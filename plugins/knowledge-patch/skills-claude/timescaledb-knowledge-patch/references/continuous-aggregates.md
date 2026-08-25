@@ -1,23 +1,22 @@
 # Continuous Aggregates
 
-## Refresh APIs and Scheduling
+## Refresh controls and batching
 
-`refresh_continuous_aggregate` accepts `force` (since 2.18.0). A forced refresh
-consumes its associated invalidations rather than leaving them pending (since
-2.26.0).
+Since 2.18.0, `refresh_continuous_aggregate` accepts optional `force`, and
+`add_continuous_aggregate_policy` accepts `include_tiered_data`.
 
-Continuous-aggregate policies can set `include_tiered_data` (since 2.18.0).
-They can split refresh work into smaller batches, and refresh newest data before
-older data, reducing memory and disk pressure while making recent results
-current sooner (since 2.19.0). The `refresh_newest_first` policy argument
-explicitly controls that ordering (since 2.20.0).
+Incremental policy refreshes arrived in 2.19.0. Policies can split work into
+smaller batches and materialize newest data before older data, bringing recent
+results current sooner while reducing per-run memory and disk pressure. The
+`refresh_newest_first` policy option became explicit in 2.20.0. In 2.21.0,
+incremental policies became enabled by default and non-overlapping refresh
+ranges could run concurrently, including through concurrent policies.
 
-Non-overlapping ranges can refresh concurrently, and concurrent refresh
-policies can be created (since 2.21.0). Incremental policy refresh is enabled by
-default. The policy default for `buckets_per_batch` is `10` (since 2.25.0), so
-policies use smaller transactions unless explicitly overridden.
+The default `buckets_per_batch` became `10` in 2.25.0, producing smaller
+transactions unless explicitly overridden. A forced refresh consumes its
+associated invalidations since 2.26.0 instead of leaving them pending.
 
-Manual refresh can also batch its work (since 2.28.0):
+Manual `refresh_continuous_aggregate()` gained incremental batching in 2.28.0:
 
 ```sql
 CALL refresh_continuous_aggregate(
@@ -30,25 +29,16 @@ CALL refresh_continuous_aggregate(
 );
 ```
 
-Manual batching uses `buckets_per_batch`, `max_batches_per_execution`, and
-`refresh_newest_first`. Invalidation-log processing uses a lighter lock, so
-that phase no longer blocks unrelated operations on the same aggregate.
+Invalidation-log processing in 2.28 uses a lighter lock, so that phase no
+longer blocks unrelated operations on the same aggregate.
 
-Refresh policies for compressed continuous aggregates can perform compression
-during refresh (since 2.27.0). The experimental Direct Compress refresh path is
-documented in
-[Columnstore and Compression](columnstore-and-compression.md).
+## Definitions and supported SQL
 
-## Query Definitions and Rewrites
+Continuous aggregates accept non-immutable functions since 2.20.0. Window
+functions were experimental and disabled by default behind
+`timescaledb.enable_cagg_window_functions`.
 
-Continuous aggregates can use non-immutable functions (since 2.20.0).
-Window-function support is experimental and disabled by default:
-
-```sql
-SET timescaledb.enable_cagg_window_functions = on;
-```
-
-Definitions can use set-returning functions such as `unnest` (since 2.23.0):
+Set-returning functions such as `unnest` became valid in 2.23.0:
 
 ```sql
 CREATE MATERIALIZED VIEW hourly_tags
@@ -62,93 +52,45 @@ GROUP BY bucket, u.tag
 WITH NO DATA;
 ```
 
-`time_bucket` accepts UUIDv7 and returns timezone-aware timestamps (since
-2.24.0), enabling continuous aggregates over a UUIDv7-partitioned hypertable:
+Since 2.24.0, `time_bucket` accepts UUIDv7 values and returns timezone-aware
+timestamps, allowing continuous aggregates on UUIDv7-partitioned hypertables.
+UUIDv7 ranges in the chunks informational view are displayed as timestamps.
 
-```sql
-SELECT time_bucket('1 hour', event_id) AS bucket, count(*)
-FROM events
-GROUP BY bucket;
-```
-
-Queries whose aggregation exactly matches a continuous aggregate can be
-rewritten to use it (since 2.27.0). Rewriting and diagnostics are independently
-disabled by default:
+Exact-match query rewrites can use an existing continuous aggregate since
+2.27.0. Rewrites and diagnostics are both disabled by default:
 
 ```sql
 SET timescaledb.enable_cagg_rewrites = on;
 SET timescaledb.cagg_rewrites_debug_info = on;
 ```
 
-## Altering and Maintaining Aggregates
+Time validation is stricter in 2.27.0: continuous-aggregate definitions reject
+non-positive bucket widths, and `time_bucket` rejects a sub-day offset for
+`DATE` input.
 
-Continuous aggregates accept ordinary PostgreSQL storage parameters (since
-2.25.0):
+## Invalidation processing
 
-```sql
-ALTER MATERIALIZED VIEW hourly_metrics SET (fillfactor = 90);
-```
+In 2.21.0, hypertable invalidations could be processed through an explicit
+function or scheduled policy, with an option to leave them unprocessed.
 
-`ALTER TABLE ... RESET` works on materialization hypertables (since 2.27.0), so
-their reloptions can be restored to defaults.
+TimescaleDB 2.22.0 added the tech-preview `timescaledb.invalidate_using`
+option, choosing trigger-based collection or WAL collection through logical
+decoding. If omitted on a continuous aggregate, it inherited the source
+hypertable's method. Processing could cover aggregates involving multiple
+hypertables. WAL processing used these defaults:
 
-An aggregate can be added to an existing continuous aggregate as a stored
-generated column without rebuilding the view (since 2.28.0). Existing
-materialized rows initially contain `NULL`; newly materialized rows populate
-the column. Force a refresh over the desired historical range to backfill:
+- `cagg_processing_wal_batch_size = 10000`
+- `cagg_processing_low_work_mem = '38.4MB'`
+- `cagg_processing_high_work_mem = '51.2MB'`
 
-```sql
-ALTER MATERIALIZED VIEW hourly_metrics
-ADD COLUMN max_value double precision
-GENERATED ALWAYS AS (max(value)) STORED;
+An explicit `timescaledb.enable_cagg_wal_based_invalidation` GUC arrived in
+2.23.0. The experimental WAL path was removed in 2.25.0; use trigger-based
+continuous-aggregate invalidation instead.
 
-CALL refresh_continuous_aggregate(
-    'hourly_metrics',
-    '2025-01-01'::timestamptz,
-    '2026-01-01'::timestamptz,
-    force => true
-);
-```
-
-`VACUUM` and `ANALYZE` accept the continuous-aggregate name and redirect to the
-materialization hypertable (since 2.28.0):
-
-```sql
-VACUUM hourly_metrics;
-ANALYZE hourly_metrics;
-```
-
-## Invalidation Processing
-
-APIs for the hypertable invalidation log and materialization invalidations are
-available (since 2.20.0).
-
-Hypertable invalidations can be processed by an explicit function or scheduled
-policy, with an option to leave them unprocessed (since 2.21.0). Invalidation
-processing supports continuous aggregates that involve multiple hypertables
-(since 2.22.0).
-
-### WAL-based invalidation was temporary
-
-The tech-preview `timescaledb.invalidate_using` option introduced in 2.22.0
-selected trigger collection or WAL collection through logical decoding. When
-omitted on an aggregate, it inherited the source hypertable's method.
-
-The WAL processor used these defaults:
-
-- `cagg_processing_wal_batch_size`: `10000`
-- `cagg_processing_low_work_mem`: `38.4MB`
-- `cagg_processing_high_work_mem`: `51.2MB`
-
-An explicit enablement GUC,
-`timescaledb.enable_cagg_wal_based_invalidation`, followed in 2.23.0. The whole
-experimental WAL path was removed in 2.25.0. Current deployments must use
-trigger-based invalidation; remove the option and GUC from configuration.
-
-### Deliberately skipping invalidations
-
-`timescaledb.skip_cagg_invalidation` skips invalidation tracking for DML and DDL
-in the current session or transaction and defaults to off (since 2.28.0):
+The 2.28.0 `timescaledb.skip_cagg_invalidation` setting skips invalidation
+tracking for DML and DDL in the current session or transaction and defaults to
+off. It can reduce bulk-load overhead, but explicitly refresh all affected
+aggregates afterward:
 
 ```sql
 BEGIN;
@@ -157,19 +99,73 @@ INSERT INTO metrics SELECT * FROM staging_metrics;
 COMMIT;
 ```
 
-This can reduce bulk-load overhead. Changes made while it is enabled are not
-tracked, so explicitly refresh affected aggregates when they must be current.
+## Compression and storage
 
-## Removed Formats and Policy Helpers
+Direct Compress supports hypertables feeding continuous aggregates since
+2.24.0; invalidation ranges for directly compressed batches are recorded at
+transaction commit. Continuous-aggregate refresh gained an experimental Direct
+Compress path in 2.25.0, default off behind
+`timescaledb.enable_direct_compress_on_cagg_refresh`.
 
-The deprecated partial continuous-aggregate format was slated for removal after
-2.24.0. Migrate any remaining aggregate:
+Compressed continuous aggregates received new automatic `segmentby` and
+`orderby` defaults in 2.25.0. Layouts may change when automatic selection is
+used. Refresh policies for compressed continuous aggregates can perform
+compression as part of refresh since 2.27.0.
+
+Continuous aggregates accept ordinary PostgreSQL storage parameters since
+2.25.0:
+
+```sql
+ALTER MATERIALIZED VIEW hourly_metrics SET (fillfactor = 90);
+```
+
+`ALTER TABLE ... RESET` is supported on their materialization hypertables since
+2.27.0, restoring reloptions to defaults.
+
+## Adding aggregates and maintenance
+
+Since 2.28.0, add an aggregate to an existing continuous aggregate as a stored
+generated column without rebuilding the view:
+
+```sql
+ALTER MATERIALIZED VIEW hourly_metrics
+ADD COLUMN max_value double precision
+GENERATED ALWAYS AS (max(value)) STORED;
+```
+
+Existing materialized rows initially contain `NULL`; new rows populate the
+column. Backfill a historical range with a forced refresh:
+
+```sql
+CALL refresh_continuous_aggregate(
+    'hourly_metrics',
+    '2025-01-01'::timestamptz,
+    '2026-01-01'::timestamptz,
+    force => true
+);
+```
+
+`VACUUM` and `ANALYZE` accept a continuous aggregate since 2.28.0 and redirect
+to its materialization hypertable.
+
+## GapFill
+
+Since 2.26.0, `time_bucket_gapfill` requires its timezone argument to be
+constant; a value derived from a non-constant expression is rejected. Since
+2.28.0, other GapFill arguments may come from subquery results represented as
+executor parameters, enabling parameterized query shapes that were previously
+rejected.
+
+## Deprecated formats and policy helpers
+
+TimescaleDB 2.24.0 announced that its next release would remove the deprecated
+partial continuous-aggregate format. Migrate any remaining aggregate with:
 
 ```sql
 SELECT cagg_migrate('<CONTINUOUS_AGGREGATE_NAME>');
 ```
 
-Replace the experimental `timescaledb_experimental.policies` view and
-`add_policies`, `alter_policies`, `show_policies`, `remove_policies`, and
-`remove_all_policies` functions with the Jobs API. These helpers were likewise
-slated for removal after 2.24.0.
+The same announcement covered the experimental
+`timescaledb_experimental.policies` view and its `add_policies`,
+`alter_policies`, `show_policies`, `remove_policies`, and
+`remove_all_policies` functions. Replace those helpers with the Jobs API.

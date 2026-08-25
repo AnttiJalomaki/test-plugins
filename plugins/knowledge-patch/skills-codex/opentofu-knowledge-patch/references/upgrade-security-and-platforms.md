@@ -1,74 +1,82 @@
-# Upgrade, security, and platform boundaries
+# Upgrade, Security, and Platform Boundaries
 
-Check these constraints before changing the required OpenTofu version or base
-runtime.
+## Unsupported release and container base (`1.9.0`)
 
-## Supported release floor
+OpenTofu 1.6 is unsupported and receives no further security updates; upgrade
+to at least the 1.7 series.
 
-OpenTofu 1.6 is unsupported from 1.9.0 and receives no further security
-updates. Upgrade to at least 1.7.
+Using `ghcr.io/opentofu/opentofu` as the base for a custom image was deprecated
+in 1.9 and is unsupported from `1.10.0`. Custom images must use another base
+rather than depending on the OpenTofu image as a build foundation.
 
-## Container-image changes
+## Operating-system boundaries (`1.10.0`)
 
-Using `ghcr.io/opentofu/opentofu` as the base for custom images is deprecated
-in 1.9 and unsupported in 1.10. Change custom-image builds before upgrading.
+OpenTofu requires Linux kernel 3.2+ or macOS 11+. On Windows, junctions are no
+longer treated as symlinks. A `TEMP` path that traverses a junction can fail;
+use a real directory symlink or a path containing neither mechanism.
 
-## Operating-system requirements
+## PostgreSQL mixed-version hazard (`1.10.0`)
 
-OpenTofu 1.10.0 requires Linux kernel 3.2+ or macOS 11+.
+Do not allow OpenTofu 1.10-or-newer and older processes to share a PostgreSQL
+backend database. Their locking implementations are incompatible and can admit
+conflicting state writes, causing data loss.
 
-OpenTofu 1.11.0 requires macOS 12 Monterey or later. The 1.12.0 series is the
-last planned line to support macOS 12.
+## Platform and transport hardening (`1.11.0`)
 
-Official 32-bit `386` and `arm` packages continue through 1.13 but are planned
-for later removal. `amd64` and `arm64` are unaffected.
+OpenTofu 1.11 requires macOS 12 Monterey or newer. It rejects SHA-1 signatures
+during TLS handshakes and rejects malformed SSH certificates whose signing key
+is itself a certificate key.
 
-## Windows junction behavior
+Use 1.11.4+ when provider or module installation can encounter untrusted ZIP
+archives. Earlier 1.11 releases can spend excessive time processing a malicious
+archive.
 
-Since 1.10, Windows junctions are not treated as symbolic links. A `TEMP` path
-that traverses a junction may fail; use a real directory symbolic link
-instead.
+## AzureRM backend upgrade (`1.11.0`)
 
-## Transport hardening
+The AzureRM backend ignores deprecated `endpoint`/`ARM_ENDPOINT` and
+`msi_endpoint`/`ARM_MSI_ENDPOINT`. Replace the latter with `MSI_ENDPOINT`, avoid
+combining `environment` with `metadata_host`, and run
+`tofu init -reconfigure`. Do not use `-migrate-state`, because this change does
+not move state.
 
-Since 1.11, TLS handshakes reject SHA-1 signatures. SSH also rejects
-incorrectly generated certificates whose signing key is itself a certificate
-key.
+## S3 module credential selection (`1.11.0`)
 
-Use 1.11.4 or later when provider or module installation may encounter an
-untrusted ZIP archive. Earlier 1.11 releases can spend excessive time
-processing a malicious archive.
+S3 module sources use AWS CLI/SDK credential discovery. Test credential
+selection during the upgrade: standard precedence can choose a different
+source than the former custom sequence. The new behavior also supports IAM
+roles for service accounts and related SDK schemes.
 
-## Provisioner deprecation
+## Provisioner and package deprecations (`1.12.0`)
 
-WinRM connections work in 1.12 but warn and are planned to become errors in
-1.13. Migrate Windows provisioner targets to SSH.
+WinRM connections still work but warn, and are planned to become errors in
+1.13. Migrate Windows provisioners to SSH. The 1.12 series is the last planned
+series for macOS 12. Official 32-bit `386` and `arm` packages continue through
+1.13 but are planned for later removal; `amd64` and `arm64` are unaffected.
 
-## Patch-level operational fixes
+## Early 1.12 security floor (`1.12.0`)
 
-- Use 1.10.2+ for native S3 lockfiles when the bucket requires server-side
-  encryption.
-- Use 1.10.5+ when processes share `TF_PLUGIN_CACHE_DIR`.
-- Use 1.11.4+ for untrusted provider or module ZIP archives and when modules
-  with local provider configurations interact with `lifecycle.enabled`.
-- Use 1.12.4+ when saving a plan that may replace a resource configured with
-  `lifecycle.destroy = false`.
+Early 1.12 releases had defects involving SSH connections, OpenBao-wrapped
+state-encryption data, revoked SSH CA keys, and malicious Git URLs that could
+read arbitrary files. The original patch floor for those issues was 1.12.4.
+That floor is superseded by the newer registry security fixes below; use 1.12.6
+or later in the 1.12 series.
 
-## OpenTofu 1.12 security floor
+## OCI redirect credential disclosure (`1.11.14-1.12.6-security`)
 
-Do not remain on 1.12.0 or another early 1.12 patch. Early releases had
-security defects involving SSH connections, OpenBao-wrapped state-encryption
-data, revoked SSH CA keys, and malicious Git URLs that could read arbitrary
-files. Use the latest 1.12 patch available; that is 1.12.4 in this guidance.
+Upgrade to OpenTofu 1.12.6 or 1.11.14 before installing modules or providers
+from OCI Distribution registries. Earlier versions can resend credentials
+intended for the original registry origin to the destination of an HTTP
+redirect.
 
-## Sensitive logs and explicit disclosure
+## Crafted relative-URL resource exhaustion (`1.11.14-1.12.6-security`)
 
-HTTP backend trace logs include request and response bodies from 1.9. Protect
-them as state-bearing output.
+An attacker-controlled remote-state backend or provider/module registry can
+make earlier releases consume excessive CPU or memory during `tofu init` by
+returning crafted relative URLs. OpenTofu 1.12.6 and 1.11.14 fix this
+initialization-time denial-of-service issue.
 
-`-show-sensitive` deliberately unmasks protected values in commands returning
-configuration or state. Avoid it in shared terminals and captured CI logs.
+## Final 1.11 patch (`1.11.14-1.12.6-security`)
 
-Experimental external encryption programs receive keys or plaintext payloads,
-and initialization tracing sends data to a collector. Run both only under the
-operator's control and evaluate their data path before use.
+OpenTofu 1.11.14 is the final patch planned for the 1.11 series. Move
+installations that must temporarily take that fix to a newer release series as
+soon as possible.

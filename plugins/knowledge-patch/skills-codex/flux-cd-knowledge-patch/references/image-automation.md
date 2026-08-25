@@ -1,28 +1,13 @@
 # Image automation
 
-## Stable APIs and migration
+## Pin mutable tags to digests
 
-Since 2.7.0, `ImageRepository`, `ImagePolicy`, and `ImageUpdateAutomation` are
-stable at `image.toolkit.fluxcd.io/v1`.
+Since 2.6.0, set `ImagePolicy.spec.digestReflectionPolicy` to `Always` to track
+the newest digest behind a tag. `ImageUpdateAutomation` can then write a full
+reference in the form `<registry>/<name>:<tag>@<digest>`.
 
-The image-reflector-controller `autologin` flags have been removed. Select
-cloud-registry login with `ImageRepository.spec.provider` instead. A provider
-must match the repository URL; use `aws`, `azure`, or `gcp` only for the
-matching registry and automatic OIDC authentication. Omit it or use `generic`
-for public repositories and image-pull-secret authentication.
-
-Commit templates must replace removed `.Updated` and `.Changed.ImageResult`
-fields with `.Changed.FileChanges`, `.Changed.Objects`, or the flat
-`.Changed.Changes` list.
-
-## Digest pinning and markers
-
-Set `ImagePolicy.spec.digestReflectionPolicy` to `Always` to track the newest
-digest (since 2.6.0). `ImageUpdateAutomation` can then write
-`<registry>/<name>:<tag>@<digest>`.
-
-For custom resources that keep the parts separate, use image-policy markers
-for name, tag, and digest:
+Use component markers when a custom resource stores the image parts in
+separate fields:
 
 ```yaml
 spec:
@@ -33,37 +18,60 @@ spec:
       digest: sha256:ec0119... # {"$imagepolicy": "flux-system:my-app:digest"}
 ```
 
-An image-policy marker can also update an
-`event.toolkit.fluxcd.io/image` annotation alongside a workload value (since
-2.5.0). Providers then receive the new full image reference in the message:
+The `:digest` marker is specifically responsible for updating the digest
+field; retain `:name` and `:tag` markers for the other fields.
 
-```yaml
-metadata:
-  annotations:
-    event.toolkit.fluxcd.io/image: docker.io/org/my-app:1.0.0 # {"$imagepolicy": "apps:my-app"}
-spec:
-  values:
-    image:
-      tag: 1.0.0 # {"$imagepolicy": "apps:my-app:tag"}
+## Migrate to stable image APIs
+
+The following resources are stable at `image.toolkit.fluxcd.io/v1` since
+2.7.0:
+
+- `ImageRepository`
+- `ImagePolicy`
+- `ImageUpdateAutomation`
+
+Run `flux migrate` before installing CRDs that remove beta storage versions.
+Upgrade the `ImageUpdateAutomation` CRD together with its controller when
+moving to 2.9.4 because that maintenance release changes its schema.
+
+## Replace removed controller flags and template fields
+
+The image-reflector-controller `autologin` flags were removed in 2.7.0. Set
+`ImageRepository.spec.provider` to the appropriate cloud provider instead.
+
+Update commit-message templates that use the removed `.Updated` or
+`.Changed.ImageResult` fields. Use one of:
+
+- `.Changed.FileChanges` for changed files;
+- `.Changed.Objects` for changed Kubernetes objects;
+- the flat `.Changed.Changes` list for a consolidated view.
+
+## Suspend and scope automation
+
+Set `ImagePolicy.spec.suspend` to pause policy evaluation without deleting the
+policy. To use sparse checkout in `ImageUpdateAutomation`, enable the 2.7.0
+feature on image-automation-controller:
+
+```shell
+--feature-gates=GitSparseCheckout=true
 ```
 
-## Policy and checkout controls
+The controller can use Kubernetes Workload Identity for Azure DevOps
+repositories, avoiding a static Git credential when the environment is
+configured for federated identity.
 
-`ImagePolicy.spec.suspend` pauses policy evaluation (since 2.7.0).
+## Authenticate and sign Git writes
 
-Enable sparse checkout for `ImageUpdateAutomation` on
-image-automation-controller with `--feature-gates=GitSparseCheckout=true`
-(since 2.7.0).
+Image automation can authenticate to GitHub as an App installation by
+referencing a GitHub App Secret through
+`ImageUpdateAutomation.spec.git` configuration. Since 2.9.0, pushed commits
+can be SSH-signed with `ImageUpdateAutomation.spec.git.commit.signingKey`.
 
-## Authentication and signing
+Use a signing key Secret appropriate for SSH commit signing; this is distinct
+from transport authentication to the repository.
 
-GitHub App installation authentication is available for
-image-automation-controller (since 2.5.0). Reference the generated Secret with
-`.spec.secretRef.name` on `ImageUpdateAutomation`.
+## Remove unsafe refspec operations
 
-The opt-in `ObjectLevelWorkloadIdentity` gate permits per-object registry
-identity for ImageRepository (since 2.6.0). Image automation can use Kubernetes
-Workload Identity for Azure DevOps repositories (since 2.7.0).
-
-Since 2.9.0, `ImageUpdateAutomation.spec.git.commit.signingKey` can sign pushed
-commits with an SSH key.
+As of 2.9.4, `ImageUpdateAutomation` rejects refspecs that force-update or
+delete refs. Remove those operations before upgrading. Keep automation writes
+as normal non-forced updates to the intended branch.

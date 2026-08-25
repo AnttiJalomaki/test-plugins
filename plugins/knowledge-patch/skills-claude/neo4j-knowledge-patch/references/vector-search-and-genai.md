@@ -1,14 +1,12 @@
 # Vector Search and GenAI
 
-Use this reference for vector-index configuration, vector import, Cypher 25
-`SEARCH`, vector procedure migrations, and GenAI plugin functions.
+## Hi-Fidelity Quantized Vector Search
 
-## Hi-Fidelity quantized vector indexes
+### Configure HFQ per index (2026.06.0)
 
-Preview Hi-Fidelity Quantized Vector Search (HFQ) expands an initial search
-over quantized vectors and reranks the candidates with full-precision vectors
-(since 2026.06.0). Configure the quantization type and default search expansion
-factor per index:
+Preview Hi-Fidelity Quantized Vector Search expands a search over quantized
+vectors, then reranks candidates against full-precision vectors. Enable its
+quantization type and default expansion factor in the index configuration:
 
 ```cypher
 CREATE VECTOR INDEX moviePlots IF NOT EXISTS
@@ -22,12 +20,14 @@ OPTIONS {indexConfig: {
 }}
 ```
 
-An existing vector index must be rebuilt to use HFQ; setting the new options
-does not retrofit the existing index.
+An existing index must be rebuilt to use HFQ. Treat the feature as preview and
+retain the full-precision vectors required for reranking.
 
-## Filtered vector `SEARCH`
+## Cypher vector search
 
-Cypher 25 vector searches accept `IN` within the search filter predicate:
+### Filter `SEARCH` with `IN` (2026.06.0)
+
+Cypher 25 vector-search filter predicates accept `IN`:
 
 ```cypher
 MATCH (movie:Movie)
@@ -40,67 +40,63 @@ SEARCH movie IN (
 RETURN movie.title AS title, movie.rating AS rating
 ```
 
-## Vector import parsing
+### Replace vector procedures
 
-For `neo4j-admin database import`:
+In Cypher 25, use the `SEARCH` clause instead of deprecated
+`db.index.vector.queryNodes()` and
+`db.index.vector.queryRelationships()`.
 
-- `--vector-delimiter` must differ from both `--delimiter` and `--quote`.
-- Native Parquet list types can supply vector values directly.
-
-Update generated commands that reuse a delimiter, and prefer the native list
-representation when the source format supports it.
-
-## Vector procedure migrations
-
-In Cypher 25, replace deprecated vector-query procedures with `SEARCH`:
-
-```text
-db.index.vector.queryNodes() -> SEARCH
-db.index.vector.queryRelationships() -> SEARCH
-```
-
-Two older procedures are removed:
+Two older procedures are removed; use their explicit replacements:
 
 ```text
 db.index.vector.createNodeIndex() -> CREATE VECTOR INDEX
 db.create.setVectorProperty() -> db.create.setNodeVectorProperty()
 ```
 
-Update allowlists, generated statements, test fixtures, and result mappings.
-The `SEARCH` clause is not a drop-in procedure name substitution; rewrite the
-query shape.
+## Vector import
 
-## Azure OpenAI base URL
+### Keep delimiter roles distinct (2026.06.0)
 
-The GenAI plugin provides `GENAI_AZURE_OPENAI_BASE_URL` (since 2026.04.0). Set
-it when `ai.text` calls must use a different Azure OpenAI base URL. Keep the
-endpoint aligned with the deployment configuration.
+For `neo4j-admin database import`, the `--vector-delimiter` character must
+differ from both `--delimiter` and `--quote`. Validate all three options
+together before starting a large import.
 
-## Token-aware text processing
+### Read native Parquet vectors (2026.06.0)
+
+The importer can read vector values directly from native Parquet list types;
+an intermediate delimited-string representation is unnecessary.
+
+## GenAI endpoint configuration
+
+### Override the Azure OpenAI base URL (2026.04.0)
+
+The GenAI plugin recognizes `GENAI_AZURE_OPENAI_BASE_URL` and uses it as the
+base URL for `ai.text` calls. Set it when traffic must target a non-default
+endpoint.
+
+## Token utilities
+
+### Chunk and estimate input (2026.04.0)
 
 The GenAI plugin provides:
 
-- `ai.text.countToken` to estimate the token count of input; and
-- `ai.text.chunkByTokenLimit` to divide input into chunks that fit a token
-  limit.
+- `ai.text.chunkByTokenLimit` to split input into chunks within a token limit.
+- `ai.text.countToken` to estimate an input's token count.
 
-## File-based batch embeddings
+Use the estimator before a call when only sizing is needed, and the chunker
+when each output segment must stay under a processing limit.
 
-`ai.file.embedBatch` reads text from a local or remote file and creates
-embeddings (since 2026.05.0). It can optionally split the input into chunks and
+## File-based embedding batches
+
+### Embed local or remote file content (2026.05.0)
+
+`ai.file.embedBatch` reads text from a local or remote file and generates
+embeddings. It can optionally split the input into chunks. The procedure
 returns one row per chunk with:
 
-- the chunk index;
-- the chunk content; and
-- its embedding vector.
+- the chunk index,
+- the chunk content,
+- the embedding vector.
 
-## Validation checklist
-
-1. Confirm that vector indexes use the intended dimensions, similarity
-   function, quantization type, and expansion factor.
-2. Rebuild pre-existing indexes before expecting HFQ behavior.
-3. Test `SEARCH` filters and compare recall after migration from procedures.
-4. Validate vector delimiter choices and native Parquet lists with production
-   import samples.
-5. Exercise token counting, chunk boundaries, local and remote file reads, and
-   embedding-row mappings independently.
+Preserve the returned index if downstream storage needs to reconstruct source
+order.

@@ -1,9 +1,11 @@
 # Identity and placement
 
-## Read a named object's name
+## Read a named object's identity
 
-An object reached through `idFromName()` or `getByName()` can read that same
-name from `ctx.id.name` (2026), including inside an alarm handler.
+An object reached through `idFromName()` or `getByName()` can read that name
+through `ctx.id.name`, including in an alarm handler (2026). The value is
+`undefined` for IDs from `newUniqueId()`, access through `idFromString()`, and
+names longer than 1,024 bytes.
 
 ```js
 export class ChatRoom extends DurableObject {
@@ -13,43 +15,28 @@ export class ChatRoom extends DurableObject {
 }
 ```
 
-The value is `undefined` for IDs created by `newUniqueId()`, access through
-`idFromString()`, and names longer than 1,024 bytes.
+## Scope a namespace to a jurisdiction
 
-## Scope compute and data to a jurisdiction
-
-Use `namespace.jurisdiction("us")` to constrain an object's compute and stored
-data to the United States. Workers outside the US can still access it.
+`namespace.jurisdiction("us")` constrains an object's compute and stored data
+to the United States (2026); Workers outside the US can still access it.
+Jurisdiction scopes also include `eu` and `fedramp`.
 
 ```js
 const usObjects = env.MY_DURABLE_OBJECT.jurisdiction("us");
 const stub = usObjects.getByName("general");
 ```
 
-Jurisdiction-scoped namespaces support `eu`, `us`, and `fedramp`. Each scope
-has a distinct ID space:
-
-- The same name produces a different ID in each jurisdiction.
-- A scoped namespace rejects an ID from another jurisdiction.
-- The unscoped namespace can resolve a restricted ID.
-
-Prefer `namespace.jurisdiction()` over per-ID
-`newUniqueId({ jurisdiction })`. A `DurableObjectId` can still be logged
-outside its jurisdiction for billing and debugging.
-
-```js
-const euRooms = env.ROOMS.jurisdiction("eu");
-const euId = euRooms.idFromName("lobby");
-const stub = env.ROOMS.get(euId);
-```
+Each jurisdiction has a distinct ID space: the same name yields a different ID
+per scope, and a scoped namespace rejects an ID from another jurisdiction. An
+unscoped namespace can resolve a restricted ID. Prefer scoping the namespace
+over calling `newUniqueId({ jurisdiction })`; a `DurableObjectId` may still be
+logged outside its jurisdiction for billing and debugging.
 
 ## Preserve jurisdiction through ID round-trips
 
-Inside the object, `ctx.id.jurisdiction` reports its jurisdiction. The value
-survives `toString()` followed by `idFromString()`.
-
-It is also available to alarm handlers for alarms scheduled on `2026-03-15`
-or later.
+Inside an object, `ctx.id.jurisdiction` reports its jurisdiction. The value
+survives `toString()` and `idFromString()`. It is available in alarm handlers
+for alarms scheduled on `2026-03-15` or later.
 
 ```js
 export class Room extends DurableObject {
@@ -59,19 +46,16 @@ export class Room extends DurableObject {
 }
 ```
 
-## Hint first placement
+## Use placement hints only for first access
 
-Both `get(id, { locationHint })` and
-`getByName(name, { locationHint })` accept a best-effort placement hint. The
-hint matters only on the object's first access and never relocates an existing
-object.
+Both `get(id, { locationHint })` and `getByName(name, { locationHint })` accept
+a best-effort hint for the object's first access. A hint never relocates an
+existing object.
+
+`apac-ne` and `apac-se` narrow the broader `apac` region. `sam`, `afr`, and
+`me` are accepted but currently place objects in a nearby region with Durable
+Objects support.
 
 ```js
-const stub = env.ROOMS.getByName("tokyo", {
-  locationHint: "apac-ne",
-});
+const stub = env.ROOMS.getByName("tokyo", { locationHint: "apac-ne" });
 ```
-
-`apac-ne` and `apac-se` narrow the broader `apac` region. The accepted `sam`,
-`afr`, and `me` hints currently fall back to a nearby region that supports
-Durable Objects.

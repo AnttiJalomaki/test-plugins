@@ -1,6 +1,8 @@
 {
   "patch": "authjs-knowledge-patch",
-  "merged_at": "2026-07-15T00:50:05Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-20T20:11:12Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -32,6 +34,11 @@
     },
     "package-release-history": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.24.15": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

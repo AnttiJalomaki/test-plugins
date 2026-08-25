@@ -12,9 +12,9 @@ metadata:
 
 Use this skill before changing React Router applications, route modules, adapters,
 framework configuration, data APIs, middleware, generated types, or migrations.
-Determine the installed major and mode first: Framework, Data, Declarative, or RSC.
-Several names and defaults differ by major, and provisional names were stabilized in
-multiple steps.
+Determine the installed major and routing mode first: Framework, Data, Declarative,
+or RSC. Names and defaults differ by major, and several provisional APIs were renamed
+more than once before stabilization.
 
 ## Reference index
 
@@ -42,22 +42,22 @@ multiple steps.
 
 ### Choose imports by major
 
-For current major projects, import shared APIs such as `Link`, `redirect`, cookie helpers,
-and hooks from `react-router`. Import DOM renderers from `react-router/dom`.
+For v8, import shared APIs such as `Link`, `redirect`, cookie helpers, and hooks from
+`react-router`. Import DOM renderers from `react-router/dom`.
 
 ```ts
 import { Link, redirect } from "react-router";
 import { HydratedRouter, RouterProvider } from "react-router/dom";
 ```
 
-The compatibility `react-router-dom` package is absent in v8. During v7 migration it is
-only a re-export shim. Runtime-neutral APIs do not belong in adapter packages.
+The v7 `react-router-dom` compatibility shim is absent in v8. Runtime-neutral APIs do
+not belong in adapter packages.
 
 ### Respect runtime and module floors
 
-Before upgrading a major, verify Node, React, Vite, ESM, and output-target requirements.
-The current major requires Node 22.22.0 or newer, React 19.2.7 or newer, Vite 7 or
-newer, ESM packages, and an ES2022 target. Adapter peer floors may be narrower.
+Before upgrading to v8, verify Node, React, Vite, ESM, and output-target requirements.
+V8 requires Node 22.22.0 or newer, React 19.2.7 or newer, Vite 7 or newer, ESM
+packages, and an ES2022 target. Adapter peer floors may be narrower.
 
 ### Remove obsolete response and deferred helpers
 
@@ -153,11 +153,12 @@ Run `react-router typegen && tsc` in CI and standalone checks.
 ### Combine server and client data deliberately
 
 Under SSR, `loader` supplies server or prerender data and `clientLoader` handles later
-navigations. Call `serverLoader()` to combine them. Set `clientLoader.hydrate = true as const`
-when it must run before hydration and provide `HydrateFallback` when the UI should wait.
+navigations. Call `serverLoader()` to combine them. Set
+`clientLoader.hydrate = true as const` when it must run before hydration and provide
+`HydrateFallback` when the UI should wait.
 
-Client-only loaders hydrate implicitly. If a hydrating client loader has no fallback, its
-first value must match server-rendered data to avoid a hydration mismatch.
+Client-only loaders hydrate implicitly. If a hydrating client loader has no fallback,
+its first value must match server-rendered data to avoid a hydration mismatch.
 
 ### Understand prerender and SPA output
 
@@ -182,7 +183,7 @@ A middleware may call `next()` at most once. Omitting it automatically continues
 useful for pre-handler setup. A middleware that short-circuits may return `Response` or `data()`.
 
 Do not assume server middleware runs on every hydrated navigation: without a loader or action,
-no `.data` request is made. Add a loader returning `null` when the server middleware must run.
+no `.data` request is made. Add a loader returning `null` when server middleware must run.
 
 Do not expect server context to survive an SPA submission's POST-to-GET boundary. Each HTTP
 request receives a separate provider. Client middleware work can share one client context.

@@ -1,98 +1,107 @@
 # Migration, SDK, Plugins, and Compatibility
 
-This topic-organized reference incorporates the included Helm `4.2.3` batch.
+## Embedded SDK migration
 
-## Scope a Helm 4 migration
+### Review public API changes
 
-Helm 4 changes several integration surfaces, but the major release does not
-imply that every Helm 3 chart needs changes. Separate the review into:
+Helm 4 changes public SDK APIs (since 4.2.3). Code that embeds Helm should be
+compiled and tested against the v4 API rather than relying on Helm 3 method
+signatures or behaviors. This SDK migration surface does not imply that every
+Helm 3 chart needs changes.
 
-- Go applications that embed the Helm SDK.
-- Plugins and post-renderers.
-- Charts whose behavior depends on changed values coalescing.
-- Automation that passes deprecated or restored CLI flags.
-- Client and cluster compatibility.
+The Helm 4 SDK can handle multiple chart API versions. Preserve that ability
+when host code loads, creates, or processes charts instead of assuming a
+single chart API version.
 
-Review the relevant surface rather than treating all charts as incompatible.
+### Integrate logging with `slog`
 
-## Public SDK APIs and logging
+Helm 4 uses Go `slog` (since 4.2.3), allowing embedded Helm logging to connect
+to modern host loggers. Exercise the logging path when migrating an embedded
+integration, including any handler or context behavior supplied by the host.
 
-Helm 4 changes public SDK APIs. Code that embeds Helm should be reviewed
-against the v4 APIs rather than relying on Helm 3 signatures or behavior.
+## Plugins and post-renderers
 
-The Helm 4 SDK supports multiple chart API versions. This capability is also
-used by the experimental chart API v3 creation path described in
-[charts-and-values.md](charts-and-values.md).
+### Adopt the Helm 4 plugin model
 
-Helm 4 uses Go `slog`. Embedded applications can integrate Helm logging with
-modern loggers through that logging model. During migration, review:
+Helm 4 redesigns the plugin system to support WebAssembly-based plugins
+(since 4.2.3). Inventory and test every extension when moving a CLI or an
+embedded integration to Helm 4.
 
-- Logger construction and injection.
-- Any adapters around older logging assumptions.
-- Routing of Helm records into the host application's logging setup.
-- Tests that assert emitted or captured logging behavior.
+Post-renderers are plugins in Helm 4. Treat post-renderer commands and
+ordinary extensions as one migration surface rather than reviewing only the
+integrations already labeled as plugins.
 
-The operational SDK surface also includes server-side apply defaults and
-fine-grained wait contexts. See
-[operations-and-delivery.md](operations-and-delivery.md).
+### Require hardened plugin validation
 
-## WebAssembly plugins and post-renderers
+Helm 4.2 fixes a missing-provenance bypass and version path traversal in
+plugin handling (since 4.2.3). Upgrade older Helm 4 clients that install
+plugins, especially when their plugin sources are not fully trusted.
 
-Helm 4 redesigns the plugin system to support WebAssembly-based plugins.
-Extension integrations should be validated against this new plugin model.
-
-Post-renderers are plugins in Helm 4. Treat them as part of the plugin
-migration:
-
-1. Inventory post-renderers along with other extensions.
-2. Check how each integration is loaded and invoked.
-3. Re-run the paths that depend on rendered output transformation.
-4. Avoid assuming an unchanged chart proves its post-renderer integration is
-   unchanged.
-
-## Plugin validation hardening
-
-Helm 4.2 fixes two plugin-handling vulnerabilities:
-
-- A missing-provenance bypass.
-- Version path traversal.
-
-Upgrade older Helm 4 clients that install plugins, especially when plugin
-sources are not fully trusted. This guidance applies to the installing client;
-changing a chart alone does not supply the validation hardening.
+After upgrading, retest plugin installation as well as execution. Installation
+is the path directly affected by provenance and version-path validation.
 
 ## Kubernetes compatibility
 
-Helm 4 follows an `n-3` Kubernetes compatibility policy. It does not promise
-forward compatibility beyond the Kubernetes client version with which Helm
-was built.
+### Apply the `n-3` policy
 
-Helm 4.2.x:
+Helm 4 follows an `n-3` Kubernetes compatibility policy (since 4.2.3). It does
+not promise forward compatibility beyond the Kubernetes client version with
+which the Helm client was built.
 
-- Uses Kubernetes 1.36 client libraries.
-- Supports Kubernetes 1.33.x, 1.34.x, 1.35.x, and 1.36.x.
+Helm 4.2.x uses Kubernetes 1.36 client libraries. Its supported Kubernetes
+window is 1.33.x through 1.36.x. Check both the Helm line and the target
+cluster version before diagnosing behavior or claiming that a combination is
+supported.
 
-When diagnosing a client/cluster issue, establish both versions before
-assuming that a newer cluster is supported by forward compatibility.
+## Helm 3 maintenance
 
-## Helm 3 support transition
+### Plan around support dates
 
-The Helm 3 support schedule is:
+Helm 3 receives bug fixes through July 8, 2026 and security fixes through
+November 11, 2026 (since 4.2.3). During this transition, features are not
+backported. The exception is Kubernetes client-library updates required to
+support newer Kubernetes versions.
 
-| Support type | Through |
-| --- | --- |
-| Bug fixes | July 8, 2026 |
-| Security fixes | November 11, 2026 |
+Use the support window to decide whether a maintained product still needs a
+Helm 3 path or should finish its Helm 4 migration. Do not plan on new Helm 4
+features appearing in Helm 3.
 
-No features are backported during the transition. The exception is
-Kubernetes client-library updates needed to support newer Kubernetes
-versions.
+### Pick up security dependency updates
 
-Use the distinction between bug fixes, security fixes, and feature
-development when planning a migration or setting maintenance expectations.
+Helm 3.21.4 includes the following dependency changes:
+
+- Provenance cryptography migrates to `ProtonMail/go-crypto` for
+  GO-2026-5932.
+- OpenTelemetry updates to 1.44.0.
+- gRPC updates to 1.82.1.
+- `x/crypto` updates to 0.54.0.
+- `x/text` updates to 0.40.0.
+
+The dependency updates address GO-2026-5158, GO-2026-6061, and GO-2026-5970
+in addition to the provenance change. Upgrade maintained Helm 3 clients that
+need these fixes.
 
 ## Platform artifacts
 
-Helm 4.2 adds official Linux `loong64` release artifacts. Use the official
-artifact for that operating-system and architecture combination rather than
-assuming a locally produced build is the only option.
+### Use official Linux `loong64` builds
+
+Helm 4.2 supplies official Linux `loong64` release artifacts (since 4.2.3).
+Prefer those artifacts over an ad hoc build when deploying the Helm CLI on
+that platform.
+
+## Migration review
+
+For an SDK, plugin, or compatibility migration:
+
+1. Identify whether the integration embeds the SDK, invokes the CLI, installs
+   a plugin, or runs a post-renderer.
+2. Compile embedded code against Helm 4 and test the chart API versions it
+   actually consumes.
+3. Connect and test `slog` output when the host owns logging.
+4. Test all plugins and post-renderers through the Helm 4 plugin model.
+5. Confirm plugin-installing clients include provenance and path hardening.
+6. Compare the target cluster with the Kubernetes client version and `n-3`
+   window.
+7. Apply the Helm 3 support dates and dependency fixes to maintained legacy
+   clients.
+8. Choose the official Linux `loong64` artifact where applicable.

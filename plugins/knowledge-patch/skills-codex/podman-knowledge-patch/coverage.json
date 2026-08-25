@@ -1,6 +1,8 @@
 {
   "patch": "podman-knowledge-patch",
-  "merged_at": "2026-07-15T01:36:07Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-21T20:54:05Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -52,6 +54,11 @@
     },
     "system-migration": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "5.8.6-6.1.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

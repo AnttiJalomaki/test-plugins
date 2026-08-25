@@ -1,218 +1,185 @@
 # Caching and Persisted Queries
 
-## Response-cache configuration lifecycle
+## Persisted queries and safelists
 
-Router 2.8.0 introduces Redis-backed root-field and entity response caching
-under `preview_response_cache`. It uses subgraph `Cache-Control` for TTL and
-cache tags for targeted invalidation. Existing entity-cache configurations can
-migrate by renaming their options.
+### Local persisted-query manifest hot reload (2.1.0)
 
-Router 2.10.0 makes response caching generally available under
-`response_cache`; production configuration should no longer use the preview
-namespace.
+`persisted_queries.hot_reload: true` watches configured local manifests without
+a Router restart. It is independent of the process `--hot-reload` flag.
 
-In Router 2.9.0, the ineffective `ttl` nested under `redis` is removed. Put
-fallback TTL on the relevant `preview_response_cache.subgraph` entry; after GA,
-use the corresponding `response_cache` path:
+### Persisted-query usage by ID (2.2.0)
 
-```yaml
-response_cache:
-  enabled: true
-  subgraph:
-    all:
-      enabled: true
-      ttl: 10m
-      redis:
-        urls: ["redis://localhost:6379"]
-```
+Usage reporting is keyed by persisted-query ID, enabling per-ID grouping.
 
-Router 2.12.0 clarifies that a configured TTL applies only when a subgraph
-omits `Cache-Control: max-age`. A multi-root-field subgraph response is stored
-as one unit rather than one entry per root field.
+### Unknown persisted-query errors expose the operation name (2.4.0)
 
-Router 2.15.0 adds
-`response_cache.include_cache_control_header_on_router_response`, defaulting to
-`true`. Setting it to `false` suppresses client `Cache-Control` without
-changing Redis storage, TTL, keys, or debugger behavior.
+With manifest safelisting and APQ disabled, `PERSISTED_QUERY_NOT_IN_LIST`
+includes `extensions.operation_name` when the request supplied a name.
 
-## Cache keys and identity
+### Safelist logs distinguish bypassed enforcement (2.3.0)
 
-### Entity-key evolution
+Unknown-operation logs include `enforcement_skipped`: false means an external
+operation was rejected, true means an internal operation bypassed enforcement.
 
-Router 2.1.0 separates entity key fields from representation-variable values
-in cache keys, fixing `@requires`-related failures. This changes hashing for
-distributed query-plan caching, so expect regeneration during upgrade.
+### Safelisted operation bodies count toward persisted-query usage (2.7.0)
 
-Router 2.1.3 fixes entity caching for types with multiple `@key` directives
-whose fields differ.
+Usage metrics include safelisted operations submitted by body, not only those
+submitted by ID.
 
-Router 2.6.0 changes entity-cache keys again while preventing storage of an
-already expired response whose `Age` exceeds `max-age`. Plan another cold-cache
-period.
+### Persisted-query IDs enter request context (2.13.0)
 
-### Nullable and interface keys
+The resolved persisted-query ID is stored in request context and is available
+to Rhai.
 
-Router 2.10.0 treats Federation interface objects as entities for response
-caching, allowing their representations to serve as keys.
+### Local persisted-query manifest key (2.16.0)
 
-Router 2.11.0 accepts nullable `@key` fields. Keep identities simple and avoid
-a representation where `null` is ambiguous.
+Replace deprecated `persisted_queries.experimental_local_manifests` with the
+equivalent `persisted_queries.local_manifests`; the former is removed in Router
+3.x.
 
-Router 2.13.0 additionally accepts a missing nullable key field and a nullable
-list item whose value is `null`.
+## Response-cache configuration and identity
 
-### Schema and per-subgraph identity
+### Redis-backed response caching (2.8.0)
 
-Router 2.12.0 includes schema changes in cache identity, so old entries stop
-receiving hits rather than serving stale-schema data.
+`preview_response_cache` stores root query fields and entity representations
+in Redis, uses subgraph `Cache-Control` for TTL, and supports cache tags for
+targeted invalidation. Entity-cache configurations can migrate by renaming
+options.
 
-Router 2.9.0 lets `apollo::response_cache::key` contain a `subgraphs` map.
-A named subgraph entry replaces rather than merges with `all`; repeat common
-data inside the named entry.
+### Response caching is generally available (2.10.0)
 
-```json
-{
-  "all": 1,
-  "subgraphs": {
-    "products": { "locale": "be" }
-  }
-}
-```
+Use production `response_cache`; the earlier namespace was
+`preview_response_cache`.
 
-Router 2.10.0 permits Rhai and coprocessors to customize identity at the
-subgraph stage, for example by copying a request header to a `private_id`
-context value.
+### Per-subgraph response-cache key context (2.9.0)
 
-## Cache-Control interpretation
+`apollo::response_cache::key` may contain a `subgraphs` map. A named entry
+replaces rather than merges with `all`, so repeat common values in overrides.
 
-Router 2.6.0 normalizes the client cache header for a single uncached entity
-fetch using the same algorithm as other fetches. It emits `max-age`, not
-`s-maxage`, instead of forwarding the subgraph header unchanged.
+### Subgraph-stage cache identity customization (2.10.0)
 
-Router 2.13.0 makes a cached response containing GraphQL errors emit
-`Cache-Control: no-store`, preventing intermediary storage.
+Rhai and coprocessors can customize response-cache identity at subgraph stage,
+for example by copying a request header into context `private_id`.
 
-The response and entity caches distinguish directives in 2.13.0:
+### Response-cache key and TTL semantics (2.12.0)
 
-- `no-store` may serve an existing entry but prevents a new store.
-- `no-cache` prevents serving without revalidation but still permits storage.
-- The Router does not implement the required revalidation.
+Schema changes produce new keys instead of serving stale entries. A multi-root
+subgraph result is cached as one unit. Configured TTL is only a fallback when
+the subgraph omits `Cache-Control: max-age`.
 
-Router 2.16.0 expands parsing and precedence:
+### Client `Cache-Control` emission is optional (2.15.0)
 
-- Numeric `stale-if-error` is accepted.
-- `s-maxage` remains distinct from `max-age`.
-- An extension-only header is `no-store`.
-- Field-qualified `no-cache` is accepted.
-- Future-dated entries expire.
-- `private` can suppress `public`.
-- Older Redis entries with boolean stale directives remain readable during a
-  rolling upgrade.
+`response_cache.include_cache_control_header_on_router_response` defaults true.
+False suppresses the client header without changing Redis, TTL, keys, or
+debugger behavior.
 
-## Invalidation
+## Entity keys and storage behavior
 
-Router 2.10.0 starts the invalidation endpoint when invalidation is enabled
-globally or for any individual subgraph. It is not necessary to enable
-`response_cache.subgraph.all.invalidation.enabled` when only named subgraphs
-accept invalidation.
+### Entity cache keys changed (2.1.0)
 
-Router 2.11.0 surfaces invalidation failures instead of letting them remain
-silent, which can increase
-`apollo.router.operations.response_cache.invalidation.error`. It also rejects
-unknown request payload fields with HTTP 400.
+Keys separate entity-key fields from representation variables, fixing cases
+such as `@requires`. This changes distributed plan-cache hashing, so upgrades
+regenerate keys.
 
-Router 2.16.0 allows each subgraph to disable `subgraph`, `type`, or `cache_tag`
-invalidation indexes. All default to enabled. Disabling an index avoids its
-Redis writes, and a request using that invalidation kind returns HTTP 400.
+### Entity caching supports multiple keys (2.1.0)
 
-```yaml
-response_cache:
-  enabled: true
-  subgraph:
-    all:
-      enabled: true
-      invalidation:
-        enabled: true
-        indexes:
-          subgraph: false
-          type: false
-```
+Router 2.1.3 correctly caches types with multiple `@key` directives using
+different fields.
 
-Re-enabling an index does not backfill entries created while it was off. Flush
-the affected Redis namespace before re-enabling when existing entries must
-immediately participate.
+### Entity-cache response headers are normalized (2.6.0)
 
-## Redis operation
+A single uncached entity fetch follows the shared response-header algorithm:
+emit `max-age`, omit `s-maxage`, rather than forwarding the subgraph header.
 
-Router 2.6.0 exposes stable query-plan cache metrics:
+### Entity-cache expiry and key regeneration (2.8.0)
 
-- `apollo.router.cache.redis.connections`
-- `apollo.router.cache.redis.command_queue_length`
-- `apollo.router.cache.redis.commands_executed`
-- `apollo.router.cache.redis.redelivery_count`
-- `apollo.router.cache.redis.errors`
+Do not store a response already expired because `Age` exceeds `max-age`. The
+fix changes key version, so expect regeneration on upgrade.
 
-Experimental metrics report average network latency, command latency, request
-size, and response size:
+### Interface objects participate in response caching (2.10.0)
 
-```text
-experimental.apollo.router.cache.redis.network_latency_avg
-experimental.apollo.router.cache.redis.latency_avg
-experimental.apollo.router.cache.redis.request_size_avg
-experimental.apollo.router.cache.redis.response_size_avg
-```
+Federation interface objects are treated as entities and their representations
+can form cache keys.
 
-`metrics_interval`, default one second, controls collection frequency.
+### Nullable entity keys can be cached (2.11.0)
 
-Router 2.8.0 replaces `apollo.router.cache.redis.connections` with
-`apollo.router.cache.redis.clients`; it counts clients rather than underlying
-connections and removes the `kind` attribute.
+Nullable `@key` fields are accepted. Keep keys simple and avoid identities where
+null is ambiguous.
 
-Router 2.9.0 standardizes Tokio and Redis response-cache timeout metrics on the
-code `timeout` across `apollo.router.operations.response_cache.*.error`.
+### Additional nullable cache-key shapes (2.13.0)
 
-Router 2.10.0 sends read-only cache commands to Redis replicas in a cluster for
-both query-plan and response caches.
+Keys accept missing nullable fields and null items in nullable lists, extending
+support for explicitly null fields.
 
-Router 2.16.0 connects to replicas eagerly, avoiding read failures, backend
-fallthrough, and CPU spikes from lazy round-robin routing with an even number
-of replicas.
+## Cache-Control semantics
 
-## Persisted-query manifests and safelists
+### GraphQL errors make cached responses `no-store` (2.13.0)
 
-### Local manifests
+When a cacheable response contains GraphQL errors, the Router emits
+`Cache-Control: no-store` so intermediaries do not retain partial data.
 
-Router 2.1.0 adds `persisted_queries.hot_reload: true` for configured local
-manifest files. This is independent of the Router's `--hot-reload` flag.
+### Cache plugins distinguish `no-store` and `no-cache` (2.13.0)
 
-```yaml
-persisted_queries:
-  enabled: true
-  local_manifests:
-    - ./manifest.json
-  hot_reload: true
-```
+`no-store` may serve an existing entry but prevents a new store. `no-cache`
+prevents serving without revalidation but permits storage; the Router does not
+perform the required revalidation.
 
-Router 2.16.0 deprecates
-`persisted_queries.experimental_local_manifests`. Rename it to the
-behavior-equivalent `local_manifests`; the old key is scheduled for Router 3
-removal.
+### Response-cache `Cache-Control` semantics (2.16.0)
 
-### Usage and request context
+The cache accepts numeric `stale-if-error`, keeps `s-maxage` distinct from
+`max-age`, treats extension-only headers as `no-store`, permits field-qualified
+`no-cache`, expires future-dated entries, and lets `private` override `public`.
+It also reads older Redis entries with boolean stale directives during rolling
+upgrades.
 
-Router 2.2.0 reports persisted-query usage keyed by persisted-query ID.
-Router 2.7.0 also counts safelisted operations submitted by body, rather than
-only ID-based requests.
+## Redis and invalidation
 
-Router 2.13.0 stores the resolved persisted-query ID in request context, where
-Rhai can read it.
+### Clustered Redis read replicas (2.10.0)
 
-### Rejection and logs
+Read-only query-plan and response-cache commands use cluster replicas rather
+than primaries.
 
-Router 2.3.0 adds `enforcement_skipped` to unknown-operation safelist logs:
-`false` means an external operation was rejected, while `true` means an
-internal operation intentionally bypassed enforcement.
+### Redis replica routing with even replica counts (2.16.0)
 
-With manifest safelisting enabled and APQ disabled, Router 2.4.0 includes
-`extensions.operation_name` on `PERSISTED_QUERY_NOT_IN_LIST` when the request
-supplied an operation name.
+Clients connect to replicas eagerly, preventing read failure, backend fallback,
+and CPU spikes caused by lazy round-robin routing with an even replica count.
+
+### Response-cache Redis TTL location (2.9.0)
+
+The ineffective `redis.ttl` field is removed. Put TTL on the relevant
+`preview_response_cache.subgraph` entry for preview-era configurations.
+
+### Selective response-cache invalidation (2.10.0)
+
+The invalidation endpoint starts when invalidation is enabled globally or on
+any named subgraph; `response_cache.subgraph.all.invalidation.enabled` is unnecessary when only
+selected subgraphs accept invalidation.
+
+### Response-cache invalidation failures are surfaced (2.11.0)
+
+Invalidation failures return an error rather than remaining silent, so
+`apollo.router.operations.response_cache.invalidation.error` may increase.
+
+### Invalidation payloads reject unknown fields (2.11.0)
+
+The invalidation endpoint returns HTTP 400 for fields outside its request
+schema.
+
+### Selective response-cache invalidation indexes (2.16.0)
+
+Each subgraph can disable `subgraph`, `type`, or `cache_tag` indexes; all default
+enabled. Disabled index types skip Redis writes and reject matching invalidation
+requests with HTTP 400. Re-enabling does not backfill; flush the affected Redis
+namespace first if old entries must participate immediately.
+
+## Cache telemetry
+
+### Cache-Control telemetry selector (2.9.0)
+
+`response_cache_control` exposes computed subgraph Cache-Control values to
+custom instruments, for example `max_age` for a seconds histogram.
+
+### Uniform response-cache timeout code (2.9.0)
+
+Tokio and Redis timeouts both report code `timeout` in
+`apollo.router.operations.response_cache.*.error`.

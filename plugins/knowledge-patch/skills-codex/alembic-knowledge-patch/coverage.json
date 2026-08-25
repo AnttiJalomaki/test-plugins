@@ -2,7 +2,7 @@
   "patch": "alembic-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T00:33:22Z",
+  "built_at": "2026-08-20T19:15:51Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -23,6 +23,11 @@
       "build": "included"
     },
     "1.18.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.19.1": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

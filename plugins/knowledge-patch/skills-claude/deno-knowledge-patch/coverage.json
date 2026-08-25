@@ -1,6 +1,8 @@
 {
   "patch": "deno-knowledge-patch",
-  "merged_at": "2026-07-15T01:03:55Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T00:23:25Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -107,6 +109,11 @@
     },
     "release-and-news-index": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.9.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

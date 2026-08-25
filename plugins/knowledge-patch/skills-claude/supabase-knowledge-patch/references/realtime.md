@@ -1,10 +1,11 @@
 # Realtime
 
-## Client binding and publishing behavior
+Use this reference for channel setup, authorization, Broadcast, Presence, Postgres Changes, protocol behavior, and service limits.
 
-### Register Postgres Changes listeners before joining
+## Supabase JS compatibility (`supabase-js-2.101.0`)
 
-As of `supabase-js` 2.101.0 (batch `supabase-js-2.101.0`), a channel blocks adding `postgres_changes` listeners after join. Register all before `subscribe()`:
+### Realtime bindings must precede subscription
+As of 2.101.0, a joined channel blocks new `postgres_changes` listeners. Register every binding before calling `subscribe()`.
 
 ```ts
 const channel = supabase
@@ -13,107 +14,87 @@ const channel = supabase
   .subscribe()
 ```
 
-### Copying Realtime bindings
+### Realtime protocol and heartbeat updates
+Realtime added its V2 serializer in 2.81.0 and made serializer version `2.0.0` the default in 2.91.0. Heartbeat callbacks can also receive the measured latency.
 
-Realtime provides `copyBindings` for copying registered event bindings.
+### Realtime REST and replay additions
+Realtime gained an explicit REST-call path, configurable Broadcast Replay, and metadata on user broadcast pushes.
 
-### Database-triggered Realtime Broadcast (batch `launch-week-14`)
+### Custom-JWT channel lifecycle
+Channels using a custom JWT no longer require `setAuth()`, and retain that token across resubscription.
 
-Database triggers can send Realtime Broadcast messages, allowing custom database-change payloads over a secure, scalable path.
+## Channel authorization, broadcasts, changes, and limits
 
-### REST Broadcast without a WebSocket subscription
-
-Servers can batch messages to `/realtime/v1/api/broadcast` with an API key and `messages`. Since `supabase-js` 2.37.0, send on an unsubscribed channel uses this REST route; remove the channel afterward.
-
-```sh
-curl -X POST "https://<project-ref>.supabase.co/realtime/v1/api/broadcast" \
-  -H "apikey: <api-key>" -H "Content-Type: application/json" \
-  --data '{"messages":[{"topic":"room-1","event":"notice","payload":{"text":"hi"}}]}'
-```
-
-## Authorization and replay
-
-### Private-channel authorization contract
-
-Realtime Authorization is public beta for Broadcast/Presence and needs `supabase-js` 2.44.0+. Add RLS to `realtime.messages`, join with `private: true`; `SELECT` permits receiving, `INSERT` sending, `realtime.topic()` gives requested topic, and `extension` distinguishes `broadcast`/`presence`. Disable **Allow public access** to require this for every channel.
+### Private Broadcast and Presence authorization
+Private channels require `supabase-js` 2.44.0 or later and RLS policies on `realtime.messages`: `SELECT` permits receiving, `INSERT` permits sending or tracking, `realtime.topic()` exposes the requested topic, and `extension` distinguishes `broadcast` from `presence`. Disable **Allow public access** and set `private: true`; these policies are cached at join, refreshed by a new access-token message, and do not apply to Postgres Changes.
 
 ```sql
-create policy "room members receive broadcasts"
-on realtime.messages for select to authenticated
-using ((select realtime.topic()) = 'room-1'
-  and realtime.messages.extension = 'broadcast');
+create policy "members receive room broadcasts"
+on realtime.messages
+for select
+to authenticated
+using (
+  extension = 'broadcast'
+  and (select realtime.topic()) = 'room-1'
+);
 ```
-
-Authorization probes roll back rather than storing messages. Read permission checks on join, write on first publish, then caches per connection. Sending a new JWT recomputes access; an unrefreshed expired JWT disconnects. Postgres Changes uses table RLS and ignores channel `private`; same-topic public/private channels stay isolated.
-
-### Broadcast replay
-
-Public-alpha replay works only on private channels and only for database-originated messages, not client/REST Broadcast. Messages remain in daily `realtime.messages` partitions for three days. Request required millisecond epoch `since` and optional positive `limit <= 25`; `payload.meta.replayed` marks history.
 
 ```ts
-const channel = supabase.channel('room-1', {
-  config: {
-    private: true,
-    broadcast: { replay: { since: Date.now() - 60_000, limit: 10 } },
-  },
-})
-channel.on('broadcast', { event: 'notice' }, ({ meta, payload }) => {
-  console.log(meta?.replayed ? 'history' : 'live', payload)
-}).subscribe()
+const room = supabase
+  .channel('room-1', { config: { private: true } })
+  .on('broadcast', { event: 'update' }, handleUpdate)
+  .subscribe()
 ```
 
-Minimum clients: JavaScript 2.74.0, Dart 2.10.0, Swift 2.34.0, Python 2.22.0. Kotlin lacks support.
+### Database-triggered Broadcast
+`realtime.send(payload, event, topic, private)` emits an arbitrary database message, while `realtime.broadcast_changes()` formats row-change events for private channels. A trigger can address each record through its topic and publish inserts, updates, and deletes without a Postgres Changes subscription.
 
-## Resource budgets and quotas
+```sql
+create or replace function public.broadcast_item_change()
+returns trigger
+security definer set search_path = ''
+language plpgsql as $$
+begin
+  perform realtime.broadcast_changes(
+    'item:' || coalesce(new.id, old.id)::text,
+    tg_op, tg_op, tg_table_name, tg_table_schema, new, old
+  );
+  return null;
+end;
+$$;
 
-### Realtime's database resource budget
-
-Realtime always starts the authorization pool plus one DB connection and one replication slot for database Broadcast. Postgres Changes adds subscription, cleanup, and WAL-pull pools and may use a second slot.
-
-Authorization-pool defaults by compute: 2 Nano/Micro, 5 Small–Large, 10 XL–4XL, 15 at 8XL+. Each of the three Changes pools defaults to 2, 4, 7, 9 respectively. Only authorization pool size is adjustable in Realtime Settings.
-
-### Realtime quotas and payload overflow
-
-Hosted defaults: Free 200 connections and 100 messages/joins per second; Pro 500 each; Pro without Spend Cap and Team 10,000 connections and 2,500 message/joins/sec. Presence is 20, 50, 1,000/sec respectively. All allow 100 channels/connection and 10 presence keys/object. Broadcast payload: 256 KB Free, 3,000 KB paid. Enterprise starts at highest and can request more.
-
-Postgres Changes payload is 1,024 KB. Overflow reduces both `new` and `old` to fields whose individual values are <=64 bytes. Join errors: `too_many_channels`, `too_many_connections`, `too_many_joins`. Event overage emits `tenant_events` and disconnects; JavaScript reconnects after load drops.
-
-### Realtime observability reports
-
-Project Settings > Product Reports > Realtime shows clients, Broadcast/Presence/Changes volume, join rate, median payload, and HTTP count/errors/latency on all plans. Paid tiers also show DB-Broadcast lag and median private-channel read/write RLS time. Read RLS is join check; write RLS is first publish before cache.
-
-### Realtime settings are connection-disrupting
-
-Every settings change disconnects clients and restarts middleware. Settings control service enabled, public channels, authorization pool, concurrent clients, total events, Presence events, and payload size. Schedule a reconnect event.
-
-## Wire protocol
-
-### Realtime wire protocol 2.0
-
-Custom clients opt into `vsn=2.0.0`; default stays 1.0.0. Text frames are exact arrays `[join_ref, ref, topic, event, payload]`. Send a `phoenix` heartbeat at least every 25 seconds:
-
-```json
-[null, "26", "phoenix", "heartbeat", {}]
+create trigger broadcast_item_change
+after insert or update or delete on public.items
+for each row execute function public.broadcast_item_change();
 ```
 
-Protocol 2 binary Broadcast frames support non-JSON payloads. Client pushes start `0x03` followed by byte lengths of join ref/ref/topic/event/metadata and encoding; server Broadcast starts `0x04` then topic/event/metadata lengths and encoding. Named fields/payload follow. Encoding 0 is binary, 1 JSON.
+### Postgres Changes payload and delete constraints
+Set `REPLICA IDENTITY FULL` to receive old row values for updates and deletes, but with RLS a delete's old record still contains only primary keys; delete events cannot be filtered, and tables with spaces in their names are unsupported. If a Postgres Changes payload exceeds its 1,024 KB limit, `new` and `old` retain only fields whose individual values are at most 64 bytes.
 
-Send `access_token` to each joined topic to refresh auth and recalculate private authorization; it may also be in initial `phx_join`.
+```sql
+alter table public.messages replica identity full;
+```
 
-## Self-hosted release boundaries
+### Realtime limit failure behavior
+The Free and Pro columns list respectively 200/500 concurrent connections, 100/500 messages and joins per second, 20/50 Presence messages per second, and 256/3,000 KB Broadcast payloads; both cap a connection at 100 channels and a Presence object at 10 keys. Join refusal reports `too_many_channels`, `too_many_connections`, or `too_many_joins`; `tenant_events` disconnects over-throughput clients, and `supabase-js` reconnects after throughput falls below the limit.
+
+### Settings changes disconnect clients
+Every change in the Realtime Settings screen disconnects all connected clients so Realtime can apply the new channel restriction, authorization pool size, client, event, Presence, or payload limits.
+
+## Realtime service compatibility
 
 ### RLS role isolation
-
-Realtime v2.112.10 fixes a role leak in `apply_rls`; treat it as security-sensitive.
-
-### Restricted Realtime schema
-
-Realtime v2.112.7 restricts the `realtime` schema. Verify privileges for custom roles/integrations.
-
-### Equality-helper execution permission
-
-Realtime v2.112.5 grants execute on `realtime.check_equality_op/5`.
+Realtime 2.112.10 fixes a role leak while applying RLS in `apply_rls`; self-hosted deployments that depend on Realtime authorization should use 2.112.10 or later.
 
 ### OrioleDB compatibility
+Realtime 2.112.2 adds support for OrioleDB-backed projects.
 
-Realtime v2.112.2 adds OrioleDB support; use it or later for OrioleDB-backed projects.
+## JavaScript client behavior
+
+### Postgres Changes are disabled on new projects
+New projects enable Broadcast and Presence but disable database-change listening by default. Enable the relevant tables in Realtime replication before expecting a `postgres_changes` subscription to receive events.
+
+## Platform capabilities (`1.26.08`)
+
+### The `realtime` schema is protected
+Creating, altering, or dropping objects in the `realtime` schema now fails with a permission error. Existing RLS policies on `realtime.messages` continue to work.

@@ -1,45 +1,20 @@
 # Jobs and Scheduling
 
-## Submission compatibility
+## Reject invalid job shapes before submission
 
-Starting in 1.11.0, `system` and `sysbatch` jobs containing a `reschedule`
-block fail submission. Remove the block; earlier releases silently ignored it.
-This upgrade check is from batch `1.11-upgrade`.
+Starting with the 1.11-upgrade behavior, `system` and `sysbatch` jobs are rejected
+when they contain a `reschedule` block. Earlier releases ignored the block. Remove
+it before submitting or upgrading these jobs.
 
-A task cannot be named `alloc`, because that name breaks inter-task filesystem
-isolation. Rename the task before submission (batch `1.11.0`).
+Tasks cannot be named `alloc` because that name breaks inter-task filesystem
+isolation (since 1.11.0). Job validation and registration also reject negative
+task resource `cores` values as of 2.0.5; job generators must never emit them.
 
-Previously deprecated task-group disconnect fields have no effect. Use the
-`disconnect` block introduced in Nomad 1.8 (batch `1.10.0`).
+## Per-job allocation ceiling
 
-## System deployments and group lifecycle
-
-System jobs support deployments controlled through the job's `update`
-configuration. Canary and blue/green strategies are available, and deployment
-status is visible in the web UI and through `nomad deployment` commands.
-
-For service and batch jobs, changing a task group to `count = 0` behaves like
-removing the group: Nomad stops every non-terminal allocation for that group.
-
-Both behaviors are from batch `1.11.0`.
-
-## Job updates and interpolation
-
-Affinity and spread changes are no longer destructive. During in-place
-updates, Nomad-native services interpolate correctly. Task-level services,
-checks, and identities no longer interpolate jobspec values belonging to other
-tasks in the same group.
-
-Use `-preserve-resources` on the job-update CLI to retain the existing resource
-block while updating the job.
-
-The interpolation behavior is from batch `1.10.0`; resource preservation is
-from batch `1.11.0`.
-
-## Job maximum count
-
-The `job_max_count` server option limits the sum of all task-group `count`
-values when a job is submitted or scaled:
+The `job_max_count` server option defaults to `50000` and limits the sum of all
+task-group `count` values when a job is submitted or scaled. Changing the option
+does not retroactively affect existing jobs.
 
 ```hcl
 server {
@@ -47,47 +22,79 @@ server {
 }
 ```
 
-It defaults to `50000`. Changing the value does not affect jobs that already
-exist. This option is from batch `1.11-upgrade`.
+## System deployments and zero-count groups
 
-## Placement and evaluation diagnostics
+System jobs support deployments through their `update` configuration (since
+1.11.0), including canary and blue/green rollouts. Inspect their deployment state
+in the web UI or with `nomad deployment` commands.
+
+For service and batch jobs, setting a task group to `count = 0` now behaves like
+removing it and stops all non-terminal allocations in that group.
+
+## Safer updates and interpolation
+
+Affinity and spread changes are no longer destructive (batch 1.10.0). During an
+in-place update, Nomad-native services interpolate correctly. Task-level services,
+checks, and identities no longer interpolate jobspec values from other tasks in
+the group, so keep their dependencies within the owning task's interpolation
+scope.
+
+The job-update CLI accepts `-preserve-resources` when an updated job should retain
+its existing resource block (since 1.11.0).
+
+## Allocation command targeting
+
+`nomad alloc exec`, `nomad alloc logs`, and `nomad alloc fs` accept `-group`,
+allowing commands to select a task group explicitly.
+
+## Evaluation and placement diagnostics
 
 `nomad eval status` shows related evaluations, placed allocations, plan
-annotations, failed placements, and preemptions. More fields are visible
-without `-verbose`, and reconciler annotations describe the intended plan
-before node-feasibility checks.
+annotations, failed placements, and preemptions, with more information available
+without `-verbose` (since 1.11.0). Reconciler annotations describe the intended
+plan before node-feasibility checks.
 
-`nomad alloc status -verbose` adds evaluated-node and rejected-node counts plus
-node scores. The Go API's `Evaluations.Info` populates `RelatedEvals`.
+`nomad alloc status -verbose` adds evaluated and rejected node counts plus node
+scores. In the Go API, `Evaluations.Info` now populates `RelatedEvals`.
 
-These diagnostic additions are from batch `1.11.0`.
+## Structured plan output
 
-## Allocation commands
-
-The following commands accept `-group` to select a task group:
+The 2.0.5 CLI accepts `-json-output` and `-t` on `nomad job plan` for structured
+plan output.
 
 ```shell
-nomad alloc exec -group=<group> <allocation> <command>
-nomad alloc logs -group=<group> <allocation>
-nomad alloc fs -group=<group> <allocation>
+nomad job plan -json-output ./job.nomad
 ```
 
-Group selection is from batch `1.10.0`.
+## Plan-apply throughput
 
-## Consul Connect networking
+The `plan_apply_pipeline` configuration lets the leader keep more outstanding
+Raft writes while evaluating plans (since 2.0.5). Tune it deliberately and watch
+evaluation and Raft behavior.
 
-Consul Connect permits `cni/*` network modes. The combination is explicitly
-marked use-at-your-own-risk (batch `1.11.0`).
+## Template scripts on first render
 
-## Scheduling resource calculations
+`change_script` supports `run_on_first_render` (since 2.0.5). When enabled, the
+script runs for the initial template render through the task's Poststart lifecycle
+hook.
 
-Nomad calculates disk available for scheduling as:
+```hcl
+template {
+  data        = "ready"
+  destination = "local/ready"
+  change_mode = "script"
 
-```text
-totalBytes - client.reserved.disk
+  change_script {
+    command             = "/bin/true"
+    run_on_first_render = true
+  }
+}
 ```
 
-It no longer uses free disk space and removes the
-`unique.storage.bytesfree` attribute. Reserve at least the disk capacity used
-by the host operating system. This placement change is from batch
-`1.11-upgrade`.
+## Network mode and validation text
+
+Consul Connect permits `cni/*` network modes as of 1.11.0, but this combination is
+explicitly use-at-your-own-risk.
+
+A variable validation block's `error_message` no longer needs to be a complete
+English sentence (since 2.0.5), so localized validation messages are accepted.

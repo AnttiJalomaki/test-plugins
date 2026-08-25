@@ -1,8 +1,6 @@
 # Mail, Notifications, and Broadcasting
 
-Mail transports, notification lifecycle, broadcasting, and delivery integrations.
-
-Batch identifiers in section headings provide exact source attribution.
+Mail transports, mailables, notification lifecycle, and broadcasting integrations.
 
 ## Broadcasting installs without lifecycle scripts (2026-04)
 
@@ -60,10 +58,6 @@ A failed notification send now dispatches `NotificationFailed`, allowing failure
 
 Mail configuration options no longer require a `name` value.
 
-## Password reset mail subject (13.0-upgrade)
-
-The default password reset subject is now `Reset your password` instead of `Reset Password Notification`; update exact mail assertions and translation overrides.
-
 ## Raw Resend attachments (2025-06)
 
 The Resend mail transport can send raw, non-encoded attachment content, so callers do not have to pre-encode attachments for that transport.
@@ -72,13 +66,13 @@ The Resend mail transport can send raw, non-encoded attachment content, so calle
 
 Laravel's Redis broadcaster now supports clustered Redis connections, so a cluster-backed application no longer needs a separate non-clustered connection solely for broadcasting.
 
+## Scheduled output email default (12.0.0)
+
+Scheduled command `emailOutput()` now sends mail only when output exists by default.
+
 ## SES tenant support (2026-07)
 
 The SES v2 mail transport supports SES tenants.
-
-## Single failover notifications (2026-01)
-
-`CacheFailedOver` and `QueueFailedOver` now fire only for the first failure in a failover attempt, so listeners are not invoked once for every failed backend.
 
 ## Transport exceptions on notification failures (2025-07)
 

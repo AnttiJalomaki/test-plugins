@@ -1,52 +1,43 @@
 # Structured Outputs
 
-## Define recursive schemas
+## Define recursive response schemas
 
-Structured-output schemas can recurse (`structured-outputs`). To recurse to the
-root, use `$ref: "#"`:
+Structured-output schemas can be recursive. To recurse to the root, point the
+nested value to `#` with `$ref`:
 
 ```json
 {
   "type": "object",
   "properties": {
     "name": {"type": "string"},
-    "children": {
-      "type": "array",
-      "items": {"$ref": "#"}
-    }
+    "children": {"type": "array", "items": {"$ref": "#"}}
   },
   "required": ["name", "children"]
 }
 ```
 
-A self-referential Pydantic model can supply the equivalent schema through
+Self-referential Pydantic models can provide the equivalent through
 `model_json_schema()`.
 
-## Accumulate streamed JSON before validation
+## Accumulate structured stream fragments
 
-With `stream=True`, structured output arrives as partial JSON strings in text
-step deltas. Preserve order, concatenate every fragment, and validate only the
-completed document:
+With `stream=True`, structured output arrives in text step deltas as partial
+JSON strings. Concatenate fragments in order and validate only after the full
+document is complete:
 
 ```python
 fragments = []
 for event in stream:
-    if (
-        event.event_type == "step.delta"
-        and event.delta.type == "text"
-    ):
+    if event.event_type == "step.delta" and event.delta.type == "text":
         fragments.append(event.delta.text)
-
 result = Result.model_validate_json("".join(fragments))
 ```
 
-Do not parse individual deltas as standalone JSON.
-
 ## Combine built-in tools with a structured final response
 
-As a preview limited to 3-series models, an interaction can run built-in tools
-and constrain its final text to a response schema. Supply `tools` and the JSON
-`response_format` in the same request:
+In preview on 3-series endpoints, an interaction can run built-in tools and
+still constrain its final text to a response schema. Supply `tools` and the
+JSON `response_format` together:
 
 ```python
 interaction = client.interactions.create(
@@ -63,13 +54,15 @@ interaction = client.interactions.create(
 
 ## Stay within the supported schema subset
 
-Along with basic JSON types and constraints, supported features include:
+The supported subset includes:
 
-- nullable unions such as `{"type": ["string", "null"]}`
-- schema-valued or boolean-valued `additionalProperties`
-- string formats `date-time`, `date`, and `time`
-- numeric `minimum` and `maximum`
-- array `prefixItems`, `minItems`, and `maxItems`
+- Basic types and constraints.
+- Nullable unions such as `{"type": ["string", "null"]}`.
+- Schema-valued or boolean-valued `additionalProperties`.
+- String formats `date-time`, `date`, and `time`.
+- Numeric `minimum` and `maximum`.
+- Array `prefixItems`, `minItems`, and `maxItems`.
 
-Very large or deeply nested schemas can be rejected. Keep schemas as small as
-the output contract permits.
+Very large or deeply nested schemas can be rejected.
+
+Batch attribution: `structured-outputs`.

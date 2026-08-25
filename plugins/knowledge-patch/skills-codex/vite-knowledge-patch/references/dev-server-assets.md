@@ -1,22 +1,36 @@
-# Development Server, HMR, Globs, and Assets
+# Development Server, Globs, and Assets
 
-## Bundled ESM with HMR
+## Top-level input integration
 
-Experimental bundled development retains HMR while serving bundled ESM (since
-8.1.0). It is aimed at large browser applications where one request per module
-creates significant startup or reload overhead.
+Configured top-level inputs participate in development-server setup (since
+8.1.5-8.2.1). Vite adds them to the `server.fs.allow` calculation and resolves
+them through plugins.
 
-```sh
-vite --experimental-bundle
+This means plugin-provided entries can participate in input resolution while
+remaining permitted by the development server's filesystem checks. When a
+custom input fails during development, inspect both plugin resolution and the
+computed filesystem allowance instead of bypassing the safety check manually.
+
+## Ephemeral development-server ports
+
+Set `server.port` to `0` to ask Vite to select a random available port (since
+8.1.5-8.2.1):
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: { port: 0 },
+})
 ```
 
-The equivalent configuration is `experimental.bundledDev: true`. The mode is
-still limited, so test HMR behavior in the target framework before relying on
-it.
+This is useful for isolated tests and concurrent development servers. Consumers
+must discover the selected address from the running server rather than assume
+a fixed port.
 
 ## Case-insensitive glob matching
 
-`import.meta.glob` accepts `caseSensitive: false` to match filenames regardless
+Set `caseSensitive: false` on `import.meta.glob` to match filenames regardless
 of case (since 8.1.0):
 
 ```ts
@@ -25,14 +39,14 @@ const modules = import.meta.glob('./dir/module*.js', {
 })
 ```
 
-Use the option deliberately when a convention or imported content permits
-multiple filename casings. Leaving it out preserves case-sensitive matching.
+Use the option deliberately when the application treats filename case as
+insignificant. The explicit setting makes behavior clear across filesystems
+with different case semantics.
 
 ## Custom HTML asset sources
 
-`html.additionalAssetSources` teaches Vite about asset-bearing custom elements
-and nonstandard attributes (since 8.1.0). Referenced files then participate in
-normal Vite asset processing.
+Use `html.additionalAssetSources` to extend asset discovery to custom elements
+or nonstandard attributes (since 8.1.0):
 
 ```ts
 import { defineConfig } from 'vite'
@@ -40,16 +54,13 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   html: {
     additionalAssetSources: {
-      'html-import': {
-        srcAttributes: 'src',
-      },
-      img: {
-        srcAttributes: ['data-src-dark', 'data-src-light'],
-      },
+      'html-import': { srcAttributes: 'src' },
+      img: { srcAttributes: ['data-src-dark', 'data-src-light'] },
     },
   },
 })
 ```
 
-`srcAttributes` may be a single attribute string or an array of attribute
-names, as the two entries demonstrate.
+URLs found through these declarations enter Vite's normal asset-processing
+pipeline. Prefer this configuration to maintaining a separate transform for
+attributes that only need standard asset handling.

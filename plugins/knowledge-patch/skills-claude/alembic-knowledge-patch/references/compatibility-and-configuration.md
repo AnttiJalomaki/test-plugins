@@ -1,74 +1,83 @@
 # Compatibility and configuration
 
+Use this reference when upgrading runtimes, building Alembic from source, or
+moving generation settings between INI and TOML configuration.
+
 ## Runtime and packaging requirements
 
 ### Python and SQLAlchemy floors
 
-Alembic 1.15.0 requires Python 3.9 or newer and SQLAlchemy 1.4 or newer. It
-drops Python 3.8 and SQLAlchemy 1.3. Check application, migration runner, CI,
-and image pins together because migrations can execute in an environment
-separate from the application. (since 1.15.0)
+Alembic 1.15.0 requires Python 3.9 or newer and SQLAlchemy 1.4 or newer. Python
+3.8 and SQLAlchemy 1.3 are no longer supported. (since 1.15.0)
 
-Alembic 1.17.0 requires Python 3.10 or newer; Python 3.9 is no longer
-supported. (since 1.17.0)
+Alembic 1.17.0 raises the Python requirement again to Python 3.10 or newer;
+Python 3.9 is no longer supported. (since 1.17.0)
 
-Alembic 1.18.0 requires SQLAlchemy 1.4.23 or newer, raising the earlier
-SQLAlchemy 1.4.0 floor. (since 1.18.0)
+Alembic 1.18.0 requires SQLAlchemy 1.4.23 or newer, raising the earlier 1.4.0
+floor. (since 1.18.0)
+
+Check all three pins together during an upgrade. A valid Alembic pin does not
+make an older interpreter or SQLAlchemy dependency compatible.
 
 ### Yanked 1.15.0 wheel
 
-The move to PEP 621 packaging omitted Alembic's template files from the 1.15.0
-wheel, so the release was yanked. Install 1.15.1 or later in that series; the
-wheel was corrected in 1.15.1. (1.15.0)
+Alembic 1.15.0 was yanked because its move to PEP 621 packaging omitted the
+Alembic template files from the wheel. The corrected wheel was published in
+1.15.1. Install 1.15.1 or later rather than pinning 1.15.0.
 
-### Source builds
+### Setuptools source-build requirement
 
-The source-build requirement for setuptools is 77.0.3 or newer following the
-adoption of PEP 639 license metadata. Treat this as a build-tool requirement,
-not an Alembic runtime dependency. (since 1.16.0)
+Source builds require setuptools 77.0.3 or newer after Alembic adopted PEP 639
+license metadata. Wheel-only installations are not the reason for this build
+dependency, but source-building CI and packaging images must provide it.
+(since 1.16.0)
 
-## Source configuration in `pyproject.toml`
+## TOML source configuration
 
-Alembic can keep source-code and generation settings in `pyproject.toml`,
-including:
+### Divide source settings from deployment settings
 
-- local paths;
-- post-write hooks;
-- `version_locations`;
-- `prepend_sys_path`.
+Alembic can read source-code and generation settings from `pyproject.toml`,
+including local paths and post-write hooks. Use TOML lists for
+`version_locations` and `prepend_sys_path`; they avoid the separator ambiguity
+of scalar INI values. `%(here)s` is resolved relative to the parent directory
+of the TOML file. (since 1.16.0)
 
-TOML lists remove separator ambiguity for `version_locations` and
-`prepend_sys_path`. In TOML configuration, `%(here)s` resolves relative to the
-parent directory of the TOML file. (since 1.16.0)
+Database connectivity and logging remain deployment settings. Supply them with
+`alembic.ini` or implement them in `env.py`. If `env.py` supplies them, a project
+created with the `pyproject` initialization template can omit `alembic.ini`.
 
-Database connectivity and logging remain deployment settings. Supply them
-through `alembic.ini` or `env.py`. If `env.py` handles those settings, use the
-`pyproject` initialization template when an `alembic.ini` file is unnecessary.
+Keep this distinction when reorganizing configuration:
 
-## Cross-platform path separation
+- Put source layout, generation paths, and post-write processing in TOML.
+- Keep URLs, connection construction, and logging in INI or environment code.
+- Resolve TOML-relative paths from the TOML file, not the process directory.
 
-`path_separator` supersedes `version_path_separator` and applies to both
-`version_locations` and `prepend_sys_path`. Set it to `os` to split values with
-`os.pathsep`: (since 1.16.0)
+## Cross-platform path splitting
+
+### Prefer `path_separator`
+
+The `path_separator` setting supersedes `version_path_separator` and controls
+splitting for both `version_locations` and `prepend_sys_path`. Set it to `os` to
+split on the platform's `os.pathsep`. (since 1.16.0)
 
 ```ini
 [alembic]
 path_separator = os
 ```
 
-New configurations default to `os`. Configurations that omit the setting keep
-the older splitting behavior and emit a deprecation warning, so add the setting
-explicitly when updating an existing configuration.
-
-TOML lists are preferable when the values live in `pyproject.toml`; no string
-separator then needs to be inferred.
+Configurations that omit `path_separator` keep the older splitting behavior
+and emit a deprecation warning. Add the setting explicitly when maintaining a
+configuration across Windows and POSIX hosts.
 
 ## Public path API contract
 
-Public command, configuration, and script APIs that accept string paths also
-accept `os.PathLike` objects. Public accessors that return paths continue to
-return strings. (since 1.16.0)
+### Accept `os.PathLike`, return strings
 
-Private underscored APIs are outside that return-type promise and may return
-`pathlib.Path` objects after the path-handling refactor. Extensions should use
-public APIs or normalize private return values if private access is unavoidable.
+Public command, configuration, and script APIs that accept string paths also
+accept `os.PathLike` objects. Public path-returning accessors continue to return
+strings. (since 1.16.0)
+
+Private underscored APIs are outside that compatibility promise and can return
+`pathlib.Path` objects after the path-handling refactor. Normalize values at the
+boundary if extension code still calls a private API; do not infer private
+return types from public behavior.

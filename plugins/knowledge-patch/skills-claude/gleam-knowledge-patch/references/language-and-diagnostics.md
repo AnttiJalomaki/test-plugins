@@ -1,52 +1,87 @@
 # Language and diagnostics
 
-## Contents
+## Records, types, and constants
 
-- [Assertions, debugging, and incomplete code](#assertions-debugging-and-incomplete-code)
-- [Records, custom types, and constants](#records-custom-types-and-constants)
-- [Pipelines, operators, and guards](#pipelines-operators-and-guards)
-- [Patterns and exhaustiveness](#patterns-and-exhaustiveness)
-- [Bit arrays and numeric edge cases](#bit-arrays-and-numeric-edge-cases)
-- [Warnings and name resolution](#warnings-and-name-resolution)
-- [Documentation and formatting](#documentation-and-formatting)
+### Generic record updates
 
-## Assertions, debugging, and incomplete code
-
-### Built-in Boolean assertions
-
-Since 1.11.0, `assert` panics when its Boolean expression is `False` and attaches source-expression, operand, and argument details for test frameworks to report. Like `panic` and `todo`, it accepts a custom message with `as`.
+Since 1.7.0, changing a record field may safely change the parameterised type
+of a generic record.
 
 ```gleam
-assert telecom.is_up(key, strict, 2025) as "My internet must always be up!"
+pub type Named(element) {
+  Named(name: String, value: element)
+}
+
+pub fn replace_value(data: Named(a), replacement: b) -> Named(b) {
+  Named(..data, value: replacement)
+}
 ```
 
-### Custom `let assert` failures
+Since 1.14.0, record-update syntax is valid in constants. Since 1.16.0,
+list-spread syntax can prepend values to another constant list.
 
-Since 1.7.0, add `as "message"` after the asserted expression to control the message used when the partial pattern does not match.
+```gleam
+pub const base = HttpConfig(host: "0.0.0.0", port: 8080)
+pub const dev = HttpConfig(..base, port: 4000)
+
+pub const mammals = ["dog", "cat", "human"]
+pub const all_mammals = ["platypus", "echidna", ..mammals]
+```
+
+Since 1.17.0, a constant may contain `todo`, allowing it to be type-checked and
+analysed while incomplete. Constants are evaluated at compile time, so a
+program containing such a constant cannot run.
+
+### Variant deprecation
+
+Since 1.7.0, `@deprecated` can annotate one custom-type variant instead of a
+function or an entire type.
+
+```gleam
+pub type HashAlgorithm {
+  @deprecated("Please upgrade to another algorithm")
+  Md5
+  Sha224
+  Sha512
+}
+```
+
+## Assertions, debugging, and placeholders
+
+### Assertion messages
+
+Since 1.7.0, append `as "message"` to a partial-pattern `let assert` to set its
+panic message.
 
 ```gleam
 let assert Ok(regex) = regex.compile("ab?c+") as "This regex is always valid"
 ```
 
-### Value-preserving debug expressions
-
-Since 1.9.0, prefix an expression with `echo` to print its value and source file and line to standard error while preserving the value. `echo` works inside pipelines, and publishing warns about any left behind.
+Since 1.11.0, `assert expression` panics when the expression is `False` and
+records the source expression and relevant operand or argument values for test
+frameworks. It also accepts a custom message with `as`.
 
 ```gleam
-[1, 2, 3]
-|> list.map(fn(x) { x + 1 })
-|> echo
+assert telecom.is_up(key, strict, 2025) as "My internet must always be up!"
 ```
 
-Since 1.12.0, add `as "message"` to print identifying context before the value:
+### `echo`
+
+Since 1.9.0, prefix an expression with `echo` to print its value and source
+location to standard error. It can occur in a pipeline without consuming the
+value. Publishing warns about `echo` expressions left in a project.
+
+Since 1.12.0, append `as "message"` to print contextual text with the location
+and value.
 
 ```gleam
 echo 11 as "lucky number"
 ```
 
-### Incomplete blocks and constants
+### Incomplete blocks
 
-Since 1.7.0, an empty block is accepted with an `incomplete block` warning, like an unfinished function body, so surrounding code can still be type checked.
+Since 1.7.0, an empty block is accepted with an incomplete-block warning, so
+the surrounding program can still be type-checked.
 
 ```gleam
 let value = {
@@ -54,81 +89,13 @@ let value = {
 }
 ```
 
-Since 1.17.0, `todo` can appear in a constant. Incomplete constant code can be type checked and analysed, and label-filling can insert `todo` fields, but a program containing one cannot run.
+## Guards, pipelines, and formatting
 
-```gleam
-pub const cleffa = Pokemon(number: 173, name: todo, hp: todo)
-```
+### Guard expressions
 
-## Records, custom types, and constants
-
-### Generic record updates
-
-Since 1.7.0, updating a generic record may change its type parameter when the replacement field makes the change safe.
-
-```gleam
-pub type Named(value) {
-  Named(name: String, value: value)
-}
-
-pub fn replace(data: Named(a), replacement: b) -> Named(b) {
-  Named(..data, value: replacement)
-}
-```
-
-Since 1.17.0, invalid record-update and list-prepend expressions remain analysable, preserving later diagnostics and language-server help around the error.
-
-### Variant deprecation
-
-Since 1.7.0, place `@deprecated` directly on a custom-type variant. Using that variant emits the normal deprecated-value warning.
-
-```gleam
-pub type HashAlgorithm {
-  @deprecated("Please use another algorithm")
-  Md5
-  Sha512
-}
-```
-
-### Record access across variants
-
-On a multi-variant value, a field accessor is available only when that field has the same label, position, and type in every variant. A variant-specific field becomes accessible after pattern matching identifies the variant. Likewise, `let` can destructure a record only for a single-variant type or a value whose variant is already known; otherwise use `case`.
-
-```gleam
-pub type SchoolPerson {
-  Teacher(name: String, subject: String)
-  Student(name: String)
-}
-
-fn name(person: SchoolPerson) -> String {
-  person.name
-}
-```
-
-### Richer constant expressions
-
-Since 1.14.0, use record updates in constant definitions:
-
-```gleam
-pub const dev_config = HttpConfig(..base_http_config, port: 4000)
-```
-
-Since 1.16.0, prepend elements to another constant list with spread syntax:
-
-```gleam
-pub const viviparous = ["dog", "cat"]
-pub const mammals = ["platypus", ..viviparous]
-```
-
-## Pipelines, operators, and guards
-
-### Typed pipeline fallback
-
-For `value |> function(1, 2)`, the compiler first tries `function(value, 1, 2)`. If the value cannot be the first argument, it calls the returned function as `function(1, 2)(value)` instead.
-
-### String concatenation in guards
-
-Since 1.15.0, `<>` can concatenate strings in `case` guards. Rename, go-to-definition, hover, and find-references also operate from guard expressions.
+Since 1.15.0, string concatenation with `<>` is valid in case-clause guards.
+Rename, go-to-definition, hover, and find-references work on expressions inside
+guards.
 
 ```gleam
 case message {
@@ -137,112 +104,135 @@ case message {
 }
 ```
 
-### Operator diagnostics
+### Pipeline fallback
 
-Since 1.10.0, a wrong binary operator produces a diagnostic on the operator with a suggested replacement. For example, string concatenation with `+` is corrected to `<>`; the correction action also works inside guards as of 1.17.0.
+For `value |> function(arguments)`, Gleam first tries
+`function(value, arguments)`. If that does not type-check, it calls
+`function(arguments)(value)`. Use a function capture when the piped value
+belongs in another argument position.
 
-## Patterns and exhaustiveness
+### Formatter behavior
 
-### Alternative-pattern restrictions
+Since 1.9.0, the formatter removes function-capture syntax when no extra
+arguments make it useful, such as rewriting `io.print(_)` to `io.print`.
 
-Every alternative in a clause must bind the same variable names with the same types. Alternatives such as `2 | 4 | 6` can be top-level patterns, but cannot currently be nested inside another pattern.
+Since 1.12.0, a trailing comma before a list's closing bracket preserves
+multiline formatting. Removing the comma allows one-line formatting again, and
+blank lines within lists are preserved.
 
-### String-aware and variant-aware analysis
+Since 1.13.0, repeated Boolean and integer negations collapse, such as
+`!!!False` to `!False` and `--11` to `11`. Explicit blocks in case-clause guards
+are preserved.
 
-Since 1.10.0, exhaustiveness analysis recognises unreachable string patterns, including a later literal already covered by an earlier prefix pattern. The compiler also warns when a `let assert` pattern cannot match the value's already inferred variant.
+## Pattern rules and reachability
 
-Since 1.11.0, inexhaustive `case` errors display record labels in missing patterns, such as `Student(name:, age:)`; generated missing patterns include the labels too.
+### Alternative patterns
 
-### Discard alias deprecation
-
-Since 1.13.0, the redundant pattern `_ as value` is deprecated, and the formatter rewrites it to the equivalent direct pattern `value`.
-
-### Bit-pattern reachability
-
-Pattern analysis catches several distinct kinds of impossible bit-array clause:
-
-- Since 1.11.0, a clause is unreachable when an earlier clause already covers it.
-- Since 1.13.0, an intrinsically impossible segment warns even without an earlier clause; `<<404, _:bits>>` cannot match because a default one-byte unsigned integer cannot contain `404`.
-- Since 1.14.0, analysis normalises numeric representations and applies interference-based pruning, detecting equivalent string/integer encodings and covered integer bit patterns.
-
-## Bit arrays and numeric edge cases
-
-### Segment defaults and embedding
-
-A segment is an 8-bit integer by default, and `size(n)` counts bits because the default unit is one. Use `:bits` to splice a bit array of any alignment or `:bytes` when the nested value must be byte-aligned. Segment options compose with dashes, and target support varies.
+Every case alternative separated by `|` must bind the same variable names with
+the same types. Alternatives cannot be nested within another pattern, so
+`[1 | 2 | 3]` is invalid.
 
 ```gleam
-let remainder = <<4, 2>>
-<<3, 6147:size(16), "ok":utf8, remainder:bits>>
+case item {
+  #(1, value) | #(2, value) -> value
+  _ -> 0
+}
 ```
 
-Since 1.12.0, UTF codepoint segments can specify endianness, and bit-array patterns can calculate segment sizes.
+### Record accessors
+
+For a multi-variant custom type, `.field` works without refinement only if
+every variant has the field in the same position with the same type. A
+variant-specific field is available only when the exact variant is known, such
+as after pattern matching.
+
+### String and variant analysis
+
+Since 1.10.0, exhaustiveness analysis detects a string pattern made unreachable
+by an earlier prefix pattern. The compiler also warns if a `let assert` pattern
+cannot match a value whose variant is already inferred.
 
 ```gleam
-let assert <<size, data:bytes-size(size / 8 - 1)>> = packet
+case greeting {
+  "Hello, " <> name -> name
+  "Hello, Jak" -> "Jak" // Unreachable
+  _ -> "Stranger"
+}
 ```
 
-Since 1.11.0, the compiler warns when a literal integer will be truncated to fit its segment and reports the resulting value. JavaScript-specific support and its 52-bit pattern limit are detailed in [targets-and-ffi.md](targets-and-ffi.md).
+### Bit-array reachability
 
-### Float target differences
+Since 1.11.0, analysis detects a bit-array clause wholly covered by an earlier
+clause. Since 1.13.0, it warns about segments that can never match, including an
+out-of-range literal in the default one-byte integer segment.
 
-Float division by zero is defined to return zero rather than overflow.
+Since 1.14.0, numeric spellings are normalised and interference-based pruning
+finds equivalent string, decimal, binary, octal, and hexadecimal integer
+segments, such as `<<"a">>` and `<<97>>`.
+
+### Other warnings and deprecations
+
+- Since 1.11.0, discarding the result of a side-effect-free call warns; this
+  catches immutable updates whose replacement value was accidentally ignored.
+- Since 1.11.0, an integer literal too large for its bit-array segment warns and
+  shows the truncated value; `<<258>>` produces `2` in the default byte segment.
+- Since 1.12.0, an unqualified function or constant import shadowed by a local
+  definition warns because the import is unreachable.
+- Since 1.12.0, a provably always-successful or always-failing comparison warns.
+- Since 1.13.0, an argument used only by forwarding it into recursive calls is
+  reported as unused.
+- Since 1.13.0, redundant `_ as value` patterns are deprecated and format as
+  plain `value`.
+- Since 1.13.0, more empty/non-empty tests that traverse a linked list through
+  `list.length`, including `0 < list.length(items)`, warn and recommend `[]`.
+- Since 1.14.0, a regular `//` comment between a `///` comment and its definition
+  warns because it detached that documentation.
+
+## Bit-array construction and matching
+
+`size(n)` counts units, and `unit` defaults to one bit. Integer segments default
+to 8 bits; float segments default to 64 bits. `bits` embeds a bit array of any
+size, while `bytes` requires byte alignment.
+
+Since 1.12.0, UTF codepoint segments can specify endianness in construction and
+patterns, and bit-array pattern sizes may contain calculations.
 
 ```gleam
-echo 3.14 /. 0.0
+let assert <<size, data:bytes-size(size / 8 - 1)>> = payload
 ```
 
-JavaScript-targeted floats can produce infinities and `NaN`. An overflow on the Erlang target raises an error, and Erlang has neither special value.
+## Documentation syntax
 
-## Warnings and name resolution
-
-### Discarded and unused values
-
-Since 1.11.0, discarding a side-effect-free function call as a non-final expression warns. This catches immutable-update bugs where the returned value was neither assigned nor piped onward.
-
-Since 1.13.0, an argument used only by passing it unchanged into self-recursive calls is considered unused if the implementation never otherwise reads it.
-
-### Inefficient list emptiness tests
-
-Since 1.13.0, the compiler catches more `<` and `>` comparisons that traverse an entire list merely to decide whether it is empty. Prefer pattern matching, `items == []`, or `items != []` to comparisons involving `list.length(items)`.
-
-### Inaccessible imports and discarded names
-
-Since 1.12.0, importing a function or constant unqualified under the same name as a local function or constant warns because the local definition makes the import inaccessible.
-
-If an unknown name such as `x` resembles a discarded binding such as `_x`, the diagnostic highlights that binding and suggests removing the underscore or choosing another variable. Language-server clients receive the secondary context.
-
-Since 1.17.0, when an unqualified value is unknown, the compiler searches imported modules and suggests qualified forms such as `io.println`.
-
-### Comparisons, arity, and displayed types
-
-Since 1.12.0, comparisons provably guaranteed to succeed or fail warn, including comparing a value with itself. An incorrect-arity error also lists the labels of additional labelled arguments the function accepts.
-
-Since 1.17.0, warning messages render types using the qualification or module alias visible in the current file instead of always using the canonical module name.
-
-## Documentation and formatting
-
-### Module and definition documentation
-
-Use a `////` comment at the top of a file to document the module rather than one definition.
+Use `////` at the top of a module for module documentation. Use `///`
+immediately before a type or function to document that definition.
 
 ```gleam
-//// Utilities for processing application messages.
+//// Utilities for displaying greetings.
+
+/// Return a greeting for a name.
+pub fn greeting(name: String) -> String {
+  "Hello, " <> name
+}
 ```
 
-Since 1.14.0, the compiler warns when a `///` definition comment is separated from its definition by a regular `//` comment and would be omitted from generated documentation.
+## Float target differences
 
-### Capture, list, negation, and guard formatting
+Both targets use 64-bit floats. JavaScript overflow produces `Infinity` or
+`-Infinity` and can lead to `NaN`; BEAM overflow raises an error and provides no
+infinity or NaN values. Float division by zero produces zero rather than
+overflow.
 
-Since 1.9.0, formatting replaces a capture with no extra arguments by the direct function reference, such as `io.print(_)` becoming `io.print`.
+## External fallbacks
 
-Since 1.12.0, a trailing comma before `]` keeps even a short list multiline; removing it allows collapse. The formatter preserves deliberate one-per-line or packed grouping and one blank line within lists.
+A function with both an `@external` annotation and a Gleam body uses the
+external implementation when the current target provides one and otherwise
+runs the Gleam body.
 
 ```gleam
-let names = [
-  "natu",
-  "milotic",
-]
-```
+import gleam/list
 
-Since 1.13.0, redundant repeated negations collapse (`--11` to `11`, `!!!False` to `!False`), while explicit blocks in `case` clause guards are preserved.
+@external(erlang, "lists", "reverse")
+pub fn reverse(items: List(a)) -> List(a) {
+  list.reverse(items)
+}
+```

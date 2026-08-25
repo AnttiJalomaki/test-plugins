@@ -1,129 +1,89 @@
 # Subscriptions and Streaming Transport
 
-## Client subscription behavior
+## Deduplication and identity
 
-During the client-v4-migration, Client subscriptions are deduplicated by
-default. A subscriber joining an existing connection does not receive the
-connection's initial server value. Disable deduplication per subscription when
-that matters:
+### Subscription deduplication can ignore headers (2.3.0)
 
-```ts
-client.subscribe({
-  query: SUBSCRIPTION,
-  context: { queryDeduplication: false },
-});
-```
+List non-semantic headers under `subscription.deduplication.ignored_headers` so
+their differences do not prevent identical subgraph subscriptions from sharing
+a connection.
 
-Apollo Client 4.0.0 makes `client.subscribe()` lazy. Creating the observable
-does not open a connection; subscribing does. The observable's `restart()`
-method closes its current link connection and recreates the request.
+### Subscription deduplication can ignore JWT context (2.15.0)
 
-GraphQL subscription errors follow `errorPolicy` in Client 4 and normally
-arrive through observer `next`, not `error`. An unrecoverable network failure
-can still terminate the subscription.
+Decoded claims participate in identity separately from forwarded headers, so
+`ignored_headers` cannot merge authenticated subscriptions. Set
+`ignore_auth_context: true` only for non-personalized streams. Deduplication
+defaults and overrides can be configured per subgraph.
 
-## Router subscription deduplication
+## Protocol and error handling
 
-Router 2.3.0 adds `subscription.deduplication.ignored_headers`. Header
-differences listed there no longer keep otherwise identical subgraph
-subscriptions separate.
+### WebSocket handshakes produce valid GraphQL payloads (2.4.0)
 
-```yaml
-subscription:
-  enabled: true
-  deduplication:
-    enabled: true
-    ignored_headers:
-      - x-transaction-id
-      - user-agent
-```
+Handshake-time subscription responses, including coprocessor responses, contain
+the required GraphQL `data` member and pass response validation.
 
-Router 2.15.0 clarifies that decoded JWT claims participate in subscription
-identity independently of forwarded headers. `ignored_headers` cannot make
-authenticated requests share a subgraph connection.
+### Subscription errors retain their protocol level (2.6.0)
 
-The same release adds per-subgraph defaults and overrides and
-`ignore_auth_context: true`. Use that only for non-personalized event streams:
+For multipart HTTP, a GraphQL error immediately before stream end remains a
+GraphQL error rather than being serialized as fatal transport failure.
 
-```yaml
-subscription:
-  deduplication:
-    all:
-      enabled: true
-    subgraphs:
-      stocks:
-        ignore_auth_context: true
-```
+### WebSocket connection errors propagate without an ID (2.7.0)
 
-## WebSocket protocol behavior
+The Router accepts `graphql-transport-ws` `connection_error` messages containing
+a payload but no `id` and propagates their errors to clients.
 
-Router 2.4.0 makes subscription responses emitted during WebSocket handshake
-satisfy GraphQL response validation, including with a coprocessor. Earlier
-handshake responses could omit required `data`.
+### WebSocket handshakes propagate trace context (2.11.0)
 
-Router 2.7.0 accepts a `graphql-transport-ws` subgraph `connection_error` with a
-payload but no `id` and propagates its underlying errors.
+Trace headers are injected into the initial subgraph HTTP upgrade. Individual
+messages on the established WebSocket cannot receive new propagation headers.
 
-Router 2.9.0 delegates ping handling to the WebSocket implementation, avoiding
-duplicate pong frames before acknowledgement. Its
-`apollo.router.operations.subscriptions.events` counter increments for each
-subscription event but excludes ping, pong, and close.
+### Subscription request builders restore plugin compatibility (2.11.0)
 
-Router 2.11.0 injects trace propagation headers into the initial HTTP upgrade
-to a subgraph. Individual messages on the established WebSocket cannot receive
-new propagation headers.
+External plugins/crates can use `SubscriptionTaskParams` with
+`execution::Request` builders again, including in unit tests.
 
-## Multipart HTTP subscriptions and deferred results
+## Lifecycle and deployment
 
-Apollo Client query deduplication remains active through the final multipart
-chunk from 3.13.0. Client 4.0.0 marks unfinished deferred data as
-`dataState: "streaming"` and retains `loading: true` with
-`NetworkStatus.streaming`.
+### Health-check endpoints can be disabled again (2.3.0)
 
-For multipart HTTP subscriptions, Router 2.6.0 keeps a GraphQL-level error
-followed immediately by stream completion at the GraphQL layer rather than
-misclassifying it as a fatal transport error.
+Router 2.3 restores the ability to disable the health endpoint after its 2.0
+conversion into a plugin temporarily lost that behavior.
 
-Router 2.13.0 can run multipart subscriptions behind AWS REST API Gateway after
-that gateway gained response streaming. Configure the gateway response
-transfer mode for streaming.
+### Self-hosted subscriptions are available on every GraphOS plan (2.11.0)
 
-Incremental delivery protocols are not interchangeable. Align Client handler,
-Server executor, GraphQL.js alpha, `Accept` header, gateways, mocks, and
-proxies. See the Client and Server references for protocol-specific values.
+Free, Developer, Standard, and Enterprise plans may run subscriptions on a
+self-hosted Router. Because the feature remains licensed, connect the Router to
+GraphOS with API key and graph ref.
 
-## Lifetime and availability
+### Maximum subscription lifetime (2.15.0)
 
-Self-hosted subscriptions are available across Free, Developer, Standard, and
-Enterprise GraphOS plans from Router 2.11.0. The self-hosted Router must still
-connect to GraphOS using an API key and graph reference because subscriptions
-are licensed.
+`subscription.max_lifetime` closes streams after the configured duration and
+sends terminal `SUBSCRIPTION_MAX_LIFETIME_EXCEEDED`. Unset means unlimited.
 
-Router 2.15.0 adds `subscription.max_lifetime`. On expiry, the Router closes
-the stream with terminal error `SUBSCRIPTION_MAX_LIFETIME_EXCEEDED`. Unset
-preserves unlimited lifetime.
+### AWS API Gateway can front multipart subscriptions (2.13.0)
 
-```yaml
-subscription:
-  enabled: true
-  max_lifetime: 10m
-```
+AWS REST API Gateway can proxy HTTP multipart subscriptions when response
+transfer mode is configured for streaming.
 
-## Termination observability
+## Streaming telemetry
 
-Router 2.14.0 dynamically adds:
+### Open-subscription metrics identify the operation (2.4.0)
 
-- `apollo.subscription.end_reason`: `server_close`, `subgraph_error`,
-  `heartbeat_delivery_failed`, `client_disconnect`, `schema_reload`, or
-  `config_reload`.
-- `apollo.defer.end_reason`: `completed` or `client_disconnect`.
+`apollo.router.opened.subscriptions` includes `graphql.operation.name`.
 
-It also adds counters for client termination, rejected subscriptions, and
-subgraph WebSocket closure:
+### Subscription event counter semantics (2.9.0)
 
-- `apollo.router.operations.subscriptions.terminated.client`
-- `apollo.router.operations.subscriptions.rejected`
-- `apollo.router.operations.subscriptions.terminated.subgraph`
+`apollo.router.operations.subscriptions.events` counts subscription events but
+not ping, pong, or close. The Router relies on WebSocket ping handling and no
+longer sends duplicate pong before acknowledgement.
 
-Router 2.4.0 labels `apollo.router.opened.subscriptions` with
-`graphql.operation.name`, enabling per-operation open-stream monitoring.
+### Streaming termination telemetry (2.14.0)
+
+Router spans expose `apollo.subscription.end_reason` values `server_close`,
+`subgraph_error`, `heartbeat_delivery_failed`, `client_disconnect`,
+`schema_reload`, or `config_reload`; deferred operations expose
+`apollo.defer.end_reason` as `completed` or `client_disconnect`. Counters cover
+client termination (`apollo.router.operations.subscriptions.terminated.client`),
+subscription rejection (`apollo.router.operations.subscriptions.rejected`), and
+per-subgraph WebSocket closure
+(`apollo.router.operations.subscriptions.terminated.subgraph`).

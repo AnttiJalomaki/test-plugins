@@ -1,8 +1,10 @@
 # Validation, Authentication, and Security
 
-Validation rules, authentication behavior, password handling, encryption, and request protection.
+Validation rules, authentication and authorization, request forgery protection, encryption, and credentials.
 
-Batch identifiers in section headings provide exact source attribution.
+## Additional JSON Schema constraints (2026-02)
+
+Numeric schema types support `multipleOf`, while array schema types support `uniqueItems`.
 
 ## Alternative validation rule sets (2025-04)
 
@@ -43,6 +45,26 @@ Laravel adds a fluent string validation rule builder and fills out the condition
 'name' => [Rule::string()->min(3)->max(100)],
 ```
 
+## JSON schema contract (2025-11)
+
+Laravel's JSON schema facilities now expose a contract alongside schema-generation improvements, allowing extensions to depend on an abstraction rather than a concrete implementation.
+
+## JSON Schema dependencies (2025-12)
+
+Laravel's JSON Schema facilities can now express dependencies between schema members instead of requiring dependent requirements to be modeled outside the schema.
+
+## JSON Schema deserialization and composition (2026-06)
+
+Illuminate JSON Schema can deserialize array schemas and multi-type unions, and schemas may use `anyOf` composition.
+
+## Line-break rejection in email addresses (2026-05)
+
+Email addresses containing line breaks are now rejected instead of reaching mail handling.
+
+## Nested policy discovery (12.0.0)
+
+Policy auto-discovery now follows parallel nested model and policy namespaces; for example, `App\Models\Admin\User` can discover `App\Policies\Admin\UserPolicy`.
+
 ## Ordinal positions in validation messages (2025-09)
 
 Validation messages support the `:ordinal-position` placeholder for wildcard array items, with safe handling when the Intl extension is unavailable.
@@ -50,6 +72,10 @@ Validation messages support the `:ordinal-position` placeholder for wildcard arr
 ```php
 'photos.*.description.required' => 'Describe the :ordinal-position photo.',
 ```
+
+## Password reset mail subject (13.0-upgrade)
+
+The default password reset subject is now `Reset your password` instead of `Reset Password Notification`; update exact mail assertions and translation overrides.
 
 ## Password reset token expiry units (12.0-upgrade)
 
@@ -59,14 +85,6 @@ Validation messages support the `:ordinal-position` placeholder for wildcard arr
 
 Precognitive requests now support wildcard paths in array validation rules.
 
-## Readable encrypted environment files (2026-01)
-
-`env:encrypt --readable` keeps environment key names visible in the encrypted output.
-
-```shell
-php artisan env:encrypt --readable
-```
-
 ## Remember-cookie payloads (2026-01)
 
 Remember cookies now store a MAC of the user's password hash instead of the hash itself. Custom code that reads or creates these cookies must not expect the raw password hash.
@@ -74,6 +92,10 @@ Remember cookies now store a MAC of the user's password hash instead of the hash
 ## Request forgery protection (13.0-upgrade)
 
 The CSRF middleware is now `PreventRequestForgery` and also validates request origin through `Sec-Fetch-Site`. `VerifyCsrfToken` and `ValidateCsrfToken` remain deprecated aliases; update direct middleware references and use the new `preventRequestForgery(...)` configuration API.
+
+## Requiring values within an array (2025-05)
+
+`Rule::contains()` builds a validation rule requiring an array input to contain specified values, as in `'features' => ['array', Rule::contains(['search', 'exports'])]`.
 
 ## Rotated-key MAC validation (2026-04)
 
@@ -111,6 +133,10 @@ A fluent `Password` rule can be converted to its equivalent password-rule string
 ## SVG image validation (12.0-upgrade)
 
 The `image` validation rule excludes SVG files by default. Opt in with `'image:allow_svg'` or `File::image(allowSvg: true)`.
+
+## Unsetting JSON Schema flags (2026-05)
+
+Fluent JSON Schema boolean flags can now be unset after being enabled, which helps when refining or reusing a schema definition.
 
 ## Uploaded-file encoding validation (2025-11)
 

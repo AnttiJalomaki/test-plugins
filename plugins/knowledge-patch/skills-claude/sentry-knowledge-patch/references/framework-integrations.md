@@ -1,12 +1,24 @@
 # Framework Integrations
 
+## Node integration renames (9.0.0-guide)
+
+`processThreadBreadcrumbIntegration` is renamed to
+`childProcessIntegration`, and its integration name changes from
+`ProcessAndThreadBreadcrumbs` to `ChildProcess`.
+
+`vercelAIIntegration` keeps its factory name, but its integration name changes
+from `vercelAI` to `VercelAI`. Update integration-name filters as well as
+factory calls when applicable.
+
 ## Prisma
 
-The bundled `prismaIntegration` targets Prisma 6 and no longer supports Prisma
-5. Prisma 6 does not need the `tracing` preview feature. To instrument another
-version, install its matching `@prisma/instrumentation`, pass a
-`PrismaInstrumentation` instance, and keep `previewFeatures = ["tracing"]`
-for pre-v6 Prisma when required.
+The bundled `prismaIntegration` instrumentation targets Prisma 6 and no longer
+supports Prisma 5. Prisma 6 does not require the `tracing` preview feature.
+
+To instrument another Prisma version, install matching
+`@prisma/instrumentation`, pass its `PrismaInstrumentation` instance through
+`prismaInstrumentation`, and retain `previewFeatures = ["tracing"]` when a
+pre-v6 Prisma release requires it.
 
 ```js
 Sentry.init({
@@ -20,45 +32,35 @@ Sentry.init({
 
 ## NestJS
 
-The v9 migration removes the Node SDK's `nestIntegration` and
-`setupNestErrorHandler`. Use `@sentry/nestjs` instead:
+The Node SDK's `nestIntegration` and `setupNestErrorHandler` are removed. Use
+`@sentry/nestjs` and make these replacements:
 
-- replace `@WithSentry` with `@SentryExceptionCaptured`;
-- replace generic and GraphQL exception filters with `SentryGlobalFilter`;
-- remove `SentryService` and `SentryTracingInterceptor`.
+| Removed | Replacement |
+| --- | --- |
+| `@WithSentry` | `@SentryExceptionCaptured` |
+| Generic or GraphQL global filters | `SentryGlobalFilter` |
+| `SentryService` | Remove |
+| `SentryTracingInterceptor` | Remove |
 
-As of 10.68.0, `SentryGlobalFilter` also handles WebSocket errors.
+`SentryGlobalFilter` also supports WebSocket errors (since 10.68.0).
 
-## React Router
+## React Router and Remix
 
-The generic `wrapUseRoutes` and `wrapCreateBrowserRouter` helpers are removed.
-Choose the explicit `V6` or `V7` variant matching the installed React Router
-major. React Router now uses its instrumentation API by default; current custom
-setup must not assume the older instrumentation path is auto-selected.
+Generic React helpers `wrapUseRoutes` and `wrapCreateBrowserRouter` are
+removed. Import the explicit `V6` or `V7` variant matching the application's
+React Router major.
 
-React Router automatically flushes for serverless loaders and actions and for
-Vercel request handlers. This behavior arrived at the v10 boundary
-(`10.0.0`).
+React Router now uses its instrumentation API by default (10.68.0). Custom
+instrumentation should not assume the older path is automatically selected.
 
-## SolidStart
+Remix removes `autoInstrumentRemix` and always behaves as though it were
+`true`. Its source-map upload behavior is documented in the build reference.
 
-`sentrySolidStartVite` is removed. Wrap the SolidStart config with `withSentry`
-and provide build-time options as the second argument:
+## Vue, Nuxt, and Pinia
 
-```ts
-export default defineConfig(
-  withSentry(solidStartConfig, sentryBuildOptions),
-);
-```
-
-SolidStart defaults server setup to `--import`. It supports
-`autoInjectServerSentry`, including
-`autoInjectServerSentry: "experimental_dynamic-import"`.
-
-## Vue and Nuxt
-
-Configure Vue component tracing under `vueIntegration({ tracingOptions })`,
-including in Nuxt. Update spans are opt-in; include `"update"` in `hooks`:
+Configure Vue component tracing under
+`vueIntegration({ tracingOptions: ... })`, including in Nuxt. Update spans are
+off unless `"update"` is included in `tracingOptions.hooks`.
 
 ```js
 Sentry.init({
@@ -73,52 +75,61 @@ Sentry.init({
 });
 ```
 
-Pinia `stateTransformer` receives combined state keyed by store ID. The
-removed `logErrors` option is unnecessary because the Vue handler always
-propagates to a user handler or rethrows.
+Pinia `stateTransformer` callbacks receive the combined state keyed by store
+ID. Remove the obsolete `logErrors` option: the Vue handler always propagates
+to a user handler or rethrows.
 
-Nuxt's module has an `enabled` switch. Its `SourceMapsOptions` includes
-`silent`, `errorHandler`, and `release`.
+Since 9.0.0, the Nuxt module has an `enabled` switch. Its `SourceMapsOptions`
+also supports `silent`, `errorHandler`, and `release`.
 
-## SvelteKit and Remix
+## SolidStart
 
-SvelteKit removes `fetchProxyScriptNonce`; use a CSP script hash or disable
-fetch-proxy injection. It injects that script only for SvelteKit versions below
-2.16.0. Remix removes `autoInstrumentRemix` and always behaves as if it were
-enabled.
+`sentrySolidStartVite` is no longer exported. Wrap the SolidStart config with
+`withSentry` and pass build-time options as its second argument:
+
+```ts
+export default defineConfig(withSentry(solidStartConfig, sentryBuildOptions));
+```
+
+SolidStart defaults server setup to `--import` and supports
+`autoInjectServerSentry`, including the
+`autoInjectServerSentry: "experimental_dynamic-import"` mode (9.0.0).
+
+## SvelteKit
+
+`fetchProxyScriptNonce` is removed. Use a CSP script hash or disable fetch
+proxy script injection. Since 9.0.0, SvelteKit injects that script only for
+versions below 2.16.0.
 
 ## Astro and Fastify
 
-Astro 5 request routes and client-side routes are parameterized, with the
-request route constructed at runtime. Fastify exposes error selection through
-`shouldHandleError`:
+Astro 5 request routes and client-side routes are parameterized; the request
+route is constructed at runtime (10.0.0).
+
+`fastifyIntegration` accepts `shouldHandleError` so the integration's error
+handler can select captured errors:
 
 ```js
 Sentry.init({
   integrations: [
     Sentry.fastifyIntegration({
-      shouldHandleError: error => shouldReport(error),
+      shouldHandleError: (error) => shouldReport(error),
     }),
   ],
 });
 ```
 
-## Statsig and worker threads
+## Browser and Node additions
 
-The browser SDK includes a Statsig integration. The Node SDK captures
-exceptions from `worker_threads` (both since the v9 line).
+The browser SDK includes a Statsig integration, and the Node SDK captures
+exceptions from `worker_threads` (since 9.0.0).
 
-## Cloudflare runtime classes
+## Modern server framework data controls
 
-Cloudflare Workflow instrumentation accepts non-UUID instance IDs. Durable
-Object instrumentation preserves synchronous methods instead of making them
-asynchronous.
-
-## Shared modern-framework controls
-
-The `modern-server-frameworks` SDKs for Elysia, Hono, Nitro, and TanStack Start
-accept `dataCollection` controls. Disable automatic user data and all request
-body collection explicitly when required:
+The Elysia, Hono, Nitro, and TanStack Start SDKs accept `dataCollection`
+options for automatic request enrichment. Disable default user information
+and all request-body collection explicitly when those fields must stay inside
+the application:
 
 ```js
 Sentry.init({ dataCollection: { userInfo: false, httpBodies: [] } });
@@ -126,10 +137,13 @@ Sentry.init({ dataCollection: { userInfo: false, httpBodies: [] } });
 
 ## Elysia
 
-The alpha `@sentry/elysia` SDK supports Elysia 1.4+ on Bun and Node.js 18+
-through `@elysiajs/node`. It instruments Elysia natively; do not add
-`@elysiajs/opentelemetry`. Initialize Sentry before constructing the app and
-wrap the app before registering routes.
+The alpha `@sentry/elysia` SDK supports Elysia 1.4+ on Bun and on Node.js 18+
+through `@elysiajs/node`. It instruments Elysia directly; do not add
+`@elysiajs/opentelemetry` for Sentry.
+
+Initialize Sentry before constructing the application and wrap the app before
+adding routes. The global error hook captures 5xx responses by default;
+`shouldHandleError` replaces that policy.
 
 ```ts
 Sentry.init({ dsn });
@@ -138,37 +152,34 @@ const app = Sentry.withElysia(new Elysia(), {
 }).get("/", () => "ok");
 ```
 
-The global error hook captures 5xx responses by default. `shouldHandleError`
-replaces that policy.
-
 ## Hono
 
 `@sentry/hono` supports Hono 4+ on Cloudflare Workers, Node.js, Bun, and Deno.
-It replaces deprecated `@hono/sentry` and `toucan-js`. Install the same-version
-peer for the runtime: `@sentry/cloudflare`, `@sentry/node`, `@sentry/bun`, or
-`@sentry/deno`. Import `sentry` from `@sentry/hono/<runtime>` and register it
-early.
+It replaces deprecated `@hono/sentry` and `toucan-js` packages.
+
+Install the same-version peer for the runtime: `@sentry/cloudflare`,
+`@sentry/node`, `@sentry/bun`, or `@sentry/deno`. Import `sentry` from the
+matching `@sentry/hono/<runtime>` entry point and register it early.
+Cloudflare needs `nodejs_compat`; options may come from Worker bindings.
 
 ```ts
 import { sentry } from "@sentry/hono/cloudflare";
 
 const app = new Hono<{ Bindings: { SENTRY_DSN: string } }>();
-app.use(sentry(app, env => ({ dsn: env.SENTRY_DSN })));
+app.use(sentry(app, (env) => ({ dsn: env.SENTRY_DSN })));
 ```
 
-Cloudflare additionally requires `nodejs_compat` and may derive options from
-Worker bindings. On Node.js, preload a file that imports and initializes
-`@sentry/hono/node`, then call `app.use(sentry(app))` without options.
-
-The middleware captures exceptions reaching Hono's `onError`, excluding 3xx
-and 4xx by default. Use `shouldHandleError` to change that selection.
+On Node.js, preload a file that imports and initializes `@sentry/hono/node`,
+then call `app.use(sentry(app))` without options. The middleware captures
+exceptions reaching Hono's `onError`, excluding 3xx/4xx by default; use
+`shouldHandleError` to override the selection.
 
 ## Nitro
 
 The beta `@sentry/nitro` SDK requires Nitro `3.0.260415-beta` or newer and
-Node.js 18.19+. Wrap config with `withSentryConfig`, initialize in a root
-`instrument.mjs`, and preload it with `--import` in development, preview, and
-production:
+Node.js 18.19+. Wrap configuration with `withSentryConfig`, initialize in a
+root `instrument.mjs`, and preload it with `--import` in development, preview,
+and production.
 
 ```ts
 export default withSentryConfig(defineNitroConfig({}), {
@@ -179,25 +190,25 @@ export default withSentryConfig(defineNitroConfig({}), {
 // NODE_OPTIONS='--import ./instrument.mjs' nitro dev
 ```
 
-The wrapper registers the module, enables Nitro tracing channels, uploads
-hidden source maps, and deletes them by default while respecting explicit
-`sourcemap` settings. The SDK re-exports `@sentry/node`.
+The wrapper registers the module, enables Nitro tracing channels, and by
+default uploads hidden source maps before deleting them. It respects an
+explicit `sourcemap` setting.
 
-Nitro's error hook captures unhandled route and middleware errors but skips
-3xx/4xx `HTTPError`s. Set `enableNitroErrorHandler: false` to disable it.
-Tracing uses `h3.request` and `srvx.request`, captures parameterized routes and
-middleware spans, and publishes `sentry-trace` and `baggage` via
-`Server-Timing` so browser pageloads can connect to the server trace.
+The SDK re-exports `@sentry/node`. Its Nitro `error` hook captures unhandled
+route and middleware errors but skips 3xx/4xx `HTTPError`s; set
+`enableNitroErrorHandler: false` to turn off the hook.
+
+Request tracing covers `h3.request`, `srvx.request`, parameterized routes, and
+middleware spans. It exposes `sentry-trace` and `baggage` through
+`Server-Timing`, enabling browser pageload traces to link to the server trace.
 
 ## TanStack Start
 
 The beta `@sentry/tanstackstart-react` SDK targets TanStack Start 1.0 RC.
-
-- Import a client initializer first in `src/client.tsx`.
-- Add `tanstackRouterBrowserTracingIntegration(router)` only when
-  `!router.isServer`.
-- Put `sentryTanstackStart()` last in the Vite plugin list.
-- Wrap an explicit server entry fetch handler with `wrapFetchWithSentry`.
+Import a client initializer first in `src/client.tsx`. Add
+`tanstackRouterBrowserTracingIntegration(router)` only when
+`!router.isServer`, put `sentryTanstackStart()` last in the Vite plugin list,
+and wrap an explicit server entry's fetch handler with `wrapFetchWithSentry`.
 
 ```ts
 export default defineConfig({
@@ -208,16 +219,22 @@ export default defineConfig({
 });
 ```
 
-The Vite plugin manages production source-map upload and tracing middleware.
-For complete server instrumentation, preload a root `instrument.server.mjs`
-with `--import` and copy it into the deployment output. Directly importing it
-from `src/server.ts` instruments only native Node.js APIs and does not work on
-Cloudflare.
+The Vite plugin handles production source-map upload and tracing middleware.
+For complete server instrumentation, preload root `instrument.server.mjs`
+with `--import` and copy it into the deployed output.
 
-Place `sentryGlobalRequestMiddleware` and
-`sentryGlobalFunctionMiddleware` first in their arrays to capture request and
-server-function errors. Capture SSR rendering exceptions manually.
+Directly importing that file from `src/server.ts` is a limited fallback: it
+instruments only native Node.js APIs and does not work on Cloudflare. Put
+`sentryGlobalRequestMiddleware` and `sentryGlobalFunctionMiddleware` first in
+their arrays to capture request and server-function errors. Capture SSR render
+exceptions manually.
 
-Set `sentryTanstackStart({ tunnelRoute: true })` to create an opaque same-origin
-tunnel route per development session and production build. The plugin
-configures the client automatically, reducing ad-blocker and firewall drops.
+`sentryTanstackStart({ tunnelRoute: true })` generates an opaque same-origin
+tunnel route per development session and production build and configures the
+client to use it, reducing ad-blocker and firewall drops.
+
+## Compatibility additions (10.69.0-10.70.0)
+
+Core supports the stable MCP SDK v2. Solid and SolidStart support
+`@solidjs/router` v1. Gatsby permits React 19 in its peer range. The SvelteKit
+worker entry point exports `metrics`.

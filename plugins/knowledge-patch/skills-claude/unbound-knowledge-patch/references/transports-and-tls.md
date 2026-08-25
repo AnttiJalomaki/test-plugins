@@ -2,16 +2,8 @@
 
 ## DNS over QUIC
 
-### Build and runtime activation
-
-Since 1.22.0, Unbound can serve DNS over QUIC when built against libngtcp2 and
-a QUIC-capable OpenSSL:
-
-```sh
-./configure --with-libngtcp2=path --with-ssl=path
-```
-
-Enable the listener and set its memory budget:
+Build DoQ support against libngtcp2 and a QUIC-capable OpenSSL with
+`--with-libngtcp2=path --with-ssl=path` (1.22.0), then configure:
 
 ```conf
 server:
@@ -19,25 +11,31 @@ server:
     quic-size: 8m
 ```
 
-Statistics expose `num.query.quic` and `mem.quic`. A build without DoQ support
-ignores configured QUIC ports and warns when `quic-port` is set.
+A build without DoQ support ignores configured QUIC ports and warns when
+`quic-port` is set. Statistics include `num.query.quic` and `mem.quic`.
 
-### Initialization and confinement
+The QUIC TLS context is initialized before chroot and privilege drop, and a
+QUIC listening context is created only when necessary (1.23.0).
 
-Since 1.23.0, the QUIC SSL context is created before chroot and privilege
-drop. A QUIC listening context is created only when one is needed.
+Adding HTTPS or QUIC ports to `interface-automatic-ports` initializes the
+corresponding protocol (1.24.0).
 
-### Automatic port activation
+`pad-responses` applies to DoQ responses (1.26.0). QUIC builds probe the ngtcp2
+early-data API and fail explicitly if `ngtcp2_crypto_ossl` is missing; they
+also build with OpenSSL 4.0.1.
 
-Since 1.24.0, listing HTTPS or QUIC ports in `interface-automatic-ports`
-initializes the corresponding protocol rather than only opening a port.
+## Listener isolation
 
-## Upstream transport
+DoT and DoH use separate SSL contexts and can therefore advertise different
+ALPN values (1.23.0). Unbound avoids opening an unencrypted channel alongside
+an encrypted one on the same port.
+
+## Upstream transport selection
 
 ### Per-forward-zone overrides
 
-Since 1.22.0, `forward-tcp-upstream` and `forward-tls-upstream` override the
-global `tcp-upstream` and `tls-upstream` settings for one forward zone:
+`forward-tcp-upstream` and `forward-tls-upstream` override global
+`tcp-upstream` and `tls-upstream` for one forward zone (1.22.0):
 
 ```conf
 server:
@@ -50,55 +48,39 @@ forward-zone:
     forward-tls-upstream: yes
 ```
 
-### Name-bound TLS reuse
+### TLS port after referrals
 
-Since 1.25.0, an existing upstream TLS connection is reused only when its TLS
-name matches the new destination. Sharing an IP address is not sufficient
-when the destination names differ.
+`tls-upstream` continues using `tls-port` after a referral (1.26.0).
 
-## Listener isolation
+### Name-bound connection reuse
 
-Since 1.23.0, DoT and DoH have separate SSL contexts so each can use its own
-ALPN values. Unbound also avoids opening unencrypted channels alongside
-encrypted channels on the same port.
+An upstream TLS connection is reused only when its TLS name matches the next
+destination, even if both names resolve to the same IP address (1.25.0).
 
-## TLS protocol selection
+## TLS protocol compatibility
 
-Since 1.25.0, `tls-protocols` selects the supported TLS versions used at
-runtime. The transient `tls-use-system-versions` and `--enable-system-tls`
-controls were removed before release.
+`tls-protocols` explicitly selects supported TLS versions (1.25.0). The
+short-lived `tls-use-system-versions` and configure-time
+`--enable-system-tls` controls were removed before release in favor of this
+runtime option.
 
-Unbound 1.24.0 disabled TLS 1.2, while 1.24.1 allowed it again. Deployments
-that require TLS 1.2 should not remain on 1.24.0.
+Unbound 1.24.0 disabled TLS 1.2, while 1.24.1 permitted it again (1.24.0).
+Deployments that require TLS 1.2 must not stay on 1.24.0.
 
 ## Certificate-aware reloads
 
-Since 1.25.0, reloads detect changed certificate files and rebuild TLS
-contexts for DoT, DoH, DoQ, and outgoing DoT. Certificate renewal therefore
-does not require a full restart.
+Reload detects changed certificate files and rebuilds TLS contexts for DoT,
+DoH, DoQ, and outgoing DoT (1.25.0), so normal certificate renewal does not
+require a full restart. `fast_reload` handles `tls-service-key`,
+`tls-service-pem`, and `tls-cert-bundle` changes.
 
-`unbound-control fast_reload` handles changes to:
+## Protocol error and connection behavior
 
-- `tls-service-key`
-- `tls-service-pem`
-- `tls-cert-bundle`
+Malformed errors receive a response without reflecting query fragments, and
+CHAOS queries do not echo incoming EDNS extended RCODEs (1.25.0). A TCP client
+EOF cancels pending replies and closes the connection.
 
-It also propagates `iter-scrub-ns`, `iter-scrub-cname`, and
-`max-global-quota` changes.
+## DoH client interoperability
 
-## Control listener ports
-
-Since 1.25.0, `control-interface` accepts `IP@port`, so each remote-control
-listener can select its port directly:
-
-```conf
-remote-control:
-    control-interface: 127.0.0.1@8953
-```
-
-## Protocol error and EOF behavior
-
-Since 1.25.0, malformed error cases receive error replies rather than silence,
-without reflecting query fragments. CHAOS-class queries do not echo incoming
-EDNS extended RCODEs. A TCP client EOF cancels pending replies and closes the
-connection.
+The `dohclient` utility includes `content-length` on POST requests (1.26.0),
+preventing strict DoH resolvers from rejecting them with HTTP 400.

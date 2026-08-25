@@ -1,43 +1,21 @@
 # Platform Products and Operations
 
-## Contents
+## Admin Portal and embedded administration
 
-- [Admin Portal](#admin-portal)
-- [Connect](#connect)
-- [MCP authorization](#mcp-authorization)
-- [WorkOS CLI](#workos-cli)
-- [Pipes](#pipes)
-- [Radar](#radar)
-- [Vault BYOK](#vault-byok)
-- [Audit Logs and log streaming](#audit-logs-and-log-streaming)
-- [Organization API keys](#organization-api-keys)
-- [Stripe Seat Sync](#stripe-seat-sync)
-- [Email delivery and suppression](#email-delivery-and-suppression)
-- [AuthKit analytics](#authkit-analytics)
-
-## Admin Portal
-
-Admin Portal supports a BYOK intent. Use it when directing an administrator into
-customer-managed key configuration.
+Admin Portal supports a BYOK intent. Its client namespace is `adminPortal` in
+Node SDK v9 and later.
 
 ## Connect
 
-Connect authorization can let a user select an organization. Connect also
-supports:
-
-- JWT templates for MCP and OAuth applications; and
-- Client ID Metadata Documents for MCP clients.
+Connect applications can let users choose an organization during authorization.
+Connect supports JWT templates for MCP and OAuth applications and Client ID
+Metadata Documents for MCP clients.
 
 ## MCP authorization
 
-Choose among the MCP-oriented products according to the surrounding
-authentication architecture:
-
-- Use AuthKit to authorize MCP servers.
-- Use Standalone OAuth to add OAuth to a server that retains its existing
-  authentication.
-- Use Pipes MCP as a deployable MCP server that grants time-limited access to
-  third-party data connections.
+Use AuthKit to authorize MCP servers. Standalone OAuth adds OAuth to a server
+that retains its existing authentication. Pipes MCP is a deployable MCP server
+that grants time-limited access to third-party data connections.
 
 ## WorkOS CLI
 
@@ -47,65 +25,40 @@ Bootstrap an AuthKit integration with:
 npx workos@latest
 ```
 
-AuthKit also supports secure authentication for users of command-line
-applications.
+AuthKit can securely authenticate users of command-line applications.
 
-## Pipes
+## Pipes data connections
 
-Use Pipes to let application users connect third-party accounts. Supported
-connections include:
+Pipes lets application users connect third-party accounts. Supported connection
+types include Asana, Box, Dropbox, Front, GitLab, HelpScout, HubSpot, Intercom,
+Jira, and Sentry.
 
-- Asana;
-- Box;
-- Dropbox;
-- Front;
-- GitLab;
-- HelpScout;
-- HubSpot;
-- Intercom;
-- Jira; and
-- Sentry.
+## Audit Logs
 
-## Radar
+Audit Logs can stream log data to Microsoft Sentinel. Node integrations can list
+schemas with `auditlogs.listSchemas`.
 
-Use Radar signup controls to:
+## API keys
 
-- block disposable email services;
-- block traffic from selected countries or regions; and
-- challenge suspicious signups by SMS.
+Organization-owned API keys can be managed through an API.
+
+## Stripe seat synchronization
+
+Stripe Seat Sync can automatically report active organization-member counts to
+Stripe.
+
+## Custom email delivery and suppression
+
+WorkOS can deliver email through a customer's Amazon SES, Postmark, Resend,
+SendGrid, or Mailgun account. Applications can check whether an email address is
+suppressed and remove it from the suppression list.
 
 ## Vault BYOK
 
-WorkOS Vault accepts customer-managed encryption keys from AWS KMS and Azure Key
+Vault supports customer-managed encryption keys from AWS KMS and Azure Key
 Vault.
-
-## Audit Logs and log streaming
-
-Stream Audit Log data to Microsoft Sentinel.
-
-## Organization API keys
-
-Manage API keys belonging to organizations through the API.
-
-## Stripe Seat Sync
-
-Use Stripe Seat Sync to send active organization-member counts to Stripe
-automatically.
-
-## Email delivery and suppression
-
-Send WorkOS email through a customer's:
-
-- Amazon SES;
-- Postmark;
-- Resend;
-- SendGrid; or
-- Mailgun account.
-
-Check whether an email address is suppressed and remove it from the suppression
-list when appropriate.
 
 ## AuthKit analytics
 
-Use AuthKit Add-ons to send signup, sign-in, and related events to Google
-Analytics or Segment.
+AuthKit Add-ons can send signup, sign-in, and related events to Google Analytics
+or Segment.

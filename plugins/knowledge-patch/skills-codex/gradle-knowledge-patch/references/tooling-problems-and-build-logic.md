@@ -1,42 +1,38 @@
 # Tooling API, Problems API, and Build Logic
 
-Use this reference when developing a Tooling API client, emitting structured
-problems, writing convention plugins, resolving settings-relative files, or
-updating Kotlin and Groovy DSL behavior.
+## Resolve files from settings
 
-## Resolve files from the settings directory
-
-`ProjectLayout` exposes the directory containing `settings.gradle(.kts)` as of
-`8.13.0`. Use it for build-wide files instead of reaching through
-`rootProject`:
+Since `8.13.0`, `ProjectLayout.settingsDirectory` exposes the directory containing `settings.gradle` or `settings.gradle.kts`. Use it for build-wide files instead of reaching through `rootProject`:
 
 ```kotlin
 val versionFile = layout.settingsDirectory.file("version.txt")
 ```
 
-## Stream custom Tooling API values
+## Inspect artifact transforms
 
-Asynchronous client streaming became stable in `8.13.0`. These APIs are
-covered by Gradle's compatibility guarantees:
+Since `8.13.0`, the `artifactTransforms` report lists every transform registered in a project, including action type, cacheability, and input/output attributes:
+
+```text
+./gradlew artifactTransforms
+```
+
+Use it to inspect plugin registrations and diagnose ambiguous transforms.
+
+## Stream Tooling API values
+
+Since `8.13.0`, asynchronous client streaming is stable and covered by Gradle's compatibility guarantees. The promoted surface is:
 
 - `BuildActionExecuter.setStreamedValueListener(StreamedValueListener)`
 - `StreamedValueListener`
 - `BuildController.send(Object)`
 
-Use them when a build action should emit values to the client before the
-action's final result is available.
+Use streamed values for incremental results from long-running build actions.
 
-## Attach structured custom problem data
+## Attach structured problem data
 
-`ProblemSpec.additionalData(...)` accepts arbitrary typed data beginning in
-`8.14.0`. The data can contain:
+### Producer-side data
 
-- Provider API properties;
-- bean-style fields;
-- collections;
-- nested objects.
-
-Define the producer model as an interface extending `AdditionalData`:
+Since `8.14.0`, `ProblemSpec.additionalData(...)` accepts typed arbitrary data. The data can contain Provider API properties, bean-style fields, collections, and nested objects. Define the model as an interface extending `AdditionalData`:
 
 ```java
 public interface SomeData extends AdditionalData {
@@ -51,101 +47,60 @@ problem.additionalData(SomeData.class, data -> {
 });
 ```
 
-Tooling API consumers can retrieve the typed data through
-`CustomAdditionalData.get(Class)` (`8.14.0`). Define a view interface that
-mirrors the producer's data model, then request that view instead of parsing an
-unstructured payload:
+### Tooling API views
+
+Also since `8.14.0`, consumers can call `CustomAdditionalData.get(Class)` with a view interface matching the producer's model. This returns structured data without parsing a serialized payload:
 
 ```java
-SomeDataView data =
-    problem.getAdditionalData().get(SomeDataView.class);
+SomeDataView data = problem.getAdditionalData().get(SomeDataView.class);
 String value = data.getSome();
 ```
 
-## Render Problems API entries in the console
+Keep producer and view property shapes aligned.
 
-`--warning-mode=all` displays relevant structured problem entries directly in
-the console as of `9.3.0`, including their build location, and still links the
-HTML Problems report:
+## Render and locate problems
+
+### Console rendering
+
+Since `9.3.0`, `--warning-mode=all` renders relevant structured Problems API entries in the console with their build location while retaining the link to the HTML Problems report:
 
 ```text
 ./gradlew test --warning-mode=all
 ```
 
-## Configure Tooling API concurrency separately
+### Large problem sets
 
-`org.gradle.tooling.parallel` (`9.4.0`) controls parallel Tooling API actions
-independently of task parallelism:
+Since `9.7.0`, Gradle attaches source locations to as many as 2,050 problems per build. The first 50 keep full stack traces; the next 2,000 use cheaper location capture. `--warning-mode=all` removes this limit. Beyond the first 50, locations stop at the originating script instead of retaining the complete call chain.
+
+## Control Tooling API execution
+
+### Parallelism
+
+Since `9.4.0`, `org.gradle.tooling.parallel` controls parallel Tooling API actions independently of build task parallelism. When unset, it inherits `org.gradle.parallel`:
 
 ```properties
 org.gradle.tooling.parallel=true
 org.gradle.parallel=false
 ```
 
-When `org.gradle.tooling.parallel` is unset, it inherits
-`org.gradle.parallel`.
+### Version and help models
 
-## Read version and help without a build model
-
-`BuildEnvironment.getVersionInfo()` (`9.4.0`) returns the exact
-`gradle --version` output without starting a daemon. The Tooling API `Help`
-model exposes rendered `gradle --help` output:
+Since `9.4.0`, `BuildEnvironment.getVersionInfo()` returns the exact `gradle --version` output without starting a daemon. The `Help` model returns rendered `gradle --help` text:
 
 ```java
-String version =
-    connection.getModel(BuildEnvironment.class).getVersionInfo();
-String help = connection.getModel(Help.class).getRenderedText();
+String version = connection
+    .getModel(BuildEnvironment.class)
+    .getVersionInfo();
+String help = connection
+    .getModel(Help.class)
+    .getRenderedText();
 ```
 
-## Stream TestKit output
+## Author Gradle plugins
 
-`BuildResult.getOutputReader()` returns a `BufferedReader` as of `9.3.0`.
-Process large `GradleRunner` output incrementally and close the reader:
+### Default plugin IDs
 
-```java
-try (BufferedReader reader = result.getOutputReader()) {
-    boolean found = reader.lines()
-        .anyMatch(line -> line.contains("example build message"));
-}
-```
-
-## Use compile-only plugins in precompiled scripts
-
-Precompiled Kotlin script plugins can apply and configure plugins supplied as
-`compileOnly` dependencies starting in `9.1.0`. The generated type-safe
-extension accessors for those plugins are available to the script.
-
-## Generate accessors for precompiled Settings plugins
-
-Precompiled `*.settings.gradle.kts` plugins receive generated type-safe
-accessors in `9.5.0` when their convention-plugin build applies `kotlin-dsl`:
-
-```kotlin
-// build-logic/build.gradle.kts
-plugins {
-    `kotlin-dsl`
-}
-```
-
-The Settings plugin can then configure an applied plugin without string-based
-lookups:
-
-```kotlin
-// build-logic/src/main/kotlin/conventions.settings.gradle.kts
-plugins {
-    id("com.gradle.develocity")
-}
-develocity {
-    buildScan {
-        publishing.onlyIf { false }
-    }
-}
-```
-
-## Use registration names as plugin IDs deliberately
-
-With `java-gradle-plugin`, a plugin registration uses its registration name as
-the plugin ID unless `id` is explicitly set (`9.4.0`):
+Since `9.4.0`, with `java-gradle-plugin`, a plugin registration uses its registration name as its ID unless `id` is set explicitly:
 
 ```kotlin
 gradlePlugin {
@@ -157,13 +112,9 @@ gradlePlugin {
 }
 ```
 
-Set `id` explicitly when the registration name is not the public plugin ID.
+### Published-plugin validation
 
-## Validate published plugin projects
-
-As of `9.4.0`, applying `com.gradle.plugin-publish`, `ivy-publish`, or
-`maven-publish` enables stricter plugin validation automatically. Local plugins
-in `buildSrc` and included builds are exempt. Other projects can enable it:
+Since `9.4.0`, applying `com.gradle.plugin-publish`, `ivy-publish`, or `maven-publish` enables stricter plugin validation automatically. Local plugins in `buildSrc` and included builds are exempt. Other plugin projects can opt in:
 
 ```kotlin
 tasks.validatePlugins {
@@ -171,35 +122,83 @@ tasks.validatePlugins {
 }
 ```
 
-`validatePlugins` provides specific errors for `@Optional` misuse in `9.6.1`.
-Pair `@Optional` with an input or output annotation. Use `@Internal` alone for
-an ignored property; do not combine it with `@Optional`.
+### Plugin Publishing plugin 2.0
 
-## Eliminate parent-project lookup in Groovy DSL
+Since `9.1.0`, Plugin Publishing plugin 2.0.0 supports Configuration Cache and exposes configuration through the Provider API. It requires Gradle 7.4 or newer. Signed publications require Gradle 8.1.1 or newer for full Configuration Cache compatibility.
 
-In `9.6.1`, Groovy DSL references that resolve a missing property or method
-from a parent project are deprecated. The same applies to `findProperty()`,
-`property()`, and `hasProperty()` when the returned value comes from a parent.
-The lookup is scheduled for removal in Gradle 10.
+### `compileOnly` accessors in precompiled scripts
 
-After removing such references, make accidental lookup fail early:
+Since `9.1.0`, precompiled Kotlin script plugins can apply and configure plugins supplied as `compileOnly` dependencies, including their type-safe extension accessors.
+
+### Type-safe accessors in Settings plugins
+
+Since `9.5.0`, precompiled `*.settings.gradle.kts` plugins receive generated type-safe accessors when the convention-plugin build applies `kotlin-dsl`:
 
 ```kotlin
-// settings.gradle.kts
-enableFeaturePreview("NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS")
+// build-logic/build.gradle.kts
+plugins {
+    `kotlin-dsl`
+}
+
+// build-logic/src/main/kotlin/conventions.settings.gradle.kts
+plugins {
+    id("com.gradle.develocity")
+}
+develocity {
+    buildScan {
+        publishing.onlyIf { false }
+    }
+}
 ```
 
-## Use supported Groovy coercions for lazy properties
+## Work with Groovy DSL lazy properties
 
-Groovy DSL assignment in `9.6.1` coerces a string to `Property<File>`,
-`RegularFileProperty`, or `DirectoryProperty` and resolves the string relative
-to the project directory.
-
-A scalar or array can also be assigned directly to `ListProperty<T>` or
-`SetProperty<T>`:
+Since `9.6.1`, Groovy assignment coerces a string to `Property<File>`, `RegularFileProperty`, or `DirectoryProperty`, resolving the string relative to the project directory. A scalar or array can be assigned to `ListProperty<T>` or `SetProperty<T>`:
 
 ```groovy
 task.workingDir = '../my-build'
 task.filter.includePatterns = 'Foo'
 task.filter.includePatterns = ['Foo', 'Bar'] as String[]
 ```
+
+## Eliminate implicit parent-project lookup
+
+Since `9.6.1`, Groovy DSL property or method references that fall through to a parent project are deprecated. So are `findProperty()`, `property()`, and `hasProperty()` when their result comes from a parent. This lookup is scheduled for removal in Gradle 10.
+
+After replacing those references with explicit ownership, enable the preview to reject accidental parent lookup:
+
+```kotlin
+// settings.gradle.kts
+enableFeaturePreview("NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS")
+```
+
+## Guard Gradle API integrations
+
+For the `9.0.0-upgrade`:
+
+- A class extending a Gradle-provided class with `@Inject` getters must be abstract.
+- `ConfigurationVariant.getDescription()` returns `Property<String>` instead of `Optional<String>`.
+- `ComponentIdentifier` handling must accept `RootComponentIdentifier` and future unknown subtypes.
+- Public nullability uses JSpecify; Kotlin generic bounds and nullable arguments are checked more precisely.
+
+## Lock collection membership
+
+Since `9.5.0`, plugin authors can call `DomainObjectCollection.disallowChanges()` to prevent later additions and removals without realizing lazy entries. The objects inside the collection remain mutable:
+
+```kotlin
+val items = objects.domainObjectContainer(MyType::class)
+val main = MyType("main")
+items.add(main)
+items.disallowChanges()
+main.setFoo("bar")
+```
+
+## Diagnostics checklist
+
+- Use `artifactTransforms` before changing transform attributes or registrations.
+- Stream high-volume Tooling API results rather than collecting one large object.
+- Keep custom problem producer and consumer view interfaces structurally aligned.
+- Use `--warning-mode=all` when source locations are missing from a large problem set.
+- Set Tooling API parallelism explicitly when it should differ from task parallelism.
+- Check generated plugin IDs and validation behavior whenever publishing plugins are applied.
+- Enable the no-parent-lookup preview only after resolving implicit Groovy references.

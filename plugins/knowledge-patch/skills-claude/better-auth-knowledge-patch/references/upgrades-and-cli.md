@@ -2,7 +2,7 @@
 
 ## Standalone Auth CLI
 
-Use standalone `npx auth` instead of `@better-auth/cli`.
+The standalone `npx auth` executable supersedes `@better-auth/cli` (since 1.5-guide). `init` scaffolds auth configuration, its adapter, and framework integration. Migration and generation use the standalone executable, and `generate --adapter` works without a complete auth config.
 
 ```sh
 npx auth init
@@ -11,19 +11,41 @@ npx auth generate --adapter prisma
 npx auth upgrade
 ```
 
-`init` scaffolds auth configuration, database adapter, and framework integration. Migration and generation commands use the new executable. `generate --adapter` can operate without a complete auth config.
+For Bun SQLite, use `bunx --bun` so CLI module detection sees Bun's types. Workers virtual-module imports are supported.
 
 ## ESM-only distribution
 
-The package is ESM-only. CommonJS applications must migrate import/loading behavior before upgrade.
+The distribution is ESM-only as of 1.4.0. Convert CommonJS `require` loading and related build configuration before upgrading.
 
-## Package alignment
+## Package extraction
 
-Security fixes are package-specific. Updating `better-auth` does not update directly installed packages such as `@better-auth/sso`, `@better-auth/scim`, or `@better-auth/oauth-provider`.
+Install extracted functionality directly:
 
-The June security cycle's stable target is `better-auth@1.6.14`. The SCIM provider-ownership and OAuth resource-indicator fixes require the documented `1.7.0-beta.4` path or the advisory workaround.
+```ts
+import { sso } from "@better-auth/sso";
+import { scim } from "@better-auth/scim";
+import { passkey } from "@better-auth/passkey";
+import { apiKey } from "@better-auth/api-key";
+import { oauthProvider } from "@better-auth/oauth-provider";
+import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+```
 
-Align all Better Auth packages to compatible versions in production dependencies. `No request state found` can indicate duplicate `better-auth`, `@better-auth/core`, or `better-call` resolutions.
+Redis storage is `@better-auth/redis-storage`. Direct adapter packages may be paired with `better-auth/minimal`. The main package still re-exports official adapters.
+
+## Version alignment and security updates
+
+Update every directly installed scoped package; updating only `better-auth` does not update `@better-auth/sso`, `@better-auth/scim`, or `@better-auth/oauth-provider` (since 1.6.0). The June security cycle used `better-auth@1.6.14` on stable, while the SCIM provider-ownership and OAuth resource-indicator fixes required the documented `1.7.0-beta.4` route or its advisory workaround.
+
+The untagged package is stable. Changes requiring code, configuration, or schema work first ship on `beta`:
+
+```sh
+npm install better-auth
+npm install better-auth@beta
+```
+
+## Duplicate dependency diagnosis
+
+`No request state found` after an upgrade may indicate duplicate copies of `better-auth`, `@better-auth/core`, or `better-call`. Inspect the dependency graph, align all Better Auth packages in production dependencies, and force a single `better-call` resolution where older Yarn or pnpm layouts still duplicate it.
 
 ```sh
 pnpm why better-auth
@@ -31,81 +53,6 @@ pnpm why @better-auth/core
 pnpm why better-call
 ```
 
-Use one `better-call` resolution where older Yarn or pnpm otherwise duplicates it.
+## Migration safety
 
-## Release tracks
-
-The untagged package is the stable track. Changes requiring code, configuration, or schema updates first ship under the `beta` tag.
-
-```sh
-npm install better-auth
-npm install better-auth@beta
-```
-
-## Extracted packages
-
-The following features have dedicated packages:
-
-- SSO: `@better-auth/sso`.
-- SCIM: `@better-auth/scim`.
-- OAuth Provider: `@better-auth/oauth-provider`.
-- Passkeys: `@better-auth/passkey`.
-- API keys: `@better-auth/api-key` and `@better-auth/api-key/client`.
-- Redis secondary storage: `@better-auth/redis-storage`.
-- Database adapters: matching `@better-auth/*-adapter` packages.
-
-The main package still re-exports database adapters. Use `better-auth/minimal` with direct adapter imports for a smaller dependency surface.
-
-## Runtime compatibility
-
-### Cloudflare Workers
-
-Enable AsyncLocalStorage with `nodejs_compat` and compatibility date `2024-09-23`, or use `nodejs_als`. The CLI understands Workers virtual-module imports.
-
-```toml
-compatibility_flags = ["nodejs_compat"]
-compatibility_date = "2024-09-23"
-```
-
-### Expo
-
-Install `expo-network` when using client session polling:
-
-```sh
-npx expo install expo-network
-```
-
-### SQLite and Bun
-
-Node's `node:sqlite` `DatabaseSync` requires Node 22.5 or later. For Bun's built-in SQLite driver, run CLI commands with `bunx --bun` so Bun module types are recognized.
-
-## Type-system compatibility
-
-Better Auth uses Zod 4.
-
-`AuthClient` is available as a client type helper. `inferAuth` infers auth types from a client. Generic `User` and `Session` types replace `InferUser` and `InferSession`.
-
-| Removed type | Replacement |
-| --- | --- |
-| `Adapter` | `DBAdapter` |
-| `TransactionAdapter` | `DBTransactionAdapter` |
-| `Store` | `ClientStore` |
-| `AtomListener` | `ClientAtomListener` |
-| `ClientOptions` | `BetterAuthClientOptions` |
-
-`LiteralUnion` and `DeepPartial` move to `@better-auth/core`. Import core utilities through explicit subpaths such as `@better-auth/core/utils/id`, `/json`, and `/error-codes`; the `@better-auth/core/utils` barrel is gone.
-
-## Removed and renamed APIs
-
-- `authClient.forgotPassword` → `authClient.requestPasswordReset`.
-- `createAdapter` → `createAdapterFactory`.
-- `onEmailVerification` → `afterEmailVerification`.
-- Organization `permission` → `permissions`.
-- OIDC `redirectURLs` → `redirectUrls` plus migration.
-- `better-auth` root `getMigrations` → `better-auth/db/migration`.
-- `better-auth/adapters/test` → `@better-auth/test-utils/adapter`.
-- `/forget-password/email-otp` → standard password-reset flow.
-
-## Compatibility checks in plugins
-
-`AuthContext` includes the running Better Auth version. Plugins can use it for diagnostics or compatibility branches, while package manifests should still enforce supported dependency versions.
+As of 1.7.1, the Auth CLI refuses to add a required column without a default to a table that already contains rows. Use a staged nullable/defaulted migration and backfill rather than expecting an unsafe alteration to run silently.

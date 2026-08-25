@@ -1,120 +1,160 @@
 # Task Authoring and Execution
 
-## Context, dates, and callbacks
+Use this reference for task runtime access, callbacks, XCom behavior, operator authoring, retry policy, state, and non-Python execution.
 
-Airflow 3 removes `tomorrow_ds`, `tomorrow_ds_nodash`, `yesterday_ds`,
-`yesterday_ds_nodash`, `prev_ds`, `prev_ds_nodash`, `prev_execution_date`,
-`prev_execution_date_success`, `next_execution_date`, `next_ds`,
-`next_ds_nodash`, and `execution_date` (3.0-upgrade).
+## Runtime access and context
 
-For manual runs, `logical_date` is the requested trigger date; it need not
-equal the timetable-resolved `data_interval_start` or `data_interval_end`.
-Future logical dates are rejected in 3.0.0. Passing `logical_date=None`, or
-omitting it for an Asset- or REST-triggered run, creates a run at the current
-time with no logical date or data interval. Such tasks omit all three date keys
-from context, so inspect and guard `dag_run.logical_date`.
+### Tasks no longer access the metadata database
 
-Skipped tasks no longer receive `on_success_callback` in 3.0.0. Teardown tasks
-still execute after early Dag-run termination, but cannot use
-`TriggerRule.ALWAYS`; choose a rule that retains upstream dependency semantics.
+Tasks and workers communicate with the API server through the Task Execution API. Task code must not use metadata ORM models or sessions. Use Task Context and SDK accessors during execution; for broader access to Dag runs, task instances, Connections, Variables, or XComs, use the stable REST API or `apache-airflow-client`. Obtain client tokens from `/auth/token`.
 
-Dag callbacks receive a task instance relevant to the final Dag state instead
-of an arbitrary lexicographically selected instance as of 3.2.0.
+```python
+from airflow.sdk import get_current_context
 
-## XCom behavior and operator links
+context = get_current_context()
+ti = context["ti"]
+connection = context["conn"].get("service")
+variable = context["var"].value.get("setting")
+```
 
-`ti.xcom_pull(key=...)` is task-scoped by default after the 3.0-upgrade. Name
-the producer when reading another task:
+### Context and manual-run dates
+
+The 3.0 upgrade removes `tomorrow_ds`, `tomorrow_ds_nodash`, `yesterday_ds`, `yesterday_ds_nodash`, `prev_ds`, `prev_ds_nodash`, `prev_execution_date`, `prev_execution_date_success`, `next_execution_date`, `next_ds`, `next_ds_nodash`, and `execution_date` from context.
+
+For manual runs, the resolved data interval need not be derived from or equal the supplied `logical_date`. Use `logical_date` for the requested trigger date and `data_interval_start`/`data_interval_end` only for timetable-resolved interval semantics.
+
+```python
+from airflow.sdk import get_current_context
+
+requested_date = get_current_context()["logical_date"]
+```
+
+### Event-driven runs may have no logical date or data interval
+
+Future `logical_date` values are rejected. Use `logical_date=None` to create a run at the current time. Asset-triggered runs and REST-triggered runs that omit it keep it as `None`, have no data interval, and omit `logical_date`, `data_interval_start`, and `data_interval_end` from task context. Inspect and guard `dag_run.logical_date`.
+
+### Task SDK runtime access expanded
+
+Since 3.2.0, the SDK can create Connections from URIs, `RuntimeTaskInstance` can retrieve the previous task instance, and `BaseXcom` is exported from `airflow.sdk`.
+
+### Task exceptions moved into the SDK
+
+Import task-facing exceptions such as `AirflowSkipException` and `TaskDeferred` from `airflow.sdk.exceptions`. Old `airflow.exceptions` proxies warn; providers can use `airflow.providers.common.compat.sdk`. Invalid sensor `poke_interval` or `timeout` arguments now raise `ValueError`, not `AirflowException`.
+
+```python
+from airflow.sdk.exceptions import AirflowSkipException, TaskDeferred
+```
+
+## XCom behavior
+
+### XCom pulls are task-scoped by default
+
+With the 3.0 upgrade, `ti.xcom_pull(key="shared_state")` searches only the current task. Name the producer when reading another task's XCom.
 
 ```python
 value = ti.xcom_pull(task_ids="upstream_task", key="shared_state")
 ```
 
-`XCom.set()` and `XCom.get()` reject empty keys in 3.1.0. The removed
-`enable_xcom_deserialize_support` option means the API server does not
-deserialize unknown Python objects just for display; it renders safer
-representations. XCom pickling is gone, so use a custom backend for non-native
-representations.
+### XCom APIs reject unsafe or empty values
 
-Async tasks gain asynchronous XCom accessors in 3.3.0. Structured XCom outputs
-can round-trip as Pydantic models when output types are registered from the
-worker-side Dag.
+Since 3.1.0, the removed `enable_xcom_deserialize_support` option cannot make the API server deserialize unknown Python objects merely for display; non-native values use safer representations. `XCom.set()` and `XCom.get()` reject empty keys.
 
-The UI no longer executes custom `BaseOperatorLink` code. Since 3.0.0, an
-extra link declares `xcom_key`, task code stores the complete URL at that key,
-and the task-detail view retrieves it from the XCom backend.
+### Async tasks gained native XCom and hook access
 
-## Task state stores
+Since 3.3.0, async tasks can use asynchronous XCom accessors and `BaseHook.aget_hook()` without synchronous calls. Structured XCom output can round-trip as Pydantic models when output types are registered from the worker-side Dag.
 
-The 3.3.0 SDK exposes `task_state_store` and `asset_state_store`. Both persist
-JSON state and support `get`, `set`, `delete`, and `clear`; task state survives
-retries and runs. Configure expiration, retention, `clear_on_success`, row-size
-limits, and retention garbage collection. Core and Execution APIs expose the
-state, and triggers can access asset state.
+## Task lifecycle and callbacks
 
-The metadata database is the default storage. Set
-`[workers] state_store_backend` for a worker-side backend.
-`task_state_store.clear()` no longer accepts `all_map_indices`.
+### Skipped tasks no longer receive success callbacks
 
-## Failure, retry, and trigger rules
+`on_success_callback` is not invoked for a task marked `SKIPPED`.
 
-Use Dag argument `fail_fast`, not removed `fail_stop`, from 3.0.0 onward. A
-task's effective `priority_weight` is capped by available pool slots, so high
-weight cannot bypass pool resource limits.
+### Teardown tasks survive DAG termination
 
-`ALL_DONE_MIN_ONE_SUCCESS`, added in 3.1.0, runs after every upstream task is
-done when at least one succeeded; skipped tasks keep normal skip propagation.
+Teardown tasks still run after early Dag-run termination. `TriggerRule.ALWAYS` is invalid for teardown tasks; choose a cleanup trigger rule that preserves upstream dependency semantics.
 
-In 3.2.0, `retry_exponential_backoff` accepts a numeric multiplier: `3.5`
-uses that factor and `0` disables backoff. Python booleans remain compatible
-as `2.0` and `0.0`, but the REST schema is numeric and rejects booleans.
+### `fail_stop` was renamed
 
-Airflow 3.3.0 adds pluggable task retry policies that decide whether and when
-to retry for selected exceptions or custom backoff. `TriggerDagRunOperator`
-wait failures, including failed triggered Dags, participate in this policy.
+Use the Dag argument `fail_fast`; the old `fail_stop` name is removed.
 
-## Templates, Python, and SDK access
+### Dag callbacks receive a state-relevant task instance
 
-An operator may override its Dag's native template rendering in 3.2.0 by
-setting `render_template_as_native_obj=True` or `False`; `None` inherits the
-Dag setting.
+Since 3.2.0, a Dag callback receives a task instance relevant to the Dag's final state, not an arbitrary lexicographically selected instance.
 
-`PythonOperator` accepts an `async def` function directly as of 3.2.0. In
-3.3.0 async tasks also gain `BaseHook.aget_hook()` and native async XCom
-access, avoiding forced synchronous calls.
+### External task management has a TaskInstance API
 
-Other 3.2.0 runtime access additions include Connection creation from URIs,
-previous-task-instance retrieval from `RuntimeTaskInstance`, and the
-`BaseXcom` export from `airflow.sdk`.
+Airflow 3.2.0 exposes a `TaskInstance` API for systems that manage task execution externally.
 
-## External and non-Python work
+## Operator and task authoring
 
-`@task.stub` declares a task implemented outside Python as of 3.2.0. Airflow
-3.3.0's experimental Coordinator layer can route those declarations to
-`JavaCoordinator` for JVM work or `ExecutableCoordinator` for native binaries
-such as Go. Language runtimes access Variables, Connections, and XComs through
-the Execution API while authoring and scheduling remain in Python.
+### Operators can override native template rendering
 
-Airflow 3.3.0 introduces `ResumableJobMixin`, initially used by
-`SparkSubmitOperator`, so external work can resume after worker failure rather
-than restart. Set `durable` to opt out of resumable execution.
+An operator can set `render_template_as_native_obj=True` or `False` to override the Dag setting. The default `None` inherits the Dag-level value.
 
-An external system can manage work through the TaskInstance API added in
-3.2.0.
+### Retry backoff accepts a numeric multiplier
 
-## Human-in-the-loop and agentic tasks
+`retry_exponential_backoff` accepts a number such as `3.5`; `0` disables backoff. Python booleans remain compatible as `2.0` and `0.0`, but the REST schema is numeric and rejects booleans.
 
-`HITLOperator`, `ApprovalOperator`, and `HITLEntryOperator` arrive in 3.1.0
-through `apache-airflow-providers-standard`. They defer while awaiting an
-authorized UI or API response, can show Dag parameters and XCom values in
-forms, and provide notification helpers linking responders to the action page.
+### `PythonOperator` accepts async callables
 
-`AgenticOperator` can attach HITL review in 3.2.0. In 3.3.0 parked HITL tasks
-enter the distinct `awaiting_input` state on the triggerer; `airflow dags test`
-waits for input instead of spinning indefinitely.
+Since 3.2.0, pass an `async def` function directly as `python_callable`; user-managed event-loop code is unnecessary.
 
-## Dag result
+### `@task.stub` defines tasks implemented in other languages
 
-Airflow 3.3.0's `@result` marks a TaskFlow task as the Dag result. A
-return-value XCom can be marked equivalently. The Dag-run wait API can then
-return the designated result without the caller naming an arbitrary task XCom.
+Use `@task.stub` to declare a task in a Python-authored Dag when its implementation lives outside Python.
+
+### `AgenticOperator` supports HITL review
+
+Since 3.2.0, human review can be attached to `AgenticOperator` workflows.
+
+### Task and operator loggers support structured fields
+
+Since 3.1.0, `LoggingMixin.log`, including operator and hook loggers, is a structlog logger. Standard-library logging remains valid; structlog calls can attach searchable fields.
+
+```python
+self.log.info("Registering adapter", name=item.name)
+```
+
+## Human-in-the-loop execution
+
+### Human-in-the-loop tasks
+
+Airflow 3.1.0 adds `HITLOperator`, `ApprovalOperator`, and `HITLEntryOperator` in `apache-airflow-providers-standard`. A HITL task defers while awaiting an authorized UI or API response. Forms can show XCom values and Dag parameters, and notification helpers can link responders to the required-action page.
+
+### HITL waiting has its own task state
+
+Since 3.3.0, parked HITL tasks enter `awaiting_input` on the triggerer. Monitoring can distinguish this state, and `airflow dags test` waits for input rather than spinning indefinitely.
+
+## State, retry, and results
+
+### Tasks and assets have first-class state stores
+
+Since 3.3.0, Task SDK accessors `task_state_store` and `asset_state_store` persist JSON state. Task state survives retries and runs. Both stores support `get`, `set`, `delete`, and `clear`, expiration and retention, optional `clear_on_success`, Core and Execution APIs, and asset-state access from triggers.
+
+Storage defaults to the metadata database. `[workers] state_store_backend` selects a worker-side backend; retention garbage collection and row-size limits are configurable. `task_state_store.clear()` no longer accepts `all_map_indices`.
+
+### Task retry policy is pluggable
+
+A task can use a custom retry policy that decides whether and when to retry particular exceptions and can implement custom backoff. `TriggerDagRunOperator` waiting failures, including a failed triggered Dag run, participate in retry-policy handling.
+
+### Dag runs can expose a designated result
+
+Use `@result` to designate a TaskFlow task as the Dag result, or mark a return-value XCom as the result. The Dag-run NDJSON wait API can return that designated result without the caller naming an arbitrary task XCom.
+
+## Durable and non-Python execution
+
+### Java and Go task execution is experimental
+
+In 3.3.0, `@task.stub(queue=...)` declarations can route through the experimental Coordinator layer. `JavaCoordinator` executes JVM tasks and `ExecutableCoordinator` executes native binaries such as Go programs. Those runtimes use the Execution API for Variables, Connections, and XComs while authoring and scheduling stay in Python.
+
+### Spark jobs can survive worker failure
+
+`ResumableJobMixin`, initially integrated with `SparkSubmitOperator`, tracks external work so execution can resume after worker failure instead of restarting it. Set `durable` to opt out of resumable behavior where required.
+
+### `ResumableJobMixin` is now abstract
+
+As of 3.3.1, custom subclasses must implement the mixin's required methods rather than relying on inherited defaults.
+
+### Custom email backends now handle task alerts
+
+Since 3.3.1, `email_on_failure` and `email_on_retry` honor `[email] email_backend` instead of always using `SmtpNotifier`. An unimportable backend path raises an error instead of silently falling back to SMTP.

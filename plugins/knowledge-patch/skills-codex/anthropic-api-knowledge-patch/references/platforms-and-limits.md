@@ -1,149 +1,168 @@
 # Platforms, Discovery, and Limits
 
-## Discover model limits
+This reference consolidates platform and administration guidance from
+`release-lifecycle`, `rate-limits`, and `2026-08-01-2026-08-19`.
 
-`GET /v1/models` and `GET /v1/models/{model_id}` return
-`max_input_tokens`, `max_tokens`, and `capabilities`. Prefer these fields to
-hard-coded constants.
+## Identity and inference location
 
-Opus 4.6 and Sonnet 4.6 can raise the single-turn output limit to 300,000 with:
+Workload Identity Federation is generally available. Configure OIDC issuers
+and federation rules in the Console, then let an SDK exchange and refresh
+short-lived credentials instead of distributing static API keys.
+
+For models released after February 1, 2026, `inference_geo` can request US-only
+inference at 1.1x pricing. For Managed Agents, place it in the agent's `model`
+object or override it for one session.
+
+## Distinguish AWS-hosted surfaces
+
+Claude Platform on AWS uses Anthropic-managed infrastructure with AWS billing
+and IAM. It exposes Messages, Files, Message Batches, Managed Agents, Agent
+Skills, code execution, and tool use through native AWS endpoints.
+
+Amazon Bedrock's `/anthropic/v1/messages` uses the first-party Messages request
+shape on AWS-managed infrastructure. Opus 4.7 and Haiku 4.5 are self-serve
+there through global and regional endpoints. Do not transfer assumptions about
+model IDs, caching, billing, limits, or available betas between the two
+surfaces.
+
+## Discover models and limits
+
+Use `GET /v1/models` or `GET /v1/models/{model_id}` to read
+`max_input_tokens`, `max_tokens`, and `capabilities`. Avoid hard-coded limits.
+Opus 4.6 and Sonnet 4.6 can request a 300k single-turn output cap with:
 
 ```text
 Anthropic-Beta: output-300k-2026-03-24
 ```
 
-## Workload identity and inference location
+Responses include `anthropic-workspace-id`. Its `wrkspc_`-prefixed value
+identifies the workspace resolved from the API key or access token, including
+the Default Workspace. Record it when diagnosing workspace-scoped behavior.
 
-Workload Identity Federation is GA. Configure OIDC issuers and federation
-rules in the Console, then use an SDK to exchange and refresh short-lived
-credentials rather than distributing static API keys.
+## MCP tunnel route migration
 
-For models released after February 1, 2026, `inference_geo` may request
-US-only inference at 1.1 times standard pricing.
-
-## AWS-hosted surfaces
-
-Claude Platform on AWS uses Anthropic-managed infrastructure with AWS billing
-and IAM. Through native AWS endpoints, it exposes Messages, Files, Message
-Batches, Managed Agents, Agent Skills, code execution, and tool-use APIs.
-
-Amazon Bedrock is a separate AWS-managed surface. Its
-`/anthropic/v1/messages` endpoint uses the first-party Messages request shape.
-Opus 4.7 and Haiku 4.5 are self-serve there across global and regional
-endpoints.
-
-Organizations on Claude Platform on AWS start in the Start tier and do not
-advance usage tiers automatically. Billing uses AWS Marketplace; spend limits
-are under Billing rather than Limits. The normal increase-request flow is
-unavailable, so arrange higher limits through an account representative or
-support.
-
-## MCP tunnel migration
-
-MCP tunnel management moved from the Admin API route
+Tunnel management moved from the Admin API route
 `/v1/organizations/tunnels` to `/v1/tunnels` on the Claude API. The new route
-requires both:
+requires the `mcp-tunnels-2026-06-22` beta header and the
+`workspace:manage_tunnels` Workload Identity Federation scope. The old route is
+available only during a migration window.
 
-```text
-Anthropic-Beta: mcp-tunnels-2026-06-22
-WIF scope: workspace:manage_tunnels
-```
+## Rate-limit mechanics
 
-The old route remains only during a migration window.
+### Continuous and acceleration throttles
 
-## Continuous rate limits
-
-The Messages API independently enforces requests per minute, input tokens per
+The Messages API independently limits requests per minute, input tokens per
 minute, and output tokens per minute with continuously replenished token
-buckets. Enforcement may occur at sub-minute intervals.
+buckets. Enforcement can occur over sub-minute windows. A rapid traffic ramp
+may produce an acceleration-limit 429 even when a steady-state calculation
+looks acceptable. Ramp gradually and obey `retry-after`.
 
-A sharp traffic increase may trigger an acceleration-limit HTTP 429 even when
-the steady-state rate looks valid. Ramp traffic gradually and obey
-`retry-after`.
+### Monthly spend caps
 
-## Token accounting
-
-For most models, input-token rate usage is:
-
-```text
-ITPM = input_tokens + cache_creation_input_tokens
-```
-
-`input_tokens` counts only content after the final cache breakpoint.
-Total input is:
-
-```text
-cache_read_input_tokens + cache_creation_input_tokens + input_tokens
-```
-
-Cache reads normally do not count against ITPM. Claude Haiku 3.5 is the
-exception and includes them.
-
-ITPM is estimated when a request starts and reconciled to actual input during
-processing. OTPM is charged in real time for generated tokens; the requested
-`max_tokens` does not reserve output capacity.
-
-## Shared and dedicated pools
-
-- Opus 4.5 through 4.8 share one combined Opus 4.x pool.
-- Sonnet 4.5 and 4.6 share one Sonnet 4.x pool.
-- Opus 5 and Sonnet 5 each have separate pools.
-- `inference_geo: "us"` and `"global"` use the same capacity.
-- Supported `speed: "fast"` calls use dedicated limits rather than the
-  standard Opus pool.
-
-A fast-pool throttle returns HTTP 429 with `retry-after`. Its state appears in
-`anthropic-fast-*` response headers.
-
-## Batch and agent pools
-
-Message Batches have a model-independent pool:
-
-- 1,000 API requests per minute.
-- Up to 200,000 constituent batch requests awaiting successful processing.
-- Up to 100,000 constituent requests in a single batch.
-
-Each constituent item, not only the enclosing batch, consumes queue capacity.
-
-Managed Agents have a separate organization-level pool: create operations are
-limited to 300 requests per minute, while retrieve, list, stream, and other
-read operations are limited to 1,200 requests per minute.
-
-## Spend caps
-
-Calendar-month standard caps are:
-
-| Tier | Cap |
+| Usage tier | Calendar-month API spend cap |
 | --- | ---: |
 | Start | $500 |
 | Build | $1,000 |
 | Scale | $200,000 |
 
-Reaching a cap pauses API use until the next month unless it is raised.
+Reaching the cap pauses API use until the next month unless it is raised.
 Custom-tier organizations have no standard monthly cap. Any organization may
-configure a lower self-imposed cap.
+set a lower self-imposed cap.
 
-## Workspace safeguards
+### AWS-billed tier handling
 
-A non-default workspace may set lower RPM, ITPM, OTPM, and spend ceilings.
-An unset workspace limit inherits the organization limit. Unused workspace
-capacity remains available to other workspaces.
+Claude Platform on AWS organizations begin on Start and do not automatically
+advance through usage tiers. Billing uses AWS Marketplace and spend limits are
+under Billing rather than Limits. Arrange higher limits through an account
+representative or support; the normal increase-request flow is unavailable.
 
-The default workspace cannot be capped. The organization ceiling still
-applies even if configured workspace limits sum to more than that ceiling.
+### Cache-aware token accounting
 
-## Response headers
+For most models, input TPM usage is
+`input_tokens + cache_creation_input_tokens`; cache reads are excluded.
+`input_tokens` is only content after the final breakpoint, while total input is
+`cache_read_input_tokens + cache_creation_input_tokens + input_tokens`. Haiku
+3.5 is the exception that also charges cache reads against input TPM.
 
-`retry-after` is the number of seconds before a retry can succeed.
+Input TPM is estimated at request start and corrected to actual input during
+processing. Output TPM is charged in real time for generated tokens; requested
+`max_tokens` does not reserve output capacity.
 
-The API also emits these rate-limit header families:
+### Shared model-family pools
+
+Most models have independent limits, with these shared or separate pools:
+
+- Opus 4.5 through 4.8 share one Opus 4.x pool.
+- Sonnet 4.5 and 4.6 share one Sonnet 4.x pool.
+- Opus 5 and Sonnet 5 each have separate pools.
+- `inference_geo: "us"` and `"global"` draw from the same capacity.
+
+### Message Batches and Managed Agents
+
+Message Batches have a model-independent pool of 1,000 API requests per minute,
+at most 200,000 constituent requests awaiting successful processing, and at
+most 100,000 constituent requests in one batch. Each constituent item occupies
+queue capacity, not just its enclosing batch.
+
+Managed Agents use a separate organization-level pool: create operations allow
+300 requests per minute, while retrieve, list, stream, and other read operations
+allow 1,200 requests per minute.
+
+### Dedicated fast-mode pool
+
+Supported `speed: "fast"` requests use a dedicated pool rather than the
+standard Opus pool. Throttling returns 429 plus `retry-after`; inspect the
+`anthropic-fast-*` response headers for pool state.
+
+### Workspace safeguards
+
+A non-default workspace can set lower RPM, input TPM, output TPM, and spend
+ceilings. An unset limiter inherits the organization limit. Unused workspace
+capacity remains available elsewhere. The Default Workspace cannot be capped,
+and organization limits still apply when configured workspace limits sum above
+them.
+
+### Response headers
+
+`retry-after` gives the seconds until a retry can succeed. The response also
+contains these families:
 
 ```text
-anthropic-ratelimit-requests-{limit|remaining|reset}
-anthropic-ratelimit-tokens-{limit|remaining|reset}
-anthropic-ratelimit-input-tokens-{limit|remaining|reset}
-anthropic-ratelimit-output-tokens-{limit|remaining|reset}
+anthropic-ratelimit-{requests|tokens|input-tokens|output-tokens}-{limit|remaining|reset}
 ```
 
-Reset values are RFC 3339 timestamps for full bucket replenishment. Remaining
-token values are rounded to the nearest thousand.
+Reset fields are RFC 3339 timestamps for full bucket replenishment. Remaining
+token counts are rounded to the nearest thousand.
+
+## Enterprise user administration
+
+Member, invite, group, and custom-role Admin API endpoints are generally
+available. Group and custom-role calls no longer require
+`ce-user-management-2026-07-13`; sending that beta header remains accepted.
+Member and invite calls likewise need no beta header.
+
+An Admin key with `read:org_audit` may call all user-management `GET` routes.
+Console-created API and Admin keys can have expiration dates. Existing keys are
+unchanged, keys lasting at least seven days trigger a pre-expiration email, and
+the Admin API reports the expiration.
+
+## Compliance transcripts
+
+Enterprise organizations can use an existing Compliance Access Key with
+`read:compliance_user_data` to list cloud Cowork sessions and retrieve their
+transcripts.
+
+```text
+GET /v1/compliance/apps/sessions/remote
+GET /v1/compliance/apps/sessions/remote/{session_id}/messages
+```
+
+Beta routes cover Cowork and Claude Code sessions run on user machines. The
+same key and scope can list organization-wide local sessions, retrieve session
+metadata, and fetch transcripts.
+
+```text
+GET /v1/compliance/apps/sessions/local
+GET /v1/compliance/apps/sessions/local/{session_id}
+GET /v1/compliance/apps/sessions/local/{session_id}/messages
+```

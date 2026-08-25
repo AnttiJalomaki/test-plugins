@@ -1,120 +1,51 @@
 # Tooling, build, release, and platform behavior
 
-## Shell and tracing
+## Native-code and dependency builds
 
-Since 28.1, a remote shell can exit by closing its input stream without
-terminating the remote node. The default tracer recognizes remote-shell use
-and sends trace output to the remote group leader.
+### Windows source-tree native loading (since 28.1)
 
-## Cross-reference analysis
+On Windows, NIFs and linked-in drivers can be loaded while Erlang runs in an Erlang source tree. Native-code build and test workflows can operate directly in that layout.
 
-In 29.0, `xref:analyze/2` adds the predefined analyses:
+### Embedded third-party selection (since 28.5)
 
-- `unsafe_function_calls`
-- `undocumented_function_calls`
-- `private_function_calls`
-
-`xref` applies `ignore_xref` declarations as a post-analysis filter instead
-of leaving that behavior to individual build tools.
-
-Since 29.0.2, a BEAM file with no debug information and
-`moduledoc(false)` causes `xref` to return an error rather than crash.
-Callers must handle the error result.
-
-## Testing and documentation
-
-### Common Test map rendering
-
-Since 28.1, Common Test prints map keys in the same order as
-`maps:iterator(Map, ordered)`. Update output comparisons and tools that
-consume rendered maps.
-
-### Documentation tests
-
-The `ct_doctest` module added in 29.0 runs shell-style examples from Erlang
-module documentation and documentation files, including examples whose
-expected result is failure. It can compile example modules for the test shell
-and supports pluggable parsers for formats such as EDoc and AsciiDoc.
-
-## ASN.1
-
-`public_key` 1.19 in 28.2 adds ASN.1 support for the Public-Key Infrastructure
-Certificate Management Protocol (PKICMP). When installing this as an
-individual application patch, first install the OpenSSL-backed `crypto`
-version shipped in 28.1.
-
-## Archive extraction
-
-Since 29.0, the `erl_tar` extraction option `{max_size, Size}` caps total
-extracted data so an archive cannot fill the destination unchecked. Symlink
-validation also accepts safe relative targets such as
-`dir/link -> ../file`, which earlier releases rejected.
-
-## Native code on Windows
-
-Since 28.1, NIFs and linked-in drivers can be loaded while Erlang runs inside
-an Erlang source tree on Windows. This enables native-code build and test
-workflows in that layout.
-
-OTP 29.0 no longer provides a 32-bit Erlang/OTP build for Windows. Move
-deployment and CI jobs to a supported architecture.
-
-## Emulator memory advice
-
-The 28.1 emulator flag `+Mumadtn <bool>` selects `MADV_DONTNEED` instead of
-`MADV_FREE`:
-
-```text
-erl +Mumadtn true
-```
-
-## Release artifacts
-
-Since 28.4, `make release` places only runtime code in the release directory.
-Generate the other artifacts separately:
-
-```text
-make release_docs
-make release_tests
-```
-
-## Embedded third-party implementations
-
-The 28.5 configure switch
-`--enable-use-embedded-3pp-alternatives` forces suitable external
-alternatives for affected embedded components.
-`--disable-use-embedded-3pp-alternatives` selects all bundled
-implementations. By default, bundled implementations are selected except
-that an available operating-system `zlib` is preferred.
+`--enable-use-embedded-3pp-alternatives` forces suitable external alternatives for affected embedded components; `--disable-use-embedded-3pp-alternatives` selects all bundled implementations. By default, bundled implementations are used except that an available OS `zlib` is preferred.
 
 ```text
 ./configure --enable-use-embedded-3pp-alternatives
 ```
 
-Affected components and requirements are:
+Affected components are `zstd`, `zlib`, Ryu with STL, OpenSSL, and Tcl. Alternatives require `zstd` 1.5.6 or newer, `zlib` 1.2.5 or newer, C++17 for Ryu, and glibc 2.32 `strerrorname_np()` for Tcl. OpenSSL needs no external replacement because OTP uses its own MD5 implementation. Inspect `erlang:system_info(embedded_3pps)` at runtime to see which embedded implementations are active.
 
-- `zstd`: external version 1.5.6 or newer;
-- `zlib`: external version 1.2.5 or newer;
-- Ryu with STL: a C++17 implementation;
-- Tcl: glibc 2.32 `strerrorname_np()`;
-- OpenSSL: no external replacement is needed because OTP uses its own MD5
-  implementation.
+## Release construction and platform support
 
-At runtime, `erlang:system_info(embedded_3pps)` returns a map identifying the
-embedded implementations in use.
+### Separate runtime, documentation, and tests (since 28.4)
+
+`make release` places only runtime code in the release directory. Generate the other artifacts with `make release_docs` and `make release_tests`.
+
+### Encrypted crash dumps (since 29.0)
+
+Configure Erlang/OTP with `--enable-encrypted-crash-dumps` to build runtime support for encrypted crash dumps.
+
+### End of 32-bit Windows builds (since 29.0)
+
+OTP no longer provides a 32-bit Erlang/OTP build for Windows.
+
+## Code loading, analysis, and documentation
+
+### Safer default code path (since 29.0)
+
+The current working directory (`.`) is last rather than first in the default code path. A local BEAM file does not shadow an OTP or application module unless the path is changed explicitly.
+
+### Documentation tests (since 29.0)
+
+`ct_doctest` runs shell-style examples from Erlang module documentation and documentation files, including expected failures. It can compile example modules for the test shell and accepts pluggable parsers for formats such as EDoc and AsciiDoc.
+
+### Controlled `xref` failure (since 29.0.2)
+
+When a BEAM file lacks debug information and has `moduledoc(false)`, `xref` returns an error instead of crashing. Callers must handle the error result.
 
 ## Supply-chain metadata
 
-Since 28.3, OTP publishes per-release OpenVEX statements at
-`https://erlang.org/download/vex/`, for example `otp-28.openvex.json`. They
-identify vendor CVEs that do not affect Erlang/OTP so scanners can suppress
-false positives. The SPDX 2.3 source SBOM links to the statement with a
-security external reference.
+### OpenVEX statements (since 28.3)
 
-## Crash dumps
-
-Since 29.0, encrypted crash-dump support can be compiled in with:
-
-```text
-./configure --enable-encrypted-crash-dumps
-```
+OTP publishes per-release OpenVEX statements under `https://erlang.org/download/vex/`, for example `otp-28.openvex.json`. They identify vendor CVEs that do not affect Erlang/OTP so scanners can suppress false positives. The SPDX 2.3 source SBOM links to them through a security external reference.

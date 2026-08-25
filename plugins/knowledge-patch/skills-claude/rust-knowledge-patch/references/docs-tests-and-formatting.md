@@ -1,68 +1,125 @@
 # Documentation, Tests, and Formatting
 
-Use this reference for rustdoc, doctest execution, libtest flags, rustfmt migration, and compiler-emitted path behavior. Edition-specific doctest aggregation and style-edition changes are in [edition-2024.md](edition-2024.md).
+## Doctest compilation and execution
 
-## Doctest target selection and execution
+### Combined edition-2024 doctests
 
-### Target-aware ignores
+Edition 2024 combines doctests into one executable. `1.85.0` accidentally fell
+back to separate compilation; `1.85.1` restores combining and can reveal tests
+that passed only in isolation.
 
-Rustdoc code blocks accept target-specific ignore attributes such as `ignore-x86_64` from 1.88.0. Use `ignore-*` only when the example truly cannot run for that target; keep ordinary `ignore` for examples that should never be tested.
+Use a `standalone_crate` code-fence tag when a doctest must be compiled as its
+own crate. Rustdoc already separates `compile_fail` and `edition*` tests,
+tests with crate-level attributes, and macros using `$crate`; it cannot detect
+code depending on its source line or generated module path. Run doctests after
+migration because `cargo fix --edition` does not edit them. Full migration
+details are in [edition-2024.md](edition-2024.md).
 
-### External run tools
+### Cross-target doctests
 
-Stable `--test-runtool` and `--test-runtool-arg` options select an external executable and arguments for running doctests from 1.88.0. This supports emulators such as QEMU without wrapping rustdoc itself.
+`doctest-xcompile` is stable from `1.89.0`. Consequently,
+`cargo test --doc --target <other>` runs doctests through the target's Cargo
+runner instead of silently skipping them.
 
-### Cross-compiled doctests
+From `1.88.0`, an `ignore-<target>` code-block info attribute skips a doctest
+on a matching target. Rustdoc also accepts `--test-runtool` and
+`--test-runtool-arg` to execute doctests through a wrapper such as qemu.
 
-`cargo test --doc --target <triple>` runs doctests from 1.89.0 instead of skipping them. Cargo uses the target's configured runner, so an upgrade can expose cross-target failures that were previously hidden.
+### Include paths in Markdown-backed docs
 
-The crate-level `#![doc(test(attr(...)))]` configuration is accepted on all targets from 1.89.0.
+For docs loaded with `#![doc = include_str!("../README.md")]`, edition-2024
+doctest calls to `include!`, `include_str!`, and `include_bytes!` resolve
+relative to the Markdown file rather than the Rust source. This is not
+automatically migrated.
 
-## Libtest command-line changes
+At the language level, `include!` in expression position no longer strips a
+leading shebang from the included file (`1.94.0`), so such an include may stop
+compiling.
 
-- Positional `--logfile` is deprecated from 1.86.0.
-- `--nocapture` is deprecated in favor of `--no-capture` from 1.88.0.
+## Test harness changes
 
-Update CI scripts before making warnings fatal.
+Libtest deprecates `--nocapture` in favor of `--no-capture` (`1.88.0`).
 
-## Rustdoc search
+`#[bench]` outside `#![feature(custom_test_frameworks)]` becomes a hard error in
+`1.88.0`. A meaningless `#[test]` placement, such as on a struct or trait
+method, becomes an error in `1.93.0`, including when rustdoc processes it.
 
-### Raw-pointer queries
+`#![reexport_test_harness_main]` was accidentally stable and is gated again in
+`1.96.0`.
 
-Type-based search accepts raw-pointer forms such as `*const u8 ->` from 1.91.0. Functions using raw pointers also display correct signatures in search results.
+## `cfg(test)` validation
 
-### Partial identifiers
+Rustc removes `test` from its built-in `--check-cfg` list in `1.85.0`.
+Tools invoking rustc directly must pass `--check-cfg=cfg(test)` to avoid
+`unexpected_cfgs` warnings. Cargo passes it unconditionally, so ordinary Cargo
+builds are unaffected.
 
-Search terms need only be valid as part of an identifier from 1.92.0, so a query may begin with a digit. When a trait item appears, corresponding impl items are hidden to leave space for more relevant inherent methods.
+## Procedural macro source locations
 
-## Rustdoc attributes and Markdown
+Stable `proc_macro::Span` source-location methods arrive in `1.88.0`:
 
-### Strict attribute validation
+- `line()` and `column()` return `usize`;
+- `start()` and `end()` return collapsed `Span` values rather than a stable
+  `LineColumn` type;
+- `file()` returns a rendered-path `String`;
+- `local_file()` returns `Option<PathBuf>` and is `None` when there is no real
+  local source, including remapped paths.
 
-`#![doc(document_private_items)]` was removed in 1.93.0. Missing, unexpected, or wrongly typed values for the following attributes trigger deny-by-default `rustdoc::invalid_doc_attributes`:
+These methods no longer require nightly or a `proc-macro2` fallback.
 
-- `html_favicon_url`
-- `html_logo_url`
-- `html_playground_url`
-- `issue_tracker_base_url`
-- `html_no_source`
+## Rustdoc attributes and output
 
-### Deprecation-note Markdown
+`#![doc(test(attr(...)))]` may be placed on a module rather than only the crate
+root from `1.89.0`, allowing scoped doctest attributes.
 
-Deprecation notes use ordinary Markdown rendering from 1.96.0 rather than special preformatted output. A multiline note may collapse onto one line; add the normal two trailing spaces before a newline when a forced line break is intended.
+From `1.93.0`, malformed crate-level attributes such as `html_logo_url` and
+`issue_tracker_base_url` trigger deny-by-default
+`rustdoc::invalid_doc_attributes`. `#![doc(document_private_items)]` is removed;
+use the CLI flag.
 
-## Rustdoc output and path remapping
+Rustdoc renders deprecation notes as ordinary Markdown from `1.96.0` rather
+than preformatted text. Multi-line notes may collapse onto one line unless the
+source ends lines with two spaces.
 
-Rustdoc stabilizes `--emit` and `--remap-path-prefix` in 1.97.0.
+Rustdoc stabilizes `--emit` and `--remap-path-prefix` in `1.97.0`.
 
-From 1.94.0, compiler-emitted paths preserve their original relative spelling and respect `--remap-path-prefix`. Cargo diagnostics for local path dependencies and workspace members therefore use relative rather than absolute paths. Do not write tooling that assumes diagnostics always carry absolute filesystem paths.
+## Compiler diagnostic paths
 
-`rustc --remap-path-scope` is separately stable from 1.95.0 and controls where remapping affects paths embedded in binaries.
+Diagnostic paths preserve their original relative or absolute form and honor
+`--remap-path-prefix` from `1.94.0`. Path dependencies and workspace members
+therefore appear as relative paths in downstream diagnostics where applicable;
+tools parsing compiler output must accept that change.
 
-## Point-release tool fixes
+Rustc `--remap-path-scope` (`1.95.0`) restricts prefix remapping to selected
+outputs such as `macro`, `diagnostics`, `debuginfo`, or `object`; the default
+remains all outputs.
 
-Rust 1.93.1 fixes a keyword-recovery compiler crash that particularly affected rustfmt and a false positive in `clippy::panicking_unwrap`. It also repairs the distributed `wasm32-wasip2` file-descriptor leak described in the target reference.
+## Rustfmt style editions
 
-## Rustfmt 2024 behavior
+Rustfmt's formatting style edition is independent of the language edition. It
+defaults to the crate edition and is configurable through `style_edition` in
+`rustfmt.toml` or `--style-edition`.
 
-Rustfmt's parsing edition and style edition can be selected independently. The 2024 style changes layout and import sorting intentionally; follow the migration guidance in [edition-2024.md](edition-2024.md) and isolate broad formatting churn when reviewing semantic changes.
+The 2024 style changes sorting of raw identifiers, identifiers with numbers,
+and `use` lists, plus block collapsing, tuple-field spacing, loop-closure
+braces, comment and generic indentation, blank lines in `where` clauses, and
+semicolons on control-flow expressions in match-arm blocks. Expect a broad
+format-only diff; exact migration examples are in
+[edition-2024.md](edition-2024.md).
+
+## Point-release fixes affecting tools
+
+- `1.93.1` fixes a parser ICE frequently triggered by rustfmt and a
+  `clippy::panicking_unwrap` false positive on field access through implicit
+  dereference.
+- `1.94.1` fixes a Clippy ICE in `match_same_arms` and removes methods that were
+  mistakenly added to the unsealed Windows `OpenOptionsExt` trait.
+
+## Output-sensitive behavior
+
+Raw-pointer `Debug` output includes pointer metadata from `1.87.0`, and format
+width and precision are capped at 16 bits. Snapshot tests relying on the old
+text must be updated.
+
+Linker stderr from successful links is visible through `linker_messages` from
+`1.97.0`; it is not escalated by `-Dwarnings` or Cargo `build.warnings`.

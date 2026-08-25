@@ -1,12 +1,15 @@
 # API and SDK Contracts
 
+Use this reference for public-client PKCE, the Python asynchronous client, Go
+package organization, and the published API specification.
+
 ## Node.js public-client PKCE
 
-Run the Node SDK without an API key in browser, mobile, and CLI clients by
-constructing `WorkOS` with only a client ID.
-`getAuthorizationUrlWithPKCE` returns both the authorization URL and verifier.
-Persist the verifier in secure platform storage so it survives application
-restarts, then supply it during the code exchange:
+Browser, mobile, and CLI clients can initialize `WorkOS` with only a client ID;
+they do not need to embed an API key. `getAuthorizationUrlWithPKCE` returns the
+authorization URL and verifier together. Store the verifier in secure
+platform-specific storage that survives restarts and provide it when exchanging
+the returned code.
 
 ```ts
 import { WorkOS } from '@workos-inc/node';
@@ -26,40 +29,30 @@ const tokens = await workos.userManagement.authenticateWithCode({
 });
 ```
 
-Confidential clients can use the same PKCE methods after constructing `WorkOS`
-with an API key. The code exchange then sends both the client secret and code
-verifier.
+Confidential clients may use the same methods after initializing WorkOS with an
+API key. Their code exchange sends both the client secret and verifier.
 
-## Python async client
+## Python asynchronous client
 
-Use `AsyncWorkOSClient` for the subset of Python SDK methods that supports
-`asyncio`. Configure it with the same API key and client ID as the synchronous
-client:
+`AsyncWorkOSClient` provides asyncio support for a subset of Python SDK
+methods. Configure it with the same API key and client ID used by the
+synchronous client.
 
 ```python
 from workos import AsyncWorkOSClient
 
 workos_client = AsyncWorkOSClient(
-    api_key="sk_1234",
-    client_id="client_1234",
+    api_key="sk_1234", client_id="client_1234"
 )
 ```
 
-Do not assume every synchronous SDK method has an asynchronous counterpart.
+## Go v6 packages
 
-## Go v6 package layout
-
-Import focused packages below `github.com/workos/workos-go/v6/pkg`, including:
-
-- `sso`;
-- `directorysync`;
-- `usermanagement`;
-- `auditlogs`;
-- `organizations`; and
-- `webhooks`.
-
-Each package exposes package-level functions backed by a default client and a
-`Client` type for custom configuration.
+The Go SDK is divided into focused packages beneath
+`github.com/workos/workos-go/v6/pkg`, including `sso`, `directorysync`,
+`usermanagement`, `auditlogs`, `organizations`, and `webhooks`. Each package
+offers package-level functions backed by a default client and a `Client` type
+for custom configuration.
 
 ```go
 package main
@@ -77,7 +70,7 @@ func main() {
 
 ## Published OpenAPI contract
 
-Use the OpenAPI 3.1.1 YAML contract at `spec/open-api-spec.yaml` in the
-`workos/openapi-spec` repository when generating clients or validating raw API
-requests. The repository's `scripts/postman` tooling generates Postman
-collections from that specification.
+The API contract is an OpenAPI 3.1.1 YAML document at
+`spec/open-api-spec.yaml` in the `workos/openapi-spec` repository. That
+repository also provides `scripts/postman` tooling to generate Postman
+collections from the specification.

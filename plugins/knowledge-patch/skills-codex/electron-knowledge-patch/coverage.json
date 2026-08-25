@@ -2,7 +2,7 @@
   "patch": "electron-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T04:38:07Z",
+  "built_at": "2026-08-21T03:52:09Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -59,6 +59,11 @@
     },
     "breaking-changes": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "41.10.5-43.4.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

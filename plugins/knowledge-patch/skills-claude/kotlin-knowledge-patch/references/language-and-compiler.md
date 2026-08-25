@@ -1,17 +1,19 @@
 # Language and compiler
 
-## Context parameters and resolution
+The guidance from `2.2-language-guide`, `2.2-tooling-guide`, `2.3-language-guide`, and `2.3-tooling-guide` is organized here by migration task. Patch-specific compiler, reflection, metadata, and scripting repairs from `2.3.0` and `2.4.10` are included where they affect diagnosis.
 
-### Declaration constraints
+## Context parameters
 
-Context parameters can be declared only on functions and whole properties, not constructors or classes. A contextual property has no backing field, so it needs an accessor and cannot have an initializer or delegate; `_` declares a value usable for context resolution but not by name.
+### Declarations and function types
+
+Context receivers are no longer supported as of Kotlin 2.3.20. Rewrite them as context parameters. They can appear only on functions and whole properties, not constructors or classes. A contextual property has no backing field, initializer, or delegate and therefore needs an accessor. Use `_` when a value participates in resolution but must not be available by name.
 
 ```kotlin
 context(users: UserRepository)
 val firstUser: User? get() = users.getById(1)
 ```
 
-Context function types contain types but no parameter names. Contextual values in a lambda are anonymous and can be retrieved with `implicit<T>()`:
+Context function types contain only types, not parameter names. Retrieve an anonymous contextual value inside a lambda with `implicit<T>()`:
 
 ```kotlin
 fun <R> withLogger(logger: Logger, block: context(Logger) () -> R): R =
@@ -22,45 +24,23 @@ val task: context(Logger) () -> Unit = {
 }
 ```
 
-A call must find exactly one compatible contextual value at the nearest scope level. Same-level matches produce an ambiguity, and `@DslMarker` restrictions apply to context parameters as well as receivers.
+Resolution selects exactly one compatible contextual value at the nearest scope level. Multiple same-level candidates are ambiguous, and `@DslMarker` restrictions apply to context parameters as well as receivers. Since 2.3.20, an otherwise matching contextual overload is not more specific than a non-contextual overload; a call can become ambiguous, and a shadowed contextual declaration produces a warning.
 
-A callable reference eagerly resolves and captures its context where the reference is created, so its resulting function type has no context parameters. Reflection identifies context values as `KParameter.Kind.CONTEXT_PARAMETER`. JVM declarations encode them before an extension receiver and ordinary value parameters.
+Callable references eagerly resolve and capture their context at creation, so the resulting function type has no context parameters. Reflection exposes each context parameter as `KParameter.Kind.CONTEXT_PARAMETER`. On the JVM, context parameters precede the extension receiver and ordinary parameters in the method ABI.
 
-The former Experimental context-receiver feature is no longer supported in 2.3.20; migrate declarations to context parameters. An overload with context parameters is no longer considered more specific than an otherwise matching overload without them. Calls that previously selected the contextual declaration can become ambiguous, and the compiler warns when such a declaration is shadowed.
+## Context-sensitive resolution and destructuring
 
-### Context-sensitive resolution
-
-With `-Xcontext-sensitive-resolution`, enum entries and sealed members can omit their type qualifier when an expected type comes from a `when` subject, declaration, parameter, return type, check, or cast. The initial preview does not resolve functions, properties with parameters, or extension properties this way.
+With `-Xcontext-sensitive-resolution`, enum entries and sealed members may omit their type qualifier when an expected type comes from a `when` subject, declaration, parameter, return type, type check, or cast. Functions, parameterized properties, and extension properties are not resolved this way. The later preview also looks in sealed and enclosing supertypes of the expected type, but not arbitrary supertype scopes; type operators and equality expressions warn when clashing declarations make lookup ambiguous.
 
 ```kotlin
 val problem: Problem = CONNECTION
-fun label(p: Problem) = when (p) { CONNECTION -> "network"; else -> "other" }
+fun label(p: Problem) = when (p) {
+    CONNECTION -> "network"
+    else -> "other"
+}
 ```
 
-The expanded lookup includes sealed and enclosing supertypes of the expected type, but no other supertype scopes. Type operators and equality expressions warn when a clashing declaration makes the result ambiguous.
-
-## Language features and previews
-
-### Stable syntax and control flow
-
-Nested type aliases and data-flow-based exhaustiveness checks for `when` expressions are Stable. `return` statements in expression-bodied functions with an explicit return type are enabled by default:
-
-```kotlin
-fun valueOrZero(value: Int?): Int = value ?: return 0
-```
-
-The same expression-body construct without an explicit return type is headed for deprecation. Before stabilization, `-Xdata-flow-based-exhaustiveness` allowed prior checks and early returns to satisfy later `when` cases without a redundant `else`.
-
-When choosing between overloads accepting `() -> T` and `suspend () -> T`, an untyped lambda selects the non-suspending overload under the 2.3 semantics. Write `suspend { ... }` to select the suspending overload. Kotlin 2.2.20 can preview the behavior with `-language-version 2.3`.
-
-```kotlin
-transform { 42 }
-transform(suspend { 42 })
-```
-
-### Experimental name-based destructuring
-
-`-Xname-based-destructuring=only-syntax` enables explicit bindings from variables to property names without changing positional destructuring. `name-mismatch` instead warns about mismatched data-class property and variable names. `complete` makes the parenthesized short form name-based and uses square brackets for positional destructuring.
+Name-based destructuring remains experimental. `-Xname-based-destructuring=only-syntax` enables explicit variable-to-property bindings while retaining existing positional destructuring. `name-mismatch` warns when data-class property and variable names differ. `complete` makes the short parenthesized form name-based and reserves square brackets for positional destructuring.
 
 ```kotlin
 data class User(val username: String, val email: String)
@@ -69,9 +49,84 @@ val user = User("alice", "alice@example.com")
 val [username, email] = user
 ```
 
-### Explicit backing fields
+## Function bodies, overloads, catches, and contracts
 
-With `-Xexplicit-backing-fields`, a public property's storage can have a narrower implementation type without a separate private property. Code in the same private scope sees the implementation type through the property and can smart-cast it automatically.
+With language version 2.3, an untyped lambda passed to overloads accepting `() -> T` and `suspend () -> T` selects the non-suspending overload. Use `suspend { ... }` to select the suspending overload. Kotlin 2.2.20 can preview this with `-language-version 2.3`.
+
+```kotlin
+transform { 42 }
+transform(suspend { 42 })
+```
+
+Returns inside expression-bodied functions are stable when the function declares its return type. The same construct without an explicit return type is headed for deprecation.
+
+```kotlin
+fun valueOrZero(value: Int?): Int = value ?: return 0
+```
+
+Data-flow-based exhaustiveness for `when` is stable. Earlier builds need `-Xdata-flow-based-exhaustiveness`; the compiler can then use prior checks and early returns instead of demanding a redundant `else`.
+
+`-Xallow-reified-type-in-catch` permits an inline function to catch `reified T : Throwable`; it was experimental in 2.2.20 and planned as a default for 2.4.
+
+Extended contracts can assert generic types and appear in accessors and selected operators with `-Xallow-contracts-on-more-functions`. `returnsNotNull()` requires `-Xallow-condition-implies-returns-contracts`; `condition holdsIn block` requires `-Xallow-holdsin-contract`. The latter two also require `ExperimentalExtendedContracts`.
+
+A lambda used as a parameter's default value cannot contain a non-local `return`. Move that return logic outside the default expression.
+
+## Annotation targets, metadata, and JVM exposure
+
+`-Xannotation-target-all` enables `@all:Ann`, propagating an annotation to each applicable constructor parameter, Kotlin property, backing field, getter, setter parameter, and JVM record component. Independently, `-Xannotation-default-target=param-property` applies an unqualified annotation to `param` where possible and also to `property`, or to `field` when no property target applies. Use `first-only` for the old behavior.
+
+```kotlin
+@JvmRecord
+data class Person(@all:Positive val age: Int)
+```
+
+`-Xannotations-in-metadata` stores declaration, accessor, receiver, backing-field, delegate-field, and enum-entry annotations in Kotlin metadata. Consumers read them through experimental `Km*.annotations` APIs and should tolerate annotation data before writing becomes the default. Kotlin 2.3.21 also exposes compiler-plugin metadata through `CompilerPluginData` in the `kotlinx-metadata` Km API.
+
+Use `@JvmExposeBoxed` for Java-callable boxed constructors or function variants involving inline value classes; `-Xjvm-expose-boxed` applies it to a whole module without changing Kotlin's internal unboxed use.
+
+Annotated JVM lambdas now use `LambdaMetafactory` by default. Reflection cannot assume annotations live on a generated lambda class; `-Xindy-allow-annotated-lambdas=false` temporarily restores class-based generation.
+
+The stable `-jvm-default` option replaces `-Xjvm-default`. Its `enable` default emits interface defaults with compatibility bridges and `DefaultImpls`; `no-compatibility` emits only interface defaults, while `disable` restores `DefaultImpls`-only output.
+
+Top-level lambdas now share the type-checking rules used for call-argument lambdas, which can change reflection-visible generic signatures.
+
+## Source checks and removed forms
+
+K2 reports errors when:
+
+- An inferred generic expression type exposes a type available only through an indirect dependency. Add the direct dependency.
+- A declaration's type-parameter bound is less visible than the declaration.
+- A non-private inline declaration refers to private types or members. Align visibility; simply removing `inline` changes the binary API.
+- A type alias with variance such as `out` is used for a constructor call or supertype. Use the expanded type. `reified` on a type-alias parameter is also rejected.
+- A nullable type introduced through a type alias is used as a supertype.
+- A reified parameter is inferred as an intersection type.
+- `@JvmSerializableLambda` is applied to an `inline` or `crossinline` lambda.
+- A generic Kotlin interface is delegated to a Java implementation whose override is non-generic.
+
+Kotlin 2.3.0 promoted inferred type arguments violating upper bounds from warning to error, including inference involving aliases. Kotlin 2.3.21 rolled that check back temporarily, so successful compilation there is not a final migration check.
+
+Synthetic property syntax is not created for getters declared in Kotlin, including through Java subclasses or mapped types; call the getter. Callable references to Java synthetic properties are a revoked language feature and must not be used in new code.
+
+Boxed inline value classes no longer pass `is` or `as` checks for `java.lang.Number` or `java.lang.Comparable` solely because the underlying primitive does.
+
+The compiler rejects `-language-version=1.6` and `1.7`; 2.2 warns for 1.8 and 1.9. Kotlin 2.3 rejects 1.8 everywhere and 1.9 on non-JVM platforms, while JVM compilation retains 1.9 support. K1 is deprecated; migrate remaining K1 selections to K2.
+
+JSpecify nullness support is finalized. When an upgrade changes enhanced Java nullability behavior, verify whether a patch release repairs a compiler regression before weakening annotations.
+
+## Return-value checking and explicit backing fields
+
+`-Xreturn-value-checker=check` warns for discarded non-`Unit`, non-`Nothing` results from marked APIs and scopes, including most standard-library functions. `full` treats project files as marked. Express policy with `@MustUseReturnValues` or `@IgnorableReturnValue`; write `val _ = call()` for an intentional discard.
+
+```kotlin
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xreturn-value-checker=check")
+    }
+}
+```
+
+With `-Xexplicit-backing-fields`, a public property can expose a stable interface while storing a narrower type. Code in the same private scope sees the implementation type and can smart-cast it.
 
 ```kotlin
 val city: StateFlow<String>
@@ -80,137 +135,32 @@ val city: StateFlow<String>
 fun updateCity(value: String) { city.value = value }
 ```
 
-### Reified catches and extended contracts
+Use experimental per-diagnostic control as `-Xwarning-level=DIAGNOSTIC_NAME:error|warning|disabled`. It overrides global `-Werror`, `-nowarn`, or `-Wextra` for that diagnostic.
 
-`-Xallow-reified-type-in-catch` permits an inline function to catch its `reified T : Throwable` directly. It is experimental in 2.2.20 and planned to become default in 2.4.
+## JVM interop diagnostics
 
-```kotlin
-inline fun <reified T : Throwable> runCatchingOnly(block: () -> Unit) {
-    try { block() } catch (error: T) { println(error.message) }
-}
-```
+Kotlin can target Java 25 bytecode. The JPA plugin now combines `no-arg` and `all-open`, opening `javax.persistence` and `jakarta.persistence` entities, embeddables, and mapped superclasses; Maven's `kotlin-maven-noarg` also brings in `kotlin-maven-allopen`.
 
-Experimental contracts can assert generic types and appear in property accessors and selected operators with `-Xallow-contracts-on-more-functions`. `returnsNotNull()` uses `-Xallow-condition-implies-returns-contracts`; `condition holdsIn block` uses `-Xallow-holdsin-contract`. The latter two forms also require `ExperimentalExtendedContracts`.
+Vert.x `io.vertx.codegen.annotations.Nullable` is recognized, with mismatches warned by default. Promote it to strict with `-Xnullability-annotations=@io.vertx.codegen.annotations:strict`.
 
-## Diagnostics and API intent
+Java APIs annotated `org.jetbrains.annotations.Unmodifiable` or `UnmodifiableView` map to read-only Kotlin collection types. Assignment to a mutable collection warns in 2.3.20 and is planned to become an error in 2.5.0.
 
-### Return-value checking
+## Scripting and command-line behavior
 
-The Experimental checker warns when a non-`Unit`, non-`Nothing` result is discarded. `-Xreturn-value-checker=check` checks marked APIs and scopes, including most standard-library functions, while `full` treats project files as marked. Use `@MustUseReturnValues`, `@IgnorableReturnValue`, or `val _ = call()` to control it.
+The `kotlinc` REPL requires `-Xrepl`. JSR-223 remains restricted to language version 1.9 and is not migrating to K2. Maven `KotlinScriptMojo` is deprecated.
 
-```kotlin
-kotlin {
-    compilerOptions { freeCompilerArgs.add("-Xreturn-value-checker=check") }
-}
-```
+Kotlin 2.1.21 restores dependency resolution in `main.kts` after the 2.1.20 regression. Kotlin 2.3.21 corrects `scriptCompilationClasspathFromContext`, anonymous-object scratch-script backend failures, destructuring code generation, and missing `ScriptDiagnostic` source locations.
 
-Serialization 1.10 marks its APIs for this checker, so ignoring a result such as `Json.encodeToString(...)` can warn.
+Kotlin 2.4.10 restores `@file:CompilerOptions("-jvm-target", ...)` in `.main.kts` instead of silently using JVM 1.8, and fixes K2 `FirResolvedTypeRef` failures for extension functions imported from other scripts.
 
-### Per-diagnostic severity
+The Kotlin distribution includes the `kotlinr` command starting in 2.4.10.
 
-The Experimental `-Xwarning-level=DIAGNOSTIC_NAME:(error|warning|disabled)` option overrides `-Werror`, `-nowarn`, or `-Wextra` for one warning. For example, use `-Werror -Xwarning-level=DEPRECATION:warning`.
+## Patch-upgrade diagnostics
 
-### Java nullability and mutability annotations
+Prefer an upgrade to Kotlin 2.3.10 over source workarounds for instability involving enhanced Java nullability, overload resolution, `UInt` constants throwing `ClassCastException`, JSpecify `@NullMarked` conflicts on `equals(Any?)`, incorrect `@NoInfer`, a serialization-plugin race registering Protobuf extensions, or `NoWhenBranchMatchedException` after a `!is` check through a non-sealed intermediate type.
 
-JSpecify compiler support is finalized. The JVM compiler also recognizes Vert.x `io.vertx.codegen.annotations.Nullable` and reports mismatches as warnings by default. Promote them to errors with:
+Kotlin 2.3.10 also repairs `KotlinReflectionInternalError` for references to `FunctionN.invoke` and type parameters in generic supertypes, plus incorrect `KType` argument comparisons when a type parameter is `Nothing`.
 
-```kotlin
-freeCompilerArgs.add("-Xnullability-annotations=@io.vertx.codegen.annotations:strict")
-```
+Kotlin 2.3.21 fixes common `@JvmRecord` metadata compilation when `java.lang.Record` is inaccessible and removes a false `SUBCLASS_CANT_CALL_COMPANION_PROTECTED_NON_STATIC` diagnostic in multi-module projects.
 
-Java declarations marked `org.jetbrains.annotations.Unmodifiable` or `UnmodifiableView` return read-only Kotlin collection types. Assigning such a result to a mutable collection warns in 2.3.20 and is scheduled to become an error in 2.5.0.
-
-## Annotations and metadata
-
-### Property annotation propagation
-
-`-Xannotation-target-all` enables `@all:Ann`, which propagates to each applicable constructor parameter, Kotlin property, backing field, getter, setter parameter, and JVM record component. Separately, `-Xannotation-default-target=param-property` applies an unqualified annotation to `param` when possible and also to `property`, or to `field` when no property target applies. Use `first-only` to retain the old behavior.
-
-```kotlin
-@JvmRecord
-data class Person(@all:Positive val age: Int)
-```
-
-### Annotations in Kotlin metadata
-
-`-Xannotations-in-metadata` writes declaration, accessor, receiver, backing-field, delegate-field, and enum-entry annotations into Kotlin metadata. Consumers use the Experimental `Km*.annotations` APIs under `@OptIn(ExperimentalAnnotationsInMetadata::class)` and should tolerate the data before metadata annotation writing becomes the default.
-
-Kotlin 2.3.21 adds `CompilerPluginData` to the `kotlinx-metadata` Km API, exposing compiler-plugin data to metadata consumers.
-
-## JVM generation and Java interop
-
-### Interface defaults
-
-The stable `-jvm-default` option replaces `-Xjvm-default` and defaults to `enable`, generating interface defaults plus compatibility bridges and `DefaultImpls`. `no-compatibility` emits only interface defaults, while `disable` restores the old `DefaultImpls`-only scheme.
-
-```kotlin
-kotlin { compilerOptions { jvmDefault = JvmDefaultMode.NO_COMPATIBILITY } }
-```
-
-### Boxed entry points for inline value classes
-
-`@JvmExposeBoxed` generates Java-callable boxed constructors or boxed variants of annotated functions involving inline value classes; `-Xjvm-expose-boxed` applies it module-wide. It adds Java entry points without changing Kotlin's internal unboxed use.
-
-```kotlin
-@JvmExposeBoxed
-@JvmInline
-value class UserId(val value: Int)
-```
-
-Boxed inline value classes no longer incorrectly pass `is` or `as` checks for `java.lang.Number` or `java.lang.Comparable` merely because their underlying primitive does.
-
-### Lambda bytecode and signatures
-
-Annotated JVM lambdas use `invokedynamic` through `LambdaMetafactory` by default, so reflection code cannot rely on annotations living on a generated lambda class. Temporarily restore class-based generation with `-Xindy-allow-annotated-lambdas=false`.
-
-Top-level lambdas now use the same type-checking logic as lambdas passed as call arguments, which can change reflection-visible generic signatures. Applying `@JvmSerializableLambda` to an `inline` or `crossinline` lambda is an error because those lambdas are not serializable.
-
-The compiler can generate Java 25 bytecode. Common `@JvmRecord` declarations compile as metadata again in Kotlin 2.3.21 after `compileCommonMainKotlinMetadata` failed because `java.lang.Record` was inaccessible. That patch also removes a false `SUBCLASS_CANT_CALL_COMPANION_PROTECTED_NON_STATIC` error in multi-module projects.
-
-### JPA openness
-
-`kotlin.plugin.jpa` applies both the existing `no-arg` preset and the `all-open` JPA preset. `javax.persistence` and `jakarta.persistence` entities, embeddables, and mapped superclasses are therefore automatically open for lazy associations. Maven's `kotlin-maven-noarg` dependency includes `kotlin-maven-allopen` implicitly.
-
-## Tightened and removed behavior
-
-### Type aliases and inference
-
-K2 rejects constructor calls and supertypes through aliases whose expansion contains variance such as `out`; use the expanded type directly. It also rejects the ineffective `reified` modifier on type-alias parameters. Inheriting from a nullable type introduced through a type alias is an error, and a reified type parameter may no longer be inferred as an intersection type.
-
-Kotlin 2.3.0 changed an implicitly inferred type argument that violated an upper bound into an error, including inference through aliases. Kotlin 2.3.21 postponed that enforcement, so successful compilation on the patch does not establish future compatibility.
-
-### Visibility and dependency checks
-
-K2 errors when generic expression types expose types available only through indirect dependencies, when a declaration's type-parameter bound is less visible than the declaration, or when a non-private inline function refers to private types or members. Add the direct dependency or align visibility; removing `inline` is a binary-incompatible alternative.
-
-### Corrected callable and delegation behavior
-
-Synthetic property syntax is no longer created from getters declared in Kotlin, including through Java subclasses or mapped types; call the getter explicitly. Callable references to Java synthetic properties are a Revoked feature and should not be used in new code.
-
-Kotlin can no longer delegate a generic interface to a Java class whose implementation supplies a non-generic override. Such delegation fails at compile time instead of risking a runtime `ClassCastException`.
-
-A lambda used as a parameter's default value may not contain a non-local `return`; move the return logic outside the default expression. Kotlin 2.2.21 also corrects erroneous `NON_PUBLIC_CALL_FROM_PUBLIC_INLINE` diagnostics for `@PublishedApi` fun interfaces.
-
-### Language-version support
-
-The compiler rejects `-language-version=1.6` and 1.7 and warns for 1.8 and 1.9 under the earlier transition. Kotlin 2.3 rejects `-language-version=1.8` on every platform and `-language-version=1.9` on non-JVM platforms; JVM compilation retains 1.9 support.
-
-K1 is deprecated. Migrate projects that still select it to K2. IntelliJ IDEA 2025.1 enables K2 analysis by default.
-
-### Scripting changes
-
-The `kotlinc` REPL requires `-Xrepl`. JSR-223 remains available only with language version 1.9 and is not moving to K2, while Maven `KotlinScriptMojo` is deprecated.
-
-Kotlin 2.3.21 repairs the `scriptCompilationClasspathFromContext` behavior change introduced in 2.3.20, JVM backend failures for scratch scripts with anonymous objects, code-generation failures around destructuring declarations, and missing source locations in `ScriptDiagnostic` errors. Kotlin 2.1.21 repairs `main.kts` dependency resolution after a 2.1.20 regression.
-
-## Patch-sensitive compiler and reflection fixes
-
-Kotlin 2.2.10 repairs several 2.2.0 regressions that can require a patch upgrade rather than a source change: Android dexing null-field failures, duplicate `DebugMetadata` on JVM-default suspend interface methods, an Xcode 16.3/iOS 15.5-simulator linker failure, and Apple Watch `SIGABRT` crashes.
-
-Upgrade from Kotlin 2.3.0 when compilation is unstable around enhanced Java nullability or overload resolution, `UInt` constants trigger `ClassCastException`, JSpecify `@NullMarked` causes an `equals(Any?)` override conflict, or `@NoInfer` behaves incorrectly. Kotlin 2.3.10 also fixes a serialization-plugin race around Protobuf extension registration and `NoWhenBranchMatchedException` from a `when` with a `!is` check and a non-sealed intermediate class.
-
-Kotlin 2.3.10 fixes `KotlinReflectionInternalError` involving references to `FunctionN.invoke` and type parameters in generic supertypes, plus incorrect `KType` argument comparisons when a type parameter is `Nothing`.
-
-## Batch attributions
-
-Relevant versioned extraction batches: `2.1.20-guide`, `2.1.20`, `2.2-language-guide`, `2.2-tooling-guide`, `2.2.0`, `2.3-language-guide`, `2.3-tooling-guide`, and `2.3.0`.
+Kotlin 2.4.10 fixes a JVM backend `IllegalStateException` when a nested Java annotation-array argument uses a `const val`, and restores expected-type propagation into reified inline calls inside a lambda with an Elvis expression.

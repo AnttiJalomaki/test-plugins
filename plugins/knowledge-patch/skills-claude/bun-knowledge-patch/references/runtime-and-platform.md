@@ -1,602 +1,433 @@
 # Runtime APIs and platforms
 
-Use this reference for runtime behavior, processes, data formats, terminal APIs, profiling, language features, native interfaces, scheduling, and platform support.
+## CLI and process configuration
 
-Entries are grouped by developer task. When entries describe evolving behavior, the later attribution supersedes earlier defaults or limitations.
+### Command behavior (`1.2-guide`, `1.2.4`)
 
-## Runtime and CLI behavior
+- `bun run <script>` changes cwd to the directory containing `package.json`,
+  matching npm and Yarn rather than the invoking shell.
+- `bun -p` is `--print`, not `--port`.
+- Under `-p`/`-e`, `process.argv` omits the old cwd `[eval]` slot and keeps the
+  first user argument.
+- `test.only()` no longer needs a CLI `--only`; testing details are separate.
 
-### Eval and print argument layout *(since 1.2.4)*
+### Global runtime options (`1.2.11`, `1.2.15`)
 
-`bun --eval` and `bun --print` no longer insert a synthetic `[eval]` path into `process.argv`. The executable is followed directly by user arguments, matching Node.js.
-
-```sh
-bun --print "process.argv" arg1 arg2
-# ["/path/to/bun", "arg1", "arg2"]
-```
-
-### Preloading through the environment *(since 1.2.11)*
-
-`BUN_INSPECT_PRELOAD` specifies a module to load before the entry script and is equivalent to passing `--preload`.
+`BUN_INSPECT_PRELOAD` is the environment equivalent of `--preload`.
+`BUN_OPTIONS` parses shell-like quoting and prepends its flags to every Bun
+invocation.
 
 ```sh
 BUN_INSPECT_PRELOAD=./setup.js bun run index.js
+BUN_OPTIONS="--config='./my config.toml' --silent" bun run app.ts
 ```
 
-### Process-wide CLI options *(since 1.2.15)*
+### Environment loading (`1.3.3`, `1.4-2`)
 
-`BUN_OPTIONS` supplies persistent arguments to every Bun command without changing scripts or `bunfig.toml`. Its value follows shell-like quoting rules and is prepended to the explicit command-line arguments.
+`--no-env-file` and bunfig `env = false` disable implicit `.env` discovery but
+do not prevent explicitly named `--env-file` files.
 
-```sh
-BUN_OPTIONS="--config='./my config.toml' --silent" bun run dev.ts
-```
+When Bun is acting as Node through `bun --bun`, `bunx --bun`, or a `node`
+symlink, it does not auto-load `.env`, `.env.local`, or environment-specific
+files. A normal `bun file.js` still does.
 
-### Disabling automatic `.env` loading *(since 1.3.3)*
+### Rejection and warning modes (`1.2.17`, `1.4-3`)
 
-`bun run --no-env-file` skips Bun's default `.env` discovery, and root-level `env = false` in `bunfig.toml` makes that behavior persistent. Files explicitly supplied with `--env-file` are still loaded.
+`--unhandled-rejections` accepts `throw`, `strict`, `warn`, and `none`; Bun's
+default remains different from Node's warning mode. `rejectionHandled` events
+work. Warning flags for suppression, stack traces, redirects, and disabling
+selected warnings are wired up.
 
-```sh
-bun run --no-env-file index.ts
-```
+### Inspection depth and CPU profiling (`1.2.19`, `1.3.2`, `1.3.9`, `1.4`)
 
-```toml
-env = false
-```
+- `--console-depth=N` or `[run] console.depth` sets object inspection depth;
+  default is 2 and CLI wins.
+- `--cpu-prof`, optional name/directory, writes Chrome `.cpuprofile` at 1ms
+  sampling. `--cpu-prof-interval` changes microseconds.
+- `--cpu-prof-md` can add a Markdown form.
+- `BUN_CPU_PROFILE=1` enables profiling when command flags cannot be changed.
 
-## Processes, resources, and event-loop behavior
+### Heap profiling (`1.3.7`, `1.3.10`)
 
-### Explicit resource management *(1.2-guide)*
+`--heap-prof` emits V8-compatible snapshots with name/directory controls;
+`--heap-prof-md` adds Markdown. `Bun.generateHeapSnapshot("v8",
+"arraybuffer")` returns UTF-8 JSON bytes without large-string limits and can be
+passed directly to `Bun.write()`.
 
-Bun supports `using`/`await using` and implements disposal for APIs including `Bun.spawn()`, `Bun.serve()`, `Bun.connect()`, `Bun.listen()`, and `bun:sqlite`. Those resources are closed at scope exit even when an exception is thrown.
+### REPL (`1.3.7`, `1.3.10`, `1.4-2`)
 
-### Automatic file-writer flushing *(since 1.2.2)*
+`Bun.Transpiler({ replMode: true })` preserves declarations between inputs,
+turns const into redeclarable let, captures the trailing value, interprets an
+object literal correctly, and switches to async for top-level await.
 
-Pending writes from `Bun.file(path).writer()` are now flushed automatically before the process exits. An explicit `flush()` is no longer required solely to ensure queued writes reach the filesystem at shutdown.
+`bun repl` is native and provides `_`, `_error`, copy/load/save/editor/clear,
+completion, and persistent history. `bun repl -e` evaluates; `-p` evaluates and
+prints. `bun --interactive` enters the ported Node REPL (`1.4-3`).
 
-### Spawn timeouts *(since 1.2.6)*
+## Files, blobs, streams, and globs
 
-The `timeout` option for spawned processes terminates a command after the specified milliseconds; synchronous results expose `exitedDueToTimeout` so callers can distinguish this exit path.
+### Bun file operations (`1.2-guide`, `1.2.2`, `1.2.3`)
+
+`Bun.file()` supports `delete`/`unlink`, Node-style `stat`, and `bytes`; bytes
+also exist on Response and Blob. File writers flush pending bytes at process
+exit. Ending a writer created from a caller-owned file descriptor does not close
+that descriptor.
+
+### Blob mutation errors (`1.2.20`)
+
+Calling write, writer, unlink, or delete on a byte-backed Blob throws rather
+than silently doing nothing. Those operations are for file-backed blobs.
+
+### Direct streams and sink backpressure (`1.4-4`)
+
+For `ReadableStream` with `type: "direct"`, controller `write()` returns a
+negative number under backpressure; `await flush(true)` waits for drain. Data
+written after a flush in `pull()` reaches pipeTo, pipeThrough, tee, async
+iteration and `Response.textStream()`. `FileSink.write()` may return a promise.
 
 ```ts
-const result = Bun.spawnSync({ cmd: ["sleep", "1000"], timeout: 1_000 });
-console.log(result.exitedDueToTimeout); // true
-```
-
-### `Bun.write()` destination behavior *(since 1.2.8)*
-
-`Bun.write(path, "")` now creates missing parent directories even when the content is empty. Conversely, a `Blob` backed by a `Buffer` or `TypedArray` is read-only as a destination, and attempting to write to it throws.
-
-```ts
-await Bun.write("./new/directory/empty.txt", "");
-```
-
-### Subprocess output limits *(since 1.2.9)*
-
-`maxBuffer` caps subprocess output in bytes and kills the process when the cap is exceeded. It works with `Bun.spawn()`, `Bun.spawnSync()`, `node:child_process.spawn()`, and `node:child_process.spawnSync()`.
-
-```ts
-const result = Bun.spawnSync({ cmd: ["yes"], maxBuffer: 100 });
-```
-
-### Configurable unhandled rejections *(since 1.2.17)*
-
-The Node-compatible `--unhandled-rejections` flag accepts `throw`, `strict`, `warn`, and `none`; Bun also emits the `process` `rejectionHandled` event when a previously unhandled promise later gains a handler.
-
-```sh
-bun --unhandled-rejections=warn app.ts
-```
-
-### Direct `ReadableStream` consumption and subprocess input *(since 1.2.18)*
-
-`ReadableStream` now directly provides async `.text()`, `.json()`, `.bytes()`, and `.blob()` methods. `Bun.spawn()` also accepts a `ReadableStream` as `stdin`, allowing input to be piped without buffering it first.
-
-```ts
-const input = new Blob(["hello"]).stream();
-const child = Bun.spawn({ cmd: ["cat"], stdin: input, stdout: "pipe" });
-console.log(await child.stdout.text());
-```
-
-### Synchronous subprocess isolation *(since 1.3.2)*
-
-`Bun.spawnSync()` and `child_process.spawnSync()` now run on an event loop isolated from the rest of the process. JavaScript timers and microtasks no longer fire during the blocking call, bringing stdio interaction and timeout behavior in line with Node.js.
-
-### Subprocess option typings *(since 1.3.2)*
-
-The subprocess declarations now expose the runtime-supported `detached`, `onDisconnect`, and `lazy` options; `lazy` defers stdout and stderr reads until accessed. Common option shapes use `Bun.Spawn.BaseOptions`, and the older `Bun.Spawn.OptionsObject` alias is deprecated.
-
-```ts
-const child = Bun.spawn({
-  cmd: ["worker"],
-  detached: true,
-  lazy: true,
-  onDisconnect() {},
-});
-```
-
-### Pseudo-terminal subprocesses *(since 1.3.5)*
-
-`Bun.spawn()` accepts a `terminal` option that attaches a real PTY, so interactive programs see TTY streams and can use prompts, colors, and cursor control. The spawned process exposes the terminal for input, resizing, raw-mode control, event-loop ref control, and closing; PTY support is limited to Linux and macOS.
-
-```ts
-const proc = Bun.spawn(["bash"], {
-  terminal: {
-    cols: 80,
-    rows: 24,
-    data(_terminal, data) {
-      process.stdout.write(data);
-    },
+new ReadableStream({
+  type: "direct",
+  async pull(controller) {
+    if (controller.write(chunk) < 0) await controller.flush(true);
   },
 });
-
-proc.terminal.write("echo hello\n");
-proc.terminal.resize(100, 30);
-await proc.exited;
-proc.terminal.close();
 ```
 
-A standalone `new Bun.Terminal()` can instead be passed to multiple sequential subprocesses; it supports `await using` for automatic disposal.
+### Text streams (`1.4`)
 
-### Parent-death process cleanup *(since 1.3.14)*
+`Response.textStream()` returns a UTF-8 `ReadableStream<string>`.
 
-`--no-orphans` makes Bun exit when its parent dies, even from `SIGKILL`, and recursively kills its own descendants on exit; nested Bun processes inherit the mode. It is available on Linux and macOS, is a no-op on Windows, and can also be set with `[run] noOrphans = true` or `BUN_FEATURE_FLAG_NO_ORPHANS=1`.
+### `Bun.Glob` semantics (`1.4-4`)
 
-```sh
-bun --no-orphans run app.ts
-```
+Literal dot segments such as `.env` match without `dot: true`, and literal
+segments traverse a symlinked directory without `followSymlinks: true`.
+Wildcard patterns that assumed dotfiles were hidden can return more results.
 
-### In-place process replacement *(since 1.3.14)*
+### Memory mapping (`1.4-2`)
 
-The POSIX-only `process.execve(execPath, args, env)` replaces the current process image and never returns on success, preserving standard streams while marking other descriptors close-on-exec. It emits an experimental warning and is unavailable in workers and on Windows.
+`Bun.mmap(path, { offset })` returns a view whose index zero is exactly that
+offset. Remove page-offset compensation used for the previous rounded view.
 
-```ts
-process.execve("/usr/bin/echo", ["echo", "hello"], {
-  PATH: process.env.PATH,
-});
-```
+## Subprocesses and terminals
 
-## Terminal, console, and REPL APIs
+### Timeouts, limits, and streaming (`1.2.6`, `1.2.9`, `1.2.18`)
 
-### TTY streams after standard input closes *(since 1.2.22)*
+- Bun spawn/sync accepts `timeout` in milliseconds and reports
+  `exitedDueToTimeout`.
+- `maxBuffer` kills a child once buffered output exceeds the byte limit.
+- `stdin` accepts a ReadableStream and streams without full buffering.
 
-After piped `stdin` reaches EOF, an application can open and read `/dev/tty` without an `ESPIPE` error, enabling the usual pipe-then-interact TUI pattern. `tty.ReadStream` also supports `ref()` and `unref()` for event-loop control.
+### Argument validation (`1.3.6`, `1.4-2`)
 
-### Windows terminal resize events *(since 1.3.3)*
+NUL bytes in spawn arguments, environment values, and shell template literals
+are rejected. Bun.spawn also rejects `timeout: NaN`, signal zero, NUL in
+`argv0`/`cwd`, and an already-aborted signal without creating a process.
 
-On Windows, `process.stdout` now emits `resize` events and Bun delivers `SIGWINCH`, allowing terminal applications to use the same resize handling as on other platforms.
+### PTY API (`1.3.5`, `1.3.14`)
 
-```ts
-process.stdout.on("resize", () => console.log(process.stdout.columns));
-```
+`Bun.spawn({ terminal })` attaches a pseudo-terminal. `proc.terminal` supports
+write, resize, raw mode, ref/unref, and close. A standalone disposable
+`Bun.Terminal` may be reused across spawns.
 
-### JSON console formatting *(since 1.3.4)*
+The API was POSIX-only when introduced and later gained Windows ConPTY. On
+Windows terminal flag fields read zero and ignore writes, there is no unattached
+kernel echo, and equivalent escape output may not be byte-identical.
 
-`console.log()` and related console methods now support Node-compatible `%j` formatting, which JSON-stringifies the corresponding value.
+### Stdio slots and path lookup (`1.4-4`)
 
-```js
-console.log("%j", { status: "ok" }); // {"status":"ok"}
-```
+`Bun.file(path|fd)` works in `stdio[3+]`, and caller descriptors are returned in
+`proc.stdio[N]`. `"ignore"` above fd 2 closes the descriptor rather than opening
+`/dev/null`. `spawnSync` honors detached. Relative PATH entries resolve against
+the spawn `cwd`, not the parent cwd.
 
-### Unicode-accurate terminal widths *(since 1.3.5)*
+### Cgroups and orphan control (`1.3.14`, `1.4`)
 
-`Bun.stringWidth()` now treats additional Unicode formatting and combining characters as zero-width, ignores complete CSI and OSC escape sequences, and measures emoji by grapheme rather than code point. Flags, skin-tone sequences, ZWJ emoji, keycaps, and variation selectors therefore produce terminal-cell widths rather than inflated component totals.
+`--no-orphans`, bunfig `run.noOrphans`, or
+`BUN_FEATURE_FLAG_NO_ORPHANS=1` exits when the parent dies and SIGKILLs all
+descendants. It is inherited on Linux/macOS and a no-op on Windows.
 
-```ts
-Bun.stringWidth("🇺🇸"); // 2
-Bun.stringWidth("👋🏽"); // 2
-Bun.stringWidth("👨‍👩‍👧"); // 2
-Bun.stringWidth("\u2060"); // 0
-```
+`Bun.spawn({ cgroup })` places a Linux child into a cgroup before execution.
 
-### Native REPL interface *(since 1.3.10)*
+## Shell
 
-Bun's REPL is now built in rather than downloaded as a third-party package. Its terminal UI adds persistent history in `~/.bun_repl_history`, tab completion, multiline editing, syntax highlighting, Emacs-style line editing, `.copy`/`.load`/`.save`/`.editor` commands, and `_`/`_error` values for the last result and error.
+### Shell typing and glob rules (`1.2.11`, `1.4-2`)
 
-### ANSI- and grapheme-aware string slicing *(since 1.3.11)*
+`Bun.$` is both a value and a type. Shell glob expansion applies only to literal
+`*`, `**`, and braces. Patterns from interpolation, variables, substitution, or
+quotes are literal; `?`, brackets, and leading `!` never expand.
 
-`Bun.sliceAnsi()` slices by terminal columns while preserving SGR styles, OSC 8 hyperlinks, and whole grapheme clusters. It supports negative indices, an optional truncation marker, and `{ ambiguousIsNarrow }` width handling consistent with `Bun.stringWidth()` and `Bun.wrapAnsi()`.
+### Builtins (`1.3.10`, `1.4-4`)
 
-```ts
-Bun.sliceAnsi("\x1b[31mhello\x1b[39m", 1, 4); // styled "ell"
-Bun.sliceAnsi("unicorn", 0, 4, "…");           // "uni…"
-Bun.sliceAnsi("unicorn", -4, undefined, "…"); // "…orn"
-```
+Shell `echo` parses `-e`, `-E`, and combined flags. `.quiet()` takes a boolean,
+bare `cd` uses HOME, `ls -l` emits a long listing, and empty interpolated
+arguments survive. `{abc}` without a comma is literal; a redirect target
+expanding to several words is an error.
 
-### Windows pseudo-terminals *(since 1.3.14)*
+### Print completion (`1.4-3`)
 
-`Bun.Terminal` and `Bun.spawn({ terminal })` now work on Windows through ConPTY, including TTY detection, input, output callbacks, and resizing. POSIX termios flags remain zero-valued no-ops there, and ConPTY output may use escape sequences that are semantically equivalent but not byte-identical to the child's output.
+`bun -p '(await 1) + 1'` prints the module's final completion value rather than
+the first awaited value.
 
-## Data formats, compression, text, and media
+## Built-in data formats
 
-### `TextDecoder` compatibility *(since 1.2.12)*
+### YAML (`1.2.21`, `1.2.22`, `1.2.23`, `1.3.5`, `1.4-2`)
 
-Encoding labels now follow WHATWG behavior: labels containing null bytes throw, and `encoding` returns the normalized name for every supported encoding. The `fatal` option also uses normal boolean coercion instead of requiring a literal boolean.
+`.yaml`/`.yml` imports and `Bun.YAML.parse()` provide parsed values. Stringify
+is supported, and parse accepts Buffer, ArrayBuffer, typed arrays, DataView, and
+Blob. Invalid input produces `SyntaxError`; NUL input is rejected.
 
-```js
-new TextDecoder("utf-8\0"); // throws RangeError
-new TextDecoder("utf-16be").encoding; // "utf-16be"
-new TextDecoder("utf-8", { fatal: 1 }).fatal; // true
-```
+YAML follows 1.2 booleans: yes/no/on/off/y variants are strings and only
+true/false are booleans. Stringify quotes colon-ending strings for round trips.
 
-### Zstandard compression *(since 1.2.14)*
+### JSONC (`1.3.6`, `1.4-2`)
 
-`fetch()` now advertises `gzip, deflate, br, zstd` by default and transparently decompresses `Content-Encoding: zstd` responses. Bun also provides synchronous and asynchronous Zstandard helpers.
+`Bun.JSONC.parse()` accepts comments and trailing commas. Invalid input and an
+empty string throw `SyntaxError`; the empty string no longer returns `{}`.
 
-```ts
-const compressed = Bun.zstdCompressSync("hello world", { level: 5 });
-const restored = Bun.zstdDecompressSync(compressed);
-const asyncCompressed = await Bun.zstdCompress("hello world");
-const asyncRestored = await Bun.zstdDecompress(asyncCompressed);
-```
+### JSON5 (`1.3.7`)
 
-### Native YAML imports and parsing *(since 1.2.21)*
+`Bun.JSON5.parse/stringify` and `.json5` imports cover comments, trailing
+commas, unquoted keys, single quotes and hexadecimal numbers.
 
-`.yaml` and `.yml` files can be default-imported as parsed data, while `Bun.YAML.parse()` parses YAML strings at runtime.
+### JSON Lines (`1.3.7`)
 
-```ts
-import config from "./config.yaml";
-import { YAML } from "bun";
-const items = YAML.parse("- one\n- two");
-```
+`Bun.JSONL.parse()` consumes a string or Uint8Array, skipping a UTF-8 BOM.
+`parseChunk()` returns values plus consumed-character `read`, `done`, and error,
+allowing the incomplete suffix to carry to the next chunk.
 
-### YAML serialization and binary parsing *(since 1.2.22)*
+### XML and TOML (`1.4`, `1.4-2`)
 
-`Bun.YAML.stringify()` serializes JavaScript values to YAML. `Bun.YAML.parse()` now also accepts `Buffer`, `ArrayBuffer`, typed arrays, `DataView`, and `Blob` input.
+`Bun.XML` parses/serializes and `.xml` imports parse directly. `Bun.TOML`
+tracks TOML 1.1.0 and stringifies.
 
-```ts
-const text = Bun.YAML.stringify({ enabled: true });
-const value = Bun.YAML.parse(new TextEncoder().encode(text));
-```
+TOML parsing and bunfig are strict: unquoted strings, missing newlines between
+pairs, and unsafe integers throw `SyntaxError` rather than `BuildMessage`.
 
-### Streaming compression Web APIs *(since 1.3.3)*
+## Markdown and terminal text
 
-Bun now implements `CompressionStream` and `DecompressionStream`, allowing data to be compressed through `ReadableStream` pipelines without buffering the full payload. In addition to `gzip`, `deflate`, and `deflate-raw`, Bun accepts `brotli` and `zstd`.
+### Width and ANSI removal (`1.2.21`, `1.3.5`, `1.3.7`)
 
-```ts
-const input = new Blob(["payload"]).stream();
-const compressed = input.pipeThrough(new CompressionStream("zstd"));
-const output = compressed.pipeThrough(new DecompressionStream("zstd"));
-console.log(await new Response(output).text()); // "payload"
-```
+`Bun.stripANSI()` removes escapes. `Bun.stringWidth()` is grapheme-aware: emoji
+sequences count as width 2, zero-width characters as 0, and CSI/OSC—including
+OSC 8 links—are excluded. Indic conjunct GB9c handling counts one cluster.
 
-### Tar archives with `Bun.Archive` *(since 1.3.6)*
+### ANSI wrapping and slicing (`1.3.7`, `1.3.11`)
 
-`Bun.Archive` creates and reads tar archives from file maps, blobs, typed arrays, or array buffers. It can list entries with an optional glob, extract to disk, emit bytes or a blob, and gzip output at levels 1–12; an archive can be passed directly to `Bun.write()` for local or S3 output.
+`Bun.wrapAnsi(text, columns, options)` wraps without breaking escapes,
+hyperlinks, wide characters, or emoji. `Bun.sliceAnsi` slices by display
+columns, supports negative indices and optional ellipsis, retains styles, and
+places the ellipsis outside links.
 
-```ts
-const archive = new Bun.Archive(
-  { "hello.txt": "Hello" },
-  { compress: "gzip", level: 6 },
-);
-await Bun.write("bundle.tar.gz", archive);
-await new Bun.Archive(await Bun.file("input.tar.gz").bytes()).extract("./out");
-```
+### Markdown parser (`1.3.8`)
 
-### Native JSONC parsing *(since 1.3.6)*
+`Bun.markdown.html()` renders CommonMark with GFM tables, strikethrough, task
+lists, and autolinks enabled; wiki links, math, heading IDs and linked headings
+are optional.
 
-`Bun.JSONC.parse()` accepts line and block comments plus trailing commas, so JSONC configuration files no longer need a third-party parser.
+`render()` calls user handlers per element with rendered children and metadata;
+return `null` to omit an element. `react()` returns a Fragment in React 19
+format and accepts component overrides or `reactVersion: 18`.
 
-```ts
-const config = Bun.JSONC.parse(`{
-  // Local service
-  "port": 3000,
-}`);
-```
+### List callback change (`1.3.11`)
 
-### Native JSON5 parsing and imports *(since 1.3.7)*
+`listItem` always receives metadata, not only for task items. It contains index,
+depth, ordered, start, and checked with undefined where irrelevant; `list` also
+gets depth.
 
-`Bun.JSON5` provides `parse()` and `stringify()`, and `.json5` files can be imported directly.
+### ANSI Markdown (`1.3.12`)
 
-```ts
-const config = Bun.JSON5.parse(`{ host: 'localhost', port: 5432, }`);
-import settings from "./config.json5";
-```
+`Bun.markdown.ansi()` supports colors, hyperlinks, wrapping columns and Kitty
+images. Running `bun ./README.md` prints ANSI without starting the JS VM.
 
-### Complete and streaming JSONL parsing *(since 1.3.7)*
+## Scheduling and browser automation
 
-`Bun.JSONL.parse()` parses a complete JSONL string or `Uint8Array`. `parseChunk()` returns complete `values`, the consumed `read` offset, a `done` flag, and any `error`, so callers can retain an incomplete suffix between chunks.
+### OS-level cron (`1.3.11`)
 
-```ts
-const values = Bun.JSONL.parse('{"id":1}\n{"id":2}\n');
-let buffer = '{"id":3}\n{"id":4';
-const { values: ready, read, done, error } = Bun.JSONL.parseChunk(buffer);
-buffer = buffer.slice(read);
-```
+`Bun.cron(path, expression, title)` registers crontab, launchd, or Task
+Scheduler work and calls the default export's `scheduled()` when fired.
+Re-registering a title replaces it; `Bun.cron.remove(title)` removes it.
 
-### Built-in Markdown-to-HTML rendering *(since 1.3.8)*
+`Bun.cron.parse()` handles five-field expressions, names, standard nicknames,
+Sunday 7, and POSIX day-of-month/day-of-week OR semantics; it returns the next
+Date or null when none appears in roughly four years.
 
-`Bun.markdown.html()` parses CommonMark and returns HTML. GFM tables, strikethrough, task lists, and permissive autolinks are enabled by default; additional options include `wikiLinks`, `latexMath`, `headingIds`, and `autolinkHeadings`.
+### In-process cron (`1.3.12`, `1.4-2`)
 
-```ts
-const html = Bun.markdown.html("## Hello", { headingIds: true });
-// '<h2 id="hello">Hello</h2>\n'
-```
+`Bun.cron(schedule, callback)` keeps state in-process, never overlaps runs, and
+reschedules after handlers settle. It is disposable, ref-counted, and cleared
+before hot reload. Sync errors emit uncaughtException; async errors emit
+unhandledRejection and exit without a listener.
 
-### Callback-driven Markdown rendering *(since 1.3.8)*
+Both parse and in-process scheduling now use the process's local time zone.
+Pass `{ tz: "UTC" }` as the final argument for UTC. OS-level jobs continue to
+follow system local time.
 
-`Bun.markdown.render()` invokes callbacks for Markdown elements, passing rendered children and element metadata such as a heading's level. Callbacks can produce custom markup or terminal text, and returning `null` omits an element.
+### WebView (`1.3.12`)
 
-```ts
-const output = Bun.markdown.render("# Title\n\nHello **world**", {
-  heading: (children, { level }) => `<h${level}>${children}</h${level}>`,
-  paragraph: (children) => `<p>${children}</p>`,
-  strong: (children) => `<b>${children}</b>`,
-  image: () => null,
-});
-```
+`Bun.WebView` exposes Playwright-style navigation, evaluation, screenshots,
+native click/type/press/scroll, history/reload/resize, and raw CDP. Selectors
+auto-wait for actionability and input is trusted OS input.
 
-### React elements from Markdown *(since 1.3.8)*
+The method surface is `navigate`, `evaluate`, `screenshot({ format, quality,
+encoding })`, coordinate- or selector-based `click`, `type`, `press` with
+modifiers, `scroll`, `scrollTo`, `goBack`, `goForward`, `reload`, `resize`, and
+`cdp`. `url`, `title`, and `loading` expose state.
 
-`Bun.markdown.react()` returns a React Fragment and accepts element overrides such as `h1`. Its default element format targets React 19; pass `reactVersion: 18` when using React 18 or older.
+Backends are macOS WKWebView or Chrome/Chromium over CDP. Constructor options
+select backend/path/args, console capture, and persistent data store. Chrome
+events are MessageEvents containing params. One browser process is shared and
+additional views open tabs. Instances are disposable.
 
-```tsx
-function Markdown({ text }: { text: string }) {
-  return Bun.markdown.react(text, {
-    h1: ({ children }) => <h1 className="title">{children}</h1>,
-  });
-}
-```
+## Runtime utility APIs
 
-### Markdown list callback metadata *(since 1.3.11)*
+### CSRF (`1.2.5`, `1.4-2`)
 
-`Bun.markdown.render()` now always passes `listItem` callbacks metadata containing zero-based `index`, `depth`, `ordered`, `start`, and `checked`; `list` callbacks now receive `depth`. Always passing the `listItem` metadata object is a breaking change for callbacks that depended on it being absent outside task lists.
+`Bun.CSRF.generate()` and `verify()` provide tokens. Both accept a `sessionId`
+binding through HMAC associated data; verification fails closed when only one
+side supplies it.
 
-```ts
-Bun.markdown.render(markdown, {
-  listItem: (children, { index, depth, ordered, start, checked }) => children,
-  list: (children, { depth }) => children,
-});
-```
+### Color, DNS, inspection, and IDs (`1.2-guide`)
 
-### ANSI Markdown rendering *(since 1.3.12)*
+- `Bun.color(input, format)` converts to CSS, ANSI, ANSI-16m/256, number, or
+  RGBA-object forms.
+- `Bun.dns.prefetch()` warms DNS and `getCacheStats()` reports cache metrics.
+- `Bun.inspect.table(rows)` returns the console-table string.
+- `Bun.randomUUIDv7()` generates sortable UUIDs.
 
-Running `bun ./file.md` renders a Markdown file directly to terminal-friendly ANSI output. `Bun.markdown.ansi()` provides the same rendering programmatically, with controls for colors, hyperlinks, wrapping width, and Kitty-protocol inline images.
+UUIDv7 now throws RangeError after 2^48 milliseconds and for NaN, invalid, or
+pre-1970 dates (`1.4-2`). `Bun.color`, Cookie Expires serialization, and
+FileSystemRouter match output also changed; update exact-output assertions.
 
-```ts
-const output = Bun.markdown.ansi("# Status\n\n[Details](https://example.com)", {
-  columns: 60,
-  hyperlinks: true,
-});
-process.stdout.write(output);
-```
+### Import attributes (`1.2-guide`)
 
-### Built-in image processing *(since 1.3.14)*
+Bun accepts `with { type: "text" }` and `with { type: "toml" }` alongside JSON.
 
-`Bun.Image` is a chainable image pipeline accepting paths, typed buffers, blobs, `BunFile`/`S3File`, and data URLs; it can resize, rotate, flip, modulate, encode, inspect metadata, generate thumbhash placeholders, and write or return body-compatible output. JPEG, PNG, WebP, GIF, and BMP work on every platform, while TIFF, HEIC, and AVIF rely on macOS or Windows system codecs, with AVIF encoding on macOS limited to Apple Silicon.
+### Resource disposal (`1.2-guide`, `1.3-guide`)
 
-```ts
-return new Response(
-  Bun.file("photo.jpg").image().resize(200).webp({ quality: 85 }),
-);
-```
+`using` works with serve, spawn, connect, listen, and sqlite.
+`DisposableStack` and `AsyncDisposableStack` dispose several resources and
+collect disposal errors before rethrowing.
 
-## Diagnostics and profiling
+### Hashes and strings (`1.2.16`)
 
-### Configurable console inspection depth *(since 1.2.19)*
+`Bun.hash.rapidhash(input)` returns a non-cryptographic bigint hash.
 
-`--console-depth=N` controls how deeply `console.log` inspects nested objects; `[run] console.depth` persists the setting in `bunfig.toml`, while the CLI flag takes precedence. The default remains `2`.
+### Native compression (`1.2.14`)
 
-```toml
-[run]
-console.depth = 4
-```
+`Bun.zstdCompressSync`/`zstdDecompressSync` and async variants provide zstd
+outside Fetch or node:zlib.
 
-### Async stack traces *(since 1.2.22)*
+### Archive and image APIs
 
-Error stack traces now retain the asynchronous `await` call chain leading to a throw instead of showing only the final synchronous frame. This makes the originating path visible without changing application code.
+`Bun.Archive` (`1.3.6`) and `Bun.Image` (`1.3.14`) are described in
+[databases and storage](databases-and-storage.md) because they directly consume
+files, blobs, and S3 handles.
 
-### CPU profiling *(since 1.3.2)*
+## FFI and native extensions
 
-`--cpu-prof` writes a Chrome DevTools-compatible `.cpuprofile` that can also be opened in VS Code. `--cpu-prof-name` selects its filename and `--cpu-prof-dir` selects its output directory.
+### Inline C and native plugins (`1.2-guide`, `1.3.7`)
 
-```sh
-bun --cpu-prof --cpu-prof-dir ./profiles --cpu-prof-name app.cpuprofile app.ts
-```
+`cc()` from `bun:ffi` compiles C source and exposes declared symbols without
+node-gyp. N-API arg/return kinds are available there. It honors
+`C_INCLUDE_PATH` and `LIBRARY_PATH` for non-FHS systems.
 
-### Markdown CPU profiles *(since 1.3.7)*
+### JavaScriptCore FFI (`1.4`)
 
-`--cpu-prof-md` writes a Markdown CPU profile with hot functions, call trees, caller/callee details, and per-file time. It can be used alone or alongside `--cpu-prof`, and honors `--cpu-prof-name` and `--cpu-prof-dir`.
+The FFI backend is JavaScriptCore's native FFI rather than TinyCC, and hot calls
+can become direct C calls. `buffer_length` passes a typed-array length alongside
+its pointer by passing the same value twice. `returns: "cstring"` yields a
+plain string or null.
 
-### Heap profiling *(since 1.3.7)*
+### CString and JIT constraints (`1.4-2`)
 
-`--heap-prof` writes a V8-compatible `.heapsnapshot`, while `--heap-prof-md` emits a searchable Markdown report with retained sizes, object listings, and retainer chains. Use `--heap-prof-name` and `--heap-prof-dir` to control the output.
+`new CString(ptr)` returns a plain string with no pointer, byteLength, or
+arrayBuffer; retain the original pointer when freeing memory. `napi_env` and
+`napi_value` types throw outside `cc()`, and `dlopen()` throws with JIT disabled.
+Shared libraries embedded into a compiled binary can be opened (`1.4-3`).
 
-### Configurable CPU profiling interval *(since 1.3.9)*
+## Signals, errors, and runtime semantics
 
-`--cpu-prof-interval` sets the CPU profiler sampling interval in microseconds; it defaults to 1000 and warns unless `--cpu-prof` or `--cpu-prof-md` is also enabled.
+### Linux user signal (`1.2.2`)
 
-```sh
-bun --cpu-prof --cpu-prof-interval 500 index.js
-```
+JavaScriptCore uses SIGPWR for GC suspension, leaving SIGUSR1 available to
+applications. Do not take over SIGPWR.
 
-### Array-buffer heap snapshots *(since 1.3.10)*
+### Async stacks (`1.3-guide`)
 
-`Bun.generateHeapSnapshot("v8", "arraybuffer")` returns the snapshot's UTF-8 JSON as an `ArrayBuffer`, avoiding the size and conversion costs of the string result and allowing it to be written directly.
+Async call chains appear in rejection stacks through `at async` caller frames,
+changing logs and parsers.
 
-```ts
-const snapshot = Bun.generateHeapSnapshot("v8", "arraybuffer");
-await Bun.write("heap.heapsnapshot", snapshot);
-```
+### Error types and strict values (`1.2.20`, `1.4-2`)
 
-### Async stacks from native APIs *(since 1.3.12)*
+- `Bun.resolve` and resolveSync always throw Error objects.
+- `Response.redirect()` throws RangeError for an invalid status.
+- Environment values longer than 4096 bytes are no longer truncated.
+- Callback exceptions in fs, DNS and `crypto.pbkdf2` surface as
+  uncaughtException rather than unhandledRejection.
+- X509 serial numbers, legacy modulus, and peer-certificate hex are uppercase.
+- Argon2 `Bun.password.hash()` requires `memoryCost >= 8`; existing lower-cost
+  hashes still verify.
 
-Failures from native APIs such as `node:fs`, `node:http`, `node:dns`, and `Bun.write()` now retain the asynchronous JavaScript call chain. `Error.captureStackTrace()` also includes async frames.
+### Temporal (`1.4-2`)
 
-## Language, Web APIs, and type declarations
+Temporal and `Date.prototype.toTemporalInstant` are defined by default;
+`BUN_JSC_useTemporal=0` disables them.
 
-### New JavaScript built-ins *(1.2-guide)*
+### Windows console signals (`1.3.14`)
 
-Bun now implements `Promise.withResolvers()`, `Promise.try()`, `Error.isError()`, `Float16Array`, and iterator helpers `map`, `flatMap`, `filter`, `take`, `drop`, `reduce`, `toArray`, `forEach`, and `find`. `Uint8Array` also gains static `fromBase64()`/`fromHex()` and instance `toBase64()`/`toHex()` conversions.
+SIGHUP and SIGBREAK listeners receive Windows console close/break events rather
+than acting as inert EventEmitter names.
 
-### New Web API coverage *(1.2-guide)*
+### Memory pressure (`1.4`)
 
-Newly supported APIs include `TextDecoderStream`, `TextEncoderStream`, streaming `TextDecoder.decode(..., { stream: true })`, `URL.createObjectURL()` for blobs, `AbortSignal.any()`, and functional `console.group()`/`groupEnd()`. `Response`, `Blob`, and `Bun.file()` gain `bytes()` returning `Uint8Array`, while `fetch()` request bodies can be async iterables for streaming uploads.
+`process` emits `memoryPressure` for OS low-memory notifications. Levels are
+warning/critical on macOS and critical elsewhere, allowing caches and idle pools
+to be released before termination.
 
-### Environment and DOM-free TypeScript declarations *(since 1.2.8)*
+## Platform support and deployment
 
-An augmentation of `Bun.Env` now applies to `process.env` as well, keeping custom environment-variable types consistent across both access paths. The ambient definitions for `AbortSignal`, `BroadcastChannel`, and `URLSearchParams` also work when `lib.dom` is omitted.
+### Linux and containers (`1.2-guide`, `1.2.10`, `1.3.12`, `1.4-2`)
 
-### `Bun.$` as a TypeScript type *(since 1.2.11)*
+- musl/Alpine x64 and aarch64 builds ship through `oven/bun:alpine`; they are
+  slightly slower than glibc.
+- Docker images moved from Debian Bullseye to Bookworm.
+- Linux CPU-count APIs and Bun thread pools honor cgroup quotas.
+- The glibc minimum is 2.17, with a kernel 3.10 fallback controlled by
+  `BUN_FEATURE_FLAG_DISABLE_MEMFD`. x64 releases are baseline-only, though old
+  baseline artifact names resolve.
 
-The shell API can now be named directly as the type of a configured shell instance.
+### Windows, FreeBSD, and Android (`1.2.20`, `1.3.10`, `1.3.14`, `1.4-2`)
 
-```ts
-class Wrapper {
-  shell: Bun.$ = Bun.$.nothrow();
-}
-```
+Windows supports paths longer than 260 characters and native ARM64. First-party
+FreeBSD x86_64/aarch64 builds support the full runtime on 14.3+, and Android
+builds are experimental. Bun works in Windows AppContainer and read-only
+directories.
 
-### Precise numeric summation *(since 1.2.18)*
+### Runtime implementation (`release-index`)
 
-Bun now implements the Stage 3 `Math.sumPrecise()` API, which sums numeric iterables with substantially better floating-point accuracy than a naive reduction.
+Bun's source and contributor toolchain are Rust rather than Zig. This does not
+change JavaScript APIs or the N-API ABI used by addons written in Zig, C, or
+Rust, but Bun-internal advice based on a Zig source tree is stale.
 
-```js
-Math.sumPrecise([0.1, 0.2, 0.3, -0.5, 0.1]); // 0.2
-```
+### Vercel (`release-index`)
 
-### Concrete DOM-free global typings *(since 1.2.19)*
+Vercel Functions can select Bun as the runtime and use Bun-specific APIs such as
+file, serve, and sqlite without reshaping the application for Node.
 
-When TypeScript's `dom` library is absent, the global `EventSource` and `Performance` declarations now extend their concrete Node-compatible types instead of becoming empty interfaces.
+### Slow-filesystem warning (`1.4-4`)
 
-### Disposable stack globals *(1.3-guide)*
+Set `BUN_DISABLE_SLOW_FILESYSTEM_WARNING=1` to suppress the notice.
 
-`DisposableStack` and `AsyncDisposableStack` collect multiple disposable resources and clean all of them up together. Cleanup continues through failures, with collected errors rethrown after every resource has been attempted.
+## Additional behavior changes
 
-```js
-const stack = new DisposableStack();
-stack.use({
-  [Symbol.dispose]() {
-    console.log("cleanup");
-  },
-});
-stack.dispose();
-```
-
-### Type environment auto-detection *(1.3-guide)*
-
-`@types/bun` now selects Node.js or DOM types from the project's enabled libraries to reduce conflicts. When DOM types are enabled they take precedence, so Bun-specific extensions such as extra `WebSocket` constructor options may still produce type errors.
-
-### `URLPattern` Web API *(since 1.3.4)*
-
-Bun now provides the `URLPattern` Web API for declarative URL matching. It supports string or `URLPatternInit` inputs, `test()`, `exec()`, component properties, named and wildcard groups, and `hasRegExpGroups`.
-
-```ts
-const pattern = new URLPattern({ pathname: "/users/:id" });
-const match = pattern.exec("https://example.com/users/123");
-console.log(match?.pathname.groups.id); // "123"
-```
-
-## Native interfaces and WebAssembly
-
-### Compile C through `bun:ffi` *(1.2-guide)*
-
-The experimental `cc()` API compiles C on demand with Bun's embedded compiler and exposes declared symbols without a separate build step. Its symbol descriptors specify argument and return FFI types, including N-API types.
-
-```ts
-import { cc } from "bun:ffi";
-const { symbols: { random } } = cc({
-  source: "./random.c",
-  symbols: { random: { args: [], returns: "int" } },
-});
-```
-
-### Streaming WebAssembly compilation *(since 1.2.20)*
-
-`WebAssembly.compileStreaming()` and `WebAssembly.instantiateStreaming()` now compile directly from a response body instead of first buffering the complete Wasm module.
-
-```js
-const { instance } = await WebAssembly.instantiateStreaming(
-  fetch("http://localhost:3000/add.wasm"),
-);
-```
-
-### FFI compiler search paths *(since 1.3.7)*
-
-The C compiler used by `bun:ffi` now honors `C_INCLUDE_PATH` and `LIBRARY_PATH`, enabling headers and libraries in nonstandard layouts such as Nix store paths.
-
-### Expanded WebAssembly proposals *(since 1.3.14)*
-
-The runtime now supports Relaxed SIMD instructions, and Memory64 support extends to atomics, bulk-memory operations, memory growth, and memory-size queries.
-
-## Scheduling and operating-system services
-
-### Native operating-system credential storage *(since 1.2.21)*
-
-`Bun.secrets` asynchronously stores, retrieves, and deletes credentials in the platform credential manager using a service/name pair.
-
-```ts
-import { secrets } from "bun";
-await secrets.set({ service: "my-cli", name: "token", value: "secret" });
-const token = await secrets.get({ service: "my-cli", name: "token" });
-```
-
-### OS-level cron jobs and expression parsing *(since 1.3.11)*
-
-`Bun.cron(path, expression, title)` registers a persistent job through `crontab` on Linux, `launchd` on macOS, or Task Scheduler on Windows; registering the same title replaces the existing job. When it fires, Bun imports the module and calls its default export's `scheduled(controller)` method, whose controller includes the normalized `cron` expression and `scheduledTime` in milliseconds.
-
-```ts
-// scheduler.ts
-await Bun.cron("./worker.ts", "30 2 * * MON", "weekly-report");
-const next = Bun.cron.parse("*/15 * * * *"); // Date or null
-await Bun.cron.remove("weekly-report"); // remove it later by title
-
-// worker.ts
-export default {
-  async scheduled({ cron, scheduledTime }) {
-    console.log({ cron, scheduledTime });
-  },
-};
-```
-
-`Bun.cron.parse(expression, from?)` searches roughly four years ahead and supports standard five-field expressions, named days and months, `@yearly` through `@hourly`, Sunday as `0` or `7`, and POSIX OR semantics for restricted day-of-month and day-of-week fields.
-
-### In-process cron scheduling *(since 1.3.12)*
-
-`Bun.cron(expression, callback)` runs non-overlapping callbacks in-process on a UTC schedule; the next invocation is not scheduled until a returned promise settles. Jobs are disposable, support `ref()`/`unref()`, and are cleared during `--hot` reevaluation; thrown errors and rejections follow `setTimeout`-style process error handling.
-
-```ts
-Bun.cron("0 9 * * *", async () => {
-  await sendDailyReport();
-});
-```
-
-## Platforms, containers, and deployment
-
-### musl Linux builds *(1.2-guide)*
-
-Bun now ships x64 and aarch64 musl builds for distributions such as Alpine, including the `oven/bun:alpine` container image. The glibc build remains recommended unless musl compatibility or a smaller image is specifically needed.
-
-### Linux garbage-collection signal *(since 1.2.2)*
-
-Bun now uses `SIGPWR` instead of `SIGUSR1` to suspend threads for garbage collection on Linux. Applications can use `SIGUSR1` for reload or other logic without colliding with the runtime; `SIGPWR` is now used internally.
-
-### Debian Bookworm Docker base *(since 1.2.10)*
-
-The `oven/bun:latest` and versioned `oven/bun:1.2.10` images now use Debian Bookworm instead of Debian Bullseye. Container builds therefore inherit Bookworm's system packages and compatibility baseline.
-
-### Windows long-path support *(since 1.2.20)*
-
-Bun now consistently supports Windows file paths longer than 260 characters through its application manifest, so deeply nested paths work without special path namespacing.
-
-### Official Alpine image baseline *(since 1.3.2)*
-
-The official Alpine images for x64 and arm64 musl now use Alpine 3.22, changing the base packages and compatibility environment inherited by container builds.
-
-### Windows ARM64 runtime and compile target *(since 1.3.10)*
-
-Bun now runs natively on Windows ARM64 and standalone executables can target that platform with `bun-windows-arm64`.
-
-```sh
-bun build --compile --target=bun-windows-arm64 ./app.ts --outfile myapp
-```
-
-### Cgroup-aware concurrency values *(since 1.3.12)*
-
-On Linux, `availableParallelism` and `hardwareConcurrency` now reflect cgroup CPU limits rather than physical core count. Bun's thread pool and JIT worker counts honor the same limits in containers.
-
-### FreeBSD and Android builds *(since 1.3.14)*
-
-Bun now provides first-party native builds for FreeBSD and Android.
-
-### Vercel Functions runtime *(release-index)*
-
-Vercel Functions can now run on the Bun Runtime with full access to Bun APIs. This makes Vercel a deployment target for functions that depend on Bun-specific runtime features.
+- Files with an unknown extension are executed by `require()` as JavaScript,
+  not returned as path strings (`1.3-guide`).
+- `Bun.stringWidth` and terminal output are grapheme-aware as described above.
+- `HTMLRewriter.getAttribute()` returns `""` for present empty/boolean
+  attributes; invalid set/remove arguments throw rather than returning Error
+  (`1.4-4`).
+- Cyclic array stringification throws RangeError instead of returning empty
+  text, and iterator `includes()` is available (`1.4-4`).
+- `BUN_DISABLE_SLOW_FILESYSTEM_WARNING` affects only the warning, not
+  filesystem behavior.

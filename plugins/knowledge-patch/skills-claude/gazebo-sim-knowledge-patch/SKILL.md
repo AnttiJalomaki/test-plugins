@@ -10,43 +10,51 @@ metadata:
 
 # Gazebo Sim Knowledge Patch
 
-Use this skill when upgrading, integrating, configuring, or extending Gazebo Sim,
-especially when work touches custom GUI plugins, system plugins, physics,
-controllers, packaging, transport, or server lifecycle behavior. Check the
-project's actual Gazebo release and apply only guidance available to that release.
+Use this skill when writing, migrating, building, configuring, or debugging Gazebo Sim applications, systems, GUI plugins, SDF worlds, transport integrations, physics behavior, or test fixtures.
 
-## Reference index
+Prefer the project's manifests, source, tests, and observed runtime behavior when they disagree with general guidance. Determine the installed Gazebo Sim and related library versions before applying version-sensitive changes.
+
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [Migration, build, and packaging](references/migration-build-and-packaging.md) | Qt6 plugin migration, removed macros, component registration, standalone applications, package names, Bazel, relocatable executables |
-| [Physics, sensors, and environment](references/physics-sensors-and-environment.md) | Ray queries, bounds, inertia, pose publication, cameras, wind, airfoils, gravity, fixed constraints, environment visualization |
-| [Systems, control, and modeling](references/systems-control-and-modeling.md) | Joint controllers, drive systems, wheel slip, entity semantics, detachable joints, reset behavior, particle emitters |
-| [Server, runtime, and APIs](references/server-runtime-and-apis.md) | Process shutdown, server startup, Python execution, static registries, command results, ECM tracking, WebSockets, networking, API spelling |
-| [GUI, transport, and ROS](references/gui-transport-and-ros.md) | Component Inspector, Zenoh selection, standard simulation interface, occupancy maps, wind topics, Windows Quick Start |
+| [GUI, Transport, and ROS](references/gui-transport-and-ros.md) | Qt6 GUI migration, QML, visualization, Zenoh, ROS interfaces, occupancy maps, Windows and WSLg |
+| [Migration, Build, and Packaging](references/migration-build-and-packaging.md) | Bazel, Bzlmod, package naming, standalone tools, runtime paths, component registration, relocatability |
+| [Physics, Sensors, and Environment](references/physics-sensors-and-environment.md) | Physics queries, inertia, gravity, wind, aerodynamics, collision commands, rendering and sensor fixes |
+| [Server, Runtime, and APIs](references/server-runtime-and-apis.md) | Shutdown, plugin registries, Python, services, ECM, reset, networking, WebSocket, invalid SDF |
+| [Systems, Control, and Modeling](references/systems-control-and-modeling.md) | Controllers, pose publication, entity semantics, detachable joints, drive systems, particle and state publishers |
 
-## Migration quick reference
+## Start With Compatibility Checks
+
+1. Identify the installed `gz-sim` package and the versions of `gz-gui`, `gz-transport`, and SDF libraries used by the project.
+2. Inspect `CMakeLists.txt`, Bazel modules, package manifests, SDF files, and plugin loading paths.
+3. Separate migration failures from simulation-behavior changes: Qt, packaging, and API breaks often fail at build or startup, while physics changes alter results.
+4. For a regression claim, reproduce against the actual installed patch release before preserving a workaround.
+5. Use the topic references to check related changes that may affect the same subsystem.
+
+## Breaking Migration Changes
 
 ### Port custom GUI plugins to Qt6
 
-- Build custom plugins against the Qt6-based Gazebo GUI.
-- Remove version numbers from Qt QML imports.
-- Review Qt6 replacements for types such as `FileDialog` and `TreeView`.
-- Prefix C++ objects exposed to QML with an underscore at the QML call site:
+Jetty's `gz-gui10` uses Qt6. Port Qt5 GUI plugins and QML imports before debugging plugin logic.
+
+- Omit version numbers from Qt6 QML imports.
+- Update Qt6-sensitive types such as `FileDialog` and `TreeView`.
+- Access C++ objects exposed to QML with a leading underscore, for example:
 
 ```qml
 _MyClass.FunctionFoo()
 ```
 
-- Do not rename the corresponding C++ object merely to match the QML prefix.
-- Treat `gz::gui::App()` as nullable and check the returned pointer before use.
-- Avoid manually calling `QCoreApplication::processEvents()` from the plugin.
+The C++ object itself does not need to be renamed.
 
-### Replace removed install-path macros
+Treat `gz::gui::App()` as nullable. Check the returned pointer before use, and avoid manually calling `QCoreApplication::processEvents()` in Qt6 plugins.
 
-Include and call the runtime path APIs instead of relying on `config.hh` macros:
+### Replace removed configuration macros
 
-| Removed macro | Runtime API |
+Do not include the removed `config.hh` path or rely on install-directory macros. Use runtime path functions:
+
+| Removed macro | Runtime function |
 | --- | --- |
 | `GZ_SIM_GUI_CONFIG_PATH` | `gz::sim::getGUIConfigPath()` |
 | `GZ_SIM_SYSTEM_CONFIG_PATH` | `gz::sim::getSystemConfigPath()` |
@@ -55,11 +63,9 @@ Include and call the runtime path APIs instead of relying on `config.hh` macros:
 | `GZ_SIM_GUI_PLUGIN_INSTALL_DIR` | `gz::sim::getGUIPluginInstallDir()` |
 | `GZ_SIM_WORLD_INSTALL_DIR` | `gz::sim::getWorldInstallDir()` |
 
-### Update component registration ownership
+### Update component factory registration
 
-The component factory no longer accepts a `std::string` registration type or a
-parameterless unregister operation. Use a C-string type name and associate both
-registration and unregistration with the same `RegistrationObjectId`:
+The string-based `Factory::Register` overloads and parameterless `Unregister()` are gone. Register with a C-string type name and an explicit registration-object ID; unregister that same ID.
 
 ```cpp
 Register(const char *_type, ComponentDescriptorBase *_compDesc,
@@ -67,45 +73,58 @@ Register(const char *_type, ComponentDescriptorBase *_compDesc,
 Unregister(RegistrationObjectId _regObjId);
 ```
 
-Keep the registration-object ID alive and available for cleanup. This makes
-unregistration explicit when multiple modules contribute registrations.
+### Update packaging and command assumptions
 
-### Adjust packages, commands, and build files
+- Gazebo package dependencies use unversioned package names.
+- The `gz` tool uses standalone applications instead of Ruby-loaded CLI libraries.
+- Bazel consumers should use Bzlmod rather than legacy workspace setup.
+- Rename `systemTimeISO` calls to `systemTimeIso`.
 
-- Depend on unversioned Gazebo package names.
-- Package `gz` commands as standalone applications; do not assume the older
-  Ruby library-loading path when locating or debugging a command.
-- Use the standalone `gz model` executable for model operations.
-- Prefer Bzlmod declarations for Gazebo Bazel consumers. Confirm that the
-  selected release supports every requested target because early Bazel support
-  covered the core library before it expanded to systems.
-- Do not infer GUI or physics Bazel support from core-library support.
-- Treat `gz-sim-main` as relocatable when the executable's runtime location
-  differs from its original installation layout.
+See [Migration, Build, and Packaging](references/migration-build-and-packaging.md) for the full migration and build guidance.
 
-### Apply API and behavior corrections
+## Build Quick Reference
 
-- Rename calls from `systemTimeISO` to `systemTimeIso`.
-- Consume the actual status returned by UserCommands services instead
-  of assuming transport success means command success.
-- Expect pose publication to omit empty pose entries.
-- Do not encode the bad-SDF server regression as intended behavior; use the
-  corrected invalid-SDF handling.
+### Know the Bazel boundaries
 
-## High-value capability quick reference
+Initial Bazel support covered only the core library, excluding GUI, physics, and systems. Systems were added later. Do not assume CMake and Bazel expose identical targets without checking the project version and module definitions.
 
-### Query geometry and sensors
+Use Bazel 9.1.1 when following the repository default that declares it. Jetty and Ionic libraries and their required third-party packages are available through the Bazel Central Registry.
 
-- Use the Physics system for supported ray-intersection queries.
-- Obtain a link's axis-aligned bounding box from its collision geometry.
-- Use the public C++ `Link` sensor accessors to access sensors associated with
-  a link.
-- Logical cameras can detect models nested below top-level models.
-- Enable frustum visualization when camera-volume diagnostics are useful.
+### Keep installed layouts relocatable
 
-### Configure inertia and surface interaction
+Use the runtime path APIs rather than compiled-in install paths. `gz-sim-main` supports relocation, so packaging should not reintroduce assumptions about its original installation prefix.
 
-Mass can drive automatic inertia calculation:
+## Runtime and API Quick Reference
+
+### Handle shutdown and startup explicitly
+
+Gazebo Sim handles `SIGTERM` gracefully. Service managers and containers should send `SIGTERM` and allow cleanup time before escalating termination.
+
+Startup detects an already-running server. Treat that diagnostic as a distinct startup condition rather than a generic server failure.
+
+### Load statically registered plugins
+
+System plugins and physics engines can load from the static plugin registry. When dynamic discovery finds nothing, check static registration before diagnosing a missing plugin.
+
+### Trust service results
+
+UserCommands services return the actual command status. Use the service result to decide whether a command succeeded; do not infer success merely from transport-level completion.
+
+### Reset through public APIs
+
+Simulation reset has a public callable API, and test fixtures support `ISystemReset`. Prefer those reset paths over reconstructing internal server state.
+
+### Reject invalid SDF safely
+
+Server handling for bad SDF files includes a regression fix. Do not treat behavior from an affected build as the intended invalid-input contract.
+
+See [Server, Runtime, and APIs](references/server-runtime-and-apis.md) for Python GIL, ECM, networking, and WebSocket details.
+
+## Physics and Environment Quick Reference
+
+### Use automatic inertia from mass
+
+With `inertial/@auto`, an SDF object may specify mass and let Gazebo derive density and inertial parameters:
 
 ```xml
 <inertial auto="true">
@@ -113,93 +132,72 @@ Mass can drive automatic inertia calculation:
 </inertial>
 ```
 
-Gazebo derives density and inertial parameters from the mass. For mesh inertia,
-the calculator is available even when the simulation originates from an SDF
-string, and mesh-optimization parameters can tune that calculation.
+Mesh inertia also works when loading from an SDF string and accepts mesh-optimization parameters.
 
-Use `LookupWheelSlip` when surface texture should select material friction. Its
-8-bit RGB lookup map maps colors to friction values, and its slip-map resource
-is resolved with `common::findFile`.
+### Apply partial physics updates safely
 
-### Select controllers and drive systems
+Physics update messages change only fields present in the message. Omitted parameters retain their previous values, so partial updates need not resend the complete physics configuration.
 
-- Use `DriveToPoseController` for drive-to-pose behavior.
-- In `JointController` force mode, disable braking when unconditional braking
-  conflicts with the control design.
-- Change `JointPositionController` PID parameters dynamically when runtime
-  tuning is required.
-- Address nested joints directly through `JointController`.
-- Use `MecanumDrive` when mecanum motion with odometry and TF output is needed.
+### Revalidate aerodynamic expectations
 
-### Model environment effects
+The `LiftDrag` system supports reversible airfoils. Wind-influenced airspeed uses the wind triangle, and advanced LiftDrag moment calculation has been corrected. Rebaseline tests that depended on earlier results.
 
-- Configure the battery plugin's current-sign parameter to match the
-  integration's charging and discharging convention.
-- Use reversible-airfoil support in `LiftDrag` for aerodynamic configurations
-  whose operating direction reverses.
-- Expect wind-aware airspeed to follow the wind triangle.
-- Publish wind data to Gazebo and ROS topics when external consumers need it.
-- Expect IMU output to react to runtime gravity changes, including changes from
-  the GUI or gravity-setting command.
-- Use `EnvironmentPreload` visualization for static environments.
+### Treat quaternion sign as equivalent orientation
 
-### Use entity and simulation lifecycle APIs
+Quaternion sign flips no longer produce angular-velocity spikes. Do not build downstream filters around those spikes as if they were physical motion.
 
-- Assign categories and tags with the `EntitySemantics` system.
-- Enforce fixed constraints with the Physics system parameter when the model
-  requires strict fixed-joint behavior.
-- Clear Entity Component Manager addition/removal tracking through its public
-  cleanup APIs when a consumer has finished processing a change set.
-- Invoke simulation reset through the public API.
-- Implement `ISystemReset` in reset-sensitive systems and exercise it through
-  the reset-aware test fixture.
-- Removing a model also cleans up its detachable joints.
+See [Physics, Sensors, and Environment](references/physics-sensors-and-environment.md) for collision bounds, gravity, wheel slip, sensors, and visualization behavior.
 
-### Operate distributed and hosted simulations
+## Systems and Control Quick Reference
 
-- Service managers and container runtimes can stop Gazebo Sim with `SIGTERM`
-  and receive graceful shutdown behavior.
-- Startup detects an already-running server; handle that condition rather than
-  assuming every invocation creates a new server.
-- Python systems and Python `TestFixture` calls use corrected GIL-release
-  behavior; avoid workarounds based on the older behavior.
-- Network secondaries create entities correctly in distributed simulations.
-- The WebSocket server is owned by Gazebo Sim rather than `gz-launch`, and its
-  protocol schema exposes top-level enums.
+### Configure controllers deliberately
 
-### Choose integration paths
+- `JointController` can disable braking in force mode and can address nested joints.
+- `JointPositionController` accepts dynamic PID parameters.
+- `DriveToPoseController` provides drive-to-pose behavior.
+- `MecanumDrive` provides odometry and TF output.
+- Joint State Publisher has a configurable update rate.
 
-Select Zenoh for a process by setting the transport implementation before
-launch:
+### Expect scoped pose output
+
+Pose Publisher can publish more than top-level model poses and suppresses empty poses. Consumers should tolerate the broader entity scope while not expecting placeholder entries.
+
+### Model entity meaning explicitly
+
+Use `EntitySemantics` to assign categories and tags to entities. Use `CollideBitmaskCmd` and `CategoryBitmaskCmd` components when commanding collision and category bitmasks.
+
+See [Systems, Control, and Modeling](references/systems-control-and-modeling.md) for detachable joints, particle emitters, static environments, and controller details.
+
+## GUI, Transport, and ROS Quick Reference
+
+### Select transport per process
+
+Set Zenoh as the Gazebo Transport implementation for a process with:
 
 ```sh
 export GZ_TRANSPORT_IMPLEMENTATION=zenoh
 ```
 
-Use the ROS community standard simulation interface when robot code must remain
-portable between compatible simulators. To begin occupancy-grid exploration
-from `/scan_image`, publish the start command:
+### Export occupancy maps
+
+Use the `/scan_image` topic for occupancy-grid export. Start exploration with:
 
 ```sh
 gz topic -t /start_exploration -m gz.msgs.Boolean -p 'data: true'
 ```
 
-## Verification checklist
+### Account for platform defaults
 
-Before considering a migration or feature complete:
+The Quick Start dialog is disabled on Windows. In WSLg, rendering detection considers `WAYLAND_DISPLAY` as well as `XDG_SESSION_TYPE` and may force X rendering.
 
-1. Confirm the installed Gazebo release and package naming scheme.
-2. Build every custom GUI plugin with Qt6 and exercise its QML dialogs and
-   views.
-3. Search for removed path macros, `systemTimeISO`, old component-factory
-   overloads, and parameterless `Unregister()` calls.
-4. Verify that Bazel targets used by the project are supported, especially GUI
-   and physics targets.
-5. Test startup with an existing server, shutdown through `SIGTERM`, reset, and
-   invalid SDF input.
-6. Validate controller behavior with braking, PID updates, nested joints, wind,
-   and gravity changes that match the application's operating envelope.
-7. Exercise transport and ROS integrations with the selected process
-   environment and verify command-level service results.
-8. Open the topic reference for any touched subsystem; the quick reference
-   intentionally favors migration-sensitive and commonly used behavior.
+See [GUI, Transport, and ROS](references/gui-transport-and-ros.md) for QML migration, plotting, visualization, ROS interfaces, and platform behavior.
+
+## Diagnostic Checklist
+
+- Build failure after migration: check Qt6 imports, package names, Bzlmod, runtime path APIs, component registration IDs, and `systemTimeIso` casing.
+- Plugin not found: check both dynamic discovery and the static system or physics registry.
+- Unexpected dynamics: check partial physics updates, gravity propagation, aerodynamic corrections, quaternion sign handling, and fixed-constraint settings.
+- Missing or changed messages: check pose suppression and scope, configured particle topics, Joint State Publisher rate, marker arrays, and WebSocket schemas.
+- Distributed entity mismatch: verify `NetworkManager` secondary creation behavior.
+- Rendering startup issue: check Windows defaults and WSLg Wayland environment variables.
+- Test reset issue: use the public reset API and `ISystemReset` support.

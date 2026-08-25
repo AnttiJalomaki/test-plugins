@@ -1,176 +1,181 @@
 # Dashboards and provisioning
 
-Use this reference for dashboard identity, schemas, authoring, visualization,
-variables, panels, file provisioning, Git Sync, cloud migration, and reporting.
-
 ## Dashboard identity and HTTP APIs
 
-- In 11.5.0, Enterprise Analytics Views deprecates `:dashboardID` routes in
-  favor of `uid/:dashboardUID`; Analytics Summaries likewise replaces
-  `dashboard_id` routes with `dashboard_uid`.
-- In 12.0.0, `/apis` dashboard endpoints perform fine-grained access-control
-  checks. `kubernetesClientDashboardsFolders` is enabled by default.
-- In 12.1.0, preferences identify the home dashboard by UID instead of numeric
-  dashboard ID.
-- In 12.2.0, deprecated internal-ID star APIs are removed.
-- In 12.3.0, annotations saved using a dashboard UID no longer populate the
-  internal numeric dashboard ID. Consumers must not require that field.
-- In 12.3.0, dashboard requests from 12.3.2 enforce previously missing scope
-  checks. API callers need the applicable scope.
-- In 12.4.0, deprecated internal-ID dashboard endpoints are removed and
-  `/api/dashboards/home` is deprecated.
-- In 13.0.0, dashboard and folder resource APIs graduate to `v1`. Dashboard
-  `v2` aligns `TransformationKind` and Dashboard Preferences, and API-server
-  clients can set a preferred resource version.
-- In 13.1.0, `DashboardDTO.isStarred` is removed. The mutation API gains
-  annotation CRUD, and a panel screenshot API is available.
+### UID-first analytics and preferences
 
-## Schemas, export, and as-code authoring
+Enterprise Analytics Views deprecates `:dashboardID` routes for `uid/:dashboardUID`; Analytics Summaries deprecates `dashboard_id` routes for `dashboard_uid`. (11.5.0)
 
-- In 12.0.0, Grafana adds dashboard-schema validation and a configurable limit
-  on the series displayed by a panel, with an explicit render-all option.
-- In 12.0.0, App Platform adds an experimental GitHub-backed dashboard
-  configuration integration.
-- In 12.1.0, exporting a schema V2 dashboard as `V1Resource` automatically
-  transforms it to the compatible representation.
-- In 12.3.0, Enterprise reporting supports schema V2 dashboards.
-- In 12.4.0, dashboard provisioning supports schema V2. Provisioned dashboards
-  can be edited through their JSON model, and schema-V2 report forms can edit
-  template variables.
-- In 13.0.0, the As Code editor includes schema validation; schema-V2 imports
-  can carry labels. Authors can choose a default layout, create rows and tabs
-  from the side pane, and define section-level variables.
-- In 13.1.0, V1-to-V2 conversion preserves the timezone user preference and
-  query-variable sort modes. File-defined V2 dashboards can be selected as the
-  home dashboard.
+Preferences store the home dashboard by UID, not numeric dashboard ID. (12.1.0)
 
-## Git Sync and repository provisioning
+Deprecated internal-ID dashboard endpoints are removed, and `/api/dashboards/home` is deprecated. Use UID-based resource routes. (12.4.0)
 
-- In 12.1.0, App Platform provisioning adds a pure-Git repository type and an
-  experimental `nanogit` mode.
-- In 12.2.0, Git Sync switches to inline secrets. Update repository
-  provisioning configuration for this breaking format change.
-- In 12.3.0, file provisioning watches the filesystem for changes instead of
-  depending only on its initial scan.
-- In 12.4.0, alert rules cannot be saved into Git-synced folders.
-- For the 13.0-upgrade, do not use the withdrawn 13.0.0 as a stopping point
-  when a self-managed 12.x instance uses the relevant Git Sync flags. Upgrade
-  directly to 13.0.1 or later and use the pre-upgrade database restore strategy
-  described in the upgrade reference.
-- In 13.0.0, provisioning and Git Sync are enabled by default. Repository
-  checks cover branch protection, write access, and emptiness. Git submodules
-  are ignored, pure-Git URLs need not end in `.git`, and repository specs
-  accept a custom webhook base URL.
-- In 13.0.0, folder metadata is enabled by default. Exports create new UIDs;
-  unmanaged resources cannot be overridden; repository-managed folders reject
-  `ownerReferences` and manager-property changes. From 13.0.3, creating or
-  moving a dashboard into a new folder writes `_folder.json`.
-- In 13.1.0, repositories expose GPG, SSH, and S/MIME commit-signing settings.
-  Repository identity is the combination of URL, branch, and path, and
-  write-workflow checks respect ruleset bypasses.
-- In 13.1.0, the webhook connector rejects GET, a provisioning URL change
-  requires a fresh token, and webhook secrets rotate. GitHub webhooks use
-  replay protection; files and history endpoints validate the `ref` query
-  parameter.
-- In 13.1.0, `public_root_url` controls externally visible provisioning URLs.
-  From 13.1.1, the per-resource synchronization write timeout is configurable.
+Usage Insights events use UIDs rather than numeric data-source and dashboard IDs. (13.0.0)
 
-## Unified-storage migration and ownership
+### Stars, annotations, and mutations
 
-- During the 13.0-upgrade, the first startup copies folders and dashboards
-  from legacy SQL tables to unified storage and records completion in
-  `unifiedstorage_migration_log`. Legacy dashboard/folder tables cease to be
-  authoritative. Restore the pre-upgrade database to roll back.
-- Do not write new automation against the deprecated legacy tables. A downgrade
-  reads stale data, and post-downgrade changes are not picked up on another
-  upgrade after the one-time migration has been recorded.
-- For persistent SQLite lock errors, raise
-  `[unified_storage] migration_cache_size_kb` or enable
-  `migration_parquet_buffer`.
+The deprecated star endpoints based on internal IDs are removed. (12.2.0)
 
-## Dashboard controls, time, and variables
+Annotations saved through a dashboard UID no longer populate the internal numeric dashboard ID; consumers must tolerate its absence. (12.3.0)
 
-- In 11.6.0, dashboard models can define custom quick time ranges, and the time
-  picker accepts manually specified quick ranges. Plugin/frontend `WeekStart`
-  is typed as `WeekStart | undefined`, not an arbitrary string.
-- In 11.6.0, time regions accept cron expressions.
-- In 12.1.0, quick ranges can be configured at server level.
-- In 12.2.0, variables can render below a drop-down. New-layout repeated panels
-  support full-screen and solo-panel embed routes; repeating stops using clone
-  keys. The Inspect drawer can no longer be opened or linked through a URL.
-- In 12.3.0, dashboards add the `Switch` variable type. The controls menu
-  exposes annotations; time-comparison windows can be saved; and view mode can
-  change panel time-range settings.
-- In 12.4.0, variable regular expressions can transform display text, and
-  time-series dashboards support per-panel filtering.
+The Dashboard DTO removes `isStarred`. The mutation API provides annotation CRUD, and a panel screenshot API is available. (13.1.0)
 
-## Panels, visualizations, and transformations
+## Dashboard schemas and authoring
 
-- In 11.5.0, **Extract fields** supports Delimiter and RegExp formats.
-  Transformation filtering can select multiple query RefIDs. Trace-view span
-  filters can be saved as panel options.
-- In 11.6.0, variables work across all transformations; unary **Add field from
-  calculation** adds `round()`. Histogram supports multiple native histograms.
-- In 11.6.0, Canvas elements can execute one-click links and actions.
-  Visualization actions can request confirmation before executing.
-- In 12.0.0, `Stack` and `Grid` expose `columnGap` and `rowGap`.
-- In 12.1.0, State timeline displays `false` and empty strings and permits
-  mappings for `NaN` and `null`. Organize fields adds Auto mode; Regression is
-  generally available; XY charts accept time on the x-axis.
-- In 12.2.0, Canvas can disable tooltips for one-click elements and choose
-  connection direction dynamically. Pie charts add ascending, descending, and
-  disabled sorting.
-- In 12.2.0, tables add frozen columns, maximum row height for variable-height
-  rows, and field-derived tooltips. Transpose gets empty-value options;
-  Trend/TimeSeries gets value labels; Trend supports a logarithmic x-axis.
-- In 12.3.0, Canvas background images may come from non-icon fields. Time
-  series panels accept custom x-axis time units.
-- In 12.3.0, tables render array-valued `FieldType.other` values as pills,
-  format Pill and JSON cells, and add links or actions to sparkline cells.
-  Geomap supports MapLibre styles as base layers, and previously beta layers
-  become generally available.
-- In 12.4.0, click-and-drag time panning is generally available for time series
-  and also works in candlestick, heatmap, and timeline panels. Heatmaps add a
-  linear y-axis; Geomap XYZ tiles accept variables and min/max zoom; smoothing
-  is available as a transformation.
-- In 13.0.0, dashboard Logs panels can expose a field selector, persist shown
-  fields, and hide the Level field.
+### Validation, layouts, and limits
 
-## Library panels and reusable elements
+Dashboard schema validation is available. Panels can enforce a configurable series-count limit while allowing an explicit render-all choice. (12.0.0)
 
-- In 12.1.0, library-panel RBAC is generally available and enabled by default;
-  `libraryPanelRBAC` is removed. Library elements can no longer be library
-  variables.
-- In 12.3.0, library-panel names cease to be unique. Use stable IDs.
-- In 12.4.0, Library Elements deprecates `folderFilter` in favor of
-  `folderFilterUIDs`.
+Repeated panels in new layouts work in full-screen and embedded solo-panel routes. Variables can render beneath a drop-down; repeating no longer uses clone keys. The Inspect drawer cannot be opened or linked by URL. (12.2.0)
 
-## Cloud migration
+Dashboards add a `Switch` variable type for on/off input. (12.3.0)
 
-- In 11.5.0, Cloud Migrations is enabled by default and the migration assistant
-  has a dedicated RBAC role.
-- In 12.1.0, mute timings are treated as notification-policy dependencies and
-  migrate with the related policy resources.
-- In 12.4.0, the Cloud Migrations feature toggle is removed. Use its
-  configuration setting when the feature must be disabled.
+Dashboards support threshold interpolation, four levels of nesting, and tabs inside nested layouts. (13.2.0)
 
-## Reporting and rendering behavior
+### Time controls
 
-- In 11.5.0, Enterprise reporting adds an allowed-email-domain setting, uses
-  the API server by default, and deprecates internal IDs.
-- In 11.6.0, report emails can set their subject.
-- In 12.4.0, report retries are productized, stabilized PDF rendering no longer
-  uses `newPDFRendering`, and schema-V2 forms can edit template variables.
-- In 13.0.0, PDF reports add header toggles, configurable footers, and a
-  readiness observer.
-- In 13.1.0, backend reporting can render by URL and can limit report-email
-  recipients to organization members.
+Models can define custom quick ranges, and users can manually add time-picker quick ranges. Plugin/frontend `WeekStart` is `WeekStart | undefined`, not an arbitrary string. (11.6.0)
 
-## Restored and removed dashboard features
+Time regions accept cron expressions. (11.6.0)
 
-- In 11.6.0, scripted dashboards return after their earlier removal.
-- In 12.0.0, experimental dashboard restore behind `dashboardRestore` is
-  removed.
-- In 13.0.0, dashboard restore is enabled by default through the replacement
-  implementation.
-- In 13.1.0, `dashboardScene` and `publicDashboardsScene` are removed.
+Quick ranges can be configured server-wide. Schema V2 dashboards are transformed automatically when exported as `V1Resource`. (12.1.0)
+
+Dashboard controls expose annotations. Time-comparison windows can be saved, and panel time-range settings can be changed from view mode. (12.3.0)
+
+Variable regular expressions can transform displayed text, and time-series dashboards support per-panel filtering. (12.4.0)
+
+### Resource versions and schema V2
+
+Dashboard and folder resource APIs graduate to `v1`. Dashboard `v2` aligns `TransformationKind` and Dashboard Preferences, and API-server users can choose a preferred resource version. (13.0.0)
+
+The As Code editor performs schema validation. Schema V2 imports can contain labels, and authors can select the default layout, add rows and tabs from the side pane, and define section-level variables. (13.0.0)
+
+V1-to-V2 conversion preserves the timezone user preference and query-variable sorting. A file-defined V2 dashboard can serve as the home dashboard. (13.1.0)
+
+## File and JSON provisioning
+
+### File watches and editable provisioned dashboards
+
+File provisioning watches the filesystem for changes rather than relying only on its startup scan. (12.3.0)
+
+Provisioning supports schema V2. A provisioned dashboard can be edited through its JSON model. (12.4.0)
+
+### Scripted dashboards
+
+Scripted dashboards returned in 11.6 after their earlier removal. (11.6.0)
+
+They are later deprecated and disabled by default. Deployments that still depend on scripts must explicitly verify their configuration and plan a replacement. (13.2.0)
+
+### Git-synced folder restrictions
+
+Alert rules cannot be saved into Git-synced folders. (12.4.0)
+
+## Git-backed provisioning
+
+### Repository modes and secrets
+
+The App Platform initially adds experimental GitHub-backed dashboard configuration. (12.0.0)
+
+Provisioning adds a pure-Git repository type and an experimental `nanogit` Git Sync mode. (12.1.0)
+
+Git Sync configuration switches to inline secrets; update existing provisioning configuration for this breaking format change. (12.2.0)
+
+### Defaults and repository validation
+
+Provisioning and Git Sync are enabled by default. Repository validation checks branch protection, write access, and emptiness. Git submodules are ignored, pure-Git URLs no longer need a `.git` suffix, and specs can set a custom webhook base URL. (13.0.0)
+
+Folder metadata is enabled by default. Exports generate fresh UIDs. An unmanaged resource cannot be overridden, and repository-managed folders reject changes to `ownerReferences` and manager properties. Starting in 13.0.3, creating or moving dashboards into new folders writes `_folder.json`. (13.0.0)
+
+### Signing and repository identity
+
+GPG, SSH, and S/MIME commit signing are configurable. Repository identity is the combination of URL, branch, and path. Write-workflow checks honor ruleset bypasses. (13.1.0)
+
+### Webhook hardening and public URLs
+
+The webhook connector rejects GET. Changing the provisioning URL requires a new token, and webhook secrets rotate. GitHub webhooks have replay protection; files and history endpoints validate the `ref` query parameter. (13.1.0)
+
+`public_root_url` controls externally visible provisioning URLs. Starting in 13.1.1, the per-resource sync write timeout is configurable. (13.1.0)
+
+### Provider integrations and commit attribution
+
+GitHub Enterprise is enabled by default and supports previews and webhooks. Enterprise provisioning adds OAuth app connections and webhooks for GitLab and Bitbucket. (13.2.0)
+
+Public-preview Git Sync conventions and user attribution are enabled by default. Commits can override the author or use the signer as author, while repository jobs record author and origin. (13.2.0)
+
+### Sync and migration controls
+
+Pull-request previews compare against the merge base. Operators can force a full pull, disable repository or connection webhooks, permit root-level saves and new folders in folderless mode, and migrate to a chosen branch. Migrate to GitOps includes playlists; SLO-managed dashboards are excluded from export. (13.2.0)
+
+## Major storage migrations
+
+### Annotation table migration
+
+An 11.x-to-12.x upgrade fills `annotation.dashboard_uid` by rewriting the entire `annotation` table and rebuilding indexes. Back up first and reserve at least two to three times the table size in free space; insufficient room can prevent Grafana from starting. (12.0-upgrade)
+
+After success, reclaim disk during a low-traffic window because the commands lock the table:
+
+```sql
+-- PostgreSQL
+VACUUM FULL annotation;
+
+-- MySQL
+OPTIMIZE TABLE annotation;
+
+-- SQLite
+VACUUM;
+```
+
+### Unified-storage migration
+
+The first 13.0 startup migrates dashboards and folders out of legacy SQL tables and records the migration in `unifiedstorage_migration_log`. Afterward, `dashboard`, `dashboard_acl`, `dashboard_provisioning`, `dashboard_version`, `dashboard_tag`, `library_element_connection`, and `folder` are deprecated and non-authoritative. (13.0-upgrade)
+
+Downgrading reads stale legacy tables. Restore the pre-upgrade database to roll back; changes made against those tables after a binary downgrade are not picked up on the next upgrade because the one-time migration is recorded. (13.0-upgrade)
+
+SQLite automatically retries lock failures using a Parquet buffer. For persistent `database is locked` errors, raise `[unified_storage] migration_cache_size_kb` above its `1000000` default or explicitly configure: (13.0-upgrade)
+
+```ini
+[unified_storage]
+migration_parquet_buffer = true
+```
+
+Unified Storage honors the `GF_DATABASE_URL` override, and storage migration respects `migration_locking`. (12.1.0)
+
+Garbage collection later defaults `dry-run` to false. Once configured, collection performs real cleanup unless dry-run is explicitly restored. (13.2.0)
+
+## Git Sync upgrade hazard
+
+Grafana 13.0.0 was withdrawn because a self-managed 12.x deployment using `provisioning`, `kubernetesClientDashboardsFolders`, `kubernetesDashboards`, and `grafanaAPIServerEnsureKubectlAccess` could lose or revert dashboards and folders. Upgrade directly to 13.0.1 or later. (13.0-upgrade)
+
+For mixed local and Git-managed content—or uncertain deployment mode—restore the pre-upgrade database before moving to 13.0.1. A full-instance Git Sync deployment can upgrade and resync from Git, but upgrading the damaged 13.0.0 database alone does not recover resources. (13.0-upgrade)
+
+## Kubernetes dashboard APIs
+
+`kubernetesDashboards` is enabled by default. (12.2.0)
+
+The deprecated experimental API-server toggle is removed; delete it from feature-toggle configuration. (12.3.0)
+
+## Library panels
+
+Library panels no longer require unique names. Use a stable identifier rather than assuming one name resolves to one panel. (12.3.0)
+
+Library Elements deprecates `folderFilter` in favor of `folderFilterUIDs`. (12.4.0)
+
+## Enterprise reporting
+
+Reporting can restrict recipient domains, uses the API server by default, and deprecates internal IDs. (11.5.0)
+
+Report emails can have a custom subject. (11.6.0)
+
+Schema V2 dashboards are supported in reports. (12.3.0)
+
+Retries are productized, the stable PDF renderer no longer needs `newPDFRendering`, and schema-V2 report forms allow template-variable editing. (12.4.0)
+
+PDF reports gain header toggles, configurable footers, and a readiness observer. (13.0.0)
+
+Backend URL-based rendering is supported, and report-email recipients can be restricted to organization members. (13.1.0)
+
+Report template variables are no longer restricted by a type allowlist. (13.2.0)
+
+## Dashboard recovery
+
+The Restore dashboards feature is enabled by default. (13.0.0)

@@ -1,41 +1,42 @@
-# Self-hosted runners
+# Self-Hosted Runners
 
-Use this reference when registering, upgrading, discovering, or autoscaling a
-self-hosted runner fleet.
+Use this reference when registering runners, planning fleet upgrades,
+auditing versions, building a custom autoscaler, or consuming interfaces added
+to the runner process.
 
-## Registration and execution gates
+## Registration and rolling execution gates
 
 Runner `2.329.0` or later is required to configure or re-register a
-self-hosted runner on the new platform.
+self-hosted runner on the new platform. This registration minimum is distinct
+from the moving execution requirement.
 
-Do not interpret that fixed registration minimum as a permanent execution
-minimum. Every runner release, including patch releases, must be installed
-within 30 days of publication. After that window, the service stops queuing
-jobs to the outdated runner.
+Every runner release, including patch releases, must be installed within 30
+days of publication. When a runner falls outside that window, the service
+stops queuing jobs to it. Auto-update satisfies the rolling requirement when
+the update service is reachable. Fleets with auto-update disabled need a
+regular manual upgrade process.
 
-- Auto-update satisfies the rolling update requirement when the update
-  service is reachable.
-- Fleets with auto-update disabled need a scheduled manual upgrade process.
-- A critical security release has no normal grace period: job queuing pauses
-  until the release is installed.
+A critical security release does not receive the normal 30-day grace period:
+job queuing pauses until the release is installed.
 
-Track the registration floor and the moving release-age floor separately in
-fleet health checks.
+After enforcement:
+
+- versions below `2.329.0` cannot register or re-register; and
+- already registered runners below the moving execution floor stop receiving
+  jobs.
 
 ## Cloud enforcement schedule
 
-Full enforcement begins on these dates:
-
-| Deployment | Enforcement |
+| Deployment | Full enforcement |
 | --- | --- |
 | Enterprise Cloud with Data Residency | July 31, 2026 |
 | Enterprise Cloud | September 25, 2026 |
 | Enterprise Server | Not affected |
 
-Before the standard Enterprise Cloud enforcement date, each brownout lasts
-from 11:00 AM through 3:00 PM ET.
+Before standard Enterprise Cloud enforcement, each brownout runs from
+11:00 AM through 3:00 PM ET.
 
-Registration-only brownouts occur on:
+Registration-only brownouts:
 
 - August 24, 2026
 - August 31, 2026
@@ -43,60 +44,58 @@ Registration-only brownouts occur on:
 - September 7, 2026
 - September 11, 2026
 
-Registration-and-runtime brownouts occur on:
+Registration-and-runtime brownouts:
 
 - September 9, 2026
 - September 14, 2026
 - September 16, 2026
 - September 18, 2026
 
-After enforcement, runners below `2.329.0` cannot register or re-register.
-Already registered runners below the moving execution floor stop running
-jobs.
+Treat the brownouts as operational tests: verify that inventory, upgrades,
+and update-service connectivity are working before full enforcement.
 
-## Find runners that need upgrades
+## Fleet discovery and upgrade auditing
 
-The self-hosted-runners REST API exposes runner versions when the request uses
-API version `2026-03-10`. Use it as a fleet inventory rather than inferring
-versions from labels or job history.
+The self-hosted-runners REST API exposes runner versions when called with API
+version `2026-03-10`. Use that inventory to find runners below the registration
+minimum or outside the release-age window.
 
-Enterprise audit-log searches can query these registration actions:
+The following enterprise audit-log events include the runner version at
+registration time:
 
 - `org.register_self_hosted_runner`
 - `repo.register_self_hosted_runner`
 - `enterprise.register_self_hosted_runner`
 
-Their events include the runner version. They are not a complete inventory,
-because an event is emitted only when a runner registers.
+These events are not a complete fleet inventory because they are emitted only
+when a runner registers. Runtime job annotations also identify outdated
+runners before enforcement.
 
-Runtime job annotations also identify outdated runners before enforcement.
-Combine current REST inventory with annotations and registration events when
-planning remediation.
+## Custom autoscaling without Kubernetes
 
-## Custom scale-set autoscaling
+The public-preview `actions/scaleset` Go client exposes runner scale-set APIs
+for custom autoscalers on containers, virtual machines, bare metal, or cloud
+infrastructure. It handles API orchestration, while the integrator remains
+responsible for:
 
-The public-preview `actions/scaleset` Go client exposes the runner scale-set
-APIs for custom autoscalers. It supports runners deployed on:
+- infrastructure setup;
+- runner provisioning;
+- capacity scaling; and
+- runner destruction.
 
-- containers;
-- virtual machines;
-- bare metal; and
-- cloud infrastructure.
+The standalone client supports multiple labels per scale set. Actions Runner
+Controller remains the recommended implementation for Kubernetes.
 
-The client handles API orchestration. The integrator remains responsible for
-infrastructure setup, runner provisioning, scaling decisions, and runner
-destruction.
+## Runner `2.336.0` environment interfaces
 
-Actions Runner Controller remains the recommended implementation on
-Kubernetes. Use the standalone client when Kubernetes is not the deployment
-target or when the infrastructure needs a custom control plane. The client
-also supports multiple labels per scale set.
+Runner `2.336.0` adds two interfaces for workflows and actions:
 
-## Runner 2.336.0 interfaces
+- `$GITHUB_ARTIFACTS` environment files; and
+- `ACTIONS_CACHE_MODE`, which exposes the effective cache mode to steps.
 
-Runner `2.336.0` adds support for `$GITHUB_ARTIFACTS` environment files. It
-also exposes the effective cache mode to workflow steps through
-`ACTIONS_CACHE_MODE`.
+Any workflow or action that reads or writes these interfaces requires runner
+`2.336.0` or later. Gate self-hosted labels or check fleet versions before
+depending on them.
 
 ```yaml
 jobs:
@@ -105,17 +104,3 @@ jobs:
     steps:
       - run: echo "$ACTIONS_CACHE_MODE"
 ```
-
-An action or workflow that depends on either interface must run on version
-`2.336.0` or later. Gate self-hosted labels or check fleet inventory rather
-than assuming all registered runners expose them.
-
-## Canceled background-step behavior
-
-Runner `2.336.0` changes cancellation handling for concurrent steps:
-
-- canceled background steps no longer affect the job result; and
-- cancellation waits for the worker to finish.
-
-Account for the runner version when a workflow depends on the final job
-result or on cleanup completing after a background step is canceled.

@@ -1,567 +1,341 @@
 # Builds and frontend development
 
-Use this reference for bundling, HTML and CSS development, transpilation, plugins, and standalone executables.
+## Build-result and output changes
 
-Entries are grouped by developer task. When entries describe evolving behavior, the later attribution supersedes earlier defaults or limitations.
+### Failure and sourcemaps (`1.2-guide`, `1.2.19`)
 
-## Breaking behavior and type changes
+`Bun.build()` rejects on build failure rather than returning errors in
+`result.logs`; set `throw: false` to retain the old result-based flow.
+`bun build --sourcemap` defaults to separate linked `.js.map` files; request
+`--sourcemap=inline` for inline maps. The JS API accepts `sourcemap: true`; the
+boolean was previously ignored.
 
-### Build failure semantics *(1.2-guide)*
+### Core build controls (`1.2-guide`)
 
-`Bun.build()` now rejects its promise on build errors instead of resolving with errors only in `logs`. Set `throw: false` to retain the old result-inspection behavior.
+Available controls include:
 
-### CLI alias and sourcemap defaults *(1.2-guide)*
+- Cross-compilation with `--compile --target=bun-windows-x64`, Windows icon and
+  hidden-console settings.
+- `--format=cjs`, `--packages=external`, `--env="PUBLIC_*"`, `--drop=console`,
+  `--banner`, `--footer`, and `--ignore-dce-annotations`.
+- `--bytecode`, which emits a required `.jsc` beside each `.js`, skips async
+  functions, generators, and `eval`, and can be about eight times the source
+  size.
+- `Bun.embeddedFiles`, listing assets embedded into a compiled executable.
 
-`bun -p` now means `bun --print`, replacing its former `--port` meaning. Bare `bun build --sourcemap` now emits linked `.map` files; request the previous behavior explicitly with `--sourcemap=inline`.
+## HTML and frontend serving
 
-## HTML and frontend development
+### HTML imports and the route option (`1.2-guide`, `1.2.3`)
 
-### HTML entrypoints *(1.2-guide)*
-
-An imported HTML file can be assigned to a `Bun.serve()` static route. Bun bundles its module scripts and linked stylesheets, rewrites their URLs to generated static assets, and serves the transformed HTML.
+Imported HTML makes `Bun.serve` bundle its linked scripts and styles. The
+original option name was `static`; it was renamed to `routes`, which adds path
+parameters, `req.params`, per-method handlers, wildcards, async handlers and an
+optional fallback `fetch` function.
 
 ```ts
-import homepage from "./index.html";
-Bun.serve({ static: { "/": homepage }, fetch: () => new Response("Not found", { status: 404 }) });
+import page from "./index.html";
+
+Bun.serve({
+  routes: {
+    "/": page,
+    "/api/:id": req => Response.json(req.params),
+  },
+});
 ```
 
-### Built-in CSS bundling *(1.2-guide)*
+`server.reload({ static: ... })` was the original runtime swap form. Treat
+`routes` as the current configuration name.
 
-`bun build` now accepts CSS entrypoints, resolves and flattens `@import` dependencies, and handles referenced assets. Importing CSS from JavaScript or TypeScript produces one combined CSS output for that module entrypoint alongside its JavaScript bundle.
+### Zero-config dev server (`1.2.3`, `1.2.12`)
 
-```sh
-bun build ./index.ts --outdir=dist
-```
+`bun ./index.html` starts a server on port 3000 and bundles/hot-reloads linked
+JS/JSX/TS and CSS. A quoted HTML glob creates a multi-page app with routes based
+on file paths. `--console` streams browser console output to the terminal.
 
-### HTML-import minification controls *(since 1.2.1)*
+`Bun.serve` exposes the same stream through
+`development: { console: true, hmr: true }`; messages are prefixed `[browser]`.
 
-Minification for HTML imports can be disabled wholly or by whitespace, identifier, and syntax transforms under `[serve.static]`. If omitted, it defaults off for `Bun.serve({ development: true })` and on for `development: false`.
+### Client-time constants (`1.2.3`, `1.2.4`)
 
-```toml
-[serve.static]
-minify = false
-# Or set minify.whitespace, minify.identifiers, and minify.syntax separately.
-```
-
-### HTML entrypoint development server *(since 1.2.3)*
-
-Running an HTML file directly starts a zero-configuration frontend server with bundling, JSX/TypeScript transpilation, CSS handling, and hot reloading. A glob creates routes for multiple HTML entrypoints.
-
-```sh
-bun ./index.html
-bun './**/*.html'
-```
-
-HTML imports can also expose selected environment variables to client code as `process.env.*`:
+Under `[serve.static]`, `env` selects variables inlined as `process.env.*` and
+`define` maps identifiers to JavaScript source strings containing arbitrary JSON
+constants.
 
 ```toml
 [serve.static]
 env = "BUN_PUBLIC_*"
+define = { CONFIG = "{ \"version\": \"1.0\", \"beta\": false }" }
 ```
 
-### Frontend setup and dependency analysis *(since 1.2.3)*
+### HTML minification (`1.2.1`)
 
-`bun init` adds a React template with frontend tooling and a lightweight backend. For existing component code, `bun create ./MyComponent.tsx` scans imports, installs missing packages, and detects tooling such as Tailwind CSS and shadcn/ui; `bun install --analyze` performs the dependency-discovery step directly and records missing imports in `package.json`.
+HTML-import minification defaults to off when `development: true` and on when
+development is false. Override aggregate or whitespace/identifier/syntax
+minification in `[serve.static]`; plugins are configured there too.
+
+### Ahead-of-time HTML (`1.2.17`)
+
+Server-side HTML imports are bundled by `bun build`: referenced scripts and
+styles become assets and the server is wired to serve them. This works for a
+normal build or one-file `--compile`; `bun --hot` retains on-demand HMR.
 
 ```sh
-bun create ./MyComponent.tsx
-bun install --analyze src/**/*.ts
-```
-
-### Official Svelte plugin *(since 1.2.5)*
-
-The `bun-plugin-svelte` package adds Svelte components, component-level TypeScript, and HMR to Bun's bundler and development server. Its build target can be `"browser"`, `"bun"`, or `"node"` for client or server components.
-
-```ts
-import { SveltePlugin } from "bun-plugin-svelte";
-
-Bun.build({
-  entrypoints: ["src/index.ts"],
-  outdir: "dist",
-  target: "browser",
-  plugins: [SveltePlugin({ development: true })],
-});
-```
-
-### CSS modules *(since 1.2.5)*
-
-Files ending in `.module.css` are automatically scoped and default-import as a class-name map. CSS Modules `composes` can reference classes in the same file, another module, or the global scope.
-
-```ts
-import styles from "./style.module.css";
-const button = document.createElement("button");
-button.className = styles.button;
-```
-
-### Modern HMR API and events *(since 1.2.5)*
-
-The development server supports self-acceptance and dependency acceptance through `import.meta.hot.accept()`, including synchronous ESM imports; these calls are dead-code eliminated in production. `on()` and `off()` handle lifecycle events such as `bun:beforeUpdate`, `bun:afterUpdate`, `bun:error`, and `bun:ws:connect`, with Vite-prefixed event names also accepted.
-
-```ts
-import.meta.hot.accept("./foo", newFoo => updateState(newFoo));
-import.meta.hot.on("bun:beforeUpdate", () => console.log("updating"));
-```
-
-### Svelte package and module resolution *(since 1.2.6)*
-
-`bun-plugin-svelte` now honors packages' `"svelte"` export condition and correctly transpiles imported `.svelte.ts` modules before compilation, enabling packages such as `@threlte/core` and TypeScript Svelte helper modules.
-
-### Global selectors in CSS Modules *(since 1.2.6)*
-
-CSS Modules now process `:global()` correctly, preserving the enclosed selector instead of applying module scoping.
-
-```css
-:global(.button) {
-  color: blue;
-}
-```
-
-### HTML imports can select the text loader *(since 1.2.10)*
-
-An `.html` file can now be imported as raw text with an import attribute instead of being forced through HTML entrypoint handling.
-
-```ts
-import html from "./template.html" with { type: "text" };
-```
-
-### Browser console streaming *(since 1.2.12)*
-
-Frontend dev servers can forward browser `console.log` and `console.error` calls to the launching terminal, prefixed with `[browser]`. Enable it with `--console` for an HTML entrypoint or `development.console` in `Bun.serve()`.
-
-```sh
-bun ./index.html --console
-```
-
-```ts
-import homepage from "./index.html";
-
-Bun.serve({
-  development: { console: true, hmr: true },
-  routes: { "/": homepage },
-});
-```
-
-### Editable Chrome DevTools workspaces *(since 1.2.15)*
-
-The frontend development server now exposes automatic workspace folders to Chrome DevTools, allowing served project files to be edited directly in the browser.
-
-### Ahead-of-time server-side HTML bundling *(since 1.2.17)*
-
-`bun build` can now follow an HTML import from a server entrypoint, bundle its referenced client-side scripts and styles, and configure the built server to serve those assets. Use a Bun target for a deployable bundle or `--compile` for a self-contained full-stack executable.
-
-```sh
-bun build ./src/server.ts --target=bun --outdir=dist
+bun build ./src/server.ts --target=bun --outdir ./dist
 bun build ./src/server.ts --compile --outfile=my-app
 ```
 
-### Production HTML builds *(1.3-guide)*
+### Production and self-contained HTML (`1.3-guide`, `1.3.10`, `1.3.13`)
 
-An HTML entrypoint can be bundled for deployment with the production build mode.
+- `bun build ./index.html --production --outdir=dist` bundles production
+  frontend settings.
+- An HTML entry can be a normal `--compile` input for a full-stack executable.
+- `--compile --target=browser` requires all entrypoints to be HTML and emits one
+  file with JS/CSS inline and assets as data URIs; it cannot combine with
+  `--splitting`.
+- File-loader assets imported from JS are also inlined in that browser output.
 
-```sh
-bun build ./index.html --production --outdir=dist
-```
+### Production sourcemap serving (`1.4`)
 
-### CSS view-transition selector arguments *(since 1.3.2)*
+HTML routes do not serve sourcemaps outside development by default. Set
+`sourcemap` under `[serve.static]` when a different policy is required.
 
-The CSS parser, bundler, and minifier now accept class selector arguments in view-transition pseudo-elements such as `::view-transition-old()`, `::view-transition-new()`, `::view-transition-group()`, and `::view-transition-image-pair()`.
+## CSS, JSX, React, and framework support
 
-```css
-::view-transition-old(.slide-out) {
-  animation: slide-out 200ms;
-}
-```
+### CSS bundling and modules (`1.2-guide`, `1.2.5`)
 
-### Self-contained browser HTML compilation *(since 1.3.10)*
+CSS entrypoints resolve `@import`; CSS reachable from a JS/TS entrypoint is
+flattened into one output. `.module.css` automatically rewrites class and ID
+names and exports the name map. `composes` works within a file, from another
+module, or from `global`.
 
-Compiling an HTML entrypoint with the browser target inlines its bundled JavaScript and CSS and converts asset references to `data:` URLs, producing an HTML file that can run directly from a `file://` URL. Every entrypoint must be HTML, and this mode cannot be combined with splitting.
+### Svelte and HMR (`1.2.5`)
 
-```sh
-bun build --compile --target=browser ./index.html
-```
+`bun-plugin-svelte` supplies bundler/dev-server integration, HMR, TypeScript in
+`<script lang="ts">`, and browser/Bun/Node targets. The HMR runtime supports
+`import.meta.hot.accept()` and dependency callbacks plus `on`/`off` events.
+Bun event names use `bun:` prefixes while Vite `vite:` aliases also work.
+Production builds dead-code-eliminate these calls.
+Documented Bun events include `bun:beforeUpdate`, `bun:afterUpdate`,
+`bun:error`, and `bun:ws:connect`.
 
-### Native headless browser automation *(since 1.3.12)*
+### HMR URL semantics (`1.2.20`)
 
-`Bun.WebView` drives the system WebKit view on macOS or Chrome/Chromium through CDP cross-platform. Selector actions wait for visible, stable, unobscured elements and dispatch trusted OS-level input; the API also covers navigation, evaluation, screenshots, scrolling, page state, events, and raw CDP calls.
+In browser HMR, `import.meta.url` uses `window.location.origin` rather than a
+`bun://` URL.
 
-```ts
-await using view = new Bun.WebView({ width: 800, height: 600 });
-await view.navigate("https://example.com");
-await view.click("a.docs");
-const title = await view.evaluate("document.title");
-await Bun.write("page.png", await view.screenshot({ format: "png" }));
-```
+### JSX purity and direct options (`1.2.22`, `1.2.23`)
 
-## Bundler configuration, plugins, and analysis
+JSX is treated as pure and unused elements may be removed. Set
+`jsxSideEffects: true` to retain JSX whose component bodies have side effects.
+`Bun.build({ jsx })` configures runtime, import source, factory, fragment,
+development and side effects without requiring `tsconfig.json`.
 
-### Native pre-parse plugins *(1.2-guide)*
+### React transforms (`1.3.6`, `1.4`)
 
-Plugins gain `onBeforeParse()`, a low-overhead source transformation hook implemented by an N-API addon rather than JavaScript. Registration supplies the file filter plus the native module and exported symbol.
+`reactFastRefresh: true` matches `--react-fast-refresh` and injects the refresh
+transform for all targets. `bun build --react-compiler`, or
+`reactCompiler: true`, runs React's automatic memoization compiler directly in
+Bun's parser.
+
+## Plugins
+
+### Native pre-parse hook (`1.2-guide`)
+
+`onBeforeParse()` runs an N-API addon over raw source without copying or string
+conversion. Register namespace/filter plus `napiModule` and exported symbol.
+The `bun-native-plugin` Rust crate exposes `define_bun_plugin!`, `#[bun]`, and
+`set_output_source_code(..., BunLoader::...)`.
 
 ```ts
 build.onBeforeParse(
   { namespace: "file", filter: "**/*.tsx" },
-  { napiModule: nativePlugin, symbol: "transform" },
+  { napiModule: plugin, symbol: "transform" },
 );
 ```
 
-### New build controls *(1.2-guide)*
+### End hook and entrypoint hooks (`1.2.22`)
 
-The CLI and `Bun.build()` can inject matching environment variables (`--env='PUBLIC_*'` / `env`), drop calls (`--drop` / `drop`), add `banner` and `footer` text, and leave all package imports external (`--packages external` / `packages: "external"`). `--ignore-dce-annotations` disables `@__PURE__` and similar annotations when incorrect annotations remove required side effects.
+`build.onEnd(result)` runs after success or failure with the `BuildOutput`.
+`onResolve` and `onLoad` also run for entrypoint files, enabling virtual
+entrypoints.
 
-### Static-file compile-time defines *(since 1.2.4)*
+### Runtime path resolution (`1.4-3`)
 
-`[serve.static].define` in `bunfig.toml` inlines constants into static-file bundles. Unlike exposed environment variables, define values can contain arbitrary JSON encoded as JavaScript inside a TOML string.
+A runtime `Bun.plugin()` `onResolve` hook may return a normal filesystem path in
+the default `file` namespace. It no longer comes back as an unloadable
+`file:/abs/path`.
 
-```toml
-[serve.static]
-define = { CONFIG = "{ \"version\": \"1.0\", \"beta\": false }" }
-```
+## Standalone executables
 
-### `$NODE_PATH` bundler resolution *(since 1.2.18)*
+### Signing and Windows metadata (`1.2.4`, `1.2.19`, `1.2.21`)
 
-`bun build` now searches the module directories in `$NODE_PATH`, extending the runtime support added earlier to bundled bare imports.
+Compiled macOS binaries are code-signable. Windows payloads live in a `.bun` PE
+section so Authenticode signing stays valid. JS `compile` accepts `true`, a
+target string, or an object with target/output and Windows icon/title/version
+metadata, while retaining build-plugin support; corresponding CLI flags cover
+`--windows-title`, `--windows-publisher`, `--windows-version`,
+`--windows-description`, and `--windows-copyright`.
 
-```sh
-NODE_PATH=./src bun build ./entry.js --outdir ./out
-```
+### Runtime flags and executable mode (`1.2.16`, `1.2.21`)
 
-### Boolean sourcemap option *(since 1.2.19)*
+- `BUN_BE_BUN=1` makes a compiled app run its embedded runtime as a general Bun
+  CLI.
+- `--compile-exec-argv` bakes runtime flags into the binary and exposes them as
+  `process.execArgv`.
+- Compiled binaries no longer add an extra executable-name entry to
+  `process.argv`, restoring normal `util.parseArgs` behavior (`1.2.22`).
 
-`Bun.build({ sourcemap: true })` now generates a sourcemap; callers may use the boolean form as well as the existing string modes.
+### Config autoload (`1.3.3`, `1.3.4`)
 
-### Glob patterns in package side-effect declarations *(since 1.2.21)*
+Compiled programs otherwise read `.env` and `bunfig.toml` at runtime; disable
+with `--no-compile-autoload-dotenv` and
+`--no-compile-autoload-bunfig`, or the matching `compile` object fields.
 
-Bun's bundler now interprets `*`, `?`, `**`, `[]`, and `{}` patterns in a package's `sideEffects` array instead of de-optimizing the entire package.
+They no longer load deployment-directory `tsconfig.json` or `package.json` by
+default. Opt in with `--compile-autoload-tsconfig` and
+`--compile-autoload-package-json` or `autoloadTsconfig`/`autoloadPackageJson`.
 
-```json
-{
-  "sideEffects": ["**/*.css", "./src/setup.js", "./src/components/*.js"]
-}
-```
+`Bun.build({ compile: true })` emits external sourcemaps so standalone stack
+traces refer to original files rather than `/$bunfs/root/` (`1.3.1`).
 
-### Bundler plugin completion hooks *(since 1.2.22)*
+### Local cross-compilation binary (`1.3.6`, `1.4-2`)
 
-Bundler plugins can register `onEnd()`, which runs after either a successful or failed build and receives its `BuildOutput` for cleanup, reporting, or post-processing.
+`--compile-executable-path=/path/to/bun-target` and JS `executablePath` use a
+local target binary rather than downloading one, including for air-gapped
+cross-compilation.
 
-```ts
-await Bun.build({
-  entrypoints: ["./index.ts"],
-  plugins: [{
-    name: "report",
-    setup(build) {
-      build.onEnd(result => console.log(result.success));
-    },
-  }],
-});
-```
+### Targets and bytecode (`1.3.9`, `1.4`)
 
-### Minified function and class names *(since 1.2.22)*
+- Compile objects accept SIMD-specific Linux targets such as
+  `bun-linux-x64-modern` and `bun-linux-x64-baseline`.
+- `--bytecode` can use ESM with `--compile`; ESM bytecode unlocks top-level
+  await, `import.meta`, dynamic imports and code splitting. Without an explicit
+  format, bytecode still defaults to CommonJS.
 
-Syntax minification now removes unused names from function and class expressions. Use `--keep-names` or `keepNames: true` when reflection, diagnostics, or application logic depends on `Function.prototype.name`.
+### Embedded filesystem and assets (`1.2.3`, `1.4`)
 
-```sh
-bun build --minify --keep-names ./input.js
-```
+Files imported with `{ type: "file" }` are accessible from compiled programs
+through async/sync `node:fs`. `--asset <file-or-dir>` embeds original paths;
+`/$bunfs/` behaves like a directory tree for existence, stat, lstat, access and
+directory enumeration, including recursive and `withFileTypes` forms.
 
-### Legal-comment source maps *(since 1.3.1)*
+### Linux executable layout (`1.3.12`, `1.4-2`)
 
-`bun build` source maps now map preserved multiline legal comments, including CRLF comments, back to their original source locations so license tooling and debuggers can trace them accurately.
+Linux binaries embed modules in a `.bun` ELF section mapped with `PT_LOAD`
+instead of reading `/proc/self/exe`, allowing `chmod 111` execution and zero
+startup file I/O. NixOS/Guix builds normalize `PT_INTERP` to the FHS path.
 
-### Compile-time feature flags *(since 1.3.5)*
+`Bun.isStandaloneExecutable` is an allocation-free read-only boolean indicating
+compiled execution (`1.4-2`).
 
-Import `feature()` from `bun:bundle` to guard code that Bun replaces with `true` or `false` during transpilation. Enable names with repeatable `--feature` flags in `bun build`, `bun run`, or `bun test`; with minification, disabled branches are removed entirely, while `Bun.build()` accepts the same names through `features`.
+## Build inputs and analysis
 
-```ts
-import { feature } from "bun:bundle";
+### Virtual files (`1.3.6`)
 
-if (feature("DEBUG")) console.log("debug details");
+`Bun.build({ files })` provides in-memory modules whose string, Blob,
+TypedArray, or ArrayBuffer contents override disk paths. Virtual and disk files
+may import each other.
 
-await Bun.build({
-  entrypoints: ["./app.ts"],
-  outdir: "./out",
-  features: ["DEBUG"],
-});
-```
+### Metafiles (`1.3.6`, `1.3.8`, `1.4-2`)
 
-Augmenting the module registry restricts feature names at type-check time:
+`metafile: true` returns esbuild-format `inputs`/`outputs` maps. CLI
+`--metafile <path>` writes JSON. `--metafile-md[=path]` adds a Markdown report
+with summaries, largest inputs, dependency chains, a full graph and searchable
+markers; the JS option may name JSON and Markdown outputs together.
 
-```ts
-declare module "bun:bundle" {
-  interface Registry {
-    features: "DEBUG" | "PREMIUM";
-  }
-}
-```
+Bundled import paths in the metafile now equal the imported file's `inputs`
+key, so `metafile.inputs[path]` resolves correctly.
 
-### Esbuild-compatible build metafiles *(since 1.3.6)*
+### Bundle-time feature flags (`1.3.5`)
 
-`Bun.build({ metafile: true })` returns `result.metafile` in esbuild's format, with input and output byte sizes, imports, exports, entry points, and contributing inputs. The CLI form writes the metadata directly with `--metafile <path>`.
+`feature(name)` from `bun:bundle` becomes a literal and enables dead-code
+elimination. Repeat `--feature=NAME` for build/run/test or pass
+`features: [...]`; augmenting `bun:bundle`'s `Registry.features` makes allowed
+names type-checkable.
 
-```ts
-const result = await Bun.build({
-  entrypoints: ["./src/index.ts"],
-  outdir: "./dist",
-  metafile: true,
-});
-await Bun.write("./dist/meta.json", JSON.stringify(result.metafile));
-```
+### Barrel optimization (`1.3.10`)
 
-### Virtual and overlaid build files *(since 1.3.6)*
+Pure re-export-only barrels load only imported submodules. Packages with
+`sideEffects: false` get this automatically; otherwise use `optimizeImports`.
+A local export or namespace import disables optimization, while `export *`
+targets are always loaded.
 
-The `files` option to `Bun.build()` supplies in-memory files or overrides matching disk files; virtual and real files can import one another. Values may be strings, blobs, typed arrays, or array buffers.
+### `sideEffects` globs (`1.2.21`)
 
-```ts
-await Bun.build({
-  entrypoints: ["/app/index.ts"],
-  files: {
-    "/app/index.ts": `import { id } from "./generated.ts"; console.log(id);`,
-    "/app/generated.ts": `export const id = "build-42";`,
-  },
-});
-```
+The bundler honors glob syntax `*`, `?`, `**`, `[]`, and `{}` in a package's
+`sideEffects`; a glob no longer de-optimizes the whole package.
 
-### Markdown build metafiles *(since 1.3.8)*
+## Module formats, loaders, and transforms
 
-`bun build --metafile-md` writes a Markdown bundle analysis to `meta.md`; use `--metafile-md=<path>` to choose a filename. `Bun.build()` can emit JSON and Markdown metafiles together by passing their paths in a `metafile` object.
+### CommonJS detection (`1.2-guide`)
 
-```sh
-bun build entry.js --metafile-md=analysis.md --outdir=dist
-```
+A no-import/no-export file beginning with `"use strict"` is CommonJS rather
+than ESM. `require.main === module` rewrites to `import.meta.main` without
+forcing CommonJS.
 
-```ts
-await Bun.build({
-  entrypoints: ["./entry.js"],
-  outdir: "./dist",
-  metafile: { json: "meta.json", markdown: "meta.md" },
-});
-```
+### CommonJS output (`1.3.1`)
 
-## Transpilation, modules, and syntax
+For `--format=cjs`, `import.meta.path`, `.dirname`, and `.file` become CommonJS
+equivalents. `import.meta.url` is not rewritten.
 
-### CommonJS bundler output and detection *(1.2-guide)*
+### Decorators (`1.3.10`, `1.3.11`, `1.4-2`)
 
-`bun build --format=cjs` now emits CommonJS. For otherwise ambiguous source, a leading `"use strict"` is treated as a last-chance CommonJS signal; conversely, `require.main === module` is rewritten to `import.meta.main`, so that check can coexist with ESM imports.
+Standard stage-3 decorators are supported when `experimentalDecorators` is not
+set, including methods, accessors, fields, classes, private auto-accessors,
+initializer hooks, metadata and standard ordering. Legacy semantics remain for
+`experimentalDecorators: true`.
 
-### Import attributes *(1.2-guide)*
+`Bun.Transpiler` honors `experimentalDecorators` and
+`emitDecoratorMetadata`; metadata alone also selects legacy behavior.
+`scan()`/`scanImports()` respect `trimUnusedImports`.
 
-Static and dynamic imports support `with { type: ... }`; Bun-specific useful types include `json`, `text`, `toml`, and `file`. Dynamic import places the same object under an options object's `with` key.
+### Target-dependent `using` (`1.3.14`)
 
-```ts
-import config from "./bunfig.toml" with { type: "toml" };
-const { default: text } = await import("./note.txt", { with: { type: "text" } });
-```
+Bun targets emit `using`/`await using` natively rather than helper lowering,
+including compiled and bytecode builds. Browser and Node targets still lower.
+This changes bundle output and disposal stack traces and fixes `using` in `.cjs`
+failing because a CommonJS function wrapper was expected.
 
-### Object-loader default interop *(since 1.2.2)*
+The public type name `Bun.Build.Target` became `Bun.Build.CompileTarget`
+(`1.3.7`).
 
-Plugin modules using `loader: "object"` now honor an exported `__esModule: true`: default imports and `require()` return the declared default value rather than a namespace wrapper.
+### Loader and resolver changes (`1.4-2`)
 
-```ts
-builder.module("my-module", () => ({
-  exports: { default: "hello", __esModule: true },
-  loader: "object",
-}));
+- `import "."` and `".."` resolve directories through index files or package
+  `main`.
+- Runtime `.css` default-imports `{}` rather than an absolute path. Module CSS
+  still differs under bundling.
+- `.xml` imports parsed XML; `--loader .xml:file` restores a file path.
+- `jsx: react-jsx` always emits production `jsx`/`jsxs`; use `react-jsxdev` for
+  `jsxDEV`. Explicit `NODE_ENV` wins.
+- `useDefineForClassFields: false` moves initializers into the constructor after
+  parameter properties and drops declaration-only fields.
+- Missing wildcard export/import targets retry known extensions, including
+  `.ts` for `.js`.
+- Builtin and `bun` ESM imports no longer eagerly evaluate lazy exports.
+- An unresolvable import inside a `catch` becomes a runtime throw rather than a
+  build failure. Bundled namespace keys enumerate in sorted order.
+- Browser builds apply package `browser` remaps for Node builtins before Bun's
+  polyfills.
 
-const value = require("my-module"); // "hello"
-```
+### Minified names (`1.2.22`)
 
-### TypeScript module-preservation default *(since 1.2.14)*
+`--minify-syntax` removes unused names from function/class expressions. If code
+depends on `.name`, use `--keep-names` or `keepNames: true`.
 
-New default TypeScript configurations now use `"module": "Preserve"` instead of `"ESNext"`, preserving the module syntax written in each file rather than transforming it.
+### Splitting and unresolved imports (`1.4-2`, `1.4-3`)
 
-```json
-{
-  "compilerOptions": { "module": "Preserve" }
-}
-```
+`allowUnresolved: string[]` supports dynamic-import glob shapes. Splitting with
+CommonJS or IIFE output fails with an ESM-only error rather than panicking;
+`Bun.build()` does allow `splitting: true` together with `compile`.
 
-### JSX side-effect preservation *(since 1.2.22)*
+Assignment to an ESM import is a runtime `TypeError` at the write when running
+source, even in dead code; `bun build` continues to reject it at bundle time.
 
-The bundler treats JSX expressions as pure by default, so unused JSX can be removed. Set `jsxSideEffects` when rendering a component must be retained for its side effects.
+## Platform build notes
 
-```json
-{
-  "compilerOptions": { "jsxSideEffects": true }
-}
-```
-
-### Programmatic JSX configuration *(since 1.2.23)*
-
-`Bun.build()` now accepts a centralized `jsx` object for transform settings that previously came from `tsconfig.json`.
-
-```ts
-await Bun.build({
-  entrypoints: ["./index.jsx"],
-  outdir: "./dist",
-  jsx: {
-    runtime: "automatic",
-    importSource: "preact",
-    development: false,
-    sideEffects: false,
-  },
-});
-```
-
-### CommonJS transforms for `import.meta` *(since 1.3.1)*
-
-With `--format=cjs`, the bundler now replaces `import.meta.path`, `import.meta.dirname`, and `import.meta.file` with CommonJS-compatible equivalents based on `__filename`, `__dirname`, and `path.basename(module.filename)`. Packages using these properties no longer leave invalid `import.meta` syntax in CommonJS output.
-
-```sh
-bun build ./entry.ts --format=cjs --outfile=entry.cjs
-```
-
-### REPL transforms with `Bun.Transpiler` *(since 1.3.7)*
-
-`replMode: true` transforms input for persistent interactive evaluation: declarations are hoisted, `const` becomes redeclarable, the final expression is captured, object literals are recognized, and top-level await is wrapped appropriately.
-
-```ts
-const transpiler = new Bun.Transpiler({ loader: "tsx", replMode: true });
-const transformed = transpiler.transformSync("await Promise.resolve(42)");
-```
-
-### Standard ES decorators *(since 1.3.10)*
-
-The transpiler now supports stage-3 standard decorators when `experimentalDecorators` is not enabled, including class and method decorators, field initializer replacement and `addInitializer`, public or private auto-accessors, `Symbol.metadata`, and spec-defined evaluation order. Legacy TypeScript decorators remain available with `experimentalDecorators: true`.
-
-```ts
-function logged(method: Function, context: ClassMethodDecoratorContext) {
-  return function (this: unknown, ...args: unknown[]) {
-    console.log(String(context.name));
-    return method.call(this, ...args);
-  };
-}
-class Service {
-  @logged run() {}
-}
-```
-
-### Legacy decorator settings in `Bun.Transpiler` *(since 1.3.11)*
-
-`Bun.Transpiler` now honors `experimentalDecorators` and `emitDecoratorMetadata` from `tsconfig` instead of always emitting standard decorators. Enabling `emitDecoratorMetadata` selects the legacy TypeScript decorator behavior even when `experimentalDecorators` is not explicitly set, restoring compatibility with frameworks that consume legacy metadata.
-
-### Native resource-management syntax in Bun output *(since 1.3.14)*
-
-`bun run`, `Bun.Transpiler({ target: "bun" })`, and `bun build --target=bun` now preserve `using` and `await using` instead of lowering them to helper calls. Browser and Node targets continue to lower the syntax.
-
-## Standalone executables and cross-compilation
-
-### Cross-compiled executables *(1.2-guide)*
-
-`bun build --compile` can target another supported platform, such as `--target=bun-windows-x64`; Windows builds also accept `--windows-icon` and `--windows-hide-console`. Compiled programs can inspect bundled assets through the iterable `embeddedFiles` export from `bun`.
-
-### Bytecode caches *(1.2-guide)*
-
-`bun build --bytecode` emits JavaScriptCore `.jsc` caches, either beside normal output or inside a standalone executable. The corresponding `.js` file is still required for non-compiled output, and async functions, generators, and `eval` are not currently bytecode-compiled.
-
-```sh
-bun build --bytecode --outdir=dist app.ts
-```
-
-### Running Bun from a compiled executable *(since 1.2.16)*
-
-Setting `BUN_BE_BUN` when launching a single-file executable runs its embedded Bun binary instead of the compiled entrypoint.
-
-```sh
-BUN_BE_BUN=1 ./my-app --version
-```
-
-### Code-signable Windows executables *(since 1.2.19)*
-
-Windows executables produced by `bun build --compile` can now be Authenticode-signed after compilation without invalidating their embedded source and assets.
-
-```sh
-bun build ./app.ts --compile --outfile app.exe
-signtool.exe sign /f MyCert.pfx /p MyPassword app.exe
-```
-
-### Programmatic executable compilation *(since 1.2.21)*
-
-`Bun.build()` now creates standalone executables with `compile: true`, a target string, or a configuration object; compiled builds can also use bundler plugins.
-
-```ts
-await Bun.build({
-  entrypoints: ["./cli.ts"],
-  compile: { target: "bun-linux-x64-musl", outfile: "./cli" },
-});
-```
-
-### Embedded executable runtime flags *(since 1.2.21)*
-
-`bun build --compile-exec-argv` embeds Bun runtime arguments into a standalone executable; they take effect on launch and appear in `process.execArgv`.
-
-```sh
-bun build ./cli.ts --compile --compile-exec-argv="--smol --user-agent=MyApp/1.0"
-```
-
-### Windows executable metadata *(since 1.2.21)*
-
-Compiled Windows executables can set title, publisher, version, description, and copyright through matching `--windows-*` flags or `compile.windows` in `Bun.build()`.
-
-```ts
-await Bun.build({
-  entrypoints: ["./app.js"],
-  compile: { windows: { title: "My App", publisher: "Acme", version: "1.2.3.4" } },
-});
-```
-
-### macOS executable code signing *(1.3-guide)*
-
-Standalone macOS executables produced by `bun build --compile` can now be signed after compilation with the platform `codesign` tool.
-
-```sh
-bun build --compile ./app.ts --outfile myapp
-codesign --sign "Developer ID" ./myapp
-```
-
-### Sourcemaps for programmatically compiled executables *(since 1.3.1)*
-
-`Bun.build({ compile: true, sourcemap: true })` now applies sourcemaps and emits an external map, matching `bun build --compile`; runtime stacks point to original files and lines instead of virtual `$bunfs` paths.
-
-### Standalone executable configuration autoload *(since 1.3.3)*
-
-Compiled executables normally search the directory where they are launched for `.env` and `bunfig.toml`. Disable either source at build time with `--no-compile-autoload-dotenv` and `--no-compile-autoload-bunfig`, or set `compile.autoloadDotenv` and `compile.autoloadBunfig` to `false` in `Bun.build()`.
-
-```sh
-bun build --compile --no-compile-autoload-dotenv --no-compile-autoload-bunfig app.ts
-```
-
-### Standalone executable config loading *(since 1.3.4)*
-
-Standalone executables no longer load deployment-time `tsconfig.json` or `package.json` files by default. Opt back in at build time with `--compile-autoload-tsconfig` and `--compile-autoload-package-json`, or with `compile.autoloadTsconfig` and `compile.autoloadPackageJson` in `Bun.build()`.
-
-```ts
-await Bun.build({
-  entrypoints: ["./app.ts"],
-  compile: { autoloadTsconfig: true, autoloadPackageJson: true },
-});
-```
-
-### Compile-target type rename *(since 1.3.7)*
-
-The TypeScript type `Bun.Build.Target` was renamed to `Bun.Build.CompileTarget`; update annotations that used the old name.
-
-### ESM bytecode in compiled executables *(since 1.3.9)*
-
-Compiled executables can now combine `--bytecode` with `--format=esm`. Omitting `--format` still selects CommonJS.
-
-```sh
-bun build --compile --bytecode --format=esm app.ts
-```
-
-### Linux x64 compile-target typings *(since 1.3.9)*
-
-`Bun.Build.CompileTarget` now includes the valid `bun-linux-x64-baseline` and `bun-linux-x64-modern` targets, so programmatic cross-compilation to those variants type-checks.
-
-```ts
-const target: Bun.Build.CompileTarget = "bun-linux-x64-modern";
-```
-
-### Linux standalone executable portability *(since 1.3.12)*
-
-Linux executables produced by `bun build --compile` now run with execute-only permissions, without needing read access to `/proc/self/exe`. Builds created on NixOS or Guix also use a normalized ELF interpreter path instead of being tied to the originating Nix generation.
-
-```sh
-bun build --compile app.ts --outfile app
-chmod 111 app
-./app
-```
+Native Windows ARM64 and its compile target were added in `1.3.10`. In `1.4-2`,
+official FreeBSD x86_64/aarch64 and experimental Android builds ship; the Linux
+glibc floor is 2.17 with a kernel 3.10 `memfd_create` fallback, and x64 releases
+are baseline-only. Bun also runs in Windows AppContainer and read-only
+directories.

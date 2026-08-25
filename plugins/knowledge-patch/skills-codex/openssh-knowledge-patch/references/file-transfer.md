@@ -1,34 +1,49 @@
 # File Transfer
 
-## Multiplexing behavior
+## Connection multiplexing
 
-From OpenSSH 10.0, `scp` and `sftp` invoke `ssh` with `ControlMaster no`. A transfer may reuse a multiplexing master that already exists, but a configured `ControlMaster yes` or `auto` no longer causes it to create one implicitly.
+### Do not implicitly create a control master (batch 10.0-10.3)
 
-Start a master explicitly when transfer automation depends on one. Do not diagnose successful reuse as evidence that the transfer client can still create it.
+From OpenSSH 10.0, `scp` and `sftp` invoke `ssh` with `ControlMaster no`.
+A transfer may reuse an already-running master, but configured `ControlMaster
+yes` or `auto` no longer makes the transfer create one implicitly. Start a
+master separately when automation depends on reuse.
 
 ## Destination containment
 
-OpenSSH 10.4 contains destinations chosen by untrusted servers:
+### Contain SFTP local destinations (batch 10.4)
 
-- In `sftp host:/path .`, the server can no longer select an unexpected local destination.
-- In remote-to-remote `scp`, a malicious server can no longer write into the parent of the intended target directory.
+The command form `sftp host:/path .` prevents a malicious server from choosing
+an unexpected local destination. Upgrade clients that download from untrusted
+servers rather than attempting to reproduce this containment in wrapper
+scripts.
 
-Upgrade clients that connect to untrusted or mutually untrusted servers; destination sanitization in calling scripts is not a complete replacement for the client fixes.
+### Contain remote-to-remote SCP destinations (batch 10.4)
 
-## Long `internal-sftp` command lines
+Remote-to-remote `scp` prevents a malicious server from writing into the parent
+of the intended target directory. Upgrade clients used with untrusted servers
+or partially trusted remote endpoints.
 
-Before 10.4, long `internal-sftp` invocations silently discard the tenth and later arguments. Audit every invocation with ten or more arguments: a security-relevant option placed after the ninth argument may never have taken effect.
+## Server command invocation
 
-Upgrade rather than relying on later positions. When an immediate upgrade is impossible, shorten or reorder the invocation so every required option is within the first nine arguments, then verify the effective behavior.
+### Audit long `internal-sftp` command lines (batch 10.4)
 
-## Numeric SFTP listings
+Earlier releases silently discarded the tenth and subsequent arguments of an
+`internal-sftp` command line. This could remove a security-relevant option.
+Audit invocations with ten or more arguments and upgrade; do not depend on
+arguments beyond the ninth position on an affected server.
 
-In 10.4, `sftp ls -ln` prints numeric user and group IDs as requested. Earlier releases incorrectly printed names. Remove scripts that translate or compensate for the old output, and test parsers against numeric fields.
+## Listing and mode behavior
 
-## Legacy SCP downloads as root
+### Parse numeric SFTP listings (batch 10.4)
 
-From 10.3, root downloads made with legacy `scp -O` clear setuid and setgid bits unless `-p` explicitly requests mode preservation.
+`sftp ls -ln` displays numeric user and group IDs as requested. Earlier
+releases incorrectly printed names. Remove workarounds that translate or parse
+the earlier name output, and test scripts against numeric fields.
 
-- Omit `-p` for the safer default.
-- Add `-p` only when preserving those bits is intentional and the source is trusted.
-- Update automation that previously assumed root plus `-O` preserved all mode bits automatically.
+### Preserve privileged mode bits only by request (batch 10.0-10.3)
+
+From OpenSSH 10.3, root downloads made with legacy `scp -O` clear setuid and
+setgid bits unless `-p` explicitly requests mode preservation. Automation that
+intentionally preserves those bits must opt in with `-p`; otherwise retain the
+safer clearing behavior.

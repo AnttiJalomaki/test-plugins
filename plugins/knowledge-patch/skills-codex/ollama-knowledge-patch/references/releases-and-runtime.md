@@ -1,69 +1,41 @@
-# Releases and runtime operations
+# Releases and Runtime Operations
 
-## Release-family behavior
+## Startup and accelerator behavior
 
-The versioned batch `0.30-0.32` introduced the CLI, import, acceleration, and
-launcher behavior summarized here and in the model reference.
+### Vulkan is enabled by default (`0.30-0.32`)
 
-### Vulkan defaults
+Ollama 0.30 enables Vulkan automatically, extending out-of-the-box GPU acceleration to more AMD and Intel hardware without vendor-specific libraries.
 
-From 0.30, Vulkan acceleration is enabled by default. This extends
-out-of-the-box GPU acceleration to additional AMD and Intel hardware without
-requiring vendor-specific libraries.
+### Bare `ollama` starts an interactive agent
 
-### Bare CLI agent
-
-From 0.32, running `ollama` without a subcommand starts an interactive agent
-for chat, coding, web features, and delegated work. The agent receives the
-current working directory as project context.
+From 0.32, running `ollama` without a subcommand starts an agent for chat, coding, web features, and delegated work. The current working directory becomes project context. If web search or fetch requires authentication, sign in from the CLI.
 
 ```sh
 ollama
-```
-
-Sign in when web search or fetch requires authentication:
-
-```sh
 ollama signin
 ```
 
-### Launcher rename and deprecations
+### MLX loading observes the timeout
 
-The former Codex App integration is named ChatGPT:
+From 0.32.1, MLX text-model loading honors `OLLAMA_LOAD_TIMEOUT`.
 
-```sh
-ollama launch chatgpt
-ollama launch chatgpt --restore
-```
+### Use expanded accelerator and Laguna support
 
-`--restore` returns to the usual ChatGPT profile. The default launcher menu
-shows only popular integrations; run `ollama launch` to see the broader
-selection.
+Ollama 0.32.3 adds CUDA support on Windows ARM64 and B200 support through CUDA 12. Laguna 2.1 models support chat, thinking, and tool calling. Ollama 0.32.4 adds Apple GPU support for Laguna through the MLX engine.
 
-The launcher warns before continuing with CodeLlama, Qwen2.5,
-Qwen2.5-coder, Llama 3.x, Mistral, StarCoder, or base DeepSeek-R1 tags because
-those integration choices are deprecated.
+## Select safe releases
 
-### MLX load timeout
-
-From 0.32.1, loading an MLX text model honors `OLLAMA_LOAD_TIMEOUT`.
-
-### Withdrawn release
+### Do not use the withdrawn 0.32.2 release
 
 Ollama 0.32.2 was withdrawn. Install or upgrade to 0.32.3 or newer.
 
-### Accelerator and Laguna support
+### Stay on 0.32.5 when image generation is required (`0.32.6`)
 
-Ollama 0.32.3 adds CUDA support on Windows ARM64 and B200 support through
-CUDA 12.
+Ollama 0.32.6 temporarily removes experimental image generation. Keep dependent workflows on 0.32.5 until a later release restores it.
 
-Laguna 2.1 models support chat, thinking, and tool calling. Apple GPU support
-for them through the MLX engine arrived in 0.32.4.
+## Disable cloud operation
 
-## Disable cloud features
-
-For local-only operation, set `disable_ollama_cloud` in
-`~/.ollama/server.json`:
+For local-only operation, set `disable_ollama_cloud` in `~/.ollama/server.json` or start the server with `OLLAMA_NO_CLOUD=1`, then restart it. This disables cloud models and web search. Confirm the setting in logs by finding `Ollama cloud disabled: true`.
 
 ```json
 {
@@ -71,75 +43,58 @@ For local-only operation, set `disable_ollama_cloud` in
 }
 ```
 
-Alternatively, start the server with:
+## Bound loaded models, parallelism, and queueing
+
+The runtime controls have these defaults:
+
+- `OLLAMA_MAX_LOADED_MODELS`: three times the GPU count, or three for CPU inference.
+- `OLLAMA_NUM_PARALLEL`: one parallel request per model.
+- `OLLAMA_MAX_QUEUE`: 512 queued requests; excess requests receive HTTP 503.
+
+Parallelism multiplies a model's context allocation and memory requirement by the parallel-request count. Tune it together with context size.
 
 ```sh
-OLLAMA_NO_CLOUD=1 ollama serve
+OLLAMA_MAX_LOADED_MODELS=2 OLLAMA_NUM_PARALLEL=4 OLLAMA_MAX_QUEUE=128 ollama serve
 ```
 
-Restart after changing the JSON setting. Server logs confirm the effective
-state with:
+## Quantize the K/V cache with Flash Attention
 
-```text
-Ollama cloud disabled: true
-```
+Flash Attention is automatically selected where supported. Force it on with `OLLAMA_FLASH_ATTENTION=1` or off with `OLLAMA_FLASH_ATTENTION=0`.
 
-This setting disables both cloud models and web search.
+When Flash Attention is active, `OLLAMA_KV_CACHE_TYPE` changes the global cache type from the default `f16`:
 
-## Concurrent work and queueing
-
-Three environment variables bound server concurrency:
-
-| Setting | Default | Effect |
-| --- | --- | --- |
-| `OLLAMA_MAX_LOADED_MODELS` | Three times the GPU count, or three for CPU inference | Number of simultaneously loaded models |
-| `OLLAMA_NUM_PARALLEL` | One per model | Parallel requests processed by each model |
-| `OLLAMA_MAX_QUEUE` | 512 | Queue capacity before excess requests receive HTTP 503 |
-
-```sh
-OLLAMA_MAX_LOADED_MODELS=2 OLLAMA_NUM_PARALLEL=4 \
-  OLLAMA_MAX_QUEUE=128 ollama serve
-```
-
-Parallelism multiplies the model context allocation and its memory requirement
-by the number of parallel requests. Include that multiplier when sizing GPU or
-system memory.
-
-## Flash Attention and K/V cache memory
-
-Flash Attention is chosen automatically when the hardware supports it. Force
-it on or off with:
-
-```sh
-OLLAMA_FLASH_ATTENTION=1 ollama serve
-OLLAMA_FLASH_ATTENTION=0 ollama serve
-```
-
-When Flash Attention is enabled, `OLLAMA_KV_CACHE_TYPE` sets the global cache
-default:
-
-| Type | Approximate memory relative to `f16` | Tradeoff |
-| --- | --- | --- |
-| `f16` | Full | Default quality |
-| `q8_0` | One half | Some quality loss |
-| `q4_0` | One quarter | Greater quality loss |
+- `q8_0` uses roughly half the memory with some quality loss.
+- `q4_0` uses roughly one quarter of the memory with greater quality loss.
 
 ```sh
 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve
 ```
 
-## Exact memory scheduling
+## Rely on exact memory scheduling for new-engine models
 
-New-engine models measure their exact memory requirement before loading rather
-than relying on an estimate. This behavior is enabled by default and can:
+New-engine models measure their exact memory requirement before loading rather than using an estimate. This default behavior avoids over-allocation, can place more of a model on the GPU, and improves scheduling across multiple or mismatched GPUs. It also makes `ollama ps` memory reporting agree with device tools such as `nvidia-smi`.
 
-- avoid memory over-allocation;
-- place more of a model on the GPU;
-- improve scheduling across multiple or mismatched GPUs; and
-- make `ollama ps` memory usage agree more closely with tools such as
-  `nvidia-smi`.
+At rollout, exact measurement applied to `gpt-oss`, `llama4`, `llama3.2-vision`, `gemma3`, `embeddinggemma`, `gemma3n`, `qwen3`, `qwen2.5vl`, `mistral-small3.2`, `all-minilm`, and other new-engine embedding models. Support follows each model's migration to the new engine.
 
-At rollout, exact scheduling applied to `gpt-oss`, `llama4`,
-`llama3.2-vision`, `gemma3`, `embeddinggemma`, `gemma3n`, `qwen3`,
-`qwen2.5vl`, `mistral-small3.2`, `all-minilm`, and other new-engine embedding
-models. Other models gain it as they migrate to the new engine.
+## Parse OpenAI-compatible stream chunks by event
+
+From 0.32.6, `/v1/chat/completions` streams:
+
+- `role` only in the first chunk.
+- `finish_reason` in its own chunk.
+- Usage in a separate chunk when `stream_options.include_usage` is enabled.
+
+Truncated responses finish with `"length"` rather than `"tool_calls"`. These behaviors apply from `0.32.6`.
+
+```json
+{
+  "model": "qwen3:8b",
+  "messages": [{"role": "user", "content": "Summarize this."}],
+  "stream": true,
+  "stream_options": {"include_usage": true}
+}
+```
+
+## Resolve cloud-only names to their cloud tags
+
+From 0.32.6, when a cloud-only model name lacks a default tag, Ollama offers its `:cloud` tag instead of failing. For example, `ollama run kimi-k3` offers `kimi-k3:cloud`.

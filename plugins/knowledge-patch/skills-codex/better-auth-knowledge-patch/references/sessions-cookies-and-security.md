@@ -2,13 +2,11 @@
 
 ## Database-free stateless authentication
 
-Omitting `database` enables stateless session management. Access-token, account-info, and refresh-token endpoints remain usable, and account data can be deferred from persistence into a signed cookie.
+Omitting `database` enables stateless session management. Access-token, account-info, and refresh-token endpoints remain available. `account.storeAccountCookie` can defer account persistence into a signed cookie.
 
 ```ts
 export const auth = betterAuth({
-  socialProviders: {
-    google: { clientId, clientSecret },
-  },
+  socialProviders: { google: { clientId, clientSecret } },
   account: { storeAccountCookie: true },
 });
 
@@ -16,11 +14,11 @@ const accessToken = await authClient.getAccessToken();
 const accountInfo = await authClient.accountInfo();
 ```
 
-## Cookie-cache behavior
+Cookies are chunked when necessary, and the session-store cookie cache uses JWE by default. Client sessions can refetch by polling or window focus; `disableSignal` disables the client's normal abort-signal behavior. The default API error page may be restyled or replaced with a custom path.
 
-Session-store cookie cache uses JWE by default. Cookies are automatically chunked when they exceed a single-cookie limit.
+## Cookie-cache refresh and invalidation
 
-`cookieCache.refreshCache: true` refreshes a stateless cookie after 80% of `maxAge`. The object form refreshes when `updateAge` seconds remain. Incrementing `cookieCache.version` invalidates all stateless sessions carrying an older version.
+`cookieCache.refreshCache: true` refreshes a stateless cookie after 80% of `maxAge`; the object form refreshes when `updateAge` seconds remain. Increment `cookieCache.version` to invalidate cookies carrying an older version.
 
 ```ts
 session: {
@@ -33,15 +31,15 @@ session: {
 }
 ```
 
-The stateless cache `maxAge` follows session `expiresIn`, preventing cached data from outliving the session.
+The stateless cache's `maxAge` cannot outlive session `expiresIn`.
 
 ## Session freshness
 
-`freshAge` is measured from session `createdAt`, not `updatedAt`. Refreshing cannot extend freshness indefinitely; sensitive operations may require reauthentication sooner than code based on refresh timestamps expects.
+`freshAge` is measured from `createdAt`, not `updatedAt`. Refreshing a session cannot keep it fresh indefinitely, so sensitive operations may require a new sign-in sooner than older refresh-based assumptions suggest.
 
 ## Secondary-storage placement
 
-Configuring secondary storage moves sessions there instead of the primary database by default. `storeSessionInDatabase` keeps them in the database as well. `preserveSessionInDatabase` retains database records after revocation.
+When secondary storage is configured, sessions live there instead of the primary database by default. Set `storeSessionInDatabase` to retain database-backed sessions and `preserveSessionInDatabase` to keep their rows when revoking sessions.
 
 ```ts
 secondaryStorage,
@@ -51,31 +49,21 @@ session: {
 }
 ```
 
-Sessions read from secondary storage do not include `id`.
+Sessions loaded from secondary storage do not contain `id`.
 
-## Custom session fields
+## Custom sessions
 
-Fields returned by `customSession` are not written to cookie cache or secondary storage, so its callback runs on every fetch. Install the matching client plugin for type inference when the auth type can be imported.
+Fields produced by `customSession` are recomputed on every fetch and are not placed in cookie cache or secondary storage. Add the matching client plugin for type inference when the server auth type is importable.
 
 ```ts
 plugins: [customSessionClient<typeof auth>()]
 ```
 
-Custom additional session fields can be changed without reauthentication through `authClient.updateSession()`:
+Additional session fields can be changed without reauthentication through `authClient.updateSession()`. Per-request refresh skipping and read-replica-aware deferred refresh are available for specialized data paths.
 
-```ts
-await authClient.updateSession({ theme: "dark", language: "en" });
-```
+## Verification data
 
-Session refresh also supports read-replica-aware deferred refresh and per-request refresh skipping.
-
-## Client refetch behavior
-
-Client sessions can refetch by polling and on window focus. `disableSignal` turns off the client's default abort-signal behavior. Expo polling requires `expo-network`.
-
-## Verification storage
-
-Verification values may live only in secondary storage or be retained in the database too. Identifiers can be plain or hashed globally, with per-purpose overrides such as `email-verification` and `password-reset`.
+Verification values can be stored only in secondary storage or retained in the database. Identifiers may be plain or hashed globally, with per-purpose overrides such as `email-verification` and `password-reset`.
 
 ```ts
 verification: {
@@ -84,33 +72,9 @@ verification: {
 }
 ```
 
-## Durable and per-path rate limits
-
-Rate-limit counters use process memory by default. Choose database, secondary, or custom storage in multi-instance deployments.
-
-Rejected requests no longer consume quota. Default sign-in and sign-up limits are three requests per 10 seconds; password reset and OTP defaults are three per 60 seconds. Plugins can add rules.
-
-`customRules` supports exact and wildcard paths, asynchronous limit functions, and `false` to exempt a path. A rejected request reports retry seconds through `X-Retry-After`.
-
-```ts
-rateLimit: {
-  storage: "secondary-storage",
-  customRules: {
-    "/get-session": false,
-    "/two-factor/*": async () => ({ window: 10, max: 3 }),
-  },
-}
-```
-
-IPv6 limiting can group clients by a configured subnet:
-
-```ts
-advanced: { ipAddress: { ipv6Subnet: 64 } }
-```
-
 ## Secret rotation
 
-An ordered `secrets` array encrypts new data with the first key and keeps older keys for decryption. This avoids forced invalidation during rotation.
+An ordered `secrets` array encrypts new data with the first key and keeps older keys available for decryption. This avoids invalidating all sessions or tokens during a rotation. The environment form is `BETTER_AUTH_SECRETS="2:new-secret,1:old-secret"`.
 
 ```ts
 secrets: [
@@ -119,36 +83,62 @@ secrets: [
 ]
 ```
 
-The environment equivalent is:
+## OAuth-token storage
 
-```sh
-BETTER_AUTH_SECRETS="2:new-secret,1:old-secret"
-```
-
-## CSRF and origin validation
-
-CSRF and origin validation run as separate controls. `disableCSRFCheck` disables CSRF checks only. `disableOriginCheck` disables callback/redirect URL validation and, for backward compatibility, CSRF defenses too.
-
-Cookie-less email sign-in and sign-up form navigations use Fetch Metadata to prevent cross-site first-login CSRF. Non-browser clients using cookies should send a valid `Origin` or `Referer`.
-
-Wildcard entries are accepted in `trustedOrigins`. An asynchronous origin callback must handle an undefined request during initialization and direct `auth.api` use.
-
-When `advanced.trustedProxyHeaders` derives base URL from `X-Forwarded-Host` and `X-Forwarded-Proto`, use it only behind a proxy that strips untrusted header values and retain an origin allowlist.
-
-## Provider-token storage
-
-Account access and refresh tokens are unencrypted by default. Enable built-in encryption:
+Provider access and refresh tokens are plain by default. Prefer the built-in database encryption setting:
 
 ```ts
-account: { encryptOAuthTokens: true }
+export const auth = betterAuth({
+  account: { encryptOAuthTokens: true },
+});
 ```
 
-If custom cryptography is required, encrypt in an account `create.before` database hook and decrypt on read.
+For a custom encryption scheme, transform tokens in an account `create.before` hook and decrypt them on reads. Do not assume a post-commit `after` hook can provide atomic encryption.
 
-## Sensitive account operations
+## Rate limits
 
-`verifyPassword` checks the current user's password without a new sign-in. User deletion is disabled by default and, once enabled, requires a valid password, fresh session, or email verification for passwordless accounts.
+Rejected requests do not consume quota. Default sign-in/sign-up limits are three requests per 10 seconds; password-reset and OTP defaults are three per 60 seconds. Plugins may contribute rules, and `advanced.ipAddress.ipv6Subnet` groups IPv6 addresses.
 
-## Error-page behavior
+Counters use process memory by default. Choose database, secondary, or custom storage for durable multi-instance limits. `customRules` supports exact and wildcard paths, asynchronous limit functions, and `false` to exempt a path. Rejections provide retry seconds in `X-Retry-After`.
 
-The default API error page can be restyled or replaced with a custom path. Keep error responses enumeration-safe; for example, `/change-email` always acknowledges with `{ status: true }` without revealing address existence.
+```ts
+rateLimit: {
+  storage: "secondary-storage",
+  customRules: {
+    "/get-session": false,
+    "/two-factor/*": async () => ({ window: 10, max: 3 }),
+  },
+},
+advanced: { ipAddress: { ipv6Subnet: 64 } },
+```
+
+## CSRF and origin checks
+
+CSRF and origin validation are independent. `disableCSRFCheck` disables only CSRF defenses. `disableOriginCheck` additionally disables callback/redirect URL validation and, for compatibility, CSRF defenses too.
+
+Cookie-less email sign-in/sign-up form navigations use Fetch Metadata to prevent first-login CSRF. Non-browser clients that use cookies should send an appropriate `Origin` or `Referer`.
+
+Wildcard entries are accepted in `trustedOrigins`. An asynchronous origins callback must handle an undefined request during initialization and direct `auth.api` calls.
+
+```ts
+trustedOrigins: async (request) =>
+  request ? await queryTrustedDomains() : ["https://app.example.com"]
+```
+
+## Proxies and request-derived URLs
+
+`baseURL` can be an allowlisted dynamic object for previews, proxies, and multiple domains. Without an explicit value, server clients also fall back to `VERCEL_URL` and `NEXTAUTH_URL`.
+
+```ts
+baseURL: {
+  allowedHosts: ["myapp.com", "*.vercel.app", "preview-*.myapp.com"],
+  fallback: "https://myapp.com",
+  protocol: "auto",
+}
+```
+
+When no configured or environment URL exists, `advanced.trustedProxyHeaders` derives a base URL from `X-Forwarded-Host` and `X-Forwarded-Proto`. Enable it only behind a proxy that strips attacker-supplied forwarded headers, and retain a `trustedOrigins` allowlist.
+
+## Client IP and request controls
+
+Server-side client IP detection is automatic. Never accept a remote IP from a client-controlled header unless the trusted proxy chain normalizes it. Request validation may treat CSRF, origin, callback, and redirect checks as separate policy decisions.

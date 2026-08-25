@@ -1,69 +1,93 @@
 # Operations, Upgrades, and Recovery
 
-## Configuration drift
+## Health checks, shutdown, and names
 
-Since 2.11.0, the server's `-t` flag generates a hash of its configuration
-file, and `varz.config_digest` reports the running configuration's hash.
-Compare them to detect an on-disk change that has not been loaded.
+Since 2.11.0, `js-server-only` no longer checks meta-leader health. Use
+`js-meta-only` when meta-group health is the intended signal. Graceful
+`SIGTERM` shutdown exits with status `0`. Server, cluster, or gateway names
+containing spaces are rejected at startup.
 
-## Health checks and shutdown
+## JetStream asset API levels
 
-Since 2.11.0:
+The 2.11.0 server line assigns JetStream API support level `1`, advertises it
+through `jsz`, `varz`, and `$JS.API.INFO`, and records these server-managed
+asset metadata keys:
 
-- `js-server-only` no longer checks meta-leader health. Use `js-meta-only`
-  when the intended signal is meta-group health.
-- Graceful `SIGTERM` shutdown exits with status `0`.
+- `_nats.ver`
+- `_nats.level`
+- `_nats.req.level`
 
-Supervisors and probes should not interpret a successful graceful shutdown as
-a failure, and should select the JetStream check that matches the component
-whose health matters.
+Reconciliation tools must ignore those dynamic metadata values. Level-dependent
+fields include nonzero `PauseUntil` and the message-TTL settings.
 
-## Stream-state downgrade rebuilds
+API level 2 is required for atomic publishing, counter streams, and message
+schedules introduced with 2.12.0. Check the advertised level rather than
+assuming a feature is available uniformly during a rolling upgrade.
 
-The first 2.11.0-to-2.10 restart rebuilds changed stream-state files by
-rescanning message blocks. No data is lost, but CPU use rises and the node
-takes longer to become healthy.
+## Replicated deletion and leader changes
 
-The first 2.12.0-to-2.11 restart performs the same kind of rescan. Use 2.11.9
-or newer as the downgrade target so assets using features introduced in 2.12
-are placed safely offline.
+Since 2.11.0, deletes in replicated Interest and WorkQueue streams go through
+Raft proposals, potentially increasing replication traffic. A new leader waits
+for its Raft log to synchronize before serving reads or writes. Replicated
+consumers redeliver unacknowledged messages after a leader change. Configured
+consumer start sequences remain honored except for hidden source and mirror
+consumers.
 
-Allow additional maintenance and health-check time for these first restarts.
+## Stream-state rebuilds during downgrade
+
+On the first 2.11-to-2.10 restart, changed stream-state files are rebuilt by
+rescanning message blocks. No message data is lost, but CPU use rises and the
+node takes longer to become healthy.
+
+The first 2.12-to-2.11 restart performs the same kind of rebuild. Use 2.11.9 or
+newer as the downgrade target so assets using 2.12-only features are placed
+safely offline.
 
 ## Replicated in-memory recovery
 
 Since 2.12.0, recovery of a replicated in-memory stream after all but one
-replica have restarted may require every replica to be available, rather than
-only a quorum, while the server chooses the state that preserves data.
-
-Do not assume quorum availability is sufficient for this recovery case.
+replica have restarted may require every replica rather than only a quorum
+while the server chooses the data-preserving state. Do not force quorum-only
+recovery when the server is waiting for the safer state.
 
 ## Filestore memory sizing
 
-Since 2.12.0, elastic filestore caches can be released under memory pressure.
-Resident memory can therefore be higher or lower than the earlier pattern,
-depending on workload.
+Since 2.12.0, elastic filestore caches can be released under memory pressure,
+so RSS may be higher or lower depending on workload. Size `GOMEMLIMIT` for the
+memory actually available to the server, including container reservations,
+rather than relying on an earlier RSS pattern.
 
-Size `GOMEMLIMIT` for the memory actually available to the server, including
-container reservations, instead of deriving it from historical RSS behavior.
+## Filestore write-error containment
 
-## Filestore write failures
-
-Since 2.14.0, a filestore write error freezes only the affected stream. The
-server:
-
-- logs a `write error`;
-- fails health checks;
-- continues serving core traffic and other streams.
-
-A replicated stream can fail over, but the affected server must restart to
-recover.
+Since 2.14.0, a filestore write error freezes only the affected stream, writes
+a `write error` log entry, and fails health checks. Core traffic and other
+streams continue, and a replicated stream can fail over. Restart the affected
+server to recover the frozen stream.
 
 ## Raft overload containment
 
 Since 2.14.0, Raft bounds memory and disk growth when proposals arrive faster
-than they can be committed. A lagging leader steps down so a healthier peer
-can take over.
+than they can commit. A lagging leader steps down for a healthier peer. If a
+majority is overloaded, the cluster remains degraded until capacity catches
+up; leadership changes cannot supply missing majority capacity.
 
-If a majority is overloaded, no healthy peer can restore progress and the
-cluster remains degraded until capacity catches up.
+## Reliable-source upgrade and downgrade behavior
+
+When upgrading to 2.14.0, mixed-version peers may temporarily log an unknown
+`sourcing` field while the upgraded node retries the former consumer form.
+Downgrading to 2.12 returns WorkQueue and Interest sources to ephemeral mode,
+can interrupt sourcing during transition, and leaves `AckFlowControl` consumers
+offline until 2.14 is restored.
+
+## Operational upgrade checklist
+
+1. Inspect `varz`, `jsz`, and `$JS.API.INFO` for server versions, API levels,
+   health, and asset state.
+2. Confirm the destination version understands every stream feature and
+   configuration block currently in use.
+3. Budget CPU and readiness time for stream-block rescans across state-format
+   boundaries.
+4. Wait for required replicas when recovering replicated in-memory streams.
+5. Treat dynamic `_nats.*` metadata as server-owned.
+6. After a filestore write error, verify failover and restart the affected
+   server rather than expecting an online thaw.

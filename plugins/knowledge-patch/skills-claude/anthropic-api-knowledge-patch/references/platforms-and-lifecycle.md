@@ -1,109 +1,119 @@
 # Platforms and Release Lifecycle
 
-Use this reference for retirement planning, capability discovery, authentication,
-hosted-platform differences, and administrative migrations.
+## Lifecycle operations
 
-## Lifecycle states and usage audits
+Legacy targets receive no updates but lack a retirement date. Deprecated
+targets continue working until their scheduled retirement, while retired IDs
+reject requests. Publicly released targets receive at least 60 days' retirement
+notice. Use the Console usage-export CSV, grouped by API key and model, to find
+remaining callers.
 
-Legacy models no longer receive updates but have no retirement date yet.
-Deprecated models continue working until their assigned retirement; requests to
-retired models fail. Publicly released models receive at least 60 days' notice
-before retirement.
+The current schedule in batch `release-lifecycle` requires moving
+`claude-opus-4-1-20250805` to `claude-opus-4-8` before August 5, 2026.
+`claude-mythos-preview` is deprecated in favor of `claude-mythos-5`; listed
+Claude 4.0, 3.x, 2.x, 1.x, and Instant IDs are already retired.
 
-Use the Console usage export to obtain a CSV grouped by API key and model, then
-locate every caller of an ID before migrating it.
+Earliest tentative retirement dates are:
 
-## Retirement schedule
+- Opus 4.5: November 24, 2026; Sonnet 4.5: September 29, 2026; Haiku 4.5:
+  October 15, 2026.
+- Opus 4.6, 4.7, 4.8, and 5: February 5, April 16, May 28, and July 24, 2027.
+- Sonnet 4.6 and 5: February 17 and June 30, 2027.
+- Fable 5: June 9, 2027.
 
-On Anthropic-operated platforms:
+## Workbench and prompt-tool shutdown
 
-- `claude-mythos-preview` is deprecated in favor of `claude-mythos-5`.
-- `claude-opus-4-1-20250805` retires August 5, 2026; move to
-  `claude-opus-4-8` first.
-- The listed Claude 4.0, 3.x, 2.x, 1.x, and Instant IDs are already retired.
-- Earliest tentative retirements are November 24, 2026 for Opus 4.5;
-  September 29, 2026 for Sonnet 4.5; and October 15, 2026 for Haiku 4.5.
-- Earliest tentative retirements are February 5, April 16, May 28, and July 24,
-  2027 for Opus 4.6, 4.7, 4.8, and 5 respectively.
-- Earliest tentative retirements are February 17 and June 30, 2027 for Sonnet
-  4.6 and 5, and June 9, 2027 for Fable 5.
+Legacy Workbench access ends August 17, 2026. Its prompts, variables, and evals
+do not transfer to the updated experience, so export them first. The endpoints
+`/v1/experimental/generate_prompt`, `/v1/experimental/improve_prompt`, and
+`/v1/experimental/templatize_prompt` retire the same day and then error.
 
-Treat tentative dates as planning floors and recheck the current lifecycle
-record before a production cutover.
+## Fast-mode retirement behavior
 
-## Removed and retiring request behavior
+`speed: "fast"` on Opus 4.7 now errors. On Opus 4.6 it silently uses standard
+speed and standard pricing. Inspect `usage.speed` rather than trusting the
+requested mode, and move fast workloads to a supported newer target.
 
-Although SDK request types still expose `temperature`, `top_p`, and `top_k`,
-non-default values return HTTP 400 on Opus 4.7 and later and on Mythos Preview.
-Omit these fields and steer with effort.
+## Discovering capabilities
 
-Legacy Workbench access ends August 17, 2026. Its saved prompts, variables, and
-evals do not transfer to the updated experience, so export required data first.
-The experimental endpoints below retire the same day and then return errors:
+`GET /v1/models` and `GET /v1/models/{model_id}` expose
+`max_input_tokens`, `max_tokens`, and `capabilities`. Discover these values
+instead of hard-coding family assumptions.
 
-- `/v1/experimental/generate_prompt`
-- `/v1/experimental/improve_prompt`
-- `/v1/experimental/templatize_prompt`
+## Workload identity and inference geography
 
-`speed: "fast"` on Opus 4.7 now returns an error. On Opus 4.6 it silently runs
-at standard speed and standard pricing. Check `usage.speed` rather than assuming
-the requested mode was honored, and move fast workloads to a supported target.
+Workload Identity Federation is GA. Configure OIDC issuers and federation
+rules in Console, then use an SDK to exchange and refresh short-lived
+credentials instead of distributing static API keys.
 
-## Context and output-limit cutovers
+For targets released after February 1, 2026, `inference_geo` can request
+US-only inference at 1.1x pricing. Managed Agents place this field inside the
+agent model object and can override it per session.
 
-`context-1m-2025-08-07` has no effect on Sonnet 4 or 4.5; requests to those
-models above their standard 200k context now fail. Opus 4.6 and Sonnet 4.6
-instead provide 1M context at standard pricing without a beta header, use
-ordinary account rate limits at all context lengths, and accept up to 600 images
-or PDF pages in a 1M-context request.
+## AWS-hosted surfaces
 
-Discover limits dynamically with `GET /v1/models` or
-`GET /v1/models/{model_id}`. Their records expose `max_input_tokens`,
-`max_tokens`, and `capabilities`. Opus 4.6 and Sonnet 4.6 can increase the
-single-turn output limit to 300k with `output-300k-2026-03-24`.
-
-## Workload identity and inference location
-
-Workload Identity Federation is GA. Configure OIDC issuers and federation rules
-in the Console, then let an SDK exchange and refresh short-lived credentials
-instead of distributing static API keys.
-
-For models released after February 1, 2026, `inference_geo` can request US-only
-inference at 1.1x pricing.
-
-## Two distinct AWS-hosted surfaces
-
-Claude Platform on AWS runs Anthropic-managed infrastructure with AWS billing
-and IAM. Its native AWS endpoints expose Messages, Files, Message Batches,
-Managed Agents, Agent Skills, code execution, and tool use.
+Claude Platform on AWS is Anthropic-managed infrastructure with AWS billing and
+IAM. Native AWS endpoints expose Messages, Files, Message Batches, Managed
+Agents, Agent Skills, code execution, and tool use.
 
 Amazon Bedrock is separate AWS-managed infrastructure. Its
-`/anthropic/v1/messages` endpoint accepts the first-party Messages request
-shape. Opus 4.7 and Haiku 4.5 are self-serve there through global and regional
-endpoints. Do not infer one surface's feature support from the other.
+`/anthropic/v1/messages` route accepts the first-party Messages shape. Opus 4.7
+and Haiku 4.5 are self-serve there through global and regional endpoints.
+Feature availability, ID syntax, caching isolation, and billing behavior must
+be checked per surface.
 
-## MCP tunnel migration
+## Automatic prompt caching and diagnosis
 
-Tunnel management moved from Admin API `/v1/organizations/tunnels` to Claude
-API `/v1/tunnels`. The new route requires `mcp-tunnels-2026-06-22` and the
-`workspace:manage_tunnels` WIF scope. The old route remains only for a migration
-window.
+A request-level `cache_control` automatically caches the last eligible block
+and advances with the conversation; it can coexist with block-level controls.
+For a miss, enable `cache-diagnosis-2026-04-07`, send
+`diagnostics.previous_message_id`, and inspect `cache_miss_reason` for the
+diverging prefix.
 
-## Mid-conversation system messages
+## Hosted tools and instruction updates
 
-Fable 5, Mythos 5, and Opus 4.8 accept a `role: "system"` message in the
-`messages` array immediately after a user turn, without a beta header. This can
-change instructions while preserving the earlier prompt cache. Other
-model-specific behavior is listed in
-[Models and Migrations](models-and-migrations.md).
+`web_search_20260318` and `web_fetch_20260318` support `response_inclusion` to
+omit already consumed result blocks from loop responses.
 
-## Enterprise users and expiring keys
+Fable 5, Mythos 5, and Opus 4.8 accept `role: "system"` messages immediately
+after a user turn without a beta header, allowing instruction changes while
+preserving earlier cache prefixes.
 
-The Enterprise user-management API manages members, invites, groups, and roles.
-Group and custom-role operations require `ce-user-management-2026-07-13`;
-member and invite operations do not. An Admin key with `read:org_audit` may call
-all user-management `GET` routes.
+## Enterprise users and key lifetime
 
-Console-created API and Admin API keys can expire. Existing keys are unchanged.
-Keys with lifetimes of at least seven days trigger a pre-expiration email, and
-the Admin API reports the expiration time.
+Batch `2026-08-01-2026-08-19` supersedes the earlier beta requirement:
+member, invite, group, and custom-role Admin API endpoints are GA. Group and
+custom-role requests no longer require `ce-user-management-2026-07-13`, though
+requests that still include it continue to work. Member and invite calls never
+needed that header. An Admin key with `read:org_audit` may call all
+user-management `GET` routes.
+
+Console-created API and Admin API keys may have expiration dates. Existing keys
+are unchanged; keys lasting at least seven days trigger pre-expiration email,
+and the Admin API reports expiration.
+
+## Compliance session transcripts
+
+Enterprise organizations can use an existing Compliance Access Key with
+`read:compliance_user_data` to list cloud Cowork sessions and retrieve their
+transcripts:
+
+```text
+GET /v1/compliance/apps/sessions/remote
+GET /v1/compliance/apps/sessions/remote/{session_id}/messages
+```
+
+Beta routes cover local Cowork and Claude Code sessions across the organization,
+including list, metadata, and transcript retrieval:
+
+```text
+GET /v1/compliance/apps/sessions/local
+GET /v1/compliance/apps/sessions/local/{session_id}
+GET /v1/compliance/apps/sessions/local/{session_id}/messages
+```
+
+## Resolved workspace identity
+
+API responses include `anthropic-workspace-id`. Its `wrkspc_`-prefixed value
+identifies the workspace selected from the request credential, including the
+Default Workspace. Record it when diagnosing limits, spend, caching, or access.

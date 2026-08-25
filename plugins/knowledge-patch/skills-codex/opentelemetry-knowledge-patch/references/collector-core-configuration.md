@@ -1,36 +1,41 @@
 # Collector Core and Configuration
 
-The details in this reference apply to the Collector 0.157.0 batch.
-
-## Core telemetry and schemas
+## Core metric semantics
 
 ### Batch-size histogram buckets
 
-Core changes both batch-send-size histograms to power-of-two buckets from
-128 B through 16 MiB:
+`otelcol_exporter_queue_batch_send_size_bytes` and
+`otelcol_processor_batch_batch_send_size_bytes` use power-of-two buckets from
+128 B through 16 MiB. Update dashboards and alerts that hard-code histogram
+`le` values.
 
-- `otelcol_exporter_queue_batch_send_size_bytes`.
-- `otelcol_processor_batch_batch_send_size_bytes`.
+Exporter queue metrics have more specific semantics:
 
-Update dashboards and alerts that hard-code histogram `le` values.
+- `otelcol_exporter_queue_batch_send_size*` measures requests after batching
+  and exists only with `sending_queue.batch`.
+- Enqueue-time sizing is reported by `otelcol_exporter_enqueue_size` and
+  `otelcol_exporter_enqueue_size_bytes`.
 
-### Component configuration schemas
+Log- and profile-record scraper metrics use unit `{record}`, not
+`{datapoint}` (batch `2026-08-stable`).
 
-Collector core ships `config.schema.yaml` for:
+## Configuration schemas
 
-- Debug, OTLP, and OTLP/HTTP exporters.
-- The OTLP receiver.
-- Batch and memory-limiter processors.
-- Memory-limiter and zpages extensions.
+Core supplies `config.schema.yaml` for:
 
-The schemas contain validation rules and shared-library references. Regenerate
-them with `schemagen`.
+- debug, OTLP, and OTLP/HTTP exporters
+- the OTLP receiver
+- batch and memory-limiter processors
+- memory-limiter and zpages extensions
 
-## Collector self-telemetry resources
+The schemas contain validation and shared-library references. Regenerate them
+with `schemagen`.
+
+## Collector self-telemetry resource detection
 
 Experimental resource detection for the Collector's own telemetry is
-configured under `service.telemetry.resource.detection/development`.
-Supported detectors are `container`, `host`, `process`, and `service`.
+configured under `service.telemetry.resource.detection/development`. Supported
+detectors are `container`, `host`, `process`, and `service`.
 
 ```yaml
 service:
@@ -41,16 +46,13 @@ service:
           - host: {}
 ```
 
-## Configuration reload
+## Partial receiver reload
 
-Collector core adds:
-
-- Alpha `service.partialReload`.
-- Beta `service.partialReloadReceivers`.
-
-With `--feature-gates=service.partialReload`, a configuration reload restarts
-only receivers when processors, exporters, extensions, and all other
-non-receiver configuration remain unchanged.
+Core has alpha `service.partialReload` and beta
+`service.partialReloadReceivers` feature gates. With
+`--feature-gates=service.partialReload`, a configuration reload can restart
+only receivers when processors, exporters, extensions, and every other
+non-receiver setting are unchanged.
 
 ## Go configuration APIs
 
@@ -59,37 +61,44 @@ non-receiver configuration remain unchanged.
 - `xconfmap.WithForceUnmarshaler` is deprecated; use
   `confmap.WithForceUnmarshaler`.
 - The `configstorage` module provides reusable storage-configuration fields.
+- `configgrpc.WaitForReady` is now applied to gRPC client connections.
+- Core no longer embeds `confighttp.ServerConfig` in zpages `Config` or
+  `configauth.Config` in `confighttp.AuthConfig`. Go integrations must use the
+  new named fields rather than promoted fields.
 
-## Removed and renamed Contrib configuration
+## Removed and renamed components
 
-- The failover connector removes `retry_gap` and `max_retries`.
-- Contrib removes the JMX receiver code.
-- The AWS ECS attributes processor type is `aws_ecs_attributes`, replacing
-  `awsecsattributes` with no compatibility alias.
-- `cumulativetodelta` remains only as a deprecated alias for
-  `cumulative_to_delta`.
-- `spanpruning` remains only as a deprecated alias for `span_pruning`.
+- The failover connector no longer accepts `retry_gap` or `max_retries`.
+- The JMX receiver code is removed.
+- Rename processor type `awsecsattributes` to `aws_ecs_attributes`; the old
+  name has no alias.
+- `cumulativetodelta` and `spanpruning` are deprecated aliases for
+  `cumulative_to_delta` and `span_pruning`.
+- `kafkatopicsobserver`, its `kafka.topics` endpoint type, and receiver-creator
+  rules for that endpoint are removed. Use `kafkareceiver` topic regex
+  support.
+- Exporter type `azuremonitor` is renamed to `azure_monitor`.
+- Receiver type `sqlquery` is renamed to `sql_query`; its old name remains as
+  a deprecated alias.
+- Huawei Cloud CES and Simple Prometheus receivers are Unmaintained.
 
-## Processor and connector error defaults
+## Error-mode defaults
 
-The routing connector defaults `error_mode` to `ignore`. During its beta-gate
-period, `--feature-gates=-connector.routing.defaultErrorModeIgnore` restores
+The routing connector defaults top-level `error_mode` to `ignore`. During the
+beta-gate period,
+`--feature-gates=-connector.routing.defaultErrorModeIgnore` restores
 `propagate`.
 
 The filter and transform processors permanently default top-level
-`error_mode` to `ignore`. Their stable compatibility gates are scheduled for
+`error_mode` to `ignore`; their stable compatibility gates are scheduled for
 removal in 0.159.0.
 
 ## Host Metrics CPU defaults
 
-The Host Metrics receiver now:
-
-- Aggregates `system.cpu.time` and `system.cpu.utilization` across logical
-  CPUs by default.
-- Omits the `cpu` attribute by default.
-- Enables `system.cpu.logical.count` by default.
-
-Restore per-CPU series by selecting both `cpu` and `state`:
+Host Metrics aggregates `system.cpu.time` and
+`system.cpu.utilization` across logical CPUs by default, omits `cpu`, and
+enables `system.cpu.logical.count`. Restore per-CPU series by selecting both
+`cpu` and `state`:
 
 ```yaml
 receivers:
@@ -103,15 +112,21 @@ receivers:
             attributes: [cpu, state]
 ```
 
-## OpAMP Supervisor recovery
+## Shared database authentication
 
-Set `agent::collector_crash_log_snippet_kib` from 1 through 1024 to attach
-recent Collector logs to crash and remote-configuration failure reports.
+Contrib provides `configdbauth` configuration and a `dbauth` extension
+interface so components can share database authentication, including AWS IAM
+authentication. AWS IAM database authentication is alpha.
 
-`agent.automatic_config_rollback` restores the last working remote
-configuration when a newly delivered configuration fails.
+## OpAMP Supervisor
 
-## Core connection behavior
+- Set `agent::collector_crash_log_snippet_kib` from 1 through 1024 to attach
+  recent Collector logs to crash and remote-configuration failure reports.
+- `agent.automatic_config_rollback` restores the last working remote
+  configuration after a newly delivered configuration fails.
+- Package upgrades accept tar.gz archives and an `agent_binary` setting.
 
-Collector core now applies `configgrpc.WaitForReady` to gRPC client
-connections.
+## Service-manager integration
+
+The `sd_notify` extension integrates the Collector with the `sd_notify(3)`
+protocol.

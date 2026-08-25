@@ -1,24 +1,26 @@
 # Upgrades and Breaking Changes
 
-## Pre-upgrade checklist
+Use this reference to plan upgrade order, configuration rewrites, API rebuilds,
+and platform or store-format migration.
 
-Before upgrading:
+## Required maintenance releases
 
-1. Avoid the base 2025.06 release; its checkpoint mutex can sporadically
-   deadlock. Use `2025.06.1` or later.
-2. Complete the discovery v1-to-v2 transition before moving to Neo4j 2025.01.
-3. Inventory removed settings, public Java APIs, administrative procedures,
-   metrics, platform dependencies, and store formats.
-4. Decide whether to retain the current configuration or adopt new-install
-   defaults.
-5. Test log, TLS, plan-output, and administrative-result parsers against the
-   target release.
+### Checkpoint deadlock in 2025.06
 
-## Discovery v1 removal
+The base `2025.06` release can sporadically deadlock on the checkpoint mutex.
+Run production deployments on `2025.06.1` or later, where the defect is fixed.
 
-Neo4j 2025.01 removes discovery service v1. Complete migration before the
-upgrade. Internal discovery traffic moves from port `5000` to `6000`, and
-settings move as follows:
+### Block-format UTF-8 defect in 2026.07.0
+
+Neo4j `2026.07.0` has a block-format UTF-8 defect that can cause unexpected
+failures in Cypher `trim()` and, in some cases, make stored string data
+unreadable. Upgrade affected installations to `2026.07.1`.
+
+## Discovery migration gate
+
+Neo4j 2025.01 removes discovery service v1. A cluster must complete its v1-to-v2
+transition before upgrading. Internal discovery traffic moves from port `5000`
+to `6000`, and settings move as follows:
 
 ```text
 dbms.cluster.discovery.v2.endpoints -> dbms.cluster.endpoints
@@ -27,21 +29,23 @@ server.discovery.advertised_address -> server.cluster.advertised_address
 server.discovery.listen_address -> server.cluster.listen_address
 ```
 
-The old `*.v2.*` names remain accepted only for the 5.26-to-2025.01 migration
-and should be replaced.
+The old `*.v2.*` names remain accepted for the 5.26-to-2025.01 migration, but
+should be replaced. These migration procedures are removed without replacement:
 
-The discovery migration procedures
-`dbms.cluster.moveToNextDiscoveryVersion()`,
-`dbms.cluster.showParallelDiscoveryState()`, and
-`dbms.cluster.switchDiscoveryServiceVersion()` are removed without
-replacements. `dbms.setDatabaseAllocator()` is also removed without a
-replacement.
+```text
+dbms.cluster.moveToNextDiscoveryVersion()
+dbms.cluster.showParallelDiscoveryState()
+dbms.cluster.switchDiscoveryServiceVersion()
+```
 
-## Server groups become tags
+The removal means an operator cannot defer the discovery transition until
+after upgrading.
 
-Catch-up strategies `connect-randomly-to-server-group` and
-`connect-randomly-within-server-group` are replaced by their
-`*-server-tags` forms. Rename configuration:
+## Groups become tags
+
+Replace `connect-randomly-to-server-group` and
+`connect-randomly-within-server-group` with their `*-server-tags` forms. Rename
+the related settings:
 
 ```text
 db.cluster.raft.leader_transfer.priority_group -> db.cluster.raft.leader_transfer.priority_tag
@@ -49,9 +53,9 @@ server.cluster.catchup.connect_randomly_to_server_group -> server.cluster.catchu
 server.groups -> initial.server.tags
 ```
 
-## Replaced and removed settings
+## Configuration removals and replacements
 
-Neo4j 2025.01 has these replacements:
+Neo4j 2025.01 replaces:
 
 ```text
 db.logs.query.annotation_data_as_json_enabled -> db.logs.query.annotation_data_format
@@ -74,9 +78,14 @@ server.memory.off_heap.max_cacheable_block_size
 server.memory.off_heap.transaction_max_size
 ```
 
-## New-install configuration defaults
+Also migrate the deprecated `server_policies` load-balancing plugin and its
+`dbms.routing.load_balancing.plugin` setting. The settings
+`server.db.query_cache_size`, `dbms.security.oidc.<provider>.auth_params`, and
+`dbms.security.oidc.<provider>.client_id` are deprecated as well.
 
-These defaults apply to new installations and upgrades that replace existing
+## New-install defaults
+
+These changes apply to new installations and to upgrades that replace existing
 configuration files:
 
 ```text
@@ -87,15 +96,19 @@ server.logs.config: conf/server-logs.xml -> server-logs.xml
 server.logs.user.config: conf/user-logs.xml -> user-logs.xml
 ```
 
-Relative `server.logs.config` and `server.logs.user.config` paths resolve from
-`server.directories.configuration`, not `server.directories.neo4j_home`.
-The default `debug.log` format also changes from text to JSON. Keep its default
-appender for supportability and add another appender for a second format.
+Relative `server.logs.config` and `server.logs.user.config` paths are resolved
+from `server.directories.configuration`, not
+`server.directories.neo4j_home`. Retained configuration does not silently gain
+the new-install values.
 
-## Removed public Java APIs
+Starting in 2026.02, the packaged `neo4j.conf` explicitly sets
+`db.query.default_language=CYPHER_25`; new deployments using that file default
+newly created databases to Cypher 25.
 
-Neo4j 2025.01 removes public Java symbols tied to retired allocator, server
-group, discovery, Raft, transaction-memory, and query-annotation facilities:
+## Removed public Java surface
+
+Neo4j 2025.01 removes public Java symbols tied to retired allocators, groups,
+discovery, Raft, transaction memory, and query annotations:
 
 ```text
 EnterpriseEditionSettings.{initial_database_allocator,server_groups,server_max_number_of_databases}
@@ -104,21 +117,59 @@ ClusterSettings.{DEFAULT_CLUSTER_STATE_DIRECTORY_NAME,DEFAULT_DISCOVERY_PORT,DEF
 ClusterBaseSettings.DEFAULT_DISCOVERY_PORT
 ClusterNetworkSettings.catchup_client_inactivity_timeout
 ParallelDiscoveryMode
-RemotesResolver.Type and RemotesResolver.init(Type,Configuration,LogProvider)
+RemotesResolver.Type
+RemotesResolver.init(Type,Configuration,LogProvider)
 ClusterAddressSettings.discovery_advertised_address
 DiscoverySettings.{discovery_endpoints,discovery_listen_address,discovery_log_level,discovery_type,discovery_version}
 KubernetesSettings.kubernetes_service_port_name
 RaftSettings.{DEFAULT_CLUSTER_STATE_DIRECTORY_NAME,DEFAULT_RAFT_PORT}
-SeedDownloadStreamWrapper and SeedProviderDependencies
+SeedDownloadStreamWrapper
+SeedProviderDependencies
 GraphDatabaseSettings.{TransactionStateMemoryAllocation,log_queries_annotation_data_as_json,tx_state_max_off_heap_memory,tx_state_memory_allocation,tx_state_off_heap_block_cache_size,tx_state_off_heap_max_cacheable_block_size}
 ```
 
 Replace removed `com.neo4j.dbms.seeding.SeedProvider` with
-`DatabaseSeedProvider`.
+`DatabaseSeedProvider`. The server-side Notification API and Result Core
+`getNotifications()` are separately deprecated from 5.26; Java integrations
+should stop using them.
 
-## Procedure and command migrations
+## Logging and metric compatibility
 
-Replace cluster entry points:
+The default `debug.log` format changes from text to JSON. Keep the default
+appender for supportability; add another appender if a second format is needed.
+Consumers of the default file must accept JSON.
+
+The old `causal_clustering.core` Raft series for indexes, term, leadership,
+retries, in-flight cache, prefetch buffering, message processing, replication,
+and last-leader messages are removed in favor of Raft metrics. The three
+`causal_clustering.read_replica.pull_update*` metrics move to store-copy
+metrics. Six discovery-v1 series under `cluster.discovery` have no replacement.
+
+Rename `<prefix>.store.size.total` to `<prefix>.store.size.full` in dashboards
+and alerts.
+
+## Supported-platform transitions
+
+Neo4j 2025.01 removes support for macOS 11 and 12, the Amazon Linux 2022 AMI,
+Ubuntu Server 16.04, 18.04, and 20.04, and Windows Server 2016 and 2019.
+
+Further retirement notices require advance planning:
+
+- Ubuntu Server 22.04, macOS 15 Sequoia, CentOS Stream 9, and Windows Server
+  2022 are deprecated in `2026.05.0` and will be removed later.
+- From 2026.05, `debian:bullseye-slim` and
+  `redhat/ubi9-minimal:latest` are unsupported as base images.
+- CentOS Stream 8.x and SysV init scripts are deprecated from 2026.01.
+- RHEL 8.x, Debian 11.x, macOS 13 Ventura, and macOS 14 Sonoma are deprecated
+  from 2025.10 and supported only through the 2026 LTS.
+
+## Administrative procedure removals
+
+`dbms.setDatabaseAllocator()` is removed without replacement. Cypher 25 also
+removes deprecated `dbms.upgrade()` and `dbms.upgradeStatus()`; remove these
+calls from administrative automation.
+
+Cluster entry points migrate as follows:
 
 ```text
 dbms.cluster.recreateDatabase() -> dbms.recreateDatabase()
@@ -128,50 +179,21 @@ dbms.cluster.readReplicaToggle() -> dbms.cluster.secondaryReplicationDisable()
 dbms.quarantineDatabase() -> dbms.unquarantineDatabase()
 ```
 
-The last two old procedures are removed in Cypher 25. Cypher 25 also removes
-deprecated `dbms.upgrade()` and `dbms.upgradeStatus()`; remove those calls from
-administrative automation.
+## TLS and seed-provider behavior
 
-Replace deprecated `database aggregate-backup` with
-`neo4j-admin backup aggregate`. Replace `neo4j-admin database migrate
---page-cache` with `--max-off-heap-memory`.
+`dbms.ssl.policy.*.verify_hostname` changes its default from `false` to `true`.
+After upgrading, TLS policies verify peer hostnames unless retained
+configuration explicitly fixes the value.
 
-## Metrics changes
-
-Old `causal_clustering.core` Raft metrics covering indexes, term, leadership,
-retries, in-flight cache, prefetch buffering, message processing, replication,
-and last-leader messages are removed in favor of Raft metrics. The
-`causal_clustering.read_replica.pull_update*` metrics move to store-copy
-metrics, and discovery-v1 metrics under `cluster.discovery` are removed.
-
-Rename `<prefix>.store.size.total` to `<prefix>.store.size.full`.
-
-## Platform removals and deprecations
-
-Neo4j 2025.01 removes macOS 11 and 12, Amazon Linux 2022 AMI, Ubuntu Server
-16.04, 18.04, and 20.04, and Windows Server 2016 and 2019.
-
-Later deprecations affect RHEL 8.x, Debian 11.x, macOS 13 and 14, CentOS Stream
-8.x, SysV init, Ubuntu Server 22.04, macOS 15, CentOS Stream 9, and Windows
-Server 2022. `debian:bullseye-slim` and `redhat/ubi9-minimal:latest` become
-unsupported base images from 2026.05. Replace them before their support
-windows end.
-
-## TLS and seed compatibility
-
-`dbms.ssl.policy.*.verify_hostname` defaults to `true` instead of `false`.
-Verify certificates and peer names before accepting the new default.
-
-`URLConnectionSeedProvider` no longer supports `file` locations in either
-Cypher 5 or Cypher 25. Use `FileSeedProvider`. Replace `S3SeedProvider` with
-`CloudSeedProvider` from 5.26.
+`URLConnectionSeedProvider` no longer accepts `file` locations in Cypher 5 or
+Cypher 25. Use `FileSeedProvider` for filesystem seeds.
 
 ## Store-format deadline
 
-The next LTS is the final release able to read, write, or migrate `high_limit`
-databases (2026.06.0). Migrate them offline to Block format before moving
-beyond it. A remaining `high_limit` database will fail to start without a
-compatibility fallback.
+The next LTS is the last release that can read, write, or migrate `high_limit`
+databases. Migrate them offline to Block format before upgrading beyond that
+LTS. A remaining `high_limit` database fails to start and has no compatibility
+fallback.
 
-The `standard` format has been deprecated since 5.23. Avoid it for new
-databases and plan migration for existing stores.
+The `standard` store format has been deprecated since 5.23. Do not select it
+for new databases, and plan to move existing stores away from it.

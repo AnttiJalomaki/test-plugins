@@ -1,21 +1,14 @@
 # Type Safety and APIs
 
-## Contents
-
-- [Generated route-module types](#generated-route-module-types)
-- [TypeScript project wiring](#typescript-project-wiring)
-- [Typed `href()` and path construction](#typed-href-and-path-construction)
-- [Loader and action inference](#loader-and-action-inference)
-- [Route component and match data](#route-component-and-match-data)
-- [Navigation and location APIs](#navigation-and-location-apis)
-- [Meta descriptors](#meta-descriptors)
-- [Data strategy APIs](#data-strategy-apis)
-- [Route config utility types](#route-config-utility-types)
-
 ## Generated route-module types
 
-Framework type generation creates sibling-style `./+types/<route>` modules with typed params,
-loader/action data, errors, and route export arguments.
+### Route export types (`7.0.0`)
+
+Framework type generation creates sibling imports such as `./+types/product`. The
+generated `Route` namespace supplies params, loader/action data, component props, and
+errors for each route export. `Node16` and `NodeNext` module resolution are supported.
+Child-route `matches` and `params` remain intentionally broad because they reflect runtime
+values.
 
 ```tsx
 import type { Route } from "./+types/product";
@@ -23,30 +16,23 @@ import type { Route } from "./+types/product";
 export async function loader({ params }: Route.LoaderArgs) {
   return { id: params.id };
 }
-
 export default function Product({ loaderData }: Route.ComponentProps) {
   return <h1>{loaderData.id}</h1>;
 }
 ```
 
-The generated layout supports TypeScript `Node16` and `NodeNext` module resolution. Child-route
-`matches` and `params` are deliberately broader because runtime descendants can contribute
-values.
+A fetcher's generic is the producing function, not the resolved value type:
 
-Generated params cover every matched page containing the route. Descendant parameters are
-optional keys, and narrowing one key refines correlated parameters in the normalized union. If
-one route module is mounted at multiple paths, typegen unions all parameter shapes rather than
-choosing one. Non-JavaScript route extensions such as `.mdx` are supported.
+```ts
+const fetcher = useFetcher<typeof loader>();
+```
 
-Generated `+types/*` modules no longer export `Info`. The provisional
-`react-router/route-module` entry moved to `react-router/internal`; both are internal surfaces,
-so remove `Info` imports and avoid depending on the internal entry unless unavoidable.
+### TypeScript project wiring (`type-safety-and-config`)
 
-## TypeScript project wiring
-
-React Router owns `.react-router/types`; ignore the overall `.react-router/` directory in source
-control, but include its type tree in TypeScript and use `rootDirs` so `./+types/*` resolves as a
-sibling of the application route.
+Ignore `.react-router/` in source control, but include `.react-router/types/**/*` in the
+TypeScript project and add the generated tree to `rootDirs` so sibling `./+types/*`
+imports resolve. Run `react-router typegen` before standalone or CI `tsc`; dev and custom
+servers based on `vite.createServer` keep types current automatically.
 
 ```json
 {
@@ -57,25 +43,34 @@ sibling of the application route.
 }
 ```
 
-`react-router dev` and custom servers using `vite.createServer` keep generated types current.
-Standalone and CI checks must run type generation explicitly:
-
 ```json
 {
-  "scripts": {
-    "typecheck": "react-router typegen && tsc"
-  }
+  "scripts": { "typecheck": "react-router typegen && tsc" }
 }
 ```
 
-Future/config flags generate their matching registration under `.react-router/types`; do not
-duplicate it with manual module augmentation. In v8, middleware-related gating types and the
-Data Mode `Future` augmentation are removed because the behavior is unconditional.
+### Config-driven generated types (`7.6.0`)
 
-## Typed `href()` and path construction
+Future flags in `react-router.config.ts` automatically register their related types under
+`.react-router/types`; remove matching manual `declare module "react-router"`
+augmentations.
 
-Framework Mode exports `href` from `react-router`. It validates the route pattern and parameter
-names against generated route configuration.
+Generated params cover every page containing a route. Descendant params are optional,
+and narrowing a key refines correlated params in the normalized union. Mounting one route
+file at several paths produces a union of all parameter shapes. Later 7.6 patches support
+non-JavaScript route extensions such as `.mdx`.
+
+Generated `+types/*` no longer exports `Info`. The provisional
+`react-router/route-module` entry moved to `react-router/internal`. Type declarations for
+`virtual:react-router/server-build` arrived in `7.4.0` and work with
+`moduleDetection: "force"` from 7.4.1.
+
+## Typed URL construction
+
+### Framework `href()` (`7.2.0`)
+
+Framework Mode exports `href` from `react-router`. It validates the route pattern and
+parameter names against generated config.
 
 ```tsx
 import { href, Link } from "react-router";
@@ -83,45 +78,42 @@ import { href, Link } from "react-router";
 <Link to={href("/products/:id", { id: "asdf" })} />;
 ```
 
-As of 7.6.2, optional static segments expand to concrete accepted patterns. Optional dynamic
-parameters keep their `?` and accept an optional parameter object. A splat value beginning with
-`/` does not add an extra slash at the boundary.
+### Optional segments and splats (`7.6.0`)
+
+As of 7.6.2, optional static segments expand into concrete patterns; optional dynamic
+parameters retain `?` and accept an optional params object. A leading `/` in a supplied
+splat no longer produces a double boundary slash.
 
 ```ts
 href("/users/:id?");
 href("/users/:id?", { id: "42" });
-href("/products/:id", { id: "42" });
 href("/products/:id/detail", { id: "42" });
 href("/products/*", { "*": "/1/edit" }); // "/products/1/edit"
 ```
 
-`href()` also handles a parameter followed by a suffix and a route consisting only of one
-optional parameter. As of 8.2.0 it stringifies and URL-encodes dynamic values like
-`generatePath()`. Splats preserve `/` while encoding their individual segments.
+`href()` also supports suffixed parameters and a route made only of one optional parameter
+from `7.9.0`.
+
+### Path generation and encoding
+
+`generatePath` correctly interpolates a suffixed parameter such as
+`/books/:id.json` from `7.12.0`.
+
+From `8.2.0`, `href()` stringifies and URL-encodes dynamic params consistently with
+`generatePath()`. Splat values keep `/` separators while encoding each segment.
 
 ```ts
 href("/items/:id", { id: "a b" }); // "/items/a%20b"
 href("/files/*", { "*": "a b/c d" }); // "/files/a%20b/c%20d"
 ```
 
-`generatePath()` likewise interpolates suffixed parameters:
+## Loader and component data typing
 
-```ts
-generatePath("/books/:id.json", { id: "42" }); // "/books/42.json"
-```
+### Client-loader inference (`7.6.0`)
 
-## Loader and action inference
-
-The generic passed to `useFetcher` is the producing function type, not the resulting data type;
-use `useFetcher<typeof loader>()`, not `useFetcher<LoaderData>()`:
-
-```ts
-const fetcher = useFetcher<typeof loader>();
-```
-
-To prevent `useRouteLoaderData<typeof clientLoader>` from applying server serialization to a
-client loader result, annotate the client-loader arguments. This preserves client-only values
-such as functions.
+Annotate a client loader's arguments when using it as the generic to
+`useRouteLoaderData`. This prevents server serialization from being applied to a
+client-only return type and preserves values such as functions.
 
 ```tsx
 export function clientLoader({}: Route.ClientLoaderArgs) {
@@ -132,34 +124,21 @@ const data = useRouteLoaderData<typeof clientLoader>("routes/home");
 data?.greeting();
 ```
 
-Redirect responses are excluded during loader-data inference. Loaders/actions may return
-`undefined`, and framework serialization preserves supported rich values. Library authors can
-use `unstable_SerializesTo` to register types handled by the turbo-stream serializer.
+`createRoutesStub` route components receive component props such as `loaderData` from
+`7.6.0`, so test components need not be rewritten to hooks.
 
-## Route component and match data
+### `loaderData` replaces `data`
 
-Route components receive generated props such as `loaderData`, `actionData`, `params`, and
-`matches`. `createRoutesStub` also passes route component props, so tests need not rewrite a
-component to use hooks.
+In `7.6.0`, `Route.MetaArgs.data` can be `undefined` because meta may run after the same
+route's loader throws or for a root 404 whose loader never ran. Guard it.
 
-```tsx
-const RoutesStub = createRoutesStub([{
-  path: "/",
-  loader: () => ({ message: "hello" }),
-  Component({ loaderData }) {
-    return <p>{(loaderData as { message: string }).message}</p>;
-  },
-}]);
-```
+`7.8.0` adds `loaderData` next to `data` in `Route.MetaArgs`, meta matches,
+`Route.ComponentProps.matches`, and `UIMatch`, while deprecating `data`. Match data can be
+undefined in an error boundary. Generated `Route.MetaArgs.loaderData` is optional only
+when the route exports `ErrorBoundary`.
 
-`loaderData` was introduced alongside the old `data` fields in `Route.MetaArgs`,
-`Route.MetaArgs.matches`, other meta-match types, `Route.ComponentProps.matches`, and `UIMatch`.
-In v8 the deprecated `data` fields are removed; always use `loaderData`.
-
-At match level, loader data can be `undefined` while an error boundary renders. Generated
-`Route.MetaArgs.loaderData` is optional only for a route that exports `ErrorBoundary`. Guard
-data from earlier matches because an ancestor loader may have failed. Meta for the route itself
-can also run on a root 404 or after its loader throws.
+V8 removes the old `data` fields entirely (`8.0.0`). Read `loaderData` from `MetaArgs` and
+every `MetaArgs.matches` item.
 
 ```ts
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -167,9 +146,20 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 ```
 
-Framework Mode's provisional `unstable_useRoute(routeId)` provides typed `loaderData`,
-`actionData`, and `handle` for a generated ID. It returns `undefined` if the route is not matched,
-except for `root`. Without an ID it targets the current route but leaves data as `unknown`.
+### Rich and read-only values
+
+Framework loaders can serialize `Map`, `Set`, and `Date` without manual JSON flattening
+(`framework-mode`). The unstable `unstable_SerializesTo` brand lets libraries register
+additional `turbo-stream` types (`7.2.0`). Server response inference retains
+`ReadonlyMap` and `ReadonlySet` as read-only (`7.8.0`).
+
+## Typed route and router state
+
+### Route match lookup (`7.9.0`)
+
+Framework `unstable_useRoute(routeId)` returns typed `loaderData`, `actionData`, and
+`handle` for a generated route ID. It returns `undefined` when unmatched except for
+`root`. Omitting the ID targets the current route but leaves data `unknown`.
 
 ```tsx
 const admin = unstable_useRoute("routes/admin");
@@ -177,28 +167,23 @@ if (!admin) throw new Error("Admin route is not matched");
 console.log(admin.loaderData, admin.actionData, admin.handle);
 ```
 
-The `root` route ID is reserved; route configuration rejects explicit reuse elsewhere.
+### Navigation and consolidated state
 
-## Navigation and location APIs
+`unstable_useRouterState()` collects active and pending data-router snapshots in
+`7.15.0`; it is limited to Framework, Data, and RSC modes. From `7.16.0`,
+`useNavigation()` preserves a discriminated union for `idle`, `loading`, and
+`submitting`, so a state check narrows its other fields correctly.
 
-The `useNavigation()` return type is a discriminated union. Branch on `state` before using fields
-specific to `idle`, `loading`, or `submitting`.
+### Stable fetcher snapshots (`7.15.0`)
 
-The `setSearchParams` updater receives a copy of the current `URLSearchParams`, so mutating it
-does not mutate router state before the navigation commits. This keeps a blocked navigation
-consistent with `useLocation().search`.
-
-`useFetchers()` has stable snapshot identity until fetchers actually change. `fetcher.reset()`
-returns one fetcher to its initial idle state; it replaced `unstable_reset()`.
-
-`unstable_useRouterState()` is available only with Framework, Data, and RSC data routers. It
-combines an always-populated active snapshot and a navigation-time pending snapshot, including
-location, search params, params, matches, navigation type/state, and submission data.
+`useFetchers()` returns the same array identity until the fetchers actually change. A
+memo or effect can safely depend on the returned array without rerunning for allocation
+alone.
 
 ## Meta descriptors
 
-`MetaDescriptor` supports an array of `LdJsonObject` values in one `script:ld+json` descriptor,
-allowing `<Meta />` to emit multiple schemas in one script.
+`MetaDescriptor` accepts multiple `LdJsonObject` values in one `script:ld+json` descriptor
+from `7.16.0`.
 
 ```tsx
 export function meta() {
@@ -211,19 +196,14 @@ export function meta() {
 }
 ```
 
-## Data strategy APIs
+## Smaller API behavior changes
 
-Custom strategies should use `match.shouldCallHandler()` and
-`match.shouldRevalidateArgs`; rename `match.unstable_shouldCallHandler()` and
-`match.unstable_shouldRevalidateArgs` rather than supporting both. `match.shouldLoad` is
-deprecated because it cannot express the same handler decision. A strategy that omits required
-route results now produces route errors for those missing results.
-
-## Route config utility types
-
-`@react-router/remix-config-routes-adapter` exports `DefineRouteFunction` for one route callback
-as well as `DefineRoutesFunction` for the overall callback. `@react-router/dev` accepts `.mts`
-and `.mjs` route-config files.
-
-The generated virtual module `virtual:react-router/server-build` has declarations, including
-when TypeScript `moduleDetection` is `force` on patched v7 releases.
+- `7.0.0`: `dataStrategy` and `patchRoutesOnNavigation` are the stable names for their
+  old `unstable_` forms.
+- `7.7.0`: `setSearchParams` updater callbacks receive a copy, so mutation cannot alter
+  internal router state before navigation succeeds.
+- `7.10.0`: custom data strategies use `shouldCallHandler()` and
+  `shouldRevalidateArgs`; `shouldLoad` is deprecated.
+- `7.10.0`: POP-navigation promises returned by `navigate()` span the full traversal.
+- `7.15.0`: instrumentation type names and the arguments `url`, `pattern`,
+  `defaultShouldRevalidate`, `mask`, and `normalizePath` lose `unstable_` prefixes.

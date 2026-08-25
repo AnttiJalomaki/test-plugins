@@ -1,267 +1,351 @@
-# PromQL, rules, and templates
+# PromQL, Rules, and Templates
 
-Use this reference for parser changes, query semantics, experimental functions,
-histogram operations, rule evaluation, and template helpers.
+Use this reference for query semantics, histogram functions, experimental
+syntax, rule evaluation, rule tests, and template helpers.
 
-## Language and parser changes
+## Core syntax and matching
 
-### Regular expressions and UTF-8
+### Dot matches newlines (3.0.0)
 
-From 3.0.0, the `.` regular-expression metacharacter matches every character,
-including newline. A selector such as `{label=~"a.b"}` can therefore match more
-series after an upgrade.
+The regular-expression `.` metacharacter matches every character, including
+newlines. Audit selectors such as `{label=~"a.b"}` when the broader match is not
+intended.
 
-PromQL `label_replace()` supports UTF-8 labels from 3.3.0. Rule names support
-UTF-8 from 3.2.0, except that `{` and `}` are rejected by the common-mistake
-checks.
+### Use duration literals as scalar values (3.0.0)
 
-`label_join()` no longer emits duplicate results from 3.3.0.
+PromQL duration and float literals are interchangeable without an experimental
+flag. For example, `time() - 1h` is a scalar expression.
 
-### Durations
+### Use UTF-8 label names in `label_replace` (3.3.0)
 
-PromQL durations and float literals are interchangeable without a feature flag
-from 3.0.0, so this scalar expression is stable syntax:
+`label_replace()` supports UTF-8 labels.
 
-```promql
-time() - 1h
-```
+### Avoid duplicate `label_join` results (3.3.0)
 
-The parser accepts arithmetic in duration expressions from 3.4.0, including
-computed range durations.
+`label_join()` no longer produces duplicate result series.
 
-With `--enable-feature=promql-duration-expr`, 3.6.0 adds `step()` and initially
-adds `min()` and `max()` for duration expressions:
+## Duration expressions and range precision
+
+### Compute durations arithmetically (3.4.0)
+
+Duration expressions accept arithmetic, including computed durations used in
+range selectors.
+
+### Preserve millisecond range precision (3.5.0)
+
+Range selectors no longer round `[1001ms]` to `[1s]`. Boundary-sample inclusion
+can therefore change.
+
+### Use step-aware duration helpers (3.6.0)
+
+With the duration-expression feature on releases where it remains gated,
+`step()` and `min()`/`max()` over durations let a range follow query resolution
+while retaining bounds:
 
 ```promql
 rate(http_requests_total[max(5m, step())])
 ```
 
-In 3.13.0 the experimental duration helpers are renamed to `min_of()` and
-`max_of()` to avoid confusion with aggregation operators. Scalar functions
-with the same names return the lesser or greater of two arguments:
+### Reject invalid duration values (3.12.0)
+
+Duration expressions reject `NaN`, infinity, and out-of-range values instead of
+silently creating an out-of-range duration.
+
+### Use query-boundary functions experimentally (3.12.0)
+
+Experimental `start()`, `end()`, and `range()` expose query boundaries.
+`range()` is valid in duration expressions:
+
+```promql
+foo[5m+range()]
+```
+
+### Rename ambiguous helpers (3.13.0)
+
+Experimental duration `min()` and `max()` are now `min_of()` and `max_of()`.
+Experimental scalar forms use the same names:
 
 ```promql
 rate(http_requests_total[max_of(5m, step())])
 max_of(2, 5)
 ```
 
-PromQL rejects `NaN`, infinite, and out-of-range duration expressions from
-3.12.0 rather than silently constructing an invalid duration.
+### Treat duration expressions as default syntax (3.13.2-3.14.0)
 
-Range selectors preserve millisecond precision from 3.5.0. A selector such as
-`[1001ms]` is no longer rounded to `[1s]`, which can change included boundary
-samples.
+Duration expressions no longer require
+`--enable-feature=promql-duration-expr`; that flag is a no-op.
 
-The experimental `start()`, `end()`, and `range()` functions arrive in 3.12.0.
-`range()` is valid in a duration expression:
+## Aggregations, matching, and metadata
 
-```promql
-foo[5m+range()]
-```
+### Pass dynamic aggregation parameters (3.5.0)
 
-`/parse_ast` includes duration expressions in its response from 3.12.0.
-
-### Aggregation parameters and fill modifiers
-
-Aggregation operators such as `quantile` and `topk` accept non-constant
-parameter expressions from 3.5.0:
+Aggregations such as `quantile` and `topk` accept non-constant parameter
+expressions:
 
 ```promql
 topk(scalar(desired_series_count), rate(http_requests_total[5m]))
 ```
 
-Prometheus rejects `NaN` parameters passed to `topk()`, `bottomk()`,
-`limitk()`, or `limit_ratio()` from 3.6.0.
+### Reject NaN aggregation parameters (3.6.0)
 
-Binary expressions gain `fill()`, `fill_left()`, and `fill_right()` in 3.10.0
-to provide values for series missing from one or both sides:
+`topk()`, `bottomk()`, `limitk()`, and `limit_ratio()` fail when passed `NaN`.
+
+### Expose type and unit metadata labels (3.5.0)
+
+Enable `--enable-feature=type-and-unit-labels` to expose metric type and unit as
+labels in PromQL. These labels are reserved and follow metric-name-style
+dropping rules, as described in the OTLP reference.
+
+### Fill unmatched binary-expression series (3.10.0)
+
+Use `fill()`, `fill_left()`, or `fill_right()` to supply values for series
+missing from one or both sides:
 
 ```promql
 left_metric + fill(0) right_metric
 ```
 
-From 3.13.0, `fill_left()` and `fill_right()` retain expected samples in range
-queries using `group_left` or `group_right`.
+### Keep fill results with group matching (3.13.0)
+
+`fill_left()` and `fill_right()` retain expected samples in range queries using
+`group_left` or `group_right`.
 
 ## Histogram query semantics
 
-### Supported functions and result types
-
-`idelta()` and `irate()` support native histograms from 3.3.0, with corrected
-native-histogram counter-reset detection.
-
-From 3.9.0, `rate()`, `increase()`, and `delta()` return gauge histograms for
-histogram inputs. A histogram also becomes gauge-typed after subtraction or
-after multiplication or division by a negative factor (3.7.0).
-
-PromQL emits warn-level annotations for counter-reset conflicts in certain
-histogram operations from 3.7.0.
-
-### Functions that ignore histograms
+### Ignore histograms in time and clamp functions (3.1.0)
 
 Time-related functions and clamp functions omit histogram samples from mixed
-float-and-histogram inputs from 3.1.0.
+float-and-histogram inputs.
 
-`scalar()`, `sort()`, and `sort_desc()` ignore native histogram samples from
-3.3.0.
+### Calculate instant deltas and rates (3.3.0)
 
-`sort()`, `sort_by_label()`, and `sort_by_label_desc()` produce a warning in a
-range query from 3.12.0 because sorting has no effect there.
+`idelta()` and `irate()` support native histograms, and native-histogram
+counter-reset detection is corrected.
 
-### Fractions, quantiles, and deviation
+### Ignore histograms in scalar and sort functions (3.3.0)
+
+`scalar()`, `sort()`, and `sort_desc()` ignore native-histogram samples.
+
+### Accept classic buckets in fractions (3.4.0)
 
 `histogram_fraction()` accepts classic bucket histograms as well as native
-histograms from 3.4.0:
+histograms:
 
 ```promql
 histogram_fraction(0, 0.2, rate(http_request_duration_seconds_bucket[5m]))
 ```
 
-From 3.5.0, `histogram_fraction()` and `histogram_quantile()` return no value
-when classic and native histograms coexist at the same timestamp.
+### Use arithmetic means for deviation (3.4.0)
 
-`histogram_stddev()` and `histogram_stdvar()` use the arithmetic mean from
-3.4.0, changing results produced by the previous mean.
+`histogram_stddev()` and `histogram_stdvar()` use the arithmetic mean, so
+results differ from versions that used another mean.
 
-The experimental variadic `histogram_quantiles` function computes multiple
-quantiles in one call from 3.11.0.
+### Omit mixed classic/native values (3.5.0)
 
-### Arithmetic and trimming
+`histogram_fraction()` and `histogram_quantile()` emit no value when classic
+and native histograms coexist at the same timestamp.
 
-Addition and subtraction reconcile native histograms with different custom
-bucket boundaries from 3.8.0; identical NHCB bounds are no longer required.
+### Interpret query diagnostics and gauge typing (3.7.0)
 
-PromQL adds `</` and `>/` in 3.11.0 to trim observations from native
-histograms. The operations retain the appropriate histogram buckets.
+Some histogram operations attach warn-level annotations for counter-reset
+conflicts. Subtraction, multiplication, or division by a negative factor types
+the resulting native histogram as a gauge.
 
-`avg_over_time()` handles a range containing one native histogram correctly
-from 3.10.0.
+### Reconcile mismatched custom bounds (3.8.0)
 
-Sample-limit enforcement counts histogram samples from 3.8.0, so
-histogram-heavy queries can now hit the configured query limit.
+Native-histogram addition and subtraction reconcile mismatched NHCB boundaries
+instead of requiring identical bounds.
 
-## Extended range selectors
+### Count histograms against sample limits (3.8.0)
 
-### Feature gate and supported functions
+Histogram samples count toward PromQL sample-limit enforcement. Histogram-heavy
+queries can now hit the configured limit.
 
-Enable experimental `anchored` and `smoothed` range modifiers with
-`--enable-feature=promql-extended-range-selectors` from 3.7.0.
+### Type range-function results as gauges (3.9.0)
 
-The `feature-flags` contract restricts them:
+`rate()`, `increase()`, and `delta()` return gauge histograms for histogram
+inputs.
 
-- `anchored` is accepted only by `resets`, `changes`, `rate`, `increase`, and
-  `delta`.
-- `smoothed` is accepted only by `rate`, `increase`, and `delta`.
-- Extended selectors do not support subqueries.
+### Handle a single histogram in averages (3.10.0)
 
-Rule groups using `smoothed` must set `query_offset` to at least one scrape
-interval. The modifier needs a sample after the evaluation interval and can
-otherwise underestimate results.
+`avg_over_time()` correctly handles a range containing one native histogram.
 
-Experimental anchored and smoothed rate evaluation supports native histograms
-from 3.13.0.
+### Trim native histograms (3.11.0)
 
-### Boundary and reset behavior
+The `</` and `>/` operators trim observations from native histograms while
+retaining the correct buckets.
+
+### Compute multiple experimental quantiles (3.11.0)
+
+Experimental `histogram_quantiles` is variadic and computes several quantiles
+in one call.
+
+## Extended range selectors and timestamp-aware queries
+
+### Enable anchored and smoothed rates (3.7.0)
+
+Use `--enable-feature=promql-extended-range-selectors` for experimental
+`anchored` and `smoothed` range-selector modifiers.
+
+### Handle anchored empty ranges (3.9.0)
 
 `resets()` and `changes()` return an empty result for an anchored selector when
-every sample lies outside the requested range from 3.9.0.
+all samples are outside the requested range.
 
-Smoothed selectors interpolate correctly across counter resets from 3.10.0.
-From 3.12.0, smoothed `rate()` and `increase()` return no result rather than
-zero when all data is strictly after the range. Smoothed selectors also work
-in binary operations using an `@` modifier.
+### Interpolate smoothed resets correctly (3.10.0)
 
-`resets()` and `changes()` produce corrected results for histograms used with
-anchored selectors from 3.13.0.
+Smoothed range selectors interpolate across counter resets correctly, changing
+affected results.
 
-### Start-timestamp incompatibility
+### Use stored start timestamps in rates (3.12.0)
 
 With `--enable-feature=use-start-timestamps`, `rate()`, `irate()`, and
-`increase()` use start timestamps and `resets()` detects start-timestamp
-resets from 3.12.0. The same flag enables `start_timestamp()`
-(`feature-flags`). This mode cannot be combined with anchored or smoothed
-extended selectors.
+`increase()` use start timestamps, and `resets()` detects start-timestamp
+resets. This mode cannot be combined with `anchored` or `smoothed` selectors.
 
-## Experimental functions
+### Handle smoothed range boundaries (3.12.0)
 
-Enable experimental functions with the current spelling
-`--enable-feature=promql-experimental-functions` (`feature-flags`). Their
-names, syntax, and behavior are explicitly unstable.
+Smoothed `rate()` and `increase()` return no result rather than zero when all
+data lies strictly after the range. Smoothed selectors work in binary
+operations using an `@` modifier.
 
-Under the experimental-function gate:
+### Extend rates to native histograms (3.13.0)
 
-- 3.5.0 provides `ts_of_min_over_time()`, `ts_of_max_over_time()`, and
-  `ts_of_last_over_time()`:
+Experimental smoothed and anchored rate evaluation supports native histograms.
 
-  ```promql
-  ts_of_last_over_time(up[5m])
-  ```
+### Correct anchored histogram reset detection (3.13.0)
 
-- 3.7.0 provides `first_over_time()` and `ts_of_first_over_time()`:
+`resets()` and `changes()` return corrected results for histograms used with
+anchored selectors.
 
-  ```promql
-  first_over_time(metric[5m])
-  ts_of_first_over_time(metric[5m])
-  ```
+### Expose sample start timestamps (feature-flags)
 
-The `type-and-unit-labels` feature exposes type and unit metadata as labels
-from 3.5.0:
+`--enable-feature=use-start-timestamps` also enables `start_timestamp()`. It
+does not work with extended range selectors.
 
-```text
---enable-feature=type-and-unit-labels
+### Obey the extended-selector allowlists (feature-flags)
+
+`anchored` is accepted only by `resets`, `changes`, `rate`, `increase`, and
+`delta`; `smoothed` is accepted only by `rate`, `increase`, and `delta`.
+Extended selectors reject subqueries. Because smoothed evaluation needs a
+sample after the interval, recording and alerting rule groups need a
+`query_offset` of at least one scrape interval to avoid under-estimation.
+
+## Range functions and `info()` corrections
+
+### Get timestamps of extrema (3.5.0)
+
+On this release, enable `--enable-feature=experimental-promql-functions` and
+use `ts_of_min_over_time()`, `ts_of_max_over_time()`, and
+`ts_of_last_over_time()` to obtain timestamps associated with range-vector
+values. Later releases use the current flag spelling documented below.
+
+### Get the first sample (3.7.0)
+
+With `--enable-feature=experimental-promql-functions` on this release,
+experimental functions include `first_over_time(...)` and
+`ts_of_first_over_time(...)`. Later releases use the current flag spelling
+documented below:
+
+```promql
+first_over_time(metric[5m])
+ts_of_first_over_time(metric[5m])
 ```
 
-Incoming user values for the reserved `__type__` and `__unit__` labels are
-overridden by ingestion metadata. PromQL drops them in the same classes of
-operation that drop `__name__`; metadata WAL values take precedence over
-conflicting labels already carried by Remote Write 2.0 (`feature-flags`).
+### Retain more `info()` results (3.10.0)
 
-## `info()` and metric-name behavior
+`info()` retains series without identifying labels and correctly applies a
+filter to a label present in both the input metric and `target_info`.
 
-The `info()` function retains series without identifying labels and handles a
-filter on a label present in both the input and `target_info` correctly from
-3.10.0. Either fix can add results.
+### Warn about range-query sorting (3.12.0)
 
-Negated `__name__` matchers in `info()` work correctly from 3.12.0.
+`sort()`, `sort_by_label()`, and `sort_by_label_desc()` warn in range queries,
+where they have no effect.
 
-`last_over_time()` and `first_over_time()` drop the metric name from 3.12.0
-when applied to a subquery containing a name-dropping function such as
-`abs()`.
+### Handle negated metric-name matchers in `info()` (3.12.0)
 
-## Rules and tests
+`info()` correctly evaluates negated `__name__` matchers.
 
-Rule files accept YAML anchors and aliases from 3.3.0.
+### Drop metric names through range functions (3.12.0)
 
-When rule dependency analysis is ambiguous, Prometheus uses conservative
-serialized evaluation from 3.1.0. Rule parse failures are detected earlier
-during startup from 3.5.0.
+`last_over_time()` and `first_over_time()` drop the metric name when applied to
+a subquery containing a name-dropping function such as `abs()`.
 
-An alerting rule that has not yet been evaluated has the explicit `unknown`
-state from 3.8.0. API and UI consumers must handle it alongside established
-states.
+### Use the stable first-sample function (3.13.2-3.14.0)
 
-Promtool rule-unit-test files support `fuzzy_compare: true` from 3.5.0 when
-exact float64 equality is too strict:
+`first_over_time` no longer needs
+`--enable-feature=promql-experimental-functions`.
 
-```yaml
-fuzzy_compare: true
-```
+### Apply result corrections (3.13.2-3.14.0)
 
-They accept `start_timestamp` from 3.9.0 for a fixed test origin. PromQL test
-`load` blocks accept `@st` sample annotations from 3.12.0 for explicit start
-timestamps.
+Case-insensitive regex label matchers no longer omit matching values.
+`mad_over_time` returns `NaN`, rather than `0`, when its range includes a `NaN`
+sample.
 
-Promtool can enable PromQL feature gates from 3.4.0. By 3.10.0 it understands
-both `promql-duration-expr` and `promql-extended-range-selectors`, allowing
-offline checks to parse the same gated syntax as the server.
+## Rules and templates
 
-## Template helpers
+### Serialize uncertain rule dependencies (3.1.0)
 
-Prometheus templates provide `toDuration()` and `now()` from 3.6.0.
+When dependency analysis is uncertain, rules fall back to serialized rather
+than concurrent evaluation.
 
-Alert templates provide `urlQueryEscape` from 3.8.0 for dynamic URL query
-values:
+### Use UTF-8 rule names (3.2.0)
+
+Rule names may contain UTF-8 except `{` and `}`, which common-mistake checks
+still reject.
+
+### Use YAML anchors in rule files (3.3.0)
+
+Rule files accept YAML anchors and aliases.
+
+### Apply alert relabeling to drop decisions (3.3.0)
+
+Alert relabeling participates in the decision about whether an alert is
+dropped.
+
+### Detect parse errors during startup (3.5.0)
+
+Rule parse errors are found earlier, before normal evaluation starts.
+
+### Use template time and duration helpers (3.6.0)
+
+Templates provide `toDuration()` and `now()`.
+
+### Scope mutating relabel actions per Alertmanager (3.7.0)
+
+Mutations in one `alertmanager_config.alert_relabel_configs` block do not pass
+the changed alert into later Alertmanager configuration blocks.
+
+### Escape query values in alert URLs (3.8.0)
+
+Use `urlQueryEscape` when interpolating dynamic values into URL query strings:
 
 ```text
 {{ urlQueryEscape $labels.instance }}
 ```
+
+### Handle the unknown alert state (3.8.0)
+
+An alerting rule not yet evaluated has state `unknown`. API and UI consumers
+must handle it alongside established states.
+
+### Preserve alert state across edits (3.11.0)
+
+Increasing an alert's `FOR` period no longer resets it incorrectly to pending.
+State restoration also works when rule labels contain Go template expressions.
+
+### Set start timestamps in promqltest data (3.12.0)
+
+PromQL test `load` blocks accept `@st` for each sample's start timestamp.
+
+### Use the current experimental-function flag (feature-flags)
+
+Enable unstable functions with
+`--enable-feature=promql-experimental-functions`. Their names, syntax, and
+semantics can change.
+
+### Bound concurrent rule evaluation (feature-flags)
+
+`--enable-feature=concurrent-rule-eval` runs dependency-free rules in one group
+concurrently. Limit the extra query load with
+`--rules.max-concurrent-evals`; its default is `4`.

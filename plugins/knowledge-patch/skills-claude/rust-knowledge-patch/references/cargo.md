@@ -1,245 +1,100 @@
 # Cargo
 
-Use this reference for Cargo configuration, builds, workspaces, packaging and publishing, lockfiles, registries, metadata, cache policy, and environment variables. Edition 2024 resolver and manifest migration rules are in [edition-2024.md](edition-2024.md).
+## Dependency resolution and MSRV
 
-## Configuration loading and merge behavior
+### Resolver v3
 
-### Include other configuration files
-
-The top-level `include` key in `.cargo/config.toml` loads additional configuration files (1.94.0). Inline tables can make a path optional for per-developer or environment-specific settings.
+Resolver v3 can prefer dependency versions compatible with a package's
+declared `rust-version` instead of always selecting the newest compatible
+release (`1.84.0`). Opt into the policy without raising the workspace's MSRV:
 
 ```toml
-include = [
-    { path = "required.toml" },
-    { path = "local.toml", optional = true },
-]
+# .cargo/config.toml
+[resolver]
+incompatible-rust-versions = "fallback"
 ```
 
-### Program-valued configuration
+Alternatively, set `package.resolver = "3"`; that manifest setting requires
+MSRV 1.84 or newer. Resolver v3 is the edition-2024 default. `cargo add` and
+`cargo update` warn when choosing an older compatible version. Latest-
+dependency CI can override fallback with
+`CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=allow`.
 
-When Cargo merges a configuration key representing a program path together with its arguments, the later value replaces the earlier value as a unit instead of combining them (1.86.0). Keep the executable and arguments together at the intended precedence level.
+TOML 1.1 syntax changes the development MSRV separately, as described below.
 
-### Boolean `cfg` literals
+## Build directories, targets, and artifacts
 
-Manifests and configuration accept `true` and `false` as cfg literals, including inside predicate operators:
+### Separate intermediates from final artifacts
 
-```toml
-[target.'cfg(not(false))'.dependencies]
-libc = "0.2"
-```
-
-### Relative `install.root`
-
-A relative `install.root` without a trailing slash still resolves from the current working directory but emits a deprecation warning. Do not depend on that interpretation; it is planned to resolve relative to the configuration file like other config paths.
-
-## Build locations, targets, and compiler flags
-
-### Separate intermediate artifacts
-
-`build.build-dir` selects where Cargo and rustc write intermediate artifacts (1.91.0). Its internal layout is not a supported interface.
+`build.build-dir` (`1.91.0`) puts incremental data, objects, and dep-info in a
+scratch directory while `target-dir` retains outputs users consume:
 
 ```toml
+# .cargo/config.toml
 [build]
-build-dir = "build"
+build-dir = "/tmp/cargo-build/{workspace-root-hash}"
+target-dir = "target"
 ```
 
-This is distinct from the target directory and from `resolver.lockfile-path`. When a separate build directory is enabled, publishing does not retain a `.crate` as a final artifact; later Cargo versions apply that publishing behavior even without the setting.
+The internal layout of `build-dir` is unstable; tooling must not inspect it.
+With this setting, `cargo publish` no longer leaves a `.crate` tarball as a
+final artifact. Run `cargo package` when that file is required. From `1.93.0`,
+`cargo publish` otherwise no longer leaves a `.crate` in a user-accessible
+location unless `build.build-dir` is configured.
 
-### Portable host target
+### Portable explicit host target
 
-`--target host-tuple` and `build.target = "host-tuple"` substitute the current host triple (1.91.0), allowing portable target-specific configuration.
+`--target host-tuple` and `build.target = "host-tuple"` (`1.91.0`) substitute
+the host target without hard-coding it. This still activates explicit-target
+mode: host and target features are not unified, and outputs go beneath
+`target/<target>/`.
 
-```console
-cargo build --target host-tuple
-```
+### Lockfile outside a read-only source tree
 
-### Target-specific rustdoc flags
-
-Target-selected Cargo configuration supports `rustdocflags` from 1.96.0:
-
-```toml
-[target.'cfg(unix)']
-rustdocflags = ["--cfg", "unix_docs"]
-```
-
-### Trailing flags
-
-For Cargo commands that accept trailing flags, those flags can take precedence over flags from other supported sources (1.85.0). Treat the command line as the final override when diagnosing an unexpected setting.
-
-## Warning policy and linker messages
-
-### Cache-preserving warning policy
-
-`build.warnings` accepts `allow`, `warn` (the default), or `deny` for warnings emitted by local packages (1.97.0). Changing it does not invalidate underlying build artifacts, unlike `RUSTFLAGS=-Dwarnings`. CI can use `CARGO_BUILD_WARNINGS=deny`, including with `--keep-going`.
-
-```toml
-[build]
-warnings = "deny"
-```
-
-### Successful linker output
-
-Rustc reports successful linker output through the warn-by-default `linker_messages` lint from 1.97.0. This special lint is not controlled by the `warnings` group; configure it explicitly when silence is required.
-
-```toml
-[lints.rust]
-linker_messages = "allow"
-```
-
-## Build-script inputs and outputs
-
-### Feature and debug-assertion cfgs
-
-- Build scripts receive `CARGO_CFG_FEATURE` from 1.85.0. Cargo also accepts raw identifiers in cfgs and warns about cfg names written as bare keywords for future compatibility.
-- Build scripts receive `CARGO_CFG_DEBUG_ASSERTIONS` according to the chosen profile from 1.93.0. This exposed an incompatibility in `static-init` 1.0.1 through 1.0.3; select a different release of that dependency.
-
-### Manifest path
-
-Cargo sets `CARGO_MANIFEST_PATH` in addition to `CARGO_MANIFEST_DIR`. The former points directly to the package manifest:
-
-```rust
-const MANIFEST: &str = env!("CARGO_MANIFEST_PATH");
-```
-
-### Native-library search precedence
-
-Native-library paths inside a build script's `OUT_DIR` are searched before external library paths. If both contain the same library name, the generated or bundled copy in `OUT_DIR` wins.
-
-### Binary path at runtime
-
-`CARGO_BIN_EXE_<crate>` is available at runtime from 1.94.0, in addition to its compile-time use in integration tests.
-
-## Cache, artifacts, and cleaning
-
-### Automatic cache cleaning
-
-Cargo automatically removes network-downloaded cache files unused for three months and locally obtained files unused for one month from 1.88.0. Cleanup does not run with `--offline` or `--frozen`. If Cargo older than 1.78 shares otherwise unobserved cache entries, disable automatic cleanup:
-
-```toml
-cache.auto-clean-frequency = "never"
-```
-
-The manual `cargo gc` command remains unstable.
-
-### Safer targeted cleaning
-
-`cargo clean --target-dir` rejects a supplied path that does not resemble a Cargo target directory from 1.97.0, reducing the risk of deleting unrelated files.
-
-### Publishing artifacts
-
-`cargo publish` no longer leaves the `.crate` tarball as a user-accessible final artifact (1.93.0, after the behavior first applied with `build.build-dir` in 1.91.0). Run `cargo package` when a local tarball is required.
-
-## Lockfiles and dependency resolution
-
-### Alternate lockfile path
-
-`resolver.lockfile-path` selects the lockfile used for dependency resolution from 1.97.0, including when source directories are read-only.
+`resolver.lockfile-path` moves the lockfile away from the workspace root
+(`1.97.0`):
 
 ```toml
 [resolver]
-lockfile-path = "../locks/Cargo.lock"
+lockfile-path = "/writable/dir/Cargo.lock"
 ```
 
-### Lockfile format v4
+This replaces the removed unstable `--lockfile-path` flag. `cargo install`
+deliberately ignores the configuration key.
 
-New or updated lockfiles default to format v4, readable by Cargo 1.78 and newer. Projects supporting an earlier Cargo should declare the true `package.rust-version` so newer Cargo can preserve a compatible lockfile format.
+### Build-script environment
+
+- Build scripts receive `CARGO_CFG_FEATURE`, a comma-separated list of enabled
+  features, from `1.85.0`, in addition to `CARGO_FEATURE_<NAME>` variables.
+- `CARGO_CFG_DEBUG_ASSERTIONS` follows the active profile in more situations
+  from `1.93.0`. This exposes an unresolved-`parking_lot` failure in
+  `static-init` 1.0.1 through 1.0.3.
+- `CARGO_BIN_EXE_<name>` is available at test/bench runtime as well as through
+  compile-time `env!` from `1.94.0`.
+
+## Configuration composition and policy
+
+### Include configuration files
+
+Top-level `include` in `.cargo/config.toml` loads more configuration files
+(`1.94.0`). Entries may be paths or inline tables with `optional = true`:
 
 ```toml
-[package]
-rust-version = "1.77"
+include = [
+    { path = "shared.toml" },
+    { path = "local-dev.toml", optional = true },
+]
 ```
 
-### Lockfiles in packages and publications
+When Cargo merges configuration, a value consisting of a program path plus
+arguments is replaced as a unit rather than concatenated across files
+(`1.86.0`).
 
-- `cargo package --exclude-lockfile` omits the lockfile from the generated package archive (1.87.0).
-- Published crates always include `Cargo.lock`, regardless of whether they have executable or example targets.
+### TOML 1.1
 
-These behaviors serve different workflows: the package command can create a local archive without a lockfile, while publication includes one.
-
-### Precise exceptional updates
-
-`cargo update --precise` may deliberately select a yanked registry release or an arbitrary Git revision:
-
-```console
-cargo update -p registry-dep --precise 1.2.3
-cargo update -p git-dep --precise <git-revision>
-```
-
-### Git locally, registry when published
-
-A dependency may declare both a Git repository and an alternate registry from 1.96.0. Cargo uses Git locally and the registry release when publishing.
-
-## Workspaces and target selection
-
-### Publish a workspace
-
-`cargo publish --workspace` publishes workspace crates in dependency order and verifies the complete set as though published, including during dry runs (1.90.0). Publication is not atomic; a network or server failure can leave a partial workspace release.
-
-### Fix target selection
-
-`cargo fix` and `cargo clippy --fix` use the normal default target selection from 1.89.0 instead of processing every binary, example, and test. `cargo fix --edition` continues to operate on all targets.
-
-### Package selection
-
-- Combining `--package` with `--workspace` errors when a requested package is missing instead of silently ignoring it (1.86.0).
-- `cargo package --package` packages only explicitly named packages and no longer implicitly adds the package in the current directory.
-
-```console
-cargo package --package api --package data
-```
-
-### Workspace-only tree depth
-
-`cargo tree --depth workspace` shows only dependencies that are workspace members.
-
-```console
-cargo tree --depth workspace
-```
-
-## Metadata and package discovery
-
-### Target filtering
-
-`cargo metadata` does not apply `CARGO_BUILD_TARGET`. Tools needing a target-specific resolved graph must pass `--filter-platform` explicitly.
-
-```console
-cargo metadata --format-version 1 --filter-platform x86_64-unknown-linux-gnu
-```
-
-### Local package information
-
-Without an explicit registry, `cargo info` with no package argument inspects the current local package.
-
-```console
-cargo info
-```
-
-### Home-directory initialization guard
-
-`cargo init` refuses to initialize the user's home directory, preventing manifest discovery from treating every descendant directory as part of one package.
-
-### Library auto-discovery
-
-`package.autolib` independently controls automatic discovery of a library target.
-
-```toml
-[package]
-autolib = false
-```
-
-### Versionless local packages
-
-`package.version` may be omitted and then defaults to `0.0.0`, which is useful for non-published workspace packages. A package without an explicit version cannot be published.
-
-```toml
-[package]
-name = "internal-tool"
-edition = "2024"
-```
-
-## Manifests and TOML syntax
-
-Cargo accepts TOML 1.1 from 1.94.0, including multiline inline tables with trailing commas, `\xHH` and `\e` string escapes, and times without seconds.
+Manifests and configuration accept TOML 1.1 from `1.94.0`, including multiline
+inline tables with trailing commas, `\xHH` and `\e` escapes, and times without
+seconds.
 
 ```toml
 serde = {
@@ -248,41 +103,168 @@ serde = {
 }
 ```
 
-These forms raise the development-tool Cargo requirement and can require updates to third-party parsers. Cargo rewrites published manifests for older parsers, so using the syntax need not raise the crate's user-facing Rust requirement.
+Using this syntax raises the development MSRV and may break third-party
+manifest parsers. `cargo publish` rewrites a manifest into the older form, so
+consumers retain the crate's declared MSRV.
 
-## Registry, publishing, and authentication
+### Warnings policy
 
-### Publish tokens
-
-- The positional token argument to `cargo login` is deprecated from 1.86.0 because it can enter shell history.
-- `cargo publish --token` is soft-deprecated. Configure a registry credential provider for new publishing workflows.
-
-### Registry publication time
-
-The registry-index `pubtime` field is stable from 1.94.0. Existing index entries are only gradually backfilled, so consumers must handle it being absent.
-
-### Proxy certificate authority
-
-`http.proxy-cainfo` selects the CA certificate used with an HTTP proxy from 1.90.0.
+`build.warnings` lets Cargo apply `allow`, `warn` (the default), or `deny` to
+warnings from local packages (`1.97.0`). Because this is Cargo configuration,
+changing it does not invalidate the rustc build cache.
 
 ```toml
-[http]
-proxy-cainfo = "/path/to/proxy-ca.pem"
+# .cargo/config.toml
+[build]
+warnings = "deny"
 ```
 
-### Third-party registry security
+Use `CARGO_BUILD_WARNINGS=deny cargo check --keep-going` to collect failures in
+CI or `CARGO_BUILD_WARNINGS=allow` to mute local noise. The rustc
+`linker_messages` lint sits outside the `warnings` group and is not escalated by
+this setting or `-Dwarnings`.
 
-Cargo 1.96.0 fixes CVE-2026-5223 in extracting crates containing symlinks and CVE-2026-5222 in authentication with normalized URLs. Both affect third-party registries; crates.io users are unaffected by these two issues.
+### Target-specific rustdoc flags and proxy CAs
 
-### Runtime dependencies of distributed Cargo
+Cargo configuration accepts `target.'cfg(...)'.rustdocflags` from `1.96.0`.
+`http.proxy-cainfo` selects a proxy-specific CA bundle from `1.90.0`.
 
-Cargo in the official Rust distribution uses OpenSSL 3. On 32-bit platforms, this adds a hard dependency on `libatomic`, which must be present to install or run the toolchain.
+## Cache behavior
 
-## Terminal behavior
-
-`term.progress.term-integration` makes Cargo emit ANSI OSC 9;4 progress updates for compatible terminals, allowing progress to appear in desktop surfaces such as a task bar.
+Cargo automatically removes cached downloads not accessed for three months
+for network sources or one month for local sources (`1.88.0`). Collection is
+skipped under `--offline` and `--frozen`. If the cache is shared with Cargo
+before 1.78, which does not record access times, disable cleanup:
 
 ```toml
-[term.progress]
-term-integration = true
+# .cargo/config.toml
+[cache]
+auto-clean-frequency = "never"
 ```
+
+## Workspaces and command selection
+
+- `cargo build -p missing --workspace` errors rather than ignoring the missing
+  package (`1.86.0`).
+- `cargo fix` and `cargo clippy --fix` use the same default target selection as
+  other build commands from `1.89.0`; `cargo fix --edition` still selects all
+  targets.
+- `cargo clean --workspace` is available from `1.93.0`.
+- `cargo clean` rejects a `--target-dir` that does not resemble a Cargo target
+  directory, and `-m` abbreviates `--manifest-path` (`1.97.0`).
+
+`cargo rustc -- <flags>` appends trailing rustc flags after every other source,
+so they outrank `RUSTFLAGS`, `build.rustflags`, `target.<...>.rustflags`, and
+profile-derived flags. This is stable behavior from 1.85:
+
+```sh
+RUSTFLAGS="-Copt-level=3" cargo rustc -- -Copt-level=0
+```
+
+## Packaging and publishing
+
+### Workspace publishing
+
+`cargo publish --workspace` topologically orders and publishes workspace
+packages (`1.90.0`). Verification builds the full set as though already on the
+registry, including under `--dry-run`. Publishing is not atomic: a failure can
+leave only part of the workspace published. Cargo performs the dependency
+sequencing itself instead of requiring manual sequencing or `cargo-release`.
+
+### Lockfiles and package archives
+
+Published `.crate` files always contain `Cargo.lock`, including library-only
+packages. This supports reproducible `cargo install --locked`, and the committed
+lockfile is the one shipped.
+
+`cargo package --exclude-lockfile` skips lockfile verification while packaging
+(`1.87.0`).
+
+Do not depend on `cargo publish` leaving a local `.crate`; use
+`cargo package` when the archive itself is needed.
+
+### Registry index publication time
+
+The registry-index `pubtime` field records a version's publication timestamp
+(`1.94.0`). crates.io backfills it lazily, so many older versions do not have
+the field.
+
+## Credentials and registries
+
+Passing a token as an argument to `cargo login` is deprecated because it leaks
+into shell history (`1.86.0`). Pipe it on stdin or let the prompt read it.
+`cargo publish --token` is soft-deprecated; prefer `cargo login`, a registry
+credential provider, or `CARGO_REGISTRY_TOKEN`.
+
+From `1.96.0`, a dependency may specify a git source for local use and an
+alternate registry plus version for publication:
+
+```toml
+[dependencies]
+my-lib = { git = "https://example.com/my-lib.git", version = "1.2", registry = "my-registry" }
+```
+
+Cargo `1.96.0` fixes CVE-2026-5223 involving symlinks in extracted crate
+archives and CVE-2026-5222 involving authentication with normalized URLs; both
+affect third-party registries. `1.96.1` restores missing HTTP retries and
+timeouts and updates Cargo's bundled libssh2 for CVE-2025-15661,
+CVE-2026-55199, and CVE-2026-55200.
+
+Cargo `1.94.1` updates `tar` to 0.4.45 for CVE-2026-33055 and
+CVE-2026-33056; crates.io users are unaffected. It also downgrades `curl-sys`
+to 0.4.83 to restore certificate validation on some FreeBSD versions.
+
+## CLI changes and removals
+
+- Unstable `--out-dir` was removed. `--artifact-dir`, still gated by
+  `-Z unstable-options`, copies final artifacts out.
+- `--timings` no longer accepts formats and emits only the SVG-backed HTML
+  report. Machine-readable data moved to unstable `-Zbuild-analysis` logs.
+- Unstable `--lockfile-path` became `resolver.lockfile-path` configuration.
+- Unstable `--build-plan` and its feature were removed. Alternatives are
+  `--unit-graph`, `-Zbuild-analysis`, or out-of-tree plumbing commands.
+- `cargo init` refuses to initialize the home directory because a manifest
+  there would absorb descendant projects into accidental manifest/workspace
+  discovery.
+
+Cargo emits ANSI OSC 9;4 sequences to terminals that render native build
+progress (`1.87.0`).
+
+## Nightly-only capabilities
+
+The following are explicitly unstable:
+
+- `multiple-build-scripts` lets `package.build` list scripts and exposes each
+  output as `<script-name>_OUT_DIR`.
+- `-Zany-build-script-metadata` lets any build script emit
+  `cargo::metadata=KEY=VALUE`, exposed as `CARGO_DEP_<name>_<key>`. The older
+  links-based variable is `DEP_<LINKS>_<KEY>`, keyed by the `links` value.
+- `-Zcargo-lints` enables `[lints.cargo]`, including lints for unused workspace
+  dependencies, naming, implicit minimum versions, and Cargo lint groups.
+- `-Zbuild-analysis` writes persistent JSONL beneath `~/.cargo/log/` and adds
+  `cargo report timings`, `cargo report rebuilds`, and
+  `cargo report sessions`.
+- `-Zhost-config` enables `[host]` linker and runner settings for build scripts
+  and proc macros, distinct from `[target]`.
+- `[hints]` includes `hints.mostly-unused`; related unstable controls include
+  `-Zno-embed-metadata` and `panic = "immediate-abort"`.
+- `-Zpublic-dependency` enables `cargo add --public` and
+  `cargo tree --edges public`; the tree option is not `--depth public`.
+- `-Zjson-target-spec` enables custom JSON target specs.
+- `-Zscript` enables single-file packages with a frontmatter manifest.
+
+## Rustdoc and cross-target tests
+
+`doctest-xcompile` is stable from `1.89.0`: `cargo test --doc --target <other>`
+runs doctests using the target runner rather than skipping them. Use the
+`ignore-<target>` code-fence attribute where a doctest intentionally does not
+run on that target.
+
+## Edition-related manifest rules
+
+Edition migration also removes `[project]` in favor of `[package]` and
+underscore dependency keys such as `default_features` in favor of
+`default-features`. A member cannot set `default-features = false` on an
+inherited dependency when the workspace declaration enables them; place the
+choice in `[workspace.dependencies]`. See
+[edition-2024.md](edition-2024.md) for per-target editions and migration.

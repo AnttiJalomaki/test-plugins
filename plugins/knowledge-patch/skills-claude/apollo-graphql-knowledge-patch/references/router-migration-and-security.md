@@ -1,315 +1,221 @@
-# Apollo Router migration, configuration, and security
+# Apollo Router Migration, Configuration, and Security
 
-## Router v2 migration (`router-v2-migration`)
+Use this reference for Router major upgrades, deployment configuration, authentication, HTTP hardening, licensing, and schema/config reload behavior.
 
-### Materialize configuration upgrades
+## Router 2 upgrade invariants
 
-Router v2 does not apply major-version migrations while loading configuration.
-Preview and materialize the upgraded YAML before deployment. The removed
-`--schema` flag is replaced by `router config schema`.
+### Configuration upgrades are explicit
 
-```sh
+For router-v2-migration, Router no longer applies major-version upgrade migrations while loading configuration. Preview and materialize changes before deployment. Replace removed `--schema` with `router config schema`.
+
+```bash
 router config upgrade --diff router.yaml
 router config upgrade router.yaml > router.next.yaml
-mv router.next.yaml router.yaml
 router config schema
 ```
 
-Within Router 2, minor-version YAML migrations are applied automatically
-(`2.2.0`). Still materialize and commit them regularly; automatic migration does
-not cross the next major boundary.
+### Automatic minor-version configuration migration
 
-### Backpressure
+Since 2.2.0, YAML migrations within the current major are automatic. Cross-major migrations still are not; regularly materialize and commit them with `router config upgrade` before the next major.
 
-The v2 architecture rejects work when busy instead of retaining it in memory.
-Stricter traffic shaping can expose more `503` and `504` responses. Monitor CPU and
-logs while retuning timeouts, concurrency, and rate limits.
+### Remote supergraph polling was removed
 
-### Route and selector syntax
+For router-v2-migration, remove `--apollo-uplink-poll-interval` and `APOLLO_UPLINK_POLL_INTERVAL`. Schemas from `--supergraph-urls` or `APOLLO_ROUTER_SUPERGRAPH_URLS` no longer hot-reload; periodically download to a local file when reload is required.
 
-Named supergraph parameters use `{name}`, not `:name`; wildcards are braced and
-named:
+### Supergraph endpoint parameters use braces
 
-```yaml
-supergraph:
-  path: /foo/{bar}/baz
-  # path: /foo/{*rest}
-```
+For router-v2-migration, change `:name` path parameters to `{name}` and use a named braced wildcard such as `{*rest}`.
 
-Header-propagation body paths require a `$` JSONPath root:
+### Header propagation paths require a JSONPath root
 
-```yaml
-headers:
-  all:
-    request:
-      - insert:
-          name: from_app_name
-          path: $.extensions.metadata[0].app_name
-```
+For router-v2-migration, body paths used for header propagation must start at `$`, for example `$.extensions.metadata[0].app_name`.
 
-From `2.14.0`, trailing slashes are normalized when matching `supergraph.path`, so
-`/graphql` and `/graphql/` both match a configured `/graphql`.
+### Request context keys were namespaced
 
-### Remote supergraphs
-
-`--apollo-uplink-poll-interval` and `APOLLO_UPLINK_POLL_INTERVAL` are removed.
-Supergraphs supplied through `--supergraph-urls` or
-`APOLLO_ROUTER_SUPERGRAPH_URLS` do not hot-reload. Download remote schemas to a
-local file on a schedule when reload behavior is needed.
-
-### Plugin lifecycle and API changes
-
-The `cargo-scaffold` generator is gone, although generated plugins continue to
-compile. A `tower::Service` pipeline is built once and cloned per request; do not
-assume a construction hook runs per request.
-
-- `oneshot_checkpoint_async()` becomes `checkpoint_async()`.
-- `OneShotAsyncCheckpointLayer` becomes `AsyncCheckpointLayer`; call
-  `.buffered()` before `.service(...)`.
-- `ExtensionsMutex::lock()` becomes `with_lock()`.
-- `TestHarness::build()` becomes `build_supergraph()`.
-- `PluginInit::{new,try_new}()` becomes `{builder,try_builder}()`.
-- `services::router::Response::map`, `SchemaSource::File.delay`, and
-  `ConfigurationSource::File.delay` are removed without listed replacements.
-- `Context::busy_time`, `Context::enter_active_request`, `BusyTimer`, and
-  `BusyTimerGuard` are removed; spans already represent processing duration.
-
-```rust
-AsyncCheckpointLayer::new(move |request: execution::Request| {
-    // ...
-})
-.buffered()
-.service(service)
-.boxed()
-```
-
-External plugins can again use `SubscriptionTaskParams` with
-`execution::Request` builders, including tests (`2.11.0`).
-
-Router `2.13.0` adopts OpenTelemetry Rust 0.31.0; plugins using unstable upstream
-APIs must update. In `2.16.0`, replace
-`apollo_router::otel_compat::{HeaderExtractor, HeaderInjector}` with identical
-`opentelemetry_http::{HeaderExtractor, HeaderInjector}` 0.31+ types.
-
-### Namespaced request context
-
-Update plugins, Rhai, coprocessors, and selectors:
+For router-v2-migration, update plugins, Rhai, coprocessors, and telemetry selectors to v2 names:
 
 ```text
-apollo_authentication::JWT::claims            → apollo::authentication::jwt_claims
-apollo_authorization::authenticated::required → apollo::authorization::authentication_required
-apollo_authorization::scopes::required        → apollo::authorization::required_scopes
-apollo_authorization::policies::required      → apollo::authorization::required_policies
-apollo_operation_id                           → apollo::supergraph::operation_id
-apollo_override::unresolved_labels            → apollo::progressive_override::unresolved_labels
-apollo_override::labels_to_override           → apollo::progressive_override::labels_to_override
-apollo_router::supergraph::first_event         → apollo::supergraph::first_event
-apollo_telemetry::client_name                 → apollo::telemetry::client_name
-apollo_telemetry::client_version              → apollo::telemetry::client_version
-apollo_telemetry::studio::exclude             → apollo::telemetry::studio_exclude
-apollo_telemetry::subgraph_ftv1               → apollo::telemetry::subgraph_ftv1
-cost.actual                                   → apollo::demand_control::actual_cost
-cost.estimated                                → apollo::demand_control::estimated_cost
-cost.result                                   → apollo::demand_control::result
-cost.strategy                                 → apollo::demand_control::strategy
-experimental::expose_query_plan.enabled       → apollo::expose_query_plan::enabled
-experimental::expose_query_plan.formatted_plan→ apollo::expose_query_plan::formatted_plan
-experimental::expose_query_plan.plan          → apollo::expose_query_plan::plan
-operation_kind                                → apollo::supergraph::operation_kind
-operation_name                                → apollo::supergraph::operation_name
-persisted_query_hit                           → apollo::apq::cache_hit
-persisted_query_register                      → apollo::apq::registered
+apollo_authentication::JWT::claims            -> apollo::authentication::jwt_claims
+apollo_authorization::authenticated::required -> apollo::authorization::authentication_required
+apollo_authorization::scopes::required        -> apollo::authorization::required_scopes
+apollo_authorization::policies::required      -> apollo::authorization::required_policies
+apollo_operation_id                           -> apollo::supergraph::operation_id
+apollo_override::unresolved_labels            -> apollo::progressive_override::unresolved_labels
+apollo_override::labels_to_override           -> apollo::progressive_override::labels_to_override
+apollo_router::supergraph::first_event         -> apollo::supergraph::first_event
+apollo_telemetry::client_name                  -> apollo::telemetry::client_name
+apollo_telemetry::client_version               -> apollo::telemetry::client_version
+apollo_telemetry::studio::exclude              -> apollo::telemetry::studio_exclude
+apollo_telemetry::subgraph_ftv1                -> apollo::telemetry::subgraph_ftv1
+cost.actual                                    -> apollo::demand_control::actual_cost
+cost.estimated                                 -> apollo::demand_control::estimated_cost
+cost.result                                    -> apollo::demand_control::result
+cost.strategy                                  -> apollo::demand_control::strategy
+experimental::expose_query_plan.enabled        -> apollo::expose_query_plan::enabled
+experimental::expose_query_plan.formatted_plan -> apollo::expose_query_plan::formatted_plan
+experimental::expose_query_plan.plan           -> apollo::expose_query_plan::plan
+operation_kind                                 -> apollo::supergraph::operation_kind
+operation_name                                 -> apollo::supergraph::operation_name
+persisted_query_hit                            -> apollo::apq::cache_hit
+persisted_query_register                       -> apollo::apq::registered
 ```
 
-Coprocessors can temporarily request `context: deprecated` (`true` is a deprecated
-alias), request new names with `context: all`, omit with `false`, or use a
-`selective` list. Selective keys cannot be mixed with deprecated names.
+Coprocessors may request `context: deprecated` (`true` is a deprecated alias), `context: all`, `false`, or a `selective` list. Selective keys cannot be mixed with deprecated names.
 
-## Authentication and JWT
+## Authentication and authorization
 
-### Failure policy (`2.1.0`)
+### JWT failures can be nonfatal
 
-`authentication.router.jwt.on_error` defaults to `Error`. `Continue` ignores JWT
-processing failures and leaves claims unset. The context records the outcome in
-`apollo::authentication::jwt_status`.
+Since 2.1.0, `authentication.router.jwt.on_error` defaults to `Error`; `Continue` ignores processing failures and leaves claims unset. Inspect `apollo::authentication::jwt_status` for the outcome.
 
-```yaml
-authentication:
-  router:
-    jwt:
-      on_error: Continue
-```
+### Multiple JWT issuers per JWKS
 
-### Issuers, audiences, and expiry
+Since 2.2.0, each `authentication.router.jwt.jwks` entry accepts `issuers`. Singular `issuer` is auto-migrated only for Router 2.x; update it before the next major.
 
-- These policies are configured per `authentication.router.jwt.jwks` entry.
-- A `jwks` entry accepts `issuers` (`2.2.0`). Singular `issuer` is auto-migrated
-  during Router 2 but should be upgraded before Router 3.
-- A `jwks` entry accepts `audiences` (`2.4.0`); the token must match at least one.
-- As of `2.11.0`, `aud` may be a string or string array. `null` and other types
-  fail. `iss` must be a string or `null`, and a string must match configured
-  issuers.
-- `allow_missing_exp: true` is per JWKS entry (`2.14.0`). A supplied expiry is
-  still enforced.
-- When several entries share key material, Router `2.14.0` continues trying
-  matching entries after an issuer or audience mismatch, supporting reused RSA
-  keys such as Azure AD B2C policies.
+### JWT audience validation
 
-```yaml
-authentication:
-  router:
-    jwt:
-      jwks:
-        - url: https://example.com/.well-known/jwks.json
-          issuers: [https://issuer.one, https://issuer.two]
-          audiences: [https://my.api]
-          allow_missing_exp: true
-```
+Since 2.4.0, a `jwks` entry may define `audiences`; reject a token when none matches.
 
-## CORS and private networks
+### JWT audience arrays and stricter claim types
 
-Router `2.5.0` adds ordered `cors.policies` with literal `origins` or regular
-expression `match_origins`, enabling different credentials and headers per origin.
+Since 2.11.0, `aud` may be a string or string array and succeeds if any configured audience matches; `null` and other types fail. `iss` must be a string or `null`, and a string must match configured issuers.
 
-```yaml
-cors:
-  policies:
-    - origins: ["https://studio.apollographql.com"]
-    - match_origins: ["^https://(dev|staging|www)?\\.my-app\\.com$"]
-      allow_credentials: true
-      allow_headers: ["content-type", "authorization"]
-    - origins: ["*"]
-      allow_credentials: false
-      allow_headers: ["content-type"]
-```
+### Per-JWKS missing-expiry policy
 
-In `2.9.0`, a policy can enable Private Network Access through
-`private_network_access`; `access_id` and `access_name` are optional.
+Since 2.14.0, `allow_missing_exp: true` on an individual `jwks` entry permits a missing `exp`; a supplied expiration is still enforced.
 
-Invalid CORS values stop Router v2 startup instead of being ignored.
+### Multiple matching JWKS candidates
 
-## Request hardening and limits
+Since 2.14.0, issuer or audience failure on the first signature-matching JWKS entry does not stop validation. The Router tries other matching entries, supporting shared keys such as Azure AD B2C policies.
 
-### Batches and headers
+### Fully unauthorized requests return null data
 
-`batching.maximum_size` rejects an oversized entire client batch with HTTP 422 and
-`BATCH_LIMIT_EXCEEDED`; unset means unlimited (`2.1.0`).
+Since 2.13.0, when all requested fields are unauthorized, the response has `data: null` and follows configured `errors.response` (`errors`, `extensions`, or `disabled`) and `errors.log`, matching partially unauthorized requests.
 
-`server.http.header_read_timeout` controls header-read time and defaults to ten
-seconds (`2.2.0`).
+### Root-type authorization directives are graph-wide
 
-`limits.http2_max_headers_list_bytes` defaults to 16 KiB and rejects oversized
-HTTP/2 header lists with 431 (`2.9.0`). From `2.10.0`, it covers TLS, cleartext
-TCP, and Unix-socket listeners.
+Since 2.15.0, `@authenticated`, `@requiresScopes`, or `@policy` on a subgraph root `Query`, `Mutation`, or `Subscription` composes onto the shared supergraph root and affects every subgraph's root fields. Put directives on individual root fields for subgraph-local scope.
 
-### GET content types
+## Request, schema, and transport hardening
 
-Router `2.12.1` (the `2.12.0` batch) rejects GraphQL GET requests with a
-`Content-Type` other than `application/json` plus optional parameters, returning
-415. Omitting it remains valid subject to CSRF checks. This is security-sensitive
-for cookie and HTTP Basic authentication.
+### Security validation is stricter
 
-An empty `Content-Type` is rejected early as possible CSRF with HTTP 400 under the
-v2 security defaults, rather than 415.
+For router-v2-migration, `limits.introspection_max_depth: true` is the default; set it to `false` only for legitimate deep introspection. Invalid CORS prevents startup. Empty `Content-Type` is rejected earlier as potential CSRF with 400 rather than 415.
 
-### Response sizes and uploads (`2.15.0`)
+### Client batch-size limits
 
-`limits.subgraph` and `limits.connector` set global and per-destination
-`http_max_response_size`; no default exists. Old Router-level limit fields migrate
-under `limits.router`. An oversized streaming body stops with
-`SUBREQUEST_HTTP_ERROR`, increments the corresponding subgraph or connector
-response-size exceeded metric, and marks the response span aborted for
-`response_size_limit`.
+Since 2.1.0, `batching.maximum_size` rejects an oversized whole client batch with 422 and `BATCH_LIMIT_EXCEEDED`. Unset means unlimited.
 
-```yaml
-limits:
-  subgraph:
-    all:
-      http_max_response_size: 10MB
-    subgraphs:
-      products:
-        http_max_response_size: 20MB
-  connector:
-    all:
-      http_max_response_size: 5MB
-```
+### Resource-exhaustion query vulnerabilities
 
-Multipart file uploads can independently bound reading of the operations field.
-`operation_body_timeout` has no default; expiration returns 504 with
-`GATEWAY_TIMEOUT`.
-
-```yaml
-preview_file_uploads:
-  enabled: true
-  protocols:
-    multipart:
-      enabled: true
-      limits:
-        operation_body_timeout: 5s
-```
-
-The response-size counters are
-`apollo.router.limits.subgraph_response_size.exceeded` and
-`apollo.router.limits.connector_response_size.exceeded`.
-
-### Recursive selections (`2.16.0`)
-
-`limits.router.max_recursive_selections` sets the fragment-expansion ceiling,
-default 10,000,000. `limits.router.warn_only: true` warns instead of rejects. The
-`APOLLO_ROUTER_DISABLE_SECURITY_RECURSIVE_SELECTIONS_CHECK` escape hatch remains.
-
-## Validation, authorization, and redaction
-
-Router v2 enables `limits.introspection_max_depth` by default. Disable it only for
-a legitimate deeper introspection query; its default is
-`limits.introspection_max_depth: true`.
-
-Router `2.1.1` fixes resource-exhaustion query vulnerabilities. Earlier releases
-need persisted queries, safelisting, and required IDs together as mitigation:
+Router 2.1.1 fixes query patterns that could exhaust resources. Earlier versions need persisted queries, safelisting, and required IDs all enabled as mitigation:
 
 ```yaml
 persisted_queries:
   enabled: true
-  safelist:
-    enabled: true
-    require_id: true
+  safelist: { enabled: true, require_id: true }
 ```
 
-`include_subgraph_errors` in `2.2.0` supports global redaction and extension
-allowlists with per-subgraph refinements. Per-subgraph entries extend or exclude
-global keys; `deny_extensions_keys` wins over the allowlist; `false` redacts all;
-omission inherits `all`. Prefer allowlists to avoid exposing future fields.
+### Configurable HTTP header-read timeout
 
-`supergraph.redact_query_validation_errors: true` replaces every validation
-failure with `invalid query` and code `UNKNOWN_ERROR` (`2.12.0`).
+Since 2.2.0, `server.http.header_read_timeout` replaces the hard-coded 10-second wait while preserving 10 seconds as default.
 
-Router `2.12.0` validates unknown fields inside input-object variables. Set
-`supergraph.strict_variable_validation: measure` only to preserve non-enforcing
-migration behavior.
+### Fine-grained subgraph error inclusion
 
-When all fields are unauthorized, Router `2.13.0` returns `data: null` and honors
-the configured `errors.response` destination and `errors.log`.
+Since 2.2.0, `include_subgraph_errors.all` defines global redaction/extension allowlists and `subgraphs` refines them. Per-subgraph rules can extend or exclude global keys; `deny_extensions_keys` wins over the allowlist; `false` redacts all; omission inherits `all`. Prefer allowlists to avoid exposing unknown sensitive extensions.
 
-Applying `@authenticated`, `@requiresScopes`, or `@policy` to a subgraph root type
-composes it onto the shared supergraph root (`2.15.0`). Use field directives when
-policy should affect only one subgraph's contribution.
+### Native planning rejects unknown execution or security links
 
-## Sensitive headers and client metadata
+Since 2.4.0, the native planner rejects unknown `@link` specifications with purpose `EXECUTION` or `SECURITY`. Remove or correct the unknown link.
 
-Router `2.16.0` masks sensitive header values in logs, telemetry, coprocessor
-communications, and Apollo trace-header forwarding even without a `masking` block.
-Built-in, global, and per-subgraph case-insensitive lists are additive unless
-`replace_defaults: true`; Connectors inherit the parent subgraph policy.
+### Per-origin CORS policies
 
-Telemetry selectors can override with `redact: mask` or `redact: allow`. The shared
-`http_client` layer applies only global rules. Secrets copied into coprocessor body
-or context fields are not automatically masked there.
+Since 2.5.0, `cors.policies` can match literal `origins` or regex `match_origins` and apply credentials/headers per origin. Keep a restrictive catch-all after trusted policies.
 
-Enhanced client-awareness names and versions are validated from `2.13.0`; invalid
-header or extension values are rejected.
+### Private Network Access per CORS policy
 
-## Building custom Router images (`2.10.0`)
+Since 2.9.0, each `cors.policies` entry may enable `private_network_access`; `access_id` and `access_name` are optional.
 
-The DIY Dockerfile pins its Rust builder to a Bookworm variant such as
-`rust:1.91.1-slim-bookworm`, matching the Bookworm runtime glibc. A generic Rust
-builder may select a newer glibc and produce `GLIBC_2.39 not found` at startup.
+### HTTP/2 header-list size limit
+
+Since 2.9.0, `limits.http2_max_headers_list_bytes` caps total HTTP/2 request-header size, defaults to 16 KiB, and returns 431 when exceeded.
+
+### HTTP/2 header limits cover every listener
+
+Since 2.10.0, `limits.http2_max_headers_list_bytes` applies to TLS, non-TLS TCP, and Unix-domain-socket listeners; earlier it covered TLS only.
+
+### Query-validation error redaction
+
+Since 2.12.0, `supergraph.redact_query_validation_errors: true` replaces all validation failures with one `invalid query` / `UNKNOWN_ERROR` response.
+
+### Strict input-object variable validation
+
+Since 2.12.0, fields inside input-object variables are validated against their GraphQL types, including unknown-field rejection. Use `supergraph.strict_variable_validation: measure` only to retain non-enforcing behavior during rollout.
+
+### GET request content-type hardening
+
+Router 2.12.1 rejects GraphQL GET requests with any `Content-Type` other than `application/json` plus optional parameters, returning 415. Omitting it remains valid subject to CSRF checks. Prioritize this for cookie or HTTP Basic authentication.
+
+### Client-awareness metadata is validated
+
+Since 2.13.0, invalid client-library names or versions in headers or operation extensions are rejected; producers must send valid values.
+
+### Trailing-slash-tolerant supergraph paths
+
+Since 2.14.0, Router normalizes trailing slashes while matching `supergraph.path`; `/graphql` accepts both `/graphql` and `/graphql/`.
+
+### Recursive-selection limit
+
+Since 2.16.0, `limits.router.max_recursive_selections` configures the fragment-expansion ceiling (default 10,000,000). `limits.router.warn_only: true` makes it warn; `APOLLO_ROUTER_DISABLE_SECURITY_RECURSIVE_SELECTIONS_CHECK` remains an escape hatch.
+
+### Sensitive-header masking
+
+Since 2.16.0, sensitive header values are masked in logs, telemetry, coprocessor messages, and Apollo trace-header forwarding even without a `masking` block. Built-in and configured global/per-subgraph lists are additive unless `replace_defaults: true`; Connectors inherit the parent subgraph rules.
+
+Telemetry selectors may override with `redact: mask` or `redact: allow`. The shared `http_client` layer applies global rules only, and a secret copied into coprocessor body/context is not masked there.
+
+## Deployment, artifacts, and reloads
+
+### Proxied Router release downloads
+
+Since 2.1.0, release downloads may use a remote proxy mirror when GitHub is unreachable from the deployment.
+
+### Health-check endpoints can be disabled again
+
+Since 2.3.0, health-check endpoints can again be disabled after the Router 2.0 plugin conversion temporarily removed that behavior.
+
+### Helm deployment annotations
+
+Since 2.7.0, Helm `deploymentAnnotations` applies to the Deployment; `podAnnotations` remains separate.
+
+### Bookworm builders for DIY Docker images
+
+Since 2.10.0, the DIY Dockerfile pins a Bookworm Rust builder (for example `rust:1.91.1-slim-bookworm`) to match the Bookworm runtime glibc. Generic builders may select a newer glibc and fail with `GLIBC_2.39 not found`.
+
+### OCI tag references reload when their target changes
+
+Since 2.11.0, Router polls mutable OCI tag references, including generated variant and custom tags, and reloads when the tag points to a new artifact, for example `artifacts.apollographql.com/my-org/my-graph:prod`.
+
+### Warning-state licenses enforce restrictions
+
+Since 2.11.0, restricted features are blocked even while a license is in warning state.
+
+### Self-hosted subscriptions are available on every GraphOS plan
+
+Since 2.11.0, all GraphOS plans may use self-hosted Router subscriptions, but the Router must connect to GraphOS with an API key and graph ref because the feature remains licensed.
+
+### Helm `ServiceMonitor` names follow the Router fullname
+
+Since 2.13.0, the chart derives `ServiceMonitor.metadata.name` from `router.fullname`, honoring `nameOverride` and `fullnameOverride`; a default `my-release` changes to `my-release-router`.
+
+### Insecure graph-artifact registries can be allowlisted
+
+Since 2.13.0, trusted registry hostnames can be allowlisted for HTTP artifact pulls, supporting private registries and pull-through caches without broadly permitting insecure transport.
+
+### Failed reloads retry automatically
+
+Since 2.15.0, transient schema or related reload failure retries instead of permanently retaining the previous schema. `reload.max_retries` defaults to 5 (`0` disables, `null` is unlimited), `retry_delay` defaults to 10 seconds, and a new trigger resets the retry budget.
+
+### Local persisted-query manifest key
+
+Since 2.16.0, replace deprecated `persisted_queries.experimental_local_manifests` with behavior-equivalent `persisted_queries.local_manifests`; the old key is scheduled for Router 3.x removal.

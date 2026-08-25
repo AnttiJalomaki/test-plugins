@@ -1,55 +1,72 @@
 # Lifecycle, runtimes, and packaging
 
-## Major-version lifecycle
+## SDK and tool lifecycle (`sdk-lifecycle-and-eol`)
 
-General-availability major versions receive new services, existing-service API updates, Region support, bug fixes, and security fixes. Maintenance mode is limited to critical bug and security fixes. End of support stops all releases, although existing packages and source remain available and repositories may be archived.
+### AWS SDK for .NET
 
-### .NET
+- **.NET SDK v3 end of support.** Version 3 entered maintenance on March 1,
+  2026 and reached end of support on June 1, 2026. Existing packages remain
+  available, but receive no further updates or releases; migrate to v4.
+- **.NET SDK v4 package and collection changes.** Upgrade every `AWSSDK.*`
+  dependency together to 4.0.0 or later because v3 and v4 core and service
+  packages cannot coexist. Collection properties now default to `null`; add
+  null handling or temporarily restore v3 initialization with:
 
-- AWS SDK for .NET v3 entered maintenance on March 1, 2026 and reached end of support on June 1, 2026. Version 4 has been generally available since April 28, 2025.
-- Upgrade every `AWSSDK.*` reference to 4.0.0 or later together. Core and service package conflicts prevent mixing v3 and v4 packages in one application.
-- In v4, request and response collection properties default to `null` instead of empty collections. This distinguishes unset values from explicitly empty values and avoids unnecessary allocations. Null-check before iteration.
-- `Amazon.AWSConfigs.InitializeCollections = true` temporarily restores v3-style empty collections, but removes that distinction and its performance benefit.
+  ```csharp
+  Amazon.AWSConfigs.InitializeCollections = true;
+  ```
 
-### Go
+### AWS CLI and Tools for PowerShell
 
-AWS SDK for Go v1 was in maintenance from July 31, 2024 through July 30, 2025 and reached end of support on July 31, 2025. Existing binaries may continue to run, but v1 receives no fixes or service updates. Move source code to Go v2 using the one-time migration.
+- **CLI v1 maintenance announcement.** CLI v1 is in the Maintenance
+  Announcement phase. CLI v2 remains generally available and is the target
+  for upgrades and new deployments.
+- **Tools for PowerShell v4 end of support.** Version 4 reached end of support
+  on June 1, 2026; move to v5, which has been generally available since June
+  23, 2025.
 
-### JavaScript
+## Runtime support (`shared-defaults-and-runtime-support`)
 
-AWS SDK for JavaScript v2 was in maintenance from September 8, 2024 through September 7, 2025 and reached end of support on September 8, 2025. Move to the modular v3 packages; an automated migration tool can assist with source conversion.
+### Python
 
-### Other successor lines
+- **Python runtime support cadence.** Boto3, Botocore, and AWS CLI v1 support
+  Python releases for six months after Python Software Foundation end of
+  support. Python 3.9 support ended in April 2026, 3.10 ends in April 2027,
+  and 3.11 ends in April 2028. AWS CLI v2 does not depend on local Python.
 
-The lifecycle matrix marks AWS CLI 1.x as maintenance-announced and AWS SDK for Java 1.x and AWS Tools for PowerShell 4.x as end of support. Their generally available successor lines are AWS CLI 2.x, Java 2.x, and PowerShell 5.x.
+### JavaScript v3
 
-## Python runtime cadence
+- **JavaScript v3 Node.js and ECMAScript cadence.** The SDK supports current
+  Node.js LTS majors plus the most recently retired major for roughly eight
+  months. Dropping a Node.js line also drops the equivalent ECMAScript browser
+  target. Node.js 18 and pre-ES2023 support ended in January 2026; Node.js 20
+  and pre-ES2024 support are scheduled to end in January 2027. Pinning an
+  older SDK can retain runtime compatibility but not support or updates.
 
-Boto3, Botocore, and AWS CLI v1 retain compatibility for roughly six months after the Python Software Foundation ends a Python release.
+## JavaScript packaging and removals
 
-| Python | AWS support boundary |
-| --- | --- |
-| 3.9 | Ended April 2026 |
-| 3.10 | Scheduled for April 2027 |
-| 3.11 | Scheduled for April 2028 |
+### Client and output changes (`2026-06`)
 
-AWS CLI v2 has no local Python dependency, so these runtime retirements do not apply to it.
+- **Removed JavaScript v3 service clients.** IoT Events, IoT Events Data,
+  Panorama, and SimSpace Weaver clients were removed; applications using them
+  cannot upgrade unchanged.
+- **ESM output required for bundlers.** Bundler support was removed from
+  `dist-cjs`; configure bundlers to consume `dist-es`.
 
-## JavaScript runtime and ECMAScript cadence
+## Service lifecycle and deprecations
 
-JavaScript v3 supports current Node.js LTS releases and keeps the most recently retired major for about eight additional months. When that window closes, it also raises the browser ECMAScript target.
+### Deprecated voice APIs (`2026-07-2`)
 
-- Node.js 18 and targets below ES2023 lost support in January 2026.
-- Node.js 20 and targets below ES2024 are scheduled to lose support in January 2027.
-- New SDK releases might still execute on a retired Node.js version, but that combination is unsupported. npm warns on the package engine requirement and fails with `ENOTSUP` when `engine-strict=true`.
-- Pinning an SDK release from before the January boundary can preserve runtime compatibility, but does not restore support, fixes, or service updates.
+- **Chime SDK Voice proxy API deprecations.** The proxy-session operations
+  `CreateProxySession`, `DeleteProxySession`, `GetProxySession`,
+  `ListProxySessions`, and `UpdateProxySession`, plus
+  `PutVoiceConnectorProxy`, `DeleteVoiceConnectorProxy`, and
+  `GetVoiceConnectorProxy`, are deprecated.
 
-## JavaScript packaging and client removals
+### Maintenance and end-of-support services (`2026-08`)
 
-- The JavaScript v3 release in `2026-06` removed the IoT Events, IoT Events Data, Panorama, and SimSpace Weaver clients. Do not assume those packages remain in aggregate install or upgrade workflows.
-- Bundler support was dropped from `dist-cjs`. Configure bundler resolution to use `dist-es`; reserve the CommonJS distribution for supported non-bundler consumers.
-
-## Service API compatibility removals
-
-- In `2026-07`, Cloud9 removed Amazon Linux 2 from the AMI options accepted by the public EC2-environment creation API after Amazon Linux 2 reached end of life on June 30, 2026.
-- In `2026-07`, Outposts tightened the validation pattern for site `ContactPhoneNumber`. Sanitize and validate existing values because strings accepted by older clients can now fail validation.
+- **Textract A2I maintenance restriction.** Amazon A2I entered maintenance
+  mode in July 2026. `StartHumanLoop` now rejects accounts that are not
+  recognized as existing customers.
+- **Cloud Directory end of support.** The public CLI reference marks Amazon
+  Cloud Directory end-of-support; do not base new integrations on it.

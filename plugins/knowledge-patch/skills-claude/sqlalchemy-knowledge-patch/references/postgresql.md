@@ -1,109 +1,55 @@
 # PostgreSQL
 
-## asyncpg and server isolation
+## asyncpg isolation inheritance
 
-When the application does not configure a client isolation level, the asyncpg
-wrapper passes `None` to the driver. That leaves the server-level isolation
-setting in control instead of forcing `READ COMMITTED`.
-
-This distinction is important when `default_transaction_isolation` is set at
-the database, role, or server level. To override that policy, set the
-SQLAlchemy isolation level explicitly; otherwise, expect the server setting
-to win.
+When SQLAlchemy has no client isolation level configured, the asyncpg wrapper
+passes `None` to the driver. The server-level isolation setting then applies
+instead of SQLAlchemy forcing `READ COMMITTED`. Configure an explicit client
+level only when the application intends to override the server.
 
 ## JSONB subscript rendering and expression indexes
 
-On PostgreSQL 14 and later, a JSONB subscript renders with bracket notation:
+On PostgreSQL 14 and later, JSONB subscripts render with square brackets:
 
 ```sql
 data['key']
 ```
 
-The PostgreSQL `JSON` type continues to use arrow syntax. Keep the two
-rendering behaviors distinct when reviewing compiled SQL.
+JSON expressions still use arrow syntax. PostgreSQL requires a textual match
+between a query expression and an expression index, so indexes made with the
+older JSONB arrow text are not selected for newly rendered expressions.
 
-PostgreSQL requires a textual expression match before it can use an
-expression index. An index created from the former JSONB arrow rendering does
-not match a query compiled with the bracket rendering, even when the
-expressions are logically equivalent. During an upgrade:
+During an upgrade, identify every affected JSONB expression index, drop it,
+and recreate it with the new expression text. Inspect SQL generation and query
+plans before and after the migration. This behavior is from 2.0.51.
 
-1. inventory indexes whose expressions contain SQLAlchemy-rendered JSONB
-   subscripts;
-2. compile representative expressions against PostgreSQL 14 or later;
-3. drop and recreate indexes whose stored expression uses the old text; and
-4. verify index selection with the actual query plan.
-
-Changing application queries without rebuilding an affected index can cause a
-silent performance regression.
-
-## Included columns on constraints
+## Constraint options
 
 `UniqueConstraint` and `PrimaryKeyConstraint` accept
 `postgresql_include`:
 
 ```python
-from sqlalchemy import MetaData, Table, Column, Integer, String
-from sqlalchemy import UniqueConstraint
-
-account = Table(
-    "account",
-    MetaData(),
-    Column("id", Integer, primary_key=True),
-    Column("email", String, nullable=False),
-    UniqueConstraint(
-        "email",
-        postgresql_include=["id"],
-    ),
-)
+UniqueConstraint("email", postgresql_include=["id"])
 ```
 
-The named columns are emitted as PostgreSQL `INCLUDE` columns for the backing
-constraint index. Keep uniqueness or primary-key membership in the positional
-constraint columns; the included list is for additional stored columns.
+Foreign-key `ON DELETE SET NULL` and `ON DELETE SET DEFAULT` actions also
+support column lists. Preserve the requested column list when expressing
+either action in schema metadata.
 
-## Column lists in referential actions
+## Typed empty arrays
 
-PostgreSQL foreign keys can carry a column list in `ON DELETE SET NULL (...)`
-or `ON DELETE SET DEFAULT (...)`. Preserve the parenthesized column list in
-the configured referential action when only part of a composite foreign key
-should receive the null or default action.
-
-This is PostgreSQL-specific SQL. Confirm the target server version and do not
-expect another dialect to accept the same action text.
-
-## Typed empty array literals
-
-PostgreSQL cannot infer the element type of a completely empty array literal.
-Pass `type_` to `array()`:
+For an empty PostgreSQL array literal, supply `type_`:
 
 ```python
-from sqlalchemy import Integer, select
-from sqlalchemy.dialects.postgresql import array
-
-stmt = select(array([], type_=Integer))
+array([], type_=Integer)
 ```
 
-The expression renders the required cast:
+This renders the cast required by PostgreSQL, such as
+`ARRAY[]::INTEGER`.
 
-```sql
-ARRAY[]::INTEGER
-```
+## Richer reflection
 
-Pass the intended element type through `type_` so SQLAlchemy can render the
-cast for the otherwise untyped empty literal.
-
-## Reflection fidelity
-
-PostgreSQL reflection preserves a non-default collation on a reflected type.
-Schema-diff and round-trip tooling should compare that reflected collation
-instead of assuming the database default.
-
-Reflected index dictionaries also expose non-default operator classes:
-
-```python
-index_info["dialect_options"]["postgresql_ops"]
-```
-
-The value is keyed by column name. Consume it from `dialect_options` when
-reconstructing an index or comparing reflected metadata; do not look for
-operator classes only in the generic index fields.
+Reflected PostgreSQL types retain non-default collations. Reflected index
+dictionaries expose non-default operator classes in
+`dialect_options["postgresql_ops"]`, keyed by column name. Preserve these
+values when comparing, copying, or regenerating reflected schema objects.

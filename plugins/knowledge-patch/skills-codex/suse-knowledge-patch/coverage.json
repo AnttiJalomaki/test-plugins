@@ -1,6 +1,8 @@
 {
   "patch": "suse-knowledge-patch",
-  "merged_at": "2026-07-15T03:19:55Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T04:59:02Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -44,6 +46,11 @@
       "kind": "unversioned",
       "codex": "fully-known",
       "build": "omitted"
+    },
+    "16.0-rev-2026-08-04": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
     }
   },
   "retire_candidates": []

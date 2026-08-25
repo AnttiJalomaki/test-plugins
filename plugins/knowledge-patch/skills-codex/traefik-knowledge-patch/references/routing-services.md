@@ -1,71 +1,95 @@
 # Routing, middleware, and services
 
-Use this reference when composing router rules, middleware chains, backend
-services, retries, failover, health checks, or load balancing.
-
 ## Compose router hierarchies
 
-Routers can form a `parentRefs` hierarchy (since 3.6.0). A parent can apply
-shared middleware or TLS configuration and enrich a request before a child
-evaluates its rule.
+Routers can use `parentRefs` to build multi-layer routing (3.6.0). A parent can
+apply shared middleware or TLS and enrich the request before the child's rule
+runs. Root routers attach to entry points without a service, intermediate
+routers may have children, and leaves select services. A child is reachable
+only through its parent.
 
 ```yaml
 http:
   routers:
     api-parent:
       rule: "Host(`api.example.com`) && PathPrefix(`/`)"
-      middlewares:
-        - auth-with-tier
-      entryPoints:
-        - websecure
+      middlewares: [auth-with-tier]
+      entryPoints: [websecure]
       tls: {}
     api-enterprise:
       rule: "HeaderRegexp(`X-Customer-Tier`, `(enterprise|business)`)"
       service: stable-backend
-      parentRefs:
-        - api-parent
-  middlewares:
-    auth-with-tier:
-      forwardAuth:
-        address: "http://auth-service:8080/validate"
-        authResponseHeaders:
-          - X-Customer-Tier
-  services:
-    stable-backend:
-      loadBalancer:
-        servers:
-          - url: "http://api-v1-stable:8080"
+      parentRefs: [api-parent]
 ```
 
-Enforce these invariants:
+`Host` and `HostSNI` accept wildcard names such as `*.example.com`, and routing
+precedence is configurable when routes from different providers compete
+(3.7.0).
 
-- a root router attaches to entry points and has no service;
-- an intermediate router may have children;
-- a leaf router selects the service; and
-- a child is reachable only by traversing its parent.
+The `defaultRuleSyntax` and `ruleSyntax` options are deprecated; remove
+dependencies on them (3.4.0).
 
-The ordering matters when a parent middleware adds a header used by a child's
-rule, as in the example.
+## Handle paths, redirects, and headers
 
-## Match hosts and choose provider precedence
+The Headers middleware can emit `Content-Security-Policy-Report-Only` for
+non-enforcing CSP evaluation (3.1.0).
 
-`Host` and `HostSNI` accept wildcard host names such as `*.example.com` (since
-3.7.0). Test both a matching subdomain and the bare parent domain; do not assume
-the wildcard covers both.
+The `encodedCharacters` middleware provides route-level encoded-character
+policy. Related entry-point settings are opt-in, and rejected requests appear
+in access logs. Prefix stripping uses the encoded prefix length and sanitizes
+the result; 3.7.7 also sanitizes paths created by `ReplacePathRegex` (3.7.0).
 
-Provider routing precedence is configurable (since 3.7.0). Set it explicitly
-when equivalent routes can be produced by, for example, a Kubernetes provider
-and another dynamic provider.
+Gateway API header modifiers can change `Host`. Redirects preserve the incoming
+scheme when none is configured and emit the configured status. CORS no longer
+emits a default zero max-age or combines credentialed requests with wildcard
+origin (3.7.0).
 
-The `defaultRuleSyntax` and `ruleSyntax` options are deprecated (since 3.4.0).
-Avoid using them to preserve legacy parsing; migrate rules to the current
-syntax.
+The Errors middleware can rewrite status codes (3.4.0). It can select forwarded
+request headers with `errorRequestHeaders`; Kubernetes CRDs gained that field
+later, and `service` is required (3.7.11).
+
+IPAllowList can choose the rejection response through `rejectStatusCode`
+(3.7.11):
+
+```yaml
+http:
+  middlewares:
+    office-only:
+      ipAllowList:
+        sourceRange: [192.0.2.0/24]
+        rejectStatusCode: 404
+```
+
+## Configure compression and mirroring
+
+Compress negotiates Zstandard when clients advertise `zstd` (3.1.0), and its
+`encodings` option restricts the formats it may negotiate (3.2.0). Version 3.7.9
+specifically disables Zstandard in the `gzhttp` wrapper, so do not depend on
+Zstd through that wrapper after upgrading (3.7.11).
+
+Mirroring has `mirrorBody` to control whether request bodies are copied to the
+mirror (3.2.0). Mirroring also handles empty bodies whose length is unknown
+(3.6.21).
+
+HTTP services can preserve the configured backend server path while proxying
+(3.2.0).
+
+## Handle WebSocket traffic
+
+The initial 3.3.0 release has a WebSocket-upgrade issue. Deployments requiring
+WebSockets must disable HTTP/2 extended CONNECT:
+
+```sh
+GODEBUG=http2xconnect=0 traefik
+```
+
+Patched 3.7 behavior supports WebSocket upgrades with `h2c` backends (3.7.0).
+Retest upgrades when changing either proxy protocol path.
 
 ## Attach middleware to services
 
-An HTTP service can have middleware attached directly (since 3.7.0). Every
-router selecting that service receives the middleware, and Gateway API filters
-can consequently apply to HTTP backends.
+HTTP services can carry middleware that applies to every selecting router and
+allows Gateway API filters on HTTP backends (3.7.0):
 
 ```yaml
 http:
@@ -74,104 +98,13 @@ http:
       loadBalancer:
         servers:
           - url: "http://api-backend:8080"
-      middlewares:
-        - rate-limit
-        - auth
+      middlewares: [rate-limit, auth]
 ```
 
-Use service-level attachment for a true backend invariant. Keep route-specific
-policy on routers so unrelated consumers of the same service are not changed.
+## Retry and fail over by status
 
-## Compress responses
-
-The Compress middleware negotiates Zstandard when a client advertises `zstd`
-(since 3.1.0). Its `encodings` option limits which compression formats may be
-negotiated (since 3.2.0). Configure the list when backend, cache, or client
-compatibility requires a narrower set, then test `Accept-Encoding` preference
-and fallback behavior.
-
-## Control encoded paths and rewrites
-
-The `encodedCharacters` middleware supplies route-level policy for encoded
-characters (since 3.7.0). Related entry-point policies are opt-in, and requests
-they reject are recorded in access logs.
-
-Prefix stripping now measures the encoded prefix length and sanitizes the
-resulting URL. Patch 3.7.7 also sanitizes paths produced by
-`ReplacePathRegex`. Exercise encoded separators, percent encodings, stripped
-prefixes, and regex replacements at the same byte forms clients send.
-
-## Mirror requests safely
-
-HTTP mirroring exposes `mirrorBody` (since 3.2.0), allowing a mirror service to
-decide whether request bodies are copied. Disable body mirroring when payloads
-are sensitive, large, or unnecessary to the shadow workload.
-
-Patched 3.6 releases correctly handle an empty mirrored request body whose
-length is unknown (since 3.6.21). Include chunked or otherwise unknown-length
-empty requests in mirroring regressions.
-
-## Preserve backend URL paths
-
-HTTP services can preserve the path configured on a backend server URL (since
-3.2.0). Enable this behavior when a server URL contains a required base path;
-test it together with strip-prefix and replace-path middleware to avoid an
-unexpected double prefix or erased path.
-
-## Rewrite error responses
-
-The Errors middleware can rewrite the HTTP status while handling an error
-response (since 3.4.0). In 3.7.0 it also gains `errorRequestHeaders`, which
-selects the request headers forwarded to the error service. Keep identity and
-credential headers out unless the error service explicitly needs and protects
-them.
-
-## Share rate-limit state
-
-The RateLimit middleware can store state in Redis (since 3.4.0), allowing a
-limit to be enforced across multiple Traefik instances. Validate Redis failure
-behavior, key scope, and aggregate limits with more than one proxy replica.
-
-## Configure sticky cookies
-
-Sticky-session cookies accept a path (since 3.3.0) and a domain (since 3.4.0).
-Use them to narrow or deliberately share cookie scope. Kubernetes Ingress and
-CRD providers also recognize serving endpoints during sticky-session backend
-selection (since 3.3.0).
-
-Test cookie issuance, return routing, path boundaries, subdomains, and backend
-changes rather than checking only the cookie attributes.
-
-## Select a balancing strategy
-
-- `p2c` is available as a service server load-balancing strategy (since 3.4.0).
-- `Least Time` routes to servers with the lowest response times and is available
-  in file-provider and Kubernetes CRD service configuration (since 3.6.0).
-- `HighestRandomWeight` performs probabilistic weighted selection and is
-  available through Kubernetes CRDs (since 3.6.0).
-
-Strategy availability differs by provider. The Kubernetes CRD schema no longer
-inserts a default strategy (since 3.4.0), so specify it when behavior must be
-stable.
-
-## Configure active and passive health
-
-- A failed backend can use a distinct unhealthy probe interval (since 3.5.0).
-- Native TCP health checks support non-HTTP services (since 3.6.0).
-- Passive health checks infer health from real traffic instead of active probes
-  (since 3.6.0).
-- Kubernetes CRD services backed by `ExternalName` Services support health
-  checks (since 3.1.0).
-- Health-check paths must be path-only, not absolute URLs (since 3.7.0).
-
-Choose active HTTP, active TCP, or passive observation according to the
-backend's protocol and failure signal. Verify transitions into and out of the
-unhealthy state at the configured cadence.
-
-## Retry by response status
-
-The Retry middleware can select response status codes, impose a per-attempt
-timeout, and opt in to retrying non-idempotent methods (since 3.7.0):
+Retry can select response status codes, impose a per-attempt timeout, and opt in
+to non-idempotent methods (3.7.0):
 
 ```yaml
 http:
@@ -185,14 +118,8 @@ http:
         timeout: 2s
 ```
 
-Only enable non-idempotent retries when the backend has a deduplication or
-idempotency contract. Test timeout and status selection separately so slow
-attempts are not mistaken for status-triggered retries.
-
-## Fail over by response status
-
-Failover services can switch to a fallback on selected response statuses, and
-`TraefikService` CRDs can express that policy (since 3.7.0):
+Failover services can switch on response statuses, including in
+`TraefikService` CRDs (3.7.0):
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
@@ -208,20 +135,21 @@ spec:
       status: ["500-504"]
 ```
 
-Exercise healthy primary responses, each configured error range, an unhealthy
-primary, and fallback failure. Retries and failover can multiply backend
-attempts, so verify their combined behavior when both are present.
+## Choose health checks and balancing
 
-## Retest patched HTTP behavior
+Backends can use a distinct probe interval while unhealthy (3.5.0). Services
+also support native TCP health checks for non-HTTP backends and passive health
+checks based on live traffic (3.6.0).
 
-Patched 3.7 releases correct several externally visible behaviors:
+Health-check paths must be path-only values, not absolute URLs (3.7.0).
 
-- Gateway API header modifiers may change `Host`.
-- A redirect with no explicit scheme retains the incoming scheme and uses the
-  configured status.
-- CORS no longer emits a default zero max-age and no longer combines a
-  credentialed request with wildcard origin.
-- WebSocket upgrades work with `h2c` backends.
+The `p2c` service load-balancing strategy is available from 3.4.0. `Least Time`
+is available in file and Kubernetes CRD service configuration, while
+`HighestRandomWeight` also works through Kubernetes CRDs (3.6.0).
 
-Treat these as regression cases when updating within the 3.7 line, particularly
-if clients or tests encoded the previous output.
+RateLimit can keep shared state in Redis for enforcement across Traefik
+instances (3.4.0). Redis keyspace notifications must be enabled for Redis update
+notifications (3.7.11).
+
+Sticky-session cookies can set a path (3.3.0) and a domain (3.4.0), allowing
+their scope to match the intended routes and hosts.

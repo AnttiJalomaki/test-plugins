@@ -1,20 +1,17 @@
 # URL Rewrites, Route Masks, and Navigation Blocking
 
-## Bidirectional URL rewrites
+## Map public and internal URLs bidirectionally
 
-Configure the router-level `rewrite` option to separate the public URL from the
-internal URL used for matching:
+The router-level `rewrite` option maps the browser URL to an internal URL with
+`input` before route matching. It maps internal URLs back to public URLs with
+`output` before links or history entries are written.
 
-- `input` maps the browser or request URL to an internal URL before matching.
-- `output` maps an internal destination back before Router writes a link or
-  browser history entry.
-
-Each function receives `{ url: URL }`. It may return the mutated object, a new
-`URL`, a complete href string, or `undefined`.
+Each handler receives `{ url: URL }` and may return the mutated object, a new
+`URL`, a full href string, or `undefined`. After rewriting,
+`location.href` is the internal URL and `location.publicHref` is the external,
+shareable URL.
 
 ```tsx
-import { createRouter } from '@tanstack/react-router'
-
 const localeRewrite = {
   input: ({ url }) => {
     url.pathname =
@@ -27,29 +24,23 @@ const localeRewrite = {
   },
 }
 
-const router = createRouter({
-  routeTree,
-  rewrite: localeRewrite,
-})
+const router = createRouter({ routeTree, rewrite: localeRewrite })
 ```
 
-`location.href` remains the internal value. Use `location.publicHref` for the
-external, shareable value.
+`<Link>` and programmatic navigation apply output rewrites automatically. If an
+output rewrite changes the origin, `<Link>` performs a hard navigation. The
+same rewrite configuration participates in server request parsing and SSR
+hydration.
 
-`<Link>` and programmatic navigation automatically apply output rewrites. If an
-output changes the origin, `<Link>` uses a hard navigation. Server request
-parsing and server-rendering hydration use the same rewrite configuration, so
-install any request-specific rewrite state before initial client matching.
+## Compose rewrites around a basepath
 
-## Composition and basepaths
+`composeRewrites` runs input rewrites from first to last and output rewrites
+from last to first, allowing transformations to unwrap in reverse order.
 
-`composeRewrites` applies input functions from first to last, then output
-functions from last to first. The inverse output order unwraps nested
-transformations correctly.
+A configured `basepath` is automatically composed outside custom rewrites. The
+router strips it before custom input and restores it after custom output.
 
 ```tsx
-import { composeRewrites } from '@tanstack/react-router'
-
 const legacyRewrite = {
   input: ({ url }) => {
     if (url.pathname === '/old') url.pathname = '/new'
@@ -64,22 +55,14 @@ const router = createRouter({
 })
 ```
 
-A configured `basepath` is automatically composed outside the custom rewrite:
-Router removes it before custom input and restores it after custom output. Do
-not manually duplicate the basepath inside custom handlers.
+## Mask one runtime route with another URL
 
-## Route masking
-
-A mask navigates to one typed runtime location while displaying and persisting
-a different location in the address bar.
-
-For one navigation, pass `mask` to `<Link>` or `navigate()`. For reusable,
-typed mappings, create a mask with `createRouteMask` and register it under the
-router's `routeMasks`.
+A route mask navigates to one typed runtime location while placing a different
+location in the URL bar. Supply `mask` to `<Link>` or `navigate()` for a single
+navigation, or register a typed `createRouteMask` result in the router's
+`routeMasks` for reuse.
 
 ```tsx
-import { createRouteMask } from '@tanstack/react-router'
-
 const photoMask = createRouteMask({
   routeTree,
   from: '/photos/$photoId/modal',
@@ -87,10 +70,7 @@ const photoMask = createRouteMask({
   params: (prev) => ({ photoId: prev.photoId }),
 })
 
-const router = createRouter({
-  routeTree,
-  routeMasks: [photoMask],
-})
+const router = createRouter({ routeTree, routeMasks: [photoMask] })
 
 navigate({
   to: '/photos/$photoId/modal',
@@ -102,14 +82,14 @@ navigate({
 })
 ```
 
-## Mask lifetime and reloads
+## Control mask lifetime across reloads
 
-The runtime location is stored in browser history state rather than encoded in
-the displayed URL. Copying or sharing that URL loses the hidden location and
-loads the displayed route normally.
+The runtime location is stored in browser history state. Copying or sharing the
+displayed URL loses that state and loads the displayed route normally.
 
-A reload in the same browser history entry preserves the mask by default. Set
-`unmaskOnReload: true` to discard it:
+A local reload retains the mask by default. Set `unmaskOnReload: true` to
+discard it. A per-link or per-navigation setting overrides the route-mask
+setting, which overrides the router default.
 
 ```tsx
 const router = createRouter({
@@ -119,16 +99,13 @@ const router = createRouter({
 })
 ```
 
-The most local setting wins: a link or navigation setting overrides a
-route-mask setting, which overrides the router default.
+## Resolve blocked navigation explicitly
 
-## Resolver-based navigation blocking
+`useBlocker` passes typed `current` and `next` locations to `shouldBlockFn`; a
+true result blocks navigation. With `withResolver: true`, the blocker enters a
+blocked state and waits. Call `proceed` to continue or `reset` to remain.
 
-`useBlocker` supplies typed `current` and `next` locations to
-`shouldBlockFn`. Returning true blocks the navigation.
-
-With `withResolver: true`, a block enters a pending blocked state instead of
-settling immediately. Call `proceed` to continue or `reset` to remain:
+`enableBeforeUnload` separately controls the native reload or tab-close prompt.
 
 ```tsx
 const { status, proceed, reset } = useBlocker({
@@ -142,14 +119,10 @@ if (status === 'blocked') {
 }
 ```
 
-`enableBeforeUnload` is independent from client navigation blocking. It
-controls the browser's native prompt for reloads and closing the tab.
+## Await an asynchronous blocker decision
 
-## Asynchronous blocker decisions
-
-Without resolver mode, `shouldBlockFn` may return a promise for custom
-asynchronous UI. Its boolean meaning follows blocking, not leaving: resolve
-`true` to cancel navigation and `false` to allow it.
+Without resolver mode, `shouldBlockFn` may return a promise for custom UI.
+Resolve `true` to cancel navigation and `false` to allow it.
 
 ```tsx
 useBlocker({

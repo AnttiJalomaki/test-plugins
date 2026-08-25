@@ -10,54 +10,54 @@ metadata:
 
 # Traefik Knowledge Patch
 
-Use this guide to identify changed Traefik behavior before editing static or
-dynamic configuration, Kubernetes resources, provider settings, or deployment
-manifests. Open the topic reference that matches the change; it carries the
-provider limits and version-specific details needed to avoid unsafe migrations.
+Use this guide to identify behavior that affects a Traefik task, then open the
+matching topic reference before editing static configuration, dynamic
+configuration, Kubernetes resources, or deployment manifests.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Kubernetes and Gateway API](references/kubernetes.md) | CRDs, RBAC, EndpointSlices, Gateway API, Ingress, ingress-nginx compatibility, and Knative |
-| [Observability](references/observability.md) | OpenTelemetry, access logs, support dumps, API paths, and dashboard behavior |
-| [Providers and operations](references/providers-operations.md) | Provider connectivity and discovery, socket activation, plugins, protocol limits, and security maintenance |
-| [Routing, middleware, and services](references/routing-services.md) | Router hierarchies, matching, compression, mirroring, retries, failover, health checks, and balancing |
-| [Security, TLS, and authentication](references/security-tls-auth.md) | ACME, TLS, forwarded headers, ForwardAuth, request limits, and error-service controls |
+| [Kubernetes and Gateway API](references/kubernetes.md) | Gateway API, EndpointSlices, CRDs, Ingress, Ingress NGINX, Knative, and namespace controls |
+| [Observability](references/observability.md) | OpenTelemetry, access logs, support dumps, API/dashboard paths, and dashboard features |
+| [Providers and operations](references/providers-operations.md) | Docker, Swarm, ECS, Nomad, HTTP, plugins, socket activation, proxy controls, and operational fixes |
+| [Routing, middleware, and services](references/routing-services.md) | Router hierarchies, matching, retries, compression, mirroring, health checks, balancing, failover, and stickiness |
+| [Security, TLS, and authentication](references/security-tls-auth.md) | ACME, TLS, ForwardAuth, forwarded headers, IP strategy, secrets, and security maintenance |
 
-## Check upgrade-sensitive behavior first
+## Check compatibility before editing
 
-- Upgrade Traefik CRDs and RBAC together. Gateway API deployments also need
-  compatible Gateway API CRDs, and every Kubernetes provider discovers
-  backends through EndpointSlices.
-- Revalidate custom resources after upgrading CRDs. CEL and regular-expression
-  validation are stricter, and the CRD schema no longer supplies a default
+- Upgrade Traefik CRDs and RBAC together. Gateway API installations also need
+  the matching Gateway API CRDs, and Kubernetes providers discover backends
+  through EndpointSlices.
+- Revalidate custom resources after a CRD upgrade. CEL and regular-expression
+  validation are stricter, and the schema no longer supplies a default
   load-balancing strategy.
-- Retest Kubernetes Ingress `Prefix` routes against Kubernetes path semantics.
-  Routes that relied on the former interpretation can select different traffic.
+- Retest Kubernetes Ingress `Prefix` routes because matching follows Kubernetes
+  semantics rather than Traefik's earlier interpretation.
+- Treat generated Kubernetes resource names as migration-sensitive, especially
+  when automation depends on their exact form.
 - Use path-only health-check paths; absolute URLs are rejected.
-- Remove reliance on `defaultRuleSyntax` and `ruleSyntax`. Both options are
-  deprecated.
+- Remove reliance on deprecated `defaultRuleSyntax` and `ruleSyntax` settings.
 - Replace ForwardAuth configurations that depend on `TrustForwardHeader`, and
-  explicitly limit both forwarded request bodies and authorization responses.
-- Set trace verbosity when span detail matters because tracing now emits fewer
-  spans by default.
-- Treat ingress-nginx snippet support as constrained translation. Snippets are
-  parsed into allowlisted directives and are never inserted as raw NGINX text.
-- Review plugin manifests before permitting unsafe interpreter operations or
-  syscalls; either setting broadens what plugin code can execute.
-- On the 3.7 patch line, use 3.7.7 or later in that line to receive the listed
-  security and path-sanitization fixes.
+  set body-size limits explicitly when forwarding request or response bodies.
+- Set trace verbosity explicitly when span detail matters; the default emits
+  fewer spans.
+- Treat ingress-nginx snippets as constrained translations. Traefik parses only
+  supported, allowlisted directives and never inserts arbitrary raw NGINX.
+- Audit plugin manifests before allowing unsafe interpreter operations or
+  syscalls, since both enlarge the plugin's execution authority.
+- On the 3.7 patch line, use 3.7.11 rather than an earlier patch to incorporate
+  the accumulated HTTP, TLS, Kubernetes, and security corrections.
 
-Read [Kubernetes and Gateway API](references/kubernetes.md) before applying
-controller manifests, [Security, TLS, and authentication](references/security-tls-auth.md)
-before changing trust boundaries, and [Providers and operations](references/providers-operations.md)
-before selecting an image or enabling a plugin.
+Read [Kubernetes and Gateway API](references/kubernetes.md) for controller and
+manifest migrations, [Security, TLS, and authentication](references/security-tls-auth.md)
+for trust-boundary changes, and [Providers and operations](references/providers-operations.md)
+before selecting a deployment image or enabling plugins.
 
 ## Build multi-layer HTTP routing
 
-Use `parentRefs` when a parent router should apply shared middleware or TLS,
-enrich the request, and then let a child evaluate its own rule.
+Use `parentRefs` when a parent router must apply shared middleware or TLS and
+enrich a request before a child evaluates its own rule.
 
 ```yaml
 http:
@@ -74,36 +74,25 @@ http:
       parentRefs:
         - api-parent
       service: stable-backend
-  middlewares:
-    auth-with-tier:
-      forwardAuth:
-        address: "http://auth-service:8080/validate"
-        authResponseHeaders:
-          - X-Customer-Tier
-  services:
-    stable-backend:
-      loadBalancer:
-        servers:
-          - url: "http://api-v1-stable:8080"
 ```
 
 Keep the hierarchy structural rules intact:
 
 - Attach root routers to entry points and omit a service from them.
-- Allow intermediate routers to have children.
+- Let intermediate routers have children.
 - Put the selected service on leaf routers.
-- Expect every request to pass through its parent before reaching a child.
+- Expect every request to traverse its parent before reaching a child.
 
-`Host` and `HostSNI` also accept wildcard host names. Set provider precedence
-when routes generated by different providers can compete. Read
-[Routing, middleware, and services](references/routing-services.md) before
-combining hierarchies with encoded-path policy or path-rewriting middleware.
+Router rules also accept wildcard `Host` and `HostSNI` names. Set provider
+precedence when routes produced by different providers can compete. Review the
+encoded-character policy before combining router hierarchies with rewriting or
+prefix stripping.
 
-## Apply policy at the service boundary
+## Apply behavior at the service boundary
 
-Attach middleware directly to an HTTP service when every router selecting the
-service must receive the same processing. This placement also lets Gateway API
-filters apply to HTTP backends.
+Attach middleware directly to an HTTP service when every router selecting that
+service must receive the same processing. This also lets Gateway API filters
+apply to HTTP backends.
 
 ```yaml
 http:
@@ -117,8 +106,7 @@ http:
         - auth
 ```
 
-Use response-aware retries when backend status controls whether another
-attempt is appropriate:
+Use status-aware retries when retry policy depends on backend responses:
 
 ```yaml
 http:
@@ -133,40 +121,47 @@ http:
 ```
 
 Opt in deliberately before retrying non-idempotent methods. For service-level
-failover, configure the response-status ranges that switch from primary to
-fallback. The routing reference contains the `TraefikService` form and the
-provider-specific strategy constraints.
+failover, define the response-status ranges that should switch from the primary
+to the fallback. See [Routing, middleware, and services](references/routing-services.md)
+for provider-specific balancing strategies and CRD failover syntax.
 
 ## Choose health and balancing behavior
 
-- Use native TCP health checks for non-HTTP services.
-- Use passive health checks to infer availability from live traffic.
+- Use native TCP health checks for non-HTTP backends.
+- Use passive checks to infer health from live traffic.
 - Set a distinct unhealthy interval when failed servers need a different probe
   cadence.
-- Use `p2c`, `Least Time`, or `HighestRandomWeight` only through providers that
-  expose the selected strategy.
-- Scope sticky cookies with path and domain when their default scope is too
+- Choose `p2c`, `Least Time`, or `HighestRandomWeight` only where the target
+  provider supports it.
+- Scope sticky cookies with both path and domain where the defaults are too
   broad.
-- Keep active health-check targets path-only.
+- Treat condition-only EndpointSlice updates as backend-state changes.
 
-Read [Routing, middleware, and services](references/routing-services.md) before
-translating file-provider services into Kubernetes CRDs; load-balancing choices
-are not identical across providers.
+Read the routing and services reference before translating file-provider
+services into Kubernetes CRDs; strategy availability differs by provider.
 
 ## Configure Kubernetes integrations
 
-The Gateway provider supports HTTP, gRPC, and TLS route capabilities including
-method, query, destination-port, and regular-expression matching; redirects,
-rewrites, response headers, backend protocols, backend TLS, reference grants,
-multiple listener certificates, and route status. It also reports supported
-features through GatewayClass status.
+The Gateway provider supports HTTP, gRPC, and TLS routes with method, query,
+destination-port, regular-expression path, rewrite, redirect, response-header,
+backend-protocol, backend-TLS, and reference-grant behavior. It also reports
+route validity and supported features.
 
-Enable `kubernetesIngressNginx` as a regular provider and audit every annotation.
-Compatibility covers many common authentication, rewrite, timeout, buffering,
-affinity, canary, rate-limit, header, error, access-log, and entry-point cases,
-but does not execute arbitrary NGINX configuration.
+For ingress-nginx migration, enable `kubernetesIngressNginx` as a normal
+provider and audit every annotation:
 
-Knative remains experimental and can be namespace-scoped:
+```yaml
+providers:
+  kubernetesIngressNginx:
+    enabled: true
+```
+
+Compatibility includes many common authentication, rewrite, timeout,
+buffering, affinity, canary, rate-limit, header, error, access-log, and
+entry-point cases, but it is not a raw NGINX execution layer.
+
+For Knative workloads, enable the experimental integration and scope watched
+namespaces:
 
 ```yaml
 experimental:
@@ -178,50 +173,47 @@ providers:
       - production
 ```
 
-Read [Kubernetes and Gateway API](references/kubernetes.md) for API-channel
-transitions, status ownership, TLS references, and compatibility controls.
+Read [Kubernetes and Gateway API](references/kubernetes.md) for exact API
+channels, status ownership, certificate references, safe naming, and
+cross-namespace controls.
 
 ## Secure certificates and upstream TLS
 
-- Treat ACME account email, trusted CAs, profiles, contact addresses, challenge
-  propagation, challenge delay, provider timeout, and certificate timeout as
-  resolver or certificate-operation concerns rather than global assumptions.
-- Disable TLS session tickets when ticket-based resumption is unwanted.
-- Enable `X25519MLKEM768` only where the client population supports the chosen
-  curve policy.
-- Restrict upstream cipher suites with `ServersTransport` when backend policy
-  requires it.
-- Recheck certificate selection when entry points share a host, certificates
-  share a SAN, ClientHello records are fragmented, or a `TLSStore` Secret is
-  missing.
+Treat ACME settings as resolver-local: resolvers can have separate account
+email addresses and custom CA trust. Configure profiles, multiple contacts,
+challenge propagation, HTTP challenge delay, provider timeouts, certificate
+duration, OCSP, and certificate timeouts only where required.
 
-Read [Security, TLS, and authentication](references/security-tls-auth.md) for
-the ACME, ForwardAuth, forwarded-header, and certificate-selection details.
+TLS configuration can disable session tickets and default-option fallback,
+enable `X25519MLKEM768`, and restrict upstream cipher suites through
+`ServersTransport`. Router TLS replaces rather than merges with entry-point TLS.
+Read [Security, TLS, and authentication](references/security-tls-auth.md) before
+debugging SNI, shared SANs, fragmented ClientHello messages, or missing Secrets.
 
 ## Preserve observability intent
 
-- Set the OTLP metrics `service.name` and resource attributes deliberately.
-- Correlate access logs with traces through trace ID and entry-point span ID.
-- Enable OTLP application and access logs with the required experimental
-  switch; stdio can remain active when a local stream is also needed.
+- Set OTLP metrics `service.name` and resource attributes deliberately.
+- Correlate access logs with traces using trace ID and entry-point span ID.
+- Enable application-log and access-log OTLP export through the required
+  experimental setting, and use stdio when a local stream is also needed.
 - Apply metrics, tracing, and access-log controls at entry-point or router scope
   when global settings are too broad.
-- Configure trace verbosity explicitly when consumers depend on span density.
-- Use the support-dump API for diagnostic state and set the API/dashboard base
-  path when mounting the UI below a prefix.
+- Use the support-dump endpoint for diagnostic state and configure the
+  API/dashboard base path when mounting the UI below a prefix.
+- Inspect certificate and service details in the dashboard during TLS and
+  balancing investigations.
 
 Read [Observability](references/observability.md) for Kubernetes resource
-detection, access-log attributes, secret-file handling, and dashboard changes.
+detection, trace-context attributes, secret-file handling, and UI additions.
 
 ## Validate the finished change
 
 1. Validate static and dynamic configuration with the same provider mix used
-   by the target environment.
+   in the target environment.
 2. Apply current CRDs before custom resources, then verify controller status,
-   EndpointSlice access, and RBAC.
-3. Exercise WebSocket, redirect, CORS, encoded-path, authentication, retry,
-   mirroring, failover, and health-check paths touched by the change.
+   namespace boundaries, and EndpointSlice RBAC.
+3. Exercise WebSocket, CONNECT, redirect, CORS, encoded-path, authentication,
+   retry, mirroring, and health-check behavior when relevant.
 4. Inspect access logs, traces, route status, and dashboard service/certificate
    details for the expected result.
-5. Review patch-line security and compatibility fixes before choosing the
-   deployment image.
+5. Review patch-line security and compatibility fixes before choosing an image.

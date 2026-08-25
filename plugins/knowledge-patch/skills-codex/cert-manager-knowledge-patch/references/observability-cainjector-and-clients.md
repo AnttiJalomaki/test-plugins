@@ -1,89 +1,66 @@
 # Observability, cainjector, and Clients
 
-Use this reference for metrics and log migrations, CA bundle injection,
-resource discovery, server-side apply clients, and operational queries.
+## Metrics
 
-## Metrics migrations
+### Certificate validity timestamps `(1.18)`
 
-In 1.19, `certmanager_acme_client_request_count` and
-`certmanager_acme_client_request_duration_seconds` replaced the high-cardinality
-`path` label with the bounded `action` label. Update PromQL, dashboards, and
-alerts that query `path`. Recreating the old semantics requires an explicit
-Prometheus relabeling or recording rule.
+Use these metrics for certificate validity monitoring:
 
-The 1.19 metric `certmanager_certificate_challenge_status` exposes ACME
-challenge status.
+- `certmanager_certificate_not_before_timestamp_seconds`
+- `certmanager_certificate_not_after_timestamp_seconds`
 
-The 1.18 certificate validity gauges expose issuance and expiration times:
+### ACME request labels `(upgrade-1.19)`
 
-```text
-certmanager_certificate_not_before_timestamp_seconds
-certmanager_certificate_not_after_timestamp_seconds
-```
+`certmanager_acme_client_request_count` and `certmanager_acme_client_request_duration_seconds` use bounded-cardinality label `action`; label `path` was removed. Update dashboards and alerts that query `path`. Reproducing its high-cardinality semantics requires a Prometheus relabeling or recording rule.
 
-When Prometheus monitoring is enabled in 1.20, the metrics label is consistently
-`cert-manager` rather than varying with the installation namespace or Helm
-release name.
+### Challenge status `(1.19)`
 
-In 1.21, chart monitoring uses the fixed `/metrics` path and `http-metrics` port
-name. The chart values `prometheus.servicemonitor.targetPort`,
-`prometheus.servicemonitor.path`, and `prometheus.podmonitor.path` are removed.
-Custom scrape configuration must stop using the old
-`tcp-prometheus-servicemonitor` Service port name.
+`certmanager_certificate_challenge_status` exposes certificate challenge state for monitoring and alerting.
 
-## Structured logs and diagnostic events
+### Stable chart metrics label `(1.20)`
 
-The 1.17 logging changes add contextual structured data. Rules that match an
-entire line or a literal message string can stop matching; prefer stable fields
-and partial predicates.
+With Prometheus monitoring enabled, the metrics label is always `cert-manager`, independent of namespace and Helm release name.
 
-From 1.20, complete DigitalOcean DNS-01 failures are attached to the Challenge
-as events. Inspect those events for provider diagnostics.
+### Fixed monitor endpoint `(upgrade-1.21)`
 
-## Cainjector bundle handling
+ServiceMonitor and PodMonitor path/port overrides were removed. Metrics use `/metrics` and port name `http-metrics`; update custom scrape configuration that used `tcp-prometheus-servicemonitor`.
 
-`CAInjectorMerging` was opt-in in 1.17 and merged a new CA with the existing
-injected bundle rather than replacing it, preserving overlap during issuer
-rotation.
+## Structured logging
 
-It became beta and enabled by default in 1.19. At that point operators could
-still explicitly disable the gate to retain replacement semantics.
+### Context changes literal messages `(upgrade-1.17)`
 
-In 1.21, merging is GA and always enabled; replacement semantics cannot be
-restored with a gate. Cainjector also always uses server-side apply, and its
-`ServerSideApply` gate is deprecated.
+Log messages include more contextual structured data. Tools that match whole lines or literal message strings may need updated rules.
 
-The cainjector `--ignore-namespaces` flag added in 1.21 excludes named
-namespaces while watching Secrets for CA injection.
+## Cainjector bundle rotation
 
-## Resource discovery and selection
+### Opt-in merging `(1.17)`
 
-`Issuer` and `ClusterIssuer` have the short names `iss` and `ciss` from 1.18:
+The `CAInjectorMerging` feature gate originally made cainjector merge new CA certificates into an injected bundle rather than replacing the existing certificate, preserving trust overlap during issuer rotation.
 
-```console
-kubectl get iss
-kubectl get ciss
-```
+### Merging enabled by default `(1.19)`
 
-From 1.20, the CRDs expose `.spec.issuerRef.group`, `.spec.issuerRef.kind`, and
-`.spec.issuerRef.name` as selectable fields:
+`CAInjectorMerging` became beta and enabled by default. At this stage it could still be explicitly disabled when replacement behavior was required.
 
-```console
-kubectl get certificates --field-selector spec.issuerRef.name=example-issuer
-```
+### Merging and apply are unconditional `(1.21)`
 
-## Client integrations
+`CAInjectorMerging` is GA and always enabled, so the feature gate cannot restore replacement semantics. Cainjector also always uses server-side apply; its `ServerSideApply` feature gate is deprecated.
 
-Generated apply-configuration types for cert-manager resources are available
-from 1.19. Go clients can build type-safe server-side apply requests rather than
-using unstructured apply payloads.
+### Ignore selected namespaces `(1.21)`
 
-The deprecated `ObjectReference` API type is removed in 1.21. Integrations that
-still compile against or serialize it must migrate.
+Use cainjector `--ignore-namespaces` to exclude namespaces while watching Secrets for CA injection.
 
-## Solver resource labels
+## Webhook resilience
 
-The 1.21 `--acme-http01-solver-extra-labels` flag lets Helm
-`global.commonLabels` propagate to dynamically generated HTTP-01 Pods,
-Services, Ingresses, and Gateway API HTTPRoutes. Use it when selectors,
-inventory, or metrics depend on common labels.
+### Resume after host suspension `(1.21)`
+
+After system suspend or VM live migration, the webhook detects a missed serving-certificate renewal with wall-clock polling and recovers within one minute of resume.
+
+## Client behavior
+
+### Type-safe server-side apply `(1.19)`
+
+Generated apply-configuration types are available for cert-manager resources, allowing typed server-side apply clients rather than unstructured apply payloads.
+
+### Domain-qualified finalizers `(1.17)`
+
+`UseDomainQualifiedFinalizer` is beta and enabled by default, avoiding Kubernetes warnings caused by an unqualified finalizer.

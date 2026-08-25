@@ -1,12 +1,13 @@
 # Replication and Recovery
 
-Batch attribution: `17.0`, `18.0`.
+## Synchronize logical slots for failover (17.0)
 
-## Make logical slots survive publisher failover
-
-Create a failover-capable logical slot with the fifth argument of
-`pg_create_logical_replication_slot()`, or set `failover = true` on a
-subscription.
+Mark a logical slot for failover with the fifth argument of
+`pg_create_logical_replication_slot()` or set `failover = true` on a
+subscription. On a standby, `sync_replication_slots` synchronizes failover
+slots, and `pg_sync_replication_slots()` requests synchronization explicitly.
+Use `synchronized_standby_slots` to name physical slots that must catch up
+before decoded changes become visible to subscribers.
 
 ```sql
 SELECT *
@@ -20,39 +21,31 @@ CREATE SUBSCRIPTION orders_sub
   WITH (failover = true);
 ```
 
-On a standby, `sync_replication_slots` synchronizes failover slots and
-`pg_sync_replication_slots()` requests synchronization immediately.
-`synchronized_standby_slots` identifies physical standby slots that must catch
-up before decoded changes become visible to subscribers.
+## Convert and upgrade replicas (17.0)
 
-Logical-slot diagnostics include `invalidation_reason` and `inactive_since`.
+`pg_createsubscriber` converts a physical standby into a logical replica.
+When the old cluster is PostgreSQL 17 or newer, `pg_upgrade` carries valid
+logical slots and full subscription state forward so replication can resume
+without a fresh copy. Slot diagnostics include `invalidation_reason` and
+`inactive_since`.
 
-## Convert and upgrade replicas
+## Bound replication resources (18.0)
 
-`pg_createsubscriber` converts a physical standby to a logical replica. It can
-operate across every eligible database with `--all`, clean up after failure
-with `--clean`, and enable two-phase decoding with `--enable-two-phase`.
+`idle_replication_slot_timeout` automatically invalidates slots that remain
+inactive. `max_active_replication_origins` separates the active-origin limit
+from `max_replication_slots`.
 
-An upgrade carries valid logical slots and complete subscription state forward,
-so replication can resume without a fresh data copy when the source cluster is
-PostgreSQL 17 or later.
+## Publish generated columns and monitor conflicts (18.0)
 
-`pg_recvlogical --enable-failover` creates a failover-capable slot.
+Generated columns named in a publication column list are published. Without a
+column list, `publish_generated_columns` determines whether they are included.
+Subscription streaming defaults to `parallel`. `ALTER SUBSCRIPTION` can change
+a slot's two-phase behavior, and apply conflicts are logged and counted in
+`pg_stat_subscription_stats`.
+
+## Use replication command-line controls (18.0)
+
+`pg_createsubscriber` adds `--all`, `--clean`, and `--enable-two-phase`.
+`pg_recvlogical --enable-failover` creates a failover-capable slot;
 `--enable-two-phase` replaces the deprecated `--two-phase` spelling, and
 `--drop-slot` no longer requires `--dbname`.
-
-## Bound replication resources
-
-`idle_replication_slot_timeout` automatically invalidates inactive slots.
-`max_active_replication_origins` separates the limit for active origins from
-`max_replication_slots`.
-
-## Publish generated columns and monitor apply conflicts
-
-A generated column named in a publication column list is published. When the
-publication has no column list, `publish_generated_columns` controls whether
-generated columns are sent.
-
-Subscription streaming defaults to `parallel`. `ALTER SUBSCRIPTION` can change
-the slot's two-phase behavior. Apply conflicts are written to the server log
-and counted in `pg_stat_subscription_stats`.

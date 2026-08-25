@@ -2,77 +2,95 @@
 
 ## Terminal
 
-### Saving cards and reader contracts
+### Saved-card consent (`2024-09-30.acacia`)
 
-In `2024-09-30.acacia`:
+Saving cards with Terminal uses explicit redisplay permission through
+`allow_redisplay` instead of the previous customer-consent model. Supply and
+preserve redisplay permission in collection and saved-card flows.
 
-- Saving cards through Terminal uses updated consent modeling.
-- Reader configuration can set a reboot time.
-- Reader device types include Stripe S700.
-- `card_present` PaymentMethods expose offline-collection details.
+### Readers and card-present data (`2024-09-30.acacia`)
 
-Review consent capture and offline handling rather than carrying forward an older save-card flow unchanged.
+Reader settings add a configurable reboot window and the S700 device type.
+`card_present` PaymentMethods add offline-collection details, card-present
+Charges and PaymentMethods add wallet details, and in-person payments add
+Interac support. Preserve these device, collection, wallet, and method fields.
 
-### Reader networking and presentation
+### Reader networking (`2025-03-31.basil`)
 
-- Terminal can configure reader Wi-Fi in `2025-03-31.basil`.
-- Terminal Locations add Japan-specific fields in `2025-09-30.clover`.
-- BBPOS WisePad 3 readers support custom splash screens.
+Terminal readers support configurable Wi-Fi, allowing network setup through the
+Terminal integration.
+
+### Locations and customization (`2025-09-30.clover`)
+
+Terminal Locations add Japan-specific fields, and BBPOS WisePad 3 readers
+support custom splash screens. Preserve the location additions and reader
+configuration.
 
 ## Issuing
 
-### Shipping and dispute handling
+### Shipping validation and dispute deductions (`2024-09-30.acacia`)
 
-In `2024-09-30.acacia`, Issuing changes the default for shipping-address validation and adds physical-card address validation. It also emits a webhook event when funds are deducted during a dispute.
+Physical-card shipping adds address validation and changes its default
+validation behavior. Set the desired behavior explicitly. Issuing also adds a
+webhook event for funds deducted during a dispute.
 
-### Authorization state and webhook requests
+### Authorization status and webhooks (`2025-03-31.basil`)
 
-In `2025-03-31.basil`:
+Issuing Authorizations add an `expired` status and a reason for authorizations
+created through network fallback while Stripe is unavailable. Authorization
+webhooks send an HTTP `Accept` header specifying JSON. Accept the new enum
+values and ensure header-sensitive middleware accepts the header contract.
 
-- Issuing Authorizations add `expired` status.
-- A reason code identifies network-fallback Authorizations created while Stripe is unavailable.
-- Issuing Authorization webhook requests send an HTTP `Accept` header that specifies JSON.
+### Risk and personalization (`2025-09-30.clover`)
 
-Do not reject the additional state or reason, and ensure webhook infrastructure tolerates the header.
+Issuing Authorization risk levels move to standard risk-level values. Update
+generated types and mapping logic instead of relying on the former closed set.
+Physical Issuing cards can print a second line; allow it in ordering models and
+personalization validation.
 
-### Risk levels and physical cards
+### Shipping additions (`2026-07-29.dahlia`)
 
-- Issuing Authorization risk levels switch to standard values in `2025-09-30.clover`; update exhaustive enum handling.
-- Issuing physical cards can print a second line.
-- Visa Issuing Tokens can omit the card reference ID in `2026-03-25.dahlia`; treat it as optional.
-- Virtual Issuing cards can automatically cancel after a configured number of payments.
+EU Issuing shipments add Correos as a carrier, and card shipping addresses add
+a business-name field. Accept both in carrier enums and address serializers.
 
 ## Tax
 
-### Transactions, registrations, and embedded components
+### Transactions and registrations (`2024-09-30.acacia`)
 
-In `2024-09-30.acacia`:
+Tax Transaction creation accepts a posting time, Tax Calculations gain a
+retrieve method, and US state registrations can specify sales-tax elections.
 
-- Tax transaction creation accepts a posting time.
-- Tax registrations support US state sales-tax elections.
-- Tax settings and registrations are available through embedded components.
-- Tax Calculations add a retrieve operation.
+### Calculation providers (`2025-09-30.clover`)
 
-### Calculation provider
+Tax settings add a calculation-provider field. Preserve the selected provider
+when reading and writing configuration.
 
-Tax settings expose the tax calculation provider in `2025-09-30.clover`, allowing an integration to identify which provider performed automatic tax calculation.
+### Registration and tax-ID types (`2026-07-29.dahlia`)
 
-### Ticket sales preview
+Stripe Tax adds US parking-tax registration types and a Canary Islands tax ID
+type. Accept both instead of enforcing the previous closed sets.
 
-The `2026-03-25.dahlia` public preview can calculate ticket-sale tax using event location instead of Customer location. It adds event-related US registration types and tax breakdown values. Keep these values behind preview-compatible models.
+## Radar, disputes, and payment risk
 
-## Disputes and Radar
+### Review and risk enums (`2025-09-30.clover`)
 
-### Dispute classifications
+Radar manual reviews add enum values. Update generated types and mapping logic
+and retain a forward-compatible path.
 
-- Card Disputes expose case type in `2024-09-30.acacia`.
-- Klarna disputes add a documented chargeback-loss reason in `2025-09-30.clover`.
-- Radar manual reviews add enum values; retain an unknown-value branch.
+### Radar referrer (`2026-07-29.dahlia`)
 
-### Crypto fingerprints
+Payment Intent Radar options add `referrer`. Preserve it when supplying Radar
+context in Intent builders and serializers.
 
-Radar value-list items accept crypto fingerprints in `2026-03-25.dahlia`, enabling value-list matching for crypto payments.
+## Identity and Treasury (`2024-09-30.acacia`)
 
-## Climate
+Identity Verification Sessions can link to Customers. Treasury outbound wires
+expose CHIPS tracking details, and ReceivedDebit failures add an enum value for
+international-transaction failures. Preserve the relationship and tracking
+data, and accept the new failure value.
 
-Climate Orders add marine carbon removal as a pathway in `2026-03-25.dahlia`. Expand pathway enum handling before consuming the new value.
+## Test Clock helpers (`2024-09-30.acacia`)
+
+Advancing `test_helpers.test_clock` objects adds `target_frozen_time`, while
+test-helper status details become required. Populate the required status detail
+in fixtures and use the target time when advancing a clock.

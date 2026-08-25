@@ -1,103 +1,141 @@
 # Networking and security
 
-Use this reference for TLS, HTTP and URLs, email and messaging, sockets, protocol behavior, and parser hardening.
+## TLS and serving
 
-## TLS and cryptography
+### TLS pre-shared keys
 
-### Stricter default TLS verification (Python 3.13)
-`ssl.create_default_context()` now enables both `VERIFY_X509_PARTIAL_CHAIN` and `VERIFY_X509_STRICT`; strict mode can reject malformed or pre-RFC-5280 certificates previously accepted by OpenSSL. Disabling strictness is possible but discouraged.
+The `ssl` module supports TLS-PSK connections authenticated by pre-shared keys
+instead of certificates.
 
-```python
-ctx = ssl.create_default_context()
-ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
-```
+### HTTPS servers and certificate chains
 
-### TLS certificate chains and pre-shared keys (3.13.0)
-`SSLSocket.get_verified_chain()` and `get_unverified_chain()` expose raw TLS certificate chains, and the `ssl` module now supports TLS pre-shared-key mode.
+`http.server.HTTPSServer` provides built-in TLS serving. The command-line
+server exposes `--tls-cert`, `--tls-key`, and `--tls-password-file`. TLS clients
+can inspect raw chains with `SSLSocket.get_verified_chain()` and
+`get_unverified_chain()`.
 
-### Nonblocking file-digest failures (3.14.0)
-`hashlib.file_digest()` now raises `BlockingIOError` when a nonblocking input has no data available; it no longer silently incorporates spurious null bytes into the digest.
+### Fine-grained TLS negotiation
 
-### Fine-grained TLS negotiation controls (Python 3.15 preview)
-`SSLContext.set_groups()` selects multiple classical, fixed-field, or post-quantum key-agreement groups, `SSLSocket.group()` reports the negotiated group, and `SSLContext.get_groups()` lists groups compatible with its TLS version bounds. `SSLContext.set_ciphersuites()` configures TLS 1.3 suites separately from pre-1.3 `set_ciphers()`, while new APIs enumerate and constrain client/server signature algorithms and report the selections; some query APIs require OpenSSL 3.2–3.5.
+Python 3.15 `SSLContext.set_groups()` configures multiple classical,
+fixed-field, or post-quantum key-agreement groups; `get_groups()` and
+`SSLSocket.group()` inspect availability and the negotiated group. Configure
+TLS 1.3 cipher suites with `set_ciphersuites()`. Signature-algorithm setters and
+inspectors separately control client and server authentication; some inspectors
+require OpenSSL 3.2 through 3.5.
 
-## HTTP, URLs, and web
+## URLs and HTTP clients
 
-### Filesystem MIME guesses split from URL guesses (Python 3.13)
-Passing filesystem paths to `mimetypes.guess_type()` is soft-deprecated; use the new `mimetypes.guess_file_type(path)` API instead.
+### Query-string byte handling
 
-### Byte-oriented query-string parsing (3.13.0)
-`urllib.parse.parse_qs()` and `parse_qsl()` accept byte strings containing raw or percent-encoded non-ASCII data. They continue to accept `None` and other false values, but reject nonzero integers and nonempty sequences with `TypeError`.
+`urllib.parse.parse_qs()` and `parse_qsl()` accept raw or percent-encoded
+non-ASCII bytes. They continue to accept `None` and other false values but
+reject nonzero integers and nonempty sequences with `TypeError`. Later
+deprecations narrow accepted false values to empty strings, bytes-like objects,
+or `None`.
 
-### HTTP response and redirect behavior (3.13.0)
-`HTTPConnection.get_proxy_response_headers()` now returns `None`, not `{}`, when no proxy response headers exist. `HTTPResponse.read1()` and `readline()` close the underlying I/O after consuming a known-length body, and redirected `HEAD` requests remain `HEAD` rather than becoming `GET`.
+### Preserved `HEAD` redirects
 
-### HTTPS in `http.server` (Python 3.14)
-`http.server.HTTPSServer` serves TLS directly, and `python -m http.server` accepts `--tls-cert`, optional `--tls-key`, and optional `--tls-password-file`.
+`urllib` preserves the `HEAD` method while following redirects instead of
+upgrading it to `GET`, so redirected probes retain no-body semantics.
 
-### Standards-aware file URLs (Python 3.14)
-`urllib.request.url2pathname()` can require a complete scheme, optionally resolve local authorities, discards query/fragment parts, and rejects nonlocal authorities outside Windows; `pathname2url(add_scheme=True)` can emit a complete URL. Windows drive-letter case is preserved, and colons outside drive prefixes no longer raise `OSError`.
+### Standards-aware file URLs
 
-### HTTP limits and response customization (Python 3.15 preview)
-`HTTPConnection` and `HTTPSConnection` accept keyword-only `max_response_headers` to override the response-header count limit. `SimpleHTTPRequestHandler` adds `default_content_type` and `extra_response_headers`, while `python -m http.server` exposes matching `--content-type` and `-H`/`--header` controls.
+`url2pathname()` can require a scheme, optionally resolve local authorities,
+and discards query and fragment components. `pathname2url(add_scheme=True)` can
+emit a complete URL. Windows drive-letter case is preserved.
 
-### Lossless URL component parsing (Python 3.15 preview)
-`urllib.parse.urlsplit()`, `urlparse()`, and `urldefrag()` accept `missing_as_none`, and the assembly functions accept `keep_empty`, allowing code to distinguish an omitted URI component from an explicitly empty one and preserve that distinction during round trips.
+### Lossless URL components
 
-### HTML5 parsing and serialization details (3.15.0b3)
-`HTMLParser` recognizes `plaintext`, the `xmp`/`iframe`/`noembed`/`noframes` RAWTEXT elements, and optional RAWTEXT `noscript`, while its tag, comment, CDATA, and whitespace handling is aligned more closely with HTML5. ElementTree's HTML serializer leaves raw-text element content, comments, and processing instructions unescaped, omits a `plaintext` closing tag, and accepts empty attributes represented by `None`.
+Python 3.15 `urlsplit()`, `urlparse()`, and `urldefrag()` accept
+`missing_as_none`; `urlunsplit()` and `urlunparse()` accept `keep_empty`. These
+options preserve the distinction between absent components and components that
+are present but empty.
 
-### RFC 9309 and fail-closed robots rules (3.15.0b3)
-`urllib.robotparser` implements RFC 9309 normalization and matching, including distinguishing raw special characters from percent-encoded forms. If `robots.txt` is unreachable because of a server or network error, access is denied rather than allowed.
+### Response limits and customization
 
-### Bounded HTTP response metadata (3.15.0b3)
-Chunked-response trailers are limited by `HTTPConnection.max_response_headers` (100 by default), and a client skips at most 100 interim 1xx responses, so a peer cannot keep the client busy indefinitely with either stream.
+`HTTPConnection` and `HTTPSConnection` accept `max_response_headers`.
+`SimpleHTTPRequestHandler` adds `default_content_type` and
+`extra_response_headers`; `python -m http.server` exposes them as
+`--content-type` and `-H` or `--header`.
 
-### Safer archive paths and browser launches (3.15.0b3)
-On Windows, `shutil.unpack_archive()` skips ZIP members with drive-prefixed paths, and `shutil.move()` resolves symlinks when checking whether a destination lies inside its source. `webbrowser.open()` rejects dash-prefixed URLs, while the new macOS controller invokes `/usr/bin/open` by absolute path.
+In Python 3.15.0b3, the response-header limit also bounds chunked trailer lines,
+and clients skip at most 100 interim 1xx responses. This prevents an endless
+response stream despite socket timeouts.
 
-## Email and messaging
+### Larger TCP listen queues
 
-### Hardened email parsing and generation (Python 3.13)
-Email generators now quote embedded newlines and refuse to serialize improperly folded or delimited headers unless `Policy.verify_generated_headers` is disabled. `email.utils.getaddresses()` and `parseaddr()` use strict parsing by default and return empty pairs for more invalid inputs; pass `strict=False` for the legacy permissive behavior.
+`socketserver.TCPServer` defaults its request queue size to
+`socket.SOMAXCONN` in Python 3.15.0b3.
 
-### Hidden Maildir entries (Python 3.13)
-`mailbox.Maildir` now ignores files whose names begin with a dot, which can change scans that previously treated such files as messages.
+## Email and application protocols
 
-### Maildir metadata operations (3.13.0)
-`mailbox.Maildir` adds `get_info()`, `set_info()`, `get_flags()`, `set_flags()`, `add_flag()`, and related methods for manipulating Maildir info and flags without hand-editing message filenames.
+### Strict email generation
 
-### Email field-name validation (3.14.0)
-Adding a header with `Message.__setitem__()` or `Message.add_header()` now validates its field name against RFC 5322 and raises `ValueError` for invalid characters.
+Assigning or adding a `Message` header validates the field name and raises
+`ValueError` for invalid characters. Generators quote embedded newlines and,
+under `verify_generated_headers`, reject unsafe folds or delimiters.
 
-```python
-message = email.message.Message()
-message["Bad\nName"] = "value"  # ValueError
-```
+Python 3.15 generators also fail rather than inaccurately flattening a
+non-ASCII mailbox unless an EAI-capable UTF-8 policy is used.
 
-### Structured email threading headers (3.15.0b3)
-Under the modern email policies, `References` and `In-Reply-To` headers are parsed as lists of message-ID tokens rather than unstructured text, preventing incorrect folding. The package also accepts all Python codec aliases and emits registered MIME/IANA charset names.
+### Structured threading headers
 
-### RFC-aware IMAP command handling (3.15.0b3)
-`imaplib` quotes command arguments such as mailbox names when RFC 3501 requires it, while preserving already quoted arguments. It refreshes capabilities after login or authentication and consumes capabilities advertised in the greeting; only NUL, CR, and LF remain forbidden in command arguments.
+In Python 3.15.0b3, the email header registry parses `References` and
+`In-Reply-To` as lists of message-ID tokens, preventing incorrect folding.
 
-## Network addresses and sockets
+### RFC-aware IMAP handling
 
-### IPv4-mapped IPv6 classification (3.14.0)
-For an IPv4-mapped `ipaddress.IPv6Address`, `is_multicast`, `is_reserved`, `is_link_local`, `is_global`, and `is_unspecified` are now decided from the mapped IPv4 address.
+`imaplib` again quotes arguments according to RFC 3501, refreshes capabilities
+after authentication, and uses capabilities from the greeting. Commands reject
+only NUL, CR, and LF; other control characters valid in quoted strings remain
+accepted. Login errors carry `str`, not `bytes`.
 
-```python
-address = ipaddress.IPv6Address("::ffff:192.0.2.1")
-assert address.is_global == address.ipv4_mapped.is_global
-```
+### RFC 9309 robots rules
 
-### Larger default TCP listen queues (3.15.0b3)
-`socketserver.TCPServer` now defaults its request queue size to `socket.SOMAXCONN` instead of a small fixed backlog, which can change connection-pressure behavior unless a subclass sets `request_queue_size` explicitly.
+`urllib.robotparser` implements RFC 9309, distinguishes raw reserved characters
+from percent-encoded ones, and no longer ignores a trailing `?`. A server or
+network failure that makes `robots.txt` unreachable denies all access.
 
-## Protocol and parser hardening
+### Strict protocol fields
 
-### Configurable Expat amplification defenses (3.15.0b3)
-Expat parser objects expose `SetBillionLaughsAttackProtectionActivationThreshold()` and `SetBillionLaughsAttackProtectionMaximumAmplification()`, plus matching `SetAllocTracker*()` controls for disproportionate parser memory allocation.
+Python 3.15.0b3 rejects control characters in `data:` URL media types, POP3
+commands, cookie fields and values, WSGI headers and status strings, and HTTP
+tunnel headers. FTP proxy-copy operations do not trust a server-provided PASV
+IPv4 address by default.
 
-### Stricter protocol field validation (3.15.0b3)
-Control characters are rejected in `data:` URL media types, POP3 commands, cookie fields and values, and WSGI header fields, values, parameters, and status strings; HTTP tunnel headers reject CR/LF. XML-RPC method names are escaped during serialization, closing a method-name injection path.
+## Parsers, archives, and defensive behavior
+
+### XML parser controls and cleanup
+
+For Expat 2.6 reparse deferral, ElementTree and SAX parsers provide `flush()`,
+while raw expat parsers expose `GetReparseDeferralEnabled()` and
+`SetReparseDeferralEnabled()`. The iterator from `ElementTree.iterparse()` has
+`close()` for explicit cleanup.
+
+### XML validation and amplification defenses
+
+Python 3.15 adds `xml.is_valid_name()` and `xml.is_valid_text()` for XML names
+and document text. Expat parser objects add controls for allocation
+amplification and billion-laughs protections.
+
+### HTML5 parser behavior
+
+In Python 3.15.0b3, `HTMLParser` follows HTML5 rules for tag whitespace,
+repeated `=`, comments, CDATA, raw-text elements, and abruptly terminated
+constructs. ElementTree's HTML serializer leaves raw-text contents unescaped,
+omits a closing `plaintext` tag, and supports empty attributes represented by
+`None`.
+
+### Hardened tar extraction
+
+Tar extraction normalizes symbolic-link targets, reapplies filters when links
+fall back to copied members and during directory fixups, and never extracts a
+rejected member merely because `errorlevel` is zero. Link substitution failures
+can raise `LinkFallbackError`.
+
+### Safer archives and browser launches
+
+On Windows, `shutil.unpack_archive()` skips ZIP members with drive prefixes.
+`shutil.move()` resolves symlinks before testing whether a destination is
+inside its source. `webbrowser.open()` rejects leading-dash URLs, and the macOS
+backend invokes `/usr/bin/open` directly.

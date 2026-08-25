@@ -1,97 +1,154 @@
 # Queries, APIs, and Command-Line Tools
 
-## Response formats and attribution
+Use this reference for LogQL evaluation, query and label APIs, caching, Patterns,
+tenant limits, ruler operations, `logcli`, `lokitool`, and canary queries.
 
-The query API can return Parquet responses as of 3.4.0. Use this response
-format when results need to flow directly into columnar-data tooling.
+## Return Parquet query results
 
-`logcli` can opt in to `ProxyFromEnvironment` and includes common labels in
-its output (3.4.0). Queries issued by the ruler carry the rule name and rule
-type in query tags, which can be used for attribution and analysis.
+Since 3.4.0, the query API can return Parquet. Select that response format when
+columnar-data tools should consume results directly, and ensure clients handle
+the binary format and response metadata rather than assuming JSON.
 
-## LogQL and query-result corrections
+## Apply corrected LogQL semantics
 
-LogQL accepts comparisons against zero-byte values, and detected fields
-recognize byte units as of 3.4.0.
+In 3.5.0, offsets are applied correctly to:
 
-The following correctness fixes apply as of 3.5.0:
+- `last_over_time`;
+- `first_over_time`;
+- `quantile_over_time`.
 
-- offsets are applied correctly to `last_over_time`, `first_over_time`, and
-  `quantile_over_time`;
-- `approx_topk` is mapped in every case; and
-- the query-path `json` parser no longer risks corrupting log lines.
+The same batch maps `approx_topk` in all cases and fixes the query-path `json`
+parser so it does not corrupt log lines. Re-run golden tests that encoded the
+older incorrect results.
 
-In 3.7.0, parsed labels no longer override same-named structured metadata.
-This affects the value exposed to queries and is a breaking change.
+LogQL permits comparisons against zero-byte values as of 3.4.0, and detected
+fields recognize byte units.
 
-As of 3.7.3, range-query evaluation timestamps align to the step grid, and the
-query engine no longer silently drops `OR` operations. Regression tests should
-include step boundaries and both branches of `OR` expressions.
+In 3.7.3, range-query evaluation timestamps align to the step grid, and the
+query engine no longer silently drops `OR` operations. Update timestamp and
+set-operation expectations in dashboards, alerts, recording rules, and tests.
 
-## Routing and request restrictions
+## Resolve label and metadata collisions
 
-Label-values queries work under a configured `server.http_path_prefix` as of
-3.5.0. Build clients from the effective prefix rather than assuming the root
-path. Aggregated metric queries are accepted only from the Logs Drilldown
-application.
+Parsed labels no longer override same-named structured metadata as of 3.7.0.
+This is breaking query behavior. Avoid ambiguous names where practical and
+expect the structured-metadata value to remain authoritative on collision.
 
-The query frontend can resolve IPv6 addresses as of 3.5.0. IPv6 interfaces in
-`common.instance_interface_names` are also valid sources for memberlist's
-advertise address.
+The internal `__aggregated_metric__` label is hidden from `/series` and
+`/labels` as of 3.6.0. Discovery clients should not require that internal label
+in either response.
 
-Interval-limit violations return HTTP 400 as of 3.7.0. Empty push payloads are
-a separate ingestion error and return HTTP 422.
+## Preserve label sketches in merged responses
 
-## Query caching and Patterns API
+In 3.7.6, query-range `MergeLabels` preserves sketch data when combining label
+responses. Consumers of merged label results can use the returned sketch; do
+not treat it as absent merely because the response passed through a merge.
 
-Starting in 3.7.3, `query_range` requests can disable caching. Use the request
-control for freshness-sensitive diagnostics without changing the global cache
-configuration.
+## Route prefixed APIs correctly
 
-The Patterns API accepts multi-tenant queries as of 3.7.0.
+Label-values requests work when `server.http_path_prefix` is set as of 3.5.0.
+Build client routes from the configured prefix and verify both gateway and Loki
+handling.
 
-Patterns can be persisted as aggregated metrics behind a feature flag since
-3.6.0. They can be queried later and bounded by volume and frequency. The
-pattern ingester supports volume-based filtering and can emit detected log
+Aggregated metric queries are accepted only from the Logs Drilldown application
+as of 3.5.0. Do not generalize that query path to arbitrary callers.
+
+## Handle response-status changes
+
+Push requests containing no streams return HTTP 422 as of 3.4.0. Interval-limit
+violations return HTTP 400 as of 3.7.0. Classify each as a client-side request
+problem rather than retrying it indefinitely as a transient server failure.
+
+## Inspect effective tenant limits
+
+Loki adds an applied-limits endpoint in 3.6.0. It returns the limits configured
+for a tenant and can restrict fields through an allowlist. A request for a
+nonexistent tenant returns default limits.
+
+Use the response to inspect effective configuration, but distinguish an unknown
+tenant receiving defaults from a known tenant with explicit overrides.
+
+## Control query caching
+
+As of 3.7.3, `query_range` requests can disable caching. Use this for workflows
+that require a fresh evaluation, and propagate the control through any gateway
+or client layer that constructs the request.
+
+## Use Logs Drilldown additions
+
+Logs Drilldown gains a configuration endpoint and partial metric-query results
+in 3.6.0. Callers must be able to recognize and handle partial results. It also
+supports `unwrap` as a projection.
+
+## Persist and query patterns
+
+As of 3.6.0, patterns can be persisted as aggregated metrics behind a feature
+flag and queried later. Persistence can be bounded by volume and frequency.
+The pattern ingester supports volume-based filtering and emits detected log
 level as structured metadata.
 
-## Logs Drilldown
+The Patterns API accepts multi-tenant queries as of 3.7.0. Apply the caller's
+tenant authorization across the full requested tenant set.
 
-As of 3.6.0, Logs Drilldown has:
+## Attribute generated queries
 
-- a configuration endpoint;
-- partial metric-query results; and
-- `unwrap` as a projection.
+Since 3.4.0, ruler-issued queries carry the rule name and rule type in query
+tags. Preserve those tags through gateways and use them for attribution and
+diagnostics.
 
-Remember that aggregated metric queries are restricted to this application.
+## Configure `logcli`
 
-## Applied limits API
+In 3.4.0, `logcli` can opt into `ProxyFromEnvironment` and includes common
+labels in its output. Enable environment proxy behavior explicitly when it is
+required and account for common labels in parsers and golden output.
 
-A tenant applied-limits endpoint added in 3.6.0 returns the limits configured
-for a tenant. It can filter the response through an allowlist. A request for a
-tenant that does not exist returns default limits, so absence must not be
-inferred from a successful default-valued response.
+In 3.6.0, `logcli` adds delete commands. Coordinate their use with the delete
+request store and compactor behavior rather than treating a submitted request
+as immediate physical removal.
 
-## Operational UI APIs
+As of 3.7.0, `logcli` can send custom headers. Use them for the deployment's
+required routing or authentication metadata while avoiding accidental secret
+exposure in shell history and logs.
 
-The Operational UI JavaScript moved into a Grafana plugin in 3.6.0, while its
-server APIs remain in Loki. Enabling the UI through the Helm chart enables the
-APIs on queriers, and the gateway forwards UI requests to those queriers.
+## Use health and rule-checking commands
 
-## `logcli`, `lokitool`, and server commands
+Loki adds a `loki health` command in 3.6.0. Use it for process health checks
+appropriate to the deployed component.
 
-In 3.6.0:
+The ruler rule checker can validate a namespace and group as of 3.6.0. The
+ruler also validates remote-write configuration as of 3.7.0, so treat invalid
+configuration as an actionable validation failure before rollout.
 
-- `logcli` gained deletion commands;
-- Loki gained the `loki health` command; and
-- the ruler rule checker gained namespace-and-group validation.
+## Configure `lokitool`
 
-In 3.7.0, `logcli` can send custom headers. `lokitool` adds regex namespace
-filtering, uses the updated ruler path, and accepts alternative TLS environment
-variables. Update scripts that hard-code the old ruler path or TLS variable
-names.
+As of 3.7.0, `lokitool`:
 
-## Ruler validation
+- supports regular-expression namespace filtering;
+- uses the updated ruler path;
+- accepts alternative TLS environment variables.
 
-The ruler validates remote-write configuration as of 3.7.0. Treat validation
-errors as configuration defects and correct them before rollout.
+Update scripts that hard-code the older path or environment-variable set, and
+test regex filters against the intended namespace population.
+
+## Configure canary queries
+
+The canary accepts an arbitrary label set for its query as of 3.7.0. Use labels
+that uniquely select the canary stream under the deployment's relabeling and
+tenant conventions.
+
+## Query and CLI validation checklist
+
+- Compare corrected range aggregations, `approx_topk`, JSON parsing, step-grid
+  timestamps, and `OR` behavior with representative data.
+- Test parsed-label collisions and discovery without the internal aggregated
+  metric label.
+- Request Parquet and decode it with the actual downstream client.
+- Exercise path-prefixed label values and the Drilldown-only query restriction.
+- Classify HTTP 400 and 422 responses without unbounded retry.
+- Query applied limits for known and unknown tenants and with an allowlist.
+- Compare cached and cache-disabled `query_range` requests.
+- Handle partial Drilldown metrics and bounded persisted patterns.
+- Verify `logcli` proxying, labels, headers, and delete commands.
+- Check ruler namespaces, groups, remote write, `lokitool` routing, and canary
+  label selection.
+- Confirm query-range label merges retain sketches.

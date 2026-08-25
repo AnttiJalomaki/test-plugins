@@ -1,193 +1,197 @@
 # Security, Operations, and Developer Tools
 
-Use this reference for IAM, organization policy, encryption, data governance, billing and audit behavior, developer tooling, and API controls.
+Use this reference for security, operations, and developer tools compatibility details and current behavior.
 
-## Contents
-
-- [Access control, identity, and organization policy](#access-control-identity-and-organization-policy)
-- [Encryption, governance, and jurisdiction](#encryption-governance-and-jurisdiction)
-- [Operations, billing, audit, and quotas](#operations-billing-audit-and-quotas)
-- [Developer tools and API surfaces](#developer-tools-and-api-surfaces)
-
-## Access control, identity, and organization policy
-
-### Agent Engine Access Transparency (2025-10)
-
-Access Transparency is available for Vertex AI Agent Engine.
-
-### Agent Engine identity and enterprise controls (2025-08)
-
-Agent Engine can use a custom service account as the agent identity. It also supports private-VPC deployment through a Private Service Connect interface, CMEK, configurable instance bounds, per-container resource limits and concurrency, and HIPAA workloads.
-
-### BigQuery custom constraints on additional resources (2026-04)
-
-Preview custom organization policies can allow or deny specific operations on BigQuery tables, data policies, and row access policies.
-
-### BigQuery custom organization constraints (2025-05)
-
-Preview custom Organization Policy constraints can restrict supported fields on BigQuery resources.
-
-### BigQuery data preparation lifecycle and IAM (2025-04)
-
-BigQuery data preparation is GA, including visual pipelines and Dataform scheduling. Its required permissions can be granted through `roles/bigquery.studioUser` and `roles/cloudaicompanion.user`, plus access to the prepared data; `roles/bigquery.dataEditor` and `roles/serviceusage.serviceUsageConsumer` are no longer required.
-
-### BigQuery Data Transfer defaults and IAM (2025-10)
-
-`bigquerydatatransfer.googleapis.com` is enabled by default for new projects. Starting March 17, 2026, creating or updating a transfer configuration requires `bigquery.datasets.getIamPolicy` and `bigquery.datasets.setIamPolicy` on its target dataset.
-
-### BigQuery IAM tags in SQL (2025-06)
-
-At GA, SQL can manage IAM tags on BigQuery datasets and tables.
-
-### BigQuery policy controls reach GA (2026-06)
-
-Custom Organization Policy constraints on supported BigQuery sharing data-exchange and listing fields, and IAM deny policies for BigQuery resources, are GA.
-
-### Cloud Run deployment IAM (2025-01)
-
-Creating or updating a Cloud Run resource now requires the acting user or service account to have explicit access to every referenced container image; for Artifact Registry, grant the deploying principal `roles/artifactregistry.reader` on the image project or repository. For source deployments, grant the Preview `roles/run.builder` role to the Compute Engine default service account that builds the service or function.
-
-### Conditional Cloud Run invocation (2025-06)
-
-Cloud Run invocation IAM Conditions can use the request host and request path when defining access to a service.
-
-### Conditional dataset IAM (2025-01)
-
-BigQuery dataset ACLs support conditional IAM access at GA, and Java client 2.46.0 can configure IAM conditions on datasets.
-
-### Custom constraints for BigQuery sharing (2025-10)
-
-Preview custom Organization Policy constraints can restrict supported fields on BigQuery sharing data exchanges and listings.
-
-### Dataset custom constraints GA (2025-11)
-
-Custom Organization Policy constraints on specific fields of BigQuery dataset resources are GA.
-
-### Dataset IAM permission enforcement (2025-05)
-
-Starting March 17, 2026, viewing dataset access controls or querying `INFORMATION_SCHEMA.OBJECT_PRIVILEGES` requires `bigquery.datasets.getIamPolicy`. Updating dataset access controls, or creating a dataset with access controls through the API, requires `bigquery.datasets.setIamPolicy`; early enforcement can be enabled before that date.
-
-### Direct Identity-Aware Proxy for Cloud Run (2026-03)
-
-Configuring IAP directly on a Cloud Run service, without a load balancer, is GA.
-
-### Extended user-credential access for BigQuery workflows (2026-06)
-
-In Preview, a data preparation running or scheduled with Google Account credentials can receive Google Drive access, while a pipeline can receive Google Drive, Bigtable, and Knowledge Catalog access.
-
-### Gemini in BigQuery IAM roles (2025-05)
-
-The BigQuery Studio User and BigQuery Studio Admin roles now include permissions to use Gemini in BigQuery features.
-
-### Identity-Aware Proxy for Cloud Run (2025-04)
-
-In Preview, IAP can secure a Cloud Run service across all ingress paths.
-
-### Identity-based BigQuery reservation routing (2026-06)
-
-An optional `principal` property on a reservation assignment can route queries by the executing user, service account, or third-party identity.
-
-### Legacy SQL access restriction (2026-02)
-
-Effective June 1, 2026, an organization or project with no Legacy SQL use from November 1, 2025 through June 1, 2026 loses Legacy SQL access. Prior users keep existing workloads, but new Legacy SQL workloads might not be allowed.
-
-### Migration-service organization policies (2025-11)
-
-Preview custom organization policies can allow or deny specific BigQuery migration operations, including disabling AI suggestions during a migration.
-
-### Organization policies for BigQuery routines (2026-03)
-
-Preview custom organization-policy constraints can allow or deny specific operations on BigQuery routines.
-
-### Routine-level IAM (2025-05)
-
-In Preview, IAM access controls can be applied directly to BigQuery routines.
-
-### Row-level policy subqueries (2025-03)
-
-GA BigQuery row-level access policies can contain subqueries and work with BigLake managed tables and the BigQuery Storage Read API.
-
-### Salted random-hash masking (2026-01)
-
-The `RANDOM_HASH` predefined BigQuery masking rule returns a salted hash of a column value and provides stronger protection than the standard SHA-256 masking rule.
-
-### Shared and role-authorized stored procedures (2025-11)
-
-In Preview, BigQuery sharing listings can include SQL stored procedures, and stored procedures can use role-based authorization.
-
-### Strict act-as enforcement for BigQuery workflows (2026-01)
-
-Dataform workflows, BigQuery notebooks, pipelines, and data preparations now enforce strict act-as mode project-wide, so every repository must use a custom service account instead of the default Dataform service agent. Grant `roles/iam.serviceAccountUser` to that default agent and the relevant principals or automatic releases can fail.
-
-
-## Encryption, governance, and jurisdiction
-
-### BigQuery CMEK key rotation (2025-07)
-
-At GA, updating a table with its existing Cloud KMS key updates the table's encryption key, so key rotation does not require changing the key resource.
-
-### Cloud KMS Autokey for Cloud Run (2025-04)
-
-Cloud KMS with Autokey is GA for Cloud Run.
-
-### Data policies directly on BigQuery columns (2025-07)
-
-In Preview, data policies can be associated directly with columns for database-level access control, masking, and transformation rules.
-
-### Dataform CMEK organization policy (2025-03)
-
-Dataform supports the CMEK organization policy.
-
-### Direct BigQuery column data policies reach GA (2026-02)
-
-Associating data policies directly with BigQuery columns for access control, masking, and transformation is now GA.
-
-### Gemini in BigQuery data jurisdiction (2026-02)
-
-Gemini in BigQuery processes data in the same `US` or `EU` jurisdiction as the associated datasets, or in a user-selected processing location.
-
-
-## Operations, billing, audit, and quotas
-
-### Automatic BigQuery ML quota synchronization (2025-07)
-
-BigQuery ML automatically detects Vertex AI model-quota increases and adjusts quotas for BigQuery ML functions that use those models, removing the previous email-based increase process.
-
-### BigQuery daily token quotas temporarily unavailable (2026-06)
-
-Daily token quotas for controlling generative AI function costs were announced at GA on June 8, but support for configuring them was temporarily disabled on June 15.
-
-### BigQuery Data Transfer billing label migration (2026-05)
-
-On August 11, 2026, the billing label changes from `goog-bq-feature-type: DATA_TRANSFER_SERVICE` to `goog-bq-feature-type: data_transfer_service` and expands to orchestration, load, and merge costs. Billing exports, dashboards, and reporting queries should accept both labels during the transition.
-
-### BigQuery Migration Service billing-account requirement (2026-06)
-
-New users have required a Cloud Billing account for BigQuery Migration Service since March 9, 2026, and all users have required one since May 18, even though the service remains without charge.
-
-### BigQuery regression re-execution audit identity (2026-05)
-
-BigQuery can re-execute side-effect-free instructions at no cost or resource consumption to detect regressions. Data Access logs can identify these executions as `bigquery-adminbot@system.gserviceaccount.com`.
-
-
-## Developer tools and API surfaces
-
-### Automatic MCP enablement and policy migration (2026-02)
-
-After March 17, 2026, enabling BigQuery or GKE automatically enables that product’s MCP server. The `gcp.managed.allowedMCPServices` organization-policy constraint no longer controls MCP use after that date; use IAM deny policies instead.
+## IAM, policy, and access control
 
 ### Cloud API Registry (2025-12)
 
 Preview Cloud API Registry in the Google Cloud console can view and manage the MCP servers and tools that an agent is allowed to access.
 
-### Default Gemini API enablement for BigQuery (2025-07)
 
-The `cloudaicompanion.googleapis.com` API is enabled by default for most BigQuery projects, except opted-out projects and projects linked to accounts based in EMEA regions.
+### Legacy SQL access restriction (2026-02)
 
-### Gemini API enablement for European BigQuery projects (2026-03)
+Effective June 1, 2026, an organization or project with no Legacy SQL use from November 1, 2025 through June 1, 2026 loses Legacy SQL access. Prior users keep existing workloads, but new Legacy SQL workloads might not be allowed.
 
-The Gemini for Google Cloud API, `cloudaicompanion.googleapis.com`, is now enabled for existing BigQuery projects in the European jurisdiction.
 
-### Pub/Sub Go resource tags and ingestion diagnostics (2025-10)
+## Billing, quotas, and resource governance
 
-Go Pub/Sub v2.3.0 adds tags to `Subscription`, `Topic`, and `CreateSnapshotRequest` for their corresponding create requests. It also adds `AwsKinesisFailureReason.ApiViolationReason` for Kinesis ingestion failures.
+### Organization-wide search-index accounting (2025-06)
+
+The GA `INFORMATION_SCHEMA.SEARCH_INDEXES_BY_ORGANIZATION` view reports search-index consumption against an organization's regional limit, broken down by project and table.
+
+
+### Per-second reservation telemetry (2025-09)
+
+The GA `INFORMATION_SCHEMA.RESERVATIONS_TIMELINE.per_second_details` field reports reservation capacity, usage, and autoscale utilization per second.
+
+
+## Observability, diagnostics, and developer tooling
+
+### `AI.AGG` availability (2026-04)
+
+The Preview `AI.AGG` function semantically aggregates unstructured input from natural-language instructions, but support was temporarily disabled on April 13, 2026.
+
+
+### Administrative job comparison (2025-10)
+
+The Preview administrative jobs explorer adds a job-details page whose Performance tab combines the execution graph, SQL, history, performance variance, and system load; it can also compare two jobs.
+
+
+### Advertising transfer controls (2025-03)
+
+Google Ad Manager transfers can repeat every four hours or more, default to eight hours, and skip match tables with `load_match_tables = FALSE`. Search Ads transfers expose PMax data in `CartDataSalesStats`, `ProductAdvertised`, `ProductAdvertisedDeviceStats`, and `ProductAdvertisedConversionActionAndDeviceStats`.
+
+
+### Colab Data Apps (2026-04)
+
+Preview Colab Data Apps turn Colab notebook analyses into interactive applications.
+
+
+### External-data null and column matching (2025-07)
+
+In Preview, `CREATE EXTERNAL TABLE` and `LOAD DATA` accept `null_markers` for multiple CSV null strings and `source_column_match` to match loaded columns by name or position.
+
+```sql
+CREATE EXTERNAL TABLE `project.dataset.events` (
+  id INT64,
+  event_time TIMESTAMP
+)
+OPTIONS (
+  format = 'CSV',
+  uris = ['gs://bucket/events.csv'],
+  skip_leading_rows = 1,
+  null_markers = ['NULL', 'N/A'],
+  source_column_match = 'NAME'
+);
+```
+
+
+### Facebook Ads `AdInsightsMMM` transfers paused (2026-07)
+
+Support for the `AdInsightsMMM` report is temporarily disabled because of upstream schema changes. Existing Facebook Ads transfers continue to run but omit that report's data.
+
+
+### Facebook Ads transfer type change (2026-04)
+
+Starting July 25, 2026, the Facebook Ads connector maps `AdInsightsActions.ActionValue` from `INT` to `FLOAT`.
+
+
+### Google Ads transfer MFA (2026-04)
+
+Starting May 7, 2026, new Google Ads transfer configurations that use individual-user authentication require multi-factor authentication.
+
+
+### Google Gen AI SDK for C# (2025-10)
+
+The Preview C# SDK supports `GenerateContentAsync`, `GenerateContentStreamAsync`, `GenerateImagesAsync`, and the Live API methods `SendClientContentAsync`, `SendRealtimeInputAsync`, and `SendToolResponseAsync`.
+
+
+### History-based optimization default (2025-09)
+
+History-based query optimizations are enabled by default; projects or organizations where they were previously disabled can explicitly re-enable them.
+
+
+### Materialized-view smart-tuning scope (2025-04)
+
+GA smart-tuning can optimize a materialized view when it is in the same project as one of its base tables or in the project that runs the query.
+
+
+### Merchant Center multi-client best sellers (2025-06)
+
+The GA Merchant Center best sellers report supports multi-client accounts: `aggregator_id` can be used to query the tables, and `BestSellersEntityProductMapping` maps best-selling entities to products in sub-account inventory.
+
+
+### Multi-series ARIMA_PLUS_XREG forecasting (2025-06)
+
+The `TIME_SERIES_ID_COL` option for forecasting multiple time series with one `ARIMA_PLUS_XREG` multivariate model is GA.
+
+
+### Optimized managed AI functions (2026-04)
+
+Preview optimized mode for `AI.IF` and `AI.CLASSIFY` reduces LLM token consumption and query latency on large datasets.
+
+
+### Partitioned TreeAH vector indexes (2025-06)
+
+In Preview, the `PARTITION BY` clause of `CREATE VECTOR INDEX` can partition TreeAH indexes, enabling partition pruning and lower I/O.
+
+
+### Query text heatmap (2025-11)
+
+The Preview query text heatmap maps SQL text to execution stages that consume more slot time and exposes their query-plan details.
+
+
+### RAG cross-corpus retrieval (2026-04)
+
+Public-Preview cross-corpus retrieval lets `AsyncRetrieveContexts` and `AskContexts` retrieve contexts or generate answers from multiple RAG corpora in one operation.
+
+
+### Search-index column granularity (2025-03)
+
+Preview search indexes can store extra column information by setting column granularity, allowing search queries to be optimized further.
+
+
+### Session IDs in reusable SQL objects (2026-04)
+
+The GA `@@session_id` system variable is available inside SQL user-defined functions, table functions, and logical views.
+
+
+### Shared-dataset usage fields (2025-10)
+
+The GA `INFORMATION_SCHEMA.SHARED_DATASET_USAGE` view adds `shared_resource_id`, `shared_resource_type`, and `referenced_tables`; the last field identifies each base table and its processed bytes for external-table and routine usage.
+
+
+### Single-table `AI.DETECT_ANOMALIES` (2026-05)
+
+GA `AI.DETECT_ANOMALIES` can take one input table containing both historical and target data.
+
+
+### Single-vector `VECTOR_SEARCH` syntax (2026-03)
+
+In Preview, an alternate `VECTOR_SEARCH` call syntax can improve query performance when searching for one vector.
+
+
+### SQL user-defined aggregate functions (2025-03)
+
+GA SQL user-defined aggregate functions can be created with `CREATE AGGREGATE FUNCTION`.
+
+
+### Stateful continuous queries (2026-04)
+
+Preview continuous queries can retain information across rows or time intervals and use stateful `JOIN` operations and windowed aggregations.
+
+
+### Stored-column usage for vector search (2025-01)
+
+At GA, query-job information exposes `StoredColumnsUsage` for vector searches that use stored columns.
+
+
+### TimesFM evaluation (2025-10)
+
+The built-in TimesFM capability is GA: `AI.FORECAST` accepts a larger context window, and `AI.EVALUATE` compares forecast output with a historical reference time series.
+
+
+### TimesFM forecasting and anomaly functions (2026-03)
+
+GA `AI.DETECT_ANOMALIES` accepts a custom context window, and GA `AI.FORECAST` can specify the latest timestamp for forecasting. `AI.EVALUATE` accepts a custom context window and returns mean absolute scaled error.
+
+
+### Vector-index drift and rebuilds (2025-07)
+
+Preview `VECTOR_INDEX.STATISTICS` reports how far indexed table data has drifted since index creation, and `ALTER VECTOR INDEX REBUILD` rebuilds an index when needed.
+
+```sql
+SELECT *
+FROM VECTOR_INDEX.STATISTICS(
+  TABLE `project.dataset.items`, 'items_embedding_idx'
+);
+
+ALTER VECTOR INDEX items_embedding_idx
+ON `project.dataset.items` REBUILD;
+```
+
+
+### Virtual Try-On endpoint migration (2026-01)
+
+Virtual Try-On is GA at `virtual-try-on-001`; applications using `virtual-try-on-preview-08-04` should migrate to the new endpoint.

@@ -1,41 +1,18 @@
 # Schema, migrations, and queries
 
-Use this reference when editing Prisma Schema Language, generating migrations, introspecting a database, selecting query APIs, or reasoning about transaction and index behavior.
-
-## Contents
-
-- [Use current schema-language features](#use-current-schema-language-features)
-- [Split schemas and database namespaces](#split-schemas-and-database-namespaces)
-- [Manage external tables and views](#manage-external-tables-and-views)
-- [Define PlanetScale shard keys](#define-planetscale-shard-keys)
-- [Manage PostgreSQL extensions](#manage-postgresql-extensions)
-- [Create partial and concurrent indexes](#create-partial-and-concurrent-indexes)
-- [Use current query APIs](#use-current-query-apis)
-- [Filter JSON correctly](#filter-json-correctly)
-- [Handle enums across schema and database names](#handle-enums-across-schema-and-database-names)
-- [Compose transactions safely](#compose-transactions-safely)
-- [Preserve introspection and generator metadata](#preserve-introspection-and-generator-metadata)
-
 ## Use current schema-language features
 
-Full-text indexing and search became generally available in 6.0.0. Remove `fullTextIndex` and `fullTextSearch` from `previewFeatures`; use the features without preview opt-in.
+Full-text index and search features are GA in Prisma 6; remove
+`fullTextIndex` and `fullTextSearch` from `previewFeatures` (6.0.0). Prisma
+Schema Language also accepts `/* ... */` block comments in addition to `//`
+line comments (6.1.0).
 
-Block comments are valid in Prisma schemas as of 6.1.0:
-
-```prisma
-/*
- * Document a group of related fields.
- */
-model User {
-  id Int @id
-}
-```
-
-SQLite schemas support Prisma `Json` fields and enums as of 6.2.0:
+SQLite schemas support `Json` fields and enums (6.2.0). String fields can use
+`ulid()` for automatic 26-character, lexicographically sortable ULIDs:
 
 ```prisma
 model User {
-  id   Int  @id @default(autoincrement())
+  id   String @id @default(ulid())
   role Role
   data Json
 }
@@ -46,27 +23,10 @@ enum Role {
 }
 ```
 
-Generate lexicographically sortable, 26-character ULIDs with `ulid()` (6.2.0):
-
-```prisma
-model User {
-  id String @id @default(ulid())
-}
-```
-
-## Split schemas and database namespaces
-
-Multi-file Prisma schemas became generally available in 6.7.0, so the `prismaSchemaFolder` Preview flag is no longer required.
-
-Projects still using that Preview layout must provide the schema directory explicitly through `--schema`, `prisma.schema` in `package.json`, or Prisma Config. Beginning with 6.6.0, the `migrations` directory belongs beside the `.prisma` file containing the datasource block. For the common `./prisma/schema` layout, that means moving `./prisma/migrations` to `./prisma/schema/migrations` unless current Prisma Config gives an independent path.
-
-```sh
-npx prisma migrate dev --schema ./prisma/schema
-```
-
-Current Prisma Config can specify schema, migrations, views, and TypedSQL paths independently; see the configuration reference.
-
-Multi-schema support for PostgreSQL and SQL Server became generally available in 6.13.0. List database namespaces on the datasource and assign each schema object with `@@schema`:
+Multi-file Prisma schemas became GA in 6.7.0, removing the old
+`prismaSchemaFolder` preview flag. PostgreSQL and SQL Server multi-schema
+support became GA in 6.13.0; declare namespaces on the datasource and use
+`@@schema` on each model:
 
 ```prisma
 datasource db {
@@ -76,68 +36,44 @@ datasource db {
 
 model User {
   id Int @id
-
   @@schema("base")
 }
 ```
 
-The datasource URL shown in older examples belongs in Prisma Config in current projects.
+PlanetScale shard keys entered Preview in 6.10.0. With the `shardKeys`
+preview feature, use `@shardKey` for a single field or `@@shardKey([...])` for
+a compound key.
 
-## Manage external tables and views
+## Keep multi-file paths and migrations explicit
 
-List externally managed tables under `tables.external` in Prisma Config (6.13.0). Prisma Client keeps their models queryable, while Prisma Migrate ignores them:
+With the earlier `prismaSchemaFolder` preview workflow, projects had to supply
+the schema directory through `--schema`, `prisma.schema` in `package.json`, or
+Prisma Config. Migrations belonged beside the `.prisma` file containing the
+datasource, so the implicit `prisma/schema` layout required
+`prisma/schema/migrations` (6.6.0).
 
-```ts
-import { defineConfig } from 'prisma/config'
+Current Prisma Config can give schema, migration, view, and TypedSQL locations
+independent paths. Prefer those explicit paths to relying on inference.
 
-export default defineConfig({
-  tables: {
-    external: ['users'],
-  },
-})
-```
+## Manage destructive and rolled-back migrations safely
 
-View client capabilities changed in two steps:
+`prisma migrate dev` no longer offers an interactive reset when it sees drift
+or cannot apply a migration. It exits; run `prisma migrate reset` explicitly
+only when destructive reset is intended (6.5.0).
 
-- In 6.13.0, Preview view definitions lost ID, index, and unique attributes. Without a trustworthy unique key, Prisma disabled `findUnique`, cursor pagination, writes, implicit ordering, and relationships.
-- In 6.14.0, view fields regained `@unique`. A declared unique field enables relationships, `findUnique`, cursor pagination, and implicit ordering.
+Supported automated coding environments add a confirmation checkpoint for
+destructive resets, including forced resets (6.15.0). The checkpoint also
+covers `prisma db push --accept-data-loss`, recognizes `AI_AGENT` and `AGENT`
+environment conventions, and is used on Linux (7.9.0). The MCP surface does
+not provide a reset shortcut.
 
-```prisma
-view UserSummary {
-  userId Int @unique
-}
-```
+Since 7.9.0, `prisma migrate status` reports a rolled-back migration that
+remains on disk as unapplied rather than saying the schema is current.
 
-Only declare `@unique` if the underlying view actually guarantees uniqueness. View writes remain inappropriate unless the current connector explicitly supports the intended operation.
+## Manage PostgreSQL extensions and indexes
 
-## Define PlanetScale shard keys
-
-Native PlanetScale sharding entered Preview in 6.10.0. Enable `shardKeys`, use `@shardKey` for a field, and use `@@shardKey([...])` for a compound key:
-
-```prisma
-generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["shardKeys"]
-}
-
-model User {
-  id String @id @default(uuid()) @shardKey
-}
-
-model Customer {
-  country    String
-  customerId String
-
-  @@id([country, customerId])
-  @@shardKey([country, customerId])
-}
-```
-
-Adapt the generator to `prisma-client` for a current project while retaining the Preview feature only if the installed release still requires it.
-
-## Manage PostgreSQL extensions
-
-`postgresqlExtensions` is deprecated as of 6.16.0. Remove the Preview flag and manage extensions in migration SQL:
+`postgresqlExtensions` is deprecated. Remove its preview flag, create an empty
+migration, and put extension SQL in the migration file (6.16.0):
 
 ```sh
 npx prisma migrate dev --name add-extension --create-only
@@ -147,16 +83,15 @@ npx prisma migrate dev --name add-extension --create-only
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 ```
 
-Prisma Postgres `pgvector` support was Early Access in 6.13.0, but Prisma ORM did not yet expose native vector operations. Enable it through a custom migration and query it through TypedSQL for that release line.
-
-## Create partial and concurrent indexes
-
-The `partialIndexes` Preview feature adds `where` predicates to `@@index` and `@@unique` for PostgreSQL, SQLite, SQL Server, and CockroachDB, with migration and introspection support (7.4.0). Predicates can be type-safe object expressions or database-specific `raw()` SQL. Patch 7.4.1 also supports `where` on field-level `@unique`.
+The `partialIndexes` preview feature adds `where` predicates to `@@index` and
+`@@unique` for PostgreSQL, SQLite, SQL Server, and CockroachDB, including
+migration and introspection support. Predicates can be typed object expressions
+or provider-specific `raw()` SQL; 7.4.1 also added `where` to field-level
+`@unique` (7.4.0).
 
 ```prisma
 generator client {
-  provider        = "prisma-client"
-  output          = "../generated/prisma"
+  provider        = "prisma-client-js"
   previewFeatures = ["partialIndexes"]
 }
 
@@ -169,29 +104,69 @@ model Post {
 }
 ```
 
-Migration and client behavior was tightened in 7.5.0:
+Migration behavior was tightened in 7.5.0: manually created partial indexes
+remain when the preview feature is disabled, and semantically equivalent
+quoted and unquoted predicates do not trigger recreation. Partial unique
+indexes are excluded from DMMF uniqueness metadata, so no incorrect
+`findUnique` input is generated.
 
-- Preserve manually created partial indexes when the Preview feature is disabled.
-- Treat equivalent quoted and unquoted predicates as the same instead of recreating the index.
-- Exclude partial unique indexes from DMMF uniqueness metadata, so they do not incorrectly generate `findUnique` inputs.
-
-PostgreSQL migration scripts accept `CREATE INDEX CONCURRENTLY` as of 7.4.0, allowing index creation without blocking writes:
+PostgreSQL migration SQL can use `CREATE INDEX CONCURRENTLY` to build an index
+without blocking writes (7.4.0):
 
 ```sql
 CREATE INDEX CONCURRENTLY "Post_title_idx" ON "Post" ("title");
 ```
 
-## Use current query APIs
+## Model externally managed tables and views
 
-Exclude fields with `omit`, generally available since 6.2.0, either per query or globally through the `PrismaClient` constructor. Remove the former `omitApi` Preview feature.
+Use top-level `tables.external` to keep tables queryable in Prisma Client while
+excluding them from Prisma Migrate (6.13.0):
 
 ```ts
-const users = await prisma.user.findMany({
-  omit: { password: true },
+export default defineConfig({
+  tables: { external: ['users'] },
 })
 ```
 
-Use `updateManyAndReturn` to update and return records instead of receiving only an affected-row count (6.2.0). It is supported for PostgreSQL, CockroachDB, and SQLite:
+The initial 6.13.0 SQL-view Preview surface removed IDs, indexes, unique
+attributes, `findUnique`, cursor pagination, writes, implicit ordering, and
+relationships. Since 6.14.0, a view field can use `@unique`; genuine uniqueness
+enables `findUnique`, cursor pagination, implicit ordering, and relationships.
+Do not claim uniqueness unless the view data guarantees it.
+
+```prisma
+view UserSummary {
+  userId Int @unique
+}
+```
+
+## Apply enum mapping correctly
+
+Prisma 7.0.0 initially made generated enum constants and query values use the
+string supplied to `@map`. Prisma 7.3.0 reversed that behavior: generated
+values again use the schema member name, while `@map` remains the database
+representation.
+
+```prisma
+enum PaymentProvider {
+  MixplatSMS @map("mixplat/sms")
+}
+```
+
+```ts
+PaymentProvider.MixplatSMS // "MixplatSMS"
+```
+
+Database parameters still use the mapped database name; parameterization was
+corrected in 7.8.0. Use the generated schema member in application code.
+
+## Use bulk mutation and omission APIs
+
+`omit` is GA and works per query or globally from the client constructor;
+remove the former `omitApi` preview flag (6.2.0).
+
+`updateManyAndReturn` updates matching rows and returns their resulting
+records on PostgreSQL, CockroachDB, and SQLite (6.2.0):
 
 ```ts
 const users = await prisma.user.updateManyAndReturn({
@@ -200,25 +175,13 @@ const users = await prisma.user.updateManyAndReturn({
 })
 ```
 
-Top-level `updateMany()` and `deleteMany()` accept `limit` as of 6.3.0:
+Top-level `updateMany` and `deleteMany` accept `limit` to cap affected records
+(6.3.0).
 
-```ts
-await prisma.user.updateMany({
-  where: { status: 'inactive' },
-  data: { archived: true },
-  limit: 100,
-})
-```
+## Filter JSON values safely
 
-The parameter layer in 7.8.0 correctly:
-
-- Uses the mapped database value for enum parameters.
-- Raises `P2029` for actual parameter-limit violations without rejecting valid queries.
-- Adds required `VARCHAR` casts to parameterized SQL Server strings.
-
-## Filter JSON correctly
-
-Case-insensitive JSON string filtering became available in 6.4.0. Combine `mode: 'insensitive'` with `string_contains`, `string_starts_with`, or `string_ends_with` at a JSON path:
+JSON string filters support `mode: 'insensitive'` with `string_contains`,
+`string_starts_with`, and `string_ends_with` at a JSON path (6.4.0).
 
 ```ts
 await prisma.user.findMany({
@@ -232,7 +195,8 @@ await prisma.user.findMany({
 })
 ```
 
-PostgreSQL JSON equality fixes in 7.8.0 use the correct `jsonb` cast for JSON-list equality and support case-insensitive equality for JSON string fields:
+PostgreSQL JSON-list equality uses the proper `jsonb` cast, and case-
+insensitive equality works for JSON string fields (7.8.0):
 
 ```ts
 await prisma.item.findMany({
@@ -244,51 +208,35 @@ await prisma.item.findMany({
 })
 ```
 
-## Handle enums across schema and database names
+## Handle transaction boundaries and raw values
 
-Enum-member mapping changed during the current architecture transition:
-
-- In 7.0.0, generated constants and query values initially used the string supplied to `@map`.
-- In 7.3.0, generated enum values returned to the Prisma schema member name; `@map` continues to control only the database representation.
-
-```prisma
-enum PaymentProvider {
-  MixplatSMS @map("mixplat/sms")
-}
-```
-
-```ts
-PaymentProvider.MixplatSMS // "MixplatSMS"
-```
-
-Use the generated schema-side constant in application code. Prisma parameterization sends the database-side mapped value where required.
-
-## Compose transactions safely
-
-Interactive transactions now surface database exceptions raised during commit, including trigger-related failures fixed in 6.3.0. Always handle rejection from the entire `$transaction()` call rather than assuming successful callback completion guarantees a successful commit.
-
-Nested interactive transactions on SQL databases are supported through savepoints as of 7.5.0. Prisma reuses the open engine transaction and tracks nesting depth:
+Interactive transactions surface database exceptions raised during commit,
+including trigger-related failures (6.3.0). Since 7.5.0, SQL interactive
+transactions can nest by calling `$transaction()` on the transaction client;
+Prisma reuses the engine transaction and tracks nesting through savepoints.
+An outer rollback rolls back nested work.
 
 ```ts
 await prisma.$transaction(async (tx) => {
   await tx.user.create({ data: { email: 'outer@example.com' } })
-
-  await tx.$transaction(async (nested) => {
-    await nested.user.create({ data: { email: 'inner@example.com' } })
-  })
-
-  throw new Error('roll back both inserts')
+  await tx.$transaction((nested) =>
+    nested.user.create({ data: { email: 'inner@example.com' } }),
+  )
 })
 ```
 
-If the outer transaction fails, nested work rolls back with it. Commit failures from the PlanetScale adapter are propagated as of 7.4.0.
+D1 savepoints are logged no-ops and provide no rollback semantics (7.8.0).
+PlanetScale commit failures propagate to callers (7.4.0). A transaction whose
+startup exceeds `maxWait` is rolled back before its connection returns to the
+pool (7.9.0).
 
-D1 is different: `createSavepoint`, `rollbackToSavepoint`, and `releaseSavepoint` are logged no-ops as of 7.8.0. Do not rely on nested rollback behavior there.
+`$queryRaw` and `$executeRaw` reject an invalid `Date` with a validation error
+instead of serializing it as `null` (7.9.0). Validate or catch bad inputs.
 
-## Preserve introspection and generator metadata
+## Expect stable introspection output
 
-`prisma db pull` orders fields inside `generator` blocks deterministically as of 6.3.0. The first pull after upgrading may reorder them once; subsequent pulls preserve the stable order.
-
-The DMMF returned by `@prisma/generator-helper` includes `onUpdate` referential-action data as of 6.3.0, allowing custom generators to inspect update behavior.
-
-PostgreSQL introspection recognizes schema-qualified sequence defaults such as `pg_catalog.nextval('sequence_name'::regclass)` as of 7.8.0. It preserves the corresponding `@default(autoincrement())` instead of dropping it.
+`prisma db pull` orders generator-block fields deterministically; the first
+pull after upgrading may reorder them once (6.3.0). PostgreSQL introspection
+preserves schema-qualified sequence defaults such as
+`pg_catalog.nextval('sequence_name'::regclass)` as
+`@default(autoincrement())` (7.8.0).

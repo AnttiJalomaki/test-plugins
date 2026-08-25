@@ -10,226 +10,228 @@ metadata:
 
 # Home Assistant Knowledge Patch
 
-Use this skill when changing, reviewing, or troubleshooting Home Assistant
-configuration, automations, dashboards, integrations, installation, or custom
-components. Start with the migration checks below, then open the reference file
-whose topic matches the work. Treat the running instance, configuration, traces,
-diagnostics, and tests as authoritative when they differ from general guidance.
+Use this skill when configuring, upgrading, automating, extending, or
+troubleshooting a current Home Assistant installation. Start with the migration
+checks below, then open the task-specific reference before changing YAML,
+entity assumptions, integrations, dashboards, backups, or custom code.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Breaking changes and migrations](references/breaking-changes.md) | Removed actions and entities, state and unit changes, new minimum versions, authentication, and polling changes |
-| [Automations, scripts, and templates](references/automation-templates.md) | Purpose-specific building blocks, action semantics, variable scope, template entities, helpers, selectors, and editor behavior |
-| [Dashboards and user interface](references/dashboards-ui.md) | Built-in dashboards, cards, layout, search, pickers, graphs, Activity, editors, and device-management pages |
-| [Backups, installation, and system operations](references/backup-system.md) | Backup configuration and destinations, supported installations, updates, runtime, logs, Apps, and storage |
-| [Assist, voice, and AI](references/assist-ai.md) | Satellites, intents, conversations, AI Task, speech, provider tools, and diagnostics |
-| [Integrations, devices, and protocols](references/integrations-devices.md) | Integration additions, device capabilities, protocol support, sensors, actions, setup, and service-specific behavior |
-| [Custom integration and frontend development](references/integration-development.md) | Entity and config-entry APIs, discovery models, service registration, selectors, frontend APIs, and developer tooling |
+| [Assist, Voice, and AI](references/assist-ai.md) | Assist pipelines, satellites, speech, conversation agents, AI Tasks, and intents |
+| [Automations, Scripts, and Templates](references/automation-templates.md) | Triggers, conditions, actions, variable scope, templates, helpers, selectors, and editors |
+| [Backups, Installation, and System Operations](references/backup-system.md) | Backup encryption and retention, restore, supported installations, Apps, runtime, networking, and updates |
+| [Breaking Changes and Migrations](references/breaking-changes.md) | Removed APIs and entities, renamed states, unit changes, minimum versions, defaults, and patch corrections |
+| [Dashboards and User Interface](references/dashboards-ui.md) | Built-in dashboards, cards, pickers, Activity, energy views, search, and navigation |
+| [Custom Integration and Frontend Development](references/integration-development.md) | Config flows, entity APIs, discovery, services, selectors, frontend interfaces, and custom panels |
+| [Integrations, Devices, and Protocols](references/integrations-devices.md) | Integrations, device capabilities, actions, sensors, Matter, MQTT, Z-Wave, KNX, ESPHome, IR, RF, and Bluetooth |
 
-## Breaking changes first
+## Upgrade triage
 
-### Installation and runtime
+Before an upgrade or migration:
 
-- Do not plan upgrades for Core, Supervised, `i386`, `armhf`, or `armv7`.
-  They stopped receiving updates, including security updates, in 2025.12.
-  Use Home Assistant OS or Container on a supported architecture.
-- Home Assistant uses Python 3.14 as of 2026.3. Official installation methods
-  upgrade it automatically; custom tooling and custom integrations must be
-  compatible with that runtime.
-- Container images use `zstd` compression as of 2026.3. Require Docker 23.0.0+
-  or containerd 1.5.0+, unless the installed older runtime explicitly supports
-  `zstd` images.
-- A Container install without host networking creates a Repair issue. Check the
-  deployment network mode before diagnosing discovery or reachability failures.
-- Home Assistant OS calls Supervisor-managed sidecar software **Apps**. Older
-  documentation and action domains may still use “add-on”; do not confuse Apps
-  with integrations.
+1. Create and verify a restorable backup, including its encryption key and all
+   configured destination uploads.
+2. Confirm that the installation method, CPU architecture, container runtime,
+   integrations, device firmware, and protocol servers remain supported.
+3. Search YAML, templates, dashboards, and exported state consumers for removed
+   fields, old service data, renamed states, exact units, and device IDs.
+4. Inspect Repairs after startup; several device, backup, entity, and mapping
+   migrations deliberately surface there.
+5. Reauthenticate or reconfigure integrations whose login method, API, server
+   minimum, or setup flow changed.
+6. Run representative automations and inspect traces, especially flows using
+   nested variables, response data, labels, Supervisor actions, or exact states.
+7. Review disabled-by-default replacement entities before deleting compatibility
+   templates or legacy references.
 
-### YAML, actions, and state models
+Open [Breaking Changes and Migrations](references/breaking-changes.md) for the
+complete migration inventory rather than treating these checks as exhaustive.
 
-- Light color temperature is Kelvin-only as of 2026.3. Replace action field
-  `color_temp` with `color_temp_kelvin`, and replace `color_temp`, `kelvin`,
-  `min_mireds`, and `max_mireds` attributes with the Kelvin attributes.
-- Legacy template entities under individual platform keys were removed in
-  2026.6. Put them under modern `template:` configuration.
-- MQTT publishing takes templates directly in `topic` and `payload`; remove
-  `topic_template` and `payload_template`. An omitted payload publishes an
-  empty payload. MQTT entity-ID suggestions use `default_entity_id`, not
-  `object_id`.
-- Google Calendar no longer has `add_event`; use entity action `create_event`.
-  Plex no longer has `scan_for_clients`; press the **Scan Clients** button
-  entity. Velux gateway reboot likewise moved to its button entity.
-- Supervisor actions now raise on failure and stop a sequence. Add
-  `continue_on_error: true` only where continuing is intentional.
-- Webhook `local_only` accepts only YAML booleans `true` and `false`, and
-  Telegram Bot actions reject undefined or unused fields.
-- Template binary sensors and fans that return `None` now become `unknown`
-  instead of `off`. Return `False` when `off` is intended. A template fan state
-  syntax error yields `unavailable`; a percentage syntax error yields `None`.
-- Media players that formerly used `standby` may now report `off`; the platform
-  `STANDBY` state is deprecated. Audit exact state comparisons.
-- Vacuum battery properties and several device-tracker `battery_level`
-  attributes moved to dedicated battery sensors. Update templates, cards,
-  automations, and scripts to target the sensor entities.
+## Installation and backup essentials
 
-### Purpose-specific automations
+- Home Assistant OS and Container are the supported installation paths. Core,
+  Supervised, and the retired 32-bit architectures do not receive updates or
+  security fixes.
+- Current container images use `zstd`; an old Docker or containerd runtime may
+  fail before Home Assistant starts.
+- Backups use a mandatory encryption key by default. Preserve the emergency kit:
+  a stored encrypted backup is not useful without the key.
+- Retention is destination-specific. Automatic cleanup does not delete manual
+  backups, but update backups and scheduled backups have their own retention
+  behavior.
+- A backup can finish creation while uploads are still running. Check each
+  location's upload status before restarting, replacing hardware, or removing
+  the source installation.
+- A requested restart waits for an active backup, while Supervisor action
+  failures now stop scripts unless the action explicitly permits continuation.
+- Home Assistant OS calls managed sidecar software **Apps**. Do not confuse an
+  App, which runs alongside Core, with an integration, which connects devices or
+  services to Home Assistant.
 
-- Purpose-specific triggers and conditions are the default editor entry point.
-  Generic state blocks, templates, YAML, and existing automations remain valid.
-- Preview keys renamed before graduation no longer work. Notable replacements
-  include `battery.low` → `battery.became_low`, `schedule.turned_on` →
-  `schedule.block_started`, `timer.time_remaining` →
-  `timer.remaining_time_reached`, and `vacuum.docked` →
-  `vacuum.returned_to_dock`.
-- Trigger behavior values changed from `any` to `each` and `last` to `all`,
-  with `each` now the default. Reselect an affected block or edit its YAML.
-- Zone-oriented person and device-tracker triggers supersede the withdrawn
-  home-only preview blocks. They support entering, leaving, occupancy, empty
-  state, and `for` durations.
+See [Backups, Installation, and System Operations](references/backup-system.md)
+for location behavior, restore paths, update safeguards, logging, and web-server
+configuration.
 
-## Backups and restore
+## High-impact YAML and entity migrations
 
-- The first backup setup creates a mandatory encryption key and configures
-  frequency and retention. Preserve the emergency kit: encrypted backups
-  cannot be restored without the key.
-- Encryption is configurable per destination except Home Assistant Cloud,
-  which stays encrypted. Downloads through Home Assistant are decrypted on the
-  fly. Restore works across all installation methods and during Cloud-backed
-  onboarding.
-- Automatic backup schedules can choose a time, weekdays, and per-location
-  retention. Advanced automations call `backup.create_automatic`.
-- Automatic retention does not remove manual backups. Pre-update backups keep
-  one automatic backup per add-on/App, and a restart waits for an active backup.
-- Backup agents include Cloud and numerous integration-provided locations.
-  Inspect [the system reference](references/backup-system.md) before choosing a
-  destination because capabilities, patch fixes, and upload-progress support
-  differ by provider.
-- Treat incomplete backups as failures even when an archive exists. Repair
-  issues report skipped add-ons or folders; the backup UI can separately show
-  creation and per-location upload progress.
+### Use Kelvin color temperature
 
-## Automations, scripts, and templates
+Light actions and state consumers should use:
 
-- Nested `variables` actions update an existing outer variable; a new name is
-  created in the top-level run scope. `wait` and `response_variable` values
-  also propagate outward, including from parallel sequences. Avoid designs
-  that rely on local shadowing.
-- Time triggers support datetime-helper offsets, selected weekdays, and
-  templated webhook IDs. Purpose-specific state blocks offer visual `for`
-  durations and domain-aware target summaries.
-- Action targets by label now include labeled configuration and diagnostic
-  entities. Inspect the expanded target list before using broad floor, area,
-  device, or label targets.
-- Modern template YAML supports lights, switches, fans, locks, covers, alarm
-  panels, vacuums, sensors, events, updates, and device trackers with the
-  platform-specific capabilities detailed in the automation reference.
-- Useful template additions include set operations, hashes, `clamp`, `wrap`,
-  `remap`, `from_hex`, translated attribute lookup, and entity, device, floor,
-  area, and label helpers. Prefer `entity_name()` over reading
-  `friendly_name` directly.
-- The UI editors provide YAML linting, Jinja/YAML autocomplete, hover values,
-  notes, traces with template errors, copy/paste, undo/redo, and visual
-  continue-on-error controls. Keep exported YAML valid even when authoring in
-  the visual editor.
+```yaml
+actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.desk
+    data:
+      color_temp_kelvin: 3000
+```
 
-## Dashboards and UI
+Do not rely on mired-based `color_temp`, `min_mireds`, or `max_mireds` fields.
+Use `min_color_temp_kelvin` and `max_color_temp_kelvin` where limits matter.
 
-- The built-in **Overview** is the default for new installations; the former
-  customizable dashboard is **Overview (legacy)**. Existing user dashboard
-  preferences and system-wide defaults have different scopes.
-- Home, Maintenance, Security, Lights, Climate, and protocol dashboards are
-  built-in experiences with availability based on configuration. Existing
-  Areas dashboards continue to work, but new ones cannot be created.
-- Sections dashboards support headers, backgrounds, sticky footers, auto-height
-  cards, a 24-pixel default row gap, prediction strategies, and many Tile-card
-  features. Themes can restore the old gap with
-  `ha-view-sections-row-gap: 8px`.
-- Energy configuration supports parent/child devices, live power sensors,
-  signed or paired flow sensors, battery state of charge, downstream water
-  meters, resource tabs, live flows, and period totals.
-- Use `Ctrl+K` or `Cmd+K` for unified Quick search. The entity-first card picker,
-  context-rich target picker, and related-object links reduce reliance on raw
-  entity IDs while preserving access to YAML.
-- Activity is the renamed and redesigned Logbook interface. OS Core logs are
-  normally available under **Settings > System > Logs** and `ha core logs`,
-  not as a duplicated configuration-folder file.
+### Use modern template configuration
 
-## Assist, voice, and AI
+Legacy template platforms under domain keys have been removed. Define supported
+template entities beneath `template:` and account for explicit `unknown` and
+`unavailable` behavior. In particular, returning `None` is not equivalent to a
+false or off state for binary sensors and fans.
 
-- `assist_satellite.start_conversation` starts an LLM-backed conversation;
-  `assist_satellite.ask_question` accepts local sentence patterns and returns
-  the matched answer ID and slots. Use `response_variable` for later choices.
-- Satellite broadcasts, thermostat targeting, shopping-list completion,
-  mapped-room vacuum cleaning, media volume, fan speed, and lawn-mower control
-  depend on language, device, and agent support.
-- Conversation agents can stream responses, use exposed calendar or to-do
-  entities, continue listening after a question, and share fallback history.
-  Audit entity exposure and tool calls in the voice debug interface.
-- `ai_task.generate_data` returns text or selector-defined structured data and
-  can receive files or camera media. `ai_task.generate_image` returns the
-  generated asset in the response variable's `url` field.
-- Selecting a default AI Task entity lets calls omit `entity_id`. AI suggestions
-  send the full automation or script plus relevant names to that configured
-  provider, so review the data boundary before enabling them.
-- Home Assistant can consume tools from MCP servers and expose Home Assistant
-  context to external MCP clients. Keep tool permissions and Assist exposure
-  narrow enough for the intended agent.
+### Update MQTT configuration
 
-## Integration work
+- Put templates directly in `mqtt.publish` `topic` and `payload`; the old
+  `topic_template` and `payload_template` fields are gone.
+- Use `default_entity_id` instead of the removed MQTT `object_id` option.
+- Modern MQTT setup and tools live on the integration's Configure page; broker
+  reconfiguration is in the integration-entry context menu.
+- Migrate old JSON-light color-mode parameters and legacy platform assumptions.
 
-- Before changing an integration, search both integration references: use
-  [integrations and devices](references/integrations-devices.md) for available
-  capabilities and [breaking changes](references/breaking-changes.md) for
-  renamed values, removed entities, new credentials, and minimum server or
-  firmware versions.
-- Exact state comparisons are especially fragile. Many integrations moved from
-  title case or vendor codes to lowercase snake-case machine values; update
-  action data, templates, and conditions together.
-- When an attribute or control disappears, look for a dedicated sensor, binary
-  sensor, event, select, number, button, update, or valve entity before creating
-  a template replacement.
-- Polling intervals increasingly use Home Assistant's integration-independent
-  polling customization. Do not assume a removed integration option means the
-  integration stopped polling.
-- Device and sub-device migrations can preserve entity IDs while changing
-  device targets. Re-audit device-targeted automations after ESPHome, Shelly,
-  Reolink Duo, or FRITZ!SmartHome registry changes.
-- Protocol integrations carry explicit external requirements. Check Z-Wave JS,
-  UniFi Protect, ESPHome, Pi-hole, pyLoad, Sentry, Mealie, BSB-LAN, and container
-  runtime versions before diagnosing setup or reauthentication failures.
+### Treat machine states as machine data
 
-## Custom integration checks
+Many integrations moved display-oriented values to lowercase snake case, split
+attributes into dedicated entities, or changed `off`, `standby`, `unknown`, and
+`unavailable` semantics. Prefer stable entity capabilities and translated UI
+labels for presentation. Audit every exact string comparison after an upgrade.
 
-- Review the development reference before updating a custom component. Recent
-  changes touch config subentries, backup agents, discovery imports, config-flow
-  results, entity descriptions, service registration, target selectors, update
-  coordinators, OAuth helpers, device trackers, and frontend components.
-- Treat `UnitSystem` as immutable. Stop reading the removed `FlowResult.result`
-  key and deprecated `DeviceEntry.suggested_area` attribute.
-- Discovery `ServiceInfo` models moved for DHCP, SSDP, USB, and zeroconf. Update
-  imports rather than preserving compatibility shims indefinitely.
-- Platform entity service registration changed and service helpers deprecate
-  the `hass` argument. Service translations are no longer returned from the
-  generic service-list endpoints.
-- Custom serial integrations must migrate from `pyserial` assumptions to the
-  asynchronous `serialx` path used by network-capable serial proxies.
-- Validate against a real Home Assistant test instance and run the component's
-  tests after every API migration; platform behavior and registry state take
-  precedence over stale examples.
+### Read battery sensors
 
-## Working method
+Vacuum and device-tracker battery properties have broadly moved to dedicated
+battery sensor entities. Cards, templates, automations, and scripts should target
+those sensors instead of entity attributes or platform properties.
 
-1. Identify the installation type, Home Assistant release, affected integration,
-   and external device, server, firmware, or app versions.
-2. Read the breaking-change entry for every exact state, attribute, entity,
-   action, option, credential, or unit involved.
-3. Read the matching feature reference and confirm prerequisites and disabled-
-   by-default entities.
-4. Search automations, scripts, templates, dashboards, statistics, and exports
-   for old identifiers and exact value comparisons.
-5. Apply the smallest migration, reload when supported, and inspect Repairs,
-   traces, logs, diagnostics, entity registry, and device targets.
-6. Exercise both success and failure paths, especially backup, authentication,
-   broad targets, response actions, and `continue_on_error` behavior.
+### Review device targets
+
+Sub-devices and one-device-per-integration ownership can change registry device
+IDs while preserving entity IDs. Prefer entity, area, or label targets when they
+match the intent, and repair device-ID-based targets after a registry split.
+
+## Automation guidance
+
+- Purpose-specific triggers and conditions are the editor default. Generic state
+  triggers, templates, existing automations, and YAML still work.
+- Purpose-specific blocks understand relevant `unknown`, `unavailable`, target,
+  repeated-event, and cross-domain semantics. Recreate preview-era blocks whose
+  keys or target behavior changed.
+- A label target can include configuration and diagnostic entities. Expand and
+  audit broad targets before invoking actions with side effects.
+- Nested `variables`, `wait`, and `response_variable` results can propagate to an
+  outer script-run scope. Do not depend on former local shadowing.
+- Response actions and AI Tasks should always store their result in a named
+  response variable before templates consume returned fields.
+- Use `continue_on_error: true` only where proceeding after a failed action is an
+  intentional workflow decision.
+- Time triggers can use weekdays, datetime-helper triggers can use offsets, and
+  purpose-specific state checks can require a duration.
+- Automation and script notes survive duplication, export, and blueprint use;
+  use them to record non-obvious target and failure behavior.
+
+Open [Automations, Scripts, and Templates](references/automation-templates.md)
+before rewriting templates, selectors, helper-driven triggers, or editor-produced
+YAML.
+
+## Frequently used capabilities
+
+### Ask, generate, and continue conversations
+
+Assist satellites can announce, start a conversation, and ask a question whose
+matched answer and slots return to an automation. AI Task entities can generate
+text, selector-defined structured data, or images from instructions and media
+attachments. A configured default AI Task entity allows reusable calls to omit
+the provider entity.
+
+Conversation systems can stream responses, call tools, use exposed calendar or
+to-do context, and continue listening after a question. Exposure and diagnostic
+views matter: verify which entities, prompts, tools, arguments, and results enter
+the conversation.
+
+See [Assist, Voice, and AI](references/assist-ai.md) for action shapes,
+satellite behavior, speech features, intents, and provider-specific changes.
+
+### Clean mapped areas
+
+Supported vacuums can map their segments to Home Assistant areas and use
+`vacuum.clean_area` from automations or voice. Refresh mappings when a Repair
+reports that the segment layout changed. Template vacuums can expose compatible
+room segments and cleaning actions too.
+
+### Use native infrared and radio-frequency proxies
+
+Device integrations can select native IR or RF transmitters supplied by ESPHome,
+Broadlink, or other supported integrations. A transmitter alone does not provide
+an appliance protocol; the corresponding device integration must implement it.
+IR receiver event entities can also turn original remote commands into automation
+events.
+
+### Model current energy and utility flow
+
+Energy configuration accepts cumulative energy plus live power, signed flow or
+separate import/export sensors, parent-child meters, downstream water meters, and
+battery capacity and state-of-charge data. Configure device hierarchy and battery
+capacity to avoid double counting and misleading aggregate charge percentages.
+
+### Prefer entity-backed controls
+
+Many former attributes and integration actions now have sensor, event, button,
+switch, select, number, update, notification, or siren entities. Entity-backed
+controls improve discoverability and targeting, but may require enabling a new
+entity and migrating exact references.
+
+Open [Integrations, Devices, and Protocols](references/integrations-devices.md)
+for device coverage and protocol details.
+
+## Dashboard and UI guidance
+
+- Overview and the other built-in dashboards derive organization from areas,
+  floors, labels, favorites, and primary sensors. Correct registry organization
+  before compensating with card-specific configuration.
+- Sections support backgrounds, spacing, auto height, sticky footers, strategies,
+  and richer card interactions. Theme overrides may be needed where defaults
+  changed.
+- Energy, Activity, protocol, Maintenance, Security, and device-management views
+  expose operational detail that previously required custom cards or developer
+  tools.
+- Target pickers show expanded entities for floors, areas, devices, and labels.
+  Use that preview to audit broad actions and visibility conditions.
+- Quick search covers navigation, commands, entities, devices, and areas; editor
+  tooling adds YAML linting, Jinja completion, hover values, and full-screen views.
+
+See [Dashboards and User Interface](references/dashboards-ui.md) before migrating
+an Areas or Home dashboard, changing card layouts, or relying on old navigation.
+
+## Custom integration checklist
+
+- Validate imports for moved discovery models and removed typed-dictionary fields.
+- Treat frozen core dataclasses as immutable and use current entity descriptions,
+  features, units, and device classes.
+- Migrate deprecated service registration helpers, device-tracker APIs, config
+  entry listeners, trigger initialization flags, and platform-mismatched IDs.
+- Do not assume one registry device can remain attached to multiple config entries.
+- Test config-entry reconfiguration, unique IDs, subentries, backup-agent progress,
+  OAuth errors, webhook reconfiguration, and update-coordinator retries.
+- Update frontend cards and custom panels for current typography, safe-area,
+  selector, dashboard-strategy, and entity-suggestion interfaces.
+
+Open [Custom Integration and Frontend Development](references/integration-development.md)
+for the detailed API and frontend migration notes.

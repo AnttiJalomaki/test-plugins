@@ -1,53 +1,44 @@
 # Playbooks, CLI, Inventory, and Galaxy
 
-These user-facing and compatibility changes are attributed to batch
-`2.19-2.20`.
+## Cache and inventory command options
 
-## Cache and CLI Options
+The `ansible`, `ansible-console`, and `ansible-pull` commands accept
+`--flush-cache` (`2.19-2.20`). Use it when the requested operation requires
+invalidating cached facts or inventory data.
 
-`ansible`, `ansible-console`, and `ansible-pull` support `--flush-cache`.
-Use it when a run must invalidate cached facts or inventory-derived data.
+Prefer `--inventory`; the `--inventory-file` alias is deprecated.
 
-The `--inventory-file` alias is deprecated; use `--inventory`.
-The `oneline` and `tree` callbacks and their `-o` and `-t` arguments are
-deprecated.
+## Inventory file discovery
 
-## Inventory Parsing
+`INVENTORY_IGNORE_EXTS` no longer contains `ini` by default. A file such as
+`inventory.ini` is therefore parsed unless `ini` is explicitly restored to the
+ignore list. Audit repositories that previously left unrelated `.ini` files in
+inventory search paths.
 
-The default `INVENTORY_IGNORE_EXTS` no longer includes `ini`. A file such as
-`inventory.ini` is therefore considered for inventory parsing unless `ini` is
-explicitly restored to the ignore list.
+## Tracebacks, warnings, and deprecations
 
-Audit repositories that keep non-inventory `.ini` files beside inventory
-sources. Either move those files, narrow inventory paths, or deliberately
-configure the ignore extension.
+`DISPLAY_TRACEBACK` controls traceback display. `-vvv` increases verbosity but
+is not the switch that enables tracebacks.
 
-## Diagnostics
+Task results expose emitted `warnings` and `deprecations`. Diagnostic tools and
+wrappers should consume those result fields rather than scraping display text.
 
-`-vvv` no longer enables tracebacks. Control traceback display with
-`DISPLAY_TRACEBACK`.
+## Deprecated playbook syntax
 
-Task results expose emitted `warnings` and `deprecations`. Tools that inspect,
-serialize, or redact task results should preserve and handle these fields.
+Replace these surfaces:
 
-## Deprecated Playbook Surfaces
+- `play_hosts` with `ansible_play_batch`.
+- `DEFAULT_MANAGED_STR` with an ordinary `ansible_managed` variable.
+- Mapping-form `action` with standard module task syntax.
 
-Replace `play_hosts` with `ansible_play_batch`.
+Remove empty `args` mappings. Do not combine `key=value` module arguments with
+an `args` mapping in one task.
 
-The following playbook forms are deprecated:
+## Play argument-spec validation
 
-- An empty `args` keyword.
-- Mapping-form `action`.
-- Combining `key=value` arguments with `args`.
-
-Normalize tasks to a module's YAML mapping form. `DEFAULT_MANAGED_STR` is also
-deprecated; define `ansible_managed` as an ordinary variable.
-
-## Play Argument-Spec Validation
-
-The `validate_argspec` play keyword is a tech preview added in 2.20. Setting
-it to `true` uses the required play `name` as the argument-spec name. A string
-selects a different spec. Specs live in `<playbook_name>.meta.yml`.
+Ansible 2.20 introduced tech-preview play validation through
+`validate_argspec`. The value `true` selects the play's required `name`; a
+string selects another entry in `<playbook_name>.meta.yml`.
 
 ```yaml
 # deploy.yml
@@ -66,11 +57,17 @@ argument_specs:
         required: true
 ```
 
-Keep the play name stable when it is also the spec selector, or use an
-explicit string selector.
+## Collection server compatibility
 
-## Galaxy Collection Servers
+Collection Galaxy servers must support API v3; v2 support was removed in 2.20.
+Upgrade private Galaxy-compatible servers before upgrading controllers.
 
-Collection servers used by Galaxy must implement API v3. API v2 support was
-removed in 2.20. Validate private Galaxy-compatible servers before upgrading
-controllers or execution environments.
+In `2.21.3`, `ansible-galaxy` retries a collection download when the response
+is shorter than expected. A truncated first response no longer fails
+immediately as an artifact-hash mismatch.
+
+## Vault filter compatibility
+
+The `vault` and `unvault` filters no longer accept `vaultid`. Remove that
+argument from filters and select vault identities through supported vault
+configuration and CLI mechanisms.

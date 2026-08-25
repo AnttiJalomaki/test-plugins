@@ -10,95 +10,75 @@ metadata:
 
 # pnpm Knowledge Patch
 
-Use this skill when maintaining pnpm workspaces, installs, lockfiles, package
-scripts, registries, publishing, or release automation. Start by identifying the
-project's pnpm major from `packageManager`, `devEngines.packageManager`, the
-lockfile, or CI setup. Apply version-specific guidance only to that major.
+Use this skill for pnpm configuration, installation, workspaces, dependency security, runtime management, publishing, and migration work. Match guidance to the project's pnpm version, especially for settings or commands that pnpm 11 removed or relocated.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migration-pnpm-11.md](references/migration-pnpm-11.md) | pnpm 10-to-11 codemod, breaking removals, configuration relocation, new defaults |
-| [build-scripts.md](references/build-scripts.md) | Dependency build approval, `allowBuilds`, strict failures, Git builds |
-| [configuration-hooks.md](references/configuration-hooks.md) | `pnpm-workspace.yaml`, config dependencies, patches, pnpmfiles, custom hooks |
-| [installs-lockfiles-store.md](references/installs-lockfiles-store.md) | Install semantics, lockfile integrity, stores, linkers, pacquet, dry runs |
-| [workspaces-catalogs-deploy.md](references/workspaces-catalogs-deploy.md) | Catalogs, workspace linking, injected dependencies, deploy, recursive execution |
-| [runtimes-scripts-cli.md](references/runtimes-scripts-cli.md) | Runtime provisioning, script behavior, initialization, diagnostics, CLI details |
-| [registries-auth-publishing.md](references/registries-auth-publishing.md) | Registry selection, credentials, TLS, package formats, global installs, publishing |
-| [security-audit-sbom.md](references/security-audit-sbom.md) | Release-age and trust policies, audit, signatures, SBOMs, dependency hardening |
-| [release-management.md](references/release-management.md) | Changes, versions, lanes, epics, staged releases, update automation |
+| [build-scripts.md](references/build-scripts.md) | Dependency lifecycle-script blocking, review, approvals, and `allowBuilds` |
+| [configuration-hooks.md](references/configuration-hooks.md) | Workspace configuration, config dependencies, patches, pnpmfiles, and hooks |
+| [installs-lockfiles-store.md](references/installs-lockfiles-store.md) | Installs, integrity, lockfiles, linkers, hoisting, and stores |
+| [migration-pnpm-11.md](references/migration-pnpm-11.md) | pnpm 10-to-11 codemod, removals, default changes, and migration checklist |
+| [registries-auth-publishing.md](references/registries-auth-publishing.md) | Registries, credentials, authentication, packing, and publishing |
+| [release-management.md](references/release-management.md) | Changes, recursive versioning, release lanes, epics, and update intents |
+| [runtimes-scripts-cli.md](references/runtimes-scripts-cli.md) | JavaScript runtimes, script behavior, initialization, globals, and CLI changes |
+| [security-audit-sbom.md](references/security-audit-sbom.md) | Release-age policy, trust, audit, signature checks, and SBOM output |
+| [workspaces-catalogs-deploy.md](references/workspaces-catalogs-deploy.md) | Workspaces, catalogs, peer resolution, recursive tasks, and deployment |
 
-## First: identify the configuration era
+## Breaking changes and migration
 
-For pnpm 10, settings may live in the `pnpm` field of `package.json`, `.npmrc`,
-or `pnpm-workspace.yaml`, depending on the pnpm 10 minor. Prefer camelCase
-workspace-file settings for an easier migration.
+### Start a pnpm 11 migration
 
-For pnpm 11, use these authoritative locations:
-
-- Put authentication and registry settings in `.npmrc`.
-- Put every other pnpm setting in `pnpm-workspace.yaml` with camelCase keys.
-- Put per-project migrated settings under `packageConfigs["<project-name>"]`.
-- Replace `npm_config_*` configuration variables with `pnpm_config_*`.
-- Use `pmOnFail` instead of the three package-manager strictness settings.
-- Use `allowBuilds` instead of all legacy dependency-build allow/deny settings.
-
-Do not copy a pnpm 11 setting back into a pnpm 10-only project without checking
-that the installed minor recognizes it.
-
-## pnpm 11 migration quick reference
-
-Run the mechanical migration at the workspace root:
+Run the codemod from the project root:
 
 ```sh
 pnpx codemod run pnpm-v10-to-v11
 ```
 
-Then complete the changes the codemod cannot safely infer:
+Then review the changes that require manual work:
 
-1. Require Node.js 22 or newer. The standalone executable also needs glibc
-   2.27 or newer, and pnpm itself is pure ESM.
-2. Move non-registry settings to `pnpm-workspace.yaml`; remove reliance on the
-   root `package.json#pnpm` field.
-3. Translate every `auditConfig.ignoreCves` entry to its GHSA identifier under
-   `auditConfig.ignoreGhsas`; a key rename alone is insufficient.
-4. Replace `package.json#pnpm.executionEnv.nodeVersion` in each subpackage with
-   that package's `devEngines.runtime` declaration.
-5. Replace `managePackageManagerVersions`, `packageManagerStrict`, and
-   `packageManagerStrictVersion` with `pmOnFail`.
-6. Remove `ignorePatchFailures`; patch application failures are always fatal.
-7. Convert dependency-build permissions to `allowBuilds`.
-8. Pass a filesystem path to `pnpm link`; package-name lookup in the global
-   store is gone.
-9. Replace argument-free `pnpm install -g`; install named packages with
-   `pnpm add -g <pkg>`.
-10. Remove `pnpm server` usage; it has no replacement.
-11. If a package script is named `clean`, `setup`, `deploy`, or `rebuild`, use
-    `pnpm pm <name>` when the built-in command is intended.
-12. Review registry commands: several are now native, while unsupported npm
-    passthrough commands fail with “not implemented.”
-13. Run `pnpm setup` so global binaries resolve from `PNPM_HOME/bin`.
+- Move all settings except authentication and registry settings to camelCase keys in `pnpm-workspace.yaml`.
+- Replace `managePackageManagerVersions`, `packageManagerStrict`, and `packageManagerStrictVersion` with `pmOnFail`.
+- Rename configuration environment variables from `npm_config_*` to `pnpm_config_*`.
+- Replace CVE entries under `auditConfig.ignoreCves` with GHSA entries under `auditConfig.ignoreGhsas`; the codemod cannot translate the identifiers.
+- Fix or remove failed dependency patches; `ignorePatchFailures` is removed.
+- Convert root `useNodeVersion` and subpackage `pnpm.executionEnv.nodeVersion` declarations to `devEngines.runtime`.
+- Replace legacy dependency-build settings with `allowBuilds`.
 
-Also account for the new install and security defaults. Notable defaults are
-`minimumReleaseAge: 1440`, `blockExoticSubdeps: true`,
-`strictDepBuilds: true`, `optimisticRepeatInstall: true`, and
-`verifyDepsBeforeRun: install`. Set `minimumReleaseAge: 0` only when the
-one-day maturity delay is intentionally unwanted.
+pnpm 11 requires Node.js 22 or newer. Its standalone executable also requires glibc 2.27 or newer.
 
-See [migration-pnpm-11.md](references/migration-pnpm-11.md) for command
-removals, global-install isolation, store migration, initialization, script
-environment changes, and the new maintenance commands.
+### Account for changed defaults
 
-## Dependency build permissions
+pnpm 11 defaults include:
 
-pnpm 10 blocks unapproved dependency lifecycle scripts. Earlier pnpm 10 minors
-use `onlyBuiltDependencies` for allowed packages and
-`ignoredBuiltDependencies` for explicit silent denials. An empty
-`neverBuiltDependencies` or `dangerouslyAllowAllBuilds` enables all builds and
-should be reserved for deliberately trusted dependency sets.
+```yaml
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: false
+blockExoticSubdeps: true
+strictDepBuilds: true
+optimisticRepeatInstall: true
+verifyDepsBeforeRun: install
+```
 
-The unified form is:
+Set `minimumReleaseAge: 0` to opt out of the one-day release-age delay.
+
+### Replace removed or changed commands
+
+- Use a filesystem path with `pnpm link`, such as `pnpm link ./foo`.
+- Use `pnpm add -g <pkg>` instead of argument-free `pnpm install -g`.
+- Do not use `pnpm server`; it has no replacement.
+- Use `pnpm pm clean`, `pnpm pm setup`, `pnpm pm deploy`, or `pnpm pm rebuild` when a package script shadows the built-in.
+- Use `pnpm runtime set` instead of `pnpm env use`.
+- Use `pnpm add -g .` instead of `pnpm link --global`.
+
+Read [migration-pnpm-11.md](references/migration-pnpm-11.md) before changing a pnpm 10 project or automation to pnpm 11.
+
+## Dependency build scripts
+
+### Use `allowBuilds` on pnpm 11
+
+pnpm 11 removes the legacy allowlists and denylists. Express both decisions in one map:
 
 ```yaml
 allowBuilds:
@@ -107,130 +87,145 @@ allowBuilds:
   nx@21.6.4 || 21.6.5: true
 ```
 
-In pnpm 11, this map is mandatory; the legacy controls are removed. Useful
-review commands include:
+Approve or deny named packages without an interactive selector:
+
+```sh
+pnpm approve-builds esbuild '!core-js'
+pnpm approve-builds --all
+```
+
+`--allow-build` permissions are persisted to `allowBuilds`. Git-hosted dependencies may be approved by repository URL without the resolved commit; a package-name-only entry does not approve a Git artifact.
+
+### Review pnpm 10 build scripts
+
+For pnpm 10 projects using legacy settings:
 
 ```sh
 pnpm ignored-builds
 pnpm approve-builds
-pnpm approve-builds --all
-pnpm approve-builds esbuild '!core-js'
+pnpm approve-builds --global
 ```
 
-Use `strictDepBuilds` to fail when a dependency has an unreviewed build. A Git
-dependency needs explicit approval too; current pnpm can approve its repository
-URL so the permission survives commit changes. See
-[build-scripts.md](references/build-scripts.md) for command-scoped approvals,
-global approvals, version matchers, and the exact Git behavior.
+Set `strict-dep-builds=true` to fail when a dependency has an unreviewed build script. Use `--allow-build=<name>` on `add`, `dlx`, or `create` for a scoped one-command allowance. Read [build-scripts.md](references/build-scripts.md) before translating these settings across major versions.
 
-## Safe installation and lockfile handling
+## Installation and lockfile safety
 
-Treat a locked tarball checksum mismatch as a supply-chain event. A normal
-install must not silently overwrite the checksum. Use the narrow opt-in only
-after validating why registry content changed:
+### Treat integrity failures as explicit decisions
+
+A non-frozen pnpm 10.34 install fails with `ERR_PNPM_TARBALL_INTEGRITY` instead of replacing a locked checksum. If current registry content should be accepted, use the narrow opt-in:
 
 ```sh
 pnpm install --update-checksums
 ```
 
-`--force`, `pnpm update`, and `--fix-lockfile` do not bypass this check. Missing
-tarball integrity is also fatal in pnpm 11 except for Git-hosted and local
-`file:` tarballs.
+`--force`, `pnpm update`, and `--fix-lockfile` do not bypass this check. A missing lockfile tarball integrity value is also fatal in pnpm 11, except for Git-hosted and local `file:` tarballs.
 
-Preview dependency resolution without filesystem changes:
+### Preview or constrain installation
 
 ```sh
 pnpm install --dry-run
-```
-
-For a hermetic read-only cache, combine a populated store with offline and
-frozen modes:
-
-```sh
+pnpm install --frozen-lockfile
 pnpm install --frozen-store --offline --frozen-lockfile
 ```
 
-In CI, an incompatible lockfile is fatal under frozen mode. A symlinked
-`pnpm-lock.yaml` may be read only when the install does not need to change it.
-Use [installs-lockfiles-store.md](references/installs-lockfiles-store.md) for
-lockfile migrations, virtual stores, hoisting, package maps, peer deduplication,
-and recovery from the installed lockfile snapshot.
+The dry run resolves and reports without changing manifests, the lockfile, or `node_modules`. Frozen-store mode requires a populated read-only store and preexisting build outputs. Consult [installs-lockfiles-store.md](references/installs-lockfiles-store.md) for its runtime requirements and incompatibilities.
 
-## Catalog and workspace essentials
+## Configuration and patches
 
-Use `catalog:` or `catalog:<name>` to centralize dependency versions. `pnpm add`
-can select a matching default catalog entry automatically, and these commands
-write catalog entries explicitly:
+pnpm 11 treats `pnpm-workspace.yaml` as the authoritative home for non-registry, non-authentication settings. Use camelCase keys. Project configuration updates preserve comments, string formatting, and whitespace.
+
+Use structured paths and JSON values when editing nested configuration:
+
+```sh
+pnpm config get catalog.react
+pnpm config set .ignoreScripts true
+pnpm config get --json catalog
+```
+
+Patch keys may be name-only, ranges, or exact versions; exact versions override ranges, and ranges override name-only entries. pnpm 11 makes every patch failure fatal. Read [configuration-hooks.md](references/configuration-hooks.md) for config dependencies, pnpmfile loading, hooks, and path restrictions.
+
+## Workspaces and catalogs
+
+Catalog-aware commands include:
 
 ```sh
 pnpm add --save-catalog lodash
 pnpm add --save-catalog-name=testing vitest
+pnpm dlx shx@catalog:
 ```
 
-Choose `catalogMode: strict` to reject requests outside the catalog, `prefer`
-to use compatible entries and otherwise fall back, or `manual` for no automatic
-catalog insertion. Use `cleanupUnusedCatalogs: true` only when install-time
-removal of unused entries is desired.
+`catalogMode` may be `manual`, `prefer`, or `strict`. Under a non-manual mode, an explicit compatible version on `add` or `update` moves the catalog resolution; strict mode still rejects an out-of-range version.
 
-For deployment, injected local workspace dependencies are hard-linked rather
-than symlinked. pnpm 10 requires `injectWorkspacePackages: true` for
-`pnpm deploy`; current deployment also supports catalog-managed workspaces and
-always creates a deployment-local virtual store.
+For deployment, pnpm 10 requires `inject-workspace-packages=true`. Deployment creates a local virtual store even when the global virtual store is enabled, and newer pnpm 11 versions support catalog-managed workspace dependencies.
 
-See [workspaces-catalogs-deploy.md](references/workspaces-catalogs-deploy.md)
-for link overrides, injected-file synchronization, concurrency, bare
-`workspace:` specifiers, `dlx` catalogs, and deployment lockfile behavior.
+Read [workspaces-catalogs-deploy.md](references/workspaces-catalogs-deploy.md) for injected-package synchronization, recursive packing, catalog pruning, peer schemes, and convergence overrides.
 
 ## Runtimes and scripts
 
-`devEngines.runtime` can lock Node.js, Deno, or Bun to an exact resolved version
-and checksum in `pnpm-lock.yaml`. pnpm-managed scripts then run with that local
-runtime. Use `pnpm runtime set` for project runtime declarations and
-`pnpm install --no-runtime` to skip fetching them without deleting lockfile
-entries.
+Declare project runtimes with `devEngines.runtime`; declare a runtime for a
+published dependency CLI and its postinstall with `engines.runtime`.
 
 ```sh
 pnpm runtime set node 24.0.0
 pnpm runtime set node 24.0.0 --save-prod
+pnpm install --no-runtime
 ```
 
-Dependency CLIs can similarly declare `engines.runtime`. Validate runtime ranges
-when `onFail` is `warn` or `error`; invalid versions are not silently ignored.
+The default `runtime set` target is `devEngines.runtime`; `--save-prod` writes
+`engines.runtime`. `--no-runtime` skips fetching and linking project runtimes
+without removing lockfile entries.
 
-Script automation should account for these details:
+Script output and environment behavior changed in pnpm 11. Command lines and
+reporter progress use stderr so stdout remains suitable for pipelines. Read
+[runtimes-scripts-cli.md](references/runtimes-scripts-cli.md) when scripts rely
+on `npm_config_*`, hidden script names, runtime ranges, or global installs.
 
-- `pnpm test` forwards trailing arguments without a `--` separator.
-- `pnpm run --no-bail` continues but exits nonzero after any failure.
-- Slash-delimited regular expressions select multiple scripts.
-- `--sequential` or `-s` forces workspace concurrency to one.
-- Script command banners and reporter progress use stderr where documented, so
-  stdout remains suitable for pipelines.
+## Audit, trust, and SBOMs
 
-See [runtimes-scripts-cli.md](references/runtimes-scripts-cli.md) for hidden
-scripts, environment variables, `pnpm why`, `pnpm doctor`, initialization,
-architecture overrides, and package-manager version selection.
+Release-age and trust controls include:
 
-## Registry, audit, and release operations
+```yaml
+minimumReleaseAge: 1440
+trustPolicy: no-downgrade
+trustLockfile: true
+```
 
-Keep credentials URL-scoped. For multiple scopes on one registry, use
-scope-qualified token keys. For file-free CI configuration, pass URL-scoped
-`pnpm_config_//...` variables through an environment facility that permits
-punctuation in names. Prefer the structured global `_auth` setting when a
-single trusted value must carry registry-wide and scope-specific credentials.
+`trustLockfile` is for lockfiles whose changes already pass trusted review; it
+skips rechecking release age and trust downgrade policy for locked entries.
 
-Before publishing or promoting packages:
+Useful verification and inventory commands include:
 
-- Use `pnpm audit signatures` to verify installed registry signatures.
-- Use `pnpm sbom` for CycloneDX or SPDX output; select, split, or exclude
-  peer-only trees as needed.
-- Use `pnpm pack --dry-run` to inspect the tarball file list.
-- Use staged publishing when a release must remain hidden until approval.
-- Use atomic recursive batch publishing only with a registry that implements
-  pnpm's batch endpoint.
+```sh
+pnpm audit signatures
+pnpm audit --fix=update --interactive
+pnpm sbom --out sbom.json
+pnpm sbom --split
+pnpm sbom --exclude-peers
+pnpm sbom --lockfile-only
+```
 
-For native workspace releases, use `pnpm change`, `pnpm change status`, and
-`pnpm version -r`; release lanes, epics, and dependency-update intents extend
-that workflow. See [registries-auth-publishing.md](references/registries-auth-publishing.md),
-[security-audit-sbom.md](references/security-audit-sbom.md), and
-[release-management.md](references/release-management.md) for the complete
-behavior and configuration.
+Read [security-audit-sbom.md](references/security-audit-sbom.md) for maturity
+exceptions, trust evidence, signature behavior, audit identifiers, and SBOM
+platform semantics.
+
+## Publishing and releases
+
+Registry credentials may be URL-scoped, scope-specific, or supplied in the
+trusted structured `_auth` form. Read
+[registries-auth-publishing.md](references/registries-auth-publishing.md)
+before moving credentials between project, global, CLI, and environment
+sources.
+
+For workspace release plans:
+
+```sh
+pnpm change
+pnpm change status
+pnpm version -r --dry-run
+pnpm version from-git
+```
+
+`pnpm change` creates intent files and `pnpm version -r` consumes them with
+workspace propagation. Release lanes, epics, changesets generated from updates,
+and GitHub Actions dependency updates are detailed in
+[release-management.md](references/release-management.md).

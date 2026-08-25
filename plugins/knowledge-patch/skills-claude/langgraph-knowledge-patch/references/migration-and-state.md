@@ -1,15 +1,11 @@
 # Migration and state
 
-## Agent and package migration
+## Agent construction and prebuilt replacements
 
-The `langgraph-v1` migration moves agent construction to LangChain while
-retaining LangGraph as the execution runtime and adding middleware support.
+The `langgraph-v1` migration moves React-agent construction to LangChain while
+retaining LangGraph as the execution layer and adding middleware support.
 
-### Agent factory
-
-Import `create_agent` from `langchain.agents` in Python or `createAgent` from
-`langchain` in JavaScript. Rename the prompt argument to `system_prompt` or
-`systemPrompt`, respectively.
+Python:
 
 ```python
 from langchain.agents import create_agent
@@ -21,6 +17,8 @@ agent = create_agent(
 )
 ```
 
+JavaScript:
+
 ```typescript
 import { createAgent } from "langchain";
 
@@ -31,32 +29,32 @@ const agent = createAgent({
 });
 ```
 
-### Python prebuilt replacements
+The import moves to `langchain`; rename Python `prompt` to `system_prompt` and
+JavaScript `prompt` to `systemPrompt`.
 
-Use these replacements when removing deprecated prebuilt APIs:
+Replace these Python prebuilt surfaces:
 
-| Deprecated surface | Replacement |
+| Previous API | Replacement |
 | --- | --- |
-| LangGraph `AgentState` import | `AgentState` from `langchain.agents` |
-| Pydantic or structured-response state variants | `AgentState` |
-| `HumanInterruptConfig`, `ActionRequest` | `InterruptOnConfig` |
+| LangGraph `AgentState` and its Pydantic or structured-response variants | `AgentState` from `langchain.agents` |
+| `HumanInterruptConfig` or `ActionRequest` | `InterruptOnConfig` |
 | `HumanInterrupt` | `HITLRequest` |
 | `ValidationNode` | Automatic tool-input validation in `create_agent` |
 | `MessageGraph` | `StateGraph` with a `messages` key |
 
-### Runtime and package output
+## Runtime and package output
 
-JavaScript LangGraph packages require Node.js 22 or newer. The Python-side
-LangChain packages require Python 3.10 or newer.
+JavaScript LangGraph packages require Node.js 22 or newer. Python-side
+LangChain packages require Python 3.10 or newer. JavaScript packages now ship
+bundled builds rather than raw TypeScript output, so replace private `dist/`
+imports with public package modules.
 
-JavaScript packages now publish bundled builds instead of raw TypeScript.
-Imports into private paths under `dist/` are unsupported; import from public
-package modules.
+## Modern JavaScript state schemas
 
-## JavaScript state schemas
-
-`StateSchema` is the recommended state API. It combines standard field schemas
-with LangGraph value types:
+Use `StateSchema` with standard field schemas and LangGraph value types.
+`MessagesValue` supplies message-aware reduction. `ReducedValue` combines a
+field schema and default with a reducer. `Annotation.Root` and direct Zod v3/v4
+integrations remain legacy alternatives.
 
 ```typescript
 import { MessagesValue, ReducedValue, StateSchema } from "@langchain/langgraph";
@@ -70,76 +68,18 @@ const State = new StateSchema({
 });
 ```
 
-`MessagesValue` provides message-aware reduction. `ReducedValue` takes the
-field schema and default plus a custom reducer. `Annotation.Root` and direct
-Zod v3/v4 integrations remain legacy alternatives.
-
 ## Python Pydantic validation boundary
 
-A Pydantic `BaseModel` may define graph state, but validation occurs only on
-input to the first node. Later node updates and final graph output are not
-validated through that model. The first node receives the validated model;
-`invoke` still returns a dictionary.
+A `BaseModel` may define graph state, but validation occurs only on input to the
+first node. That node receives the validated model; later updates and graph
+output are not automatically validated, and `invoke` returns a dictionary.
+Use `AnyMessage`, not `BaseMessage`, for message fields that must serialize over
+the wire.
 
-For message fields that must serialize over the wire, use `AnyMessage` rather
-than `BaseMessage`.
+## Runtime context outside graph state
 
-## Private and runtime-only state
-
-### Private channels remain visible in snapshots
-
-A node's input schema controls what it can read, not which channels it may
-update. Schemas declared by nodes can add private channels to the union of
-graph state.
-
-Input, output, and private schemas do not redact `values` streams. When a v3
-event stream must exclude private channels, filter snapshots with
-`output_keys` in Python or `outputKeys` in JavaScript:
-
-```python
-stream = graph.stream_events(
-    {"user_input": "My"},
-    version="v3",
-    output_keys=["graph_output"],
-)
-```
-
-### Bypass a reducer once
-
-In Python, wrap a replacement in `Overwrite` to bypass the channel's reducer
-for one update:
-
-```python
-from langgraph.types import Overwrite
-
-return {"items": Overwrite(["replacement"])}
-```
-
-### Exclude JavaScript values from checkpoints
-
-`UntrackedValue` holds execution-time state that starts fresh after resume and
-is excluded from checkpoints. Use it for connections, temporary caches, and
-similar runtime-only objects.
-
-```typescript
-const State = new StateSchema({
-  dbConnection: new UntrackedValue<DatabaseConnection>(),
-  tempCache: new UntrackedValue(z.record(z.string(), z.unknown()), {
-    guard: false,
-  }),
-});
-```
-
-Its default `guard: true` rejects multiple same-step writes. With
-`guard: false`, multiple writes are accepted and the last value wins.
-
-## Runtime context
-
-Runtime context carries dependencies and invocation data without making them
-graph state.
-
-In Python, declare `context_schema`, accept `Runtime[Context]`, read
-`runtime.context`, and pass the invocation's context with `context=`:
+Python graphs declare `context_schema`, nodes read `Runtime.context`, and
+callers pass `context=`:
 
 ```python
 from langgraph.graph import END, START, StateGraph
@@ -165,6 +105,40 @@ graph = (
 graph.invoke({}, context={"tenant": "acme"})
 ```
 
-In JavaScript, pass a context schema as the second `StateGraph` constructor
-argument, read `runtime.context`, and supply `{ context: ... }` in invocation
+JavaScript passes a context schema as the second `StateGraph` constructor
+argument, reads `runtime.context`, and supplies `{ context: ... }` in invocation
 options.
+
+## Uncheckpointed JavaScript values
+
+`UntrackedValue` holds connections, temporary caches, or other execution-only
+objects. It is excluded from checkpoints and starts fresh after resume. Its
+default `guard: true` rejects multiple writes in one step; `guard: false`
+permits them and retains the last value.
+
+```typescript
+const State = new StateSchema({
+  dbConnection: new UntrackedValue<DatabaseConnection>(),
+  tempCache: new UntrackedValue(z.record(z.string(), z.unknown()), {
+    guard: false,
+  }),
+});
+```
+
+## Reducer bypass with `Overwrite`
+
+A Python node can bypass a channel's reducer for one update by wrapping the
+replacement value:
+
+```python
+from langgraph.types import Overwrite
+
+return {"items": Overwrite(["replacement"])}
+```
+
+## Checkpoint-compatible graph changes
+
+Completed threads tolerate arbitrary topology changes. Interrupted threads
+cannot safely rename or remove nodes. Adding or removing state keys is
+compatible, but renaming a key loses its saved value, and incompatible type
+changes may break state stored by older threads.

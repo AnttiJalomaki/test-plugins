@@ -1,6 +1,8 @@
 {
   "patch": "expo-knowledge-patch",
-  "merged_at": "2026-07-26T21:35:35Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-21T04:47:08Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -11,6 +13,11 @@
       "build": "included"
     },
     "56": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-08-13": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

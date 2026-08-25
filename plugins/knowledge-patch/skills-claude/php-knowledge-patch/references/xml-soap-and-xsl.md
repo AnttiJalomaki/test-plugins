@@ -1,98 +1,117 @@
 # XML, SOAP, and XSL
 
-Use this reference for DOM, XPath, XML handlers, SimpleXML, SOAP, and XSLT
-behavior and migration.
+## XML parser and writer APIs
 
-## DOM and XML callbacks
+### Deprecated XML entry points (8.4-migration)
 
-### DOM and GMP object restrictions (8.4-migration)
+`xml_set_object()` is deprecated, as are non-callable method-name strings passed
+to `xml_set_*()`. `DOM_PHP_ERR` and obsolete DOM encoding and configuration
+properties are deprecated. `xml_parser_free()` is deprecated
+(8.5-migration) because the parser object is freed automatically.
 
-`DOMXPath` cannot be cloned, and `DOMImplementation::getFeature()` has been
-removed. `GMP` is final and cannot be subclassed.
-
-### XML handler callables (8.4-migration)
+### Handler callable migration (8.4-migration)
 
 XML handler setters enforce an effective `callable|string|null` handler type.
 Legacy method-name strings resolve only after `xml_set_object()` associates an
-object. Migrate to direct callables such as `[$handler, 'method']`;
-`xml_set_object()` and non-callable strings are deprecated.
+object. Migrate to direct callables such as `[$handler, 'method']`, because both
+that association API and non-callable strings are deprecated.
 
-### Native callables in DOM XPath (8.4.0)
+### XML exception tightening (8.4-migration)
+
+XMLReader and XMLWriter operations throw for invalid encodings, null bytes, or
+incompatible objects where applicable. Validate external input and update code
+that expected warnings or permissive coercion.
+
+## DOM and XPath
+
+### Object restrictions (8.4-migration)
+
+`DOMXPath` cannot be cloned, and `DOMImplementation::getFeature()` has been
+removed. Separately, `GMP` is final and cannot be subclassed.
+
+### Native XPath callables (8.4.0)
 
 `DOMXPath::registerPhpFunctions()` accepts any callable.
-`DOMXPath::registerPhpFunctionNs()` registers namespaced callbacks so XPath
-can call them with native function syntax rather than
-`php:function('name')`.
+`DOMXPath::registerPhpFunctionNs()` registers a callback under a namespace, so
+XPath can use native function syntax instead of `php:function('name')`.
 
-## SimpleXML behavior
+## SimpleXML
 
-### SimpleXML iteration no longer rewinds implicitly (8.4-migration)
+### Iterator position (8.4-migration)
 
 Calling methods such as `asXML()` or `getName()`, or casting a
-`SimpleXMLElement` to string, no longer resets its iterator. Call `rewind()`
-explicitly when needed.
+`SimpleXMLElement` to string, no longer resets its iterator. Loops that relied
+on an implicit reset must call `rewind()` explicitly.
 
-### SimpleXML and SOAP behavior (8.5-migration)
+### XPath result types (8.5-migration)
 
 `SimpleXMLElement::xpath()` warns and returns `false` when the expression
-produces something other than a node set. `SoapClient::__doRequest()` has an
-optional URI-parser class argument: `null` keeps `parse_url()`, while
-`Uri\Rfc3986\Uri` and `Uri\WhatWg\Url` select the new parser backends.
+produces something other than a node set.
 
-## SOAP types, serialization, and builds
+## SOAP
 
-### SOAP member type migrations (8.4-migration)
+### Function registration and member types (8.4-migration)
 
-`SoapClient::$httpurl` and `$sdl` are `Soap\Url` and `Soap\Sdl` objects, while
-`$typemap` is an array. Replace resource checks on these members with null
+Replace an integer such as `SOAP_FUNCTIONS_ALL` passed to
+`SoapServer::addFunction()` with an array of function names, such as a
+flattened `get_defined_functions()` result.
+
+`SoapClient::$httpurl` and `$sdl` are `Soap\Url` and `Soap\Sdl` objects, and
+`$typemap` is an array. Replace resource checks for these members with null
 checks.
 
-### SOAP build dependency (8.4-migration)
+### SOAP/session build interaction (8.4-migration)
 
 SOAP optionally depends on the session extension. A build without session but
 with `--enable-rtld-now` can fail at startup when SOAP loads. Avoid that flag
 combination or load the session extension.
 
-### SOAP class maps with namespaces (8.4.0)
+### Namespaced class maps (8.4.0)
 
-SOAP class-map keys may use Clark notation to disambiguate identically named
-types from different namespaces.
+SOAP class-map keys may use Clark notation to distinguish types with the same
+name in different namespaces.
 
 ```php
 $classMap = ['{http://example.com}foo' => 'FooClass'];
 ```
 
-### SOAP DateTime serialization (8.4.0)
+### Date/time serialization (8.4.0)
 
-`DateTimeInterface` instances supplied for `xsd:datetime` and similar SOAP
+`DateTimeInterface` instances supplied for `xsd:datetime` and related SOAP
 elements serialize as date/time values rather than empty strings.
 
-### SOAP schema and reason-language support (8.5.0)
+### Selectable URI parsing (8.5-migration)
+
+`SoapClient::__doRequest()` has an optional URI-parser class argument. `null`
+keeps `parse_url()`; `Uri\Rfc3986\Uri` and `Uri\WhatWg\Url` select the new
+parser backends.
+
+### Schema enums and reason languages (8.5.0)
 
 `SoapClient::__getTypes()` includes enumeration cases. SOAP 1.2 Reason Text
-supports `xml:lang`, exposed through an optional `lang` parameter on
+supports `xml:lang`, exposed by a new optional `lang` parameter on
 `SoapFault::__construct()` and `SoapServer::fault()`.
 
-## XSLT parameters, callbacks, and limits
+## XSLT
 
-### Quote-safe XSL parameters (8.4.0)
+### Validation and callback failures (8.4-migration)
 
-XSLT parameters may contain both single and double quotes without failing.
+XSL operations throw for null bytes, incompatible objects, invalid encodings,
+or failed PHP callbacks where applicable. Update callers that expected only a
+warning or permissive behavior.
 
-### Native XSL PHP callbacks (8.4.0)
+### Quote-safe parameters and native callbacks (8.4.0)
 
+XSLT parameters may contain both single and double quotes.
 `XSLTProcessor::registerPhpFunctions()` accepts any callable.
 
-### XSL evaluation limits (8.4.0)
+### Evaluation limits (8.4.0)
 
-`XSLTProcessor::$maxTemplateDepth` and
-`XSLTProcessor::$maxTemplateVars` control recursion depth and variable limits
-during XSL template evaluation.
+`XSLTProcessor::$maxTemplateDepth` and `$maxTemplateVars` control template
+recursion depth and variable limits.
 
-### Namespace-aware XSL parameters (8.5.0)
+### Namespace-aware parameters (8.5.0)
 
-The `namespace` argument of `XSLTProcessor::getParameter()`,
-`setParameter()`, and `removeParameter()` is effective. It applies when `name`
-is unqualified; Clark notation or a QName supplies the namespace through its
-URI or prefix.
-
+The `namespace` argument of `XSLTProcessor::getParameter()`, `setParameter()`,
+and `removeParameter()` takes effect when `name` is unqualified. Clark notation
+or a QName instead supplies the namespace through its URI or prefix.

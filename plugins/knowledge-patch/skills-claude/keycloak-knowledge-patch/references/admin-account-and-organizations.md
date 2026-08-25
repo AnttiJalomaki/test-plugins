@@ -3,25 +3,15 @@
 ## Client Admin API v2
 
 Enable experimental `client-admin-api:v2` for strictly validated, declarative
-OIDC and SAML client management (26.7.0). It is available through REST, Java,
-generated JavaScript, and CLI clients. The management interface also publishes
-its OpenAPI document.
+OIDC and SAML client management through REST, Java, generated JavaScript, CLI,
+or the `KeycloakOIDCClient` and `KeycloakSAMLClient` Operator custom resources.
+Its OpenAPI specification is available on the management interface. (26.7.0)
 
-The Operator uses this API for `KeycloakOIDCClient` and `KeycloakSAMLClient`
-custom resources.
-
-### Filtering and projection
-
-`GET /admin/api/{realmName}/clients/v2` accepts a `q` expression with this SCIM
-subset:
-
-- Comparison operators: `eq`, `ne`, `co`, `sw`, `ew`, and `pr`.
-- Boolean operators: `and`, `or`, and `not`.
-- Parentheses for grouping.
-
-String comparisons are case-sensitive and string literals require double
-quotes. Boolean literals are unquoted. Malformed expressions, unknown fields,
-and unsupported ordering operators `gt`, `ge`, `lt`, and `le` return HTTP 400.
+`GET /admin/api/{realmName}/clients/v2` accepts a `q` expression using the SCIM
+subset `eq`, `ne`, `co`, `sw`, `ew`, and `pr`, combined with `and`, `or`, `not`,
+and parentheses. Strings are case-sensitive and double-quoted; booleans are
+unquoted. Malformed filters, unknown fields, and `gt`, `ge`, `lt`, or `le`
+return HTTP 400.
 
 ```bash
 curl -G -H "Authorization: Bearer $TOKEN" \
@@ -30,131 +20,96 @@ curl -G -H "Authorization: Bearer $TOKEN" \
   https://keycloak.example/admin/api/myrealm/clients/v2
 ```
 
-For collection fields such as `roles` and `redirectUris`, `eq`, `co`, `sw`,
-and `ew` match when any element matches. `ne` means no element equals the
-given value. Repeat a predicate with `and` when multiple different values must
-all be present.
-
-Protocol-specific fields are genuinely null for the other client protocol.
-Select these with `eq null` or `not ... pr`. The `fields` parameter projects
-the response only after filtering the complete representation.
+For collection fields such as `roles` and `redirectUris`, `eq`, `co`, `sw`, and
+`ew` match when any element matches; `ne` means no element equals the value.
+Repeat a condition with `and` to require multiple values. Protocol-specific
+fields are actually null for the other client type and can be selected with
+`eq null` or `not ... pr`. Apply `fields` projection after filtering the full
+representation.
 
 ## Account REST feature boundaries
 
-The `ACCOUNT_API` gate controls sessions, credentials, UMA resources,
-organizations, verifiable-credential resources, applications, and application
-consents. These routes return 404 when the feature is unavailable.
+When `ACCOUNT_API` is disabled, sessions, credentials, UMA resources,
+organizations, verifiable-credential resources, applications, and
+application-consent operations return 404. The profile root,
+`supportedLocales`, `linked-accounts`, and groups are not guarded by that check.
 
-The profile root, `supportedLocales`, `linked-accounts`, and groups are not
-guarded by that feature check in this service.
+Profile GET requires `manage-account` or `view-profile` and includes user-profile
+metadata unless `userProfileMetadata=false`. Profile POST requires
+`manage-account`, validates in the `ACCOUNT` user-profile context, and returns
+204 on success.
 
-### Profile
+## Account application discovery
 
-Profile GET requires `manage-account` or `view-profile`. It includes
-user-profile metadata unless `userProfileMetadata=false`.
+`GET /applications?name=` requires `manage-account` or `view-applications`. It
+returns the union of clients used by online sessions, offline sessions,
+existing consents, and clients configured to always appear in the account
+console. Bearer-only clients are excluded. `name` is a case-insensitive
+substring match on the configured client name, not the client ID.
 
-Profile POST requires `manage-account`, validates the data in the `ACCOUNT`
-user-profile context, and returns 204 on success.
+## Account consent CRUD
 
-### Application discovery
+At `/applications/{clientId}/consent`, GET accepts `briefRepresentation`
+(default `true`) and returns 204 when no consent exists; DELETE also returns
+204. POST and PUT are both upserts rather than separate create and replace
+operations.
 
-`GET /applications?name=` requires `manage-account` or `view-applications`.
-Its result is the union of clients found in:
+Granted-scope IDs must resolve to realm client scopes, or to the client itself
+when its consent is required. Parameterized client scopes are rejected with
+HTTP 400. Reading consent requires `manage-account`, `view-consent`, or
+`manage-consent`; changing or deleting it requires `manage-account` or
+`manage-consent`.
 
-- online sessions;
-- offline sessions;
-- existing consents; and
-- clients configured to always display in the account console.
+## SCIM provisioning
 
-Bearer-only clients are excluded. `name` is a case-insensitive substring match
-against the configured client name, not the client ID.
+Enable preview `scim-api`; it is disabled by the default profile. The API
+manages realm users and groups with CRUD, PATCH, filtering, pagination,
+Enterprise User extensions, and schema discovery. (26.7.0)
 
-### Application consent
+SCIM uses the standard `name.formatted` field, not the misspelled
+`name.formated` spelling fixed in 26.7.2.
 
-At `/applications/{clientId}/consent`:
-
-- GET accepts `briefRepresentation`, which defaults to `true`, and returns 204
-  when no consent exists.
-- DELETE returns 204.
-- POST and PUT are both upserts, not separate create and replacement
-  operations.
-- Granted-scope IDs must resolve to realm client scopes, or to the client
-  itself when client consent is required.
-- Parameterized client scopes are rejected with HTTP 400.
-
-Reading consent requires `manage-account`, `view-consent`, or
-`manage-consent`. Creating, changing, or deleting it requires
-`manage-account` or `manage-consent`.
+```json
+{"name":{"formatted":"Ada Lovelace"}}
+```
 
 ## Delegated organization administration
 
-Keycloak 26.7.0 adds three coarse-grained realm roles:
+Use `manage-organizations`, `view-organizations`, and `query-organizations` for
+coarse-grained write, read, and search access. `manage-realm` retains full
+access. Viewing members also requires `view-users` or an equivalent
+fine-grained permission. Organizations can themselves be fine-grained
+admin-permission resources, permitting view or manage access to selected
+organizations and filtering member queries by user-level visibility. (26.7.0)
 
-| Realm role | Access |
-|---|---|
-| `manage-organizations` | Organization write access |
-| `view-organizations` | Organization read access |
-| `query-organizations` | Organization search access |
+Fine-Grained Admin Permissions protect the Role Groups endpoint and prevent
+group-hierarchy searches from exposing hidden parent groups. The parameterized
+`UserPropertyMapper` also checks permission before exposing a target user's
+attributes. (26.7.2)
 
-Viewing organization members additionally requires `view-users` or an
-equivalent fine-grained permission. `manage-realm` retains unrestricted
-organization access.
-
-Organizations are also resources in fine-grained admin permissions. Grant
-view or manage rights to particular organizations and filter member queries by
-the caller's user-level visibility.
-
-## Organization group role inheritance
+## Organization group roles in tokens
 
 Realm and client roles assigned to an organization group propagate to every
-member's `realm_access` and `resource_access` token claims (26.7.0).
-
-Enabling *Add group role mappings* on the OIDC or SAML
-*Organization Group Membership* mapper also organizes those roles by
-organization inside the `organization` claim.
+member's `realm_access` and `resource_access` claims. Enable *Add group role
+mappings* on the OIDC or SAML *Organization Group Membership* mapper to group
+those roles per organization in the `organization` claim. (26.7.0)
 
 ## Organization response compatibility
 
-In 26.7.0:
+Organization-member listings return brief users by default from 26.7; request
+`briefRepresentation=false` for full records. Invitation `email`, `firstName`,
+and `lastName` filters are case-insensitive exact matches, while `search`
+remains a substring match. Organization-group representations return empty or
+populated `realmRoles` and `clientRoles` instead of null, and general user-by-ID
+queries no longer return service accounts.
 
-- Organization-member listing returns brief users by default; request
-  `briefRepresentation=false` for full user records.
-- Invitation filters `email`, `firstName`, and `lastName` are
-  case-insensitive exact matches. `search` remains substring matching.
-- Organization-group representations return empty or populated `realmRoles`
-  and `clientRoles` collections instead of null.
-- General user-by-ID queries no longer return service accounts.
+Adding an organization member works with `stateless:v1` enabled after the fix
+in 26.7.2.
 
-## Realm and identity-provider queries
+## Realm and role administration
 
-Realm search matches both the technical realm name and the human-readable
-display name (26.7.0).
+Realm search matches both the technical realm name and human-readable display
+name. Account for either field when interpreting search results. (26.7.0)
 
-From 26, ordinary realm representations no longer embed identity providers;
-exports still do. API consumers must query the dedicated identity-provider
-instances endpoint and use its filtering and pagination.
-
-An identity-provider alias becomes immutable after creation in 26.7.0.
-Attempting to change it through Admin REST returns HTTP 400.
-
-## User representation attributes
-
-From 24, `UserRepresentation.getAttributes()` contains custom attributes only.
-Root fields such as username, email, first and last name, and locale remain
-dedicated properties inherited from `AbstractUserRepresentation`.
-
-Server-side code can call `getRawAttributes()` when it needs a combined map.
-That method is not part of the serialized representation payload.
-
-## Authorization resource URI validation
-
-Authorization Services validates resource URI templates on create and update
-in 26.7.0:
-
-- Placeholders must be nonempty and cannot contain `/`.
-- A wildcard is valid only as trailing `/*` or in a valid suffix such as
-  `/*.html`.
-- Unmatched braces are invalid.
-
-Existing malformed values remain stored until updated. Audit every resource's
-`uris` before upgrading so later edits do not fail unexpectedly.
+Non-master realms can update a custom realm-level role named exactly `admin`;
+26.7.2 fixes the regression that blocked such updates.

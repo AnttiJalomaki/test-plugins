@@ -1,109 +1,178 @@
-# PKI and cryptography
+# PKI and Cryptography
 
-Use this reference for PKI issuance and validation, ACME and enrollment protocols, Transit algorithms and workflows, managed keys, KMIP, FIPS, Common Criteria, and cryptographic resource limits.
+Use this reference for Transit, PKI, ACME, SCEP, KMIP, managed keys, TLS, and
+cryptographic compatibility.
 
-## Transit algorithms
+## Transit and key operations
 
-- Transit adds experimental ML-DSA signatures. Later fixes ensure stored ML-DSA and SLH-DSA keys remain usable after their policies reload.
-- Experimental SLH-DSA signatures are available from 1.20.
-- Enterprise supports Ed25519ph and Ed25519ctx signing and verification.
-- RSA encryption accepts `pkcs1v15` padding.
-- Enterprise supports 192-bit keys for AES CMAC (since 1.20).
-- Enterprise adds AES-CBC encryption and decryption (since 1.21).
+### Transit cryptography additions (`1.19-changelog`)
 
-## Transit workflows
+Transit adds experimental ML-DSA signatures, Enterprise Ed25519ph and
+Ed25519ctx signing/verification, and RSA encryption with `pkcs1v15` padding.
+Stored ML-DSA and SLH-DSA keys remain usable after policy reloads in later
+fixes.
 
-- The datakeys and derived-keys endpoints accept `context` for encrypting derived data-encryption keys (Enterprise, since 1.21).
-- Rewrap supports managed keys (Enterprise, since 1.21).
-- Transit supports envelope encryption from 2.0: applications encrypt or decrypt bulk data locally while Vault protects the data-encryption keys.
-- Core and Transit random-byte APIs allow larger responses and can return pseudorandom bytes seeded from random sources. Large requests consume proportionally more memory.
+### Additional Transit algorithms (`1.20-changelog`)
 
-## TLS, FIPS, and asymmetric bounds
+Transit adds experimental SLH-DSA signatures. Enterprise also supports 192-bit
+AES CMAC keys.
 
-- FIPS builds use a FIPS 140-3 cryptographic module and compliant algorithms.
-- The Go TLS stack supports X25519MLKEM768 hybrid post-quantum key agreement.
-- Enterprise KMIP RSA generation enforces a minimum size of 2048 bits.
-- The SSH secrets engine caps RSA keys at 8192 bits from 1.19.18.
+### Transit additions (`1.21-changelog`)
 
-## Issuer validation
+Enterprise Transit supports AES-CBC encryption/decryption, `context` on
+datakeys and derived-key endpoints for derived DEKs, and managed keys on the
+rewrap endpoint.
 
-- PKI enforces issuer extended-key-usage, name-constraint, and issuer-name extensions when issuing or signing leaf certificates.
-- A signing CA's `max_path_length` constrains `root/sign-intermediate`.
-- Manual chains reject unusable issuers. Enterprise issuer fields can disable selected chain validations where an exception is explicitly required.
-- `leaf_not_after_behavior = "always_enforce_err"` rejects TTLs extending past the issuer even for CA issuance and ACME.
-- Issuance respects the configured maximum TTL.
+### MSSQL EKM Transit key-version control (`1.21`)
 
-## Subject names and role constraints
+The MSSQL EKM provider lets an administrator choose the Transit key versions
+used to wrap and unwrap SQL Server data-encryption keys, including during
+encrypted-backup restoration.
 
-- Roles accept `serial_number_source`.
-- Root and intermediate creation supports permitted and excluded email, IP, URI, and DNS name constraints.
-- Role `alt_names` accept glob-style DNS names.
-- `allow_token_displayname` is deprecated and targeted for removal in April 2027. Replace it with constraints such as `allowed_domains`, `allow_bare_domains`, `allow_subdomains`, or `allow_glob_domains` (`upgrade-safety`).
+### Managed-key usage response (`2.0-changelog`)
 
-## Chains and Common Criteria mode
+`GET sys/managed-keys/:type/:name` returns usage names rather than numeric IDs:
+`encrypt`, `decrypt`, `sign`, `verify`, `wrap`, `unwrap`, `generate_random`, and
+`mac`. Update consumers that decode integers.
 
-Enterprise `common_criteria_mode`:
+### Random-byte APIs (`2.0-changelog`)
 
-- restricts listener TLS cipher suites;
-- validates the full certificate chain;
-- can enable validation-time checks;
-- treats `NotBefore` as zero;
-- enforces minimum key usages for extended-key-usage sets; and
-- rejects uploaded certificates that lack a chain of trust.
+Core and Transit random-byte endpoints permit larger results and pseudorandom
+bytes seeded from random sources. Large requests use proportionally more
+memory.
 
-Test both issuance and uploaded-certificate paths before enabling it.
+### Multi-region AWS KMS keys (`2.0-changelog`)
 
-## CRLs and distribution points
+The Enterprise key-management secrets engine supports multi-region AWS KMS
+keys.
 
-- Set `max_crl_entries` to prevent an unbounded CRL from exhausting Vault resources.
-- Mount- and issuer-level AIA data can advertise Freshest CRLs.
-- Base CRLs include the Freshest CRL extension (since 1.20).
+### Transit envelope encryption (`2.0`)
 
-## ACME validation and administration
+Transit can protect data-encryption keys while applications encrypt and decrypt
+bulk data locally.
 
-- `challenge_permitted_ip_ranges` and `challenge_excluded_ip_ranges` constrain HTTP-01 and TLS-ALPN-01 validation targets.
-- APIs can list account key IDs, fetch account, order, and certificate detail, and update account status.
-- ACME validation failures return ACME-specific error types.
-- The Enterprise PKI External CA plugin can acquire public-CA certificates through ACME (since 2.0).
-- Vault Agent can execute those ACME workflows natively, and Agent templates re-render when an external-CA certificate is issued or renewed.
+### PKCS#11 managed-key token selection (`2.0.4`)
 
-## SCEP, EST, and CMPv2
+Enterprise PKCS#11 managed keys make `slot` and `token_label` strictly mutually
+exclusive and accept slot values wider than 32 bits. To change addressing
+mode, clear the old identifier in the same request:
 
-- SCEP, EST, and CMPv2 can issue certificates without the `server_flag` key usage.
-- Enterprise PKI exposes a SCEP server for clients that do not use Vault APIs (since 1.20).
-- SCEP can use an issuer backed by an RSA PKCS#11 managed key.
-- Enterprise SCEP roles enforce `token_bound_cidrs` (since 1.21).
-- `GetCACaps` reflects configured encryption and digest algorithms and advertises `POSTPKIOperation`.
+```json
+{"slot":"","token_label":"hsm-token"}
+```
 
-## PKI response and integration APIs
+### Managed-key Transit certificate operations (`2.0.4`)
 
-- Issue, sign, and fetch responses include the certificate `AuthorityKeyID` (since 1.21).
-- Enterprise `batch/certs` fetches multiple certificates.
-- Enterprise `integrations/guardium` configures the Guardium integration.
-- `sign-verbatim` copies a CSR basic-constraints extension when `isCA=false` and rejects it when `isCA=true`.
+Enterprise Transit accepts managed keys on CSR-signing and certificate-chain
+setting endpoints.
 
-## Managed keys and KMIP
+## Cryptographic runtime constraints
 
-- Enterprise GCP managed keys accept workload identity federation credentials.
-- `GET sys/managed-keys/:type/:name` returns usage names rather than integer IDs: `encrypt`, `decrypt`, `sign`, `verify`, `wrap`, `unwrap`, `generate_random`, and `mac` (since 2.0). Update typed clients and decoders.
-- Enterprise SSH secrets can use managed keys to sign SSH keys (since 1.20).
-- KMIP APIs manage multiple client-verification CAs and import external CAs (since 2.0).
-- Enterprise also has an experimental API for executing KMIP requests.
-- The Enterprise key-management secrets engine supports multi-region AWS KMS keys.
+### FIPS and TLS cryptography (`1.19-changelog`)
 
-## Password-generation entropy
+FIPS builds use a FIPS 140-3 module and compliant algorithms. Go TLS supports
+X25519MLKEM768 hybrid post-quantum key agreement.
 
-Enterprise password-generation policies can select an entropy source, including `seal` for entropy augmentation (since 1.21).
+### Asymmetric key-size bounds (`1.19-changelog`)
 
-## MSSQL external key management
+Enterprise KMIP RSA generation requires at least 2048 bits. From 1.19.18, SSH
+secrets-engine RSA keys are capped at 8192 bits.
 
-The MSSQL EKM provider lets administrators choose which Transit key versions wrap and unwrap SQL Server data-encryption keys. This supports restoring encrypted backups that depend on a specific wrapping-key version (since 1.21).
+### Password-generation entropy (`1.21-changelog`)
 
-## PKI review checklist
+Enterprise password-generation policies can choose an entropy source,
+including `seal` for entropy augmentation.
 
-1. Resolve edition, feature maturity, issuer, role, key type, and backing managed key.
-2. Validate name constraints, EKUs, path length, chain usability, TTL, and requested subject data together.
-3. Bound CRL size and ACME validation networks.
-4. Confirm protocol capabilities for SCEP, EST, CMPv2, External CA, and Agent automation.
-5. Update clients for named managed-key usages and `AuthorityKeyID` response data.
-6. Load-test memory-sensitive random-byte and revocation workflows.
+### Common Criteria mode (`2.0-changelog`)
+
+Enterprise `common_criteria_mode` restricts listener TLS cipher suites. PKI
+validates full chains, can enforce validation-time checks, treats `NotBefore`
+as zero, enforces minimum key usages for extended-key-usage sets, and rejects
+uploaded certificates without a trust chain.
+
+## PKI issuance, chains, and revocation
+
+### PKI issuer constraints and chains (`1.19-changelog`)
+
+PKI enforces issuer extended-key-usage, name-constraint, and issuer-name
+extensions for leaf issuance/signing. A signing CA's `max_path_length` limits
+`root/sign-intermediate`. Unusable issuers reject manual chains; Enterprise
+issuer fields can disable selected chain validations.
+
+### PKI expiry and subject controls (`1.19-changelog`)
+
+`leaf_not_after_behavior = "always_enforce_err"` rejects overlong TTLs for CA
+issuance and ACME as well as leaves. Roles support `serial_number_source`, and
+issuance honors maximum TTL.
+
+### PKI names and protocol usages (`1.19-changelog`)
+
+Root/intermediate creation supports remaining permitted/excluded email, IP,
+URI, and DNS name constraints. Role `alt_names` accepts glob DNS names. SCEP,
+EST, and CMPv2 can issue without the `server_flag` key usage.
+
+### PKI CRL guardrail (`1.19-changelog`)
+
+Set `max_crl_entries` to keep a runaway revocation list from overloading Vault.
+
+### Delta CRL distribution points (`1.20-changelog`)
+
+Mount- and issuer-level AIA can advertise Freshest CRLs, and base CRLs carry
+the Freshest CRL extension.
+
+### PKI response and integration APIs (`1.21-changelog`)
+
+PKI issue, sign, and fetch responses include `AuthorityKeyID`. Enterprise adds
+`batch/certs` for fetching certificates in bulk and `integrations/guardium`
+configuration.
+
+### PKI CSR constraints (`1.21-changelog`)
+
+`sign-verbatim` copies a CSR basic-constraints extension when `isCA=false` and
+rejects it when `isCA=true`.
+
+### PKI token-display-name role constraint (`upgrade-safety`)
+
+`allow_token_displayname` is deprecated and targeted for removal in April
+2027. Replace it with `allowed_domains`, `allow_bare_domains`,
+`allow_subdomains`, or `allow_glob_domains` constraints.
+
+## ACME, SCEP, External CA, and KMIP
+
+### ACME validation and administration (`1.19-changelog`)
+
+Use `challenge_permitted_ip_ranges` and `challenge_excluded_ip_ranges` to
+control HTTP-01 and TLS-ALPN-01 validation destinations. APIs can list account
+key IDs, read account/order/certificate details, and update account status.
+Validation failures return ACME-specific error types.
+
+### PKI SCEP server (`1.20-changelog`)
+
+Enterprise PKI provides SCEP for non-Vault-API clients. It can use an issuer
+backed by an RSA PKCS#11 managed key.
+
+### Managed-key SSH signing (`1.20-changelog`)
+
+The Enterprise SSH secrets engine can sign SSH keys with managed keys.
+
+### SCEP role and capability enforcement (`1.21-changelog`)
+
+Enterprise SCEP roles enforce `token_bound_cidrs`. `GetCACaps` reflects chosen
+encryption and digest algorithms and advertises `POSTPKIOperation`.
+
+### PKI External CA and Agent ACME (`2.0-changelog`)
+
+The Enterprise External CA plugin obtains public-CA certificates through ACME.
+Vault Agent runs those ACME flows natively, and templates re-render when an
+External CA certificate is issued or renewed.
+
+### KMIP CA and request APIs (`2.0-changelog`)
+
+KMIP APIs manage multiple client-verification CAs and import external CAs.
+Enterprise also has an experimental KMIP-request execution API.
+
+### External CA PEM bundle contents (`2.0.4`)
+
+For Enterprise External CA responses with `certificate_format=pem_bundle`, the
+`certificate` field now includes the private key. Treat it as sensitive and
+parse the extra PEM block.

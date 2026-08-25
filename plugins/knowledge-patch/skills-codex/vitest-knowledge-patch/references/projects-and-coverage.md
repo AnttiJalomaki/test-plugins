@@ -1,34 +1,12 @@
 # Projects and Coverage
 
-Relevant versioned source batches: `3.2.0`, `4.0.0`, and `4.1.0`.
-
-## Contents
-
-- [Resolve project entries](#resolve-project-entries)
-- [Understand the root config boundary](#understand-the-root-config-boundary)
-- [Give every project a unique identity](#give-every-project-a-unique-identity)
-- [Order groups of projects](#order-groups-of-projects)
-- [Opt into AST-aware V8 remapping](#opt-into-ast-aware-v8-remapping)
-- [Load a custom coverage reporter](#load-a-custom-coverage-reporter)
-- [Load a custom coverage provider](#load-a-custom-coverage-provider)
-- [Ignore coverage regions with both providers](#ignore-coverage-regions-with-both-providers)
-- [Exclude precise V8 constructs](#exclude-precise-v8-constructs)
-- [Distinguish changed tests from changed coverage](#distinguish-changed-tests-from-changed-coverage)
-- [Integrate custom coverage HTML](#integrate-custom-coverage-html)
-- [Toggle coverage through the public API](#toggle-coverage-through-the-public-api)
-
 ## Resolve project entries
 
-`test.projects` accepts a mixture of:
+Use root-level `test.projects`; the previous workspace forms were deprecated in 3.2.0. Entries can mix inline configurations, direct config paths, directories, and glob patterns. A matched directory becomes a project even when it has no config file.
 
-- Inline project configurations
-- Direct paths to project configuration files
-- Directories
-- Glob patterns, including negated patterns
+A matched file must use a supported naming form: `vitest.config*`, `vite.config*`, `vitest.<name>.config.*`, or `vite.<name>.config.*`. The embedded name may contain only letters, numbers, `_`, or `-`.
 
 ```ts
-import { defineConfig } from 'vitest/config'
-
 export default defineConfig({
   test: {
     projects: [
@@ -40,113 +18,54 @@ export default defineConfig({
 })
 ```
 
-A matched directory becomes a project even if it has no config file. A matched file must use one of these naming families:
+## Understand root configuration and inheritance
 
-- `vitest.config.*`
-- `vite.config.*`
-- `vitest.<name>.config.*`
-- `vite.<name>.config.*`
-
-The `<name>` segment can contain only letters, numbers, `_`, and `-`.
-
-## Understand the root config boundary
-
-The root `vitest.config` coordinates a multi-project run but is not automatically a test project. Include it explicitly if it should also discover tests.
-
-Separate project config files inherit none of the root test options. Merge shared configuration explicitly for file-based projects. Use `defineProject` in a project config so the type checker rejects properties that are not supported at project scope.
-
-An inline project can merge root options with `extends: true`:
+The root `vitest.config` is not itself a test project unless explicitly included. Separate project config files inherit none of its test options. Inline projects can merge root configuration with `extends: true`:
 
 ```ts
 export default defineConfig({
   test: {
     projects: [{
       extends: true,
-      test: {
-        name: 'unit',
-        include: ['**/*.unit.test.ts'],
-      },
+      test: { name: 'unit', include: ['**/*.unit.test.ts'] },
     }],
   },
 })
 ```
 
-Root plugins still run configuration and server hooks. They are also used by global setup and custom coverage providers even though root test options are not automatically inherited.
+Root plugins still run their configuration and server hooks and are used by global setup and custom coverage providers. `coverage`, `reporters`, and `resolveSnapshotPath` are root-only. Use `defineProject` in file-based project configs so unsupported properties fail type checking, and merge shared configuration explicitly when those projects need common settings.
 
-The following are root-only rather than per-project options:
+## Name and schedule projects
 
-- `coverage`
-- `reporters`
-- `resolveSnapshotPath`
+Every resolved project name must be unique or Vitest throws. Unnamed inline projects receive numeric names. Glob-discovered projects use the nearest `package.json` name, falling back to the folder name.
 
-## Give every project a unique identity
-
-Every resolved project name must be unique; Vitest throws on duplicates.
-
-- Unnamed inline projects receive numeric names.
-- Glob-discovered projects use the nearest `package.json` name when available.
-- Without a package name, a glob-discovered project uses its folder name.
-
-Set `test.name` to a string or to an object with a reporter label and color:
+Since 3.2.0, a project name can supply a reporter label and color:
 
 ```ts
-export default defineProject({
-  test: {
-    name: {
-      label: 'unit',
-      color: 'red',
-    },
-  },
-})
+test: {
+  name: { label: 'unit', color: 'red' },
+}
 ```
 
-The object form gives projects distinct labels in reporter output.
-
-## Order groups of projects
-
-Set `sequence.groupOrder` in a project's test config to schedule project groups from the lowest number to the highest:
+Also since 3.2.0, `sequence: { groupOrder: number }` schedules lower-numbered groups first. Projects with the same number run together; without the option, all projects run in parallel.
 
 ```ts
-export default defineProject({
-  test: {
-    sequence: {
-      groupOrder: 0,
-    },
-  },
-})
+test: {
+  name: 'unit',
+  sequence: { groupOrder: 0 },
+}
 ```
 
-Projects with the same value still run together. Without `groupOrder`, all projects run in parallel.
+## Use custom coverage reporters
 
-## Opt into AST-aware V8 remapping
-
-`coverage.experimentalAstAwareRemapping: true` aligns V8 coverage remapping more closely with Istanbul:
-
-```ts
-export default defineConfig({
-  test: {
-    coverage: {
-      experimentalAstAwareRemapping: true,
-    },
-  },
-})
-```
-
-This was opt-in in `3.2.0` and was intended to replace the older V8 remapper in the following major. Treat the option as migration-sensitive when maintaining configuration that spans releases.
-
-## Load a custom coverage reporter
-
-`coverage.reporter` accepts an npm package name or an absolute path to a local module. Either can be paired with reporter options:
+`coverage.reporter` accepts an npm package name or an absolute local path, optionally paired with reporter options. The module must implement Istanbul's reporter interface, for example by extending `ReportBase` from `istanbul-lib-report`.
 
 ```ts
 export default defineConfig({
   test: {
     coverage: {
       reporter: [
-        [
-          '@acme/coverage-reporter',
-          { file: 'coverage/custom.txt' },
-        ],
+        ['@acme/coverage-reporter', { file: 'coverage/custom.txt' }],
         '/absolute/path/to/local-reporter.cjs',
       ],
     },
@@ -154,11 +73,11 @@ export default defineConfig({
 })
 ```
 
-The module must implement Istanbul's reporter interface. A typical implementation extends `ReportBase` from `istanbul-lib-report`.
+Custom reporters can set `coverage.htmlDir` so HTML output integrates with the Vitest UI and HTML reporter, including subpath deployments (4.1.0).
 
-## Load a custom coverage provider
+## Implement a custom coverage provider
 
-Select `provider: 'custom'` and name the module through `customProviderModule`:
+Select `provider: 'custom'` and set `customProviderModule` to a package name or path. The module must default-export a `CoverageProviderModule`; `getProvider()` returns the `CoverageProvider`, and its `initialize` method receives the Vitest context.
 
 ```ts
 export default defineConfig({
@@ -171,13 +90,17 @@ export default defineConfig({
 })
 ```
 
-The module, loaded by package name or path, must default-export a `CoverageProviderModule`. Its `getProvider()` method returns a `CoverageProvider` instance. The provider's `initialize` method receives the Vitest context.
+## Distinguish changed tests from changed coverage
 
-Root plugins remain active for a custom provider, which is one reason plugin setup belongs in the root configuration.
+`coverage.changed` or `--coverage.changed` runs the selected test set but limits the report to modified files (4.1.0). `--changed` instead narrows which tests run.
 
-## Ignore coverage regions with both providers
+```sh
+vitest --coverage.changed
+```
 
-Both V8 and Istanbul recognize start/stop regions. Add `-- @preserve` so transforms retain the directives:
+## Preserve coverage ignore regions
+
+Both V8 and Istanbul recognize start/stop regions as of 4.1.0. Preserve ignore comments through transforms with `-- @preserve`:
 
 ```ts
 /* v8 ignore start -- @preserve */
@@ -185,16 +108,13 @@ unreachablePlatformCode()
 /* v8 ignore stop -- @preserve */
 ```
 
-For Istanbul, use the corresponding `istanbul ignore start` and `istanbul ignore stop` directives with the same preservation suffix.
+Use the corresponding `istanbul ignore start` and `istanbul ignore stop` directives for Istanbul.
 
-## Exclude precise V8 constructs
+V8 also supports finer exclusions:
 
-V8 coverage supports more granular directives:
-
-- `v8 ignore if` excludes the `if` branch.
-- `v8 ignore else` excludes the `else` branch.
-- `v8 ignore next` can exclude the next statement, function, class, conditional, try/catch, or switch case.
-- `v8 ignore file` excludes an entire file.
+- `v8 ignore if` and `v8 ignore else` exclude one branch.
+- `v8 ignore next` can exclude the following statement, function, class, conditional, try/catch, or switch case.
+- `v8 ignore file` excludes a whole file.
 
 ```js
 /* v8 ignore if */
@@ -205,22 +125,8 @@ else runPortablePath()
 export class UnsupportedRuntime {}
 ```
 
-Placing `/* v8 ignore next */` between `catch (error)` and the catch body excludes the whole catch. That exact placement requires Rolldown Vite; esbuild does not support it.
+Placing `/* v8 ignore next */` between a `catch (error)` clause and its body excludes the whole catch only with Rolldown Vite; esbuild does not support that placement.
 
-## Distinguish changed tests from changed coverage
+## Account for V8 remapping history
 
-`coverage.changed` and `--coverage.changed` run the complete selected test set but restrict coverage reporting to modified files:
-
-```sh
-vitest --coverage.changed
-```
-
-This differs from `--changed`, which narrows the tests that run.
-
-## Integrate custom coverage HTML
-
-Custom coverage reporters can set `coverage.htmlDir`. Vitest then integrates their HTML output with the UI and HTML reporter, including applications deployed under a subpath.
-
-## Toggle coverage through the public API
-
-Programmatic integrations can enable and disable coverage dynamically with `enableCoverage` and `disableCoverage`. These are part of the redesigned public Vitest API; see [Reporters and integrations](reporters-and-integrations.md) for the surrounding lifecycle and run-control methods.
+Vitest 3.2.0 offered `coverage.experimentalAstAwareRemapping: true` to align V8 coverage remapping more closely with Istanbul. It was opt-in and intended to replace the older remapper in the next major, so remove assumptions that all 3.2-era runs used the same remapping behavior.

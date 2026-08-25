@@ -1,12 +1,12 @@
-# Hosted runner images
-
-Use this reference when selecting Windows or macOS hosted-runner labels and
-validating architecture-sensitive builds.
+# Hosted Runner Images
 
 ## Windows Server 2025 with Visual Studio 2026
 
-The dedicated `windows-2025-vs2026` hosted-runner image provides a
-public-preview validation path alongside `windows-2025`.
+The dedicated `windows-2025-vs2026` label provides a public-preview validation
+path alongside `windows-2025`. Its migration into `windows-2025` was scheduled
+to start June 8, 2026. Use the dedicated label when validating Visual Studio
+2026 explicitly, and verify image status before treating the toolchain as
+stable.
 
 ```yaml
 jobs:
@@ -16,14 +16,11 @@ jobs:
       - run: echo test
 ```
 
-Migration of this image into `windows-2025` was scheduled to begin June 8,
-2026. Keep an explicit label while isolating Visual Studio 2026 validation,
-and reassess image assumptions as that migration proceeds.
-
-## macOS 26 Intel larger runners
+## macOS 26 on Intel
 
 The public-preview macOS 26 Intel image is available to larger runners under
-the `macos-26-large` label.
+`macos-26-large`. Select it when Intel architecture is part of the test target;
+do not infer architecture from the macOS release alone.
 
 ```yaml
 jobs:
@@ -33,17 +30,17 @@ jobs:
       - run: uname -a
 ```
 
-Use the explicit Intel label when architecture affects native dependencies,
-build products, or test behavior.
-
 ## M2 macOS larger runners
 
-M2-powered macOS larger runners are generally available under:
+M2-powered macOS runners are generally available under these labels:
 
 - `macos-latest-xlarge`
 - `macos-15-xlarge`
 - `macos-14-xlarge`
 - `macos-13-xlarge`
+
+Use a release-specific label when image movement would harm reproducibility;
+use `macos-latest-xlarge` only when following the latest M2 image is intended.
 
 ```yaml
 jobs:
@@ -52,7 +49,3 @@ jobs:
     steps:
       - run: uname -m
 ```
-
-Choose a versioned label when image drift matters. Use
-`macos-latest-xlarge` only when following the moving latest image is
-intentional.

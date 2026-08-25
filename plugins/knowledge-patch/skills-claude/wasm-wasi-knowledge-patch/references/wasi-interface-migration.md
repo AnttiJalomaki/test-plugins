@@ -1,63 +1,63 @@
 # WASI Interface Migration
 
-The migration and initial toolchain guidance in this reference is attributed to
-`wasi-0.3-guide`. Ratified service and middleware semantics are also confirmed
-by `wasi-0.3.0`.
+Use this reference when deciding whether to migrate a 0.2 component or when
+rewriting I/O, HTTP, sockets, filesystems, clocks, and CLI interfaces. The
+migration details come from source batch `wasi-0.3-guide`.
 
-## Decide whether to migrate
+## Interoperation with WASI 0.2
 
-WASI 0.3 is additive rather than a forced migration:
+WASI 0.3 is additive, not a mandatory migration. Hosts can continue exposing
+0.2. A 0.3 runtime can polyfill 0.2 by translating its imports into native 0.3
+primitives at the host boundary.
 
-- A host can continue exposing WASI 0.2.
-- A 0.3 runtime can polyfill 0.2 by translating its imports into native 0.3
-  primitives at the host boundary.
-- Migration is chiefly needed for composable cross-component async or the
-  reshaped 0.3 interfaces.
-
-Preserving a working 0.2 component is therefore a valid compatibility choice.
+Migration is mainly required when a design needs composable cross-component
+async behavior or the reshaped 0.3 interfaces.
 
 ## Replace `wasi:io`
 
-The `wasi:io` package has no 0.3 release. Replace its resources and operations
-as follows:
+The `wasi:io` package has no 0.3 release. Translate its main resources and
+operations as follows:
 
-| 0.2 construct | 0.3 construct |
+| WASI 0.2 | WASI 0.3 |
 | --- | --- |
 | `pollable` | `future<T>` |
 | `input-stream` | `stream<u8>` |
-| `output-stream` | `stream<u8>` passed into the consuming call |
-| polling | awaiting a future |
-| `subscribe()` | returning a future from the operation |
+| `output-stream` | A `stream<u8>` supplied to a call |
+| Polling | Awaiting a future |
+| `subscribe()` | Returning a future from the operation |
 
-Read-like operations separate data from completion:
+## Read data and completion independently
+
+A read-like operation returns a data stream and a separate terminal-result
+future:
 
 ```wit
 read-via-stream: func(offset: filesize)
     -> tuple<stream<u8>, future<result<_, error-code>>>;
 ```
 
-The terminal future resolves even if the caller samples or drops the stream
-early. Filesystem reads, stdin, TCP receives, and directory listings use this
-shape.
+The future resolves even if the caller reads only part of the stream or drops
+it. The caller therefore need not drain all data to learn whether the operation
+succeeded. Stdin, TCP receive, and directory-listing APIs use the same shape.
 
-Writes reverse the direction of data transfer:
+## Pass write data toward the host
+
+The guest no longer obtains a host-owned `output-stream` and pushes bytes into
+it. Instead, pass a `stream<u8>` to the host and receive a future that completes
+after the host consumes the stream:
 
 ```wit
 write-via-stream: func(data: stream<u8>)
     -> future<result<_, error-code>>;
 ```
 
-The guest passes the stream to the host rather than obtaining a host-owned
-output stream. This applies to stdout, stderr, filesystem writes, and TCP
-sends.
+Stdout, stderr, filesystem write, and TCP send operations use this direction.
 
 ## Collapse two-step operations
 
 Replace a 0.2 `start-foo`/`finish-foo` pair and its intervening `pollable` with
-one operation.
-
-Use `async func` when the host operation actually suspends, as TCP connect
-does:
+one operation. A host-suspending operation such as TCP connect becomes
+`async func`:
 
 ```wit
 connect: async func(remote-address: ip-socket-address)
@@ -67,69 +67,43 @@ connect: async func(remote-address: ip-socket-address)
 An operation whose split only enabled nonblocking dispatch, such as bind or
 listen, may become an ordinary `func`.
 
-## Migrate HTTP components
+## Reshape HTTP
 
-The 0.3 `wasi:http` interface reduces the former nine request, response, body,
-out-parameter, and future resources to `request` and `response`.
-
-- Bodies are `stream<u8>`.
-- Trailers use a future.
-- The handler returns its response directly.
+`wasi:http` reduces nine request, response, body, out-parameter, and future
+resources to `request` and `response`. Bodies use `stream<u8>`, and trailers
+use a future. The handler returns the response directly:
 
 ```wit
 handle: async func(request: request) -> result<response, error-code>;
 ```
 
-The `service` world replaces the endpoint role previously represented by
-`proxy`. It imports the HTTP `client` and exports the incoming `handler`.
+The `service` world replaces `proxy`. The new `middleware` world both imports
+and exports the handler.
 
-The `middleware` world includes `service` and imports a downstream `handler`.
-It is the direct successor to the 0.2 `proxy` world for middleware composition.
+## Move socket capabilities to the world
 
-```wit
-world service {
-    import client;
-    export handler;
-}
+`wasi:sockets` removes the `network` resource that 0.2 passed through bind,
+connect, and name lookup. Grant network access at the world level instead.
 
-world middleware {
-    include service;
-    import handler;
-}
-```
+Seven socket interfaces consolidate into `types` and `ip-name-lookup`. TCP
+`listen` returns `stream<tcp-socket>` directly rather than requiring a distinct
+accept loop.
 
-## Migrate socket capabilities
-
-The 0.2 `network` resource is removed. Instead of threading that resource
-through bind, connect, and name lookup, grant network access at the world
-level.
-
-The former seven socket interfaces consolidate into:
-
-- `types`;
-- `ip-name-lookup`.
-
-TCP `listen` returns `stream<tcp-socket>` directly, so a separate accept loop
-interface is no longer needed.
-
-## Update other interfaces
+## Account for other interface changes
 
 - Some filesystem methods become `async func`.
-- `wasi:clocks/wall-clock` is renamed to `system-clock`.
-- The clocks `datetime` type is renamed to `instant`.
-- CLI interfaces share types through `wasi:cli/types`.
+- `wasi:clocks` renames `wall-clock` to `system-clock`.
+- `wasi:clocks` renames `datetime` to `instant`.
+- CLI interfaces share the new `wasi:cli/types` interface.
 
-## Check initial toolchain requirements
+## Initial toolchain requirements
 
-For the initial WASI 0.3 release:
+For the initial 0.3 release:
 
-| Tool or binding | Requirement |
-| --- | --- |
-| Wasmtime | 46 or newer; WASI 0.3 and `component-model-async` enabled by default |
-| `wit-bindgen` | 0.46 or newer with the `async` feature |
-| `wkg` | 0.15 or newer for 0.3 packages |
-| jco | `preview3-shim` for JavaScript host bindings |
-
-Rust builds currently require nightly. Stable Rust bundles a
-`wasm-component-ld` that is too old for the WASI 0.3 output generated by
-`wit-bindgen` 0.58.
+- Use Wasmtime 46 or newer; WASI 0.3 and `component-model-async` are enabled by
+  default there.
+- Use `wit-bindgen` 0.46 or newer with its `async` feature.
+- Use `wkg` 0.15 or newer for 0.3 packages.
+- Use jco's `preview3-shim` for JavaScript host bindings.
+- Use nightly Rust while stable Rust bundles a `wasm-component-ld` too old for
+  the 0.3 output generated by `wit-bindgen` 0.58.

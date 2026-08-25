@@ -1,171 +1,156 @@
 # Configuration, Security, and Observability
 
-## Configuration loading and validation
+## Configuration and runtime
 
-### Parameterized CIDR authorization
+### Parameterized CIDR authorizer configuration
 
-`CassandraCIDRAuthorizer` retains and applies configured parameters (since
-5.0.3). Deployments can parameterize the authorizer without those values being
-discarded while the configuration is applied.
+`CassandraCIDRAuthorizer` applies configured parameters instead of losing them
+(since 5.0.3). Keep parameterized authorizer settings in the intended
+configuration path and verify them after startup.
 
-### Audit logging startup validation
+### Startup validation for audit logging
 
 `audit_logging_options` are sanitized and validated during startup (since
-5.0.3). A malformed audit configuration should be handled as a startup
-configuration error rather than something that will remain latent until audit
-logging is exercised.
+5.0.3). Malformed audit settings should be treated as startup configuration
+errors.
 
-### Default YAML
+### Valid default YAML when options are uncommented
 
-Optional entries in the distributed `cassandra.yaml` remain valid YAML when
-uncommented (since 5.0.4). This also matters to downstream configuration
-templating and parsing tools that start from the default file.
+Optional entries in the default `cassandra.yaml` remain parseable when
+uncommented (since 5.0.4), including when downstream configuration tooling
+processes the file.
 
-### Unified Compaction sizes
+### Null tombstones in FQL batches
 
-Unified Compaction validates its minimum and target size settings correctly
-(since 5.0.5). Invalid size combinations are rejected; do not rely on an
-invalid combination being accepted and normalized later.
+Full Query Logging batch statements support null column-value tombstones
+(since 5.0.4). Logging and replay tooling must preserve these null entries.
 
-### Initial disk-usage configuration
+### Full Java 17 support
+
+Cassandra supports running fully on Java 17 (since 5.0.5). Align service,
+diagnostic, and build runtimes when standardizing on Java 17.
+
+### First boot with a disk-usage limit
 
 Configuring `data_disk_usage_max_disk_size` before the data directory exists
-does not crash a node on first boot (since 5.0.5). It is safe to provision the
-limit as part of an initial configuration rather than deferring it until after
-the directory has been created.
+does not crash a node on first boot (since 5.0.5).
 
-### Table-name length
+### Forced optimized index-status format
 
-DDL rejects table names that would lead to filenames that are too long (since
-5.0.6). Identifier-generating automation should surface this validation error
-and choose a shorter name instead of expecting a later filesystem failure.
+`IndexStatusManager` can be forced to use the optimized index-status format
+when automatic selection is unsuitable (since 5.0.7).
 
-## Authorization and identity
+### Correct failure-detector maximum-interval default
 
-### Corrected authorization boundaries
+The failure detector calculates its default maximum interval correctly (since
+5.0.7). Clusters that retain the default may observe changed failure-detection
+timing after an upgrade.
 
-Authorization checks around data-center handling, authorizers, and system
-keyspaces are stricter (since 5.0.3). Requests previously accepted because of
-overly broad access can be rejected after an upgrade. Re-test roles that
-operate on system resources or depend on data-center-scoped behavior.
+### Type checking for reflectively loaded extensions
 
-### Virtual system keyspaces
+Cassandra verifies the required type of a reflectively loaded extension before
+initializing the class (since 5.0.9). An incompatible class is rejected before
+its initialization side effects occur.
 
-Permissions can be granted on `system_views` and
-`system_virtual_schema` (since 5.0.5):
+## Authorization and secrets
+
+### Stricter authorization boundaries
+
+Authorization is tighter for data-center and authorizer handling and for
+system keyspaces (since 5.0.3). Access inadvertently allowed by older releases
+may now be rejected; grant only the required permissions explicitly.
+
+### Grants on virtual system keyspaces
+
+Permissions can be granted on `system_views` and `system_virtual_schema`
+(since 5.0.5):
 
 ```cql
 GRANT SELECT ON KEYSPACE system_views TO monitoring_role;
 GRANT SELECT ON KEYSPACE system_virtual_schema TO monitoring_role;
 ```
 
-Use explicit grants for monitoring roles rather than assuming these virtual
-system keyspaces cannot participate in normal authorization.
-
-### Identity binding
+### Superuser identity-binding restriction
 
 A regular user cannot bind an identity to a superuser (since 5.0.7).
-Provisioning must perform such an association with authority appropriate to
-the target superuser; a workflow driven by an ordinary user is rejected.
+Provisioning flows must use a suitably privileged actor for that association.
 
-### Password-change rate limiting
+### Rate-limited password changes
 
-Password changes are rate-limited (since 5.0.7). Provisioning and rotation
-clients must tolerate rejection or delay when they submit rapid repeated
-changes; they should not assume every immediate rotation attempt is accepted.
+Password changes are rate-limited (since 5.0.7). Rotation automation should
+pace requests and handle a rate-limit rejection instead of assuming every
+rapid repeated change succeeds.
 
-## Guardrail administration
+### Broader password obfuscation
 
-### Configuration commands
+`PasswordObfuscator` masks password forms that were previously missed (since
+5.0.9). Logs and diagnostics should no longer expose those forms, but callers
+must still avoid emitting secrets through unrelated fields.
 
-Guardrail configuration is exposed by the finalized, simplified
-`nodetool getguardrailsconfig` and `setguardrailsconfig` interface (since
-5.0.5):
+## Guardrails
+
+### Guardrail configuration commands
+
+`nodetool getguardrailsconfig` and `setguardrailsconfig` expose guardrail
+configuration with the simplified final command interface (since 5.0.5):
 
 ```shell
 nodetool getguardrailsconfig
 ```
 
-Use `setguardrailsconfig` with the intended setting arguments. Automation
-should target this final command interface rather than an earlier draft shape.
-
-### Disabling a tripped disk guardrail
+### Disabling a tripped disk-usage guardrail
 
 The disk-usage guardrail can be disabled after its failure threshold has
-already been reached (since 5.0.7). A tripped state no longer prevents the
-administrative disable operation.
+already been reached (since 5.0.7). Operators can recover configuration control
+without first clearing the tripped condition.
 
-## Virtual settings inventory
+## Virtual tables and management interfaces
 
-### JSON values
+### JSON values in `system_views.settings`
 
-Complex values in `system_views.settings` are represented as JSON (since
-5.0.6). Consumers must parse those fields as JSON rather than depending on the
-older representation.
+Complex settings are represented as JSON in `system_views.settings` (since
+5.0.6). Parse those values as JSON instead of relying on the earlier
+representation.
 
-### Sensitive-value redaction
+### Prepared-statement invalidation over JMX
 
-Security-sensitive values in `system_views.settings` are redacted (since
-5.0.6). Monitoring and configuration-inventory systems must treat redaction as
-expected and must not use the view as a source from which to reconstruct
-secrets.
+`StorageService.dropPreparedStatements` is exposed through JMX (since 5.0.6),
+allowing management clients to invalidate prepared statements.
 
-### Configuration coverage
+### Sensitive-settings redaction
 
-Settings that had been missing from `system_views.settings` are present again
-for backward compatibility (since 5.0.7). Inventory consumers can discover
-those configurations through the virtual table, while still applying the JSON
-and redaction rules above.
+`system_views.settings` redacts security-sensitive information (since 5.0.6).
+Monitoring and configuration-inventory consumers must not expect secret values
+from the view.
 
-## JMX management surfaces
-
-### Prepared-statement invalidation
-
-`StorageService.dropPreparedStatements` is exposed over JMX (since 5.0.6).
-Management clients can invalidate prepared statements through the
-`StorageService` interface.
-
-### Native connection limit
+### Native connection cap over JMX
 
 `StorageProxyMBean` exposes
-`NativeTransportMaxConcurrentConnectionsPerIp` (since 5.0.6). JMX monitoring
-can read the configured per-IP native transport connection cap directly.
+`NativeTransportMaxConcurrentConnectionsPerIp` (since 5.0.6), making the
+per-IP native transport connection limit available to JMX clients.
 
-### Bootstrap visibility
+### Complete `system_views.settings` configuration coverage
 
-The `StorageService` JMX MBean is available while a node is bootstrapping
-(since 5.0.5). Bootstrap-aware automation does not need to wait for the node to
-finish bootstrap before using that MBean.
+Configuration rows previously missing from `system_views.settings` are
+included again for backward compatibility (since 5.0.7). Inventory consumers
+can discover those settings through the virtual table.
 
-## Diagnostics and operational expectations
+### Non-string keys in `system_views.settings`
 
-### SAI table statistics
+Queries against `system_views.settings` tolerate settings containing
+non-string keys (since 5.0.9). Consumers should still parse the resulting
+structured representation rather than assuming every key is a string.
 
-`nodetool tablestats` includes selected SAI index state and query-performance
-metrics (since 5.0.3):
+## Operational signals
 
-```shell
-nodetool tablestats
-```
+### No heap dumps for handled exceptions
 
-Use the existing table-statistics command when diagnosing SAI state rather
-than assuming index detail requires a separate command.
+Handled exceptions do not generate heap dumps (since 5.0.7). Incident tooling
+must not wait for or require a dump artifact when Cassandra catches and handles
+an exception.
 
-### Failure-detector timing
-
-The default maximum interval used by the failure detector is calculated
-correctly (since 5.0.7). Clusters that leave the value at its default may see
-different failure-detection timing after upgrading, even without an explicit
-configuration change.
-
-### Handled exceptions
-
-Exceptions that Cassandra catches and handles no longer generate heap dumps
-(since 5.0.7). Incident automation should not require a dump artifact as proof
-that such an exception occurred.
-
-### Direct-memory reporting
+### Correct direct-memory reporting in `nodetool gcstats`
 
 `nodetool gcstats` reports direct-memory usage correctly (since 5.0.7).
-Monitoring baselines built from earlier incorrect values should be recalibrated
-before interpreting a post-upgrade change as a memory regression.
+Monitoring should consume the corrected value after upgrading rather than
+applying compensation for the old output.

@@ -10,231 +10,153 @@ metadata:
 
 # Gradle Knowledge Patch
 
-Use this patch when writing, reviewing, upgrading, or troubleshooting Gradle
-builds, plugins, TestKit integrations, or Tooling API clients. Start with the
-quick references below, then open only the topic files relevant to the task.
+Use this skill when upgrading, configuring, debugging, or extending Gradle builds. Start with the project wrapper version and the plugins actually applied, then use the reference that matches the work at hand.
+
+## How to use this patch
+
+1. Read `gradle/wrapper/gradle-wrapper.properties` before proposing version-sensitive syntax.
+2. Inspect `settings.gradle(.kts)`, root and convention-plugin build scripts, and `gradle.properties` for active feature flags.
+3. For a Gradle 9 upgrade, apply the breaking-change checklist before introducing newer APIs.
+4. Preserve lazy configuration: prefer providers, `register`, role-based configuration factories, and deferred publication inputs.
+5. Distinguish daemon JVM requirements from Java compilation and test toolchains.
+6. Verify report consumers when changing test engines, report structures, timestamps, attachments, or aggregation.
+7. Treat incubating APIs and feature previews as opt-in behavior that can still change.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [configuration-cache-and-laziness.md](references/configuration-cache-and-laziness.md) | Configuration Cache behavior, integrity checks, providers, lazy configurations, attributes, and immutable collections |
-| [daemon-cli-and-platforms.md](references/daemon-cli-and-platforms.md) | Daemon JVMs, Java and native platforms, Wrapper behavior, console modes, reports, distributions, and CLI diagnostics |
-| [dependencies-publishing-and-distribution.md](references/dependencies-publishing-and-distribution.md) | Dependency APIs, artifact transforms, publishing, signing, distributions, repositories, ANTLR, and EAR |
-| [gradle-9-upgrade.md](references/gradle-9-upgrade.md) | Gradle 9 runtime floors, language changes, removed APIs, task behavior, archives, and migration replacements |
-| [testing-and-quality.md](references/testing-and-quality.md) | Test task inputs, discovery, reports, metadata, TestKit, PMD, validation, and default quality-tool versions |
-| [tooling-problems-and-build-logic.md](references/tooling-problems-and-build-logic.md) | Tooling API, Problems API, plugin build logic, Kotlin and Groovy DSL behavior, layouts, and plugin IDs |
+| [Gradle 9 upgrade](references/gradle-9-upgrade.md) | Runtime and plugin floors, removed APIs, Kotlin and Groovy changes, archives, tests, publications |
+| [Configuration Cache and laziness](references/configuration-cache-and-laziness.md) | Cache modes and correctness, Isolated Projects, providers, lazy configurations and collections |
+| [Daemon, CLI, Wrapper, and platforms](references/daemon-cli-and-platforms.md) | JVM toolchains, daemon behavior, consoles, Wrapper security and reliability, platform support |
+| [Testing, reports, and quality tools](references/testing-and-quality.md) | Test discovery and events, HTML/XML reports, TestKit, ANTLR, PMD, validation |
+| [Dependencies, publishing, and distributions](references/dependencies-publishing-and-distribution.md) | Resolution, repositories, verification, publications, distributions, reproducible archives |
+| [Tooling API, Problems API, and build logic](references/tooling-problems-and-build-logic.md) | Tooling models and streaming, structured problems, plugin authoring, layout and diagnostics |
 
-## Gradle 9 migration: fix these first
+## Breaking changes first
 
-### Run the daemon on Java 17 or newer
+### Gradle 9 runtime and language baselines
 
-Gradle 9 requires JVM 17+ for the daemon. Compilation, tests, and workers can
-still target older Java versions through toolchains. A launcher or Tooling API
-client may itself run on JVM 8, but it must be able to locate a JVM 17+ daemon.
+- Run the daemon on Java 17 or newer. Older targets remain available through Java toolchains.
+- Expect embedded Kotlin 2.2 and Groovy 4 behavior in scripts and build logic.
+- Check plugin compatibility floors before changing the wrapper, especially Kotlin DSL, Android, and enterprise build plugins.
+- Ensure every included project maps to an existing writable directory.
 
-Also verify the surrounding plugin floors:
+See [Gradle 9 upgrade](references/gradle-9-upgrade.md) for exact compatibility floors and migration details.
 
-- Kotlin Gradle Plugin 2.0.0 or newer.
-- Android Gradle Plugin 8.4.0 or newer.
-- Gradle Enterprise Plugin 3.13.1 or newer.
-- Kotlin DSL plugins built with Gradle 9 normally require Gradle 8.11+.
-- Groovy DSL plugins built with Gradle 9 require Gradle 7.0+.
+### Removed build-layout and convention APIs
 
-### Update embedded-language assumptions
+Do not use `-c`/`--settings-file`, `-b`/`--build-file`, `GradleBuild.buildFile`, or the removed `Convention` APIs. Use standard settings and build locations, extensions, direct task configuration, and the `base` extension.
 
-Gradle 9 embeds Kotlin 2.2.0 and uses Kotlin language version 2.2 in scripts,
-build logic, and plugins. Remove script-instance labels such as
-`this@Build_gradle`; use `project`, `settings`, or `gradle`.
+Replace removed Kotlin DSL domain-object shortcuts and eager provider access. Apply Develocity by explicit plugin ID, stop relying on removed bundled Groovy modules and `org.gradle.util` helpers, and replace removed process helpers in build logic.
 
-Gradle 9 also embeds Groovy 4.0.27. Recompile Groovy plugins and test `super`
-resolution and closure access to private parent members. `@CompileStatic`
-avoids the changed delegate-first dynamic lookup in the latter case.
+### Test tasks require explicit intent
 
-### Replace removed entry points
+Custom `Test` tasks no longer inherit the built-in `test` source set. Set `testClassesDirs` and `classpath`, or model the target with JVM test suites. A test task with sources, no filters, and no discovered tests now fails unless `failOnNoDiscoveredTests` is deliberately disabled.
 
-| Removed behavior | Replacement |
-| --- | --- |
-| `-c` / `--settings-file`, `-b` / `--build-file`, `GradleBuild.buildFile` | Use conventional settings and build locations |
-| `Convention`, `getConvention()` | Extensions; configure `war`/`ear` tasks directly; use the `base` extension |
-| `Project.exec`, `Project.javaexec`, script-level counterparts | Remove calls; these helpers no longer exist |
-| `JvmVendorSpec.IBM_SEMERU` | `JvmVendorSpec.IBM` |
-| `WriteProperties.outputFile` | `destinationFile` |
-| `IdeaModule.testSourceDirs`, `testResourceDirs` | `testSources`, `testResources` |
-| `GroovySourceSet`, `ScalaSourceSet` | `GroovySourceDirectorySet`, `ScalaSourceDirectorySet` |
-| Integer Unix-mode copy APIs | `FilePermissions` / `ConfigurableFilePermissions` |
-| `` `gradle-enterprise` `` Kotlin DSL shorthand | Explicit `com.gradle.develocity` plugin ID and version |
-| `kotlinDslPluginOptions.jvmTarget` | A Java toolchain |
-| `"name"()` domain-object shorthand | `named("name")` |
-| Eager provider accessors | Explicitly dereference or compose providers |
-| Closure-only plugin DSL entry points | `Action`-accepting methods |
+### Archive and artifact lifecycle behavior
 
-`groovy-test`, `groovy-console`, and `groovy-sql` are no longer supplied by
-`localGroovy`. The Gradle utility types `CollectionUtils`, `ConfigureUtil`, and
-`ClosureBackedAction` are also removed.
+Archives are reproducible by default. Filesystem order, timestamps, and permissions are no longer preserved unless explicitly requested. Standard EAR, WAR, and Java artifacts join `assemble` and `archives`, but artifacts on custom visible configurations require explicit lifecycle wiring.
 
-### Recheck task and project assumptions
+### API and nullability migrations
 
-Every project included from settings must map to an existing, writable
-directory. A custom `Test` task no longer inherits the built-in `test` source
-set's inputs, so configure both `testClassesDirs` and `classpath` explicitly or
-use a JVM test suite. Test tasks now fail when sources exist but no tests are
-discovered; set `failOnNoDiscoveredTests = false` only for an intentional empty
-result.
+Gradle API nullness annotations use JSpecify. Kotlin extensions over `Provider<T>` commonly require `T : Any`, and nullable `Property` declarations may no longer type-check. Injected getters on Gradle subclasses require abstract classes; account for `RootComponentIdentifier` and unknown future component identifiers.
 
-Move C++ and Swift `toolChains` configuration out of `model {}` and configure
-it at the top level. Apply `jvm-toolchains` before using `ValidatePlugins` when
-no JVM plugin already provides toolchain infrastructure.
+## Configuration Cache quick reference
 
-### Recheck API types
+### Enabling, suppressing, and troubleshooting
 
-Gradle API nullability uses JSpecify. Kotlin extensions over `Provider<T>`
-commonly need `T : Any`; `Property<String?>` is invalid, and nullable values
-cannot be supplied to APIs declaring `Map<String, *>`.
+Gradle 9 suggests Configuration Cache for compatible builds but does not force it. Set `org.gradle.configuration-cache=false` to suppress the suggestion. Known unsupported features can fall back automatically; task-execution cache problems still abort.
 
-Injected getter subclasses of Gradle-provided classes must be abstract.
-`ConfigurationVariant.getDescription()` now returns `Property<String>`.
-Exhaustive logic over `ComponentIdentifier` must tolerate
-`RootComponentIdentifier` and future unknown implementations.
+Use the integrity check only for diagnosis because it increases cache size and read/write cost:
 
-## Configuration Cache essentials
+```properties
+org.gradle.configuration-cache.integrity-check=true
+```
 
-Gradle 9 prefers Configuration Cache but does not force it. A compatible build
-that has not enabled it receives a suggestion; set
-`org.gradle.configuration-cache=false` to suppress that suggestion. Known
-unsupported features cause a non-cache fallback with the reason in the report,
-but a cache problem during task execution aborts immediately.
-
-With Configuration Cache enabled:
-
-- `onTaskCompletion` listeners must be providers from registered build
-  services.
-- Unsupported providers are cache problems.
-- Incompatible tasks discard the cache entry even with
-  `org.gradle.configuration-cache.problems=warn`.
-- The temporary listener escape hatch is
-  `org.gradle.configuration-cache.unsafe.ignore.unsupported-build-events-listeners=true`.
-
-For cache consumers that must never populate entries:
+Read-only mode consumes hits without storing misses:
 
 ```text
-./gradlew --configuration-cache \
-  -Dorg.gradle.configuration-cache.read-only=true build
+./gradlew --configuration-cache -Dorg.gradle.configuration-cache.read-only=true
 ```
 
-Use `org.gradle.configuration-cache.integrity-check=true` only while
-troubleshooting serialization; it increases entry size and slows cache I/O.
+### Correctness rules
 
-Project properties supplied with `-Dorg.gradle.project.<name>` or
-`ORG_GRADLE_PROJECT_<name>` invalidate an entry only when read during
-configuration. A provider read only during task execution can observe a new
-value while the existing entry is reused.
+- Register `onTaskCompletion` listeners through a registered build service provider.
+- Incompatible tasks discard the entry even when cache problems are warnings.
+- Environment-backed project properties only invalidate an entry if configuration actually read them.
+- Startup `-javaagent:` agents work in normal daemons and TestKit's default daemon mode; dynamic attachment and embedded TestKit mode do not.
+- A whole `ResolutionResult` can be a task `@Input` while Configuration Cache is active.
 
-## Preserve lazy configuration
+See [Configuration Cache and laziness](references/configuration-cache-and-laziness.md) for flags, provider patterns, and Isolated Projects migration.
 
-Prefer `register` and role-based configuration factories over eager `create`.
-Applying `base`, directly or through a JVM plugin, no longer realizes all
-registered configurations.
+## Common workflows
 
-Use the newer lazy composition APIs where appropriate:
+### Select and provision daemon JVMs
 
-```kotlin
-val parent = configurations.dependencyScope("parent")
-configurations.resolvable("child") {
-    extendsFrom(parent)
-}
+Daemon JVM criteria can auto-provision a missing JDK when a resolver is configured. Native Image-capable JDKs can be required for Java or daemon toolchains. `JAVA_HOME` participates in toolchain auto-detection, and daemon toolchains are stable APIs.
 
-target.attributes.addAllLater(source.attributes)
-```
+Keep the daemon runtime separate from compile/test toolchains. Use `updateDaemonJvm` to materialize cross-platform daemon criteria and download URLs. See [Daemon, CLI, Wrapper, and platforms](references/daemon-cli-and-platforms.md).
 
-`addAllLater` tracks later source changes. Imported attributes override values
-already in the destination; destination values set afterward win.
+### Keep configuration lazy
 
-Publishing variant methods accept
-`Provider<ConsumableConfiguration>`, delaying realization until publication.
-`DomainObjectCollection.disallowChanges()` freezes membership without realizing
-lazy entries; contained objects remain mutable.
-
-## Testing essentials
-
-When a custom JUnit Platform engine discovers non-class definitions, point
-`Test.testDefinitionDirs` at them. This supports inputs such as Cucumber
-feature files without a placeholder suite class.
-
-JUnit Platform `TestReporter` key-value data and files appear in HTML and XML
-reports. Build logic can consume the same structured events through
-`Test.addTestMetadataListener(TestMetadataListener)`.
-
-Custom test infrastructure can inject `TestEventReporterFactory` and report
-nested groups, tests, timestamped metadata, Gradle binary results, and HTML
-reports. For high-volume TestKit output, stream and close
-`BuildResult.getOutputReader()` instead of materializing `getOutput()`.
-
-Test reports now retain framework hierarchy and attribute output to the test
-that emitted it. Aggregate reports keep each input source on its own tab rather
-than merging overlapping structures. HTML result columns are sortable.
-
-## Toolchains, Wrapper, and unattended execution
-
-Daemon JVM criteria can auto-provision a matching JDK when a resolver such as
-Foojay is installed. Generate `gradle/gradle-daemon-jvm.properties` with
-`updateDaemonJvm`; it records vendor/version criteria and per-platform URLs.
-Daemon toolchains are stable APIs.
-
-Toolchains can require GraalVM Native Image:
+Prefer these patterns:
 
 ```kotlin
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-        nativeImageCapable = true
+configurations {
+    val parent = dependencyScope("parent")
+    resolvable("child") {
+        extendsFrom(parent)
     }
 }
 ```
 
-Gradle 9 Wrapper version selectors may be partial:
+Use `AttributeContainer.addAllLater(...)` for deferred attribute merging, provider overloads when publishing configuration variants, and `DomainObjectCollection.elements` when wiring a collection to task inputs without realization.
 
-```text
-./gradlew wrapper --gradle-version=9
-./gradlew wrapper --gradle-version=9.1
-```
+### Run unattended and diagnostic builds
 
-Do not apply that interpretation to pre-9 versions such as `8.12`, which is an
-exact historical release.
+- `--non-interactive` disables prompts; `org.gradle.console.interactive=false` persists the choice.
+- `NO_COLOR` disables color while retaining rich-console behavior; `--console=colored` provides color without progress UI.
+- `--task-graph` prints requested tasks and dependencies without execution.
+- `tasks --provenance` and `help --task` identify where tasks were registered.
+- `--warning-mode=all` renders structured problems and lifts the source-location cap.
 
-For unattended runs use `--non-interactive` or set
-`org.gradle.console.interactive=false`. A non-empty `NO_COLOR` suppresses color
-while preserving other rich-console behavior. `--console=colored` provides
-color without progress bars.
+### Configure modern test reporting
 
-## Publishing and artifact lifecycles
+Gradle reports framework hierarchy, parameterized invocations, metadata, and attachments with stronger source attribution. Non-class JUnit Platform engines can supply `testDefinitionDirs`, and custom runners can use `TestEventReporterFactory`. Aggregate reports keep each source separate rather than merging identical structures.
 
-When `ear`, `war`, and `java` are combined, `assemble` builds all three artifact
-types and `archives` contains them. A custom visible configuration does not
-join either lifecycle automatically; wire its task into `assemble` and its
-artifact into `archives`.
+When consuming JUnit XML, accept millisecond timestamps, nested-class filenames, properties emitted from test data, and attachment markers. See [Testing, reports, and quality tools](references/testing-and-quality.md).
 
-Do not mutate Gradle Module Metadata after an eagerly created publication has
-been populated from the same component; this is an error. OpenPGP signatures
-now match the key version, including version 6 keys.
+### Publish components and distributions
 
-The publishing extension exposes `SoftwareComponentFactory`, and ad hoc
-components can consume lazy configuration providers. Maven publications can
-also declare POM distribution management directly.
+Create ad hoc software components through the `publishing` extension's `softwareComponentFactory`. Pass `Provider<ConsumableConfiguration>` values to preserve laziness. Use `distribution-base` when a plugin needs distribution support without an automatic `main` distribution.
 
-## Diagnostics worth reaching for
+POM distribution management, signing behavior, distribution signatures, dependency-verification diagnostics, and repository-failure behavior are covered in [Dependencies, publishing, and distributions](references/dependencies-publishing-and-distribution.md).
 
-- `./gradlew artifactTransforms` lists registered artifact transforms,
-  cacheability, and input/output attributes.
-- `./gradlew ... --task-graph` prints requested-task dependencies without
-  executing them.
-- `./gradlew tasks --provenance` shows where tasks were registered.
-- `./gradlew test --warning-mode=all` renders relevant Problems API entries in
-  the console while retaining the HTML report link.
-- `BuildEnvironment.getVersionInfo()` returns exact version output without
-  starting a daemon; the Tooling API `Help` model returns rendered help.
-- `ProjectLayout.settingsDirectory` resolves files relative to the settings
-  script without reaching through `rootProject`.
+### Author plugins and integrations
 
-For complete constraints, edge cases, and examples, open the relevant topic
-file from the reference index before changing a build.
+- Strongly typed dependency blocks have partially stable APIs, except version-catalog dependencies.
+- `ProblemSpec.additionalData(...)` and Tooling API typed views carry structured custom diagnostics.
+- Stream Tooling API and TestKit output rather than materializing large results.
+- `ProjectLayout.settingsDirectory` resolves build-wide files without reaching through `rootProject`.
+- Precompiled Kotlin Settings plugins can receive generated accessors from `kotlin-dsl`.
+- Lock domain-object collection membership with `disallowChanges()` without realizing lazy entries.
+
+See [Tooling API, Problems API, and build logic](references/tooling-problems-and-build-logic.md).
+
+## Upgrade verification checklist
+
+After changing a Gradle wrapper or build feature:
+
+1. Run `./gradlew help` to validate settings, included-project paths, and plugin application.
+2. Run `./gradlew tasks --all` and inspect unexpected configuration realization or task registration.
+3. Run the relevant test tasks with `--warning-mode=all`; inspect console, HTML, and XML output.
+4. Exercise Configuration Cache twice: the first run stores and the second loads an entry.
+5. Verify archives for deterministic order, timestamp, and permissions expected by consumers.
+6. Publish to a local repository and inspect Gradle Module Metadata, POM content, variants, and signatures.
+7. Run integration tests through the same TestKit daemon mode used in CI.
+8. Check Wrapper authentication, timeout, and retry settings without exposing credentials to unrelated hosts.
+
+## Compatibility judgment
+
+Prefer the wrapper, applied plugin versions, source code, and observed task behavior over assumptions. If a build is newer than this patch's frontmatter version, use the guidance only for features known to exist in the project's actual Gradle version and verify current behavior before changing the build.

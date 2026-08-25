@@ -1,49 +1,33 @@
 # Kubernetes, OpenShift, and Snapshots
 
-## Apply Pod Security Admission
+## Store Kubernetes snapshots in Google Cloud
 
-Consul can be deployed with Kubernetes Pod Security Admission controls applied
-per namespace (since 1.21.0). Use Pod Security Admission, rather than the
-PodSecurityPolicy mechanism it replaces, to enforce minimum pod security
-requirements. Align namespace policy levels with the Consul workloads placed in
-each namespace.
+Since 1.21.0, the Enterprise snapshot-agent sidecar for Consul on Kubernetes can send snapshots to Google Cloud Storage. Local storage, Amazon S3, and Azure Blob Storage remain available targets.
 
-## Match Supported OpenShift Releases
+## Authenticate Azure snapshots without static credentials
+
+Since 1.22.0, the Enterprise snapshot agent can authenticate to Azure Blob Storage with Azure Managed Service Identity. Prefer this route when the workload identity and storage authorization are available, avoiding static storage credentials in snapshot configuration.
+
+## Enforce Pod Security Admission by namespace
+
+Since 1.21.0, Consul can be deployed and configured under Kubernetes Pod Security Admission controls applied per namespace. Pod Security Admission replaces PodSecurityPolicy for minimum pod-security enforcement.
+
+Test all Consul components against the intended namespace policy before switching the policy to enforcement.
+
+## Select a supported OpenShift platform
 
 Consul 1.21.0 supports OpenShift Container Platform 4.16, 4.17, and 4.18.
-Check the Consul and OpenShift pairing explicitly before an orchestrator
-upgrade.
 
-IPv6 behavior added with Consul 1.22.0 does not extend to OpenShift in that
-release. Do not assume VM or Kubernetes IPv6 guidance applies unchanged to an
-OpenShift deployment.
-
-## Migrate Gateway Resources on OpenShift
-
-OpenShift 4.19 and later require the newer Kubernetes resource types in the
-`consul.hashicorp.com` API group (since 2.0.0). Earlier Kubernetes Gateway API
-`v1alpha` resources are incompatible. Migrate existing gateway resources as
-part of the OpenShift upgrade rather than waiting for gateway reconciliation
-to fail.
+IPv6 behavior introduced later is not supported on OpenShift. Do not infer IPv6 support from VM or Kubernetes compatibility alone.
 
 ## Scale Enterprise API Gateways
 
-Enterprise API Gateways on Kubernetes can scale beyond the earlier
-eight-replica ceiling (since 2.0.0). Horizontal Pod Autoscaling is supported
-when enabled through annotations on the Gateway resource. Coordinate replica
-limits, annotations, and cluster capacity rather than carrying forward an
-eight-replica assumption.
+Since 2.0.0, Enterprise API Gateways on Kubernetes can scale beyond the former eight-replica limit. Horizontal Pod Autoscaling can be enabled through annotations on the Gateway resource.
 
-## Store Snapshots in Google Cloud Storage
+Size the autoscaler and gateway limits together so replica growth does not overwhelm upstream services.
 
-The Enterprise snapshot-agent sidecar for Consul on Kubernetes can send
-snapshots to Google Cloud Storage (since 1.21.0). This joins the supported
-local, Amazon S3, and Azure Blob Storage targets. Select the destination and
-credentials explicitly for the deployed sidecar.
+## Migrate OpenShift gateway resources
 
-## Authenticate Azure Snapshots with Managed Identity
+Since 2.0.0, newer Kubernetes resource types in the `consul.hashicorp.com` API group support OpenShift 4.19 and later. Earlier Kubernetes Gateway API `v1alpha` resources are incompatible with those OpenShift releases.
 
-The Enterprise snapshot agent can authenticate to Azure Blob Storage with
-Azure Managed Service Identity (since 1.22.0). Prefer managed identity when
-the environment supports it and static storage credentials should not be
-stored in snapshot-agent configuration.
+Inventory existing gateway resources and migrate them to the new types during an OpenShift upgrade. Coordinate controller compatibility, resource conversion, and traffic cutover rather than treating the platform upgrade as an in-place API change.

@@ -1,179 +1,192 @@
 # Images, builds, and artifacts
 
-Use this reference for Containerfile builds, image listing and transfer, registry trust, OCI
-artifact lifecycle, artifact mounts, and artifact-specific APIs.
+## Building images
 
-## Build behavior
+### Squash without layers (5.2.0)
 
-### Squash without layers
-
-Since 5.2.0, combine `--squash` with `--layers=false`:
+`podman build` permits `--squash` with `--layers=false`.
 
 ```console
 podman build --squash --layers=false .
 ```
 
-### Base-image label inheritance
+### Multi-platform Build API (5.2.0)
 
-Since 5.5.0, `podman build --inherit-labels` controls whether labels are inherited from base
-images and base stages. It defaults to `true`.
+The Images Build API accepts comma-separated values in `Platform`, such as
+`linux/amd64,linux/arm64`, to build several architectures in one request.
 
-### SBOM options
+### Build toolchain progression (5.3.0, 5.5.0, 5.7.0, and 6.0.0)
 
-Podman 5.7.0 corrects `podman build` so its SBOM-related options are honored.
+Building Podman requires Go 1.22 from 5.3.0, Go 1.23 from 5.5.0, Go 1.24 from 5.7.0, and Go 1.25
+from 6.0.0. Choose the floor for the source release being built.
 
-### Process-substitution Containerfiles
+### Abandoned build cleanup (5.4.0)
 
-Since 6.0.0, when `podman build -f` receives a process-substitution file, Podman supplies an empty
-temporary directory as the build context. It no longer derives a context from the special file
-path.
-
-### Abandoned build containers
-
-Since 5.4.0, remove build containers left behind by interrupted builds with:
+`podman system prune --build` removes build containers left by interrupted builds.
 
 ```console
 podman system prune --build
 ```
 
-### Build-context security and compatibility
+### Build provenance (5.4.0)
 
-- Use 5.6.2 or later for Containerfile builds that combine a non-root user with cache mounts.
-- Use 5.8.3 or later to prevent a malicious Git repository or tar archive from causing `ADD` or
-  `COPY` to include files outside the build context.
+Makefile builds accept `BUILD_ORIGIN`; its value identifies the packager in `podman version` and
+`podman info`.
 
-## Build APIs and remote builds
-
-### Several platforms in one request
-
-Since 5.2.0, the Images Build API's `Platform` query parameter accepts a comma-separated list:
-
-```text
-linux/amd64,linux/arm64
+```console
+BUILD_ORIGIN=distribution make
 ```
 
-One request can therefore build for several architectures.
+### Suppress `/etc/hosts` through the API (5.4.0)
 
-### Suppress `/etc/hosts`
+Compat and Libpod Images Build accept boolean query parameter `nohosts`. Set `nohosts=true` to
+avoid creating `/etc/hosts` in the image.
 
-Since 5.4.0, Compat and Libpod Images Build endpoints accept boolean `nohosts`; set
-`nohosts=true` to avoid creating `/etc/hosts` in the image.
+### Label inheritance (5.5.0)
 
-### Remote build contexts
+`podman build --inherit-labels` controls label inheritance from base images and stages. It
+defaults to true.
 
-Since 5.6.0, the remote client supports `podman build --build-context`.
+### Remote build contexts (5.6.0)
 
-## Image creation, listing, and transfer
+The remote client supports `podman build --build-context`.
 
-### Commit consistency
+### Restored build compatibility (5.6.0)
 
-Since 6.0.0, `podman commit` pauses its source container by default while recording changes. Pass
-`--pause=false` only when concurrent mutations and a potentially inconsistent result are
-acceptable.
+Use 5.6.2 or later when a Containerfile combines a non-root user with cache mounts.
 
-### Deterministic repository sorting
+### SBOM behavior (5.7.0)
 
-Since 5.3.0, `podman images --sort=repository` breaks equal-repository ties by tag, producing
-deterministic ordering.
+Podman now honors its SBOM-related build options. Recheck pipelines that previously worked around
+ignored settings.
 
-### Pull policy
+### Build-context security fixes (5.8.0)
 
-Since 5.6.0, `podman pull --policy` selects the pull policy explicitly.
+Use 5.8.3 or later to fix CVE-2026-44517, where `ADD` or `COPY` from a malicious Git repository
+or tar archive could escape the build-context boundary. Use 5.8.4 or later to fix
+CVE-2026-57231, where malformed image `Env` entries could expose host environment variables in a
+container.
 
-### Registry credentials and certificates
+### Process-substitution Containerfiles (6.0.0)
 
-Since 5.7.0, `podman run` and `podman create` accept `--creds` and `--cert-dir` for authentication
-and certificate selection when the requested image must be pulled.
+When `podman build -f` receives a process-substitution file, Podman supplies an empty temporary
+directory as the build context instead of deriving a context from that path.
 
-### Signing
+## Image operations
 
-Builds compiled with optional Sequoia-PGP support expose `--sign-by-sq-fingerprint` since 5.7.0
-for signing with a Sequoia-PGP key.
+### Deterministic repository sorting (5.3.0)
 
-### Trust policy
+`podman images --sort=repository` uses tag as a secondary key when repositories match.
 
-Since 6.0.0, the `podman image trust` commands accept `--signature-policy`, and
-`podman image trust set` requires it.
+### Pull authentication and certificates (5.7.0)
 
-### SCP archive format
+`podman run` and `podman create` accept `--creds` and `--cert-dir` for authentication and trust
+when pulling a missing image.
 
-Since 6.0.0, `podman image scp --format` selects the archive format used during transfer.
+### Sequoia-PGP signing (5.7.0)
 
-## OCI artifact CLI lifecycle
+Builds compiled with optional Sequoia-PGP support expose `--sign-by-sq-fingerprint` for image
+signing.
 
-### Preview to stable
+### Trust and transfer controls (6.0.0)
 
-Podman 5.4.0 introduced the preview artifact suite with `add`, `inspect`, `ls`, `pull`, `push`,
-and `rm`. Treat that release's interface as pre-final. The suite became stable in 5.6.0 and is
-available from the remote client and REST bindings.
+`podman image trust` commands accept `--signature-policy`, and `image trust set` requires it.
+`podman image scp --format` selects the transfer archive format.
+
+### Pull policy (5.6.0)
+
+`podman pull --policy` selects pull policy explicitly.
+
+### Retried manifest pushes (5.8.6-6.1.0)
+
+`podman manifest push` accepts `--retry` and `--retry-delay`.
+
+```console
+podman manifest push --retry 3 --retry-delay 5s LIST DESTINATION
+```
+
+## OCI artifacts
+
+### Preview command suite (5.4.0)
+
+The initial `podman artifact add`, `inspect`, `ls`, `pull`, `push`, and `rm` interface is a preview
+in 5.4.0 and is not yet final.
 
 ```console
 podman artifact ls
 ```
 
-### Add and extend artifacts
+### Artifact consumption and updates (5.5.0)
 
-Since 5.5.0:
+`podman create`, `run`, and `pod create` accept `--mount type=artifact`. `podman artifact add`
+adds `--append` to extend an artifact and `--file-type` to set the added file's MIME type.
 
-- `podman artifact add --append` extends an existing artifact;
-- `podman artifact add --file-type` sets the MIME type of the added file.
+### Stable commands and remote coverage (5.6.0)
 
-### Inspect and format metadata
+The command suite is stable. Artifact commands work through the remote client and REST bindings.
 
-Since 5.7.0:
+### Stable Libpod API (5.6.0)
 
-- generic `podman inspect` accepts artifacts;
-- `podman artifact inspect --format` formats artifact inspection;
-- artifact list format field `VirtualSize` is integer bytes;
-- artifact list format field `CreatedAt` is an RFC3339 timestamp;
-- newly created artifacts receive `org.opencontainers.image.created` by default.
+The Libpod API supports list, inspect, pull, remove, tar-body add/append, push, and extract. Key
+routes are:
 
-## Mount artifact contents
+- `GET /libpod/artifacts/json` and `GET /libpod/artifacts/{name}/json`;
+- `POST /libpod/artifacts/pull` and `POST /libpod/artifacts/add`;
+- `DELETE /libpod/artifacts/{name}`;
+- `GET /libpod/artifacts/{name}/extract`;
+- `/libpod/artifacts/{name}/push` for pushes.
 
-### Artifact mount type
+### Mount naming and a single blob (5.6.0)
 
-Since 5.5.0, `--mount` on `podman create`, `podman run`, and `podman pod create` accepts
-`type=artifact`:
+Artifact mounts accept `name=` to choose the exposed filename. If an artifact contains one blob
+and its destination does not exist in the image, the blob mounts as a file at the destination,
+not as a directory.
 
 ```console
-podman run --mount type=artifact,src=example.com/acme/data:latest,dst=/data IMAGE
+podman run --mount type=artifact,src=example.com/acme/data:latest,dst=/data,name=payload IMAGE
 ```
 
-### Exposed name and single-blob shape
+### Metadata and inspection (5.7.0)
 
-Since 5.6.0, artifact mounts accept `name=` to select the filename exposed inside the container.
-If the artifact has one blob and the destination does not already exist in the image, Podman
-mounts that blob as a file at the destination rather than creating a directory.
+`podman inspect` accepts artifacts, and `podman artifact inspect` adds `--format`. List formatting
+exposes `VirtualSize` as integer bytes and `CreatedAt` as an RFC3339 timestamp. New artifacts get
+`org.opencontainers.image.created` by default.
 
-## Artifact APIs
+### Local artifact API (6.0.0)
 
-### Stable Libpod routes
+`POST /libpod/local/artifacts/add` loads an artifact from the service host without uploading a tar
+archive. The existing `POST /libpod/local/images` endpoint now requires an absolute `path` query
+value.
 
-The stable 5.6.0 artifact API includes list, inspect, pull, remove, tar-body add/append, push, and
-extract operations. Principal routes are:
+## Image and artifact API output
 
-| Operation | Route |
-| --- | --- |
-| List | `GET /libpod/artifacts/json` |
-| Inspect | `GET /libpod/artifacts/{name}/json` |
-| Pull | `POST /libpod/artifacts/pull` |
-| Add or append tar body | `POST /libpod/artifacts/add` |
-| Remove | `DELETE /libpod/artifacts/{name}` |
-| Push | `POST /libpod/artifacts/{name}/push` |
-| Extract | `GET /libpod/artifacts/{name}/extract` |
+### Manifest annotations and image fields (5.3.0 and 5.6.0)
 
-### Service-local add
+`podman manifest inspect` includes annotations. Compat System DF no longer has `BuilderSize`.
+Image lists always have `shared-size`, using `-1` when it was not requested. Image inspection
+omits `VirtualSize` for Docker API 1.44 and later.
 
-Since 6.0.0, `POST /libpod/local/artifacts/add` loads an artifact directly from the service host
-without uploading a tar archive.
+### Compat image inspect (5.7.0)
 
-### Local image endpoint
+Compat Image Inspect no longer returns `ContainerConfig`; read `Config`, matching Docker API
+v1.45 behavior.
 
-Since 6.0.0, the existing `POST /libpod/local/images` endpoint requires an absolute `path` query
-parameter.
+### Machine-readable image list (6.0.0)
 
-## Artifact events and Quadlet
+`podman image list --format json` adds `Repository` and `Tag`.
 
-Since 6.0.0, artifact events include `create`, `pull`, `push`, and `remove`. Since 5.7.0, manage
-artifacts declaratively with Quadlet `.artifact` units; consult the Quadlet reference for unit
-installation and generated-service behavior.
+### Libpod pull behavior (6.0.0)
+
+The Libpod image Pull endpoint streams progress with `pullProgress=true` and returns an error HTTP
+status when a pull fails instead of always returning 200.
+
+### Compat image Push completion (6.0.0)
+
+Compat image Push finishes with a JSON object containing the pushed tag, digest, and size.
+
+## Commit consistency
+
+### Pause by default (6.0.0)
+
+`podman commit` pauses the source container while recording changes. Use `--pause=false` only when
+concurrent mutation and a potentially inconsistent commit are acceptable.

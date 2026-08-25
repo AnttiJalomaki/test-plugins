@@ -1,156 +1,87 @@
 # Apple platform integration
 
-## Contents
+## Rendering and text integration
 
-- [iOS scene lifecycle](#ios-scene-lifecycle)
-- [Swift Package Manager](#swift-package-manager)
-- [Deployment targets and Xcode](#deployment-targets-and-xcode)
-- [Native APIs and plug-ins](#native-apis-and-plug-ins)
-- [Development hosts](#development-hosts)
-- [Rendering behavior](#rendering-behavior)
-- [Content-sized embedded views](#content-sized-embedded-views)
+- iOS Skia support is removed and `FLTEnableImpeller` no longer opts out of
+  Impeller (3.29.0). SkSL build targets and warm-up artifacts are also removed
+  (3.32.0).
+- Native iOS editing uses `SystemContextMenu` by default (3.32.0); custom edit-menu
+  actions participate in secure-paste handling (3.38.0).
+- iOS bounded backdrop blur prevents color bleed at translucent edges
+  (`3.41-guide`). macOS supports Display P3, and float32 images can retain float32
+  data through `Image.toByteData()` (3.44.0).
+- Impeller remains opt-in on macOS: use `flutter run --enable-impeller` for a run or
+  top-level `FLTEnableImpeller` inside the `Info.plist` `<dict>` for deployed builds
+  (`rendering-and-web`).
 
-## iOS scene lifecycle
+## UIScene and embedder lifecycle
 
-Flutter fully supports the iOS `UIScene` lifecycle by default (`3.41-guide`). Existing
-applications that still put lifecycle behavior only in deprecated `AppDelegate`
-callbacks must migrate it. Lifecycle-aware plug-ins must consume scene events, and
-add-to-app hosts must expose scene events if their plug-ins depend on them.
+- The experimental automatic UIScene migration appeared in `3.38-guide` behind
+  `flutter config --enable-uiscene-migration`. Apps, lifecycle-aware plug-ins, and
+  add-to-app hosts needed scene events.
+- UIScene is the supported default by `3.41-guide`. Move deprecated AppDelegate
+  lifecycle logic before platform requirements make the migration mandatory.
+- `FlutterSceneLifeCycleProvider.sceneLifeCycleDelegate` is read-only; native
+  integrations must not assign it (3.41.0).
+- UI/platform thread merging is mandatory on iOS (`3.38-guide`).
 
-Earlier projects can use the automatic migration path supplied with `3.38-guide`:
+## Swift and plug-in APIs
 
-```sh
-flutter config --enable-uiscene-migration
-```
-
-Use the manual migration when automatic edits cannot preserve a customized host.
-`FlutterSceneLifeCycleProvider.sceneLifeCycleDelegate` is read-only; native code must
-not assign it.
+- Public iOS/macOS embedder APIs are consumable from Swift, and iOS provides the
+  `FlutterPluginRegistrant` protocol for generated or custom registration
+  (3.35.0).
+- `FlutterPluginRegistrar.viewController` supports controller-scoped iOS/macOS
+  plug-in work, and a Darwin implementation can be shared between platforms
+  (3.38.0, 3.41.0).
+- One registered iOS plug-in can access another registered plug-in (3.44.0).
 
 ## Swift Package Manager
 
-Swift Package Manager is the default dependency manager for ordinary iOS and macOS
-Flutter applications (`3.44-guide`). During build or run, Flutter can migrate the
-Xcode project. Plug-in authors must publish SwiftPM support; a plug-in updated from
-the 2024 pilot also needs a `FlutterFramework` dependency.
+- SwiftPM becomes the default for ordinary iOS/macOS applications in
+  `3.44-guide`; CLI build/run may migrate the Xcode project. Plug-ins need SwiftPM
+  support and 2024-pilot packages need a `FlutterFramework` dependency. CocoaPods-
+  only dependencies trigger a temporary warning/fallback. A blocking project may
+  temporarily set `enable-swift-package-manager: false`, but both escape paths are
+  planned for removal.
+- Automatic migration edits `Runner.xcodeproj/project.pbxproj` and the shared
+  `Runner.xcscheme` (`apple-platform-migrations`). Audit both after migration.
+- For manual repair, attach the local generated package under
+  `ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage` or its macOS
+  equivalent,
+  `macos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage`, to the
+  Runner target, and embed its product.
+- Every flavor needs a **Run Prepare Flutter Framework Script** scheme pre-action,
+  with build settings from Runner. Run `xcode_backend.sh prepare` on iOS or
+  `macos_assemble.sh prepare` on macOS.
+- SwiftPM integration does not support add-to-app. Custom targets require manual
+  package-product attachment and must provide the pre-action's build settings from
+  that target.
+- Disabling SwiftPM selects CocoaPods but does not undo Xcode migration. To remove
+  it fully, disable the feature, run `flutter clean`, remove the package dependency
+  and embedded product, and delete the prepare pre-action.
 
-Dependencies that still require CocoaPods produce a warning and temporarily fall
-back. A project with a blocking incompatibility can temporarily add this to
-`pubspec.yaml`:
+## Deployment targets, Xcode, and signing
 
-```yaml
-flutter:
-  config:
-    enable-swift-package-manager: false
-```
+- The stream first announced a move from iOS 12/macOS 10.14 to iOS 13/macOS 10.15
+  (`3.32-guide`). Raise deployment targets deliberately and check package minimums.
+- When a Swift package product raises its minimum OS, update **Minimum Deployments**
+  and regenerate configuration with `flutter build ios --config-only` or
+  `flutter build macos --config-only` (`apple-platform-migrations`).
+- Xcode 26 physical-device runs use `devicectl`; use
+  `flutter config --no-enable-lldb-debugging` only as the documented fallback
+  (`3.38-guide`).
+- iOS tooling generates `ExportOptions.plist` for manual signing (3.41.0).
+- Flutter framework output can also be generated as a Swift package (3.41.0).
+- Minimum supported Xcode is 15 and Xcode 16 is recommended (3.44.0). macOS command
+  line and iOS device tools run natively on Apple Silicon; Intel host support is
+  planned to end (`3.44-guide`).
 
-The fallback and opt-out are transitional. Do not use them as the final migration.
-SwiftPM integration does not support add-to-app hosts.
+## Cupertino presentation and add-to-app sizing
 
-### Audit automatic migration
-
-Automatic migration edits `Runner.xcodeproj/project.pbxproj` and the shared
-`Runner.xcscheme`. For a customized project that cannot be repaired automatically:
-
-1. Add the local generated package to the `Runner` target:
-   `ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage` or
-   `macos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage`.
-2. Add its product under **Frameworks, Libraries, and Embedded Content**.
-3. Give every flavor a scheme build pre-action named
-   **Run Prepare Flutter Framework Script**.
-4. Set **Provide build settings from** to `Runner`, or to the corresponding custom
-   target.
-5. Run the platform command from that pre-action.
-
-```sh
-# iOS
-"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh" prepare
-
-# macOS
-"$FLUTTER_ROOT"/packages/flutter_tools/bin/macos_assemble.sh prepare
-```
-
-Custom Xcode targets require the same manual package-product attachment and must be
-the source of build settings for their scheme pre-action.
-
-### Fully remove SwiftPM integration
-
-Disabling SwiftPM switches Flutter back to CocoaPods but does not undo Xcode project
-edits. To remove integration completely, or before opening the project with a Flutter
-SDK older than 3.24:
-
-1. Disable SwiftPM.
-2. Run `flutter clean`.
-3. Remove `FlutterGeneratedPluginSwiftPackage` from package dependencies.
-4. Remove its embedded product.
-5. Delete the **Run Prepare Flutter Framework Script** pre-action.
-
-## Deployment targets and Xcode
-
-- The announced Apple platform floor moved from iOS 12 and macOS 10.14 toward iOS 13
-  and macOS 10.15 (`3.32-guide`). Check the selected SDK's current minimum before
-  raising a host or plug-in target.
-- When a Swift package product requires a newer OS, raise **Minimum Deployments** in
-  Xcode and regenerate the corresponding Flutter configuration:
-
-```sh
-flutter build ios --config-only
-flutter build macos --config-only
-```
-
-- The supported Xcode floor is 15 and Xcode 16 is recommended (`3.44.0`). Upgrade
-  development and CI hosts that still use older Xcode releases.
-- With Xcode 26, `flutter run` normally installs, launches, and debugs physical devices
-  through command-line `devicectl`. If that path fails, temporarily use:
-
-```sh
-flutter config --no-enable-lldb-debugging
-```
-
-Flutter tooling generates `ExportOptions.plist` for manually signed iOS builds.
-Flutter framework output can also be generated as a Swift package.
-
-## Native APIs and plug-ins
-
-Public iOS and macOS embedder APIs are available to Swift. iOS provides the
-`FlutterPluginRegistrant` protocol for generated or custom registration (`3.35.0`).
-The iOS/macOS `FlutterPluginRegistrar` protocol exposes `viewController` for work
-scoped to the host controller.
-
-An iOS plug-in can access another registered plug-in, allowing native implementations
-to coordinate without routing every interaction through Dart. Plug-in tooling can
-share one Darwin implementation between iOS and macOS. New Apple plug-ins should use
-Swift because the Objective-C plug-in template is deprecated.
-
-## Development hosts
-
-All macOS command-line tools, including iOS device communication binaries, run
-natively on ARM. Apple Silicon development hosts therefore do not need Rosetta.
-Support for Intel Mac development hosts is planned to end in a future release.
-
-## Rendering behavior
-
-- iOS no longer supports Skia; `FLTEnableImpeller` cannot opt out of Impeller.
-- Impeller remains opt-in on macOS. Enable it for a debug run or deployed application:
-
-```sh
-flutter run --enable-impeller
-```
-
-```xml
-<key>FLTEnableImpeller</key>
-<true />
-```
-
-- macOS rendering supports Display P3. See the graphics reference for float image and
-  color-space behavior.
-- On iOS, `BackdropFilter` uses bounded blur behavior so translucent sheet content no
-  longer bleeds color at its edges.
-
-## Content-sized embedded views
-
-An iOS embedded Flutter view can size itself from Flutter content by setting
-`FlutterViewController.isAutoResizable = true`. The Flutter root must accept unbounded
-constraints; do not put a size-dependent `ListView` or `LayoutBuilder` at the root.
-Android content sizing and experimental desktop equivalents are covered in the
-embedding reference.
+- `CupertinoSheet.showDragHandle` adds the native-style handle (`3.41-guide`).
+- `FlutterViewController.isAutoResizable = true` lets an iOS add-to-app view size
+  itself from Flutter content. Its Flutter root must accept unbounded constraints;
+  avoid a size-dependent `ListView` or `LayoutBuilder` at the root (`3.41-guide`).
+- Test scene lifecycle events, custom targets and flavors, plugin-to-plugin access,
+  secure paste, signing, device deployment, minimum OS settings, and both SwiftPM
+  migration and rollback paths.

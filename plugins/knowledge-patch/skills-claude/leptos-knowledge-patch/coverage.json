@@ -1,6 +1,8 @@
 {
   "patch": "leptos-knowledge-patch",
-  "merged_at": "2026-07-15T04:04:07Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T13:59:00Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },

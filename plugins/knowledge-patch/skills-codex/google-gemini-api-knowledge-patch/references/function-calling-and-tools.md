@@ -1,16 +1,10 @@
 # Function calling and tools
 
-Source batch: `function-calling`.
+## Declare Interactions functions directly
 
-Use this reference when declaring Interactions tools, controlling tool choice,
-returning multimodal results, connecting an MCP server, or reconstructing
-streamed arguments.
-
-## Direct function declarations
-
-Interactions custom functions are direct typed entries in the `tools` array,
-not wrappers around a declarations list. `parameters` is an object schema with
-`properties` and `required`.
+Custom functions are direct typed entries in the Interactions `tools` array,
+not a wrapper containing a declarations list. `parameters` is an object schema
+with `properties` and `required`.
 
 ```python
 weather_tool = {
@@ -28,17 +22,12 @@ interaction = client.interactions.create(
 )
 ```
 
-## Tool choice and validation
+## Select tool behavior and validate schemas
 
-Set behavior through `generation_config.tool_choice`:
-
-- `auto` is the default;
-- `any` forces a call;
-- `none` prohibits calls;
-- preview `validated` enforces schema adherence.
-
-Restrict functions with the nested `allowed_tools` object. `any` can reject
-very large or deeply nested schemas.
+Set behavior with `generation_config.tool_choice`: `auto` is the default,
+`any` forces a call, `none` prohibits calls, and preview `validated` enforces
+schema adherence. Restrict callable functions through nested `allowed_tools`.
+Forced `any` mode may reject very large or deeply nested schemas.
 
 ```python
 generation_config = {
@@ -48,11 +37,11 @@ generation_config = {
 }
 ```
 
-## Multimodal function results
+## Return multimodal function results
 
 For Gemini 3-series models, an Interactions `function_result` can contain
-multiple typed content blocks, including images. Put the blocks in `result` and
-preserve both the function name and call ID when continuing.
+multiple typed result blocks, including images. Preserve both function name
+and call ID when continuing.
 
 ```python
 input=[{
@@ -66,15 +55,15 @@ input=[{
 }]
 ```
 
-For Gemini 3.x on `generateContent`, every `FunctionResponse` likewise needs
-both its `call_id` and function `name`.
+For legacy `generateContent` with Gemini 3.x, every `FunctionResponse` likewise
+requires both `call_id` and function `name` (gemini-3.6).
 
-## Remote MCP tools
+## Connect remote MCP tools
 
 Interactions can connect directly to a remote MCP server with an `mcp_server`
-tool. Only Streamable HTTP is supported, not SSE. The server name must not
-contain hyphens. Optional `headers` and `allowed_tools` fields carry
-authentication data and tool filters.
+tool. Only Streamable HTTP is supported, not SSE. Server names cannot contain
+hyphens. Optional `headers` and `allowed_tools` provide authentication and
+filtering.
 
 ```python
 tools=[{
@@ -85,27 +74,28 @@ tools=[{
 }]
 ```
 
-## Stream argument deltas
+## Assemble typed SDK argument deltas
 
-At `step.start`, capture each function's ID and name and associate it with
-`event.index`. Append each subsequent argument fragment for that index. In the
-Python event representation, the fragment arrives when
-`event.delta.type == "arguments"` at `event.delta.partial_arguments`:
+In a streamed Interactions call, take each function ID and name from
+`step.start` and group state by `event.index`. Typed SDK objects expose
+argument fragments when `event.delta.type == "arguments"`; append
+`event.delta.partial_arguments` and parse only after
+`interaction.completed`.
 
 ```python
 if event.event_type == "step.delta" and event.delta.type == "arguments":
     current_calls[event.index]["arguments"] += event.delta.partial_arguments
 ```
 
-Serialized lifecycle descriptions may represent the same incremental data as
-an `arguments_delta.arguments` fragment. In either representation, do not parse
-until the step or interaction has completed and all fragments have been joined.
+At the raw SSE layer, the corresponding discriminant and value are
+`arguments_delta` and `arguments`; see
+[Interactions API](interactions-api.md#continue-a-streamed-client-side-function-call).
 
-## Avoid structured pre-tool text
+## Avoid structured prose immediately before tool calls
 
-Requiring XML, YAML, or JSON text immediately before a tool call can cause
-`Malformed_Function_Call`. Prefer making working notes a dedicated function
-call alongside the real call. Markdown notes or dropping the pre-tool text
+Requiring XML, YAML, or JSON text immediately before a tool call can produce
+`Malformed_Function_Call`. Prefer a dedicated working-notes function invoked
+alongside the real call. Markdown notes or removing the pre-tool text
 requirement are fallback options.
 
 ```json
@@ -119,3 +109,10 @@ requirement are fallback options.
   }
 }
 ```
+
+## Combine built-in and custom tools
+
+A request can contain built-in tools and custom function tools together.
+Computer Use is in public preview on `gemini-3.5-flash`, with browser, mobile,
+and desktop environments plus configurable safety and prompt-injection
+controls.

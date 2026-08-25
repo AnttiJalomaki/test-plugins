@@ -8,242 +8,200 @@ metadata:
 ---
 
 
-# Zephyr RTOS Knowledge Patch
+# Zephyr RTOS Compatibility Guide
 
-Use this skill when upgrading, building, porting, or debugging a Zephyr
-application, board, driver, module, network service, Bluetooth product, or
-firmware-update flow. Start with the migration triage below, then open the
-reference for the affected subsystem. Apply related Kconfig, Devicetree,
-callback, structure, and runtime changes together; many compile-time renames
-also carry behavioral changes.
+Use this skill when migrating, configuring, building, testing, or debugging
+Zephyr applications, boards, subsystems, and out-of-tree drivers.
+
+## How to use this skill
+
+1. Read the project manifest and configuration before proposing changes.
+2. Identify whether the problem is a removed API, renamed Kconfig symbol,
+   changed Devicetree binding, new runtime registration requirement, or changed
+   default.
+3. Start with the breaking-change checks below.
+4. Load the reference file matching the subsystem being changed.
+5. Preserve explicit application choices when replacing an old default.
+6. Rebuild generated Devicetree and Kconfig outputs after migrations.
+7. Run the smallest relevant test first, then the affected integration suite.
+8. Treat project code, manifests, generated files, and observed behavior as
+   authoritative when they differ from compatibility guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [build-boards-and-testing.md](references/build-boards-and-testing.md) | Build configuration, toolchains, modules, board targets, runners, native simulation, Twister, ztest, and diagnostics |
-| [devicetree-and-hardware.md](references/devicetree-and-hardware.md) | Binding syntax, properties, generated macros, clocks, regulators, partitions, and SoC hardware description |
-| [drivers-and-peripherals.md](references/drivers-and-peripherals.md) | ADC, CAN, I3C, SPI, UART, GPIO, DMA, flash, storage devices, timers, counters, watchdogs, and driver APIs |
-| [kernel-runtime-and-utilities.md](references/kernel-runtime-and-utilities.md) | Kernel, POSIX, architecture, power management, Zbus, logging, state machines, instrumentation, and utilities |
-| [networking-and-iot.md](references/networking-and-iot.md) | Ethernet, sockets, HTTP, CoAP, MQTT, LwM2M, OpenThread, Wi-Fi, LoRa, Modbus, and network management |
-| [bluetooth.md](references/bluetooth.md) | Host, controller, HCI, connections, pairing, Mesh, Classic, LE Audio, and profile registration |
-| [security-storage-and-updates.md](references/security-storage-and-updates.md) | Mbed TLS, TF-PSA-Crypto, secure storage, NVMEM, MCUboot, TF-M, MCUmgr, hawkBit, and persistence |
-| [display-input-and-media.md](references/display-input-and-media.md) | Display, LVGL, video, UVC, input, haptics, USB media, and stepper control |
+| [bluetooth.md](references/bluetooth.md) | Host, controller, GATT, Mesh, Classic, LE Audio, ISO, pairing, and channel sounding |
+| [build-boards-and-testing.md](references/build-boards-and-testing.md) | Toolchains, board targets, runners, sysbuild, native simulation, Twister, and ztest |
+| [devicetree-and-hardware.md](references/devicetree-and-hardware.md) | Bindings, properties, clocks, SoCs, architecture ports, memory, and pin control |
+| [display-input-and-media.md](references/display-input-and-media.md) | Display, LVGL, input, haptics, video, UVC, pixel formats, and media buffers |
+| [drivers-and-peripherals.md](references/drivers-and-peripherals.md) | ADC, CAN, UART, SPI, I3C, I2S, counters, DMA, steppers, watchdogs, and device APIs |
+| [kernel-runtime-and-utilities.md](references/kernel-runtime-and-utilities.md) | Kernel APIs, POSIX, power management, logging, RTIO, Zbus, utilities, and runtime behavior |
+| [networking-and-iot.md](references/networking-and-iot.md) | Ethernet, sockets, HTTP, CoAP, DNS, DHCP, MQTT, LwM2M, OpenThread, Wi-Fi, and IoT protocols |
+| [security-storage-and-updates.md](references/security-storage-and-updates.md) | Security fixes, PSA Crypto, Mbed TLS, TF-M, MCUboot, flash, storage, and update flows |
 
 ## Breaking-change triage
 
-Check an upgrade in this order:
+### Build and board failures
 
-1. Confirm the host toolchain and language floor, then update modules with
-   `west update`. Check Python, SDK, C language mode, CMSIS, and generated-header
-   dependencies before diagnosing application code.
-2. Convert all out-of-tree boards and SoCs to HWMv2 and use current qualified
-   board targets. Recheck runner defaults and destructive flash options.
-3. Run a pristine configure so removed Kconfig symbols, binding errors, and
-   generated Devicetree changes are visible. Do not preserve old defaults by
-   accident.
-4. Audit callback signatures, structure layouts, enum values, and ownership.
-   Several APIs add user data, widths, status values, family arguments, or
-   lifecycle calls while retaining familiar names.
-5. Revalidate security and update state on real devices. Crypto-provider,
-   secure-storage UID, image-slot, flash-layout, and pairing changes can make
-   previously persisted data or images incompatible.
-6. Exercise runtime behavior on hardware. Advertising restart, watchdog
-   startup, power management, PHY configuration, HTTP transaction completion,
-   and video negotiation are not compile-only migrations.
+- Convert all out-of-tree HWMv1 boards and SoCs to HWMv2.
+- Use current qualified board targets; removed aliases no longer build.
+- Require Zephyr SDK 1.0.0, Python 3.12, and a C17-capable toolchain.
+- Add full_name to new board.yml entries.
+- Do not assume BOARD_QUALIFIERS begins with a slash.
+- Add application snippet roots explicitly through module metadata or CMake.
+- Make downstream libraries depend on zephyr_generated_headers when they
+  consume generated heap constants.
+- Use file-type selection for OpenOCD artifacts.
+- Update Nordic flashing automation for nRF Util defaults and explicit erase
+  modes.
+- Use sysbuild for STM32N6 chainloaded application targets.
 
-## Build, board, and Devicetree essentials
+### Devicetree and hardware failures
 
-### Establish the build environment
+- Replace underscore property spellings with binding-defined hyphenated names.
+- Do not put defaults for status, address cells, or size cells in bindings.
+- Use DT_REG_ADDR_RAW when a register address is used as a Devicetree index.
+- Replace power-domain with plural power-domains and declare provider cells.
+- Give SDMMC and MMC disks explicit disk-name values.
+- Move oscillator, regulator, clock, and pin-control choices from deprecated
+  Kconfig symbols into Devicetree where required.
+- Describe RISC-V ISA capabilities in the required riscv node.
+- Migrate code partitions to zephyr,mapped-partition.
+- Point NXP FlexSPI chosen flash and controller entries at their distinct
+  child and parent nodes.
+- Check active-low GPIO flags explicitly when bindings change reset semantics.
 
-- Use Zephyr SDK 1.0.0 or newer and Python 3.12 or newer. C17 is the default;
-  `CONFIG_STD_C99` and `CONFIG_STD_C11` are temporary deprecated fallbacks for
-  toolchains that cannot compile C17.
-- Add `zephyr_generated_headers` as a dependency of downstream CMake libraries
-  that include `kernel.h` and might race generation of `heap_constants.h`.
-- Add the application directory to `SNIPPET_ROOT` explicitly through
-  `zephyr/module.yml` or CMake when it supplies snippets.
-- New `board.yml` entries require `full_name`. `BOARD_QUALIFIERS` has no leading
-  slash, so form a qualified name as `${BOARD}/${BOARD_QUALIFIERS}`.
+### Kernel and core API failures
 
-### Treat hardware descriptions as authoritative
+- Replace CONFIG_MP_NUM_CPUS with CONFIG_MP_MAX_NUM_CPUS.
+- Replace deprecated pipe calls with k_pipe_write, k_pipe_read, k_pipe_reset,
+  and k_pipe_close semantics.
+- Interpret device_init failure as a negative errno.
+- Include the standard POSIX headers directly.
+- Size the file-descriptor table through ZVFS_OPEN_SIZE and contributed minima.
+- Return an SMF event result from hierarchical run actions.
+- Inspect the first error passed to RTIO callback chains.
+- Enable CONFIG_STACK_CANARIES_ALL when all-function protection is required.
+- Enable CONFIG_POLL explicitly when Bluetooth code still uses k_poll.
+- Configure watchdogs explicitly instead of relying on startup defaults.
 
-- HWMv1 is gone. Port out-of-tree hardware to HWMv2 and remove old alias board
-  names rather than depending on compatibility targets.
-- `DT_REG_ADDR*` and `DT_REG_SIZE*` produce unsigned literals. Use
-  `DT_REG_ADDR_RAW` when an address must serve as a Devicetree index.
-- Bindings cannot default `status`, `#address-cells`, or `#size-cells`; put
-  required values in the Devicetree source.
-- Local binding property names use hyphens, not underscores. Run the binding
-  migration utility for broad mechanical conversions, then review units and
-  semantics manually.
-- Replace selected `zephyr,code-partition` nodes with
-  `zephyr,mapped-partition`; the unit address is the mapped address and the
-  node cannot be combined with `CONFIG_FLASH_LOAD_OFFSET` or
-  `CONFIG_FLASH_LOAD_SIZE`.
-- Out-of-tree implementations of upstream driver classes declare their API
-  with `DEVICE_API()` so iterable-section validation and `DEVICE_API_IS` work.
+### Driver and peripheral failures
 
-## Kernel and core API essentials
+- Declare out-of-tree implementations of upstream driver classes with
+  DEVICE_API.
+- Use DEVICE_API_IS for runtime API checks and compatible shell completion.
+- Split stepper enable and disable calls, then migrate motion interfaces to the
+  stepper_ctrl family where applicable.
+- Put SPI chip-select setup and hold delays in Devicetree.
+- Select driver-specific CAN filter and message-buffer capacities.
+- Select both counter 64-bit capability and application support before calling
+  get_value_64.
+- Treat uart_irq_tx_ready values greater than zero as ready.
+- Add the required timeout to video-buffer allocation calls.
+- Expect signal-only IPM callbacks to receive a null payload.
+- Configure watchdog timeout and startup from application code.
 
-### Replace removed interfaces deliberately
+### Networking failures
 
-- Use `K_KERNEL_STACK_MEMBER`, `DIV_ROUND_UP`, `cmsis_core.h`, and
-  `<zephyr/random/random.h>` in place of their removed predecessors. Audit
-  generated enum-token helpers, init levels, `net_pkt`, and `net_buf` calls in
-  the same pass.
-- Replace the deprecated pipe API with `k_pipe_write()`, `k_pipe_read()`,
-  `k_pipe_reset()`, and `k_pipe_close()`. Partial-transfer thresholds,
-  availability queries, and dynamic pipe allocation are not preserved.
-- Treat `device_init()` failure as negative `-errno`. Remove workarounds that
-  expected a positive failure value.
-- Include standard `<time.h>`, `<signal.h>`, and `<limits.h>` for POSIX code;
-  use `sysconf()` for limits that vary at runtime.
-- Enable `CONFIG_POLL` explicitly when Bluetooth-host or other application
-  code calls `k_poll`; it is no longer selected transitively.
-- Enable `CONFIG_STACK_CANARIES_ALL` when all-function protection is required;
-  `CONFIG_STACK_CANARIES` alone no longer adds `-fstack-protector-all`.
+- Include POSIX socket headers directly or use zsock-prefixed APIs.
+- Update networking types and constants to net, NET, and ZSOCK namespaces.
+- Treat socklen_t as a 32-bit unsigned type.
+- Size HTTP concurrency and backlog arguments deliberately.
+- Pass HTTP service configuration and fallback-resource arguments.
+- Reset dynamic HTTP state on transaction completion.
+- Return net_verdict from ICMP handlers.
+- Move CoAP discovery attributes to resource metadata.
+- Use the new CoAP client response-data ownership model.
+- Use a source argument when reconfiguring DNS resolvers.
+- Replace raw AF_PACKET protocol usage with datagram link-layer sockets or
+  proper IP raw sockets.
+- Expect forwarded IPv4 and IPv6 packets to have decremented hop limits.
 
-### Recheck power and execution behavior
+### Bluetooth failures
 
-- Device runtime PM can be synchronous or asynchronous and can use the system
-  or a dedicated workqueue. Select the workqueue and sizing options explicitly.
-- SoCs and enabled `suspend-to-ram` Devicetree states own S2RAM selection;
-  applications should not select the removed ownership symbols.
-- Watchdogs are not automatically configured merely because
-  `CONFIG_WDT_DISABLE_AT_BOOT=n`. Configure and start the watchdog in the
-  application.
-- Review execute-never regions, hardware shadow stacks, cache-coherence tests,
-  exception-frame fields, and architecture current-thread hooks when porting
-  architecture or SoC code.
+- Register BAP, PACS, Scan Delegator, TBS, and related callbacks at runtime in
+  the required order.
+- Explicitly enable LE Audio dependencies formerly selected automatically.
+- Restart legacy connectable advertising explicitly when the application
+  depended on automatic resumption.
+- Use the driver-model HCI API and current lower-case Devicetree bus values.
+- Create and remove ISO data paths explicitly.
+- Secure the ACL before connecting an ISO channel.
+- Use CONFIG_PSA_CRYPTO for Mesh provider selection.
+- Replace fixed-passkey configuration with an application passkey callback.
+- Read BASS receive states explicitly after Broadcast Assistant discovery.
+- Return true to continue audio iteration and false to stop.
+- Check GATT notification permissions on the characteristic value.
 
-## Security, storage, and firmware-update essentials
+### Security, storage, and update failures
 
-### Migrate crypto as a provider stack
+- Upgrade security-sensitive deployments as a coordinated image set when a
+  maintenance release fixes cross-subsystem vulnerabilities.
+- Pass imgtool arguments through CONFIG_MCUBOOT_EXTRA_IMGTOOL_ARGS.
+- Set the TF-M image security counter deliberately.
+- Preserve installed secure-storage entries with the 64-bit UID compatibility
+  option when required.
+- Choose a PSA Crypto provider explicitly and remove TinyCrypt paths.
+- Account for the Mbed TLS and TF-PSA-Crypto module split.
+- Select TLS versions and ciphersuites explicitly for secure sockets.
+- Use authenticated hawkBit DDI configuration.
+- Preserve the intended MCUboot swap mode and partition-size relationship.
+- Accept TF-M secure and non-secure FOTA images before reboot when required.
+- Supply Secure Storage backends and their Settings, NVS, or ZMS dependencies
+  explicitly.
+- Use PARTITION macros in place of the deprecated FIXED_PARTITION family.
 
-- Treat Mbed TLS as the TLS/X.509 layer and TF-PSA-Crypto as the cryptographic
-  provider. Legacy Mbed TLS crypto configuration, custom configuration files,
-  and old algorithm-level toggles are not supported by the split stack.
-- Select TLS versions and ciphersuites explicitly. Secure-socket creation now
-  enforces the protocol argument as the minimum TLS version, and socket TLS no
-  longer pulls crypto settings in transitively.
-- `CONFIG_PSA_CRYPTO` chooses TF-M for TF-M builds and Mbed TLS otherwise;
-  use the custom-provider choice only when the application supplies the full
-  provider contract.
-- Persistent PSA key identifiers come from the allocated user and subsystem
-  ranges in `<zephyr/psa/key_ids.h>`. Size key slots explicitly where needed.
-- Existing secure-storage records created with 64-bit UIDs need
-  `CONFIG_SECURE_STORAGE_64_BIT_UID` during an upgrade that must preserve them.
+## High-value feature quick reference
 
-### Revalidate boot and update flows
+### Build and diagnostics
 
-- The build no longer invokes `west sign` for MCUboot. Pass imgtool arguments
-  through `CONFIG_MCUBOOT_EXTRA_IMGTOOL_ARGS`.
-- MCUboot defaults to swap-using-offset. Recheck primary and secondary slot
-  geometry, or explicitly retain swap-using-move.
-- Do not derive the TF-M rollback counter from an image version. Set
-  `CONFIG_TFM_IMAGE_SECURITY_COUNTER` deliberately.
-- TF-M BL2 signing derives alignment and sector counts from the hardware
-  description. Its secure and non-secure BIN outputs are unconfirmed FOTA
-  images and need `psa_fwu_accept()` to prevent rollback after reboot.
-- Backends no longer select secure-storage dependencies. Enable Settings and
-  NVS, ZMS, TF-M PSA storage, or a custom backend explicitly.
+- Use dtdoctor for Devicetree failures and traceconfig for Kconfig provenance.
+- Use the build dashboard for footprint, initialization, and Devicetree views.
+- Use the ztest benchmark framework for compensated cycle measurements.
+- Use scope helpers for RAII-style cleanup in C.
+- Generate compile-time layout constants with zephyr_constants_library.
 
-## Networking essentials
+### Runtime and data movement
 
-### Update type and namespace contracts
+- Use asynchronous Zbus listeners when observers must leave the publisher
+  thread.
+- Use proxy agents to bridge Zbus channels across CPU or domain boundaries.
+- Enable tiered sys_heap hardening at the assurance level the target can
+  afford.
+- Use streaming COBS helpers for incremental framing.
+- Use disjoint-set helpers for union-find workloads.
+- Use the CPU-load and pressure-based frequency policies for demand-driven
+  clock scaling.
 
-- Include network buffers from `<zephyr/net_buf.h>`. Zephyr networking symbols
-  use `net_`, `NET_`, and `ZSOCK_` prefixes; POSIX applications include POSIX
-  socket headers directly instead of receiving names transitively.
-- `net_mgmt` event and request callbacks receive a `uint64_t` event. Decode it
-  with `NET_MGMT_LAYER_CODE` and `NET_MGMT_GET_COMMAND`.
-- The inline `net_linkaddr` replaces pointer-based link-address storage. Test
-  `len == 0`, not `addr == NULL`, for an unset address.
-- Use packet datagram sockets for link-layer packets; the former
-  `AF_PACKET/SOCK_RAW/IPPROTO_RAW` combination is invalid.
+### Hardware and media
 
-### Honor server and transaction lifecycles
+- Use NVMEM cells for named hardware data and OTP for one-time programming.
+- Register display, PWM, and haptics event callbacks for asynchronous status.
+- Import externally owned video buffers when capture memory comes from another
+  allocator or named region.
+- Use video format classification helpers before calculating layouts.
+- Use USB host-class UVC support when Zephyr is the camera host.
 
-- Size HTTP service concurrency and backlog values deliberately and provide
-  the required configuration and fallback-resource arguments.
-- Dynamic HTTP handlers use request contexts and transaction status values.
-  Handle transaction completion to reset per-request state after the response
-  has actually been sent.
-- HTTP response callbacks return `0` to continue or nonzero to abort.
-- CoAP client request paths and options are embedded arrays, and response
-  callbacks receive a `coap_client_response_data` object. Move discovery
-  attributes from `coap_resource.user_data` to `metadata`.
-- MQTT 3.1.1 callers pass `NULL` to the extended `mqtt_disconnect()`; enable
-  the MQTT 5 option before using MQTT 5 properties.
+### Connectivity
 
-## Bluetooth essentials
+- Use WireGuard for integrated VPN connectivity.
+- Use Wi-Fi peer-to-peer management for direct discovery and connections.
+- Use multicast CoAP clients and parallel-client DTLS servers where required.
+- Use raw-UART SMP when MCUmgr framing must run directly over UART.
+- Use LoRa CAD, airtime, and duty-cycle receive APIs for channel-aware radios.
 
-### Make registration and dependencies explicit
+## Verification checklist
 
-- Register the Unicast Server before callbacks, PACS before ASCS, and the Scan
-  Delegator through its runtime register function. Use the corresponding
-  unregister functions for teardown.
-- LE Audio no longer selects GATT client, CCC discovery/update, extended or
-  periodic advertising, ISO broadcast/sync, PAC source/sink, or SMP features
-  automatically. Enable exactly what the product uses.
-- Multiple callback registrations are supported by several host and audio
-  APIs; do not retain single-listener storage assumptions.
-- Extended advertising never auto-resumes. Restart it explicitly after a
-  connection, and use the current connectable option or shorthand.
-
-### Recheck security and data paths
-
-- Legacy LE passkey-entry pairing no longer provides MITM authentication, and
-  loaded bonds created that way are downgraded. Request the required ACL
-  security explicitly before connecting an ISO channel.
-- Applications create and remove ISO data paths explicitly. Test central and
-  peripheral ISO channel types instead of the removed generic connected type.
-- Mesh PSA migration can make TinyCrypt-provisioned keys incompatible. An
-  in-place provider switch may require unprovisioning and reprovisioning.
-- Use application passkey callbacks instead of the deprecated fixed-passkey
-  Kconfig path.
-
-## Display, video, and motion essentials
-
-- Supply `video_buf_type` to stream operations, use `video_format.size` for
-  allocation, and let drivers set pitch. Bits-per-pixel helpers return bits,
-  not bytes.
-- UVC no longer configures the source device automatically after host
-  negotiation. Apply the selected frame format and rate in the application.
-- Use `uvc_device_init()`, `uvc_device_add_format()`, `uvc_device_enable()`,
-  and `uvc_device_shutdown()` for the current UVC lifecycle.
-- Motion control uses the `stepper_ctrl_*` API and controller event types.
-  Put step/dir motion properties on a `zephyr,gpio-step-dir-stepper-ctrl` node.
-- Recheck RGB/BGR and monochrome workarounds. Several pixel-format identifiers
-  and byte-layout meanings were corrected rather than merely renamed.
-
-## High-value capabilities
-
-- Secure storage provides the PSA storage surface and persistent PSA keys;
-  ZMS supports both erase-based NOR and no-erase nonvolatile media.
-- NVMEM exposes named or indexed cells and supports EEPROM and flash-backed
-  implementations; OTP adds standard read and gated program operations.
-- WireGuard, Wi-Fi Direct, multicast CoAP clients, FTP clients, parallel-client
-  DTLS servers, and an OpenThread NAT64 translator expand network integration.
-- Asynchronous Zbus listeners move observer work out of publisher context, and
-  proxy agents can forward channels over IPC between domains.
-- CPU-frequency policies can react to scheduler load or pressure, while
-  `cpu_load` exposes usage metrics from scheduler statistics.
-- Scope guards and deferred cleanup provide structured C cleanup, and tiered
-  heap hardening adds progressively stronger allocator validation.
-- The USB host-class framework can drive UVC cameras, while the device stack
-  supports runtime configuration and multiple simultaneous controllers.
-
-## Migration workflow
-
-1. Record the exact board target, runner, modules, toolchain, application
-   configuration, overlays, and sysbuild inputs.
-2. Perform a pristine configure and classify failures by reference topic.
-3. Apply a whole subsystem migration: names, types, callbacks, dependencies,
-   Devicetree, defaults, persistence, and lifecycle.
-4. Inspect generated configuration and Devicetree output before flashing.
-5. Exercise initialization failures, reconnects, suspend/resume, update and
-   rollback, persisted state, protocol aborts, and teardown paths on hardware.
-6. Run Twister or ztest coverage and any host-side parsers against the new
-   identifiers and output formats.
+- Confirm every renamed symbol is absent from the final configuration.
+- Inspect generated Devicetree for required properties, child topology, and
+  chosen-node targets.
+- Verify flash partitions and update slots against deployed-device layouts.
+- Re-run signing, flashing, reset, and rollback tests on physical hardware.
+- Exercise network timeout, backlog, cancellation, and teardown paths.
+- Exercise Bluetooth registration, disconnect, iteration-stop, and pairing
+  downgrade paths.
+- Test storage migration with a copy of persistent production data.
+- Run Twister or ztest suites that cover each changed subsystem.
+- Recheck security advisories before releasing a product based on an older
+  maintenance image.

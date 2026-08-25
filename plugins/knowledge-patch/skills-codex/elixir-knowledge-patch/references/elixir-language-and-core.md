@@ -1,29 +1,23 @@
 # Elixir Language and Core APIs
 
-Batch attribution: `1.17.0`, `1.18.0`, `1.19.0`, and `1.20.0`.
+## Choose compatible runtimes
 
-## Contents
+- Elixir `1.17.0` added Erlang/OTP 27 support, dropped OTP 24, and requires OTP
+  25 or newer; OTP 26 or newer was recommended.
+- Elixir `1.18.0` is the final Elixir release supporting OTP 25. Experimental
+  PowerShell launchers exist for `elixir`, `elixirc`, and `mix`; WERL is no
+  longer supported, so Windows users should use OTP 26 or newer.
+- Elixir `1.19.0` supports Erlang/OTP 28.1 or newer in the OTP 28 line.
+- Elixir `1.20.0` requires Erlang/OTP 27 or newer and is compatible with OTP
+  29.
 
-- [Runtime compatibility](#runtime-compatibility)
-- [Syntax and parsing migrations](#syntax-and-parsing-migrations)
-- [JSON and data representation](#json-and-data-representation)
-- [Time, guards, and collections](#time-guards-and-collections)
-- [Files, regexes, and processes](#files-regexes-and-processes)
-- [Protocols and derivation](#protocols-and-derivation)
-- [Debug evaluation](#debug-evaluation)
+## Update source constructs
 
-## Runtime compatibility
+### Remove recursive variable cycles
 
-- Elixir 1.17 supports Erlang/OTP 27, drops OTP 24, requires OTP 25 or newer, and recommends OTP 26 or newer.
-- Elixir 1.18 is the final release supporting OTP 25. Use OTP 26 or newer on Windows; WERL is no longer supported. Experimental PowerShell entry scripts are available for `elixir`, `elixirc`, and `mix`.
-- Elixir 1.19 requires Erlang/OTP 28.1 or newer when running on OTP 28.
-- Elixir 1.20 requires Erlang/OTP 27 or newer and is compatible with OTP 29.
-
-## Syntax and parsing migrations
-
-### Remove recursive pattern-variable cycles
-
-Recursive variable definitions fail compilation, even when a cycle consists only of root variables and could be satisfied. Remove the cycle or state equality in guards:
+Recursive pattern-variable definitions fail compilation in `1.18.0`, even
+when a root-variable cycle could theoretically be satisfied. Remove the cycle
+or express equality with guards:
 
 ```elixir
 # rejected
@@ -33,60 +27,71 @@ def same(x = y, y = z, z = x), do: x
 def same(x, y, z) when x == y and y == z, do: x
 ```
 
-### Follow mixed-script identifier rules
+### Separate scripts in identifiers
 
-Identifier parsing follows the newer UTS #55 guidance. Combine different scripts only across underscore-delimited segments, such as `http_сервер`; direct mixing such as `Tシャツ` is rejected. The compiler warns about bidirectionally confusable identifiers.
+Identifier parsing follows newer UTS #55 guidance in `1.18.0`. Scripts may be
+combined across underscores, as in `http_сервер`, but direct mixing such as
+`Tシャツ` is rejected. The compiler also warns about bidirectionally
+confusable identifiers.
 
 ### Make descending ranges explicit
 
-Inferring a negative step in `Range.new/2` is deprecated. Supply it explicitly:
+Implicit negative-step inference in `Range.new/2` is deprecated in `1.18.0`.
+Pass a negative step:
 
 ```elixir
 Range.new(5, 1, -1)
 ```
 
-### Match structs before updating them
+### Match before struct updates
 
-The updated expression in struct-update syntax must have been explicitly matched as that struct. After the match, map-update syntax keeps the same typing guarantees:
+From `1.19.0`, struct update syntax requires an explicit match proving the
+updated value has that struct type. Map update syntax retains its typing after
+the match:
 
 ```elixir
 def set_path(%URI{} = uri), do: %{uri | path: "/foo/bar"}
 ```
 
-### Pin bound bitstring sizes
-
-Pin an already-bound size used in a bitstring pattern:
-
-```elixir
-size = 8
-<<value::size(^size)>> = <<42>>
-```
-
-### Account for stricter line parsing
-
-- Raw carriage-return line endings are rejected in strings, comments, and after `?`.
-- U+2028 and U+2029 raise in comments and strings.
-- Other disallowed line-break characters raise in comments and warn in strings; that string warning becomes an error in Elixir 1.20.
-- `Code.string_to_quoted/2` returns an error for invalid Unicode instead of raising and accepts an `:indentation` option for embedded source.
+Defining a struct or exception inside `defprotocol` is rejected.
 
 ### Separate `require` from macro calls
 
-`require SomeModule` still evaluates to the module at runtime, but its macro expansion no longer produces module AST. Do not chain a macro call from `require(SomeModule)`:
+In `1.20.0`, `require SomeModule` still returns the module at runtime, but
+`require/1` no longer expands to module AST. Split previously chained code:
 
 ```elixir
 require SomeModule
 SomeModule.some_macro()
 ```
 
-### Stop relying on undefined-variable fallback
+### Pin bound bitstring sizes
 
-The `on_undefined_variable: :warn` option is hard-deprecated. Undefined identifiers must not be treated as implicit function calls.
+An already-bound bitstring size must be pinned in a pattern (`1.20.0`):
 
-## JSON and data representation
+```elixir
+size = 8
+<<value::size(^size)>> = <<42>>
+```
 
-### Use the built-in `JSON` module
+## Handle stricter source parsing
 
-Encode, decode, or produce encoded iodata without an external JSON library. Decoded object keys are binaries by default. Derive `JSON.Encoder` for selected struct fields; Calendar types have built-in implementations:
+Elixir `1.19.0` rejects U+2028 and U+2029 in comments and strings. Other
+disallowed line-break characters warn in strings and raise in comments; the
+string warning becomes an error in Elixir 1.20.
+
+Elixir `1.20.0` rejects raw carriage-return line endings in strings, comments,
+and after `?`.
+
+The `on_undefined_variable: :warn` option is hard-deprecated in `1.19.0`.
+Undefined identifiers must not rely on fallback conversion into function calls.
+
+## Encode and decode JSON
+
+Elixir's `JSON` module in `1.18.0` encodes values, decodes binaries, and
+produces encoded iodata without an external library. Object keys decode as
+binaries by default. Derive `JSON.Encoder` for selected struct fields; Calendar
+types already implement the protocol.
 
 ```elixir
 defmodule User do
@@ -98,83 +103,77 @@ json = JSON.encode!(%User{id: 1, name: "Ada"})
 %{"id" => 1, "name" => "Ada"} = JSON.decode!(json)
 ```
 
-### Expect whole-structure inspect limits
+## Normalize durations
 
-Pretty printing spends `:limit` across an entire nested structure instead of restarting the allowance at every depth, so deeply nested values may truncate earlier. The default limit is 100 rather than 50.
-
-Derive `Inspect` with `optional: :all` when every field may be omitted. In custom `Inspect.Algebra` document builders, replace the soft-deprecated `next_break_fits` with optimistic or pessimistic groups.
-
-### Customize runtime escaping
-
-Structs may define `__escape__/1` to control how runtime values are escaped by `Macro.escape/1`.
-
-## Time, guards, and collections
-
-### Normalize durations as timeouts
-
-Use `Kernel.to_timeout/1` to normalize integer or calendar-style durations for timeout-taking APIs:
+`Kernel.to_timeout/1` converts integers and calendar-style durations for APIs
+that accept timeouts (`1.17.0`):
 
 ```elixir
 Process.send_after(pid, :wake_up, to_timeout(hour: 1))
 ```
 
-### Use minimum and maximum in guards
+## Read and copy files
 
-`min/2` and `max/2` are guard-safe:
-
-```elixir
-def lower(a, b) when min(a, b) == a, do: a
-```
-
-### Let map operations refine types
-
-The checker tracks most `Map` operations. `put` makes a key present, `delete` makes it absent, and `replace` leaves it optional:
-
-```elixir
-Map.put(map, :key, 123)     # %{..., key: integer()}
-Map.delete(map, :key)       # %{..., key: not_set()}
-Map.replace(map, :key, 123) # %{..., key: if_set(integer())}
-```
-
-`Map.fetch!/2`, `Map.pop!/2`, `Map.replace!/3`, and `Map.update!/3` propagate required-key information and expose calls known statically to fail.
-
-## Files, regexes, and processes
-
-### Read and copy files safely
-
-`File.read/2` accepts `[:raw]`:
+`File.read/2` accepts `[:raw]` in `1.20.0`:
 
 ```elixir
 File.read("data.bin", [:raw])
 ```
 
-`File.cp_r/3` skips devices, named pipes, and other special files rather than failing with `:eio`. Recursive copies preserve directory permissions and avoid loops from symlink cycles or a destination inside the source.
+`File.cp_r/3` now skips devices, named pipes, and other special files instead
+of returning `:eio`. It preserves directory permissions and avoids loops from
+symlink cycles or a destination nested inside the source.
 
-Callbacks formerly passed as the third positional argument to `File.cp/3` or `File.cp_r/3` move to `on_conflict: callback`.
+Callbacks passed positionally as the third argument of `File.cp/3` or
+`File.cp_r/3` move to `on_conflict: callback` in `1.19.0`.
 
-Use `File.stream!(path, lines_or_bytes, modes)` instead of the hard-deprecated old argument order.
-
-### Construct and import regexes
-
-- `OptionParser` can parse `:regex` option values.
-- `Regex.to_embed/2` returns a representation suitable for embedding in another regex.
-- Define a regular expression with uppercase `/E`, then load it with `Regex.import/1`:
+Call `File.stream!` in the `1.20.0` argument order:
 
 ```elixir
-regex = Regex.import(~r/foo/E)
-Regex.match?(regex, "foo")
+File.stream!(path, lines_or_bytes, modes)
 ```
 
-On Erlang/OTP 28, do not use a compiled regex as a struct field default. Initialize it while constructing the struct:
+## Use regular expressions portably
+
+Elixir `1.19.0` on OTP 28 must not put compiled regexes in struct defaults.
+Construct them at runtime instead:
 
 ```elixir
 defstruct [:regex]
 def new, do: %__MODULE__{regex: ~r/foo/}
 ```
 
-### Name partition supervisors through registries
+OTP's compiled representation is runtime-specific, so recompile expressions
+for each node and OTP version. A struct may implement `__escape__/1` to control
+how its runtime values are handled by `Macro.escape/1`.
 
-`PartitionSupervisor.count_children/1` and `PartitionSupervisor.stop/3` accept standard `{:via, module, term}` references:
+`OptionParser` accepts `:regex` as an option type, and `Regex.to_embed/2`
+returns a representation suitable for embedding in another expression
+(`1.19.0`):
+
+```elixir
+OptionParser.parse(args, strict: [pattern: :regex])
+```
+
+Use `Regex.import/1` to load a regex created with uppercase `/E` in `1.20.0`:
+
+```elixir
+regex = Regex.import(~r/foo/E)
+Regex.match?(regex, "foo")
+```
+
+## Use guard-safe minimum and maximum
+
+`min/2` and `max/2` are guard-safe in `1.19.0`:
+
+```elixir
+def lower(a, b) when min(a, b) == a, do: a
+```
+
+## Name partition supervisors through registries
+
+`PartitionSupervisor.count_children/1` and `PartitionSupervisor.stop/3`
+accept standard `{:via, module, term}` references in `1.20.0`:
 
 ```elixir
 name = {:via, Registry, {MyRegistry, :partitions}}
@@ -182,20 +181,30 @@ PartitionSupervisor.count_children(name)
 PartitionSupervisor.stop(name, :normal, :infinity)
 ```
 
-### Use current node and logger APIs
+## Customize evaluation and inspection
 
-- Replace positional `Node.start/2-3` calls with `Node.start/2` and a keyword list.
-- Replace `Logger.enable/1` and `Logger.disable/1` with `Logger.put_process_level/2` and `Logger.delete_process_level/1`.
-- Replace Logger's deprecated `:backends` setting by disabling `:default_handler` or starting custom backends from the application start callback.
+`Code` evaluation functions accept `:dbg_callback` in `1.20.0`, allowing an
+embedded evaluator to customize `dbg`. Pipeline debugging also prints the
+intermediate result of every stage.
 
-## Protocols and derivation
+Pretty printing in `1.19.0` consumes `:limit` across an entire nested structure
+rather than resetting at each depth, so nested values can truncate sooner. The
+default limit increased from 50 to 100.
 
-### Let protocols own deriving
+`Inspect` derivation accepts `optional: :all`. Custom `Inspect.Algebra`
+builders should replace soft-deprecated `next_break_fits` with optimistic or
+pessimistic groups:
 
-A protocol can define an optional `__deriving__/1` macro callback without requiring an empty implementation. Defining the older `__deriving__/3` callback in the protocol's `Any` implementation is deprecated.
+```elixir
+@derive {Inspect, optional: :all}
+```
 
-Do not define a struct or exception inside `defprotocol`; the compiler rejects it.
+## Migrate process and node APIs
 
-## Debug evaluation
+Replace the `1.20.0` hard-deprecated Logger switches:
 
-Pass `:dbg_callback` to `Code` evaluation functions when an embedded evaluator must customize `dbg` handling. A pipeline passed to `dbg` prints every intermediate stage, not only the final result.
+- `Logger.enable/1` becomes `Logger.put_process_level/2`.
+- `Logger.disable/1` becomes `Logger.delete_process_level/1`.
+
+The positional `Node.start/2-3` forms are soft-deprecated in `1.19.0`; call
+`Node.start/2` with a keyword list.

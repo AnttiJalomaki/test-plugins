@@ -1,102 +1,104 @@
 # Security, Identity, and Cryptography
 
-Use this reference for mandatory access control, login policy, PAM, SSH, directory services, FIPS, and cryptographic compatibility.
-
-## Contents
-
-- [Mandatory access control](#mandatory-access-control)
-- [Local and remote authentication](#local-and-remote-authentication)
-- [SSH and system cryptography](#ssh-and-system-cryptography)
-- [Directory and identity services](#directory-and-identity-services)
-- [PAM migration](#pam-migration)
-- [Security-focused containers](#security-focused-containers)
-
 ## Mandatory access control
 
-### Leap AppArmor and SELinux choices
+### Leap AppArmor behavior (`leap-16.0-guide`)
 
-Leap 16 new installations cannot select AppArmor as the Linux Security Module, although it can be enabled after installation. Manual Leap 15.6 migrations preserve AppArmor; `opensuse-migration-tool` prompts to preserve it or switch to SELinux.
+New Leap 16 installations cannot select AppArmor as the LSM, but administrators
+can enable it after installation. Manual 15.6 migrations preserve it; the
+openSUSE migration tool asks whether to preserve it or switch to SELinux.
 
-AppArmor 4.1 adds a `priority=<number>` rule prefix. AppArmor 4.0's IP- and port-granular network rules still lack upstream kernel support.
+AppArmor 4.1 adds the `priority=<number>` rule prefix. The IP/port-granular
+network rules introduced in 4.0 still lack upstream kernel support.
 
-### SLES SELinux-only policy
+### SLES 16 SELinux default
 
-SLES 16 removes AppArmor and enables SELinux in enforcing mode by default, with policies for more than 400 modules. Configuring SLES for SAP workloads automatically changes SELinux to permissive mode.
+SLES 16 removes AppArmor and enables SELinux enforcing mode by default, with
+policies for more than 400 modules. Configuring SAP workloads automatically
+changes SELinux to permissive mode; account for that deliberate exception.
 
-### Yama
+## SSH and local privilege
 
-SLES 16 supports Yama system-wide scopes for restricting which processes may observe or manipulate other processes through `ptrace`.
+### Remote root defaults (`leap-16.0-guide`)
 
-## Local and remote authentication
+New Leap installations allow root SSH by key only. If setup provides only a
+root password, it does not enable `sshd`; upgrades retain prior behavior.
+`openssh-server-config-rootlogin` restores password-based remote root login.
 
-### Primary user groups
+### OpenSSH system crypto policy
 
-With `USERGROUPS_ENAB` enabled in `/usr/etc/login.defs`, Leap 16 creates a same-named primary group for each new user instead of using the common `users` group. This also affects upgrades that did not override `/etc/login.defs`. Audit policy based on `@users` and inherited home-directory group ownership. Convert a home that uses no other group with:
-
-```sh
-chgrp -R myuser "$HOME"
-```
-
-### Sudo and Polkit
-
-The first SLES 16 installer-created user joins `wheel`. Wheel members use their own password for `sudo -i`, `kexec`, and Polkit; non-members use the `root` password. New installations implement the default through `sudo-policy-wheel-auth-self`.
-
-### Remote root SSH
-
-Leap 16 new installations allow root SSH authentication by key only and do not enable `sshd` when setup supplies only a root password. Upgrades preserve prior behavior. Install `openssh-server-config-rootlogin` only when password-based remote root login is deliberately required.
-
-### Cockpit root login
-
-Leap 15.6 disables Cockpit password login for `root` through `/etc/cockpit/disallowed-users`. Remove the entry only deliberately and restart `cockpit.socket`.
-
-## SSH and system cryptography
-
-### OpenSSH policy
-
-SLES 15 SP6 OpenSSH 9.6p1 follows system `crypto-policies` and rejects RSA keys smaller than 2048 bits. Find affected `known_hosts` entries and arrange a verified replacement host key:
+On SLES 15 SP6, OpenSSH 9.6p1 follows system `crypto-policies` and rejects RSA
+keys smaller than 2048 bits. Find affected `known_hosts` entries and arrange a
+verified replacement key before upgrading:
 
 ```sh
 grep ssh-rsa ~/.ssh/known_hosts | ssh-keygen -lf -
 ```
 
-Use the insecure `LEGACY` policy only for temporary recovery, then restore `DEFAULT` immediately:
+If recovery requires the insecure policy, use `LEGACY` only temporarily and
+restore `DEFAULT` immediately:
 
 ```sh
 sudo update-crypto-policies --set LEGACY
 sudo update-crypto-policies --set DEFAULT
 ```
 
-### FIPS and SHA-1
+### Sudo authentication split
 
-SLES 16.0 provides FIPS mode but is not yet FIPS 140-3 certified. SHA-1 is disabled or marked unapproved in that mode, and other disabled algorithms can also affect applications.
+On new SLES 16 installations, the first installer-created user joins `wheel`.
+Wheel members use their own password for `sudo -i`, `kexec`, and Polkit;
+non-members supply the root password. The default is implemented by
+`sudo-policy-wheel-auth-self`.
 
-### Legacy OpenSSL hashes
+### Per-user primary groups (`leap-16.0-guide`)
 
-SLES 16 OpenSSL is built with MD2, but MD2, MD4, and MD5 stay disabled until the legacy provider is active. For SQL Server 2025 `HASHBYTE` compatibility, enable both providers in `/etc/ssl/openssl.cnf`:
+With `USERGROUPS_ENAB` in `/usr/etc/login.defs`, new users get a same-named
+primary group instead of the shared `users` group, including on upgrades without
+an `/etc/login.defs` override. Audit `@users` policy and inherited home-directory
+ownership. For a simple home that uses no other group:
 
-```ini
-[provider_sect]
-default = default_sect
-legacy = legacy_sect
-
-[default_sect]
-activate = 1
-
-[legacy_sect]
-activate = 1
+```sh
+chgrp -R myuser "$HOME"
 ```
 
-Verify with `openssl list -providers`. Do not enable the legacy provider without a compatibility requirement.
+### Installer SSH keys (`16.0-rev-2026-08-04`)
 
-## Directory and identity services
+Agama can configure public keys for every account it creates.
 
-### Azure Entra ID
+## Identity services
 
-Leap 16 supplies `himmelblau` PAM and NSS modules for Azure Entra ID and Intune-backed Linux authentication.
+### Azure Entra ID on Leap 16 (`leap-16.0-guide`)
+
+`himmelblau` integrates Azure Entra ID and Intune through PAM and NSS and is the
+distribution-provided Entra-backed identity path.
+
+### Yama ptrace restrictions
+
+SLES 16 supports Yama system-wide scopes that restrict which processes can
+observe or manipulate others through `ptrace`.
+
+### NIS removal
+
+SLES 16 removes NIS/Yellow Pages. Migrate identity services to LDAP.
+
+### OpenLDAP migration window
+
+SLES 15 SP6 announced OpenLDAP end of support with that service pack in favor
+of 389 Directory Server. SP7 reverses immediate removal by reintroducing the
+server as `openldap2_5` to extend the migration window. It is not for new
+deployments and is not planned for SLES 16; continue migration to `389-ds`.
+
+### OpenLDAP 2.4 ABI shims
+
+SLES 16 supplies `libldap` and `liblber` shims with OpenLDAP 2.4 sonames linked
+to OpenLDAP 2.6 for applications such as SAP central user management. They
+support the public API only and cannot supply the two GSSAPI functions removed
+from OpenLDAP 2.6.
 
 ### Unprivileged SSSD
 
-SLES 16 SSSD 2.10 can run as user `sssd` for non-root containers. Clear the default supplementary group in a unit override:
+SSSD 2.10 can run as user `sssd` for non-root containers. Clear the default
+supplementary group in an override:
 
 ```ini
 [Service]
@@ -111,22 +113,54 @@ systemctl daemon-reload
 systemctl restart sssd
 ```
 
-Filesystems without POSIX capabilities, including NFS, still require SSSD to run as root.
+Filesystems without POSIX capabilities, including NFS, still require root.
 
-### OpenLDAP transition
+### SAP PAM migration rewrite
 
-SLES 15 SP6 originally ended OpenLDAP support with the SP6 lifecycle in favor of 389 Directory Server. SLES 15 SP7 reverses immediate removal by reintroducing the server as `openldap2_5` to extend the migration window. Do not use it for new deployments; it is not planned for SLES 16, so continue migration to `389-ds`.
+The SLES 16 migration tool replaces obsolete SAP Host Agent references in
+`/etc/pam.d/` from `pam_unix_auth.so`, `pam_unix_acct.so`,
+`pam_unix_session.so`, and `pam_unix_passwd.so` to `pam_unix.so`; the old
+compatibility links no longer exist.
 
-SLES 16 supplies OpenLDAP 2.4-soname compatibility shims for public APIs only; see [packages-runtimes.md](packages-runtimes.md).
+## Cryptographic policy
 
-### Removed identity protocols
+### OpenSSL development package conflict
 
-SLES 16 removes NIS/Yellow Pages; migrate its identity roles to LDAP.
+SLES 15 SP6 OpenSSL 3.1.4 replaces 1.1.1. The development packages are mutually
+exclusive and conflict resolution is not automatic; remove
+`libopenssl1_1-devel` manually during upgrade.
 
-## PAM migration
+### FIPS status on SLES 16
 
-During SLES 16 migration, replace obsolete SAP Host Agent PAM references `pam_unix_auth.so`, `pam_unix_acct.so`, `pam_unix_session.so`, and `pam_unix_passwd.so` with `pam_unix.so`. The migration tool rewrites them because the compatibility links are absent.
+FIPS mode is available, but SLES 16.0 is not yet FIPS 140-3 certified. SHA-1 is
+disabled or unapproved in that mode, and other disabled algorithms can alter
+application behavior.
 
-## Security-focused containers
+### Legacy hashes for SQL Server 2025
 
-A STIG-compliant SLE Base Container Image is available through the US Department of Defense Iron Bank repository. Use that artifact for deployments requiring Iron Bank content instead of assuming the ordinary BCI has equivalent hardening.
+OpenSSL is built with MD2, but MD2, MD4, and MD5 remain disabled until the
+legacy provider is enabled for SQL Server `HASHBYTE` compatibility. Activate
+both providers in `/etc/ssl/openssl.cnf` and verify with
+`openssl list -providers`:
+
+```ini
+[provider_sect]
+default = default_sect
+legacy = legacy_sect
+
+[default_sect]
+activate = 1
+
+[legacy_sect]
+activate = 1
+```
+
+### Post-quantum key exchange (`16.0-rev-2026-08-04`)
+
+Post-quantum key exchange is enabled by default. Interoperability tests must
+account for PQC negotiation without an explicit opt-in.
+
+### Regular-file hardening (`16.0-rev-2026-08-04`)
+
+Regular-file security protection is enabled by default. Recheck workloads that
+depended on the previous unprotected behavior.

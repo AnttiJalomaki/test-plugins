@@ -1,21 +1,21 @@
 # Vue Ecosystem Tooling
 
-## Nuxt data fetching
+## Nuxt custom data fetchers
 
-Nuxt 4.4 supports custom data-fetcher instances. Applications can use multiple
-separately configured fetching clients instead of routing all requests through
-one shared default instance.
+Nuxt 4.4 supports custom data-fetcher instances. Use separately configured
+clients when a feature needs distinct base URLs, headers, authentication, or
+other behavior instead of routing every request through one shared default.
 
-## Vite's bundler transition
+## Vite 8 and Rolldown
 
-Vite 8 replaces the split esbuild-in-development and Rollup-in-production
-pipeline with Rolldown. Vue framework users generally inherit this change
-through Vite, while tools that integrate directly with Vite should account for
-Rolldown as the bundler.
+Vite 8 replaces its esbuild-in-development and Rollup-in-production split with
+Rolldown. Framework applications generally inherit the bundler transition,
+while tools that integrate directly with Vite should validate their plugin,
+build, and output assumptions against Rolldown.
 
-## Vite+
+## Vite+ unified toolchain
 
-Vite+ is an open-source, MIT-licensed frontend toolchain built on Vite and Oxc.
-Its `vp` CLI covers building, linting, formatting, type-checking, packaging,
-testing, Node-version management, and package management. Configuration is
-consolidated in `vite.config.ts`.
+Vite+ is an open-source, MIT-licensed frontend toolchain based on Vite and Oxc.
+Its `vp` CLI covers building, linting, formatting, type checking, packaging,
+testing, Node-version management, and package management. It consolidates
+toolchain configuration in `vite.config.ts`.

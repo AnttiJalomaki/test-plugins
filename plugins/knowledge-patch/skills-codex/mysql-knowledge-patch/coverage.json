@@ -1,6 +1,8 @@
 {
   "patch": "mysql-knowledge-patch",
-  "merged_at": "2026-07-26T23:08:31Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-21T13:14:56Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -16,6 +18,11 @@
       "build": "included"
     },
     "9.7.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "9.7.2": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

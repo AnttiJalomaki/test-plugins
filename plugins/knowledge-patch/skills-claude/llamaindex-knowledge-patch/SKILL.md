@@ -10,25 +10,31 @@ metadata:
 
 # LlamaIndex Knowledge Patch
 
-Use this skill when maintaining LlamaIndex applications that use core indexes,
-ingestion pipelines, agents, or workflows. Start with the migration rules below,
-then open the topic guide that matches the code being changed.
+Use this skill when writing, reviewing, migrating, or debugging LlamaIndex
+applications. Inspect the application's installed distributions and lockfile
+before applying package-specific advice because core and integration packages
+are released independently.
+
+Prefer project code, installed-package metadata, and tests when they disagree
+with this guidance. Load only the reference files relevant to the current task.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [API migrations](references/api-migrations.md) | `ServiceContext` and `LLMPredictor` removal, Pydantic v2, package coordination, Python support, workflow migration |
-| [Ingestion and storage](references/ingestion-storage.md) | `IngestionPipeline`, cache and docstore state, parallel execution, document updates, persisted and external vector stores |
-| [Agents and workflows](references/agents-workflows.md) | Agent selection, tools, run handlers, memory, concurrency, state, resources, validation |
+| [API migrations](references/api-migrations.md) | Configuration, Pydantic v2, coordinated upgrades, and workflow migration |
+| [Agents and workflows](references/agents-workflows.md) | Agent selection, handlers, memory, concurrency, state, resources, and validation |
+| [Ingestion and storage](references/ingestion-storage.md) | Persistence, caching, upserts, deletion, parsing, and graph extraction |
+| [Retrieval and citations](references/retrieval-citations.md) | MMR filters, async reranking, citation identity, and spans |
+| [Package integrations](references/package-integrations.md) | Model adapters, protocols, vector stores, client compatibility, and optional dependencies |
 
-## Migration priorities
+## Breaking migrations first
 
-### Replace removed global abstractions
+### Replace removed configuration abstractions
 
-Do not build new code around `ServiceContext` or `LLMPredictor`. Configure
-process-wide defaults through `Settings`, or pass the LLM, embedding model, and
-transformations directly when multiple configurations must coexist.
+Do not build new code around `ServiceContext` or `LLMPredictor`. Use `Settings`
+for process-wide defaults, or pass the LLM, embedding model, and transformations
+directly when configurations must coexist.
 
 ```python
 from llama_index.core import Settings
@@ -37,15 +43,14 @@ Settings.llm = llm
 Settings.embed_model = embed_model
 ```
 
-Treat this as more than an import edit. Audit custom readers, nodes, output
-parsers, tools, models, validators, serialization, and integrations for
-Pydantic v2 behavior.
+Audit custom readers, nodes, output parsers, tools, models, validators,
+serialization, and integrations for Pydantic v2 behavior.
 
-### Upgrade the package set coherently
+### Upgrade the package family coherently
 
-Resolve the entire `llama-index-*` environment together. Integration packages
-have independent versions and core constraints, so neither upgrading core alone
-nor pinning every distribution to `0.12.0` is a safe upgrade strategy.
+Do not assign one release number to every `llama-index-*` distribution. Resolve
+core and integrations together under their actual independent versions and
+constraints, test the resulting environment, and preserve its lockfile.
 
 ```python
 from importlib.metadata import version
@@ -54,55 +59,68 @@ core_version = version("llama-index-core")
 starter_version = version("llama-index")
 ```
 
-Read each selected release's Python metadata. Python 3.8 is no longer supported,
-and some newer releases may require a higher interpreter version. Preserve the
-resolved lockfile after the upgrade.
+The v0.12 transition drops Python 3.8. Check each selected distribution's
+metadata because newer packages may require a later interpreter.
 
-### Redesign old agent entry points
+### Redesign legacy pipelines as workflows
 
-Use workflow-based agents from `llama_index.core.agent.workflow`. Their runs are
-asynchronous workflow handlers with event streams; older `OpenAIAgent`, runner,
-and worker examples do not describe this execution model.
+A workflow is not a renamed `QueryPipeline` DAG. Model control flow with typed
+events, asynchronous `@step` methods, branches or loops, `Context`, streaming,
+and checkpointable execution. Use `llama_index.core.workflow` inside core
+applications; standalone workflow applications can use the `workflows` import
+surface from `llama-index-workflows`.
+
+### Treat current agent execution as asynchronous
+
+Import current workflow agents from `llama_index.core.agent.workflow`. A call to
+`agent.run(...)` or `workflow.run(...)` returns an awaitable handler, not a
+finished response. Keep that handler if live events are needed, then await the
+same object for the final result.
 
 ```python
-from llama_index.core.agent.workflow import (
-    AgentWorkflow,
-    FunctionAgent,
-    ReActAgent,
-)
+handler = agent.run("What is 12 times 34?")
+async for event in handler.stream_events():
+    ...
+result = await handler
 ```
 
-Use `Memory` for current agent memory. `ChatMemoryBuffer`,
-`ChatSummaryMemoryBuffer`, and `VectorMemory` are deprecated.
+Legacy provider-specific agent, runner, and worker examples do not describe
+this execution model.
 
-### Redesign QueryPipeline graphs as workflows
+## Ingestion and persistence quick reference
 
-A workflow is not a renamed `QueryPipeline`. Re-express the control flow with
-typed Pydantic events, asynchronous `@step` methods, branches or loops,
-`Context`, streaming, and checkpoint-aware execution.
+### Own document updates explicitly
 
-Core applications can keep the `llama_index.core.workflow` import surface.
-Standalone workflow applications can install `llama-index-workflows` and import
-from `workflows`.
+Use `IngestionPipeline` when an application needs transformation caching,
+document update strategies, or direct vector-store insertion.
+`VectorStoreIndex.from_documents` remains useful for simple construction, but
+it does not replace an explicit update lifecycle.
 
-## Ingestion quick reference
+Stable `document.doc_id` and `node.ref_doc_id` values drive duplicate, update,
+and deletion decisions. A strategy that deletes records absent from the input
+requires a complete authoritative inventory; do not apply it to a partial
+crawl.
 
-### Own updates with an ingestion pipeline
+### Keep pipeline cache and document state distinct
 
-`VectorStoreIndex.from_documents` is convenient, but use `IngestionPipeline`
-when the application needs transformation caching, document update policies, or
-direct vector-store insertion.
+Cache identity includes both a node and its transformation. A custom
+transformation whose behavior changes without changing its stable serialized
+settings or hash can reuse stale output.
 
-When the embedding model or its configuration changes, rebuild or explicitly
-verify persisted vector indexes. Exercise ingestion, retrieval, agent, and
-workflow paths together during an upgrade.
+```python
+pipeline.persist("./pipeline-state")
+pipeline.load("./pipeline-state")
+```
 
-### Keep persisted components explicit
+This cache is separate from docstore state. Use `pipeline.arun()` for async
+execution. Use process-based `num_workers` only when transformations and client
+objects are picklable and multiprocessing is actually beneficial.
 
-`index.storage_context.persist()` saves local stores. It does not necessarily
-back up an external vector store, and a remote collection alone may not contain
-node text, mappings, or document state. Reloading also does not prove that the
-remote collection exists or that its embeddings are compatible.
+### Verify both sides of persisted indexes
+
+`StorageContext.persist()` saves local stores; it does not necessarily copy an
+external vector collection. The remote collection may likewise lack node text,
+mappings, or document state held locally.
 
 ```python
 from llama_index.core import StorageContext, load_index_from_storage
@@ -112,50 +130,19 @@ storage_context = StorageContext.from_defaults(persist_dir="./storage")
 index = load_index_from_storage(storage_context)
 ```
 
-If a persist directory contains multiple indexes, select the expected index ID.
+On restore, verify the remote collection, embedding compatibility, and expected
+index ID. Rebuild or explicitly validate persisted vector indexes after an
+embedding model or embedding configuration change.
 
-### Separate cache state from document state
+## Agents and workflows quick reference
 
-Ingestion cache reuse is based on each node and transformation combination.
-Custom transformation changes can reuse stale output when stable serialized
-settings or hashes do not change.
+### Select agents by tool interface
 
-```python
-pipeline.persist("./pipeline-state")
-pipeline.load("./pipeline-state")
-```
-
-The saved pipeline cache is distinct from docstore state used to detect
-duplicate, updated, and deleted documents.
-
-### Choose async and worker execution deliberately
-
-Use `pipeline.arun()` in asynchronous code. `num_workers` enables process-based
-parallelism for suitable synchronous transformations; provider clients and
-non-picklable transformations can make it invalid or slower.
-
-```python
-nodes = await pipeline.arun(documents=documents, num_workers=4)
-```
-
-### Protect partial crawls from deletion
-
-With both a docstore and vector store, stable `document.doc_id` or
-`node.ref_doc_id` values anchor hash-based duplicate and update detection.
-Deletion strategies that remove documents absent from a run require an
-authoritative, complete input inventory. Do not apply them to a partial crawl.
-
-## Agents quick reference
-
-### Match the agent to the tool interface
-
-Choose `FunctionAgent` only when the LLM supports compatible native function or
-tool calls. Use `ReActAgent` for text-based reasoning and action parsing when it
-does not; use `CodeActAgent` for code-action scenarios.
-
-Plain synchronous and asynchronous callables can be tools. Type hints and
-docstrings supply their schemas; use `FunctionTool` when metadata or adaptation
-must be explicit.
+Use `FunctionAgent` when the selected LLM provides compatible native tool
+calling, `ReActAgent` for text-parsed reasoning and actions, and `CodeActAgent`
+for code-action scenarios. Plain synchronous or asynchronous callables can be
+tools; type hints and docstrings define their schemas. Use `FunctionTool` when
+metadata or adaptation must be explicit.
 
 ```python
 from llama_index.core.agent.workflow import FunctionAgent
@@ -167,24 +154,12 @@ def multiply(a: float, b: float) -> float:
 agent = FunctionAgent(tools=[multiply], llm=llm)
 ```
 
-### Retain and await the run handler
+### Separate memory, run state, and resources
 
-`agent.run(...)` and `workflow.run(...)` return streamable awaitables, not
-completed results. Retain one handler, consume its live events if needed, then
-await that same handler for the final result.
-
-```python
-handler = agent.run("What is 12 times 34?")
-async for event in handler.stream_events():
-    ...
-result = await handler
-```
-
-### Keep memory, state, and resources separate
-
-Create `Memory` explicitly and pass it to `run`. Conversation history and memory
-blocks are different from workflow `Context`, which carries per-run execution
-state and events.
+Create conversation `Memory` explicitly and pass it to `run`. Keep per-run,
+serializable execution state in asynchronous `ctx.store`; inject live clients,
+indexes, models, and configuration as workflow resources rather than placing
+them in checkpointable state.
 
 ```python
 from llama_index.core.memory import Memory
@@ -193,32 +168,20 @@ memory = Memory.from_defaults(session_id="session-123", token_limit=40000)
 response = await agent.run("...", memory=memory)
 ```
 
-Store serializable per-run values through asynchronous `ctx.store` operations.
-Inject clients, indexes, models, and configuration as workflow resources rather
-than treating live objects as checkpointable state.
+For dynamic fan-out, emit work with `Context.send_event` and join with
+`Context.collect_events`; completion order may differ from input order. Call
+`workflow.validate()` in tests or at startup to catch invalid typed event
+graphs before execution.
 
-### Use events for dynamic concurrency
+## Upgrade verification checklist
 
-A step can return a list of events for finite fan-out. For dynamic fan-out, emit
-work with `Context.send_event`; at fan-in, use `Context.collect_events` for the
-expected event set. Never assume results arrive in input order.
+After changing core, integrations, embeddings, agents, or workflows:
 
-### Validate the event graph
-
-Call `workflow.validate()` in tests or startup checks. It detects missing
-start/stop paths, produced events without consumers, consumed events without
-producers, and dead ends.
-
-```python
-workflow = RagFlow(timeout=60)
-workflow.validate()
-```
-
-## Working method
-
-1. Identify whether the change affects API migration, ingestion/storage, or
-   agent/workflow execution.
-2. Apply the matching quick-reference rule before adapting local code.
-3. Open the corresponding reference guide for edge cases and lifecycle details.
-4. Test the complete affected path, including persisted or remote state where
-   relevant.
+1. Resolve actual package constraints and retain the lockfile.
+2. Run ingestion against representative new, updated, and deleted documents.
+3. Reload persistence with the real external vector collection available.
+4. Exercise synchronous and asynchronous retrieval and reranking paths.
+5. Stream agent or workflow events and await the final handler result.
+6. Validate workflow graphs and checkpoint only serializable run state.
+7. Recheck node counts, boundaries, citation identities, and metadata values.
+8. Pin integration defaults that must not drift with package upgrades.

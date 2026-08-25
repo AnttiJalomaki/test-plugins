@@ -1,98 +1,73 @@
 # Native Addons, Embedding, and Builds
 
-Supported build platforms, toolchains, addon ABIs, Node-API, embedding, and native integration.
+## ABI and platform baselines
 
-## Contents
+- Node.js 23.0.0 removes 32-bit Windows support and experimental support for
+  Windows older than 10. Node itself builds as C++20, GCC older than 12.2
+  warns, AIX uses GCC 12, and final `NODE_MODULE_VERSION` is 131. Rebuild or
+  replace ABI-dependent addon binaries.
+- Node.js 24.0.0 requires ClangCL rather than MSVC for Windows source builds,
+  uses a macOS 13.5 and Xcode 16.1 baseline, and drops Python 3.8. It removes
+  32-bit s390 and PowerPC support, classifies ARMv7 as experimental, and uses
+  `NODE_MODULE_VERSION` 137.
+- Node.js 25.0.0 requires Clang 19 and Xcode 16.4 for macOS source builds. Its
+  `NODE_MODULE_VERSION` is 141. Distributions no longer bundle Corepack, so
+  projects that need it must install it separately.
+- Node.js 26.0.0 requires GCC 13.2, drops Python 3.9, targets Windows SDK 11,
+  removes Power8 and IBM z13, and targets Power9 on AIX and IBM i. Temporal-
+  enabled builds check for `rustc` and Cargo and honor `CARGO`.
+  `NODE_MODULE_VERSION` is 147.
+- In 26.7.0, source builds require `rustc` 1.86 or newer.
+- In 26.5.0, Tier 2 macOS x64 support is due to end; build and CI planning
+  should not depend on that tier.
 
-- [Source builds and supported platforms](#source-builds-and-supported-platforms)
-- [Node-API and native addons](#node-api-and-native-addons)
-- [Embedding and native integration](#embedding-and-native-integration)
+## Node-API
 
-## Source builds and supported platforms
+- In 23.5.0, addon finalizers may call `napi_delete_reference()`.
+- In 23.6.0, Node-API defines version 10 as a compatibility and feature-check
+  boundary.
+- In 24.9.0, Node-API can create, inspect, and type-check JavaScript
+  `SharedArrayBuffer` values.
+- In 24.12.0, `napi_create_object_with_properties()` creates an object and
+  defines its property descriptors in one call. It requires explicit
+  experimental opt-in because `node.h` no longer defines `NAPI_EXPERIMENTAL`
+  automatically: define it before including `node_api.h`.
+- In 24.13.0, the 24.13.1 APIs add `Float16Array` support and allow
+  `napi_create_dataview()` to use `SharedArrayBuffer` backing memory.
+- In 26.0.0, `node.h` includes `node_api_types.h` rather than the complete
+  `node_api.h`; addons using the complete Node-API surface must include
+  `node_api.h` explicitly.
 
-### Experimental Node-API build warning (since 25.0.0)
+## Source-build controls and optional components
 
-Native addon builds that define `NAPI_EXPERIMENTAL` now produce a warning, making accidental dependence on the unstable experimental Node-API surface visible during compilation.
+- In 23.8.0, source builds accept `suppress_all_error_on_warn` to suppress
+  warning-as-error treatment.
+- In 24.1.0, custom builds can omit SQLite. Software targeting custom builds
+  must feature-detect `node:sqlite` instead of inferring it from the version.
+- In 24.13.0, 24.13.1 supports Python 3.14 source builds, including the Windows
+  setup.
+- In 25.4.0, source builds add `--shared-hdr-histogram` and `--shared-gtest`.
+  `--debug-symbols` adds `-g` without enabling DCHECKs, and Windows builds
+  support Visual Studio 2026.
+- In 25.5.0, `--shared-nbytes` links a shared nbytes dependency.
+- In 25.9.0, Node can build and link with OpenSSL 4.0.
+- In 24.18.0, `--enable-all-experimentals` compiles with all experimental
+  features enabled.
 
-### Shared `nbytes` source builds (since 25.5.0)
+## Native embedders
 
-Source builds now accept the `--shared-nbytes` configure flag for using a shared `nbytes` dependency.
+- In 25.0.0, embedders must migrate from removed callback-without-async-
+  context APIs and removed `node::EmitBeforeExit`, `node::EmitExit`,
+  `node::CreatePlatform`, `node::FreePlatform`, and
+  `node::InitializeNodeWithArgs`.
+- In 24.14.0, the C++ embedder API gains initial ESM support.
+- In 24.18.0, `node::RegisterContext()` makes a V8 context managed by Node.
 
-### Source-build additions (since 25.4.0)
+## Native extension surfaces
 
-Source builds now support Visual Studio 2026 and add `--shared-hdr-histogram`, `--shared-gtest`, and `--debug-symbols`; the last option includes debug symbols without enabling DCHECKs.
-
-### Source-build requirements and addon ABI (since 25.0.0)
-
-Clang-based source builds now require Clang 19, while Apple builds require Xcode 16.4. Native addons tied to Node's V8 ABI need builds for `NODE_MODULE_VERSION` 141.
-
-### Source-build requirements and targets (since 26.0.0)
-
-Building Node.js now requires GCC 13.2 and no longer supports Python 3.9. Windows builds target SDK 11, Power8 and IBM z13 support is removed, and AIX or IBM i builds target Power9.
-
-Temporal-enabled source builds now check for `rustc` and Cargo, and the build honors the `CARGO` environment variable when selecting the Cargo executable.
-
-### Supported platforms and source builds (since 24.0.0)
-
-Windows source builds now require ClangCL; MSVC support has been removed. The minimum supported macOS version is 13.5 and the minimum Xcode version is 16.1, Python 3.8 is no longer supported for builds, 32-bit PowerPC and s390 support is removed, and Armv7 support is experimental.
-
-Native addons tied to Node's module ABI need builds for `NODE_MODULE_VERSION` 137; portable Node-API addons are not tied to that V8 ABI number.
-
-### Supported platforms and source-build toolchains (since 23.0.0)
-
-Node.js 23 no longer supports 32-bit Windows or Windows before 10. Building Node itself now uses C++20, warns with GCC older than 12.2, and requires GCC 12 on AIX.
-
-### Upcoming macOS x64 support change (since 26.5.0)
-
-Tier 2 support for macOS x64 is scheduled to end, so build and release planning should move away from relying on that support tier.
-
-
-## Node-API and native addons
-
-### Buffer views for Node-API addons (since 23.0.0)
-
-Node-API adds `napi_create_buffer_from_arraybuffer()`, which creates a `Buffer` view over a specified byte range of an existing JavaScript `ArrayBuffer`.
-
-```c
-napi_create_buffer_from_arraybuffer(env, arraybuffer, offset, length,
-                                    &data, &buffer);
-```
-
-### Native addon ABI and headers (since 26.0.0)
-
-Native addons tied to Node's V8 ABI need builds for `NODE_MODULE_VERSION` 147. The public `node.h` header now includes `node_api_types.h` instead of `node_api.h`, so addons that use the full Node-API surface must include `node_api.h` explicitly rather than relying on the former transitive include.
-
-### Node-API reference cleanup in finalizers (since 23.5.0)
-
-Native addon finalizers may now call `napi_delete_reference()`, allowing a reference to be released as part of finalization.
-
-### Node-API typed-memory support (since 25.4.0)
-
-Node-API now supports `Float16Array`, and `napi_create_dataview()` can create a view backed by a `SharedArrayBuffer`.
-
-### Shared array buffers in Node-API (since 24.9.0)
-
-Node-API now exposes creation, inspection, and type checking for JavaScript `SharedArrayBuffer` values, so native addons can work with shared backing memory directly.
-
-
-## Embedding and native integration
-
-### `node::ObjectWrap` cleanup hooks (since 26.4.0)
-
-Native addons can now attach cleanup hooks to `node::ObjectWrap` instances so wrapped resources can participate in environment cleanup.
-
-### ESM support in the embedder API (since 24.14.0)
-
-Node's C++ embedder API now has initial support for ES modules. Native hosts embedding Node can integrate ESM execution through the supported embedder surface instead of being limited to CommonJS-oriented startup.
-
-### Experimental fast FFI calls (since 26.4.0)
-
-The experimental FFI surface now has a fast-call API for AArch64 and x86_64, with fast support extended to almost all other platforms.
-
-### Node-managed embedder contexts (since 24.18.0)
-
-The C++ embedder API now exposes `node::RegisterContext()` for turning a V8 context into a Node-managed context.
-
-### Removed C++ embedding APIs (since 25.0.0)
-
-The deprecated `node::InitializeNodeWithArgs()`, `node::CreatePlatform()`, `node::FreePlatform()`, `node::EmitBeforeExit()`, and `node::EmitExit()` APIs are removed, along with callback helpers that omit async context. Embedders must use the current once-per-process, platform, event-loop, and async-context-aware callback APIs.
+- In 25.9.0, native addons gain `crypto::GetSSLCtx()` for OpenSSL context
+  access.
+- In 26.4.0, the FFI implementation adds an experimental fast-call API on
+  AArch64 and x86_64 and extends fast-call support to almost all other
+  platforms in that release.
+- In 26.4.0, `node::ObjectWrap` adds object-associated cleanup hooks.

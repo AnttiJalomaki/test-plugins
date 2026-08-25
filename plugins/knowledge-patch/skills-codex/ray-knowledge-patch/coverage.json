@@ -2,7 +2,7 @@
   "patch": "ray-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T12:30:53Z",
+  "built_at": "2026-08-22T00:40:14Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -34,6 +34,11 @@
     },
     "kuberay": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.56.0-2.57.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

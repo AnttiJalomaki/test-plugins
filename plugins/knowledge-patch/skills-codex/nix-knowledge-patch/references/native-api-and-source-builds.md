@@ -2,16 +2,19 @@
 
 ## Building Nix from source
 
-Nix uses Meson and Ninja as of 2.26.0. The Make-based build system was removed,
-so source-build automation, packaging, flags, and CI targets must use Meson.
+### Meson and Ninja (since 2.26.0)
 
-## C++ consumer migration
+Nix uses Meson and Ninja; the Make-based build system was removed. Update
+source-build automation and packaging to invoke the current build system.
 
-Installed public headers are namespaced under `nix/<component>/...` (since
-2.28.0). `pkg-config` supplies `-I${includedir}` rather than an include
-directory ending in `/nix`. Configuration headers no longer need to be
-force-included, and remaining public configuration macros use the `NIX_`
-prefix.
+## C++ consumers
+
+### Namespaced headers and macros (since 2.28.0)
+
+Include installed headers as `nix/<component>/...`. Pkg-config now supplies
+`-I${includedir}` rather than a path ending in `/nix`. Configuration headers
+need not be force-included, and remaining public configuration macros have the
+`NIX_` prefix.
 
 ```cpp
 #include <nix/store/derived-path.hh>
@@ -22,72 +25,59 @@ prefix.
 #endif
 ```
 
-Update include directives and macro checks together; do not compensate for the
-new pkg-config include directory by retaining old unnamespaced paths.
+## Evaluator and flake C APIs
 
-## Flake settings and locking in C
+### Builder-scoped flake settings (since 2.28.0)
 
-The process-global `nix_flake_init_global` function was removed in 2.28.0.
-Attach flake settings to each evaluator-state builder:
+`nix_flake_init_global` was removed. Add flake settings to each evaluator
+state builder with `nix_flake_settings_add_to_eval_state_builder`.
 
 ```c
-nix_eval_state_builder *builder =
-    nix_eval_state_builder_new(ctx, store);
-HANDLE_ERROR(ctx);
+nix_eval_state_builder *builder = nix_eval_state_builder_new(ctx, store);
 nix_flake_settings_add_to_eval_state_builder(ctx, settings, builder);
-HANDLE_ERROR(ctx);
 ```
 
-The C API can load flakes and perform basic locking as of 2.29.0, avoiding
-workarounds through `builtins.getFlake`. Select lock behavior with:
+### Native flake loading and locking (since 2.29.0)
 
-- `nix_flake_lock_flags_set_mode_check`
-- `nix_flake_lock_flags_set_mode_virtual`
-- `nix_flake_lock_flags_set_mode_write_as_needed`
+C consumers can load flakes and perform basic locking directly. Select lock
+modes with `nix_flake_lock_flags_set_mode_check`, `_virtual`, or
+`_write_as_needed`; `nix_flake_lock_flags_add_input_override` also enables
+virtual mode. The `nix-fetchers-c` library manages `nix.conf` settings for
+built-in fetchers.
 
-Calling `nix_flake_lock_flags_add_input_override` also enables virtual mode.
-The separate `nix-fetchers-c` library owns `nix.conf` settings for built-in
-fetchers.
-
-## Collection access and mutability
+### Mutable indexed access (since 2.32.0)
 
 `nix_get_attr_name_byidx` and `nix_get_attr_byidx` accept mutable
-`nix_value *` rather than `const nix_value *` as of 2.32.0, because the lookup
-may modify the value. This is ABI-compatible but can require source changes
-for const-correct compilation.
+`nix_value *`, because lookup may modify the value. The ABI remains compatible,
+but const-correct source may need adjustment.
 
-Lazy accessors added in 2.32.0 retrieve list and attribute-set members without
-forcing evaluation:
+### Lazy collection access (since 2.32.0)
 
-- `nix_get_list_byidx_lazy`
-- `nix_get_attr_byname_lazy`
-- `nix_get_attr_byidx_lazy`
+Use `nix_get_list_byidx_lazy`, `nix_get_attr_byname_lazy`, and
+`nix_get_attr_byidx_lazy` to retrieve list or attribute-set members without
+forcing them. This is useful when forwarding an unevaluated value into a
+collection or function call.
 
-Use them when passing an unevaluated child into another collection or function
-call.
+### Sticky primop errors (since 2.34.0)
 
-## Store operations in C
-
-The C API adds two store operations in 2.34.0:
-
-- `nix_store_query_path_from_hash_part()` resolves a hash fragment to a full
-  store path.
-- `nix_store_copy_path()` copies a path between stores with controls for
-  repair and signature checking.
-
-Respect each store's directory and verification policy; do not manufacture a
-full path by assuming `/nix/store`.
-
-## Primop error behavior
-
-An error returned by a C API primop is sticky by default as of 2.34.0.
-Re-forcing the thunk reuses the remembered failure rather than calling the
-primop again and potentially succeeding. Classify an intentionally retryable
-failure as recoverable:
+An error returned by a C primop is retained in its thunk, so forcing again
+does not retry and later succeed. Mark intentionally retryable errors with
+`NIX_ERR_RECOVERABLE`.
 
 ```c
 nix_set_err_msg(context, NIX_ERR_RECOVERABLE, msg);
 ```
 
-Return the default nonrecoverable classification for deterministic errors so
-evaluation does not repeat side effects.
+## Store C API and plugins
+
+### Lookup and copy store paths (since 2.34.0)
+
+`nix_store_query_path_from_hash_part()` resolves a hash part to a full store
+path. `nix_store_copy_path()` copies a path between stores with repair and
+signature-check controls.
+
+### Dynamically resolved plugin symbols (since 2.35.2)
+
+The `nix` executable exports its C-binding symbols. C API plugins may resolve
+them dynamically instead of linking the corresponding `libnix*c.so`
+libraries.

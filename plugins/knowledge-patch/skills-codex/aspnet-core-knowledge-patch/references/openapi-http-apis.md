@@ -1,53 +1,48 @@
 # OpenAPI, HTTP APIs, and JSON
 
-These API and serialization behaviors apply to ASP.NET Core `10.0`.
+Batch attribution: `10.0`.
 
-## OpenAPI 3.1 schema defaults
+## Generate OpenAPI 3.1 Schemas
 
-Generated documents default to OpenAPI 3.1. Nullable scalar schemas use a type
-array that contains `null`; nullable complex types and collections use
-`oneOf`.
+Generated documents default to OpenAPI 3.1.
 
-The default `JsonNumberHandling.AllowReadingFromString` behavior means `int`
-and `long` schemas can use a digit pattern without `type: integer`. Configure
-number handling as `Strict` when consumers require integer schemas.
+- Nullable scalar types use a type array that contains `null`.
+- Nullable complex types and collections use `oneOf`.
+- With the default `JsonNumberHandling.AllowReadingFromString`, `int` and `long` schemas use a digit pattern without `type: integer`.
 
-## Migrate transformers to OpenAPI.NET 2
+Configure JSON number handling as `Strict` when consumers require integer schemas instead of the default string-readable numeric representation.
 
-OpenAPI entities are interfaces with separate inline and reference
-implementations. Transformer code must work with that model. Also replace:
+## Migrate OpenAPI.NET Transformer Code
 
-- `OpenApiSchema.Nullable` with checks for `JsonSchemaType.Null`.
-- `OpenApiAny` with `JsonNode`.
+OpenAPI.NET 2 changes the APIs consumed by document, operation, and schema transformers:
 
-These changes are required even when the generated document targets OpenAPI
-3.0 rather than 3.1.
+- OpenAPI entities are interfaces with separate inline and reference implementations.
+- `OpenApiSchema.Nullable` is replaced by checking for `JsonSchemaType.Null`.
+- `OpenApiAny` is replaced by `JsonNode`.
 
-## Populate OpenAPI from XML comments
+Make these code changes even if `OpenApiVersion` is configured to emit OpenAPI 3.0. The transformer object model and the emitted specification version are separate concerns.
 
-Set `GenerateDocumentationFile` so the OpenAPI source generator can populate
-summaries, remarks, parameter descriptions, return descriptions, and comments
-from referenced projects:
+## Populate Documentation from XML Comments
+
+Enable the documentation file in the project:
 
 ```xml
 <GenerateDocumentationFile>true</GenerateDocumentationFile>
 ```
 
-Minimal API lambdas cannot carry this documentation metadata. Use a documented
-method as the endpoint handler when generated endpoint documentation matters.
+The OpenAPI source generator can then populate summaries, remarks, parameter descriptions, return descriptions, and comments from referenced projects.
 
-## Generate schemas inside transformers
+Minimal API lambdas cannot carry this XML documentation metadata. Use a documented method as the endpoint handler when the generated operation needs it.
 
-Document, operation, and schema transformer contexts expose
-`GetOrCreateSchemaAsync` for creating a schema from a C# type. Operation and
-schema transformer contexts also expose `Document`; use it with `AddComponent`
-to register the generated schema in the document.
+## Generate and Register Schemas in Transformers
 
-## Support multi-segment JSON tokens
+Document, operation, and schema transformer contexts expose `GetOrCreateSchemaAsync` for generating a schema from a C# type.
 
-MVC, Minimal APIs, and `ReadFromJsonAsync` deserialize through `PipeReader`.
-Custom converters that only inspect `Utf8JsonReader.ValueSpan` can lose data
-when `HasValueSequence` is `true`.
+Operation and schema transformer contexts also expose `Document`. Use the returned document with `AddComponent` when the generated schema must be registered as a reusable component.
+
+## Read JSON from Segmented Input
+
+MVC, Minimal APIs, and `ReadFromJsonAsync` deserialize through `PipeReader`. A custom `JsonConverter` must handle tokens split across multiple segments:
 
 ```csharp
 var span = reader.HasValueSequence
@@ -55,5 +50,10 @@ var span = reader.HasValueSequence
     : reader.ValueSpan;
 ```
 
-Update converters to read `ValueSequence`. As a temporary fallback, set the
-`Microsoft.AspNetCore.UseStreamBasedJsonParsing` AppContext switch to `true`.
+Code that always consumes `Utf8JsonReader.ValueSpan` can silently lose token data when `HasValueSequence` is `true`.
+
+For temporary compatibility while converters are being corrected, set the following AppContext switch to `true`:
+
+```text
+Microsoft.AspNetCore.UseStreamBasedJsonParsing
+```

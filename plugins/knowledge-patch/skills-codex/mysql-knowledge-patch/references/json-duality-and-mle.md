@@ -1,114 +1,83 @@
 # JSON Duality Views and MLE
 
-Use this reference for relational-to-JSON mappings, DML through Duality Views,
-stored JavaScript routines, database APIs, reusable libraries, localization, and
-WebAssembly.
+## JSON Duality View definition and inspection
 
-## JSON Duality View definition and metadata
+### View DDL and metadata (9.4-9.6)
 
-Batch 9.4-9.6 adds:
-
-```sql
-CREATE JSON DUALITY VIEW ...
-ALTER JSON DUALITY VIEW ...
-```
-
-`DROP VIEW` and `SHOW CREATE VIEW` also apply to JSON Duality Views. Documents
-selected from a view contain `_metadata.etag`.
+`CREATE JSON DUALITY VIEW` and `ALTER JSON DUALITY VIEW` expose relational data
+as JSON documents. `DROP VIEW` and `SHOW CREATE VIEW` apply to them. Selected
+documents contain `_metadata.etag`.
 
 Inspect mappings through these Information Schema tables:
 
-- `JSON_DUALITY_VIEWS`;
-- `JSON_DUALITY_VIEW_TABLES`;
-- `JSON_DUALITY_VIEW_COLUMNS`; and
-- `JSON_DUALITY_VIEW_LINKS`.
+- `JSON_DUALITY_VIEWS`
+- `JSON_DUALITY_VIEW_TABLES`
+- `JSON_DUALITY_VIEW_COLUMNS`
+- `JSON_DUALITY_VIEW_LINKS`
 
-### Per-table DML tags
+Implicit geometry-to-JSON conversion preserves spatial reference information in
+a `crs` member, and `ST_AsGeoJSON()` options `2` and `4` always emit a CRS URN.
 
-A view definition can allow `INSERT`, `UPDATE`, or `DELETE` per table, or deny
-operations with `NO INSERT`, `NO UPDATE`, and `NO DELETE`. Runtime DML is checked
-against the tags.
+## Duality View DML
 
-In batch 9.7.0, Community Server permits `INSERT`, `UPDATE`, and `DELETE`
-through JSON Duality Views. DML also supports auto-increment columns, including
-automatic generation of primary-key values.
+### Per-table permissions (9.4-9.6)
 
-### Preserve spatial reference information
+A view definition can allow `INSERT`, `UPDATE`, or `DELETE` per mapped table, or
+deny operations with `NO INSERT`, `NO UPDATE`, and `NO DELETE`. Runtime DML is
+checked against those tags.
 
-Implicit geometry-to-JSON conversion adds a `crs` attribute in batch 9.4-9.6,
-so spatial-reference information survives in JSON Duality Views.
-`ST_AsGeoJSON()` options 2 and 4 now always include a CRS URN.
+### Community DML and generated keys (9.7.0)
 
-## Stored JavaScript SQL types
+Community Server supports `INSERT`, `UPDATE`, and `DELETE` through JSON Duality
+Views. Auto-increment columns are supported, including automatic primary-key
+value generation.
 
-In batch 9.2-9.3, stored JavaScript programs add:
+## Stored JavaScript types and localization
 
-- `ENUM` and `SET` arguments;
-- complete `DECIMAL` and `NUMERIC` input, output, bind, and return support.
+### SQL types, decimals, and locale lifetime (9.2-9.3)
 
-Decimals become JavaScript strings by default. Use `decimalType=NUMBER` only
-when conversion to a JavaScript number and its precision tradeoff are intended.
+Stored JavaScript routines accept `ENUM` and `SET`, and support full
+`DECIMAL`/`NUMERIC` input, output, binding, and return paths. Decimal values are
+JavaScript strings by default; use `decimalType=NUMBER` only when loss of decimal
+precision is acceptable.
 
-Batch 9.4-9.6 adds the MySQL `BIT` type and brings the runtime to ECMAScript
-2025.
+The `Intl` API maps MySQL locale underscores to dashes. A routine retains the
+locale from its first invocation in a session until the locale is reset.
 
-## Localization
+### `BIT`, language level, and memory (9.4-9.6)
 
-The JavaScript `Intl` API uses MySQL locale names with underscores converted to
-dashes. A routine retains the locale from its first invocation in a session
-until the locale is reset. Reset or isolate sessions when locale-sensitive code
-must change behavior between calls.
+Stored JavaScript accepts MySQL `BIT` and supports ECMAScript 2025. On premises,
+`mle.memory_max` defaults to 5% of physical memory, bounded to the range 0.4 GB
+through 32 GB.
 
 ## Database and transaction APIs
 
-JavaScript routines in batch 9.2-9.3 can:
+### Routine calls and session state (9.2-9.3)
 
-- obtain stored functions with `Schema.getFunction()`;
-- obtain stored procedures with `Schema.getProcedure()`;
-- pass `OUT` and `INOUT` values through `mysql.arg()`; and
-- access user variables as `session` properties.
+Use `Schema.getFunction()` and `Schema.getProcedure()` to call stored functions
+and procedures. Use `mysql.arg()` for `OUT` and `INOUT` parameters. User variables
+are available as properties on `session`.
 
-The transaction API provides start, commit, rollback, autocommit, savepoints,
-and `SqlError`. The runtime also exposes `rand()`, `sleep()`, `uuid()`, and
-`isUUID()` for the corresponding built-ins.
+The transaction API supports start, commit, rollback, autocommit, and savepoints,
+and exposes `SqlError`. The `rand()`, `sleep()`, `uuid()`, and `isUUID()` APIs
+provide the corresponding server operations.
 
-## Reusable JavaScript libraries
+## Reusable libraries
 
-The initial library DDL in batch 9.2-9.3 includes:
+### JavaScript libraries and dynamic imports (9.2-9.3)
 
-- `CREATE LIBRARY`;
-- `DROP LIBRARY`;
-- `SHOW CREATE LIBRARY`; and
-- routine `USING` clauses.
-
-MySQL 9.3 adds `ALTER LIBRARY`, `SHOW LIBRARY STATUS`, library comments,
-`ALTER PROCEDURE/FUNCTION ... USING`, and dynamic imports:
+`CREATE LIBRARY`, `DROP LIBRARY`, `SHOW CREATE LIBRARY`, and routine `USING`
+clauses provide reusable libraries. Additions include `ALTER LIBRARY`, `SHOW
+LIBRARY STATUS`, comments, `ALTER PROCEDURE/FUNCTION ... USING`, and dynamic
+imports:
 
 ```javascript
 let module = await import(`/db1/lib_${object_type}`)
 return module.default.print()
 ```
 
-## WebAssembly libraries
+### WebAssembly libraries (9.4-9.6)
 
-In batch 9.4-9.6, an MLE library can contain hexadecimal or base64-encoded
-WebAssembly:
-
-```sql
-CREATE LIBRARY example_wasm
-  LANGUAGE WASM
-  AS '0061736d...';
-```
-
-Import it through a routine's `USING` clause. WebAssembly libraries cannot use:
-
-- MySQL-specific APIs;
-- WASI system calls;
-- WASI clock calls; or
-- WASI I/O calls.
-
-## Runtime memory
-
-On-premises `mle.memory_max` defaults to 5% of physical memory in batch
-9.4-9.6, bounded to at least 0.4 GB and at most 32 GB. Include that automatic
-allocation when planning server memory.
+Create a hexadecimal- or base64-encoded module with `CREATE LIBRARY ... LANGUAGE
+WASM`, then import it through a routine's `USING` clause. WebAssembly libraries
+cannot call MySQL-specific APIs or WASI system, clock, or I/O services.

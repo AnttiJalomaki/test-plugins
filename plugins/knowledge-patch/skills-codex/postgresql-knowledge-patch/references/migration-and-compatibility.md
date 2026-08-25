@@ -1,117 +1,110 @@
 # Migration and Compatibility
 
-Batch attribution: `17.0`, `18.0`. Release status attribution:
-`release-catalog`.
+Use this reference before upgrading a cluster or adapting tooling to catalog,
+configuration, build, and security changes. It covers compatibility facts from
+`17.0` and `18.0`, plus current release availability from `release-catalog`.
 
-## Contents
+## Remove obsolete PostgreSQL 17 settings and objects
 
-- [Removed behavior](#remove-obsolete-settings-objects-and-syntax)
-- [Catalog compatibility](#update-catalog-and-statistics-consumers)
-- [Checksums and pg_upgrade](#initialize-and-upgrade-checksummed-clusters)
-- [Authentication and time zones](#recheck-authentication-and-time-zone-assumptions)
-- [Partitions, triggers, and text search](#repair-partition-and-trigger-behavior)
-- [Security semantics](#preserve-security-semantics-across-updates)
-- [Build prerequisites](#check-build-prerequisites)
-- [Release availability](#track-release-availability-separately-from-feature-compatibility)
+PostgreSQL 17 removes:
 
-## Remove obsolete settings, objects, and syntax
+- `old_snapshot_threshold`
+- `db_user_namespace`
+- `trace_recovery_messages`
+- the `adminpack` extension
+- `information_schema.element_types.domain_default`
+- the Windows `fsync_writethrough` WAL synchronization method
 
-Remove uses of `old_snapshot_threshold`, `db_user_namespace`,
-`trace_recovery_messages`, the `adminpack` extension,
-`information_schema.element_types.domain_default`, and the Windows
-`fsync_writethrough` WAL synchronization method.
-
-Interval input accepts `ago` only at the end and rejects repeatedly empty
-units.
-
-Unlogged partitioned tables are not allowed.
+Interval input also accepts `ago` only at the end and rejects repeated empty
+units. Fix stored expressions, tests, and import data that use the old forms.
 
 ## Update catalog and statistics consumers
 
-`pg_collation.colliculocale` is now `colllocale`, and
-`pg_database.daticulocale` is now `datlocale`. A default `attstattarget` or
-`stxstattarget` is represented by `NULL`.
+PostgreSQL 17 changes include:
 
-At an exact WAL-segment boundary, `pg_walfile_name()` and
-`pg_walfile_name_offset()` identify the current segment rather than the
-previous segment.
+- `pg_collation.colliculocale` is renamed to `colllocale`.
+- `pg_database.daticulocale` is renamed to `datlocale`.
+- Default `attstattarget` and `stxstattarget` values are represented by `NULL`.
+- `pg_stat_statements.blk_read_time` and `blk_write_time` become
+  `shared_blk_read_time` and `shared_blk_write_time`.
+- `pg_stat_progress_vacuum.max_dead_tuples` becomes `max_dead_tuple_bytes`,
+  `num_dead_tuples` becomes `num_dead_item_ids`, and `dead_tuple_bytes` is new.
+- At an exact WAL-segment boundary, `pg_walfile_name()` and
+  `pg_walfile_name_offset()` name the current segment rather than the previous
+  one.
 
-`pg_backend_memory_contexts.parent` is removed. `level` and levels written to
-the log are one-based. The `path` and `type` columns describe ancestry and
-memory-context type.
+PostgreSQL 18 removes `pg_backend_memory_contexts.parent`; its `level` and
+logged levels are one-based, while `path` and `type` describe ancestry and
+context type. It also removes `pg_attribute.attcacheoff` and adds
+`pg_class.relallfrozen` plus new index-access-method capabilities.
 
-`pg_attribute.attcacheoff` is removed. `pg_class.relallfrozen` and new
-index-access-method capability fields are available.
+## Account for initialization and checksum defaults
 
-See [Observability, Statistics, and Planning](observability-and-planning.md)
-for renamed statistics columns and relocated I/O, WAL, and checkpoint data.
-
-## Initialize and upgrade checksummed clusters
-
-`initdb` enables data checksums by default. Use `--no-data-checksums` only when
-an unchecked cluster is intentional. `pg_upgrade` requires matching checksum
-settings in the source and destination clusters.
+PostgreSQL 18 `initdb` enables data checksums by default. Use the explicit
+opt-out only when an unchecked cluster is required:
 
 ```sh
 initdb --no-data-checksums -D new-cluster
 ```
 
-`pg_upgrade` preserves ordinary optimizer statistics by default, but not
-extended statistics. `--no-statistics` disables preservation. `--jobs`
-parallelizes database checks.
+`pg_upgrade` requires the old and new clusters to have matching checksum
+settings.
 
-`pg_upgrade --swap` exchanges the old and new data directories.
-`--set-char-signedness` handles clusters built with different default `char`
-signedness.
+## Audit authentication, partitions, triggers, and text search
 
-## Recheck authentication and time-zone assumptions
+- MD5 password authentication is deprecated. Setting an MD5 password warns
+  unless `md5_password_warnings` is disabled.
+- Session time-zone abbreviations take precedence over definitions in
+  `timezone_abbreviations`.
+- PostgreSQL 18 rejects unlogged partitioned tables.
+- Deferred `AFTER` triggers execute as the role active when their events were
+  queued, not the role active when they finally run.
+- Full-text search and `pg_trgm` read configuration and dictionaries using the
+  cluster's default collation provider. When upgrading a cluster whose default
+  provider is not libc, reindex affected indexes as needed.
 
-Session time-zone abbreviations take precedence over entries in
-`timezone_abbreviations`. Review applications that expect a configured
-abbreviation to override the session interpretation.
-
-MD5 authentication migration and TLS setting changes are detailed in
-[Clients, Authentication, and Command-Line Tools](clients-and-cli.md).
-
-## Repair partition and trigger behavior
-
-Deferred `AFTER` triggers execute as the role that was active when their events
-were queued, not the role active when the trigger eventually runs.
+## Repair affected PostgreSQL 17 foreign keys
 
 Early PostgreSQL 17 releases could omit enforcement triggers after attaching
-or detaching a referencing partition, and could incompletely enforce
+or detaching a referencing partition and could incompletely enforce
 self-referential foreign keys when partitions were created or attached. After
-updating, drop and recreate affected constraints, repair rows found by
+updating, drop and recreate affected constraints, repair rows exposed by
 validation, and add the constraints again.
 
-Full-text search and `pg_trgm` read configurations and dictionaries using the
-cluster's default collation provider. When upgrading a cluster whose default
-provider is not libc, reindex affected indexes.
+## Preserve corrected security boundaries
 
-## Preserve security semantics across updates
+Updated PostgreSQL 17 releases correctly invalidate role-dependent plans for
+nested row-level-security references. Planner permission checks for views,
+partitioning, and inheritance occur early enough to prevent leaky estimators
+from observing protected statistics.
 
-Plans depending on roles through nested row-level-security references are
-invalidated correctly. Planner permission checks for views, partitioning, and
-inheritance occur early enough to keep leaky estimators from observing
-protected statistics.
+`SET SESSION AUTHORIZATION` uses the session user's superuser status at command
+time rather than connection time; patched minors also restrict its
+`SET ROLE NONE` side effect. Creating statistics requires `CREATE` on the
+target schema, and assigning a non-built-in selectivity estimator to an
+operator requires superuser.
 
-`SET SESSION AUTHORIZATION` evaluates the session user's superuser status when
-the command is issued rather than when the connection was opened. Current
-maintenance updates also constrain the command's `SET ROLE NONE` side effect.
+## Plan pg_upgrade behavior explicitly
 
-Creating statistics requires `CREATE` on the target schema. Attaching a
-non-built-in selectivity estimator to an operator requires superuser.
+PostgreSQL 17 `pg_upgrade` carries valid logical slots and full subscription
+state forward when the old cluster is PostgreSQL 17 or later.
 
-Dump scripts use psql's `\restrict` mode so text emitted by a source server
-cannot execute later psql meta-commands during restore.
+PostgreSQL 18 preserves ordinary optimizer statistics by default, but not
+extended statistics. `--no-statistics` opts out, `--jobs` parallelizes database
+checks, `--swap` exchanges data directories, and `--set-char-signedness`
+handles clusters built with a different default `char` signedness.
 
-## Check build prerequisites
+## Check build prerequisites and NUMA support
 
-Source builds require Python 3.6.8 or newer, OpenSSL 1.1.1 or newer, LLVM 14 or
-newer when LLVM is enabled, and 32-bit atomic operations.
+PostgreSQL 18 requires Python 3.6.8 or newer, OpenSSL 1.1.1 or newer, LLVM 14
+or newer when LLVM is enabled, and 32-bit atomic operations. NUMA-aware builds
+use `--with-libnuma`; inspect availability and allocation using
+`pg_numa_available()`, `pg_shmem_allocations_numa`, and
+`pg_buffercache_numa`.
 
 ## Track release availability separately from feature compatibility
 
-PostgreSQL 19 Beta 1 became available for pre-release testing on June 4, 2026.
-The release archive snapshot from July 15, 2026 reaches maintenance releases
-18.4, 17.10, 16.14, 15.18, and 14.23.
+PostgreSQL 19 Beta 1 was released June 4, 2026 for prerelease testing. The
+release archive snapshot dated July 15, 2026 reaches PostgreSQL 18.4, 17.10,
+16.14, 15.18, and 14.23 for the five newest stable major lines. Do not infer
+PostgreSQL 19 feature behavior from the beta's availability alone.

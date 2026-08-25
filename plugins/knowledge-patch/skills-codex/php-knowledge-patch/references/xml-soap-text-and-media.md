@@ -1,173 +1,176 @@
 # XML, SOAP, Text, and Media
 
-Use this reference for XML-family extensions, SOAP serialization, Unicode and
-locale behavior, images, and native callback registration. Included batch
-identifiers cited here are `8.4-migration`, `8.4.0`, `8.5-migration`, and
-`8.5.0`.
+## XML handlers and deprecated object association
 
-## XML callbacks and object association
+Source batch: `8.4-migration`.
 
-In `8.4-migration`, XML handler setters enforce an effective
-`callable|string|null` handler type. A legacy method-name string is resolved
-only after `xml_set_object()` associates an object.
+XML handler setters enforce an effective `callable|string|null` handler type.
+Legacy method-name strings are resolved only after `xml_set_object()` associates
+an object.
 
-Both `xml_set_object()` and non-callable method-name strings passed to
-`xml_set_*()` are deprecated. Migrate to direct callables:
+Migrate to direct callables such as `[$handler, 'method']`.
+`xml_set_object()` and non-callable method-name strings passed to
+`xml_set_*()` are deprecated.
 
-```php
-[$handler, 'method']
-```
-
-`xml_parser_free()` is deprecated in `8.5-migration`, because the parser object
-is released automatically.
+`xml_parser_free()` is deprecated because its handle object is freed
+automatically (source batch `8.5-migration`).
 
 ## DOM and XPath
 
-In `8.4-migration`, `DOMXPath` cannot be cloned,
-`DOMImplementation::getFeature()` has been removed, `DOM_PHP_ERR` is
-deprecated, and obsolete DOM encoding and configuration properties are
-deprecated.
+### Object restrictions
 
-Since `8.4.0`, `DOMXPath::registerPhpFunctions()` accepts any callable.
-`DOMXPath::registerPhpFunctionNs()` registers a callback under a namespace so
-XPath can call it with native function syntax instead of
+Source batch: `8.4-migration`.
+
+`DOMXPath` can no longer be cloned. `DOMImplementation::getFeature()` has been
+removed. `DOM_PHP_ERR` and obsolete DOM encoding and configuration properties
+are deprecated.
+
+`GMP` is final and cannot be subclassed.
+
+### Native XPath callables
+
+Source batch: `8.4.0`.
+
+`DOMXPath::registerPhpFunctions()` accepts any callable.
+`DOMXPath::registerPhpFunctionNs()` registers callbacks under a namespace so
+XPath can call them with native function syntax instead of
 `php:function('name')`.
 
-## XSL callbacks, limits, and parameters
+## XMLReader, XMLWriter, and XSL validation
 
-Since `8.4.0`:
+Source batch: `8.4-migration`.
 
-- `XSLTProcessor::registerPhpFunctions()` accepts any callable.
-- XSLT parameters can contain both single and double quotes.
-- `XSLTProcessor::$maxTemplateDepth` and
-  `XSLTProcessor::$maxTemplateVars` constrain recursion depth and variable
-  counts.
+XMLReader, XMLWriter, and XSL operations throw for invalid encodings, null
+bytes, incompatible objects, or failed PHP callbacks where applicable.
 
-Since `8.5.0`, the `namespace` argument to
-`XSLTProcessor::getParameter()`, `setParameter()`, and `removeParameter()`
-takes effect. It supplies the namespace for an unqualified `name`; Clark
-notation or a QName supplies the namespace through its URI or prefix instead.
+Class constants supplied by XMLReader now declare types. Reflection or tooling
+that assumed those internal constants were untyped must account for the type
+metadata.
 
-## XML-family error behavior
+## XSL parameters, callbacks, and limits
 
-In `8.4-migration`, XMLReader, XMLWriter, and XSL operations throw where
-applicable for:
+### Quote-safe parameters and native callbacks
 
-- invalid encodings;
-- embedded NUL bytes;
-- incompatible objects; and
-- failed PHP callbacks.
+Source batch: `8.4.0`.
 
-Validate these inputs and catch exceptions at the document-processing boundary.
+XSLT parameters may contain both single and double quotes without failing.
+`XSLTProcessor::registerPhpFunctions()` accepts any callable.
 
-`XMLReader` extension constants also gained declared types in
-`8.4-migration`.
+`XSLTProcessor::$maxTemplateDepth` and
+`XSLTProcessor::$maxTemplateVars` control recursion depth and variable limits
+during XSL template evaluation.
 
-## SimpleXML iteration and XPath
+### Namespace-aware parameters
 
-In `8.4-migration`, calling methods such as `asXML()` or `getName()`, or
-casting a `SimpleXMLElement` to string, no longer implicitly resets its
-iterator. Code that depended on this side effect must call `rewind()`.
+Source batch: `8.5.0`.
 
-In `8.5-migration`, `SimpleXMLElement::xpath()` warns and returns `false` if
-the expression evaluates to something other than a node set.
+The `namespace` argument of `XSLTProcessor::getParameter()`,
+`setParameter()`, and `removeParameter()` takes effect. It applies when `name`
+is unqualified. Clark notation or a QName instead supplies the namespace
+through its URI or prefix.
 
-## SOAP objects, functions, and builds
+## SOAP members, handlers, and builds
 
-### Internal member types
+### Member type migrations
 
-In `8.4-migration`:
+Source batch: `8.4-migration`.
 
-- `SoapClient::$httpurl` is a `Soap\Url` object.
-- `SoapClient::$sdl` is a `Soap\Sdl` object.
-- `SoapClient::$typemap` is an array.
+`SoapClient::$httpurl` and `$sdl` are `Soap\Url` and `Soap\Sdl` objects, and
+`$typemap` is an array. Replace resource checks on those members with null
+checks.
 
-Replace resource checks on these members with null checks where absence is the
-relevant state.
+### Function registration
+
+Source batch: `8.4-migration`.
 
 Passing `SOAP_FUNCTIONS_ALL` or another integer to
 `SoapServer::addFunction()` is deprecated. Pass an array of function names,
 such as a flattened `get_defined_functions()` result.
 
-### Build dependency
+### Optional session dependency
 
-SOAP optionally depends on the session extension in `8.4-migration`. A build
-without session but with `--enable-rtld-now` can fail at startup when SOAP
-loads. Avoid that flag combination or load the session extension.
+Source batch: `8.4-migration`.
 
-### Class maps and date values
+SOAP optionally depends on the session extension. A build without session but
+with `--enable-rtld-now` can fail at startup when SOAP is loaded. Avoid that
+flag combination or load the session extension.
 
-Since `8.4.0`, SOAP class-map keys can use Clark notation to distinguish
-same-named types in different namespaces:
+## SOAP mappings, dates, schemas, and faults
+
+### Namespaced class maps
+
+Source batch: `8.4.0`.
+
+SOAP class-map keys may use Clark notation to disambiguate identically named
+types from different namespaces.
 
 ```php
 $classMap = ['{http://example.com}foo' => 'FooClass'];
 ```
 
-`DateTimeInterface` values supplied for `xsd:datetime` and related SOAP
-elements serialize as date/time values rather than empty strings.
+### Date and time serialization
 
-### URI parsing, schemas, and reason languages
+Source batch: `8.4.0`.
 
-In `8.5-migration`, `SoapClient::__doRequest()` has an optional URI-parser
-class argument. `null` keeps `parse_url()` behavior; `Uri\Rfc3986\Uri` and
-`Uri\WhatWg\Url` select the newer parser backends.
+`DateTimeInterface` instances supplied for `xsd:datetime` and similar SOAP
+elements are serialized as date/time values rather than as empty strings.
 
-Since `8.5.0`, `SoapClient::__getTypes()` includes enumeration cases. SOAP 1.2
-Reason Text supports `xml:lang`, exposed through an optional `lang` parameter
-on `SoapFault::__construct()` and `SoapServer::fault()`.
+### Schema enumerations and Reason language
+
+Source batch: `8.5.0`.
+
+`SoapClient::__getTypes()` includes enumeration cases. SOAP 1.2 Reason Text
+supports `xml:lang`, exposed through a new optional `lang` parameter on
+`SoapFault::__construct()` and `SoapServer::fault()`.
+
+### URI parsing for requests
+
+Source batch: `8.5-migration`.
+
+`SoapClient::__doRequest()` has an optional URI-parser class argument. `null`
+keeps `parse_url()`. `Uri\Rfc3986\Uri` and `Uri\WhatWg\Url` select the new
+parser backends.
+
+## SimpleXML iteration and XPath
+
+Calling methods such as `asXML()` or `getName()`, or casting a
+`SimpleXMLElement` to string, no longer resets its iterator. Loops that
+accidentally relied on that reset must call `rewind()` explicitly (source batch
+`8.4-migration`).
+
+`SimpleXMLElement::xpath()` warns and returns `false` when the expression
+produces something other than a node set (source batch `8.5-migration`).
 
 ## mbstring indices and Unicode data
 
+Source batch: `8.4-migration`.
+
 For strings with encoding errors, `mb_substr()` interprets character indices
-consistently with other mbstring functions in `8.4-migration`, allowing
-offsets from `mb_strpos()` to be reused.
+consistently with other mbstring functions, so offsets from `mb_strpos()` can
+be reused.
 
-SJIS-Mac indices refer to Unicode code points produced by conversion, including
-characters that expand to multiple code points.
+SJIS-Mac indices refer to the Unicode code points produced by conversion,
+including characters that expand to multiple code points.
 
-In `8.5-migration`, mbstring uses Unicode 17.0 data. Test classifications,
-case mappings, segmentation, and validation that depend on a Unicode version.
+mbstring uses Unicode 17.0 data (source batch `8.5-migration`). Malformed
+mbstring maps or encodings now raise `ValueError`.
 
-Malformed mbstring maps and encodings now raise `ValueError` in
-`8.4-migration`, rather than relying on permissive fallback behavior.
+## Intl collation and list formatting
 
-## Internationalization
+Intl regular collation sort handles numeric strings like the standard
+`SORT_REGULAR` (source batch `8.5-migration`).
 
-### Validation and configuration
+`IntlListFormatter`, available with ICU 67 or newer, formats localized AND, OR,
+or unit lists in wide, short, or narrow forms using its `TYPE_*` and `WIDTH_*`
+constants (source batch `8.5.0`).
 
-In `8.4-migration`, invalid Intl locales and invalid `ResourceBundle` offsets
-raise `ValueError`.
+## EXIF and image dimensions
 
-In `8.5-migration`:
+Source batch: `8.5.0`.
 
-- `intl.error_level` is deprecated; perform explicit error checks or enable
-  `intl.use_exceptions`.
-- Intl timezone and locale operations reject documented invalid states with
-  exceptions.
-- Regular collation sort handles numeric strings like standard
-  `SORT_REGULAR`.
-- Intl requires ICU 57.1 or newer.
+EXIF supports `OffsetTime*` tags and HEIF/HEIC. `getimagesize()` recognizes
+HEIF/HEIC and, with ext-libxml, SVG.
 
-### Localized lists
-
-Since `8.5.0`, `IntlListFormatter` is available with ICU 67 or newer. It
-formats localized AND, OR, or unit lists in wide, short, or narrow form using
-the `TYPE_*` and `WIDTH_*` constants.
-
-## Image metadata and sizing
-
-In `8.4-migration`, invalid GD quality, speed, scale, and filter ranges raise
-`ValueError`. The `SUNFUNCS_RET_*` constants are deprecated.
-
-Since `8.5.0`:
-
-- EXIF supports `OffsetTime*` tags and HEIF/HEIC.
-- `getimagesize()` recognizes HEIF/HEIC and, when ext-libxml is available,
-  SVG.
-- Image-size results include `width_unit` and `height_unit`; they default to
-  pixels but can differ.
-- `image_type_to_extension()` and `image_type_to_mime_type()` recognize SVG.
-
-`imagedestroy()` is deprecated in `8.5-migration`, because the image object is
-released automatically.
+Image-size results include `width_unit` and `height_unit`. They default to
+pixels but may differ. SVG is also recognized by
+`image_type_to_extension()` and `image_type_to_mime_type()`.

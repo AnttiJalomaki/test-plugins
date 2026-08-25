@@ -1,50 +1,59 @@
 # Systems, Control, and Modeling
 
-## Joint control
+## Pose and state publication
 
-- `JointController` can disable braking in force mode. Use this option where
-  the force controller must coast or where automatic braking conflicts with
-  the intended dynamics (since 9.3.0).
-- `JointPositionController` accepts dynamic PID parameters, enabling runtime
-  tuning rather than fixed startup-only gains (since 9.3.0).
-- `JointController` supports joints in nested models (since 10.0.0).
+### Publish poses beyond top-level models (since 9.1.0)
+
+Pose Publisher is not limited to top-level model poses.
+
+### Suppress empty poses (since 10.1.0)
+
+Pose Publisher does not publish empty poses, so subscribers should not expect placeholder entries.
+
+### Configure Joint State Publisher rate (since 10.5.0)
+
+Joint State Publisher has an update-rate parameter for controlling publication frequency.
+
+## Joint lifecycle and control
+
+### Clean up detachable joints with models (since 9.1.0)
+
+Removing a model also removes its detachable joints.
+
+### Disable force-mode braking (since 9.3.0)
+
+`JointController` can disable braking while operating in force mode.
+
+### Change position PID dynamically (since 9.3.0)
+
+`JointPositionController` supports dynamic PID parameters rather than fixed-only configuration.
+
+### Control nested joints (since 10.0.0)
+
+`JointController` supports nested joints.
 
 ## Drive systems
 
-- `DriveToPoseController` is a system plugin for driving to a target pose
-  (since 9.2.0).
-- `MecanumDrive` supplies mecanum drive behavior with odometry and TF output
-  (since 10.0.0).
+### Drive to a pose (since 9.2.0)
 
-## Wheel slip from textures
+Use the `DriveToPoseController` system plugin for drive-to-pose behavior.
 
-`LookupWheelSlip` uses an 8-bit RGB lookup map to translate surface texture
-colors into material-friction values, so friction can vary spatially across a
-surface (jetty-highlights).
+### Drive mecanum bases (since 10.0.0)
 
-Slip-map paths are resolved through `common::findFile`; account for that
-resource-resolution behavior when configuring the map (since 10.0.0).
+The `MecanumDrive` plugin provides odometry and TF output.
 
-## Entity semantics and cleanup
+## Entity modeling and commands
 
-- `EntitySemantics` assigns categories and tags to simulation entities (since
-  10.0.0).
-- Removing a model removes its detachable joints as well. Do not retain logic
-  that expects those joints to remain after model deletion (since 9.1.0).
+### Assign entity categories and tags (since 10.0.0)
 
-## Battery convention
+The `EntitySemantics` system assigns categories and tags to entities.
 
-The battery plugin accepts a parameter that adjusts the sign of current. Set it
-to the charging/discharging convention expected by downstream integrations
-(since 9.1.0).
+## Configurable and visualized systems
 
-## Simulation reset
+### Configure particle-emitter topics in SDF (since 10.1.0)
 
-- Simulation reset is exposed through a public callable API (since 10.0.0).
-- The test fixture supports `ISystemReset`, allowing reset-sensitive system
-  behavior to be exercised in tests (since 10.0.0).
+`ParticleEmitter` accepts its topic from SDF configuration.
 
-## Particle emitters
+### Visualize static environments (since 10.1.0)
 
-`ParticleEmitter` can read its topic from SDF, allowing the publisher topic to
-be selected per model or world configuration (since 10.1.0).
+`EnvironmentPreload` can visualize static environments.

@@ -1,56 +1,57 @@
 # Middleware and Context
 
-## Contents
+## Select APIs by installed version
 
-- [Current context model](#current-context-model)
-- [Route-module middleware](#route-module-middleware)
-- [Calling `next()`](#calling-next)
-- [Error flow](#error-flow)
-- [When server middleware runs](#when-server-middleware-runs)
-- [Context lifetime](#context-lifetime)
-- [Custom static-handler response generation](#custom-static-handler-response-generation)
-- [Testing middleware](#testing-middleware)
-- [Lazy middleware migration history](#lazy-middleware-migration-history)
+Middleware is a stable React Router capability in the migration guidance
+(`7.0-guide`), but the v7 implementation passed through provisional names before the
+context API stabilized. Do not mix these stages:
 
-## Current context model
+| Version stage | Context creation and initialization |
+| --- | --- |
+| `7.3.0` | `unstable_createContext`; callbacks return `unstable_InitialContext` maps |
+| `7.8.0` | callbacks return `unstable_RouterContextProvider`; map type removed |
+| `7.9.0` | `createContext`, `RouterContextProvider`, and `getContext` are stable names |
+| `8.0.0` | middleware/provider context is unconditional; gating types/flags are removed |
 
-Middleware is a stable feature. Define typed keys with `createContext()` and store request or
-navigation values in a `RouterContextProvider`.
+## Context evolution
 
-```ts
-import { createContext, RouterContextProvider } from "react-router";
+### Initial typed context (`7.3.0`)
 
-export const userContext = createContext<User>();
+Framework `clientLoader`/`clientAction` and Library Mode `loader`/`action` gained typed
+client context. A fresh context is created for each navigation or fetcher call and is
+seeded by `unstable_getContext` on `createBrowserRouter` or `HydratedRouter`.
 
-export function getContext() {
-  const context = new RouterContextProvider();
+Under provisional server middleware, loaders/actions receive typed context rather than
+`AppLoadContext`. Create keys with `unstable_createContext`; custom-server
+`getLoadContext` must return an `unstable_InitialContext` map instead of an object.
+
+### Provider instances (`7.8.0`)
+
+`unstable_getContext` on `RouterProvider`, `HydratedRouter`, and
+`unstable_RSCHydratedRouter`, and adapter `getLoadContext` under
+`future.unstable_middleware`, must return an `unstable_RouterContextProvider` instance.
+`unstable_InitialContext` is removed, and middleware-enabled context parameters are
+read-only providers rather than extensible objects.
+
+```tsx
+function getContext() {
+  const context = new unstable_RouterContextProvider();
   context.set(userContext, getCurrentUser());
   return context;
 }
+
+<RouterProvider router={router} unstable_getContext={getContext} />;
 ```
 
-Use `context.get(key)` and `context.set(key, value)`. The `getContext` spelling applies to the
-`createBrowserRouter` option and the `HydratedRouter` prop. Adapter `getLoadContext` functions
-also return a provider when middleware is enabled; in v8 that is unconditional.
+### Stable provider names (`7.9.0`)
 
-Client-side `clientLoader` and `clientAction` in Framework Mode, and `loader` and `action` in
-Library/Data Mode, receive the typed context. A fresh provider is created for each navigation or
-fetcher call; seed it through the router or hydrated-router `getContext` callback.
+Remove `unstable_` from `createContext`, `RouterContextProvider`, and `getContext`. The
+stable `getContext` spelling applies to both `createBrowserRouter` and `HydratedRouter`.
 
-### Migration of provisional context APIs
+```ts
+import { createBrowserRouter, createContext, RouterContextProvider } from "react-router";
 
-The context API evolved in three stages:
-
-1. Early v7 used `unstable_createContext`, an `unstable_InitialContext` `Map`, and
-   `unstable_getContext`.
-2. Provider-based context then required `unstable_RouterContextProvider`; the Map-returning
-   `unstable_InitialContext` was removed, and handler context parameters became read-only
-   provider views rather than extensible objects.
-3. Stable APIs are `createContext`, `RouterContextProvider`, and `getContext`.
-
-Do not combine examples from different stages. A current provider callback looks like:
-
-```tsx
+const userContext = createContext<User>();
 const router = createBrowserRouter(routes, {
   getContext() {
     const context = new RouterContextProvider();
@@ -58,39 +59,58 @@ const router = createBrowserRouter(routes, {
     return context;
   },
 });
-
-<HydratedRouter getContext={getContext} />;
 ```
 
-In v8, middleware is always enabled and all loaders, actions, and middleware receive a provider.
-Remove the old `future.v8_middleware` gate, the Data Mode `Future` augmentation, and the
-`MiddlewareEnabled` gating type formerly exposed as `UNSAFE_MiddlewareEnabled`.
+### Unconditional v8 context (`8.0.0`)
 
-## Route-module middleware
+Middleware is always enabled. Loaders, actions, and middleware always receive a
+`RouterContextProvider`; custom `getLoadContext` must return a provider rather than a plain
+object. Remove `UNSAFE_MiddlewareEnabled` and Data Mode's `Future` augmentation.
 
-Export `middleware` for server document/data requests and `clientMiddleware` for browser-side
-navigations. Functions run in route order around the work at the leaf.
+```ts
+import { RouterContextProvider } from "react-router";
+
+function getLoadContext() {
+  return new RouterContextProvider();
+}
+```
+
+## Server and client route middleware
+
+### Route exports (`framework-mode`)
+
+`middleware` functions run sequentially around server document and data requests. At the
+leaf, `next()` executes loaders or the action and returns the response. `clientMiddleware`
+wraps browser navigations similarly, but its `next()` has no `Response` return.
 
 ```ts
 export const middleware = [loggingMiddleware, authMiddleware];
 export const clientMiddleware = [clientLoggingMiddleware];
 ```
 
-At the server leaf, `next()` executes the action or matched loaders and yields the response.
-Client middleware's `next()` does not return a `Response`.
+### When middleware runs (`middleware`)
 
-In Data Mode, adding middleware to a route is itself the client-middleware opt-in; do not pass
-`future.unstable_middleware` to `createBrowserRouter`. Framework Mode required the flag while
-the feature was provisional so route-module and context types could change together. The gate
-became `future.v8_middleware` before becoming unconditional in v8.
+Document requests run matched server middleware even without loaders. Hydrated client
+navigation sends no `.data` request when no loader/action requires one, so corresponding
+server middleware does not run. Add a loader when it must run on every matching client
+navigation.
 
-Client middleware runs even when a navigation has no loaders. It receives the inner
-`dataStrategy` results on unwind and may post-process them. It can return redirects directly.
+```ts
+export async function loader() {
+  return null;
+}
+```
 
-## Calling `next()`
+Data Mode client middleware is enabled by adding middleware to a route; passing
+`future.unstable_middleware` to `createBrowserRouter` is rejected as of `7.8.0`.
+Framework Mode still required that flag at this stage for route-module/context typing.
+Client middleware runs even without loaders and receives inner `dataStrategy` results for
+post-processing.
 
-A middleware may call `next()` at most once. Calling it twice throws. Returning without calling
-it automatically continues the chain, so setup-only middleware can omit explicit forwarding.
+### `next()` usage (`middleware`)
+
+A middleware may call `next()` at most once; a second call throws. Returning without
+calling it automatically continues the chain, so setup-only middleware can omit it.
 
 ```ts
 export const middleware: Route.MiddlewareFunction[] = [
@@ -100,73 +120,42 @@ export const middleware: Route.MiddlewareFunction[] = [
 ];
 ```
 
-Server middleware that intentionally does not continue may return a `Response` or `data()`;
-`data()` is converted with `Response.json()`.
+### Short-circuit responses and redirects
 
-The provisional `Route.unstable_MiddlewareFunction` return type changed from `Response | void`
-to `Response | undefined`. Patch 7.4.1 corrected false type errors for functions that return no
-value.
+From `7.8.0`, server middleware that skips `next()` may return a `Response` or `data()`;
+`data()` becomes `Response.json()`. Client middleware may return redirect responses from
+`7.11.0`.
 
-## Error flow
+## Errors and response generation
 
-Do not wrap `await next()` in `try`/`catch` to intercept downstream route errors. Earlier
-provisional middleware exposed an internal `MiddlewareError`, then rethrew the original error;
-the settled flow does not throw downstream errors from `next()`. React Router selects a route
-error boundary, renders its response, and passes that response back through ancestor middleware.
-Thrown non-redirect `Response` objects also reach route error boundaries.
+### Evolution of `next()` error behavior
 
-Error-boundary selection depends on whether handler work has begun:
+In `7.4.0`, downstream provisional middleware exceptions were rethrown as the original
+error instead of an internal `MiddlewareError`; catch original errors. The provisional
+`Route.unstable_MiddlewareFunction` return type became `Response | undefined`, and 7.4.1
+fixed no-return functions.
 
-- An error thrown after `await next()` originates at the throwing route and has loader data.
-- An error thrown before `next()` runs before any loaders. React Router bubbles to the highest
-  matched route with loader data and then searches upward for a boundary, because the route and
-  its descendants cannot render without their loader data.
+By `7.8.0`, downstream server middleware errors no longer make `next()` throw. The chosen
+route error boundary handles them and its response unwinds through ancestor middleware;
+do not depend on `try`/`catch` around `next()`. Thrown non-redirect responses also reach
+route error boundaries.
 
-## When server middleware runs
+### Boundary selection (`middleware`)
 
-A document request runs matched server middleware even if the route has no loader. A hydrated
-client navigation sends a `.data` request only when a loader or action already requires one, so
-server middleware alone does not force a request. Add a loader when the middleware must run on
-every matching client navigation:
+An error after `await next()` originates at the throwing route with loader data available.
+An error before `next()` occurs before loaders; React Router bubbles to the highest matched
+route with a loader and searches upward for an error boundary because it cannot render
+that route or descendants without loader data.
 
-```ts
-export async function loader() {
-  return null;
-}
-```
+### Manual SSR response hook (`7.8.0`)
 
-## Context lifetime
-
-Server context is request-scoped. A document POST can share one provider between its action and
-the subsequent loaders, but an SPA submission performs separate POST and GET requests and gets a
-new provider for each. Never rely on a value set during the action still existing during SPA
-revalidation. Client middleware, client actions, and client loaders can share context because
-their work is not split across HTTP requests.
-
-Server middleware can use Node `AsyncLocalStorage.run()` around `next()` to make state visible to
-loaders, React Server Components, and Server Actions in the same execution context. Prefer the
-explicit React Router provider when the middleware must remain portable across runtimes.
-
-```ts
-import { AsyncLocalStorage } from "node:async_hooks";
-
-const currentUser = new AsyncLocalStorage<User>();
-
-export const middleware: Route.MiddlewareFunction[] = [
-  async ({ request }, next) =>
-    currentUser.run(await getUser(request), next),
-];
-```
-
-## Custom static-handler response generation
-
-For manual SSR with `createStaticHandler`, use `unstable_generateMiddlewareResponse` on `query`
-or `queryRoute`, not the older `unstable_respond`. The callback receives the query function and
-must invoke it. This permits setup, cleanup, and handler-error processing around the query.
+For `createStaticHandler`, replace `unstable_respond` on `query`/`queryRoute` with
+`unstable_generateMiddlewareResponse`. The callback receives the query function and must
+invoke it, permitting work around handler execution and error capture.
 
 ```ts
 await staticHandler.query(request, {
-  requestContext: new RouterContextProvider(),
+  requestContext: new unstable_RouterContextProvider(),
   async unstable_generateMiddlewareResponse(query) {
     const result = await query(request);
     return result instanceof Response ? result : generateHtmlResponse(result);
@@ -174,30 +163,50 @@ await staticHandler.query(request, {
 });
 ```
 
-The normalized-path option on static-handler `query` and `queryRoute` is named `normalizePath`;
-it was initially exposed as `unstable_normalizePath`.
+## Lazy middleware migration
+
+In 7.4.1, lazy middleware moved to `route.unstable_lazyMiddleware`; returning
+`unstable_middleware` from `route.lazy` stopped working (`7.4.0`). The next stage removed
+that property and required `route.lazy.unstable_middleware` in the per-property lazy
+object (`7.5.0`). These were provisional spellings; use the API appropriate to the
+installed version.
+
+## Context lifetime and async-local state
+
+### HTTP request boundaries (`middleware`)
+
+Server context is request-scoped. A document POST can share a provider between its action
+and subsequent loaders, but an SPA submission uses separate POST and GET requests with
+separate providers. Client middleware, actions, and loaders can share client context
+because their execution is not split across HTTP requests.
+
+### AsyncLocalStorage (`middleware`)
+
+Server middleware can wrap `next()` in `AsyncLocalStorage.run()` so request state reaches
+loaders, React Server Components, and Server Actions in the same execution context. Use
+React Router context when middleware must be portable beyond Node.
+
+```ts
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const currentUser = new AsyncLocalStorage<User>();
+export const middleware: Route.MiddlewareFunction[] = [
+  async ({ request }, next) => currentUser.run(await getUser(request), next),
+];
+```
 
 ## Testing middleware
 
-`createRoutesStub` supports middleware. Pass a constructed context provider as the second
-argument. During the v7 gated stage, render the stub with `future={{ v8_middleware: true }}` to
-activate the matching types.
+`createRoutesStub` used the prior `AppLoadContext` object without middleware in `7.7.0`;
+with middleware, its second argument had to be an instantiated
+`unstable_RouterContextProvider`, not a context factory.
+
+From `7.9.0`, route stubs support middleware with stable provider names. Render the stub
+with `future={{ v8_middleware: true }}` to activate corresponding v8 context typing.
 
 ```tsx
 const context = new RouterContextProvider();
-context.set(userContext, testUser);
-
+context.set(SomeContext, someValue);
 const RoutesStub = createRoutesStub(routes, context);
 render(<RoutesStub future={{ v8_middleware: true }} />);
 ```
-
-Without the provisional middleware behavior, v7 `createRoutesStub` retained support for the old
-`AppLoadContext` object. Do not pass a `getContext` factory as the stub's second argument.
-
-## Lazy middleware migration history
-
-Early lazy middleware returned `unstable_middleware` from function-form `route.lazy`. In 7.4.1,
-that stopped working and temporarily moved to `route.unstable_lazyMiddleware`. The next
-per-property lazy API removed that property and used `route.lazy.unstable_middleware`. Treat
-these as migration-only spellings and use the stable middleware API supported by the installed
-version.

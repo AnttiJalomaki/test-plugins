@@ -1,29 +1,31 @@
 # Package Boundaries and Environment Linting
 
-## Boundary checks
+## Run Boundary Analysis
 
-Run the experimental boundary analyzer to find imports that escape a package
-directory and imports of packages absent from that package's dependencies
-(since 2.4.0):
+The experimental `turbo boundaries` command detects imports that escape a
+package directory and imports of packages missing from that package's declared
+dependencies (since 2.4.0):
 
 ```bash
 turbo boundaries
 ```
 
-Package rules, implicit dependencies, and TypeScript configuration path aliases
-are understood by the analyzer (since 2.5.0). It also detects circular package
-dependencies and analyzes dynamic imports (since 2.10.0).
+Package rules, implicit-dependency handling, and TypeScript configuration path
+aliases are included in boundary analysis (since 2.5.0). Boundary checks also
+detect circular package dependencies and analyze dynamic imports (since
+2.10.0).
 
-## Circular-dependency diagnostics
+## Interpret Cycles at the Right Graph Level
 
-Use cycle errors to identify actionable edge-removal choices (since 2.4.0).
-Diagnostics list sets of dependency edges where removing any one complete set
-breaks the Package Graph cycle, instead of listing only involved packages.
+Circular-dependency diagnostics report sets of dependency edges where removing
+all edges in any one complete set breaks the Package Graph cycle (since 2.4.0).
+This is more actionable than a package-only list; choose one reported set and
+remove or redirect every edge in it.
 
-Do not confuse a Package Graph cycle with an invalid Task Graph (behavior
-changed in 2.9.0). Turborepo no longer exits automatically for a package cycle.
-Tasks without cyclic task dependencies can run; task relationships such as
-`^build` still fail when they create a Task Graph cycle:
+Package Graph cycles no longer cause an unconditional exit (since 2.9.0).
+Turborepo validates the Task Graph instead. A task without cyclic task
+dependencies can run even when its packages form a cycle, while a recursive
+relationship such as `^build` can still form a Task Graph cycle:
 
 ```json
 {
@@ -34,11 +36,15 @@ Tasks without cyclic task dependencies can run; task relationships such as
 }
 ```
 
-## ESLint Flat Config
+Do not treat a successful simple task as proof that every task is safe; inspect
+the selected task relationships.
 
-Use Flat Config with `eslint-config-turbo` and `eslint-plugin-turbo` while
-retaining compatibility with ESLint 8 (since 2.4.0). Spread the shareable
-configuration into the exported array:
+## Configure ESLint Flat Config
+
+`eslint-config-turbo` and `eslint-plugin-turbo` support ESLint Flat Config and
+remain compatible with ESLint 8 (since 2.4.0).
+
+Spread the shareable configuration into the exported array:
 
 ```js
 export default [
@@ -46,7 +52,8 @@ export default [
 ];
 ```
 
-For direct plugin use, register `turbo` in the flat-config `plugins` object:
+For direct plugin use, register the plugin in the Flat Config `plugins` object
+and then enable its rule:
 
 ```js
 export default [
@@ -59,12 +66,12 @@ export default [
 ];
 ```
 
-## Biome undeclared-environment checks
+## Configure Biome Environment Checks
 
-With Biome 2.3.10 or newer, allow project detection from repository
-dependencies, then explicitly enable the nursery `noUndeclaredEnvVars` rule
-(since 2.7.0). The rule catches environment-variable use that could otherwise
-produce incorrect cache hits:
+Biome 2.3.10 and newer automatically detects a Turborepo project from its
+repository dependencies (since Turborepo 2.7.0). The
+`noUndeclaredEnvVars` rule remains in Biome's nursery group and is not enabled
+by detection alone. Enable it explicitly:
 
 ```json
 {
@@ -77,3 +84,7 @@ produce incorrect cache hits:
   }
 }
 ```
+
+The rule catches environment-variable reads that are absent from Turborepo's
+declared environment configuration and could otherwise produce incorrect cache
+hits.

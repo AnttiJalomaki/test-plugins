@@ -10,220 +10,213 @@ metadata:
 
 # Qdrant Knowledge Patch
 
-Use this skill when designing, implementing, upgrading, or operating Qdrant
-collections and clusters. Start with the quick reference, then open the topic
-reference that matches the work.
+Use this skill when designing, upgrading, operating, or troubleshooting Qdrant
+deployments whose behavior may depend on recent APIs, defaults, storage modes,
+query features, or compatibility changes.
+
+## How to use this skill
+
+1. Determine the server version and deployment shape before proposing changes.
+2. Read the reference file for the task; several defaults and behaviors changed
+   after their original introduction.
+3. Treat collection configuration, index creation options, and query-time
+   parameters as different scopes. Do not move an option between them.
+4. Check upgrade prerequisites before changing a cluster or single-node server.
+5. Prefer the current replacement when a setting or endpoint is deprecated.
+6. Validate assumptions against the running collection schema and telemetry.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [deployment-upgrades-and-operations.md](references/deployment-upgrades-and-operations.md) | Upgrade sequencing, rolling availability, Helm, Gridstore, write back pressure |
-| [indexing-storage-and-quantization.md](references/indexing-storage-and-quantization.md) | GPU and incremental HNSW, quantization, inline vectors, per-field graph participation |
-| [retrieval-ranking-and-filtering.md](references/retrieval-ranking-and-filtering.md) | Formula scoring, MMR, ACORN, RRF, relevance feedback, named-vector filtering |
-| [text-search.md](references/text-search.md) | Multilingual tokenization, stop words, stemming, phrase search, match-any, ASCII folding |
-| [collections-writes-and-multitenancy.md](references/collections-writes-and-multitenancy.md) | Strict mode, tenant shards, conditional writes, upsert modes, metadata, vector schema changes |
-| [observability-auditing-and-ui.md](references/observability-auditing-and-ui.md) | Cluster telemetry, optimization status, memory, metrics, audit logs, Web UI |
+| [Collections, Writes, and Multitenancy](references/collections-writes-and-multitenancy.md) | Strict mode, global quotas, conditional writes, schemas, shard keys, tenant promotion, update queues |
+| [Deployment, Upgrades, and Operations](references/deployment-upgrades-and-operations.md) | Upgrade sequencing, rolling availability, Helm, Gridstore, GPU indexing, replica routing, readiness |
+| [Indexing, Storage, and Quantization](references/indexing-storage-and-quantization.md) | HNSW behavior, binary and asymmetric quantization, TurboQuant, mmap, component memory policy |
+| [Observability, Auditing, and Web UI](references/observability-auditing-and-ui.md) | Telemetry, optimization and memory views, audit APIs, metrics, inference credentials, UI tools |
+| [Retrieval, Ranking, and Filtering](references/retrieval-ranking-and-filtering.md) | Formula scoring, MMR, ACORN, feedback, RRF, prefix and slice filters, corrected edge cases |
+| [Full-Text Search](references/text-search.md) | Multilingual tokenization, stop words, stemming, phrases, match-any, ASCII folding |
 
-## Upgrade constraints and changed defaults
+## Breaking changes and deprecations
 
-### Preserve adjacent-minor compatibility
+### Replace the strict-mode RSS guardrail
 
-Do not skip a minor-version migration step. Before moving to a target minor,
-bring every node to the latest patch of the immediately preceding minor.
-This rule also applies to a single-node deployment because skipped steps can
-skip required data migrations.
+Do not introduce `strict_mode_config.max_resident_memory_percent` in new
+configurations. Use the Global quota API for memory protection. When upgrading,
+find collections that still rely on the strict-mode setting and migrate their
+policy deliberately.
 
-For example, before moving from 1.16 to 1.17, first reach 1.16.3. A 1.17 node
-can interoperate with 1.16 during the rollout, but not with 1.15.
+### Re-evaluate ingestion back pressure
 
-### Upgrade clients before servers
+The update queue default is now much smaller than the former one-million-entry
+backlog. A workload that depended on deep buffering may encounter back pressure
+far earlier. Tune producers, monitor the queue, and decide explicitly whether a
+larger queue is appropriate.
 
-Upgrade Qdrant client SDKs first. The SDK compatibility window covers the
-latest three server minor versions, which keeps the client usable while the
-cluster is rolled forward.
+### Expect corrected query behavior
 
-### Check replication before promising zero downtime
+Regression tests should cover these compatibility-sensitive cases:
 
-Zero-downtime rolling upgrades require every collection to have replication
-factor 2 or greater. Restart one node at a time. A single-node cluster, or
-even one collection with replication factor 1, requires a short outage.
+- An empty `min_should` with nonzero `min_count` no longer matches everything.
+- Scalar-quantized L2 scores no longer include the former erroneous shift.
+- A zero-limit batch query retains the empty-result response shape.
+- Query API recommendations fail when a referenced point ID is missing.
 
-For Kubernetes installations managed by the Qdrant chart, a Helm release
-upgrade rolls the StatefulSet automatically:
+Do not encode the superseded behavior into application logic.
+
+### Migrate from legacy search endpoints
+
+Deprecated search endpoints are no longer present in the OpenAPI description
+and are marked deprecated in gRPC. Build new integrations on the points Query
+API and plan migrations for generated clients that depended on the old surface.
+
+### Account for storage-default changes
+
+Single-file mmap vector storage is enabled by default for immutable segments.
+New deployments also use Gridstore rather than RocksDB as their embedded
+storage backend. Capacity and performance comparisons must name the actual
+backend and vector-storage configuration.
+
+## Upgrade quick reference
+
+### Advance one minor at a time
+
+Before moving to a new minor release, bring every node to the latest patch of
+the immediately preceding minor. This rule applies to single-node deployments
+as well as clusters because skipping an intermediate minor can skip required
+data migrations.
+
+### Preserve availability intentionally
+
+Zero-downtime rolling upgrades require replication factor 2 or greater for
+every collection and one-at-a-time node restarts. A single-node deployment, or
+even one collection at replication factor 1, requires a short outage.
+
+Upgrade client SDKs before servers. SDKs are tested for backward compatibility
+with the latest three server minor versions, which keeps the client usable
+during the rollout.
+
+With Helm, upgrading the release rolls the Qdrant StatefulSet automatically:
 
 ```bash
 helm upgrade qdrant qdrant/qdrant --version <target-version> -n <namespace>
 ```
 
-### Account for the storage default
+## Collection and write quick reference
 
-New deployments use Gridstore as the embedded storage backend. When upgrading
-an older deployment, prefer adjacent-version upgrades even when APIs and
-indexes do not otherwise require migration.
+### Evolve named-vector schemas in place
 
-See
-[deployment-upgrades-and-operations.md](references/deployment-upgrades-and-operations.md)
-before planning a rollout or tuning ingestion back pressure.
+Add a new named vector to an existing collection, populate it in the
+background, switch consumers, and remove the old vector after migration. A
+full collection recreation and re-ingestion is no longer required.
 
-## Strict-mode guardrails
+### Protect writes from stale callers
 
-Configure `strict_mode_config` at collection level to reject costly requests
-instead of allowing them to consume unbounded resources. Useful limits cover:
+Attach an update filter to a point update and compare an expected version,
+synchronized timestamp, or monotonically increasing payload value. Qdrant
+rejects the write when the condition does not match. Use insert-only and
+update-only upsert modes when creation and mutation must not be interchangeable.
 
-- unindexed filtering during retrieval;
-- oversized batches and payloads;
-- too many filter conditions or payload indexes;
-- excessive timeouts, `hnsw_ef`, or oversampling;
-- high resident-memory pressure;
-- too many queries in one batch-search request.
+### Use tiered tenant placement
 
-New collections enable strict mode by default. The `enabled` flag is dynamic,
-and existing collections can be changed with `PATCH`. A rejected operation
-returns a client error identifying the exceeded limit.
+Keep small tenants in a shared fallback shard and promote large tenants to
+user-defined dedicated shards. Continue sending the shard key selector; Qdrant
+routes to the dedicated shard when present and otherwise uses the fallback.
+Promotion uses shard transfer while reads and writes continue.
 
-```http
-PATCH /collections/{collection_name}
-{
-  "strict_mode_config": {
-    "enabled": true,
-    "max_resident_memory_percent": 90,
-    "search_max_batchsize": 64
-  }
-}
-```
+### Apply guardrails at the right layer
 
-Keep service limits and client batch sizes aligned. Read
-[collections-writes-and-multitenancy.md](references/collections-writes-and-multitenancy.md)
-for the complete set of collection and write controls.
+Collection strict mode rejects operations that exceed configured limits and
+returns a client error naming the violated limit. It can protect against
+unindexed filtering, excessive query or batch parameters, and payload-index
+growth. Use global quotas, rather than the deprecated strict-mode RSS setting,
+for process-wide memory protection.
 
-## Retrieval and reranking choices
+## Retrieval quick reference
 
-Choose the query mechanism from the retrieval goal:
+### Choose the query-time ranking tool
 
-| Goal | Mechanism |
+| Need | Feature |
 | --- | --- |
-| Mix vector relevance with business signals | Formula-based score boosting |
-| Increase diversity among nearest neighbors | Maximal Marginal Relevance |
-| Improve HNSW traversal under difficult filters | Per-query ACORN |
-| Tune rank fusion decay | Configurable RRF `k` |
-| Give contributing rankers different influence | Weighted RRF |
-| Refine similarity from positive/negative context pairs | Relevance Feedback Query |
-| Reduce replica tail latency | Delayed read fan-out |
+| Boost vector results with payload, time, or distance signals | Formula rescoring after prefetch |
+| Balance relevance with result diversity | MMR with `diversity` and `candidates_limit` |
+| Improve filtered HNSW recall for difficult low-selectivity filters | Per-query `acorn` |
+| Learn from more- and less-relevant examples | Relevance Feedback Query |
+| Prevent a weak ranker from diluting stronger result sets | Weighted RRF |
+| Change the rank-decay curve during fusion | Configurable RRF `k` |
 
-Formula queries rescore a prefetched candidate set. They can combine `$score`,
-payload conditions, numeric expressions, datetime decay, geographic distance,
-and fallback `defaults`.
+Use ACORN selectively because it increases query-time work. Formula expressions
+can combine `$score`, payload conditions, numeric operations, datetime decay,
+geographic distance, and fallback `defaults`.
 
-MMR uses `diversity` from `0.0` for relevance to `1.0` for diversity.
-`candidates_limit` bounds the initial pool. ACORN is query-time only and needs
-no index rebuild, but adds runtime work, so enable it only for filtered queries
-that suffer from disconnected HNSW neighborhoods.
+### Filter on recent conditions
 
-Open
-[retrieval-ranking-and-filtering.md](references/retrieval-ranking-and-filtering.md)
-for request shapes and the distinctions between these mechanisms.
+- `has_vector` selects points containing a named vector.
+- Keyword `prefix` matching requires prefix support on the keyword index first.
+- Slice conditions support deterministic sampling and sliced scrolling.
+- `text_any` tokenizes several terms and matches a text field containing any
+  one of them.
 
-## Full-text index choices
+## Indexing and quantization quick reference
 
-Set text behavior when creating the payload index:
+### Select a compression strategy
 
-- `tokenizer: "multilingual"` handles languages such as Chinese and Japanese
-  that do not rely on whitespace word boundaries.
-- `stopwords` removes configured common words during indexing and querying.
-- a Snowball `stemmer` normalizes grammatical variants for a chosen language.
-- `phrase_matching: true` builds the additional structure required by
-  `match.phrase`; it cannot be added merely as a query option.
-- `ascii_folding: true` makes unaccented query text match accented text.
+Use 2-bit binary quantization when explicitly representing zero helps accuracy,
+especially for vectors below roughly 1,000 dimensions. Use 1.5-bit for an
+intermediate compression/accuracy point. Asymmetric quantization can keep stored
+vectors binary while scalar-quantizing queries to improve precision and reduce
+rescoring.
 
-Use `match.text_any` when any token in a multi-term string may match. It
-replaces a client-generated set of `should` conditions.
+TurboQuant rotates vectors before compression, so it does not depend on the
+centered distribution expected by binary quantization. Its 4-bit representation
+can serve as primary vector storage when retaining original vectors is not
+required.
 
-Read [text-search.md](references/text-search.md) before defining or migrating a
-full-text payload index.
+### Tune HNSW behavior deliberately
 
-## Indexing, storage, and quantization
+Incremental HNSW construction extends the graph for upserts, but deletes and
+updates can still cause a full rebuild. `inline_storage: true` reduces random
+disk reads by keeping vector data in HNSW nodes; it requires quantization and
+uses more storage. Payload indexes that are not used by dense-vector queries
+can be excluded from HNSW participation.
 
-Use the index and compression features according to workload:
+## Text-search quick reference
 
-- Vulkan GPU images can build HNSW indexes on supported GPUs, including
-  concurrent indexing across multiple GPUs.
-- Incremental HNSW extends the graph for upserts; deletes and updates can still
-  require a full rebuild.
-- 1.5-bit and 2-bit binary modes trade compression for accuracy, with 2-bit
-  explicitly representing zero.
-- Asymmetric quantization can combine binary stored vectors with
-  scalar-quantized query vectors.
-- TurboQuant rotates vectors before compression and supports cosine, dot
-  product, and L2 distance.
-- `inline_storage: true` places vector data in HNSW nodes to reduce random disk
-  reads, but requires quantization and consumes more storage.
+Choose index features when creating the full-text payload index:
 
-Do not assume every payload index should affect HNSW. Disable participation for
-fields that are not used with dense-vector queries to avoid unnecessary graph
-edges.
+- `multilingual` tokenization handles languages without whitespace boundaries.
+- Stop-word removal and Snowball stemming normalize language-specific text.
+- Phrase matching must be enabled at index creation before `match.phrase` can
+  require ordered terms.
+- ASCII folding must be enabled at index creation to make `cafe` match `café`.
 
-See
-[indexing-storage-and-quantization.md](references/indexing-storage-and-quantization.md)
-for the compression ratios and operating tradeoffs.
+Index-time features require index recreation when absent; `text_any` is a
+query condition and does not replace index configuration.
 
-## Collection evolution and multitenancy
+## Operations quick reference
 
-For tiered multitenancy, keep small tenants in a shared fallback shard and
-create user-defined dedicated shards for large tenants. Continue sending a
-shard key selector; Qdrant resolves it to the dedicated shard when present and
-otherwise uses the fallback. Promote a tenant through shard transfer without
-changing application routing.
+Use `/cluster/telemetry` for a cluster-wide view, and use the collection
+optimizations endpoint to inspect current and historical optimization work.
+Collection memory data separates disk, RAM, and OS page-cache use by component.
+Enable per-collection metrics only when the extra Prometheus label cardinality
+is acceptable.
 
-Protect writes with the narrowest available semantic:
+Audit protected API operations, query audit records across the cluster, and
+propagate a supported tracing header so entries can be correlated with client
+and distributed traces. Request-scoped inference credentials can travel in a
+request header rather than being stored as one shared server credential.
 
-- attach an update filter to reject stale conditional updates;
-- use insert-only mode when a create must not overwrite an existing point;
-- use update-only mode when an update must not create a missing point.
+When debugging replica latency, consider delayed fan-out: a second replica is
+queried only after the first crosses a latency threshold, and the first response
+wins. Use a routing token when deterministic read routing is required.
 
-Named vectors can be added to or removed from an existing schema. For embedding
-migrations, add the new vector, backfill it, switch reads, and only then remove
-the old vector. Collections can also carry custom metadata, and the shard-key
-listing operation can discover the current custom sharding layout.
+## Verification checklist
 
-## Operations, telemetry, and auditing
-
-Use `/cluster/telemetry` for a cluster-wide view rather than polling every
-peer. Use `/collections/{collection_name}/optimizations` for active and past
-optimization work. Inspect the collection Memory view or API for disk, RAM,
-and page-cache use by vectors, payload, and indexes.
-
-For per-collection request metrics:
-
-```http
-GET /metrics?per_collection=true
-```
-
-This adds a `collection` label to REST and gRPC response counters, failures,
-and duration series. Consider the label cardinality before enabling it in a
-large environment.
-
-Audit protected operations when authentication or authorization is enabled.
-Query audit entries across all nodes, filter them by time or field value, and
-correlate requests by supplying `x-request-id`, `x-tracing-id`, or
-`traceparent`.
-
-Read
-[observability-auditing-and-ui.md](references/observability-auditing-and-ui.md)
-for endpoint scope, UI surfaces, and request-scoped inference credentials.
-
-## Working method
-
-1. Identify the deployed server version, topology, replication factors,
-   collection schema, and client SDK version.
-2. Open the reference for the task instead of inferring option names.
-3. Distinguish collection-creation settings from dynamic settings and
-   per-query controls.
-4. For schema or index changes, state whether backfill, rebuilding, or extra
-   storage is required.
-5. For upgrades, validate every intermediate minor and every collection's
-   replication factor before describing availability.
-6. For performance features, describe both the intended workload and the
-   additional CPU, memory, storage, or latency cost.
-7. Prefer observed collection and cluster behavior over assumptions, then use
-   these references to explain the relevant compatibility rule.
+- Confirm server, client, and Helm chart versions independently.
+- Inspect the live collection schema before changing vectors or indexes.
+- Verify whether index options are creation-time or query-time controls.
+- Exercise corrected query edge cases in application tests.
+- Observe queue pressure, optimization status, and component memory after a
+  storage, indexing, or ingestion change.
+- Test rolling-upgrade availability against every collection's replication
+  factor, not only the cluster node count.
+- Check audit and metrics cardinality before enabling high-volume observability.

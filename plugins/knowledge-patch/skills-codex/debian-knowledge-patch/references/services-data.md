@@ -1,43 +1,75 @@
 # Services and data migrations
 
-## RabbitMQ queues and broker state
+Stateful services need application-specific preparation before the operating
+system upgrade. Make verified backups, estimate temporary disk use, and test
+the migration path with representative data.
 
-Convert classic HA queues to quorum queues before upgrading. There is no direct
-Bookworm-to-Trixie broker upgrade path.
+## RabbitMQ
 
-Debian's recommended reset is to remove `/var/lib/rabbitmq/mnesia` after the operating
-system upgrade and restart the service. Preserve or recreate any needed state before
-using this destructive procedure.
+### Convert queues before upgrading
 
-## MariaDB crash-recovery boundary
+Convert classic HA queues to quorum queues before the OS upgrade. There is no
+direct broker upgrade path from Bookworm to Trixie.
 
-MariaDB 11.8 cannot perform crash recovery on a crashed 10.11 data directory. Stop
-MariaDB before upgrading and confirm `Shutdown complete` in its logs.
+Debian's recommended reset procedure removes
+`/var/lib/rabbitmq/mnesia` after the OS upgrade and then restarts RabbitMQ.
+Inventory definitions, messages, credentials, policies, and cluster state;
+preserve or arrange to recreate everything required before applying that
+destructive reset.
 
-If shutdown was unclean, recover under 10.11 and then stop it cleanly again before the
-major upgrade.
+## MariaDB
 
-## Dovecot configuration migration
+### Require a clean 10.11 shutdown
 
-Dovecot 2.4 uses a configuration format incompatible with earlier releases, and the
-`replicator` feature has been removed. Port and test production mail configurations
-before the operating system upgrade instead of accepting extended downtime during it.
+MariaDB 11.8 cannot crash-recover a crashed 10.11 data directory. Before the
+major upgrade:
 
-## Bacula database schema
+1. Stop MariaDB under 10.11.
+2. Confirm `Shutdown complete` in the logs.
+3. Only then proceed to 11.8.
 
-The Bacula director database migration can take hours or days. It temporarily needs
-about twice the database's current disk use, plus room for a dump under
+If shutdown was unclean, recover the directory with MariaDB 10.11, verify the
+data, and stop it cleanly again before installing 11.8.
+
+## Dovecot
+
+### Port configuration before the OS upgrade
+
+Dovecot 2.4 uses a configuration format incompatible with earlier releases,
+and the `replicator` feature has been removed. Port the production
+configuration and test authentication, delivery, retrieval, TLS, and any
+replacement replication design before starting the OS upgrade.
+
+## Bacula
+
+### Reserve time and disk for the schema migration
+
+The director database migration can take hours or days. It temporarily needs
+about twice the database's current disk usage, plus room for a dump under
 `/var/cache/dbconfig-common/backups`.
 
-Running out of disk space during the migration can corrupt the database.
+Measure free space on every affected filesystem before beginning. Exhausting
+disk space during the migration can corrupt the database, so stop rather than
+starting with marginal headroom.
 
-## WirePlumber custom configuration
+## WirePlumber
 
-WirePlumber uses a new configuration system. Defaults need no action, but port custom
-setups by using `/usr/share/doc/wireplumber/NEWS.Debian.gz`.
+### Port custom configuration
 
-## Legacy timezone names
+WirePlumber uses a new configuration system. Default installations need no
+action, but custom setups must be ported using
+`/usr/share/doc/wireplumber/NEWS.Debian.gz` and tested for the intended audio
+routing and policy behavior.
 
-Names outside the region/city scheme, including `US/*`, moved to `tzdata-legacy`.
-The system timezone is converted automatically. Databases and services that copied an
-old name may still require `tzdata-legacy` to remain installed.
+## Timezone compatibility
+
+### Keep tzdata-legacy for copied legacy names
+
+Timezone names outside the region/city scheme, including `US/*`, moved to
+`tzdata-legacy`. The system timezone is converted automatically, but a database
+or service may have copied an old identifier into its own configuration or
+data. Search those consumers and keep `tzdata-legacy` installed until every
+legacy name is migrated.
+
+All service migration items in this reference come from batch
+`13-known-issues`.

@@ -2,7 +2,7 @@
   "patch": "elasticsearch-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T21:56:53Z",
+  "built_at": "2026-08-21T05:06:39Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -56,7 +56,14 @@
       "kind": "unversioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "9.5.1": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "9.5.1"
+  ]
 }

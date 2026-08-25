@@ -10,67 +10,87 @@ metadata:
 
 # TanStack Router Knowledge Patch
 
-Load this skill when implementing or reviewing TanStack Router or TanStack Start
-code. Begin with the compatibility-critical notes below, then open only the
-reference files relevant to the task.
+Use this skill when writing, reviewing, upgrading, or debugging TanStack Router
+and TanStack Start applications. Identify the installed router, plugin, and
+framework versions first, then open the reference matching the task.
+
+Prefer the project's manifests, generated route tree, code, and tests when they
+disagree with this guidance. Treat APIs explicitly described as experimental as
+unstable.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [search-params.md](references/search-params.md) | Search validation, validator typing, defaults, and search middlewares |
-| [rewrites-and-masking.md](references/rewrites-and-masking.md) | Bidirectional URL rewrites, composition, basepaths, and route masks |
-| [matching-and-params.md](references/matching-and-params.md) | Segment-trie matching, param priority, parse rejection, and route errors |
-| [loading-and-ssr.md](references/loading-and-ssr.md) | Loader freshness, stale reloads, cache lifetime, native SSR, streaming, and serialization |
-| [code-splitting-and-navigation.md](references/code-splitting-and-navigation.md) | Automatic and manual route splitting, lazy loaders, route directories, and blockers |
-| [start-and-build-tooling.md](references/start-and-build-tooling.md) | Hydration boundaries, SSR assets, RSC exports, virtual routes, plugins, transforms, and HMR |
+| [Search parameters](references/search-params.md) | Validation failures, validator input/output typing, schema adapters, defaults, and search middlewares |
+| [Matching and parameters](references/matching-and-params.md) | Segment-priority matching, route-param priority, parse rejection, and component-thrown route errors |
+| [Rewrites and masking](references/rewrites-and-masking.md) | Bidirectional URL rewriting, composition, basepaths, route masks, and reload behavior |
+| [Loading and SSR](references/loading-and-ssr.md) | Stale reloads, cache defaults, invalidation, request handlers, streaming, serialization, hydration, and assets |
+| [Code splitting and navigation](references/code-splitting-and-navigation.md) | Route directories, automatic and manual splitting, lazy loaders and routes, blocking, and lazy-component revisits |
+| [Start and build tooling](references/start-and-build-tooling.md) | Route-generator syntax, transforms, plugin isolation, Rsbuild, HMR, server exports, and intent tooling |
 
-## Compatibility-critical behavior
+## Breaking behavior and defaults
 
-### Treat public and internal URLs as different values
+### Keep validator input and output types distinct
 
-Router-level rewrites parse the browser URL with `input` and emit a browser URL
-with `output`. A matched location keeps its internal URL in `location.href` and
-its shareable external URL in `location.publicHref`.
+`validateSearch` receives JSON-parsed, unvalidated search. Reads use the
+validator's output type, while links and navigation accept its input type.
+Defaults make fields optional at navigation sites only when the validator
+preserves both sides correctly.
 
-- Do not display or copy `location.href` when an output rewrite is active.
-- Return a mutated `URL`, a new `URL`, a full href string, or `undefined` from a
-  rewrite handler.
-- Expect links whose output rewrite changes origin to perform a hard navigation.
-- Keep the same rewrite setup on the server so request matching and hydration
-  agree.
+For Zod v3, use `@tanstack/zod-adapter` and `fallback`; direct `.catch()` can
+erase the needed input/output distinction. Zod v4 and Standard Schema
+implementations can be supplied directly.
 
-See [rewrites-and-masking.md](references/rewrites-and-masking.md).
+```tsx
+import { fallback, zodValidator } from '@tanstack/zod-adapter'
 
-### Do not depend on flat-list route ordering
+const schema = z.object({
+  page: fallback(z.number(), 1).default(1),
+})
 
-Matching traverses a segment trie. Static branches have priority, ambiguous
-dynamic and optional branches are explored deterministically, and wildcards are
-considered last. Use `params.priority` only to break a genuine candidate tie.
-An experimental `params.parse` may return `false` to reject an incoming
-candidate.
+export const Route = createFileRoute('/products')({
+  validateSearch: zodValidator(schema),
+})
 
-See [matching-and-params.md](references/matching-and-params.md).
+const link = <Link to="/products" />
+```
 
-### Keep matching code out of lazy render chunks
+If validation throws, `onError` receives an error whose `routerCode` is
+`'VALIDATE_SEARCH'`, and the route renders `errorComponent`. Use tolerant
+fallbacks when a malformed URL should not interrupt navigation.
 
-Automatic splitting extracts only these route options:
+### Understand deterministic matching
 
-- `component`
-- `errorComponent`
-- `pendingComponent`
-- `notFoundComponent`
+Matching traverses a segment trie. Static, dynamic, optional, and wildcard
+branches are explored by priority; fully static branches can win immediately,
+and wildcards are considered last. Use `params.priority` only to break ties
+between otherwise competing candidates.
 
-Loaders, `beforeLoad`, search validation, context, static data, links, scripts,
-styles, and other matching configuration stay in the critical chunk. Automatic
-splitting requires a bundler plugin; the router CLI alone cannot provide it.
+`params.parse` may experimentally return `false` to reject an incoming
+candidate. Throwing still reports a parse error on the selected match, and
+outgoing typed template links use exact route lookup followed by
+`params.stringify`.
 
-See
-[code-splitting-and-navigation.md](references/code-splitting-and-navigation.md).
+```tsx
+const reportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reports/$id',
+  params: {
+    parse: (raw) => /^\d+$/.test(raw.id)
+      ? { id: Number(raw.id) }
+      : false,
+    stringify: ({ id }) => ({ id: String(id) }),
+  },
+})
+```
 
-### Distinguish stale reload policy from freshness
+### Choose stale reload behavior explicitly
 
-Use loader object form when a stale navigation must block:
+A stale successful match reloads in the background by default and keeps its
+current `loaderData` visible. Use loader `staleReloadMode: 'blocking'`, or
+router `defaultStaleReloadMode`, when navigation must wait. `staleTime:
+Infinity` instead prevents the data from becoming stale.
 
 ```tsx
 export const Route = createFileRoute('/posts')({
@@ -81,141 +101,126 @@ export const Route = createFileRoute('/posts')({
 })
 ```
 
-The default mode for a stale successful match is `background`, which preserves
-existing `loaderData` during revalidation. `staleTime: Infinity` prevents data
-from becoming stale; it does not make a stale reload blocking.
+Navigation results default to stale immediately, preloads stay fresh for 30
+seconds, and unused entries are collected after 30 minutes. `router.invalidate()`
+reloads active routes immediately and marks every cached route stale.
 
-See [loading-and-ssr.md](references/loading-and-ssr.md).
+### Keep root document components outside Suspense
 
-### Preserve blocker boolean semantics
+Since 1.170.28, root components that may render the HTML document are not
+wrapped in Suspense during SSR or hydration. Do not rely on suspending the
+document shell itself.
 
-`shouldBlockFn` answers whether navigation should be blocked:
+### Do not recreate resolved lazy components
 
-- `true` blocks or cancels.
-- `false` allows navigation.
-- With `withResolver: true`, call `proceed()` to leave or `reset()` to stay.
-- Without resolver mode, the callback may return a promise using the same
-  boolean meanings.
-- `enableBeforeUnload` independently controls the native reload or tab-close
-  prompt.
+Since 1.170.28, a resolved code-split lazy route component is retained for
+later visits. A revisit should not show pending UI merely to resolve that same
+component again.
 
-See
-[code-splitting-and-navigation.md](references/code-splitting-and-navigation.md).
+## High-value features
 
-### Keep unsupported values out of SSR dehydration
+### Apply search middlewares to generated destinations
 
-The built-in serializer handles ordinary JSON plus `undefined`, `Date`, `Error`,
-and `FormData`. It does not provide default round-tripping for `Map`, `Set`,
-`BigInt`, or arbitrary complex values. Convert unsupported loader data at an
-explicit boundary.
-
-See [loading-and-ssr.md](references/loading-and-ssr.md).
-
-### Preserve literal punctuation in virtual route definitions
-
-Dots in explicit virtual paths and pathless layout IDs are literal. Leading and
-trailing underscores in virtual `route()` paths are also literal URL characters.
-Physical file routes still require bracket escapes for literal underscore
-segments.
-
-See [start-and-build-tooling.md](references/start-and-build-tooling.md).
-
-## Common implementation patterns
-
-### Validate search without making defaulted fields required
-
-Navigation uses a validator's input type; route reads use its output type. Keep
-both sides intact when defaults should make search fields optional.
+`search.middlewares` transforms search for links to a route or its descendants,
+then runs again after validation during navigation. Middlewares compose through
+`next`. `retainSearchParams` copies selected current values, and
+`stripSearchParams` removes values equal to supplied defaults.
 
 ```tsx
-import { fallback, zodValidator } from '@tanstack/zod-adapter'
+search: {
+  middlewares: [
+    retainSearchParams(['campaign']),
+    stripSearchParams({ page: 1, tags: [] }),
+  ],
+}
+```
 
-const searchSchema = z.object({
-  page: fallback(z.number(), 1).default(1),
-})
+### Separate internal and public URLs
 
-export const Route = createFileRoute('/products')({
-  validateSearch: zodValidator(searchSchema),
+Router `rewrite.input` maps the browser URL to the internal matching URL;
+`rewrite.output` maps internal destinations back before links or history are
+written. `location.href` is internal and `location.publicHref` is shareable.
+Links and programmatic navigation apply output rewrites automatically, while a
+changed origin forces a hard link navigation.
+
+```tsx
+const router = createRouter({
+  routeTree,
+  rewrite: {
+    input: ({ url }) => {
+      url.pathname = url.pathname.replace(/^\/(en|fr)(?=\/|$)/, '') || '/'
+      return url
+    },
+    output: ({ url }) => {
+      url.pathname = `/en${url.pathname === '/' ? '' : url.pathname}`
+      return url
+    },
+  },
 })
 ```
 
-Use the adapter and `fallback` for Zod v3. Zod v4 and Standard Schema
-implementations can be passed directly. For malformed URLs that should continue
-navigation, use tolerant schema fallbacks; thrown validation errors are routed
-through `onError` with `routerCode === 'VALIDATE_SEARCH'`.
+`composeRewrites` applies inputs first-to-last and outputs last-to-first. The
+router strips `basepath` before custom input and restores it after custom
+output. The same rewrites participate in request parsing and hydration.
 
-See [search-params.md](references/search-params.md).
+### Treat masks as history-local state
 
-### Compose search URL policy declaratively
+A route mask runs one typed route while displaying another location. Pass
+`mask` to `Link` or `navigate`, or register a typed `createRouteMask` in
+`routeMasks`. Sharing the visible URL loses runtime mask state. Local reloads
+retain it unless `unmaskOnReload` is enabled; navigation-level configuration
+overrides mask configuration, which overrides the router default.
 
-Put search transforms in `search.middlewares`. They affect links to the route or
-descendants and run again after validation during navigation. Use
-`retainSearchParams` to inherit selected current values and `stripSearchParams`
-to omit supplied defaults.
+### Split only supported route options
 
-See [search-params.md](references/search-params.md).
+Bundler-plugin `autoCodeSplitting` extracts only `component`,
+`errorComponent`, `pendingComponent`, and `notFoundComponent`. Critical
+matching and loading configuration stays eager. The router plugin must precede
+the framework plugin, and the standalone router CLI cannot provide automatic
+splitting.
 
-### Select a loader cache strategy explicitly
+```ts
+plugins: [
+  tanstackRouter({ autoCodeSplitting: true }),
+  react(),
+]
+```
 
-The important defaults are:
+Without automatic splitting, keep critical options in the normal route file
+and place those four render options in the corresponding `.lazy.tsx` file with
+`createLazyFileRoute`. The `__root` route cannot be split.
 
-- navigation results are immediately stale (`staleTime: 0`);
-- preloads remain fresh for 30 seconds;
-- unused cache entries are collected after 30 minutes;
-- `router.invalidate()` immediately reloads active routes and marks all cached
-  routes stale.
+### Use resolver mode for explicit navigation decisions
 
-Use `gcTime: 0` with `shouldReload: false` to discard data on unload while still
-allowing dependency or entry loads. Set `defaultPreloadStaleTime: 0` when an
-external cache should receive and deduplicate every loader event.
+`useBlocker` receives typed `current` and `next` locations. With
+`withResolver: true`, a true `shouldBlockFn` leaves the blocker pending until
+`proceed` or `reset` is called. `enableBeforeUnload` separately controls the
+native reload or tab-close prompt.
 
-See [loading-and-ssr.md](references/loading-and-ssr.md).
+```tsx
+const { status, proceed, reset } = useBlocker({
+  shouldBlockFn: () => formIsDirty,
+  withResolver: true,
+  enableBeforeUnload: formIsDirty,
+})
+```
 
-### Choose the SSR rendering boundary
+Without resolver mode, `shouldBlockFn` may return a promise: resolve `true` to
+cancel navigation and `false` to allow it.
 
-Create a shared router factory. On the server, pass it and a web-standard
-`Request` to `createRequestHandler`; on the client, hydrate with `RouterClient`.
-Use:
+### Start SSR from a shared router factory
 
-- `defaultRenderHandler` for the default string-rendered path;
-- `renderRouterToString` plus `RouterServer` for custom wrappers or providers;
-- `defaultStreamHandler` for automatic streaming and dehydration;
-- `renderRouterToStream` plus `RouterServer` for lower-level streaming control.
+The standalone React SSR API is experimental. Pass a web-standard `Request`
+and shared `createRouter` factory to `createRequestHandler`; hydrate with
+`RouterClient`. Use `defaultStreamHandler` for streaming. Adapters such as
+Express must translate request and response objects at their boundaries.
 
-The handler returns a web-standard `Response`, so framework adapters must
-translate request and response objects at their boundary. The standalone React
-SSR API is experimental.
+```tsx
+export function render({ request }: { request: Request }) {
+  return createRequestHandler({ request, createRouter })(defaultRenderHandler)
+}
+```
 
-See [loading-and-ssr.md](references/loading-and-ssr.md).
-
-### Pick one supported route-splitting shape
-
-For file routes, keep critical options in the normal route file and put render
-options in the matching `.lazy.tsx` file with `createLazyFileRoute`. The
-`__root` route cannot be split. When a route has no critical options, remove its
-empty normal file; the generated tree supplies a virtual anchor.
-
-For code-defined routes, attach a `createLazyRoute` result with `Route.lazy()`.
-Use `lazyFn` for a named loader import and usually provide an explicit
-`LoaderContext` type.
-
-See
-[code-splitting-and-navigation.md](references/code-splitting-and-navigation.md).
-
-## Review checklist
-
-Before finalizing Router or Start changes, verify that:
-
-- shared URLs use `publicHref` when rewrites are configured;
-- rewrite composition accounts for reverse output order and automatic basepath
-  wrapping;
-- mask behavior after reload and sharing is intentional;
-- search validators preserve distinct input and output types;
-- lazy route files contain only supported render options;
-- loader freshness, garbage collection, and stale reload behavior are not being
-  conflated;
-- SSR loader data stays within serializer limits;
-- blocker booleans have not been inverted;
-- virtual route punctuation follows virtual rather than physical-file rules;
-- build plugins run in the required order and separate plugin instances do not
-  share assumed global state.
+The default renderer creates server memory history and transfers resolved
+loader data. For custom wrappers, use `renderRouterToString` or
+`renderRouterToStream` with an explicit `RouterServer`.

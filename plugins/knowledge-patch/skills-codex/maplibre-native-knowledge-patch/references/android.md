@@ -1,143 +1,151 @@
 # Android SDK
 
-## Upgrade and renderer decisions
+Use this reference for Android dependency upgrades, renderer selection,
+sources, style behavior, snapshots, and offline storage.
 
-### Platform floor and library loading
+## Upgrade and dependency gates
 
-At the `android-12.0.0` upgrade boundary, the minimum supported Android SDK
-rises from 21 to 23. Set the application's `minSdk` to at least 23 before
-upgrading.
+### Minimum SDK and native loading
 
-From Android 12.1, a failed `System.loadLibrary` call throws an exception rather
-than allowing native-library loading to fail silently. Handle or surface that
-failure at initialization.
+The `android-12.0.0` line raises the minimum Android SDK from 21 to 23. Set
+the application's `minSdk` to at least 23 before upgrading.
 
-### Vulkan-default published artifact
+From 12.1, a failed `System.loadLibrary` call throws instead of leaving the
+native library silently unloaded. Handle the exception and diagnose package,
+ABI, or loader problems at startup.
 
-At the `android-13.0.0` boundary, `org.maplibre.gl:android-sdk` switches to the
-Vulkan renderer. Applications that need OpenGL ES must select
-`org.maplibre.gl:android-sdk-opengl`:
+### Published renderer artifacts
+
+The standard `org.maplibre.gl:android-sdk` artifact uses Vulkan beginning in
+the `android-13.0.0` line. Stay on OpenGL ES with the explicit artifact:
 
 ```kotlin
 implementation("org.maplibre.gl:android-sdk-opengl:13.4.0")
 ```
 
 Vulkan surface snapshots arrive in 13.3 and Vulkan custom layers in 13.4.
-Source builds separately expose `opengl` and `vulkan` Gradle flavors; do not
-confuse the checkout's OpenGL broad-compatibility default with the Android 13
-published artifact default.
+Audit those capabilities when migrating from OpenGL ES.
 
-## Sources and runtime data
+Android 13.5 adds a `multiBackend` Gradle flavor that can switch between
+OpenGL and Vulkan at runtime (`android-13.5.0`). It is distinct from the
+single-backend `opengl` and `vulkan` source-build flavors.
 
-### PMTiles and ambient caching
+## Camera, symbols, and snapshots
 
-The `android-11.8.0` line adds PMTiles-backed map data. Starting in 13.3,
-PMTiles sources also participate in the ambient cache.
+### Frustum offset and camera roll
 
-### MLT tiles
+Android 12.2 can set a frustum offset so the renderer omits screen edges.
+Android 13.0 adds camera roll.
 
-Android 12.1 parses vector-tile sources in MLT format. Android 13.4 extends this
-to MLT tiles using FastPFOR encoding.
+### Snapshotter controls
+
+Android 12.0.1 allows snapshots to hide attribution, and 12.1 adds padding to
+`MapSnapshotter`.
+
+### Pitched-map icon offsets
+
+Android 13.1 disables icon scaling when icon offsets are used on pitched maps.
+Visually regress styles that combine pitch and icon offsets because placement
+can differ after upgrade.
+
+### Location-indicator bearing placement
+
+Android 13.5 can move the symbol location indicator bearing down the image
+stack, allowing the bearing element's relative placement to be configured.
+
+## Sources and tile formats
+
+### PMTiles
+
+PMTiles-backed map data is supported from Android 11.8
+(`android-11.8.0`). From Android 13.3, PMTiles resources also participate in
+the ambient cache.
+
+### MLT vector tiles
+
+Android 12.1 parses vector-tile sources in MLT format. Android 13.4 also
+supports MLT tiles encoded with FastPFOR.
 
 ### Synchronous GeoJSON updates
 
-Android 12.3 introduces synchronous GeoJSON updates for cases where a source
-change must be applied before execution continues. Android 13.0 replaces the
-short-lived individual synchronous setter methods: construct the source with
-`GeoJsonOptions.withSynchronousUpdate(true)`, then call the normal GeoJSON
-update API.
+Android 12.3 introduced synchronous GeoJSON source updates for callers that
+must observe a source change before execution continues. Android 13.0 then
+replaced the short-lived individual synchronous setter methods: construct the
+source with synchronous updates enabled and use the ordinary update methods.
 
 ```kotlin
 GeoJsonOptions().withSynchronousUpdate(true)
 ```
 
+Android 13.5 adds `setOverrideSynchronousUpdate` for sources that already
+exist, so construction-time `GeoJsonOptions` is no longer the only selection
+point.
+
+### Binary custom vector sources
+
+Android 13.5 exposes core `CustomVectorSource` support for delivering vector
+tile content as binary data.
+
+## Layers, expressions, and feature state
+
+### Color-Relief and hillshade
+
+Android 13.0 adds Color-Relief layers and updates the hillshade algorithms.
+Version 13.0.1 fixes Color-Relief and hillshade layers becoming invisible
+above fill layers on Vulkan, the default backend for this release line.
+
 ### Feature state
 
-Android 13.4 adds public feature-state functionality for runtime per-feature
-state.
-
-## Camera, snapshots, and style rendering
-
-### Snapshotter controls
-
-Android 12.0.1 allows snapshots to hide attribution. Android 12.1 adds padding
-support to `MapSnapshotter`.
-
-### Frustum offset and camera roll
-
-Android 12.2 adds a frustum offset, allowing the renderer to omit screen edges.
-Android 13.0 adds camera roll.
-
-### Color relief and hillshade
-
-Android 13.0 adds Color-Relief Layer support and updates hillshade algorithms.
-Android 13.0.1 fixes color-relief and hillshade layers becoming invisible above
-fill layers when using Vulkan, the default backend for the Android 13 artifact.
-
-### Pitched icon offsets
-
-Android 13.1 changes icon-offset behavior on pitched maps: icons no longer
-scale when offsets are used. Recheck styles that combine pitch and icon offsets
-for visual regressions.
+Android 13.4 adds runtime per-feature state. Android 13.5 also repaints symbol
+paint properties when the feature state they depend on changes; applications
+no longer need a separate style change to force that symbol repaint.
 
 ### Rounded fill extrusions
 
-Android 13.4 adds a fill-extrusion style property for rounded corners on
-extruded buildings.
+Android 13.4 adds a fill-extrusion property for rounded building corners.
 
-## Runtime style API
+### Expression additions
 
-Android exposes platform expression builders, but the resulting expressions are
-parsed and evaluated by the shared C++ core. Nested builders can construct a
-layer property:
+Android 13.5 adds `split` and `join`. String expression processing is
+Unicode-aware, including non-ASCII text, and the core color parser accepts
+HSL colors with an alpha component.
 
-```java
-fillLayer.setProperties(
-    fillColor(interpolate(
-        exponential(0.5f), zoom(),
-        stop(1.0f, color(Color.RED)),
-        stop(5.0f, color(Color.BLUE)),
-        stop(10.0f, color(Color.GREEN))
-    ))
-);
-```
+## Annotation migration
 
-A loaded `org.maplibre.android.maps.Style` proxy supports typed sources, layers,
-images, light, transitions, and indexed or relative layer placement. Wait for
-the style to load before mutating it.
-
-## Annotations
-
-The core `Annotation` hierarchy has been deprecated since 7.0.0. This includes
+The core `Annotation` hierarchy has been deprecated since 7.0.0, including
 `Marker`, `Polyline`, `Polygon`, `MarkerOptions`, and `IconFactory`. Use the
-separate MapLibre Annotation Plugin for new overlay and annotation work.
+separate MapLibre Annotation Plugin for new overlay work.
 
-## Offline regions
+## Offline regions and ambient cache
+
+### Explicit regions
 
 `OfflineManager.getInstance(context)` manages persistent region definitions
-with opaque application metadata. Operations are asynchronous and callbacks
-arrive on the main thread.
+and opaque application metadata. Operations are asynchronous and callbacks
+arrive on the main thread. Attach a region observer for progress and errors.
 
-A region observer reports progress and errors. `setDownloadState` pauses or
-resumes fetching without making downloaded resources unavailable.
-`invalidate`, `updateMetadata`, and `delete` respectively revalidate resources,
-replace metadata, or make resources eligible for eviction.
+- `setDownloadState` pauses or resumes fetching; already downloaded resources
+  remain usable.
+- `invalidate` revalidates the region's resources.
+- `updateMetadata` replaces the opaque application metadata.
+- `delete` removes the region definition and makes its resources eligible for
+  eviction.
 
-## Ambient cache
+### Ambient cache
 
-The ambient cache stores resources encountered during normal rendering and is
-separate from explicit offline regions:
+The ambient cache contains resources encountered during normal rendering and
+is separate from explicit regions.
 
-- `setMaximumAmbientCacheSize` sets the byte limit.
-- `invalidateAmbientCache` revalidates ambient resources.
-- `clearAmbientCache` evicts ambient data while retaining resources required by
+- `setMaximumAmbientCacheSize` sets its byte limit.
+- `invalidateAmbientCache` revalidates cached resources.
+- `clearAmbientCache` evicts ambient data but retains resources required by
   offline regions.
-- `putResourceWithUrl` prewarms the cache with response bytes and HTTP cache
+- `putResourceWithUrl` prewarms it with response bytes and HTTP cache
   metadata.
 
-## Offline database maintenance
+### Database maintenance
 
-`packDatabase` compacts the offline database.
-`runPackDatabaseAutomatically` controls automatic compaction. `resetDatabase`
-deletes and reinitializes the store. These operations are asynchronous storage
-work and should not run as part of frame rendering.
+`packDatabase` compacts the offline database,
+`runPackDatabaseAutomatically` controls automatic compaction, and
+`resetDatabase` deletes and reinitializes the store. These asynchronous
+storage operations should not run during frame rendering.

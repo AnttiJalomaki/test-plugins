@@ -1,188 +1,106 @@
-# Components and packages
+# Components and Packages
 
-This task-organized reference draws on `components-2025`,
-`3.145.0-3.159.0`, `release-notes-117`, `3.160.0-3.181.0`,
-`3.182.0-3.198.0`, `3.199.0-3.214.0`, `3.214.1-3.228.0`,
-`3.229.0-3.248.0`, and `3.249.0-3.254.0`.
+## Cross-language component packages
 
-## Author cross-language components
-
-### Source package marker
-
-A component directory becomes a cross-language package when it contains
+A component source directory becomes a cross-language package when it contains
 `PulumiPlugin.yaml`; same-language-only components do not need the file. Pulumi
-derives a schema from exposed components and generates consumer SDKs, including
-Pulumi YAML SDKs (`components-2025`).
+analyzes exposed components, derives a schema, and generates consumer SDKs,
+including Pulumi YAML (batch `components-2025`).
 
-```yaml
-runtime: python # nodejs, dotnet, go, java, and yaml are also valid
-```
-
-### Expose components by runtime
-
-TypeScript exposes every exported component class and needs no separate entry
-point. YAML also needs no entry point. Other runtimes start a component-provider
-host (`components-2025`):
+TypeScript exposes every exported component class and YAML needs no entrypoint.
+Other runtimes start a provider host:
 
 - Python uses `_main_.py` and passes classes to
-  `pulumi.provider.experimental.component_provider_host(name=..., components=[...])`.
-- Go uses the `pulumi-go-provider` v1 builder:
-  `infer.NewProviderBuilder().WithNamespace(...).WithComponents(infer.ComponentF(NewComponent)).Build()`,
-  then `provider.Run(...)`.
-- .NET returns
-  `Pulumi.Experimental.Provider.ComponentProviderHost.Serve(args)` from
-  `Program.Main`.
+  `pulumi.provider.experimental.component_provider_host`.
+- Go builds with `infer.NewProviderBuilder().WithNamespace(...).WithComponents`
+  from `pulumi-go-provider` v1, then calls `provider.Run`.
+- .NET returns `Pulumi.Experimental.Provider.ComponentProviderHost.Serve(args)`
+  from `Program.Main`.
 - Java starts `com.pulumi.provider.internal.ComponentProviderHost` with the
   package to scan.
 
-Python's experimental component helpers moved from
-`pulumi.provider.experimental.provider` to
-`pulumi.provider.experimental.component`; the old `provider` namespace now
-contains a general provider interface. Python component providers also support
-bootstrap-less operation (`3.160.0-3.181.0`).
+## YAML-authored components
 
-### Define components in YAML
-
-Pulumi YAML supports top-level `components`. Each component declares inputs,
-children, and outputs. Use another authoring language for conditional logic or
-map merging (`components-2025`).
+Pulumi YAML defines reusable components under top-level `components`; each
+component declares inputs, child resources, and outputs. Use another language
+for logic such as conditionals or map merges.
 
 ```yaml
 runtime: yaml
-name: my-components
 components:
   SecureBucket:
     inputs:
-      bucketName:
-        type: string
+      bucketName: { type: string }
     resources:
       bucket:
         type: aws:s3/bucketV2:BucketV2
-        properties:
-          bucket: ${bucketName}
+        properties: { bucket: "${bucketName}" }
     outputs:
-      bucketName: ${bucket.id}
+      bucketName: "${bucket.id}"
 ```
 
-### Type and initialize components
+## Installing and restoring components
 
-Python component providers infer enums and resource references.
-`@pulumi.type_token` and the static `pulumi_type` class property expose resource
-type tokens (`3.160.0-3.181.0`).
+`pulumi package add` accepts Git sources pinned to tags and relative or absolute
+component directories. Private repositories use tokens from the environment.
+The command records the source under `packages` in `Pulumi.yaml`; `pulumi
+install` restores all declarations and generates local SDKs. Commit those SDKs
+or require every checkout to restore them.
 
-Local Node.js components use the version from `package.json` rather than
-`0.0.0`; Python component providers can set their version. Node.js component
-`initialize` receives options, name, and type (`3.199.0-3.214.0`).
+Local paths must keep `./` or `../`; unprefixed sources are no longer assumed to
+be paths. `pulumi install` recurses into local packages. Multiple components in
+one Git repository can be referenced together. Git plugins accept HTTPS,
+subdirectories, and short commits; an unversioned source chooses its latest
+version. `GITHUB_TOKEN` and `GITLAB_TOKEN` are recognized. Plugin namespaces are
+inferred and cannot be overridden through `PulumiPlugin.yaml` as of 3.159.0.
 
-Go and Node.js components send inputs to the engine for diffing and state,
-matching Python. Node.js can opt out through
-`PULUMI_NODEJS_SKIP_COMPONENT_INPUTS` (`3.199.0-3.214.0`). Node.js schema
-inference recognizes enums, `Partial<T>`, and `Required<T>`, and replacement
-triggers propagate through remote `Construct` calls (`3.214.1-3.228.0`).
+## Registries and templates
 
-## Add and restore packages
+`pulumi package add` accepts registry identifiers. `pulumi new` accepts qualified
+registry template names and lists published templates; private Registry template
+resolution does not require `PULUMI_EXPERIMENTAL`, though it can be disabled by
+`PULUMI_DISABLE_REGISTRY_RESOLVE=true`. Unqualified package names resolve through
+the Pulumi Cloud Registry by default.
 
-### Git and local sources
+Pulumi Cloud templates are valid `pulumi new` sources. `pulumi package publish`
+was experimental in 3.158.0 and became stable in 3.166.0; `pulumi template
+publish`, added in 3.180.0, remained experimental. `pulumi package delete`
+removes Registry versions. Package references may appear in plugins.
 
-`pulumi package add` accepts a Git source, optionally pinned to a tag, or a
-relative/absolute component directory. It fetches the source and generates a
-local SDK for the project language. Private repository tokens come from the
-environment (`components-2025`).
+Private packages can be local dependencies. Publishing accepts Azure DevOps Git
+URLs. Source-based packages work with `pulumi schema check`, and package add/get
+schema install package dependencies. `pulumi package new` bootstraps from a
+template. `pulumi package add --language` works outside a project or plugin.
 
-```shell
-pulumi package add github.com/myorg/secure-s3-component@v1.0.0
-pulumi package add ./components/secure-s3-component
-```
+## Extension packages and direct servers
 
-Package add records the source under `packages` in `Pulumi.yaml`. Unprefixed
-sources are not assumed to be file paths, so use `./` or `../` for local paths
-(`3.160.0-3.181.0`). Multiple Git components from one repository can coexist
-(`3.199.0-3.214.0`).
+Package commands accept `--extension`; declarations written to `Pulumi.yaml`
+are restored by `pulumi install`. Generated tokens use the extension's package
+name, not the base provider name. SDK and program generation supports
+extension-parameterized packages.
 
-Git plugins accept HTTPS URLs, repository subdirectories, and short commit
-hashes. An unversioned source resolves its latest version. `GITHUB_TOKEN` and
-`GITLAB_TOKEN` are recognized. The namespace is inferred and cannot be
-overridden in `PulumiPlugin.yaml` (`3.145.0-3.159.0`).
+`--server <URL>` on package add, publish, get-schema, get-mapping, gen-sdk, info,
+and schema check bypasses package resolution and treats the URL as the plugin
+download URL. Package add persists that server in `Pulumi.yaml` (batch
+`3.255.0-3.258.0`).
 
-### Restore declared packages
+The default package-registry source is private. Plugin download URLs may resolve
+through the Registry; `pulumi install --file` bypasses it. Go's direct-repository
+installer supports private GitHub and GitLab instances. `pulumi plugin run`
+executes a local plugin binary; source debugging uses the exact form
+`--attach-debugger plugin=<name>`.
 
-`pulumi install` processes every `packages` entry in `Pulumi.yaml` and
-generates local SDKs. Commit generated SDKs for reproducibility or require
-every fresh checkout to run install (`components-2025`). Install now recurses
-into local packages (`3.199.0-3.214.0`).
+## Component metadata and state
 
-```yaml
-packages:
-  secure-s3-component: github.com/myorg/secure-s3-component@v1.0.0
-resources:
-  secureBucket:
-    type: secure-s3-component:SecureBucket
-```
+Local Node.js components use the version from `package.json`, not `0.0.0`.
+Python component providers can set their version. Node.js component
+`initialize` receives resource options, name, and type.
 
-### Registry resolution
+Go and Node.js components send inputs to the engine for state and diffs, matching
+Python; set `PULUMI_NODEJS_SKIP_COMPONENT_INPUTS` to opt Node.js out. Node.js
+schema inference understands enums, `Partial<T>`, and `Required<T>`.
+Replacement triggers pass through remote `Construct` calls.
 
-The default package registry source is private, plugin download URLs can be
-resolved through the Pulumi Registry, and `pulumi install --file` bypasses the
-Registry (`3.160.0-3.181.0`). `pulumi package add` accepts Registry identifiers
-(`3.182.0-3.198.0`). Unqualified package names resolve through the Pulumi Cloud
-Registry by default (`3.214.1-3.228.0`).
-
-Private packages can be local component dependencies. Package publication
-accepts Azure DevOps Git URLs; `pulumi schema check` accepts source packages;
-and package add/get-schema install dependencies (`3.214.1-3.228.0`). Package
-and plugin flows also accept package references in plugins
-(`3.199.0-3.214.0`).
-
-Go's direct-repository installer supports private GitHub and GitLab instances
-(`3.160.0-3.181.0`).
-
-## Publish, delete, and bootstrap packages
-
-The package-publishing command introduced experimentally in
-`3.145.0-3.159.0` became non-experimental in 3.166.0. The separate
-`pulumi template publish` command arrived experimentally in 3.180.0
-(`3.160.0-3.181.0`).
-
-`pulumi package delete` removes package versions from the Pulumi Registry
-(`3.199.0-3.214.0`). `pulumi package new` bootstraps from a template, and
-`pulumi package add --language` works outside a Pulumi project or plugin
-(`3.229.0-3.248.0`).
-
-## Schema and SDK generation
-
-### Aliases and functions
-
-Provider schemas may express aliases as type-token strings, not only alias
-objects (`3.145.0-3.159.0`).
-
-```json
-{ "aliases": ["pkg:index:OldResource"] }
-```
-
-`OutputStyleOnly` suppresses a generated plain-function variant
-(`3.199.0-3.214.0`). Schemas and Go/Python generation support function
-`multiArgumentInputs` (`3.229.0-3.248.0`), while PCL invokes such functions
-positionally (`3.249.0-3.254.0`). Provider methods may return scalars; Go and
-Python SDK generation and Node.js generation support this, with Node.js using
-`callSingle` (`3.160.0-3.181.0`).
-
-### Cross-package references and extensions
-
-SDK generation supports type references into parameterized and third-party
-packages (`3.214.1-3.228.0`). Schemas support extension parameterization and
-string-enum provider outputs (`3.229.0-3.248.0`). SDK and program generation
-also support extension-parameterized packages (`3.249.0-3.254.0`).
-
-### Schema naming constraints
-
-Schema names cannot contain whitespace/control characters or conflict with
-module paths; `pulumi` and `input` are reserved package names. Modules nested
-beneath the index module are strict binding errors (`3.229.0-3.248.0`).
-
-### CLI version contracts
-
-Projects declare `requiredPulumiVersion` in `Pulumi.yaml`; corresponding checks
-are Node.js `requirePulumiVersion`, Python `require_pulumi_version`, Go
-`CheckPulumiVersion`, and generated .NET `RequirePulumiVersion`. Plugins use
-`requiredPulumiVersion` in `PulumiPlugin.yaml`; the former
-`pulumiVersionRange` key was renamed (`3.214.1-3.228.0`).
+Component provider invokes inherit a provider from the parent's `providers`
+option. PCL applies component providers to both resources and invokes, and
+generated Node.js, Go, and Python code parents invokes accordingly.

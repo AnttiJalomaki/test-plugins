@@ -8,130 +8,108 @@ metadata:
 ---
 
 
-# NestJS Knowledge Patch
+# NestJS Compatibility Guide
 
-Use this skill when maintaining or migrating NestJS applications whose code may
-depend on current platform adapters, dependency injection, lifecycle behavior,
-configuration, health checks, logging, or transport APIs.
+Use this skill when migrating, reviewing, or debugging NestJS applications whose
+behavior may depend on recent framework, platform-adapter, configuration, cache,
+health-check, or microservice changes.
 
-Prefer the application's manifest, code, and tests when they disagree with this
-guidance. Check the installed versions of Nest core and companion packages before
-applying package-specific migration advice.
+Inspect the application's manifest before applying version-sensitive advice.
+Prefer the installed package versions, application code, and test results when
+they disagree with this guide.
 
-## Reference index
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [Platform and routing](references/platform-and-routing.md) | Runtime and Express requirements, Fastify CORS and path matching, middleware order, WebDAV methods, date parsing |
-| [Modules, lifecycle, and configuration](references/modules-lifecycle-and-configuration.md) | Dynamic-module identity, Reflector types, shutdown order, promise exports, cache stores, config precedence, context selection, intrinsic exceptions |
-| [Transports and operations](references/transports-and-operations.md) | Microservice state and native access, NATS, TCP, RabbitMQ, WebSockets, JSON logs, Terminus indicators |
+| [Modules, Lifecycle, and Configuration](references/modules-lifecycle-and-configuration.md) | Dynamic modules, exports, reflection, shutdown hooks, middleware ordering, cache stores, configuration precedence, and health indicators |
+| [Platform and Routing](references/platform-and-routing.md) | Runtime requirements, Express and Fastify migration, route matching, date parsing, WebDAV methods, and context selection |
+| [Transports and Operations](references/transports-and-operations.md) | Microservice observability and configuration, logging, NATS, TCP, RabbitMQ, and WebSocket extension points |
 
-## First-pass migration checks
+## Breaking Changes and Deprecations
 
-1. Confirm the runtime is Node.js 20 or newer.
-2. Treat the default Express adapter as Express 5 code.
-3. If using Fastify, list every required non-safelisted CORS method explicitly.
-4. Replace middleware `(.*)` patterns with named wildcards such as `*splat`.
-5. Reuse dynamic-module objects when imports are intended to represent one module.
-6. Remove promises from module `exports` arrays.
-7. Recheck assumptions about metadata merge return shapes and override types.
-8. Verify shutdown-hook and global-middleware ordering in order-sensitive code.
-9. Migrate cache backends to Keyv adapters in `stores`.
-10. Re-evaluate configuration precedence and deprecated environment options.
-11. Replace deprecated Terminus indicator base classes with
-    `HealthIndicatorService`.
+### Confirm the Runtime and HTTP Platform
 
-## Breaking platform changes
+- Require Node.js 20 or newer.
+- Treat the default Express integration as Express 5 when auditing middleware,
+  routing, error handling, and platform-specific dependencies.
+- Read [Platform and Routing](references/platform-and-routing.md) before an HTTP
+  platform upgrade.
 
-### Runtime and Express
+### Configure Fastify CORS Methods Explicitly
 
-The supported runtime starts at Node.js 20. Node.js 16 and 18 are not supported.
-The default Express platform integration uses Express 5.
-
-### Fastify CORS
-
-Fastify's default CORS methods are safelisted methods. Applications that accept
-`PUT`, `PATCH`, `DELETE`, or other non-safelisted methods must enable them:
+With the Fastify adapter and Fastify 5, the default CORS method set contains only
+safelisted methods. Explicitly include application methods such as `PUT`, `PATCH`,
+and `DELETE`:
 
 ```typescript
 app.enableCors({ methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
 ```
 
-### Middleware path syntax
+Do not assume that a successful `GET` or `POST` preflight proves write methods
+are enabled.
 
-Middleware matching uses the current `path-to-regexp` syntax. Replace anonymous
-`(.*)` matches with a named wildcard:
+### Update Middleware Wildcards
+
+Middleware matching uses the newer `path-to-regexp` syntax. Replace anonymous
+`(.*)` patterns with named wildcards:
 
 ```typescript
 consumer.apply(ApiMiddleware).forRoutes('*splat');
 ```
 
-This migration applies to Nest middleware matching. Do not rewrite ordinary
-Fastify route wildcards solely because of this change.
+This migration applies to middleware matching. Do not mechanically rewrite
+ordinary Fastify route wildcards.
 
-## Dependency injection and metadata
+### Reuse Dynamic-Module Objects When Deduplication Matters
 
-### Dynamic-module identity
-
-Dynamic modules are equivalent only when the same object is reused. Store a
-dynamic-module result and import that reference everywhere it should be
-deduplicated:
+Dynamic modules are compared by object identity. Construct the dynamic module
+once and reuse that object when multiple imports should identify one module:
 
 ```typescript
 const usersFeature = TypeOrmModule.forFeature([User]);
 
-@Module({ imports: [usersFeature] })
-export class UsersModule {}
+@Module({
+  imports: [usersFeature],
+})
+export class AppModule {}
 ```
 
-For tests that intentionally need metadata-based equivalence, opt into deep
-hashing:
+For tests that intentionally depend on metadata-based equivalence, use the
+testing module's `moduleIdGeneratorAlgorithm: 'deep-hash'` option. The detailed
+testing alternatives are in
+[Modules, Lifecycle, and Configuration](references/modules-lifecycle-and-configuration.md).
 
-```typescript
-await Test.createTestingModule(
-  { imports: [usersFeature] },
-  { moduleIdGeneratorAlgorithm: 'deep-hash' },
-).compile();
-```
+### Export Resolved Nest Artifacts
 
-Tests can instead select the intended parent or retrieve all module instances
-when multiple instances are expected.
+Do not put promise values in a module's `exports` list. Export resolved providers
+or module tokens instead.
 
-### Reflector return values
+### Recheck Reflector Consumers
 
-When a single metadata entry contains an object, `getAllAndMerge()` returns the
-object itself, not a one-element array. `getAllAndOverride()` returns
-`T | undefined`. Transformed `ReflectableDecorator` types now flow through the
-Reflector APIs, so remove stale casts and update affected assertions.
+- A single object-valued entry returned by `Reflector.getAllAndMerge()` is the
+  object itself, not a one-element array.
+- `getAllAndOverride()` returns `T | undefined`.
+- Transformed `ReflectableDecorator` types flow through Reflector method
+  inference.
 
-### Promise exports
+Remove array-unwrapping workarounds and handle the possible `undefined` result.
 
-Module `exports` arrays cannot contain promises. Export resolved providers or
-module tokens.
+### Recheck Lifecycle and Middleware Order
 
-## Ordering changes
+Shutdown hooks run in reverse initialization order. For dependencies
+`A -> B -> C`, initialization is `C -> B -> A`, while `OnModuleDestroy`,
+`BeforeApplicationShutdown`, and `OnApplicationShutdown` run `A -> B -> C`.
+Global modules initialize first and are destroyed last.
 
-### Shutdown hooks
+Middleware from global modules runs before middleware from imported modules,
+regardless of the global module's position in the dependency graph. Audit code
+whose correctness depends on side effects from the older ordering.
 
-Termination hooks run in reverse initialization order. For dependencies
-`A -> B -> C`, initialization is `C -> B -> A`, while
-`OnModuleDestroy`, `BeforeApplicationShutdown`, and
-`OnApplicationShutdown` run `A -> B -> C`.
+### Migrate Cache Backends to Keyv Adapters
 
-Global modules initialize first and are destroyed last. Audit cleanup code when
-one provider assumes that a dependency has already shut down.
-
-### Global middleware
-
-Middleware registered by global modules runs before middleware registered by
-imported modules, regardless of where the global module appears in the dependency
-graph.
-
-## Cache and configuration
-
-### Keyv-backed caches
-
-Configure external cache backends as Keyv adapters in `stores`:
+Configure external cache backends as Keyv adapters in `stores`, rather than with
+the former `store` option:
 
 ```typescript
 CacheModule.registerAsync({
@@ -141,16 +119,19 @@ CacheModule.registerAsync({
 });
 ```
 
-Direct backend consumers must handle raw cache records shaped as
-`{ value, expires }`. Account for that shape when reading or migrating old data.
+Direct backend consumers must also account for raw cached records shaped as
+`{ value, expires }`, including data written before a migration.
 
-### Configuration precedence
+### Apply the New Configuration Precedence
 
-`ConfigService#get()` resolves internal configuration first, then validated
-environment values, then `process.env`. Internal configuration can therefore
-override an environment variable with the same key.
+`ConfigService#get()` checks sources in this order:
 
-Replace deprecated `ignoreEnvVars` according to intent:
+1. Internal configuration.
+2. Validated environment values.
+3. `process.env`.
+
+Internal configuration can therefore override environment variables. Replace
+deprecated `ignoreEnvVars` usage according to the intended behavior:
 
 ```typescript
 ConfigModule.forRoot({
@@ -159,34 +140,22 @@ ConfigModule.forRoot({
 });
 ```
 
-Use `validatePredefined: false` to avoid validating variables that existed before
-module import. Use `skipProcessEnv: true` to prevent `get()` from consulting
-`process.env`.
+Use `validatePredefined: false` to skip validation of variables that existed
+before module import. Use `skipProcessEnv: true` to prevent `get()` from
+consulting `process.env`.
 
-## Health checks
+### Replace Deprecated Terminus Indicator APIs
 
-Inject `HealthIndicatorService`, begin with `check(key)`, and return `up()` or
-`down()` with optional details:
+Inject `HealthIndicatorService`, call `check(key)`, and return `up()` or `down()`.
+The former `HealthIndicator` and `HealthCheckError` classes are deprecated and
+scheduled for removal in the next major release. See the complete pattern in
+[Modules, Lifecycle, and Configuration](references/modules-lifecycle-and-configuration.md).
 
-```typescript
-const indicator = this.healthIndicatorService.check(key);
+## High-Value Features
 
-try {
-  const healthy = await this.probe();
-  return healthy ? indicator.up() : indicator.down({ reason: 'probe failed' });
-} catch {
-  return indicator.down('Unable to run probe');
-}
-```
+### Emit Structured Console Logs
 
-`HealthIndicator` and `HealthCheckError` are deprecated and scheduled for removal
-in the next major release.
-
-## Common application features
-
-### Structured console logs
-
-Enable JSON output by supplying a configured `ConsoleLogger`:
+Use `ConsoleLogger` with JSON output when log consumers need structured events:
 
 ```typescript
 const app = await NestFactory.create(AppModule, {
@@ -194,37 +163,58 @@ const app = await NestFactory.create(AppModule, {
 });
 ```
 
-### Date query parameters
+### Parse Date Parameters with a Built-In Pipe
 
-Use the exported `ParseDatePipe` to transform an incoming value to `Date`:
+`ParseDatePipe` is exported from `@nestjs/common` and transforms an incoming
+parameter into a `Date`:
 
 ```typescript
 find(@Query('since', ParseDatePipe) since: Date) {}
 ```
 
-### Selected contexts and expected exceptions
+### Observe and Extend Microservice Transports
 
-`NestApplicationContext.select()` accepts a context-specific `abortOnError`:
+- Use `status` to observe transport state.
+- Use `on` to subscribe to native-driver events.
+- Use `unwrap` when direct access to the underlying driver is necessary.
+- Configure NATS queues per message handler and opt into graceful shutdown.
+- Allow the operating system to select a TCP port and set a maximum packet-buffer
+  size when those deployment controls are needed.
+- Resolve microservice options through dependency injection when configuration
+  depends on registered providers.
+- Use RabbitMQ topic exchanges for topic-based RMQ routing.
+
+Read [Transports and Operations](references/transports-and-operations.md) for the
+transport-specific boundaries.
+
+### Extend WebSocket Handling
+
+WebSocket exceptions may retain a cause. The `ws` adapter also exposes a
+message-parser extension point for custom wire formats.
+
+### Route WebDAV Methods
+
+WebDAV HTTP methods are recognized by the common, core, and Fastify packages and
+can participate in Nest routing.
+
+### Control Selected-Context Error Policy
+
+Override `abortOnError` for a selected application context:
 
 ```typescript
 const featureContext = app.select(FeatureModule, { abortOnError: false });
 ```
 
-Use `IntrinsicException` for expected framework-level exceptions that Nest should
-not log automatically, avoiding duplicate or unwanted log output.
+### Suppress Automatic Logging for Expected Exceptions
 
-## Transport quick reference
+Use `IntrinsicException` for exceptions that Nest should not automatically log,
+avoiding duplicate or unwanted framework-level log output for expected failures.
 
-- Microservice clients and servers expose `status`, `on`, and `unwrap` for state,
-  native events, and native-driver access.
-- NATS handlers can select queues individually; the transporter can shut down
-  gracefully.
-- TCP supports operating-system-selected ports and a maximum packet-buffer size.
-- Microservice options can be resolved through dependency injection.
-- RabbitMQ supports topic exchanges.
-- WebSocket errors may retain a cause, and the `ws` adapter can use a custom
-  message parser.
-- WebDAV methods are recognized by the common, core, and Fastify packages.
+## Migration Review Order
 
-Use the transport reference for the full behavior and migration implications.
-
+1. Confirm the Node.js runtime and HTTP platform adapter.
+2. Fix middleware patterns, CORS methods, and module exports.
+3. Audit dynamic-module identity, reflection result shapes, and lifecycle order.
+4. Migrate cache, configuration, and health-check integrations.
+5. Verify transport observability, queueing, shutdown, and buffer controls.
+6. Exercise routing, shutdown, and direct-backend data paths in tests.

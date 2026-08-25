@@ -1,65 +1,74 @@
 # Packages, build, and configuration
 
-## Contents
+## Hex authentication and ownership
 
-- [Project layout and scaffolding](#project-layout-and-scaffolding)
-- [Dependencies](#dependencies)
-- [Build, development, CI, and exports](#build-development-ci-and-exports)
-- [Package configuration](#package-configuration)
-- [Publishing validation and authentication](#publishing-validation-and-authentication)
-- [Hex ownership and release lifecycle](#hex-ownership-and-release-lifecycle)
-- [Documentation and repository links](#documentation-and-repository-links)
+### Authentication lifecycle
 
-## Project layout and scaffolding
+Since 1.7.0, the first Hex login creates a long-lived API token stored encrypted
+on disk with a local password. Later Hex operations request that local password
+instead of the Hex account credentials.
 
-### Development-only source
+Since 1.15.0, Hex authentication uses OAuth2 exclusively, with MFA for write
+operations and short-lived access tokens. The first Hex use with this release
+revokes legacy tokens stored by Gleam. The password used to encrypt local tokens
+must contain at least eight characters.
 
-Since 1.11.0, put development-only modules in `dev/`. They may import `src/` and use development dependencies but are not shipped in production. Define `main` in `<package>_dev` and run it with `gleam dev`.
+Set `GLEAM_CACERTS_PATH` to custom CA certificates that Gleam should trust for
+Hex package-manager communication (since 1.9.0).
 
-See [conventions-and-patterns.md](conventions-and-patterns.md) for the complete `src/`, `dev/`, and `test/` import boundaries.
+### Owners
 
-### New-project controls
+Transfer a Hex package to another account with
+`gleam hex owner transfer` (since 1.13.0). Add another owner with
+`gleam hex owner add` (since 1.16.0).
 
-`gleam new` can select an Erlang or JavaScript template, override the package name, and omit Git or only GitHub-specific files.
+### Verified registry metadata
 
-```sh
-gleam new --template javascript --skip-git web_app
-```
+Since 1.18.0, Gleam obtains a downloaded Hex package's checksum and requirements
+from verified registry metadata rather than the Hex API response. The registry
+signature protects the values used for tarball verification and dependency
+resolution.
 
-`--skip-git` skips repository initialisation plus `.gitignore`, `.git/*`, and `.github/*`. `--skip-github` omits only `.github/*`.
+## Publishing checks
 
-Since 1.8.0, an invalid or reserved project name prompts with a valid replacement rather than only failing; for example, `type` can become `type_app` after confirmation.
+Since 1.7.0, `gleam publish` detects modules outside the package namespace,
+explains the collision risk, and asks for confirmation. A package named
+`pumpkin` should normally place modules under `src/pumpkin/`.
 
-### Internal-module globs
+Publishing an unofficial package with a name beginning with the core team's
+`gleam_` prefix requires a longer typed confirmation (since 1.7.0). Publishing
+a `0.*` version also requires confirmation because it does not provide normal
+semantic-versioning compatibility guarantees.
 
-`internal_modules` contains module-name glob patterns and defaults to `<package>/internal` and its descendants. Matching modules are omitted from generated documentation, but their public definitions remain importable and carry no public stability guarantee.
+Since 1.14.0, the compiler warns about a module with no public types or
+functions, and `gleam publish` treats it as an error that requires removing the
+module from the package.
 
-```toml
-internal_modules = ["my_app/internal", "my_app/internal/*"]
-```
+Since 1.15.0, publishing refuses a package with no README or with the default
+README created by `gleam new`.
+
+Since 1.17.0, publishing recognises an enclosing Git repository when the
+package is inside a monorepo rather than at its root.
 
 ## Dependencies
 
-### Git, path, Hex, rebar3, and Mix dependencies
+### Dependency sources
 
-Since 1.9.0, a dependency may point at a Git or HTTP repository and a `ref` naming a tag, branch, or commit SHA. The build tool downloads the repository and treats it as a normal Gleam package.
+Since 1.9.0, a dependency may come from a Git repository when its Git or HTTP
+URL and a tag, branch, or commit SHA are supplied.
 
 ```toml
 [dependencies]
 gleam_stdlib = { git = "https://github.com/gleam-lang/stdlib.git", ref = "957b83b" }
-shared = { path = "../shared" }
 ```
 
-Regular dependency entries may also name Gleam packages, Erlang rebar3 packages, or Elixir Mix packages with the same Hex-requirement syntax. Development dependencies are omitted from published packages and cannot duplicate a regular dependency.
+Erlang rebar3 and Elixir Mix packages use the same Hex requirement syntax as
+Gleam packages under `[dependencies]`; no ecosystem-specific form is needed.
 
-```toml
-[dev_dependencies]
-gleeunit = ">= 1.0.0 and < 2.0.0"
-```
+### Dependency tree
 
-### Inspect dependency trees
-
-Since 1.8.0, display the whole dependency tree, one package's subtree, or all paths from a package back to the root:
+Since 1.8.0, `gleam deps tree` prints the resolved tree. `--package` selects one
+package's subtree; `--invert` shows every path from a package back to the root.
 
 ```sh
 gleam deps tree
@@ -67,174 +76,156 @@ gleam deps tree --package package_c
 gleam deps tree --invert package_b
 ```
 
-Since 1.14.0, combining `--invert` with `--package` fails instead of silently ignoring `--invert`.
+Since 1.14.0, `--package` and `--invert` are mutually exclusive; combining them
+fails instead of silently ignoring `--invert`.
 
-### Resolution diagnostics and change reports
+### Resolution and updates
 
-Since 1.12.0, a dependency-resolution failure identifies the incompatible packages and traces the requirement chains imposing conflicting ranges.
+Since 1.12.0, resolution failures identify incompatible packages and trace
+conflicting constraints through direct and transitive dependencies.
 
-`gleam update` and `gleam deps download` report dependencies with newer major releases, showing the selected and newest versions without automatically choosing a potentially breaking major. Since 1.13.0, resolution after commands such as `gleam add` or `gleam update` prints each added, removed, or changed package and version for auditing.
+`gleam update` and `gleam deps download` report a dependency whose newest major
+version lies outside the project's allowed range (since 1.12.0).
 
-### Outdated dependencies
+Since 1.13.0, adding, removing, changing, or updating dependencies prints the
+affected package names and versions when resolution changes.
 
-Since 1.14.0, `gleam deps outdated` lists packages with repository updates and shows current and latest versions, including newer majors.
+Since 1.14.0, `gleam deps outdated` lists each dependency's current version and
+latest package-repository version. Since 1.17.0, it also prints a summary count,
+including `0 of N packages have newer versions available` when all are current.
 
-```sh
-gleam deps outdated
-```
+## Project creation and source directories
 
-Since 1.17.0, the summary states how many packages are outdated out of the total checked, including an explicit zero when all are current.
+Since 1.8.0, `gleam new` proposes a valid alternative and asks to use it when a
+requested name contains an invalid character or a Gleam keyword. Project names
+may contain lowercase letters, underscores, and numbers.
 
-### Custom certificate authorities
+Since 1.7.0, Erlang, Elixir, JavaScript, and other external modules may be in
+subdirectories of `src/` or `test/`; they are not restricted to the top level.
 
-Since 1.9.0, set `GLEAM_CACERTS_PATH` to a CA certificate path when requests to Hex must trust a custom authority, such as on a TLS-intercepting network.
-
-## Build, development, CI, and exports
-
-### Warning and formatting gates
-
-Promote compiler warnings to failures and check formatting without rewriting files:
-
-```sh
-gleam build --warnings-as-errors
-gleam format --check src/main.gleam test/main_test.gleam
-```
-
-### Development output
-
-Since 1.17.0, suppress compilation and launch progress while retaining the program's output:
+Since 1.11.0, development-only source may live in `dev/`. It can import `src/`
+modules and use development dependencies without entering production output.
+Give `<package>_dev` a `main` function and run:
 
 ```sh
-gleam dev --no-print-progress
+gleam dev
 ```
 
-### Fault-tolerant compilation
+Since 1.17.0, `gleam dev --no-print-progress` suppresses compilation and
+execution progress while preserving the program's own output.
 
-Since 1.16.0, when a module fails to compile, the build tool prunes its dependent subtree and continues compiling independent modules. This preserves as much current language-server information as possible. An opened module that could not compile receives a diagnostic on the import leading to the failure.
+## Configuration
 
-### Machine-readable and packaging exports
+### Canonical key names
 
-Since 1.10.0, `gleam export package-information` writes package information as JSON for other build tools.
+Since 1.15.0, `dev_dependencies` and `tag_prefix` are canonical. The older
+`dev-dependencies` and `tag-prefix` spellings work but are deprecated.
 
-`package-interface` exports JSON describing modules, functions, and types to a required output path. Other exports provide JavaScript and TypeScript prelude modules or construct the publishable Hex tarball.
+```toml
+[dev_dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
+```
+
+Since 1.12.0, `repository.tag-prefix` can prefix generated release tags so
+packages in a monorepo have distinct tags. Use the later canonical spelling
+`tag_prefix`.
+
+Since 1.18.0, commands that previously failed on TOML 1.1 syntax accept
+`gleam.toml` files using that syntax.
+
+### Internal modules
+
+`internal_modules` is glob-based: it marks matching modules as outside the
+public package API but does not prevent imports. Defaults are
+`<package>/internal` and `<package>/internal/*`.
+
+```toml
+internal_modules = ["my_app/internal", "my_app/internal/*"]
+```
+
+### OTP application startup
+
+`erlang.application_start_module` names an OTP application-behaviour module.
+In Erlang atom notation, a Gleam module slash becomes `@`.
+`erlang.extra_applications` lists OTP applications to start beyond those
+provided by dependencies.
+
+```toml
+[erlang]
+application_start_module = "my_project@application"
+extra_applications = ["inets", "ssl"]
+```
+
+### JavaScript generation and runtime
+
+`javascript.typescript_declarations` emits `.d.ts` files.
+`javascript.runtime` selects `node`, `deno`, or `bun` and defaults to Node.
+
+Deno's `allow_env`, `allow_net`, `allow_read`, `allow_run`, and `allow_write`
+accept booleans or allowlists. `allow_all`, `allow_ffi`, `allow_hrtime`, and
+`allow_sys` are booleans.
+
+```toml
+[javascript]
+typescript_declarations = true
+runtime = "deno"
+
+[javascript.deno]
+allow_env = ["DATABASE_URL"]
+allow_net = ["example.com:443"]
+allow_read = ["./database.sqlite"]
+```
+
+## Build behavior
+
+Since 1.16.0, if a module fails to compile, the build tool prunes modules that
+depend on it and continues compiling independent module trees. The language
+server diagnoses the import that leads to the failed module.
+
+Use `gleam fix` to rewrite deprecated Gleam syntax to supported replacements
+across the project.
+
+## Exports
+
+Since 1.10.0, `gleam export package-information` writes package information as
+JSON for other build tools.
+
+`gleam export package-interface --out` writes JSON describing project modules,
+functions, and types. Separate commands export JavaScript and TypeScript
+prelude modules.
 
 ```sh
 gleam export package-information
 gleam export package-interface --out build/package-interface.json
 gleam export javascript-prelude
 gleam export typescript-prelude
-gleam export hex-tarball
 ```
 
-Target-specific shipment and escript exports are covered in [targets-and-ffi.md](targets-and-ffi.md).
+## Documentation and repository metadata
 
-### Release artefacts
-
-Since 1.10.0, official container images include Software Bill of Materials and SLSA provenance data for security auditing and compliance.
-
-Since 1.11.0, releases include a precompiled ARM64 Windows executable, avoiding a source build on Windows-on-ARM.
-
-## Package configuration
-
-### TOML and compiler constraints
-
-Project configuration uses TOML 1.1. `name` and `version` are required. An optional `gleam` requirement makes compilation fail when the active compiler does not satisfy the range.
+Additional Markdown documentation pages are `documentation.pages` entries with
+a display title, output HTML path, and source file.
 
 ```toml
-name = "my_package"
-version = "1.0.0"
-gleam = ">= 1.15.0"
-```
-
-### Snake-case keys
-
-Since 1.15.0, the canonical keys are `dev_dependencies` and `tag_prefix`. The hyphenated `dev-dependencies` and `tag-prefix` forms remain accepted but are deprecated.
-
-Development-tool configuration conventions are documented in [conventions-and-patterns.md](conventions-and-patterns.md). Target-specific `[erlang]` and `[javascript]` settings are documented in [targets-and-ffi.md](targets-and-ffi.md).
-
-## Publishing validation and authentication
-
-### Namespace and version confirmations
-
-Since 1.7.0, `gleam publish` detects modules that pollute the VM's top-level namespace and asks for confirmation. Package modules should normally live below `src/<package-name>/`.
-
-Publishing a package whose name uses the core-team `gleam_` prefix requires typing a longer confirmation. Publishing a `0.*` version also requires confirmation, encouraging packages intended for use to adopt stable semantic versions.
-
-### Required package content
-
-Since 1.14.0, the compiler warns about a module with no public types or functions, and publishing treats that redundant module as an error until it is removed.
-
-Since 1.15.0, publishing refuses a package with no README or with the unchanged default README generated by `gleam new`.
-
-Since 1.17.0, publishing detects a containing Git repository when the Gleam package lives in a monorepo subdirectory instead of at the repository root.
-
-### Hex credentials and OAuth2
-
-The 1.7.0 credential workflow exchanged supplied Hex credentials for a long-lived API token and stored it encrypted with a local password, prompting for that local password on later operations.
-
-Since 1.15.0, Gleam uses Hex's short-lived OAuth2 flow exclusively. First use revokes any stored legacy token. Hex write operations require multi-factor authentication, and a password used to encrypt local tokens must contain at least eight characters.
-
-## Hex ownership and release lifecycle
-
-Since 1.13.0, transfer an existing package to another account:
-
-```sh
-gleam hex owner transfer
-```
-
-Since 1.16.0, add another owner to an existing package:
-
-```sh
-gleam hex owner add
-```
-
-Retire a package version with a reason and optional message, or restore it:
-
-```sh
-gleam hex retire <PACKAGE> <VERSION> <REASON> [MESSAGE]
-gleam hex unretire <PACKAGE> <VERSION>
-```
-
-## Documentation and repository links
-
-### Documentation lifecycle
-
-Build local HTML documentation and optionally open it, publish it to HexDocs, or remove the documentation for a specific package version:
-
-```sh
-gleam docs build --open
-gleam docs publish
-gleam docs remove --package my_package --version 1.2.0
-```
-
-Since 1.11.0, generated documentation preserves source type-variable names, keeps imported types qualified, shows full modules on hover, and links to imported type documentation.
-
-### Publishing metadata and additional pages
-
-`licences`, `description`, and `repository` are optional locally but required for Hex publishing. Licences use SPDX identifiers. Top-level `links` appear in generated docs and on Hex; each `[[documentation.pages]]` entry adds a Markdown source page to generated HTML.
-
-```toml
-licences = ["Apache-2.0"]
-description = "A useful package"
-links = [{ title = "Home", href = "https://example.com" }]
-
-[repository]
-type = "github"
-user = "my-user"
-repo = "my-package"
-
 [[documentation.pages]]
-title = "Guide"
-path = "guide.html"
-source = "./docs/guide.md"
+title = "My Page"
+path = "my-page.html"
+source = "./guides/my-page.md"
 ```
 
-### Monorepo and Tangled links
-
-Since 1.12.0, repository configuration accepts `tag-prefix`; it is prepended to the default release tag so packages in a monorepo can use distinct tags while retaining correct documentation source links.
-
-Since 1.13.0, set repository type `tangled` to link generated HTML type and value definitions to source hosted on Tangled.
+Since 1.13.0, repository metadata accepts Tangled as a source forge, allowing
+generated documentation to link type and value definitions to source.
 
 ```toml
 repository = { type = "tangled", user = "me", repo = "my_project" }
 ```
+
+## Tooling and project safety
+
+The language server type-checks unsaved buffers for the configured target
+without generating code or compiling Erlang or Elixir, so merely opening a
+project cannot execute foreign code. Only formatting is available for Gleam
+files outside a project.
+
+Since 1.10.0, official container images include a software bill of materials
+and SLSA provenance information for audits and compliance checks.

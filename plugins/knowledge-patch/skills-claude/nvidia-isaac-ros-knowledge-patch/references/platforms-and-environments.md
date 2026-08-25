@@ -1,73 +1,85 @@
 # Platforms and environments
 
-## Select a tested runtime
+Use this reference to choose a supported hardware, operating-system,
+JetPack, simulator, development-mode, and camera combination.
 
-Current quickstarts use ROS 2 Jazzy through the Isaac ROS CLI-managed
-environment. The tested targets are:
+## Tested runtime matrix snapshot
 
-| Target | Runtime and capacity |
+The runtime matrix recorded on 2026-07-28 targets ROS 2 Jazzy through the
+Isaac ROS CLI-managed environment:
+
+| Family | Tested requirements |
 | --- | --- |
-| Jetson Thor T5000 or T4000 | JetPack 7.1 with at least 128 GB NVMe storage |
+| Jetson | Thor T5000 or T4000 on JetPack 7.1 with at least 128 GB NVMe storage |
 | x86_64 | Ampere-or-newer NVIDIA GPU with at least 8 GB RAM, Ubuntu 24.04, CUDA 13.0 or newer, driver 580 or newer, and at least 32 GB storage |
 | DGX Spark | DGX OS 7.2.3 with at least 32 GB storage |
 
-Other GB10 systems are outside the current test matrix. Docker-optional
-Virtual Environment and Bare Metal deployments must still satisfy this
-dependency and platform matrix (`current-runtime-and-packages`).
+Other GB10 systems are outside that test matrix. Virtual Environment and Bare
+Metal deployments still have to satisfy the dependency and platform matrix;
+their Docker-free nature does not broaden hardware support.
 
-## Choose an environment mode
+## JetPack 6.2 and Orin Nano Super (3.2-1)
 
-Virtual Environment and Bare Metal became supported development and deployment
-modes in 4.1.0, so Docker is not required for those flows. This changes the
-container requirement, not the target matrix.
+The `v3.2-1` package set adds JetPack 6.2 and Jetson Orin Nano Super support.
+Use that update rather than base `v3.2` for either target.
 
-SAM2 initially had a Virtual Environment NumPy mismatch. Pinning NumPy 1.26.4
-was a possible 4.1.0 workaround. The dependency problems affecting SAM2
-quickstarts in both Virtual Environment and Bare Metal flows are fixed in
-4.5.0.
+## Jetson AGX Thor and JetPack 7.0 (4.0.0)
 
-## Match JetPack and Jetson hardware
+Isaac ROS 4.0 adds Jetson AGX Thor and a JetPack 7.0 stack based on Ubuntu
+24.04 and CUDA 13.0. The tested simulator for this package set is Isaac Sim
+5.1.
 
-### JetPack 6.2 and Orin Nano Super
+The platform boundary is narrower than the headline support:
 
-The 3.2-1 update adds JetPack 6.2 and Jetson Orin Nano Super support. Select
-the `v3.2-1` package set rather than the base `v3.2` release for either target.
+- Isaac Perceptor and Nova packages are not yet optimized for AGX Thor.
+- The ZED SDK is incompatible with Jetson Thor in this release, so ZED cameras
+  were not tested.
+- RealSense SDK support on JetPack 7 can become unstable and stop publishing
+  images.
 
-### JetPack 7 and AGX Thor
+## Docker-optional modes and camera setup (4.1.0)
 
-Isaac ROS 4.0.0 adds Jetson AGX Thor support and a JetPack 7.0 stack based on
-Ubuntu 24.04 and CUDA 13.0. That combination was tested with Isaac Sim 5.1.
+Virtual Environment and Bare Metal are supported development and deployment
+modes, so Docker is no longer required for those workflows.
 
-At that point, Isaac Perceptor and Nova packages were not optimized for AGX
-Thor. The ZED SDK was incompatible with Jetson Thor, so ZED cameras were not
-tested. RealSense SDK support on JetPack 7 could become unstable and stop
-publishing images.
+Use the dedicated Isaac ROS 4.1 RealSense-on-JetPack-7 setup procedure. It
+addresses the RealSense SDK stability issue on that platform. The
+`sensor_mounting_rig` package also adds support for the Jetson AGX Thor
+RealSense Rig.
 
-In 4.1.0, use the dedicated RealSense-on-JetPack-7 setup procedure, which
-addresses that SDK stability problem. `sensor_mounting_rig` also supports the
-Jetson AGX Thor RealSense Rig.
+DGX Spark is not supported by the 4.1 package set. Do not apply that historical
+exclusion to later package sets without checking their newer platform matrix.
 
-## Interpret DGX Spark support by date
+## SAM2 outside Docker (4.5.0)
 
-Isaac ROS 4.1.0 did not support DGX Spark. That exclusion no longer represents
-the current environment: DGX Spark and JetPack 7.1 support arrived on
-2026-02-19. Current DGX Spark quickstarts use DGX OS 7.2.3 and require at least
-32 GB storage (`current-runtime-and-packages`).
+The SAM2 quickstart dependency problems that affected Virtual Environment and
+Bare Metal flows are fixed in 4.5. Older environments may still need their
+release-specific workaround; see [Troubleshooting](troubleshooting.md).
 
-## Use SIPL Camera-over-Ethernet
+## DGX Spark, JetPack 7.1, and early SIPL support
 
-Early SIPL and Leopard Imaging Eagle stereo Camera-over-Ethernet support
-arrived on 2026-03-23. `isaac_ros_sipl_camera` publishes SIPL camera images
-through zero-copy NITROS (`current-runtime-and-packages`).
+DGX Spark and JetPack 7.1 support arrived on 2026-02-19, superseding the 4.1
+DGX Spark exclusion for the newer environment. Early SIPL and Leopard Imaging
+Eagle stereo Camera-over-Ethernet support followed on 2026-03-23.
+`isaac_ros_sipl_camera` publishes SIPL camera images through zero-copy NITROS.
 
-## Work with Isaac Sim 5.1
+## JetPack 7.2 and simulator selection (4.6.0)
 
-NITROS Bridge topics from Isaac Sim 5.1 might not arrive through DDS. This can
-break the object-following manipulation simulation tutorial (4.0.0).
+Isaac ROS 4.6 adds Jetson Orin and JetPack 7.2 support. Isaac Sim 6.0 is the
+recommended tested simulator. Legacy Isaac Sim 5.0 and 5.1 remain supported.
 
-If the Nvblox sample scene does not load normally, open it through:
+These additions do not erase package-specific platform exceptions. In
+particular, cuVSLAM remains unsupported on DGX Spark; see
+[Perception, mapping, and localization](perception-mapping-and-localization.md).
 
-`Content Window → Samples → NvBlox → nvblox_sample_scene.usd`
+## Selection procedure
 
-For stereo-image-processing visualization failures, see
-[troubleshooting](troubleshooting.md).
+1. Identify the exact Isaac ROS package set.
+2. Match the Jetson or desktop target to its operating-system, JetPack, CUDA,
+   driver, GPU-memory, and storage requirements.
+3. Select a simulator tested by that package set.
+4. Check the camera SDK against the exact Jetson model and JetPack line.
+5. Select Docker, Virtual Environment, or Bare Metal only after the dependency
+   matrix is satisfied.
+6. Apply later support announcements only when the corresponding packages are
+   actually installed.

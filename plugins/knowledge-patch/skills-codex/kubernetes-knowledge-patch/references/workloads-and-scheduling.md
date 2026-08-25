@@ -1,253 +1,291 @@
 # Workloads, Lifecycle, and Scheduling
 
-Use this reference for Pods, containers, Jobs, controllers, autoscaling, resource management, scheduler behavior, and workload APIs.
+## Containers, sidecars, and restart behavior
 
-Entries are grouped by task; the parenthetical identifier is the source batch.
+### Native sidecars are stable (1.33-guide)
 
-## `nominatedNodeName` can advertise intended placement (1.34-guide)
+An `initContainers` entry with container-level `restartPolicy: Always` preserves
+init ordering, remains with the application, stops afterward in reverse order,
+and does not block Job completion.
 
-With `NominatedNodeNameForExpectation`, the scheduler may set `status.nominatedNodeName` for an intended binding, not only for preemption, so autoscalers and other components can avoid disrupting a node with a pending placement.
+### Native sidecars have a one-release compatibility gate (1.33.0)
 
-## A restart rule can restart every container (1.35.0)
+Default-off `LegacySidecarContainers` restores pre-native-sidecar behavior only
+in 1.33; it is removed in 1.34.
 
-The alpha `RestartAllContainersOnContainerExit` gate makes a matching restart-policy rule on a source container restart all containers when that source exits.
+### Pods can select a container stop signal (1.33-guide)
 
-## Agent Sandbox targets AI agent workloads (project-news)
+Alpha `ContainerStopSignals` lets `lifecycle.stopSignal` override the image or
+runtime default; the Pod must declare `spec.os.name`.
 
-Agent Sandbox provides a way to run AI agents on Kubernetes as these workloads move beyond transient, stateless execution.
+### Crash-loop restart delays can be shortened (1.33.0)
 
-## Container restart rules are default-on beta (1.35-guide)
+`ReduceDefaultCrashLoopBackOffDecay` changes restart backoff to one second
+initially and 60 seconds maximum. If `KubeletCrashLoopBackOffMax` also sets a
+node maximum, its conflict rules determine effective values.
 
-Per-container `restartPolicy` and exit-code-based `restartPolicyRules` are now available by default for regular and init containers.
+### Containers can have exit-code-specific restart rules (1.34-guide)
 
-## Containers can have exit-code-specific restart rules (1.34-guide)
+`ContainerRestartRules` gives regular and init containers individual
+`restartPolicy` and `restartPolicyRules` overrides for selected exit codes.
 
-With `ContainerRestartRules`, each regular or init container can set its own `restartPolicy` and a `restartPolicyRules` list that overrides that policy for selected exit codes, instead of every container being governed only by the Pod-level policy.
+### Container restart rules are default-on beta (1.35-guide)
 
-## Containers can import runtime-generated environment files (1.34-guide)
+Per-container policies and exit-code rules are available by default.
 
-With the alpha `EnvFiles` gate, an earlier container can write environment values to a file and a later container can import them at startup, avoiding an entrypoint wrapper for values produced during Pod initialization.
+### A restart rule can restart every container (1.35.0)
 
-## Crash-loop restart delays can be shortened (1.33.0)
+Alpha `RestartAllContainersOnContainerExit` lets a matching rule on one source
+container restart all containers.
 
-Enabling `ReduceDefaultCrashLoopBackOffDecay` changes container restart backoff to a 1-second initial delay and a 60-second maximum; if `KubeletCrashLoopBackOffMax` also configures a per-node maximum, its conflict-resolution rules determine the effective values.
+### Restart-all rules are default-on beta (1.36.0)
 
-```text
---feature-gates=ReduceDefaultCrashLoopBackOffDecay=true
-```
+The later gate name is `RestartAllContainersOnContainerExits`; the behavior is
+beta and enabled by default.
 
-## Deployments can report terminating replicas (1.33.0)
+### Containers can import runtime-generated environment files (1.34-guide)
 
-With `DeploymentPodReplacementPolicy`, Deployments and ReplicaSets expose `.status.terminatingReplicas`, allowing controllers and rollout tooling to distinguish terminating Pods from other replica counts.
+Alpha `EnvFiles` lets an earlier container write values that a later container
+imports at startup, avoiding an entrypoint wrapper.
 
-## Downward resource references use Pod-level limits (1.34.0)
+### EnvFiles values must be single-quoted (1.35.0)
 
-For `resourceFieldRef`, an absent container-level limit now falls back to the Pod-level limit before falling back to node allocatable resources.
-
-## EnvFiles values must be single-quoted (1.35.0)
-
-The EnvFiles feature is beta and enabled by default, but its syntax is now restricted so every value is wrapped in single quotes.
+The feature is beta/default-on and every value must be single-quoted:
 
 ```text
 TOKEN='value'
 ```
 
-## Environment variable names accept nearly all printable ASCII (1.34-guide)
+### Environment variable names accept nearly all printable ASCII (1.34-guide)
 
-Pod `env` entries and keys imported from ConfigMaps or Secrets with `envFrom` may contain any printable ASCII character except `=`, including names such as .NET configuration keys containing `:`.
+Pod `env` names and keys imported with `envFrom` may contain any printable ASCII
+except `=`, including .NET-style names containing `:`.
 
-## HPA tolerance is default-on beta (1.35-guide)
+## Pod status, identity, and metadata
 
-HorizontalPodAutoscalers can set a custom per-resource tolerance in `behavior`, such as `0.05` for a five-percent window, instead of relying only on the global ten-percent tolerance.
+### Pod status can track observed generations (1.33-guide)
 
-## HPAs can override the global tolerance (1.33.0)
+Alpha Pod generation makes `metadata.generation` meaningful and adds
+`status.observedGeneration` for detecting stale status.
 
-The alpha `HPAConfigurableTolerance` gate adds a per-HorizontalPodAutoscaler `tolerance` field, allowing an HPA to override the cluster-wide scaling tolerance.
+### Pod observed generations are beta and default-on (1.34.0)
 
-## In-place Pod resize is beta and default-on (1.33-guide)
+Kubernetes populates top-level status and
+`status.conditions[*].observedGeneration`, allowing condition-level freshness
+checks.
 
-CPU and memory changes for a running Pod must now go through the `resize` subresource; `spec.containers[*].resources` is desired state while `status.containerStatuses[*].resources` is actual state, and native sidecars can also be resized. The old `status.resize` is deprecated in favor of `PodResizePending` (`Deferred` or `Infeasible`) and `PodResizeInProgress` conditions.
+### Pods can override their hostname (1.34.0)
+
+With `HostnameOverride`, `PodSpec.hostnameOverride` accepts an RFC 1123 DNS
+subdomain.
+
+### Pod DNS search validation is relaxed (1.33.0)
+
+Beta `RelaxedDNSSearchValidation` permits a search domain that is a single dot
+or contains an underscore.
+
+### Namespace deletion removes Pods first (1.33.0)
+
+Default-on alpha `OrderedNamespaceDeletion` deletes Pods before other namespaced
+resources, affecting finalizer and dependency cleanup order.
+
+### Pod sandbox readiness is reported earlier (1.36.0)
+
+Kubelet sets `PodReadyToStartContainers=True` after sandbox creation, before
+image pulling; consumers must not treat it as proof images are present.
+
+## In-place resize and Pod-level resources
+
+### In-place Pod resize is beta and default-on (1.33-guide)
+
+Change CPU and memory through the `resize` subresource. Spec is desired state;
+`status.containerStatuses[*].resources` is actual state. Native sidecars are
+resizable. Replace deprecated `status.resize` with `PodResizePending`
+(`Deferred`/`Infeasible`) and `PodResizeInProgress` conditions.
 
 ```console
 kubectl edit pod <pod-name> --subresource resize
 ```
 
-## In-place Pod resize reaches GA with new integrations (1.35-guide)
+### In-place resize has stricter mutation rules (1.33.0)
 
-VPA's `InPlaceOrRecreate` update mode is beta, while resizing Pod-level resources is a separate alpha capability. In-place resize still applies only to CPU and memory and is prohibited with swap or the static CPU and Memory Manager policies.
+At this stage a memory limit reduction or swap-enabled resize requires that
+container's memory policy to be `RestartContainer`; `resizePolicy` is immutable.
 
-## In-place resize changes memory and priority behavior (1.34.0)
+### In-place resize changes memory and priority behavior (1.34.0)
 
-A memory limit may now be decreased with `resizePolicy[*].restartPolicy: NotRequired`; kubelet makes a best-effort check against current usage to avoid an immediate OOM kill. When resources cannot satisfy all pending resizes, requests are prioritized by PriorityClass and QoS, while Guaranteed Pods under the static Memory Manager policy require the default-off `InPlacePodVerticalScalingExclusiveMemory` gate.
+A memory limit may later decrease with `restartPolicy: NotRequired`; kubelet
+best-effort checks current use to avoid immediate OOM. Pending resizes prioritize
+by PriorityClass and QoS. Guaranteed Pods under static Memory Manager need
+default-off `InPlacePodVerticalScalingExclusiveMemory`.
 
-## In-place resize has stricter mutation rules (1.33.0)
+### In-place Pod resize reaches GA with new integrations (1.35-guide)
 
-A memory limit cannot be reduced unless that container's memory resize policy is `RestartContainer`, and `resizePolicy` itself is no longer mutable. Swap-enabled containers are likewise ineligible for in-place resize without that memory restart policy.
+VPA `InPlaceOrRecreate` is beta and Pod-level resize is a separate alpha
+capability. Resize remains CPU/memory only and is prohibited with swap or static
+CPU/Memory Manager policies.
 
-## Indexed Job success policies are stable (1.33-guide)
+### Pod-level resources support huge pages (1.33.0)
 
-An Indexed Job can finish when any `successPolicy` rule's `succeededIndexes`, `succeededCount`, or combination is satisfied, terminating remaining Pods. The controller first adds `SuccessCriteriaMet`, then adds `Complete` after cleanup.
+With `PodLevelResources`, huge-page requests and limits may be placed in Pod
+`spec.resources`, not only individual containers.
 
-## Jobs can delegate reconciliation (1.35-guide)
+### Pod-level resources are beta and work with HPA (1.34-guide)
 
-The stable `Job.spec.managedBy` field lets an external controller own Job status synchronization while the built-in Job controller stands aside. It delegates reconciliation only; it does not carry controller parameters or alter CronJob concurrency behavior.
+Pod-wide requests and limits provide one shared scheduling/autoscaling budget.
 
-## Jobs can wait for a terminated Pod before replacing it (1.34-guide)
+### Pod-level resources have platform and topology limits (1.34.0)
 
-The stable `podReplacementPolicy: Failed` setting prevents a Job from creating a replacement while the old Pod is merely terminating, avoiding overlapping Pods for the same work or completion index.
+Pods with `spec.resources` are rejected on Windows. At this stage on Linux they
+do not produce CPU/Memory/Topology Manager alignment or hints.
 
-```yaml
-spec:
-  podReplacementPolicy: Failed
-```
+### Downward resource references use Pod-level limits (1.34.0)
 
-## Native gang scheduling begins as alpha (1.35-guide)
+When `resourceFieldRef` finds no container limit, it falls back to the Pod limit
+before node allocatable.
 
-The new Workload API and PodGroup concept provide all-or-nothing scheduling for interdependent Pods, preventing part of a parallel workload from consuming resources while the rest cannot be placed.
+### Pod-level resource management expands (1.36.0)
 
-## Native sidecars are stable (1.33-guide)
+`InPlacePodLevelResourcesVerticalScaling` is beta/default-on; Topology, CPU, and
+Memory managers act on `spec.resources`, and running non-sidecar init containers
+can resize. Requests exceeding node capacity or using an unsupported OS fail
+admission. Non-sidecar init containers cannot use `RestartContainer` resize.
 
-Kubernetes 1.33 makes native sidecars stable and enabled by default; `initContainers` entries with container-level `restartPolicy: Always` retain init ordering, remain running with the application, stop afterward in reverse order, and do not block Job completion.
+## Autoscaling and controllers
 
-## Native sidecars have a one-release compatibility gate (1.33.0)
+### HPAs can override the global tolerance (1.33.0)
 
-`LegacySidecarContainers` restores the pre-native-sidecar code path when explicitly enabled; the default-off escape hatch exists only in 1.33 and is removed in 1.34.
+Alpha `HPAConfigurableTolerance` adds per-HPA tolerance.
 
-## Per-index Job retry limits are stable (1.33-guide)
+### HPA tolerance is default-on beta (1.35-guide)
 
-Indexed Jobs can use `backoffLimitPerIndex` so one fast-failing index does not consume the entire Job retry budget; `maxFailedIndexes` caps total failed indexes, a Pod failure policy can short-circuit retries with `FailIndex`, and exhausted indexes appear in `status.failedIndexes`.
+Set per-resource tolerance in HPA `behavior`, such as `0.05`, rather than using
+only the global ten-percent window.
 
-## Pod observed generations are beta and default-on (1.34.0)
+### Deployments can report terminating replicas (1.33.0)
 
-Kubernetes now populates both `status.observedGeneration` and `status.conditions[*].observedGeneration`, allowing clients to detect an individually stale Pod condition as well as stale top-level status.
+With `DeploymentPodReplacementPolicy`, Deployment and ReplicaSet status exposes
+`terminatingReplicas` separately.
 
-## Pod status can track observed generations (1.33-guide)
+### StatefulSet rollouts can tolerate more unavailability (1.35-guide)
 
-The alpha Pod generation feature makes `metadata.generation` meaningful for Pods and adds `status.observedGeneration`, letting clients distinguish status for the current spec from stale status.
+Default-on beta rolling-update `maxUnavailable` accepts a positive count or
+percentage, defaults to one, and is especially useful with parallel management.
 
-## Pod-level resource management expands (1.36.0)
+### StatefulSet `maxUnavailable` is disabled by default (1.36.0)
 
-`InPlacePodLevelResourcesVerticalScaling` is beta and enabled by default, and the Topology, CPU, and Memory managers now act on `spec.resources`; running non-sidecar init containers can also be resized. Requests that exceed node capacity or target an unsupported OS fail admission, and non-sidecar init containers cannot use the `RestartContainer` resize policy.
+Because of a parallel-management regression, `MaxUnavailableStatefulSet` is off
+by default in 1.36; clusters relying on it must opt in explicitly.
 
-## Pod-level resources are beta and work with HPA (1.34-guide)
+## Jobs
 
-Pod-wide requests and limits graduate to beta and can be consumed by HorizontalPodAutoscaler, allowing a multi-container Pod to expose one shared resource budget to scheduling and autoscaling.
+### Per-index Job retry limits are stable (1.33-guide)
 
-## Pod-level resources have platform and topology limits (1.34.0)
+Indexed Jobs use `backoffLimitPerIndex`; `maxFailedIndexes` caps failed indexes,
+`FailIndex` short-circuits retries, and `status.failedIndexes` reports exhausted
+indexes.
 
-Pods with `spec.resources` are rejected when `spec.os.name` is `windows`. On Linux, Pod-level resources do not produce CPU or memory alignment or hints from the CPU Manager, Memory Manager, or Topology Manager.
+### Indexed Job success policies are stable (1.33-guide)
 
-## Pod-level resources support huge pages (1.33.0)
+A Job completes when any `successPolicy` rule's `succeededIndexes`,
+`succeededCount`, or combination is met, terminating remaining Pods. The
+controller adds `SuccessCriteriaMet`, then `Complete` after cleanup.
 
-With `PodLevelResources` enabled, huge-page requests and limits can now be declared in the Pod-level `spec.resources` field rather than only on individual containers.
+### Jobs can wait for a terminated Pod before replacing it (1.34-guide)
 
-```yaml
-spec:
-  resources:
-    limits:
-      hugepages-2Mi: 1Gi
-    requests:
-      hugepages-2Mi: 1Gi
-```
+Stable `podReplacementPolicy: Failed` prevents creating a replacement while the
+old Pod is merely terminating.
 
-## PodGroups can be scheduled atomically (1.36-guide)
+### Jobs can delegate reconciliation (1.35-guide)
 
-The alpha Workload Aware Scheduling additions revise the Workload API and decouple the PodGroup API; a PodGroup scheduling cycle now binds every Pod in the group together or binds none, rather than only checking that a minimum count is schedulable.
+Stable `Job.spec.managedBy` makes the built-in controller stand aside for an
+external controller. It carries no controller parameters and does not change
+CronJob concurrency.
 
-## Pods can override their hostname (1.34.0)
+### Suspended Jobs can change container resources (1.35-guide)
 
-With the `HostnameOverride` feature gate, `PodSpec.hostnameOverride` accepts any RFC 1123 DNS subdomain as the Pod hostname.
+`MutablePodResourcesForSuspendedJobs` permits CPU and memory request/limit edits
+before resume while preserving Job identity and status.
 
-```yaml
-spec:
-  hostnameOverride: app.example
-```
+### Suspended Jobs can change scheduling directives (1.35.0)
 
-## Pods can select a container stop signal (1.33-guide)
+Default-off alpha `MutableSchedulingDirectivesForSuspendedJobs` permits edits
+while suspended and clears `status.startTime` on suspension.
 
-With the alpha `ContainerStopSignals` gate, `lifecycle.stopSignal` overrides the image's stop signal or runtime default; the Pod must also declare `spec.os.name`.
+### Suspended Job resource edits are beta and default-on (1.36-guide)
 
-```yaml
-spec:
-  os:
-    name: linux
-  containers:
-  - name: app
-    image: example/app
-    lifecycle:
-      stopSignal: SIGUSR1
-```
+Resource edits now include CPU, memory, GPU, and extended-resource requests or
+limits while suspended or after Pods terminate during suspension. Active Pods
+remain immutable.
 
-## Pods receive selected Node topology labels (1.33.0)
+### Suspended Jobs accept scheduling edits by default (1.36.0)
 
-At binding time Kubernetes copies `topology.k8s.io/zone`, `topology.k8s.io/region`, and `kubernetes.io/hostname` from the Node onto the Pod, so workloads can consume topology through the downward API without permission to read Node objects.
+Default-on `MutableSchedulingDirectivesForSuspendedJobs` permits nodeSelector,
+toleration, and node-affinity changes, including before `JobSuspended` is
+recorded.
 
-## Restart-all rules are default-on beta (1.36.0)
+## Scheduling framework and topology
 
-`RestartAllContainersOnContainerExits` is now beta and enabled by default, making restart-policy rules that restart every container available without opting into the former alpha gate.
+### Scheduler framework types move to a staging module (1.34.0)
 
-## Scheduler failures clear `nominatedNodeName` (1.35.0)
+Out-of-tree plugins import `Status`, `CycleState`, `ClusterEvent`, and `NodeInfo`
+from `k8s.io/kube-scheduler/framework`, not the Kubernetes internal package.
+`CycleState` is an interface; moved types may require getters/setters instead of
+field access.
 
-The scheduler now clears a Pod's `nominatedNodeName` after scheduling or binding failure. External components such as autoscalers must not overwrite this scheduler-owned field.
+### Scheduler plugin contracts gain preflight inputs (1.34.0)
 
-## Scheduler framework types move to a staging module (1.34.0)
+PreFilter receives the `NodeInfo` list. Every `PreBindPlugin` implements
+`PreBindPreFlight`; `Skip` suppresses its `PreBind`, and success may publish the
+intended node in `nominatedNodeName`.
 
-Out-of-tree scheduler plugins must move framework types such as `Status`, `CycleState`, `ClusterEvent`, and `NodeInfo` from `k8s.io/kubernetes/pkg/scheduler/framework` to `k8s.io/kube-scheduler/framework`; `CycleState` is now an interface and some moved types require getter and setter methods instead of direct field access.
+### Scheduler plugin contracts changed (1.36.0)
 
-## Scheduler plugin contracts changed (1.36.0)
+`PreBindPreFlight` returns `PreBindPreFlightResult`; `AllowParallel: true` opts
+into parallel PreBind and `nil` remains sequential. Rename
+`Handle.WorkloadManager.PodGroupInfo` to `PodGroupState`.
 
-`PreBindPreFlight` now returns `PreBindPreFlightResult`; return `AllowParallel: true` to opt into parallel PreBind execution, while `nil` preserves sequential execution. Custom plugins using `Handle.WorkloadManager` must also rename `PodGroupInfo` to `PodGroupState`.
+### `nominatedNodeName` can advertise intended placement (1.34-guide)
 
-## Scheduler plugin contracts gain preflight inputs (1.34.0)
+With `NominatedNodeNameForExpectation`, the scheduler may set the status field
+for intended binding, not just preemption, so autoscalers can avoid disruption.
 
-PreFilter plugins now accept the `NodeInfo` list through their arguments, and every `PreBindPlugin` must implement `PreBindPreFlight`. Returning `Skip` suppresses that plugin's `PreBind` call, while a successful preflight can cause the scheduler to publish the intended node through `nominatedNodeName`.
+### Scheduler failures clear `nominatedNodeName` (1.35.0)
 
-## StatefulSet `maxUnavailable` is disabled by default (1.36.0)
+Scheduling or binding failure clears the field. External components must not
+overwrite this scheduler-owned status.
 
-The `MaxUnavailableStatefulSet` gate is off by default in 1.36 because of a regression in parallel Pod management; clusters relying on rolling-update `maxUnavailable` must explicitly enable it.
+### Topology-spread selectors are merged by the API server (1.34.0)
 
-## StatefulSet rollouts can tolerate more unavailability (1.35-guide)
+Kube-apiserver merges `matchLabelKeys` into a topology constraint's
+`labelSelector`. Upgrade 1.32 through 1.33 before 1.34 and ensure affected 1.32
+Pods have scheduled. The default-on
+`MatchLabelKeysInPodTopologySpreadSelectorMerge` gate controls behavior.
 
-The beta, default-on `.spec.updateStrategy.rollingUpdate.maxUnavailable` accepts a positive count or percentage and defaults to `1`; it is most useful with parallel Pod management.
+### Tolerations can compare numeric thresholds (1.35-guide)
 
-```yaml
-spec:
-  podManagementPolicy: Parallel
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 10%
-```
+Alpha numeric comparison operators match threshold-valued taints such as
+reliability tiers rather than equality/existence only.
 
-## Static Pods cannot reference API objects (1.34.0)
+## Gang and workload-aware scheduling
 
-Kubelet now denies static Pods that reference API objects, explicitly including arbitrary ResourceClaims, rather than letting the workload run after mirror-Pod creation fails.
+### Native gang scheduling begins as alpha (1.35-guide)
 
-## Suspended Job resource edits are beta and default-on (1.36-guide)
+The Workload API and PodGroup concept provide all-or-nothing placement for
+interdependent Pods, avoiding partial resource consumption.
 
-`MutablePodResourcesForSuspendedJobs` now permits CPU, memory, GPU, and other extended-resource request or limit changes while a Job is suspended, or after its Pods have terminated during suspension; active Pods remain immutable.
+### PodGroups can be scheduled atomically (1.36-guide)
 
-## Suspended Jobs accept scheduling edits by default (1.36.0)
+The revised Workload API decouples PodGroup. A scheduling cycle binds every Pod
+in the group or none, instead of merely checking a minimum schedulable count.
 
-`MutableSchedulingDirectivesForSuspendedJobs` is enabled by default, allowing changes to `nodeSelector`, tolerations, and node affinity while a Job is suspended, including before the controller has recorded the `JobSuspended` condition.
+### Workload scheduling moves to `v1alpha2` (1.36.0)
 
-## Suspended Jobs can change container resources (1.35-guide)
+Workload and PodGroup use `scheduling.k8s.io/v1alpha2`; v1alpha1 Workload is
+removed. The scheduler reports `PodGroupScheduled` for successful or
+unschedulable groups.
 
-With `MutablePodResourcesForSuspendedJobs`, a suspended Job's Pod template can update CPU and memory requests or limits before the Job resumes, preserving the Job identity and status during correction.
+### Agent Sandbox targets AI agent workloads (project-news)
 
-## Suspended Jobs can change scheduling directives (1.35.0)
-
-The alpha, default-off `MutableSchedulingDirectivesForSuspendedJobs` gate allows scheduling-directive edits while a Job is suspended and clears `status.startTime` when the Job is suspended.
-
-## Tolerations can compare numeric thresholds (1.35-guide)
-
-Alpha numeric comparison operators in Pod tolerations let scheduling policies match threshold-valued taints, such as reliability or service-level tiers, instead of relying only on equality or existence.
-
-## Topology-spread selectors are merged by the API server (1.34.0)
-
-For `topologySpreadConstraints`, kube-apiserver now merges keys selected by `matchLabelKeys` into `labelSelector`, so controllers no longer need to perform that merge. Upgrade 1.32 clusters through 1.33 before 1.34 and ensure Pods created on 1.32 with `matchLabelKeys` have been scheduled; the default-on `MatchLabelKeysInPodTopologySpreadSelectorMerge` gate controls the new behavior.
-
-## Workload scheduling moves to `v1alpha2` (1.36.0)
-
-Workload and PodGroup objects use `scheduling.k8s.io/v1alpha2`, and the `v1alpha1` Workload API is removed. The scheduler also reports a `PodGroupScheduled` condition for successful or unschedulable groups.
-
+Agent Sandbox provides a Kubernetes execution model for agent workloads as they
+move beyond transient, stateless execution.

@@ -1,206 +1,109 @@
 # Targets, Linkers, and Toolchains
 
-Use this reference when selecting a compilation target, upgrading low-level build infrastructure, diagnosing linker or ABI changes, or building the compiler itself.
+## Host and compiler invocation
 
-## Host targeting and compiler defaults
+- Since 1.84.0, `rustc --print host-tuple` prints the compiler's host target directly.
+- Since 1.86.0, `rustc -O` means `-C opt-level=3`, not level 2, matching Cargo's optimized profile.
+- The nightly `-Zpolymorphize` flag was removed in 1.85.0.
+- Stable rustc stopped accepting custom JSON targets in 1.95.0. Nightly requires `-Z unstable-options`; nightly Cargo's `-Z json-target-spec` forwards it.
+- `-Csoft-float` was removed in 1.96.0.
 
-### Query the host triple
+## WebAssembly
 
-`rustc --print host-tuple` prints the compiler's host target tuple from 1.84.0, avoiding parsing verbose version output. Cargo also accepts the portable `host-tuple` placeholder from 1.91.0.
+### Target names and features
 
-### Optimization shorthand
+- The old `wasm32-wasi` target is gone as of 1.84.0; use `wasm32-wasip1`.
+- `wasm32v1-none` became Tier 2 in 1.84.0, and `multivalue`, `reference-types`, and `tail-call` became stable WebAssembly target features.
 
-`rustc -O` means `-C opt-level=3` from 1.86.0 rather than level 2, matching Cargo's default optimized profile.
+### C ABI transition
 
-### Jump tables
+`wasm32-unknown-unknown` adopted the standards-compliant C ABI in 1.89.0. Rebuild all components across an `extern "C"` boundary; do not mix old and new conventions. The earlier `wasm_c_abi` compatibility warning became a hard error in 1.86.0, and affected `wasm-bindgen` users need 0.2.89 or newer.
 
-`-Cjump-tables=<bool>` is stable from 1.93.0 and replaces the nightly `-Zno-jump-tables` spelling.
+### Undefined imports
 
-```console
-rustc -Cjump-tables=no main.rs
-```
+Since 1.96.0, WebAssembly linkers no longer receive `--allow-undefined`; unresolved symbols are errors rather than implicit imports from `"env"`. Declare intentional imports with `#[link(wasm_import_module = "env")]`, or deliberately restore the old linker option with `-C link-arg=--allow-undefined`.
 
-### Scoped path remapping
+### Emscripten
 
-`rustc --remap-path-scope` is stable from 1.95.0 and controls where remapped paths affect the resulting binary.
+Since 1.93.0, Emscripten `panic=unwind` uses the Wasm exception ABI rather than the JavaScript exception ABI. Mixed Rust/C/C++ links need `-fwasm-exceptions`.
 
-### Custom JSON targets
+### Point-release repair
 
-Stable rustc no longer accepts custom JSON target specifications from 1.95.0. Direct nightly invocation requires `-Z unstable-options`; Cargo provides `-Z json-target-spec` to pass the compiler option. Workflows that also build `core` for a custom target already require nightly facilities.
+Rust 1.91.1 fixed possible mislinking when different crates imported the same Wasm symbol name from different modules; 1.91.0 could fail linking or exhibit undefined behavior.
 
-## Linux GNU linking and symbols
+## Linkers and native libraries
 
-### LLD default
+### Linux LLD default
 
-`x86_64-unknown-linux-gnu` uses LLD by default from 1.90.0. Opt out only when a confirmed incompatibility requires the prior linker path:
+`x86_64-unknown-linux-gnu` uses LLD by default since 1.90.0. For a verified incompatibility, opt out explicitly:
 
 ```toml
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-Clinker-features=-lld"]
 ```
 
-### Unwind tables for aborting builds
+### Apple native lookup
 
-Linux `-C panic=abort` builds retain unwind tables by default from 1.92.0 so backtraces work. Use `-C force-unwind-tables=no` for an explicit size-oriented opt-out.
+Since 1.91.0, rustc linking through `cc` always supplies the Apple SDK root and exports `SDKROOT`. `/usr/local/lib` may no longer be searched implicitly; an affected build script should emit `cargo::rustc-link-search=/usr/local/lib`.
 
-### v0 symbol mangling
+### Windows native libraries
 
-Stable rustc emits Rust-specific v0-mangled symbols by default from 1.97.0 without `-Csymbol-mangling-version=v0`. Older debuggers and profilers may not demangle them, and backtrace spelling can change. Selecting the legacy scheme requires nightly and is planned for removal.
+Except on Windows 7 targets, the standard library stopped linking `advapi32` transitively in 1.87.0. Native code needing it must link it explicitly.
 
-## WebAssembly
+## External LLVM and compiler builds
 
-### WASI and bare targets
+- Rust 1.88.0 requires LLVM 19 or newer for an external-LLVM compiler build.
+- Rust 1.92.0 raises that minimum to LLVM 20.
+- Rust 1.96.0 raises it to LLVM 21.
+- Rust 1.88.0 also rejects a vector type in a non-Rust ABI unless the required target feature is enabled.
+- Rust 1.97.1 backports an LLVM fix and disables a 1.97.0 IR change that increased exposure to an optimization miscompilation present since at least 1.87. Affected users on 1.87–1.97.0 should upgrade to 1.97.1.
 
-- `wasm32-wasi` was removed in 1.84.0; use `wasm32-wasip1`.
-- `wasm32v1-none` became Tier 2 in 1.84.0.
-- WebAssembly `multivalue`, `reference-types`, and `tail-call` target features are stable from 1.84.0.
+## Platform baselines and target tiers
 
-### C ABI compatibility
+### Changes in 1.85.0
 
-On `wasm32-unknown-unknown`, C-ABI functions use a standards-compliant convention from 1.89.0. This is an ABI break: do not assume callers and callees compiled under the old and new conventions interoperate.
+- `powerpc64le-unknown-linux-musl` is Tier 2 with host tools.
+- `sparcv9-sun-solaris` and `x86_64-pc-solaris` require Solaris 11.4.
+- `powerpc64-ibm-aix` defaults to the large code model.
 
-The earlier `wasm_c_abi` future-compatibility warning became a hard error in 1.86.0. `wasm-bindgen` must be version 0.2.89 or newer.
+### Changes in 1.86.0
 
-### Explicit undefined imports
+- `i686-unknown-redox` is replaced by `i586-unknown-redox`.
+- `i686-unknown-hurd-gnu` assumes Pentium 4.
+- `i586-pc-windows-msvc` warns before removal in favor of `i686-pc-windows-msvc`.
+- Disabling SSE2 on i686 32-bit x86 hard-float targets warns ahead of becoming an error; pre-SSE2 hardware should use an i586 target.
+- New Tier 3 targets cover QNX 7.1 io-socket and QNX 8 (`aarch64-unknown-nto-qnx710_iosock`, `x86_64-pc-nto-qnx710_iosock`, `aarch64-unknown-nto-qnx800`, `x86_64-pc-nto-qnx800`), with QNX 8 limited to `no_std`.
+- Other new Tier 3 targets: `x86_64-win7-windows-gnu`, `i686-win7-windows-gnu`, `amdgcn-amd-amdhsa`, `x86_64-pc-cygwin`, `mips-mti-none-elf`, `mipsel-mti-none-elf`, `m68k-unknown-none-elf`, `armv7a-nuttx-eabi`, `armv7a-nuttx-eabihf`, `aarch64-unknown-nuttx`, `thumbv7a-nuttx-eabi`, and `thumbv7a-nuttx-eabihf`.
 
-Rust no longer passes `--allow-undefined` for WebAssembly links from 1.96.0, so unresolved symbols fail instead of implicitly becoming `env` imports. Declare an intentional import with `#[link(wasm_import_module = "env")]`. The old broad behavior can be restored explicitly with `RUSTFLAGS=-Clink-arg=--allow-undefined`.
+### Changes in 1.88.0 and 1.89.0
 
-### Import-module regression
+- `i686-pc-windows-gnu` is Tier 2 as of 1.88.0.
+- Rust 1.89.0 is expected to be the last Tier 1 release for `x86_64-apple-darwin`; Tier 2 with host tools retains distributed compiler/library builds but not the guarantee that automated tests pass.
+- `loongarch32-unknown-none` and `loongarch32-unknown-none-softfloat` are Tier 3 in 1.89.0.
 
-Rust 1.91.0 could report `import module mismatch` or call the wrong function when different crates imported the same Wasm symbol name from different `#[link(wasm_import_module)]` modules. Upgrade to 1.91.1 or later.
+### Changes in 1.90.0 through 1.92.0
 
-### Emscripten exceptions
+- `mips64-unknown-linux-muslabi64`, `powerpc64-unknown-linux-musl`, `powerpc-unknown-linux-musl`, `powerpc-unknown-linux-muslspe`, `riscv32gc-unknown-linux-musl`, `s390x-unknown-linux-musl`, and `thumbv7neon-unknown-linux-musleabihf` link dynamically by default from 1.90.0.
+- In 1.91.0, use Apple `target_env = "macabi"` and `target_env = "sim"` rather than equivalent `target_abi` values.
+- `aarch64-pc-windows-msvc` is Tier 1 from 1.91.0. AArch64/x86-64 Windows GNU and LLVM targets are Tier 2 with host tools but without `llvm-tools` or MSI installers.
+- `File::lock` support on illumos, regressed in 1.91.0, is restored by 1.91.1.
+- `mips64el-unknown-linux-muslabi64` links dynamically by default from 1.92.0.
 
-Emscripten `panic=unwind` uses the Wasm exception-handling ABI from 1.93.0 instead of the JavaScript exception convention. Compile linked C or C++ objects with `-fwasm-exceptions` so unwinding matches.
+### Changes in 1.93.0 and later
 
-### WASI component regression
+- All `*-linux-musl` targets ship musl 1.2.5 from 1.93.0, including the newer resolver. Removed legacy symbols require `libc` 0.2.146 or newer.
+- Rust 1.94.0 recognizes 29 more RISC-V target features covering much of RVA22U64/RVA23U64 and adds Tier 3 `riscv64im-unknown-none-elf`.
+- `powerpc64-unknown-linux-musl` is Tier 2 with host tools in 1.95.0. AArch64 Apple tvOS, watchOS, and visionOS device/simulator targets are also Tier 2.
+- `riscv64gc-unknown-fuchsia` requires an RVA22 vector-capable baseline from 1.96.0.
+- `nvptx64-nvidia-cuda` dropped older GPU architectures and instruction-set versions in 1.97.0; audit legacy CUDA targets.
 
-Rust 1.93.1 fixes file-descriptor leaks in the distributed `wasm32-wasip2` component. Independently built toolchains must verify their own Wasm dependencies.
+## CPU features and debug information
 
-## Musl targets
+- `-C dwarf-version` is stable since 1.88.0.
+- Since 1.89.0, stable x86 supports AVX-512 plus `sha512`, `sm3`, `sm4`, `kl`, and `widekl`; LoongArch supports `f`, `d`, `frecipe`, `lasx`, `lbt`, `lsx`, and `lvz`.
+- Since 1.94.0, AVX-512 FP16 intrinsics on x86 and NEON FP16 intrinsics on AArch64 are stable except where an operation directly requires unstable `f16`.
+- Since 1.97.0, `cfg(target_has_atomic_primitive_alignment)` and target features `div32`, `lam-bh`, `lamcas`, `ld-seq-sa`, and `scq` are stable.
 
-### Dynamic-link defaults
+## Platform modules
 
-The following targets link dynamically by default from 1.90.0:
-
-- `mips64-unknown-linux-muslabi64`
-- `powerpc64-unknown-linux-musl`
-- `powerpc-unknown-linux-musl`
-- `powerpc-unknown-linux-muslspe`
-- `riscv32gc-unknown-linux-musl`
-- `s390x-unknown-linux-musl`
-- `thumbv7neon-unknown-linux-musleabihf`
-
-`mips64el-unknown-linux-muslabi64` follows with a dynamic-link default in 1.92.0.
-
-### Bundled musl release
-
-All `*-linux-musl` targets bundle musl 1.2.5 from 1.93.0. Static x86_64, AArch64, and little-endian PowerPC64 builds move from 1.2.3 and gain the newer DNS resolver. Legacy compatibility symbols were removed; affected projects need `libc` 0.2.146 or newer.
-
-### Support tiers
-
-- `powerpc64le-unknown-linux-musl` is Tier 2 with host tools from 1.85.0.
-- `powerpc64-unknown-linux-musl` becomes Tier 2 with host tools in 1.95.0.
-
-## Windows and 32-bit x86
-
-### Target tiers and replacements
-
-- `i586-pc-windows-msvc` warned ahead of its 1.87 removal in favor of `i686-pc-windows-msvc` (1.86.0).
-- Disabling SSE2 on i686 32-bit x86 hard-float targets warned in 1.86.0 ahead of an error; use an i586 target for pre-SSE2 hardware.
-- `i686-pc-windows-gnu` moved from Tier 1 to Tier 2 in 1.88.0. Rustup still distributes its compiler and standard-library artifacts, but the target receives less testing.
-- `aarch64-pc-windows-msvc` is Tier 1 from 1.91.0.
-- `aarch64-pc-windows-gnullvm` and `x86_64-pc-windows-gnullvm` are Tier 2 with host tools from 1.91.0, but lack LLVM tools and MSI installers.
-
-### Calling convention and native libraries
-
-- i686 targets pass SIMD arguments with SSE2 from 1.87.0, changing low-level calls.
-- Except on Windows 7 targets, the standard library stopped linking `advapi32` in 1.87.0. Native libraries relying on that transitive dependency must link it directly.
-
-### Windows 7 GNU targets
-
-`x86_64-win7-windows-gnu` and `i686-win7-windows-gnu` were added as Tier 3 targets in 1.86.0.
-
-## Apple targets and linking
-
-### Support and frame pointers
-
-- Rust 1.89.0 is the last release with `x86_64-apple-darwin` at Tier 1. Its planned Tier 2-with-host-tools status retains distributed compiler and standard-library artifacts without guaranteeing the full automated suite passes.
-- Apple frame-pointer defaults became architecture-specific in 1.89.0.
-- `aarch64-apple-{tvos,tvos-sim,watchos,watchos-sim,visionos,visionos-sim}` targets are Tier 2 from 1.95.0.
-
-### SDK search behavior
-
-When linking through `cc`, rustc always supplies the Apple SDK root and sets `SDKROOT` from 1.91.0. `/usr/local/lib` may therefore no longer be searched implicitly. An affected build script should emit:
-
-```text
-cargo::rustc-link-search=/usr/local/lib
-```
-
-## Other target baselines and tiers
-
-### Solaris, AIX, Redox, and Hurd
-
-- The Solaris baseline for `sparcv9-sun-solaris` and `x86_64-pc-solaris` is 11.4 from 1.85.0.
-- `powerpc64-ibm-aix` uses large code addressing by default from 1.85.0.
-- `i686-unknown-redox` was replaced by `i586-unknown-redox` in 1.86.0.
-- `i686-unknown-hurd-gnu` assumes a Pentium 4 CPU from 1.86.0.
-
-### QNX, bare-metal, and NuttX Tier 3 additions
-
-Rust 1.86.0 adds:
-
-- QNX 7.1 io-socket: `{aarch64-unknown,x86_64-pc}-nto-qnx710_iosock`
-- QNX 8: `{aarch64-unknown,x86_64-pc}-nto-qnx800`, limited to `no_std`
-- GPU and Unix-like: `amdgcn-amd-amdhsa`, `x86_64-pc-cygwin`
-- Bare metal: `{mips,mipsel}-mti-none-elf`, `m68k-unknown-none-elf`
-- NuttX: `armv7a-nuttx-{eabi,eabihf}`, `aarch64-unknown-nuttx`, `thumbv7a-nuttx-{eabi,eabihf}`
-
-### LoongArch, RISC-V, and s390x
-
-- LoongArch gains stable `f`, `d`, `frecipe`, `lasx`, `lbt`, `lsx`, and `lvz` features in 1.89.0. `loongarch32-unknown-none` and `loongarch32-unknown-none-softfloat` are new Tier 3 targets in that release.
-- LoongArch32 inline assembly is stable from 1.91.0.
-- `riscv64a23-unknown-linux-gnu` is Tier 2 without host tools from 1.93.0.
-- Several s390x vector features and `is_s390x_feature_detected!` are stable from 1.93.0.
-- Twenty-nine more RISC-V features, including much of RVA22U64 and RVA23U64, are stable from 1.94.0; `riscv64im-unknown-none-elf` is a new Tier 3 target.
-- `riscv64gc-unknown-fuchsia` requires RVA22 plus vector support from 1.96.0.
-
-### AArch64, Arm64EC, and soft float
-
-- AArch64 Linux and Arm64EC Windows retain non-leaf frame pointers by default from 1.89.0.
-- Enabling `neon` on `aarch64-unknown-none-softfloat` warns from 1.89.0 because mixing code with and without it is not properly supported.
-- AArch64 soft-float JSON targets must set `rustc_abi` to `"softfloat"` from 1.96.0; `-Csoft-float` was removed.
-
-## Architecture feature stabilization
-
-### x86
-
-- AVX-512 target features and intrinsics plus `kl`, `widekl`, `sha512`, `sm3`, and `sm4` are stable from 1.89.0.
-- `sse4a` and `tbm` are stable from 1.91.0.
-- x86 AVX-512 FP16 intrinsics are stable from 1.94.0 except those directly requiring the still-unstable `f16` type.
-
-### AArch64 half precision
-
-AArch64 NEON FP16 intrinsics are stable from 1.94.0 except intrinsics directly requiring the unstable `f16` type.
-
-### Primitive-alignment cfg and newer features
-
-`cfg(target_has_atomic_primitive_alignment)` and the `div32`, `lam-bh`, `lamcas`, `ld-seq-sa`, and `scq` target features are stable from 1.97.0. NVPTX no longer supports older architectures and instruction-set versions in that release; review the selected GPU baseline during an upgrade.
-
-## PowerPC ABI
-
-PowerPC64 code generation uses the ELF ABI version specified by the target from 1.95.0 instead of guessing, correcting OpenBSD output.
-
-## External LLVM requirements
-
-Building rustc against an external LLVM requires:
-
-- LLVM 19 or newer for Rust 1.88.0;
-- LLVM 20 or newer for Rust 1.92.0;
-- LLVM 21 or newer for Rust 1.96.0.
-
-Match the LLVM floor to the compiler release being built.
-
-## Target cfg spelling
-
-Use `target_env = "macabi"` and `target_env = "sim"` instead of corresponding `target_abi` predicates from 1.91.0.
+`std::os::darwin` is public since 1.84.0 and provides shared Darwin-family platform interfaces.

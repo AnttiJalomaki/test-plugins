@@ -7,244 +7,206 @@ metadata:
   author: Nevaberry
 ---
 
+# Anthropic API Compatibility Guidance
 
-# Anthropic API Knowledge Patch
-
-Use this skill for Anthropic Messages integrations, current model IDs, Claude 5
-migrations, streamed tools, structured output, prompt caching, model
-retirements, and Managed Agents.
-
-Treat model, platform, and beta boundaries as explicit contracts. Prefer
-capability discovery and response metadata over cross-target assumptions.
+Use this skill when building or migrating integrations for the Messages API,
+hosted platform variants, Managed Agents, structured outputs, tools, streaming,
+prompt caching, model selection, or rate-limit handling. Treat the project's
+actual SDK types, API responses, and model metadata as authoritative when they
+differ from this rolling guidance.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [Models and migrations](references/models-and-migrations.md) | IDs, thinking, access, fallback, token budgets, tool migration, image accounting |
-| [Tools, betas, and streaming](references/tools-and-streaming.md) | Eager tool input, beta headers, event aggregation, fallback blocks, stream recovery |
-| [Structured outputs](references/structured-outputs.md) | JSON schemas, SDK parsing, strict tools, complexity and compliance edges |
-| [Prompt caching and rate limits](references/caching-and-rate-limits.md) | Breakpoints, TTLs, invalidation, pre-warming, throttles, pools, spend caps |
-| [Platforms and lifecycle](references/platforms-and-lifecycle.md) | Retirements, context limits, WIF, AWS surfaces, tunnels, key expiry |
-| [Managed Agents](references/managed-agents.md) | Sessions, overrides, streams, memory, vaults, schedules, webhooks |
+| --- | --- |
+| [Models and migrations](references/models-and-migrations.md) | Model IDs, thinking, sampling, context, token budgets, migration contracts, refusals, images |
+| [Platforms and lifecycle](references/platforms-and-lifecycle.md) | Retirement, model discovery, AWS surfaces, identity, compliance, enterprise administration |
+| [Structured outputs](references/structured-outputs.md) | JSON schemas, parse helpers, strict tools, schema limits, parsing safeguards |
+| [Tools and streaming](references/tools-and-streaming.md) | Eager input, stream aggregation and recovery, beta headers, hosted tools, MCP tunnels |
+| [Caching and rate limits](references/caching-and-rate-limits.md) | Cache breakpoints, TTLs, invalidation, pre-warming, token buckets, spend and workspace limits |
+| [Managed Agents](references/managed-agents.md) | Agents, sessions, event streams, memory, secrets, schedules, budgets, advisors, repository skills |
 
-## Breaking-change triage
+## Migration triage
 
-Before changing a production integration, check these high-impact boundaries:
+Before changing a production target:
 
-- Claude 5 rejects manual thinking budgets, assistant-message prefills, and
-  non-default sampling parameters.
-- Opus 4.7 and later and Mythos Preview reject non-default `temperature`,
-  `top_p`, and `top_k`, even though SDK types may still expose them.
-- Raw message requests use `output_config.format`, not deprecated top-level
-  `output_format`; the Python parse helper remains an exception.
-- Claude 4.6 and later cannot resume interrupted text through assistant
-  prefilling. Send the captured text in a new user message.
-- Context exhaustion on Claude 4.5 and later is
-  `model_context_window_exceeded`, distinct from `max_tokens`.
-- `speed: "fast"` errors on Opus 4.7 and is silently ignored by Opus 4.6.
-- The old 1M-context beta does not expand Sonnet 4 or 4.5; oversized requests
-  fail.
-- Memory API calls must replace the core Managed Agents beta with the current
-  memory beta; sending both is an error.
-- Legacy Workbench and its experimental prompt endpoints have a scheduled
-  shutdown. Export prompts, variables, and evals first.
+1. Resolve the exact model ID and query `/v1/models/{model_id}` for advertised
+   context, output, and capability limits.
+2. Remove assistant prefills and non-default sampling controls for targets that
+   reject them.
+3. Move final structured output from top-level `output_format` to
+   `output_config.format`; keep the Python parse helper's convenience argument
+   only when using that helper.
+4. Recount tokens and retune `max_tokens`, compaction, and cache breakpoints.
+5. Audit tool versions, remove `undo_edit`, and parse every tool input with a
+   real JSON parser.
+6. Treat `model_context_window_exceeded`, `max_tokens`, and `refusal` as
+   separate stop conditions.
+7. Remove retired beta headers and confirm whether the destination surface
+   supports each remaining beta.
 
-## Select and validate a model ID
+## Claude 5 breaking changes
 
-For 4.6 and later, use canonical dateless snapshot IDs:
-
-```text
-claude-sonnet-4-6
-claude-sonnet-5
-```
-
-These IDs are pinned releases, not evergreen aliases. Each receives its own
-deprecation and retirement schedule. A pinned snapshot stabilizes weights and
-configuration, but serving infrastructure can still change.
-
-Hosted IDs differ:
-
-```text
-Claude API / Google Cloud: claude-sonnet-4-6
-Amazon Bedrock:            anthropic.claude-sonnet-4-6
-Bedrock Opus 4.6:          anthropic.claude-opus-4-6-v1
-```
-
-Use `GET /v1/models` or `GET /v1/models/{model_id}` to discover
-`max_input_tokens`, `max_tokens`, and `capabilities`. Audit actual callers with
-the Console's usage export before retiring an ID.
-
-## Migrate generation controls
-
-Claude 5 defaults to adaptive thinking. A typical request uses:
+Claude 5 targets default to adaptive thinking. Manual extended thinking with
+`budget_tokens` is rejected. Fable 5 and Mythos 5 cannot disable thinking;
+Opus 5 can disable it only at `high`, `medium`, or `low` effort, and Sonnet 5
+can disable it at every effort. Request `display: "summarized"` when readable
+thinking is needed.
 
 ```python
 thinking={"type": "adaptive", "display": "summarized"}
 output_config={"effort": "high"}
 ```
 
-Apply target-specific constraints:
+`max_tokens` is still the hard ceiling for thinking and visible output.
+Disabling thinking on Opus 5 can expose tool calls as text or internal XML, so
+do not use it as a routine latency optimization.
 
-- Fable 5 and Mythos 5 cannot disable thinking.
-- Opus 5 can disable it only at `high`, `medium`, or `low`; `xhigh` and `max`
-  return HTTP 400, and disabling can expose tool syntax in visible output.
-- Sonnet 5 can disable thinking at every effort.
-- `max_tokens` is a hard combined ceiling for thinking and visible output.
-- Pass thinking blocks back unchanged only to the model that produced them.
-  Strip `thinking` and `redacted_thinking` when switching models.
+Fable 5, Mythos 5, Opus 5, and Sonnet 5 reject assistant-message prefills and
+non-default `temperature`, `top_p`, and `top_k`. Use system instructions,
+effort, or structured output instead.
 
-Replace formatting prefills with system instructions or structured output.
-Omit non-default sampling parameters and steer with effort. Retokenize real
-prompts because Claude 5 model families do not preserve older token counts.
+Replay thinking blocks unchanged only to the target that produced them. Strip
+both `thinking` and `redacted_thinking` before replaying a conversation to a
+different target.
 
-For Opus 5 agentic loops, task budgets provide an advisory allowance across
-thinking, tools, results, and output. They do not override `max_tokens`:
+## Model identity and lifecycle
 
-```python
-betas=["task-budgets-2026-03-13"]
-output_config={
-    "effort": "high", "task_budget": {"type": "tokens", "total": 128000},
-}
-```
+From the 4.6 generation onward, dateless IDs such as
+`claude-sonnet-4-6` are pinned snapshots, not evergreen aliases. Whole-major
+IDs omit the minor component, as in `claude-sonnet-5`. Each ID has its own
+deprecation and retirement schedule.
 
-See [Models and migrations](references/models-and-migrations.md) before moving
-tools from Claude 3.x, handling refusals, enabling fallback, or changing
-mid-conversation instructions.
+An ID pins weights and configuration, but serving infrastructure, routing,
+safety classifiers, and sampling logic may still change. Do not infer a new
+snapshot solely from a small behavioral change.
 
-## Stream tool input safely
+Lifecycle states have different operational meanings:
 
-Enable unbuffered input per user-defined tool:
+- Legacy targets receive no updates but have no assigned retirement date.
+- Deprecated targets work until their retirement date.
+- Retired targets reject requests.
+- Public releases receive at least 60 days' retirement notice.
 
-```python
-tools=[{
-    "name": "make_file",
-    "eager_input_streaming": True,
-    "input_schema": {"type": "object",
-                     "properties": {"text": {"type": "string"}}},
-}]
-```
+Use Console usage export to find callers by API key and model. Do not hard-code
+limits when `/v1/models` exposes `max_input_tokens`, `max_tokens`, and
+`capabilities`.
 
-Treat streamed JSON as untrusted fragments:
+## Structured output quick reference
 
-1. Start from the `input: {}` placeholder.
-2. Concatenate `input_json_delta.partial_json` by content-block index.
-3. Parse only at `content_block_stop`.
-4. Reject truncated or invalid JSON; never execute it.
-5. Return an error tool result containing the raw input in a JSON-library-
-   serialized `INVALID_JSON` wrapper.
-
-Omitting `eager_input_streaming` preserves buffered, server-validated tool
-input. The legacy fine-grained beta affects only tools where the field is
-unset; explicit `false` remains buffered.
-
-## Constrain outputs and tool arguments
-
-For raw JSON output, set `output_config.format` and decode the returned text
-block:
+The GA raw request shape is `output_config.format` with `type: "json_schema"`
+and a `schema`. The result is JSON text in a text content block; select that
+block and decode it.
 
 ```python
-output_config={"format": {
-    "type": "json_schema",
-    "schema": {"type": "object",
-               "properties": {"answer": {"type": "string"}},
-               "required": ["answer"], "additionalProperties": False},
-}}
+response = client.messages.create(
+    model=model_id,
+    max_tokens=256,
+    messages=[{"role": "user", "content": "Extract the order number."}],
+    output_config={"format": {
+        "type": "json_schema",
+        "schema": schema,
+    }},
+)
+data = json.loads(next(b.text for b in response.content if b.type == "text"))
 ```
 
-Set `strict: true` separately on each tool whose arguments need grammar
-constraints. A final output schema does not constrain tool calls, tool results,
-or thinking.
+The Python `messages.parse` helper is the exception: it accepts
+`output_format=SomePydanticModel` and returns `response.parsed_output`.
 
-Always inspect `stop_reason` before decoding. Refusals can fall outside the
-schema and `max_tokens` can truncate valid JSON. Do not combine citations or
-assistant prefilling with JSON output.
+Set `strict: true` on each tool whose name and arguments must conform to its
+`input_schema`. A final-output grammar does not constrain tool calls, tool
+results, or thinking.
 
-Schema compilation has combined request ceilings and can time out. SDK-derived
-schemas may be simplified before reaching the server, then validated against
-the richer original schema locally. Read
-[Structured outputs](references/structured-outputs.md) before using complex
-unions, many optional fields, or sensitive schema literals.
+Always inspect `stop_reason` before parsing. Refusals and truncation can violate
+the requested schema. Treat `enum` and `const` comparisons case-insensitively
+and avoid values distinguished only by capitalization.
 
-## Consume event streams defensively
+## Streaming safely
 
-Use each SDK's final-message accumulator when streaming only to keep a large
-request alive. Event consumers must also accept:
+Enable eager input per user-defined tool with `eager_input_streaming: true`.
+The old fine-grained streaming beta acts only as a fallback for tools where the
+field is unset; explicit `false` keeps buffered validation.
 
-- a server-side `fallback` block that starts and stops without deltas;
-- an omitted-thinking block that contains only a `signature_delta`; and
-- interruption recovery limited to the most recent partial text block.
+A streamed `tool_use` starts with `input: {}`. Concatenate
+`input_json_delta.partial_json` by content-block index and parse only after
+`content_block_stop`. Eager fragments are unvalidated and can be truncated by
+`max_tokens`; never execute invalid input. Return a failed tool result with the
+raw input encoded by a JSON library under an `INVALID_JSON` wrapper.
 
-Raw HTTP puts multiple beta names in one comma-separated `anthropic-beta`
-header. SDKs use a `betas` list. The `ant` CLI accepts one comma-separated
-`--beta`; repeated flags currently do not compose.
+Use streaming for large output ceilings even when only the final message is
+needed. Prefer the SDK accumulator: `get_final_message()` in Python,
+`finalMessage()` in TypeScript, `Accumulate` in Go, `MessageAccumulator` in
+Java, `Aggregate` or `CollectAsync` in C#, and `accumulated_message` in Ruby.
+PHP needs manual accumulation.
 
-## Design prompt caching deliberately
+At a server-side fallback boundary, accept an empty `fallback` content-block
+lifecycle. When thinking display is omitted, accept a thinking block containing
+only a `signature_delta`.
 
-A request-level `cache_control` creates an automatic breakpoint at the last
-eligible block and consumes one of four slots. It can coexist with explicit
-breakpoints, but conflicting TTLs or an exhausted slot count return HTTP 400.
+## Prompt caching essentials
 
-Use these rules to preserve hits:
+Request-level `cache_control` consumes one of four breakpoint slots. It is a
+no-op when the final target already has an explicit control with the same TTL;
+a different TTL or four existing explicit controls returns HTTP 400. If the
+final block is ineligible, automatic caching searches backward for an eligible
+block.
 
-- Keep replayed tool JSON serialization byte-stable.
-- Put every one-hour breakpoint before all five-minute breakpoints.
-- Keep thinking mode, manual budget, and effort stable.
-- Expect tool-definition changes to invalidate tool, system, and message
-  caches.
-- Wait until the first response begins before issuing parallel requests that
-  depend on its newly written entry.
+Place all one-hour breakpoints before five-minute breakpoints. The TTL-specific
+counts under `usage.cache_creation` add up to
+`cache_creation_input_tokens`.
 
-For pre-warming, use `max_tokens: 0`, an explicit system or tool breakpoint,
-and a non-whitespace user placeholder. Match production thinking and effort.
-Do not combine zero-output warming with streaming, enabled manual thinking,
-structured output, forced tool choice, or Message Batches.
+Cache matching is prefix-sensitive. Tool definitions, thinking settings,
+effort, tool choice, images, citations, web search, speed, and unstable JSON
+serialization can invalidate different cache layers. Consult the caching
+reference before changing any of them.
 
-Cache floors, hosted-platform isolation, usage accounting, and precise
-invalidation rules are in
-[Prompt caching and rate limits](references/caching-and-rate-limits.md).
+For deterministic pre-warming, use `max_tokens: 0`, an explicit breakpoint on
+shared tools or system content, and a non-whitespace user placeholder. Keep
+thinking and effort identical to production traffic.
 
-## Handle throttling and capacity
+## Rate-limit handling
 
-Messages enforces RPM, ITPM, and OTPM independently with continuously refilled
-buckets. Ramp traffic to avoid acceleration limits and honor `retry-after` on
-HTTP 429. Do not treat requested `max_tokens` as reserved OTPM capacity.
+The Messages API independently enforces RPM, input-token, and output-token
+token buckets, possibly over sub-minute intervals. Ramp traffic gradually;
+honor `retry-after` after both ordinary and acceleration-limit 429 responses.
 
-Capacity pools are not uniformly per model: some Opus 4.x and Sonnet 4.x
-releases share family pools, fast mode has a dedicated pool, Message Batches
-have a separate queue, and Managed Agents have their own organization-level
-limits. Workspace caps can be lower than organization limits.
+For most targets, ITPM equals `input_tokens + cache_creation_input_tokens` and
+excludes cache reads; Haiku 3.5 also charges cache reads. OTPM is charged as
+tokens are generated, not reserved from the requested output ceiling.
 
-Use the detailed accounting formulas and response-header meanings in
-[Prompt caching and rate limits](references/caching-and-rate-limits.md) before
-sizing concurrency or retry policy.
+Rate-limit pools can be shared across related 4.x targets, separate for newer
+targets, or dedicated to supported fast mode. Workspace safeguards can lower
+limits without partitioning unused capacity, and the organization-wide ceiling
+still applies.
 
-## Respect platform boundaries
+## Managed Agents safety checks
 
-Claude Platform on AWS and Amazon Bedrock are separate surfaces with different
-infrastructure and feature support. Automatic prompt caching, server-side
-fallback, and some API products are not portable across every hosted platform.
+Use optimistic concurrency by sending an agent `version` on updates; a mismatch
+returns 409. Omitting it performs an unconditional update.
 
-Prefer Workload Identity Federation and short-lived credentials where
-available. When moving tunnel management, use the Claude API route, required
-beta, and WIF scope together. Track API-key expiration and pre-expiration
-notifications operationally.
+Treat session budgets as hard controls: reaching one pauses the session with
+`stop_reason: "budget_reached"`; changing or removing it resumes work.
+Deployment budgets apply independently to every launched session.
 
-Consult [Platforms and lifecycle](references/platforms-and-lifecycle.md) for
-retirement dates, context and output cutovers, AWS surface details, inference
-location, tunnel migration, and Enterprise user-management requirements.
+Memory list calls under `agent-memory-2026-07-22` must replace the older beta
+header, not accompany it. Old cursors are incompatible, `depth` is 0, 1, or
+omitted, and `path_prefix` must end in `/` and match complete path segments.
 
-## Build Managed Agents safely
+Tool output beyond 100,000 characters spills into a sandbox file. Follow the
+returned path rather than assuming the truncated preview is complete.
 
-The core Managed Agents beta covers API-managed agents, containers, tools,
-sessions, and streams. Use session-scoped overrides when a model, prompt, tool,
-MCP server, or skill should change without mutating the stored agent.
+Keep secrets in vaults and inject them at egress. For federated API access,
+prefer SDK-managed exchange and refresh of short-lived credentials over static
+keys.
 
-Place effort inside the agent model configuration. Include `version` on updates
-when optimistic concurrency matters; a mismatch returns HTTP 409.
+## Verification checklist
 
-Memory endpoints have a separate beta-header cutover and stricter listing
-semantics. Vault injection happens at egress, tool outputs above 100,000
-characters spill to a sandbox file, and webhook thread events include their
-session-thread identifier. Read [Managed Agents](references/managed-agents.md)
-before implementing these surfaces.
+- Query the exact target's capabilities instead of inferring them by family.
+- Verify hosted-platform ID syntax and feature availability independently.
+- Exercise streaming consumers against empty fallback and signature-only blocks.
+- Parse structured output only after checking the terminal stop reason.
+- Log workspace ID and every rate-limit header needed for incident diagnosis.
+- Test cache-hit behavior after any tool, thinking, media, or serialization change.
+- Audit all beta headers during upgrades; some must be removed, not accumulated.
+- Export legacy Workbench data before shutdown deadlines.

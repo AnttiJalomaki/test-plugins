@@ -1,70 +1,144 @@
 # Testing and Assertions
 
-The built-in test runner, assertions, mocks, snapshots, discovery, coverage, and reporters.
+Use this reference for testing and assertions work.
 
-## Contents
+## Changed TypeScript test discovery (`23.10.0`)
 
-- [Assertions and equality](#assertions-and-equality)
-- [Mocks and snapshots](#mocks-and-snapshots)
-- [Coverage and reporters](#coverage-and-reporters)
-- [Discovery and configuration](#discovery-and-configuration)
-- [Execution and lifecycle](#execution-and-lifecycle)
+The test runner changes its default TypeScript glob in this release. Projects relying on implicit TypeScript test discovery should verify the files selected after upgrading.
 
-## Assertions and equality
+## Coverage for unexecuted files (`26.7.0`)
 
-### Custom test assertions (since 23.7.0)
+`--test-coverage-include-all` lets test coverage include eligible source files even when the tests never load them, making completely untested files visible in coverage results.
 
-`t.assert.register(name, fn)` adds a reusable assertion to that test context; after `t.assert.register('isEven', value => strictEqual(value % 2, 0))`, call it as `t.assert.isEven(4)`.
+```sh
+node --test --experimental-test-coverage --test-coverage-include-all
+```
 
-### Deep-comparison semantics for promises and invalid dates (since 25.0.0)
+## Custom test assertions (`23.7.0`)
 
-Deep equality now treats distinct `Promise` instances as unequal even when neither exposes enumerable state, while two invalid `Date` objects compare equal.
+`t.assert.register()` adds a named assertion to the test context's assertion object.
+
+```js
+t.assert.register('isEven', value => assert.equal(value % 2, 0));
+t.assert.isEven(4);
+```
+
+## Deep comparisons of promises and invalid dates (`25.0.0`)
+
+Deep equality now compares promises by identity, so two distinct promises fail comparison even if they settle identically. Two invalid `Date` objects now compare equal; both changes affect assertions and `util.isDeepStrictEqual()`.
 
 ```js
 import assert from 'node:assert/strict';
 
-const promise = Promise.resolve(1);
-assert.deepStrictEqual(promise, promise);
-assert.notDeepStrictEqual(Promise.resolve(1), Promise.resolve(1));
-assert.deepStrictEqual(new Date(NaN), new Date(NaN));
+assert.deepStrictEqual(Promise.resolve(1), Promise.resolve(1)); // throws
+assert.deepStrictEqual(new Date(NaN), new Date(NaN)); // passes
 ```
 
-### File-backed snapshot assertions (since 23.7.0)
+## Expected-failure tests (`25.5.0`)
 
-`t.assert.fileSnapshot()` compares a value with a snapshot stored in a separate file and participates in snapshot updates, for example `await t.assert.fileSnapshot(render(), './fixtures/render.txt')`.
+The test runner can mark a test case as expected to fail, so negative tests can distinguish an anticipated failure from an unexpected regression.
 
-### Invalid Date properties in deep comparisons (since 25.4.0)
+## Failed-test reruns (`24.7.0`)
 
-`assert.deepStrictEqual()` and `util.isDeepStrictEqual()` no longer skip custom properties when comparing invalid `Date` objects. Invalid dates still compare as dates, but differing own properties now make the deep comparison fail.
+The test runner can persist failure state and rerun only tests that failed in the preceding run.
 
-### Partial assertions for maps and array buffers (since 23.5.0)
+```sh
+node --test --test-rerun-failures=.test-failures
+```
 
-`assert.partialDeepStrictEqual()` now performs partial comparisons for `Map` values and supports `ArrayBuffer` values, correcting gaps in the API introduced in 23.4.0.
+## Failed-test reruns preserve failures (`24.18.0`)
 
-### Partial assertions for URLs and files (since 23.7.0)
+`--test-rerun-failures` no longer swallows failures encountered during a retry, so unsuccessful reruns remain visible in the test result and process status.
 
-`assert.partialDeepStrictEqual()` now handles URL values and `File` prototypes, filling another comparison gap in the experimental partial assertion API.
+## File-backed test snapshots (`23.7.0`)
 
-### Partial comparisons of errors (since 23.11.0)
-
-`assert.partialDeepStrictEqual()` now performs partial comparison for `Error` objects, extending the API's earlier partial-value support to error-specific data.
-
-### Partial deep strict assertions (since 23.4.0)
-
-The experimental `assert.partialDeepStrictEqual(actual, expected)` recursively requires only the values in `expected`; `actual` may contain extra object properties or collection elements.
+Snapshot testing is stable, and `t.assert.fileSnapshot()` compares a value with snapshot content stored in a separate file.
 
 ```js
-import * as assert from 'node:assert';
-
-assert.partialDeepStrictEqual(
-  { user: { id: 7, role: 'admin' }, active: true },
-  { user: { id: 7 } },
-);
+t.assert.fileSnapshot(rendered, './fixtures/rendered.txt');
 ```
 
-### Printf-style assertion messages (since 26.0.0)
+## Global test setup and per-test timeouts (`24.0.0`)
 
-`node:assert` assertion errors can now interpolate printf-style message arguments instead of treating the supplied format as only literal text.
+The test runner adds global setup and teardown, supports mocking JSON modules, and applies `--test-timeout` to each test rather than the whole run.
+
+```sh
+node --test --test-global-setup=./test/setup.mjs --test-timeout=5000
+```
+
+## Invalid dates retain own-property semantics (`25.4.0`)
+
+Deep comparisons still treat two invalid `Date` values as equal, but no longer skip their own properties. Invalid dates with different attached state now compare unequal.
+
+```js
+import assert from 'node:assert/strict';
+
+const left = Object.assign(new Date(NaN), { zone: 'UTC' });
+const right = Object.assign(new Date(NaN), { zone: 'local' });
+assert.deepStrictEqual(left, right); // throws
+```
+
+## Mock timers are stable (`23.1.0`)
+
+The `node:test` `MockTimers` API is now stable and can mock `Date` plus the major timers from globals, `node:timers`, and `node:timers/promises`. Mock timers also support `scheduler.wait()`.
+
+```js
+import { mock } from 'node:test';
+
+mock.timers.enable({
+  apis: ['Date'],
+  now: new Date('1970-01-01'),
+});
+```
+
+## Object property mocking (`24.3.0`)
+
+The test runner can temporarily replace an object's property with `t.mock.property()` and restore it during mock cleanup.
+
+```js
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+test('uses a mocked property', (t) => {
+  const config = { mode: 'production' };
+  t.mock.property(config, 'mode', 'test');
+  assert.equal(config.mode, 'test');
+});
+```
+
+## Partial deep comparisons distinguish signed zero (`23.6.0`)
+
+`assert.partialDeepStrictEqual()` now rejects a comparison between `[0]` and `[-0]`.
+
+```js
+import assert from 'node:assert/strict';
+
+assert.partialDeepStrictEqual([0], [-0]); // throws
+```
+
+## Partial deep comparisons for Maps and ArrayBuffers (`23.5.0`)
+
+`assert.partialDeepStrictEqual()` now performs partial comparison for `Map` values and supports `ArrayBuffer` values.
+
+## Per-run test environments (`24.14.0`)
+
+The programmatic `run()` function from `node:test` now accepts an `env` option for the test environment.
+
+```js
+import { run } from 'node:test';
+
+run({
+  env: { ...process.env, FEATURE_FLAG: 'enabled' },
+});
+```
+
+## Permission and test JSON configuration (`25.4.0`)
+
+JSON configuration files now support Permission Model and test-runner settings. The test namespace is `test`, not `testRunner`, and declaring a namespace implicitly enables its corresponding mode.
+
+## Printf-style assertion messages (`26.0.0`)
+
+Assertion errors can interpolate additional arguments into printf-style message placeholders.
 
 ```js
 import assert from 'node:assert/strict';
@@ -72,202 +146,114 @@ import assert from 'node:assert/strict';
 assert.strictEqual(1, 2, 'expected %s, received %s', 2, 1);
 ```
 
-### Programmatic value diffs (since 23.11.0)
+## Programmatic test-run controls (`23.0.0`)
 
-`node:util` now exposes the assertion formatter as `diff(actual, expected)`, allowing code to produce the same style of human-readable value diff without first causing an assertion failure.
+`node:test`'s `run()` API now supports custom arguments, coverage, and a `cwd` option, and its stream emits a `test:summary` event. Coverage-file selection supports glob matching.
 
-### Prototype-optional deep equality (since 24.9.0)
+## Prototype-independent deep equality (`24.9.0`)
 
-`util.isDeepStrictEqual()` accepts a third `skipPrototype` boolean; passing `true` compares structure without requiring matching constructors or prototypes.
-
-### Removed `process.assert()` (since 23.0.0)
-
-The long-deprecated `process.assert()` API has been removed. Use `assert.ok(value)` from `node:assert` instead.
-
-### Removed assertion APIs (since 25.0.0)
-
-The legacy multi-argument `assert.fail(actual, expected, message, operator)` signature and `assert.CallTracker` have been removed. Use the single-message `assert.fail()` form and test-runner mocks or explicit call counting.
-
-### Signed zero in partial strict assertions (since 23.6.0)
-
-`assert.partialDeepStrictEqual()` now distinguishes array elements containing `0` and `-0`; comparing `[0]` with `[-0]` throws.
-
-### Stable partial strict assertions (since 24.0.0)
-
-`assert.partialDeepStrictEqual()` is now stable after its comparison support was filled out across the Node.js 23 releases.
-
-### Weak collections in deep comparisons (since 23.0.0)
-
-`assert.deepStrictEqual()` and `util.isDeepStrictEqual()` no longer treat two distinct `WeakMap` or `WeakSet` instances as equal merely because their entries cannot be enumerated. The same instance still compares equal to itself.
-
-
-## Mocks and snapshots
-
-### Consolidated module-mock exports (since 25.9.0)
-
-`MockModuleOptions.defaultExport` and `namedExports` are replaced by one `exports` option. Its own enumerable `default` property supplies the default export, while its other own enumerable properties become named exports.
+`util.isDeepStrictEqual()` accepts a third `skipPrototype` boolean. Passing `true` compares object structure without requiring the same constructors or prototypes.
 
 ```js
-t.mock.module('./dependency.mjs', {
-  exports: { default: defaultMock, named: namedMock },
+import { isDeepStrictEqual } from 'node:util';
+
+class Point { constructor(x) { this.x = x; } }
+class Coordinate { constructor(x) { this.x = x; } }
+isDeepStrictEqual(new Point(1), new Coordinate(1), true); // true
+```
+
+## Public assertion-style diffs (`23.11.0`)
+
+`util.diff()` exposes the value-diff formatter used by assertion errors, allowing custom checks and test tools to produce the same kind of diagnostics.
+
+```js
+import { diff } from 'node:util';
+
+console.log(diff({ answer: 41 }, { answer: 42 }));
+```
+
+## Richer test reporting and TypeScript coverage (`24.19.0`)
+
+Test events carrying a `testId` now also carry `parentId`, and JUnit `testsuites` output includes a timestamp. Coverage also ignores TypeScript lines erased during type stripping, avoiding uncovered-line results for code that never reaches JavaScript.
+
+## Source-mapped test coverage (`23.1.0`)
+
+Source-map coverage in the test runner now requires launching Node with `--enable-source-maps`.
+
+## Test completion promises are restored (`24.3.0`)
+
+Node.js 24.3 reverses the 24.0 change: `test()` and `t.test()` return completion promises again, and automatic subtest waiting is reverted. Await subtests when their completion must be sequenced.
+
+```js
+test('parent', async (t) => {
+  await t.test('child', () => {});
 });
 ```
 
-Existing tests can be migrated with `npx codemod @nodejs/mock-module-exports`.
+## Test coverage excludes tests by default (`23.5.0`)
 
-### JSON module mocks (since 24.0.0)
+The test runner now excludes test files from coverage results by default.
 
-The test runner's module-mocking support can now target JSON modules, including their default export, rather than being limited to JavaScript and TypeScript modules.
+## Test discovery and reporters (`23.0.0`)
 
-### Object-property mocks (since 24.3.0)
+The test runner always defaults to the `spec` reporter, and the `lcov` reporter is exposed as a constructible function. Default test discovery now includes TypeScript files, and module mocking supports TypeScript modules.
 
-`MockTracker.property()` can temporarily replace an object's property and restore it with the other tracked mocks; in a test, use `t.mock.property(config, 'mode', 'test')`.
+## Test functions no longer return completion promises (`24.0.0`)
 
-### Special characters in snapshot keys (since 23.9.0)
+In Node.js 24.0, `test()` and `t.test()` no longer return promises; the runner automatically waits for subtests. Code must not use those return values to detect completion.
 
-The test runner now accepts special characters in snapshot keys.
+## Test isolation is stable (`23.6.0`)
 
-### Stable mock timers (since 23.1.0)
+The test runner's isolation support and its CLI surface are now stable rather than experimental.
 
-The `node:test` `MockTimers` API is now stable for mocking `Date`, `setTimeout`, `setInterval`, and `setImmediate` across globals, `node:timers`, and `node:timers/promises`; it also supports `scheduler.wait()`. For example: `mock.timers.enable({ apis: ['Date'], now: new Date('1970-01-01') })`.
+## Test logging and entry-file metadata (`26.7.0`)
 
-### Stable test plans and snapshots (since 23.4.0)
-
-The test runner's snapshot testing and `context.plan()` API are now stable rather than experimental.
-
-
-## Coverage and reporters
-
-### Coverage file globs (since 23.0.0)
-
-Test coverage include and exclude options now accept glob patterns, allowing coverage scope to be selected directly from the CLI.
-
-```console
-node --test --experimental-test-coverage \
-  --test-coverage-include='src/**/*.js' \
-  --test-coverage-exclude='src/**/fixtures/**'
-```
-
-### JUnit test locations (since 25.0.0)
-
-The test runner's JUnit reporter now includes file attributes for test cases, allowing CI consumers to associate reported failures with their source files.
-
-### Source-mapped test coverage (since 23.1.0)
-
-Test-runner coverage now requires `--enable-source-maps` when coverage should be mapped through source maps, for example `node --enable-source-maps --test --experimental-test-coverage`.
-
-### Test files excluded from coverage (since 23.5.0)
-
-The test runner now excludes test files from coverage results by default, changing totals for projects whose reports previously counted the tests themselves.
-
-### Test reporter changes (since 23.0.0)
-
-The `spec` reporter is now the default regardless of whether output is a TTY; request TAP explicitly with `node --test --test-reporter=tap` if tooling parses TAP. The built-in `lcov` reporter is also exposed as a constructible reporter via `new lcov()` from `node:test/reporters`.
-
-
-## Discovery and configuration
-
-### Changed TypeScript test discovery (since 23.10.0)
-
-The test runner's default TypeScript glob has changed, so invocations that rely on automatic discovery may select a different set of TypeScript tests. Pass the intended test paths explicitly when the selection must remain fixed.
-
-### Per-run test environments (since 24.14.0)
-
-The `run()` function from `node:test` now accepts an `env` option for the environment passed to test processes; it defaults to the current process environment.
+`TestContext.log()` emits a `test:log` event, and `TestStream` events now report `entryFile`. Custom reporters can retain test-authored logs and associate events with their originating entry file.
 
 ```js
-import { run } from 'node:test';
+import { test } from 'node:test';
 
-run({
-  files: ['./test/example.test.js'],
-  env: { ...process.env, FEATURE_FLAG: 'enabled' },
+test('connects', (context) => {
+  context.log('starting connection');
 });
 ```
 
-### Per-test timeouts (since 24.0.0)
+## Test tags and ambient test contexts (`24.19.0`)
 
-`--test-timeout` now applies its timeout to each individual test instead of treating it as one aggregate timeout for a larger test run.
-
-### Restored TypeScript test discovery (since 24.1.0)
-
-The test runner reverts the default TypeScript glob change introduced in 23.10.0, restoring the earlier discovery behavior. Pass test paths explicitly if a project depended on the newer selection.
-
-### Stable test isolation (since 23.6.0)
-
-Test-runner isolation and its CLI controls are now stable rather than experimental.
-
-
-## Execution and lifecycle
-
-### Expected-failure test cases (since 25.5.0)
-
-The built-in test runner now supports declaring that a test case is expected to fail, distinguishing an intentional negative case from an unexpected suite failure.
-
-### Global test setup and teardown (since 24.0.0)
-
-The test runner can load a module with `--test-global-setup`; that module may export `globalSetup` and `globalTeardown` hooks that run around the complete test run.
+Tests accept a `tags` option and the runner can filter by tag name. `getTestContext()` exposes the active test context to helper code without requiring callers to pass it through explicitly.
 
 ```js
-// test/lifecycle.mjs
-export async function globalSetup() {
-  // allocate shared test resources
-}
+import { getTestContext, test } from 'node:test';
 
-export async function globalTeardown() {
-  // release shared test resources
-}
-```
-
-```console
-node --test --test-global-setup=./test/lifecycle.mjs
-```
-
-### Programmatic test-runner controls (since 23.0.0)
-
-`node:test`'s `run()` can enable coverage, set a working directory, and pass custom `argv` values to test files. Its returned stream also emits a `test:summary` event for end-of-run reporting.
-
-```js
-import { run } from 'node:test';
-
-const tests = run({
-  files: ['./test.mjs'],
-  argv: ['--fixture=small'],
-  cwd: process.cwd(),
-  coverage: true,
-});
-tests.on('test:summary', (summary) => console.log(summary));
-```
-
-### Rerunning failed tests (since 24.7.0)
-
-The test runner adds an option to rerun only failed tests, reducing repeated work while iterating on a failing suite.
-
-### Restored test completion promises (since 24.3.0)
-
-The Node 24.0 return-value removal has been reverted: `test()` and `t.test()` once again return completion promises. The runner still automatically waits for subtests, while callers can `await` these promises when later work must be sequenced after completion.
-
-### Test and subtest completion (since 24.0.0)
-
-`test()` and `t.test()` no longer return completion promises. The runner automatically waits for started subtests, so callers should neither `await` these calls nor chain work from their return values.
-
-```js
-import test from 'node:test';
-
-test('parent', (t) => {
-  t.test('child', async () => {
-    // asynchronous child work
-  });
+test('fast path', { tags: ['unit'] }, () => {
+  getTestContext().diagnostic('running unit test');
 });
 ```
 
-### Test-runner failure behavior (since 25.9.0)
+## Test-runner suite failures (`25.9.0`)
 
-Suite-level errors now set a non-zero process exit code, and the test runner is compatible with fake timers.
+Errors that occur at the test-suite level now set a non-zero process exit code, so CI correctly treats them as failures even when no individual test case reports the error.
 
-### TypeScript test integration (since 23.0.0)
+## TypeScript test-discovery rollback (`24.1.0`)
 
-When built-in TypeScript support is available, the test runner's default discovery also recognizes `.ts`, `.cts`, and `.mts` test files, and module mocks can target TypeScript modules. `process.features.typescript` can be used as the feature probe; builds without Amaro report no TypeScript support.
+This release reverts the default TypeScript test glob change introduced in 23.10.0, restoring the earlier implicit discovery behavior. Projects that adapted to the intervening pattern should re-check which TypeScript tests run by default.
 
-### Waiting for test conditions (since 23.7.0)
+## Waiting for test conditions (`23.7.0`)
 
-`TestContext.waitFor()` repeatedly evaluates a condition until it becomes truthy or times out; use `await t.waitFor(() => server.listening)` instead of implementing a polling loop.
+`TestContext.prototype.waitFor()` repeatedly checks a condition until it succeeds or times out.
+
+```js
+await t.waitFor(() => server.ready, { timeout: 1_000 });
+```
+
+## Weak collections compare by identity (`23.0.0`)
+
+Deep strict comparisons now treat distinct `WeakMap` and `WeakSet` instances as unequal; only the same instance compares equal. This affects both assertions and `util.isDeepStrictEqual()`.
+
+```js
+import assert from 'node:assert/strict';
+
+const weak = new WeakMap();
+assert.deepStrictEqual(weak, weak); // passes
+assert.deepStrictEqual(weak, new WeakMap()); // throws
+```

@@ -1,110 +1,119 @@
 # Concurrency and asyncio
 
-Use this reference for asyncio, multiprocessing and executors, threads and queues, subinterpreters, and the free-threaded runtime.
+## Threads, contexts, and queues
 
-## Asyncio
+### Task-factory maintenance compatibility (`whatsnew-3.13`)
 
-### Identity-preserving `asyncio.as_completed()` (Python 3.13)
-`asyncio.as_completed()` now supports both synchronous and asynchronous iteration. When tasks or futures are supplied, asynchronous iteration can yield those original objects, allowing completion results to stay associated with task metadata.
+Python 3.13.3 accidentally forwarded arbitrary `**kwargs` through task
+creation, breaking the established custom-factory contract. Python 3.13.4 and
+later restore that contract while retaining the extra keyword channel for
+`Task` and custom factories. Guard workarounds by maintenance release.
 
-```python
-tasks = [asyncio.create_task(fetch(url)) for url in urls]
-async for task in asyncio.as_completed(tasks):
-    result = await task
-```
+### Thread join completion (`3.13.0`)
 
-### Asyncio server closure semantics (3.13.0)
-`loop.create_unix_server()` now removes its Unix socket when the server closes. `Server.wait_closed()` waits until the server is closed and all active connections are gone, rather than returning merely because no connection is active.
+`Thread.join()` waits until the underlying operating-system thread exits,
+making a subsequent `fork()` from a multithreaded process safer.
 
-### Third-party asyncio task naming (3.13.0)
-Third-party task implementations must now implement `Task.set_name()`; the deprecated undocumented `_set_task_name()` helper has been removed.
+### Free-threaded context contracts (`whatsnew-3.14`)
 
-### Asyncio transport and callback behavior (3.13.0)
-`DatagramTransport.sendto(b"")` now transmits a zero-length datagram, and exceptions from an `asyncio.start_server()` `client_connected_cb` are passed to the loop exception handler. `Future.set_exception(StopIteration(...))` converts that exception to `RuntimeError` instead of risking a hang.
+`context_aware_warnings` and `thread_inherit_context` default on in
+free-threaded builds and off in GIL-enabled builds. Audit warning filters and
+context propagation across threads.
 
-### Configurable loops in isolated async tests (3.13.0)
-`unittest.IsolatedAsyncioTestCase` now supports configuring the `loop_factory` used by its `asyncio.Runner`, allowing tests to avoid the asyncio policy system.
+### Queue-listener lifecycle (`3.14.0`)
 
-### Async task-graph introspection (Python 3.14)
-`python -m asyncio ps PID` prints running tasks and awaiters, while `pstree PID` renders their coroutine hierarchy and detects cycles. In-process tools can inspect and render a program's call graph with `asyncio.capture_call_graph()` and `print_call_graph()`.
-
-### Async task-factory keyword passthrough (Python 3.14)
-`asyncio.create_task()`, loop `create_task()`, and `TaskGroup.create_task()` accept arbitrary keyword arguments and pass all of them to `Task` or the configured task factory; custom factories must therefore handle `name`, `context`, and any additional keywords.
-
-### No implicit event-loop creation (Python 3.14)
-`asyncio.get_event_loop()` now raises `RuntimeError` when no current loop exists instead of creating one. Use `asyncio.run()` for a complete async entry point, `get_running_loop()` inside async code, or an `asyncio.Runner` when several runs must share a loop.
-
-### Event-loop policy retirement (Python 3.14)
-The asyncio policy classes and `get_event_loop_policy()`/`set_event_loop_policy()` are deprecated for removal in 3.16. Select a loop implementation with the `loop_factory` argument to `asyncio.run()` or `Runner` instead.
-
-### Direct task-group cancellation (Python 3.15 preview)
-`asyncio.TaskGroup.cancel()` requests early cancellation of every task in the group, replacing the workaround of adding a task that raises a sentinel exception once the group's goal has been reached.
+`logging.handlers.QueueListener` is a context manager. Calling `start()` on an
+already started listener raises `RuntimeError`:
 
 ```python
-async with asyncio.TaskGroup() as group:
-    group.create_task(worker())
-    group.cancel()
+with QueueListener(queue, handler):
+    run_application()
 ```
 
-### Quiet and isolated asyncio REPLs (3.15.0b3)
-The asyncio REPL honors `-q` by suppressing its copyright and version banner and honors `-I` by not loading `PYTHONSTARTUP`.
+### Native thread diagnostics (`3.14.0`)
 
-## Multiprocessing and executors
+On Linux, `threading.Thread` propagates its name to the OS thread, and
+`faulthandler` output includes thread names. Use `faulthandler.dump_c_stack()`
+or `faulthandler.enable(c_stack=True)` to include native stacks.
 
-### Current-environment process spawning (3.13.0)
-`os.posix_spawn(..., env=None)` now inherits the current process environment instead of requiring an explicit environment mapping.
+### Context decorators and deferred execution (`whatsnew-3.15`)
 
-### Forkserver becomes the Unix process default (Python 3.14)
-On Unix other than macOS, `multiprocessing` and `ProcessPoolExecutor` now default to `forkserver` instead of `fork`; Windows and macOS remain on `spawn`. Code relying on inherited mutable globals or unpicklable state must be adapted or explicitly request a `fork` context through `get_context()` or `mp_context`.
+`ContextDecorator`, `AsyncContextDecorator`, `contextmanager()`, and
+`asynccontextmanager()` used as decorators keep their contexts active while a
+returned generator iterates or a coroutine awaits, instead of exiting when the
+deferred object is created.
 
-### Executor backpressure and forced shutdown (Python 3.14)
-`Executor.map(..., buffersize=n)` limits submitted results that have not yet been yielded, pausing input consumption when full. `ProcessPoolExecutor.terminate_workers()` and `kill_workers()` provide explicit whole-pool termination levels.
+### Concurrent iterator helpers (`whatsnew-3.15`)
 
-### Interruptible child processes (Python 3.14)
-`multiprocessing.Process.interrupt()` sends `SIGINT` to the child, allowing its normal `KeyboardInterrupt`, traceback, and `finally` cleanup path instead of immediately terminating or killing it.
+`threading.serialize_iterator`, `synchronized_iterator()`, and
+`concurrent_tee()` are supported ways to share iterators and generators among
+concurrent callers.
 
-### Subprocess `posix_spawn` selection knob (3.14.0)
-The new `_PYTHON_SUBPROCESS_USE_POSIX_SPAWN` environment variable controls whether `subprocess` uses `os.posix_spawn()`, providing a process-wide compatibility escape hatch.
+### Free-threaded iterator guarantees (`3.15.0b3`)
 
-### Multiprocessing startup controls (3.15.0b3)
-`multiprocessing.set_forkserver_preload(..., on_error=)` accepts `'ignore'`, `'warn'`, or `'fail'` for preload import failures. Spawned children now inherit every `-X` option, while creating a spawn-context process and calling `freeze_support()` no longer select the process-wide start method as a side effect.
+One `range` iterator and shared `itertools` chain, cycle, combinations,
+combinations-with-replacement, permutations, product, `zip_longest`, and
+accumulate iterators support concurrent iteration in free-threaded builds.
 
-## Threads, queues, and contexts
+## Asyncio lifecycle and observability
 
-### Explicit queue shutdown (Python 3.13)
-Both `queue.Queue` and `asyncio.Queue` now have `shutdown()` lifecycle APIs, with termination reported through `queue.ShutDown` and `asyncio.QueueShutDown`, respectively.
+### Unix server socket cleanup (`3.13.0`)
 
-### Context-safe warnings and inherited thread contexts (Python 3.14)
-`-X context_aware_warnings` makes `warnings.catch_warnings()` use a context variable, preventing concurrent threads or tasks from corrupting one another's filters. `sys.flags.thread_inherit_context` controls whether `Thread.start()` copies its caller's `Context`; both flags default on in free-threaded builds and off in GIL-enabled builds.
+Closing a server created by `loop.create_unix_server()` automatically removes
+its Unix-domain socket path.
 
-### Operating-system thread names (Python 3.14)
-`threading.Thread.start()` now sets the operating-system thread name from `Thread.name`, making Python-assigned names visible to system debuggers and process tools.
+### Live and asynchronous debugging (`3.14.0`)
 
-### Locale queries can affect other threads (Python 3.14)
-`locale.nl_langinfo()` now temporarily changes `LC_CTYPE` for some queries, and that process-global transition is observable by concurrent threads.
+Use `await pdb.set_trace_async()` inside a coroutine. `python -m asyncio ps PID`
+and `pstree PID` inspect live task relationships; `asyncio.capture_call_graph()`
+and `print_call_graph()` provide in-process views.
 
-### Interruptible synchronization on Windows (3.14.0)
-On Windows, Ctrl-C can now interrupt `threading.Lock.acquire()`, `RLock.acquire()`, and `Thread.join()` with `KeyboardInterrupt`, matching their behavior on macOS and Linux.
+### Direct task-group cancellation (`whatsnew-3.15`)
 
-### Concurrent iterator utilities (Python 3.15 preview)
-`threading.serialize_iterator`, `synchronized_iterator()`, and `concurrent_tee()` provide supported synchronization for sharing generators and iterators across threads rather than relying on ad hoc locks around every `next()` call.
+`asyncio.TaskGroup.cancel()` terminates a group without adding a task whose
+sole purpose is to raise a sentinel exception.
 
-## Subinterpreters and free-threading
+### Quiet and isolated asyncio REPL (`3.15.0b3`)
 
-### Free-threaded runtime and extension opt-in (Python 3.13)
-Free-threaded CPython uses a separate `python3.13t` executable or a build configured with `--disable-gil`; `PYTHON_GIL=1` or `-X gil=1` re-enables the GIL, while `sys._is_gil_enabled()` reports its runtime state. Multi-phase C extensions declare support with `Py_mod_gil`, single-phase extensions use `PyUnstable_Module_SetGIL()`, and importing an undeclared extension enables the GIL unless it was explicitly forced off with `PYTHON_GIL=0` or `-X gil=0`; installing C extensions requires pip 24.1 or newer.
+The asyncio REPL honors `-q` and `-I`, handles exceptions raised from
+`PYTHONSTARTUP`, and closes its event loop when the session ends.
 
-### Safer first imports in subinterpreters (3.13.0)
-When a built-in or extension module is first imported while a subinterpreter is active, its initialization function runs in the main interpreter first. A single-phase module therefore fails in an isolated subinterpreter without first executing there and leaving inconsistent process-global state.
+## Processes and interpreters
 
-### Standard-library subinterpreters (Python 3.14)
-The new `concurrent.interpreters` module exposes isolated interpreters in Python, while `concurrent.futures.InterpreterPoolExecutor` provides the executor interface and true multicore parallelism within one process. Sharing is opt-in and currently limited, and many third-party extension modules are not yet compatible even though standard-library extensions are.
+### Shared-memory resource lifecycle (`3.13.0`)
 
-### Free-threaded support status (Python 3.14)
-The free-threaded build is now an officially supported, still-optional configuration rather than experimental. Windows extension build backends must now define `Py_GIL_DISABLED` themselves when targeting it; the running build's value is available from `sysconfig.get_config_var()`.
+`SharedMemory(..., track=False)` opts out of POSIX resource-tracker cleanup.
+The tracker exits nonzero when it detects a leak, and `atexit` handlers run for
+every multiprocessing start method.
 
-### Isolated-interpreter capability detection (3.15.0b3)
-`sys.implementation.supports_isolated_interpreters` reports whether the running implementation supports isolated subinterpreters, so portable tools can gate their use without assuming CPython behavior.
+### Safer first extension import (`3.13.0`)
 
-### Free-threaded iterator guarantees (3.15.0b3)
-Concurrent iteration over the same `range` iterator and the same `itertools` `chain`, `combinations`, `combinations_with_replacement`, `permutations`, `product`, `cycle`, `zip_longest`, or `accumulate` iterator is now safe in free-threaded builds. `BytesIO`, `mmap`, `cProfile`, `csv`, `heapq`, and `json` also received explicit free-threaded safety support.
+When a built-in or extension module is first imported from a subinterpreter,
+its initializer first runs in the main interpreter. A single-phase module thus
+fails in an isolated subinterpreter before leaving global state or callbacks
+there.
+
+### Isolated-interpreter capability (`3.15.0b3`)
+
+`sys.implementation.supports_isolated_interpreters` reports whether the
+runtime supports isolated interpreters.
+
+### Multiprocessing startup controls (`3.15.0b3`)
+
+`freeze_support()` works on every spawn-based platform and no longer selects a
+global start method. Creating a process from a spawn context likewise leaves
+the global method unchanged. `set_forkserver_preload(on_error=...)` accepts
+`ignore`, `warn`, or `fail`; spawned children inherit every command-line `-X`
+option.
+
+## Native free-threading rules
+
+### Dictionary iteration (`3.14.0`)
+
+`PyDict_Next()` does not lock in free-threaded builds. Hold a single critical
+section around the entire traversal, not one lock per step.
+
+### Locale changes are process-wide (`whatsnew-3.14`)
+
+`locale.nl_langinfo()` may temporarily change `LC_CTYPE`. Concurrent
+locale-sensitive code can observe the transient process-wide change.

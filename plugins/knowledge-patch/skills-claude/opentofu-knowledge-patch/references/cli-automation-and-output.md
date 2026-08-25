@@ -1,123 +1,103 @@
 # CLI, automation, and output
 
-## Concise and JSON output
+## Concise and JSON output (`1.7.0`)
 
-Since 1.7.0, `tofu plan -concise` omits state-refresh logs. `tofu init -json`
-and `tofu get -json` provide machine-readable automation output.
+`tofu plan -concise` suppresses state-refresh logs. OpenTofu 1.10 extends concise mode to apply: `tofu apply -concise` removes progress-like streaming output while retaining final results for automation.
 
-OpenTofu 1.8.0 changes
-`tofu plan -generate-config-out=generated.tf` to render JSON-shaped values
-with `jsonencode(...)` instead of quoted JSON strings.
+`tofu init -json` and `tofu get -json` provide machine-readable output. From 1.8, generated configuration from `tofu plan -generate-config-out=generated.tf` renders JSON-shaped values with `jsonencode(...)` rather than quoted JSON strings.
 
-OpenTofu 1.10.0 adds `tofu apply -concise`, which suppresses progress-like
-output while retaining final results for non-streaming automation.
+## Simultaneous terminal and JSON streams (`1.12.0`)
 
-OpenTofu 1.12.0 can preserve human output while writing the equivalent JSON
-event stream to another target:
+`-json-into=FILENAME` writes the same machine-readable stream as `-json` while preserving ordinary human-readable output on stdout.
 
 ```bash
 tofu plan -json-into=plan-events.json
 ```
 
-Streaming commands may write to an IPC object such as a named pipe or
-`/dev/fd/N` for concurrent consumption.
+Streaming commands can target an IPC object such as a named pipe or `/dev/fd/N`, allowing another process to consume events concurrently.
 
-## Plan inclusion and exclusion
+## Planning selectors (`1.9.0`, `1.10.0`)
 
-OpenTofu 1.9.0 adds transitive exclusion:
+`tofu plan -exclude=ADDRESS` skips the selected object and all objects that depend on it. This is the inverse dependency direction from `-target`, which includes selected objects and their requirements.
 
-```bash
-tofu plan -exclude=kubernetes_manifest.crds
-```
+Use files for stable, reusable lists of addresses:
 
-`-exclude` skips the chosen object and everything depending on it. By
-contrast, `-target` includes the chosen object and its requirements.
-
-OpenTofu 1.10.0 adds reusable address-list files:
-
-```bash
+```text
 tofu plan -target-file=targets.txt
 tofu plan -exclude-file=deferred.txt
 ```
 
-## Sensitive and diagnostic output
+## Sensitive values and diagnostics
 
-OpenTofu 1.9.0 adds `-show-sensitive` to `plan`, `apply`, and other commands
-that return configuration or state data. It deliberately unmasks sensitive
-values, so restrict captured output and logs.
+From 1.9, `-show-sensitive` unmasks sensitive values for `tofu plan`, `tofu apply`, and other commands that return configuration or state. Treat logs and terminals as secret-bearing whenever this flag is active.
 
-Commands also accept `-consolidate-warnings` and `-consolidate-errors` to
-control diagnostic summarization.
+Commands also accept `-consolidate-warnings` and `-consolidate-errors` to control diagnostic summarization.
 
-OpenTofu 1.12.0 emits provider-schema deprecation warnings for referenced
-attributes and blocks. Use `-deprecation=` to control those diagnostics.
+Provider-schema deprecation warnings appear when configuration references an attribute or block marked deprecated. In 1.12, `-deprecation=` can disable those diagnostics when an automation workflow must suppress them.
 
-## Console behavior and locking
+## Console behavior
 
-Since 1.9.0, `tofu console` accepts multiline expressions within brackets or
-across backslash-escaped newlines.
+OpenTofu 1.9 accepts multiline `tofu console` expressions inside brackets or across backslash-escaped newlines.
 
-OpenTofu 1.12.0 adds console state-lock controls:
+OpenTofu 1.12 adds state-lock controls:
 
 ```bash
 tofu console -lock=false
 tofu console -lock-timeout=30s
 ```
 
-## Inspect state and saved plans
+## State, plan, and configuration inspection
 
-OpenTofu 1.10.0 adds explicit forms:
+OpenTofu 1.10 adds explicit selection forms:
 
 ```bash
 tofu show -state
 tofu show -plan=PLANFILE
 ```
 
-These select current state or a saved plan. The older positional form remains
-supported.
+The older positional plan-file form remains supported.
 
-## Inspect configuration without a plan
-
-OpenTofu 1.11.0 emits configuration JSON without first creating a plan:
+OpenTofu 1.11 can emit configuration JSON without first building a plan:
 
 ```bash
 tofu show -json -config
 tofu show -json -config -module=modules/example
 ```
 
-The module form inspects one directory. Configuration JSON includes every
-input variable's type constraint and whether it is required.
+The configuration summary includes each input variable's type constraint and whether the variable is required.
 
-`tofu validate` can also validate a non-root module that declares additional
-provider configurations through `configuration_aliases`.
+## Destroy behavior (`1.12.0`)
 
-## Provider schemas and generated configuration
+`tofu destroy -suppress-forget-errors` suppresses errors for objects forgotten during destroy and exits successfully. Use it only when the workflow intentionally permits state-only removal.
 
-Since 1.8.0, `tofu providers schema -json` includes provider-defined function
-schemas. Automation parsing generated configuration should also account for
-the release's use of `jsonencode(...)` for JSON-shaped imported values.
+## Provider schemas and validation
 
-## Force unlock and destroy controls
+From 1.8, `tofu providers schema -json` includes provider-defined function schemas.
 
-The HTTP backend supports `tofu force-unlock` from 1.10.0.
+From 1.11, `tofu validate` can validate a non-root module that declares extra provider configurations using `configuration_aliases`.
 
-OpenTofu 1.12.0 adds:
+## XDG paths and environment variables
 
-```bash
-tofu destroy -suppress-forget-errors
-```
+OpenTofu 1.7 supports the XDG Base Directory Specification, so CLI files can live in standard XDG locations.
 
-It suppresses errors for objects forgotten during destroy and exits
-successfully.
+`TF_STATE_PERSIST_INTERVAL` controls the state-write interval from 1.8.
 
-## User-Agent compatibility
+`OPENTOFU_USER_AGENT`, which replaced the entire default HTTP User-Agent, is removed in 1.12. Delete workflows that depend on it.
 
-`OPENTOFU_USER_AGENT`, which replaced the default HTTP User-Agent completely,
-is removed in 1.12.0. Remove automation that depends on that environment
-variable.
+On Unix, `tofu login` honors `BROWSER` when it names one command that accepts the URL as its sole argument. An inherited environment value can therefore change or break browser launch behavior.
 
-## Experimental initialization tracing
+## Registry retries and timeouts (`1.11.0`)
 
-OpenTofu 1.10.0 can emit partial OpenTelemetry traces for `tofu init` under
-environment control. Send them only to a collector controlled by the
-operator. The integration is experimental and its trace detail is limited.
+Configure registry retry counts and request timeouts in CLI configuration or through their environment variables. Prefer checked-in or centrally managed CLI configuration when automation needs consistent behavior across machines.
+
+## Initialization tracing (`1.10.0`)
+
+Experimental, environment-controlled OpenTelemetry support can send partial `tofu init` traces to a collector operated by the user. Current spans contain limited detail. Protect the collector endpoint and do not assume stable telemetry shape while the feature remains experimental.
+
+## Backend logging cautions
+
+From 1.9, HTTP backend trace logs contain request and response bodies. Trace capture can expose credentials, state, or other sensitive payloads; restrict access and retention.
+
+## Force unlocking
+
+The HTTP backend supports `tofu force-unlock` from 1.10. Confirm that no live writer owns the lock before forcing it, because removing a legitimate lock permits concurrent state writes.

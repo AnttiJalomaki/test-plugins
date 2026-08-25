@@ -1,16 +1,15 @@
-# OpenTofu test behavior
+# OpenTofu Test Behavior
 
-This reference covers test changes from `1.7.0`, `1.8.0`, `1.9.0`, `1.10.0`,
-and `1.11.0`.
+## Cleanup failure recovery (`1.7.0`)
 
-## Cleanup recovery
+When `tofu test` cannot clean up resources, it dumps the state file. Preserve
+that file and use it to recover, inspect, and manage the resources that remain.
 
-When `tofu test` cannot clean up created resources, it dumps the state file.
-Use that state to recover and manage the resources that remain.
+## Provider mocks and targeted overrides (`1.8.0`)
 
-## Mock providers and defaults
-
-Since 1.8, `mock_provider` can define `mock_resource` and `mock_data` defaults:
+`mock_provider` supports `mock_resource` and `mock_data`. Use
+`override_resource`, `override_data`, and `override_module` to replace the
+results of specific targets.
 
 ```hcl
 mock_provider "aws" {
@@ -20,20 +19,7 @@ mock_provider "aws" {
     }
   }
 }
-```
 
-Later 1.8 patch releases stop validating mock-provider definitions against the
-real provider schema and relax type validation for mocks and overrides.
-
-Generated mocks in 1.11 follow provider schemas more closely. Upgrade any mock
-or override that depended on an invalid, previously unchecked shape.
-
-## Targeted overrides
-
-`override_resource`, `override_data`, and `override_module` replace a
-particular result:
-
-```hcl
 override_resource {
   target = aws_instance.web
   values = {
@@ -42,26 +28,30 @@ override_resource {
 }
 ```
 
-Since 1.9, `override_resource` and `override_data` may be nested inside a
-specific `mock_provider`, scoping the override to that mock. Invalid mock and
-override fields are errors rather than warnings.
+Test-file `variables` blocks may reference variables. Test run names cannot
+contain spaces.
 
-## Variables and run outputs
+Later 1.8 patches stop validating mock-provider definitions against the real
+provider schema and relax type validation for mocks and overrides. Do not infer
+that an accepted mock shape is valid production provider configuration.
 
-Test-file `variables` blocks may reference variables since 1.8. Test run names
-cannot contain spaces.
+## Mock-local override scope (`1.9.0`)
 
-Since 1.10, test-file `provider` blocks may refer to output values from a
-previous `run` block.
+`override_resource` and `override_data` may be nested in a `mock_provider`,
+scoping the override to that mock. Invalid mock and override fields are errors,
+not warnings.
 
-Since 1.11, test-file `variable` blocks may call functions.
+## Remote modules and run-output providers (`1.10.0`)
 
-## Iterated mocks
+An explicit module under test in `.tftest.hcl` may use a remote source.
+Test-file `provider` blocks may refer to output values from a `run` block,
+allowing later scenarios to configure providers with earlier results.
 
-`mock_provider` supports `for_each` since 1.11, allowing a test to construct
-multiple mock provider configurations from one declaration.
+## Iterated mocks and function-valued variables (`1.11.0`)
 
-## Modules under test
+`mock_provider` supports `for_each`, and test-file `variable` blocks can call
+functions.
 
-Since 1.10, an explicit module under test in `.tftest.hcl` may use a remote
-source rather than only a local source.
+Generated mocks follow provider schemas more closely. Correct mocks or
+overrides that depended on formerly unchecked invalid shapes after upgrading;
+do not preserve them merely because an older release accepted them.

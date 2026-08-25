@@ -1,21 +1,29 @@
 # Physics and Environment
 
-## Geometry queries and cleanup
+## Geometry and physics queries
 
-- The Physics system supports ray-intersection queries (9.1.0).
-- A link's axis-aligned bounding box can be obtained from its collision
-  geometry (9.2.0).
-- Removing a model also removes its detachable joints (9.1.0); do not add
-  cleanup logic based on the earlier orphaned-joint behavior.
+### Query ray intersections
 
-## Calculate inertia from meshes or mass
+The Physics system supports ray-intersection queries (9.1.0). Use the
+simulation capability directly when implementing picking, ranging, or
+geometry checks.
 
-- `MeshInertialCalculator` is registered when a simulation is loaded from an
-  SDF string (9.2.0), so that loading path supports mesh-inertia calculation.
-- `MeshInertialCalculator` accepts mesh-optimization parameters (9.2.0).
-- With `inertial/@auto` enabled, an SDF object may specify mass instead of
-  density (`jetty-highlights`). Gazebo derives density and inertial
-  parameters.
+### Derive link bounds from collisions
+
+A link's axis-aligned bounding box can be obtained from its collision geometry
+(9.2.0). This makes collision-derived bounds available at link scope.
+
+### Load mesh inertia from every supported source
+
+`MeshInertialCalculator` is registered when a simulation is loaded from an
+SDF string, so mesh-inertia calculation works on that loading path (9.2.0).
+The calculator also accepts mesh-optimization parameters; pass them when
+tuning the inertia mesh rather than preprocessing the source unconditionally.
+
+### Prefer mass-based automatic inertia when appropriate
+
+With `inertial/@auto` enabled, an object may specify mass instead of density.
+Gazebo derives density and inertial parameters (jetty-highlights):
 
 ```xml
 <inertial auto="true">
@@ -23,34 +31,94 @@
 </inertial>
 ```
 
-## Configure joints and constraints
+## Constraints, joints, and contacts
 
-- `JointController` can disable braking in force mode (9.3.0). Configure this
-  when a force-controlled joint must operate without automatic braking.
-- The Physics system has a parameter for enforcing fixed constraints
-  (10.0.0).
+### Configure fixed-constraint enforcement
 
-## Model aerodynamics and wind
+The Physics system has a parameter for enforcing fixed constraints (10.0.0).
+For detachable joints, the ECS also provides the
+`DetachableJointEnforceFixedConstraint` component (10.5.0); use the component
+when enforcement belongs in entity state.
 
-- `LiftDrag` supports reversible airfoils (9.3.0).
-- Airspeed under wind is calculated with the wind triangle (9.3.0). Expect
-  wind-aware results rather than a calculation that ignores that geometry.
-- Wind information can be published to Gazebo and ROS topics (9.2.0).
+### Rely on detachable-joint cleanup
 
-## Configure battery-current convention
+Removing a model also removes its detachable joints (9.1.0). Cleanup logic
+should not treat leftover detachable joints as intended behavior.
 
-The battery plugin accepts a parameter that adjusts the current sign (9.1.0).
-Set it to match the sign convention expected by the consuming integration.
+### Use collision bitmask commands
 
-## Vary wheel slip by surface texture
+The ECS provides `CollideBitmaskCmd` and `CategoryBitmaskCmd` components for
+collision and category bitmask commands (10.5.0).
 
-`LookupWheelSlip` maps colors from an 8-bit RGB lookup image to
-material-friction values (`jetty-highlights`), allowing friction to vary over
-a surface. Its slip-map lookup uses `common::findFile` (10.0.0), so configure
-the resource path according to Gazebo Common file resolution.
+### Treat tactile failures as a fixed regression
 
-## React to runtime environment changes
+The tactile plugin regression is fixed (10.5.0). Do not encode behavior from
+affected builds as the plugin's intended contract.
 
-- The IMU system reacts to gravity changes (10.1.0). Gravity updates made
-  through both the GUI and the gravity-setting command propagate correctly.
-- `EnvironmentPreload` can visualize static environments (10.1.0).
+## Aerodynamics, wind, and gravity
+
+### Model reversible airfoils
+
+The `LiftDrag` system supports reversible airfoils (9.3.0). Configure this for
+aerodynamic surfaces whose operation reverses rather than approximating the
+reverse regime externally.
+
+### Use wind-aware airspeed
+
+Airspeed under wind influence is calculated with the wind triangle (9.3.0).
+Update expectations for windy conditions instead of comparing against a
+wind-agnostic result.
+
+### Account for corrected LiftDrag moments
+
+The advanced `LiftDrag` implementation corrects its moment calculation
+(10.5.0). Revalidate results that were calibrated against the earlier,
+incorrect computation.
+
+### Propagate runtime gravity changes
+
+The IMU system reacts to gravity changes. GUI-based gravity updates and the
+gravity-setting command also propagate correctly (10.1.0), so sensors and
+tests should observe the changed gravity without a restart.
+
+## Terrain, friction, and environment data
+
+### Export occupancy grids
+
+Occupancy-grid maps can be exported from the `/scan_image` topic. Start
+exploration by publishing (jetty-highlights):
+
+```sh
+gz topic -t /start_exploration -m gz.msgs.Boolean -p 'data: true'
+```
+
+### Configure texture-driven wheel slip
+
+`LookupWheelSlip` maps colors in an 8-bit RGB lookup image to material-friction
+values, allowing surface friction to vary spatially (jetty-highlights). Its
+slip-map lookup uses `common::findFile` (10.0.0), so configure resources for
+that resolution path rather than assuming a process-relative filename.
+
+### Visualize static environments
+
+`EnvironmentPreload` can visualize static environments (10.1.0). Use its
+visualization path when inspecting preloaded environment data.
+
+## Runtime physics updates and numerical behavior
+
+### Send partial physics updates safely
+
+Physics update messages modify only parameters present in the message;
+omitted parameters retain their existing values (10.5.0). Send a sparse update
+when changing one setting instead of reconstructing the entire parameter set.
+
+### Ignore quaternion representation sign flips
+
+Quaternion sign flips no longer create angular-velocity spikes (10.5.0).
+Spikes caused only by equivalent `q` / `-q` representations are not expected
+simulation output.
+
+### Load statically registered physics engines
+
+Physics-engine plugins can be loaded from the static plugin registry
+(10.0.0). Static integration does not require a separate dynamic-plugin path.

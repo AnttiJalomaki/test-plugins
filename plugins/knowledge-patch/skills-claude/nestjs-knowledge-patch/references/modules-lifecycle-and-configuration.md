@@ -1,75 +1,90 @@
 # Modules, Lifecycle, and Configuration
 
-## Dynamic-module identity
+Use this reference for module identity and exports, reflection, lifecycle order,
+middleware precedence, cache integration, configuration, and Terminus health
+indicators.
 
-Under the 11.0-migration behavior, Nest determines dynamic-module equivalence by
-object identity rather than by a predictable hash of module metadata. Two calls
-that produce structurally equal dynamic-module objects are not automatically the
-same module.
+## Dynamic-Module Identity
 
-Reuse a single object when imports are intended to deduplicate:
+Migration guidance (`11.0-migration`): dynamic-module equivalence is based on
+object identity rather than a predictable hash of module metadata. Two separately
+created dynamic-module objects are distinct even when their metadata is equal.
+
+Construct once and reuse the same object when imports should deduplicate:
 
 ```typescript
 const usersFeature = TypeOrmModule.forFeature([User]);
 
-@Module({ imports: [usersFeature] })
-export class UsersModule {}
+@Module({
+  imports: [usersFeature],
+})
+export class AppModule {}
 ```
 
-Tests that deliberately depend on the older deep-comparison behavior can opt
-back into deep hashing:
+When a test intentionally needs the previous metadata-based behavior, opt into
+deep hashing for the testing module:
 
 ```typescript
+const usersFeature = TypeOrmModule.forFeature([User]);
+
 await Test.createTestingModule(
   { imports: [usersFeature] },
   { moduleIdGeneratorAlgorithm: 'deep-hash' },
 ).compile();
 ```
 
-When multiple instances are intentional, a test can instead select the correct
-parent context or retrieve every instance.
+Other test strategies are to select the correct parent context or retrieve all
+instances and choose the intended one. Do not assume equal dynamic-module
+metadata implies one instance.
 
-## Module exports
+## Module Exports
 
-Promise values in a module's `exports` list are unsupported as of 11.0.0.
-Resolve the provider first and export a provider or module token rather than a
-promise.
+In `11.0.0`, promise values are no longer supported in a module's `exports`
+array. Export the resolved provider or a module token, not a promise that will
+eventually produce one.
 
-## Reflector results and types
+Audit dynamic and asynchronous modules for values that are still pending when
+the module metadata is constructed.
 
-The 11.0-migration includes three related Reflector changes:
+## Reflector Return Values and Types
 
-- When one metadata entry contains an object, `getAllAndMerge()` returns that
-  object rather than an array containing the object.
-- `getAllAndOverride()` returns `T | undefined`.
-- A transformed `ReflectableDecorator` has its transformed type inferred across
-  the Reflector methods.
+For a single object-valued metadata entry, `Reflector.getAllAndMerge()` returns
+the object itself instead of wrapping it in an array. Code that indexes `[0]` or
+blindly iterates this result may now be wrong.
 
-Update array assumptions, account for `undefined`, and allow the inferred
-transformed type to replace unnecessary casts.
+`Reflector.getAllAndOverride()` returns `T | undefined`; handle missing metadata
+instead of assuming a value. When a `ReflectableDecorator` transforms its value,
+the transformed type is inferred across Reflector methods, so keep annotations
+aligned with the transformed result rather than the decorator's input shape.
 
-## Lifecycle shutdown order
+## Shutdown-Hook Order
 
-Termination hooks now run in the reverse of initialization order. Given
-dependencies `A -> B -> C`, initialization runs `C -> B -> A`, while all three
-termination phases run `A -> B -> C`:
+Termination hooks run in reverse initialization order. For a dependency chain
+`A -> B -> C`:
 
-1. `OnModuleDestroy`
-2. `BeforeApplicationShutdown`
-3. `OnApplicationShutdown`
+- Initialization runs `C -> B -> A`.
+- `OnModuleDestroy` runs `A -> B -> C`.
+- `BeforeApplicationShutdown` runs `A -> B -> C`.
+- `OnApplicationShutdown` runs `A -> B -> C`.
 
-Global modules initialize first and are destroyed last. This is part of the
-11.0-migration guidance.
+Global modules initialize first and are destroyed last. Review teardown code for
+implicit assumptions that dependencies have already shut down; a dependent can
+now begin termination while its dependency is still available.
 
-Review cleanup code that assumes a dependency was destroyed earlier. In the
-example above, `A` starts terminating while `B` and `C` are still available;
-`C` terminates last.
+## Global-Middleware Precedence
 
-## Cache stores and raw records
+Middleware registered by global modules executes before middleware registered by
+imported modules, regardless of where the global module appears in the dependency
+graph.
 
-The updated `@nestjs/cache-manager` integration in 11.0-migration expects
-external backends as Keyv adapters in a `stores` array. Replace the older
-singular `store` configuration:
+Where middleware shares request-scoped state, authorization context, tracing
+metadata, or response mutations, test the effective sequence rather than relying
+on module graph position.
+
+## Cache Stores and Raw Records
+
+The updated `@nestjs/cache-manager` expects external backends as Keyv adapters in
+a `stores` array. Replace the former singular `store` configuration:
 
 ```typescript
 CacheModule.registerAsync({
@@ -80,23 +95,29 @@ CacheModule.registerAsync({
 ```
 
 Raw cached data has the shape `{ value, expires }`. This is observable to code
-that accesses the backend directly and must be considered when migrating data
-written in the previous format.
+that reads the backend directly and matters when migrating records written with
+the previous representation. Keep cache-manager consumers at the abstraction
+boundary where possible; when direct access is required, update decoding and
+migration logic for this wrapper.
 
-## Configuration lookup and validation
+## Configuration Source Precedence
 
-With `@nestjs/config@4` in 11.0-migration, `ConfigService#get()` resolves values
-in this order:
+In `@nestjs/config@4`, `ConfigService#get()` resolves values in this order:
 
 1. Internal configuration.
 2. Validated environment values.
 3. `process.env`.
 
-Internal configuration can consequently override a same-named environment
-variable.
+An internal configuration value can therefore override an environment variable.
+Audit applications that previously treated `process.env` as the final override.
 
-`ignoreEnvVars` is deprecated. Choose its replacement based on the required
-behavior:
+`ignoreEnvVars` is deprecated. Choose the replacement based on the behavior you
+need:
+
+- `validatePredefined: false` skips validation of variables already present
+  before the configuration module is imported.
+- `skipProcessEnv: true` prevents `ConfigService#get()` from consulting
+  `process.env`.
 
 ```typescript
 ConfigModule.forRoot({
@@ -105,43 +126,26 @@ ConfigModule.forRoot({
 });
 ```
 
-- `validatePredefined: false` skips validation of variables that were present
-  before the module was imported.
-- `skipProcessEnv: true` prevents `ConfigService#get()` from consulting
-  `process.env`.
+These options are independent: disabling predefined-variable validation does not
+by itself remove `process.env` from lookup.
 
-These switches are independent; enable only the behavior the application needs.
+## Terminus Custom Health Indicators
 
-## Application-context selection
-
-As of 11.0.0, `NestApplicationContext.select()` can override `abortOnError` for
-the selected context:
+Custom Terminus checks can inject `HealthIndicatorService`, create an indicator
+result with `check(key)`, and return `up()` or `down()` with optional details:
 
 ```typescript
-const featureContext = app.select(FeatureModule, {
-  abortOnError: false,
-});
+const indicator = this.healthIndicatorService.check(key);
+
+try {
+  const healthy = await this.probe();
+  return healthy ? indicator.up() : indicator.down({ reason: 'probe failed' });
+} catch {
+  return indicator.down('Unable to run probe');
+}
 ```
 
-This lets the selected context use an error-abort policy different from the
-surrounding context.
-
-## Intrinsic exceptions
-
-`IntrinsicException` marks an exception that Nest should not automatically log
-as of 11.0.0. Use it for expected framework-level failures when automatic
-logging would create duplicate or unwanted output.
-
-## Module migration checklist
-
-- Reuse one dynamic-module object for every import that should deduplicate.
-- Use deep hashing only in tests that intentionally need metadata equivalence.
-- Remove promise values from module exports.
-- Update Reflector result shapes and optional return types.
-- Verify assumptions about termination ordering and global-module teardown.
-- Configure Keyv adapters through `stores` and migrate raw cache records.
-- Reassess configuration collisions under internal-first lookup precedence.
-- Replace `ignoreEnvVars` with the option matching the intended behavior.
-- Set `abortOnError` at context selection when the selected context differs.
-- Mark only expected, non-automatically-logged failures as intrinsic.
-
+The former `HealthIndicator` and `HealthCheckError` classes are deprecated and
+scheduled for removal in the next major release. New and migrated indicators
+should return the result built by `HealthIndicatorService` rather than throw a
+`HealthCheckError` to represent an unhealthy check.

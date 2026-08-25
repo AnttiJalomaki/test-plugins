@@ -1,77 +1,46 @@
 # R8, Packaging, and Test Infrastructure
 
-Use this reference for shrinker configuration, resource shrinking, packaging,
-shader compilation, fused libraries, reports, and test dashboards. The source
-batch is `agp-9-toolchain`.
+## Strict shrinking defaults
 
-## Contents
+### Missing files and constructors
 
-- [Stricter shrinker inputs](#stricter-shrinker-inputs)
-- [Kotlin null-check rewriting](#kotlin-null-check-rewriting)
-- [Desugaring keep behavior](#desugaring-keep-behavior)
-- [Mapping identification](#mapping-identification)
-- [Annotation attributes](#annotation-attributes)
-- [Negated member names](#negated-member-names)
-- [Optimization DSL and source sets](#optimization-dsl-and-source-sets)
-- [Configuration analysis](#configuration-analysis)
-- [Shader compilation](#shader-compilation)
-- [Removed packaging and report features](#removed-packaging-and-report-features)
-- [Fused library publication](#fused-library-publication)
-- [Aggregated test and coverage dashboards](#aggregated-test-and-coverage-dashboards)
+AGP 9.0 fails the build when a referenced keep file is missing and enables
+optimized resource shrinking. Strict full-mode keep semantics mean that:
 
-## Stricter shrinker inputs
+```proguard
+-keep class A
+```
 
-AGP 9.0 fails the build when a configured keep file is missing. It also
-enables optimized resource shrinking and strict full-mode keep semantics.
-Keeping a class no longer implicitly retains its default constructor:
+does not retain `A`'s default constructor. Name it when construction is
+required:
 
 ```proguard
 -keep class A { <init>(); }
 ```
 
 Library and feature publication rejects global options such as
-`-dontoptimize` and `-dontobfuscate` in consumer rules. When precompiled
-dependency rules contain these options, app builds silently ignore them.
+`-dontoptimize` and `-dontobfuscate` in consumer rules. If precompiled
+dependency rules contain those global options, application builds silently
+ignore them.
 
-## Kotlin null-check rewriting
+### Kotlin null-check rewriting
 
-R8 supports `-processkotlinnullchecks` with three values:
-
-- `keep`
-- `remove_message`
-- `remove`
-
-The default is `remove_message`. If configuration supplies the option more
-than once, the strongest value wins.
+R8's `-processkotlinnullchecks` accepts `keep`, `remove_message`, or `remove`.
+The default is `remove_message`. If the option appears more than once, the
+strongest value wins.
 
 ```proguard
 -processkotlinnullchecks keep
 ```
 
-## Desugaring keep behavior
+Choose `keep` when stack traces or diagnostics must retain Kotlin-generated
+null-check messages.
 
-R8 no longer propagates keep information from interface methods to synthesized
-companion methods. This breaks the former separately desugared `minSdk < 24`
-library flow that relied on `-applymapping`. Explicitly keep the companion
-methods in that separately desugared artifact.
-
-Direct D8/R8 users must replace the removed L8 keep-rule generation APIs and
-`--desugared-lib-pg-conf-output` with `TraceReferences`.
-`-addconfigurationdebugging` is no longer supported.
-
-## Mapping identification
-
-When retracing is required, R8 writes `r8-map-id-<MAP_ID>` into `SourceFile`
-instead of a source filename. The ID is the full mapping hash. A custom
-`-renamesourcefileattribute` takes precedence.
-
-In ProGuard compatibility mode, do not keep `SourceFile` if this mapping ID is
-needed; retaining the attribute prevents the marker from being emitted.
-
-## Annotation attributes
+### Runtime-invisible annotations
 
 In AGP 9.2, wildcard `-keepattributes` patterns no longer match
-runtime-invisible annotation attributes. Preserve them by naming all three:
+runtime-invisible annotation attributes. Preserve all required forms by naming
+them explicitly:
 
 ```proguard
 -keepattributes RuntimeInvisibleAnnotations,
@@ -79,69 +48,106 @@ runtime-invisible annotation attributes. Preserve them by naming all three:
                 RuntimeInvisibleTypeAnnotations
 ```
 
-## Negated member names
+### Negated member-name patterns
 
-AGP 9.2 accepts negated member-name patterns, including in `-if`
-preconditions:
+AGP 9.2 allows negated member names, including in `-if` preconditions:
 
 ```proguard
 -keepclassmembers class com.example.MyClass { *** !*ForTesting(...); }
 ```
 
-Wildcards inside a negated precondition cannot be back-referenced in its
+Wildcards inside a negated `-if` precondition cannot be back-referenced in its
 consequent.
 
-## Optimization DSL and source sets
+## Desugaring and keep propagation
 
-AGP 9.3 adds an `optimization` block to application build types. Enabling it
-turns on code optimization and optimized resource shrinking without requiring
-the default Android keep-rules file. The legacy DSL remains supported.
+Keep information on interface methods is no longer propagated to synthesized
+companion methods. This breaks a former `minSdk < 24` library workflow that
+depended on `-applymapping`; explicitly keep companion methods in the artifact
+that is desugared separately.
 
-`.keep` files in `src/<variant>/keepRules/` work with either DSL for
-applications and libraries. They can also define KMP consumer rules.
+Direct D8/R8 integrations must replace removed L8 keep-rule generation APIs and
+`--desugared-lib-pg-conf-output` with `TraceReferences`.
+`-addconfigurationdebugging` is no longer supported.
 
-## Configuration analysis
+## Mapping and retracing
 
-AGP 9.3 can analyze R8 configuration without finishing an APK or app bundle:
+When retracing is needed, R8 puts `r8-map-id-<MAP_ID>` in `SourceFile`, using
+the full mapping hash. A custom `-renamesourcefileattribute` takes precedence.
+
+In ProGuard compatibility mode, do not keep `SourceFile` if the embedded
+mapping ID is required; retaining it prevents the ID from being written.
+
+## Optimization DSL and source-set rules
+
+AGP 9.3 adds an `optimization` block to application build types. Enabling the
+block turns on both code optimization and optimized resource shrinking without
+requiring the default Android keep-rules file. The legacy DSL remains valid.
+
+Place `.keep` files under `src/<variant>/keepRules/` for variant-specific app
+and library rules. These files work with either DSL and can also define KMP
+consumer rules.
+
+## Configuration analysis and reports
+
+### Analyze without assembling
+
+On AGP 9.3, run:
 
 ```shell
 ./gradlew :app:analyzeReleaseR8Config
 ```
 
-The task produces an R8 Configuration Analyzer report.
+The task creates an R8 Configuration Analyzer report without completing an APK
+or app bundle build.
 
-## Shader compilation
+### Aggregate tests and coverage
 
-When shader compilation is enabled, AGP 9.0 requires an explicit compiler path
-in `local.properties`:
-
-```properties
-glslc.dir=/path/to/shader-tools
-```
-
-During migration, opting out of `android.custom.shader.path.required`
-temporarily restores the former implicit lookup.
-
-## Removed packaging and report features
-
-AGP 9.0 removes:
-
-- Embedded Wear OS apps and the `wearApp` configuration. Publish the Wear app
-  separately.
-- Density-split APKs. Use app bundles for density delivery.
-- The `androidDependencies` and `sourceSets` report tasks.
-
-## Fused library publication
-
-The preview Fused Library Plugin can combine several Android libraries and
-publish them as one Android Library AAR.
-
-## Aggregated test and coverage dashboards
-
-AGP 9.2 has experimental HTML dashboards that aggregate unit and
-instrumentation results and coverage across modules and variants. Enable them
-with:
+On AGP 9.2, set:
 
 ```properties
 android.experimental.reportAggregationSupport=true
 ```
+
+This enables experimental HTML dashboards that combine unit-test,
+instrumentation-test, and coverage results across modules and variants.
+
+On-device tests default to `AndroidJUnitRunner` under AGP 9.0. Only the tested
+build type receives a unit-test component by default, normally debug rather
+than debug and release. Test any build logic that assumed both components.
+
+## Native and APK compatibility
+
+### Build native libraries for 16 KB pages
+
+On Android 16, some 4 KB-aligned apps can run in 16 KB page-size compatibility
+mode. Compiling with API 36 and enabling the manifest property below suppresses
+the user dialog, but it is not a substitute for rebuilding native code with
+16 KB alignment.
+
+```xml
+<property android:name="android:pageSizeCompat" android:value="true" />
+```
+
+This behavior comes from batch `api-36`.
+
+### Make dynamically loaded native code read-only
+
+For API 37 targets, dynamic-code-loading protection includes native libraries.
+Make a file read-only before passing it to `System.load()` or loading fails with
+`UnsatisfiedLinkError`. This behavior comes from batch `api-37`.
+
+### Hybrid post-quantum APK signing
+
+Android 17 adds APK Signature Scheme v3.2, combining RSA or elliptic-curve
+signatures with ML-DSA signatures. Validate that signing, verification,
+distribution, and rollback tooling all preserve the hybrid signature.
+
+## Profiling and notification tests
+
+Android 17 adds `ProfilingManager` triggers for `COLD_START`, `OOM`, and
+`KILL_EXCESSIVE_CPU_USAGE`. Use the relevant trigger when investigating startup,
+memory, or CPU termination behavior.
+
+Android 17 also strictly limits custom notification-view sizes. Test each
+custom layout at runtime rather than relying only on resource previews.

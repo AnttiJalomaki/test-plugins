@@ -1,9 +1,9 @@
 # Lifecycle, Messages, Metadata, and Schemas
 
-## JSON-RPC batching history
+## JSON-RPC batching by revision
 
-The `2025-03-26` revision introduced batching, allowing several protocol
-requests in one top-level array:
+The `2025-03-26` revision added batching, allowing multiple protocol requests
+in one top-level array:
 
 ```json
 [
@@ -12,57 +12,40 @@ requests in one top-level array:
 ]
 ```
 
-The `2025-06-18` revision removed batching. For that revision and later, a
-top-level request or response array is invalid; send every JSON-RPC message
-separately. This also matches Streamable HTTP's one-message-per-POST framing.
+The `2025-06-18` revision removes batching and reverses that addition. A
+top-level array of requests or responses is no longer valid MCP. Send every
+JSON-RPC message separately.
 
-## Lifecycle requirement (`2025-06-18`)
+## Mandatory lifecycle operation (`2025-06-18`)
 
-The lifecycle operation changed from **SHOULD** to **MUST**. Treat it as a
-required part of implementations targeting this revision rather than an
-optional interoperability enhancement.
+The lifecycle operation requirement is strengthened from **SHOULD** to
+**MUST**. Treat the operation as required rather than optional.
 
-## Extensible metadata (`2025-06-18`)
+## Expanded metadata interfaces (`2025-06-18`)
 
-Additional interface types define `_meta`. Validators, schema consumers, and
-generated bindings must allow it on each newly covered interface shape and
-preserve its defined semantics.
+The schema adds `_meta` to additional interface types and defines its proper
+use. Validators and generated bindings must allow metadata on the newly
+covered shapes.
 
-## Programmatic names and display titles (`2025-06-18`)
+## Implementation descriptions (`2025-11-25`)
 
-Schema types may supply `title` as a human-friendly display name while keeping
-`name` as the programmatic identifier. Protocol operations continue to address
-objects by `name`; user interfaces may prefer `title`.
-
-## Icons and implementation descriptions (`2025-11-25`)
-
-Tools, resources, resource templates, and prompts may expose icons as metadata.
-Clients can display those icons when presenting the objects.
-
-The initialization `Implementation` interface has an optional `description`
-field for human-readable client or server context.
-
-## Tool validation error layer (`2025-11-25`)
-
-Represent a tool input-validation failure as a Tool Execution Error, not a
-Protocol Error. The distinction lets the caller inspect the tool failure and
-retry with corrected input.
+The `Implementation` interface includes an optional `description` field for
+human-readable client or server context during initialization.
 
 ## JSON Schema dialect (`2025-11-25`)
 
 JSON Schema 2020-12 is the default dialect for MCP schema definitions. Schema
-producers, validators, and code generators use it unless a different dialect is
-explicitly selected.
+producers, validators, and code generators should use it unless another
+dialect is selected explicitly.
 
-## Standalone request-parameter schemas (`2025-11-25`)
+## Standalone request parameter schemas (`2025-11-25`)
 
 Request payload schemas are decoupled from RPC method definitions and exposed
 as standalone parameter schemas. Schema consumers and generated bindings must
-resolve the new organization rather than assuming that each method definition
-contains its parameter shape.
+account for this organization.
 
-## Invalid Origin response (`2025-11-25`)
+## Stable revision status (`2026-07-28`)
 
-A Streamable HTTP server that rejects an invalid `Origin` returns HTTP 403
-Forbidden. Validate the header consistently on incoming connections to prevent
-DNS-rebinding attacks.
+The `2026-07-28` protocol revision is stable. Behavior previously published
+for that revision as release-candidate material is no longer prerelease
+guidance.

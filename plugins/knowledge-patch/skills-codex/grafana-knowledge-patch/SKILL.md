@@ -8,188 +8,209 @@ metadata:
 ---
 
 
-# Grafana Knowledge Patch
+# Grafana Compatibility and Operations Guide
 
-Use this skill when upgrading, configuring, provisioning, extending, or
-troubleshooting modern Grafana. Start with the installed Grafana version and
-deployment mode, then apply only advice whose version attribution matches the
-deployment. Treat manifests, configuration, API responses, and tests from the
-actual installation as authoritative.
+Use this skill when upgrading, configuring, provisioning, extending, or operating
+Grafana, especially when code or automation depends on an API, feature toggle,
+plugin contract, alerting behavior, data-source integration, or storage detail.
+
+## How to use this skill
+
+1. Determine the deployed Grafana version and edition from the project manifest,
+   image tag, package lock, or runtime configuration.
+2. Identify the task area in the reference index below.
+3. Apply only guidance relevant to the deployed version. Prefer manifests, code,
+   tests, and observed behavior when they differ from compatibility notes.
+4. For an upgrade, inspect every intermediate major-version migration and take a
+   database backup before any irreversible schema or storage transition.
+5. Audit feature toggles, deprecated endpoints, RBAC actions, plugin manifests,
+   container assumptions, and provisioning workflows before rollout.
+6. Validate the change in a staging environment with representative dashboards,
+   alerts, plugins, authentication, rendering, and data-source queries.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrades-and-runtime.md](references/upgrades-and-runtime.md) | Major-upgrade runbooks, storage migrations, containers, commands, renderer, server defaults |
-| [alerting.md](references/alerting.md) | Rules, evaluation, notification APIs, contact points, recording rules, state, HA |
-| [dashboards-and-visualizations.md](references/dashboards-and-visualizations.md) | Dashboard APIs, variables, panels, transformations, layouts, logs, reporting |
-| [identity-access-and-enterprise.md](references/identity-access-and-enterprise.md) | Authentication, SSO, SCIM, RBAC, audit, migration, reporting controls |
-| [data-sources-and-observability.md](references/data-sources-and-observability.md) | Prometheus, Loki, Tempo, cloud and SQL sources, traces, profiles, query behavior |
-| [plugins-and-frontend.md](references/plugins-and-frontend.md) | Plugin compatibility, manifests, process isolation, React and UI API transitions |
-| [provisioning-storage-and-apis.md](references/provisioning-storage-and-apis.md) | Git Sync, Kubernetes-style APIs, UID migrations, storage, webhooks, resource ownership |
+| [Alerting](references/alerting.md) | Rules, recording, evaluation, state, Alertmanager, contact points, templates, imports, and alerting APIs |
+| [Dashboards and visualizations](references/dashboards-and-visualizations.md) | Dashboard schema and layout, variables, panels, transformations, annotations, reporting, and rendering |
+| [Data sources and observability](references/data-sources-and-observability.md) | Prometheus, Loki, Tempo, CloudWatch, Elasticsearch, SQL, traces, profiles, expressions, and query behavior |
+| [Identity, access, and Enterprise](references/identity-access-and-enterprise.md) | Authentication, SSO, SCIM, RBAC, permissions, auditing, cloud migration, and Enterprise controls |
+| [Plugins and frontend](references/plugins-and-frontend.md) | Plugin installation, manifests, runtime isolation, frontend APIs, UI components, and build dependencies |
+| [Provisioning, storage, and APIs](references/provisioning-storage-and-apis.md) | Git Sync, file provisioning, Unified Storage, database migrations, HTTP APIs, webhooks, and resource identity |
+| [Upgrades and runtime](references/upgrades-and-runtime.md) | Major-upgrade sequencing, removed settings and toggles, commands, containers, server defaults, and Grafana Live |
 
-## Upgrade triage
+## Breaking changes and migration priorities
 
-1. Record the exact Grafana version, edition, database, image, installed
-   plugins, provisioning mode, and active feature toggles.
-2. Back up the database and Git-provisioned content before a major upgrade.
-3. Audit numeric-ID API calls, deprecated command names, Angular plugins,
-   Image Renderer deployment mode, and plugin environment-variable
-   dependencies.
-4. Update the current release line and every plugin before crossing the React
-   19 boundary.
-5. Reserve migration disk space, test rollback from backup, and validate alert,
-   dashboard, provisioning, authentication, and reporting paths in staging.
+### Do not use Grafana 13.0.0 for affected Git Sync upgrades
 
-## Critical 13.0 upgrade guardrails
+Self-managed 12.x deployments using the Git Sync-related `provisioning`,
+`kubernetesClientDashboardsFolders`, `kubernetesDashboards`, and
+`grafanaAPIServerEnsureKubectlAccess` flags can lose or revert dashboards and
+folders on 13.0.0. Upgrade directly to 13.0.1 or later. If local and Git-managed
+content are mixed, restore the pre-upgrade database before proceeding.
 
-Do not upgrade a self-managed Git Sync installation to Grafana 13.0.0. That
-withdrawn release can lose or revert dashboards and folders when the relevant
-provisioning and Kubernetes dashboard flags are in use. Upgrade directly to
-13.0.1 or later. If 13.0.0 already touched a mixed local/Git deployment,
-restore the pre-upgrade database before proceeding; merely installing a later
-binary does not recover the lost content.
+### Treat unified-storage migration as one-way
 
-Grafana 13 performs a one-way first-start migration of folders and dashboards
-from legacy SQL tables to unified storage. The old tables cease to be
-authoritative, and downgrading exposes stale data. Rollback means restoring the
-pre-upgrade database, not simply reinstalling the old binary.
+The first 13.0 startup migrates folders and dashboards out of the legacy SQL
+tables and records completion in `unifiedstorage_migration_log`. A downgrade
+reads stale legacy tables, and a later re-upgrade does not replay post-downgrade
+changes. Roll back by restoring the pre-upgrade database, not by downgrading the
+binary against the migrated database.
 
-If SQLite repeatedly reports `database is locked`, increase
-`[unified_storage] migration_cache_size_kb` above its `1000000` default or
-stage through Parquet:
+### Budget space for the Grafana 12 annotation migration
 
-```ini
-[unified_storage]
-migration_parquet_buffer = true
-```
+An 11.x-to-12.x upgrade rewrites the full `annotation` table and its indexes to
+populate `annotation.dashboard_uid`. Back up the database and reserve two to
+three times the table size in free space. Reclaim space later in a low-traffic
+window because `VACUUM FULL`, `OPTIMIZE TABLE`, and SQLite `VACUUM` lock work.
 
-Replace removed command names in service units, images, and automation:
+### Move automation from numeric IDs to UIDs
 
-```text
-grafana-cli     -> grafana cli
-grafana-server  -> grafana server
-```
+Malformed data-source UIDs are rejected by default from 12.0, including values
+over 40 characters. Dashboard, annotation, analytics, star, home-dashboard,
+data-source, and Usage Insights surfaces progressively remove or deprecate
+numeric-ID and name-based contracts. Prefer stable UIDs throughout JSON,
+provisioning, URLs, permissions, and alert queries.
 
-Plugin-mode Image Renderer is removed. Run the renderer as a separate service
-and configure the same nonempty, non-`-` shared token on both sides:
+### Migrate from legacy HTTP APIs
 
-```ini
-[rendering]
-renderer_token = replace-with-a-shared-secret
-```
+The legacy `/api` family is deprecated in Grafana 13 in favor of versioned
+Kubernetes-style `/apis` resources. Numeric-ID data-source endpoints are disabled
+by default, and multiple legacy Alertmanager configuration and notification
+provisioning endpoints are removed or deprecated. Keep any temporary legacy flag
+exception narrowly scoped and plan its removal.
 
-The JWT renderer path is enabled by default. `renderAuthJWT = false` is only a
-temporary compatibility escape hatch for the former opaque-token behavior.
+### Update plugins before the React 19 upgrade
 
-## Grafana 12 preflight
+Before moving to Grafana 13, update the current Grafana release line to its latest
+patch, update and validate every installed plugin, and only then perform the major
+upgrade. Grafana 12 removes Angular support; Grafana 13 moves to React 19 and
+removes or changes multiple `@grafana/ui` contracts.
 
-The 11.x-to-12.x annotation migration rewrites the full `annotation` table and
-rebuilds its indexes. Back up the database and reserve two to three times the
-table size as free space. Reclaim space later in a low-traffic window because
-the database-specific operations lock the table.
+### Replace plugin-mode image rendering
 
-Grafana 12 enables strict data-source UID validation by default. UIDs must
-match the accepted character set and be at most 40 characters. Invalid UIDs
-cannot be repaired in place: create replacement data sources, then repoint
-dashboard JSON and alert queries. Add authentication to this local audit when
-required:
+Grafana 13 removes plugin-mode Image Renderer support. Run rendering as a separate
+service and configure the same nonempty, non-`-` `[rendering] renderer_token` in
+Grafana and the renderer. JWT renderer authentication is enabled by default.
 
-```bash
-curl http://localhost:3000/api/datasources |
-  jq '.[] | select((.uid | test("^[a-zA-Z0-9\\-_]+$") | not) or (.uid | length > 40)) | {id, uid, name, type}'
-```
+### Revisit bundled data-source assumptions
 
-After the migration, reclaim annotation-table space with the appropriate
-maintenance command:
+Grafana 13 removes the core Elasticsearch data source. Grafana 13.1 removes core
+Zipkin and removes Azure and SigV4 authentication from the core Prometheus
+integration, together with the `grafana-prometheus` package. Install or redesign
+integrations explicitly instead of assuming those capabilities remain bundled.
 
-```sql
--- PostgreSQL
-VACUUM FULL annotation;
+### Review plugin process environment access
 
--- MySQL
-OPTIMIZE TABLE annotation;
+From 12.4, plugin processes do not inherit host environment variables by default.
+External AWS plugins retain AWS SDK credential-chain variables, and plugins get
+`PLUGIN_UNIX_SOCKET_DIR` for restricted temporary-directory deployments. Pass
+required configuration through supported plugin mechanisms.
 
--- SQLite
-VACUUM;
-```
+## Alerting quick reference
 
-Grafana 12 also removes Angular frontend support, internal Alertmanager
-configuration writes, `viewers_can_edit`, plugin dependency-version support,
-and secrets-manager plugins. Review integrations before the first start.
+### Identify rules by UID
 
-## API and identity rules
+Rule titles and library-panel names are not unique. Alert groups can also contain
+position-matched duplicates or rules without a group. Use rule UIDs and explicit
+resource identity in tooling rather than title or position alone.
 
-Prefer stable UIDs over numeric IDs, names, or titles:
+### Account for state and evaluation defaults
 
-- Dashboard, annotation, analytics, home-dashboard, data-source, external
-  Alertmanager metrics, and Usage Insights paths have progressively moved to
-  UIDs.
-- Rule and library-panel names are no longer guaranteed unique; use their
-  stable identifiers.
-- From Grafana 13, numeric-ID data-source endpoints are disabled by default.
-  `datasourceLegacyIdApi` is temporary only.
-- The legacy `/api` family remains deprecated; new automation should target
-  versioned Kubernetes-style `/apis` resources.
+Alert retry `max_attempts` defaults to 3, recording rules become enabled by
+default in 12.1, compressed alert state becomes the default in 12.2, and the
+compression toggle is removed in 13.2. Pending periods apply to NoData and Error
+alerts from 12.4. Test state transitions, retries, recovery windows, and recording
+destinations during upgrades.
 
-Existing API keys migrate to service accounts on first 11.6 startup, and the
-API-key endpoints and authentication implementation are removed in 12.1.
-Inventory old clients before either transition.
+### Use current provisioning resources
 
-## Alerting default changes
+Prefer the App Platform notification resources under
+`/apis/notifications.alerting.grafana.app/v1beta1/namespaces/{namespace}/` for
+receivers, routing trees, template groups, time intervals, and inhibition rules.
+Provisioning authorization now checks resource-specific permissions, protected
+fields, provenance, and managed-route access.
 
-Check defaults rather than carrying old assumptions forward:
+### Update custom alerting roles
 
-- Alert retry `max_attempts` became `3`, with
-  `state_periodic_save_batch_size` available for save batching.
-- Recording rules became enabled by default in 12.1.
-- Compressed alert-state persistence became enabled by default in 12.2.
-- Pending periods apply to NoData and Error states in 12.4.
-- Grafana 13 managed routes use `notification_settings.policy`, not labels.
+Alertmanager status requires `alert.notifications.system-status:read` in Grafana
+13. Custom roles and automation must also account for dedicated template-testing,
+enrichment, snapshot, and provisioning permissions where applicable.
 
-Use rule UIDs, not titles. Titles are not unique, rules may be groupless, and
-multiple lifecycle and version-restore paths now exist. When provisioning,
-preserve provenance and protected-field authorization.
+## Provisioning and storage quick reference
 
-The old internal Alertmanager configuration and notification-provisioning
-routes are being removed. Move receiver, routing tree, template group, time
-interval, and inhibition-rule automation to the notification resources under
-`/apis/notifications.alerting.grafana.app/`.
+### Treat Git Sync ownership as authoritative
 
-## Plugin compatibility checklist
+Provisioning and Git Sync are enabled by default in 13.0. Repository-managed
+resources reject ownership mutations, and unmanaged resources cannot be
+overridden. Validate branch protection, write access, repository emptiness,
+webhook tokens, signing, URL/branch/path identity, and folder metadata.
 
-- Upgrade to the latest patch in the current Grafana line and update all
-  plugins before moving to Grafana 13 and React 19.
-- The frontend toolchain uses Node 22 from 11.5.
-- The plugin CLI enforces `grafanaDependency`; incompatible installations
-  require the deliberate ZIP path rather than a bypass flag.
-- Grafana 13 requires `type` on every `plugin.json` `includes` entry.
-- Plugin manifests require `routes[].path` from 12.4.
-- Host environment variables are no longer inherited by plugin processes by
-  default. Pass explicit configuration; use `PLUGIN_UNIX_SOCKET_DIR` for
-  constrained temporary directories.
-- The core Elasticsearch and Zipkin data sources and core Prometheus Azure and
-  SigV4 authentication are removed in later releases. Package or replace what
-  the deployment still needs.
+### Protect webhook and external URL configuration
 
-## Feature-toggle hygiene
+Provisioning webhooks reject GET, rotate secrets, require a new token after URL
+changes, and validate `ref`; GitHub handling adds replay protection. Configure
+`public_root_url` for externally visible provisioning links and explicitly set
+sync write timeouts when long writes require it.
 
-Remove obsolete toggles instead of retaining dead configuration. Grafana 13
-supports direct per-toggle environment variables and deprecates the aggregate
-`GF_FEATURE_TOGGLES_ENABLE` and `[feature_toggles] enable` forms. Provisioning,
-Git Sync, dashboard restore, gzip, and several API-server behaviors have also
-changed defaults; pin a setting explicitly when an external proxy, security
-policy, or operational runbook depends on the former behavior.
+### Check Unified Storage cleanup behavior
 
-## Validation after changes
+Unified Storage honors `GF_DATABASE_URL`, migration locking, PostgreSQL TLS, and
+migration cache/Parquet controls. In 13.2, garbage collection defaults to real
+cleanup because dry-run defaults to false. Make dry-run intent explicit before
+enabling scheduled collection.
 
-Verify all of the following against the upgraded instance:
+## Plugin and frontend quick reference
 
-- health, startup migrations, database headroom, and rollback artifacts;
-- dashboard and folder counts, UIDs, ownership, Git state, and home dashboard;
-- alert evaluation, state recovery, notification delivery, templates, and HA;
-- SSO, service accounts, SCIM, anonymous access, and custom roles;
-- data-source connectivity from the server side, headers, TLS, and query modes;
-- plugin signatures, compatibility, manifests, process configuration, and UI;
-- logs, traces, profiles, transformations, exports, screenshots, and reports;
-- metrics and dashboards that consume renamed or removed Grafana metrics.
+### Validate manifests and compatibility
+
+Plugin installation honors `grafanaDependency` and offers no compatibility bypass
+other than deliberate ZIP installation. Grafana can reject unsupported Angular
+versions. Plugin manifests require `routes[].path` from 12.4 and `includes[].type`
+from 13.0.
+
+### Migrate changed UI contracts
+
+Use `Combobox` instead of deprecated `Select`; account for `Combobox` grouping and
+`isItemDisabled`. The `Gauge` visualization remains available although the
+`Gauge` component is removed. Replace removed `Modal` props, Graph graveyard APIs,
+`SeriesIcon.noMargin`, and synchronous `datasourceSrv` access. Review required
+accessibility props on childless `ToolbarButton` and required `Slider.inputId`.
+
+## Runtime quick reference
+
+### Update executable names and images
+
+Use `grafana cli` and `grafana server`; the old hyphenated commands are removed.
+Move Docker references from deprecated `grafana/grafana-oss` to
+`grafana/grafana`. Derived images must account for Grafana-provided glibc 2.40,
+Alpine 3.24.1, and the Ubuntu base transition from 22.04 to 24.04.
+
+### Make changed defaults explicit
+
+`server.enable_gzip` defaults to true in 13.0. Short URLs default to never
+expiring, Grafana HTTP metrics use native histograms by default, recording rules
+are enabled by default, scripted dashboards are disabled by default in 13.2, and
+Unified Storage garbage collection is no longer dry-run by default. Pin settings
+when infrastructure depends on earlier behavior.
+
+### Remove dead feature gates
+
+Do not leave removed toggles in configuration or branch application behavior on
+them. Feature lifecycles include promotion to defaults or general availability,
+followed later by toggle removal. Consult the runtime reference before carrying a
+feature-toggle list across releases.
+
+## Verification checklist
+
+- Back up the database and test both forward migration and restore procedures.
+- Inventory dashboard, data-source, rule, folder, annotation, and role UIDs.
+- Exercise alert evaluation, notification delivery, imports, templates, and HA.
+- Verify SSO, JWT, SCIM, service-account, anonymous, and custom-role behavior.
+- Run representative Prometheus, Loki, Tempo, SQL, CloudWatch, trace, and profile queries.
+- Validate plugin installation, signatures, manifests, process configuration, and UI APIs.
+- Confirm Git Sync ownership, webhook security, signing, folder metadata, and resync behavior.
+- Check metrics, audit events, logs, reporting, image rendering, and container dependencies.
+- Remove obsolete flags, endpoints, settings, executable names, and image repositories.
+- Prefer a tested restore over an unsupported downgrade after one-way migration.

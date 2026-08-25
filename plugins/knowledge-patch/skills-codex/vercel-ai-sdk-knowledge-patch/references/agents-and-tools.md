@@ -1,18 +1,16 @@
-# Agents, tools, and control loops
+# Agents, Tools, and Control Loops
 
-## Tool-loop termination
+## Stop and completion rules
 
-`ToolLoopAgent` defaults to `isStepCount(20)`. It evaluates `stopWhen` after a step
-that produced tool results. When `stopWhen` is an array, any matching condition stops
-the loop. A typed custom `StopCondition` can inspect all prior steps and their usage.
+`ToolLoopAgent` defaults to `isStepCount(20)`. A `stopWhen` condition is evaluated
+after a step that produced tool results; an array of conditions uses OR semantics. A
+typed condition can inspect every prior step, including cumulative usage.
 
 ```ts
 const overBudget: StopCondition<typeof tools> = ({ steps }) =>
   steps.reduce(
-    (total, step) =>
-      total +
-      (step.usage.inputTokens ?? 0) +
-      (step.usage.outputTokens ?? 0),
+    (sum, step) =>
+      sum + (step.usage.inputTokens ?? 0) + (step.usage.outputTokens ?? 0),
     0,
   ) > 20_000;
 
@@ -23,39 +21,13 @@ const agent = new ToolLoopAgent({
 });
 ```
 
-The loop can also end when:
+The loop can also stop when the model finishes without a tool call, a selected tool
+has no `execute`, or a call requires approval. `isLoopFinished()` removes the step cap
+and relies on natural completion, so use it only when that behavior is safe.
 
-- the model finishes without producing a tool call;
-- a called tool has no `execute` function; or
-- a tool call requires approval.
-
-`isLoopFinished()` removes the step cap and relies on natural completion. Use it only
-when the tools, model behavior, timeout budget, and external side effects make an
-unbounded step count acceptable.
-
-## Per-step reconfiguration
-
-`prepareStep` runs before each generation. It receives the current `model`, a
-zero-based `stepNumber`, previous `steps`, and outgoing `messages`; runtime context is
-also available when configured. It can override the model or messages and narrow
-`activeTools` or `toolChoice`. Returning `{}` keeps the initial settings.
-
-```ts
-const agent = new ToolLoopAgent({
-  model,
-  tools: { search, summarize },
-  prepareStep: ({ stepNumber }) =>
-    stepNumber < 3
-      ? { activeTools: ['search'], toolChoice: 'required' }
-      : { activeTools: ['summarize'], toolChoice: 'required' },
-});
-```
-
-## Explicit terminal tools
-
-To force every step through a tool, set `toolChoice: 'required'` and add a terminal
-tool without `execute`. Emitting that tool ends the loop, and its inferred payload is
-available in `staticToolCalls`:
+To require an explicit terminal payload, combine `toolChoice: 'required'` with a tool
+that has no `execute`. The unexecuted call ends the loop and remains available through
+the typed `staticToolCalls` collection.
 
 ```ts
 const agent = new ToolLoopAgent({
@@ -75,10 +47,36 @@ const call = result.staticToolCalls[0];
 if (call?.toolName === 'done') console.log(call.input.answer);
 ```
 
-## Structured agent results
+## Per-step configuration
 
-Declare output on the agent to make `generate().output` validated and statically
-typed. This avoids a separate structured-generation call:
+`prepareStep` runs before every generation. It receives the current `model`, a
+zero-based `stepNumber`, prior `steps`, outgoing `messages`, and runtime context. It
+can replace the model or messages, restrict `activeTools`, select a `toolChoice`, or
+override model-call settings. Returning `{}` keeps constructor settings.
+
+```ts
+const agent = new ToolLoopAgent({
+  model,
+  tools: { search, summarize },
+  prepareStep: ({ stepNumber }) =>
+    stepNumber < 3
+      ? { activeTools: ['search'], toolChoice: 'required' }
+      : { activeTools: ['summarize'], toolChoice: 'required' },
+});
+```
+
+In 2026-08 behavior, each `prepareStep` invocation can override model-call settings,
+and a `ToolLoopAgent.prepareCall` callback can inspect and replace the top-level
+`reasoning` option.
+
+`defaultInstructionsMiddleware` (2026-08) supplies default language-model
+instructions without overwriting instructions provided by an individual call.
+
+## Typed agent output and UI adaptation
+
+An agent can declare `output: Output.object(...)` in its constructor. Its
+`generate().output` is then schema-validated and statically inferred without a
+separate structured-generation call.
 
 ```ts
 const agent = new ToolLoopAgent({
@@ -91,39 +89,26 @@ const agent = new ToolLoopAgent({
 const { output } = await agent.generate({ prompt });
 ```
 
-## Lifecycle callback composition
-
-Constructor callbacks and callbacks passed to `generate()` or `stream()` compose. If
-the same lifecycle callback exists in both places, the constructor callback executes
-first and the call-level callback executes second. Do not expect the call-level value
-to override the constructor value.
-
-The experimental observer hooks `experimental_onStart`,
-`experimental_onStepStart`, `experimental_onToolCallStart`, and
-`experimental_onToolCallFinish` observe operation, step, and tool boundaries.
-Exceptions thrown by these hooks are caught and do not interrupt generation, so they
-must not be used for correctness-critical enforcement.
+Use `InferAgentUIMessage<typeof agent>` to carry agent tool and output types into UI
+components and persistence. Server routes can adapt UI messages with
+`createAgentUIStreamResponse`.
 
 ```ts
-await generateText({
-  model,
-  prompt,
-  tools,
-  experimental_onToolCallFinish({ toolName, durationMs, error }) {
-    recordToolRun({ toolName, durationMs, error });
-  },
-});
+export type AgentMessage = InferAgentUIMessage<typeof agent>;
+
+return createAgentUIStreamResponse({ agent, uiMessages: messages });
 ```
+
+Constructor and invocation lifecycle callbacks compose. If the same callback is
+defined on an agent and on `generate()` or `stream()`, both run and the constructor
+callback runs first.
 
 ## Runtime and tool-scoped context
 
-`runtimeContext` carries typed orchestration state through step preparation,
-approvals, callbacks, telemetry, and agent execution. It is shared orchestration state,
-not automatically exported telemetry data.
-
-A tool can declare a separate `contextSchema`. Supply its private configuration under
-that tool's key in `toolsContext`; only the selected tool receives the validated value
-as `context`:
+`runtimeContext` (2026-07) carries typed orchestration state through step preparation,
+approvals, callbacks, telemetry, and agents. For private tool configuration, declare
+the tool's `contextSchema`, supply its value through `toolsContext`, and read the
+validated `context` from the execution callback. Other tools do not receive it.
 
 ```ts
 const agent = new ToolLoopAgent({
@@ -139,90 +124,20 @@ const agent = new ToolLoopAgent({
       execute: ({ city }, { context }) => getWeather(city, context.apiKey),
     }),
   },
-  toolsContext: {
-    weather: { apiKey: process.env.WEATHER_API_KEY! },
-  },
+  toolsContext: { weather: { apiKey: process.env.WEATHER_API_KEY! } },
 });
 ```
 
-Prefer tool-scoped context for credentials and private integration configuration.
+Since 4.1.0, a normal tool `execute` callback also receives the `toolCallId`, full
+conversation `messages`, and request `abortSignal` as its second argument. Use them
+for per-call annotations, conversation-aware behavior, and cancellation propagation.
 
-## Tool execution context
+## Approvals
 
-Since `4.1.0`, the second argument of a tool's `execute` callback includes
-`toolCallId`, the complete conversation `messages`, and the request `abortSignal`.
-Use it for call-specific annotations, conversation-aware behavior, and cancellation
-propagation:
-
-```ts
-const weather = tool({
-  parameters: z.object({ location: z.string() }),
-  execute: async ({ location }, { toolCallId, messages, abortSignal }) => {
-    annotate(toolCallId, messages.length);
-    const response = await fetch(`/weather?q=${location}`, {
-      signal: abortSignal,
-    });
-    return response.json();
-  },
-});
-```
-
-## Tool-call repair and typed failures
-
-`experimental_repairToolCall` receives the invalid call and its error. Return a
-replacement call to retry with repaired arguments, or `null` to decline repair.
-
-```ts
-const result = await generateText({
-  model,
-  tools,
-  prompt,
-  experimental_repairToolCall: async ({ toolCall, error }) => {
-    if (NoSuchToolError.isInstance(error)) return null;
-    const args = await repairArguments(toolCall);
-    return { ...toolCall, args: JSON.stringify(args) };
-  },
-});
-```
-
-Handle the failure classes separately where recovery differs:
-
-- `NoSuchToolError`
-- `InvalidToolArgumentsError`
-- `ToolExecutionError`
-- `ToolCallRepairError`
-
-## Approval return and replay
-
-An approval-gated tool does not suspend `generateText` or `streamText`. The first call
-ends with `tool-approval-request` content. Preserve its response messages, append
-matching `tool-approval-response` parts in a `tool` message, and call generation again.
-An approved replay executes the tool; a denial is exposed to the model.
-
-```ts
-const approvals: ToolApprovalResponse[] = [];
-
-for (const part of result.content) {
-  if (part.type === 'tool-approval-request') {
-    approvals.push({
-      type: 'tool-approval-response',
-      approvalId: part.approvalId,
-      approved: true,
-    });
-  }
-}
-
-messages.push(
-  ...result.response.messages,
-  { role: 'tool', content: approvals },
-);
-
-await generateText({ model, tools, messages });
-```
-
-At the call or agent level, `toolApproval` can map each tool to user approval,
-automatic policy, or a typed decision function. For high-risk or durable flows, use
-HMAC-signed approvals and revalidate both tool input and policy during replay.
+Call-level `toolApproval` (2026-07) on `generateText`, `streamText`, or
+`ToolLoopAgent` can require a user decision, approve automatically, or delegate to a
+typed policy. For high-risk actions, use HMAC-signed approvals and revalidate both the
+tool input and current policy during replay.
 
 ```ts
 await generateText({
@@ -233,11 +148,56 @@ await generateText({
 });
 ```
 
-## Runtime-defined tools
+Approval is a return-and-replay protocol, not a suspended call. The first generation
+ends with `tool-approval-request` content. Preserve `result.response.messages`, append
+matching `tool-approval-response` parts in a `tool` message, and call the model again.
+An approved response permits execution; a denial is exposed to the model.
 
-`dynamicTool` represents tools whose input and output types are unavailable at compile
-time. Validate or cast their input at runtime. Mixed unions of static and dynamic
-calls/results expose a `dynamic` flag, preserving inference for known tools:
+```ts
+const approvals: ToolApprovalResponse[] = [];
+for (const part of result.content) {
+  if (part.type === 'tool-approval-request') {
+    approvals.push({
+      type: 'tool-approval-response',
+      approvalId: part.approvalId,
+      approved: true,
+    });
+  }
+}
+
+messages.push(...result.response.messages, { role: 'tool', content: approvals });
+await generateText({ model, tools, messages });
+```
+
+## Tool repair and typed failures
+
+Since 4.1.0, invalid tool calls can be replaced by a repair callback or declined by
+returning `null`. Distinguish `NoSuchToolError`, `InvalidToolArgumentsError`,
+`ToolExecutionError`, and `ToolCallRepairError` instead of treating all failures as a
+retry signal.
+
+```ts
+const result = await generateText({
+  model,
+  tools,
+  prompt,
+  repairToolCall: async ({ toolCall, error }) => {
+    if (NoSuchToolError.isInstance(error)) return null;
+    const args = await repairArguments(toolCall);
+    return { ...toolCall, args: JSON.stringify(args) };
+  },
+});
+```
+
+The stable option name is `repairToolCall` as of 2026-08. Older code can still use
+the deprecated `experimental_repairToolCall` compatibility alias.
+
+## Dynamic, streaming, and multimodal tools
+
+`dynamicTool` represents a runtime-loaded tool whose input and output are unknown at
+compile time. Validate or cast its values at runtime. Mixed static and dynamic call or
+result unions expose `dynamic` for narrowing while retaining inference for static
+tools.
 
 ```ts
 const custom = dynamicTool({
@@ -252,11 +212,8 @@ for (const call of result.toolCalls) {
 }
 ```
 
-## Streaming tool progress
-
-A tool's `execute` can return an `AsyncIterable`, usually via an async generator.
-Every yielded value except the last is preliminary; the final yielded value is the
-final tool result.
+A tool `execute` function may be an async generator. Every yielded value is a
+preliminary result except the last, which becomes the final result.
 
 ```ts
 const report = tool({
@@ -269,33 +226,15 @@ const report = tool({
 });
 ```
 
-## Tool input hooks
+Tools expose `onInputStart`, streaming `onInputDelta`, and validated
+`onInputAvailable` hooks. Earlier behavior called start and delta only under
+`streamText`; since 2026-08, `onInputStart` also runs before `onInputAvailable` for
+non-streaming calls. `onInputDelta` remains the per-chunk streaming observer.
 
-Tools can observe argument construction with:
-
-- `onInputStart`, when streamed argument generation begins;
-- `onInputDelta`, for each `inputTextDelta`; and
-- `onInputAvailable`, after complete input passes validation.
-
-The start and delta hooks run only with `streamText`. `generateText` invokes only the
-complete-input hook.
-
-```ts
-const weather = tool({
-  inputSchema,
-  onInputStart: () => markStarted(),
-  onInputDelta: ({ inputTextDelta }) => appendInput(inputTextDelta),
-  onInputAvailable: ({ input }) => recordValidated(input),
-  execute: getWeather,
-});
-```
-
-## Model-facing multimedia results
-
-Returning an image or other media object from `execute` is not enough to make it part
-of the next model input. Implement `toModelOutput` to serialize the runtime result into
-model content. This route is experimental and provider-dependent; inline media data is
-safer than assuming a remote media URL is supported.
+Returning an image or other media from `execute` does not send it back to the model.
+Define `toModelOutput` to serialize the runtime value into model content. This path is
+experimental and provider-dependent, so inline bytes are safer than assuming a remote
+URL can be fetched.
 
 ```ts
 const screenshot = tool({
@@ -303,43 +242,18 @@ const screenshot = tool({
   execute: async () => ({ data: await captureScreen() }),
   toModelOutput: ({ output }) => ({
     type: 'content',
-    value: [
-      { type: 'media', data: output.data, mediaType: 'image/png' },
-    ],
+    value: [{ type: 'media', data: output.data, mediaType: 'image/png' }],
   }),
 });
 ```
 
-## Computer-use tools
+## Timeouts and sandboxes
 
-The Anthropic provider supplies versioned Computer, Text Editor, and Bash tools for
-Claude 3.5 Sonnet. The application must implement each tool's `execute`
-behavior. Use `experimental_toToolResultContent` to serialize runtime results as text
-or image content, and configure `maxSteps` for multi-action runs.
-
-Computer use is a beta, high-risk capability. Isolate it from sensitive data and run
-it in a constrained environment, preferably a virtual machine.
-
-```ts
-const computer = anthropic.tools.computer_20241022({
-  displayWidthPx: 1920,
-  displayHeightPx: 1080,
-  execute: async ({ action, coordinate, text }) =>
-    action === 'screenshot'
-      ? { type: 'image', data: getScreenshot() }
-      : executeComputerAction(action, coordinate, text),
-  experimental_toToolResultContent: result =>
-    typeof result === 'string'
-      ? [{ type: 'text', text: result }]
-      : [{ type: 'image', data: result.data, mimeType: 'image/png' }],
-});
-```
-
-## Timeout budgets and sandbox sessions
-
-Generation and agent calls accept timeout budgets for the whole call, each step, idle
-stream chunks, the default tool duration, and individual tools. Timeout aborts are
-represented by `TimeoutError`.
+Generation and agent calls (2026-07) support total, per-step, idle-chunk,
+default-tool, and per-tool timeout budgets. Timeout aborts are represented by
+`TimeoutError`. A provided `SandboxSession` is delivered to tools as
+`experimental_sandbox` and supports a working directory, environment values,
+streaming command output, and abort signals.
 
 ```ts
 await generateText({
@@ -351,17 +265,6 @@ await generateText({
     toolMs: 5_000,
     tools: { runCommandMs: 15_000 },
   },
-  prompt,
-});
-```
-
-A supplied `SandboxSession` reaches tool execution as `experimental_sandbox`. It
-supports portable commands, working directories, environment variables, output
-streaming, and abort signals:
-
-```ts
-await generateText({
-  model,
   experimental_sandbox: sandbox,
   tools: {
     runCommand: tool({
@@ -374,38 +277,28 @@ await generateText({
 });
 ```
 
-## Durable workflows
+## Durable and external execution
 
-`@ai-sdk/workflow` provides `WorkflowAgent`. It persists execution between steps so a
-long-running agent can survive restarts, deployments, interruptions, and delayed
-approvals. Streaming, tools, approvals, callbacks, runtime and tool context, and
-provider model serialization all work across workflow boundaries.
+`WorkflowAgent` from `@ai-sdk/workflow` (2026-07) persists execution between steps so
+long-running agents can survive restarts, deployments, interruptions, and delayed
+approvals. It supports streaming, tools, approvals, callbacks, runtime and tool
+context, and serialization of provider models across workflow boundaries.
 
-```ts
-import { WorkflowAgent } from '@ai-sdk/workflow';
+Experimental `HarnessAgent` (2026-07) wraps an existing agent runtime with the normal
+`Agent` interface, allowing standard `generate`, `stream`, UI chat, and workflow
+integration. Harness runs can receive a sandbox, instructions, skills, and tools, and
+can resume sessions or interrupted turns.
 
-const agent = new WorkflowAgent({
-  model,
-  tools,
-  runtimeContext: { userId: 'user_123' },
-});
-```
+## Provider computer-use tools
 
-## External harnesses
+Since 4.0.0, the Anthropic provider offers versioned Computer, Text Editor, and Bash
+tools for Claude 3.5 Sonnet. The application must implement each `execute` operation,
+serialize text or image results with `experimental_toToolResultContent`, bound the
+multi-action run with `maxSteps`, and isolate this beta capability from sensitive data,
+preferably inside a virtual machine.
 
-Experimental `HarnessAgent` adapts an established agent runtime to the standard
-`Agent` interface. Its `generate`, `stream`, UI chat, and workflow integrations return
-normal SDK results. Harness runs can receive a sandbox, instructions, skills, and
-tools; sessions and interrupted turns can be resumed.
+## Experimental code-mode routing
 
-```ts
-import { HarnessAgent } from '@ai-sdk/harness/agent';
-
-const agent = new HarnessAgent({
-  harness,
-  sandbox,
-  instructions,
-  skills,
-  tools,
-});
-```
+As of 2026-08, `generateText` can route code mode through
+`experimental_toolCaller`. `streamText` and `ToolLoopAgent` also accept experimental
+tool callers, with simplified configuration available from 7.0.50.

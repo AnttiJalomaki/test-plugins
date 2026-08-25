@@ -1,67 +1,63 @@
-# OTLP ingestion
+# OTLP Ingestion
 
-Use this reference when configuring the OTLP receiver, choosing translation or
-temporality behavior, promoting metadata, or debugging target information,
-histograms, start times, and request limits.
+Use this reference when configuring OTLP translation, metadata promotion,
+delta-temporality handling, start timestamps, or histogram conversion.
 
-## Translation strategies
+## Translation strategies and identity
 
-### UTF-8 and suffix behavior
+### Preserve UTF-8 while retaining suffixes (3.0.0)
 
-From 3.0.0, `otlp.translation_strategy` can preserve UTF-8 without escaping
-while retaining translated suffixes:
+Set `otlp.translation_strategy` to `NoUTF8EscapingWithSuffixes` to avoid UTF-8
+normalization while retaining suffix translation.
 
-```yaml
-otlp:
-  translation_strategy: NoUTF8EscapingWithSuffixes
-```
+### Preserve target identity and metric metadata (3.1.0)
 
-From 3.6.0, `UnderscoreEscapingWithoutSuffixes` escapes names with underscores
-without adding translated suffixes:
+Translation keeps identifying attributes in `target_info`. The receiver also
+converts metric metadata and accepts colons in non-standard unit strings,
+preserving more resource context without rejecting custom units.
+
+### Leave names and attributes untranslated (3.4.0)
+
+OTLP translation can preserve original OTLP metric names and attributes rather
+than translating them. Choose this only when downstream Prometheus naming and
+query behavior can accommodate those forms.
+
+### Respect defaults without an `otlp` block (3.4.0)
+
+Receiver defaults apply even when configuration omits the `otlp:` block.
+
+### Escape with underscores but omit suffixes (3.6.0)
+
+Use `UnderscoreEscapingWithoutSuffixes` to escape names with underscores
+without translated suffixes:
 
 ```yaml
 otlp:
   translation_strategy: UnderscoreEscapingWithoutSuffixes
 ```
 
-The translation configuration can also preserve metric names and attributes in
-their original OTLP forms from 3.4.0.
+### Handle leading underscores consistently (3.7.0)
 
-From 3.7.1, translating an OpenTelemetry attribute whose name begins with
-exactly one underscore prefixes the Prometheus label with `key_`; multiple
-consecutive leading underscores are preserved. This restores behavior changed
-in 3.7.0.
+From 3.7.1, translating an attribute beginning with one underscore prefixes
+the label with `key_`; multiple consecutive underscores are preserved. This
+restores behavior that 3.7.0 changed.
 
-### Reserved names
+### Filter the metric-name attribute (3.10.0)
 
-OTLP conversion filters the `__name__` attribute from 3.10.0 so it cannot
-create a second label alongside the translated metric name.
+Conversion drops the reserved `__name__` attribute so it cannot create a
+duplicate label next to the translated metric name.
 
-With `--enable-feature=type-and-unit-labels`, OTLP metrics receive `__type__`
-and `__unit__` labels from 3.6.0. These labels are reserved
-(`feature-flags`): ingestion metadata overrides incoming user values, and
-metadata WAL values override conflicting values on an existing Remote Write
-2.0 series.
+### Monitor translation collisions (3.13.2-3.14.0)
 
-## Resource, scope, and metric metadata
+Translation warns when distinct OTLP attributes sanitize to the same Prometheus
+label. Monitor `prometheus_api_otlp_translation_warnings_total`, grouped by its
+`category` label.
 
-### Identity and metadata
+## Resource, scope, type, and unit metadata
 
-From 3.1.0, translation retains identifying attributes in `target_info`. The
-receiver also translates metric metadata and accepts colons in non-standard
-unit strings.
+### Promote resource attributes broadly (3.5.0)
 
-Prometheus emits `target_info` samples between the earliest and latest sample
-for each OTLP resource from 3.6.0, keeping its resource metadata available
-across the sample interval.
-
-Duplicate `target_info` samples with the same series and timestamp are
-de-duplicated from 3.8.0.
-
-### Attribute promotion
-
-The 3.5.0 `otlp` block supports broad resource-attribute promotion plus an
-exclusion list:
+Use `promote_all_resource_attributes` with selective exclusions:
 
 ```yaml
 otlp:
@@ -70,88 +66,104 @@ otlp:
     - service.instance.id
 ```
 
-Set `otlp.promote_scope_metadata` from 3.6.0 to add OTLP scope metadata as
-metric labels:
+### Promote scope metadata (3.6.0)
+
+Set `otlp.promote_scope_metadata` to add scope metadata as metric labels:
 
 ```yaml
 otlp:
   promote_scope_metadata: true
 ```
 
-OTLP receiver defaults apply even when the configuration has no explicit
-`otlp:` block from 3.4.0.
+### Add type and unit labels (3.6.0)
+
+With `--enable-feature=type-and-unit-labels`, OTLP metrics receive `__type__`
+and `__unit__` labels.
+
+### Fill target-info sample intervals (3.6.0)
+
+Prometheus generates `target_info` samples from the earliest through latest
+sample for each OTLP resource, keeping its resource metadata available across
+the resource's sample interval.
+
+### De-duplicate target information (3.8.0)
+
+OTLP ingestion de-duplicates `target_info` samples sharing the same series and
+timestamp.
+
+### Treat type and unit labels as reserved (feature-flags)
+
+Ingestion metadata overrides incoming values for `__type__` and `__unit__`.
+PromQL drops them under the same kinds of operations that drop `__name__`. If a
+metadata WAL record conflicts with labels on a Remote Write 2 series, the
+reserved metadata values take precedence.
 
 ## Delta temporality
 
-### Delta-to-cumulative conversion
+### Convert deltas to cumulative metrics (3.2.0)
 
-Enable `otlp-deltatocumulative` from 3.2.0 to convert delta-temporality metrics
-to cumulative metrics instead of dropping them:
+Enable `otlp-deltatocumulative` to convert delta-temporality metrics instead of
+dropping them:
 
 ```text
 --enable-feature=otlp-deltatocumulative
 ```
 
-Conversion retains per-series state in memory. Restarting loses that state and
-causes a counter reset; inactive state is periodically removed according to
-`max_stale`.
+The converter keeps per-series state in memory. Restarting loses that state and
+causes a counter reset; inactive state is cleared according to `max_stale`.
 
-### Native delta ingestion
+### Distinguish raw-delta ingestion (3.4.0)
 
-Primitive ingestion of delta metrics without conversion appears in 3.4.0. The
-full `otlp-native-delta-ingestion` contract is described by `feature-flags`:
+The receiver can ingest delta metrics as-is. This is different from
+`otlp-deltatocumulative`, which maintains cumulative state.
 
-- it stores raw delta values;
-- it is mutually exclusive with `otlp-deltatocumulative`;
-- it currently ignores `StartTimeUnixNano`;
-- it records unknown metric metadata;
-- identical-timestamp deltas are not summed;
-- federation can collect them incorrectly when ingestion and scrape intervals
-  differ;
-- cumulative and delta data need an explicit distinguishing label if they can
-  mix.
+### Query native deltas as deltas (feature-flags)
 
-Counter functions such as `rate()` and `increase()` are incorrect for these
-raw-delta series. Sum deltas directly over a range aligned to their collection
-interval:
+`otlp-native-delta-ingestion` stores raw deltas and is mutually exclusive with
+`otlp-deltatocumulative`. It ignores `StartTimeUnixNano` and records unknown
+metric metadata. `rate()` and `increase()` are incorrect for these series; sum
+aligned deltas directly:
 
 ```promql
 sum_over_time(delta_metric[5m])
 sum_over_time(delta_metric[5m]) / 5m
 ```
 
-## Histograms
+Align the range with the collection interval. Equal-timestamp deltas are not
+summed. Federation can miscollect them when ingestion and scrape intervals
+differ, and mixed delta/cumulative streams need an explicit distinguishing
+label.
 
-An opt-in feature added in 3.4.0 translates OTLP explicit-bucket histograms
-into native histograms with custom buckets.
+## Histograms, exemplars, and sums
 
-Classic-histogram-to-NHCB conversion can run with created-timestamp zero
-ingestion from 3.8.0.
+### Convert explicit histograms to custom buckets (3.4.0)
 
-Prometheus 3.11.0 fixes OTLP exemplar placement so exemplars are not mixed
-between incorrect sections of a histogram.
+An opt-in feature can translate OTLP explicit-bucket histograms into native
+histograms with custom buckets.
 
-## Start times
+### Store OTLP start times as created-time samples (3.7.0)
 
-With `--enable-feature=created-timestamp-zero-ingestion`, the receiver writes
-OTLP metric start times as created-time zero samples from 3.7.0.
+With `created-timestamp-zero-ingestion`, the receiver writes metric start times
+into TSDB as created-time zero samples.
 
-The 3.11.0 `st-storage` feature stores OTLP start timestamps in the TSDB and
-Agent WAL and exposes them through Remote Write 2. Its encoding and replay
-requirements are in
-[Histograms, TSDB, and storage](histograms-tsdb-and-storage.md).
+### Preserve OTLP sums (3.10.0)
 
-`st-synthesis` is not implemented for OTLP (`feature-flags`); it applies only
-to scraped cumulative metrics.
+A corrected ingestion path no longer silently loses OTLP sum metrics. Upgrade
+deployments receiving OTLP sums rather than depending on affected behavior.
 
-## Receiver correctness and limits
+### Place histogram exemplars correctly (3.11.0)
 
-Prometheus 3.10.0 fixes a receiver path that could silently lose OTLP sum
-metrics. OTLP-sum users should upgrade rather than rely on the affected
-behavior.
+OTLP exemplars are no longer mixed into the wrong parts of a histogram.
 
-The OTLP write endpoint limits the decompressed size of gzip-compressed request
-bodies from 3.12.0.
+## Request handling and tracing
 
-Prometheus no longer fails to start when tracing is configured for insecure
-OTLP over HTTP from 3.12.0.
+### Limit decompressed request size (3.12.0)
+
+The OTLP write endpoint limits the decompressed size of gzip request bodies.
+Size clients and gateway limits for the uncompressed payload, not only the
+wire size.
+
+### Allow insecure OTLP-over-HTTP tracing (3.12.0)
+
+Prometheus no longer fails startup when tracing is configured to send insecure
+OTLP over HTTP.

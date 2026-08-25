@@ -2,14 +2,17 @@
 
 ## Publishing Qwik libraries
 
-From 1.9, a Qwik library build no longer performs the Qwik transform. Publish a
-new build rather than relying on output created under the older behavior. When
-the library accepts both generations, extend its Qwik range with `| ^2.0.0`.
+Since 1.9, Qwik library builds no longer perform the Qwik transform. Library
+authors should publish a fresh build instead of relying on consumer-side
+behavior from an older artifact.
 
-## Using V1 libraries in a V2 application
+For a library intended to support both package generations, extend its
+accepted Qwik range with `| ^2.0.0`.
 
-From 1.11, a V2 application can retain a V1 library by installing both core
-generations:
+## Keeping V1 libraries in V2 applications
+
+Since 1.11, a V2 application can retain libraries built against V1 by
+installing both generations:
 
 ```json
 {
@@ -20,43 +23,37 @@ generations:
 }
 ```
 
-The V1 package supplies the retained library while the V2 package supplies the
-application runtime generation.
+Keep the two runtimes deliberate; do not remove the V1 package while a
+retained library still imports it.
 
-## Vite peer dependencies
+## Vite dependency placement
 
-`vite` is a peer dependency of Qwik, Qwik City, Qwik React, and Qwik Labs to
-avoid duplicate Vite imports. Add Vite directly to the application's
-dependencies and align its version with the Qwik toolchain.
+`vite` is a peer dependency of Qwik, Qwik City, Qwik React, and Qwik Labs.
+Applications must declare Vite directly. This avoids duplicate Vite imports
+through framework packages.
 
-## Direct build-constant imports
+## Vite 7 toolchain
 
-Import the build constants from the main package:
-
-```ts
-import { isBrowser, isDev, isServer } from '@builder.io/qwik';
-```
-
-The older `@builder.io/qwik/build` entry point remains available.
+Qwik core and Qwik City moved to Vite 7 in 1.16. Align the application's Vite
+dependency, plugins, and configuration with that major when upgrading either
+package.
 
 ## Tailwind integrations
 
-The integration supports Tailwind CSS 4. The CLI also allows an existing
-project to continue with Tailwind CSS 3.
+The Qwik integration supports Tailwind CSS 4. The CLI also lets projects
+continue using Tailwind CSS 3; choose the generation that matches the
+application's existing stylesheet and plugin configuration.
 
-## Compiled i18n
+## Compiled i18n scaffolding
 
-Scaffold the compiled-i18 integration directly:
+Add the compiled-i18 integration with the Qwik CLI:
 
 ```sh
 qwik add compiled-i18
 ```
 
-## Targeting integrations in a monorepo
-
-Pass `projectDir` to `qwik add` when the integration belongs in a package or
-subproject rather than at the repository root:
+In a monorepo, combine it with `projectDir` to target a subproject:
 
 ```sh
-qwik add --projectDir=packages/my-package
+qwik add compiled-i18 --projectDir=packages/my-package
 ```

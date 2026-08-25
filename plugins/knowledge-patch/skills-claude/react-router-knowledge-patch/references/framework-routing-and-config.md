@@ -1,53 +1,36 @@
 # Framework Routing and Configuration
 
-## Contents
+## Define the route tree
 
-- [Route configuration](#route-configuration)
-- [Route discovery and patching](#route-discovery-and-patching)
-- [Route-module splitting and lazy route code](#route-module-splitting-and-lazy-route-code)
-- [Prerendering and static output](#prerendering-and-static-output)
-- [Framework request behavior](#framework-request-behavior)
-- [URL presentation and path generation](#url-presentation-and-path-generation)
-- [Multiple server bundles](#multiple-server-bundles)
+### Explicit route configuration
 
-## Route configuration
-
-### Explicit route trees
-
-Framework routes are exported from `app/routes.ts` as `RouteConfig`. Use helpers from
-`@react-router/dev/routes`:
+Since 7.0.0, Framework Mode exports a `RouteConfig` from `app/routes.ts` and uses
+helpers from `@react-router/dev/routes`.
 
 ```ts
-import { index, route, type RouteConfig } from "@react-router/dev/routes";
+import { index, layout, prefix, route, type RouteConfig } from "@react-router/dev/routes";
 
 export default [
   index("./home.tsx"),
-  route("products/:id", "./product.tsx"),
-] satisfies RouteConfig;
-```
-
-`layout(module, children)` adds a route module and outlet nesting without adding a URL
-segment. `prefix(path, children)` adds a URL prefix without adding a route to the tree and
-returns an array that must be spread.
-
-```ts
-import { layout, prefix, route, type RouteConfig } from "@react-router/dev/routes";
-
-export default [
   layout("./auth/layout.tsx", [route("login", "./auth/login.tsx")]),
-  ...prefix("projects", [route(":id", "./projects/project.tsx")]),
+  ...prefix("products", [route(":id", "./products/product.tsx")]),
 ] satisfies RouteConfig;
 ```
 
-The route ID `root` is reserved for the actual root route and is rejected on any other route.
-The `relative(directory)` helper creates route helpers whose module paths resolve relative to
-that directory, which lets route config be split across files without manually rebasing paths.
+`layout` inserts a route module and outlet nesting without adding a URL segment.
+`prefix` adds a URL prefix without adding a route and returns an array that must be
+spread. The `relative` helper creates route helpers whose module paths resolve from
+a supplied directory, which is useful for route definitions split across files.
 
-### File-route compatibility
+The route ID `root` is reserved for the actual root route as of 7.6.0; assigning it
+to another route is rejected.
 
-Use `flatRoutes()` from `@react-router/fs-routes` for Remix-style discovery. It defaults to
-`app/routes`; `rootDirectory` selects another directory relative to `app`, and
-`ignoredRouteFiles` excludes matching modules.
+### File-route discovery
+
+Remix-style file routes remain available through `flatRoutes()` from
+`@react-router/fs-routes`. It defaults to `app/routes`; `rootDirectory` selects a
+different directory relative to `app`, while `ignoredRouteFiles` filters matched
+modules.
 
 ```ts
 import { flatRoutes } from "@react-router/fs-routes";
@@ -59,14 +42,16 @@ export default flatRoutes({
 }) satisfies RouteConfig;
 ```
 
-Bridge a custom Remix route callback with `@react-router/remix-config-routes-adapter`. The
-adapter exports both `DefineRoutesFunction` and the per-route `DefineRouteFunction` type.
+Custom Remix route callbacks can be bridged through
+`@react-router/remix-config-routes-adapter`.
 
-## Route discovery and patching
+## Route discovery and lazy code
 
-Framework Mode defaults to a lazy route manifest served at `/__manifest`. Configure another
-path for servers hosting multiple apps, or use `mode: "initial"` to put every route in the
-initial manifest and avoid discovery requests.
+### Configurable manifest discovery
+
+Framework Mode's 7.6.0 `routeDiscovery` option supports the default lazy manifest,
+a custom endpoint for hosts serving multiple applications, and initial mode, which
+puts every route in the initial manifest.
 
 ```ts
 export default {
@@ -77,56 +62,28 @@ export default {
 };
 ```
 
-In lazy mode, the first manifest contains only initially matched routes. Rendered links are
-batched into one manifest request so their routes can be patched before navigation. A click
-that wins the race still succeeds after discovery, and a route is discovered only once per
-session.
+Lazy mode defaults to `/__manifest`. The first document includes matched routes;
+rendered links are then batched into one manifest request and patched before likely
+navigations. A click that beats discovery still succeeds after the discovery
+request, and each route is discovered only once per session. If deployment makes a
+client manifest stale, Framework Mode reloads the destination for navigation or the
+current page for a fetcher call (7.3.0).
 
-Framework Mode detects route-manifest skew after a deployment. Navigating to a stale,
-undiscovered route reloads the destination path; a fetcher request reloads the current path.
-
-Custom `patchRoutesOnNavigation` callbacks receive `fetcherKey` to identify a fetcher-driven
-patch. For those calls, `path` excludes the search string.
+`patchRoutesOnNavigation` receives `fetcherKey` as of 7.3.0. For fetcher-triggered
+calls, its `path` excludes search parameters as of 7.7.0.
 
 ```ts
 createBrowserRouter(routes, {
   patchRoutesOnNavigation({ fetcherKey, path, patch }) {
-    // Discover and patch `path`; associate work with `fetcherKey` if present.
+    // Discover and patch routes for this path and initiating fetcher.
   },
 });
 ```
 
-## Route-module splitting and lazy route code
+### Per-property Data Mode lazy imports
 
-Framework Mode automatically splits route modules. In v7, the behavior progressed through
-`future.unstable_splitRouteModules` and `future.v8_splitRouteModules`; in v8 it is configured
-with top-level `splitRouteModules`, defaulting to `true`.
-
-```ts
-export default {
-  splitRouteModules: "enforce",
-};
-```
-
-Use `false` for one chunk per module. With `"enforce"`, the root route may still combine
-splittable and unsplittable exports because it is always emitted as one chunk.
-
-A declaration shared by two exports inside one route module prevents those exports from being
-isolated. The app can build as one chunk, but enforced splitting fails. Move shared declarations
-to another module so each generated chunk imports them.
-
-```tsx
-// shared.ts
-export const shared = () => "hello";
-
-// route.tsx
-import { shared } from "./shared";
-export async function clientLoader() { return { message: shared() }; }
-export default function Component() { return <p>{shared()}</p>; }
-```
-
-Since 7.5.0, Data Mode `route.lazy` can use the faster, granular object form whose properties
-import independently:
+Since 7.5.0, `route.lazy` can be an object whose members import route properties
+independently rather than importing a whole route module.
 
 ```ts
 createBrowserRouter([{
@@ -139,15 +96,37 @@ createBrowserRouter([{
 }]);
 ```
 
-The short-lived `route.unstable_lazyMiddleware` migration is obsolete. It replaced middleware
-returned from function-form `route.lazy` in 7.4.1, then was removed in favor of
-`route.lazy.unstable_middleware` in the per-property object API. Stable middleware uses the
-current route middleware surface described in the middleware reference.
+The former `route.unstable_lazyMiddleware` transition is obsolete. In 7.5, lazy
+middleware used `route.lazy.unstable_middleware`; current code should use the stable
+middleware surface supported by its installed version.
 
-## Prerendering and static output
+## Route-module splitting
 
-The framework plugin's `prerender` callback can combine statically known paths with application
-paths and emits `.html` and `.data`; resource routes can be prerendered too.
+Automatic Framework Mode route-module splitting was introduced in the 7.0-guide
+and active by 7.2. It later used `future.unstable_splitRouteModules`, then
+`future.v8_splitRouteModules` in 7.10.0. In 8.0.0 it became top-level
+`splitRouteModules` and defaults to `true`.
+
+```ts
+export default {
+  splitRouteModules: "enforce",
+};
+```
+
+Use `false` for one chunk per route module. Under enforced splitting, the root route
+may still contain splittable and unsplittable exports because it is always emitted
+as one chunk (7.4.0).
+
+If multiple route exports reference one declaration defined inside the route module,
+they cannot be isolated. The app can still build as one chunk, but enforcement fails;
+move the shared declaration into another module so each chunk can import it.
+
+## Prerendering and SPA output
+
+### Select paths at build time
+
+The 7.0.0 Vite plugin can prerender route and resource paths into `.html` and `.data`
+files. A callback can combine generated static paths with explicit dynamic values.
 
 ```ts
 reactRouter({
@@ -157,16 +136,24 @@ reactRouter({
 });
 ```
 
-Set `prerender: true` to discover and build all static paths from `routes.ts`. Parameterized
-routes are omitted because their values must be supplied explicitly. `prerender.concurrency`
-controls parallel work; it was originally called `prerender.unstable_concurrency`.
+`prerender: true` discovers and builds every static route from `routes.ts`;
+parameterized routes remain excluded until explicit values are supplied. Prerender
+concurrency began as `prerender.unstable_concurrency` in 7.9.0 and stabilized as
+`prerender.concurrency` in 7.15.0.
 
-`@react-router/serve` serves generated `.data` as `text/x-turbo`. Prerendered files outside the
-asset directory receive no explicit cache policy.
+When multiple server bundles are enabled, 7.14.0 can prerender them under the v8
+Vite Environment API behavior. In v8, the preview-server prerenderer is the only
+implementation.
 
-When `ssr: false`, omitting `/` from a path list leaves `index.html` as a generic SPA fallback.
-Including `/` makes `index.html` root-specific and emits `__spa-fallback.html` for other
-non-prerendered application paths.
+`@react-router/serve` serves `.data` files as `text/x-turbo`. Generated prerender
+files outside the asset directory have no explicit cache policy, so configure the
+deployment cache deliberately.
+
+### SPA fallback files
+
+With `ssr: false`, omitting `/` from `prerender` leaves `index.html` as the generic
+SPA fallback. Including `/` makes `index.html` the root-route output and emits
+`__spa-fallback.html` for non-prerendered application paths (7.2.0).
 
 ```ts
 export default {
@@ -175,65 +162,15 @@ export default {
 };
 ```
 
-In SPA Mode, a root `loader` can run at build time. Without explicit prerender paths, only the
-root may have a loader. Configured paths may use all matched loaders. `headers` and `action`
-remain invalid, and dynamic fallback paths need `clientLoader` rather than later server-loader
-revalidation. `Route.HydrateFallbackProps.loaderData` is optional while child routes load.
+Without prerendering, SPA Mode permits only a build-time root loader. With explicit
+prerender paths, their matched loaders may also run. `headers` and `action` remain
+forbidden, and dynamic fallback paths need `clientLoader` rather than server-loader
+revalidation.
 
-## Framework request behavior
+## Server bundles and environment-aware routes
 
-With SSR, Framework Mode revalidates route loaders after every navigation and form submission;
-Data Mode does not. Define route-level `shouldRevalidate` to opt out. SPA Mode has no navigation
-server loaders and therefore behaves like Data Mode.
-
-Pass-through request behavior exposes the raw incoming `request` to loaders, actions, and
-middleware while a sibling `url` provides the normalized routing URL. It began as
-`future.unstable_passThroughRequests` with `unstable_url`, then became
-`future.v8_passThroughRequests` with `url`, and is unconditional in v8.
-Before opting into pass-through requests, both `request.url` and the sibling URL represented the
-same normalized routing location. Opting in stops the router from replacing the request URL to
-hide `.data`, `index`, and `_routes` implementation details; the sibling `url: URL` remains the
-right value for routing logic.
-
-```ts
-export function loader({ request, url }: Route.LoaderArgs) {
-  return {
-    rawPath: new URL(request.url).pathname,
-    routePath: url.pathname,
-  };
-}
-```
-
-Trailing-slash-aware data requests preserve `/a/b/c/` for middleware and handlers and map it to
-`/a/b/c/_.data` instead of `/a/b/c.data`; the root endpoint is `/_.data` rather than
-`/_root.data`. The flag spelling
-moved from `future.unstable_trailingSlashAwareDataRequests` to
-`future.v8_trailingSlashAwareDataRequests` and the behavior is unconditional in v8. Update
-caches and URL-sensitive infrastructure when adopting it. The old unstable spelling is a config
-resolution error once the `v8_` spelling is available.
-
-## URL presentation and path generation
-
-Framework and Data Mode links can navigate to one location while displaying another using the
-`mask` prop. Read the optional mask from `useLocation().mask`. Masking is SPA-only and is removed
-from history state during SSR. These were originally `<Link unstable_mask>` and
-`useLocation().unstable_mask` when introduced in 7.13.1.
-
-```tsx
-<Link to="/gallery?image=42" mask="/images/42">
-  Open image
-</Link>
-```
-
-`generatePath()` correctly handles a dynamic parameter followed by a suffix, such as
-`/books/:id.json`. Typed framework `href()` supports optional static and dynamic segments,
-splats, suffixed parameters, and single optional-parameter routes. See the type/API reference
-for its typing and encoding rules.
-
-## Multiple server bundles
-
-`serverBundles` receives each matched branch and returns a bundle ID, which becomes the
-directory name under the server build directory.
+The `serverBundles` callback receives a route branch and returns the output directory
+name, allowing server code to be split by route family.
 
 ```ts
 import type { Config } from "@react-router/dev/config";
@@ -244,5 +181,56 @@ export default {
 } satisfies Config;
 ```
 
-Prerendering multiple server bundles is supported when the v7 Vite Environment API behavior is
-enabled and follows the mandatory environment API in v8.
+Since 7.10.0, `@react-router/dev` loads environment variables before evaluating
+`routes.ts`; route selection may use `VITE_`-prefixed `import.meta.env` values.
+
+## URL forms and masking
+
+URL masks route to `to` while displaying another URL, such as a gallery modal with a
+shareable standalone address. The feature arrived as `unstable_mask` in 7.13.1 and
+stabilized as `mask` in 7.15.0. Read the active mask from `useLocation().mask`.
+Masking is SPA-only and is removed from history state during SSR.
+`Location.mask` is optional in the stable 7.15.0 API.
+
+```tsx
+<Link to="/gallery?image=42" mask="/images/42">Open image</Link>
+```
+
+Trailing-slash-aware data endpoints first used
+`future.unstable_trailingSlashAwareDataRequests` in 7.12.0 and
+`future.v8_trailingSlashAwareDataRequests` in 7.16.0; the older spelling then became
+a config error. The behavior is unconditional in 8.0.0. A browser path `/a/b/c/`
+changes its data endpoint from `/a/b/c.data` to `/a/b/c/_.data`; root changes from
+`/_root.data` to `/_.data`. Update caches and URL-sensitive infrastructure.
+
+Raw request pass-through similarly moved from `future.unstable_passThroughRequests`
+in 7.13.2 to `future.v8_passThroughRequests` in 7.15.0, then became unconditional
+in v8. Loaders, actions, and middleware receive the raw implementation URL in
+`request`; use their normalized `url` argument for routing logic.
+
+## Config-name migration map
+
+The 7.15.0 stable spellings replaced these provisional names:
+
+| Old | Stable |
+| --- | --- |
+| `future.unstable_passThroughRequests` | `future.v8_passThroughRequests` |
+| `future.unstable_subResourceIntegrity` | top-level `subResourceIntegrity` |
+| `prerender.unstable_concurrency` | `prerender.concurrency` |
+| `unstable_url` | `url` |
+| `unstable_instrumentations` | `instrumentations` |
+| `unstable_pattern` | `pattern` |
+| `unstable_defaultShouldRevalidate` | `defaultShouldRevalidate` |
+| `unstable_useTransitions` | `useTransitions` |
+| `unstable_mask` | `mask` |
+| `unstable_normalizePath` | `normalizePath` |
+
+Earlier, 7.10.0 renamed `future.unstable_viteEnvironmentApi` and
+`future.unstable_splitRouteModules` to `future.v8_viteEnvironmentApi` and
+`future.v8_splitRouteModules`. In 8.0.0, Vite Environment API, pass-through
+requests, middleware, and trailing-slash behavior became unconditional; splitting
+moved top-level. Remove adopted flags rather than carrying them forward.
+
+The 7.16.0 development tooling warns about all approaching v8 behaviors:
+`v8_middleware`, `v8_splitRouteModules`, `v8_viteEnvironmentApi`,
+`v8_passThroughRequests`, and `v8_trailingSlashAwareDataRequests`.

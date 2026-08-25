@@ -1,180 +1,69 @@
 # Backends, Encryption, Installation, and Security
 
-Backend migrations and authentication, state encryption, package installation, security updates, and supported platforms.
+## S3 credentials and locking
 
-## S3 and object-storage backends
+Terraform 1.7 changes the S3 backend's default `use_legacy_workflow` to `false`, following AWS SDK and CLI default-provider-chain order (`terraform-1.7.0`). The `true` compatibility setting temporarily restores the old order but is deprecated. OpenTofu 1.8 removes the argument entirely (`opentofu-1.8.0`).
 
-### Additional OSS backend environment variables
+Terraform 1.10 removes deprecated flat assume-role attributes; put them in an `assume_role` block (`terraform-1.10.0`). It also adds native S3 state locking. When native and DynamoDB locking are both configured, both locks are acquired.
 
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-The `oss` backend accepts more of the standard environment variables used by the corresponding provider, allowing backend authentication and configuration to reuse provider-style environment settings.
-
-### Backend validation and S3 authentication changes
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-`terraform validate` now checks that the configured backend type exists, required backend attributes are present, and backend-specific validation succeeds. The S3 backend can authenticate through `aws login`; after upgrading, `AWS_USE_FIPS_ENDPOINT` and `AWS_USE_DUALSTACK_ENDPOINT` must contain `true` or `false`, and other non-empty values are no longer interpreted as true.
-
-### Cross-platform provider checksums
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-When installing from a registry, `tofu init` now records the full set of supported-platform `zh:` and `h1:` provider hashes, so the first initialization after upgrade can add many `h1:` entries to `.terraform.lock.hcl`. A separate `tofu providers lock` is generally needed only when initialization uses an alternative installation source; a `network_mirror` can also opt to trust all hashes reported by that mirror.
-
-### Module-source HTTP handling
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-An `s3::http://` module source now uses plaintext HTTP for non-AWS origins; official AWS hostnames retain their special handling. Earlier releases silently changed any URL using the `s3` source type to HTTPS.
-
-### Native S3 state locking
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-The S3 backend can lock state directly in S3 without a DynamoDB table by enabling `use_lockfile`. Use 1.10.2 or later when lock files require S3 server-side encryption, because that release fixes the missing `x-amz-server-side-encryption` header.
+Terraform 1.11 deprecates DynamoDB locking arguments. Migrate to S3-native lock files, using both mechanisms only during transition (`terraform-1.11.0`).
 
 ```hcl
 terraform {
   backend "s3" {
+    bucket       = "example-state"
+    key          = "prod/terraform.tfstate"
+    region       = "us-east-1"
     use_lockfile = true
   }
 }
 ```
 
-### OCI Object Storage backend
+Terraform 1.15 accepts credentials established by `aws login`. It strictly parses `AWS_USE_FIPS_ENDPOINT` and `AWS_USE_DUALSTACK_ENDPOINT` as `true` or `false`; other non-empty strings no longer mean true (`terraform-1.15.0`).
 
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
+OpenTofu 1.10 makes `skip_s3_checksum` disable the AWS SDK's default S3 integrity checks too; this helps incomplete S3-compatible servers at the cost of verification. Use 1.10.2 or later when lockfiles require the configured server-side-encryption header (`opentofu-1.10.0`).
 
-Terraform now includes a backend implementation for storing state in OCI Object Storage.
+OpenTofu 1.11 S3 module sources follow AWS CLI/SDK credential search, including IAM roles for service accounts, so an upgrade can select a different credential. The S3 backend can tag state and lock objects and supports `eusc-de-east-1` (`opentofu-1.11.0`).
 
-### S3 backend credential-chain default
+OpenTofu 1.12 honors plaintext HTTP for `s3::http://` module sources unless the origin is an official AWS hostname; older releases ignored the scheme and used HTTPS (`opentofu-1.12.0`).
 
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
+## Azure backends
 
-The S3 backend now defaults `use_legacy_workflow` to `false` and searches for credentials in the same order as AWS SDKs and the AWS CLI. Setting `use_legacy_workflow = true` temporarily restores the old order, but the option and legacy workflow are deprecated for removal in a future minor release.
-
-### S3 legacy credential workflow removed
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-The S3 backend no longer accepts `use_legacy_workflow`; remove this temporary legacy credential-chain setting before upgrading to OpenTofu 1.8.
-
-### S3 locking migration away from DynamoDB
-
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
-
-Terraform 1.11 deprecates the S3 backend's DynamoDB-related locking arguments in favor of `use_lockfile`, the argument for native lock files.
-
-### S3 module and state behavior
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-S3 module-package installation now follows the AWS CLI and SDK credential search order, which can select a different credential source after upgrade and adds support for schemes such as IAM roles for service accounts. The S3 backend can tag state and lock objects and can use the `eusc-de-east-1` European Sovereign Cloud region.
-
-### S3 role assumption and native locking
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-The S3 backend removes its deprecated assume-role attributes; role-assumption settings must now use the `assume_role` block. It also supports S3-native state locking, acquires both S3 and DynamoDB locks when both mechanisms are configured, and requires at least 1.10.1 to write lock files to buckets with Object Lock enabled.
-
-### Security updates across the 1.8 line
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-OpenTofu 1.8.0 updates the module getter for CVE-2024-6257, with a possible slowdown for large modules. Releases 1.8.2, 1.8.8, and 1.8.9 add Go toolchain and networking/cryptography fixes for CVE-2024-24790, CVE-2024-45336, CVE-2024-45337, CVE-2024-45338, CVE-2024-45341, and CVE-2025-22866.
-
-## Other backends and state encryption
-
-### AzureRM backend migration and authentication
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-The `azurerm` backend adds `use_cli` (default `true`), `use_aks_workload_identity` (default `false`), `client_id_file_path`, `client_secret_file_path`, and `client_certificate`. It now ignores the deprecated `endpoint`/`ARM_ENDPOINT` and `msi_endpoint`/`ARM_MSI_ENDPOINT` settings, uses `MSI_ENDPOINT` instead, and makes `environment` mutually exclusive with `metadata_host`; update an initialized backend with `tofu init -reconfigure`, not `-migrate-state`.
-
-OpenTofu 1.11.3 dynamically refreshes Azure DevOps OIDC tokens, and 1.11.5 makes MSI authentication honor the configured client ID.
-
-### Backend and encrypted initialization controls
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-The AzureRM backend adds `timeout_seconds`, defaulting to 300 seconds, while HTTP backend trace logs now include request and response bodies. `tofu init -backend=false` no longer tries to read state-encryption keys.
-
-### Backend compatibility
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-The HTTP backend accepts user-defined headers, with `Authorization` propagation fixed in 1.7.2. The S3 backend again honors lowercase `http_proxy` and `https_proxy` from 1.7.3 and no longer requires permission to use the default `env:` workspace prefix.
-
-### Backend compatibility controls
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-For the S3 backend, `skip_s3_checksum` now also disables the AWS SDK's default integrity checks, improving compatibility with incomplete S3-compatible implementations. The HTTP backend supports `tofu force-unlock`, and the OSS backend now honors standard proxy variables including `NO_PROXY`.
-
-### Encryption configuration additions
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-The new `azure_vault` key provider can source state and plan encryption keys from Azure Key Vault. Apply-time input values can now configure encryption as long as every non-ephemeral variable still matches the value used during planning; starting in 1.11.4, JSON-form encryption method keys accept either normal expression syntax or template interpolation.
-
-### Encryption helper compatibility
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-JSON encryption configuration now accepts direct quoted references in `key_provider` expressions as well as template interpolation. An external key-provider program consistently receives JSON `null` when OpenTofu requests only the encryption key.
-
-### Encryption providers and constraints
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-OpenTofu 1.7's AES-GCM method requires 16-, 24-, or 32-byte keys and should use key derivation or regular KMS rotation to avoid key saturation. Its initial key providers are PBKDF2 (minimum 16-character passphrase; defaults of a 32-byte key, 600,000 iterations, 32-byte salt, and SHA-512), AWS KMS (`kms_key_id` and `key_spec`, with S3-backend authentication), GCP KMS (`kms_encryption_key` and `key_length`, with GCS-backend authentication), and OpenBao Transit (`key_name`, with `BAO_TOKEN`/`BAO_ADDR` support). The OpenBao provider is compatible with Vault 1.14 but not later BUSL releases.
-
-Documented encryption methods and key providers are guaranteed for only one additional minor release. A deprecation warning during `plan` or `apply` means the configuration should migrate before the following upgrade.
-
-### Encryption rollover and rollback
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-To rotate a passphrase, key provider, or method, make the new method primary and place the old method in `fallback`: reads try both, while writes always use the new method. Provider and method names are stored in encrypted metadata, so do not rename them directly; `encrypted_metadata_alias` gives a key provider a stable metadata name. To remove encryption, make `unencrypted` primary and retain the encrypted method as fallback until the data has been rewritten. Starting in 1.7.7, encryption-configuration changes automatically apply their migration.
-
-### Expanded Azure backend authentication
-
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
-
-The Azure backend adds `use_cli`, `use_aks_workload_identity`, `client_id_file_path`, `client_certificate`, and `client_secret_file_path` as it aligns with AzureRM provider authentication. Starting in 1.11.2, Azure DevOps Pipelines OIDC token refresh can use `oidc_request_url`, `oidc_request_token`, and the new `ado_pipeline_service_connection_id`; `subscription_id` is also optional in some setups, avoiding an unnecessary management-plane API call.
-
-### External and chained state-encryption keys
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-State encryption can obtain keys from external programs, and the PBKDF2 key provider adds a `chain` parameter for deriving a new key from another provider. Configurations with multiple key providers and methods now load only those needed for the current operation, including when decrypting `terraform_remote_state` data.
-
-### PostgreSQL backend state partitioning and upgrade boundary
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-The `pg` backend accepts `table_name` and `index_name`, allowing multiple states in one database and more granular locking between configurations. Do not let OpenTofu 1.10 and older OpenTofu versions use the `pg` backend in the same database: the locking implementations are incompatible and concurrent writes can cause data loss.
-
-### Registry and backend authentication
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-Module registries can tell OpenTofu to reuse registry API credentials for package downloads, avoiding a separate `.netrc` entry when the registry serves its own packages. The S3 backend discovers credentials created by `aws login`, and the AzureRM backend supports Azure DevOps and Azure Pipelines workload identity federation.
-
-### State and plan encryption
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-OpenTofu can encrypt local or backend state and saved plan files at rest through `terraform.encryption`; the same inner configuration can be supplied in `TF_ENCRYPTION`, which merges with configuration files and takes precedence over them. Encryption does not prevent state loss or replay attacks, and it cannot hide values from the person running `tofu`, so back up both the state and its keys before enabling it.
-
-For an existing plaintext state, explicitly allow one migration read with the `unencrypted` method:
+OpenTofu 1.9 adds AzureRM `timeout_seconds`, defaulting to 300 seconds (`opentofu-1.9.0`).
 
 ```hcl
-variable "state_passphrase" {
-  sensitive = true
+terraform {
+  backend "azurerm" {
+    timeout_seconds = 600
+  }
 }
+```
 
+Terraform 1.11 adds Azure backend `use_cli`, `use_aks_workload_identity`, `client_id_file_path`, `client_certificate`, and `client_secret_file_path`. Terraform 1.11.2 refreshes Azure DevOps Pipelines OIDC tokens with `ado_pipeline_service_connection_id` plus `oidc_request_url` and `oidc_request_token`; `subscription_id` becomes optional if no management-plane call is required.
+
+OpenTofu 1.11 ignores deprecated `endpoint`/`ARM_ENDPOINT` and `msi_endpoint`/`ARM_MSI_ENDPOINT`; use `MSI_ENDPOINT`, and do not combine `environment` with `metadata_host`. Reinitialize with `tofu init -reconfigure`, not `-migrate-state`. New authentication fields include `use_cli` (default true), `use_aks_workload_identity`, `client_id_file_path`, `client_secret_file_path`, and inline `client_certificate`. Use 1.11.3 or later for refreshed Azure DevOps OIDC tokens and 1.11.5 or later for MSI to honor an explicit client ID.
+
+## Other backends and locks
+
+Terraform 1.12 adds an OCI Object Storage backend (`terraform-1.12.0`).
+
+OpenTofu 1.10 `pg` backends accept `table_name` and `index_name` and use finer-grained locks. Never mix 1.10 and older OpenTofu processes in one database: their lock protocols are incompatible and can permit conflicting writes and data loss.
+
+OpenTofu 1.10 makes `tofu force-unlock LOCK_ID` work with the HTTP backend and makes the `oss` backend honor standard HTTP/HTTPS proxy variables, including `NO_PROXY`.
+
+OpenTofu 1.11.5 adds the GCS backend `universe_domain` option for sovereign GCP services. OpenTofu 1.12 adds `-lock=false` and `-lock-timeout=DURATION` to `tofu console`; an interrupted HTTP-backend apply also releases its state lock correctly.
+
+```shell
+tofu console -lock-timeout=30s
+```
+
+Terraform 1.15.0 briefly made `terraform validate` check required and backend-specific attributes inside backend blocks. Terraform 1.15.1 removed attribute validation because configurations can be completed through `-backend-config`; structural validation still applies.
+
+## OpenTofu state and plan encryption (`opentofu-1.7.0`)
+
+OpenTofu can encrypt local or backend state and saved plans at rest with AES-GCM. Initial key providers include PBKDF2, AWS KMS, GCP KMS, and OpenBao. Encryption does not prevent state loss, replay of old artifacts, or disclosure to the `tofu` process.
+
+```hcl
 terraform {
   encryption {
     key_provider "pbkdf2" "state" {
@@ -183,170 +72,96 @@ terraform {
     method "aes_gcm" "state" {
       keys = key_provider.pbkdf2.state
     }
-    method "unencrypted" "migrate" {}
     state {
-      method = method.aes_gcm.state
-      fallback { method = method.unencrypted.migrate }
+      method   = method.aes_gcm.state
+      enforced = true
+    }
+    plan {
+      method   = method.aes_gcm.state
+      enforced = true
     }
   }
 }
 ```
 
-Run `tofu apply` to rewrite the state, then remove the fallback and optionally set `enforced = true`; repeat the process in `plan {}` for saved plans. New projects omit the `unencrypted` method and fallback. Encryption variables and locals must resolve during `tofu init` and therefore cannot depend on state data or provider-defined functions.
+Encryption variables and locals must resolve during `tofu init`; they cannot depend on state data or provider-defined functions.
 
-## Provider and module installation
+### Migration and rollover
 
-### Authenticated provider artifact downloads
+Once encryption is enabled, existing plaintext is rejected unless an `unencrypted` fallback is explicit. Reads try the primary method then fallbacks; writes always use the primary. Back up state and keys, configure the old or plaintext method as fallback, apply to rewrite the artifact, and only then remove the fallback and enforce encryption. OpenTofu 1.7.7 automatically applies encryption-configuration migrations.
 
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
+```hcl
+method "unencrypted" "migrate" {}
 
-`terraform init` now uses credentials configured in `.netrc` for provider download and checksum URLs returned by provider registries, allowing those artifact endpoints to require authentication.
+state {
+  method = method.aes_gcm.state
+  fallback {
+    method = method.unencrypted.migrate
+  }
+}
+```
 
-### Concurrent global provider caching
+### Environment and remote state
 
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
+`TF_ENCRYPTION` supplies an encryption block body, merges with checked-in configuration, and takes precedence. Keep `enforced = true` for state and plan in configuration so a missing environment variable cannot silently write plaintext.
 
-When its filesystem supports locking, the global provider cache is safe for concurrent use by multiple OpenTofu processes. Shared `TF_PLUGIN_CACHE_DIR` users should use 1.10.5 or later to avoid a lock-contention bug and should keep valid `.terraform.lock.hcl` files in every project.
+Encrypted `terraform_remote_state` consumers need their own mapping under `remote_state_data_sources`; use `default` for all consumers or named mappings for different methods.
 
-### Development-override initialization
+```hcl
+remote_state_data_sources {
+  default {
+    method = method.aes_gcm.state
+  }
+}
+```
 
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
+## Encryption extensions
 
-`terraform init` skips dependencies that are declared in development overrides while still installing dependencies absent from those overrides, so provider development overrides no longer prevent normal dependency installation.
+OpenTofu 1.9 key providers accept `encrypted_metadata_alias` (`opentofu-1.9.0`). OpenTofu 1.10 adds external-program key providers and PBKDF2 `chain`, integrating key sources not implemented in-process. OpenTofu 1.11 adds `azure_vault` for Azure Key Vault. Apply may receive encryption input values, but every non-ephemeral value must equal the plan-time value; 1.11.4 JSON encryption configuration accepts both expression syntax and template interpolation for keys.
 
-### Provider installation compatibility
+## Provider and module distribution
 
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
+Terraform 1.8 `terraform providers lock -enable-plugin-cache` can reuse packages in the configured global plugin cache (`terraform-1.8.0`). Release archives include the license from 1.8.2, so extraction scripts that expect one file should name it explicitly:
 
-Terraform 1.12.1 restores provider installation without sending `HEAD` requests, correcting the 1.12.0 regression for endpoints that cannot handle those requests.
+```shell
+unzip terraform_1.8.2_linux_amd64.zip terraform
+```
 
-### Provider locking can use the global plugin cache
+Terraform 1.11 uses matching `.netrc` credentials for provider package downloads and checksum URLs returned by registries. Its official container image includes `ca-certificates`.
 
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
+When combined provider constraints both select and exclude the same prerelease, Terraform 1.9 gives the negative constraint precedence. For example, `1.2.0-beta.1, !1.2.0-beta.1` excludes that version. Terraform 1.13 `init` succeeds when a constraint has at least one valid matching provider version (`terraform-1.13.0`).
 
-`terraform providers lock -enable-plugin-cache` uses the configured global plugin cache while calculating provider locks, avoiding separate downloads during the lock operation.
+Terraform 1.15 `init` skips providers covered by development overrides but still installs dependencies that those overrides do not supply.
 
-### Provider migration and lock-file checksums
+OpenTofu 1.10 supports `oci:` module sources and OCI provider mirrors. Multiple processes coordinate global provider-cache access on locking filesystems; use 1.10.5 or later with `TF_PLUGIN_CACHE_DIR` and keep a valid lockfile because earlier patch releases can report lock contention.
 
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
+When a lockfile names certain `registry.terraform.io` providers, OpenTofu only seeks an equivalent at `registry.opentofu.org` for providers rebuilt and republished by the OpenTofu project. Use 1.10.2 or later when explicitly retaining the Terraform hostname. For unsigned provider ZIPs, OpenTofu records a locally verified `zh:` archive checksum alongside `h1:`.
 
-During `tofu init`, lock entries for selected `registry.terraform.io` providers can resolve to project-rebuilt equivalents on `registry.opentofu.org`; this mapping does not apply generally to third-party providers. For unsigned provider-package sources, OpenTofu also records the locally verified archive's `zh:` checksum alongside `h1:`, improving verification when reinstalling the same package from another source; use 1.10.2 or later when configurations explicitly retain the original registry hostname.
+OpenTofu 1.11 moves registry retry counts and timeouts into CLI configuration. OpenTofu 1.12 initialization from OpenTofu Registry records official `zh:` and `h1:` hashes for all supported platforms, which may add many lockfile entries. `tofu providers lock` remains useful with alternative installation sources; a `network_mirror` can opt to trust every hash it reports. Private module registries can tell clients to reuse registry API credentials for package downloads.
 
-### Registry and sovereign-cloud controls
+OpenTofu 1.9 deprecates using `ghcr.io/opentofu/opentofu` as a custom-image base and 1.10 removes it; migrate derived images to the supported custom-image process.
 
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
+## Platform boundaries
 
-Registry retry counts and request timeouts can now be set in CLI configuration instead of only through environment variables. Starting in 1.11.5, the GCS backend accepts `universe_domain` for sovereign Google Cloud services.
+- Terraform 1.12 requires Linux kernel 3.2 or later.
+- Terraform 1.14 builds require macOS Monterey or later because the release uses Go 1.25.
+- Terraform 1.15 adds Windows ARM64 builds, 1.15.4 adds Linux s390x, and SSH `file` and `remote-exec` provisioners again support PowerShell targets.
+- OpenTofu 1.10 requires macOS 11 or later. On Windows, only true symbolic links count as symlinks; a `TEMP` path traversing directory junctions can fail.
+- OpenTofu 1.11 requires macOS 12 or later. On Windows, `tofu.rc` precedes `terraform.rc`; empty quoted values in `TF_CLI_ARGS*` become zero-length arguments, and sensitive prompts locate `stty` through `PATH`.
+- OpenTofu 1.12 is the last planned macOS 12 line. WinRM provisioners warn on every use ahead of expected removal in 1.13; migrate to SSH. Official 32-bit `386` and `arm` packages remain through at least 1.13 but are planned for later removal.
 
-### Release archive layout changed in 1.8.2
+## Security and observability
 
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
+Terraform 1.7 updates SSH dependencies to mitigate CVE-2023-48795 for `local-exec` and `file` provisioner connections.
 
-Packaged releases now include a license file alongside the Terraform binary. Extraction scripts that expect only the binary should name it explicitly, for example `unzip terraform_1.8.2_linux_amd64.zip terraform`.
+Terraform 1.9.1 updates module fetching for CVE-2024-6257; 1.9.3 includes fixes for CVE-2024-6104 and CVE-2024-24791 through HTTP and Go dependency updates (`terraform-1.9.0`).
 
-### Security and provider-function patch boundaries
+OpenTofu 1.9 HTTP backend trace logging includes request and response bodies. Treat trace logs as state- and credential-bearing. `-show-sensitive` likewise exposes masked values and requires secret-safe handling.
 
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
+OpenTofu 1.10 initialization tracing is experimental and initially covers only `tofu init`; use 1.10.6 or later because earlier telemetry failures could panic. Use 1.10.9 or later for fixes covering malicious tar files, pathological certificate chains, wildcard constraints, certificate-error CPU exhaustion, unbounded query parsing, and TLS message boundaries. The 1.10.7 HTTPS fixes do not update HTTP stacks embedded in provider plugins.
 
-OpenTofu 1.10.7 fixes denial-of-service risks from malicious module tar archives and pathological TLS certificate chains, while 1.10.8 and 1.10.9 add further TLS and query-parsing fixes; installations staying on 1.10 should therefore use at least 1.10.9. A fix for provider-defined functions used in an import block's `id` expression is listed for the still-unreleased 1.10.10.
+OpenTofu 1.11 rejects SHA-1 TLS handshake signatures and SSH remote-provisioner certificates whose signature key is itself a certificate key. Use 1.11.4 or later against malicious provider or module ZIPs and at least 1.11.2 when Helm or Kubernetes provider configuration contains irrelevant plan-time unknowns.
 
-## Security and platform boundaries
+OpenTofu 1.12 removes `OPENTOFU_USER_AGENT`, so integrations cannot globally replace the default HTTP User-Agent. On Unix, `tofu login` honors `BROWSER` only when it names one command that accepts the URL as its sole argument; unset it to restore platform-default launching.
 
-### CA certificates in the official container image
-
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
-
-The official Terraform Docker image now includes the `ca-certificates` package for certificate handling in downstream images.
-
-### Encrypted remote state
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-`remote_state_data_sources` configures decryption separately for `terraform_remote_state`: `default` supplies a common method, while `remote_state_data_source "name"` overrides one source. Override selectors may be `name`, `module.name`, or `module.name[0]`; matching `encrypted_metadata_alias` values let producer and consumer configurations use different local key-provider names.
-
-### Linux kernel requirement
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-Terraform 1.12 on Linux requires kernel 3.2 or later; support for older kernels has been removed.
-
-### macOS source-build requirement
-
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
-
-Building Terraform 1.14 requires macOS Monterey or later because it is built with Go 1.25.
-
-### OpenTofu 1.10 platform and image boundaries
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-Linux now requires kernel 3.2 or later and macOS requires version 11 Big Sur or later. The `ghcr.io/opentofu/opentofu` image is no longer supported as a base for custom images; on Windows, only true symbolic links count as symlinks, so a `TEMP` path traversing directory junctions may fail and should use directory symlinks instead.
-
-### Platform, transport, and patch boundaries
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-OpenTofu now requires macOS 12 Monterey, rejects SHA-1 TLS signatures, and rejects malformed SSH certificates that use a certificate key as their own signature key. Use at least 1.11.4 when installing provider or module archives because it prevents excessive processing of maliciously crafted ZIP files; 1.11.3 also releases HTTP backend locks when an apply is interrupted.
-
-The still-unreleased 1.11.6 also fixes `tofu apply -refresh-only` configurations containing ephemeral resources.
-
-### Provisioner and platform deprecations
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-WinRM connections used by `remote-exec` and `file` provisioners warn in 1.12 and are expected to become errors in 1.13, so Windows targets should migrate to SSH. The 1.12 series is the last planned to support macOS 12; official 32-bit `386` and `arm` packages remain available throughout 1.12 and 1.13, but are planned for removal in a later series.
-
-### Security update in 1.10.5
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-Terraform 1.10.5 updates `github.com/hashicorp/go-slug` to 0.16.3 for CVE-2025-0377.
-
-### Security update in 1.7.8
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-OpenTofu 1.7.8 updates its Go toolchain for CVE-2024-45336 and CVE-2024-45341 and also addresses GO-2024-2947 and GO-2024-2948.
-
-### Security update in 1.8.4
-
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
-
-Terraform 1.8.4 updates `golang.org/x/net` to a release that addresses CVE-2023-45288.
-
-### Security updates in the 1.9 line
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-Terraform 1.9.1 updates the module getter for CVE-2024-6257, though `init` and `get` can become slower for large Git repositories. Terraform 1.9.3 also addresses CVE-2024-6104 and CVE-2024-24791 through dependency and toolchain updates.
-
-### SSH provisioner security update
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-Terraform 1.7.0 includes an upstream mitigation for CVE-2023-48795, which can affect `local-exec` and `file` provisioners that connect to remote hosts over SSH.
-
-### Upgrade and security boundaries
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-The 1.9 release ends support for OpenTofu 1.6, so remaining 1.6 installations should upgrade to at least 1.7. Using `ghcr.io/opentofu/opentofu` as a custom image base is deprecated for removal in 1.10, and the 1.9.1 line records Go toolchain updates for CVE-2024-45336, CVE-2024-45341, and CVE-2025-22866.
-
-### Windows platform and provisioner support
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-Terraform now publishes Windows ARM64 builds, and SSH-based `file` and `remote-exec` provisioners support PowerShell again.
-
-### Windows, TLS, and security compatibility
-
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
-
-Terraform 1.11.1 temporarily restores the earlier Windows symlink behavior for configurations using non-symlink junctions and updates `golang.org/x/oauth2` for CVE-2025-22868. Terraform 1.11.4 disables X25519Kyber768Draft00 in TLS to prevent timeouts with some AWS network firewalls.
-
-### XDG directory support
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-OpenTofu now supports the XDG Base Directory Specification for user-level files, allowing its paths to follow XDG-configured locations.
-
+Terraform 1.15.9 mitigates CVE-2026-14978, where Unicode normalization could cause `.terraformignore`-excluded files to be uploaded to HCP Terraform or Terraform Enterprise (`terraform-1.15.9`). Upgrade when ignored files must not leave the working directory.

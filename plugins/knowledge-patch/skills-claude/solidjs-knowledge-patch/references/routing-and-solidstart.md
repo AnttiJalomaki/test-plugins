@@ -1,22 +1,10 @@
 # Routing and SolidStart
 
-## Contents
+## Router-neutral generated routes
 
-- [Router-neutral filesystem routes](#router-neutral-filesystem-routes)
-- [Route-module configuration](#route-module-configuration)
-- [Filesystem parameter syntax](#filesystem-parameter-syntax)
-- [Router preloading and navigation](#router-preloading-and-navigation)
-- [Public route types and root loading](#public-route-types-and-root-loading)
-- [SolidStart runtime migration](#solidstart-runtime-migration)
-- [Server-function transport](#server-function-transport)
-- [API routes and request locals](#api-routes-and-request-locals)
-- [Exports, assets, and alpha runtime contracts](#exports-assets-and-alpha-runtime-contracts)
-
-## Router-neutral filesystem routes
-
-In the `solidstart-1.0.0` filesystem-routing contract, `FileRoutes` exposes the
-generated route configuration both as a component and as a regular function.
-This lets an application supply and configure its own router:
+`FileRoutes` exposes SolidStart's filesystem-route configuration as both a
+component and a regular function (solidstart-1.0.0). The component form lets an
+application choose and configure its own router:
 
 ```tsx
 import { FileRoutes } from "@solidjs/start/router";
@@ -31,17 +19,29 @@ export default function App() {
 }
 ```
 
-Use the regular function form when direct access to the generated
-configuration is needed rather than JSX composition.
+Use the regular function form when a router needs the generated configuration
+directly rather than as JSX.
 
-Parenthesized filename parts do not participate in URL matching, but they
-still shape the route tree. Use them for route groups, named index routes, and
-intentional breaks from normal filesystem nesting.
+## Route-tree and filename rules
+
+Parenthesized filename parts do not participate in URL matching, but they still
+shape the route tree. Use them for route groups, named index routes, or an
+intentional break from normal filesystem nesting.
+
+Optional and catch-all parameters use distinct forms:
+
+```text
+routes/users/[[id]].tsx    # /users or /users/123
+routes/blog/[...post].tsx  # /blog/a/b; params.post === "a/b"
+```
+
+`[[name]]` makes a parameter optional. `[...name]` captures any number of
+segments as one slash-delimited string rather than an array.
 
 ## Route-module configuration
 
-Export `route` from a route module to supply router-specific configuration,
-including loaders and parameter filters:
+A route module can export `route` with router-specific configuration such as a
+loader or parameter filter:
 
 ```tsx
 import type { RouteDefinition } from "@solidjs/router";
@@ -55,85 +55,75 @@ export default function Story() {
 }
 ```
 
-SolidStart lazy-wraps the default component and supplies it as the route
-configuration's `component`. Do not repeat `component` in the `route` object.
+SolidStart lazy-wraps the default export and supplies it as the route
+configuration's `component`. Do not duplicate `component` in the named
+`route` export.
 
-## Filesystem parameter syntax
+## Route preloading and descriptions
 
-Use double brackets for an optional route parameter and a bracketed ellipsis
-for a catch-all:
+The route option previously named `load` is now `preload`. The router exports
+`usePreloadRoute`, and `preloadRoute` accepts a string path. Update the option
+name, imports, and call sites together so route discovery and imperative
+preloading agree.
 
-```text
-routes/users/[[id]].tsx    # /users or /users/123
-routes/blog/[...post].tsx  # /blog/a/b; params.post === "a/b"
+The public `Route` type is now `RouteDescription`. All types used by the public
+API are exported, so import the public declarations instead of copying internal
+shapes.
+
+`rootLoad` was added, and `root` plus `rootLoad` moved outside route matching.
+Do not rely on either root setting to participate in the matching algorithm.
+
+## Parameters, hrefs, and URL rewriting
+
+`SearchParams` is a public exported type. Its values may be optional and may be
+arrays; `Params` values may also be optional. Preserve those possibilities in
+application types instead of narrowing every value to a required string.
+
+Objects returned by `useParams()` support the `in` operator. Use it when route
+logic needs to distinguish a missing key from a key whose value is optional.
+
+The router supports URL rewriting. `useHref` returns a string when it receives
+a string parameter, so string-based helpers can preserve a string-to-string
+contract without an extra coercion.
+
+## Router package integration
+
+The router package re-exports its context and supports Vite 6. Prefer the public
+context export rather than reaching into an internal module path.
+
+## SolidStart runtime lineage
+
+The 2.0 alpha line began the move from Vinxi to a pure Vite-based system and
+targeted feature parity with 1.x. During that staging plan, beta was the
+milestone for Solid 2 support, stable was reserved for hardening, continued v1
+work lived on the `1.x` branch, and Nitro 3 integration was planned before the
+stable release.
+
+Stable SolidStart 2 is the Solid 1 line built directly on Vite's Environment API
+with a Vite 8 and Rolldown foundation and direct deployment-plugin integration
+(since 2.0.0). Treat earlier alpha notes as migration history, not evidence that
+the installed stable runtime still uses Vinxi.
+
+## Preview and server runtime
+
+SolidStart 2 supports `vite preview`:
+
+```sh
+vite preview
 ```
 
-The catch-all value is one slash-delimited parameter string and may represent
-any number of URL segments.
+As of 2.0.1, that command delegates to Nitro when Nitro's preview plugin is
+active. Delegation also applies to static builds that intentionally have no
+server entry.
 
-## Router preloading and navigation
+Server-side types are exported from `@solidjs/start/server`. API routes honor
+the configured base URL. Redirect responses preserve multiple `Set-Cookie`
+headers rather than dropping all but one.
 
-Apply the current preloading names and inputs:
+## API route `OPTIONS` handlers
 
-- Rename the route option `load` to `preload`.
-- Import `usePreloadRoute` when a component needs the preloading helper.
-- Pass a string path to `preloadRoute` when a path string is available.
-
-The router also supports URL rewriting. When `useHref` receives a string
-parameter, expect a string result rather than a different route object shape.
-
-## Public route types and root loading
-
-Use `RouteDescription` in place of the former public `Route` type. All types
-used by the public API are exported, so prefer those exports over reconstructing
-internal shapes.
-
-Use `rootLoad` for root-level data loading. Both `root` and `rootLoad` live
-outside route matching, so do not place their behavior inside a matched route
-branch.
-
-The router package re-exports its context and supports Vite 6. Prefer the
-package export rather than reaching into an internal context module.
-
-Parameter-related public types have also widened:
-
-- Import `SearchParams` as an exported type.
-- Allow `SearchParams` values to be optional and to contain arrays.
-- Allow `Params` values to be optional.
-- Use the `in` operator with the object returned by `useParams()` when checking
-  parameter presence.
-
-## SolidStart runtime migration
-
-The SolidStart `2.0.0-alpha` line replaces Vinxi with a pure Vite-based system
-and targets feature parity with 1.x. Plan migration work with its stated
-milestones in mind:
-
-- Treat beta as the milestone for Solid 2 support.
-- Treat stable as the hardening milestone.
-- Keep continued v1 work on the `1.x` branch.
-- Account for the planned Nitro 3 integration before 2.0 becomes stable.
-
-Do not assume a Vinxi-specific configuration or deployment integration carries
-unchanged into the Vite-based alpha runtime.
-
-## Server-function transport
-
-SolidStart 1.1 adopted the TanStack server-functions plugin in a
-maintainer-described breaking transition. SolidStart 1.3 then moved
-serialization to Seroval JSON mode.
-
-A 1.3.0 regression could loop indefinitely after an unexpected response, such
-as an S3 XML error. The regression is fixed in 1.3.2; verify the installed
-release before diagnosing the upstream response as an application retry loop.
-
-For the server-function execution and streaming model, see
-[Reactivity and async](reactivity-and-async.md).
-
-## API routes and request locals
-
-Since 1.1, a filesystem API route can export an `OPTIONS` handler. Use it to
-answer CORS preflight requests directly:
+Since SolidStart 1.1, a filesystem API route can export `OPTIONS` and answer a
+CORS preflight directly:
 
 ```ts
 export function OPTIONS() {
@@ -147,8 +137,13 @@ export function OPTIONS() {
 }
 ```
 
-Also since 1.1, type request-event locals by augmenting
-`App.RequestEventLocals` globally:
+Return the status and access-control headers required by the endpoint; do not
+assume another server layer will synthesize the preflight response.
+
+## Request-local application types
+
+Since SolidStart 1.1, request locals are typed through
+`App.RequestEventLocals`:
 
 ```ts
 declare global {
@@ -162,7 +157,10 @@ declare global {
 export {};
 ```
 
-## Exports, assets, and alpha runtime contracts
+Augment the global interface in application code so middleware and handlers
+share the same local-state contract.
+
+## Server-function metadata
 
 Import `getServerFunctionMeta` from the package root:
 
@@ -170,17 +168,12 @@ Import `getServerFunctionMeta` from the package root:
 import { getServerFunctionMeta } from "@solidjs/start";
 ```
 
-Its former `@solidjs/start/server` export remains temporarily but is
-deprecated.
+The former export from `@solidjs/start/server` is temporarily retained but
+deprecated. Change the import without moving unrelated server-only type
+imports that still belong in the server entry point.
 
-Since 1.2, configure the public-assets directory when assets do not live in the
-default `public` directory.
+## Public assets
 
-The SolidStart 2 alpha runtime additionally:
-
-- Supports `vite preview`.
-- Exports server-side types from `@solidjs/start/server`.
-- Makes API routes honor the configured base URL.
-- Preserves multiple `Set-Cookie` headers on redirects instead of retaining
-  only one.
-
+Since SolidStart 1.2, the public-assets directory is configurable rather than
+fixed to `public`. Set it explicitly when the project's static assets live
+elsewhere and keep deployment-plugin configuration aligned with that path.

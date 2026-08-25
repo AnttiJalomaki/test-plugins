@@ -1,237 +1,156 @@
 # Networking
 
-Private subnet defaults, retired SKUs, virtual networks, gateways, routing, load balancing, Application Gateway, WAF, and private endpoints.
+## Private virtual-network defaults
 
-## Defaults and SKU retirements
+### New VNets become private (`network-defaults-and-sku-retirements`)
 
-### Basic Load Balancer is retired but still operating (network-defaults-and-sku-retirements)
+With the API version released after March 31, 2026, subnets in newly created
+VNets default `defaultOutboundAccess` to false. VMs need NAT Gateway, Standard
+Load Balancer outbound rules, Standard public IP, or a firewall/NVA reached by
+UDR for outbound internet and public Azure endpoints. The portal already uses
+the private default. Older explicitly selected APIs leave an omitted property
+null and permit implicit outbound access.
 
-Basic Load Balancer retired on September 30, 2025. Existing instances remain
-operational but are unsupported and have no SLA; Cloud Services Extended
-Support deployments are exempt and can still create and use Basic load
-balancers.
+Existing VNets and VMs on existing nonprivate subnets do not change. A new
+subnet may explicitly opt back into default outbound access for compatibility.
 
-Plan downtime because migration to Standard is not a simple mixed-SKU
-transition. Make every frontend and backend-VM public IP static before
-disassociating it or its address can be lost; all public IPs and load
-balancers involved must use matching SKUs. A Standard public IP also needs an
-NSG allow rule for inbound traffic. A public Standard load balancer needs an
-outbound rule for its backend, while a private load balancer needs a NAT
-gateway or instance-level public IPs.
+### Changing privacy requires deallocation
 
-### Basic public IP is retired with resource-specific upgrade paths (network-defaults-and-sku-retirements)
-
-Basic public IP retired on September 30, 2025, but existing addresses likewise
-continue without support or an SLA. Cloud Services Extended Support can still
-create Basic addresses through non-portal tools and continue using them.
-
-A disassociated address can be upgraded when zone redundancy is not required;
-zone redundancy requires creating a new Standard address, and an address used
-by a load balancer must match its regional or global tier. Associated
-addresses require the owning resource's migration path: a Basic load balancer
-must be replaced, gateways must be migrated, and per-instance public-IP
-configurations on a uniform VM scale set are not Public IP resources and must
-be replaced rather than upgraded. Basic addresses attached to Application
-Gateway v1 are exempt until that gateway SKU retires.
-
-### Changing subnet privacy requires VM deallocation (network-defaults-and-sku-retirements)
-
-Make a subnet private by disabling default outbound access, then stop and
-deallocate its existing VMs so the change reaches their NICs; the same
-deallocation is required when changing back to a nonprivate subnet.
+After enabling or disabling subnet default outbound access, stop and deallocate
+existing VMs so their NICs receive the change.
 
 ```azurecli
 az network vnet subnet update --resource-group rgname --vnet-name vnetname \
   --name subnetname --default-outbound false
 ```
 
-A default outbound IP can remain assigned, and its portal or Advisor alert can
-remain visible, when a VM on a nonprivate subnet also has NAT gateway or
-UDR-based egress. The explicit path takes precedence, but fully removing the
-implicit IP and alert requires both a private subnet and VM deallocation.
-Use a NAT gateway, a Standard load balancer outbound rule, a Standard public
-IP, or a firewall/NVA reached through a UDR for explicit egress.
+A VM on a nonprivate subnet can retain an implicit default outbound IP and
+Advisor alert even when NAT Gateway or UDR egress takes precedence. Fully
+remove them with both a private subnet and VM deallocation.
 
-### New virtual networks become private by default (network-defaults-and-sku-retirements)
+### Routing exceptions
 
-With the API version released after March 31, 2026, subnets in newly created
-virtual networks default `defaultOutboundAccess` to `false`, so VMs need an
-explicit outbound method to reach public Azure endpoints and the internet.
-The portal already uses this private default, while older API
-versions—including templates or Terraform configurations that deliberately
-select one—continue to leave an omitted property null and implicitly permit
-default outbound access.
+On a private subnet, a UDR with `Internet` next hop does not itself provide
+egress. Service-tag routes that bypass an NVA also fail without another
+explicit outbound method; service endpoints are unaffected. Same-region
+Storage remains reachable and should be constrained with NSGs. The setting
+does not apply to delegated or managed PaaS subnets.
 
-Existing virtual networks are unchanged, including new VMs added to their
-existing nonprivate subnets. A new subnet can still explicitly opt into
-default outbound access when compatibility requires it.
+A known issue gives default outbound access to IP-address-based Load Balancer
+backend pools. Attach NAT Gateway to the VM subnet for deterministic egress.
 
-### Private-subnet routing has exceptions (network-defaults-and-sku-retirements)
+## Load Balancer and Public IP retirement
 
-In a private subnet, a UDR whose next hop is `Internet` does not itself provide
-outbound access. This includes service-tag exception routes intended to bypass
-an NVA; they fail without another explicit outbound method, whereas service
-endpoints are unaffected. Same-region Azure Storage remains reachable, and
-should be constrained with NSGs; the private-subnet setting does not apply to
-delegated or managed PaaS subnets.
+### Basic Load Balancer
 
-An IP-address-based load-balancer backend pool still receives default outbound
-access because of a known issue. Attach a NAT gateway to its VM subnet when
-secure, deterministic outbound behavior is required.
+Basic Load Balancer retired September 30, 2025. Existing instances remain
+operational but unsupported and without SLA; Cloud Services Extended Support
+is exempt and can create/use Basic.
 
-## Virtual networks, gateways, and routing
+Plan downtime. Before disassociation, make every frontend and backend-VM public
+IP static or its address can be lost. All IPs and load balancers must have
+matching SKUs. Standard public IP needs an inbound NSG allow rule. A public
+Standard LB needs an outbound rule; a private LB needs NAT Gateway or instance
+public IPs.
 
-### Network appliance diagnostics and high-bandwidth gateways (2.71.0)
+### Basic Public IP
 
-`az network virtual-appliance get-boot-diagnostic-log` retrieves boot
-diagnostic logs. `az network vnet-gateway create` accepts
-`--enable-high-bandwith-vpn-gateway`; the CLI spelling is `bandwith`.
+Basic Public IP retired the same day and has the same unsupported/no-SLA state;
+Cloud Services Extended Support remains exempt. Upgrade a disassociated address
+only if zone redundancy is unnecessary; zone redundancy requires a new
+Standard address. An address attached to an LB must match its regional/global
+tier.
 
-### Network appliance, flow-log, and Maps endpoint support (2.82.0)
+Associated addresses follow the owner migration: replace Basic LB, migrate
+gateways, and replace rather than upgrade uniform-VMSS per-instance public IP
+configurations. Basic IPs on Application Gateway v1 remain exempt until that
+gateway SKU retires.
 
-`az network virtual-appliance` accepts `--nva-interface-configurations`, and
-`az network watcher flow-log` accepts `--record-types`. Private-endpoint
-connections now recognize provider `Microsoft.Maps/accounts`.
+## Virtual networks, IPAM, NICs, and NAT
 
-### Network gateway resiliency and peering routes (2.86.0)
+### VNet and subnet controls
 
-`az network express-route gateway` supports Virtual WAN gateway resiliency
-APIs. Route-table create/update also accepts `--disable-peering-route` to
-disable peering routes.
+- `2.68.0` VNet create/update adds `--ipam-pool-prefix-allocations`; VNet
+  Gateway create/update adds `--resiliency-model`.
+- `2.70.0` NIC IP-config create/update adds
+  `--private-ip-address-prefix-length`.
+- `2.75.0` VNet subnet create/update can allocate address space from IPAM.
+- `2.77.0` VNet show/list adds `defaultPublicNatGateway`.
+- `2.87.0` VNet create/update adds `--summarized-gateway-prefixes`.
+- `2.88.0` VNet list without resource group returns all VNets; update scripts
+  that assumed group-scoped output.
 
-### Network listing and certificate authentication (2.88.0)
+### Standard V2 NAT, public IP, and prefixes
 
-`az network vnet list` without `--resource-group` now returns all virtual
-networks. `az network vpn-connection create` no longer requires
-`--shared-key` when `--auth-type Certificate` is used.
+`2.75.0` adds Standard V2 support to NAT Gateway, public IP, and public IP
+prefix. `2.77.0` Standard V2 NAT supports IPv6 public IPs/prefixes. `2.89.0`
+adds `az network nat gateway --nat64` to enable or disable NAT64.
 
-### Network provisioning controls (2.87.0)
+## Gateways, VPN, ExpressRoute, and route servers
 
-Virtual-network create/update operations accept
-`--summarized-gateway-prefixes`. Application Gateway SSL-certificate
-create/update accepts `--hsm` for Managed HSM, and virtual network appliance
-create/update accepts `--private-ip-address-version`.
+- `2.69.0` Load Balancer create accepts multiple frontend zones; route-server
+  create/update adds autoscale configuration.
+- `2.71.0` network virtual-appliance boot diagnostics are retrievable;
+  VNet-gateway create adds misspelled `--enable-high-bandwith-vpn-gateway`.
+- `2.74.0` adds VNet Gateway migration and new VPN-connection show properties.
+- `2.77.0` VNet Gateway adds insights and failover.
+- `2.78.0` VNet Gateway create no longer requires a public IP.
+- `2.83.0` VNet Gateway adds identity parameters/group; VPN connection adds
+  `--auth-type` and `--cert-auth`.
+- `2.86.0` ExpressRoute gateway supports Virtual WAN resiliency; route-table
+  create/update adds `--disable-peering-route`.
+- `2.88.0` VPN connection create does not require `--shared-key` for
+  certificate authentication.
 
-### Network resource coverage (2.88.0)
+## Application Gateway and WAF
 
-`az network ddos-custom-policy` now supports frontend IP configuration
-associations, and Traffic Manager profile create/update accepts
-`--record-type` for record-type filtering. Private-endpoint connections now
-recognize `Microsoft.HorizonDB/clusters`.
+- `2.72.0` WAF managed rules accept `Microsoft_DefaultRuleSet`.
+- `2.76.0` WAF output adds read-only `computedDisabledRules`; custom-rule
+  grouping adds `GeoLocationXffHeader`/`ClientAddrXffHeader`.
+- `2.79.0` Application Gateway create/update adds FIPS.
+- `2.80.0` HTTP settings support dedicated backend connections and certificate
+  validation. WAF supports `Microsoft_HTTPDDoSRuleSet`; rule sensitivity no
+  longer accepts `None`.
+- `2.82.0` settings expose L4 client-IP preservation, probes expose proxy-
+  protocol headers, and managed-rule sets support disabled rules by default.
+- `2.84.0` SSL certificates support dedicated backend connections.
+- `2.87.0` SSL-certificate create/update accepts `--hsm` for Managed HSM.
 
-### Network service controls (2.69.0)
+## Private endpoints and Private Link
 
-Load-balancer creation accepts multiple zones through `--frontend-ip-zone`,
-and route-server create/update gains `--auto-scale-config`. Network virtual
-appliances can reimage associated VMs, and private endpoint connections now
-recognize `Microsoft.HealthDataAiservices/deidservices`.
+### Multiple IPs and IPv6
 
-### NIC private-address prefix length (2.70.0)
+`2.76.0` Private Link service creation supports multiple IP configurations.
+`2.85.0` private-endpoint create/update adds `--ip-version-type` for IPv6.
 
-`az network nic ip-config create` and `az network nic ip-config update` accept
-`--private-ip-address-prefix-length`.
+### Newly recognized providers
 
-### Packet-capture ring buffers (2.74.0)
+- `2.69.0`: `Microsoft.HealthDataAiservices/deidservices`
+- `2.74.0`: `Microsoft.FluidRelay/fluidRelayServers` and
+  `Microsoft.VideoIndexer/accounts`
+- `2.80.0`: `Microsoft.Security/privateLinks`
+- `2.82.0`: `Microsoft.Maps/accounts`
+- `2.85.0`: `Microsoft.DurableTask/schedulers`
+- `2.88.0`: `Microsoft.HorizonDB/clusters`
+- `2.89.0`: `Microsoft.HardwareSecurityModules/cloudHsmClusters`
 
-`az network network-watcher packet-capture` now supports packet captures that
-include a ring buffer.
+## Network virtual appliances, DDoS, and diagnostics
 
-### Standard V2 NAT Gateway IPv6 and VNet output (2.77.0)
+- `2.69.0` network virtual appliances can reimage associated VMs.
+- `2.74.0` Network Watcher packet capture supports a ring buffer.
+- `2.82.0` NVA accepts interface configurations; flow-log accepts record types.
+- `2.83.0` adds `az network virtual-network-appliance` and
+  `ddos-custom-policy` groups.
+- `2.87.0` virtual-appliance create/update accepts private-IP address version.
+- `2.88.0` DDoS custom policy supports frontend-IP associations; Traffic
+  Manager create/update accepts record-type filtering.
+- `2.89.0` virtual-appliance migration can move an NVA to internal-LB
+  architecture.
 
-Standard V2 NAT gateways now support IPv6 public IP addresses and prefixes.
-`az network vnet show` and `list` output also exposes
-`defaultPublicNatGateway`.
+## Other networked service controls
 
-### Standard V2 network resources (2.75.0)
-
-NAT gateways, public IPs, and public IP prefixes created or managed through
-`az network` now support the Standard V2 SKU.
-
-### Subnet IPAM pool allocation (2.75.0)
-
-`az network vnet subnet create` and `az network vnet subnet update` now
-support allocating subnet address space from an IPAM pool.
-
-### Virtual network appliance and custom DDoS policy commands (2.83.0)
-
-The new `az network virtual-network-appliance` and
-`az network ddos-custom-policy` groups expose Virtual Network Appliance and
-DDoS policy customization operations.
-
-### Virtual-network resilience and IPAM allocation (2.68.0)
-
-Virtual network gateway create/update commands gain `--resiliency-model`,
-while virtual network create/update commands gain
-`--ipam-pool-prefix-allocations` for IPAM pool prefix allocations.
-
-### VNet gateway identity and VPN authentication (2.83.0)
-
-`az network vnet-gateway` adds identity-related parameters and a subgroup.
-`az network vpn-connection` adds `--auth-type` and `--cert-auth`.
-
-### VNet Gateway insights and failover (2.77.0)
-
-The `az network vnet-gateway` command group now supports VNet Gateway
-insights and failover.
-
-### VNet gateways without a public IP (2.78.0)
-
-`az network vnet-gateway create` no longer requires a public IP.
-
-### VPN gateway migration and output (2.74.0)
-
-The `az network vnet-gateway migration` command group supports VPN gateway
-migration. `az network vpn-connection show` also returns new virtual-network
-gateway properties.
-
-## Application delivery and private endpoints
-
-### Additional private-endpoint providers (2.74.0)
-
-`az network private-endpoint-connection` now recognizes
-`Microsoft.FluidRelay/fluidRelayServers` and
-`Microsoft.VideoIndexer/accounts`.
-
-### Application Gateway and private-endpoint values (2.80.0)
-
-`az network application-gateway http-settings` now supports dedicated backend
-connections and certificate validation. WAF managed rules accept
-`Microsoft_HTTPDDoSRuleSet`, while WAF rule sensitivity no longer accepts
-`None`; `az network private-endpoint-connection` recognizes
-`Microsoft.Security/privateLinks`.
-
-### Application Gateway dedicated-backend certificates (2.84.0)
-
-The `az network application-gateway ssl-cert` command group now supports
-dedicated backend connections.
-
-### Application Gateway FIPS (2.79.0)
-
-`az network application-gateway create` and `update` accept `--enable-fips`
-to enable FIPS mode.
-
-### Application Gateway transport and WAF controls (2.82.0)
-
-`az network application-gateway settings` exposes
-`enableL4ClientIpPreservation` through `--enable-l4-client-ip`, while probe
-commands expose `enableProbeProxyProtocolHeader` through
-`--enable-proxy-header`. WAF managed-rule rule-set commands also support
-disabled rules by default.
-
-### Application Gateway WAF and private-link networking (2.76.0)
-
-Application Gateway WAF policy output includes the read-only
-`computedDisabledRules` property, and custom-rule `groupByVariables` accepts
-`GeoLocationXffHeader` and `ClientAddrXffHeader`. Private Link service creation
-now supports multiple IP configurations.
-
-### Microsoft default WAF ruleset (2.72.0)
-
-Application Gateway WAF policy managed-rule ruleset commands now accept the
-`Microsoft_DefaultRuleSet` ruleset type.
-
-### Private endpoints for IPv6 and Durable Task (2.85.0)
-
-Private-endpoint create/update accepts `--ip-version-type` for IPv6, and
-private-endpoint connections now recognize the
-`Microsoft.DurableTask/schedulers` provider.
+- `2.70.0` IoT Hub minimum TLS is covered in the compute/app reference.
+- `2.76.0` Event Hubs namespace `nsp-configuration show/list` exposes Network
+  Security Perimeter configuration.
+- `2.82.0` Azure Maps private-endpoint recognition is listed above.
+- `2.83.0` storage IPv6 endpoints/network rules are in the data reference.

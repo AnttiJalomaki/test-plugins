@@ -1,6 +1,8 @@
 {
   "patch": "elixir-knowledge-patch",
-  "merged_at": "2026-07-15T01:20:38Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-21T05:09:59Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -79,7 +81,14 @@
       "kind": "unversioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "1.20.3": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "1.20.3"
+  ]
 }

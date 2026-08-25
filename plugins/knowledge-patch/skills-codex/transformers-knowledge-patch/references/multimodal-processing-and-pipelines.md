@@ -1,149 +1,208 @@
 # Multimodal processing and pipelines
 
-Use this reference for image, video, audio, chat-template, processor, pipeline, and embedding input contracts, plus preprocessing changes that can affect results.
+Use this reference for image, video, audio, text, chat-template, processor, and
+pipeline inputs and outputs.
 
-## Processor architecture
+## Pipeline defaults and arguments
 
-### Fast image processors
+### Image-text post-processing (4.50.0)
 
-Most vision and vision-language architectures can use fast processors backed by Torch and Torchvision functional transforms on CPU or CUDA (since 4.52.1). Fast implementations were later added for SuperPoint, SegFormer, Janus, DeepSeek-VL, and DeepSeek-VL Hybrid (since 4.55.0).
+The `image-text-to-text` pipeline accepts post-processing keyword arguments.
 
-Fast `center_crop` now matches the slow implementation (since 4.57.0). Keep parity tests when switching processor backend.
+### Pipeline dtype (4.53.0)
 
-### Unified image-processing backend
+Pipeline `dtype` defaults to `auto`. Pass an explicit dtype when the application
+requires a fixed representation.
 
-The separate `BaseImageProcessor` and `BaseImageProcessorFast` architecture was replaced by a unified backend. `image_processing_utils_fast` is removed, so direct imports and custom processors must migrate to `image_processing_utils` (since 5.4.0).
+### Image-text batching (4.57.0)
 
-PIL-backed processors do not require Torchvision when they only use PIL operations (since 5.5.0).
+Image-text inference supports batch sizes greater than one, and DeepSeek V3
+adds `DeepseekV3ForTokenClassification`.
 
-Video processors are separate classes rather than image-processor variants (since 4.52.1). `make_batched_video` handles five-dimensional arrays (since 5.1.0).
+### Gemma 3n image-text input (4.53.0)
 
-### Hub and configuration handling
-
-- `AutoProcessor.from_pretrained` forwards Hub keyword arguments rather than discarding them (since 5.4.0).
-- Timm backbones preserve `out_features` across save/load (since 5.2.0).
-- A registered configuration is preferred to remote code, and `AutoConfig.from_pretrained` can take an explicit `model_type` (since 5.5.0).
-
-## Chat-template inputs and outputs
-
-### Return shape
-
-`apply_chat_template` returns a `BatchEncoding`, not bare token IDs or a tensor. Select the desired field (since 5.0.0):
+The `image-text-to-text` pipeline accepts an image URL and a prompt containing
+`<image_soft_token>` for Gemma 3n.
 
 ```python
-chat_inputs = processor.apply_chat_template(
-    messages,
-    return_tensors="pt",
-)
-input_ids = chat_inputs["input_ids"]
-```
+from transformers import pipeline
 
-Multiple raw chat-template files can be saved and loaded (since 4.52.1).
-
-### Media inputs
-
-Depending on processor support, chat templates can:
-
-- load audio embedded in video inputs (since 4.51.0);
-- accept in-memory video in addition to paths and URLs (since 4.55.0);
-- correctly load PIL image inputs (since 4.57.0);
-- accept OpenAI-style `image_url` content entries (since 5.2.0);
-- prefill custom fields such as `reasoning_content` and `thinking` (since 5.9.0).
-
-Serve forwards `tool_calls` and `tool_call_id` into processor inputs and uses `parse_response` for tool output parsing (since 5.6.0).
-
-## Image and video input contracts
-
-### Unified position and embedding inputs
-
-Vision-language models use a shared Qwen2-VL-derived three-dimensional position-ID interface. Migrate custom processors and manual position-ID construction for affected Ernie and GLM4V-style integrations (since 5.3.0).
-
-For SAM3, EdgeTAM, and SAM3-Lite-Text, `text_embeds` means full text embeddings, not pooler outputs (since 5.9.0).
-
-Generic `get_input_embeddings` and `set_input_embeddings` discover a multimodal model's nested `language_model` component (since 5.9.0).
-
-Multimodal callers can pass `mm_token_type` as non-padded lists (since 5.4.0). LLaVA-OneVision accepts `image_sizes` (since 5.1.0).
-
-### Gemma 4 preprocessing
-
-Gemma 4 preserves aspect ratio while selecting a fixed budget of 70, 140, 280, 560, or 1,120 soft tokens per image; 280 is the default. Total pixels must fit the patch budget, and processed height and width must both be divisible by 48 (since 5.5.0).
-
-Do not apply ImageNet mean/std normalization. Gemma 4 patch embedding performs final `[-1, 1]` scaling internally.
-
-### Resolution and resize semantics
-
-- LFM2-VL preserves native resolution through 512×512 without forced upscaling or aspect-ratio distortion. Larger images are divided into 512×512 patches, and the 1.6B variant also receives a thumbnail for global context (since 4.57.0).
-- Janus resizing rounds dimensions rather than truncating them, which can cause small numerical differences (since 5.1.0).
-- SigLIP2 NaFlex supports variable aspect ratios and resolutions (since 4.50.0).
-
-## Pipeline behavior
-
-### Image-text and batch inference
-
-- `image-text-to-text` accepts post-processing keyword arguments (since 4.50.0).
-- The Gemma 3n `image-text-to-text` pipeline accepts an image URL and a prompt containing `<image_soft_token>` (since 4.53.0):
-
-```python
 pipe = pipeline("image-text-to-text", model="google/gemma-3n-e4b")
-output = pipe(
-    image_url,
-    text="<image_soft_token> in this image, there is",
-)
+output = pipe(image_url, text="<image_soft_token> in this image, there is")
 ```
 
-- Image-text inference supports batch sizes greater than one (since 4.57.0).
-- GLM-Image supports batch sizes greater than one (since 5.1.0).
+### Pipeline task cleanup (5.3.0)
 
-### Pipeline task cleanup
+The v5 cleanup removes or changes `question-answering`,
+`visual-question-answering`, and `image-to-image`. Replace old task names with
+their current pipeline or updated name.
 
-The v5 cleanup removes or changes the `question-answering`, `visual-question-answering`, and `image-to-image` task names. Update pipeline selection and tests rather than retaining old strings (since 5.3.0).
+## Chat templates and media content
 
-EoMT is compatible with the image-segmentation pipeline (since 4.54.0).
+### Audio, video, and image inputs
 
-### Visualization helpers
+- Chat templates can load audio from video inputs as of 4.51.0.
+- `apply_chat_template` accepts in-memory video objects, not only file paths and
+  URLs, as of 4.55.0.
+- PIL image inputs load correctly through `ProcessorMixin.apply_chat_template`
+  as of 4.57.0.
+- OpenAI-style `image_url` content entries are accepted by
+  `apply_chat_template` as of 5.2.0.
 
-Replace deprecated `plot_keypoint_matching` with `visualize_keypoint_matching` (since 4.55.0). LightGlue can be combined with SuperPoint for pose or homography estimation (since 4.53.0).
+### Saved templates and return types
 
-## Audio and speech processing
+Video processors become separate classes in 4.52.1, and processors can save
+and load multiple raw chat-template files. In 5.0.0,
+`apply_chat_template` returns a `BatchEncoding`; select fields such as
+`input_ids` rather than treating the result as raw IDs or a tensor.
 
-- `Speech2TextFeatureExtractor` exposes dithering (since 4.50.0).
-- Whisper word timestamps interpret a timestamp token as the end of that token's time span (since 4.54.0).
-- Whisper transcription accepts a progress callback (since 4.55.0).
-- `WhisperFeatureExtractor` keeps `input_features` and `attention_mask` lengths consistent (since 4.57.0).
-- The ASR pipeline no longer emits `num_frames` (since 5.1.0).
-- VITS `forward` accepts optional speaking-rate control (since 5.3.0):
+### Custom field prefilling (5.9.0)
+
+`apply_chat_template` can prefill custom fields such as `reasoning_content` and
+`thinking`.
+
+### Serve tool inputs (5.6.0)
+
+`transformers serve` forwards `tool_calls` and `tool_call_id` to processor
+inputs and uses `parse_response` to interpret tool calls. It also accepts audio
+and video request content.
+
+## Image processor architecture
+
+### Fast processors on CPU and CUDA
+
+Most vision and vision-language architectures can use fast processors backed
+by `torch` and `torchvision` functional transforms on both CPU and CUDA as of
+4.52.1. Fast implementations are added for SuperPoint, SegFormer, Janus,
+DeepSeek-VL, and DeepSeek-VL Hybrid in 4.55.0.
+
+### Unified backend (5.4.0)
+
+The separate `BaseImageProcessor` and `BaseImageProcessorFast` design is
+replaced by one backend architecture. `image_processing_utils_fast` is removed;
+custom processors and direct imports must use `image_processing_utils`.
+
+### PIL-only processing (5.5.0)
+
+PIL-backed processors no longer incorrectly require `torchvision`. A PIL-only
+preprocessing path can run without that dependency.
+
+### CUDA interpolation fallback (5.15.1)
+
+Lanczos interpolation requests on CUDA fall back to bicubic. Accelerator output
+can therefore differ from CPU Lanczos preprocessing.
+
+## Model-specific image and video preprocessing
+
+### Gemma 4 fixed-budget images (5.5.0)
+
+Gemma 4 preserves aspect ratio while choosing one of 70, 140, 280, 560, or
+1,120 soft tokens per image; 280 is the default. Total pixels must fit the
+selected patch budget, and processed width and height must both be divisible by
+48.
+
+Do not apply standard ImageNet mean/std normalization. Gemma 4's patch embedding
+performs final scaling to `[-1, 1]` internally.
+
+### LFM2-VL resolution behavior (4.57.0)
+
+LFM2-VL preserves native image sizes through 512×512 without forced upscaling
+or aspect-ratio distortion. It splits larger images into 512×512 patches; the
+1.6B variant receives a thumbnail for global context.
+
+### Corrected multimodal processing
+
+- `Dinov2ForImageClassification` handles register-token checkpoints correctly
+  (4.52.1).
+- PerceptionLM receives video and preprocesses non-tiled images correctly;
+  Fuyu image inference and Qwen-VL video beam search are repaired (4.56.0).
+- LLaVA-OneVision batch inference and tensor-device handling in Idefics2,
+  Idefics3, and SmolVLM are corrected (4.56.0).
+- Janus image resizing rounds dimensions rather than truncating them, causing
+  small numerical differences (5.1.0).
+- Qwen2.5-VL no longer applies temporal RoPE scaling incorrectly to still
+  images, so outputs can change after upgrading (5.6.0).
+
+### Multimodal token metadata
+
+Callers can pass `mm_token_type` as non-padded lists as of 5.4.0. In 5.3.0,
+vision-language architectures converge on a Qwen2-VL-derived interface for 3D
+position IDs. Custom processors and manual position-ID construction for
+architectures such as Ernie and GLM4V must migrate.
+
+## Embeddings and model inputs
+
+### Standardized embedding names (5.2.0)
+
+Use the plural `inputs_embeds` rather than `input_embeds`.
 
 ```python
-outputs = model(**inputs, speaking_rate=1.2)
+outputs = model(inputs_embeds=embeddings)
 ```
 
-- Audio models have vLLM compatibility (since 5.6.0).
+### Full text embeddings for SAM3 family (5.9.0)
 
-## Model-specific processing and output fixes
+The `text_embeds` input for SAM3, EdgeTAM, and SAM3-Lite-Text expects full text
+embeddings rather than pooler output. Update callers that pass pooled
+representations.
 
-### Vision and multimodal correctness
+### Nested language model embeddings (5.9.0)
 
-- `Dinov2ForImageClassification` handles models containing register tokens correctly (since 4.52.1).
-- PerceptionLM receives video and correctly preprocesses non-tiled images (since 4.56.0).
-- Fuyu image inference is repaired (since 4.56.0).
-- Qwen-VL video beam search is repaired (since 4.56.0).
-- LLaVA-OneVision batch inference is corrected (since 4.56.0).
-- Tensor/device handling is corrected for Idefics2, Idefics3, and SmolVLM (since 4.56.0).
-- Qwen2.5-VL no longer applies temporal RoPE scaling incorrectly to still images, so still-image output can change after upgrade (since 5.6.0).
-- `Zamba2MambaMixer` honors `use_mamba_kernels=False` rather than continuing to use the kernels (since 5.6.0).
+Generic `get_input_embeddings` and `set_input_embeddings` logic recognizes the
+nested `language_model` component of multimodal architectures.
 
-### Output shape and metadata
+### Gemma 4 per-layer inputs (5.9.0)
 
-- `CLIPOutput` includes attentions (since 5.1.0).
-- `BeitImageProcessorFast.reduce_label` returns `labels` instead of `label` (since 5.1.0).
-- Flash Attention utilities accept one-dimensional `position_ids` (since 5.1.0).
-- Non-generative models do not create KV caches (since 4.54.0).
+Gemma 4 generation accepts `inputs_embeds` and `per_layer_inputs`, with the
+latter exposed across every Gemma 4 variant.
 
-## Input regression checklist
+## Audio and speech preprocessing
 
-1. Compare fast and slow image preprocessing and PIL-only dependency sets.
-2. Check chat-template output fields and every supported media carrier: path, URL, PIL object, and in-memory video.
-3. Rebuild custom 3D position IDs with the unified contract.
-4. Pass full text embeddings to SAM3-family models.
-5. Validate model-specific resize, normalization, register-token, and temporal-RoPE behavior.
-6. Recheck audio feature/mask lengths, timestamp interpretation, speaking rate, and removed ASR output fields.
+### Dithering (4.50.0)
+
+`Speech2TextFeatureExtractor` exposes dithering in its public API.
+
+### Whisper behavior
+
+- Word timestamps interpret a timestamp token as the end of the token's time
+  span as of 4.54.0.
+- Transcription accepts a progress callback as of 4.55.0.
+- `WhisperFeatureExtractor` keeps `input_features` and `attention_mask` lengths
+  consistent as of 4.57.0.
+
+### Batched video utility (5.1.0)
+
+`make_batched_video` accepts five-dimensional arrays.
+
+## Visualization and inspection
+
+### Attention masks (4.50.0)
+
+`AttentionMaskVisualizer` loads a tokenizer and model from an ID and displays
+the resulting attention layout, including sliding-window and multimodal masks.
+
+```python
+from transformers.utils.attention_visualizer import AttentionMaskVisualizer
+
+visualizer = AttentionMaskVisualizer("meta-llama/Llama-3.2-3B-Instruct")
+visualizer("A normal attention mask")
+```
+
+### Keypoint matching (4.55.0)
+
+`plot_keypoint_matching` is deprecated. Use the standardized
+`visualize_keypoint_matching` helper.
+
+## Output and preprocessing corrections
+
+- Fast `center_crop` now matches the slow implementation (4.57.0).
+- `CLIPOutput` includes attentions, and Flash Attention utilities accept
+  one-dimensional `position_ids` (5.1.0).
+- `BeitImageProcessorFast.reduce_label` returns `labels` rather than `label`,
+  while `BeitConfig.segmentation_indices` migrates to `out_indices` (5.1.0).
+- `Siglip2Tokenizer` enforces the preprocessing defaults used during training
+  (5.1.0).
+- Llama 3 tokenizer conversion sets `clean_up_tokenization_spaces=False`
+  (5.4.0).
+- `AutoProcessor.from_pretrained` forwards Hub keyword arguments instead of
+  silently discarding them (5.4.0).

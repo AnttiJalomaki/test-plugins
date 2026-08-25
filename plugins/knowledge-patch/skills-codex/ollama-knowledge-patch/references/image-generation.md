@@ -1,37 +1,37 @@
-# Image generation
+# Image Generation and MLX
 
-Image generation is experimental. Keep callers tolerant of endpoint and
-platform changes, and decode base64 API output before treating it as an image
-file.
+Image generation is experimental. Verify both the Ollama release and platform before depending on it.
 
-## Native generate API
+## Generate images from the CLI on macOS
 
-`POST /api/generate` automatically detects image-generation models.
-
-Request controls:
-
-- `width`;
-- `height`; and
-- `steps`.
-
-Streams report `completed` and `total`. The final `image` field contains a
-base64-encoded image.
+Pass a prompt directly to an image model. Ollama saves the image in the current directory, and terminals with image-rendering support also show an inline preview. Windows and Linux were not supported when this workflow was announced.
 
 ```sh
-curl http://localhost:11434/api/generate -d \
-  '{"model":"x/z-image-turbo","prompt":"a sunset over mountains","width":1024,"height":768}'
+ollama run x/z-image-turbo "a watercolor lighthouse in a winter storm"
+# Alternative model:
+ollama run x/flux2-klein "a neon sign reading OPEN 24 HOURS"
 ```
 
-## OpenAI-compatible image API
+## Configure interactive image generation
 
-`/v1/images/generations` accepts:
+Within an image-model session, use `/set width` and `/set height` for output dimensions. Each model supplies a recommended default step count. Image generation also supports reproducible random seeds and negative prompts.
 
-- `model`;
-- `prompt`; and
-- `size`.
+```text
+/set width 1024
+/set height 768
+```
 
-`response_format` must be `"b64_json"`. The endpoint does not support `n`,
-`quality`, `style`, or `user`.
+## Generate through the native API
+
+`POST /api/generate` automatically detects image-generation models. `width`, `height`, and `steps` control generation. Streams report `completed` and `total`; the final `image` is base64-encoded.
+
+```sh
+curl http://localhost:11434/api/generate -d '{"model":"x/z-image-turbo","prompt":"a sunset over mountains","width":1024,"height":768}'
+```
+
+## Generate through the compatibility API
+
+The experimental `/v1/images/generations` endpoint accepts `model`, `prompt`, and `size`. `response_format` must be `b64_json`. It does not support `n`, `quality`, `style`, or `user`.
 
 ```python
 response = client.images.generate(
@@ -42,29 +42,16 @@ response = client.images.generate(
 )
 ```
 
-This compatibility endpoint may change or be removed.
+## Pin a release when image generation is required
 
-## Generate from the CLI on macOS
+Ollama 0.32.6 temporarily removes experimental image generation. Keep workflows that require it on 0.32.5 until the feature returns in a later release.
 
-Pass a prompt directly to an image model. Ollama saves the image in the current
-directory. A terminal that supports image rendering also displays an inline
-preview.
+## Run MLX-specific models on Apple Silicon
+
+The MLX engine supports NVIDIA's model-optimized NVFP4 format on Apple Silicon, both as imported NVFP4 models and dedicated library tags. The initial Qwen coding preview requires more than 32 GB of unified memory. Newer MLX tags can run directly or be passed to an integration.
 
 ```sh
-ollama run x/z-image-turbo "a watercolor lighthouse in a winter storm"
-ollama run x/flux2-klein "a neon sign reading OPEN 24 HOURS"
+ollama run qwen3.5:35b-a3b-coding-nvfp4
+ollama run gemma4:12b-mlx
+ollama launch pi --model gemma4:12b-mlx
 ```
-
-Windows and Linux were not supported when this CLI feature was announced.
-
-## Configure an interactive session
-
-Within an image-model session, set dimensions with:
-
-```text
-/set width 1024
-/set height 768
-```
-
-Each model supplies a recommended default step count. Interactive generation
-also supports reproducible random seeds and negative prompts.

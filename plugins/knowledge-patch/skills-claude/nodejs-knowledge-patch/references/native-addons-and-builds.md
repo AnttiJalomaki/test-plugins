@@ -1,98 +1,115 @@
 # Native Addons, Embedding, and Builds
 
-Supported build platforms, toolchains, addon ABIs, Node-API, embedding, and native integration.
+Use this reference for native addons, embedding, and builds work.
 
-## Contents
+## Distribution, build, and addon baselines (`25.0.0`)
 
-- [Source builds and supported platforms](#source-builds-and-supported-platforms)
-- [Node-API and native addons](#node-api-and-native-addons)
-- [Embedding and native integration](#embedding-and-native-integration)
+Node distributions no longer include Corepack, so projects that depend on it must install it separately. The minimum Clang version is 19, macOS source builds require Xcode 16.4, and `NODE_MODULE_VERSION` is 141, requiring matching ABI-dependent addon binaries.
 
-## Source builds and supported platforms
+## Enable all experiments in source builds (`24.18.0`)
 
-### Experimental Node-API build warning (since 25.0.0)
+Source builds accept `--enable-all-experimentals` to compile with all experimental features enabled.
 
-Native addon builds that define `NAPI_EXPERIMENTAL` now produce a warning, making accidental dependence on the unstable experimental Node-API surface visible during compilation.
-
-### Shared `nbytes` source builds (since 25.5.0)
-
-Source builds now accept the `--shared-nbytes` configure flag for using a shared `nbytes` dependency.
-
-### Source-build additions (since 25.4.0)
-
-Source builds now support Visual Studio 2026 and add `--shared-hdr-histogram`, `--shared-gtest`, and `--debug-symbols`; the last option includes debug symbols without enabling DCHECKs.
-
-### Source-build requirements and addon ABI (since 25.0.0)
-
-Clang-based source builds now require Clang 19, while Apple builds require Xcode 16.4. Native addons tied to Node's V8 ABI need builds for `NODE_MODULE_VERSION` 141.
-
-### Source-build requirements and targets (since 26.0.0)
-
-Building Node.js now requires GCC 13.2 and no longer supports Python 3.9. Windows builds target SDK 11, Power8 and IBM z13 support is removed, and AIX or IBM i builds target Power9.
-
-Temporal-enabled source builds now check for `rustc` and Cargo, and the build honors the `CARGO` environment variable when selecting the Cargo executable.
-
-### Supported platforms and source builds (since 24.0.0)
-
-Windows source builds now require ClangCL; MSVC support has been removed. The minimum supported macOS version is 13.5 and the minimum Xcode version is 16.1, Python 3.8 is no longer supported for builds, 32-bit PowerPC and s390 support is removed, and Armv7 support is experimental.
-
-Native addons tied to Node's module ABI need builds for `NODE_MODULE_VERSION` 137; portable Node-API addons are not tied to that V8 ABI number.
-
-### Supported platforms and source-build toolchains (since 23.0.0)
-
-Node.js 23 no longer supports 32-bit Windows or Windows before 10. Building Node itself now uses C++20, warns with GCC older than 12.2, and requires GCC 12 on AIX.
-
-### Upcoming macOS x64 support change (since 26.5.0)
-
-Tier 2 support for macOS x64 is scheduled to end, so build and release planning should move away from relying on that support tier.
-
-
-## Node-API and native addons
-
-### Buffer views for Node-API addons (since 23.0.0)
-
-Node-API adds `napi_create_buffer_from_arraybuffer()`, which creates a `Buffer` view over a specified byte range of an existing JavaScript `ArrayBuffer`.
-
-```c
-napi_create_buffer_from_arraybuffer(env, arraybuffer, offset, length,
-                                    &data, &buffer);
+```sh
+./configure --enable-all-experimentals
 ```
 
-### Native addon ABI and headers (since 26.0.0)
+## Experimental ESM loading for native addons (`23.6.0`)
 
-Native addons tied to Node's V8 ABI need builds for `NODE_MODULE_VERSION` 147. The public `node.h` header now includes `node_api_types.h` instead of `node_api.h`, so addons that use the full Node-API surface must include `node_api.h` explicitly rather than relying on the former transitive include.
+The ESM loader now has experimental support for addon modules, allowing native addons to participate directly in ESM loading.
 
-### Node-API reference cleanup in finalizers (since 23.5.0)
+## Experimental fast FFI calls (`26.4.0`)
 
-Native addon finalizers may now call `napi_delete_reference()`, allowing a reference to be released as part of finalization.
+The FFI implementation gains an experimental fast-call API for AArch64 and x86_64, with fast-call support extended to almost all other platforms in the same release.
 
-### Node-API typed-memory support (since 25.4.0)
+## Experimental Node-API object construction (`24.12.0`)
 
-Node-API now supports `Float16Array`, and `napi_create_dataview()` can create a view backed by a `SharedArrayBuffer`.
+Native addons can create an object and define its property descriptors in one call with `napi_create_object_with_properties()`. This API requires an explicit experimental opt-in because `node.h` no longer defines `NAPI_EXPERIMENTAL` automatically.
 
-### Shared array buffers in Node-API (since 24.9.0)
+```c
+#define NAPI_EXPERIMENTAL
+#include <node_api.h>
 
-Node-API now exposes creation, inspection, and type checking for JavaScript `SharedArrayBuffer` values, so native addons can work with shared backing memory directly.
+napi_value object;
+napi_create_object_with_properties(env, property_count, properties, &object);
+```
 
+## Initial ESM support for native embedders (`24.14.0`)
 
-## Embedding and native integration
+The C++ embedder API now has initial support for ES modules, allowing native hosts that embed Node.js to integrate ESM execution.
 
-### `node::ObjectWrap` cleanup hooks (since 26.4.0)
+## Managed contexts for native embedders (`24.18.0`)
 
-Native addons can now attach cleanup hooks to `node::ObjectWrap` instances so wrapped resources can participate in environment cleanup.
+The C++ embedder API now exposes `node::RegisterContext()` for making a V8 context managed by Node.
 
-### ESM support in the embedder API (since 24.14.0)
+## Native `ObjectWrap` cleanup hooks (`26.4.0`)
 
-Node's C++ embedder API now has initial support for ES modules. Native hosts embedding Node can integrate ESM execution through the supported embedder surface instead of being limited to CommonJS-oriented startup.
+The C++ `node::ObjectWrap` API adds cleanup hooks, giving native addons an object-associated cleanup path.
 
-### Experimental fast FFI calls (since 26.4.0)
+## Native addon ABI and headers (`26.0.0`)
 
-The experimental FFI surface now has a fast-call API for AArch64 and x86_64, with fast support extended to almost all other platforms.
+ABI-dependent addons need builds for `NODE_MODULE_VERSION` 147. Because `node.h` now includes `node_api_types.h` rather than the complete `node_api.h`, addons using the full Node-API surface must include `node_api.h` explicitly.
 
-### Node-managed embedder contexts (since 24.18.0)
+## Native-addon imports enabled by default (`26.5.0`)
 
-The C++ embedder API now exposes `node::RegisterContext()` for turning a V8 context into a Node-managed context.
+The module loader now enables import support for native addons by default, so ESM addon imports no longer require separate enablement.
 
-### Removed C++ embedding APIs (since 25.0.0)
+## Node-API reference cleanup in finalizers (`23.5.0`)
 
-The deprecated `node::InitializeNodeWithArgs()`, `node::CreatePlatform()`, `node::FreePlatform()`, `node::EmitBeforeExit()`, and `node::EmitExit()` APIs are removed, along with callback helpers that omit async context. Embedders must use the current once-per-process, platform, event-loop, and async-context-aware callback APIs.
+Native addons may now call `napi_delete_reference()` from finalizers.
+
+## Node-API typed-array support (`24.13.0`)
+
+Node-API adds `Float16Array` support and allows `napi_create_dataview()` to use `SharedArrayBuffer` backing memory in 24.13.1.
+
+## Node-API version 10 (`23.6.0`)
+
+Node-API now defines version 10, giving native addons a new version boundary for feature and compatibility checks.
+
+## Platform, build, and addon baselines (`24.0.0`)
+
+Windows source builds now require ClangCL instead of MSVC, the supported macOS baseline is 13.5 with Xcode 16.1, and Python 3.8 is no longer supported for builds. Support for 32-bit s390 and PowerPC is removed, ARMv7 is experimental, and `NODE_MODULE_VERSION` is 137, so ABI-dependent addons need matching binaries.
+
+## Platform, compiler, and addon baselines (`23.0.0`)
+
+Node.js 23 removes 32-bit Windows support and the experimental support for Windows older than 10, builds Node itself as C++20, warns for GCC older than 12.2, and uses GCC 12 on AIX. Its final `NODE_MODULE_VERSION` is 131, so ABI-dependent native addon binaries must be rebuilt or replaced.
+
+## Python 3.14 source builds (`24.13.0`)
+
+Node.js 24.13.1 supports Python 3.14 for source builds, including the Windows build setup. Build environments no longer need to pin an older Python solely for this Node.js line.
+
+## Rust source-build baseline (`26.7.0`)
+
+Source builds now require `rustc` 1.86 or newer, so build images and toolchains pinned to an older Rust compiler must be upgraded.
+
+## Shared nbytes source builds (`25.5.0`)
+
+Source builds can link against a shared nbytes dependency with the new `--shared-nbytes` configure flag.
+
+```sh
+./configure --shared-nbytes
+```
+
+## SharedArrayBuffer support in Node-API (`24.9.0`)
+
+Node-API now supports creating, inspecting, and type-checking JavaScript `SharedArrayBuffer` values, so native addons can work with shared backing memory directly.
+
+## Source-build controls (`25.4.0`)
+
+Source builds add `--shared-hdr-histogram` and `--shared-gtest`; `--debug-symbols` adds `-g` without enabling DCHECKs. Windows source builds also support Visual Studio 2026.
+
+```sh
+./configure --shared-hdr-histogram --shared-gtest --debug-symbols
+```
+
+## Source-build requirements (`26.0.0`)
+
+Source builds now require GCC 13.2 and no longer support Python 3.9; Windows targets SDK 11, Power8 and IBM z13 support is removed, and AIX or IBM i targets Power9. Temporal-enabled builds check for `rustc` and Cargo and honor the `CARGO` environment variable.
+
+## Source-build warning control (`23.8.0`)
+
+Source builds gain the `suppress_all_error_on_warn` option for suppressing warning-as-error treatment.
+
+## Upcoming macOS x64 support change (`26.5.0`)
+
+Tier 2 support for macOS x64 is due to end, so build and CI planning should avoid depending on that support tier.

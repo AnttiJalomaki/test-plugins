@@ -1,63 +1,87 @@
 # Bundles and OCI storage
 
-## Default representation and storage
+Use this reference when choosing a bundle representation, moving bundles
+through lifecycle operations, storing signatures in OCI registries, or
+processing annotations, attestations, and blob checksums.
 
-Cosign v3 uses the standardized protobuf bundle format by default. Trusted-root and signing-config inputs, along with OCI Image 1.1 referring-artifact storage, are also default behavior. Older behavior remains available only through opt-in compatibility.
+## Standardized bundle and storage defaults
 
-Audit workflows that silently depended on an older bundle representation or storage model. Make compatibility selection explicit at the boundary where the old consumer or registry requires it.
+Cosign v3 enables the standardized protobuf bundle format by default (batch
+3.1.2). Trusted-root and signing-config inputs also become defaults, as does
+OCI Image 1.1 referring-artifact storage. Older behavior remains available as
+explicit compatibility rather than as the implicit path.
 
-## Required output path
+Decide the representation and storage mode at each interoperability boundary.
+Check registry support for referring artifacts and test all producers and
+consumers against the selected bundle format.
 
-`--bundle` is required when producing a Sigstore bundle. A blob-signing invocation therefore names the bundle output directly:
+## Required bundle destination
+
+When a command produces a Sigstore bundle, `--bundle` is required. For blob
+signing, always provide the destination explicitly:
 
 ```sh
 cosign sign-blob --bundle artifact.sigstore.json artifact.bin
 ```
 
-Do not rely on a default destination. Pass the resulting path explicitly to the next workflow step.
+A missing path is an invocation error, not a request for a default filename.
 
 ## Bundle-aware lifecycle operations
 
-The standardized protobuf bundle format is supported by:
+The standardized protobuf format is supported across these operation families
+(batch 3.1.2):
 
 - `clean`
 - `save`
 - `load`
 - `tree`
-- download operations
-- attach operations
+- download
+- attach
 
-Test the particular operation chain used by the application. For example, a successful save is not the complete check when a later load, attach, or tree operation consumes the result.
+Preserve the chosen format deliberately through the full workflow. Do not
+insert a conversion based only on assumptions about older behavior. Test the
+actual save/load and download/attach round trips used in production.
 
-## Inspection
+## Bundle inspection
 
-Version 3.1.2 adds the `cosign bundle inspect` command. Use it to inspect the bundle itself when diagnosing bundle-format and content questions.
+Version 3.1.2 adds `cosign bundle inspect`. Use it to determine format and
+contents during interoperability diagnosis. A `.json` suffix, OCI location,
+or other naming convention does not prove which bundle representation is
+present.
 
-Do not infer representation solely from a filename extension, the signature generation, or whether the artifact came from local or remote storage.
+## Local-image workflows
 
-## Local images and mixed signature generations
+`--local-image` works with `--new-bundle-format` for both v2 and v3 signatures
+(batch 3.1.2). This permits local-image workflows to exercise the standardized
+representation while processing signatures produced by either major
+generation.
 
-`--local-image` works with `--new-bundle-format` for both v2 and v3 signatures. Test both generations when a local-image workflow consumes signatures produced on both sides of a migration.
+Test both generations if the local workflow is a migration bridge. Do not
+assume that enabling the new bundle format changes the generation of the
+signature it contains.
 
 ## Attestation downloads
 
-Attestation downloads handle both bundle formats. For new-format bundles, the download path validates predicate type.
+Attestation downloads handle both legacy and standardized bundle formats
+(batch 3.1.2). For a new-format bundle, predicate type is validated during the
+download flow.
 
-Preserve that validation result as a security-relevant outcome. Do not turn a predicate-type mismatch into an ignored warning or a successful download step.
+Do not bypass or discard that predicate-type check in surrounding automation.
+Treat a mismatch as a failed attestation selection rather than accepting the
+payload based only on its storage location.
 
 ## Annotation parsing
 
-Since 3.1.2, annotation values may contain `=`. Values such as tokens or encoded data must be retained in full instead of being split on every equals sign or rejected at the first embedded one.
+Cosign 3.1.2 accepts `=` inside annotation values. Tokens, base64-like values,
+and other encoded content may therefore contain embedded equals signs.
 
-When a wrapper parses an annotation argument, separate the key from the value only at the intended boundary and pass the remainder unchanged.
+Split an annotation only at the separator that divides its key from its full
+value. Preserve every later `=` character instead of truncating or rejecting
+the value.
 
-## Bundle workflow review
+## Blob checksum comparison
 
-- Identify the format of every incoming and outgoing bundle.
-- Pass an explicit `--bundle` output whenever a bundle is produced.
-- Decide explicitly whether older compatibility behavior is required.
-- Test all used clean, save, load, tree, download, and attach paths.
-- Verify registry support for the selected referring-artifact storage path.
-- Exercise local-image handling for every signature generation the workflow accepts.
-- Preserve predicate-type validation for new-format attestation downloads.
-- Round-trip annotation values containing embedded equals signs.
+Cosign 3.1.3 compares blob file checksums case-insensitively (batch
+2.6.5-3.1.3). Equivalent upper- and lower-case checksum encodings are accepted.
+Automation may normalize case for display, but must not treat a case-only
+difference as a checksum mismatch.

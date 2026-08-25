@@ -8,174 +8,139 @@ metadata:
 ---
 
 
-
 # Qwik Knowledge Patch
 
-Use this skill when maintaining Qwik applications, Qwik City routing, Qwik
-libraries, SSR integrations, or their Vite build configuration. Start with the
-quick references below, then open the topic file that matches the task.
-
-## When to load this skill
-
-Load it when:
-
-- upgrading an existing Qwik application or library;
-- diagnosing optimizer, Vite, preload, manifest, or asset-output changes;
-- updating reactive state, tasks, computed values, or store access;
-- changing Qwik City routing, navigation, request handling, or caching;
-- working with MDX, error boundaries, events, or route-data tests; or
-- reviewing deprecated APIs before a later migration.
-
-Prefer the project manifest, lockfile, configuration, code, and tests when they
-show behavior that differs from this guidance.
+Use this skill when creating, upgrading, reviewing, or debugging Qwik and
+Qwik City applications. Check the breaking changes and deprecations first,
+then open the topic reference that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Async reactivity and state](references/async-reactivity-and-state.md) | Async computation, tasks, stores, tracking, and notification behavior |
-| [Build and deployment](references/build-and-deployment.md) | Optimizer, Vite, assets, preload, manifests, service workers, CLI, and integrations |
-| [Components and events](references/components-and-events.md) | MDX, error boundaries, view-transition events, and route-data testing |
-| [Migration and packaging](references/migration-and-packaging.md) | Library publishing, mixed-generation consumers, dependency placement, and exports |
-| [Router and navigation](references/router-and-navigation.md) | SPA prevention, previous URLs, rewrites, redirects, and cache behavior |
-| [Server and route data](references/server-and-route-data.md) | Server-function errors, request events, origins, redirect responses, and rewrites |
+| [Async Reactivity and State](references/async-reactivity-and-state.md) | Async computations, tasks, stores, `untrack()`, and computed notifications |
+| [Build and Deployment](references/build-and-deployment.md) | Optimizer behavior, Vite options, assets, preloading, manifests, caching, CLI integrations, and deployment |
+| [Components and Events](references/components-and-events.md) | MDX components, view-transition events, and error boundaries |
+| [Migration and Packaging](references/migration-and-packaging.md) | Library publishing, mixed-generation consumers, and peer dependencies |
+| [Router and Navigation](references/router-and-navigation.md) | Navigation blocking, previous URLs, rewrites, and redirect caching |
+| [Server and Route Data](references/server-and-route-data.md) | Server errors, middleware responses, route-data caching, mocks, origins, and request events |
 
-## Breaking-change triage
+## Breaking changes and deprecations
 
-### Update asset paths and cache rules
+### Do not use async `useComputed$` callbacks
 
-Default build assets use `assets/hash-name.ext`. Replace deployment rules,
-CDN patterns, or CSP generation that assumes an older location. Apply
-long-lived immutable caching only to content-hashed files under `build/` and
-`assets/`, unless Rollup output names were customized.
+Async `useComputed$` callbacks are deprecated. Reads made after the first
+`await` are not tracked, and an initial promise restarts rendering. Move
+asynchronous work to `useTask$` or `useResource$`.
 
-See [Build and deployment](references/build-and-deployment.md#asset-paths-and-cache-headers).
+### Remove deprecated task eagerness
 
-### Keep library QRL files in the transform
+The `eagerness` option on `useTask$` is deprecated as of 1.13. Remove it from
+new work and do not base scheduling behavior on it.
 
-A custom `qwikVite()` `fileFilter` cannot exclude `*.qwik.js`,
-`*.qwik.mjs`, or `*.qwik.cjs`. These library QRL files are always processed.
-Do not use the filter as a way to suppress their Qwik transform.
+### Migrate away from built-in service-worker prefetching
 
-See [Build and deployment](references/build-and-deployment.md#library-qrl-file-filtering).
+Automatic bundle preloading now uses `modulepreload` links and the bundle
+graph. The built-in service-worker components are deprecated. For an
+uncustomized worker, remove `service-worker.ts` but temporarily keep
+`ServiceWorkerRegister` so old deployed workers and caches can be removed.
+Retain the integration only for custom worker logic.
 
-### Make Vite an application dependency
+### Replace deprecated preload probability
 
-Vite is a peer dependency of Qwik, Qwik City, Qwik React, and Qwik Labs.
-Declare Vite directly in the application so package resolution does not create
-duplicate Vite imports. Qwik core and Qwik City projects using the newer
-toolchain must use Vite 7.
+The `preloadProbability` SSR option is deprecated as of 1.16.1. Use the
+current preload controls, including the stable `maxIdlePreloads` concurrency
+limit.
 
-See [Migration and packaging](references/migration-and-packaging.md#vite-dependency-placement)
-and [Build and deployment](references/build-and-deployment.md#vite-7).
+### Update asset and cache rules
 
-### Rework library publishing
+Default assets use `assets/hash-name.ext`. Update deployment rules that rely
+on older paths. Content-hashed files below `build/` and `assets/` should
+normally receive a one-year immutable cache policy unless Rollup output names
+have been customized.
 
-Qwik library builds no longer run the Qwik transform. Publish a fresh library
-build and expand the accepted Qwik range when the package must support both
-generations. A later-generation project can retain a first-generation library
-by installing both runtimes as described in the packaging reference.
+### Match the supported Vite major
 
-See [Migration and packaging](references/migration-and-packaging.md#library-builds-and-mixed-generation-consumers).
+Qwik core and Qwik City use Vite 7 as of 1.16. Applications must install that
+major directly. Vite is a peer dependency of the Qwik packages, which avoids
+duplicate Vite imports but makes the application's dependency explicit.
 
-### Migrate built-in service-worker prefetching
+### Republish libraries for current consumers
 
-Qwik now preloads bundles with `modulepreload` links and a bundle graph.
-Built-in service-worker components are deprecated. For an uncustomized worker,
-remove `service-worker.ts` but temporarily keep `ServiceWorkerRegister` so
-deployed workers and caches are removed. Preserve the integration when custom
-worker logic prevents automatic unregistration.
+Qwik library builds stopped applying the Qwik transform as of 1.9. Library
+authors should publish a new build and extend the accepted Qwik range with
+`| ^2.0.0` where cross-generation consumption is intended.
 
-See [Build and deployment](references/build-and-deployment.md#automatic-preloading-and-service-worker-migration).
+## Build and deployment quick reference
 
-## Deprecation quick reference
+### Preserve plugin transform ordering
 
-### Do not use async callbacks in `useComputed$`
+The optimizer accepts `import ... with`, replaces eligible enums with
+numbers, and delegates QRL grouping to Rollup. Keep CSS-in-JS and other
+Rollup/Vite transforms ordered so they can process source before Qwik.
 
-Async `useComputed$` callbacks fail to track signals first read after an
-`await`, and an initial promise restarts rendering. Move asynchronous work to
-`useTask$` or `useResource$`.
+### Always transform library QRL files
 
-See [Async reactivity and state](references/async-reactivity-and-state.md#async-computed-functions).
+A `qwikVite()` `fileFilter` cannot exclude `*.qwik.js`, `*.qwik.mjs`, or
+`*.qwik.cjs`; those library QRL files are always processed.
 
-### Remove task eagerness
+### Configure experimental features explicitly
 
-The `eagerness` option of `useTask$` is deprecated and should not be used in
-new code.
-
-See [Async reactivity and state](references/async-reactivity-and-state.md#usetask-eagerness).
-
-### Replace `preloadProbability`
-
-`preloadProbability` is deprecated. Use the supported preload controls,
-including `maxIdlePreloads` for concurrent idle-preload limits.
-
-See [Build and deployment](references/build-and-deployment.md#ssr-preload-configuration).
-
-## Configuration quick reference
-
-### Gate experimental features explicitly
-
-Pass experimental feature names through the `qwikVite()` `experimental`
-array:
+Pass feature names through the `experimental` array:
 
 ```ts
-qwikVite({
-  experimental: ['noSPA', 'valibot', 'preventNavigate'],
-});
+qwikVite({ experimental: ['noSPA', 'valibot', 'preventNavigate'] });
 ```
 
-Use `noSPA` only for MPA-only applications that do not use `Link`,
-`valibot` for `valibot$` validation, and `preventNavigate` for
-`usePreventNavigate`.
+Use `noSPA` only for MPA-only applications that do not use `Link`.
+`preventNavigate` enables `usePreventNavigate`, including asynchronous SPA
+blocking and browser-dialog fallback for other unsaved-state navigation.
 
-### Tune SSR preloading
+### Tune SSR preload behavior
 
 ```ts
 renderToStream(<Root />, {
   ...opts,
-  preload: {
-    debug: true,
-    maxIdlePreloads: 5,
-  },
+  preload: { debug: true, maxIdlePreloads: 5 },
 });
 ```
 
-`maxIdlePreloads` is the stable concurrent idle-preload limit. Prefetch
-strategies can also set `linkFetchPriority` for generated `modulepreload`
-links.
+Use `debug` for preload diagnostics and `maxIdlePreloads` to cap concurrent
+idle preloads. A prefetch strategy may set `linkFetchPriority` on generated
+`modulepreload` links.
 
-### Inline the Qwikloader only when necessary
+### Handle Qwikloader delivery intentionally
 
-SSR normally loads the Qwikloader from a separate bundle. Tests and unusual
-network setups can opt back into embedding it:
+SSR normally loads Qwikloader from a separate bundle. Testing and unusual
+network environments can opt back into embedding it:
 
 ```ts
-renderToStream(<Root />, {
-  ...opts,
-  qwikLoader: 'inline',
-});
+renderToStream(<Root />, { ...opts, qwikLoader: 'inline' });
 ```
 
-## Runtime and reactivity quick reference
+### Verify generated artifacts
 
-### Extract raw store data for platform APIs
+The preloader bundle graph is emitted as an asset, and generated assets appear
+in `q-manifest.json`. Current output filters `core.js` and `preloader.js`
+references from both the manifest and bundle graph. Run `qwik check-client`
+to detect a stale client bundle.
 
-Use `unwrapStore()` before passing store content to structured cloning or
-IndexedDB:
+## Reactivity and state quick reference
+
+### Unwrap stores only at integration boundaries
+
+Use `unwrapStore()` when an API such as structured cloning or IndexedDB needs
+the store's underlying content:
 
 ```ts
+import { unwrapStore } from '@builder.io/qwik';
+
 const copy = structuredClone(unwrapStore(store));
 ```
 
-### Account for membership tracking
+### Read without subscribing
 
-`"prop" in store` creates a reactive subscription. Consumers that execute
-membership checks rerun when the property's presence changes.
-
-### Read without tracking
-
-`untrack()` accepts signals and stores directly. Its callback form accepts
+`untrack()` accepts signals and stores directly, and its callback form accepts
 arguments:
 
 ```ts
@@ -183,21 +148,24 @@ const value = untrack(signal);
 const result = untrack((a, b) => a + b, 1, 2);
 ```
 
-Computed signals notify listeners only when the computed result changes, not
-merely when a dependency changes.
+The expression `"prop" in store` has the opposite behavior: it creates a
+subscription to changes in that property's presence.
+
+### Expect value-based computed notifications
+
+Computed signals notify listeners only when the computed value changes. A
+dependency update that produces the same result does not notify them.
 
 ## Router and server quick reference
 
-### Block navigation with the matching experiment
+### Handle an absent previous URL
 
-`usePreventNavigate` asynchronously blocks SPA navigation. Other unsaved-state
-navigation falls back to browser dialogs. Enable `preventNavigate` before
-using it.
+The router's previous URL is `undefined` on the first render. Guard code that
+uses it rather than assuming a prior navigation exists.
 
-### Throw rewrites from request handlers
+### Rewrite without changing the visible URL
 
-`RequestEvent.rewrite()` performs an internal redirect while preserving the
-browser-visible URL:
+Throw the result of `RequestEvent.rewrite()` from the handler:
 
 ```ts
 export const onRequest: RequestHandler = async ({ rewrite }) => {
@@ -205,45 +173,50 @@ export const onRequest: RequestHandler = async ({ rewrite }) => {
 };
 ```
 
-Multiple rewrite routes may target the same destination. On the first render,
-the router's previous URL is `undefined`, so consumers must handle its
-absence.
+Multiple rewrite routes may target the same destination. The browser-visible
+URL remains unchanged.
 
-### Catch server-function failures in middleware
+### Treat redirects as uncacheable by default
 
-Errors are standardized across `server$` functions and route loaders.
-`@plugin` middleware can catch `server$` failures. Client calls throw for 4xx
-statuses and statuses above 500, while 499 is accepted.
+Redirects do not inherit a parent layout's `Cache-Control` header and default
+to `no-store`. Apply an explicit policy only when the redirect is safe to
+cache.
 
-See [Server and route data](references/server-and-route-data.md#server-function-error-flow).
+### Expect thrown client-call failures
 
-## Components, CLI, and testing quick reference
+Client calls to `server$` throw for 4xx statuses and statuses above 500; 499
+is accepted. Middleware marked with `@plugin` can catch `server$` failures,
+and server-function and route-loader errors use standardized handling.
 
-Imported MDX accepts a `components` prop, can use props in JavaScript
-expressions, and honors default-exported layout components. Use
-`ErrorBoundary` for component error handling; corrected
-`useErrorBoundary` behavior is also available.
+## Component and integration quick reference
 
-Qwik emits `qviewTransition` when a view transition starts. Listen for that
-`CustomEvent` when application code needs transition lifecycle behavior.
+### Customize imported MDX
 
-For monorepos, target a package with:
+Imported MDX accepts a `components` prop, JavaScript expressions can read
+props, and default-exported MDX layout components are honored:
 
-```sh
-qwik add --projectDir=packages/my-package
+```tsx
+import Content from './markdown.mdx';
+import MyComponent from './my-component';
+
+export default component$(() => (
+  <Content components={{ MyComponent }} />
+));
 ```
 
-Use `QwikCityMockProvider` to mock route loaders and actions. Run
-`qwik check-client` when validating that a client bundle is fresh.
+### Listen for view transitions
 
-## Verification checklist
+Qwik emits a `CustomEvent` named `qviewTransition` when a view transition
+starts. Use that exact event name for integration listeners.
 
-Before completing a change:
+### Use the framework error boundary
 
-- inspect `package.json` and the lockfile for direct Vite ownership;
-- verify generated asset, manifest, loader, and preloader paths;
-- test navigation with an absent initial previous URL and with redirects;
-- exercise client-visible server failures and middleware interception;
-- check reactive consumers after changing `untrack()` or store membership;
-- test deployed service-worker cleanup before removing registration; and
-- confirm cache headers distinguish hashed assets, route data, and redirects.
+Qwik provides `ErrorBoundary`; `useErrorBoundary` also has corrected behavior
+as of 1.13. Prefer these APIs for component-level failure handling.
+
+### Enable optional integrations deliberately
+
+The Tailwind integration supports Tailwind CSS 4, while the CLI can retain
+Tailwind CSS 3. Scaffold compiled internationalization with
+`qwik add compiled-i18`. Because the Vite `lint` option defaults to `false`,
+enable linting explicitly when the build must run it.

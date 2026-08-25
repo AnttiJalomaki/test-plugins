@@ -1,24 +1,51 @@
 # Microservices and Observability
 
-Use this reference for transport state, driver access, structured logging, and
-transport-specific capabilities. It incorporates the `11.0.0` and
-`11.1.x-selected` guidance.
+Use this reference when configuring microservice transports, observing their
+state, accessing native drivers, handling transport-specific behavior, or
+changing logging and exception reporting.
 
-## Transport observability and native access
+## Transport status, events, and native-driver access
 
-Microservice client and server abstractions expose three capabilities:
+Microservice client and server abstractions expose three transport-facing APIs
+(`11.0.0`):
 
 - `status` observes transport state.
 - `on` subscribes to native-driver events.
-- `unwrap` accesses the underlying driver.
+- `unwrap` accesses the underlying driver without leaving the Nest
+  abstraction.
 
-Use `status` and `on` for lifecycle monitoring without abandoning the Nest
-abstraction. Use `unwrap` only when a driver-specific operation cannot be
-expressed through that abstraction.
+Use the narrowest API that fits the task. Reach for `unwrap` only when the
+underlying driver itself is needed.
 
-## Structured console logging
+## Dependency-injected transport options
 
-`ConsoleLogger` can emit JSON:
+Microservice configuration can be resolved through the dependency-injection
+container (`11.0.0`). Transport options may therefore depend on registered
+providers instead of being built entirely outside Nest.
+
+## NATS handler queues and shutdown
+
+NATS message handlers can choose queues individually (`11.0.0`). Queue choice
+does not need to apply as one setting to every handler on the server.
+
+The NATS transporter also provides an optional graceful-shutdown path. Use it
+when teardown should be graceful rather than immediate.
+
+## TCP transport bounds and ephemeral ports
+
+The TCP transporter accepts an operating-system-selected port (`11.0.0`),
+which permits ephemeral-port startup. It also accepts a configurable maximum
+packet-buffer size, providing an explicit bound on buffered packets.
+
+## RabbitMQ topic exchanges
+
+RabbitMQ microservices support topic exchanges (`11.1.x-selected`). This lets
+applications use topic-based routing through Nest's RMQ transport.
+
+## Structured JSON console logging
+
+`ConsoleLogger` can emit structured JSON (`11.0.0`). Enable it through the
+logger passed to `NestFactory.create`.
 
 ```typescript
 const app = await NestFactory.create(AppModule, {
@@ -26,41 +53,9 @@ const app = await NestFactory.create(AppModule, {
 });
 ```
 
-This supplies structured console output without replacing the built-in logger
-with a separate implementation.
+## Intrinsic exceptions
 
-## Dependency-injected microservice options
-
-Microservice configuration can be resolved through the dependency-injection
-container. Transport options may depend on registered providers instead of
-being constructed entirely outside Nest.
-
-Use this capability when configuration, credentials, or another transport
-dependency is already represented by a provider. Keep the resulting options
-compatible with the selected transport.
-
-## NATS
-
-NATS message handlers can choose queues individually. Queue selection no longer
-has to be one value for the entire server, so handlers can participate in
-different queue groups.
-
-The NATS transporter also has an optional graceful-shutdown path. Use it when
-the service must avoid immediate transporter teardown during application
-shutdown.
-
-## TCP
-
-The TCP transporter accepts an operating-system-selected port, enabling
-ephemeral-port startup. This is useful when the process should bind an
-available port rather than a fixed one.
-
-It also accepts a configurable maximum packet-buffer size. Set an explicit
-bound when the service must limit how much packet data can be buffered.
-
-## RabbitMQ
-
-RabbitMQ microservices support topic exchanges (`11.1.x-selected`). Use the RMQ
-transport's topic-based routing when routing keys need topic matching rather
-than a non-topic exchange pattern.
+`IntrinsicException` marks exceptions that Nest should not log automatically
+(`11.0.0`). Use it for expected framework-level failures when automatic
+logging would duplicate or otherwise produce unwanted output.
 

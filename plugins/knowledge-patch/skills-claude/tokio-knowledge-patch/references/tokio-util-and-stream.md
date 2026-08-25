@@ -1,106 +1,67 @@
 # Companion crates: tokio-util and tokio-stream
 
-Use this reference when selecting or implementing APIs from the included `tokio-util` and `tokio-stream` updates.
+## `tokio-util` compatibility and I/O
 
-## Contents
+- `tokio-util` 0.7.12 raises the Rust floor to 1.70, and 0.7.17 raises it to
+  Rust 1.71. Version 0.7.18 requires Tokio 1.44.0 or newer.
+- Version 0.7.18 adds `tokio_util::io::simplex` for one-direction asynchronous
+  I/O.
+- Version 0.7.14 adds `tokio_util::io::read_exact_arc` for exact reads backed by
+  an `Arc`.
+- From 0.7.14, `Either` delegates `AsyncWrite` to its active branch.
+- Version 0.7.13 fixes `LinesCodec::decode_eof` handling of invalid UTF-8 at the
+  end of input; require it when malformed terminal bytes must be handled
+  correctly.
 
-- [Dependency floors](#dependency-floors)
-- [I/O, framing, and codecs](#io-framing-and-codecs)
-- [Cancellation and task ownership](#cancellation-and-task-ownership)
-- [Task collections and delay queues](#task-collections-and-delay-queues)
-- [Stream adapters and batching](#stream-adapters-and-batching)
+## `tokio-util` task and cancellation tools
 
-## Dependency floors
+- `CancellationToken::run_until_cancelled` arrives in 0.7.12, its owned form in
+  0.7.14, and `FutureExt` cancellation adapters in 0.7.16. From 0.7.16,
+  cancellation wins when it and the wrapped future become ready together.
+- `DropGuardRef` arrives in 0.7.16 for cancelling a borrowed token when its
+  guard drops.
+- `AbortOnDropHandle` arrives in 0.7.12 and aborts its task on drop; `detach`
+  arrives in 0.7.16 to let the task continue independently.
+- `JoinMap` is stable from 0.7.16, and `tokio_util::task::JoinQueue` arrives in
+  0.7.17.
 
-### `tokio-util`
+## `tokio-util` framing and queues
 
-- Version 0.7.12 raises the minimum supported Rust version to 1.70.
-- Version 0.7.17 raises it again to Rust 1.71.
-- Version 0.7.18 raises the Tokio dependency floor to 1.44.0.
+- From 0.7.16, `Framed::with_capacity` applies the capacity to its read buffer
+  as well as its write buffer. Version 0.7.17 removes unnecessary trait bounds
+  from every `Framed` constructor.
+- From 0.7.12, removing the last `DelayQueue` entry wakes a waiting consumer so
+  it can observe the queue becoming empty.
 
-An upgrade to 0.7.18 must satisfy both the Rust 1.71 floor inherited from 0.7.17 and the Tokio 1.44.0 floor.
+## `tokio-stream` compatibility and features
 
-### `tokio-stream`
+- `tokio-stream` 0.1.13 raises the Rust floor to 1.56, 0.1.15 raises it to
+  1.63, and 0.1.16 raises it to 1.70. Version 0.1.14 raises the minimum Tokio
+  dependency to 1.15 so `timeout_repeating` compiles.
+- Version 0.1.13 adds the aggregate `full` feature.
 
-Version 0.1.16 raises the minimum supported Rust version to 1.70.
+```toml
+tokio-stream = { version = "0.1.13", features = ["full"] }
+```
 
-## I/O, framing, and codecs
+## Watch, timeout, and closure adapters
 
-### Simplex I/O
+- `WatchStream::from_changes` is available from 0.1.12 when the stream should
+  wait for a later watch value instead of yielding the current value first.
+- `StreamExt::timeout_repeating` arrives in 0.1.13 for timeout behavior driven
+  by a repeating timer.
+- `StreamNotifyClose` arrives in 0.1.13 to emit an explicit closure notification
+  before the wrapper terminates.
+- `StreamExt::chunks_timeout` can be constructed outside a Tokio runtime from
+  0.1.11, allowing synchronous pipeline assembly.
+- `ChunksTimeout::into_remainder` arrives in 0.1.18 for recovering an incomplete
+  buffered chunk while dismantling the adapter.
 
-`tokio-util` 0.7.18 adds `tokio_util::io::simplex`, providing simplex I/O directly without a project-local implementation.
+## Stream maps and concrete adapters
 
-Tokio itself also has `util::SimplexStream` from Tokio 1.40.0. Choose the API from the crate whose dependency and type surface the component already owns.
-
-### Exact reads and asynchronous writes
-
-- `tokio-util` 0.7.14 adds `tokio_util::io::read_exact_arc` for an exact-read operation backed by an `Arc`.
-- From `tokio-util` 0.7.14, `Either` delegates `AsyncWrite` to its selected underlying branch. It can satisfy an `AsyncWrite` bound without manual enum dispatch.
-
-### Framed construction and buffers
-
-- Starting with `tokio-util` 0.7.16, the capacity supplied to `Framed::with_capacity` applies to the read buffer as well. Recheck code that assumed it controlled only another side of the framed transport.
-- `tokio-util` 0.7.16 adds `FramedWrite::with_capacity` for explicit write-buffer sizing.
-- `tokio-util` 0.7.17 removes unnecessary trait bounds from every `Framed` constructor, allowing more codec and transport types to be constructed directly.
-
-### End-of-stream decoding
-
-`tokio-util` 0.7.13 fixes `LinesCodec::decode_eof` handling of invalid UTF-8 at the end of input. Require at least that version when malformed terminal bytes must be reported or processed correctly.
-
-## Cancellation and task ownership
-
-### Cancellation composition
-
-`CancellationToken` gains several ways to compose cancellation with a future:
-
-- `tokio-util` 0.7.12 adds `CancellationToken::run_until_cancelled`.
-- Version 0.7.14 adds the owned form, allowing composition without a borrowed token lifetime.
-- Version 0.7.16 adds `CancellationToken` adapters to `FutureExt`.
-- From 0.7.16, `run_until_cancelled` is biased toward cancellation when the token and wrapped future become ready simultaneously.
-
-Account for that tie-breaking rule when the wrapped future has side effects at completion.
-
-### Borrowed cancellation guards
-
-`tokio-util` 0.7.16 adds `DropGuardRef`, a reference-based guard that cancels a `CancellationToken` on drop without requiring ownership of the token.
-
-### Abort-on-drop handles
-
-- `tokio-util` 0.7.12 adds `AbortOnDropHandle`, which aborts its task when the wrapper is dropped.
-- Version 0.7.16 adds `AbortOnDropHandle::detach`, allowing the task to continue independently.
-- Version 0.7.18 removes unnecessary trait bounds from `AbortOnDropHandle`'s `Debug` implementation.
-
-Choose at least 0.7.16 when ownership may deliberately detach, and avoid accidental early drops when abortion is not desired.
-
-## Task collections and delay queues
-
-### Join collections
-
-- `tokio-util` 0.7.16 stabilizes `JoinMap`.
-- Version 0.7.17 adds `tokio_util::task::JoinQueue`.
-- Version 0.7.18 removes unnecessary trait bounds from `JoinQueue`'s `Debug` implementation.
-
-### Removing the final delayed item
-
-`tokio-util` 0.7.12 makes `DelayQueue` wake a waiter when its final item is removed. Waiters can now observe the transition to an empty queue without an unrelated wakeup.
-
-## Stream adapters and batching
-
-### Batch `StreamMap` retrieval
-
-`tokio-stream` 0.1.16 adds:
-
-- `StreamMap::next_many` for asynchronously collecting multiple mapped items per operation.
-- `StreamMap::poll_next_many` for manual poll-based batched retrieval.
-
-### Nameable adapter types
-
-`tokio-stream` 0.1.16 makes stream adapter types public. The concrete types returned by stream combinators can be named in structure fields, aliases, and function signatures.
-
-### Recover partial timed chunks
-
-`tokio-stream` 0.1.18 adds `ChunksTimeout::into_remainder`. Consuming an adapter can return the items in its current incomplete chunk instead of discarding them.
-
-### Receiver stream bounds
-
-In `tokio-stream` 0.1.18, `ReceiverStream` and `UnboundedReceiverStream` return meaningful `Stream::size_hint` values. Consumers can use their lower and upper item-count bounds for allocation or planning.
+- `StreamMap::next_many` and `poll_next_many` arrive in 0.1.16 for collecting
+  multiple ready keyed items at once.
+- Stream adapter concrete types become public in 0.1.16, so signatures and
+  stored state can name them.
+- `ReceiverStream` and `UnboundedReceiverStream` expose meaningful
+  `Stream::size_hint` bounds from 0.1.18.

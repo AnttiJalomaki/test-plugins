@@ -1,216 +1,331 @@
 # Editor and refactoring
 
-## Contents
+## Navigation, references, and display
 
-- [Navigation, hover, and completion](#navigation-hover-and-completion)
-- [References and rename](#references-and-rename)
-- [Generating definitions and codecs](#generating-definitions-and-codecs)
-- [Patterns and labels](#patterns-and-labels)
-- [Extraction and structural refactoring](#extraction-and-structural-refactoring)
-- [Cleanup and migration actions](#cleanup-and-migration-actions)
-- [Running the language server](#running-the-language-server)
+### Find references and rename
 
-## Navigation, hover, and completion
+Since 1.8.0, rename handles local variables and function arguments and updates
+all their uses. Other Gleam symbols were outside that first iteration's scope.
 
-### Richer hover and navigation
+Since 1.10.0, find-references locates every use of a type or value throughout a
+project, and renaming types and values updates cross-module references.
 
-Since 1.7.0, hover includes types and documentation for patterns and function labels. Since 1.9.0, go-to-type-definition on an expression presents the definitions of the types of values used by that expression.
+Since 1.15.0, module rename can start on any qualifier use, not just its import;
+it adds an import alias and updates qualifiers throughout the file. Find
+references and rename also work for variables bound in string-prefix patterns.
 
-Since 1.11.0, hover, completion, and go-to-definition work in module constant expressions. Generate-function and qualify/unqualify actions also work in constants as of 1.14.0.
+Since 1.18.0, constructor renames update references inside constants correctly.
 
-Since 1.13.0, go-to-definition, rename, and related actions work from every alternative of a `case` pattern, including names after `|`. Hovering a record-access field shows that field's documentation.
+### Navigation and hover
 
-### Public aliases and opaque internals
+- Since 1.9.0, go-to-type-definition on an expression presents definitions for
+  the types of values used in that expression.
+- Since 1.9.0, hovering an imported type or value's module qualifier shows that
+  module's documentation.
+- Since 1.11.0, hover, completion, and go-to-definition work in constants.
+- Since 1.15.0, rename, go-to-definition, hover, and find-references work in
+  guards.
+- Since 1.17.0, `textDocument/documentHighlight` lets an editor highlight all
+  references to the variable under the cursor.
+- Since 1.17.0, hovering the spread value in a record update lists unchanged
+  fields.
 
-Since 1.13.0, hovers and annotation actions prefer an accessible public type alias instead of exposing the aliased internal type name. Generated Hex documentation follows the same rule.
+Since 1.17.0, warnings print types with the qualifier or import alias visible in
+the source file, not always the canonical module name.
 
-Since 1.15.0, inexhaustive-pattern errors do not expose the structure of an internal type, field completions are suppressed, and add-missing-patterns inserts a catch-all rather than revealing variants.
+## Generating functions, types, and modules
 
-### Context-aware completion and hover
+### Missing functions
 
-Since 1.16.0, record updates complete labelled fields, while completion after a qualified type excludes values.
-
-Since 1.17.0, hovering the spread value in a record update lists the fields left unchanged, making the remaining available labels visible without navigating to the record definition.
-
-The server also implements `textDocument/documentHighlight`, so editors can highlight every reference to the selected variable in the current document.
-
-## References and rename
-
-### Local and project-wide symbols
-
-Since 1.8.0, rename updates a local variable or function argument and all of its uses. Since 1.10.0, find-references and rename operate project-wide for types and values, including uses across module boundaries.
-
-### Module aliases from usages
-
-Since 1.15.0, invoke module rename on any module usage. The action adds an alias to the import and updates qualified type and value references to use it.
-
-## Generating definitions and codecs
-
-### Missing functions and modules
-
-Since 1.8.0, a generate-function action on an unresolved call creates a definition with inferred argument and return annotations and a `todo` body.
-
-Since 1.11.0, generated parameter names come from call labels and argument variables. A call such as `remove(each: number, in: list)` generates labelled parameters named `number` and `list`.
-
-Since 1.13.0, generating from a missing qualified call such as `maths.subtract(2, 1)` adds a public typed skeleton to the imported module. Since 1.17.0, an import of a nonexistent module can create its source file; `import wobble/woo` in a `src` module creates `src/wobble/woo.gleam`.
-
-### Custom type variants and parameters
-
-Since 1.11.0, when an unknown variant's owning custom type can be inferred, generate the variant in that type with inferred field types and labels.
-
-Since 1.15.0, when a variant uses an undeclared type variable, add it to the custom type header; for example, change `pub type Store` to `pub type Store(inner_type)`.
-
-### Dynamic decoders
-
-Since 1.7.0, invoke decoder generation on a custom type header to create a `gleam/dynamic/decode` function with decoders for the type's fields.
-
-Since 1.9.0, the action supports multi-variant types. It decodes a string `"type"` field, branches on lowercased variant names, and decodes each variant's fields.
-
-Since 1.15.0, generation handles `Nil` and produces best-effort zero values for `decode.failure`.
-
-### JSON encoders
-
-Since 1.9.0, generate an encoder using `gleam/json` from a custom type. Record-like variants become `json.object` values whose fields use the matching encoders.
-
-Since 1.10.0, generated encoders destructure every custom-type field without `..`. Adding a field therefore creates a compile error until the encoder is updated instead of silently omitting the new data.
-
-### Type-variable names and annotations
-
-Since 1.13.0, add-annotations and generate-function choose type-variable names relative to the function being edited, without reserving names used elsewhere in the module.
-
-Since 1.14.0, add inferred annotations to every top-level constant and function in a module with one action.
-
-Since 1.16.0, replace `_` in a type annotation with its inferred type, such as changing `Result(_, Error)` to `Result(User, Error)`.
-
-## Patterns and labels
-
-### Generate exhaustive matches
-
-Since 1.8.0, the pattern-match action on a local variable or argument inserts a `case` with all patterns required for exhaustiveness and `todo` branches.
-
-Since 1.13.0, the action generates empty and non-empty branches for lists and works on variables introduced by `let` and `case` patterns. For a binding in an existing clause, it specialises that clause into the variable's variants instead of nesting another `case`.
-
-Since 1.17.0, invoke the action on a discard nested in a `case` pattern. For example, an `Ok(_)` holding a list can expand to `Ok([])` and `Ok([first, ..rest])`.
-
-### Convert an inexhaustive binding
-
-Since 1.7.0, an inexhaustive `let` diagnostic offers a replacement `case` with the missing patterns and `todo` placeholders.
-
-### Add and expand fields and labels
-
-Since 1.8.0, fill-labels works on partial calls, adding missing labelled arguments with `todo` values.
-
-Since 1.10.0, fill-unused-fields expands `..` in a pattern into every ignored field, such as changing `Pokemon(..)` to `Pokemon(id:, name:, moves:)`.
-
-Since 1.11.0, fill-labels works on record patterns, changing forms such as `Person(age:)` to `Person(age:, name:, job:)`.
-
-Since 1.13.0, add-omitted-labels can label arguments already present rather than inserting missing arguments.
+Since 1.8.0, invoking generate-function on an undefined call inserts a function
+with inferred argument and return types and a `todo` body.
 
 ```gleam
-User(first_name, "Cavalieri", ["gleam"])
-// becomes
-User(first_name:, last_name: "Cavalieri", likes: ["gleam"])
-```
-
-Since 1.17.0, fill-labels works on constant record constructors and uses constant `todo` expressions for missing fields.
-
-### Reshape case expressions
-
-Since 1.13.0, remove a clause diagnosed as unreachable with a quick fix. Another action collapses a nested `case` into its enclosing `case`, flattening clauses while preserving behavior.
-
-Since 1.14.0, merge selected clauses with identical bodies into one alternative pattern such as `Admin(..) | Guest(..) -> todo`.
-
-## Extraction and structural refactoring
-
-### `use`, captures, and pipelines
-
-Since 1.7.0, convert a `use` expression to its callback-based function call and back again. The server can also expand a capture such as `int.add(_, 11)` into `fn(value) { int.add(value, 11) }`.
-
-Since 1.9.0, convert a normal call to pipeline syntax or a pipeline back to a call. Select a non-first argument before conversion to pipe that position.
-
-Since 1.16.0, replace a single-call anonymous function with its direct function reference and restore the anonymous form later.
-
-```gleam
-[-1, -2, -3] |> list.map(fn(value) { int.absolute_value(value) })
-// becomes: [-1, -2, -3] |> list.map(int.absolute_value)
-```
-
-### Extract variables and constants
-
-Since 1.7.0, extract the expression at the cursor into a `let` binding and replace the expression with that variable.
-
-Since 1.10.0, lift a non-dynamic expression into a module constant and replace its original occurrence.
-
-### Extract functions
-
-Since 1.13.0, replace selected code with a call and move the expression into a new private function with inferred parameter and return types. The initial name is `function`; rename it afterward.
-
-Since 1.15.0, extracting an anonymous function moves its body into the new named function and passes captured values as parameters rather than extracting the anonymous expression itself.
-
-Since 1.16.0, extraction can move selected steps from the middle of a pipeline into a function. When invoked on an assignment, it extracts the assigned expression and replaces the value with a call.
-
-### String interpolation and blocks
-
-Since 1.9.0, invoke interpolation inside a string to split it and insert `<> todo <>`; selecting a valid name inserts that variable instead.
-
-```gleam
-"wibble wobble"
-// selecting `wobble` becomes:
-"wibble " <> wobble
-```
-
-Since 1.10.0, wrap an assignment value or case-clause value in a block, ready for more expressions. Since 1.12.0, remove a block containing only one expression, replacing `{ "Hello" }` with the expression.
-
-## Cleanup and migration actions
-
-### Remove debug and unused code
-
-Since 1.10.0, remove every `echo` expression from the current module in one action.
-
-Since 1.11.0, remove-unused-imports deletes unused unqualified types and values from grouped imports while retaining used members.
-
-### Simplify records and cases
-
-Since 1.17.0, remove a record spread when every field is already supplied, rewriting `User(..old, name: new_name, likes: new_likes)` as a direct constructor.
-
-Flatten a tuple-valued `case` subject and tuple patterns into Gleam's equivalent multiple-subject form:
-
-```gleam
-case a, b {
-  1, 2 -> todo
-  _, _ -> todo
+fn to_string(pokemon: Pokemon) -> String {
+  todo
 }
 ```
 
-### Fix warnings and deprecated code
+Since 1.11.0, generated parameter names come from argument labels and local
+variable names rather than generic placeholders.
 
-Bind an intentionally ignored failure result to `_` to silence an unused-result warning, though handling the failure is preferable:
+Since 1.13.0, the action works on a missing qualified call and edits the imported
+module with a public function outline and inferred annotations.
+
+### Types and variants
+
+Since 1.11.0, an action can add a missing custom-type variant inferred from its
+use, including field types and labels.
+
+Since 1.15.0, a quick fix adds an undeclared type variable used by a custom-type
+variant to the type header.
 
 ```gleam
-let _ = function_which_can_fail()
+pub type Store(inner_type) {
+  Store(name: String, data: inner_type)
+}
 ```
 
-Remove `opaque` from a private custom type because opacity has no effect outside a public API.
+### Missing modules
 
-Use `gleam fix` to rewrite deprecated code when an automatic supported migration is available:
+Since 1.17.0, an import of a nonexistent module in the package can create the
+corresponding source file. For example, `import wobble/woo` in
+`src/wiggle.gleam` can create `src/wobble/woo.gleam`.
 
-```sh
-gleam fix
+## Pattern-match actions
+
+### Exhaustive matches
+
+Since 1.8.0, the language server can add a `case` for a local variable or
+function argument with every pattern required to exhaustively match its type.
+
+```gleam
+case result {
+  Ok(value) -> todo
+  Error(value) -> todo
+}
 ```
 
-## Running the language server
+Since 1.7.0, an inexhaustive `let` binding can be replaced by a `case` with
+missing patterns inserted as `todo` branches.
 
-The language server ships in the main executable. Run it from a project root for a generic editor:
+Since 1.11.0, inexhaustive-case diagnostics show record labels in missing
+patterns, and the insert-missing-clauses action includes those labels.
 
-```sh
-gleam lsp
+Since 1.13.0, pattern-match generation handles lists and variables introduced
+by other patterns. When invoked on a variable bound by an enclosing case clause,
+it expands that clause into specialised exhaustive patterns.
+
+Since 1.15.0, add-missing-patterns uses a catch-all for an internal type rather
+than exposing its variants. Field completions are omitted, and inexhaustive
+diagnostics do not reveal the internal structure.
+
+Since 1.17.0, the action can expand a discard nested in a case pattern into
+exhaustive alternatives.
+
+```gleam
+Ok(_) -> todo
+// Becomes:
+Ok([]) -> todo
+Ok([first, ..rest]) -> todo
 ```
 
-With `nvim-lspconfig`, use the API matching the editor version:
+### Expanding and simplifying patterns
 
-```lua
-vim.lsp.enable("gleam") -- Neovim 0.11+, nvim-lspconfig 2.1+
-require("lspconfig").gleam.setup({}) -- Neovim 0.10 and earlier
+Since 1.10.0, an action replaces `..` in a custom-type pattern with every field
+that it ignored.
+
+```gleam
+let Pokemon(..) = pokemon
+// Becomes:
+let Pokemon(id:, name:, moves:) = pokemon
 ```
 
-One editor session can contain multiple Gleam projects. The server associates each file with its project, uses unsaved buffer contents, and follows the configured target. It performs no code generation or Erlang/Elixir compilation, so opening a project cannot execute its code. Outside a Gleam project, only formatting is available.
+Since 1.13.0, a quick fix removes case clauses already diagnosed as unreachable.
+
+Since 1.14.0, selected case clauses with identical bodies can merge into one
+alternative pattern.
+
+```gleam
+case user {
+  Admin(name:, ..) | Guest(name:, ..) -> todo
+  _ -> todo
+}
+```
+
+Since 1.13.0, nested case expressions can collapse into equivalent flat clauses
+whose patterns combine the outer and inner cases.
+
+## Labels and completions
+
+### Fill and add labels
+
+Since 1.8.0, fill-labels handles partially supplied calls, inserting missing
+labelled arguments as `todo`.
+
+```gleam
+string.replace("wibble", each: todo, with: todo)
+```
+
+Since 1.11.0, fill-labels adds omitted fields to record patterns while retaining
+already supplied fields.
+
+Since 1.13.0, an action labels positional arguments when the function parameter
+or constructor field has a label.
+
+```gleam
+User(first_name, "Cavalieri", ["gleam"])
+// Becomes:
+User(first_name:, last_name: "Cavalieri", likes: ["gleam"])
+```
+
+Since 1.15.0, fill-labels inserts an in-scope variable when its name and type
+match a label and leaves `todo` only if there is no suitable variable.
+
+Since 1.17.0, fill-labels works in constants and uses `todo` for missing fields.
+
+### Context-aware completion
+
+Since 1.16.0, completion suggests labelled fields while writing a record update
+and suppresses value completions while editing a qualified type.
+
+Since 1.17.0, an unknown unqualified value prompts the compiler to search
+already imported modules and suggest matching qualified values, such as
+`io.println` when `gleam/io` is imported.
+
+## Generating encoders and decoders
+
+### Dynamic decoders
+
+Since 1.7.0, a code action on a custom-type header generates a decoder using
+`gleam/dynamic/decode`.
+
+```gleam
+import gleam/dynamic/decode
+
+pub type Person {
+  Person(name: String, age: Int)
+}
+
+fn person_decoder() -> decode.Decoder(Person) {
+  use name <- decode.field("name", decode.string)
+  use age <- decode.field("age", decode.int)
+  decode.success(Person(name:, age:))
+}
+```
+
+Since 1.9.0, decoder generation supports multi-variant types. It reads a string
+field named `"type"`, matches lower-case variant names such as `"adult"` and
+`"child"`, decodes that variant's fields, and leaves an unknown discriminator
+as a `decode.failure` placeholder to complete.
+
+Since 1.15.0, decoder generation supports `Nil` and supplies best-effort zero
+values for `decode.failure`.
+
+### JSON encoders
+
+Since 1.9.0, an action on a custom type generates an encoder with `gleam_json`.
+
+```gleam
+import gleam/json
+
+fn encode_person(person: Person) -> json.Json {
+  json.object([
+    #("name", json.string(person.name)),
+    #("age", json.int(person.age)),
+  ])
+}
+```
+
+Since 1.10.0, the generated encoder first performs a full-field pattern match.
+Adding a field to the type then prevents compilation until the encoder is
+updated, instead of silently omitting the field.
+
+## Call and `use` refactors
+
+Since 1.7.0, actions convert a `use` expression to an equivalent callback call
+and back.
+
+Since 1.9.0, actions convert ordinary calls to pipeline syntax and back.
+Selecting an argument before conversion allows an argument other than the first
+to become the piped value.
+
+```gleam
+list.map([1, 2, 3], double)
+[1, 2, 3] |> list.map(double)
+```
+
+Since 1.16.0, actions switch between a single-call anonymous function and its
+equivalent direct function reference.
+
+```gleam
+fn(value) { int.absolute_value(value) }
+int.absolute_value
+```
+
+## Extraction actions
+
+Since 1.10.0, extract-constant lifts a selected non-dynamic expression into a
+module constant and replaces the selection with its name.
+
+Since 1.13.0, extract-function turns a selected expression into a typed private
+function and replaces it with a call. The generated name is `function`; rename
+it to a meaningful name.
+
+Since 1.15.0, extracting an anonymous function extracts its body and passes
+captured values as parameters. The action can also extract the initial
+expression of a pipeline into a variable.
+
+```gleam
+list.map(numbers, function(_, multiplier))
+
+fn function(number: Int, multiplier: Int) -> Int {
+  number * multiplier
+}
+```
+
+Since 1.16.0, extract-function can lift consecutive selected pipeline steps into
+a function and leave a call in the pipeline. On an assignment, it can extract
+the assigned expression instead of the enclosing assignment.
+
+## String interpolation
+
+Since 1.9.0, an action splits a string at the cursor and inserts `todo`, or
+replaces a selected valid Gleam name with an interpolation.
+
+```gleam
+"wibble " <> todo <> " wobble"
+"wibble " <> wobble <> " woo"
+```
+
+Since 1.15.0, interpolate-string can cut out any selected substring; it no
+longer needs to be a valid Gleam identifier.
+
+## Annotations, operators, and cleanup
+
+### Type annotations
+
+Since 1.14.0, one action adds inferred type annotations to every top-level
+constant and function in a module.
+
+Since 1.16.0, an action replaces `_` in a type annotation with the inferred
+type at that position.
+
+```gleam
+fn identity(value: Int) -> _ { value }
+// Becomes:
+fn identity(value: Int) -> Int { value }
+```
+
+### Operator corrections
+
+Since 1.10.0, when an operator has the wrong operand types, the compiler points
+at it and recommends the appropriate operator; the language server can apply
+the correction. Since 1.17.0, this works in case guards too, such as replacing
+string `+` with `<>`.
+
+### Import and qualifier cleanup
+
+Since 1.11.0, remove-unused-imports removes unused unqualified types and values
+from grouped imports while retaining used names.
+
+The language server can add or remove qualifiers while updating imports and all
+uses in a module. Qualifying supports all types and values; unqualifying is
+limited to types and custom-type variant constructors.
+
+### Record cleanup
+
+Since 1.17.0, an action removes a record spread when every field is explicitly
+provided and rewrites the expression as a constructor call.
+
+```gleam
+User(..lucy, name: "Jak", likes: ["Gleam", "Dogs"])
+// Becomes:
+User(name: "Jak", likes: ["Gleam", "Dogs"])
+```
+
+## Editor protocol features
+
+Since 1.15.0, the language server implements `textDocument/foldingRange` for
+contiguous import blocks and multiline top-level functions, custom types,
+constants, and type aliases.

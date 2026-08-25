@@ -2,7 +2,7 @@
   "patch": "vllm-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T17:42:33Z",
+  "built_at": "2026-08-22T10:57:19Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -59,6 +59,11 @@
     },
     "speculative-decoding": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "0.27.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

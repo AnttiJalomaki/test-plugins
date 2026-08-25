@@ -1,27 +1,10 @@
 # ACME and Challenge Solvers
 
-Use this reference for ACME account and certificate behavior, HTTP-01 and
-DNS-01 solver configuration, self-checks, retries, and challenge resources.
+## HTTP-01 solver behavior
 
-## Certificate profiles and renewal information
+### Exact Ingress paths `(1.18)`
 
-ACME issuers can select a certificate profile offered by the CA (since 1.18).
-For example, Let's Encrypt offers `tlsserver` for ordinary server certificates
-and `shortlived` for six-day certificates.
-
-Experimental RFC 9773 ACME Renewal Information support is available in 1.21
-behind `ACMEUseARI`. It queries the server's `renewalInfo` endpoint so the CA
-can recommend a renewal window, including during mass revocations or CA key
-rollovers.
-
-Created Let's Encrypt account-key resources carry
-`app.kubernetes.io/managed-by: cert-manager` from 1.18.
-
-## HTTP-01 ingress behavior
-
-Solver Ingresses use `PathType: Exact` from 1.18. ingress-nginx strict path
-validation can reject this combination. From cert-manager 1.18.1, restore the
-old path type with:
+Generated HTTP-01 solver Ingresses use `PathType: Exact`. With ingress-nginx strict path validation, use ingress-nginx 1.12.6+ or 1.13.2+, disable `strict-validate-path-type`, or, with cert-manager 1.18.1+, restore the former behavior:
 
 ```yaml
 config:
@@ -29,29 +12,13 @@ config:
     ACMEHTTP01IngressPathTypeExact: false
 ```
 
-Other options are disabling ingress-nginx `strict-validate-path-type` or using
-ingress-nginx 1.12.6+ or 1.13.2+.
+### Exclusive ingress selection `(1.19)`
 
-A solver is rejected from 1.19 if more than one of `class`,
-`ingressClassName`, and `name` is set. Select exactly one ingress mechanism.
+An HTTP-01 solver is invalid when more than one of `class`, `ingressClassName`, and `name` is set. Configure exactly one.
 
-An individual Ingress can override the solver's
-`http01.ingress.ingressClassName` with the 1.20 annotation:
+### Per-Issuer solver resources `(1.19)`
 
-```yaml
-metadata:
-  annotations:
-    acme.cert-manager.io/http01-ingress-ingressclassname: nginx
-```
-
-HTTP-01 challenges accept IPv6 addresses in the Host header from 1.18.5,
-allowing IP-address certificates for IPv6 subjects.
-
-## HTTP-01 solver Pods and resources
-
-An Issuer or ClusterIssuer can set requests and limits for its own HTTP-01
-solver Pods from 1.19. These values override the platform-wide
-`--acme-http01-solver-resource-*` flags for that solver.
+Set HTTP-01 solver Pod requests and limits in an Issuer or ClusterIssuer to override the controller-wide `--acme-http01-solver-resource-*` flags for that solver:
 
 ```yaml
 spec:
@@ -70,36 +37,29 @@ spec:
                     memory: 64Mi
 ```
 
-Runtime classes are configurable for HTTP-01 solver Pods in 1.21. For
-chart-wide solver configuration:
+### Per-Ingress class override `(1.20)`
+
+The `acme.cert-manager.io/http01-ingress-ingressclassname` annotation overrides the solver's `http01.ingress.ingressClassName` for one Ingress:
 
 ```yaml
-acmesolver:
-  runtimeClassName: gvisor
+metadata:
+  annotations:
+    acme.cert-manager.io/http01-ingress-ingressclassname: nginx
 ```
 
-The `--acme-http01-solver-extra-labels` controller flag added in 1.21 allows
-Helm `global.commonLabels` to be propagated to dynamic HTTP-01 Pods, Services,
-Ingresses, and Gateway API HTTPRoutes.
+### IPv6 subjects `(1.18)`
 
-## Delayed validation and retries
+Since 1.18.5, HTTP-01 handles IPv6 addresses in the Host header, enabling IP-address certificate issuance for IPv6 subjects.
 
-HTTP-01 and DNS-01 solvers in 1.21 can use `waitInsteadOfSelfCheck` to skip the
-cert-manager self-check, wait for a configured duration, and then request ACME
-server validation. Treat this as an escape hatch for split-horizon DNS and NAT
-hairpin environments.
+## DNS-01 solvers
 
-Starting in 1.17.3, ACME authorization waits up to two minutes, reducing
-premature `error waiting for authorization` failures.
+### Cloudflare correction `(1.17)`
 
-In 1.21, TLS handshake timeouts, DNS failures, and context cancellation while
-fetching an ACME nonce or waiting for authorization retry through workqueue
-backoff instead of terminally failing the Challenge.
+A Cloudflare API change broke DNS-01 issuance until cert-manager 1.17.1 restored it. Require 1.17.1 or later on that minor branch.
 
-## DNS-01 solver controls
+### RFC2136 transport selection `(1.19)`
 
-RFC2136 solver configuration accepts a `protocol` from 1.19, allowing an
-explicit DNS update transport:
+RFC2136 solver configuration accepts a `protocol` field for explicit DNS update transport selection:
 
 ```yaml
 spec:
@@ -110,17 +70,67 @@ spec:
             protocol: TCP
 ```
 
-Azure DNS private zones, tenant selection, and provider-specific retry fixes
-are described in the issuers and providers reference.
+### Azure private zones `(1.20)`
 
-## Challenge status and permissions
+Select an Azure DNS private zone with `zoneType`:
 
-The 1.19 metric `certmanager_certificate_challenge_status` exposes challenge
-status for dashboards and alerts.
+```yaml
+spec:
+  acme:
+    solvers:
+      - dns01:
+          azureDNS:
+            zoneType: AzurePrivateZone
+```
 
-From 1.19.6, the aggregate `cert-manager-edit` ClusterRole no longer allows
-creating Challenges or creating, patching, or updating Orders. Certificate-led
-issuance is unaffected. Direct resource-management tools need explicit RBAC.
+### CloudDNS cleanup `(1.20)`
 
-The `global.rbac.disableHTTPChallengesRole` Helm value existed only from 1.18.0
-through 1.18.1 and was removed in 1.18.2 due to a bug. Do not depend on it.
+The CloudDNS solver cleans up ACME challenge TXT records even when the DNS name has a large resource-record set.
+
+### DigitalOcean retries and events `(1.20)`
+
+DigitalOcean DNS-01 retries are regulated, and complete solver errors are attached to the Challenge as events for diagnosis.
+
+### Credential validation and recovery `(1.21)` `(1.21.1)`
+
+DNS issuer Secrets are validated before an issuer becomes ready. If an ACME DNS-01 solver Secret is missing, 1.21.1 allows an Issuer or ClusterIssuer stuck at `Ready=False` with reason `InvalidSolver` to recover after the Secret is created; 1.21.0 can remain stuck.
+
+## ACME issuance controls
+
+### Certificate profiles `(1.18)`
+
+ACME issuance can select a profile advertised by the CA. For example, Let's Encrypt offers `tlsserver` for standard server certificates and `shortlived` for six-day certificates.
+
+### Renewal Information `(1.21)`
+
+Experimental RFC 9773 ACME Renewal Information is behind `ACMEUseARI`. When enabled, cert-manager calls the ACME server's `renewalInfo` endpoint so the CA can recommend renewal windows, including during mass revocation or CA key rollover.
+
+### Delayed validation `(1.21)`
+
+HTTP-01 and DNS-01 solvers can set `waitInsteadOfSelfCheck` to skip the local self-check, wait for a configured duration, and then request ACME validation. Use this escape hatch for conditions such as split-horizon DNS or NAT hairpinning.
+
+### Authorization timeout `(1.17)`
+
+Starting in 1.17.3, ACME challenge authorization waits up to two minutes, reducing premature `error waiting for authorization` failures.
+
+### Transient error retries `(1.21)`
+
+TLS handshake timeouts, DNS failures, and context cancellation while fetching nonces or waiting for authorization retry through workqueue backoff instead of terminally failing the Challenge.
+
+### Managed account-key label `(1.18)`
+
+Created Let's Encrypt account-key resources carry `app.kubernetes.io/managed-by: cert-manager`.
+
+## Solver access and observability
+
+### Direct Challenge and Order RBAC `(upgrade-1.19)`
+
+Starting in 1.19.6, the aggregate `cert-manager-edit` ClusterRole cannot create Challenges and cannot create, patch, or update Orders. Certificate-driven issuance is unchanged. Tools that directly mutate these internal objects need explicit RBAC.
+
+### Challenge status metric `(1.19)`
+
+`certmanager_certificate_challenge_status` exposes certificate challenge status for monitoring and alerting.
+
+### Labels on dynamic solver resources `(1.21)`
+
+Use `--acme-http01-solver-extra-labels` to propagate Helm `global.commonLabels` to dynamic HTTP-01 Pods, Services, Ingresses, and Gateway API HTTPRoutes.

@@ -1,6 +1,8 @@
 {
   "patch": "postgresql-knowledge-patch",
-  "merged_at": "2026-07-15T04:54:55Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T20:49:25Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },

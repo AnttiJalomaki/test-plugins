@@ -1,71 +1,59 @@
 # Migration and Configuration
 
-## Imports and constructor names
+## Imports and constructors
 
-Most APIs formerly exported from the crate root are available from the
-prelude (since 0.7.0):
+The common API moved behind the prelude (since 0.7.0):
 
 ```rust
 use leptos::prelude::*;
 ```
 
-Router APIs are grouped by purpose:
+Router APIs are organized under `leptos_router::components` and
+`leptos_router::hooks`. Update root-level imports accordingly.
 
-```rust
-use leptos_router::components::*;
-use leptos_router::hooks::*;
-```
+Constructor names now follow idiomatic Rust naming. Replace calls such as
+`create_signal(...)` with `signal(...)`, and replace `create_rw_signal(...)`
+with `RwSignal::new(...)`.
 
-Constructors use idiomatic Rust naming. In particular, replace
-`create_signal(...)` with `signal(...)` and `create_rw_signal(...)` with
-`RwSignal::new(...)`. Apply the corresponding constructor-style migration to
-other reactive primitives rather than searching for another `create_*` free
-function.
+## Automatic update batching
 
-## Thread-safe and local storage
+The explicit `batch` function was removed in 0.7.0. Reactive updates receive
+the batching behavior automatically, so remove manual `batch(...)` wrappers.
 
-Reactive primitives use `SyncStorage` by default and therefore require their
-data to be `Send + Sync` (since 0.7.0). For `Rc` or another thread-local type,
-select `LocalStorage` or use an API's `_local` constructor:
+## Explicit configuration construction
 
-```rust
-let shared = RwSignal::new("value");
-let local = RwSignal::new_local(std::rc::Rc::new("value"));
-```
+`LeptosOptions` and `ConfFile` no longer implement `Default` (since 0.8.0).
+Load configuration or construct these values explicitly rather than calling
+`LeptosOptions::default()` or `ConfFile::default()`.
 
-Do not weaken thread-safety elsewhere merely to accommodate a local value;
-make the storage decision at the reactive primitive.
+`LeptosOptions` string fields use `Arc<str>` (since 0.7.0). When another API
+requires `&str`, borrow the field or call `.as_ref()` instead of moving or
+expecting an owned `String`.
 
-## Leptos options and configuration
+## Configured stylesheet paths
 
-`LeptosOptions` string fields are `Arc<str>` (since 0.7.0). Borrow them or
-call `.as_ref()` where a consumer expects `&str`.
+Read the configured stylesheet through `LeptosOptions::css_file_path` (since
+0.8.0). The briefly introduced `css_path` spelling was replaced in the same
+release line; do not build against that transient name.
 
-`LeptosOptions` and `ConfFile` do not implement `Default` (since 0.8.0).
-Construct or load them explicitly instead of calling `LeptosOptions::default()`
-or `ConfFile::default()`.
+When `cargo-leptos` asset hashing is enabled, render the stylesheet with
+`HashedStylesheet` (since 0.7.0). `Stylesheet` no longer supplies the CLI's file
+hashing integration automatically.
 
-Use `LeptosOptions::css_file_path` for the configured stylesheet path. Do not
-use the briefly introduced `css_path` spelling; it was replaced within the
-same release line.
+## Feature names
+
+Rename the `experimental-islands` Cargo feature to `islands` when migrating
+feature lists (since 0.7.0). For client-side routing in an islands application,
+enable the separate `islands-router` features described in
+[Routing, SSR, and integrations](routing-ssr-and-integrations.md).
 
 ## Dependency alignment
 
-Workspace crates receive patch releases independently (since 0.8.0). Do not
-assume `leptos`, `leptos_macro`, `server_fn_macro`, and other related crates
-always have the same patch number. Let the resolver select compatible releases
-or specify compatible versions per crate.
+Direct Axum dependencies must use Axum 0.8 with the current integration and
+its changed route syntax (since 0.8.0). Leptos reexports some Axum types, so a
+stale direct dependency can otherwise create incompatible duplicate types.
 
-The Axum integration targets Axum 0.8. If an application directly depends on
-Axum in addition to using reexported integration types, update the direct
-dependency and its changed route syntax at the same time.
-
-## Feature and component migrations
-
-The Cargo feature formerly named `experimental-islands` is named `islands`
-(since 0.7.0). Use the separate `islands-router` features when an islands
-application also needs client-side navigation.
-
-`Stylesheet` does not automatically participate in `cargo-leptos` filename
-hashing. When hashed asset filenames are enabled, use `HashedStylesheet` and
-provide the corresponding props.
+Leptos workspace crates do not necessarily share a patch number (since
+0.8.0). Resolve compatible versions for `leptos`, `leptos_macro`,
+`server_fn_macro`, and other workspace crates independently instead of forcing
+identical patch versions.

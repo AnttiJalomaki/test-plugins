@@ -1,41 +1,51 @@
 # Concepts and migrations
 
-## Database secret boundary
+## Secrets and password migration
 
-ZITADEL AES-256-encrypts database-held secrets with a `masterkey` that must be exactly 32 bytes. The master key, TLS key material, and initial administrator credentials remain outside that store, so self-hosters must supply and protect them separately.
+### Keep the database secret boundary intact
 
-## Password migration and rehashing
+ZITADEL AES-256-encrypts database-held secrets with a `masterkey` that must be exactly 32 bytes. The master key, TLS key material, and initial administrator credentials remain outside that store; self-hosters must supply, back up, and protect them separately.
 
-Password and client-secret hashes use Modular Crypt Format, embedding the algorithm, parameters, salt, and hash. Only `bcrypt` is enabled by default; migrations must enable other `Verifiers`, successful checks transparently rehash when the configured algorithm or cost changes, insecure MD5 and Drupal 7 formats are verify-only, and Argon2 is disabled on ZITADEL Cloud.
+### Import and rehash passwords deliberately
 
-## Read-after-write behavior
+Password and client-secret hashes use Modular Crypt Format, which embeds the algorithm, parameters, salt, and hash. Only `bcrypt` is enabled by default. Enable other `Verifiers` during migration; successful checks transparently rehash when the configured algorithm or cost changes. Insecure MD5 and Drupal 7 formats are verify-only, and Argon2 is disabled on ZITADEL Cloud.
 
-Commands append events while queries read projections, so list and query results can lag behind a successful write; reads by ID often trigger projection catch-up. Clients should tolerate this eventual consistency instead of treating a momentarily stale query as a failed write.
+Imported password compatibility includes salted MD5, SHA2, PHPass, and Drupal 7 hashes. Do not choose a verify-only legacy format for newly written credentials.
 
-## Projection failure diagnostics
+## Event sourcing and projections
 
-Projection progress is tracked per instance in `projections.current_sequences` and corresponding `notification`, `auth`, and `adminapi` tables. After retry exhaustion an event is recorded in the matching `failed_events` table so later events are not blocked. Event sequence numbers preserve ordering but are not guaranteed to be contiguous, which matters when monitoring lag or consuming audit events.
+### Plan for read-after-write lag
 
-## Virtual instance isolation
+Commands append events while queries read projections. A successful write can therefore precede its appearance in list and query results; reads by ID often trigger projection catch-up. Tolerate this eventual consistency rather than treating a briefly stale query as a failed write.
 
-A fresh installation creates one virtual instance, but one deployment can host multiple fully isolated instances; each is a top-level resource that normally has its own domain and issuer, default settings, and organizations. Use a separate virtual instance rather than an organization when a customer needs an independent issuer and complete configuration isolation.
+### Diagnose projection failures
 
-## Terminology across API generations
+Projection progress is tracked per instance in `projections.current_sequences` and corresponding `notification`, `auth`, and `adminapi` tables. After retry exhaustion, an event is recorded in the matching `failed_events` table so later events are not blocked. Event sequence numbers preserve ordering but are not guaranteed to be contiguous; account for that when measuring lag or consuming audit events.
 
-Current documentation maps `IAM` to **Instance**, `Member`/`Membership`/`Manager` to **Administrator**, and `User Grant`/`Authorization` to **Role Assignment**. Older API and resource names can retain the former terms, so these labels do not denote separate resource types.
+## Isolation and access models
 
-## Individual cross-organization access
+### Use virtual instances for full isolation
 
-An external role assignment grants project roles directly to a specific user who remains in another organization. Unlike a project grant, it provides individual access without delegating role-assignment management to the user's organization.
+A fresh installation creates one virtual instance, but one deployment can host multiple fully isolated instances. Each top-level instance normally has its own domain and issuer, default settings, and organizations. Choose a separate virtual instance rather than an organization when a customer needs an independent issuer and complete configuration isolation.
 
-## Linked external identities control login routing
+### Translate terminology across API generations
 
-Once an existing user enters a username linked to an external identity, ZITADEL redirects to that provider without offering a local-versus-external choice; local authentication is used only if the external login fails. If exactly one external provider is configured and password login is disabled, authentication requests redirect to it immediately.
+Current documentation maps `IAM` to **Instance**, `Member`/`Membership`/`Manager` to **Administrator**, and `User Grant`/`Authorization` to **Role Assignment**. Older APIs and resources retain earlier names; the old and new labels do not identify separate resource types.
 
-## Actions migration overlap
+### Distinguish individual access from project grants
 
-Configured Actions V2 execute in addition to legacy Actions V1 rather than replacing them. A staged migration must prevent duplicate side effects and remove the old action after the equivalent V2 execution is active.
+An external role assignment grants project roles directly to a user who remains in another organization. Unlike a project grant, it provides individual access without delegating role-assignment management to that user's organization.
 
-## Rolling zero-downtime upgrades
+### Understand external-identity routing
 
-ZITADEL's rolling-upgrade model keeps the old release serving while the new release applies database schema updates and joins background-job leader election. Route traffic to the new release only after it reports readiness, and back up the database and review release notes before upgrading.
+After an existing user enters a username linked to an external identity, ZITADEL redirects to that provider without offering a local-versus-external choice; local authentication is used only if external login fails. If exactly one external provider is configured and password login is disabled, authentication requests redirect to it immediately.
+
+## Migration and upgrade behavior
+
+### Avoid duplicate Actions during migration
+
+Configured Actions V2 execute in addition to legacy Actions V1 rather than replacing them. In a staged migration, prevent duplicate side effects and remove the old action only after the equivalent V2 execution is active.
+
+### Perform rolling zero-downtime upgrades
+
+The rolling-upgrade model keeps the old release serving while the new release applies schema updates and joins background-job leader election. Back up the database and review release notes first. Route traffic to the new release only after it reports readiness.

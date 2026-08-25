@@ -10,81 +10,61 @@ metadata:
 
 # Ollama Knowledge Patch
 
-Use this skill when working on Ollama commands, Modelfiles, native or
-compatibility APIs, integrations, cloud-backed features, image generation, or
-runtime sizing. Prefer the project's installed server behavior and model
-metadata when they differ from this guidance.
+Use this skill when implementing, reviewing, or troubleshooting Ollama model
+creation, native or compatibility APIs, integrations, cloud tools, acceleration,
+image generation, and server scheduling. Prefer the project's installed Ollama
+version and observed behavior when they differ from this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/cli-and-integrations.md](references/cli-and-integrations.md) | CLI entry points, launcher configuration, coding context, model-library tags, and launcher deprecations |
-| [references/model-creation.md](references/model-creation.md) | GGUF and Safetensors imports, adapters, blob uploads, quantization, requirements, aliases, and derived context |
-| [references/native-api-and-server.md](references/native-api-and-server.md) | Native chat and generate requests, tool results, embeddings, images, cloud controls, concurrency, and cache sizing |
-| [references/compatibility-apis.md](references/compatibility-apis.md) | Anthropic Messages and OpenAI-compatible endpoints, supported fields, limitations, and stateless Responses |
-| [references/cloud-and-web-tools.md](references/cloud-and-web-tools.md) | Cloud tags, hosted search and fetch, client helpers, coding agents, and MCP exposure |
-| [references/acceleration-images-and-scheduling.md](references/acceleration-images-and-scheduling.md) | Vulkan, CUDA, MLX, image CLI controls, accelerator support, and exact memory scheduling |
+| [Native API and server operation](references/native-api-and-server.md) | Thinking, tool results, blobs, embeddings, native image requests, concurrency, cloud controls, and K/V cache |
+| [Compatibility APIs](references/compatibility-apis.md) | Anthropic Messages, OpenAI chat/completions, Responses, embeddings, images, aliases, context sizing, and streaming |
+| [Model creation](references/model-creation.md) | GGUF and Safetensors import, adapters, quantization, capabilities, and minimum versions |
+| [CLI and integrations](references/cli-and-integrations.md) | Interactive agent, launcher behavior, context sizing, library tags, cloud tag resolution, and release hazards |
+| [Cloud and web tools](references/cloud-and-web-tools.md) | Cloud models, hosted search/fetch, chat helpers, integration search, and MCP |
+| [Acceleration, images, and scheduling](references/acceleration-images-and-scheduling.md) | Vulkan, CUDA, MLX, image generation, exact-memory scheduling, and temporary removal |
 
-## Critical compatibility notes
+## Breaking changes and deprecations
+
+### Keep image workflows on 0.32.5
+
+Ollama 0.32.6 temporarily removes experimental image generation. Pin 0.32.5
+for workflows that require image output, and do not upgrade until a later
+release explicitly restores it. See
+[acceleration, images, and scheduling](references/acceleration-images-and-scheduling.md#version-boundaries-for-image-generation).
 
 ### Skip the withdrawn release
 
-Do not install Ollama 0.32.2. Install or upgrade to 0.32.3 or newer.
+Do not deploy 0.32.2. Install 0.32.3 or newer instead. If image generation is
+also required, observe the separate 0.32.5 pin above.
 
-### Expect warnings for deprecated launcher tags
+### Update streaming parsers
 
-The launcher warns before continuing with CodeLlama, Qwen2.5 or
-Qwen2.5-coder, Llama 3.x, Mistral, StarCoder, and base DeepSeek-R1 tags. Move
-integration configurations to maintained model tags.
+From 0.32.6, OpenAI-compatible chat streams emit `role` only in the first
+chunk, put `finish_reason` in its own chunk, and optionally put usage in a
+separate chunk. A truncated response ends with `"length"`, not `"tool_calls"`.
+Do not assume all chunk fields arrive together.
 
 ### Use the current embeddings endpoint
 
-Use `POST /api/embed` instead of the superseded `/api/embeddings`. It accepts a
-single string or a list in `input` and returns an embeddings matrix.
+Prefer native `POST /api/embed` over superseded `/api/embeddings`. The current
+endpoint accepts one string or a list, returns a matrix, supports output
+`dimensions`, and can reject rather than truncate overlong input.
 
-```sh
-curl http://localhost:11434/api/embed -d \
-  '{"model":"all-minilm","input":["first text","second text"],"truncate":false}'
-```
+### Account for launcher renames and warnings
 
-The optional `dimensions` field controls output size. Input truncation defaults
-to true; `truncate: false` rejects overlong input.
+The former Codex App integration is exposed as ChatGPT through
+`ollama launch chatgpt`; `--restore` selects the usual ChatGPT profile. Older
+CodeLlama, Qwen2.5, Qwen2.5-coder, Llama 3.x, Mistral, StarCoder, and base
+DeepSeek-R1 tags produce a deprecation warning before continuing.
 
-### Keep Responses conversations in the application
+## Model creation quick reference
 
-`/v1/responses` is stateless. Do not depend on `previous_response_id`,
-`conversation`, or `truncation`; carry prior turns in the application and send
-the required context on each request.
+### Import GGUF artifacts
 
-### Respect compatibility endpoint limits
-
-The compatibility APIs intentionally implement subsets of their upstream
-interfaces. In particular:
-
-- Chat Completions does not support `tool_choice`, log probabilities,
-  `logit_bias`, `user`, or `n`.
-- Completions requires a string `prompt`; it does not support `best_of`,
-  `echo`, log probabilities, `logit_bias`, `user`, or `n`.
-- Embeddings does not accept token arrays or `user`.
-- Image compatibility responses must use `b64_json`; `n`, `quality`, `style`,
-  and `user` are unsupported.
-
-Read [references/compatibility-apis.md](references/compatibility-apis.md) before
-porting a client that uses optional request fields.
-
-### Treat image generation as experimental
-
-Native `/api/generate`, the compatibility image endpoint, and the image CLI
-workflow are experimental. Check platform support and avoid relying on stable
-response or lifecycle guarantees.
-
-## High-value workflows
-
-### Import a local GGUF
-
-Point `FROM` at one GGUF file or a directory containing GGUF files, then create
-and run the local model.
+A Modelfile `FROM` may point to one GGUF file or a directory of GGUF files.
 
 ```text
 FROM ./my-model.Q4_K_M.gguf
@@ -95,57 +75,85 @@ ollama create -f Modelfile my-model
 ollama run my-model
 ```
 
-If the imported artifact supports tools, confirm that `ollama show my-model`
-lists the `tools` capability before selecting it in an integration.
+If the GGUF supports tools, verify that `ollama show my-model` reports the
+`tools` capability before selecting it in an integration.
 
-### Import weights and adapters safely
+### Import Safetensors and adapters
 
-A supported Safetensors directory can be the Modelfile source:
+Use `FROM .` when a Modelfile sits beside supported Safetensors weights. Use
+`ADAPTER` with a Safetensors directory or GGUF adapter file, and keep `FROM`
+matched to the exact fine-tuning base. Prefer non-quantized Safetensors
+adapters over QLoRA imports because framework quantization differs.
 
-```text
-FROM .
-```
+### Quantize during creation
 
-Use `ADAPTER` with a Safetensors adapter directory or GGUF adapter file. The
-`FROM` model must be the exact base used during fine-tuning; a mismatch can
-produce erratic results. Prefer non-quantized Safetensors adapters over QLoRA
-adapters because framework quantization methods differ.
-
-### Quantize while creating
-
-Convert an FP16 or FP32 source during creation:
+For an FP16 or FP32 source, pass `-q` or `--quantize` to `ollama create`.
+The native create API accepts `q4_K_M`, `q4_K_S`, and `q8_0`; `q4_K_M` and
+`q8_0` are the recommended choices.
 
 ```sh
 ollama create --quantize q4_K_M my-model
 ```
 
-The native create API also accepts `quantize`; supported values are `q4_K_M`,
-`q4_K_S`, and `q8_0`, with `q4_K_M` and `q8_0` recommended.
+Use Modelfile `REQUIRES` when an artifact depends on a minimum Ollama version.
+See [model creation](references/model-creation.md) for complete import and
+adapter rules.
 
-### Control thinking
+## Native API quick reference
 
-Native `/api/generate` and `/api/chat` requests accept `think` as a boolean or
-as `"low"`, `"medium"`, `"high"`, or `"max"`. Chat returns reasoning separately
-in `message.thinking`.
+### Control reasoning and tool history
 
-```sh
-curl http://localhost:11434/api/chat -d \
-  '{"model":"gpt-oss:20b","messages":[{"role":"user","content":"Solve this carefully."}],"think":"high","stream":false}'
-```
-
-When returning a function result to chat history, append a `tool` message with
-`tool_name` so the result can be matched to its call:
+For `/api/generate` and `/api/chat`, `think` accepts a boolean or `"low"`,
+`"medium"`, `"high"`, or `"max"`. Chat returns reasoning separately in
+`message.thinking`. Append executed function results as role `tool` messages
+with `tool_name` so streamed calls can be matched to their results.
 
 ```json
 {"role":"tool","content":"11 degrees celsius","tool_name":"get_weather"}
 ```
 
-### Size coding integrations
+### Upload before creating
 
-Configure at least 64,000 tokens of context for coding integrations. Local
-context allocation consumes memory, and parallel requests multiply that
-allocation by the parallel-request count. A derived model can set context
-explicitly:
+Upload GGUF or Safetensors content to
+`POST /api/blobs/sha256:<digest>`, optionally check it with `HEAD`, and map
+filenames to digests in `/api/create` under `files` or `adapters`.
+
+### Bound server work
+
+Use `OLLAMA_MAX_LOADED_MODELS`, `OLLAMA_NUM_PARALLEL`, and `OLLAMA_MAX_QUEUE`
+to cap residency, per-model parallelism, and queued work. Expect HTTP 503 after
+the queue limit. Parallelism multiplies each model's context allocation and
+memory requirement.
+
+With Flash Attention, `OLLAMA_KV_CACHE_TYPE=q8_0` uses roughly half the default
+`f16` cache memory, while `q4_0` uses roughly one quarter with more quality
+loss. See [native API and server operation](references/native-api-and-server.md).
+
+## Compatibility API quick reference
+
+### Point clients at the right base URL
+
+Anthropic Messages clients connect at `http://localhost:11434`; client-required
+credentials are ignored locally. OpenAI clients use
+`http://localhost:11434/v1/`, also with a placeholder API key when required by
+the client.
+
+### Stay inside the supported subset
+
+OpenAI-compatible Chat Completions supports streaming usage, JSON mode, seeded
+output, tools, vision with base64 images, and reasoning effort. It does not
+support `tool_choice`, log probabilities, `logit_bias`, `user`, or `n`.
+
+Responses requests are stateless: carry conversation state in the application
+because `previous_response_id`, `conversation`, and `truncation` are not
+supported. The compatibility image endpoint requires `b64_json` and is
+experimental. See [compatibility APIs](references/compatibility-apis.md) for
+endpoint-specific limits.
+
+### Derive a larger-context alias
+
+The compatibility API has no request field for context size. Create and call a
+derived model instead:
 
 ```text
 FROM llama3.2
@@ -156,67 +164,44 @@ PARAMETER num_ctx 65536
 ollama create mymodel
 ```
 
-### Configure without launching
-
-`ollama launch` normally configures and starts an integration. Add `--config`
-to write the integration configuration without starting it:
-
-```sh
-ollama launch opencode --config
-```
+## CLI and integration quick reference
 
 Running bare `ollama` starts the interactive agent and supplies the current
-working directory as project context. Use `ollama signin` when its web search
-or fetch functionality requires authentication.
+working directory as project context. Use `ollama signin` for authenticated
+web search or fetch. `ollama launch` shows the wider integration list, and
+`ollama launch <integration> --config` configures without starting it.
 
-### Run local-only
+Give coding integrations at least 64,000 tokens of context. A local
+`glm-4.7-flash` at that context needs about 23 GB VRAM; cloud tags provide
+full-context alternatives. Gemma 4 is available as `gemma4`.
 
-Disable cloud models and web search in `~/.ollama/server.json`:
+See [CLI and integrations](references/cli-and-integrations.md) for commands,
+recommended tags, and cloud-only tag resolution.
 
-```json
-{
-  "disable_ollama_cloud": true
-}
-```
+## Cloud and web quick reference
 
-Alternatively start the server with `OLLAMA_NO_CLOUD=1`. Restart the server and
-verify that its logs contain `Ollama cloud disabled: true`.
+Sign in before using cloud tags. They work with normal `run`, `pull`, `ls`,
+and `cp` commands and with the local API, while inference executes remotely.
+Set `OLLAMA_NO_CLOUD=1` or `disable_ollama_cloud` in the server configuration
+to disable both cloud models and web search for local-only operation.
 
-### Bound concurrency and queueing
+Hosted search and fetch require an account API key and expose
+`/api/web_search` and `/api/web_fetch`. Python and JavaScript clients expose
+matching helpers that can be passed directly as chat tools. Allocate roughly
+32K context or more to a standalone search agent because results can be large.
 
-Set explicit limits when memory or latency must be predictable:
+See [cloud and web tools](references/cloud-and-web-tools.md) for request shapes,
+integration behavior, and the stdio MCP configuration.
 
-```sh
-OLLAMA_MAX_LOADED_MODELS=2 \
-OLLAMA_NUM_PARALLEL=4 \
-OLLAMA_MAX_QUEUE=128 \
-ollama serve
-```
+## Acceleration and scheduling quick reference
 
-Defaults are three loaded models per GPU, or three for CPU inference; one
-parallel request per model; and a queue of 512 before excess work receives
-HTTP 503.
+Vulkan acceleration is enabled by default on supported AMD and Intel hardware.
+MLX text loading respects `OLLAMA_LOAD_TIMEOUT`; MLX-specific NVFP4 tags run on
+Apple Silicon. Windows ARM64 CUDA and B200 through CUDA 12 are supported in the
+documented accelerator path.
 
-### Reduce K/V cache memory
-
-Flash Attention is selected automatically where supported and can be forced
-with `OLLAMA_FLASH_ATTENTION=1` or disabled with `0`. When it is enabled,
-`OLLAMA_KV_CACHE_TYPE=q8_0` uses roughly half the default `f16` cache memory;
-`q4_0` uses roughly one quarter but has greater quality loss.
-
-```sh
-OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve
-```
-
-## Working method
-
-1. Identify whether the caller uses the native API, a compatibility API, the
-   CLI, or an integration; their fields and lifecycle guarantees differ.
-2. Inspect `ollama show`, the Modelfile, and server configuration before
-   assuming capabilities, context size, or accelerator placement.
-3. Budget context and parallelism together because each parallel request
-   multiplies context memory.
-4. For cloud, search, fetch, or image features, verify authentication, local-only
-   policy, and platform support before selecting an implementation.
-5. Open the topic reference from the index for full supported values, defaults,
-   and endpoint-specific restrictions.
+New-engine models measure exact memory before loading. This improves GPU
+placement and multi-GPU scheduling and makes `ollama ps` memory reporting agree
+more closely with system GPU tools. Consult
+[acceleration, images, and scheduling](references/acceleration-images-and-scheduling.md)
+for the affected model families and image controls.

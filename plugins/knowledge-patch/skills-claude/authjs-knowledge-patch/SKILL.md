@@ -10,7 +10,7 @@ metadata:
 
 # Auth.js Knowledge Patch
 
-Use this patch to choose the maintained authentication path, avoid security-sensitive provider mistakes, and apply current Auth.js integration patterns. Read the topic reference before changing an affected flow; the quick reference below prioritizes breaking behavior, security updates, and common implementation work.
+Use this patch to choose the maintained authentication path, avoid security-sensitive provider mistakes, and apply current Auth.js integration patterns. Read the topic reference before changing an affected flow; the quick reference prioritizes breaking behavior, security updates, and common implementation work.
 
 ## Reference index
 
@@ -20,9 +20,9 @@ Use this patch to choose the maintained authentication path, avoid security-sens
 | [Providers and authentication](references/providers-and-authentication.md) | Account linking, credentials errors, email providers, passkeys, OAuth customization, redirect proxies |
 | [Sessions and frameworks](references/sessions-and-frameworks.md) | Session lifecycle, Qwik, SvelteKit, Express |
 | [v5 migration](references/v5-migration.md) | Next.js Pages Router limitations, Next.js 16 proxy protection |
-| [Adapters, operations, and security](references/adapters-operations-and-security.md) | Adapter contracts, value normalization, logging, security upgrade floors |
+| [Adapters, operations, and security](references/adapters-operations-and-security.md) | Adapter contracts, logging, security upgrade floors, v4 token and OAuth behavior |
 
-## Decide between Auth.js and Better Auth
+## Choose the maintained project path
 
 - Prefer Better Auth for a new project.
 - Keep Auth.js for an existing application that needs continued security and urgent fixes, or when Better Auth still lacks a required capability such as stateless sessions without a database.
@@ -41,11 +41,24 @@ Audit installed package versions before debugging provider or adapter behavior.
 
 Read [Adapters, operations, and security](references/adapters-operations-and-security.md) for exact upgrade implications.
 
+## Account for v4.24.15 behavior
+
+When updating the v4 line:
+
+- Treat `null` from `getToken()` as unauthenticated when the Bearer value is malformed; do not depend on an exception.
+- Expect provider-mismatched OAuth state, nonce, or PKCE cookies to be rejected.
+- Warn that OAuth sign-ins already in flight during deployment can fail once and succeed on retry.
+- Let email sign-in apply NFKC normalization before validation.
+- In trusted-host mode, expect an explicit `NEXTAUTH_URL` to override an auto-detected forwarded host.
+- Retain the CommonJS-compatible `uuid@^11.1.1` dependency for Node.js versions before 20.19.
+
+See [Adapters, operations, and security](references/adapters-operations-and-security.md#v42415-authentication-hardening-and-compatibility) for the operational details.
+
 ## Treat cross-provider linking as a security boundary
 
-With a database and multiple authentication methods, a later sign-in can link to an existing user when emails match. Evaluate the email-verification guarantee of every enabled provider; the weakest provider can undermine linking safety.
+With a database and multiple authentication methods, a later sign-in can link to an existing user when emails match. Evaluate the email-verification guarantee of every enabled provider because each one affects account-linking safety.
 
-Do not assume matching email text alone proves common ownership. Read [Providers and authentication](references/providers-and-authentication.md#database-backed-account-linking) before enabling a provider alongside existing accounts.
+Do not assume matching email text alone proves common ownership. Read [Providers and authentication](references/providers-and-authentication.md#database-backed-account-linking) before enabling another provider alongside existing accounts.
 
 ## Handle credentials failures by invocation style
 
@@ -53,7 +66,7 @@ Returning `null` from `authorize` has two observable forms:
 
 - Expect built-in-page flows to redirect with `?error=CredentialsSignin&code=credentials`.
 - Catch a thrown `CredentialsSignin` in form actions and custom server-side flows.
-- Subclass `CredentialsSignin` to replace the public, URL-visible `code`; keep the value generic enough to avoid leaking sensitive details.
+- Subclass `CredentialsSignin` to replace the public, URL-visible `code`.
 
 ```ts
 class InvalidLoginError extends CredentialsSignin {
@@ -96,7 +109,7 @@ await signIn("passkey", { action: "register" })
 await signIn("passkey")
 ```
 
-Use the built-in sign-in page when possible because it exposes the configured passkey action automatically. Check the package floors in [Providers and authentication](references/providers-and-authentication.md#experimental-passkeys).
+Use the built-in sign-in page when possible because it exposes the configured passkey action automatically. Check all package floors in [Providers and authentication](references/providers-and-authentication.md#experimental-passkeys).
 
 ## Configure email authentication
 
@@ -183,4 +196,4 @@ NextAuth({
 3. Check security floors and experimental prerequisites.
 4. Trace the invocation style: built-in page, form action, server handler, or client action.
 5. Test success, rejection, expiry, redirect, and account-linking paths as applicable.
-6. Verify that public error codes and logs reveal no sensitive authentication detail.
+6. Treat `null` tokens as unauthenticated and verify logs and public error codes expose no sensitive authentication detail.

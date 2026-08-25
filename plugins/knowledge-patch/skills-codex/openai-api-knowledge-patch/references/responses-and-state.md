@@ -1,59 +1,57 @@
 # Responses, State, and Safety
 
-## Request shape and candidate generation
+## One generation per request (`responses-api`)
 
-Responses produces exactly one generation per request and does not accept the
-Chat Completions `n` parameter. Send independent requests when the application
-needs multiple candidate outputs. (`responses-api`; 2025-03-11)
+Responses removes the `n` parameter and produces one generation per request.
+Make separate requests when multiple candidate outputs are required.
 
-## Response chains and instructions
+## Response chains, instructions, and billing
 
-Use `previous_response_id` to carry prior response context. It does not carry
-top-level `instructions`, so resend stable instructions on every request.
-Tokens from earlier input in the chained context are still billed as input
-tokens.
+`previous_response_id` carries earlier response context, but it does not carry
+top-level `instructions`. Resend stable instructions on every request in a chain.
+Earlier input tokens in that chain are still billed as input tokens.
 
 ## Storage and stateless reasoning
 
-Responses are stored by default. Chat Completions are also stored by default
-for new accounts. Set `store: false` when the application must remain
-stateless. Zero Data Retention flows enforce disabled storage automatically.
+Responses is stored by default. Chat Completions is also stored by default for new
+accounts. Set `store: false` for stateless use; Zero Data Retention flows enforce
+disabled storage automatically.
 
-When continuing reasoning without storage, replay every reasoning item returned
-by the preceding response, including its default `encrypted_content`. Do not
-reduce the replay to assistant message text.
+To retain reasoning context without storage, replay every returned reasoning item
+with its default `encrypted_content`. Do not discard reasoning items between
+stateless turns.
 
-## Function strictness
+## Responses function strictness
 
-Responses internally tags function definitions. If `strict` is omitted, the
-API attempts strict mode rather than preserving the old non-strict default.
-When a schema is incompatible with strict mode, calling falls back to best
-effort and the returned definition reports `strict: false`.
-
-Set non-strict behavior explicitly:
+Responses function definitions are internally tagged. Omitting `strict` attempts
+strict mode rather than preserving the earlier non-strict default. If a schema is
+incompatible, the API falls back to best-effort calling and reports
+`strict: false`. Set the field explicitly to require non-strict behavior.
 
 ```json
 {
   "type": "function",
   "name": "lookup",
-  "parameters": {
-    "type": "object",
-    "properties": {}
-  },
+  "parameters": {"type": "object", "properties": {}},
   "strict": false
 }
 ```
 
-## Chained reasoning context
+## Streaming transports and moderation timing
 
-For GPT-5.6, set `reasoning.context` according to the validity of prior goals
-and assumptions:
+HTTP `stream=true` uses server-sent events. Persistent WebSocket mode supports
+incremental inputs chained with `previous_response_id`.
 
-- Use `all_turns` with `previous_response_id` while the reasoning context
-  remains applicable.
-- Use `current_turn` when earlier reasoning has become stale.
-- Use `auto`, or omit the property, to accept the model default; inspect the
-  returned effective value.
+When moderation scores are requested with a generation, the scores arrive only
+after the full output. They are not included in partial deltas, so do not treat an
+in-progress stream as having final moderation results.
+
+## Persisted reasoning context
+
+Set `reasoning.context` to `all_turns` and continue with `previous_response_id` only
+while goals and assumptions remain stable. Use `current_turn` when earlier
+reasoning has gone stale. Use `auto` or omit the field for the model default, then
+inspect the returned effective value.
 
 ```json
 {
@@ -62,71 +60,15 @@ and assumptions:
 }
 ```
 
-When manually replaying the history, retain every user input and every output
-item. Preserve item IDs, call IDs, caller metadata, and assistant phase values;
-these are part of the continuation record.
-
-## Streaming transports
-
-An HTTP request with `stream=true` streams server-sent events. Persistent
-WebSocket mode supports incremental inputs and chains them with
-`previous_response_id`.
-
-If moderation scores are requested with a generation, they arrive only after
-the full output. Partial deltas do not include those scores, so do not present
-the streamed content as having passed the later moderation result.
-
-## Programmatic tool calling
-
-Use the hosted program tool for bounded reductions over tool results. Enable
-the tool and opt individual functions into programmatic invocation with
-`allowed_callers`:
-
-```json
-{
-  "tools": [
-    {"type": "programmatic_tool_calling"},
-    {
-      "type": "function",
-      "name": "lookup_records",
-      "allowed_callers": ["programmatic"]
-    }
-  ]
-}
-```
-
-Process and preserve all `program`, program-issued `function_call`,
-`function_call_output`, and `program_output` items. Keep `call_id` and `caller`
-unchanged through the host round trip.
-
-## Multi-agent Responses beta
-
-Enable the beta using both the request header and a bounded concurrency value:
-
-```text
-OpenAI-Beta: responses_multi_agent=v1
-```
-
-```json
-{
-  "multi_agent": {
-    "enabled": true,
-    "max_concurrent_subagents": 3
-  }
-}
-```
-
-Handle and replay `multi_agent_call`, `multi_agent_call_output`, and
-`agent_message` items. Also handle function calls issued by any subagent, not
-only calls emitted by the parent.
+For manual replay, retain every user input and output item as well as item IDs,
+call IDs, caller metadata, and assistant phase values.
 
 ## Generation-time safeguards
 
-Cyber and biology safeguards can synchronously review generation. A request,
-including a legitimate dual-use request, can be refused or its stream can pause
-for several seconds during review. Make clients tolerant of the pause and
-refusal path.
+Cyber and biology safeguards can refuse output or pause a stream for several
+seconds while generation is synchronously reviewed, including for legitimate
+dual-use requests. Applications should attach a stable, privacy-preserving
+`safety_identifier` to each request.
 
-Attach a stable, privacy-preserving `safety_identifier` for each end user to
-every Responses request. Realtime uses a different transport described in
-[service-tiers-and-realtime.md](service-tiers-and-realtime.md).
+Realtime does not use that request parameter. Its transport-specific
+`OpenAI-Safety-Identifier` header is described in the Realtime reference.

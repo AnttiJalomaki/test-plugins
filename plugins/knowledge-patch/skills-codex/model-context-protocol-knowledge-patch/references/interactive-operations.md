@@ -1,81 +1,91 @@
 # Interactive Operations
 
-## Negotiate elicitation
+## Tool definitions and results
 
-Compatibility batch `2025-06-18-compat` adds elicitation. A client advertises
-`capabilities.elicitation`; a server can then issue an `elicitation/create`
-request inside another operation to ask for non-sensitive structured input.
+### Behavior annotations
 
-The initial `requestedSchema` is a flat object whose properties are primitive
-strings, numbers or integers, booleans, or string enums. Do not use complex
-nesting or arrays of objects.
+Tool definitions can carry annotations describing behavior such as whether a
+tool is read-only or destructive, allowing clients to present its intended
+effects more accurately. (`2025-03-26`)
+
+### Structured content and resource links
+
+A tool may declare an `outputSchema` and return the corresponding JSON object
+in `structuredContent`. Servers must conform to the declared schema and clients
+should validate it. For older clients, the server should also serialize the
+same JSON into a text item in `content`. (`2025-06-18-compat`)
 
 ```json
-{
-  "jsonrpc": "2.0",
-  "id": 7,
-  "method": "elicitation/create",
-  "params": {
-    "message": "Choose a region",
-    "requestedSchema": {
-      "type": "object",
-      "properties": {
-        "region": {"type": "string", "enum": ["eu", "us"]}
-      },
-      "required": ["region"]
-    }
-  }
-}
+{"content":[{"type":"text","text":"{\"temperature\":22.5}"}],"structuredContent":{"temperature":22.5}}
 ```
 
-The response action is one of:
+Tool results may contain a `resource_link` with a fetchable or subscribable URI
+and resource annotations. The link is not guaranteed to appear in
+`resources/list`.
 
-- `accept`, with schema-conforming `content`;
-- `decline`, an explicit refusal, normally without `content`;
-- `cancel`, dismissal without a choice, normally without `content`.
+```json
+{"type":"resource_link","uri":"file:///project/src/main.rs","name":"main.rs","mimeType":"text/x-rust"}
+```
+
+### Input validation failures
+
+For `2025-11-25`, tool-call input validation failures should be returned as
+Tool Execution Errors rather than Protocol Errors. This lets the failure be
+inspected and the tool input corrected.
+
+## Content, progress, and completion
+
+MCP content can contain audio data alongside text and image content types.
+(`2025-03-26`)
+
+`ProgressNotification` has a `message` field for descriptive status updates in
+addition to its progress values. (`2025-03-26`)
+
+```json
+{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"job-7","progress":42,"message":"Indexing files"}}
+```
+
+The `completions` capability lets servers explicitly advertise argument
+autocompletion support; clients should check it before relying on completion
+requests. (`2025-03-26`)
+
+`CompletionRequest` has a `context` field for previously resolved variables,
+allowing later completion requests to account for values already selected.
+(`2025-06-18`)
+
+## Elicitation
+
+### Form requests and response actions
+
+A client advertises `capabilities.elicitation`, after which a server can nest
+an `elicitation/create` request inside another operation to ask the user for
+non-sensitive structured input. (`2025-06-18-compat`)
+
+`requestedSchema` is restricted to a flat object of primitive string,
+number/integer, boolean, or string-enum properties. Complex nesting and arrays
+of objects are not supported.
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"elicitation/create","params":{"message":"Choose a region","requestedSchema":{"type":"object","properties":{"region":{"type":"string","enum":["eu","us"],"enumNames":["Europe","United States"]}},"required":["region"]}}}
+```
+
+The response action is `accept`, `decline`, or `cancel`. Acceptance carries
+schema-conforming `content`; decline is an explicit refusal; cancel is a
+dismissal without a choice. Decline and cancel typically omit `content`.
 
 ```json
 {"jsonrpc":"2.0","id":7,"result":{"action":"accept","content":{"region":"eu"}}}
 ```
 
-## Negotiate form and URL modes
+### Mode negotiation and URL mode
 
-Compatibility batch `2025-11-25-compat` adds explicit mode negotiation:
+For `2025-11-25-compat`, elicitation capabilities negotiate modes explicitly
+with `elicitation: {form: {}, url: {}}`. The legacy empty object means
+form-only, and an omitted request `mode` defaults to `"form"`.
 
-```json
-{"elicitation": {"form": {}, "url": {}}}
-```
-
-The legacy empty elicitation capability means form-only. When
-`elicitation/create` omits `mode`, it defaults to `"form"`.
-
-### Form mode choices
-
-Form schemas remain flat. They now support titled and multi-select choices:
-
-- Use `oneOf` entries containing `const` and `title` for a titled
-  single-select choice.
-- Use a string array whose `items.anyOf` entries contain `const` and `title`
-  for a titled multi-select choice.
-- Use schema defaults and have clients pre-populate them.
-
-```json
-{
-  "type": "array",
-  "items": {
-    "anyOf": [
-      {"const": "eu", "title": "Europe"},
-      {"const": "us", "title": "United States"}
-    ]
-  }
-}
-```
-
-### URL mode
-
-URL mode is intended for sensitive or third-party interactions outside the
-client. Do not use it to authorize the client to the MCP server. Its behavior
-is still subject to change.
+URL mode is still subject to change. It is for sensitive or third-party
+interactions outside the client, not for authorizing the client to the MCP
+server.
 
 ```json
 {
@@ -89,51 +99,68 @@ is still subject to change.
 }
 ```
 
-An `accept` response means only that the user agreed to open the URL; it does
-not mean the out-of-band work finished. The server can later send
-`notifications/elicitation/complete` with the same `elicitationId`.
-Alternatively, JSON-RPC error `-32042` can carry one or more required URL
-elicitations for the client to complete before it retries the original
-request.
+An `accept` response means only that the user agreed to open the URL, not that
+the out-of-band interaction finished. The server may later send
+`notifications/elicitation/complete` with the same ID. Alternatively, error
+`-32042` carries one or more required URL elicitations that the client can
+complete before retrying the original request.
 
-## Use tools during sampling
+### Choice fields
 
-A client must advertise `sampling: {tools: {}}` before a server includes
-`tools` and optional `toolChoice` in `sampling/createMessage`. `toolChoice` is
-one of `auto`, `required`, or `none`.
+Form schemas remain flat, but choice fields include multi-select string arrays
+in `2025-11-25-compat`. Use `oneOf` entries with `const` and `title` for titled
+single-select choices, and array `items.anyOf` for titled multi-select choices.
+Defaults are supported, and clients should pre-populate them.
 
-A tool-using sampling result contains assistant `tool_use` content with `id`,
-`name`, and `input`. The server executes it and sends another sampling request
-whose next user message contains the matching `tool_result`:
+```json
+{
+  "type": "array",
+  "items": {
+    "anyOf": [
+      {"const": "eu", "title": "Europe"},
+      {"const": "us", "title": "United States"}
+    ]
+  }
+}
+```
+
+## Sampling with tools
+
+Clients advertise `sampling: {tools: {}}` before servers send `tools` and
+optional `toolChoice` with `auto`, `required`, or `none` in
+`sampling/createMessage`. (`2025-11-25-compat`)
+
+A tool-using result has assistant `tool_use` content with `id`, `name`, and
+`input`. The server executes it and sends another sampling request whose next
+user message contains the matching `tool_result`.
 
 ```json
 {"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"weather","input":{"city":"Paris"}}]}
 {"role":"user","content":[{"type":"tool_result","toolUseId":"call-1","content":[{"type":"text","text":"18 C"}]}]}
 ```
 
-Every tool use must be followed, before any other message, by exactly one
+Every tool use must be followed before any other message by exactly one
 matching result. A tool-result message must contain only tool results.
-Violations produce invalid parameters error `-32602`.
-
-## Avoid deprecated sampling context
+Violations use `-32602`.
 
 `includeContext: "thisServer"` and `"allServers"` are soft-deprecated. Omit
 the field to use its `"none"` default. A server should send either old value
-only if the client explicitly advertises `sampling: {context: {}}`.
+only when the client explicitly advertises `sampling: {context: {}}`.
+(`2025-11-25-compat`)
 
-## Negotiate experimental tasks
+## Experimental tasks
 
-Tasks are experimental in the 2025-11-25 revision. Negotiate them by request
-category rather than as a single blanket capability:
+### Capabilities and creation
 
-- A server can advertise `tasks.requests.tools.call`.
-- A client can advertise `tasks.requests.sampling.createMessage` and
-  `tasks.requests.elicitation.create`.
-- `tasks.list` and `tasks.cancel` have separate capabilities.
+Tasks are experimental in `2025-11-25-compat` and must be negotiated by
+request category. Servers can advertise `tasks.requests.tools.call`; clients
+can advertise `tasks.requests.sampling.createMessage` and
+`tasks.requests.elicitation.create`. `tasks.list` and `tasks.cancel` are
+separate capabilities.
 
-A tool declares `execution.taskSupport` as `required`, `optional`, or
-`forbidden`; absence means `forbidden`. Violating required or forbidden task
-use should return method not found (`-32601`).
+A tool sets `execution.taskSupport` to `required`, `optional`, or `forbidden`;
+absence means the default `forbidden` case. Violating required or forbidden
+task use should produce `-32601`.
 
 ```json
 {
@@ -146,37 +173,44 @@ use should return method not found (`-32601`).
 }
 ```
 
-An accepted task-augmented request immediately returns `result.task`, not the
-underlying operation result. The receiver creates a unique task ID, starts the
-task in `working`, and may override the requested TTL in milliseconds.
+An accepted augmented request immediately returns `result.task` rather than
+the underlying operation result. The receiver creates the unique task ID,
+starts it in `working`, and may override the requested millisecond TTL.
 
-## Poll and complete tasks
+### Polling, results, and state
 
-Poll with `tasks/get`, respecting `pollInterval`. Optional
-`notifications/tasks/status` can reduce latency but never replaces polling.
-Call `tasks/result` to block until the task reaches `completed`, `failed`, or
-`cancelled`; it then returns exactly the underlying operation's result or
-JSON-RPC error.
+Poll with `tasks/get` while respecting `pollInterval`.
+`notifications/tasks/status` is optional and cannot replace polling.
+`tasks/result` blocks until `completed`, `failed`, or `cancelled`, then returns
+exactly the underlying request's result or JSON-RPC error.
 
 ```json
 {"method":"tasks/get","params":{"taskId":"task-7"}}
 {"method":"tasks/result","params":{"taskId":"task-7"}}
 ```
 
-When the state is `input_required`, call `tasks/result` so the receiver can
-deliver the required server-to-client requests. The receiver returns the task
-to `working` after receiving input.
+`input_required` tells the requestor to call `tasks/result` so the receiver can
+deliver needed requests before returning to `working`. Terminal states never
+transition. Expired tasks may disappear. Cancelling an already-terminal task
+returns `-32602`.
 
-Task-associated messages carry this relation:
+### Related-task metadata
 
-```json
-{"io.modelcontextprotocol/related-task":{"taskId":"task-7"}}
-```
+Task-associated messages carry
+`_meta["io.modelcontextprotocol/related-task"].taskId`. The `tasks/get`,
+`tasks/list`, and `tasks/cancel` control messages omit it. A `tasks/result`
+request also omits it because its `taskId` parameter is authoritative, while a
+`tasks/result` response must carry it because the underlying result has no task
+ID.
 
-Place it under `_meta`. Omit it from `tasks/get`, `tasks/list`, and
-`tasks/cancel` control messages. Also omit it from a `tasks/result` request,
-whose `taskId` parameter is authoritative. A `tasks/result` response must carry
-it because the underlying result otherwise has no task ID.
+## Presentation metadata
 
-Terminal task states never transition. Expired tasks may disappear. Cancelling
-an already terminal task returns invalid parameters (`-32602`).
+Schema types can provide `title` as a human-friendly display name while
+reserving `name` for the programmatic identifier. Protocol calls should use
+`name`; interfaces can present `title`. (`2025-06-18`)
+
+Servers can expose icons on tools, resources, resource templates, and prompts;
+clients can use them when presenting those objects. (`2025-11-25`)
+
+The `Implementation` interface has an optional `description` field for
+human-readable client or server context during initialization. (`2025-11-25`)

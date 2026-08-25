@@ -1,64 +1,64 @@
 # Blazor WebAssembly, Static Assets, and Tooling
 
-## Set standalone environments in the project
+Batch attribution: `10.0-migration` and `10.0`.
 
-For the `10.0-migration`, standalone Blazor WebAssembly apps no longer use the
-`Blazor-Environment` header, `Properties/launchSettings.json`, or
-`ASPNETCORE_ENVIRONMENT` to select the environment. Builds default to
-`Development`, while publishes default to `Production`. Override the value in
-the project file:
+## Select the Standalone App Environment
+
+Standalone Blazor WebAssembly apps do not select the environment from the `Blazor-Environment` header, `Properties/launchSettings.json`, or `ASPNETCORE_ENVIRONMENT`. Set it in the project file:
 
 ```xml
 <WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
 ```
 
-## Stop reading or rewriting `blazor.boot.json`
+A build defaults to `Development`, while a publish defaults to `Production`.
 
-The boot configuration is now inlined into `dotnet.js`, so the separate
-`blazor.boot.json` file no longer exists. Workflows that inspected or modified
-that file must be removed. No replacement is documented for either the
-published-asset integrity script or DLL-extension customization.
+## Stop Depending on `blazor.boot.json`
 
-## Remove the custom boot-resource cache setting
+The standalone `blazor.boot.json` asset no longer exists. Its content is inlined into `dotnet.js`.
 
-Browser caching of fingerprinted client files replaces Blazor's custom cache.
-`BlazorCacheBootResources` is unavailable or ineffective and must be removed
-from client project files:
+Workflows that directly inspected or changed `blazor.boot.json` must not assume a replacement file. No documented replacement exists for the published-asset integrity script or DLL-extension customization based on editing that file.
+
+## Remove the Custom Boot-Resource Cache Setting
+
+Browser caching of fingerprinted client files replaces Blazor's custom caching mechanism. `BlazorCacheBootResources` is unavailable or ineffective and must be removed:
 
 ```diff
 - <BlazorCacheBootResources>...</BlazorCacheBootResources>
 ```
 
-## Force Blazor script inclusion when necessary
+## Include the Blazor Script Without Components
 
-In `10.0`, the Blazor script is a compressed, fingerprinted static web asset.
-It is automatically included only if the project has a `.razor` file. A
-component-free project that still uses the script must opt in:
+The Blazor script is a compressed, fingerprinted static web asset. It is included automatically only when the project contains a `.razor` file.
+
+If an app contains no component but still needs the script, force static-web-asset inclusion:
 
 ```xml
 <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
 ```
 
-## Handle streamed HTTP responses
+## Handle Streaming HTTP Responses
 
-Response streaming is enabled by default. `ReadAsStreamAsync` returns a
-`BrowserHttpReadStream` instead of a `MemoryStream`, and the browser stream
-does not support synchronous reads.
+Response streaming is enabled by default in Blazor WebAssembly. `ReadAsStreamAsync` returns `BrowserHttpReadStream`, not `MemoryStream`, and the browser stream does not support synchronous reads.
 
-Disable streaming for one request:
+Opt out for one request when a dependency requires the older buffered behavior:
 
 ```csharp
 requestMessage.SetBrowserResponseStreamingEnabled(false);
 ```
 
-Use `<WasmEnableStreamingResponse>false</WasmEnableStreamingResponse>` or
-`DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0` for a global opt-out.
+For a global opt-out, use either:
 
-## Fingerprint standalone assets
+```xml
+<WasmEnableStreamingResponse>false</WasmEnableStreamingResponse>
+```
 
-Standalone apps can opt into build-time fingerprinting by enabling HTML asset
-placeholder replacement, adding an import map, and putting the fingerprint
-marker in the framework script filename:
+```text
+DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0
+```
+
+## Fingerprint Standalone Assets
+
+Standalone apps can opt into build-time fingerprinting by enabling HTML placeholder replacement, adding an import map, and placing the fingerprint marker in the framework script name:
 
 ```xml
 <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
@@ -69,21 +69,16 @@ marker in the framework script filename:
 <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
 ```
 
-Developer modules can use the same `#[.{fingerprint}]` marker through a
-`StaticWebAssetFingerprintPattern` item.
+Developer modules can use the same `#[.{fingerprint}]` marker with a `StaticWebAssetFingerprintPattern`.
 
-## Produce bundler-friendly output
+## Publish Bundler-Friendly Output
 
-Published output can be made compatible with JavaScript bundlers such as
-Webpack and Rollup:
+Enable bundler-friendly boot configuration when published output will be consumed by Webpack, Rollup, or a similar JavaScript bundler:
 
 ```xml
 <WasmBundlerFriendlyBootConfig>true</WasmBundlerFriendlyBootConfig>
 ```
 
-## Load UI-culture resources
+## Load UI Culture Resources
 
-Standalone apps load globalization resources for
-`CultureInfo.DefaultThreadCurrentUICulture` as well as those selected by
-`DefaultThreadCurrentCulture`. Account for the UI culture when auditing
-downloaded globalization data.
+Standalone apps load globalization resources for `CultureInfo.DefaultThreadCurrentUICulture` as well as `DefaultThreadCurrentCulture`. Include the UI-culture setting when diagnosing missing localized resources.

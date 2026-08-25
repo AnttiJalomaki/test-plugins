@@ -10,202 +10,171 @@ metadata:
 
 # GDAL Knowledge Patch
 
-Use this skill when upgrading, building, extending, or troubleshooting GDAL,
-its unified command family, raster and vector drivers, multidimensional data,
-cloud virtual filesystems, or language bindings.
-
-## How to use this skill
-
-1. Determine the GDAL version used by the project from its package manifest,
-   build configuration, container image, or linked library.
-2. Read the migration checklist before changing downstream C or C++ code,
-   out-of-tree drivers, custom VSI handlers, or command invocations.
-3. Open the task-specific reference from the index; reference entries retain
-   exact batch labels for version-sensitive behavior.
-4. Prefer the installed headers, driver metadata, command help, and project
-   tests when local behavior differs from this guidance.
-5. Treat a newer project version as potentially beyond this patch and verify
-   changed APIs and defaults directly.
+Use this skill when upgrading, building, extending, or operating GDAL, its unified
+CLI, drivers, VSI handlers, or language bindings. Check project manifests and
+runtime behavior first, then use the topic references below for compatibility
+details and corrected behavior.
 
 ## Reference index
 
 | Reference | Topics |
-| --- | --- |
-| [references/migration-and-api.md](references/migration-and-api.md) | Breaking C/C++ migrations, public APIs, driver extension points, bindings |
-| [references/commands-and-pipelines.md](references/commands-and-pipelines.md) | Unified commands, pipelines, algorithms, utility behavior and exit contracts |
-| [references/raster-processing-and-formats.md](references/raster-processing-and-formats.md) | Warping, reprojection, VRT, nodata, overviews, raster formats |
-| [references/vector-and-database-workflows.md](references/vector-and-database-workflows.md) | Geometry, schemas, vector formats, SQL, databases, network services |
-| [references/multidimensional-and-scientific.md](references/multidimensional-and-scientific.md) | Multidimensional arrays, Zarr, GTI/STAC, scientific and product formats |
-| [references/cloud-vsi-build-and-bindings.md](references/cloud-vsi-build-and-bindings.md) | Cloud authentication, HTTP/VSI, builds, dependencies, language bindings |
+|---|---|
+| [migration-and-api.md](references/migration-and-api.md) | C/C++ API migrations, ABI, RasterIO, algorithms, errors, and binding contracts |
+| [commands-and-pipelines.md](references/commands-and-pipelines.md) | Unified CLI, pipelines, raster/vector commands, output defaults, and utility fixes |
+| [cloud-vsi-build-and-bindings.md](references/cloud-vsi-build-and-bindings.md) | Build dependencies, CMake, cloud authentication, VSI/HTTP behavior, and language bindings |
+| [raster-processing-and-formats.md](references/raster-processing-and-formats.md) | Warping, VRT, overviews, COG/GeoTIFF, imagery formats, and raster correctness |
+| [vector-and-database-workflows.md](references/vector-and-database-workflows.md) | OGR formats, Arrow/Parquet, databases, services, geometry, and schema behavior |
+| [multidimensional-and-scientific.md](references/multidimensional-and-scientific.md) | Multidimensional APIs, Zarr, netCDF, HDF, planetary, hydrographic, and scientific formats |
 
-## Migration quick reference
+## Upgrade-critical changes
 
-### C and C++ callers
+### Update public API overrides and call sites
 
-- Use GDAL's canonical opaque-type declarations from `gdal_fwd.h`; remove
-  downstream redeclarations that can conflict under strict debug aliases.
-- Check `OGRErr` from spatial-filter setters and geometry point mutation APIs.
-- Store metadata returned by `GetMetadata()` as `CSLConstList`, not `char **`.
-- Handle `GDT_Float16`, `GDT_CFloat16`, and canonical `GDT_UInt8` in data-type
-  dispatch. Request `GDT_Float32` conversion when native half precision is not
-  supported by the caller.
-- Expect aggregate coordinate transformation failure when any point fails;
-  inspect the per-point success or error arrays for partial results.
-- Account for RasterIO resampling operating in the output buffer type. Set
-  `GDALRasterIOExtraArg::bOperateInBufType` to false only when older working-
-  type behavior is deliberately required.
-- Replace `MIN`, `MAX`, and `ABS` uses supplied by GDAL with `CPL_MIN`,
-  `CPL_MAX`, and `CPL_ABS`. Arrange for the platform math header to expose pi
-  instead of relying on GDAL to export `M_PI`.
+- Use GDAL's declarations from `gcore/gdal_fwd.h`; do not redeclare public
+  opaque types.
+- Override `OGRLayer::IGetExtent()`/`IGetExtent3D()` and
+  `ISetSpatialFilter()`. Public extent and spatial-filter entry points are
+  checked, non-virtual methods; spatial-filter setters return `OGRErr`.
+- Treat partial coordinate-transform failure as aggregate failure and inspect
+  each point's success or error-code array.
+- Update const-correct vector overrides and store returned layer definitions,
+  spatial references, and metadata in const-qualified pointers or
+  `CSLConstList`.
+- Update `GDALGeoTransform` references, raster-attribute-table mutation return
+  values, geometry point-mutation return values, `CSLConstList` option lists,
+  progressive `Close()` overrides, and custom VSI `Read()`/`Write()` signatures.
+- Replace `MIN`, `MAX`, and `ABS` with `CPL_MIN`, `CPL_MAX`, and `CPL_ABS`.
+  Do not assume GDAL exports `M_PI`.
+- Dispatch `GDT_Float16` and `GDT_CFloat16`; `GDT_UInt8` is canonical and
+  `GDT_Byte` is its alias.
 
-### Out-of-tree driver authors
+See [migration-and-api.md](references/migration-and-api.md) for exact signatures,
+return semantics, RasterIO changes, and binding behavior.
 
-- Override `IGetExtent()` and `IGetExtent3D()` rather than the checked public
-  extent methods.
-- Implement `ISetSpatialFilter()` instead of overriding the public spatial-
-  filter entry points.
-- Update const-correct dataset and layer overrides and retain const pointers
-  returned by layer, feature-definition, and spatial-reference accessors.
-- Update geotransform overrides to use `GDALGeoTransform` references.
-- Update raster attribute table switches for Boolean, DateTime, and WKB
-  geometry fields, and return/check errors from `SetValue()` mutations.
-- Update `GDALDataset::Close()` overrides for progress arguments and option-
-  list parameters for `CSLConstList`.
-- Update custom `VSIVirtualHandle::Read()` and `Write()` overrides to the
-  single-count signatures.
-- Rebuild binary dependents when crossing a shared-library major-version bump.
+### Audit ABI and driver availability
 
-### Command and configuration migrations
+- Rebuild binary dependents when consuming the shared-library-major-version
+  bump.
+- Removed raster drivers include BLX, CTable2, ELAS, FIT, GSBG, JP2Lura,
+  Rasterlite v1, and several legacy grid/image formats; removed vector drivers
+  include Geoconcept Export, OGDI, SDTS, SVG, Tiger, and UK .NTF. Some were
+  restored later: GSBG, GSAG, BT, Tiger, and UK .NTF.
+- FileGDB creation/update routes through OpenFileGDB. OGR `Memory` is deprecated
+  in favor of `MEM`.
+- The OpenCL warper and unofficial `gdalwarpsimple` and `ogrdissolve` programs
+  are gone, as are several legacy writers.
 
-- Move geometry subcommands directly under `gdal vector`; use
-  `set-geom-type` for the renamed geometry-type operation.
-- Prefer `--input` and `--output` in unified commands. Legacy `--src` and
-  `--dst` aliases remain accepted where compatibility is required.
-- Do not assume info and VSI-list commands choose JSON at the terminal; ask
-  explicitly for machine-readable output.
-- Do not parse progress output as data. Use quiet mode for scripts whose
-  standard output is a data channel.
-- Audit raw VRT use. Raw-file access is restricted by default and can also be
-  compiled out.
-- Replace `MRF_BYPASSCACHING` with `MRF_ENABLE_CACHING`.
-- For GDAL-only minor compatibility, express a bounded range in
-  `find_package()` instead of relying on a minimum version alone.
+### Migrate unified CLI paths and defaults
 
-## Unified command and pipeline quick reference
+- Geometry commands moved from `gdal vector geom ...` to `gdal vector ...`;
+  `set-type` became `set-geom-type`. The temporary old aliases do not survive
+  the next command-family transition.
+- Unified options increasingly use `--input` and `--output`; old `--src` and
+  `--dst` spellings remain accepted where compatibility is documented.
+- CLI progress goes to stdout unless quiet mode is selected. Raster info,
+  vector info, and VSI list default to text in the CLI but retain JSON API
+  defaults.
+- Text-mode vector info requires `--features` to emit features.
+- `ogr2ogr` fails when destination field creation fails unless `-skip` is
+  supplied, and warns when curve, Z, or M geometry cannot be preserved.
 
-- The `gdal` front end covers raster, vector, multidimensional, dataset, VSI,
-  and driver operations; prefer it for new automation while retaining legacy
-  utilities where their exact contracts matter.
-- Raster pipelines can begin with mosaic or stack, use analysis and editing
-  stages, materialize intermediate datasets, and terminate in tiling.
-- Vector pipelines support selection, SQL, concatenation, filtering, limits,
-  geometry operations, and writing; selected-layer reads can feed SQL stages.
-- General pipelines can mix raster and vector stages, nest another pipeline,
-  branch with `tee`, execute an external step, and select a non-first output
-  from a preceding multi-output stage with `_`.
-- Treat pipeline inputs and outputs as datasets, not merely filenames. Several
-  commands accept externally supplied or anonymous pipeline datasets.
-- Use explicit output layers when composing contour, polygonize, select, or
-  other stages that can expose more than one layer.
-- In Python, use the generated `gdal.alg` namespace for algorithm calls and
-  pass `progress=` when cancellation or reporting is needed.
-- Validate algorithm arguments before execution: malformed lists, constrained
-  `NaN` values, invalid numeric options, and incompatible dependencies are
-  rejected rather than coerced.
-- Check process status in automation. Utilities now surface failures for VRT
-  processing, failed footprint simplification, and other previously silent
-  error paths.
+See [commands-and-pipelines.md](references/commands-and-pipelines.md) before
+porting scripts.
 
-## Raster quick reference
+### Review security and numeric behavior
 
-### Warping and reprojection
+- Raw VRT bands have restricted file access by default. Account for
+  `vrtrawrasterband_restricted_access`, the runtime
+  `GDAL_VRT_ENABLE_RAWRASTERBAND` option, and the build-time switch.
+- `/vsicurl?header_file=...` accepts only permitted filenames. Redirected
+  credentials are not forwarded to S3-like targets.
+- RasterIO resampling now operates in the output buffer type by default. Set
+  `GDALRasterIOExtraArg::bOperateInBufType` to false only when the old behavior
+  is explicitly required.
+- Exact integer matching is used when statistics and histograms exclude integer
+  nodata. NaN nodata and signed-byte warp paths also have corrected semantics.
+- `INIT_DEST=NO_DATA` without a nodata value is an error; use
+  `RESET_DEST_PIXELS` when an existing destination must be reset.
 
-- Inspect per-band data types before choosing a warp working type, especially
-  for signed bytes and half precision.
-- Expect mode resampling to use source-pixel coverage, RMS overviews to use
-  corrected normalization, and Lanczos output near masks or nodata to differ
-  from older special-case behavior.
-- For `INIT_DEST=NO_DATA`, provide a destination nodata value. Use
-  `RESET_DEST_PIXELS` when an existing destination must be reset completely.
-- Treat NaN nodata explicitly for bilinear, cubic, cubic-spline, and Lanczos
-  resampling; exact integer nodata exclusion also affects statistics.
-- Use bounds transformation for target extents and account for global,
-  non-square-pixel, polar, south-up, and rotated-source cases.
-- Honor interruption from progress callbacks in both single- and
-  multithreaded work.
+## High-value command and pipeline features
 
-### VRT, masks, and overviews
+### Prefer the unified `gdal` command family
 
-- VRT derived bands support expressions, reclassification, aggregate pixel
-  functions, constants, transposition, block selection, and implicit
-  overviews.
-- Embedded source datasets and processed-VRT output-band declarations can
-  avoid temporary named datasets.
-- Keep source alignment in mind: neighboring unaligned VRT sources may disable
-  multithreading to preserve deterministic nearest-neighbor output.
-- Preserve mask semantics when selecting a mask as a regular band, building
-  pansharpened overviews, or reading masked GTI overviews.
-- Use overview source and creation options explicitly when importing or
-  rebuilding overviews; COG cleanup has layout-aware behavior.
+The front end covers raster, vector, multidimensional, VSI, dataset, driver,
+and mixed pipeline operations. Notable workflow building blocks include:
 
-### Formats
+- raster calculate, reclassify, tile, mosaic, stack, clip, edit, reproject,
+  zonal statistics, blend, index, sample, select, create, and validate;
+- vector validation, coverage cleaning, algebra, partitioning, schema export,
+  update, sorting, filtering, SQL, and geometry processing;
+- nested and composite pipelines, `tee`, `external`, named and anonymous
+  `materialize`, multi-input stages, and parameter overrides;
+- a dynamically generated Python `gdal.alg` namespace and C/C++ algorithm API.
 
-- Confirm driver availability at runtime. Several legacy drivers were removed,
-  some were later restored, and read/write capabilities continue to evolve.
-- Distinguish GTiff, COG, and LIBERTIFF: their creation models, thread safety,
-  compression support, nodata parsing, and alpha handling are not identical.
-- Treat JPEG XL, JPEG 2000, HEIF/GeoHEIF, AVIF, WEBP, Lerc, and Grok support as
-  dependency-sensitive.
-- Validate creation and open options against the dataset-versus-layer scope;
-  diagnostics may identify an option supplied at the wrong level.
+Pipelines may pass anonymous VRT or COG results into later stages, select a
+non-first output with `_`, and mix raster and vector stages. Consult
+[commands-and-pipelines.md](references/commands-and-pipelines.md) for stage and
+option constraints.
 
-## Vector quick reference
+### Use raster algebra and richer VRTs
 
-- Check spatial-filter and geometry mutation results; do not assume failure is
-  silent or that polygon-building returns a single polygon.
-- Preserve curve, Z, M, field domains, relationships, schema, and metadata only
-  when the destination driver advertises the required capability.
-- Expect conversion to fail when destination field creation fails unless skip
-  behavior is explicitly requested.
-- Use Arrow paths with awareness of validity-buffer contracts, ignored-field
-  collisions, timestamp offsets, list types, string views, and selected fields.
-- For Parquet and GeoParquet, account for Hive filters, partition metadata,
-  geometry encodings, bounding-box column names, and large-list fields.
-- Verify server-side versus local spatial intersection for service/database
-  drivers, and check whether filters and counts are pushed down or evaluated
-  client-side.
-- Treat format identification as significant: GeoJSON, ESRIJSON, TileDB, WFS,
-  STAC, and subdataset strings have tightened recognition rules.
+Raster bands support arithmetic, comparison, conversion, aggregate functions,
+and conditional expressions. VRT derived bands add expression evaluation,
+reclassification, constants, nodata-aware aggregate functions, `area`,
+`quantile`, and `round`; `vrt://` adds transpose and block selection. Embedded
+VRT sources and processed-VRT `OutputBands` make fileless composition possible.
 
-## Multidimensional and cloud quick reference
+### Use current pipeline output semantics
 
-- Discover arrays explicitly when drivers default to a limited listing; use
-  raw-block information or classic-dataset bridges when the workflow needs it.
-- Preserve slicing steps, indexing variables, strides, coordinate metadata,
-  and geotransforms when working with multidimensional views.
-- For Zarr, distinguish v2 codecs from v3 sharding, consolidated metadata,
-  multiscales, georeferencing conventions, and Kerchunk reference stores.
-- For GTI and STAC, validate SRS behavior, relative paths, asset metadata,
-  south-up handling, URL rewriting, interleave, masks, and overview refresh.
-- Scope HTTP and cloud options to the intended path. Authentication changes can
-  invalidate cached directory state, and redirects may deliberately drop
-  credentials.
-- Use the appropriate cloud VSI handler for provider URLs and verify directory
-  listing, empty-file synchronization, timestamps, retries, and size discovery.
-- Keep permitted-filename restrictions in mind when using `/vsicurl?` header
-  files.
+- `--append` creates a missing target.
+- `materialize --output name.ext` infers its format; an unnamed materialized
+  COG can feed `tile` directly.
+- `gdal raster mosaic --target-aligned-pixels` requires `--resolution`.
+- A tiled raster pipeline does not print its output filename to stdout.
+- Raster tiling automatically selects a source overview and supports spawn or,
+  off Windows, fork parallelism.
 
-## Diagnostic checklist
+## High-value data and driver features
 
-1. Record the exact GDAL library and command versions used by the failing path.
-2. Identify the driver selected by `GDALOpenEx()` or the command's detailed
-   identification output; exclude an unwanted driver explicitly when needed.
-3. Capture open, dataset-creation, and layer-creation options separately.
-4. Reproduce with explicit CRS, nodata, output type, resampling, and thread
-   settings before assuming a driver defect.
-5. Check whether input is a named file, VSI URL, subdataset, anonymous dataset,
-   or pipeline output; these paths can exercise different behavior.
-6. Close writable datasets explicitly so Arrow, Parquet, COG, and other
-   deferred writers flush output and report close-time failures.
-7. Read the relevant reference entry for the exact batch attribution and any
-   dependency or platform condition.
+### Cloud-native raster access
+
+- Zarr v3, Kerchunk JSON/Parquet reference stores, consolidated metadata,
+  sharding, checksums, variable-length UTF-8, datetime/timedelta, multiscales,
+  and spatial/proj georeferencing are supported.
+- GTI accepts STAC GeoParquet metadata, SQL-selected tile sources, south-up
+  tiles, cloud URL translation, SRS override/reprojection, and band/pixel
+  interleave.
+- STACTA supports Google and Azure URL schemes plus WEBP and JPEG XL tiles.
+- COG supports band/tile interleave, complex types, random-write creation,
+  reliable BigTIFF intermediates, and multithreaded multiband overviews.
+
+See [raster-processing-and-formats.md](references/raster-processing-and-formats.md)
+and [multidimensional-and-scientific.md](references/multidimensional-and-scientific.md).
+
+### Modern vector and columnar workflows
+
+- Arrow and Parquet support explicit close/flush, editable layers, GeoArrow,
+  Parquet `GEOMETRY`, `LargeList`, string-view batches, Timestamp With Offset,
+  partition metadata, and additional filtering/open controls.
+- Unified vector operations propagate domains, relationships, and metadata;
+  partitioning can use geometry type and can create Parquet `_metadata`.
+- ADBC supports DuckDB, Parquet, and installed BigQuery drivers, with corrected
+  missing-database and DuckDB compatibility behavior.
+- GeoPackage, SQLite, PostGIS, WFS, OAPIF, ESRIJSON, GML, CSV, DXF, MVT, and
+  service-driver changes are cataloged by workflow in the vector reference.
+
+## Operational checklist
+
+1. Identify the exact GDAL runtime and build configuration actually used.
+2. Before an upgrade, audit custom drivers, VSI handlers, C/C++ overrides,
+   removed drivers, CLI paths, and binary compatibility.
+3. Validate raw-VRT policy, redirect/authentication behavior, and cloud cache
+   assumptions.
+4. Re-run raster golden tests around resampling, nodata, masks, overviews,
+   warping, geotransforms, and Float16/Int8 paths.
+5. Re-run vector tests around geometry dimensionality, spatial filters,
+   Arrow/Parquet field selection, field domains, and transactional counts.
+6. Explicitly close output datasets where a driver flushes pending data at
+   close time, and inspect returned errors or exceptions.
+7. For a detailed fix or option, open the matching topic reference rather than
+   inferring behavior from a nearby driver or command.

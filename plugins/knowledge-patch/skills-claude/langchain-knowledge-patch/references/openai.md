@@ -1,21 +1,18 @@
 # OpenAI Integration
 
-## Choose the correct integration boundary
+## API boundary and Azure v1
 
-`ChatOpenAI` targets official API schemas. Compatible third-party endpoints may
-add non-standard fields, but this integration does not extract or preserve them.
-Use the endpoint's provider-specific integration whenever those fields are part
-of the application's contract.
+`ChatOpenAI` targets official API schemas. It does not extract or preserve
+non-standard fields added by compatible third-party endpoints. Use the
+endpoint's provider-specific integration when those fields matter.
 
-## Azure v1 endpoints
-
-With `langchain-openai>=1.0.1`, Azure's v1 API is available through
-`ChatOpenAI`. Append `/openai/v1/` to the resource URL and pass the deployment
-name as `model`.
+With `langchain-openai>=1.0.1`, Azure's v1 API works through `ChatOpenAI`.
+Append `/openai/v1/` to the resource URL and use the deployment name as
+`model`. `api_key` can be an automatically refreshing Entra token-provider
+callable. An async callable requires `ainvoke`, `astream`, or another async
+method.
 
 ```python
-from langchain_openai import ChatOpenAI
-
 llm = ChatOpenAI(
     model="my-deployment",
     base_url="https://my-resource.openai.azure.com/openai/v1/",
@@ -23,65 +20,45 @@ llm = ChatOpenAI(
 )
 ```
 
-`api_key` may be an automatically refreshing Entra token-provider callable. If
-that callable is asynchronous, invoke the model through `ainvoke`, `astream`, or
-another async method.
+## Custom and structured tools
 
-## Responses API routing
-
-`ChatOpenAI` automatically selects the Responses API when a requested feature
-requires it, including built-in tools, conversation-state IDs, and reasoning
-summaries. Set `use_responses_api=True` when the application should select it
-explicitly.
-
-Keep consuming normalized LangChain response fields. Provider calls, results,
-citations, generated images, reasoning, and compaction data appear in
-`response.content_blocks`; `response.text` includes text only.
-
-JavaScript `@langchain/openai` supports provider-side file search, web search,
-code interpreter, image generation, computer use, shell, and MCP connector tools.
-`ChatOpenAI` also exposes `moderateContent`, and GPT-5.2 Pro prefers the Responses
-API.
-
-## Raw-string custom tools
+### Accept raw-string tool input
 
 `langchain_openai.custom_tool` defines a Responses tool whose input is one
-arbitrary string rather than a JSON object. Use `format=` with a Lark or regex
-grammar when the string must follow a constrained language.
+arbitrary string rather than a JSON object. Its `format=` can constrain the
+string with a Lark or regex grammar.
 
 ```python
 from langchain_openai import custom_tool
 
 @custom_tool
 def execute_code(code: str) -> str:
-    """Execute code."""
     return run_safely(code)
 ```
 
-Treat the grammar as input validation, not as sandboxing. Validate authorization
-and isolate execution independently.
+### Combine ordinary tools with structured output
 
-## Structured output with ordinary tools
-
-`bind_tools` accepts `response_format` together with `strict=True`, so one model
-invocation may return an ordinary tool call or schema-conforming final output.
-The parsed schema value is stored in `response.additional_kwargs["parsed"]`.
+`bind_tools` accepts `response_format` and `strict=True` together. An
+invocation may then return ordinary tool calls or schema-conforming output.
+Parsed schema output is available in
+`response.additional_kwargs["parsed"]`.
 
 ```python
 structured = ChatOpenAI(model="gpt-4.1").bind_tools(
-    [get_weather],
-    response_format=OutputSchema,
-    strict=True,
+    [get_weather], response_format=OutputSchema, strict=True
 )
 ```
 
-Handle both branches. Do not assume that binding a response schema prevents the
-model from selecting one of the ordinary tools.
+## Responses API selection and server tools
 
-## Server-executed tools
+`ChatOpenAI` automatically selects the Responses API when a requested feature
+requires it, including built-in tools, conversation-state IDs, and reasoning
+summaries. Set `use_responses_api=True` to select it explicitly.
 
-Pass provider tool dictionaries to `bind_tools`. File search requires an
-OpenAI-managed vector-store ID.
+Web search, image generation, and file search are passed to `bind_tools` as
+provider tool dictionaries. File search requires an OpenAI-managed vector
+store ID. Calls, results, citations, and generated images are normalized into
+`response.content_blocks`; `response.text` contains only text.
 
 ```python
 model = ChatOpenAI(model="gpt-4.1-mini").bind_tools([
@@ -91,79 +68,51 @@ model = ChatOpenAI(model="gpt-4.1-mini").bind_tools([
 ])
 ```
 
-The provider executes these tools. Inspect `content_blocks` for calls, results,
-citations, and images rather than waiting for an application-side tool function.
+## Deferred tool loading
 
-## Deferred loading and tool search
-
-Set `extras={"defer_loading": True}` on catalog tools and expose a
-`{"type": "tool_search"}` tool. The model can then load a definition only when
-needed.
+Mark a tool with `extras={"defer_loading": True}` and expose
+`{"type": "tool_search"}` so its definition is loaded only when needed. Add
+`"execution": "client"` to get `tool_search_call` blocks that the application
+answers with `tool_search_output` blocks.
 
 ```python
-from langchain.agents import create_agent
-from langchain.tools import tool
-
 @tool(extras={"defer_loading": True})
 def get_weather(location: str) -> str:
-    """Get the weather for a location."""
     return lookup_weather(location)
 
-agent = create_agent(
-    model,
-    tools=[get_weather, {"type": "tool_search"}],
-)
+agent = create_agent(model, tools=[get_weather, {"type": "tool_search"}])
 ```
 
-Add `"execution": "client"` to the search definition when the application owns
-execution. The provider then emits `tool_search_call` blocks, and the application
-must answer with `tool_search_output` blocks.
-
-## Computer-use screenshot loop
+## Computer use and code interpreter
 
 Bind computer use as `computer_use_preview` with display dimensions and an
-environment. For every `computer_call`, return a correlated `ToolMessage` whose
-content is an `input_image` screenshot and whose `additional_kwargs` type is
+environment. Answer each `computer_call` with a correlated `ToolMessage`: its
+screenshot content is an `input_image`, and `additional_kwargs` identifies
 `computer_call_output`.
 
 ```python
-from langchain_core.messages import ToolMessage
-
 tool_message = ToolMessage(
-    content=[{
-        "type": "input_image",
-        "image_url": screenshot_data_url,
-    }],
+    content=[{"type": "input_image", "image_url": screenshot_data_url}],
     tool_call_id=computer_call["call_id"],
     additional_kwargs={"type": "computer_call_output"},
 )
 ```
 
-Keep the screenshot correlated to the call ID and apply a separate policy for
-display capture, actions, credentials, and human approval.
-
-## Code-interpreter containers
-
-Use `{"container": {"type": "auto"}}` to create a server sandbox. The returned
-call block exposes its identifier at `extras["container_id"]`; supply that ID as
-`container` in a later tool definition to reuse the sandbox.
+The built-in code interpreter accepts `{"container": {"type": "auto"}}` to
+create a sandbox. Its call block exposes `extras["container_id"]`; pass that
+ID as `container` in a later tool definition to reuse the sandbox.
 
 ```python
-tool = {
-    "type": "code_interpreter",
-    "container": {"type": "auto"},
-}
+tool = {"type": "code_interpreter", "container": {"type": "auto"}}
 model = ChatOpenAI(model="gpt-4.1-mini").bind_tools([tool])
 ```
-
-Persist the container ID only for the intended conversation or task boundary.
 
 ## Remote MCP approvals
 
 The Responses MCP tool accepts `server_label`, `server_url`, and
-`require_approval`. Approval may be `"never"`, `"always"`, or a per-tool policy.
-Answer an `mcp_approval_request` with an `mcp_approval_response` input block, then
-continue using the response ID.
+`require_approval`. Approval can be `"never"`, `"always"`, or a per-tool
+policy. Answer an `mcp_approval_request` with an `mcp_approval_response` input
+block and continue the thread using the response ID.
 
 ```python
 approval = {
@@ -173,50 +122,34 @@ approval = {
 }
 ```
 
-Treat the request ID as the authority being approved; do not approve based only
-on a displayed tool name.
-
-## Continue conversations by response ID
+## Conversation state and context compaction
 
 Pass `previous_response_id=response.id` to continue a Responses conversation
-without resending its message history.
-
-With `use_previous_response_id=True`, `ChatOpenAI` finds the newest response in
-the supplied input sequence, removes messages through that response from the
-request payload, and supplies the ID automatically.
+without resending its messages. With `use_previous_response_id=True`,
+`ChatOpenAI` finds the most recent response in the input sequence, removes
+messages through that response from the request payload, and supplies its ID.
 
 ```python
-llm = ChatOpenAI(
-    model="gpt-4.1-mini",
-    use_previous_response_id=True,
-)
+llm = ChatOpenAI(model="gpt-4.1-mini", use_previous_response_id=True)
 ```
 
-Do not combine this optimization with application logic that assumes the full
-history is serialized in each outbound request.
-
-## Server-side context compaction
-
-Configure a threshold with `context_management`. Returned `compaction` content
-blocks must remain in conversation history. Messages before the newest retained
+Configure a compaction threshold with `context_management`. Returned
+`compaction` content blocks must remain in history. Messages before the newest
 compaction block may be discarded to reduce latency.
 
 ```python
 model = ChatOpenAI(
     model="gpt-5.2",
-    context_management=[{
-        "type": "compaction",
-        "compact_threshold": 100_000,
-    }],
+    context_management=[{"type": "compaction", "compact_threshold": 100_000}],
 )
 ```
 
-Persist the compaction block as protocol state; it is not merely display text.
+## Reasoning output
 
-## Reasoning summaries and output budgets
-
-The `reasoning` parameter selects effort and can request a summary, which also
-selects the Responses API. Summaries appear as `reasoning` content blocks.
+The `reasoning` parameter controls effort and requests a summary, selecting
+the Responses API automatically. Summaries appear in `reasoning` content
+blocks. Leave `max_tokens=None` or allocate enough output tokens; reasoning
+can otherwise consume the limit before final text is generated.
 
 ```python
 model = ChatOpenAI(
@@ -225,13 +158,14 @@ model = ChatOpenAI(
 )
 ```
 
-Leave `max_tokens=None` or allocate enough output tokens. Reasoning can consume a
-tight limit before the model emits final text.
+In `openai-1.5.2`, Responses output preserves boundaries between individual
+reasoning items. Code that stores, inspects, or replays reasoning can keep
+those items separate instead of treating adjacent reasoning as one item.
 
-## PDF inputs
+## PDF input
 
-Cross-provider PDF blocks require a filename in addition to media type and data;
-unnamed PDF inputs are rejected.
+A cross-provider PDF block must include a filename as well as media type and
+data. The provider rejects unnamed PDF inputs.
 
 ```python
 pdf = {
@@ -246,12 +180,21 @@ pdf = {
 
 Pass `prompt_cache_key` per invocation to improve cache affinity for identical
 prompt prefixes. Read hits from
-`response.usage_metadata.input_token_details.cache_read`.
+`response.usage_metadata.input_token_details.cache_read`. A default may be set
+in `model_kwargs` and overridden per call.
 
 ```python
 response = llm.invoke(messages, prompt_cache_key="support-v1")
 ```
 
-A default may be set in `model_kwargs` and overridden per call. Use stable keys
-for genuinely shared prefixes; do not include volatile or secret values merely
-to make the key unique.
+## Token counting
+
+In `openai-1.5.2`, `get_num_tokens_from_messages` supports o-series models,
+providing the integration's built-in message-token estimate for those models.
+
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(model="o3")
+token_count = model.get_num_tokens_from_messages(messages)
+```

@@ -1,9 +1,11 @@
 # Loading, quantization, and kernels
 
-## Register and select quantizers
+## Extensible loading
 
-Custom quantization integrations register both halves under one method name
-(4.50.0). After registration, `from_pretrained()` accepts the configuration.
+### Custom quantizer registration (4.50.0)
+
+Register the configuration and quantizer under the same method name. The custom
+configuration then works through ordinary `from_pretrained` loading.
 
 ```python
 @register_quantization_config("custom")
@@ -13,48 +15,62 @@ class CustomConfig(QuantizationConfigMixin):
 @register_quantizer("custom")
 class CustomQuantizer(HfQuantizer):
     pass
-
-model = AutoModelForCausalLM.from_pretrained(
-    "facebook/opt-350m",
-    quantization_config=CustomConfig(),
-    dtype="auto",
-)
 ```
 
-- Quark-quantized repositories load through normal `from_pretrained()` after
-  installing `amd-quark` (4.50.0).
-- The torchao integration gained autoquant, CPU quantization, and advanced
-  `AOBaseConfig` configuration in 4.50.0. The specific `torchao.autoquant`
-  integration was later removed in 5.1.0, while other torchao paths remain.
-- AutoRound is supported from 4.52.1, including low-bit rounding and clipping
-  optimization.
-- SINQ is available as a v5 quantization strategy from 5.2.0.
-- torchao requires version 0.15.0 or newer as of 5.4.0.
-- Attempting to quantize an already quantized model raises an error as of
-  4.56.0; detect checkpoint quantization metadata instead of stacking methods.
+### Dynamic checkpoint conversion (5.0.0, 5.4.0)
 
-## Match formats to devices and parallelism
+`WeightConverter` declaratively maps checkpoint keys to model keys and can
+apply reversible reshape, merge, split, quantization, or parallelism operations.
+Use operations such as `Concatenate(dim=0)` to fuse QKV tensors rather than
+embedding conversion inside `from_pretrained`. Conversion recurses through
+nested model structures as of 5.4.0.
 
-### FP8 and FP-Quant
+### Dtype, authentication, and shard defaults (5.0.0)
 
-- PyTorch can load FP8 safetensors, including DeepSeek checkpoints, from
-  4.51.0.
-- Tensor-parallel inference in 4.52.1 supports only `compressed-tensors`, `fp8`,
-  and `fp8-fbgemm` quantization. Other quantizers cannot be combined with tensor
-  parallelism in that release.
-- `FPQuantConfig` enables on-the-fly FP-Quant loading in 4.54.0. Initially only
-  post-training MXFP4 is implemented. Accelerated execution requires a
-  Blackwell-generation Nvidia GPU and QuTLASS; `pseudoquant=True` emulates the
-  quantization without QuTLASS.
-- Static FP8 experts can run in multi-GPU configurations as of 5.4.0.
-- Four Over Six (4/6) NVFP4 is supported on NVIDIA Blackwell GPUs in 5.3.0 and
-  gains configurable dtype choices in 5.6.0.
-- torchao NVFP4 models serialize correctly as of 5.7.0.
+`from_pretrained` defaults to `dtype="auto"`, preserving checkpoint precision;
+pass an explicit dtype to force another. Use `token` instead of
+`use_auth_token`. Saved-model shards default to at most 50 GB rather than 5 GB.
+
+### Memory mapping and Hub arguments (5.4.0, 5.6.0)
+
+`AutoProcessor.from_pretrained` forwards Hub keyword arguments instead of
+dropping them. Model loading accepts `disable_mmap` and automatically detects
+hf-mount.
+
+## Quantization methods
+
+### Quark and torchao configuration (4.50.0)
+
+After installing `amd-quark`, load Hub repositories containing Quark-quantized
+weights through normal `AutoModelForCausalLM.from_pretrained`. Torchao added
+autoquant, CPU quantization, and advanced `AOBaseConfig` configurations in this
+batch; note that `torchao.autoquant` was later removed in 5.1.0.
+
+### FP8 and GGUF constraints (4.51.0)
+
+The PyTorch loader accepts FP8 safetensors, including DeepSeek checkpoints.
+GGUF cannot be offloaded to disk, so ensure the device map contains no disk
+target.
+
+### AutoRound and Gemma 3 GGUF (4.52.1)
+
+AutoRound is supported for low-bit rounding and clipping optimization. GGUF
+loading supports the Gemma 3 text backbone and Gemma 3 QAT checkpoints.
+
+### Tensor parallelism limits (4.52.1)
+
+At this point, quantized tensor-parallel inference was limited to
+`compressed-tensors`, `fp8`, and `fp8-fbgemm`. Validate the installed release
+before combining any other quantization method with tensor parallelism.
+
+### FP-Quant (4.54.0)
+
+`FPQuantConfig` performs on-the-fly FP-Quant loading. Only post-training MXFP4
+was initially implemented. Accelerated execution requires an NVIDIA Blackwell
+GPU and QuTLASS; `FPQuantConfig(pseudoquant=True)` emulates the quantization
+without QuTLASS.
 
 ```python
-import torch
-from transformers import AutoModelForCausalLM, FPQuantConfig
-
 model = AutoModelForCausalLM.from_pretrained(
     "qwen/Qwen3-8B",
     quantization_config=FPQuantConfig(),
@@ -63,87 +79,95 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 ```
 
-### MXFP4 and GPT-OSS
+### GPT-OSS MXFP4 and fallback kernels (4.55.0)
 
-- Transformers 4.55.0 loads the native MXFP4 MoE weights for
-  `openai/gpt-oss-20b` and `openai/gpt-oss-120b`. The 20B checkpoint fits in
-  about 16 GB with MXFP4; the 120B checkpoint fits in about 80 GB and exposes a
-  default tensor-parallel plan through `tp_plan="auto"`.
-- MXFP4 can automatically dequantize on CPU when `device_map` contains CPU as
-  of 4.56.0. GPT-OSS MXFP4 also runs on Nvidia `sm75+`, and MXFP4 has a
-  quantization-aware save path.
-- On Hopper with PyTorch 2.7 or 2.8, GPT-OSS can use the sink-aware Flash
-  Attention 3 kernel after upgrading `kernels` (4.55.0).
-- If MXFP4 is unavailable, `use_kernels=True` opts into a downloadable
-  MegaBlocks MoE path. It requires bfloat16 and consumes more memory (4.55.0).
-- GPT-OSS gains full GGUF loading in 5.6.0.
+Native GPT-OSS loading supports the `openai/gpt-oss-20b` and
+`openai/gpt-oss-120b` MXFP4 MoE checkpoints. The 20B weights fit in 16 GB and
+the 120B weights in 80 GB with MXFP4; the 120B model provides a default plan
+through `tp_plan="auto"`. When MXFP4 is unavailable,
+`use_kernels=True` selects the downloadable MegaBlocks MoE path. That fallback
+requires bfloat16 and consumes more memory.
 
-```python
-model = AutoModelForCausalLM.from_pretrained(
-    "openai/gpt-oss-20b",
-    attn_implementation="kernels-community/vllm-flash-attn3",
-    device_map="auto",
-    dtype="auto",
-)
-```
+### Qwen3 MoE GGUF (4.55.0, 4.56.0)
 
-### GGUF and CPU formats
+The GGUF loader supports Qwen3 mixture-of-experts checkpoints. The following
+batch corrected the architecture used for that path.
 
-- GGUF files cannot be offloaded to disk as of 4.51.0; construct a device map
-  without disk offload.
-- Gemma 3 text-backbone and Gemma 3 QAT GGUF checkpoints load in 4.52.1.
-- Qwen3 MoE GGUF loading appears in 4.55.0 and uses a corrected architecture in
-  4.56.0.
-- `int4` quantized models can execute on CPU as of 4.56.0.
-- MLX quantization on MPS devices is supported in 5.3.0.
+### Expanded MXFP4 and CPU support (4.56.0)
 
-## Use checkpoint conversion and I/O controls
+MXFP4 can dequantize on CPU and selects that route when a `device_map` contains
+CPU. GPT-OSS MXFP4 works on NVIDIA `sm75+`; MXFP4 also has a quantization-aware
+save path. Int4 models can execute on CPU. Attempting to quantize an already
+quantized model now raises an error.
 
-The `WeightConverter` API introduced in 5.0.0 declaratively maps checkpoint
-keys to model keys. Its reversible operations can reshape, merge, split,
-quantize, or apply parallel transformations, so integrations can fuse QKV
-weights without hard-coding conversion inside `from_pretrained()`.
+### SINQ, MLX, and Four Over Six (5.2.0, 5.3.0)
 
-```python
-conversion = WeightConverter(
-    ["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"],
-    "self_attn.qkv_proj",
-    operations=[Concatenate(dim=0)],
-)
-```
+SINQ is available as a v5 quantization strategy. MLX quantization works on MPS,
+and Four Over Six (4/6) NVFP4 targets NVIDIA Blackwell GPUs. Four Over Six
+later gained configurable dtype choices in 5.6.0.
 
-- Dynamic conversion recurses through nested model structure as of 5.4.0.
-- Decoder-only dense and MoE tensor-parallel all-reduce corrections in 5.3.0
-  require existing tensor-parallel configs and checkpoint conversion mappings
-  to be updated.
-- `from_pretrained(..., disable_mmap=...)` is available in 5.6.0 and includes
-  automatic hf-mount detection.
-- Loading `.bin` checkpoints with duplicate tied keys needs verification after
-  the 5.4.0 weight-tying behavior change.
+### Torchao and distributed FP8 (5.4.0)
 
-## Opt into downloadable kernels
+Torchao integrations require torchao 0.15.0 or newer. Static FP8 experts can
+run in multi-GPU configurations.
 
-- Installing `kernels` no longer automatically replaces decorated forward
-  methods as of 4.53.0. `@use_kernel_forward_from_the_hub` records the kernel
-  name; set `use_kernels=True` or call `kernelize` to apply it.
-- Attention implementations can be changed after loading with
-  `set_attn_implementation()` as of 4.54.0. A Hub reference automatically
-  fetches a build matching installed CUDA and PyTorch.
-- Hub kernel references accept `@revision` suffixes as of 4.56.0; pin a revision
-  for reproducibility.
-- Flash Attention 2 requires version 2.3.3 or newer as of 5.4.0. Initial Flash
-  Attention 4 support includes a `kernels` fallback.
-- Kernel integrations add `paged_attention` for continuous batching and custom
-  kernels on Neuron devices in 5.4.0.
-- Hub-registered expert kernels load correctly in 5.7.0. The same release fixes
-  kernel configuration and error handling for FP8 checkpoints and enables the
-  rotary kernel for Gemma3n and Gemma4.
-- Neuron devices joined the automatic compilation hardware list in 5.6.0.
+### GPT-OSS GGUF and torchao serialization (5.6.0, 5.7.0, 5.15.1)
+
+GPT-OSS supports full GGUF loading. Torchao NVFP4 models serialize correctly as
+of 5.7.0, and TorchAO safetensor loading later accepts parameter names that are
+not conventional weight names.
+
+## Kernels and attention implementations
+
+### Explicit kernel opt-in (4.53.0)
+
+Installing `kernels` no longer swaps decorated forwards automatically.
+`@use_kernel_forward_from_the_hub` records a kernel name; `kernelize` applies
+it, and `from_pretrained(..., use_kernels=True)` opts a model in.
+
+### Hub attention kernels (4.54.0, 4.56.0)
+
+Select a Hub implementation with `set_attn_implementation`; the fetched build
+matches installed CUDA and PyTorch. References support revisions, for example:
 
 ```python
-model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-3.2-1B-Instruct",
-    use_kernels=True,
-)
 model.set_attn_implementation("kernels-community/flash-attn3@main")
 ```
+
+### Dependency rename and GPT-OSS package (4.56.0, 5.1.0)
+
+The old `triton_kernels` dependency was replaced with `kernels`. The GPT-OSS
+Triton implementation was later renamed to `gpt-oss-triton-kernels`. XPU also
+gained a MegaBlocks MoE kernel in 5.1.0.
+
+### Flash and paged attention kernels (5.4.0)
+
+Flash Attention 2 requires version 2.3.3 or newer. Flash Attention 4 has an
+initial `kernels` fallback. Kernel integrations include `paged_attention` for
+continuous batching and support custom kernels on Neuron.
+
+### Expert and rotary kernels (5.7.0)
+
+Hub-registered custom expert kernels load correctly. Kernel configuration and
+error handling work with FP8 checkpoints, and Gemma3n and Gemma4 can use the
+rotary kernel.
+
+### Extended kernel configuration (5.15.1)
+
+`KernelConfig` supports n-to-1 module fusion and parameter transformation. The
+Triton integration adds fine-grained FP8 and FP4 kernels.
+
+### Linear-attention families (5.15.1)
+
+Mamba, GDN, and convolution-only models select native fallbacks by default.
+Pass `use_kernels=True` during loading to retain kernel-backed execution.
+
+## Loading validation checklist
+
+- Reject device maps that disk-offload GGUF files.
+- Test CPU branches for int4 and MXFP4 device maps.
+- Confirm hardware, PyTorch, CUDA, torchao, QuTLASS, and kernel-package
+  requirements before choosing an accelerated path.
+- Verify tied weights and duplicate checkpoint keys after model-load changes.
+- Round-trip quantized saves, including NVFP4 and nonstandard parameter names.
+- Never stack a new quantizer on a checkpoint that is already quantized.

@@ -1,166 +1,196 @@
 # Diagnostics and Performance
 
-Inspector capabilities, diagnostics channels, reports, profiling, heap data, and performance metrics.
+Use this reference for diagnostics and performance work.
 
-## Contents
+## Additional HTTP/2 stream diagnostics (`24.2.0`)
 
-- [Inspector and debugger](#inspector-and-debugger)
-- [CPU and heap profiling](#cpu-and-heap-profiling)
-- [Performance metrics](#performance-metrics)
-- [Diagnostics channels and reports](#diagnostics-channels-and-reports)
-- [Runtime inspection utilities](#runtime-inspection-utilities)
+Diagnostics channels now cover server-stream `created`, `start`, `error`, and `finish` events, plus client-stream `close`, `error`, and `finish` events. Instrumentation can observe these lifecycle points without wrapping HTTP/2 APIs.
 
-## Inspector and debugger
+## Bounded debugger probes (`26.4.0`)
 
-### Debugger probe hit limits (since 26.4.0)
+Debugger probe mode adds `--max-hit`, allowing a session to cap the number of probe hits it processes.
 
-Debugger probe mode now accepts `--max-hit`, allowing a run to cap the number of probe hits.
+## C++ heap statistics (`23.10.0`)
 
-### Inspector flags for single-executable applications (since 24.8.0)
-
-Single-executable applications now allow inspector command-line flags such as `--inspect` and `--inspect-brk`, so a packaged executable can be debugged through the inspector.
-
-### Inspector payload retrieval (since 24.3.0)
-
-The inspector protocol now exposes methods for retrieving sent and received data, allowing protocol clients to fetch payloads instead of relying only on event metadata.
-
-### Inspector resource loading (since 24.5.0)
-
-The inspector has initial support for the `Network.loadNetworkResource` protocol method, allowing inspector clients to retrieve a network resource through that command.
-
-### Inspector storage inspection (since 25.5.0)
-
-The inspector has initial support for storage inspection, extending its debugging coverage to stored application data.
-
-### Programmatic precise coverage (since 24.18.0)
-
-The JavaScript inspector surface can now start precise coverage directly, allowing in-process tooling to initiate exact coverage collection without an external inspector controller.
-
-
-## CPU and heap profiling
-
-### C++ heap statistics (since 23.10.0)
-
-`node:v8` now exports `getCppHeapStatistics()` for inspecting V8's C++ heap statistics: `import { getCppHeapStatistics } from 'node:v8'; console.log(getCppHeapStatistics());`.
-
-### CPU profiling through `node:v8` (since 25.0.0)
-
-`node:v8` now provides CPU-profile support for the current isolate, complementing the per-worker profiling API when profiling the main thread without driving the Inspector protocol directly.
-
-### CPU profiling through `NODE_OPTIONS` (since 23.9.0)
-
-The `--cpu-prof` family of CLI options is now accepted in `NODE_OPTIONS`, so profiling can be enabled by deployment configuration.
-
-```console
-NODE_OPTIONS='--cpu-prof --cpu-prof-dir=./profiles' node app.js
-```
-
-### Heap profiling through `NODE_OPTIONS` (since 23.1.0)
-
-`--heap-prof` is now permitted in `NODE_OPTIONS`, so heap profiling can be enabled with `NODE_OPTIONS=--heap-prof node app.js`.
-
-### Heap snapshots on out-of-memory failures (since 24.11.0)
-
-The V8 flag `--heap-snapshot-on-oom` is supported for writing a heap snapshot when an out-of-memory failure occurs.
-
-```console
-node --heap-snapshot-on-oom app.js
-```
-
-### Overall heap-size limit (since 25.9.0)
-
-The new `--max-heap-size` CLI option caps the V8 heap directly, rather than requiring the limit to be expressed only through the existing heap-space-specific options.
-
-```console
-node --max-heap-size=<size> app.js
-```
-
-### Per-thread CPU usage (since 23.9.0)
-
-`process.threadCpuUsage()` reports CPU time consumed by the current thread rather than the whole process, allowing worker-heavy programs to measure threads separately.
-
-### Per-worker CPU profiles (since 24.8.0)
-
-`Worker.startCpuProfile()` starts profiling a particular worker and returns a handle whose `stop()` method resolves to the captured profile, making it possible to isolate worker activity rather than profile only the complete process.
+`v8.getCppHeapStatistics()` exposes C++ heap statistics for native-memory diagnostics alongside the existing V8 heap APIs.
 
 ```js
-const handle = await worker.startCpuProfile();
-await runWork(worker);
-const profile = await handle.stop();
+import { getCppHeapStatistics } from 'node:v8';
+
+const statistics = getCppHeapStatistics();
 ```
 
-### Per-worker CPU usage (since 24.6.0)
+## Call-site metadata (`23.7.0`)
 
-`Worker` instances now expose `cpuUsage()` for querying an individual worker's CPU consumption, complementing the current-thread-only `process.threadCpuUsage()` API.
+Call sites rename the `column` property to `columnNumber` and expose `scriptId`; consumers of `util.getCallSites()` must use the new property name.
 
-### Per-worker heap profiles (since 24.9.0)
+## Conditional debugger probes (`26.7.0`)
 
-`Worker.startHeapProfile()` starts a heap profile for one worker and returns a handle stopped with `await handle.stop()`, complementing per-worker CPU profiling for allocation investigations.
+`node inspect` probe mode adds `--cond`, allowing a probe to be limited by a condition in addition to its existing hit-count controls.
 
-### PID-specific CPU profile names (since 24.5.0)
+## Diagnostic-report environment preservation (`23.3.0`)
 
-`--cpu-prof-name` now expands a `${pid}` placeholder, allowing concurrent processes to avoid overwriting one another's profiles: `node --cpu-prof --cpu-prof-name='CPU.${pid}.cpuprofile' app.js`.
+The CLI gains an option to preserve environment variables in diagnostic reports, allowing generated reports to retain that process context when it is needed.
 
-### Total allocated bytes in heap statistics (since 25.2.0)
+## HTTP body diagnostics (`25.2.0`)
 
-`getHeapStatistics()` from `node:v8` now includes `total_allocated_bytes`, exposing the total allocated-byte count to JavaScript diagnostics.
+Inspector network tooling can now inspect HTTP response bodies and both HTTP/2 request and response bodies. HTTP/2 also adds diagnostics channels for client-stream request bodies.
 
+## HTTP creation diagnostic channels (`23.2.0`)
 
-## Performance metrics
-
-### Disposable event-loop delay histograms (since 24.2.0)
-
-Histograms returned by `monitorEventLoopDelay()` now implement `Symbol.dispose`, so a `using` declaration can disable the histogram automatically at scope exit.
+Instrumentation can subscribe to the new `http.client.request.created` and `http.server.response.created` diagnostic channels to observe HTTP object creation.
 
 ```js
-import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { channel } from 'node:diagnostics_channel';
 
-using histogram = monitorEventLoopDelay();
-histogram.enable();
+channel('http.client.request.created').subscribe((message) => {
+  console.log(message);
+});
 ```
 
-### Event-loop delay sampling (since 26.5.0)
+## HTTP/2 client-stream diagnostics (`24.1.0`)
 
-Event-loop delay measurement in `node:perf_hooks` now samples once per event-loop iteration, which changes how its histogram sample counts and distributions should be interpreted.
+The diagnostics channel adds `http2.client.stream.created` and `http2.client.stream.start` events for observing HTTP/2 client stream creation and startup.
 
-### Minor mark-sweep GC classification (since 26.5.0)
+```js
+import { channel } from 'node:diagnostics_channel';
 
-`node:perf_hooks` adds `NODE_PERFORMANCE_GC_MINOR_MARK_SWEEP`, allowing GC performance observers to identify minor mark-sweep collections.
-
-### Removed `perf_hooks` accessors (since 25.0.0)
-
-The deprecated `kind` and `flags` accessors on garbage-collection `PerformanceEntry` objects have been removed. Read `entry.detail.kind` and `entry.detail.flags` instead.
-
-
-## Diagnostics channels and reports
-
-### Environment-free diagnostic reports (since 23.3.0)
-
-The new `--report-exclude-env` CLI option omits environment variables from generated diagnostic reports, allowing reports to be collected without embedding the process environment.
-
-### Environment-variable access tracing (since 23.4.0)
-
-The new `--trace-env`, `--trace-env-js-stack`, and `--trace-env-native-stack` CLI switches trace environment-variable access, optionally with JavaScript or native stack information.
-
-```console
-node --trace-env-js-stack app.js
+for (const name of [
+  'http2.client.stream.created',
+  'http2.client.stream.start',
+]) {
+  channel(name).subscribe((message) => console.log(name, message));
+}
 ```
 
-### Revoked diagnostics-channel deprecation (since 24.8.0)
+## HTTP/2 server-stream close diagnostics (`24.3.0`)
 
-DEP0163 has been revoked, so the `Channel.prototype.subscribe()` and `Channel.prototype.unsubscribe()` instance methods are no longer deprecated and do not require migration solely because of that deprecation.
+The `http2.server.stream.close` diagnostics channel exposes server-side HTTP/2 stream closure to instrumentation.
 
-### Web Lock diagnostics (since 25.9.0)
+## HTTP/2 traffic in inspector network tools (`24.8.0`)
 
-`node:diagnostics_channel` now exposes diagnostics channels for Web Lock activity, allowing lock behavior to be observed without instrumenting application calls directly.
+Inspector network tracking now includes HTTP/2 client calls. Start the process with the experimental network inspector enabled, then open the dedicated Node DevTools from Chrome's `about:inspect` page.
 
+```sh
+node --inspect-wait --experimental-network-inspection app.js
+```
 
-## Runtime inspection utilities
+## Inspector storage inspection (`25.5.0`)
 
-### Call-site property changes (since 23.7.0)
+The inspector adds initial support for storage inspection, allowing inspector clients to examine runtime storage.
 
-Objects returned by `util.getCallSites()` now expose `columnNumber` instead of `column` and add `scriptId`; consumers of this experimental API must update the old property name.
+## Inspector target enumeration (`25.9.0`)
 
-### Plural and source-mapped call sites (since 23.3.0)
+The inspector protocol now supports `Target.getTargets`, allowing inspector clients to enumerate the runtime's available debugging targets.
 
-The experimental utility API is now named `util.getCallSites()` rather than `util.getCallSite()`, and can resolve original locations through source maps by passing `{ sourceMap: true }` as its options argument.
+## Minor mark-sweep GC classification (`26.5.0`)
+
+`node:perf_hooks` adds `NODE_PERFORMANCE_GC_MINOR_MARK_SWEEP`, allowing performance observers to distinguish minor mark-sweep collections.
+
+## Network initiators in the inspector (`23.8.0`)
+
+The inspector protocol now exposes `Network.Initiator`, allowing tooling to report what initiated a network request.
+
+## Node-specific Performance extensions (`24.12.0`)
+
+Non-standard `performance` properties now belong to the `node:perf_hooks` surface. Import its `performance` export when using Node-specific extensions instead of relying on the browser-compatible global.
+
+```js
+import { performance } from 'node:perf_hooks';
+
+console.log(performance.nodeTiming);
+```
+
+## Overall heap-size limit (`25.9.0`)
+
+The new `--max-heap-size` option limits the overall V8 heap rather than only its old-space portion.
+
+```sh
+node --max-heap-size=2048 app.js
+```
+
+## Per-iteration event-loop delay sampling (`26.5.0`)
+
+Event-loop delay measurement in `node:perf_hooks` now takes one sample per event-loop iteration. Monitoring code should account for the resulting histogram semantics when comparing data across upgrades.
+
+## Per-stream console inspection options (`24.10.0`)
+
+The `Console` constructor's `inspectOptions` can now be a `Map` keyed by output stream, so stdout and stderr can use different object-formatting settings.
+
+```js
+import { Console } from 'node:console';
+import { stderr, stdout } from 'node:process';
+
+const log = new Console({
+  stdout,
+  stderr,
+  inspectOptions: new Map([
+    [stdout, { colors: false }],
+    [stderr, { colors: true }],
+  ]),
+});
+```
+
+## Percentage-based old-space limits (`24.6.0`)
+
+`--max-old-space-size` now accepts a percentage as well as a fixed MiB value, allowing the V8 old-space limit to scale with available memory.
+
+```sh
+node --max-old-space-size=50% app.js
+```
+
+## Perfetto tracing support (`26.7.0`)
+
+Node.js adds Perfetto build integration and a trace agent, allowing compatible builds to integrate with Perfetto tracing tooling.
+
+## PID-aware CPU profile filenames (`24.5.0`)
+
+`--cpu-prof-name` now replaces a `${pid}` placeholder with the process ID, preventing concurrent profilers from writing the same filename.
+
+```sh
+node --cpu-prof '--cpu-prof-name=CPU.${pid}.cpuprofile' app.js
+```
+
+## Programmatic V8 CPU profiling (`25.0.0`)
+
+`node:v8` adds a CPU-profiling facility, providing an in-process alternative to enabling CPU profiling only through startup flags.
+
+## Proxy inspection output (`26.0.0`)
+
+`util.inspect()` now identifies proxied objects as proxies, which can change logs and snapshots after upgrading.
+
+## Revoked diagnostics-channel deprecation (`24.8.0`)
+
+DEP0163 has been revoked, so `Channel.prototype.subscribe()` and `Channel.prototype.unsubscribe()` are no longer deprecated and need no migration solely because of that deprecation.
+
+## Singular call-site helper removed (`24.10.0`)
+
+`util.getCallSite()` is removed. Code using the singular API must switch to the existing `util.getCallSites()` API.
+
+## Source-mapped call sites (`23.3.0`)
+
+`util.getCallSites()`—using the plural API name—now supports resolving call-site locations through source maps.
+
+```js
+import { getCallSites } from 'node:util';
+
+const sites = getCallSites(10, { sourceMap: true });
+```
+
+## Total allocated bytes in heap statistics (`25.2.0`)
+
+`v8.getHeapStatistics()` now includes `total_allocated_bytes` for allocation monitoring.
+
+```js
+import { getHeapStatistics } from 'node:v8';
+
+const { total_allocated_bytes } = getHeapStatistics();
+```
+
+## Undici traffic in the inspector (`24.4.0`)
+
+Inspector network tooling can now inspect traffic produced through Undici.
+
+## Versioned diagnostic-report key corrections (`23.5.0`)
+
+Misspelled diagnostic-report keys are corrected and the report version is bumped. Report consumers should branch on the report version rather than assuming the older key spellings.

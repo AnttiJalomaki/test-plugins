@@ -1,24 +1,35 @@
 # CQL, Schema, Clients, and Tools
 
-## Native protocol and value encoding
+## Native protocol and serialization
 
-### Multiframe message limits
+### CQL multiframe message limits
 
-The configured CQL message-size limit applies to multiframe messages as well
-as single-frame messages (since 5.0.3). Splitting a large logical message
-across frames does not bypass the limit; clients must remain within it.
+The CQL message-size limit applies to multiframe as well as single-frame
+messages (since 5.0.3). Splitting a message across frames does not bypass the
+configured limit.
 
-### Full UTF-8
+### Complete UTF-8 serialization
 
-`CBUtil` serializes the complete valid UTF-8 range correctly (since 5.0.3).
-Clients can send valid UTF-8 values without compensating for the former
-high-range serialization problem.
+`CBUtil` serializes the full UTF-8 range correctly (since 5.0.3), including
+valid data that older maintenance releases mishandled.
 
-## Schema and type behavior
+### Correctly correlated overload responses
 
-### Descending UDT and vector keys
+Coordinator load shedding attaches the request stream ID to
+`OverloadedException` responses (since 5.0.9), preventing an overloaded
+response from being delivered to the wrong in-flight request.
 
-Frozen UDTs and vectors can be descending clustering keys (since 5.0.3):
+### Native value-length bounds
+
+`CBUtil` bounds a declared value length against the remaining readable bytes
+(since 5.0.9). Malformed or truncated values cannot cause a read beyond the
+available payload.
+
+## CQL types and schema
+
+### Descending UDT and vector clustering keys
+
+UDTs and vectors can be descending clustering keys (since 5.0.3):
 
 ```cql
 CREATE TYPE coordinates (x int, y int);
@@ -30,121 +41,92 @@ CREATE TABLE samples (
 ) WITH CLUSTERING ORDER BY (position DESC, embedding DESC);
 ```
 
-Schema emitted for snapshots also contains definitions for UDTs used in these
-reverse clustering positions.
+### Materialized views in `DESCRIBE TABLE`
 
-### Materialized views in schema descriptions
+`DESCRIBE TABLE` includes the table's materialized views (since 5.0.4).
+Schema export and inspection tooling should account for the additional DDL.
 
-`DESCRIBE TABLE` includes materialized views associated with the table (since
-5.0.4). Schema-export tooling that consumes this output should expect the view
-definitions rather than treating them as a separate missing artifact.
+### `min` and `max` over descending clustering columns
 
-### Table-name validation
+The built-in `min` and `max` functions return correct results for descending
+clustering columns (since 5.0.4).
 
-Cassandra rejects a table name when the corresponding generated filename
-would be too long (since 5.0.6). Schema generators should shorten the
-identifier after a validation failure rather than waiting for a filesystem
-operation to fail.
+### Table-name length validation
 
-### `BytesType` compatibility
+Cassandra rejects table names that would create filenames that are too long
+(since 5.0.6). DDL generators should handle validation failure instead of
+expecting a later filesystem-path error.
 
-`BytesType` is compatible only with scalar types (since 5.0.7). Schema
-evolution and schema-management tools must not treat a non-scalar type as
-compatible with `BytesType`.
+### Scalar-only `BytesType` compatibility
+
+`BytesType` compatibility is restricted to scalar types (since 5.0.7).
+Schema evolution or tooling that treats it as compatible with non-scalar types
+may now be rejected.
 
 ## `CQLSSTableWriter`
 
-### Production notifications
+### `CQLSSTableWriter` production notifications
 
-`CQLSSTableWriter` can notify its client whenever it produces an SSTable
-(since 5.0.3). Callers can react at file-production time instead of discovering
-new files only after the writer completes.
+`CQLSSTableWriter` can notify clients whenever it produces an SSTable (since
+5.0.3), allowing callers to react as files are emitted.
 
-### Output format
+### Configurable `CQLSSTableWriter` format
 
-The writer can select BTI or Big-format SSTables (since 5.0.5). Choose the
-format through the writer rather than assuming all generated files use one
-fixed format.
+`CQLSSTableWriter` can choose BTI or Big-format SSTables (since 5.0.5). Select
+the format deliberately for the destination cluster and workflow.
 
-### Date and time vectors
+### Date and time vectors in `CQLSSTableWriter`
 
-Vectors whose elements are `date` or `time` serialize correctly through
-`CQLSSTableWriter` (since 5.0.7). These vector element types no longer need a
-client-side avoidance path.
+`CQLSSTableWriter` correctly serializes vectors whose elements are `date` or
+`time` values (since 5.0.7).
 
-## Logging and shell behavior
+## Command-line tools and builds
 
-### Full Query Logging batches
+### Tool initialization without DirectIO
 
-Full Query Logging batch statements support null column-value tombstones
-(since 5.0.4). A null representing a tombstone in a batch is a supported log
-value rather than an invalid serialization case.
+Cassandra tools skip the DirectIO check during initialization (since 5.0.4),
+so management tools can initialize independently of that storage capability.
 
-### Optional `cqlsh` history
+### Selective tool environment loading
 
-`cqlsh` has an option to disable command history (since 5.0.7). Use it for
-sessions that must not persist entered statements; do not assume history is
-unconditionally written.
+`nodetool` and other tools avoid sourcing `cassandra-env.sh` when unnecessary
+(since 5.0.5). Wrappers must not depend on unrelated side effects from that
+file.
 
-## Command-line tool environment
+### Buildable source distributions
 
-### Selective environment loading
-
-`nodetool` and other tools do not source `cassandra-env.sh` when it is
-unnecessary (since 5.0.5). Wrapper scripts must set any environment they need
-explicitly rather than relying on unrelated side effects of that file.
-
-### Direct I/O initialization
-
-Tools skip the DirectIO check during initialization (since 5.0.4). A tool can
-initialize without satisfying the server's Direct I/O check.
-
-### Token metadata command
-
-`nodetool checktokenmetadata` compares `TokenMetadata` with gossip endpoint
-state (since 5.0.3):
-
-```shell
-nodetool checktokenmetadata
-```
-
-### Guardrail commands
-
-Guardrail configuration is exposed through the finalized
-`getguardrailsconfig` and `setguardrailsconfig` commands (since 5.0.5):
-
-```shell
-nodetool getguardrailsconfig
-```
-
-Use `setguardrailsconfig` with the guardrail setting to change.
-
-### Corrected memory statistics
-
-`nodetool gcstats` reports direct-memory usage correctly (since 5.0.7).
-Consumers should interpret the corrected result rather than preserving a
-compensation for the former value.
-
-## Stress client TLS
-
-`cassandra-stress` performs automatic TLS-version negotiation and supports TLS
-1.3 by default (since 5.0.8). A TLS 1.3 endpoint does not require the client to
-remain pinned to an older protocol version.
-
-## Source builds and runtime
-
-### Source distributions
-
-Source distributions build with the Ant `artifacts` target, and the
-native-protocol processing script used by that build is executable (since
+Source distributions can be built with the Ant `artifacts` target, and the
+native-protocol processing script used by the build is executable (since
 5.0.5):
 
 ```shell
 ant artifacts
 ```
 
-### Java runtime
+### Optional `cqlsh` history
 
-Cassandra has full Java 17 runtime support (since 5.0.5). Java 17 can be used
-as the supported server runtime rather than only as a partial or experimental
-build environment.
+`cqlsh` can disable command history (since 5.0.7), allowing sensitive or
+ephemeral sessions to avoid persisting entered statements.
+
+### TLS 1.3 negotiation in `cassandra-stress`
+
+`cassandra-stress` supports TLS 1.3 by default through automatic TLS-version
+negotiation (since 5.0.8).
+
+### Python 3.12 and 3.13 for `cqlsh`
+
+`cqlsh` supports running with Python 3.12 and 3.13 (since 5.0.9).
+
+### Documentation generation without Go
+
+The `gen-doc` tooling uses Python rather than Go (since 5.0.9), so Go is no
+longer a dependency for generating Cassandra documentation.
+
+### `nodetool import --copy-data` short option
+
+The short form of `nodetool import --copy-data` is `-cd`, not the conflicting
+`-p` (since 5.0.9). Update command automation accordingly:
+
+```shell
+nodetool import -cd keyspace_name table_name /path/to/sstables
+```

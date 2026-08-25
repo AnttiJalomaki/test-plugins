@@ -1,12 +1,11 @@
 # Interoperability and Portability
 
-Batch attribution: `interop-and-portability`.
+## Browser Elixir (`interop-and-portability`)
 
-## Run Elixir-facing code in browsers
+### Popcorn on AtomVM WebAssembly
 
-### Use Popcorn on AtomVM WebAssembly
-
-Popcorn runs an extensive Elixir subset in the browser on AtomVM's WebAssembly target. Register a process through `Popcorn.Wasm` and invoke JavaScript directly:
+Popcorn runs an extensive Elixir subset in the browser on AtomVM's WebAssembly
+target. A process can register with `Popcorn.Wasm` and call JavaScript directly.
 
 ```elixir
 def init(_) do
@@ -16,11 +15,15 @@ def init(_) do
 end
 ```
 
-Choose it when the AtomVM-compatible subset and direct process-to-JavaScript bridge fit the application.
+Choose Popcorn when the AtomVM-compatible subset is sufficient and direct
+browser execution is the goal.
 
-### Build isomorphic Phoenix interfaces with Hologram
+### Hologram client-side components
 
-Hologram transpiles Elixir syntax trees to JavaScript and supplies Phoenix-based components, routing, templates, and client/server communication. Use `~HOLO` templates and handle browser events in client-side `action/3` callbacks:
+Hologram is a Phoenix-based isomorphic framework. It transpiles Elixir syntax
+trees to JavaScript and supplies components, routing, templates, and
+client-server communication. Components render `~HOLO` templates and dispatch
+browser events to `action/3` entirely on the client.
 
 ```elixir
 def template, do: ~HOLO"""<svg $pointer_down="start_drawing"></svg>"""
@@ -30,11 +33,16 @@ def action(:start_drawing, _params, component) do
 end
 ```
 
-## Implement native functions
+Choose Hologram when Phoenix integration and isomorphic components matter more
+than an embedded VM subset.
 
-### Wrap C++ NIFs with Fine
+## Native extensions (`interop-and-portability`)
 
-Fine derives NIF argument and return conversion from a C++ function signature. It supports Elixir structs and converts C++ exceptions into Elixir exceptions:
+### Fine for C++ NIFs
+
+Fine wraps the C++ NIF API and derives argument and return conversion from the
+function signature. It supports Elixir structs and turns C++ exceptions into
+Elixir exceptions.
 
 ```cpp
 #include <fine.hpp>
@@ -44,9 +52,11 @@ FINE_NIF(add, 0);
 FINE_INIT("Elixir.Example");
 ```
 
-### Embed Zig with Zigler
+### Zigler for inline Zig NIFs
 
-Zigler compiles embedded Zig during the Elixir build without separate build scripts or glue. The resulting functions are exposed on the Elixir module. `mix format` formats the Zig, and IEx's `h` helper displays its documentation:
+Zigler compiles embedded Zig at build time without separate build scripts or
+glue. `mix format` formats the Zig, its documentation appears through IEx `h`,
+and generated functions are exposed directly on the Elixir module.
 
 ```elixir
 Mix.install([:zigler])
@@ -60,11 +70,10 @@ defmodule Example do
 end
 ```
 
-## Embed other language runtimes
+## Embedded Python (`interop-and-portability`)
 
-### Run Python in-process with Pythonx
-
-Pythonx embeds Python in the same operating-system process, converts values between Python and Elixir, and provisions Python plus packages from a `uv` project declaration:
+Pythonx embeds Python in the Elixir OS process, converts Python and Elixir data,
+and provisions Python and packages from a `uv` project declaration.
 
 ```elixir
 Mix.install([{:pythonx, "~> 0.4.0"}])
@@ -84,8 +93,11 @@ np.int64(x) + np.int64(2)
 """
 ```
 
-Ordinary Python execution remains serialized by the GIL across Elixir processes. Native packages can release the GIL during CPU-intensive work or I/O.
+Ordinary Python execution remains serialized by the GIL across Elixir
+processes. Native packages may release the GIL during CPU-intensive work or I/O.
 
-### Connect Swift as a distributed node
+## Swift distributed nodes (`interop-and-portability`)
 
-Use the Swift Erlang Actor System to let Swift programs communicate with Erlang and Elixir as distributed nodes. It is a newer alternative to implementing the distribution protocol directly.
+The Swift Erlang Actor System lets Swift programs communicate with Erlang and
+Elixir as distributed nodes. Prefer it over implementing the distribution
+protocol directly when a Swift program must join the cluster.

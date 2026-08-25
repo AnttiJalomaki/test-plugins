@@ -1,55 +1,81 @@
 # Verification and security
 
-## Old bundles with a trusted root
+## Legacy bundle with trusted-root verification
 
-GHSA-whqx-f9j3-ch6m affected the old-bundle plus trusted-root verification path before v3.0.4. Under some conditions, an unrelated valid Rekor entry could satisfy verification.
+Do not rely on the pre-v3.0.4 legacy-bundle plus trusted-root verification
+path. GHSA-whqx-f9j3-ch6m allowed an unrelated valid Rekor entry to satisfy
+verification under some conditions.
 
-Do not use that affected path for a policy decision. Upgrade the verifier and verify the bundle again with the intended trust material; the existence of some valid transparency-log entry is not sufficient evidence for the artifact being checked.
+For policy enforcement:
+
+1. Detect the installed release before verification.
+2. Reject the vulnerable path instead of compensating with assumptions about
+   the Rekor entry.
+3. Upgrade the verifier and rerun verification with the intended trust
+   material.
+
+## Unexpected public keys in legacy bundles
+
+The `2.6.5-3.1.3` batch addresses GHSA-fx35-mq7g-6g98, a verification bypass
+involving an unexpected public key in a legacy bundle. Cosign 3.1.3 fixes the
+v3 line, and 2.6.5 contains the v2 backport. Where legacy bundles remain
+accepted, use at least 3.1.3 or 2.6.5 respectively.
+
+Do not infer that a newer standardized-bundle workflow makes an unpatched
+legacy acceptance path safe. Remove legacy acceptance when possible; otherwise
+enforce the fixed release before evaluating the bundle.
 
 ## Certificate-chain validation
 
-Version 3.0.5 verifies the validity of the certificate chain rather than checking only the leaf certificate.
+Cosign 3.0.5 validates the certificate chain rather than validating only the
+leaf certificate. Wrappers and alternate verification implementations must not
+reintroduce leaf-only validation.
 
-Wrappers and alternate implementations must preserve full chain validation. A successful leaf check alone must not be promoted to an equivalent verification result.
+## Explicit-key offline verification
 
-## Blob-attestation parsing
+Offline verification with an explicit key does not require a trusted root.
+Keep the explicit key as the trust input for that mode rather than adding a
+trusted-root prerequisite copied from another verification path.
 
-GHSA-w6c6-c85g-mmv6 affects `verify-blob-attestation`. On affected releases, payload parsing can fail while the command reports a false-positive result.
+The deprecation of the `--offline` flag is a CLI migration concern and does not
+make all verification modes equivalent. Review the actual invocation and trust
+material together.
 
-Use fail-closed handling:
+## Security-key identity behavior
 
-1. determine whether the verifier release is affected;
-2. treat payload parsing failure as verification failure regardless of the reported success result;
-3. do not use an affected release as a policy gate;
-4. rerun verification with a non-affected release before accepting the attestation.
-
-Do not catch a parsing error and replace it with an empty or partially decoded payload. The verification decision depends on successfully parsing the payload that was actually attested.
-
-## Offline explicit-key verification
-
-Offline verification with an explicit key no longer requires a trusted root. Model this as a distinct verification path rather than fabricating or fetching trusted-root material that the mode does not need.
-
-This does not make other verification modes independent of their trust inputs. Choose the mode first, then supply the material that mode requires.
-
-## Security-key verification
-
-Security-key verification skips identity validation. A successful cryptographic verification in this mode must not be described as proof that a configured certificate or container identity matched.
-
-If identity is a policy requirement, select a verification path that actually validates it and test a nonmatching identity as a negative case.
+Security-key verification skips identity validation. A successful security-key
+verification therefore does not establish that certificate identity checks
+ran. If identity is part of policy, select a verification mode that performs
+the required identity validation.
 
 ## Multiple container identities
 
-Verification can accept multiple container identities. Review the full accepted set as one policy boundary.
+Verification can accept multiple container identities. Express the complete
+accepted set directly, confirm every identity is intended, and confirm that the
+chosen verification mode actually validates identity. Avoid composing
+independent commands whose combined acceptance semantics are unclear.
 
-Avoid implementing an ambiguous series of independent checks whose success combination differs from the intended accepted-identity semantics. Also confirm that the chosen verification mode performs identity validation at all.
+## Blob-attestation parse failures
+
+On releases affected by GHSA-w6c6-c85g-mmv6,
+`verify-blob-attestation` can report a false positive when payload parsing
+fails. Treat every parse failure as a verification failure. Do not use an
+affected release as a policy gate even if the command reports success after a
+payload parse error.
+
+## Blob checksum casing
+
+Cosign 3.1.3 compares blob file checksums without regard to letter case.
+Equivalent upper- and lower-case encodings are accepted; surrounding code
+should not reject a checksum solely because hexadecimal letter casing differs.
 
 ## Trust-boundary checklist
 
-- Record the exact verifier release used by the policy gate.
-- Reject the pre-v3.0.4 old-bundle/trusted-root path.
-- Preserve full certificate-chain validation from v3.0.5 behavior.
-- Treat every blob-attestation payload parsing failure as verification failure.
-- Do not use a release affected by GHSA-w6c6-c85g-mmv6 as a policy gate.
-- Do not require a trusted root for offline verification that uses an explicit key.
+- Determine whether the input is a standardized or legacy bundle.
+- Enforce the fixed release when legacy bundles remain accepted.
+- Validate the full certificate chain.
+- Keep trusted-root, explicit-key, and security-key modes distinct.
 - Do not claim identity validation for security-key verification.
-- Review every accepted container identity and test negative identity cases.
+- Review every accepted container identity.
+- Fail closed on blob-attestation payload parse errors.
+- Compare blob checksums independently of letter case.

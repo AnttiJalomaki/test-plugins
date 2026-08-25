@@ -1,56 +1,96 @@
 # Connections and Agents
 
-## Post-authentication rekey
+## Rekey and connection lifetime
 
-OpenSSH 10.4 disconnects clients or servers that send non-key-exchange messages during a post-authentication key re-exchange. Bring peers into compliance with RFC 4253 section 7.1; implementations that relied on leniency may stop interoperating.
+### Enforce post-authentication rekey sequencing
 
-The same release fixes a client use-after-free triggered when a server changes its host key during rekey. Upgrade exposed clients rather than avoiding rekey as a workaround.
+OpenSSH 10.4 clients and servers disconnect peers that send a non-key-exchange
+message during a post-authentication rekey. Test non-OpenSSH implementations
+for compliance with RFC 4253 section 7.1 and fix peers that violate the
+sequence.
 
-OpenSSH 10.3 also removes compatibility for peers that cannot rekey at all. Replace or upgrade those peers.
+The same release fixes a client use-after-free triggered when a server changes
+its host key during rekey. Upgrade exposed clients. OpenSSH 10.3 also drops
+compatibility with peers that cannot rekey at all.
 
-## Dynamic IPQoS
+### Start unused-connection timing after the final channel
 
-OpenSSH 10.1 changes the default `IPQoS` behavior:
+In OpenSSH 10.3, `UnusedConnectionTimeout` starts only after the last channel
+closes. A preceding `ChannelTimeout` no longer starts it early. API clients may
+therefore keep the transport available for later channels after earlier ones
+have closed.
 
-- Use EF for interactive-only traffic.
-- Use the operating-system default for non-interactive traffic.
-- Switch dynamically as channel types change.
+## Multiplexing and forwarding
 
-Legacy `lowdelay`, `reliability`, and `throughput` values are ignored. Remove them instead of expecting their former mappings.
+### Avoid the 10.1 `ControlPersist` terminal regression
 
-OpenSSH 10.3 accepts the VA codepoint and makes server `IPQoS` follow normal first-match-wins configuration precedence. Put the preferred value in the earliest applicable block.
+OpenSSH 10.1 could leave terminal sessions unusable whenever `ControlPersist`
+was active. OpenSSH 10.2 fixes the regression. Upgrade interactive systems that
+use persistent control sockets.
 
-## Multiplexing regression
+### Upgrade clients that add remote forwards concurrently
 
-OpenSSH 10.1 can leave terminal sessions unusable when `ControlPersist` is active. OpenSSH 10.2 fixes the regression. Avoid 10.1 for persistent control sockets, especially for interactive sessions.
+OpenSSH 10.5 fixes a potential realloc use-after-free in the client. It can be
+triggered when a remote forwarding is added through the local multiplexing
+socket while another remote-forward open request is still pending. Upgrade
+automation that changes remote forwards concurrently over a shared control
+connection.
 
-## Idle connection timing
+## Traffic policy
 
-From 10.3, `UnusedConnectionTimeout` becomes active only after the last channel closes. A preceding `ChannelTimeout` no longer starts it early. API clients may therefore keep a transport alive and open later channels after earlier channels close, up to the configured unused-connection limit.
+### Apply dynamic `IPQoS`
 
-## Agent key clearing and socket activation
+OpenSSH 10.1 makes `IPQoS` depend on active channel types: interactive-only
+traffic defaults to EF, non-interactive traffic uses the operating-system
+default, and the choice changes as channels change.
 
-From 10.0, send `SIGUSR1` to `ssh-agent` to clear all loaded keys.
+Legacy `lowdelay`, `reliability`, and `throughput` values are ignored. OpenSSH
+10.3 adds the VA codepoint and makes server `IPQoS` follow normal
+first-match-wins configuration precedence. Remove legacy values and test mixed
+interactive and non-interactive sessions.
 
-The agent also supports systemd-style socket activation when `LISTEN_PID` and `LISTEN_FDS` are set. Run `ssh-agent` with `-d` or `-D` and without a socket path in this mode; supplying a path defeats the activation contract.
+## Agent lifecycle and sockets
 
-## Agent socket layout and cleanup
+### Clear keys and use socket activation correctly
 
-From 10.1, local and forwarded agent sockets move from `/tmp` to hostname-hashed paths under `~/.ssh/agent`.
+From OpenSSH 10.0, sending `SIGUSR1` clears all keys from `ssh-agent`.
+Systemd-style socket activation is supported when `LISTEN_PID` and
+`LISTEN_FDS` are set and the agent runs with `-d` or `-D` without an explicit
+socket path. Do not combine activation with a manually selected socket path.
 
-- Use `-T` to restore the `/tmp` layout.
-- Use `-U` to suppress stale-socket cleanup.
-- Use `-u` to perform cleanup only.
-- Use `-uu` to perform cleanup while ignoring the hostname.
+### Migrate agent socket discovery
 
-Update scripts and service units that assume the socket lives below `/tmp`.
+OpenSSH 10.1 moves local and forwarded agent sockets from `/tmp` to
+hostname-hashed paths below `~/.ssh/agent`.
 
-## Certificate lifetime in the agent
+- `ssh-agent -T` restores the legacy `/tmp` layout when compatibility requires
+  it.
+- `-U` suppresses stale-socket cleanup.
+- `-u` performs cleanup only.
+- `-uu` performs cleanup while ignoring the hostname.
 
-From 10.1, `ssh-add` assigns a loaded certificate a lifetime ending five minutes after the certificate's own expiry. The agent removes it at that point. Use `ssh-add -N` when automatic lifetime assignment must be disabled.
+Update tools that scan or hard-code `/tmp` socket paths.
 
-## Standard agent-forwarding extensions
+### Enforce certificate lifetime in the agent
 
-OpenSSH 10.3 supports the IANA-assigned agent-forwarding codepoints and prefers them when the peer advertises them through `EXT_INFO`. It retains the older `@openssh.com` names for compatibility.
+From OpenSSH 10.1, `ssh-add` gives a loaded certificate a lifetime ending five
+minutes after the certificate's own expiry. The agent then removes it. Use
+`ssh-add -N` when automatic certificate lifetime enforcement must be disabled.
 
-`ssh-agent` implements the standardized `query` extension. Use `ssh-add -Q` to report the extensions an agent supports instead of inferring them from its version.
+## Agent protocol and forwarding boundaries
+
+### Prefer standardized forwarding extensions
+
+OpenSSH 10.3 supports the IANA-assigned agent-forwarding codepoints and prefers
+them when they are advertised through `EXT_INFO`. The older `@openssh.com`
+names remain available for compatibility. `ssh-agent` implements the
+standardized `query` extension, and `ssh-add -Q` reports extensions supported
+by an agent.
+
+### Enforce binding while a forwarded agent is locked
+
+OpenSSH 10.5 fixes `ssh-agent` refusing `session-bind@openssh.com` requests
+while locked. The refusal could allow remote users of a forwarded agent to
+perform operations intended to be local-only. Upgrade forwarded agents,
+especially agents that can add PKCS#11 tokens or contain
+destination-restricted keys.

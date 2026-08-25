@@ -2,7 +2,7 @@
   "patch": "opensearch-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T12:34:54Z",
+  "built_at": "2026-08-21T18:05:19Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -59,6 +59,11 @@
     },
     "version-history": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.8.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

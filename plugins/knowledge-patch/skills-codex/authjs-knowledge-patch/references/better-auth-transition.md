@@ -1,18 +1,14 @@
 # Better Auth Transition
 
-## Project status
-
-Treat Auth.js and its former NextAuth.js name as an existing project overseen and maintained by the Better Auth team. Existing applications continue to receive security patches and urgent fixes.
-
 ## Choose a project path
 
-Prefer Better Auth for a new project unless a current feature gap blocks the required design. A notable reason to retain Auth.js is stateless session management without a database.
+Auth.js, formerly NextAuth.js, is maintained and overseen by the Better Auth
+team. Existing Auth.js and NextAuth.js applications continue to receive
+security patches and urgent fixes.
 
-For an existing Auth.js or NextAuth.js application:
+Prefer Better Auth for a new application. Keep Auth.js when maintaining an
+existing application or when Better Auth does not yet provide a required
+capability, such as stateless session management without a database.
 
-1. Keep dependencies current so security and urgent fixes continue to land.
-2. Inventory session, provider, adapter, and framework requirements.
-3. Confirm that Better Auth supports every required behavior.
-4. Use the NextAuth migration guide when moving to Better Auth.
-
-Do not migrate solely because maintenance oversight changed; decide from application requirements and the migration cost.
+For an existing application that will move to Better Auth, follow the NextAuth
+migration guide rather than treating the change as a package rename.

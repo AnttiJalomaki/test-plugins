@@ -1,42 +1,55 @@
 # Types and Static Analysis
 
-Batch attribution: `1.17.0`, `1.18-type-system-guide`, `1.18.0`, `1.19.0`, `1.20-type-system-guide`, `1.20.0`, and `otp-28`.
+## Understand the checker boundary
 
-## Contents
+The initial set-theoretic checker in `1.17.0` inferred from patterns inside one
+function. It could warn about impossible map or struct fields, calls through
+non-functions or non-modules, comparisons between structs or disjoint types,
+invalid binary segments, and invalid rescue targets or fields. It did not yet
+infer from guards or across function boundaries, and modeled tuples, lists,
+and functions only coarsely.
 
-- [Understand checker scope](#understand-checker-scope)
-- [Read set-theoretic notation](#read-set-theoretic-notation)
-- [Refine maps with guards and operations](#refine-maps-with-guards-and-operations)
-- [Describe lists and tuples](#describe-lists-and-tuples)
-- [Read function and protocol types](#read-function-and-protocol-types)
-- [Avoid inference traps](#avoid-inference-traps)
-- [Use nominal Dialyzer types in Erlang](#use-nominal-dialyzer-types-in-erlang)
+In `1.18.0`, inference expanded to function inputs and returns plus local and
+remote call checking. It can diagnose invalid arguments, impossible matches
+on results, and private clauses unreachable by every caller. At that point,
+`for`, `with`, closures, and guard inference were still outside the boundary.
 
-## Understand checker scope
-
-### Treat warnings as best-effort proofs
-
-The set-theoretic checker warns when every possible type combination would fail. It may miss an incompatibility when gradual or uninferred values leave at least one successful possibility.
-
-Its inference scope expanded across releases:
-
-- In Elixir 1.17, inference comes from patterns within the same function. It can identify impossible map or struct fields, calls through non-functions or non-modules, comparisons between structs or disjoint types, invalid binary segments, and invalid rescue targets or fields. It does not infer from guards or across function boundaries, and tuple, list, and function types remain coarse.
-- In Elixir 1.18, it infers function inputs and returns, checks local and remote calls, warns on impossible matches against call results, and identifies private clauses no caller can reach. `for`, `with`, closures, and guard inference remain outside that release's checker.
-- In Elixir 1.19, it infers anonymous functions and captures and checks protocol dispatch and implementations.
-- In Elixir 1.20, best-effort inference spans every language construct, including guards and constraints that flow backward from calls.
+By `1.20-type-system-guide`, best-effort inference covers every language
+construct, including guards and constraints flowing backward from calls. It
+may miss some incompatibilities, but warns when every possible type
+combination fails:
 
 ```elixir
 def add_rem(a, b), do: rem(a + b, 8)
-# rem/2 constrains both a and b to integers through the addition
+# rem/2 constrains both values to integers
 ```
 
-### Respect module boundaries
+## Follow values through calls and protocols
 
-Function inference considers the current module, the standard library, and dependencies. During local inference, a call to another module in the same project is treated as `dynamic()`. Whole-project checking still compares the types inferred for all project modules afterward.
+`1.19.0` adds inference for anonymous functions. Captures such as
+`&String.to_integer/1` propagate their types into callers:
 
-### Let earlier clauses subtract types
+```elixir
+fun = fn %{} -> :map end
+fun.("hello") # type warning
+```
 
-A later clause excludes inputs definitely accepted by earlier clauses, improving its inferred input and exposing redundant clauses. A guarded clause subtracts only the values its guard is certain to accept:
+The checker also verifies protocol dispatch and implementations. It warns when
+an inferred input cannot implement the protocol—for example, interpolating a
+range through `String.Chars` or using `Date` as an `Enumerable` generator.
+
+## Read guard and clause refinements
+
+Guards refine nested shapes, not only broad types
+(`1.20-type-system-guide`). For example:
+
+- `is_map_key(x, :foo)` establishes `%{..., foo: dynamic()}`.
+- Its negation establishes `%{..., foo: not_set()}`.
+- Tuple-size comparisons constrain the indexes that may exist.
+
+Clause order contributes negative information. A later clause excludes values
+definitely accepted by earlier clauses; guarded clauses subtract only inputs
+their guard certainly accepts:
 
 ```elixir
 def kind(x) when is_binary(x), do: :binary
@@ -44,42 +57,89 @@ def kind(x) when is_integer(x), do: :integer
 def kind(x), do: :other # neither binary() nor integer()
 ```
 
+This refinement can also reveal redundant clauses.
+
+## Account for cross-module inference
+
+Inference considers the current module, the standard library, and dependencies
+(`1.20-type-system-guide`). A call to another module in the same project is
+treated as `dynamic()` during local inference. Whole-project checking still
+compares the types inferred for all project modules afterward.
+
 ## Read set-theoretic notation
 
-### Compose sets explicitly
+Diagnostics compose sets with `or`, `and`, and `not`. `none()` is the empty
+set; `term()` is the set of all terms. Every atom except `nil`, for example,
+is `atom() and not nil` (`1.20-type-system-guide`).
 
-Diagnostics combine types with `or`, `and`, and `not`. `none()` is the empty set; `term()` contains every type. For example, `atom() and not nil` means every atom except `nil`.
+`dynamic(t)` means `dynamic() and t`. An operation only needs to accept some
+member of the range, but it warns when it accepts none. Dynamism is always at
+the root: `{:ok, dynamic()}` normalizes to
+`dynamic({:ok, term()})`, rather than making only one tuple element gradual.
 
-### Interpret `dynamic()` as a constrained range
+Function arrows use `(arguments -> result)`. A multi-clause function that
+supports distinct input/output pairs belongs to all the corresponding function
+sets, so its complete type joins arrows with `and`, not `or`:
 
-`dynamic(t)` is `dynamic() and t`. An operation on that value must accept at least one member of the range and warns when it accepts none. Dynamism always sits at the root: `{:ok, dynamic()}` normalizes to `dynamic({:ok, term()})`, not to a fully static tuple with only a dynamic element.
+```elixir
+(integer() -> integer()) and (boolean() -> boolean())
+```
 
-## Refine maps with guards and operations
+## Model lists
 
-### Infer presence and absence from guards
+`1.18-type-system-guide` distinguishes empty and non-empty lists, allowing a
+guarantee such as `String.split/2` returning a non-empty list to be represented.
+Guard-safe `hd/1` and `tl/1` require proof that the input is non-empty; a
+pattern match can supply it.
 
-Guards refine nested structures, not only broad types. `is_map_key(x, :foo)` establishes `%{..., foo: dynamic()}`; its negation establishes `%{..., foo: not_set()}`. Tuple-size comparisons similarly constrain which tuple indexes may exist.
+In `1.20-type-system-guide`,
+`non_empty_list(element_type, tail_type)` describes proper and improper list
+tails. If the tail is itself a list, it normalizes into the element union:
 
-### Distinguish closed, open, optional, and forbidden maps
+```elixir
+non_empty_list(integer(), list(binary()))
+# equals non_empty_list(integer() or binary(), empty_list())
+```
 
-A map type without `...` is closed to the listed keys. Put `...` first to make it open. Use `if_set(type)` for an optional key and `not_set()` for a key that must be absent:
+## Model tuples and indexes
+
+An open tuple ends in `...` and specifies only a minimum size
+(`1.18-type-system-guide`):
+
+```elixir
+{atom(), integer(), ...}
+```
+
+For a literal index, `elem/2` performs exact static access: the checker must
+prove the tuple is large enough and rejects negative or out-of-range indexes.
+A non-literal index uses a dynamic signature, preserving the possible runtime
+error while making the dynamic boundary visible:
+
+```elixir
+dynamic({...a}), integer() -> dynamic(a)
+```
+
+## Model map shapes and operations
+
+In `1.20-type-system-guide`, a map without `...` is closed to its listed keys;
+leading `...` makes it open. `if_set(type)` marks an optional key, and
+`not_set()` proves a key cannot occur:
 
 ```elixir
 %{name: binary(), age: if_set(integer())}
 %{..., age: not_set()}
 ```
 
-### Order domain and literal keys by specificity
-
-Write non-literal key domains with `=>`; they are inherently optional. The checker records only their broad top-level domain, so distinct `list(...)` domains merge under `list()`. Mix domain and literal entries in increasing specificity so a later literal key overrides its broader domain:
+Non-literal key domains use `=>` and are inherently optional. The checker
+tracks only their broad top-level domain, so distinct `list(...)` domains merge
+under `list()`. Mix domain and literal keys from broad to specific; a later
+literal key overrides its broader domain:
 
 ```elixir
 %{..., atom() => binary(), root: integer()}
 ```
 
-### Track key information through `Map`
-
-Most `Map` operations preserve inferred shape information:
+The `1.20.0` checker models most `Map` operations:
 
 ```elixir
 Map.put(map, :key, 123)     # %{..., key: integer()}
@@ -87,91 +147,28 @@ Map.delete(map, :key)       # %{..., key: not_set()}
 Map.replace(map, :key, 123) # %{..., key: if_set(integer())}
 ```
 
-Bang operations including `Map.fetch!/2`, `Map.pop!/2`, `Map.replace!/3`, and `Map.update!/3` propagate required keys and reveal statically certain failures.
+Bang operations including `Map.fetch!/2`, `Map.pop!/2`, `Map.replace!/3`, and
+`Map.update!/3` propagate required keys and expose calls statically known to
+fail.
 
-## Describe lists and tuples
+## Handle comprehension inference
 
-### Prove a list is non-empty
+Inference assumes a `for` body runs at least once
+(`1.20-type-system-guide`). Constraints learned inside it can therefore cause
+a false positive if the input may really be empty. When the distinction
+matters, guard the comprehension with an explicit non-empty check.
 
-List types distinguish empty and non-empty lists, allowing guarantees such as `String.split/2` returning a non-empty list. Guard-safe `hd/1` and `tl/1` require proof of a non-empty input; establish it with pattern matching or a suitable guard.
+## Declare nominal Dialyzer types
 
-### Represent improper-list tails
-
-`non_empty_list(element_type, tail_type)` represents both proper and improper tails. When the tail is another list type, normalize its elements into the outer element union:
-
-```elixir
-non_empty_list(integer(), list(binary()))
-# equals non_empty_list(integer() or binary(), empty_list())
-```
-
-### Write open tuples
-
-End a tuple type with `...` to express a minimum size while constraining only known positions:
-
-```elixir
-{atom(), integer(), ...}
-```
-
-### Distinguish literal and dynamic tuple indexing
-
-With a literal index, `elem/2` is exact static access: the checker must prove the tuple is large enough and rejects negative or out-of-bounds indexes. A non-literal index uses a dynamic signature, retaining the possible runtime error while marking the operation dynamic to fully static code:
-
-```elixir
-dynamic({...a}), integer() -> dynamic(a)
-```
-
-## Read function and protocol types
-
-### Join clauses as intersections
-
-Arrow types use `(arguments -> result)`. A function supporting distinct input/output pairs belongs to every corresponding function set, so join its arrows with `and`, not `or`:
-
-```elixir
-(integer() -> integer()) and (boolean() -> boolean())
-```
-
-### Propagate anonymous-function and capture types
-
-Anonymous functions are inferred and checked. Captures such as `&String.to_integer/1` carry their types into callers:
-
-```elixir
-fun = fn %{} -> :map end
-fun.("hello") # type warning
-```
-
-### Check protocol dispatch
-
-The checker verifies both dispatch and implementations. It warns when an inferred type cannot implement the required protocol, such as interpolating a range through `String.Chars` or using a `Date` as an `Enumerable` generator.
-
-## Avoid inference traps
-
-### Guard possibly empty comprehensions
-
-Inference intentionally treats a `for` body as executing at least once. Constraints learned inside the body can therefore cause a false positive when the input may actually be empty. When that distinction matters, branch on an explicit non-empty check before the comprehension.
-
-### Do not create recursive variable cycles
-
-Recursive pattern-variable definitions are compile errors, including satisfiable cycles made only from root variables. Express equality with guards:
-
-```elixir
-def same(x, y, z) when x == y and y == z, do: x
-```
-
-### Match a struct before its update
-
-The checker requires the value in struct-update syntax to have been explicitly matched as that struct:
-
-```elixir
-def set_path(%URI{} = uri), do: %{uri | path: "/foo/bar"}
-```
-
-## Use nominal Dialyzer types in Erlang
-
-Declare `-nominal` types when structural equality must not make two named concepts interchangeable in specs, inputs, and outputs:
+The `-nominal` attribute in `otp-28` declares structurally identical types
+that Dialyzer treats as incompatible by name when checking specs, inputs, and
+outputs. A nominal type remains compatible with a non-nominal, non-opaque type
+of the same structure.
 
 ```erlang
 -nominal meter() :: integer().
 -nominal foot() :: integer().
-```
 
-A nominal type remains compatible with a non-nominal, non-opaque type that has the same structure.
+-spec as_meter(integer()) -> meter().
+as_meter(X) -> X.
+```

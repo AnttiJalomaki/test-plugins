@@ -1,30 +1,21 @@
 # Auth.js v5 Migration and Next.js Integration
 
-## Pages Router session access
+## Pages Router API routes
 
-Do not assume that Auth.js server-side session methods are restored for Next.js Pages Router API routes. Fetch the session REST endpoint from those API routes instead.
+Auth.js server-side session methods are not currently restored for Next.js Pages Router API routes. Fetch the session REST endpoint from those routes.
 
-This limitation does not affect pages rendered with `getServerSideProps`; call `auth(ctx)` there.
+This limitation does not apply to pages rendered with `getServerSideProps`; continue to call `auth(ctx)` there.
 
-| Context | Session access |
-| --- | --- |
-| Pages Router API route | Fetch the session REST endpoint. |
-| `getServerSideProps` | Call `auth(ctx)`. |
+## Next.js 16 route protection
 
-Keep the distinction explicit during migration so a helper that works during page rendering is not copied into an API route.
-
-## Protect routes in Next.js 16
-
-Next.js 16 renamed `middleware.ts` to `proxy.ts` and the `middleware` export to `proxy`. Older Next.js versions must keep the middleware file and export names.
-
-Export Auth.js `auth` under the correct convention:
+Next.js 16 renamed the request-interception file and export from `middleware.ts` and `middleware` to `proxy.ts` and `proxy`. Export Auth.js `auth` under the new name.
 
 ```ts
 // proxy.ts
 export { auth as proxy } from "@/auth"
 ```
 
-Configure `authorized` on the Auth.js instance:
+The proxy matcher selects the routes to which protection applies. The Auth.js `authorized` callback decides whether each matching request can continue.
 
 ```ts
 // auth.ts
@@ -35,4 +26,4 @@ export const { auth, handlers } = NextAuth({
 })
 ```
 
-The proxy matcher selects which routes invoke protection. The `authorized` callback then decides whether each selected request is allowed.
+Keep `middleware.ts` and the `middleware` export on older Next.js versions.

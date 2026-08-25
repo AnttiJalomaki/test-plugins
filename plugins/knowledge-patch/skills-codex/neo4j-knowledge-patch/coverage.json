@@ -2,7 +2,7 @@
   "patch": "neo4j-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T22:00:26Z",
+  "built_at": "2026-08-21T12:51:38Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -39,6 +39,11 @@
     },
     "breaking-changes": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026.07.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

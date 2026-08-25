@@ -1,10 +1,21 @@
 # PHP, Ruby, and Rust
 
-## PHP runtime baseline and type names
+## Shared JSON and UTF-8 hardening
 
-PHP requires 8.2 or newer from the 34.0 migration. (34.0-migration)
+Ruby and PHP JSON parsers reject nonnumeric strings such as `""`, `"12abc"`,
+and `"abc"` for numeric fields from `30.0-migration` onward. The same inputs
+only warned in the 29.x line.
 
-Replace removed runtime types at the v34 boundary:
+Ruby also surfaces UTF-8 enforcement failures earlier when invalid UTF-8 data
+is assigned to a protobuf `string` field (`30.0-migration`).
+
+## PHP
+
+### Runtime baseline and renamed types
+
+The PHP runtime requires PHP 8.2 or newer from `34.0-migration`.
+
+At `34.0-announcement`, replace removed runtime types as follows:
 
 | Removed | Replacement |
 | --- | --- |
@@ -12,73 +23,70 @@ Replace removed runtime types at the v34 boundary:
 | `Google\Protobuf\Field_Cardinality` | `Google\Protobuf\Field\Cardinality` |
 | `Google\Protobuf\Internal\RepeatedField` | `Google\Protobuf\RepeatedField` |
 
-(34.0-announcement)
+### Strict JSON behavior
 
-Generated PHP setters now have PHP type hints and redundant `GPBUtil` checks
-are removed. Reflection, subclasses, or callers that assumed untyped signatures
-may require changes. Pure-PHP type checks now match upb-PHP, including rejection
-of `null` for string fields. (34.0, 34.0-announcement)
-
-## PHP descriptors, defaults, and JSON
+PHP JSON parsing rejects out-of-range values, noninteger numeric values for
+integer fields, duplicate oneof fields, and non-string values for string fields
+(`34.0-announcement`). JSON serialization also rejects `Infinity` and `NaN` as
+number values.
 
 The runtime now honors proto2 and Editions scalar defaults instead of ignoring
-them. Field descriptors implement `hasPresence()`; the broken
-`hasOptionalKeyword()` is removed, and `getLabel()` was removed in the 34.0
-migration. Use semantic presence queries. (34.0-announcement, 34.0,
-34.0-migration)
+them. Pure-PHP type checks align with upb-PHP, including rejection of `null` for
+string fields.
 
-Ruby and PHP reject nonnumeric strings such as `""`, `"12abc"`, and `"abc"`
-for numeric JSON fields; these cases only warned in v29.x.
-(30.0-migration)
+At `34.0`, JSON serialization gains an option to emit fields whose values equal
+their defaults.
 
-The v34 PHP JSON parser additionally rejects out-of-range values, noninteger
-numbers for integer fields, duplicate oneof fields, and non-string values for
-string fields. Serialization rejects numeric `Infinity` and `NaN`. PHP also
-adds a JSON option that emits fields whose values equal their defaults.
-(34.0-announcement, 34.0)
+### Generated setters and reflection
+
+Generated PHP setters carry type hints at `34.0`, and redundant `GPBUtil`
+checks are removed. Reflection, subclasses, and callers that depended on
+untyped signatures may require updates.
+
+PHP field descriptors implement `hasPresence()`. The broken
+`hasOptionalKeyword()` helper is removed; reflection code should ask about
+presence rather than optional-keyword syntax (`34.0`). The older `getLabel()`
+removal is detailed in the descriptors reference.
 
 ## Ruby and JRuby
 
-Ruby requires 3.1 or newer from 31.0. The runtime adds Ruby 4.0 support at
-34.0. (31.0, 34.0)
+JRuby switches to its FFI implementation by default in `30.0`. Applications
+that relied on the prior implementation can break. This did not trigger a Ruby
+major bump because JRuby support is best-effort rather than official.
 
-The JRuby runtime uses its FFI implementation by default from 30.0. This can
-break applications that depended on the earlier implementation. JRuby remains
-best-effort rather than officially supported, so this change did not trigger a
-Ruby major-version bump. (30.0)
+Ruby 3.0 support is removed in `31.0`; use Ruby 3.1 or newer. The runtime adds
+Ruby 4.0 support in `34.0`.
 
-Ruby surfaces invalid-UTF-8 errors earlier for protobuf `string` fields. It
-also shares the stricter numeric-string JSON parsing described above.
-(30.0-migration)
+Ruby code generation can emit RBS files as of `34.0`, allowing generated
+protobuf types to participate in RBS-based type checking.
 
-Ruby code generation can emit RBS files from 34.0, allowing generated message
-types to participate in RBS-based type checking. (34.0)
+## Rust
 
-## Rust version matching and sendability
+### Sendable mutations (`34.0`)
 
-Rust requires generated code and the runtime to match at the exact release,
-not merely the same major. Regenerate and update the crate together.
-(release-lifecycle)
+`MessageMut` includes a `Send` bound. Implementations and generic code using
+the trait must meet cross-thread sendability requirements.
 
-At 34.0, `MessageMut` gains a `Send` bound. Implementations and generic code
-using the trait must be cross-thread sendable. (34.0)
+### Standard optional accessors (`35.0`)
 
-## Rust generated accessor changes
+Generated `_opt()` accessors return the standard `Option` type instead of
+`protobuf::Optional`. Update code that names, converts, or implements against
+the old wrapper.
 
-At 35.0, generated `_opt()` accessors return the standard `Option` rather than
-`protobuf::Optional`. Update named types, conversions, bounds, and helper
-implementations that refer to the old wrapper. (35.0)
+### Generated-name collisions
 
-When direct siblings `Xyz` and `XyzView` exist in one generated scope, the
-generator now mangles the `XyzView` type. Regeneration can therefore change a
-previously referenced identifier. (35.0)
+When direct siblings named `Xyz` and `XyzView` occur in one generated scope,
+the Rust generator mangles the `XyzView` type (`35.0`). Code that refers to the
+old generated identifier must follow the regenerated name.
 
-## Rust generic field and view traits
+### Field and map traits
 
-The 35.0 Rust API adds `Singular` for types permitted as simple fields and
-revises map traits. Replace `ProxiedInMapValue` with `MapValue`; do not treat
-`f32` or `f64` as map-key types. (35.0)
+Rust adds a `Singular` trait for types allowed as simple fields and revises map
+traits (`35.0`). `ProxiedInMapValue` is replaced by `MapValue`; `f32` and `f64`
+no longer incorrectly satisfy the map-key trait.
 
-`ProtoStr` is usable in const contexts, and `&T` implements `AsView` whenever
-`T` does. Generic view-taking code can accept references without converting to
-byte slices or adding adapters. (35.0)
+### View usability
+
+`ProtoStr` works in const contexts, and `&T` implements `AsView` whenever `T`
+does (`35.0`). Generic view-taking code can accept references without custom
+adapters or conversion to byte slices.

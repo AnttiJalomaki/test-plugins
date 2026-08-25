@@ -1,61 +1,51 @@
 # Configuration Cache and Lazy Modeling
 
-## Enablement, fallback, and failures
+## Configuration Cache behavior and diagnostics
 
-Gradle 9 prefers the Configuration Cache but does not require it (`9.0.0`).
-A compatible build that has not enabled it receives an end-of-build
-suggestion. Suppress the suggestion by making the decision explicit:
+### Enable integrity checking only for diagnosis (8.14.0)
 
-```properties
-org.gradle.configuration-cache=false
-```
-
-Known unsupported features cause an automatic non-cache fallback, with the
-reason recorded in the Configuration Cache report. A cache problem encountered
-during task execution aborts immediately; the task is not left up-to-date or
-cached.
-
-## Read-only mode for cache consumers
-
-Read-only mode reuses an existing entry on a hit but never writes an entry
-(since `9.1.0`):
-
-```text
-./gradlew --configuration-cache \
-  -Dorg.gradle.configuration-cache.read-only=true build
-```
-
-This suits CI jobs such as pull-request builds that may consume shared entries
-but must not populate them.
-
-## Encryption keystore selection
-
-Configuration Cache encryption uses the JVM's default keystore type when that
-type supports symmetric keys (since `9.1.0`). Gradle falls back to `PKCS12` for
-known asymmetric-only types. This matters on customized or FIPS-oriented JVM
-security configurations; do not assume the keystore is always PKCS12.
-
-## Integrity diagnostics
-
-Set the integrity-check property for stricter serialization checking and more
-precise cache-load diagnostics (since `8.14.0`):
+Set the following property for stricter serialization checks and more precise
+cache-load diagnostics:
 
 ```properties
 org.gradle.configuration-cache.integrity-check=true
 ```
 
-It increases cache size and slows reads and writes, so enable it only during
-troubleshooting.
+It increases cache size and slows reads and writes, so disable it after the
+investigation.
 
-## Precise project-property tracking
+### Understand prompting and fallback (9.0.0)
 
-Project properties supplied through
-`-Dorg.gradle.project.<name>` or `ORG_GRADLE_PROJECT_<name>` no longer
-invalidate an entry if configuration did not read that property (since
-`9.6.1`).
+Configuration Cache is preferred but remains optional. Compatible builds that
+have not enabled it receive an end-of-build suggestion; explicitly set
+`org.gradle.configuration-cache=false` to suppress that suggestion. Known
+unsupported features automatically fall back to an uncached build and record
+the reason in the report. A cache problem during task execution aborts
+immediately rather than leaving that task up-to-date or cached.
 
-A provider read only during task execution can observe a changed value while
-Gradle reuses the existing configuration entry:
+### Use read-only entries in CI (9.1.0)
+
+Read-only mode reuses an entry on a hit but never creates an entry on a miss:
+
+```text
+./gradlew --configuration-cache -Dorg.gradle.configuration-cache.read-only=true
+```
+
+This lets pull-request or other restricted jobs consume shared entries without
+populating them.
+
+### Respect keystore selection (9.1.0)
+
+Cache encryption uses the JVM's default keystore type when that type supports
+symmetric keys. Gradle falls back to `PKCS12` for known asymmetric-only formats,
+which accommodates customized and FIPS-oriented JVM security configurations.
+
+### Track environment-backed properties precisely (9.6.1)
+
+Properties supplied with `-Dorg.gradle.project.<name>` or
+`ORG_GRADLE_PROJECT_<name>` do not invalidate an entry when configuration never
+reads them. A provider read only during task execution can observe the new value
+while reusing the existing entry:
 
 ```kotlin
 tasks.register("printValue") {
@@ -64,14 +54,42 @@ tasks.register("printValue") {
 }
 ```
 
-Do not call `get()` during configuration if the property should remain an
-execution-time input.
+## Cache-compatible inputs and integrations
 
-## Lazy configuration registration and inheritance
+### Declare a `ResolutionResult` task input (9.7.0)
 
-Applying `base`, directly or through Java or Kotlin plugins, does not realize
-every configuration declared using `register` or a role-based factory such as
-`resolvable` (since `8.14.0`):
+With Configuration Cache, a task may expose the entire `ResolutionResult` as an
+`@Input`. This preserves direct use of `allComponents` and `allDependencies`
+without separately extracting the root component and variant:
+
+```kotlin
+abstract class DependencyReport : DefaultTask() {
+    @get:Input
+    abstract val result: Property<ResolutionResult>
+
+    @TaskAction
+    fun report() = println(result.get().allComponents)
+}
+
+tasks.register<DependencyReport>("dependencyReport") {
+    result = configurations.runtimeClasspath.map { it.incoming.resolutionResult }
+}
+```
+
+### Use startup Java agents carefully (9.7.0)
+
+Agents supplied at JVM startup with `-javaagent:` work with Configuration Cache
+in normal daemon builds and TestKit's default daemon mode. Dynamically attached
+agents and TestKit embedded mode from `withDebug(true)` remain unsupported. For
+manual debugging, use `-Dorg.gradle.debug=true`.
+
+## Lazy configurations and attributes
+
+### Preserve registered configuration laziness (8.14.0)
+
+The `base` plugin, including indirect application through Java or Kotlin
+plugins, does not realize every configuration declared with `register` or a
+role-based factory such as `resolvable`. Prefer `register` over `create`:
 
 ```kotlin
 configurations {
@@ -79,10 +97,20 @@ configurations {
 }
 ```
 
-Prefer registration to `create` when immediate realization is unnecessary.
+### Merge attributes lazily (9.1.0)
 
-`Configuration.extendsFrom` accepts a `Provider<Configuration>` as of `9.4.0`,
-so a lazily registered parent does not need `get()`:
+`AttributeContainer.addAllLater(source)` imports attributes without eager
+evaluation. Imported values override existing destination values and track
+later source changes; destination values set after the import take precedence.
+
+```kotlin
+target.attributes.addAllLater(source.attributes)
+```
+
+### Extend configurations from providers (9.4.0)
+
+`Configuration.extendsFrom` accepts a `Provider<Configuration>`, avoiding a
+realizing `get()` call:
 
 ```kotlin
 configurations {
@@ -93,53 +121,42 @@ configurations {
 }
 ```
 
-## Lazy attribute merging
+## Domain-object collection lifecycle
 
-`AttributeContainer.addAllLater(source)` lazily imports an entire source
-container (since `9.1.0`):
-
-```kotlin
-target.attributes.addAllLater(source.attributes)
-```
-
-Precedence and timing are significant:
-
-1. Imported values override values already present on the destination.
-2. Later changes in the source remain visible.
-3. Values set on the destination after `addAllLater` take precedence.
-
-## Artifact-transform diagnostics
-
-Run the `artifactTransforms` report task to list all transforms registered in a
-project (since `8.13.0`):
-
-```text
-./gradlew artifactTransforms
-```
-
-The report includes action type, cacheability, and input and output attributes.
-Use it to inspect plugin registrations and diagnose ambiguous transforms.
-
-## Immutable collection membership
+### Freeze membership without realization (9.5.0)
 
 `DomainObjectCollection.disallowChanges()` prevents later additions and
-removals without realizing lazily added entries (since `9.5.0`):
+removals without realizing entries added lazily. It freezes collection
+membership, not mutable state inside each object.
+
+### Expose elements through a provider (9.7.0)
+
+The `elements` property is a `Provider<out Collection<T>>` that does not force
+realization. It also carries task dependencies contributed through `addLater`
+and `addAllLater`, so it can be wired into task inputs safely:
 
 ```kotlin
-val items = objects.domainObjectContainer(MyType::class)
-val main = MyType("main")
-items.add(main)
-items.disallowChanges()
-main.setFoo("bar")
+val items = objects.domainObjectSet(MyType::class.java)
+items.addLater(someProvider)
+tasks.register("process") {
+    inputs.property("items", items.elements)
+}
 ```
 
-The collection's membership is locked; contained objects remain mutable.
+## Isolated Projects
 
-## Develocity without project configuration
+### Use current controls and migrate cross-project access (9.7.0)
 
-Publish a Build Scan to a specified Develocity server without adding project
-configuration by supplying the command-line URL (since `9.5.0`):
+The incubating feature uses `--isolated-projects` or:
 
-```text
-./gradlew --develocity-url https://develocity.example.com build
+```properties
+org.gradle.isolated-projects=true
+org.gradle.isolated-projects.diagnostics=true
+# Migration experiments only:
+# org.gradle.isolated-projects.dangerously-ignore-problems=true
 ```
+
+The legacy `org.gradle.unsafe.isolated-projects` names are deprecated aliases.
+Isolation rejects mutable access to other projects or the build. Diagnostics
+help migration; dangerous-ignore mode can turn violations into warnings but is
+not recommended for production. The feature remains opt-in.

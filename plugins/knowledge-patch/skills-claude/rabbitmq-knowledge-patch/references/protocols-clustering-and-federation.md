@@ -1,39 +1,49 @@
 # Protocols, Clustering, and Federation
 
-Use this reference for protocol wire behavior, peer discovery, stream
-replication networking, federation, shovels, and WebSocket transport.
+Use this reference for cluster formation, discovery, wire-protocol limits,
+WebSocket listeners, federation, Shovels, and replication networking.
 
-## Cluster Formation and Peer Discovery
+## Form and recover clusters (4.0.6, 4.1.0)
 
-Khepri's default cluster-formation timeout matches Mnesia at five minutes as
-of batch `4.0.6`.
+### Khepri cluster-formation timeout
 
-Peer discovery accepts a positive retry count or infinite retries:
+Khepri's default cluster-formation timeout is five minutes, matching Mnesia.
 
-```ini
-cluster_formation.discovery_retry_limit = infinity
-```
+### Optional Consul registration
 
-Consul can perform discovery without registering services when another system
-such as Nomad owns registration:
+Let Consul provide discovery without registering services when another system
+owns registration:
 
 ```ini
 cluster_formation.registration.enabled = false
 ```
 
-A reset former Mnesia cluster member now attempts to leave the cluster and
-retries joining, matching Khepri behavior.
+### Infinite peer-discovery retries
 
-The Kubernetes discovery plugin no longer relies on the Kubernetes API. On
-first formation it tries to join node index `0` as the seed; this remains
+`cluster_formation.discovery_retry_limit` accepts `infinity` as well as
+positive integers.
+
+### Reset Mnesia nodes can rejoin
+
+A reset former Mnesia cluster member attempts to leave the cluster and retries
+joining it, matching Khepri behavior.
+
+### Kubernetes peer-discovery seed model
+
+Kubernetes peer discovery no longer depends on the Kubernetes API. At first
+formation it attempts to join node index `0` as the seed; the change is
 backwards compatible.
 
-The AWS peer-discovery plugin uses IPv6 discovery endpoints in IPv6-only
-environments starting in 4.1.7.
+### IPv6-only AWS peer discovery
 
-## Stream Replication Networking
+From 4.1.7, AWS peer discovery uses IPv6 discovery endpoints in IPv6-only
+environments.
 
-Stream replicas can use IPv6 through `advanced.config`:
+## Configure Stream replication networking (4.0.6, 4.1.0)
+
+### IPv6 stream replication
+
+Select IPv6 for Stream replication in `advanced.config`:
 
 ```erlang
 [
@@ -41,120 +51,131 @@ Stream replicas can use IPv6 through `advanced.config`:
 ].
 ```
 
-Starting in 4.1.7, the stream replication IPv4/IPv6 family can also be
-selected in `rabbitmq.conf`.
+### Stream replication IP family in `rabbitmq.conf`
 
-## AMQP 1.0
+From 4.1.7, select the IPv4 or IPv6 family for replication in
+`rabbitmq.conf`; the earlier `advanced.config` mechanism remains available.
 
-### Sender, routing, and node behavior
+## Respect protocol frame and packet limits (4.1-guides, 4.3.5)
 
-When a sender omits the AMQP 1.0 header section in batch `4.2.0`, RabbitMQ
-applies the specification default `durable=false`. Persistent applications
-must send a header with `durable=true`.
+### AMQP 0-9-1 pre-authentication frame limit
 
-An AMQP 1.0 publisher can attach a list of string routing keys in the `x-cc`
-message annotation, equivalent to the AMQP 0-9-1 `CC` header.
+The pre-authentication maximum frame is 8192 bytes. Client `frame_max`
+overrides must be at least 8192; the recommended server default is 131072.
+Node.js `amqplib` needs 0.10.7 or later unless configured with a larger value.
 
-RabbitMQ honors `dynamic` on sources and targets, allowing clients to create
-exclusive queues dynamically for RPC and similar workloads.
+### MQTT maximum packet size
 
-The Erlang AMQP 1.0 client declares durable entities only. Purging a
-nonexistent queue through that client returns `404`.
+The default MQTT Maximum Packet Size is 16 MiB. Override it with
+`mqtt.max_packet_size_authenticated`, never above `max_message_size`, whose
+default is also 16 MiB.
 
-The event exchange plugin can publish internal events as AMQP 1.0 instead of
-AMQP 0-9-1, preserving list and map properties.
+### Stream connection resource limits
 
-### Authentication and outcomes
+A Stream Protocol connection supports at most 256 publishers and 256
+subscriptions. Exceeding either wire-format limit is rejected immediately.
 
-AMQP 1.0 JWT renewal behavior is covered in
-[configuration-auth-and-security.md](configuration-auth-and-security.md).
+### Pre-authentication Stream frame limit
 
-A `Rejected` outcome in 4.3 identifies the rejecting queue and reason, such as
-a length limit or unavailable queue. A publisher routed to several queues can
-therefore locate the failed target.
-
-### Direct Reply-To
-
-AMQP 1.0 supports Direct Reply-To in 4.2, including RPC where requester and
-responder use AMQP 1.0 and AMQP 0-9-1 in either combination.
-
-For an AMQP 0-9-1 responder using `mandatory`, an
-`amq.rabbitmq.reply-to.*` destination is considered routed without checking
-whether the requester is still consuming. RabbitMQ does not emit
-`basic.return` when it is the only target.
-
-## AMQP 0-9-1 Connection Limits
-
-The pre-authentication maximum frame size is 8192 bytes in the 4.1 guidance,
-so a client `frame_max` override must be at least 8192. The recommended choice
-is the server default, 131072. Node.js `amqplib` must be 0.10.7 or later or
-configured with a larger value.
-
-AMQP listener user-space TCP buffers are auto-tuned, and
-`tcp_listen_options.buffer` is ignored. Kernel `recbuf` and `sndbuf` are
-unaffected.
-
-## MQTT and WebSocket Behavior
-
-The default MQTT Maximum Packet Size is 16 MiB instead of 256 MiB. Override it
-with `mqtt.max_packet_size_authenticated`, never above `max_message_size`,
-which also defaults to 16 MiB.
-
-Exchange federation supports MQTTv5 consumers.
-
-Starting in 4.1.7, Web MQTT accepts the `mqttv3.1` WebSocket subprotocol as
-well as `mqtt`.
-
-Starting in 4.1.8, authorization failures disconnect MQTT clients by default.
-To preserve the connection and return the protocol-level error:
+Before a successful Stream `open`, frames default to an 8192-byte ceiling.
+Raise it only when authentication requires a larger frame:
 
 ```ini
-mqtt.disconnect_on_unauthorized = false
+stream.initial_frame_max = 8192
 ```
 
-In 4.2, Web MQTT and Web STOMP enable HTTP/2 for WebSocket connections by
-default.
+### Stream sub-entry decompression limit
 
-In 4.3, an MQTT 5.0 publish rejected because the target queue reached its
-maximum length receives `Quota exceeded` in `PUBACK`.
+`stream.max_uncompressed_sub_entry_batch_size` caps the declared uncompressed
+size of a published sub-entry batch and defaults to 67108864 bytes (64 MiB).
+Use the same value in publishers and on the broker.
+
+```ini
+stream.max_uncompressed_sub_entry_batch_size = 67108864
+```
+
+### STOMP frame-size enforcement
+
+STOMP enforces frame limits earlier during setup. Web STOMP checks accumulated
+post-authentication frame size against `max_frame_size`.
+
+## Configure TCP and WebSocket transports (4.1-guides, 4.1.0, 4.2.0, 4.3.0)
+
+### Auto-tuned AMQP user-space TCP buffers
+
+AMQP listeners auto-tune their user-space TCP buffer, so
+`tcp_listen_options.buffer` is ignored. Kernel `recbuf` and `sndbuf` settings
+are unaffected.
+
+### MQTT 3.1 over WebSocket
+
+From 4.1.7, Web MQTT accepts the `mqttv3.1` WebSocket subprotocol as well as
+`mqtt`.
+
+### HTTP/2 WebSocket defaults
+
+Web MQTT and Web STOMP enable HTTP/2 for WebSocket connections by default.
+
+### WebSocket connection protections
 
 Web MQTT bounds decompressed frames at
-`mqtt.max_packet_size_unauthenticated`, raises the bound after a valid
+`mqtt.max_packet_size_unauthenticated`, raises the ceiling after successful
 `CONNECT`, and enforces `login_timeout`. Configure origin validation with
 `web_mqtt.allow_origins` and `web_stomp.allow_origins`.
 
-STOMP subscriptions for destinations that formerly created non-exclusive
-transient queues now create exclusive queues.
+## Handle MQTT protocol outcomes (4.3.0, 4.3.5)
 
-## Federation
+### MQTT 5.0 queue-limit feedback
+
+If a target queue rejects a publish because its maximum length is reached, an
+MQTT 5.0 publisher receives `Quota exceeded` in `PUBACK`.
+
+### Strict MQTT 5 property validation
+
+MQTT 5 rejects properties invalid for their packet type and rejects the
+prohibited `Receive Maximum` value `0`.
+
+## Operate federation and Shovels (4.1.0, 4.2.0, 4.3.0, 4.3.5)
+
+### MQTTv5 consumers over exchange federation
+
+Exchange federation supports MQTTv5 consumers.
+
+### Mixed-version exchange federation
 
 RabbitMQ 4.1.8 restores exchange-federation compatibility in mixed
 4.2.x/4.1.x multi-node clusters.
 
-Configure separate AMQP 0-9-1 federation connection-close timeouts:
+### Federation connection-close timeout
+
+From 4.1.8, configure separate AMQP 0-9-1 close timeouts for exchange and
+queue federation, in milliseconds up to 5000:
 
 ```ini
 federation.exchanges.connection_close_timeout = 3000
 federation.queues.connection_close_timeout = 3000
 ```
 
-Values are milliseconds and cannot exceed 5000.
+### Local shovels
 
-## Shovels and Interceptors
+The `local` Shovel protocol consumes and publishes inside one cluster over
+AMQP 1.0, reusing intra-cluster connections and internal flow APIs. It cannot
+connect different clusters.
 
-RabbitMQ 4.2 message interceptors cover AMQP 1.0, AMQP 0-9-1, MQTTv3, and
-MQTTv5 in both incoming and outgoing directions. Plugins can validate,
-annotate, or trigger side effects. Optional built-ins add outgoing timestamps
-or the publishing MQTT client's ID.
+### Named Shovel source consumers
 
-Shovels support the `local` protocol for consuming and publishing within one
-cluster. These AMQP 1.0-based shovels reuse intra-cluster connections and
-internal consumption, publication, and credit-flow APIs instead of TCP
-connections. They cannot connect different clusters.
+Use `src-consumer-name` as the source consumer tag for AMQP 0-9-1 or local
+Shovels, or as the AMQP 1.0 source link identifier.
 
-Resource alarms block direct in-cluster AMQP 0-9-1 shovel connections just as
-they block network shovel connections. This applies to direct connections,
-not to the `local` protocol.
+### Dynamic Shovel TTL
 
-In 4.3, `src-consumer-name` sets the AMQP 0-9-1 or local source consumer tag,
-or the AMQP 1.0 source link identifier.
+Dynamic Shovels accept `src-delete-after-duration` and delete themselves after
+at least the configured duration.
+
+## Integrate broker-side protocol extensions (4.2.0)
+
+### Native-protocol message interceptors
+
+Incoming and outgoing broker-side interceptors cover AMQP 1.0, AMQP 0-9-1,
+MQTTv3, and MQTTv5. Plugins can validate, annotate, or produce side effects;
+optional built-ins add outgoing timestamps or the publishing MQTT client ID.

@@ -1,72 +1,64 @@
 # Hosting, Platform Behavior, and Interop
 
-## Hosting, configuration, and logging (`10.0-guides`)
+The compatibility items in this reference are attributed to `10.0-guides`.
 
-### Background services
+## Background Services, Configuration, and Logging
 
-All of `BackgroundService.ExecuteAsync` now runs as a `Task`. Audit code that
-depended on synchronous execution before the first await, especially startup
-ordering and exception propagation.
+All of `BackgroundService.ExecuteAsync` now runs as a `Task`. Code before the first
+`await` should no longer be treated as synchronously executed startup work. Review
+startup ordering, exception observation, and tests that assume synchronous entry.
 
-### Configuration and logging
+Configuration preserves null values. Providers and binders that previously treated
+null as missing may now produce a distinguishable result; test defaulting and merge
+behavior with explicit null inputs.
 
-- Configuration preserves null values. Distinguish a present null from a
-  missing key where configuration binding or merging depends on that state.
-- `ProviderAliasAttribute` moved to
-  `Microsoft.Extensions.Logging.Abstractions`; update package and namespace
-  assumptions.
-- `DynamicallyAccessedMembers` annotations were removed from trim-unsafe
-  `Microsoft.Extensions.Configuration` code. Treat those paths as trim-unsafe
-  and verify trimmed applications directly.
-- The ICU override environment variable is `DOTNET_ICU_VERSION_OVERRIDE`.
+`ProviderAliasAttribute` moved to
+`Microsoft.Extensions.Logging.Abstractions`. Update assembly/package assumptions and
+rebuild consumers that inspect or reference the attribute.
 
-## Process shutdown (`10.0-guides`)
+Trim-related `DynamicallyAccessedMembers` annotations were removed from trim-unsafe
+`Microsoft.Extensions.Configuration` code. Do not infer trimming safety from the old
+annotations; retain required members explicitly or avoid the unsafe path.
 
-The runtime no longer installs default termination-signal handlers. Applications
-that require graceful termination must register the relevant handling and
-connect it to their own shutdown lifecycle.
+The ICU override environment variable is `DOTNET_ICU_VERSION_OVERRIDE`. Replace
+older variable names in launch scripts, containers, and deployment configuration.
 
-## Containers and native libraries (`10.0-guides`)
-
-Default .NET 10 container images use Ubuntu. Builds that require packages,
-paths, or a package manager from the prior distribution must pin a compatible
-base or adapt the build.
+## Native-Library Search
 
 Single-file applications no longer probe the executable directory for native
-libraries. `DllImportSearchPath.AssemblyDirectory` searches only the assembly
-directory. Package native dependencies in a searched location or configure
-loading explicitly.
+libraries. Package native dependencies in a supported publish layout or resolve them
+explicitly rather than relying on executable-directory proximity.
 
-## COM interop (`10.0-guides`)
+`DllImportSearchPath.AssemblyDirectory` now searches only the assembly directory.
+Audit code that expected the flag to search additional locations, and test the
+published artifact rather than only the build tree.
 
-Casting an `IDispatchEx` COM object to `IReflect` now fails. Use supported COM
-dispatch behavior instead of depending on that cast.
+## COM Reflection
 
-## Windows desktop compatibility (`10.0-guides`)
+Casting an `IDispatchEx` COM object to `IReflect` now fails. Use the COM dispatch
+surface directly or another supported reflection/interop mechanism; do not retain a
+fallback that assumes this cast succeeds.
 
-- A project referencing both WPF and Windows Forms must disambiguate
-  `MenuItem` and `ContextMenu`.
-- `HtmlElement.InsertAdjacentElement` has a renamed parameter. Update named
-  arguments.
-- `StatusStrip` defaults to the system render mode.
-- Some `System.Drawing` failures throw `ExternalException` rather than
-  `OutOfMemoryException`; revise exception handling that distinguishes them.
-- WPF rejects empty `ColumnDefinitions` and `RowDefinitions`.
-- Incorrect `DynamicResource` use can terminate the application. Validate
-  resource keys and placement rather than relying on a recoverable failure.
+## Windows Desktop Compatibility
 
-## .NET tasks in .NET Framework MSBuild (`10.0`)
+Projects referencing both WPF and Windows Forms must disambiguate `MenuItem` and
+`ContextMenu`. Qualify the namespace or use explicit aliases at mixed-framework call
+sites.
 
-Visual Studio 2026 and `msbuild.exe` can execute .NET-built MSBuild tasks via
-`TaskHostFactory`. The task runs out of process, and task Host Objects are not
-supported on this path.
+`HtmlElement.InsertAdjacentElement` has a renamed parameter. Source callers that use
+named arguments must adopt the current parameter name; positional calls are not
+affected by a name-only change.
 
-```xml
-<UsingTask TaskName="MyTask"
-           AssemblyFile="path\to\MyTask.dll"
-           Runtime="NET"
-           TaskFactory="TaskHostFactory" />
-```
+`StatusStrip` defaults to the system render mode. Set the desired render mode
+explicitly if appearance must be stable across a runtime update.
 
-Add a conditional second `UsingTask` without the factory when Core MSBuild
-should keep the task in process.
+Some `System.Drawing` failures now throw `ExternalException` instead of
+`OutOfMemoryException`. Revisit exception filters and recovery paths that handle only
+the older type.
+
+WPF rejects empty `ColumnDefinitions` and `RowDefinitions`. Remove empty declarations
+or populate them with valid definitions.
+
+Incorrect `DynamicResource` usage can terminate the application. Treat invalid
+resource references as a correctness issue and exercise resource-loading paths in
+startup and UI tests.

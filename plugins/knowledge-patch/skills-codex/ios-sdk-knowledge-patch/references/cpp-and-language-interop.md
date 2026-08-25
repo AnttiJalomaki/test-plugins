@@ -1,68 +1,73 @@
 # C++, Swift Interop, and Language Runtime Changes
 
-## Enable hvf availability checking explicitly
+## C and C++ Compatibility
 
-Availability checking for hvf C APIs is disabled unless
-`BUILD_FOR_APPLE_SDK` is defined before every hvf header include. Define it at
-the top of the translation unit or in a build-wide prefix that is guaranteed
-to precede those headers: (18.4)
+### Enable hvf Availability Checks
+
+For the iOS 18.4 SDK, hvf C API availability checking is disabled unless
+`BUILD_FOR_APPLE_SDK` is defined before any hvf header is included:
 
 ```c
 #define BUILD_FOR_APPLE_SDK 1
 ```
 
-## Replace libxml2 custom allocators
+Define it consistently in translation units that consume the SDK's hvf headers.
 
-The libxml2 custom-allocation API is deprecated on iOS 18.4. Replace
-`xmlMalloc()` and `xmlMallocAtomic()` with `malloc()`, `xmlRealloc()` with
-`realloc()`, `xmlFree()` with `free()`, and `xmlMemStrdup()` with `strdup()`.
-(18.4)
+### Replace Deprecated libxml2 Allocation APIs
 
-Stop configuring allocation through `xmlMemSetup()`, `xmlMemGet()`,
-`xmlGcMemSetup()`, `xmlGcMemGet()`, or their corresponding global variables.
-libxml2 and libxslt now allocate internally with the system allocator.
+The iOS 18.4 SDK deprecates libxml2's custom allocation API. Replace:
 
-## Use the public fileport calls
+| Deprecated | System replacement |
+| --- | --- |
+| `xmlMalloc()`, `xmlMallocAtomic()` | `malloc()` |
+| `xmlRealloc()` | `realloc()` |
+| `xmlFree()` | `free()` |
+| `xmlMemStrdup()` | `strdup()` |
 
-`fileport_makeport(2)` and `fileport_makefd(2)` are public APIs and have manual
-pages. Code that needs Mach fileport conversion can use these public entry
-points rather than private declarations. (18.4)
+Stop configuring allocators through `xmlMemSetup()`, `xmlMemGet()`,
+`xmlGcMemSetup()`, `xmlGcMemGet()`, or corresponding globals. libxml2 and
+libxslt now allocate internally with the system allocator.
 
-## Treat generic `std::char_traits` as temporary compatibility
+### Treat Generic `std::char_traits` as Temporary Compatibility
 
-Xcode 16.4 restores the generic `std::char_traits` base template that Xcode
-16.3 removed. Nonstandard instantiations such as
+Xcode 16.4, paired with the iOS 18.5 SDK, restores the base
+`std::char_traits` template that Xcode 16.3 removed. Nonstandard types such as
 `std::basic_string<long long>` compile again, but the base template remains
-deprecated and is planned for removal. Migrate such code instead of treating
-the restored template as a permanent API. (18.5)
+deprecated and is planned for removal. Migrate nonstandard instantiations rather
+than relying on the restoration.
 
-## Audit libc++ container ABI boundaries
+### Audit Standard-Library Container ABI
 
-Xcode 26 can change the layout of `std::unordered_map`,
-`std::unordered_multimap`, `std::unordered_set`, `std::unordered_multiset`, and
+With Xcode 26 and the iOS 26.0 SDK, layouts can change for
+`std::unordered_map`, `std::unordered_set`, their multi variants, and
 `std::deque` when an empty allocator shares a base across rebound allocator
-types. (26.0)
+types. The layout of an enclosing type can also change when it contains a
+standard container and the same empty allocator, comparator, or hasher as a
+`[[no_unique_address]]` member or empty base.
 
-An enclosing type's layout can also change when it contains a standard
-container and the same empty allocator, comparator, or hasher appears as a
-`[[no_unique_address]]` member or empty base. Audit values passed across dylib,
-framework, plugin, IPC, or persisted binary boundaries; rebuild all sides with
-a compatible toolchain where possible.
+Treat affected types as ABI-sensitive across separately built modules, rebuild
+both sides of a binary boundary together, and do not assume serialized raw
+layouts remain compatible.
 
-## Use updated Swift and C++ interop behavior
+## Swift and C++ Interop
 
-`MutableSpan` can be passed as an `inout` function parameter without enabling
-an experimental feature. Remove obsolete feature gates that existed only for
-this use. (26.0)
+### Pass `MutableSpan` as `inout`
 
-Swift infers `SWIFT_SHARED_REFERENCE` for a C++ derived type when its base type
-already carries the annotation. Avoid duplicating the annotation solely to
-make inheritance visible to Swift. (26.0)
+`MutableSpan` can be used as an `inout` function parameter with the iOS 26.0
+SDK without enabling an experimental feature.
 
-## Diagnose Objective-C nonatomic-property races
+### Inherit Shared-Reference Annotations
 
-During a synthesized nonatomic property mutation, the setter may briefly store
-the sentinel `0x400000000000bad0`; on 32-bit watchOS the sentinel is `0xbad0`.
-A concurrent reader that crashes on this value has exposed unsafe concurrent
-access. Synchronize access or make the ownership design race-free rather than
-filtering or retrying the sentinel value. (26.0)
+Swift now infers `SWIFT_SHARED_REFERENCE` for a C++ type when its base type
+already carries that annotation. Avoid duplicating the annotation solely to
+make a derived type import with shared-reference semantics.
+
+## Objective-C Runtime Diagnostics
+
+### Interpret the Nonatomic Mutation Sentinel
+
+During a synthesized nonatomic-property setter, the runtime may briefly store
+`0x400000000000bad0`; on 32-bit watchOS it uses `0xbad0`. If a concurrent
+reader crashes on that sentinel after rebuilding with Xcode 26, the crash is
+evidence of unsafe concurrent access to the nonatomic property, not an ordinary
+application value.

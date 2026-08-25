@@ -1,72 +1,78 @@
 # Storage, deletion, and Kafka
 
-## Thanos object-store clients
+## Thanos object-store clients (3.4.0)
 
-Loki 3.4.0 moves object-store access to the shared Thanos client and adds Swift
-support through `thanos.io/objstore`. Related storage controls include:
+Loki moves object-store access to the shared Thanos client and adds Swift
+support through `thanos.io/objstore`.
+
+Storage configuration also includes:
 
 - an Alibaba Cloud OSS request timeout;
-- age-based suppression of cache writeback for fetched chunks;
-- in-memory-only TSDB index creation.
+- age-based suppression of cache writeback for fetched chunks; and
+- an in-memory-only mode for TSDB index creation.
 
-Thanos object storage accepts dashes in `storage_prefix` as of 3.6.0.
+Treat these as distinct controls: provider request behavior, cache policy, and
+index materialization solve different operational problems.
 
-## S3, GCS, Swift, and MinIO compatibility
+## SQLite delete-request storage (3.5.0)
 
-- The S3 chunk delimiter is configurable in 3.5.0 for MinIO on Windows.
-- GCS can target a custom endpoint in 3.5.0.
-- The Operator can configure a TLS CA for Swift in 3.5.0.
-- The S3 client preserves a region already supplied by the configuration
-  chain in 3.7.0.
-- Loki 3.7.2 adds a SHA-256 checksum to `PutObject` calls for S3 Object Lock
-  buckets.
-- Loki 3.7.4 fixes index filenames when the legacy S3 client uses
-  `chunk_delimiter`.
-
-## Chart storage validation
-
-In 3.7.0, chunk bucket names are not required when storage uses an S3 URL,
-MinIO, or local disk. Ruler bucket names are optional when ruler storage is
-local. Do not add placeholder buckets merely to satisfy older chart
-validation.
-
-## SQLite delete requests
-
-Delete requests can use SQLite storage as of 3.5.0. For this backend, Loki uses
-each request's stored completion time to reduce the requests considered during
+Delete requests can be stored in SQLite. With this backend, Loki uses each
+request's stored completion time to reduce the requests considered during
 query-time filtering.
 
-## Horizontally scalable deletion
+## Tenant-specific Kafka topics (3.5.0)
 
-The experimental horizontally scalable compactor in 3.6.0 delegates queued
-deletion work to workers. It is intended to scale large deletion jobs and
-backlogs. Index compaction and retention remain in the main singleton
-Compactor; scaling deletion workers does not distribute those duties.
+Kafka-backed ingestion supports tenant-specific topics. Keep topic selection
+aligned with tenant routing and isolation.
 
-## Object-backed deletion markers
+## Object-store compatibility controls (3.5.0)
 
-The compactor can store chunk-deletion markers in object storage rather than
-local disk in 3.7.0. Loki 3.7.4 also repairs delete requests made through the
-Thanos object-store client when its backend is the filesystem.
+The S3 chunk delimiter is configurable for MinIO running on Windows. GCS
+storage can use a custom endpoint. Set these only for the relevant compatible
+backend rather than treating them as provider-neutral defaults.
 
-## Kafka ingestion and block building
+## Horizontally scalable deletion processing (3.6.0)
 
-- Kafka-backed ingestion supports tenant-specific topics in 3.5.0.
-- Components can consume Kafka records and maintain multiple Kafka clients in
-  3.6.0.
-- The Helm chart exposes `block_builder` configuration for deploying this path
-  in 3.6.0.
+The experimental horizontally scalable compactor delegates queued deletion
+work to workers, allowing large deletes and backlogs to scale out. Index
+compaction and retention remain in the main singleton Compactor.
 
-Keep tenant topic selection, client multiplicity, and block-builder deployment
-configuration aligned; configuring one does not implicitly deploy the others.
+Scale deletion workers independently while preserving the singleton ownership
+of index compaction and retention.
 
-## Index gateway
+## Kafka consumption and block building (3.6.0)
 
-Index-gateway clients can use shuffle sharding in 3.7.0. Select shard sizing
-with tenant isolation and index-gateway capacity in mind.
+Components can consume Kafka records and maintain multiple Kafka clients. The
+Helm chart exposes `block_builder` configuration for deploying the associated
+path. Model client ownership, topic routing, consumers, and block builders as
+one ingestion design.
 
-## Caches
+## Storage-prefix compatibility (3.6.0)
 
-The Helm chart supports external Memcached and an L2 chunks cache in 3.6.0.
-Separately, storage configuration can suppress cache writeback for fetched
-chunks based on age in 3.4.0.
+Thanos object storage accepts dashes in `storage_prefix`. Do not reject an
+otherwise valid prefix solely because it contains a dash.
+
+## Object-backed deletion markers (3.7.0)
+
+The compactor can store chunk-deletion markers in object storage rather than on
+local disk. This enables marker persistence to follow the object-backed
+deployment design.
+
+Loki 3.7.4 repairs delete requests made through the Thanos object-store client
+when its filesystem backend is used. Include that repair when this exact
+combination is deployed.
+
+## S3 configuration and compatibility (3.7.0)
+
+The S3 client preserves a region already supplied by the configuration chain.
+Do not overwrite or duplicate a valid region supplied earlier in that chain.
+
+Loki 3.7.2 adds a SHA-256 checksum to `PutObject` calls for Object Lock
+buckets. Loki 3.7.4 fixes index filenames when the legacy S3 client uses
+`chunk_delimiter`.
+
+## Helm storage validation (3.7.0)
+
+Chunk bucket names are not required when using an S3 URL, MinIO, or local disk.
+Ruler bucket names are optional when ruler storage is local. Keep validation
+conditional on the selected storage mode.

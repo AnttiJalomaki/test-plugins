@@ -1,160 +1,146 @@
 # Planning, Execution, Validation, and Demand Control
 
-## Query-planning cancellation and resources
+## Query planning and scheduling
 
-Router 2.4.0 adds
-`supergraph.query_planning.experimental_cooperative_cancellation`. Use
-`measure` to observe a timeout without cancelling or `enforce` to cancel
-overlong planning. `apollo.router.query_planning.plan.duration` and the
-`query_planning` span expose an `outcome`.
+### Cooperative query-planning cancellation (2.4.0)
 
-```yaml
-supergraph:
-  query_planning:
-    experimental_cooperative_cancellation:
-      enabled: true
-      mode: measure
-      timeout: 1s
-```
+`supergraph.query_planning.experimental_cooperative_cancellation` can measure or
+enforce a planning timeout. `measure` records without cancelling; both the
+`apollo.router.query_planning.plan.duration` metric and `query_planning` span
+report an `outcome`.
 
-Router 2.11.0 adds `memory_limit`. In `enforce` mode it cancels and errors; in
-`measure` it records and lets planning finish. Memory and time limits race.
-Memory accounting is available only on Unix with `global-allocator` enabled
-and `dhat-heap` disabled. The full setting is
-`experimental_cooperative_cancellation.memory_limit`.
+### Query planning can enforce a memory ceiling (2.11.0)
 
-`apollo.router.request.memory` measures allocation across a full request and
-`apollo.router.query_planner.memory` covers planning compute jobs. Both expose
-`allocation.type` and `context` and have the same build constraints.
+The same configuration accepts
+`experimental_cooperative_cancellation.memory_limit`. `enforce` cancels and errors;
+`measure` records and completes. Memory and time limits race. Memory enforcement
+requires Unix, `global-allocator`, and no `dhat-heap`.
 
-Warm-up parsing and planning after hot reload run below live-request priority
-from 2.4.0. Compute duration, queue wait, execution duration, and active-job
-instruments label the work `query_parsing_warmup` or
-`query_planning_warmup` in `job.type`.
+### Warm-up compute work is separately observable (2.4.0)
 
-## Planner and schema compatibility
+Post-reload parsing/planning warm-up runs below live-request priority. Compute
+duration, queue wait, execution duration, and active-job metrics identify it as
+`query_parsing_warmup` or `query_planning_warmup` in `job.type`.
+
+### Native planning rejects unknown execution or security links (2.4.0)
 
 The native planner rejects a supergraph schema containing an unknown `@link`
-specification with purpose `EXECUTION` or `SECURITY` from 2.4.0. Remove or
-correct the unknown link.
+specification with purpose `EXECUTION` or `SECURITY`. Remove or correct the link.
 
-Router 2.6.0 supports labeled `@override` on fields and types implementing
-interfaces in the same subgraph. Earlier native planning failed those
-operations.
+### Progressive overrides on interface implementations (2.6.0)
 
-Router 2.16.0 preserves dependencies that supply entity keys, `__typename`, or
-other values needed by a deferred query-plan block. This prevents fields in
-the deferred chunk becoming null or disappearing.
+The native planner supports labeled `@override` on types and fields that
+implement interfaces within the same subgraph; operations that previously
+failed planning now execute.
 
-## Variable and query validation
+### Deferred query-plan dependencies (2.16.0)
 
-Router 2.12.0 can replace all query-validation failures with one generic
-`invalid query` error carrying `UNKNOWN_ERROR`:
-the setting is `supergraph.redact_query_validation_errors`.
+Plan reduction preserves values needed by deferred blocks, including entity
+keys and `__typename`, preventing deferred fields from becoming null or absent.
 
-```yaml
-supergraph:
-  redact_query_validation_errors: true
-```
+## Input validation and security
 
-The same release validates fields inside input-object variables, including
-rejecting unknown fields. Set `supergraph.strict_variable_validation: measure`
-only when temporarily retaining non-enforcing behavior while observing
-incompatibilities.
+### Strict input-object variable validation (2.12.0)
 
-Router 2.12.0 also reports parser complexity through
-`apollo.router.operations.recursion` and
-`apollo.router.operations.lexical_tokens`.
+Input-object variables are validated recursively, including rejection of
+unknown fields. Set `supergraph.strict_variable_validation: measure` to observe
+without enforcing the new behavior.
 
-## Result coercion and malformed responses
+### Query-validation error redaction (2.12.0)
 
-Router 2.8.0 can enable result-coercion errors:
+`supergraph.redact_query_validation_errors: true` replaces all validation
+failures with one `invalid query` error carrying `UNKNOWN_ERROR`.
 
-```yaml
-supergraph:
-  enable_result_coercion_errors: true
-```
+### Multiple `@listSize` directives (2.12.0)
 
-Subgraph values that conflict with the schema and operation are reformatted and
-nullified. With errors enabled, the Router adds
-`RESPONSE_VALIDATION_FAILED` containing the path and reason, so clients can see
-failures that were previously silent.
+The Router processes every `@listSize` on a field and chooses the greatest
+`assumedSize`. In this release the behavior remains dormant until Federation
+composition can emit repeatable directives into the supergraph.
 
-Router 2.16.0 extends this to a requested field missing from the merged
-response. It emits one `RESPONSE_VALIDATION_FAILED` and one value-completion
-entry at the source, while suppressing redundant errors along the null-bubble
-path.
+### Nested and array-based `@listSize` sizing (2.12.0)
 
-Router 2.5.0 replaces the nonstandard `"@"` path used for a malformed subgraph
-array response with one error per concrete array index. Consumers must tolerate
-more errors and expanded paths.
+Cost calculation for `@listSize` supports array-style sizing values, nested input paths for
+list size, and nested field paths in `sizedFields`.
 
-Router 2.13.0 attaches an entity-resolution error with no identifiable target
-to the immediate parent rather than every expected entity, avoiding
-multiplicative fan-out.
+### List arguments can size demand (2.14.0)
 
-For subgraphs that return wrong entity error paths, 2.13.0 adds
-`experimental_hoist_orphan_errors`. It places orphan errors at the nearest
-non-array ancestor. Named settings override `all`; this reduces but does not
-hard-cap error counts.
+`@listSize(slicingArguments: [...])` can use the length of a list argument as
+its multiplier for inline or variable values.
 
-## Demand-control sizing
+## Demand-control behavior
 
-### Per-subgraph static estimates
+### Per-subgraph demand control (2.12.0)
 
-Router 2.12.0 lets static estimated demand control define defaults and named
-subgraph overrides. It sums every fetch to each subgraph across the plan.
-Exceeding a subgraph limit skips only that subgraph's calls and composes those
-values as null; other fetches continue.
+Static estimated demand control can set `subgraphs.all` defaults and named
+overrides. It sums all fetches to each subgraph across the plan; exceeding a
+subgraph limit skips only that subgraph's calls, composes those values as null,
+and lets the rest continue.
 
-```yaml
-demand_control:
-  enabled: true
-  mode: enforce
-  strategy:
-    static_estimated:
-      max: 20
-      list_size: 10
-      subgraphs:
-        all:
-          max: 8
-          list_size: 10
-        subgraphs:
-          products:
-            max: 6
-```
+### Actual demand cost includes intermediate work (2.12.0)
 
-### List sizing
+`demand_control.strategy.static_estimated.actual_cost_mode` defaults to
+`by_subgraph`, summing response
+cost from every fetch rather than only the final response. Set `response_shape`
+for the earlier calculation.
 
-Router 2.12.0:
+## Result coercion and error paths
 
-- Processes every `@listSize` on a field and uses the largest `assumedSize`.
-  At that release this awaits Federation composition support for repeatable
-  directives.
-- Understands array sizing values, nested input paths used to resolve sizes,
-  and nested field paths in `sizedFields`.
+### Result-coercion errors (2.8.0)
 
-Router 2.14.0 uses the length of a list-typed slicing argument as the cost
-multiplier, whether the argument is inline or a variable.
+Schema-mismatched subgraph values are reformatted and nullified. With
+`supergraph.enable_result_coercion_errors: true`, the client also receives a
+`RESPONSE_VALIDATION_FAILED` error containing path and reason.
 
-### Actual cost
+### Missing fields are result-coercion errors (2.16.0)
 
-Router 2.12.0 changes
-`demand_control.strategy.static_estimated.actual_cost_mode` to default to
-`by_subgraph`, summing response cost from every subgraph fetch rather than only
-the final response shape. Set `response_shape` to restore the earlier
-calculation.
+When enabled, a requested field missing from the merged result emits one
+`RESPONSE_VALIDATION_FAILED` plus one value-completion entry at its source;
+redundant null-bubble errors are suppressed.
 
-## Error and selector semantics
+### Malformed subgraph errors use concrete array paths (2.5.0)
 
-Router 2.4.0 makes `on_graphql_error` consistently boolean: it returns `false`
-instead of absent when no GraphQL error exists, matches
-`subgraph_on_graphql_error`, and works at supergraph as well as Router stage.
+For malformed results affecting every array element, the Router emits one error
+per concrete index instead of the nonstandard `"@"` path segment. Consumers
+must allow expanded counts and paths.
 
-Value-completion failures are not present in the GraphQL errors array. From
-2.1.0 they nevertheless increment `apollo.router.graphql.error` and
-`apollo.router.operations.error` with
-`code="RESPONSE_VALIDATION_FAILED"`.
+### Coprocessor execution errors preserve null data (2.2.0)
 
-Connector and demand-control errors include original message and path in
-GraphOS traces from 2.3.0, in addition to their error code.
+A coprocessor execution error returned with `data: null` retains that `data`
+member in the client response.
+
+### Coprocessor response validation (2.5.0)
+
+The coprocessor-level `response_validation` option controls GraphQL validation
+of coprocessor responses and defaults enabled. Subscription termination
+responses are validated correctly; disable only deliberately.
+
+### Unlocatable entity errors target the immediate parent (2.13.0)
+
+When an entity error target cannot be determined, the error attaches to the
+immediate parent rather than every expected entity, avoiding fan-out.
+
+### Optional orphan-error hoisting (2.13.0)
+
+`experimental_hoist_orphan_errors` assigns incorrect subgraph entity paths to
+the nearest non-array ancestor. Named subgraph settings override `all`; this
+reduces but does not cap counts.
+
+### GraphQL error selectors are consistently boolean (2.4.0)
+
+Telemetry `on_graphql_error` yields false rather than absent when no error is
+present, matches `subgraph_on_graphql_error`, and works at supergraph as well as
+router stage.
+
+## Planning and parser observability
+
+### Request allocation histograms (2.11.0)
+
+`apollo.router.request.memory` covers full-request allocation and
+`apollo.router.query_planner.memory` covers planning compute jobs, with
+`allocation.type` and `context`. Availability matches planning memory limits:
+Unix, `global-allocator`, and no `dhat-heap`.
+
+### Parser-complexity metrics (2.12.0)
+
+`apollo.router.operations.recursion` records parser recursion depth and
+`apollo.router.operations.lexical_tokens` records query token count.

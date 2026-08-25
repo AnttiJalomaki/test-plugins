@@ -1,112 +1,74 @@
 # API, CLI, and UI
 
-## REST API v2 migration
+Use this reference for authentication, REST clients, command-line migrations, UI endpoints, and interactive administration.
 
-The 3.0-upgrade replaces REST `/api/v1` with the FastAPI stable `/api/v2`.
-Clients must treat validation failures as HTTP 422, send `logical_date` rather
-than `execution_date`, and expect an omitted trigger date to remain `None`
-(3.0.0).
+## Authentication and remote administration
 
-Use `airflowctl`, distributed in `apache-airflow-client`, for remote
-administration such as triggering Dags and managing Connections. Keep the
-`airflow` CLI for local operations. Tokens are issued at `/auth/token`, and
-auth-manager endpoints live under `/auth`.
+### Authentication changes
 
-## Waiting for runs and returning results
+For the 3.0 upgrade, Simple Auth is the default auth manager. To retain FAB, install its provider and set `auth_manager` to `airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager`. Custom security managers import `FabAirflowSecurityManagerOverride` from `airflow.providers.fab.auth_manager.security_manager.override`.
 
-Since 3.1.0,
-`GET /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}/wait` streams repeated JSON
-updates as NDJSON until completion. Its `result` query parameter can select a
-task's XCom:
+Auth-manager routes are under `/auth`; update external OAuth redirects such as `/oauth-authorized/google` to `/auth/oauth-authorized/google`.
+
+### Remote administration moved to `airflowctl`
+
+Since 3.0.0, use `airflow` for local operations and `airflowctl`, distributed in `apache-airflow-client`, for remote operations such as triggering Dags or managing Connections.
+
+## REST API behavior
+
+### REST API v2 tightened request semantics
+
+Clients must treat validation failures as HTTP 422, send `logical_date` instead of `execution_date`, and expect an omitted trigger date to stay `None`.
+
+### DAG runs can be watched as an NDJSON stream
+
+Since 3.1.0, `GET /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}/wait` emits repeated JSON updates until completion. Use `result` to include an XCom result and build quasi-synchronous integrations without client-side status polling.
 
 ```bash
 curl -H "Accept: application/x-ndjson" \
   "http://localhost:8080/api/v2/dags/ml_pipeline/dagRuns/manual_2024_01_15/wait?result=inference_task"
 ```
 
-Airflow 3.3.0 can instead return the Dag-designated `@result` or marked
-return-value XCom.
+### REST search and bulk updates are more expressive
 
-## Search, bulk changes, and external management
+Since 3.2.0, search parameters support OR, Dags can be filtered by timetable type, and bulk task-instance endpoints accept wildcard `dag_id` and `dag_run_id`. Task-instance search supports `operator_name_pattern`, `pool_pattern`, and `queue_pattern`; bulk PATCH endpoints accept `update_mask`.
 
-The 3.2.0 API supports OR search terms and Dag filtering by timetable type.
-Bulk task-instance endpoints accept wildcard `dag_id` and `dag_run_id`;
-task-instance search accepts `operator_name_pattern`, `pool_pattern`, and
-`queue_pattern`; bulk PATCH accepts `update_mask`. A TaskInstance API supports
-systems that manage tasks externally.
+### API fallback pagination replaces page size
 
-`api.page_size` is deprecated in favor of `api.fallback_page_limit` as of
-3.2.0.
+`api.page_size` is deprecated in favor of `api.fallback_page_limit`.
 
-Airflow 3.3.0 adds `clearPartitions` and bulk
-`/dags/{dag_id}/clearDagRuns`, including `partition_key` and `partition_date`
-window selectors.
+## CLI changes
 
-## Backfill authorization and operations
+### Deprecated CLI spellings were removed
 
-Backfills are scheduler-managed and observable through REST and UI from 3.0.0.
-In 3.2.0, `BaseAuthManager.is_authorized_backfill` is removed. Authorize
-backfills through `requires_access_dag` for `DagAccessEntity.Run`; policies
-that granted Backfill permission but not Dag-run permission must change.
+Replace `--ignore-depends-on-past` with `--depends-on-past ignore`. Pass `dag_id` positionally to `airflow dags list-runs`. Replace `airflow tasks list --tree` with `airflow dag show`.
 
-## Asset and UI endpoint changes
+### CLI listings hide sensitive values by default
 
-Asset responses use `scheduled_dags` instead of `consuming_dags` in 3.1.0.
-The value represents Dags scheduling on the Asset, not every Dag that uses it.
+Since 3.2.0, `connections list` and `variables list` hide sensitive values unless `--show-values` is used; `--hide-sensitive` is also available. `connections list --conn-id` is removed, so retrieve a single Connection with `airflow connections get`.
 
-Task-instance summaries use one NDJSON stream in 3.2.0:
+### Development and access workflows gained self-service tools
 
-```text
-GET /ui/grid/ti_summaries/{dag_id}?run_ids=...
-```
+The CLI supports hot reload through `--dev`, `auth list-envs` displays configured CLI environments and authentication status, and the UI can generate JWTs for API and CLI access.
 
-It returns one `GridTISummaries` JSON line per run. The former single-run
-`/ui/grid/ti_summaries/{dag_id}/{run_id}` endpoint is removed.
+## UI and extensions
 
-The 3.2.0 UI can add, edit, and delete XCom values, and HITL details show the
-full approval and rejection history.
+### React Apps are an experimental plugin surface
 
-## HITL and UI extensions
+Airflow 3.1.0 adds experimental full React applications and dashboard/menu integrations to the modern UI. Backend plugins also gain `iframe_views` for external views in navigation and Dag pages.
 
-HITL tasks added in 3.1.0 wait for an authorized UI or API response. Their
-forms may show Dag parameters and XCom values, and notification utilities can
-link responders to the required-action page. In 3.3.0, `awaiting_input`
-identifies this state explicitly.
+### UI task summaries use one NDJSON stream
 
-React Apps and their dashboard/menu integrations are an experimental plugin
-surface in 3.1.0. Backend plugins also gain `iframe_views` for navigation and
-Dag-page external views.
+Since 3.2.0, fetch task-instance summaries from `GET /ui/grid/ti_summaries/{dag_id}?run_ids=...`, which emits one `GridTISummaries` JSON line per run. The single-run `/ui/grid/ti_summaries/{dag_id}/{run_id}` endpoint is removed.
 
-In 3.3.0, plugin navigation can request `nav_top_level`, while `/auth` and
-`/pluginsv2` are reserved prefixes. Owner-link and extra-link `href` values
-must be HTTP, HTTPS, `mailto`, or relative URLs.
+### XCom and HITL state can be managed in the UI
 
-## CLI migrations and safer output
+The UI can add, edit, and delete XCom values. HITL task details show the full approval and rejection history.
 
-Removed spellings in 3.0.0 include:
+## Sensitive configuration
 
-- Replace `--ignore-depends-on-past` with `--depends-on-past ignore`.
-- Pass `dag_id` positionally to `airflow dags list-runs`.
-- Replace `airflow tasks list --tree` with `airflow dag show`.
+### Team-scoped sensitive configuration is masked
 
-Since 3.2.0, `connections list` and `variables list` hide sensitive values by
-default and accept `--show-values` and `--hide-sensitive`. The removed
-`connections list --conn-id` is replaced by `airflow connections get`.
+Since 3.3.1, sensitivity checks normalize `[<team>=<section>]` and `AIRFLOW__<TEAM>___<SECTION>__<KEY>` to the base option. `AirflowConfigParser.as_dict(display_sensitive=False)`, config REST endpoints, and `airflow config list` return `< hidden >` for team-scoped sensitive values. Authorized callers that require real values must explicitly request `display_sensitive=True`.
 
-Also in 3.2.0, Dag clear accepts `only_new`; `pools import` and
-`connections import` accept `--action-on-existing-key`; `airflow db init`
-again accepts `--use-migration-files`; and database cleaning can explicitly
-include or exclude Dags. Partition ranges reach clear and backfill commands in
-3.3.0.
-
-Development servers support `--dev` hot reload in 3.2.0. `auth list-envs`
-reports configured CLI environments and authentication status, while the UI
-can generate JWTs for API and CLI use.
-
-## Transport and connection security
-
-API clients and servers support mutual TLS and private certificate authorities
-in 3.3.0. CORS credential behavior is configurable, and wildcard origins are
-rejected when credentials would make them unsafe. Connection tests may run
-asynchronously on workers so the API server does not need direct Connection
-access.
+Team-scoped `_cmd` and `_secret` entries remain masked in place rather than being resolved and removed, because team resolution of those forms is unsupported.

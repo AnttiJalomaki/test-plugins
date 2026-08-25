@@ -1,27 +1,111 @@
 # Cryptography, TLS, and Certificates
 
-## Post-quantum primitives
+## Enforce certificate identity and path rules
 
-When OTP 28.1 is built with OpenSSL 3.5, `crypto:sign/4` and
-`crypto:verify/5` support ML-DSA with the `mldsa44`, `mldsa65`, and `mldsa87`
-algorithm atoms. ML-KEM is exposed through `crypto:encapsulate_key/2` and
-`crypto:decapsulate_key/3` with `mlkem512`, `mlkem768`, and `mlkem1024`.
-`public_key` and `ssl` integrate both families as well.
+### SAN-only hostname validation
 
-OTP 28.3 adds the TLS 1.3 hybrid groups `x25519mlkem768`,
-`secp384r1mlkem1024`, and `secp256r1mlkem768`. The `public_key` and `ssl`
-applications also add SLH-DSA support.
+Since 29.0.1, `public_key` follows RFC 9525 and does not fall back to a
+certificate subject common name. Certificates must contain a matching subject
+alternative name. Code matching `ssl` or `public_key` errors must also handle
+the separate subject-name and subject-alternative-name constraint errors. This
+is the hostname-validation fix for CVE-2026-42790.
 
-SSH supports the hybrid `mlkem768x25519-sha256` key exchange starting in OTP
-28.4. In OTP 29.0, the hybrid algorithms become preferred defaults: `ssl`
-puts `x25519mlkem768` first and `ssh` puts `mlkem768x25519-sha256` first, while
-retaining fallback for peers without support. When a suitable certificate is
-configured, `ssl` prefers ML-DSA signatures followed by
-`slh_dsa_sha2_256f`.
+For application-level patching, `ssl-11.7.1` requires the matching
+`public_key-1.21.1`.
 
-Backend support remains runtime-dependent. In OTP 29.0.3,
-`crypto:compute_key/4` and `crypto:generate_key/2,3` report a missing EdDH or
-EdDSA implementation as structured exceptions:
+### Corrected path and OCSP validation
+
+Since 29.0.1, expired OCSP responder certificates are rejected and certificate
+path basic-constraint validation follows the corrected RFC 5280 behavior
+(CVE-2026-42789).
+
+Since 29.0.3, OCSP responses larger than 100 KB are rejected before ASN.1
+decoding. Keep responder output within the limit and exercise the rejection
+path in certificate-validation integrations.
+
+Since 29.0.4, certificate path validation caps policy-tree nodes. Crafted
+`policyMappings` chains now fail with
+`{bad_cert, policy_tree_exceeded}` instead of consuming memory exponentially.
+TLS chain building also rejects cycles caused by invalid, unordered, or
+extraneous certificates.
+
+### Fail early on invalid PEM files
+
+Since 28.1, a TLS server fails earlier when its configured PEM file is missing
+or invalid. Treat a bad path or contents as a deployment/startup configuration
+failure rather than expecting a later handshake failure.
+
+## Handle stricter TLS state machines
+
+Since 28.2, `ssl` 11.4.2 rejects duplicate `change_cipher_spec` messages and a
+second certificate message with an unexpected-message alert. Negative tests
+and malformed peers that previously left corrupt handshake state now fail
+immediately. An individually patched `ssl` application requires the matching
+`crypto` and `public_key` versions.
+
+Since 29.0.1, servers send an alert for malformed-client cases that previously
+closed the connection silently. Protocol tests and clients should accept an
+observable alert rather than requiring a bare disconnect.
+
+Since 29.0.3, TLS clients:
+
+- reject application data injected during the handshake plaintext window;
+- reject a second HelloRetryRequest;
+- answer PSK binder/identity mismatches with `illegal_parameter`; and
+- always validate TLS 1.3 stateless tickets against server lifetime and
+  freshness data, including when the client reports an age of zero.
+
+Since 29.0.4, pre-TLS 1.3 clients verify that the server-selected algorithm was
+one the client offered. This closes a path that could bypass server-certificate
+validation.
+
+## Use post-quantum algorithms deliberately
+
+### ML-DSA and ML-KEM APIs
+
+With OpenSSL 3.5 and OTP 28.1, `crypto:sign/4` and `crypto:verify/5` support:
+
+- `mldsa44`
+- `mldsa65`
+- `mldsa87`
+
+`crypto:encapsulate_key/2` and `crypto:decapsulate_key/3` support:
+
+- `mlkem512`
+- `mlkem768`
+- `mlkem1024`
+
+The `public_key` and `ssl` applications integrate both families. Check the
+linked OpenSSL before enabling algorithms in configurations shared by
+heterogeneous nodes.
+
+### TLS and SSH hybrid algorithms
+
+Since 28.3, TLS 1.3 supports `x25519mlkem768`,
+`secp384r1mlkem1024`, and `secp256r1mlkem768`. `public_key` and `ssl` also
+support SLH-DSA.
+
+Since 28.4, SSH supports the hybrid key exchange
+`mlkem768x25519-sha256`, combining ML-KEM-768 with X25519.
+
+In 29.0 these algorithms became preferred defaults: `ssl` puts
+`x25519mlkem768` first and `ssh` puts `mlkem768x25519-sha256` first, with
+fallback for peers lacking support. Given a suitable certificate, `ssl` also
+prefers ML-DSA signatures and then `slh_dsa_sha2_256f`. Recheck policy,
+interoperability, and performance assumptions after an upgrade.
+
+## Use PKICMP ASN.1 support with compatible applications
+
+`public_key` 1.19 in OTP 28.2 adds ASN.1 support for the Public-Key
+Infrastructure Certificate Management Protocol (PKICMP). When applying only
+this application patch, first satisfy its dependency on the OpenSSL-backed
+`crypto` version shipped in OTP 28.1.
+
+## Handle unsupported crypto backends
+
+Since 29.0.3, a backend without EdDH or EdDSA support makes
+`crypto:compute_key/4` and `crypto:generate_key/2,3` raise the structured
+exception `error:{notsup, Info, Description}`:
 
 ```erlang
 try crypto:generate_key(eddh, x25519) of
@@ -32,64 +116,23 @@ catch
 end.
 ```
 
-Handle `{notsup, Info, Description}` rather than depending on the earlier
-unstructured failure.
+Match the structured tuple when implementing a supported fallback.
 
-## Certificate configuration and validation
+## Expect hardened crypto inputs
 
-TLS servers on OTP 28.1 fail earlier when a configured PEM file is missing or
-invalid. Treat paths and contents as startup validation failures rather than
-expecting a later handshake error.
+Since 29.0.4:
 
-OTP 29.0.1 changes hostname verification to follow RFC 9525 and fixes
-CVE-2026-42790. Validation no longer falls back to a certificate subject's
-common name; the certificate must contain a matching subject alternative
-name. Error handling must also account for distinct subject-name and
-subject-alternative-name constraint errors.
+- `crypto:macN/5` no longer crashes when `MacLength` exceeds the underlying
+  hash output length;
+- invalid AEAD initialization no longer segfaults; and
+- `chacha20_poly1305` key handling no longer reads beyond its key buffer.
 
-When applying application patches rather than a full OTP patch, note that
-`ssl-11.7.1` requires `public_key-1.21.1`.
+Preserve input validation in application code, but do not depend on the former
+runtime-failure shapes.
 
-The same OTP 29.0.1 patch rejects expired OCSP responder certificates and
-corrects RFC 5280 basic-constraint validation for certificate paths
-(CVE-2026-42789).
+## Validate SSH Diffie-Hellman parameters
 
-OTP 29.0.3 rejects an OCSP response larger than 100 KB before ASN.1 decoding.
-Certificate-validation integrations must keep responder output within the
-limit.
-
-## TLS handshake hardening
-
-In OTP 28.2, `ssl` 11.4.2 rejects duplicate `change_cipher_spec` messages and
-a second certificate message with an unexpected-message alert. Malformed
-peers and negative tests that previously left corrupted handshake state now
-fail immediately. An individually patched `ssl` requires the corresponding
-`crypto` and `public_key` versions.
-
-OTP 29.0.1 sends a TLS alert for malformed-client cases that previously
-terminated the connection silently. Protocol tests and clients should expect
-an alert rather than only a disconnect.
-
-OTP 29.0.3 tightens several TLS paths:
-
-- clients reject application data injected during the handshake plaintext
-  window;
-- clients reject a second HelloRetryRequest;
-- a PSK binder/identity mismatch produces an `illegal_parameter` alert; and
-- TLS 1.3 stateless tickets are always checked against server lifetime and
-  freshness data, even if the client reports an age of zero.
-
-Update negative tests to assert these immediate failures and alerts.
-
-## PKICMP support
-
-`public_key` 1.19 in OTP 28.2 adds ASN.1 support for the Public-Key
-Infrastructure Certificate Management Protocol (PKICMP). If installing that
-application patch by itself, first satisfy its dependency on the
-OpenSSL-backed `crypto` version shipped in OTP 28.1.
-
-## Encrypted crash dumps
-
-OTP 29.0 can be configured with `--enable-encrypted-crash-dumps`. Use this
-runtime build option where crash dumps may contain secrets and the deployment
-has an operational plan for its encrypted artifacts.
+Since 29.0.4, every SSH DH path enforces `1 < e/f < p-1` and
+`1 < K < p-1`. DH-GEX clients reject `P` below 2048 bits or `G` outside
+`(1, P-1)`, and the default minimum in `dh_gex_limits` is 2048 for clients and
+servers. Retest legacy groups and custom limit configurations.

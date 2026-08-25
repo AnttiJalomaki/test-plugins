@@ -1,165 +1,92 @@
-# Files, caches, and upload workflows
+# Files, Caches, and Upload Workflows
 
-Use this reference when choosing a download destination, modifying downloaded
-files, cleaning storage, uploading large directories, queuing background work,
-copying repository files, or mixing Git LFS and Xet tooling.
+## Downloaded files and cache paths
 
-## Central-cache paths are immutable inputs
+### Treat central-cache results as immutable
 
-The central Hub cache stores file content once under `blobs`. Revision trees
-under `snapshots/{commit}` expose that content through links where the platform
-supports them.
+The central cache stores content under `blobs` and presents revision trees
+under `snapshots/{commit}` through links where supported. Editing a path
+returned from a snapshot may therefore mutate shared blob content or damage
+multiple snapshots. Copy the file into a working directory before modifying
+it.
 
-A returned snapshot path may therefore share storage with other snapshots.
-Editing it can corrupt shared content or make several snapshots inconsistent.
+### Account for `local_dir` metadata
 
-Treat the returned path as read-only:
+Using `local_dir` materializes selected files in that directory and records
+resume metadata below `.cache/huggingface`. Exclude this metadata from
+publication or source-control payloads.
 
-1. Download or resolve the cached file.
-2. Copy it to a working directory.
-3. Modify the copy.
-4. Upload the intended result as a new repository change.
+`local_dir` also provides less cross-project deduplication than the central
+cache, so choose it for a materialized working tree rather than assuming it
+has identical storage characteristics.
 
-Do not use link count or apparent directory separation as proof that a cached
-file is safe to mutate.
+## Cache cleanup
 
-## `local_dir` materialization
+### Use cache commands instead of deleting internals
 
-Passing `local_dir` materializes selected files in that destination rather than
-using a central snapshot path as the working tree. Transfer and resume metadata
-is written beneath:
+Use `hf cache ls`, `hf cache rm`, and `hf cache prune` to inspect and remove
+Hub cache content. Avoid manually deleting internals while clients may be
+using them.
 
-```text
-.cache/huggingface
-```
+The Hub snapshot cache and Xet chunk cache are distinct layers:
 
-Keep that metadata when an interrupted transfer should be resumed. Exclude it
-from packages, container contexts, publications, and repository commits unless
-there is a specific operational reason to retain it there.
+- Removing snapshots does not necessarily remove Xet chunks.
+- Clearing chunks does not update repository references.
+- Logging out does not delete private bytes already present on disk.
 
-`local_dir` offers a convenient explicit destination, but expect less
-cross-project deduplication than the central cache.
+Select and clean each layer deliberately according to the storage and privacy
+goal.
 
-## Clean cache layers deliberately
+## Large and asynchronous uploads
 
-Use supported commands to inspect and remove Hub cache content:
+### Resume `upload_large_folder` from its metadata
 
-```bash
-hf cache ls
-hf cache rm
-hf cache prune
-```
+`upload_large_folder` stores hashing, pre-upload, and commit progress in the
+source folder's `.cache/huggingface`. A rerun against the same source folder
+and repository can reuse completed work.
 
-Avoid deleting internal directories during active downloads or uploads. The
-command surface understands Hub cache records and references better than an
-ad hoc recursive delete.
+Keep that metadata until the upload finishes, and do not modify source files
+during the run. Changing the folder or repository breaks the assumptions
+behind safe progress reuse.
 
-The Xet chunk cache is separate from repository snapshots:
+### Do not treat a large-folder upload as one transaction
 
-- removing Hub snapshots does not necessarily remove Xet chunks;
-- clearing Xet chunks does not update repository refs;
-- cleaning one layer is not evidence that the other meets a storage or data
-  retention target.
+The operation can create multiple commits. A failure may therefore leave a
+valid partial history rather than rolling back the whole upload.
 
-Logging out also leaves previously downloaded private content on disk. Treat
-credential removal and cached-data cleanup as independent operations.
+For an all-or-nothing release, upload to a staging branch or separate
+repository, validate the complete result, and then promote it.
 
-## Resumable large-folder uploads
+### Observe process-local deferred work
 
-`upload_large_folder` persists progress for hashing, pre-upload, and commits in
-the source folder's `.cache/huggingface`. A rerun against the same folder and
-repository can reuse completed work.
+Calls with `run_as_future=True` return futures and preserve queue order within
+the client. They are background operations in the current process, not
+durable remote jobs.
 
-For reliable resumption:
+Keep the process alive, wait for each future, and retrieve its failure.
+Scheduled commit helpers also need an explicit stop and verification of their
+last commit before the process exits.
 
-- keep the progress metadata available between attempts;
-- retry with the same source folder and target repository;
-- do not modify source files while the operation is running;
-- preserve logs and surface failures rather than assuming every queued item
-  completed.
+## Commit composition
 
-Deleting the metadata discards reusable progress. Moving to a materially
-different source tree can also invalidate assumptions behind that progress.
+### Copy eligible files server-side
 
-## Large-folder uploads are not one transaction
+`create_commit` accepts `CommitOperationCopy` alongside add and delete
+operations. An eligible copy occurs server-side without re-uploading the
+content and still produces a repository commit.
 
-The operation may create multiple commits. A failure can therefore leave a
-valid but incomplete sequence of remote changes.
+The operation remains subject to the supported source, destination, revision,
+and repository contexts. Validate those contexts rather than assuming an
+arbitrary cross-repository or cross-revision copy is available.
 
-For an all-or-nothing release:
+## Xet and Git LFS interoperability
 
-1. Upload to a staging branch or staging repository.
-2. Wait for all work to finish.
-3. Validate file inventory and content.
-4. Promote the validated state through an explicit repository workflow.
-
-Do not present the target as complete merely because the upload call began or
-because some commits are visible.
-
-## Deferred uploads are process-local
-
-Upload calls with `run_as_future=True` return futures. A client preserves queue
-order for its own deferred calls, but these are background tasks in the current
-process, not durable jobs managed remotely.
-
-The caller must:
-
-- keep the process alive;
-- retain each returned future;
-- retrieve each result so failures are observed;
-- wait for required work before reporting success or exiting.
-
-Process termination can abandon unfinished work. Queue order does not provide
-durability and does not make a group of commits atomic.
-
-Scheduled commit helpers have a similar shutdown boundary. Stop the helper and
-verify its final commit before a job exits.
-
-## Copy files without re-uploading
-
-Supported clients accept `CommitOperationCopy` alongside add and delete
-operations passed to `create_commit`.
-
-An eligible copy:
-
-- happens server-side without downloading and re-uploading file bytes;
-- still produces a repository commit;
-- is constrained by supported source and destination paths, revisions, and
-  repository contexts.
-
-Check those constraints before building a large copy plan. Include the copy in
-the same commit operation set when it must be coordinated atomically with
-supported adds or deletes.
-
-## Xet and legacy Git LFS interoperability
+### Verify that a clone materialized large bytes
 
 Xet-backed repositories retain a compatibility bridge for legacy Git LFS
-clients. This permits interoperability, but Xet and LFS do not have identical
-storage layouts or performance behavior.
+clients. The bridge supports interoperability, but Xet and LFS do not have
+identical storage or performance behavior.
 
-A successful generic Git clone may materialize repository metadata or pointer
-files without fetching the large-file bytes.
-
-After a clone:
-
-- inspect whether LFS filters ran;
-- check suspect files for pointer content;
-- verify required large objects are actually materialized;
-- use a Hub download API when the workflow needs dependable file
-  materialization rather than generic Git metadata.
-
-Do not treat clone success alone as proof that large model or dataset files are
-present.
-
-## Operational checklist
-
-- Copy central-cache paths before editing.
-- Keep `.cache/huggingface` only where resumable local work needs it.
-- Exclude transfer metadata from published artifacts.
-- Use `hf cache` commands and account for Hub and Xet layers separately.
-- Preserve large-folder progress and freeze source files during upload.
-- Stage and validate workflows that require all-or-nothing publication.
-- Await every process-local future and stop scheduled helpers cleanly.
-- Prefer `CommitOperationCopy` for eligible server-side copies.
-- Verify large bytes after generic Git or LFS operations on Xet-backed
-  repositories.
+A generic Git clone can succeed while leaving repository metadata or pointer
+files instead of the large-file bytes. Inspect Git filters and pointer state,
+or use a Hub download API when materialization must be guaranteed.

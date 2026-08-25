@@ -1,12 +1,15 @@
 # Service Tiers
 
-Use this reference to configure Flex and Priority, distinguish project defaults from per-request choices, and build retry and traffic-ramp behavior around effective processing tiers.
+Source batches: `service-tiers` and `2026-08-04-2026-08-13`.
 
-## Flex economics and endpoint support
+## Flex
 
-Flex is available on Responses and Chat Completions. It uses Batch API token rates and retains prompt-cache discounts.
+### Timeouts, retries, and pricing
 
-Official SDK requests default to a ten-minute timeout and automatically retry `408 Request Timeout` twice. Long-running Flex work can outlive that client timeout, so raise the timeout globally or per request when the workload requires it.
+Flex applies to Responses and Chat Completions at Batch API token rates, while
+retaining prompt-cache discounts. Official SDK requests default to a ten-minute
+timeout and automatically retry `408 Request Timeout` twice. Long-running Flex
+work may need a larger client-level or per-request timeout.
 
 ```python
 response = client.with_options(timeout=900.0).responses.create(
@@ -16,22 +19,21 @@ response = client.with_options(timeout=900.0).responses.create(
 )
 ```
 
-Choose the timeout from expected work duration rather than relying on the default retry loop to extend the same request indefinitely.
+### Capacity failures
 
-## Flex capacity failures
+A Flex capacity shortage returns `429 Resource Unavailable` and does not charge
+the request. Retry with exponential backoff to preserve Flex pricing. To use
+the project's default processing mode instead, retry with
+`service_tier="auto"` or omit the field.
 
-When Flex lacks capacity, the API returns `429 Resource Unavailable` and does not charge for that request.
+## Priority
 
-Two retry strategies have different cost behavior:
+### Project defaults and effective tier
 
-- Retry Flex with exponential backoff to retain Flex pricing.
-- Retry with `service_tier: "auto"`, or omit the field, to use the project's default processing mode.
-
-Do not treat this capacity response as proof that the request payload or normal rate-limit configuration is invalid.
-
-## Selecting Priority
-
-Priority can be requested explicitly:
+Set `service_tier="priority"` per request, or configure a project to make
+Priority the default when requests omit the field. The project-level
+transition occurs gradually. Inspect the response's `service_tier` field to
+learn which tier actually processed a request.
 
 ```json
 {
@@ -41,37 +43,29 @@ Priority can be requested explicitly:
 }
 ```
 
-A project can also make Priority the default for requests that omit `service_tier`. The project-level transition happens gradually, so omission does not imply that every request immediately uses Priority.
+### Rate and ramp limits
 
-Inspect the response's `service_tier` field to determine the tier that actually processed each request. Use this effective field for latency and billing telemetry rather than inferring it from request configuration.
+Standard and Priority traffic share the same per-model rate limit. At one
+million TPM or more, raising TPM by over 50 percent within 15 minutes may
+trigger the ramp limit. Affected Priority requests are processed with
+`service_tier="default"` and billed at Standard rates. Shift sustained traffic
+gradually.
 
-## Rate and ramp behavior
+### Compatibility and intended use
 
-Standard and Priority traffic share the same per-model rate limit.
+Priority retains prompt-cache discounts and supports multimodal image inputs.
+It does not support long-context requests, fine-tuned models, or embeddings.
+It carries a per-token premium and suits steady latency-sensitive traffic,
+rather than erratic batch or evaluation workloads.
 
-At traffic of at least one million tokens per minute, increasing TPM by more than 50 percent within 15 minutes can trigger the Priority ramp limit. Affected Priority requests are processed with `service_tier: "default"` and billed at Standard rates.
+## Other processing modes
 
-Ramp sustained traffic gradually. Also monitor the effective response tier so fallback is visible rather than mistaken for unexplained Priority latency drift.
+### Ultrafast limited preview
 
-## Priority compatibility
+Ultrafast is a service tier for `gpt-5.6-sol` available only in limited preview
+to selected customers. Do not assume it is enabled without separate access.
 
-Priority:
+### Fast mode and long context
 
-- Retains prompt-cache discounts.
-- Supports multimodal image inputs.
-- Does not support long-context requests.
-- Does not support fine-tuned models.
-- Does not support embeddings.
-- Adds a per-token premium.
-
-Priority is intended for steady, latency-sensitive traffic. Flex or other modes are better aligned with erratic batch and evaluation workloads where per-token price matters more than steady latency.
-
-## Operational checklist
-
-1. Set longer timeouts for genuinely long Flex operations.
-2. Handle `429 Resource Unavailable` separately from payload errors and choose whether to retain Flex pricing.
-3. Record requested and effective `service_tier` values.
-4. Account for a gradual project-default transition.
-5. Keep sustained Priority traffic ramps within the stated threshold.
-6. Reject or reroute unsupported Priority workloads before sending them.
-7. Include cache discounts, Priority premium, and fallback billing in cost telemetry.
+Fast mode accepts inputs longer than 272K tokens for `gpt-5.6-sol`,
+`gpt-5.6-terra`, and `gpt-5.6-luna`.

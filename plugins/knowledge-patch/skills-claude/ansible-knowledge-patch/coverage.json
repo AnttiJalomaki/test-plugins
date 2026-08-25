@@ -1,6 +1,8 @@
 {
   "patch": "ansible-knowledge-patch",
-  "merged_at": "2026-07-26T22:34:50Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-20T19:27:55Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -11,6 +13,11 @@
       "build": "included"
     },
     "2.21.2": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.21.3": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

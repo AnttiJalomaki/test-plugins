@@ -1,46 +1,33 @@
 # Plugin Development and Testing
 
-## Unified request hooks
+## Unified request middleware
 
-Global and plugin before/after hooks use the same `AuthMiddleware` abstraction. Global handlers may be declared directly; plugin hooks remain matcher/handler entries. After middleware reads the response from `ctx.context.returned`.
+Global before/after hooks and plugin hooks use `AuthMiddleware`. Global hooks can be direct middleware; plugin hooks remain matcher/handler entries. After middleware reads the returned response from `ctx.context.returned`.
 
 ```ts
 import { createAuthMiddleware } from "better-auth/api";
 
 hooks: {
-  before: createAuthMiddleware(async (ctx) => console.log(ctx.path)),
-  after: createAuthMiddleware(async (ctx) =>
-    console.log(ctx.context.returned)),
+  before: createAuthMiddleware(async (ctx) => {
+    console.log(ctx.path);
+  }),
+  after: createAuthMiddleware(async (ctx) => {
+    console.log(ctx.context.returned);
+  }),
 }
 ```
 
-Plugin form:
+Callbacks in email OTP, magic-link, phone-number, and organization plugins that formerly received `request` now receive `ctx`; access the request as `ctx.request`. See the migration reference for the exact callback set.
 
-```ts
-const plugin = {
-  id: "example",
-  hooks: {
-    before: [{
-      matcher: (ctx) => ctx.path.startsWith("/example"),
-      handler: createAuthMiddleware(async (ctx) => {
-        // Inspect or replace request behavior.
-      }),
-    }],
-  },
-} satisfies BetterAuthPlugin;
-```
+## Plugin context and registry
 
-## Plugin context and registry typing
+`PluginContext<Options>` is generic. Plugins may augment `BetterAuthPluginRegistry`, allowing `getPlugin()` and `hasPlugin()` to infer registered plugin types. A plugin `init()` receives the same mutable context used throughout the auth lifecycle and may return arbitrary context keys for other plugins.
 
-`PluginContext<Options>` is generic. A plugin may augment `BetterAuthPluginRegistry`, allowing `getPlugin()` and `hasPlugin()` to infer registered plugin types.
-
-`init()` receives the same mutable context object used by the full auth lifecycle. It may return arbitrary context keys for other plugins.
-
-`AuthContext` exposes the running Better Auth version for compatibility checks and diagnostics.
+`AuthContext` exposes the runtime Better Auth version for compatibility checks and diagnostics. Use the `AuthClient` helper for client typing and `inferAuth` when types should be inferred from the auth instance.
 
 ## Error codes
 
-A plugin `$ERROR_CODES` property expects `Record<string, RawError>`, not a string map. Assign the result of `defineErrorCodes()`.
+Plugin `$ERROR_CODES` expects `Record<string, RawError>`, not a plain string map. `defineErrorCodes()` creates `{ code, message }` values accepted by `APIError.from()`. Error responses contain a machine-readable `code`.
 
 ```ts
 $ERROR_CODES: defineErrorCodes({
@@ -48,49 +35,54 @@ $ERROR_CODES: defineErrorCodes({
 })
 ```
 
-`defineErrorCodes()` produces `{ code, message }` values accepted by `APIError.from()`. Auth error responses carry machine-readable `code` fields.
-
-## Database hooks and transaction timing
-
-Database `create.after`, `update.after`, and `delete.after` hooks run after the transaction commits. They cannot provide atomic follow-up writes. Put such writes in the adapter during the main operation.
-
-For OAuth token encryption implemented manually, use an account `create.before` hook, which can replace the data before persistence:
+`@better-auth/i18n` supplies typed translations and locale detection through headers, cookies, or sessions.
 
 ```ts
-databaseHooks: {
-  account: {
-    create: {
-      before(account) {
-        const data = { ...account };
-        if (data.accessToken) data.accessToken = encrypt(data.accessToken);
-        if (data.refreshToken) data.refreshToken = encrypt(data.refreshToken);
-        return { data };
-      },
-    },
+plugins: [i18n({
+  defaultLocale: "en",
+  detection: ["header", "cookie"],
+  translations: {
+    en: { USER_NOT_FOUND: "User not found" },
+    fr: { USER_NOT_FOUND: "Utilisateur introuvable" },
   },
-}
+})]
 ```
 
-Prefer `account.encryptOAuthTokens: true` when custom handling is unnecessary.
+## Adapter operations
 
-## Adapter factories and schema generation
-
-`createAdapter` is removed; use `createAdapterFactory`. Custom adapters can expose `createSchema` so the CLI can generate their schema.
-
-Case-insensitive comparison is portable across adapters through `mode: "insensitive"` on an individual `where` clause.
+Create adapters with `createAdapterFactory`; `createAdapter` is removed. Individual adapter predicates accept `mode: "insensitive"` for case-insensitive string matching.
 
 ```ts
 await adapter.findOne({
   model: "user",
-  where: [{ field: "email", value: email, mode: "insensitive" }],
+  where: [{
+    field: "email",
+    value: "user@example.com",
+    mode: "insensitive",
+  }],
 });
 ```
 
-`getMigrations` is exported from `better-auth/db/migration`, not from the package root.
+Database `create.after`, `update.after`, and `delete.after` hooks run after transaction commit. Place atomic follow-up changes inside the original adapter operation or transaction.
 
-## Auth test utilities
+## Background work
 
-The `testUtils` plugin exposes user factories, persistence helpers, login headers, sessions, tokens, and optional OTP capture through `auth.$context.test` for integration and end-to-end tests.
+`ctx.context.runInBackground()` schedules fire-and-forget work after the response. `runInBackgroundOrAwait()` also uses a configured handler, but awaits when no handler exists; use it for work that must complete, such as required email delivery.
+
+```ts
+hooks: {
+  after: createAuthMiddleware(async (ctx) => {
+    ctx.context.runInBackground(sendAnalytics());
+    await ctx.context.runInBackgroundOrAwait(sendRequiredEmail());
+  }),
+}
+```
+
+A platform handler under `advanced.backgroundTasks.handler` changes deferred writes to eventual consistency. Plugin behavior that relies on immediately visible data must account for that.
+
+## Test utilities
+
+The `testUtils` plugin exposes factories, persistence helpers, login headers, sessions, tokens, and optional OTP capture at `auth.$context.test` for integration and end-to-end tests.
 
 ```ts
 plugins: [testUtils({ captureOTP: true })]
@@ -103,24 +95,25 @@ const { headers, session, token } = await test.login({ userId: user.id });
 const otp = test.getOTP(user.email);
 ```
 
-For adapter suites, import `testAdapter` and `createTestSuite` from `@better-auth/test-utils/adapter`. The old `better-auth/adapters/test` path is removed.
+Adapter authors import `testAdapter` and `createTestSuite` from `@better-auth/test-utils/adapter`; the former `better-auth/adapters/test` export is removed.
 
-## OpenAPI reference generation
+## Generated OpenAPI
 
-`openAPI()` serves a Scalar reference at `/api/auth/reference` with core and plugin endpoints.
+The `openAPI()` plugin serves a Scalar reference at `/api/auth/reference`, including core and plugin endpoints. Generate the schema directly with `await auth.api.generateOpenAPISchema()` or through `/api/auth/open-api/generate-schema`. `disableDefaultReference` removes the UI route while retaining the schema endpoint.
 
-Generate the schema in code with:
+## Custom admin roles
+
+Defining custom `admin` or `user` roles replaces that role's built-in permissions. Merge `defaultStatements` and `adminAc.statements` to retain them, and pass the same access controller and roles to server and client plugins.
 
 ```ts
-const schema = await auth.api.generateOpenAPISchema();
+const ac = createAccessControl({
+  ...defaultStatements,
+  project: ["create"],
+} as const);
+const adminRole = ac.newRole({
+  ...adminAc.statements,
+  project: ["create"],
+});
 ```
 
-It is also exposed at `/api/auth/open-api/generate-schema` as an additional Scalar source. `disableDefaultReference` hides the default reference UI while preserving the schema endpoint.
-
-## Plugin-contributed rate limits
-
-Plugins may contribute rate-limit rules. Rejected requests do not consume quota. Use exact or wildcard paths, asynchronous rule functions, and `false` exemptions consistently with global `customRules`.
-
-## Server/client type pairing
-
-When a plugin has a client companion, install the matching client plugin so endpoint and additional-field inference works. Examples include organization, dynamic organization roles, custom sessions, Sentinel challenges, API keys, and Electron.
+`checkRolePermission` checks a role definition synchronously, not the signed-in user. Use client `hasPermission` or server `userHasPermission` for user authorization. The admin plugin can create users with optional passwords when configured.

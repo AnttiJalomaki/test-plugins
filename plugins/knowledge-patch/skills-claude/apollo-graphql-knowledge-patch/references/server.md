@@ -1,175 +1,87 @@
-# Apollo Server runtime, HTTP, and execution
+# Apollo Server Runtime, HTTP, and Execution
 
-## Runtime and integration migration (`server-v5-migration`)
+Use this reference when upgrading Apollo Server, selecting an integration, configuring incremental execution, or hardening standalone HTTP handling.
 
-Apollo Server 5 requires Node.js 20.0.0+ and `graphql` 16.11.0+. Upgrade both before
-the server. Node.js 24+ is preferable where outgoing requests must honor HTTP proxy
-environment variables.
+## Server 5 migration
 
-The published JavaScript targets ES2023 (`5.0.0`), so consuming runtimes, bundlers,
-and test tools must support ES2023 syntax and built-ins.
+### Runtime and GraphQL.js minimums
 
-### Express integrations
+For the server-v5-migration, require Node.js 20.0.0+ and `graphql` 16.11.0+. Prefer Node.js 24+ when outgoing requests must use an HTTP proxy.
 
-Express middleware is no longer exported from `@apollo/server/express4`. Install
-the integration matching the Express major. These packages also support Server 4,
-so this step can precede the server upgrade.
+### Express integration packages
 
-```sh
-npm install @as-integrations/express4
-```
+For the server-v5-migration, Express middleware is no longer exported from `@apollo/server/express4`. Install `@as-integrations/express4` or `@as-integrations/express5` to match Express. These integrations also work with Server 4, so migrate them first.
 
 ```ts
-import { expressMiddleware } from "@as-integrations/express4";
-// Use @as-integrations/express5 with Express 5.
+import { expressMiddleware } from '@as-integrations/express4';
 ```
 
-`startStandaloneServer` now runs directly on Node's HTTP server. Express-specific
-behavior such as `x-powered-by`, dynamic `etag` headers, and access to Express APIs
-is absent. Use an explicit integration where those behaviors are part of the
-contract.
+### Reporting and callback plugins use Node.js `fetch`
 
-### Built-in `fetch` and proxies
+For the server-v5-migration, usage reporting, schema reporting, and subscription callback plugins default to Node's built-in `fetch`; `global-agent` no longer affects them. On Node 24+, remove `global-agent`, set `NODE_USE_ENV_PROXY=1`, and rename `GLOBAL_AGENT_HTTP_PROXY`, `GLOBAL_AGENT_HTTPS_PROXY`, and `GLOBAL_AGENT_NO_PROXY` to `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. On Node 20/22, install Undici's `EnvHttpProxyAgent` as global dispatcher.
 
-Usage reporting, schema reporting, and subscription callback plugins use Node's
-built-in `fetch`, not `node-fetch`. Existing `global-agent` configuration no
-longer affects these requests.
+To keep old behavior, install `node-fetch@2` and pass it as `fetcher` to every enabled reporting/callback plugin, including plugins previously enabled implicitly through environment variables.
 
-- On Node.js 24+, remove `global-agent`, set `NODE_USE_ENV_PROXY=1`, and replace
-  `GLOBAL_AGENT_HTTP_PROXY`, `GLOBAL_AGENT_HTTPS_PROXY`, and
-  `GLOBAL_AGENT_NO_PROXY` with `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
-- On Node.js 20 or 22, install Undici's `EnvHttpProxyAgent` as the global
-  dispatcher.
-- To retain old behavior, install `node-fetch@2` and pass it to every enabled
-  reporting or callback plugin, including plugins implicitly enabled by
-  environment variables.
+### Variable coercion errors default to HTTP 400
 
-```ts
-import nodeFetchFetcher from "node-fetch";
+For the server-v5-migration, `status400ForVariableCoercionErrors` defaults to `true`. Invalid variable values therefore return 400. `false` temporarily restores the Server 4 default but is intended for removal.
 
-ApolloServerPluginUsageReporting({ fetcher: nodeFetchFetcher });
-ApolloServerPluginSchemaReporting({ fetcher: nodeFetchFetcher });
-```
+### Standalone server no longer embeds Express
 
-### Removed and testing options
+For the server-v5-migration, `startStandaloneServer` uses Node's HTTP server directly. Express-specific behavior such as `x-powered-by`, dynamic `etag`, and access to Express request APIs disappears; use an explicit Express integration when needed.
 
-Landing-page plugins no longer accept unsafe `precomputedNonce`; delete it.
+### Incremental delivery remains pinned to one GraphQL.js alpha
 
-`@apollo/server-integration-testsuite` no longer contributes DOM globals. Add
-`"dom"` to the integration test project's own `tsconfig.json`
-`compilerOptions.lib` if required.
+For the server-v5-migration, the initial Server 5 release enables `@defer`/`@stream` only with exactly `graphql@17.0.0-alpha.2` and `Accept: multipart/mixed; deferSpec=20220824`. GraphQL.js 16, later v17 alphas, and the eventual stable v17 do not enable it in that release.
 
-```json
-{
-  "compilerOptions": {
-    "lib": ["dom"]
-  }
-}
-```
+### Landing-page `precomputedNonce` removed
 
-## Request and validation behavior
+For the server-v5-migration, delete the unsafe deprecated `precomputedNonce` option. The Cloudflare Workers issue it addressed was fixed without a fixed nonce.
 
-### Variable coercion status
+### Integration test suites no longer assume DOM globals
 
-`status400ForVariableCoercionErrors` defaults to `true`, so invalid variable values
-return HTTP 400. A temporary Server 4 compatibility setting exists:
+For the server-v5-migration, `@apollo/server-integration-testsuite` no longer compiles with DOM globals. Integration-library test projects that require them must add `"dom"` to `compilerOptions.lib` in their `tsconfig.json`.
 
-```ts
-new ApolloServer({
-  typeDefs,
-  resolvers,
-  status400ForVariableCoercionErrors: false,
-});
-```
+### ES2023 compilation target
 
-### Execution and validation ceilings
-
-Server `5.3.0` exposes the GraphQL coercion-error limit through
-`executionOptions.maxCoercionErrors`:
-
-```js
-new ApolloServer({
-  typeDefs,
-  resolvers,
-  executionOptions: { maxCoercionErrors: 50 },
-});
-```
-
-It exposes the validation-error limit through `validationOptions.maxErrors`:
-
-```js
-new ApolloServer({
-  typeDefs,
-  resolvers,
-  validationOptions: { maxErrors: 10 },
-});
-```
+Since 5.0.0, Server is compiled to ES2023 instead of ES2020. Consumers and tooling must support ES2023 syntax and built-ins.
 
 ## Incremental execution protocols
 
-Protocol support depends on the exact Server and GraphQL.js combination.
+### Incremental delivery moves to GraphQL.js alpha 9
 
-### Initial Server 5 protocol
+Since 5.1.0, `@defer` and `@stream` incremental delivery uses `graphql@17.0.0-alpha.9` and protocol v0.2 selected with `Accept: multipart/mixed; incrementalSpec=v0.2`. `graphql@16` remains supported without incremental delivery; `graphql@17.0.0-alpha.2` deployments must upgrade. Alpha.9 result types use an `Alpha9` suffix and add completed/pending types; old unsuffixed types are renamed with `Alpha2`.
 
-The Server 5 migration release enables `@defer` and `@stream` only with exactly
-`graphql@17.0.0-alpha.2` and:
+Legacy `multipart/mixed; deferSpec=20220824` support in 5.1.0 requires `@yaacovcr/transform`; without it, that header receives an error.
 
-```http
-Accept: multipart/mixed; deferSpec=20220824
-```
+### Legacy incremental execution must be configured explicitly
 
-GraphQL.js 16, later v17 alphas, and a later final v17 do not enable incremental
-delivery under that release.
-
-### Alpha 9 and protocol v0.2 (`5.1.0`)
-
-Server 5.1 uses `graphql@17.0.0-alpha.9` and:
-
-```http
-Accept: multipart/mixed; incrementalSpec=v0.2
-```
-
-`graphql@16` remains supported without incremental delivery. Deployments using
-alpha.2 must upgrade for this protocol. Legacy
-`multipart/mixed; deferSpec=20220824` acceptance requires
-`@yaacovcr/transform`; without it, the server rejects the header.
-
-Unsuffixed legacy incremental result types acquire an `Alpha2` suffix. Alpha 9
-types use `Alpha9` and include completed and pending result types.
+Since 5.2.0, installing `@yaacovcr/transform` is insufficient for `multipart/mixed; deferSpec=20220824`. Pass its compatibility executor explicitly:
 
 ```ts
-import type {
-  GraphQLExperimentalFormattedInitialIncrementalExecutionResultAlpha9,
-  GraphQLExperimentalFormattedCompletedResultAlpha9,
-  GraphQLExperimentalPendingResultAlpha9,
-} from "@apollo/server";
-```
-
-### Explicit legacy executor (`5.2.0`)
-
-Installing the transform is no longer sufficient. Pass its compatibility executor
-to `ApolloServer`, or legacy accept headers fail:
-
-```ts
-import { legacyExecuteIncrementally } from "@yaacovcr/transform";
+import { legacyExecuteIncrementally } from '@yaacovcr/transform';
 
 const server = new ApolloServer({
   legacyExperimentalExecuteIncrementally: legacyExecuteIncrementally,
 });
 ```
 
+## Execution limits
+
+### Configurable execution coercion limit
+
+Since 5.3.0, configure GraphQL execution coercion limits through `executionOptions.maxCoercionErrors` on `ApolloServer`.
+
+### Configurable validation error limit
+
+Since 5.3.0, configure validation limits through `validationOptions.maxErrors` on `ApolloServer`.
+
 ## Standalone HTTP hardening
 
-### Request-body encodings (`5.4.0`)
+### Standalone request-body encodings are restricted
 
-`startStandaloneServer` accepts only UTF-8, UTF-16 LE/BE, and UTF-32 LE/BE request
-bodies. Other character sets return `415 Unsupported Media Type`, closing a
-denial-of-service vector. Other integrations are unaffected.
+Since 5.4.0, `startStandaloneServer` accepts only UTF-8, UTF-16 LE/BE, and UTF-32 LE/BE request bodies. Other charsets return `415 Unsupported Media Type`. Other integrations are unaffected.
 
-### GET `Content-Type` (`5.5.0`)
+### Standalone GET request content-type hardening
 
-`@apollo/server/standalone` rejects GraphQL GET requests whose `Content-Type` is
-not `application/json` with optional parameters, returning HTTP 415. An omitted
-header remains allowed. With default CSRF prevention, a headerless request still
-needs a non-empty `X-Apollo-Operation-Name` or `Apollo-Require-Preflight`. This is
-especially relevant when authentication uses cookies or HTTP Basic Auth.
+Since 5.5.0, `@apollo/server/standalone` rejects GraphQL GET requests carrying a `Content-Type` other than `application/json` with optional parameters, returning 415. No `Content-Type` remains allowed, but default CSRF protection still requires a non-empty `X-Apollo-Operation-Name` or `Apollo-Require-Preflight`. This matters especially with cookie or HTTP Basic authentication.

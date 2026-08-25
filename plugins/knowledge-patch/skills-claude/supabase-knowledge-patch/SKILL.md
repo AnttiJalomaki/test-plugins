@@ -10,162 +10,149 @@ metadata:
 
 # Supabase Knowledge Patch
 
+Use this skill for current Supabase implementation, migration, administration, and troubleshooting work. It covers hosted, local CLI, and Docker self-hosted behavior across Auth, Database, Data API, Edge Functions, Realtime, Storage, branching, queues, integrations, and platform controls.
+
+Choose the reference that matches the task before proposing code or operational steps. Keep hosted, local, and self-hosted contracts distinct, and preserve alpha, beta, feature-preview, and plan restrictions stated in the references.
+
+## Working method
+
+1. Identify whether the target is hosted Supabase, the local CLI stack, or Docker self-hosting.
+2. Read the relevant topic reference; read more than one when a workflow crosses service boundaries.
+3. Check the breaking changes and deprecations below before using a familiar API or migration path.
+4. Preserve exact option names, defaults, limits, security boundaries, and lifecycle conditions from the references.
+5. Do not infer a replacement, guarantee, or hosted/self-hosted equivalence that the references do not state.
+
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [auth-and-keys.md](references/auth-and-keys.md) | Hooks, MFA and passkeys, identity linking, custom providers, OAuth 2.1 server, third-party JWTs, signing keys, API keys |
-| [database-and-data-api.md](references/database-and-data-api.md) | Poolers, configuration, extensions, timeouts, Data API exposure and errors, replication, Postgres 17, OrioleDB |
-| [platform-administration-and-security.md](references/platform-administration-and-security.md) | Roles, billing, backups, disks, domains, networking, replicas, migrations, upgrades, compliance and advisors |
-| [edge-functions.md](references/edge-functions.md) | Dashboard deployment, dependencies, CORS, filesystems, background work, limits, regions, WebSockets, server SDK |
-| [realtime.md](references/realtime.md) | Listener ordering, private-channel RLS, Broadcast, replay, protocol 2.0, quotas, database resources, releases |
-| [storage-ai-and-vectors.md](references/storage-ai-and-vectors.md) | S3, resumable uploads, Analytics/Iceberg, Vector buckets, automatic embeddings, remote vector stores |
-| [local-cli-and-branching.md](references/local-cli-and-branching.md) | CLI installation, config, schemas, migrations, tests, local services, preview and persistent branches, deployment |
-| [self-hosting.md](references/self-hosting.md) | Compose upgrades, asymmetric auth, Functions, Storage, email, MCP, TLS, restores, MFA, security boundaries |
-| [cron-queues-and-integrations.md](references/cron-queues-and-integrations.md) | pg_cron, PGMQ, Data API queue wrappers, Management API OAuth, provisioning, ETL and marketplace integration |
-| [clients-tools-and-mcp.md](references/clients-tools-and-mcp.md) | JavaScript APIs, typed queries, SSR and mobile setup, UI and SQL tools, hosted/local MCP, Terraform and integrations |
+| --- | --- |
+| [Authentication, OAuth, Hooks, and Keys](references/auth-and-keys.md) | Auth flows, identity providers, hooks, signing keys, passkeys, MFA, and API-key lifecycle |
+| [Clients, Developer Tools, and MCP](references/clients-tools-and-mcp.md) | JavaScript client compatibility, project starters, hosted and local MCP, and server SDKs |
+| [Cron, Queues, and Platform Integrations](references/cron-queues-and-integrations.md) | Scheduled jobs, queue delivery, Management API workflows, ETL, and marketplaces |
+| [Database and Data API](references/database-and-data-api.md) | Connections, Postgres settings, extensions, migrations, replication, PostgREST, GraphQL, and types |
+| [Edge Functions](references/edge-functions.md) | Dependencies, invocation, filesystems, deployment, quotas, regions, WebSockets, and metrics |
+| [Local Development, CLI, Branching, and Deployment](references/local-cli-and-branching.md) | Local configuration, migrations, seeds, CLI compatibility, previews, and GitHub deployment |
+| [Platform Administration and Security](references/platform-administration-and-security.md) | Roles, billing, backups, networking, project lifecycle, observability, and compliance |
+| [Realtime](references/realtime.md) | Channels, authorization, Broadcast, Presence, Postgres Changes, protocol behavior, and limits |
+| [Self-hosting](references/self-hosting.md) | Docker configuration, key rotation, Auth, Functions, proxying, Storage, MCP, and restores |
+| [Storage, AI, and Vectors](references/storage-ai-and-vectors.md) | Uploads, S3, Analytics and Vector buckets, embeddings, CDN behavior, and encryption |
 
 ## Breaking changes and migration traps
 
-### Secure-by-default Data API
+- Supabase JavaScript libraries from 2.79.0 require Node.js 20 and native `fetch`; 2.78.0 is the last Node.js 18-compatible release.
+- The npm-distributed CLI also requires Node.js 20 and does not support global npm installation.
+- A joined Realtime channel rejects new `postgres_changes` listeners; register every binding before `subscribe()`.
+- Passing an async callback directly to `onAuthStateChange` is deprecated.
+- New projects disable Postgres Changes until the relevant tables are enabled in Realtime replication.
+- New projects require explicit grants before PostgREST or GraphQL can expose new `public` tables, and `pg_graphql` is opt-in.
+- Explicit extension versions in `CREATE EXTENSION` or `ALTER EXTENSION` are ignored from August 5; the default version is installed with a warning.
+- The `realtime` schema is protected from object creation, alteration, and deletion; existing `realtime.messages` RLS policies still work.
+- Do not begin new `pgsodium` or Transparent Column Encryption deployments; Vault remains available.
+- Before a Postgres 17 upgrade, migrate TimescaleDB hypertables and drop deprecated `pgjwt`.
+- New Storage ownership uses `owner_id`; the older `owner` field is deprecated, and ownership itself does not grant access.
+- Self-hosted Docker upgrades require matching Compose and mounted-configuration migrations, not image-tag changes alone.
+- `supabase migration squash` is schema-only and omits all DML, including cron jobs, Storage buckets, and Vault secrets.
+- Preview branches remember applied migrations and run their seed only at creation; recreating a preview reruns both and discards branch-local data.
+- Custom-domain activation immediately changes OAuth callback URLs and the SAML entity ID.
+- Opaque API keys are not bearer JWTs; Edge Functions using them need disabled built-in JWT verification plus explicit `apikey` validation.
 
-New projects no longer automatically expose new `public` tables. Grant privileges explicitly:
+## Auth and keys quick reference
 
-```sql
-grant select on table public.catalog to anon, authenticated;
-```
+- A publishable key selects `anon` unless a user JWT selects `authenticated`; a secret key selects `service_role`, bypasses RLS, stays server-side, and is rejected in browsers.
+- Hosted opaque keys can rotate independently while legacy JWT keys remain active. Self-hosted deployments support only one opaque key per role.
+- The OAuth scopes `openid`, `email`, `profile`, and `phone` control identity fields, not database authorization; use RLS for database access.
+- OAuth access tokens carry `client_id`, while direct user sessions do not.
+- Asymmetric signing-key migration uses a standby, rotation, and later explicit revocation; move direct legacy-secret verification to `getClaims()` or JWKS before switching.
+- External JWKS verifiers should allow roughly twenty minutes for edge and client cache propagation; Supabase services honor revocation immediately.
+- Clerk, Firebase Auth, Auth0, Amazon Cognito, and WorkOS tokens need an asymmetric signature, a `kid`, and `role: "authenticated"` to avoid falling back to `anon`.
+- HTTP Auth Hooks use Standard Webhooks signatures, not JWT verification, and retry only `429` or `503` responses with a nonempty `retry-after`, within the stated budget.
+- With Secure Email Change and a Send Email Hook, send both messages and preserve the documented reversed token/hash pairing.
+- SAML identities do not automatically link by email; reference application data by user UUID.
+- Auth supports passkey authentication and administration, AWS KMS-backed RS256 signing keys, zero-downtime SAML SP key rotation, and per-provider custom OAuth claim allowlists.
+- For server-side Next.js authorization with `@supabase/ssr`, call `getClaims()` in root `proxy.ts` and copy refreshed cookies into the request and response; do not authorize from `getSession()`.
 
-New projects also leave `pg_graphql` disabled. Enable it explicitly if the application uses GraphQL:
+## Database and Data API quick reference
 
-```sql
-create extension pg_graphql;
-```
+- Data API requests use nearest-read-replica routing by default on load-balancer endpoints.
+- Paid projects can choose direct connections, shared Supavisor, or a database-co-located dedicated PgBouncer pooler.
+- Supavisor and dedicated PgBouncer each receive the configured pool-size budget independently.
+- Dashboard and client statement timeouts top out at 60 seconds; role changes used by PostgREST need a config reload.
+- `.explain()` is opt-in because query plans expose database structure; protect plan media types from untrusted production callers.
+- HypoPG index creation and `EXPLAIN` must execute in one connection.
+- `pg_net` starts requests only after commit; its POST body is JSON and PATCH/PUT are unsupported.
+- Foreign tables from Wrappers do not enforce RLS; keep them in an unexposed schema and expose only deliberately secured functions.
+- A Data API pre-request function can inspect request settings and raise SQLSTATE `PGRST` to control response status, headers, and body.
+- Data API error logs split database failures into `postgres_logs` and API failures into `edge_logs`; PostgREST codes appear in logs only on version 14 or later.
+- Python database types generated by CLI 2.66.0 or later use Pydantic row models and `TypedDict` insert/update payloads.
+- Managed replication targets BigQuery and requires source primary keys. Restart after publication changes; downstream consumers must deduplicate when exactly-once behavior matters.
 
-Disabling **Enable Data API** disables REST, GraphQL, and database access through Supabase clients. When exposing a custom schema, remove `public` from both exposed schemas and the extra search path, then grant the custom schema deliberately.
+## Edge Functions quick reference
 
-### API keys and JWT verification
+- Keep a separate `deno.json` and, when needed, `.npmrc` beside each deployed function; colocated `deno.json` wins over a legacy import map.
+- Publishable keys are not injected automatically; store one under an `SB_` secret name because `SUPABASE_` is reserved.
+- Mounted S3-compatible buckets appear under `/s3/<bucket>`; `/tmp` is invocation-scoped and limited by plan.
+- In request handlers and callbacks, use asynchronous filesystem calls; synchronous Deno and Node calls are blocklisted there.
+- Static bundled files require CLI 2.7.0 or later and Docker-based bundling, not `--use-api`.
+- A pinned region does not fail over during an outage; inspect `x-sb-edge-region` or `SB_REGION` to confirm placement.
+- Hosted workers have explicit memory, CPU, response-idle, wall-clock, bundle, log, and secret ceilings detailed in the reference.
+- Resource termination returns status `546` with `WORKER_LIMIT`.
+- Browser WebSockets require handler-level token validation when gateway JWT verification is disabled, and connections end at the worker wall-clock limit.
 
-Hosted projects support `sb_publishable_...` and `sb_secret_...` keys. Put these opaque values in `apikey`; they are not bearer JWTs. A publishable key starts with `anon`, while a secret selects `service_role` and must remain server-side.
+## Realtime quick reference
 
-```sh
-curl "$SUPABASE_URL/rest/v1/items?select=*" \
-  -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
-  -H "Authorization: Bearer $USER_JWT"
-```
+- Private Broadcast and Presence require `private: true`, disabled public access, and `realtime.messages` RLS; `SELECT` receives and `INSERT` sends or tracks.
+- Those channel policies are cached at join and refreshed by a new access-token message; they do not govern Postgres Changes.
+- `realtime.broadcast_changes()` can publish trigger-formatted row changes to record-specific private topics.
+- `REPLICA IDENTITY FULL` exposes old values, but RLS delete payloads still retain only primary keys; delete events cannot be filtered.
+- Oversized Postgres Changes payloads retain only fields whose individual values are at most 64 bytes.
+- Realtime settings changes disconnect all clients.
+- Custom-JWT channels retain their token across resubscription and no longer require `setAuth()`.
+- Self-hosted authorization deployments should use Realtime 2.112.10 or later for the `apply_rls` role-leak fix.
 
-Migrate with new and legacy keys active together, then deactivate legacy keys. Before revoking the legacy JWT secret, replace direct-secret verification with `supabase.auth.getClaims()` or JWKS verification and replace legacy `anon`/`service_role` JWT keys with publishable/secret keys.
+## Storage, AI, and vectors quick reference
 
-Edge Functions do not automatically authorize new-format keys. Calls using them require disabled built-in JWT verification and explicit `apikey` authorization inside the function.
+- Analytics buckets are private-alpha Iceberg warehouses with separate catalog and S3 data credentials.
+- Vector index dimension, metric, and data type are immutable; current indexes use `float32`, up to 4,096 dimensions, and the documented distance choices.
+- Use 500 vectors as the conservative write batch while the alpha examples and limit table disagree.
+- Generated S3 keys bypass RLS; an RLS-scoped client instead uses project reference, anon key, and user JWT as session credentials.
+- Supabase S3 does not support versioning, lifecycle configuration, bucket CORS configuration, ACLs, object locking, or server-side-encryption controls.
+- Large TUS uploads use `/storage/v1/upload/resumable` and should use the direct Storage hostname with chunks of exactly `6 * 1024 * 1024` bytes.
+- Cross-bucket copy and move are limited to 5 GB and require the documented source/destination privileges.
+- `NoSuchBucket` or `NoSuchKey` may mean RLS hid an existing resource; lock, timeout, and throttle failures use `423`, `504`, and `503`.
+- Smart CDN invalidation can take up to 60 seconds and does not clear browser caches.
+- Queue-backed embedding workers delete only successful jobs and let failed or interrupted jobs become visible for retry.
+- `Supabase.ai.Session` currently supports only `gte-small`; keep it at module scope and use mean pooling plus normalization for dot-product sentence embeddings.
 
-### Asymmetric signing-key rotation
+## Local development, branching, and self-hosting quick reference
 
-Signing keys now have standby, current, previously-used, and revoked states. Rotate issuance to the asymmetric key, wait at least the JWT lifetime plus 15 minutes, then revoke the old key. External verifiers may retain a revoked key for ten minutes at the edge plus another library cache interval; purge caches when required.
+- `supabase config push` applies local `config.toml` to a linked hosted project.
+- Declarative schema diffs omit DML and several object classes; keep those changes in explicit versioned migrations.
+- Local Auth templates use relative `content_path` files and a restart; hosted templates require hosted project configuration.
+- Seed path globs are lexically sorted and deduplicated, making multi-file seed order deterministic.
+- `supabase test db` rolls each pgTAP file back; `supabase db lint` needs `--fail-on` to fail CI on findings.
+- Persistent branch configuration lives below `[remotes.<name>]` and applies only when the branch exists and its project ID matches.
+- Git-backed preview secrets use dotenvx encryption; literal `encrypted:` values work only in designated secret fields.
+- GitHub production deployment applies migrations, Edge Functions, and declared Storage buckets, but ignores API settings, Auth settings, and seeds by default.
+- Self-hosted opaque and ES256 keys must be enabled together across Auth, Realtime, and Storage; changing `JWT_SECRET` also requires regenerating JWKS.
+- Rotating only opaque self-hosted API keys preserves sessions; replacing the EC P-256 pair invalidates ES256 sessions.
+- Self-hosted Auth template settings must be reachable HTTP URLs, not mounted file paths.
+- The self-hosted MCP route is default-deny and has no OAuth 2.1; restrict it by IP and tunnel access rather than exposing it publicly.
+- Self-hosted Functions share `volumes/functions`, require a service restart for code changes, and use internal `SUPABASE_URL` for service calls.
+- Storage object migration must use S3-to-S3 transfer; copying into `volumes/storage` does not rebuild metadata.
 
-The bearer JWT and the `apikey` are separate credentials for Data API calls. Imported ES256 keys support external minting, but private material cannot be exported after creation.
+## Cron, queues, integrations, and platform controls
 
-### Realtime listener ordering
-
-As of `supabase-js` 2.101.0, register every `postgres_changes` binding before `subscribe()`; adding one after the channel joins is blocked.
-
-```ts
-const channel = supabase
-  .channel('database-changes')
-  .on('postgres_changes', { event: '*', schema: 'public' }, handleChange)
-  .subscribe()
-```
-
-Realtime settings changes restart the service and disconnect every connected client. Plan them as reconnect events.
-
-### JavaScript response overrides
-
-`.returns()` is deprecated. Use `.overrideTypes<T>()`; it merges by default, or replaces the result type with `{ merge: false }`.
-
-```ts
-const rows = supabase.from('users').select()
-  .overrideTypes<{ id: number; name: string }, { merge: false }>()
-```
-
-### Postgres 17 compatibility
-
-TimescaleDB is unavailable on Postgres 17. Migrate hypertables and dependent objects, drop the extension, and use native partitioning plus optional `pg_partman`; Timescale-specific bucketing and compression have no direct replacement.
-
-Disable `plcoffee`, `plls`, `plv8`, and `pgjwt` before upgrading to Postgres 17. Logical replication must use a direct connection; Postgres 17 permits a dedicated replication login and read-replica subscription.
-
-### CLI and migration hazards
-
-The npm CLI requires Node 20+ and does not support global npm installation. Before a local-stack upgrade, dump schema/data and run `supabase stop --no-backup` so service migrations start with fresh volumes.
-
-`supabase migration squash` omits all DML, including cron jobs, buckets, and Vault secrets. `db reset --linked` preserves cluster-level custom roles. A schema-specific first `db pull` ignores `--schema` when the migrations directory is empty.
-
-## High-value authentication features
-
-### OAuth 2.1 server
-
-A project can act as an OAuth 2.1/OIDC provider. Local support requires CLI 2.54.11+. Configure a consent path, inspect the `authorization_id`, and approve or deny it from the application UI.
-
-```toml
-[auth.oauth_server]
-enabled = true
-authorization_url_path = "/oauth/consent"
-allow_dynamic_registration = false
-```
-
-Only authorization-code-with-PKCE and refresh-token grants are supported. Redirect URIs are exact, authorization codes are single-use and valid for ten minutes, custom scopes are unavailable, and `openid` requires asymmetric signing. OAuth scopes control identity claims, not database authorization; use the token's `client_id` in RLS.
-
-### Auth hooks
-
-The Before User Created hook runs before `auth.users` insertion. HTTP hooks must verify the raw Standard Webhooks body, stay within 20 KB and five seconds, return JSON, and expect retries only for `429`/`503` with `retry-after`. Custom Access Token, MFA Verification, and Password Verification hooks require bodies and cannot return `204`.
-
-The Send Email hook replaces SMTP only while the Email provider stays enabled. Secure email-change token/hash field names are intentionally crossed; see the Auth reference before implementing a custom sender.
-
-### MFA, passkeys, and identity linking
-
-Phone MFA uses enroll/challenge/verify and refreshes successful sessions to `aal2`; phone codes can remain valid for five minutes and older issued codes remain usable until expiry. Passkeys support discoverable authentication, progressive enrollment, and user/admin list/delete endpoints.
-
-Native identity linking accepts provider ID/access tokens without a redirect when manual linking is enabled. A user may unlink only while at least two identities remain.
-
-### Third-party authentication
-
-Clerk, Auth0, Cognito, Firebase, and WorkOS JWTs can authorize Data API, Storage, Realtime, and Functions directly. Tokens need asymmetric signing, `kid`, and normally `role: authenticated`; key changes can take 30 minutes to propagate. Keep issuer/audience RLS checks especially strict for self-hosted Firebase.
-
-## High-value data and runtime features
-
-### Private Realtime channels and replay
-
-Authorize private Broadcast/Presence channels with RLS on `realtime.messages`: `SELECT` receives, `INSERT` sends, `realtime.topic()` identifies the topic, and `extension` separates Broadcast from Presence. Postgres Changes still uses table RLS and ignores `private`.
-
-Broadcast Replay is alpha, private-channel-only, and replays database-originated messages retained for three days. Supply millisecond `since` and optional `limit <= 25`; client and REST broadcasts are not replayed.
-
-### Database-triggered Broadcast
-
-Database triggers can publish controlled Realtime Broadcast payloads. REST Broadcast can also send a batch without joining a WebSocket channel, and sending on an unsubscribed JavaScript channel uses this path.
-
-### Analytics and Vector buckets
-
-Analytics buckets store Iceberg metadata plus Parquet data and expose a REST Catalog and S3 endpoint. Query with PyIceberg, Spark, DuckDB, or an Iceberg FDW in Postgres; ingestion must come from an external pipeline.
-
-Vector buckets are S3-backed, backend-oriented embedding stores. Index dimension, `float32` type, and distance metric are immutable. Use `putVectors()` and `queryVectors()` or the SQL wrapper's `data <==> query`; keep batches at 500 vectors while alpha documentation remains inconsistent.
-
-### Queues and asynchronous embeddings
-
-Supabase Queues wraps `pgmq`: `read()` hides messages for a visibility interval, `pop()` gives at-most-once behavior, and explicit delete/archive completes work. Exposing `pgmq_public` requires per-table RLS and role grants; local/self-hosted deployments must also add it to PostgREST schemas.
-
-Automatic embedding updates should enqueue row identity in triggers, process batches with Cron plus an Edge Function, and delete only after storage succeeds. Align the queue visibility timeout with the function timeout; clear stale embeddings on update when correctness requires it.
-
-### Edge Function execution
-
-Use function-local `deno.json` and `.npmrc`. The runtime provides per-invocation `/tmp`, persistent `/s3/<bucket>` mounts when configured, `EdgeRuntime.waitUntil()` for background work, region selection, and inbound/outbound WebSockets.
-
-Hosted workers have 256 MB, two seconds of CPU per request, 150/400-second Free/paid wall time, and 20 MB bundles. Resource exhaustion returns `546 WORKER_LIMIT`; startup failures return `503 BOOT_ERROR`.
-
-## Deployment and operations essentials
-
-Branches are isolated instances with separate credentials, data, Storage, Functions, and Auth configuration. Preview branches are ephemeral and empty of production data; persistent branches need explicit `[remotes.<name>]` configuration and branch-local secrets.
-
-Git deployment runs `Clone -> Pull -> Health -> Configure -> Migrate -> Seed -> Deploy`. Production integration deploys migrations, changed Functions, and declared Storage buckets, but ignores API/Auth config and seed data. Editing an already-applied preview migration does nothing; recreate the preview to replay history.
-
-For self-hosting, upgrade configuration files and entrypoint logic together with image tags. The current stack supports opaque keys plus ES256 sessions, but key variables must reach every JWT-aware service and Functions need hybrid verification. Restart after code changes; force-recreate after environment changes.
-
-Use direct or session-mode port 5432 connections for dumps, restores, migrations, and logical replication. Supavisor transaction mode on 6543 does not support prepared statements; Prisma needs its pooler switch and a separate direct/session migration URL.
-
-Read the matching reference before changing Auth, exposed schemas, RLS, signing keys, networking, backups, branches, self-hosted Compose, Realtime limits, or Storage alpha features.
+- Scheduling the same case-sensitive cron name replaces the job; unscheduling leaves run history, while disabling `pg_cron` deletes all jobs.
+- Client queue access is opt-in through `pgmq_public`; keep raw `pgmq` private and add RLS plus operation-specific grants to every exposed queue table.
+- `read_with_poll()` waits for work and leases messages; `pop()` deletes on read and is at-most-once if processing fails.
+- `detach_archive()` preserves an archive across extension removal without stopping later archive writes while the extension remains installed.
+- Management API OAuth apps configure scopes on the app, not in the authorization request; users must reauthorize after scope changes.
+- Poll project health until the required service is `ACTIVE_HEALTHY` before post-provision configuration.
+- Management API database migrations are transactional; restore-point undo does not restore configuration, secrets, stored objects, or deployed Functions.
+- Branch merge through the Management API promotes only database changes and deployed Edge Functions.
+- Supabase Pipelines is a public alpha on paid plans.
+- Developer and Read-Only role names do not imply secret isolation; consult the platform reference before delegating organization access.
+- Physical backups omit custom-role passwords and Storage objects; non-Realtime subscriptions and replication slots must be dropped and recreated for restore.
+- Network restrictions cover direct and pooled database routes, not HTTPS APIs, and direct database access from Edge Functions remains blocked.
+- Platform Audit Logs cover dashboard and Platform API member actions, not project Auth events.
+- High Compliance projects require the HIPAA prerequisites, continuous Security Advisor checks, PITR, at least Small compute, SSL enforcement, and network restrictions.

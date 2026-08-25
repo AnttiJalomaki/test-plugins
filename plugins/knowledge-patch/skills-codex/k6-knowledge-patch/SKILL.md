@@ -8,73 +8,76 @@ metadata:
 ---
 
 
-# Grafana k6 Development Guidance
+# Grafana k6 Knowledge Patch
 
-Use this skill when writing, reviewing, upgrading, or operating k6 tests. Start
-with migration guidance for an existing project, then open the topic reference
-that matches the work. Prefer explicit commands and current module paths over
-compatibility switches that only postpone a migration.
+Use this skill when writing, reviewing, upgrading, or operating Grafana k6
+tests. Inspect the project's pinned k6 version before applying version-specific
+advice. Prefer the project's manifests, scripts, configuration, and observed
+behavior when they disagree with generic guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Browser testing](references/browser-testing.md) | Locators, frames, request routing, page events, proxies, browser metrics, and Cloud log filtering |
-| [CLI, configuration, and execution](references/cli-config-and-execution.md) | TypeScript, summaries, feature flags, execution status, HTTP API, VU overrides, and diagnostics |
-| [Cloud and secrets](references/cloud-and-secrets.md) | Cloud commands, stack and project resolution, exit status, local execution, and secret sources |
-| [Extensions and dependencies](references/extensions-and-dependencies.md) | Automatic provisioning, dependency discovery, `k6 x`, official extensions, archives, and extension runtime integration |
-| [Metrics, outputs, and runtime](references/metrics-outputs-and-runtime.md) | OpenTelemetry, Prometheus, Rate and Gauge shapes, WebSockets, gRPC, crypto, assertions, and logging |
-| [Migration and compatibility](references/migration-and-compatibility.md) | Major-version removals, Go APIs and toolchains, Docker behavior, support policy, and upgrade audit |
+| [Browser Testing](references/browser-testing.md) | Locators, frames, network waits, routing, events, proxies, CDP, and browser metrics |
+| [CLI, Configuration, and Execution](references/cli-config-and-execution.md) | TypeScript, summaries, scenarios, feature flags, logging, containers, and runtime controls |
+| [Cloud and Secrets](references/cloud-and-secrets.md) | Cloud commands, stacks and projects, local execution, secret sources, logs, and orchestrator credentials |
+| [Extensions and Dependencies](references/extensions-and-dependencies.md) | Automatic resolution, dependency manifests, `k6 x`, Go extensions, DNS, Redis, and WebSockets |
+| [Metrics, Outputs, and Runtime](references/metrics-outputs-and-runtime.md) | OpenTelemetry, Prometheus, Cloud output, gRPC, crypto, HTTP/2, and JavaScript runtime APIs |
+| [Migration and Compatibility](references/migration-and-compatibility.md) | Semantic-versioning policy, build toolchains, removals, deprecations, and major-version migration |
 
-## Start with breaking changes
+## Breaking changes and migration traps
 
-### Audit a v2 migration
+### Treat a v2 upgrade as an explicit migration
 
-For k6 v2, address all of these before debugging secondary failures:
+Before moving to k6 v2, search code and automation for all of the following:
 
-- Change Go imports from `go.k6.io/k6/...` to `go.k6.io/k6/v2/...`.
-- Replace the removed `externally-controlled` executor. The `pause`, `resume`,
-  `scale`, and `status` commands no longer exist.
-- Use `k6 cloud login`, `k6 cloud run`, and `k6 cloud upload`; remove the old
-  positional Cloud form and `--upload-only`.
-- Move `options.ext.loadimpact` to `options.cloud`.
-- Remove `K6_OTEL_SINGLE_COUNTER_FOR_RATE`, `K6_BINARY_PROVISIONING`, and
-  `K6_ENABLE_COMMUNITY_EXTENSIONS`.
-- Move legacy configuration to `{USER_CONFIG_DIR}/k6/config.json`; v2 does not
-  read the old `loadimpact` path.
-- Enable the HTTP API explicitly with `--address` or `K6_ADDRESS` if automation
-  expects it.
-- Treat Cloud exit status `97` as failure. Threshold aborts remain `99`.
+- Go imports beginning with `go.k6.io/k6/`; change them to
+  `go.k6.io/k6/v2/`.
+- The `externally-controlled` executor and the `pause`, `resume`, `scale`, or
+  `status` CLI commands; replace the executor rather than looking for renamed
+  commands.
+- Positional `k6 cloud script.js`, top-level `k6 login`, `--upload-only`, and
+  `options.ext.loadimpact`; use explicit Cloud subcommands and `options.cloud`.
+- `K6_BINARY_PROVISIONING`, `K6_ENABLE_COMMUNITY_EXTENSIONS`, and
+  `K6_OTEL_SINGLE_COUNTER_FOR_RATE`; remove them.
+- The legacy `loadimpact/config.json` path; move or regenerate the file under
+  the `k6` configuration directory.
+- Automation that assumes the HTTP API listens by default or that an aborted
+  Cloud run exits successfully. Enable the API with `--address`; treat exit
+  status `97` as failure.
 
-Read [Migration and compatibility](references/migration-and-compatibility.md)
-for extension JSON changes, Docker tags, and build requirements. Read
-[Cloud and secrets](references/cloud-and-secrets.md) before changing Cloud CI.
+See [Migration and Compatibility](references/migration-and-compatibility.md)
+for extension JSON changes, archive metadata, Docker tags, and the complete
+migration checklist.
 
-### Replace deprecated interfaces
+### Migrate deprecated summary settings
 
-- Use summary mode `disabled` instead of `--no-summary` or `K6_NO_SUMMARY`.
-  Migrate `legacy` summary users to `compact` or `full`.
-- Use `--out opentelemetry` and `K6_OTEL_EXPORTER_PROTOCOL`; the experimental
-  output name and `K6_OTEL_EXPORTER_TYPE` are deprecated.
-- Import WebSockets from `k6/websockets`, not
-  `k6/experimental/websockets`.
-- Replace `k6/experimental/redis` with the official Redis extension.
-- Replace `browser_web_vital_fid` thresholds and integrations with
-  `browser_web_vital_inp`.
+Use `--summary-mode=disabled` or `K6_SUMMARY_MODE=disabled` instead of
+`--no-summary` or `K6_NO_SUMMARY`. Do not build new tooling around the legacy
+summary mode; choose `compact` or `full`. If `handleSummary()` legitimately
+needs longer than its default budget, set `handleSummaryTimeout` or
+`K6_HANDLE_SUMMARY_TIMEOUT`.
+
+### Use stable module paths
+
+- Use `k6/websockets`, not `k6/experimental/websockets`.
+- Use the official Redis extension instead of `k6/experimental/redis`.
+- Use `--out opentelemetry`; the `experimental-opentelemetry` alias and
+  `K6_OTEL_EXPORTER_TYPE` are deprecated.
+- Replace browser FID thresholds and integrations with INP.
 
 ## High-value workflows
 
-### Run TypeScript directly
+### Run JavaScript or TypeScript directly
 
-k6 runs `.ts` tests without a separate transpilation step:
+k6 executes `.ts` files directly, so a separate transpilation stage is not
+required for supported TypeScript syntax:
 
 ```typescript
 import http from 'k6/http';
 
-interface Target {
-  url: string;
-}
-
+interface Target { url: string }
 const target: Target = { url: 'https://quickpizza.grafana.com/' };
 
 export default function () {
@@ -86,123 +89,116 @@ export default function () {
 k6 run script.ts
 ```
 
-### Inspect and provision dependencies
+### Coordinate browser waits with their trigger
 
-Use static ES module imports so automatic extension resolution and dependency
-inspection can see dependencies:
-
-```sh
-k6 deps --json script.js
-K6_DEPENDENCIES_MANIFEST='{"k6/x/faker":">=v0.4.4"}' k6 run script.js
-```
-
-Dynamic `require()` calls are not discovered. For unavoidable CommonJS, place a
-`"use k6 with ..."` directive at the start of every relevant file. See
-[Extensions and dependencies](references/extensions-and-dependencies.md) for
-community-extension rules, archive metadata, and `k6 x` provisioning.
-
-### Arm browser waits before actions
-
-Start a page wait together with the action that triggers it:
+Arm request or response waits at the same time as the action so fast network
+events cannot be missed:
 
 ```javascript
-await Promise.all([
+const [response] = await Promise.all([
   page.waitForResponse(/\/api\/.*\.json$/),
   page.click('button[data-testid="load-data"]'),
 ]);
 ```
 
-Use `waitForRequest()` for outgoing requests, `waitForEvent()` for named page
-events, and `requestfailed` or `requestfinished` listeners for lifecycle
-observation. Use `route()` to abort, modify, or fulfill traffic. The complete
-locator, frame, routing, proxy, and event guidance is in
-[Browser testing](references/browser-testing.md).
+Use `page.route()` to abort, modify, or fulfill matching requests. Remove a
+specific route with the identical matcher passed to `page.unroute()`, or clear
+all routes with `page.unrouteAll()`. For nested iframes, chain
+`frameLocator()` calls rather than manually switching frame context.
 
-### Use structured summaries deliberately
+### Resolve extensions automatically
 
-The newer machine-readable summary is opt-in:
+Use static ES module imports so k6 can detect and provision extensions:
 
-```sh
-k6 run script.js --new-machine-readable-summary --summary-export=summary.json
+```javascript
+import dns from 'k6/x/dns';
 ```
 
-It applies to both `--summary-export` and `handleSummary()` and is intended to
-become the default in a later major line. Update consumers before enabling it.
+Dynamic CommonJS `require()` is not discovered. If CommonJS is unavoidable,
+put a directive at the beginning of each relevant file, after only an optional
+shebang, whitespace, or comments:
 
-### Resolve Cloud context explicitly
+```javascript
+"use k6 with k6/x/redis"
+const redis = require('k6/x/redis');
+```
 
-Save a default stack at login or override it for a run:
+Inspect dependencies with `k6 deps --json script.js`. Supply missing
+constraints through `K6_DEPENDENCIES_MANIFEST`; use `k6 x` to discover or run
+extension subcommands.
+
+### Configure Cloud context explicitly
+
+Prefer explicit Cloud commands:
 
 ```sh
 k6 cloud login --token "$MY_TOKEN" --stack my-stack-slug
-K6_CLOUD_STACK_ID=12345 k6 cloud run script.js
+k6 cloud run script.js
+k6 cloud upload script.js
+k6 cloud project list --format=json
+k6 cloud test list --json
 ```
 
-For deterministic automation, pass project IDs explicitly. `k6 cloud test
-list` otherwise resolves a project from environment or configuration and then
-the configured stack. See [Cloud and secrets](references/cloud-and-secrets.md)
-for exact precedence and local-execution behavior.
+Cloud project resolution can come from an explicit project ID, environment or
+script configuration, or the configured stack's default project. For local
+Cloud execution, decide explicitly whether secrets and logs should leave the
+machine; behavior differs between maintained major lines and newer commands
+provide `--no-cloud-logs`.
 
-### Enable experimental behavior visibly
+### Inspect and enable features
 
-Feature flags can come from repeated or comma-separated `--features`,
-`K6_FEATURES`, or `config.json`:
+List lifecycle information with `k6 features` or `k6 features --json`. Enable
+features with repeated or comma-separated `--features`, `K6_FEATURES`, or the
+`features` key in `config.json`:
 
 ```sh
-k6 run --features native-histograms script.js
-k6 features --json
+k6 run --features native-histograms,merge-run-tags script.js
 ```
 
-Enabled features become metric tags and survive archives and Cloud workers.
-Treat `native-histograms` as experimental and make downstream metric consumers
-understand its trend representation.
+Feature selections are tagged in metrics and preserved in archives and Cloud
+workers. `native-histograms` changes trend storage; `merge-run-tags` changes
+tag precedence; `freeze-env` makes mutation of `__ENV` fail in strict mode.
 
-## Output and metric checks
+## Operational guardrails
 
-- Exported Rate metrics use one counter labeled with `zero` and `nonzero`.
-- OpenTelemetry uses the stable `opentelemetry` output name. Its HTTP exporter
-  accepts Basic Auth through the documented username and password settings.
-- Experimental Prometheus remote write defaults to TLS 1.3 and exposes a
-  minimum-version override.
-- Cloud output v2 reports Gauge `min` and `max` in their proper fields.
-- The built-in dashboard runs with `--out=web-dashboard`.
+### Make scenario overrides visible
 
-Open [Metrics, outputs, and runtime](references/metrics-outputs-and-runtime.md)
-when changing collectors, dashboards, WebSockets, gRPC payloads, cryptography,
-or log parsing.
+Passing `--vus N` now replaces configured scenarios with a
+`shared-iterations` scenario containing `N` VUs and `N` iterations, and emits
+a warning. Treat the flag as a scenario override, not a harmless default.
 
-## Browser selection checklist
+### Interpret exits and explicit failures correctly
 
-- Use `count()` when visibility waiting would be wrong.
-- Use `first()`, `nth(index)`, and `last()` to select among locator matches.
-- Use `filter({ hasText })` or `filter({ hasNotText })` to narrow a locator.
-- Use `contentFrame()` or chain `frameLocator()` calls for iframe content.
-- Use `pressSequentially()` when every keyboard event matters; `fill()` is for
-  simple form filling.
-- Configure a proxy per isolated browser context with
-  `browser.newContext({ proxy: ... })`.
+Status consumers can distinguish a run marked by `execution.test.fail()` with
+`ExecutionStatusMarkedAsFailed`. In Cloud automation, preserve the distinct
+exit meanings: successful runs use `0`, Cloud aborts use `97`, and threshold
+aborts use `99`.
 
-## Extension checklist
+### Keep sensitive output deliberate
 
-1. Prefer static ES module imports.
-2. Run `k6 deps --json` and inspect inferred versions.
-3. Add `K6_DEPENDENCIES_MANIFEST` constraints when no version pragma exists.
-4. Let automatic resolution provision missing supported extensions.
-5. Run `k6 x` to discover registry and compiled-in subcommands.
-6. For Go extensions on v2, update the module path and use `encoding/json`
-   instead of removed easyjson-generated methods.
+Locally executed Cloud tests can stream logs to their Cloud run. Use
+`--no-cloud-logs` when logs must remain local, and otherwise rely on Grafana
+secrets management and redaction for values that might be logged. Anonymous
+extension usage reporting can be disabled with `--no-usage-report`.
 
-## Upgrade verification
+### Pin infrastructure assumptions
 
-After migration, verify behavior at system boundaries:
+Container images run as numeric UID `12345`, which is useful in Kubernetes
+security contexts. Pin explicit Docker tags when reproducibility matters;
+floating `:vN` tags track a major line, while prereleases and maintenance
+releases from older majors do not update `:latest`.
 
-- Run browser tests containing redirects and confirm request samples are not
-  duplicated.
-- Check Rate and Gauge queries rather than assuming their old export shapes.
-- Exercise Cloud abort paths and assert exit status handling.
-- Confirm the HTTP API is intentionally enabled or intentionally absent.
-- Run extension discovery from the same archive or source used in deployment.
-- Pin a Docker major-line tag when `latest` is too broad for the deployment.
+### Check output compatibility
 
-Use the references as the source of detail; this file is the triage and
-high-frequency command guide.
+- Rate exports use one counter labeled `zero` or `nonzero`; the old
+  OpenTelemetry fallback is gone in v2.
+- Experimental OpenTelemetry and Prometheus outputs began with a TLS 1.3
+  default. Prometheus remote write can set its floor with
+  `K6_PROMETHEUS_RW_TLS_MIN_VERSION`.
+- Cloud output v2 reports Gauge `min` and `max` in their correct fields.
+- OpenTelemetry HTTP Basic Auth uses the dedicated username and password
+  environment variables or output-config keys.
+
+Consult the topic references before changing browser synchronization,
+extension provisioning, Cloud local execution, or exported metric schemas;
+those areas have version-sensitive behavior that is easy to misapply.

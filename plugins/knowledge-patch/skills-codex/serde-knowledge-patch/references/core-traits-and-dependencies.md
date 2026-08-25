@@ -1,23 +1,12 @@
 # Core Traits and Dependencies
 
-## The trait-only `serde_core` crate
+## Choose the dependency boundary
 
-The `serde_core` crate introduced in the `1.0.220-serde-core` coverage batch
-contains Serde's core traits and their supporting APIs:
+### Trait-only serde_core crate (`1.0.220-serde-core`)
 
-- `Serialize` and `Serializer`
-- `Deserialize` and `Deserializer`
-- the `ser` and `de` modules used by handwritten implementations
-
-It deliberately contains no derive-macro support. This separation lets a
-crate depend on the trait layer without pulling in the rest of `serde`, but
-it changes neither the meaning of the traits nor the implementation that a
-format crate expects.
-
-### Suitable direct dependencies
-
-Use `serde_core` directly for libraries that only mention traits in generic
-bounds:
+`serde_core` contains Serde's `Serialize`, `Deserialize`, `Serializer`, and
+`Deserializer` traits. Use it directly only when a crate needs those traits as
+bounds or provides handwritten implementations without derive macros.
 
 ```toml
 [dependencies]
@@ -25,57 +14,78 @@ serde_core = "1.0.220"
 ```
 
 ```rust
-pub fn require_serializable<T: serde_core::Serialize>(_: &T) {}
+fn require_serializable<T: serde_core::Serialize>(_: &T) {}
 ```
 
-It is also suitable when all required `Serialize` or `Deserialize`
-implementations are handwritten with the `ser` and `de` APIs.
+The direct dependency communicates that the crate needs Serde's trait layer,
+not its derive support.
 
-### When to retain `serde`
+### Keep serde for derives
 
-Any crate using `#[derive(Serialize)]` or `#[derive(Deserialize)]` must
-continue to depend on `serde` with derive support:
-
-```toml
-[dependencies]
-serde = { version = "1.0.220", features = ["derive"] }
-```
+`serde_core` does not support `#[derive(Serialize)]` or
+`#[derive(Deserialize)]`. A crate that derives either trait must continue to
+depend on `serde`, which re-exports the same traits.
 
 ```rust
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-struct Message {
-    body: String,
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Record {
+    id: u64,
 }
 ```
 
-`serde` re-exports the same core traits and remains the safe default for
-applications and libraries that do not specifically need a trait-only
-dependency.
+Do not replace `serde` with `serde_core` merely because dependency resolution
+or a compiler diagnostic begins showing `serde_core` paths.
 
-## Understanding diagnostic paths
+## Diagnose exposed serde_core paths
 
-Because the traits originate in `serde_core`, an unsatisfied trait bound can
-be rendered with a path such as:
+Format crates that use `serde_core` can report an error such as:
 
 ```text
 T: serde_core::ser::Serialize
 ```
 
-This is the ordinary Serde serialization trait. The path does not imply that
-the affected dependency has a distinct `serde_core` integration or that the
-type needs a second serialization implementation.
+Read this as the ordinary Serde `Serialize` bound. The path identifies where
+the shared trait is defined; it does not describe a different serialization
+contract.
 
-Use the same remedies as for any missing Serde implementation:
+For a local type, derive or manually implement `serde::Serialize`:
 
-- Derive `serde::Serialize` or `serde::Deserialize` for a local type.
-- Enable the `derive` feature on `serde` if the derive macro is unavailable.
-- Enable a dependency's `serde` feature when its Serde implementations are
-  feature-gated.
-- Write the corresponding trait implementation by hand when deriving is not
-  appropriate.
+```rust
+#[derive(serde::Serialize)]
+struct Event {
+    sequence: u64,
+}
+```
 
-Do not search for a separate “serde_core support” switch solely because the
-diagnostic prints a `serde_core` path.
+For a type owned by another crate, enable that crate's existing `serde`
+feature when it provides one.
 
+Do not look for a special `serde_core` compatibility feature unless the
+dependency documents one. Fix the same missing implementation or feature that
+would have caused an unsatisfied `serde::Serialize` bound.
+
+## Remove the integer-128 compatibility wrapper
+
+### serde_if_integer128! is deprecated (since 1.0.221)
+
+Serde 1.0.221 deprecates `serde_if_integer128!`. Invoking the macro can produce
+deprecation warnings, so remove existing calls and avoid new ones.
+
+Search compatibility modules, macro definitions, and generated sources if the
+warning is not emitted directly from handwritten code:
+
+```text
+serde_if_integer128!
+```
+
+The macro is an obsolete compatibility wrapper. Remove the wrapper rather than
+suppressing its deprecation warning.
+
+## Dependency review checklist
+
+- Does the crate derive `Serialize` or `Deserialize`? Keep `serde`.
+- Does it only name traits in bounds or handwritten implementations?
+  `serde_core` may be appropriate.
+- Does an error mention `serde_core::ser::Serialize`? Fix the ordinary Serde
+  implementation or the foreign dependency's `serde` feature.
+- Does the source invoke `serde_if_integer128!`? Remove the deprecated wrapper.

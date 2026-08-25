@@ -1,90 +1,42 @@
 # Logging, privacy, and events
 
-Use this reference for structured logging, shared log and metric attributes,
-console ingestion, replay and trace correlation, PII controls, feedback, and
-manual event enrichment.
+## Structured logger and parameterized messages
 
-## Browser and console event behavior (9.0.0-guide)
-
-Browser SDKs no longer request backend IP inference by default. Set
-`sendDefaultPii: true` only when IP inference is intended.
-
-With `attachStackTrace: true`, `captureConsoleIntegration` marks console events
-handled unless configured with `{ handled: false }`:
-
-```js
-Sentry.init({
-  sendDefaultPii: true,
-  attachStackTrace: true,
-  integrations: [Sentry.captureConsoleIntegration({ handled: false })],
-});
-```
-
-`requestDataIntegration` no longer copies `request.user` into Express events.
-Call `Sentry.setUser()` explicitly, such as from authentication middleware.
-
-## Feedback migration (9.0.0-guide)
-
-Replace removed `captureUserFeedback()` calls with `captureFeedback()`. Rename
-the payload's `comments` property to `message`:
-
-```js
-Sentry.captureFeedback({ message: "What happened" });
-```
-
-## Additional captured failures (9.0.0)
-
-- Use the browser Statsig integration when Statsig context belongs in browser
-  telemetry.
-- The Node SDK captures exceptions from `worker_threads`; account for those
-  events in filtering and alerting.
-
-## Log and Replay option migration (10.0.0-guide)
-
-Move log options out of `_experiments`:
-
-```js
-Sentry.init({
-  enableLogs: true,
-  beforeSendLog: (log) => log,
-});
-```
-
-Remove Replay's `_experiments.autoFlushOnFeedback`; user feedback flushes an
-active replay by default.
-
-## Structured logger (structured-logs)
-
-`Sentry.logger` emits required-message logs at `trace`, `debug`, `info`, `warn`,
-`error`, and `fatal` levels. Supply searchable attributes as the second
-argument:
+The `structured-logs` API exposes `Sentry.logger` at `trace`, `debug`, `info`,
+`warn`, `error`, and `fatal` levels. Every call requires a message; pass
+searchable attributes as the second argument. The `Sentry.logger.fmt` tagged
+template extracts interpolated values as searchable attributes.
 
 ```js
 Sentry.logger.info("Order created", { orderId: "order_456" });
-```
-
-Use the `Sentry.logger.fmt` tagged template to turn interpolated values into
-searchable attributes:
-
-```js
 Sentry.logger.info(
   Sentry.logger.fmt`User ${userId} purchased ${productName}`,
 );
 ```
 
+The v10 initialization options `enableLogs` and `beforeSendLog` are top-level,
+not under `_experiments` (`10.0.0-guide`):
+
+```js
+Sentry.init({
+  enableLogs: true,
+  beforeSendLog: log => log,
+});
+```
+
+Replay's removed `_experiments.autoFlushOnFeedback` option is unnecessary;
+feedback flushes Replay by default.
+
 ## Shared log and metric attributes
 
-Since 10.61.0, `Sentry.setAttribute()` and `Sentry.setAttributes()` attach
-shared attributes to all logs and metrics. Values may be strings, numbers,
-booleans, or arrays of those primitive types.
-
-The same methods on the global scope set app-wide attributes. Methods on the
-current scope set operation-local attributes:
+Since 10.61.0, as recorded in `structured-logs`, `Sentry.setAttribute()` and
+`Sentry.setAttributes()` add shared attributes to logs and metrics. Values may
+be strings, numbers, booleans, or arrays of those types. The same methods on the
+global or current scope place attributes app-wide or operation-locally.
 
 ```js
 Sentry.setAttributes({ org_id: user.orgId, user_tier: user.tier });
-
-Sentry.withScope((scope) => {
+Sentry.withScope(scope => {
   scope.setAttribute("request_id", req.id);
   Sentry.logger.info("Processing order");
 });
@@ -92,8 +44,10 @@ Sentry.withScope((scope) => {
 
 ## Console and Consola ingestion
 
-`consoleLoggingIntegration({ levels })` converts only the selected console
-methods to Sentry logs:
+`consoleLoggingIntegration({ levels })` converts selected console calls to logs.
+Since 10.13.0, additional arguments become searchable
+`message.parameter.N` attributes. Since 10.12.0, Consola applications can attach
+`Sentry.createConsolaReporter()` instead (`structured-logs`).
 
 ```js
 Sentry.init({
@@ -103,24 +57,84 @@ Sentry.init({
 });
 ```
 
-Since 10.13.0, extra console arguments become searchable
-`message.parameter.N` attributes. Since 10.12.0, Consola applications can
-attach `Sentry.createConsolaReporter()` instead.
+Logs emitted during an active span automatically receive
+`sentry.trace.parent_span_id`. In supported browsers, a log emitted during an
+active Session Replay also receives `sentry.replay_id`.
 
-## Trace and replay correlation
+## Browser PII behavior
 
-Logs emitted during an active span include `sentry.trace.parent_span_id`,
-supporting trace navigation and filtering. In supported browser environments,
-logs emitted during an active Session Replay also include `sentry.replay_id`.
+Browser SDKs no longer request backend IP inference by default in
+`9.0.0-guide`. Set `sendDefaultPii: true` only when IP inference and the other
+default PII behavior are intended.
 
-## Framework data controls (modern-server-frameworks)
+`requestDataIntegration` no longer copies Express `request.user` into events.
+Set the user explicitly, usually in middleware:
 
-Elysia, Hono, Nitro, and TanStack Start SDKs accept `dataCollection` options
-for automatic request enrichment. Explicitly disable default user information
-and all HTTP request bodies when they must not leave the application:
+```js
+Sentry.setUser({ id: request.user.id });
+```
+
+## Console events and handled state
+
+With `attachStackTrace: true`, `captureConsoleIntegration` marks console events
+handled by default in `9.0.0-guide`. Pass `{ handled: false }` to retain
+unhandled semantics:
 
 ```js
 Sentry.init({
-  dataCollection: { userInfo: false, httpBodies: [] },
+  attachStackTrace: true,
+  integrations: [
+    Sentry.captureConsoleIntegration({ handled: false }),
+  ],
 });
 ```
+
+## Session tracking
+
+`autoSessionTracking` is removed in `9.0.0-guide`. Browser sessions use
+`browserSessionIntegration`, server request sessions use `httpIntegration`, and
+Node.js process sessions use the default `processSessionIntegration`.
+
+Disable browser tracking by removing `browserSessionIntegration`. Disable
+incoming server request sessions with:
+
+```js
+Sentry.httpIntegration({ trackIncomingRequestsAsSessions: false });
+```
+
+Core always uses the session on the isolation scope as of `9.0.0`. If multiple
+scopes carry session state, selection follows the isolation scope rather than
+another active scope.
+
+## Browser feedback
+
+`captureUserFeedback()` is removed in `9.0.0-guide`. Use `captureFeedback()`
+and rename payload `comments` to `message`:
+
+```js
+Sentry.captureFeedback({ message: "What happened" });
+```
+
+## Web-vital migration
+
+Browser SDKs stop reporting First Input Delay in `10.0.0-guide`. Replace
+FID-based processing, filters, alerts, and dashboards with Interaction to Next
+Paint equivalents where appropriate.
+
+## Error sampling order
+
+In `10.69.0-10.70.0`, error sampling occurs after `beforeSend`, while session
+updates remain preserved. A `beforeSend` hook can therefore execute for an event
+that sampling subsequently discards. Avoid relying on the hook as proof that an
+event will be sent.
+
+## Stack-frame variable filtering
+
+At `10.68.0`, `stackFrameVariables` can filter by variable name. Use it to
+retain only the captured variables allowed by the application's privacy and
+diagnostic policy.
+
+## Browser and Node event integrations
+
+The browser SDK gains a Statsig integration in `9.0.0`. The Node SDK also begins
+capturing exceptions from `worker_threads` in that release.

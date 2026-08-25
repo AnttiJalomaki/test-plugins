@@ -10,232 +10,209 @@ metadata:
 
 # vLLM Knowledge Patch
 
-Load this skill when building, upgrading, serving, or troubleshooting vLLM.
-Use it for engine configuration, OpenAI-compatible APIs, distributed execution,
-cache topology, quantization, model integration, and speculative decoding.
+Use this skill when changing, deploying, extending, or debugging vLLM. Start
+with the quick references below, then load the topic file that matches the
+work. Treat a project's manifests, runtime help, logs, and tests as the final
+authority when behavior depends on the installed build or accelerator.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [engine-runtime.md](references/engine-runtime.md) | V1 architecture, scheduling, compilation, sampling, Model Runner V2, runtime dependencies, configuration, removals |
-| [serving-apis.md](references/serving-apis.md) | OpenAI-, Anthropic-, gRPC-, and Rust-facing APIs; speech, embeddings, operations, security, validation, logging |
-| [distributed-cache.md](references/distributed-cache.md) | Parallelism, multi-node launch, disaggregated serving, KV connectors, offloading, prefix caching, RDMA |
-| [models-adapters.md](references/models-adapters.md) | Model and task coverage, multimodal integration, LoRA, pooling, RLHF lifecycle, installation caveats |
-| [quantization-hardware.md](references/quantization-hardware.md) | Quantized formats, hardware support, KV-cache formats, online quantization, plugin contracts |
-| [speculative-decoding.md](references/speculative-decoding.md) | Speculation methods, configuration keys, proposers, acceptance, compatibility, vocabulary handling |
+| [Engine, Runtime, and Configuration](references/engine-runtime.md) | V1 architecture, scheduling, compilation, batching, configuration, sampling, Model Runner V2, dependencies, and removals |
+| [Serving APIs, Operations, and Security](references/serving-apis.md) | HTTP, Responses, Chat, embeddings, speech, parsers, Rust frontend, gRPC, metrics, logging, TLS, validation, and security |
+| [Distributed Execution, Parallelism, and Cache Topology](references/distributed-cache.md) | TP/PP/DP/EP, Ray and multiprocessing, disaggregation, KV connectors, offloading, fault tolerance, and RDMA |
+| [Models, Multimodal Integration, Adapters, and Lifecycle](references/models-adapters.md) | Model and task coverage, multimodal processing, loading, LoRA, pooling, lifecycle, and RL integrations |
+| [Quantization Formats, Hardware, and Extensions](references/quantization-hardware.md) | Checkpoint formats, KV-cache quantization, hardware support, custom quantization plugins, wheels, and accelerators |
+| [Speculative Decoding](references/speculative-decoding.md) | Methods, configuration, acceptance, heterogeneous vocabularies, structured output, and evolving execution combinations |
 
-## Upgrade triage
+## Breaking changes and migration checks
 
-### Treat V1 as the only engine
+### Assume V1-only interfaces
 
-V1 became the supported default and V0 was subsequently removed. Do not build
-new integrations around `AsyncLLMEngine`, `LLMEngine`, `MQLLMEngine`, V0
-attention backends, V0 executors, or V0-only environment switches. Custom
-model forward methods must obtain KV cache and attention metadata from
-`forward_context`, not positional `kv_cache` or `attn_metadata` arguments.
+- Do not build new integrations around `AsyncLLMEngine`, `LLMEngine`,
+  `MQLLMEngine`, V0 executors, or V0 attention backends. The remaining V0
+  interfaces and backends were removed after V1 became the default.
+- Custom model `forward` methods must obtain KV-cache and attention metadata
+  through `forward_context`; the old `kv_cache` and `attn_metadata` arguments
+  are gone.
+- Recheck extensions that depended on legacy PagedAttention, old tokenizer or
+  chat-template import locations, or legacy `api_server.py` placement.
 
-### Recheck defaults instead of assuming continuity
+### Audit removed and renamed settings
 
-- A model's `generation_config` can supply sampling and chat-template defaults.
-  Pin temperature, token limits, and other behavior-critical values explicitly.
-- V1 uses a deterministic default seed. Avoid assuming independent process runs
-  produce different samples at nonzero temperature.
-- `top_k=0` disables top-k sampling; do not generate new configuration with the
-  transitional `-1` sentinel.
-- Async scheduling moved from experimental and unsafe in some preemption cases
-  to broadly enabled. Use `--no-async-scheduling` only after checking workload
-  compatibility, especially speculation, CPU, and pipeline-parallel paths.
-- `generation_config.max_tokens` is a request default, not a hard upper bound.
-- KV-connector load failures default to failing the request. Configure
-  recomputation explicitly if that is the intended recovery policy.
+- Replace `VLLM_ATTENTION_BACKEND` with `--attention-backend` or
+  `AttentionConfig`/`attention_config`.
+- Replace `--convert reward` with `--convert embed`.
+- Replace non-GPU-specific metric names carrying a `gpu_` prefix and migrate
+  from removed `vllm:time_per_output_token_seconds` to
+  `vllm:inter_token_latency_seconds`.
+- Remove use of `num_lookahead_slots`, `best_of`, LoRA extra vocabulary,
+  `swap_space`, per-request logits processors, `reasoning_content`,
+  `VLLM_ALL2ALL_BACKEND`, BitBlas, Marlin 24, DeepSpeedFp8, and RTN where the
+  deployed version no longer accepts them.
+- Do not depend on vLLM mutating `CUDA_VISIBLE_DEVICES`; pass `device_ids` for
+  explicit placement. Existing visibility masks change how integer device IDs
+  are interpreted.
 
-### Replace retired options and interfaces
+### Re-pin environment dependencies on upgrade
 
-Use current configuration surfaces:
+- Rebuild images and native extensions when the PyTorch, CUDA, Triton,
+  Transformers, compiler, or manylinux baseline changes.
+- Ray is no longer guaranteed as a default dependency; install the executor
+  extras explicitly when using Ray.
+- Treat cgroup memory and `/dev/shm` checks as startup requirements in
+  constrained containers.
 
-| Retired or deprecated | Current direction |
-| --- | --- |
-| `VLLM_ATTENTION_BACKEND` | `--attention-backend` or `AttentionConfig` |
-| `--convert reward` | `--convert embed` |
-| `guided_*` request fields | Structured-output configuration |
-| `--calculate-kv-scales` | Online or explicit KV-scale configuration |
-| `VLLM_ALL2ALL_BACKEND` | Current expert-parallel backend configuration |
-| backend environment variables | `--moe-backend` and `--linear-backend` |
-| `--disable-frontend-multiprocessing` | Current frontend/executor selection |
-| `score` task | Pooling or current scoring interfaces |
-| `swap_space` | KV offloading configuration |
-| legacy tokenizer/chat-template imports | Current exported import locations |
+## Defaults that can change output or availability
 
-Also remove `num_lookahead_slots`, `best_of`, LoRA extra vocabulary,
-per-request logits processors, and old compilation forms. Consult
-[engine-runtime.md](references/engine-runtime.md) before carrying configuration
-forward across a large upgrade.
+### Make sampling explicit
 
-## Engine quick reference
+- V1's seed default became deterministic. Set the seed deliberately when
+  comparing runs, and do not assume caller RNG isolation when V1
+  multiprocessing is disabled.
+- Use `top_k=0` to disable top-k sampling; `-1` is only a compatibility
+  sentinel on releases that still accept it.
+- Set temperature and other sampling values explicitly when model
+  `generation_config` defaults must not alter behavior after a model change.
+- Treat `generation_config.max_tokens` as a request default, not necessarily a
+  hard ceiling; explicit request values can override it on newer releases.
+- Unsupported speculative-decoding sampling parameters can be rejected rather
+  than ignored.
 
-### Understand the V1 scheduling model
+### Re-evaluate scheduler and cache defaults
 
-`EngineCore` isolates scheduling and model execution. Tokenization,
-multimodal preprocessing, detokenization, and response streaming overlap around
-that hot path. Scheduling allocates token counts per request rather than
-separate prefill and decode phases, so one token budget covers chunked prefill,
-prefix hits, ordinary decode, and speculative tokens.
+- Async scheduling became default for many supported configurations after an
+  earlier period with corruption hazards. Opt out with
+  `--no-async-scheduling` when the deployed combination is unsupported.
+- Pipeline parallelism is supported with async scheduling on newer releases,
+  but other exclusions can remain hardware- and method-specific.
+- V1 enables prefix caching cheaply for ordinary supported models, while
+  hybrid models keep it opt-in and RISC-V forces it off with chunked prefill.
+- KV-connector load failures default to failing the request on newer releases;
+  configure recomputation explicitly if that is the intended policy.
+- Cascade attention is no longer assumed enabled, and backend defaults differ
+  across Blackwell, SM90+, sparse MLA, and KV-cache formats.
 
-V1 prefix caching is hash-based, LRU-evicted, and inexpensive enough to enable
-by default for supported non-hybrid models. Hybrid models retain opt-in
-behavior. Do not force chunked prefill or prefix caching contrary to a model's
-support declaration; unsupported combinations can crash or corrupt output.
+### Understand automatic sizing
 
-### Configure compilation intentionally
+- `--max-model-len auto` selects a context length that fits available GPU
+  memory.
+- Scheduler token and sequence defaults vary by device class, offline versus
+  server use, and performance mode. Explicit limits take precedence.
+- Automatic batched-token limits account for model context, multimodal media,
+  sequence limits, and chunked-prefill support.
+- Use startup `GPU KV cache size` and maximum-concurrency estimates as capacity
+  signals, not promises independent of request shape.
 
-V1 integrates `torch.compile`. Current optimization levels use `-O0` through
-`-O3`; the old `-O.xx` spelling is gone. CUDA graph capture and standalone
-Inductor behavior changed over time, and `compile_ranges` permits selective
-compilation. When debugging numerical or graph issues, record the optimization
-level, capture mode, model runner, attention backend, and hardware generation.
+## Configuration quick reference
 
-### Account for Model Runner V2 selection
+### Prefer structured configuration
 
-Model Runner V2 progressed from experimental to the default for dense models,
-including quantized dense models. Unsupported features can fall back to the
-older runner on intermediate versions, so inspect startup logs rather than
-inferring the runner only from model family. The newer runner covers VLMs,
-pooling, pipeline and decode-context parallelism, hybrid/Mamba paths,
-speculation, logprobs, and multiple CUDA-graph capture modes.
+- Dataclass-backed CLI options accept a whole JSON object or dotted keys, such
+  as `--attention-config.flash_attn_version=2`.
+- Size values accept decimal `k/m/g/t` and binary `K/M/G/T` suffixes in the
+  supported batch, scheduling, KV-memory, and prefetch settings.
+- Nested YAML configuration is supported; use it for repeatable deployments
+  instead of long unreviewable command lines.
+- Speculation shorthands `--spec-method`, `--spec-model`, and `--spec-tokens`
+  populate `--speculative-config`, but must not duplicate fields already set
+  in the JSON object.
 
-### Use structured configuration
+### Choose execution topology deliberately
 
-Dataclass-backed CLI options accept a JSON object or dotted keys. For example:
-
-```bash
-vllm serve MODEL --attention-config.flash_attn_version=2
-```
-
-Config JSON accepts decimal `k/m/g/t` and binary `K/M/G/T` size suffixes.
-Nested YAML configuration is supported. Keep engine, scheduler, cache,
-attention, and speculative settings in their proper nested objects so removals
-and validation errors are visible.
+- Prefer pipeline parallelism with `tensor_parallel_size=1` when GPU counts do
+  not divide model layers cleanly or the GPUs lack fast interconnects such as
+  NVLink.
+- Native multi-node launch requires the multiprocessing DP backend and an
+  `nnodes` count that evenly divides `DP × PP × TP`.
+- External data-parallel balancing is MoE-only, forces local DP size to one,
+  and requires an explicit or inferred rank.
+- Fault tolerance requires external balancing or an explicit DP rank; it is
+  not available with internal balancing.
+- Keep Ray cluster traffic on private per-node addresses. Its transport is not
+  an untrusted-network boundary.
 
 ## Serving quick reference
 
-### Know compatibility boundaries
+### OpenAI-style endpoints
 
-The OpenAI-compatible server does not implement Completions `suffix` or Chat
-`image_url.detail`; Chat `user` is accepted but ignored. Setting
-`parallel_tool_calls=false` enforces at most one tool call, while `true` merely
-allows multiple calls. Request validation rejects invalid token IDs,
-non-positive parallelism or scheduling values, non-finite sampling values, and
-degenerate structured-output constraints.
+- The request `model` field can be optional. Supported surfaces include
+  Chat/Completions, Responses, `/score`, embeddings, reranking, transcription,
+  batch chat, and extensible endpoints; exact availability is version- and
+  frontend-dependent.
+- Completions `suffix` and Chat `image_url.detail` are unsupported. Chat's
+  `user` is accepted but ignored.
+- `parallel_tool_calls=false` limits output to at most one tool call; `true`
+  permits but cannot force multiple calls.
+- Responses can be retrieved and cancelled by response ID. Newer surfaces add
+  structured outputs, reasoning events, prompt embeddings, namespace tools,
+  tool streaming, and chat-template parameters.
+- Validate frontend parity before switching between Python and Rust; the Rust
+  path has its own rollout of auth, CORS, pause/resume, TLS, multimodal, and
+  benchmark support.
 
-Responses can be created, retrieved, and cancelled:
+### Operations and observability
 
-```text
-POST /v1/responses
-GET  /v1/responses/{response_id}
-POST /v1/responses/{response_id}/cancel
-```
+- A dead engine returns HTTP 503 from health checks. Use `/server_info`,
+  `/load`, `/is_sleeping`, pause/resume, cache-reset, and tokenizer-info routes
+  only where supported by the selected frontend.
+- `--enable-log-requests` logs identifiers and parameters at INFO and prompt
+  content at DEBUG. Choose `VLLM_LOGGING_LEVEL` with that disclosure boundary
+  in mind.
+- Use `--aggregate-engine-logging` for aggregate DP statistics and
+  `--fail-on-environ-validation` to make validation failures fatal.
+- Rotate TLS keys through the server facility where supported; configure
+  cipher policy and graceful-shutdown timeouts explicitly.
+- Treat the gRPC interface described as private-use as unsuitable for an
+  exposed network even when a later frontend adds TLS or mTLS.
 
-Strict tool calling, reasoning/tool streaming, structured outputs, request
-timings, token IDs, prompt embeddings, cache keys, and namespace tools are
-version- and parser-sensitive. Read [serving-apis.md](references/serving-apis.md)
-before mirroring OpenAI or Anthropic client behavior exactly.
+## Model, multimodal, and adapter quick reference
 
-### Separate rendering when useful
+- V1 out-of-tree multimodal support uses the merged processor plus the
+  appropriate `get_*_embeddings` methods. The legacy input mapper is not a
+  future-proof extension point.
+- Multimodal preprocessing, processor caches, prefix hashes, and encoder
+  caches are distinct reuse layers; size and secure them independently.
+- Model Runner V2 is selected automatically for increasing model families and
+  can fall back when a requested feature is unsupported. Verify the runner in
+  logs before attributing behavior to it.
+- LoRA support spans sharded MoE, multimodal towers/connectors, remote
+  resolvers, quantized adapters, audio adapters, and target-module filtering,
+  but each path has model and backend constraints.
+- Use `LLM.sleep`, `LLM.wake_up`, pause/resume, weight reload/update, and
+  synchronization APIs according to the integration's request-preservation
+  and serialization requirements.
 
-Prompt preprocessing can run apart from GPU inference. Use render endpoints or
-`vllm launch render` for a GPU-less preprocessing tier, especially when
-centralizing chat templates or multimodal processing.
+## Quantization and speculation quick reference
 
-### Treat private transports as private
+- Check both the quantization format and accelerator generation. A format name
+  alone does not establish kernel availability, KV-cache support, or LoRA
+  compatibility.
+- Per-layer `QuantSpec` configuration separates `linear` and `moe` choices;
+  out-of-tree methods register a `QuantizationConfig` and return layer-specific
+  method implementations.
+- TurboQuant KV cache currently forces FlashAttention 2 when an incompatible
+  version is selected implicitly.
+- In speculative decoding, use `draft_tensor_parallel_size` inside
+  `speculative_config`; target-model `tensor_parallel_size` is not a substitute.
+- Heterogeneous-vocabulary speculation is draft-model-only and greedy-only.
+  Token distribution can remain lossless while individual log probabilities
+  still vary with precision and batching.
+- Cloud-storage model URIs skip automatic speculator detection; configure the
+  method and proposer explicitly.
 
-The gRPC interface is explicitly a private-use surface even when TLS support is
-available elsewhere. Ray cluster traffic is also unsafe to expose to untrusted
-networks. Bind cluster addresses privately and place authentication and network
-policy at the deployment boundary.
+## Debugging order
 
-## Distributed and cache quick reference
-
-### Choose parallelism for the topology
-
-Use pipeline parallelism with tensor parallel size one when GPU count does not
-divide the model cleanly or when GPUs lack a fast interconnect such as NVLink.
-Native multi-node launch requires multiprocessing data parallelism and a node
-count that evenly divides `DP × PP × TP`. External data-parallel balancing is
-MoE-only, and fault tolerance requires an external balancer or explicit rank.
-
-```bash
-vllm serve MODEL --tensor-parallel-size 1 --pipeline-parallel-size 4
-```
-
-Startup log lines for GPU KV-cache size and maximum concurrency are capacity
-estimates. Use them to validate sizing rather than relying only on GPU count.
-
-### Make device placement explicit
-
-Current vLLM does not rewrite `CUDA_VISIBLE_DEVICES`; use `device_ids`. Integer
-IDs index an existing visibility mask, UUIDs are allowed, forms cannot be mixed,
-and the option does not affect Ray executors.
-
-### Design offloading as a tiered cache
-
-KV offloading supports policies, hybrid allocators, multiple cache groups,
-CPU, filesystem, disk, and object-store tiers. Some connectors enable the
-Hybrid Memory Allocator automatically. Per-request policy, async batched lookup,
-chunk sizing, workload identity, and encoder-cache offloading are available but
-backend-dependent. See [distributed-cache.md](references/distributed-cache.md).
-
-## Quantization quick reference
-
-Quantization names do not imply universal hardware support. Verify GPU compute
-capability, CPU architecture, runtime backend, linear versus MoE coverage, and
-KV-cache compatibility. TurboQuant KV cache currently forces FlashAttention 2;
-set that version explicitly to make the constraint clear.
-
-Use `--quantization-config` for per-layer-kind `linear` and `moe` specs and
-ignore patterns. Online shorthand can populate the structured config. Loading a
-deprecated scheme requires `--allow-deprecated-quantization`.
-
-For out-of-tree methods, register a `QuantizationConfig`, dispatch by layer
-type, and provide distinct method contracts for `LinearBase` and `FusedMoE`.
-Import the registration module before selecting its quantization name. Full
-hardware and plugin details are in
-[quantization-hardware.md](references/quantization-hardware.md).
-
-## Speculative-decoding quick reference
-
-Use the component shorthands `--spec-method`, `--spec-model`, and
-`--spec-tokens`, or use `--speculative-config`; do not set the same field in
-both. Inside the object, draft execution uses `draft_tensor_parallel_size` and
-draft `max_model_len`, while temperature and top-p remain sampling parameters.
-
-Select methods deliberately:
-
-- `suffix` uses bounded shared state and no draft model.
-- `ngram` couples omitted min/max lookup bounds.
-- `mtp` is required for Gemma 4 assistant checkpoints.
-- `custom_class` loads a fully qualified proposer class through `model`.
-- `draft_model` is required for heterogeneous vocabularies, which are
-  greedy-only and limited to tokens shared by normalized token text.
-
-Speculation is distribution-preserving up to numerical precision, not a promise
-of stable token log probabilities or bit-identical output across hardware and
-batch shapes. Consult
-[speculative-decoding.md](references/speculative-decoding.md) for method limits,
-acceptance modes, dynamic speculation, DFlash, TLI, DSpark, and weight updates.
-
-## Working procedure
-
-1. Inspect the installed vLLM version, model manifest, hardware, runner choice,
-   and server frontend.
-2. Identify whether the task concerns engine/runtime, serving, distribution,
-   adapters/models, quantization, or speculation.
-3. Load the matching reference files from the index; multiple areas often
-   interact through attention, cache, and parallelism settings.
-4. Prefer manifest, runtime help, startup validation, code, and tests over
-   assumptions when a deployment differs from the documented path.
-5. Make defaults explicit in production configuration and preserve startup logs
-   with the deployed configuration.
-6. Test representative requests: long context, preemption, structured output,
-   tool streaming, multimodal data, adapter loading, and failure recovery as
-   applicable.
+1. Confirm the installed vLLM build, frontend, runner, accelerator, wheel, and
+   dependency versions.
+2. Capture the resolved engine configuration and startup capacity logs.
+3. Make sampling, scheduling, attention, cache, and topology settings explicit.
+4. Reduce to one frontend and one execution topology before testing adapters,
+   quantization, or speculative decoding.
+5. For distributed failures, verify ranks, private addresses, `/dev/shm`,
+   locked memory, Ray membership, and NCCL transport selection.
+6. For output drift, compare generation configuration, seed, parser, chat
+   template, tokenizer, speculative method, and logprob mode.
+7. Load the matching reference file before changing a deprecated interface or
+   assuming support for a model, hardware generation, or endpoint.

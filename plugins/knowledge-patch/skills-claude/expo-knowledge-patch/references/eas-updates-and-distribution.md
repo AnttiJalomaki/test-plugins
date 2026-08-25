@@ -1,10 +1,10 @@
 # EAS Updates and Distribution
 
-## Control Hermes bytecode diffs
+## Hermes bytecode diffs
 
-EAS Update and `expo-updates` can send binary diffs instead of complete Hermes bytecode.
+EAS Update and `expo-updates` can send binary diffs instead of full Hermes bytecode.
 
-This is opt-in in SDK 55. Enable it in app config with:
+In batch `55`, this behavior is opt-in:
 
 ```json
 {
@@ -16,30 +16,44 @@ This is opt-in in SDK 55. Enable it in app config with:
 }
 ```
 
-Equivalent native configuration is supported. In SDK 56, bytecode diffs are enabled by default. Opt out with `updates.enableBsdiffPatchSupport: false`. Set an explicit value when update rollout characteristics must not change implicitly during an SDK upgrade.
+Equivalent native configuration is supported.
 
-## Select the EAS Update environment
+In batch `56`, bytecode diffs are enabled by default. Opt out with:
 
-`eas update` requires `--environment <name>` as of SDK 55, including in CI. Ensure the chosen environment supplies the variables expected by app config and update code.
+```json
+{
+  "expo": {
+    "updates": {
+      "enableBsdiffPatchSupport": false
+    }
+  }
+}
+```
 
-## Understand EAS native build behavior
+Pin the setting when deterministic rollout behavior across SDK upgrades matters.
 
-For SDK 55 iOS builds, EAS Build defaults to Xcode 26.2. SDK 56 native builds require Xcode 26.4.
+## EAS Build behavior
 
-In SDK 56, complex Expo modules use prebuilt XCFrameworks by default for local and EAS builds; set `EXPO_USE_PRECOMPILED_MODULES=0` in the EAS environment to compile them from source. EAS also prebuilds major community libraries and exposes per-step `xcodebuild` and Gradle timings.
+SDK 55 EAS Build defaults to Xcode 26.2. SDK 56 requires Xcode 26.4 and uses prebuilt iOS XCFrameworks for complex Expo modules. Put `EXPO_USE_PRECOMPILED_MODULES=0` in the EAS environment when source builds are required.
 
-## Provision Convex through EAS
+EAS prebuilds major community libraries and reports per-step `xcodebuild` and Gradle timings. Use those timings to distinguish dependency compilation from application compilation.
 
-SDK 56 adds:
+`eas update` requires `--environment <name>`, including in CI.
+
+## Convex integration
+
+Run:
 
 ```sh
 eas integrations:convex:connect
 ```
 
-The command installs and provisions Convex, links a development deployment, writes `CONVEX_DEPLOY_KEY` and `EXPO_PUBLIC_CONVEX_URL` to `.env.local`, and creates `EXPO_PUBLIC_CONVEX_URL` in the Production, Preview, and Development EAS environments. Review the generated local secret and environment values before committing or deploying.
+The command installs and provisions Convex, links a development deployment, writes `CONVEX_DEPLOY_KEY` and `EXPO_PUBLIC_CONVEX_URL` to `.env.local`, and creates `EXPO_PUBLIC_CONVEX_URL` in the Production, Preview, and Development EAS environments.
 
-## Distribute Expo Go deliberately
+Review generated secrets and environment selection before deploying.
 
-SDK 56 Expo Go is not distributed through mobile app stores. Expo CLI can install it directly on Android. On iOS, use the external TestFlight beta or create an `eas go` build and upload it to the application's TestFlight team.
+## Expo Go distribution and native limitations
 
-Expo Go is not a substitute for a development build: Android push notifications require a development build, and native integrations may not be present in Expo Go.
+SDK 56 Expo Go is not distributed through the mobile app stores. Expo CLI can install it directly on Android. On iOS, use the external TestFlight beta or create an `eas go` build and upload it to the application's TestFlight team.
+
+Do not treat Expo Go as a complete native-integration test. Android push notifications require a development build, and `expo-av` is absent from Expo Go.

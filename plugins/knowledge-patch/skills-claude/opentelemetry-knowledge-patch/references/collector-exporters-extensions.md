@@ -1,92 +1,134 @@
 # Collector Exporters and Extensions
 
-The details in this reference apply to the Collector 0.157.0 batch.
+## Shared authentication and maturity
 
-## Shared database authentication
+### Database authentication components (`collector-0.157.0`)
 
-Contrib adds `configdbauth` configuration and a `dbauth` extension interface.
-Components can use them to share database authentication, including AWS IAM
-authentication.
+Use `configdbauth` configuration and the `dbauth` extension interface to share
+database authentication, including AWS IAM authentication, across components.
 
-## Datadog exporter delivery
+### Promoted capabilities (`2026-08-stable`)
 
-The alpha, default-off
-`datadog.serializerexporter.UseSyncForwarder` gate makes the Datadog metric
-serializer report 4xx and 5xx failures through `exporterhelper`.
+Load Balancing exporter metrics, AWS IAM database authentication, and Google
+Cloud Pub/Sub Push log support are alpha.
 
-When enabled:
+## Datadog and SignalFx
 
-- `retry_on_failure` applies to the serializer path.
-- Sending-queue overflow telemetry applies.
-- Failed-point telemetry applies.
+### Synchronous Datadog delivery (`collector-0.157.0`)
 
-The legacy asynchronous forwarder swallowed these failures.
+The alpha, default-off `datadog.serializerexporter.UseSyncForwarder` gate
+makes the Datadog metric serializer surface 4xx/5xx failures through
+`exporterhelper`. With it enabled, `retry_on_failure`, sending-queue overflow
+telemetry, and failed-point telemetry apply instead of failures being swallowed
+by the legacy asynchronous forwarder.
+
+### Datadog scope and metric handling (`2026-08-stable`)
+
+With `datadog.EnableScopeConvention`, Datadog spans add `otel.scope.name` and
+`otel.scope.version` while retaining deprecated `otel.library.*` attributes.
+Batches containing multiple resource-log scopes are routed per scope. Legacy
+clients no longer drop delta sums marked `datadog.metric.as_type=rate`.
+
+### SignalFx Host Metrics translation (`collector-0.157.0`)
+
+SignalFx derives `cpu.num_processors` from `system.cpu.logical.count` and
+exports `system.cpu.time` and `system.disk.io` by default. Default CPU
+translations assume state-aggregated Host Metrics output, but retain an
+explicitly re-enabled `cpu` attribute.
+
+### SignalFx span and RSS behavior (`2026-08-stable`)
+
+SignalFx still accepts spans but no longer sends them to the retired
+trace-correlation endpoint. It no longer excludes `container.memory.rss` by
+default.
 
 ## Elasticsearch and OpenSearch
 
-### Elasticsearch retry policy
+### Retry and managed templates (`collector-0.157.0`)
 
-`retry::retry_on_document_status` configures document-level retry status codes
-independently of request-level retries.
+Elasticsearch uses `retry::retry_on_document_status` for document-level retry
+codes independently of request-level retries. In `otel-v1` mode, OpenSearch
+`mapping.manage_index_template` idempotently creates span and log composable
+templates without replacing existing templates. Reject this option in other
+mapping modes.
 
-### OpenSearch templates and dynamic indexes
+### Dynamic-index validation (`collector-0.157.0`)
 
-In `otel-v1` mode, `mapping.manage_index_template` can idempotently create
-span and log composable templates without overwriting existing templates.
-The option is rejected in other mapping modes.
+OpenSearch rejects empty, dot-prefixed, and `..`-containing dynamic-index
+substitutions, then tries the next attribute or configured fallback.
 
-Dynamic-index substitutions are rejected when they are:
+## Kafka and load balancing
 
-- Empty.
-- Prefixed with `.`.
-- Contain `..`.
+### Kafka request mode (`collector-0.157.0`)
 
-After a rejected substitution, the exporter tries the next attribute or the
-configured fallback.
+The default-off alpha `exporter.kafka.useRequestType` gate converts all
+signals to Kafka records when the exporter request is created. In this mode,
+`queue_batch.sizer: items` counts Kafka records and persistent
+`sending_queue.storage` causes a startup error.
 
-## Kafka request mode
+### Load-balancing ring behavior (`collector-0.157.0`)
 
-The alpha `exporter.kafka.useRequestType` gate is default-off. When enabled:
+The Load Balancing exporter uses 200 default virtual nodes rather than 100 and
+a ring space of 131,071 rather than 36,000. Endpoint ordering no longer biases
+ring assignment.
 
-- Every signal is converted into Kafka records when the exporter request is
-  created.
-- `queue_batch.sizer: items` counts Kafka records.
-- Configuring persistent `sending_queue.storage` is a startup error.
+## Encoding and identity extensions
 
-## SignalFx host-metric translation
-
-The SignalFx exporter:
-
-- Derives `cpu.num_processors` from `system.cpu.logical.count`.
-- Exports `system.cpu.time` and `system.disk.io` by default.
-- Assumes state-aggregated Host Metrics CPU output in its default
-  translations.
-- Still supports an explicitly re-enabled `cpu` attribute.
-
-## Encoding and OIDC extensions
-
-### Google Cloud log-entry encoding
+### Google Cloud log encoding and OIDC (`collector-0.157.0`)
 
 The default-off
 `extension.encoding.googlecloudlogentryencoding.DontEmitV0RPCConventions`
-gate suppresses deprecated JSON-RPC error attributes while continuing to emit
-`rpc.response.status_code`.
+gate suppresses deprecated JSON-RPC error attributes while still emitting
+`rpc.response.status_code`. The OIDC extension has an issuer-ignore option for
+single-provider configurations.
 
-### OIDC
+## File and cloud exporters
 
-The OIDC extension adds an issuer-ignore option for single-provider
-configurations.
+### File exporter rotation migration (`collector-0.157.0`)
 
-## File exporter rotation
+The File exporter creates output with mode `0644`, including rotated files.
+On startup it renames lumberjack-format backups into timberjack's naming
+scheme so `max_backups` and `max_days` can manage them after an upgrade.
 
-- Output files use mode `0644`, including when rotation is enabled.
-- On startup, older lumberjack-format backups are renamed into timberjack's
-  naming scheme.
-- The migration lets `max_backups` and `max_days` manage those older backups
-  after upgrade.
+### CloudWatch Logs size and pod templates (`2026-08-stable`)
 
-## Load-balancing exporter
+AWS CloudWatch Logs retains a 256 KiB event default. Set
+`max_event_payload_bytes: 1048576` for the service's 1 MiB ceiling; direct
+callers can use `cwlogs.WithMaxEventPayloadBytes`. `{PodName}` in group or
+stream templates resolves `k8s.pod.name` as well as the legacy `pod`
+attribute.
 
-- The default virtual-node count increases from 100 to 200.
-- Default ring space increases from 36,000 to 131,071.
-- Endpoint ordering no longer biases ring assignment.
+### Azure Monitor HTTP success mapping (`2026-08-stable`)
+
+Use
+`telemetry_mappings.traces.http.success.additional_success_status_codes` for
+additional successful client and server response codes. Set
+`telemetry_mappings.traces.http.success.server_policy: otel` to treat
+server-side 4xx responses as successful. Defaults preserve earlier mapping.
+
+## Prometheus Remote Write
+
+### HTTP settings, WAL, and label delivery (`2026-08-stable`)
+
+HTTP client settings may be nested under `http`; nested values take precedence
+over flat settings. WAL telemetry includes exporter ID. Deadline expiration is
+retriable, idle exporters flush buffered WAL entries, and permissive label
+sanitization preserves consecutive underscores.
+
+## Tail storage and fleet registration
+
+### Bounded Pebble storage (`2026-08-stable`)
+
+Bound pending tail-sampling data with `max_storage_size_mib`:
+
+```yaml
+extensions:
+  pebble_tail_storage:
+    directory: /var/lib/otelcol/pebble-tail-storage
+    max_storage_size_mib: 10240
+```
+
+### Sumo Logic fleets (`2026-08-stable`)
+
+The Sumo Logic extension accepts `fleet_id`. If the fleet is invalid or
+missing, registration retries without that ID.

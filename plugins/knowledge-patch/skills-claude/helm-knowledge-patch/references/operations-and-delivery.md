@@ -1,97 +1,126 @@
 # Operations and Chart Delivery
 
-The apply, wait, install, dry-run, caching, and packaging behavior here is
-attributed to the included `4.2.3` batch.
+Use this reference for install, upgrade, server-side apply, waiting, tests,
+server dry-runs, registry operations, caching, and deterministic packaging.
 
-## Server-side apply
+## Install and server-side apply
 
-Helm 4 supports server-side apply.
+### Atomic installation *(since 4.2.3)*
 
-In Helm 4.2, SDK server-side-apply defaults are kept consistent with the CLI
-defaults. This matters when the same operation is exposed through both a CLI
-workflow and an embedded Helm workflow:
-
-- Do not assume the SDK silently chooses a different default.
-- Preserve an explicit SDK option when a deliberate override is required.
-- Remove compatibility workarounds whose only purpose was to reconcile
-  differing defaults, after verifying the application does not need them for
-  another reason.
-
-## kstatus-based resource waiting
-
-Helm 4 bases improved resource watching and waiting on kstatus.
-
-Helm 4.2 adds fine-grained context options for waiting. Use those context
-controls when a caller needs to cancel or bound the wait.
-
-Helm 4.2 also avoids waiting forever after a resource has failed. Code around
-Helm should preserve the failure and return path instead of replacing it with
-another unbounded wait.
-
-Exercise at least these paths when changing wait integration:
-
-- A resource becomes ready.
-- A resource reports failure.
-- The wait context is canceled.
-- A bounded wait reaches its context limit.
-
-## Atomic installation
-
-Helm 4.2 restores `--atomic` on `helm install`. The flag allows a failed
-installation to be rolled back automatically again.
+Helm 4.2 restores `--atomic` on `helm install`. Use it when failed
+installation work must be rolled back automatically:
 
 ```sh
 helm install my-release ./chart --atomic
 ```
 
-Use the flag when automatic rollback is part of the intended install
-semantics. Retest failure handling in wrappers that previously removed or
-rejected the install flag.
+Exercise the failure path as well as the successful install. The flag expresses
+the rollback requirement; verification should confirm that the surrounding
+release workflow handles the resulting failure and rollback as intended.
 
-## Server dry-run and generated names
+### CLI and SDK defaults *(since 4.2.3)*
 
-`--dry-run=server` accepts rendered resources that use
-`metadata.generateName` rather than `metadata.name`.
+Helm 4 supports server-side apply. In Helm 4.2, the SDK's server-side-apply
+defaults are kept consistent with the CLI defaults. When comparing CLI and
+embedded behavior, do not add configuration solely to compensate for a
+default difference that no longer exists.
 
-This matches server-side name generation behavior. A test or validator for
-server dry-runs should therefore accept a resource shaped like:
+Keep explicit settings when the caller intentionally overrides the shared
+default. Test both configuration wiring and the resulting Kubernetes behavior.
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  generateName: demo-
-```
+### Conflict retries *(since 4.2.4)*
 
-Do not require a rendered `metadata.name` when `metadata.generateName` is the
-intentional server-side naming mechanism.
+Server-side apply retries Kubernetes conflicts instead of failing on the first
+conflict. This makes concurrent resource updates less likely to abort a Helm
+operation immediately.
 
-## Content-based caching
+Do not treat retries as a substitute for time bounds or final error handling.
+Test a conflicting update and ensure the calling workflow handles both eventual
+success and exhausted failure.
 
-Helm 4 adds local content-based caching, including caching for charts.
-Identical content can share cached data regardless of its source location.
+## Waiting and diagnostics
 
-Consequences for cache reasoning:
+### Kstatus-based waiting *(since 4.2.3)*
 
-- A changed location does not necessarily imply changed cached content.
-- Identical chart content from different locations can reuse cached data.
-- Cache identity should be understood in terms of content, not only path or
-  origin.
+Helm 4 bases improved resource watching and waiting on kstatus. Helm 4.2 adds
+fine-grained context options for waiting and avoids waiting forever after a
+resource has failed.
 
-When investigating reuse or invalidation, compare the actual content before
-attributing behavior to the source location.
+Pass an appropriate context for the operation, cover cancellation and timeout
+paths, and retain failed-resource information for diagnosis. Do not wrap the
+operation in an unbounded wait to imitate older behavior.
 
-## Reproducible chart archives
+### Multi-container test logs *(since 4.2.4)*
 
-Helm 4 chart archive builds are reproducible and idempotent. Repeating the
-same packaging operation is suitable for deterministic build and
-verification workflows.
+`helm test` fetches logs from every container in each test pod. Failures from
+sidecars and other secondary containers are therefore part of the diagnostic
+output.
 
-A verification workflow can:
+Log processors and test harnesses should accept multiple container streams.
+When diagnosing a failed test, inspect every container rather than assuming
+the primary container contains the relevant failure.
 
-1. Hold chart inputs constant.
-2. Build the archive more than once.
-3. Compare the outputs as deterministic artifacts.
+### Generated names in server dry-runs *(since 4.2.3)*
 
-If repeated archives differ, inspect the inputs and surrounding build steps;
-archive nondeterminism is not the expected Helm 4 behavior.
+`--dry-run=server` accepts rendered resources that set
+`metadata.generateName` instead of `metadata.name`. This matches the API
+server's ability to generate the final resource name.
+
+Allow this shape in validators and server dry-run fixtures. Do not reject a
+resource solely because `metadata.name` is absent when `metadata.generateName`
+is present and server-side name generation is intended.
+
+## Registry operations
+
+### Token-authenticated pushes *(since 4.2.4)*
+
+`helm push` requests both `pull` and `push` scopes when authenticating to a
+registry with tokens. Upgrade when pushes fail because the registry requires
+the complete scope set during token exchange.
+
+When debugging authentication, inspect the granted scopes as well as stored
+credentials. A valid token with an incomplete requested scope can still make a
+push fail.
+
+### Dependency downloads during upgrade *(since 4.2.4)*
+
+During `helm upgrade`, Helm passes its registry client to
+`downloader.Manager`. Registry credentials and client configuration are then
+available while chart dependencies are downloaded.
+
+Test an upgrade whose dependencies require registry authentication. Use the
+same registry client configuration expected by the upgrade instead of creating
+an unrelated unauthenticated dependency-download path.
+
+## Caching and archives
+
+### Content-based caching *(since 4.2.3)*
+
+Helm 4 provides local content-based caching, including for charts. Identical
+content can share cached data independently of the source location.
+
+Reason about cache identity from content. Moving or obtaining identical chart
+content from a different location does not necessarily require a distinct
+cached copy, while changed content should not be treated as the same object
+merely because its path is unchanged.
+
+### Reproducible chart archives *(since 4.2.3)*
+
+Chart archive builds are reproducible and idempotent in Helm 4. Repeated
+packaging is suitable for deterministic build and verification workflows.
+
+When repeated archives differ, investigate chart inputs and the surrounding
+workflow. Archive nondeterminism is not expected behavior to accept by default.
+
+## Operations checklist
+
+- Test failed installation rollback with `--atomic` where required.
+- Compare explicit apply configuration with aligned CLI and SDK defaults.
+- Exercise conflict retry success and terminal failure.
+- Bound waits with context and preserve failed-resource diagnostics.
+- Capture logs from every container in each test pod.
+- Include `metadata.generateName` in a server dry-run fixture.
+- Verify token exchange requests both registry scopes for pushes.
+- Test authenticated registry dependencies during `helm upgrade`.
+- Compare cached objects by content, not only by path.
+- Package identical chart inputs repeatedly and compare the archives.

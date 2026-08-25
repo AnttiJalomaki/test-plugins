@@ -1,16 +1,10 @@
 # Routing and Rendering
 
-Batch attributions used here: `15.3.0`, `15.4.0`, `16.0.0`, `16.2.0`, `16.3.0`, and `release-catalogs`.
+## Navigation-aware links (`15.3.0`)
 
-## Navigation-aware links
-
-### `onNavigate`
-
-`Link` accepts `onNavigate` for client-side SPA navigations (`15.3.0`). It is narrower than an ordinary click handler: modified clicks, downloads, and other non-SPA interactions do not invoke it as a navigation. Call `preventDefault()` to cancel the route change, such as for an unsaved-work guard.
+`Link` accepts `onNavigate`, which runs for client-side SPA navigations rather than every click. Its event supports `preventDefault()`, so use it for navigation guards and cancellation.
 
 ```tsx
-import Link from 'next/link'
-
 <Link
   href="/dashboard"
   onNavigate={(event) => {
@@ -21,9 +15,7 @@ import Link from 'next/link'
 </Link>
 ```
 
-### `useLinkStatus`
-
-The Client Component hook `useLinkStatus` returns `{ pending }` for an in-progress navigation (`15.3.0`). The component calling it must be rendered as a descendant of the corresponding `Link`; it does not provide a global router-pending signal.
+The Client Component hook `useLinkStatus()` returns a `pending` boolean for an in-progress navigation. The component calling it must render as a descendant of the corresponding `Link`.
 
 ```tsx
 'use client'
@@ -36,59 +28,78 @@ function Pending() {
 }
 
 export function Navigation() {
+  return <Link href="/dashboard">Dashboard <Pending /></Link>
+}
+```
+
+## Explicit and renewable prefetching (`15.4.0`)
+
+`prefetch="auto"` is an explicit alias for the default `prefetch={undefined}` link behavior.
+
+`router.prefetch()` accepts `onInvalidate`, allowing code to react when prefetched data becomes stale and optionally warm it again.
+
+```tsx
+'use client'
+
+import { useRouter } from 'next/navigation'
+
+export function WarmDashboard() {
+  const router = useRouter()
   return (
-    <Link href="/dashboard">
-      Dashboard <Pending />
-    </Link>
+    <button onMouseEnter={() => router.prefetch('/dashboard', {
+      onInvalidate: () => router.prefetch('/dashboard'),
+    })}>
+      Dashboard
+    </button>
   )
 }
 ```
 
-### Navigation transition types
+## Global not-found metadata (`15.4.0`)
 
-In the App Router, `transitionTypes` on `Link` forwards each supplied string to `React.addTransitionType` during navigation (`16.2.0`). The Pages Router silently ignores this prop, so a shared link wrapper can use it safely.
-
-```tsx
-<Link href="/about" transitionTypes={['slide']}>
-  About
-</Link>
-```
-
-## Global and unmatched routes
-
-With `experimental.globalNotFound` enabled, `app/global-not-found.tsx` may export metadata (`15.4.0`). Because this file is the complete global response, render its `html` and `body` elements.
+With `experimental.globalNotFound` enabled, `app/global-not-found.tsx` may export metadata for the global 404 page.
 
 ```tsx
 export const metadata = { title: 'Page not found' }
 
 export default function GlobalNotFound() {
-  return (
-    <html>
-      <body><h1>Page not found</h1></body>
-    </html>
-  )
+  return <html><body><h1>Page not found</h1></body></html>
 }
 ```
 
-`unstable_rootParams` was server-only and unsupported in Client Components in `15.4.0`; it was removed in Next.js 16. Do not introduce new uses.
+## Intercepted routes and partial prerendering (`15.4.0`)
 
-## Parallel-route fallbacks
+Partial prerendering supports intercepted dynamic routes, so these route patterns do not have to opt out of PPR.
 
-Every parallel-route slot must define `default.js` in Next.js 16 (`16.0.0`). Missing fallbacks fail the build. To reproduce the old implicit fallback, either return `null` or call `notFound()` explicitly.
+## Incremental segment prefetching (`16.0.0`)
+
+Modern prefetching downloads a shared layout once and requests only segments missing from the cache. It cancels work when a link leaves the viewport, reprioritizes hover and viewport re-entry, and prefetches again after invalidation. This can produce more individual requests while transferring less total data.
+
+## Smooth scrolling (`16.0.0`)
+
+Automatic handling of `scroll-behavior: smooth` is removed. Opt in explicitly on the document element.
 
 ```tsx
-import { notFound } from 'next/navigation'
-
-export default function Default() {
-  notFound()
-}
+<html data-scroll-behavior="smooth">
 ```
 
-## Framework-aware error boundaries
+## Required parallel-route fallbacks (`16.0.0`)
 
-### Component-level boundaries
+Every parallel-route slot needs a `default.js`; omission is a build failure. Call `notFound()` or return `null` for a deliberately empty fallback.
 
-A Client Component can call `unstable_catchError()` from `next/error` to place a framework-aware boundary anywhere in its tree (`16.2.0`). The fallback receives the wrapped component's call-site props as its first argument and `ErrorInfo` as its second. Control-flow errors such as `redirect()` and `notFound()` pass through instead of being mistaken for failures, and the captured state clears when navigation moves to another route.
+## Link view transitions (`16.2.0`)
+
+In the App Router, `transitionTypes` passes every supplied string to `React.addTransitionType` during navigation.
+
+```tsx
+<Link href="/about" transitionTypes={['slide']}>About</Link>
+```
+
+Pages Router links silently ignore this prop, so a shared link component may still expose it.
+
+## Component-level framework error boundaries (`16.2.0`)
+
+Client Components can use `unstable_catchError()` from `next/error` to place framework-aware error boundaries anywhere in the tree. The fallback receives its call-site props and `ErrorInfo`. Control-flow errors such as `redirect()` and `notFound()` pass through correctly, and navigation to another route clears the error state.
 
 ```tsx
 'use client'
@@ -99,19 +110,15 @@ function Fallback(
   { title }: { title: string },
   { error, unstable_retry }: ErrorInfo,
 ) {
-  return (
-    <button onClick={() => unstable_retry()}>
-      {title}: {error.message}
-    </button>
-  )
+  return <button onClick={() => unstable_retry()}>{title}: {error.message}</button>
 }
 
 export default unstable_catchError(Fallback)
 ```
 
-### Server-aware retries
+## Server-aware retries (`16.2.0`)
 
-An `error.tsx` boundary receives `unstable_retry()` in `ErrorInfo` (`16.2.0`). It refreshes the router and resets the boundary inside a transition, so it can recover from errors thrown during data fetching or Server Component rendering. Prefer it to `reset()` for most retry buttons because `reset()` cannot re-run those server phases.
+An `error.tsx` component's `unstable_retry()` prop refreshes the router and resets its boundary inside a transition. It re-fetches data and re-renders the segment, including errors from data fetching or the Server Component phase. Prefer it to `reset()` for most retries.
 
 ```tsx
 'use client'
@@ -119,42 +126,52 @@ An `error.tsx` boundary receives `unstable_retry()` in `ErrorInfo` (`16.2.0`). I
 import type { ErrorInfo } from 'next/error'
 
 export default function Error({ error, unstable_retry }: ErrorInfo) {
-  return (
-    <button onClick={() => unstable_retry()}>
-      Retry: {error.message}
-    </button>
-  )
+  return <button onClick={() => unstable_retry()}>Retry: {error.message}</button>
 }
 ```
 
-## Scroll and focus behavior
+## Prefetch response and navigation experiments (`16.2.0`)
 
-Automatic smooth-scroll handling is removed in Next.js 16 (`16.0.0`). Opt in explicitly on the document element:
+`experimental.prefetchInlining` places all prefetched segment data for one route in a single response. This reduces prefetching to one request per link but duplicates shared-layout data instead of reusing it from the segment cache.
 
-```tsx
-<html data-scroll-behavior="smooth">
+```ts
+export default { experimental: { prefetchInlining: true } }
 ```
 
-The experimental App Router scroll/focus handler in `16.2.0` uses React Fragment refs and browser-like focus behavior. After navigation it blurs the active element instead of focusing the first focusable descendant deep in the new segment.
+`experimental.cachedNavigations` separately caches static and dynamic Server Component data from navigations and initial HTML loads for instant repeat visits. It requires Cache Components.
 
 ```ts
 export default {
-  experimental: { appNewScrollHandler: true },
+  cacheComponents: true,
+  experimental: { cachedNavigations: true },
 }
 ```
 
-In the `release-catalogs` canary line, this reworked fragment-scroll and focus handler is enabled by default, so remove assumptions that it is always gated by `experimental.appNewScrollHandler` when testing canary builds.
+## Browser-like focus handling (`16.2.0`, `release-catalogs`)
 
-## Instant route enforcement
+`experimental.appNewScrollHandler: true` opted into reworked App Router scroll and focus management using React Fragment refs. After navigation it blurs the active element instead of focusing the first focusable descendant deep in the new segment, matching browser behavior.
 
-With Cache Components enabled, Next.js `16.3.0` reports server work that delays navigation in the development overlay and terminal; `next build` emits the same guidance when the work prevents prerendering. Choose one of these responses:
+The reworked fragment-scroll and focus handler became the canary-line default in `release-catalogs`; do not continue treating the experimental opt-in as universally necessary after that transition.
 
-- Stream the work behind `Suspense`.
-- Cache it with `use cache`.
-- Explicitly accept a server-bound page or layout.
+## Instant routes (`16.3.0`)
+
+With Cache Components enabled, the development overlay and terminal identify server work that delays navigation, and `next build` reports the same guidance when it stops prerendering. Put work behind `Suspense`, cache it with `use cache`, or explicitly accept a server-bound page or layout.
 
 ```ts
 export const instant = false
 ```
 
-See the caching reference for the associated partial-prefetching and loading-shell controls.
+## Partial Prefetching (`16.3.0`)
+
+The top-level `partialPrefetching` flag makes production prefetching fetch and session-cache one reusable loading shell per distinct route rather than one response per link. The Navigation Inspector can pause a navigation at that shell during development.
+
+```ts
+const nextConfig = {
+  cacheComponents: true,
+  partialPrefetching: true,
+}
+
+export default nextConfig
+```
+
+`<Link prefetch={true}>` additionally includes per-link synchronous or cached content known at build time. `export const prefetch = 'allow-runtime'` extends the work to request-time cached content, increasing server load.

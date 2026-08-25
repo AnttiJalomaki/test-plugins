@@ -1,35 +1,10 @@
 # Forms, Validation, Persistent State, and Identity
 
-## Use declarative prerendered-state persistence
+Batch attribution: `10.0-migration` and `10.0`.
 
-During the `10.0-migration`, components and services can annotate state with
-`[PersistentState]` instead of implementing the more involved common pattern
-around `PersistentComponentState`.
+## Use Recursive Source-Generated Validation
 
-## Upgrade existing apps to passkeys
-
-Existing Blazor Web Apps can adopt passkey user authentication through the
-dedicated ASP.NET Core 10 migration path. Treat this as an upgrade workflow;
-do not assume passkey support is restricted to newly generated apps.
-
-## Update Identity redirects when navigation exceptions are disabled
-
-The Blazor Web App template sets:
-
-```xml
-<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-```
-
-When an older Individual Accounts app opts into this behavior, update
-`Components/Account/IdentityRedirectManager.cs`: remove the
-`InvalidOperationException` thrown by `RedirectTo` and remove all five
-`[DoesNotReturn]` attributes.
-
-## Enable recursive source-generated validation
-
-In `10.0`, call `AddValidation`, keep the model in a C# file rather than a
-Razor file, and annotate the root model with `[ValidatableType]`. Nested
-objects and collections are then validated without reflection.
+Register validation services, place the model in a C# file rather than a Razor file, and mark the root model with `[ValidatableType]`:
 
 ```csharp
 builder.Services.AddValidation();
@@ -42,25 +17,42 @@ public sealed class Order
 }
 ```
 
-Use `[SkipValidation]` to exclude a property or an entire type. If the model
-comes from another assembly, both that assembly and the application must call
-`AddValidation` so the required generated metadata is available.
+This validates nested objects and collections without reflection. Apply `[SkipValidation]` to a property or type that should be excluded.
 
-## Control persistent component state
+When the model lives in a different assembly, that assembly and the application must both call `AddValidation()` so the required generated validation metadata exists.
 
-Register `PersistentComponentStateSerializer<T>` to replace JSON
-serialization for a state type. `[PersistentState]` supports:
+## Bind Empty Nullable Form Values
 
-- `AllowUpdates = true` to accept state updates during enhanced-navigation
-  refreshes.
-- `RestoreBehavior.SkipInitialValue` to skip restoration during prerendering.
-- `RestoreBehavior.SkipLastSnapshot` to skip the last snapshot during
-  reconnection.
+For a complex `[FromForm]` parameter, an empty string posted to a nullable value-type property binds as `null`. It no longer produces a parse failure. Tests that asserted the old failure should be updated to assert successful null binding.
 
-Use `RegisterOnRestoring` when restoration requires imperative control.
+## Declare Prerendered State
 
-## Bind empty nullable form values as null
+Components and services can mark state with `[PersistentState]` rather than using the more involved `PersistentComponentState` service pattern for every value persisted during prerendering.
 
-For a complex Minimal API `[FromForm]` parameter, an empty string posted to a
-nullable value-type property binds as `null`. It no longer produces a parse
-failure, so remove workarounds or assertions that expect the old error.
+Register `PersistentComponentStateSerializer<T>` when a state type requires serialization other than the default JSON representation.
+
+`[PersistentState]` supports the following controls:
+
+- `AllowUpdates = true` updates state across enhanced-navigation refreshes.
+- `RestoreBehavior.SkipInitialValue` suppresses restoration during prerendering.
+- `RestoreBehavior.SkipLastSnapshot` suppresses restoration during reconnection.
+- `RegisterOnRestoring` provides imperative restoration control.
+
+## Add Passkeys to an Existing App
+
+Existing Blazor Web Apps can adopt passkey authentication through the dedicated migration path. Treat this as an Identity migration rather than assuming that updating package references alone modifies an existing account UI and data flow.
+
+## Update Identity Redirects
+
+The current Blazor Web App template enables:
+
+```xml
+<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+```
+
+When an older Individual Accounts app opts into this behavior during upgrade, edit `Components/Account/IdentityRedirectManager.cs`:
+
+1. Remove the `InvalidOperationException` thrown by `RedirectTo`.
+2. Remove all five `[DoesNotReturn]` attributes.
+
+Leaving those declarations in place misrepresents control flow now that static SSR navigation no longer uses the navigation exception.

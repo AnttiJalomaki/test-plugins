@@ -2,7 +2,7 @@
   "patch": "erlang-otp-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T04:04:24Z",
+  "built_at": "2026-08-21T01:39:41Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -53,6 +53,16 @@
       "build": "included"
     },
     "29.0.3": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "29.0.4": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "29.0.5": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

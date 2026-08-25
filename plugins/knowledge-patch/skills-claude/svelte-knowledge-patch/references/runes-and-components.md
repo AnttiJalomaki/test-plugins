@@ -1,23 +1,14 @@
 # Runes and components
 
-## Contents
+The rune semantics in this reference are attributed to `5.0.0-runes`.
 
-- [Reactive dependencies](#reactive-dependencies)
-- [Derived values](#derived-values)
-- [State, props, and ownership](#state-props-and-ownership)
-- [Component IDs and reactive classes](#component-ids-and-reactive-classes)
-- [Element attachments](#element-attachments)
-- [Snippets](#snippets)
-- [Template declarations and syntax](#template-declarations-and-syntax)
-- [Programmatic contexts](#programmatic-contexts)
-- [Asynchronous rendering](#asynchronous-rendering)
+## Dependency tracking
 
-## Reactive dependencies
+### Await-aware derived dependencies
 
-### Await-aware derived expressions
-
-Reactive reads on both sides of an `await` written directly in a `$derived`
-expression are dependencies:
+Reactive reads after an `await` written directly in a `$derived` expression
+remain dependencies. This does not apply when the `await` is hidden inside a
+function called by the expression.
 
 ```svelte
 <script>
@@ -27,40 +18,30 @@ expression are dependencies:
 </script>
 ```
 
-This does not extend through an arbitrary function boundary. If the expression
-calls a helper and that helper reads reactive state after awaiting, do not assume
-the hidden read becomes a dependency.
+### Effect dependency granularity
 
-### Effect subscription granularity
-
-An effect subscribes only to reactive values read synchronously during its most
-recent execution. Reads after an `await`, in a timer, or in another later
-callback are not tracked.
-
-Reading a state proxy object does not observe all of its properties. Read the
-property whose changes should rerun the effect:
+An effect subscribes only to reactive values read synchronously during its
+latest run. Reads after `await` or inside timers are not tracked. Reading a
+state proxy object does not subscribe to mutations of all of its properties;
+read the property that should trigger the effect.
 
 ```js
-$effect(() => state);       // does not rerun for state.value mutations
-$effect(() => state.value); // observes state.value
+$effect(() => state);       // does not rerun when only state.value changes
+$effect(() => state.value); // reruns when state.value changes
 ```
 
-These dependency rules are attributed to `5.0.0-runes`.
+## Derived and state values
 
-## Derived values
-
-### Optimistic overrides
+### Overridable derived values
 
 A `$derived` binding declared with `let` can be reassigned for optimistic UI.
-The assigned value remains until a dependency changes, at which point the
-derived expression recalculates it. Derived bindings before Svelte 5.25 were
-read-only.
+The override remains until a dependency changes and the expression recalculates.
+Derived values were read-only before Svelte 5.25.
 
 ```svelte
 <script>
 	let { post } = $props();
 	let likes = $derived(post.likes);
-
 	function optimisticLike() {
 		likes += 1;
 	}
@@ -70,44 +51,70 @@ read-only.
 ### Destructuring and proxy behavior
 
 Destructuring directly from `$derived(...)` creates individually reactive
-bindings:
+bindings. A derived result is otherwise returned as-is rather than being
+deep-proxied. Ordinary destructuring from a `$state` proxy captures the current
+values and does not keep the destructured variables reactive.
 
 ```js
-let { a, b } = $derived(makeValues());
+let { a, b } = $derived(makeValues()); // individually reactive
+let { done } = todos[0];               // current value only
 ```
 
-A derived result is otherwise returned as-is; Svelte does not deep-proxy it.
-By contrast, a `$state` value can be a deep proxy, but ordinary JavaScript
-destructuring captures current property values rather than reactive bindings:
+### Prop fallbacks and ownership
 
-```js
-let { done } = todos[0]; // snapshot of a property on a state proxy
-```
-
-## State, props, and ownership
-
-### Prop fallbacks
-
-A fallback object created while destructuring `$props()` is not converted to a
-state proxy. Mutating it does not trigger a UI update:
+A fallback object supplied while destructuring `$props()` is an ordinary
+object, not a state proxy, so mutating the fallback does not update the UI.
+Mutating a parent-owned state proxy does update the parent, but emits an
+ownership warning unless the prop is explicitly bindable.
 
 ```js
 let { options = { enabled: false } } = $props();
 ```
 
-### Parent-owned state
+Use a binding or callback for intentional child-to-parent writes.
 
-Mutating a state proxy owned by a parent can update the parent, but Svelte emits
-an ownership warning unless the prop is explicitly bindable. Use a binding or a
-callback when a child is intended to update parent state.
+### Reactive class fields are non-enumerable
 
-## Component IDs and reactive classes
+A class field initialized with `$state` compiles to a prototype accessor backed
+by a private field. It therefore does not appear during property enumeration.
+Expose the value explicitly when serializing or spreading a class instance.
+
+## Asynchronous UI
+
+### Pending work and eager feedback
+
+In a component that uses `await`, `$effect.pending()` reports the number of
+pending promises in the current boundary and excludes child boundaries.
+`$state.eager(value)` lets displayed state update immediately instead of waiting
+for synchronized asynchronous updates.
+
+```svelte
+{#if $effect.pending()}<p>pending: {$effect.pending()}</p>{/if}
+<a aria-current={$state.eager(pathname) === '/' ? 'page' : null} href="/">home</a>
+```
+
+### Awaited template constants and server rendering
+
+An `{@const}` declaration can await a value as part of asynchronous template
+work:
+
+```svelte
+{#if task}
+	{@const value = await task}
+	<p>{value}</p>
+{/if}
+```
+
+Svelte also has an experimental asynchronous SSR path that can wait for this
+kind of asynchronous template work during server rendering.
+
+## Component identity and context
 
 ### Hydration-stable IDs
 
-`$props.id()` returns an ID unique to the component instance and stable between
+`$props.id()` returns an ID unique to a component instance and stable across
 server rendering and hydration. Use it for label, description, and ARIA
-relationships:
+relationships.
 
 ```svelte
 <script>const uid = $props.id();</script>
@@ -115,21 +122,17 @@ relationships:
 <input id="{uid}-name" />
 ```
 
-### Non-enumerable reactive class fields
+### Typed programmatic contexts
 
-Class fields initialized with `$state` compile to accessors on the prototype
-backed by private storage. They do not appear during ordinary property
-enumeration. Spreading or serializing a class instance therefore omits them
-unless the class exposes those values explicitly.
+Programmatic Svelte code can create typed contexts with `createContext`,
+preserving the context value type without relying on untyped keys.
 
-The derived, prop, ID, and class-field behavior in these sections is attributed
-to `5.0.0-runes`.
+## Attachments
 
-## Element attachments
+### Element lifecycle behavior
 
-An attachment is a function that runs with an element when the element mounts.
-It can return a cleanup function that runs when the element is removed. Apply it
-with `{@attach ...}`:
+An attachment runs with an element when it mounts and may return cleanup logic
+for removal. Apply one with `{@attach ...}`:
 
 ```svelte
 <script>
@@ -142,19 +145,16 @@ with `{@attach ...}`:
 <input {@attach autofocus} />
 ```
 
-### Adapt an action
+### Adapt actions with `fromAction`
 
-Use `fromAction` from `svelte/attachments` to preserve an existing action's
-behavior as an attachment. For an action with an argument, pass a function that
-returns the value as the second argument, not the value itself:
+`fromAction` exposes an existing action as an attachment. For a parameterized
+action, its second argument is a function that returns the parameter value, not
+the value itself.
 
 ```svelte
 <script>
 	import { fromAction } from 'svelte/attachments';
-
-	const title = (node, value) => {
-		node.title = value;
-	};
+	const title = (node, value) => { node.title = value; };
 	const message = 'More details';
 </script>
 
@@ -163,30 +163,26 @@ returns the value as the second argument, not the value itself:
 
 ### Attach through spread props
 
-Since Svelte 5.29, `createAttachmentKey()` returns a symbol whose property acts
-as an attachment when its containing object is spread onto an element. This is
-primarily useful for prop objects created by libraries:
+Since Svelte 5.29, `createAttachmentKey()` returns a symbol whose object property
+acts as an attachment when the object is spread onto an element. This is useful
+for library-authored prop objects.
 
 ```svelte
 <script>
 	import { createAttachmentKey } from 'svelte/attachments';
-
 	const props = {
-		[createAttachmentKey()]: (node) => {
-			node.textContent = 'attached';
-		}
+		[createAttachmentKey()]: (node) => { node.textContent = 'attached'; }
 	};
 </script>
 
 <button {...props}>waiting</button>
 ```
 
-## Snippets
+## Snippets and template syntax
 
-### Parameter syntax
+### Snippet parameters
 
-Snippet parameters allow defaults and destructuring. They do not allow rest
-parameters:
+Snippet parameters allow defaults and destructuring, but not rest parameters.
 
 ```svelte
 {#snippet badge({ label }, prefix = '')}
@@ -196,11 +192,10 @@ parameters:
 {@render badge({ label: 'New' }, 'Status: ')}
 ```
 
-### Export snippets
+### Exported and programmatic snippets
 
-Since Svelte 5.5, a top-level snippet in a `.svelte` file can be exported from
-`<script module>`. The snippet must not refer directly, or through another
-snippet, to any declaration in the instance-level `<script>`:
+Since Svelte 5.5, a top-level snippet can be exported from `<script module>` when
+it has no direct or transitive reference to instance-script declarations:
 
 ```svelte
 <script module>
@@ -212,24 +207,23 @@ snippet, to any declaration in the instance-level `<script>`:
 {/snippet}
 ```
 
-### Construct snippets programmatically
+Use `createRawSnippet` from `svelte` when a snippet must be constructed
+programmatically instead of with a `{#snippet ...}` block.
 
-Use `createRawSnippet` from `svelte` when a snippet must be created
-programmatically rather than with a `{#snippet ...}` block.
+### Template declaration tags
 
-## Template declarations and syntax
-
-Svelte 5.56 allows `let` and `const` declarations directly in template scope.
-A declaration tag can contain multiple declarators, and a later initializer can
-refer to an earlier declaration. Runes can initialize the values:
+Svelte 5.56 accepts `let` and `const` declaration tags in template scope. One
+tag can declare multiple values, and a later initializer can reference an
+earlier declaration, including when runes initialize the values.
 
 ```svelte
 {let count = $state(0), doubled = $derived(count * 2)}
-
 <button onclick={() => count++}>{doubled}</button>
 ```
 
-HTML comments are also accepted between attributes in an opening tag:
+### Comments between attributes
+
+HTML comments are accepted between attributes in an opening tag:
 
 ```svelte
 <button
@@ -239,42 +233,3 @@ HTML comments are also accepted between attributes in an opening tag:
 	Save
 </button>
 ```
-
-## Programmatic contexts
-
-Programmatic Svelte code can use typed `createContext` calls so the context value
-keeps its type without relying on an untyped key.
-
-## Asynchronous rendering
-
-### Pending work and eager display
-
-In a component that uses `await`, `$effect.pending()` returns the number of
-pending promises in the current boundary. Pending work in child boundaries is
-excluded. `$state.eager(value)` opts a displayed value out of synchronized await
-updates so immediate feedback can render while other work finishes:
-
-```svelte
-{#if $effect.pending()}<p>pending: {$effect.pending()}</p>{/if}
-<a aria-current={$state.eager(pathname) === '/' ? 'page' : null} href="/">home</a>
-```
-
-The pending and eager APIs are attributed to `5.0.0-runes`.
-
-### Await template constants
-
-An `{@const}` declaration can await a value as part of asynchronous template
-work:
-
-```svelte
-{#if task}
-	{@const value = await task}
-	<p>{value}</p>
-{/if}
-```
-
-### Asynchronous server rendering
-
-Svelte includes an experimental asynchronous SSR path that can wait for
-asynchronous template work while rendering on the server. Treat the path as
-experimental when deciding whether production behavior may depend on it.

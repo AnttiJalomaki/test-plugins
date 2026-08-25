@@ -1,19 +1,19 @@
 # Resolution and Module Interoperability
 
-## ESM-only Vite package
+## Account for the ESM-Only Distribution
 
-Vite ships as ESM-only beginning with Vite 7 (since 7.0.0). Its Node.js runtime
-minimums—20.19+ or 22.12+—supply unflagged `require(esm)`, so the Vite JavaScript
-API remains loadable from CommonJS even though the distributed package is ESM.
+Vite `7.0.0` requires Node.js 20.19+ or 22.12+. Those runtimes provide
+unflagged `require(esm)`, allowing Vite to ship as ESM-only while keeping its
+JavaScript API loadable from CommonJS.
 
-Do not interpret ESM-only distribution as meaning that every API consumer must
-first be rewritten to ESM. Do ensure that CommonJS consumers run on one of the
-supported Node.js versions.
+When a CommonJS consumer cannot load the Vite JavaScript API, first verify the
+exact Node.js minor version. Node.js 18 is no longer supported, and an older
+minor of Node.js 20 or 22 does not satisfy the Vite 7 floor.
 
-## Direct WebAssembly ESM imports
+## Import WebAssembly Exports Directly
 
-Vite supports WebAssembly ESM integration (since 8.1.0). Import exports directly
-from a `.wasm` module:
+Since `8.1.0`, Vite supports WebAssembly ESM integration. Named exports from a
+`.wasm` file can be imported directly:
 
 ```ts
 import { add } from './add.wasm'

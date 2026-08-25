@@ -1,12 +1,55 @@
 # Requests and security
 
-Use this reference for request classification and parsing, strict JSON media types, authentication failures, OAuth2 metadata, and security-scope generation.
+## Forms and parameter models
 
-## JSON request media types
+### Union-valued forms
 
-FastAPI 0.132 validates JSON `Content-Type` by default (`2026-02`). A request carrying JSON without a valid JSON media type is rejected rather than parsed permissively. Update clients to send a valid value such as `Content-Type: application/json`.
+FastAPI 0.115.14 (`2025-06`) validates a `Form()` field directly against a
+union instead of requiring a manual parser:
 
-Temporarily retain the older behavior at application construction while migrating clients:
+```python
+from typing import Annotated
+from fastapi import FastAPI, Form
+
+app = FastAPI()
+
+@app.post("/values")
+async def create_value(value: Annotated[int | float, Form()]):
+    return {"value": value}
+```
+
+### Aliases, optional sequences, and missing values
+
+FastAPI 0.123.3 (`2025-11`) honors aliases on Pydantic models used with
+`Query`, `Header`, and `Cookie`, and accepts optional sequences such as
+`list[str] | None`. Related fixes apply missing-value semantics to an empty
+HTML form control whose default is `None`, and preserve extra list-valued form
+or non-body parameters.
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Query
+from pydantic import BaseModel, Field
+
+class Filters(BaseModel):
+    tags: list[str] | None = Field(default=None, alias="tag")
+
+@app.get("/items")
+def items(filters: Annotated[Filters, Query()]):
+    return filters
+```
+
+### Tagged unions are request bodies
+
+FastAPI 0.118.2 (`2025-09`) classifies a Pydantic tagged discriminated union as
+a request body, so it is parsed and validated from the body rather than as a
+different parameter kind.
+
+### Strict JSON media types
+
+FastAPI 0.132 (`2026-02`) requires a valid JSON media type, normally
+`application/json`, before parsing a JSON request. Fix clients to send the
+header. During a compatibility migration only, restore headerless parsing with:
 
 ```python
 from fastapi import FastAPI
@@ -14,35 +57,23 @@ from fastapi import FastAPI
 app = FastAPI(strict_content_type=False)
 ```
 
-Prefer correcting clients; the compatibility flag weakens a useful request-boundary check.
+The strict default protects a narrow trust boundary described by
+`frontend-cli-and-protocol`: a credential-free browser request with a
+headerless `Blob` body cannot bypass CORS preflight and reach an unauthenticated
+localhost or internal-network endpoint merely because that endpoint trusts its
+network location. Disabling strict content types removes this barrier and is
+not a substitute for authentication.
 
-## Form parsing
+## Authentication behavior
 
-### Union annotations
+### Missing credentials return `401`
 
-FastAPI handles union-typed form inputs correctly as of the `2025-06` batch. Keep the intended union annotation instead of widening the field or manually parsing the submitted value.
+Built-in security dependencies return `401 Unauthorized`, not `403 Forbidden`,
+for missing credentials from FastAPI 0.122 (`2025-11`). Tests and clients that
+encoded the old status must be updated or use an explicit compatibility class.
 
-### Empty and list-valued controls
-
-FastAPI 0.123.2 treats an empty string from an HTML form control as missing. When the parameter default is `None`, an empty control consequently resolves to `None`. The same release correctly handles extra list-valued values in `Form` and other non-body parameters (`2025-11`).
-
-## Query, header, and cookie parameter models
-
-FastAPI 0.123.3 honors aliases on Pydantic parameter models passed through `Query`, `Header`, or `Cookie`. It also fixes Pydantic V2 serialization of optional sequences. FastAPI 0.123.5 completes parsing support for Python 3.10 union syntax such as `list[str] | None`.
-
-Remove manual alias translation and sequence-normalization workarounds when the minimum FastAPI version includes these fixes.
-
-## Request-body classification
-
-FastAPI 0.118.2 recognizes tagged discriminated unions as request bodies (`2025-09`). A parameter using a tagged union no longer needs an explicit workaround to prevent it being classified as a query parameter.
-
-Callable discriminators on PEP 695 aliases are also supported by Pydantic 2.12; see [openapi-and-pydantic.md](openapi-and-pydantic.md).
-
-## Missing authentication credentials
-
-Starting with FastAPI 0.122.0, built-in security classes raise `401 Unauthorized` for absent credentials instead of `403 Forbidden` (`2025-11`). Update response assertions, generated-client expectations, and any middleware keyed to the previous status.
-
-To retain custom behavior, subclass the security implementation and override `make_not_authenticated_error()`. Return the exception; the implementation raises it:
+Override `make_not_authenticated_error()` to preserve a `403` contract. Return
+the exception; do not raise inside the hook (`frontend-cli-and-protocol`).
 
 ```python
 from fastapi import HTTPException, status
@@ -56,39 +87,51 @@ class HTTPBearer403(HTTPBearer):
         )
 ```
 
-FastAPI 0.128.1 strips surrounding whitespace from credentials extracted from the `Authorization` header (`2025-12`). Authentication dependencies therefore receive the normalized credential rather than the original padded substring.
+### Authorization values are normalized
 
-## OAuth2 password flows
+FastAPI 0.128.1 (`2025-12`) strips surrounding whitespace from credentials
+parsed from `Authorization`. Built-in authentication dependencies therefore
+receive the normalized credential value.
 
-`OAuth2PasswordBearer` accepts `refreshUrl` and emits it in the OpenAPI password flow. Use the OpenAPI spelling shown by the constructor:
+### Nested scopes propagate
+
+FastAPI 0.122.1 (`2025-11`) propagates security scopes through dependency
+hierarchies. Fixes through 0.123.9 correct OAuth2 scope declarations and avoid
+duplicate schemes when parents and children use different scopes. Remove
+workarounds that manually copied nested scopes or schemes.
+
+### Top-level schemes
+
+FastAPI 0.120.4 (`2025-10`) correctly renders OpenAPI security schemes added at
+the top-level application.
+
+## OAuth2 password flow metadata
+
+`OAuth2PasswordBearer` accepts `refreshUrl` (`2025-06`) and emits it on the
+generated password-flow definition:
 
 ```python
 from fastapi.security import OAuth2PasswordBearer
 
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/auth/token",
-    refreshUrl="/auth/refresh",
+    tokenUrl="/token",
+    refreshUrl="/token/refresh",
 )
 ```
 
-`OAuth2PasswordRequestForm` marks both `password` and `client_secret` with OpenAPI's `password` format. Documentation UIs and generated forms can render them as password controls without application schema customization (`2025-06`).
+The `password` and `client_secret` fields on `OAuth2PasswordRequestForm` now
+carry the `password` schema format (`2025-06`), allowing interactive
+documentation to render protected inputs.
 
-## Nested security scopes and OpenAPI schemes
+## Exception headers
 
-FastAPI 0.122.1 fixes hierarchical security-scope propagation. FastAPI 0.123.9 fixes the corresponding OpenAPI scope declarations and scheme deduplication for combinations such as a scoped parent dependency with an unscoped child security scheme.
-
-FastAPI 0.120.4 also fixes omission of security schemes added at the top-level application (`2025-10`). Upgrade instead of patching the generated document or duplicating schemes manually.
-
-## Exception header mappings
-
-FastAPI 0.128.7 types `HTTPException.headers` as any `Mapping`, not only `dict`. Read-only and custom mappings are accepted without a static type error:
+FastAPI 0.128.7 (`2025-12`) types `HTTPException.headers` as `Mapping` rather
+than only `dict`, so any string-to-string mapping is accepted:
 
 ```python
-from types import MappingProxyType
+from collections.abc import Mapping
 from fastapi import HTTPException
 
-raise HTTPException(
-    status_code=404,
-    headers=MappingProxyType({"X-Reason": "missing"}),
-)
+headers: Mapping[str, str] = {"Retry-After": "30"}
+raise HTTPException(status_code=429, headers=headers)
 ```

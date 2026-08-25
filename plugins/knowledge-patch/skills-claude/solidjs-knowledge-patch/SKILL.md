@@ -23,9 +23,6 @@ response, and route helpers do not necessarily share a package or runtime.
 | [Routing and SolidStart](references/routing-and-solidstart.md) | Filesystem routes, route definitions, preloading, navigation, SolidStart runtime and request APIs |
 | [Stores and actions](references/stores-and-actions.md) | Action lifecycle, submissions, form encoding, revalidation, responses, redirects, single-flight mutations |
 
-Read only the reference files relevant to the task, but read both routing and
-actions when a mutation redirects or revalidates route data.
-
 ## Upgrade triage
 
 Check these migration-sensitive changes first:
@@ -84,7 +81,7 @@ Apply the current names and behaviors together:
 | API | Current contract |
 | --- | --- |
 | `query` | Replaces `cache`; response handling preserves headers |
-| `createAsyncStorage` | Provides the storage-oriented async-data variant |
+| `createAsyncStorage` | Added async-data helper available alongside `createAsync` |
 | `createAsync` | Exposes `.latest`; user-provided names are honored |
 | `action` | Supports `onComplete`, exposes errors, and returns the processed response |
 | `Submission` | Import from the package top level |
@@ -205,11 +202,13 @@ data calls, and retain every `Set-Cookie` header on redirect responses.
 
 Before changing configuration or deployment code:
 
-- Distinguish the Vite-based SolidStart 2 alpha runtime from the 1.x Vinxi
-  runtime.
-- Use `vite preview` with the alpha line.
+- Distinguish stable SolidStart 2's Vite Environment API runtime from the 1.x
+  Vinxi runtime and from older 2.0 alpha assumptions.
+- Use `vite preview`; when the Nitro preview plugin is active, preview delegates
+  to Nitro, including for static builds without a server entry.
 - Import server-side types from `@solidjs/start/server` where needed.
 - Expect API routes to honor the configured base URL.
 - Configure the public-assets directory when the project does not use
   `public`.
-- Keep v1 fixes on the `1.x` line while evaluating alpha migration work.
+- Keep fixes for the earlier runtime on the `1.x` branch while evaluating a
+  major-version migration.

@@ -1,74 +1,88 @@
 # Observability and Runtime APIs
 
-## Logging by transaction stage
+## Transaction-stage log profiles
 
-`log profile` in 3.1.0 assigns formats independently at `accept`, `request`,
-`connect`, `response`, `close`, `error`, or `any`, and binds the profile to a
-particular log destination. One profile may therefore emit at several stages
-with destination-specific formats. The `do-log` action emits extra records as
-traffic is processed.
+HAProxy 3.1.0 adds `log profile`, allowing destination-specific formats at the
+`accept`, `request`, `connect`, `response`, `close`, `error`, and `any` stages.
+A profile may therefore emit several records during one transaction. The
+`do-log` action emits an additional record while rules are running.
 
-Starting in 3.4.0, each `do-log` action can select its own profile instead of
-all actions in a frontend sharing the profile chosen on the `log` line:
+Since 3.4.0, each `do-log` invocation can select its own profile instead of all
+invocations in a frontend inheriting the profile on the `log` line.
 
 ```haproxy
 http-request do-log profile syslog
 ```
 
-## Tracing
+## Supported traces and runtime control
 
-Tracing is supported rather than experimental starting in 3.1.0. It has a
-dedicated configuration section and Runtime API controls. Trace sources include
-`h1`, `h2`, `h3`, `quic`, `qmux`, `fcgi`, `spop`, `peers`, and `check`, allowing
-subsystem-focused debugging.
-
-The Runtime API `trace` command adds an `ssl` source for TLS events in 3.2.0.
-An `acme` source for certificate automation arrives in 3.3.0:
+Tracing is supported, configured in a dedicated section, and controlled by the
+Runtime API since 3.1.0. Sources include `h1`, `h2`, `h3`, `quic`, `qmux`,
+`fcgi`, `spop`, `peers`, and `check`. The `ssl` source was added in 3.2.0 and
+the `acme` source in 3.3.0.
 
 ```haproxy
 traces
     trace acme sink stdout level user event +any verbosity clean start now
 ```
 
-## Termination and rule diagnostics
+Keep trace scope and duration narrow on busy systems.
 
-### Conditional fields
+## Multi-event termination diagnostics
 
-Converter `when(condition)` in 3.1.0 returns its input unchanged when true and
-no value otherwise. Use it to emit fields such as `bs.debug_str` and
-`fs.debug_str` only for relevant failures.
-
-Fetches `last_entity` and `waiting_entity` identify the operation interrupted by
-a timeout or error. They can also identify the final evaluated rule leading to
-an accept, redirect, or deny.
-
-### Multi-event termination state
-
-Fetch `term_events` in 3.2.0 returns a comma-separated sequence of request
-termination states rather than only the final stream state. Append it to the
-access format and decode it later with the supplied `term_events` program.
+The 3.2.0 `term_events` fetch records the sequence of request termination
+states as a comma-separated value, rather than exposing only the final stream
+state. Append it to an access log, then decode it with the supplied
+`term_events` utility.
 
 ```haproxy
 log-format "$HAPROXY_HTTP_LOG_FMT %[term_events]"
 ```
 
-## Master CLI sessions and event rings
+## Conditional diagnostics
 
-When selecting a worker by relative PID, use `@@` instead of `@` in 3.2.0 to
-keep the Master CLI session interactive until explicit exit or command
-completion. The worker inherits the master's prompt mode. The `prompt` command
-supports `n`, `i`, and `p` modes.
+The 3.1.0 `when(condition)` converter returns its input only while its
+condition is true. Use it to include `bs.debug_str` and `fs.debug_str` only
+for selected failures. `last_entity` and `waiting_entity` identify the
+operation interrupted by an error or timeout and can expose the final rule
+behind an accept, redirect, or deny.
 
-Persistent sessions can subscribe to event rings. The `dpapi` ring was added
-for this facility and initially carries ACME notifications.
+## Master CLI worker sessions
 
-## Persistent and operational statistics
+Since 3.2.0, select a worker by relative PID with `@@` instead of `@` to keep
+the Master CLI session interactive until exit or command completion. The
+master's prompt mode carries into the worker; `prompt` accepts `n`, `i`, and
+`p`. Persistent sessions can subscribe to event rings, including the `dpapi`
+ring initially used for ACME notifications.
 
-Experimental shared-memory statistics in 3.3.0 require:
+## Runtime-created backends
 
-- global `expose-experimental-directives`;
-- global `shm-stats-file`; and
-- a unique `guid` on every participating frontend, backend, and server.
+HAProxy 3.4.0 can add, publish, unpublish, and delete whole backends through the
+Runtime API. A backend is unroutable until published. `use_backend` and
+`default_backend` skip disabled or unpublished targets unless
+`force-be-switch` is set.
+
+```text
+add backend test-backend from mydefaults mode http
+add server test-backend/server1 127.0.0.1:3000 check
+enable server test-backend/server1
+enable health test-backend/server1
+publish backend test-backend
+```
+
+Remove safely by placing every server in maintenance, waiting for
+`srv-removable`, deleting the servers, unpublishing the backend, waiting for
+`be-removable`, and deleting it. Named `defaults` sections remain resident for
+dynamic creation; `tune.defaults.purge` releases them when dynamic backends are
+not used.
+
+## Persistent and typed statistics
+
+Experimental statistics persistence in 3.3.0 requires
+`expose-experimental-directives`, a global `shm-stats-file`, and a unique
+`guid` on every participating frontend, backend, and server. Reloads preserve
+the shared statistics, but full process restarts do not. `show stat typed`
+marks each metric `P` for persistent or `V` for volatile.
 
 ```haproxy
 global
@@ -85,72 +99,56 @@ backend webservers
     server web1 172.16.0.12:80 check guid 775e29c2-0b97-4f19-9976-dba604b833f4
 ```
 
-A reload preserves these statistics, but a process restart does not. `show stat
-typed` labels each metric `P` for persistent or `V` for volatile.
+## Runtime diagnostics and version queries
 
-`show dev` in 3.3.0 reports thread-to-CPU bindings. `show info` reports counts
-of lines added to and removed from map and ACL files, which can reveal
-automation that only appends entries.
+In 3.3.0, `show dev` reports thread-to-CPU bindings and `show info` adds counts
+of lines added to and removed from Map and ACL files. Use the latter to detect
+automation that continually grows files. CLI version-only formats are `-vq`,
+short version `-vqs`, and branch `-vqb`.
 
-The Prometheus endpoint in 3.4.0 exports
-`haproxy_sticktable_local_updates`, a cumulative gauge of local updates for
-each configured stick table. Monitor its rate to understand update activity.
+The `haproxy-dump-certs` script introduced in 3.3.0 writes certificates from a
+stats or master socket to disk. Install the `halog` utility with
+`make install-admin`; `make install` is no longer its installation target.
 
-## Sample fetches
+## Connection, TLS, counter, and date samples
 
-### Connection, TLS ClientHello, counters, and dates
+The 3.2.0 `bc_reused` fetch says whether a transfer reused a backend
+connection. ClientHello capability fetches are `req.ssl_cipherlist`,
+`req.ssl_keyshare_groups`, `req.ssl_sigalgs`, and
+`req.ssl_supported_groups`. `sc_key(<ctr>)` returns a tracked-counter key;
+`table_clr_gpc(<idx>[,<table>])` and
+`table_inc_gpc(<idx>[,<table>])` mutate a general-purpose counter and return
+its previous or new value. `accept_date` and `request_date` fall back to the
+session date when no stream exists, including early TLS handshake failures.
 
-The following arrive in 3.2.0:
+## Timeout, certificate, and thread samples
 
-- `bc_reused` reports whether the transfer reused a backend connection.
-- `req.ssl_cipherlist`, `req.ssl_keyshare_groups`, `req.ssl_sigalgs`, and
-  `req.ssl_supported_groups` expose binary TLS ClientHello capabilities.
-- `sc_key(<ctr>)` returns the tracked-counter key.
-- `table_clr_gpc(<idx>[,<table>])` mutates a general-purpose counter and returns
-  its previous value.
-- `table_inc_gpc(<idx>[,<table>])` mutates a general-purpose counter and returns
-  its new value.
-- `accept_date` and `request_date` fall back to the session date when no stream
-  exists, including an early TLS-handshake failure.
+Added in 3.4.0, `cur_connect_timeout`, `cur_queue_timeout`, and
+`cur_tarpit_timeout` expose current stream timeouts in milliseconds;
+`fe_tarpit_timeout` exposes the frontend setting. `ssl_fc_crtname` returns the
+selected incoming certificate name, and `tgroup` returns the zero-based thread
+group position.
 
-### Directional byte counts
+## Stick-table updates in Prometheus
 
-The 3.3.0 byte fetches have intentionally asymmetric viewpoints:
+The 3.4.0 Prometheus endpoint exports
+`haproxy_sticktable_local_updates`, a cumulative gauge per configured stick
+table. Derive a rate to alert on unexpected local write activity.
 
-| Fetch | Meaning |
-| --- | --- |
-| `req.bytes_in` | Client-to-HAProxy bytes; alias of `bytes_in` |
-| `req.bytes_out` | HAProxy-to-server bytes |
-| `res.bytes_in` | Server-to-HAProxy bytes; alias of `bytes_out` |
-| `res.bytes_out` | HAProxy-to-client bytes |
+## Stats page and administration hardening
 
-### HTTP versions, timeouts, TLS, and threads
+Since 3.4.0, the Stats page hides the HAProxy version by default. Add
+`stats show-version` only if operators need it.
 
-As of 3.4.0, `req.ver` and `res.ver` consistently return `major.minor` for
-HTTP/1, HTTP/2, and HTTP/3. `capture.req.ver` and `capture.res.ver` consistently
-return `HTTP/major.minor`.
+HAProxy 3.4.3 makes `stats admin` honor `stats scope`, preventing actions on
+excluded proxies, and validates the `Origin` of Stats POST requests. The stats
+administration UI remains documented as CSRF-vulnerable: isolate it, require
+authentication, constrain scope, and do not treat Origin validation as the
+only control.
 
-Also added in 3.4.0:
+## Sample converters and stricter decoding
 
-- `cur_connect_timeout`, `cur_queue_timeout`, and `cur_tarpit_timeout` return
-  the active stream timeouts in milliseconds;
-- `fe_tarpit_timeout` returns the configured frontend tarpit timeout;
-- `ssl_fc_crtname` returns the selected incoming certificate name; and
-- `tgroup` returns the zero-based position of the calling thread group.
-
-## Data converters
-
-Converters added or extended in 3.3.0 include:
-
-- `base2`, which renders every input byte as eight binary digits;
-- `le2dec`, which renders little-endian binary chunks as unsigned decimals;
-- `aes_gcm_enc` and `aes_gcm_dec`, which accept an optional AAD argument for
-  authenticated additional data.
-
-Converters added in 3.4.0 include:
-
-- `jwt_decrypt_cert`, `jwt_decrypt_secret`, and `jwt_decrypt_jwk`, which decrypt
-  JWT input with a certificate, base64-encoded secret, or JSON Web Key;
-- `aes_cbc_enc` and `aes_cbc_dec`, which process raw bytes with
-  AES-128/192/256-CBC according to the `bits` argument; and
-- `fe_exists`, which reports whether its input names a configured frontend.
+The 3.4.0 `fe_exists` converter reports whether its input names a configured
+frontend. In 3.4.3, Protobuf field lookup no longer permits nested-path
+bypasses and rejects deprecated group wire types. Conversions that depended on
+either ambiguous behavior now fail and should be covered by negative tests.

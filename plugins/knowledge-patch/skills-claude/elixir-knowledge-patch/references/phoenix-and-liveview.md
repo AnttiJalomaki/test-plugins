@@ -1,29 +1,20 @@
 # Phoenix and LiveView
 
-Batch attribution: `liveview-1.0.0`, `liveview-1.1.0`, and `phoenix-1.8.0`.
+## LiveView source annotations (`liveview-1.0.0`)
 
-## Contents
+Enable `debug_heex_annotations` in development to annotate rendered markup with
+the function component's definition and the caller's file and line.
+`Phoenix.LiveReloader` can use configured key-click navigation to open either
+source location in the editor.
 
-- [Upgrade projects and assets](#upgrade-projects-and-assets)
-- [Use generated Phoenix application boundaries](#use-generated-phoenix-application-boundaries)
-- [Colocate browser behavior with components](#colocate-browser-behavior-with-components)
-- [Render and patch dynamic interfaces](#render-and-patch-dynamic-interfaces)
-- [Debug rendered components](#debug-rendered-components)
-- [Test rendered behavior](#test-rendered-behavior)
-
-## Upgrade projects and assets
-
-### Install the matching Phoenix generator
-
-Phoenix 1.8 requires Erlang/OTP 25 or later. Install its project generator explicitly when replacing an existing `phx.new` archive:
-
-```console
-mix archive.install hex phx_new 1.8.0 --force
+```elixir
+config :phoenix_live_view, debug_heex_annotations: true
 ```
 
-### Wire the LiveView compiler and test parser
+## LiveView upgrade wiring (`liveview-1.1.0`)
 
-Put LiveView's compiler before the standard compilers, upgrade the dependency, and use LazyHTML in tests:
+Place LiveView's compiler before the standard compilers and add LazyHTML for
+tests. Remove Floki only if nothing else uses it.
 
 ```elixir
 # project/0
@@ -34,61 +25,27 @@ compilers: [:phoenix_live_view] ++ Mix.compilers()
 {:lazy_html, ">= 0.0.0", only: :test}
 ```
 
-Remove Floki only if no other dependency or test still uses it. The upgrade can be automated with:
+The upgrade can be automated with:
 
 ```console
 mix archive.install hex igniter_new
 mix igniter.upgrade phoenix_live_view
 ```
 
-If the app enables colocated code, also update esbuild, add `--alias:@=.`, and set `NODE_PATH` to the dependency and build paths.
+Existing applications enabling colocated code must also update esbuild, add
+`--alias:@=.`, and set `NODE_PATH` to the dependency and build paths.
 
-## Use generated Phoenix application boundaries
+## Colocated client code (`liveview-1.1.0`)
 
-### Follow generated project guidance
+### Hooks and arbitrary JavaScript
 
-New `phx.new` applications include an `AGENTS.md` with Phoenix and Elixir syntax, idiom, and API guidance for coding tools working in the repository.
+LiveView extracts component `<script>` blocks at compile time. Use
+`Phoenix.LiveView.ColocatedHook` for a hook and
+`Phoenix.LiveView.ColocatedJS` for arbitrary JavaScript; the latter may omit
+`name`. Colocated hooks require Phoenix 1.8 or newer.
 
-### Treat the default CSS stack as replaceable
-
-New projects include Tailwind v4, daisyUI, light and dark themes, and a layout theme toggle. The `phx.gen.*` generators do not depend on daisyUI, so removing the plugin does not require rewriting generated features.
-
-### Choose authentication behavior explicitly
-
-`mix phx.gen.auth` generates magic-link registration and login by default. Traditional email/password authentication remains opt-in through user settings. Generated authentication includes a `require_sudo_mode` plug for operations that require recent authentication.
-
-### Thread generated scopes through the application
-
-`mix phx.gen.auth` creates an application-owned `%MyApp.Accounts.Scope{}` and uses it as the default scope when none exists. With a default scope, `phx.gen.live`, `phx.gen.html`, and `phx.gen.json`:
-
-- pass `current_scope` through context functions;
-- generate scoped queries and foreign keys;
-- isolate PubSub topics by scope; and
-- place generated LiveView routes in the authenticated `live_session`.
-
-```elixir
-def list_posts(%Scope{} = scope) do
-  Repo.all(from post in Post, where: post.user_id == ^scope.user.id)
-end
-```
-
-### Call layout components explicitly
-
-The root layout remains unchanged, but LiveViews no longer select a fixed app layout with `use Phoenix.LiveView, layout: ...`. Call the layout function component from the rendered page so each layout can accept its own assigns and slots:
-
-```heex
-<Layouts.app flash={@flash}>
-  <p>My LiveView page</p>
-</Layouts.app>
-```
-
-## Colocate browser behavior with components
-
-### Define colocated hooks and JavaScript
-
-LiveView extracts a component's `<script>` at compile time. Use `Phoenix.LiveView.ColocatedHook` for hooks and `Phoenix.LiveView.ColocatedJS` for arbitrary JavaScript; the latter may omit `name`.
-
-Colocated hooks require Phoenix 1.8 or newer. A hook name beginning with `.` is prefixed with its module to prevent global collisions. Rename any pre-upgrade global hook that intentionally began with a dot.
+A leading-dot hook name is module-prefixed to avoid global collisions. Rename
+hooks that intentionally used a global leading-dot name before LiveView 1.1.
 
 ```heex
 <div id="status" phx-hook=".Status"></div>
@@ -97,45 +54,44 @@ Colocated hooks require Phoenix 1.8 or newer. A hook name beginning with `.` is 
 </script>
 ```
 
-Import and merge the generated hook collection:
+Merge the generated hooks into the `LiveSocket` options:
 
 ```javascript
 import {hooks as colocatedHooks} from "phoenix-colocated/my_app"
-const liveSocket = new LiveSocket("/live", Socket, {
-  hooks: {...colocatedHooks}
-})
+const liveSocket = new LiveSocket("/live", Socket, {hooks: {...colocatedHooks}})
 ```
 
-### Use the bundled JavaScript declarations
+### Official JavaScript types
 
-The JavaScript client ships declarations for every public API, replacing `@types/phoenix_live_view`. Annotate hooks with JSDoc or subclass `ViewHook`:
+The client ships declarations for every public API, replacing the separate
+`@types/phoenix_live_view` package. Hooks can use JSDoc types or subclass
+`ViewHook`. If an editor cannot resolve declarations, map TypeScript `paths` to
+both `node_modules/*` and `../deps/*`.
 
 ```javascript
 /** @type {import("phoenix_live_view").Hook} */
 const Status = { mounted() { this.pushEvent("ready", {}) } }
 ```
 
-If an editor cannot resolve the declarations, map TypeScript `paths` to both `node_modules/*` and `../deps/*`.
+## Rendering and change tracking (`liveview-1.1.0`)
 
-### Support form-associated custom elements
+### Keyed comprehensions
 
-The client treats form-associated custom elements as form inputs, so they participate in LiveView form handling like native controls.
-
-## Render and patch dynamic interfaces
-
-### Key comprehensions with stable identity
-
-Comprehensions perform change tracking by default and use each entry's index when no key is provided. Add `:key` when identity must remain stable across insertions and moves:
+Comprehensions track changes by default, using the entry index when no key is
+given. Add `:key` for stable identity through insertion and reordering. Keys work
+on regular elements and components used with `:for`, but not on slot entries or
+`:for` on slots. Prefer streams for very large collections when server memory
+matters.
 
 ```heex
 <li :for={item <- @items} :key={item.id}>{item.name}</li>
 ```
 
-Keys work on ordinary elements and components using `:for`, but not on slot entries or `:for` attached to slots. Prefer streams for very large collections when server memory matters.
+### Portals
 
-### Render through portals
-
-`Phoenix.Component.portal/1` moves rendered content elsewhere in the DOM while retaining event handling in the owning LiveView. It also works from LiveComponents and nested LiveViews:
+`Phoenix.Component.portal/1` renders elsewhere in the DOM while keeping the
+owning LiveView's event handling, including for LiveComponents and nested
+LiveViews.
 
 ```heex
 <.portal id="tooltip" target="body">
@@ -143,33 +99,57 @@ Keys work on ordinary elements and components using `:for`, but not on slot entr
 </.portal>
 ```
 
-### Preserve client-controlled attributes
+### Browser-controlled attributes
 
-Use `JS.ignore_attributes/1` to keep patches from overwriting attributes controlled by the browser or client code, such as a dialog's `open` state:
+`JS.ignore_attributes/1` stops LiveView patches from overwriting attributes such
+as `open` that the browser or client owns.
 
 ```heex
 <dialog id="modal" phx-mounted={JS.ignore_attributes(["open"])}>...</dialog>
 ```
 
-### Update streams without inserting
+### Update-only streams
 
-Pass `update_only: true` when `stream_insert/4` should update an existing item and leave a missing item absent:
+Use `stream_insert/4` with `update_only: true` to update an existing item without
+inserting a missing one:
 
 ```elixir
 stream_insert(socket, :items, item, update_only: true)
 ```
 
-## Debug rendered components
+### Form-associated custom elements
 
-### Annotate component definitions and callers
+The client treats form-associated custom elements as inputs, so they participate
+in LiveView form handling like native controls.
 
-Enable `debug_heex_annotations` in development to annotate rendered markup with both the function component definition and its caller file and line. `Phoenix.LiveReloader` can use configured key-click navigation to open either source location in the editor:
+## LiveView testing and debugging (`liveview-1.1.0`)
+
+### LazyHTML selectors
+
+LiveViewTest parses HTML with LazyHTML, supporting selectors such as `:is()` and
+`:has()` and normalizing whitespace in text filters. Floki-only `fl-contains` and
+`fl-icontains` do not work with `element/3`; use a text filter:
 
 ```elixir
-config :phoenix_live_view, debug_heex_annotations: true
+view |> element("main a", "Sign up") |> render_click()
 ```
 
-The annotations also mark slot boundaries. Enable `debug_attributes` to add a tag's source line as `data-phx-loc` and its LiveView PID as `data-phx-pid`:
+### Duplicate IDs
+
+`LiveViewTest.live/3` and `live_isolated/3` raise by default when rendered DOM or
+LiveComponent IDs are duplicated. Their `on_error` option can alter this.
+
+### Runtime inspection
+
+`Phoenix.LiveView.Debug` inspects running LiveViews. Its `live_components/1`
+returns inspection failures as error tuples instead of raising.
+
+### Slot, tag, and PID annotations
+
+With `debug_heex_annotations`, LiveView also annotates slot boundaries. Enable
+`debug_attributes` to add source lines as `data-phx-loc` and the LiveView PID as
+`data-phx-pid`. Custom `Phoenix.LiveView.TagEngine` implementations must add the
+`annotate_slot/4` callback.
 
 ```elixir
 config :phoenix_live_view,
@@ -177,26 +157,61 @@ config :phoenix_live_view,
   debug_attributes: true
 ```
 
-Custom `Phoenix.LiveView.TagEngine` implementations must implement `annotate_slot/4`.
+### Custom inline formatting
 
-### Inspect running LiveViews
+`Phoenix.LiveView.HTMLFormatter` accepts `:inline_matcher`, a list of strings and
+regular expressions identifying tags to format as inline elements.
 
-Use `Phoenix.LiveView.Debug` to inspect runtime LiveViews. `live_components/1` returns inspection failures as error tuples instead of raising.
+## Phoenix application generation (`phoenix-1.8.0`)
 
-### Format custom inline tags
+### Runtime and matching generator
 
-Configure `Phoenix.LiveView.HTMLFormatter` with `:inline_matcher`, a list of strings and regular expressions identifying tag names that should remain inline.
+Phoenix 1.8 requires Erlang/OTP 25 or newer. Explicitly install the matching
+generator when replacing an existing `phx.new` archive:
 
-## Test rendered behavior
-
-### Use LazyHTML selectors and text filters
-
-LiveViewTest parses HTML with LazyHTML and supports modern selectors including `:is()` and `:has()`. Text filters normalize whitespace. Floki-only `fl-contains` and `fl-icontains` selectors do not work in `element/3`; replace them with the text-filter argument:
-
-```elixir
-view |> element("main a", "Sign up") |> render_click()
+```console
+mix archive.install hex phx_new 1.8.0 --force
 ```
 
-### Fix duplicate IDs or select an error policy
+New applications include an `AGENTS.md` with Phoenix and Elixir syntax, idiom,
+and API guidance for coding tools.
 
-`LiveViewTest.live/3` and `live_isolated/3` raise by default when the rendered DOM or LiveComponent IDs are duplicated. Fix the IDs or use their `on_error` option to select different behavior.
+### CSS and themes
+
+New projects ship with Tailwind v4, daisyUI, light and dark themes, and a layout
+theme toggle. `phx.gen.*` output does not depend on daisyUI, so removing the
+plugin does not require generated feature rewrites.
+
+### Authentication defaults
+
+`mix phx.gen.auth` uses magic links by default for registration and login.
+Standard email/password authentication remains opt-in through user settings.
+Generated authentication includes `require_sudo_mode` for operations requiring
+recent authentication.
+
+### Scoped resources
+
+`mix phx.gen.auth` creates an application-owned `%MyApp.Accounts.Scope{}` and
+makes it the default scope if none exists. With a default configured,
+`phx.gen.live`, `phx.gen.html`, and `phx.gen.json` thread `current_scope` through
+context calls, generate scoped queries and foreign keys, and isolate PubSub by
+scope. Put generated LiveView routes inside the authenticated `live_session`.
+
+```elixir
+def list_posts(%Scope{} = scope) do
+  Repo.all(from post in Post, where: post.user_id == ^scope.user.id)
+end
+```
+
+### Explicit app layouts
+
+The root layout remains unchanged, but LiveViews no longer choose a fixed app
+layout through `use Phoenix.LiveView, layout: ...`. Render pages through an
+explicit layout function component so each layout can receive its own assigns and
+slots without branching in one global layout.
+
+```heex
+<Layouts.app flash={@flash}>
+  <p>My LiveView page</p>
+</Layouts.app>
+```

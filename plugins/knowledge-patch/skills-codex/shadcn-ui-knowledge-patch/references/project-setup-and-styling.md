@@ -1,25 +1,19 @@
 # Project Setup and Styling
 
-## Preserve the current stack during upgrades
+## Stack boundary and Tailwind v4 upgrade
 
-The CLI can initialize projects with Tailwind v4 and React 19, but an existing
-Tailwind v3 or React 18 application stays on that stack until it is explicitly
-upgraded. Adding components does not cross that boundary.
+The CLI can initialize Tailwind v4 and React 19 projects. Existing Tailwind v3
+and React 18 applications, including components subsequently added to them,
+remain on that stack until an explicit upgrade. Check Tailwind v4 browser
+compatibility before upgrading and run `@tailwindcss/upgrade@next` to perform
+the mechanical migration.
 
-Before upgrading Tailwind, verify that the application's browser support is
-compatible with Tailwind v4 and run the preview upgrade codemod:
+## Tailwind v4 variable layout
 
-```sh
-npx @tailwindcss/upgrade@next
-```
-
-This transition behavior comes from the `tailwind-v4-transition` batch.
-
-## Lay out Tailwind v4 variables
-
-Move `:root` and `.dark` outside `@layer base`. Each custom property should hold
-the full color expression. Map it to Tailwind through `@theme inline` without
-adding a second color-function wrapper.
+Place `:root` and `.dark` outside `@layer base`. Variables hold complete color
+expressions, and `@theme inline` maps them directly without another color
+function. New palettes use OKLCH. Chart configuration likewise uses the complete
+variable, for example `color: "var(--chart-1)"`.
 
 ```css
 :root {
@@ -35,26 +29,23 @@ adding a second color-function wrapper.
 }
 ```
 
-New palettes use OKLCH. Code that consumes chart tokens should also use the full
-variable directly:
+## Animation dependency
 
-```ts
-const chartConfig = {
-  series: {
-    color: "var(--chart-1)",
-  },
-}
+`tailwindcss-animate` is deprecated. Remove it and its `@plugin` directive,
+install `tw-animate-css` as a development dependency, and import the replacement
+from global CSS:
+
+```css
+@import "tw-animate-css";
 ```
 
-Do not rewrite that value as a variable fragment nested in `hsl()` or `oklch()`.
+## Dark-mode palette refresh
 
-## Opt in to the refreshed dark palette
+The March 2025 palette refresh applies automatically to projects created on
+Tailwind v4, not to projects upgraded from v3. To opt an upgraded project in:
 
-The March 2025 dark-mode palette is included in projects created on Tailwind v4.
-It is not automatically applied to projects upgraded from v3. To adopt it:
-
-1. Commit local component changes so the overwrite has a clean comparison point.
-2. Overwrite the project components.
+1. Commit local component changes.
+2. Overwrite the installed components.
 3. Replace the dark variables in `globals.css` with the new OKLCH values.
 4. Review the diff and reapply intentional customizations.
 
@@ -62,124 +53,78 @@ It is not automatically applied to projects upgraded from v3. To adopt it:
 pnpm dlx shadcn@latest add --all --overwrite
 ```
 
-Treat this as a palette migration, not an incidental consequence of installing
-Tailwind v4.
+## Interactive project creation
 
-## Replace the animation package
+`npx shadcn create` creates a customized Next.js, Vite, TanStack Start, or v0
+setup. It prompts for the component library, icons, base color, theme, fonts,
+and visual style. The five supplied styles are:
 
-`tailwindcss-animate` is deprecated for new projects. In an existing project:
+- Vega: classic.
+- Nova: reduced spacing.
+- Maia: soft and rounded.
+- Lyra: boxy and sharp.
+- Mira: compact and dense.
 
-1. Remove the `tailwindcss-animate` dependency.
-2. Remove its `@plugin` directive.
-3. Install `tw-animate-css` as a development dependency.
-4. Import it from the global stylesheet.
+Styles rewrite component code, including fonts, spacing, structure, and
+libraries; they are not merely color themes.
 
-```css
-@import "tw-animate-css";
-```
+## Full-project initialization
 
-## Scaffold a project
-
-The current CLI's `init` command can scaffold Next.js, Vite, TanStack Start,
-React Router, Astro, or Laravel. `create` is an alias for `init`. Use `--name`
-for a new project directory, `--monorepo` for a workspace, and `--base` to select
-Base UI, Radix, or Aria primitives.
+`init` scaffolds Next.js, Vite, TanStack Start, React Router, Astro, or Laravel;
+`create` is an alias. `--name` creates a named project, `--monorepo` creates a
+workspace, and `--base` selects Base UI, Radix, or Aria primitives.
 
 ```sh
 pnpm dlx shadcn@latest init --name dashboard --template astro --base radix
 pnpm dlx shadcn@latest init --template next --monorepo
 ```
 
-The earlier interactive creation workflow also supports a v0 target and prompts
-for the component library, icon set, base color, theme, fonts, and visual style:
+## Preset codes
 
-```sh
-npx shadcn create
-```
-
-The five supplied style choices in that workflow are:
-
-| Style | Character |
-| --- | --- |
-| Vega | Classic |
-| Nova | Reduced spacing |
-| Maia | Soft and rounded |
-| Lyra | Boxy and sharp |
-| Mira | Compact and dense |
-
-A style selection rewrites component code, including fonts, spacing, structure,
-and supporting libraries. It is not merely a color-theme switch. These creation
-details come from `create-and-base-ui`; current initialization behavior comes
-from `cli-v4-and-presets`.
-
-## Apply portable presets
-
-A preset code packages colors, theme, icon library, fonts, and radius. Use it
-with `init --preset` to scaffold with that configuration or to switch an
-existing application; a full switch also reconfigures its components.
+A portable preset packages colors, theme, icon library, fonts, and radius.
+`init --preset` scaffolds with it or switches an existing application and
+reconfigures that application's components.
 
 ```sh
 pnpm dlx shadcn@latest init --preset a1Dg5eFl
 ```
 
-The `apply` command applies a code to an existing project. Restrict it to theme
-or font when UI components must not be reinstalled:
+`apply` updates an existing project and can restrict the change to `theme` or
+`font` without reinstalling UI components. `preset decode` inspects a code;
+`preset resolve` reconstructs the current project's preset; `preset info` is an
+alias for `preset resolve`. Both inspection commands support JSON output.
 
 ```sh
 pnpm dlx shadcn@latest apply a2r6bw --only theme
-pnpm dlx shadcn@latest apply a2r6bw --only font
-```
-
-Inspect a code with `preset decode`, or reconstruct the project's current code
-with `preset resolve`. Both support JSON. `preset info` is an alias for
-`preset resolve`.
-
-```sh
 pnpm dlx shadcn@latest preset decode a2r6bw --json
 pnpm dlx shadcn@latest preset resolve --json
-pnpm dlx shadcn@latest preset info --json
 ```
 
-Preset commands and portable codes come from `cli-v4-and-presets`.
+## Registry-delivered design systems and fonts
 
-## Understand shared Tailwind CSS and ejection
+A `registry:base` item can install a complete design system containing
+components, dependencies, CSS variables, fonts, and configuration. A
+`registry:font` item is independently installable and declares its provider,
+import, CSS variable, and subsets.
 
-New initialization imports `shadcn/tailwind.css`, which supplies shared Tailwind
-v4 variants, utilities, and animations. The `eject` command irreversibly copies
-that CSS into the project and removes the `shadcn` dependency:
-
-```sh
-pnpm dlx shadcn@latest eject
-```
-
-After ejection, the project owns the copied CSS. Later CLI changes to the shared
-stylesheet are no longer received automatically. Review and commit the project
-before running this command.
-
-## Use current component-source conventions
-
-React 19 component wrappers use functions typed with `React.ComponentProps`
-instead of `React.forwardRef`. Pass the ref with the remaining props, add a
-`data-slot` marker to every primitive, and remove the old wrapper's `displayName`
-assignment.
-
-```tsx
-function AccordionItem({
-  className,
-  ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Item>) {
-  return (
-    <AccordionPrimitive.Item
-      data-slot="accordion-item"
-      className={cn("border-b last:border-b-0", className)}
-      {...props}
-    />
-  )
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "font-inter",
+  "type": "registry:font",
+  "font": {
+    "family": "'Inter Variable', sans-serif",
+    "provider": "google",
+    "import": "Inter",
+    "variable": "--font-sans",
+    "subsets": ["latin"]
+  }
 }
 ```
 
-Other changed defaults from `tailwind-v4-transition` are:
+## Shared Tailwind CSS and ejection
 
-- The legacy `toast` is deprecated in favor of `sonner`.
-- The `default` style is deprecated; new projects use `new-york`.
-- Buttons retain the browser's default cursor.
+New initialization imports `shadcn/tailwind.css` for shared Tailwind v4
+variants, utilities, and animations. `shadcn eject` irreversibly inlines that
+CSS and removes the `shadcn` dependency. After ejection, later CLI changes to
+the shared stylesheet no longer arrive automatically.

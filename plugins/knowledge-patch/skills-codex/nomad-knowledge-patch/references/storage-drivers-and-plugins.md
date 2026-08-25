@@ -2,79 +2,64 @@
 
 ## Dynamic host volumes
 
-Nomad can create host volumes through the CLI or API without restarting
-clients, and stateful deployments can use them:
+Nomad can create host volumes through the CLI or API without restarting clients
+(batch 1.10.0), and stateful deployments can consume them through `volume` and
+`volume_mount` blocks.
 
 ```shell
 nomad volume create ./internal-plugin.volume.hcl
 ```
 
-Jobs consume the volume with `volume` and `volume_mount` blocks. The scheduler
-tracks availability but does not interpret the underlying storage; a volume
-can be backed by node-local storage or highly available network storage.
+The scheduler tracks volume availability, but Nomad does not interpret the
+underlying storage. A volume may therefore be local or backed by highly available
+network storage; design placement and failure handling accordingly.
 
-Enterprise volume governance can use Sentinel at creation time, impose
-per-namespace host-volume capacity quotas, and validate a requested node pool
-against the namespace's configured node pools.
+`nomad volume status` shows volume capabilities. `nomad volume delete` accepts a
+volume ID prefix and a wildcard namespace. CSI volume and plugin events are also
+available in the event stream.
 
-Dynamic host volumes and governance are from batch `1.10.0`.
+## Storage scheduling capacity
 
-## Volume CLI, API, and events
+Nomad calculates storage available for scheduling as
+`totalBytes - client.reserved.disk`, rather than using free disk space (batch
+1.11-upgrade). The `unique.storage.bytesfree` attribute is removed. Reserve at
+least the disk capacity consumed by the host operating system.
 
-- CSI volume and CSI plugin events appear in the event stream.
-- `nomad volume status` shows volume capabilities.
-- `nomad volume delete` accepts a volume ID prefix and a wildcard namespace.
+## External plugin registration
 
-These visibility and CLI changes are from batch `1.10.0`.
+Executables discovered in `plugin_dir` run only when a matching `plugin`
+configuration block exists (since 1.10.0). Unconfigured executables are skipped.
 
-## External plugin loading
+## Removed remote driver interface
 
-An executable in `plugin_dir` runs only when a matching `plugin` configuration
-block exists. Nomad skips unconfigured plugins. This explicit-loading behavior
-is from batch `1.10.0`.
+Task drivers no longer support remote tasks (batch 1.10.0). Custom drivers using
+that interface must be redesigned before upgrading.
 
-## Removed remote task-driver interface
+## Driver configuration
 
-Task drivers no longer support remote tasks. Custom drivers using that
-interface must be redesigned before moving to the behavior in batch `1.10.0`.
+The Docker driver plugin accepts `image_pull_timeout`. The `raw_exec` driver
+accepts `denied_envvars` in driver and task configuration and can select the task
+user on Windows (since 1.10.0).
 
-## Docker and raw_exec configuration
+The secrets plugin execution timeout is 60 seconds (since 2.0.0), changing when a
+slow provider operation fails.
 
-The Docker driver plugin accepts `image_pull_timeout`.
+## QEMU behavior and paths
 
-The `raw_exec` driver accepts `denied_envvars` in both driver and task
-configuration. On Windows, it can also select the task user.
+Nomad 1.11.1 adds the QEMU task fields `emulator` and `machine_type`, defaulting to
+`qemu-system-x86_64` and `pc`. The `kvm` accelerator no longer forces machine type
+`host`. A `resources.cores` value supplies `-smp` only when the user has not
+provided a custom `-smp` flag.
 
-These additions are from batch `1.10.0`.
+In Nomad 1.11.2, filesystem environment variables from the QEMU driver contain
+host paths instead of relative container-style paths such as `/alloc` and
+`/local`. Update jobs that consume those variables.
 
-## QEMU machine configuration
+## Custom driver API compatibility
 
-Nomad 1.11.1 adds:
+`DriverNetwork.Hash` is removed from the `plugin/drivers` package in 2.0.5.
+Custom driver plugins referencing it must be updated before they can build.
 
-```hcl
-config {
-  emulator     = "qemu-system-x86_64"
-  machine_type = "pc"
-}
-```
+## Architecture support
 
-Those values are the defaults. The `kvm` accelerator no longer forces the
-machine type to `host`. A `resources.cores` value supplies `-smp` only when the
-user has not passed a custom `-smp` flag.
-
-In Nomad 1.11.2, filesystem environment variables exposed by the QEMU driver
-contain host file paths, replacing relative container paths such as `/alloc`
-and `/local`. Update jobspecs that use these variables.
-
-Both QEMU changes are from batch `1.11-upgrade`.
-
-## Executor failure status
-
-Executor failures in the `exec`, `raw_exec`, `java`, and `qemu` task drivers
-report exit code `-1` (batch `1.10.0`).
-
-## Secrets plugin timeout
-
-Secrets plugin execution times out after 60 seconds. Use that limit when
-implementing and diagnosing secret-provider plugins. This behavior is from
-batch `2.0.0`.
+Nomad Enterprise 2.0.0 supports Linux on the `ppc64le` CPU architecture.

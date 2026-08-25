@@ -2,7 +2,7 @@
   "patch": "ros2-navigation-nav2-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T14:16:30Z",
+  "built_at": "2026-08-21T23:48:53Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -36,7 +36,14 @@
       "kind": "unversioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "1.5.0": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "1.5.0"
+  ]
 }

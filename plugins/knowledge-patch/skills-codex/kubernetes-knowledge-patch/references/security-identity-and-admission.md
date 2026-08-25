@@ -1,154 +1,176 @@
 # Security, Identity, and Admission
 
-Use this reference for authentication, authorization, ServiceAccounts, workload identity, Pod security, admission, impersonation, and audit policy.
+## ServiceAccount and registry credentials
 
-Entries are grouped by task; the parenthetical identifier is the source batch.
+### Bound ServiceAccount tokens carry stronger identity (1.33-guide)
 
-## Admission configuration APIs graduate and retire (1.36.0)
+Bound tokens have a unique JTI and node identity for validation/auditing and may
+be restricted to their designated node.
 
-`MutatingAdmissionPolicy` is stable as `admissionregistration.k8s.io/v1` and enabled by default. The `v1alpha1` `WebhookAdmissionConfiguration` is removed; admission webhook configuration files must use `apiserver.config.k8s.io/v1`.
+### Image-pull authentication covers cached images and ServiceAccounts (1.33-guide)
 
-## Admission control can use a unified manifest (1.36-guide)
+The alpha cached-image mode can require an authentication check for each new
+credential set even when `IfNotPresent` or `Never` reuses local data. Separately,
+the on-disk credential provider may request a ServiceAccount token for
+OIDC-backed registry access without pull Secrets.
 
-Alpha manifest-based admission configuration puts admission plugins and their settings into one structured, versioned manifest instead of distributing configuration across component flags and separate plugin files.
+### Kubelet token requests are audience constrained (1.33.0)
 
-## Anonymous authentication can be limited by path (1.34-guide)
+Kubelet token-request configuration can dynamically select ServiceAccount and
+audience. Default-on `ServiceAccountNodeAudienceRestriction` makes
+NodeRestriction require the requested audience in the Pod token-volume spec.
 
-Anonymous access can now use a strict endpoint allowlist instead of being globally on or off, allowing unauthenticated health endpoints such as `/healthz`, `/readyz`, and `/livez` without exposing other paths through accidental RBAC grants.
+### External ServiceAccount signers accept a bounded maximum (1.33.0)
 
-## AppArmor annotations are no longer synthesized (1.34.0)
+`--service-account-max-token-expiration` works with
+`--service-account-signing-endpoint` if it does not exceed the external signer's
+maximum.
 
-AppArmor profiles set through Pod or container `securityContext` are no longer copied to `container.apparmor.security.beta.kubernetes.io/*` annotations; consumers must inspect the structured security-context fields.
+### Cluster trust bundles move to `v1beta1` (1.33.0)
 
-## Audit policy and retention semantics changed (1.36.0)
+`ClusterTrustBundleProjection` requires the `ClusterTrustBundle` API at
+`v1beta1` and the kubelet feature gate. If the API becomes available only after
+kubelet starts, restart kubelet to activate projection support.
 
-Audit resource rules can use `group: "*"` to match every API group. Setting `--audit-log-maxsize=0` now disables rotation; the defaults are `--audit-log-maxage=366` and `--audit-log-maxbackup=100`, and both pruning controls must be set explicitly to `0` to retain every rotated log.
+### ServiceAccount token integrations advance to beta (1.34-guide)
 
-## Authorizers can enforce request selectors (1.34-guide)
+Image credential providers can use short-lived, audience-bound tokens tied to
+the requesting Pod. Out-of-process `ExternalJWTSigner` is beta and default-on.
 
-Authorizers, including authorization webhooks and the node authorizer, can evaluate label and field selectors on `list`, `watch`, and `deletecollection` requests. A policy can therefore require a selector such as `.spec.nodeName`; omitting the required selector makes the request unauthorized.
+### Image credential provider configuration is composable (1.34.0)
 
-## Beta mutating policies still need storage migration (1.34.0)
+For a v1 provider using ServiceAccount tokens, `tokenAttributes.cacheType` is
+required and is `ServiceAccount` or `Token`.
+`--image-credential-provider-config` may point to a directory whose JSON/YAML
+files merge in lexicographic order.
 
-Enabling `admissionregistration.k8s.io/v1beta1` MutatingAdmissionPolicy in 1.34 does not change the default stored version from alpha, so operators using the beta API must run a storage migration rather than leave alpha data in etcd.
+### Cached-image credential checks are default-on (1.35-guide)
 
-## Bound ServiceAccount tokens carry stronger identity (1.33-guide)
+Default-on beta `KubeletEnsureSecretPulledImages` verifies credentials for
+cached private images. Choose compatibility or enforcement with
+`imagePullCredentialsVerificationPolicy`.
 
-The stable bound-token improvements add a unique JTI and node information for validation and auditing, and allow node-specific restrictions so a token can be limited to its designated node.
+### CSI tokens can use the secrets channel (1.35-guide)
 
-## Cached-image credential checks are default-on (1.35-guide)
+Set `CSIDriver.spec.serviceAccountTokenInSecrets: true` to deliver tokens in
+`NodePublishVolume` secrets rather than routinely logged `volume_context`.
 
-`KubeletEnsureSecretPulledImages` is beta and enabled by default, so locally cached private images are subject to credential verification. Operators can choose the compatibility-versus-enforcement policy with `imagePullCredentialsVerificationPolicy`.
+## Authentication and authorization
 
-## Client certificates can carry a user UID (1.33.0)
+### Client certificates can carry a user UID (1.33.0)
 
-Components accepting X.509 client authentication now read the user UID from a single string-valued subject RDN with OID `1.3.6.1.4.1.57683.2`; the beta `AllowParsingUserUIDFromCertAuth` gate can disable parsing.
+X.509 authentication reads a user UID from one string RDN with OID
+`1.3.6.1.4.1.57683.2`. Beta `AllowParsingUserUIDFromCertAuth` can disable it.
 
-## Cluster trust bundles move to `v1beta1` (1.33.0)
+### Structured authentication configuration reaches v1 (1.34.0)
 
-`ClusterTrustBundleProjection` now requires the `ClusterTrustBundle` API at `v1beta1` plus its kubelet feature gate; if that API becomes available only after kubelet starts, restart kubelet to activate projection support.
+`--authentication-config` accepts `apiserver.config.k8s.io/v1`. A JWT issuer may
+select `controlplane` or `cluster` egress with `issuer.egressSelectorType`;
+unset retains no selector. CEL accesses escaped or optional names with syntax
+such as `claims[?"kubernetes.io"]`.
 
-## Constrained impersonation has a compatible beta transition (1.36-guide)
+### Authorizers can enforce request selectors (1.34-guide)
 
-The API server prefers the new constrained authorization checks, but existing `impersonate` RBAC rules continue to work, allowing clusters to adopt per-operation impersonation permissions incrementally.
+Authorizers, including webhooks and the node authorizer, can inspect label and
+field selectors on `list`, `watch`, and `deletecollection`. A policy may require
+`.spec.nodeName`; omitting a required selector makes the request unauthorized.
 
-## External ServiceAccount signers accept a bounded maximum (1.33.0)
+### Anonymous authentication can be limited by path (1.34-guide)
 
-`--service-account-max-token-expiration` can now be combined with `--service-account-signing-endpoint`, provided the configured maximum does not exceed the external signer's own maximum expiration.
+Use an exact endpoint allowlist for unauthenticated `/healthz`, `/readyz`, and
+`/livez` rather than global anonymous access that can combine with accidental
+RBAC grants.
 
-## Fine-grained kubelet API authorization is stable (1.36-guide)
+### Impersonation can be constrained per operation (1.35-guide)
 
-`KubeletFineGrainedAuthz` is GA, allowing monitoring and observability clients to receive narrow permissions for the kubelet HTTPS API instead of the overly broad `nodes/proxy` permission.
+Alpha `ConstrainedImpersonation` performs a second authorization check with
+verbs like `impersonate-on:<mode>:<verb>`, limiting an impersonated identity to
+particular operations.
 
-## Host-network Pods can use user namespaces (1.35.0)
+### Constrained impersonation has a compatible beta transition (1.36-guide)
 
-The alpha, default-off `UserNamespacesHostNetworkSupport` gate permits Pods to combine `hostNetwork` with a user namespace.
+The server prefers constrained checks but honors existing `impersonate` RBAC,
+allowing incremental adoption.
 
-## Image credential provider configuration is composable (1.34.0)
+### WebSocket Pod streaming requires `create` authorization (1.35.0)
 
-For a v1 provider using a ServiceAccount token, `tokenAttributes.cacheType` is required and must be `ServiceAccount` or `Token`. `--image-credential-provider-config` can now point to a directory whose `.json`, `.yaml`, and `.yml` files are merged in lexicographic order.
+With default-on `AuthorizePodWebsocketUpgradeCreatePermission`, WebSocket and
+SPDY requests for `pods/exec`, `pods/attach`, and `pods/portforward` need
+`create`. Update roles that granted only `get`.
 
-## Image-pull authentication covers cached images and ServiceAccounts (1.33-guide)
+### Fine-grained kubelet API authorization is stable (1.36-guide)
 
-An alpha security mode can require an authentication check for each new credential set even when `IfNotPresent` or `Never` reuses an image already on the node. Separately, kubelet's on-disk credential provider can request an optional ServiceAccount token, enabling OIDC-backed registry authentication without image-pull Secrets.
+`KubeletFineGrainedAuthz` allows monitoring clients narrow kubelet HTTPS API
+permissions rather than broad `nodes/proxy` access.
 
-## Impersonation can be constrained per operation (1.35-guide)
+### Overlapping client CAs require an allowed-name restriction (1.35.0)
 
-With the alpha `ConstrainedImpersonation` gate, authorization performs a second check using verbs such as `impersonate-on:<mode>:<verb>`, allowing an impersonated identity to be limited to particular actions instead of receiving all of that identity's powers.
+If `--requestheader-client-ca-file` and `--client-ca-file` overlap, set
+`--requestheader-allowed-names` so ordinary client certs cannot inject proxy
+authentication headers.
 
-## Kubelet token requests are audience constrained (1.33.0)
+## Workload identity and Pod security
 
-Kubelet token-request configuration can dynamically select the ServiceAccount name and audience, and the default-on `ServiceAccountNodeAudienceRestriction` gate makes NodeRestriction require that requested audience to appear in the Pod's token volume specification.
+### Supplemental group membership can be strict (1.33-guide)
 
-## Mutating admission policies are beta but opt-in (1.34-guide)
+Default-on beta `SupplementalGroupsPolicy` adds
+`spec.securityContext.supplementalGroupsPolicy: Strict`, using only explicit
+groups. `Merge` also imports image `/etc/group` memberships.
 
-`admissionregistration.k8s.io/v1beta1` policies provide in-process CEL mutation with either server-side-apply `Object{...}` configurations or arrays of `JSONPatch` operations; a `MutatingAdmissionPolicyBinding` is required and can supply a parameter resource through `paramRef`. The beta feature is off by default and requires both controls:
+### Restricted Pod security rejects remote probe hosts (1.34-guide)
 
-```text
---feature-gates=MutatingAdmissionPolicy=true
---runtime-config=admissionregistration.k8s.io/v1beta1=true
-```
+HTTP probes and lifecycle handlers with explicit `host` fail Restricted Pod
+Security. Leave it unset so kubelet targets the Pod IP.
 
-Apply configurations cannot modify atomic structs, maps, or arrays; JSON Patch expressions should use `jsonpatch.escapeKey()` for path keys containing `/` or `~`.
+### AppArmor annotations are no longer synthesized (1.34.0)
 
-## MutatingAdmissionPolicy storage moves to `v1beta1` (1.35.0)
+Profiles in Pod/container security context are not copied to legacy
+`container.apparmor.security.beta.kubernetes.io/*` annotations. Read structured
+fields.
 
-The storage version for MutatingAdmissionPolicy is now `v1beta1`, replacing the alpha storage-version behavior present when the beta API first appeared.
+### Pods can obtain kubelet-managed X.509 identities (1.34-guide)
 
-## Overlapping client CAs require an allowed-name restriction (1.35.0)
+Alpha `PodCertificateRequest` lets kubelet request and manage workload
+certificates for mTLS rather than relying on bearer tokens.
 
-When `--requestheader-client-ca-file` and `--client-ca-file` contain overlapping certificates, kube-apiserver now requires `--requestheader-allowed-names` so ordinary client certificates cannot supply authenticating-proxy headers.
+### Pod certificates advance to beta (1.35-guide)
 
-## Pod certificates advance to beta (1.35-guide)
+Kubelet generates keys, requests and rotates certificates, and writes credential
+bundles to the Pod filesystem. API-server node restrictions isolate signers.
 
-`PodCertificateRequest` now lets kubelet generate keys, request and rotate certificates, and write credential bundles directly into a Pod's filesystem. API-server node restrictions protect signer isolation, so certificate issuance can avoid bearer tokens.
+### Pod certificates remain opt-in at beta (1.35.0)
 
-## Pod certificates prefer stub PKCS#10 requests (1.36.0)
+Enable both the feature and `v1beta1` certificates API groups.
+`PodCertificateProjection.UserAnnotations` reaches requests as
+`UnverifiedUserAnnotations`.
 
-The beta Pod Certificates API adds `spec.stubPKCS10Request` for certificate authorities that require a PKCS#10 request; `spec.pkixPublicKey` and `spec.proofOfPossession` are deprecated.
+### Pod certificates prefer stub PKCS#10 requests (1.36.0)
 
-## Pod certificates remain opt-in at beta (1.35.0)
+Use `spec.stubPKCS10Request` for CAs requiring PKCS#10.
+`spec.pkixPublicKey` and `spec.proofOfPossession` are deprecated.
 
-Using PodCertificateRequest still requires enabling both its feature gate and the `v1beta1` certificates API groups. PodCertificateProjection also gains `UserAnnotations`, which reaches requests as `UnverifiedUserAnnotations`.
+## Mutating admission and policy
 
-## Pod user namespaces are beta and enabled by default (1.33-guide)
+### Mutating admission policies are beta but opt-in (1.34-guide)
 
-Linux Pods still opt in with `spec.hostUsers: false`; support requires an appropriate runtime (containerd 2.0 or newer, or CRI-O) and idmapped-mount support for the root filesystem and every volume filesystem. NFS is unsupported, and tmpfs-backed Secret, ConfigMap, projected, and downward-API volumes require Linux 6.3; the feature maps container root to an unprivileged, non-overlapping host ID range.
+`admissionregistration.k8s.io/v1beta1` uses CEL server-side-apply `Object{...}`
+or arrays of JSON Patch operations. A binding is required and may provide
+`paramRef`. Enable both the feature gate and runtime API. Apply configurations
+cannot change atomic structs, maps, or arrays; use `jsonpatch.escapeKey()` for
+JSON Pointer keys containing `/` or `~`.
 
-```yaml
-spec:
-  hostUsers: false
-```
+### Beta mutating policies still need storage migration (1.34.0)
 
-## Pods can obtain kubelet-managed X.509 identities (1.34-guide)
+Enabling the beta API does not change the initial alpha stored version; run a
+storage migration rather than leaving alpha data in etcd.
 
-The alpha `PodCertificateRequest` mechanism lets kubelet request and manage workload certificates for mTLS to the API server or other certificate-aware services, rather than requiring bearer-token identity.
+### MutatingAdmissionPolicy storage moves to `v1beta1` (1.35.0)
 
-## Restricted Pod security rejects remote probe hosts (1.34-guide)
+The stored version becomes `v1beta1`, replacing the earlier alpha storage
+behavior.
 
-HTTP probes and lifecycle handlers with an explicitly set `host` no longer satisfy the Restricted Pod Security Standard; leave `host` unset so kubelet targets the Pod IP.
+### Admission configuration APIs graduate and retire (1.36.0)
 
-## ServiceAccount token integrations advance to beta (1.34-guide)
-
-Kubelet image credential providers can use short-lived, audience-bound tokens tied to the requesting Pod, and out-of-process `ExternalJWTSigner` ServiceAccount token signing is now beta and enabled by default.
-
-## Strict supplemental groups expose support and identity (1.35-guide)
-
-At GA, `supplementalGroupsPolicy: Strict` requires containerd 2.0 or newer or CRI-O 1.31 or newer; support is advertised at `Node.status.features.supplementalGroupsPolicy`. Kubelet reports the initially attached UID, GID, and groups in `status.containerStatuses[*].user.linux`, but a privileged process can change that identity later.
-
-## Structured authentication configuration reaches v1 (1.34.0)
-
-Files passed through `--authentication-config` can use `apiserver.config.k8s.io/v1`, and a JWT issuer can select `controlplane` or `cluster` egress with `issuer.egressSelectorType`; leaving it unset preserves the previous no-selector behavior. CEL mappings can access escaped or optional names with bracket syntax such as `claims[?"kubernetes.io"]`.
-
-## Supplemental group membership can be strict (1.33-guide)
-
-The default-on beta `SupplementalGroupsPolicy` feature adds `spec.securityContext.supplementalGroupsPolicy: Strict`, which uses only explicitly configured groups; the backward-compatible `Merge` policy also imports memberships from the image's `/etc/group`.
-
-## User-namespaced Pods cannot use block devices (1.34.0)
-
-Pods with `hostUsers: false` are rejected if they also declare `volumeDevices`.
-
-## WebSocket Pod streaming requires `create` authorization (1.35.0)
-
-With the default-on `AuthorizePodWebsocketUpgradeCreatePermission` gate, `pods/exec`, `pods/attach`, and `pods/portforward` require `create` for both WebSocket and SPDY requests. Update custom Roles and ClusterRoles that granted only `get` for WebSocket access.
-
+`MutatingAdmissionPolicy` is stable as `admissionregistration.k8s.io/v1` and
+default-on. `v1alpha1` `WebhookAdmissionConfiguration` is removed; webhook
+configuration files use `apiserver.config.k8s.io/v1`.

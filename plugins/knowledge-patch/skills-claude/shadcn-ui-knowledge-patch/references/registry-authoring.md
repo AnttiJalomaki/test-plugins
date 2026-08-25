@@ -1,9 +1,37 @@
 # Registry Authoring
 
-## Compose Source Registries
+## Registry-wide Design Systems
 
-A root `registry.json` may collect items from other registry files with
-`include`. Only the root must define `name` and `homepage`:
+A `registry:base` item can install a full design-system payload: components,
+dependencies, CSS variables, fonts, and configuration. Use it when a registry
+must establish or pin a component base and its associated system settings.
+
+## Font Items
+
+Fonts are independently installable `registry:font` items. Their metadata can
+specify the provider, import name, font family, CSS variable, and subsets.
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "font-inter",
+  "type": "registry:font",
+  "font": {
+    "family": "'Inter Variable', sans-serif",
+    "provider": "google",
+    "import": "Inter",
+    "variable": "--font-sans",
+    "subsets": ["latin"]
+  }
+}
+```
+
+## Composable Source Registries
+
+A root `registry.json` may use `include` to compose items from other registry
+files. Only the root supplies `name` and `homepage`. `shadcn build` resolves
+the includes to a flat registry without `include` and preserves item file paths
+relative to the root.
 
 ```json
 {
@@ -17,25 +45,20 @@ A root `registry.json` may collect items from other registry files with
 }
 ```
 
-`shadcn build` resolves those includes to a flat generated registry, removes
-the `include` field, and preserves each item file path relative to the root.
+## Validate Registry Source
 
-## Validate From Source
-
-Validation does not require a build first:
+Validation operates on the source registry; a build is not required first. It
+checks the root, included registries, item schemas, duplicate names, include
+rules, and local file paths, then reports all actionable errors in one run.
 
 ```sh
 pnpm dlx shadcn registry validate
 ```
 
-It checks the root and included registries, item schemas, duplicate item names,
-include constraints, and local file paths. It reports all actionable errors in
-one run so authors can fix the complete set together.
+## Dynamic Registry Loaders
 
-## Load Dynamic Registry Routes
-
-Use the documented `shadcn/registry` entry point to load the composed registry
-or one resolved item in a dynamic route:
+Dynamic routes can load the composed registry or a resolved item from the
+`shadcn/registry` public subpath.
 
 ```ts
 import { loadRegistry, loadRegistryItem } from "shadcn/registry"
@@ -44,55 +67,15 @@ const registry = await loadRegistry()
 const item = await loadRegistryItem(name)
 ```
 
-Do not import CLI command internals for this purpose.
+## GitHub Source Registries
 
-## Distribute From a Public GitHub Repository
-
-Any public repository with `registry.json` at its root can be consumed as
-`<username>/<repo>/<item>`:
+Any public GitHub repository with a root `registry.json` can be addressed as
+`username/repo/item`. The CLI reads the source registry and resolves includes,
+so an author does not need to run `shadcn build`, publish generated item JSON,
+or host a registry server. A `registry:item` can carry arbitrary project files,
+including documentation, editor settings, agent instructions, workflows,
+templates, and codemods.
 
 ```sh
 pnpm dlx shadcn@latest add acme/toolkit/project-conventions
-```
-
-The CLI reads the source registry and resolves its includes. The author does
-not need to run `shadcn build`, host generated item JSON, or operate a registry
-server. A `registry:item` may distribute arbitrary project files, including
-documentation, editor settings, agent instructions, workflows, templates, and
-codemods.
-
-## Return Useful Authentication Errors
-
-An authenticated registry may respond to a `401` or `403` with JSON containing
-a `message`. The CLI shows that message to the user, allowing a registry to
-explain a missing token, expired subscription, or resource-specific permission.
-
-```ts
-return NextResponse.json(
-  {
-    error: "Forbidden",
-    message: "This component requires Design team access.",
-  },
-  { status: 403 }
-)
-```
-
-Keep the response safe for display and do not include secrets.
-
-## Target Files Through Consumer Aliases
-
-A registry file target may begin with `@components/`, `@ui/`, `@lib/`, or
-`@hooks/`. The CLI resolves it against the consumer's `components.json`
-directories, independently of the consumer's import prefix.
-
-`@utils/` is not supported because that alias identifies a file rather than a
-directory. A target may intentionally route a file somewhere different from
-its declared type. `registry:page` and `registry:file` entries require a target.
-
-```json
-{
-  "path": "registry/new-york/example/format-date.ts",
-  "type": "registry:ui",
-  "target": "@lib/format-date.ts"
-}
 ```

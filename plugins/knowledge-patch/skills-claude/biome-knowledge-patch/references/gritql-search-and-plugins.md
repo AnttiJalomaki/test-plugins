@@ -1,52 +1,39 @@
 # GritQL Search and Plugins
 
-Use this reference when writing structural searches, transformations, or custom
-lint rules with GritQL.
+## Run structural search
 
-## Contents
-
-- [Run structural searches](#run-structural-searches)
-- [Define reusable logic](#define-reusable-logic)
-- [Register a lint plugin](#register-a-lint-plugin)
-- [Scope plugins by path](#scope-plugins-by-path)
-- [Attach safe or unsafe rewrites](#attach-safe-or-unsafe-rewrites)
-- [Profile plugin cost](#profile-plugin-cost)
-
-## Run structural searches
-
-Run `biome search` with a structural query. Matches ignore trivia such as
-whitespace and quote style. Because GritQL code fragments use backticks,
-single-quote the complete query in shells that interpret backticks:
+`biome search` runs structural GritQL queries whose matches ignore trivia such
+as whitespace and quote style (introduced experimentally in `1.9-guide`).
+GritQL fragments use backticks, so single-quote the whole query in shells that
+treat backticks as command substitution.
 
 ```shell
 biome search '`console.$method($args)` where { $method <: or { `log`, `info` } }' ./
 ```
 
-Search supports JSON and JavaScript with optional TypeScript or JSX flavors. It
-can also use direct Biome syntax-node patterns selected with
-`engine biome(1.0)`.
-
-## Define reusable logic
-
-Define custom patterns, predicates, and functions instead of repeating complex
-match logic. Function and method patterns match async declarations by default.
-Capture the optional `async` token and require it to be empty when the query
+Reusable pattern, predicate, and function definitions are supported (since
+`1.9.0`). Function and method patterns match async declarations by default.
+Capture the optional `async` token and require it to be empty when a pattern
 must match synchronous declarations only:
 
 ```grit
 $async function foo() {} where $async <: .
 ```
 
-## Register a lint plugin
+Search supports JSON and JavaScript with optional TypeScript/JSX flavors, plus
+direct Biome syntax-node patterns selected with `engine biome(1.0)` (since
+`2.0-guides`).
 
-Load `.grit` files from top-level `plugins`:
+## Register lint diagnostics
+
+Top-level `plugins` entries load `.grit` files and run their patterns across
+files handled by the linter (since `2.0-guides`). Register a match with
+`register_diagnostic(span, message, severity)`. Severity is optional, defaults
+to `error`, and accepts `hint`, `info`, `warn`, or `error`.
 
 ```json
 { "plugins": ["./lint/no-object-assign.grit"] }
 ```
-
-Report a match with `register_diagnostic(span, message, severity)`. Severity is
-optional, defaults to `error`, and accepts `hint`, `info`, `warn`, or `error`.
 
 ```grit
 `$fn($args)` where {
@@ -55,20 +42,27 @@ optional, defaults to `error`, and accepts `hint`, `info`, `warn`, or `error`.
 }
 ```
 
-Plugins default to JavaScript. Select another supported language explicitly.
-CSS plugins use `language css;`. JSON plugins use `language json` and may match
-native nodes such as `JsonMember` or TreeSitter-compatible names such as
-`pair`, `object`, and `array`:
+Plugins default to JavaScript. Select CSS with `language css;`. At their
+introduction, plugin targets were JavaScript and CSS, while search additionally
+supported JSON and syntax-node patterns.
+
+## Target JSON
+
+GritQL can target JSON for searches, transformations, and custom lint rules
+(since `2.4-guide`). Use native nodes such as `JsonMember` or Tree-sitter-style
+names such as `pair`, `object`, and `array`.
 
 ```grit
 language json
 pair(key = $k, value = $v)
 ```
 
+Select `language json` explicitly rather than allowing the JavaScript default.
+
 ## Scope plugins by path
 
-Use object-form plugin entries with `path` and ordered `includes`. Combine
-positive and negative globs to restrict where a plugin runs:
+Plugin entries can be objects with `path` and `includes` (since
+`2.5-guide`). Positive and negative globs restrict where that plugin runs.
 
 ```json
 {
@@ -81,10 +75,14 @@ positive and negative globs to restrict where a plugin runs:
 }
 ```
 
-## Attach safe or unsafe rewrites
+`--only` and `--skip` also filter plugin diagnostics (since `2.5.1`).
 
-Attach a rewrite with `=>`, then classify it using
-`register_diagnostic(fix_kind = "safe" | "unsafe")`:
+## Attach and classify rewrites
+
+A plugin pattern can attach a `=>` rewrite and pass
+`fix_kind = "safe" | "unsafe"` to `register_diagnostic` (since
+`2.5-guide`). Unclassified fixes are unsafe. Safe fixes run with `--write`;
+unsafe fixes require `lint` or `check --write --unsafe`.
 
 ```grit
 `console.log($msg)` as $call where {
@@ -97,15 +95,9 @@ Attach a rewrite with `=>`, then classify it using
 }
 ```
 
-Fixes default to unsafe. Run safe fixes with `lint --write` or `check --write`.
-Add `--unsafe` to apply an unsafe plugin rewrite.
+## Profile and suppress plugins
 
-## Profile plugin cost
-
-Run `biome lint --profile-rules` or `biome check --profile-rules` to include
-plugin timing with rules and assists. Measurements include total, average,
-minimum, maximum, and invocation count but exclude CST-query time. Each plugin
-appears as `plugin/<pluginName>`, matching its suppression name.
-
-Coverage IDs: `1.9-guide`, `1.9.0`, `2.0-guides`, `2.4-guide`, `2.5-guide`,
-`2.5.0`.
+`--profile-rules` includes GritQL plugin time along with lint-rule and assist
+timing (since `2.4-guide`); CST-query time is not included. Each plugin is
+reported separately as `plugin/<pluginName>` (since `2.5.0`). That name also
+matches the plugin's suppression name.

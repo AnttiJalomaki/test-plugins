@@ -1,48 +1,130 @@
 # Containers and Virtual Machines
 
-## Run managed VMs
+## Per-user managers and host integration
 
-- Vmspawn can boot a directory or a direct kernel/initrd, choose firmware and software TPM use, configure user namespaces and networking, add bind mounts or drives, register with machined, and pass transient SSH keys (since 256).
-- `systemd-vmspawn@.service` runs images as units. `machinectl --runner=vmspawn` or `machinectl -V` chooses vmspawn instead of nspawn (since 256).
-- Vmspawn supports unprivileged networking, `--grow-image=`, `--tpm-state=`, and `--notify-ready=` (since 258).
-- `systemd-vmspawn --ephemeral` runs a disposable VM. `--image-format=` selects raw or qcow2, and an extra drive's format can be supplied in the colon-separated `--extra-drive=` argument (since 260).
-- Vmspawn accepts `--bind-user=` and `--bind-user-shell=`; both vmspawn and nspawn accept `--bind-user-group=`. A file-backed VM disk exposes its backing filename as its serial, enabling stable guest `/dev/disk/by-id/` selection (since 259).
+### Capsules (256)
 
-## Integrate containers with the host
+A capsule is an extra per-user manager using a transient `DynamicUser=` and a
+home below `/var/lib/capsules/<name>`. Start `capsule@<name>.service`, then use
+`systemctl --capsule=`/`-C` or the matching `systemd-run` option.
 
-- Container payloads export AF_UNIX sockets to the host through `/run/systemd/nspawn/unix-export/`. The `owneridmap` option on `--bind=` maps the host owner to the container-side owner, and Wi-Fi interfaces can be moved into a container (since 256).
-- PID 1 sends its supervisor `X_SYSTEMD_HOSTNAME=`, `X_SYSTEMD_MACHINE_ID=`, `X_SYSTEMD_UNIT_ACTIVE=`, `X_SYSTEMD_SIGNALS_LEVEL=2`, `X_SYSTEMD_SHUTDOWN=`, and `X_SYSTEMD_REBOOT_PARAMETER=` notifications. A supervisor can use target notifications such as `ssh-access.target` rather than polling (since 256).
-- When a container payload has no systemd installation, nspawn mounts unified cgroup2 into it by default. `SYSTEMD_NSPAWN_UNIFIED_HIERARCHY=0` retains the earlier behavior where still supported (since 257; cgroup v1 itself is gone in 258).
-- An `.nspawn` file can join an existing network namespace with `[Network] NamespacePath=` (since 259).
+### Nspawn host integration (256)
 
-```ini
-[Network]
-NamespacePath=/run/netns/build
+Payloads export UNIX sockets below `/run/systemd/nspawn/unix-export/`.
+`--bind=` accepts `owneridmap` to map the host owner to the container-side
+owner, and Wi-Fi interfaces can be moved into a container.
+
+### Host lifecycle notifications (256)
+
+PID 1 reports hostname, machine ID, reached targets, installed signal-handler
+level, shutdown type, and reboot argument through `X_SYSTEMD_HOSTNAME=`,
+`X_SYSTEMD_MACHINE_ID=`, `X_SYSTEMD_UNIT_ACTIVE=`,
+`X_SYSTEMD_SIGNALS_LEVEL=2`, `X_SYSTEMD_SHUTDOWN=`, and
+`X_SYSTEMD_REBOOT_PARAMETER=`. Supervisors can gate access on notifications
+such as `ssh-access.target`.
+
+### Per-user machine and image daemons (259)
+
+Machined and importd have user instances selected by `machinectl --user` and
+`importctl --user`; images live below `~/.local/state/machines/`. Nspawn and
+vmspawn register with caller and system instances where permitted.
+`RegisterMachineEx()` and `CreateMachineEx()` accept pidfds.
+
+## Nspawn behavior
+
+### Cgroups for non-systemd payloads (257)
+
+Nspawn mounts unified cgroup hierarchy into roots without systemd. Set
+`SYSTEMD_NSPAWN_UNIFIED_HIERARCHY=0` only to retain the older behavior.
+
+### Unprivileged directory containers (258)
+
+Foreign-ID ranges plus mountfsd/nsresourced permit directory-tree containers
+stored below a caller-owned parent, not only DDI containers. Managed UID/GID
+ranges are available through `--private-users=managed` even to privileged
+nspawn.
+
+### Delegation to nested containers (260)
+
+Nsresourced can allocate multiple extra 64K ranges, combine a client-UID-only
+mapping with them, and optionally identity-map the foreign range. Its BPF-LSM
+policy does not reject inode access solely for ownership outside the transient
+range. Expose nsresourced and mountfsd Varlink sockets to a child with
+`--private-users-delegate=`.
+
+### OCI swappiness spelling (258.10-261.2)
+
+Nspawn reads the spec-correct `swappiness` key from OCI memory resources.
+
+```json
+{"linux":{"resources":{"memory":{"swappiness":0}}}}
 ```
 
-## Run unprivileged containers
+## Vmspawn workflows
 
-- `systemd-nsresourced` allocates transient 65,536-entry UID/GID ranges and delegates mounts, cgroups, and network interfaces. `systemd-mountfsd` mounts verity-backed DDIs and returns mount file descriptors (since 256).
-- This allows unprivileged `systemd-dissect`, user-manager `RootImage=`, and `systemd-nspawn --image=`. Untrusted images still require Polkit approval (since 256).
-- Directory-tree containers can use a foreign UID/GID range beneath a caller-owned parent, and unprivileged VMMs can receive automatically routed TAP devices. `--private-users=managed` requests nsresourced allocation even for privileged nspawn (since 258).
-- Nsresourced can allocate multiple additional 65,536-ID ranges, combine a caller-UID-only map with them, and optionally identity-map the foreign range. Its BPF-LSM policy no longer rejects inode access solely because ownership lies outside a transient range (since 260).
-- Expose the mountfsd and nsresourced Varlink sockets inside nested containers when delegation is intended; nspawn automates this with `--private-users-delegate=` (since 260).
+### Managed VM runner (256)
 
-## Use capsules and per-user daemons
+Vmspawn boots a directory or direct kernel/initrd, selects firmware and
+software TPM, configures namespaces and networking, attaches binds or drives,
+registers with machined, and passes transient SSH keys.
+`systemd-vmspawn@.service` runs images as units; use
+`machinectl --runner=vmspawn` or `machinectl -V`.
 
-- A capsule is an extra per-user service manager using a transient `DynamicUser=` identity and `/var/lib/capsules/<name>` as its home. Start `capsule@<name>.service`, then address it with `systemctl -C <name>` or `--capsule=` (since 256).
-- Machined and importd have per-user instances. Select them with `machinectl --user` and `importctl --user`; user images live below `~/.local/state/machines/` (since 259).
-- Nspawn and vmspawn register with the caller's and system machined instances when authorized. `RegisterMachineEx()` and `CreateMachineEx()` accept pidfds (since 259).
-- Portabled has a user instance selected with `portablectl --user` or `--system`. On attachment it generates a policy and pins the image so it cannot be silently replaced (since 260).
+### Unprivileged and host-integrated VMs (258, 259)
 
-## Connect without guest networking
+Vmspawn supports unprivileged routed TAP networking, `--grow-image=`,
+`--tpm-state=`, and `--notify-ready=`. It accepts `--bind-user=`,
+`--bind-user-shell=`, and, like nspawn, `--bind-user-group=`. File-backed VM
+disks expose their backing filename as the guest-visible serial. An `.nspawn`
+file may join `[Network] NamespacePath=`.
 
-- `systemd-ssh-generator` socket-activates `sshd@.service` on VSOCK port 22 in VMs, on exported AF_UNIX sockets in containers, and on `/run/ssh-unix-local/socket` locally. Add listeners with `systemd.ssh_listen=` or the `ssh.listen` credential (since 256).
-- `systemd-ssh-proxy` connects OpenSSH to these transports, such as `ssh vsock/4711`, `ssh unix/run/ssh-unix-local/socket`, or a registered VM via `ssh machine/foobar` (since 256 and 257).
-- Vmspawn can forward the guest journal to the host over VSOCK with `--forward-journal=` (since 256).
+### Ephemeral and qcow2 machines (260)
 
-## Compose OCI-backed roots
+Use `systemd-vmspawn --ephemeral` for a disposable VM and `--image-format=`
+for raw or qcow2 input. `--extra-drive=` accepts its format as a colon
+parameter.
 
-- An MStack is a self-contained `.mstack/` directory describing OverlayFS layers and bind mounts. `importctl pull-oci` downloads OCI content into this form (since 260).
-- Inspect it with `systemd-mstack`, use it as a service root with `RootMStack=`, or run it with nspawn's `--mstack=` (since 260).
-- Nspawn supports unprivileged FUSE, and `--bind-user=` propagates an SSH key from the bound user record (since 257).
+## Access and transports
+
+### Socket-activated SSH (256, 257)
+
+`systemd-ssh-generator` activates `sshd@.service` on VM VSOCK port 22,
+container-exported UNIX sockets, and `/run/ssh-unix-local/socket`.
+`systemd.ssh_listen=` or the `ssh.listen` credential adds endpoints.
+`systemd-ssh-proxy` connects OpenSSH to `vsock/`, `unix/`, or registered
+`machine/` targets, for example `ssh vsock/4711`,
+`ssh unix/run/ssh-unix-local/socket`, or `ssh machine/foobar`. Homed may unlock
+homes through userdb authorized keys.
+
+### Varlink over SSH (257)
+
+`ssh-exec:` starts a remote executable and speaks Varlink over SSH;
+`ssh-unix:` tunnels to a remote UNIX socket. The old `ssh:` spelling remains
+accepted.
+
+## Images, services, and machine APIs
+
+### Boot-time image workflow (257)
+
+Nspawn supports unprivileged FUSE and `--bind-user=` can carry the bound
+record's SSH key. `systemd-import-generator` schedules sysext, confext,
+portable-service, nspawn, or vmspawn downloads from kernel arguments or
+credentials.
+
+### MStacks (260)
+
+An `.mstack/` directory describes a self-contained OverlayFS and bind-mount
+layout. `importctl pull-oci` downloads OCI content into this form;
+`systemd-mstack` inspects it, `RootMStack=` uses it in a service, and
+`systemd-nspawn --mstack=` runs it.
+
+### Per-user portable services (260)
+
+Portabled has a user instance selected with `portablectl --user` or
+`--system`. On attachment it creates policy and pins the image against silent
+replacement.
+
+### Machined request contract (258.10-261.2)
+
+Machine registration no longer accepts the redundant `supervisor` Varlink
+input. The D-Bus shell operation accepts numeric user IDs as well as names.

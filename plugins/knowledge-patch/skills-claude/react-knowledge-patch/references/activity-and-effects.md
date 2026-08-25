@@ -1,10 +1,9 @@
 # Activity and Effect Events
 
-The `19.2-guide` behavior described here covers preparing hidden UI, hydration boundaries, and Effect-local callbacks.
+## Prepare hidden UI with Activity
 
-## Activity modes
-
-`<Activity>` gives a subtree an explicit visibility mode:
+Since `19.2-guide`, an initially hidden `<Activity>` renders its children at
+low priority without mounting their Effects:
 
 ```jsx
 <Activity mode={activeTab === "posts" ? "visible" : "hidden"}>
@@ -12,60 +11,33 @@ The `19.2-guide` behavior described here covers preparing hidden UI, hydration b
 </Activity>
 ```
 
-| Mode | DOM and state | Effects | Updates |
-|---|---|---|---|
-| `visible` | Shown and retained | Mounted | Normal priority |
-| `hidden` | Retained and hidden with `display: none` | Cleaned up | Low priority |
+Hidden children retain component state and DOM state. React cleans up their
+Effects while they are hidden and recreates the Effects when they become
+visible. The low-priority render can warm Suspense-enabled data, `lazy` code,
+or a cached Promise read with `use`. A fetch started by an Effect does not run
+while the tree is initially hidden because that Effect is not mounted.
 
-Switching modes preserves component state and retained DOM. Revealing the subtree recreates its Effects.
+### Hydration behavior
 
-## Preparing hidden content
+For SSR, React omits an initially hidden Activity from the response. React
+client-renders that content while the visible page hydrates. A visible
+Activity remains in the server HTML but creates a selective-hydration
+boundary whose contents are deprioritized until needed. An Activity that is
+always visible can therefore isolate slower hydration work.
 
-An initially hidden Activity renders at low priority without mounting Effects. It can prepare work that begins during render, including:
+### Clean up browser-owned behavior
 
-- Suspense-enabled data;
-- a `lazy` component's code; and
-- a cached Promise read with `use`.
+Hidden Activity content uses `display: none` but keeps its DOM. Effect cleanup
+does not necessarily stop browser-owned behavior in retained `<video>`,
+`<audio>`, or `<iframe>` elements. Explicitly stop that behavior in the Effect
+cleanup. Apart from retained component and DOM state, treat hidden children as
+unmounted when managing side effects.
 
-A fetch started by an Effect does not run while the Activity is initially hidden. Put preparatory work behind a Suspense-compatible render-time integration when it must warm in advance.
+## Keep Effect Events local
 
-Useful cases include likely navigation destinations and views whose component or DOM state should survive hiding.
-
-## Server rendering and hydration
-
-An Activity's initial mode changes SSR behavior:
-
-- A hidden Activity is omitted from the server response. React renders it on the client at low priority while the visible page hydrates.
-- A visible Activity stays in the HTML but forms a selective-hydration boundary. React can deprioritize hydrating its contents until they are needed.
-
-An always-visible Activity can therefore isolate slower hydration work without serving as a visibility toggle.
-
-## Retained DOM side effects
-
-Hidden Activity content should generally be treated as unmounted because its Effects are cleaned up. Its DOM remains, however, and element-owned browser behavior may continue. This matters for elements such as:
-
-- `<video>`;
-- `<audio>`; and
-- `<iframe>`.
-
-Use an Effect cleanup that explicitly pauses, stops, disconnects, or otherwise neutralizes the element-owned behavior:
-
-```jsx
-useEffect(() => {
-  const player = videoRef.current;
-  player.play();
-
-  return () => {
-    player.pause();
-  };
-}, []);
-```
-
-Do not assume that hiding the DOM or cleaning up React Effects automatically stops browser-owned work.
-
-## Effect Events
-
-`useEffectEvent` creates an Effect-local callback that reads the latest committed props and state. Values read by that callback do not need to become dependencies of the Effect that calls it:
+Since `19.2-guide`, `useEffectEvent` returns a callback that reads the latest
+committed props and state without making those values dependencies of the
+Effect that invokes it:
 
 ```jsx
 const onConnected = useEffectEvent(() => {
@@ -78,26 +50,13 @@ useEffect(() => {
 }, [roomId]);
 ```
 
-The returned callback intentionally has a new identity on every render. Follow all of these constraints:
+The returned callback intentionally has a new identity on every render:
 
-- Do not add it to an Effect dependency array.
-- Do not call it during render.
-- Do not call it from an ordinary event handler.
-- Do not pass it to another component.
-- Do not pass it to another Hook.
+- Do not put it in an Effect dependency array.
+- Do not call it during render or from an ordinary event handler.
+- Do not pass it to another component or Hook.
 - Call it only from an Effect or another Effect Event in the same component.
 
-`useEffect`, `useLayoutEffect`, and `useInsertionEffect` may call an Effect Event.
-
-A custom Hook can keep a caller-provided callback current by wrapping it in its own Effect Event, provided the custom Hook calls that event only from its own Effect:
-
-```jsx
-function useConnection(roomId, onConnected) {
-  const onConnectedEvent = useEffectEvent(onConnected);
-
-  useEffect(() => {
-    const connection = connect(roomId, onConnectedEvent);
-    return () => connection.disconnect();
-  }, [roomId]);
-}
-```
+`useEffect`, `useLayoutEffect`, and `useInsertionEffect` can invoke Effect
+Events. A custom Hook can wrap an incoming callback in its own
+`useEffectEvent`, keeping that event local to the custom Hook's Effect.

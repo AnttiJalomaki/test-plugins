@@ -21,11 +21,11 @@ with the behavior changes below, then open the reference for the task at hand.
 | --- | --- |
 | [Applications, projects, and sync](references/applications-projects-and-sync.md) | Comparison, reconciliation, automated sync, sync windows, dry runs, server-side apply |
 | [ApplicationSets and generators](references/applicationsets-and-generators.md) | Progressive Sync, deletion order, Pull Request and Git generators, generator values and status |
-| [Repositories, rendering, and hydration](references/repositories-rendering-and-hydration.md) | Repository identity, OCI, config-management plugins, Kustomize, Source Hydrator |
+| [Repositories, rendering, and hydration](references/repositories-rendering-and-hydration.md) | Repository identity, Helm and OCI, config-management plugins, Kustomize, Source Hydrator |
 | [CLI, API, and extensions](references/cli-api-and-extensions.md) | Server-side diff, resource retrieval, plugins, password input, logs, exec, extensions |
-| [Security, identity, and RBAC](references/security-identity-and-rbac.md) | Log permissions, fine-grained RBAC, tokens, bearer auth, SSO, static assets |
-| [Operations and observability](references/operations-and-observability.md) | Repo-server contention, Redis, probes, OpenTelemetry, metrics, logs, pod view |
-| [Resource health and actions](references/resource-health-and-actions.md) | Built-in health coverage, scaling, rollout controls, Job and Numaplane actions |
+| [Security, identity, and RBAC](references/security-identity-and-rbac.md) | Log permissions, fine-grained RBAC, tokens, bearer auth, SSO, impersonation |
+| [Operations and observability](references/operations-and-observability.md) | Repo-server contention, Redis, probes, OpenTelemetry, metrics, logs, webhooks |
+| [Resource health and actions](references/resource-health-and-actions.md) | Built-in health coverage, scaling, rollout controls, Job and database actions |
 
 ## Upgrade-critical behavior changes
 
@@ -53,13 +53,26 @@ and API with representative project roles after an upgrade.
   the revision selected by the original attempt. Automation must not assume
   that every retry deploys identical Git content.
 
+### Validate newer rendering and API behavior
+
+- Manifest generation uses Helm 4. Regression-test charts and plugins that
+  depended on Helm 3 output or command behavior.
+- Event-listing APIs return Argo CD's typed `EventList`. Update clients that
+  assumed an untyped Kubernetes list.
+- Objects in disallowed namespaces are filtered before entering the server
+  cache, so they are absent from cache-backed retrieval as well as responses.
+- Setting `timeout.reconciliation=0` disables soft expiry while retaining use
+  of the diff cache; do not interpret zero as disabling that cache.
+
 ### Check transport and repository scale
 
 - Pod exec and port forwarding use WebSockets instead of SPDY. Proxies and
   ingress layers must pass the WebSocket upgrade correctly.
 - Large monorepos can trigger repo-server lock contention severe enough to
-  require pod restarts. The release notes defer the fix to a later patch, so
-  monitor repo-server health and plan the patch-level upgrade.
+  require pod restarts. Monitor repo-server health and plan a patch-level
+  upgrade that contains the deferred fix.
+- Repo-server connections can use mutual TLS. Coordinate certificates and
+  trust configuration before enabling it.
 - Kubernetes 1.32 is supported, but cluster compatibility does not remove the
   need to validate Argo CD CRDs, admission policies, and extensions.
 
@@ -94,20 +107,25 @@ Use it when a sync creates a type before applying instances of that type. Keep
 the scope deliberate: skipping a dry run also removes an early validation
 signal for genuinely missing APIs.
 
-### Review server-side apply migration
+### Review server-side apply and replace paths
 
-Server-side apply has controls for field-manager migration. Before enabling or
-changing them, identify the existing manager, the intended Argo CD manager,
-and fields shared with other controllers. Inspect managed fields after the
-first migrated sync instead of treating a successful apply as proof of safe
-ownership transfer.
+Server-side apply has controls for field-manager migration. Before changing
+them, identify the existing manager, the intended Argo CD manager, and fields
+shared with other controllers. Current server-side-apply syncs no longer also
+run auth reconcile, and replace sync no longer clobbers non-ignored fields.
+
+Webhook-diff filtering preserves manager-owned descendants, while annotation
+backfill leaves an existing live annotation untouched. Include ownership and
+live-value cases in diff regression tests.
 
 ### Make sync-window intent visible
 
-- AppProject sync windows accept a `description`; use it to record the reason,
-  owner, and expected exception path.
-- Sync-window matching has an opt-in AND operator. Enable it only when all
-  configured selectors must match; the default matching assumption may differ.
+- AppProject sync windows accept a `description`; use it to record purpose and
+  ownership.
+- Sync-window matching has an opt-in AND operator for requiring every selector
+  to match.
+- An overrun option lets a sync already in progress continue past the window's
+  end. Decide explicitly whether completion or strict cutoff is desired.
 
 ### Inspect what actually synced
 
@@ -129,13 +147,20 @@ resources remaining available.
 
 Pull Request generators can expose values to generated templates. Filters are
 provider-specific: Bitbucket Cloud supports target-branch filtering, Gitea
-supports label filtering, and Pull Request generation can filter by title.
-A missing repository yields zero results rather than an ApplicationSet error,
-so alert on an unexpected empty set.
+supports label filtering, and Pull Request generation can filter by title. A
+missing repository yields zero results rather than an ApplicationSet error, so
+alert on an unexpected empty set.
 
-Git file generators can exclude files, and generators can provide
-`repository_id`. Prefer repository identity over parsing a clone URL when the
-generated template needs a stable repository key.
+Git file generators can exclude files, and generators provide `repository_id`.
+Prefer repository identity over parsing a clone URL when templates need a
+stable repository key. Repository discovery can also filter archived entries.
+
+### Plan concurrent management and deletion
+
+Generated Applications can be managed concurrently. During ApplicationSet
+deletion, the controller retains its finalizer while children terminate and
+checks terminating Applications against the API server. Account for that wait
+in deletion automation instead of forcibly stripping the finalizer.
 
 ### Bound status growth
 
@@ -153,10 +178,12 @@ status consumers require predictable cardinality.
 - The source repository can authenticate through a credential template.
 - Hydration preserves files it did not generate and places `.gitattributes` at
   the hydrated repository root.
+- Dry and sync sources can use separate repository URLs; diff and manifest
+  commands follow the dry source revision.
 
-Do not implement hydration cleanup by deleting unknown files; that conflicts
-with the preservation behavior. Review generated commit messages for useful,
-non-secret provenance.
+Do not implement hydration cleanup by deleting unknown files. Review generated
+commit messages for useful, non-secret provenance, and size hydration queue
+concurrency for repository capacity.
 
 ### Update manifest-generation inputs
 
@@ -165,8 +192,9 @@ non-secret provenance.
 - Manifest generation exposes the project as `ARGOCD_APP_PROJECT_NAME`.
 - Kustomize label handling supports `--include-templates`, and integrations can
   ignore missing components.
-- Git and OCI repositories can use Azure workload identity. OCI source support
-  is beta, so gate it according to the deployment's tolerance for beta APIs.
+- Git and OCI repositories can use Azure workload identity.
+- Helm `valueFiles` supports wildcard globs; dependency builds honor the
+  repository `insecure` setting.
 
 ## Access and CLI quick reference
 
@@ -175,46 +203,47 @@ non-secret provenance.
 - Server-side diff is stable in CLI workflows.
 - `get-resource` retrieves one resource belonging to an Application.
 - CLI plugins can add commands.
-- `bcrypt` prompts when `--password` is omitted; the Argo CD password can also
-  be supplied through standard input. Avoid putting secrets in argv or shell
-  history.
+- `bcrypt` prompts when `--password` is omitted; Argo CD and Helm registry
+  passwords can be supplied through standard input. Avoid secrets in argv.
 - Pod-log search can perform case matching.
+- Namespace-aware Application and ApplicationSet commands accept their
+  respective namespace controls.
 
 ### Propagate caller identity safely
 
 The server forwards the authenticated user ID to extensions in a request
-header. Extensions should use that identity only within the trust boundary of
-the authenticated Argo CD server and must not accept a spoofable direct-client
-header as equivalent evidence.
+header. Extensions should use it only inside the authenticated server trust
+boundary and must not treat a direct-client copy as equivalent evidence.
 
-Bearer-token authentication is supported. OAuth2 login also accepts
-`--sso-host` to choose the SSO callback host; align that host with externally
-reachable routing and registered redirect URLs.
+Bearer-token authentication is supported. OAuth2 login accepts `--sso-host`
+to choose the SSO callback host; align it with externally reachable routing and
+registered redirect URLs.
 
 ## Operations, health, and observability
 
 ### Keep traces connected
 
 OpenTelemetry trace context propagates across HTTP requests. Preserve trace
-headers in proxies and extensions, and use the manifest-provided environment
-references for `otlp.attrs` when composing deployment overlays.
+headers in proxies and extensions, use the manifest environment references for
+`otlp.attrs`, and pass `ARGOCD_REPO_SERVER_OTLP_HEADERS` where repo-server
+export authentication requires headers.
 
 ### Expand probes and metrics deliberately
 
 - `argocd-server` exposes a gRPC health check suitable for operational probes.
 - Cluster metrics can add cluster names and labels.
 - GitHub API rate-limit and sync-duration metrics are available.
-- Log timestamp formatting is configurable, and klog follows the configured
-  log format.
+- Repo-server parallelism and webhook-handler failures are observable.
+- Log timestamp formatting is configurable, and klog follows that format.
 - Node labels can be propagated into the Application pod view.
 
-High-cardinality cluster labels and node labels can increase storage or UI
-costs. Select only labels used by dashboards, alerts, or operators.
+High-cardinality cluster and node labels can increase storage or UI costs.
+Select only labels used by dashboards, alerts, or operators.
 
-### Use built-in health and actions before custom Lua
+### Use built-in health and actions before custom code
 
 Built-in health coverage has expanded across common operators, Gateway API,
-policy, database, telemetry, and rollout resources. Resource actions now cover
-parameterized scaling, rollout flow control, Job lifecycle operations, and
-Numaplane promotion. Check the health-and-actions reference before maintaining
-a custom health script or action with overlapping behavior.
+policy, database, telemetry, and rollout resources. Resource actions cover
+parameterized scaling, rollout flow control, Job lifecycle operations, database
+suspension, pipeline recycling, restart, and Application auto-sync. Check the
+health-and-actions reference before maintaining overlapping custom behavior.

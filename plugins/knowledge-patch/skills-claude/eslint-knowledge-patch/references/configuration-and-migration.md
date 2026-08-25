@@ -1,89 +1,114 @@
 # Configuration and Migration
 
-The changes in this reference apply to ESLint 10.0.0.
+Use this reference for runtime compatibility, flat-config discovery, language
+selection, suppression integrations, recommended-rule changes, and migration
+planning.
 
 ## Runtime prerequisites
 
-ESLint 10 drops all Node.js versions before 20.19.0. It also drops every
-Node.js 21.x and 23.x release.
+Since 10.0.0, ESLint requires Node.js 20.19.0 or later and excludes all Node.js
+21.x and 23.x releases. A numerically newer odd-numbered runtime is not
+automatically supported, so check the exact local and CI versions.
 
-Loading a TypeScript configuration file through Jiti requires Jiti 2.2.0 or
-later. When a JavaScript config works but a TypeScript config does not, check
-the Jiti version as well as the Node.js runtime.
+Loading `eslint.config.ts` or another TypeScript configuration through Jiti
+requires Jiti 2.2.0 or later. Verify both prerequisites before diagnosing a
+TypeScript config that does not load.
 
-## Configuration lookup begins at each target
+## Config lookup starts from each linted file
 
-For every linted file, lookup for `eslint.config.*` begins in that file's
-directory. It no longer begins in the current working directory.
+Since 10.0.0, ESLint begins `eslint.config.*` discovery in the directory of
+each linted file, not the current working directory. A single command can find
+different configs for files in different directories.
 
-This changes the unit of reasoning from one invocation to one target file.
-A single invocation can lint files that select different configurations. If
-two files behave differently, determine the lookup result from each file's
-own directory before comparing their effective configuration.
+For monorepos and nested projects:
 
-The `v10_config_lookup_from_file` feature flag no longer exists. Per-file
-lookup is the default behavior, so retaining or trying to toggle the flag
-cannot restore the old lookup rule.
+1. Identify the directory of each lint target.
+2. Walk config discovery from that directory.
+3. Compare the selected config for targets with different results.
+4. Do not infer selection from the directory where the command was invoked.
 
-## Legacy configuration removal
+The `v10_config_lookup_from_file` feature flag was removed because per-file
+lookup is now the default.
 
-The eslintrc system is removed. The environment variable
-`ESLINT_USE_FLAT_CONFIG` is ignored, and neither `.eslintrc.*` nor
-`.eslintignore` is read.
+## Removed eslintrc configuration
 
-Legacy environment comments are not a compatibility path:
+Since 10.0.0, the eslintrc system is unavailable. Do not use a legacy fallback
+when migrating or debugging.
 
-```js
-/* eslint-env node */
-```
+| Legacy mechanism | Behavior |
+| --- | --- |
+| `ESLINT_USE_FLAT_CONFIG` | Ignored |
+| `.eslintrc.*` | Not read |
+| `.eslintignore` | Not read |
+| `/* eslint-env */` comments | Reported as errors |
+| `--no-eslintrc` | Removed |
+| `--env` | Removed |
+| `--resolve-plugins-relative-to` | Removed |
+| `--rulesdir` | Removed |
+| `--ignore-path` | Removed |
 
-An `/* eslint-env */` comment is an error under ESLint 10.
+Move ignore patterns, globals, environments, plugin resolution, and local
+rules into flat configuration rather than trying to preserve the deleted
+flags or files.
 
-The following legacy CLI options are gone:
+### Removed programmatic legacy surface
 
-- `--no-eslintrc`
-- `--env`
-- `--resolve-plugins-relative-to`
-- `--rulesdir`
-- `--ignore-path`
-
-Remove these flags from package scripts, CI commands, editor integrations,
-and wrappers rather than expecting them to be ignored uniformly.
-
-## Programmatic legacy removal
-
-The Node.js API no longer offers a legacy engine selection:
+The API follows the same flat-only contract:
 
 - `loadESLint()` always returns `ESLint`.
 - `Linter` rejects `configType: "eslintrc"`.
-- `Linter#defineParser()` is removed.
-- `Linter#defineRule()` is removed.
-- `Linter#defineRules()` is removed.
-- `Linter#getRules()` is removed.
-- `/use-at-your-own-risk` no longer exports `LegacyESLint`.
-- `/use-at-your-own-risk` no longer exports `FileEnumerator`.
+- `Linter#defineParser()`, `defineRule()`, `defineRules()`, and `getRules()` no
+  longer exist.
+- `/use-at-your-own-risk` no longer exports `LegacyESLint` or
+  `FileEnumerator`.
 - `shouldUseFlatConfig()` always returns `true`.
 
-Audit integrations for both direct imports and feature-detection branches.
-A branch around `shouldUseFlatConfig()` cannot select eslintrc behavior
-because its result is always true.
+Update callers to construct flat configuration and use supported plugin APIs.
+Do not branch on `shouldUseFlatConfig()` or expect `loadESLint()` to select a
+legacy implementation.
 
-## Recommended configuration expansion
+## Language-aware configuration
 
-`eslint:recommended` includes additional rules in ESLint 10. An unchanged
-project configuration can consequently produce new diagnostics after the
-upgrade.
+Since 10.2.0, a configuration object can specify `language`. Rule metadata can
+also define `meta.languages`, allowing a rule to declare which languages it
+supports.
 
-When triaging new findings, distinguish diagnostics introduced by the
-expanded recommended set from diagnostics caused by config lookup or rule
-behavior. This avoids misattributing every new report to per-file config
-selection.
+For a non-JavaScript language plugin:
 
-## ESLint 9 maintenance lifecycle
+1. Select the language in the matching configuration object.
+2. Declare compatible languages in each published rule's metadata.
+3. Treat compatibility as rule-specific when a plugin serves multiple
+   languages.
 
-ESLint 9.x receives only critical, security, and cross-major compatibility
-fixes during its maintenance period. Its end-of-life date is 2026-08-06.
+## Programmatic bulk suppressions
 
-Treat continued use of 9.x as a time-bounded migration decision, especially
-when relying on a legacy configuration or API that no longer exists in
+Since 10.2.0, bulk-suppression functionality is exposed through the API.
+Integrations can invoke it directly instead of being limited to the CLI
+workflow. Prefer the programmatic surface when suppression generation is part
+of an editor, build service, or other in-process tool.
+
+## Recommended configuration changes
+
+Since 10.0.0, `eslint:recommended` contains additional rules. An upgrade can
+therefore produce new diagnostics even when the project configuration is
+otherwise unchanged.
+
+When triaging new findings:
+
+1. Run lint before changing configuration.
+2. Separate diagnostics from newly recommended rules from config-discovery
+   failures.
+3. Review or configure the newly active rules deliberately.
+
+## TypeScript compatibility floor
+
+Since 10.2.0, the documented minimum supported TypeScript version is 5.3.
+Check the compiler version as well as parser and typed-integration versions
+when an ESLint upgrade exposes TypeScript compatibility failures.
+
+## ESLint 9 maintenance window
+
+As documented with 10.0.0, ESLint 9.x is limited to critical, security, and
+cross-major compatibility fixes during maintenance. It reaches end of life on
+2026-08-06. Account for this date when deciding whether to defer migration to
 ESLint 10.

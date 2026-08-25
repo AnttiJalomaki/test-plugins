@@ -1,84 +1,121 @@
-# Server runtime and security
+# Server Runtime and Security
 
-## Network binding
+## Network exposure and HTTP behavior
 
-Since the `1.0-migration`, `opa run --server` binds to localhost rather than
-every interface. Explicitly opt in when the process must be reachable from a
-host, peer container, or remote service:
+### Bind explicitly for remote access (`1.0-migration`)
+
+`opa run --server` binds to localhost instead of all interfaces. When a host,
+another container, or a remote service must connect, opt in to that exposure:
 
 ```sh
 opa run --server --addr 0.0.0.0:8181
 ```
 
-Review firewalling and authentication whenever exposing that listener.
+Protect the newly exposed listener with the deployment's intended network and
+authentication controls.
 
-## Data API path injection
+### Adapt to `http.ServeMux` routing (`1.6.0`)
 
-OPA 1.4.0 fixes CVE-2025-46569 in earlier standalone servers. An attacker who
-could place controlled text into a Data API HTTP path could inject Rego that
-redirected the requested path, forced success or failure, or consumed excessive
-compute. Exposure included authorization policy that did not exactly match
-`input.path` and intermediaries that copied unsanitized third-party text into
-the path. Upgrade and keep path construction constrained.
+The OPA server uses Go's `http.ServeMux` instead of `gorilla/mux`. Embedders that
+touch router internals, route variables, or matching behavior must adapt and
+re-test their integration.
 
-## Runtime Rego mode
+### Accept ordinary JSON content types (`1.6.0`)
 
-Since 1.0.0, policies uploaded through the RESTful policy API use the runtime's
-configured Rego version. Upload clients should not assume API-loaded policy is
-parsed independently of the server's v0 or v1 mode.
+Topdown HTTP evaluation matches `application/json` content types leniently.
+Responses no longer need the earlier exact header form to be decoded as JSON.
 
-## Release build toolchains
+### Account for the header deadline (`1.19.0`)
 
-When reproducing official builds from source, select the release's required Go
-toolchain:
+All OPA HTTP servers set `ReadHeaderTimeout` to 32 seconds. Clients or
+intermediaries that take longer to send complete request headers may be
+disconnected.
 
-| OPA release | Go toolchain guidance |
-| --- | --- |
-| 1.0.0 | Go 1.22 or newer |
-| 1.9.0 | Go 1.25.1 |
-| 1.12.0 | Go 1.25.5, bumped from 1.25.4 |
-| 1.13.2 | Go 1.25.7 security rebuild for GO-2026-4337 |
-| 1.15.0 | Go 1.26.1 |
-| 1.17.1 | Go 1.26.4 security rebuild for HTTP-handler and crypto-built-in exposures |
+## Configuration and resource control
 
-Self-built artifact security depends on the selected Go version, not merely the
-OPA tag.
+### Inspect unknown-option warnings (`1.19.0`)
 
-## Patched point releases
+OPA warns about unrecognized configuration keys instead of silently ignoring
+them; intentionally extensible sections are exempt. Go embedders using
+`config.ParseConfig` can read the same messages through `Config.Warnings`.
+Treat warnings such as `decision_log` instead of `decision_logs` as deployment
+errors.
 
-- OPA 1.4.1 rebuilds with Go 1.24.2 for CVE-2025-22870 and CVE-2025-22871 but
-  omits `capabilities/v1.4.1.json`. Use 1.4.2 for the complete patched 1.4 line.
-- OPA 1.13.2 distributed binaries and images contain the Go 1.25.7 standard
-  library fix; use at least that point release when relying on distributed
-  artifacts.
-- OPA 1.16.0 restores bundle-download, `print()`, and other plugin-originated
-  logs dropped by 1.15.x, but its plugin manager can hang at shutdown. OPA
-  1.16.1 fixes the hang.
-- OPA 1.17.1 distributed binaries and images contain the Go 1.26.4 security
-  rebuild. A source build's posture follows its actual toolchain.
-- OPA 1.18.1 fixes an `AnnotationSet` memory leak introduced in 1.17.0. Use it
-  or later for long-running servers, especially when diagnosing excess memory.
+### Let container limits tune the Go runtime (`1.18.0`)
 
-## Outbound HTTP identity
+OPA sets `GOMAXPROCS` from container-aware CPU limits and `GOMEMLIMIT` from
+container-aware memory limits. Include these automatically selected values when
+sizing a deployment or diagnosing CPU, memory, or garbage-collection behavior.
 
-OPA 1.18.0 changes the `User-Agent` for every outbound HTTP path—bundle,
-discovery, decision log, status, `http.send`, and AWS KMS/ECR—from the invalid
-space-separated product name to:
+### Reject excessive parser recursion (`1.5.0`)
 
-```text
-User-Agent: Open-Policy-Agent/<version> (<os>, <arch>)
-```
+The parser enforces a recursion-depth guard. Handle a parse error for deeply
+nested untrusted input instead of assuming arbitrary depth is accepted.
 
-Update exact-match WAF rules, proxies, metrics, and log filters.
+### Preserve custom version provenance (`1.5.0`)
 
-## Container resource limits
+The runtime does not overwrite caller-supplied `commit` or `timestamp` fields
+in version information, so custom builds retain injected provenance.
 
-OPA 1.18.0 again derives `GOMAXPROCS` automatically from container-aware CPU
-limits and also derives `GOMEMLIMIT` from container-aware memory limits.
-Capacity planning and incident diagnosis must account for those runtime-selected
-values rather than assuming host-wide Go defaults.
+## Security upgrades
 
-## Wasm runtime dependencies
+### Close Data API path injection (`1.4.0`)
 
-OPA 1.18.0 moves the Wasm evaluator and SDK to the pure-Go wazero runtime. A
-Wasm-enabled OPA build no longer needs cgo or a C compiler toolchain.
+OPA 1.4.0 fixes CVE-2025-46569 in earlier standalone servers. If
+attacker-controlled text reaches a Data API HTTP path, injected Rego could
+redirect the requested path, force success or failure, or consume excessive
+compute. Exposure includes authorization policy that does not exactly match
+`input.path` and intermediaries that copy unsanitized third-party text into the
+path. Upgrade rather than attempting to sanitize around the parser flaw.
+
+### Use the complete patched 1.4 release (`1.4.0`)
+
+OPA 1.4.1 moves to Go 1.24.2 to address CVE-2025-22870 and CVE-2025-22871 but
+omits `capabilities/v1.4.1.json`. OPA 1.4.2 restores the capability file, so
+tooling that reads versioned capabilities should move directly to 1.4.2.
+
+### Use the Go security rebuild (`1.13.0`)
+
+OPA 1.13.2 binaries and images use Go 1.25.7, whose standard library fixes
+GO-2026-4337. Use at least 1.13.2 when relying on distributed artifacts.
+
+### Use patched plugin and HTTP releases (`1.17.0`)
+
+OPA 1.16.0 restores plugin-originated logging lost in 1.15.x but can hang during
+plugin-manager shutdown; 1.16.1 fixes it. OPA 1.17.1 distributed binaries and
+images use Go 1.26.4 to fix standard-library vulnerabilities exercised by the
+HTTP handler and crypto built-ins. Self-built artifacts depend on their chosen
+Go toolchain.
+
+### Avoid the annotation leak (`1.18.0`)
+
+OPA 1.18.1 fixes an `AnnotationSet` memory leak introduced in 1.17.0. Upgrade
+long-running servers that show excess memory use instead of remaining on
+1.18.0.
+
+### Use the later Go security rebuild (`1.19.0`)
+
+OPA 1.19.1 is otherwise identical to 1.19.0 but uses Go 1.26.6 instead of
+1.26.5 to fix standard-library vulnerabilities reachable through the HTTP
+handler and cryptographic built-ins. A self-built binary or image depends on
+the Go version selected by its builder.
+
+## Runtime API consistency
+
+### Apply the configured Rego version to uploads (`1.0.0`)
+
+Policies uploaded through the REST policy API honor the runtime's selected
+Rego version. Set the server's v0/v1 mode with both uploaded and bundled modules
+in mind.
+
+### Cancel long-running built-ins (`1.12.0`)
+
+`regex.replace`, `replace`, `strings.replace_n`, and `concat` observe evaluation
+context cancellation. Deadlines and canceled requests can interrupt these
+operations rather than waiting for completion.
+
+### Distinguish cancellations and timeouts (`1.0.0`)
+
+Evaluation errors differentiate a canceled context from a timeout. Server and
+embedding layers can map the actual reason to different retry, response, and
+logging behavior.

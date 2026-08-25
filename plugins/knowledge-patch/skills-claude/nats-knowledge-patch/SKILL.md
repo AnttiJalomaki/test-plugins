@@ -10,27 +10,44 @@ metadata:
 
 # NATS Server Knowledge Patch
 
-Use this skill when configuring, upgrading, operating, or writing integrations
-for NATS Server, especially JetStream. Prefer the project's server
-configuration, client-library types, deployed version, and observed behavior
-when they differ from generic examples.
+Use this skill when configuring or operating NATS Server, designing JetStream
+streams and consumers, publishing advanced message forms, or preparing an
+upgrade or downgrade. Check the deployed server version and mixed-version
+cluster state before applying version-dependent settings.
+
+## Working method
+
+1. Inspect the server configuration, `varz`, `jsz`, and `$JS.API.INFO` as
+   relevant to establish the running feature level and effective settings.
+2. Treat server-managed metadata and hidden source or mirror consumers as
+   implementation state; do not overwrite or reconcile them as user metadata.
+3. Check whether a configuration change is reloadable or restart-only before
+   applying it. In particular, `feature_flags` cannot be reloaded.
+4. For JetStream publishing, distinguish Core publishes, ordinary PubAck-based
+   publishes, atomic batches, and fast batches. Their buffering, acknowledgement,
+   and failure semantics differ.
+5. Before enabling a stream feature, check creation-only restrictions,
+   incompatible retention or stream modes, API level, and downgrade behavior.
+6. When changing ACK or flow-control formats, audit permissions, imports,
+   exports, and client parsers before changing server emission.
+7. During recovery, prefer the state-preserving path even when it requires
+   waiting for more replicas or a stream restart.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [jetstream-streams-and-publishing.md](references/jetstream-streams-and-publishing.md) | Strict requests, message TTL, delete markers, ingest limits, atomic and fast batches, counters, schedules, transforms, replication semantics |
-| [consumers-mirrors-and-sources.md](references/consumers-mirrors-and-sources.md) | Priority groups, pausing, mirror promotion, reliable sourcing, consumer reset, ACK and flow-control subjects |
-| [networking-security-and-observability.md](references/networking-security-and-observability.md) | Distributed tracing, routes, gateways, leafnodes, TLS, encryption, MQTT, metadata, system events |
-| [operations-upgrades-and-recovery.md](references/operations-upgrades-and-recovery.md) | Configuration drift, health checks, API levels, shutdown, downgrade rebuilds, recovery, filestore and Raft overload |
+| [Consumers, mirrors, and sources](references/consumers-mirrors-and-sources.md) | Pull priority groups, pauses, resets, mirror promotion, reliable sourcing |
+| [JetStream streams and publishing](references/jetstream-streams-and-publishing.md) | Strict requests, TTL, markers, buffering, batches, counters, schedules |
+| [Networking, security, and observability](references/networking-security-and-observability.md) | Leafnodes, TLS, tracing, ACK subjects, metadata, events, configuration digests |
+| [Operations, upgrades, and recovery](references/operations-upgrades-and-recovery.md) | Health checks, API levels, downgrade rebuilds, recovery, filestore and Raft containment |
 
-## Breaking and compatibility changes
+## Upgrade-critical changes
 
-### Expect strict JetStream request validation
+### Strict JetStream requests
 
-JetStream rejects JSON request fields it does not recognize. Fix request
-schemas and client payloads instead of depending on ignored fields. During a
-short migration window only, restore permissive handling with:
+JetStream rejects unknown JSON request fields by default. Fix clients that emit
+invalid fields. Use this only as a temporary compatibility bridge:
 
 ```text
 jetstream {
@@ -38,11 +55,12 @@ jetstream {
 }
 ```
 
-### Budget for bounded stream ingest
+### Bounded Core-to-JetStream ingest
 
-Core NATS publishes entering JetStream are buffered per stream. The defaults
-are 10,000 messages and 128 MB; overflow can drop messages and report
-`429 JSStreamTooManyRequests`.
+Core NATS publishing into a stream is bounded by both message count and bytes.
+The defaults are 10,000 messages and 128 MB per stream. Overflow can drop
+messages and report `429 JSStreamTooManyRequests`; publishers waiting for
+PubAcks should not normally reach this path.
 
 ```text
 jetstream {
@@ -51,31 +69,28 @@ jetstream {
 }
 ```
 
-Prefer JetStream publishing that waits for PubAcks. Raise the limits only after
-accounting for the resulting memory use.
+### Health and shutdown semantics
 
-### Treat names and health checks precisely
+`js-server-only` does not test meta-leader health. Select `js-meta-only` when
+the meta group is the desired signal. A graceful `SIGTERM` exits successfully,
+and startup rejects server, cluster, or gateway names containing spaces.
 
-- Server, cluster, and gateway names containing spaces fail startup.
-- `js-server-only` does not test meta-leader health. Use `js-meta-only` when
-  the meta group is the signal you need.
-- Graceful `SIGTERM` shutdown exits successfully with status `0`.
+### Downgrade safeguards
 
-### Plan downgrade boundaries
+Use 2.11.9 or newer for a downgrade from a server using 2.12-only assets so
+unsupported assets are placed safely offline. The first restart across the
+2.12-to-2.11 or 2.11-to-2.10 state-format boundary rescans message blocks,
+temporarily raising CPU usage and delaying health without losing data.
 
-The first restart across a stream-state format boundary can rescan message
-blocks, increasing CPU use and delaying health without losing data. When
-downgrading assets that use newer JetStream features, use a destination release
-with the corresponding offline-asset safeguard. Reliable WorkQueue and
-Interest sourcing also reverts to the older ephemeral mode when moving back
-from the durable sourcing implementation.
+Before downgrading from a server configured with `feature_flags`, remove the
+entire block if the destination does not recognize it. Downgrading reliable
+WorkQueue or Interest sources to 2.12 returns them to ephemeral sourcing and
+leaves `AckFlowControl` consumers offline until 2.14 is restored.
 
-### Prepare permissions for domain-aware ACK subjects
+### ACK and flow-control subject migration
 
-Servers accept both the original ACK/flow-control subject form and the
-domain/account-aware form. Before enabling v2 emission, replace narrow rules
-such as `$JS.ACK.<stream>.>` and `$JS.FC.<stream>.>` or extend them to cover
-v2. Catch-all `$JS.ACK.>` and `$JS.FC.>` already cover both forms.
+Servers parse legacy and domain/account-aware subjects but emit the legacy form
+by default. To test domain-aware emission, enable the restart-only flag:
 
 ```text
 feature_flags {
@@ -83,157 +98,110 @@ feature_flags {
 }
 ```
 
-The feature-flag block is restart-only and must be removed before downgrading
-to a server that does not recognize it.
+Rules matching `$JS.ACK.>` or `$JS.FC.>` cover both forms. Rules scoped as
+`$JS.ACK.<stream>.>` or `$JS.FC.<stream>.>` need revision. Clients must accept
+the 9-token legacy form and domain-aware forms with 11 or more tokens, and must
+publish the received reply subject unchanged.
 
-## High-value JetStream publishing features
+## JetStream publishing quick reference
+
+### Per-message TTL and subject markers
+
+Set `AllowMsgTTL` on the stream, then publish `Nats-TTL` as integer seconds, a
+Go duration, or `never`. Invalid or sub-second TTLs reject the publish. The
+feature cannot be disabled once enabled, and `never` also bypasses `MaxAge`.
+
+`SubjectDeleteMarkerTTL` creates a marker only when age removal deletes the
+last message for a subject. It requires roll-ups and purge permission; API
+deletes and purges do not create markers, and mirrors cannot enable it.
 
 ### Choose the right batch mode
 
-Use `AllowAtomicPublish` for an all-or-nothing batch:
-
-```go
-StreamConfig{AllowAtomicPublish: true}
-```
-
-Atomic batches use one batch ID, contiguous sequences, and a commit on the
-last message or an end-of-batch message. They stage intermediate messages and
-produce a normal PubAck only when committed.
+Use `AllowAtomicPublish` for all-or-nothing staging and a single final PubAck.
+It requires API level 2, rejects asynchronous persistence, cannot be used on a
+mirror, and limits a batch to 1,000 messages with a 10-second idle expiry.
 
 Use `AllowBatchPublish` for flow-controlled throughput with per-message
-consistency checks but without atomic staging:
+consistency checks and no intermediate atomic staging. Either batch mode may
+end with an EOB message that is not persisted.
 
-```go
-StreamConfig{AllowBatchPublish: true}
-```
+### Counters and schedules
 
-Both modes can finish with an end-of-batch message that is not persisted.
-Consult the publishing reference for atomic-mode limits and incompatible
-settings.
+`AllowMsgCounter` creates arbitrary-precision signed counters, one per subject.
+Every publish must include `Nats-Incr`; counter mode is creation-only and has
+strict incompatibilities. Sourced aggregation is eventually consistent and
+must be corrected with compensating increments, not purge or roll-up.
 
-### Apply per-message expiration deliberately
+`AllowMsgSchedules` stores one schedule per unique subject. Use `Nats-Schedule`
+with `@at`, a six-field UTC cron expression, an alias, or `@every`; keep the
+schedule record's TTL distinct from the generated message's TTL.
 
-Enable `AllowMsgTTL` before publishing `Nats-TTL`:
+## Consumer and sourcing quick reference
 
-```go
-StreamConfig{AllowMsgTTL: true}
-```
+### Grouped pull consumers
 
-The header accepts integer seconds, Go durations, or `never`. Invalid or
-sub-second TTLs reject the publish. `never` also exempts a message from stream
-`MaxAge`, and the stream option cannot later be disabled.
+Grouped consumers require explicit acknowledgements and one priority group.
+Choose among:
 
-Use `SubjectDeleteMarkerTTL` when consumers must observe that age-based
-expiration removed a subject's last message. API delete and purge operations
-do not create these markers.
+- `overflow`: deliver once either supplied pending threshold is met.
+- `pinned_client`: select one active client while other pulls wait as standbys.
+- `prioritized`: favor an eligible request sooner, with possible flip-flopping.
 
-### Create counters only for counter workloads
+For pinned clients, retain the `Nats-Pin-Id`, retry without it after a `423`
+mismatch, and use the unpin API for administrative reselection. Only the
+priority timeout is updatable after creation.
 
-`AllowMsgCounter` turns every stream subject into an arbitrary-precision
-signed counter. Publish a signed `Nats-Incr`; the stored body and PubAck carry
-the resulting value.
+### Reliable sources and mirrors
 
-```go
-StreamConfig{AllowMsgCounter: true}
-```
+WorkQueue and Interest sources use visible, durable replicated consumers whose
+names begin `JS_SRC_` or `JS_MIRROR_`. They use `AckFlowControl` and acknowledge
+only after the receiver persists the message. Pre-create and reference a durable
+consumer when lifecycle, permissions, starting position, filters, or replay
+policy must be controlled explicitly.
 
-Counter mode is creation-only and excludes several ordinary stream features,
-including per-message TTL, schedules, mirrors, and body-only publishes.
+### Reset delivery state deliberately
 
-### Separate schedule lifetime from output lifetime
+Request `$JS.API.CONSUMER.RESET.<STREAM>.<CONSUMER>` with an empty body for a
+state reset that retains the stream ack floor, or `{"seq": N}` to make the next
+stream sequence at least `N`. Other processes may reset a non-ordered consumer,
+so delivery sequence is not guaranteed to remain monotonic.
 
-With `AllowMsgSchedules`, use `Nats-Schedule` for `@at`, six-field UTC cron, an
-alias, or a Go-duration interval. `Nats-TTL` expires the schedule record;
-`Nats-Schedule-TTL` becomes `Nats-TTL` on generated messages.
+## Networking and operations quick reference
 
-```go
-StreamConfig{
-    AllowMsgSchedules: true,
-    AllowMsgTTL:       true,
-}
-```
+### Leafnode connection control
 
-Schedules can publish a supplied body, sample the latest message with
-`Nats-Schedule-Source`, and apply a generated-message roll-up with
-`Nats-Schedule-Rollup`.
-
-## High-value consumer and sourcing features
-
-### Select a priority-group policy
-
-Grouped pull consumers require explicit acknowledgements and one configured
-priority group:
-
-```go
-ConsumerConfig{
-    PriorityGroups: []string{"jobs"},
-    PriorityPolicy: "overflow",
-    AckPolicy:      "explicit",
-}
-```
-
-- `overflow` begins delivery when a pull's `min_pending` or `min_ack_pending`
-  threshold is met.
-- `pinned_client` selects one client and keeps other pulls as standbys. Persist
-  the returned `Nats-Pin-Id`, retry without it after a `423`, and remember that
-  already in-flight work is not strictly exclusive.
-- `prioritized` admits a group sooner than overflow and can move work back and
-  forth between clients.
-
-Only the pin timeout is updatable; grouped mode and its policy cannot be
-changed in place.
-
-### Pause and reset consumers intentionally
-
-Set `PauseUntil` or use the pause API to suspend delivery until a deadline.
-Heartbeats continue and delivery resumes automatically.
-
-Reset delivery state through:
-
-```text
-$JS.API.CONSUMER.RESET.<STREAM>.<CONSUMER>
-```
-
-An empty request clears pending/redelivery/delivered state while retaining the
-stream ack floor. `{"seq": N}` advances the next stream sequence subject to
-the consumer's delivery policy and configured start bound. A reset can make
-delivery sequences non-monotonic to other clients.
-
-### Control source consumers explicitly when needed
-
-WorkQueue and Interest mirrors/sources use durable, replicated
-`AckFlowControl` consumers. Pre-create one when lifecycle, permissions, replay,
-filters, or starting position need explicit control, then reference its name
-and delivery subject from the source.
-
-`AckFlowControl` requires flow control and heartbeats, acts like `AckAll`, uses
-`MaxDeliver: -1`, and does not allow `AckWait` or `BackOff`.
-
-## High-value operations and networking features
+Use `handshake_first` for TLS before the NATS protocol handshake. Solicited
+remotes can be toggled with reloadable `disabled`; the whole remotes section can
+also be added or removed on reload. Set global or per-remote `dial_timeout` for
+high-latency links; its default is one second.
 
 ### Detect configuration drift
 
-Generate an on-disk configuration digest with `nats-server -t` and compare it
-with `varz.config_digest`. A mismatch means the running server has not loaded
-the current file.
+Run the server with `-t` to generate the file digest and compare it with
+`varz.config_digest`. A mismatch means the on-disk configuration differs from
+the running configuration.
 
-### Trace without delivering
+### Contain overloaded or failed storage
 
-Publish with `Nats-Trace-Dest` to collect hop events. Add
-`Nats-Trace-Only: true` to propagate trace events without delivering the
-message. Existing `traceparent` values are preserved.
+A filestore write error freezes only the affected stream and fails health
+checks; restart that server to recover. Other streams and Core traffic continue,
+and a replicated stream may fail over. Raft bounds proposal growth, steps down
+a lagging leader when a healthier peer exists, and remains degraded when a
+majority lacks capacity.
 
-### Reduce reconnect storms
+### Preserve observability context
 
-Set `connect_backoff: true` on routes or gateways for exponential reconnect
-delays from one to 30 seconds. For leafnodes, use
-`isolate_leafnode_interest` to prevent unnecessary east-west interest
-propagation. Leafnode remotes can be toggled, added, or removed by reload.
+For distributed message traces, publish `Nats-Trace-Dest` and optionally
+`Nats-Trace-Only: true`; trace-only mode emits hops without subscriber delivery.
+Existing `traceparent` values are preserved.
 
-### Diagnose storage and consensus overload
+## Final checks
 
-A filestore write error freezes only its stream, logs `write error`, and fails
-health checks; other streams and core traffic continue. Restart the affected
-server to recover. Raft bounds proposal growth and can make an overloaded
-leader step down, but a cluster remains degraded while a majority lacks
-capacity.
+- Confirm every stream feature is valid for its retention, mirror/source, and
+  persistence mode.
+- Confirm grouped pull requests carry the configured group and pinned clients
+  handle reselection.
+- Confirm custom ACK/flow-control permissions match every parsed subject form.
+- Confirm memory sizing reflects the server's real container or host budget.
+- Confirm downgrade targets understand the configuration and asset features in
+  use before restarting any node.

@@ -1,53 +1,38 @@
 # SQL/JSON and JSON Processing
 
-Batch attribution: `17-json-guide`, `17.0`, `18.0`.
+## Query JSON with SQL-standard functions (17-json-guide)
 
-## Query JSON with SQL-standard functions
-
-`JSON_EXISTS`, `JSON_QUERY`, and `JSON_VALUE` accept a SQL/JSON path and named
-variables supplied by `PASSING`.
-
-`JSON_EXISTS` tests whether the path produces an item. Its default on error is
-`FALSE`.
-
-`JSON_VALUE` extracts exactly one scalar. It returns `text` unless `RETURNING`
-requests another SQL type. JSON null becomes SQL `NULL`.
-
-`JSON_QUERY` returns JSON, or the type selected by `RETURNING`. It can apply a
-conditional or unconditional array wrapper and can keep or omit the quotes
-around scalar strings. Unlike `JSON_VALUE`, it preserves JSON null.
-
-`JSON_QUERY` and `JSON_VALUE` support `ON EMPTY` and `ON ERROR` fallbacks; both
-default to SQL `NULL`. Conversion of the context expression to `jsonb` occurs
-outside `ON ERROR`, so malformed context input still raises an error.
+`JSON_EXISTS`, `JSON_QUERY`, and `JSON_VALUE` accept SQL/JSON paths and named
+variables supplied by `PASSING`. `JSON_EXISTS` reports whether a path yields an
+item, `JSON_QUERY` returns JSON or a declared `RETURNING` type, and
+`JSON_VALUE` extracts one scalar as `text` unless another SQL type is requested.
 
 ```sql
 SELECT JSON_EXISTS(
          jsonb '{"scores":[1,3,5]}',
          'strict $.scores[*] ? (@ > $minimum)' PASSING 3 AS minimum
        ),
-       JSON_VALUE(
-         jsonb '{"age":"42"}', '$.age' RETURNING integer
-       ),
+       JSON_VALUE(jsonb '{"age":"42"}', '$.age' RETURNING integer),
        JSON_QUERY(
          jsonb '{"scores":[1,3,5]}', '$.scores[*]'
          WITH CONDITIONAL WRAPPER
        );
 ```
 
-## Project JSON into rows with `JSON_TABLE`
+`JSON_QUERY` supports conditional or unconditional array wrappers and can keep
+or omit quotes around scalar strings. `JSON_QUERY` and `JSON_VALUE` support
+`ON EMPTY` and `ON ERROR`; both default to SQL `NULL`, while `JSON_EXISTS`
+defaults to `FALSE`. Conversion of the context value to `jsonb` happens outside
+`ON ERROR`, so malformed context input still raises an error. `JSON_VALUE`
+maps JSON null to SQL `NULL`; `JSON_QUERY` preserves JSON null.
 
-`JSON_TABLE` turns every match of its row path into a row whose shape is
-declared by `COLUMNS`. In `FROM` it is implicitly lateral to earlier source
-rows.
+## Project JSON into rows (17-json-guide)
 
-Columns can:
-
-- extract and coerce a value, with `PATH` optional when `$.column_name` is
-  correct;
-- test a path with `EXISTS`;
-- number matches with `FOR ORDINALITY`; or
-- recursively expand arrays with `NESTED PATH`.
+`JSON_TABLE` produces a row per row-path match using a schema declared in
+`COLUMNS`. It is implicitly lateral to its source row. Columns may coerce a
+value, test a path with `EXISTS`, count matches with `FOR ORDINALITY`, or
+recursively expand arrays with `NESTED PATH`; an omitted column path defaults
+to `$.column_name`.
 
 ```sql
 SELECT o.id, item.*
@@ -64,14 +49,17 @@ FROM orders AS o,
      ) AS item;
 ```
 
-A nested path's rows join to its parent row. Sibling `NESTED PATH` clauses are
-combined as a union, not a cross product. Value extraction defaults to `NULL`
-on empty or error, and `EXISTS` defaults to `FALSE`; each column can override
-those actions. Top-level `EMPTY ON ERROR` instead produces no rows.
+A nested path joins its rows to the parent row. Sibling `NESTED PATH` clauses
+form a union, not a cross product. Column extraction defaults to `NULL` on
+empty or error, except that `EXISTS` defaults to `FALSE`; override behavior per
+column. Top-level `EMPTY ON ERROR` instead emits no rows.
 
-## Construct, serialize, and convert JSON
+## Construct, serialize, and convert JSON (17.0)
 
-The SQL-standard constructors and serializer are available:
+Use the SQL-standard `JSON()`, `JSON_SCALAR()`, and `JSON_SERIALIZE()`
+constructors. SQL/JSON paths also provide `.bigint()`, `.boolean()`, `.date()`,
+`.decimal()`, `.integer()`, `.number()`, `.string()`, `.time()`, `.time_tz()`,
+`.timestamp()`, and `.timestamp_tz()` conversions.
 
 ```sql
 SELECT JSON('{"n":1}'),
@@ -79,15 +67,12 @@ SELECT JSON('{"n":1}'),
        JSON_SERIALIZE(JSON('{"n":1}') RETURNING text);
 ```
 
-SQL/JSON paths can convert values with `.bigint()`, `.boolean()`, `.date()`,
-`.decimal()`, `.integer()`, `.number()`, `.string()`, `.time()`,
-`.time_tz()`, `.timestamp()`, and `.timestamp_tz()`.
+## Handle JSON nulls and binary casts (18.0)
 
-## Handle JSON nulls in scalar and array conversions
-
-Casting a `jsonb` null to a scalar produces SQL `NULL`. The optional second
-Boolean argument to `jsonb_strip_nulls` also removes null array elements;
-without it, the function removes null-valued object fields only.
+Casting a JSONB null to a scalar yields SQL `NULL`. Pass `true` as the second
+argument to `jsonb_strip_nulls()` to remove null array elements as well as null
+object fields. Integer-to-`bytea` casts use two's-complement representation,
+and reverse casts are supported.
 
 ```sql
 SELECT ('null'::jsonb)::integer,

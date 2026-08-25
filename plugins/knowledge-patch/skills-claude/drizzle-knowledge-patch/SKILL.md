@@ -10,67 +10,66 @@ metadata:
 
 # Drizzle ORM Knowledge Patch
 
-## Working method
+Use this skill when work touches Drizzle SQL identifiers or aliases,
+Drizzle Kit module loading, or Zod schemas generated from Drizzle tables.
 
-Use this patch when changing Drizzle queries, schema-derived validation,
-or Drizzle Kit execution.
+The relevant behavior is controlled by different packages and, for the CLI,
+by the runtime used to launch it. Establish those boundaries before changing
+code or dependencies.
+
+## Working method
 
 Before editing:
 
-1. Identify the installed `drizzle-orm` and `drizzle-kit` package versions.
-2. Identify whether the CLI is launched by Node, Bun, or Deno.
-3. Check whether the project imports `drizzle-zod`.
-4. Search for dynamic values passed to `sql.identifier()` or `sql.as()`.
-5. Read the reference matching the task before choosing a migration.
+1. Read the installed `drizzle-orm` version.
+2. Read the installed `drizzle-kit` version separately.
+3. Identify whether Drizzle Kit is launched with Node, Bun, or Deno.
+4. Search for `sql.identifier()` and `sql.as()` calls.
+5. Search for imports from `drizzle-zod` and `drizzle-orm/zod`.
+6. Confirm whether `zod` is a direct application dependency.
+7. Open the task-specific reference below before selecting a change.
 
-Keep package versions distinct while reasoning:
+Do not use the ORM version to infer CLI loader behavior.
 
-- `drizzle-orm` controls query helpers and built-in Zod generators.
-- `drizzle-kit` controls CLI module loading.
-- `zod` remains a direct application dependency for generated schemas.
+Do not use the Drizzle Kit version to infer schema-generator availability.
 
-Do not infer one package's behavior from another package's version.
+Do not assume every JavaScript runtime follows the Node loader path.
 
 ## Reference index
 
 | Reference | Topics | Read when |
 | --- | --- | --- |
-| [queries-and-runtime.md](references/queries-and-runtime.md) | SQL identifier and alias escaping; security review | Building dynamic SQL or auditing `sql.identifier()` and `sql.as()` |
-| [migrations-and-kit.md](references/migrations-and-kit.md) | Runtime-aware CLI loading; ESM and CommonJS projects | Running Drizzle Kit or diagnosing module-loading failures |
-| [schema-validation.md](references/schema-validation.md) | Built-in Zod entry point; deprecated package; select, insert, and update schemas | Generating or migrating schema-derived validation |
+| [queries-and-runtime.md](references/queries-and-runtime.md) | Identifier and alias escaping; SQL injection risk | Reviewing or changing `sql.identifier()` or `sql.as()` |
+| [migrations-and-kit.md](references/migrations-and-kit.md) | Runtime-aware Drizzle Kit loading; ESM and CommonJS | Running the CLI or diagnosing module-loading failures |
+| [schema-validation.md](references/schema-validation.md) | Built-in Zod generators; deprecated package; direct dependency | Creating or migrating select, insert, or update schemas |
 
 ## Quick reference
 
-### Upgrade code that builds identifiers or aliases
+### Upgrade code that constructs identifiers or aliases
 
-Treat dynamic identifier and alias construction as security-sensitive.
+Current Drizzle ORM releases properly escape values passed to
+`sql.identifier()` and `sql.as()`.
 
-Current releases properly escape values passed to:
+Earlier releases could leave those values improperly escaped and expose an
+application to SQL injection.
 
-- `sql.identifier()`
-- `sql.as()`
+If either helper is present, verify the installed ORM and upgrade from an
+affected release. Treat this as a security change, not routine cleanup.
 
-Earlier releases could leave those values improperly escaped and expose
-applications to SQL injection.
+Then review every helper call and test the values the application can pass.
 
-Upgrade when either helper is used.
+See [queries-and-runtime.md](references/queries-and-runtime.md) for the
+security boundary and focused review procedure.
 
-Then audit every call site that accepts a value originating outside the
-static query definition.
+### Move schema generation to the built-in Zod entry point
 
-Read [queries-and-runtime.md](references/queries-and-runtime.md) for the
-security boundary and review checklist.
-
-### Replace the deprecated `drizzle-zod` entry point
-
-For `drizzle-orm@1.0.0-beta.15` and newer, import schema generators from
+With `drizzle-orm@1.0.0-beta.15` or newer, import the schema generators from
 `drizzle-orm/zod`.
 
-Install `zod` directly.
+The separate `drizzle-zod` package is deprecated and receives no new
+updates. Keep `zod` installed directly by the application.
 
-Do not expect new updates to the separate `drizzle-zod` package.
-
-Use the built-in generators for all three supported schema purposes:
+Use the built-in entry point for all three schema purposes:
 
 ```ts
 import {
@@ -84,122 +83,120 @@ const insertUserSchema = createInsertSchema(users);
 const updateUserSchema = createUpdateSchema(users);
 ```
 
-Read [schema-validation.md](references/schema-validation.md) before
-changing dependencies or imports.
+Preserve the generator calls while changing the import source.
 
-### Match Drizzle Kit loading to the launch runtime
+Remove `drizzle-zod` only after the repository no longer imports it.
+
+See [schema-validation.md](references/schema-validation.md) for a narrow
+migration sequence.
+
+### Match Drizzle Kit diagnosis to the launch runtime
 
 Starting with `drizzle-kit@0.31.10`, a Node launch uses the `tsx` loader
 instead of `esbuild-register`.
 
-This lets the CLI load both ESM and CommonJS projects.
+That Node path can load both ESM and CommonJS projects.
 
-Bun and Deno launches do not use that Node loader path.
+Bun and Deno bypass `tsx` and use their native import systems.
 
-They use their native import systems instead.
+Before changing loader dependencies, record the command and runtime that
+actually launch Drizzle Kit.
 
-Read [migrations-and-kit.md](references/migrations-and-kit.md) before
-changing loader dependencies or debugging module format errors.
+See [migrations-and-kit.md](references/migrations-and-kit.md) for the runtime
+matrix and diagnostic workflow.
 
-## Query and SQL workflow
+## SQL identifier and alias workflow
 
-When a task touches dynamic SQL:
+Use this workflow whenever a query constructs an identifier or alias:
 
-1. Search for `sql.identifier(` and `.as(` usages.
-2. Determine whether values passed to them are static or dynamic.
-3. Verify that the installed ORM contains the escaping correction.
-4. Prefer upgrading over compensating for old helper behavior locally.
-5. Review tests that exercise unusual identifier and alias values.
-6. Treat a version upgrade as a security change in the handoff.
+1. Find each `sql.identifier()` call.
+2. Find each `sql.as()` call.
+3. Record the installed `drizzle-orm` version.
+4. Determine which calls can receive values outside the static query text.
+5. Upgrade if the project is on a release with improper escaping.
+6. Retest the queries after the upgrade.
+7. Call out the SQL injection risk in the handoff.
 
-Do not claim that application-side validation replaces correct escaping.
+Correct helper escaping is the required security boundary.
 
-Do not preserve an affected release merely because common values appear
-to work.
+Application validation may narrow inputs, but it is not a substitute for
+using a corrected ORM release.
 
-Use the exact helper names in review notes so the affected surface is
-easy to find.
+Avoid local quoting workarounds that preserve an affected helper
+implementation.
 
 ## Schema-validation workflow
 
-When a project uses Drizzle-derived Zod schemas:
+Use this workflow for Drizzle-derived Zod schemas:
 
-1. Confirm that the ORM supports the built-in Zod entry point.
-2. Add `zod` as a direct dependency if it is not already direct.
-3. Replace generator imports from `drizzle-zod` with `drizzle-orm/zod`.
-4. Preserve calls to `createSelectSchema()`.
-5. Preserve calls to `createInsertSchema()`.
-6. Preserve calls to `createUpdateSchema()`.
-7. Remove `drizzle-zod` only after no imports still depend on it.
-8. Run the project's type checks and validation tests.
+1. Confirm the installed `drizzle-orm` supports `drizzle-orm/zod`.
+2. Inventory imports from the deprecated `drizzle-zod` package.
+3. Confirm `zod` is declared as a direct dependency.
+4. Change generator imports to `drizzle-orm/zod`.
+5. Preserve `createSelectSchema()` calls.
+6. Preserve `createInsertSchema()` calls.
+7. Preserve `createUpdateSchema()` calls.
+8. Remove `drizzle-zod` after its final import is gone.
+9. Run type checks and the validation tests used by the project.
 
-Keep the migration narrow.
+Keep this migration narrow. The entry-point change does not require renaming
+the three generator functions.
 
-The entry-point change does not require renaming the three generator
-functions shown above.
-
-Do not add a second compatibility wrapper unless the repository must
-support an older ORM that lacks the built-in entry point.
-
-If old and new package support must coexist, state that constraint before
-selecting an import strategy.
+If the repository must retain an older ORM that lacks the built-in entry
+point, state that compatibility constraint before proposing the migration.
 
 ## Drizzle Kit workflow
 
-When the CLI cannot load project configuration or source modules:
+Use this workflow when the CLI cannot load configuration or project modules:
 
-1. Record the actual launch runtime.
-2. Record the installed `drizzle-kit` version.
-3. For Node, reason about the `tsx` loader path.
-4. For Bun, reason about Bun's native imports.
-5. For Deno, reason about Deno's native imports.
-6. Check whether a proposed fix belongs to the active runtime path.
-7. Retest through the same runtime used by the project.
+1. Capture the exact launch command.
+2. Identify whether the command runs under Node, Bun, or Deno.
+3. Record the installed `drizzle-kit` version.
+4. For Node, evaluate the `tsx` loader path.
+5. For Bun, evaluate Bun's native imports.
+6. For Deno, evaluate Deno's native imports.
+7. Apply a fix only to the runtime path the project uses.
+8. Retest through that same runtime and command.
 
 Do not prescribe `esbuild-register` for the current Node loading path.
 
-Do not add `tsx` solely to control a Bun or Deno launch that bypasses it.
+Do not add `tsx` to control a Bun or Deno launch that bypasses it.
 
-Distinguish a package-format problem from a launch-runtime mismatch in
-the final diagnosis.
+Distinguish a project module-format problem from a mismatch between the
+assumed and actual launch runtime.
 
 ## Review checklist
 
-Before completing a Drizzle change, verify the relevant items.
-
 ### SQL security
 
-- Confirm whether `sql.identifier()` is used.
-- Confirm whether `sql.as()` is used.
-- Confirm that affected code runs on a corrected ORM release.
-- Call out the injection risk when an upgrade is required.
+- Locate both `sql.identifier()` and `sql.as()` usage.
+- Verify the installed ORM has the escaping correction.
+- Treat an affected version as an upgrade requirement.
+- Report the SQL injection exposure when the correction is needed.
 
 ### Zod integration
 
-- Import generators from `drizzle-orm/zod` where supported.
+- Use `drizzle-orm/zod` where the installed ORM supports it.
 - Keep `zod` as a direct dependency.
-- Avoid introducing new reliance on `drizzle-zod`.
-- Cover select, insert, and update generators used by the project.
+- Avoid new imports from deprecated `drizzle-zod`.
+- Cover each select, insert, and update generator used by the project.
 
 ### CLI loading
 
 - Identify Node, Bun, or Deno before changing loader configuration.
-- Expect `tsx`, not `esbuild-register`, on the current Node path.
-- Expect native imports on Bun and Deno paths.
-- Reproduce and verify with the project's real launch command.
+- Expect `tsx` on the current Node path.
+- Expect runtime-native imports on Bun and Deno paths.
+- Verify using the project's real launch command.
 
 ## Handoff
 
-State which package and runtime controlled the behavior you changed.
+State which package controlled the behavior that changed.
 
-Mention any required minimum package version only where the code depends
-on that threshold.
+For query-helper work, name the helper and describe the escaping correction as
+security-sensitive.
 
-For security-sensitive helper usage, explicitly recommend the corrected
-release rather than presenting the upgrade as optional cleanup.
-
-For Zod migration work, report both the import change and the direct
+For schema-validation work, report both the import migration and the direct
 `zod` dependency.
 
-For CLI work, report whether the tested path used Node's loader or a
-runtime-native import system.
+For CLI work, report the launch runtime and whether the tested path used
+Node's loader or a runtime-native import system.

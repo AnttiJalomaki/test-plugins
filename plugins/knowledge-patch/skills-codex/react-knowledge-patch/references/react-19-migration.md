@@ -1,31 +1,19 @@
 # React 19 Migration and Compatibility
 
-## Generated `useId` values
+Output and DOM compatibility changes below are attributed to `19.2.0`; the June patch-level snapshot is from `news-and-versions`.
 
-The default generated prefix changed across React 19 patch lines:
+## Update expectations for generated IDs
 
-| Release | Prefix |
-|---|---|
-| 19.0 | `:r:` |
-| 19.1 | `«r»` |
-| 19.2.0 | `_r_` |
+The default `useId` prefix changed from `:r:` in React 19.0 and `«r»` in React 19.1 to `_r_`. The new form is valid as a `view-transition-name` and as an XML 1.0 name.
 
-The `_r_` form is valid both as a CSS `view-transition-name` value and as an XML 1.0 name. Server-rendered output, tests, and snapshots that expose generated IDs will change.
+Rendered output and snapshots that expose generated IDs will change. Update those expectations, and avoid application logic that depends on the exact generated text.
 
-Treat `useId` values as opaque. Update snapshots where the change is expected, and remove application logic that parses or depends on a generated prefix.
+## Add CSP nonces to hoistable styles
 
-## CSP nonces for hoistable styles
+React DOM permits a `nonce` on hoistable styles, allowing those styles to work under a nonce-based Content Security Policy.
 
-React DOM accepts a `nonce` on hoistable styles, allowing them to pass a nonce-based Content Security Policy.
+## Interpret listed React 19 patch levels carefully
 
-## Maintained React 19 patch levels
+The June 2026 release snapshot listed `19.2.7`, `19.1.8`, and `19.0.7` as the patch targets for projects pinned to the corresponding React 19 minor lines.
 
-For projects intentionally pinned to a React 19 minor line, the June 2026 listed patch targets are:
-
-| Minor line | Patch target |
-|---|---|
-| 19.2 | `19.2.7` |
-| 19.1 | `19.1.8` |
-| 19.0 | `19.0.7` |
-
-Security remediation can require a newer release than an application's current pin. Update `react`, `react-dom`, and any RSC transport coherently; see [Security](security.md) for the RSC-specific rules and the React Native monorepo exception.
+Treat those values as the recorded June 2026 levels, not as a substitute for security guidance to install the latest patched release available for the selected minor line.

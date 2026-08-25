@@ -10,242 +10,218 @@ metadata:
 
 # Polars Knowledge Patch
 
-## When to load this skill
+Use this skill when writing, reviewing, migrating, or debugging Polars code whose
+behavior may depend on current Python or Rust APIs. It is especially useful for
+constructor behavior, expression semantics, lazy queries, streaming execution,
+SQL, serialization, Arrow interchange, and storage integrations.
 
-Load this skill when a Python, Rust, or SQL task uses Polars and any of the
-following are involved:
+## How to use this skill
 
-- upgrading code that depends on constructor, dtype, null, schema, or renamed
-  API behavior;
-- reading or writing Parquet, Excel, CSV, Delta Lake, Iceberg, Arrow, or
-  databases in eager, lazy, or streaming execution;
-- serializing frames, expressions, plans, or Python objects;
-- using Polars SQL or nested, decimal, temporal, Enum, or `Float16` data.
-
-First inspect the project's declared Polars version. Apply an item only when
-the installed version includes that behavior. Prefer the manifest, executable
-tests, and observed schemas over assumptions.
-
-## Working method
-
-1. Identify eager, lazy, streaming, or SQL execution and inspect both schemas.
-2. Make orientation, strictness, null policy, and partition behavior explicit.
-3. Treat persisted plans and expressions as compatibility-sensitive.
-4. Exercise boundary data and verify both values and nested dtypes.
+1. Identify whether the task concerns migration, expressions, I/O, query
+   execution, SQL, serialization, or runtime interoperability.
+2. Read the matching reference file before proposing API names or defaults.
+3. Prefer explicit options where defaults have changed or are deprecated.
+4. Treat persisted lazy plans, expressions, UDFs, and provider-bearing objects as
+   compatibility-sensitive artifacts.
+5. Preserve the exception specificity documented here when writing recovery code.
+6. Verify schema and dtype assumptions before and after nested casts, Arrow
+   conversion, file scans, or database reads.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migration-and-core-api.md](references/migration-and-core-api.md) | Constructors, renamed APIs, defaults, deprecations, exceptions |
-| [expressions-and-data-types.md](references/expressions-and-data-types.md) | Nulls, nested values, temporal expressions, decimals, enums |
-| [lazy-streaming-and-sql.md](references/lazy-streaming-and-sql.md) | Lazy schemas, optimizer controls, streaming, SQL behavior |
-| [io-cloud-and-databases.md](references/io-cloud-and-databases.md) | Parquet, CSV, Excel, cloud credentials, Delta, Iceberg, databases |
-| [serialization-runtime-and-arrow.md](references/serialization-runtime-and-arrow.md) | Serialization, Python support, Arrow interchange, exception fidelity |
+| [Migration and Core API](references/migration-and-core-api.md) | Constructors, renamed arguments, exceptions, deprecations, core frame and series behavior |
+| [Expressions and Data Types](references/expressions-and-data-types.md) | Nested values, null behavior, temporal operations, categoricals, decimals, and numeric expressions |
+| [I/O, Cloud Storage, and Databases](references/io-cloud-and-databases.md) | Parquet, CSV, spreadsheets, Delta, Iceberg, cloud credentials, and database I/O |
+| [Lazy Execution, Streaming, and SQL](references/lazy-streaming-and-sql.md) | Schema planning, optimizer controls, streaming, joins, grouping, sorted merges, and SQL |
+| [Serialization, Runtime, and Arrow](references/serialization-runtime-and-arrow.md) | Serialization formats, Python/runtime compatibility, NumPy, Arrow import/export, and interchange |
 
-## Breaking changes and deprecations
+## Breaking changes: constructors and core operations
 
-### Make construction explicit
+### Make row orientation explicit
 
-`Series` construction is strict even when the dtype is inferred. Mixed values
-that cannot satisfy one inferred dtype raise by default:
+Pass `orient="row"` for heterogeneous row records. Frame construction infers
+orientation from dimensions and schema shape and warns when it infers rows.
 
-```python
-s = pl.Series([1, 2, 3.5], strict=False)
-```
+### Choose strict `Series` construction deliberately
 
-For heterogeneous row data, declare row orientation:
+Mixed incompatible values raise under strict construction, even when the dtype
+is inferred. Use `strict=False` only when common-dtype inference or casting is
+intended.
 
-```python
-df = pl.DataFrame([[1, "a"], [2, "b"]], orient="row")
-```
+### Expect datetime values to be converted to the declared zone
 
-Two-dimensional NumPy input and `reshape` produce fixed-size `Array` values.
-Convert with `.arr.to_list()` only when a downstream consumer requires
-variable-length `List` values.
+Constructing with a zoned datetime dtype converts values to that zone. Do not
+assume that construction merely replaces timezone metadata; wall-clock values can
+shift.
 
-A datetime constructor with a zoned dtype converts values into the requested
-zone. Check the resulting instant and wall-clock value instead of assuming
-that the operation only changes metadata.
-
-### Replace and index deliberately
+### Use `replace_strict` for dtype-changing mappings
 
 `replace` preserves the existing dtype. Use `replace_strict` when a mapping may
-change dtype:
+change dtype, and provide `default` when unmapped non-null values should survive.
 
-```python
-out = s.replace_strict(old, new, default=s)
-```
+### Update pivot calls and generated names
 
-Without `default`, every non-null input must be mapped. This strict form also
-works with Enum data.
+Use `on` instead of `columns`. It is the first positional argument, and omitted
+`index` or `values` inputs are inferred. Multi-value output names no longer repeat
+the pivot-column name.
 
-All `get` and `gather` variants raise on an out-of-bounds index by default.
-Request nullable lookup explicitly:
+### Treat two-dimensional values as fixed-size arrays
 
-```python
-item = pl.col("items").list.get(1, null_on_oob=True)
-```
+Reshaping a series or constructing one from a two-dimensional NumPy array creates
+an `Array`, not a `List`. Convert with `.arr.to_list()` where list semantics are
+required.
 
-Every positional argument to `pl.nth` is an index. Use
-`pl.col("a").get(1)` to index a named expression.
+### Handle bounds explicitly
 
-### Update renamed fields and arguments
+`get` and `gather` operations raise for out-of-bounds indices by default. Pass
+`null_on_oob=True` only when a missing result is the intended contract.
 
-`DataFrame.pivot` uses `on` in place of `columns`; `on` is its first
-positional argument. `index` and `values` may be inferred, and multi-value
-output names are shorter.
+### Collect lazy schemas explicitly
 
-The `rle` result fields are `len` and `value`. The length uses the unsigned
-index dtype.
+Call `collect_schema()` before inspecting lazy columns, dtypes, width, or schema.
+Direct property access can trigger expensive resolution and a performance warning.
 
-Call `set_sorted` once per independently sorted column:
+## Breaking changes: execution and persistence
 
-```python
-df = df.set_sorted("a").set_sorted("b")
-```
+### Separate binary serialization from JSON I/O
 
-The implicit output column from `scan_lines` and `read_lines` is `line`.
-Calling `unnest()` without arguments targets every applicable column.
+Frame and expression serialization defaults to binary. Use byte streams for the
+default format or request `format="json"`; use `deserialize` for serialized
+frames, not `read_json`.
 
-### Review changed defaults
+### Recreate non-serializable runtime state
 
-`group_by_dynamic` uses a zero offset. Specify a negative interval when the
-old leading-window layout is required:
+Credential-provider objects are not embedded in serialized objects. Reattach
+credentials after loading, and reject incompatible DSL representations rather
+than assuming persisted expressions or lazy plans remain portable.
 
-```python
-df.group_by_dynamic("ts", every="1d", offset="-1d")
-```
+### Do not rely on implicit `map_batches` optimization
 
-`LazyFrame.map_batches` enables no optimizer transformations by default.
-State any safe optimization behavior explicitly.
+`LazyFrame.map_batches` defaults to no optimizer transformations. Enable only the
+optimizations whose interaction with the callback is known to be safe.
 
-`Series.equals` ignores names unless `check_names=True`.
+### Expect stricter invalid-operation failures
 
-EWM operations preserve null positions. Append `.forward_fill()` only when
-forward-filled output is intended. A null bound passed to `clip` leaves the
-input value unchanged.
+Invalid temporal/non-temporal arithmetic, imploding `Object` values, incompatible
+nested casts, bad SQL expressions, and non-numeric integer-range inputs now fail
+instead of producing invalid or weakly typed results.
 
-### Remove deprecated dependencies
+### Update exception handling
 
-- Avoid new uses of `StringCache`; it is deprecated.
-- Stop relying on cache-related `scan_ipc` arguments.
-- Do not use `rolling_corr(ddof=...)`; `ddof` is deprecated and ignored.
-- Treat the dataframe interchange protocol integration as transitional.
-- Replace separate lazy optimizer controls with `QueryOptFlags`.
-- Update removed installation extras; use supported extras such as
-  `calamine`, `async`, and `graph`.
-- Access `time_unit` and `time_zone` on dtype instances, not dtype classes,
-  and define public dtype aliases locally.
+Operations that formerly collapsed failures into broad compute errors may raise
+specific invalid-operation, schema, duplicate-name, or SQL-syntax exceptions.
+Catch the narrow type when recovery depends on the failure category.
 
-## High-use recipes
+## Deprecations to remove from new code
 
-### Resolve lazy schemas once
+- Do not rely on dataframe interchange integration for a long-lived boundary.
+- Avoid `StringCache`; prepare existing uses for removal.
+- Pass `plan_stage` to `show_graph()` and `empty_as_null` to `.explode()`.
+- Remove cache-related arguments from `scan_ipc` calls.
+- Stop supplying `ddof` to `rolling_corr`; it is ignored.
+- Give `struct.rename_fields()` exactly one name per field.
+- Replace categorical-to-integer and numeric-to-categorical casts with explicit
+  categorical conversion expressions.
+- Replace string-to-temporal, scalar-to-`List`, and mixed integer/Boolean bitwise
+  casts or operators with explicit, typed conversions.
+- Do not depend on `cat.get_categories()` or `cat.to_local()`.
 
-Properties such as `LazyFrame.schema`, `.dtypes`, `.columns`, and `.width` can
-trigger expensive resolution and emit `PerformanceWarning`. Collect once:
+## High-value expression and dtype updates
 
-```python
-schema = lf.collect_schema()
-names = schema.names()
-```
+### Null handling is configurable or preserved more consistently
 
-Use `LazyFrame.match_to_schema` to reconcile an expected schema before
-execution:
+Nested `contains`, `any`, and `all` operations expose explicit null controls.
+Rolling-by results preserve null keys, EWM outputs preserve null positions, and
+unbiased EWM variance and standard deviation start with null rather than zero.
 
-```python
-lf = lf.match_to_schema({"id": pl.Int64})
-```
+### Nested types support more native operations
 
-Strict casts validate nested inner values as well as the outer dtype.
+Fixed-size arrays can be grouping keys. Lists and arrays support missing-aware
+comparisons, uniqueness checks, null-aware membership, Boolean reductions, and
+scalar broadcasting for `list.slice`.
 
-### Handle Parquet paths and partitions
+### Decimal and half-precision behavior is stronger
 
-Directory inputs enable Hive partitioning by default. A file, glob, or list of
-files does not, so request it when partition columns must be recovered:
+Arrow decimals stay decimal, decimal sums widen their result precision and raise
+on overflow, and stable `Float16` values participate in Parquet reads and group-by
+aggregation.
 
-```python
-lf = pl.scan_parquet(paths, hive_partitioning=True)
-```
+### Categorical conversion is explicit
 
-Use `cast_options` for scan-time Parquet casts. Project only needed columns;
-unprojected columns are not dtype-validated. Parquet sinks preserve field IDs,
-and readers give `DuplicateError` for duplicate column names.
+Use `Expr.cat.to` for categorical conversion and `Expr.cat.physical` for physical
+representation access. Align Enum categories before append, and remember that
+lexical categorical order controls extrema where configured.
 
-### Make nested null semantics visible
+## High-value query and SQL updates
 
-Nested operations now expose specific controls:
+### Treat streaming as a supported engine
 
-```python
-has_null = pl.col("items").list.contains(None, nulls_equal=True)
-any_value = pl.col("items").list.any(ignore_nulls=False)
-```
+Streaming covers a wider set of aggregations, grouped as-of joins, interpolation,
+automatic datetime parsing, covariance and correlation, PyArrow datasets, and
+Parquet output.
 
-List and Array values support missing-aware equality, membership controls,
-Boolean reductions, and uniqueness. Test empty lists, null lists, and null
-elements separately.
+### Use centralized optimizer controls
 
-### Use stable streaming and sinks
+Pass a `QueryOptFlags` object when customizing lazy optimization. Keep callback
+semantics in mind when combining flags with `map_batches`.
 
-The streaming engine and `sink_*` APIs are supported interfaces. Streaming
-covers grouped as-of joins, interpolation, inferred-format `strptime`,
-covariance and correlation, PyArrow dataset sources, common group
-aggregations, and Parquet output.
+### Use the top-level SQL context for multiple frames
 
-Do not assume that streaming changes semantic edge cases: grouped as-of joins
-preserve null rows, and a Delta sink does not require maintained order.
+Frame-local SQL sees only its own frame. Use `pl.sql(...)` when a query must
+resolve multiple named frames.
 
-### Choose the right SQL entry point
+### Account for current SQL arithmetic and aggregates
 
-`DataFrame.sql` and `LazyFrame.sql` see only their own frame. Use top-level SQL
-for multiple frames:
+Division uses true-division semantics. Aggregate filters, `STRING_AGG`, `TOTAL`,
+computed grouping keys, implicit joins, and subquery membership predicates are
+available. All-null `SUM` and `CORR` results are null.
 
-```python
-result = pl.sql(
-    "SELECT * FROM left CROSS JOIN right",
-    eager=True,
-)
-```
+### Preserve sortedness contracts
 
-Polars SQL supports true division, bit operations, discrete quantiles,
-aggregate `FILTER`, `STRING_AGG`, Unicode normalization, and multiline
-`LIKE`/`ILIKE`. Invalid expressions and invalid `HAVING` placement raise
-specific SQL errors.
+Each `set_sorted` call annotates one independently sorted column. Use
+`merge_sorted` for already-sorted frames, including multiple frames or multiple
+lexicographic keys where applicable.
 
-### Read spreadsheets predictably
+## High-value I/O updates
 
-`read_excel` defaults to the Calamine engine. Choose `xlsx2csv` when
-engine-specific options such as `skip_empty_lines` are required:
+### Be explicit about Hive partition discovery
 
-```python
-df = pl.read_excel(path, engine="xlsx2csv")
-```
+Directory Parquet reads enable Hive partitioning by default; individual paths,
+globs, and file lists do not. Pass `hive_partitioning=True` when partition columns
+must be recovered outside directory input.
 
-Use `drop_empty_rows` deliberately. Excel reads can select a named table and
-accept raw bytes; Excel writes accept file-like outputs.
+### Use current spreadsheet engines and inputs
 
-### Preserve serialization boundaries
+Excel reads default to Calamine. Select `xlsx2csv` when engine options are needed.
+Spreadsheet readers accept raw bytes, can drop empty rows, and can select named
+Excel tables; Excel writers accept file-like outputs.
 
-Frame, lazy-frame, and expression serialization defaults to binary. Pair
-binary output with `BytesIO`, or request `format="json"`. Row-oriented
-`write_json` output is data, not a serialized frame:
+### Carry cloud and schema settings deliberately
 
-```python
-buffer = io.BytesIO()
-df.serialize(buffer)
-buffer.seek(0)
-restored = pl.DataFrame.deserialize(buffer)
-```
+Credential providers, certificate options, endpoint discovery, Parquet cast
+controls, multi-file CSV inference, explicit schemas, metadata, and field IDs all
+affect planning or output. Do not assume these settings survive serialization.
 
-Persisted DSL data must be compatible with its reader. Credential-provider
-objects are intentionally excluded from serialized state.
+### Prefer stable sink APIs for large outputs
 
-## Verification checklist
+Use the sink interfaces for Parquet, Delta, Iceberg, callback, and remote output.
+Configure the out-of-core disk budget when execution can spill to disk.
 
-- Confirm Polars and Python versions, constructor orientation, and inferred
-  dtypes from project files and focused tests.
-- Inspect lazy schemas and exercise null, empty, duplicate, and boundary cases.
-- Verify time zones, truncation anchors, and fractional datetime precision.
-- Distinguish Parquet directories, files, globs, and explicit lists.
-- Test cloud credentials without assuming serialization, compare eager,
-  streaming, and SQL dtypes, and deserialize in the target runtime.
+## Review checklist
+
+- Are constructor orientation, strictness, timezone conversion, and byte-scalar
+  broadcasting intentional?
+- Are nested dtypes (`Array`, `List`, `Struct`, Enum, Decimal, `Float16`) handled
+  without relying on legacy coercions?
+- Are null and out-of-bounds policies explicit where they affect results?
+- Are lazy schema collection and optimizer controls explicit?
+- Does SQL code account for frame scope, true division, null aggregates, and
+  syntax validation?
+- Does I/O code choose its engine, partition behavior, schema controls, and
+  credential lifecycle deliberately?
+- Are serialized artifacts read with the matching serializer and supplied with
+  fresh runtime-only state?
+- Are Arrow, NumPy, and database boundaries checked for duplicate names, ordered
+  dictionaries, integer width, and null preservation?

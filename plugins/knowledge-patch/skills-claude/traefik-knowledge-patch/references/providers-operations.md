@@ -1,91 +1,77 @@
 # Providers and operations
 
-## Docker, Swarm, ECS, Nomad, and catalog providers
+## Use systemd socket activation
 
-Docker and Swarm can use HTTP Basic Authentication for protected provider
-endpoints from 3.2.0.
+Systemd can own listening sockets and pass them to Traefik (3.1.0). Socket
+activation also covers UDP routing (3.4.0). Keep socket unit addresses and
+Traefik entry points aligned, and test process restarts without recreating the
+socket.
 
-Nomad can watch catalog changes rather than poll from 3.2.0, giving an
-event-driven refresh path.
+## Connect Docker and Swarm safely
 
-Docker, ECS, Swarm, Consul Catalog, and Nomad can read complete backend server
-URLs from provider labels as of 3.4.0.
+Docker and Swarm providers support HTTP Basic Authentication for protected
+provider endpoints (3.2.0). Docker and Swarm later auto-negotiate the Docker API
+version (3.7.0), reducing dependence on a manually pinned API version.
 
-In 3.6.0, ECS discovery supports IPv6 and Docker can discover containers that
-are not running. Consul, Consul Catalog, and Nomad log their provider namespace
-during startup, making namespace selection visible during diagnosis.
+The Docker provider can discover containers that are not running (3.6.0).
+Account for container state in constraints so stopped workloads do not produce
+unwanted routes. The ECS provider supports IPv6 (3.6.0).
 
-Docker and Swarm negotiate the Docker API version automatically in 3.7.0.
+## Configure label providers
 
-## HTTP provider
+Docker, ECS, Docker Swarm, Consul Catalog, and Nomad can set backend server URLs
+directly through labels (3.4.0). Validate label ownership because it controls
+the full upstream URL rather than only host and port fragments.
 
-HTTP provider requests include a `Host` header from 3.3.0, allowing a
-host-routed configuration endpoint to serve the request correctly.
+Consul, Consul Catalog, and Nomad log their provider namespace at startup
+(3.6.0). Include startup logs in diagnostics when namespace scoping produces
+unexpected discovery.
 
-The 3.7.0 `maxResponseBodySize` setting bounds the size of downloaded dynamic
-configuration. Treat an exceeded limit as a provider failure and size it for
-the largest legitimate document with controlled headroom.
+## Watch Nomad events
 
-## Systemd socket activation
+The Nomad provider can watch catalog changes rather than poll for them (3.2.0).
+Choose the event-driven mode when prompt updates matter, and retain monitoring
+for a stalled watch.
 
-Systemd can own Traefik's TCP listeners from 3.1.0. Define and bind them in the
-socket unit, then start Traefik as the accepting service. UDP routing joins
-socket activation in 3.4.0.
+## Bound HTTP provider behavior
 
-Socket activation changes restart behavior: the listener can remain owned by
-systemd while the process is replaced.
+Requests from the HTTP provider include a `Host` header, allowing host-routed
+configuration endpoints to respond correctly (3.3.0). The provider also has
+`maxResponseBodySize` to bound the downloaded dynamic configuration (3.7.0).
+Set the limit above the legitimate configuration size but below an unacceptable
+memory or transfer cost.
 
-## Request and HTTP/2 resource limits
+## Control server protocol resources
 
-The maximum incoming request-header size is configurable from 3.2.0. Set it
-from measured application needs; an undersized value rejects legitimate
-requests, while an excessive value weakens the memory bound.
+The server maximum request-header size is configurable (3.2.0). HTTP/2 servers
+also expose HPACK table-size controls (3.6.0). Treat both as resource and
+compatibility limits: test expected clients before tightening them.
 
-HTTP/2 servers expose HPACK table-size controls from 3.6.0. Tune header
-compression tables only when interoperability or measured memory behavior
-requires it.
+## Fail closed on plugin loading
 
-The 3.3.0 WebSocket workaround disables HTTP/2 extended CONNECT:
+`AbortOnPluginFailure` stops startup if a plugin cannot load instead of silently
+continuing without it (3.3.0). Prefer it when plugin behavior is required for
+security or correctness.
 
-```sh
-GODEBUG=http2xconnect=0 traefik
-```
+Plugin manifests can enable unsafe operations in the Yaegi interpreter
+(3.5.0), and plugins can use syscalls (3.6.0). Both broaden the plugin's
+effective authority. Review the manifest and source, minimize host access, and
+treat enabling either capability as a trust decision.
 
-Later 3.7 patches restore WebSocket upgrades through `h2c` backends.
+## Configure Redis notifications
 
-## Support and diagnostics
+Traefik's Redis integration requires Redis keyspace notifications (3.7.11).
+Enable them before depending on notification-driven updates and monitor the
+event path after Redis configuration changes.
 
-The API exposes a support-dump endpoint from 3.3.0. Treat the dump as
-diagnostic material that may contain deployment details and control its
-distribution.
+## Apply patch-line security updates
 
-The API and dashboard base path became configurable in 3.3.0, supporting
-mounting below a non-default route.
+Do not remain on an initial 3.7 image. The 3.7.5 patch addresses
+CVE-2026-54761 and CVE-2026-54762; 3.7.6 addresses CVE-2026-54763 through
+CVE-2026-54765; and 3.7.7 addresses three additional advisories (3.7.0).
 
-The Web UI's automatic theme became the default in 3.4.0.
-
-The 3.7.0 dashboard adds a certificate overview with certificate domains,
-expiration, and HTTP/TCP router attachments. Service pages show server
-weights, and the dashboard name is configurable.
-
-## Server and provider behavior
-
-HTTP services can preserve the configured backend server path from 3.2.0.
-
-In 3.7.0, the server can remove incoming header names containing underscores.
-A global setting can disable appending to `X-Forwarded-For`.
-
-Health-check targets are validated and must be path-only rather than absolute
-URLs in 3.7.0.
-
-Provider routing precedence is configurable in 3.7.0. Set it where routes from
-different providers can match the same request rather than relying on load or
-discovery order.
-
-## Operational warnings
-
-Authentication middleware logs a warning from 3.6.0 when `maxBodySize` is not
-set. Treat it as a prompt to bound bodies sent to an authorization service.
-
-Use `AbortOnPluginFailure` from 3.3.0 when missing plugin behavior should
-prevent startup.
+Later fixes supersede the earlier recommendation: 3.7.8 addresses
+GHSA-8rxv-jg7p-wvg3, 3.7.9 addresses GHSA-3ccp-42pg-hgv6, and 3.7.10 addresses
+GHSA-fgjj-px3w-67xx, GHSA-62fc-8686-hfmq, and GHSA-6765-c87h-8mrf. Deployments
+staying on the 3.7 line should move to 3.7.11 rather than an earlier patch
+(3.7.11).

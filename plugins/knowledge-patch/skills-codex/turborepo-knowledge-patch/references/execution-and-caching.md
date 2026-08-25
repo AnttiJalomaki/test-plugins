@@ -1,20 +1,10 @@
 # Execution and Caching
 
-## Watch Mode cache writes
+## Start Sidecar Tasks With Persistent Work
 
-Pass the watched task and explicitly opt into cache writes (since 2.4.0):
-
-```bash
-turbo watch dev --experimental-write-cache
-```
-
-Do not omit the task argument. The feature remains experimental.
-
-## Persistent sidecars
-
-Use `with` for long-running tasks that must start together (since 2.5.0). This
-expresses runtime coexistence instead of the completion ordering imposed by
-`dependsOn`:
+A persistent task can use `with` to start other long-running tasks whenever it
+runs (since 2.5.0). This expresses runtime coexistence; `dependsOn` expresses
+completion ordering.
 
 ```json
 {
@@ -28,88 +18,107 @@ expresses runtime coexistence instead of the completion ordering imposed by
 }
 ```
 
-Dry-run and summary output include `with` relationships (since 2.6.0).
+Dry-run and summary output includes these `with` relationships (since 2.6.0),
+which makes the sidecar topology inspectable without starting tasks.
 
-## Dependency-safe continuation
+## Continue Only Through Successful Dependencies
 
-Use `--continue=dependencies-successful` to continue unrelated tasks after a
-failure while running a dependent only if every dependency succeeded (since
-2.5.0):
+`--continue=dependencies-successful` continues past task failures but runs a
+dependent task only if all its dependencies succeeded (since 2.5.0):
 
 ```bash
 turbo run test --continue=dependencies-successful
 ```
 
-## Git-aware pruning
+Use it when independent work should continue but failed prerequisites must
+still block downstream tasks.
 
-Opt into respecting `.gitignore` during pruning with `--use-gitignore` (since
-2.4.0):
+## Cache Watch Mode Explicitly
+
+Watch Mode can write results to the cache only when explicitly enabled (since
+2.4.0). The watched task argument is required:
+
+```bash
+turbo watch dev --experimental-write-cache
+```
+
+## Prune With Repository Semantics
+
+Ask `turbo prune` to respect `.gitignore` with `--use-gitignore` (since 2.4.0):
 
 ```bash
 turbo prune web --use-gitignore
 ```
 
-Use the positional target form; `turbo prune --scope web` is deprecated.
+The positional target form is preferred over the deprecated `--scope` form.
+When the `pruneIncludesGlobalFiles` Future Flag is active, files matched by
+`globalDependencies` are also copied to pruned output (since 2.9.0).
 
-## Package-manager-aware pruning and invalidation
+## Handle Environment and Force-Mode Cache Rules
 
-Prune repositories that use Bun 1.2 or newer and its text lockfile normally
-(since 2.5.0):
+`DISPLAY` passes through by default (since 2.4.0). Negated `passThroughEnv`
+patterns can exclude built-in variables and variables inherited from
+`globalPassThroughEnv`.
+
+Force mode takes precedence over other cache settings, including
+`remoteCache.enable`; do not assume disabling or narrowing remote cache settings
+overrides an explicitly forced run.
+
+## Share Cache Across Git Worktrees
+
+Linked Git worktrees share their local Turborepo cache automatically (since
+2.8.0). No setting is needed. A task cached in one linked worktree can be a
+cache hit in another:
 
 ```bash
-turbo prune web
+turbo run build
+git worktree add -B my-branch ../my-branch
+cd ../my-branch
+turbo run build
 ```
 
-Stable Bun support parses the text `bun.lock` v1 format granularly (since
-2.6.0). A dependency change invalidates only affected packages rather than the
-entire repository.
+## Remove Daemon Configuration
 
-Turborepo also parses catalogs from Yarn 4.10.0 and newer (since 2.7.0). A
-catalog edit invalidates only affected packages and tasks:
+`turbo run` and `turbo watch` no longer use the daemon (since 2.9.0). The
+following interfaces are deprecated because they no longer have a role:
 
-```yaml
-catalog:
-  react: ^19.2.3
+- `TURBO_DAEMON`;
+- `--daemon` and `--no-daemon`; and
+- the `daemon` configuration key.
+
+## Migrate Deprecated Execution and Cache Interfaces
+
+These interfaces still work in 2.9.0 but warn in preparation for the next
+major release:
+
+- Remove `turbo scan`; it is obsolete and has no replacement.
+- Replace `--parallel` with task-level `persistent` and `with`.
+- Replace `--no-cache` with `--cache=local:r,remote:r`.
+- Replace `TURBO_REMOTE_ONLY` or `--remote-only` with
+  `--cache=remote:rw`.
+- Replace `TURBO_REMOTE_CACHE_READ_ONLY` or
+  `--remote-cache-read-only` with `--cache=local:rw,remote:r`.
+- Replace `.png`, `.jpg`, or `.pdf` graph output with `.svg`, `.html`,
+  `.mermaid`, or `.dot`.
+- Replace `.json` graph output with `turbo query`.
+- Replace `turbo prune --scope web` with `turbo prune web`.
+
+## Intersect Affected and Filtered Scopes
+
+`--affected` and `--filter` can be combined (since 2.10.0). The selected tasks
+or packages must satisfy both constraints. A negative filter removes packages
+from the affected set:
+
+```bash
+turbo run build --affected --filter=web
+turbo run build --affected --filter=!docs
+turbo query ls --affected --filter=my-app
 ```
 
-## Cache sharing across Git worktrees
+## Evict Old Local Cache Artifacts
 
-Expect linked Git worktrees to share the local cache automatically (since
-2.8.0). No configuration is required; work completed and cached in one worktree
-can hit in another.
-
-## Cache command migrations
-
-Prefer explicit cache modes (deprecated forms documented in 2.9.0):
-
-| Deprecated interface | Replacement |
-| --- | --- |
-| `--no-cache` | `--cache=local:r,remote:r` |
-| `TURBO_REMOTE_ONLY` or `--remote-only` | `--cache=remote:rw` |
-| `TURBO_REMOTE_CACHE_READ_ONLY` or `--remote-cache-read-only` | `--cache=local:rw,remote:r` |
-
-Remember that force mode overrides other cache settings, including
-`remoteCache.enable`.
-
-## Daemon-free execution
-
-Do not rely on a daemon for `turbo run` or `turbo watch` (since 2.9.0). The
-following no longer have a role and are deprecated:
-
-- `TURBO_DAEMON`
-- `--daemon`
-- `--no-daemon`
-- the `daemon` configuration key
-
-## Graceful shutdown
-
-Allow task cleanup handlers to finish after `SIGINT` or `SIGTERM` (since
-2.10.0). Turborepo forwards the signal and waits. Press `Ctrl+C` a second time
-to force an immediate exit; no configuration is needed.
-
-## Automatic local cache eviction
-
-Opt into age- and size-based eviction with top-level settings (since 2.10.0):
+Top-level `cacheMaxAge` and `cacheMaxSize` opt into age- and size-based local
+cache eviction (since 2.10.0):
 
 ```jsonc
 {
@@ -118,5 +127,22 @@ Opt into age- and size-based eviction with top-level settings (since 2.10.0):
 }
 ```
 
-At the start of each `turbo run`, a background thread first removes expired
-artifacts, then removes the oldest artifacts necessary to meet the size cap.
+At the start of each `turbo run`, a background thread removes expired
+artifacts, then removes the oldest remaining artifacts until the size cap is
+met.
+
+## Shut Tasks Down Gracefully
+
+On `SIGINT` or `SIGTERM`, Turborepo forwards the signal to its tasks and waits
+for their cleanup handlers (since 2.10.0). Press `Ctrl+C` a second time to force
+an immediate exit. No configuration is required.
+
+## Resolve Remote Base References in CI
+
+With the corresponding Future Flag enabled, Turborepo can resolve remote base
+refs in GitHub Actions (since 2.10.8). This allows Git comparisons to use a
+base ref that is not already present locally.
+
+## Authenticate Remote Cache With OIDC Policies
+
+Remote Cache authentication guidance supports OIDC policies (since 2.10.8).

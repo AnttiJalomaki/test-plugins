@@ -1,63 +1,118 @@
 # Packages, toolchains, and desktops
 
-## Core platform versions
+## Replace retired commands and packages
 
-Key packaged versions are:
+These replacements are from `13-whats-new` and `13-known-issues`.
 
-| Component | Version | Component | Version |
-| --- | --- | --- | --- |
-| Linux | 6.12 | glibc | 2.41 |
-| GCC | 14.2 | LLVM/Clang | 19 |
-| OpenJDK | 21 | OpenSSH | 10.0p1 |
-| OpenSSL | 3.5 | Perl | 5.40 |
-| PHP | 8.4 | PostgreSQL | 17 |
-| Python | 3.13 | Rust | 1.85 |
-| MariaDB | 11.8 | Samba | 4.22 |
-| systemd | 257 |  |  |
+### Replace utmp and wtmp tools
 
-## Desktop versions and compatibility
+The Y2038-unsafe utmp/wtmp databases are being displaced. Use the `lastlog2` package
+instead of `lastlog`, `wtmpd` instead of `last`, and util-linux's `lslogins` where it
+fits the query.
 
-Desktop choices include GNOME 48, Plasma 6.3, LXDE 13, LXQt 2.1, and Xfce 4.20.
+`util-linux-extra` removes `mesg` and `write` while adding tools including `exch` and
+`waitpid`. Audit scripts for the removed commands and select alternatives rather than
+assuming a compatible alias exists.
 
-Plasma 6.3 is built on Qt 6.8.2 and KDE Frameworks 6.13. Qt 5.15.15 and KDE
-Frameworks 5.116 remain available for older applications. Frameworks 5 is deprecated
-and planned for removal during the Forky development cycle.
+### Map removed packages deliberately
 
-Existing Plasma profiles generally upgrade in place, although some quirks remain.
+Use `libnss-myhostname` for `libnss-gw-name`, `grep -P` or `pcre2grep` for `pcregrep`,
+and `request-tracker5` for `request-tracker4`.
 
-## Qt WebEngine spelling dictionaries
+The `git-daemon-run`, `git-daemon-sysvinit`, Tesla 470 NVIDIA driver, `deborphan`,
+`tldr`, and `tpp` packages are also gone. Where applicable:
 
-Hunspell language packages include compiled `.bdic` dictionaries. Supporting Qt
-WebEngine browsers, including Falkon and Privacy Browser, can use them for spell-checking.
+- replace `deborphan` workflows with `apt-mark minimize-manual` followed by
+  `apt autoremove`;
+- replace `tldr` with `tealdeer` or `tldr-py`;
+- replace `tpp` with `lookatme` or `patat`.
 
-## libvirt package split
+## Review component and feature package splits
 
-Each libvirt driver and storage backend now has its own binary package. Upgrades try to
-preserve installed components, but review the resulting package set. Consult
+### libvirt
+
+Every libvirt driver and storage backend has its own binary package. The upgrade tries
+to preserve installed components, but review the resulting package set and read
 `/usr/share/doc/libvirt-common/NEWS.Debian.gz` for obsolete conffile handling.
 
-## Samba feature packages
+### Samba
 
-Active Directory domain-controller support moved from `samba` to `samba-ad-dc`.
-
-Most VFS modules moved into `samba`. Ceph and GlusterFS support instead require
+Active Directory domain-controller support moved from `samba` to `samba-ad-dc`. Most
+VFS modules moved into `samba`, while Ceph and GlusterFS support require
 `samba-vfs-ceph` and `samba-vfs-glusterfs`, respectively.
 
-## Removed packages and replacements
+### Legacy timezone names
 
-Apply replacements selectively:
+Names outside the region/city scheme, including `US/*`, moved to `tzdata-legacy`.
+The system timezone is converted automatically, but keep `tzdata-legacy` installed
+when databases or services copied an old name.
 
-| Removed package or command | Replacement or action |
-| --- | --- |
-| `libnss-gw-name` | Use `libnss-myhostname`. |
-| `pcregrep` | Use `grep -P` or `pcre2grep`. |
-| `request-tracker4` | Use `request-tracker5`. |
-| `deborphan` | Run `apt-mark minimize-manual`, then `apt autoremove`. |
-| `tldr` | Use `tealdeer` or `tldr-py`. |
-| `tpp` | Use `lookatme` or `patat`. |
+## Reconcile configuration-system changes
 
-The following packages are also gone, with no replacement specified here:
+### WirePlumber
 
-- `git-daemon-run`
-- `git-daemon-sysvinit`
-- the Tesla 470 NVIDIA drivers
+Defaults need no action, but custom WirePlumber setups must be ported to the new
+configuration system. Use `/usr/share/doc/wireplumber/NEWS.Debian.gz` as the migration
+guide.
+
+### sg3-utils udev data
+
+A Trixie `sg3-utils` bug prevents SCSI devices from receiving all properties normally
+injected by `sg3-utils-udev`. Migrate consumers away from those properties or prepare
+for failures after reboot.
+
+### usrmerge warnings
+
+During upgrade, `dpkg` may warn that it cannot delete old nonempty directories under
+paths such as `/lib/firmware`. These warnings are a consequence of usrmerge
+finalization and can be ignored.
+
+## Desktop and application compatibility
+
+These desktop changes are from `13-whats-new`.
+
+### Plasma compatibility stack
+
+Plasma 6.3 uses Qt 6.8.2 and KDE Frameworks 6.13. Debian retains Qt 5.15.15 and KDE
+Frameworks 5.116 for older applications. Existing Plasma profiles generally upgrade
+in place, although quirks remain. Frameworks 5 is deprecated and planned for removal
+during the Forky development cycle.
+
+### Qt WebEngine spelling dictionaries
+
+Hunspell language packages include compiled `.bdic` dictionaries. Supporting Qt
+WebEngine browsers, including Falkon and Privacy Browser, can use them for spell
+checking.
+
+## Complete migrations before the next release
+
+The pending removals in this section are from `13-known-issues`.
+
+### sudo and OpenSSH features
+
+Move `sudo-ldap` policy to `libsss-sudo`; otherwise privilege-escalation rules may
+disappear when `sudo-ldap` is removed. `sudo_logsrvd` input/output logging may also be
+removed unless it gains a maintainer.
+
+The main OpenSSH packages will drop GSS-API authentication and key exchange. When
+using `GSSAPI*` options, install the currently transitional `openssh-client-gssapi` or
+`openssh-server-gssapi` package so the separately built implementation remains
+installed.
+
+### Build, input-method, container, and DHCP tooling
+
+- Replace `sbuild-debian-developer-setup` with
+  `sbuild --chroot-mode=unshare`.
+- Replace fcitx 4 with `fcitx5`.
+- Move Debian LXD deployments to Incus using tools in `incus-extra`.
+- Remove `libnss-docker`; it depends on a Docker API removed after Engine 26.
+- Do not add an ISC DHCP client for NetworkManager or systemd-networkd. With
+  `ifupdown`, use `dhcpcd-base`; for servers, move from ISC DHCP to Kea.
+
+## Account for stale GeoIP allocation data
+
+This Bookworm package change is from `12.15`.
+
+For licensing reasons, `geoip-database` contains allocation data from approximately
+December 2019. Treat location or ownership results from applications consuming it as
+potentially outdated.

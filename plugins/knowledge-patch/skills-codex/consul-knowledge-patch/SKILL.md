@@ -8,231 +8,213 @@ metadata:
 ---
 
 
-# HashiCorp Consul Operations and Development
+# HashiCorp Consul Compatibility Guide
 
-Use this skill when upgrading Consul, configuring agents, registering services,
-operating service mesh or gateways, integrating Kubernetes or OpenShift, or
-building operational automation around Consul APIs and telemetry.
+Use this skill when planning, configuring, upgrading, or troubleshooting Consul
+deployments whose behavior may depend on recent agent, platform, service-mesh,
+gateway, licensing, or operational changes.
 
-Start with the running cluster's edition, deployment platform, Consul version,
-Envoy version, datacenter topology, and ACL configuration. Enterprise-only
-features must not be proposed for Community deployments.
+Prefer the running deployment's configuration, API responses, release notes,
+and observed behavior when they disagree with this guidance. Separate Community
+and Enterprise advice: several controls described here are Enterprise-only.
+
+## Working method
+
+1. Identify the Consul version and edition on every server and client.
+2. Record the deployment environment: VM, Kubernetes, OpenShift, Nomad, or ECS.
+3. For service mesh, identify the Envoy version and whether proxies run in
+   direct or transparent mode.
+4. For federated deployments, map the primary and secondary datacenters before
+   selecting a rollout order.
+5. Check ACL token persistence, quorum, redundancy, and rollback readiness
+   before restarting agents.
+6. Apply version-sensitive defaults explicitly when predictable behavior is
+   more important than inheriting a changed default.
+7. Validate security-sensitive paths, listener behavior, and request limits
+   with representative traffic after the change.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Upgrades and lifecycle](references/upgrades-and-lifecycle.md) | Support cadence, rolling and federated upgrades, license transitions, Autopilot replacement |
-| [Discovery and networking](references/discovery-and-networking.md) | Multi-port registration, DNS, IPv6, external service monitoring, sessions, KV validation |
-| [Service mesh and gateways](references/service-mesh-and-gateways.md) | Envoy compatibility, gateway security, SDS certificates, limits, scaling, passive health |
-| [Platforms, identity, and storage](references/platforms-identity-and-storage.md) | Kubernetes, OpenShift, Pod Security Admission, OIDC, cloud snapshot authentication |
-| [Operations and telemetry](references/operations-and-telemetry.md) | HTTP timeouts, RPC limits, utilization reporting, product and certificate telemetry, licensing |
+| [Discovery and networking](references/discovery-and-networking.md) | Agentless ESM, sessions, multi-port registration and DNS, IP families, agent request and gRPC limits |
+| [Operations and telemetry](references/operations-and-telemetry.md) | Snapshots, utilization, HTTP timeouts, RPC limits, telemetry, certificate monitoring, licensing |
+| [Platforms, identity, and storage](references/platforms-identity-and-storage.md) | Kubernetes security, OpenShift support and migration, OIDC, Azure identity, KV validation |
+| [Service mesh and gateways](references/service-mesh-and-gateways.md) | Envoy compatibility, routing, normalization, SDS, gateway scaling and limits, CA and health controls |
+| [Upgrades and lifecycle](references/upgrades-and-lifecycle.md) | Support cadence, rolling and federated upgrades, protocol transitions, ACL recovery, Autopilot migrations |
 
-## Breaking changes and required migrations
+## Breaking and security-sensitive changes
 
-### Treat KV key validation as a compatibility boundary
+### Validate KV keys before enabling enforcement
 
-Consul 1.22.0 validates key names at the key/value endpoint. Applications that
-previously wrote invalid names can fail after the upgrade. Audit writers and
-stored key conventions before rollout. `DisableKVKeyValidation` can disable the
-new validation when temporary compatibility is required.
+The KV endpoint rejects invalid key names by default in affected releases.
+Audit producers and stored key conventions before upgrading. Use
+`DisableKVKeyValidation` only as a deliberate compatibility escape hatch, and
+plan to remove it after callers are corrected.
 
-### Migrate incompatible OpenShift gateway resources
+### Budget for bounded agent API bodies
 
-For OpenShift 4.19 and later, use the newer resource types in the
-`consul.hashicorp.com` API group. Earlier Kubernetes Gateway API `v1alpha`
-resources are incompatible and existing gateway resources must be migrated as
-part of the OpenShift upgrade.
+Check updates, check and service registration, and Connect authorization have a
+512 KiB request-body ceiling. The limit is enforced before decoding or ACL
+resolution and also applies to chunked requests. Split oversized payloads and
+treat HTTP 413 as a size failure, not an ACL failure.
 
-### Align Envoy before changing Consul
+### Preserve L7 path normalization
 
-Consul 1.22.0 bundles Envoy 1.35.3 and no longer supports Envoy 1.31.10.
-Consul 2.0.0 expects Envoy 1.37.2 or newer. This is especially important when
-Envoy is installed or pinned separately.
+API Gateway and terminating-gateway HTTP listeners normalize paths before L7
+intention RBAC checks. Custom Envoy public-listener HTTP Connection Manager
+chains also receive the default normalization. Do not disable it casually with
+`InsecureDisablePathNormalization`; doing so restores a bypass-prone boundary.
 
-For Envoy 1.35 and later, generated configuration includes a TLS transport
-socket only when a CA bundle exists. Do not assume the socket is emitted in a
-deployment without a CA bundle.
+### Account for gRPC listener limits
 
-### Preserve gateway intention enforcement
+External gRPC and gRPC-TLS listeners default to 100 connections per source IP
+and a 20-second handshake timeout. Review concentrated clients, NAT gateways,
+and load balancers before rollout. Set `limits.grpc_max_conns_per_client`
+explicitly when the default is unsuitable.
 
-API Gateway and terminating-gateway HTTP listeners normalize request paths.
-Keep that behavior enabled so non-normalized paths cannot bypass L7 intention
-RBAC checks.
+### Recheck Envoy pins
 
-## Upgrade quick reference
+Do not assume an independently installed Envoy remains compatible. Affected
+releases dropped Envoy 1.31.10, bundled 1.35.3, and later moved service-mesh
+compatibility to Envoy 1.37.2 and newer. Find a mutually supported Envoy version
+before rolling agents and proxies.
 
-### Choose a supported jump
+## Upgrade guardrails
 
-- Routine upgrades should span no more than two major Consul version jumps.
-- Community operators generally move to the latest major release about every
-  four months.
-- Standard Enterprise majors are maintained for about one year.
-- Enterprise LTS operators can upgrade about annually, with jumps of at most
-  three major versions; LTS releases are supported for about two years.
-- Automated replacement still requires old and new versions that support a
-  direct upgrade.
+### Preserve quorum and service availability
 
-### Roll agents in the safe order
+- Upgrade server agents one at a time and wait for health and membership before
+  proceeding.
+- Upgrade Raft followers before the leader when controlling order explicitly.
+- Roll client agents only after servers are healthy on the new release.
+- Provide redundant service instances because a client and its services are
+  unavailable between `consul leave` and agent restart.
+- On mesh clients, stop the old agent and associated proxies, start the new
+  agent, then start compatible proxies.
+- Confirm versions and protocols with `consul members` after each phase.
 
-1. Restart server agents one at a time.
-2. Wait for each server to become healthy and rejoin.
-3. Roll client agents only after the server set is healthy.
-4. On service-mesh clients, stop Envoy after stopping the old agent and start a
-   compatible Envoy after the new agent starts.
-5. Confirm builds and protocols with `consul members`.
+### Treat federation as an ordered rollout
 
-For WAN federation, complete the primary datacenter before each secondary.
-Within a server set, identify the leader with
-`consul operator raft list-peers`, upgrade followers first, and the leader last.
+Upgrade the primary datacenter first, servers then clients, and repeat for each
+secondary datacenter. Afterward, verify WAN membership and query ACL replication
+from a secondary datacenter; the primary reports replication disabled even when
+replication is functioning.
 
-### Use two phases for protocol transitions
+### Use two phases for incompatible protocols
 
-If release notes require an incompatible protocol transition, first run the new
-binary with the previous protocol:
+When release notes require a protocol transition, first run the new binary with
+the previous protocol override. After every node runs the new binary, restart
+all agents without the override. The override changes the protocol spoken, not
+the full protocol range understood, and can suppress new features while active.
 
-```shell
-consul -v
-consul agent -protocol=PREVIOUS
-```
+### Restore non-persistent ACL tokens
 
-After every node runs the new binary, restart all agents without the override.
-The `-protocol` flag selects the spoken version rather than changing the full
-protocol range the agent understands; an older protocol can disable features.
+If `enable_token_persistence` was disabled and tokens are absent from server
+configuration, restore the `agent` and `default` tokens after restart so the
+server can rejoin.
 
-### Account for service and token availability
+### Respect Enterprise license ordering
 
-Between `consul leave` and a client restart, services on that client are
-unhealthy and undiscoverable. Provide redundant instances on other clients for
-zero-downtime work.
+For the updated `enterprise-standard` license transition, move servers first,
+one at a time, and restart only those servers. After the server set is ready,
+apply the new license to clients and restart them.
 
-If `enable_token_persistence` was disabled and server tokens are absent from
-configuration files, reapply the `agent` and `default` tokens after restart so
-the server can rejoin.
+## Configuration changes worth making explicit
 
-## Common configuration changes
+### Agent HTTP timeouts
 
-### Register and route multiple ports
+`http_config.read_timeout` and `write_timeout` default to 15 minutes, allowing
+long-polling blocking queries to complete. `read_header_timeout` remains 10
+seconds and `idle_timeout` remains 120 seconds. Pin all four when proxies or
+clients depend on a particular timeout budget.
 
-Service definitions can use optional `ports` data to register multiple catalog
-ports. Kubernetes Service sync handles multi-port Services, and Consul DNS can
-select a named service port through its `port` field.
+### Multi-port services
 
-Enterprise service-mesh sidecars advertise named local ports with
-`proxy.local_service_ports`. An upstream selects one with
+Use a service definition's optional `ports` parameter to register named ports.
+Kubernetes Service sync understands multi-port Services, and Consul DNS accepts
+a `port` selector. In Enterprise mesh, sidecars advertise named local ports with
+`proxy.local_service_ports` and upstreams select one through
 `proxy.upstreams[].destination_port`.
 
-- Direct-mode applications continue to dial `localhost:<bind-port>`.
-- Transparent-proxy applications can dial
-  `<port-name>.<service>.virtual.consul`.
+Direct-mode applications still dial `localhost:<bind-port>`. Transparent-proxy
+applications can dial `<port-name>.<service>.virtual.consul`.
 
-### Configure address families deliberately
+### IPv6 and dual stack
 
-Agents and services on VMs and Kubernetes can use IPv4 or IPv6. Prefer one
-address family per datacenter. IPv6 is unavailable on OpenShift, Nomad, and ECS
-for the relevant release.
+Choose one address family per datacenter where possible. IPv6 is available for
+agents and services on VMs and Kubernetes but is not supported on OpenShift,
+Nomad, or ECS in the affected release. Envoy bootstrap loopback and proxy bind
+defaults change to `::1` when the agent bind address is IPv6.
 
-Envoy bootstrap uses `127.0.0.1` for IPv4-only environments and `::1` for IPv6
-or dual stack. When the agent bind address is IPv6,
-`upstream.local_bind_address` and `proxy.local_service_address` default to
-`::1`.
+### Cluster-wide RPC controls
 
-### Preserve blocking queries
+Enterprise clusters can change RPC limits at runtime with the Raft-replicated
+`rate-limit` configuration entry. Exempt critical methods deliberately. Obtain
+targetable method names from `GET /v1/internal/rpc/methods` using a token with
+`operator:read`.
 
-Agent `http_config.read_timeout` and `write_timeout` default to 15 minutes so
-long-polling blocking queries are not cut off early. `read_header_timeout`
-remains 10 seconds and `idle_timeout` remains 120 seconds. All four settings
-are configurable.
+## Service-mesh and gateway checks
 
-### Harden OIDC without relying on a client secret
+### Manage certificates through SDS
 
-PKCE is enabled by default for Consul UI OIDC login. Providers may authenticate
-the OIDC client with a JWT assertion instead of a client secret.
+API Gateway listeners can use a default SDS TLS certificate while HTTP or TCP
+route services override it. An override without its own cluster inherits the
+listener's SDS cluster; conflicting mappings are rejected. Terminating-gateway
+upstream TLS also uses SDS, allowing certificate rotation without restart.
 
-## Gateway and mesh quick reference
+### Tune gateway resource pressure
 
-### Rotate certificates through SDS
+Set gateway-wide defaults or route-service overrides for `MaxConnections`,
+`MaxPendingRequests`, and `MaxConcurrentRequests`. On Kubernetes, Enterprise API
+Gateways can exceed eight replicas and can enable Horizontal Pod Autoscaling
+through Gateway annotations.
 
-API Gateway listeners can use a default SDS TLS certificate. HTTP or TCP route
-services may override it and inherit the listener's SDS cluster when the
-override omits one. Conflicting override mappings are rejected.
+### Control response identity and client certificates
 
-Terminating-gateway upstream TLS also uses SDS, allowing certificate changes
-without restarting the gateway.
+In `ProxyDefaults.spec.config`, use `envoy_suppress_envoy_headers` to remove the
+server response header or `envoy_server_header_name` to rename it. Suppression
+wins if both are set. Connect-proxy inbound listeners add XFCC headers to gRPC
+requests as well as HTTP requests.
 
-### Bound API Gateway upstream load
+### Monitor certificate and passive health
 
-Set gateway-wide upstream defaults and per-route-service overrides for:
+Scrape `/agent/metrics` for active root and signing CAs, agent certificates, and
+leaf-renewal health. Use structured certificate-expiration logs and Connect CA
+`NotAfter` values for alerting. Enterprise passive checks can distinguish
+general 5xx failures from gateway failures through `Consecutive5xx`,
+`ConsecutiveGatewayFailure`, and `EnforcingConsecutiveGatewayFailure`.
 
-- `MaxConnections`
-- `MaxPendingRequests`
-- `MaxConcurrentRequests`
+## Platform and identity checks
 
-Enterprise API Gateways on Kubernetes can scale beyond eight replicas and can
-enable Horizontal Pod Autoscaling with annotations on the Gateway resource.
+### Prepare OpenShift migrations
 
-### Configure passive failure detection
+OpenShift 4.19 and later requires the newer `consul.hashicorp.com` gateway
+resource types. Migrate older Kubernetes Gateway API `v1alpha` resources during
+the platform upgrade. Do not plan IPv6 for the affected OpenShift support line.
 
-Enterprise `PassiveHealthCheck` supports `Consecutive5xx`,
-`ConsecutiveGatewayFailure`, and `EnforcingConsecutiveGatewayFailure` for Envoy
-outlier detection. Gateway failures mean HTTP 502, 503, or 504 responses.
+### Use current Kubernetes security controls
 
-## Operational controls
+Apply Kubernetes Pod Security Admission per namespace; it replaces
+PodSecurityPolicy for enforcing minimum pod security requirements.
 
-### Change cluster RPC limits without restarts
+### Review OIDC and storage credentials
 
-Enterprise provides a Raft-replicated `rate-limit` configuration entry for
-cluster-wide RPC limits and critical-method exemptions. Discover targetable RPC
-method names with `GET /v1/internal/rpc/methods`; the request needs an ACL token
-with `operator:read`.
+PKCE is enabled by default for UI OIDC login, and providers may authenticate the
+OIDC client using a JWT assertion rather than a secret. Snapshot workflows can
+use Google Cloud Storage, or Azure Blob Storage with Azure Managed Service
+Identity, reducing static credential use.
 
-### Monitor certificate expiry
+## Post-change verification
 
-Use `/agent/metrics` Prometheus metrics for active root and signing CAs, agent
-TLS certificates, and leaf-renewal health. Dimensions include datacenter,
-partition, and namespace. The agent `telemetry` block can emit structured
-certificate-monitoring logs with severity thresholds, and the Connect CA API
-exposes root and intermediate `NotAfter` values.
-
-### Distinguish collection from export
-
-Census metrics collection is always enabled. License-utilization export remains
-configurable, and self-managed Enterprise product-usage telemetry is disabled
-by default until explicitly enabled.
-
-## Platform checks
-
-- Agentless Consul ESM connects directly to servers over one outbound TCP
-  connection and does not join gossip.
-- The Enterprise Kubernetes snapshot sidecar supports local, Amazon S3, Azure
-  Blob Storage, and Google Cloud Storage targets.
-- Azure Blob snapshots can authenticate with Azure Managed Service Identity.
-- Namespace-scoped Kubernetes Pod Security Admission replaces
-  PodSecurityPolicy for minimum pod-security enforcement.
-- OpenShift compatibility and gateway resource requirements differ by
-  OpenShift release; check the platform reference before upgrading.
-- Enterprise can use CyberArk Workload Identity Manager, also known as Venafi
-  Firefly, as the Connect CA through `connect.ca_provider =
-  "pan-distributed-issuer"`.
-
-## Verification checklist
-
-Before a change:
-
-- Record edition, Consul and Envoy versions, datacenters, and platform.
-- Check the direct-upgrade path and protocol-transition requirements.
-- Audit KV key names, gateway resources, Envoy pins, ACL tokens, and service
-  redundancy.
-- For Enterprise license transitions, confirm the required server-first order.
-
-After a change:
-
-- Confirm every agent's build and protocol with `consul members`.
-- For federation, verify `consul members -wan` and ACL replication from a
-  secondary datacenter.
-- Confirm gateway certificates, route limits, and normalized-path behavior.
-- Check certificate expiry and renewal metrics.
-- Confirm utilization and product telemetry export settings match policy.
-
-Use the indexed references for exact rollout sequences, API endpoints,
-configuration names, platform limitations, and edition-specific behavior.
+- Confirm every server is healthy and quorum is intact.
+- Confirm every agent reports the intended build and protocol.
+- Exercise blocking queries longer than 30 seconds.
+- Test valid and invalid KV key names.
+- Test normalized and deliberately malformed gateway paths.
+- Exercise payloads near the 512 KiB agent API ceiling.
+- Check gRPC connection concentration by source IP.
+- Verify named-port discovery in catalog, DNS, direct mesh, and transparent
+  proxy modes as applicable.
+- Confirm certificate metrics, logs, and renewal health are visible.
+- In federation, confirm WAN membership and ACL replication from a secondary.

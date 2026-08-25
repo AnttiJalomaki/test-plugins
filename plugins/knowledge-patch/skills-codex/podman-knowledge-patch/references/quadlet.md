@@ -1,28 +1,43 @@
 # Quadlet
 
-Use this reference for source-unit discovery, installation, generated systemd behavior, and keys
-specific to container, pod, image, build, artifact, network, volume, and Kubernetes units.
+## Unit types and discovery
 
-## Install and manage source units
+### Build units (5.2.0)
 
-### Local management commands
+Quadlet accepts `.build` units. They build images under systemd management for use by Quadlet
+containers.
 
-Podman 5.6.0 added:
+### Runtime unit directory (5.3.0)
+
+System Quadlets are also read from `/run/containers/systemd`, enabling transient units alongside
+persistent unit directories.
+
+### OCI artifact units (5.7.0)
+
+`.artifact` units manage OCI artifacts as systemd-backed resources alongside container, image,
+build, pod, network, and volume units.
+
+### Packaged user units (6.0.0)
+
+Quadlet searches `/usr/share/containers/systemd/users` and
+`/usr/share/containers/systemd/users/${UID}` so packages can install user units globally or for a
+specific UID.
+
+## Installation and local management
+
+### Local commands (5.6.0)
+
+`podman quadlet install`, `list`, `print`, and `rm` manage units for the current user. In 5.6.0,
+these commands are local-only and unavailable through the remote client.
 
 ```console
-podman quadlet install
 podman quadlet list
-podman quadlet print
-podman quadlet rm
 ```
 
-Installation targets the current user. These commands were not available through the remote
-client when introduced.
+### Bundled installation (5.8.0)
 
-### Bundled installation files
-
-Since 5.8.0, one input file can install several units. Separate units with `---` on its own line
-and begin each section with `# FileName=<name>`:
+One input file can install several units. Put `---` on its own line between units and begin every
+section with `# FileName=<name>`.
 
 ```ini
 # FileName=app.container
@@ -33,200 +48,169 @@ Image=docker.io/library/alpine:latest
 [Volume]
 ```
 
-### Podman 6 installation layout
+### Management API (5.8.0)
 
-Since 6.0.0, `podman quadlet install` no longer tracks an installation and its auxiliary files in
-a `.app` file. It places them in subdirectories. Update manual cleanup and management tools for
-the new layout.
+The Libpod API provides:
 
-### Scriptable listing
+- `GET /libpod/quadlets/{name}/file` and `GET /libpod/quadlets/{name}/exists`;
+- `POST /libpod/quadlets` to install one or more units;
+- `DELETE /libpod/quadlets` to remove one or more units;
+- `DELETE /libpod/quadlets/{name}` to remove one unit.
 
-Since 6.0.0, `podman quadlet list`:
+`GET /libpod/quadlets/json`, introduced in 5.7.0, lists units.
 
-- accepts `--noheading`;
-- applies no-heading mode automatically with `--format`;
-- reports a container unit's pod in the `Pod` field;
-- accepts `--filter status=...`.
+### Installation layout (6.0.0)
 
-## Discover source units and drop-ins
+Installations and auxiliary files are stored in subdirectories rather than tracked in a `.app`
+file. Manual tools must understand the new layout.
 
-### Runtime system units
+### Scriptable listing (6.0.0)
 
-Since 5.3.0, Quadlet reads `/run/containers/systemd`, enabling transient system-level units in
-addition to persistent unit directories.
+`podman quadlet list` adds `--noheading`, applies it automatically with `--format`, exposes a
+container unit's pod through `Pod`, and accepts `--filter status=...`.
 
-### Packaged user units
+### Safe replacement (5.8.6-6.1.0)
 
-Since 6.0.0, Quadlet also searches:
+Podman 5.8.6 fixes CVE-2026-19730. `podman quadlet install --replace` now truncates the
+destination, preventing trailing content when the new file is shorter. Use 5.8.6 or later for
+in-place replacement.
 
-- `/usr/share/containers/systemd/users`;
-- `/usr/share/containers/systemd/users/${UID}`.
+## Drop-ins, ordering, and generated services
 
-Distributions can use these paths for system-wide or per-UID user Quadlets.
+### Broader drop-ins (5.2.0)
 
-### Broader drop-in lookup
+Quadlet searches top-level type drop-ins such as `container.d` and `pod.d`, plus truncated
+unit-name drop-ins such as `unit-.container.d`.
 
-Since 5.2.0, Quadlet searches top-level type drop-ins such as `container.d` and `pod.d`, plus
-truncated unit-name drop-ins such as `unit-.container.d`.
+### Image startup ordering (5.2.0)
 
-## Generated service names and dependencies
+Generated `.image` units depend on `network-online.target` and are ordered after the network is
+online.
 
-### Common service controls
+### Common service controls (5.3.0)
 
-Since 5.3.0, all supported Quadlet file types accept:
+Every supported file type accepts `ServiceName` to choose the generated service name and
+`DefaultDependencies` to opt out of the implicit `network-online.target` dependency.
 
-- `ServiceName=` to choose the generated systemd service name;
-- `DefaultDependencies=` to opt out of the implicit network-online dependency.
+### Rootless network ordering (5.3.0)
 
-### Network-online ordering
+User units wait for usable networking with `podman-user-wait-network-online.service` instead of
+the ineffective user-session `network-online.target`.
 
-Generated `.image` units have depended on `network-online.target` since 5.2.0. For rootless user
-units, 5.3.0 replaced the ineffective user-session `network-online.target` wait with
-`podman-user-wait-network-online.service`. Use `DefaultDependencies=` when the implicit dependency
-is undesirable.
+### Build-unit lifecycle (5.3.0)
 
-### Quadlet-aware dependency translation
+Generated build units no longer set `RemainAfterExit=yes` by default, so systemd state after the
+build command exits differs from older generators.
 
-Since 5.5.0, dependency values naming Quadlet source units are translated to their generated
-systemd names, so declarations such as this are valid:
+### Dependencies (5.5.0)
 
-```ini
-[Unit]
-Wants=my.container
-```
+`UpheldBy` in `[Install]` is the counterpart of systemd's `Upholds`. Dependency values naming
+Quadlet units are translated automatically, so `Wants=my.container` is valid.
 
-Quadlet also supports `UpheldBy=` in `[Install]`, the counterpart to systemd's `Upholds=`.
+### Generator diagnostics (5.8.6-6.1.0)
 
-### Service-setting compatibility warnings
+Generator errors are written to standard error as well as `/dev/kmsg`, allowing tools such as
+`systemd-analyze --generators verify` to display them directly.
 
-Since 5.6.0, generation warns about `[Service]` settings that can conflict with Quadlet's model,
-including `User=`, `Group=`, and `DynamicUser=`.
+## Container and pod units
 
-## Container units
+### Logging, stop signals, and network aliases (5.2.0)
 
-### Build and image composition
-
-`.build` units have existed since 5.2.0, allowing systemd-managed image builds that feed Quadlet
-containers. Since 5.3.0, a `.container` unit can mount an image managed by an `.image` unit using
-`Mount=type=image` with the `.image` target.
-
-### Pod and network composition
-
-Since 5.3.0:
-
-- `PublishPort=` in `.container` and `.pod` files accepts variables;
-- `StartWithPod=` starts a container with its referenced pod;
-- `Network=` in a `.container` file can name another `.container` file to share that container's
-  network namespace.
-
-### Logging, stopping, aliases, and memory
-
-Container keys include:
-
-| Key | Behavior |
-| --- | --- |
-| `LogOpt=` | Add container logging options (since 5.2.0) |
-| `StopSignal=` | Select the container stop signal (since 5.2.0) |
-| `NetworkAlias=` | Add a network alias; also accepted by `.pod` units (since 5.2.0) |
-| `Memory=` | Set the memory limit (since 5.5.0) |
-| `ReloadCmd=` | Select the command run on systemd reload (since 5.5.0) |
-| `ReloadSignal=` | Select the reload signal (since 5.5.0) |
-| `HttpProxy=` | Control automatic host proxy forwarding (since 5.7.0) |
-| `AppArmor=` | Select an AppArmor profile (since 5.8.0) |
+`.container` units add `LogOpt=` and `StopSignal=`. Both `.container` and `.pod` units add
+`NetworkAlias=`; container keys belong in `[Container]`.
 
 ```ini
 [Container]
 LogOpt=max-size=10mb
 StopSignal=SIGTERM
 NetworkAlias=web
-AppArmor=my-profile
 ```
 
-### Host environment imports
+### Container composition (5.3.0)
 
-Since 5.6.0, a value-less `Environment=NAME` imports that environment variable from the host when
-the container starts:
+`PublishPort` accepts variables in `.container` and `.pod` units. A `.container` adds
+`StartWithPod` and can share another Quadlet container's network by naming its `.container` file
+in `Network`.
 
-```ini
-[Container]
-Environment=REGISTRY_AUTH_FILE
-```
+### Pod infra names (5.3.0)
 
-### Entrypoint and health-command parsing
+A Quadlet pod's infra container uses the pod name with `-infra`, such as `web-infra`. Observability
+tools must expect that name.
 
-Since 5.8.2, `Entrypoint=""` clears the image entrypoint and `HealthCmd=` accepts double quotes in
-the command.
+### Pod shared memory (5.4.0)
 
-### Anonymous volumes
-
-Since 6.0.0, a `.container` unit can declare an anonymous volume by using `Mount=` without a
-source.
-
-## Pod units
-
-Pod-specific additions include:
-
-| Key | Behavior |
-| --- | --- |
-| `ShmSize=` | Set pod shared-memory size (since 5.4.0) |
-| `HostName=` | Set the pod hostname (since 5.5.0) |
-| `Label=` | Add pod labels (since 5.6.0) |
-| `ExitPolicy=` | Set pod exit policy (since 5.6.0) |
-| `StopTimeout=` | Set the stop timeout (since 5.7.0) |
+`.pod` files accept `ShmSize` in `[Pod]`.
 
 ```ini
 [Pod]
 ShmSize=1g
 ```
 
-The infra container created for a Quadlet pod has used the pod-derived `-infra` suffix since
-5.3.0, such as `web-infra`. Do not hard-code an older infra naming convention in tooling.
+### Container and pull controls (5.5.0)
 
-## Image and build units
+`.container` units add `Memory`, `ReloadCmd`, and `ReloadSignal`. `.container`, `.image`, and
+`.build` units add `Retry` and `RetryDelay` for failed pulls. `.pod` units add `HostName=`.
 
-### Image tags and pull policy
+### Inputs and compatibility warnings (5.6.0)
 
-Since 5.3.0, repeat `ImageTag=` in an `.image` file to assign several tags to the managed image.
-Since 5.6.0, `.image` units accept `Policy=`.
+A value-less `Environment=NAME` in `.container` imports the host variable when the container
+starts. `.pod` adds `Label=` and `ExitPolicy=`, `.image` adds `Policy=`, and `.network` adds
+`InterfaceName=`. Generation warns about potentially incompatible `[Service]` settings including
+`User=`, `Group=`, and `DynamicUser=`.
 
-### Pull retry controls
+```ini
+[Container]
+Environment=REGISTRY_AUTH_FILE
+```
 
-Since 5.5.0, `.container`, `.image`, and `.build` units accept `Retry=` and `RetryDelay=` for
-failed image pulls.
+### Expanded inputs (5.7.0)
 
-### Build-unit lifecycle
+`.container` adds `HttpProxy`, `.pod` adds `StopTimeout`, and `.build` adds `BuildArg` and
+`IgnoreFile`. Volume and network dependencies can be templated.
 
-Since 5.3.0, generated `.build` units no longer set `RemainAfterExit=yes` by default. The unit's
-systemd state after its build command exits therefore differs from earlier behavior.
+### AppArmor profiles (5.8.0)
 
-### Build inputs
+Use `AppArmor` in `[Container]` to select a profile.
 
-Since 5.7.0, `.build` units accept `BuildArg=` and `IgnoreFile=`.
+```ini
+[Container]
+AppArmor=my-profile
+```
 
-## Artifact units
+### Corrected parsing and restart semantics (5.8.0)
 
-Podman 5.7.0 added the `.artifact` unit type for systemd-managed OCI artifacts. Use it alongside
-container, image, build, pod, network, and volume resources. See the image and artifact reference
-for artifact CLI, mount, and API semantics.
+From 5.8.2, Quadlet treats `Entrypoint=""` as clearing the image entrypoint and permits double
+quotes in `HealthCmd`. With `podman-restart.service` enabled, containers using `unless-stopped`
+restart after reboot.
 
-## Network and volume units
+### Volume controls (6.0.0)
 
-### Network inputs and lifecycle
+`.volume` units add `UID=`, `GID=`, and generic `Options=`. A `.container` can declare an anonymous
+volume by using `Mount=` without a source.
 
-- `.network` units accept `InterfaceName=` since 5.6.0.
-- Stopping a `.network` unit deletes its network when no containers are using it since 5.5.0.
-- Volume and network dependencies can be templated since 5.7.0.
+### Image-volume policy (5.8.6-6.1.0)
 
-### Volume ownership and options
+`.container` units accept `ImageVolume=` to control volumes declared by the image.
 
-Since 6.0.0, `.volume` units accept `UID=`, `GID=`, and generic `Options=` keys.
+```ini
+[Container]
+ImageVolume=ignore
+```
 
-## Kubernetes units
+## Image and network units
 
-Since 5.7.0, a `.kube` unit can reference multiple YAML files. Keep naming collision behavior and
-the other multi-file replay details in mind; see the Kubernetes, network, and storage reference.
+### Image mounts and tags (5.3.0)
 
-## Parsing rules
+A `.container` can mount an image managed by an `.image` unit with `Mount=type=image` and the
+`.image` target. Repeated `ImageTag` entries give the managed image several tags.
 
-Since 5.4.0, `:` is not a Quadlet comment marker. Use systemd-compatible `#` or `;`. A colon that
-previously appeared to begin a comment is parsed as unit content.
+### Network teardown (5.5.0)
+
+Stopping a `.network` unit deletes its network when no containers are using it.
+
+## Syntax rules
+
+### Comment markers (5.4.0)
+
+Use systemd-compatible `#` or `;` comments. `:` is no longer a comment marker and is parsed as
+content.

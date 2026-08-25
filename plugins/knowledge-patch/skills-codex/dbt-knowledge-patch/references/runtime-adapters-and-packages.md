@@ -1,108 +1,58 @@
 # Runtime, Adapters, and Packages
 
-Use this reference before upgrading Python, Core, adapters, or project package
-resolution. Relevant extraction sections: 1.9.0, 1.10-behavior-changes,
-1.10.0, 1.11-udfs, 1.11.0, and 1.12.0.
+Use this reference for Python and dependency compatibility, adapter-specific behavior, packages, embedded execution, and parser/manifest boundaries.
 
-## Python support
+## Core 1.9 runtime floor (1.9.0)
 
-- The 1.9 line removes Python 3.8 support.
-- Core 1.10 adds Python 3.13 support.
-- Core 1.11 removes Python 3.9 support, making Python 3.10 the floor.
-- Core 1.12 supports Python 3.14.
+The 1.9 line removes Python 3.8 support and raises the minimum `dbt-adapters` version to 1.9.0.
 
-Check adapter Python support as well as Core before changing the project
-runtime.
+## Working-directory behavior (1.9.0)
 
-## Core and dependency constraints
+`dbt deps`, `dbt clean`, and `dbt init` no longer change the process working directory. Embedded callers that depended on the side effect must manage paths explicitly.
 
-The 1.9 line raises the minimum `dbt-adapters` version to 1.9.0.
+## Databricks materialization v2 (1.10-behavior-changes)
 
-Core 1.10 supports Pydantic v1 or v2. Its patch line also:
-
-- raises the minimum JSON Schema package to 4.19.1;
-- moves to Protobuf 6;
-- caps `sqlparse` below 0.5.5;
-- raises `dbt-common` to at least 1.37.3.
-
-Adapter bounds change within that patch line. From 1.10.10 the
-`dbt-adapters` range starts at 1.16.5. Version 1.10.21 temporarily caps it
-below 1.24; 1.10.22 restores the upper bound to below 2.0.
-
-Core 1.12 supports Python 3.14 and raises minimum dependencies to Click 8.3.0,
-`dbt-common` 1.37.3, and `dbt-adapters` 1.24.5.
-
-Resolve the full compatible set rather than upgrading one of Core, the
-adapter, or `dbt-common` in isolation.
-
-## Databricks materialization behavior
-
-dbt-databricks 1.10.0 introduces `use_materialization_v2`, disabled by
-default, to choose its restructured materializations:
+dbt-databricks 1.10.0 introduces `use_materialization_v2`, disabled by default, for its restructured materializations. It uses project-level behavior-flag configuration; no maturity release is specified.
 
 ```yaml
 flags:
   use_materialization_v2: true
 ```
 
-It uses project-level behavior-flag configuration. No maturity release is
-specified, so inspect the installed adapter rather than assuming a later
-default.
+## Snowflake quoting behavior (1.10.0)
 
-## Snowflake identifier quoting
+From Core 1.10.11, project-level `quoting.snowflake_ignore_case` is a no-op. Do not rely on it to change identifier casing.
 
-From Core 1.10.11, project-level `quoting.snowflake_ignore_case` is a no-op.
-Projects must not rely on it to change identifier casing.
+## Core 1.10 runtime and dependency compatibility (1.10.0)
 
-Managed JavaScript functions have a separate Snowflake-specific argument
-quoting config:
+Core 1.10 supports Python 3.13 and either Pydantic v1 or v2. Patch releases raise the minimum JSON Schema package to 4.19.1, move to Protobuf 6, cap `sqlparse` below 0.5.5, and raise `dbt-common` to at least 1.37.3.
 
-```yaml
-config:
-  snowflake:
-    quote_args: true
-```
+From 1.10.10, the `dbt-adapters` range starts at 1.16.5. Core 1.10.21 temporarily caps it below 1.24; 1.10.22 restores the upper bound to below 2.0. Resolve dependencies against the exact Core patch release rather than assuming one range for the whole minor line.
 
-This UDF setting does not restore the inert project-level relation behavior.
+## Core 1.11 Python floor (1.11.0)
 
-## Managed function adapter matrix
+Core 1.11 drops Python 3.9. Run it on Python 3.10 or newer.
 
-SQL managed functions work on BigQuery, Snowflake, Redshift, Postgres, and
-Databricks. Python functions work on Snowflake, BigQuery, and Databricks with
-Unity Catalog. JavaScript functions work on Snowflake and BigQuery from Core
-1.12.
+## Adapter support for managed functions (1.11-udfs)
 
-Body conventions and config support differ:
+SQL functions work on BigQuery, Snowflake, Redshift, Postgres, and Databricks. Python works on Snowflake, BigQuery, and Databricks with Unity Catalog. JavaScript works on Snowflake and BigQuery. Adapter differences in body shape, volatility, defaults, overloads, and Python runtime config are detailed in [resources-tests-and-functions.md](resources-tests-and-functions.md).
 
-- BigQuery, Snowflake, and Databricks SQL bodies are expressions; Redshift and
-  Postgres use `SELECT`.
-- SQL argument defaults work only on Snowflake and Postgres.
-- Snowflake and BigQuery Python require `runtime_version` and `entry_point`.
-- Databricks accepts those two properties for compatibility but ignores them
-  with a warning and embeds the body verbatim.
-- BigQuery ignores SQL/Python `volatility` with a warning. For JavaScript it
-  supports `deterministic` and `non-deterministic`, but not `stable`.
+## Private Git packages (1.12.0)
 
-SQL overloads work on Snowflake and Postgres. Python and JavaScript overloads
-work on Snowflake.
+Private Git packages work in both `packages.yml` and `dependencies.yml`. dbt resolves their URLs from a configured environment variable when present; otherwise, it constructs an SSH URL.
 
-## Snapshot adapter support
+## Core 1.12 runtime compatibility (1.12.0)
 
-The `hard_deletes` snapshot setting is supported by PostgreSQL, BigQuery,
-Snowflake, and Redshift. Existing relations still require a manual schema and
-data migration before switching deletion mode.
+Core 1.12 supports Python 3.14 and raises minimum dependencies to Click 8.3.0, `dbt-common` 1.37.3, and `dbt-adapters` 1.24.5.
 
-## Private Git packages
+## Fusion manifests and local adapter macros (1.12.1)
 
-Core 1.12 supports private Git packages in both `packages.yml` and
-`dependencies.yml`. dbt resolves package URLs from a configured environment
-variable when one is present; otherwise it constructs an SSH URL. Ensure CI
-has the corresponding environment value or SSH credentials instead of
-assuming the resolution path is identical across environments.
+After loading a Fusion-generated manifest, Core reparses adapter macros from the locally installed `dbt-<adapter>` package. Execution uses macros from the user's installed adapter version rather than the adapter copy used when Fusion compiled the manifest. Pin and inspect the local adapter when compiled and executed behavior differ.
 
-## External parser dependency
+## External parser dependency (1.12.1)
 
-Using Core 1.12's V2 parser delegation requires
-`dbt-core-experimental-parser>=2.0.0a4`. The parser runs as an external command
-and returns `manifest.json`, so its executable and environment are runtime
-dependencies of every delegated parse.
+The minimum `dbt-core-experimental-parser` version for the external V2 parser rises from `2.0.0a4` to `2.0.0b1`.
+
+## Databricks config validation (1.12.1)
+
+Core 1.12.2 recognizes `query_tags`, `zorder`, `options`, `unique_tmp_table_suffix`, and `skip_optimize` as Databricks adapter keys, preventing false `CustomKeyInConfigDeprecation` warnings.

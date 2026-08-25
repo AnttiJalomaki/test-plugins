@@ -1,119 +1,103 @@
 # Templating, Values, and Conditionals
 
-The templating transitions in this reference are attributed to batch
-`2.19-2.20`.
+## Trusted, single-pass templating
 
-## Trusted, Single-Pass Evaluation
+In `2.19-2.20`, Jinja in a string is evaluated only when the string's source is
+trusted. Playbooks, vars files, and many inventory sources are trusted; facts
+and module results are not. Literal Jinja delimiters in an untrusted string do
+not make it executable, and attempting to use such content as a template emits
+a warning.
 
-Ansible evaluates Jinja in a string only when the string's source is trusted.
-Playbooks, variable files, and many inventory sources are trusted. Module
-results and facts are untrusted, so Jinja markers found in those strings are
-not evaluated and cause a warning.
+Plugins that create a template string must explicitly apply trust. Plugins that
+transform one must preserve its trust metadata. Do not restore multi-pass
+evaluation: a template result is not recursively evaluated as another template.
 
-Plugins that create a string intended for later templating must apply trust.
-Plugins that transform a trusted template string must preserve that trust.
-Never infer trust merely from the presence of Jinja delimiters.
-
-Security-motivated multi-pass templating is gone. A rendered value is not
-reinterpreted as another template:
-
-- An embedded template outside a Jinja string constant is an error.
-- An embedded template inside a Jinja string constant produces a warning.
-- A conditional should omit Jinja delimiters unless its entire value is one
-  trusted string expression.
+Embedded templates outside Jinja string constants are errors. Embedded
+templates inside those constants warn. Write ordinary conditionals without
+Jinja delimiters; only a complete, trusted string expression is a supported
+exception.
 
 ```yaml
-vars:
-  expected_port: 443
+# Correct
+when: service_state == 'running'
 
-tasks:
-  - ansible.builtin.debug:
-      msg: TLS is configured
-    when: service.port == expected_port
+# Do not use delimiters for an ordinary conditional
+when: "{{ service_state == 'running' }}"
 ```
 
-## Native Values
+Test facts and module return values containing literal `{{ ... }}` to ensure
+they remain data rather than becoming executable expressions.
 
-Templates always operate in Jinja native mode. Non-string results are not
-automatically stringified, and `None` is not generally converted to an empty
-string. The following settings no longer change that behavior:
+## Native values and strict boolean conditionals
+
+Templates in `2.19-2.20` always use Jinja native mode. A non-string result is
+not automatically stringified, and `None` is not generally replaced by an
+empty string. `set_fact` also preserves `yes`, `no`, `true`, and `false` as
+strings when those values were supplied as strings.
+
+The following settings no longer alter that behavior:
 
 - `DEFAULT_JINJA2_NATIVE`
 - `DEFAULT_NULL_REPRESENTATION`
 - `DEFAULT_UNDEFINED_VAR_BEHAVIOR`
 - `STRING_TYPE_FILTERS`
 
-`set_fact` leaves `yes`, `no`, `true`, and `false` as strings when the input
-values are strings. Convert at the point where a boolean or another native
-type is required.
+Conditionals must return a boolean. A non-boolean result fails by default.
+`ALLOW_BROKEN_CONDITIONALS` can temporarily downgrade the failure to a
+deprecation warning for staged migration; in that compatibility mode, literal
+`None` and empty strings evaluate true. Make conversions and comparisons
+explicit rather than depending on those exceptional truthiness rules.
 
-Stored values may be subclasses of Python builtins. Plugin code should convert
-them to plain native values before calling libraries that reject subclasses.
+Ansible values stored by the engine may be subclasses of Python builtins.
+Before handing them to third-party libraries that reject subclasses, convert
+them to the corresponding plain Python type.
 
-## Strict Boolean Conditionals
+## Lazy templating and `omit`
 
-A conditional returning a non-boolean value fails by default.
-`ALLOW_BROKEN_CONDITIONALS` temporarily changes the failure to a deprecation
-warning for migration. In that compatibility mode, literal `None` and empty
-strings evaluate as true, so the mode must not be treated as ordinary Python
-truthiness.
+Structures are templated lazily in `2.19-2.20`: only the portions that code
+accesses are evaluated. A bad expression may therefore fail when a member is
+read, rather than when its enclosing mapping or list is constructed.
 
-Prefer an explicit predicate:
-
-```yaml
-when: response.status == 200
-```
-
-```yaml
-when: feature_flag | bool
-```
-
-## Lazy Templating
-
-Only accessed portions of a structure are templated. Building or passing a
-large mapping therefore does not guarantee every nested expression has already
-been evaluated. Tests should access the same branches that production tasks
-consume, and exception handling should surround the access point.
-
-## `omit`
-
-`omit` is removed from its parent container during templating. A loop value
-that should disappear from task arguments must apply `default(omit)` where the
-argument is formed:
+`omit` is removed from its parent container during templating. In a loop, put
+`default(omit)` on the exact value that should disappear from the task's module
+arguments.
 
 ```yaml
-- ansible.builtin.file:
-    path: "{{ item.path }}"
-    owner: "{{ item.owner | default(omit) }}"
-  loop: "{{ managed_paths }}"
+- ansible.builtin.user:
+    name: "{{ item.name }}"
+    shell: "{{ item.shell | default(omit) }}"
+  loop: "{{ users }}"
 ```
 
-Callers of `Templar.template()` must catch `AnsibleValueOmittedError` when the
+A caller of `Templar.template()` must catch `AnsibleValueOmittedError` when the
 entire templated result is omitted.
 
-## Sandbox Behavior and Final Values
+## Undefined values and markers
 
-The standard Jinja sandbox replaces the immutable sandbox. This restores
-ordinary methods such as `list.append` and `dict.update`. Attributes beginning
-with `_` and known side-effect methods remain blocked.
+Custom Jinja plugins in `2.19-2.20` must explicitly opt in if they accept an
+undefined top-level argument. A plugin that calls `environment.getitem` must
+catch `MarkerError` and return a marker, or explicitly opt in to receiving
+marker values. Do not turn a marker into an ordinary successful value by
+accident.
 
-A `range()` object cannot be the final value returned by a template; consume
-it through a filter. Final `set` and `tuple` values are converted to lists.
+## Sandbox behavior
 
-In the later behavior covered by batch `2.19-2.20`, containers created inside
-Jinja `set` or `with` blocks are copied when passed to a method. A mutation
-that is not returned by that method is discarded. Unobserved exceptions in
-those blocks are ignored in the same way as undefined values.
+The standard Jinja sandbox replaces the immutable sandbox in `2.19-2.20`.
+Useful methods such as `list.append` and `dict.update` are available again,
+while attributes beginning with `_` and known side-effect methods remain
+blocked.
 
-## JSON and Template Lookup Conversion
+A `range()` object cannot be a final template result; consume it through a
+filter. Final `set` and `tuple` results are converted to lists.
 
-`from_json`, `to_json`, and `to_nice_json` accept a `profile` argument. The
-default profile is `tagless`.
+In Jinja `set` or `with` blocks, containers passed to methods are copied. A
+mutation is discarded unless the method returns the changed value. Unobserved
+exceptions from those blocks are ignored in the same way as undefined values.
+
+## JSON conversion profiles
+
+In `2.19-2.20`, `from_json`, `to_json`, and `to_nice_json` accept a `profile`
+argument. It defaults to `tagless`.
 
 The template lookup's `convert_data` option no longer performs conversion.
-Apply `from_json` explicitly when the rendered template contains JSON:
-
-```yaml
-vars:
-  parsed: "{{ lookup('ansible.builtin.template', 'data.json.j2') | from_json }}"
-```
+Apply `from_json` explicitly when lookup output must become structured data.

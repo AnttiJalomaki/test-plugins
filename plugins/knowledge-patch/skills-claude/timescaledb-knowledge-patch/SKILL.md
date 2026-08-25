@@ -10,30 +10,28 @@ metadata:
 
 # TimescaleDB Knowledge Patch
 
-Load this skill when writing, reviewing, debugging, or upgrading TimescaleDB
-schema, SQL, configuration, background jobs, compression, columnstore, chunks,
-or continuous aggregates.
+Use this skill when writing, reviewing, debugging, upgrading, or operating
+TimescaleDB. Determine the installed TimescaleDB and PostgreSQL versions before
+applying version-sensitive advice. Prefer public APIs and informational views
+over private catalog objects.
 
-Prefer public APIs and informational views over private catalog objects. Check
-the installed TimescaleDB and PostgreSQL versions before applying
-version-dependent advice.
-
-## Reference Index
+## Reference index
 
 | Reference | Topics |
-| --- | --- |
-| [Columnstore and Compression](references/columnstore-and-compression.md) | Columnstore APIs, compression settings, Hypercore, Direct Compress, sparse indexes, recompression, and scan behavior |
-| [Continuous Aggregates](references/continuous-aggregates.md) | Refresh controls, policies, invalidations, query features, maintenance, and migrations |
-| [Hypertables, Chunks, and DDL](references/hypertables-chunks-and-ddl.md) | Declarative creation, reloptions, constraints, chunk operations, partitioning, triggers, and publications |
-| [Operations, Jobs, and Query Behavior](references/operations-jobs-and-query-behavior.md) | Images, jobs, event triggers, memory and cache controls, GapFill, query correctness, and observability |
-| [Upgrades and Compatibility](references/upgrades-and-compatibility.md) | PostgreSQL compatibility, upgrade blockers, removals, downgrade preparation, and catalog migrations |
+|---|---|
+| [Columnstore and Compression](references/columnstore-and-compression.md) | Columnstore APIs, compression, sparse indexes, Direct Compress, recompression |
+| [Continuous Aggregates](references/continuous-aggregates.md) | Refresh, invalidation, definitions, GapFill, maintenance |
+| [Hypertables, Chunks, and DDL](references/hypertables-chunks-and-ddl.md) | Declarative hypertables, chunk operations, constraints, UUIDv7, triggers |
+| [Operations, Jobs, and Query Behavior](references/operations-jobs-and-query-behavior.md) | Jobs, configuration, publications, planner behavior, correctness fixes |
+| [Upgrades and Compatibility](references/upgrades-and-compatibility.md) | Breaking changes, removals, PostgreSQL support, required migrations |
 
-## Upgrade Blockers and Removals
+## Upgrade blockers and removals
 
-### Remove the `hypercore` access method before upgrading
+### Remove the Hypercore access method before a 2.22+ upgrade
 
-The experimental `hypercore` table access method is gone. An upgrade is blocked
-while a relation still uses it. Find those relations and return them to heap:
+The experimental `hypercore` table access method was deprecated in 2.21 and
+removed in 2.22. The upgrade is blocked while any relation still uses it.
+Convert every such relation back to `heap` first:
 
 ```sql
 DO $$
@@ -52,65 +50,92 @@ END
 $$;
 ```
 
-Do this before attempting the extension upgrade. See
-[Upgrades and Compatibility](references/upgrades-and-compatibility.md).
+Do not confuse the removed table access method with the supported columnstore
+feature. See the upgrade and columnstore references for their separate
+lifecycle.
 
-### Clear affected `int2` bloom indexes
+### Respect PostgreSQL support boundaries
 
-An upgrade can be blocked by bloom sparse indexes on compressed `int2` columns
-because those indexes can omit matching rows. Drop affected indexes before the
-upgrade. Separately, composite bloom filters created with old metadata need the
-timescaledb-extras catalog migration described in
-[Upgrades and Compatibility](references/upgrades-and-compatibility.md).
+- TimescaleDB 2.19 is the last minor release supporting PostgreSQL 14.
+- TimescaleDB 2.23 supports PostgreSQL 15, 16, 17, and 18.
+- TimescaleDB 2.28.x is the final minor series supporting PostgreSQL 15;
+  TimescaleDB 2.29 supports PostgreSQL 16, 17, and 18 only.
 
-### Rebuild legacy bloom indexes when package hashing changed
+Upgrade PostgreSQL before crossing either support boundary.
 
-Old bloom indexes may silently miss rows after a package change. Decompress and
-recompress affected chunks to rebuild them. The official APT AMD64 package has
-a narrowly scoped server setting for reading legacy indexes; do not treat that
-exception as a general migration.
+### Handle sparse-index upgrade hazards
 
-### Replace removed features
+Before upgrading to 2.27, drop bloom sparse indexes on compressed `int2`
+columns; affected indexes can omit matching rows and block the upgrade. After
+moving from 2.26 to 2.27, run the timescaledb-extras
+`utils/2.27.x-fix-composite-bloom-columns.sql` migration so 2.27 can use 2.26
+composite bloom metadata. This catalog-only migration needs no recompression.
 
-Do not build new dependencies on these removed or transitional interfaces:
+Bloom indexes created before 2.24 use a build-dependent hash format and are
+disabled after upgrade. Decompress and recompress affected chunks, except that
+official APT AMD64 installations whose hash scheme did not change may enable
+`timescaledb.read_legacy_bloom1_v1 = on` for reads.
 
-- Adaptive chunking has been removed.
-- WAL-based continuous-aggregate invalidation has been removed; use
+### Replace removed APIs and behavior
+
+- Adaptive chunking is removed as a backward-incompatible change in 2.28.
+- WAL-based continuous-aggregate invalidation is removed in 2.25; return to
   trigger-based invalidation.
-- `time_bucket_ng` and the `_timescaledb_debug` schema have been removed.
-- The partial continuous-aggregate format must be migrated with
-  `cagg_migrate(...)`.
-- `_timescaledb_catalog.chunk_constraint` is only temporarily represented by a
-  compatibility view; move integrations to informational views.
-- The experimental policy helpers and view are replaced by the Jobs API.
+- `time_bucket_ng` and `_timescaledb_debug` are removed in 2.25.
+- `_timescaledb_functions.create_chunk_table` is removed in 2.20.
+- The deprecated partial continuous-aggregate format and experimental policy
+  helpers were scheduled for removal after 2.24; migrate with `cagg_migrate`
+  and use the Jobs API.
+- `_timescaledb_catalog.chunk_constraint` became a temporary compatibility view
+  in 2.28 and will itself disappear; move integrations to informational views.
 
-The detailed timing and replacement guidance is in
-[Upgrades and Compatibility](references/upgrades-and-compatibility.md).
+## Columnstore quick reference
 
-## Columnstore API Migration
+### Use columnstore names
 
-Use columnstore terminology in current code:
+Prefer `convert_to_rowstore`, `convert_to_columnstore`,
+`add_columnstore_policy`, and `remove_columnstore_policy`. Prefer
+`hypertable_columnstore_stats`, `chunk_columnstore_stats`, the corresponding
+`*_columnstore_settings` views, and `columnstore_settings`. Use the reloptions
+`timescaledb.enable_columnstore`, `timescaledb.segmentby`, and
+`timescaledb.orderby`. Their compression-named predecessors are deprecated for
+removal in the next major release.
 
-| Deprecated name | Preferred name |
-| --- | --- |
-| `decompress_chunk` | `convert_to_rowstore` |
-| `compress_chunk` | `convert_to_columnstore` |
-| `add_compression_policy` | `add_columnstore_policy` |
-| `remove_compression_policy` | `remove_columnstore_policy` |
-| `hypertable_compression_stats` | `hypertable_columnstore_stats` |
-| `chunk_compression_stats` | `chunk_columnstore_stats` |
-| `timescaledb.compress` | `timescaledb.enable_columnstore` |
-| `timescaledb.compress_segmentby` | `timescaledb.segmentby` |
-| `timescaledb.compress_orderby` | `timescaledb.orderby` |
+The `tsdb` reloption prefix aliases `timescaledb`, and `columnstore` aliases
+`enable_columnstore` where supported:
 
-Settings and information-view renames are listed completely in
-[Columnstore and Compression](references/columnstore-and-compression.md).
+```sql
+ALTER TABLE metrics SET (tsdb.enable_columnstore = true);
+ALTER TABLE metrics SET (timescaledb.chunk_time_interval = '1 day');
+```
 
-## Continuous-Aggregate Refreshes
+### Choose current compression behavior deliberately
 
-### Batch manual refresh work
+Recompression is nonblocking by default. Set
+`timescaledb.enable_exclusive_locking_recompression = on` only to restore
+legacy exclusive locking. Boolean compression became enabled by default in
+2.20; data created with the early 2.19 format must be prepared with the
+timescaledb-extras `utils/2.19.0-downgrade_new_compression_algorithms.sql`
+script before downgrading below 2.19.
 
-Manual refresh supports batching, an execution cap, and newest-first ordering:
+Composite bloom indexes are created by default where supported. Use
+`timescaledb.enable_composite_bloom_indexes` to control them and inspect
+`EXPLAIN` for batch-pruning and false-positive statistics.
+
+### Recompress after layout changes
+
+`convert_to_columnstore(..., recompress := true)` can recompress in memory when
+`timescaledb.enable_in_memory_recompression` is enabled. Later behavior also
+supports unordered chunks and changes to `orderby` or index settings.
+`VACUUM FULL` can therefore include recompression work.
+
+## Continuous-aggregate quick reference
+
+### Batch refresh work
+
+Refresh policies process recent data first and can split work into smaller
+batches. The policy default `buckets_per_batch` is `10` as of 2.25. Manual
+refresh also accepts batching controls:
 
 ```sql
 CALL refresh_continuous_aggregate(
@@ -123,31 +148,29 @@ CALL refresh_continuous_aggregate(
 );
 ```
 
-Policy refreshes are incremental by default and default to ten buckets per
-batch. Non-overlapping ranges can refresh concurrently.
+Non-overlapping ranges can refresh concurrently, and forced refreshes consume
+their invalidations. Use `force => true` for an explicit historical backfill.
 
-### Backfill a newly added aggregate
+### Add an aggregate without rebuilding
 
-Add an aggregate as a stored generated column. Existing materialized rows start
-as `NULL`; a forced refresh fills the selected history:
+An aggregate can be added as a stored generated column. Existing materialized
+rows start as `NULL`; new rows populate it. Force-refresh the historical range
+to backfill:
 
 ```sql
 ALTER MATERIALIZED VIEW hourly_metrics
 ADD COLUMN max_value double precision
 GENERATED ALWAYS AS (max(value)) STORED;
-
-CALL refresh_continuous_aggregate(
-    'hourly_metrics',
-    '2025-01-01'::timestamptz,
-    '2026-01-01'::timestamptz,
-    force => true
-);
 ```
 
-### Suppress invalidations only with an explicit refresh plan
+`VACUUM` and `ANALYZE` on the continuous aggregate redirect to its
+materialization hypertable.
 
-For a bulk operation, `timescaledb.skip_cagg_invalidation` can avoid invalidation
-tracking:
+### Suppress invalidations only with a refresh plan
+
+`timescaledb.skip_cagg_invalidation` skips DML and DDL invalidation tracking in
+the current session or transaction and defaults to off. It can reduce bulk-load
+overhead, but changes made while it is enabled require an explicit refresh.
 
 ```sql
 BEGIN;
@@ -156,12 +179,13 @@ INSERT INTO metrics SELECT * FROM staging_metrics;
 COMMIT;
 ```
 
-Changes made this way are not tracked. Explicitly refresh every affected
-continuous aggregate afterward when it must be current.
+## Hypertable and DDL quick reference
 
-## Declarative Hypertables and Columnstore
+### Prefer declarative creation
 
-The declarative API can create a hypertable with columnstore enabled:
+Create a hypertable and enable columnstore through reloptions. The partition
+column may be inferred where supported, and enabling columnstore declaratively
+also creates its policy:
 
 ```sql
 CREATE TABLE metrics (
@@ -174,60 +198,31 @@ CREATE TABLE metrics (
 );
 ```
 
-`tsdb` is an alias for the `timescaledb` reloption prefix. A declarative
-columnstore hypertable automatically receives a columnstore policy. Use
-`ALTER TABLE ONLY` when changed reloptions should affect future chunks only:
+Use `ALTER TABLE ONLY` when reloption changes should affect future chunks only.
+PostgreSQL and TimescaleDB reloptions can coexist in one `ALTER TABLE SET`.
 
-```sql
-ALTER TABLE ONLY metrics
-SET (timescaledb.orderby = 'time DESC');
-```
+### Treat Direct Compress as an explicit path
 
-See [Hypertables, Chunks, and DDL](references/hypertables-chunks-and-ddl.md)
-for constraints, triggers, split/merge behavior, and partitioning rules.
+Direct Compress can write `COPY`, `INSERT`, and continuous-aggregate refresh
+input directly in compressed form. Its primary enablement GUCs default off.
+Batch sorting is safer than declaring client-sorted input; only enable a
+`*_client_sorted` mode when the source order is guaranteed. Earlier releases
+had a data-loss path for client-ordered `INSERT ... SELECT` from a compressed
+hypertable, fixed in 2.26.
 
-## Direct Compress Safety
+## Query correctness quick reference
 
-Direct Compress paths are experimental and independently controlled for
-`COPY`, `INSERT`, and continuous-aggregate refresh. Client-sorted modes are safe
-only when input is genuinely sorted. Earlier implementations had a data-loss
-path for client-ordered `INSERT ... SELECT` from a compressed hypertable;
-upgrade before using that combination.
+- Require 2.29.2 before relying on compressed SkipScan for affected `DISTINCT`
+  queries over mixed compressed and uncompressed data.
+- Require the fixed sparse-index behavior before relying on `IS NULL` min/max
+  pushdown over compressed data.
+- Keep columnar filter pushdown enabled by default; disable it only for targeted
+  diagnosis with `timescaledb.enable_columnar_scan_filter_pushdown = off`.
+- `time_bucket_gapfill` requires a constant timezone argument as of 2.26,
+  although other GapFill arguments can later arrive as executor parameters.
+- `compressed_data_column_size` returns `bigint`; update casts and clients that
+  assumed a narrower integer.
 
-Direct Compress can record continuous-aggregate invalidations at commit and can
-compress refresh output. Tuple-sort limits bound in-memory sorting. Review every
-GUC and default in
-[Columnstore and Compression](references/columnstore-and-compression.md)
-before enabling it.
-
-## Sparse-Index and Scan Controls
-
-Columnstore uses bloom sparse indexes, including composite indexes. Keep these
-controls distinct:
-
-- `timescaledb.enable_sparse_index_bloom` controls default bloom creation.
-- `timescaledb.enable_composite_bloom_indexes` defaults to `true`.
-- `timescaledb.enable_columnar_scan_filter_pushdown` defaults to on.
-- `timescaledb.read_legacy_bloom1_v1` is a narrow upgrade compatibility
-  setting, not a normal default.
-
-Use `EXPLAIN` to inspect batch pruning and false-positive statistics. Detailed
-upgrade caveats are in
-[Columnstore and Compression](references/columnstore-and-compression.md).
-
-## Operational Checks
-
-- Use the official `timescale/timescaledb-ha` image rather than a retired
-  Bitnami build.
-- Treat `VACUUM FULL` on columnstore data as potentially including
-  recompression work.
-- `VACUUM` and `ANALYZE` on a continuous aggregate are redirected to its
-  materialization hypertable.
-- Keep `time_bucket_gapfill` timezone arguments constant.
-- Leave the expert default-chunk-interval GUC unchanged unless specifically
-  directed.
-- When disabling continuous-aggregate invalidations or compressed statistics
-  caching, document the compensating refresh or observability plan.
-
-Use [Operations, Jobs, and Query Behavior](references/operations-jobs-and-query-behavior.md)
-for configuration defaults and query-behavior details.
+Consult the topic references before implementing migrations or enabling
+experimental paths; they retain all version-specific defaults, limitations,
+and operational caveats.

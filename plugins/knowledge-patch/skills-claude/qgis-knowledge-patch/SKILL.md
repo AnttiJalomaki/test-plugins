@@ -10,32 +10,42 @@ metadata:
 
 # QGIS Knowledge Patch
 
-Use this skill when changing QGIS projects, plugins, Processing workflows,
-rendering, layouts, data providers, 3D scenes, or server deployments. Start
-with the compatibility checks below, then open the topic reference matching
-the task.
+Use this skill when implementing, reviewing, migrating, or troubleshooting QGIS
+desktop, Server, Processing, provider, or PyQGIS work where recent behavior can
+change the answer.
+
+## How to use this patch
+
+1. Identify the QGIS version and, for provider-backed features, the packaged
+   GDAL, PDAL, wrench, GEOS, or SFCGAL versions.
+2. Read only the topic references needed for the task.
+3. Apply guidance introduced no later than the project's QGIS version.
+4. Prefer the installed build's capabilities, project files, and runtime
+   behavior when they differ from this guidance.
+5. Treat UI defaults separately from API availability and provider-library
+   prerequisites.
 
 ## Reference index
 
-| Reference | Topics |
+| Reference | Use for |
 | --- | --- |
-| [Rendering and labeling](references/rendering-and-labeling.md) | Labels, symbology, temporal rasters, annotations, styles, and scale calculation |
-| [3D, mesh, and point clouds](references/3d-mesh-and-point-clouds.md) | 3D scenes and materials, mesh editing, VPC/COPC, point-cloud processing, and profiles |
-| [Processing and analysis](references/processing-and-analysis.md) | Geometry, raster, network, terrain, metadata, packaging, and output algorithms |
-| [Data sources and databases](references/data-sources-and-databases.md) | Browser workflows, SQL, PostgreSQL, imports, STAC, WFS, OAPIF, WMS, and authentication |
-| [Layouts, editing, and profiles](references/layouts-editing-and-profiles.md) | Layout legends and charts, atlas controls, digitizing, forms, elevation profiles, and georeferencing |
-| [Server and web services](references/server-and-web-services.md) | QGIS Server cache and metadata, GetFeatureInfo, OAPIF routes, WMS options, and layer recovery |
-| [Expressions and APIs](references/expressions-and-apis.md) | Expression functions, geometry APIs, PyQGIS, GPS tools, SFCGAL, and 3D extension points |
-| [Plugins, projects, and migration](references/plugins-projects-and-migration.md) | QGIS 4 plugin metadata, Qt 6 checks, settings isolation, project trust, UI customization, and translation |
+| [3D, mesh, and point clouds](references/3d-mesh-and-point-clouds.md) | 3D scenes, mesh editing, VPC/COPC, point-cloud rendering, editing, and analysis |
+| [Data sources and databases](references/data-sources-and-databases.md) | STAC, PostgreSQL, SQL Server, imports, Browser administration, OAPIF clients, and SensorThings |
+| [Expressions and APIs](references/expressions-and-apis.md) | Expressions, PyQGIS geometry, GPS, SFCGAL, GeoPandas, and 3D extension APIs |
+| [Layouts, editing, and profiles](references/layouts-editing-and-profiles.md) | Layouts, legends, charts, digitizing, forms, attributes, and elevation profiles |
+| [Plugins, projects, and migration](references/plugins-projects-and-migration.md) | QGIS 4 plugin metadata, Qt 6 migration, themes, project trust, profiles, and custom UI |
+| [Processing and analysis](references/processing-and-analysis.md) | Native, raster, vector, terrain, network, geometry, and metadata algorithms |
+| [Rendering and labeling](references/rendering-and-labeling.md) | Labels, symbols, masks, temporal rasters, annotations, and style transfer |
+| [Server and web services](references/server-and-web-services.md) | QGIS Server, WMS/WFS/OAPIF, OAuth2, caching, GetFeatureInfo, and remote raster behavior |
 
-## Handle compatibility changes first
+## Breaking changes and migration
 
-### Advertise plugin compatibility with version bounds
+### Advertise QGIS 4 compatibility with version bounds
 
-Plugin compatibility is determined by `qgisMinimumVersion` and the optional
-`qgisMaximumVersion`. A missing maximum limits assumed support to the end of
-the minimum version's major line. To retain QGIS 3.22 while advertising QGIS 4
-readiness, use:
+For plugin repositories, use `qgisMinimumVersion` and optional
+`qgisMaximumVersion`. With no maximum, compatibility is assumed only through
+the end of the minimum version's major line. A plugin retaining QGIS 3.22
+support while advertising QGIS 4 support can use:
 
 ```ini
 [general]
@@ -44,159 +54,167 @@ qgisMaximumVersion=4.99
 ```
 
 The QGIS 4 Ready list accepts a plugin when either bound is at least 4.0.
-Remove `supportsQt6=True`; core no longer recognizes it. Before widening the
+Remove `supportsQt6=True`; it is no longer recognized. Before widening the
 range, replace Qt 5-only APIs and direct `PyQt5` imports, preferably using
-`qgis.PyQt`, run the repository's `pyqgis4-checker`, and test on QGIS 4.
-Checker findings identify affected files but do not block upload or approval.
-
+`qgis.PyQt`, test on QGIS 4, and use the repository's `pyqgis4-checker` report.
 See [Plugins, projects, and migration](references/plugins-projects-and-migration.md).
 
-### Treat QGIS 4 settings as a separate target
+### Redirect settings and deployment automation
 
-QGIS 4 uses settings separate from QGIS 3. Its first startup performs one
-lossless copy of the loaded QGIS 3 profile; later changes do not synchronize.
-Installation, profile-management, and enterprise-deployment scripts must
-therefore target the QGIS 4 location explicitly.
+QGIS 4.2 uses settings separate from QGIS 3. Its first startup makes a
+one-time, lossless copy of the loaded QGIS 3 profile, but later edits do not
+synchronize. Installation, profile, backup, and enterprise deployment scripts
+must target the QGIS 4 location.
 
-### Update OAPIF server routing
+### Update the QGIS Server OAPIF route
 
-The default QGIS Server OGC API Features root is `/ogcapi`, replacing `/wfs3`.
-Set `QGIS_SERVER_API_WFS3_ROOT_PATH` when a deployment requires a different
-path. Audit reverse-proxy routes, public links, health checks, and client
-configuration during migration.
-
-### Adapt layout-legend automation
-
-The old Auto update checkbox is replaced by All Project Layers, Visible
-Layers, and Manual Layer Selection. New legends default to Visible Layers,
-which follows visibility and tree changes but does not filter by map extent.
-Reset replaces Update All, and a global layout option can restore the former
-default. Layer properties also control automatic legend inclusion and enable
-it by default.
+Since 4.0, the default OAPIF root is `/ogcapi`, replacing `/wfs3`. Set
+`QGIS_SERVER_API_WFS3_ROOT_PATH` when a deployment needs another path, and
+update reverse-proxy routes, clients, and tests together.
 
 ### Replace deprecated hub-distance algorithms
 
-The C++ Hub Distance algorithm replaces Distance to Nearest Hub (Points) and
-Distance to Nearest Hub (Line to Hub), which are deprecated. The replacement
-offers both optional outputs; update Processing models and scripts to use it.
+Since 4.0, the C++ Hub Distance algorithm replaces Distance to Nearest Hub
+(Points) and Distance to Nearest Hub (Line to Hub). It provides both optional
+outputs; migrate models and automation away from the two deprecated IDs.
 
-## Guard dependency-sensitive features
+### Account for changed legend defaults
 
-- Request COG optimization and pyramids only with GDAL 3.13 or later. In
-  Processing, pass `-of COG` explicitly because COG and GTiff share `.tif`
-  and `.tiff` extensions.
-- Use GDAL Data Identification only with GDAL 3.13 or later.
-- Update or delete GeoPackage field domains only with GDAL 3.12 or later.
-- Enable M3C2 point-cloud comparison only when the build includes PDAL later
-  than 2.10.
-- Set a maximum TIN edge length only with PDAL 2.6+ and wrench 1.2.2+.
-- Use Approximate Medial Axis `extendToEdges` only with SFCGAL 2.3.
-- Keep VPC editing local: both the VPC and every linked COPC file must be
-  local, even though remote VPCs can be opened.
+Since 4.0, layout legends use All Project Layers, Visible Layers, or Manual
+Layer Selection instead of the former Auto update checkbox. New legends
+default to Visible Layers. This follows layer-tree visibility and changes but
+does not filter by map extent; a global layout option restores the old default.
 
-## Apply high-value rendering changes
+## Capability gates
 
-### Reserve enough rendering extent
+Check runtime library versions before exposing these operations:
 
-Symbols can request a buffer around the canvas extent so off-screen features
-whose generated symbols extend into view are still considered. Increase the
-buffer for constructs such as `buffer(@geometry, 7)`, balancing correctness
-against the extra feature-fetch and rendering cost.
+- COG export controls and GDAL Data Identification require GDAL 3.13 or later
+  (4.0).
+- GeoPackage field-domain updates and deletion require GDAL 3.12 or later
+  (4.0).
+- M3C2 point-cloud comparison requires a build with PDAL later than 2.10
+  (4.0).
+- Export to Raster (TIN) maximum-edge filtering requires PDAL 2.6+ and wrench
+  1.2.2+ (4.0).
+- Approximate Medial Axis `extendToEdges` requires SFCGAL 2.3 (4.2).
+- Some raster, point-cloud, 3D Tiles, I3S, and provider features remain
+  conditional on the providers compiled into the installed QGIS build.
 
-### Choose the intended curved and multipart label behavior
+## High-value desktop behavior
 
-Curved labels can place characters at line vertices, stretch character
-spacing, or stretch word spacing; the mode may be data-defined. Vertex mode
-drops excess characters when vertices run out. Collision tests can ignore
-spaces and tabs, but only for curved placement and with the option off by
-default.
+### Choose the right layout-legend mode
 
-Multipart labels can use only the largest part, repeat the same text on every
-part, or distribute newline-delimited lines across parts. Distribution occurs
-after wrap-character processing and drops surplus lines if there are too few
-parts.
+- All Project Layers tracks the whole project.
+- Visible Layers tracks visibility, order, and layer-tree changes.
+- Manual Layer Selection keeps an explicit list.
+- Per-layer automatic legend inclusion is enabled by default for vector,
+  raster, mesh, and point-cloud layers (4.0).
 
-### Configure cross-layer label exclusion deliberately
+### Keep temporary outputs named
 
-Vector labels can reserve a margin against labels from every layer. A separate
-duplicate-text rule suppresses identical, case-sensitive text within a chosen
-distance across all layers. Use the margin for spatial clearance and duplicate
-prevention for repeated names.
+Processing outputs can remain temporary while using a user-selected layer
+name (4.0). The memory-chip icon still identifies them as temporary; naming a
+result does not persist it.
 
-### Make temporal raster accumulation explicit
+### Preserve raw provider values when copying
 
-Raster layers representing temporal values can accumulate pixels over time,
-matching cumulative single-date/time vector animation. Select this behavior
-when raster and vector animation frames must retain prior values together.
+Attribute tables and Identify Results can copy literal provider values rather
+than represented values affected by locale formatting, expressions, or display
+relations (4.0). Choose the raw action for round-tripping or exact comparisons.
 
-## Use current 3D and point-cloud capabilities
+### Use cumulative temporal raster rendering
 
-### Select a scene model before styling
+Raster layers in represent-temporal-values mode can accumulate pixels over
+time (4.0), matching cumulative vector animation behavior. Enable it when
+raster and vector frames must remain temporally aligned.
 
-Globe scenes curve the mesh to the project ellipsoid and can use any map layer
-as a 2D texture; a suitable CRS and ellipsoid can model another celestial body.
-Tiled scenes and point-cloud 3D renderers are supported. For local or planar
-work, keep the conventional scene and use cross sections, camera-coordinate
-controls, fixed-width clipping, or the camera-centered 2D overlay as needed.
+### Use isolated label-collision controls
 
-### Account for 3D Tiles limitations
+- Cross-layer margins reserve space around a label (3.44).
+- Duplicate prevention suppresses case-sensitive matching text within a
+  minimum distance across all layers (3.44).
+- Curved labels can ignore spaces and tabs during collision tests; this is off
+  by default and applies only to curved placement (4.0).
 
-3D Tiles supports 1.0 `i3dm`, 1.1 glTF GPU instancing, 1.1 implicit quadtree
-tiling, and 1.0 `cmpt` tiles. Projected-CRS rotations are corrected, but
-quantized positions, oct-encoded rotations, and feature IDs are unsupported.
+## High-value Processing behavior
 
-### Pick the right VPC overview strategy
+### Distinguish COG from ordinary GeoTIFF
 
-VPC styling can show extents, overviews, both, or switch to actual points at a
-chosen stage. Multiple assets with the `overview` role are recognized, and
-`.vpz` opens zipped VPC data. Build VPC accepts `--overview-length`; it can
-also convert LAS/LAZ inputs to COPC for fully renderable output.
+When creating Cloud Optimized GeoTIFF output, pass `-of COG` explicitly (4.0).
+The `.tif` or `.tiff` extension cannot distinguish the COG and GTiff drivers.
+With GDAL 3.13+, export dialogs can also request optimization and pyramids.
 
-## Use Processing outputs precisely
+### Preserve provenance when merging vectors
 
-- Raster rank uses positive or negative rank positions per cell. It excludes
-  NoData by default and returns NoData only when the requested rank is
-  unavailable; an alternate mode propagates any input NoData.
-- Named temporary outputs retain a user-selected layer name while the
-  memory-chip icon still identifies them as temporary. Batch Processing also
-  accepts temporary outputs.
-- Reproject Layer transforms Z only when its optional Z-transform parameter is
-  enabled.
-- `native:forcecw` produces clockwise exterior and counter-clockwise interior
-  rings; `native:forceccw` applies the inverse. `native:forcecw` is the
-  existing right-hand-rule operation under its explicit name.
-- Package Layers can transform to a destination CRS and filter all inputs by
-  extent. It still creates an empty packaged layer when no feature intersects.
-- Merge Vector Layers can add source `layer` and `path` fields. The option is
-  enabled by default for backward compatibility.
+Merge Vector Layers can add source `layer` and `path` attributes (3.42). The
+option is enabled by default for backward compatibility; disable it only when
+the output schema must exclude provenance.
 
-See [Processing and analysis](references/processing-and-analysis.md) for the
-complete algorithm behavior and output contracts.
+### Understand raster-rank NoData behavior
 
-## Keep security and authentication explicit
+Raster rank uses positive ranks from the low end and negative ranks from the
+high end: for `[10, 20, 30, 40]`, `2` gives `20` and `-2` gives `30` (3.44).
+The default ignores NoData unless the requested rank is unavailable; the
+alternate mode propagates NoData when any input cell is NoData.
 
-Projects hold separate trust decisions for macros, expression functions,
-actions, and attribute-form initialization code. Use the trust preview before
-allowing embedded Python, and set global policy by project or path where
-central control is required.
+### Keep WMS extraction scale-aware
 
-OAuth2 connections refresh tokens automatically while in use; cleanup and
-layer removal stop refresh for unused connections. Advanced OAuth2
-configuration can also forward additional token-endpoint values as HTTP(S)
-headers. Planetary Computer sources use SAS signing for the public service or
-SAS plus OAuth2 for Pro GeoCatalogs, with the auth configuration retained in
-STAC, GDAL, and point-cloud source URIs.
+Clip Raster by Extent and Clip Raster by Mask Layer can request WMS input at a
+reference scale and service resolution (4.0). The default service resolution
+is 96 DPI. Use this when scale-dependent remote rendering must survive a clip.
 
-## Verify task-specific details
+## High-value APIs
 
-Before shipping a change:
+### Geometry and dataframe conversion
 
-1. Match project, provider, GDAL, PDAL, wrench, and SFCGAL capabilities to the
-   feature being used.
-2. Check defaults that can alter existing output: legend synchronization,
-   merge provenance fields, temporal accumulation, NoData propagation, label
-   collisions, scale calculation, and automatic legend inclusion.
-3. Test both GUI and Processing or server paths when they share data but expose
-   separate controls.
-4. For QGIS 4 plugins, validate metadata bounds, Qt 6 compatibility, profile
-   paths, and runtime behavior on QGIS 4 itself.
+- `QgsGeometry.as_numpy()` preserves Z and M dimensionality as XYZ, XYM, or
+  XYZM arrays (3.42).
+- `QgsGeos` is directly available to PyQGIS for GEOS-specific operations not
+  exposed by `QgsGeometryEngine` (3.42).
+- `QgsGeometry.area3D()` computes polygonal surface area and returns zero for
+  points and lines (4.0).
+- `QgsVectorLayer.as_geopandas()` creates a GeoPandas dataframe when GeoPandas
+  is installed (4.0).
+
+### Time-zone semantics
+
+`convert_timezone` preserves the instant and changes its local representation;
+`set_timezone` replaces the zone without changing the date or time components
+(4.0). Use `timezone_from_id`, `timezone_id`, and `get_timezone` for IANA-zone
+creation and inspection.
+
+### Point-cloud color expressions
+
+Point-cloud renderers can modify `@point_color` with point attributes (4.2).
+Arithmetic is channel-by-channel RGBA. Multiplication permits the color on
+either side, while other operators require it on the left, for example:
+
+```qgis
+@point_color * (@intensity / 65535)
+```
+
+## Server operational checks
+
+- `QGIS_SERVER_PROJECT_CACHE_SIZE` controls server project-cache QCache cost
+  (3.44).
+- `QGIS_SERVER_RETRY_BAD_LAYERS=true` retests previously bad layers on every
+  request and restores them after dependencies recover (4.0).
+- HTML GetFeatureInfo can use only the layer maptip via the project setting
+  corresponding to `WITH_MAPTIP=HTML_FI_ONLY_MAPTIP` (4.0).
+- WMS highlight-label frames accept background, outline color, outline width,
+  and size vendor parameters, optionally scoped per map (4.2).
+- QGIS Server can answer mesh GetFeatureInfo (4.0) and export FlatGeobuf from
+  OGC API Features (4.2).
+
+## Verification checklist
+
+- Confirm the installed QGIS and provider-library versions.
+- Check defaults separately for newly created and existing projects.
+- For plugin migration, test imports, metadata bounds, UI behavior, and package
+  validation on QGIS 4.
+- For Server changes, test direct requests and proxy-routed public URLs.
+- For Processing, inspect output schema, NoData handling, CRS, temporary versus
+  persisted status, and conditional outputs.
+- For 3D or point clouds, verify both renderer support and data locality before
+  enabling editing.

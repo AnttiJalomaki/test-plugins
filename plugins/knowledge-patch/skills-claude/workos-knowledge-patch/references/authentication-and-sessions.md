@@ -1,55 +1,51 @@
 # Authentication and Sessions
 
-## Identity data and token customization
+## Editable identity data and customization
 
-Edit user and organization metadata, including external ID, in the dashboard.
-AuthKit supports custom metadata, external ID, and JWT templates, so keep token
-generation and application-side metadata handling aligned with the configured
-template.
+Dashboard users can edit user and organization metadata, including external
+IDs. AuthKit supports custom metadata, external IDs, and JWT templates.
 
-AuthKit keeps a user's email address synchronized with their social login
-provider. User email addresses can also be changed through the API or dashboard.
-
-## Presentation and localization
-
-AuthKit is localized in 90 languages and identifies the last-used login method
-in the sign-in UI. Customize the authentication UI with CSS and Google Fonts.
+AuthKit is localized in 90 languages; embedded widgets can use a user's
+preferred language. The sign-in UI identifies the last-used login method, and
+authentication UI styling supports custom CSS and Google Fonts.
 
 ## Applications and platform embedding
 
-Use WorkOS to manage identity and users across multiple applications. Platform
-builders can embed AuthKit separately into each application created on their
-platform.
+WorkOS can manage identities and users across multiple applications. Platform
+builders can embed AuthKit into every application created on their platform.
 
 ## Authentication providers
 
-AuthKit includes built-in Intuit and Vercel providers.
-
-AuthKit also supports Sign in with Slack. Use it as a hosted sign-in option
-instead of building and maintaining a separate Slack OAuth flow.
+AuthKit includes built-in Intuit, Vercel, and Slack sign-in providers. Slack
+sign-in uses the hosted AuthKit flow and does not require a separate Slack OAuth
+implementation.
 
 ## Invitations
 
-Handle the two additional invitation lifecycle events when tracking changes to
-pending invitations. Do not infer pending-invitation state only from the
-original creation and acceptance events.
+Two additional invitation events support tracking changes to pending
+invitations. Invitations can also carry role selection; see the authorization
+reference.
 
 ## Session management
 
-Use the Session Management API to list active sessions and revoke an individual
-session by ID.
+Session APIs list active sessions and revoke a session by ID. Organization-aware
+AuthKit token refresh remembers the most recently used organization.
 
-AuthKit token refresh remembers the most recently used organization. Preserve
-that organization-aware behavior when wrapping or replacing the built-in refresh
-flow.
-
-## OAuth and redirects
+## OAuth and redirect configuration
 
 Configure custom OAuth scopes in the dashboard. Production redirect URIs may
-contain wildcards; validate that a deployment's redirect still matches the
-dashboard configuration.
+contain wildcards.
+
+## User email lifecycle
+
+AuthKit synchronizes user email addresses with social login providers. User
+email addresses can also be changed through the API or dashboard.
 
 ## Password history
 
-Configure password history to reject reuse of as many as 10 previous passwords
-for a user.
+Password history can reject reuse of up to 10 prior passwords for a user.
+
+## Radar signup controls
+
+Radar can block disposable-email services and traffic from selected countries
+or regions. It can challenge suspicious signups by SMS.

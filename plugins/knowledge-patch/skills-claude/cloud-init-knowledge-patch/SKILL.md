@@ -11,158 +11,131 @@ metadata:
 # cloud-init Knowledge Patch
 
 Use this skill when changing cloud-init networking, datasource detection,
-packaging, service integration, distribution support, platform detection, or
-reporting consumers. Start with the compatibility checks below, then load the
-topic reference that matches the work.
+packaging, service integration, distribution support, templating, platform
+detection, or reporting consumers. Start with the compatibility checks below,
+then load the topic reference that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [networking-and-datasources.md](references/networking-and-datasources.md) | Network v1 devices, router advertisements, OpenStack bond names and datasource identity, Scaleway metadata |
-| [packaging-runtime-and-services.md](references/packaging-runtime-and-services.md) | Installation layout, Meson migration, systemd unit overrides, Python and distribution support |
-| [platforms-and-reporting.md](references/platforms-and-reporting.md) | Tilaa, s390x LXD, Raspberry Pi behavior, finish-event duration |
+| [networking-and-datasources.md](references/networking-and-datasources.md) | Network v1 devices, route metrics, OpenStack bond names and identity, Azure controls, OpenNebula, Scaleway |
+| [packaging-runtime-and-services.md](references/packaging-runtime-and-services.md) | Installation layout, Meson migration, systemd overrides, Python support, Jinja, mounts, boot analysis |
+| [platforms-and-reporting.md](references/platforms-and-reporting.md) | Distribution modules and defaults, platform detection, Raspberry Pi, CloudStack, Oracle, finish-event duration |
 
 ## How to apply this patch
 
-- Check datasource identity before diagnosing a metadata-networking failure on
-  non-x86 systems.
-- Audit downstream packaging and custom systemd units when moving an older
-  cloud-init integration forward.
-- Treat network renderer capabilities separately from datasource detection;
-  support for a device type does not identify the cloud platform.
-- Check platform-specific defaults before adding generic fallback networking or
-  APT mirror configuration to Raspberry Pi images.
-- Update event consumers to read the reported finish-event duration when direct
-  stage timing is useful.
+- Establish the datasource identity before debugging metadata networking on a
+  non-x86 system.
+- Audit package manifests, custom systemd units, and runtime selection when
+  moving an older downstream integration forward.
+- Treat renderer features separately from datasource detection: support for a
+  device or route setting does not establish the cloud platform.
+- Test custom Jinja templates against the sandbox before shipping an image.
+- Check platform-specific defaults before adding generic fallback networking,
+  mirror configuration, or separate module bootstrapping.
+- Keep reporting duration and conventional exit status intact for callers that
+  consume cloud-init results programmatically.
 
 ## Breaking changes and migration checks
 
 ### Non-x86 datasource identity is strict
 
-Since 25.1.4, Ec2, OpenStack, and AltCloud systems without DMI no longer fall
-back to probing link-local metadata after networking. If the datasource is not
-identified explicitly, cloud-init remains disabled.
-
-Identification can come from one of these sources:
+Since 25.1.4, Ec2, OpenStack, and AltCloud systems without DMI do not fall back
+to probing link-local metadata after networking. Cloud-init remains disabled
+unless one of these identifies the datasource:
 
 - DMI data
-- A kernel `ds=` override
+- a kernel `ds=` override
 - `datasource_list` configuration
 
-For OpenStack, a config drive can supply the needed identification. An image can
-also force the datasource in `/etc/cloud/cloud.cfg.d/91_openstack.cfg`:
+For OpenStack, a config drive can provide identification. An image intentionally
+tied to OpenStack can force it in
+`/etc/cloud/cloud.cfg.d/91_openstack.cfg`:
 
 ```yaml
 datasource_list: [ OpenStack ]
 ```
 
-Use that override only when the image is intentionally tied to OpenStack. Do not
-expect successful network setup by itself to trigger the removed link-local
-probe.
+Do not interpret successful networking or a later metadata response as proof
+that the removed fallback should select the datasource.
 
-### Installed-file paths moved
+### Custom Jinja templates run in a sandbox
 
-Since 25.1, packaged files install under `/usr/lib` rather than `/lib`.
+Cloud-init renders Jinja templates in a sandbox. Revise custom templates that
+depend on operations the sandbox forbids, and exercise them during image tests
+rather than assuming an unrestricted rendering environment.
 
-Review downstream assumptions in:
+### Missing Azure custom data is a failure
 
-- package manifests
-- file lists
-- patches that use absolute installation paths
-- service or image assembly logic that copies installed files
+The Azure datasource reports missing custom data as a provisioning failure
+instead of silently continuing. Automation must handle that result as a failed
+provisioning path.
 
-Do not retain `/lib` merely because an older package placed cloud-init files
-there.
+### Installed paths and the build backend changed
 
-### The build backend is Meson
+Packaged files install under `/usr/lib`, not `/lib`, and cloud-init builds with
+Meson rather than setuptools or distutils. Recheck build invocation, generated
+paths, downstream manifests, patches with absolute paths, and image assembly
+logic. Meson also supports BSD builds.
 
-Since 25.3, cloud-init builds with Meson instead of setuptools/distutils.
-Downstream packages need to be checked for build invocation and installed-layout
-differences. Meson also supports BSD builds in the current patch.
+### Custom systemd commands need review
 
-When adapting packaging:
-
-1. Remove assumptions that the setuptools/distutils entry point performs the
-   build.
-2. Recheck the generated installation paths instead of translating commands
-   mechanically.
-3. Verify downstream file manifests against the Meson result.
-4. Include the BSD Meson support when maintaining BSD packaging.
-
-### Custom systemd unit commands need review
-
-The socket protocol used by cloud-init's systemd units changed in 25.3 so that
-alternatives such as `ncat -U` can be used. A downstream unit that overrides
-`ExecStart=` must update its command for the changed protocol.
-
-Audit the effective unit, not only the vendor file:
+The systemd-unit socket protocol changed for compatibility with alternatives
+such as `ncat -U`. Inspect the effective unit:
 
 ```sh
 systemctl cat cloud-init.service
 ```
 
-If a drop-in or replacement unit supplies `ExecStart=`, compare that command
-with the current packaged unit before deployment.
+If a drop-in or replacement supplies `ExecStart=`, compare its command with the
+current packaged unit and update it before deployment.
 
-### Runtime and distribution support changed
+### Python 3.8 is unsupported
 
-Python 3.8 is no longer supported. Do not select it as the interpreter for a
-current cloud-init build or package.
-
-Distribution-specific behavior also changed:
-
-| Area | Current behavior |
-| --- | --- |
-| Rocky Linux | The `ca_certs` module is supported. |
-| openEuler | `cc_rh_subscription` no longer handles this distribution. |
-| RHEL | cloud-init no longer overwrites local changes in `disable-sshd-keygen-if-cloud-init-active.conf`. |
-
-Preserve an administrator's RHEL changes to that file; do not add packaging
-logic that restores the older overwrite behavior.
+Do not select Python 3.8 for a current cloud-init build or package. Check both
+the package build environment and the interpreter used by installed services.
 
 ## Networking quick reference
 
-### Network v1 device support
+### Preserve Network v1 device capabilities
 
-Network v1 can render all of these device types:
+Network v1 renders bonds, bridges, and VLANs. `network-config` can express
+`allow_accept_ra` for each of those device types. Keep the setting when
+translating or generating Network v1 data.
 
-- bonds
-- bridges
-- VLANs
+### Use OpenStack bond names from metadata
 
-`network-config` can also express `allow_accept_ra` for those device types.
-Keep that setting when translating or generating network v1 data; do not discard
-it on the assumption that it is limited to another network schema or device
-class.
+OpenStack bond names come directly from `network_data.json`. Do not replace
+them with sequential names such as `bond0` or `bond1`, predict names before
+reading metadata, or hard-code `bondN` expectations in tests.
 
-### OpenStack bond names are supplied by metadata
+### Keep route metrics in NetworkManager output
 
-OpenStack bond names now come directly from `network_data.json`. Do not replace
-them with synthetic sequential names such as `bond0`, `bond1`, and so on.
+The NetworkManager renderer carries route-metric settings into generated
+connection profiles. Express competing-route preference in the network
+configuration; a renderer-specific workaround is no longer needed.
 
-This affects any downstream logic that:
+### Apply Azure controls deliberately
 
-- predicts bond names before reading metadata
-- rewrites rendered bond names
-- hard-codes sequential bond identifiers in tests
-- maps other device configuration to a presumed `bondN` name
+Azure provides `apply_network_config_set_name` to disable application of
+network-config `set-name` directives. Its experimental `skip_ready_report`
+option suppresses the ready report. Treat these as separate controls and make
+the experimental status visible in image policy.
 
-Use the name supplied in the OpenStack network data as the stable input to later
-rendering steps.
+### Preserve OpenNebula route metadata
+
+OpenNebula accepts global `SEARCH_DOMAIN` data for all interfaces and
+per-interface static routes through `ETHx_ROUTES`. Keep the global and
+interface scopes distinct when translating metadata.
 
 ## Datasource metadata quick reference
 
 ### Scaleway
 
-The Scaleway datasource exposes:
-
-- region
-- availability zone
-
-It no longer handles private-IP metadata. Consumers should use the exposed
-location fields and must not depend on this datasource to populate the removed
-private-IP metadata.
+The Scaleway datasource exposes region and availability-zone fields. It no
+longer handles private-IP metadata, so consumers must not depend on it to
+populate that value.
 
 ### OpenStack identity triage
 
@@ -174,50 +147,80 @@ order:
 3. Whether `datasource_list` selects OpenStack.
 4. Whether an OpenStack config drive is available.
 
-Do not use a later link-local metadata response as proof that cloud-init should
-have selected the datasource; that fallback is no longer performed in this
-case.
+Do not use a later link-local metadata response as evidence that selection
+should have happened.
+
+## Runtime and module quick reference
+
+### Amazon Linux modules
+
+Amazon Linux supports `yum_add_repo` and `ca_certs`. Images can configure Yum
+repositories and trusted CA certificates through cloud-init without separate
+bootstrap logic.
+
+### Mount paths with special characters
+
+The `mounts` module escapes special characters in mount paths written to
+`fstab`. Preserve the escaped result rather than post-processing it back into
+an invalid entry.
+
+### Analyze boot exit status
+
+`analyze_boot` returns an integer exit code. Callers can consume it as a
+conventional process status and should not assume the result is non-numeric.
 
 ## Platform quick reference
 
-### Newly detected environments
+### Raspberry Pi defaults
 
-Cloud-init detects the Tilaa cloud platform and s390x LXD environments. Avoid
-carrying local detection workarounds forward without first checking whether the
-built-in detection now covers the target.
+Raspberry Pi support includes keymap handling, USB-gadget handling, and a
+systemd network service template. On this platform cloud-init also disables
+fallback network configuration and removes APT mirror configuration. Account
+for those defaults before diagnosing absent generic output.
 
-### Raspberry Pi behavior
+### Distribution behavior
 
-Raspberry Pi support includes:
+Current distribution behavior includes:
 
-- keymap handling
-- USB-gadget handling
-- a systemd network service template
+| Area | Behavior |
+| --- | --- |
+| Rocky Linux | `ca_certs` is supported. |
+| openEuler | `cc_rh_subscription` does not handle the distribution. |
+| RHEL | Local changes to `disable-sshd-keygen-if-cloud-init-active.conf` are preserved. |
+| Azure Linux 4.0 | The distribution is supported. |
+| Alpine | The CDN is the default APK mirror. |
+| Debian Bullseye | Backports suite selection uses the updated behavior. |
 
-For this platform, cloud-init also disables fallback network configuration and
-removes APT mirror configuration. Account for those defaults when building an
-image or investigating why generic fallback networking or mirror configuration
-was not emitted.
+Do not add package logic that restores the older RHEL overwrite behavior or
+generic mirror defaults that conflict with the platform behavior.
+
+### Detection updates
+
+Cloud-init detects Tilaa and s390x LXD environments. CloudStack can discover
+virtual-router information from NetworkManager leases, and Oracle dracut images
+can detect an iSCSI root through iBFT. Recheck built-in detection before
+carrying local workarounds forward.
 
 ## Reporting quick reference
 
-Reporting finish events include their duration. Event consumers can obtain
-stage timing directly from the finish event instead of reconstructing it from
-separate timestamps.
-
-When changing a reporting integration, retain the duration field through
-parsing, storage, and export so downstream observers can use it.
+Reporting finish events include duration. Keep the field through parsing,
+storage, and export so consumers can obtain stage timing directly rather than
+reconstructing it from separate timestamps.
 
 ## Review checklist
 
-- Is a non-x86 Ec2, OpenStack, or AltCloud datasource explicitly identifiable?
-- Does OpenStack configuration preserve bond names from `network_data.json`?
-- Does network v1 generation retain bonds, bridges, VLANs, and
-  `allow_accept_ra` where configured?
+- Is a non-x86 Ec2, OpenStack, or AltCloud datasource explicitly identified?
+- Does OpenStack preserve bond names from `network_data.json`?
+- Does Network v1 retain bonds, bridges, VLANs, and `allow_accept_ra`?
+- Do NetworkManager profiles retain configured route metrics?
+- Are Azure rename, ready-report, and custom-data behaviors handled separately?
+- Are OpenNebula search-domain and per-interface route scopes preserved?
 - Do package manifests use `/usr/lib` and the Meson-produced layout?
-- Do custom systemd `ExecStart=` commands follow the changed socket protocol?
+- Do effective custom systemd commands follow the current socket protocol?
 - Does the runtime avoid Python 3.8?
-- Do distribution conditionals match Rocky Linux, openEuler, and RHEL behavior?
-- Do Raspberry Pi images respect the platform's networking and APT defaults?
-- Do Scaleway consumers avoid the removed private-IP metadata?
-- Do reporting consumers preserve finish-event duration?
+- Do sandboxed templates and escaped mount paths pass image tests?
+- Do distribution conditionals match current module support and defaults?
+- Do Raspberry Pi images respect networking and APT behavior?
+- Do Scaleway consumers avoid removed private-IP metadata?
+- Do detection paths account for CloudStack leases and Oracle iBFT?
+- Do reporting consumers preserve finish-event duration and integer exit codes?

@@ -1,127 +1,131 @@
 # Studio and developer tooling
 
-Use this reference when browsing data, embedding Studio, working through the editor extension, automating CLI output, initializing a project, or handling very large schemas.
-
-## Contents
-
-- [Choose a Studio surface](#choose-a-studio-surface)
-- [Connect Studio through a driver adapter](#connect-studio-through-a-driver-adapter)
-- [Embed Studio in a React application](#embed-studio-in-a-react-application)
-- [Use current Studio workflows](#use-current-studio-workflows)
-- [Manage databases from the editor](#manage-databases-from-the-editor)
-- [Initialize and bootstrap projects](#initialize-and-bootstrap-projects)
-- [Automate CLI output and large-schema work](#automate-cli-output-and-large-schema-work)
-
 ## Choose a Studio surface
 
-Hosted Prisma Studio returned in Prisma Console for PostgreSQL and MySQL in 6.3.0, providing an in-console data browser and editor.
-
-The redesigned Studio became available from `prisma studio` in 7.0.0. It added relationship visualization and could inspect a remote database through `--url`; that initial CLI release supported PostgreSQL, MySQL, and SQLite only.
+Hosted Prisma Studio returned in Prisma Console for PostgreSQL and MySQL in
+6.3.0. The redesigned Studio became available through `prisma studio` in
+7.0.0, initially for PostgreSQL, MySQL, and SQLite; it can inspect a remote
+database with `--url`:
 
 ```sh
 npx prisma studio --url "$DATABASE_URL"
 ```
 
-Use a current Prisma Config datasource when the CLI should share project configuration. Use `--url` for an intentional one-command override, not as a hidden substitute for missing project configuration.
-
-Query Insights is embedded in Studio in the `product-updates` batch, allowing slow-query investigation in the same surface used to browse data.
-
-## Connect Studio through a driver adapter
-
-Prisma Config added a `studio.adapter` factory in 6.5.0. It lets Studio connect through a driver adapter rather than requiring a conventional datasource URL:
+Early Prisma Config can supply `studio.adapter` as an async driver-adapter
+factory, allowing Studio to connect through LibSQL or another adapter (6.5.0).
+Use current Prisma Config syntax even though the original feature required
+`earlyAccess: true`.
 
 ```ts
-import type { PrismaConfig } from 'prisma'
+import { defineConfig } from 'prisma/config'
 import { PrismaLibSql } from '@prisma/adapter-libsql'
 import { createClient } from '@libsql/client'
 
-export default {
+export default defineConfig({
   schema: './prisma/schema.prisma',
   studio: {
     adapter: async () =>
       new PrismaLibSql(createClient({ url: 'file:./dev.db' })),
   },
-} satisfies PrismaConfig
+})
 ```
 
-The original release required `earlyAccess: true` and used the older adapter export casing. Current configurations omit that obsolete opt-in and use `PrismaLibSql`.
+Applications that provision Prisma Postgres for users can embed the data
+editor in React through `@prisma/studio-core` (6.11.0).
 
-## Embed Studio in a React application
+## Use current data-editing and SQL workflows
 
-`@prisma/studio-core` can embed the Studio data editor in a React interface as of 6.11.0. This supports applications that expose database editing to their own users, including products that provision a separate Prisma Postgres database for each user.
+Studio added table-wide value search, raw SQL filters, multi-cell selection, a
+`Cmd+K` command palette, and a dedicated raw-SQL tab in 7.5.0. Console Studio
+also offers generated filters.
 
-## Use current Studio workflows
+In 7.6.0 Studio restored dark mode, added row copying as Markdown or CSV,
+allowed several cells to be edited before a single save-or-discard decision,
+and linked references to related records. It can also turn a natural-language
+request into SQL.
 
-Studio capabilities added in 7.5.0 include:
+Query Insights is embedded in Studio for investigating slow queries beside
+the browsed data (product-updates).
 
-- Multi-cell selection.
-- Value search across a table.
-- Raw SQL filters.
-- A `Cmd+K` command palette.
-- A dedicated SQL tab for raw queries.
-- AI-generated filters in the Console-hosted Studio.
+Since 7.9.0, SQL execution, linting, and navigation resolve unqualified names
+against the schema selected in Studio instead of always using the adapter's
+default schema.
 
-The 7.6.0 tooling update adds or restores:
+## Inspect next-generation migrations and streams
 
-- Dark mode.
-- Copying one or more rows as Markdown or CSV.
-- Editing multiple cells before choosing to save or discard all changes.
-- Links from reference values to related records.
-- Natural-language generation of SQL statements.
+For databases using a Prisma Next migration ledger, Studio shows a newest-
+first timeline and visual diffs for models, fields, enums, relations, executed
+SQL, and schema changes. The view stays hidden for databases managed by classic
+Prisma Migrate because they do not store that ledger (7.9.0).
 
-## Manage databases from the editor
+Studio also includes a Prisma Streams browser with live aggregations,
+diagnostics, routing-key browsing, table-to-WAL-history handoff, and summarized
+event-log and OpenTelemetry observability (7.9.0).
 
-With the Prisma editor extension installed, agent mode can check migration status, create and run migrations, authenticate with Prisma Console, and provision Prisma Postgres databases (6.8.0).
+## Manage databases from the editor extension
 
-The Prisma Activity Bar database UI expanded in 6.9.0. It can:
+With the Prisma editor extension installed, agent mode can check migration
+status, create and run migrations, authenticate with Prisma Console, and
+provision Prisma Postgres (6.8.0).
 
-- Authenticate with Prisma Console.
-- Create or delete hosted Prisma Postgres instances.
-- Display local instances.
-- Edit data through embedded Studio.
-- Visualize schemas.
-
-The **Push to Cloud** action deploys a local Prisma Postgres instance for remote applications (6.10.0). Local database management stopped requiring a Console login in 6.15.0. CLI `prisma dev stop` and `prisma dev rm` can manage instances that the editor started.
+The Prisma Activity Bar can create or delete hosted databases, list local
+instances, embed Studio, and visualize schemas (6.9.0). It can push a local
+Prisma Postgres instance to the cloud (6.10.0), and local-instance management
+does not require a Console login (6.15.0).
 
 ## Initialize and bootstrap projects
 
-`prisma init` detects Bun and tailors generated setup to that runtime as of 7.2.0. Avoid replacing the generated Bun setup with Node-specific scripts unless the project intentionally uses both runtimes.
+`prisma init` detects Bun and emits runtime-appropriate project setup when
+invoked under Bun (7.2.0). It creates `prisma.config.ts` for Prisma 6.18.0 and
+later, preparing projects for the Prisma 7 configuration requirement.
 
-`prisma bootstrap` orchestrates Prisma Postgres setup as of 7.7.0:
-
-```sh
-npx prisma@latest bootstrap
-npx prisma@latest bootstrap --template nextjs
-npx prisma@latest bootstrap --api-key "$PRISMA_API_KEY" --database "db_abc123"
-```
-
-The command inspects project state and runs only missing steps:
-
-1. Scaffold or initialize the application.
-2. Authenticate and link a Prisma Postgres database.
-3. Install dependencies.
-4. Migrate the database.
-5. Generate the client.
-6. Seed data.
-
-Side-effecting steps require confirmation, and completed steps are skipped when the command is rerun. Supply an API key and database ID for non-interactive execution.
-
-For an already initialized project, `prisma postgres link` links the local project to a Prisma Postgres database (7.6.0):
+New projects receive the version-relevant `prisma/skills` catalog through a
+best-effort install that cannot block initialization. Pass `--no-skills` to
+opt out (7.9.0):
 
 ```sh
-npx prisma postgres link
+npx prisma@latest init --no-skills
 ```
 
-This command introduced the `prisma postgres` command group.
+`prisma bootstrap` is state-aware: it performs only missing setup, asks before
+side effects, skips completed work on rerun, and supports templates or
+non-interactive API credentials plus a database ID (7.7.0).
 
-## Automate CLI output and large-schema work
+## Make CLI output automation-friendly
 
-`prisma version --json` writes only JSON to stdout as of 7.2.0. Scripts can parse or redirect it without stripping unrelated CLI messages:
+`prisma version --json` emits only JSON to stdout, allowing direct parsing and
+redirection (7.2.0).
+
+Prisma provides command, option, flag, and option-value completions for Bash,
+Zsh, Fish, and PowerShell (7.9.0). For a project-local CLI, initialize
+`@bomb.sh/tab` for the package-manager command. `npm exec` and `bun x` work;
+`npx` and `bunx` do not. A globally installed CLI can use
+`prisma complete <shell>` directly.
 
 ```sh
-npx prisma version --json > prisma-version.json
+npm install -g @bomb.sh/tab
+source <(tab pnpm zsh)
+
+# Globally installed CLI
+source <(prisma complete zsh)
 ```
 
-The CLI falls back to streaming parsing for schemas too large for V8 string limits as of 7.6.0. Do not pre-concatenate a very large multi-file schema into one JavaScript string in wrapper tooling; let the CLI use its streaming path.
+## Handle large schemas and engine binaries
 
-`prisma generate` can execute under Bun without a separate Node.js installation as of 6.6.0. If generation hangs in an older Bun-only environment, upgrade the CLI before adding Node solely as a workaround.
+The CLI can switch to streaming parsing when a schema exceeds V8 string
+limits, allowing database commands to operate on very large schemas (7.6.0).
+
+Prisma binaries can load from local-network locations, supporting deployments
+that keep them on network-accessible storage (6.5.0).
+
+On Windows, engine binaries are cached under `%APPDATA%\Prisma` rather than a
+working-directory-relative `node_modules\.cache`. This avoids duplicate caches
+and accidental inclusion in serverless or container bundles (7.9.0).
+
+## Preserve destructive-command checkpoints
+
+Destructive CLI commands invoked through supported automated coding
+environments require explicit confirmation. The later checkpoint covers
+`prisma db push --accept-data-loss`, recognizes generic `AI_AGENT` and `AGENT`
+conventions, and applies on Linux. The MCP server does not expose its former
+reset tool; use the guarded CLI workflow (7.9.0).

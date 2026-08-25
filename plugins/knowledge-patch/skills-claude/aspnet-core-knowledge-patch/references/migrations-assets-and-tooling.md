@@ -1,67 +1,56 @@
 # Migrations, Assets, and Tooling
 
-Use this reference while upgrading an application or changing Blazor WebAssembly build output.
-Treat project properties and generated assets as build contracts, and verify them in published
-output.
+## Standalone Blazor WebAssembly migration
 
-## Standalone WebAssembly environment selection
+### Select the environment at build or publish time
 
-Batch `10.0-migration` moves environment selection into the client project file:
+Standalone apps no longer use the `Blazor-Environment` header,
+`Properties/launchSettings.json`, or `ASPNETCORE_ENVIRONMENT` to select their
+environment (`10.0-migration`). Configure it in the project file:
 
 ```xml
-<PropertyGroup>
-  <WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
-</PropertyGroup>
+<WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
 ```
 
-Standalone Blazor WebAssembly apps no longer select the environment from the
-`Blazor-Environment` header, `Properties/launchSettings.json`, or `ASPNETCORE_ENVIRONMENT`.
-Without the property, builds default to `Development` and publishes default to `Production`.
-Check both local builds and published artifacts during migration.
+A build defaults to `Development`; a publish defaults to `Production`.
 
-## Boot configuration is part of `dotnet.js`
+### Remove `blazor.boot.json` workflows
 
-In batch `10.0-migration`, the contents formerly written to `blazor.boot.json` are inlined into
-`dotnet.js`; the separate file no longer exists. Workflows that inspect or alter that file,
-including the published-asset integrity script and DLL-extension customization, have no
-documented replacement. Remove assumptions about the old file rather than silently fabricating
-one.
+The boot configuration is inlined into `dotnet.js`, and the separate
+`blazor.boot.json` artifact no longer exists (`10.0-migration`). Direct
+inspection or mutation workflows must be redesigned. This includes the
+published-asset integrity script and DLL-extension customization; neither has a
+documented replacement.
 
-## Remove the custom boot-resource cache property
+### Remove the custom boot-resource cache setting
 
-Browser caching of fingerprinted client files replaces Blazor's custom boot-resource cache.
-`BlazorCacheBootResources` is unavailable or ineffective and must be removed from upgraded
-client project files (batch `10.0-migration`).
+Browser caching of fingerprinted client files replaces Blazor's custom cache
+(`10.0-migration`). Remove `BlazorCacheBootResources` from client projects; it
+is no longer available or effective.
 
 ```diff
 - <BlazorCacheBootResources>...</BlazorCacheBootResources>
 ```
 
-Do not replace it with an equivalent service-worker customization unless the application has a
-separate product requirement for one.
+## Static web assets
 
-## Blazor script static-asset inclusion
+### Force Blazor script inclusion without components
 
-The Blazor script is a compressed, fingerprinted static web asset in batch `10.0`. It is included
-automatically only when the project contains at least one `.razor` file. A component-free project
-that still needs the script must force inclusion:
+The Blazor script is a compressed, fingerprinted static web asset and is
+included automatically only if the project contains a `.razor` file (since
+10.0). A project that needs the script but has no component must opt in:
 
 ```xml
 <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
 ```
 
-Do not add the property routinely to component projects; automatic discovery already includes
-the asset there.
+### Fingerprint standalone WebAssembly assets
 
-## Standalone WebAssembly asset fingerprinting
-
-To opt into build-time fingerprinting, enable HTML placeholder replacement, add an import map,
-and put the fingerprint marker in the framework script name:
+Enable HTML asset-placeholder replacement, add an import map, and place the
+fingerprint marker in the framework script filename (since 10.0):
 
 ```xml
-<PropertyGroup>
-  <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
-</PropertyGroup>
+<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 ```
 
 ```html
@@ -69,54 +58,22 @@ and put the fingerprint marker in the framework script name:
 <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
 ```
 
-Developer modules can use the same `#[.{fingerprint}]` marker through a
-`StaticWebAssetFingerprintPattern`. Inspect the published HTML, import map, and filenames
-together; a placeholder without its corresponding map and generated asset is incomplete.
+Developer modules can use the same `#[.{fingerprint}]` marker by defining a
+`StaticWebAssetFingerprintPattern`.
 
-## Bundler-friendly WebAssembly output
+### Produce bundler-friendly published output
 
-Published output can be shaped for JavaScript bundlers such as Webpack and Rollup:
+Set the following project property when published WebAssembly output must be
+consumed by a JavaScript bundler such as Webpack or Rollup (since 10.0):
 
 ```xml
 <WasmBundlerFriendlyBootConfig>true</WasmBundlerFriendlyBootConfig>
 ```
 
-This is an explicit publishing mode. Test the downstream bundler against published output and
-retain any application-specific asset-copy rules only when they still match the new boot layout.
+## Testing
 
-## Identity navigation migration
+### Let the source generator expose `Program`
 
-The Blazor Web App template uses:
-
-```xml
-<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-```
-
-When an older Individual Accounts app adopts this setting, update
-`Components/Account/IdentityRedirectManager.cs` as described in
-[Observability, Identity, and SignalR](observability-identity-and-signalr.md). Navigation helpers
-must no longer claim that every redirect exits by throwing.
-
-## Testing top-level-statement applications
-
-The ASP.NET Core source generator emits the `public partial class Program` needed by test
-projects in batch `10.0`. Remove an application's manual declaration when upgrading.
-
-## Upgrade search checklist
-
-Search for these migration-sensitive tokens and assumptions:
-
-```text
-Blazor-Environment
-ASPNETCORE_ENVIRONMENT
-blazor.boot.json
-BlazorCacheBootResources
-RequiresAspNetWebAssets
-blazor.webassembly#[.{fingerprint}].js
-WasmBundlerFriendlyBootConfig
-BlazorDisableThrowNavigationException
-partial class Program
-```
-
-Review each occurrence in context. Some tokens are required new configuration; others identify
-behavior or assets that must be removed.
+For top-level-statement applications, the ASP.NET Core source generator emits
+the `public partial class Program` needed by test projects (since 10.0). Remove
+the manual declaration previously used for test visibility to avoid a duplicate.

@@ -1,12 +1,12 @@
 # Search, Matching, Parameters, and Route Errors
 
-## Search validation failures
+## Recover from search validation failures
 
-`validateSearch` receives a JSON-parsed but otherwise unvalidated search
-object. If validation throws, the route's `onError` runs with
-`error.routerCode === 'VALIDATE_SEARCH'`, then the route renders its
-`errorComponent`. Use tolerant schema fallbacks when malformed shared URLs
-should recover rather than interrupt navigation.
+`validateSearch` receives the JSON-parsed but unvalidated search object. If it
+throws, the route's `onError` runs with
+`error.routerCode === 'VALIDATE_SEARCH'`, and the route renders its
+`errorComponent`. Use tolerant schema fallbacks when malformed URL values
+should not interrupt navigation.
 
 ```tsx
 const searchSchema = z.object({
@@ -19,14 +19,15 @@ export const Route = createFileRoute('/products')({
 })
 ```
 
-## Validator input and output types
+## Preserve validator input and output types
 
-Navigation is typed from a validator's input, whereas reading route search uses
-its output. Defaults make a search field optional for `<Link>` and `navigate`
-only if the validator integration preserves both types.
+Navigation is typed from the validator's input, while route reads use its
+output. Defaults make search optional only when inference preserves both sides.
 
-Zod v3 requires `@tanstack/zod-adapter`. Use its `zodValidator` and `fallback`
-helper rather than a Zod v3 `.catch()` that erases the distinct input type:
+Zod v3 requires `@tanstack/zod-adapter`. Use its `fallback` helper instead of a
+type-erasing Zod v3 `.catch()`. Zod v4 schemas can be passed directly. Standard
+Schema implementations including Valibot 1, ArkType 2, and Effect's
+`standardSchemaV1` can also be passed directly.
 
 ```tsx
 import { fallback, zodValidator } from '@tanstack/zod-adapter'
@@ -39,22 +40,17 @@ export const Route = createFileRoute('/products')({
   validateSearch: zodValidator(searchSchema),
 })
 
-// The default makes search optional.
 const link = <Link to="/products" />
 ```
 
-Zod v4 schemas can be passed directly. Standard Schema implementations,
-including Valibot 1, ArkType 2, and Effect's `standardSchemaV1`, can also be
-used directly.
+## Transform link search with middleware
 
-## Search middleware
+A route's `search.middlewares` transforms search for links to that route or its
+descendants. The middleware chain runs again on navigation after validation and
+composes through `next`.
 
-A route's `search.middlewares` transform search when constructing links to that
-route or any descendant. They run again on navigation after validation.
-Middleware functions compose through `next`.
-
-Use `retainSearchParams` to carry selected values from the current search and
-`stripSearchParams` to omit values that equal supplied defaults:
+- `retainSearchParams` carries selected values from the current search.
+- `stripSearchParams` removes values equal to the supplied defaults.
 
 ```tsx
 import {
@@ -74,28 +70,25 @@ export const Route = createFileRoute('/search')({
 })
 ```
 
-Order middlewares according to the transformation desired both when links are
-created and after validated navigation.
-
-## Deterministic segment-priority matching
+## Understand deterministic matching priority
 
 Route matching traverses a segment trie rather than sorting and scanning a flat
-route list. When branches are ambiguous, it explores static, dynamic, optional,
-and wildcard segments by priority. A fully static branch can win immediately;
+route list. Ambiguous branches are explored by segment priority: fully static
+branches can win immediately, dynamic and optional branches follow, and
 wildcards are considered last. Matching therefore does not depend on browser
 sorting behavior.
 
-Routes may set `params.priority` as a tie-breaker when otherwise competing
-route candidates remain.
+## Break candidate ties with parameter priority
 
-## Rejecting candidates from parameter parsing
+Set `params.priority` on a route when otherwise competing candidates need an
+explicit tie-breaker.
 
-`params.parse` can experimentally return `false` to reject an incoming route
-candidate and allow matching to continue. Throwing from `parse` still exposes
-the parse error on the selected match.
+## Reject a candidate during parameter parsing
 
-Outgoing typed links to a route template are different: Router performs exact
-route lookup and then calls `params.stringify`.
+`params.parse` may experimentally return `false` to skip an incoming route
+candidate. A thrown parse error still surfaces on the selected match. Outgoing
+typed route-template links continue to use exact route lookup and then call
+`params.stringify`.
 
 ```tsx
 const reportRoute = createRoute({
@@ -109,15 +102,13 @@ const reportRoute = createRoute({
 })
 ```
 
-Because returning `false` is experimental, keep tests for competing route
-candidates and invalid parameter shapes.
+## Throw not-found errors from components
 
-## Route-level error preservation
-
-A component can throw `notFound()` without an explicit `routeId`. Its route's
+A component can throw `notFound()` without an explicit `routeId`. The route's
 `notFoundComponent` handles the error, and framework error boundaries preserve
 it.
 
-Primitive values thrown from `beforeLoad` are likewise preserved through
-Router's error handling. Do not assume route errors are always `Error`
-instances when inspecting or rendering them.
+## Preserve primitive `beforeLoad` errors
+
+Primitive values thrown by `beforeLoad` remain intact through router error
+handling.

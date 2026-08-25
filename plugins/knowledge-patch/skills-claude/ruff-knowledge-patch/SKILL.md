@@ -10,110 +10,157 @@ metadata:
 
 # Ruff Knowledge Patch
 
-Use this skill when configuring, upgrading, integrating, or debugging Ruff,
-especially when the result depends on current lint rules, formatter style,
-Python syntax support, suppressions, autofix safety, CLI output, or server
-behavior.
+Load this skill when upgrading Ruff, changing lint or formatter configuration,
+integrating Ruff with an editor or CI, or consuming machine-readable output.
 
-## Working method
-
-1. Determine the installed Ruff version from the project manifest, lockfile,
-   CI image, pre-commit revision, or `ruff --version`.
-2. Read the project configuration before recommending changes. Check
-   `pyproject.toml`, `ruff.toml`, or `.ruff.toml`, including every file reached
-   through `extend`.
-3. Establish the intended Python version explicitly. An implicit
-   `target-version` can affect syntax validation, lint selection, import
-   rewrites, and formatting.
-4. Separate stable behavior from preview behavior. Do not recommend a preview
-   rule or formatter style without checking whether preview is enabled for the
-   relevant command.
-5. Preserve explicit `select`, `ignore`, per-file ignores, suppression
-   comments, output formats, and unsafe-fix policy during migrations.
-6. Run the narrow command first, inspect its diff and diagnostics, and only
-   then apply broader formatting or fixes.
+Start with the migration checks, then open the matching topic reference. Treat
+preview as opt-in and pin settings that must not change as defaults advance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/migration-and-configuration.md](references/migration-and-configuration.md) | Default-selection changes, deprecations, renamed rules and options, target-version inference, configuration inheritance |
-| [references/formatting-and-syntax.md](references/formatting-and-syntax.md) | Stable and preview formatter styles, Markdown, Python syntax validation, language-version support |
-| [references/lint-rules.md](references/lint-rules.md) | Newly stable and preview rules, expanded rule coverage, stabilized diagnostics |
-| [references/suppressions-and-fixes.md](references/suppressions-and-fixes.md) | `noqa`, `ruff: ignore`, range suppressions, future imports, fix availability and safety |
-| [references/cli-server-analysis-and-distribution.md](references/cli-server-analysis-and-distribution.md) | Check/format output, language server, dependency analysis, discovery, containers, binaries, source builds |
+| [CLI, server, analysis, and distribution](references/cli-server-analysis-and-distribution.md) | CLI exit and output behavior, language server, dependency graphs, containers, binaries, source builds |
+| [Formatting and syntax](references/formatting-and-syntax.md) | Stable and preview formatter styles, syntax validation, Python targets, Markdown formatting |
+| [Lint rules](references/lint-rules.md) | Stable and preview rules, changed rule behavior, defaults, import and typing checks |
+| [Migration and configuration](references/migration-and-configuration.md) | Renamed, recoded, deprecated, and removed rules; target inference; configuration discovery and inheritance |
+| [Suppressions and fixes](references/suppressions-and-fixes.md) | `noqa`, `ruff: ignore`, range suppressions, fix availability, and safety classifications |
 
-## Breaking changes first
+## Breaking-change checklist
 
-### Pin lint selection when defaults matter
+Before changing the pinned Ruff version:
 
-The default selection can change substantially across upgrades. Ruff now
-enables 413 rules by default rather than 59, but the expanded set is not a
-strict superset: 18 opinionated pycodestyle and Pyflakes rules are no longer
-implicit. Preserve a known policy with an explicit selection:
+1. Pin `target-version` when the project cannot accept evolving Python syntax
+   assumptions.
+2. Pin `lint.select` when the project depends on a fixed default rule set,
+   especially when enabling preview.
+3. Search configuration, `noqa`, and other suppression comments for renamed,
+   recoded, deprecated, or removed rule codes.
+4. Run formatting separately; review f-strings, `match`, assertions, lambdas,
+   method chains, stubs, and Markdown blocks.
+5. Audit human-readable and JSON parsers; locations are not always populated.
+6. Reassess every enabled unsafe fix; several fixes change classification
+   based on operand types, comments, or the surrounding expression.
+7. Check editor settings and server logs independently from command-line
+   behavior.
+8. For Ruff builds, verify container bases, Rust, artifacts, and source builds.
+
+## High-impact migrations
+
+### Pin the lint selection
+
+The default and preview selections have expanded substantially and are not
+strict supersets of earlier selections. A project that expects the traditional
+Pyflakes and pycodestyle selection should state it explicitly:
 
 ```toml
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
 ```
 
-Earlier preview releases also broadened their defaults to hundreds of rules
-while omitting several formerly implicit checks. Treat `preview = true` as a
-lint-selection change as well as a feature gate.
+Do not infer that every formerly implicit rule remains selected. Read
+[Lint rules](references/lint-rules.md) for the exact default-selection changes
+and the stable-rule lists.
 
-### Expect Markdown writes
+### Pin Python semantics
 
-`ruff format` formats labeled Python code blocks in Markdown by default.
-Include Markdown in upgrade diffs and CI checks. Quarto files no longer receive
-an implicit special case; configure their extension when needed:
-
-```toml
-[tool.ruff]
-extension = { qmd = "markdown" }
-```
-
-### Pin the Python target
-
-Ruff's implicit default and latest Python baselines have advanced. Syntax
-validation can use a different fallback from ordinary lint-rule application,
-and inherited configuration can now supply the target after the complete
-`extend` chain is resolved. Pin project reality:
+Use the real minimum supported Python version rather than relying on fallback
+behavior:
 
 ```toml
 [tool.ruff]
 target-version = "py312"
 ```
 
-The once-announced `requires-python` inference change was not present in
-0.10.0; it first shipped in 0.11.0.
+This controls version-gated syntax and influences lint and formatting choices.
+Syntax diagnostics can use a different fallback from ordinary lint-rule
+application when no target is configured. Extended configurations are resolved
+before Ruff falls back to a default.
 
-### Update machine-readable output consumers
+### Migrate rule identifiers deliberately
 
-JSON diagnostic fields including `filename`, `location`, `end_location`, and
-fix-edit locations may be null. CI wrappers must also account for fix diffs in
-human-readable `ruff check` and `ruff format --check` output.
+Rule codes have been split, moved, deprecated, and removed. Update all of the
+following together:
 
-## Deprecations and removals
+- `select`, `extend-select`, `ignore`, and per-file ignores;
+- inline and file-level suppression comments;
+- editor filters and CI annotations;
+- scripts that call `ruff rule` or parse diagnostics.
 
-- Replace `RUF035` selections and suppressions with `S704` for
-  `unsafe-markup-use`.
-- `RUF025` moved to `RUF037`; preview split `Optional` handling from `UP007`
-  into `UP045`, and the split later became stable.
-- Airflow preview codes were reorganized: the old `AIR301` became `AIR002`,
-  `AIR302` became `AIR301`, and `AIR303` became `AIR302`; checks also split
-  into `AIR311` and `AIR312`, with some moving back to `AIR302`.
-- `S320` was deprecated and then removed. `PD901` and `UP038` were deprecated
-  and later removed. Deprecated rules no longer activate through a group or
-  prefix and, while present, require exact-code selection.
-- Replace `builtins-allowed-modules` and other `builtins-`-prefixed
-  `flake8-builtins` settings with their unprefixed names.
-- On macOS, use the XDG configuration location, normally
-  `~/.config/ruff/ruff.toml`; the Application Support fallback was removed.
-- The `NPY201` fix for `np.in1d` no longer exists.
+The most migration-sensitive changes include the `UP007`/`UP045` split,
+`RUF025` moving to `RUF037`, `RUF035` moving to `S704`, Airflow rule-code
+reorganization, and the removal of `S320`, `PD901`, and `UP038`. Exact behavior
+and staging are in
+[Migration and configuration](references/migration-and-configuration.md).
+
+### Expect formatter diffs
+
+Stable formatter styles have incorporated earlier preview changes. Upgrades
+can alter f-string quoting and layout, assertion wrapping, `match` patterns,
+single-manager `with` statements, lambdas, fluent method chains, stub spacing,
+and Markdown Python blocks.
+
+Run a formatter-only change before mixing an upgrade with semantic edits:
+
+```console
+ruff format --check .
+ruff format .
+```
+
+Use `--exit-non-zero-on-format` only when the intended contract is "write the
+changes, then fail if anything changed." See
+[Formatting and syntax](references/formatting-and-syntax.md).
+
+### Treat machine output as a versioned interface
+
+JSON consumers must allow nullable filenames, diagnostic locations, and edit
+locations. Human-readable check output can include fix diffs, and format-check
+output supports linter-style output formats. Validate parsers and wrappers
+against actual output rather than placeholder assumptions.
+
+## Configuration quick reference
+
+### Prevent fixes from importing `typing_extensions`
+
+```toml
+[tool.ruff.lint]
+typing-extensions = false
+```
+
+Use this when generated changes must stay within the standard library or the
+project's declared dependencies.
+
+### Permit future-import insertion
+
+```toml
+[tool.ruff.lint]
+future-annotations = true
+```
+
+This can let typing-related fixes insert `from __future__ import annotations`,
+move imports under `TYPE_CHECKING`, use PEP 604 syntax on older targets, or
+unquote annotations. Review module-level import changes.
+
+### Map custom Markdown extensions
+
+```toml
+[tool.ruff]
+extension = { qmd = "markdown" }
+```
+
+Extension mappings affect discovery, code-block language selection, and server
+handling. Formatting Markdown may now occur without preview, so include
+documentation changes in upgrade review.
+
+### Preserve code-oriented names in preview
+
+Preview output can prefer human-readable rule names. When integrating tools
+that require rule codes, use the preview option that opts out of
+human-readable names and test editor and CLI output together.
 
 ## Suppression quick reference
 
-Canonical logical-line suppression syntax is:
+Ruff accepts a line-end or preceding-line `ruff: ignore` comment:
 
 ```python
 import math  # ruff: ignore[F401]
@@ -122,83 +169,83 @@ import math  # ruff: ignore[F401]
 import os
 ```
 
-Keep the space in `ruff: ignore`. Block `ruff:disable` / `ruff:enable`
-suppression is stable. Human-readable rule names, nested logical-line
-suppression, `#ruff:file-ignore`, `#ruff:ignore`, and `--add-ignore` remain
-preview-sensitive features where introduced.
+Keep the canonical space after the colon. Block `ruff:disable` and
+`ruff:enable` suppressions are stable, while logical-line and file-level forms,
+human-readable names, and migration checks may still depend on preview.
 
-File-level and inline `noqa` comments share one robust parser. Malformed legacy
-forms can now error. `PGH004` detects blanket file-level `noqa`, and `RUF100`
-detects unused file-level or range suppressions. Because some diagnostic spans
-moved—for example `UP015` now highlights only the mode argument—an existing
-`noqa` may need repositioning.
+Unified suppression parsing recognizes more valid comments but reports some
+malformed comments that older parsing tolerated. File-level suppressions also
+participate in blanket- and unused-suppression checks. See
+[Suppressions and fixes](references/suppressions-and-fixes.md).
 
-## Autofix safety quick reference
+## Fix-safety workflow
 
-Do not equate “a fix exists” with “safe to apply.” Important unsafe cases
-include:
+Never equate "a fix exists" with "the fix is semantics-preserving." For an
+upgrade or a new rule selection:
 
-- fixes that remove comments across many bugbear, simplify, upgrade, pathlib,
-  refurb, and Ruff rules;
-- `FURB171` with a string right-hand side, `FURB161` except for integers and
-  booleans, and `FURB116` except for numeric literals;
-- `FURB180` on a class with bases, `PIE804` on dictionaries with comments,
-  and Airflow module moves;
-- `B905`, `B912`, and `FURB192`; pathlib fixes that can change return or
-  expression type; and `RUF036` outside typing-only code;
-- future-annotation rewrites that insert a module-level
-  `from __future__ import annotations`.
+1. Run checks without fixes and save the diagnostic set.
+2. Apply safe fixes first.
+3. Review files containing comments, type-sensitive expressions, generators,
+   context managers, path operations, and string conversions.
+4. Apply unsafe fixes in small groups with tests.
+5. Re-run Ruff and the project's test suite after each group.
 
-Conversely, the `FURB129` fix and the stabilized `SIM117` fix are always safe;
-`UP008` is safe when it preserves comments. Read the full safety matrix before
-enabling `--unsafe-fixes` or applying fixes repository-wide.
+Many classifications are conditional: a fix may be safe only for integers,
+booleans, literals, comment-free expressions, typing-only contexts, or a
+particular call shape. The exhaustive changes are cataloged in
+[Suppressions and fixes](references/suppressions-and-fixes.md).
 
-## Formatter quick reference
+## Preview discipline
 
-Upgrades can intentionally produce formatter-only diffs. The stable style now
-includes fluent method-chain formatting, updated lambda layout, Python 3.14
-exception-type formatting, triple-quoted-string spacing, blank lines before
-decorated stub classes, and the `nested-string-quote-style` option. Earlier
-stable changes affected f-string expressions and quotes, implicit string
-concatenation, match cases, asserts, return annotations, comprehensions,
-single-manager `with` statements, and dynamic docstring code-block widths.
+Preview is a bundle of evolving parser, formatter, rule, default-selection,
+suppression, and output behavior. Enabling it for one feature can expose other
+changes. Keep these controls explicit:
 
-For Python 3.13.4 compatibility, Ruff avoids a multiline f-string break after
-a format specifier that would be a syntax error. Preview also validates
-compile-time and version-gated syntax; regular checks later inherited that
-validation.
+- `preview` itself;
+- `target-version`;
+- `lint.select` and ignores;
+- formatter and Markdown extension settings;
+- whether output uses codes or human-readable rule names;
+- whether unsafe fixes are allowed.
 
-## High-value current capabilities
+When a preview diagnostic becomes stable, remove workarounds only after
+checking whether its code, default selection, fix safety, or scope also changed.
 
-- `ruff format --exit-non-zero-on-format` writes changes and exits nonzero if
-  it modified files.
-- `ruff format --check --output-format github .` emits a CI annotation format;
-  linter output formats are accepted by format checks.
-- `ruff analyze graph` can resolve dependencies from a supplied virtual
-  environment, skip imports under `TYPE_CHECKING`, analyze notebooks, and use
-  configured `src` directories.
-- Set `lint.typing-extensions = false` to prevent generated fixes from adding
-  imports from `typing_extensions`.
-- Set `lint.future-annotations = true` when selected typing fixes may insert a
-  future import and use that expanded rewrite space deliberately.
-- `py314` is a supported target. Python 3.15 syntax, lazy imports, and related
-  rules require the appropriate preview configuration.
-- The server can use `uv` as a formatter backend. Logging is controlled only
-  by `logLevel` (default `info`), not LSP `trace`.
+## Language-server checks
 
-## Verification checklist
+Server logging is controlled by the dedicated log-level setting, not LSP trace.
+Code actions ignore diagnostics from other sources. Debug-information commands
+and formatter-backend choices have changed, and the server now covers Markdown
+and TOML in more situations.
 
-- Confirm `ruff --version` matches the configuration and CI image being
-  evaluated.
-- Run `ruff check` without fixes and review newly selected, renamed, removed,
-  or stabilized rules.
-- Run `ruff format --check` over Python and Markdown inputs; inspect style-only
-  changes separately from lint fixes.
-- If applying fixes, start without unsafe fixes, then review every unsafe class
-  relevant to the selected rules.
-- Validate suppression comments after rule-code migrations and diagnostic-span
-  changes.
-- Exercise JSON parsers, annotation output, watch mode, and editor code actions
-  when automation depends on their exact shape.
-- Recheck import classification and dependency graphs against the configured
-  project roots, `src` directories, notebooks, and virtual environment.
+When command-line and editor results differ, compare:
+
+- the resolved workspace root and nested workspace exclusions;
+- target and inherited configuration;
+- discovered extensions and file types;
+- server formatter backend;
+- diagnostic source and code-action ownership;
+- log-level configuration.
+
+Read [CLI, server, analysis, and distribution](references/cli-server-analysis-and-distribution.md) for complete integration notes.
+
+## Dependency analysis
+
+Dependency graphs can resolve imports from a supplied virtual environment,
+skip imports guarded by `TYPE_CHECKING`, analyze notebooks, and use configured
+source roots. Pass the same environment and source layout used by the project;
+otherwise graph classification can differ from lint and runtime behavior.
+
+## Verification after an upgrade
+
+Run the project's normal commands, plus focused checks appropriate to the
+features in use:
+
+```console
+ruff check .
+ruff format --check .
+ruff analyze graph .
+```
+
+Also inspect editor diagnostics, output fixtures, containers, and source builds.
+A clean lint run does not validate formatter, server, schema, or packaging.

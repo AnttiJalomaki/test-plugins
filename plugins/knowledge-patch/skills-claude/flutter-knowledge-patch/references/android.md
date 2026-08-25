@@ -1,102 +1,95 @@
 # Android platform integration
 
-## Contents
+## Project and embedding migrations
 
-- [Required project migrations](#required-project-migrations)
-- [SDK and build-tool requirements](#sdk-and-build-tool-requirements)
-- [Architectures and artifacts](#architectures-and-artifacts)
-- [Rendering](#rendering)
-- [Display and privacy APIs](#display-and-privacy-apis)
-- [Threads and native interop](#threads-and-native-interop)
-- [Removed and changed tool controls](#removed-and-changed-tool-controls)
+### Gradle plugin application and embedding APIs (3.29.0)
 
-## Required project migrations
+The imperative Flutter Gradle-script application mechanism is removed. Projects
+created before Flutter 3.16 that still emit its warning must migrate to declarative
+plugin application.
 
-### Gradle plug-in application
+The Android v1 embedding Java APIs are removed (breaking-change-guides). Migrate
+applications and plugins to the v2 embedding; do not preserve v1 shims in new work.
 
-The imperative script mechanism for applying Flutter's Gradle plug-in has been
-removed. Projects created before the declarative setup was introduced must migrate
-their `settings.gradle` and application plug-in declarations instead of suppressing
-the old warning (`3.29.0`).
+Newly created plugins use Gradle Kotlin DSL by default (3.41-guide).
 
-New plug-in projects use Gradle's Kotlin DSL. Remove `pluginClass: none` from a
-Flutter plug-in platform declaration; omitting `pluginClass` is the supported way to
-declare a platform implementation with no native code. Also omit
-`dartPluginClass: 'none'` when there is no Dart plug-in class.
+### Build baselines
 
-### Embedding and system UI
+New templates in 3.32.0 use Kotlin 2.1.0 and Gradle 8.12. Flutter enforces its
+Android `minSdk` and warns below Android Gradle Plugin 8.3 instead of 7.3, so older
+projects can require upgrades.
 
-- Android v1 embedding Java APIs are removed. Migrate applications and plug-ins to
-  the v2 embedding.
-- `SystemUiMode.edgeToEdge` is the default system-UI mode. Layout content around
-  system-bar insets rather than assuming Flutter keeps it outside the bars.
-- On Android 16 and later, edge-to-edge opt-out is being deprecated,
-  `SystemChrome.setPreferredOrientations` can be ineffective, and embedder methods
-  that set status-bar, navigation-bar, or navigation-divider colors are deprecated.
-- Android 17 large screens ignore application orientation and resizability
-  restrictions. Design every large-screen route for resizing and orientation changes.
+By 3.35-guide, Flutter's Android minimum is API 24. The minimum build stack is
+Gradle 8.7.0, AGP 8.6.0, and Java 17. Android x86 32-bit is deprecated; ARM 32-bit
+and x86_64 remain supported. Projects overriding `flutter.minSdkVersion` must raise
+that value.
 
-`FlutterFragment` and `FlutterFragmentActivity` support predictive back, extending
-the system gesture to fragment-based and add-to-app embeddings (`3.44.0`). Material
-route defaults are described in the navigation reference.
-
-## SDK and build-tool requirements
-
-Flutter enforces its Android `minSdk`. The floor moved to API 24, so projects that
-override `flutter.minSdkVersion` must raise it. The supported build floor at that
-point was Gradle 8.7.0, Android Gradle Plugin 8.6.0, and Java 17 (`3.35-guide`).
-Newer templates and tool checks also introduced Kotlin 2.1.0, Gradle 8.12, and an
-AGP warning threshold of 8.3; do not copy one isolated version from a template into
-an older project without checking the whole combination.
-
-For the later tested stack, Kotlin Gradle Plugin 2.2.20 was the maximum known
-supported version with AGP 8.11.1 and Gradle 8.14; AGP 8.11.1 requires Gradle 8.13
-or newer (`3.38-guide`). Flutter also defaults `ndkVersion` to NDK r28, which
-supplies the native toolchain needed for correct 16 KB page alignment for Android
+For 3.38-guide, the tested combination is Kotlin Gradle Plugin 2.2.20 with AGP
+8.11.1 and Gradle 8.14; AGP 8.11.1 requires at least Gradle 8.13. The default
+`ndkVersion` is NDK r28 to meet 16 KB page-alignment requirements for Android
 15-and-newer targets.
 
-### Android Gradle Plugin 9
+Trust the selected Flutter SDK's validation and project templates over mixing these
+snapshots into an untested combination.
 
-Do not apply one migration recipe across SDK releases:
+### Android Gradle Plugin 9 transition
 
-- The `3.41-guide` contract says Flutter applications using plug-ins and Flutter
-  plug-ins must not move to AGP 9 because those combinations are unsupported.
-- The later `3.44-guide` migration supports AGP 9's built-in Kotlin compilation.
-  Remove the separately applied Kotlin Gradle plug-in from applications and plug-ins
-  because it conflicts with built-in Kotlin. A migrated plug-in must set a minimum
-  Flutter SDK constraint of 3.44, and its dependencies must migrate before Flutter's
-  temporary compatibility layer disappears.
+At 3.41-guide, apps using plugins and plugins themselves were not yet supported on
+AGP 9; avoid backporting a later migration to that SDK.
 
-Use `minSdk` rather than `minSdkVersion` in Gradle 9-compatible configuration. When
-product flavors define their own `abiFilters`, set the Android project flag
-`disable-abi-filtering` so those filters take precedence over Flutter's injected
-filters.
+At 3.44-guide, AGP 9's built-in Kotlin support requires removing the separately
+applied Kotlin Gradle plugin from applications and plugins. A migrated plugin must
+declare a minimum Flutter SDK of 3.44, and its dependencies must also migrate before
+temporary compatibility is removed.
 
-## Architectures and artifacts
+Gradle 9-compatible configuration uses `minSdk` rather than `minSdkVersion`
+(3.38.0). The `disable-abi-filtering` project flag lets product-flavor
+`abiFilters` take precedence over Flutter's injected filters (3.41.0).
 
-- Android 32-bit x86 is deprecated; 32-bit ARM and x86_64 remain supported.
-- Android tooling no longer strips symbols from `libapp.so` by default. Account for
-  the artifact-size change and use the retained information for native symbolication.
-- `flutter test integration_test` builds native assets from development dependencies;
-  see the Dart tooling reference for hook and asset identity rules.
+## System UI, screens, and policy changes
+
+Flutter 3.27 made `SystemUiMode.edgeToEdge` the default
+(breaking-change-guides). Layout content around system bars explicitly.
+
+Projects using framework defaults target Android SDK 36 by 3.35.0. Android 16
+deprecates edge-to-edge opt-out; `SystemChrome.setPreferredOrientations` can be
+ineffective, and embedder methods that set status-bar, navigation-bar, or
+navigation-divider colors are deprecated.
+
+On Android 17, large screens ignore application orientation and resizability
+restrictions (breaking-change-guides). Build layouts that tolerate resizing and
+orientation changes.
+
+`MediaQueryData.displayCornerRadii` exposes physical and logical display-corner
+radii so layouts can avoid clipping on aggressively rounded screens
+(3.44-guide).
+
+```dart
+final cornerRadii = MediaQuery.of(context).displayCornerRadii;
+```
+
+On API 35 and later, wrap sensitive UI in `SensitiveContent` when media projection
+should obscure the entire app screen (3.35-guide).
 
 ## Rendering
 
-### Impeller backends
+### Impeller backend selection
 
-On Android, a device without a functional Vulkan driver falls back to Impeller's
-OpenGLES backend rather than Skia. The Android emulator and several older MediaTek,
-PowerVR, and Samsung XClipse configurations also use OpenGLES. As of Flutter 3.29.3,
-API 28 and older use Skia, while API 29 and newer default to Impeller.
+In 3.29.0, Android devices without a working Vulkan driver fall back to Impeller's
+OpenGLES backend rather than Skia. By 3.29.3, API 28 and older use Skia while API
+29 and newer default to Impeller; the emulator and specified older MediaTek,
+PowerVR, and Samsung XClipse configurations use Impeller OpenGLES
+(3.32-guide).
 
-Opting out of Impeller on Android is deprecated. Do not build a long-term workaround
-around restoring Skia on supported devices.
+Opting out of Impeller on Android is deprecated (3.38.0). Test the selected backend
+on representative devices instead of assuming Vulkan, OpenGLES, or Skia from the
+OS version alone.
 
-### Hybrid Composition++ platform views
+### Hybrid Composition++ platform views (3.44-guide)
 
-Hybrid Composition++ delegates Android platform-view compositing to the operating
-system and provides reliable `SurfaceView` support. It has device and API
-requirements, remains opt-in, and is not the default. Enable it for a run:
+Hybrid Composition++ delegates platform-view compositing to Android and provides
+reliable `SurfaceView` support. It has device and API requirements and is not the
+default.
 
 ```sh
 flutter run --enable-hcpp
@@ -110,30 +103,54 @@ Or enable it in `AndroidManifest.xml`:
   android:value="true" />
 ```
 
-Test unsupported devices and fallback behavior before adopting it.
+## Threads and embedding behavior
 
-## Display and privacy APIs
+Dart began running on the application main thread on Android and iOS in 3.29.0.
+Mobile embedders later made UI/platform thread merging mandatory, with no opt-out
+(3.38-guide). Native integrations must not depend on separate runners or on the
+serialization that separation implied.
 
-`MediaQueryData.displayCornerRadii` reports physical and logical display corner radii,
-allowing layouts to keep controls away from heavily rounded corners:
+Android content-sized add-to-app views can enable content sizing in the manifest and
+give the relevant `FlutterView` a wrap-content dimension (3.41-guide). The Flutter
+root must accept unbounded constraints; do not put a size-dependent `ListView` or
+`LayoutBuilder` at the root.
 
-```dart
-final cornerRadii = MediaQuery.of(context).displayCornerRadii;
-```
+`FlutterFragment` and `FlutterFragmentActivity` support Android predictive back,
+including fragment-based and add-to-app hosts (3.44.0). `MaterialApp` also defaults
+to predictive-back-aware transitions (3.38-guide); test both framework routing and
+native host integration.
 
-On Android API 35 and newer, `SensitiveContent` protects sensitive UI by obscuring
-the entire application screen during media projection.
+## Input
 
-## Threads and native interop
+Android 14 and later supports stylus handwriting in Material and Cupertino text
+fields (3.32-guide). Disable it per field with
+`stylusHandwritingEnabled: false` and rename
+`SelectionChangedCause.scribble` to `SelectionChangedCause.stylusHandwriting`.
 
-Dart runs on the application main thread on Android. Mobile embedders no longer
-permit opting out of UI/platform thread merging, so native integration code must not
-assume separate Flutter UI and platform task runners. See the embedding reference for
-the same contract on other targets.
+Text editing recognizes Home and End (3.35-guide). `hintLocales` provides language
+hints to Android input methods (3.35.0).
 
-## Removed and changed tool controls
+On Android API 36, semantic announcement events are deprecated. Use live-region
+updates where possible and test the remaining non-focusable-text limitation
+(3.32-guide).
 
-- The experimental `--fast-start` option is removed.
-- Projects using Flutter's framework default target Android SDK 36.
-- Tool validation can reject an outdated `minSdk`, Gradle, AGP, Kotlin, Java, or NDK
-  combination rather than leaving the failure to the Android build itself.
+## Build artifacts and diagnostics
+
+Android builds no longer strip symbols from `libapp.so` by default, affecting both
+artifact contents and native symbolication (3.44.0). Revisit packaging-size
+assumptions and crash-symbol workflows.
+
+The experimental `--fast-start` option is removed (3.38.0). Use supported run and
+startup-profile controls.
+
+## Android verification
+
+- Run `flutter analyze` and all Android plugin builds.
+- Build each flavor and ABI; confirm effective `minSdk`, target SDK, NDK, Kotlin,
+  AGP, Gradle, and Java versions.
+- Exercise edge-to-edge insets, rounded corners, resize/orientation changes, and
+  media projection.
+- Test predictive back in activities, fragments, and add-to-app hosts.
+- Exercise platform views on supported and unsupported HCPP configurations.
+- Verify renderer fallback, stylus handwriting, keyboard editing, native symbols,
+  and 16 KB page alignment where applicable.

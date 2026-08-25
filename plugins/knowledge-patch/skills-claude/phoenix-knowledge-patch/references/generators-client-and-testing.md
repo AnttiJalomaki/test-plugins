@@ -1,95 +1,81 @@
 # Generators, JavaScript Clients, and Channel Tests
 
-This task-oriented reference includes generator, client, and testing behavior from the `1.8.x` batch, plus the generated-auth asset requirement associated with current authentication guidance.
+## Use bulk and functional assigns
 
-## Streamlined resource generators
+`Phoenix.Socket.assign/2` can take a function of the current assigns; the map
+returned by that function is merged into the assigns (`1.8.x`).
 
-The context argument is optional for:
-
-- `phx.gen.live`
-- `phx.gen.html`
-- `phx.gen.json`
-
-When omitted, the generator derives the context from the plural resource name. `phx.gen.context` can likewise infer a context from the schema.
-
-For example:
-
-```console
-$ mix phx.gen.live Post posts title:string
+```elixir
+socket = Phoenix.Socket.assign(socket, fn assigns ->
+  %{count: assigns.count + 1}
+end)
 ```
 
-This short form derives the context rather than requiring it as a separate positional argument.
+`Phoenix.Controller.assign/2` now accepts the same functional form as well as
+maps and keyword lists, matching the bulk-assignment style used by LiveView:
 
-When a resource belongs to a configured non-default generator scope, keep the explicit `--scope` selection:
-
-```console
-$ mix phx.gen.live Blog Post posts title:string body:text --scope organization
+```elixir
+conn = Phoenix.Controller.assign(conn, current_user: user, locale: "en")
 ```
 
-The scope changes generated ownership fields, context queries, routes, fixtures, and setup integration. See `scopes-and-auth.md` for the full boundary configuration.
+## Put guards in channel assertions
 
-## Interactive project generation
-
-`phx.new` supports an interactive mode:
-
-```console
-$ mix phx.new my_app --interactive
-```
-
-Use it when choices should be gathered during generation.
-
-## Generated project side effects and tooling
-
-When Git is installed, `phx.new` initializes a repository.
-
-The `--docker` option uses Debian trixie as its base image.
-
-Generated projects include:
-
-- A `mix precommit` alias.
-- An `AGENTS.md` compatible with `usage_rules`.
-- A `usage_rules` directory for synchronizing Phoenix guidance.
-
-## Tailwind-enabled application themes
-
-Tailwind-enabled generated applications use daisyUI-backed themes with light, dark, and system choices.
-
-## Authentication generator assets
-
-The features emitted by `phx.gen.auth` assume that `phoenix_html.js` is included in the JavaScript bundle. The generator warns when esbuild is unavailable.
-
-## JavaScript socket visibility behavior
-
-The JavaScript socket stops reconnection attempts while the page is hidden.
-
-## LongPoll fallback transport
-
-LongPoll can use `fetch()` when `XMLHttpRequest` is unavailable.
-
-LongPoll remains opt-in after Phoenix 1.8.2. Its server-side security and event-batch constraints are detailed in `runtime-security-and-routing.md`.
-
-## Presence dispatch and key safety
-
-Presence supports a custom dispatcher for `presence_diff` broadcasts.
-
-Phoenix 1.8.9 also prevents Presence keys that match `Object.prototype` members from crashing the JavaScript client.
-
-## Guarded channel assertions
-
-As of Phoenix 1.8.4, `assert_push`, `assert_broadcast`, and `assert_reply` accept guards. Constrain a received payload inline instead of adding a separate assertion solely for its basic shape.
+Since Phoenix 1.8.4, `assert_push`, `assert_broadcast`, and `assert_reply`
+support guards. Constrain a received payload without a separate assertion:
 
 ```elixir
 assert_push "updated", payload when is_map(payload)
 ```
 
-The same pattern applies to broadcast and reply assertions.
+## Use inferred generator contexts
 
-## Deterministic verified-route queries in tests
+The context argument is optional for `phx.gen.live`, `phx.gen.html`, and
+`phx.gen.json`; each defaults it from the plural name. `phx.gen.context` can
+similarly infer a context from the schema.
 
-The top-level Phoenix setting added in 1.8.3 makes verified-route query-parameter ordering deterministic:
-
-```elixir
-config :phoenix, sort_verified_routes_query_params: true
+```console
+$ mix phx.gen.live Post posts title:string
 ```
 
-Tests can enable it when they need deterministic generated query strings.
+`phx.new` also has an interactive mode:
+
+```console
+$ mix phx.new my_app --interactive
+```
+
+## Preserve authentication JavaScript assets
+
+`phx.gen.auth` warns if esbuild is unavailable because its generated features
+assume `phoenix_html.js` is present in the JavaScript bundle. If the project
+uses another asset pipeline, ensure it still includes the module.
+
+## Expect new-project side effects and tooling
+
+When Git is installed, `phx.new` initializes a repository. The `--docker`
+option now selects Debian trixie as its base image.
+
+Generated projects also contain:
+
+- A `mix precommit` alias.
+- An `AGENTS.md` compatible with `usage_rules`.
+- A `usage_rules` directory for synchronizing Phoenix guidance.
+
+Account for these files and the automatic repository initialization when
+wrapping `phx.new` in scripts or applying a project template.
+
+## Handle JavaScript socket visibility and fallback transport
+
+The JavaScript socket stops reconnect attempts while the page is hidden. Code
+that reports connection state should account for reconnection resuming after
+the page becomes visible.
+
+LongPoll can use `fetch()` when `XMLHttpRequest` is unavailable. Do not assume
+that observing or instrumenting `XMLHttpRequest` captures every LongPoll
+request.
+
+## Customize Presence dispatch
+
+JavaScript Presence supports a custom dispatcher for `presence_diff`
+broadcasts. Use it when an application needs to schedule or route diff
+processing instead of applying every broadcast through the default dispatch
+path.

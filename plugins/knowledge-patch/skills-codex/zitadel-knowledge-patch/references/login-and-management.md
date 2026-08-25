@@ -1,40 +1,14 @@
 # Login and management
 
-- [Cloud egress allowlisting](#cloud-egress-allowlisting)
-- [Administrator memberships and custom roles](#administrator-memberships-and-custom-roles)
-- [Application redirect and token settings](#application-redirect-and-token-settings)
-- [Login V2 selection precedence](#login-v2-selection-precedence)
-- [Settings inheritance and login discovery](#settings-inheritance-and-login-discovery)
-- [Authentication recency and lockout policy](#authentication-recency-and-lockout-policy)
-- [Organization user and domain invariants](#organization-user-and-domain-invariants)
-- [Project grants and authentication gates](#project-grants-and-authentication-gates)
-- [Project-controlled branding](#project-controlled-branding)
-- [Notification-provider activation and payloads](#notification-provider-activation-and-payloads)
-- [Feature-restriction effects](#feature-restriction-effects)
-- [SCIM provisioning domains](#scim-provisioning-domains)
-- [SCIM contact and attribute mapping](#scim-contact-and-attribute-mapping)
-- [User creation and verification delivery](#user-creation-and-verification-delivery)
-- [Web Key algorithms and creation defaults](#web-key-algorithms-and-creation-defaults)
-- [Safe Web Key rotation](#safe-web-key-rotation)
-- [Self-hosted Login proxy contract](#self-hosted-login-proxy-contract)
-- [Session state and lifetime contract](#session-state-and-lifetime-contract)
-- [OIDC handoff from a custom Login UI](#oidc-handoff-from-a-custom-login-ui)
-- [SAML handoff from a custom Login UI](#saml-handoff-from-a-custom-login-ui)
-- [Device authorization in a custom Login UI](#device-authorization-in-a-custom-login-ui)
-- [External identity-provider intents](#external-identity-provider-intents)
-- [MFA enrollment and Session API challenges](#mfa-enrollment-and-session-api-challenges)
-- [Passkey registration and login](#passkey-registration-and-login)
-- [Password reset and password change](#password-reset-and-password-change)
-
 ## Cloud egress allowlisting
 
 ZITADEL Cloud uses region-specific static source addresses for outbound LDAP, OIDC/OAuth, SAML, SMTP, HTTP-provider, and Action traffic. Allowlist only the address for the instance's region:
 
 ```text
-Switzerland    34.65.158.196
-Europe         34.107.19.72
-United States  34.69.146.246
-Australia      34.87.243.23
+Switzerland   34.65.158.196
+Europe        34.107.19.72
+United States 34.69.146.246
+Australia     34.87.243.23
 ```
 
 ## Administrator memberships and custom roles
@@ -61,7 +35,7 @@ InternalAuthZ:
 
 ## Application redirect and token settings
 
-An application's type cannot be changed after creation, and outside Development Mode redirect URIs must match exactly and use HTTPS. Development Mode permits insecure redirects and glob terms `*`, `/**/`, `?`, `[class]`, and `{alt1,alt2}`, with `**` required between path separators and IPv6 brackets escaped as in `http://\[::1\]:80`. Per-application settings also select opaque versus JWT access tokens, user roles or user information in the ID token, clock skew, and additional CORS origins.
+An application's type cannot be changed after creation, and outside Development Mode redirect URIs must match exactly and use HTTPS; Development Mode permits insecure redirects and glob terms `*`, `/**/`, `?`, `[class]`, and `{alt1,alt2}`, with `**` required between path separators and IPv6 brackets escaped as in `http://\[::1\]:80`. Per-application settings also select opaque versus JWT access tokens, user roles or user information in the ID token, clock skew, and additional CORS origins.
 
 ## Login V2 selection precedence
 
@@ -69,7 +43,7 @@ The per-application **Use new login UI** switch matters only while the instance 
 
 ## Settings inheritance and login discovery
 
-Instance settings are defaults that organizations can override, and feature values are `Enabled`, `Disabled`, or `Inherit`. Login policy can independently disable email or phone login, route an unknown login name to an organization's IdP through domain discovery, or defer unknown-user disclosure until the password step. When auth-request context is missing, the default redirect URI is used and initially points to `/ui/console/`.
+Instance settings are defaults that organizations can override, and feature values are `Enabled`, `Disabled`, or `Inherit`. Login policy can independently disable email or phone login, route an unknown login name to an organization's IdP through domain discovery, or defer unknown-user disclosure until the password step; when auth-request context is missing, the default redirect URI is used and initially points to `/ui/console/`.
 
 ## Authentication recency and lockout policy
 
@@ -81,7 +55,7 @@ A user belongs to exactly one organization and cannot be moved, the same email m
 
 ## Project grants and authentication gates
 
-All applications in a project share its roles. A project grant exposes only selected roles to another organization, whose administrators can assign those roles to their own users but cannot view or change application settings. Project policy can require any role assignment, require the user's organization to have a project grant, or assert roles. Do not repurpose the automatically created `ZITADEL` project because it protects Console and the APIs.
+All applications in a project share its roles; a project grant exposes only selected roles to another organization, whose administrators can assign those roles to their own users but cannot view or change application settings. Project policy can require any role assignment, require the user's organization to have a project grant, or assert roles, and the automatically created `ZITADEL` project should not be repurposed because it protects Console and the APIs.
 
 ## Project-controlled branding
 
@@ -89,7 +63,7 @@ Project branding mode can use instance defaults, enforce the project-owning orga
 
 ## Notification-provider activation and payloads
 
-Multiple SMTP, SMS, or HTTP providers may be configured per channel, but only the active provider delivers messages. SMTP supports plain, XOAUTH/XOAuth2, and unauthenticated configurations; OAuth settings are exposed in Console. HTTP providers are created and activated separately and receive the resolved content rather than only a template identifier.
+Multiple SMTP, SMS, or HTTP providers may be configured per channel but only the active provider delivers messages; generic SMTP in Console supports plain authentication, while the API can configure XOAUTH2. HTTP providers are created and activated separately, and receive resolved content rather than only a template identifier.
 
 ```text
 POST /admin/v1/sms/http                 POST /admin/v1/email/http
@@ -103,7 +77,7 @@ When public organization registration is restricted, `GET /ui/login/register/org
 
 ## SCIM provisioning domains
 
-Set `urn:zitadel:scim:provisioningDomain` as service-account metadata to isolate one provisioner's `externalId` values from another. ZITADEL stores the value at the namespaced metadata key, falling back to the unscoped key when the service account has no provisioning domain.
+Set `urn:zitadel:scim:provisioningDomain` as service-account metadata to isolate one provisioner's `externalId` values from another; ZITADEL stores the value at the namespaced metadata key, falling back to the unscoped key when the service account has no provisioning domain.
 
 ```text
 service-account metadata: urn:zitadel:scim:provisioningDomain = customer-a
@@ -113,11 +87,11 @@ fallback:                 urn:zitadel:scim:externalId = upstream-123
 
 ## SCIM contact and attribute mapping
 
-Only the primary SCIM email and phone are stored, both are considered verified by default, and `displayName` wins over `name.formatted`; `name.givenName`, `name.familyName`, and at least one email are additionally required. Attributes without native fields are stored under `urn:zitadel:scim:*` user metadata, with multivalued structures serialized as JSON. Configure the verification defaults with `SCIM.EmailVerified` and `SCIM.PhoneVerified`.
+Only the primary SCIM email and phone are stored, both are considered verified by default, and `displayName` wins over `name.formatted`; `name.givenName`, `name.familyName`, and at least one email are additionally required. Attributes without native fields are stored under `urn:zitadel:scim:*` user metadata, with multivalued structures serialized as JSON, and the verification defaults are configurable with `SCIM.EmailVerified` and `SCIM.PhoneVerified`.
 
 ## User creation and verification delivery
 
-`POST /v2/users/human` can atomically accept a caller-chosen user ID, profile, password plus `changeRequired`, and email; mark the email verified or choose `sendCode` with a URL template versus `returnCode` for custom delivery. A registration UI should read `SettingsService.GetLoginSettings` and `GetPasswordComplexitySettings` rather than hard-code the enabled methods or password rules.
+`POST /v2/users/human` can atomically accept a caller-chosen user ID, profile, password plus `changeRequired`, and email; mark the email verified or choose `sendCode` with a URL template versus `returnCode` for custom delivery. A registration UI should read `SettingsService.GetLoginSettings` and `GetPasswordComplexitySettings` rather than hard-code enabled methods or password rules.
 
 ```json
 {"userId":"<id>","username":"ada","email":{"email":"ada@example.com","returnCode":{}},"password":{"password":"...","changeRequired":false}}
@@ -129,7 +103,7 @@ Only the primary SCIM email and phone are stored, both are considered verified b
 
 ## Safe Web Key rotation
 
-Only one Web Key is active, activation deactivates the previous key, and initial plus inactive public keys remain in JWKS. Only non-active keys can be deleted, and deletion immediately invalidates tokens and long-lived `id_token_hint` values signed by that key. Create the next key first, wait at least the JWKS cache age plus client refresh time, activate it, and retain the old key through relevant token and hint lifetimes.
+Only one Web Key is active, activation deactivates the previous key, and initial plus inactive public keys remain in JWKS; only non-active keys can be deleted, and deletion immediately invalidates tokens and long-lived `id_token_hint` values signed by that key. Create the next key first, wait at least the JWKS cache age plus client refresh time, activate it, and retain the old key through relevant token and hint lifetimes.
 
 ```text
 POST   /v2/web_keys
@@ -150,7 +124,7 @@ x-zitadel-instance-host: tenant.zitadel.cloud
 
 ## Session state and lifetime contract
 
-A Session API session accumulates checked factors with `verifiedAt` timestamps, but the client must decide which factors and recency are sufficient. Every create or update can return a replacement opaque session token, so retain only the latest token. Supplying `lifetime` recalculates expiration from each update, omitting it creates a non-expiring session, and an expired session is rejected and cannot be updated. A session token is not an OAuth access token and cannot be introspected as one.
+A Session API session accumulates checked factors with `verifiedAt` timestamps, but the client must decide which factors and recency are sufficient; every create or update can return a replacement opaque session token, so only the latest token should be retained. Supplying `lifetime` recalculates expiration from each update, omitting it creates a non-expiring session, and an expired session is rejected and cannot be updated; a session token is not an OAuth access token and cannot be introspected as one.
 
 ```json
 {"checks":{"user":{"loginName":"ada@example.com"}},"lifetime":"18000.000000000s"}
@@ -158,7 +132,7 @@ A Session API session accumulates checked factors with `verifiedAt` timestamps, 
 
 ## OIDC handoff from a custom Login UI
 
-Proxy the authorization request, load the resulting ID with `GET /v2/oidc/auth_requests/{id}`, perform the required Session API checks, then use an `IAM_LOGIN_CLIENT` credential to POST the latest session ID and token to that auth-request resource. Use the response's `callbackUrl` for the browser redirect. The custom host must also proxy token, userinfo, introspection, discovery, and end-session endpoints.
+Proxy the authorization request, load the resulting ID with `GET /v2/oidc/auth_requests/{id}`, perform the required Session API checks, then use an `IAM_LOGIN_CLIENT` credential to POST the latest session ID and token to that auth-request resource. The response's `callbackUrl` must be used for the browser redirect, and the custom host must also proxy token, userinfo, introspection, discovery, and end-session endpoints.
 
 ```json
 POST /v2/oidc/auth_requests/{id}
@@ -191,7 +165,7 @@ TOTP enrollment uses `/v2/users/{id}/totp` followed by `/verify`; SMS OTP requir
 
 ## Passkey registration and login
 
-Passkey enrollment can first create `/v2/users/{id}/passkeys/registration_link` with either a sent link template or returned code, then start `/passkeys` with the optional code and platform, cross-platform, or unrestricted authenticator choice before verifying the browser credential at `/passkeys/{passkey-id}`. Login creates a checked-user session with a `webAuthN` challenge whose domain is the Login UI's relying-party domain and whose verification requirement is `REQUIRED`, then PATCHes the browser assertion into that session. Moving Login to an unrelated domain therefore strands existing domain-bound credentials.
+Passkey enrollment can first create `/v2/users/{id}/passkeys/registration_link` with either a sent link template or returned code, then start `/passkeys` with the optional code and platform, cross-platform, or unrestricted authenticator choice before verifying the browser credential at `/passkeys/{passkey-id}`. Login creates a checked-user session with a `webAuthN` challenge whose domain is the Login UI's relying-party domain and whose verification requirement is `REQUIRED`, then PATCHes the browser assertion into that session; moving Login to an unrelated domain therefore strands existing domain-bound credentials.
 
 ```json
 {"checks":{"user":{"loginName":"ada@example.com"}},"challenges":{"webAuthN":{"domain":"login.example.com","userVerificationRequirement":"USER_VERIFICATION_REQUIREMENT_REQUIRED"}}}

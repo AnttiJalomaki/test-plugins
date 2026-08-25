@@ -1,99 +1,58 @@
 # Observability
 
-Use this reference when configuring metrics, traces, logs, diagnostics, the API,
-or the dashboard.
+## Identify OTLP signals
 
-## Identify OTLP telemetry
+The OTLP metrics exporter can set OpenTelemetry `service.name`; configure it to
+give emitted metrics an explicit service identity (3.2.0).
 
-The OTLP metrics exporter can set OpenTelemetry `service.name` (since 3.2.0).
-Set it explicitly when multiple Traefik deployments report to the same
-collector so their metric resources remain distinguishable.
+Metrics also accept `resourceAttributes`. Resource detection covers application
+logs, access logs, metrics, and traces, and Kubernetes resource attributes are
+added automatically to logs and traces when Traefik runs in Kubernetes (3.5.0).
 
-Metrics also accept `resourceAttributes` (since 3.5.0). Resource detection now
-applies across application logs, access logs, metrics, and traces; when Traefik
-runs in Kubernetes, logs and traces automatically gain Kubernetes resource
-attributes. Account for those discovered values when writing collector routing
-or cardinality rules.
+Traefik can export application and access logs through OpenTelemetry when the
+required experimental flag is enabled (3.3.0). OTLP logging can coexist with
+stdio access-log output (3.7.0), so keep a local stream when operations require
+both local and remote collection.
 
-## Correlate access logs and traces
+## Correlate requests and traces
 
-Access logs can record both the trace ID and the entry point's span ID (since
-3.2.0). Use the former to join a request to its distributed trace and the
-latter to identify the proxy's entry-point span.
+Access logs can include the trace ID and entry point's span ID (3.2.0). Use them
+to correlate proxy requests with distributed traces.
 
-Tracing has a verbosity setting and emits fewer spans by default (since 3.5.0).
-Configure verbosity explicitly if alerts, tests, or analysis depend on the
-older span density.
+Tracing has a verbosity setting and emits fewer spans by default. Set verbosity
+explicitly when consumers depend on the earlier span detail (3.5.0).
 
-In 3.7.0, access logs:
+Access logs use OpenTelemetry-conformant trace-context attributes and can
+include Kubernetes Ingress fields (3.7.0).
 
-- can continue writing to stdio while OTLP log export is active;
-- use OpenTelemetry-conformant trace-context attributes; and
-- can include Kubernetes Ingress fields.
+## Scope observability
 
-Update queries that depended on older trace-context attribute names, and enable
-the Kubernetes fields when Ingress identity is needed during request analysis.
+Metrics, tracing, and access logging can be controlled at both entry-point and
+router scope rather than only globally (3.3.0). Decide whether a global default
+or a route-specific override owns each signal before changing configuration.
 
-## Export application and access logs
+ForwardAuth can expose an authenticated user to access logs through
+`LogUserHeader` (3.2.0). Treat the selected identity header as sensitive and
+ensure the authentication boundary controls it.
 
-Application logs and access logs can be exported through OpenTelemetry (since
-3.3.0). The OTLP logs integration requires its experimental flag. Configure the
-collector and experimental setting together; enabling an exporter without the
-gate does not activate this path.
+## Use diagnostics and secret files
 
-When both a local stream and centralized export are operational requirements,
-use the 3.7.0 stdio-plus-OTLP behavior rather than assuming OTLP must replace
-stdio.
+The API exposes a support-dump endpoint for collecting diagnostic state
+(3.3.0). Protect it with the same care as other operational APIs.
 
-## Scope observability controls
+`metrics.influxdb2.token` may point to a file containing the secret rather than
+embedding the token directly in configuration (3.7.0).
 
-Metrics, tracing, and access logging can be controlled at entry-point and router
-scope (since 3.3.0), not only in global observability configuration. Use the
-narrowest scope that expresses policy, and verify inheritance when a router
-uses a parent-router hierarchy.
+Consul, Consul Catalog, and Nomad log their provider namespace at startup,
+which helps distinguish provider instances during diagnosis (3.6.0).
 
-Rejected requests caused by opt-in encoded-character entry-point policies are
-written to access logs (since 3.7.0). Include those records when investigating
-why a request never reached a router or backend.
+## Configure the API and dashboard
 
-ForwardAuth can expose the authenticated identity to access logs through
-`LogUserHeader` (since 3.2.0). Treat the selected header as identity-bearing
-data and apply the same retention and disclosure policy as other user fields.
+The API and dashboard can use a configurable base path (3.3.0). Set it when the
+UI is mounted below a reverse-proxy prefix.
 
-## Protect exporter secrets
+The Web UI's automatic theme is the default theme choice (3.4.0).
 
-`metrics.influxdb2.token` can read its secret from a file path (since 3.7.0).
-Prefer a mounted secret file when placing the token directly in static
-configuration would expose it to configuration distribution or inspection.
-
-## Collect diagnostics through the API
-
-The API provides a support-dump endpoint (since 3.3.0). Use it to capture
-diagnostic state, then handle the dump as operationally sensitive material.
-
-The API and dashboard can be mounted under a configurable base path (since
-3.3.0). Update router rules, redirects, health checks, and external links when
-moving the UI below a prefix.
-
-## Use dashboard details
-
-- The automatic Web UI theme was added and made the default in 3.4.0.
-- The certificate overview added in 3.7.0 shows each certificate's domains,
-  expiration, and attached HTTP and TCP routers.
-- Service details show server weights (since 3.7.0), which helps confirm the
-  configured balancing distribution.
-- The dashboard name is configurable (since 3.7.0).
-
-Dashboard data is a useful configuration check, but validate request behavior
-and emitted telemetry as well; a visible attachment does not prove that a route
-or collector works end to end.
-
-## Validate observability
-
-1. Send a request through each affected entry point and router.
-2. Confirm access-log, trace, and metric resource identity in the collector.
-3. Verify trace ID and entry-point span ID correlation using an actual trace.
-4. Check both stdio and OTLP output when both are configured.
-5. Exercise the configured API base path and create a support dump.
-6. Compare dashboard certificate attachments and server weights with the
-   intended dynamic configuration.
+The dashboard includes a certificate overview with certificate domains,
+expiration, and attached HTTP/TCP routers. Service details include server
+weights, and the dashboard name is configurable (3.7.0).

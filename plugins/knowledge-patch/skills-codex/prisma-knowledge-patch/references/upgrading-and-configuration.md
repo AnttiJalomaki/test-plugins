@@ -1,49 +1,62 @@
 # Upgrading and configuration
 
-Use this reference before upgrading dependencies, rewriting `prisma.config.ts`, changing migration automation, or translating removed CLI and engine options.
+## Runtime prerequisites
 
-## Contents
+Prisma ORM 6 raised the minimum supported Node.js and TypeScript versions
+(6.0.0). Check the exact requirements of the Prisma release being installed
+before changing dependencies, CI images, or production runtimes.
 
-- [Check runtime prerequisites](#check-runtime-prerequisites)
-- [Understand Prisma Config's evolution](#understand-prisma-configs-evolution)
-- [Write current Prisma Config](#write-current-prisma-config)
-- [Configure independent project paths](#configure-independent-project-paths)
-- [Use driver adapters for schema commands](#use-driver-adapters-for-schema-commands)
-- [Handle destructive migration workflows](#handle-destructive-migration-workflows)
-- [Replace removed CLI inputs](#replace-removed-cli-inputs)
-- [Remove legacy engine controls](#remove-legacy-engine-controls)
-- [Make generation and seeding explicit](#make-generation-and-seeding-explicit)
-- [Override or omit a connection URL intentionally](#override-or-omit-a-connection-url-intentionally)
+## Prisma Config evolution
 
-## Check runtime prerequisites
+### Early configuration shapes
 
-Prisma ORM raised its minimum supported Node.js and TypeScript versions in 6.0.0. Verify the actual runtime used by local development, CI, builds, and production before upgrading packages; checking only a developer shell can miss an older deployment image or editor TypeScript service.
+`prisma.config.ts` began as Early Access in 6.4.0. It was resolved relative to
+the CLI working directory, required `earlyAccess: true`, stopped automatic
+`.env` loading when present, and could run arbitrary TypeScript such as secret
+retrieval. A single schema used `{ kind: 'single', filePath: ... }`, while a
+multi-file schema used `{ kind: 'multi', folderPath: ... }`.
 
-Generated `Bytes` types also vary with the installed TypeScript version as of 6.18.0. Keep the compiler used for generation and application type-checking aligned.
+Early adapter-backed schema commands and Studio connections used config-level
+factories (6.5.0 and 6.6.0). Those shapes are historical; do not copy their
+`migrate.adapter` or `studio.adapter` fields into current Prisma Config without
+checking that the installed release still accepts them. That early API exposed
+`defineConfig` from `prisma/config` and the `PrismaConfig` type from `prisma`.
 
-Prisma ORM 7 does not support MongoDB (7.0.0). Keep a MongoDB application on Prisma 6 unless a separately documented migration path has become available; do not apply the SQL-database upgrade checklist to it.
+In 6.12.0, config could independently locate migrations, views, and TypedSQL:
 
-## Understand Prisma Config's evolution
+```ts
+import { defineConfig } from 'prisma/config'
 
-The first `prisma.config.ts` in 6.4.0 was Early Access. It was loaded from the CLI's current working directory, could run arbitrary TypeScript such as secret retrieval, and required `earlyAccess: true`. When the file existed, the CLI stopped automatically loading `.env`. The original structured schema form used `kind: 'single'` plus `filePath`, or `kind: 'multi'` plus `folderPath`.
+export default defineConfig({
+  earlyAccess: true,
+  migrations: { path: './db/migrations' },
+  views: { path: './db/views' },
+  typedSql: { path: './db/queries' },
+})
+```
 
-In 6.5.0, configurations could use `defineConfig` from `prisma/config` or the `PrismaConfig` type from `prisma`. That release also added the Studio adapter factory described in the tooling reference.
+### Stable configuration
 
-Prisma Config became generally available in 6.13.0:
+Prisma Config became GA in 6.13.0. Remove `earlyAccess: true`; opt into
+unfinished config capabilities through `experimental`. Supported module
+extensions are `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`, and the CLI
+also searches `.config/prisma.*`. A seed command belongs under `migrations`.
 
-- Remove `earlyAccess: true`.
-- Put opt-ins for Preview or Early Access config capabilities under `experimental`.
-- Use `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, or `.cts`.
-- Name the root file `prisma.config.*`, or use the supported `.config/prisma.*` location.
-- Attach a seed command to `migrations.seed`.
+`prisma init` started creating `prisma.config.ts` in 6.18.0. That release could
+place a datasource URL in config and select `engine: 'classic'`; a config
+datasource took precedence over the schema datasource.
 
-New projects created by `prisma init` began receiving `prisma.config.ts` in 6.18.0. That release temporarily allowed an `engine` field and a config-owned datasource; when present, the config datasource overrode the schema datasource.
+### Required Prisma 7 shape
 
-The current breaking architecture in 7.0.0 makes Prisma Config required for introspection and migration but removes the transitional top-level `engine` and `adapter` config fields. Distinguish historical examples from current configuration.
+For Prisma 7, Prisma Config is required for introspection and migrations and
+owns CLI datasource settings (7.0.0). Move
+`datasource.url` and `datasource.shadowDatabaseUrl` out of `schema.prisma`,
+remove `datasource.directUrl`, and move schema and seed settings out of the
+removed `prisma` block in `package.json`. The former config-level `engine` and
+`adapter` fields are removed.
 
-## Write current Prisma Config
-
-Keep CLI datasource settings, project paths, and seed commands in `prisma.config.ts`:
+The CLI does not load `.env` automatically. Import a loader explicitly before
+calling `env()`:
 
 ```ts
 import 'dotenv/config'
@@ -62,116 +75,72 @@ export default defineConfig({
 })
 ```
 
-The CLI no longer loads environment variables automatically (7.0.0). Import `dotenv/config`, use a platform secret loader, or otherwise populate `process.env` before calling `env()`.
-
-In the Prisma schema, retain the provider but remove CLI-owned URLs:
-
-```prisma
-datasource db {
-  provider = "postgresql"
-}
-```
-
-Upgrade mappings:
-
-- Move `datasource.url` from the schema to `datasource.url` in Prisma Config.
-- Move `datasource.shadowDatabaseUrl` to `datasource.shadowDatabaseUrl` in Prisma Config.
-- Remove `datasource.directUrl`; it has no current schema/config equivalent.
-- Move schema and seed settings out of the removed `prisma` block in `package.json`.
-- Remove obsolete top-level config `engine` and `adapter` fields.
-- Remove `generator.runtime = "react-native"` from current projects.
-
-## Configure independent project paths
-
-Prisma Config gained Early Access independent top-level paths for migrations, views, and TypedSQL in 6.12.0:
-
-```ts
-import { defineConfig } from 'prisma/config'
-
-export default defineConfig({
-  schema: 'db/schema.prisma',
-  migrations: {
-    path: 'db/migrations',
-    seed: 'tsx db/seed.ts',
-  },
-  views: { path: 'db/views' },
-  typedSql: { path: 'db/queries' },
-})
-```
-
-This removes the need to infer every artifact location from the schema location. For older multi-file layouts without independent config paths, the migrations directory belongs beside the schema file containing the datasource block (6.6.0).
-
-## Use driver adapters for schema commands
-
-Early Access support in 6.6.0 allowed `db push`, `db pull`, and `migrate diff` to operate on remote Cloudflare D1 and Turso/LibSQL databases through a migration adapter supplied by Prisma Config. At introduction, `migrate dev` and `migrate deploy` were not supported for these databases.
-
-The original D1 shape was:
-
-```ts
-import type { PrismaConfig } from 'prisma'
-import { PrismaD1Http } from '@prisma/adapter-d1'
-
-type Env = {
-  CLOUDFLARE_D1_TOKEN: string
-  CLOUDFLARE_ACCOUNT_ID: string
-  CLOUDFLARE_DATABASE_ID: string
-}
-
-export default {
-  schema: 'prisma/schema.prisma',
-  migrate: {
-    async adapter(env: Env) {
-      return new PrismaD1Http({
-        CLOUDFLARE_D1_TOKEN: env.CLOUDFLARE_D1_TOKEN,
-        CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
-        CLOUDFLARE_DATABASE_ID: env.CLOUDFLARE_DATABASE_ID,
-      })
-    },
-  },
-} satisfies PrismaConfig<Env>
-```
-
-The snippet uses current adapter export casing; verify the current config type before copying the historical `migrate.adapter` shape unchanged.
-
-Local D1 introspection no longer uses `db pull --local-d1` (7.0.0). Configure it through `listLocalDatabases()` and use the normal `prisma db pull` command.
-
-## Handle destructive migration workflows
-
-`prisma migrate dev` stopped offering an interactive reset when it detects drift or cannot apply a migration cleanly in 6.5.0. It exits with an error. Run the destructive operation explicitly only when data loss is intended:
+Connection-free commands tolerate an undefined datasource URL as of 7.2.0,
+so `prisma generate` can run where no database secret is available. Database
+commands can override the configured datasource for one invocation:
 
 ```sh
-npx prisma migrate reset
+npx prisma db pull --url "$DATABASE_URL"
+npx prisma db push --url "$DATABASE_URL"
+npx prisma migrate dev --url "$DATABASE_URL"
 ```
 
-As of 6.15.0, when the CLI detects invocation from a supported automated coding environment, even `prisma migrate reset --force` asks for explicit confirmation. Account for that guardrail in automation; do not attempt to bypass it accidentally.
+## Generated client and connection changes
 
-Prisma binaries may load from local network locations as of 6.5.0. This supports deployments that put binaries on network-accessible storage, but the execution environment still needs reliable access and correct platform binaries.
+New projects use the application-owned `prisma-client` generator. Give it an
+explicit output and import from that path. Construct its client with a driver
+adapter or with `accelerateUrl`; a bare constructor, an empty options object,
+`datasources`, and `datasourceUrl` are removed connection paths (7.0.0).
 
-## Replace removed CLI inputs
+Normalize renamed exports during the upgrade:
 
-The following `prisma generate` options were removed in 7.0.0:
+- `PrismaBetterSQLite3` to `PrismaBetterSqlite3`
+- `PrismaD1HTTP` to `PrismaD1Http`
+- `PrismaLibSQL` to `PrismaLibSql`
+- `PrismaNeonHTTP` to `PrismaNeonHttp`
+
+The `node`, `deno-deploy`, and `vercel` runtime names were consolidated into
+`nodejs`, `deno`, and `vercel-edge` in 6.15.0. Prisma 7 removes the generator's
+`react-native` runtime (7.0.0).
+
+## Explicit generation and seeding
+
+Package installation no longer invokes `prisma generate`, and Prisma Migrate
+no longer generates the client or seeds implicitly (7.0.0). Add the intended
+steps explicitly to local, CI, deployment, and installation workflows:
+
+```sh
+npx prisma generate
+npx prisma db seed
+```
+
+If a legacy `prisma-client-js` generator keeps a custom output directory,
+install `@prisma/client-runtime-utils`.
+
+## Removed CLI inputs
+
+Prisma 7 removes these `prisma generate` flags (7.0.0):
 
 - `--data-proxy`
 - `--accelerate`
 - `--no-engine`
 - `--allow-no-models`
 
-For `prisma migrate diff`:
+For `migrate diff`, rename `--from-schema-datamodel` and
+`--to-schema-datamodel` to `--from-schema` and `--to-schema`. URL,
+schema-datasource, and local-D1 inputs become
+`--from-config-datasource`/`--to-config-datasource`; one config cannot diff two
+different datasource URLs.
 
-- Replace `--from-schema-datamodel` with `--from-schema`.
-- Replace `--to-schema-datamodel` with `--to-schema`.
-- Replace legacy URL, schema-datasource, and local-D1 inputs with `--from-config-datasource` or `--to-config-datasource` as appropriate.
-- Do not try to diff two datasource URLs through one config file; one Prisma Config cannot represent both sides that way.
+`db pull --local-d1`, its undocumented `--url` option, and `prisma introspect`
+were removed. Configure local D1 with `listLocalDatabases()` and use
+`prisma db pull`. The general `--url` override returned for `db pull`,
+`db push`, and `migrate dev` in 7.2.0.
 
-Also remove:
+## Removed engines and environment controls
 
-- `prisma db pull --local-d1`; use `listLocalDatabases()` configuration.
-- The undocumented legacy `db pull --url` behavior from the 7.0.0 transition; an official `--url` override returned for selected commands in 7.2.0, as described below.
-- `prisma introspect`; use `prisma db pull`.
-
-## Remove legacy engine controls
-
-The library, binary, Data Proxy, old Accelerate, and React Native engines were removed in 7.0.0. Remove `engineType = "library"` and `engineType = "binary"` plus these retired environment variables:
+Remove library and binary engine selection, Data Proxy controls, and these
+environment variables (7.0.0):
 
 - `PRISMA_CLI_QUERY_ENGINE_TYPE`
 - `PRISMA_CLIENT_ENGINE_TYPE`
@@ -186,43 +155,30 @@ The library, binary, Data Proxy, old Accelerate, and React Native engines were r
 - `PRISMA_MIGRATE_SKIP_GENERATE`
 - `PRISMA_MIGRATE_SKIP_SEED`
 
-Use the Query Compiler and a driver adapter for direct database access, or `accelerateUrl` for Prisma Accelerate.
+The deprecated `metrics` preview API is also removed; collect pool and driver
+metrics from the selected adapter.
 
-## Make generation and seeding explicit
+## MongoDB compatibility
 
-Package installation no longer invokes `prisma generate`, and Prisma Migrate no longer generates or seeds automatically as of 7.0.0. Add the commands to the exact workflows that require them:
+Prisma ORM 7.0.0 does not support MongoDB. Keep MongoDB projects on a supported
+Prisma 6 release rather than applying the SQL-focused major upgrade.
 
-```sh
-npx prisma migrate deploy
-npx prisma generate
-npx prisma db seed
-```
+## Destructive-operation guardrails
 
-Do not run seeding after every production deploy unless it is intentionally idempotent. If a retained `prisma-client-js` generator uses a custom output path, install `@prisma/client-runtime-utils` explicitly.
+`prisma migrate dev` stopped offering an interactive reset after drift or a
+failed migration in 6.5.0. It exits with an error; run `prisma migrate reset`
+explicitly only when data destruction is intended.
 
-## Override or omit a connection URL intentionally
+Starting in 6.15.0, destructive CLI commands launched through supported
+automated coding environments require explicit confirmation even with
+`migrate reset --force`. The safeguard expanded in 7.9.0 to cover
+`prisma db push --accept-data-loss`, more environment conventions including
+`AI_AGENT` and `AGENT`, and Linux. The Prisma MCP server no longer exposes its
+`migrate-reset` operation; use the guarded CLI path when a reset is required.
 
-`prisma db pull`, `prisma db push`, and `prisma migrate dev` accept an official `--url` override as of 7.2.0:
+## PostgreSQL extensions
 
-```sh
-npx prisma db pull --url "$DATABASE_URL"
-npx prisma db push --url "$DATABASE_URL"
-npx prisma migrate dev --url "$DATABASE_URL"
-```
-
-Use this for an intentional one-invocation target.
-
-Connection-free commands tolerate an undefined datasource URL as of 7.2.0. For example, allow `prisma generate` to run in a build stage without database credentials:
-
-```ts
-import { defineConfig } from 'prisma/config'
-
-export default defineConfig({
-  schema: 'prisma/schema.prisma',
-  datasource: {
-    url: process.env.DATABASE_URL,
-  },
-})
-```
-
-Use an optional environment lookup only for genuinely connection-free workflows.
+Remove the deprecated `postgresqlExtensions` preview feature and manage
+extensions in custom migration SQL (6.16.0). Create an empty migration, insert
+the required `CREATE EXTENSION` statement, review it, and apply it through the
+ordinary migration workflow.

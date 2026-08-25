@@ -10,50 +10,52 @@ metadata:
 
 # Erlang/OTP Knowledge Patch
 
-Use this skill when upgrading, reviewing, debugging, or writing Erlang/OTP
-code whose behavior depends on recent language, runtime, standard-library,
-networking, cryptography, or build-system changes.
-
-## How to use this skill
-
-1. Read the project manifest, release configuration, and runtime version.
-2. Identify whether the work touches a breaking change, security boundary,
-   experimental feature, or newly deprecated API.
-3. Apply only guidance relevant to the project's deployed OTP patch level.
-4. Open the topic reference before changing code or configuration; quick
-   references below emphasize the migration decisions, not every detail.
-5. Test serialized terms, certificates, protocol peers, and native extensions
-   across every OTP version that participates in an upgrade.
+Use this skill when upgrading Erlang/OTP, changing Erlang language or runtime
+code, operating BEAM services, or configuring OTP networking, cryptography,
+shells, builds, and test tooling. Read the relevant topic reference before
+depending on historical defaults, serialized runtime terms, protocol behavior,
+or application-level patch compatibility.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Language and runtime](references/language-runtime.md) | Comprehensions, native records, compiler diagnostics, types, arrays, maps, persistent data structures, code loading |
-| [Shell, I/O, and testing](references/shell-io-testing.md) | Standard input, raw `noshell`, remote shells, ANSI output, Common Test, doctests, native-code test workflows |
-| [Cryptography, TLS, and certificates](references/crypto-tls-certificates.md) | Post-quantum algorithms, PEM and certificate validation, TLS hardening, OCSP, encrypted crash dumps |
-| [Networking and services](references/networking-services.md) | DNS, TCP, sockets, HTTP, FTP, SFTP, SSH services, SCTP, tar extraction |
-| [Build and operations](references/build-operations.md) | PCRE2 migration, release artifacts, embedded dependencies, memory advice, Windows support, OpenVEX |
+| [`build-operations.md`](references/build-operations.md) | Release artifacts, embedded dependencies, runtime flags, platform support, crash dumps, and vulnerability metadata |
+| [`crypto-tls-certificates.md`](references/crypto-tls-certificates.md) | TLS and certificate validation, post-quantum algorithms, OCSP, crypto failures, and hardening |
+| [`language-runtime.md`](references/language-runtime.md) | Comprehensions, types, compiler diagnostics, runtime APIs, collections, regular expressions, and serialization |
+| [`networking-services.md`](references/networking-services.md) | DNS, TCP and sockets, HTTP, SSH/SFTP/FTP, distribution, `epmd`, Diameter, Megaco, and SNMP |
+| [`shell-io-testing.md`](references/shell-io-testing.md) | Shell modes, standard input, terminal styling, Common Test, documentation tests, abstract forms, and tar/ZIP extraction |
 
-## Breaking changes and deprecations
+## Upgrade-critical changes
 
-### Do not carry serialized arrays into OTP 29
+### Replace serialized `array` terms
 
-The `array` internal representation changed incompatibly. Terms produced by
-`term_to_binary/1` on an earlier release must be decoded and converted before
-the upgrade, or regenerated afterward. Do not treat the representation as a
-stable persistence format.
+OTP 29 changes the internal `array` representation. Do not carry values
+serialized by `term_to_binary/1` on an earlier release across the upgrade;
+rebuild them from an application-owned format.
 
-### Require SANs on certificates
+### Require SANs in certificates
 
-Hostname validation no longer falls back to a certificate subject common
-name. Provision certificates with a matching subject alternative name and
-update error handling to distinguish subject-name and SAN constraint errors.
+Hostname validation no longer falls back to a certificate subject common name.
+Certificates must have a matching subject alternative name. Error handling may
+also see separate subject-name and subject-alternative-name constraint errors.
 
-### Configure SSH daemon services explicitly
+### Harden extraction boundaries
 
-`ssh:daemon/2` does not enable shell, exec, or SFTP services by default. Add
-only the services the application intends to expose:
+Use `erl_tar`'s `{max_size, Size}` option to cap extracted data. Current ZIP
+extraction rejects relative entries such as `../x/y` that escape the target
+directory; treat rejection as a security boundary, not an archive compatibility
+problem.
+
+### Audit default code loading
+
+The current directory is last, rather than first, in the default code path.
+Local BEAM files no longer shadow OTP or application modules unless the code
+path is changed explicitly.
+
+### Opt in to SSH daemon services
+
+`ssh:daemon/2` no longer enables shell, exec, or SFTP by default:
 
 ```erlang
 ssh:daemon(Port, [
@@ -64,162 +66,182 @@ ssh:daemon(Port, [
 ]).
 ```
 
-### Audit code-path assumptions
+Enable only the services the daemon needs.
 
-The current working directory is last, rather than first, in the default code
-path. A local BEAM no longer shadows an OTP or application module unless the
-code path is changed explicitly. Remove workflows that relied on implicit
-shadowing.
+### Check ordered inputs
 
-### Migrate old language constructs
+`gb_sets:from_ordset/1` and `gb_trees:from_orddict/1` now reject unordered
+input with `badarg` instead of constructing invalid data structures.
 
-The compiler warning for `catch Expr` is enabled by default. Prefer a targeted
-`try ... catch`; use `nowarn_deprecated_catch` only as a temporary module-level
-escape hatch. Old-style guard type tests such as `integer` and `atom`, plus the
-`odbc` application and `ftp` and `ct_ftp` modules, are scheduled for removal in
-OTP 30.
+### Account for bounded HTTP retries
 
-### Make comprehension assignments explicit
+After a `Retry-After` response, `httpc:request/4,5` retries once by default and
+then returns the error response. Configure `{autoretry, Timeout}` or implement
+an application retry policy when one retry is insufficient.
 
-A match used as a comprehension qualifier is a compile error unless the
-experimental `compr_assign` feature is enabled. With the feature enabled,
-`P = E` has strict-generator behavior. Otherwise, rewrite the qualifier as a
-generator or move the match outside the comprehension.
+## Deprecations and diagnostics
 
-### Revalidate regular expressions
+### Migrate old-style `catch`
 
-The `re` module uses PCRE2, whose validation and Unicode data can change
-matches and errors. Retest invalid escapes, Unicode properties, branch-reset
-groups, and `re:split/3` results. Never persist or transfer a compiled regex's
-internal value; use the supported export/import path where available.
+The warning for `catch Expr` is enabled by default. Prefer targeted
+`try ... catch` clauses. Use `nowarn_deprecated_catch` only as a temporary
+module-level migration escape hatch.
 
-### Do not assume input repair by ordered constructors
+### Prepare for removals
 
-`gb_sets:from_ordset/1` and `gb_trees:from_orddict/1` reject unordered input.
-Validate or sort at the boundary rather than constructing a corrupt data
-structure.
+Old-style guard type tests such as `integer` and `atom`, the `odbc`
+application, and the `ftp` and `ct_ftp` modules are deprecated and scheduled
+for removal in OTP 30.
 
-## Security and protocol upgrade checks
+### Review new compiler warnings
 
-### Keep native-record deployments patched
+The compiler warns by default for variables exported from subexpressions and
+match aliases that unify constructors. Temporary suppressions are
+`nowarn_export_var_subexpr` and `nowarn_match_alias_pats`.
 
-Native records are experimental. OTP 29.0.1 fixes compiler and runtime
-correctness failures, and OTP 29.0.2 adds further Dialyzer, formatting, and
-anonymous-update fixes. Use at least 29.0.1 and prefer a complete current OTP
-installation instead of selectively updating applications.
+Enable `warn_obsolete_bool_op` to find eager `and`/`or` expressions that
+should generally use `andalso`/`orelse`, or `,`/`;` in guards.
 
-### Expect stricter TLS failures
+### Find unsafe calls
 
-Treat invalid PEM input as an immediate configuration failure. Modern TLS
-handling rejects duplicate or injected handshake messages, stale stateless
-tickets, PSK binder/identity mismatches, oversized OCSP responses, expired
-OCSP responder certificates, and invalid certificate paths. Tests should
-assert the emitted alert where the peer now receives one.
+Functions may have `-unsafe` attributes, and calls to always-unsafe OTP
+functions warn by default. Enable `warn_possibly_unsafe_function` for
+conditional cases such as atom creation. The `xref` analyses
+`unsafe_function_calls`, `undocumented_function_calls`, and
+`private_function_calls` support wider audits.
 
-### Recheck request and file-transfer trust boundaries
+## Language quick reference
 
-On cross-host or cross-port redirects, `httpc` strips authorization,
-proxy-authorization, cookie, referer, and origin headers. FTP rejects passive
-responses that redirect data connections to arbitrary hosts. SFTP confines
-`READLINK` and `REALPATH` results to its configured root and caps reads at
-255 KiB.
-
-### Validate distribution boundaries
-
-TLS distribution enforces the same-LAN restriction when `check_ip` is set.
-Confirm the intended LAN and certificate configuration before rolling a
-patched node into a cluster.
-
-## High-value language and runtime features
-
-### Strict and zipped generators
+### Strict generators
 
 Use `<:-` for strict list and map generators and `<:=` for strict binary
-generators when a nonmatching input is an error. Join generators with `&&` to
-advance them in parallel rather than produce a Cartesian product:
+generators. A pattern mismatch raises instead of silently skipping the value.
+
+```erlang
+[X || {ok, X} <:- [{ok, 1}, error, {ok, 3}]].
+```
+
+### Zip generators
+
+Join generators with `&&` to consume their inputs in parallel rather than
+forming a Cartesian product:
 
 ```erlang
 [{X, Y} || X <- [1, 2] && Y <- [a, b]].
 ```
 
-Comprehensions can also emit several comma-separated values per iteration.
+Any number of list, binary, or map generators can participate, alongside
+ordinary generators and filters.
 
-### Priority messaging
+### Comprehension assignment
 
-Priority delivery is an explicit alias capability. Create the alias with
-`alias([priority])`, then opt each send into priority handling:
+A match used as a qualifier is a compile error by default. Enable
+`compr_assign` to make `P = E` behave like the strict generator `P <-:- [E]`:
+
+```erlang
+-feature(compr_assign, enable).
+```
+
+Comprehensions can also emit multiple comma-separated values per iteration,
+such as `[I, -I || I <- lists:seq(1, 3)]`.
+
+### Native records
+
+Native records are experimental runtime types, not tagged tuples:
+
+```erlang
+-record #vec{x = 0.0, y = 0.0}.
+-export_record([vec]).
+```
+
+Definitions are private by default. Other modules need `-export_record` for
+construction or field-aware matches, though a field-free match is permitted.
+Because early compiler, runtime, Dialyzer, and formatting defects were fixed in
+29.0.1 and 29.0.2, update the full installation before experimenting with them.
+
+### Bounded integer guards
+
+`is_integer(Term, LowerBound, UpperBound)` succeeds only when all three
+arguments are integers and the term is within the inclusive bounds. It avoids
+range guards that accidentally accept floats.
+
+### Nominal types
+
+Use `-nominal` when structurally identical types must remain distinct in
+Dialyzer specifications:
+
+```erlang
+-nominal meter() :: integer().
+-nominal foot() :: integer().
+```
+
+A nominal type remains compatible with a non-opaque, non-nominal type of the
+same structure.
+
+## Runtime quick reference
+
+### Priority signals
+
+Create a priority-capable alias and use the `priority` send option:
 
 ```erlang
 PrioAlias = alias([priority]),
 erlang:send(PrioAlias, Message, [priority]).
 ```
 
-Sending through that alias without the option is ordinary. Use the analogous
-priority option for exit, link, or monitor signals, and call `unalias/1` to
-revoke the capability.
+Priority messages go ahead of ordinary messages while signal order is
+preserved. Sending through the alias without the option remains ordinary, and
+`unalias/1` revokes the capability. Priority exits use
+`exit(Alias, Reason, [priority])`; event-generated links and monitors opt in
+through `erlang:link/2` and `erlang:monitor/3`.
 
-### Native records
+### Hibernate without discarding the stack
 
-Native records are runtime types, not tagged tuples. Their definitions are
-private unless exported, and only a field-free match is available to another
-module without `-export_record`:
+`erlang:hibernate/0` minimizes the calling process while it waits for the next
+message but, unlike `erlang:hibernate/3`, preserves the call stack.
+
+### Insert persistent terms idempotently
+
+`persistent_term:put_new/2` returns quickly when the same key and value already
+exist. It raises `badarg` when the key exists with a different value.
+
+### Use consistent map iteration carefully
+
+Standard map traversal functions now return a given map's elements in a
+consistent order, including keys, values, list conversion, default iterators,
+and comprehensions. The order is still undefined, unsorted, and not stable
+across maps or releases.
+
+## Security and protocol quick reference
+
+### Treat patch hardening as compatibility-sensitive
+
+Recent patch fixes tighten certificate paths, TLS handshakes and tickets, SSH
+Diffie-Hellman and packet validation, SFTP/FTP confinement, ETF decoding,
+archive extraction, `epmd`, Diameter, Megaco, and crypto input validation.
+Retest negative cases and error matching instead of relying on former silent
+disconnects, crashes, or permissive behavior.
+
+### Handle unsupported crypto structurally
+
+When EdDH or EdDSA is unavailable, `crypto:compute_key/4` and
+`crypto:generate_key/2,3` raise:
 
 ```erlang
--record #vec{x = 0.0, y = 0.0}.
--export_record([vec]).
-
-make_vec(X, Y) -> #vec{x = X, y = Y}.
+error:{notsup, Info, Description}
 ```
 
-Treat their syntax and behavior as experimental and isolate their use behind
-small module boundaries.
+Catch that tuple when fallback is valid; do not match an unstructured failure.
 
-### Safer guards and diagnostics
+### Recheck post-quantum negotiation
 
-Use `is_integer(Term, Lower, Upper)` for an inclusive integer-only range
-check. Consider the opt-in warnings for obsolete eager Boolean operators and
-possibly unsafe functions. Use `xref` analyses for unsafe, undocumented, and
-private calls as part of an upgrade audit.
+Hybrid ML-KEM groups and ML-DSA/SLH-DSA signatures are integrated into TLS,
+SSH, `public_key`, and `crypto`. They become preferred defaults where
+supported, while retaining fallback for peers that cannot negotiate them.
+Confirm the linked OpenSSL capabilities and the certificate/key material.
 
-### Functional and expanded collections
+## Further guidance
 
-The persistent `graph` API returns a new graph from each modification. The
-`array` API adds prepend, append, concat, slice, shift, flexible construction,
-bounded folds, and map-fold families. Standard map iteration forms now agree
-on one order for a given map, but that order remains undefined and unsorted.
-
-## High-value system features
-
-### Post-quantum cryptography
-
-With a suitable OpenSSL build, ML-DSA signing and ML-KEM encapsulation are
-available through `crypto`, with integration in `public_key` and `ssl`.
-Hybrid ML-KEM groups are preferred by TLS and SSH, with fallback for peers
-that do not support them. Check backend capability and handle structured
-`{notsup, Info, Description}` crypto errors.
-
-### Bounded resource use
-
-Use `{max_size, Size}` during `erl_tar` extraction. Understand `httpc`'s
-bounded default retry after `Retry-After`, and choose an explicit retry policy.
-The SFTP and OCSP limits described in the references are protocol boundaries,
-not hints.
-
-### Better terminal and test tooling
-
-Use raw `noshell` mode for keystroke-oriented applications, `io_ansi` for
-terminfo-aware styling, and `ct_doctest` for shell-style documentation
-examples. Standard input is lazy, so remove obsolete `-noinput` workarounds
-whose only purpose was preventing eager reads.
-
-## Upgrade checklist
-
-- Compile with the new default warnings and classify every new diagnostic.
-- Run Dialyzer and the new `xref` analyses against production code paths.
-- Recompile regexes and test Unicode and malformed-pattern cases.
-- Replace persisted array terms and test map-order-sensitive output.
-- Validate SANs, OCSP responses, TLS alerts, and post-quantum negotiation.
-- Test `httpc`, FTP, SFTP, SSH, DNS, SCTP, and accepted-socket behavior.
-- Verify release artifact targets and embedded third-party selections.
-- Exercise shell, terminal, Common Test, and documentation examples.
-- Test native records only on an adequately patched full OTP installation.
+Open the reference that matches the task before changing production behavior.
+The references preserve exact API names, flags, dependency constraints,
+protocol limits, and migration consequences that this quick reference omits.

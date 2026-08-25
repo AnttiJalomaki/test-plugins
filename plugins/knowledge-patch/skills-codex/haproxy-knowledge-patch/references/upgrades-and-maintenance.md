@@ -1,162 +1,167 @@
 # Upgrades and Maintenance
 
-## Configuration and process compatibility
+## Worker-owned configuration parsing
 
-### Parsing and reload ownership
+Since 3.1.0, the master only starts workers and each worker parses the
+configuration itself. This removes the master's old parse-and-undo sequence,
+making reload behavior consistent and avoiding the related file-descriptor
+leaks. Investigate parse failures in worker startup rather than assuming the
+master already validated and materialized all configuration state.
 
-Workers parse their own configuration as of 3.1.0; the master only starts the
-workers. This removes the master's former parse-and-undo path and avoids the
-associated reload inconsistencies and file-descriptor leaks.
+## Deprecated-directive warnings
 
-### Deprecated-directive policy
+HAProxy 3.1.0 warns on deprecated directives unless the global
+`expose-deprecated-directives` option is present.
 
-Deprecated directives warn starting in 3.1.0 unless the global
-`expose-deprecated-directives` option is enabled. Use that option only as a
-short migration aid; it exposes old directives rather than making them a good
-long-term configuration choice.
+```haproxy
+global
+    expose-deprecated-directives
+```
 
-The compatibility sequence is LTS-aware. A supported configuration on a
-non-LTS line is expected to continue working on the next LTS line, and that LTS
-does not normally add warnings for supported configuration that was
-warning-free on the preceding non-LTS. Deprecation ordinarily begins with a
-warning on a non-LTS and removal becomes an error on the next non-LTS, at least
-one year later.
+Use that switch only as a temporary compatibility measure. `program` sections
+and legacy C mailers were scheduled for removal in 3.3.0, with Lua mailers as
+the supported replacement. The OpenTracing filter was scheduled for
+deprecation in 3.3.0 and removal in 3.5.
 
-Specific migrations are:
+OpenTelemetry support is available as an add-on in 3.4.0 and replaces
+OpenTracing. Complete the integration migration before the removal point.
 
-- `program` sections and legacy C mailers were deprecated for removal in 3.3;
-  use Lua mailers.
-- The OpenTracing filter was scheduled for deprecation in 3.3 and removal in
-  3.5. In 3.4.0 OpenTracing is officially deprecated; use the OpenTelemetry
-  add-on.
-- Backend `dispatch` and `option transparent` warn as deprecated in 3.3.0 and
-  are planned for removal in 3.5.
-- Replace global `tune.quic.frontend.*` names with `tune.quic.fe.*`.
-- Replace the global `master-worker` directive with `-W` or `-Ws` on the
-  command line.
-- `tune.disable-fast-forward` is stable in 3.3.0 and no longer requires
-  `expose-experimental-directives`.
+## Duplicate names become errors
 
-To replace `dispatch <address>`, configure a regular server named `dispatch`
-at the same address. If legacy servers must remain in the backend, set their
-weights to zero to retain dispatch semantics:
+HAProxy 3.1.0 detects and warns about duplicate names across `frontend`,
+`listen`, `backend`, `defaults`, and `log-forward` section families, as well
+as duplicate server names. Those duplicates became errors in 3.3.0. HAProxy
+3.1 otherwise introduced no breaking changes. Rename collisions before moving
+to 3.3 or later.
+
+## Empty arguments
+
+Since 3.2.0, empty configuration arguments warn, including an empty environment
+variable expanded inside double quotes, and were scheduled to become errors
+in the next version. Use `${NAME[*]}` when an empty expansion is intentional.
+
+## Startup diagnostics
+
+HAProxy 3.3.0 adds targeted startup checks:
+
+- running as root without a global `user` directive warns;
+- leaving `expose-experimental-directives` enabled when no configured feature
+  needs it warns;
+- `thread-groups` ranges larger than `nbthreads` are trimmed with a warning,
+  while a group trimmed to empty is fatal;
+- static builds warn when `user` or `group` should be `uid` or `gid`.
+
+Treat these as deployment defects rather than suppressing the messages.
+
+## Crash retention and reload caps
+
+For crash investigation in 3.3.0, `master-worker no-exit-on-failure` keeps the
+other workers alive when one receives a segmentation fault. Use it only with
+an operational plan for a partially degraded process set.
+
+The default `mworker-max-reloads` is 50 from 3.3.0. Account for that cap in
+automation that performs frequent reloads.
+
+## New and renamed deprecations
+
+HAProxy 3.3.0 warns that backend `dispatch` and `option transparent` are
+deprecated. Replace them before their planned 3.5 removal.
 
 ```haproxy
 backend legacy_dispatch
     server dispatch 192.0.2.10:8080
-```
 
-To replace `transparent` or `option transparent`, define a server at
-`0.0.0.0`. This preserves forwarding to the original TPROXY destination:
-
-```haproxy
 backend original_destination
     server tproxy 0.0.0.0
 ```
 
-### Errors and warnings to resolve before an upgrade
+If a dispatch backend retains other legacy servers, set those servers to
+weight zero to preserve dispatch behavior. The zero-address server preserves
+routing to the original TPROXY destination.
 
-Duplicate names across proxy-section families (`frontend`, `listen`,
-`backend`, `defaults`, and `log-forward`) and duplicate server names warn in
-3.1.0 and become errors in 3.3.0. HAProxy 3.1 otherwise adds no breaking
-changes.
+Also migrate:
 
-Empty arguments, including empty environment variables expanded inside double
-quotes, warn in 3.2.0 and are scheduled to become errors in the next version.
-Use `${NAME[*]}` for an intentionally empty environment expansion.
+- `tune.quic.frontend.*` globals to `tune.quic.fe.*`;
+- the global `master-worker` directive to the `-W` or `-Ws` command-line
+  option;
+- global `no-quic` to `tune.quic.listen on|off`;
+- the shared compression filter and deprecated `compression-direction` to
+  3.4.0 `filter comp-req` and `filter comp-res`;
+- `tune.takeover-other-tg-connections` to 3.4.0
+  `tune.idle-pool.shared`.
 
-An ACL can no longer specify multiple match types after `-m` in 3.3.0. The
-configuration fails instead of silently using the final type. Ambiguous forms
-such as `path_beg -m reg` also warn; rewrite them with one coherent match
-method.
+## Strict configuration validation
 
-`http-send-name-header` may no longer target `connection`, `content-length`,
-`host`, or `transfer-encoding` in 3.3.0, because replacing those fields would
-create an invalid HTTP request.
+In 3.3.0, an ACL may not specify several match types after `-m`; a
+configuration that previously used only the final type now fails. Ambiguous
+combinations such as `path_beg -m reg` warn and should be rewritten with an
+unambiguous fetch and matcher.
 
-Startup diagnostics added in 3.3.0 warn when:
+The same release forbids `http-send-name-header` from targeting
+`connection`, `content-length`, `host`, or `transfer-encoding`, because
+rewriting those fields can create an invalid HTTP request.
 
-- HAProxy runs as root without a global `user` directive;
-- `expose-experimental-directives` remains enabled but no configured feature
-  needs it;
-- a `thread-groups` range exceeds `nbthreads` and must be trimmed; or
-- a static build uses `user` or `group` where `uid` or `gid` is appropriate.
+## Build and install changes
 
-An empty thread group after trimming is fatal.
+The default `linux-glibc` build target requires Linux 4.17 from 3.3.0 to
+support Kernel TLS. Verify the build host and runtime kernel floor together.
 
-### Changed automatic behavior
+Install the `halog` administration utility with `make install-admin`; it is no
+longer installed by `make install`.
 
-Starting in 3.3.0, a backend without `balance` uses `random` rather than
-`roundrobin`. The random policy samples two servers and selects the less-loaded
-one. Set `balance roundrobin` to preserve the previous behavior. In 3.4.0, an
-equal concurrent-connection count is broken using recent HTTP request rates;
-this changes distribution in large pools with many apparent ties.
+## LTS-aware deprecation sequence
 
-HTTP-mode backends enable `option abortonclose` by default in 3.3.0, so HAProxy
-can stop work before an abandoned client request reaches a server. The option
-also becomes valid in a frontend.
+HAProxy's compatibility policy says a supported setup on a non-LTS branch
+continues to work on the next LTS, so features are not removed between those
+branches. An LTS also avoids adding warnings for configurations that were
+supported and warning-free on the preceding non-LTS. A deprecation normally
+warns first in a non-LTS and is removed as an error in the next non-LTS at
+least one year later.
 
-The global `dns-accept-family`, introduced in 3.2.0, defaults to `auto` in
-3.3.0. See the networking reference for probe behavior and explicit choices.
+Use this sequence to schedule migration, but resolve warnings early rather
+than relying on the full grace period.
 
-### Command and build changes
-
-The `linux-glibc` target requires Linux 4.17 as of 3.3.0 to support Kernel TLS.
-The `halog` utility is installed with `make install-admin`, not `make install`.
-
-Version-only command formats added in 3.3.0 are:
-
-- `haproxy -vq` for the version;
-- `haproxy -vqs` for the short version; and
-- `haproxy -vqb` for the branch.
-
-The Stats page stops showing the HAProxy version by default in 3.4.0. Add
-`stats show-version` to expose it.
-
-## Master-worker operation
-
-For crash investigation, `master-worker no-exit-on-failure` in 3.3.0 keeps the
-remaining workers running after one worker segfaults rather than terminating
-all of them. The default `mworker-max-reloads` is 50.
-
-## Selecting and maintaining a branch
+## Choose branch and patch level separately
 
 Since 1.8, HAProxy normally publishes two feature branches each year.
-Even-numbered feature branches are LTS lines maintained for five years.
-Odd-numbered feature branches are stable lines maintained for roughly 12–18
-months and suit operators able to upgrade and roll back more frequently.
+Even-numbered branches are LTS and maintained for five years. Odd-numbered
+branches are short-lived stable lines, maintained roughly 12–18 months, for
+operators prepared to upgrade and roll back more frequently.
 
-Pick the feature branch separately from its patch release. Bug fixes are
-conservatively backported within a maintained branch, so keeping the final
-component current does not require adopting new features. Reproduce a problem
-on the newest patch release before reporting it.
+Within a maintained branch, keep the final bug-fix component current. Fixes
+are backported conservatively, so patch-level maintenance does not require a
+feature-branch upgrade. Reproduce a suspected defect on the latest patch in
+its branch before reporting it.
 
-The branch-maintenance snapshot lists these states:
+## Maintenance snapshot from the source batch
 
-| Branch snapshot | Maintenance state |
+At the 2026-07-28 branch-maintenance snapshot, fully maintained releases were:
+
+| Release | Status |
 | --- | --- |
-| 3.4.2 | Fully maintained LTS through 2031-Q2 |
-| 3.3.12 | Fully maintained stable through 2027-Q1 |
-| 3.2.21 | Fully maintained LTS through 2030-Q2 |
-| 3.0.25 | Fully maintained LTS through 2029-Q2 |
-| 2.8.26 | Critical fixes only through 2028-Q2 |
-| 2.6.31 | Critical fixes only through 2027-Q2 |
+| 3.4.2 | LTS through 2031-Q2 |
+| 3.3.12 | Stable through 2027-Q1 |
+| 3.2.21 | LTS through 2030-Q2 |
+| 3.0.25 | LTS through 2029-Q2 |
 
-All other released branches in that snapshot are unmaintained.
+Branches 2.8 at 2.8.26 through 2028-Q2 and 2.6 at 2.6.31 through 2027-Q2
+received critical fixes only. Every other released branch in that matrix was
+unmaintained. This is a dated snapshot: consult the current maintenance table
+before selecting a branch.
 
-## Reading maintenance queues
+## Interpret maintenance bug queues
 
-The pending-fixes table contains changes already queued for the next patch of
-that maintenance branch. A separate list of fixes made later on the development
-branch is only a candidate set: a candidate may not affect the maintenance
-branch, and applicable fixes land on development before backporting. At the
-snapshot, the newest 3.4, 3.3, and 3.2 releases each had zero queued known bugs
-even though later development fixes were listed.
+The pending-fixes table lists fixes already queued for the next release of a
+maintenance branch. A separate list of fixes made later on the development
+branch is only a candidate pool: a candidate may not affect the maintenance
+branch, and an applicable fix lands on development before backporting. At the
+snapshot above, the latest 3.4, 3.3, and 3.2 releases each had zero queued
+known bugs even though later development fixes were listed.
 
-Use severity to decide urgency:
+Use severity to determine urgency:
 
-- `MINOR`: limited effect and seldom a reason to update by itself.
-- `MEDIUM`: normally update or temporarily disable the affected feature.
-- `MAJOR`: upgrade as soon as possible.
-- `CRITICAL`: short-term reliability or security impact with no workaround;
-  expect an immediate release and upgrade.
+- `MINOR`: limited impact and seldom a reason to update by itself;
+- `MEDIUM`: normally update or temporarily disable the affected feature;
+- `MAJOR`: upgrade as soon as possible;
+- `CRITICAL`: a short-term reliability or security problem with no workaround,
+  requiring an immediate release and upgrade.

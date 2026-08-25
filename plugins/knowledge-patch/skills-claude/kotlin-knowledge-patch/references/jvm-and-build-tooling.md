@@ -1,181 +1,43 @@
 # JVM and build tooling
 
-## Kotlin Gradle plugin migrations
+This reference incorporates build migrations and patch diagnostics from `2.1.20-guide`, `2.1.20`, `2.2-language-guide`, `2.2-tooling-guide`, `2.2.0`, `2.3-language-guide`, `2.3-tooling-guide`, `2.3.0`, and `2.4.10`.
 
-### Removed and replaced APIs
+## Compatibility checkpoints
 
-`KotlinCompileTool.setSource()` has conventional replacement semantics rather than appending to existing sources. Gradle plugins that intend to add inputs must call `source()`.
+- Kotlin 2.1.20 is generally compatible with Gradle 7.6.3 through 8.11. Upgrade to Kotlin 2.1.21 before moving to Gradle 8.12.
+- Kotlin 2.3.0 supports Gradle 7.6.3 through 9.0.0 and Android Gradle plugin 8.2.2 through 8.13.0.
+- Kotlin 2.3.20 supports Gradle 7.6.3 through 9.3.0. Later Gradle versions may run with deprecation warnings or without support for their newest features.
+- Xcode and Native compatibility are version-specific; consult the Native reference rather than assuming Gradle compatibility implies toolchain compatibility.
 
-Replace `BaseKapt.annotationProcessorOptionProviders` with `annotationProcessorOptionsProviders`, a `ListProperty<CommandLineArgumentProvider>`, and use `addAll()` rather than adding a list as one element. Move additional resources from the erroring `KotlinCompilationOutput.resourcesDirProvider` to `KotlinSourceSet.resources`.
+## Kapt, Lombok, and generated sources
 
-Kotlin 2.2 removes `KotlinCompilation.source`, target presets and `fromPreset`, obsolete disambiguation-classifier properties, and the legacy metadata options `isCompatibilityMetadataVariantEnabled`, `withGranularMetadata`, and `isKotlinGranularMetadataEnabled`. It also removes `kotlin.incremental.useClasspathSnapshot`; classpath-based incremental compilation has been the default since 1.8.20.
-
-`KotlinCompile.classpathSnapshotProperties.useClasspathSnapshot` and `.classpath` are removed. The opt-outs `kotlin.compiler.preciseCompilationResultsBackup` and `kotlin.compiler.keepIncrementalCompilationCachesInMemory` are also removed now that precise backup is fixed behavior.
-
-`ExtrasProperty` is internal; use Gradle's `ExtraPropertiesExtension`. Move dependency APIs exposed through `HasKotlinDependencies` to `KotlinSourceSet`. `CleanableStore`, `CleanDataTask`, and `LanguageSettings.enableLanguageFeature` are deprecated in 2.3.20.
-
-Gradle plugins and build logic should register generated Kotlin through `KotlinSourceSet.generatedKotlin`. Read `allKotlinSources` instead of `kotlin` when all generated and ordinary sources are required.
-
-### Removed properties and fixed modes
-
-Applying `kotlin-android-extensions` is a configuration error. The obsolete `kotlin.incremental.classpath.snapshot.enabled` property is removed.
-
-`kotlin.mpp.resourcesResolutionStrategy` is removed, and the old IDE-import switch `kotlin.mpp.import.enableKgpDependencyResolution=false` is deprecated. In 2.3.20, `kotlin.kmp.isolated-projects.support`, `kotlin.mpp.enableKotlinToolingMetadataArtifact`, and `kotlin.publishJvmEnvironmentAttribute` are deprecated because isolated-project support is the only mode, tooling metadata is always generated, and the JVM environment attribute is published conventionally.
-
-Gradle Groovy scripts receive notice that Boolean `is-` properties are headed for deprecation.
-
-### Warning mode
-
-KGP warnings obey Gradle `--warning-mode`: `fail` promotes them to errors and `none` hides them. Set `kotlin.internal.diagnostics.ignoreWarningMode=true` only when KGP diagnostics must ignore the global setting.
-
-## Gradle and Android compatibility
-
-### Gradle versions and Isolated Projects
-
-Kotlin 2.1.20 is generally compatible with Gradle 7.6.3 through 8.11. Kotlin 2.1.21 is required for Gradle 8.12, so upgrade Kotlin before moving a build from Gradle 8.11 to 8.12.
-
-Kotlin Gradle plugins need no Kotlin-specific setup for Gradle Isolated Projects. The initial pre-Alpha support requires Gradle 8.10 or newer, excludes JS and Wasm targets, and can be disabled for a multiplatform build with `kotlin.kmp.isolated-projects.support=disable`. That opt-out is deprecated in 2.3.20 because isolated-project support is then the only mode.
-
-Kotlin 2.3.0 is fully compatible with Gradle 7.6.3 through 9.0.0. Kotlin 2.3.20 extends full compatibility through Gradle 9.3.0; later Gradle releases may work with deprecation warnings or unavailable features.
-
-Kotlin 2.2.21 restores `compileKotlin` with Gradle's configuration cache, makes KGP publication helpers compatible with Isolated Projects, and prevents GnuPG signing from breaking configuration-cache use.
-
-### Android Gradle plugin 9
-
-The supported Android Gradle plugin range for Kotlin 2.3.0 is 8.2.2 through 8.13.0. AGP 9 has built-in Kotlin support, so Android projects should stop applying `org.jetbrains.kotlin.android`.
-
-Multiplatform Android targets should migrate to `com.android.kotlin.multiplatform.library` and rename `androidTarget {}` to `android {}`. Keeping the old setup triggers migration diagnostics or configuration errors under AGP 9. Kotlin 2.3.10 reverts the `androidTarget` deprecation for projects using older AGP versions, where the old target remains valid.
-
-### Kotlin DSL plugin versions
-
-Applying both `kotlin-dsl` and an independently versioned `kotlin("jvm")` plugin is unsupported and can produce a version diagnostic. Let `kotlin-dsl` supply KGP, use Gradle's `embeddedKotlinVersion`, or omit `kotlin-dsl` for an independently versioned binary plugin.
-
-## kapt, Lombok, and Java integration
-
-### K2 kapt default
-
-Kotlin 2.1.20 enables the Beta K2 implementation of kapt by default for all projects. If a regression remains, temporarily restore the old implementation in `gradle.properties`:
+K2 kapt is the default implementation starting with Kotlin 2.1.20. If it causes a regression that cannot be avoided, temporarily select the old implementation:
 
 ```properties
 kapt.use.k2=false
 ```
 
-Kotlin 2.2.10 fixes K2 kapt fake-override backend failures and unresolved `@kotlin.Metadata` in generated Java stubs.
+Kotlin 2.2.10 fixes K2 kapt fake-override backend failures and unresolved `@kotlin.Metadata` in generated Java stubs. Prefer upgrading before disabling K2 kapt.
 
-### Lombok builders
+Replace `BaseKapt.annotationProcessorOptionProviders` with the typed `annotationProcessorOptionsProviders`, a `ListProperty<CommandLineArgumentProvider>`. Add a collection with `addAll()` rather than adding the list as a single element.
 
-The Experimental Kotlin Lombok compiler plugin understands Lombok's `@SuperBuilder` for class hierarchies and permits `@Builder` on constructors.
+The experimental Kotlin Lombok plugin understands Lombok `@SuperBuilder` across class hierarchies and accepts `@Builder` on constructors.
 
-## Build Tools API
+Build logic should register generated Kotlin with `KotlinSourceSet.generatedKotlin`. Read `allKotlinSources`, not `kotlin`, when both generated and ordinary sources are needed. Put generated resources on `KotlinSourceSet.resources`; `KotlinCompilationOutput.resourcesDirProvider` is an error.
 
-### Gradle compiler path
+`KotlinCompileTool.setSource()` now replaces the compile inputs. Call `source()` when a plugin means to append inputs.
 
-The initial Experimental, JVM-only Build Tools API opt-in used `kotlin.compiler.runViaBuildToolsApi=true`. It made the `in-process` execution strategy incremental and allowed a compiler version different from the plugin version:
+## Android and JVM targets
 
-```kotlin
-kotlin {
-    @OptIn(
-        org.jetbrains.kotlin.buildtools.api.ExperimentalBuildToolsApi::class,
-        org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class,
-    )
-    compilerVersion.set("2.1.21")
-}
-```
+### AGP 9 migration
 
-Compiler plugins may not tolerate mixed compiler and plugin versions. The API at that stage was not ready for third-party build-tool integrations.
+AGP 9 provides built-in Kotlin support. Do not apply `org.jetbrains.kotlin.android`. A multiplatform Android library should apply `com.android.kotlin.multiplatform.library` and use `android {}` instead of `androidTarget {}`. The old form triggers migration diagnostics or configuration errors on AGP 9.
 
-Kotlin/JVM compilation through KGP now uses the Build Tools API by default, replacing the previous internal path. Kotlin 2.3.20 deprecates the slow `out-of-process` execution strategy, which the API does not support; use daemon or in-process compilation.
+Kotlin 2.3.10 deliberately restored `androidTarget` for older AGP lines, so do not rename it until the project actually migrates to AGP 9.
 
-### Operation model and integrations
+### JVM executables in multiplatform builds
 
-Operations implementing `CancellableBuildOperation` support best-effort cancellation through `cancel()`, reported as `OperationCancelledException`. Configure an operation through its mutable builder and call `build()` before execution to prevent changes after it starts.
-
-Attach a `BuildMetricsCollector` through `BuildOperation.METRICS_COLLECTOR`. It receives a build-tool-independent metric set across execution strategies, with strategy-specific values only when applicable.
-
-Configure compiler plugins as configuration objects through `kotlin.buildtools.api.arguments.CommonCompilerArguments.COMPILER_PLUGINS` rather than constructing experimental command-line options.
-
-### Compiler option schema
-
-`org.jetbrains.kotlin:kotlin-compiler-arguments-description` publishes a common code model and JSON description of compiler options, including descriptions and introduction or stabilization versions, for IDE and build-tool integrations.
-
-## Maven builds
-
-### Daemon and incremental compilation
-
-`kotlin-maven-plugin` uses the Kotlin daemon by default. Set `kotlin.compiler.daemon=false` to restore in-process compilation, or configure comma-separated JVM options without leading dashes through `kotlin.compiler.daemon.jvmArgs`:
-
-```xml
-<properties>
-  <kotlin.compiler.daemon.jvmArgs>Xmx1500m,Xms500m</kotlin.compiler.daemon.jvmArgs>
-</properties>
-```
-
-Kotlin Maven plugin 2.2.21 restores Java-class resolution when incremental compilation is enabled and the daemon is disabled; the combination is broken in 2.2.20.
-
-### Smart defaults
-
-Setting the Kotlin Maven plugin as a build extension registers existing `src/main/kotlin` and `src/test/kotlin` roots and supplies `kotlin-stdlib` when it is not declared:
-
-```xml
-<plugin>
-  <groupId>org.jetbrains.kotlin</groupId>
-  <artifactId>kotlin-maven-plugin</artifactId>
-  <version>2.3.20</version>
-  <extensions>true</extensions>
-</plugin>
-```
-
-Set `<kotlin.smart.defaults.enabled>false</kotlin.smart.defaults.enabled>` in project properties to disable both behaviors.
-
-Maven uses the Build Tools API by default. `KotlinScriptMojo` is deprecated; scripting compatibility details are in [language-and-compiler.md](language-and-compiler.md).
-
-## Publication and variants
-
-### Custom publication variants
-
-JVM and multiplatform projects can opt in and add, but not modify, publication variants through `adhocSoftwareComponent()`:
-
-```kotlin
-kotlin {
-    @OptIn(ExperimentalKotlinGradlePluginApi::class)
-    publishing {
-        adhocSoftwareComponent { /* configure custom variants */ }
-    }
-}
-```
-
-KGP supports `JAVA_API` and `JAVA_RUNTIME` values for the `org.gradle.usage` attribute, so variants published with those values participate in dependency resolution.
-
-Kotlin 2.1.21 corrects the generated POM `artifactId` when a Maven publication customizes `pom.withXml`.
-
-### Maven Central helpers
-
-KGP adds `generatePgpKeys` and `uploadPublicPgpKey`, plus `checkSigningConfiguration` and `checkPomFileFor<PublicationName>Publication`. Verification checks configured and uploaded signing keys, signed publications, and required POM metadata, but is not wired into `build` or `check` automatically.
-
-```shell
-./gradlew -Psigning.password=secret generatePgpKeys --name "Name <name@example.com>"
-./gradlew checkSigningConfiguration checkPomFileForKotlinMultiplatformPublication
-```
-
-Generated keys initially land in `build/pgp` and should be moved to secure storage.
-
-## ABI validation
-
-The initial Experimental KGP ABI validation generated and compared JVM or KLIB ABI dumps after `abiValidation { enabled.set(true) }`. It used `checkLegacyAbi` to validate and `updateLegacyAbi` to accept a new dump, required per-module configuration, and was not yet recommended for production.
-
-KGP renames `checkLegacyAbi` to `checkKotlinAbi`, `updateLegacyAbi` to `updateKotlinAbi`, and `dumpLegacyAbi` to `internalDumpKotlinAbi`, retaining old aliases during 2.3.20. Enabling ABI validation now wires `checkKotlinAbi` into Gradle's `check` task.
-
-## Tests, tasks, and extensibility
-
-`testApi` is deprecated because Gradle cannot expose tests between modules. Replace it and source-set `dependencies.api()` calls with `testImplementation` or `implementation`, using JVM test fixtures when appropriate. `KotlinJsTestFramework.createTestExecutionSpec()` is an error.
-
-The unused `closureTo()` and `createResultSet()` helpers are removed, and `KotlinToolingVersionOrNull()` becomes `KotlinToolingVersion()`. Kotlin test tasks and JavaScript runtime/setup classes such as `KotlinJsTest`, `KotlinKarma`, `KotlinWebpack`, and `YarnRootExtension` cannot be subclassed; configure them through the plugin DSL.
-
-Java source sets are created automatically for multiplatform JVM targets as `withJava()` is phased out. Projects using Gradle Java test fixtures should upgrade directly to Kotlin 2.1.21. Kotlin 2.2.10 also fixes JVM test-fixture dependency configurations such as `testFixturesApi` so they affect `jvmTestFixtures` in a multiplatform build.
-
-## JVM executables in multiplatform builds
-
-Gradle's Application plugin is incompatible with the Kotlin Multiplatform plugin starting with Gradle 8.7. The Experimental replacement creates JVM execution tasks and distributions through `binaries.executable`:
+Gradle's Application plugin is incompatible with Kotlin Multiplatform starting with Gradle 8.7. Use the experimental JVM executable DSL to create run tasks and distributions:
 
 ```kotlin
 kotlin {
@@ -188,6 +50,116 @@ kotlin {
 }
 ```
 
-## Removed legacy tooling
+Java source sets are created automatically for multiplatform JVM targets while `withJava()` is phased out. Projects using Gradle Java test fixtures should upgrade directly to Kotlin 2.1.21. Kotlin 2.2.10 makes `testFixturesApi` and related JVM fixture configurations affect the multiplatform `jvmTestFixtures` source set correctly.
 
-Ant support is deprecated for removal in Kotlin 2.3. The legacy JS-backend `KotlinJsDce`, `dceTask`, and related compiler-option DSLs are removed; the current JS IR backend performs DCE itself and uses `@JsExport` to retain exported APIs.
+`testApi` is deprecated because Gradle cannot expose tests between modules. Replace it and source-set `dependencies.api()` calls with `testImplementation` or `implementation`, using JVM test fixtures where appropriate.
+
+## Plugin and DSL API migrations
+
+Remove or replace these APIs and behaviors:
+
+- `KotlinCompilation.source`, target presets, `fromPreset`, obsolete disambiguation-classifier properties, `isCompatibilityMetadataVariantEnabled`, `withGranularMetadata`, and `isKotlinGranularMetadataEnabled` are removed.
+- `KotlinCompile.classpathSnapshotProperties.useClasspathSnapshot` and `.classpath` are removed. So are `kotlin.incremental.useClasspathSnapshot` and the older `kotlin.incremental.classpath.snapshot.enabled` property.
+- `kotlin.compiler.preciseCompilationResultsBackup` and `kotlin.compiler.keepIncrementalCompilationCachesInMemory` are removed because precise backup is fixed behavior.
+- `ExtrasProperty` is internal; use Gradle's `ExtraPropertiesExtension`.
+- Move dependency helpers from `HasKotlinDependencies` to `KotlinSourceSet`.
+- `CleanableStore`, `CleanDataTask`, and `LanguageSettings.enableLanguageFeature` are deprecated in 2.3.20.
+- `KotlinToolingVersionOrNull()` is replaced by `KotlinToolingVersion()`; unused `closureTo()` and `createResultSet()` helpers are gone.
+- Do not subclass `KotlinJsTest`, `KotlinKarma`, `KotlinWebpack`, Yarn setup, or other Kotlin test/runtime setup classes. Configure the plugin DSL.
+- `KotlinJsTestFramework.createTestExecutionSpec()` is an error.
+
+Applying both `kotlin-dsl` and an independently versioned `kotlin("jvm")` plugin is unsupported and can produce a version diagnostic. Let `kotlin-dsl` provide KGP, use Gradle's `embeddedKotlinVersion`, or omit `kotlin-dsl` for an independently versioned binary plugin.
+
+The obsolete `kotlin-android-extensions` plugin is a configuration error. Ant support was deprecated for removal in Kotlin 2.3.
+
+KGP warnings now follow Gradle `--warning-mode`: `fail` promotes them to errors and `none` suppresses them. Set `kotlin.internal.diagnostics.ignoreWarningMode=true` only when KGP diagnostics must intentionally ignore the global setting.
+
+Groovy DSL scripts now warn that Boolean `is-` properties are headed for deprecation.
+
+## Multiplatform build properties and resolution
+
+Remove `kotlin.mpp.resourcesResolutionStrategy`. The IDE-import escape hatch `kotlin.mpp.import.enableKgpDependencyResolution=false` is deprecated.
+
+In 2.3.20, these properties are deprecated because their enabled behavior is now unconditional:
+
+- `kotlin.kmp.isolated-projects.support`
+- `kotlin.mpp.enableKotlinToolingMetadataArtifact`
+- `kotlin.publishJvmEnvironmentAttribute`
+
+Earlier 2.1.20 builds had pre-Alpha Isolated Projects support on Gradle 8.10 or newer, excluding JS and Wasm, and allowed disabling it with `kotlin.kmp.isolated-projects.support=disable`. Current builds need no Kotlin-specific setup.
+
+Kotlin 2.1.21 restores dependencies from `commonTest` or `nativeTest` to another multiplatform project and corrects a custom Maven publication's generated POM `artifactId` when `pom.withXml` is used.
+
+KGP recognizes both `JAVA_API` and `JAVA_RUNTIME` for the `org.gradle.usage` attribute, so custom variants carrying those values can resolve.
+
+On Gradle 8.8 or newer, an experimental top-level `kotlin.dependencies` block adds common dependencies as if declared in `commonMain`:
+
+```kotlin
+kotlin {
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    dependencies { implementation("org.example:library:1.0") }
+}
+```
+
+Stricter multiplatform matching in 2.3.20 can fail metadata compilation when common and platform source sets resolve different dependency graphs. Compare those resolutions before treating it as a compiler failure.
+
+## Publishing and ABI validation
+
+JVM and multiplatform projects can opt into additional publication variants with `adhocSoftwareComponent()`. Variants may be added but existing variants cannot be modified:
+
+```kotlin
+kotlin {
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    publishing {
+        adhocSoftwareComponent { /* add variants */ }
+    }
+}
+```
+
+KGP provides `generatePgpKeys`, `uploadPublicPgpKey`, `checkSigningConfiguration`, and `checkPomFileFor<PublicationName>Publication`. The checks cover configured and uploaded signing keys, signatures, and required POM metadata, but are not wired into `build` or `check`. Generated keys initially appear in `build/pgp`; move them to secure storage.
+
+```shell
+./gradlew -Psigning.password=secret generatePgpKeys --name "Name <name@example.com>"
+./gradlew checkSigningConfiguration checkPomFileForKotlinMultiplatformPublication
+```
+
+Enable JVM or KLIB ABI dumps with `abiValidation { enabled.set(true) }`. Early versions used `checkLegacyAbi`, `updateLegacyAbi`, and `dumpLegacyAbi`; current task names are `checkKotlinAbi`, `updateKotlinAbi`, and internal `internalDumpKotlinAbi`. The old aliases remain temporarily, and validation now adds `checkKotlinAbi` to Gradle's `check` lifecycle.
+
+Kotlin 2.4.10 fixes the `kotlinAbiValidationCompatClasspath` dependency range so it does not accidentally resolve `kotlin-build-tools-impl` 2.4.20-Beta1 for a 2.4.0-compatible validation run.
+
+## Build Tools API
+
+Kotlin/JVM Gradle compilation uses the Build Tools API by default in 2.3.20. The earlier opt-in, `kotlin.compiler.runViaBuildToolsApi=true`, made in-process execution incremental and allowed a compiler version distinct from KGP through `compilerVersion`. Compiler plugins may not tolerate mixed versions.
+
+The out-of-process strategy is deprecated in 2.3.20 and unsupported by the API; use daemon or in-process compilation.
+
+Integrations can:
+
+- Configure a mutable operation builder and call `build()` to obtain an immutable operation before execution.
+- Implement `CancellableBuildOperation` and use best-effort `cancel()`, receiving `OperationCancelledException` when cancellation succeeds.
+- Attach `BuildMetricsCollector` through `BuildOperation.METRICS_COLLECTOR` for a common metric set plus applicable strategy-specific values.
+- Supply compiler-plugin configuration objects through `kotlin.buildtools.api.arguments.CommonCompilerArguments.COMPILER_PLUGINS` instead of constructing experimental command-line options.
+
+The `org.jetbrains.kotlin:kotlin-compiler-arguments-description` artifact publishes a common code model and JSON schema for compiler options, including descriptions and introduction or stabilization versions.
+
+## Maven behavior
+
+The Kotlin Maven plugin uses the Kotlin daemon by default. Set `kotlin.compiler.daemon=false` for in-process compilation. Configure comma-separated daemon JVM options without leading dashes through `kotlin.compiler.daemon.jvmArgs`.
+
+```xml
+<properties>
+  <kotlin.compiler.daemon.jvmArgs>Xmx1500m,Xms500m</kotlin.compiler.daemon.jvmArgs>
+</properties>
+```
+
+Kotlin Maven 2.2.21 restores Java-class resolution when incremental compilation is enabled and the daemon is disabled; that combination is broken in 2.2.20.
+
+When `kotlin-maven-plugin` is a build extension, it registers existing `src/main/kotlin` and `src/test/kotlin` roots and adds `kotlin-stdlib` if absent. Set `kotlin.smart.defaults.enabled=false` to disable both behaviors.
+
+## Patch-upgrade diagnostics
+
+Upgrade to Kotlin 2.2.10 rather than writing source workarounds for Android dexing null-field failures, duplicate `DebugMetadata` on JVM-default suspend interface methods, the Xcode 16.3/iOS 15.5 simulator linker failure, or Apple Watch `SIGABRT` crashes.
+
+Kotlin 2.2.21 restores Gradle configuration-cache compilation, makes publication helpers compatible with Isolated Projects, and prevents GnuPG signing from breaking configuration-cache use. It also removes the erroneous `NON_PUBLIC_CALL_FROM_PUBLIC_INLINE` diagnostic for `@PublishedApi` fun interfaces.
+
+Kotlin 2.3.21 repairs common `@JvmRecord` metadata compilation and compiler-plugin generated top-level declarations during Kotlin/JS incremental compilation; see the language and JS references for the related fixes.

@@ -1,23 +1,15 @@
 # Core Traits and Dependencies
 
-## The trait-only `serde_core` crate
+## Choose the dependency by how the crate uses Serde
 
-The `serde_core` crate introduced in the `1.0.220-serde-core` coverage batch
-contains Serde's core traits and their supporting APIs:
+Batch attribution: `1.0.220-serde-core`.
 
-- `Serialize` and `Serializer`
-- `Deserialize` and `Deserializer`
-- the `ser` and `de` modules used by handwritten implementations
+`serde_core` contains Serde's `Serialize`, `Deserialize`, `Serializer`, and
+`Deserializer` traits. It does not support `#[derive(Serialize)]` or
+`#[derive(Deserialize)]`.
 
-It deliberately contains no derive-macro support. This separation lets a
-crate depend on the trait layer without pulling in the rest of `serde`, but
-it changes neither the meaning of the traits nor the implementation that a
-format crate expects.
-
-### Suitable direct dependencies
-
-Use `serde_core` directly for libraries that only mention traits in generic
-bounds:
+Use `serde_core` directly only when the crate needs trait bounds or handwritten
+implementations:
 
 ```toml
 [dependencies]
@@ -25,16 +17,11 @@ serde_core = "1.0.220"
 ```
 
 ```rust
-pub fn require_serializable<T: serde_core::Serialize>(_: &T) {}
+fn require_serializable<T: serde_core::Serialize>(_: &T) {}
 ```
 
-It is also suitable when all required `Serialize` or `Deserialize`
-implementations are handwritten with the `ser` and `de` APIs.
-
-### When to retain `serde`
-
-Any crate using `#[derive(Serialize)]` or `#[derive(Deserialize)]` must
-continue to depend on `serde` with derive support:
+Continue to depend on `serde` when the crate derives either trait. `serde`
+re-exports the same traits:
 
 ```toml
 [dependencies]
@@ -42,40 +29,40 @@ serde = { version = "1.0.220", features = ["derive"] }
 ```
 
 ```rust
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-struct Message {
-    body: String,
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Record {
+    id: u64,
 }
 ```
 
-`serde` re-exports the same core traits and remains the safe default for
-applications and libraries that do not specifically need a trait-only
-dependency.
+Do not replace `serde` with `serde_core` in a crate that uses Serde derives.
 
-## Understanding diagnostic paths
+## Diagnose trait bounds that expose `serde_core` paths
 
-Because the traits originate in `serde_core`, an unsatisfied trait bound can
-be rendered with a path such as:
+Batch attribution: `1.0.220-serde-core`.
+
+Format crates that depend on `serde_core` can produce an error like:
 
 ```text
 T: serde_core::ser::Serialize
 ```
 
-This is the ordinary Serde serialization trait. The path does not imply that
-the affected dependency has a distinct `serde_core` integration or that the
-type needs a second serialization implementation.
+This is the ordinary Serde trait. Resolve the missing implementation according
+to who owns the type:
 
-Use the same remedies as for any missing Serde implementation:
+- For a local type, derive `serde::Serialize`.
+- For a foreign type, enable the dependency's existing `serde` feature.
 
-- Derive `serde::Serialize` or `serde::Deserialize` for a local type.
-- Enable the `derive` feature on `serde` if the derive macro is unavailable.
-- Enable a dependency's `serde` feature when its Serde implementations are
-  feature-gated.
-- Write the corresponding trait implementation by hand when deriving is not
-  appropriate.
+The `serde_core` path in the diagnostic does not indicate that another
+compatibility layer is required.
 
-Do not search for a separate “serde_core support” switch solely because the
-diagnostic prints a `serde_core` path.
+## Remove the deprecated integer compatibility macro
 
+Batch attribution: `1.0.221`.
+
+Serde 1.0.221 deprecates `serde_if_integer128!`. Remove existing uses of this
+compatibility wrapper and avoid introducing new uses, because invoking it can
+now produce deprecation warnings.
+
+When reviewing an upgrade, search the crate and its local macros for
+`serde_if_integer128!` so invocations are not left behind.

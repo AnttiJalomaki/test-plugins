@@ -1,99 +1,128 @@
 # Helm and Operator deployment
 
-## Rendering and ownership
+## Helm rendering and ownership
 
-- In 3.4.0 chart behavior, ConfigMap and Secret checksums cover only `.data`.
-- The installation manager, not the chart template, sets the `managed-by`
-  marker.
-- Ruler and index-gateway templates include their namespace.
-- Headless backend gRPC ports declare `appProtocol: tcp`.
-- Ruler configuration renders only when the ruler is enabled and defaults its
-  WAL directory.
-- `test.enabled=false` suppresses the test pod.
-- In 3.5.0, `tpl()` evaluation is restored for read, write, and backend pods,
-  and provisioners can be namespaced.
-- In 3.6.0, the chart also applies `tpl` to `pattern_ingester`,
-  `ingester_client`, and `loki.operational_config`.
-- In 3.7.0, `nameOverride` is evaluated with `tpl`.
+### Checksums, ownership, and conditional resources (3.4.0)
 
-Render the final manifests whenever a value can contain templates; validation
-of values alone will not expose expansion and escaping problems.
+ConfigMap and Secret checksums cover only `.data`. The installation manager,
+not the chart template, sets `managed-by`.
 
-## Workload topology and rollout
+Ruler and index-gateway templates include their namespace. Headless backend
+gRPC ports declare `appProtocol: tcp`. Ruler configuration renders only when
+the ruler is enabled and defaults its WAL directory. Setting
+`test.enabled=false` suppresses the test pod.
 
-- The 3.4.0 chart adds overrides-exporter support.
-- `topologySpreadConstraints` are available for admin-api pods and distributed
-  deployments in 3.4.0, then for SingleBinary in 3.7.0.
-- Zone-aware replication splits the ingester HPA in 3.4.0.
-- Rollout-group values and ingester names can be prefixed in 3.4.0.
-- The canary can run as a Deployment instead of a DaemonSet and batch pushes
-  in 3.6.0.
-- User namespaces are supported in 3.6.0.
-- Configurable init containers cover backend, bloom, distributor, query, read,
-  and write workloads in 3.6.0.
-- Distributor and read workloads gain startup probes in 3.7.0.
-- The canary readiness probe is configurable in 3.7.0.
-- Filesystem group change policy defaults to `OnRootMismatch` in 3.7.0.
+### Restored and expanded `tpl` evaluation (3.5.0, 3.6.0)
 
-## Services, DNS, and images
+The chart restores `tpl()` evaluation for read, write, and backend pods, and
+provisioners can be namespaced. It also applies `tpl` to `pattern_ingester`,
+`ingester_client`, and `loki.operational_config`.
 
-- The query-frontend gRPC load-balancing port can be toggled in 3.7.0.
-- Service `trafficDistribution` can be set in 3.7.0.
-- `dnsConfig` renders for backend, read, write, SingleBinary, and table-manager
-  workloads in 3.7.0.
-- The global image registry applies to sidecars in 3.7.0.
+### Naming and Service controls (3.7.0)
 
-## Persistence
+`nameOverride` is evaluated with `tpl`. The chart can toggle the query-frontend
+gRPC load-balancing port and set the Service `trafficDistribution` field.
 
-- PVC access modes and claim-template labels are configurable in 3.6.0.
-- PVCs are retained when a StatefulSet scales down but remain deletable with
-  the StatefulSet (3.6.0). Align reclaim policy and backups with that
-  asymmetry.
-- `volumeAttributesClassName` can be set on volume claim templates in 3.7.0.
+## Workload placement and rollout
 
-## Storage and ruler chart integration
+### Overrides exporter and zone-aware controls (3.4.0)
 
-- The chart exposes the full storage configuration in 3.6.0 and can bypass
-  generated S3, GCS, and Azure settings.
-- Separate ruler storage is supported in 3.6.0.
-- Ruler pods can run the rules sidecar, and alert rules can carry custom
-  annotations (3.6.0).
-- Chunk bucket names are optional in 3.7.0 when using an S3 URL, MinIO, or
-  local disk.
-- Ruler bucket names are optional in 3.7.0 with local ruler storage.
+The chart supports overrides-exporter and exposes `topologySpreadConstraints`
+for admin-api pods and distributed deployments. Zone-aware replication splits
+the ingester HPA. Rollout-group values and ingester names can be prefixed.
 
-## Authentication and caching values
+### Startup, probes, and placement (3.7.0)
 
-- External Memcached and an L2 chunks cache can be configured in 3.6.0.
-- Tenant authentication can accept a password hash instead of plaintext in
-  3.6.0.
+Distributor and read workloads support startup probes. SingleBinary supports
+`topologySpreadConstraints`, and the canary `readinessProbe` is configurable.
+The filesystem-group change policy is `OnRootMismatch`.
 
-## Loki Operator identity and ingestion
+## Workload extensibility and persistence (3.6.0)
 
-- Managed GCP Workload Identity is supported in 3.4.0.
-- The Operator places the log-level attribute in structured metadata in 3.4.0.
-- It can drop OTLP attributes, configure a TLS CA for Swift, and enable
-  time-based stream sharding in 3.5.0. Attribute dropping is a breaking
-  behavior and requires an upgrade review.
-- Generated sizing keeps delete workers nonzero and corrects the minimum
-  available ingesters for the `1x.pico` size in 3.5.0.
+The canary can run as a Deployment rather than a DaemonSet and can batch log
+pushes. The chart supports user namespaces and configurable init containers for
+backend, bloom, distributor, query, read, and write workloads.
 
-## Loki Operator network, storage, and authorization
+PVC access modes and claim-template labels are configurable. PVCs are retained
+when a StatefulSet scales down but remain deletable with the StatefulSet.
 
-- A LokiStack can include Operator-managed NetworkPolicies in 3.6.0.
-- S3 secrets can request virtual-host-style access in 3.6.0.
-- LokiStack authorization can use OpenTelemetry semantics in 3.6.0.
-- The Operator can suppress ingress and customize the gateway server
-  certificate in 3.7.0.
-- Metrics authentication no longer depends on `kube-rbac-proxy` as of 3.7.3.
-- On OCP 4.20, NetworkPolicies are no longer deployed automatically.
-- AWS STS deployments receive the region through an environment variable in
-  3.7.0.
+As of 3.7.0, `volumeAttributesClassName` can be set on volume claim templates.
+`dnsConfig` renders for backend, read, write, SingleBinary, and table-manager
+workloads. The global image registry applies to sidecars.
 
-## OpenShift upgrade review
+## Authentication and caching (3.6.0)
 
-Default OpenShift stream labels change in 3.7.0 and the change is breaking.
-Before reconciliation, compare selectors, alerting rules, dashboards,
-retention rules, and cardinality estimates. Separately verify network isolation
-on OCP 4.20 because the prior automatic NetworkPolicy behavior no longer
-applies.
+The chart can use external Memcached and an L2 chunks cache. Tenant
+authentication can be configured with a password hash instead of a plaintext
+password.
+
+## Storage and ruler configuration
+
+### Object-store value rename (3.5.0)
+
+Use `object_store.storage_prefix`; `object_store.prefix` is no longer the chart
+value. The nginx Service no longer receives a ServiceMonitor.
+
+### Full configuration and ruler integration (3.6.0)
+
+The chart exposes the full storage configuration and can bypass generated
+S3/GCS/Azure settings. It supports separate ruler storage. Ruler pods can run
+the rules sidecar, and alert rules can include custom annotations.
+
+### Backend-sensitive bucket validation (3.7.0)
+
+Chunk bucket names are not required when using an S3 URL, MinIO, or local disk.
+Ruler bucket names are optional with local ruler storage.
+
+## Block-building deployment (3.6.0)
+
+The chart exposes `block_builder` configuration for the Kafka record-consumer
+and block-building path. Size and deploy it as part of the Kafka ingestion
+architecture, not as an unrelated chart workload.
+
+## Meta-monitoring migration (3.6.0)
+
+Meta-monitoring responsibilities move from the Grafana meta-monitoring Helm
+chart to the Grafana Kubernetes Monitoring Helm chart. Update ownership and
+values automation around the destination chart.
+
+## Chart repository transfer (3.7.0)
+
+Effective March 16, 2026, the open-source Loki chart moved to
+`grafana-community/helm-charts` for community maintenance. The GEL chart remains
+separately maintained. Point chart source references and update automation at
+the new open-source repository where applicable.
+
+## Loki Operator capabilities
+
+### Identity, labels, and OTLP defaults (3.4.0)
+
+The Operator supports managed GCP Workload Identity and places the log-level
+attribute in structured metadata. OTLP ingestion adds
+`deployment.environment.name` to the default label set.
+
+### Ingestion, storage, and sizing (3.5.0)
+
+The Operator can drop OTLP attributes, configure a TLS CA for Swift, and enable
+time-based stream sharding. OTLP attribute dropping is a breaking change;
+review generated ingestion behavior during upgrades.
+
+Generated sizing keeps delete workers nonzero and corrects the minimum
+available ingesters for the `1x.pico` size.
+
+### Networking, storage, and authorization (3.6.0)
+
+The Operator can create NetworkPolicies with a LokiStack, configure
+virtual-host-style S3 access from secrets, and apply OpenTelemetry semantics to
+LokiStack authorization.
+
+### Ingress, certificates, and metrics authentication (3.7.0)
+
+The Operator can suppress ingress and customize the gateway server certificate.
+As of 3.7.3, metrics authentication no longer depends on `kube-rbac-proxy`.
+
+### OpenShift and AWS behavior (3.7.0)
+
+Default OpenShift stream labels changed as a breaking update. On OCP 4.20, the
+Operator no longer deploys NetworkPolicies automatically. AWS STS deployments
+receive the region through an environment variable.

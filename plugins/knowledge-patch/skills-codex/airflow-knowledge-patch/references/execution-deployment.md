@@ -1,73 +1,55 @@
 # Execution and deployment
 
-## Execution architecture
+## Edge Executor
 
-The Edge Executor is generally available in 3.0.0. It runs tasks in distributed
-or remote compute environments through the Task Execution API, enabling hybrid
-deployments with workers close to their data or applications.
+Edge Executor runs tasks in distributed or remote environments through the
+Task Execution API. Use it for hybrid deployments whose workers need to remain
+near their data or applications. It is generally available in the 3.0.0
+batch.
 
-Tasks cannot access metadata ORM models or sessions. Remote runtimes obtain
-task-facing Variables, Connections, and XComs through the Execution API.
+## Dag versions and bundles
 
-SequentialExecutor is removed; use LocalExecutor, including with SQLite.
-CeleryKubernetesExecutor and LocalKubernetesExecutor hybrids are removed; use
-multiple-executor configuration instead. Do not subclass built-in executor
-implementations as if they were stable extension contracts.
+Task renames, dependency changes, and other structural changes are stored as
+Dag versions in the metadata database and exposed through UI and API. The
+triggerer does not initialize Dag bundles, so trigger implementations cannot
+live only inside a bundle; install them somewhere importable on the
+triggerer's `sys.path`. (3.0.0)
 
-## Scheduler-managed work
+`rerun_with_latest_version` decides whether clear, rerun, backfill, and
+`TriggerDagRunOperator` reruns use the original or latest bundle. Precedence is:
+request parameter or CLI flag, Dag setting, `[core] rerun_with_latest_version`,
+then a default of `False` for clear/rerun and `True` for backfill. (3.3.0)
 
-Backfills are scheduler-managed Dag runs, not standalone CLI jobs. Their Dag
-versions and status are visible through normal UI and REST surfaces.
+Provider example Dags now use dedicated bundles named
+`apache-airflow-providers-<distribution>-example-dags`, or
+`<distribution>-example-dags` for third-party providers. API clients must stop
+assuming provider examples belong to `dags-folder`. `[core] load_examples`
+still controls their registration. (3.3.0)
 
-For run-limited scheduler jobs in 3.2.0, add `--only-idle` so `--num-runs`
-counts only idle loops and the scheduler can finish processing triggered Dags
-and queued tasks:
+A legacy upgrade could assign all old Dags to `dags-folder` even when a custom
+bundle is configured. The Dag processor performs a best-effort path-based
+repair at startup. Unmatched Dags repair on their next successful parse; run
+`airflow dags reserialize` to force parsing. (3.3.1)
+
+## Scheduler and triggerer lifecycle
+
+`airflow scheduler --only-idle` makes `--num-runs` count only idle loops, so a
+run-limited scheduler can finish triggered Dags and queued tasks before exit.
+(3.2.0)
 
 ```bash
 airflow scheduler --num-runs 1 --only-idle
 ```
 
-## Triggerer routing
+Route queued triggers with `airflow trigger --queues`. Limit per-loop selection
+with `max_trigger_to_select_per_loop` in high-availability triggerer
+deployments. (3.2.0)
 
-The 3.2.0 `trigger` command accepts `--queues`, routing triggers according to a
-task queue to particular Triggerer hosts. Configure
-`max_trigger_to_select_per_loop` to cap selection per loop in high-availability
-Triggerer deployments.
+## API-server worker model
 
-The triggerer does not initialize Dag bundles. Custom triggers must be
-importable independently on `sys.path`.
-
-In 3.3.0, triggerers can also be assigned and filtered by team.
-`BaseTrigger.on_kill()` handles user actions against a trigger.
-
-## Task SDK runtime capabilities
-
-Airflow 3.2.0 expands task runtime access:
-
-- Create Connections from URIs through the SDK.
-- Retrieve the previous task instance from `RuntimeTaskInstance`.
-- Import `BaseXcom` from `airflow.sdk`.
-
-Airflow 3.3.0 adds native async XCom accessors and `BaseHook.aget_hook()` for
-async tasks. Worker-side Dag registrations let structured XCom outputs
-round-trip as Pydantic model instances.
-
-## Tasks implemented outside Python
-
-`@task.stub` in 3.2.0 declares a task implemented in another language. In
-3.3.0, the experimental Coordinator layer can dispatch such declarations:
-
-- `JavaCoordinator` executes JVM tasks.
-- `ExecutableCoordinator` executes native binaries such as Go programs.
-
-The queue selects a coordinator. Non-Python runtimes use the Execution API;
-Dag authoring and scheduling stay in Python.
-
-## API server worker models
-
-Uvicorn remains the default API server and cannot perform rolling restarts.
-For preloaded, memory-sharing workers and zero-downtime FIFO recycling in
-3.2.0, install `apache-airflow-core[gunicorn]` and configure:
+Uvicorn remains the default API server. To use preloaded memory-sharing
+workers and zero-downtime FIFO recycling, install
+`apache-airflow-core[gunicorn]` and select Gunicorn. (3.2.0)
 
 ```ini
 [api]
@@ -76,66 +58,65 @@ worker_refresh_interval = 43200
 worker_refresh_batch_size = 1
 ```
 
-For horizontal scaling, prefer multiple API server instances; `[api] workers`
-defaults to `1` in 3.1.0.
+## Dag parsing statistics
 
-## Dag bundles
+`FileLoadStat` includes nullable `bundle_path` and `bundle_name`. Its paths are
+real relative paths and no longer use a leading `/` to mean “relative to the
+Dags folder.” Custom parser tooling should operate on `pathlib.Path` values
+instead of relying on that string convention. (3.2.0)
 
-`GitDagBundle` supports repository submodules and HTTP URL authentication as
-of 3.2.0.
+## Rendered-field retention
 
-Provider example Dags move to dedicated bundles in 3.3.0. Apache provider
-bundles are named `apache-airflow-providers-<distribution>-example-dags`;
-third-party bundles use `<distribution>-example-dags`. Clients that locate
-examples by filtering for `dags-folder` must update their filters.
-`[core] load_examples` still controls whether examples are registered.
+`max_num_rendered_ti_fields_per_task` is renamed to
+`num_dag_runs_to_retain_rendered_fields`; the old name is deprecated. Retention
+counts the newest Dag runs rather than task executions, so sparse and
+conditional tasks can retain fewer records than the old setting suggested.
+(3.2.0)
 
-Rerun bundle selection follows `rerun_with_latest_version`. Request/CLI input
-wins over the Dag setting, then `[core]` configuration. If none is specified,
-clear/rerun use the original version (`False`) and backfill uses the latest
-version (`True`).
+## Runtime and database compatibility
 
-## Multi-team deployments
+The `3.1.0` runtime supports Python 3.10 through 3.13, removing Python 3.9.
+It adds SQLAlchemy 2.0 compatibility and psycopg3 PostgreSQL-driver support.
 
-A single deployment can experimentally isolate each team's Dags,
-Connections, Variables, pools, executors, resources, and permissions in
-3.2.0.
+The `3.2.0` batch adds Python 3.14, requires SQLAlchemy 2, and removes the
+MySQL client from official images. Add that client to a derived image when
+operators or administration scripts need it.
 
-Enforcement expands in 3.3.0:
+## Container build controls
 
-- Asset access uses `access_control` rather than `allow_producer_teams`.
-- `AssetAccessControl` includes `consumer_teams` and `allow_global`.
-- XCom Execution API calls and asset queries are team-scoped.
-- Pool scheduling enforces ownership; pool CLI commands accept `--team-name`.
-- Triggerers can be assigned and filtered by team.
+Set the `PYTHON_LTO` build argument as needed for FIPS-oriented builds. Docker
+builds can verify cryptographic signatures on Python source packages.
+(3.2.0)
 
-Treat the multi-team surface as experimental and test isolation in API,
-scheduler, worker, pool, asset, XCom, and trigger paths.
+## Git Dag bundles
 
-## Multiprocessing
+`GitDagBundle` supports repositories with submodules and HTTP URL
+authentication. (3.2.0)
 
-Airflow 3.3.0 adds `[core] mp_start_method` and
-`[core] mp_forkserver_preload` for global multiprocessing behavior. Override
-them per component in `[scheduler]`, `[triggerer]`, or `[dag_processor]`.
+## Multiprocessing configuration
 
-## Containers and official images
+`[core] mp_start_method` and `[core] mp_forkserver_preload` configure process
+startup globally. Override them per component in `[scheduler]`, `[triggerer]`,
+or `[dag_processor]` when their workloads differ. (3.3.0)
 
-Airflow 3.2.0 official images no longer include a MySQL client; add it in a
-derived image when required. Container build compliance controls include:
+## Non-Python task runtimes
 
-- `PYTHON_LTO` to make Python link-time optimization configurable for FIPS
-  builds.
-- Verification of cryptographic signatures on Python source packages.
+Experimental Coordinator execution routes `@task.stub` declarations to
+`JavaCoordinator` for JVM work and `ExecutableCoordinator` for native binaries
+such as Go programs. Runtimes use the Execution API for Variables,
+Connections, and XCom while Dags and scheduling remain in Python. (3.3.0)
 
-## External job durability
+## Resumable external jobs
 
-`ResumableJobMixin` in 3.3.0 tracks external work across worker failure.
-`SparkSubmitOperator` is the first integration. Resumption avoids starting the
-external job twice; set `durable` to opt out where restart semantics are
-preferred.
+`ResumableJobMixin`, initially used by `SparkSubmitOperator`, tracks external
+work so it can resume after worker failure instead of submitting another job.
+Operators can opt out with `durable=False`. (3.3.0)
 
-## External task management
+`ResumableJobMixin` is abstract in the `3.3.1` batch. Custom subclasses must
+implement every required method instead of relying on inherited defaults.
 
-The 3.2.0 `TaskInstance` API supports systems that manage tasks outside the
-normal worker lifecycle. Correlation IDs propagated through the Execution API
-can link those operations to component logs and traces.
+## Custom email backends
+
+`email_on_failure` and `email_on_retry` honor `[email] email_backend` rather
+than always using `SmtpNotifier`. An unimportable backend path raises an error
+instead of silently falling back to SMTP. (3.3.1)

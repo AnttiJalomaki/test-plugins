@@ -1,249 +1,118 @@
 # Multidimensional Data and Georeferencing
 
-Multidimensional arrays, CRS handling, coordinate operations, geolocation, dates, and scientific data.
+## Multidimensional discovery, views, and metadata
 
-## Absent GeoHEIF geotransforms
+- **netCDF extra-dimension values (3.10.1).** Set
+  `GDAL_NETCDF_REPORT_EXTRA_DIM_VALUES` when extra-dimension values should be
+  reported.
 
-*Batch 3.13.1*
+- **Array discovery (3.11.0).** Zarr and netCDF support `LIST_ALL_ARRAYS`,
+  defaulting to `NO`. Zarr reports compressor, filters, and array dimensions.
+  netCDF can identify a geolocation array without a `coordinates` attribute
+  and uses `GeoTransform` to retain precision.
 
-A GeoHEIF dataset that has no geotransform no longer reports one.
+- **Recursive array names (3.11.0).** Use
+  `GDALGroup::GetMDArrayFullNamesRecursive()` to enumerate full multidimensional
+  array names.
 
-## Closed polygons after polar reprojection
+- **netCDF axis discovery (3.11.2).** The netCDF driver recognizes the axis of
+  `rhos` variables in PACE OCI products and can use a geolocation array to find
+  X and Y axes in three-dimensional variables.
 
-*Batch 3.12.4*
+- **HDF5 strides and auxiliary geolocation (3.11.4).** HDF5 multidimensional
+  arrays support non-default read strides. Geolocation references from
+  `.aux.xml` resolve correctly. For netCDF, `LIST_ALL_ARRAYS=YES` works even
+  when no two-dimensional array exists.
 
-`OGRGeometryFactory::transformWithOptions()` closes polygons produced by its polar-reprojection path, including when used with GEOS 3.15.
+- **Reverse slicing (3.11.5).** `CreateSlicedArray()` slices a dimension's
+  indexing variables with its data. One-element dimensions work with
+  `GetView(["::-1"])`, and `VRTMDArraySourceFromArray::Read()` handles negative
+  steps.
 
-## Dataset capabilities and metadata
+- **Classic/multidimensional bridging (3.12.0).**
+  `GDALDataset::AsMDArray()` presents a classic dataset as an array.
+  `GDALMDArray::GetRawBlockInfo()` reports raw block information for HDF5,
+  netCDF, Zarr, and VRT. Extended data types can expose raster attribute
+  tables, groups can enumerate data types, and classic views can take band
+  metadata from fully qualified attributes.
 
-*Batch 3.11.0*
+- **Multivalue conversion arguments (3.12.1).** `gdal mdim convert` accepts
+  multiple `--group`, `--subset`, and `--scale-axes` values.
 
-Driver metadata now reflects update capabilities, and `GDAL_DCAP_CREATE_SUBDATASETS` identifies drivers supporting `APPEND_SUBDATASET=YES`; `GDALMDArray::AsClassicDataset()` accepts `BAND_IMAGERY_METADATA` for per-band imagery metadata. `GDAL_CACHEMAX` accepts memory units, new built-in tile matrix sets include `WorldMercatorWGS84Quad`, `PseudoTMS_GlobalMercator`, and `GoogleCRS84Quad`, and raster APIs now reject `GDT_Unknown` and `GDT_TypeCount`.
+- **HDF5 swath metadata (3.12.1).** Swath geolocation fields are reported in
+  the `GEOLOCATION` metadata domain instead of as ground control points.
 
-## Dataset extent, overview, and window APIs
+- **Indexed multidimensional overviews (3.13.0).** Arrays expose
+  `GetOverviewCount()` and indexed `GetOverview()` access.
 
-*Batch 3.12.0*
+- **Mosaic dimensions (3.13.0).** `gdal mdim mosaic` accepts dimensions that
+  lack indexing variables; `gdal mdim info --summary` provides abbreviated
+  output.
 
-New APIs include `GDALDataset::GetLayerIndex()`, `GetExtent()`, `GetExtentWGS84LongLat()`, and `AddOverviews()`, plus `GDALRasterBand::IterateWindows()` and `SplitRasterIO()`. `GDALGetGDALPath()` exposes GDAL's installation path, and `GDALRescaleGeoTransform()` rescales a geotransform.
+- **Sliced-array read advice (3.13.2).** Sliced arrays calculate the correct
+  parent bounds for `IAdviseRead()` when the step is not one.
 
-## Driver connection and subdataset parsing
+## Coordinate systems and transforms
 
-*Batch 3.12.3*
+- **Rotated latitude/longitude grids (3.11.1).** netCDF reads the spatial
+  reference and geotransform from a Rotated Latitude Longitude grid mapping
+  even when no ellipsoid is defined.
 
-GeoRaster preserves double quotes in database connection strings. `GDALGetSubdatasetInfo()` now handles netCDF subdataset names whose endpoint includes a port number.
+- **ESRI-labeled coordinate operations (3.11.2).** Coordinate transformation
+  succeeds when an input CRS carries a code labeled EPSG that is actually an
+  ESRI code.
 
-## ESRI fallback in `importFromEPSG()`
+- **Polar-to-geographic correction (3.11.5).** Core geometry transformation
+  and `gdal vector reproject` correctly reproject from polar CRS coordinates to
+  geographic coordinates.
 
-*Batch 3.10.1*
+- **Longitude normalization (3.12.0).** The geolocation transformer accepts
+  `GEOLOC_NORMALIZE_LONGITUDE_MINUS_180_PLUS_180` to force longitudes into the
+  -180 to +180 interval.
 
-`OGRSpatialReference::importFromEPSG()` tries an ESRI lookup when a code looks like an ESRI code and emits a warning when that fallback succeeds.
+- **GCP transformer options (3.12.2).** `GDALTransformer()` ignores
+  `MAX_GCP_ORDER` with `METHOD=GCP_TPS`; with
+  `METHOD=GCP_POLYNOMIAL`, it sanitizes negative `MAX_GCP_ORDER` values.
 
-## Fake GeoServer CRS values in WFS
+- **Homography overview scaling (3.12.3).** Homography GCP transforms apply
+  the correct scaling factor on overviews.
 
-*Batch 3.12.2*
+- **Stored geotransform validation (3.12.3).** netCDF uses a stored
+  `GeoTransform` only when it agrees with dimension variables. RPFTOC now
+  georeferences polar zones correctly.
 
-The WFS driver now skips the synthetic GeoServer CRS identifier `EPSG:404000`.
+- **Vertical-shift unit metadata (3.13.1).** A 3D-to-3D vertical-shift warp no
+  longer copies the source unit type into the output.
 
-## Fractional seconds at the minute boundary
+## HDF and product geolocation details
 
-*Batch 3.11.2*
+- **HDF4 nodata GCPs (3.11.5).** HDF4 skips longitude and latitude values at
+  nodata positions when generating ground control points.
 
-`OGRParseDate()` parses a seconds value of `59.999999` as `59.999` rather than rounding it to `60.0`.
+- **S-102 depth-only products (3.11.1).** S102 opens products without an
+  uncertainty component and retrieves nodata correctly when only depth is
+  present.
 
-## GCP transformer option handling
+- **Sentinel-2 missing granules (3.12.2).** Geolocation-enabled Sentinel-2
+  subdatasets tolerate expected missing granules.
 
-*Batch 3.12.2*
+- **MiraMon multiband transforms (3.12.2).** MiraMonRaster reports the correct
+  dataset geotransform for multiband data.
 
-`GDALTransformer()` ignores `MAX_GCP_ORDER` when `METHOD=GCP_TPS`; with `METHOD=GCP_POLYNOMIAL`, negative `MAX_GCP_ORDER` values are sanitized.
+- **NITF RPFIMG coordinates (3.12.2).** NITF specification data uses corrected
+  latitude/longitude ordering in the RPFIMG `CoverageSectionSubheader`.
 
-## Geolocation, geometry, schema, and celestial-body APIs
+- **DIMAP2 coverage metadata (3.13.2).** DIMAP2 reports `CLOUD_COVERAGE` and
+  `SNOW_COVERAGE` metadata.
 
-*Batch 3.12.0*
+- **S-10x enumeration names (3.13.3).** S102, S104, and S111 writers and
+  validators use corrected `dataCodingFormat` enumeration names.
 
-The geolocation transformer adds `GEOLOC_NORMALIZE_LONGITUDE_MINUS_180_PLUS_180` to force longitude normalization. OGR adds envelope-to-geometry creation and constrained Delaunay triangulation, vector datasets expose `GetSpatialRef()`, schema overrides accept `*` layer matching and `srcType`/`srcSubType` matching, and CRS APIs can report celestial-body names.
+## Subdataset and path parsing
 
-## Georeferencing validation
+- **Connection and endpoint parsing (3.12.3).** GeoRaster preserves double
+  quotes in database connection strings. `GDALGetSubdatasetInfo()` handles a
+  netCDF subdataset endpoint containing a port number.
 
-*Batch 3.12.3*
-
-The netCDF driver uses a stored `GeoTransform` attribute only when it is consistent with the dimension variables. The RPFTOC driver now georeferences polar zones correctly.
-
-## GML and AIXM geometry handling
-
-*Batch 3.10.1*
-
-The GML driver supports AIXM `ElevatedCurve` and honors `SWAP_COORDINATES=YES` even when a geometry has no spatial reference system.
-
-## GML time instants
-
-*Batch 3.11.5*
-
-The GML and GMLAS drivers support `gml:TimeInstantType`.
-
-## GTI SRS and interleave behavior
-
-*Batch 3.13.0*
-
-GTI adds `SRS_BEHAVIOR=OVERRIDE|REPROJECT` and exposes `INTERLEAVE=BAND|PIXEL`, honoring band interleave during on-the-fly warping.
-
-## GTI support for richer STAC GeoParquet metadata
-
-*Batch 3.10.1*
-
-GTI can use STAC GeoParquet without `assets.image.href`; it recognizes `assets.XXX.proj:epsg`, `assets.XXX.proj:transform`, `proj:code`, `proj:wkt2`, and `proj:projjson`. It also reads `eo:bands` for any asset name, all `common_names`, central wavelength and full-width-half-maximum metadata, scale and offset from `raster:bands`, exposes the `SRS` open option, and attaches a sample tile's color table to a single-band GTI dataset.
-
-## GTI warp controls and alpha output
-
-*Batch 3.12.3*
-
-The GTI driver adds a `WARPING_MEMORY_SIZE` open option. Its on-the-fly reprojection no longer creates a destination alpha band when one is unnecessary.
-
-## HDF4 GCP generation at nodata coordinates
-
-*Batch 3.11.5*
-
-When generating ground control points, the HDF4 driver skips longitude and latitude values at nodata locations.
-
-## HDF5 and netCDF multidimensional reads
-
-*Batch 3.11.4*
-
-HDF5 multidimensional arrays can be read with non-default strides, and geolocation references from `.aux.xml` resolve correctly. For netCDF, `LIST_ALL_ARRAYS=YES` also works when the dataset has no two-dimensional array.
-
-## HDF5 swath geolocation metadata
-
-*Batch 3.12.1*
-
-For swath geolocation fields, HDF5 reports `GEOLOCATION` metadata instead of exposing those fields as ground control points.
-
-## Homography overviews and viewshed value ranges
-
-*Batch 3.12.3*
-
-Homography GCP transformations now apply the correct scaling factor on overviews. Viewshed DEM and GROUND modes also accept values outside the `Byte` range.
-
-## Invalid GCP-derived geotransforms
-
-*Batch 3.10.2*
-
-`GDALGCPsToGeoTransform()` now returns `FALSE` when it generates an invalid geotransform, allowing callers to reject the conversion instead of using an invalid result.
-
-## JGD2024 in GML
-
-*Batch 3.11.4*
-
-The GML driver recognizes the JGD2024 coordinate reference system used by recent Japanese Fundamental Geospatial Data.
-
-## Kerchunk Parquet reference stores
-
-*Batch 3.12.1*
-
-The Zarr driver restores an affected way of opening Kerchunk Parquet reference stores.
-
-## Leap-second date parsing
-
-*Batch 3.11.5*
-
-`OGRParseDate()` accepts timestamps containing leap seconds.
-
-## Missing Kerchunk targets
-
-*Batch 3.11.5*
-
-The Zarr driver now reports an error when a JSON/Kerchunk reference store points to a file that cannot be opened.
-
-## Multiband MiraMon geotransforms
-
-*Batch 3.12.2*
-
-The MiraMonRaster driver now reports the correct dataset geotransform when a dataset has several bands.
-
-## Multidimensional bridging and raw-block discovery
-
-*Batch 3.12.0*
-
-`GDALDataset::AsMDArray()` exposes a classic dataset as a multidimensional array, while `GDALMDArray::GetRawBlockInfo()` reports raw block information in HDF5, netCDF, Zarr, and VRT. Extended data types can expose raster attribute tables, groups can enumerate data types, and classic-dataset views can source band metadata from fully qualified attributes.
-
-## Multidimensional reverse slicing
-
-*Batch 3.11.5*
-
-`CreateSlicedArray()` now slices a dimension's indexing variables as well as its data. One-element dimensions work with `GetView(["::-1"])`, and `VRTMDArraySourceFromArray::Read()` handles negative steps correctly.
-
-## netCDF axis discovery
-
-*Batch 3.11.2*
-
-The netCDF driver recognizes the axis of `rhos` variables in PACE OCI products and can use a geolocation array to detect X and Y axes in three-dimensional variables.
-
-## netCDF extra-dimension reporting
-
-*Batch 3.10.1*
-
-The netCDF driver adds the `GDAL_NETCDF_REPORT_EXTRA_DIM_VALUES` configuration option for reporting extra-dimension values.
-
-## New raster data-source drivers
-
-*Batch 3.13.0*
-
-New read-only drivers expose E57 two-dimensional images and CPHD data through the multidimensional API. JP2GROK provides JPEG 2000 reading and writing through the AGPLv3-licensed Grok toolkit.
-
-## PNG, WEBP, and Zarr access
-
-*Batch 3.12.0*
-
-PNG reads and writes background color through the `BACKGROUND_COLOR` dataset metadata item and accepts `ZLEVEL=0` for uncompressed output. WEBP supports `.wld` worldfiles, while Zarr can open `.zarray`, `.zgroup`, `.zmetadata`, and `zarr.json` files directly.
-
-## Raster reads at edges, strides, and large sizes
-
-*Batch 3.13.2*
-
-Pansharpening can read a small window at a raster edge without a window error. Sliced multidimensional arrays compute correct parent bounds for `IAdviseRead()` with a step other than one, and block-based `RasterIO()` avoids integer overflow on huge rasters.
-
-## Raster SDK additions
-
-*Batch 3.11.0*
-
-New SDK facilities include `gdal::CXXTypeTraits<T>`, `gdal::GDALDataTypeTraits<T>`, `gdal_minmax_element.hpp`, `gdal::VectorX`, `GDALRasterComputeMinMaxLocation()`/`GDALRasterBand::ComputeMinMaxLocation()`, `GDALDataset::GeolocationToPixelLine()`, `GDALRasterBand::InterpolateAtGeolocation()`, `GDALTranspose2D()`, `GDALGroup::GetMDArrayFullNamesRecursive()`, `GDALIsValueInRangeOf()`, and `GDALRasterBand::SetNoDataValueAsString()`.
-
-## Raster types, covariance, and multidimensional overviews
-
-*Batch 3.13.0*
-
-`GDT_UInt8` is the canonical unsigned eight-bit data type and `GDT_Byte` aliases it. C, C++, and Python gain inter-band covariance-matrix APIs, while multidimensional arrays gain `GetOverviewCount()` and indexed `GetOverview()` access.
-
-## Reprojection in Arrow streams from warped layers
-
-*Batch 3.10.1*
-
-`OGRWarpedLayer` no longer takes its Arrow stream directly from the source layer, because doing so skipped reprojection. Arrow-stream reads from a warped layer therefore retain the layer's reprojection behavior.
-
-## Rotated-latitude/longitude netCDF georeferencing
-
-*Batch 3.11.1*
-
-The netCDF driver reads the spatial reference and geotransform from a Rotated Latitude Longitude grid mapping even when it has no ellipsoid definition.
-
-## Sentinel-2 geolocation with missing granules
-
-*Batch 3.12.2*
-
-Geolocation-enabled Sentinel-2 subdatasets now tolerate expected missing granules.
-
-## Transformations involving ESRI authority codes
-
-*Batch 3.11.2*
-
-Coordinate transformation works when one input CRS carries a code labeled as EPSG that is actually an ESRI code.
-
-## Vector schema, defaults, and format controls
-
-*Batch 3.11.0*
-
-CSV, GML, and SQLite accept the `OGR_SCHEMA` open option, GeoJSON adds `FOREIGN_MEMBERS=AUTO/ALL/NONE/STAC`, and newly created GeoPackages default to version 1.4. DXF creation can set `$INSUNITS` and `$MEASUREMENT` and handles MultiPoint output and WIPEOUT input; Shapefile conversion writes DateTime as ISO 8601 text, GMLAS can resolve CityGML 2.0 without `schemaLocation`, and TopoJSON reads a top-level `crs`.
-
-## Zarr and multidimensional discovery
-
-*Batch 3.11.0*
-
-The Zarr driver supports the current Zarr v3 specification with `zstd`, Kerchunk JSON and Parquet reference stores, and the Zarr v2 `shuffle`, `quantize`, `fixedscaleoffset`, and `imagecodecs_tiff` codecs/filters; it also reports compressor, filters, and array dimensions. Zarr and netCDF add `LIST_ALL_ARRAYS` defaulting to `NO`, while netCDF can identify a geolocation array without a `coordinates` attribute and uses `GeoTransform` to preserve precision.
+- **Multiple colons in netCDF paths (3.13.3).** netCDF parses subdataset names
+  correctly when the underlying path contains multiple colons.

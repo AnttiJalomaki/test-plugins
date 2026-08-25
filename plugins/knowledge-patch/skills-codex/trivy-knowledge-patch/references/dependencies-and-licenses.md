@@ -1,107 +1,173 @@
 # Dependencies and Licenses
 
-## Node.js and JavaScript ecosystems
+## Go
 
-- Node.js dependency trees account for peer dependencies, so peer relationships
-  can change the dependency graph in results (since 0.59.0).
-- Yarn analysis records root/workspace context for packages (since 0.62.0).
-- `bun.lock` files are parsed and analyzed (since 0.63.0), including their
-  `packages` array (since 0.64.0).
-- npm constraint comparison no longer applies prerelease logic (since 0.65.0).
-- Object-form workspace declarations in `package-lock.json` are accepted. pnpm
-  package IDs use the snapshot string (since 0.67.0).
-- Node.js analysis reads license metadata from `package-lock.json` (since
-  0.69.0).
-- Legacy npm lockfile license formats are accepted. Invalid package names in
-  subdirectory `package.json` files are skipped without aborting analysis
-  (since 0.71.0).
-- Project dependencies are parsed from multi-document `pnpm-lock.yaml` files
-  (since 0.72.0).
+### Main-module and binary versions
 
-## Python dependencies
+Go analysis parses the main-module version in artifacts built with Go 1.24 or
+newer (since 0.60.0). For pseudo-versions, it uses the linker-flags version for
+all pseudo-version cases, affecting the emitted version and vulnerability
+matching when build metadata supplies it (since 0.69.0).
 
-- uv projects are supported, including uv development and optional
-  dependencies. Poetry development dependencies are supported, but
-  dependencies in Poetry's `dev` group are skipped (since 0.59.0).
-- Poetry v2 projects are supported (since 0.60.0).
-- Package metadata in `.egg-info/METADATA` is recognized (since 0.65.0).
-- PEP 770 SBOM files under `.dist-info/sboms/` are excluded from normal SBOM
-  discovery (since 0.69.0).
-- PEP 751 `pylock.toml` lock files are parsed and scanned (since 0.70.0).
-- `requirements.txt` accepts dependencies with multiple version specifiers.
-  Empty optional Poetry groups no longer cause a crash (since 0.70.0).
+Binary analysis can recover versions from the ELF symbol table for binaries
+built with `-trimpath`. It also recognizes the version format produced with
+`GOEXPERIMENT` in Go 1.26 (since 0.70.0).
 
-## Go, Rust, Julia, and .NET
+### License discovery
 
-- Go artifacts produced with Go 1.24 or later yield the correct main-module
-  version (since 0.60.0).
-- WebAssembly modules use standard Go rather than TinyGo, which changes the
-  compiler required to build them (since 0.61.0).
-- Cargo lockfile analysis records root/workspace packages and their
-  relationships (since 0.62.0).
-- Julia parsing populates `Relationship`, and client/server RPC transports that
-  field (since 0.63.0).
-- `.NET` dependency analysis builds graphs from `.deps.json` rather than
-  representing packages as an unconnected list (since 0.68.0).
-- Julia packages participate in vulnerability matching (since 0.69.0).
-- Go pseudo-versions use the linker-flags version consistently, which can alter
-  the version reported and matched when build metadata provides it (since
-  0.69.0).
-- Cargo monorepos expand workspace-member globs and support inherited package
-  versions (since 0.69.0).
-- For `-trimpath` binaries, Go versions can be recovered from the ELF symbol
-  table. Go 1.26 `GOEXPERIMENT` version formatting is also handled (since
-  0.70.0).
-- Self-contained `.NET` deployments expose their bundled runtime as components
-  (since 0.72.0).
+Go license scanning searches dependencies in `GOPATH` and `vendor`. For a
+`go.mod` project, it also searches the vendor directory for licenses (since
+0.63.0).
 
-## Java and Maven resolution
+## Java and JVM ecosystems
 
-- Gradle lockfile analysis excludes development dependencies (since 0.63.0).
-- Every environment-variable placeholder in Maven `settings.xml` is expanded,
-  including files containing multiple placeholders (since 0.64.0).
-- Remote repositories are read from Maven `settings.xml`. Releases and
-  snapshots default to enabled when those settings omit a value, and fields
-  from multiple dependency-management sources follow corrected precedence
-  (since 0.68.0).
-- POM properties inherit from parent fields, and repositories from upper POMs
-  propagate to dependencies. `pom.xml` package IDs include a hash of the GAV
-  coordinates and root-POM path to avoid collisions (since 0.69.0).
-- Maven proxy settings are used for repository access (since 0.70.0).
-- Java dependency exclusions are preserved rather than overwritten (since
-  0.70.0).
-- Maven `<mirrors>` in `settings.xml` are honored. HTTP 429 from a remote Maven
-  repository while scanning a POM is fatal rather than producing incomplete
-  resolution (since 0.71.0).
+### Maven settings
 
-## Other ecosystem detection
+Maven analysis dereferences every environment-variable placeholder in
+`settings.xml`, including files with multiple placeholders (since 0.64.0).
+It reads remote repository configuration, treating omitted `releases` and
+`snapshots` enablement as enabled, and applies corrected precedence when
+resolving package fields from several dependency-management sources (since
+0.68.0).
 
-- Echo is supported (since 0.63.0).
-- Native Seal support is available (since 0.67.0), and Seal language-file
-  detection includes vendor information (since 0.71.0).
-- NuGet package-name matching is case-insensitive (since 0.67.0).
-- Composer analysis includes development dependencies (since 0.69.0).
+It also reads proxy configuration (since 0.70.0) and `<mirrors>` (since
+0.71.0) from `settings.xml`. A 429 response from a remote Maven repository
+while scanning a `pom.xml` is fatal; do not consume the scan as if dependency
+resolution were complete. User-defined Maven mirrors can also be supplied in
+`trivy.yaml` (since 0.74.0).
 
-## License discovery
+### Maven models and dependency exclusions
 
-- Go license scanning searches both `GOPATH` and `vendor`. For `go.mod`
-  projects it also searches the vendor directory (since 0.63.0).
-- Package-type selection applies to license results (since 0.65.0).
-- JAR license discovery reads packaged `LICENSE` files and embedded `pom.xml`
-  content (since 0.72.0).
+POM analysis inherits properties from parent fields and propagates repositories
+from upper POMs to dependencies (since 0.69.0). A `pom.xml` package ID includes
+a hash of its GAV coordinates and root-POM path, avoiding collisions. Java
+analysis preserves dependency exclusions rather than overwriting them (since
+0.70.0).
+
+### JAR identity and licenses
+
+Java license analysis discovers packaged `LICENSE` files and an embedded
+`pom.xml` inside JARs (since 0.72.0). It reads Jenkins plugin licenses from
+manifests and maps license URLs in JAR `Bundle-License` metadata and POM `<url>`
+elements to SPDX identifiers (since 0.74.0). Artifact properties come only
+from the main `MANIFEST.MF` section, not per-entry sections.
+
+Nested JARs receive a per-file digest so their identities remain file-specific
+(since 0.74.0).
+
+### Gradle development dependencies
+
+Gradle lockfile analysis excludes development dependencies (since 0.63.0).
+
+## JavaScript and TypeScript ecosystems
+
+### npm dependency trees
+
+Node.js dependency trees include peer dependencies, which can alter emitted
+relationships (since 0.59.0). Constraint comparison does not apply prerelease
+logic to npm constraints (since 0.65.0).
+
+`package-lock.json` accepts object-form workspace declarations (since 0.67.0),
+and lockfile analysis reads license metadata (since 0.69.0). The npm lockfile
+parser accepts legacy license formats; malformed names in subdirectory
+`package.json` files are skipped without stopping analysis (since 0.71.0).
+
+### Yarn workspaces
+
+Yarn analysis records root and workspace context for packages (since 0.62.0).
+
+### pnpm
+
+The pnpm snapshot string is the package's `Package.ID` (since 0.67.0).
+Multi-document `pnpm-lock.yaml` files contribute project dependencies (since
+0.72.0), and workspaces with overlapping package definitions are supported
+(since 0.74.0).
+
+### Bun
+
+Node.js analysis parses `bun.lock` (since 0.63.0), including its `packages`
+array shape (since 0.64.0).
+
+## Python
+
+### uv and Poetry
+
+Python scanning supports uv projects, including development and optional
+dependencies (since 0.59.0). Poetry development dependencies are supported,
+while dependencies in Poetry's `dev` group are skipped. Poetry v2 projects are
+supported (since 0.60.0).
+
+Poetry analysis accepts an optional group with no dependencies without
+crashing (since 0.70.0).
+
+### Requirements and standardized lock files
+
+`requirements.txt` parsing accepts a dependency with multiple version
+specifiers (since 0.70.0). Python analysis parses and scans the PEP 751
+`pylock.toml` format (since 0.70.0).
+
+Dependencies declared through PEP 621 in `pyproject.toml` have their names
+normalized before package results are created (since 0.74.0).
+
+### Installed-package metadata
+
+The Python Packaging analyzer reads `.egg-info/METADATA` (since 0.65.0).
+PEP 770 SBOM files in `.dist-info/sboms/` are excluded from ordinary SBOM
+discovery (since 0.69.0).
+
+## Rust
+
+Cargo lockfile analysis records root packages, workspace packages, and their
+relationships (since 0.62.0). Cargo monorepo analysis expands glob patterns in
+workspace members and supports inherited package versions (since 0.69.0).
+
+## .NET and NuGet
+
+Analysis builds dependency graphs from `.deps.json` rather than emitting an
+unconnected package list (since 0.68.0). It detects the bundled runtime in a
+self-contained deployment (since 0.72.0), and identifies the root .NET project
+from the `.deps.json` dependency graph (since 0.74.0).
+
+Vulnerability matching compares NuGet package names in lowercase, preventing
+name-casing-only misses (since 0.67.0).
+
+## Julia, Composer, and Seal
+
+Julia parsing populates dependency `Relationship`, and client/server RPC
+transports it (since 0.63.0). Julia packages can be matched for
+vulnerabilities (since 0.69.0).
+
+Composer analysis includes development dependencies (since 0.69.0).
+
+Trivy has native Seal support (since 0.67.0). Seal language-file detection
+uses vendor information (since 0.71.0) and recognizes packages without a name
+prefix by using their version suffix (since 0.74.0).
+
+## Package provenance and filtering
+
+Detected packages expose `AnalyzedBy`, identifying the analyzer that found
+them (since 0.69.0). License scanning obeys the package-types option, so
+package selection also filters license results (since 0.65.0).
+
+Debian `dpkg` package results omit empty license values (since 0.61.0).
 
 ## License classification and expressions
 
-- SPDX text licenses retain their original text in `otherLicenses`, without
-  normalization (since 0.61.0).
-- Configured custom classifications apply to text licenses. Compound
-  expressions using SPDX operators are supported (since 0.63.0).
-- `GFDL-NIV-1.1` and `GFDL-NIV-1.2` are mapped, and `LaxSplitLicenses` handles
-  the `WITH` operator (since 0.65.0).
-- License identifiers are checked against the SPDX ID list. Ignore processing
-  distinguishes individual SPDX IDs from full expressions; `WITH` exceptions
-  remain attached during category detection, and literal `unlicensed` is not
-  normalized to `Unlicense` (since 0.68.0).
-- Output uses canonical SPDX identifiers from the embedded license data (since
-  0.69.0).
+### Custom and compound licenses
 
+Configuration-defined custom classifications apply to text licenses. License
+analysis supports compound expressions containing SPDX operators (since
+0.63.0).
+
+### SPDX identifiers and exceptions
+
+License analysis maps `GFDL-NIV-1.1` and `GFDL-NIV-1.2`, and
+`LaxSplitLicenses` handles the `WITH` operator (since 0.65.0).
+
+Identifiers are validated against the SPDX identifier list. Ignore handling
+distinguishes an SPDX ID from a full expression, `WITH` exceptions remain part
+of one license during category detection, and literal `unlicensed` is not
+normalized to `Unlicense` (since 0.68.0).
+
+License output uses canonical identifiers from the embedded SPDX license data
+(since 0.69.0).

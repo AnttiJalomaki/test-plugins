@@ -1,103 +1,80 @@
 # Issuers and External Providers
 
-Use this reference for Vault, Venafi, DNS providers, issuer readiness, and
-provider-specific authentication or failure behavior.
+## Vault issuers
 
-## Vault
+### TLS server-name validation `(1.18)`
 
-Vault issuers can set the TLS server name used to validate the Vault server's
-certificate (since 1.18). Use it when the connection address and certificate
-identity differ.
+Configure the server name used to validate the certificate presented by the Vault server when it differs from the connection address.
 
-ServiceAccount tokens generated for Vault issuers include the Vault server
-address in their default audiences from 1.20.
+### Service-account token audiences `(1.20)`
 
-Vault issuers can authenticate with AWS IAM in 1.21 through IRSA, EKS Pod
-Identity, or ambient EC2/ECS credentials rather than a long-lived AWS Secret.
+Service-account tokens generated for Vault issuers include the Vault server address among their default audiences.
 
-Vault issuer validation rejects `..` path segments in `spec.vault.path` and in
-authentication mount paths from 1.21. Do not depend on path joining to resolve
-parent traversal.
+### AWS IAM authentication `(1.21)`
 
-The 1.21 chart stops creating token-request RBAC for the controller's own
-ServiceAccount. If Vault Kubernetes authentication selects that account with
-`serviceAccountRef.name`, add explicit Role and RoleBinding resources or use a
-dedicated ServiceAccount with its own RBAC.
+Vault issuers can authenticate with AWS identity from IRSA, EKS Pod Identity, or ambient EC2/ECS credentials instead of a long-lived AWS Secret.
 
-## Venafi
+### Path traversal rejection `(1.21)`
 
-Username/password authentication can use a custom client ID from 1.17 rather
-than the previous fixed default.
+Validation rejects `..` segments in `spec.vault.path` and authentication mount paths. Do not depend on path joining to resolve parent traversal.
 
-The `venafi.cert-manager.io/custom-fields` annotation added in 1.20 supplies
-base custom fields on an Issuer or ClusterIssuer. Certificate-level custom
-fields can override or append to that base.
+## Venafi issuers
 
-From 1.21, invalid OAuth credentials produce the `AuthFailed` condition reason
-so they can be distinguished from transient failures. PANW NGTS is also
-supported as a Venafi backend.
+### Custom client IDs `(1.17)`
 
-## Azure DNS
+Venafi username/password authentication can use a customized client ID instead of the fixed default.
 
-When managed identities are used with service principals, AzureDNS accepts
-`tenantID` from 1.17. Set it for explicit tenant selection in multi-tenant
-environments.
+### Layered custom fields `(1.20)`
 
-Azure DNS-01 supports private zones through the `zoneType` field from 1.20:
+The `venafi.cert-manager.io/custom-fields` annotation on an Issuer or ClusterIssuer supplies base custom fields. Certificate-level values can override or append to that base.
 
-```yaml
-spec:
-  acme:
-    solvers:
-      - dns01:
-          azureDNS:
-            zoneType: AzurePrivateZone
-```
+### Authentication conditions and backends `(1.21)`
 
-## Cloudflare, CloudDNS, and DigitalOcean
+Venafi issuers use condition reason `AuthFailed` to distinguish invalid OAuth credentials from transient failures. PANW NGTS is supported as a backend.
 
-Use cert-manager 1.17.1 or later for Cloudflare DNS-01; that patch restored
-issuance after a breaking Cloudflare API change.
+## Azure DNS issuers
 
-From 1.20, the CloudDNS solver cleans up ACME challenge TXT records even when
-the DNS name contains a large resource-record set.
+### Managed-identity tenant selection `(1.17)`
 
-DigitalOcean DNS-01 retries are regulated from 1.20. Complete DNS-01 failures
-are attached to the Challenge as events, so inspect events before reducing a
-failure to the final condition text.
+The AzureDNS provider accepts `tenantID` when managed identities are used with service principals, allowing explicit tenant choice in multi-tenant environments.
 
-## RFC2136
+### Private zones `(1.20)`
 
-RFC2136 DNS-01 configuration has an explicit `protocol` field from 1.19. Use it
-to select the DNS update transport, such as `TCP`, rather than depending on an
-implicit choice.
+The Azure DNS-01 solver supports private zones through `zoneType: AzurePrivateZone`.
 
-## Issuer validation and response safety
+## DNS issuer readiness
 
-DNS issuer credentials are validated before the issuer becomes Ready from
-1.21. A Secret error should therefore appear as readiness failure instead of an
-issuer that silently looks usable.
+### Validate Secrets before Ready `(1.21)`
 
-From 1.18.5, a certificate response whose public key does not match the CSR is
-rejected before being stored. Issuance backs off instead of entering an
-infinite loop.
+DNS issuer credentials are validated before an issuer is marked ready, surfacing Secret misconfiguration rather than accepting it silently.
 
-From 1.21, an issuer response containing an already-expired certificate also
-stops rather than entering an infinite reissuance loop.
+### Recover after a missing Secret `(1.21.1)`
 
-## Issuer discovery
+When a referenced ACME DNS-01 solver Secret is initially missing, 1.21.1 lets an Issuer or ClusterIssuer recover from `Ready=False` with reason `InvalidSolver` after the Secret is created. Version 1.21.0 can stay stuck.
 
-`Issuer` and `ClusterIssuer` have the kubectl short names `iss` and `ciss`
-from 1.18:
+## Issuer API ergonomics
+
+### Short names `(1.18)`
+
+Issuer and ClusterIssuer have short names `iss` and `ciss`:
 
 ```console
 kubectl get iss
 kubectl get ciss
 ```
 
-From 1.20, `.spec.issuerRef.group`, `.spec.issuerRef.kind`, and
-`.spec.issuerRef.name` are selectable CRD fields. This supports queries such as:
+### Field-selectable references `(1.20)`
+
+CRDs expose `.spec.issuerRef.group`, `.spec.issuerRef.kind`, and `.spec.issuerRef.name` as selectable fields:
 
 ```console
 kubectl get certificates --field-selector spec.issuerRef.name=example-issuer
 ```
+
+### Type-safe apply clients `(1.19)`
+
+Generated apply-configuration types let clients construct type-safe server-side apply requests for cert-manager resources instead of unstructured payloads.
+
+### Removed ObjectReference `(1.21)`
+
+The deprecated `ObjectReference` API type is removed. Migrate integrations that still compile against or emit it before upgrading.

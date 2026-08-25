@@ -1,115 +1,83 @@
 # Home Manager
 
-Use this reference for activation and profile behavior, state-version defaults,
-module migrations, application settings, XDG locations, and Darwin integration.
+## Activation, profiles, and generations
 
-## Activation, generations, and profiles
+### User-service activation
 
-### Home Manager service activation
+`systemd.user.startServices` defaults to `true` from nixos-25.05, so activation
+restarts user services as necessary. The removed `"legacy"` value causes an
+evaluation error; `"suggest"` remains only as a temporary compatibility mode.
 
-Since nixos-25.05, `systemd.user.startServices` defaults to `true`, so
-activation restarts user services as needed. The removed `"legacy"` value is an
-evaluation error; `"suggest"` remains temporarily.
+For homes unavailable at system boot, nixos-26.05 adds
+`home-manager.startAsUserService`. It defers activation until login and works
+with late-mounted homes such as those provided by `pam_mount`.
 
-### Home Manager rollback and specialisation switches
+### Rollbacks and specialisations
 
-Since nixos-25.11, `home-manager switch --rollback` activates the generation
-before the current one without creating another profile generation.
-`home-manager switch --specialisation NAME` directly activates a named
-specialisation with the same profile-preserving behavior.
+Nixos-25.11 adds profile-preserving switches:
 
-### Home Manager profile ownership
-
-Since nixos-25.11, updating the Home Manager Nix profile from a generated
-activation script is deprecated. A caller that invokes the script directly
-must update the profile itself. NixOS and nix-darwin module use no longer
-creates per-user shadow profiles; temporarily restore that behavior with
-`home-manager.enableLegacyProfileManagement = true`.
-
-### Home Manager login-time activation
-
-Since nixos-26.05, `home-manager.startAsUserService` defers activation until
-login instead of system boot. This supports homes mounted later by facilities
-such as `pam_mount`.
-
-### Package-provided Home Manager services
-
-Since nixos-26.05, `home.services` lifts Nixpkgs modular services such as
-`pkgs.<name>.passthru.services.default` into user systemd units without
-rewriting the packaged module.
-
-## Module loading and common integration
-
-### Minimal Home Manager module imports
-
-Since nixos-25.11, `home-manager.minimal = true` imports only the modules needed
-for Home Manager itself. Import every additional program and service module
-explicitly.
-
-```nix
-home-manager.minimal = true;
-imports = [ "${modulesPath}/programs/fzf.nix" ];
+```sh
+home-manager switch --rollback
+home-manager switch --specialisation work
 ```
 
-### Home Manager SSH configuration
+Rollback selects the generation before the current one without creating an
+extra profile generation. A specialisation switch directly activates the
+named specialisation with the same preservation behavior.
 
-Since nixos-26.05, `programs.ssh.settings` provides RFC 42-style SSH
-configuration. `programs.ssh.matchBlocks` is deprecated and automatically
-migrated. The new `sshAuthSock` module supplies shell integration for SSH-agent
-providers, replacing removed
-`services.ssh-agent.enable{Bash,Zsh,Fish,Nushell}Integration`.
+### Profile ownership
 
-### Home Manager XDG and Darwin integration
+Updating the Home Manager Nix profile from a generated activation script is
+deprecated in nixos-25.11. Tools invoking that script directly must update the
+profile themselves. The NixOS and nix-darwin modules no longer create
+per-user shadow profiles; set
+`home-manager.enableLegacyProfileManagement = true` only as a temporary
+migration aid.
 
-Since nixos-26.05, `nix.assumeXdg` handles Nix installations that use XDG base
-directories outside Home Manager; NixOS
-`nix.settings.use-xdg-base-directories` is detected automatically.
+### Minimal module imports
 
-On Darwin, launchd agents wait for `/nix/store`, activation replacement waits
-for `bootout`, nix-darwin dry-run mode reaches user activation, and
-`TERMINFO_DIRS` exposes package-provided terminfo.
+`home-manager.minimal = true` imports only the modules required for Home
+Manager itself (nixos-25.11). Every program, service, and other nonessential
+module must then be imported explicitly.
 
-## State-gated defaults and file locations
+### Package-provided services
 
-### Home Manager Git signing format
+The nixos-26.05 `home.services` namespace turns Nixpkgs modular services such
+as `pkgs.<name>.passthru.services.default` into user systemd units without
+duplicating the packaged module.
 
-With `home.stateVersion = "25.05"` or later in nixos-25.05,
-`programs.git.signing.format` no longer defaults to `"openpgp"`. Select it
-explicitly for GPG signing:
+## State-version behavior
 
-```nix
-programs.git.signing.format = "openpgp";
-```
+### Signing and application locations
 
-### Home Manager 25.11 state defaults
+For `home.stateVersion = "25.05"` or newer,
+`programs.git.signing.format` does not default to `"openpgp"`; select it
+explicitly for GPG signing.
 
-With `home.stateVersion = "25.11"` or later in nixos-25.11, Password Store
-defaults to `$HOME/.password-store`, not `$XDG_DATA_HOME/password-store`.
-On macOS, packages are copied to `~/Applications/Home Manager Apps` by default
-through `targets.darwin.copyApps.enable`, replacing symlinks.
+At state version 25.11, Password Store again defaults to
+`$HOME/.password-store` rather than `$XDG_DATA_HOME/password-store`. On macOS,
+packages are copied to `~/Applications/Home Manager Apps` by default through
+`targets.darwin.copyApps.enable`, replacing symlink-based application exposure.
 
-### Home Manager 26.05 XDG defaults
+### XDG defaults in state version 26.05
 
-With `home.stateVersion = "26.05"` in nixos-26.05:
+When XDG is enabled, Zsh and Docker configuration moves under XDG paths and
+Linux Firefox moves to `$XDG_CONFIG_HOME/mozilla/firefox`.
+`xdg.userDirs.setSessionVariables` defaults to `false`. Keys under
+`xdg.userDirs.extraConfig` should omit both the `XDG_` prefix and `_DIR`
+suffix.
 
-- Zsh and Docker configuration move below XDG paths when XDG is enabled.
-- Linux Firefox moves to `$XDG_CONFIG_HOME/mozilla/firefox`.
-- `xdg.userDirs.setSessionVariables` defaults to `false`.
-- Keys in `xdg.userDirs.extraConfig` omit the `XDG_` prefix and `_DIR` suffix.
+### Configuration formats in state version 26.05
 
-### Home Manager 26.05 configuration formats
+Neovim plugin `config` fragments are interpreted as Lua. Hyprland generation
+changes from Hyprlang to Lua; pin
+`wayland.windowManager.hyprland.configType = "hyprlang"` to retain the old
+format during migration.
 
-With the same state version in nixos-26.05, Neovim plugin `config` fragments
-are Lua, and Hyprland generation changes from Hyprlang to Lua. Set
-`wayland.windowManager.hyprland.configType = "hyprlang"` to retain the former
-format.
+### Automation defaults in state version 26.05
 
-### Home Manager 26.05 automation defaults
-
-In nixos-26.05, automatic upgrades no longer run `nix flake update`, Mergiraf
-Git and Jujutsu integration defaults off, Yazi's shell wrapper becomes `y`, and
-GTK 4 no longer inherits `gtk.theme`. Restore input updates explicitly when
-wanted:
+Automatic upgrades no longer run `nix flake update`. Restore it explicitly if
+required:
 
 ```nix
 services.home-manager.autoUpgrade.preSwitchCommands = [
@@ -117,38 +85,61 @@ services.home-manager.autoUpgrade.preSwitchCommands = [
 ];
 ```
 
-## Program and service migrations
+Mergiraf integration for Git and Jujutsu defaults off, Yazi's shell wrapper is
+named `y`, and GTK 4 no longer inherits `gtk.theme`.
 
-### Home Manager Syncthing tray migration
+## Program configuration migrations
 
-In nixos-25.11, the Boolean `services.syncthing.tray` was removed. Use:
+### SSH and agent integration
+
+Use RFC 42-style `programs.ssh.settings` in nixos-26.05.
+`programs.ssh.matchBlocks` is deprecated and automatically migrated. The
+`sshAuthSock` module supplies shell integration for agent providers, replacing
+the removed `services.ssh-agent.enableBashIntegration`,
+`enableZshIntegration`, `enableFishIntegration`, and
+`enableNushellIntegration` options.
+
+### Firefox, Anki, and Thunderbird profiles
+
+The removed top-level `programs.firefox.extensions` list moves to each
+profile's `extensions.packages` or `extensions.settings` (nixos-26.05). Move
+Anki synchronization under `programs.anki.profiles."User 1".sync`; `uiScale`
+accepts values from 1.0 through 2.0.
+
+Thunderbird supports EWS accounts. For the `outlook.office365.com` flavor,
+unspecified IMAP and SMTP authentication defaults to OAuth2.
+
+### Syncthing
+
+The Boolean `services.syncthing.tray` form is removed in nixos-25.11. Use:
 
 ```nix
 services.syncthing.tray.enable = true;
 ```
 
-### Per-profile Home Manager migrations
+In nixos-26.05, move Syncthing credentials from
+`services.syncthing.passwordFile` to `services.syncthing.guiCredentials`.
 
-In nixos-26.05:
+### Editors, viewers, and wallpaper services
 
-- Firefox extensions move from removed top-level
-  `programs.firefox.extensions` to each profile's `extensions.packages` or
-  `extensions.settings`.
-- Anki sync settings move below
-  `programs.anki.profiles."User 1".sync`; `uiScale` accepts 1.0–2.0.
-- Thunderbird adds EWS accounts, and the `outlook.office365.com` flavor
-  defaults unspecified IMAP and SMTP authentication to OAuth2.
+For nixos-26.05:
 
-### Renamed and split Home Manager modules
-
-In nixos-26.05:
-
-- Syncthing credentials move from `services.syncthing.passwordFile` to
-  `guiCredentials`.
-- VS Code forks use dedicated modules instead of `programs.vscode.package`.
-- Select exactly one of `programs.man.man-db.enable` and `.mandoc.enable`.
-- Replace `programs.neovim.extraLuaConfig` with `initLua`.
-- Replace `services.swww` with `services.awww`.
-- Move assistant instruction options to their common `context` shape.
-- Replace removed free-form Aerospace and aria2 configuration with structured
+- Configure VS Code forks through their dedicated modules rather than setting
+  `programs.vscode.package`.
+- Choose exactly one of `programs.man.man-db.enable` and
+  `programs.man.mandoc.enable`.
+- Rename `programs.neovim.extraLuaConfig` to `programs.neovim.initLua`.
+- Rename `services.swww` to `services.awww`.
+- Move tool instruction options to their shared `context` structure.
+- Replace free-form Aerospace and aria2 configuration with structured
   `settings`.
+
+## External Nix and Darwin integration
+
+`nix.assumeXdg` supports Nix installations using XDG base directories outside
+Home Manager in nixos-26.05. The NixOS setting
+`nix.settings.use-xdg-base-directories` is detected automatically.
+
+On Darwin, launchd agents wait for `/nix/store`, replacement activation waits
+for `bootout`, nix-darwin dry-run reaches user activation, and
+`TERMINFO_DIRS` includes terminfo supplied by installed packages.

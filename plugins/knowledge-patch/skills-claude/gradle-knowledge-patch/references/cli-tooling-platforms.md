@@ -1,159 +1,182 @@
 # CLI, Wrapper, Tooling API, and Platforms
 
-## Wrapper version selectors
+## Daemon JVM selection and provisioning
 
-On Gradle `9.0.0` or newer, `wrapper --gradle-version` accepts a major or
-major/minor selector and resolves the latest matching release:
+### Auto-provision a daemon JVM (8.13.0)
+
+When no installed JDK matches the daemon criteria, Gradle can download one.
+Apply Foojay resolver convention plugin `0.9.0` or a custom resolver, then run:
+
+```text
+./gradlew updateDaemonJvm --jvm-version=17 --jvm-vendor=adoptium
+```
+
+The generated `gradle/gradle-daemon-jvm.properties` records the vendor and
+version plus per-platform download URLs.
+
+### Use stable daemon toolchains (9.2.0)
+
+Daemon JVM criteria are stable and no longer emit an incubation warning.
+
+### Bind the daemon explicitly (9.5.0)
+
+Set `GRADLE_DAEMON_BIND_ADDRESS` to bypass address auto-detection for
+client-daemon and cross-daemon traffic on unusual or multi-interface networks:
+
+```text
+GRADLE_DAEMON_BIND_ADDRESS=192.168.1.10 ./gradlew build
+```
+
+### Account for daemon housekeeping (9.4.0)
+
+Daemon logs older than 14 days are removed automatically at daemon shutdown.
+
+## Wrapper and distribution transport
+
+### Interpret release numbers using SemVer (9.0.0)
+
+Gradle 9 and newer use `MAJOR.MINOR.PATCH`. This does not rename older releases
+or their backports. Internal and `@Incubating` features are outside the public
+SemVer compatibility guarantee and may still change in a minor release.
+
+### Select partial versions (9.0.0)
+
+For Gradle 9 or newer, `wrapper --gradle-version` accepts a major or major/minor
+selector and resolves its latest matching release:
 
 ```text
 ./gradlew wrapper --gradle-version=9
 ./gradlew wrapper --gradle-version=9.1
 ```
 
-Do not apply this interpretation to pre-9 values. A selector such as `8.12`
-already names an exact historical release.
+Do not apply this interpretation to older releases: a value such as `8.12` is
+an exact historical version.
 
-## Wrapper authentication, retries, and timeout
+### Use bearer credentials (9.4.0)
 
-Wrapper distribution downloads accept bearer tokens through system properties
-(since `9.4.0`). Bearer credentials take priority over Basic credentials.
-Restrict both authentication types by host so credentials are not sent to an
-unintended distribution server.
+Wrapper downloads accept bearer tokens supplied through system properties.
+Bearer authentication takes priority over Basic authentication. Restrict both
+credential types per host so secrets are not sent to unintended servers.
 
-Retries are disabled by default. Enable them in
-`gradle-wrapper.properties` when transient failures are expected (since
-`9.5.0`):
+### Retry downloads deliberately (9.5.0)
+
+Retries are off by default. Configure the attempt count and initial delay in
+`gradle-wrapper.properties`; the delay doubles after each failure:
 
 ```properties
 retries=3
 retryBackOffMs=1000
 ```
 
-`retryBackOffMs` is the initial delay and doubles after every failed attempt.
+### Use the stable timeout API (9.6.1)
 
-`Wrapper.getNetworkTimeout()` is stable as of `9.6.1`; it is no longer
-incubating and is covered by Gradle's backward-compatibility guarantees.
+`Wrapper.getNetworkTimeout()` is stable and covered by Gradle's compatibility
+guarantees.
 
-## Non-interactive and console output
+### Upgrade past the initial 9.7 release (9.7.0)
 
-Disable all prompting in unattended builds with `--non-interactive` (since
-`9.6.1`):
+Use Gradle 9.7.1 rather than 9.7.0 to restore compatibility for `BaseExecSpec`
+streams, failed-test diff formatting, KAPT isolation from bundled ANTLR,
+existing `Transformer` implementations, Ant tasks with explicit classpaths,
+and Kotlin DSL `@Option` annotation arguments.
 
-```text
-./gradlew --non-interactive build
-```
+## Command-line inspection and console behavior
 
-The persistent equivalent is:
+### Inspect transforms and task graphs (8.13.0, 9.1.0)
 
-```properties
-org.gradle.console.interactive=false
-```
-
-A non-empty `NO_COLOR` environment variable suppresses color while retaining
-other styling and rich-console features such as progress bars and animations
-(`9.6.1`):
-
-```text
-NO_COLOR=1 ./gradlew build
-```
-
-`--console=colored` adds highlighting without rich-console progress bars
-(since `9.1.0`), which is useful for simple terminals and CI logs:
-
-```text
-./gradlew build --console=colored
-```
-
-On Windows ARM64/AArch64, the rich console is unavailable (`9.2.0`). Default
-console selection and an explicit `--console=rich` both fall back to plain
-output.
-
-## Task and project diagnostics
-
-The incubating `--task-graph` option prints a tree of requested tasks and
-dependencies without executing them (since `9.1.0`):
+Run `./gradlew artifactTransforms` to list each registered transform, its action
+type, cacheability, and input/output attributes. Use the incubating
+`--task-graph` option to print requested tasks and dependencies without running
+them:
 
 ```text
 ./gradlew root r2 --task-graph
 ```
 
-The Project Report includes each project's physical filesystem location next
-to its logical build path as of `9.1.0`.
+### Locate projects and task registrations (9.1.0, 9.5.0)
 
-Non-verification task failures identify the build script, settings script, or
-plugin that registered the task (since `9.5.0`). The same provenance appears
-in `help --task`, and it can be requested in task listings:
+The Project Report shows physical filesystem locations alongside logical build
+paths. Non-verification task failures and `help --task` identify the script or
+plugin that registered a task; request the same information in listings with:
 
 ```text
 ./gradlew tasks --provenance
 ```
 
-## Composite-build dry runs
+### Choose console output (9.1.0, 9.2.0, 9.6.1)
 
-`--dry-run` prevents execution-phase tasks in included builds from running as
-of `9.1.0`. Tasks invoked by an included build's configuration logic can still
-run during configuration, so dry-run does not imply that configuration is
-side-effect-free.
+- `--console=colored` adds color without rich progress rendering.
+- Windows ARM64/AArch64 is supported, including ARM-hosted VMs, but its rich
+  console is unavailable; automatic selection and `--console=rich` use plain
+  output.
+- A non-empty `NO_COLOR` suppresses color while retaining other rich styling,
+  including progress bars and animations.
 
-## Project initialization
+### Disable prompts (9.6.1)
 
-`init --into` creates a project in a specified target directory, creating the
-directory when necessary (since `9.5.0`):
+Use `--non-interactive` for one invocation or persist the behavior with:
 
-```text
-gradle init --type java-application --into my-new-project
+```properties
+org.gradle.console.interactive=false
 ```
 
-## Stable streamed values
+### Create a project in another directory (9.5.0)
 
-Asynchronous Tooling API value streaming became stable in `8.13.0`. The
-compatibility guarantee covers:
+`gradle init --into my-new-project` targets that directory and creates it when
+needed.
 
-- `BuildActionExecuter.setStreamedValueListener(StreamedValueListener)`
-- `StreamedValueListener`
-- `BuildController.send(Object)`
+### Publish an unconfigured Build Scan (9.5.0)
 
-Use streaming when an action should deliver intermediate values before its
-final result.
+`--develocity-url` publishes a Build Scan to the named server without project
+configuration:
 
-## Tooling API parallelism and lightweight models
+```text
+./gradlew --develocity-url https://develocity.example.com build
+```
 
-`org.gradle.tooling.parallel` controls parallel Tooling API actions
-independently from `org.gradle.parallel` (since `9.4.0`). If unset, it inherits
-the value of `org.gradle.parallel`:
+## Tooling API and TestKit
+
+### Stream custom client values (8.13.0)
+
+Asynchronous Tooling API streaming is stable. Register a
+`StreamedValueListener` with `BuildActionExecuter.setStreamedValueListener(...)`
+and send serializable values from an action with `BuildController.send(...)`.
+
+### Control Tooling API parallelism (9.4.0)
+
+`org.gradle.tooling.parallel` controls parallel Tooling API actions separately
+from `org.gradle.parallel`; when absent, it inherits `org.gradle.parallel`.
 
 ```properties
 org.gradle.tooling.parallel=true
 org.gradle.parallel=false
 ```
 
-`BuildEnvironment.getVersionInfo()` returns the exact `gradle --version`
-output without starting a daemon, while the `Help` model exposes rendered
-`gradle --help` output (`9.4.0`):
+### Query version and help without a build (9.4.0)
 
-```java
-String version =
-    connection.getModel(BuildEnvironment.class).getVersionInfo();
-String help =
-    connection.getModel(Help.class).getRenderedText();
+`BuildEnvironment.getVersionInfo()` returns the exact `gradle --version` text
+without starting a daemon. The `Help` model returns rendered `gradle --help`
+through `getRenderedText()`.
+
+### Stream TestKit output (9.3.0)
+
+`BuildResult.getOutputReader()` returns a `BufferedReader` for incremental
+processing of high-volume runner output. Close the reader after use.
+
+## Composite builds and file watching
+
+### Make dry runs include included builds (9.1.0)
+
+`--dry-run` prevents execution-phase tasks in included builds from running.
+Tasks invoked by an included build's configuration logic may still run during
+configuration.
+
+### Watch with a custom project cache (9.7.0)
+
+File watching works when `--project-cache-dir` or `org.gradle.projectcachedir`
+moves project state elsewhere, even when the destination filesystem cannot be
+watched:
+
+```text
+./gradlew build --watch-fs --project-cache-dir /custom/path
 ```
-
-## Streaming TestKit output
-
-`BuildResult.getOutputReader()` returns a `BufferedReader` as of `9.3.0`.
-Process large `GradleRunner` output incrementally instead of materializing the
-entire `getOutput()` string, and close the reader:
-
-```java
-try (BufferedReader reader = result.getOutputReader()) {
-    boolean found = reader.lines()
-        .anyMatch(line ->
-            line.contains("example build message"));
-}
-```
-
-## Platform support
-
-Gradle builds can run on Windows ARM64/AArch64 devices, including Windows
-virtual machines hosted on ARM hardware (since `9.2.0`). Account for the plain
-console fallback described above when comparing logs across platforms.

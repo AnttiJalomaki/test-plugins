@@ -1,9 +1,8 @@
-# Dependency build scripts and approvals
+# Dependency Build Scripts and Approvals
 
-## pnpm 10 default-deny model
+## Default blocking and review (2025-01)
 
-Starting with pnpm 10, dependency lifecycle scripts do not run during install
-unless the package is approved in `pnpm.onlyBuiltDependencies` (`2025-01`):
+pnpm 10 does not run dependency lifecycle scripts during installation unless the package is listed in `pnpm.onlyBuiltDependencies`. An empty `pnpm.neverBuiltDependencies` array restores the pre-v10 allow-all behavior.
 
 ```json
 {
@@ -13,81 +12,46 @@ unless the package is approved in `pnpm.onlyBuiltDependencies` (`2025-01`):
 }
 ```
 
-Set `pnpm.neverBuiltDependencies` to an empty array to recover the former
-allow-all behavior. Packages listed in `pnpm.ignoredBuiltDependencies` remain
-blocked and do not produce the informational skipped-build message.
-
-Review pending packages with:
+Use `pnpm ignored-builds` to list dependencies whose build scripts were skipped and `pnpm approve-builds` to approve dependencies to run scripts during installation. Packages in `pnpm.ignoredBuiltDependencies` remain unbuilt without the informational skipped-build message.
 
 ```sh
 pnpm ignored-builds
 pnpm approve-builds
 ```
 
-When an already-installed dependency is newly added to
-`onlyBuiltDependencies`, the next `pnpm install` runs its previously skipped
-build script (`2025-12`).
+## One-command allowances (2025-02)
 
-## Command-scoped approvals
-
-Packages directly executed by `pnpm dlx` or `pnpm create` may run their own
-postinstall scripts. Their dependencies stay blocked unless named by
-`--allow-build`. The same flag on `pnpm add` runs and records named dependencies
-in `pnpm.onlyBuiltDependencies` for later installs (`2025-02`):
+Packages executed by `pnpm dlx` or `pnpm create` may run their own postinstall scripts by default. Their dependencies remain blocked unless named with `--allow-build`. On `pnpm add`, the same flag runs the named dependencies' scripts and records them in `pnpm.onlyBuiltDependencies` for later installs.
 
 ```sh
 pnpm --allow-build=esbuild dlx bundle
 pnpm --allow-build=esbuild add bundle
 ```
 
-In newer pnpm, `--allow-build` persists to the unified `allowBuilds` map
-instead (`2026-03`):
+## Strict review and global approvals (2025-02)
 
-```yaml
-allowBuilds:
-  esbuild: true
-```
-
-Use `pnpm approve-builds --global` to review and allow postinstall scripts for
-dependencies of globally installed packages. Use `pnpm approve-builds --all`
-to approve all pending builds without the interactive selector.
-
-pnpm 11 also accepts explicit package arguments, with `!` for denial
-(`11.0.0`):
-
-```sh
-pnpm approve-builds esbuild '!core-js'
-```
-
-## Fail on unreviewed builds
-
-Enable strict build review to make installation exit nonzero whenever a
-dependency has an unreviewed build script:
+Set `strict-dep-builds=true` to make installation exit nonzero when a dependency has an unreviewed build script. Use `pnpm approve-builds --global` to review and allow postinstall scripts for dependencies of globally installed packages.
 
 ```ini
 strict-dep-builds=true
 ```
 
-This becomes the default in pnpm 11. Explicit denials still belong in
-`allowBuilds` so policy remains reviewable.
+```sh
+pnpm approve-builds --global
+```
 
-## Allow every dependency build
+## Explicit allow-all control (2025-04)
 
-`dangerouslyAllowAllBuilds` permits all dependency build scripts and has the
-same effect as an empty `neverBuiltDependencies` list (`2025-04`):
+`dangerouslyAllowAllBuilds` permits every dependency build script without individual approval. It may be enabled globally or for one command and has the same effect as an empty `neverBuiltDependencies` list.
 
 ```sh
 pnpm config set dangerouslyAllowAllBuilds true
 pnpm install --dangerously-allow-all-builds
 ```
 
-This may be configured globally or for one command. It bypasses individual
-review and should only be used when the complete dependency set is trusted.
+## Version-scoped approvals (2025-10)
 
-## Version-scoped approvals
-
-`onlyBuiltDependencies` accepts exact versions and `||` disjunctions
-(`2025-10`):
+`onlyBuiltDependencies` accepts exact package versions and `||` disjunctions, so approval need not cover every version of a dependency.
 
 ```yaml
 onlyBuiltDependencies:
@@ -95,15 +59,13 @@ onlyBuiltDependencies:
   - esbuild@0.25.1
 ```
 
-This limits approval to the listed releases rather than every version of the
-package.
+## Build newly approved installed dependencies (2025-12)
 
-## Unified `allowBuilds`
+When an already-installed dependency is added to `onlyBuiltDependencies`, the next `pnpm install` runs its previously skipped build script.
 
-`allowBuilds` replaces `onlyBuiltDependencies` and
-`ignoredBuiltDependencies`. Map a package matcher to `true` to permit its
-scripts or `false` to deny them; version matchers and `||` disjunctions work
-(`2025-12`):
+## Unified `allowBuilds` permissions (2025-12)
+
+`allowBuilds` is the preferred replacement for `onlyBuiltDependencies` and `ignoredBuiltDependencies`. It maps package matchers to `true` to allow scripts or `false` to block them, and supports version matchers and `||` disjunctions.
 
 ```yaml
 allowBuilds:
@@ -112,18 +74,41 @@ allowBuilds:
   nx@21.6.4 || 21.6.5: true
 ```
 
-pnpm 11 removes `onlyBuiltDependencies`, `onlyBuiltDependenciesFile`,
-`neverBuiltDependencies`, `ignoredBuiltDependencies`, and `ignoreDepScripts`.
-All approvals and denials must use `allowBuilds`.
+## Git dependency prepare scripts (2025-12)
 
-## Git dependency builds
+Starting in pnpm 10.26, Git-hosted dependencies cannot run `prepare` during installation unless permitted by `onlyBuiltDependencies` or `allowBuilds`. pnpm 10.27 also honors `dangerouslyAllowAllBuilds` for them.
 
-Beginning in pnpm 10.26, Git-hosted dependencies cannot run `prepare` during
-installation unless allowed through `onlyBuiltDependencies` or `allowBuilds`.
-pnpm 10.27 also applies `dangerouslyAllowAllBuilds` to Git dependencies
-(`2025-12`).
+## Persist command allowances to `allowBuilds` (2026-03)
 
-In current pnpm 11, an `allowBuilds` matcher may be the Git dependency's
-repository URL without its resolved commit hash, so approval survives branch
-updates (`11.10-11.17`). A package-name-only matcher does not approve a
-Git-hosted artifact.
+`--allow-build` permissions are persisted in the unified `allowBuilds` map instead of the legacy allowlist.
+
+```sh
+pnpm --allow-build=esbuild add bundle
+```
+
+```yaml
+allowBuilds:
+  esbuild: true
+```
+
+## Approve every pending build (2026-03)
+
+`pnpm approve-builds --all` approves all pending dependency builds without opening the interactive selector.
+
+```sh
+pnpm approve-builds --all
+```
+
+## pnpm 11 build permission migration (migration-10-to-11, 11.0.0)
+
+pnpm 11 removes `onlyBuiltDependencies`, `onlyBuiltDependenciesFile`, `neverBuiltDependencies`, `ignoredBuiltDependencies`, and `ignoreDepScripts`. Express both allowed and denied dependency builds in `allowBuilds`.
+
+`pnpm approve-builds` also accepts positional package names for non-interactive approval; prefix a name with `!` to deny it explicitly.
+
+```sh
+pnpm approve-builds esbuild '!core-js'
+```
+
+## Approve Git builds by repository (11.10-11.17)
+
+An `allowBuilds` entry for a Git-hosted dependency may match its repository URL without the resolved commit hash, so the approval survives branch updates. A package-name-only entry does not approve a Git-hosted artifact.

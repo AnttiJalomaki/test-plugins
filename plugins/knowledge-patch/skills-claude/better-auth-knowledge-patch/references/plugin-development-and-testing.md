@@ -1,46 +1,27 @@
 # Plugin Development and Testing
 
-## Unified request hooks
+## Unified request middleware
 
-Global and plugin before/after hooks use the same `AuthMiddleware` abstraction. Global handlers may be declared directly; plugin hooks remain matcher/handler entries. After middleware reads the response from `ctx.context.returned`.
+Global and plugin hooks use the `AuthMiddleware` abstraction (since 1.5-guide). Global handlers may be direct middleware; plugin hooks remain matcher/handler entries. After middleware reads the result from `ctx.context.returned`.
 
 ```ts
 import { createAuthMiddleware } from "better-auth/api";
 
 hooks: {
-  before: createAuthMiddleware(async (ctx) => console.log(ctx.path)),
-  after: createAuthMiddleware(async (ctx) =>
-    console.log(ctx.context.returned)),
+  before: createAuthMiddleware(async (ctx) => inspect(ctx.path)),
+  after: createAuthMiddleware(async (ctx) => inspect(ctx.context.returned)),
 }
 ```
 
-Plugin form:
+## Plugin context and lifecycle
 
-```ts
-const plugin = {
-  id: "example",
-  hooks: {
-    before: [{
-      matcher: (ctx) => ctx.path.startsWith("/example"),
-      handler: createAuthMiddleware(async (ctx) => {
-        // Inspect or replace request behavior.
-      }),
-    }],
-  },
-} satisfies BetterAuthPlugin;
-```
+`PluginContext<Options>` is generic. Plugins can augment `BetterAuthPluginRegistry` so `getPlugin()` and `hasPlugin()` infer registered types. `init()` receives the same mutable context reference used throughout the auth lifecycle and may return arbitrary context keys for other plugins.
 
-## Plugin context and registry typing
+`AuthContext.version` exposes the running Better Auth version for compatibility checks and diagnostics (since 1.5.0).
 
-`PluginContext<Options>` is generic. A plugin may augment `BetterAuthPluginRegistry`, allowing `getPlugin()` and `hasPlugin()` to infer registered plugin types.
+## Error codes and localization
 
-`init()` receives the same mutable context object used by the full auth lifecycle. It may return arbitrary context keys for other plugins.
-
-`AuthContext` exposes the running Better Auth version for compatibility checks and diagnostics.
-
-## Error codes
-
-A plugin `$ERROR_CODES` property expects `Record<string, RawError>`, not a string map. Assign the result of `defineErrorCodes()`.
+Plugin `$ERROR_CODES` is `Record<string, RawError>`, not a string map. Use the object returned by `defineErrorCodes()`; errors include a machine-readable `code`, and `APIError.from()` accepts the resulting `{ code, message }`.
 
 ```ts
 $ERROR_CODES: defineErrorCodes({
@@ -48,79 +29,81 @@ $ERROR_CODES: defineErrorCodes({
 })
 ```
 
-`defineErrorCodes()` produces `{ code, message }` values accepted by `APIError.from()`. Auth error responses carry machine-readable `code` fields.
-
-## Database hooks and transaction timing
-
-Database `create.after`, `update.after`, and `delete.after` hooks run after the transaction commits. They cannot provide atomic follow-up writes. Put such writes in the adapter during the main operation.
-
-For OAuth token encryption implemented manually, use an account `create.before` hook, which can replace the data before persistence:
+`@better-auth/i18n` provides typed translations and locale detection from headers, cookies, or sessions.
 
 ```ts
-databaseHooks: {
-  account: {
-    create: {
-      before(account) {
-        const data = { ...account };
-        if (data.accessToken) data.accessToken = encrypt(data.accessToken);
-        if (data.refreshToken) data.refreshToken = encrypt(data.refreshToken);
-        return { data };
-      },
-    },
+i18n({
+  defaultLocale: "en",
+  detection: ["header", "cookie"],
+  translations: {
+    en: { USER_NOT_FOUND: "User not found" },
+    fr: { USER_NOT_FOUND: "Utilisateur introuvable" },
   },
-}
+})
 ```
 
-Prefer `account.encryptOAuthTokens: true` when custom handling is unnecessary.
+## Adapter predicates and IDs
 
-## Adapter factories and schema generation
-
-`createAdapter` is removed; use `createAdapterFactory`. Custom adapters can expose `createSchema` so the CLI can generate their schema.
-
-Case-insensitive comparison is portable across adapters through `mode: "insensitive"` on an individual `where` clause.
+Any adapter can perform a case-insensitive string comparison by adding `mode: "insensitive"` to an individual `where` clause (since 1.6.0).
 
 ```ts
 await adapter.findOne({
   model: "user",
-  where: [{ field: "email", value: email, mode: "insensitive" }],
+  where: [{
+    field: "email",
+    value: "user@example.com",
+    mode: "insensitive",
+  }],
 });
 ```
 
-`getMigrations` is exported from `better-auth/db/migration`, not from the package root.
+`advanced.database.generateId` callbacks may return `false` or `undefined` for a model to let the database generate that ID.
+
+## Background work
+
+`ctx.context.runInBackground()` is fire-and-forget. `runInBackgroundOrAwait()` delegates to the configured handler but awaits when there is none, which suits work that must complete, such as required email delivery.
+
+```ts
+hooks: {
+  after: createAuthMiddleware(async (ctx) => {
+    ctx.context.runInBackground(sendAnalytics());
+    await ctx.context.runInBackgroundOrAwait(sendRequiredEmail());
+  }),
+}
+```
+
+Connect serverless lifetime primitives through `advanced.backgroundTasks.handler`. Once configured, deferred writes are eventually consistent because the response may return first.
 
 ## Auth test utilities
 
-The `testUtils` plugin exposes user factories, persistence helpers, login headers, sessions, tokens, and optional OTP capture through `auth.$context.test` for integration and end-to-end tests.
+`testUtils` exposes factories, persistence helpers, login headers/sessions/tokens, and optional OTP capture through `auth.$context.test`.
 
 ```ts
 plugins: [testUtils({ captureOTP: true })]
 
 const test = (await auth.$context).test;
-const user = await test.saveUser(
-  test.createUser({ email: "test@example.com" }),
-);
+const user = await test.saveUser(test.createUser({ email: "test@example.com" }));
 const { headers, session, token } = await test.login({ userId: user.id });
 const otp = test.getOTP(user.email);
 ```
 
-For adapter suites, import `testAdapter` and `createTestSuite` from `@better-auth/test-utils/adapter`. The old `better-auth/adapters/test` path is removed.
+Adapter suites come from `@better-auth/test-utils/adapter`, not the removed `better-auth/adapters/test`.
 
-## OpenAPI reference generation
+## OpenAPI reference
 
-`openAPI()` serves a Scalar reference at `/api/auth/reference` with core and plugin endpoints.
+`openAPI()` serves Scalar at `/api/auth/reference` and includes core and plugin endpoints. Generate the schema directly with `await auth.api.generateOpenAPISchema()` or fetch `/api/auth/open-api/generate-schema`. `disableDefaultReference` removes only the default reference UI and retains the schema route.
 
-Generate the schema in code with:
+## Custom OAuth state
+
+Social sign-in `additionalData` survives the OAuth redirect. Read it in hooks, middleware, or endpoints with `getOAuthState<T>()` (since 1.4.0).
 
 ```ts
-const schema = await auth.api.generateOpenAPISchema();
+await authClient.signIn.social({
+  provider: "google",
+  additionalData: { referralCode: "ABC123", source: "landing-page" },
+});
 ```
 
-It is also exposed at `/api/auth/open-api/generate-schema` as an additional Scalar source. `disableDefaultReference` hides the default reference UI while preserving the schema endpoint.
+## Custom adapter schema
 
-## Plugin-contributed rate limits
-
-Plugins may contribute rate-limit rules. Rejected requests do not consume quota. Use exact or wildcard paths, asynchronous rule functions, and `false` exemptions consistently with global `customRules`.
-
-## Server/client type pairing
-
-When a plugin has a client companion, install the matching client plugin so endpoint and additional-field inference works. Examples include organization, dynamic organization roles, custom sessions, Sentinel challenges, API keys, and Electron.
+The CLI can call a custom adapter's `createSchema`, and Better Auth's schema definitions use Zod 4 (since 1.3.0).

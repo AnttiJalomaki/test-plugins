@@ -17,25 +17,25 @@ servers, Go authorization, Java channels, xDS, or load-balancing behavior.
 
 1. Identify the implementation, package versions, transport, and deployment
    platform involved in the task.
-2. Read the matching reference before relying on a default, dependency bound,
-   xDS matcher, or dynamically created channel.
-3. Treat security-related defaults as behavior changes even when application
-   code did not opt in explicitly.
+2. Read the matching reference before relying on a security default,
+   dependency bound, xDS matcher, or dynamically created channel.
+3. Treat default changes as behavior changes even when application code did
+   not opt in explicitly.
 4. Preserve intentional compatibility overrides until integration and
-   interoperability tests show they are no longer needed.
-5. Test both success and failure paths for interceptors, name resolution,
-   authorization, and control-plane resource loading.
-6. Prefer the project's manifests, lockfiles, code, and observed runtime
-   behavior when they conflict with assumptions outside this patch.
+   interoperability tests show that they are no longer needed.
+5. Exercise success and failure paths for interceptors, name resolution,
+   authorization, connection setup, and control-plane resource loading.
+6. Prefer project manifests, lockfiles, code, tests, and observed runtime
+   behavior when they conflict with general assumptions.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [transport-security-and-tooling.md](references/transport-security-and-tooling.md) | Post-quantum TLS, HTTP/2 frame-flood protection, Android server TLS 1.3, Linux ARM64 `Grpc.Tools` packaging |
-| [python-apis-runtime-and-dependencies.md](references/python-apis-runtime-and-dependencies.md) | Async status aborts, custom interceptor failures, protobuf bounds, Python 3.15 |
-| [authorization-and-xds.md](references/authorization-and-xds.md) | Go RBAC matchers, deprecated `source_ip`, ORCA-to-LRS propagation, aggregate-cluster labels, control-plane connections |
-| [java-channel-and-configuration.md](references/java-channel-and-configuration.md) | RFC 3986 parsing, per-channel resolver registries, numeric service config, child-channel configuration |
+| [transport-security-and-tooling.md](references/transport-security-and-tooling.md) | Post-quantum TLS, HTTP/2 flood protection, Netty stream limits, Android TLS, Linux ARM64 tooling |
+| [python-apis-runtime-and-dependencies.md](references/python-apis-runtime-and-dependencies.md) | Async status aborts, interceptor failures, protobuf bounds, Python runtime support |
+| [authorization-and-xds.md](references/authorization-and-xds.md) | Go RBAC matchers, header hardening, deprecated principals, ORCA/LRS, aggregate labels, control-plane connections |
+| [java-channel-and-configuration.md](references/java-channel-and-configuration.md) | RFC 3986 parsing, resolver registries, service-config numbers, child-channel customization |
 
 ## Breaking changes, defaults, and compatibility risks
 
@@ -44,69 +44,74 @@ servers, Go authorization, Java channels, xDS, or load-balancing behavior.
 - Expect new gRPC Core TLS connections to use post-quantum cryptography in key
   exchange by default.
 - Recheck TLS inspection, policy enforcement, interoperability, and latency
-  assumptions when transport behavior changes despite unchanged application
-  configuration.
+  assumptions even when application TLS configuration is unchanged.
 - On Android, account for TLS 1.3 on OkHttp-based gRPC Java servers as well as
-  clients. Do not retain a server-only assumption that TLS 1.3 is unavailable.
+  clients.
 - Read [transport security and tooling](references/transport-security-and-tooling.md)
   before changing TLS policy or transport dependencies.
 
-### Java URI parsing now follows RFC 3986 by default
+### Java URI parsing follows RFC 3986 by default
 
 - Re-test targets containing reserved characters, percent escapes, unusual
   authorities, or path-like components.
-- Do not assume a parser behavior remains legacy-compatible merely because no
-  parsing option was enabled by the application.
-- Keep target parsing tests close to custom resolvers and channel construction.
+- Keep target-parsing tests close to custom resolvers and channel construction.
+- Do not infer legacy parsing behavior from the absence of an application
+  opt-in.
 
 ### gRPC-Go throttles HTTP/2 control-frame floods
 
-- Expect a server to stop reading from a connection after the control-buffer
-  throttle reaches its limit.
-- The default threshold is 100 frames; DATA and HEADERS frames do not count
-  toward it.
-- Override the threshold only through
-  `GRPC_GO_EXPERIMENTAL_CONTROL_BUFFER_THROTTLE_LIMIT`, and validate the chosen
-  value under legitimate high-control-frame workloads as well as abusive ones.
+- Expect the server to stop reading from a connection when the control-frame
+  limit is reached.
+- The default limit is 100 frames; DATA and HEADERS frames do not count.
+- Change the limit only through
+  `GRPC_GO_EXPERIMENTAL_CONTROL_BUFFER_THROTTLE_LIMIT`, then validate legitimate
+  high-control-frame traffic as well as abusive traffic.
 
 ```sh
 export GRPC_GO_EXPERIMENTAL_CONTROL_BUFFER_THROTTLE_LIMIT=200
 ```
 
-### xDS DENY rules no longer ignore two permission matchers
+### Go xDS authorization closes fail-open paths
 
-- Treat `Metadata` and `RequestedServerName` as enforced gRPC-Go xDS RBAC
-  permission fields.
-- Audit DENY policies that previously relied on those fields being ignored;
-  the old behavior could fail open.
-- Include matching and non-matching metadata and requested-server-name cases in
-  authorization tests.
+- Treat `Metadata` and `RequestedServerName` as enforced permission fields in
+  gRPC-Go xDS RBAC rules, including DENY rules.
+- Validate and canonicalize header names in nested `Principal` and `Permission`
+  rules; non-lowercase names are covered by the same handling.
+- Reject `:scheme` and `grpc-`-prefixed matchers, and map `host` to
+  `:authority`.
+- Re-test mixed-case header matchers so they cannot silently match nothing and
+  let a DENY rule fail open.
 - Continue accepting deprecated `source_ip` principals as equivalent to
-  `direct_remote_ip`, but generate the current spelling in new configuration.
+  `direct_remote_ip`, but emit the current spelling in new configuration.
 
-### Java xDS control-plane connections are channel-scoped again
+### Netty enforces stream limits during connection setup
 
-- Do not assume xDS control-plane connections are reused across channels.
-- The earlier reuse behavior could exhaust the control plane's
-  `MAX_CONCURRENT_STREAMS` under many targets, leaving new channels stuck in
-  name resolution while waiting for resources.
-- Capacity-test many-channel deployments and diagnose stalled resolution with
-  both channel state and control-plane stream limits in view.
+- Expect the gRPC-Java Netty server to enforce its client-initiated stream
+  limit from startup, before `SETTINGS_ACK` arrives.
+- Test connection startup as well as steady-state multiplexing when clients
+  approach or exceed the configured limit.
 
-### Python protobuf compatibility has two distinct paths
+### Java xDS control-plane connections are channel-scoped
 
-- Treat 7.35.1 as the new lower bound for the main Python protobuf dependency.
-- Do not apply that bound indiscriminately to the separate v1.83.x
-  `grpc-status` backport, whose relaxed constraint retains protobuf 6.x
-  compatibility.
-- Resolve the package actually constraining protobuf before changing a lockfile.
+- Do not assume that xDS control-plane connections are reused across channels.
+- With many targets, compare channel resolution progress with the control
+  plane's `MAX_CONCURRENT_STREAMS`; exhausted streams can leave new channels
+  waiting for resources.
+- Capacity-test the production-like number of channels and targets.
+
+### Python protobuf compatibility has two paths
+
+- Treat 7.35.1 as the lower bound for the main Python protobuf dependency.
+- Do not apply that bound to the separate v1.83.x `grpc-status` backport; its
+  relaxed bound retains protobuf 6.x compatibility.
+- Identify which package constrains protobuf before changing a lockfile.
 
 ### Aggregate-cluster metric labels identify the leaf
 
-- Expect gRPC Java xDS metrics for aggregate clusters to use the leaf cluster
+- Expect gRPC-Java xDS metrics for aggregate clusters to use the leaf cluster
   name as the backend-service label.
 - Update dashboards, alerts, joins, and cardinality expectations that grouped
-  these metrics by the aggregate cluster name.
+  these metrics by aggregate cluster name.
 
 ## New APIs and capability quick reference
 
@@ -119,63 +124,62 @@ async def handle(request, context):
     await context.abort_with_status(status)
 ```
 
-The method is part of the abstract async context interface. Keep custom context
-implementations compatible with that interface, and test that control flow ends
-as expected after the awaited abort.
+The method is part of the abstract async context interface. Keep custom
+context implementations compatible and verify that awaited aborts end handler
+control flow as expected.
 
 ### Isolate Java name resolution per channel
 
 Use the `Grpc.newChannelBuilder` overload that accepts a
-`NameResolverRegistry` when a channel must not depend on the process-global
-registry. This is useful for isolated tests, embedded runtimes, and applications
-whose channels require different resolver sets.
+`NameResolverRegistry` when a channel should use an explicitly supplied
+registry instead of process-global resolver state.
 
 ### Customize dynamically created Java child channels
 
 Use `ChildChannelConfigurer` to intercept child channels created by load
-balancers. Apply channel-specific interceptors or credential changes there
-instead of assuming top-level channel customization automatically reaches every
-dynamic child.
+balancers. Apply channel-specific interceptors or credential changes there,
+then verify the resulting dynamic channels.
 
 ### Accept ordinary Java numeric service-config values
 
 Pass integer-looking values such as `maxAttempts: 4` and
-`backoffMultiplier: 2` to `defaultServiceConfig()` without converting them to
-JSON-style decimal literals first. Validation accepts any `Number` and
-normalizes accepted values to `Double`.
+`backoffMultiplier: 2` to `defaultServiceConfig()` without first converting
+them to decimal literals. Validation accepts any `Number` and normalizes
+accepted values to `Double`.
 
 ### Select ORCA metrics for LRS propagation
 
 Expect ORCA-to-LRS propagation to be enabled by default in gRPC Java. Under
-gRFC A85, use xDS configuration to select which fields from backend ORCA metric
-reports are copied into LRS load reports.
+gRFC A85, use xDS configuration to select which fields from backend ORCA
+metric reports are propagated into LRS load reports.
 
 ### Use current Python and Linux ARM64 support
 
-- Include Python 3.15 in supported-runtime testing where the application adopts
+- Include Python 3.15 in supported-runtime testing when the application adopts
   that interpreter.
 - On Linux ARM64, account for the `Grpc.Tools` move to `manylinux_2_28` and the
-  page-size alignment fix for the bundled `protoc` executable.
-- Re-evaluate base-image compatibility when upgrading build tooling, even when
-  generated source is unchanged.
+  maximum-page-size alignment fix for its bundled `protoc`.
+- Re-evaluate the build-image baseline when upgrading tooling, even if the
+  generated source does not change.
 
 ## Implementation checklists
 
 ### Transport and packaging
 
 - Read [transport-security-and-tooling.md](references/transport-security-and-tooling.md).
-- Exercise TLS handshakes against every relevant peer and middlebox.
+- Exercise TLS handshakes against every relevant peer and intermediary.
 - Load-test the HTTP/2 control-frame threshold before overriding it.
+- Test Netty's client-initiated stream limit during connection setup.
 - Run the packaged `protoc` on the actual Linux ARM64 build image.
 - Verify Android server and client TLS expectations separately.
 
 ### Python
 
 - Read [python-apis-runtime-and-dependencies.md](references/python-apis-runtime-and-dependencies.md).
-- Inspect both the gRPC and `grpc-status` dependency paths before resolving
-  protobuf constraints.
+- Inspect both the main gRPC and `grpc-status` dependency paths before
+  resolving protobuf constraints.
 - Await status-based aborts and update custom async contexts.
-- Test interceptor exceptions for unary and streaming call shapes in use.
+- Test interceptor exceptions for every unary or streaming call shape in use.
 - Add Python 3.15 to CI only after native and generated dependencies agree.
 
 ### Go authorization and server protection
@@ -183,9 +187,10 @@ reports are copied into LRS load reports.
 - Read [authorization-and-xds.md](references/authorization-and-xds.md) and the
   Go section of [transport-security-and-tooling.md](references/transport-security-and-tooling.md).
 - Re-run DENY-policy tests for metadata and requested server names.
+- Test valid, remapped, mixed-case, and forbidden header names in nested rules.
 - Accept legacy `source_ip` input while emitting `direct_remote_ip` in new xDS
   configuration.
-- Observe connection behavior at the default flood threshold before tuning it.
+- Observe behavior at the default flood threshold before tuning it.
 
 ### Java channels, xDS, and load balancing
 
@@ -193,13 +198,12 @@ reports are copied into LRS load reports.
   for channel construction and parsing.
 - Read [authorization-and-xds.md](references/authorization-and-xds.md) for xDS
   telemetry, labels, and control-plane connection behavior.
-- Test custom target strings under RFC 3986 parsing.
+- Test custom targets under RFC 3986 parsing.
 - Supply a channel-local resolver registry where global state is inappropriate.
-- Verify child-channel interceptors and credentials on dynamically created
-  subchannels.
+- Verify interceptors and credentials on dynamically created child channels.
 - Update metric queries to use leaf-cluster backend-service labels.
-- Stress resource loading with the production-like number of channels and
-  targets.
+- Stress resource loading with a production-like number of channels and targets.
+- Exercise Netty stream limits before and after connection setup completes.
 
 ## Validation matrix
 
@@ -207,15 +211,17 @@ reports are copied into LRS load reports.
 | --- | --- |
 | Core TLS | Connect through each deployed TLS policy and intermediary |
 | Go HTTP/2 | Send legitimate and excessive non-DATA, non-HEADERS frames |
-| Go RBAC | Exercise matching and non-matching DENY rules for both new fields |
-| Python aborts | Await a status abort through the stock and any custom context |
-| Python interceptors | Raise from each custom interceptor shape in use |
-| Python dependencies | Resolve both the main protobuf path and `grpc-status` backport path |
-| Java targets | Parse representative custom schemes, authorities, escapes, and paths |
+| Go RBAC fields | Match and miss DENY rules for metadata and requested server names |
+| Go RBAC headers | Cover canonical, remapped, mixed-case, and forbidden header names |
+| Python aborts | Await a status abort through stock and custom contexts |
+| Python interceptors | Raise from every custom interceptor call shape in use |
+| Python dependencies | Resolve the main protobuf path and the `grpc-status` backport path |
+| Java targets | Parse representative schemes, authorities, escapes, and paths |
 | Java resolvers | Construct channels with global and explicit registries |
-| Java xDS | Load many targets while observing resource and stream progress |
+| Java xDS | Load many targets while observing resources and stream progress |
 | Java metrics | Confirm LRS selection and leaf-cluster label dimensions |
 | Java child channels | Confirm injected interceptors or credentials on dynamic children |
+| Java Netty | Exceed the stream limit before `SETTINGS_ACK` and after startup |
 
-Load only the indexed reference relevant to the implementation and task, then
-retain its implementation-specific checks in code review and regression tests.
+Load only the indexed references relevant to the implementation, then retain
+their implementation-specific checks in code review and regression tests.

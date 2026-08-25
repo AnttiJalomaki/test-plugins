@@ -8,30 +8,86 @@ metadata:
 ---
 
 
-# Dagster Knowledge Patch
+# Dagster compatibility guide
 
-Use this skill when upgrading or writing Dagster projects, Components, asset
-automation, deployment configuration, or integration code. Start with the
-breaking-change checklist, then open the topic reference that matches the work.
+Use this skill when writing, reviewing, or migrating Dagster projects. Start by
+identifying the installed Dagster and integration-package versions, then apply
+only guidance relevant to those versions. Project manifests, runtime behavior,
+and tests take precedence when they disagree with compatibility guidance.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [upgrades-and-api.md](references/upgrades-and-api.md) | Breaking changes, deprecations, API lifecycle, freshness migration |
-| [assets-and-automation.md](references/assets-and-automation.md) | Assets, checks, partitions, selections, backfills, automation |
-| [components-and-cli.md](references/components-and-cli.md) | Components, templates, state, project scaffolding, `dg`, Dagster+ CLI |
-| [operations-and-deployment.md](references/operations-and-deployment.md) | Coordination, executors, GraphQL, databases, Kubernetes, ECS, daemons |
-| [data-integrations.md](references/data-integrations.md) | dbt, Airbyte, Fivetran, Sling, dlt, BI tools, warehouse IO managers |
-| [platform-integrations.md](references/platform-integrations.md) | Databricks, cloud resources, Pipes, authentication, newer packages |
+| --- | --- |
+| [Assets and automation](references/assets-and-automation.md) | Asset values, virtual assets, selections, partitions, checks, freshness, and declarative automation |
+| [Components and CLI](references/components-and-cli.md) | Components, state, templates, `dg`, scaffolding, deployment commands, and configuration |
+| [Data integrations](references/data-integrations.md) | dbt, Airbyte, Fivetran, Databricks, BI tools, IO managers, and new packages |
+| [Operations and deployment](references/operations-and-deployment.md) | Coordinators, pools, executors, backfills, GraphQL, databases, daemons, and runtime support |
+| [Platform integrations](references/platform-integrations.md) | Kubernetes, Helm, ECS, Azure, Pipes, authentication, Teams, SCIM, and Airlift |
+| [Upgrades and API](references/upgrades-and-api.md) | Removed and renamed APIs, freshness migration, CLI replacement, lifecycle labels, and package changes |
 
-## Upgrade first
+## Apply breaking changes first
 
-### Keep runs launching
+### Replace removed asset APIs
 
-The queued run coordinator is the default and requires a running Dagster
-daemon. For deliberately immediate in-process launches, opt back into the
-synchronous coordinator:
+- Pass `AssetSpec` objects directly to `Definitions`; do not call removed
+  `external_asset_from_spec` or `external_assets_from_specs` helpers.
+- Pass `deps` as a sequence. For a single configured dependency, use
+  `deps=[AssetDep("upstream")]`.
+- Replace `Definitions.get_all_asset_specs()` with
+  `Definitions.resolve_all_asset_specs()`.
+- Use `include_external_assets`, not the old `include_sources` keyword, in
+  `AssetSelection` calls.
+
+### Finish the freshness migration
+
+- Import `FreshnessPolicy` and `apply_freshness_policy` from top-level
+  `dagster`.
+- Replace legacy freshness and observation parameters with
+  `automation_condition` plus schedule- or sensor-based automation.
+- Do not call the superseded `build_.*_freshness_checks` helpers or translator
+  `get_freshness_policy` methods.
+- Remember that the `FreshnessDaemon` evaluates policies by default. Set
+  `freshness.enabled: false` in `dagster.yaml` only when that evaluation is
+  intentionally disabled.
+
+### Update Component loading
+
+- Load a definitions folder with `load_from_defs_folder(path)` instead of the
+  deprecated, non-public `load_defs`.
+- Use `context.load_component(...)` and `context.build_defs(...)`. Their
+  `*_at_path` compatibility methods were removed in the 1.13 upgrade.
+- Put integration Component post-processors in top-level `post_processors`.
+  For Sling, pass `connections` directly rather than `sling` or `resource`.
+
+### Replace removed commands
+
+- Create a project with `create-dagster project`; all `dagster project`
+  commands are gone.
+- Use `dg utils integrations` where older code used
+  `dg docs integrations`, but note that `dg utils integrations` itself is
+  removed in 1.13.
+- Replace `dagster-cloud ci check` with `dg plus deploy start`.
+- Ensure Python is at least 3.10; Python 3.9 support was dropped in 1.12.
+
+### Repair integration migrations
+
+- Replace `AirbyteState` with `AirbyteJobStatusType` and remove legacy
+  freshness arguments from `build_airbyte_assets()`.
+- Load Looker, Power BI, and Sigma specs through their `load_*_asset_specs`
+  functions, pass translator instances, and construct `Definitions` from the
+  returned specs.
+- Declare `psycopg2-binary` directly if a PostgreSQL deployment requires it;
+  `dagster-postgres` no longer installs it transitively.
+- Run `dagster instance migrate` for the MySQL `LongText` migrations.
+
+## Account for changed defaults
+
+### Run launch and concurrency
+
+The queued run coordinator is the default. A running Dagster daemon is
+therefore required to launch runs. To preserve immediate in-process launching,
+configure `SyncInMemoryRunCoordinator` explicitly:
 
 ```yaml
 run_coordinator:
@@ -39,79 +95,36 @@ run_coordinator:
   class: SyncInMemoryRunCoordinator
 ```
 
-Concurrency-key and pool blocking is also enabled by default. At op
-granularity, a run can leave the queue once one op is runnable. At run
-granularity, every pool used by the run needs a free slot.
+Concurrency blocking is also on by default. Under op granularity, a run can be
+dequeued when one op has capacity; under run granularity, every pool used by
+the run needs a free slot. Current pool names may contain any non-whitespace
+character, so do not preserve the older alphanumeric-only validator.
 
-### Replace removed asset APIs
+### Configuration and persisted state
 
-- Rename `include_sources` to `include_external_assets` on
-  `AssetSelection` APIs.
-- Pass `AssetSpec` objects directly to `Definitions`; do not call removed
-  `external_asset_from_spec` or `external_assets_from_specs`.
-- Pass `deps` as a sequence, even for one dependency. Use `AssetDep` when a
-  dependency carries configuration.
-- Replace `Definitions.get_all_asset_specs()` with
-  `Definitions.resolve_all_asset_specs()`.
+- Partial run config is merged with job-level defaults for omitted fields.
+- State-backed integration Components default to `LOCAL_FILESYSTEM` storage,
+  not legacy code-server snapshots. Configure storage explicitly when local
+  files are unsuitable.
+- `DagsterDbtTranslatorSettings.enable_source_metadata` defaults to `True`,
+  which can remap upstream keys from dbt source table names.
+- Date-looking YAML strings remain strings instead of becoming datetimes.
 
-```python
-from dagster import AssetDep, AssetSpec, Definitions, asset
+### Storage and checks
 
-defs = Definitions(assets=[AssetSpec("external_table")])
+- The SQLite event-log `busy_timeout` default is 30 seconds.
+- BigQuery, Snowflake, and DuckDB IO managers skip empty-DataFrame writes and
+  warn rather than inferring a degenerate table.
+- A missing result from a blocking asset check now warns and allows downstream
+  assets to proceed; an explicitly failed result still fails the step.
 
-@asset(deps=[AssetDep("upstream")])
-def downstream(): ...
-```
-
-### Complete the freshness migration
-
-Do not confuse the old and new policy types:
-
-- The former policy became `LegacyFreshnessPolicy`; its deprecated alias is
-  available from `dagster.deprecated`, not top-level `dagster`.
-- Import the current `FreshnessPolicy` and `apply_freshness_policy` from
-  top-level `dagster`.
-- The freshness daemon evaluates policies by default. Set
-  `freshness.enabled: false` only when automatic evaluation is unwanted.
-- Replace `build_.*_freshness_checks` helpers and integration translator
-  `get_freshness_policy` hooks with freshness policies.
-- Remove legacy freshness and auto-observation arguments. Use
-  `automation_condition` plus schedule- or sensor-based automation.
-
-```yaml
-freshness:
-  enabled: false
-```
-
-### Update Component loading
-
-- Replace deprecated, non-public `load_defs` with
-  `load_from_defs_folder(path)`.
-- Use `context.load_component(...)` and `context.build_defs(...)`. The
-  compatibility names `load_component_at_path` and `build_defs_at_path` are
-  removed.
-- Put Sling and Airflow `post_processors` at the top level; the old
-  `asset_post_processors` field is gone.
-- Give `SlingReplicationCollectionComponent` its `connections` directly,
-  rather than the old `sling` YAML field or Python `resource` argument.
-
-### Update commands and runtime declarations
-
-- Use `create-dagster project`; all `dagster project` commands are removed.
-- Use `dg plus deploy start` instead of deprecated
-  `dagster-cloud ci check`.
-- Do not call removed `dg docs integrations` or `dg utils integrations`.
-- Require Python 3.10 or newer. Declare `psycopg2-binary` directly when a
-  PostgreSQL deployment depends on it.
-- On MySQL, run `dagster instance migrate` for the `LongText` migrations.
-
-## High-value asset patterns
+## Use current asset patterns
 
 ### Return and load asset values
 
-`MaterializeResult(value=...)` sends the value through the asset IO manager
-and supports `MaterializeResult[T]`. A downstream asset can load a dependency
-dynamically through `AssetExecutionContext.load_asset_value`.
+`MaterializeResult(value=...)` sends the value through the asset IO manager and
+supports `MaterializeResult[T]`. A dependent asset can dynamically load a
+value through its context:
 
 ```python
 import dagster as dg
@@ -127,103 +140,80 @@ def downstream(context: dg.AssetExecutionContext):
 
 ### Model virtual assets
 
-Use preview `is_virtual=True` on `@asset` or `AssetSpec` for a view or derived
-table that reflects upstream changes without explicit materialization.
+Use preview `is_virtual=True` on `@asset` or `AssetSpec` for views and derived
+tables whose state follows upstream changes without explicit materialization.
 Virtual assets participate in staleness, planning, and declarative automation.
 
-```python
-import dagster as dg
+### Select assets consistently
 
-view = dg.AssetSpec("reporting_view", is_virtual=True)
-```
+Selection expressions combine Boolean logic, lineage traversal, and attribute
+filters across Components YAML and the UI. Newer selectors include `sensor:`,
+`schedule:`, `job:`, `automation_type:`, and `is:`. Group names may contain
+`/`, and `group:"marketing/*"` selects nested groups.
 
-### Use partition-aware checks
+### Use partition-aware checks and context
 
-`@asset_check` and `AssetCheckSpec` accept `partitions_def`; it must match the
-target asset's partition definition. Execution contexts expose
-`multi_partition_key` in multi-partition runs. Ops can also yield
-`AssetCheckEvaluation`, and `@asset` accepts success and failure `hooks`.
+- Give `@asset_check` or `AssetCheckSpec` a `partitions_def` matching the
+  target asset.
+- Read `multi_partition_key` from op, asset, or asset-check execution context
+  in a multi-partition run.
+- Use time-window partition `exclusions` for custom calendars.
+- Filter selections by partition type, such as `partitions:"static"`.
 
-### Build richer selections
+### Automate assets and jobs
 
-Selection expressions combine lineage traversal, attribute filters, and
-Boolean logic. They work across Components YAML, the Asset Catalog, saved
-selections, alerts, and insights. Useful attributes include `sensor:`,
-`schedule:`, `job:`, `automation_type:`, and the `is:` type filter.
+- Use `AutomationCondition.data_version_changed()` for data-version changes.
+- Use `all_new_updates_have_run_tags()`,
+  `any_new_update_has_run_tags()`, or `all_new_executed_with_tags()` when
+  decisions depend on tags across new updates.
+- Use `freshness_passed()`, `freshness_warned()`, and `freshness_failed()` to
+  branch on the most recent freshness evaluation.
+- In 1.13.16, preview job automation accepts an `automation_condition` on
+  `define_asset_job`; wrap asset conditions with
+  `any_job_root_assets_match()` or `all_job_root_assets_match()`.
 
-```text
-sensor:daily_refresh
-automation_type:schedule
-is:materializable
-group:"marketing/*"
-partitions:"static"
-```
+## Prefer current Component and CLI workflows
 
-Schedule and sensor selectors include assets in targeted jobs as well as
-direct selections. Group names may contain `/` and support hierarchical
-wildcards.
+For new projects, define Components in `defs.yaml` or as typed Python
+`Component` subclasses. Expose template helpers with `@template_var`, and use
+`load_component_at_path` or `build_defs_at_path` only when maintaining code on
+the older 1.11 surface.
 
-## Component starting point
+Use the stable `dg` command groups for routine work:
 
-Components are the default starting point for new projects. Declare them in
-`defs.yaml` or implement typed Python `Component` subclasses. Use
-`@template_var` to expose Python helpers to YAML, and use
-`build_defs_for_component` outside a `defs` folder.
+- `dg scaffold` for definitions and deployment artifacts.
+- `dg dev` for local UI startup.
+- `dg launch` for launches.
+- `dg list` and `dg api` for definition and deployment metadata.
+- `dg check` for project validation.
+- `dg plus` for Dagster+ login, configuration, environment, and deployment.
 
-```yaml
-deps:
-  - "{{ load_component_at_path('dbt_ingest').asset_key_for_model('customers') }}"
-```
+State-backed Components separate discovery state from YAML or Python config.
+Treat state refresh as a deployment step; generated GitHub Actions workflows
+do this for integrations that use the state-backed model.
 
-For current template code, helpers live in explicit namespaces:
+## Operate safely
 
-```jinja
-{{ dg.AutomationCondition.on_missing() & dg.AutomationCondition.in_latest_time_window() }}
-{{ dg.DailyPartitionsDefinition("2025-01-01") }}
-{{ context.load_component("warehouse") }}
-```
+- Follow GraphQL cursors: `logsForRun` and `eventConnection` return at most
+  1,000 events by default.
+- Expect event error fields above 500 KB to be truncated unless
+  `DAGSTER_EVENT_ERROR_FIELD_SIZE_LIMIT` is set.
+- Custom process executors must emit, register, and handle a failure-or-retry
+  event after resource initialization failure, or the run can remain started.
+- Schedule, sensor, and asset daemons distribute instigator ticks round-robin
+  across code locations.
+- Use `DAGSTER_MAX_BACKFILL_RETRIES`; the former asset-specific variable is
+  accepted only as a fallback.
 
-Use `dg scaffold`, `dg dev`, `dg launch`, `dg list`, `dg check`, and
-`dg utils` for normal project work. Generated projects use a `src/` plus
-`defs/` layout and local `dg` configuration.
+## Verify a migration
 
-## Operational checks
-
-Before deploying:
-
-1. Ensure the daemon is running when queued coordination, schedules, sensors,
-   freshness, or asset automation is expected.
-2. Check pool names and granularity. Pool names can contain any
-   non-whitespace character.
-3. Paginate `logsForRun` and `eventConnection` after 1,000 events by following
-   the returned cursor.
-4. Confirm database migrations and explicitly declared database drivers.
-5. Check state-backed integration storage; local filesystem state is now the
-   default unless configured otherwise.
-6. Validate definitions and partition mappings before launch.
-7. Review Kubernetes inheritance, owner references, replicas, and custom CA
-   settings when deploying through Helm.
-
-## Behavior that can surprise callers
-
-- Partial run config is merged with job-level defaults for omitted fields.
-- Date-like quoted YAML values remain strings.
-- BigQuery, Snowflake, and DuckDB IO managers skip empty DataFrame writes and
-  log a warning.
-- A missing result from a blocking asset check warns and lets downstream
-  assets proceed; an emitted failed check still fails the step.
-- Wiping an asset or partition also clears its asset-check history.
-- Backfills retry transient daemon failures, and failed asset backfills cancel
-  in-progress runs before termination.
-- Schedule, sensor, and asset-daemon ticks dispatch round-robin across code
-  locations.
-
-## Focused lookup
-
-For API migration details, use
-[upgrades-and-api.md](references/upgrades-and-api.md). For definition and
-automation behavior, use
-[assets-and-automation.md](references/assets-and-automation.md). Keep
-integration-specific defaults and extension points paired with their package
-guidance in [data-integrations.md](references/data-integrations.md) and
-[platform-integrations.md](references/platform-integrations.md).
+1. Confirm the core and integration package versions from the environment.
+2. Search for the removed names in the upgrade reference.
+3. Validate definitions with `dg check` and the applicable definition-querying
+   commands.
+4. Exercise asset selections, partition mappings, checks, and job defaults.
+5. Start the daemon when using the queued coordinator or freshness evaluation.
+6. Test database migrations, state storage, and deployment-specific overrides
+   before rollout.
+7. Paginate GraphQL log consumers and confirm retry behavior for custom
+   executors and external integrations.

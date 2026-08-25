@@ -1,26 +1,35 @@
 # Migration and Configuration
 
-## Extension packaging and removed attributes
+Use this reference when upgrading an established htmx application, choosing a
+distribution build, or deciding how closely to follow new releases.
 
-Since 2.0.0, extensions are distributed and versioned separately from the core
-repository. Most extensions written for the earlier major line continue to
-work, but extension compatibility must be checked independently of the core
-package.
+## htmx 2.0.0 migration
+
+### Separately distributed extensions
+
+Extensions are versioned outside the core repository. Most 1.x extensions
+continue to work, but each extension should be audited and upgraded separately
+from core.
 
 The SSE extension has a breaking change and must be upgraded. The core
-`hx-sse` and `hx-ws` attributes were removed; migrate them to the attributes
-provided by the separately installed SSE and WebSocket extensions.
+`hx-sse` and `hx-ws` attributes were removed; migrate each use to the
+attributes provided by its corresponding extension.
 
-## Distribution builds
+### Module-specific builds
 
-Choose the distribution that matches the loader:
+Load the artifact that matches the consumer's module system:
 
-| Loader | File |
+| Consumer | Distribution |
 | --- | --- |
 | Direct browser script | `/dist/htmx.js` |
 | ECMAScript module | `/dist/htmx.esm.js` |
 | AMD | `/dist/htmx.amd.js` |
 | CommonJS | `/dist/htmx.cjs.js` |
+
+Do not substitute the directly browser-loadable build for a module-specific
+artifact.
+
+### ESM default export
 
 The ESM build exposes htmx as its default export:
 
@@ -28,22 +37,40 @@ The ESM build exposes htmx as its default export:
 import htmx from "htmx.org/dist/htmx.esm.js";
 ```
 
-Do not load the directly browser-oriented file through a module loader when a
-module-specific distribution is available.
+### Changed request and scrolling defaults
 
-## Removed inline-event form
+Three defaults differ from 1.x:
 
-The legacy multi-event `hx-on` attribute is removed. Put each handler in its
-own `hx-on:<event>` attribute:
+- `DELETE` values are sent as URL parameters.
+- Requests are restricted to the same origin.
+- Swap scrolling is instant rather than smooth.
+
+Restore the corresponding earlier behaviors only if the application requires
+them:
+
+```js
+htmx.config.methodsThatUseUrlParams = ["get"];
+htmx.config.selfRequestsOnly = false;
+htmx.config.scrollBehavior = "smooth";
+```
+
+Turning off `selfRequestsOnly` requires an explicit URL allowlist and suitable
+CORS rules. See
+[Requests and validation](requests-and-validation.md#cross-origin-request-allowlisting).
+
+### Per-event inline handlers
+
+The legacy multi-event `hx-on` attribute is removed. Declare each inline
+handler with a separate `hx-on:<event>` attribute:
 
 ```html
 <button hx-post="/save" hx-on:click="this.disabled = true">Save</button>
 ```
 
-## Public swap API
+### Public swap API
 
-The internal `selectAndSwap()` method is removed. Extensions and application
-code that called it directly must use the public `htmx.swap()` API:
+The internal `selectAndSwap()` method is removed. Extensions and direct callers
+must use the public `htmx.swap()` replacement:
 
 ```js
 htmx.swap(document.querySelector("#result"), "<p>Updated</p>", {
@@ -51,24 +78,34 @@ htmx.swap(document.querySelector("#result"), "<p>Updated</p>", {
 });
 ```
 
-## Shadow DOM
+### Shadow DOM support
 
-htmx behavior is supported inside Shadow DOM. Web Components can place htmx
-attributes on elements within their shadow roots rather than moving those
-controls into the light DOM solely for htmx processing.
+htmx behavior now works inside Shadow DOM. Web Components can place htmx
+attributes on elements within their shadow roots.
 
-## Maintenance and upgrade policy
+## Maintenance policy
 
-The project prioritizes stability: existing APIs, implementation quirks, and
-defaults are intended to remain compatible so upgrades stay low-risk. When a
-behavior can be improved without forcing a migration, a new configuration
-option is preferred over changing the default. A working installation on the
-earlier major line does not need to move solely to remain current.
+### Stability-first maintenance
 
-New functionality is generally explored in extensions before it is considered
-for core. Core additions are expected mainly when new browser capabilities
-create an opportunity; the extension API may grow to enable external features.
+Treat working behavior as intentional compatibility surface. Existing APIs,
+implementation quirks, and defaults are intended to remain stable so upgrades
+stay low-risk. When behavior needs improvement, a new configuration option is
+preferred over changing a default.
 
-Releases are planned roughly quarterly without an expectation of recurring
-large feature migrations. Projects can upgrade selectively when they need a
-particular bug fix rather than following every release automatically.
+A working 1.x installation does not need to migrate to 2.x solely to remain
+current. Upgrade when the application needs a specific fix or feature.
+
+### Extensions before core features
+
+Expect new functionality to be explored through extensions rather than added
+directly to core. Core additions are mainly expected when browser capabilities
+open a new opportunity. The extensions API may expand to enable external
+features.
+
+This policy makes extension compatibility and versioning independent concerns.
+
+### Quarterly release cadence
+
+Releases are planned roughly quarterly and are not expected to impose recurring
+major-feature migrations. Projects can follow the cadence selectively rather
+than upgrading for every release.

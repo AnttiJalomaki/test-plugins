@@ -1,13 +1,14 @@
 # Static Assets and Pages migration
 
+This topic-organized migration guide incorporates the `static-assets-migration`
+material and the relevant Static Assets change from batch `2025`.
+
 ## Deploy assets with Worker code
 
-`assets.directory` publishes a directory and Worker code as one deployment
-(batch `static-assets-migration`).
-
-By default, an exact asset match is served without invoking the Worker. A miss
-invokes `main`. Adding `assets.binding` lets Worker code delegate to the asset
-service:
+`assets.directory` publishes a directory together with Worker code as one
+deployment. By default, an exact asset match is served without invoking the
+Worker; a miss invokes `main`. Add `assets.binding` when Worker code must
+delegate to the asset service with `env.ASSETS.fetch(request)`:
 
 ```jsonc
 {
@@ -19,22 +20,18 @@ service:
 }
 ```
 
-```js
-return env.ASSETS.fetch(request);
-```
-
-An assets-only Worker must omit `binding`, which is valid only when `main` is
-present. Projects using the Cloudflare Vite plugin do not need to set
+An assets-only Worker must omit `binding`, because it is valid only with
+`main`. A project using the Cloudflare Vite plugin does not need to declare
 `assets.directory`.
 
-## Configure fallback and Worker-first routing
+## Configure fallback and Worker-first routes
 
-Workers does not infer fallback mode from the presence of `index.html` or
-`404.html` as Pages does. Set `assets.not_found_handling` to
+Unlike Pages, Workers does not infer fallback behavior from `index.html` or
+`404.html`. Set `assets.not_found_handling` to
 `single-page-application` or `404-page`.
 
-`assets.run_worker_first` accepts `true` or an ordered list of route patterns.
-A leading `!` excludes a matching path:
+`assets.run_worker_first` accepts `true` or an ordered list of route patterns;
+a leading `!` excludes a matching path:
 
 ```jsonc
 {
@@ -46,30 +43,26 @@ A leading `!` excludes a matching path:
 }
 ```
 
-From compatibility date `2025-04-01`, navigation requests prefer Static Assets
-fallback even without an exact match. SPA `/index.html` and custom `/404.html`
-responses therefore run before the Worker unless
-`assets.run_worker_first = true` or a matching Worker-first rule applies.
+From compatibility date `2025-04-01`, navigation requests prefer Static
+Assets fallback handling even without an exact asset match. SPA `/index.html`
+and custom `/404.html` responses therefore run before the Worker. This change
+does not apply when `assets.run_worker_first = true`.
 
-Worker-first middleware is billed as a normal Worker invocation.
+## Convert the Wrangler configuration
 
-## Convert the Pages configuration
-
-Replace `pages_build_output_dir` with `assets.directory` in a root Wrangler
-configuration. Preserve the Pages Functions project's compatibility date.
-Placement and compatibility flags can carry over:
+Move to a root Wrangler configuration and replace `pages_build_output_dir`
+with `assets.directory`. Preserve the Pages Functions project's compatibility
+date. Placement and compatibility flags can carry over:
 
 ```jsonc
 {
   "name": "my-worker",
   "compatibility_date": "2026-07-28",
-  "assets": {
-    "directory": "./dist/client/"
-  }
+  "assets": { "directory": "./dist/client/" }
 }
 ```
 
-## Exclude files explicitly
+## Exclude upload-only files
 
 Workers does not automatically apply Pages exclusions for `node_modules`,
 `.DS_Store`, `.git`, or generated Worker files. Put `.assetsignore` inside the
@@ -84,8 +77,8 @@ _worker.js
 
 ## Convert Pages Functions
 
-For an advanced-mode project, move `_worker.js` outside the asset directory or
-exclude it with `.assetsignore`, then point `main` to it.
+For an advanced-mode Pages project, move `_worker.js` outside the asset
+directory or exclude it with `.assetsignore`, then point `main` at it.
 
 A `functions/` directory must first be compiled to one Worker entrypoint:
 
@@ -93,29 +86,25 @@ A `functions/` directory must first be compiled to one Worker entrypoint:
 wrangler pages functions build --outdir=./dist/worker/
 ```
 
-Set `main` to `./dist/worker/index.js`.
+Set `main` to `./dist/worker/index.js`. Pages `_routes.json` and middleware do
+not automatically preserve function-first behavior. Configure
+`assets.run_worker_first` for authentication, logging, and any other middleware
+that must precede static assets.
 
-Pages `_routes.json` and middleware do not automatically preserve their
-function-first behavior. Use `assets.run_worker_first` for authentication,
-logging, and other middleware that must run before assets.
+## Change local and deployment commands
 
-## Change development and deployment commands
+Replace `wrangler pages dev` and `wrangler pages deploy` with `wrangler dev`
+and `wrangler deploy`. The default local ports differ: Pages uses 8788, while
+Workers uses 8787.
 
-Replace:
-
-- `wrangler pages dev` with `wrangler dev`;
-- `wrangler pages deploy` with `wrangler deploy`.
-
-The default local port changes from Pages port 8788 to Workers port 8787.
-
-For Workers Builds, connect the repository and disable Pages automatic
-deployments. Build-time variables in Workers Builds are configured separately
-from Worker runtime variables.
+Workers Builds requires connecting the repository and disabling automatic
+Pages deployments. Build-time variables in Workers Builds are configured
+separately from runtime Worker variables.
 
 ## Recreate preview environments
 
-To approximate Pages branch previews, enable both `preview_urls` and
-non-production branch builds in Workers Builds:
+Enable `preview_urls` and non-production branch builds in Workers Builds to
+approximate Pages branch previews:
 
 ```jsonc
 {
@@ -123,21 +112,24 @@ non-production branch builds in Workers Builds:
 }
 ```
 
-Workers does not natively provide separate production and non-production
-bindings. Use Wrangler environments and the corresponding build configuration
-when the bindings must differ.
-
-Non-production branch controls are less configurable than Pages, and custom
-branch aliases are not supported in the source version.
+Workers does not natively offer distinct production and non-production
+bindings. Use Wrangler environments and corresponding build configuration when
+that separation is required.
 
 ## Preserve headers, redirects, and routing
 
 Workers Static Assets supports Pages-style `_headers` and `_redirects` files
-when they remain inside the asset directory.
+when those files remain inside the asset directory.
 
 Set `workers_dev: true` to opt into the account's `workers.dev` subdomain.
-Worker custom domains require Cloudflare-managed nameservers. Use a Worker route
-when only selected paths should migrate.
+Worker custom domains require Cloudflare-managed nameservers; when only
+selected paths should migrate, use a Worker route.
 
-Workers Early Hints require both the zone setting and appropriate `Link`
-headers.
+## Account for migration differences
+
+- Worker-first middleware is billed as a normal Worker invocation.
+- Workers Early Hints require both the zone setting and suitable `Link`
+  headers.
+- Non-production branch controls in Workers Builds are less configurable than
+  Pages controls; custom branch aliases are not supported in this source
+  version.

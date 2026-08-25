@@ -1,23 +1,24 @@
 # Persistence, Foundation, and Commerce
 
-## Keep Core Data values within their concurrency domain
+## Core Data
 
-The iOS 26 SDK imports `NSManagedObject` as nonisolated and non-`Sendable`,
-`NSManagedObjectContext` as nonisolated and `Sendable`, and the `perform` and
-`performBlock` family with `Sendable` closures. A rebuild can therefore expose
-new concurrency warnings even when the source has not changed. (26.0)
+### Follow the Imported Concurrency Contract
 
-Keep each managed object within the scope of its context. During migration,
-launch with the following argument to catch violations: (26.0)
+In the iOS 26.0 SDK, `NSManagedObject` imports as nonisolated and non-`Sendable`,
+while `NSManagedObjectContext` imports as nonisolated and `Sendable`. The
+`perform` and `performBlock` families import with `Sendable` closures. Rebuilding
+can therefore expose new concurrency diagnostics.
+
+Keep managed objects within the scope of their context. During diagnosis, add
+the launch argument below to catch context violations:
 
 ```text
 -com.apple.CoreData.ConcurrencyDebug 1
 ```
 
-## Remove Core Data ubiquity store options
+### Remove Ubiquity Store Options
 
-Apps built with the iOS or macOS 26 SDK receive errors for these legacy
-options: (26.0)
+The iOS and macOS 26 SDKs make these options compile-time errors:
 
 - `NSPersistentStoreUbiquitousContentNameKey`
 - `NSPersistentStoreUbiquitousContentURLKey`
@@ -26,52 +27,51 @@ options: (26.0)
 - `NSPersistentStoreUbiquitousContainerIdentifierKey`
 - `NSPersistentStoreRebuildFromUbiquitousContentOption`
 
-Older builds log warnings instead. Removing the options preserves the local
-store but stops synchronization through that mechanism. Migrate synchronization
-to `NSPersistentCloudKitContainer` or SwiftData.
+Older builds only log warnings. Removing the options retains the local store but
+stops synchronization. Migrate synchronized persistence to
+`NSPersistentCloudKitContainer` or SwiftData.
 
-## Parse ISO-8601 fractional seconds consistently
+## StoreKit
 
-`ISO8601FormatStyle` accepts fractional seconds regardless of its
-`includingFractionalSeconds` setting. Do not use that setting as an input
-validation barrier; validate the source text separately if a protocol forbids
-fractions. (26.0)
+### Use Advanced Commerce and Signed Introductory-Offer Control
 
-## Update the intended AdAttributionKit conversion
+The iOS 18.4 SDK adds Advanced Commerce API purchase support and the purchase
+option `introductoryOfferEligibility(compactJWS:)`. The server-signed compact JWS
+can request that an introductory offer apply even when the customer would
+otherwise be ineligible, or prevent redemption.
 
-AdAttributionKit supports multiple simultaneous re-engagement conversions.
-Read the conversion tag from the re-engagement URL parameter and pass it to
-`updateConversionValue` so the intended conversion is updated. (18.4)
+### Read Expanded Transaction Metadata
 
-For development postback testing, an Xcode-built advertised app can create and
-interact with development postbacks under **Settings > Developer > Ad
-Attribution Testing**. This flow does not require a publisher app or prior
-store distribution. (18.4)
+New StoreKit metadata includes `appTransactionID`, `originalPlatform`, and
+`period` across `AppTransaction`, `Transaction`, `Transaction.Offer`, and
+`Product.SubscriptionInfo.RenewalInfo`. The type used by `originalPlatform`
+moved to `AppStore.Platform`; its `watchOS` case was removed and folded into
+`iOS`.
 
-## Apply Advanced Commerce introductory-offer policy
+### Preserve Family-Shared Entitlements
 
-StoreKit supports Advanced Commerce API purchases and adds the purchase option
-`introductoryOfferEligibility(compactJWS:)`. The server-signed compact JWS can
-request that an introductory offer be applied even when the customer would
-otherwise be ineligible, or can block redemption. Generate and evaluate that
-policy as a signed server decision. (18.4)
-
-## Consume the expanded transaction model
-
-New transaction metadata across `AppTransaction`, `Transaction`,
-`Transaction.Offer`, and `Product.SubscriptionInfo.RenewalInfo` includes
-`appTransactionID`, `originalPlatform`, and `period`. The platform type for
-`originalPlatform` moved to `AppStore.Platform`; its `watchOS` case was removed
-and combined with `iOS`. Update exhaustive switches and persisted mappings.
-(18.4)
-
-## Preserve complete entitlement results
-
-`Transaction.currentEntitlement(for:)` is deprecated. Use
+`Transaction.currentEntitlement(for:)` is deprecated in iOS 18.4. Use
 `Transaction.currentEntitlements(for:)`, which does not omit family-shared
-transactions. Because the replacement is plural, consume the complete result
-rather than selecting an arbitrary first value. (18.4)
+transactions. `isEligibleForIntroOffer(for:)` returns `false` when no App Store
+account is signed in, so require a signed-in account before interpreting the
+result as the customer's eligibility.
 
-`isEligibleForIntroOffer(for:)` returns `false` when no App Store account is
-signed in. Treat sign-in state separately from a definitive signed-in
-ineligibility result. (18.4)
+## Foundation and POSIX
+
+### Accept ISO-8601 Fractional Seconds Independently
+
+With the iOS 26.0 SDK, `ISO8601FormatStyle` permits fractional seconds whether
+or not `includingFractionalSeconds` is set. Do not use that setting as a strict
+input-rejection rule.
+
+### Use the Public Fileport Calls
+
+The iOS 18.4 SDK makes `fileport_makeport(2)` and `fileport_makefd(2)` public
+APIs and supplies manual pages for both.
+
+### Treat POSIX Named Semaphores as Team-Scoped
+
+On iOS 26, processes signed with a Team ID entitlement cannot use `sem_open`
+or `sem_unlink` to observe a named semaphore created by a different development
+team. Do not design cross-team process coordination around a shared semaphore
+name.

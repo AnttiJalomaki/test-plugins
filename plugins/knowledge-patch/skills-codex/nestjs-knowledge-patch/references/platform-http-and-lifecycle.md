@@ -1,59 +1,57 @@
 # Platform, HTTP, and Lifecycle
 
-Use this reference for runtime upgrades, HTTP adapters, middleware, lifecycle
-hooks, and protocol-facing utilities. It incorporates the `11.0-migration` and
-`11.0.0` guidance.
+Use this reference when upgrading the Node.js runtime or HTTP adapter, changing
+route and middleware matching, relying on lifecycle ordering, or working with
+HTTP and WebSocket request handling.
 
 ## Runtime and default HTTP platform
 
 NestJS 11 requires Node.js 20 or newer; Node.js 16 and 18 are no longer
-supported. Align developer machines, CI images, container bases, and production
-runtimes before debugging framework-level failures.
+supported. Its default Express platform integration uses Express 5
+(`11.0.0`).
 
-The default Express platform integration uses Express 5. Validate route
-matching and middleware behavior as part of the platform migration.
+Treat the runtime and platform adapter as separate upgrade checks: confirm the
+deployed Node.js version and identify code that depends on the underlying
+Express integration.
 
-## Fastify v5 migration
+## Fastify adapter migration
 
-### CORS method defaults
+These adapter changes belong to the `11.0-migration` batch.
 
-With `@nestjs/platform-fastify` v11 and Fastify v5, CORS allows only safelisted
-methods by default. Applications that accept methods such as `PUT`, `PATCH`, or
-`DELETE` must list them explicitly:
+### CORS methods
+
+With `@nestjs/platform-fastify` v11 and Fastify v5, CORS defaults to only
+safelisted methods. Explicitly enable non-safelisted methods that the API uses,
+including `PUT`, `PATCH`, and `DELETE`.
 
 ```typescript
-app.enableCors({
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-});
+app.enableCors({ methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
 ```
 
-Audit preflight requests as well as the controller routes themselves.
+### Middleware catch-all paths
 
-### Middleware path matching
-
-Nest middleware matching uses the latest `path-to-regexp`. Replace the old
-anonymous `(.*)` matcher with a named wildcard:
+Middleware matching uses the latest `path-to-regexp`. The former `(.*)`
+catch-all must become a named wildcard.
 
 ```typescript
 consumer.apply(ApiMiddleware).forRoutes('*splat');
 ```
 
-This is a middleware-matcher migration. Ordinary Fastify route wildcards have
-not changed, so do not rewrite them solely because of this rule.
+This change is specific to middleware matching. Ordinary Fastify route
+wildcards remain unchanged.
 
-## Middleware from global modules
+## Middleware ordering
 
-Middleware registered by global modules runs before middleware from imported
-modules. This ordering does not depend on the global module's position in the
-dependency graph.
+Middleware registered by global modules executes before middleware registered
+by imported modules (`11.0-migration`). Its order no longer depends on where
+the global module appears in the dependency graph.
 
-Review authentication, request context, tracing, and mutation middleware for
-order dependencies. Tests should assert observable order when imported-module
-middleware expects state established by another layer.
+When behavior depends on sequencing, test the effective order of global and
+imported middleware after the upgrade.
 
-## Initialization and termination
+## Shutdown hook ordering
 
-Termination hooks run in the reverse order of initialization. Given
+Termination hooks run in reverse initialization order (`11.0-migration`). For
 dependencies `A -> B -> C`:
 
 - Initialization runs `C -> B -> A`.
@@ -61,36 +59,30 @@ dependencies `A -> B -> C`:
 - `BeforeApplicationShutdown` runs `A -> B -> C`.
 - `OnApplicationShutdown` runs `A -> B -> C`.
 
-Global modules initialize first and are destroyed last. Cleanup logic should
-not assume the earlier destruction sequence; explicitly test providers that
-close shared connections or depend on other providers during teardown.
+Global modules initialize first and are destroyed last. Check resource
+ownership and cleanup dependencies against this order.
 
-## HTTP method recognition
+## WebDAV method recognition
 
-WebDAV HTTP methods are recognized consistently by the common, core, and
-Fastify packages. They can participate in Nest routing instead of being treated
-as unknown methods.
+WebDAV HTTP methods are recognized consistently across the common, core, and
+Fastify packages (`11.0.0`). They can participate in Nest routing rather than
+being treated as unknown methods.
 
 ## WebSocket extension points
 
-WebSocket errors can retain a cause, allowing the original failure to remain
-attached when a higher-level error is created.
+WebSocket errors can retain a cause (`11.0.0`). Preserve the cause when a
+caller needs the underlying failure alongside the WebSocket error.
 
-The `ws` adapter exposes a message-parser extension point. Use it when the
-application needs a custom wire format while retaining the Nest WebSocket
-adapter.
+The `ws` adapter also exposes a message-parser extension point for custom wire
+formats. Use that extension point when the adapter's message input requires
+application-specific parsing.
 
-## Date parsing
+## Built-in date parsing
 
-`ParseDatePipe` is exported by `@nestjs/common` and converts an incoming
-parameter into a `Date`:
+`ParseDatePipe` is exported by `@nestjs/common` (`11.0.0`). It can transform an
+incoming parameter into a `Date`.
 
 ```typescript
-import { ParseDatePipe, Query } from '@nestjs/common';
-
 find(@Query('since', ParseDatePipe) since: Date) {}
 ```
-
-Use the transformed `Date` type in the handler rather than manually reparsing
-the original string.
 

@@ -1,429 +1,332 @@
 # NixOS Systems and Services
 
-Use this reference when upgrading NixOS configurations, rebuilding or switching
-systems, migrating boot and network behavior, or adapting service modules.
+## Rebuild, system entry points, and images
 
-## Rebuilds, images, and configuration entry points
+### Rebuild implementations
 
-### Opting in to `nixos-rebuild-ng`
+The Python `nixos-rebuild-ng` was opt-in through `system.rebuild.enableNg` in
+nixos-25.05 and became the default in nixos-25.11. Its temporary
+`system.rebuild.enableNg = false` escape hatch was scheduled to disappear.
+System switching is Rust-only; remove the obsolete `system.switch.enableNg`
+setting because the Perl implementation is gone.
 
-In nixos-25.05, set `system.rebuild.enableNg = true` to replace the original
-`nixos-rebuild` with the Python rewrite. Installing `nixos-rebuild-ng` in
-`environment.systemPackages` instead made it available side by side. Later
-releases make the rewrite the default.
+`nixos-rebuild build-image` builds the platform-specific image defined by the
+configuration. Image builders have customizable `image.baseName`,
+`image.extension`, and `image.fileName`; `image.filePath` exposes the relative
+output path at evaluation time. Do not hard-code older default filenames.
 
-### Building system images with `nixos-rebuild`
+`nixos-option` supports flake configurations, nested `attrsOf`/`listOf`
+submodules, and `--show-trace`.
 
-Since nixos-25.05, `nixos-rebuild build-image` builds the platform-specific
-disk image defined by the configuration. It works with both rebuild
-implementations.
+### Channel-free system evaluation
 
-### Flake-aware `nixos-option`
+In nixos-26.05, `/etc/nixos/system.nix` may evaluate directly to one system
+derivation or to an attribute set selected by `nixos-rebuild --attr`. Use
+`--file` for another file or directory; when `--attr` is present, a
+`system.nix` in the current directory is also considered. This supports pinned
+evaluation without a channel.
 
-Since nixos-25.05, `nixos-option` supports flake configurations, descent into
-`attrsOf` and `listOf` submodules, and `--show-trace`.
+### Switch inhibitors and activation
 
-### Channel tarballs as lockable flake inputs
+Switch inhibitors can reject a generation when configured comparison strings
+differ (nixos-26.05); `NIXOS_NO_CHECK=1` forces the switch. The switch program
+reloads a unit whose only change is `ExecReload=`, does nothing when
+`ExecReload=` is removed, and deprecates activation scripts that directly
+request unit reloads or restarts.
 
-Since nixos-25.05, the channel server implements the Lockable HTTP Tarball
-Protocol. A channel `nixexprs.tar.xz` can be used directly as a flake input:
+## Boot, initrd, filesystems, and containers
 
-```nix
-inputs.nixpkgs.url =
-  "https://channels.nixos.org/nixos-25.05/nixexprs.tar.xz";
-```
+### Systemd stage 1
 
-### Customizable image output names
-
-In nixos-25.05, default filenames from `system.build` image builders changed.
-Use `image.baseName`, `image.extension`, and `image.fileName`; `image.filePath`
-exposes the evaluation-time path relative to the derivation output.
-
-### `nixos-rebuild-ng` is the default
-
-In nixos-25.11, the Python rewrite became the default. Setting
-`system.rebuild.enableNg = false` was only a temporary opt-out.
-
-### Rust-only system switching
-
-In nixos-25.11, the Perl `switch-to-configuration` was removed. Every switchable
-system uses the Rust implementation; remove `system.switch.enableNg`.
-
-### Channel-free `system.nix` entry points
-
-Since nixos-26.05, `/etc/nixos/system.nix` may evaluate directly to one system
-derivation or an attribute set selected by `nixos-rebuild --attr`. `--file`
-selects another file or directory, and `--attr` also considers `system.nix` in
-the current directory. This enables pinned, channel-free entry points.
-
-### Switch inhibitors and unit activation
-
-In nixos-26.05, switch inhibitors can reject a generation when configured
-comparison strings differ; `NIXOS_NO_CHECK=1` forces a switch. A unit reloads
-when its only change is `ExecReload=`, while removing `ExecReload=` does
-nothing. Activation-script-driven unit reloads and restarts are deprecated.
-
-## State versions and core module contracts
-
-### Validated system state versions
-
-Since nixos-25.05, `system.stateVersion` must use the `"YY.MM"` form matching a
-NixOS release.
-
-### Overriding module-provided file systems
-
-In nixos-25.05, NixOS-provided `fileSystems` definitions use `lib.mkDefault`,
-allowing complete replacement. Overriding only `fsType` or `options` can lose
-the required `device`; restate it explicitly.
-
-### State-gated PostgreSQL 17 default
-
-With `system.stateVersion = "25.11"` or newer in nixos-25.11, new systems
-default to PostgreSQL 17. Older state versions retain their selected default.
-
-### Stricter core option types
-
-In nixos-26.05:
-
-- `services.openssh.settings.AcceptEnv` must be a list, not a string.
-- Every `fileSystems.<name>.fsType` must be explicit.
-- Unknown `services.xserver.videoDriver(s)` values fail evaluation.
+The initrd uses systemd by default in nixos-26.05. Scripted stage 1 is
+deprecated and can temporarily be retained with:
 
 ```nix
-services.openssh.settings.AcceptEnv = [ "LANG" "LC_*" ];
-fileSystems."/".fsType = "ext4";
+boot.initrd.systemd.enable = false;
 ```
 
-### Structured system configuration migrations
+Name the LUKS source and mapped root consistently, replace `/dev/root` with a
+stable path, and give complex LVM-on-LUKS device discovery an infinite systemd
+device timeout where needed.
 
-In nixos-26.05, migrate free-form settings:
+The earlier Rust `nixos-init` made a bashless systemd initrd possible in
+nixos-25.11 through `system.nixos-init.enable = true`.
 
-- `systemd.coredump.extraConfig` to
-  `systemd.coredump.settings.Coredump`;
-- `systemd.sleep.extraConfig` to `systemd.sleep.settings.Sleep`;
-- `services.pdns-recursor.yaml-settings` to
-  `services.pdns-recursor.settings`.
+### Filesystems and the Nix store mount
 
-Resolved and Dovecot similarly expose RFC 42-style settings.
+NixOS-provided `fileSystems` entries use `lib.mkDefault` from nixos-25.05, so a
+configuration can replace them wholesale. When overriding only `fsType` or
+`options`, restate `device` if the override would discard it. Every
+`fileSystems.<name>.fsType` is mandatory in nixos-26.05.
 
-## Boot, initrd, containers, and system facilities
+`boot.readOnlyNixStore` was removed in nixos-25.11. Set bind-mount behavior
+through `boot.nixStoreMountOpts`.
 
-### Bashless systemd initrd initialization
+### Containers and integration tests
 
-In nixos-25.11, `system.nixos-init.enable = true` enables the Rust `nixos-init`,
-allowing a systemd initrd without an interpreter.
+`boot.enableContainers` is automatic only when declarative `containers` are
+present (nixos-25.11). Hosts using imperative `nixos-container` must enable it
+explicitly. NixOS integration tests can use `systemd-nspawn` instead of QEMU in
+nixos-26.05, including on VM builders without KVM and in tests that bind-mount
+host devices such as GPUs.
 
-### Imperative containers require an explicit boot opt-in
+## systemd and service ordering
 
-In nixos-25.11, `boot.enableContainers` is automatic only when declarative
-`containers` exist. Hosts managed imperatively with `nixos-container` must set:
-
-```nix
-boot.enableContainers = true;
-```
-
-### Nix store mount option migration
-
-In nixos-25.11, `boot.readOnlyNixStore` was removed. Configure `/nix/store`
-bind-mount behavior with `boot.nixStoreMountOpts`.
-
-### Systemd is the default stage 1
-
-In nixos-26.05, the initrd uses systemd by default. Scripted stage 1 is
-deprecated and can be retained temporarily with
-`boot.initrd.systemd.enable = false`. LUKS roots should name their
-`/dev/mapper/...` device, `/dev/root` must become a stable path, and complex
-LVM-on-LUKS may need an infinite systemd device timeout.
-
-```nix
-boot.initrd.luks.devices.cryptroot.device = "/dev/disk/by-uuid/...";
-fileSystems."/".device = "/dev/mapper/cryptroot";
-```
-
-### Container-backed NixOS tests
-
-Since nixos-26.05, the integration-test driver can use `systemd-nspawn`
-containers rather than QEMU, including on builders without KVM and for tests
-that bind-mount host devices such as GPUs.
-
-### Removed system facilities
-
-In nixos-26.05, `profiles/hardened`, `linux_hardened`, `linux-rt`, ReiserFS, and
-eCryptfs support were removed. Systemd no longer starts units installed by
-`nix-env -i`. Replace `post-resume.target` ordering with `sleep.target` and
-`ExecStop=`.
-
-## Networking, firewall, and wireless
-
-### Services must request online networking explicitly
+### Network readiness
 
 Since nixos-25.05, `multi-user.target` is not ordered after
-`network-online.target`. A service that requires connectivity must declare both
-the dependency and ordering:
+`network-online.target`. A service that cannot start offline needs both:
 
 ```nix
-systemd.services."<name>" = {
+systemd.services.example = {
   wants = [ "network-online.target" ];
   after = [ "network-online.target" ];
 };
 ```
 
-### NAT external-address filtering
+### Structured settings
 
-In nixos-25.05, when `networking.nat.externalIP` or `externalIPv6` is set,
-`forwardPorts` handles only packets addressed to that configured external
-address.
+In nixos-25.11, system manager configuration moves from `systemd.extraConfig`
+and `boot.initrd.systemd.extraConfig` to the corresponding
+`systemd.settings.Manager` attributes. Watchdogs become
+`RuntimeWatchdogSec`, `WatchdogDevice`, `RebootWatchdogSec`, and
+`KExecWatchdogSec` there; replace `systemd.enableCgroupAccounting` with the
+individual `*Accounting` manager settings.
 
-### Networkd-backed WireGuard
+Also move:
 
-In nixos-25.05, `networking.wireguard` can use a networkd backend. It is selected
-when `networking.useNetworkd` is enabled or explicitly through
-`networking.wireguard.useNetworkd`; semantics differ from the scripted backend.
-
-### FirewallD and selectable firewall backends
-
-Since nixos-25.11, `services.firewalld` runs FirewallD, and
-`networking.firewall.backend` selects the backend for existing firewall
-configuration.
-
-### Explicit NetworkManager VPN plugins
-
-In nixos-25.11, NetworkManager has no default VPN plugin set. List every needed
-plugin in `networking.networkmanager.plugins`.
-
-### Hardened wireless configuration
-
-In nixos-26.05, `wpa_supplicant` runs unprivileged. Generated and imperative
-configuration lives below `/etc/wpa_supplicant`, and credentials must be
-readable by its user. Remove `networking.wireless.userControlled.group`;
-`.userControlled.enable` becomes `.userControlled`.
-
-NetworkManager relies on `networking.wireless`, so remove an explicit
-`networking.wireless.enable = false`. `networking.wireless.enableHardening` is
-the compatibility escape hatch. `iw` and `wirelesstools` are no longer
-implicitly installed.
-
-### Network and resolver ordering
-
-In nixos-26.05, the scripted backend removes `network-setup.service`; addresses,
-routes, and gateways apply asynchronously as devices appear. Name-server setup
-runs in `network-local-commands.service`. `networking.resolvconf.enable` always
-defaults to `true`; disable it explicitly when managing `/etc/resolv.conf`.
-
-### Firewall refusal logging is opt-in
-
-In nixos-26.05, `networking.firewall.logRefusedConnections` defaults to `false`
-to avoid flooding the kernel log. Enable it explicitly when refused-packet logs
-are required.
-
-## System services and structured settings
-
-### Hardened and correctly escaped `earlyoom`
-
-In nixos-25.05, the module uses upstream's hardened systemd unit. A `killHook`
-that needs home or filesystem access can require a `ProtectSystem` override.
-Every `extraArgs` item is independently shell-escaped rather than word-split.
-
-```nix
-services.earlyoom.extraArgs = [ "--prefer" "spaced pat" ];
-```
-
-### BorgBackup hook arguments are arrays
-
-In nixos-25.05, `services.borgbackup.jobs.*.extraArgs` and the other
-`extra*Args` values are Bash arrays. Hooks must append array elements:
-
-```sh
-extraCreateArgs+=("--exclude" "/some/path")
-```
-
-### AppArmor policy state
-
-In nixos-25.05, `security.apparmor.policies.<name>.enable` and `.enforce` were
-removed. Use the `state` tristate option.
-
-### Structured rsyncd settings
-
-In nixos-25.05, `services.rsyncd.settings` accepts only `sections` and
-`globalSection`. Move named sections below `settings.sections` and former
-`settings.global` values below `settings.globalSection`.
-
-### Structured NixOS settings migrations
-
-In nixos-25.11:
-
-- `services.dwm-status.extraConfig` becomes `.settings`, with `order` nested.
-- `services.traccar.settings.loggerConsole` becomes
+- `services.dwm-status.extraConfig` to `services.dwm-status.settings`, nesting
+  `order` there.
+- `services.traccar.settings.loggerConsole` to
   `services.traccar.settings.logger.console`.
-- `services.logind.extraConfig` becomes `services.logind.settings.Login`.
-- `systemd.extraConfig` and `boot.initrd.systemd.extraConfig` move to the
-  corresponding `systemd.settings.Manager`.
-- Watchdogs use `RuntimeWatchdogSec`, `WatchdogDevice`, `RebootWatchdogSec`, and
-  `KExecWatchdogSec` under `systemd.settings.Manager`.
-- `systemd.enableCgroupAccounting` becomes the individual `*Accounting`
-  manager settings.
+- `services.logind.extraConfig` to `services.logind.settings.Login`.
 
-### Postfix TLS certificate settings
+In nixos-26.05, use `systemd.coredump.settings.Coredump`,
+`systemd.sleep.settings.Sleep`, and `services.pdns-recursor.settings` in place
+of the old free-form options. The resolved and Dovecot modules likewise use
+RFC 42-style settings.
 
-In nixos-25.11, `services.postfix.sslCert` and `sslKey` were removed. Use
-`services.postfix.settings.main.smtpd_tls_chain_files` for server chains and
-`smtp_tls_chain_files` for client chains.
+### PostgreSQL readiness
 
-### GNOME SSH agent split
+`postgresql.target` means PostgreSQL is writable and initialization and ensure
+scripts have completed (nixos-25.11). `postgresql.service` promises only a
+read-only connection. Choose the dependency matching the consumer's need.
 
-In nixos-25.11, `gnome-keyring` no longer supplies an SSH agent. Use
-`services.gnome.gcr-ssh-agent.enable` from `gcr_4`; it defaults to the value of
-`services.gnome.gnome-keyring.enable` for migration compatibility.
+### ACME ordering and renewal
 
-### Nettools is no longer installed by default
-
-In nixos-25.11, `ifconfig`, `arp`, `mii-tool`, `netstat`, and `route` are absent
-from default installations. Prefer `iproute2` and `ethtool`, or install
-`nettools` explicitly.
-
-### Declarative user lingering is opt-in
-
-In nixos-25.11, `users.users.<name>.linger` defaults to `null`, preserving the
-existing loginctl state rather than disabling lingering.
-`users.manageLingering` disables NixOS lingering management globally.
-
-### `dbus-broker` is the default
-
-In nixos-26.05, `services.dbus.implementation` defaults to `dbus-broker`.
-Changing implementations is a switch inhibitor and requires a reboot. Pin
-`"dbus"` to keep the reference daemon.
-
-### OpenSSH module changes
-
-In nixos-26.05, `services.openssh.generateHostKeys = true` can generate keys
-while the daemon is disabled. Set `enableRecommendedAlgorithms = false` to
-disable the curated algorithm set. Replace removed `services.openssh.banner`
-with `services.openssh.settings.Banner`.
-
-### NVIDIA branch and module configuration
-
-In nixos-26.05, `hardware.nvidia.branch` chooses a driver branch unless
-`hardware.nvidia.package` overrides it. `hardware.nvidia.moduleParams` writes
-modprobe settings. Nixpkgs exposes `production`, `new_feature`, and `beta`;
-proprietary modules moved to `nvidia_x11.mod`. Maxwell-or-older GPUs must pin
-the retained 580 legacy driver.
-
-### Explicit service access control
-
-In nixos-26.05, VSFTPD no longer creates a PAM service automatically:
-`localUsers` needs an explicitly enabled PAM service or a virtual-user database.
-Cgit must explicitly choose `gitHttpBackend.checkExportOkFiles`; do not inherit
-an export-all backend that bypasses cgit access controls.
-
-### Locally built Kubernetes CoreDNS
-
-In nixos-26.05, `services.kubernetes.addons.dns.coredns` becomes `corednsImage`
-and takes an image package, not attributes. The default is locally built from
-`pkgs.coredns` with `dockerTools.buildImage`; use a `dockerTools.pullImage`
-derivation to retain an upstream image.
-
-## Certificates and secrets
-
-### ACME unit dependency changes
-
-In nixos-25.11, services requiring a syntactically valid certificate should
-depend on `acme-{certname}.service`. Initial self-signed certificates are always
-generated, `security.acme.preliminarySelfsigned` is removed, and dependencies
-on `acme-finished-{certname}.target` move to
+Depend on `acme-{certname}.service` when a service needs a syntactically valid
+certificate (nixos-25.11). Initial self-signed certificates are always
+generated; `security.acme.preliminarySelfsigned` was removed. Replace
+dependencies on `acme-finished-{certname}.target` with
 `acme-order-renew-{certname}.service`.
 
-### Lifetime-aware ACME renewal
+From nixos-26.05, an unset `security.acme.defaults.validMinDays` derives the
+renewal point from lifetime: two thirds for certificates valid at least ten
+days and one half for shorter certificates.
 
-In nixos-26.05, when `security.acme.defaults.validMinDays` is unset,
-certificates valid for at least ten days renew after two thirds of their
-lifetime; shorter-lived certificates renew halfway through.
+## Networking, firewalling, and wireless
+
+### Firewall backends and logging
+
+NixOS supports FirewallD as `services.firewalld` or as the backend for
+`networking.firewall`; select through `networking.firewall.backend`
+(nixos-25.11). In nixos-26.05,
+`networking.firewall.logRefusedConnections` defaults to `false`; enable it
+explicitly when refusal logs are required.
+
+NAT forward-port rules are restricted to packets targeting
+`networking.nat.externalIP` or `externalIPv6` when either is set
+(nixos-25.05).
+
+### NetworkManager, WireGuard, and resolver behavior
+
+`networking.wireguard` can use networkd (nixos-25.05), selected automatically
+with `networking.useNetworkd` or explicitly through
+`networking.wireguard.useNetworkd`. The scripted and networkd backends differ
+in some option semantics.
+
+NetworkManager has no default VPN plugin set from nixos-25.11; enumerate every
+required package in `networking.networkmanager.plugins`.
+
+The scripted backend in nixos-26.05 has no `network-setup.service`; interface
+addresses, routes, and gateways appear asynchronously, and DNS setup runs in
+`network-local-commands.service`. `networking.resolvconf.enable` always
+defaults to `true`, so configurations that own `/etc/resolv.conf` must set it
+to `false`.
+
+### Hardened wireless
+
+In nixos-26.05, `wpa_supplicant` runs unprivileged and keeps generated and
+imperative configuration below `/etc/wpa_supplicant`. Credential files must be
+readable by that user. Remove `networking.wireless.userControlled.group` and
+rename `.userControlled.enable` to `.userControlled`.
+
+NetworkManager now relies on `networking.wireless`, so remove an explicit
+`networking.wireless.enable = false`. Use
+`networking.wireless.enableHardening` only as a compatibility escape hatch.
+`iw` and `wirelesstools` are no longer installed implicitly.
+
+## OpenSSH and access control
+
+`services.openssh.settings.AcceptEnv` is a list in nixos-26.05, not a string.
+Host keys may be generated with `services.openssh.generateHostKeys = true`
+while the daemon is disabled. Disable the curated algorithm set only with
+`enableRecommendedAlgorithms = false`. Replace removed
+`services.openssh.banner` with `services.openssh.settings.Banner`.
+
+VSFTPD no longer creates a PAM service automatically (nixos-26.05); local
+users need explicit PAM or a virtual-user database. Cgit must explicitly set
+whether `gitHttpBackend.checkExportOkFiles` is enabled instead of inheriting an
+export-all backend that can bypass cgit access controls.
+
+## Security policy and secrets
+
+### AppArmor and earlyoom
+
+Replace removed `security.apparmor.policies.<name>.enable` and `.enforce` with
+the `state` tristate option (nixos-25.05).
+
+The earlyoom module uses upstream's hardened unit. A `killHook` needing home or
+filesystem access may require a `ProtectSystem` override. Each
+`services.earlyoom.extraArgs` element is shell-escaped separately, so express
+arguments as list elements rather than relying on word splitting.
 
 ### Secret-file migrations
 
-In nixos-26.05, `services.oauth2-proxy.clientSecret` and `cookie.secret` become
+Nextcloud secret files use systemd credentials from nixos-25.05, so
+`nextcloud-occ` needs root or an existing `$CREDENTIALS_DIRECTORY`.
+
+In nixos-26.05, replace OAuth2 Proxy's `clientSecret` and `cookie.secret` with
 `clientSecretFile` and `cookie.secretFile`. Grafana's
-`settings.security.secret_key` has no default; retain or rotate the old value
-deliberately and inject it through Grafana variable expansion rather than the
-Nix store.
+`settings.security.secret_key` has no default; retain or deliberately rotate
+the existing key and inject it through Grafana variable expansion rather than
+the Nix store.
 
-### Secure Yggdrasil keys
+Yggdrasil removes `configFile` and `persistentKeys` in favor of structured
+`settings`. Put the persistent private key in a PKCS #8 PEM file and point
+`settings.PrivateKeyPath` to it. A literal `PrivateKey` is rejected to prevent
+store disclosure.
 
-In nixos-26.05, removed `services.yggdrasil.configFile` and `persistentKeys`
-become structured `settings`. Persistent private keys must be PKCS #8 PEM files
-referenced by `settings.PrivateKeyPath`. A literal `PrivateKey` in `settings` is
-rejected to prevent store disclosure.
+## Database and application services
 
-## Databases and applications
+### Nextcloud
 
-### Nextcloud database and credential defaults
+`services.nextcloud.config.dbtype` has no SQLite default in nixos-25.05; select
+the database explicitly. In nixos-25.11, `configureRedis` defaults to `true`
+and state version 25.05 selects Nextcloud 32. Upgrade installations on 30 or
+older through Nextcloud 31 rather than skipping a major.
 
-In nixos-25.05, `services.nextcloud.config.dbtype` has no SQLite default and
-must be explicit. Secret files use systemd credentials, so `nextcloud-occ`
-needs root or an existing `$CREDENTIALS_DIRECTORY`.
+State version 26.05 selects Nextcloud 33 and removes 31. An installation on 31
+or older must pin `pkgs.nextcloud32`, complete that upgrade, and then choose 33.
 
-### PostgreSQL readiness target
+### PostgreSQL, Mattermost, and Immich
 
-In nixos-25.11, `postgresql.target` guarantees a writable database after
-initialization and ensure scripts. `postgresql.service` guarantees only a
-read-only connection.
+New state-version 25.11 systems default to PostgreSQL 17; older systems retain
+their state-selected version. Mattermost defaults to version 11 in
+nixos-26.05 and drops MySQL. Remove the upstream 250-user limit only by
+overriding its package with `removeUserLimit` (and optionally
+`removeFreeBadge`).
 
-### Forgejo dump retention default
+Immich always uses VectorChord in nixos-26.05; `database.enableVectors` and
+`database.enableVectorchord` were removed. Completely remove pgvecto.rs from
+an existing database before upgrading.
 
-In nixos-25.11, `services.forgejo.dump.age` defaults to `4w`; older dumps are
-deleted unless retention is overridden.
+### Stateful data migrations
 
-### Nextcloud cache and major-version upgrades
+At state version 26.05, TaskChampion Sync Server enables `DynamicUser` and uses
+`/var/lib/private/taskchampion-sync-server`; migrate the old directory when
+opting in manually. The renamed `services.stalwart` has its own `stateVersion`
+and changes user, group, data path, and tracer defaults only at 26.05.
 
-In nixos-25.11, `services.nextcloud.configureRedis` defaults to `true`.
-For `system.stateVersion >= "25.05"`, the implicit package is Nextcloud 32.
-Upgrades from 30 or older must pin and pass through Nextcloud 31.
+### Forgejo, rsyncd, and BorgBackup
 
-### State-gated service data migrations
+Forgejo dump retention defaults to `4w` from nixos-25.11. Override
+`services.forgejo.dump.age` to retain older dumps.
 
-With state version 26.05 in nixos-26.05, TaskChampion Sync Server uses
-`DynamicUser` and `/var/lib/private/taskchampion-sync-server`; migrate the old
-directory when opting in manually. Renamed `services.stalwart` has its own
-`stateVersion`; user, group, data-directory, and tracer defaults change when it
-reaches 26.05.
+`services.rsyncd.settings` accepts only `sections` and `globalSection` from
+nixos-25.05. Move named sections below `settings.sections` and old
+`settings.global` values below `settings.globalSection`.
 
-### Mattermost 11 requires PostgreSQL
+BorgBackup job `extraArgs` and other `extra*Args` are Bash arrays. Hook code
+must append array elements, for example
+`extraCreateArgs+=("--exclude" "/some/path")`, not concatenate a string.
 
-In nixos-26.05, the Mattermost module defaults to version 11 and removes MySQL.
-Remove the upstream 250-user limit only by overriding the selected package with
-`removeUserLimit`, optionally with `removeFreeBadge`.
+## Hardware, graphics, and kernel behavior
 
-### Nextcloud 33 upgrade stepping
+### Graphics and NVIDIA
 
-With `system.stateVersion >= "26.05"` in nixos-26.05, Nextcloud defaults to 33
-and Nextcloud 31 is removed. Systems on 31 or older must explicitly pin and
-upgrade through `pkgs.nextcloud32`.
+`hardware.graphics.package` selects the global Mesa version without a mass
+rebuild (nixos-25.05).
 
-### Immich vector-extension migration
+In nixos-26.05, `hardware.nvidia.branch` selects a driver branch unless
+`hardware.nvidia.package` overrides it. `hardware.nvidia.moduleParams` writes
+kernel module parameters. Branches include `production`, `new_feature`, and
+`beta`; proprietary modules moved to `nvidia_x11.mod`. Maxwell and older GPUs
+must pin `config.boot.kernelPackages.nvidiaPackages.legacy_580`.
 
-In nixos-26.05, Immich removes `database.enableVectors` and
-`database.enableVectorchord` and always uses VectorChord. Completely remove
-pgvecto.rs from an existing database before upgrading.
+Unknown `services.xserver.videoDriver` or `videoDrivers` values now fail
+evaluation instead of being ignored.
 
-## Module and package selection migrations
+### Removed facilities
 
-### Selecting the system Mesa package
+Nixos-26.05 removes `profiles/hardened`, `linux_hardened`, `linux-rt`, ReiserFS,
+and eCryptfs support. Systemd no longer starts units installed by
+`nix-env -i`. Replace `post-resume.target` ordering with `sleep.target` and an
+`ExecStop=` action.
 
-Since nixos-25.05, `hardware.graphics.package` can choose the global Mesa
-version without triggering a mass rebuild.
+XFS created by xfsprogs 6.18 may enable parent pointers and exchange-range
+features. Such filesystems need a 6.18-or-newer kernel, and GRUB 2 may not boot
+from them.
 
-### Locale configuration
+## Users, desktop, and compatibility packages
 
-In nixos-25.05, prefer `i18n.extraLocales` for additional locales.
-`i18n.supportedLocales` remains but is an implementation detail and warns when
-required locales are omitted. Use `i18n.defaultCharset` and
-`i18n.localeCharsets` for per-locale character sets.
+### User sessions and legacy tools
 
-### Renamed and replacement NixOS modules
+`users.users.<name>.linger` defaults to `null` in nixos-25.11, leaving current
+loginctl state unchanged. Set `users.manageLingering = false` to disable NixOS
+lingering management globally.
 
-In nixos-25.11, migrate:
+The legacy `nettools` commands are not installed by default. Use `iproute2`
+and `ethtool`, or explicitly install `nettools` where required.
 
-- `programs.river` to `programs.river-classic`;
-- `services.nixseparatedebuginfod` to `services.nixseparatedebuginfod2`;
-- `services.dnscrypt-proxy2` to `services.dnscrypt-proxy`;
-- `services.pds` to `services.bluesky-pds`;
-- removed `virtualisation.lxd` to `virtualisation.incus`.
+`gnome-keyring` no longer supplies an SSH agent. Use
+`services.gnome.gcr-ssh-agent.enable`; its default follows
+`services.gnome.gnome-keyring.enable` for migration compatibility.
+
+### D-Bus
+
+`dbus-broker` is the default implementation in nixos-26.05. Switching
+implementations inhibits live switching and requires a reboot. Pin the
+reference daemon with:
+
+```nix
+services.dbus.implementation = "dbus";
+```
+
+## Module renames and removals
+
+For nixos-25.11, migrate:
+
+- `programs.river` to `programs.river-classic`
+- `services.nixseparatedebuginfod` to `services.nixseparatedebuginfod2`
+- `services.dnscrypt-proxy2` to `services.dnscrypt-proxy`
+- `services.pds` to `services.bluesky-pds`
+- `virtualisation.lxd` to `virtualisation.incus` because the LXD module is gone
+
+Postfix's `sslCert` and `sslKey` are removed. Configure server chains with
+`services.postfix.settings.main.smtpd_tls_chain_files` and client chains with
+`services.postfix.settings.main.smtp_tls_chain_files`.
+
+## Kubernetes DNS
+
+In nixos-26.05, `services.kubernetes.addons.dns.coredns` becomes
+`corednsImage` and accepts an image package rather than attributes. Its default
+is built locally from `pkgs.coredns` with `dockerTools.buildImage`; pass a
+`dockerTools.pullImage` derivation to keep an upstream image.
+
+## State-version discipline
+
+`system.stateVersion` must be a valid `"YY.MM"` NixOS release string from
+nixos-25.05. Do not bump it as a routine package update: it gates PostgreSQL,
+Nextcloud, service users, data locations, and other migration-sensitive
+defaults described above.

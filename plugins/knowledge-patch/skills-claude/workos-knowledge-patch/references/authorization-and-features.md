@@ -2,49 +2,34 @@
 
 ## Authorization resources and roles
 
-Use authorization resources and role APIs for scoped authorization. Apply the
-legacy FGA removal described in the Node SDK migration reference when upgrading.
+Use authorization resources and role APIs instead of the removed legacy FGA
+package. Environment and organization roles are available, including
+resource-scoped custom roles.
 
-The SDK supports:
-
-- environment roles;
-- organization roles;
-- authorization resources; and
-- resource-scoped custom roles.
-
-Permission and role objects expose `resourceTypeSlug`. Pass
-`resource_type_slug` to `createOrganizationRole`, and use
-`CreateAuthorizationResourceOptions` for typed resource creation.
-
-Invitations accept `role_slug`.
+Permissions and roles expose `resourceTypeSlug`. Supply `resource_type_slug`
+when creating an organization role, use typed
+`CreateAuthorizationResourceOptions` for resources, and pass `role_slug` when
+creating invitations.
 
 ## Role assignments
 
-Use both resource and group role-assignment endpoints. Filter assignment lists
-with `resource` and `role_slug`.
-
-Returned role assignments contain `source`. Inspect it to distinguish direct
-grants from roles inherited through a group.
+Resource and group role-assignment endpoints are available. Assignment lists
+can be filtered by `resource` and `role_slug`. Inspect the returned assignment
+`source` to distinguish direct grants from group-derived grants.
 
 ## Multi-role provisioning
 
-An organization membership can hold multiple roles across AuthKit, SSO, and
-Directory Sync. Do not collapse membership state to one role when consuming or
-persisting it.
+Organization memberships can hold multiple roles assigned through AuthKit,
+SSO, or Directory Sync. During SSO setup, IT administrators can map
+identity-provider groups to roles in Admin Portal.
 
-During SSO setup, an IT administrator can map identity-provider groups to roles
-in Admin Portal. Account for those group-derived roles when explaining or
-auditing effective access.
+## Feature Flags runtime evaluation
 
-## Feature Flag evaluation
+Use the Feature Flags runtime client to evaluate flags locally when a network
+request for every decision is unsuitable.
 
-Use the Feature Flags runtime client to evaluate flags locally when an API
-request for every evaluation is undesirable.
+## Feature Flags control plane
 
-The Feature Flag control plane supports:
-
-- organization rollouts;
-- fetching flags for an organization through the API;
-- targeting individual users;
-- flag management through the management API; and
-- delivery of flag updates to Slack.
+Feature flags can roll out to organizations, target individual users, and be
+fetched for an organization through the API. A management API controls flags,
+and flag updates can be delivered to Slack.

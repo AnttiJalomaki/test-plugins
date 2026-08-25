@@ -1,105 +1,109 @@
 # Management API and observability
 
-Use this reference for management serialization, API endpoints, diagnostics,
-metric migrations, and administrative tooling.
+## Health and readiness APIs
 
-## Contents
+The original all-in-one HTTP “One True Health Check” is a no-op in `4.0.6`.
+Replace it with focused endpoints.
 
-- [HTTP API behavior](#http-api-behavior)
-- [Diagnostic commands](#diagnostic-commands)
-- [Prometheus additions](#prometheus-additions)
-- [Ra metric migration](#ra-metric-migration)
-- [Management authorization](#management-authorization)
-- [`rabbitmqadmin`](#rabbitmqadmin)
+Metadata-store checks distinguish initialization from initialization with
+data:
+
+- `GET /api/health/checks/metadata-store/initialized`
+- `GET /api/health/checks/metadata-store/initialized/with-data`
+
+Starting in 4.1.1, `GET /api/health/checks/below-node-connection-limit`
+succeeds while a node is below its AMQP/AMQPS connection limit.
+`GET /api/health/checks/ready-to-serve-clients` also requires the node to be
+booted and outside maintenance mode. Listener checks accept comma-separated
+protocol names.
 
 ## HTTP API behavior
 
-### Serialization
+### Response shapes and static connection data
 
 An empty `channel_details` value is serialized as an object (`{}`), not an
-array (`[]`).
+array (`[]`). Client decoders should use the object shape.
 
-### Aggregation pool
+Static connection details—including peer address, TLS details, and
+authentication mechanism—remain available when statistics collection is
+disabled (`4.3.0`).
 
-`management.delegate_count` controls the worker pool that aggregates HTTP API
-response data. It defaults to `5`; nodes with many CPU cores can use a higher
-value such as `10` or `16`.
+### User and queue endpoints
 
-### Static connection information
+The API provides `GET /users/{user}/queues`. A user tagged `protected` cannot
+be modified or deleted through the HTTP API, though the CLI can remove the tag
+or delete and recreate the user.
 
-The HTTP API exposes peer address, TLS details, authentication mechanism, and
-other static connection information even when statistics collection is disabled.
+### Definition exports and imports
 
-### User queues
+`GET /api/definitions` supports conditional requests. Its `ETag` comes from
+the metadata-store Raft index and changes when metadata is written (`4.3.5`).
 
-List queues accessible to a user:
+Require a `.json` extension for management UI and HTTP API definition uploads
+with:
 
-```text
-GET /users/{user}/queues
+```ini
+management.definitions.require_json_extension = true
 ```
 
-### Protected users
+The default is `false`. Content is validated as JSON whether or not filename
+enforcement is enabled.
 
-The `protected` user tag prevents HTTP API modification or deletion. CLI
-operations can still remove the tag or recreate the user.
+### Authentication and authorization controls
 
-### API reference authentication
-
-Require authentication for the `/api` reference page:
+Protect the `/api` reference with:
 
 ```ini
 management.require_auth_for_api_reference = true
 ```
 
-### Empty mega-check
+HTTP API access can use a separate authentication backend chain. Federation
+link restart actions and Shovel `DELETE` operations require `policymaker`.
+When explicitly enabled, an HTTP backend can expose a custom `deny <Reason>`
+authorization failure to AMQP clients.
 
-The legacy all-in-one HTTP API health check no longer performs its former
-comprehensive check. Use focused readiness and metadata-store checks.
+## Management HTTP behavior
 
-## Diagnostic commands
+`management.delegate_count` sizes the process pool used to aggregate HTTP API
+response data. It defaults to `5`; nodes with many CPU cores may benefit from a
+higher value such as `10` or `16`.
 
-### Message sizes
+Configure the response `Referrer-Policy` through
+`management.headers.referrer_policy`. Set
+`management.http.hide_allow_header = true` to suppress `Allow`, except on
+`405 Method Not Allowed` responses where HTTP requires it.
 
-Estimate the distribution of message sizes flowing through the cluster:
+After a cluster upgrade, clear browser cache, local storage, session storage,
+and cookies for management UI domains if stale JavaScript state causes errors
+(`4.1-guides`).
 
-```shell
-rabbitmq-diagnostics message_size_stats
-```
+## Encrypted UI credentials
 
-### Quorum leaders
+With `management.credential_encryption_secret`, `POST /api/login` returns an
+AES-256-GCM-encrypted `rmqe.` token. Browsers send
+`Authorization: Bearer rmqe.<token>`. Use one secret on every node and wait
+until all nodes have been upgraded before enabling the feature.
 
-Check queues matching a virtual host and regular expression:
+## Prometheus metrics
 
-```shell
-rabbitmq-diagnostics check_for_quorum_queues_without_an_elected_leader \
-  --vhost "vh-1" "^naming-pattern"
-```
+### Endpoint origin and message-size metrics
 
-`--across-all-vhosts ".*"` checks the whole cluster but can be expensive with
-many quorum queues.
+Metrics include labels distinguishing values scraped from the aggregated
+endpoint from same-named values scraped per object. RabbitMQ also exposes a
+histogram of application-published message sizes labeled by protocol and a
+`queue_identity_info` metric labeled with queue type and the scraped node's
+leader/follower relationship (`4.1.0`).
 
-### Metadata readiness
+The `/metrics/detailed` endpoint can filter detailed queue metrics by queue
+name.
 
-```shell
-rabbitmq-diagnostics check_if_metadata_store_is_initialized
-rabbitmq-diagnostics check_if_metadata_store_is_initialized_with_data
-```
+### Ra metric migration (`4.2.0`)
 
-## Prometheus additions
+Update alerts and dashboards using `rabbitmq_raft*` or
+`rabbitmq_detailed_raft*`. Use a 4.2-compatible RabbitMQ quorum-queue Raft
+Grafana dashboard.
 
-- Metrics include labels distinguishing identically named metrics scraped
-  from aggregated and per-object endpoints.
-- Nodes expose an application-published message-size histogram labeled by
-  protocol.
-- `queue_identity_info` labels each queue's type and whether the scraped node
-  is its leader or follower.
-- `/metrics/detailed` can filter queue metrics by queue name.
-
-## Ra metric migration
-
-Update alerts and use a 4.2-compatible quorum-queue Raft Grafana dashboard.
-
-### Aggregated `/metrics` renames
+Aggregated `/metrics` renames:
 
 | Old | New |
 | --- | --- |
@@ -108,12 +112,8 @@ Update alerts and use a 4.2-compatible quorum-queue Raft Grafana dashboard.
 | `rabbitmq_raft_log_commit_index` | `rabbitmq_raft_commit_index` |
 | `rabbitmq_raft_log_last_written_index` | `rabbitmq_raft_last_written_index` |
 
-### Aggregated removals
-
-- `rabbitmq_raft_term_total`
-- `rabbitmq_raft_entry_commit_latency_seconds`
-
-### Aggregated additions
+Aggregated output removes `rabbitmq_raft_term_total` and
+`rabbitmq_raft_entry_commit_latency_seconds`. It adds:
 
 - `rabbitmq_raft_num_segments` for internal components
 - `rabbitmq_raft_max_num_segments` for the largest quorum-queue segment count
@@ -121,28 +121,18 @@ Update alerts and use a 4.2-compatible quorum-queue Raft Grafana dashboard.
 - `rabbitmq_raft_max_commit_latency_seconds` for the highest quorum-queue
   latency
 
-### Per-object and detailed `family=ra_metrics`
+Per-object and detailed `family=ra_metrics` output renames
+`rabbitmq_raft_term_total` to `rabbitmq_raft_term`, adds
+`rabbitmq_raft_num_segments`, and exposes additional per-queue metrics.
 
-- Rename `rabbitmq_raft_term_total` to `rabbitmq_raft_term`.
-- Add `rabbitmq_raft_num_segments`.
-- Expect more metrics per queue.
+## Diagnostics and logs
 
-## Management authorization
+Estimate cluster message-size distribution with:
 
-Federation link restarts and Shovel management `DELETE` operations require the
-`policymaker` tag.
-
-An HTTP authentication backend can return `deny <Reason>` for disclosure to
-AMQP clients when enabled:
-
-```ini
-auth_http.authorization_failure_disclosure = true
+```shell
+rabbitmq-diagnostics message_size_stats
 ```
 
-## `rabbitmqadmin`
-
-- The standalone `rabbitmqadmin` v2 is generally available and preferred over
-  v1.
-- v2 includes commands for automating 3.13.x-to-4.2.x blue-green migrations.
-- The management plugin no longer serves the v1 download endpoint. Obtain v1
-  from the RabbitMQ `v4.2.x` source branch only for temporary compatibility.
+Use `log.summarize_process_state` and `log.error_logger_format_depth` to bound
+queue-replica crash output and avoid allocation spikes. Authentication logs use
+category `user`, with successes at `info` and failures at `warning`.

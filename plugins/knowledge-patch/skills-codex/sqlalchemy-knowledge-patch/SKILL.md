@@ -10,22 +10,23 @@ metadata:
 
 # SQLAlchemy Knowledge Patch
 
-Use this skill when changing SQLAlchemy ORM mappings, type annotations,
-engines, schema objects, SQL expressions, async connections, or
-dialect-specific code. Check the installed SQLAlchemy, Python, database
-server, and DBAPI versions before applying compatibility-sensitive advice.
+Use this skill when changing SQLAlchemy ORM mappings, annotations, dataclass
+integration, SQL expressions, engines, schema objects, async connections, or
+dialect-specific code. Before applying compatibility-sensitive guidance, check
+the installed SQLAlchemy and Python versions together with the database server
+and DBAPI driver versions.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Python, ORM, and typing](references/python-orm-and-typing.md) | Python 3.14 and free-threading, annotation maps and aliases, dataclass field metadata, deferred composites |
-| [Engine, SQL, and schema](references/engine-sql-and-schema.md) | Autocommit rollback suppression, standalone constraint isolation, `GROUPS` window frames |
-| [PostgreSQL](references/postgresql.md) | asyncpg isolation, JSONB subscripts and index migration, constraint options, typed arrays, reflection |
-| [MySQL, MariaDB, and SQLite](references/mysql-mariadb-and-sqlite.md) | Async SQLite pooling, strict tables, limited deletes, locking reads, MariaDB DDL names, Connector/Python, network types |
-| [Oracle and SQL Server](references/oracle-and-sql-server.md) | Oracle vectors and tablespaces, aioodbc batching, conditional index drops |
+| [Python, ORM, and typing](references/python-orm-and-typing.md) | Python runtime support, annotation maps, dataclass fields, composites, loader options, and aliases |
+| [Engine, SQL, and schema](references/engine-sql-and-schema.md) | Autocommit rollback, constraints, window frames, numeric conversion, and metadata copies |
+| [PostgreSQL](references/postgresql.md) | asyncpg isolation, JSONB index migration, constraints, arrays, and reflection |
+| [MySQL, MariaDB, and SQLite](references/mysql-mariadb-and-sqlite.md) | Async pooling, limited deletes, locking reads, DDL names, drivers, network types, and strict tables |
+| [Oracle and SQL Server](references/oracle-and-sql-server.md) | Vectors, tablespaces, aioodbc batching, index drops, and ODBC connection quoting |
 
-## Check compatibility and migrations first
+## Check migrations and deprecations first
 
 ### Rebuild affected PostgreSQL JSONB expression indexes
 
@@ -35,115 +36,75 @@ On PostgreSQL 14 and later, JSONB subscripting renders with square brackets:
 data['key']
 ```
 
-JSON expressions continue to use arrow syntax. PostgreSQL matches an
-expression index by rendered text, so an index built from the older JSONB
-arrow expression will not be selected for the new expression. Drop and
-recreate every affected expression index during the SQLAlchemy upgrade.
+JSON expressions still use arrow syntax. PostgreSQL matches expression indexes
+by rendered text, so an index created from the older JSONB arrow expression is
+not selected for the newly rendered expression. Drop and recreate every
+affected expression index as part of the SQLAlchemy upgrade, and compare the
+generated SQL and query plans before and after the migration.
 
-Inspect generated SQL and query plans before and after the migration; do not
-assume that a logically equivalent old expression index remains usable.
+### Replace invalid loader-option strings
+
+A dotted loader-option string ending in `"*"`, such as
+`Load(A).joinedload("bs.*")`, now raises `ArgumentError`; string attribute names
+are rejected instead of silently matching nothing. The bare wildcard remains a
+special valid form:
+
+```python
+Load(A).lazyload("*")
+```
+
+Use mapped class attributes for non-wildcard loader paths.
+
+### Build explicit subqueries before `aliased()`
+
+Passing `select()` or `union()` directly to `aliased()` is deprecated and
+becomes an error in SQLAlchemy 2.1. Make the coercion explicit:
+
+```python
+user_alias = aliased(User, select(User).subquery())
+```
 
 ### Treat annotation-map unions as exact keys
 
-`registry.type_annotation_map` resolves a union entry only for the exact union.
-An entry keyed by `float | Decimal` does not also map `Mapped[float]`.
-PEP 604 unions and `typing.Union` resolve consistently, so do not duplicate
-entries solely because the spelling differs.
+`registry.type_annotation_map` resolves a union entry only for that exact
+union. An entry keyed by `float | Decimal` does not also map `Mapped[float]`.
+PEP 604 and `typing.Union` spellings resolve consistently, so duplicate entries
+are unnecessary solely to cover both spellings.
 
-PEP 695 aliases can resolve through:
-
-- an explicit entry for the alias;
-- an entry for its immediate target; or
-- a generic alias whose target wraps
-  `Annotated[..., mapped_column(...)]`.
-
-Do not depend on recursive alias-chain traversal or implicit `NewType`
-resolution. Those forms are deprecated in the 2.0 line and rejected in 2.1.
-Add explicit map entries or flatten aliases before an upgrade.
+PEP 695 aliases can resolve through their own map entry, their immediate
+target, or a generic alias whose target wraps
+`Annotated[..., mapped_column(...)]`. Recursive alias-chain traversal and
+implicit `NewType` resolution are deprecated in the 2.0 line and disallowed in
+2.1. Add explicit map entries or flatten those aliases.
 
 ### Rename MariaDB-specific DDL options
 
-Under a `mariadb://` URL, `mysql_with_parser` and `mysql_using` warn. Use:
+Under a `mariadb://` URL, `mysql_with_parser` and `mysql_using` warn. Use
+`mariadb_with_parser` and `mariadb_using`, or supply both prefixes when one
+metadata definition must support MySQL and MariaDB.
 
-- `mariadb_with_parser`;
-- `mariadb_using`; or
-- both the `mysql_` and `mariadb_` forms when one metadata definition must
-  support both dialects.
+### Recheck decimal conversion scale
 
-Warnings here identify a forward-compatibility issue, not merely cosmetic
-renaming.
+For DBAPIs without native decimal support,
+`Numeric(decimal_return_scale=n)` now controls conversion scale rather than
+being ignored in favor of `Numeric.scale`. Tests that compare processed
+`Decimal` values may observe a different number of fractional digits.
 
-### Account for async default changes
+### Do not rely on shared defaults after `Table.to_metadata()`
 
-The `aiosqlite` dialect uses `AsyncAdaptedQueuePool` by default. Code that
-requires a new connection per checkout must opt back into `NullPool`:
+Copied tables now receive copies of column defaults and on-update objects,
+including sequences and server-side defaults. They are associated with the
+copied columns and metadata, so identity checks against the source objects must
+be removed.
 
-```python
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.pool import NullPool
+## Account for connection and pooling behavior
 
-engine = create_async_engine(url, poolclass=NullPool)
-```
+### Suppress rollback only for detected autocommit
 
-For asyncpg, leaving SQLAlchemy's isolation level unset now lets the server
-setting apply. Configure an isolation level explicitly only when the
-application intends to override the server.
-
-### Verify Python runtime assumptions
-
-Python 3.14 installs `greenlet` automatically through SQLAlchemy's dependency
-metadata. Deferred annotations now cover relationship targets in
-`MappedAsDataclass` and unresolved names encountered during ORM
-introspection.
-
-Free-threaded Python 3.13t and 3.14t have initial runtime fixes in this
-SQLAlchemy line, but free-threaded PyPI wheels are a 2.1 feature. Plan for the
-actual artifact available in the deployment environment rather than assuming
-a 2.0 wheel exists.
-
-## High-value ORM features
-
-### Attach metadata to generated dataclass fields
-
-ORM attribute constructors that accept dataclass options also accept
-`dataclass_metadata`. SQLAlchemy forwards the mapping to the generated
-dataclass field:
+Use `skip_autocommit_rollback=True` when rollback calls are unwanted and the
+dialect can detect DBAPI autocommit:
 
 ```python
-from sqlalchemy.orm import Mapped, mapped_column
-
-name: Mapped[str] = mapped_column(
-    dataclass_metadata={"ui": "label"},
-)
-```
-
-Use `dataclasses.fields()` to read the resulting field metadata. Keep this
-separate from `Column.info`, which describes a SQLAlchemy schema object.
-
-### Apply loader options to composites
-
-`defer()`, `undefer()`, and `load_only()` accept composite attributes:
-
-```python
-from sqlalchemy import select
-from sqlalchemy.orm import load_only
-
-stmt = select(Location).options(load_only(Location.point))
-```
-
-Pass the mapped composite attribute, not a string name. This allows loading
-plans to describe the composite at the ORM level.
-
-## High-value Core and engine features
-
-### Avoid redundant rollback in autocommit
-
-Use `skip_autocommit_rollback=True` when the dialect can determine that a
-connection is already in DBAPI autocommit and rollback calls are unwanted:
-
-```python
-from sqlalchemy import create_engine
-
 engine = create_engine(
     url,
     isolation_level="AUTOCOMMIT",
@@ -151,77 +112,98 @@ engine = create_engine(
 )
 ```
 
-This includes the rollback normally issued when a pooled connection is
-returned. The suppression depends on dialect-level autocommit detection; it
-is not a general instruction to skip rollback in transactional operation.
+This also suppresses rollback on pool return. It is not a general mechanism for
+skipping rollback during transactional operation.
 
-### Choose standalone constraint isolation deliberately
+### Choose the async SQLite pool explicitly when needed
 
-`AddConstraint` and `DropConstraint` accept `isolate_from_table`, which
-defaults to `True`. Pass `False` when the constraint must remain eligible for
-inline creation as part of the table's `CREATE TABLE` sequence:
+The `aiosqlite` dialect defaults to `AsyncAdaptedQueuePool`. Applications that
+require a new connection per checkout must opt into `NullPool`:
 
 ```python
-from sqlalchemy.schema import AddConstraint
+engine = create_async_engine(url, poolclass=NullPool)
+```
 
+### Let asyncpg inherit server isolation deliberately
+
+When SQLAlchemy has no client isolation level configured, its asyncpg wrapper
+passes `None` to the driver and the server-level setting applies. Set a client
+isolation level only when the application intends to override the server.
+
+## Use the newer ORM and SQL capabilities
+
+### Add metadata to generated dataclass fields
+
+ORM attribute constructors that accept dataclass options also accept
+`dataclass_metadata`, forwarding it to the generated dataclass field:
+
+```python
+name: Mapped[str] = mapped_column(
+    dataclass_metadata={"ui": "label"},
+)
+```
+
+Read it through `dataclasses.fields()`. This metadata belongs to the dataclass
+field rather than the SQLAlchemy schema object's `Column.info` mapping.
+
+### Apply loader options to composites
+
+`defer()`, `undefer()`, and `load_only()` accept mapped composite attributes:
+
+```python
+stmt = select(Location).options(load_only(Location.point))
+```
+
+Pass the composite attribute, not a string name.
+
+### Control standalone constraint isolation
+
+`AddConstraint` and `DropConstraint` accept `isolate_from_table`, defaulting to
+`True`. Pass `False` when the constraint must remain eligible for inline
+creation in the table's `CREATE TABLE` sequence:
+
+```python
 ddl = AddConstraint(constraint, isolate_from_table=False)
 ```
 
-Review DDL ordering when changing this value, especially when metadata-level
-create operations and explicit constraint DDL are mixed.
+Review DDL ordering when explicit constraint DDL and metadata-level creation
+are mixed.
 
 ### Express `GROUPS` window frames
 
-`over()` and `FunctionElement.over()` accept `groups=` alongside the existing
+`over()` and `FunctionElement.over()` accept `groups=` alongside the other
 frame styles:
 
 ```python
-from sqlalchemy import func
-
 running = func.sum(t.c.amount).over(
     order_by=t.c.id,
     groups=(None, 0),
 )
 ```
 
-The tuple above renders an unbounded-preceding-to-current-group frame. Confirm
-that the target database supports SQL `GROUPS` frames.
+This tuple means unbounded preceding through the current group. Confirm that
+the target database supports SQL `GROUPS` frames.
 
-## Dialect decision points
+## Verify runtime and dialect assumptions
 
-### PostgreSQL
-
-- `UniqueConstraint` and `PrimaryKeyConstraint` accept
-  `postgresql_include`.
-- Foreign-key `ON DELETE SET NULL` and `SET DEFAULT` actions can include a
-  column list.
-- `array([], type_=Integer)` emits the cast required for an empty array.
-- Reflection preserves non-default type collations and reports non-default
-  index operator classes in `dialect_options["postgresql_ops"]`.
-
-### MySQL and MariaDB
-
-- `Delete.with_dialect_options()` accepts integer-only `mysql_limit` and
-  `mariadb_limit`.
-- MySQL 8.0.1 and later supports locking reads rendered as `FOR SHARE` with
-  `NOWAIT` or `SKIP LOCKED`.
-- Modern MySQL-Connector/Python support is restored; MariaDB connections need
-  explicit charset and collation, and this driver does not use server-side
+- Python 3.14 installs `greenlet` automatically and supports more deferred
+  annotation cases. Initial free-threaded runtime fixes do not imply that a
+  free-threaded 2.0 PyPI wheel exists; those wheels are a 2.1 feature.
+- Python 3.15 support is tested in the newer maintenance release represented
+  in the detailed runtime reference.
+- Empty PostgreSQL arrays can use `array([], type_=Integer)` to render the
+  required cast. PostgreSQL constraint and reflection metadata also gained
+  richer dialect-specific information.
+- MySQL and MariaDB support integer-only limited deletes. MySQL 8.0.1 and later
+  can render `FOR SHARE` with `NOWAIT` or `SKIP LOCKED` for locking reads.
+- Modern MySQL-Connector/Python is supported again, but MariaDB needs explicit
+  charset and collation settings and this driver does not use server-side
   cursors.
-- MariaDB exposes `INET4` and `INET6`.
-
-### SQLite
-
-Use `sqlite_strict=True` for a `STRICT` table. It composes with
-`sqlite_with_rowid=False`, so both options may be set on the same `Table`.
-
-### Oracle
-
-The dialect includes dense and sparse vector types, distance operations,
-vector-index options, and approximate fetch support. Tables can also set
-`oracle_tablespace`.
-
-### SQL Server
-
-The async aioodbc dialect honors `fast_executemany`. SQL Server 2016 and later
-also receives `DROP INDEX IF EXISTS` from `DropIndex(..., if_exists=True)`.
+- SQLite supports `sqlite_strict=True`, including together with
+  `sqlite_with_rowid=False`.
+- Oracle supports dense and sparse vectors, vector distance operations,
+  vector indexes, approximate fetch, and table tablespaces.
+- The SQL Server aioodbc dialect honors `fast_executemany`; SQL Server 2016 and
+  later can emit `DROP INDEX IF EXISTS`.
+- pyodbc connection-string components receive safer brace quoting, including
+  parameter names containing semicolons or closing braces.

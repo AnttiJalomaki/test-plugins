@@ -10,127 +10,102 @@ metadata:
 
 # uv Knowledge Patch
 
-Apply this guidance when changing uv-managed Python projects, environments,
-dependency resolution, package indexes, publishing, or CI and container
-workflows. Confirm the installed uv version and the project's own manifests,
-lockfiles, configuration, and tests before relying on compatibility guidance.
+Use this guidance for uv-managed Python projects, environments, dependency
+resolution, package indexes, publishing, tools, CI, and containers. Inspect the
+repository and installed executable before changing a workflow: project files,
+lockfiles, and observed behavior take precedence when they differ from this
+guidance.
 
 ## Working Method
 
-1. Run `uv self version` to identify uv itself. Do not use `uv version` for
-   that purpose; inside a project it reads or changes the project version.
-2. Inspect `pyproject.toml`, `uv.toml`, `.python-version`, `uv.lock`, and any
-   `pylock*.toml` inputs that are relevant to the task.
-3. Distinguish stable behavior from preview behavior. Do not design a critical
-   workflow around a preview command without acknowledging that status.
-4. Read the task-specific reference from the index below before proposing
-   flags or configuration keys.
-5. Prefer the repository's observed behavior and tests if they disagree with
-   this patch, especially when the installed uv is newer than the frontmatter
-   version.
-6. Preserve lockfile intent: use `--locked` or `uv lock --check` to verify,
-   and use `uv lock --refresh` only when canonical regeneration is intended.
-7. Treat authentication, environment replacement, virtual-environment
-   clearing, and publishing as security- or state-sensitive operations.
+1. Run `uv self version` to identify the uv executable. `uv version` reads or
+   changes a project's version and errors outside a project.
+2. Inspect `pyproject.toml`, `uv.toml`, `.python-version`, `uv.lock`, relevant
+   `pylock*.toml` files, inline-script metadata, and CI or container files.
+3. Decide whether each proposed command is stable or preview. Keep preview
+   behavior explicit in durable scripts and configuration.
+4. Read the task-specific reference from the index before choosing flags or
+   settings.
+5. Preserve lockfile intent. Use `uv lock --check` or `--locked` to verify;
+   reserve `uv lock --refresh` for deliberate canonical regeneration.
+6. Treat credential changes, certificate overrides, publishing, environment
+   replacement, archive validation bypasses, and malware checks as sensitive.
 
 ## Reference Index
 
-| Reference | Read for |
+| Reference | Use for |
 | --- | --- |
-| [projects-and-workspaces](references/projects-and-workspaces.md) | Project versions, initialization, workspaces, path members, builds, groups, and project checks |
-| [python-environments-and-platforms](references/python-environments-and-platforms.md) | Interpreter selection, managed Python, virtual environments, platform targeting, and tool Python pins |
-| [dependency-resolution-and-lockfiles](references/dependency-resolution-and-lockfiles.md) | Resolution controls, constraints, cutoffs, source suppression, lock checks, PEP 751, and remote inputs |
-| [indexes-auth-and-publishing](references/indexes-auth-and-publishing.md) | Named indexes, fail-closed authentication, stored credentials, publishing, and archive validation |
-| [tooling-and-operations](references/tooling-and-operations.md) | Release compatibility, process environment, `uvx`, formatting, auditing, exports, containers, and networking |
+| [Projects and workspaces](references/projects-and-workspaces.md) | Project versions, initialization, builds, checks, workspace membership, groups, and metadata |
+| [Python, environments, and platforms](references/python-environments-and-platforms.md) | Interpreter discovery and installation, managed Python, virtual environments, platform targets, and tool pins |
+| [Dependency resolution and lockfiles](references/dependency-resolution-and-lockfiles.md) | Constraints, groups, cutoffs, upgrades, lock checks, PEP 751, sources, hashes, and pre-releases |
+| [Indexes, authentication, and publishing](references/indexes-auth-and-publishing.md) | Index policy, credentials, certificates, archives, publishing, uploads, and local index paths |
+| [Tooling and operations](references/tooling-and-operations.md) | Release boundaries, subprocesses, `uvx`, ephemeral runs, formatting, auditing, exports, caches, containers, and networking |
 
 ## Breaking Changes and Compatibility Traps
 
-### Release and storage boundaries
+### Distinguish executable and project versions
 
-- Treat uv as stable even though its version begins with `0`. A minor release
-  may break behavior; a patch release may add fixes and enhancements but is
-  intended to remain non-breaking.
-- The public `uv.lock` schema changes only with a breaking minor release.
-  Cache formats are internal and may change in either minor or patch releases;
-  do not build cross-version guarantees around cache internals.
-- Rust consumers must distinguish release numbering from API stability. The
-  `uv` and `uv-build` Rust interfaces do not promise semantic versioning, and
-  other internal crates do not promise stability.
+Use `uv self version` for the executable. Inside a project, `uv version` reads
+or updates project metadata and can lock and sync after an update; it is not a
+fallback executable-version command.
 
-### Project version and initialization commands
+### Expect packaged initialization
 
-- Use `uv version` only for a project's version. It errors outside a project
-  and may lock and sync after an update. Use `uv self version` for the uv
-  executable's version.
-- New packaged projects and libraries use `uv_build` by default. Request
-  `--build-backend hatchling` when the prior backend is required.
-- Prefer `uv init <target>` over deprecated `uv init --project`. Use
-  `UV_INIT_BARE` when bare initialization needs environment-level control.
+`uv init <name>` creates a `uv_build`-backed `src/<name>` package, project
+script, and installed project. Use `--no-package` for the former unpackaged
+`main.py` layout. Existing projects do not change automatically, and a pinned
+`uv_build` range must admit the version used by newly initialized projects.
 
-### Python discovery and installation
+### Preserve lockfile formatting and state
 
-- `uv python install` honors `UV_PYTHON`, which takes precedence over
-  `.python-version`.
-- In `uv pip compile`, `-p` means `--python`, not `--python-version`.
-  A missing path or requested implementation is an error; only a missing
-  version request may be satisfied by another interpreter with overridden
-  tags.
-- Managed installs create versioned executables on `PATH` by default and may
-  register with the Windows `py` launcher. Use `--no-bin` or `--no-registry`
-  to suppress those effects.
-- Discovery enforces managed/unmanaged Python preferences for interpreters on
-  `PATH`. A preference change can invalidate and recreate the project
-  environment.
-- Unversioned installation and automatic-download defaults now favor Python
-  3.14. On Python 3.14+, discovery may select free-threaded Python without a
-  `t` suffix, while installation still prefers a GIL-enabled build.
+`uv lock --check` and `--locked` reject non-canonical `uv.lock` formatting.
+Regenerate intentionally with `uv lock --refresh`. Check commands return 1 for
+stale state and reserve 2 for operational errors. `--isolated` must not rewrite
+the project lockfile.
 
-### Validation became stricter
+### Account for stricter validation
 
-- Expect errors for nonexistent local extras, groups absent from a frozen
-  lockfile, and unknown dependency-group object specifiers.
-- Do not combine `--frozen` with `--no-sources`.
-- Arbitrary executable names in `.python-version` are ignored.
-- `uv build` requires UTF-8 license files and rejects an unmatched
-  `project.license-files` glob. `uv_build` rejects invalid classifiers and
-  warns about legacy license classifiers.
+Treat these as errors rather than ignored input:
 
-### Index lookup and credentials
+- nonexistent local extras;
+- missing frozen dependency groups and unknown group object specifiers;
+- `--frozen` combined with `--no-sources`;
+- unmatched `project.license-files` globs or non-UTF-8 license files;
+- malformed or unsafe archives and invalid `pylock.toml` structure;
+- hash-checking requirements that are unpinned, unhashed, or MD5-only.
 
-- With the default `first-index` strategy, a 401 or 403 stops lookup instead
-  of falling through. Configure `ignore-error-codes` only for an index whose
-  nonstandard behavior requires fallthrough.
-- Use `authenticate = "always"` when credentials are mandatory; missing
-  credentials then fail closed.
-- Configuration rejects multiple indexes marked `default = true`, and an
-  `explicit = true` index must have a name.
-- If several stored credentials match a URL, pass the username explicitly
-  rather than relying on match order.
+Arbitrary executable names in `.python-version` are ignored. `uv_build`
+rejects invalid classifiers and warns on legacy license classifiers.
 
-### Execution and environment safety
+### Treat index failures as authoritative
 
-- `uvx <name>` verifies that the package or one of its dependencies provides
-  the executable. Use `uvx --from <package> <command>` when intentionally
-  separating package and command names.
-- `uv run --with` executes in a fresh empty layer over a cached requirement
-  environment. Runtime inspection or mutation no longer targets the cached
-  layer itself.
-- Interactive `uv venv` prompts before removing an existing environment and
-  refuses to remove a directory that is not a virtual environment. Make
-  removal intent explicit with `--clear` or `--no-clear`.
-- `--isolated` operations do not rewrite `uv.lock`.
+The default `first-index` strategy stops on 401 or 403. Use
+`ignore-error-codes` only for an index whose unusual behavior requires
+fallthrough. `authenticate = "always"` makes missing credentials fail closed.
+Only one index may be `default = true`, and an explicit index needs a name.
 
-### Platform and container migrations
+### Do not rely on certificate fallback
 
-- The `linux` platform alias targets `manylinux_2_28`. Request
-  `x86_64-manylinux_2_17` explicitly for the older compatibility target.
-- Floating Debian and Alpine container images moved to Debian 13 Trixie and
-  Alpine 3.22. Removed tags include Bookworm, Alpine 3.21, and Python 3.8;
-  prebuilt big-endian PPC64 binaries are also gone.
-- Derived uv images set `UV_TOOL_BIN_DIR=/usr/local/bin`. Override it when an
-  unprivileged container user cannot write there.
+An explicitly set `SSL_CERT_FILE` or `SSL_CERT_DIR` is authoritative. If it is
+missing, inaccessible, empty, or contains no certificates, fix or remove it;
+uv does not silently fall back to default trust roots.
 
-## High-Value Current Workflows
+### Revisit Python and platform assumptions
+
+Unversioned installation and automatic download now prefer Python 3.14.
+Discovery can select a free-threaded 3.14+ interpreter without a `t` suffix,
+while installation still prefers a GIL-enabled build. The `linux` platform
+alias means `manylinux_2_28`; request `x86_64-manylinux_2_17` explicitly when
+that older target is required.
+
+### Pin container and formatter behavior
+
+Floating images now follow Debian 13 Trixie and Alpine 3.22; removed tags
+include Bookworm, Alpine 3.21, and Python 3.8. Preview `uv format` moved to Ruff
+0.15 and the 2026 style guide. Pin the image tag and formatter version when
+reproducibility matters.
+
+## High-Value Workflows
 
 ### Verify lockfiles and environments
 
@@ -140,13 +115,10 @@ uv sync --check
 uv lock --refresh
 ```
 
-- Canonical lockfile formatting is enforced by `uv lock --check` and
-  `--locked`. Refresh rewrites non-canonical formatting.
-- A stale environment or lockfile produces exit status 1 from the check
-  commands; status 2 remains an operational error. Preserve that distinction
-  in CI.
+Use the first two commands for CI verification. Run the refresh command only
+when rewriting the lockfile is the intended repository change.
 
-### Work with one or all workspace packages
+### Check projects and workspaces
 
 ```console
 uv check --package my-package
@@ -155,50 +127,88 @@ uv workspace list --paths
 uv workspace dir
 ```
 
-- Package selection for `uv check` is preview behavior.
-- Workspace listing and directory discovery are stable scripting interfaces.
-- `uv workspace metadata` includes best-effort active-environment information
-  by default, so output can depend on the invoking environment.
+Package selection for `uv check` is preview. Workspace listing and directory
+discovery are stable scripting interfaces. `uv workspace metadata` includes
+best-effort active-environment data by default, so its output can vary with the
+invocation environment.
 
-### Control dependency resolution precisely
+Preview checks also provide `--fix`, `--no-install-project`, and explicit
+`--script`. Scripts are not checked unless requested. `uv tool audit` can
+inspect installed tools, and configured malware checks can screen locked tools
+before cache reuse.
 
-- Use build constraints for build-time dependencies, including ephemeral
-  `uv run --with`, tools, and inline-script workflows.
-- Use dependency-group Python requirements and `default-groups = "all"` to
-  control group inclusion. Use required environments to demand wheel coverage.
-- Use package-specific or relative `exclude-newer` cutoffs, dependency
-  exclusions, selective `--no-sources-package`, and stable bounds controls
-  instead of broad global workarounds.
-- Marker-aware `uv upgrade` can update multiple declarations of the same
-  package when markers distinguish them.
+### Control resolution precisely
 
-### Exchange standardized and machine-readable results
+- Apply build constraints to project builds, `uv run --with`, tools, and
+  inline scripts.
+- Use per-group Python requirements and `default-groups = "all"` deliberately.
+- Require wheel coverage with `tool.uv.required-environments`.
+- Prefer package-specific cutoffs, dependency exclusions, selective
+  `--no-sources-package`, and stable bounds controls over broad workarounds.
+- Use marker-aware `uv upgrade` when repeated declarations differ by markers.
+- Override automatic stable-then-prerelease fallback with an explicit global
+  or package-specific prerelease policy when the distinction matters.
 
-- Generate, compile, install, or sync PEP 751 `pylock.toml` files. Custom
-  names must follow `pylock.<name>.toml`.
-- Export CycloneDX SBOM data when downstream tooling needs a software bill of
-  materials.
-- Preview sync output can report package changes as JSON.
+### Exchange standardized results
 
-### Audit, format, and publish
+Generate, compile, install, and sync PEP 751 files named `pylock.toml` or
+`pylock.<name>.toml`. A valid file contains a `packages` array, which may be
+empty, and declared artifact sizes are checked.
 
-- `uv audit` is preview functionality backed by batched OSV queries and
-  supports linked findings and report formatting.
-- `uv format` is preview functionality. It runs from the project root and can
-  pin Ruff with `--version`; pinning avoids unexpected style changes.
-- Publishing can use stored `uv auth` credentials, PEP 740 attestations,
-  Trusted Publishing with pyx, S3 pre-signed URLs, or GCS request signing.
+CycloneDX exports include distribution artifact URLs and hashes. Preview JSON
+sync output can describe package changes made by the operation.
+
+### Select indexes and credentials explicitly
+
+```toml
+[[tool.uv.index]]
+name = "private"
+url = "https://packages.example.invalid/simple"
+authenticate = "always"
+```
+
+Named flat indexes share the same configuration. Under preview
+`index-by-name`, `--index` and `--default-index` may select a configured name;
+preview index configuration can also choose the lockfile hash algorithm. When
+several credentials match a URL, supply the username explicitly.
+
+### Install and discover Python deliberately
+
+`UV_PYTHON` takes precedence over `.python-version` for `uv python install`.
+Managed installs add versioned executables to a `PATH` directory and can
+register with the Windows launcher; use `--no-bin` or `--no-registry` to
+suppress those effects. Changing managed/unmanaged discovery preference can
+invalidate and recreate the project environment.
+
+### Run tools and temporary requirements safely
+
+`uvx <name>` verifies that the requested executable comes from that package or
+its dependencies. Use `uvx --from <package> <command>` when the package and
+command intentionally differ. `uv run --with` executes through a fresh empty
+top layer over a cached requirement environment, so runtime mutations do not
+modify the cached layer.
+
+### Protect virtual environments
+
+Interactive `uv venv` prompts before clearing an existing virtual environment
+and refuses to remove a non-environment directory. State the decision with
+`--clear` or `--no-clear`. Preview relocatable environments omit
+`activate.csh`; a `.venv` file may instead point to a centralized environment.
+
+### Audit, format, and publish cautiously
+
+`uv audit` and `uv format` are preview commands. Auditing batches OSV queries
+and supports linked findings and report formats. Publishing supports stored
+credentials, PEP 740 attestations, Trusted Publishing with pyx, and preview S3
+or GCS signing flows. Validate archives and authentication before upload.
 
 ## Final Checks
 
-- Confirm stable versus preview status for every command introduced in a
-  durable workflow.
-- Re-run lock and environment checks after dependency or project-version
-  changes.
-- Test the intended Python implementation, GIL mode, and target platform
-  explicitly when producing cross-platform artifacts.
-- Verify index names, authentication policy, credential username, proxy and
-  certificate settings before diagnosing resolution failures.
-- Pin formatter behavior and container tags when reproducibility matters.
-- Read the relevant reference file for edge cases before changing security,
-  publishing, virtual-environment, or lockfile behavior.
+- Confirm stable versus preview status for each durable command.
+- Re-run lock and environment checks after dependency or version changes.
+- Test the intended implementation, GIL mode, and target platform explicitly.
+- Verify index names, authentication policy, username, proxy, certificate, and
+  upload timeout settings before diagnosing resolution or publishing failures.
+- Pin formatter behavior and container tags where reproducibility matters.
+- Inspect the relevant reference before changing security, publishing,
+  environment-clearing, lockfile, or archive-validation behavior.

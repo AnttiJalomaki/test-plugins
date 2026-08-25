@@ -1,16 +1,22 @@
-# Runtime and migration
+# Runtime and Migration
 
-## Packaging and imports
+## Distribution and imports
 
-### ESM-only distribution
+### Removed unminified production artifact
 
-The v6 migration removes UMD and dedicated CSP bundles and distributes
-`maplibre-gl.mjs` with `maplibre-gl-worker.mjs` (migration-v5-v6). Named npm
-imports continue to work. Replace default imports with namespace or named
-imports, and use `type="module"` for direct browser loading.
+The unminified production build is not distributed starting in 5.0.0. Replace
+references to that artifact with an available development or production build.
+
+### ESM-only packaging
+
+The migration-v5-v6 distribution removes UMD and dedicated CSP bundles and
+ships `maplibre-gl.mjs` with `maplibre-gl-worker.mjs`. Named npm imports remain
+valid. Replace a default import with a namespace or named import, and use a
+module script for direct browser loading.
 
 ```ts
 import * as maplibregl from 'maplibre-gl';
+// or
 import {Map, setWorkerUrl} from 'maplibre-gl';
 ```
 
@@ -20,57 +26,31 @@ import {Map, setWorkerUrl} from 'maplibre-gl';
 </script>
 ```
 
-The unminified production build was already removed in 5.0.0. Consumers that
-reference that artifact must select a distributed ESM build or produce the
-needed debugging output through their own toolchain.
-
 ## Worker loading and CSP
 
-Migration previews described direct browser ESM resolving its worker relative
-to `import.meta.url`, with a same-origin Blob URL for a cross-origin CDN. Under
-that preview behavior, CDN deployments needed `blob:` in `worker-src`, while a
-self-hosted worker did not (migration-v5-v6):
+Migration-stage guidance in migration-v5-v6 described direct cross-origin ESM
+loading through a same-origin Blob URL, with `worker-src 'self' blob:` and no
+`setWorkerUrl()` call. It also required bundled applications to call
+`setWorkerUrl()` once because bundlers cannot reliably resolve the worker from
+`import.meta.url`; self-hosting did not require `blob:`.
 
-```text
-worker-src 'self' blob:;
-img-src data: blob: 'self';
-```
+The final 6.0.0 build supersedes that provisional browser/CDN behavior. It
+loads the worker as a real module URL and auto-loads a cross-origin CDN worker
+while preserving ESM semantics. The final direct-browser path needs neither a
+CSP-specific bundle nor a `worker-src blob:` allowance. Retain explicit
+`setWorkerUrl()` in bundled applications when the bundler cannot resolve the
+worker.
 
-The final 6.0.0 build supersedes that preview path: it loads the worker as a
-real module URL, and direct CDN use auto-loads the cross-origin worker while
-preserving ESM semantics. It therefore does not need the CSP-specific bundle
-or a `worker-src blob:` allowance.
+Scripts imported into workers can communicate with the worker environment and
+use `makeRequest` starting in 5.20.0.
 
-Bundled applications must still call `setWorkerUrl()` once when their bundler
-cannot reliably retain worker resolution through `import.meta.url`
-(migration-v5-v6). Validate the emitted worker URL rather than assuming direct
-browser behavior also applies to a bundler.
+## Browser, JavaScript, and WebGL requirements
 
-Scripts imported into a worker can communicate with the worker environment and
-call `makeRequest` from the worker as of 5.20.0.
+### Canvas context options
 
-## Browser and graphics requirements
-
-Published v6 code targets ES2022. Older browsers or build tools need to be
-updated or handled by application-side transpilation (6.0.0).
-
-WebGL 1 support is removed in 6.0.0; WebGL 2 is required. A failure to create
-the WebGL context is emitted through the map's `error` event:
-
-```js
-map.on('error', handleMapError);
-```
-
-Legacy compatibility paths for IE11 and pre-2016 browsers were removed in
-5.20.0 in favor of native browser APIs. Image requests always send
-`Accept: image/webp`; the old Edge 18 detection workaround is gone.
-
-## WebGL context construction
-
-Since 5.0.0, WebGL options such as `antialias`, `preserveDrawingBuffer`, and
-`failIfMajorPerformanceCaveat` belong to
-`MapOptions.canvasContextAttributes`. `contextType` selects the WebGL version.
-The v5 runtime could use WebGL 2 with a WebGL 1 fallback; v6 requires WebGL 2.
+In 5.0.0, former top-level WebGL options move to
+`MapOptions.canvasContextAttributes`. `contextType` selects the WebGL version;
+the v5 runtime can request WebGL 2 with a WebGL 1 fallback.
 
 ```js
 const map = new Map({
@@ -84,16 +64,55 @@ const map = new Map({
 });
 ```
 
-## Map and camera architecture
+### Modern baseline
 
-In 6.0.0, `Map` composes a `Camera` and forwards its public API rather than
-inheriting from `Camera`. Code that checks the inheritance relationship or
-uses internal `map.transform` state must move to public `Map` methods.
-`transform.getMatrixForModel` is removed.
+Published 6.0.0 code targets ES2022. Update old browsers and build tooling or
+transpile at the application boundary. WebGL 1 is removed and WebGL 2 is
+required; an unavailable context is reported through the map's `error` event.
 
-## Network failures
+```js
+map.on('error', handleMapError);
+```
 
-Fetch failures, including CORS, DNS, and malformed-URL failures, are delivered
-as `AJAXError` instances through the map's `error` event since 5.0.0. Error
-handlers can inspect the request details exposed by the error.
+Legacy IE11 and pre-2016 browser paths were removed in 5.20.0 in favor of
+native APIs. Image requests always send `Accept: image/webp`; there is no Edge
+18 detection workaround.
 
+## Core API migrations
+
+### `Map` and `Camera`
+
+`Map` composes a `Camera` and forwards its public API in 6.0.0; it no longer
+extends `Camera`. Replace code depending on inheritance or internal
+`map.transform` access. `transform.getMatrixForModel` is removed; use public
+map or custom-render argument APIs.
+
+### `queryIntersectsFeature`
+
+`StyleLayer.queryIntersectsFeature` takes one object satisfying
+`QueryIntersectsFeatureParams` rather than positional arguments (since 5.0.0).
+
+### Strong style-property types
+
+Layout- and paint-property getter/setter signatures use the actual property types
+in 6.0.0 instead of broad `string` and `any` types. Correct invalid
+property names and values instead of widening them back to `any`.
+
+## URL hash parsing
+
+Hash location control uses `URLSearchParams` parsing and normalization in
+6.0.0. Encoded strings such as `#10%2F3.00%2F-1.00` are accepted, and a bare
+`#foo` normalizes to `#foo=`. Account for normalization in routing and tests.
+
+## Error handling
+
+Fetch failures such as CORS, DNS, and malformed URLs are delivered as
+`AJAXError` through the map's `error` event in 5.0.0. Use its request details
+when reporting or retrying a failed request.
+
+## DOM sanitization
+
+In 6.1.0-6.4.1, specifically 6.4.1, `DOM.sanitize` removes consecutive
+dangerous attributes correctly. Earlier behavior could skip a dangerous
+attribute immediately after another removed attribute, leaving it able to
+execute. Upgrade rather than relying on the affected sanitizer.

@@ -1,42 +1,50 @@
 # Events and JavaScript
 
-## Static trigger sources
+Use this reference when configuring event sources, polling, confirmation, or
+attribute inheritance.
 
-The selector in `from:<selector>` is evaluated once when the trigger is
-initialized. Elements added later do not cause the selector to be re-evaluated.
+## Trigger sources and filters
+
+### Static `from:` selectors
+
+The selector in `from:<selector>` is evaluated once. It is not reevaluated when
+matching elements are added later, so do not expect a trigger source to follow
+later DOM changes automatically.
 
 ```html
-<button hx-get="/shortcut" hx-trigger="keydown[ctrlKey] from:body">
-  Save
-</button>
+<button hx-get="/shortcut" hx-trigger="keydown[ctrlKey] from:body">Save</button>
 ```
 
-For dynamic content, design the trigger source around an element that already
-exists instead of assuming `from:` will track future selector matches.
+### Filter-name lookup and `this`
 
-## Trigger-filter lookup
+Within a trigger filter, names resolve against the triggering event before the
+global scope. In the example above, `ctrlKey` is read from the `keydown` event.
 
-Inside a trigger filter, a name is resolved on the triggering event first and
-then against the global scope. In the example above, `ctrlKey` comes from the
-keyboard event. `this` refers to the element bearing the `hx-trigger`
-attribute, not necessarily the event source selected by `from:`.
+`this` refers to the element that bears the `hx-trigger` attribute, not
+necessarily the element matched by the `from:` selector.
 
-## Server-controlled polling
+## Polling
 
-An endpoint serving a request triggered by `hx-trigger="every ..."` can stop
-future polling by returning HTTP status `286`.
+### Stop polling from the server
 
-## Asynchronous request confirmation
+An endpoint serving an `hx-trigger="every ..."` poll can stop further polling
+by responding with HTTP status `286`.
 
-The `htmx:confirm` event fires for every request trigger, not only elements
-with `hx-confirm`. This makes it the interception point for asynchronous
-approval. Cancel the pending request, then invoke `event.detail.issueRequest()`
-after approval:
+This lets the server terminate polling when the polled condition is complete
+without requiring a separate client-side event handler.
+
+## Request confirmation
+
+### Confirm asynchronously
+
+The `htmx:confirm` event fires for every request trigger, not only for elements
+with `hx-confirm`. Scope a listener to the intended elements, cancel the
+request, and resume it with `event.detail.issueRequest()` after asynchronous
+approval.
 
 ```js
 document.body.addEventListener("htmx:confirm", (event) => {
   if (!event.target.matches("[data-confirm]")) return;
-
   event.preventDefault();
   Promise.resolve(window.confirm("Continue?")).then((ok) => {
     if (ok) event.detail.issueRequest();
@@ -44,26 +52,31 @@ document.body.addEventListener("htmx:confirm", (event) => {
 });
 ```
 
-Filtering the event before calling `preventDefault()` is important because the
-event occurs even for requests that do not need custom confirmation.
+If approval is denied, leave the canceled request unissued.
 
-## Attribute inheritance controls
+## Attribute inheritance
 
-Use an `unset` value to clear a specific inherited attribute on a descendant:
+### Clear one inherited attribute
+
+Assign the special `unset` value on a descendant to clear an inherited
+attribute at that point:
 
 ```html
-<main hx-confirm="Are you sure?">
-  <button hx-delete="/draft">Delete</button>
-  <button hx-get="/preview" hx-confirm="unset">Preview</button>
-</main>
+<button hx-confirm="unset">Save without inherited confirmation</button>
 ```
 
-Use `hx-disinherit` when an element should stop inheriting selected attributes.
-To reverse the global default, configure:
+### Disable selected inheritance
+
+Use `hx-disinherit` when a branch should stop inheriting selected attributes.
+This differs from clearing one attribute value on one descendant.
+
+### Make inheritance opt-in
+
+Reverse the default globally with:
 
 ```js
 htmx.config.disableInheritance = true;
 ```
 
-With inheritance disabled globally, descendants explicitly opt in through
+After inheritance is disabled by default, descendants can opt in with
 `hx-inherit`.

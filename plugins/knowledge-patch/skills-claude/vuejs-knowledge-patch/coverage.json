@@ -1,6 +1,8 @@
 {
   "patch": "vuejs-knowledge-patch",
-  "merged_at": "2026-07-15T04:24:00Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-22T08:11:10Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -42,6 +44,21 @@
     },
     "vue-core-release-catalog": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.5.40": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.0.3": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "5.2.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

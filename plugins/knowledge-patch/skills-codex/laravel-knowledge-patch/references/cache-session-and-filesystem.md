@@ -1,8 +1,6 @@
 # Cache, Sessions, Redis, and Filesystems
 
-Cache stores and locks, sessions, Redis integration, disks, uploads, and filesystem behavior.
-
-Batch identifiers in section headings provide exact source attribution.
+Cache stores and locks, session behavior, Redis integration, and filesystem adapters.
 
 ## Always-deferred flexible cache refreshes (2025-05)
 
@@ -17,6 +15,14 @@ $files = File::files($path, depth: 2);
 $directories = File::directories($path, depth: 2);
 ```
 
+## Cache flush events (2025-03)
+
+The new `CacheFlushed` event allows listeners to react when a cache store is flushed.
+
+## Cache TTL contract (13.0-upgrade)
+
+The cache `Store` and `Repository` contracts now include `touch`; custom cache stores must implement TTL extension with `touch($key, $seconds)`.
+
 ## Cache-backed sessions (2025-09)
 
 Laravel includes a generic cache session driver, so session storage can use a configured cache store instead of requiring a cache-specific session driver.
@@ -26,33 +32,17 @@ SESSION_DRIVER=cache
 SESSION_STORE=redis
 ```
 
-## Cache flush events (2025-03)
-
-The new `CacheFlushed` event allows listeners to react when a cache store is flushed.
-
 ## Cache-lock pruning control (2025-12)
 
 Database-backed locks can opt out of their probabilistic pruning lottery when an application manages pruning separately.
-
-## Cache TTL contract (13.0-upgrade)
-
-The cache `Store` and `Repository` contracts now include `touch`; custom cache stores must implement TTL extension with `touch($key, $seconds)`.
 
 ## Cacheable Predis retry settings (2026-07)
 
 Predis retry configuration accepts scalar values, allowing retry settings to be used with `config:cache`.
 
-## Clean deadlock retries (2026-02)
-
-A lingering PDO transaction is rolled back before Laravel retries a commit deadlock, so the retry starts from a clean transaction state.
-
 ## Default cache and session identifiers (13.0-upgrade)
 
 Framework fallback cache prefixes, Redis prefixes, and session cookie names now use hyphenated slugs and the suffixes `-cache-`, `-database-`, and `-session`. Applications that need their prior identifiers should explicitly set `CACHE_PREFIX`, `REDIS_PREFIX`, and `SESSION_COOKIE`.
-
-## Disk-backed SQS overflow payloads (2026-05)
-
-SQS queues may offload large payloads to optional disk storage. `queue:clear` can optionally flush that overflow store as well.
 
 ## Driver-independent cache funnels (2026-02)
 
@@ -61,10 +51,6 @@ SQS queues may offload large payloads to optional disk storage. `queue:clear` ca
 ## Encoded filesystem URLs (2026-05)
 
 Filesystem-generated URL paths are now URL-encoded, while local adapters preserve directory separators, including when generating temporary URLs.
-
-## Enum scheduler cache stores (2025-10)
-
-`Schedule::useCache()` accepts enum cache-store selectors in addition to strings.
 
 ## Failover cache stores (2025-10)
 
@@ -95,10 +81,6 @@ $value = Cache::memo()->get('settings');
 $value = Cache::memo('redis')->get('settings');
 ```
 
-## MySQL DDL locking options (2026-01)
-
-The MySQL schema grammar can express DDL locking options, allowing supported schema changes to select MySQL's lock behavior.
-
 ## Nested scoped disks (12.0.0)
 
 A scoped filesystem disk may now use another scoped disk as its backing disk, allowing scopes to be layered.
@@ -118,14 +100,6 @@ Laravel's Redis integration supports `predis/predis` 3.x, so applications can up
 ## Predis cluster key lookup (2025-11)
 
 `PredisClusterConnection` now implements `keys()`, allowing pattern-based key lookup through Predis-backed Redis cluster connections.
-
-## Redis Cluster queues and concurrency (2026-04)
-
-Queues and `ConcurrencyLimiter` now have first-class Redis Cluster support.
-
-## Redis connections for queue middleware (2026-02)
-
-Redis-based queue middleware can select an explicit Redis connection instead of always using the default connection.
 
 ## Redis session prefixes (2026-07)
 
@@ -149,10 +123,6 @@ The default `cache.serializable_classes` value is `false`, so applications that 
 ],
 ```
 
-## Scheduler cache-check opt-outs (2026-06)
-
-The scheduler can opt out of pause and interrupt cache checks when those shared-cache controls are not wanted.
-
 ## Scoped-disk exception behavior (2025-09)
 
 A scoped filesystem disk now passes its `throw` option to the parent disk, so configured write failures throw consistently through the scoped adapter.
@@ -164,10 +134,6 @@ Filesystem disks configured for serving must use distinct URIs; Laravel now thro
 ## Typed cache retrieval (2026-02)
 
 Cache repositories now provide typed getters, allowing cached values to be retrieved through an accessor for the expected value type.
-
-## Unique job locks after rollback (2025-04)
-
-When an `afterCommit()` job implementing `ShouldBeUnique` is discarded by a transaction rollback, its unique lock is now released instead of remaining stuck.
 
 ## Wider database cache expirations (2026-03-laravel-12)
 

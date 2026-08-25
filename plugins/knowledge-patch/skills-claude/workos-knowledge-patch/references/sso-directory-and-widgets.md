@@ -2,65 +2,37 @@
 
 ## Directory and identity-provider attributes
 
-Directory data includes these predefined attributes:
-
-- `display_name`;
-- `employee_number`;
-- `organization`;
-- `phone_numbers`;
-- `manager_name`; and
-- `manager_id`.
-
-Surface identity-provider custom attributes in AuthKit by mapping values from
-SAML responses or from standard and custom OIDC profile attributes.
-
-## Entra nested groups
-
-Azure Entra ID does not expand deeply nested group membership transitively over
-SCIM. Do not assume a Directory Sync integration will automatically receive
-members inherited through deep Entra group nesting.
+Directory data includes `display_name`, `employee_number`, `organization`,
+`phone_numbers`, `manager_name`, and `manager_id` as predefined attributes.
+Identity-provider custom attributes can appear in AuthKit through mappings from
+SAML responses and standard or custom OIDC profile attributes.
 
 ## Embedded administration widgets
 
-Embed administration widgets for:
+Embeddable widgets cover user profiles, organization switching, SSO setup and
+status, domain verification, Directory Sync, and log streaming. Admin Portal
+prompts customers to verify a domain before they configure SSO.
 
-- user profiles;
-- organization switching;
-- SSO setup and connection status;
-- domain verification;
-- Directory Sync; and
-- log streaming.
+## SSO session lifecycle and consent
 
-Widgets can translate into the user's preferred language. Admin Portal prompts a
-customer to verify a domain before configuring SSO.
+SSO sessions have a `Timed-out` state and additional lifecycle events.
+Organizations with configured IT-admin email addresses can receive direct
+notifications about SSO connection issues.
 
-## SSO session lifecycle and notifications
+SSO adds a consent screen intended to reduce login CSRF and phishing risks.
 
-Handle the `Timed-out` SSO session state and the additional SSO lifecycle
-events. When organizations provide IT administrator email addresses, WorkOS can
-notify those administrators directly about SSO connection issues.
+## Providers and OAuth tokens
 
-## Sign-in consent
+SSO supports Clever, Okta OIDC, Entra ID OIDC, and Google OIDC connections.
+Standalone SSO authorization URLs accept `provider_scopes`; token responses can
+include `oauth_tokens`.
 
-SSO can present an additional consent screen designed to protect sign-in flows
-from login CSRF and phishing attempts. Do not treat it as an unexpected
-application redirect.
+## Entra nested groups
 
-## Connection types
+Azure Entra ID does not expand deeply nested groups transitively over SCIM.
+Directory Sync integrations must not assume that membership inherited through
+deep nesting will be expanded automatically.
 
-SSO supports Clever connections and the following OIDC connection types:
+## Certificate renewal
 
-- Okta OIDC;
-- Entra ID OIDC; and
-- Google OIDC.
-
-## Standalone SSO OAuth tokens
-
-Pass `provider_scopes` when extra provider authorization is required in a
-Standalone SSO authorization URL. The resulting SSO token response can include
-`oauth_tokens`.
-
-## Certificate-renewal events
-
-Consume WorkOS webhook events for SAML certificate renewals so applications can
-track renewal state without polling.
+WorkOS emits webhook events for SAML certificate renewals.

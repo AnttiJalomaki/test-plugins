@@ -8,223 +8,205 @@ metadata:
 ---
 
 
-# OpenAI API
+# OpenAI API Knowledge Patch
 
-Use this skill when implementing, reviewing, or migrating API integrations.
-Identify the endpoint, model ID, storage policy, service tier, and transport
-before choosing fields or event handlers. Treat returned output items as the
-protocol record: preserve every item required by the next turn instead of
-reconstructing only assistant text.
+Use this skill when implementing, reviewing, or migrating OpenAI API integrations that
+touch Responses, GPT-5.6, tools, prompt caching, service tiers, Realtime, or platform
+retirements.
+
+## How to use this patch
+
+1. Identify the endpoint, model family, and processing tier in the application.
+2. Check retirement migrations before preserving an older API, model, or alias.
+3. Read the matching reference file before changing request or event schemas.
+4. Preserve response items and identifiers exactly when chaining state or tool calls.
+5. Make storage, reasoning, image detail, cache mode, and service tier explicit when
+   their defaults affect privacy, cost, latency, or compatibility.
+6. Inspect returned effective fields such as `strict`, `reasoning.context`, and
+   `service_tier` instead of assuming the requested behavior was applied.
 
 ## Reference index
 
-| Reference | Read when working on |
+| Reference | Topics |
 | --- | --- |
-| [responses-and-state.md](references/responses-and-state.md) | Responses requests, chaining, storage, reasoning replay, streaming, safety |
-| [models-and-prompt-caching.md](references/models-and-prompt-caching.md) | Model selection, reasoning modes, context limits, media detail, prompt caching |
-| [tools-and-structured-output.md](references/tools-and-structured-output.md) | Function/custom tools, schemas, parse helpers, call loops, tool search, streaming |
-| [release-lifecycle.md](references/release-lifecycle.md) | Shutdown dates, replacements, alias stability, API and platform migrations |
-| [service-tiers-and-realtime.md](references/service-tiers-and-realtime.md) | Flex, Priority, realtime voice/translation/transcription, credentials and events |
+| [Models, Reasoning, Media, and Prompt Caching](references/models-and-prompt-caching.md) | GPT-5.6 tiers and limits, reasoning, Pro, multimodal detail, cache breakpoints and retention, restricted-access models |
+| [Release Lifecycle and Migrations](references/release-lifecycle.md) | Deprecation semantics, alias pinning, shutdown dates, replacements, fine-tuning wind-down |
+| [Responses, State, and Safety](references/responses-and-state.md) | Generation count, response chains, storage, stateless replay, streaming, moderation, reasoning context, safety identifiers |
+| [Service Tiers and Realtime](references/service-tiers-and-realtime.md) | Flex, Priority, Ultrafast, usage dimensions, Realtime sessions, translation, credentials, GA events |
+| [Tools and Structured Output](references/tools-and-structured-output.md) | Structured parsing, function round trips, deferred loading, allowed tools, streaming calls, custom tools, programmatic and multi-agent calls |
 
-## Working method
+## Breaking migrations first
 
-1. Pin behavior-sensitive production workloads to dated model IDs; use moving
-   aliases only when regularly changing behavior is intentional.
-2. Check [release-lifecycle.md](references/release-lifecycle.md) before choosing
-   any older API, platform feature, model family, image model, or fine-tuning
-   base.
-3. Prefer Responses for reasoning-plus-tools, Pro reasoning, persisted response
-   chains, and new stateful assistant integrations.
-4. Preserve output item identity and ordering across turns. Keep item IDs,
-   `call_id`, caller metadata, phase values, tool-search records, reasoning
-   items, and all other returned items required by the chosen workflow.
-5. Set cost-, latency-, state-, and safety-sensitive defaults explicitly.
-   Inspect effective values returned by the API where available.
-6. Branch on output item type before parsing. Refusals, messages, function
-   calls, program items, and agent items have different contracts.
-7. Keep stable prompt prefixes byte-identical. Apply explicit cache boundaries
-   only after choosing a compatible model and block type.
-8. Test streaming integrations against named GA events and aggregate deltas by
-   their identifiers rather than arrival assumptions.
+Before making feature changes, search the integration for retired endpoints, models,
+headers, and reusable platform objects.
 
-## Breaking changes and urgent migrations
+### Replace retired interfaces
 
-### Move stateful assistant applications
-
-The Assistants API shuts down on August 26, 2026. Move persistent assistant
-integrations to Responses plus Conversations. Responses generates one
-candidate per request and has no `n`; issue separate requests for multiple
-candidates.
-
-Do not assume `previous_response_id` carries top-level `instructions`. Resend
-stable instructions on every request, and account for prior chain tokens being
-billed again as input.
-
-### Remove retired beta and platform interfaces
-
-- Remove the `OpenAI-Beta: realtime=v1` integration; use the released Realtime
-  interface and its GA session and event shapes.
-- Move reusable prompts into application code before `v1/prompts` shuts down
+- Remove the `OpenAI-Beta: realtime=v1` interface and adopt the released Realtime
+  session, credential, endpoint, and event shapes.
+- Move Assistants API persistence to Responses plus Conversations before the
+  August 26, 2026 shutdown.
+- Remove Videos API dependencies before September 24, 2026; no replacement is
+  listed for its `sora-2` and `sora-2-pro` models.
+- Move reusable prompt objects into application code before `v1/prompts` shuts down
   on November 30, 2026.
-- Move Agent Builder workflows to the Agents SDK or Workspace Agents by
-  November 30, 2026; ChatKit remains available.
-- Export or replace Evals before the dashboard, API, and documented graders
-  shut down on November 30, 2026. Existing Evals become read-only October 31.
-- Do not start a Videos migration on the assumption that a replacement exists;
-  the listed Videos and Sora removals provide none.
+- Replace Evals with Promptfoo and Agent Builder workflows with the Agents SDK or
+  ChatGPT Workspace Agents before their November 30 shutdowns.
+- Migrate supported image generation to `gpt-image-2`; the remaining older image
+  models have shutdowns through December 1, 2026.
 
-Read [release-lifecycle.md](references/release-lifecycle.md) for every dated
-model, fine-tuning, image, audio, realtime, and platform replacement.
+### Pin behavior-sensitive models
 
-### Recheck function strictness
+- Treat `legacy` as no-longer-updated, not as a shutdown announcement.
+- Treat a deprecation notice as actionable because it includes a shutdown date.
+- Do not use moving `chat-latest`, audio, realtime, transcription, or Sora aliases
+  when behavior must remain fixed; select a dated model ID.
+- Review the full migration tables before retaining GPT-3.5, GPT-4, GPT-4o, GPT-5,
+  o-series, Codex, deep-research, realtime, audio, image, or fine-tuned models.
 
-Responses function definitions try strict mode when `strict` is omitted. An
-incompatible schema falls back to best effort and reports `strict: false`.
-Set `strict: false` explicitly when non-strict behavior is required; validate
-schemas when strict guarantees are required.
+## Responses essentials
 
-Chat Completions function tools on the GPT-5.6 family require effective
-reasoning `none`. Because omitted reasoning defaults to `medium`, set
-`reasoning_effort: "none"` explicitly or move reasoning-plus-tools work to
-Responses.
+### Generation and chains
 
-```json
-{
-  "model": "gpt-5.6-luna",
-  "reasoning_effort": "none",
-  "tools": [{
-    "type": "function",
-    "function": {
-      "name": "lookup",
-      "parameters": {"type": "object", "properties": {}}
-    }
-  }]
-}
-```
+- Responses produces one generation per request and has no `n` parameter. Send
+  separate requests when multiple candidates are required.
+- `previous_response_id` carries prior response context but not top-level
+  `instructions`; resend stable instructions on every request.
+- Earlier input in a response chain remains billable input.
 
-## Responses quick reference
+### Storage and stateless execution
 
-### Choose state behavior deliberately
+- Responses is stored by default. Chat Completions is also stored by default for
+  new accounts.
+- Set `store: false` for stateless use. Zero Data Retention disables storage
+  automatically.
+- For stateless reasoning continuity, replay every returned reasoning item with its
+  default `encrypted_content`.
 
-Responses are stored by default; Chat Completions are also stored by default
-for new accounts. Set `store: false` for stateless use. In a stateless
-reasoning loop, replay every returned reasoning item with its default
-`encrypted_content`. Zero Data Retention disables storage automatically.
+### Streaming and moderation
 
-Use `reasoning.context: "all_turns"` with `previous_response_id` only while the
-goal and assumptions remain stable. Choose `current_turn` when earlier
-reasoning is stale. With `auto` or omission, inspect the returned effective
-context value.
+- HTTP `stream=true` uses server-sent events.
+- Persistent WebSocket mode accepts incremental input chained with
+  `previous_response_id`.
+- Moderation scores requested with generation arrive only after the full output;
+  partial deltas do not contain them.
 
-### Stream with the correct transport
+## GPT-5.6 request compatibility
 
-HTTP `stream=true` uses server-sent events. Persistent WebSocket mode accepts
-incremental inputs chained through `previous_response_id`. Moderation scores
-requested with generation arrive only after the complete output, never with
-partial deltas.
+### Choose the family member deliberately
 
-Generation-time cyber or biology review can refuse output or pause a stream
-for seconds. Attach a stable, privacy-preserving `safety_identifier` to each
-Responses request.
+- `gpt-5.6` routes to `gpt-5.6-sol`.
+- Use `gpt-5.6-terra` for a balanced lower-cost tier and `gpt-5.6-luna` for
+  efficient high-volume work.
+- Sol and Terra accept roughly 1.05 million input tokens; Luna accepts 400,000.
+  All three allow up to 128,000 output tokens.
+- Sol and Terra requests above 272,000 input tokens enter different full-request
+  pricing. Fast mode accepts long-context prompts for all three family members.
 
-## Model and reasoning quick reference
+### Set reasoning explicitly
 
-| Need | Select |
-| --- | --- |
-| Flagship capability | `gpt-5.6` alias or `gpt-5.6-sol` |
-| Balanced lower cost | `gpt-5.6-terra` |
-| Efficient high volume | `gpt-5.6-luna` |
-| Responses-only extended reasoning | Normal family model plus `reasoning.mode: "pro"` |
-
-Sol and Terra accept roughly 1.05M input tokens; Luna accepts 400K. All three
-allow up to 128K output tokens. Sol and Terra requests above 272K input tokens
-enter different full-request pricing.
-
-The family accepts reasoning efforts `none`, `low`, `medium`, `high`, `xhigh`,
-and `max`; omission defaults to `medium` in standard and Pro modes. Responses
-uses `reasoning: {"effort": "..."}`. Chat Completions uses
-`reasoning_effort: "..."`. Preserve effective effort during endpoint migration
-before tuning it.
-
-Pro is a Responses-only mode, not a separate model slug. Mode and effort are
-independent, and supported Pro efforts begin at `medium`.
+- Supported efforts are `none`, `low`, `medium`, `high`, `xhigh`, and `max`; the
+  default is `medium` in standard and Pro modes.
+- Responses uses `reasoning: {"effort": "none"}`. Chat Completions uses
+  `reasoning_effort: "none"`.
+- Chat Completions function tools require effective reasoning `none`. Set it
+  explicitly or move reasoning-plus-tools work to Responses.
+- Pro is a Responses-only mode on a normal family model, not a separate slug. Mode
+  and effort are independent, and Pro starts at `medium` effort.
 
 ```json
 {
   "model": "gpt-5.6-sol",
-  "reasoning": {"mode": "pro", "effort": "medium"}
+  "reasoning": { "mode": "pro", "effort": "medium" }
 }
 ```
 
-Set image or file detail explicitly when token cost and latency matter.
-Omitted or `auto` image detail can retain original dimensions; Responses PDF
-inputs can use high-detail page images. Chat Completions file inputs do not
-offer the same detail control.
+### Control reasoning history
 
-## Tools and structured output quick reference
+- Use `reasoning.context: "all_turns"` with `previous_response_id` only while goals
+  and assumptions remain stable.
+- Use `current_turn` when earlier reasoning is stale, or omit the field/use `auto`
+  and inspect the returned effective value.
+- Manual replay must preserve user inputs, output items, item IDs, call IDs, caller
+  metadata, and assistant phase values.
 
-Place raw Responses output formats under `text.format`. In SDK parse helpers,
-pass a Pydantic model as Python `text_format` or a Zod format as JavaScript
-`text.format`. Inspect message content items before using parsed data because a
-safety refusal arrives as its own `refusal` item.
+## Tools and structured output
 
-For each function call:
+### Function schemas and round trips
 
-1. Preserve all response output items in the next input.
-2. Parse the JSON-encoded `arguments`.
-3. Run the named function.
-4. Return a `function_call_output` with the unchanged `call_id`.
-5. Encode the normal result as a string, or supply the supported image/file
-   object array.
+- In Responses, omitted `strict` attempts strict mode. An incompatible schema falls
+  back to best effort and reports `strict: false`; set `strict: false` explicitly
+  when non-strict behavior is intended.
+- Preserve every output item. Return each function result as
+  `function_call_output` with the originating `call_id`.
+- A function result is usually a string but may be an array of image or file
+  objects.
 
-Keep the declared tool list stable and use an `allowed_tools` `tool_choice` to
-restrict a turn without disturbing prompt-cache reuse. Remember that with tool
-search the restriction applies only to tools already loaded for that turn.
+### Structured data and refusals
 
-Do not combine built-in tools with parallel function calling. Set
-`parallel_tool_calls: false` to permit at most one call. Read
-[tools-and-structured-output.md](references/tools-and-structured-output.md)
-before enabling parallel calls, deferred loading, programmatic calling,
-multi-agent Responses, custom grammars, or function-call streaming.
+- Put raw structured formats under `text.format`.
+- Python parse helpers accept a Pydantic model through `text_format`; JavaScript
+  helpers accept a Zod format through `text.format`.
+- Inspect message content items: a safety refusal is a distinct `refusal` item and
+  does not conform to the requested schema.
 
-## Prompt caching quick reference
+### Tool orchestration
 
-For GPT-5.6-family caching, set a stable `prompt_cache_key` and preserve the
-exact prefix through the selected breakpoint. Shard busy traffic while keeping
-identical prefixes on the same key; keep aggregate traffic sharing one key
-near 15 requests per minute.
+- Keep `tool_search_call` and `tool_search_output` items in history when deferred
+  functions are discovered.
+- Use `tool_choice` with `type: "allowed_tools"` to restrict a stable full tool list
+  without destroying prompt-cache reuse.
+- Do not combine built-in tools with parallel function calling.
+- When handling streamed calls, aggregate argument deltas by `output_index` and
+  associate them with the call by `item_id`.
+- Hosts using programmatic or multi-agent calling must recognize, preserve, and
+  replay every specialized call, output, message, caller, and `call_id` item.
 
-Use `prompt_cache_options: {"mode": "explicit", "ttl": "30m"}` with
-`prompt_cache_breakpoint` for measured boundaries. The TTL is a minimum and
-`30m` is the only supported value. An explicit-mode request with no markers
-disables caching and writes. Do not send these fields to pre-GPT-5.6 models.
+## Prompt caching
 
-Cache writes are reported as `cache_write_tokens` and cost 1.25 times uncached
-input. Read [models-and-prompt-caching.md](references/models-and-prompt-caching.md)
-for write limits, lookup rules, compatible blocks, older retention policies,
-and Zero Data Retention defaults.
+### Prefer explicit boundaries for measured prefixes
 
-## Service tier and realtime quick reference
+- Implicit caching places a managed breakpoint near the latest user or tool message;
+  a changing suffix can therefore displace a stable prefix.
+- Use `prompt_cache_options` with `prompt_cache_breakpoint` for measured stable
+  boundaries on GPT-5.6 and later.
+- Set `prompt_cache_key` and shard busy traffic with a stable mapping that keeps
+  identical prefixes on the same key.
+- A cache hit still requires an exact rendered-prefix match and at least 1,024
+  tokens in that prefix.
 
-Flex uses Batch API token rates but can run beyond the SDK's ten-minute default
-timeout. Increase the timeout when appropriate. Retry its uncharged
-`429 Resource Unavailable` with exponential backoff, or fall back to
-`service_tier: "auto"` or the project default.
+### Respect generation-specific retention
 
-Priority is for steady, latency-sensitive traffic. Inspect the response
-`service_tier`: project defaults roll out gradually, and ramp-limited Priority
-requests may execute as `default` at Standard rates.
+- GPT-5.6 uses `prompt_cache_options.ttl`; `30m` is its only supported value and is
+  a minimum lifetime.
+- Earlier models retain `prompt_cache_retention`, whose `in_memory` and `24h`
+  policies have maximum-retention semantics.
+- Cache writes appear as `cache_write_tokens` and cost 1.25 times uncached input.
+- Do not send explicit cache fields to pre-GPT-5.6 models; they reject those fields.
 
-For realtime work, select the dedicated endpoint and lifecycle:
+## Service tiers and Realtime
 
-| Workload | Model and endpoint |
-| --- | --- |
-| Stateful voice agent | `gpt-realtime-2.1` on `/v1/realtime` |
-| Continuous translation | `gpt-realtime-translate` on `/v1/realtime/translations` |
-| Live transcript deltas | `gpt-realtime-whisper` |
+### Processing tiers
 
-Translation begins without `response.create` or a client-committed user turn.
-Use the `OpenAI-Safety-Identifier` header for realtime sessions; a Responses
-`safety_identifier` does not carry over. Read
-[service-tiers-and-realtime.md](references/service-tiers-and-realtime.md) for
-credential setup, GA WebRTC configuration, event names, and tier constraints.
+- Flex uses Batch API token rates but can take longer than the SDK's ten-minute
+  default timeout. A capacity miss is an unbilled `429 Resource Unavailable`.
+- Retry Flex with exponential backoff, or use `service_tier: "auto"` to fall back to
+  the project's default processing mode.
+- Inspect returned `service_tier`: Priority can be downgraded to `default` by ramp
+  limits and billed at Standard rates.
+- Priority supports prompt-cache discounts and image inputs, but not long context,
+  fine-tuned models, or embeddings.
+- Ultrafast for `gpt-5.6-sol` is limited preview and must not be assumed available.
+
+### Realtime transport
+
+- Use `gpt-realtime-2.1` on `/v1/realtime` for stateful voice agents,
+  `gpt-realtime-translate` for continuous translation, and
+  `gpt-realtime-whisper` for transcript deltas.
+- Translation starts without `response.create` or a committed user turn.
+- Realtime uses the `OpenAI-Safety-Identifier` header, not the Responses
+  `safety_identifier` parameter.
+- Client credentials come from `POST /v1/realtime/client_secrets`; GA WebRTC uses
+  `/v1/realtime/calls`.
+- Update handlers to the GA output-text, output-audio, and output-audio-transcript
+  delta event names documented in the Realtime reference.

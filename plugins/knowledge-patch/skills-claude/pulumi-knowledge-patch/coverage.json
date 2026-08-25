@@ -2,7 +2,7 @@
   "patch": "pulumi-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T12:32:41Z",
+  "built_at": "2026-08-21T22:38:40Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -58,6 +58,11 @@
       "build": "included"
     },
     "3.249.0-3.254.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.255.0-3.258.0": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

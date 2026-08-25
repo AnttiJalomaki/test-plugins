@@ -2,7 +2,7 @@
   "patch": "laravel-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T07:07:08Z",
+  "built_at": "2026-08-21T11:16:49Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -108,6 +108,11 @@
       "build": "included"
     },
     "2026-07": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-08": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

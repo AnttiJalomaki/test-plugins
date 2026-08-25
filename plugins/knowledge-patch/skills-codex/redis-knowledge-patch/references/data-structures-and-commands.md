@@ -1,90 +1,89 @@
 # Data Structures and Commands
 
-Use this reference when implementing counters, atomic string changes, stream
-production and consumption, notifications, bit operations, sorted-set
-combinations, or Cuckoo Filter restore flows.
+Use this reference for command behavior involving strings, hashes, lists,
+sets, streams, notifications, and probabilistic structures.
 
-## Array and window counters
+## Arrays and compact hashes
 
 Redis 8.8 adds Array as a data structure.
 
-`INCREX` combines the behavior needed for window-counter rate limiting:
+Redis 8.10 adds a compact hash encoding that stores shared field names once
+for keys with the same schema, reducing memory for repeated hash shapes. The
+new `HIMPORT` command provides high-throughput bulk insertion for compact
+hashes. This compact-hash guidance comes from batch `8.10.0`.
 
-- `INCR`, `INCRBY`, or `INCRBYFLOAT`-style increments;
-- lower or upper bounds; and
-- expiration.
+## String compare, delete, and multi-key writes
 
-## Atomic string operations
-
-Redis 8.4 adds `DIGEST` and `DELEX` and extends `SET` for atomic
+Redis 8.4 adds `DIGEST` and `DELEX`, plus `SET` extensions, for atomic
 compare-and-set and compare-and-delete operations on string keys.
 
-`MSETEX` atomically sets multiple string keys and updates their expiration. If
-using it on an older 8.4 maintenance release, account for the ACL key-pattern
-bypass fixed in 8.4.4.
+`MSETEX` atomically sets multiple string keys and updates their expiration.
+Redis 8.4.4 fixes an ACL key-pattern bypass in this command; apply that floor
+before granting access.
 
-## Stream deletion and references
+## Window counters with `INCREX`
 
-Redis 8.2 adds `XDELEX` and `XACKDEL` and extends `XADD` and `XTRIM`. The stream
-deletion controls include these reference strategies:
+Redis 8.8 adds `INCREX`. It combines the behavior of `INCR`, `INCRBY`, and
+`INCRBYFLOAT` with bounds and expiration, making it suitable for window-counter
+rate limiting without a multi-command race.
 
-- `DELREF`
-- `ACKED`
+## Multi-element list moves
 
-Before enabling the new commands on untrusted input, account for the
-`XACKDEL` stack-overflow/RCE fix in 8.2.3.
+`LMOVEM` moves multiple elements between lists. `BLMOVEM` supplies the
+blocking form.
 
-## Reading and releasing pending stream entries
+## Set and sorted-set aggregation
 
-Redis 8.4 adds `CLAIM min-idle-time` to `XREADGROUP`. One read can claim and
-return pending entries whose idle time is high enough while also consuming new
-entries.
+`SUNIONCARD` returns the cardinality of the union of multiple sets, while
+`SDIFFCARD` returns the cardinality of their difference.
 
-Redis 8.8 adds `XNACK`, which lets a stream consumer explicitly release pending
-messages.
+In Redis 8.8, `ZUNION`, `ZINTER`, `ZUNIONSTORE`, and `ZINTERSTORE` accept the
+`COUNT` aggregator.
+
+## Additional `BITOP` operators
+
+Redis 8.2 adds `DIFF`, `DIFF1`, `ANDOR`, and `ONE` to `BITOP`.
+
+## Stream deletion reference controls
+
+Redis 8.2 introduces `XDELEX` and `XACKDEL` and extends `XADD` and `XTRIM`.
+The deletion controls include `DELREF` and `ACKED` reference strategies.
+
+## Claim pending entries while reading new ones
+
+Redis 8.4 adds `CLAIM min-idle-time` to `XREADGROUP`. One read can consume both
+sufficiently idle pending entries and incoming entries.
 
 ## Idempotent stream production
 
-Redis 8.6 adds `IDMPAUTO` and `IDMP` to `XADD` for at-most-once production. The
-configuration settings `stream-idmp-duration` and `stream-idmp-maxsize` provide
-defaults.
+Redis 8.6 adds `IDMPAUTO` and `IDMP` to `XADD` for at-most-once production.
+`stream-idmp-duration` and `stream-idmp-maxsize` provide defaults.
 
-Redis 8.6.0 warns against using these options when both conditions hold:
+Redis 8.6.0 warns against using those options with both `appendonly yes` and
+`aof-use-rdb-preamble no`. Redis 8.6.2 fixes AOF rewrite and state restoration
+for idempotency state.
 
-- `appendonly yes`
-- `aof-use-rdb-preamble no`
+## Explicit release of pending messages
 
-Redis 8.6.2 fixes AOF rewrite and state-restoration problems involving the
-idempotency state.
+Redis 8.8 adds `XNACK`, allowing a stream consumer to release pending messages
+explicitly.
 
-## Bit operations
+## Bounded stream reads
 
-Redis 8.2 adds four `BITOP` operators:
-
-- `DIFF`
-- `DIFF1`
-- `ANDOR`
-- `ONE`
-
-## Sorted-set combinations
-
-Redis 8.8 allows `ZUNION`, `ZINTER`, `ZUNIONSTORE`, and `ZINTERSTORE` to use the
-`COUNT` aggregator.
+`XREAD` and `XREADGROUP` accept `MAXCOUNT` and `MAXSIZE`. `MAXCOUNT` caps the
+cumulative number of entries in a reply; `MAXSIZE` caps cumulative reply size.
 
 ## Keyspace and hash-field notifications
 
-Redis 8.2 adds two keyspace notification events:
+Redis 8.2 adds `OVERWRITTEN` for complete value replacement and `TYPE_CHANGED`
+for a key type change.
 
-- `OVERWRITTEN` for complete replacement of a value;
-- `TYPE_CHANGED` when a key's type changes.
-
-Redis 8.8 adds hash subkey notifications, enabling field-level events.
+Redis 8.8 adds hash subkey notifications, enabling field-level notification
+events rather than only key-level events.
 
 ## Cuckoo Filter failover durability
 
-Redis 8.2.8, 8.4.5, and 8.6.5 replicate `CF.LOADCHUNK` chunks. Earlier affected
-maintenance releases can silently lose restored Cuckoo Filter data on failover.
-
-The command and data-structure changes above originate in the included
-`8.0-8.6` and `8.8.1` batches; version-specific constraints are stated beside
-the affected operation rather than organized as a release log.
+Redis 8.2.8, 8.4.5, and 8.6.5 replicate `CF.LOADCHUNK` chunks. Use one of these
+fixed maintenance releases for the deployed line to prevent silent Cuckoo
+Filter loss after failover. This maintenance guidance originates in source
+batch `8.0-8.6`.

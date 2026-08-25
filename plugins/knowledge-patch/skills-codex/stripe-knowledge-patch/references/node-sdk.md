@@ -1,287 +1,234 @@
-# Stripe Node SDK v18-v21
+# Stripe Node SDK
 
-## SDK-to-API pins
+## Version, API pin, and runtime matrix (`node-sdk-stable-2025-2026`)
 
-| Node SDK | Associated API release |
+| SDK | Pinned API release |
 | --- | --- |
-| v18.0.0 | `2025-03-31.basil` |
-| v18.1.0 | `2025-04-30.basil` |
-| v18.2.0 | `2025-05-28.basil` |
-| v18.3.0 | `2025-06-30.basil` |
-| v18.4.0 | `2025-07-30.basil` |
-| v18.5.0 | `2025-08-27.basil` |
-| v19.0.0 | `2025-09-30.clover` |
-| v19.2.0 | `2025-10-29.clover` |
-| v20.0.0 | `2025-11-17.clover` |
-| v20.1.0 | `2025-12-15.clover` |
-| v20.3.0 | `2026-01-28.clover` |
-| v20.4.0 | `2026-02-25.clover` |
-| v21.0.0 | `2026-03-25.dahlia` |
+| v18 | `2025-03-31.basil` |
+| v19 | `2025-09-30.clover` |
+| v20 | `2025-11-17.clover` |
+| v21 | `2026-03-25.dahlia` |
 
-Starting with v18.4.0, `Stripe.API_VERSION` exposes the package's active API pin.
+V19 drops Node versions below 16 and deprecates Node 16. V21 drops Node 16.
+From v18.1, `@types/node` is an optional peer dependency rather than an
+unconditional dependency.
 
-## Runtime and dependency requirements
+Node v22.4 changes its pinned API version to `2026-07-29.dahlia`
+(`sdk-stable-through-2026-08-10`). Test the Dahlia contract when relying on the
+SDK default and taking that release.
 
-- v19 drops Node versions below 16 and deprecates Node 16.
-- v21 drops Node 16, making Node 18 the minimum supported line.
-- v18.1.0 changes `@types/node` to an optional peer dependency. Applications that consume Node types should declare their chosen version directly.
+## Webhooks and event notifications
 
-## Core breaking changes
+### V18 webhook accessor (`node-sdk-stable-2025-2026`)
 
-### Webhook accessor in v18
-
-`Stripe.webhooks` and `stripe.webhooks` are plain objects, not factory functions. Replace `stripe.webhooks().constructEvent(...)` with property access.
+`Stripe.webhooks` and an instance's `webhooks` member are plain objects, not
+factory functions. Replace `Stripe.webhooks().constructEvent(...)` with:
 
 ```ts
-const event = stripe.webhooks.constructEvent(payload, signature, secret);
+const event = Stripe.webhooks.constructEvent(payload, signature, secret);
 ```
 
-### Removed operation type aliases
+### V19 event notification API (`node-sdk-stable-2025-2026`)
 
-v18 removes unscoped aliases for operations on:
+V19 moves event types from `Stripe.V2` to `Stripe.V2.Core`, renames
+`parseThinEvent` to `parseEventNotification`, removes `Stripe.ThinEvent`, and
+returns the typed `Stripe.V2.EventNotification` union with `fetchEvent()` and,
+when applicable, `fetchRelatedObject()`.
 
-- capabilities;
-- cash balances;
-- Credit Note Line Items;
-- Customer balance and cash-balance transactions;
-- Customer sources;
-- external accounts;
-- fee refunds;
-- Invoice Line Items;
-- Login Links;
-- Persons; and
-- Transfer Reversals.
+Cast unknown notifications to `UnknownEventNotification`. From v19.1, its fetch
+method is always present and returns `null` when no related object exists.
 
-Use resource-owned aliases whose names begin with the owning resource. Examples:
+### Parser separation and verified handoff
+
+V21 throws when a webhook payload is passed to the wrong parser
+(`node-sdk-stable-2025-2026`). Use `webhooks.constructEvent` for snapshots and
+`parseEventNotification` for event notifications.
+
+Node v22.5 adds parsers for payloads whose authenticity was verified before
+queueing or handoff (`sdk-stable-through-2026-08-10`):
+
+```js
+const event = stripe.webhooks.constructEventWithoutVerification(payload);
+const notification = stripe.parseEventNotificationWithoutVerification(payload);
+```
+
+The available methods are
+`stripe.webhooks.constructEventWithoutVerification()`,
+`stripe.constructEventWithoutVerification()`, and
+`stripe.parseEventNotificationWithoutVerification()`. They also parse AWS
+EventBridge and Azure Event Grid deliveries natively. Do not use them for an
+unverified inbound payload.
+
+## Request context, transport, and serialization
+
+### StripeContext migration (`node-sdk-stable-2025-2026`)
+
+V18.3 adds `stripeContext` to per-request options and client configuration. V19
+represents notification context as a request-serializable `StripeContext` object
+instead of a string. V19 also stops stripping `stripe-context` from v1 requests
+or `stripe-account` from v2 requests. Do not send both headers; prefer context
+when migrating.
+
+### Raw requests (`node-sdk-stable-2025-2026`)
+
+From v18.1, `rawRequest` accepts `host` and `streaming` options, while request
+data is accepted only for `POST`:
+
+```ts
+await stripe.rawRequest('GET', '/v1/files/file_123/contents', {}, {
+  host: 'files.stripe.com',
+  streaming: true,
+});
+```
+
+V18.4 exposes the pinned API version as `Stripe.API_VERSION`. Node v22.5 exposes
+the major API version separately as `stripe.major_api_version`
+(`sdk-stable-through-2026-08-10`):
+
+```js
+const majorApiVersion = stripe.major_api_version;
+```
+
+### V2 query and failure behavior (`node-sdk-stable-2025-2026`)
+
+V20 serializes arrays for v2 retrieve and list calls with indexed keys such as
+`include[0]=foo&include[1]=bar`; update mock-server assertions. It replaces
+event-list `gt`/`gte`/`lt`/`lte` filters with `created`. From v20.3.1, failed v2
+list calls reject normally instead of crashing Node through an unhandled
+rejection.
+
+### Alternate runtimes and release tags (`node-sdk-stable-2025-2026`)
+
+Starting with v19, npm releases use `latest`, `public-preview`, or
+`private-preview` rather than `beta`. V19 fixes FetchHttpClient file uploads in
+runtimes such as Bun, Unicode JSON content lengths, and Buffer-dependent
+encoding in other JavaScript runtimes. V20.1.2 also fixes multipart upload
+content lengths.
+
+## Generated types and object shapes
+
+### Removed v18 aliases (`node-sdk-stable-2025-2026`)
+
+V18 removes February 2024 deprecated types in favor of resource-scoped names:
 
 | Removed | Replacement |
 | --- | --- |
-| `CapabilityRetrieveParams` | `AccountRetrieveCapabilityParams` |
-| `CustomerSourceVerifyParams` | `CustomerVerifySourceParams` |
-| `FeeRefundCreateParams` | `ApplicationFeeCreateRefundParams` |
-| `PersonUpdateParams` | `AccountUpdatePersonParams` |
-| `AccountDebitSource` | `Account` |
+| `CapabilityListParams` | `AccountListCapabilitiesParams` |
+| `PersonCreateParams` | `AccountCreatePersonParams` |
+| `InvoiceLineItemUpdateParams` | `InvoiceUpdateLineItemParams` |
+| `TransferReversalCreateParams` | `TransferCreateReversalParams` |
 
-### Other removed Clover shapes
+Migrate imports because the aliases are no longer exported.
 
-v19 also changes generated types beyond the main API migration:
+### V19 response and compile-time breaks (`node-sdk-stable-2025-2026`)
 
-- Account Session components remove `balance_report` and `payout_reconciliation_report`.
-- Weekly payout days remove Saturday and Sunday.
-- `PaymentMethodUpdateParams` removes `link` and `pay_by_bank`.
-- `Invoice.id` becomes required, including in locally constructed and narrowed Invoice shapes.
+V2 delete methods return `V2DeletedObject` with the deleted object's ID and
+type. Nullable v2 properties become optional (`prop?: string`) instead of
+explicit null unions (`prop: string | null`), so use presence checks rather than
+null-only checks.
 
-## Event notifications and request context
+V19 also removes `balance_report` and `payout_reconciliation_report` from
+AccountSession components, weekend values from weekly payout days, and `link`
+and `pay_by_bank` from `PaymentMethodUpdateParams`; `Invoice.id` becomes
+required. These are compile-time breaks even without use of new Clover
+resources.
 
-### Context migration
+### Decimal and integer values (`node-sdk-stable-2025-2026`)
 
-- v18.3.0 adds `stripeContext` to `RequestOptions` and `StripeConfig`.
-- v19 adds a serializable `StripeContext` class.
-- `EventNotification.context` changes from `string` to `StripeContext`.
-- v19 no longer strips `stripe-context` from v1 requests or `stripe-account` from v2 requests.
-- The server can reject requests carrying both headers. Migrate shared code to context and remove `stripeAccount` when both would be sent.
-
-### Namespace and parser migration
-
-v19 moves these types from `Stripe.V2` into `Stripe.V2.Core`:
-
-- `Stripe.V2.EventDestination` to `Stripe.V2.Core.EventDestination`;
-- `Stripe.V2.Event` to `Stripe.V2.Core.Event`;
-- `Stripe.V2.EventBase` to `Stripe.V2.Core.EventBase`; and
-- `Stripe.V2.Events.RelatedObject`, now `Stripe.V2.Core.Events.RelatedObject`.
-
-It also:
-
-- renames `StripeClient.parseThinEvent` to `parseEventNotification`;
-- removes `Stripe.ThinEvent`;
-- returns the typed `Stripe.V2.EventNotification` union; and
-- adds `relatedObject`, `fetchRelatedObject()`, and `fetchEvent()` support.
-
-From v19.1.0, `UnknownEventNotification` declares `fetchEvent()`. `fetchRelatedObject()` is always callable and returns `null` when no related object exists.
-
-### Parser separation in v21
-
-v21 throws when a payload is passed to the wrong webhook parser. Use:
-
-- `parseEventNotification` for thin notifications; and
-- `webhooks.constructEvent` for snapshot events.
-
-v21 also adds distinct OAuth error classes and runtime handling for string-encoded v2 `int64` fields.
-
-## V2 response and request behavior
-
-### Response types
-
-- v19 delete methods return `V2DeletedObject`, including the deleted object's ID and type.
-- Nullable v2 response fields change from `prop: T | null` to optional `prop?: T`.
-
-### List serialization and failures
-
-- v20 serializes arrays on v2 retrieve and list calls with indexed keys such as `include[0]=foo&include[1]=bar`. Update mocks that expect repeated `include=...` keys.
-- Upgrade to at least v20.3.1. Earlier v20 builds can turn a v2 list API error into an unhandled rejection that crashes Node rather than normally rejecting the list operation.
-
-## HTTP clients and raw requests
-
-### Raw file streaming
-
-From v18.1.1, `rawRequest` accepts `host` and `streaming` options, enabling direct streaming from the Files host.
-
-```ts
-const file = await stripe.rawRequest(
-  'GET',
-  '/v1/files/file_123/contents',
-  {},
-  {host: 'files.stripe.com', streaming: true}
-);
-```
-
-v18.2.1 limits request data to POST requests and stops incorrectly warning about v2 GET requests.
-
-### Alternate runtimes and request bodies
-
-- v19 fixes `FetchHttpClient` file uploads in alternate runtimes such as Bun. The regression affects v18.1.0 through v18.5.0.
-- v19 computes JSON body length correctly for Unicode.
-- Non-Node environments use `TextEncoder` instead of `Buffer.byteLength`.
-- v20.1.2 fixes multipart upload content-length calculation.
-
-## Decimal values in v21
-
-Every generated `decimal_string` request and response field becomes `Stripe.Decimal` instead of `string`, including:
-
-- Checkout foreign-exchange rates;
-- Climate quantities;
-- Billing decimal quantities and unit amounts;
-- Issuing amount fields;
-- Plan and Price decimal amounts; and
-- Accounts v2 ownership percentages.
-
-Construct with `Stripe.Decimal.from(...)` and serialize explicitly:
+V21 changes every `decimal_string` request and response field from `string` to
+the vendored `Stripe.Decimal`, including decimal prices and quantities, Climate
+amounts, Issuing amounts, ownership percentages, and Checkout currency-
+conversion rates:
 
 ```ts
 const quantity = Stripe.Decimal.from('1.25');
 const serialized = quantity.toString();
 ```
 
-Use v21.0.1 or newer for corrected CommonJS and ESM exports.
+V21 also supports v2 int64 fields encoded as strings. Preserve those strings
+instead of coercing them through JavaScript numbers. Dedicated OAuth error
+classes require error classifiers to accept the new subclasses.
 
-## Preview package channels
+### Non-exhaustive enums and removed fields (`sdk-stable-through-2026-08-10`)
 
-Starting with v19, preview packages no longer use the `beta` npm dist-tag. Select `latest`, `public-preview`, or `private-preview` for the intended release phase.
+Node v22.4 adds shared `OtherString` typing for non-exhaustive generated enums.
+Switches still need an unknown-value branch.
 
-## Generated Accounts, Connect, and financial contracts
+V22.4 removes `proof_of_registration` from Account creation documents and
+`dynamic_tax_rates` from Checkout Session line-item creation parameters. Remove
+those fields before upgrading generated request code.
 
-### Account and Person data
+Generated error unions add `tax_id_prohibited`,
+`forwarding_api_upstream_error`, `customer_session_expired`,
+`india_recurring_payment_mandate_canceled`,
+`payment_intent_rate_limit_exceeded`, `account_token_required_for_v2_account`,
+`request_blocked`, `storer_capability_missing`, and
+`storer_capability_not_active` (`node-sdk-stable-2025-2026`). Add cases and a
+forward-compatible fallback.
 
-- v18.1.0 adds `minority_owned_business_designation`, company `registration_date`, and Person `us_cfpb_data`.
-- v18.3.0 adds Account proof-of-address fields and payout-day settings.
-- v18.4.0 adds Account Session instant-payout promotion; Identity related-person Account and Person fields become required.
-- v18.5.0 adds Account Session balance-report, payout-details, and payout-reconciliation components.
-- v20.1.0 generates `V2.Core.Account`, `AccountToken`, `AccountLink`, `AccountPerson`, and `AccountPersonToken`, with create, list, retrieve, update, close, and delete operations as applicable.
-- v20.3.0 adds more Accounts v2 business-identity fields.
+## Generated resource surfaces (`node-sdk-stable-2025-2026`)
 
-### Accounts v2 notifications
+### Billing, Checkout, and payment records
 
-v20.2 adds typed notifications for:
+April 2025 types add billing-details tax IDs, Checkout `wallet_options`,
+automatic-tax providers on Checkout Sessions, Invoices, and Quotes,
+ConfirmationToken installment test helpers, and Refund `pending_reason`.
 
-- Account creation and closure;
-- general and include-dependent Account updates;
-- capability-status updates;
-- Account Link returns; and
-- Account Person creation, update, and deletion.
+May adds Invoice `attach_payment`, refund-and-dispute prefunding, balance types,
+mixed Credit Notes with pre- and post-payment amounts, the
+`invoice.payment.paid` snapshot event, and restored billing-threshold fields.
 
-Account and Person notifications expose the corresponding `V2.Core.Account` or `V2.Core.AccountPerson` as their related object.
+July and August add Checkout `origin_context`, rendering templates,
+schedule-phase duration and cancel-at sentinels, Payment Link inline
+`price_data`, named Billing Portal configurations, payout methods, PIX IOF
+handling, and additional payment transaction IDs.
 
-### Financial Connections, balances, and payouts
+October adds `PaymentAttemptRecord` list and retrieve and `PaymentRecord`
+retrieve plus payment-attempt, payment, and refund reporting. Invoice payments
+and credit-note refunds can reference payment records rather than only
+PaymentIntents and ordinary refunds.
 
-- v18.2.0 adds Account Session dispute components plus balance-type and dispute-prefunding fields.
-- v18.2.0 adds the Pix Account capability.
-- v18.5.0 adds `Payout.payout_method`.
-- v20.0.0 adds Financial Connections account-number fields and account-number expiry/update events; Session client secrets become nullable.
-- v20.3.0 adds reserve-related balance types.
+December adds PayTo across Intent, Checkout, Billing, Payment Link, mandate, and
+payment-method surfaces. Checkout line items become updateable and accept
+metadata, debit-method details add expected debit dates, and Payment Records add
+richer card details and reporter attribution.
 
-## Generated Billing and invoicing contracts
+February 2026 adds Reserve Hold, Plan, and Release resources with snapshot
+events, Pay by Bank billing support, US-bank transaction purpose, and
+`payment_behavior` when deleting a Subscription Item.
 
-- v18.1.0 makes `InvoiceLineItem.parent.subscription_item_details.subscription` nullable and adds Affirm Invoice settings.
-- v18.2.0 adds Invoice `attach_payment` and the `invoice_payment.paid` event.
-- v18.2.0 requires `usage_threshold.meter` when creating Billing Alerts.
-- v18.2.0 restores Subscription `billing_thresholds` to generated types.
-- v18.2.0 adds Credit Note pre- and post-payment amounts and the `mixed` type.
-- v18.3.0 adds Subscription `migrate` and requires hosted payment-method saving in Account Invoice settings.
-- v18.4.0 adds adjustable quantities to Billing Portal Subscription updates and Invoice rendering-template selection.
-- v18.4.0 adds Schedule Phase `duration`; Subscription cancellation accepts `max_period_end` or `min_period_end`.
-- v18.5.0 adds named Billing Portal configurations and metadata plus periods on Subscription-added Invoice Items.
-- v19.2.0 makes Credit Grant `category` optional and adds `invoice.payment_attempt_required`.
-- v19.2.0 lets Invoice Payments attach and filter by Payment Record.
-- v19.3 adds `payment_record` as an InvoicePayment discriminator.
-- v20.1.0 makes Invoice Item and Invoice Line Item Prices expandable and adds Invoice Line Item `subtotal`.
-- v20.3.0 requires PayTo payment settings on Invoice and Subscription responses.
-- v20.4.0 adds Pay by Bank to Invoice and Subscription settings and `payment_behavior` to Subscription Item deletion.
+### Accounts, identity, and financial data
 
-## Generated Checkout and payment contracts
+April 2025 types add account compliance fields. June adds account payout-day
+settings, Identity related-person matching, and Treasury status filtering. July
+and August add AccountSession reporting components and Issuing card expiration
+input.
 
-### Checkout and payment methods
+November adds `Tax.Association.find`, Financial Connections account-number data
+and expiry/update events, and nullable Financial Connections Session client
+secrets. December exposes v2 Core Account, AccountPerson, token, and link
+resources, and Identity Sessions can reference customer accounts.
 
-- v18.1.0 adds billing-details `tax_id`, Checkout `wallet_options`, automatic-tax `provider`, ConfirmationToken test payment-method options and card installments, Refund `pending_reason`, Billie PaymentIntent options, Pix PaymentMethodConfiguration, Klarna PaymentMethod Domains, and more tax IDs and registration countries.
-- v18.2.0 makes Naver Pay `buyer_id` required.
-- v18.3.0 adds crypto capabilities and payment-method fields plus recurring or future-use Klarna options.
-- v18.4.0 adds Checkout `origin_context`, Pix future usage, and New Zealand bank accounts.
-- v18.4.0 lets Payment Link lines use inline `price_data` instead of `price`.
-- v18.5.0 adds transaction IDs across local methods, PayNow Reader and Location data, and Pix `amount_includes_iof`.
-- v20.1.0 adds PayTo throughout payment flows.
+January 2026 adds typed notifications for v2 Account, AccountPerson, and
+AccountLink changes plus additional v2 account identity fields.
 
-### Payment records, attempts, and line items
+Node v22.4 also exposes `FinancialConnections.Authorization`, adds
+`bank_account_token` to Financial Connections Sessions, and adds
+`sepa_debit_payments` to Account update settings
+(`sdk-stable-through-2026-08-10`). Preserve all three generated additions.
 
-- v19.2.0 adds `PaymentAttemptRecord`, `PaymentIntentAmountDetailsLineItem`, and `PaymentRecord` with list/retrieve operations and Payment Record reporting methods.
-- v19.2.0 adds SetupIntent payment-method exclusions.
-- v19.3 adds per-method `capture_method` for `card_present` PaymentIntents.
-- v20.0.0 adds PaymentIntent `hooks`.
-- v20.1.0 adds Checkout Line Item metadata and updates, Payment Record card details, and optional `PaymentIntent.transfer_data` and `Product.tax_code`.
-- v20.3.0 adds adjustable quantities on Line Items and 3DS versions `2.3.0` and `2.3.1`.
-- v20.4.0 makes Boleto tax IDs nullable and US-bank expected debit dates required on Payment Records.
-- v20.4.0 adds Bacs mandate display details and US-bank `transaction_purpose`.
+### Terminal, risk, and payment methods
 
-### Customer Sessions
+May 2025 adds Terminal reader input collection and test helpers. June adds
+Terminal `collect_payment_method` and `confirm_payment_intent`, crypto
+payment-method surfaces, and expanded card-installment plans.
 
-v19.2.0 adds Customer Session mobile-sheet components.
+November adds `Terminal.OnboardingLink.create`, PaymentIntent hooks,
+card-present capture-method options, and refund destination details. January
+2026 adds `Radar.PaymentEvaluation.create` and 3DS versions `2.3.0` and `2.3.1`.
+February adds Terminal S710 and cellular configuration plus Terminal Wi-Fi
+certificate file purposes.
 
-## Generated Terminal, Issuing, Radar, Tax, and Treasury contracts
-
-### Terminal
-
-- v18.2.0 adds Terminal Reader input collection and success/timeout test helpers.
-- v18.3.0 adds Terminal Reader `collect_payment_method`, `confirm_payment_intent`, and typed `terminal.reader.action_updated` snapshot events.
-- v18.5.0 adds Terminal Android APK file purposes and card input for Reader test helpers.
-- v19.2.0 adds Terminal Reader `last_seen_at`.
-- v20.0.0 adds `Terminal.OnboardingLink.create`.
-- v20.3.0 removes BGN from Terminal tipping.
-- v20.4.0 adds Wi-Fi certificate/private-key file purposes, cellular configuration, and S710 device values.
-
-### Issuing and Radar
-
-- v18.5.0 adds expiration fields to Issuing Card creation.
-- v20.3.0 adds `Radar.PaymentEvaluation.create`.
-- v21 renames `risk_level` to `level` under both `Issuing.AuthorizationCreateParams.testHelpers.risk_assessment.card_testing_risk` and `merchant_dispute_risk`.
-- v21 changes `Radar.PaymentEvaluation`: `recommended_action` and `signals` replace `insights` from the earlier preview shape.
-
-### Tax, Identity, Reserve, and Treasury
-
-- v18.1.0 makes `Tax.CalculationLineItem.reference` required.
-- v18.3.0 adds Identity related-person matching and a Treasury Financial Account status filter.
-- v20.0.0 adds `Tax.Association.find`.
-- v20.1.0 adds Identity `related_customer_account`.
-- v20.3.0 adds a `topup` linked flow to Treasury Received Debits.
-- v20.4.0 adds `Reserve.Hold`, `Reserve.Plan`, and `Reserve.Release` plus their snapshot events.
-
-## V2 events and filters
-
-- v18.1.0 adds Event `context`.
-- v19.2.0 adds comparison/type filters to `V2.Core.EventListParams` and adds `balance_settings.updated`.
-- v20.0.0 replaces v2 Event-list `gt`, `gte`, `lt`, and `lte` filters with `created`.
-- v20.1.0 adds `changes` to `V2.Core.Event`.
-
-## Capability and error unions
-
-- v18.4.0 removes `disabled` from `Capability.status`.
-- During Basil, error unions add `tax_id_prohibited`, `forwarding_api_upstream_error`, `customer_session_expired`, and `india_recurring_payment_mandate_canceled`.
-- During Clover, they add `payment_intent_rate_limit_exceeded`, `account_token_required_for_v2_account`, `request_blocked`, `storer_capability_missing`, and `storer_capability_not_active`.
-- During Dahlia, they add `service_period_coupon_with_metered_tiered_item_unsupported`.
+Generated SDKs add `stripe_internal_error` to Issuing Authorization request-
+history reasons (`sdk-stable-through-2026-08-10`). Accept the value in
+exhaustive handling.

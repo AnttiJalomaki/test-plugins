@@ -1,9 +1,9 @@
 # JSX, Events, and Serialization
 
-## Raw store access
+## Accessing raw store content
 
-Use `unwrapStore()` when an API needs the store's underlying content, including
-structured cloning and IndexedDB operations:
+`unwrapStore()` exposes the underlying contents of a store. Use it when an
+API such as structured cloning or IndexedDB cannot accept the reactive proxy.
 
 ```ts
 import { unwrapStore } from '@builder.io/qwik';
@@ -11,30 +11,51 @@ import { unwrapStore } from '@builder.io/qwik';
 const copy = structuredClone(unwrapStore(store));
 ```
 
-Keep normal component reads on the reactive store; unwrap only for the boundary
-that requires raw content.
+The returned value bypasses the store proxy. Do not treat raw mutations as
+reactive store updates.
 
-## MDX component mapping and layouts
+## Direct build-constant exports
 
-Imported Qwik City MDX content accepts a `components` prop for custom component
-bindings. JavaScript expressions inside MDX can use props, and Qwik honors an
-MDX layout component exported as the default.
+Import `isDev`, `isBrowser`, and `isServer` directly from
+`@builder.io/qwik`. The older `@builder.io/qwik/build` entry point remains
+available.
+
+```ts
+import { isBrowser, isDev, isServer } from '@builder.io/qwik';
+```
+
+## Qwik City MDX components
+
+Imported MDX accepts a `components` prop for substituting custom components.
+MDX JavaScript expressions can use props, and Qwik honors default-exported
+MDX layout components.
 
 ```tsx
 import { component$ } from '@builder.io/qwik';
 import Content from './markdown.mdx';
 import MyComponent from './my-component';
 
-export default component$(() => <Content components={{ MyComponent }} />);
+export default component$(() => (
+  <Content components={{ MyComponent }} />
+));
 ```
 
-## View-transition events
+## View-transition event
 
-Qwik emits a `CustomEvent` named `qviewTransition` when a view transition
-starts. Listen for that event when code must coordinate with the transition.
+Qwik dispatches a `CustomEvent` named `qviewTransition` when a view
+transition starts. Code listening for the transition should use that exact
+case-sensitive event name.
 
-## Error boundaries
+## Reads without reactive subscriptions
 
-Use the `ErrorBoundary` component to contain component errors. Qwik also
-corrected `useErrorBoundary` behavior in 1.13, so code that worked around older
-hook behavior should be rechecked before retaining the workaround.
+`untrack()` accepts a signal or store directly. Its callback form also
+accepts arguments:
+
+```ts
+const signalValue = untrack(signal);
+const plainStoreRead = untrack(store);
+const result = untrack((a, b) => a + b, 1, 2);
+```
+
+Use these forms for reads that must not subscribe the current reactive
+consumer.

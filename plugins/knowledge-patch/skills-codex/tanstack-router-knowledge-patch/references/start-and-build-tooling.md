@@ -1,100 +1,72 @@
-# TanStack Start and build tooling
+# TanStack Start and Build Tooling
 
-## Deferred hydration boundaries
+## Preserve punctuation in virtual route definitions
 
-TanStack Start's compiler can code-split `Hydrate` boundaries. The integration:
+The route generator preserves dots in explicit virtual route paths and
+pathless layout IDs rather than treating them as flat-file separators. Leading
+and trailing underscores in virtual `route()` paths are literal URL
+characters.
 
-- preloads the generated client chunks;
-- preserves server-rendered fallback HTML until hydration;
-- replays interactions that triggered hydration after the boundary becomes
-  interactive;
-- works with both Vite and Rsbuild.
+Physical file routes still require bracket escapes for literal underscore
+segments. This includes index routes below pathless layouts, `physical()`
+prefixes, and `__virtual.ts` subtrees.
 
-## Hydration before initial matching
+## Resolve TypeScript aliases in virtual configuration
 
-Custom router hydration runs before the first client route match. Install
-hydrated configuration, such as request-specific URL rewrites, during that phase
-so it is present before SSR hydration compares route matches.
+Virtual route configuration files may import through aliases declared in
+`tsconfig`. The generator resolves those aliases while loading the
+configuration.
 
-## Runtime SSR asset transformation
+## Parse plain TypeScript transforms correctly
 
-TanStack Start SSR supports inline CSS manifests that hydrate without adding
-duplicate stylesheet links. `transformAssets` also supports runtime-configurable
-inline CSS and opt-in CSS URL templates.
+When a filename is available, router and Start import-protection transforms
+parse plain TypeScript files without JSX. Angle-bracket type assertions are no
+longer misread as JSX in those files.
 
-For Rsbuild client output, module scripts are the default and IIFE output is
+## Escape custom route-token assumptions
+
+File-based generation accepts custom `routeToken` and `indexToken` values that
+begin with regex metacharacters such as `+`.
+
+## Isolate multiple plugin instances
+
+Each router plugin instance holds explicit context instead of sharing global
+route metadata. Multiple instances therefore do not cross-transform each
+other's route files.
+
+## Select supported builders and peers
+
+`@tanstack/router-plugin` supports Rsbuild, accepts Vite 8 as a peer, and
+supports `vite-plugin-solid` beginning with `3.0.0-0`.
+
+For Rsbuild client output, module scripts are the default; IIFE output is
 available for classic-script environments. A `transformAssets` script callback
-receives only:
+receives only `{ kind: 'script', url }`, and cross-origin configuration for
+script assets uses the `script` key.
 
-```ts
-{ kind: 'script', url }
-```
+## Preserve route state during HMR
 
-Configure cross-origin behavior for script assets with the `script` key.
+React route HMR preserves state for auto-split components and functions with
+lowercase names. Development transforms cover split component groups and
+unsplit root shell, pending, and error options.
 
-## React Server Component imports
+Aliased route imports retain generated properties, and Vite Fast Refresh
+recognizes `createRootRouteWithContext` calls with type arguments. Webpack and
+Rspack no longer import the optional `react-refresh/runtime` package for route
+HMR.
 
-The `@tanstack/react-router` package root has a `react-server` export condition.
-It preserves the usual API surface while resolving `notFound` and `redirect`
-from a server-safe entry. React Server Components and server functions can keep
-using package-root imports:
+## Import server-safe router helpers from the root
+
+The `@tanstack/react-router` package has a `react-server` export condition. It
+preserves the normal API while resolving `notFound` and `redirect` through a
+server-safe entry, so React Server Components and server functions can import
+them from the package root.
 
 ```tsx
 import { notFound, redirect } from '@tanstack/react-router'
 ```
 
-## Intent tooling
+## Use intent tooling for Router and Start
 
-`@tanstack/intent` supplies agent-oriented skills and CLI entry points for
+`@tanstack/intent` publishes development-agent skills and CLI entry points for
 TanStack Router and TanStack Start packages.
-
-## Virtual route punctuation
-
-The route generator treats punctuation differently in explicit virtual config
-and physical file routes:
-
-- dots in explicit virtual route paths and pathless layout IDs are preserved;
-- leading and trailing underscores in virtual `route()` paths are literal URL
-  characters;
-- physical file routes continue to use bracket escapes for literal underscore
-  segments.
-
-The physical-file escape rule also applies to index routes beneath pathless
-layouts, `physical()` prefixes, and `__virtual.ts` subtrees.
-
-## Virtual config imports and tokens
-
-Virtual route config files may import through aliases defined in `tsconfig`; the
-route generator resolves those aliases while loading the config.
-
-Custom `routeToken` and `indexToken` values may begin with regex metacharacters,
-including `+`. The generator treats the configured token as a token rather than
-accidentally interpreting its first character as regex syntax.
-
-## Plain TypeScript transform parsing
-
-When a filename is available, router and Start import-protection transforms
-parse plain TypeScript files without JSX. Angle-bracket type assertions are
-therefore interpreted as TypeScript rather than misread as JSX.
-
-## Isolated plugin instances
-
-Every router plugin instance carries explicit context rather than using global
-route metadata. Multiple plugin instances can process separate route sets
-without cross-transforming each other's route files.
-
-## Supported build integrations
-
-`@tanstack/router-plugin` supports Rsbuild, accepts Vite 8 as a peer, and
-supports `vite-plugin-solid` starting at `3.0.0-0`.
-
-## Expanded React route HMR
-
-React route hot-module replacement preserves state for auto-split components
-and lowercase-named component functions. Development transforms cover split
-component groups and the unsplit root shell, pending, and error options.
-
-Aliased route imports retain generated properties during HMR transforms.
-`createRootRouteWithContext` calls with type arguments are recognized by Vite
-Fast Refresh. Webpack and Rspack route HMR no longer import the optional
-`react-refresh/runtime` package.

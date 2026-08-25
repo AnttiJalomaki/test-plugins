@@ -1,86 +1,175 @@
 # Cache, Filesystems, Redis, Sessions, and Locks
 
-## Cache stores and expiration
+## Blade context blocks (2025-07)
 
-- **Cache flush events** `[2025-03]`: listen for `CacheFlushed` when application
-  behavior must react to a store flush.
-- **Memoized stores** `[2025-04]`: `Cache::memo()` wraps the default or named
-  store with request-local memoization.
-- **Flexible memoized reads** `[2025-05]`: memoized stores support
-  `flexible()`, combining local memoization with stale-while-revalidate.
-- **Always-deferred refreshes** `[2025-05]`: pass `alwaysDefer: true` to
-  `Cache::flexible()` to defer regeneration even where the current context
-  would otherwise refresh immediately.
-- **Failover stores** `[2025-10]`: configure failover cache stores for fallback
-  when a primary store fails; emitted cache events identify the underlying
-  store that handled the operation.
-- **Single failover notifications** `[2026-01]`: `CacheFailedOver` and
-  `QueueFailedOver` fire only for the first failure in a failover attempt, not
-  once per failed backend.
-- **Lock-pruning control** `[2025-12]`: database-backed locks can disable their
-  probabilistic pruning lottery when pruning is managed separately.
-- **Typed cache retrieval** `[2026-02]`: cache repositories provide typed
-  getters for enforcing the expected cached value type.
-- **Driver-independent funnels** `[2026-02]`: `Cache::funnel()` provides
-  concurrency limiting with any cache driver.
-- **Wider database expirations** `[2026-03-laravel-12]`: custom database-cache
-  migrations should use a big-integer expiration column.
-- **Laravel 13 cache TTL contract** `[13.0-upgrade]`: custom `Store` and
-  `Repository` implementations must implement `touch($key, $seconds)`.
-- **Restricted unserialization** `[13.0-upgrade]`: the default
-  `cache.serializable_classes` is `false`; allow-list cached object classes or
-  use non-object payloads.
-- **Memoized cache injection** `[2026-06]`: the `Cache` contextual attribute can
-  use memoization for repeated reads in one execution.
-- **Refreshable locks** `[2026-06]`: refresh a cache lock's expiration during
-  long-running work instead of releasing and reacquiring it.
+The new `@context` directive renders a block when the requested context key exists and exposes its value as `$value`.
 
-## Redis behavior
+```blade
+@context('trace_id')
+    <span>{{ $value }}</span>
+@endcontext
+```
 
-- **Predis 3 support** `[2025-05]`: Laravel supports `predis/predis` 3.x.
-- **Redis cluster broadcasting** `[2025-08]`: broadcasting works with clustered
-  Redis connections; a separate non-cluster connection is unnecessary.
-- **PhpRedis number packing** `[2025-09]`: configure the client
-  pack-ignore-numbers option so packing preserves numeric values as intended.
-- **Atomic tagged flushes** `[2025-09]`: Redis cache-tag flushes are atomic and
-  accept custom Redis connections.
-- **Predis cluster keys** `[2025-11]`: `PredisClusterConnection::keys()` supports
-  pattern-based key lookup.
-- **Command failure listeners** `[2026-01]`: Redis connections expose
-  `listenForFailures()` and dispatch `CommandFailed`.
-- **PhpRedis keepalive** `[2026-03-laravel-12]`: configure `tcp_keepalive` on
-  PhpRedis connections.
-- **Cacheable Predis retries** `[2026-07]`: Predis retry configuration accepts
-  scalar values and therefore works with `config:cache`.
+## Bounded filesystem traversal (2025-11)
 
-## Sessions and password reset storage
+`Filesystem::files()` and `directories()` accept a custom traversal depth, allowing bounded recursive discovery without switching to an all-depth operation.
 
-- **Password reset expiry units** `[12.0-upgrade]`: custom
-  `DatabaseTokenRepository` construction must pass expiry seconds, not minutes.
-- **Cache reset prefix removed** `[2025-07]`: remove the `prefix` option from
-  cache-backed password broker configuration.
-- **Generic cache session driver** `[2025-09]`: select `SESSION_DRIVER=cache`
-  and use `SESSION_STORE` to choose the cache store.
-- **Laravel 13 identifier defaults** `[13.0-upgrade]`: fallback cache and Redis
-  prefixes and session cookie names use hyphenated slugs with `-cache-`,
-  `-database-`, and `-session`. Set `CACHE_PREFIX`, `REDIS_PREFIX`, and
-  `SESSION_COOKIE` to preserve existing identifiers.
-- **Redis session prefixes** `[2026-07]`: configure a session-specific Redis
-  prefix to separate session keys from other Redis data.
+```php
+$files = File::files($path, depth: 2);
+$directories = File::directories($path, depth: 2);
+```
 
-## Filesystems and storage
+## Cache flush events (2025-03)
 
-- **Local fallback root** `[12.0-upgrade]`: without an explicit `local` disk,
-  the root is `storage/app/private`, not `storage/app`.
-- **Nested scoped disks** `[12.0.0]`: a scoped disk may use another scoped disk
-  as its backing disk.
-- **Scoped disk exceptions** `[2025-09]`: scoped disks pass `throw` to their
-  parent disk, so configured write failures throw consistently.
-- **Bounded traversal** `[2025-11]`: `Filesystem::files()` and
-  `directories()` accept `depth:` for bounded recursion.
-- **Local temporary uploads** `[2026-02]`: the local driver supports
-  `temporaryUploadUrl()`.
-- **Served URI uniqueness** `[13.0.0]`: every served filesystem disk must have
-  a distinct URI; duplicate served URIs throw.
-- **Encoded filesystem URLs** `[2026-05]`: generated URL paths are URL-encoded;
-  local adapters preserve directory separators, including temporary URLs.
+The new `CacheFlushed` event allows listeners to react when a cache store is flushed.
+
+## Cache password-reset prefix removal (2025-07)
+
+The `prefix` option has been removed from cache-backed password reset repositories; remove it from password broker configuration.
+
+## Cache TTL contract (13.0-upgrade)
+
+The cache `Store` and `Repository` contracts now include `touch`; custom cache stores must implement TTL extension with `touch($key, $seconds)`.
+
+## Cache-backed sessions (2025-09)
+
+Laravel includes a generic cache session driver, so session storage can use a configured cache store instead of requiring a cache-specific session driver.
+
+```dotenv
+SESSION_DRIVER=cache
+SESSION_STORE=redis
+```
+
+## Cache-lock pruning control (2025-12)
+
+Database-backed locks can opt out of their probabilistic pruning lottery when an application manages pruning separately.
+
+## Cacheable Predis retry settings (2026-07)
+
+Predis retry configuration accepts scalar values, allowing retry settings to be used with `config:cache`.
+
+## Cached bootstrap testing traits (2025-11)
+
+The `WithCachedRoutes` and `WithCachedConfig` testing traits let application tests exercise bootstrapping with route and configuration caches; cached-configuration tests also support parallel runs.
+
+```php
+final class CachedBootstrapTest extends TestCase
+{
+    use WithCachedConfig, WithCachedRoutes;
+}
+```
+
+## Clean deadlock retries (2026-02)
+
+A lingering PDO transaction is rolled back before Laravel retries a commit deadlock, so the retry starts from a clean transaction state.
+
+## Default cache and session identifiers (13.0-upgrade)
+
+Framework fallback cache prefixes, Redis prefixes, and session cookie names now use hyphenated slugs and the suffixes `-cache-`, `-database-`, and `-session`. Applications that need their prior identifiers should explicitly set `CACHE_PREFIX`, `REDIS_PREFIX`, and `SESSION_COOKIE`.
+
+## Driver-independent cache funnels (2026-02)
+
+`Cache::funnel()` provides concurrency limiting with any cache driver instead of requiring a Redis-specific funnel.
+
+## Encoded filesystem URLs (2026-05)
+
+Filesystem-generated URL paths are now URL-encoded, while local adapters preserve directory separators, including when generating temporary URLs.
+
+## Failover cache stores (2025-10)
+
+Laravel includes failover cache support for falling back to another store when the primary store fails. Cache events emitted through failover identify the underlying store that handled the operation.
+
+## Flexible reads through memoized cache stores (2025-05)
+
+Memoized cache stores support `flexible()`, so `Cache::memo()->flexible('settings', [30, 120], fn () => loadSettings())` combines request-local memoization with stale-while-revalidate behavior.
+
+## Local disk fallback root (12.0-upgrade)
+
+When no `local` disk is explicitly configured, its root now defaults to `storage/app/private` instead of `storage/app`. Define the disk and its root explicitly to preserve the old location.
+
+## Memoized `Cache` attribute (2026-06)
+
+The `Cache` contextual attribute supports memoization, so repeated attribute-backed reads can use Laravel's memoized cache layer during the same execution.
+
+## Memoized cache stores (2025-04)
+
+`Cache::memo()` wraps a cache store with an in-memory layer for the current execution, avoiding repeated underlying reads for values already resolved.
+
+```php
+$value = Cache::memo()->get('settings');
+$value = Cache::memo('redis')->get('settings');
+```
+
+## MySQL DDL locking options (2026-01)
+
+The MySQL schema grammar can express DDL locking options, allowing supported schema changes to select MySQL's lock behavior.
+
+## Nested scoped disks (12.0.0)
+
+A scoped filesystem disk may now use another scoped disk as its backing disk, allowing scopes to be layered.
+
+## Parallel-test cache isolation (2026-02)
+
+Parallel tests now receive process-isolated cache prefixes by default, with an option to disable the safe prefix when shared-cache behavior is intentional.
+
+## PhpRedis packed-number handling (2025-09)
+
+Laravel exposes PhpRedis's pack-ignore-numbers option, allowing applications using PhpRedis packing to preserve numeric values according to that client option.
+
+## PhpRedis TCP keepalive (2026-03-laravel-12)
+
+The PhpRedis connector accepts a `tcp_keepalive` option, allowing Redis connections to configure TCP keepalive behavior.
+
+## Predis 3 compatibility (2025-05)
+
+Laravel's Redis integration supports `predis/predis` 3.x, so applications can upgrade without switching Redis clients.
+
+## Predis cluster key lookup (2025-11)
+
+`PredisClusterConnection` now implements `keys()`, allowing pattern-based key lookup through Predis-backed Redis cluster connections.
+
+## Redis command failure listeners (2026-01)
+
+Redis connections expose `listenForFailures()` and dispatch `CommandFailed`, allowing applications to observe failed Redis commands explicitly.
+
+## Redis session prefixes (2026-07)
+
+Redis-backed sessions support a session-specific prefix, allowing their keys to be separated from other Redis data.
+
+## Redis tagged-cache flushing (2025-09)
+
+Redis cache-tag flushes are now atomic, and tagged-cache flushing supports custom Redis connections, avoiding partial concurrent flushes and assumptions about the default connection.
+
+## Refreshable cache locks (2026-06)
+
+Cache locks can refresh their expiration, allowing long-running work to retain a lock without releasing and reacquiring it.
+
+## Restricted cache unserialization (13.0-upgrade)
+
+The default `cache.serializable_classes` value is `false`, so applications that cache PHP objects must allow-list their classes or switch to non-object payloads.
+
+```php
+'serializable_classes' => [
+    App\Data\CachedDashboardStats::class,
+],
+```
+
+## Scoped-disk exception behavior (2025-09)
+
+A scoped filesystem disk now passes its `throw` option to the parent disk, so configured write failures throw consistently through the scoped adapter.
+
+## Served-disk URI uniqueness (13.0.0)
+
+Filesystem disks configured for serving must use distinct URIs; Laravel now throws when multiple served disks share a URI.
+
+## Session regeneration during login (2025-10)
+
+`Auth::login()` now regenerates the session. Manual authentication flows and their tests should expect the session identifier to rotate during login.
+
+## Typed cache retrieval (2026-02)
+
+Cache repositories now provide typed getters, allowing cached values to be retrieved through an accessor for the expected value type.
+
+## Wider database cache expirations (2026-03-laravel-12)
+
+Database cache expiration columns now use big integers; custom cache-table migrations should use the same width.

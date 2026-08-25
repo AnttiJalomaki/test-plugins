@@ -1,10 +1,10 @@
-# Story authoring and docs
+# Story Authoring and Docs
 
 ## React CSF factories
 
-React CSF factories have reached Preview status. A typed preview can construct
-component metadata and stories without separate `Meta` and `StoryObj` type
-declarations:
+React CSF factories reached Preview status in batch `9.0-10.0`. A typed preview
+can create component metadata and stories without separate `Meta` and
+`StoryObj` type declarations:
 
 ```ts
 import preview from '../.storybook/preview';
@@ -16,25 +16,19 @@ export const Primary = meta.story({
 });
 ```
 
-Older CSF formats remain supported. A codebase can therefore adopt factories
-incrementally instead of converting every story in one change.
+Older CSF formats remain supported. Migrate story files incrementally rather
+than coupling factory adoption to a repository-wide rewrite.
 
-Factory stories can also use the experimental `.test()` API for named,
-story-bound tests; see [Testing and automation](testing-and-automation.md).
+Factory stories can also attach experimental named tests through `.test()`;
+see [Testing and automation](testing-and-automation.md) for the testing
+context and test-only story behavior.
 
-## CSF modules and tags
+## Tags and filtering
 
-Addon Docs can resolve CSF4 modules that do not have a default export. Do not
-add a synthetic default export solely to make such a module visible to Docs.
+### Set the default filter state
 
-CSF Next adds tag type support. The `skip` tag propagates to generated `.test`
-children, which makes a skip on source story metadata relevant to generated
-test execution as well.
-
-## Default tag exclusion
-
-Tag filters can exclude stories that match a tag. `main.ts` can establish the
-initial selection:
+Tag filters can exclude matching stories, and `main.ts` can establish the
+initial filter state (batch `9.0-10.0`):
 
 ```ts
 export default {
@@ -44,32 +38,51 @@ export default {
 };
 ```
 
-This controls the initial filter rather than removing the stories from the
-project. Use it when content should remain addressable but hidden from the
-default navigation view.
+Use this for initial presentation, not as a substitute for removing stories
+that must never be indexed.
 
-## Standalone MDX identity
+### Type and propagate tags
 
-Standalone MDX supports an explicit `id` on `Meta`:
+CSF Next supports tag types (since `10.5.0`). A `skip` tag propagates to
+generated `.test` children, so tag inheritance can suppress both a story and
+its derived tests.
+
+When a generated test is unexpectedly absent, inspect the parent story's tags
+before changing test registration.
+
+## CSF modules and addon Docs
+
+Addon Docs can resolve CSF4 modules with no default export (since `10.5.0`). Do
+not add a synthetic default export only to make such a module visible to Docs.
+
+This is specifically a CSF4 module-resolution behavior; keep existing default
+exports where older formats or other tooling still rely on them.
+
+## MDX and Docs APIs
+
+### Give standalone MDX an explicit identity
+
+Standalone MDX accepts an explicit `id` on `Meta` (since `10.5.0`):
 
 ```mdx
 <Meta id="guides-introduction" title="Guides/Introduction" />
 ```
 
-Use an explicit ID when the document needs a stable identity independent of its
-derived title or location.
+Use a stable ID when other Docs content or automation addresses the page by
+identity rather than title.
 
-## Docs API changes
+### Update Docs components
 
-- `ExternalDocs` is deprecated. Avoid adding new dependencies on it and include
-  it in Docs migration review.
-- `ActionItem` accepts `ariaLabel`, allowing an accessible label to be supplied
-  when its visual presentation is not sufficient.
+`ActionItem` accepts `ariaLabel` (since `10.5.0`). Supply it when the visible
+content does not provide an adequate accessible name.
 
-## Experimental React docgen service
+`ExternalDocs` is deprecated in `10.5.0`. Avoid introducing new uses and
+include replacement work in Docs migrations that currently depend on it.
 
-Enable `features.experimentalDocgenServer` to use a worker-backed service that
-unifies React component metadata across MCP, Docs, and Controls:
+## Unified React component metadata
+
+Enable the experimental worker-backed React docgen service with
+`features.experimentalDocgenServer` (since `10.5.0`):
 
 ```js
 export default {
@@ -77,9 +90,10 @@ export default {
 };
 ```
 
-When enabled, ArgTypes and Controls consume this service as well, including
-metadata from `react-component-meta`. Diagnose inconsistencies at the shared
-metadata service rather than assuming each consumer has an independent docgen
-pipeline.
+When enabled, one service supplies React component metadata across MCP, Docs,
+and Controls. ArgTypes and Controls consume the service, including
+`react-component-meta` data.
 
-Batch attribution: `9.0-10.0`, `10.5.0`.
+Use the flag when inconsistent metadata across those surfaces is more costly
+than adopting an experimental service. Verify generated ArgTypes and Controls
+for representative components before enabling it broadly.

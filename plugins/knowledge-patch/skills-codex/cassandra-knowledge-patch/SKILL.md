@@ -10,183 +10,207 @@ metadata:
 
 # Apache Cassandra Knowledge Patch
 
-Use this skill when changing, upgrading, operating, or integrating with Apache
-Cassandra and the work touches the behaviors documented here. Start with the
-quick checks below, then open the topic reference that matches the task.
+Use this skill when writing, reviewing, upgrading, or operating Apache Cassandra
+code, CQL, configuration, and tooling. Start with the compatibility-sensitive
+items below, then load the topic reference that matches the task.
+
+## How to apply this skill
+
+1. Identify the Cassandra version, SSTable format, index implementations, Java
+   runtime, and whether the cluster is in a mixed-version state.
+2. For upgrades, check changed validation, authorization, command-line options,
+   virtual-table representations, and operational defaults before changing
+   automation.
+3. For query or storage correctness, identify whether SAI, legacy secondary
+   indexes, BTI, static columns, tombstones, repair, or descending clustering
+   order is involved.
+4. For operations, verify gossip, token metadata, disk guardrails, repair
+   scheduling, and JMX visibility against live cluster state.
+5. Treat compatibility fallbacks as safeguards, not as reasons to postpone
+   format upgrades or mixed-version completion.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [security-and-configuration.md](references/security-and-configuration.md) | Authorizers, permissions, audit logging, virtual settings, guardrails, and configuration compatibility |
-| [queries-schema-and-indexing.md](references/queries-schema-and-indexing.md) | CQL semantics, schema validation, SAI, legacy indexes, filtering, and reconciliation |
-| [storage-and-data-path.md](references/storage-and-data-path.md) | SSTables, commitlog, hints, mutation serialization, compaction, snapshots, and streaming |
-| [operations-topology-and-repair.md](references/operations-topology-and-repair.md) | Gossip, JMX, node tools, runtime support, failure detection, repair, and AutoRepair |
-| [protocols-and-tooling.md](references/protocols-and-tooling.md) | Native protocol limits, client serialization, CQLSSTableWriter, FQL, cqlsh, stress, and builds |
+| [Operations, topology, and repair](references/operations-topology-and-repair.md) | Gossip, token metadata, hints, bootstrap, JMX, failure detection, streaming, guardrails, and AutoRepair |
+| [Protocols and tooling](references/protocols-and-tooling.md) | Native protocol, serialization, `cqlsh`, `nodetool`, build tooling, Java, FQL, and `CQLSSTableWriter` |
+| [Queries, schema, and indexing](references/queries-schema-and-indexing.md) | CQL behavior, schema, SAI, legacy secondary indexes, filtering, clustering order, and index lifecycle |
+| [Security and configuration](references/security-and-configuration.md) | Authorization, identities, audit logging, password handling, YAML, virtual settings, and extensions |
+| [Storage and data path](references/storage-and-data-path.md) | SSTables, compaction, commitlog, snapshots, caches, deletion reconciliation, and disk sizing |
 
-## Upgrade triage
+## Breaking and behavior-sensitive changes
 
-Check these compatibility boundaries before treating a changed result as a
-regression:
+### Update `nodetool import` automation
 
-1. Re-test authorization. Access formerly admitted through DC, authorizer, or
-   system-keyspace edge cases can now be rejected.
-2. Re-test identity provisioning. A non-superuser cannot bind an identity to a
-   superuser, and rapid password changes can be rate-limited.
-3. Parse complex values from `system_views.settings` as JSON, and never depend
-   on that view to disclose security-sensitive values.
-4. Validate generated table names before issuing DDL; Cassandra now rejects
-   names that would create overlong filenames.
-5. Re-test schema-compatibility tooling that treats `BytesType` as broadly
-   compatible. Compatibility is limited to scalar types.
-6. Do not rely on `nodetool` or other tools sourcing `cassandra-env.sh` as an
-   incidental side effect.
-7. During a mixed-major-version upgrade, do not assume the in-process repair
-   scheduler remains active; it stops when it detects two major versions.
-8. If failure-detection timing changes with an otherwise default
-   configuration, account for the corrected maximum-interval calculation.
+The short option for `nodetool import --copy-data` is `-cd`. Replace scripts
+that use the conflicting `-p` form.
 
-## Authorization and configuration quick checks
+```shell
+nodetool import -cd keyspace_name table_name /path/to/sstables
+```
 
-### Authorizers and system keyspaces
+### Expect tighter authorization
 
-- Preserve parameters under `CassandraCIDRAuthorizer`; configured parameters
-  are now applied.
-- Expect malformed `audit_logging_options` to fail validation during startup.
-- Monitoring roles may receive `SELECT` on `system_views` and
-  `system_virtual_schema`.
-- Treat password-change throttling as an expected rejection path and back off
-  in provisioning automation.
+Operations that previously crossed DC, authorizer, or system-keyspace
+boundaries may now be rejected. A non-superuser also cannot bind an identity to
+a superuser. Test provisioning and role-management flows with their real
+service accounts.
 
-### Settings consumers
+Password changes are rate-limited. Rotation automation should back off instead
+of assuming rapid repeated changes will succeed.
 
-- Deserialize complex `system_views.settings` values as JSON.
-- Treat sensitive values as intentionally redacted.
-- Do not assume an absent configuration is unsupported; settings omitted by
-  an earlier view implementation are exposed again.
-- Optional entries in the default `cassandra.yaml` should remain parseable
-  when uncommented; preserve valid YAML in downstream templates.
+### Do not depend on tool environment side effects
 
-### Guardrails
+`nodetool` and related tools avoid sourcing `cassandra-env.sh` when it is not
+needed. Put required settings in supported tool configuration or the caller's
+environment instead of relying on incidental script side effects.
 
-- Inspect or update guardrail settings with `nodetool getguardrailsconfig` and
-  `nodetool setguardrailsconfig`.
-- A disk-usage guardrail can be disabled after it has tripped.
-- A configured disk-usage maximum no longer makes first boot depend on the
-  data directory already existing.
+### Parse virtual settings defensively
 
-## Query and index correctness quick checks
+Complex values in `system_views.settings` are JSON, sensitive values are
+redacted, previously omitted settings are visible, and mappings may contain
+non-string keys. Inventory consumers must handle all four conditions without
+expecting secrets.
 
-### SAI lifecycle
+### Revalidate schema and snapshot names
 
-- A restarted node does not become fully query-ready until its built SAI
-  indexes are queryable; the startup ordering now avoids an availability gap.
-- Repair flushes of partial partitions or rows mark SAI as non-empty.
-- An SSTable-writer switch flushes the active SAI segment builder.
-- ANN execution uses score-ordered iterators; verify result ordering and
-  latency expectations together.
-- Use `nodetool tablestats` when selected SAI state and query-performance
-  metrics are needed.
+Long table names that would exceed filesystem filename limits are rejected.
+Snapshot operations also reject invalid snapshot names, while valid snapshot
+directory names that older SSTable path checks rejected are accepted. Keep
+identifier generation within Cassandra's validation rules.
 
-### Mixed indexes and filters
+### Recheck type compatibility
 
-- If legacy 2i and SAI both index a column, legacy 2i is selected first.
-- Empty values remain invalid for non-literal and other types that disallow
-  them; do not depend on an index accepting such values.
-- Re-test intersection queries involving repaired matches, multiple
-  non-indexed predicates, static columns, or composite map values.
-- Preserve deletions when result reconciliation is required; filtering no
-  longer purges them early.
+`BytesType` compatibility applies only to scalar types. Schema migration tools
+must not assume it is compatible with collections or other non-scalar types.
 
-### Schema and expressions
+### Plan around mixed-version safeguards
 
-- UDT and vector clustering columns support `DESC` ordering.
-- `min` and `max` over descending clustering columns follow the corrected
-  semantics.
-- `DESCRIBE TABLE` includes the table's materialized views.
-- Expect a validation error for table identifiers that would overflow the
-  filesystem filename limit.
+The automated repair scheduler stops when it detects two Cassandra major
+versions. Mixed-version upgrades need an explicit repair plan and monitoring;
+do not assume scheduled repairs remain active.
 
-## Storage and data-path quick checks
+## Operations quick reference
 
-### Hints and mutations
+### Check topology consistency
 
-- Hint expiry is based on request start time, not timeout time.
-- Schema mismatch alone no longer blocks hint delivery.
-- Multi-collection row serialization preserves complex deletions.
-- Updating a column with a new TTL but the same expiration time is
-  deterministic across replicas.
+Use the token-metadata check when gossip state and ownership appear inconsistent.
 
-### SSTables and commitlog
+```shell
+nodetool checktokenmetadata
+```
 
-- Direct I/O commitlog flushes use the corrected safe path.
-- Memory-mapped trie indexes larger than 2 GiB are readable.
-- Early-open BTI SSTables return correct range-query results.
-- A corrupt SSTable encountered during compaction is marked suspected and its
-  buffer-pool resources are released.
-- Commitlog recovery skips sync blocks correctly after CRC errors.
-- Legacy SSTables with the old Bloom-filter format automatically fall back
-  from zero-copy streaming.
+Restarted nodes are protected from delayed shutdown gossip, and multi-field
+endpoint updates converge correctly. Still compare gossip, token metadata, and
+the node's current lifecycle state before taking topology action.
 
-### Snapshots and compaction
+### Configure and observe AutoRepair
 
-- Snapshot paths accept names that were previously rejected too broadly.
-- Snapshot schema CQL carries definitions for UDTs used by reverse clustering
-  columns.
-- Unified Compaction rejects invalid minimum/target size combinations.
-- Snapshot loading handles pre-table-ID directory layouts.
+Built-in AutoRepair provides in-process scheduling, a minimum task-duration
+setting, `preview_repaired`, disk protection for full repair, and reporting of
+expected versus actual bytes and keyspaces. Parallel repair counts greater than
+one are supported. Monitor the scheduler and account for its mixed-major-version
+shutdown behavior.
 
-## Operations and topology quick checks
+### Inspect guardrails
 
-### Gossip and metadata
+Use the guardrail commands instead of scraping configuration indirectly.
 
-- Delayed shutdown state cannot overwrite fresh startup state after a restart.
-- Gossip-only and bootstrapping nodes receive DC, rack, and host-ID state.
-- Concurrent multi-field endpoint updates converge.
-- Run `nodetool checktokenmetadata` to compare `TokenMetadata` with gossip
-  endpoint state.
+```shell
+nodetool getguardrailsconfig
+```
 
-### Management interfaces
+The disk-usage guardrail can be disabled after it trips, and first boot works
+when `data_disk_usage_max_disk_size` is set before the data directory exists.
 
-- `StorageService` is available over JMX during bootstrap.
-- JMX can drop prepared statements through
-  `StorageService.dropPreparedStatements`.
-- `StorageProxyMBean` exposes the per-IP native transport connection cap.
-- `nodetool gcstats` reports corrected direct-memory usage; adjust monitoring
-  baselines rather than compensating for the older value.
+### Recalibrate corrected metrics
 
-### Repair
+`nodetool gcstats` reports direct memory correctly, and `nodetool tablestats`
+includes selected SAI state and query-performance details. Alert thresholds may
+need adjustment after an upgrade.
 
-- Long-running repairs are not failed merely for running too long.
-- The built-in AutoRepair scheduler supports recurring in-process repair,
-  task-duration bounds, `preview_repaired`, disk protection for full repair,
-  and expected-versus-actual progress reporting.
-- Keep external repair orchestration aware of scheduler shutdown during
-  mixed-major-version operation.
+## Query and indexing quick reference
 
-## Protocol and tool quick checks
+### Define descending complex clustering keys
 
-- Enforce the CQL message-size limit across an entire multiframe message.
-- Preserve the complete UTF-8 range when using Cassandra's binary utilities.
-- `CQLSSTableWriter` can notify on produced files, choose BTI or Big format,
-  and serialize vectors containing `date` or `time` elements.
-- Full Query Logging batches preserve null value tombstones.
-- Use the no-history option for `cqlsh` sessions that must not persist entered
-  statements.
-- `cassandra-stress` negotiates TLS 1.3 by default.
-- Java 17 is supported, and source distributions can be produced with
-  `ant artifacts`.
+Frozen UDTs and vectors can be descending clustering keys. Snapshot schema CQL
+also carries the required UDT definitions.
 
-## Task workflow
+```cql
+CREATE TYPE coordinates (x int, y int);
+CREATE TABLE samples (
+    sensor_id uuid,
+    position frozen<coordinates>,
+    embedding vector<float, 3>,
+    PRIMARY KEY (sensor_id, position, embedding)
+) WITH CLUSTERING ORDER BY (position DESC, embedding DESC);
+```
 
-1. Identify whether the task is primarily security/configuration, query/index,
-   storage/data-path, operations/repair, or protocol/tooling work.
-2. Read the corresponding reference in full; cross-read adjacent references
-   when a repair, restart, or upgrade crosses subsystem boundaries.
-3. Compare the project configuration and automation with the compatibility
-   boundary described there.
-4. Prefer current observed behavior and repository tests over assumptions
-   encoded in older scripts or monitoring rules.
-5. For operational changes, verify both correctness and observability: command
-   output, JMX attributes, virtual tables, and repair progress may all have
-   changed together.
+### Account for index selection and lifecycle
+
+When a column has both a legacy secondary index and SAI, Cassandra prioritizes
+the legacy index. SAI availability after restart, writer switches, repair
+flushes, segment checksum validation, ANN score ordering, and distributed
+static-column tombstones all have correctness-sensitive handling described in
+the indexing reference.
+
+### Validate filtering edge cases
+
+Correct behavior covers descending `min`/`max`, numeric range intersections,
+unresolved static rows, static-column SAI queries, composite map filters,
+repaired intersection matches, and reads after column deletion. Use targeted
+regression tests when an application depends on these cases.
+
+## Storage quick reference
+
+### Size compaction using compressed estimates
+
+Free-space admission checks use each table's estimated compressed size. Unified
+Compaction also validates minimum and target size combinations. Review disk
+headroom and reject invalid compaction settings before rollout.
+
+### Preserve deletion semantics
+
+Complex collection deletions, reconciliation-required deletions, deterministic
+TTL updates, and expired-row index notifications all avoid earlier data or index
+divergence paths. Do not recreate older client-side workarounds that discard
+tombstone or reconciliation information.
+
+### Handle damaged or legacy storage safely
+
+Compaction marks corrupt SSTables suspected and releases buffer-pool resources;
+commitlog recovery skips CRC-damaged sync blocks correctly. Legacy Bloom-filter
+SSTables fall back from zero-copy streaming, and pre-table-ID snapshot schemas
+can be loaded.
+
+## Configuration and tooling quick reference
+
+### Validate configuration before startup
+
+Audit logging options are sanitized and validated during startup. The default
+YAML's optional settings remain parseable when uncommented, and reflectively
+loaded extensions are type-checked before initialization.
+
+Batchlog endpoint selection accepts `random_remote`, `prefer_local`,
+`dynamic_remote`, and `dynamic`.
+
+```yaml
+batchlog_endpoint_strategy: dynamic_remote
+```
+
+### Use supported runtimes and build paths
+
+The server fully supports Java 17. `cqlsh` supports Python 3.12 and 3.13,
+`cassandra-stress` negotiates TLS 1.3 automatically, source distributions build
+with `ant artifacts`, and documentation generation does not require Go.
+
+```shell
+ant artifacts
+```
+
+### Use current writer capabilities
+
+`CQLSSTableWriter` can notify clients when it emits an SSTable, choose BTI or
+Big format, and serialize vectors containing `date` or `time` values. Choose
+formats deliberately and attach production callbacks before bulk generation.

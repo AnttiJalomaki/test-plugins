@@ -1,66 +1,21 @@
 # Browser Mode
 
-Relevant versioned source batches: `3.0.0`, `3.2.0`, `4.0-guides`, `4.0.0`, and `4.1.0`.
+## Providers, configuration, and instances
 
-## Contents
+Browser instances moved into `test.browser.instances` in 3.0.0. Each instance selects a browser and can override options such as `launch`, `setupFiles`, and `provide`; do not model each browser as a project.
 
-- [Scaffold and choose a provider](#scaffold-and-choose-a-provider)
-- [Configure multiple instances](#configure-multiple-instances)
-- [Select a configured browser from the CLI](#select-a-configured-browser-from-the-cli)
-- [Find the Browser Mode server](#find-the-browser-mode-server)
-- [Respect browser runtime requirements](#respect-browser-runtime-requirements)
-- [Extend and compose locators](#extend-and-compose-locators)
-- [Handle strict actions](#handle-strict-actions)
-- [Assert viewport intersection](#assert-viewport-intersection)
-- [Debug browser tests](#debug-browser-tests)
-- [Spy on module exports under browser ESM](#spy-on-module-exports-under-browser-esm)
-- [Record Playwright traces](#record-playwright-traces)
-- [Create visual-regression baselines](#create-visual-regression-baselines)
-- [Configure screenshot capture and comparison](#configure-screenshot-capture-and-comparison)
-- [Place the Browser UI details panel](#place-the-browser-ui-details-panel)
-
-## Scaffold and choose a provider
-
-Scaffold Browser Mode with the initializer when starting from scratch:
-
-```sh
-npx vitest init browser
-```
-
-It installs the required dependencies and creates browser configuration. A manual setup must define a provider. `@vitest/browser-preview` is a local preview environment that simulates events; use Playwright or WebdriverIO for CI, headless execution, or real browser automation.
-
-Provider configuration changed to provider-specific packages and factory calls. Context imports also moved from `@vitest/browser/context` to `vitest/browser`:
+Provider configuration changed again in 4.0.0: install a provider-specific package, import its factory, call it, and import runtime context APIs from `vitest/browser` rather than `@vitest/browser/context`. The provider packages include `@vitest/browser`, so it need not remain a direct dependency solely for that purpose.
 
 ```ts
-import { playwright } from '@vitest/browser-playwright'
-import { page } from 'vitest/browser'
 import { defineConfig } from 'vitest/config'
+import { playwright } from '@vitest/browser-playwright'
 
 export default defineConfig({
   test: {
     browser: {
-      provider: playwright({
-        launchOptions: { slowMo: 100 },
-      }),
-      instances: [{ browser: 'chromium' }],
-    },
-  },
-})
-```
-
-The provider packages include `@vitest/browser`, so a separate direct dependency on it can be removed. Older configuration passed a provider name such as `provider: 'playwright'`; migrate it to the imported factory.
-
-## Configure multiple instances
-
-Use `test.browser.instances` for multiple browser setups instead of creating workspace projects for them. Each instance selects a browser and may override `launch`, `setupFiles`, `provide`, and other supported browser options:
-
-```ts
-export default defineConfig({
-  test: {
-    browser: {
-      provider: playwright(),
+      provider: playwright({ launchOptions: { slowMo: 100 } }),
       instances: [
-        { browser: 'chromium', launch: { devtools: true } },
+        { browser: 'chromium' },
         { browser: 'firefox', setupFiles: ['./setup.firefox.ts'] },
       ],
     },
@@ -68,84 +23,59 @@ export default defineConfig({
 })
 ```
 
-Playwright also supports persistent browser contexts and accepts both `launchOptions` and `connectOptions` in provider configuration.
+`vitest init browser` installs the required dependencies and creates a browser configuration. A manual setup must define a provider. `@vitest/browser-preview` simulates local events; use Playwright or WebdriverIO for CI and headless automation.
 
-## Select a configured browser from the CLI
-
-Passing `--browser` without a `browser` option in configuration fails instead of assuming the Node test configuration is browser-compatible. Select a configured instance and headless behavior explicitly:
+Since 3.2.0, `--browser` fails when the config has no browser option. Select an existing instance explicitly:
 
 ```sh
 npx vitest --browser=chromium --browser.headless
 ```
 
-This configuration requirement applies since `3.2.0`.
+## Browser server and runtime
 
-## Find the Browser Mode server
+The browser server defaults to port `63315`; configure it through `browser.api`. The CLI does not print its Vite server URL automatically, so press `b` in watch mode to display it.
 
-The default Browser Mode port is `63315`; configure it through `browser.api`. Vitest does not automatically print the browser Vite server URL. In watch mode, press `b` to display it.
+Browser Mode inherits Vite's target requirements and also requires `BroadcastChannel`, native ESM, dynamic import, and `import.meta`. The documented browser minimums are Chrome 87, Firefox 78, Safari 15.4, and Edge 88.
 
-## Respect browser runtime requirements
+Synchronous dialogs such as `alert` and `confirm` are pre-mocked because native dialogs block communication with the test page and can hang a run. Mock them explicitly when a test depends on their return value.
 
-Browser Mode inherits Vite's target requirements and requires `BroadcastChannel`, native ESM, dynamic imports, and `import.meta`. The documented minimum browser versions are:
+## Locators and actions
 
-- Chrome 87
-- Firefox 78
-- Safari 15.4
-- Edge 88
-
-## Extend and compose locators
-
-Register project-specific locator methods with `locators.extend`. A method can return a Playwright locator string, which produces a chainable locator scoped to the parent, or declare `this: Locator` and compose locator operations and user actions.
+Custom locators arrived in 3.2.0. Extend the vocabulary with `locators.extend`; a method can return a Playwright locator string that becomes chainable and parent-scoped, or use `this: Locator` to compose locator operations and actions. Use the current `vitest/browser` import path.
 
 ```ts
 import { locators, page } from 'vitest/browser'
 
 locators.extend({
-  getByCommentsCount: (count: number) =>
-    `.comments :text("${count} comments")`,
+  getByCommentsCount: (count: number) => `.comments :text("${count} comments")`,
 })
 
 await expect.element(page.getByCommentsCount(1)).toBeVisible()
 ```
 
-With the Playwright provider, `page.frameLocator` returns a `FrameLocator` for queries and actions inside an iframe:
+With the Playwright provider, `page.frameLocator` returns a `FrameLocator` for querying inside an iframe. Locators expose `length` and work directly with `toHaveLength` (4.0.0).
 
 ```ts
 const frame = page.frameLocator(page.getByTestId('iframe'))
 await frame.getByText('Hello World').click()
-```
-
-Browser locators also expose `length`, so they can be passed directly to `toHaveLength`:
-
-```ts
 await expect.element(page.getByText('Item')).toHaveLength(3)
 ```
 
-## Handle strict actions
-
-WebdriverIO and Preview locators are strict by default. An action throws if its locator matches more than one element. Opt an individual action into the previous first-match behavior only when that ambiguity is intentional:
-
-```ts
-await page.getByRole('button').click({ strict: false })
-```
-
-## Assert viewport intersection
-
-Use `toBeInViewport`, backed by `IntersectionObserver`, to check that a browser element intersects the viewport. The optional `ratio` requires a proportion of the element to be visible:
+`toBeInViewport` uses `IntersectionObserver`; pass `ratio` to require a proportion of the element to be visible (4.0.0).
 
 ```ts
 await expect.element(page.getByText('Welcome')).toBeInViewport({ ratio: 0.5 })
 ```
 
-## Debug browser tests
+WebdriverIO and Preview actions became strict in 4.1.0. An action throws when its locator matches multiple elements; opt into prior first-match behavior per action only when it is intentional:
 
-Start Playwright or WebdriverIO browser tests with `vitest --inspect`, then attach through DevTools. Inspect mode automatically disables `browser.trackUnhandledErrors`. The official VS Code extension also provides a Debug Test action for browser tests.
+```ts
+await page.getByRole('button').click({ strict: false })
+```
 
-Browser Mode pre-mocks synchronous, thread-blocking dialogs such as `alert` and `confirm`. A native dialog can block communication with the test page and hang the run. Explicitly mock these APIs when their return behavior is part of the test.
+## Spying on native ESM exports
 
-## Spy on module exports under browser ESM
-
-Native ESM module namespace objects in the browser are sealed, so `vi.spyOn` cannot patch an imported namespace. Mock the module with `{ spy: true }`; this wraps every export while preserving its implementation, after which `vi.mocked` can configure an exported function:
+Browser module namespace objects are sealed, so `vi.spyOn` cannot patch an imported namespace. Mock the module with `{ spy: true }` to wrap each export without replacing its implementation, then configure the typed function.
 
 ```ts
 import { vi } from 'vitest'
@@ -155,11 +85,25 @@ vi.mock('./api.js', { spy: true })
 vi.mocked(api.method).mockImplementation(() => 'stubbed')
 ```
 
-This does not make exported variables replaceable. When a test must change a live binding, expose a function from the module that changes it.
+Exported variables cannot be mocked this way. Expose a function that changes the live binding when a test must alter one.
 
-## Record Playwright traces
+## Debugging and UI
 
-The Playwright provider can record every test or limit recording to retries and failures. `browser.trace` accepts a mode string or an object with a root-relative `tracesDir`:
+Playwright and WebdriverIO browser tests can start with `vitest --inspect` and attach through DevTools. Inspection automatically disables `browser.trackUnhandledErrors`. The official editor extension also provides a Debug Test action for browser tests (4.0.0).
+
+Set the Browser UI details panel to the bottom or right, or use the UI layout toggle (4.1.0):
+
+```ts
+export default defineConfig({
+  test: { browser: { detailsPanelPosition: 'bottom' } },
+})
+```
+
+The Playwright provider also accepts `launchOptions` together with `connectOptions` and supports persistent contexts (4.1.0).
+
+## Playwright traces
+
+The 4.0-guides trace workflow records every test or retains trace data only around retries and failures. `browser.trace` accepts a mode directly or an object with a root-relative `tracesDir`; trace archives are exposed to reporters as annotations.
 
 ```ts
 import { playwright } from '@vitest/browser-playwright'
@@ -178,81 +122,45 @@ export default defineConfig({
 })
 ```
 
-Supported selective modes include `on-first-retry` and `on-all-retries`. Use `trace: 'on'` or `--browser.trace=on` to record every test. Without `tracesDir`, archives are written to `__traces__` beside the test file. Trace archives are also exposed to reporters as test annotations.
+Selective modes are `on-first-retry` and `on-all-retries`. `trace: 'on'` or `--browser.trace=on` records every test. Without `tracesDir`, archives go to `__traces__` beside the test file.
 
-Browser assertions and interactions are automatically grouped in traces at the test lines that triggered them. Ordinary Node-side assertions are not grouped. Add meaningful trace structure with:
-
-- `page.mark(name)` or `locator.mark(name)` for a named point.
-- `page.mark(name, callback)` or the locator equivalent to group a flow.
-- `vi.defineHelper(callback)` around reusable helpers so trace entries point to the helper's call site instead of its implementation.
+Browser assertions and interactions are grouped at their triggering test lines in traces; ordinary Node-side assertions are not. Add named points with `page.mark()` or `locator.mark()`, group a flow with a callback, and wrap reusable helpers in `vi.defineHelper()` so trace entries point at each helper call site.
 
 ```ts
 const signIn = vi.defineHelper(async () => {
   await page.mark('sign in', async () => {
-    await page.getByRole('textbox', { name: 'Email' })
-      .fill('me@example.com')
+    await page.getByRole('textbox', { name: 'Email' }).fill('me@example.com')
     await page.getByRole('button', { name: 'Sign in' }).click()
   })
 })
 ```
 
-## Create visual-regression baselines
+## Screenshot baselines
 
-`toMatchScreenshot` is an asynchronous assertion for a page or locator:
+The 4.0-guides visual-regression workflow uses asynchronous `toMatchScreenshot` assertions on pages or locators. A missing reference is created under `__screenshots__` beside the test and the run deliberately fails. Review and commit the browser-and-platform-specific baseline, then regenerate deliberate changes with `vitest --update`.
 
 ```ts
-await expect(page.getByTestId('hero'))
-  .toMatchScreenshot('hero-section')
+await expect(page.getByTestId('hero')).toMatchScreenshot('hero-section', {
+  screenshotOptions: { mask: [page.getByTestId('last-seen')] },
+})
 ```
 
-If no reference exists, Vitest creates one under `__screenshots__` beside the test and deliberately fails that run. Review and commit the browser-and-platform-specific baseline. Regenerate intentional changes with `vitest --update`.
+Vitest captures repeatedly until the image stabilizes or the test times out, so control continuously changing content. The Playwright provider disables screenshot animations by default and can mask dynamic regions.
 
-Vitest repeatedly captures the target until the image stabilizes or the test times out. Freeze or mask continuously changing content so stabilization can succeed.
-
-## Configure screenshot capture and comparison
-
-Set `browser.expect.toMatchScreenshot` globally or pass the same comparator settings to an assertion. In the `4.0-guides` configuration, screenshot capture options could mask dynamic regions alongside explicit Pixelmatch settings:
+In the 4.0-guides comparator configuration, Pixelmatch accepted a color `threshold` and either `allowedMismatchedPixelRatio` or `allowedMismatchedPixels`; there was no default mismatch allowance, and the stricter limit applied when both were set. Put these settings globally under `browser.expect.toMatchScreenshot` or pass the same comparator settings to an individual assertion.
 
 ```ts
-export default defineConfig({
-  test: {
-    browser: {
-      expect: {
-        toMatchScreenshot: {
-          comparatorName: 'pixelmatch',
-          comparatorOptions: {
-            threshold: 0.2,
-            allowedMismatchedPixelRatio: 0.01,
-          },
-        },
+browser: {
+  expect: {
+    toMatchScreenshot: {
+      comparatorName: 'pixelmatch',
+      comparatorOptions: {
+        threshold: 0.2,
+        allowedMismatchedPixelRatio: 0.01,
       },
     },
   },
-})
-
-await expect(page.getByTestId('profile')).toMatchScreenshot('profile', {
-  screenshotOptions: {
-    mask: [page.getByTestId('last-seen')],
-  },
-})
+}
 ```
 
-The `4.0-guides` Pixelmatch configuration supports a color `threshold` plus `allowedMismatchedPixelRatio` or `allowedMismatchedPixels`. There is no default mismatch allowance, and the stricter limit applies when both allowance forms are present. With Playwright, screenshot animations are disabled by default.
-
-In `4.1.0`, browser screenshot comparison switched from Pixelmatch to BlazeDiff. This can change visual-diff results after an upgrade, so review explicit comparator configuration and regenerated baselines carefully. Failure screenshots now go through the artifacts API; their attachments can be processed by the HTML reporter.
-
-## Place the Browser UI details panel
-
-Set the details panel below or beside the test view. The Browser UI exposes the same choice through its layout toggle:
-
-```ts
-export default defineConfig({
-  test: {
-    browser: {
-      detailsPanelPosition: 'bottom',
-    },
-  },
-})
-```
-
-Valid positions are `bottom` and `right`.
+Vitest 4.1.0 changed screenshot comparison from Pixelmatch to BlazeDiff, so existing visual results can change after upgrading. Failure screenshots now go through the artifacts API, allowing the HTML reporter to process their attachments.

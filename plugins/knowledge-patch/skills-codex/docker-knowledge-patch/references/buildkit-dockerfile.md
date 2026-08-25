@@ -1,50 +1,85 @@
 # BuildKit and Dockerfile Frontend
 
-Use this reference for BuildKit provenance, source protocols and verification, deployment constraints, Dockerfile frontend behavior, and linting.
+Use this reference for Dockerfile frontend behavior, BuildKit source handling,
+provenance, runtime compatibility, and BuildKit security changes.
 
-## Frontend versions
+## Dockerfile and build-context behavior
 
-- BuildKit 0.28.0 bundles Dockerfile frontend v1.22.0.
-- Buildx cross-project named-context isolation requires Dockerfile 1.22.0 or later.
-- Buildx resource limits introduced later require Dockerfile v1.25.0 or later together with BuildKit 0.31.0 or later.
+### Dockerfile `ADD` on filesystems without xattrs (26.0.0)
 
-## Provenance
+Extracting an archive with extended attributes through `ADD` no longer fails
+with `lsetxattr ... operation not supported` when the destination filesystem
+cannot store those attributes.
 
-- BuildKit 0.28.0 emits SLSA v1.0 provenance by default instead of v0.2. Set the provenance `version` attribute when an integration still requires v0.2.
-- An image's provenance attestation can be fetched directly through a Source metadata request.
-- The provenance JSON key is `InvocationId`, not `InvocationID`, matching the SLSA specification. Update case-sensitive consumers.
+### Bundled Dockerfile frontend 1.22.0 (0.28.0)
 
-## Registry and OCI raw-blob sources
+BuildKit 0.28.0 updates its built-in Dockerfile frontend to v1.22.0;
+compatibility checks against the bundled frontend should use that version.
 
-LLB definitions can retrieve raw blobs from registries and OCI layouts using protocols added in 0.28.0:
+### Invalid `.dockerignore` patterns (0.28.0)
 
-- `docker-image+blob://`
-- `oci-layout+blob://`
+BuildKit 0.28.1 no longer panics while processing an invalid `.dockerignore`
+pattern during `COPY`.
 
-## HTTP source verification
+### Negated ignore patterns no longer trigger false copy warnings (1.22.0)
 
-BuildKit 0.28.0 expands LLB HTTP-source verification:
+Dockerfile frontend 1.22.0 no longer emits an incorrect linter warning that a
+`COPY` source is ignored when a negated `.dockerignore` pattern re-includes it.
+Builds that intentionally re-include files should no longer treat this warning
+as actionable.
 
-- Request checksums using algorithms other than the default SHA-256.
-- Use optional checksum suffixes.
-- Validate sources with PGP signatures.
-- Supply combined public keys when defining the required signer for PGP verification.
+## Provenance and source metadata
 
-Buildx Rego policy adds higher-level Sigstore, provenance, PGP, and network-request checks; see [buildx.md](buildx.md).
+### SLSA v1 provenance by default (0.28.0)
 
-## Deployment environments
+Provenance attestations now default to SLSA v1.0 instead of v0.2. Set the
+provenance `version` attribute when legacy v0.2 output is required.
 
-- BuildKit 0.28.0 cgroup support works in environments without their own cgroup namespace, including such Kubernetes deployments.
+### Provenance through source metadata (0.28.0)
 
-## Dockerfile archive extraction
+An image's provenance attestation can now be pulled directly with a Source
+metadata request.
 
-- Starting with Engine 26.0.0, Dockerfile `ADD` does not fail with `lsetxattr ... operation not supported` merely because an input archive has extended attributes that the destination filesystem cannot store.
-- This is narrower than general image-layer extraction: Engine 25.0.0 makes layer unpacking fail when extended attributes cannot be preserved. Do not treat the `ADD` exception as a global xattr policy.
+### Provenance JSON key casing (0.28.0)
 
-## Dockerfile linting
+The provenance attestation key `InvocationID` is now `InvocationId` to match
+SLSA. BuildKit and Buildx Go tooling is unaffected, but case-sensitive
+third-party JSON parsers must accept the new spelling.
 
-- Dockerfile frontend 1.22.0 stops reporting a false copy warning when a negated ignore pattern has re-included a path used by `COPY`.
+## LLB source capabilities
 
-## buildctl shell integration
+### Raw registry and OCI-layout blob sources (0.28.0)
 
-- `buildctl` supports Bash completion starting with BuildKit 0.28.0.
+LLB definitions can access raw blobs from image registries and OCI layouts
+through the new `docker-image+blob://` and `oci-layout+blob://` source identifier
+protocols.
+
+### Custom HTTP-source checksums (0.28.0)
+
+The LLB API can request HTTP-source checksums using algorithms other than the
+default SHA-256 and can include optional checksum suffixes.
+
+### HTTP-source PGP verification (0.28.0)
+
+LLB HTTP sources can now be validated with PGP signatures, as Git sources
+already could. PGP verification also accepts combined public keys when defining
+the required signer.
+
+## Runtime and tooling
+
+### Cgroups without a dedicated namespace (0.28.0)
+
+BuildKit's cgroup handling now supports environments, including Kubernetes
+deployments, that do not have their own cgroup namespace.
+
+### Bash completion for `buildctl` (0.28.0)
+
+The `buildctl` binary now supports Bash completion.
+
+## Security fixes
+
+### 0.28.1 security hardening (0.28.0)
+
+The follow-up release validates Git URL `#ref:subdir` fragments so they cannot
+access restricted files outside the checked-out repository root, and prevents
+untrusted custom frontends from writing outside the BuildKit state directory.

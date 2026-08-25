@@ -1,134 +1,221 @@
 # Engine Runtime, Daemon, and Platform
 
-Use this reference for daemon installation and configuration, container lifecycle, mounts, resource controls, rootless mode, Windows, and platform support.
+## Daemon startup, reload, and process model
 
-## Daemon startup, validation, and reload
+### Transactional reload and early validation
 
-- Configuration reload is atomic (since 25.0.0): if any proposed setting is invalid, none of the reload changes take effect.
-- The daemon validates `userland-proxy-path` during startup rather than waiting for the first published port (since 25.0.0).
-- A proxy executable whose name begins with `docker-` is also searched for in `/usr/local/libexec` and `/usr/libexec` (since 27.0.1).
-- Engine 28.0.0 requires the updated `docker-proxy`; an older binary is incompatible. `rootlesskit-docker-proxy` was removed from builds and packages.
-- `dockerd --validate` now checks host requirements as well as daemon configuration:
+Since 25.0.0, a failed daemon configuration reload is atomic: none of the new
+settings apply if any reload step fails. An invalid `userland-proxy-path` is
+also rejected at daemon startup rather than on the first published port.
 
-```console
-dockerd --validate --config-file /etc/docker/daemon.json
-```
+Engine 29 extends `dockerd --validate` to check host requirements as well as
+configuration. Engine 29.3 implements systemd 253 `Type=notify-reload` with
+synchronous `RELOADING`, `READY`, and `STOPPING` notifications. Validate first,
+then let systemd's completion notification delimit a reload.
 
-- Reloads now emit systemd `RELOADING` notifications and support systemd 253's `Type=notify-reload` protocol.
-- The Engine API socket can serve gRPC natively, so a gRPC integration does not need a second listener. API v1.53 nevertheless deprecates the older `POST /grpc` tunnel; see [engine-api.md](engine-api.md).
+### Live restore
 
-## Installation and image-store behavior
+Since 25.0.0, live-restored `--rm` containers survive an Engine restart instead
+of being forcibly deleted. They also begin a new health-check start period.
+Automation must not infer either removal or immediate health failure after a
+live-restore restart.
 
-- The containerd image store is the default for fresh Engine 29 installations. Upgrades retain their existing store. Daemons using `userns-remap` cannot temporarily use the containerd store.
-- On Windows, Engine 28.0.0 can manage containerd as a daemon child instead of requiring a system-installed containerd.
-- The `devicemapper` storage driver, Debian Upstart integration, daemon `--oom-score-adjust`, and `logentries` logging driver were removed in 25.0.0.
-- External graph-driver plugins and daemon/API CORS configuration were removed in 28.0.0. The in-tree image-spec package was replaced by `github.com/moby/docker-image-spec`.
+### Containerd layouts and installation state
 
-## Container lifecycle and OCI behavior
+Windows Engine 28.0.0 can manage containerd as a daemon child rather than
+requiring a separately installed system service. Fresh Engine 29 installations
+default to the containerd image store; upgrades preserve their existing store,
+and `userns-remap` prevents use of that store. Detect the store rather than
+inferring it from the Engine version.
 
-- After a daemon restart, live-restored `--rm` containers are no longer forcibly removed, and every restored container receives another health-check start period (since 25.0.0).
-- `Healthcheck.StartInterval` now defaults to the documented five seconds (since 27.0.1).
-- Container `StartedAt` is recorded before startup and therefore precedes `FinishedAt` (since 27.0.1).
-- The deprecated OCI `prestart` hook is used only for build containers (since 28.0.0). For other containers, Engine adds network interfaces after task creation completes and before the task starts; account for that order in hooks that inspect the network namespace.
-- Restarting a container no longer overwrites a user-edited `/etc/resolv.conf` starting with Engine 29.1.
-- Legacy-link environment variables are no longer injected automatically. Set `DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1` only as temporary compatibility; that switch is also scheduled for removal.
+Engine 29.7.0 adds an experimental mode that embeds containerd inside the
+daemon process. Monitoring and process supervision must account for the chosen
+layout.
 
-## Filesystems and mounts
+### Proxy compatibility
 
-- Layer extraction fails rather than silently dropping extended attributes when the target filesystem cannot store them (since 25.0.0). Dockerfile `ADD` has separate behavior for archives; see [buildkit-dockerfile.md](buildkit-dockerfile.md).
-- Containers can mount content from an image with `type=image` (since 28.0.0). `image-subpath` selects a path inside the source image:
+Engine 28.0.0 requires its matching `docker-proxy`; older proxy binaries are
+incompatible. `rootlesskit-docker-proxy` is removed from the distribution.
 
-```console
-docker run --mount type=image,source=alpine:latest,target=/mnt,image-subpath=etc alpine:latest
-```
+### OpenTelemetry
 
-- `--mount` accepts `bind-create-src` when Docker should create a missing bind source:
+Engine 25.0.0 adds daemon OpenTelemetry tracing. Configure it when daemon
+activity needs to join an existing OpenTelemetry trace pipeline.
 
-```console
-docker run --mount type=bind,src=/host/data,dst=/data,bind-create-src IMAGE
-```
+### Containerd store metrics
 
-- The deprecated `bind-nonrecursive` spelling is removed. Engine 29 treats it as an error; use `bind-recursive=disabled`:
+Since 26.0.0, the containerd image store exposes Prometheus metrics. Include
+that backend in Prometheus collection and alerting instead of assuming only the
+classic store contributes daemon image metrics.
 
-```console
-docker run --mount type=bind,src=/host/data,dst=/data,bind-recursive=disabled IMAGE
-```
+## Resource controls and host integration
 
-- Anonymous volume mounts can now be read-only; a named volume source is no longer required:
+### File-descriptor defaults
 
-```console
-docker run --mount type=volume,dst=/data,readonly IMAGE
-```
-
-## Resource limits, cgroups, and security
-
-- Bundled containerd 2.1.5 adopts systemd's default `LimitNOFILE`, changing a container's default `ulimit -n` from `1048576` to `1024`. Set a per-container `--ulimit` or a daemon default:
+Engine 29's bundled static containerd 2.1.5 follows systemd's default
+`LimitNOFILE`, reducing a container's default `nofile` limit from 1048576 to
+1024. Request a limit per container or configure a daemon default:
 
 ```json
 {
   "default-ulimits": {
-    "nofile": { "Name": "nofile", "Soft": 1048576, "Hard": 1048576 }
+    "nofile": {"Name": "nofile", "Soft": 1048576, "Hard": 1048576}
   }
 }
 ```
 
-- A custom seccomp profile supplied with `--privileged` is honored instead of ignored (since 27.0.1).
-- API `HostConfig.SecurityOpt` accepts `writable-cgroups=true`, allowing writable cgroup mounts without full privileged mode (since 28.0.0):
+### Writable cgroups and cgroup generations
+
+Engine 28.0.0 accepts `writable-cgroups=true` in `HostConfig.SecurityOpt`,
+providing writable cgroup mounts without full privileged mode.
 
 ```json
-{"HostConfig":{"SecurityOpt":["writable-cgroups=true"]}}
+{"HostConfig": {"SecurityOpt": ["writable-cgroups=true"]}}
 ```
 
-- Cgroup v1 is deprecated. Support is promised only until at least May 2029; migrate deployments to cgroup v2.
-- `--kernel-memory` is hidden and warns because neither the daemon nor the kernel supports it.
+Cgroup v1 is deprecated in Engine 29, though support is promised until at least
+May 2029. Plan host migration to cgroup v2.
 
-## Swarm resources and security
+### Stop and swap controls
 
-- Service create and update accept `OomScoreAdj` through the API (since 27.0.1). `docker service create` and Compose stack deployment expose it starting with 28.0.0.
-- Swarm service create and update now accept memory-swap and memory-swappiness controls. Service and task resources expose `SwapBytes` and `MemorySwappiness` in list, inspect, create, and update operations.
-- API v1.44 service create and update requests accept `Seccomp` and `AppArmor` under `ContainerSpec.Privileges`.
-- `Healthcheck.StartInterval` is correctly ignored when a Swarm service is updated through API versions earlier than v1.44 (since 27.0.1).
+Engine 29.7.0 adds daemon option `default-stop-timeout`, inherited by containers
+that do not set their own timeout. Engine 28.0.0 renamed the CLI flags on
+`docker stop` and `docker restart` from `--time` to `--timeout`.
 
-## NRI, CDI, and device access
+Engine 29 adds `--memory-swap` and `--memory-swappiness` to `docker service
+create` and `docker service update`; service and task resources expose
+`SwapBytes` and `MemorySwappiness`.
 
-- Engine 29.2 adds experimental NRI support; inspect its state in the `NRI` section of `docker info`.
-- Engine 29.2 uses CDI for NVIDIA `--gpus` requests when possible, and 29.3 uses CDI injection for AMD GPUs.
-- Rootless CDI discovery searches `$XDG_CONFIG_HOME/cdi` and `$XDG_RUNTIME_DIR/cdi`.
-- API v1.44 exposes configured CDI directories as `CDISpecDirs`; v1.50 adds discovered devices. See [engine-api.md](engine-api.md).
-- Engine builder configuration adds a `device` entitlement for builds that need device access.
+### Build-cache storage policy
 
-## Rootless mode and user namespaces
+Since 28.0.0, `docker buildx prune` supports `reserved-space`,
+`max-used-space`, and `min-free-space` in addition to `keep-bytes`. The prune
+API renames `keep-bytes` to `reserved-space` and exposes the other limits.
 
-- Rootless containers can opt into host access at `10.0.2.2` by setting `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false` (since 26.0.0). Host loopback remains disabled by default.
-- With `--userns-remap`, the containerd image store separates images into distinct containerd namespaces and publishes metrics (since 26.0.0). Engine 29's fresh-install default still excludes `userns-remap` temporarily.
-- If `slirp4netns` is unavailable, `dockerd-rootless.sh` now tries pasta from passt instead of failing immediately.
+## Mount and filesystem behavior
 
-## Remote daemon security
+### Image mounts
 
-- The CLI and daemon deprecate unauthenticated TCP connections starting in 26.0.0.
-- On Engine 27 and later, a non-local remote TCP listener combined with explicit `--tls=false` or `--tlsverify=false`—including equivalent `daemon.json` settings—prevents daemon startup. `tcp://localhost` is exempt. Use verified TLS, a Unix socket, or SSH.
+Engine 28.0.0 introduces `type=image` mounts and `image-subpath`. The mount type
+graduates from experimental in Engine 29.7.0.
+
+```console
+docker run --rm --mount type=image,source=alpine:latest,target=/mnt,image-subpath=etc alpine ls /mnt
+```
+
+### Volume and bind subpaths
+
+Engine 26.0.0 adds `VolumeOptions.Subpath`, exposed as `volume-subpath`. Engine
+28.0.0 extends it to Swarm services.
+
+```console
+docker run --mount type=volume,src=data,dst=/mnt,volume-subpath=logs IMAGE
+```
+
+Engine 29.2 allows anonymous read-only volumes. Engine 29.3 adds
+`bind-create-src` and removes `bind-nonrecursive`.
+
+### Extended attributes
+
+Since 25.0.0, unpacking an image layer onto a filesystem that cannot store its
+extended attributes fails rather than silently losing them. Separately, since
+26.0.0 Dockerfile `ADD` archive extraction tolerates an xattr-incapable
+destination rather than failing with `lsetxattr ... operation not supported`.
+Test the exact extraction path; these behaviors address different operations.
+
+## Container lifecycle and security
+
+### MAC persistence repair
+
+Engine 26.0.0 stops restoring generated MAC addresses across restart while
+preserving explicitly configured values. Re-create containers created by
+25.0.0 that may have duplicate MACs. Also re-create 25.0.0/25.0.1 containers
+with configured MACs if 25.0.2 started them with generated addresses.
+
+### Seccomp with privileged containers
+
+Since 27.0.1, an explicitly supplied custom seccomp profile remains active
+with `--privileged`; it is no longer silently ignored.
+
+```console
+docker run --privileged --security-opt seccomp=profile.json IMAGE
+```
+
+### Health and timestamps
+
+Engine 27.0.1 corrects the default health-check `StartInterval` to five seconds.
+Swarm updates through APIs older than v1.44 still ignore that field. Container
+`StartedAt` is recorded before startup and therefore precedes `FinishedAt`.
+
+### OCI hook ordering
+
+In 28.0.0, the deprecated OCI `prestart` hook remains only for build
+containers. For other containers Engine creates the task, attaches network
+interfaces to its namespace, then starts it. Hooks depending on the previous
+network/task order must be migrated.
+
+## Rootless and devices
+
+### Rootless host loopback
+
+Since 26.0.0, rootless containers can reach the host at `10.0.2.2` when
+`DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false`; the default remains
+`true`.
+
+```console
+export DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false
+```
+
+### NRI, CDI, and networking fallback
+
+Engine 29.2 adds experimental NRI and reports it in `docker info`. NVIDIA GPU
+requests use CDI when possible; Engine 29.3 adds AMD CDI handling, and builder
+configuration accepts the `device` entitlement. Rootless mode searches
+`$XDG_CONFIG_HOME/cdi` and `$XDG_RUNTIME_DIR/cdi`, and falls back to pasta when
+slirp4netns is unavailable.
 
 ## Logging
 
-- The `fluentd-async-connect` logging option was removed in 28.0.0.
-- The fluentd driver accepts `fluentd-read-timeout` to bound waits for Fluentd acknowledgement reads.
+Engine 25.0.0 removes the `logentries` driver. Engine 28.0.0 removes Fluentd
+option `fluentd-async-connect`. Engine 29 adds `fluentd-read-timeout` so a
+daemon can bound its wait for Fluentd acknowledgements.
 
-## Windows behavior
+## Windows and platform support
 
-- Windows containers' internal DNS forwards to external DNS by default (since 27.0.1), allowing tools such as `nslookup` to resolve external names. The temporary daemon switch below disables it but is planned for removal:
+### Windows behavior
 
-```json
-{"features":{"windows-dns-proxy":false}}
-```
+Engine 27.0.1 makes the Windows container DNS resolver forward to external DNS
+by default and permits BuildKit when the daemon advertises support. The
+temporary `"windows-dns-proxy": false` escape hatch is removed in 28.0.0.
 
-- A CLI can use BuildKit when a Windows daemon advertises support (since 27.0.1).
-- Windows now supports `docker run --runtime <name>`.
-- The Windows overlay driver accepts `--dns`.
-- Install Windows CLI plugins under `%ProgramFiles%\Docker\cli-plugins`; the old `%PROGRAMDATA%\Docker\cli-plugins` compatibility location is no longer searched.
+Engine 29 supports `docker run --runtime` for Windows containers and `--dns` on
+the Windows overlay driver. The CLI stops discovering plugins under
+`%PROGRAMDATA%\Docker\cli-plugins`; use `%ProgramFiles%\Docker\cli-plugins`.
 
-## Host and package compatibility
+### ARM packages
 
-- Debian `armhf` packages now require ARMv7 and do not run on ARMv6.
-- Official Raspbian packages were removed. Use Debian arm64 for 64-bit systems or Debian armhf for 32-bit ARMv7.
-- Engine no longer loads image formats predating Docker 1.10.
-- Values passed to `--tlscacert`, `--tlscert`, and `--tlskey` are no longer specially unquoted.
+Engine 29 Debian `armhf` packages require ARMv7, official 32-bit Raspbian
+packages are removed, and ARMv6 is unsupported by those packages.
+
+## Removed and inert daemon features
+
+- Engine 25.0.0 removes daemon option `--oom-score-adjust`.
+- Engine 27.0.1 deprecates experimental GraphDriver plugins and API CORS.
+- Engine 28.0.0 removes external graph-driver plugins and the daemon API CORS
+  option.
+- Engine 28.0.0 makes `--allow-nondistributable-artifacts` inert and warns;
+  related registry fields are `null` through API v1.48 and omitted from v1.49.
+- Engine 28.0.0 removes the SCTP checksum mangle rule but temporarily accepts
+  daemon environment `DOCKER_IPTABLES_SCTP_CHECKSUM=1`; Engine 29 removes the
+  behavior entirely, so the switch then has no effect.
+- Engine 29 hides unsupported `--kernel-memory` and deprecates `docker commit
+  --pause` in favor of `--no-pause`.
+
+## Operational checks
+
+1. Run `dockerd --validate --config-file ...` before reload or restart.
+2. Inspect the image store, containerd layout, firewall backend, cgroups, CDI,
+   and resource defaults with host configuration and `docker info`.
+3. Re-test hooks, health timing, logging acknowledgements, and live restore.
+4. Treat fresh installs, in-place upgrades, and downgrades as different state
+   transitions.

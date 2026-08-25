@@ -1,81 +1,14 @@
 # Rendering and components
 
-Use this reference for server/client boundaries, server components and islands, delayed hydration, head state, runtime hooks, error handling, and built-in components.
+## Server-only and client-only pages
 
-## Contents
+Pages ending in `.client.vue` skip SSR for the entire page. Pages ending in `.server.vue` emit server-rendered HTML while still supporting client navigation and prefetch (3.11.0).
 
-- [Server-only, client-only, and multi-app rendering](#server-only-client-only-and-multi-app-rendering)
-- [Server components and islands](#server-components-and-islands)
-- [Hydration control](#hydration-control)
-- [Head and response APIs](#head-and-response-apis)
-- [Built-in components and error handling](#built-in-components-and-error-handling)
-- [Component authoring and render functions](#component-authoring-and-render-functions)
+Experimental multi-app support can run multiple application instances in parallel behind `experimental.multiApp` (3.12.0). Treat it as unfinished compatibility-sensitive behavior.
 
-## Server-only, client-only, and multi-app rendering
+## Lazy hydration
 
-### Use page suffixes for whole-page rendering modes (3.11.0)
-
-A page ending in `.client.vue` skips SSR for the entire page. A page ending in `.server.vue` renders HTML on the server while still supporting client navigation and link prefetching.
-
-### Enable deep selective client islands only when needed (3.11.0)
-
-Set `componentIslands.selectiveClient` to `'deep'` to allow `nuxt-client` anywhere inside a server-component tree. Server components emit `@error` on load failure. Nuxt automatically enables server-only components when the project or a layer contains a server-only component or page; these APIs remain experimental.
-
-```ts
-export default defineNuxtConfig({
-  experimental: {
-    componentIslands: { selectiveClient: 'deep' },
-  },
-})
-```
-
-### Type the server-component fallback slot (3.12.0)
-
-The `#fallback` slot exposed by server components has generated types; avoid replacing it with an untyped wrapper API.
-
-### Evaluate multi-app support as experimental (3.12.0)
-
-Use the unfinished `experimental.multiApp` support only for deliberate testing of multiple application instances running in parallel at runtime.
-
-```ts
-export default defineNuxtConfig({
-  experimental: { multiApp: true },
-})
-```
-
-## Server components and islands
-
-### Add document head entries from server islands (3.13.0)
-
-Server component islands can update the document head during rendering, including SEO metadata.
-
-### Prerender compatible server components for static hosting (4.0-platform-guide)
-
-Nuxt prerenders server components used by crawled pages by default. They work on fully static hosting when they are not first discovered only in the browser and their props do not change at runtime. With payload extraction enabled, their payloads can be prefetched for client navigation.
-
-### Use server-island runtime context carefully (4.0-platform-guide)
-
-Server components can read shared state and the current route, nest like ordinary components, and run all application plugins during rendering. At the platform guide's snapshot, a `<NuxtLink>` rendered inside a server component does not by itself provide interactive client routing; handle the click in a client parent with `navigateTo` when SPA navigation is required.
-
-### Keep server-island props out of secrets (release-catalogs)
-
-Props passed to server components and islands are serialized into the island request query string. Keep them URL-serializable, within practical URL size limits, and free of secrets.
-
-## Hydration control
-
-### Run browser work immediately before hydration (3.12.0)
-
-Use `onPrehydrate` for browser code that must execute during the hydration cycle before Nuxt hydrates the page.
-
-```ts
-onPrehydrate(() => {
-  // runs before hydration
-})
-```
-
-### Delay auto-imported component hydration (3.16.0)
-
-Lazy components support Vue's visibility, idle, interaction, media-query, and timed hydration strategies. Listen for `hydrated` when completion matters.
+Auto-imported lazy components support visibility, idle, interaction, media-query, and delay strategies through `hydrate-on-visible`, `hydrate-on-idle`, `hydrate-on-interaction`, `hydrate-on-media-query`, and `hydrate-after`. The `hydrated` event signals completion (3.16.0).
 
 ```vue
 <LazyChart hydrate-on-visible @hydrated="onHydrated" />
@@ -83,11 +16,7 @@ Lazy components support Vue's visibility, idle, interaction, media-query, and ti
 <LazyFooter :hydrate-after="2000" />
 ```
 
-Use `hydrate-on-visible`, `hydrate-on-idle`, `hydrate-on-interaction`, `hydrate-on-media-query`, or `hydrate-after` according to the trigger.
-
-### Apply lazy hydration to explicit imports (3.18.0)
-
-Use `defineLazyHydrationComponent` when the component is imported explicitly rather than discovered as an auto-imported `Lazy` component.
+Use `defineLazyHydrationComponent` for explicitly imported components (3.18.0):
 
 ```vue
 <script setup lang="ts">
@@ -102,57 +31,45 @@ const LazyHydrationChart = defineLazyHydrationComponent(
 </template>
 ```
 
-### Use lazy-hydration macros without auto-imports (3.19.0)
+Lazy-hydration macro transforms also work when Nuxt auto-imports are disabled or customized (3.19.0). Use `onPrehydrate` for browser work that must run during the hydration cycle immediately before Nuxt hydrates the page (3.12.0).
 
-Macro transformation no longer depends on Nuxt auto-imports being enabled. Projects that disable or customize auto-imports can still use the lazy-hydration macros.
+## Server islands and server components
 
-## Head and response APIs
+With `componentIslands.selectiveClient: 'deep'`, `nuxt-client` can appear anywhere inside a server-component tree. Server components emit `@error` on loading failure, and Nuxt auto-enables server-only components when the project or a layer contains one; these APIs began as experimental (3.11.0). Their `#fallback` slot is typed (3.12.0).
 
-### Import head composables through Nuxt (3.16.0)
+Server islands can update document head state while rendering, including SEO metadata (3.13.0). They can access shared state and the current route, nest normally, and run application plugins (4.0-platform-guide).
 
-Nuxt uses Unhead v2 with a Nuxt 3 compatibility build. Import head composables through Nuxt auto-imports or `#app/composables/head`; a direct `@unhead/vue` import can lose Nuxt async context.
+Server components used by crawled pages are prerendered by default and can work on static hosting. This does not apply when a component first appears only after client navigation or requires runtime-changing props. Payload extraction allows eligible island payloads to be prefetched for navigation (4.0-platform-guide).
 
-```ts
-import { useHead } from '#app/composables/head'
-```
+Island props are serialized into the island request query string. They must be non-secret, serializable, small, and object-shaped; Nitro rejects non-object props (release-catalogs, 4.5.2).
 
-### Target a specific head instance (3.19.0)
+At the 4.0-platform-guide snapshot, links inside server components required a client wrapper for SPA navigation. Since 4.5.2, island links navigate client-side directly. That patch also preserves payload keys containing underscores and supports Options API island components rendered with `v-for`.
 
-`useHead` honors its `head` option:
+Page-island rendering runs Nuxt middleware rather than bypassing it (3.21.0).
+
+## Head and runtime composables
+
+Import head composables through Nuxt auto-imports or `#app/composables/head`; direct `@unhead/vue` imports can lose async context (3.16.0). `useHead` accepts a `head` option to target a specific head instance (3.19.0).
 
 ```ts
 useHead({ title: 'Preview' }, { head })
 ```
 
-### Use response-header and runtime-hook composables (3.14.0)
+`useResponseHeader` works with a response header from application code. `useRuntimeHook` registers a runtime hook through a composable API (3.14.0).
 
-Use `useResponseHeader` to work with an outgoing response header and `useRuntimeHook` to register a Nuxt runtime hook through composable APIs.
+## Built-in components
 
-## Built-in components and error handling
-
-### Format time without hydration mismatches (3.17.0)
-
-`<NuxtTime>` formats dates consistently between server and client.
-
-```vue
-<NuxtTime :datetime="Date.now()" />
-```
-
-### Control relative-time formatting (4.2.0)
-
-In relative mode, `<NuxtTime>` exposes `numeric` and `relativeStyle`.
+`<NuxtTime>` formats dates without server/client hydration mismatches (3.17.0). Relative mode also accepts `numeric` and `relativeStyle` (4.2.0).
 
 ```vue
 <NuxtTime :datetime="date" relative numeric="auto" relative-style="short" />
 ```
 
-### Reuse stronger built-in component types (3.18.0)
+`<ClientOnly>` and `<DevOnly>` expose typed slots, and `<NuxtTime>` exports its prop types for wrappers (3.18.0). Auto-imported components can be passed directly to Vue's `h()` in render functions (4.2.0).
 
-`<ClientOnly>` and `<DevOnly>` expose typed slots, and `<NuxtTime>` exports its prop types for wrapper components and extensions.
+## Error boundaries and error pages
 
-### Inspect and clear error boundaries through public state (3.17.0)
-
-`<NuxtErrorBoundary>` exposes `error` and `clearError` on its instance and typed error slot. Templates and `useTemplateRef` can inspect and reset a captured error.
+`<NuxtErrorBoundary>` exposes `error` and `clearError` through its component instance and typed error slot (3.17.0):
 
 ```vue
 <NuxtErrorBoundary>
@@ -164,19 +81,12 @@ In relative mode, `<NuxtTime>` exposes `numeric` and `relativeStyle`.
 </NuxtErrorBoundary>
 ```
 
-## Component authoring and render functions
+In development, a custom application error page appears with a toggleable technical overlay, allowing the rendered result and stack trace to be inspected together (4.2.0). The overlay can be moved to a corner or minimized, and its state persists across reloads (4.3.0).
 
-### Auto-import watcher cleanup (3.18.0)
+`NuxtError` extends the standard `Error` type. Prefer `status` and `statusText` over deprecated `statusCode` and `statusMessage` (3.21.0, 4.3.0).
 
-Nuxt auto-imports Vue's `onWatcherCleanup`, allowing watcher-owned resources to be released without an explicit Vue import.
+## Cleanup and component naming
 
-```ts
-watch(source, () => {
-  const timer = setInterval(runTask, 1000)
-  onWatcherCleanup(() => clearInterval(timer))
-})
-```
+Vue's `onWatcherCleanup` is auto-imported, allowing timers and other watcher-owned resources to be released without an explicit Vue import (3.18.0).
 
-### Use auto-imported components with `h()` (4.2.0)
-
-Auto-imported components can be passed directly to Vue's `h()` function without manually resolving the component first.
+Under compatibility version 4, nested component paths contribute to runtime names: `components/App/Header.vue` becomes `AppHeader`. Review name-based `<KeepAlive>` filters and diagnostics when enabling those defaults (3.14.0).

@@ -1,53 +1,41 @@
 # Playbooks, CLI, Inventory, and Galaxy
 
-These user-facing and compatibility changes are attributed to batch
-`2.19-2.20`.
+## Cache control and inventory discovery
 
-## Cache and CLI Options
+The `ansible`, `ansible-console`, and `ansible-pull` commands in `2.19-2.20`
+accept `--flush-cache` when cached facts or inventory data must be invalidated.
 
-`ansible`, `ansible-console`, and `ansible-pull` support `--flush-cache`.
-Use it when a run must invalidate cached facts or inventory-derived data.
+`INVENTORY_IGNORE_EXTS` no longer includes `ini` by default. A file such as
+`inventory.ini` is therefore parsed as inventory unless `ini` is explicitly
+restored to the ignore list. Audit repositories that used an `.ini` suffix for
+unrelated configuration.
 
-The `--inventory-file` alias is deprecated; use `--inventory`.
-The `oneline` and `tree` callbacks and their `-o` and `-t` arguments are
-deprecated.
+Prefer `--inventory`; the `--inventory-file` alias is deprecated.
 
-## Inventory Parsing
+## Tracebacks and result diagnostics
 
-The default `INVENTORY_IGNORE_EXTS` no longer includes `ini`. A file such as
-`inventory.ini` is therefore considered for inventory parsing unless `ini` is
-explicitly restored to the ignore list.
+Use `DISPLAY_TRACEBACK` to control traceback display in `2.19-2.20`. `-vvv`
+does not enable tracebacks. Diagnostic tooling can consume the `warnings` and
+`deprecations` values emitted in task results; preserve these fields when
+wrapping or relaying results.
 
-Audit repositories that keep non-inventory `.ini` files beside inventory
-sources. Either move those files, narrow inventory paths, or deliberately
-configure the ignore extension.
+## Deprecated play and task syntax
 
-## Diagnostics
+Replace `play_hosts` with `ansible_play_batch` in `2.19-2.20`. Also remove:
 
-`-vvv` no longer enables tracebacks. Control traceback display with
-`DISPLAY_TRACEBACK`.
+- an empty `args` keyword;
+- mapping-form `action`;
+- task syntax that combines `key=value` arguments with `args`.
 
-Task results expose emitted `warnings` and `deprecations`. Tools that inspect,
-serialize, or redact task results should preserve and handle these fields.
+`DEFAULT_MANAGED_STR` is deprecated. Define `ansible_managed` as a normal
+variable instead.
 
-## Deprecated Playbook Surfaces
+## Play argument-spec validation
 
-Replace `play_hosts` with `ansible_play_batch`.
-
-The following playbook forms are deprecated:
-
-- An empty `args` keyword.
-- Mapping-form `action`.
-- Combining `key=value` arguments with `args`.
-
-Normalize tasks to a module's YAML mapping form. `DEFAULT_MANAGED_STR` is also
-deprecated; define `ansible_managed` as an ordinary variable.
-
-## Play Argument-Spec Validation
-
-The `validate_argspec` play keyword is a tech preview added in 2.20. Setting
-it to `true` uses the required play `name` as the argument-spec name. A string
-selects a different spec. Specs live in `<playbook_name>.meta.yml`.
+Play argument validation is a tech preview in `2.19-2.20`. Add
+`validate_argspec: true` to use the play's required `name` as the argument-spec
+name. Supply a string instead to select another entry from
+`<playbook_name>.meta.yml`.
 
 ```yaml
 # deploy.yml
@@ -66,11 +54,17 @@ argument_specs:
         required: true
 ```
 
-Keep the play name stable when it is also the spec selector, or use an
-explicit string selector.
+## Galaxy server and download behavior
 
-## Galaxy Collection Servers
+Collection Galaxy servers must support API v3 in `2.19-2.20`; API v2 support
+is removed.
 
-Collection servers used by Galaxy must implement API v3. API v2 support was
-removed in 2.20. Validate private Galaxy-compatible servers before upgrading
-controllers or execution environments.
+In `2.21.3`, `ansible-galaxy` retries a collection download when the response
+body is shorter than expected. A truncated first response no longer causes an
+immediate terminal artifact-hash mismatch.
+
+## Explicit test-target versions
+
+Target filtering in `2.21.3` preserves a user-specified version even if that
+version is absent from completion configuration. Do not treat completion data
+as the authoritative allowlist for explicit target versions.

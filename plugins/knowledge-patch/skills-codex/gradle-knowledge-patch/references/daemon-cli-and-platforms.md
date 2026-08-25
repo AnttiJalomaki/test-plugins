@@ -1,26 +1,10 @@
 # Daemon, CLI, Wrapper, and Platforms
 
-Use this reference for JVM selection, daemon connectivity, Wrapper downloads,
-unattended execution, console output, platform support, and command-line
-diagnostics.
+## Daemon JVM selection
 
-## Select and provision the daemon JVM
+### Auto-provision missing JVMs
 
-### Meet the Gradle 9 runtime floor
-
-The daemon requires JVM 17 or newer after the `9.0.0-upgrade`. Compilation,
-tests, and workers may still target older JVMs through toolchains. Wrapper and
-command-line launchers, Tooling API clients, and TestKit may run on JVM 8, but
-the launcher must still locate a JVM 17+ daemon.
-
-Java toolchain auto-detection also considers the JDK referenced by `JAVA_HOME`
-as of `9.0.0`, aligning command-line and IDE discovery.
-
-### Auto-provision a matching daemon JVM
-
-Since `8.13.0`, Gradle can download a JDK when no installation matches the
-Daemon JVM criteria. Apply Foojay resolver convention plugin 0.9.0 or provide a
-custom resolver:
+Since `8.13.0`, Gradle can download a JDK when no installed JDK matches the Daemon JVM criteria. Apply Foojay resolver plugin 0.9.0 or a custom resolver, then run `updateDaemonJvm`:
 
 ```kotlin
 plugins {
@@ -28,21 +12,15 @@ plugins {
 }
 ```
 
-Then generate the criteria file:
-
 ```text
 ./gradlew updateDaemonJvm --jvm-version=17 --jvm-vendor=adoptium
 ```
 
-`gradle/gradle-daemon-jvm.properties` records the requested vendor and version
-plus per-platform download URLs. Daemon toolchains are stable and covered by
-compatibility guarantees starting in `9.2.0`; using the criteria no longer
-emits an incubation warning.
+The resulting `gradle/gradle-daemon-jvm.properties` records requested vendor and version criteria plus per-platform download URLs.
 
-### Require Native Image
+### Native Image-capable toolchains
 
-Java and Daemon JVM toolchain selection can require a JDK that provides
-GraalVM Native Image (`8.14.0`):
+Since `8.14.0`, Java and Daemon JVM toolchain selection can require a JDK that provides GraalVM Native Image:
 
 ```kotlin
 java {
@@ -53,102 +31,85 @@ java {
 }
 ```
 
-### Account for newer Java releases
+### Stable daemon toolchains
 
-Gradle can run its daemon on Java 25 and use Java 25 toolchains as of `9.1.0`.
-Tooling API clients must enable native access at startup because the API uses
-JNI. Java 26 daemon and toolchain support follows in `9.4.0`. In either case,
-verify third-party tool compatibility separately.
+Since `9.2.0`, daemon toolchains are stable and covered by Gradle's backward-compatibility guarantees. Daemon JVM criteria no longer emit an incubation warning.
 
-## Control daemon networking and retention
+### Runtime compatibility
 
-Set `GRADLE_DAEMON_BIND_ADDRESS` (`9.5.0`) to bypass address auto-detection and
-choose the address used for client-daemon and cross-daemon communication:
+The Gradle 9 daemon needs Java 17 or newer. Compilation, tests, and workers may still use older target toolchains. Since `9.0.0`, Java toolchain auto-detection includes the JDK referenced by `JAVA_HOME`.
+
+Gradle `9.1.0` can run its daemon on Java 25 and use Java 25 toolchains. Tooling API clients on Java 25 must enable native access at startup because the API uses JNI; third-party tool compatibility can lag.
+
+Gradle `9.4.0` adds Java 26 support for both the daemon and toolchains. Check third-party tools separately.
+
+## Daemon networking and cleanup
+
+### Bind a specific address
+
+Since `9.5.0`, `GRADLE_DAEMON_BIND_ADDRESS` bypasses address auto-detection and selects the address used for client-daemon and cross-daemon communication:
 
 ```text
 GRADLE_DAEMON_BIND_ADDRESS=192.168.1.10 ./gradlew build
 ```
 
-This is useful on multi-interface hosts and unusual network setups.
+Use it on multi-interface hosts and networks where automatic selection is unsuitable.
 
-Daemon logs older than 14 days are automatically removed when the daemon shuts
-down starting in `9.4.0`.
+### Log retention
 
-## Run on supported native platforms
+Since `9.4.0`, daemon logs older than 14 days are removed automatically when the daemon shuts down.
 
-Gradle supports Windows ARM64/AArch64 hosts as of `9.2.0`, including Windows
-virtual machines hosted on ARM. The rich console is unavailable there, so both
-automatic console selection and an explicit `--console=rich` fall back to
-plain output.
+## Wrapper version selection
 
-## Manage Wrapper versions and downloads
-
-### Resolve partial version selectors
-
-Gradle `9.0.0` and newer lets `wrapper --gradle-version` accept a major or
-major/minor selector and resolve the latest matching release:
+Since `9.0.0`, the Wrapper accepts major and major/minor selectors and resolves the latest matching release:
 
 ```text
 ./gradlew wrapper --gradle-version=9
 ./gradlew wrapper --gradle-version=9.1
 ```
 
-Do not interpret a pre-9 value the same way. For example, `8.12` is already an
-exact historical version.
+This interpretation applies to Gradle 9 or newer. Pre-9 values such as `8.12` are already exact historical versions.
 
-Gradle 9 and later uses `MAJOR.MINOR.PATCH` versions. Older releases and
-backports are not renamed. Internal and `@Incubating` APIs remain outside the
-public Semantic Versioning guarantee and may change in a minor release.
+## Wrapper network behavior
 
-### Authenticate downloads with bearer tokens
+### Bearer authentication
 
-Wrapper distribution downloads accept bearer tokens through system properties
-as of `9.4.0`. Bearer credentials take precedence over Basic credentials.
-Restrict both authentication types per host to avoid sending credentials to
-unintended servers.
+Since `9.4.0`, Wrapper distribution downloads accept bearer tokens supplied through system properties. Bearer credentials take priority over Basic credentials. Restrict both authentication types per host so credentials are not sent to unintended servers.
 
-### Retry failed downloads
+### Retries and backoff
 
-Retries are disabled by default. Enable them in
-`gradle-wrapper.properties` (`9.5.0`):
+Since `9.5.0`, retries remain disabled by default but can be enabled in `gradle-wrapper.properties`. `retryBackOffMs` is the initial delay and doubles after each failed attempt:
 
 ```properties
 retries=3
 retryBackOffMs=1000
 ```
 
-`retryBackOffMs` is the initial delay and doubles after each failed attempt.
+### Network timeout API
 
-### Configure network timeout through the API
+Since `9.6.1`, `Wrapper.getNetworkTimeout()` is stable rather than incubating and is covered by Gradle's backward-compatibility guarantees.
 
-`Wrapper.getNetworkTimeout()` is stable, no longer incubating, and covered by
-backward-compatibility guarantees as of `9.6.1`.
+## Console and unattended execution
 
-### Verify distribution authenticity
+### Colored plain console
 
-Since `9.3.0`, each Gradle distribution ZIP has an ASCII-armored `.asc`
-signature alongside its `.sha256` checksum. Verify the signature when
-authenticity matters; the checksum alone detects corruption but does not
-authenticate the publisher.
-
-## Make console behavior explicit
-
-`--console=colored` (`9.1.0`) adds color without rich-console features such as
-progress bars, making it suitable for simple terminals and readable CI logs:
+Since `9.1.0`, `--console=colored` adds color without rich-console features such as progress bars:
 
 ```text
 ./gradlew build --console=colored
 ```
 
-A non-empty `NO_COLOR` environment variable (`9.6.1`) suppresses color while
-retaining other styling and rich-console features:
+### Disable color only
+
+Since `9.6.1`, a non-empty `NO_COLOR` environment variable suppresses color but retains other styling and rich-console behavior such as progress bars and animations:
 
 ```text
 NO_COLOR=1 ./gradlew build
 ```
 
-For unattended builds, disable all prompts with `--non-interactive` or the
-persistent equivalent (`9.6.1`):
+### Disable all prompts
+
+Since `9.6.1`, use `--non-interactive` for unattended builds or persist the setting with a Gradle property:
 
 ```text
 ./gradlew --non-interactive build
@@ -158,43 +119,79 @@ persistent equivalent (`9.6.1`):
 org.gradle.console.interactive=false
 ```
 
-## Inspect tasks and project layout
+## Inspection and dry runs
 
-The incubating `--task-graph` option (`9.1.0`) prints the requested tasks and
-their dependency tree without executing them:
+### Task graph
+
+Since `9.1.0`, the incubating `--task-graph` option prints requested tasks and dependencies without executing them:
 
 ```text
 ./gradlew root r2 --task-graph
 ```
 
-`--dry-run` also suppresses execution-phase tasks in included builds as of
-`9.1.0`. Tasks invoked by an included build's configuration logic can still
-run during configuration.
+### Composite builds
 
-Project Report includes each project's physical filesystem location alongside
-its logical build path starting in `9.1.0`. This makes non-standard layouts
-visible.
+Since `9.1.0`, `--dry-run` also prevents execution-phase tasks in included builds from running. Tasks invoked by included-build configuration logic may still execute during configuration.
 
-Task diagnostics gained provenance in `9.5.0`. Non-verification failures say
-which build script, settings script, or plugin registered the task;
-`help --task` includes the same information. Request it in task listings with:
+### Project locations
+
+Since `9.1.0`, the Project Report prints each project's physical filesystem location beside its logical build path. Use it to diagnose non-standard project layouts.
+
+### Task provenance
+
+Since `9.5.0`, failures from non-verification tasks identify the build script, settings script, or plugin that registered the task. `help --task` includes the same provenance, and task listings expose it on request:
 
 ```text
 ./gradlew tasks --provenance
 ```
 
-## Initialize and scan builds from the CLI
+## Project creation and Build Scans
 
-`init --into` (`9.5.0`) creates a project in the selected directory and creates
-the directory if needed:
+### Initialize into a target directory
+
+Since `9.5.0`, `init --into` creates the target directory when necessary and generates the project there:
 
 ```text
 gradle init --type java-application --into my-new-project
 ```
 
-Publish a Build Scan to a Develocity server without project configuration by
-using `--develocity-url` (`9.5.0`):
+### Publish without project configuration
+
+Since `9.5.0`, `--develocity-url` publishes a Build Scan to a selected Develocity server without project configuration:
 
 ```text
 ./gradlew --develocity-url https://develocity.example.com build
 ```
+
+## Platform behavior
+
+### Windows ARM64
+
+Since `9.2.0`, Gradle runs on Windows ARM64/AArch64, including Windows virtual machines hosted on ARM. The rich console is unavailable, so default console selection and `--console=rich` fall back to plain output.
+
+### File watching with a custom project cache
+
+Since `9.7.0`, file system watching works when `--project-cache-dir` or `org.gradle.projectcachedir` moves project state elsewhere, even if the target file system does not itself support watching:
+
+```text
+./gradlew build --watch-fs --project-cache-dir /custom/path
+```
+
+## Patch-level guard for the 9.7 line
+
+If upgrading into the Gradle 9.7 line, use `9.7.1` rather than `9.7.0`. It restores compatibility for:
+
+- `BaseExecSpec` streams
+- Failed-test diff formatting
+- KAPT classpath isolation from bundled ANTLR
+- Existing `Transformer` implementations
+- Explicit-classpath Ant tasks
+- Kotlin DSL `@Option` annotation arguments
+
+## Operational checklist
+
+- Keep launcher JVM, daemon JVM, and compile/test toolchains conceptually separate.
+- Commit daemon criteria generated by `updateDaemonJvm` when builds need repeatable cross-platform selection.
+- Scope Wrapper credentials by host and test retry behavior against transient failures.
+- Use `--non-interactive` in automation that must never wait for input.
+- Verify console fallback on Windows ARM64 and file watching when relocating project cache state.

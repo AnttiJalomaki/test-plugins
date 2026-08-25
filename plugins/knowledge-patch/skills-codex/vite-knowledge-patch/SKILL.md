@@ -10,40 +10,41 @@ metadata:
 
 # Vite Knowledge Patch
 
-Use this skill when configuring, upgrading, extending, or troubleshooting Vite.
-Start with the migration checks, then open the topic reference that matches the
-work at hand.
+Use this skill when configuring, upgrading, extending, or troubleshooting
+Vite. Start with the migration checks, then open the topic reference that
+matches the task.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Builds and dependency optimization](references/build-optimization.md) | Bundled development, chunk import maps, and the Rolldown-backed package |
-| [Development server and assets](references/dev-server-assets.md) | HMR-aware bundled development, case-insensitive globs, and custom HTML asset sources |
+| [Builds and dependency optimization](references/build-optimization.md) | Bundled development, worker HMR, chunk import maps, and the Rolldown trial package |
+| [Development server and assets](references/dev-server-assets.md) | Top-level inputs, ephemeral ports, case-insensitive globs, and custom HTML asset sources |
 | [Migration and runtime requirements](references/migration-requirements.md) | Node.js support, browser targets, Vitest compatibility, and removed APIs |
 | [Plugin and framework APIs](references/plugin-api.md) | Environment API and coordinated multi-environment builds |
-| [Resolution and module interoperability](references/resolution-modules.md) | ESM-only packaging, CommonJS loading, and direct WebAssembly ESM imports |
+| [Resolution and module interoperability](references/resolution-modules.md) | ESM-only packaging and direct WebAssembly ESM imports |
 | [Transforms, TypeScript, and styles](references/transforms-styles.md) | Lightning CSS interoperability and Sass legacy API removal |
 
 ## Upgrade blockers first
 
-### Check the Node.js runtime
+### Verify the Node.js runtime
 
-Before upgrading a project or CI image, inspect `node --version`.
+Inspect the actual runtime locally and in CI:
 
-- Vite 7 requires Node.js 20.19+ or 22.12+.
-- Node.js 18 is below that floor.
-- Node.js 21 was already unsupported by Vite 6.
-- Do not treat an arbitrary Node.js 20 or 22 release as sufficient; the minor
-  versions matter.
+```sh
+node --version
+```
 
-The newer minimums provide unflagged `require(esm)`. Vite can therefore be
-distributed as ESM-only while keeping its JavaScript API loadable from
-CommonJS.
+Vite 7 requires Node.js 20.19+ or 22.12+. Node.js 18 is below that
+floor, and Node.js 21 was already unsupported by Vite 6. Do not treat an
+arbitrary Node.js 20 or 22 release as sufficient; the minor version matters.
+
+These minimum versions provide unflagged `require(esm)`. Vite can therefore
+ship as ESM-only while keeping its JavaScript API loadable from CommonJS.
 
 ### Remove deleted APIs
 
-Search an upgrading project for both of these before changing the Vite major:
+Search an upgrading project for both removed surfaces:
 
 ```sh
 rg "splitVendorChunkPlugin|legacy API" .
@@ -58,18 +59,19 @@ Migrate either dependency before expecting the upgraded build to work.
 
 ### Recheck the default browser target
 
-The default `build.target` is now `'baseline-widely-available'`, fixed for each
-Vite major, rather than `'modules'`. In Vite 7, that default means Chrome 107,
-Edge 107, Firefox 104, and Safari 16.0.
+The default `build.target` changed from `'modules'` to
+`'baseline-widely-available'`, fixed for each Vite major. For Vite 7, that
+default means Chrome 107, Edge 107, Firefox 104, and Safari 16.0.
 
 Set `build.target` explicitly when the application's browser contract differs
-from those defaults. Do not assume that leaving the target unset preserves the
-previous output compatibility.
+from those defaults. Leaving the target unset does not preserve the previous
+output compatibility.
 
 ### Pair Vite with a supported Vitest
 
 Vite 7 support begins with Vitest 3.2. Upgrade older Vitest installations when
-upgrading Vite rather than diagnosing the combination as an application bug.
+upgrading Vite instead of treating the unsupported pairing as an application
+failure.
 
 ## High-value configuration
 
@@ -95,8 +97,8 @@ export default defineConfig({
 })
 ```
 
-The mode remains experimental and limited. Validate framework integration and
-development behavior before adopting it for the whole team.
+The mode remains experimental and limited. Validate framework integration,
+worker updates, and development behavior before adopting it for a team.
 
 ### Stabilize chunk relationships with an import map
 
@@ -111,8 +113,24 @@ export default defineConfig({
 })
 ```
 
-Do not combine this option with `experimental.renderBuiltUrl`; the two are
-currently incompatible.
+Do not combine this option with `experimental.renderBuiltUrl`; they are
+incompatible. Client chunk import maps can be used with `sharedPlugins: true`.
+
+### Use an ephemeral development-server port
+
+Set `server.port` to `0` to ask Vite for a random available port. This is
+useful for isolated tests and concurrent development servers.
+
+```ts
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  server: { port: 0 },
+})
+```
+
+Read the selected address from the running server instead of assuming a fixed
+port.
 
 ### Import WebAssembly exports directly
 
@@ -159,9 +177,9 @@ const modules = import.meta.glob('./dir/module*.js', {
 
 ### Use the expanded Lightning CSS integration
 
-With `css.transformer: 'lightningcss'`, CSS files can import external CSS files
-and plugins can register file dependencies. These capabilities close two prior
-compatibility gaps with the PostCSS transformer.
+With `css.transformer: 'lightningcss'`, CSS files can import external CSS
+files and plugins can register file dependencies. These capabilities close two
+previous compatibility gaps with the PostCSS transformer.
 
 ```ts
 import { defineConfig } from 'vite'
@@ -178,10 +196,9 @@ development integrations that more closely match production. Normal
 single-client SPA behavior is unchanged, and existing custom SSR applications
 remain backward compatible.
 
-For coordinated build work, the API exposes a `buildApp` hook so plugins
-can coordinate builds across multiple environments. Treat the API as
-experimental and keep integration code isolated behind framework or plugin
-boundaries.
+For coordinated build work, the API exposes a `buildApp` hook so plugins can
+coordinate builds across multiple environments. Keep experimental integration
+code isolated behind framework or plugin boundaries.
 
 To evaluate the future Rolldown-based bundler, replace the `vite` package with
 `rolldown-vite`. It is intended as a drop-in trial package before Rolldown
@@ -193,5 +210,8 @@ becomes the default; test plugin and build behavior before committing to it.
 2. Search for removed Sass and chunk-splitting APIs.
 3. Decide whether the default browser target matches the product contract.
 4. Upgrade Vitest to a supported pairing when necessary.
-5. Keep experimental options explicit and validate their incompatibilities.
-6. Open the relevant reference file before editing config or plugin code.
+5. Keep experimental options explicit and test their incompatibilities.
+6. Check configured top-level inputs against development-server filesystem
+   access and plugin resolution.
+7. Open the relevant reference file before editing configuration or plugin
+   code.

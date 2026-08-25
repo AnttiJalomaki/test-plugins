@@ -1,55 +1,16 @@
 # Templates, Control Flow, and Animations
 
-Batch attribution: 19.0.0, 20-guides, 20.0.0, 21.0.0, 22.0.0.
+## Expression syntax
 
-## Native enter and leave animation
-
-`animate.enter` and `animate.leave` apply CSS animation classes as Angular inserts or removes a conditional element. Use them when native CSS can replace the legacy animation DSL for this lifecycle.
-
-```html
-@if (shown()) {
-  <div
-    class="panel"
-    animate.enter="enter"
-    animate.leave="leave">
-    Content
-  </div>
-}
-```
-
-```css
-.enter {
-  animation: fade-in 200ms;
-}
-
-.leave {
-  opacity: 0;
-  transition: opacity 200ms;
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-```
-
-Angular 22 can run nested leave animations inside the same component boundary when an ancestor is removed; leave handling is no longer limited to the removed element itself.
-
-## Template expression syntax
-
-### Template literals
-
-Angular 19.2 templates accept untagged template literals, avoiding manual concatenation and quote escaping:
+Templates accept untagged template literals, avoiding manual concatenation and
+quote escaping (`19.0.0`):
 
 ```html
 <div [class]="`layout col-${colWidth}`"></div>
 ```
 
-### Exponentiation, property presence, and condition aliases
-
-Angular 20 accepts exponentiation (`**`) and property-presence (`in`) expressions. Later Angular 20 releases also allow an `as` alias on `@else if`:
+Exponentiation and property-presence expressions are supported, and later v20
+releases permit `as` aliases on `@else if` conditions (`20.0.0`):
 
 ```html
 {{ n ** 2 }}
@@ -62,21 +23,15 @@ Angular 20 accepts exponentiation (`**`) and property-presence (`in`) expression
 }
 ```
 
-### Regular-expression literals
-
-Angular 21 accepts regular-expression literals directly in template logic:
+Regular-expression literals can be evaluated directly in template expressions
+(`21.0.0`):
 
 ```html
 @let isValidNumber = /\d+/.test(someValue);
-
-@if (!isValidNumber) {
-  <p>{{ someValue }} is not a valid number!</p>
-}
 ```
 
-### Comments inside start tags
-
-Angular 22 permits line and block comments between attributes and bindings in an element start tag:
+Element start tags accept line and block comments between attributes and
+bindings (`22.0.0`):
 
 ```html
 <button
@@ -88,9 +43,8 @@ Angular 22 permits line and block comments between attributes and bindings in an
 </button>
 ```
 
-### Spread and rest
-
-Angular 22 template expressions support spread and rest syntax in object literals, array literals, and function calls:
+Templates support spread and rest syntax in object literals, array literals,
+and calls (`22.0.0`):
 
 ```html
 <div [class]="{...baseClasses, selected: isSelected}"></div>
@@ -98,100 +52,96 @@ Angular 22 template expressions support spread and rest syntax in object literal
 {{ total(...prices) }}
 ```
 
-### Inline arrow functions
-
-Short arrow functions can be used inline, including callbacks passed to component methods and signal updates:
+Short inline arrow functions can be passed to methods and signal updates
+(`22.0.0`):
 
 ```html
-<button
-  (click)="item.update(x => ({...x, stock: x.stock - 1}))">
+<button (click)="item.update(x => ({...x, stock: x.stock - 1}))">
   Decrease stock
 </button>
 ```
 
-Keep complex logic in TypeScript even though short callbacks are syntactically valid.
+## Exhaustive control flow
 
-## Exhaustive and shared-body switches
-
-Consecutive `@case` clauses can share a body. `@default never;` asks the compiler to verify exhaustiveness for a union-valued switch.
+Consecutive `@case` clauses can share one body. Use `@default never;` to request
+compile-time exhaustiveness checking for a union-valued switch (`22.0.0`):
 
 ```html
 @switch (status) {
   @case ('pending')
-  @case ('processing') {
-    <p>In progress</p>
-  }
-  @case ('shipped') {
-    <p>Shipped</p>
-  }
+  @case ('processing') { <p>In progress</p> }
+  @case ('shipped') { <p>Shipped</p> }
   @default never;
 }
 ```
 
-## Template and metadata diagnostics
+## Template diagnostics and typing
 
-### Unused standalone imports
-
-The CLI warns about unused entries in a standalone component's `imports`, and the language service can remove them. Suppress the extended diagnostic only when necessary:
-
-```json
-{
-  "extendedDiagnostics": {
-    "checks": {
-      "unusedStandaloneImports": "suppress"
-    }
-  }
-}
-```
-
-### Invalid expressions and missing directive imports
-
-Angular 20 static checks detect:
-
-- a nullish-coalescing expression whose types make `??` ineffective;
-- a missing import for a structural directive;
-- `@for (...; track trackFn)` when the likely intent is to invoke it, such as `track trackFn(item)`.
-
-### Host metadata checking
-
-Compiler and language-service type checking for host binding and listener expressions in component metadata is opt-in in Angular 20:
+Static checks detect invalid nullish-coalescing expressions, missing structural
+directive imports, and suspicious `@for` tracking such as `track trackFn` where
+`track trackFn(item)` was likely intended. Host binding and listener expressions
+in component metadata can be type-checked by opting in with
+`typeCheckHostBindings: true`. (`20.0.0`)
 
 ```json
-{
-  "angularCompilerOptions": {
-    "typeCheckHostBindings": true
-  }
-}
+{"angularCompilerOptions":{"typeCheckHostBindings":true}}
 ```
 
-### Defer trigger checks
+The ineffective defer-trigger diagnostic identifies unreachable or redundant
+`@defer` combinations (`21.0.0`). Diagnostic NG8023 makes duplicate selector
+matches a compile-time error (`22.0.0`).
 
-Angular 21 adds a diagnostic for unreachable or redundant `@defer` triggers. Correct ineffective combinations instead of preserving them through suppression.
+The possible-event-handler check applies only to property names longer than two
+characters, so a property named exactly `on` is accepted (`20.3.28`):
 
-### Duplicate selectors
+```html
+<status-toggle [on]="enabled" />
+```
 
-Angular 22 diagnostic `NG8023` makes duplicate selector matches a compile-time error.
+Chained optional navigation now compiles correctly and the compiler CLI resolves
+`SafePropertyRead` symbols within the chain (`22.1.2`):
 
-## Host-directive matching
+```html
+{{ account?.profile?.name }}
+```
 
-Angular 22 de-duplicates the same host directive when it matches more than once:
+## Defer viewport options
 
-- a direct template match wins over a host-directive match;
-- host input and output maps are merged;
-- exposing one input or output under multiple names is an error.
-
-Account for the winner and merged maps when composing directive behavior dynamically.
-
-## Viewport defer options
-
-An `@defer` viewport trigger accepts `IntersectionObserver` options, such as a `rootMargin` that starts loading before the trigger enters the viewport:
+An `@defer` viewport trigger accepts `IntersectionObserver` options such as
+`rootMargin`, allowing loading before the trigger reaches the viewport
+(`21.0.0`):
 
 ```html
 <div #trigger>Load boundary</div>
-
 @defer (on viewport({trigger, rootMargin: '100px'})) {
   <section>Content</section>
 }
 ```
 
-For hydrate-trigger semantics, see [SSR, Hydration, and Routing](ssr-hydration-and-routing.md).
+## Native enter and leave animation
+
+`animate.enter` and `animate.leave` apply CSS classes while a conditional element
+is inserted or removed, allowing native CSS to replace the legacy animation DSL
+for that lifecycle (`20-guides`):
+
+```html
+@if (shown()) {
+  <div class="panel" animate.enter="enter" animate.leave="leave">Content</div>
+}
+```
+
+```css
+.enter { animation: fade-in 200ms; }
+.leave { opacity: 0; transition: opacity 200ms; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(10px); } }
+```
+
+Nested leave animations can run within the same component boundary; removal is
+not limited to animating only the element being removed (`22.0.0`).
+
+## Host-directive matching
+
+When the same host directive matches more than once, Angular de-duplicates it. A
+direct template match wins over a host-directive match, and host input/output
+maps merge. Exposing one input or output under multiple names is an error.
+(`22.0.0`)

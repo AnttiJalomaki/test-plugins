@@ -1,193 +1,160 @@
-# Platform administration and security
+# Platform Administration and Security
 
-## Access and organizations
+Use this reference for organizations, billing, backups, networking, project lifecycle, observability, and compliance controls.
 
-### Organization and project role boundaries
+## Organizations, billing, backups, networking, and upgrades
 
-Organization roles cover all present/future projects. Team/Enterprise can make project-scoped membership hide unrelated projects; Read-Only also requires those plans. Developers can read service keys, JWT secret, and Function secrets. Read-Only can read Function secrets and run `SELECT` as `supabase_read_only_user`, which has `pg_read_all_data`.
+### Organization roles and project scoping
+Administrators have broad access but cannot update organization settings, transfer projects out, or add owners; Developers cannot change project settings, and Read-Only members have no write access. Read-Only and project-scoped roles require Team or Enterprise, and a project-scoped member cannot even see unassigned projects, while an organization-scoped role covers all current and future projects.
 
-### AWS Marketplace-managed organizations
+### Role names do not imply secret isolation
+Developers can read service and anonymous API keys, the JWT secret, S3 access keys, and Function secrets; Read-Only members can also view Function secrets and run `SELECT` snippets as `supabase_read_only_user`, which has `pg_read_all_data`.
 
-One AWS Marketplace subscription links exactly one organization and moves plans, payment, and tax to AWS while disabling Spend Cap. Each extra organization needs another subscription. Upgrades are immediate/prorated; downgrades wait for renewal; fixed and usage charges are separate invoices. Linking an existing organization resets its billing anchor and can produce a final direct-platform usage charge.
+### Spend Cap boundaries
+On Pro, an enabled Spend Cap blocks further covered usage after an organization exceeds its quota rather than charging overage. It covers variable items such as disk, egress, Functions, active users, Realtime, and Storage, but not opted-in resources such as compute, replicas, branching, domains, provisioned I/O, IPv4, log drains, phone MFA, or PITR, and it cannot set per-item budgets or alerts.
 
-### Project transfer prerequisites
+### AWS Marketplace-managed billing
+One AWS Marketplace subscription links to exactly one organization, moves plan changes, payment and tax details to AWS, and disables the Spend Cap; linking an existing organization also resets its billing-cycle anchor and may produce a final direct-platform usage charge. Fixed subscription fees are invoiced in advance on that anchor date, while usage arrives on a separate calendar-month invoice, and plan downgrades wait for renewal.
 
-Transfers require source ownership and target membership. Remove GitHub integration, project-scoped memberships, and log drains. Vercel Marketplace targets are unsupported. Usage splits at transfer time; paid-to-Free can lose features and pause for 1–2 minutes. Region cannot change.
+### Capacity and add-on meters
+Primary compute is billed in whole hours, with a partial hour rounded up; monthly Compute Credits apply only to primary-project compute, not branch or replica compute. Database and Storage capacity use GB-hours, while extra disk performance uses IOPS-hours and MB/s-hours, and every configured log drain separately accrues hours, whole one-million-event packages, and egress.
 
-## Backups, restores, and migrations
+### Invocation and Realtime package meters
+Every Function invocation counts regardless of response status except CORS `OPTIONS`, and billable overage rounds up to whole one-million-invocation packages. A database change counts once per listening Realtime client, Broadcast counts the send plus each receiver, and peak connections sum each project's successful cycle maximum before rounding to one-thousand-connection packages.
 
-### Physical backup and restore semantics
+### Identity, image, and egress meters
+A user counts once per cycle when signing in or refreshing a token, with native, SAML SSO, and supported third-party users tracked separately; image transformations count distinct origin images rather than variants. Uncached egress shares one organization-wide quota across services, cached Storage egress has a separate quota, and Supavisor output is classified as Shared Pooler Egress rather than double-counted as database egress.
 
-Postgres `15.8.1.079`+ uses physical backups. They omit Storage objects; downloadable daily backups omit custom login-role passwords. In-place restore makes a project unavailable and requires non-Realtime subscriptions and replication slots to be dropped/recreated.
+### Physical backups and PITR
+Projects on Postgres `15.8.1.079` or newer use physical backups, which omit custom-role passwords and Storage API objects; restoring takes the project offline and requires non-Realtime subscriptions and replication slots to be dropped and recreated. PITR requires at least Small compute, replaces daily backups while enabled, and has a worst-case recovery-point objective of two minutes; disabling it leaves physical restore points that cannot be downloaded, so create a logical dump when an export is required.
 
-### Point-in-Time Recovery lifecycle
+### Restore-to-new-project scope
+A restore to a new project copies the database, roles, Auth users, enabled extensions, compute and disk attributes, SSL enforcement, and network restrictions into the source region, but Functions, Storage objects and settings, Auth/API and Realtime settings, database settings, and replicas still need manual setup. A restored project cannot itself be a clone source, and extensions that perform external work, such as `pg_net`, `pg_cron`, or wrappers, should be disabled immediately after the copy when duplicate actions would be unsafe.
 
-PITR is a paid add-on needing Small compute or above. It replaces daily backups and archives WAL at worst about every two minutes; restore points exist only when activity creates WAL. Disabling PITR leaves physical points, not downloadable backups—make a logical dump for export.
+### Provisioned disk constraints
+Effective IOPS and throughput are the lower of the compute limit and provisioned disk limit; the default gp3 disk supplies 3,000 IOPS and 125 MB/s, and additional provisioning requires Large compute or above. Any disk-attribute change starts an approximately six-hour cooldown, and disk size can be increased but not manually decreased.
 
-### Restoring into a new project
+### Disk autoscaling and read-only recovery
+Paid disks expand at 90% utilization by 50%, capped at 200 GB per expansion; reaching 95% during the six-hour cooldown puts the project into read-only mode, as does exceeding 500 MB on Free. A cleanup session can temporarily regain writes, and normal access resumes below 95%; an infrastructure upgrade can right-size the disk to 1.2 times database size with an 8 GB minimum.
 
-A paid physical daily/PITR backup can create an independent project carrying database, Auth users, roles, extensions, compute/disk, SSL, network restrictions, and region. Reconfigure Storage objects/settings, Functions, Auth config/keys, Realtime, and replicas. A restored clone cannot itself be a clone source. Disable copied `pg_net`, `pg_cron`, and wrapper jobs before external actions repeat.
+```sql
+set session characteristics as transaction read write;
+vacuum;
+set default_transaction_read_only = 'off';
+```
 
-### Postgres migration modes
+### Custom-domain activation changes Auth
+A project supports one CNAME-based custom domain or experimental vanity subdomain, while its original project domain remains usable; activation immediately changes OAuth callback URLs and the SAML entity ID, so providers must be prepared first. Custom domains also bypass the read-replica API load balancer.
 
-Use direct or Supavisor session port 5432 for dumps/restores/logical replication, never transaction mode. Portable dumps omit owners, privileges, subscriptions; recreate roles and RLS enablement. Logical replication additionally needs schema freeze and manual sequences, large objects, and cutover cleanup.
+```sh
+supabase domains create --project-ref <ref> --custom-hostname api.example.com
+supabase domains reverify --project-ref <ref>
+supabase domains activate --project-ref <ref>
+```
 
-### Split CLI project backups
+### Database ingress addressing and restrictions
+Direct database endpoints use IPv6 by default, while both Supavisor modes use IPv4; the IPv4 add-on guarantees a static ingress address only, can briefly interrupt direct connections when toggled, and may assign a new address after toggling or pausing. Network restrictions replace the entire allowlist and cover direct and pooled database routes, usually requiring both IPv4 and IPv6 CIDRs, but do not cover HTTPS APIs and always block direct database access from Edge Functions.
 
-Dump roles, schema, and data separately, excluding vector-bucket internals; disable triggers while loading:
+### PrivateLink scope
+PrivateLink is a Team/Enterprise beta that shares an AWS VPC Lattice resource configuration with a VPC in the project's region. It carries only direct Postgres and PgBouncer traffic—API, Auth, Storage, and Realtime remain public—and disabling the public database endpoint requires support.
+
+### Organization MFA enforcement
+Only an owner who already uses MFA can enable organization enforcement; members without an MFA-backed session immediately lose resource access but retain membership and recover their original permissions after enrollment. Personal access tokens are not subject to this enforcement boundary.
+
+### Organization SSO lockout behavior
+Organization SAML SSO can auto-join matching email domains with a chosen default role, and organization invitations from SSO accounts are restricted to the same identity provider. Disabling the provider immediately prevents all SSO users from signing in, so retain a non-SSO owner before doing so.
+
+### Managed schema ownership
+Hosted services require every object in `storage` to remain owned by `supabase_storage_admin` and every object in `auth` by `supabase_auth_admin`; violating this may surface only when a later service migration fails.
+
+### Project-transfer prerequisites
+A transfer requires ownership of the source organization and membership in the target, with no active GitHub integration, project-scoped role, or log drain; Vercel Marketplace-managed targets are unsupported. Transfers do not change region, may reduce access or features under the target plan, and can incur brief downtime when moving to Free.
+
+### Read-replica lifecycle
+Replicas require AWS, Postgres 15+, physical backups, and at least Small compute; sizes below XL allow two, XL and above allow five, and every replica inherits the primary's compute size. Their dedicated Data API accepts only `GET` requests, read-only RPCs need `{ get: true }`, and all replicas must be removed before project upgrades or restores; removing the final replica also removes the load-balancer endpoint.
+
+```ts
+await supabase.rpc('report', {}, { get: true })
+```
+
+### SSL enforcement restarts the database
+SSL enforcement applies to Postgres and Supavisor only because all HTTPS APIs already require TLS, and changing it triggers a database reboot with downtime. Clients needing certificate identity verification should use `sslmode=verify-full` with the project CA certificate, not merely rely on server-side enforcement.
+
+### Project-to-project dump contract
+CLI backup and restore use separate role, schema, and data dumps, with Vector bucket system tables excluded from the data dump; restore them through a direct or session-mode port 5432 connection in one `psql` transaction with triggers disabled. Custom `auth`/`storage` changes, migration history, login-role passwords, Storage objects, and function dependency files such as `deno.json` or import maps require separate handling.
 
 ```sh
 supabase db dump --db-url "$OLD_DB_URL" -f roles.sql --role-only
 supabase db dump --db-url "$OLD_DB_URL" -f schema.sql
 supabase db dump --db-url "$OLD_DB_URL" -f data.sql --use-copy --data-only \
-  -x storage.buckets_vectors -x storage.vector_indexes
-psql --single-transaction --variable ON_ERROR_STOP=1 \
-  --file roles.sql --file schema.sql \
-  --command 'SET session_replication_role = replica' --file data.sql \
-  --dbname "$NEW_DB_URL"
+  -x "storage.buckets_vectors" -x "storage.vector_indexes"
 ```
 
-Dump `supabase_migrations` and custom `auth`/`storage` changes separately, reset custom-role passwords, and copy the `pgsodium` root key via Management API before restoring encrypted columns. Downloaded Functions omit `deno.json` and legacy import maps.
+### External Postgres migration omissions
+Use the session pooler on port 5432 for dump/restore and logical-replication migrations; portable dumps should use `--no-owner --no-privileges --no-subscriptions`, after which users, roles, privileges, and RLS enablement must be recreated. Logical replication supports low-downtime migrations from Postgres 10+, but it does not carry DDL, sequences, or large objects, so freeze schema and synchronize sequences before cutover.
 
-## Compute, disk, and billing
-
-### Provisioned disk performance
-
-Default `gp3` provides 3,000 IOPS/125 MB/s. Large+ can provision more; `io2` provides higher IOPS with derived throughput. Effective performance is the lower compute/disk limit. Attribute changes start about six hours of cooldown; ordinary changes can grow, not shrink, disk.
-
-### Disk autoscaling and read-only recovery
-
-Paid disks at 90% expand 50%, capped at 200 GB per increase and once/six hours. Hitting 95% in cooldown makes DB read-only. A cleanup session can temporarily enable writes to delete/vacuum; later upgrade right-sizes to roughly `1.2 * database_size`, minimum 8 GB.
-
-### Spend Cap and Fair Use scope
-
-Pro Spend Cap covers disk/Storage size, egress, Function invocations, MAUs, Realtime, and transformations. It excludes compute, branches, replicas, domains, extra disk performance, IPv4, log drains, phone MFA, and PITR. Repeated capped/Free overage can pause the organization, make DB read-only, restrict transfers, or return 402. Exhausted grace does not reset when usage briefly falls; warnings clear only after multiple compliant cycles.
-
-### Hourly and capacity metering
-
-Compute/add-ons meter per resource-hour, rounding partial hours up. Database/object storage use GB-hours; disk performance uses IOPS-hours and MB/s-hours. Included quotas aggregate per organization. Monthly Compute Credits cover primary compute only, not branches/replicas.
-
-### Invocation and Realtime package meters
-
-Every Function response status counts, except CORS `OPTIONS`; overage rounds to million-invocation packages. A DB change counts per listening client; Broadcast counts the send plus each receiver. Project peak successful connections are summed then rounded to thousand-connection packages.
-
-### Identity and image-transformation meters
-
-Sign-in or refresh makes a user an MAU once/cycle. Native, SAML, and supported third-party Auth are separate usage items. Image transformations count distinct origin images, not variants, and overage rounds by 1,000 origins.
-
-### Egress and log-drain accounting
-
-Uncached service egress shares one organization quota; cached Storage egress has another. Supavisor output is Shared Pooler Egress, not duplicate DB egress. Each log drain bills configured hours, million-event packages, and egress; gzip can reduce egress.
-
-### Log Drains on Pro
-
-Pro projects can drain Postgres, Auth, Storage, Function, and Realtime logs to Datadog, Grafana Loki, Sentry, Axiom, S3, or a custom endpoint.
-
-## Domains and networking
-
-### Custom-domain activation
-
-One project can have one CNAME custom subdomain or one experimental `supabase.co` vanity subdomain. The original URL remains, but Auth advertises the new host immediately; add both OAuth callbacks and update SAML metadata before activation.
-
-```sh
-supabase domains create --project-ref "$PROJECT_REF" --custom-hostname api.example.com
-supabase domains reverify --project-ref "$PROJECT_REF"
-supabase domains activate --project-ref "$PROJECT_REF"
-```
-
-### Dedicated IPv4 behavior
-
-IPv4 add-on gives static database ingress only, not outbound. Supavisor is already IPv4-compatible. Toggling briefly disrupts direct DNS, pausing/toggling can replace the address, and each replica gets/bills one.
-
-### Database network restrictions
-
-Restrictions cover direct DB and all poolers, not HTTPS APIs. IPv6-capable direct clients normally need both IPv4/IPv6 CIDRs. Updates replace the whole allowlist. Functions cannot connect directly to a restricted database; use SDK/API.
-
-```sh
-supabase network-restrictions --project-ref "$PROJECT_REF" update \
-  --db-allow-cidr 203.0.113.0/24 --db-allow-cidr 2001:db8::/64 \
-  --experimental
-```
-
-### AWS PrivateLink
-
-Team/Enterprise beta uses organization-level AWS VPC Lattice sharing for same-region VPC access to direct DB and pgBouncer; replica access needs support. Auth, Storage, Realtime, and APIs stay public. Support can disable public DB only after every client/tool uses private endpoints.
-
-### Postgres SSL enforcement
-
-Postgres/Supavisor may allow plaintext unless DB SSL enforcement is enabled; HTTPS always uses TLS. Changing it briefly reboots DB. Install project CA and use `sslmode=verify-full` for identity verification.
-
-```sh
-supabase ssl-enforcement --project-ref "$PROJECT_REF" update \
-  --enable-db-ssl-enforcement --experimental
-```
-
-### Database login abuse protection
-
-Every hosted database uses fail2ban to block IPs after failed logins, independently of database allowlists.
-
-## Read replicas
-
-### Read-replica eligibility and scale
-
-Replicas require AWS hosting, Postgres 15+, Small+, and physical backups; they match primary compute. Below XL: two replicas; XL+: five. Each disk is 1.25× primary size plus matching optional IOPS/throughput/IPv4.
-
-### Read-replica API semantics
-
-A dedicated replica Data API permits only GET. RPCs opt in with `{ get: true }`; replica endpoints cannot serve Auth, Storage, or Realtime. The load-balancer routes writes to primary and fronts other services, but custom domains bypass it. Removing the last replica removes that endpoint—move clients first.
+### Auth0 password-hash imports
+Admin user creation accepts existing bcrypt or Argon2 hashes through `password_hash`, plus a custom UUID and confirmation flags, so password users can be migrated without forcing a reset. OAuth users sign in through their provider instead of being pre-created, Auth0 organizations have no direct migration, and exported TOTP factors may need reenrollment.
 
 ```ts
-await supabase.rpc('report_totals', {}, { get: true })
+await supabase.auth.admin.createUser({
+  id: oldUserId,
+  email,
+  password_hash: exportedHash,
+  email_confirm: true,
+})
 ```
 
-### Read-replica lifecycle operations
-
-Remove all replicas before project upgrade/restore, then redeploy. Restart/compute changes restart primary while replicas remain readable, then all replicas together. Monitor `physical_replication_lag_physical_replica_lag_seconds`; long transactions, exclusive locks, or resource saturation cause staleness.
-
-## Upgrades and ownership
-
-### Platform schema ownership
-
-Keep `storage` objects owned by `supabase_storage_admin` and `auth` by `supabase_auth_admin`; later platform migrations depend on those privileges.
-
-### In-place Postgres upgrades
-
-Prefer `pg_upgrade`; failed attempts restore the original DB, and above 1 GB it is usually faster than pause/restore. Plan DB and dependent-service downtime. Replication slots are lost; oversized `cron.job_run_details` may exhaust duplicated disk; old TimescaleDB/`plv8` can block; reset MD5 custom-role passwords to SCRAM-SHA-256.
-
-### Paused-project and Postgres 17 upgrade constraints
-
-Free paused projects have a 90-day one-click restore window, then only downloadable DB/Storage backups. A later organization upgrade can re-enable restore that still fails compatibility. For Postgres 17 disable `plcoffee`, `plls`, `plv8`, `pgjwt`; upgrade right-sizes oversized disks from live DB size.
-
-## Security posture and compliance
-
-### RLS-secure table creation and alerts
-
-Dashboard tables start with RLS. An event-trigger setup can enforce RLS for external/migration-created tables. Table Editor marks disabled RLS, and owners receive email/Dashboard alerts.
-
-### Security Advisor checks and delivery
-
-Security Advisors use Splinter to find missing RLS, permissive policies, and exposed sensitive columns. Dashboard provides fixes, owners receive weekly summaries, and the official MCP server can run/fix findings in development.
+### Project-upgrade lifecycle
+In-place `pg_upgrade` is the preferred path and brings the original database back online if it fails, while pause-and-restore upgrades are Free-only and paused projects have a 90-day one-click restore window. Logical replication slots are not preserved, custom-role passwords are absent from restore backups, and custom roles still using MD5 passwords must be reset to migrate them to SCRAM-SHA-256.
 
 ### High Compliance projects
+Organizations handling protected health information need a signed BAA and the HIPAA add-on before marking a project High Compliance. That setting runs continuous Security Advisor checks and requires PITR with at least Small compute, SSL enforcement, and network restrictions.
 
-After BAA plus HIPAA add-on, mark individual projects High Compliance for continuous advisor checks. Baseline requires PITR, Small+, SSL enforcement, and DB restrictions.
+## Security and compliance
+
+### RLS-secure table creation and alerts
+Tables created through the dashboard have RLS enabled by default; for tables created by migrations or external tools, the dashboard can install a Postgres event trigger that enables RLS automatically. The Table Editor labels tables without RLS, and project owners receive both dashboard and email alerts when such tables are created.
+
+### Security Advisor checks and remediation surfaces
+Security Advisor uses Splinter to detect issues such as tables without RLS, policies that could be more restrictive, and exposed sensitive columns; findings appear in the dashboard and in weekly emails to organization owners. The dashboard Assistant can generate and apply RLS policy SQL, while the hosted MCP server can scan and fix Advisor findings from a development environment.
+
+### Restricted OpenAPI schema visibility
+With new publishable keys, the OpenAPI specification requires elevated permissions instead of exposing the complete table-and-column schema as legacy anonymous keys did. Applications or tooling that relied on anonymous schema discovery must use an appropriately privileged path.
+
+### Automatic database login blocking
+Hosted Supabase databases run fail2ban and automatically block source IP addresses after failed database login attempts, independently of optional network restrictions.
 
 ### Platform audit-log boundary
+Team and Enterprise organizations automatically log member actions performed through the dashboard or Platform API, including the actor's IP, email and token type, action metadata, and target. Platform Audit Logs are distinct from project Auth logs; dashboard export and log drains are unavailable, and retention depends on the plan.
 
-Team/Enterprise records Dashboard/Platform API member actions with actor IP/email/token type, metadata/status, and target. Logs are visible in organization Dashboard but cannot be exported or drained; retention varies by plan.
-
-### HIPAA boundary for self-hosting
-
-Hosted HIPAA controls are not supplied automatically for self-hosting. Establish separate legal agreements, operational controls, policies, and audited configuration.
+### Hosted HIPAA boundary
+The hosted platform supplies the controls needed for HIPAA environments, but self-hosted Supabase does not provide those controls out of the box because compliance also depends on BAAs, operating controls, and policies. Security Advisor warnings identify weakened required controls, but remediation remains the customer's responsibility.
 
 ### SOC 2 report and compliance boundary
-
-Team/Enterprise Legal Documents provides the SOC 2 Type 2 report covering a rolling March–February period. Scope is data within Supabase, not external customer systems; customers choose compliant primary/replica regions.
+Supabase is assessed annually for SOC 2 Type 2, and Team or Enterprise customers can download the report from the organization's Legal Documents page. The attestation covers data inside the hosted Supabase product boundary; it does not make a customer's application or external environment SOC 2 compliant.
 
 ### Customer penetration-testing policy
+Customers may test their own hosted Auth, Database, Edge Functions, Storage, Realtime, and project endpoints without prior approval. DoS or DDoS testing, request flooding, and cross-tenant testing are prohibited, and product vulnerabilities found during testing must be reported to Supabase Security within 24 hours after testing is completed.
 
-Customers may test their own Auth, DB, Functions, Storage, Realtime, and endpoints without approval. Stay within the project; no DoS/DDoS/flooding/cross-tenant tests. Report product vulnerabilities within 24 hours after testing.
+## Platform capabilities
 
-### Expanded Terraform coverage
+### Transactional Table Editor staging
+The **Queue table operations** feature preview stages inserts, updates, and deletes, shows them in a diff, and commits the batch in one transaction instead of saving each edit immediately.
 
-Terraform Provider 1.9.0 adds Edge Function and Function-secret resources plus a network-bans data source.
+### Dashboard query and index assistance
+The dashboard adds Explain/Analyze diagrams and an Index Advisor, while feature-preview table filters can translate natural-language requests into Postgres filters and the Assistant can suggest query optimizations.
+
+### Log Drains on Pro
+Pro projects can send Postgres, Auth, Storage, Edge Functions, and Realtime logs to Datadog, Grafana Loki, Sentry, Axiom, S3, or a custom endpoint.
+
+### Terraform coverage for Functions and network bans
+Terraform Provider 1.9.0 adds resources for Edge Functions and their secrets plus a data source for network bans.
+
+## Platform capabilities (`1.26.08`)
+
+### Unified Logs open beta
+Unified Logs provides one searchable view across all Supabase services, with live tailing, filtering, and a timeline.
+
+### One-click Grafana Cloud observability
+Every plan, including Free, can connect a project to Grafana Cloud in one click for a pre-built dashboard, alerts, and metrics.

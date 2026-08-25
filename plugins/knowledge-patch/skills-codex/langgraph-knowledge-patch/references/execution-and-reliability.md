@@ -1,12 +1,14 @@
 # Execution and Reliability
 
-Source batches: `graph-api-overview`, `graph-api-usage`.
+Relevant source topics: `graph-api-overview`, `graph-api-usage`, and `1.2.11`.
 
-## Node caching
+## Cache policy and cache backend
 
-Caching activates only when the node has a cache policy and the compiled graph
-has a cache. A policy without TTL never expires. Python's default cache key
-hashes the pickled node input.
+Node caching activates only when the node has a cache policy and the compiled
+graph has a cache. Omitting TTL means the entry never expires. Python's default
+key function hashes the pickled node input. JavaScript spells the settings
+`cachePolicy` and `keyFunc` and imports `InMemoryCache` from
+`@langchain/langgraph-checkpoint`.
 
 ```python
 from langgraph.cache.memory import InMemoryCache
@@ -16,68 +18,30 @@ builder.add_node("expensive", expensive, cache_policy=CachePolicy(ttl=30))
 graph = builder.compile(cache=InMemoryCache())
 ```
 
-JavaScript uses `cachePolicy` and `keyFunc`. Import its `InMemoryCache` from
-`@langchain/langgraph-checkpoint`.
+## Replay begins at node boundaries
 
-## Replay and task ordering
+After an interrupt or retry, LangGraph runs the affected node again from the
+beginning. Make side effects before the pause or failure idempotent. Tasks
+inside a node are checkpointed, so completed task results can be reused.
+Changing task or interrupt order before a resume point can pair execution with
+the wrong saved result.
 
-After an interrupt or retry, LangGraph starts the affected node again from its
-beginning. Make side effects before an interrupt idempotent.
+## Default retry filtering
 
-Tasks within a node are checkpointed, so a completed task result can be reused
-during replay. Do not reorder tasks or interrupts that precede a resume point:
-saved results are positional enough that a changed order can mismatch them.
+Attach `RetryPolicy` through `retry_policy=` in Python or `retryPolicy` in
+JavaScript. Python defaults exclude common programming and runtime exceptions,
+including `ValueError`, `TypeError`, `RuntimeError`, and `OSError`, and retry
+HTTP-library errors only for 5xx responses. JavaScript defaults exclude
+`TypeError`, `SyntaxError`, and `ReferenceError`. Use `retry_on` or `retryOn`
+when an application needs a deliberate exception selection.
 
-## Routing and invocation input
+## Per-attempt Python node timeouts
 
-A node's `Command(goto=...)` adds a dynamic route and does not suppress
-static outgoing edges. When both are configured, both destinations execute. Use
-either `Command` routing or static edges for that node. The same additive rule
-applies to commands returned by tools.
-
-Passing any `Command` to `invoke` or `stream` resumes execution from the latest
-checkpoint. `Command(resume=...)`, optionally with `update`, is the command
-intended for invocation input. To begin a new turn on an existing thread from
-`__start__`, pass a plain state mapping rather than `Command(update=...)`.
-
-```python
-graph.invoke({"messages": [follow_up]}, config)
-graph.invoke(Command(resume=review_answer), config)
-```
-
-## Recursion budgets
-
-Since LangGraph Python 1.0.6, the default recursion limit is 1000 super-steps.
-JavaScript defaults to 25. Set `recursion_limit` in Python or
-`recursionLimit` in JavaScript as a top-level invocation config field, not
-inside `configurable`.
-
-Nodes can inspect the current super-step through
-`metadata.langgraph_step`. Python graphs can also declare a `RemainingSteps`
-managed state field to route proactively before the budget is exhausted.
-
-```python
-result = graph.invoke(inputs, config={"recursion_limit": 100})
-current_step = config["metadata"]["langgraph_step"]
-```
-
-## Retry filtering
-
-Attach `RetryPolicy` with `retry_policy=` in Python or `retryPolicy` in
-JavaScript.
-
-Python's default filter excludes common programming and runtime exceptions,
-including `ValueError`, `TypeError`, `RuntimeError`, and `OSError`. HTTP
-library failures are retried only for 5xx responses. JavaScript's default
-excludes `TypeError`, `SyntaxError`, and `ReferenceError`.
-
-Use `retry_on` or `retryOn` when retries should deliberately include or
-exclude different failures.
-
-## Python node timeouts
-
-With `langgraph>=1.2`, an asynchronous node's `timeout=` may be seconds, a
-`timedelta`, or `TimeoutPolicy(run_timeout=..., idle_timeout=...)`.
+With `langgraph>=1.2`, an async node's `timeout=` accepts seconds, a
+`timedelta`, or `TimeoutPolicy(run_timeout=..., idle_timeout=...)`. A timeout
+raises `NodeTimeoutError`, discards buffered state writes and child-task
+scheduling, and may be retried with a fresh timer. Applying a timeout to a
+synchronous node fails graph compilation.
 
 ```python
 from langgraph.types import TimeoutPolicy
@@ -89,17 +53,12 @@ builder.add_node(
 )
 ```
 
-Each attempt receives a fresh timer. Timeout raises `NodeTimeoutError` and
-discards buffered writes and child-task scheduling; a retry can then start a
-new attempt. Configuring a timeout on a synchronous node fails graph
-compilation.
+## Post-retry Python error handlers
 
-## Post-retry error handling
-
-With `langgraph>=1.2`, Python `add_node(error_handler=...)` installs a handler
-that runs only when a node failure has exhausted its retries. The handler
-receives current state and a typed `NodeError`. It may return a `Command` that
-updates state and routes to compensation or recovery.
+With `langgraph>=1.2`, `add_node(error_handler=...)` installs a handler that
+runs only after the node fails and exhausts its retries. It receives current
+state plus a typed `NodeError` and may return a `Command` that updates state and
+routes to recovery.
 
 ```python
 from langgraph.errors import NodeError
@@ -111,15 +70,13 @@ def recover(state: State, error: NodeError) -> Command:
 builder.add_node("charge", charge, error_handler=recover)
 ```
 
-## Graph-wide policy defaults
+## Graph-wide node defaults
 
-Python `langgraph>=1.2` provides `StateGraph.set_node_defaults()` for
-compile-time `retry_policy`, `timeout`, `cache_policy`, and `error_handler`
-defaults. An explicit per-node value wins, and defaults do not propagate into
-subgraphs.
-
-Retry and timeout defaults apply to handler nodes. Cache and error-handler
-defaults apply only to regular nodes.
+Python `langgraph>=1.2` adds `StateGraph.set_node_defaults()` for compile-time
+`retry_policy`, `timeout`, `cache_policy`, and `error_handler` defaults. An
+explicit per-node setting wins. Defaults do not flow into subgraphs. Retry and
+timeout defaults also apply to handler nodes; cache and error-handler defaults
+apply only to regular nodes.
 
 ```python
 builder.set_node_defaults(
@@ -129,22 +86,22 @@ builder.set_node_defaults(
 )
 ```
 
-## Execution and server metadata
+## Execution identity and server metadata
 
-Nodes can read execution identity and retry state through Python
-`runtime.execution_info` or JavaScript `runtime.executionInfo`. The object can
-include thread, run, checkpoint, task, attempt number, and first-attempt time.
+Nodes can inspect execution identity and retry state through Python
+`runtime.execution_info` or JavaScript `runtime.executionInfo`. These include
+thread, run, checkpoint, task, attempt number, and first-attempt time.
 
-Server deployments also provide assistant, graph, and authenticated-user data
-through `server_info` or `serverInfo`. That server metadata is absent in local
-execution. These fields require Python `langgraph>=1.1.5` or JavaScript
+Server deployments additionally expose assistant, graph, and authenticated
+user data through `server_info` or `serverInfo`; this is absent in local
+execution. These surfaces require Python `langgraph>=1.1.5` or JavaScript
 `@langchain/langgraph>=1.2.8`.
 
-## Graceful drain
+## Graceful-drain awareness
 
 Python `langgraph>=1.2` exposes `runtime.drain_requested` and
-`runtime.drain_reason` once a run drain has been requested. A node may inspect
-them to skip expensive work before the next super-step boundary.
+`runtime.drain_reason` after a drain is requested. A node can avoid expensive
+work before execution reaches the next super-step boundary.
 
 ```python
 def node(state: State, runtime: Runtime):
@@ -153,13 +110,21 @@ def node(state: State, runtime: Runtime):
     return {"status": do_work()}
 ```
 
-## Deferred fan-in
+## Deferred fan-in nodes
 
-In Python, `add_node(..., defer=True)` postpones the node until every pending
-task has finished. Use it for a final fan-in when parallel branches have
-different lengths; without it, a node can run as soon as one incoming branch
-arrives.
+In Python, `add_node(..., defer=True)` waits until every pending task is done
+instead of firing when the first incoming branch arrives. Use it as the final
+fan-in for parallel branches of different lengths.
 
 ```python
 builder.add_node("finalize", finalize, defer=True)
+```
+
+## Per-node tracing
+
+Python `StateGraph.add_node()` exposes `trace_policy` in 1.2.11. Supply a trace
+policy while registering the individual node.
+
+```python
+builder.add_node("worker", worker, trace_policy=trace_policy)
 ```

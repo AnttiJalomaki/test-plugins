@@ -1,98 +1,225 @@
-# Operations and upgrades
+# Operations and Upgrades
 
-Use this reference for cluster lifecycle, storage, seals, containers, listener limits, configuration compatibility, and release-specific hazards. Guidance is grouped by operator task rather than release chronology.
+Use this reference for server configuration, integrated storage, containers,
+cluster lifecycle, recovery, and upgrade hazards.
 
-Extraction attribution for version-sensitive notes: `1.19-changelog`, `1.19`, `1.20-changelog`, `1.20`, `1.21-changelog`, `1.21`, `2.0-changelog`, and `2.0`. Additional cross-release guidance is attributed to `upgrade-safety`.
+## Cluster state, Raft, and recovery
 
-## Cluster membership and health
+### Cluster health and removal signals (`1.19-changelog`)
 
-- Health responses now distinguish a removed node and an unhealthy HA standby. The default failure codes are `530` for removed and `474` for HA-unhealthy; override them with `removedcode` and `haunhealthycode`.
-- `sys/seal-status` and `vault status` expose `removed_from_cluster`; seal status also exposes `migration_done_at_epoch` in later patches.
-- A removed node with existing Raft data cannot rejoin through `sys/storage/raft/join`. Removed nodes stop serving requests and are shut down and sealed. Reprovision or clean the intended node state instead of repeatedly joining it.
-- SIGHUP reloads additional Raft settings. `/sys/config/state/sanitized` exposes the sanitized active settings, which is useful for confirming a reload.
-- Raft auto-join can be forced to IPv4 on dual-stack networks.
-- Integrated storage rejects `performance_multiplier <= 0` (since 2.0).
+`sys/health` reports whether a node was removed and whether a standby can
+heartbeat the active node. Default failure codes are 530 and 474; override them
+with `removedcode` and `haunhealthycode`. `sys/seal-status` and `vault status`
+include `removed_from_cluster`; seal status later also includes
+`migration_done_at_epoch`.
 
-## Memory locking and containers
+### Removed Raft nodes (`1.19-changelog`)
 
-- With integrated storage, `disable_mlock` has no default; set it explicitly to `true` or `false`, or Vault refuses to start (since 1.20).
-- Container images run as the `vault` user by default from 1.19.16. The 1.19.17 image required runtime `IPC_LOCK`, but 1.19.18 removed the built-in `cap_ipc_lock`.
-- Current containers therefore cannot call `mlock()`. Configure `disable_mlock = true` and disable swapping at the container runtime or host.
-- The 1.19.16 Docker image has a `setfcap` startup failure with a documented workaround; account for this if that exact image is still deployed.
-- Images are distributed as compressed OCI image layouts. UBI variants use UBI 10 minimal.
+`sys/storage/raft/join` rejects a removed node that still has Raft data.
+Removed nodes stop serving requests and are shut down and sealed.
 
-## Paths, parsing, and listener limits
+### Seal HA and seal-wrap controls (`1.19-changelog`)
 
-- Vault 1.19.16 started rejecting non-canonical paths. From 1.19.19, paths containing `/./`, `/../`, or `//` redirect to their cleaned form.
-- A mount tuneable can trim trailing slashes on `POST`. Trailing-slash `LIST` requests honor more-specific denies instead of falling through to broader allows.
-- HTTP handling can bound request data with `max_json_depth`, `max_json_string_value_length`, `max_json_object_entry_count`, and `max_json_array_element_count`. Quotas are evaluated before JSON limits.
-- Listeners cap `X-Vault-Token` and bearer-token header content with `max_token_header_size`, default 8 KB. A value of `-1` disables the limit (since 2.0).
-- Client IP values obtained from `X-Forwarded-For` must parse as valid IPv4 or IPv6 addresses.
-- Agent, Proxy, server, and other displayed configuration canonicalizes IPv6 values using RFC 5952.
+Seal HA persists the barrier keyring only when every seal is healthy; later
+patches allow new nodes to join Seal-HA clusters. `detect_deadlocks` accepts
+`sealwrap`, AppRole secrets are seal-wrapped when seal wrap is enabled, and
+selected sensitive seal-wrap and managed-key values may come from environment
+variables or files.
 
-## HCL migration
+### Seal-wrapped Raft quorum (`1.19`)
 
-- Duplicate attributes in HCL server configuration and policy definitions were deprecated in the 1.19 line.
-- They are errors from 1.21. `VAULT_ALLOW_PENDING_REMOVAL_DUPLICATE_HCL_ATTRIBUTES` temporarily restores warning behavior to aid migration; remove duplicates rather than treating the flag as permanent.
+Enterprise 1.19.18 has an unresolved issue in which seal wrapping can cause
+Raft quorum failure. The release notes list no workaround.
 
-## Rekey, seal, and HSM safety
+### Recovery from integrated-storage snapshots (`1.20-changelog`)
 
-- Rekey cancellation requires the operation nonce from 1.19.6. Automation must retain the nonce and submit it when cancelling.
-- Seal HA will not persist the barrier keyring unless every seal is healthy. Later 1.19 patches allow new nodes to join Seal-HA clusters.
-- `detect_deadlocks` accepts `sealwrap`. When seal wrap is active, AppRole secrets are seal-wrapped.
-- Selected sensitive seal-wrap and managed-key configuration values may be read from environment variables or files.
-- Enterprise 1.19 has an unresolved duplicate unseal or seal-wrap HSM-key issue; use the release-note workaround.
-- Enterprise 1.19.18 has an unresolved seal-wrap issue that can cause Raft quorum failure and has no listed workaround. Do not roll onto that patch without an explicit risk decision.
+Enterprise can load a snapshot and read, list, and recover KV v1 and cubbyhole
+secrets. Later 1.20 releases add database static roles and credentials and the
+SSH plugin CA.
 
-## Storage backends
+### Snapshot recovery request changes (`1.21-changelog`)
 
-- The DynamoDB storage backend can modify its table to use on-demand, per-request billing.
-- The PostgreSQL physical backend can authenticate with AWS IAM, Azure MSI, or GCP IAM identities (since 1.20).
-- The MySQL physical backend can obtain credentials from `VAULT_MYSQL_USERNAME` and `VAULT_MYSQL_PASSWORD` (since 1.20).
+Send the snapshot ID in `X-Vault-Recover-Snapshot-Id`, not the deprecated
+`recover_snapshot_id` query parameter. Recovery accepts `RECOVER`, `POST`, and
+`PUT`. `vault recover -from` restores an item to a different live path. Unload a
+stuck snapshot with `vault operator raft snapshot unload -force` or
+`DELETE sys/storage/raft/snapshot-load/{snapshot_id}?force=true`.
 
-## Diagnostics and reload visibility
+### Automatic snapshot loading (`1.21-changelog`)
 
-- Start the server with `pprof-dump-dir` to write startup profiles.
-- `enable_post_unseal_trace` and `post_unseal_trace_directory` capture a Go trace after unseal.
-- Use `sys/health`, `sys/seal-status`, `vault status`, sanitized configuration state, and the Raft APIs together when diagnosing membership or post-unseal failures.
+Set `autoload_enabled` on an Enterprise Raft automated-snapshot configuration
+to load generated snapshots automatically for recovery. Snapshot-management
+and recovery permissions are separate, so recovery can be delegated alone.
 
-## Upgrade compatibility issues
+### KV v2 snapshot recovery (`2.0.4`)
 
-### Plugin signing key
+Enterprise recovery can read and recover KV v2 secrets from a loaded snapshot,
+either in place or by copying another path in the same mount and namespace.
 
-Enterprise releases 1.19.17, 1.20.11, 1.21.6, and 2.0.1 cannot register Enterprise plugins released on or after April 21, 2026 because the renewed signing key fails verification. Existing registrations are unaffected. Upgrade, respectively, to 1.19.18, 1.20.12, 1.21.7, or 2.0.2 or later in the same release line (`upgrade-safety`).
+### Raft multiplier validation (`2.0-changelog`)
 
-### Azure propagation
+Integrated storage rejects `performance_multiplier` values less than or equal
+to zero.
 
-- Dynamic-role credential creation can fail before a new service principal propagates. Use 1.19.19, 1.20.13, 1.21.8, or 2.0.3 or later in the applicable release line.
-- Static-role rotations issued in rapid succession can fail to remove the previous credential. Wait several minutes between `static-rotate` calls and manually inspect for leftovers.
+### Cross-cluster SSCT error status (`2.0.4`)
 
-### Rotation and mount migration
+An invalid cross-cluster Server-Side Consistent Token sent to an active
+performance secondary now prefers HTTP 403 over 412. Treat it as an
+authorization failure when classifying API errors.
 
-- Vault 1.19.19 fixes incorrect routing of local mount entries under namespaces.
-- Rotation Manager can still lose track of entries after a mount migration. Inventory scheduled entries before and after moving a mount.
-- Configuration writes to local LDAP, AWS, GCP, or Azure auth mounts can ignore the mount's `local` flag in 1.19.x; no workaround is listed.
+## Server configuration and runtime
 
-### Event delivery
+### Container execution and memory locking (`1.19-changelog`)
 
-Enterprise 1.19.x can miss events when multiple event clients are connected. A workaround is available; validate fan-out behavior before relying on the stream for control logic.
+Containers run as `vault` by default from 1.19.16. The 1.19.17 image required
+runtime `IPC_LOCK`, but 1.19.18 removed built-in `cap_ipc_lock`; containers can
+no longer call `mlock()`. Set `disable_mlock = true` and prevent swapping at the
+runtime or host level.
 
-### Snowflake key pairs
+### Integrated-storage memory locking (`1.20-changelog`)
 
-Snowflake database credential refresh with key-pair authentication has an unresolved 1.19.x failure mode and an available workaround. This is separate from the retirement of password authentication.
+With integrated storage, `disable_mlock` has no default. Set it explicitly to
+`true` or `false`, or Vault refuses to start.
 
-## Enterprise lifecycle and licensing
+### Container image format (`1.19-changelog`)
 
-- The 1.19 Enterprise line is an LTS line; 1.16.x moved into long-term support when it became current.
-- Vault Enterprise accepts IBM PAO license keys (since 2.0). This license type requires `license_entitlement` in server configuration.
-- `common_criteria_mode` is an Enterprise feature flag. It restricts listener cipher suites and enables additional PKI rules; review the cryptography reference before enabling it.
+Vault container images are compressed OCI image layouts. UBI images use UBI 10
+minimal.
 
-## Safe rollout sequence
+### Docker image startup (`1.19`)
 
-1. Record the exact server, CLI, image, and external-plugin patch versions.
-2. Remove duplicate HCL attributes and set integrated-storage `disable_mlock` explicitly.
-3. Check HSM, seal-wrap, image, plugin-signing, Azure propagation, and event-client hazards.
-4. Validate canonical paths, header sizes, JSON limits, and proxy headers against real clients.
-5. Test rekey cancellation with nonce retention and confirm all seals before keyring persistence.
-6. Upgrade a non-voting or disposable node first where the topology permits it.
-7. Confirm health codes, removal state, unseal, Raft membership, plugin registration, auth, rotation, and event flow before proceeding.
+The 1.19.16 image has an unresolved `setfcap` startup failure. Apply the
+workaround from that release line when pinned to this image.
+
+### UBI container package removal (`2.0.4`)
+
+UBI images no longer contain `gnupg`, `openssl`, or `procps`. Supply any of
+those tools needed by setup, health checks, or debugging separately.
+
+### HCL duplicate attributes (`1.19-changelog`)
+
+Duplicate attributes in server HCL and policy definitions are deprecated.
+
+### Duplicate HCL attributes (`1.21-changelog`)
+
+Duplicate attributes are errors. The temporary
+`VAULT_ALLOW_PENDING_REMOVAL_DUPLICATE_HCL_ATTRIBUTES` setting downgrades them
+to warnings only on releases that still support the switch.
+
+### Duplicate HCL compatibility switch removed (`2.0.4`)
+
+Duplicate attributes always fail parsing; the temporary compatibility switch
+has been removed.
+
+### Canonical paths and trailing slashes (`1.19-changelog`)
+
+Non-canonical paths began failing in 1.19.16; 1.19.19 redirects `/./`, `/../`,
+and `//` forms to cleaned paths. A mount tuneable can trim trailing slashes on
+POST. A trailing-slash LIST now applies the more-specific deny rule rather than
+falling through to a broader allow.
+
+### JSON request limits (`1.19-changelog`)
+
+HTTP listeners support `max_json_depth`, `max_json_string_value_length`,
+`max_json_object_entry_count`, and `max_json_array_element_count`. Rate-limit
+quotas run before these limits.
+
+### Operator diagnostics and reloads (`1.19-changelog`)
+
+Use `pprof-dump-dir` for startup profile dumps and
+`enable_post_unseal_trace`/`post_unseal_trace_directory` for post-unseal Go
+traces. SIGHUP reloads additional Raft settings, which also appear at
+`/sys/config/state/sanitized`.
+
+### Network and storage configuration (`1.19-changelog`)
+
+Agent, Proxy, server, and other configuration displays canonicalize IPv6 under
+RFC 5952. Raft auto-join can force IPv4 on dual-stack networks. DynamoDB
+storage can modify its table to use per-request billing.
+
+### Cloud identity for PostgreSQL storage (`1.20-changelog`)
+
+PostgreSQL physical storage supports AWS IAM, Azure MSI, and GCP IAM identity
+authentication.
+
+### MySQL storage credentials from the environment (`1.20-changelog`)
+
+The MySQL physical storage backend reads `VAULT_MYSQL_USERNAME` and
+`VAULT_MYSQL_PASSWORD`.
+
+### State reporting scan (`1.21-changelog`)
+
+The sudo-protected `sys/reporting/scan` endpoint writes Vault-state report
+files into `reporting_scan_directory`.
+
+### IBM PAO licensing (`2.0-changelog`)
+
+Enterprise accepts IBM PAO license keys only when server configuration includes
+a `license_entitlement` stanza.
+
+## Operator and client behavior
+
+### Privileged system endpoints (`1.19-changelog`)
+
+`sys/generate-root`, `sys/replication/dr/secondary/generate-operation-token`,
+and `sys/rekey` authenticate callers by default. A root token generated on the
+primary can authenticate to a DR secondary. Restore legacy unauthenticated
+behavior only explicitly:
+
+```hcl
+enable_unauthenticated_access = ["generate-root", "generate-operation-token", "rekey"]
+```
+
+### Rekey cancellation nonce (`1.19`)
+
+From 1.19.6, cancellation requires the rekey operation nonce. Automation must
+retain and send it.
+
+### Lease renewal and rate-limit retries (`1.19-changelog`)
+
+`vault lease renew --fail-if-not-fulfilled` fails if the requested renewal
+cannot be fulfilled. The default API client honors `Retry-After`, and quota
+delays round up to whole seconds.
+
+### Automatic irrevocable-lease removal (`1.20-changelog`)
+
+Enterprise `remove_irrevocable_lease_after` deletes irrevocable leases after
+that duration past expiry. A nonzero duration must be at least two days.
+
+### Removed token-counter endpoint (`1.20-changelog`)
+
+`/sys/internal/counters/tokens` is deprecated and returns HTTP 403 with
+`unsupported path`; clients must not depend on it.
+
+### Response-header tuning (`1.21-changelog`)
+
+The mounts API can unset `allowed_response_headers`.
+
+## Release-line and known-issue checks
+
+### Enterprise LTS lifecycle (`1.19`)
+
+Enterprise 1.19 is the current LTS line in this guidance; 1.16.x moved into
+long-term support.
+
+### Duplicate HSM keys (`1.19`)
+
+Enterprise 1.19 has an unresolved duplicate unseal or seal-wrap HSM-key issue;
+the release notes require a workaround.
+
+### Local auth-mount configuration (`1.19`)
+
+Writes to local LDAP, AWS, GCP, or Azure auth mounts can ignore the mount's
+`local` flag in 1.19.x. No workaround is listed.
+
+### Rotation Manager mount handling (`1.19`)
+
+1.19.19 fixes routing of local mount entries under namespaces, but Rotation
+Manager can still lose entries after a mount migration.
+
+### Enterprise plugin signing-key compatibility (`upgrade-safety`)
+
+Enterprise 1.19.17, 1.20.11, 1.21.6, and 2.0.1 cannot register Enterprise
+plugins released on or after April 21, 2026 because the renewed signing key
+fails verification. Existing registrations work. Upgrade respectively to
+1.19.18, 1.20.12, 1.21.7, or 2.0.2 or later.

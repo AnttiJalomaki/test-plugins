@@ -1,131 +1,91 @@
 # Targets and Offload
 
-Target feature names, defaults, ABI layout, runtime requirements, and lowering
-support can change independently. Validate the emitted target and deployed
-runtime, not merely driver acceptance of a flag.
+Use this reference for architecture flags, platform ABI defaults, target retirement, GPU builds, OpenMP, OpenACC, OpenCL, and WebAssembly.
 
-## Target defaults and ABI details
+## X86 and vector-width changes
 
-### Arm and AArch64
+Clang 20 (`clang-20.1`) makes `*mmintrin.h` intrinsics on `__m64` use SSE2 and XMM registers. They no longer support MMX-only targets or `-mmmx -mno-sse2`; MMX inline assembly remains available. Direct users of the removed `__builtin_ia32_*` implementation builtins must use the header intrinsics.
 
-On 32-bit Arm, Clang 20 passes an empty C++ structure as a one-byte object to
-match AAPCS32 and GCC; `-fclang-abi-compat=19` restores the old ignored-argument
-behavior (`clang-20.1`). `-fno-omit-frame-pointer` now retains frame pointers in
-leaf functions unless combined with `-momit-leaf-frame-pointer`. SME
-function-type attributes participate in mangling.
+Clang 21 (`clang-21.1`) makes `-mavx10.1` select a 512-bit maximum vector width because AVX10/256 was removed from the specification. The suffixed `-mavx10.x-256`, `-mavx10.x-512`, and `-m[no-]evex512` forms warn; use unsuffixed `-m[no-]avx10.x`.
 
-In Clang 21, AArch32 `-mtp` defaults to `auto`, choosing `TPIDRURO` where
-available instead of calling `__aeabi_read_tp`; use `-mtp=soft` if the call is
-required (`clang-21.1`). The Arm assembler includes FPU features implied by the
-selected CPU or architecture, so remove them with explicit `+no...` options.
-`+nosimd` now disables NEON and dependent features. AArch64 adds
-`-mexecute-only`/`-mpure-code` and `-msve-streaming-vector-bits=`. Replace
-deprecated pointer-authentication `__has_feature` tests with `__PTRAUTH__`.
+Clang 22 (`clang-22.1`) removes the deprecated suffixed AVX10 and EVEX512 spellings, and intrinsic feature requests use unsuffixed `avx10.x`. It adds `-march=wildcatlake` and `-march=novalake`. clang-cl adds `/arch:AVX10.1`, `/arch:AVX10.2`, `/vlen`, `/vlen=256`, and `/vlen=512`; more SSE, AVX, and AVX512 intrinsics are constant-expression capable.
 
-GCC 16 deprecates AArch64 PC-relative literal loads; migrate assembly and
-low-level emitters rather than relying on future acceptance (`gcc-16.1`).
+## Arm and AArch64
 
-Clang 22 changes AArch64 argument passing for empty C++ classes with large
-explicit alignment (`clang-22.1`). ACLE function multiversioning reaches release
-status with PAC/BTI-aware resolvers, overridable version priority, and
-unreachable-version diagnostics.
+Clang 20 (`clang-20.1`) changes 32-bit Arm empty-struct argument passing to one-byte objects and makes SME function-type attributes participate in mangling. `-fno-omit-frame-pointer` now retains leaf-function frame pointers unless combined with `-momit-leaf-frame-pointer`.
 
-### X86
+Clang 21 (`clang-21.1`) makes the Arm assembler include FPU features implied by the selected CPU or architecture; remove them with explicit `+no...` choices. `+nosimd` now disables NEON and dependent features. AArch64 gains `-mexecute-only`/`-mpure-code` and `-msve-streaming-vector-bits=`. Replace deprecated pointer-authentication `__has_feature` probes with `__PTRAUTH__`.
 
-Clang 20 adds AVX10.2, MOVRS, AMX-FP8, AMX-TRANSPOSE, AMX-MOVRS,
-AMX-AVX512, AMX-TF32, and `-march/-mtune=diamondrapids` (`clang-20.1`). MMX
-header intrinsics using `__m64` now always require SSE2/XMM; inline MMX assembly
-remains supported.
+AArch32 `-mtp` now defaults to `auto`, selecting `TPIDRURO` where available rather than calling `__aeabi_read_tp`; use `-mtp=soft` when that call is required. The general `-fbracket-depth` default rises from 256 to 2048.
 
-Clang 21 makes `-mavx10.1` select a 512-bit maximum vector width because the
-AVX10/256 specification was removed (`clang-21.1`). The
-`-mavx10.x-256`, `-mavx10.x-512`, and `-m[no-]evex512` forms warn; use
-`-m[no-]avx10.x`.
+Clang 22 (`clang-22.1`) changes AArch64 argument passing for explicitly over-aligned empty C++ classes. ACLE function multiversioning reaches release status with PAC/BTI-aware resolvers, overridable version priority, and unreachable-version diagnostics.
 
-Clang 22 removes `-mavx10.x-{256,512}`, `-mno-avx10.x-{256,512}`, and the
-EVEX512 forms; intrinsic requests use unsuffixed `avx10.x` (`clang-22.1`). It adds `-march=wildcatlake` and
-`-march=novalake`. clang-cl adds `/arch:AVX10.1`, `/arch:AVX10.2`, `/vlen`,
-`/vlen=256`, and `/vlen=512`; more SSE/AVX/AVX512 intrinsics are constant-
-expression capable.
+GCC 15 (`gcc-15.1`) deprecates AArch64 ILP32 (`-mabi=ilp32`). GCC 16 (`gcc-16.1`) deprecates PC-relative literal loads on AArch64; migrate assembly and low-level emitters away from them.
 
-### Other target changes
+## GPU and accelerator targets
 
-Clang 20 adds gfx950, Arm SVE2.1/SME2.1, AArch64 `fujitsu-monaka`, RISC-V
-`-mcmodel=large`, RVV intrinsics 1.0, CUDA SDK 12.6, and `sm_100`
-(`clang-20.1`). `target_version` is limited to AArch64 and RISC-V; on AArch64,
-`target_version("default")` by itself creates a mangled default version.
+### CUDA and HIP driver behavior
 
-Clang 21 (`clang-21.1`) adds Cortex-A320, MIPS little-endian Windows, OHOS and
-`_Float16`/`__bf16` on LoongArch, RISC-V `-mtune=generic-ooo`, SiFive and
-Qualcomm interrupt attributes, and `__builtin_riscv_pause()`. AIX runtimes moved
-from `lib/clang/20/lib/aix` to per-target Clang 21 directories.
+Clang 20 (`clang-20.1`) makes the new CUDA offloading driver the default, including native `-fgpu-rdc` static-library support. Its RDC binary format is incompatible with NVIDIA's; `--no-offload-new-driver` selects the old path during migration.
 
-Also in Clang 21:
+The same release supports CUDA SDK 12.6 and `sm_100`, as well as AMDGPU `gfx950`.
 
-- AMDGPU defaults to code object version 6 and requires ROCm 6.3 at runtime.
-- Hexagon defaults to V68 instead of V60.
-- LoongArch `_BitInt(N)` wider than 64 bits has consistent 16-byte alignment,
-  potentially changing layout.
+Clang 22 (`clang-22.1`) treats C++17 deduction guides as implicit `__host__ __device__` declarations for CUDA and HIP. Duplicate implicit guides are suppressed and constraint-distinct guides remain. Explicit target-only guides are errors. Explicit host-plus-device guides still work but are deprecated because deduction guides do not participate in code generation.
 
-Clang 22 enables linker relaxation by default on LoongArch64 and supports
-LoongArch32 (`clang-22.1`). RISC-V adds `-march=unset`, falling back to `-mcpu`
-or platform defaults, and defines `__GCC_CONSTRUCTIVE_SIZE` and
-`__GCC_DESTRUCTIVE_SIZE` as 64. `wasm32-wasi` is deprecated in favor of
-`wasm32-wasip1`.
+### AMDGPU defaults
 
-## Driver and feature detection
-
-Clang 20's WebAssembly `generic` CPU enables bulk memory and non-trapping
-float-to-int conversion (`clang-20.1`). clang-cl adds `/std:c++23preview`, and
-COFF targets support `#pragma clang section`.
-
-During Clang 22 offloading, `__has_builtin` considers only the currently active
-target (`clang-22.1`). OpenCL no longer exposes unconditional header-only feature
-macros; availability is centralized and controlled consistently through
-`-cl-ext`.
-
-## CUDA and HIP
-
-Clang 20 uses the new CUDA offloading driver by default, including native
-`-fgpu-rdc` static-library support (`clang-20.1`). Its RDC binary format is not
-compatible with NVIDIA's. Use `--no-offload-new-driver` for the old path during
-migration.
-
-Clang 22 supports device-side C++17 CTAD in CUDA and HIP (`clang-22.1`).
-Deduction guides act as implicit `__host__ __device__` declarations; duplicate
-implicit guides are suppressed and constraint-distinct guides remain. Explicit
-target-only guides are errors. Explicit host-plus-device guides work but are
-deprecated because deduction guides do not generate code.
+Clang 21 (`clang-21.1`) makes AMDGPU code object version 6 the default, requiring ROCm 6.3 at runtime. `[[clang::atomic(...)]]` can control AMDGPU atomic metadata per statement.
 
 ## OpenMP
 
-Clang 20 adds (`clang-20.1`):
+### Syntax and runtime build changes
 
-- `omp assume` and `omp scope`;
-- allocator and alignment modifiers on `allocate`;
-- combined masked-taskloop forms, optionally with `parallel` and `simd`.
+Clang 20 (`clang-20.1`) adds `omp assume`, `omp scope`, allocator and alignment modifiers on `allocate`, and combined masked-taskloop forms with optional `parallel` and `simd`.
 
-DeviceRTL uses generic IR. `LIBOMPTARGET_DEVICE_ARCHITECTURES` is unused, and
-runtime builds always cover AMDGPU and NVPTX.
+DeviceRTL now uses generic IR. `LIBOMPTARGET_DEVICE_ARCHITECTURES` is unused, and runtime builds always cover AMDGPU and NVPTX.
 
-Clang 21 adds the `no_openmp_constructs` assumption, `self_maps` in map and
-requirement clauses, `omp stripe`, and private-variable reduction
-(`clang-21.1`). The delimited `declare target` form is deprecated.
+### Assumptions, maps, and reductions
 
-Clang 22 adds (`clang-22.1`):
+Clang 21 (`clang-21.1`) adds the `no_openmp_constructs` assumption clause, `self_maps` in map and requirement clauses, `omp stripe`, and private-variable reduction. The delimited form of `declare target` is deprecated.
 
-- `need_device_addr` for `adjust_args`, `threadset`, `groupprivate`, `omp fuse`,
-  omitted array-section lengths, and the new `uses_allocators` syntax;
-- `variable-category`, `defaultmap(storage|private)`, and `default` on `target`;
-- the optional OpenMP 6.0 `nowait` argument;
-- OpenMP 6.1 `fb_nullify` and `fb_preserve` fallbacks for `need_device_ptr`.
+### Mapping and allocator behavior
 
-If lookup fails, `use_device_ptr` and `use_device_addr` now preserve the host
-address.
+Clang 22 (`clang-22.1`) adds `need_device_addr` for `adjust_args`, `threadset`, `groupprivate`, `omp fuse`, omitted array-section lengths, new `uses_allocators` syntax, `variable-category`, `defaultmap(storage|private)`, and `default` on `target`.
 
-## OpenACC
+OpenMP 6.0 permits an optional `nowait` argument. OpenMP 6.1 adds `fb_nullify` and `fb_preserve` fallbacks to `need_device_ptr`. `use_device_ptr` and `use_device_addr` preserve host addresses when lookup fails.
 
-Clang 21's `-fopenacc` performs OpenACC 3.4 semantic analysis and builds an AST
-(`clang-21.1`). Partial lowering exists only in a Clang-IR-enabled compiler with
-`-fclangir`. The ACC MLIR dialect cannot lower to LLVM IR, so OpenACC code
-generation is not yet available.
+## OpenACC and OpenCL
+
+Clang 21 (`clang-21.1`) provides OpenACC 3.4 semantic analysis and AST construction with `-fopenacc`. Partial lowering requires a Clang-IR-enabled compiler and `-fclangir`, but the ACC MLIR dialect cannot lower to LLVM IR, so executable OpenACC code generation is not available.
+
+Clang 22 (`clang-22.1`) removes formerly unconditional OpenCL header-only feature macros. Extension and feature availability are centralized under `-cl-ext`. During offloading, `__has_builtin` considers only the active target, so host and device probes can differ.
+
+## WebAssembly and COFF
+
+Clang 20 (`clang-20.1`) makes WebAssembly's `generic` CPU enable bulk memory and non-trapping float-to-int conversion. clang-cl adds `/std:c++23preview`, and COFF targets add `#pragma clang section`.
+
+Clang 22 (`clang-22.1`) deprecates `wasm32-wasi` in favor of `wasm32-wasip1`.
+
+## RISC-V, LoongArch, Hexagon, and other targets
+
+### Clang 20 target additions
+
+Clang 20 (`clang-20.1`) adds AVX10.2, MOVRS, AMX-FP8/TRANSPOSE/MOVRS/AVX512/TF32, `-march/-mtune=diamondrapids`, Arm SVE2.1/SME2.1, AArch64 `fujitsu-monaka`, RISC-V `-mcmodel=large`, and RVV intrinsics 1.0.
+
+`target_version` becomes limited to AArch64 and RISC-V. On AArch64, `target_version("default")` by itself creates a mangled default function version.
+
+### Clang 21 target additions and defaults
+
+Clang 21 (`clang-21.1`) moves Hexagon's default target from V60 to V68. LoongArch `_BitInt(N)` wider than 64 bits gets consistent 16-byte alignment, which can alter record layout.
+
+New target support includes Cortex-A320, MIPS little-endian Windows, OHOS and `_Float16`/`__bf16` on LoongArch, RISC-V `-mtune=generic-ooo`, SiFive and Qualcomm interrupt attributes, and `__builtin_riscv_pause()`. AIX compiler runtimes move from `lib/clang/20/lib/aix` into per-target Clang 21 directories.
+
+### Clang 22 target additions and defaults
+
+Clang 22 (`clang-22.1`) enables linker relaxation by default on LoongArch64 and supports LoongArch32. RISC-V adds `-march=unset` to fall back to `-mcpu` or platform defaults, and sets `__GCC_CONSTRUCTIVE_SIZE` and `__GCC_DESTRUCTIVE_SIZE` to 64.
+
+## Removed or restricted targets
+
+Clang 20 (`clang-20.1`) removes `le32`, `le64`, and RenderScript target support. On SPARC Linux, `clang -m32` defaults to `-mcpu=v9`; pass `-mcpu=v8` for retained SPARC V8 environments.
+
+GCC 15 (`gcc-15.1`) removes Nios II and Solaris 11.3, and it is the last release supporting the `reload` register allocator before GCC 16 removes it.

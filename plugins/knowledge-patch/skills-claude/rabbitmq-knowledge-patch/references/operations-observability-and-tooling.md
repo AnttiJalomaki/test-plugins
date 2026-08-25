@@ -1,149 +1,150 @@
 # Operations, Observability, and Tooling
 
-Use this reference for health probes, diagnostics, HTTP API response details,
-Prometheus migrations, logging controls, resource alarms, and administrative
-tools.
+Use this reference for health probes, diagnostics, metrics, management API
+behavior, operating-system limits, logs, and administrative tools.
 
-## Health and Readiness
+## Build focused health and readiness checks (4.0.6, 4.1.0)
 
-Batch `4.0.6` adds distinct metadata-store initialization checks:
+### Metadata-store readiness checks
 
-```shell
-rabbitmq-diagnostics check_if_metadata_store_is_initialized
-rabbitmq-diagnostics check_if_metadata_store_is_initialized_with_data
-```
+Use `rabbitmq-diagnostics check_if_metadata_store_is_initialized` for basic
+initialization and `check_if_metadata_store_is_initialized_with_data` when
+data must also be present. HTTP equivalents are
+`GET /api/health/checks/metadata-store/initialized` and
+`GET /api/health/checks/metadata-store/initialized/with-data`.
 
-The HTTP equivalents are:
+### Legacy all-in-one health check is a no-op
 
-```text
-GET /api/health/checks/metadata-store/initialized
-GET /api/health/checks/metadata-store/initialized/with-data
-```
+The original HTTP API “One True Health Check” no longer performs its former
+aggregate check. Replace it with focused health checks.
 
-The original HTTP API “One True Health Check” is now a no-op and does not run
-its old all-in-one check. Replace it with focused health checks.
+### Client-readiness health checks
 
-Starting in 4.1.1:
+From 4.1.1, `GET /api/health/checks/below-node-connection-limit` succeeds
+while the node is below its AMQP/AMQPS connection limit. The
+`ready-to-serve-clients` check also requires boot completion and no maintenance
+mode. Listener checks accept comma-separated protocol names.
 
-- `GET /api/health/checks/below-node-connection-limit` succeeds while the
-  node is below its AMQP/AMQPS connection limit.
-- `GET /api/health/checks/ready-to-serve-clients` additionally requires a
-  booted node outside maintenance mode.
-- Protocol-listener health checks accept comma-separated protocol names.
-
-## Quorum and Message Diagnostics
+### Quorum-leader diagnostics
 
 Check matching quorum queues for an elected leader:
 
 ```shell
-rabbitmq-diagnostics check_for_quorum_queues_without_an_elected_leader \
-  --vhost "vh-1" "^naming-pattern"
+rabbitmq-diagnostics check_for_quorum_queues_without_an_elected_leader --vhost "vh-1" "^naming-pattern"
 ```
 
-Use `--across-all-vhosts ".*"` to check the cluster. It can be expensive on a
-cluster with many quorum queues.
+Use `--across-all-vhosts ".*"` for the entire cluster, but expect high cost
+with many quorum queues.
 
-Estimate the distribution of message sizes passing through the cluster:
+## Interpret and migrate metrics (4.0.6, 4.1.0, 4.2.0, 4.3.0)
+
+### Prometheus endpoint-origin labels
+
+Metrics include labels that distinguish values scraped from the aggregated
+endpoint from same-named metrics scraped from a per-object endpoint.
+
+### Prometheus message-size and queue-identity metrics
+
+Use the protocol-labeled histogram for application-published message sizes.
+`queue_identity_info` identifies queue type and whether the scraped node is
+its leader or follower.
+
+### Message-size diagnostics
+
+Estimate the distribution of message sizes moving through a cluster with:
 
 ```shell
 rabbitmq-diagnostics message_size_stats
 ```
 
-Node-shutdown quorum checks and forced queue checkpoints are documented in
-[upgrades-and-deprecations.md](upgrades-and-deprecations.md) and
-[queues-streams-and-messaging.md](queues-streams-and-messaging.md).
+### Ra Prometheus metric migration
 
-## HTTP API Behavior and Capacity
+Update dashboards and alerts for the 4.2 Ra metric schema, including the
+RabbitMQ quorum-queue Raft Grafana dashboard.
 
-An empty `channel_details` value is serialized as an object (`{}`), not an
-array (`[]`).
+- Aggregated `/metrics` renames `rabbitmq_raft_log_snapshot_index` to
+  `rabbitmq_raft_snapshot_index`, `rabbitmq_raft_log_last_applied_index` to
+  `rabbitmq_raft_last_applied`, `rabbitmq_raft_log_commit_index` to
+  `rabbitmq_raft_commit_index`, and `rabbitmq_raft_log_last_written_index` to
+  `rabbitmq_raft_last_written_index`.
+- It removes `rabbitmq_raft_term_total` and
+  `rabbitmq_raft_entry_commit_latency_seconds`.
+- It adds `rabbitmq_raft_num_segments` and `rabbitmq_raft_commit_latency_seconds`
+  for internal components, plus `rabbitmq_raft_max_num_segments` and
+  `rabbitmq_raft_max_commit_latency_seconds` for quorum-queue maxima.
+- Per-object and detailed `family=ra_metrics` output renames
+  `rabbitmq_raft_term_total` to `rabbitmq_raft_term`, adds
+  `rabbitmq_raft_num_segments`, and exposes more per-queue metrics.
 
-`management.delegate_count` controls the process pool that aggregates data
-for HTTP API responses. It defaults to `5`; nodes with many CPU cores can use
-a larger value such as `10` or `16`.
+### Per-queue detailed metrics filtering
 
-RabbitMQ 4.3 adds:
+The Prometheus `/metrics/detailed` endpoint can filter queue metrics by queue
+name.
 
-- `GET /users/{user}/queues`
-- Static connection information—including peer address, TLS details, and
-  authentication mechanism—even when statistics collection is disabled
+## Control diagnostic and process overhead (4.0.6, 4.1.0, 4.2.0)
 
-## Prometheus Metrics
+### HTTP API aggregation pool sizing
 
-Prometheus metrics can label whether same-named data came from the aggregated
-endpoint or a per-object endpoint.
+`management.delegate_count` sizes the process pool used to aggregate HTTP API
+responses. It defaults to `5`; nodes with many CPU cores can use values such
+as `10` or `16`.
 
-Starting in batch `4.1.0`, nodes expose:
+### Open-file soft-limit override
 
-- A histogram of application-published message sizes labeled by protocol
-- `queue_identity_info`, labeling queue type and whether the scraped node is
-  the leader or a follower
+From 4.1.4 on Linux, macOS, and BSD, the startup script recognizes
+`RABBITMQ_MAX_OPEN_FILES`. It can raise a low soft limit when the hard limit is
+already sufficient; it does not replace operating-system hard-limit setup.
 
-### Ra metric migration
+### Queue-replica crash-log controls
 
-Batch `4.2.0` changes `rabbitmq_raft*` and `rabbitmq_detailed_raft*` metrics.
-Update dashboards and alerts, including the RabbitMQ quorum-queue Raft Grafana
-dashboard, to a compatible version.
+Use `log.summarize_process_state` and `log.error_logger_format_depth` to limit
+queue-member state logged after abnormal termination and avoid allocation
+spikes from very large diagnostics.
 
-Aggregated `/metrics` renames:
+### Resource-alarm blocking
 
-| Previous | Current |
-|---|---|
-| `rabbitmq_raft_log_snapshot_index` | `rabbitmq_raft_snapshot_index` |
-| `rabbitmq_raft_log_last_applied_index` | `rabbitmq_raft_last_applied` |
-| `rabbitmq_raft_log_commit_index` | `rabbitmq_raft_commit_index` |
-| `rabbitmq_raft_log_last_written_index` | `rabbitmq_raft_last_written_index` |
+From 4.1.6, MQTT, STOMP, and Web MQTT connections remain blocked until all
+active memory and disk alarms clear.
 
-Aggregated `/metrics` removes:
+### Resource alarms for direct in-cluster shovels
 
-- `rabbitmq_raft_term_total`
-- `rabbitmq_raft_entry_commit_latency_seconds`
+Direct AMQP 0-9-1 shovel connections are blocked by resource alarms like
+network connections. This does not describe the `local` shovel protocol.
 
-Aggregated `/metrics` adds:
+## Consume management API details correctly (4.0.6, 4.3.0, 4.3.5)
 
-- `rabbitmq_raft_num_segments` for internal components
-- `rabbitmq_raft_max_num_segments` for the largest quorum-queue segment count
-- `rabbitmq_raft_commit_latency_seconds` for internal components
-- `rabbitmq_raft_max_commit_latency_seconds` for the highest quorum-queue
-  latency
+### Empty channel details are objects
 
-Per-object and detailed `family=ra_metrics` output:
+An empty `channel_details` value is serialized as `{}`, not `[]`.
 
-- Renames `rabbitmq_raft_term_total` to `rabbitmq_raft_term`
-- Adds `rabbitmq_raft_num_segments`
-- Exposes more metrics for each queue
+### User queue-list endpoint
 
-In 4.3, `/metrics/detailed` can filter queue metrics by queue name.
+List queues visible to a user with `GET /users/{user}/queues`.
 
-## Logging
+### Connection information without statistics
 
-RabbitMQ 4.2 adds `log.summarize_process_state` and
-`log.error_logger_format_depth` to limit queue-member state logged after an
-abnormal termination. Use them to avoid allocation spikes from extremely
-large crash diagnostics.
+Static connection data such as peer address, TLS details, and authentication
+mechanism remains available through the HTTP API when statistics collection is
+disabled.
 
-## Resource Alarms
+### Conditional definition exports
 
-Starting in 4.1.6, MQTT, STOMP, and Web MQTT connections remain blocked until
-all active memory and disk alarms clear. Clearing only one of multiple alarms
-does not unblock them.
+`GET /api/definitions` supports conditional requests. Its `ETag` derives from
+the metadata-store Raft index and changes as metadata writes occur.
 
-Direct in-cluster AMQP 0-9-1 shovel connections are also blocked by resource
-alarms in 4.2, like network shovel connections. The separate `local` shovel
-protocol does not use this behavior.
+## Select administrative tools and artifacts (4.0.6, 4.2.0, 4.3-guides)
 
-## Administrative Tooling
+### `rabbitmqadmin` v2
 
-`rabbitmqadmin` 2.0 is generally available as a standalone binary and is
-recommended over the original tool.
+Prefer the GA standalone `rabbitmqadmin` 2.0 binary over the original tool.
 
-Starting in 4.1.2, force a chosen stream Single Active Consumer member active:
+### Complete source archive
 
-```shell
-rabbitmq-streams activate_stream_consumer \
-  --stream "stream-name" \
-  --reference "consumer-reference"
-```
+Use `rabbitmq-server-4.2.0.tar.xz` for the complete 4.2.0 source distribution,
+not the automatically generated repository source archive.
 
-The management plugin's v1 download endpoint is removed in 4.3; see
-[upgrades-and-deprecations.md](upgrades-and-deprecations.md).
+### Tanzu Stream Browser
+
+The commercial Stream Browser management plugin can inspect streams and super
+streams from an offset, timestamp, head, or tail; expose AMQP 1.0 sections and
+segment/chunk layout; and selectively download message sections.

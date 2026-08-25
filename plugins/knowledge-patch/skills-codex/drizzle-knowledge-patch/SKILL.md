@@ -17,7 +17,7 @@ or Drizzle Kit execution.
 
 Before editing:
 
-1. Identify the installed `drizzle-orm` and `drizzle-kit` package versions.
+1. Identify the installed `drizzle-orm` and `drizzle-kit` versions.
 2. Identify whether the CLI is launched by Node, Bun, or Deno.
 3. Check whether the project imports `drizzle-zod`.
 4. Search for dynamic values passed to `sql.identifier()` or `sql.as()`.

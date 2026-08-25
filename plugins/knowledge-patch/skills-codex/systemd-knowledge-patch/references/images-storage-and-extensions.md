@@ -1,62 +1,143 @@
 # Images, Storage, and Extensions
 
-## Select versioned files and images
+## Image discovery and transfer
 
-- A directory ending in `.v/` holds UAPI-versioned files. `systemd-vpick` selects the newest matching file, and nspawn, dissect, portabled, `RootImage=`, `RootDirectory=`, `ExtensionImages=`, and `ExtensionDirectories=` understand the same protocol (since 256).
+### Versioned `.v/` selection (256)
 
-```sh
-systemd-vpick --suffix=.conf ss.v/
-```
+`systemd-vpick` selects the newest UAPI-versioned file from a directory ending
+`.v/`. Nspawn, dissect, portabled, `RootImage=`, `RootDirectory=`,
+`ExtensionImages=`, and `ExtensionDirectories=` understand the same protocol.
 
-- Unprivileged image tools search `~/.local/state/machines/`. `systemd-dissect --all` includes directory images, and `systemd-loop@.service` attaches an encoded image path during boot (since 258).
-- For duplicate partition definitions in `RootImageOptions=` and the mount-image parameters of `ExtensionImages=` and `MountImages=`, the last definition wins rather than the first (announced in 259 for 260).
+### General image transfer (256)
 
-## Transfer and pull images
+`importctl` moves tar, raw, and filesystem images through importd. Pull,
+import, export, and transfer management cover sysext, confext,
+portable-service, nspawn, and vmspawn images.
 
-- `importctl` transfers tar, raw, and filesystem images through `systemd-importd`. Pull, import, export, and transfer-management verbs cover system extensions, configuration extensions, portable services, and machine images (since 256).
-- `systemd-import-generator` schedules extension, portable-service, nspawn, or vmspawn downloads during boot from the kernel command line or credentials (since 257).
-- `systemd.pull=` and `rd.systemd.pull=` support `blockdev`, `bootorigin`, and `runtime=`. A pull can expose a raw image as a root block device or resolve relative to a network-loaded UKI. Initrd pulls default to `/run`; host pulls default to `/var` (since 258).
-- `root=bind:` boots a downloaded tar tree through a bind-mounted root. `root=off` suppresses the initrd-to-host root transition (since 258).
+### Boot-time image imports (257, 258)
 
-```text
-rd.systemd.pull=raw,machine,verify=no,blockdev:image:https://boot.example.invalid/image.raw root=/dev/disk/by-loop-ref/image.raw-part2
-```
+`systemd-import-generator` schedules sysext, confext, portable, nspawn, or
+vmspawn downloads from kernel-command-line or credential configuration.
+`systemd.pull=`/`rd.systemd.pull=` supports `blockdev`, `bootorigin`, and
+`runtime=`. Initrd pulls default to `/run`, host pulls to `/var`; a downloaded
+raw image may become the root block device. `root=bind:` boots a downloaded tar
+tree and `root=off` prevents initrd-to-host transition.
 
-## Discover and mount DDIs
+### Per-user images and DDI root discovery (258)
 
-- `root=dissect` and `mount.usr=dissect` request full DDI discovery, including automatic Verity metadata. `systemd.image_filter=` selects partition-label variants (since 258).
-- Automatically dissected XBOOTLDR partitions must be VFAT, like ESPs. Mount a deliberate non-VFAT XBOOTLDR explicitly through `/etc/fstab` (since 259).
-- Mountfsd's `MountImage()` supports bare filesystem images with separate Verity data and signature files, and can decide whether images with the same root hash share a device-mapper Verity volume (since 259).
-- `MountImage()` accepts per-partition `mountOptions` and `relaxExtensionReleaseChecks`; its result reports `singleFileSystem` for a bare filesystem without a GPT envelope. `MakeDirectory()` accepts `mode` (since 260).
-- Mountfsd and nsresourced enable unprivileged, descriptor-based DDI mounting; see [Containers and Virtual Machines](containers-and-virtual-machines.md).
+Unprivileged tools search `~/.local/state/machines/`; `systemd-dissect --all`
+includes directories, and `systemd-loop@.service` attaches an encoded path at
+boot. `root=dissect` and `mount.usr=dissect` request full DDI/Verity discovery;
+`systemd.image_filter=` chooses partition-label variants, and udev exposes
+partitions below `/dev/disk/by-designator/`.
 
-## Build partitioned images with repart
+### XBOOTLDR must be VFAT (259)
 
-- `Compression=` and `CompressionLevel=` compress an offline-created filesystem internally. `MakeSymlinks=` creates links in the filesystem, and `CopyBlocks=` accepts character devices (since 257).
-- `SupplementFor=` allocates a partition only when another partition cannot meet its constraints, such as an XBOOTLDR added only for an undersized ESP (since 257).
-- ESP and XBOOTLDR minimum sizes are 100M on 512-byte-sector disks and 260M on 4K-sector disks. `Format=empty` creates an `_empty`, `NoAuto` partition suitable for sysupdate (since 258).
-- `AddValidateFS=` defaults on and records protected filesystem-use constraints. `systemd-validatefs@.service` checks them; `x-systemd.validatefs` pulls the check into an fstab mount, and mismatch triggers immediate reboot (since 258).
-- The default LUKS label is the partition/filesystem label prefixed by `luks-`, avoiding ambiguous `/dev/disk/by-label/` links. Set `VolumeLabel=` in the partition definition to override it (since 259).
-- Pass `-` as the repart device to calculate the minimum required size without modifying a block device. `--defer-partitions-empty=yes` and `--defer-partitions-factory-reset=yes` let an installer postpone `Format=empty` or `FactoryReset=yes` partitions until first boot (since 259).
-- A `Subvolumes=` entry ending in `:nodatacow` creates a btrfs subvolume with data copy-on-write disabled (since 259).
-- Udevd and repart update live partition tables incrementally with `BLKPG` rather than `BLKRRPART`, adding, removing, or growing changed partitions while retaining unchanged kernel partition objects (since 259).
-- Repart is available through Varlink (since 259). Populating XFS requires xfsprogs 6.17.0 or newer (since 260).
+Automatic image dissection rejects non-VFAT XBOOTLDR, like ESP. Mount an
+intentional non-VFAT XBOOTLDR explicitly through fstab.
 
-## Encrypt and verify images
+## Repart and filesystem construction
 
-- `systemd-integrity-setup` supports HMAC-SHA256, PHMAC-SHA256, and PHMAC-SHA512 (since 259).
-- Repart's `Integrity=` and `IntegrityAlgorithm=` enable dm-integrity for LUKS volumes. An image-dissection policy can require it with `encryptedwithintegrity` (since 260).
-- Partition definitions accept `TPM2PCRs=` and binary `KeyFile=` encryption inputs. Crypttab's `fixate-volume-key=` pins an entry to a hash derived from the volume key; repart can produce the needed metadata (since 259 and 260).
-- Verity image loads can be measured into the dedicated `verity` NvPCR; see [Boot, UKIs, and TPM Policy](boot-uki-and-tpm.md).
+### Filesystem controls (257)
 
-## Manage system and configuration extensions
+Repart can use `Compression=`/`CompressionLevel=`, create filesystem links via
+`MakeSymlinks=`, and read `CopyBlocks=` from character devices.
+`SupplementFor=` creates a partition only when another cannot satisfy its
+constraints.
 
-- `systemd-sysext --mutable=` adds a writable upper layer below `/var/lib/extensions.mutable/`. Ephemeral mode uses tmpfs and discards changes when extensions are reattached (since 256).
-- Systemd-sysext and systemd-confext read persistent merge policy from `/etc/systemd/systemd-sysext.conf` and `/etc/systemd/systemd-confext.conf`. Add OverlayFS options with `SYSTEMD_SYSEXT_OVERLAYFS_MOUNT_OPTIONS` or `SYSTEMD_CONFEXT_OVERLAYFS_MOUNT_OPTIONS` (since 259).
-- `systemd-sysext refresh` and `systemd-confext refresh` do nothing when the image set is unchanged. Use `--always-refresh=yes` to force unmount/remount behavior (since 260).
-- OCI-backed MStacks can serve as service and container roots; see [Containers and Virtual Machines](containers-and-virtual-machines.md).
+### Metadata and validation (258)
 
-## Acquire system updates
+Minimum ESP/XBOOTLDR sizes are 100M on 512-byte-sector disks and 260M on 4K.
+`Format=empty` creates an `_empty`, `NoAuto` partition for sysupdate.
+`AddValidateFS=` records filesystem-use constraints; a mismatch pulled in by
+`x-systemd.validatefs` triggers an immediate reboot.
 
-- Experimental `systemd-sysupdated` exposes updates over D-Bus and is controlled with `updatectl`. Transfer files should use `.transfer` instead of the compatible legacy `.conf`; `.feature` files group independently selectable transfers. Definitions may link changelog and AppStream metadata (since 257).
-- `systemd-sysupdate acquire` downloads without installing. SHA256SUMS manifests may use a dated `BEST-BEFORE-` filename whose expiration is enforced, and partitions can be marked partially downloaded (since 260).
+### LUKS and filesystem labels (259)
+
+The default LUKS superblock label is `luks-` plus the partition/filesystem
+label. Set `VolumeLabel=` in a partition definition when old naming is needed.
+
+### Sizing, deferred layouts, and subvolumes (259)
+
+`systemd-repart -` calculates minimum device size without modifying a device.
+Installers can defer `Format=empty` and `FactoryReset=yes` partitions using
+`--defer-partitions-empty=yes` and
+`--defer-partitions-factory-reset=yes`. A `Subvolumes=` entry ending
+`:nodatacow` creates a btrfs no-data-CoW subvolume.
+
+### Live partition table changes (259)
+
+Udevd and repart use incremental `BLKPG` add/remove/grow operations rather
+than `BLKRRPART`, preserving unchanged in-kernel partition objects.
+
+### XFS population requirement (260)
+
+Populating XFS requires xfsprogs 6.17.0+ because repart unconditionally uses
+`mkfs.xfs` directory population and removed its protofile fallback.
+
+### Dry runs and JSON (258.10-261.2)
+
+In v259.8, v260.4, and v261.2, repart dry runs skip generated files, and
+dissect JSON includes image size. Do not clean up files a dry run did not
+generate; tolerate the extra JSON field.
+
+## Extensions and image policy
+
+### Mutable system extensions (256)
+
+`systemd-sysext --mutable=` attaches a writable upper layer under
+`/var/lib/extensions.mutable/`; ephemeral mode uses tmpfs discarded on
+reattach.
+
+### Confext reload and persistent merge policy (258, 259)
+
+Reloading a service reloads associated confext images. Sysext/confext read
+`/etc/systemd/systemd-sysext.conf` and
+`/etc/systemd/systemd-confext.conf` for mutability and DDI policy. Supply
+overlay options with `SYSTEMD_SYSEXT_OVERLAYFS_MOUNT_OPTIONS` and
+`SYSTEMD_CONFEXT_OVERLAYFS_MOUNT_OPTIONS`.
+
+### No-op refresh (260)
+
+Sysext/confext refresh does not unmount/remount when the image set is
+unchanged. Use `--always-refresh=yes` to force it.
+
+## Integrity, Verity, and mountfsd
+
+### Bare image Verity and integrity algorithms (259)
+
+`systemd-integrity-setup` supports HMAC-SHA256, PHMAC-SHA256, and
+PHMAC-SHA512. Mountfsd `MountImage()` can attach bare filesystem images with
+separate Verity data/signatures and choose whether equal root hashes share a
+device-mapper Verity volume.
+
+### Richer mountfsd controls (260)
+
+`MakeDirectory()` accepts `mode`; `MountImage()` accepts per-partition
+`mountOptions` and `relaxExtensionReleaseChecks`, and reports
+`singleFileSystem` for a bare filesystem without GPT.
+
+### Encrypted image integrity (260)
+
+Repart `Integrity=`/`IntegrityAlgorithm=` enables dm-integrity for LUKS;
+dissection policy can require `encryptedwithintegrity`. Crypttab
+`fixate-volume-key=` pins to a volume-key-derived hash.
+
+## System updates and portable images
+
+### Transfer definitions and feature groups (257)
+
+Experimental sysupdated is controlled by `updatectl`. Prefer `.transfer` over
+legacy `.conf`; `.feature` groups independently selectable transfers, and
+definitions can point to changelog and AppStream metadata.
+
+### Acquisition separate from installation (260)
+
+`systemd-sysupdate acquire` downloads without installing. SHA256SUMS can use
+dated `BEST-BEFORE-` filenames whose expired manifests are rejected;
+partitions may be marked partially downloaded.
+
+### Portable pool enforcement (258.10-261.2)
+
+V260.4 and v261.2 count portable-service images against configured portabled
+pool limits.

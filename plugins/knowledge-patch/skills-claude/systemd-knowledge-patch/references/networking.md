@@ -1,8 +1,13 @@
 # Network Configuration
 
-## Configure forwarding and bridge VLANs
+## Forwarding, VLANs, and NAT
 
-- `IPForward=` is deprecated. Use `IPv4Forwarding=` and `IPv6Forwarding=` globally or per link. `IPv6SendRA=` and `IPMasquerade=` imply only per-link forwarding (since 256).
+### Per-family forwarding and authoritative VLANs (256)
+
+Replace deprecated `IPForward=` with `IPv4Forwarding=` and
+`IPv6Forwarding=`, globally or per link. `IPv6SendRA=` and `IPMasquerade=`
+imply only their link's forwarding. Once `[BridgeVLAN]` has a valid setting,
+networkd removes every VLAN ID not declared there.
 
 ```ini
 [Network]
@@ -10,34 +15,64 @@ IPv4Forwarding=yes
 IPv6Forwarding=yes
 ```
 
-- Once a `[BridgeVLAN]` section contains any valid setting, networkd removes every VLAN ID on that interface that is not declared in the section (since 256).
-- Bridges support `FDBMaxLearned=` to cap dynamically learned forwarding entries. `MulticastGroupAddress=` accepts layer-2 and layer-3 MDB entries (since 257).
+### Nftables-only NAT (259)
 
-## Supply network configuration and ownership
+Networkd and nspawn no longer create NAT through iptables/libiptc; nftables is
+required, and `-Dlibiptc=` is deprecated.
 
-- `systemd-network-generator` can read `.network`, `.netdev`, `.link`, and `networkd.conf` content from system credentials. Networkd can obtain WireGuard secrets from credentials (since 256).
-- Shipped networkd-only link policies set `ID_NET_MANAGED_BY=io.systemd.Network`. A `.link` file can set, import, or unset udev properties explicitly (since 256).
-- In 258, Tun/Tap `User=` and `Group=` were restricted to system accounts; that restriction was partially reverted in 260 and may be backported to 259.
+## Configuration ownership and persistence
 
-## Preserve and reload dynamic state
+### Credentials and udev ownership (256)
 
-- `KeepConfiguration=dynamic` and `dynamic-on-stop` replace `dhcp` and `dhcp-on-stop`; they cover DHCPv4, DHCPv6, NDISC, and IPv4LL with ACD. A networkd restart preserves dynamic state regardless of this option (since 257).
-- `networkctl reload` applies traffic-control and mutable `.netdev` changes in place. Immutable settings such as a VLAN ID still require interface recreation (since 257).
-- The shipped `99-default.link` adds `mac` to `AlternativeNamesPolicy=`, producing an `enx*` alternative name from a hardware-assigned MAC even when another primary naming policy wins (since 257).
+`systemd-network-generator` can obtain `.network`, `.netdev`, `.link`, and
+`networkd.conf` from credentials; networkd can read WireGuard secrets from
+credentials. Shipped networkd-only link policies set
+`ID_NET_MANAGED_BY=io.systemd.Network`; `.link` files can set, import, or unset
+udev properties.
 
-## Configure addresses, routes, and protocols
+### Dynamic-state retention and reload (257)
 
-- Global `networkd.conf` supports `[IPv6AddressLabel]` with `Prefix=` and `Label=` for source-address labels (since 257).
-- IPv4 duplicate-address detection defaults to 200ms rather than 7s and is configurable with `IPv4DuplicateAddressDetectionTimeoutSec=` (since 258).
-- Global `ClientIdentifier=` configures the DHCP client. A DHCP server can set `PersistLeases=runtime` to retain leases in runtime storage (since 258).
-- Added protocol controls include DHCPv6 `UseSIP=`, `MPLSRouting=`, DHCPv4 `BOOTP=`, tunnel `Local=dhcp_pd`, HSR/SRP netdevs, and additional bridge and VXLAN settings (since 258).
-- `MultiPathRoute=` supports interface-bound ECMP routes (since 260).
-- `.link` supports `ScatterGather=`, `ScatterGatherFragmentList=`, `TCPECNSegmentationOffload=`, `TCPMangleIdSegmentationOffload=`, `GenericReceiveOffloadList=`, and `GenericReceiveOffloadUDPForwarding=` (since 260).
+Use `KeepConfiguration=dynamic` or `dynamic-on-stop`; `dhcp` and
+`dhcp-on-stop` are obsolete. The modes cover DHCPv4, DHCPv6, NDISC, and IPv4LL
+with ACD, while networkd restart preserves dynamic state regardless.
+`networkctl reload` updates traffic control and mutable netdev settings;
+immutable settings such as VLAN ID require recreation.
 
-## Serve DHCP and cellular links
+### Alternative names and preserved MACs (257, 258.10-261.2)
 
-- The DHCP server supports `EmitDomain=` and `Domain=`, and an individual static lease supports `Hostname=` (since 259).
-- `[MobileNetwork]` uses ModemManager's simple-connect protocol. It configures APN, authentication, credentials, IP family, roaming, PIN, operator, route metric, and gateway use (since 260).
+`99-default.link` includes `mac` in `AlternativeNamesPolicy=`, producing
+`enx*` alternatives from hardware MACs. Systemd no longer replaces a MAC
+already assigned by userspace.
+
+## Addressing, bridges, and DHCP
+
+### IPv6 labels and bridge capacity (257)
+
+Global `[IPv6AddressLabel]` entries define `Prefix=` and `Label=`. Bridges use
+`FDBMaxLearned=` to cap dynamic entries; `MulticastGroupAddress=` accepts L2
+and L3 MDB entries.
+
+### Protocol and lease persistence controls (258)
+
+IPv4 duplicate-address detection defaults to 200ms and is configurable with
+`IPv4DuplicateAddressDetectionTimeoutSec=`. `ClientIdentifier=` may be global;
+DHCP-server `PersistLeases=runtime` retains leases at runtime. Additions include
+DHCPv6 `UseSIP=`, `MPLSRouting=`, DHCPv4 `BOOTP=`, tunnel `Local=dhcp_pd`,
+HSR/SRP netdevs, and further bridge/VXLAN controls.
+
+### DHCP domains and hostnames (259)
+
+DHCP server supports `EmitDomain=` and `Domain=`, and individual static leases
+support `Hostname=`. `resolvectl --json=` exposes resolved's complete
+`DumpDNSConfiguration()` result.
+
+## Cellular, routes, and link offloads
+
+### MobileNetwork (260)
+
+`[MobileNetwork]` drives ModemManager simple-connect. Configure APN,
+authentication and credentials, IP family, roaming, PIN, operator, route
+metric, and gateway behavior.
 
 ```ini
 [MobileNetwork]
@@ -45,17 +80,37 @@ APN=internet.example
 AllowRoaming=no
 ```
 
-## Use socket and activation networking
+### ECMP and offloads (260)
 
-- Socket units select Multipath TCP with `SocketProtocol=mptcp`. Per-connection AF_UNIX stream services receive the peer address in `REMOTE_ADDR` (since 257).
-- `BindNetworkInterface=` binds every socket created for a service to a named interface, including a VRF (since 260).
-- Networkd and nspawn use nftables exclusively for NAT; iptables/libiptc setup was removed (since 259).
+`MultiPathRoute=` supports interface-bound ECMP. `.link` files configure
+`ScatterGather=`, `ScatterGatherFragmentList=`,
+`TCPECNSegmentationOffload=`, `TCPMangleIdSegmentationOffload=`,
+`GenericReceiveOffloadList=`, and
+`GenericReceiveOffloadUDPForwarding=`.
 
-## Control networkd over Varlink
+### Link state over Varlink (260)
 
-- `io.systemd.Network.Link.Up()` and `Down()` back `networkctl up` and `down` (since 260).
-- Networkd Varlink and JSON address data includes a human-readable address string alongside the existing integer array, allowing parsers to migrate compatibly (since 260).
+`io.systemd.Network.Link.Up()` and `Down()` back `networkctl up` and `down`.
+Networkd Varlink/JSON returns IP addresses as readable strings in addition to
+the existing integer arrays.
 
-## Name interfaces predictably
+## DNS and online readiness
 
-- DeviceTree aliases and `firmware_node/sun` contribute to interface names; DeviceTree Wi-Fi gained predictable names, and MCTP uses the `mc` prefix (since 257, 259, and 260).
+### DNS-aware wait and delegated zones (258)
+
+`systemd-networkd-wait-online --dns` waits for resolved configuration.
+`RefuseRecordTypes=` blocks chosen RR types. Files in
+`/etc/systemd/dns-delegate.d/*.dns-delegate` create domain-specific scopes
+with servers and routing/search domains.
+
+### Scoped delegated and NSS traffic (260)
+
+Delegate files accept `FirewallMark=`. `SYSTEMD_NSS_RESOLVE_INTERFACE`
+restricts an nss-resolve lookup to an interface, and ifindex 0 in
+`BrowseServices` browses all mDNS interfaces.
+
+### Strict per-link DNS-over-TLS (258.10-261.2)
+
+In v259.8, v260.4, and v261.2, per-link `DNSOverTLS=yes` performs certificate
+verification. Connections with invalid or mismatched server certificates now
+fail.

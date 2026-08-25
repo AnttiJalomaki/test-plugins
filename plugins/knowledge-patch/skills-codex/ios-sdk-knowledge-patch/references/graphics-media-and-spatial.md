@@ -1,26 +1,25 @@
 # Graphics, Media, and Spatial APIs
 
-## Range in the background with Nearby Interaction
+## Nearby Interaction
 
-An app with an active Live Activity can perform Ultra Wideband ranging through
-Nearby Interaction while it is in the background. (18.4)
+### Range in the Background with an Active Live Activity
 
-## Use the higher Broadcast Extension memory limit carefully
+On iOS 18.4, an application with an active Live Activity can perform Ultra
+Wideband ranging through Nearby Interaction while it runs in the background.
+Structure the background-ranging lifetime around the active Live Activity.
 
-Broadcast Extensions receive a higher per-process memory limit on iOS and
-iPadOS 18.5. This can support higher-quality capture and streaming, but the
-actual headroom still depends on system resources. Continue responding to
-memory pressure and test on representative devices. (18.5)
+## Broadcast Extensions
 
-## Migrate legacy Push to Talk entitlement use
+### Use the Higher Memory Limit Conservatively
 
-Apps built with the iOS 26 SDK or later cannot use
-`com.apple.developer.pushkit.unrestricted-voip.ptt`. Migrate Push to Talk
-features to the Push to Talk framework introduced in iOS 16, and remove the
-legacy entitlement from new-SDK builds. (26.0)
+iOS and iPadOS 18.5 raise the per-process memory limit for Broadcast
+Extensions. The additional headroom can support higher-quality capture and
+streaming when system resources permit.
 
-## Declare Metal 4 indirect-command-buffer residency
+## Metal 4
 
-When encoding with Metal 4, add render and compute pipelines that support
-indirect command buffers to the residency set even though the Metal driver does
-not currently enforce the requirement. (26.0)
+### Add Indirect-Command Pipelines to the Residency Set
+
+When encoding with Metal 4 on iOS 26.0, add render and compute pipelines that
+support indirect command buffers to the residency set. The Metal driver does
+not currently enforce this rule, but applications must not rely on that leniency.

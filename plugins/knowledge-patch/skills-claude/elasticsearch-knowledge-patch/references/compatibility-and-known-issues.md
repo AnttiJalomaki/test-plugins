@@ -1,126 +1,126 @@
 # Compatibility, Deprecations, and Known Issues
 
-Use this reference for upgrade planning and version-specific incident
-response. Confirm the installed patch version before applying a workaround.
+Use this reference before upgrading nodes, changing defaults, or removing a
+workaround. A workaround is scoped to the affected release and should be
+removed after reaching the stated fixed version.
 
-## Contents
+## Request and response compatibility
 
-- [Breaking query and response behavior](#breaking-query-and-response-behavior)
-- [Removed interfaces and settings](#removed-interfaces-and-settings)
-- [Changed platform and index defaults](#changed-platform-and-index-defaults)
-- [Lifecycle and plugin breaks](#lifecycle-and-plugin-breaks)
-- [Deprecations](#deprecations)
-- [Known upgrade and runtime issues](#known-upgrade-and-runtime-issues)
+### Partial results and remote failures
 
-## Breaking query and response behavior
+ES|QL permits partial results by default. Callers must inspect `is_partial` and
+can require completeness with `allow_partial_results=false` per request or
+`esql.query.allow_partial_results: false` cluster-wide. EQL similarly defaults
+`allow_partial_search_results` to `true`. With `skip_unavailable: true`, any
+remote runtime error, including a missing index, is non-fatal and reports the
+remote cluster as skipped or partial.
 
-- ES|QL partial results are enabled by default. Inspect `is_partial`, set
-  `allow_partial_results=false` per request, or set
-  `esql.query.allow_partial_results: false` cluster-wide.
-- EQL similarly defaults `allow_partial_search_results` to `true`.
-- With `skip_unavailable: true`, an ES|QL remote-cluster runtime error,
-  including a missing index, becomes non-fatal and the cluster is reported as
-  skipped or partial.
-- ES|QL index patterns must quote the whole remote-and-index expression or no
-  part of it. `FROM "remote:index"` and `FROM remote:index` are valid;
-  `FROM remote:"index"` is invalid.
-- Elasticsearch timeouts return HTTP 429 instead of a 5xx response, and byte
-  sizes are limited to two decimal places.
+ES|QL remote index quoting is all-or-nothing. Parentheses are invalid in an
+unquoted pattern. `FROM "remote:index"` and `FROM remote:index` are valid;
+`FROM remote:"index"` is not.
+
+### Status codes and parsing
+
+- Elasticsearch timeouts return HTTP 429 rather than a 5xx response.
+- Byte-size values accept at most two decimal places.
+- Invalid processors in ingest simulation return HTTP 400.
 - `date_histogram` no longer accepts boolean values.
-- `random_score` without an explicit field uses `_seq_no`.
+- Inference timeouts return HTTP 504.
+- Inference requests cannot override `secret_parameters` in 9.3.8 and 9.4.4.
+
+### Removed request and API surface
+
+- Highlighting no longer accepts `force_source`.
+- Alias APIs no longer accept `local`.
+- Frozen indices cannot be read, and the unfreeze endpoint is removed.
 - `_fleet/_fleet_search` and `_fleet/_fleet_msearch` are local-only.
-- Inference requests can no longer override `secret_parameters` in 9.3.8 and
-  9.4.4.
-- Invalid processors in simulate-ingest requests now produce HTTP 400.
-
-## Removed interfaces and settings
-
-- Highlighting rejects `force_source`; alias APIs reject `local`; frozen
-  indices cannot be read; and the unfreeze REST endpoint is removed.
-- The technical-preview `_knn_search` endpoint is removed.
-- `/_cluster/reroute` responses no longer include cluster state, and
-  `cluster.routing.allocation.disk.watermark.enable_for_single_data_node` is
-  removed.
-- Removed settings include `client.type`, `tracing.apm.*`, and
-  `xpack.searchable.snapshot.allocate_on_rolling_restart`.
-- The `user_agent` ingest processor no longer accepts `ecs`, and the GeoIP
-  processor's ignored fallback option is removed.
-- Metadata-field definitions no longer accept `type`, `fields`, `copy_to`, or
-  `boost`; `_source.mode` is a no-op.
-- Machine learning is disabled on macOS x86_64. The
-  `data_frame_transforms` roles and Watcher search `types` field are removed.
-
-## Changed platform and index defaults
-
-- Elasticsearch 9.0.0 bundles JDK 24, uses Lucene 10.1.0, and changes the
-  default container image from Ubuntu to UBI minimal. Startup ignores
-  `_JAVA_OPTIONS`.
-- Entitlements permanently replace the Java SecurityManager in 9.0.0.
-- JDK 24 removes `TLS_RSA` cipher support and TLSv1.1 from the default
-  protocols.
-- New indices exclude vectors from `_source` by default.
-- Normalized `keyword` fields use native synthetic source.
-- LogsDB and TSDB text fields omit norms.
-- LogsDB is conditionally enabled for `logs-*-*` data streams.
-- The OTLP endpoint maps histograms as `exponential_histogram` by default.
-- Analyzer output may change after Snowball and Nori dictionary updates.
-  `german2` aliases the `german` Snowball stemmer, and the `persian` analyzer
-  stems by default.
-- A configured LDAP or Active Directory bind DN without its bind password
-  prevents node startup.
 - Connector APIs require `manage_connector` or `monitor_connector`.
-- The deprecation-log keyword is `elasticsearch.deprecation`, replacing
-  `deprecation.elasticsearch`.
+- The technical-preview `_knn_search` API is removed.
+- Watcher searches no longer accept `types`.
+- The `user_agent` ingest processor no longer accepts `ecs`; the ignored GeoIP
+  fallback option is removed.
+- Machine learning is disabled on macOS x86_64, and the old
+  `data_frame_transforms` roles are removed.
 
-## Lifecycle and plugin breaks
+## Configuration, mapping, and default changes
 
-- Starting in 9.4.0, ILM downsampling does not force-merge by default. Add a
-  force-merge action or set `force_merge_index: true` when required.
-- `discovery-ec2` uses AWS SDK v2, requires IMDSv2, ignores
-  `discovery.ec2.protocol`, and removes `aws.secretKey` and
-  `com.amazonaws.sdk.ec2MetadataServiceEndpointOverride`. Include `http://`
-  in `discovery.ec2.endpoint` when needed and set both access and secret keys
-  or neither.
+### Index and mapping defaults
 
-## Deprecations
+- `exclude_source_vectors` is enabled by default for new indices.
+- LogsDB and TSDB text fields omit norms.
+- Eligible `logs-*-*` streams enable LogsDB by default.
+- Normalized `keyword` fields use native synthetic source.
+- Metadata field definitions reject `type`, `fields`, `copy_to`, and `boost`.
+- `_source.mode` is a no-op.
+- `random_score` without a field uses `_seq_no`.
+- OTLP histograms map to `exponential_histogram` by default.
 
-- ES|QL query logging emits deprecation messages starting in 9.4.2. Do not
-  create new dependencies on it.
-- The `logs` data-stream type is deprecated in 9.4.0.
-- `aggregate_metric_double.default_metric` is deprecated in 9.4.0; omit it
-  from new mappings.
-- ILM's `max_size` rollover condition is deprecated in 9.3.0. Move to
-  supported rollover conditions.
-- Lenient boolean analysis settings and boolean system properties are
-  deprecated in 9.3.0; use strict `true` or `false`.
-- The built-in `reporting_user` role derives authorization from reserved
-  Kibana privileges in 9.0.6 and 9.1.3. Recheck custom assumptions based on
-  its former privilege composition.
-- `indices.merge.scheduler.use_thread_pool` is deprecated as of 9.0.3.
-- ES|QL bracketed `METADATA` syntax is removed in 9.0.0. Write:
+### Lifecycle and allocation
 
-```esql
-FROM my-index METADATA _id, _index
-```
+Since 9.4.0, ILM downsampling leaves the output unmerged by default. Add a
+force-merge action or set `force_merge_index: true` on the downsample action to
+retain the earlier behavior. The setting
+`cluster.routing.allocation.disk.watermark.enable_for_single_data_node` is
+removed, and `/_cluster/reroute` responses no longer include cluster state.
 
-- The machine-learning flush API, the Inference API `elser` service, and
-  Behavioral Analytics CRUD APIs are deprecated in 9.0.0.
+### Removed node settings
 
-## Known upgrade and runtime issues
+Remove `client.type`, `tracing.apm.*`, and
+`xpack.searchable.snapshot.allocate_on_rolling_restart`. LDAP or Active
+Directory configuration that supplies a bind DN without a bind password now
+prevents node startup. The deprecation-log keyword is
+`elasticsearch.deprecation`, replacing `deprecation.elasticsearch`.
 
-### Trained-model request rejection
+### Analyzer and TLS output changes
 
-Elasticsearch 9.3.6 applies overly restrictive create-trained-model limits to
-`description`, `tags`, both `prefix_strings` fields, `input.field_names`,
-`default_field_map`, and `metadata`. Upgrade to 9.3.7.
+Snowball stemmers and the Nori Korean dictionary changed. `german2` is now an
+alias for the `german` Snowball stemmer, and the `persian` analyzer stems by
+default. JDK 24 installations do not support `TLS_RSA` ciphers, and TLSv1.1 is
+absent from the default protocol list.
+
+### EC2 discovery migration
+
+`discovery-ec2` uses AWS SDK v2, requires IMDSv2, and ignores
+`discovery.ec2.protocol`. Include `http://` directly in
+`discovery.ec2.endpoint` when needed. The plugin no longer supports
+`aws.secretKey` or `com.amazonaws.sdk.ec2MetadataServiceEndpointOverride`.
+Configure `discovery.ec2.access_key` and `discovery.ec2.secret_key` together or
+omit both.
+
+## Deprecations to remove from new work
+
+- ES|QL query logging emits a deprecation message from 9.4.2.
+- The `logs` data-stream type and
+  `aggregate_metric_double.default_metric` are deprecated in 9.4.0.
+- ILM `max_size` rollover is deprecated in 9.3.0; use supported rollover
+  conditions rather than aggregate index size.
+- Lenient booleans in third-party analysis settings and boolean system
+  properties warn in 9.3.0; use `true` or `false`.
+- The built-in `reporting_user` role derives authorization from reserved Kibana
+  privileges in 9.0.6 and 9.1.3; recheck assumptions about its former privilege
+  composition.
+- `indices.merge.scheduler.use_thread_pool` is deprecated from 9.0.3.
+- ES|QL `METADATA` no longer accepts brackets in 9.0; write
+  `FROM my-index METADATA _id, _index`.
+- The machine-learning flush API, the `elser` inference service, and Behavioral
+  Analytics CRUD APIs are deprecated in 9.0.
+
+## Upgrade blockers and workarounds
+
+### Trained-model request limits
+
+Elasticsearch 9.3.6 can reject otherwise valid create-trained-model requests
+because of overly restrictive limits on `description`, `tags`,
+`prefix_strings.ingest_prefix`, `prefix_strings.search_prefix`,
+`input.field_names`, `default_field_map`, and `metadata`. Upgrade to 9.3.7.
 
 ### GCS Application Default Credentials
 
-In 9.2.8 and 9.3.3, `repository-gcs` can fail while discovering ADC paths
-because of an entitlement exception. Upgrade to 9.2.9 or 9.3.4. When an
-immediate upgrade is impossible, create
-`${ES_CONF_PATH}/jvm_options/workaround-gcsadc.options` with the matching
-temporary policy:
+`repository-gcs` operations using Application Default Credentials can fail in
+9.2.8 and 9.3.3 because credential-path discovery raises an entitlement
+exception. Upgrade to 9.2.9 or 9.3.4 respectively. If an immediate upgrade is
+not possible, create `${ES_CONF_PATH}/jvm_options/workaround-gcsadc.options`
+with the value for the installed release:
 
 ```text
 # 9.2.8
@@ -129,12 +129,12 @@ temporary policy:
 -Des.entitlements.policy.repository-gcs=dmVyc2lvbnM6CiAgLSA5LjMuMwpwb2xpY3k6CiAgQUxMLVVOTkFNRUQ6CiAgICAtIHNldF9odHRwc19jb25uZWN0aW9uX3Byb3BlcnRpZXMKICAgIC0gb3V0Ym91bmRfbmV0d29yawogICAgLSBmaWxlczoKICAgICAgICAtIHJlbGF0aXZlX3BhdGg6ICIuY29uZmlnL2djbG91ZCIKICAgICAgICAgIHJlbGF0aXZlX3RvOiBob21lCiAgICAgICAgICBtb2RlOiByZWFkCg==
 ```
 
-### Mixed-GPU log flooding
+### Mixed-GPU usage warnings
 
-On a multi-node 9.3.1 cluster where some nodes lack GPUs, `_xpack/usage` can
-repeatedly log `OutboundHandler` serialization warnings while GPU stats fail.
-Other usage data and single-node clusters are unaffected. Upgrade to 9.3.2,
-or temporarily suppress the flood:
+In a multi-node 9.3.1 cluster where some nodes lack a GPU, `_xpack/usage` can
+repeatedly log `OutboundHandler` serialization warnings. Other usage data and
+single-node clusters are unaffected. Upgrade to 9.3.2 or temporarily suppress
+the flood:
 
 ```http
 PUT /_cluster/settings
@@ -145,34 +145,36 @@ PUT /_cluster/settings
 }
 ```
 
-### Incompatible direct upgrade
+### Unsafe direct upgrade
 
-A direct upgrade from 9.1.10 to 9.2.4 can fail at startup because node-shutdown
-metadata contains a field 9.2.4 cannot parse. Upgrade to 9.2.5 or later.
+A direct upgrade from 9.1.10 to 9.2.4 can fail at boot because stored
+node-shutdown metadata contains a field that 9.2.4 cannot parse. Upgrade to
+9.2.5 or later instead.
 
-### DiskBBQ licensing
+### DiskBBQ licensing after 9.2
 
-Elasticsearch 9.2.0 did not enforce the Enterprise requirement for
-`bbq_disk`. After upgrading to 9.3.0 or later, existing indices remain
-queryable and updatable, but creating new ones requires an Enterprise license.
+Elasticsearch 9.2.0 did not enforce the Enterprise license requirement for
+`bbq_disk` indices. After upgrading to 9.3 or later, existing indices remain
+queryable and updatable, but creation of new indices of this type requires an
+Enterprise license.
 
-### Shrunk TSDB and LogsDB merges
+### Shrunk TSDB and LogsDB merge failures
 
-In 9.1.0 and 9.1.1, an optimized merge path can fail after shrinking TSDB or
-LogsDB indices. Upgrade to 9.1.2. Until then, omit the post-shrink ILM force
-merge or put this property on every data node and perform a rolling restart;
-remove it after upgrade because it slows merges:
+An optimized merge path can break merges after shrinking a TSDB or LogsDB index
+in 9.1.0 and 9.1.1. Upgrade to 9.1.2. Until then, omit post-shrink force merge
+from ILM, or add this property on every data node and rolling-restart. Remove it
+after upgrading because it slows merges:
 
 ```text
 -Dorg.elasticsearch.index.codec.tsdb.es819.ES819TSDBDocValuesConsumer.enableOptimizedMerge=false
 ```
 
-### Direct I/O and `bbq_hnsw`
+### Direct I/O latency on `bbq_hnsw`
 
-In 9.1.0, `vector.rescoring.directio=true` can make kNN against `bbq_hnsw`
-indices up to ten times slower when vectors fit in memory. Set it to `false`
-on every search node and restart. Remove the override in 9.1.1. New 9.1
-indices with dense vectors over 384 dimensions default to `bbq_hnsw`.
+In 9.1.0, `vector.rescoring.directio` defaults to `true` and can make
+`bbq_hnsw` kNN searches up to ten times slower when vectors fit in memory. Set
+it to `false` on every search node and restart. Remove the override in 9.1.1.
+New 9.1 indices with dense vectors over 384 dimensions default to `bbq_hnsw`.
 
 ```text
 -Dvector.rescoring.directio=false
@@ -180,38 +182,38 @@ indices with dense vectors over 384 dimensions default to `bbq_hnsw`.
 
 ### Low-disk shard closure
 
-In 9.0.3, a merge without enough free space can prevent shard closure and hang
-index closure or relocation. Keep the release default
-`indices.merge.disk.check_interval: 0s`; do not enable that check manually.
+In 9.0.3, a merge with insufficient space can leave index closure or relocation
+hanging. Keep `indices.merge.disk.check_interval` at its release default of
+`0s`; do not manually enable the disk-space check on this version.
 
-### Incorrect two-key ES|QL grouping
+### Incorrect ES|QL two-key groups
 
 From 8.16.0 until fixes in 8.17.9, 8.18.7, and 9.0.4,
-`STATS ... BY keyword1, keyword2` can be wrong when exactly two keyword fields
-are used and the first exceeds 65,000 distinct values. Upgrade, put the
-lower-cardinality field first, or filter to lower cardinality.
+`STATS ... BY keyword1, keyword2` can return incorrect groups when the first
+keyword has more than 65,000 distinct values. Upgrade, put the lower-cardinality
+field first, or filter before `STATS`.
 
 ### Windows entitlement paths
 
-Elasticsearch 9.0.0 entitlements compare Windows paths case-sensitively. Match
-filesystem casing exactly in command-line paths, configuration, environment
-variables, and secure settings to avoid startup failures or
+Elasticsearch 9.0 entitlements treat paths as case-sensitive even on Windows.
+Match filesystem casing exactly in command-line paths, configuration,
+environment variables, and secure settings to avoid startup failures or
 `NotEntitledException`.
 
-### Active Directory connectivity
+### Active Directory in 9.0
 
-The 9.0.0 `x-pack-core` entitlement policy blocks the LDAP library's outbound
-connection. As a temporary workaround, create
-`${ES_CONF_PATH}/jvm_options/workaround-127061.options` containing:
+The 9.0 `x-pack-core` entitlement policy blocks the LDAP library's outbound
+connection and prevents Active Directory authentication. As a temporary
+workaround, create `${ES_CONF_PATH}/jvm_options/workaround-127061.options`:
 
 ```text
--Des.entitlements.policy.x-pack-core=dmVyc2lvbnM6CiAgLSA4LjE4LjAKICAtIDkuMC4wCnBvbGljeToKICB1bmJvdW5kaWQubGRhcHNkazoKICAgIC0gc2V0X2h0dHBwc19jb25uZWN0aW9uX3Byb3BlcnRpZXMKICAgIC0gb3V0Ym91bmRfbmV0d29yaw
+-Des.entitlements.policy.x-pack-core=dmVyc2lvbnM6CiAgLSA4LjE4LjAKICAtIDkuMC4wCnBvbGljeToKICB1bmJvdW5kaWQubGRhcHNkazoKICAgIC0gc2V0X2h0dHBzX2Nvbm5lY3Rpb25fcHJvcGVydGllcwogICAgLSBvdXRib3VuZF9uZXR3b3Jr
 ```
 
 ### Watcher after an old 7.x upgrade
 
-A cluster previously on 7.10.0 through 7.12.1 can retain templates that stop
-Watcher in 9.x. Delete them and restart Watcher:
+A 9.x cluster that once ran 7.10.0 through 7.12.1 can retain templates that
+prevent Watcher from starting. Delete them and restart Watcher:
 
 ```http
 DELETE _index_template/.triggered_watches
@@ -219,9 +221,9 @@ DELETE _index_template/.watches
 POST /_watcher/_start
 ```
 
-### S3 repository analysis
+### S3 repository analysis before 9.3
 
 Before 9.3.0, repository analysis can incorrectly fail S3
-linearizable-register checks because multipart uploads do not always meet the
-assumed guarantees. Run analysis on a single-node cluster with
-`?register_operation_count=1`, or upgrade.
+linearizable-register checks because multipart-upload semantics do not always
+meet the assumed guarantees. Run the analysis on one node with
+`?register_operation_count=1`, or upgrade to 9.3.0 or later.

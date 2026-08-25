@@ -10,197 +10,153 @@ metadata:
 
 # OpenSearch Knowledge Patch
 
-Use this skill when designing, upgrading, operating, or debugging OpenSearch
-clusters and OpenSearch Dashboards. Start with the upgrade checks below, then
-load the topic reference that matches the task. Treat cluster mappings,
-settings, installed plugins, security configuration, and observed API behavior
-as authoritative when they differ from assumptions.
+Use this skill when designing, upgrading, querying, securing, or operating OpenSearch and OpenSearch Dashboards. Start with the migration checks below, then open the reference that matches the task.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/upgrades-and-platform.md](references/upgrades-and-platform.md) | Breaking changes, migration blockers, runtime and packaging changes, removed settings |
-| [references/vector-and-neural-search.md](references/vector-and-neural-search.md) | k-NN, Faiss, Lucene vectors, compression, semantic fields, sparse retrieval |
-| [references/search-relevance-and-insights.md](references/search-relevance-and-insights.md) | Hybrid search, scoring, aggregations, relevance evaluation, Query Insights, workloads |
-| [references/ppl-and-sql.md](references/ppl-and-sql.md) | Calcite, PPL commands and semantics, SQL, unified query APIs, PPL monitors |
-| [references/agents-ml-and-flows.md](references/agents-ml-and-flows.md) | ML Commons, agents, memory, tools, MCP, connectors, Flow Framework |
-| [references/security-and-multitenancy.md](references/security-and-multitenancy.md) | Authentication, authorization, certificates, API keys, resource sharing, tenancy |
-| [references/cluster-operations-and-lifecycle.md](references/cluster-operations-and-lifecycle.md) | Remote store, ingestion, gRPC, ISM, replication, scheduler, metadata |
-| [references/observability-alerting-and-dashboards.md](references/observability-alerting-and-dashboards.md) | Metrics, traces, Discover, Alerting, Anomaly Detection, notifications |
+| [Agents, ML Commons, and Flow Framework](references/agents-ml-and-flows.md) | Agents, tools, memory, connectors, inference, MCP, Flow Framework, Launchpad |
+| [Cluster Operations and Data Lifecycle](references/cluster-operations-and-lifecycle.md) | Node roles, remote store, ingestion, ISM, replication, scheduling, transport, codecs |
+| [Observability, Alerting, and Dashboards](references/observability-alerting-and-dashboards.md) | Metrics, traces, Discover, anomaly detection, alerting, notifications, dashboards |
+| [PPL and SQL](references/ppl-and-sql.md) | Calcite routing, commands, functions, SQL, unified query APIs, result behavior |
+| [Search, Relevance, and Query Insights](references/search-relevance-and-insights.md) | Search Relevance Workbench, experiments, Query Insights, workload groups, scoring |
+| [Security and Multitenancy](references/security-and-multitenancy.md) | Authentication, authorization, API keys, DLS/FLS, audit logging, resource sharing, tenants |
+| [Upgrades and Platform Compatibility](references/upgrades-and-platform.md) | Breaking changes, runtime requirements, removed settings, client and index compatibility |
+| [Vector and Neural Search](references/vector-and-neural-search.md) | k-NN, Faiss, Lucene, compression, hybrid search, semantic fields, sparse retrieval |
 
-## Upgrade checks first
+## Check breaking changes first
 
-### Block unsafe major upgrades
+### Prepare indexes before a 3.x upgrade
 
-- Reindex every index created before 2.x, including system indexes, before a
-  3.0 upgrade.
-- Audit documents migrated from Elasticsearch OSS 6.8 for more than 10,000
-  nested objects; such documents can block shard relocation.
-- Move searchable-snapshot shards to nodes with the `warm` role. The `search`
-  role is no longer valid for those shards.
-- Reshape JSON deeper than 1,000 object or array levels and property names
-  beyond the 50,000-byte-or-character parser limit.
-- Install the backend notification plugins required by Alerting before a 2.0
-  migration, and install the Dashboards notification plugin for UI management.
+OpenSearch 3.0 cannot open indexes created before 2.x, including system indexes. Inventory and reindex them before upgrading. Also audit documents migrated from Elasticsearch OSS 6.8 for more than 10,000 nested JSON objects; those documents can block shard relocation under `index.mapping.nested_objects.limit`.
 
-### Update removed and renamed interfaces
+### Move searchable snapshots to warm nodes
 
-- Replace `compatibility.override_main_response_version`; it no longer changes
-  the root response.
-- Replace `wlm/query_group` with `wlm/workload_group`,
-  `queryGroupID` with `workloadGroupID`, and the old cluster-setting prefix
-  with `wlm.workload_group`.
-- Replace `CatIndexTool` with `ListIndexTool`.
-- Replace `PathHierarchy` with `path_hierarchy` in analyzer configuration.
-- Replace whitelist-named Security settings with their allowlist equivalents.
-- Remove `_bulk?batch_size=...`, `mmap.extensions`, the `transport-nio` plugin,
-  old index-level k-NN tuning settings, and legacy OpenDistro SQL interfaces.
-- Review SQL clients for Point-in-Time pagination and corrected Nodes API
-  indexing-buffer field formats.
+Searchable snapshots cannot run on `search`-role nodes in 3.0. Every node that may hold those shards needs the `warm` role.
 
-### Verify runtime and cryptographic assumptions
+### Update the runtime and artifact trust
 
-- Run OpenSearch 3.x on JDK 21 or newer.
-- Verify 3.x artifacts with the `release@opensearch.org` signing key.
-- Retest Blake2b hash fixtures because corrected salt handling changes output.
-- Reindex Romanian text when mixing old and newly normalized analyzer output.
-- Update Dashboards build and runtime integrations for Node.js 22 and Rspack.
+OpenSearch 3.0 requires JDK 21. Artifacts from 3.0.0 onward use the `release@opensearch.org` signing key; do not verify them with the key reserved for 2.x artifacts.
 
-## High-value search guidance
+### Remove retired compatibility paths
 
-### Make k-NN choices explicit
+Do not carry these into a 3.0 configuration or client:
 
-- The implicit engine changed from NMSLIB to Faiss. Set `engine` explicitly
-  when stored-vector representation or scoring stability matters.
-- With implicit Faiss and `space_type: "cosinesimil"`, indexing normalizes
-  vectors. Already-normalized vectors can use `innerproduct` for equivalent
-  scoring without implicit normalization.
-- A model-backed vector mapping must not specify both model ID and `dimension`.
-  The training index supplies the dimension.
-- `index.knn` is immutable and derived vector source is incompatible with
-  `index.knn: false`.
-- Remote vector building is enabled by default. A terminal remote-build
-  failure does not fall back to CPU.
-- New OnDisk indexes using 4x compression rescore by default. Set
-  `rescore: false` to opt out.
+- `compatibility.override_main_response_version`
+- `_bulk?batch_size=...`
+- `mmap.extensions`
+- the `transport-nio` plugin
+- `plugins.sql.pagination.api`
+- OpenDistro endpoints or `opendistro`-prefixed SQL settings
+- the `CatIndexTool`; use `ListIndexTool`
 
-### Account for compressed-vector behavior
+System indexes are no longer available through REST. SQL pagination defaults to Point in Time, while Scroll pagination is deprecated.
 
-- Faiss 32x compression defaults to scalar-quantized 1-bit encoding.
-- Use asymmetric distance computation and random rotation where their recall
-  tradeoffs fit binary-quantized indexes.
-- `docvalue_fields` returns compressed `knn_vector` values as base64-encoded
-  binary by default, not as numeric arrays.
-- Retrieve the full vector and decode it deliberately before comparing it with
-  the original input.
+### Recheck parsers and response consumers
 
-### Build valid hybrid queries
+OpenSearch 3.0 limits JSON object and array nesting to 1,000 levels and property names to 50,000 bytes or characters depending on the input. It also enforces a 512-byte bulk `_id` limit. The Nodes API now returns a raw byte count in `total_indexing_buffer_in_bytes` and a formatted size in `total_indexing_buffer`.
 
-- Use RRF or score normalization deliberately; Z-score, min-max lower and upper
-  bounds, custom RRF weights, and optimizer-selected `rank_constant` values
-  have distinct ranking effects.
-- Use `pagination_depth` for large hybrid result windows.
-- Hybrid queries support collapse and group `inner_hits`, but invalid nested
-  hybrid structures are rejected.
-- Do not place a `hybrid` query inside `function_score`, `constant_score`,
-  `script_score`, or another compound query.
-- Use `hybrid_score_explanation` and `verbose_pipeline` to inspect ranking and
-  processor transformations.
+### Update renamed workload controls
 
-## High-value query-language guidance
+Query groups are now workload groups. Replace `wlm/query_group` with `wlm/workload_group`, `queryGroupID` with `workloadGroupID`, and the `wlm.query_group` settings prefix with `wlm.workload_group`.
 
-### Expect Calcite semantics
+## Apply search changes deliberately
 
-- Calcite is the default PPL path.
-- General Calcite query failures do not fall back to the v2 engine, while
-  unsupported commands can route to v2.
-- Date and time functions default to UTC across PPL and SQL.
-- `query.size_limit` limits final results, not intermediate pipeline rows.
-- `NOT IN` and `NOT LIKE` exclude missing values as well as explicit nulls.
-- Calcite `dedup` preserves sort order, and wildcard searches across text and
-  keyword mappings no longer silently discard documents.
+### Pin the k-NN engine when behavior matters
 
-### Protect pagination and access boundaries
+Faiss is the implicit k-NN engine from 2.18. With cosine similarity and no explicit engine, vectors are normalized at index time. Pin `engine`, `space_type`, mode, compression, and rescore behavior when reproducibility matters.
 
-- SQL pagination defaults to Point in Time; do not depend on the removed
-  pagination setting or deprecated Scroll behavior.
-- Under fine-grained access control, SQL cursor continuation stays within the
-  indexes selected by the original query.
-- The unified V2 query path is query-only and rejects DML and DDL.
-- Cancel PPL through `_tasks/_cancel`, and use `fetch_size` where result
-  pagination is required.
+### Treat vector representation as an API choice
 
-## High-value security guidance
+`docvalue_fields` returns k-NN vectors as Base64 by default. Vector fields can also be ingested as Base64. If callers expect JSON arrays, set and test the representation explicitly.
 
-### Validate authorization at every interface
+### Respect hybrid-query composition limits
 
-- Account for the extra `cluster:monitor/shards` permission used by
-  `_cat/shards`.
-- Treat resource sharing, tenant visibility, DLS/FLS, workload filtering, and
-  plugin multi-tenancy as separate enforcement layers.
-- Use the permission-validation request mode before execution when checking a
-  principal's access.
-- For gRPC, configure TLS plus a supported Security authentication method;
-  Basic and JWT authentication are available.
-- Scope API-key permissions directly on each key, set expiration, and plan for
-  synchronous cluster-wide revocation.
+A `hybrid` query cannot be nested inside compound queries such as `function_score`, `constant_score`, or `script_score`. It also rejects `dfs_query_then_fetch`; choose a supported search type and put fusion in the search pipeline.
 
-### Review dynamic configuration carefully
+### Make rescore intent explicit
 
-- Security cache TTL changes are picked up dynamically.
-- Resource settings and preferred Dashboards tenants can also be updated
-  without a restart.
-- Static security configuration wins when it overlaps custom configuration.
-- The notification resource-access filename and settings prefix changed; audit
-  both during upgrade.
+New on-disk indexes with 4x compression rescore by default. Set `rescore: false` to opt out. For Faiss efficient filters, a separate index setting can disable the exact-search phase after ANN search.
 
-## High-value operations guidance
+## Route PPL and SQL correctly
 
-### Separate readers and writers deliberately
+### Know which PPL engine handles the request
 
-- On remote-store clusters, `_scale` can remove writers and make an index
-  search-only.
-- ISM also supplies `search_only`, policy simulation, transition exclusions,
-  `no_alias`, and `min_state_age`.
-- Policy simulation reads live metrics and reports the next state without
-  changing cluster state.
-- Replication lifecycle APIs can clear stale persistent tasks and accept
-  `cluster_manager_timeout`.
+Calcite is the default PPL path. General Calcite failures no longer fall back to the v2 engine, but unsupported commands can route to v2. Test both syntax support and failure behavior rather than relying on a blanket fallback assumption.
 
-### Observe before tuning
+### Use Point in Time for SQL pagination
 
-- Query Insights exposes live-query, historical top-N, profiling,
-  recommendation, and remote-export paths.
-- Workload groups can auto-tag requests and override timeouts, cancellation
-  intervals, and bucket limits.
-- Filter live-query and historical data by the same identity and backend-role
-  rules used for non-admin access.
-- Inspect shard-level live-query tasks and recently finished-query history
-  before changing cancellation or workload thresholds.
+The legacy SQL pagination setting is gone and PIT is the default. Under fine-grained access control, cursor continuation remains restricted to the indexes selected by the original query.
 
-## Feature-state discipline
+### Keep unified-query APIs query-only
 
-- Disabled-by-default features must be enabled intentionally and tested with
-  the installed plugin set.
-- Do not assume an earlier experimental transport, agent, search, or
-  observability feature is still experimental; several graduated later.
-- Conversely, do not retain removed experimental PPL Alerting assets or legacy
-  endpoint paths after their transition.
-- When a feature changes state, use the latest applicable behavior and keep the
-  earlier state only as upgrade context.
+The unified V2 path supports richer SQL planning but blocks DML and DDL. PPL supports cancellation through `_tasks/_cancel`, `fetch_size`, and a grammar bundle for query-tool integrations.
 
-## Task workflow
+### Account for null and result-shape semantics
 
-1. Identify the installed OpenSearch and Dashboards versions and plugin set.
-2. Read the relevant upgrade and topic references from the index.
-3. Check whether the behavior is core, plugin-specific, experimental, or
-   disabled by default.
-4. Compare mappings, persistent and transient settings, security configuration,
-   node roles, and request payloads with the documented constraints.
-5. Reproduce against a non-production index or cluster when changing mappings,
-   codecs, vector representation, authentication, or lifecycle policy.
-6. Use explain, stats, profiling, live-query, simulation, or dry-run APIs where
-   the subsystem provides them.
-7. Roll out with explicit rollback criteria and verify stored data as well as
-   response shape; several changes affect one but not the other.
+`NOT IN` and `NOT LIKE` exclude null or missing values. Final struct values are maps, missing `JSON_EXTRACT` paths return null, and double overflow to infinity returns null. Consumers should assert these shapes and null rules.
+
+## Build agents and ML integrations safely
+
+### Prefer current agent registration and transport
+
+The unified registration API and `conversational_v2` agent are production-ready. The ML Commons MCP server uses Streamable HTTP and deprecates SSE for MCP transport; streaming inference and agent execution have separate streaming APIs, including gRPC methods.
+
+### Validate connector substitutions and egress policy
+
+Connector headers can substitute per-request `${parameters.*}` values. Connector paths enforce private-IP, ReDoS, and trusted-endpoint controls, so test final resolved URLs and headers against the cluster policy.
+
+### Treat guardrail failures as denials
+
+`ModelGuardrail` and `LocalRegexGuardrail` fail closed when evaluation fails. Existing integrations that previously continued on guardrail errors need explicit error handling.
+
+### Bound memory and context
+
+Agents support context hooks, truncation, summaries, sliding windows, structured conversation memory, and long-term retrieval. Configure limits and retention deliberately; retention policies remain disabled by default when used.
+
+## Operate security and tenancy explicitly
+
+### Scope API keys at creation
+
+Long-lived API keys carry cluster and index permissions directly rather than inheriting user roles. Set expiration, keep grants minimal, and plan synchronous cluster-wide revocation.
+
+### Protect writes under DLS
+
+Enable `plugins.security.dls.write_blocked` when document-level restrictions must prohibit all writes. DLS can use lookup queries, and DLS/FLS variables can define fallback values.
+
+### Validate security request sizes
+
+Security-plugin PUT and PATCH requests enforce a 256-character limit on every text input. Validate generated configuration before submission.
+
+### Review multitenant feature constraints
+
+Alerting multi-tenancy disables unsupported email, findings, chained actions, scheduler indexes, and other actions. Anomaly Detection multi-tenant data sources also disable several result-index and historical-analysis paths; unsupported routes return 501.
+
+## Keep operations observable
+
+### Use Query Insights for live and historical work
+
+Live Queries exposes inflight work and can retain recently finished queries on demand. Top-N records and Live Queries can include user and role identity; authorization filters determine which records non-admin users see.
+
+### Separate alert scheduling modes
+
+Alerting supports internal schedules and external EventBridge Scheduler with SQS. Configure the external two-role design with `execution_role_arn`, and set monitor trigger and lookback limits explicitly.
+
+### Plan the PPL Alerting transition
+
+Experimental PPL Alerting assets were removed while the API surface was refactored. Current Dashboards integration uses v1 endpoints rather than parallel legacy and PPL paths.
+
+### Verify observability data contracts
+
+Trace Analytics accepts the newer OpenTelemetry output layout, custom span and log indexes, cross-cluster trace correlation, and configurable service-map limits. Test field mappings when data is not in the standard OpenTelemetry schema.
+
+## Upgrade checklist
+
+1. Inventory index creation versions, system indexes, searchable snapshots, node roles, Java runtime, plugins, and signing keys.
+2. Search configuration for removed settings, renamed workload-group paths, deprecated analyzers, notification prefixes, and resource-access filenames.
+3. Pin vector engine, compression, rescore, response representation, and hybrid-search type.
+4. Exercise PPL and SQL routing, pagination, null semantics, request limits, and response parsers.
+5. Revalidate authentication, DLS/FLS writes, API keys, tenant constraints, resource sharing, and audit sinks.
+6. Test agent connectors, MCP transport, guardrails, memory bounds, and external endpoint policy.
+7. Compare live-query, alert, anomaly, trace, replication, ISM, and scheduler behavior before and after the change.

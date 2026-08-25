@@ -1,154 +1,204 @@
 # Tooling, Modules, and Testing
 
-Batch coverage: `1.23.0`, `1.24-guide`, `1.24.0`, `1.25.0`, `1.26.0`.
+## Modules, workspaces, and dependency metadata
 
-## Contents
+### Module checksums in `go list` (`1.23.0`)
 
-- [Modules and dependencies](#modules-and-dependencies)
-- [Build and command output](#build-and-command-output)
-- [Analysis and modernization](#analysis-and-modernization)
-- [Deterministic concurrency tests](#deterministic-concurrency-tests)
-- [Test lifecycle and output](#test-lifecycle-and-output)
-- [Profiling tools](#profiling-tools)
+`go list -m -json` reports `Sum` and `GoModSum`, matching the checksum fields
+from `go mod download -json`.
 
-## Modules and dependencies
+### Operating on module tools as a set (`1.24.0`)
 
-### Module checksums
+The `tool` meta-pattern covers every executable dependency named by a `tool`
+directive in the current module. `go get tool` upgrades them together,
+`go install tool` installs them into `GOBIN`, and
+`go get -tool package@version` adds both the tool directive and required module
+dependency.
 
-`go list -m -json` includes `Sum` and `GoModSum`, matching the checksum fields from `go mod download -json`.
+### VCS-derived main module versions (`1.24.0`)
 
-### Module tool dependencies
+`go build` derives `runtime/debug.BuildInfo.Main.Version` from a VCS tag or
+commit and appends `+dirty` for uncommitted changes. `-buildvcs=false` omits
+this VCS information.
 
-The `tool` meta-pattern denotes every executable dependency named by a `tool` directive in the current module:
+### Private-module authentication and toolchain tracing (`1.24.0`)
 
-```sh
-go get tool
-go install tool
-```
+`GOAUTH` configures authentication for private module fetches.
+`GODEBUG=toolchaintrace=1` traces `go` command toolchain selection.
 
-The first command upgrades the tools as a set; the second installs them into `GOBIN`. Use `go get -tool package@version` to add both a tool directive and the required module dependency.
+### Module and workspace package selection (`1.25.0`)
 
-### Package-pattern selection
-
-The `go.mod` `ignore` directive excludes a named directory and all descendants from package-pattern matching such as `all` and `./...`. It does not exclude those files from module zip archives.
+A `go.mod` `ignore` directive excludes named directories and descendants from
+package-pattern matching such as `all` and `./...`, but not from module zip
+files. The `work` pattern selects every package in the work module or all
+workspace modules. Updating a `go` line no longer adds a `toolchain` line for
+the command's current version.
 
 ```go.mod
 ignore ./generated
 ```
 
-The `work` pattern selects every package in the current work module, or in all workspace modules. Updating a `go` line no longer adds a `toolchain` line for the command's current version.
+### Module roots in repository subdirectories (`1.25.0`)
 
-### Repository subdirectories in vanity imports
+A vanity import maps a module root to a repository subdirectory by placing that
+subdirectory in a fourth `go-import` metadata field:
+`root-path vcs repo-url subdir`.
 
-Map a module root to a repository subdirectory by adding a fourth field to `go-import` metadata:
+### Conservative `go mod init` versions (`1.26.0`)
 
-```text
-root-path vcs repo-url subdir
-```
+Under a stable 1.N toolchain, `go mod init` writes `go 1.(N-1).0`; a 1.N
+prerelease writes `go 1.(N-2).0`. Thus the stable 1.26 toolchain defaults to
+`go 1.25.0`, while its release candidates default to `go 1.24.0`. Run
+`go get go@version` afterward to select another language version.
 
-### Conservative `go mod init` versions
+### Canonical `go mod tidy` require blocks (`1.27.0`)
 
-Under a stable 1.N toolchain, `go mod init` writes `go 1.(N-1).0`; under a 1.N prerelease it writes `go 1.(N-2).0`. Thus stable Go 1.26 defaults to `go 1.25.0`, while its release candidates default to `go 1.24.0`. Run `go get go@version` afterward to choose another language version.
+For modules declaring Go 1.27 or later, `go mod tidy` consolidates duplicate
+`require` blocks into at most one direct and one indirect block. Dependency
+comments remain; a comment spanning both kinds attaches to the direct block.
 
-### Private modules and toolchain selection
+## Command output, caches, and documentation
 
-Set `GOAUTH` to configure authentication for private-module fetches. Set `GODEBUG=toolchaintrace=1` to trace the `go` command's toolchain-selection decisions.
+### Relocating the Go command (`1.23.0`)
 
-## Build and command output
+`GOROOT_FINAL` no longer affects the installed toolchain. Distributions that
+place `go` outside `$GOROOT/bin/go` must install a symlink instead of relocating
+or copying the binary.
 
-### Structured build events
+### Structured build events (`1.24.0`)
 
-`go build -json` and `go install -json` emit structured build output and failures. `go test -json` interleaves build records with test records using additional `Action` values. Integrations that still require textual build output can temporarily set `GODEBUG=gotestjsonbuildtext=1`.
+`go build -json` and `go install -json` emit structured build output and
+failures. `go test -json` interleaves build and test records using distinct
+`Action` values. `GODEBUG=gotestjsonbuildtext=1` restores textual build output
+for an older integration.
 
-### VCS-derived main-module versions
+### External build-cache programs (`1.24.0`)
 
-`go build` derives `runtime/debug.BuildInfo.Main.Version` from a VCS tag or commit and appends `+dirty` for uncommitted changes. Pass `-buildvcs=false` to omit VCS information.
+`GOCACHEPROG` may name a child process implementing the `go` command's binary
+and test cache through a JSON protocol; the facility is no longer experimental.
 
-### External build caches
+### Documentation and profiling tool changes (`1.26.0`)
 
-`GOCACHEPROG` can name a child process implementing the `go` command's binary and test cache through a JSON protocol; this capability is no longer experiment-gated.
+`cmd/doc` and `go tool doc` are removed; use the flag-compatible `go doc`.
+The `pprof -http` UI opens on the flame graph. The former graph view is under
+`View -> Graph` or `/ui/graph`.
 
-### AddressSanitizer leaks
+### Tool response files (`1.27.0`)
 
-Programs built with `go build -asan` perform leak detection at exit by default. Set `ASAN_OPTIONS=detect_leaks=0` when running the program to disable those reports.
-
-### Documentation command removal
-
-`cmd/doc` and `go tool doc` are removed. Use the flag-compatible `go doc` command.
-
-## Analysis and modernization
-
-### Vet diagnostics
-
-The `tests` analyzer, also run by `go test`, reports malformed test, fuzz, benchmark, and example declarations. For code selecting language version 1.24 or later, vet reports non-constant `fmt.Printf(s)` calls with no formatting arguments. Version build constraints may name only a major Go release, so a tag such as `go1.23.1` is invalid.
-
-The `waitgroup` analyzer reports misplaced `sync.WaitGroup.Add` calls. The `hostport` analyzer reports address construction such as `fmt.Sprintf("%s:%d", host, port)`, which breaks for IPv6, and recommends `net.JoinHostPort`.
-
-### Analysis-based `go fix`
-
-The rewritten `go fix` uses the Go analysis framework to apply many behavior-preserving modernizers. A function annotated with `//go:fix inline` can specify source-level inlining for automated API migrations. The historical fixers were removed.
-
-### Source-analysis APIs
-
-- `ast.PreorderStack` traverses syntax while exposing the enclosing-node stack.
-- `token.FileSet.AddExistingFiles` assembles a file set from existing files.
-- `types.Var.Kind` exposes variable classification.
-- `types.LookupSelection` exposes selections.
-- `ast.ParseDirective` parses conventional directive comments such as `//go:generate`.
-- `token.File.End` returns a file's end position.
-
-`ast.BasicLit.ValueEnd` records an exact literal end. A tool that changes `ValuePos` must update or clear `ValueEnd` to avoid formatting differences.
-
-The AST package-merging APIs and `parser.ParseDir` are deprecated.
-
-Go 1.27 is scheduled to ignore `gotypesalias`, after which `go/types` will always represent aliases with `Alias`.
-
-## Deterministic concurrency tests
-
-### Stable API
-
-Use `synctest.Test` from `testing/synctest` to run a test in an isolated bubble and `synctest.Wait` to wait until every other goroutine in that bubble is durably blocked. `Wait` is synchronization recognized by the race detector.
-
-The package first appeared experimentally behind `GOEXPERIMENT=synctest` with a `Run` API and no compatibility guarantee. `Run` placed its callback and all descendant goroutines in the bubble:
+`compile`, `link`, `asm`, `cgo`, `cover`, and `pack` accept `@file` response
+files. Arguments are whitespace-separated with single or double quotes,
+escapes, and backslash-newline continuation in a GCC-compatible format.
 
 ```sh
-GOEXPERIMENT=synctest go test ./...
+go tool compile @compile.args
 ```
 
-The package is now generally available. The old `Run` remains only under that experiment in Go 1.25 and was scheduled for removal in Go 1.26. Use `Test`, not `Run`, in current code.
+### Typed `go test -json` output (`1.27.0`)
 
-### Fake time and durable blocking
+Test output events may include an optional `OutputType` field with values such
+as `error`, `error-continue`, or `frame`. Consumers must tolerate this field and
+future additions.
 
-The `time` package uses a fake clock inside a bubble. Time advances to the next event only when every goroutine is durably blocked, making sleeps and timers deterministic without wall-clock delays.
+### Versioned and example-aware `go doc` (`1.27.0`)
 
-Durable blocking includes:
+`go doc` accepts `package@version`; `-ex` lists executable examples. Asking for
+a named example prints its source and comments.
 
-- Send or receive on a nil channel or a channel created in the same bubble.
-- A `select` containing only durable cases.
-- `time.Sleep`.
-- `sync.Cond.Wait`.
-- `sync.WaitGroup.Wait`.
+```sh
+go doc example.com/pkg@v1.2.3
+go doc -ex bytes
+```
 
-Mutex acquisition and external I/O are not durable. Use in-memory substitutes such as `net.Pipe` instead of real network I/O. A channel created in a bubble panics if used outside it.
+## Vet and source modernization
 
-The experimental `Run` API waited for all bubble goroutines to exit and panicked on a deadlock that fake-time advancement could not resolve. Always shut down background goroutines.
+### New vet failures (`1.24.0`)
 
-## Test lifecycle and output
+The `tests` analyzer, also run by `go test`, finds malformed test, fuzz,
+benchmark, and example declarations. For language version 1.24 or later, vet
+diagnoses non-constant `fmt.Printf(s)` calls without formatting arguments.
+Build constraints may name only a major Go release, so `go1.23.1` is invalid.
 
-### Test-scoped contexts
+### New vet diagnostics (`1.25.0`)
 
-`T.Context` and `B.Context` return a context canceled after the test or benchmark finishes but before registered cleanup functions execute. Use this ordering when cleanup must observe cancellation.
+The `waitgroup` analyzer reports misplaced `sync.WaitGroup.Add` calls. The
+`hostport` analyzer reports `fmt.Sprintf("%s:%d", host, port)` addresses that
+fail for IPv6 and recommends `net.JoinHostPort`.
 
-### Attributes and log writers
+### Modernizing code with `go fix` (`1.26.0`)
 
-`T.Attr`, `B.Attr`, and `F.Attr` attach key/value attributes to test logs and JSON events. Their `Output` methods return indented log writers without file-and-line prefixes.
+The analysis-based `go fix` applies behavior-preserving modernizers. A function
+annotated `//go:fix inline` can drive source-level inlining for automated API
+migrations. Obsolete historical fixers are removed.
 
-`testing.AllocsPerRun` panics if parallel tests are running instead of returning a measurement made inherently flaky by concurrent activity.
+### Default `stdversion` checks (`1.27.0`)
 
-### Persistent artifacts
+`go test` runs the `stdversion` vet analyzer by default and reports
+standard-library symbols newer than the version selected by module and file
+build tags.
 
-`T.ArtifactDir`, `B.ArtifactDir`, and `F.ArtifactDir` return directories for test output. With `go test -artifacts`, the directory persists beneath `-outputdir`, or beneath the current directory when `-outputdir` is unset, and its location is logged on first use. Without `-artifacts`, it is temporary and removed after the test.
+### `go fix` analyzer changes (`1.27.0`)
 
-## Profiling tools
+`go fix` adds `atomictypes`, `embedlit`, `slicesbackward`, and `unsafefuncs`.
+`fmtappendf` is removed, and `waitgroup` is renamed to `waitgroupgo`.
 
-The `pprof -http` UI opens on the flame graph. Find the former graph view under `View -> Graph` or at `/ui/graph`.
+### Declarations of removed `GODEBUG` settings (`1.27.0`)
+
+A `go.mod` `godebug` entry or `//go:debug` comment may still name a removed
+setting only with its final default value. Naming its obsolete value fails the
+build rather than restoring removed behavior.
+
+## Concurrency tests and test lifecycle
+
+### Experimental deterministic concurrency tests (`1.24-guide`)
+
+The initial `testing/synctest` API requires `GOEXPERIMENT=synctest` and is not
+covered by compatibility guarantees. `Run` creates an isolated bubble for the
+callback and descendants; `Wait` returns when the other goroutines are durably
+blocked and supplies synchronization understood by the race detector.
+
+### Bubble time and blocking rules (`1.24-guide`)
+
+Inside a synctest bubble, `time` uses a fake clock that advances only when every
+goroutine is durably blocked. Durable operations include nil or same-bubble
+channels, selects containing only durable cases, `time.Sleep`,
+`sync.Cond.Wait`, and `sync.WaitGroup.Wait`; mutex acquisition and external I/O
+do not qualify. A channel created inside a bubble panics if used outside it.
+
+Use `net.Pipe` or another in-memory substitute for network tests. The initial
+`Run` API waits for all bubble goroutines and panics on an unresolved deadlock,
+so every background goroutine must exit.
+
+### Test-scoped contexts (`1.24.0`)
+
+`T.Context` and `B.Context` return a context canceled after the test or
+benchmark finishes but before cleanup functions run.
+
+### Stabilized `testing/synctest` (`1.25.0`)
+
+The stable API uses `synctest.Test` and `synctest.Wait` without an experiment.
+The older `Run` remains only under `GOEXPERIMENT=synctest` and is scheduled for
+removal in 1.26.
+
+### Test attributes, output, and allocation checks (`1.25.0`)
+
+`T.Attr`, `B.Attr`, and `F.Attr` add key/value attributes to logs and JSON
+events. Their `Output` methods return an indented log writer without file and
+line prefixes. `testing.AllocsPerRun` panics while parallel tests are running
+instead of producing a flaky measurement.
+
+### Persistent test artifacts (`1.26.0`)
+
+`T.ArtifactDir`, `B.ArtifactDir`, and `F.ArtifactDir` return an output
+directory. With `go test -artifacts`, it persists under `-outputdir` or the
+current directory and is logged on first use; otherwise it is temporary and
+removed after the test.
+
+## Supported release lines
+
+### Support window and maintenance releases (`rolling-2026-08-19`)
+
+The 1.27.0 release leaves 1.27 and 1.26 as the supported lines under the
+two-release policy; 1.25 is no longer supported. The older supported line is at
+1.26.7, issued on 2026-08-19 with `net/http` fixes. The same package-level fix
+appeared in 1.25.14 for users not yet migrated, but those users should move to
+1.26 or 1.27.

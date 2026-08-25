@@ -1,14 +1,13 @@
 # Indexes, Authentication, and Publishing
 
-Use this reference for package-index configuration, credential selection,
-publishing transports, attestations, and archive validation.
+## Fail-closed index authentication (0.6-0.8)
 
-## Index Definition and Lookup
+Use `authenticate = "always"` when credentials are mandatory. Missing
+credentials then fail closed.
 
-### Fail closed when authentication is required
-
-The 0.6-0.8 batch added `authenticate = "always"` for indexes whose credentials
-must be present:
+With the default `first-index` strategy, 401 or 403 stops package lookup rather
+than falling through to another index. Configure `ignore-error-codes` only for
+an index whose nonstandard response needs fallthrough.
 
 ```toml
 [[tool.uv.index]]
@@ -17,55 +16,63 @@ url = "https://example.invalid/simple"
 authenticate = "always"
 ```
 
-With the default `first-index` strategy, HTTP 401 or 403 stops package lookup
-instead of falling through to a later index. For a nonstandard index that uses
-those responses for ordinary misses, configure `ignore-error-codes`
-deliberately.
+## Named and configured indexes
 
-### Name flat indexes
+Flat `--find-links`-style indexes can be declared in `[[tool.uv.index]]` and
+participate in named-index configuration (0.6-0.8).
 
-`--find-links`-style flat indexes can be represented in `[[tool.uv.index]]`.
-They can therefore participate in named-index configuration rather than
-remaining anonymous CLI-only inputs.
+Configuration errors when multiple indexes have `default = true`, or when an
+`explicit = true` index has no name (0.9-0.10).
 
-### Keep index configuration unambiguous
+With preview `index-by-name`, `--index` and `--default-index` can select a
+configured index by name instead of repeating its URL (0.12.5). Preview index
+configuration also supports per-index `hash-algorithm` for lockfile generation.
 
-In the 0.9-0.10 batch, configuration became stricter:
+```toml
+[[tool.uv.index]]
+name = "internal"
+url = "https://packages.example.invalid/simple"
+```
 
-- More than one index with `default = true` is an error.
-- An index with `explicit = true` must have a name.
+## Credential management and matching
 
-## Credential Management
+`uv auth` manages credentials by URL, and stored token credentials can be used
+by `uv publish` (0.6-0.8).
 
-Use `uv auth` commands to manage credentials by URL. Stored token credentials
-can be consumed by `uv publish`.
-
-When several stored credentials match the same URL, specify the username
-instead of relying on the first match:
+If multiple stored credentials match a URL, specify the username rather than
+depending on match order (0.9-0.10):
 
 ```console
 uv auth token --username foo example.com
 ```
 
-## Publishing
+## Publishing attestations and cloud signing (0.9-0.10)
 
-`uv publish` can collect and upload PEP 740 attestations and can use Trusted
-Publishing with pyx.
+`uv publish` can collect and upload PEP 740 attestations and use Trusted
+Publishing with pyx. Preview publishing paths support S3 pre-signed URLs and
+GCS request signing.
 
-Preview publishing transports include:
+## Archive validation
 
-- S3 pre-signed URLs.
-- Google Cloud Storage request signing.
+Archive handling rejects duplicate ZIP entries and other ambiguous forms that
+Python tooling could interpret differently (0.6-0.8). Use
+`UV_INSECURE_NO_ZIP_VALIDATION=1` only as an escape hatch for a falsely rejected
+archive.
 
-Treat preview transport configuration as subject to change, and validate the
-exact upload target and authentication path before publishing.
+At 0.12.5, source distributions must use `.tar.gz`, although legacy `.zip`
+source distributions remain accepted; `.tar.bz2` and `.tar.xz` are rejected.
+ZIP entries may be stored, DEFLATE-compressed, or zstd-compressed. Wheels are
+rejected when entry points or data files could overwrite a Python interpreter,
+including case variants on case-insensitive filesystems.
 
-## Archive Validation
+## Explicit certificate overrides (0.12.5)
 
-uv rejects malformed ZIP archives with duplicate entries or other structures
-that Python tooling could interpret inconsistently. This closes ambiguity in
-archive extraction and package installation.
+`SSL_CERT_FILE` and `SSL_CERT_DIR` are authoritative when explicitly set. A
+missing, inaccessible, empty, or certificate-free source does not fall back to
+default trust roots. Fix the source or remove the override.
 
-`UV_INSECURE_NO_ZIP_VALIDATION=1` restores the earlier behavior only as an
-escape hatch for falsely rejected archives. Scope it narrowly and remove it
-after resolving the offending artifact.
+## Local index path resolution (0.12.5)
+
+Relative index paths in PEP 723 scripts resolve against the script directory.
+`--find-links` paths in requirements files resolve against the containing
+file. Local HTML files are accepted as flat indexes.

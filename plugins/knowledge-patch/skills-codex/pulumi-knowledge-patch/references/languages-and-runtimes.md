@@ -1,131 +1,94 @@
-# Languages and runtimes
+# Languages and Runtimes
 
-This reference includes `components-2025`, `release-notes-117`,
-`3.145.0-3.159.0`, `3.160.0-3.181.0`, `3.182.0-3.198.0`,
-`3.199.0-3.214.0`, `3.214.1-3.228.0`, `3.229.0-3.248.0`, and
-`3.249.0-3.254.0`.
+## Runtime baselines
 
-## Node.js and TypeScript
+The Node.js SDK raised its floor to Node.js 20 in batch `3.160.0-3.181.0`, then
+to Node.js 22 in `3.249.0-3.254.0`. The current test matrix includes Node.js 26
+and no longer includes Node.js 20. TypeScript 6 is accepted as a peer dependency,
+and newly generated TypeScript projects use `nodenext` for both `module` and
+`moduleResolution`. Node.js supports pnpm 11.
 
-The effective Node.js SDK minimum is Node.js 22. Earlier guidance raised it to
-20, added Node.js 24 support, and changed the SDK target from ES2016 to ES2020;
-later test coverage dropped Node.js 20 while adding 26. Do not retain 20 as the
-supported minimum. TypeScript 6 is accepted as a peer dependency, and generated
-projects use `nodenext` for both `module` and `moduleResolution`
-(`3.160.0-3.181.0`, `3.229.0-3.248.0`, `3.249.0-3.254.0`).
+Generated Go programs and the Go SDK first moved to Go 1.23, then to Go 1.25;
+Automation API supports Go 1.26. Generated Go output-form invokes that delegate
+unresolved inputs to the core SDK require Pulumi SDK v3.255.0 or later.
 
-The Node.js SDK supports pnpm 11. A project's `production` runtime option in
-`Pulumi.yaml` makes `pulumi install` use package-manager production mode and
-skip `devDependencies` (`3.249.0-3.254.0`).
+Python supports Python 3.14 and needs `grpcio>=1.75.1` there. `pulumi new
+--generate-only` creates `pyproject.toml` for uv and Poetry projects. Java SDK
+1.0 provides the full programming model, type safety, and the Java LTS releases
+supported at its launch (batch `release-notes-117`).
 
-Node.js package handling can use Bun and configures ESM automatically unless
-`--import` or `--require` is explicitly supplied. Entrypoint discovery respects
-`package.exports` (`3.182.0-3.198.0`). This package-manager choice is distinct
-from the native Bun runtime.
+## Node.js and Bun
 
-## Bun runtime
+The Node.js SDK can use Bun as a package manager and configures ESM automatically
+unless `--import` or `--require` is explicit. Entrypoint lookup respects
+`package.exports`. The `production` runtime option in `Pulumi.yaml` causes
+`pulumi install` to skip `devDependencies` using the package manager's production
+mode.
 
-The bundled `pulumi-language-bun` plugin runs programs, plugins, debuggers, and
-policy packs with Bun (`3.214.1-3.228.0`). Selecting Bun as the Node.js package
-manager does not select this language runtime.
+Bun is also a distinct native Pulumi runtime through bundled
+`pulumi-language-bun`; it runs programs, plugins, debuggers, and policy packs.
+Do not confuse the runtime with choosing Bun only as Node's package manager.
 
-## Python
+## Python toolchains and entrypoints
 
-### Toolchains and compatibility
+Dynamic providers work with Poetry and uv. Plugin/package discovery supports uv,
+and `RunPlugin` uses a virtual environment by default. Lockfile detection chooses
+the Python toolchain and reads Poetry and uv locks for program dependencies.
+`UV_PROJECT_ENVIRONMENT` overrides the virtual-environment path Pulumi uses.
 
-Dynamic providers support Poetry and uv. Pulumi discovers uv plugins/packages,
-and `RunPlugin` uses a virtual environment by default
-(`3.145.0-3.159.0`). Python projects detect their toolchain from lockfiles and
-read Poetry and uv lockfiles when resolving dependencies
-(`3.214.1-3.228.0`).
+`pulumi.run` accepts a natively awaited Python entrypoint and may receive its
+stack outputs as the return value. Python Automation API `preview_refresh` and
+`preview_destroy` accept a `program` argument.
 
-Python 3.14 is supported and uses `grpcio>=1.75.1`. For uv and Poetry projects,
-`pulumi new --generate-only` creates `pyproject.toml`
-(`3.199.0-3.214.0`).
+Experimental component helpers moved from
+`pulumi.provider.experimental.provider` to
+`pulumi.provider.experimental.component`; a new general provider interface now
+uses the old provider namespace. Python component providers can run without a
+bootstrap. They support resource references, enum inference and references,
+`@pulumi.type_token`, and the static `pulumi_type` property.
 
-### Async entrypoints
+Missing Python `StackReference` outputs no longer raise. Undecryptable
+stack-reference outputs are elided. Python dynamic-provider `read()` may return
+inputs so refresh preserves them for subsequent diffs.
 
-`pulumi.run` supports a natively awaited program entrypoint, which may return
-stack outputs (`3.249.0-3.254.0`).
+## Go APIs
 
-### Provider and component APIs
+Go has deferred outputs, so code can create an output handle before setting the
+value that resolves it. `property.Value` is immutable; `property.Path` and
+`property.Map.Delete` provide structured access and removal. Workspace plugin
+lookup/path and APIs that create `plugin.Context` accept `context.Context`.
 
-Experimental component-provider helpers live under
-`pulumi.provider.experimental.component`; the general provider API occupies
-`pulumi.provider.experimental.provider`. Component providers can run without a
-bootstrap (`3.160.0-3.181.0`).
+Go and Python tests can query resources registered with their mock monitor; Go
+tests can inspect the current stack export map through `GetCurrentExportMap`.
+Go's Policy SDK gives policy code a Pulumi `Context` and supports full-stack
+validation through `policyx.NewStackValidationPolicy` and `AnalyzeStack`.
 
-Python component providers support resource references, enum inference, and
-enum references. `@pulumi.type_token` and static `pulumi_type` expose class type
-tokens (`3.160.0-3.181.0`). Python providers can set component versions
-(`3.199.0-3.214.0`).
+## Cross-language runtime introspection
 
-Python resource and error hooks have decorator forms, and `Output.recover`
-handles output-resolution exceptions (`3.229.0-3.248.0`). Missing
-`StackReference` outputs no longer throw (`3.199.0-3.214.0`).
+.NET, Go, Java, Node.js, Python, and YAML can locate the project root. Go and
+Python expose `pulumiResourceName` and `pulumiResourceType` for a resource's
+runtime name and token.
 
-## Go
+Provider methods may return scalars instead of objects. Go and Python code
+generation support this, while Node.js generation uses `callSingle`. Node.js
+provider constructors receive `ignoreChanges`, `replaceOnChanges`,
+`customTimeouts`, `retainOnDelete`, and `deletedWith` rather than dropping them.
 
-### Version targets
+## Outputs, invokes, and hooks
 
-Generated Go programs and the SDK moved from Go 1.23
-(`3.160.0-3.181.0`) to Go 1.25. Automation API supports Go 1.26
-(`3.214.1-3.228.0`). Use the later targets when regenerating code.
+Node.js and Python provide `Output.recover` to handle exceptions during output
+resolution. Resource hook secrets arrive as `Output` values in both languages.
+Python offers decorator forms of resource and error hooks. Output-form invokes
+in Go, Node.js, Python, and PCL declare dependencies; Go also infers them from
+arguments, and its generated SDK passes unresolved arguments to the core SDK.
 
-### Deferred outputs
+Plain Node.js and Python invokes retain compatibility with output arguments.
+Invokes wait for resource dependencies found in inputs; Go, Node.js, and Python
+avoid provider calls while those dependencies are unknown.
 
-The SDK and generated programs support deferred outputs, letting code establish
-an output handle before assigning the value that resolves it
-(`3.145.0-3.159.0`).
+## YAML behavior
 
-### Property and workspace APIs
-
-`property.Value` is immutable. `property.Path` and `property.Map.Delete`
-support structured lookup and removal. `workspace.GetPluginInfo`,
-`workspace.GetPluginPath`, and APIs that create `plugin.Context` accept
-`context.Context` (`3.160.0-3.181.0`).
-
-### Components, tests, and policy
-
-Cross-language Go components use the `pulumi-go-provider` v1 inference builder
-and `provider.Run` (`components-2025`). Mock tests can retrieve registered
-resources and inspect `GetCurrentExportMap` (`3.182.0-3.198.0`).
-
-Go has an experimental Policy as Code SDK, and Automation API preview/up
-options can carry policy packs (`3.160.0-3.181.0`). Policy code receives a
-Pulumi `Context` (`3.182.0-3.198.0`).
-
-## Java
-
-The Java SDK reached 1.0 with the complete Pulumi programming API, stronger
-type safety, parity with other supported languages, and the Java LTS releases
-current at launch (`release-notes-117`). Cross-language components start
-`com.pulumi.provider.internal.ComponentProviderHost` with a package to scan
-(`components-2025`).
-
-## .NET
-
-Cross-language .NET components return
-`Pulumi.Experimental.Provider.ComponentProviderHost.Serve(args)` from
-`Program.Main` (`components-2025`). Generated programs call
-`RequirePulumiVersion` for project CLI constraints (`3.214.1-3.228.0`).
-
-Provider tooling should migrate from
-`github.com/pulumi/pulumi/pkg/v3/codegen/dotnet` to
-`github.com/pulumi/pulumi-dotnet/pulumi-language-dotnet/v3/codegen`; the former
-package is deprecated and scheduled for removal (`3.214.1-3.228.0`).
-
-## Windows executable resolution
-
-CLI executable lookup on Windows searches `.cmd` and `.ps1` extensions
-(`3.199.0-3.214.0`).
-
-## Cross-language scalar methods and cancellation
-
-Provider methods can return scalar values. Go and Python SDK generation and
-Node.js program generation support these returns; Node.js uses `callSingle`
-(`3.160.0-3.181.0`).
-
-Node.js and Python providers expose cancel handlers. Bun, Go, Node.js, and
-Python propagate cancellation to language-host runs, and hosts issue `Cancel`
-while closing plugins (`3.229.0-3.248.0`).
+Pulumi YAML enables views by default. It accepts `object` configuration and
+parses the value as an object. YAML `null` read as an empty string produces a
+warning; the temporary typed-config behavior introduced in 3.170.0 was reverted
+in 3.174.0.

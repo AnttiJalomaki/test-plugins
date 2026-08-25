@@ -1,178 +1,128 @@
-# CLI operations and configuration
+# CLI Operations and Configuration
 
-This reference is organized by operator task. Source batch attribution:
-`3.145.0-3.159.0`, `release-notes-117`, `3.160.0-3.181.0`,
-`3.182.0-3.198.0`, `3.199.0-3.214.0`, `3.214.1-3.228.0`,
-`3.229.0-3.248.0`, and `3.249.0-3.254.0`.
+Use this reference for local command behavior, project creation, configuration, machine-readable output, Neo, logging, and tracing.
 
-## Configure execution
+## Engine targeting and parallelism (batch `3.145.0-3.159.0`)
 
-- `PULUMI_PARALLEL` supplies `--parallel`, and `PULUMI_PARALLEL_DIFF=true`
-  enables concurrent diff calculation. Effective parallelism observes
-  container cgroup limits.
-- `PULUMI_STACK` selects the stack for config and state commands without a
-  persistent `pulumi stack select`.
-- Every command flag can use a `PULUMI_OPTION_*` environment variable. Convert
-  a flag such as `--refresh` to `PULUMI_OPTION_REFRESH`.
-- `PULUMI_SKIP_CONFIRMATIONS` is honored at every CLI confirmation prompt.
-- `--skip-plugin-pre-install` bypasses up-front plugin installation.
-- `up`, `preview`, `destroy`, and `refresh` accept `--override-env` for
-  operation-scoped imported environments and `--skip-config-validation` for
-  bypassing project config-schema checks.
+Target-aware operations accept `--exclude <URN>`; add `--exclude-dependents` to omit children of the excluded resource. `PULUMI_PARALLEL` supplies `--parallel`, `PULUMI_PARALLEL_DIFF` enables concurrent diff calculations, and effective parallelism observes container cgroup limits.
 
-```shell
-PULUMI_PARALLEL=8 PULUMI_PARALLEL_DIFF=true pulumi up
-PULUMI_STACK=dev pulumi config get region
-PULUMI_OPTION_REFRESH=true pulumi preview
-```
+`PULUMI_STACK` selects a stack for configuration and state commands without persisting `pulumi stack select`. `preview` and `up` accept `--show-secrets`, which exposes plaintext secrets in terminal and captured log output. `pulumi config set --type` selects the stored scalar type explicitly.
 
-## Decide when to run the program
+## Removed query and early package publication (batch `3.145.0-3.159.0`)
 
-From CLI 3.160.0, `refresh` and `destroy` accept opt-in `--run-program`. Use it
-when changed code establishes short-lived credentials, loads secrets, defines
-dynamic providers, or supplies other operation context. Without it, these
-commands use updated stack configuration but not changed program code.
+`pulumi query` was removed in 3.157.0. Replace scripts that call it. `pulumi new` can use templates defined in Pulumi Cloud. Package publishing was experimental in 3.158.0; do not infer current stability from that introduction.
 
-`preview` and `up` also accept `--run-program` when combined with `--refresh`.
-`PULUMI_RUN_PROGRAM` supplies the setting globally.
+## Run program before refresh or destroy (batch `release-notes-117`)
+
+`pulumi refresh --run-program` and `pulumi destroy --run-program` execute the stack program before the operation, allowing changed code to establish short-lived credentials, retrieve secrets, or define dynamic providers. Without the flag, these commands incorporate changed stack configuration but not changed program code.
+
+## Refresh-enabled previews and updates (batch `3.160.0-3.181.0`)
+
+`PULUMI_RUN_PROGRAM` globally supplies the run-program setting. `pulumi preview --refresh` and `pulumi up --refresh` accept `--run-program`; it is tied to refresh for those two operations.
 
 ```shell
-pulumi refresh --run-program
-pulumi destroy --run-program
-pulumi preview --refresh --run-program
 PULUMI_RUN_PROGRAM=true pulumi up --refresh
+pulumi preview --refresh --run-program
 ```
 
-Automation API inline programs have corresponding run-program controls for
-refresh and destroy; see the language SDK reference.
+## Diagnostics, preview output, and YAML config (batch `3.182.0-3.198.0`)
 
-## Handle config and environments
+CLI diagnostics are written to stderr rather than stdout. `--show-full-output` defaults to false, and `PULUMI_ENABLE_STREAMING_JSON_PREVIEW` controls streaming JSON previews.
 
-- `pulumi config set --type` selects the stored scalar type rather than
-  relying on string handling.
-- `pulumi config set --raw` preserves newlines from piped standard input.
-- `pulumi config set-all --json` accepts bulk JSON input. Automation API calls
-  the equivalent operation `SetAllConfigJson`.
-- `refresh` and `destroy` accept both `--config` and `--config-path`.
-- Refreshing stack configuration includes environments used by the stack.
-- Pulumi YAML accepts `object` as a configuration type and parses its values
-  as objects.
-- YAML `null` produces a warning because it is read as an empty string. The
-  3.170.0 change that preserved YAML types was reverted in 3.174.0; do not
-  rely on that interim behavior.
-- `pulumi config env list` supports `--output <format>`.
+Pulumi YAML accepts `object` as a configuration type and parses those values as objects. The CLI warns when YAML `null` would be read as an empty string. The temporary 3.170.0 behavior that preserved YAML types was reverted in 3.174.0 and is not the final behavior.
 
-```shell
-pulumi config set featureEnabled true --type bool
-printf '%s' 'line one
-line two' | pulumi config set message --raw
-```
+## Registry templates and project creation (batch `3.182.0-3.198.0`)
 
-## Control display and machine output
+`pulumi new` accepts qualified Registry template names and lists templates published with `pulumi template publish`. Private Registry publishing and resolution no longer need `PULUMI_EXPERIMENTAL`; set `PULUMI_DISABLE_REGISTRY_RESOLVE=true` to disable Registry resolution for `pulumi new`.
 
-`up`, `preview`, `refresh`, `destroy`, and `import` accept `--output json` for
-a structured operation summary. For the first four operations, affected
-resources include URN, type, name, operation, and parent.
+## Configuration inputs and generic flag environment variables (batch `3.199.0-3.214.0`)
 
-```shell
-pulumi preview --output json
-```
+`refresh` and `destroy` accept `--config` and `--config-path`. Every CLI flag can be supplied as `PULUMI_OPTION_<FLAG>`; for example, `PULUMI_OPTION_REFRESH=true` maps to `--refresh`. `pulumi about` reports `PULUMI_*` variables, and `pulumi about env` is an environment helper.
 
-Additional output contracts:
+Template locations can be overridden with `PULUMI_TEMPLATE_GIT_REPOSITORY`, `PULUMI_TEMPLATE_BRANCH`, `PULUMI_POLICY_TEMPLATE_GIT_REPOSITORY`, and `PULUMI_POLICY_TEMPLATE_BRANCH`.
 
-- CLI diagnostics go to stderr rather than stdout.
-- `--show-full-output` defaults to false.
-- `PULUMI_ENABLE_STREAMING_JSON_PREVIEW` controls streaming JSON previews.
-- `--urns` displays full URNs in preview, up, destroy, refresh, import, and
-  watch output.
-- `--show-secrets` on `preview` and `up` writes plaintext secrets to the
-  terminal and captured logs. Use only in controlled environments.
-- Strings containing non-UTF-8 bytes render as `b"<base64>"` in diffs and JSON
-  output.
-- `pulumi stack list`, `stack history`, `stack tag list`, `policy list`,
-  `policy group list`, `project list`, `config env list`, and `plugin list`
-  accept `--output <format>`.
+## JSON bulk configuration and Windows executables (batch `3.199.0-3.214.0`)
 
-## Capture and export traces and logs
+`pulumi config set-all --json` accepts bulk JSON, with `SetAllConfigJson` as the Automation API counterpart. On Windows, executable resolution searches `.cmd` and `.ps1` extensions.
 
-`--otel-traces` writes traces to a relative path or exports them to a gRPC
-endpoint. Exporters accept `grpcs://`, authentication headers, and
-`OTEL_RESOURCE_ATTRIBUTES`; provider OpenTracing spans are bridged into
-OpenTelemetry. `TRACEPARENT` parents CLI spans beneath an existing trace.
+## Required CLI versions and native Bun (batch `3.214.1-3.228.0`)
 
-```shell
-pulumi preview --otel-traces ./traces.json
-```
+Projects can set `requiredPulumiVersion` in `Pulumi.yaml`. Language checks are exposed as Node.js `requirePulumiVersion`, Python `require_pulumi_version`, Go `CheckPulumiVersion`, and generated .NET `RequirePulumiVersion`.
 
-Automatic encrypted CLI logging was initially opt-in through
-`PULUMI_ENABLE_AUTOMATIC_LOGGING`, but is now enabled for every command by
-default. Logs are stored under `~/.pulumi/logs`, and property-value secrets are
-redacted.
+`pulumi-language-bun` runs programs, plugins, debuggers, and policy packs with Bun as a native runtime. This is different from using Bun only as a Node.js package manager.
 
-```shell
-pulumi logs ls
-pulumi logs decrypt
-pulumi logs share
-pulumi logs rm
-```
+## Journaling and trace export (batch `3.214.1-3.228.0`)
 
-## Authenticate and inspect the environment
+Engine journaling is enabled by default. Set `PULUMI_DISABLE_JOURNALING=true` only to disable it explicitly.
 
-`pulumi login` accepts an external OIDC token directly or from `file://`,
-exchanges it for a short-lived Pulumi Cloud token, and avoids storing a
-long-lived CI credential. The default lifetime is two hours and can be changed
-with `--oidc-expiration`. The organization must trust the issuer and authorize
-the claims and audience.
+`--otel-traces` accepts a relative file or a gRPC endpoint, including `grpcs://`; exporters support header authentication and `OTEL_RESOURCE_ATTRIBUTES`. Provider OpenTracing spans are bridged into OpenTelemetry traces.
 
-```shell
-pulumi login \
-  --oidc-token file:///var/run/secrets/eks.amazonaws.com/serviceaccount/token \
-  --oidc-org my-org \
-  --oidc-team platform-team
-```
+## Machine-readable operations (batch `3.229.0-3.248.0`)
 
-`--oidc-team` and `--oidc-user` narrow the resulting identity. Current login
-defaults to Pulumi Cloud when given an OIDC token and can infer organization,
-team, and user from JWT claims. This behavior originated in source batch
-`native-oidc`.
+`pulumi up`, `preview`, `refresh`, `destroy`, and `import` accept `--output json`. The first four return structured affected-resource entries with URN, type, name, operation, and parent.
 
-When `credentials.json` includes an OAuth refresh token, a 401 triggers one
-automatic access-token refresh and retry. `pulumi logout` now deletes all
-backend configuration, shared temporary agent credentials, and the current
-tokenless backend.
+## Runtime-free projects and `npx` (batch `3.229.0-3.248.0`)
 
-`pulumi about` reports `PULUMI_*` environment variables; `pulumi about env`
-provides a focused environment view. Reading non-secret stack outputs and
-running `pulumi about` no longer require the passphrase for a
-passphrase-encrypted stack.
+Projects can omit a runtime in CLI operations and Automation API project settings. `pulumi project new -y` creates a minimal project without a template, `pulumi new` aliases `pulumi project new`, and the `pulumi` package lets Node.js users run commands through `npx pulumi`.
 
-## Work with templates, projects, and local plugins
+## Direct Pulumi Cloud API calls (batch `3.229.0-3.248.0`)
 
-- `pulumi new` can consume Pulumi Cloud templates. Qualified registry template
-  names are supported, and `PULUMI_DISABLE_REGISTRY_RESOLVE=true` disables
-  registry resolution.
-- Template sources can be overridden with
-  `PULUMI_TEMPLATE_GIT_REPOSITORY`, `PULUMI_TEMPLATE_BRANCH`,
-  `PULUMI_POLICY_TEMPLATE_GIT_REPOSITORY`, and
-  `PULUMI_POLICY_TEMPLATE_BRANCH`.
-- Projects can omit a runtime. `pulumi project new -y` writes a minimal
-  project, and `pulumi new` is an alias of `pulumi project new`.
-- Installing the `pulumi` package permits `npx pulumi`.
-- `pulumi plugin run` starts a local binary plugin. Debug a source plugin with
-  the exact form `--attach-debugger plugin=<name>`.
-- Windows executable lookup considers `.cmd` and `.ps1`.
-- The on-demand HCL runtime is not bundled; `pulumi convert --from hcl`
-  installs its converter automatically.
+`pulumi api <op-or-path>` calls a Pulumi Cloud API operation or path. It supports fields, headers, request input or body, path templates, content negotiation, and dry runs. `list` and `describe` expose the OpenAPI surface. `--paginate` combines cursor pages into one JSON envelope and `--emit-events` writes pagination progress to stderr. Use `--output`, not the earlier `--format` spelling.
 
-`pulumi package publish` was introduced experimentally in 3.158.0 and
-graduated in 3.166.0. `pulumi template publish`, added experimentally in CLI
-3.180.0, remains experimental.
+## Neo terminal workflow (batch `3.229.0-3.248.0`)
 
-## Removed CLI surfaces
+`pulumi neo` is available without `PULUMI_EXPERIMENTAL`. It runs requested shell and filesystem tools locally in the working directory while the conversation is backed by Pulumi Console. It supports non-interactive `--print`, approval and permission modes, and `--disable-integrations`.
 
-- `pulumi query` was removed in 3.157.0.
-- The experimental local `Pulumi.<stack>.deploy.yaml` workflow was removed,
-  including `deployment settings init`, `pull`, `configure`, `env`, and
-  `push`/`update`/`up`; `--config-file` and matching SDK helpers are gone.
-- Manage deployment settings with `pulumi deployment settings get`, `edit`,
-  and `destroy` in Pulumi Cloud.
+Plan mode must be chosen before the first message. Until the plan is approved, it blocks file writes, `pulumi up`, and pull-request creation.
+
+## Automatic logs before the default changed (batch `3.229.0-3.248.0`)
+
+This batch introduced encrypted CLI logs behind `PULUMI_ENABLE_AUTOMATIC_LOGGING`, stored under `~/.pulumi/logs`. `pulumi logs decrypt`, `logs ls`, and `logs rm` manage them. Later behavior enables capture by default.
+
+## PCL/HCL command behavior (batch `3.229.0-3.248.0`)
+
+The HCL language runtime is downloaded on demand rather than bundled. `pulumi convert --from hcl` installs its converter automatically.
+
+## CLI automation and observability (batch `3.229.0-3.248.0`)
+
+`pulumi config set --raw` preserves newlines piped through stdin. `--urns` shows full URNs in preview, up, destroy, refresh, import, and watch displays. `--skip-plugin-pre-install` bypasses eager plugin installation. `PULUMI_SKIP_CONFIRMATIONS` applies wherever the CLI asks for confirmation, and `TRACEPARENT` parents CLI spans under an existing trace.
+
+## Automatic logging is now default (batch `3.249.0-3.254.0`)
+
+Encrypted CLI log capture is enabled for every command by default; `PULUMI_ENABLE_AUTOMATIC_LOGGING` is no longer required. Property-value secrets are redacted. Use `pulumi logs share` to share a captured log with Pulumi.
+
+## Per-operation environment and config validation (batch `3.249.0-3.254.0`)
+
+`up`, `preview`, `destroy`, and `refresh` accept `--override-env` to replace imported environments for one run without changing stack configuration. They also accept `--skip-config-validation` to bypass the project's config schema for one run.
+
+## List output formats and deployment settings removal (batch `3.249.0-3.254.0`)
+
+`--output <format>` is supported on `pulumi stack list`, `stack history`, `stack tag list`, `policy list`, `policy group list`, `project list`, `config env list`, and `plugin list`.
+
+The experimental local `Pulumi.<stack>.deploy.yaml` workflow was removed. The removed surface includes `deployment settings init`, `pull`, `configure`, `env`, `push`/`update`/`up`, `--config-file`, and SDK helpers that read the file. Use `pulumi deployment settings get`, `edit`, and `destroy` with Pulumi Cloud.
+
+## Neo editor and recovery (batch `3.249.0-3.254.0`)
+
+`pulumi neo acp` runs Neo as an Agent Client Protocol process over stdio, with read-only and plan session modes. `pulumi neo resume` restores conversation history. `--debug-update` and `--debug-preview` start investigation of failed operations.
+
+## Machine output for non-UTF-8 strings (batch `3.249.0-3.254.0`)
+
+Diffs and JSON output represent strings containing non-UTF-8 bytes as `b"<base64>"`, rather than emitting invalid text.
+
+## Historical summaries and protection overrides (batch `3.255.0-3.258.0`)
+
+`pulumi stack history events --summary` reduces a past update to the structured summary produced by `pulumi up --output json`, adding error diagnostics, failed-resource markers, and language-host program errors.
+
+`pulumi up`, `preview`, and `destroy` accept `--ignore-protect` for a single operation that intentionally allows deletion of protected resources. It does not require first changing protection in state.
+
+## Remote execution and project creation (batch `3.255.0-3.258.0`)
+
+Failed `pulumi up --remote` and `pulumi deployment run` commands now exit nonzero. Remote updates no longer require a local `Pulumi.yaml`. `pulumi new` installs packages required by the generated program, matching `pulumi install`.
+
+## Removed Pulumi AI mode (batch `3.255.0-3.258.0`)
+
+The Pulumi AI mode of `pulumi new` was removed after its service shut down. The interactive choice and the `--ai` and `--language` flags tied to that mode are gone; use `pulumi neo` instead.
+
+## HTTPS trace export (batch `3.255.0-3.258.0`)
+
+The endpoint passed to `--otel-traces` may use HTTPS.

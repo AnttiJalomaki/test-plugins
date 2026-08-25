@@ -1,44 +1,9 @@
 # Queries, Observability, and Terminal UI
 
-## Terminal UI controls
+## Query Repository State
 
-Expect selection, task-list visibility, and pinning state to persist between
-invocations (since 2.4.0). Use these controls:
-
-| Key | Action |
-| --- | --- |
-| `h` | Toggle the task list |
-| `c` | Copy highlighted logs |
-| `j` / `k` | Select tasks |
-| `p` | Pin or unpin a task |
-| `u` / `d` | Scroll logs |
-| `m` | List all keybindings |
-
-Press `/` to enter a task search query (since 2.6.0). The task list filters so
-only matching tasks are selected.
-
-## Graph and dry-run inspection
-
-Use JSON output from `turbo ls` to inspect package dependents (since 2.6.0).
-Dry-run and summary output also expose `with` sidecar relationships.
-
-Run `turbo devtools` for Package Graph and Task Graph views that hot-reload as
-the repository changes (since 2.7.0). Inspect direct and transitive
-relationships when diagnosing cache misses:
-
-```bash
-turbo devtools
-```
-
-For graph files, replace deprecated `.png`, `.jpg`, or `.pdf` output with
-`.svg`, `.html`, `.mermaid`, or `.dot` (deprecated forms documented in 2.9.0).
-Replace `.json` graph output with `turbo query`.
-
-## Stable repository queries
-
-Use `turbo query` as the stable repository-query interface (since 2.9.0). With
-no query, it opens GraphiQL. Supply GraphQL inline or with `--file`, and inspect
-the schema with `--schema`:
+`turbo query` is stable (since 2.9.0). With no query it opens GraphiQL. Supply
+GraphQL inline or with `--file`, and use `--schema` to print the schema:
 
 ```bash
 turbo query
@@ -47,37 +12,40 @@ turbo query '{ packages { items { name } } }'
 turbo query --file=query.gql
 ```
 
-Use the `affected` shorthand for structured JSON describing changed tasks or
-packages. Use `ls` for pretty package details, JSON output, affected-only
-results, and selectors:
+The `affected` shorthand emits structured JSON for changed tasks or packages:
 
 ```bash
 turbo query affected --tasks build
 turbo query affected --packages
+```
+
+`ls` pretty-prints package details by default and supports JSON output,
+affected-only results, and selectors:
+
+```bash
 turbo query ls web --output=json
 turbo query ls --affected --filter='./apps/*'
 ```
 
-Replace deprecated `turbo-ignore` with `turbo query affected`.
+`turbo-ignore` is deprecated in favor of `turbo query affected`.
 
-## Intersect affected and filtered scopes
+## Inspect Graphs and Relationships
 
-Combine `--affected` and `--filter` to select only tasks or packages that match
-both constraints (since 2.10.0). Negate a filter to remove packages from the
-affected set:
+`turbo devtools` presents live Package Graph and Task Graph views that
+hot-reload with repository changes (since 2.7.0):
 
 ```bash
-turbo run build --affected --filter=web
-turbo run build --affected --filter=!docs
-turbo query ls --affected --filter=my-app
+turbo devtools
 ```
 
-## OpenTelemetry metrics
+The views expose direct and transitive relationships useful for explaining
+cache misses. JSON output from `turbo ls` includes package dependents, and
+dry-run and summary output includes `with` sidecar relationships (since 2.6.0).
+
+## Export Experimental OpenTelemetry Metrics
 
 Enable the `experimentalObservability` Future Flag and configure an OTLP
-endpoint to export experimental metrics (since 2.9.0), including
-`turbo.run.duration_ms`, `turbo.run.tasks.cached`, and
-`turbo.run.tasks.failed`:
+endpoint to export metrics (since 2.9.0):
 
 ```json
 {
@@ -92,27 +60,51 @@ endpoint to export experimental metrics (since 2.9.0), including
 }
 ```
 
-## Structured logs
+Exported metrics include `turbo.run.duration_ms`,
+`turbo.run.tasks.cached`, and `turbo.run.tasks.failed`.
 
-Use `--json` to stream experimental NDJSON objects containing `timestamp`,
-`source`, `level`, and `text` (since 2.9.0). Use `--log-file` to preserve normal
-terminal output while writing structured logs to
-`.turbo/logs/<epoch-millis>.json`; provide a value for a custom path. Combine
-the flags when both stream and file output are required:
+## Stream and Save Structured Logs
+
+`--json` streams NDJSON objects with `timestamp`, `source`, `level`, and
+`text` fields (since 2.9.0):
 
 ```bash
 turbo run build --json
+```
+
+`--log-file` preserves ordinary terminal output while writing structured logs
+to `.turbo/logs/<epoch-millis>.json` by default. It accepts a custom path and
+can be combined with `--json`:
+
+```bash
 turbo run build --log-file
 turbo run lint --json --log-file=logs.json
 ```
 
-## Profiles
+## Capture Profiles Without Naming Files
 
-Omit filenames from `--profile` and `--anon-profile` when the default output is
-sufficient (since 2.9.0). Each profile also produces a Markdown companion next
-to its trace:
+`--profile` and `--anon-profile` no longer require a filename, and profile
+output includes a Markdown companion beside the trace (since 2.9.0):
 
 ```bash
 turbo run build --profile
 turbo run build --anon-profile
 ```
+
+## Use Persistent Terminal UI Controls
+
+The terminal UI remembers the selected task, task-list visibility, and task
+pinning between invocations (since 2.4.0).
+
+| Key | Action |
+| --- | --- |
+| `h` | Toggle the task list |
+| `c` | Copy highlighted logs |
+| `j` / `k` | Select tasks |
+| `p` | Pin or unpin a task |
+| `u` / `d` | Scroll logs |
+| `m` | List all keybindings |
+
+Press `/` to enter a task search query; the task list filters so only matching
+tasks are selected (since 2.6.0). The task list also supports mouse-wheel
+scrolling (since 2.10.8).

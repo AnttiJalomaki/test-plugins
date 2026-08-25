@@ -1,13 +1,16 @@
 # Linux Build and Rendering Tests
 
+Use this reference for local OpenGL development builds, image rendering on
+desktop or headless hosts, and render-fixture investigation.
+
 ## OpenGL development build
 
-Use Ubuntu 22.04 or later, clone submodules, and select the `linux-opengl`
-preset. It builds GLFW-based development tools and can produce static libraries
+On Ubuntu 22.04 or later, clone submodules and configure the `linux-opengl`
+preset. It builds the GLFW development tools and can produce static libraries
 for other C++ projects.
 
-The preset defaults to Wayland and therefore requires `libegl1-mesa-dev`.
-`libsqlite3-dev` is optional because SQLite can be vendored.
+The preset defaults to Wayland and therefore needs `libegl1-mesa-dev`.
+`libsqlite3-dev` is optional because the build can supply SQLite itself.
 
 ```bash
 git clone --recurse-submodules -j8 https://github.com/maplibre/maplibre-native.git
@@ -20,38 +23,44 @@ cmake --build build-linux-opengl --target mbgl-render
 
 ## Render a style to PNG
 
-`mbgl-render` accepts a style URL or local file and writes a PNG:
+`mbgl-render` reads a style URL or local style file and writes a PNG:
 
 ```bash
 ./build-linux-opengl/bin/mbgl-render --style style.json --output out.png
 ```
 
-A local style can reference an MBTiles database with an absolute
-`mbtiles:///path/to/data.mbtiles` source URL.
+A local style can address an MBTiles database with an absolute source URL:
 
-## Render without an X display
+```text
+mbtiles:///path/to/data.mbtiles
+```
 
-On a remote or containerized host without an X display, install both `xvfb` and
-`xauth`, then use a virtual display:
+## Headless rendering
+
+On a remote or containerized host without an X display, install `xvfb` and
+`xauth`, then run the renderer through a virtual display:
 
 ```bash
 xvfb-run -a ./build-linux-opengl/bin/mbgl-render --style style.json --output out.png
 ```
 
-## Run render fixtures
+## Render-fixture runner
 
-Linux render tests compare each fixture's output with `expected.png`. Failures
-leave `actual.png` and `diff.png` beside the fixture and generate an HTML
-summary next to the manifest.
+Linux render tests compare each fixture's generated image with
+`expected.png`. They retain `actual.png` and `diff.png` beside the fixture and
+write an HTML summary next to the manifest.
 
-Run the complete manifest:
+Run a complete manifest:
 
 ```bash
 ./build-linux-opengl/mbgl-render-test-runner --manifestPath metrics/linux-clang8-release-style.json
 ```
 
-Narrow the run with `--filter`:
+Narrow the run with `--filter` while investigating one fixture:
 
 ```bash
 ./build-linux-opengl/mbgl-render-test-runner --manifestPath metrics/linux-clang8-release-style.json --filter "render-tests/fill-visibility/visible"
 ```
+
+Preserve the style, renderer backend, viewport, expected image, actual image,
+diff image, and HTML summary together when reporting a visual regression.

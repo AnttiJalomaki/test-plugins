@@ -1,124 +1,113 @@
 # HTTP APIs and Observability
 
-## Query and rule APIs
+## Rule API and self-monitoring (`3.1.0`)
 
-### Query result limits
+The rules API paginates rule groups. Its `groupNextToken` field is present even
+when empty, so clients must accept it whether or not another page exists.
 
-`/query` and `/query_range` accept a `limit` parameter (since 3.2.0):
+Prometheus exports `rule_group_last_rule_duration_sum_seconds` and
+`go_sync_mutex_wait_total_seconds_total`. Notification-error counting is per
+affected alert rather than per failed batch.
+
+## Query limits and status fields (`3.2.0`)
+
+`/query` and `/query_range` accept `limit`:
 
 ```text
 /query?limit=100
 /query_range?limit=100
 ```
 
-### Rule-group pagination and state
+The `/status` response includes `Node` and `ServerTime`.
 
-The rules API can paginate groups (since 3.1.0). Its `groupNextToken` response
-field is present even when empty, so clients must not use field absence as the
-end-of-pages signal.
+## Target and mixin metadata (`3.3.0`)
 
-An alerting rule that has not yet run has the explicit state `unknown` (since
-3.8.0). API and UI clients must accept it with the established states.
+Dropped targets from `/api/v1/targets` include their scrape pool. The Prometheus
+mixin's `cluster` label can be customized with `clusterLabel`.
 
-### Parse and OpenAPI contracts
+## Storage replay metrics (`3.4.0`)
 
-`/parse_ast` responses include duration expressions (since 3.12.0). Prometheus
-serves an OpenAPI 3.2 HTTP API description at `/api/v1/openapi.yaml` (since
-3.10.0).
+Monitor unknown replay references with
+`prometheus_tsdb_wal_replay_unknown_refs_total` and
+`prometheus_tsdb_wbl_replay_unknown_refs_total`.
 
-### Experimental search
+## Loaded blocks, tracing, and stale series (`3.6.0`)
 
-Experimental endpoints can search metric names, label names, and label values
-(since 3.13.0). With `search-api`, `--web.search.max-limit` caps each request's
-`limit` and defaults to 10000 (`feature-flags`). Requests above the cap receive
-HTTP 400. The response default of 100 is clamped to a smaller operator cap;
-setting the cap to zero allows unbounded requests and is unsafe for untrusted
-clients.
+`/v1/status/tsdb/blocks` exposes metadata for loaded TSDB blocks. Scrape
+requests include `traceparent`. `prometheus_tsdb_head_stale_series` reports
+stale series in the Head block.
 
-## Status APIs
+## Histogram annotations (`3.7.0`)
 
-The `/status` response has `Node` and `ServerTime` fields (since 3.2.0).
-Dropped targets returned by `/api/v1/targets` carry their scrape-pool name
-(since 3.3.0).
+PromQL produces warn-level annotations for certain histogram counter-reset
+conflicts. Surface annotations in API clients instead of discarding them.
 
-`/v1/status/tsdb/blocks` exposes loaded TSDB block metadata (since 3.6.0).
-The TSDB status endpoint returns at most 10,000 statistic sets (since 3.9.0), so
-clients must not assume exhaustive, unbounded results.
+## Alert states and sample limits (`3.8.0`)
 
-`/api/v1/features` reports server capabilities (since 3.9.0); use it instead of
-inferring feature support from a version string. `/api/v1/status/self_metrics`
-returns current server self-metric state as JSON (since 3.12.0).
+Clients must accept `unknown` for an alerting rule not yet evaluated. Histogram
+samples count toward the configured query sample limit.
 
-## Query accounting and diagnostics
+## Feature discovery and bounded status data (`3.9.0`)
 
-From 3.13.0, query statistics expose `samplesRead`, plus `samplesReadPerStep`
-when `stats=all` and `promql-per-step-stats` are enabled. These count storage
-I/O; `totalQueryableSamples` counts samples loaded into evaluation and may count
-one reused sample in multiple windows. The engine-wide storage-read counter is
-`prometheus_engine_query_samples_read_total`.
+Use `/api/v1/features` to discover supported capabilities rather than infer
+them from a version. The TSDB status endpoint returns at most 10,000 sets of
+statistics.
 
-Range subqueries no longer evaluate after the parent's last actual step when the
-end is not step-aligned. This corrects `peakSamples`, `query.max-samples`, and
-storage-read inflation. `totalQueryableSamples` is also corrected after the
-first step for an `@`-modified range beneath an at-modifier-unsafe function.
+Most `prometheus_sd_refresh` metrics carry a `config` label with the job name.
+`prometheus_tsdb_sample_ooo_delta` measures every sample's out-of-order distance.
+Query, rule, discovery, and scrape instrumentation supplies native histograms
+beside summaries, and notification latency adds
+`prometheus_notifications_latency_histogram_seconds`.
 
-When tracing is enabled, query-log entries include both `traceID` and `spanID`
-(since 3.11.0).
+## API schema, profiles, and notification dimensions (`3.10.0`)
 
-## Server and subsystem metrics
+The OpenAPI 3.2 document is at `/api/v1/openapi.yaml`. Wall-time profiling is
+available at `/debug/pprof/fgprof`.
 
-### Rules and Go runtime
+Notification dropped, queue-capacity, and queue-length metrics have an
+`alertmanager` label. Each Alertmanager has its own send loop. `/-/ready`
+restores `X-Prometheus-Stopping` during the shutdown `NotReady` state.
 
-`rule_group_last_rule_duration_sum_seconds` and
-`go_sync_mutex_wait_total_seconds_total` expose rule-group evaluation totals and
-Go mutex wait time (since 3.1.0).
+## Discovery timing and trace correlation (`3.11.0`)
 
-### Notifications
+`prometheus_sd_last_update_timestamp_seconds` reports when a discovery update
+was last sent to consumers. With tracing enabled, query-log records include
+both `traceID` and `spanID`.
 
-`prometheus_notifications_errors_total` increments by the number of affected
-alerts, not by one failed notification batch (since 3.1.0). From 3.10.0,
-`prometheus_notifications_dropped_total`,
-`prometheus_notifications_queue_capacity`, and
-`prometheus_notifications_queue_length` have an `alertmanager` label; aggregate
-explicitly when older queries expected one unlabeled series.
+## Self-metrics and AST responses (`3.12.0`)
 
-Each configured Alertmanager has an independent send loop (since 3.10.0), which
-changes scheduling across multiple destinations. Notification latency also has
-`prometheus_notifications_latency_histogram_seconds` alongside the summary
-(since 3.9.0).
+`/api/v1/status/self_metrics` returns the server's own current metrics as JSON.
+`/parse_ast` responses include duration expressions. Series for removed scrape
+jobs' per-job discovery refresh and discovered-target metrics are cleaned up.
 
-### Storage and service discovery
+## Search and query read statistics (`3.13.0`)
 
-Use `prometheus_tsdb_wal_replay_unknown_refs_total` and
-`prometheus_tsdb_wbl_replay_unknown_refs_total` for unknown series references
-during replay (since 3.4.0), `prometheus_tsdb_head_stale_series` for stale Head
-series (since 3.6.0), and `prometheus_tsdb_sample_ooo_delta` for the accepted or
-rejected out-of-order distance in seconds (since 3.9.0).
+Experimental API endpoints search metric names, label names, and label values.
 
-Most `prometheus_sd_refresh` metrics have a `config` label containing the job
-name (since 3.9.0). `prometheus_sd_last_update_timestamp_seconds` records the
-last update sent to consumers (since 3.11.0). Per-job
-`prometheus_sd_refresh*` and `prometheus_sd_discovered_targets` series are
-deleted when their scrape job is removed (since 3.12.0).
+Query statistics expose `samplesRead`, and `samplesReadPerStep` with `stats=all`
+plus `promql-per-step-stats`. These measure storage I/O.
+`totalQueryableSamples` instead counts samples loaded into the evaluator and can
+count one reused sample in multiple range windows. The engine-wide storage-read
+counter is `prometheus_engine_query_samples_read_total`.
 
-### Native-histogram instrumentation
+Range subqueries no longer execute beyond a parent's last real step when the
+end is not step-aligned, correcting peak/sample-limit/read accounting.
 
-PromQL, rules, service discovery, and scraping export native histograms beside
-existing summaries (since 3.9.0). Account for both forms when discovering or
-aggregating self-monitoring series.
+## Search API resource caps (`feature-flags`)
 
-### Mixin labels
+With `search-api`, `--web.search.max-limit` caps each endpoint's requested
+`limit` and defaults to 10000. Requests above it return HTTP 400. The normal
+response default of 100 is clamped to a smaller operator cap. A cap of `0`
+allows unbounded requests and is unsafe for untrusted endpoints.
 
-The Prometheus mixin's `cluster` label can be renamed through `clusterLabel`
-(since 3.3.0).
+## Current diagnostics and API deprecations (`3.13.2-3.14.0`)
 
-## Debug endpoints and UI
+For `/api/v1/query` and `/api/v1/query_range`, only `stats=true` and `stats=all`
+are current. Other values still enable basic statistics but return a warning
+and are scheduled for rejection in the next major release.
 
-`/debug/pprof/fgprof` provides on-demand wall-time profiles (since 3.10.0).
-
-The target UI can display every relabeling step for a discovered target (since
-3.8.0), showing how labels changed and why a target was dropped. From 3.12.0,
-the Status menu includes a UI for deleting time series and cleaning tombstones.
-
-The `/-/ready` response includes `X-Prometheus-Stopping` in the `NotReady`
-shutdown state (since 3.10.0).
+Monitor OTLP name collisions with
+`prometheus_api_otlp_translation_warnings_total{category=...}` and current head
+native histogram use with `prometheus_tsdb_head_native_histogram_series` and
+`prometheus_tsdb_head_native_histogram_buckets`. TSDB query errors that were
+previously discarded are now returned to callers.

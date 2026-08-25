@@ -1,45 +1,18 @@
 # Tools and Structured Output
 
-Use this reference for Responses function calls, structured parsing, tool discovery, constrained tool sets, streaming, custom tools, Programmatic Tool Calling, and the multi-agent beta.
+Source batches: `tool-and-structured-output` and `gpt-5.6`.
 
-## Function definition strictness
+## Structured Responses output
 
-Responses internally tags function definitions. When `strict` is omitted, it attempts strict mode rather than preserving the older non-strict default. If a schema is incompatible with strict mode, the API falls back to best-effort calling and reports `strict: false`.
+### Formats, parsing, and refusals
 
-Set non-strict behavior explicitly when it is intentional:
+Responses places raw structured formats under `text.format`, including
+`{"type":"json_object"}` for JSON mode. SDK parse helpers accept a Pydantic
+model through Python `text_format` or a Zod format through JavaScript
+`text.format`.
 
-```json
-{
-  "type": "function",
-  "name": "lookup",
-  "parameters": {
-    "type": "object",
-    "properties": {}
-  },
-  "strict": false
-}
-```
-
-Do not infer that an omitted `strict` guarantees strict execution; inspect the effective result when schema compatibility is uncertain.
-
-## Structured response parsing
-
-Raw Responses structured-output formats belong below `text.format`. JSON mode uses:
-
-```json
-{
-  "text": {
-    "format": {"type": "json_object"}
-  }
-}
-```
-
-SDK parse helpers use different convenience fields:
-
-- Python passes a Pydantic model as `text_format`.
-- JavaScript passes a Zod format under `text.format`.
-
-A safety refusal is a distinct `refusal` content Item, not data matching the requested schema. Inspect message content before consuming parsed output.
+A safety refusal is a distinct `refusal` content item, not schema-conforming
+data. Inspect message content items before reading parsed output.
 
 ```python
 response = client.responses.parse(
@@ -47,16 +20,20 @@ response = client.responses.parse(
     input=[{"role": "user", "content": "Extract the result."}],
     text_format=Result,
 )
-
 for output in response.output:
     if output.type == "message":
         for item in output.content:
             value = item.refusal if item.type == "refusal" else item.parsed
 ```
 
-## Function-call round trip
+## Function calling
 
-A `function_call` output Item contains `name`, JSON-encoded `arguments`, and `call_id`. Preserve all response output Items in the next input, execute each applicable call, and append a `function_call_output` with exactly the same `call_id`.
+### Responses round trip
+
+Each `function_call` output item carries `name`, JSON-encoded `arguments`, and
+a `call_id`. Preserve every response output item, then return each tool result
+as a `function_call_output` with the same `call_id`. A result is normally a
+string but can be an array of image or file objects.
 
 ```python
 input_list += response.output
@@ -70,69 +47,72 @@ for call in response.output:
         })
 ```
 
-The function result is normally a string. It may instead be an array containing image or file objects, so avoid string-only validators when the tool can return those media types.
+### Namespaces and deferred tool search
 
-## Namespaces and deferred loading
-
-A `namespace` groups related functions. Set `defer_loading: true` on functions that should stay out of initial context until `tool_search` discovers them. Tool search requires `gpt-5.4` or later.
+A `namespace` groups related functions. `defer_loading: true` leaves a
+function out of the initial context so `tool_search` can discover it; tool
+search requires GPT-5.4 or later. Before the eventual `function_call`, output
+can contain `tool_search_call` and `tool_search_output` items. Keep both in
+interaction history.
 
 ```json
 {
   "type": "namespace",
   "name": "crm",
-  "tools": [
-    {
-      "type": "function",
-      "name": "lookup",
-      "defer_loading": true,
-      "parameters": {"type": "object", "properties": {}}
-    }
-  ]
+  "tools": [{
+    "type": "function",
+    "name": "lookup",
+    "defer_loading": true,
+    "parameters": {"type":"object", "properties":{}}
+  }]
 }
 ```
 
-Before the eventual `function_call`, the output can contain `tool_search_call` and `tool_search_output`. Retain both Items in interaction history.
+### Per-turn allowed tools
 
-## Per-turn allowed tools
-
-Keep a stable full tool list for prompt-cache reuse and narrow the callable subset per turn with `tool_choice`:
+`tool_choice` can restrict a stable full tool list to a callable subset without
+changing the original list, preserving prompt-cache reuse. With tool search,
+the restriction applies only to tools currently loaded for that turn.
 
 ```json
 {
   "type": "allowed_tools",
   "mode": "auto",
   "tools": [
-    {"type": "function", "name": "get_weather"},
-    {"type": "function", "name": "search_docs"}
+    {"type":"function", "name":"get_weather"},
+    {"type":"function", "name":"search_docs"}
   ]
 }
 ```
 
-With tool search, the restriction applies only to tools already loaded for that turn. A deferred tool outside the current loaded set is not made callable merely by naming it in the restriction.
+### Parallel-call edge cases
 
-## Parallel-call edge cases
+Built-in tools cannot be combined with parallel function calling.
+`parallel_tool_calls: false` limits a turn to zero or one call. Multiple calls
+from a fine-tuned model disable strict mode for those calls.
+`gpt-4.1-nano-2025-04-14` can duplicate a tool call when parallel calls are
+enabled.
 
-- Built-in tools cannot be combined with parallel function calling.
-- `parallel_tool_calls: false` limits a turn to zero or one call.
-- Multiple calls from a fine-tuned model disable strict mode for those calls.
-- `gpt-4.1-nano-2025-04-14` can duplicate a tool call when parallel calls are enabled.
+### Function-call streaming events
 
-Tool executors should deduplicate by protocol identity or make side effects idempotent rather than assuming each emitted call is unique.
+A streamed call follows this sequence:
 
-## Function-call streaming
+1. `response.output_item.added` starts the item.
+2. `response.function_call_arguments.delta` sends JSON fragments.
+3. `response.function_call_arguments.done` provides the complete encoded
+   arguments.
+4. `response.output_item.done` finishes the item.
 
-A streamed function call follows this event sequence:
+Aggregate deltas by `output_index` and use `item_id` to associate them with
+the call.
 
-1. `response.output_item.added` announces the Item.
-2. `response.function_call_arguments.delta` sends fragments of JSON-encoded arguments.
-3. `response.function_call_arguments.done` supplies the complete encoded arguments.
-4. `response.output_item.done` completes the Item.
+## Custom tools
 
-Aggregate deltas by `output_index`. Use `item_id` to associate fragments and completion with the correct call. Execute from the complete encoded arguments rather than assuming each delta is independently valid JSON.
+### Free-form text input
 
-## Free-form custom tools
-
-A `custom` tool receives arbitrary text rather than JSON-schema arguments:
+A tool with `type: "custom"` accepts arbitrary text rather than JSON-schema
+arguments. The `custom_tool_call` output item carries text in `input` together
+with `name` and `call_id`.
 
 ```json
 {
@@ -142,11 +122,13 @@ A `custom` tool receives arbitrary text rather than JSON-schema arguments:
 }
 ```
 
-The corresponding output Item is `custom_tool_call` and includes `name`, `call_id`, and the text in `input`.
+### Grammar-constrained input
 
-## Grammar-constrained custom tools
-
-Set a custom tool's `format` to `grammar` and choose `lark` or `regex`:
+Set a custom tool's `format` to `grammar` with `lark` or `regex`. Regexes in
+both formats use Rust syntax; lookarounds and lazy modifiers are unsupported.
+Lark omits terminal priorities, templates, `%declare`, and non-common imports.
+Keep terminals bounded, whitespace explicit, and anchored free-form spans in
+one terminal because greedy lexing happens before parsing.
 
 ```json
 {
@@ -160,30 +142,33 @@ Set a custom tool's `format` to `grammar` and choose `lark` or `regex`:
 }
 ```
 
-Both formats use Rust regex syntax, which excludes lookarounds and lazy modifiers. The Lark implementation also excludes terminal priorities, templates, `%declare`, and non-common imports. Keep terminals bounded, make whitespace explicit, and place an anchored free-form span in one terminal because greedy lexing happens before parsing.
+## Hosted and multi-agent tool orchestration
 
-## Programmatic Tool Calling
+### Programmatic Tool Calling
 
-Use Programmatic Tool Calling for bounded reductions over function results. Enable the hosted program tool and opt individual functions in through `allowed_callers`:
+For bounded reductions over tool results, enable the hosted program tool and
+opt individual functions in with `allowed_callers`. The host must process
+`program`, program-issued `function_call`, `function_call_output`, and
+`program_output` items while preserving `call_id` and `caller`.
 
 ```json
 {
   "tools": [
-    {"type": "programmatic_tool_calling"},
+    {"type":"programmatic_tool_calling"},
     {
-      "type": "function",
-      "name": "lookup_records",
-      "allowed_callers": ["programmatic"]
+      "type":"function",
+      "name":"lookup_records",
+      "allowed_callers":["programmatic"]
     }
   ]
 }
 ```
 
-The host must process and preserve `program`, program-issued `function_call`, `function_call_output`, and `program_output` Items. Preserve both `call_id` and `caller` so calls and outputs remain associated with the program.
+### Multi-agent Responses beta
 
-## Multi-agent Responses beta
-
-Enable the beta with both the request header and bounded concurrency:
+Enable the beta with both the request header and bounded concurrency. Handle
+and replay `multi_agent_call`, `multi_agent_call_output`, and `agent_message`
+items, plus function calls issued by any subagent.
 
 ```text
 OpenAI-Beta: responses_multi_agent=v1
@@ -191,21 +176,6 @@ OpenAI-Beta: responses_multi_agent=v1
 
 ```json
 {
-  "multi_agent": {
-    "enabled": true,
-    "max_concurrent_subagents": 3
-  }
+  "multi_agent": {"enabled":true, "max_concurrent_subagents":3}
 }
 ```
-
-Handle and replay `multi_agent_call`, `multi_agent_call_output`, and `agent_message` Items. Also handle function calls issued by any subagent; do not assume only the top-level agent can call a tool.
-
-## Host checklist
-
-1. Validate requested strictness and inspect fallback behavior.
-2. Branch parsed content between `refusal` and schema-shaped data.
-3. Preserve every output Item and correlate calls by `call_id`.
-4. Retain tool-search, program, and multi-agent protocol Items.
-5. Restrict tools without rebuilding the stable full list.
-6. Make parallel tool side effects idempotent.
-7. Aggregate streamed arguments by `output_index` and `item_id`.

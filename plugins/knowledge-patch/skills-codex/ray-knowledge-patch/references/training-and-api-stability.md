@@ -1,25 +1,25 @@
 # Training and API stability
 
-## Train V2 activation and migration
+## Train V2 opt-in and legacy APIs
 
-Starting in Ray 2.43, enable the overhauled Train V2 implementation and APIs
-with `RAY_TRAIN_V2_ENABLED=1`.
+Starting in Ray 2.43, set `RAY_TRAIN_V2_ENABLED=1` to enable the overhauled
+Train V2 implementation and APIs:
 
-```bash
+```sh
 RAY_TRAIN_V2_ENABLED=1 python train.py
 ```
 
-The separate V1 reference is deprecated. It contains legacy framework
-helpers, trainers, configuration paths, and session utilities. When migrating,
-check the V2 API explicitly instead of assuming those old imports or paths
-remain available.
+The separate V1 reference is deprecated and contains legacy framework helpers,
+Trainers, configuration paths, and session utilities. Check the V2 API during
+migration rather than assuming old imports remain valid.
 
-## Dataset splitting across workers
+## Selecting Trainer datasets to shard
 
-By default, Train uses `Dataset.streaming_split()` to give every worker a
-disjoint shard of every Dataset.
-
-Use `DataConfig(datasets_to_split=[...])` to shard only named datasets:
+By default, Train calls `Dataset.streaming_split()` so every worker gets a
+disjoint shard of every Dataset. Set
+`DataConfig(datasets_to_split=[...])` to split only selected inputs. An
+unlisted validation Dataset is available in full on every worker. Results from
+a split validation Dataset must be aggregated across workers.
 
 ```python
 trainer = TorchTrainer(
@@ -30,18 +30,13 @@ trainer = TorchTrainer(
 )
 ```
 
-In this example, every worker can access the full `val` Dataset. If `val`
-were split, validation results would need to be aggregated across workers.
+## Pinning data work to a labeled subcluster
 
-## Labeled subclusters for Train data work
-
-Pinning all data work requires two selectors because Train replaces a
-Dataset's execution options during ingestion:
-
-1. Copy the current `DataContext` and set `label_selector` while constructing
-   the Dataset. This pins file listing and schema work.
-2. Set the same selector under `DataConfig.execution_options` for the Dataset.
-   This pins per-worker ingestion.
+Pin Dataset construction work and ingestion separately. Copy the current
+`DataContext`, set its label selector while constructing the Dataset, and
+repeat that selector in `DataConfig.execution_options`. Train replaces the
+Dataset context's execution options, so the construction selector alone does
+not pin per-worker ingestion.
 
 ```python
 from ray.data import ExecutionOptions
@@ -66,18 +61,13 @@ trainer = TorchTrainer(
 )
 ```
 
-The construction-time selector alone does not pin per-worker ingest.
+## Persisting fitted preprocessors
 
-## Persisting a fitted preprocessor
-
-Apply preprocessing before creating the Trainer. Serialize the fitted
-preprocessor into the Trainer's `metadata`. Trainer metadata is available
-through `TrainContext.get_metadata()` and is attached to checkpoints saved by
-the Trainer.
-
-Preprocessor serialization returns bytes, but Trainer metadata must be JSON
-compatible. Base64-encode before constructing the Trainer and decode when
-restoring from checkpoint metadata:
+Apply preprocessing before constructing the Trainer. Serialize the fitted
+preprocessor into Trainer `metadata`, which is available through
+`TrainContext.get_metadata()` and is attached to checkpoints saved by the
+Trainer. Encode the serialized bytes for the JSON-compatible metadata
+dictionary.
 
 ```python
 payload = base64.b64encode(scaler.serialize()).decode("ascii")
@@ -88,9 +78,10 @@ payload = result.checkpoint.get_metadata()["preprocessor_pkl"]
 restored = StandardScaler.deserialize(base64.b64decode(payload))
 ```
 
-## Per-Dataset object-store backpressure
+## Dataset object-store backpressure
 
-Set an object-store limit through each Dataset's execution context:
+Set an execution resource limit on each Dataset. Ray Data slows production at
+the limit so a training consumer is not overrun by spilled data.
 
 ```python
 train_ds.context.execution_options.resource_limits = ray.data.ExecutionResources(
@@ -98,19 +89,33 @@ train_ds.context.execution_options.resource_limits = ray.data.ExecutionResources
 )
 ```
 
-Ray Data slows production at the limit. This helps prevent training consumers
-from being overrun by data that spills from the object store.
+## API exposure and deprecation policy
 
-## API exposure and deprecation
+An unannotated API is a Developer API by default and may change. Public and
+deprecated APIs require explicit annotations.
 
-An API with no annotation is a Developer API by default and can change.
-Public and deprecated APIs require explicit annotations.
+- A Stable API demotion or parameter change requires warnings, coexistence of
+  old and new parameters during transition, and a deadline of six months or
+  25 minor versions.
+- Beta uses three months or 12 minor versions.
+- Alpha has no stability guarantee.
 
-Stable API demotions and parameter changes require:
+## Logging and training-function results
 
-- warnings;
-- a transition period in which old and new parameters coexist; and
-- a deadline of six months or 25 minor versions.
+In `2.56.0-2.57.0`, `LoggingConfig` configures `ray.train` logging on the
+controller and workers. A `DataParallelTrainer` training function may return
+data.
 
-Beta API changes use a deadline of three months or 12 minor versions.
-Alpha APIs carry no stability guarantee.
+## Checkpoint and restore behavior
+
+For `2.56.0-2.57.0`:
+
+- `ray.train.get_all_reported_checkpoints` accepts `timeout_s`.
+- `ray.train.report(checkpoint=...)` is restricted to in-band checkpoints.
+- `Result.from_path` is read-only.
+- Train v1 `Predictor` is removed.
+
+## RLlib module specifications
+
+`MultiRLModuleSpec.rl_module_specs` must be a dictionary in
+`2.56.0-2.57.0`. Other container types fail validation.

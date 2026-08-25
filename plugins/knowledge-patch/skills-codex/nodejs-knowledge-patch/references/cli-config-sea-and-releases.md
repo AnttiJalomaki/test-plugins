@@ -1,144 +1,115 @@
 # CLI, Configuration, SEA, and Releases
 
-Runtime flags, JSON and environment configuration, watch mode, single-executable applications, and release policy.
+## Startup and environment controls
 
-## Contents
+- Since 23.0.0, the main entry point may be a file URL, for example
+  `node file:///absolute/path/app.mjs`.
+- In 23.0.0, `--no-experimental-global-customevent`,
+  `--no-experimental-fetch`, and `--no-experimental-global-webcrypto` are
+  removed because those globals are no longer optional experiments;
+  `--trace-atomics-wait` is also end-of-life.
+- In 23.4.0, `--experimental-default-type` is removed. Startup commands can no
+  longer use it to override the module type.
+- Since 23.5.0, `require(ESM)` warnings are emitted only when
+  `--trace-require-module` is requested.
+- Since 23.7.0, `--disable-sigusr1` prevents creation of the SIGUSR1 signal I/O
+  thread and therefore prevents signal-triggered inspector activation.
+- Since 24.0.0, use `--permission`; `--experimental-permission` is removed.
+- Since 24.4.0, `--watch-kill-signal` selects the signal used to stop a process
+  for a watch restart. An empty `NO_COLOR` value is treated as absent, so use a
+  non-empty value to suppress color.
+- Since 24.6.0, `--max-old-space-size` accepts a percentage as well as a fixed
+  MiB value. Since 25.9.0, `--max-heap-size` limits the entire V8 heap rather
+  than only old space.
+- In 26.0.0, `--experimental-transform-types` is removed.
+- Since 24.14.0, `node --print` emits complete long strings rather than
+  truncating them.
 
-- [JSON, environment, and watch configuration](#json-environment-and-watch-configuration)
-- [Single-executable applications](#single-executable-applications)
-- [Runtime flags and options](#runtime-flags-and-options)
-- [Release lines and distribution](#release-lines-and-distribution)
+## JSON configuration
 
-## JSON, environment, and watch configuration
+- In 23.10.0, CLI options can come from the `nodeOptions` object of a JSON
+  configuration file. `--experimental-default-config-file` reads
+  `node.config.json`; `--experimental-config-file=<path>` selects another
+  file. Node does not sanitize or validate configuration contents, so trust the
+  selected file.
+- In 24.2.0, experimental JSON configuration supports namespaced options.
+- In 25.1.0, configuration supports a separate `watch` namespace.
+- In 25.4.0, configuration supports Permission Model and test settings. The
+  test namespace is `test`, not `testRunner`, and declaring a namespace
+  implicitly enables its associated mode.
+- In 24.19.0, an empty file selected by `--experimental-config-file` is
+  accepted and represents no overrides.
 
-### Experimental JSON configuration files (since 23.10.0)
+## Stability promotions
 
-Node CLI options can now be placed under `nodeOptions` in a trusted JSON file. Load an explicit file with `--experimental-config-file=path`, or use `--experimental-default-config-file` to load `node.config.json`; Node does not sanitize or validate the file.
+- In 24.10.0, built-in `.env` file support is stable.
+- In 24.13.0, the 24.13.1 release makes `--heapsnapshot-near-heap-limit`,
+  `--build-snapshot`, `--build-snapshot-config`, `crypto.hash()`, and
+  `v8.queryObjects()` stable. Synchronous `module.registerHooks()` is release
+  candidate, while dedicated-thread `module.register()` is active development.
 
-```json
-{
-  "$schema": "https://nodejs.org/dist/v23.10.0/docs/node-config-schema.json",
-  "nodeOptions": {
-    "test-coverage-lines": 80,
-    "test-coverage-branches": 60
-  }
-}
-```
+## Watch mode
 
-```console
-node --experimental-config-file=node.config.json --test --experimental-test-coverage
-```
+- In 23.7.0, watch-mode restarts reload the file passed through
+  `--env-file-if-exists`, so edits are reflected after restarting.
+- In 24.13.0, the 24.13.1 correction makes watch mode restart after ESM syntax
+  errors.
+- In 25.5.0, `fs.watch()` adds `ignore` for excluding selected paths before
+  event delivery.
+- In 24.19.0, normal watch output identifies the changed file that triggered a
+  restart.
 
-### Multiple environment files in watch mode (since 25.2.0)
+## Single executable applications
 
-Watch mode now handles multiple environment files correctly across restarts.
+- In 24.7.0, SEA configuration accepts `execArgv` for baked-in Node execution
+  arguments and `execArgvExtension` for runtime additions. Extension mode is
+  `"none"`, `"cli"` for a `--node-options` argument, or `"env"` for
+  `NODE_OPTIONS`; `"env"` is the default.
+- In 24.8.0, single executables accept inspector flags such as `--inspect` and
+  `--inspect-brk`.
+- In 25.5.0, `node --build-sea <config>` directly builds an SEA and replaces
+  the previous copy, preparation-blob, and `postject` sequence. The older
+  `--experimental-sea-config` injection workflow remains supported for now.
+- In 25.9.0, an SEA whose entry point is ESM can generate and use a code cache
+  by setting `useCodeCache: true`.
+- In 24.18.0, SEA support explicitly excludes `darwin-x64`; target another
+  supported platform or architecture.
+- In 26.5.0, Tier 2 macOS x64 support is due to end, so build and CI plans
+  should avoid depending on that tier.
 
-### Namespaced configuration options (since 24.2.0)
+## Release verification and lifecycle
 
-The experimental JSON configuration-file parser now accepts namespace-owned options. Config generators should follow the schema for the matching Node version rather than assuming that every supported setting is a flat ordinary Node option.
+- The 23.11.1 security release fixes CVE-2025-23166 in asynchronous-crypto
+  error handling. Upgrade deployments running 23.11.0.
+- The 24.4.1 security release fixes CVE-2025-27209, a V8 RapidHash HashDoS, and
+  CVE-2025-27210, a Windows reserved-device-name bypass in
+  `path.normalize()`. Upgrade deployments running 24.4.0.
+- Node.js 24.11.0 starts the Krypton LTS line, with updates through the end of
+  April 2028. Other than LTS metadata such as `process.release`, it is
+  unchanged from 24.10.0.
+- Node.js 24.13.1 includes Permission Model, TLS, async-hooks, and Buffer
+  security fixes described in the relevant topic references. Affected
+  deployments should upgrade instead of attempting application workarounds.
+- The 24.14.1 release hardens WebCrypto HMAC and KMAC comparison, HTTP/2
+  flow-control errors, URL handling, and array-index hash collisions. It also
+  changes `headersDistinct` and `trailersDistinct` to null-prototype objects
+  and adds missing filesystem permission checks; use `Object.hasOwn()` for the
+  header collections and grant required filesystem access.
+- In 26.5.0, future releases may use Stewart X Addison's Ed25519 release key.
+  Verification keyrings need fingerprint
+  `655F3B5C1FB3FA8D1A0CA6BDE4A7D232B936D2FD`.
 
-### Permission and test configuration namespaces (since 25.4.0)
+## Release cadence
 
-JSON configuration files now support `permission` and `test` namespaces. Rename the former `testRunner` namespace to `test`; a configured namespace is implicitly enabled.
-
-### Stable `.env` file support (since 24.10.0)
-
-Node's built-in `.env` file support is now stable rather than experimental.
-
-### Watch configuration namespace (since 25.1.0)
-
-Node's JSON configuration files now support a watch namespace, allowing watch-mode settings to be grouped in their own configuration section.
-
-### Watch-mode environment reloads (since 23.7.0)
-
-When `--watch` is combined with `--env-file-if-exists`, process restarts now reload the environment file, so edits take effect on the next restart.
-
-### Watch-mode restart signals (since 24.4.0)
-
-`--watch-kill-signal` selects the signal used to stop the running process before a watch-mode restart; for example, `node --watch --watch-kill-signal=SIGINT app.js`.
-
-
-## Single-executable applications
-
-### Direct single-executable builds (since 25.5.0)
-
-`node --build-sea sea-config.json` now performs SEA preparation and binary generation in one step, writing the final executable named by the configuration's `output` field. The older `--experimental-sea-config` and postject-based workflow remains supported for now.
-
-```json
-{ "main": "hello.js", "output": "sea" }
-```
-
-### ESM code caches in single-executable applications (since 25.9.0)
-
-SEA code caching now supports an ES module entry point, so `useCodeCache` can be enabled for an `.mjs` main.
-
-```json
-{ "main": "app.mjs", "output": "app", "useCodeCache": true }
-```
-
-### Execution arguments in single-executable applications (since 24.7.0)
-
-SEA configuration accepts `execArgv` for baked-in Node arguments and `execArgvExtension` to control runtime additions: `"none"` rejects them, `"cli"` accepts the special `--node-options` flag, and the default `"env"` reads `NODE_OPTIONS`.
-
-```json
-{
-  "main": "./app.js",
-  "output": "./sea-prep.blob",
-  "execArgv": ["--no-warnings"],
-  "execArgvExtension": "cli"
-}
-```
-
-```console
-sea --node-options="--max-old-space-size=4096" user-arg
-```
-
-### SEA built-in warning suppression (since 23.9.0)
-
-A single-executable application built with `disableExperimentalSEAWarning: true` now also suppresses its built-in experimental warning.
-
-
-## Runtime flags and options
-
-### Percentage-based old-space limits (since 24.6.0)
-
-`--max-old-space-size` now accepts a percentage as well as an absolute size.
-
-```console
-node --max-old-space-size=75% app.js
-```
-
-### Removed CLI opt-outs (since 23.0.0)
-
-The `--no-experimental-fetch`, `--no-experimental-global-webcrypto`, and `--no-experimental-global-customevent` flags have been removed, so those globals can no longer be disabled with these switches. The deprecated `--trace-atomics-wait` flag also reached end-of-life.
-
-### Removed experimental default-type flag (since 23.4.0)
-
-The `--experimental-default-type` CLI flag has been removed. Declare module type explicitly with package metadata or `.mjs` and `.cjs` extensions instead of relying on that override.
-
-
-## Release lines and distribution
-
-### Alpha channel (release-schedule)
-
-Each upcoming line now has an October-through-March Alpha phase for compatibility testing. Alpha builds use semver prerelease versions such as `27.0.0-alpha.1`; semver-major changes and API churn are allowed, the cadence is flexible, and they are not for production.
-
-Unlike automated, untested nightlies from `main`, Alpha releases are selected, signed, tagged, and tested with CITGM, and may omit changes present on `main`. Library authors should add Alphas to CI early—especially if they otherwise test only LTS—so breaking changes can be reported before that line reaches users.
-
-### Annual all-LTS release cycle (release-schedule)
-
-Starting with 27.x, Node.js moves from two majors per year to one Current release each April, and every major becomes LTS in October; the odd/even LTS distinction is gone. Version numbers align with the year of the initial Current release (`27.0.0` in 2027, `28.0.0` in 2028), and each line has six months as Current followed by 30 months of LTS, reaching EOL 36 months after its Current release.
-
-Node.js 26 is the final old-model line, entering LTS in October 2026, maintenance in October 2027, and EOL in April 2029. Node.js 27 is the first new-model line: Alpha starts in October 2026, `27.0.0` ships in April 2027, LTS begins in October 2027, and EOL is April 2030.
-
-### Bundled package tooling (since 24.0.0)
-
-Node.js 24 ships with npm 11. Corepack is still documented as being removed from the Node.js distribution in version 25 and later, so deployments that rely on it should arrange a separate installation before that upgrade.
-
-### Node.js 24 enters LTS (since 24.11.0)
-
-Node.js 24.11.0 starts the "Krypton" LTS line, which receives updates through the end of April 2028. Apart from LTS metadata it is unchanged from 24.10.0; runtime detection can use `process.release.lts`, whose value is `'Krypton'` for this line.
-
-### Release signing key (since 26.5.0)
-
-Future Node.js releases may be signed with Stewart X Addison's Ed25519 release key, fingerprint `655F3B5C1FB3FA8D1A0CA6BDE4A7D232B936D2FD`; release-verification keyrings need this key.
+- Under the release-schedule announced on 2026-07-28, 27.x starts a one-major-
+  per-year cadence and every release line proceeds to LTS. A line spends six
+  months in Alpha from October through March, six months as Current from April
+  through October, and 30 months in LTS.
+- Node.js 26 is the final line under the earlier model. Node.js 27 begins Alpha
+  in October 2026, releases 27.0.0 in April 2027, enters LTS in October 2027,
+  and reaches end-of-life in April 2030.
+- Alpha releases may contain semver-major changes and change APIs between
+  releases. Unlike automated, untested nightlies from `main`, they are signed,
+  tagged, and CITGM-tested, may intentionally omit commits from `main`, and are
+  intended for early library and CI compatibility testing rather than
+  production.

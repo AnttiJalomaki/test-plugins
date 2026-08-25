@@ -10,85 +10,110 @@ metadata:
 
 # Turborepo Knowledge Patch
 
-Inspect the repository's `package.json`, lockfile, and installed `turbo` version
-before changing configuration or commands. Apply version-attributed guidance only
-when the installed version includes that behavior. Prefer the repository's code,
-configuration, and test results when they disagree with this guide.
+Load this skill when configuring, migrating, debugging, or operating a
+Turborepo repository. Check the repository's installed `turbo` version before
+applying version-sensitive guidance, and prefer its manifest, lockfile,
+configuration, and observed behavior when they disagree with general advice.
 
-## Reference index
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [configuration-and-inputs.md](references/configuration-and-inputs.md) | Local schemas, JSONC, environment handling, inheritance, task descriptions, Future Flags, and structured inputs |
-| [execution-and-caching.md](references/execution-and-caching.md) | Sidecars, continuation, Watch Mode, package-manager invalidation, pruning, worktree caches, shutdown, and eviction |
-| [queries-observability-and-ui.md](references/queries-observability-and-ui.md) | Stable queries, affected selection, graph tools, terminal UI, structured logs, OpenTelemetry, and profiling |
-| [boundaries-and-linting.md](references/boundaries-and-linting.md) | Package-boundary checks, cycle diagnostics, ESLint Flat Config, and Biome environment linting |
-| [ecosystem-and-migrations.md](references/ecosystem-and-migrations.md) | Microfrontends, documentation tooling, migration deprecations, catalogs, Cargo workspaces, and agent guidance |
+| [Package Boundaries and Environment Linting](references/boundaries-and-linting.md) | Boundary analysis, cycles, ESLint Flat Config, and Biome environment checks |
+| [Configuration and Task Inputs](references/configuration-and-inputs.md) | Schemas, JSONC, inheritance, root globs, Future Flags, and deferred hashes |
+| [Ecosystem, Documentation, and Migrations](references/ecosystem-and-migrations.md) | Package managers, documentation, migration tooling, Cargo, Termux, and uv |
+| [Execution and Caching](references/execution-and-caching.md) | Sidecars, failure handling, watch mode, pruning, affected scopes, cache policy, and shutdown |
+| [Queries, Observability, and Terminal UI](references/queries-observability-and-ui.md) | Repository queries, devtools, structured logs, metrics, profiles, and terminal controls |
 
-## Apply this patch
+## Start With Breaking Changes and Deprecations
 
-1. Determine the installed Turborepo and package-manager versions.
-2. Read the reference matching the task before editing commands or configuration.
-3. Check inline version markers before relying on newer syntax or behavior.
-4. Treat Future Flags and experimental interfaces as opt-in behavior.
-5. Validate changes with a dry run, query, or focused task execution.
+### Replace Deprecated Invocation Forms
 
-## Breaking changes and deprecations
+When preparing for the next major release, migrate these interfaces:
 
-### Replace daemon controls
-
-Do not design automation around the Turborepo daemon. `turbo run` and
-`turbo watch` execute without it. Remove these deprecated controls when
-migrating configuration or scripts:
-
-- `TURBO_DAEMON`
-- `--daemon`
-- `--no-daemon`
-- the `daemon` configuration key
-
-### Replace migration-warning interfaces
-
-Prefer current equivalents when touching commands that still warn:
-
-| Older interface | Current form |
+| Deprecated | Replacement |
 | --- | --- |
-| `--parallel` | Express coexistence with task-level `persistent` and `with` |
+| `turbo-ignore` | `turbo query affected` |
+| `--parallel` | Task-level `persistent` and `with` |
 | `--no-cache` | `--cache=local:r,remote:r` |
 | `TURBO_REMOTE_ONLY` or `--remote-only` | `--cache=remote:rw` |
 | `TURBO_REMOTE_CACHE_READ_ONLY` or `--remote-cache-read-only` | `--cache=local:rw,remote:r` |
+| Raster/PDF `--graph` output | `.svg`, `.html`, `.mermaid`, or `.dot` |
+| JSON `--graph` output | `turbo query` |
 | `turbo prune --scope web` | `turbo prune web` |
-| `.png`, `.jpg`, or `.pdf` graph output | `.svg`, `.html`, `.mermaid`, or `.dot` |
-| `.json` graph output | `turbo query` |
-| `turbo-ignore` | `turbo query affected` |
+| `turbo scan` | Remove it; there is no replacement |
 
-Treat `turbo scan` as obsolete; it has no replacement.
+The daemon no longer participates in `turbo run` or `turbo watch`. Remove
+`TURBO_DAEMON`, `--daemon`, `--no-daemon`, and the `daemon` configuration key.
 
-### Reason about task cycles, not package cycles
+### Treat Package and Task Cycles Separately
 
-Do not reject a repository merely because its Package Graph contains a cycle.
-Validate the Task Graph. A task without cyclic task dependencies can run, while
-a dependency such as `"dependsOn": ["^build"]` can still form an invalid cycle.
+A cycle in the Package Graph does not automatically stop execution. Turborepo
+validates the Task Graph, so a cyclic package relationship is usable when the
+selected tasks do not create cyclic task dependencies. A recursive dependency
+such as `build.dependsOn: ["^build"]` can still fail.
 
-### Adopt 3.0 behavior selectively
+Use `turbo boundaries` to detect circular package dependencies and invalid
+imports. When a cycle error reports alternative edge-removal sets, removing
+every edge in any one complete set breaks that cycle.
 
-Enable each `futureFlags` entry independently and expect it to change the global
-hash. Read the configuration and execution references before enabling:
+## Configure Repositories Safely
 
-- `globalConfiguration`
-- `affectedUsingTaskInputs`
-- `watchUsingTaskInputs`
-- `filterUsingTasks`
-- `pruneIncludesGlobalFiles`
-- `errorsOnlyShowHash`
-- `longerSignatureKey`
-- `experimentalObservability`
+### Use the Installed Schema
 
-## Task orchestration quick reference
+Point root configuration at the package's local schema so editor validation
+matches the installed CLI:
 
-### Run persistent sidecars
+```json
+{
+  "$schema": "./node_modules/turbo/schema.json"
+}
+```
 
-Use `with` when long-running tasks must coexist. Do not use `dependsOn` for
-services that should start alongside one another.
+Adjust the relative path in package-level configuration. Both `turbo.jsonc`
+and comments are supported, and `turbo.json` itself accepts trailing commas.
+
+### Preserve Inherited Arrays Deliberately
+
+Package configuration can extend the root with `"//"` and another workspace
+package by name. Local arrays replace inherited arrays unless they contain
+`$TURBO_EXTENDS$`:
+
+```json
+{
+  "extends": ["//", "web"],
+  "tasks": {
+    "build": {
+      "outputs": ["$TURBO_EXTENDS$", ".next/**"]
+    }
+  }
+}
+```
+
+### Anchor Inputs at the Workspace Root
+
+Use `$TURBO_ROOT$` instead of package-depth-dependent parent traversal:
+
+```json
+{
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_ROOT$/important-file.txt"]
+    }
+  }
+}
+```
+
+For generated files, structured `inputs` can postpone hashing until task
+dependencies complete. Choose `mode: "jit"` for files created upstream, or
+`mode: "dependencyOutputs"` to hash selected outputs from dependency tasks.
+See [Configuration and Task Inputs](references/configuration-and-inputs.md) for
+complete forms and cache implications.
+
+## Run Long-Running Work Correctly
+
+Use `with` when a persistent task must coexist with another long-running task;
+do not express coexistence as completion ordering:
 
 ```json
 {
@@ -102,108 +127,98 @@ services that should start alongside one another.
 }
 ```
 
-### Continue only through successful dependencies
-
-Keep unrelated work running after a failure while blocking dependents of failed
-tasks:
+To continue after failures without running dependents of failed work, use:
 
 ```bash
 turbo run test --continue=dependencies-successful
 ```
 
-### Let long-running tasks clean up
+Turborepo forwards `SIGINT` and `SIGTERM` to tasks and waits for cleanup. A
+second `Ctrl+C` forces immediate termination.
 
-On `SIGINT` or `SIGTERM`, allow Turborepo to forward the signal and wait for task
-cleanup handlers. Use a second `Ctrl+C` only when an immediate forced exit is
-required.
+## Control Cache Scope and Invalidation
 
-## Configuration and hashing quick reference
+### Share and Bound the Local Cache
 
-### Extend arrays instead of replacing them
-
-Use `$TURBO_EXTENDS$` to retain inherited values in a package configuration.
-Without it, a local array replaces the inherited array.
+Linked Git worktrees share their local Turborepo cache automatically. To cap
+disk use, configure age and size eviction:
 
 ```json
-{
-  "extends": ["//"],
-  "tasks": {
-    "build": {
-      "outputs": ["$TURBO_EXTENDS$", ".next/**"]
-    }
-  }
-}
-```
-
-### Hash generated inputs after dependencies
-
-Use a structured input with `mode: "jit"` for files produced by an upstream
-task. Use `mode: "dependencyOutputs"` when a downstream task should hash selected
-outputs rather than upstream implementation details.
-
-```jsonc
-{
-  "tasks": {
-    "build": {
-      "dependsOn": ["codegen"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!src/generated/**",
-        { "mode": "jit", "globs": ["src/generated/**"] }
-      ]
-    },
-    "check-types": {
-      "dependsOn": ["^check-types"],
-      "inputs": [{
-        "mode": "dependencyOutputs",
-        "globs": ["dist/**/*.d.ts"],
-        "from": ["^check-types"]
-      }]
-    }
-  }
-}
-```
-
-## Scope and cache quick reference
-
-### Intersect affected work with filters
-
-Combine `--affected` and `--filter`; Turborepo selects only tasks or packages in
-both scopes. Use a negated filter to remove a package from the affected set.
-
-```bash
-turbo run build --affected --filter=web
-turbo run build --affected --filter=!docs
-turbo query ls --affected --filter=my-app
-```
-
-### Bound the local cache
-
-Opt into automatic eviction with top-level age and size limits:
-
-```jsonc
 {
   "cacheMaxAge": "7d",
   "cacheMaxSize": "10GB"
 }
 ```
 
-At the start of `turbo run`, eviction removes expired artifacts and then removes
-the oldest remaining artifacts needed to satisfy the size limit in a background
-thread.
+Eviction runs at the start of `turbo run`, removing expired artifacts before
+the oldest artifacts needed to meet the size cap.
 
-## Query and diagnostics quick reference
+### Refine Affected Work
 
-Use `turbo query` for stable, machine-readable repository inspection:
+Combine `--affected` and `--filter` to take their intersection, including
+negative filters:
 
 ```bash
-turbo query
-turbo query --schema
+turbo run build --affected --filter=web
+turbo run build --affected --filter=!docs
+```
+
+Future Flags can make affected selection, watch reruns, filters, and pruning
+respect task inputs or global dependencies more precisely. Because each flag
+changes behavior and contributes to the global hash, enable them independently
+and review the full flag list before migration.
+
+## Query Before Guessing
+
+`turbo query` exposes stable repository data. With no query it opens GraphiQL;
+it accepts inline GraphQL, `--file`, and `--schema`. Use the `affected`
+shorthand for machine-readable changed tasks or packages and `ls` for package
+details:
+
+```bash
 turbo query affected --tasks build
 turbo query affected --packages
 turbo query ls web --output=json
+turbo query ls --affected --filter='./apps/*'
 ```
 
-Run `turbo devtools` when live Package Graph and Task Graph views will make direct
-and transitive relationships or cache misses easier to explain. For automation,
-prefer query output, dry runs, and structured logs over scraping terminal output.
+Use `turbo devtools` for hot-reloading Package Graph and Task Graph views. JSON
+from `turbo ls` contains dependents, while dry-run and summary data expose
+`with` relationships.
+
+## Observe Runs Without Losing Terminal Output
+
+`--json` emits NDJSON log objects. `--log-file` keeps normal terminal output
+and writes structured logs, either to the default timestamped path or a custom
+one:
+
+```bash
+turbo run lint --json --log-file=logs.json
+```
+
+OpenTelemetry metrics require the `experimentalObservability` Future Flag and
+an OTLP endpoint. Profiling flags no longer require a filename and produce a
+Markdown companion next to the trace:
+
+```bash
+turbo run build --profile
+```
+
+## Validate Environment Declarations
+
+For ESLint Flat Config, spread the shareable `eslint-config-turbo` array, or
+register `eslint-plugin-turbo` under `plugins.turbo` and enable
+`turbo/no-undeclared-env-vars`. Biome can detect Turborepo repositories, but
+its `noUndeclaredEnvVars` rule must be explicitly enabled in the nursery group.
+
+Remember that `DISPLAY` passes through by default. Negated `passThroughEnv`
+entries can exclude built-ins and values inherited from
+`globalPassThroughEnv`; force mode takes precedence over other cache settings.
+
+## Check Ecosystem-Specific Behavior
+
+Lockfile parsing is dependency-aware for Bun and Yarn catalogs. Native
+workspace integration also covers Cargo and uv repositories, but support
+details differ across task inference, formatting, watching, hashing, and
+pruning. Consult [Ecosystem, Documentation, and Migrations](references/ecosystem-and-migrations.md)
+before assuming JavaScript-only behavior.

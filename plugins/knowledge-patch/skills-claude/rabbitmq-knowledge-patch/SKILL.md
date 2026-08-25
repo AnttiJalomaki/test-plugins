@@ -8,228 +8,244 @@ metadata:
 ---
 
 
-# RabbitMQ Knowledge Patch
+# RabbitMQ Compatibility Guidance
 
-Use this skill when designing, upgrading, configuring, operating, or
-troubleshooting RabbitMQ deployments whose behavior may depend on recent
-broker, plugin, protocol, CLI, or observability changes.
+Load this skill for RabbitMQ application, plugin, operations, security,
+clustering, protocol, or upgrade work. Inspect manifests, configuration,
+plugins, feature flags, and installed RabbitMQ and Erlang versions first.
 
-## How to Use This Skill
+Treat a rolling mixed-version cluster as temporary upgrade state. Prefer the
+project's actual configuration, code, tests, and observed broker behavior when
+they disagree with compatibility guidance.
 
-1. Identify the deployed RabbitMQ series and patch level.
-2. Read the upgrade and removal guidance before changing a cluster.
-3. Match the task to the reference index below.
-4. Prefer the repository's manifests, configuration, tests, and observed
-   runtime behavior when they differ from general guidance.
-5. Apply version-qualified notes only when the deployed version includes the
-   stated change.
-6. Validate commands on a non-production node before automating them.
+## Reference index
 
-## Reference Index
+| Reference | Read for |
+| --- | --- |
+| [Configuration, Authentication, and Security](references/configuration-auth-and-security.md) | Authentication backends, OAuth/OIDC, TLS, authorization, credentials, and management HTTP hardening |
+| [Operations, Observability, and Tooling](references/operations-observability-and-tooling.md) | Health checks, diagnostics, metrics, logs, resource controls, management API behavior, and tools |
+| [Protocols, Clustering, and Federation](references/protocols-clustering-and-federation.md) | Cluster discovery, replication networking, frame limits, WebSockets, MQTT, federation, and Shovels |
+| [Queues, Streams, and Messaging](references/queues-streams-and-messaging.md) | Queue and exchange declarations, quorum behavior, Streams, AMQP outcomes, filtering, and commercial features |
+| [Upgrades and Deprecations](references/upgrades-and-deprecations.md) | Upgrade paths, mixed-version rules, Khepri migration, feature flags, removed settings, and runtime compatibility |
 
-| Reference | Topics |
-|---|---|
-| [upgrades-and-deprecations.md](references/upgrades-and-deprecations.md) | Direct and rolling upgrade paths, Khepri migration, feature flags, removed settings, deprecated commands and queue forms |
-| [configuration-auth-and-security.md](references/configuration-auth-and-security.md) | TLS and CA behavior, authentication backends, OAuth/OIDC, LDAP, protected resources, limits, permissions |
-| [protocols-clustering-and-federation.md](references/protocols-clustering-and-federation.md) | AMQP, MQTT, STOMP, WebSocket, peer discovery, federation, shovels, message interception |
-| [queues-streams-and-messaging.md](references/queues-streams-and-messaging.md) | Queue types, quorum semantics, stream filters, delayed delivery, Single Active Consumer, commercial queue and stream features |
-| [operations-observability-and-tooling.md](references/operations-observability-and-tooling.md) | Health checks, diagnostics, HTTP API behavior, metrics, logging, alarms, `rabbitmqadmin` |
+## Breaking changes and upgrade gates
 
-## Breaking Changes First
+### Enter 4.3 through 4.2 and Khepri
 
-### Plan upgrade hops explicitly
+Upgrade a 4.3.x cluster only from 4.2.x after enabling all stable feature
+flags. Khepri is mandatory. Enable `khepri_db` before upgrading; otherwise the
+first 4.3 node migrates Mnesia metadata while booting.
 
-- Upgrade to 4.1 directly from 4.0.x or 3.13.x only after enabling all stable
-  feature flags.
-- A 3.13 cluster already using Khepri cannot be upgraded in place to 4.x;
-  migrate it with a blue-green deployment.
-- Upgrade to 4.2 directly from 4.1.x, 4.0.x, or 3.13.x.
-- Upgrade to 4.3 only from 4.2.x, with all stable feature flags enabled.
-- Khepri is mandatory in 4.3. Enable `khepri_db` before the upgrade when
-  possible; otherwise the first 4.3 node migrates metadata during boot.
-- Mixed-version clusters are temporary rolling-upgrade states, not steady
-  operating modes. Finish them within a few hours.
+For a cluster that used AMQP 1.0 on 3.13.x, complete a rolling update after
+enabling `rabbitmq_4.0.0` and before moving to 4.3.0.
 
-Read [upgrades-and-deprecations.md](references/upgrades-and-deprecations.md)
-before changing cluster membership or metadata-store state.
+### Keep mixed versions short-lived
 
-### Remove or replace obsolete behavior
+Use mixed-version clusters only for rolling upgrades, normally for no more
+than a few hours. New-line features remain unavailable until all nodes finish.
 
-- Do not rely on Mnesia partition-handling strategies in 4.3; their accepted
-  configuration keys have no effect.
-- Non-durable, non-exclusive classic queues are rejected by default in 4.3.
-  Prefer durable queues, exclusive transient queues, or durable queues with a
-  TTL.
-- Classic queue v1 declarations fail in 4.3.
-- `rabbitmqctl force_reset` is deprecated because it is incompatible with
-  Khepri.
-- The legacy all-in-one HTTP health endpoint is a no-op. Use focused health
-  checks.
-- `rabbitmq-streams set_stream_retention_policy` is a no-op. Configure stream
-  retention with a policy.
-- The management plugin no longer serves the `rabbitmqadmin` v1 download
-  endpoint in 4.3. Use v2.
-
-### Recheck client assumptions
-
-- An AMQP 1.0 message with no header is non-durable. Send a header with
-  `durable=true` when persistence is required.
-- AMQP 0-9-1 clients must use a pre-authentication `frame_max` of at least
-  8192 bytes.
-- MQTT's default maximum packet size is 16 MiB and must not exceed the broker's
-  `max_message_size`.
-- `tcp_listen_options.buffer` is ignored because AMQP user-space TCP buffers
-  are auto-tuned; kernel `recbuf` and `sndbuf` remain effective.
-
-## High-Value Configuration
-
-### Metadata and cluster formation
-
-```ini
-cluster_formation.discovery_retry_limit = infinity
-cluster_formation.registration.enabled = false
-```
-
-Use infinite discovery retries only when continuous retry is operationally
-appropriate. Disable Consul service registration when another system owns it
-but retain Consul peer discovery.
-
-Existing Mnesia installations remain on Mnesia after upgrading to 4.2 even
-though Khepri is the default for new deployments. Migration is explicit until
-Khepri becomes mandatory for 4.3.
-
-### Authentication and management API
-
-Messaging and HTTP API connections can use different authentication chains:
-
-```ini
-auth_backends.1 = ldap
-auth_backends.2 = internal
-http_dispatch.auth_backends.1 = http
-management.require_auth_for_api_reference = true
-```
-
-Known authentication backends supplied by disabled plugins now cause startup
-to fail. Treat this as configuration validation, not a recoverable client
-authentication error.
-
-Starting in 4.1.4, only `default_password` and `ssl_options.password` values
-prefixed with `encrypted:` are interpreted as encrypted.
-
-### Cluster and exchange limits
-
-```ini
-cluster_exchange_limit = 200
-exchange_types.local_random.enabled = false
-```
-
-`cluster_exchange_limit` includes protocol-standard predeclared exchanges and
-must be identical on every node. Disable local-random exchanges when the load
-balancer cannot preserve locality.
-
-### Federation and MQTT behavior
-
-```ini
-federation.exchanges.connection_close_timeout = 3000
-federation.queues.connection_close_timeout = 3000
-mqtt.disconnect_on_unauthorized = false
-```
-
-Federation close timeouts are milliseconds and cannot exceed 5000. The MQTT
-authorization setting defaults to `true`; setting it to `false` keeps the
-connection open and returns the protocol-level error.
-
-## High-Value Queue and Stream Features
-
-### Quorum queue delayed retries
-
-Configure `x-delayed-retry-type` as `all`, `returned`, `failed`, or `disabled`,
-plus `x-delayed-retry-min` and `x-delayed-retry-max` in milliseconds. Policy
-keys omit the `x-` prefix.
-
-The computed delay is:
-
-```text
-min(delayed-retry-min * delivery-count, delayed-retry-max)
-```
-
-An AMQP 1.0 modified outcome can override the delay per message with the
-Unix-millisecond `x-opt-delivery-time` annotation.
-
-### Strict priorities
-
-Quorum queues support 32 strict priority levels in 4.3. Every
-higher-priority message is delivered before lower-priority messages; do not
-expect the earlier two-level 2:1 interleaving behavior.
-
-### Stream filtering
-
-- AMQP 1.0 property and application-property filters preserve order while
-  selecting different stream subsets.
-- A filter can inspect at most 16 properties.
-- Broker-side SQL filters can inspect standard fields and application
-  properties; combine them with a Bloom-filter value to skip chunks first.
-
-### Consumer timeouts
-
-Quorum and Tanzu JMS queues evaluate consumer timeouts. The precedence is:
-
-1. Consumer argument `x-consumer-timeout`
-2. Queue argument `x-consumer-timeout`
-3. Policy key `consumer-timeout`
-4. Global `consumer_timeout`
-
-The global default remains 1,800,000 ms. Classic queues and streams do not
-evaluate this timeout.
-
-## Operational Checks
-
-Before stopping a node:
+Before stopping a node, protect quorum:
 
 ```shell
 rabbitmq-diagnostics check_if_node_is_quorum_critical
 rabbitmq-upgrade await_online_quorum_plus_one
 ```
 
-To distinguish metadata-store states:
+Do not use grow-then-shrink for a cluster-wide upgrade; it changes replica
+identities and can trigger unnecessary data transfer.
 
-```shell
-rabbitmq-diagnostics check_if_metadata_store_is_initialized
-rabbitmq-diagnostics check_if_metadata_store_is_initialized_with_data
+### Replace removed queue and cluster behavior
+
+- CQv1 declarations fail when `x-queue-mode` has any value or
+  `x-queue-version` is `1`. Convert queues to CQv2 on 4.2.x first.
+- Non-durable, non-exclusive classic queues are rejected by default in 4.3.
+  Prefer durable queues, exclusive transient queues, or durable queues with a
+  queue TTL.
+- Mnesia partition strategies `pause_if_all_down`, `pause_minority`, and
+  `autoheal` are removed. Related accepted settings are no-ops and should be
+  deleted.
+- `ram_node_type` is removed. `amqp_address_v1`, `amqp_filter_set_bug`,
+  `global_qos`, and `queue_master_locator` are denied by default.
+
+Temporarily permit the deprecated queue combination only as a migration aid:
+
+```ini
+deprecated_features.permit.transient_nonexcl_queues = true
 ```
 
-To find matching quorum queues without a leader:
+### Remove obsolete tools and settings
 
-```shell
-rabbitmq-diagnostics check_for_quorum_queues_without_an_elected_leader \
-  --vhost "vh-1" "^naming-pattern"
+- `rabbitmqctl force_reset` is deprecated and incompatible with Khepri.
+- The management plugin no longer offers the `rabbitmqadmin` v1 download;
+  prefer the standalone v2 binary.
+- Remove obsolete etcd TLS `fail_if_no_peer_cert`, `dh`, and `dhfile`
+  settings.
+- Remove ineffective `*.cacerts` settings; `cacertfile` remains supported.
+- AMQP listeners auto-tune their user-space TCP buffer, so
+  `tcp_listen_options.buffer` is ignored.
+
+### Match the runtime
+
+RabbitMQ 4.3.x requires Erlang/OTP 27.0 or later and rejects older releases.
+
+## Queue and Stream quick reference
+
+### Use strict quorum-queue priorities
+
+Quorum queues have 32 strict priority levels. Higher-priority messages are
+fully drained before lower-priority messages, replacing the older two-level
+2:1 interleaving behavior.
+
+### Configure native delayed retries
+
+For quorum queues, configure `x-delayed-retry-type` as `all`, `returned`,
+`failed`, or `disabled`, plus `x-delayed-retry-min` and
+`x-delayed-retry-max`. Policy keys omit the `x-` prefix.
+
+```text
+delay = min(delayed-retry-min * delivery-count, delayed-retry-max)
 ```
 
-Use `--across-all-vhosts ".*"` cautiously on clusters with many quorum queues.
+AMQP 1.0 can supply per-message Unix-millisecond `x-opt-delivery-time`.
 
-To compact matching quorum queue logs:
+### Distinguish returns from failed deliveries
 
-```shell
-rabbitmq-queues force_checkpoint \
-  --vhost-pattern "vhost-pattern" \
-  --queue-pattern "queue-pattern"
+Quorum queues increment `acquired-count` for every requeue but increment
+`delivery-count` only for failed attempts. Poison-message handling uses
+`delivery-count`, so releases, non-failed modifications, `basic.nack`,
+consumer timeouts, and suspect consumer nodes need not consume the limit.
+
+### Apply consumer timeouts deliberately
+
+Quorum and Tanzu JMS queues enforce consumer timeouts; classic queues and
+Streams do not. Configuration precedence is:
+
+1. Consumer `x-consumer-timeout`
+2. Queue `x-consumer-timeout`
+3. Policy `consumer-timeout`
+4. Global `consumer_timeout`, default `1800000` ms
+
+Use `consumer_disconnected_timeout`, policy
+`consumer-disconnected-timeout`, or queue
+`x-consumer-disconnected-timeout` to change the 60-second default before a
+quorum queue returns messages from a disconnected consumer.
+
+### Filter Streams on the broker
+
+AMQP 1.0 property and application-property filters accept at most 16
+properties. SQL filtering can inspect standard fields and application
+properties after a Bloom-filter value skips irrelevant chunks.
+
+## Protocol and connection quick reference
+
+### Set current pre-authentication limits
+
+- AMQP 0-9-1 pre-authentication frames can be up to 8192 bytes; a client
+  `frame_max` override must not be lower.
+- Stream Protocol pre-open frames default to 8192 bytes; adjust
+  `stream.initial_frame_max` only when authentication needs more.
+- A Stream connection is limited to 256 publishers and 256 subscriptions.
+- `stream.max_uncompressed_sub_entry_batch_size` defaults to 64 MiB and must
+  match the publisher configuration.
+
+### Respect MQTT behavior
+
+The default maximum MQTT packet is 16 MiB and must not exceed
+`max_message_size`. MQTT 5 rejects invalid packet properties and
+`Receive Maximum = 0`; it returns `Quota exceeded` in `PUBACK` when a target
+queue is full.
+
+### Harden WebSocket listeners
+
+Web MQTT enforces `login_timeout`, bounds decompressed frames before and after
+`CONNECT`, and supports origin allowlists through `web_mqtt.allow_origins`.
+Web STOMP uses `web_stomp.allow_origins` and enforces accumulated frame size
+against `max_frame_size`.
+
+## Authentication and management quick reference
+
+### Separate HTTP API authentication
+
+Configure a distinct HTTP API backend chain when messaging protocols and the
+management API use different identity systems:
+
+```ini
+auth_backends.1 = ldap
+auth_backends.2 = internal
+http_dispatch.auth_backends.1 = http
 ```
 
-To estimate cluster message-size distribution:
+Use `rabbitmqctl clear_auth_backend_cache` for explicit invalidation. A
+configured backend from a known disabled plugin prevents startup.
 
-```shell
-rabbitmq-diagnostics message_size_stats
-```
+### Renew OAuth credentials safely
 
-## Verification Checklist
+AMQP 1.0 can replace JWTs without disconnecting, but missing the expiry closes
+the connection. Stream connections close immediately after failed renewal and
+recheck virtual-host access after success. Refreshed credentials also replace
+the connection's original user tags.
 
-- Confirm the exact broker, Erlang/OTP, plugin, and client versions.
-- Confirm all stable feature flags before each supported upgrade hop.
-- Check quorum-plus-one before node shutdown.
-- Confirm metadata-store readiness and intended Khepri state.
-- Search configuration for removed, ignored, or no-op settings.
-- Exercise AMQP durability, frame size, filter, and routing assumptions.
-- Exercise MQTT packet limits, authorization errors, and WebSocket origins.
-- Update dashboards for renamed or removed Ra metrics.
-- Validate authentication plugins and explicit OAuth provider settings.
-- Clear management UI browser state after an upgrade if stale assets fail.
+### Encrypt management UI credentials after rollout
+
+Set the same `management.credential_encryption_secret` on every node. Enable
+it only after the rolling upgrade, because older nodes reject the resulting
+AES-256-GCM `rmqe.` bearer tokens.
+
+### Protect management actions
+
+- Tag users `protected` to prevent HTTP API modification or deletion.
+- Require `policymaker` for federation link restarts and Shovel deletion.
+- Set `management.require_auth_for_api_reference = true` to protect `/api`.
+- Enable `auth_http.authorization_failure_disclosure` only when custom denial
+  reasons should be disclosed to AMQP clients.
+
+## Operations quick reference
+
+### Replace broad health checks
+
+The old all-in-one HTTP health check is a no-op. Use focused metadata-store,
+connection-limit, listener, boot-state, and maintenance-state checks.
+
+### Update Ra dashboards for 4.2 metrics
+
+The `rabbitmq_raft*` and `rabbitmq_detailed_raft*` families changed. Update the
+quorum-queue Raft Grafana dashboard and dependent alerts together.
+
+### Limit diagnostic overhead
+
+Use `log.summarize_process_state` and `log.error_logger_format_depth` to avoid
+large queue-member crash reports causing allocation spikes. On supported Unix
+systems, `RABBITMQ_MAX_OPEN_FILES` can raise a soft limit when the hard limit
+is already sufficient.
+
+### Keep resource alarms authoritative
+
+MQTT, STOMP, and Web MQTT stay blocked until every active memory and disk
+alarm clears. Direct AMQP 0-9-1 Shovel connections are also blocked by
+resource alarms.
+
+## Cluster and federation quick reference
+
+### Configure discovery intentionally
+
+Set `cluster_formation.registration.enabled = false` when Consul should
+discover peers but another system owns service registration. Use
+`cluster_formation.discovery_retry_limit = infinity` for unbounded discovery
+retries.
+
+Kubernetes discovery uses node index `0` as the initial seed without calling
+the Kubernetes API. AWS discovery can use IPv6 endpoints in IPv6-only
+environments.
+
+### Choose the Stream replication address family
+
+Select IPv4 or IPv6 for Stream replication in `rabbitmq.conf`; older
+deployments can use the Osiris `replica_ip_address_family` setting in
+`advanced.config`.
+
+### Choose the correct Shovel mode
+
+Use `local` only for consuming and publishing inside one cluster. It reuses
+internal AMQP 1.0 paths and cannot connect separate clusters. Use
+`src-consumer-name` for a stable source consumer identity and
+`src-delete-after-duration` for self-deleting dynamic Shovels.

@@ -1,16 +1,11 @@
 # cargo-leptos
 
-## Install a pinned prebuilt release
+## Install a pinned prebuilt CLI
 
-Releases provide ready-to-run archives for:
-
-- AArch64 and x86-64 macOS;
-- x86-64 Windows;
-- AArch64 and x86-64 Linux using either GNU or MUSL.
-
-Each archive has a SHA-256 checksum. Pin the desired release, use its shell or
-PowerShell installer, and verify the downloaded artifact rather than requiring
-a local Rust build of the CLI.
+`cargo-leptos` releases provide prebuilt binaries for Apple Silicon and Intel
+macOS, x64 Windows, and ARM64/x64 GNU and MUSL Linux. Each archive has a
+SHA-256 checksum. Prefer the release's shell or PowerShell installer for a
+pinned version over compiling the CLI locally.
 
 ```shell
 curl --proto '=https' --tlsv1.2 -LsSf \
@@ -22,12 +17,17 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/leptos-rs/cargo-leptos/releases/download/v0.3.7/cargo-leptos-installer.ps1 | iex"
 ```
 
-## Development and generated assets
+Pin the URL to the intended release and verify the downloaded archive against
+the published checksum before use.
 
-Hot reloading works on stable Rust (since 0.8.0); a nightly toolchain is not
-needed solely for that development loop.
+## Use stable Rust for hot reloading
 
-Features that emit lazy-loaded code require a matching `cargo-leptos` release.
-Lazy output can use file hashing. For stylesheet hashing, render
-`HashedStylesheet` with its corresponding props: `Stylesheet` no longer
-integrates automatically with CLI-generated hashed filenames (since 0.7.0).
+Development hot reloading works on stable Rust (since 0.8.0). Do not select a
+nightly toolchain solely to support the hot-reload loop.
+
+## Keep lazy loading support aligned
+
+The `#[lazy]` and `#[lazy_route]` facilities require a matching
+`cargo-leptos` release. Lazy output can use hashed filenames, so keep the CLI
+and application-side lazy-loading support compatible. See
+[Server functions and lazy loading](server-functions-and-lazy-loading.md).

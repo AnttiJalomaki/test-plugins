@@ -1,120 +1,112 @@
 # Migration, Security, and Deployment
 
-## Major-upgrade checklist
+## Major-version migration checklist (`3.0-migration`)
 
-### Flags promoted to normal behavior
+### Remove promoted feature gates
 
-For the 3.0 migration (`3.0-migration`), remove
-`promql-at-modifier`, `promql-negative-offset`,
-`new-service-discovery-manager`, `expand-external-labels`, and
-`no-default-scrape-port` from `--enable-feature`. External labels now expand
-`$var` and `${var}`; undefined variables become empty and `$$` is a literal
-dollar. Scrape target labels no longer gain ports derived from the scheme.
+Do not pass `promql-at-modifier`, `promql-negative-offset`,
+`new-service-discovery-manager`, `expand-external-labels`, or
+`no-default-scrape-port` in `--enable-feature`; those behaviors are default.
+External labels expand `$var` and `${var}`, undefined variables become empty,
+and `$$` escapes a dollar. Scrape target labels no longer gain ports inferred
+from their schemes.
 
-Use `--agent` in place of the `agent` feature flag and
-`--web.enable-remote-write-receiver` in place of `remote-write-receiver`.
-Automatic `GOMEMLIMIT` and `GOMAXPROCS` sizing is enabled; disable it only with
-`--no-auto-gomemlimit` or `--no-auto-gomaxprocs`.
+Replace the former `agent` and `remote-write-receiver` gates with `--agent` and
+`--web.enable-remote-write-receiver`. Automatic `GOMEMLIMIT` and `GOMAXPROCS`
+sizing is default; opt out with `--no-auto-gomemlimit` or
+`--no-auto-gomaxprocs`.
 
-### Removed commands, flags, and bundled files
+### Respect the TSDB downgrade floor
 
-The `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and
-`storage.tsdb.retention` startup flags are rejected (since 3.0.0). Example
-JavaScript and templates for the console feature are no longer bundled, so
-console deployments must mount or package their own files.
+The data format prepared in v2.55 means a v3 data directory is readable only
+by v2.55 or newer. Upgrade through v2.55 as a safety step. Downgrading below it
+requires abandoning the v3 persistent data.
 
-Alertmanager's v1 API configuration is unsupported. Run Alertmanager 0.16.0 or
-later and replace explicit `api_version: v1` with `api_version: v2`
-(`3.0-migration`).
+### Choose UTF-8 validation deliberately
 
-### Persistent-data downgrade floor
+Metric and label names accept UTF-8, so an upgrade can ingest formerly invalid
+names and change exposed names. Preserve the old validation globally or per
+scrape job with `metric_name_validation_scheme: legacy`; use `utf8` when the
+new behavior is intended.
 
-The TSDB format prepared in 2.55 makes 2.55 the lowest release that can open a
-data directory used by 3.x. Upgrade through 2.55 before the major jump. A
-downgrade below 2.55 requires abandoning that persistent data
-(`3.0-migration`). Experimental XOR2 and histogram start-timestamp block formats
-create stricter downgrade boundaries; see the storage reference.
+### Update logs and normalized labels
 
-### Log pipeline compatibility
+Logging uses `log/slog`, not the former `go-kit/log` shape. Parsers should
+accept `time`, `source`, and uppercase levels such as `level=INFO` rather than
+assuming `ts`, `caller`, and lowercase levels.
 
-Prometheus uses `log/slog` output rather than the earlier `go-kit/log` shape
-(`3.0-migration`). Update parsers that require `ts`, `caller`, or lowercase
-levels so they accept `time`, `source`, and values such as `level=INFO`.
+Classic histogram `le` and summary `quantile` label values are normalized to
+float-like strings across scrape protocols. Update exact matchers such as
+`le="1"` to `le="1.0"`; queries spanning the transition can still be uneven.
 
-## Security requirements
+### Require Alertmanager API v2
 
-### Required patch levels
+Alertmanager API v1 configuration is unsupported. Run Alertmanager 0.16.0 or
+later and replace explicit `api_version: v1` with `api_version: v2`.
 
-Deploy at least 3.11.3 on the 3.11 line (`3.11.0`). It fixes:
+## Removed and changed v3 assets (`3.0.0`)
 
-- AzureAD remote-write `client_secret` disclosure through `/-/config`
-  (CVE-2026-42151).
-- Failure to enforce the declared-length limit for Snappy remote-read requests
-  (CVE-2026-42154).
-- Stored XSS through metric or label values in current and old UIs
-  (CVE-2026-40179 and GHSA-fw8g-cg8f-9j28).
+Remove `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and
+`storage.tsdb.retention` from startup arguments because they are rejected.
+The bundled console JavaScript and templates are also gone; console users must
+supply their own files.
 
-STACKIT service-discovery secrets are no longer exposed in plaintext through
-`/-/config` in fixed 3.12 releases; STACKIT users should upgrade (`3.12.0`).
+## Container filesystem changes (`3.3.0`)
 
-Prometheus 3.13.0 updates `sanitize-html` for CVE-2026-44990, so UI-exposing
-deployments should use that release or later (`3.13.0`).
+The container image's `/prometheus` directory is writable, so workloads do not
+need a custom image solely to make the data directory writable.
 
-### Redirect credential stripping
+## Distroless deployment (`3.10.0`)
 
-HTTP clients strip authorization headers, basic and bearer credentials, OAuth2
-credentials, and configured headers when a redirect changes host (since
-3.13.0). This applies to scraping, remote read/write, alerting, and service
-discovery, closing CVE-2025-4673 and CVE-2023-45289. Do not design a cross-host
-redirect flow that depends on forwarding secrets.
-
-### Authentication additions
-
-OAuth2 HTTP clients can use the RFC 7523 section 3.1 JWT bearer grant (since
-3.8.0). SigV4 accepts `use_fips_sts_endpoint` for FIPS-compliant AWS STS
-endpoints (since 3.8.0) and an AWS `external_id` (since 3.11.0). Details specific
-to Azure remote write are in the remote-storage reference.
-
-## Containers and release artifacts
-
-### Writable data directory
-
-The container image's `/prometheus` directory is writable (since 3.3.0).
-
-### Busybox and distroless variants
-
-From 3.10.0, `-busybox` and `-distroless` image variants are published; the
-unsuffixed image is still busybox. Distroless runs as UID/GID 65532 and has no
-`VOLUME` declaration. Fix named-volume or bind-mount ownership before switching:
+Prometheus publishes `-busybox` and `-distroless` variants; the unsuffixed image
+remains the busybox variant. Distroless runs as UID/GID 65532 and declares no
+`VOLUME`. Adjust named-volume or bind-mount ownership before switching:
 
 ```text
 docker run --rm -v prometheus-data:/prometheus alpine chown -R 65532:65532 /prometheus
 docker run -v prometheus-data:/prometheus prom/prometheus:latest-distroless
 ```
 
-Images are also published through GitHub Container Registry (since 3.13.0).
-Third-party npm licenses are served by the binary at
-`/assets/third-party-licenses.txt`; tarballs and images no longer contain
-`npm_licenses.tar.bz2` (since 3.13.0).
+## Required 3.11 patch level (`3.11.0`)
 
-### Platform target
+Deploy at least 3.11.3 on the 3.11 line. It prevents AzureAD remote-write
+OAuth `client_secret` disclosure through `/-/config` (CVE-2026-42151), enforces
+the declared-length limit for Snappy remote-read requests (CVE-2026-42154), and
+closes stored-XSS paths involving metric or label values in current and old UIs
+(CVE-2026-40179 and GHSA-fw8g-cg8f-9j28).
 
-The `aix/ppc64` compilation target is supported (since 3.12.0).
+## Platform and credential fixes (`3.12.0`)
 
-## Runtime and shutdown compatibility
+STACKIT service-discovery secrets are no longer exposed in plaintext through
+`/-/config`; users of that discovery should upgrade to a fixed release.
+Prometheus also supports the `aix/ppc64` build target.
 
-Prometheus 3.9.1 fixes an Agent-mode startup crash present in 3.9.0 and restores
-scrape relabel `keep` and `drop`; use 3.9.1 when either path matters (`3.9.0`).
+## UI and redirect security (`3.13.0`)
 
-The `/-/ready` endpoint again returns `X-Prometheus-Stopping` while in the
-`NotReady` shutdown state (since 3.10.0). Shutdown-aware health checks may use
-that header.
+Prometheus 3.13.0 updates `sanitize-html` to fix CVE-2026-44990. Upgrade any
+deployment that exposes the UI.
 
-Concurrent Agent appends for one label set no longer create duplicate in-memory
-series or duplicate WAL records (since 3.12.0).
+HTTP clients strip authorization headers, basic and bearer credentials, OAuth2
+credentials, and configured headers when a redirect changes host. This applies
+to scraping, remote read and write, alerting, and service discovery and closes
+CVE-2025-4673 and CVE-2023-45289. Do not depend on cross-host credential
+forwarding.
 
-## Promtool HTTP configuration paths
+Relative paths inside the file supplied to `promtool --http.config.file` now
+resolve from that file's directory, not its parent. Fix layouts that relied on
+the former extra parent traversal.
 
-Relative paths inside the file supplied through `--http.config.file` resolve
-from that file's own directory (since 3.13.0), not from an extra parent
-directory. Adjust configurations that depended on the old traversal.
+Third-party npm licenses are served at `/assets/third-party-licenses.txt` from
+the binary. Tarballs and images no longer include `npm_licenses.tar.bz2`.
+Container images are also published through GitHub Container Registry.
+
+## Security and resilience follow-ups (`3.13.2-3.14.0`)
+
+Prometheus 3.13.2 updates `golang.org/x/text` to v0.39.0 for CVE-2026-56852 and
+`google.golang.org/grpc` to v1.82.1 for GHSA-hrxh-6v49-42gf. Use 3.13.2 or
+later when either advisory affects the deployment.
+
+The active query tracker is now preallocated, avoiding SIGBUS crashes when the
+data disk fills. Alerting and scrape managers also stop cleanly instead of
+spinning at 100% CPU during shutdown; the older alerting loop could postpone a
+graceful shutdown until an external timeout killed the process.

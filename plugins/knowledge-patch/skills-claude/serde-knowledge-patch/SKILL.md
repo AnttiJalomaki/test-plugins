@@ -10,42 +10,65 @@ metadata:
 
 # Serde Knowledge Patch
 
+Use this skill when updating Serde or `serde_json` dependencies, resolving
+trait-bound errors, migrating deprecated compatibility code, or working with
+JSON object maps and values.
+
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Core traits and dependencies](references/core-traits-and-dependencies.md) | Choosing `serde` or `serde_core`; derive support; trait-path diagnostics |
-| [JSON compatibility and values](references/json-compatibility-and-values.md) | Version floors; enum object keys; arbitrary-precision numbers; `Map` parsing and deserialization; `Value` defaults; `RawValue`; deterministic key ordering |
+| [Core traits and dependencies](references/core-traits-and-dependencies.md) | `serde` versus `serde_core`, derive support, trait-path diagnostics, deprecated integer compatibility macro |
+| [JSON compatibility and values](references/json-compatibility-and-values.md) | Dependency floors, enum object keys, arbitrary-precision output, map parsing and deserialization, borrowed defaults, raw literals, key sorting |
 
-## Dependency and compatibility changes
+## Quick reference: deprecations and compatibility changes
 
-### Choose `serde` unless a trait-only dependency is intentional
+### Remove `serde_if_integer128!`
 
-`serde_core` 1.0.220 contains the core traits and supporting APIs:
+Serde 1.0.221 deprecates `serde_if_integer128!`. Remove existing invocations
+and do not add new ones; invoking the compatibility wrapper can produce a
+deprecation warning.
 
-- `Serialize`
-- `Deserialize`
-- `Serializer`
-- `Deserializer`
-- the supporting `ser` and `de` modules
+See [Core traits and dependencies](references/core-traits-and-dependencies.md)
+for the batch attribution and migration guidance.
 
-It deliberately does not provide `#[derive(Serialize)]` or
-`#[derive(Deserialize)]`.
+### Convert non-string enum object keys before serialization
 
-Depend directly on `serde_core` only when a crate uses traits as bounds or
-writes implementations by hand:
+As of `serde_json` 1.0.150, JSON object serialization rejects enum keys whose
+Serde representation is not a string. Convert data-carrying or otherwise
+non-string enum keys into explicit strings before serializing the object.
+
+Do not rely on a non-string enum representation being accepted as an object
+key.
+
+### Keep Serde new enough for `serde_json`
+
+`serde_json` 1.0.145 and newer require Serde 1.0.220 or newer. Upgrade the two
+dependencies together:
 
 ```toml
 [dependencies]
-serde_core = "1.0.220"
+serde = "1.0.220"
+serde_json = "1.0.145"
 ```
 
-```rust
-pub fn require_serializable<T: serde_core::Serialize>(_: &T) {}
-```
+If Serde must stay below 1.0.220, keep `serde_json` below 1.0.145.
 
-Keep depending on `serde` when the crate derives either trait. `serde`
-re-exports the same traits and remains the general-purpose default:
+### Recheck exact arbitrary-precision output
+
+With `arbitrary_precision` enabled, `serde_json` 1.0.149 aligns number strings
+with `zmij` formatting. Values remain numerically equivalent, but the exact
+text can differ. Recheck snapshots, signatures, hashes, and other
+byte-for-byte consumers during an upgrade.
+
+## Quick reference: core traits and dependencies
+
+### Choose `serde` when deriving traits
+
+`serde_core` contains the `Serialize`, `Deserialize`, `Serializer`, and
+`Deserializer` traits, but it does not support derives. Crates that use
+`#[derive(Serialize, Deserialize)]` must continue to depend on `serde`, which
+re-exports the same traits:
 
 ```toml
 [dependencies]
@@ -59,47 +82,57 @@ struct Record {
 }
 ```
 
-### Read `serde_core` paths in errors as ordinary Serde traits
+### Use `serde_core` only for trait-only dependencies
 
-After the traits moved to `serde_core`, an unsatisfied bound from a format
-crate can appear as:
+Depend directly on `serde_core` when a crate only needs Serde traits for
+bounds or handwritten implementations:
+
+```toml
+[dependencies]
+serde_core = "1.0.220"
+```
+
+```rust
+fn require_serializable<T: serde_core::Serialize>(_: &T) {}
+```
+
+Do not switch a crate that uses derives from `serde` to `serde_core`.
+
+### Treat `serde_core` diagnostic paths as ordinary Serde traits
+
+A format crate can report a failed bound such as:
 
 ```text
 T: serde_core::ser::Serialize
 ```
 
-This does not normally call for a separate compatibility feature. Fix the
-underlying Serde implementation by deriving `serde::Serialize`, enabling
-`serde`'s `derive` feature, or enabling the dependency's existing `serde`
-feature.
+For a local type, derive `serde::Serialize`. For a foreign type, enable the
+dependency's existing `serde` feature. The path identifies the ordinary Serde
+trait and does not mean the type needs a separate serialization system.
 
-### Respect serde_json's Serde version floor
+## Quick reference: JSON maps and values
 
-`serde_json` 1.0.145 requires Serde 1.0.220 or newer. If a dependency graph
-pins Serde below 1.0.220, either update Serde or keep `serde_json` below
-1.0.145.
+### Parse object text directly into a map
 
-### Do not serialize non-string enum representations as object keys
+Since `serde_json` 1.0.143, `Map<String, Value>` implements `FromStr`, so an
+object can be parsed with `.parse()`:
 
-As of `serde_json` 1.0.150, enum keys whose Serde representation is not a
-string are rejected during JSON object serialization. Give data-carrying
-variants an explicit string-key representation instead of relying on a
-non-string enum representation.
+```rust
+use serde_json::{Map, Value};
 
-### Expect arbitrary-precision spelling changes
+let object: Map<String, Value> =
+    r#"{"enabled":true}"#.parse().unwrap();
+assert_eq!(object.get("enabled"), Some(&Value::Bool(true)));
+```
 
-In `serde_json` 1.0.149, number strings emitted with the
-`arbitrary_precision` feature were aligned with `zmij` formatting. Numeric
-values remain equivalent, but their exact serialized spelling can change.
-Review snapshots, hashes, signatures, golden files, and byte-for-byte tests
-when upgrading.
+There is no need to parse a `Value` first and then extract its object map.
 
-## Common serde_json value operations
+### Deserialize typed data directly from a map
 
-### Deserialize directly from an object map
-
-Since `serde_json` 1.0.131, owned and borrowed object maps implement both
-Serde `Deserializer` and `IntoDeserializer`:
+Since `serde_json` 1.0.131, both `Map<String, Value>` and
+`&Map<String, Value>` implement `Deserializer` and `IntoDeserializer`.
+Decode typed data from the existing map without wrapping it in
+`Value::Object` or converting it back to JSON text:
 
 ```rust
 use serde::Deserialize;
@@ -110,45 +143,32 @@ struct Config {
     enabled: bool,
 }
 
-let map: Map<String, Value> =
-    serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+let mut map = Map::new();
+map.insert("enabled".into(), Value::Bool(true));
 let config = Config::deserialize(map).unwrap();
 assert!(config.enabled);
 ```
 
-There is no need to wrap the map in `Value::Object` or serialize it back to
-text first. Use a borrowed `&Map<String, Value>` when the caller must retain
-the map.
+Use the borrowed map implementation when the caller must retain the map.
 
-### Parse an object map with `FromStr`
+### Default a missing borrowed value to JSON null
 
-Since `serde_json` 1.0.143, `Map<String, Value>` supports `.parse()`:
-
-```rust
-let object: serde_json::Map<String, serde_json::Value> =
-    r#"{"answer":42}"#.parse().unwrap();
-assert_eq!(object["answer"], serde_json::json!(42));
-```
-
-### Default a missing shared value to JSON null
-
-Since `serde_json` 1.0.142, `&Value` implements `Default`. This makes a
-missing optional shared reference default to a shared JSON `null` value:
+Since `serde_json` 1.0.142, `&Value` implements `Default`. A missing borrowed
+value can therefore fall back to a shared JSON null without allocation or a
+source mutation:
 
 ```rust
-let value = serde_json::json!({});
-let missing: &serde_json::Value =
-    value.get("missing").unwrap_or_default();
+use serde_json::{json, Value};
+
+let document = json!({});
+let missing: &Value = document.get("missing").unwrap_or_default();
 assert!(missing.is_null());
 ```
 
-This is useful for read-only fallback behavior. It does not insert a value
-into the source object.
-
 ### Reuse static raw JSON literals
 
-With the `raw_value` feature enabled, `RawValue::NULL`, `RawValue::TRUE`, and
-`RawValue::FALSE` provide static raw fragments (since `serde_json` 1.0.134):
+Since `serde_json` 1.0.134, `RawValue` provides associated constants for the
+JSON literals `null`, `true`, and `false`:
 
 ```rust
 use serde_json::value::RawValue;
@@ -157,40 +177,34 @@ let raw: &'static RawValue = RawValue::NULL;
 assert_eq!(raw.get(), "null");
 ```
 
-Use these constants instead of allocating or parsing a boxed `RawValue` for
-one of the three JSON literals.
+Use these constants when one of those raw fragments is needed without
+allocation or parsing.
 
-### Sort object keys deterministically
+### Sort keys in place when output order must be deterministic
 
-Since `serde_json` 1.0.129:
-
-- `Map::sort_keys()` sorts one object.
-- `Value::sort_all_objects()` recursively sorts all objects in a tree.
+Since `serde_json` 1.0.129, `Map::sort_keys()` sorts one object and
+`Value::sort_all_objects()` recursively sorts every object in a JSON tree:
 
 ```rust
 let mut value = serde_json::json!({
-    "z": {"second": 2, "first": 1},
+    "z": {"b": 1, "a": 2},
     "a": 0,
 });
 value.sort_all_objects();
-assert_eq!(
-    value.to_string(),
-    r#"{"a":0,"z":{"first":1,"second":2}}"#,
-);
 ```
 
-These methods matter when the `preserve_order` feature is enabled. Without
-that feature, object maps are already maintained in sorted order and
-`sort_keys()` does no work.
+Use the recursive method when nested output also needs deterministic key
+order.
 
 ## Upgrade checklist
 
-1. Keep `serde` with `derive` enabled anywhere derives are used.
-2. Use `serde_core` directly only for intentionally trait-only crates.
-3. Treat diagnostic paths through `serde_core` as the regular Serde traits.
-4. Pair `serde_json` 1.0.145 or newer with Serde 1.0.220 or newer.
-5. Convert enum object keys to explicit string representations.
-6. Recheck exact-number snapshots when `arbitrary_precision` is enabled.
-7. Prefer direct `Map` deserialization over JSON text round trips.
-8. Sort objects before deterministic output when `preserve_order` is used.
-
+1. Remove uses of the deprecated `serde_if_integer128!` wrapper.
+2. Convert enum object keys with non-string representations to explicit strings.
+3. Pair `serde_json` 1.0.145 or newer with Serde 1.0.220 or newer.
+4. Recheck exact number text when `arbitrary_precision` is enabled.
+5. Keep `serde` with derive support in crates that derive Serde traits.
+6. Use `serde_core` directly only for intentional trait-only dependencies.
+7. Resolve `serde_core` trait errors as ordinary Serde implementation errors.
+8. Prefer direct map parsing and deserialization over intermediate `Value` or text round trips.
+9. Use shared null and raw literal constants where their allocation-free behavior fits.
+10. Sort the full value tree when nested deterministic object ordering is required.

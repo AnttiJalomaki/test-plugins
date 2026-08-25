@@ -1,422 +1,104 @@
 # Language, Values, Modules, and Providers
 
-Expression semantics, value marks, module contracts, early evaluation, and provider-facing configuration changes.
+## Provider-defined functions (`terraform-1.8.0`, `opentofu-1.7.0`)
 
-## Ephemeral, sensitive, and write-only values
+Terraform providers can contribute functions invoked as `provider::provider_name::function_name(...)`. The built-in `terraform` provider includes `decode_tfvars`, `encode_tfvars`, and `encode_expr` for explicitly reading or generating Terraform expression and tfvars syntax.
 
-### `nonsensitive` accepts already non-sensitive values
+OpenTofu providers can derive their function set from provider configuration. Use OpenTofu 1.7.5 or later for complete behavior: tests were fixed in 1.7.1, variables and outputs in 1.7.2, child modules in 1.7.4, and partially unknown arguments in 1.7.5. `tofu providers schema` includes provider functions starting in OpenTofu 1.8.
 
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
+## Template strings
 
-`nonsensitive(value)` no longer errors when `value` is already non-sensitive, so callers can apply it without first branching on the value's sensitivity.
-
-### Apply-time deferral for ephemeral resources
-
-*Terraform 1.11.0 — batch `terraform-1.11.0-guide`.*
-
-If an ephemeral resource input is unknown during planning but will resolve during apply, Terraform defers opening that resource until apply. Ephemeral resources participate in the dependency graph, so a generated value can be written to an external secret store through a write-only argument, read back through a deferred ephemeral resource, and then passed to a downstream write-only consumer; this preserves a generated secret outside Terraform without putting it in plan or state.
-
-### Ephemeral resources are phase-scoped
-
-*Terraform 1.10.0 — batch `terraform-1.10.0-guide`.*
-
-An `ephemeral` block declares a third resource mode whose object is created or fetched separately for each Terraform phase and explicitly closed before that phase ends. Terraform stores neither the object nor its values in plan or state, and the values need not remain consistent between plan and apply or between runs.
+OpenTofu 1.7 adds `templatestring(template, variables)` and permits recursive `templatefile` calls with a default maximum depth of 1024.
 
 ```hcl
-ephemeral "aws_secretsmanager_secret_version" "db_master" {
-  secret_id = var.secret_id
-}
-
-locals {
-  credentials = jsondecode(
-    ephemeral.aws_secretsmanager_secret_version.db_master.secret_string
-  )
-}
-
-provider "postgresql" {
-  username = local.credentials["username"]
-  password = local.credentials["password"]
-}
+message = templatestring("Hello, $${name}!", { name = "Ada" })
 ```
 
-Provider support is resource-type-specific. The 1.10 launch set included `aws_secretsmanager_secret_version`, `aws_lambda_invocation`, `azurerm_key_vault_secret`, `azurerm_key_vault_certificate`, `kubernetes_token_request`, and `kubernetes_certificate_signing_request`, along with ephemeral resources in the `random` provider.
-
-### Ephemeral values reach OpenTofu
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-OpenTofu now supports ephemeral input variables and outputs, provider-defined ephemeral resources, and managed-resource write-only attributes. Ephemeral data exists only in memory for one OpenTofu phase and is not persisted in plan or state; providers must explicitly expose the corresponding resource types or attributes.
-
-### Exact 1.10 ephemeral surface
-
-*Terraform 1.10.0 — batch `terraform-1.10.0-guide`.*
-
-Input and output variables can be marked `ephemeral = true` for short-lived values such as session tokens, and Terraform 1.10 also adds the `ephemeralasnull` and `terraform.applying` language helpers.
-
-```hcl
-variable "session_token" {
-  type      = string
-  ephemeral = true
-}
-```
-
-Managed-resource write-only arguments are not part of Terraform 1.10; they arrive in Terraform 1.11. Configurations using arguments such as `password_wo` or `secret_string_wo` therefore require a later Terraform release even when their values come from an `ephemeral` block.
-
-### Language and ephemeral patch compatibility
-
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
-
-Terraform 1.11.1 fixes planned-change serialization when values combine ephemeral and sensitive marks. Terraform 1.11.2 makes a `templatestring` consisting only of one null-valued interpolation return an error, while 1.11.3 fixes apply errors when a zero-instance module contains ephemeral resources.
-
-### Managed-resource write-only arguments
-
-*Terraform 1.11.0 — batch `terraform-1.11.0-guide`.*
-
-Terraform 1.11 lets provider-declared write-only arguments accept either ephemeral or ordinary values. Terraform sends a write-only value to the provider during every operation but records it in neither plan nor state, so it cannot display a diff or detect that the value itself changed.
+Terraform 1.9 adds the same function, but its template argument must be a direct reference to a named string object in the current module, such as a data-source result; the second argument supplies interpolation variables (`terraform-1.9.0-guide`).
 
 ```hcl
 locals {
-  password_version = 1
-}
-
-ephemeral "random_password" "database" {
-  length = 16
-}
-
-resource "aws_db_instance" "database" {
-  instance_class      = "db.t3.micro"
-  allocated_storage   = 5
-  engine              = "postgres"
-  username            = "example"
-  skip_final_snapshot = true
-
-  password_wo         = ephemeral.random_password.database.result
-  password_wo_version = local.password_version
+  rendered = templatestring(data.http.template.response_body, {
+    APP_NAME = var.app_name
+  })
 }
 ```
 
-Provider-specific companion arguments such as `password_wo_version` are stored in state: increment one to make a rotation visible in the plan and tell the provider to use the new write-only value. Keep the companion versions synchronized when several write-only values must rotate together.
+## Variable validation and value marks
 
-Support is opt-in per resource. Initial examples include `aws_db_instance.password_wo`, `aws_secretsmanager_secret_version.secret_string_wo`, `azurerm_key_vault_secret.value_wo`, `google_secret_manager_secret_version.secret_data_wo`, `kubernetes_secret_v1.data_wo` and `binary_data_wo`, and `helm_release.set_wo`; other database, secret-store, and credential resources also expose provider-specific `_wo` arguments.
-
-### Partial ephemeral output compatibility
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-Terraform 1.12.2 accepts partially ephemeral values in ephemeral outputs; Terraform 1.12.0 and 1.12.1 reject them.
-
-### Sensitive early-evaluation inputs
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-Starting in 1.8.3, handling for variables marked `sensitive` in module sources, module versions, and backend configuration is opt-in. Set `TOFU_ENABLE_STATIC_SENSITIVE=1` in environments using these values; 1.8 otherwise warns for compatibility, and the behavior becomes the default in 1.9.
-
-### Sensitivity and ephemeral metadata fixes
-
-*Terraform 1.13.0 — batch `terraform-1.13.0`.*
-
-Nested-module outputs now retain sensitivity declared in configuration. Terraform 1.13.2 keeps changed sensitive inputs hidden between plan and apply, while 1.13.3 preserves sensitive and ephemeral metadata when evaluating variable validation conditions.
-
-### Validation and marked-value behavior
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-Terraform Stacks now supports input-variable validation. When a container is compared with `null`, only marks on the container itself affect the result; marks nested inside the container no longer mark the comparison result by themselves.
-
-## Functions and expressions
-
-### Built-in tfvars conversion functions
-
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
-
-The built-in `terraform` provider now exposes `decode_tfvars`, `encode_tfvars`, and `encode_expr` for tooling that needs to read or generate Terraform variable-file content.
-
-### Built-in tfvars tooling functions
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-The built-in `terraform` provider now exposes `decode_tfvars`, `encode_tfvars`, and `encode_expr`, allowing OpenTofu-native tooling to parse variable files and generate variable-file or expression syntax.
-
-### Configuration-dependent provider functions
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-Beyond ordinary provider-defined functions, OpenTofu providers can dynamically define functions based on their provider configuration. The experimental Lua and Go providers demonstrate this OpenTofu-specific capability.
-
-### Dynamic string templates in Terraform
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-Terraform 1.9 adds `templatestring(template, variables)` for rendering template text obtained dynamically, such as from an input variable or data resource, rather than loading it from a file with `templatefile`.
+Terraform 1.9 validation conditions can refer to other variables, locals, and data sources instead of only the variable being validated (`terraform-1.9.0-guide`). Terraform 1.9 also propagates sensitivity from a sensitive `templatefile` path to the rendered result instead of failing.
 
 ```hcl
-variable "template" { type = string }
-variable "name" { type = string }
-
-output "rendered" {
-  value = templatestring(var.template, { name = var.name })
-}
-```
-
-### Expression and dependency behavior
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-Comparing a complex value with `null` now produces a sensitive boolean only when the container itself is sensitive, not merely when it contains a nested sensitive value; the result can therefore drive `enabled`. `replace_triggered_by` now replaces a resource when the referenced resource is itself being replaced, `yamldecode` supports YAML `<<` merges from sequences of mappings, and a dynamic block's `for_each` can call provider-defined functions. OpenTofu now rejects ephemeral values in `count`.
-
-Calls to modules containing `check` blocks can use `depends_on` without a dependency-cycle error. `length(module.example)` also reports the correct number of instances for `count` or `for_each` modules that declare no outputs.
-
-### Module-source and provider-function patch compatibility
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-OpenTofu 1.9.1 fixes GitHub module sources whose branch names contain slashes. The 1.9.5 notes, still marked unreleased, restore provider functions when parentheses are involved and allow provider-defined functions in a `dynamic` block's `for_each`.
-
-### Negative indices in `element`
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-The `element` function now accepts negative indices. Terraform 1.10.0 through 1.10.4 can crash when a negative index is used with a tuple, so use 1.10.5 or later for that case.
-
-### Provider functions in schema inspection
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-`tofu providers schema` now includes provider-defined functions, allowing schema-driven tooling to discover them instead of maintaining a separate function list.
-
-### Provider-defined functions
-
-*Terraform 1.8.0 — batch `terraform-1.8.0-guide`.*
-
-Terraform 1.8 lets providers expose specialized functions for use in any Terraform expression, including validations, checks, and tests. Invoke them through the provider namespace as `provider::<provider_name>::<function_name>(arguments)`; the function requires a provider version that implements it.
-
-```hcl
-locals {
-  module_directory_exists = provider::local::direxists(path.module)
-}
-```
-
-For example, `direxists` is available in the `local` provider from v2.5, while the `time` provider offers `rfc_3339_parse` from v0.11.
-
-### Provider-function patch compatibility
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-Provider functions had important follow-up fixes across the 1.7 line: tests require at least 1.7.1, variables and outputs require 1.7.2, child-module support improved in 1.7.4, and partially unknown arguments follow the plugin protocol starting in 1.7.5.
-
-### Short-circuiting and negative collection indices
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-Logical `&&` and `||` operators now skip the right operand when the left operand determines the result, so they can safely guard expressions that would otherwise fail. `element` extends its wrapping behavior to negative indices, with `-1` selecting the last element; `format` and `formatlist` also accept `null` without producing an apply-time unknown-value failure.
-
-```hcl
-locals {
-  last    = element(var.items, -1)
-  enabled = var.settings != null && var.settings.enabled
-}
-```
-
-### Short-circuiting logical operators
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-Logical binary operators can now short-circuit, so `false && expression` and `true || expression` need not evaluate the right-hand expression; conditions can therefore guard evaluations that are valid only for some input values.
-
-### Template and validation behavior
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-The new `templatestring(template, variables)` function renders a string value as a template, while `templatefile` can now recurse with a default maximum call depth of 1024. Starting in 1.7.8, `plantimestamp()` correctly remains unknown during validation.
-
-### Validation and expression behavior
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-An object constructor used for a typed input variable now warns about attribute names absent from the target object type, and `tofu validate` can validate non-root modules whose providers declare `configuration_aliases`. `issensitive` now returns an unknown result when its argument is unknown, so it cannot drive plan-time `count` or `for_each` unless the argument is known; `regex` and `regexall` accept long Unicode property names such as `\p{Letter}`, and `fileset` can match escaped glob metacharacters.
-
-### Validation, YAML, and module-selection compatibility
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-Variable validations can now refer to other variables, data, and related values. `yamldecode("+")` follows YAML 1.2 by returning the string `"+"` instead of a numeric parse error, and module `version` constraints now accept `v`-prefixed prerelease selections.
-
-## Modules and provider configuration
-
-### `enabled` for zero-or-one instances
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-Resources and modules can use a boolean `enabled` meta-argument as a clearer alternative to zero-or-one `count` or `for_each`. It is deliberately nested in `lifecycle` so it cannot collide with an existing argument or module input named `enabled`.
-
-```hcl
-resource "aws_instance" "example" {
-  # ...
-  lifecycle {
-    enabled = var.enable_instance
-  }
-}
-```
-
-OpenTofu 1.11.1 fixes serialization of `enabled` in saved plans. Starting in 1.11.4, a module containing local provider configurations rejects `enabled`, matching the existing restrictions on `count`, `for_each`, and `depends_on`.
-
-### Apply-time environment-variable overrides
-
-*Terraform 1.11.0 — batch `terraform-1.11.0`.*
-
-Terraform 1.11 reports an attempted variable override through `TF_VAR_*` during `apply` as a warning instead of a misleading error.
-
-### Deprecated module inputs and outputs
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-Module authors can mark input variables and output values as deprecated; callers that use them receive warnings, allowing a module API to evolve without immediately breaking consumers.
-
-```hcl
-variable "legacy_region" {
-  type       = string
-  deprecated = "Use var.region instead."
-}
-```
-
-Use 1.10.7 or later when testing deprecated outputs, because `tofu test` can crash on them in earlier 1.10 releases.
-
-### Deprecated module inputs and outputs
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-Terraform modules can now set `deprecated = "..."` on `variable` and `output` blocks. Supplying a deprecated input or referencing a deprecated output emits a warning, and deprecation warnings for provider-defined resources, blocks, and attributes now more reliably include the provider's message.
-
-### Early evaluation for modules and backends
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-OpenTofu 1.8 permits input variables and locals in module source and version arguments and in backend configuration. These values must be available during early evaluation; provider configuration is not included in this feature.
-
-```hcl
-variable "module_source" {
-  default = "./modules/app"
-}
-
-module "app" {
-  source = var.module_source
-}
-```
-
-For early-evaluated backends, use 1.8.5 or later: 1.8.4 corrected a false "Backend configuration changed" error involving references and `-backend-config`, while 1.8.5 repaired a related reinitialization regression for backends with required arguments.
-
-### Explicit output types and inline conversion
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-`output` blocks now accept an explicit `type` constraint, while `convert(value, type)` performs a precise conversion at the expression site. Together they let a module state and satisfy its output contract directly.
-
-```hcl
-output "port" {
-  type  = number
-  value = convert(var.port, number)
-}
-```
-
-### GitHub module refs containing slashes
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-Unencoded slashes in GitHub module source refs are no longer truncated or mistaken for subdirectories, so refs such as `?ref=feature/example` work as written.
-
-### Iterated aliased provider configurations
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-An aliased provider configuration can use `for_each` to create dynamically selected instances, letting resource instances use different provider configurations without one manually duplicated block per region.
-
-```hcl
-provider "aws" {
-  alias    = "by_region"
-  for_each = var.aws_regions
-
-  region = each.key
-}
-```
-
-### Nullable module version constraints and provider keys
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-A module's `version` argument may be `null`, which is equivalent to omitting it. Dynamic instance keys used in a resource's `provider` argument or a module's `providers` map are now automatically converted to strings.
-
-### OCI module sources and provider mirrors
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-OpenTofu can install module packages from OCI registries through the new `oci:` source-address scheme and can use OCI registries as provider mirrors. This enables private or air-gapped distribution of both modules and providers without a conventional module or provider registry.
-
-### OpenTofu-specific `.tofu` overrides
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-When `name.tofu` is present, OpenTofu ignores the identically named `name.tf` file rather than merging the two. A module can therefore keep a compatible `.tf` implementation beside an OpenTofu-specific override.
-
-### Variable-driven module sources and versions
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-Terraform now accepts variables and locals in module `source` and `version` arguments, and most commands can accept the variable values needed to evaluate them. For example, a module can use `source = var.module_source` and `version = local.module_version` instead of requiring both arguments to be literal.
-
-## Validation and evaluation behavior
-
-### Apply-time variable fixes
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-Terraform 1.10.1 fixes complex values supplied through environment variables being parsed incorrectly during apply, while 1.10.2 fixes overridden values from auto-loaded tfvars files being reported as changed between plan and apply.
-
-### Cross-object input variable validation
-
-*Terraform 1.9.0 — batch `terraform-1.9.0-guide`.*
-
-An input variable's `validation` condition can now refer to other input variables, locals, and data sources, instead of only the variable being validated. This allows related or dynamically discovered constraints to fail during planning without moving the check to a later resource precondition.
-
-```hcl
-variable "create_cluster" {
-  type    = bool
-  default = false
-}
-
 variable "cluster_endpoint" {
   type    = string
   default = ""
 
   validation {
     condition     = var.create_cluster == false ? length(var.cluster_endpoint) > 0 : true
-    error_message = "You must specify cluster_endpoint when not creating a cluster."
+    error_message = "Specify cluster_endpoint when create_cluster is false."
   }
 }
 ```
 
-### Destroy plans avoid unnecessary variable validation
+Terraform 1.10 conditional and `for` expressions combine marks from all participating values. An expression may therefore become sensitive after an upgrade where an older runtime exposed it. Terraform 1.13 preserves sensitivity on nested-module outputs; use 1.13.2 or later to keep changed sensitive inputs hidden between plan and apply, and 1.13.3 or later for validation conditions to preserve sensitive and ephemeral metadata (`terraform-1.13.0`).
 
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
+OpenTofu 1.8.7 prevents validation errors from disclosing sensitive values. OpenTofu 1.11 warns when an object assigned to a typed variable has attributes outside the target type. Its `issensitive` returns unknown for an unknown argument, so that result cannot control plan-time `count` or `for_each` unless the input is known (`opentofu-1.11.0`).
 
-Terraform 1.9.4 stops running unneeded variable validations during destroy plans, preventing failures when such a plan starts with incomplete state.
+OpenTofu 1.12 marks `complex_value == null` as sensitive only when the whole value is sensitive, not merely because a nested element is sensitive. Such null checks can be used in non-sensitive contexts such as `enabled` (`opentofu-1.12.0`).
 
-### Filesystem result consistency
+`nonsensitive` accepts already non-sensitive input and returns it unchanged in Terraform 1.7 (`terraform-1.7.0`).
 
-*Terraform 1.13.0 — batch `terraform-1.13.0`.*
+## Ephemeral values
 
-Terraform now checks filesystem-function results for consistency to catch invalid data during apply. Terraform 1.13.5 fixes false consistency failures caused by impure functions inside `templatefile` and allows filesystem results to vary when evaluated in provider configuration.
+Terraform 1.10 adds `ephemeral = true` input and output variables, provider-defined `ephemeral` resources, `ephemeralasnull`, and `terraform.applying` (`terraform-1.10.0-guide`). Ephemeral values are omitted from plan and state, may differ between plan and apply, and live only for one operation phase. Each ephemeral resource is opened and closed independently during each phase.
 
-### More complete sensitivity propagation
+```hcl
+ephemeral "aws_secretsmanager_secret_version" "db_master" {
+  secret_id = data.aws_db_instance.example.master_user_secret[0].secret_arn
+}
 
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
+variable "session_token" {
+  type      = string
+  ephemeral = true
+}
+```
 
-Conditional expressions now combine marks from all participating values, so results that incorrectly lost sensitivity in earlier releases may become sensitive after upgrading. Related fixes preserve marks through conditional and `for` expressions with unknown values and prevent `issensitive` from prematurely treating an unknown value as non-sensitive.
+Terraform 1.11 can defer opening an ephemeral resource until apply when an input is unknown during planning. Dependencies still order prerequisites before the resource and consumers after it (`terraform-1.11.0-guide`). Use 1.11.1 or later for values that are both sensitive and ephemeral, and 1.11.3 or later for zero-instance modules containing ephemeral resources (`terraform-1.11.0`).
 
-### Static-evaluation declarations and language constraints
+Terraform 1.12.2 permits partial ephemeral values in outputs declared ephemeral (`terraform-1.12.0`). OpenTofu 1.11 adds ephemeral inputs, outputs, resources, and provider-declared write-only managed-resource attributes (`opentofu-1.11.0`). OpenTofu 1.12 rejects ephemeral `count` values (`opentofu-1.12.0`).
 
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
+## Dynamic and early-evaluated modules
 
-An input variable can set `const = true` to require its assigned value to be available to OpenTofu's static evaluation phase.
+OpenTofu 1.8 allows variables and locals in module sources and versions and in backend configuration (`opentofu-1.8.0`). These expressions run before provider configuration. Use 1.8.5 or later when combining variable- or local-based backend settings with reinitialization or `-backend-config`.
+
+OpenTofu 1.8.3 adds sensitivity handling for early-evaluated module and backend inputs. On that line, enable the compatibility behavior below; it becomes the default in 1.9.
+
+```shell
+export TOFU_ENABLE_STATIC_SENSITIVE=1
+```
+
+OpenTofu 1.9 prompts for missing early-evaluation inputs and rejects sensitive values for backend configuration or module source locations, where initialization or installation would expose them (`opentofu-1.9.0`). OpenTofu 1.9.1 is required for GitHub module sources whose branch names contain slashes.
+
+Terraform 1.15 permits variables and locals in module `source` and `version`, and most commands accept variable values to resolve them (`terraform-1.15.0`). Version 1.15.5 permits a dynamic module version to be `null`; 1.15.6 fixes installation edge cases involving `null` and sensitive or ephemeral source values.
+
+```hcl
+variable "module_source" {
+  type = string
+}
+
+locals {
+  module_version = "1.2.0"
+}
+
+module "service" {
+  source  = var.module_source
+  version = local.module_version
+}
+```
+
+## Static-evaluation contracts and product-specific files
+
+OpenTofu 1.12 variables can declare `const = true` to require assignments compatible with static evaluation. Its new `language` configuration separates the OpenTofu constraint from constraints on other software; the normal form makes 1.12 the module minimum unless the backward-compatible interim form is used.
 
 ```hcl
 variable "module_source" {
@@ -425,11 +107,78 @@ variable "module_source" {
 }
 ```
 
-The new `language` configuration block provides version constraints that distinguish OpenTofu requirements from constraints for other software. Modules adopting it require OpenTofu 1.12 unless they use the release's backward-compatible interim approach.
+Since OpenTofu 1.8, a `.tofu` file causes OpenTofu to ignore the identically named `.tf` file. Keep portable configuration in `main.tf` and OpenTofu-only constructs in `main.tofu`.
 
-### Validation with deferred values
+## Module contracts and deprecations
 
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
+OpenTofu 1.10 variables and outputs accept deprecation messages (`opentofu-1.10.0`). Use at least 1.10.7 for tests or complex deprecated values: 1.10.6 fixes crashes involving multiple deprecated marks, and 1.10.7 fixes tests consuming deprecated outputs.
 
-An unknown variable-validation `error_message` can now pass core validation and be evaluated during planning, and `plantimestamp()` no longer produces an invalid date during validation.
+Terraform 1.15 variables and outputs also accept `deprecated`; assigning a deprecated variable or reading a deprecated output warns. Provider-authored deprecations on resource attributes and blocks also appear as warnings.
 
+```hcl
+variable "legacy_region" {
+  type       = string
+  deprecated = "Use region instead."
+}
+
+output "legacy_id" {
+  value      = example_resource.main.id
+  deprecated = "Use resource_id instead."
+}
+```
+
+Terraform 1.15 output blocks can declare `type`, and `convert(value, type)` performs an explicit inline conversion.
+
+```hcl
+output "ports" {
+  value = convert(var.ports, set(number))
+  type  = set(number)
+}
+```
+
+## Provider configuration iteration
+
+OpenTofu 1.9 alternate provider configurations can use `for_each`, letting resources choose instances by region or another deployment dimension.
+
+```hcl
+provider "aws" {
+  alias    = "by_region"
+  for_each = var.aws_regions
+  region   = each.key
+}
+```
+
+OpenTofu 1.11 accepts provider functions in `for_each` expressions inside `dynamic` blocks and indexed provider references such as `null.some_alias[each.key]` in `.tf.json`.
+
+## Expressions and lifecycle
+
+- Terraform 1.10 `element` accepts negative indices. Versions 1.10.0 through 1.10.4 can crash for tuples; use 1.10.5 or later (`terraform-1.10.0`).
+- Terraform 1.12 `&&` and `||` short-circuit, so a decisive left side can protect an invalid right-side access (`terraform-1.12.0`).
+- OpenTofu 1.9.1 makes `plantimestamp()` unknown during validation; validation expressions must tolerate that (`opentofu-1.9.0`).
+- Terraform 1.13 checks filesystem-function results for plan/apply consistency. Use 1.13.5 or later when `templatefile` calls impure functions or filesystem functions appear in provider configuration.
+- OpenTofu 1.11 `regex` and `regexall` accept long Unicode properties such as `\p{Letter}`, and `fileset` can match filenames containing escaped glob metacharacters.
+- OpenTofu 1.12 `yamldecode` accepts YAML merge keys whose value is a sequence of mappings.
+
+```hcl
+condition = var.settings == null || var.settings.enabled
+
+locals {
+  config = yamldecode(<<-YAML
+    base: &base {retries: 3}
+    timing: &timing {timeout: 30}
+    service:
+      <<: [*base, *timing]
+  YAML
+  )
+}
+```
+
+OpenTofu 1.11 resources and modules can use `lifecycle { enabled = CONDITION }` as a zero-or-one alternative to `count` or `for_each`. From 1.11.4, modules with local provider configurations reject it like `count`, `for_each`, and `depends_on`.
+
+OpenTofu 1.12 lets `prevent_destroy` refer to other symbols in the same module. It also replaces a resource when its `replace_triggered_by` target is itself being replaced, rather than only when that target is updated.
+
+## Validation boundaries
+
+OpenTofu 1.11 can validate non-root modules that declare provider `configuration_aliases`. Terraform 1.15.9 reports errors or warnings for invalid `list`, `import`, `backend`, and `cloud` blocks in child modules (`terraform-1.15.9`). Configurations that previously passed validation may therefore produce new diagnostics.
+
+Terraform 1.13 `-allow-deferral` for unknown `count` and `for_each` values was alpha-only and is unavailable in stable 1.13 binaries.

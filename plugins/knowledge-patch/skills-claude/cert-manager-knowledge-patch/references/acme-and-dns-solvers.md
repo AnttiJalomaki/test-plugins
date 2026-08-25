@@ -1,37 +1,13 @@
 # ACME and DNS Solvers
 
-Use this reference for ACME account behavior, HTTP-01 and DNS-01 solver
-configuration, validation timing, workload resources, and retry behavior.
+## HTTP-01 behavior
 
-## ACME account and certificate behavior
+### Exact Ingress paths
 
-### Certificate profiles
-
-Since `1.18`, ACME issuance can select a certificate profile offered by the
-CA. For example, Let's Encrypt exposes `tlsserver` for ordinary server
-certificates and `shortlived` for six-day certificates. Confirm that the
-configured ACME server advertises the chosen profile.
-
-### Renewal Information
-
-`1.21` includes experimental RFC 9773 support behind the `ACMEUseARI` feature
-gate. When enabled, cert-manager queries the ACME server's `renewalInfo`
-endpoint and uses CA-recommended renewal windows, including windows associated
-with mass revocations or CA key rollovers.
-
-### Managed account-key label
-
-Let's Encrypt account-key resources created since `1.18` carry
-`app.kubernetes.io/managed-by: cert-manager`. Use the label for ownership
-queries and policy without assuming it appears on older, pre-existing Secrets.
-
-## HTTP-01 solver Ingresses
-
-### Exact path behavior
-
-Since `1.18`, generated challenge Ingresses use `PathType: Exact`. This can
-conflict with ingress-nginx strict path validation. Starting in 1.18.1, restore
-`ImplementationSpecific` with:
+Solver Ingresses use `PathType: Exact` (`1.18`). With ingress-nginx strict path
+validation, use ingress-nginx 1.12.6+ or 1.13.2+, disable
+`strict-validate-path-type`, or from cert-manager 1.18.1 restore the former path
+type:
 
 ```yaml
 config:
@@ -39,38 +15,13 @@ config:
     ACMEHTTP01IngressPathTypeExact: false
 ```
 
-Other options are disabling `strict-validate-path-type` in ingress-nginx or
-using ingress-nginx 1.12.6+ or 1.13.2+.
-
-### Select one Ingress mechanism
-
-In `1.19`, an HTTP-01 solver is rejected if it specifies more than one of
-`class`, `ingressClassName`, and `name`. Configure exactly one selection
-mechanism for a solver.
-
-### Per-Ingress class override
-
-In `1.20`, an individual Ingress can override the solver's
-`http01.ingress.ingressClassName`:
-
-```yaml
-metadata:
-  annotations:
-    acme.cert-manager.io/http01-ingress-ingressclassname: nginx
-```
-
-### IPv6 subjects
-
-Starting in 1.18.5, HTTP-01 handles IPv6 addresses in the Host header, enabling
-issuance for IPv6 IP-address subjects.
-
-## Solver workloads
+An HTTP-01 solver is rejected when more than one of `class`,
+`ingressClassName`, and `name` is configured. Choose exactly one (`1.19`).
 
 ### Per-Issuer resources
 
-In `1.19`, an Issuer or ClusterIssuer can override platform-wide
-`--acme-http01-solver-resource-*` flags with Pod requests and limits for a
-specific solver:
+An Issuer or ClusterIssuer can override the platform-wide solver resource
+flags for its own HTTP-01 Pods (`1.19`):
 
 ```yaml
 spec:
@@ -89,65 +40,40 @@ spec:
                     memory: 64Mi
 ```
 
-### Runtime class and common labels
+### IPv6 and IP subjects
 
-In `1.21`, `acmesolver.runtimeClassName` configures the runtime class for
-HTTP-01 solver Pods:
+From 1.18.5, HTTP-01 handles IPv6 addresses in the Host header. For Gateway
+solvers, cert-manager 1.20 sets `HTTPRoute.spec.hostnames` when the challenge
+name is an IP address, avoiding an invalid HTTPRoute.
 
-```yaml
-acmesolver:
-  runtimeClassName: gvisor
-```
+### Skip the self-check deliberately
 
-The `--acme-http01-solver-extra-labels` controller flag allows Helm
-`global.commonLabels` to propagate to dynamically created solver Pods,
-Services, Ingresses, and Gateway API HTTPRoutes.
+`waitInsteadOfSelfCheck` lets HTTP-01 and DNS-01 skip cert-manager's self-check,
+wait for a configured duration, and ask the ACME server to validate (`1.21`).
+Treat it as an escape hatch for split-horizon DNS and NAT hairpin deployments.
 
-## Validation and retries
+## ACME accounts, profiles, and authorization
 
-### Authorization timeout
+An issuer can select a certificate profile advertised by the CA (`1.18`). For
+example, Let's Encrypt offers `tlsserver` for normal server certificates and
+`shortlived` for six-day certificates.
 
-Starting in 1.17.3, ACME challenge authorization waits for up to two minutes,
-reducing premature `error waiting for authorization` failures.
+New Let's Encrypt account-key Secrets carry
+`app.kubernetes.io/managed-by: cert-manager`. From 1.17.3, ACME challenge
+authorization waits for up to two minutes, reducing premature
+`error waiting for authorization` failures.
 
-### Delayed validation without self-check
-
-In `1.21`, HTTP-01 and DNS-01 solvers can set `waitInsteadOfSelfCheck` to skip
-cert-manager's self-check, wait for a configured duration, and then request
-validation from the ACME server. Use this only for environments such as
-split-horizon DNS or NAT hairpin deployments where a valid challenge cannot
-pass the local self-check.
-
-### Transient failures use workqueue backoff
-
-In `1.21`, TLS handshake timeouts, DNS failures, and context cancellation while
-fetching an ACME nonce or waiting for authorization retry through workqueue
-backoff instead of terminally failing the Challenge.
+TLS handshake timeouts, DNS failures, and context cancellation while fetching
+an ACME nonce or awaiting authorization retry with workqueue backoff instead of
+terminally failing the Challenge (`1.21`).
 
 ## DNS-01 providers
 
-### Cloudflare
+### Azure DNS
 
-A Cloudflare API change broke DNS-01 issuance in the initial 1.17 release. Use
-1.17.1 or later.
-
-### RFC2136 transport
-
-Since `1.19`, RFC2136 solver configuration accepts `protocol` so the DNS update
-transport can be selected explicitly:
-
-```yaml
-spec:
-  acme:
-    solvers:
-      - dns01:
-          rfc2136:
-            protocol: TCP
-```
-
-### Azure private zones
-
-Since `1.20`, Azure DNS-01 supports private zones through `zoneType`:
+With service principals and managed identities, AzureDNS accepts `tenantID` to
+select the tenant explicitly in multi-tenant environments (`1.17`). Azure
+Private DNS Zones are selectable with `zoneType` (`1.20`):
 
 ```yaml
 spec:
@@ -158,18 +84,38 @@ spec:
             zoneType: AzurePrivateZone
 ```
 
-### CloudDNS cleanup
+### RFC2136
 
-In `1.20`, CloudDNS challenge cleanup removes ACME TXT records even when the
-DNS name has a large resource-record set.
+RFC2136 solver configuration accepts `protocol` so the DNS update transport is
+explicit (`1.19`):
 
-### DigitalOcean retries and events
+```yaml
+spec:
+  acme:
+    solvers:
+      - dns01:
+          rfc2136:
+            protocol: TCP
+```
 
-In `1.20`, DigitalOcean DNS-01 retries are regulated, and the complete DNS-01
-error is attached to the Challenge as an event for troubleshooting.
+### Provider fixes and diagnostics
 
-### Credential readiness
+- Use 1.17.1 or later for Cloudflare DNS-01 after its API change.
+- CloudDNS cleanup handles challenge TXT names with large record sets (`1.20`).
+- DigitalOcean retries are regulated, and complete DNS-01 errors are attached
+  to the Challenge as events (`1.20`).
+- DNS issuer credentials are checked before readiness, exposing Secret errors
+  rather than accepting them silently (`1.21`).
+- In 1.21.0, an issuer can remain `Ready=False` with `InvalidSolver` after a
+  missing solver Secret is created. Version 1.21.1 makes it recover.
 
-In `1.21`, DNS issuer Secrets are validated before the Issuer is marked ready.
-Secret mistakes are surfaced at readiness time rather than being silently
-accepted until issuance.
+## Per-Ingress solver selection
+
+`acme.cert-manager.io/http01-ingress-ingressclassname` overrides an HTTP-01
+solver's `http01.ingress.ingressClassName` for one Ingress (`1.20`):
+
+```yaml
+metadata:
+  annotations:
+    acme.cert-manager.io/http01-ingress-ingressclassname: nginx
+```

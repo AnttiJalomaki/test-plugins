@@ -1,67 +1,77 @@
 # Serialization, Data, and Diagnostics
 
-## Serialization compatibility (`10.0-guides`)
+Compatibility notes are attributed to `10.0-guides`; new APIs and behaviors are from
+`10.0`.
 
-`System.Text.Json` checks for property-name conflicts. Resolve colliding names
-instead of depending on an implicit winner.
+## Serialization Validation
 
-`XmlSerializer` no longer ignores properties marked with `ObsoleteAttribute`.
-Such properties can enter the serialized contract; exclude them explicitly if
-they are not wire data.
+`System.Text.Json` checks for property-name conflicts. Models whose CLR members map
+to the same JSON name can now fail contract creation or serialization. Include naming
+policies, attributes, inheritance, and generated metadata when auditing collisions.
 
-## JSON contracts (`10.0`)
+`XmlSerializer` no longer ignores properties marked with `ObsoleteAttribute`. Such
+properties can enter the serialized contract. Marking a property obsolete is not a
+wire-contract exclusion mechanism; use the serializer's supported ignore controls
+when exclusion is required.
 
-### Reference handling in generated contexts
+## Source-Generated JSON Reference Handling
 
-`JsonSourceGenerationOptionsAttribute.ReferenceHandler` accepts a
-`JsonKnownReferenceHandler`. A generated context can therefore preserve
-references instead of throwing when it encounters a cycle.
+In `10.0`, `JsonSourceGenerationOptionsAttribute.ReferenceHandler` can select a
+`JsonKnownReferenceHandler`. This allows generated contexts to preserve references
+instead of throwing when the object graph contains cycles.
 
 ```csharp
-[JsonSourceGenerationOptions(
-    ReferenceHandler = JsonKnownReferenceHandler.Preserve)]
+[JsonSourceGenerationOptions(ReferenceHandler = JsonKnownReferenceHandler.Preserve)]
 [JsonSerializable(typeof(Node))]
 partial class AppJsonContext : JsonSerializerContext;
 ```
 
-### Duplicate-safe and strict input
+Choose the generated reference policy as part of the wire contract; preserved output
+contains reference metadata that consumers must understand.
 
-Set `AllowDuplicateProperties = false` to make serializers, `JsonObject`,
-dictionaries, and `JsonDocument` reject duplicate property names with
+## Strict and Duplicate-Safe JSON
+
+In `10.0`, setting `AllowDuplicateProperties = false` makes serializers,
+`JsonObject`, dictionaries, and `JsonDocument` reject duplicate names with
 `JsonException`.
 
 ```csharp
-var options = new JsonSerializerOptions
-{
-    AllowDuplicateProperties = false
-};
+var options = new JsonSerializerOptions { AllowDuplicateProperties = false };
 var value = JsonSerializer.Deserialize<Model>(json, options);
 ```
 
-The `JsonSerializerOptions.Strict` preset additionally disallows unmapped
-members, retains case-sensitive binding, and enforces nullable annotations and
-required constructor parameters.
+The `JsonSerializerOptions.Strict` preset additionally:
 
-## Diagnostics (`10.0`)
+- disallows unmapped members;
+- retains case-sensitive property binding;
+- enforces nullable annotations; and
+- enforces required constructor parameters.
 
-### Telemetry schema URLs and activity serialization
+Adopt strictness with contract tests because inputs previously accepted by permissive
+settings can fail.
 
-`ActivitySource` and `Meter` can carry a telemetry schema URL.
-`ActivitySourceOptions` supplies the constructor path when multiple options are
-needed. Out-of-process `Activity` serialization includes events and links, so
-consumers should be prepared to receive those collections.
+## Diagnostics Schema and Rate-Limited Sampling
 
-### Rate-limited root-activity sampling
+In `10.0`, `ActivitySource` and `Meter` can carry a telemetry schema URL.
+`ActivitySourceOptions` provides the constructor path when multiple options must be
+set together. Keep the schema URL aligned with the emitted attribute/event contract.
 
-EventSource trace aggregators can cap root activities per second. A filter such
-as the following sets the cap to 100:
+Out-of-process `Activity` serialization includes events and links. Update collectors,
+payload-size assumptions, and tests that previously expected only core activity data.
+
+EventSource trace aggregators can cap root activities per second with a filter such
+as:
 
 ```text
 [AS]*/-ParentRateLimitingSampler(100)
 ```
 
-## EF Core query filters (`10.0`)
+Select a limit appropriate for expected root-activity volume and verify the effect on
+trace completeness.
 
-EF Core 10 supports multiple named query filters for an entity type. Disable an
-individual named filter when needed instead of disabling every filter attached
-to that entity.
+## Named EF Core Query Filters
+
+EF Core 10 supports multiple named query filters per entity type and selective
+disabling of individual filters. Use names when a request must bypass one concern,
+such as soft deletion, while retaining another, such as tenant isolation. Do not use
+the all-filters disable path when only one filter should be removed.

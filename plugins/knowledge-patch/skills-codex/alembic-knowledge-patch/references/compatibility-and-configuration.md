@@ -2,58 +2,72 @@
 
 ## Runtime requirements
 
-Alembic 1.15.0 drops Python 3.8 and SQLAlchemy 1.3. It requires Python 3.9 or
-newer and SQLAlchemy 1.4 or newer.
+### Python and SQLAlchemy floors (1.15.0)
 
-Alembic 1.17.0 raises the Python minimum to 3.10; Python 3.9 is no longer
-supported.
+Alembic 1.15 drops Python 3.8 and SQLAlchemy 1.3. It requires Python 3.9 or
+newer and SQLAlchemy 1.4 or newer. Upgrade the application runtime and ORM
+dependency before adopting that Alembic line.
 
-Alembic 1.18.0 raises the SQLAlchemy minimum from 1.4.0 to 1.4.23.
+### Python 3.10 minimum (1.17.0)
 
-## Yanked 1.15.0 package
+Alembic 1.17 drops Python 3.9 and requires Python 3.10 or newer. Environments
+that must remain on Python 3.9 cannot upgrade to this line.
 
-The PEP 621 packaging change omitted Alembic's template files from the 1.15.0
-wheel, so that release was yanked. The corrected wheel shipped in 1.15.1.
-Install 1.15.1 or later when using that series.
+### Raised SQLAlchemy floor (1.18.0)
 
-## Source-build requirement
+Alembic 1.18 requires SQLAlchemy 1.4.23 or newer, raising the previous
+SQLAlchemy 1.4.0 floor. Check resolved dependency versions, not only broad
+requirement specifiers.
 
-As of 1.16.0, building Alembic from source requires setuptools 77.0.3 or newer.
-This accompanies the move to PEP 639 license metadata.
+## Packaging and source builds
 
-## Split source settings from deployment settings
+### Yanked 1.15.0 wheel
 
-As of 1.16.0, source-code and migration-generation settings can live in
-`pyproject.toml`. These include local paths and post-write hooks.
+The move to PEP 621 packaging omitted Alembic's template files from the 1.15.0
+wheel, so that release was yanked. The 1.15.1 wheel corrected the package;
+install 1.15.1 or later in that series rather than pinning 1.15.0.
 
-Use TOML lists for `version_locations` and `prepend_sys_path` to avoid string
-separator ambiguity. In TOML configuration, `%(here)s` resolves relative to
-the parent directory of the TOML file.
+### Setuptools build requirement (1.16.0)
 
-Database connectivity and logging remain deployment concerns. Supply them
-through `alembic.ini` or `env.py`. If `env.py` supplies both, the `pyproject`
-initialization template permits a project without `alembic.ini`.
+Building Alembic from source requires setuptools 77.0.3 or newer. The higher
+floor accompanied the adoption of PEP 639 license metadata. Ensure isolated
+build environments can resolve this version.
 
-## Use cross-platform INI path splitting
+## Configuration sources
 
-`path_separator` supersedes `version_path_separator` and governs both
-`version_locations` and `prepend_sys_path`. The value `os` uses
-`os.pathsep`, making the configuration portable:
+### Source settings in `pyproject.toml` (1.16.0)
+
+Alembic can read source-code and generation settings from `pyproject.toml`,
+including local paths and post-write hooks. TOML lists avoid separator
+ambiguity for `version_locations` and `prepend_sys_path`. In TOML values,
+`%(here)s` resolves relative to the parent directory of `pyproject.toml`.
+
+Keep database connectivity and logging as deployment settings in
+`alembic.ini` or `env.py`. When `env.py` supplies them, the `pyproject` init
+template permits omitting `alembic.ini` entirely.
+
+### Cross-platform path separation (1.16.0)
+
+`path_separator` supersedes `version_path_separator` and applies to both
+`version_locations` and `prepend_sys_path`:
 
 ```ini
 [alembic]
 path_separator = os
 ```
 
-The setting defaults to `os` in newly configured environments. A configuration
-that omits it keeps the older splitting behavior and emits a deprecation
-warning.
+The `os` value splits paths with `os.pathsep`. If `path_separator` is absent,
+Alembic retains the older splitting behavior and emits a deprecation warning.
+Set it explicitly for predictable behavior across operating systems.
 
-## Pass path-like objects through public APIs
+## Public path APIs
 
-Since 1.16.0, public command, configuration, and script APIs that accept string
-paths also accept `os.PathLike` objects. Public accessors that return paths
-continue to return strings.
+### `PathLike` inputs (1.16.0)
 
-Private underscored APIs are not covered by that return-type guarantee. After
-the path-handling refactor, they may return `pathlib.Path` objects.
+Public command, configuration, and script APIs that accept path strings also
+accept `os.PathLike` objects. Public accessors that return paths continue to
+return strings, so do not change calling code to require `Path` results.
+
+Private underscored APIs can return `pathlib.Path` objects after the path
+handling refactor. Code relying on private path types should migrate to public
+APIs or normalize the returned value explicitly.

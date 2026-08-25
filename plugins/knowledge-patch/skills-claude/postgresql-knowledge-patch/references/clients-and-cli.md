@@ -1,89 +1,85 @@
 # Clients, Authentication, and Command-Line Tools
 
-Batch attribution: `17.0`, `18.0`.
+## Cancel safely and stream chunked results (17.0)
 
-## Migrate password authentication and configure OAuth
+The current libpq cancellation API supports blocking or nonblocking operation
+and can reuse an existing encrypted connection, replacing the old
+blocking, unencrypted-only behavior. `PQsetChunkedRowsMode()` returns results
+in chunks. `PQsendPipelineSync()` queues a synchronization point without
+necessarily flushing it immediately, and `PQchangePassword()` hashes a new
+role password before sending it.
 
-MD5 password authentication is deprecated. `CREATE ROLE` and `ALTER ROLE` warn
-when setting an MD5 password unless `md5_password_warnings` is disabled.
+## Negotiate TLS directly (17.0)
 
-`oauth` is a `pg_hba.conf` authentication method. The server loads token
-validation libraries named by `oauth_validator_libraries`, while libpq provides
-the corresponding OAuth connection options. Building OAuth support from source
-requires `--with-libcurl`.
-
-## Configure TLS negotiation
-
-`sslnegotiation=direct` makes libpq begin TLS immediately, avoiding the usual
-negotiation round trip. It requires ALPN and a PostgreSQL 17-or-newer server.
+`sslnegotiation=direct` begins TLS immediately and saves a negotiation round
+trip. Use it only with ALPN and a PostgreSQL 17-or-newer server.
 
 ```text
 host=db.example dbname=app sslmode=require sslnegotiation=direct
 ```
 
-Server TLS settings include `ssl_tls13_ciphers`. The multi-valued `ssl_groups`
-replaces `ssl_ecdh_curve`, although the old name remains accepted; the default
-group list includes X25519.
+## Account for psql behavior changes (17.0)
 
-Later security updates make libpq discard unauthenticated server error text
-received before SSL or GSS negotiation. Its escaping functions also validate
-input encoding, so applications and intermediaries must agree on that encoding.
+`\watch` has a `min_rows` stopping condition, and Control-C can cancel a
+connection attempt. `FETCH_COUNT` applies to row-returning statements beyond
+`SELECT`. Backslash-command output honors `\pset null`; `\dp` prints `(none)`
+for explicitly empty privileges but leaves default privileges blank.
 
-## Cancel, stream, and pipeline libpq operations
+## Update pgbench invocations (17.0)
 
-The current cancel API can operate in blocking or nonblocking mode and reuses
-the existing encrypted connection. It replaces the old cancellation behavior,
-which was blocking and could not preserve encrypted transport.
+The former `pgbench -d` debug option is now `--debug`. `-d` selects the
+database, with `--dbname` as its long spelling. `--exit-on-abort` ends a run
+after any client aborts, and `\syncpipeline` sends pipeline synchronization
+messages explicitly.
 
-`PQsetChunkedRowsMode()` returns query results in chunks.
-`PQsendPipelineSync()` queues a pipeline synchronization point without
-necessarily flushing immediately. `PQchangePassword()` hashes a new role
-password before sending it.
+## Harden patched clients (17.0)
 
-## Negotiate protocol versions
+Later 17.x clients discard unauthenticated server error text received before
+SSL or GSS negotiation. Libpq escaping functions validate input encoding, so
+applications and intermediaries must agree on that encoding. Trusted PL/Perl
+rejects `%ENV` changes; `plperlu` retains that ability.
 
-Wire protocol 3.2 supports 256-bit cancel keys. `PQfullProtocolVersion()`
-reports the negotiated protocol, and libpq connection parameters and
-environment variables can bound acceptable protocol versions.
+## Reconnect after notification-consumption failure (17.0)
 
-Clients are notified when `search_path` changes. `PQtrace()` traces
-authentication and every other protocol message. `sslkeylogfile` exports TLS
-key material for debugging. Updated public signatures use `int64_t` instead of
-the deprecated `pg_int64` type.
+In updated 17.x releases, an error while consuming asynchronous `NOTIFY` is
+always promoted to `FATAL` and closes the connection. Reconnect because the
+failure means a notification may have been lost.
 
-## Use prepared statements and pipeline mode in psql
+## Migrate authentication and time-zone assumptions (18.0)
 
-psql supplies `\parse`, `\bind_named`, and `\close_prepared` for named prepared
-statements.
+MD5 password authentication is deprecated. `CREATE ROLE` or `ALTER ROLE`
+warns when setting an MD5 password unless `md5_password_warnings` is disabled.
+Session time-zone abbreviations take precedence over entries from
+`timezone_abbreviations`.
 
-Pipeline control uses `\startpipeline`, `\syncpipeline`, `\sendpipeline`,
-`\endpipeline`, `\flushrequest`, `\flush`, and `\getresults`. The `%P` prompt
-escape and `PIPELINE_*_COUNT` variables expose pipeline state.
+## Configure OAuth and TLS groups (18.0)
 
-## Control psql display, fetching, and watch behavior
+`oauth` is a `pg_hba.conf` authentication method. Server token validation uses
+libraries listed in `oauth_validator_libraries`; libpq has OAuth connection
+options, and source builds need `--with-libcurl`. TLS configuration adds
+`ssl_tls13_ciphers`. The multi-valued `ssl_groups` replaces `ssl_ecdh_curve`
+(the old name still works), and its default includes X25519.
 
-`\watch` supports a `min_rows` stopping condition, and `WATCH_INTERVAL` sets
-its default delay. Connection attempts can be canceled with Control-C.
-`FETCH_COUNT` applies to row-returning statements even when they are not
-`SELECT`.
+## Bound wire-protocol negotiation (18.0)
 
-Backslash-command output honors `\pset null`. `\dp` displays `(none)` for
-explicitly empty privileges while leaving default privileges blank.
+Wire protocol 3.2 provides 256-bit cancel keys. `PQfullProtocolVersion()` and
+new connection parameters and environment variables report and bound accepted
+protocol versions. Clients receive notifications when `search_path` changes,
+and `PQtrace()` covers authentication and every other message.
+`sslkeylogfile` exports TLS key material for debugging. Affected public APIs
+use `int64_t` instead of deprecated `pg_int64`.
 
-Appending `x` to a list command requests expanded output. `\conninfo` uses a
-richer tabular display. Function and operator descriptions show leakproof
-status, partition descriptions show access methods, and `\dx` includes an
-extension's default version.
+## Drive prepared statements and pipelines in psql (18.0)
 
-## Run pgbench with compatible option names
+Use `\parse`, `\bind_named`, and `\close_prepared` for named prepared
+statements. Pipeline mode adds `\startpipeline`, `\syncpipeline`,
+`\sendpipeline`, `\endpipeline`, `\flushrequest`, `\flush`, and
+`\getresults`; `%P` and the `PIPELINE_*_COUNT` variables expose its state.
 
-`pgbench -d` now selects the database and `--dbname` is its long form. Use
-`--debug` instead of the old `-d` debug meaning. `--exit-on-abort` stops a run
-after any client aborts, and `\syncpipeline` explicitly sends pipeline
-synchronization messages.
+## Use richer psql display controls (18.0)
 
-## Recover from asynchronous notification failures
-
-If an updated server reports an error while a client consumes an asynchronous
-`NOTIFY`, that error is promoted to `FATAL` and the connection closes. Reconnect:
-the failure indicates that a notification may have been lost.
+Append `x` to list commands for expanded output. `\conninfo` uses a richer
+tabular display, and `WATCH_INTERVAL` sets the default `\watch` delay.
+Function and operator descriptions show leakproof status, partition
+descriptions show access methods, and `\dx` includes an extension's default
+version.

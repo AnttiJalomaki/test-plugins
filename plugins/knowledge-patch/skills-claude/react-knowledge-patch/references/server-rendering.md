@@ -1,16 +1,10 @@
 # Server Rendering and Cache Lifetimes
 
-The APIs and behavior in this reference are available in React `19.2.0`.
+## Cancel work when an RSC cache lifetime ends
 
-## Cancel work with `cacheSignal`
-
-`cacheSignal()` is available only in React Server Components. It returns an `AbortSignal` tied to the surrounding `cache()` lifetime. The signal aborts when rendering:
-
-- completes;
-- aborts; or
-- fails.
-
-Pass it to cancellable work so work stops when its result can no longer enter the cache:
+Since `19.2.0`, `cacheSignal()` is an RSC-only API. It returns a signal that
+aborts when the surrounding `cache()` lifetime ends because rendering
+completed, aborted, or failed:
 
 ```jsx
 import { cache, cacheSignal } from "react";
@@ -23,16 +17,17 @@ async function Component() {
 }
 ```
 
-## Partial pre-rendering workflow
+Pass the signal to cancellable work so a result that can no longer enter the
+cache does not continue consuming resources.
 
-Static rendering can stop at dynamic work and return two artifacts:
+## Resume partial pre-rendering
 
-- `prelude`: HTML that can be served immediately or cached; and
-- `postponed`: reusable state needed to continue the same tree later.
-
-Create and retain the postponed state:
+Since `19.2.0`, static rendering can stop with reusable `postponed` state.
+Serve or cache the returned `prelude`, persist the postponed state, and later
+resume the same tree to fill in dynamic content:
 
 ```jsx
+import { resume } from "react-dom/server";
 import { prerender } from "react-dom/static";
 
 const controller = new AbortController();
@@ -41,48 +36,39 @@ const { prelude, postponed } = await prerender(<App />, {
 });
 
 await savePostponedState(postponed);
+const stream = await resume(
+  <App />,
+  await getPostponedState(request),
+);
 ```
 
-Resume the same tree when request-specific dynamic content is available:
+Select the continuation for the desired output:
 
-```jsx
-import { resume } from "react-dom/server";
-
-const postponed = await getPostponedState(request);
-const stream = await resume(<App />, postponed);
-```
-
-The resumed render must correspond to the pre-rendered tree and its saved postponed state.
-
-## Resume API selection
-
-| Goal | Web Stream API | Node stream API |
+| Goal | Web Stream | Node stream |
 |---|---|---|
-| Resume and stream dynamic content | `resume` | `resumeToPipeableStream` |
-| Complete postponed work as static HTML for SSG | `resumeAndPrerender` | `resumeAndPrerenderToNodeStream` |
+| Resume dynamic output | `resume` | `resumeToPipeableStream` |
+| Finish as static HTML for SSG | `resumeAndPrerender` | `resumeAndPrerenderToNodeStream` |
 
-`resumeAndPrerender` and `resumeAndPrerenderToNodeStream` finish the postponed tree as static output rather than serving it as a dynamic streaming continuation.
+## Choose streams deliberately on Node
 
-## Web Streams on Node
+Node supports the Web Streams SSR APIs `renderToReadableStream`, `prerender`,
+`resume`, and `resumeAndPrerender` since `19.2.0`. Their Node-stream
+counterparts are faster for server rendering on Node:
 
-Node.js supports these Web Streams server-rendering APIs:
+| Web Streams API | Preferred Node-stream counterpart |
+|---|---|
+| `renderToReadableStream` | `renderToPipeableStream` |
+| `prerender` | `prerenderToNodeStream` |
+| `resume` | `resumeToPipeableStream` |
+| `resumeAndPrerender` | `resumeAndPrerenderToNodeStream` |
 
-- `renderToReadableStream`;
-- `prerender`;
-- `resume`; and
-- `resumeAndPrerender`.
+Web Streams also do not provide compression by default.
 
-Prefer the corresponding Node-stream APIs when rendering on Node because they are faster there:
+## Do not depend on Suspense reveal batching
 
-- `renderToPipeableStream`;
-- `prerenderToNodeStream`;
-- `resumeToPipeableStream`; and
-- `resumeAndPrerenderToNodeStream`.
-
-Web Streams do not provide compression by default.
-
-## Batched Suspense reveals
-
-During streaming SSR, React may wait briefly after a Suspense boundary completes so nearby boundaries can replace their fallbacks together. This aligns server reveals with client reveal behavior and can produce larger View Transition batches.
-
-The delay is opportunistic. React abandons it when waiting could hurt user-visible metrics, including the 2.5-second Largest Contentful Paint threshold. Application correctness and coordination must not depend on all nearby boundaries revealing in one batch.
+During streaming SSR, completed Suspense boundaries can wait briefly so
+nearby completions replace their fallbacks together (`19.2.0`). This matches
+client reveal behavior and can produce larger View Transition batches. React
+abandons the delay when it could hurt metrics such as the 2.5-second LCP
+threshold. Do not assume every nearby boundary will be held or revealed in
+one batch.

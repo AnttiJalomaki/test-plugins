@@ -2,186 +2,225 @@
 
 ## Custom model integration
 
-### V1 forward contract (`0.7-0.10`)
+### V1 forward contract
 
-Custom model `forward` methods no longer receive `kv_cache` or
-`attn_metadata`; attention implementations obtain both through
-`forward_context`. During the V0 transition, `SupportsV0Only` allowed a model
-definition to declare its dependency on the old engine. V0 is now removed, so
-new integrations must implement the V1 contract.
+From `0.7-0.10`, custom model `forward` methods no longer receive `kv_cache`
+or `attn_metadata`; attention backends obtain both from `forward_context`.
+`SupportsV0Only` briefly allowed definitions to declare an old-engine
+requirement, but V0 was subsequently removed.
 
-### Multimodal extension path (`0.7-0.10`)
+### Multimodal extension contract
 
-A model that implements the merged multimodal processor and appropriate
-`get_*_embeddings` methods is automatically supported by V1. The legacy input
-mapper for out-of-tree multimodal models was deprecated in 0.8. By 0.10, VLMs
-can run through the Transformers backend and that backend supports multimodal
-caching.
+An out-of-tree model that implements the merged multimodal processor and the
+appropriate `get_*_embeddings` methods is automatically supported by V1. The
+legacy input mapper was deprecated in `0.7-0.10`. The Transformers modeling
+backend later gained VLM support and multimodal caching.
 
-V1 preprocesses multimodal data outside the engine loop, shares cached
-preprocessed inputs across requests, includes image hashes in prefix caching,
-and keeps vision embeddings in an encoder cache
-(`v1-architecture-and-batching`).
+Multimodal preprocessing runs outside the engine loop. Preprocessed inputs can
+be shared across requests, image hashes participate in prefix-cache lookup,
+and an independent encoder cache retains vision embeddings. This separation
+lets the scheduler split the text prefill across steps instead of coupling all
+text with the media item.
 
-### Multimodal encoder controls (`engine-and-openai-server`)
+### Encoder execution controls
 
-Processor caching exposes `--mm-processor-cache-type` plus a shared-memory
-object-size cap. Encoder execution has separate tensor-parallel, attention
-backend, and attention dtype settings. Encoder FP8 scales can be loaded or
+Processor caching has `--mm-processor-cache-type` and a shared-memory
+object-size cap. The encoder independently selects tensor-parallel mode,
+attention backend, and attention dtype. Encoder FP8 scales can be loaded or
 saved with a configurable save margin. Multimodal tensor IPC has its own mode
 and GPU-memory budget.
 
-## Pooling, embedding, and task selection
+### Streaming and embedding inputs
 
-Version 0.10 lets a model advertise multiple tasks and multiple poolers and
-select pooling parameters at runtime. Integrations must not assume a single
-fixed task/pooler (`0.7-0.10`).
+V1 added prompt embeddings in `0.11-0.14`, and chat completions gained audio
+embeddings. Engines can consume async generators of `StreamingInput` objects
+while preserving KV-cache alignment (`0.15-0.18`), providing a session-style
+path for workloads such as ASR. Image embeddings, multiple image/audio items,
+and `mm_processor_kwargs` are supported on the corresponding request paths.
 
-Versions 0.11-0.12 add RADIO and Transformers encoder-only models, BERT token
-classification/NER, multimodal pooling, and Qwen3 Omni audio-in-video. Versions
-0.13-0.14 add Qwen3-VL embedding and reranking (`0.11-0.14`).
+## Runtime lifecycle and training integration
 
-Versions 0.15-0.18 add BGE-M3 sparse and ColBERT embeddings, sparse-embedding
-IO, multimodal late-interaction scoring, Cohere Embed v2 compatibility, ColPali
-retrieval, and ERNIE pooling models.
+### Sleep, wake, RPC, and model application
 
-Versions 0.25-0.26 add RoBERTa/XLM-RoBERTa token classification
-(`0.23-0.26`).
+Batch `0.7-0.10` added `LLM.sleep`, `LLM.wake_up`, `LLM.collective_rpc`, and
+`LLM.reset_prefix_cache` for post-training integrations. It later extended RPC
+with runtime weight reload and configuration updates. Batch `0.11-0.14` added
+sharded state loading, `LLM.apply_model`, and pause/resume generation for
+asynchronous RL training.
 
-## Runtime lifecycle and weight synchronization
+### Weight synchronization and request preservation
 
-Version 0.7 added `LLM.sleep`, `LLM.wake_up`, `LLM.collective_rpc`, and
-`LLM.reset_prefix_cache` for post-training integrations. Version 0.10 extends
-RPC with runtime weight reload and configuration updates and adds a logprobs
-mode selecting the processing stage that supplies returned logprobs
-(`0.7-0.10`).
+Batch `0.15-0.18` added native NCCL weight sync, layerwise reloading, and
+pause/resume that preserves requests. It then added an IPC weight-sync path and
+sleep level 0 with an enqueue/wait pattern. Batch `0.19-0.22` exposed
+`/start_weight_update` and `/finish_weight_update` for explicit RLHF update
+boundaries.
 
-Version 0.11 adds `LLM.apply_model`; 0.12 adds pause/resume generation for
-asynchronous reinforcement-learning training (`0.11-0.14`).
+In `0.27.1`, RL rollout paths can attach a version to weights. The FlashInfer
+monolithic MoE kernel can return router-replay output for training
+integrations.
 
-Version 0.16 adds native NCCL weight synchronization, layerwise reload, and
-pause/resume that preserves requests. Version 0.17 adds an IPC synchronization
-path and sleep level 0 with an enqueue/wait pattern (`0.15-0.18`). Version 0.21
-adds `/start_weight_update` and `/finish_weight_update`; version 0.26 adds
-runtime draft-weight updates and an `/abort_requests` development endpoint.
+## LoRA adapters and resolvers
 
-Deserialization for reinforcement-learning weight synchronization is gated by
-the insecure-serialization setting from 0.18.
+### Initial V1 and platform expansion
 
-## LoRA support
+Rank-Stabilized LoRA arrived in `0.7-0.10`, followed by V1 LoRA and LoRA for
+`TransformersModel`. Multi-LoRA expanded across x86, TPU, and Neuron. A
+default local-directory LoRA resolver and Tensorizer loading for both V1 and
+LoRA followed.
 
-### `0.7-0.10`
+### Sharded and multimodal adapters
 
-Rank-Stabilized LoRA arrived in 0.7. Version 0.8 added V1 LoRA and LoRA for
-`TransformersModel`; Multi-LoRA expanded to x86, TPU, and Neuron. Version 0.9
-adds a default local-directory resolver and Tensorizer loading for V1 and LoRA.
-
-### `0.11-0.14`
-
-Version 0.12 adds `--fully-sharded-loras` for fused MoE. Version 0.14 supports
+Batch `0.11-0.14` added `--fully-sharded-loras` for fused MoE. It later added
 LoRA on multimodal towers/connectors for LLaVA, PaliGemma, DotsOCR, and GLM4-V;
-adds DeepSeek-OCR, Qwen3-Next, and PLaMo 2/3 paths; caches vision-LoRA processor
-work; and loads MoE expert `base_layer` weights.
+DeepSeek-OCR, Qwen3-Next, and PLaMo 2/3; vision-LoRA processor caching; and MoE
+expert `base_layer` loading.
 
-### `0.15-0.18`
+Batch `0.23-0.26` added language-backbone LoRA for MiniCPM-V 4.6,
+FlashInfer MoE LoRA for BF16 models, and tower/connector LoRA for
+LLaVA-Next-Video.
 
-Version 0.16 adds a Hugging Face Hub LoRA resolver. Version 0.17 permits direct
-loading of quantized adapters such as QLoRA. Version 0.18 adds Whisper LoRA and
-an FP8 dense LoRA kernel.
+### Remote, quantized, audio, and targeted adapters
 
-### `0.19-0.22`
+Batch `0.15-0.18` added a Hugging Face Hub resolver, direct loading of
+quantized adapters such as QLoRA, Whisper LoRA, and an FP8 dense LoRA kernel.
 
-Version 0.19 adds `--lora-target-modules` and H2OVL tower/connector LoRA.
-Subsequent releases add adapters for Qwen3-ASR, Gemma 4, DeepSeek V3.2, XPU,
-and expert parallelism. Version 0.22 adds simultaneous 2D and 3D MoE LoRA
-adapters.
+`--lora-target-modules` restricts adapters to selected modules
+(`0.19-0.22`). The same batch added H2OVL tower/connector LoRA, adapters for
+Qwen3-ASR, Gemma 4, and DeepSeek V3.2, XPU and expert-parallel support, and
+simultaneous 2D and 3D MoE LoRA adapters.
 
-### `0.23-0.26`
+### LoRA migration notes
 
-Version 0.25 adds language-backbone LoRA for MiniCPM-V 4.6. Version 0.26 adds
-FlashInfer MoE LoRA for BF16 models and tower/connector LoRA for
-LLaVA-Next-Video. `head_dtype` also applies through the LoRA path.
+LoRA extra vocabulary was removed in `0.11-0.14`. Long-context LoRA was part
+of the V0 cleanup. Quantized checkpoints and adapters must still match the
+selected kernel, layer type, sharding, and accelerator support; model-level
+LoRA support does not imply every quantized or multimodal path is available.
 
-## Model loading and installation caveats
+## Loading formats and checkpoint behavior
+
+Batch `0.11-0.14` accepts `repo_id:quant_type` when selecting a GGUF model,
+auto-detects Mistral format, and supports multimodal Gemma 3 GGUF loading.
+Batch `0.7-0.10` added Tensorizer loading for V1 and LoRA.
+
+Security-sensitive loading became stricter in `0.15-0.18`: NemotronVL and
+KimiK25 honor `trust_remote_code`, and RLHF weight-sync deserialization is
+gated by the insecure-serialization setting. Earlier hardening loads PyTorch
+weights with `weights_only=True`.
+
+Offline Hugging Face mode resolves non-cloud model and tokenizer repository
+IDs to revision-specific local paths. Cloud-storage URIs remain unchanged.
+`EngineArgs(tokens_only=True)` separately skips tokenizer initialization.
+
+## Pooling, embedding, classification, and scoring models
+
+From `0.7-0.10`, one model can advertise multiple tasks and poolers, with
+pooling parameters selected dynamically at runtime. Do not assume one fixed
+task/pooler per integration.
+
+Batch `0.11-0.14` expanded support to RADIO and Transformers encoder-only
+models, BERT token classification/NER, multimodal pooling, Qwen3 Omni
+audio-in-video, and Qwen3-VL embedding/reranking. Batch `0.15-0.18` added
+BGE-M3 sparse and ColBERT embeddings, multimodal late-interaction scoring,
+sparse-embedding IO, Cohere Embed v2 compatibility, ColPali retrieval, and
+ERNIE pooling models.
+
+Batch `0.23-0.26` added RoBERTa/XLM-RoBERTa token classification. In
+`0.27.1`, MRV2 covers encoder-only attention, sequence pooling for embedding
+and classification, encoder token classification and embeddings, and BGE-M3
+pooling; `jina-embeddings-v5-text-nano` arrived with its EuroBERT encoder.
+
+## Diffusion and attention-free workloads
+
+Batch `0.23-0.26` added DiffusionGemma with CPU execution and
+structured-output guardrails for diffusion decoders, then tensor parallelism
+and Hugging Face stability-window semantics. In `0.27.1`, DiffusionGemma also
+accepts `top_k` and `top_p`.
+
+Attention-free architectures and hybrid SSM/attention models arrived during
+`0.7-0.10`. MRV2 later expanded to Qwen3.5/Mamba hybrids, Mamba-hybrid prefix
+caching, and additional hybrid-model paths.
+
+## Model and task compatibility catalog
+
+### Text, multimodal, reward, and speech additions
+
+Batch `0.7-0.10` added CogAgent, DeepSeek-VL2, InternLM3, Whisper, Qwen2 PRM,
+InternLM2 reward models, Gemma 3, Mistral Small 3.1, Phi-4 multimodal, Grok1,
+QwQ-32B tool calling, and Zamba2. It later added MiMo-7B, MiniMax-VL-01,
+Ovis 2, Falcon-H1, LlamaGuard 4, Llama 4 with EAGLE, EXAONE 4.0, Hunyuan V1,
+JinaVL Reranker, Arcee, Voxtral, additional embedding families,
+attention-free architectures, and hybrid SSM/attention models.
 
 Gemma 3 on 0.8 requires Transformers from its main branch and should use
 `bfloat16` or `float32`; `float16` is numerically unstable. Falcon-H1 on 0.9
-also requires a development Transformers installation (`0.7-0.10`).
+also requires a development Transformers installation.
 
-Version 0.12 accepts `repo_id:quant_type` for GGUF selection, automatically
-detects Mistral format, and loads multimodal Gemma 3 GGUF (`0.11-0.14`).
+### V1-era architecture expansion
 
-Gemma 4 support in 0.19 includes MoE, multimodal, reasoning, and tools but
-requires `transformers>=5.5.0`. The recommended ready-to-run image is
-`vllm/vllm-openai:gemma4` (`0.19-0.22`). A Gemma 4 assistant checkpoint used
-for speculative decoding must take the MTP path rather than generic draft-model
-configuration.
+Batch `0.11-0.14` added DeepSeek-V3.2-Exp, Qwen3-VL, OLMo3, Dots OCR, CWM,
+PLaMo-3, OpenCUA-7B, Mistral Large 3, Ministral 3, BAGEL (autoregressive only),
+AudioFlamingo3, latent MoE, Grok-2, LFM2-VL, MiMo-V2-Flash, openPangu MoE,
+IQuestCoder, Nemotron Parse 1.1, GLM-ASR, Isaac vision, Kanana 1.5, and
+K-EXAONE.
 
-## Model and workload coverage
+The same batch expanded tasks to RADIO, Transformers encoder-only models,
+BERT token classification/NER, multimodal pooling, Qwen3 Omni audio-in-video,
+and Qwen3-VL embedding/reranking.
 
-These lists are compatibility data: confirm that the installed version includes
-the named implementation before relying on it.
+### Realtime, ASR, retrieval, and hybrid expansion
 
-### `0.7-0.10`
+Batch `0.15-0.18` added Kimi-K2.5, Molmo2, Step1, Eagle2.5-8B VLM, GLM-OCR,
+Qwen3-ASR, Intern-S1-Pro, openPangu7B-VL, MusicFlamingo, GLM-5, Qwen3.5,
+Ring 2.5, Ovis 2.6, FunASR, FireRedASR2, Sarvam MoE, OLMo Hybrid,
+HyperCLOVAX-SEED-Think-14B, ColPali retrieval, and ERNIE pooling models.
 
-Versions 0.7-0.8 add CogAgent, DeepSeek-VL2, InternLM3, Whisper, Qwen2 PRM,
-InternLM2 reward models, Gemma 3, Mistral Small 3.1, Phi-4 multimodal, Grok1,
-QwQ-32B tool calling, and Zamba2.
+Qwen3.5 with an FP8 KV cache on B200 has a known degraded-accuracy issue in
+that batch; select another cache dtype when accuracy is critical.
 
-Versions 0.9-0.10 add MiMo-7B, MiniMax-VL-01, Ovis 2, Falcon-H1, LlamaGuard 4,
-Llama 4 with EAGLE, EXAONE 4.0, Hunyuan V1, JinaVL Reranker, Arcee, Voxtral,
-additional embedding families, attention-free architectures, and hybrid
-SSM/attention models.
+### Gemma 4 and later serving models
 
-### `0.11-0.14`
+Batch `0.19-0.22` added Cohere ASR, ColQwen3.5, Granite 4 Speech and 4.1
+Vision, Qwen3-ForcedAligner, DeepSeek V4, Hunyuan v3 preview, EXAONE-4.5,
+Phi-4 Reasoning Vision, TeleChat3, Jina Reranker v3, Nemotron-v3 VL,
+MiMo-V2.5, Laguna XS.2, Moondream3, Cohere MoE and Eagle, MiniCPM-V 4.6, and
+InternS2 Preview. DeepSeek V4 gained ROCm, pipeline/disaggregated serving, MTP
+speculation, and NVFP4 MoE support.
 
-Versions 0.11-0.12 add DeepSeek-V3.2-Exp, Qwen3-VL, OLMo3, Dots OCR, CWM,
-PLaMo-3, OpenCUA-7B, Mistral Large 3, Ministral 3, RADIO, Transformers
-encoder-only models, BERT token classification/NER, multimodal pooling, and
-Qwen3 Omni audio-in-video.
+Gemma 4 support includes MoE, multimodal, reasoning, and tool use, but requires
+`transformers>=5.5.0`. The recommended ready-to-run path in that batch is the
+`vllm/vllm-openai:gemma4` image.
 
-Versions 0.13-0.14 add BAGEL autoregressive support, AudioFlamingo3, latent
-MoE, Grok-2, LFM2-VL, MiMo-V2-Flash, openPangu MoE, IQuestCoder, Nemotron Parse
-1.1, GLM-ASR, Isaac vision, Kanana 1.5, and K-EXAONE, plus Qwen3-VL embedding
-and reranking.
+### Dense, diffusion, and encoder additions
 
-### `0.15-0.18`
+Batch `0.23-0.26` added Step-3.7-Flash, Cosmos3 Reasoner, Mellum v2, Cohere
+Mini Code, encoder-free Gemma 4 Unified, MiniMax-M3, DiffusionGemma, HrmText,
+OpenMOSS, LLaVA-OneVision-2, Unlimited OCR, MOSS-Transcribe-Diarize, Hy3,
+Inkling, RoBERTa/XLM-RoBERTa token classification, Cosmos3 Edge Reasoner, and
+TranslateGemma. MiniMax-M3 was explicitly unsupported in 0.23 and arrived in
+0.24.
 
-Versions 0.15-0.16 add Kimi-K2.5, Molmo2, Step1, Eagle2.5-8B VLM, GLM-OCR,
-Qwen3-ASR, Intern-S1-Pro, openPangu7B-VL, MusicFlamingo, and GLM-5.
+### Kimi K3 and current additions
 
-Versions 0.17-0.18 add Qwen3.5, Ring 2.5, Ovis 2.6, FunASR, FireRedASR2,
-Sarvam MoE, OLMo Hybrid, HyperCLOVAX-SEED-Think-14B, ColPali retrieval, and
-ERNIE pooling models.
+In `0.27.1`, Kimi K3 landed in the Python and Rust frontends with native
+kernels, AttnRes, DeepGEMM, compressed-tensors checkpoints, and DSpark
+autoregressive fusion. Its shared expert can be sharded instead of replicated.
 
-### `0.19-0.22`
+The same batch added Qwen3.5 text-only dense and MoE models,
+K-EXAONE-2.0-750B-A37B, VaultGemma through the Transformers modeling backend,
+and `jina-embeddings-v5-text-nano` with EuroBERT. Inkling checkpoints can use
+llm-compressor NVFP4 or compressed-tensors dynamic FP8. The Transformers
+backend also accepts audio models.
 
-Versions 0.19-0.20 add Cohere ASR, ColQwen3.5, Granite 4 Speech and 4.1 Vision,
-Qwen3-ForcedAligner, DeepSeek V4, Hunyuan v3 preview, EXAONE-4.5, Phi-4
-Reasoning Vision, TeleChat3, Jina Reranker v3, and Nemotron-v3 VL.
+## Retired models and integration paths
 
-Versions 0.21-0.22 add MiMo-V2.5, Laguna XS.2, Moondream3, Cohere MoE and
-Eagle, MiniCPM-V 4.6, and InternS2 Preview. DeepSeek V4 also gains ROCm,
-pipeline/disaggregated serving, MTP speculation, and NVFP4 MoE support.
+Batch `0.23-0.26` deprecated `JAISLMHeadModel` and first-generation Qwen and
+QwenVL. It removed ERNIE, Xverse, Bamba, the InternLM registry alias,
+Baichuan, Aquila, Tarsier, Tarsier2, Mantis, TeleChat, Persimmon, and Fuyu.
+The same batch removed `P2pNcclConnector`, dropped `gptq_marlin` on ROCm,
+moved legacy `api_server.py` to examples, and deprecated the old online FP8
+MoE class.
 
-### `0.23-0.26`
-
-Version 0.23 adds Step-3.7-Flash, Cosmos3 Reasoner, Mellum v2, Cohere Mini Code,
-and encoder-free Gemma 4 Unified. MiniMax-M3 is explicitly unsupported in 0.23
-and arrives in 0.24 with DiffusionGemma, HrmText, and OpenMOSS.
-
-Versions 0.25-0.26 add LLaVA-OneVision-2, Unlimited OCR,
-MOSS-Transcribe-Diarize, Hy3, Inkling, RoBERTa/XLM-RoBERTa token
-classification, Cosmos3 Edge Reasoner, and TranslateGemma.
-
-DiffusionGemma in 0.24 supports CPU execution and structured-output guardrails
-for diffusion decoders. Version 0.25 adds tensor parallelism and Hugging Face
-stability-window semantics.
-
-## Retired model integrations (`0.23-0.26`)
-
-Version 0.23 deprecates `JAISLMHeadModel`. Version 0.24 removes ERNIE, Xverse,
-Bamba, and the InternLM registry alias and deprecates first-generation
-Qwen/QwenVL. Version 0.25 removes Baichuan, Aquila, Tarsier, Tarsier2, and
-Mantis and moves legacy `api_server.py` to examples. Version 0.26 removes
-TeleChat, Persimmon, and Fuyu.
+Earlier removals include V0-only CPU/XPU/TPU/HPU backends, long-context LoRA,
+Phi3-Small, BlockSparse Attention, and legacy multimodal input fallbacks. Check
+the installed version before retaining a compatibility shim for any of these.

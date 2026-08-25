@@ -1,397 +1,224 @@
 # AKS and containers
 
-AKS cluster and node-pool controls, Azure Container Registry, Container Apps, container instances, and IoT.
+## AKS networking and cluster topology
 
-## AKS clusters and node pools
+### Network controls and outbound behavior
 
-### AKS advanced networking controls (2.68.0)
+- In Azure CLI `2.68.0`, create/update add `--enable-acns`; pair it with
+  `--disable-acns-observability` or `--disable-acns-security` to omit those
+  ACNS features, and use update `--disable-acns` to turn ACNS off. Update can
+  change `--ip-families`; create/update set node-resource-group restrictions
+  with `--nrg-lockdown-restriction-level`.
+- In `2.71.0`, create/update accept `--bootstrap-artifact-source` and
+  `--bootstrap-container-registry-resource-id`; `--outbound-type none` is
+  valid.
+- In `2.73.0`, create/update support API-server VNet integration, and cluster
+  creation/app routing apply a default NIC configuration for app routing.
+- In `2.75.0`, create/update add `--enable-static-egress-gateway`; add the
+  gateway pool with node-pool `--mode Gateway --gateway-prefix-size ...`.
+  Create and node-pool add support Azure CNI Static Block Allocation through
+  `--pod-ip-allocation-mode`.
+- In `2.85.0`, create/update accept `--acns-transit-encryption-type WireGuard`
+  or `None` and add ACNS performance support. Update can toggle HTTP proxy with
+  `--enable-http-proxy`/`--disable-http-proxy`.
+- In `2.86.0`, Automatic Managed System Pool clusters can use a caller VNet by
+  combining `--enable-hosted-system`, `--system-node-subnet-id`, and
+  `--node-subnet-id`.
+- In `2.89.0`, update no longer requires `--vnet-subnet-id` to be repeated for
+  `userDefinedRouting` or `userAssignedNATGateway` on BYO-VNet clusters;
+  managed-VNet clusters get a clear validation error for these outbound types.
 
-`az aks create` and `az aks update` gain `--enable-acns`; when enabling it,
-`--disable-acns-observability` and `--disable-acns-security` can omit the
-corresponding ACNS features. `az aks update` also gains `--disable-acns`.
+## Node pools, machines, and operating systems
 
-```bash
-az aks update --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" \
-  --enable-acns --disable-acns-observability
-```
+### Pool types and provisioning
 
-### AKS application auto-instrumentation (2.86.0)
+- `2.73.0` changes the `--node-vm-size` default on cluster create and node-pool
+  add to an empty string. Pass a size when it must be stable.
+- `2.76.0` adds Virtual Machines node pools and permits update migration from
+  VMAS to VMS. `az aks machine show/list` table output adds zones. Create/update
+  also add `--node-provisioning-mode` and `--node-provisioning-default-pools`.
+- `2.89.0` cluster upgrades skip Machines-mode pools during both node-image and
+  Kubernetes-version upgrades; operate on those pools separately.
 
-`az aks update --enable-azure-monitor-app-monitoring` enables Azure Monitor
-Application Monitoring auto-instrumentation on a cluster.
+### OS, CA, GPU, DNS, and runtime choices
 
-### AKS artifact streaming (2.87.0)
+- `2.72.0`: node-pool add/update accept `Ubuntu2204`; cluster create and pool
+  add accept `--custom-ca-trust-certificates`; pool add accepts
+  `--gpu-driver install|none`.
+- `2.78.0`: node-pool add/update accept `AzureLinux3`. Cluster creation with
+  v1 container storage fails when the VM SKU is empty.
+- `2.79.0`: update removes custom CA certificates when
+  `--custom-ca-trust-certificates` points to an empty file.
+- `2.80.0`: cluster/pool creation accept `KataVmIsolation` as
+  `--workload-runtime`; pool add/update accept `--localdns-config`.
+- `2.82.0`: pool add/update accept `Ubuntu2404`; update also accepts
+  `--gpu-driver install|none`. `az aks install-cli --gh-token` authenticates
+  the GitHub `kubelogin` download.
+- `2.86.0`: create and pool add/update accept `AzureContainerLinux`; pool add
+  also accepts `Windows2025`.
 
-AKS add and update operations accept `--enable-artifact-streaming` and
-`--disable-artifact-streaming`, allowing artifact streaming to be toggled
-through the CLI.
+## Upgrades, disruption, and recovery
 
-### AKS Automatic clusters on a bring-your-own VNet (2.86.0)
+### Concurrency and disruption controls
 
-`az aks create` can combine `--enable-hosted-system`,
-`--system-node-subnet-id`, and `--node-subnet-id` to place an Automatic
-Managed System Pool cluster on a caller-supplied virtual network.
+- `2.69.0` cluster create/update/delete support `--if-match` and
+  `--if-none-match` for ETag-guarded operations.
+- `2.70.0` node-pool delete accepts `--ignore-pod-disruption-budget`; upgrade
+  accepts `--node-soak-duration 0` for no soak.
+- `2.74.0` node-pool add/update/upgrade add
+  `--undrainable-node-behavior` and number-or-percentage `--max-unavailable`.
+- `2.88.0` node-pool upgrade no longer ignores `--max-unavailable`. New
+  `get-rollback-versions` and `rollback` commands list rollback choices and
+  restore the pool's most recently used configuration.
 
-### AKS Azure Container Storage v2 controls (2.83.0)
+### Load balancer and maintenance migrations
 
-On a new cluster, `az aks create --enable-azure-container-storage` enables
-ACStor v2 without selecting a storage option. On an existing cluster,
-`az aks update --enable-azure-container-storage ephemeralDisk` enables
-ephemeral-disk storage, `--disable-azure-container-storage elasticSan`
-disables Elastic SAN storage, and the value-less disable flag disables ACStor
-v2 entirely.
-
-### AKS bootstrap artifacts and outbound type (2.71.0)
-
-`az aks create` and `az aks update` accept `--bootstrap-artifact-source` and
-`--bootstrap-container-registry-resource-id` for selecting the cluster's
-bootstrap artifact source and registry. Their `--outbound-type` option also
-accepts `none`.
-
-```bash
-az aks update --resource-group "$RESOURCE_GROUP" --name "$CLUSTER" \
-  --bootstrap-artifact-source "$ARTIFACT_SOURCE" \
-  --bootstrap-container-registry-resource-id "$REGISTRY_ID" \
-  --outbound-type none
-```
-
-### AKS container-network logs and cloud workspaces (2.84.0)
-
-`az aks create` gains `--enable-container-network-logs`; `az aks update` can
-toggle the feature with `--enable-container-network-logs` and
-`--disable-container-network-logs`. `az aks enable-addons` can now create a
-default workspace in the Bleu and Delos clouds.
-
-### AKS control-plane metrics (2.88.0)
-
-AKS create can enable Azure Monitor managed Prometheus control-plane metrics
-with `--enable-control-plane-metrics` or `--enable-cp-metrics`; update can
-also disable them with `--disable-control-plane-metrics` or
-`--disable-cp-metrics`.
-
-### AKS custom-CA removal and advanced network policies (2.79.0)
-
-`az aks update` can remove existing custom CA certificates by passing an empty
-file to `--custom-ca-trust-certificates`. AKS create and update also accept
-`--acns-advanced-networkpolicies` with `None`, `L7`, or `FQDN`.
-
-### AKS deployment safeguards and run-command policy (2.76.0)
-
-The new `az aks safeguards` group manages deployment safeguards. Creation can
-disable run command with `--disable-run-command`, while update can toggle it
-with `--disable-run-command` or `--enable-run-command`.
-
-### AKS device-code kubeconfigs (2.78.0)
-
-`az aks get-credentials` converts device-code-mode kubeconfigs to Azure CLI
-token format so that conditional-access login does not block them.
-
-### AKS downloads and node-pool choices (2.82.0)
-
-`az aks install-cli` accepts `--gh-token` to authenticate the GitHub download
-of `kubelogin`. `az aks nodepool add` and `update` accept `Ubuntu2404` for
-`--os-sku`, and node-pool update now accepts `--gpu-driver install` or
-`--gpu-driver none`.
-
-### AKS isolation and node networking (2.80.0)
-
-Cluster and node-pool creation accept `KataVmIsolation` for
-`--workload-runtime`; node-pool add and update accept `--localdns-config`.
-Service Mesh egress gateways can be managed with
-`az aks mesh enable-egress-gateway` and
-`az aks mesh disable-egress-gateway`.
-
-### AKS Istio CNI and managed gateways (2.86.0)
-
-`az aks mesh enable` and `az aks mesh proxy-redirection-mechanism` add Istio
-CNI management. AKS create/update can toggle Managed Gateway API with
-`--enable-gateway-api` or `--disable-gateway-api`, and the App Routing Istio
-gateway implementation with `--enable-app-routing-istio` or
-`--disable-app-routing-istio`.
-
-### AKS load-balancer SKU migration (2.76.0)
-
-`az aks update` can now migrate a cluster load balancer from Basic to Standard
-SKU.
-
-### AKS maintenance-window format (2.88.0)
-
-`az aks maintenanceconfiguration add` and `update` now accept the
+In `2.76.0`, `az aks update` migrates a Basic cluster load balancer to
+Standard. In `2.88.0`, maintenance-configuration add/update accept the
 `maintenanceWindow` format for the default maintenance configuration.
 
-### AKS managed namespaces (2.80.0)
+## Security, policy, and identity
+
+### Run command and safeguards
+
+`2.76.0` adds the `az aks safeguards` group. Cluster creation can set
+`--disable-run-command`; update can disable or enable it. `2.81.0` safeguards
+adds `--pss-level` for Pod Security Standards, and create rejects duplicate
+safeguard resources during CLI validation.
+
+### SSH and conditional access
+
+`2.78.0` announces the coming `--no-ssh-key` default; `2.80.0` enacts it, so
+cluster create now behaves as if no SSH key were requested unless configured
+otherwise. In `2.78.0`, `az aks get-credentials` converts device-code
+kubeconfigs to Azure CLI token format so Conditional Access does not block
+them.
+
+### Identity and registry attachment
+
+`2.75.0` adds `--assignee-principal-type` when update uses `--attach-acr`.
+`2.89.0` adds `az aks identity-binding` to manage cluster identity bindings,
+also called the trust domain.
+
+### Advanced network policy
+
+In `2.79.0`, create/update accept
+`--acns-advanced-networkpolicies None|L7|FQDN`.
+
+## Observability, add-ons, and cluster features
+
+- `2.70.0` create and node-pool add accept `--message-of-the-day`.
+- `2.74.0` removes preview status from `--enable-high-log-scale-mode` on
+  cluster create and add-on enablement.
+- `2.76.0` create/update add `--enable-ai-toolchain-operator` for Kaito;
+  creation can configure Azure Monitor metrics and logs.
+- `2.77.0` create/update accept `--sku` for AKS Automatic.
+- `2.80.0` adds `az aks namespace add/update/show/list/delete/get-credentials`
+  for managed namespaces. Mesh egress gateways use
+  `az aks mesh enable-egress-gateway` and `disable-egress-gateway`.
+- `2.84.0` create enables container-network logs; update enables or disables
+  them. Add-on enablement can create a default workspace in Bleu and Delos.
+- `2.85.0` update adds `--enable-high-log-scale-mode` for Container Logs.
+- `2.86.0` update `--enable-azure-monitor-app-monitoring` enables application
+  auto-instrumentation. `az aks mesh enable` and
+  `mesh proxy-redirection-mechanism` manage Istio CNI. Create/update toggle
+  Managed Gateway API and App Routing's Istio gateway with the corresponding
+  `--enable-*` and `--disable-*` switches.
+- `2.87.0` add/update toggle artifact streaming with
+  `--enable-artifact-streaming` and `--disable-artifact-streaming`.
+- `2.88.0` create enables managed Prometheus control-plane metrics with
+  `--enable-control-plane-metrics` or `--enable-cp-metrics`; update can also
+  disable them with either long or short form.
+
+## Azure Container Storage
+
+`2.77.0` create/update can install the latest acstor with
+`--enable-azure-container-storage`; `--container-storage-version` pins a
+release, and update `--disable-azure-container-storage` removes it regardless
+of installed version.
+
+`2.83.0` defines ACStor v2 behavior: value-less enable on a new cluster enables
+v2 without a storage option; on an existing cluster, enable with
+`ephemeralDisk`, disable with `elasticSan`, or use value-less disable to remove
+v2 entirely.
+
+## Azure Container Registry
+
+### Registry creation, endpoints, and login
+
+- `2.72.0` registry create/check-name accept `--dnl-scope` for domain-label
+  hash scope.
+- `2.74.0` `az acr login --expose-token` output adds `refreshToken` and
+  `username`; update fixed-schema consumers.
+- `2.82.0` ACR login enforces the ACR audience for its Entra token.
+- `2.85.0` replication create/update add `--global-endpoint-routing`;
+  `--region-endpoint-enabled` redirects to it and is distinct from registry
+  `--regional-endpoints`.
+- `2.86.0` login supports Podman. `show-endpoints` displays regional endpoint
+  hosts; `login --endpoint` selects one, and import accepts a regional endpoint
+  URI.
+- `2.87.0` login can customize its Entra token audience; registry update adds
+  `--endpoint-protocol`.
+- `2.88.0` registry create adds `--data-endpoint-enabled` for a dedicated data
+  endpoint and can select `--endpoint-protocol` at creation.
+- `2.89.0` registry create/update add `--writable-cache-repo`.
+
+### Cache, connected registries, ABAC, and tasks
+
+`2.71.0` allows a credentialless cache rule. In `2.73.0`, connected-registry
+create/update add `--gc-enabled` and cron `--gc-schedule`; registry
+create/update add `--role-assignment-mode` for ABAC; `check-health
+--repository` tests one repository's read/write/delete permissions; ACR task
+create/update/build/run add `--source-acr-auth-id` for source authentication.
+In `2.85.0`, cache-rule create/update accepts a user-assigned `--identity`.
+
+### Content trust transition
+
+`2.79.0` deprecates `az acr config content-trust` show/update. `2.83.0`
+announces that content-trust update will stop accepting status `enabled`, and
+that `az acr check-health` will remove its Notary client check. Do not create
+new automation dependencies on either behavior.
 
-The new `az aks namespace` group supports `add`, `update`, `show`, `list`,
-`delete`, and `get-credentials` operations for managed namespaces.
+## Container Apps and jobs
 
-### AKS message of the day (2.70.0)
+### Environments and ingress
 
-`az aks create` and `az aks nodepool add` accept `--message-of-the-day`, so a
-message can be configured with either the cluster or a newly added node pool.
+- `2.79.0` adds environment `http-route-config` and `premium-ingress` groups.
+- `2.80.0` premium-ingress operations remove `--min-replicas` and
+  `--max-replicas`.
+- `2.82.0` environment create accepts `--infrastructure-resource-group`.
+- `2.85.0` workload-profile add supplies a default profile name if omitted;
+  pass one explicitly for deterministic naming.
 
-### AKS network-family updates and node-resource-group lockdown (2.68.0)
+### Apps, Compose, and registries
 
-`az aks update` can now change the cluster network with `--ip-families`.
-Both create and update accept `--nrg-lockdown-restriction-level` to set the
-managed node resource group's restriction level.
+`2.69.0` Compose create splits environment assignments only at the first `=`,
+so values may contain equals signs. In `2.79.0`, registry show handles apps
+without a registry server. In `2.86.0`, app creation supports ACR references
+from another Azure cloud instead of assuming the default cloud.
 
-### AKS network-integration behavior (2.73.0)
+### Jobs and defaults
 
-AKS create/update now supports API-server VNet integration. Cluster creation
-and app routing also apply a default NIC configuration for app routing.
+`2.77.0` job list is no longer capped at 20 items; job update accepts `0` for
+both minimum and maximum executions. `2.84.0` job create supplies defaults for
+parallelism and replica completion count; pass both explicitly if those
+defaults must not drift.
 
-### AKS networking and high-volume logging (2.85.0)
+## Container Instances and Service Fabric
 
-AKS create/update accepts `--acns-transit-encryption-type` with `WireGuard`
-or `None` for pod-to-pod encryption and adds ACNS performance support.
-`az aks update` also gains `--enable-http-proxy`, `--disable-http-proxy`, and
-`--enable-high-log-scale-mode` for proxy and Container Logs configuration.
+### Container group defaults
 
-### AKS node operating-system choices (2.86.0)
+In `2.76.0`, `az container create` stops injecting the old container-group
+defaults to permit standby-pool reuse. Supply required values explicitly.
 
-`AzureContainerLinux` is now accepted by `az aks create` and by node-pool
-`add` and `update` through `--os-sku`. Node-pool `add` also accepts
-`Windows2025`.
+### Service Fabric
 
-### AKS node OS and container-storage validation (2.78.0)
-
-`az aks nodepool add` and `update` accept `AzureLinux3` for `--os-sku`.
-Creating a cluster with v1 container storage now fails when the VM SKU is empty.
-
-### AKS node VM-size default (2.73.0)
-
-The `--node-vm-size` default is now an empty string for `az aks create` and
-`az aks nodepool add`; pass a value explicitly when provisioning must use a
-specific VM size.
-
-### AKS node-pool disruption and soak controls (2.70.0)
-
-`az aks nodepool delete` accepts `--ignore-pod-disruption-budget` when a
-deletion must proceed despite PodDisruptionBudgets. An upgrade can now set
-`--node-soak-duration` to `0` when no soak interval is wanted.
-
-### AKS node-pool OS, CA trust, and GPU driver controls (2.72.0)
-
-`az aks nodepool add` and `az aks nodepool update` accept `Ubuntu2204` for
-`--os-sku`. Cluster creation and node-pool addition gain
-`--custom-ca-trust-certificates`, while node-pool addition can explicitly use
-`--gpu-driver install` or `--gpu-driver none`.
-
-### AKS node-pool upgrade and rollback (2.88.0)
-
-`az aks nodepool upgrade` no longer silently ignores `--max-unavailable`.
-The new `az aks nodepool get-rollback-versions` and `rollback` commands list
-rollback versions and restore an agent pool to its most recently used
-configuration.
-
-### AKS provisioning and observability add-ons (2.76.0)
-
-AKS create/update gains `--node-provisioning-mode`,
-`--node-provisioning-default-pools`, and `--enable-ai-toolchain-operator` for
-the Kaito add-on. Cluster creation can also configure the Azure Monitor
-metrics and logs add-on.
-
-### AKS SSH-key default (2.80.0)
-
-`az aks create` now uses `--no-ssh-key` behavior by default, enacting the
-breaking change announced in 2.78.0.
-
-### AKS SSH-key default warning (2.78.0)
-
-This release pre-announces a breaking change to the default behavior of
-`az aks create --no-ssh-key`; automation should not rely on its implicit default.
-
-### AKS static egress gateways (2.75.0)
-
-`az aks create` and `az aks update` accept
-`--enable-static-egress-gateway`. To add the corresponding gateway node pool,
-`az aks nodepool add` accepts `Gateway` for `--mode` together with
-`--gateway-prefix-size`.
-
-### AKS upgrade availability controls (2.74.0)
-
-`az aks nodepool add`, `update`, and `upgrade` accept
-`--undrainable-node-behavior` to control whether nodes can be cordoned during
-an upgrade and `--max-unavailable` to cap simultaneously unavailable nodes by
-number or percentage. The preview designation is also removed from
-`--enable-high-log-scale-mode` on `az aks create` and `enable-addons`.
-
-### AKS virtual-machine pools and migration (2.76.0)
-
-AKS commands now support Virtual Machines node pools, and `az aks update` can
-migrate an agent pool from VMAS to VMS. `az aks machine show/list` also adds
-zones to table output.
-
-### Azure CNI static block allocation (2.75.0)
-
-`az aks create` and `az aks nodepool add` accept
-`--pod-ip-allocation-mode` to configure Azure CNI Static Block Allocation.
-
-### Azure Container Storage lifecycle and AKS Automatic (2.77.0)
-
-`az aks create` and `az aks update` can install the latest acstor release with
-`--enable-azure-container-storage`; when enabling it,
-`--container-storage-version` selects a specific release. `az aks update
---disable-azure-container-storage` can uninstall acstor regardless of its
-installed version, and create/update also accept `--sku` for AKS Automatic.
-
-### ETag-guarded AKS operations (2.69.0)
-
-`az aks create`, `az aks update`, and `az aks delete` accept `--if-match` and
-`--if-none-match`, allowing callers to make cluster changes conditional on an
-ETag instead of racing concurrent updates.
-
-### Pod Security Standards for AKS safeguards (2.81.0)
-
-`az aks safeguards` adds `--pss-level` for configuring Pod Security Standards.
-`az aks safeguards create` also rejects duplicate resource creation during
-CLI validation.
-
-## Container Registry
-
-### ACR access and source-registry identity (2.73.0)
-
-Registry create/update accepts `--role-assignment-mode` to enable or disable
-ABAC, and `az acr check-health --repository` checks read, write, and delete
-permissions for one repository. ACR task create/update, build, and run accept
-`--source-acr-auth-id` to choose the managed identity used to authenticate to
-the source registry.
-
-### ACR content-trust and health-check breaking changes (2.83.0)
-
-`az acr config content-trust update` announces that the `enabled` status will
-stop being accepted. `az acr check-health` also announces removal of its
-Notary client check, so automation must not depend on either behavior.
-
-### ACR content-trust command deprecation (2.79.0)
-
-`az acr config content-trust` and its `show` and `update` operations now emit
-deprecation notices. Treat these interfaces as transitional in automation.
-
-### ACR creation controls (2.88.0)
-
-`az acr create` now accepts `--data-endpoint-enabled` for a dedicated data
-endpoint used in client firewall configuration and `--endpoint-protocol` to
-select the registry endpoint protocol during creation.
-
-### ACR domain-name-label hash scope (2.72.0)
-
-`az acr create` and `az acr check-name` accept `--dnl-scope` to select the
-scope used for the registry's domain-name-label hash.
-
-### ACR endpoint routing and cache identities (2.85.0)
-
-`az acr replication create` and `update` gain
-`--global-endpoint-routing`; `--region-endpoint-enabled` now redirects to
-that option rather than being confused with registry-level
-`--regional-endpoints`. Cache-rule create/update also accepts `--identity`
-for a user-assigned managed identity.
-
-### ACR exposed-token output (2.74.0)
-
-`az acr login --expose-token` now adds `refreshToken` and `username` fields to
-its output, so consumers with fixed output schemas must account for them.
-
-### ACR Podman and regional-endpoint login (2.86.0)
-
-`az acr login --name` now supports Podman. For registries with regional
-endpoints enabled, `az acr show-endpoints` displays their host names,
-`az acr login --endpoint` selects one for login, and `az acr import` accepts a
-regional endpoint URI as its source.
-
-### ACR token audience (2.82.0)
-
-`az acr login` now enforces the ACR audience when acquiring its Microsoft
-Entra token. Token acquisition policies or scripts that assumed another
-audience must account for this change.
-
-### ACR token audience and endpoint protocol (2.87.0)
-
-`az acr login` can now customize the Microsoft Entra token audience used for
-authentication. Registry updates also accept `--endpoint-protocol` to select
-the registry endpoint protocol.
-
-### AKS attach-ACR principal types (2.75.0)
-
-When `az aks update` uses `--attach-acr`, the new
-`--assignee-principal-type` option specifies the attached registry assignee's
-principal type.
-
-### Connected-registry garbage collection (2.73.0)
-
-`az acr connected-registry create` and `update` accept `--gc-enabled` and
-cron-based `--gc-schedule` to control garbage collection.
-
-### Credentialless ACR cache rules (2.71.0)
-
-`az acr create` can now create a cache rule without a credential set; that
-previously failed even when the cache rule did not need credentials.
-
-### Cross-cloud ACR use by Container Apps (2.86.0)
-
-`az containerapp create` now supports Azure Container Registry references in
-other Azure clouds rather than assuming the default cloud.
-
-### Registry inspection without a configured server (2.79.0)
-
-`az containerapp registry show` now handles container apps that have no
-registry server instead of failing with a `NoneType` error.
-
-## Container Apps and container instances
-
-### Container App Compose environment parsing (2.69.0)
-
-`az containerapp compose create` splits an environment assignment only at
-its first `=`, so values can themselves contain equal signs.
-
-### Container App job listing and zero execution limits (2.77.0)
-
-`az containerapp job list` no longer stops after 20 items. `az containerapp
-job update` now accepts `0` for both `--min-executions` and
-`--max-executions`.
-
-### Container Apps environment routing and premium ingress (2.79.0)
-
-The new `az containerapp env http-route-config` and
-`az containerapp env premium-ingress` groups manage environment-level HTTP
-routing and premium ingress settings.
-
-### Container Apps infrastructure resource groups (2.82.0)
-
-`az containerapp env create --infrastructure-resource-group` selects the
-resource-group name used for the environment's infrastructure resources.
-
-### Container-group defaults removed (2.76.0)
-
-`az container create` no longer injects its former container-group defaults,
-allowing standby-pool reuse. Automation that depended on those CLI defaults
-must now pass the required values explicitly.
-
-### Default Container Apps workload-profile name (2.85.0)
-
-`az containerapp env workload-profile add` now supplies a default profile
-name when one is not specified.
-
-### New Container Apps and Maps defaults (2.84.0)
-
-`az containerapp job create` now supplies defaults for `--parallelism` and
-`--replica-completion-count`. `az maps account create` likewise supplies a
-default for `--sku`; pass these options explicitly when automation must not
-depend on CLI defaults.
-
-### Premium-ingress replica arguments removed (2.80.0)
-
-`az containerapp env premium-ingress` operations no longer accept
-`--min-replicas` or `--max-replicas`.
-
-## IoT
-
-### IoT Hub device streams move to an extension (2.77.0)
-
-The `az iot hub devicestream` command group is now supplied by the
-`azure-iot` extension rather than Azure CLI itself.
-
-### IoT Hub minimum TLS version (2.70.0)
-
-`az iot hub update` accepts `--min-tls-version` to change the hub's minimum
-TLS version.
+- `2.76.0` managed-cluster NSG rules accept source/destination address prefixes
+  and port ranges; managed-node-type update can change VM size and tags.
+- `2.77.0` cluster create honors `cluster_name` from a parameter file.
+- `2.80.0` removes several managed-application update options:
+  `--service-type-policy`, `--upgrade-replica-set-check-timeout`, and the four
+  misspelled `--max-porcent-unhealthy-*` options. Application update removes
+  service-type policy, upgrade timeout, instance-close duration,
+  warning-as-error, and its unhealthy partitions/replicas/deployed-applications
+  percentage options.

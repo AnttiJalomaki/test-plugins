@@ -1,47 +1,37 @@
 # Helm and Platform Operations
 
-Use this reference for chart composition, ServiceAccounts, Pod security and
-scheduling, NetworkPolicies, component scope, and OpenShift installation.
+## Installation and chart composition
 
-## Chart composition
+### OperatorHub distribution ended `(1.17)`
 
-The chart accepts an `enabled` value from 1.17, allowing a parent chart to turn
-cert-manager on or off when it is included as a dependency.
+Red Hat OpenShift and community OperatorHub catalogs stop at cert-manager 1.16.5. Installations from those catalogs need another distribution method to move to 1.17 or later.
 
-Configured image pull secrets are applied to Deployments even when the chart is
-set not to create ServiceAccounts (since 1.17).
+### Dependency toggle `(1.17)`
 
-Both keys and values in chart-managed ServiceAccount annotations are evaluated
-with Helm `tpl` from 1.17. Workload-identity annotation names and values can
-therefore derive from other chart values.
+The chart accepts `enabled`, allowing a parent chart to turn its cert-manager dependency on or off.
 
-PodDisruptionBudget `minAvailable` and `maxAvailable` accept percentages from
-1.17:
+### ServiceAccount-independent pull secrets `(1.17)`
+
+Configured image pull secrets reach Deployments even when the chart does not create ServiceAccounts.
+
+### Namespace-scoped operation `(1.18)`
+
+Running the controller with `--namespace=<namespace>` restricts cert-manager to that namespace and disables cluster-scoped controllers.
+
+## Scheduling and availability
+
+### Percentage PodDisruptionBudgets `(1.17)`
+
+`podDisruptionBudget.minAvailable` and `podDisruptionBudget.maxAvailable` accept percentages:
 
 ```yaml
 podDisruptionBudget:
   minAvailable: "50%"
 ```
 
-## Controller scope
+### Global node selector `(1.19)`
 
-From 1.18, starting the controller with `--namespace=<namespace>` both limits
-cert-manager to that namespace and disables cluster-scoped controllers. Do not
-expect ClusterIssuer or other cluster-scoped reconciliation in this mode.
-
-## Network policy
-
-Default chart network policies include IPv6 rules from 1.19, so dual-stack and
-IPv6-only clusters do not need patched cert-manager traffic rules.
-
-From 1.20, the chart can create NetworkPolicy resources for every cert-manager
-Deployment, providing chart-managed isolation for all deployed components.
-
-## Scheduling, user namespaces, and runtimes
-
-`global.nodeSelector` applies a common selector to all chart components from
-1.19. Use 1.19.2 or later, which correctly merges it with per-component
-settings.
+`global.nodeSelector` applies a common selector to all chart components. Use 1.19.2 or later so it merges correctly with component-level settings.
 
 ```yaml
 global:
@@ -49,68 +39,72 @@ global:
     kubernetes.io/os: linux
 ```
 
-On Kubernetes 1.33 or later, the experimental `global.hostUsers: false` value
-places all cert-manager Pods in Kubernetes user namespaces. It is unset by
-default to retain compatibility with earlier Kubernetes releases.
+### Runtime classes `(1.21)`
 
-```yaml
-global:
-  hostUsers: false
-```
-
-Runtime classes are configurable for components and ACME HTTP-01 solver Pods
-from 1.21. The chart-wide solver value is:
+Runtime classes can be set for cert-manager components and ACME HTTP-01 solver Pods. The solver chart value is:
 
 ```yaml
 acmesolver:
   runtimeClassName: gvisor
 ```
 
-## Container identity
+## Pod identity and security context
 
-In 1.20, the default container UID changed from `1000` to `65532` and the GID
-changed from `0` to `65532`. Update admission policies, security checks, and
-volume ownership that depend on the previous identities.
+### Templated ServiceAccount annotations `(1.17)`
 
-## RBAC changes
+The chart evaluates ServiceAccount annotation keys and values through Helm `tpl`, allowing workload-identity annotations to derive from other chart values.
 
-The 1.21 chart no longer creates the Role and RoleBinding that allow the
-controller to request tokens for its own ServiceAccount. Issuers selecting that
-account through `serviceAccountRef.name`, including some Vault Kubernetes auth
-and Route53 configurations, require explicit RBAC or a dedicated account.
+### Kubernetes user namespaces `(1.19)`
 
-The `global.rbac.disableHTTPChallengesRole` chart value was added in 1.18.0 and
-removed in 1.18.2 due to a bug. It is unavailable for the remainder of 1.18.
+On Kubernetes 1.33 or later, experimental `global.hostUsers: false` makes chart-managed Pods use Kubernetes user namespaces. It is unset by default to preserve compatibility with older Kubernetes releases.
 
-From 1.19.6, the aggregate `cert-manager-edit` ClusterRole restricts direct
-Challenge and Order manipulation. Certificate-driven issuance is unchanged;
-grant explicit RBAC to tools that directly manage those internal resources.
+```yaml
+global:
+  hostUsers: false
+```
 
-## Startup API check cleanup
+### Container identity defaults `(1.20)`
 
-Set the opt-in 1.21 value `startupapicheck.ttlSecondsAfterFinished` to let the
-Kubernetes TTL-after-finished controller delete the completed startup API check
-Job.
+The default container UID changed from `1000` to `65532`, and the default GID changed from `0` to `65532`. Update admission policy, file ownership, and volume permissions that depend on the old IDs.
 
-## OpenShift and OperatorHub
+### Controller token-creation RBAC `(upgrade-1.21)`
 
-OperatorHub publication ends at cert-manager 1.16.5 in both Red Hat OpenShift
-and community catalogs. OperatorHub installations need another distribution
-method for 1.17 or later.
+The chart no longer creates the Role and RoleBinding that let the controller mint tokens for its own ServiceAccount. If an Issuer's `serviceAccountRef.name` selects that account—for example for Vault Kubernetes auth or Route53—create explicit RBAC or migrate to a dedicated ServiceAccount with its own RBAC before upgrading.
 
-Do not deploy cert-manager 1.20.0 on OpenShift. It omitted issuer-finalizer RBAC
-required by the Order controller; 1.20.1 restores the rule.
+## Network policy
 
-At the support-lifecycle snapshot, cert-manager 1.21 maps to OpenShift
-4.20-4.22 and Kubernetes 1.33-1.36, while cert-manager 1.20 maps to OpenShift
-4.19-4.21 and Kubernetes 1.32-1.35. Mappings for OpenShift releases that do not
-yet exist may be predictions.
+### IPv6 defaults `(1.19)`
 
-## Webhook operation
+The chart's default network policy includes IPv6 rules, so dual-stack and IPv6-only clusters do not need a custom patch for cert-manager traffic.
 
-Use 1.20.2 or later when both `webhook.config` and `webhook.volumes` are set;
-earlier versions can render invalid Helm YAML.
+### Chart-managed NetworkPolicies `(1.20)`
 
-From 1.21, wall-clock polling lets the webhook detect a missed serving
-certificate renewal after system suspend or VM live migration and recover
-within one minute of resume.
+The chart can create NetworkPolicy resources for every cert-manager Deployment, providing network isolation for all deployed components.
+
+## Chart validation and rendering
+
+### HTTP challenge RBAC value withdrawn `(1.18)`
+
+`global.rbac.disableHTTPChallengesRole` appeared in 1.18.0 but was removed in 1.18.2 because of a bug. It is unavailable for the rest of the 1.18 line.
+
+### Webhook config plus volumes `(1.20)`
+
+Before 1.20.2, setting both `webhook.config` and `webhook.volumes` can render invalid YAML. Use 1.20.2 or later for that combination.
+
+### Prometheus monitor overrides removed `(upgrade-1.21)`
+
+Remove `prometheus.servicemonitor.targetPort`, `prometheus.servicemonitor.path`, and `prometheus.podmonitor.path` before upgrade or chart schema validation fails. Metrics use fixed path `/metrics` and port name `http-metrics`; custom scrapers must replace the former `tcp-prometheus-servicemonitor` Service port name.
+
+## Labels and cleanup
+
+### Common labels on solver resources `(1.21)`
+
+The controller flag `--acme-http01-solver-extra-labels` allows Helm `global.commonLabels` to reach dynamic HTTP-01 Pods, Services, Ingresses, and Gateway API HTTPRoutes.
+
+### Startup API check cleanup `(1.21)`
+
+Set the opt-in value `startupapicheck.ttlSecondsAfterFinished` so the Kubernetes TTL-after-finished controller removes the completed startup API check Job.
+
+## OpenShift correction `(1.20)`
+
+Version 1.20.0 omitted issuer-finalizer RBAC needed by the Order controller and regressed OpenShift installations. Use 1.20.1 or later.

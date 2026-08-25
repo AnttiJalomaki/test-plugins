@@ -1,178 +1,183 @@
 # Histograms, TSDB, and Start Timestamps
 
-## Native-histogram ingestion
+## Native histogram activation and classic retention (`3.0-migration`)
 
-### Activation and scraping
-
-Native-histogram created timestamps and out-of-order samples can be ingested
-(since 3.0.0). Once native histograms are stable, the `native-histograms`
-feature name is a no-op, but scraping still requires the configuration introduced
-before stabilization (`3.0-migration`):
+Starting in v3.9, `native-histograms` is a no-op because native histograms are
+stable. Scraping them still requires the configuration introduced for v3.8:
 
 ```yaml
 global:
   scrape_native_histograms: true
 ```
 
-If ingestion is disabled, the scrape path skips native-histogram series (since
-3.3.0).
+When a target exposes native and classic forms together, use
+`always_scrape_classic_histograms`; `scrape_classic_histograms` is the obsolete
+name. The option can be global or job-specific.
 
-To retain a classic histogram exposed alongside a native form, use
-`always_scrape_classic_histograms`, replacing `scrape_classic_histograms`
-(`3.0-migration`). It is available globally from 3.5.0. Conversion of classic
-histograms to custom-bucket native histograms is global from 3.4.0 and can
-coexist with created-timestamp zero ingestion from 3.8.0.
+## Created timestamps and out-of-order histograms (`3.0.0`)
 
-From 3.13.0, relabeling can override all three choices per target through
-`__scrape_native_histograms__`, `__always_scrape_classic_histograms__`, and
-`__convert_classic_histograms_to_nhcb__`.
+With `created-timestamp-zero-ingestion`, processing a created timestamp no
+longer emits an additional `_created` series. Created-timestamp processing also
+supports native histograms, and the TSDB accepts out-of-order native-histogram
+samples.
 
-### Out-of-order ingestion
+## Reloaded histogram settings (`3.1.0`)
 
-`--enable-feature=ooo-native-histograms` is a no-op from 3.4.0. Out-of-order
-native histograms are accepted whenever `out_of_order_time_window` is positive
-and the native-histogram feature is active.
+Configuration reloads honor both `always_scrape_classic_histograms` and
+`convert_classic_histograms_to_nhcb`; reloaded values are not silently ignored.
 
-`prometheus_tsdb_sample_ooo_delta` records every accepted or rejected sample's
-out-of-order distance in seconds (since 3.9.0).
+## Ingestion disablement (`3.3.0`)
 
-### Schema and custom-bound validation
+When native-histogram ingestion is disabled, scraping skips native-histogram
+series rather than ingesting them anyway.
 
-Unsupported native histogram schemas are rejected on append (since 3.7.0).
-Scrape and remote write reduce schemas -9 through 52 to the supported maximum
-resolution. WAL/WBL replay ignores invalid schemas, while exponential schemas
-read from chunks or remote read are also reduced.
+## Out-of-order and custom-bucket controls (`3.4.0`)
 
-For custom bounds, a NaN threshold is rejected and `-Inf` is accepted as the
-first bound (since 3.8.0). Federation supports custom-bucket native histograms,
-but Remote Write 1.0 does not; attempts are prevented and logged (since 3.7.0).
+`--enable-feature=ooo-native-histograms` is a no-op. Out-of-order native
+histograms are enabled when `out_of_order_time_window` is positive and the
+then-required `native-histograms` feature is enabled.
 
-### Query accounting and instrumentation
+Classic-to-native custom-bucket conversion can be global:
 
-Histogram samples count toward PromQL sample limits (since 3.8.0). PromQL,
-rules, service discovery, and scraping publish native histograms beside existing
-summaries (since 3.9.0). Notification latency also exposes
-`prometheus_notifications_latency_histogram_seconds`.
-
-## TSDB lifecycle
-
-### Downgrades and block consumers
-
-The data format prepared in 2.55 means a 3.x data directory can only be opened
-by 2.55 or later (`3.0-migration`). Upgrade through 2.55 before the major
-upgrade. Downgrading lower requires discarding the 3.x persistent data.
-
-XOR2, `histogramST`, and `floathistogramST` blocks are unreadable by older
-releases (`feature-flags`). Their experimental formats can change, and
-downstream block consumers may not support them. Treat activation as a downgrade
-and interoperability boundary for existing blocks.
-
-### Block loading and compaction
-
-`/v1/status/tsdb/blocks` exposes loaded-block metadata (since 3.6.0).
-`--storage.tsdb.block-reload-interval` controls block reload cadence (since
-3.9.0). `--storage.tsdb.delay-compact-file.path` configures a Thanos-compatible
-compaction-delay file (since 3.9.0).
-
-`stale_series_compaction_threshold` enables experimental early compaction of
-stale in-memory series and sets its threshold (since 3.10.0). From 3.13.0,
-`CompactStaleHead` and `CompactSelectedSeries` retain label records through WAL
-checkpoint/replay and preserve samples at chunk-range boundaries. Upgrade before
-using early stale-series compaction because earlier eviction could cause replay
-failure or sample loss.
-
-### Retention
-
-`storage.tsdb.retention.percentage` caps TSDB disk use as a percentage (since
-3.11.0). Removing retention from the configuration falls back to CLI values,
-and file-based `storage.tsdb.retention.time` no longer has the unit mismatch that
-made retention one million times too long.
-
-Percentage retention works with the new data path and preserves decimal
-precision from 3.12.0.
-
-### Replay and Head metrics
-
-`prometheus_tsdb_wal_replay_unknown_refs_total` and
-`prometheus_tsdb_wbl_replay_unknown_refs_total` count unknown series references
-during replay (since 3.4.0). `prometheus_tsdb_head_stale_series` counts stale
-Head series (since 3.6.0).
-
-Metadata for automatic metrics can be written to the WAL through
-`metadata-wal-records` (since 3.2.0).
-
-### Fast startup and uncached writes
-
-The experimental `fast-startup` feature records active-series state in
-`series_state.json` in the WAL directory for reuse after restart (since 3.11.0).
-
-The experimental `use-uncached-io` gate uses direct I/O for chunk writes on
-Linux and bypasses the page cache (`feature-flags`). It is Linux-only.
-
-## Float chunk encoding
-
-`xor2-encoding` selects a float-sample block encoding optimized for scraped data
-and capable of storing start timestamps (since 3.11.0):
-
-```text
---enable-feature=xor2-encoding
+```yaml
+global:
+  convert_classic_histograms_to_nhcb: true
 ```
 
-`storage.tsdb.chunk_encoding.floats` chooses `xor` or `xor2` at runtime,
-independently of the feature gate (since 3.13.0).
+Monitor unknown series references encountered during replay with
+`prometheus_tsdb_wal_replay_unknown_refs_total` and
+`prometheus_tsdb_wbl_replay_unknown_refs_total`.
 
-Upgrade for the 3.13.0 chunk-snapshot fix before relying on `EncXOR2`; the
-earlier snapshot behavior could corrupt TSDB data on restart.
+## Transport, schemas, and result typing (`3.7.0`)
 
-## Start-timestamp storage
+Federation transports native histograms with custom buckets. Remote Write 1.0
+cannot, so Prometheus blocks those sends and logs a warning.
 
-### Storage gate and prerequisites
+Unsupported native-histogram schemas are rejected during append. Scrape and
+remote write reduce schemas -9 through 52 in resolution to fit the supported
+maximum. WAL/WBL replay ignores invalid schemas, while exponential schemas read
+from chunks or remote read are reduced in resolution.
 
-`st-storage` stores ingested start timestamps—formerly called Created
-Timestamps—from scrapes or OTLP in TSDB and the Agent WAL, and exposes them over
-Remote Write 2 (since 3.11.0):
+Histogram operations emit warn annotations for certain counter-reset
+conflicts. Subtraction, or multiplication or division by a negative factor,
+produces a gauge native histogram.
+
+## Custom bounds and query accounting (`3.8.0`)
+
+Custom bounds reject a NaN threshold but accept `-Inf` as the first bound.
+Native-histogram addition and subtraction reconcile mismatched custom-bucket
+boundaries rather than requiring identical bounds. Query sample-limit
+enforcement counts histogram samples.
+
+Classic-to-NHCB conversion can run with created-timestamp zero ingestion.
+
+## TSDB operations and histogram validation (`3.9.0`)
+
+The TSDB status endpoint returns at most 10,000 statistic sets. Configure the
+Thanos-compatible compaction-delay file with
+`--storage.tsdb.delay-compact-file.path` and the loaded-block refresh cadence
+with `--storage.tsdb.block-reload-interval`.
+
+Most query, rule, service-discovery, and scrape instrumentation exposes native
+histograms alongside summaries. Notification latency additionally exposes
+`prometheus_notifications_latency_histogram_seconds`.
+
+`prometheus_tsdb_sample_ooo_delta` records each sample's out-of-order distance
+in seconds, whether accepted or rejected. Remote-read histograms are validated
+instead of silently accepting invalid data. `rate()`, `increase()`, and
+`delta()` produce gauge histograms for histogram inputs.
+
+Prometheus 3.9.1 fixes an Agent-mode startup crash; use it instead of 3.9.0 for
+Agent deployments.
+
+## Stale-series compaction (`3.10.0`)
+
+`stale_series_compaction_threshold` enables experimental early compaction of
+stale series from memory and controls the threshold. Treat it as experimental
+storage behavior.
+
+## Retention, startup state, and encodings (`3.11.0`)
+
+`storage.tsdb.retention.percentage` caps TSDB disk use by percentage. Removing
+file-based retention falls back to CLI values, and file-based
+`storage.tsdb.retention.time` no longer has a unit mismatch that made retention
+one million times too long.
+
+The `fast-startup` feature persists active-series state in `series_state.json`
+in the WAL directory for reuse after restart.
+
+`st-storage` stores ingested start timestamps from scrapes or OTLP in the TSDB
+and Agent WAL and exposes them through Remote Write 2:
 
 ```text
 --enable-feature=st-storage
 ```
 
-The gate does not choose an ST-capable encoding (`feature-flags`). Float chunks
-must resolve to XOR2 or startup/config reload fails. Persisting native- and
+`xor2-encoding` selects a float-sample chunk encoding optimized for scraped
+data and capable of encoding start timestamps:
+
+```text
+--enable-feature=xor2-encoding
+```
+
+## Start-timestamp queries and synthesis (`3.12.0`)
+
+With `--enable-feature=use-start-timestamps`, `rate()`, `irate()`, and
+`increase()` use stored start timestamps and `resets()` detects their resets.
+This mode cannot be combined with `anchored` or `smoothed` selectors.
+
+`--enable-feature=st-synthesis` synthesizes missing start timestamps for
+scraped cumulative metrics, which can help Remote Write 2 consumers expecting
+delta or OpenTelemetry semantics. PromQL test `load` blocks accept `@st` to
+specify sample start timestamps.
+
+Percentage retention works with the new data path and preserves decimals.
+Concurrent Agent appends for one label set no longer create duplicate in-memory
+series or WAL records.
+
+## Runtime encoding and persistence fixes (`3.13.0`)
+
+`storage.tsdb.chunk_encoding.floats` selects `xor` or `xor2` at runtime,
+independently of the `xor2-encoding` feature flag.
+
+Chunk-snapshot encoding for `EncXOR2` is fixed; earlier behavior could corrupt
+the TSDB on restart when XOR2 series existed. `CompactStaleHead` and
+`CompactSelectedSeries` now retain label records through checkpoint/replay and
+preserve samples at chunk-range boundaries. Upgrade early-stale-compaction
+deployments because old eviction paths could cause replay failure or data loss.
+
+## Encoding prerequisites and synthesis semantics (`feature-flags`)
+
+`st-storage` does not select an ST-capable block format. Float chunks must
+resolve to XOR2 or startup/config reload fails; persisting native- and
 float-histogram start timestamps also requires
-`--enable-feature=histograms-st-encoding`. `SamplesV2` WAL records require 3.11
-or later for replay.
+`--enable-feature=histograms-st-encoding`. `SamplesV2` WAL records require
+Prometheus 3.11 or later. XOR2, `histogramST`, and `floathistogramST` blocks can
+be unreadable by older releases or downstream consumers, and their
+experimental formats can change.
 
-### Ingestion and query use
+`use-start-timestamps` also enables the PromQL `start_timestamp()` function and
+remains incompatible with extended range selectors.
 
-With `use-start-timestamps`, `rate()`, `irate()`, and `increase()` use start
-timestamps, while `resets()` detects start-timestamp resets (since 3.12.0). The
-gate also enables `start_timestamp()` (`feature-flags`). It is incompatible with
-anchored or smoothed extended selectors.
+For scraped cumulative metrics without a start timestamp, `st-synthesis` drops
+the first sample and subtracts it from later samples, so stored values differ
+from scraped values. It does not support remote write or OTLP, rejects those
+metrics' out-of-order samples regardless of `out_of_order_time_window`, and
+clears synthesis state after an append failure so the next sample becomes a
+newly dropped reference point.
 
-PromQL test `load` blocks accept `@st` on samples to define start timestamps
-(since 3.12.0).
+## Restart, compaction, and stale-series correctness (`3.13.2-3.14.0`)
 
-### Synthesis
+Prometheus 3.14 fixes potential restart data loss after out-of-order ingestion
+and compaction, samples and errors missing after deleted-series restart, and
+native-histogram corruption after restart. Out-of-order queries no longer hold
+up compaction for hours while memory grows.
 
-`st-synthesis` creates missing start timestamps for scraped cumulative metrics
-(since 3.12.0). Its transformation is significant (`feature-flags`):
+Mixed float, integer-histogram, and float-histogram series are no longer
+evicted early, and `prometheus_tsdb_head_stale_series` no longer over-counts
+them. Previously discarded TSDB query errors reach callers. Compaction also
+preserves the configured float encoding rather than rewriting XOR2 to XOR.
 
-- The first sample is dropped and becomes a reference value.
-- That value is subtracted from subsequent samples, so stored raw values differ
-  from scraped values.
-- Remote write and OTLP ingestion are unsupported.
-- Out-of-order samples for those metrics are rejected regardless of
-  `out_of_order_time_window`.
-- An append failure clears per-series state, making the next sample a newly
-  dropped reference point.
-
-Use synthesis when downstream Remote Write 2 or delta/OTLP systems require
-start timestamps and the input transformation is acceptable.
-
-## Created-timestamp zero ingestion
-
-Created-timestamp zero ingestion no longer emits additional `_created` series
-(since 3.0.0). OTLP start times can be written as zero samples under this gate
-(since 3.7.0). It can run with classic-to-NHCB conversion (since 3.8.0), and it
-changes the default scrape-protocol preference unless that preference is
-configured explicitly (`feature-flags`).
+Monitor head native histograms with
+`prometheus_tsdb_head_native_histogram_series` and
+`prometheus_tsdb_head_native_histogram_buckets`.

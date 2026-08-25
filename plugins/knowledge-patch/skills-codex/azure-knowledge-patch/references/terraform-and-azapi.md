@@ -1,41 +1,10 @@
-# Terraform And Azapi
+# Terraform and AzAPI
 
-Use this reference for Terraform AzureRM and AzAPI provider upgrades, resource IDs, schema, state, imports, actions, and preflight.
+Use this reference for current compatibility details and exact command or schema changes.
 
-## Absence-aware reads and actions
+## AzAPI 2.0 migration
 
-_Source batch `azapi-provider-2.x`._
-
-The `azapi_resource` data source accepts `ignore_not_found`; a missing
-resource then avoids a 404 failure and is reported through its computed
-`exists` field. Resource actions gain the same `ignore_not_found` and
-existence pattern in 2.9.
-
-## Additional identity and resource-ID outputs
-
-_Source batch `azapi-provider-2.x`._
-
-`azapi_client_config.object_id` exposes the authenticated principal's object
-ID. The `parse_resource_id` provider function now also returns
-`resource_group_id`.
-
-## AKS switches from preview to stable APIs
-
-_AzureRM batch `azurerm-4.0.0`._
-
-AzureRM 4.x removes preview-only AKS fields: `custom_ca_trust_enabled`,
-`custom_ca_trust_certificates_base64`,
-`api_server_access_profile.vnet_integration_enabled`,
-`api_server_access_profile.subnet_id`, `storage_profile.disk_driver_version`,
-and `message_of_the_day`; node-pool equivalents are also removed where
-applicable, and `workload_runtime` no longer accepts
-`KataMshvVMIsolation`. Use AzAPI for required preview features, but mixing
-AzAPI changes into an AzureRM-managed AKS resource can cause diffs or
-recreation.
-
-## Authentication and default-output changes
-
-_AzAPI batch `azapi-2.0.0`._
+### Authentication and default-output changes (azapi-2.0.0)
 
 Managed identity no longer activates implicitly: `use_msi` defaults to
 `false` and must be set to `true`. Without `response_export_values`, outputs
@@ -44,18 +13,7 @@ fields, while `azapi_resource_list.output` defaults to the full response;
 refresh state after upgrading, or set `disable_default_output = true` on the
 provider to suppress this computed output.
 
-## Authentication compatibility
-
-_Source batch `azapi-provider-2.x`._
-
-AKS workload identity accepts `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`, and
-auxiliary tenant IDs are propagated for cross-tenant ARM authentication.
-Client-certificate authentication supports modern encrypted PFX files in
-2.11.
-
-## Azure resource-ID provider functions
-
-_AzAPI batch `azapi-2.0.0`._
+### Azure resource-ID provider functions (azapi-2.0.0)
 
 With Terraform 1.8+, AzAPI exposes `build_resource_id(parent_id, type, name)`
 and `parse_resource_id(type, id)`. Scope-specific builders are
@@ -75,9 +33,242 @@ output "subnet_id" {
 }
 ```
 
-## Azure resource-ID provider functions
+### Custom API retry policy (azapi-2.0.0)
 
-_AzureRM batch `azurerm-4.0.0`._
+Resources and data sources can retry errors whose messages match configured
+regular expressions, using exponential backoff controls in a `retry` object.
+
+```hcl
+retry = {
+  error_message_regex  = ["ResourceGroupNotFound"]
+  interval_seconds     = 5
+  max_interval_seconds = 30
+  multiplier           = 1.5
+  randomization_factor = 0.5
+}
+```
+
+### Named JMESPath response projections (azapi-2.0.0)
+
+`response_export_values` can be a map from output names to JMESPath queries,
+producing a directly addressable HCL object rather than requiring callers to
+decode and traverse the entire response.
+
+```hcl
+response_export_values = {
+  login_server      = "properties.loginServer"
+  quarantine_status = "properties.policies.quarantinePolicy.status"
+}
+
+output "login_server" {
+  value = data.azapi_resource.registry.output.login_server
+}
+```
+
+### Native HCL bodies and outputs (azapi-2.0.0)
+
+AzAPI 2.0 requires `body` to be an HCL object and returns `output` as an HCL
+object, so remove `jsonencode`/`jsondecode` calls. The provider setting
+`enable_hcl_output_for_data_source` is removed, as is `ignore_body_changes`;
+use a native `lifecycle.ignore_changes` path instead.
+
+```hcl
+resource "azapi_resource" "subnet" {
+  type      = "Microsoft.Network/virtualNetworks/subnets@2022-07-01"
+  parent_id = azapi_resource.vnet.id
+  name      = var.name
+  body = {
+    properties = {
+      addressPrefix = "10.0.2.0/24"
+      delegations   = []
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [body.properties.delegations]
+  }
+}
+
+output "subnet_prefix" {
+  value = azapi_resource.subnet.output.properties.addressPrefix
+}
+```
+
+### Plan-time preflight validation (azapi-2.0.0)
+
+Set `enable_preflight = true` on the provider to validate resource
+configuration during `terraform plan`; invalid Azure values such as malformed
+CIDR prefixes then fail the plan before deployment.
+
+```hcl
+provider "azapi" {
+  enable_preflight = true
+}
+```
+
+### Provider-controlled replacement triggers (azapi-2.0.0)
+
+`replace_triggers_external_values` forces replacement when a listed non-null
+value changes. `replace_triggers_refs` instead names paths within the AzAPI
+resource whose changes require replacement.
+
+```hcl
+replace_triggers_external_values = [var.sku, var.zones]
+replace_triggers_refs            = ["properties.sku", "properties.zones"]
+```
+
+### Removed naming behavior (azapi-2.0.0)
+
+Provider-level `default_naming_prefix` and `default_naming_suffix` are removed;
+build them into each resource's `name`. `azapi_resource.removing_special_chars`
+is also removed, so names must be sanitized by configuration instead.
+
+### Request headers and query parameters (azapi-2.0.0)
+
+Data sources accept `query_parameters`, whose values are string lists.
+Managed resources can set operation-specific `create_query_parameters`,
+`update_query_parameters`, `read_query_parameters`, and
+`delete_query_parameters`, plus matching `create_headers`, `update_headers`,
+`read_headers`, and `delete_headers` maps.
+
+```hcl
+data "azapi_resource_list" "builtins" {
+  type      = "Microsoft.Authorization/policyDefinitions@2021-06-01"
+  parent_id = "/subscriptions/${var.subscription_id}"
+  query_parameters = {
+    "$filter" = ["policyType eq 'BuiltIn'"]
+  }
+}
+```
+
+## AzAPI 2.x capabilities
+
+### Absence-aware reads and actions (azapi-provider-2.x)
+
+The `azapi_resource` data source accepts `ignore_not_found`; a missing
+resource then avoids a 404 failure and is reported through its computed
+`exists` field. Resource actions gain the same `ignore_not_found` and
+existence pattern in 2.9.
+
+### Additional identity and resource-ID outputs (azapi-provider-2.x)
+
+`azapi_client_config.object_id` exposes the authenticated principal's object
+ID. The `parse_resource_id` provider function now also returns
+`resource_group_id`.
+
+### Authentication compatibility (azapi-provider-2.x)
+
+AKS workload identity accepts `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`, and
+auxiliary tenant IDs are propagated for cross-tenant ARM authentication.
+Client-certificate authentication supports modern encrypted PFX files in
+2.11.
+
+### Body and collection reconciliation (azapi-provider-2.x)
+
+`azapi_resource.ignore_null_property` excludes null-valued body properties
+from comparison, and the order of `identity_ids` no longer matters. A body or
+API-version edit also produces no change when the configured body still
+matches the remote resource.
+
+For lists, `list_unique_id_property` identifies items by a stable property and
+`ignore_other_items_in_list` permits additional remote items to remain
+unmanaged; both are available on `azapi_resource` and
+`azapi_update_resource`. Version 2.9 also extends
+`replace_triggers_external_values` to `azapi_update_resource`.
+
+### Broader schema and preflight validation (azapi-provider-2.x)
+
+Embedded schema checks for `azapi_resource` now run during
+`terraform validate`, and preflight validation covers nested resources. From
+2.10, preflight also validates update operations and requires only read
+permission rather than write permission.
+
+### Cross-provider state moves (azapi-provider-2.x)
+
+`azapi_resource` supports Terraform resource moves from AzureRM resources
+instead of requiring destroy and recreate. Later 2.x releases also translate
+the data-plane-style IDs used by AzureRM storage containers, storage shares,
+Key Vault keys, and Key Vault secrets into the ARM IDs AzAPI needs.
+
+### Ephemeral and triggered resource actions (azapi-provider-2.x)
+
+AzAPI 2.3 adds an ephemeral `azapi_resource_action`. Version 2.8 also adds a
+stateless `azapi_resource_action` for Terraform action triggers, and 2.9 lets
+resource actions change API version without recreation.
+
+### Expanded data-plane coverage (azapi-provider-2.x)
+
+`azapi_data_plane_resource` gains a customization layer for services whose
+CRUD operations do not follow the standard pattern. Built-in coverage expands
+to Purview scanning managed virtual networks, Key Vault keys and secrets,
+Search data sources, indexers, indexes, skillsets, and synonym maps, plus
+`Microsoft.Foundry/agents`; data-plane HTTP 204 responses are accepted as
+successful operations.
+
+### Identity-based import and bulk discovery (azapi-provider-2.x)
+
+`azapi_resource` can import through provider identity using an ID alone, an ID
+with an API version, or an ID with a resource type. When no API version is
+explicit and import receives HTTP 400 or 404, 2.11 falls back through as many
+as three recent indexed API versions.
+
+The provider also implements the ListResource protocol for `azapi_resource`;
+omitting `type` can enumerate every resource in a resource group.
+`azapi_data_plane_resource` supports normal Terraform import as of 2.9.
+
+### Provider environment and custom-cloud controls (azapi-provider-2.x)
+
+The provider accepts `environment = "custom"` when all endpoints are supplied
+manually. Instance discovery can be disabled with
+`disable_instance_discovery` or `ARM_DISABLE_INSTANCE_DISCOVERY`; 2.x also
+adds the Key Vault resource-manager audience for Azure Government.
+
+`enable_preflight` and `disable_default_output` can be sourced from
+`ARM_ENABLE_PREFLIGHT` and `ARM_DISABLE_DEFAULT_OUTPUT`, while
+`oidc_azure_service_connection_id` can come from
+`ARM_ADO_PIPELINE_SERVICE_CONNECTION_ID` or
+`ARM_OIDC_AZURE_SERVICE_CONNECTION_ID`.
+
+### Request and retry behavior (azapi-provider-2.x)
+
+Resources and data sources accept a `User-Agent` header that is appended to
+the provider's default user agent. Post-create GET requests retry HTTP 404 by
+default, custom retry configuration overrides that policy, and an exhausted
+retry sequence now returns its last retryable error instead of only
+`context deadline exceeded`.
+
+The `retry.multiplier` and `retry.randomization_factor` fields are deprecated
+from 2.6, superseding the earlier custom-retry example in this stream.
+Provider-level `maximum_busy_retry_attempts` is also deprecated; remove all
+three before the next major release and allow the provider defaults to apply.
+
+### Sensitive request and response payloads (azapi-provider-2.x)
+
+`azapi_resource` and `azapi_update_resource` accept `sensitive_body` for
+write-only request properties. `azapi_resource` adds
+`sensitive_body_version` to manually control that payload's version;
+`azapi_data_plane_resource` later receives both fields, and resource actions
+receive sensitive request-body support in 2.11.
+
+For action resources and data sources, `sensitive_response_export_values`
+selects secret response fields and `sensitive_output` exposes the resulting
+value as sensitive.
+
+## AzureRM 4 migration
+
+### AKS switches from preview to stable APIs (azurerm-4.0.0)
+
+AzureRM 4.x removes preview-only AKS fields: `custom_ca_trust_enabled`,
+`custom_ca_trust_certificates_base64`,
+`api_server_access_profile.vnet_integration_enabled`,
+`api_server_access_profile.subnet_id`, `storage_profile.disk_driver_version`,
+and `message_of_the_day`; node-pool equivalents are also removed where
+applicable, and `workload_runtime` no longer accepts
+`KataMshvVMIsolation`. Use AzAPI for required preview features, but mixing
+AzAPI changes into an AzureRM-managed AKS resource can cause diffs or
+recreation.
+
+### Azure resource-ID provider functions (azurerm-4.0.0)
 
 With Terraform 1.8+, `provider::azurerm::normalise_resource_id(id)` fixes the
 casing of Azure-controlled ID segments without changing user-supplied names,
@@ -93,33 +284,7 @@ locals {
 }
 ```
 
-## Body and collection reconciliation
-
-_Source batch `azapi-provider-2.x`._
-
-`azapi_resource.ignore_null_property` excludes null-valued body properties
-from comparison, and the order of `identity_ids` no longer matters. A body or
-API-version edit also produces no change when the configured body still
-matches the remote resource.
-
-For lists, `list_unique_id_property` identifies items by a stable property and
-`ignore_other_items_in_list` permits additional remote items to remain
-unmanaged; both are available on `azapi_resource` and
-`azapi_update_resource`. Version 2.9 also extends
-`replace_triggers_external_values` to `azapi_update_resource`.
-
-## Broader schema and preflight validation
-
-_Source batch `azapi-provider-2.x`._
-
-Embedded schema checks for `azapi_resource` now run during
-`terraform validate`, and preflight validation covers nested resources. From
-2.10, preflight also validates update operations and requires only read
-permission rather than write permission.
-
-## Changed defaults and upgrade-time drift
-
-_AzureRM batch `azurerm-4.0.0`._
+### Changed defaults and upgrade-time drift (azurerm-4.0.0)
 
 Security/network defaults now include TLS 1.2 for Application Gateway SSL
 profiles and Cosmos DB, Event Hubs, and Service Bus; Standard SKU for Load
@@ -139,54 +304,7 @@ explicitly or, where the service owns them, use `lifecycle.ignore_changes`;
 Storage Account `large_file_share_enabled` also no longer universally
 defaults to `true`.
 
-## Cross-provider state moves
-
-_Source batch `azapi-provider-2.x`._
-
-`azapi_resource` supports Terraform resource moves from AzureRM resources
-instead of requiring destroy and recreate. Later 2.x releases also translate
-the data-plane-style IDs used by AzureRM storage containers, storage shares,
-Key Vault keys, and Key Vault secrets into the ARM IDs AzAPI needs.
-
-## Custom API retry policy
-
-_AzAPI batch `azapi-2.0.0`._
-
-Resources and data sources can retry errors whose messages match configured
-regular expressions, using exponential backoff controls in a `retry` object.
-
-```hcl
-retry = {
-  error_message_regex  = ["ResourceGroupNotFound"]
-  interval_seconds     = 5
-  max_interval_seconds = 30
-  multiplier           = 1.5
-  randomization_factor = 0.5
-}
-```
-
-## Ephemeral and triggered resource actions
-
-_Source batch `azapi-provider-2.x`._
-
-AzAPI 2.3 adds an ephemeral `azapi_resource_action`. Version 2.8 also adds a
-stateless `azapi_resource_action` for Terraform action triggers, and 2.9 lets
-resource actions change API version without recreation.
-
-## Expanded data-plane coverage
-
-_Source batch `azapi-provider-2.x`._
-
-`azapi_data_plane_resource` gains a customization layer for services whose
-CRUD operations do not follow the standard pattern. Built-in coverage expands
-to Purview scanning managed virtual networks, Key Vault keys and secrets,
-Search data sources, indexers, indexes, skillsets, and synonym maps, plus
-`Microsoft.Foundry/agents`; data-plane HTTP 204 responses are accepted as
-successful operations.
-
-## High-impact field migrations
-
-_AzureRM batch `azurerm-4.0.0`._
+### High-impact field migrations (azurerm-4.0.0)
 
 AKS renames `automatic_channel_upgrade` to `automatic_upgrade_channel`,
 `node_os_channel_upgrade` to `node_os_upgrade_channel`, and the cluster and
@@ -221,22 +339,7 @@ virtual-network rule block. Linux and Windows VM scale sets rename
 `gallery_applications`, `terminate_notification`, and `scale_in_policy` to
 `gallery_application`, `termination_notification`, and `scale_in`.
 
-## Identity-based import and bulk discovery
-
-_Source batch `azapi-provider-2.x`._
-
-`azapi_resource` can import through provider identity using an ID alone, an ID
-with an API version, or an ID with a resource type. When no API version is
-explicit and import receives HTTP 400 or 404, 2.11 falls back through as many
-as three recent indexed API versions.
-
-The provider also implements the ListResource protocol for `azapi_resource`;
-omitting `type` can enumerate every resource in a resource group.
-`azapi_data_plane_resource` supports normal Terraform import as of 2.9.
-
-## Inline virtual-network subnets
-
-_AzureRM batch `azurerm-4.0.0`._
+### Inline virtual-network subnets (azurerm-4.0.0)
 
 The `azurerm_virtual_network` inline `subnet` block gains
 `default_outbound_access_enabled`, `delegation`,
@@ -247,59 +350,7 @@ The `azurerm_virtual_network` inline `subnet` block gains
 CIDRs; an upgrade may warn about replacement, but this migration should update
 in place.
 
-## Named JMESPath response projections
-
-_AzAPI batch `azapi-2.0.0`._
-
-`response_export_values` can be a map from output names to JMESPath queries,
-producing a directly addressable HCL object rather than requiring callers to
-decode and traverse the entire response.
-
-```hcl
-response_export_values = {
-  login_server      = "properties.loginServer"
-  quarantine_status = "properties.policies.quarantinePolicy.status"
-}
-
-output "login_server" {
-  value = data.azapi_resource.registry.output.login_server
-}
-```
-
-## Native HCL bodies and outputs
-
-_AzAPI batch `azapi-2.0.0`._
-
-AzAPI 2.0 requires `body` to be an HCL object and returns `output` as an HCL
-object, so remove `jsonencode`/`jsondecode` calls. The provider setting
-`enable_hcl_output_for_data_source` is removed, as is `ignore_body_changes`;
-use a native `lifecycle.ignore_changes` path instead.
-
-```hcl
-resource "azapi_resource" "subnet" {
-  type      = "Microsoft.Network/virtualNetworks/subnets@2022-07-01"
-  parent_id = azapi_resource.vnet.id
-  name      = var.name
-  body = {
-    properties = {
-      addressPrefix = "10.0.2.0/24"
-      delegations   = []
-    }
-  }
-
-  lifecycle {
-    ignore_changes = [body.properties.delegations]
-  }
-}
-
-output "subnet_prefix" {
-  value = azapi_resource.subnet.output.properties.addressPrefix
-}
-```
-
-## Newly required values and collection changes
-
-_AzureRM batch `azurerm-4.0.0`._
+### Newly required values and collection changes (azurerm-4.0.0)
 
 New required configuration includes Grafana `grafana_major_version`, image
 OS/data-disk `storage_type`, activity-log-alert `location`, data-collection
@@ -317,38 +368,7 @@ resolver inbound endpoint permits at most one `ip_configurations` block.
 `azurerm_api_management_api_tag` is recreated on upgrade so its revision can
 enter the resource ID.
 
-## Plan-time preflight validation
-
-_AzAPI batch `azapi-2.0.0`._
-
-Set `enable_preflight = true` on the provider to validate resource
-configuration during `terraform plan`; invalid Azure values such as malformed
-CIDR prefixes then fail the plan before deployment.
-
-```hcl
-provider "azapi" {
-  enable_preflight = true
-}
-```
-
-## Provider environment and custom-cloud controls
-
-_Source batch `azapi-provider-2.x`._
-
-The provider accepts `environment = "custom"` when all endpoints are supplied
-manually. Instance discovery can be disabled with
-`disable_instance_discovery` or `ARM_DISABLE_INSTANCE_DISCOVERY`; 2.x also
-adds the Key Vault resource-manager audience for Azure Government.
-
-`enable_preflight` and `disable_default_output` can be sourced from
-`ARM_ENABLE_PREFLIGHT` and `ARM_DISABLE_DEFAULT_OUTPUT`, while
-`oidc_azure_service_connection_id` can come from
-`ARM_ADO_PIPELINE_SERVICE_CONNECTION_ID` or
-`ARM_OIDC_AZURE_SERVICE_CONNECTION_ID`.
-
-## Provider setup and resource-provider registration
-
-_AzureRM batch `azurerm-4.0.0`._
+### Provider setup and resource-provider registration (azurerm-4.0.0)
 
 Every provider instance now needs an explicit `subscription_id` or
 `ARM_SUBSCRIPTION_ID`; Azure CLI authentication no longer infers the active
@@ -367,30 +387,7 @@ provider "azurerm" {
 }
 ```
 
-## Provider-controlled replacement triggers
-
-_AzAPI batch `azapi-2.0.0`._
-
-`replace_triggers_external_values` forces replacement when a listed non-null
-value changes. `replace_triggers_refs` instead names paths within the AzAPI
-resource whose changes require replacement.
-
-```hcl
-replace_triggers_external_values = [var.sku, var.zones]
-replace_triggers_refs            = ["properties.sku", "properties.zones"]
-```
-
-## Removed naming behavior
-
-_AzAPI batch `azapi-2.0.0`._
-
-Provider-level `default_naming_prefix` and `default_naming_suffix` are removed;
-build them into each resource's `name`. `azapi_resource.removing_special_chars`
-is also removed, so names must be sanitized by configuration instead.
-
-## Removed resources and data sources
-
-_AzureRM batch `azurerm-4.0.0`._
+### Removed resources and data sources (azurerm-4.0.0)
 
 The legacy `azurerm_sql_*` resources and data sources listed by the provider
 are gone in favor of their `azurerm_mssql_*` replacements. MariaDB and MySQL
@@ -423,52 +420,3 @@ Other exact migrations are
 network rules, Synapse AAD administrators, Container App custom domains, and
 NGINX configuration move out to their documented dedicated resource or
 embedded block.
-
-## Request and retry behavior
-
-_Source batch `azapi-provider-2.x`._
-
-Resources and data sources accept a `User-Agent` header that is appended to
-the provider's default user agent. Post-create GET requests retry HTTP 404 by
-default, custom retry configuration overrides that policy, and an exhausted
-retry sequence now returns its last retryable error instead of only
-`context deadline exceeded`.
-
-The `retry.multiplier` and `retry.randomization_factor` fields are deprecated
-from 2.6, superseding the earlier custom-retry example in this stream.
-Provider-level `maximum_busy_retry_attempts` is also deprecated; remove all
-three before the next major release and allow the provider defaults to apply.
-
-## Request headers and query parameters
-
-_AzAPI batch `azapi-2.0.0`._
-
-Data sources accept `query_parameters`, whose values are string lists.
-Managed resources can set operation-specific `create_query_parameters`,
-`update_query_parameters`, `read_query_parameters`, and
-`delete_query_parameters`, plus matching `create_headers`, `update_headers`,
-`read_headers`, and `delete_headers` maps.
-
-```hcl
-data "azapi_resource_list" "builtins" {
-  type      = "Microsoft.Authorization/policyDefinitions@2021-06-01"
-  parent_id = "/subscriptions/${var.subscription_id}"
-  query_parameters = {
-    "$filter" = ["policyType eq 'BuiltIn'"]
-  }
-}
-```
-
-## Sensitive request and response payloads
-
-_Source batch `azapi-provider-2.x`._
-
-`azapi_resource` and `azapi_update_resource` accept `sensitive_body` for
-write-only request properties. `azapi_resource` adds
-`sensitive_body_version` to manually control that payload's version;
-`azapi_data_plane_resource` later receives both fields, and resource actions
-receive sensitive request-body support in 2.11.
-
-For action resources and data sources, `sensitive_response_export_values`
-selects secret response fields and `sensitive_output` exposes the resulting
-value as sensitive.

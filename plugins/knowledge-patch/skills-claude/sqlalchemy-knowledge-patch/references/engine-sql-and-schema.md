@@ -1,9 +1,9 @@
 # Engine, SQL, and Schema
 
-## Suppressing autocommit rollback
+## Autocommit rollback suppression
 
-An engine can avoid DBAPI `.rollback()` calls when its dialect detects that
-the connection is in autocommit:
+Use `skip_autocommit_rollback=True` when the dialect can determine that the
+DBAPI connection is already in autocommit and rollback calls are unwanted:
 
 ```python
 from sqlalchemy import create_engine
@@ -15,60 +15,55 @@ engine = create_engine(
 )
 ```
 
-The option also suppresses the rollback normally performed when a connection
-returns to the pool. It is specifically coupled to dialect autocommit
-detection. Do not treat it as a general rollback-disable switch for
-connections that may have an open transaction.
-
-This is useful for a database or proxy where a rollback round trip in
-autocommit is redundant or costly. Validate support with the actual dialect:
-the safety of skipping the call depends on correctly identifying autocommit.
+This suppresses DBAPI `.rollback()` calls, including the rollback normally
+issued when a pooled connection is returned. Suppression depends on
+dialect-level autocommit detection; do not use it as a general substitute for
+rollback in transactional operation. This option is available in 2.0.51.
 
 ## Standalone constraint isolation
 
-`AddConstraint` and `DropConstraint` accept `isolate_from_table`. Its default
-is `True`:
+`AddConstraint` and `DropConstraint` accept `isolate_from_table`, which
+defaults to `True`. Pass `False` to keep a constraint eligible for inline
+creation in the table's `CREATE TABLE` sequence:
 
 ```python
-from sqlalchemy.schema import AddConstraint, DropConstraint
+from sqlalchemy.schema import AddConstraint
 
-add = AddConstraint(constraint)
-drop = DropConstraint(constraint)
+ddl = AddConstraint(constraint, isolate_from_table=False)
 ```
 
-Pass `isolate_from_table=False` when the constraint should remain eligible for
-inline creation in the table's `CREATE TABLE` sequence:
-
-```python
-add = AddConstraint(
-    constraint,
-    isolate_from_table=False,
-)
-```
-
-This choice matters when the same metadata participates in both table-level
-creation and explicitly executed constraint DDL. Decide whether the
-constraint is standalone or inline before assembling the DDL sequence so it
-is neither unexpectedly separated nor emitted twice.
+Review DDL ordering when changing this setting, particularly when combining
+metadata-level creation with explicit constraint DDL.
 
 ## `GROUPS` window frames
 
-Both the top-level `over()` function and `FunctionElement.over()` accept a
-`groups` frame specification. It follows the tuple form used by the existing
-window-frame parameters:
+`over()` and `FunctionElement.over()` accept `groups=` in parallel with the
+existing frame options:
 
 ```python
-from sqlalchemy import func, select
+from sqlalchemy import func
 
-group_total = func.sum(t.c.amount).over(
+running = func.sum(t.c.amount).over(
     order_by=t.c.id,
     groups=(None, 0),
 )
-
-stmt = select(t.c.id, group_total)
 ```
 
-`(None, 0)` means unbounded preceding through the current group. `GROUPS`
-frames count peer groups determined by the window ordering, unlike `ROWS`,
-which counts physical rows. Use the frame style that matches the query's
-semantics and check that the target server implements `GROUPS`.
+The example describes an unbounded-preceding-to-current-group frame. Verify
+that the target database supports SQL `GROUPS` frames.
+
+## Decimal return scale
+
+On DBAPIs that do not return native decimals,
+`Numeric(decimal_return_scale=n)` controls conversion scale. It is no longer
+ignored in favor of `Numeric.scale`. After moving to 2.0.52, processed
+`Decimal` values may therefore contain a different number of fractional
+digits. Audit serialization, equality assertions, and other code that depends
+on that scale.
+
+## Independent defaults in `Table.to_metadata()`
+
+`Table.to_metadata()` copies column default and on-update objects rather than
+sharing them with the source table. This includes sequences and server-side
+defaults. Each copied object remains associated with the copied column and
+metadata, so code that inspects these objects must expect distinct identities.

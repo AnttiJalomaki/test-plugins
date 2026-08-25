@@ -10,240 +10,241 @@ metadata:
 
 # Hugging Face Hub Knowledge Patch
 
-Use this skill when working with `huggingface_hub`, repository files and
-commits, authentication, caches, large-file storage, routed inference,
+Use this skill for work involving `huggingface_hub`, Hub repositories,
+authentication, downloads, uploads, caches, Xet or Git LFS, routed inference,
 Inference Endpoints, or Spaces.
 
-Prefer the installed package metadata, live API signatures, repository state,
-and returned remote state over assumptions about a whole release family.
+Start from the installed package metadata and signatures. Confirm repository
+state and asynchronous remote state when behavior depends on either one.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/client-migration.md](references/client-migration.md) | Python and HTTP client compatibility, removed APIs and CLI, download arguments, upload results, Xet, framework integration |
-| [references/repositories-auth.md](references/repositories-auth.md) | Commit concurrency, redirected downloads, token resolution and storage, logout and revocation |
-| [references/files-cache-uploads.md](references/files-cache-uploads.md) | Cache immutability and cleanup, `local_dir`, resumable and deferred uploads, server-side copies, Xet/LFS interoperability |
-| [references/inference-spaces.md](references/inference-spaces.md) | Routed providers, credentials, endpoint lifecycle, Space configuration, persistence, secrets, OAuth |
+| [Client migration](references/client-migration.md) | Python support, HTTPX, removed APIs and CLI, arguments, return values, Xet, packaging |
+| [Repository writes and authentication](references/repositories-auth.md) | Optimistic concurrency, redirect safety, token resolution, storage, logout and revocation |
+| [Files, caches, and uploads](references/files-cache-uploads.md) | Cache immutability, `local_dir`, cleanup, large-folder and deferred uploads, copies, LFS bridge |
+| [Inference and Spaces](references/inference-spaces.md) | Routed providers, credentials, endpoint lifecycle and hardware, engine images, parallelism, Space configuration |
 
-## Start with breaking changes
+## Breaking client changes
 
-### Check the runtime floor
+### Check Python compatibility per installed release
 
-Do not assume that every release in a major series supports the same Python
-minimum. Read the installed distribution metadata when choosing an interpreter
-or declaring a downstream package constraint.
+The initial v1 client requires Python 3.9 or newer, but do not treat that as
+the floor for every later 1.x release. Read the installed release's package
+metadata before choosing a runtime or publishing package constraints.
 
-### Migrate transport customization to HTTPX
+### Configure HTTPX, not requests or aiohttp
 
-The synchronous and asynchronous clients use HTTPX rather than `requests` and
-`aiohttp`.
+The client uses HTTPX for synchronous and asynchronous traffic. Treat
+transport failures as `httpx.HTTPError`-based and Hub response failures as
+members of the `HfHubHttpError` hierarchy.
 
-- Catch `httpx.HTTPError` for transport failures.
-- Catch the appropriate `HfHubHttpError` subclass for Hub response failures.
-- Replace `configure_http_backend` with `set_client_factory` or
-  `set_async_client_factory`.
-- Put proxy, TLS, timeout, transport, and mock configuration on the global or
-  custom HTTPX client.
-- Do not pass the removed per-call `proxies=` argument.
+Replace `configure_http_backend` with `set_client_factory` or
+`set_async_client_factory`. Put proxy, TLS, timeout, transport, and mock
+configuration on the global or custom HTTPX client; do not pass per-call
+`proxies=`.
 
 ### Replace removed abstractions
 
-| Removed surface | Current direction |
-| --- | --- |
-| `Repository` | `HfApi` commit operations or supported Git/Xet tooling |
-| `HfFolder` | `login`, `logout`, `auth_switch`, and `get_token` |
-| `InferenceApi` | `InferenceClient` or `AsyncInferenceClient` |
-| `huggingface-cli` | `hf` |
+Do not import or recommend `Repository`, `HfFolder`, or `InferenceApi`.
 
-Commit-oriented HTTP operations are not a drop-in local Git worktree wrapper.
-Re-evaluate conflict handling, atomicity, and assumptions about local files.
+- Use `HfApi` or supported Git/Xet tools for repository work.
+- Use `login`, `logout`, `auth_switch`, and `get_token` for authentication.
+- Use `InferenceClient` or `AsyncInferenceClient` for inference.
 
-Current command families include:
+Moving from a local `Repository` worktree to commit-oriented HTTP calls changes
+conflict handling, atomicity, and local-worktree behavior. Review those
+semantics instead of mechanically replacing the class name.
 
-```bash
-hf auth
-hf download
-hf upload
-hf cache
-```
+### Use the `hf` command
 
-### Rename and remove call arguments
+Replace `huggingface-cli` automation with `hf`, including `hf auth`,
+`hf download`, `hf upload`, and `hf cache` commands.
 
-Use `token=` instead of the removed `use_auth_token` alias:
+### Remove obsolete call arguments
+
+Replace `use_auth_token` with `token`, including in downstream wrappers.
+
+Downloads no longer accept `resume_download`, `force_filename`, or
+`local_dir_use_symlinks`. Use supported cache resumption, returned paths,
+`force_download`, the central cache, and current `local_dir` behavior.
 
 ```python
 api.model_info("org/model", token=token)
 snapshot_download("org/model")
 ```
 
-Download functions no longer accept `resume_download`, `force_filename`, or
-`local_dir_use_symlinks`.
-
-- Supported cache behavior handles resumption where applicable.
-- Use the returned path instead of forcing an old filename convention.
-- Use `force_download` only when a fresh fetch is required.
-- Choose between the central cache and current `local_dir` behavior explicitly.
-
 ### Inspect upload return types
 
-Upload methods return commit-oriented information or URLs, not the old
-file-CDN abstraction. Follow the exact installed return type. Do not rely on an
-old result's truthiness, string concatenation behavior, or local Git-wrapper
-semantics.
+Upload methods return commit-oriented information or URLs rather than the old
+file-CDN abstraction. Follow the exact current return type; do not depend on an
+old result's truthiness, string concatenation, or local Git-wrapper semantics.
 
-### Remove legacy transfer switches
+### Use Xet for large files
 
-Xet through `hf_xet` is the supported large-file path and is integrated
-automatically. The removed `hf_transfer` integration is not re-enabled by
-`HF_HUB_ENABLE_HF_TRANSFER`.
+Xet is integrated through `hf_xet`. The `hf_transfer` integration is removed,
+and `HF_HUB_ENABLE_HF_TRANSFER` no longer enables it. Set
+`HF_XET_HIGH_PERFORMANCE` only after accepting its documented resource cost.
 
-Enable `HF_XET_HIGH_PERFORMANCE` only after accepting its documented resource
-tradeoff.
+### Keep framework integration outside the core client
 
-### Move framework-specific behavior outward
+Removed TensorFlow/Keras helpers should be replaced by framework-owned
+serialization and model-card callbacks that call Hub primitives. For
+packaging, select the actual supported extra or direct dependency of the
+installed release because optional and CLI dependency groups changed.
 
-Removed TensorFlow and Keras helpers should be replaced by framework-owned
-serialization and model-card callbacks that call Hub primitives. Packaging
-must select an extra or direct dependency that actually exists for the
-installed release; optional and CLI dependency groups have changed.
+## Repository and authentication safety
 
-## Repository and authentication quick reference
+### Guard writes with the expected branch head
 
-### Protect concurrent writes
+For mutations accepting `parent_commit`, pass the known branch head when a
+lost update or overwrite would be unsafe. If the branch moved, the request
+fails rather than applying on an unexpected base.
 
-For a mutation that accepts `parent_commit`, pass the branch head that the
-change was prepared against. If the branch moved, the operation fails instead
-of applying to an unexpected base.
+### Handle storage redirects without leaking credentials
 
-Use this guard whenever a blind retry could overwrite another writer or
-publish a change based on stale content.
+Repository `resolve` requests may redirect to content-addressed storage. A raw
+HTTP client must follow the redirect without forwarding the bearer token to an
+unrelated origin. Prefer `hf_hub_download` or another supported client flow,
+which handles this safely.
 
-### Resolve credentials deliberately
+### Choose token behavior explicitly
 
-`HF_TOKEN` takes precedence over a token stored on disk.
+`HF_TOKEN` overrides the token stored on disk. For APIs with `token=`:
 
-For APIs accepting `token=`:
-
-- a string uses that credential;
-- `True` requests the locally resolved token;
+- A string selects that credential.
+- `True` requests the locally resolved token.
 - `False` suppresses authentication.
 
-Set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1` when otherwise-anonymous reads must not
-silently use an available token.
+Use `HF_HUB_DISABLE_IMPLICIT_TOKEN=1` to keep an available token off reads
+that should remain anonymous.
 
 ```python
 api.model_info("open/model", token=False)
 api.model_info("org/private-model", token=True)
 ```
 
-### Separate storage, logout, and revocation
+`HF_TOKEN_PATH` overrides the stored-token file normally kept under `HF_HOME`.
+`HF_HUB_CACHE` and `HF_XET_CACHE` do not move authentication state.
 
-`HF_TOKEN_PATH` moves the stored-token file under `HF_HOME`. Changing
-`HF_HUB_CACHE` or `HF_XET_CACHE` does not move authentication state.
+`logout()` and `hf auth logout` delete saved local credentials but do not
+revoke the remote token. Revoke compromised or retired tokens in Hub settings
+as well.
 
-`logout()` and `hf auth logout` delete saved local credentials. They do not
-revoke the remote token, and they do not erase private content already present
-in caches.
+## File, cache, and upload safety
 
-### Handle download redirects safely
+### Never edit the central cache in place
 
-Repository `resolve` requests can redirect to content-addressed storage. A raw
-HTTP client must follow redirects without forwarding a bearer token to an
-unrelated origin. Prefer `hf_hub_download` or another supported client flow,
-which handles this boundary.
+Central-cache `snapshots/{commit}` trees link to shared content under `blobs`
+where links are supported. Editing a returned cache path may corrupt shared
+content or affect multiple snapshots. Copy files to a working directory first.
 
-## Files, cache, and upload quick reference
+`local_dir` materializes selected files and writes resume metadata under
+`.cache/huggingface`. Exclude that metadata from publication and expect less
+cross-project deduplication than the central cache provides.
 
-### Never edit central-cache results
+### Clean caches through supported commands
 
-The central cache stores content in `blobs` and exposes
-`snapshots/{commit}` trees through links where supported. A path returned from
-that cache can be shared by several snapshots.
-
-Copy cached content to a working directory before modification.
-
-With `local_dir`, selected files are materialized in the destination and
-transfer metadata is written under `.cache/huggingface`. Exclude that metadata
-from publication and expect less cross-project deduplication.
-
-### Use cache commands
-
-Use `hf cache ls`, `hf cache rm`, and `hf cache prune`. Avoid deleting cache
-internals while work is active.
-
-The Hub cache and Xet chunk cache are separate layers. Removing repository
-snapshots may leave chunks, while clearing chunks does not update repository
-refs.
+Use `hf cache ls`, `hf cache rm`, and `hf cache prune`; do not delete cache
+internals during active work. Hub snapshots and the Xet chunk cache are
+separate layers. Logging out does not erase downloaded private data.
 
 ### Treat large-folder upload as resumable, not atomic
 
 `upload_large_folder` records hashing, pre-upload, and commit progress in the
-source folder's `.cache/huggingface`.
+source folder's `.cache/huggingface`. Preserve that directory, rerun with the
+same folder and repository, and do not modify files during the upload.
 
-- Keep the metadata for a retry against the same folder and repository.
-- Do not modify source files during the run.
-- Expect multiple commits.
-- For all-or-nothing publication, upload to a staging branch or repository,
-  validate it, then promote it.
+The operation may create multiple commits. For all-or-nothing publication,
+upload to a staging branch or repository, validate it, and then promote it.
 
-### Await process-local background work
+### Keep deferred work alive and observe failures
 
-`run_as_future=True` returns a future and preserves per-client queue order, but
-the work is tied to the current process. Keep the process alive and retrieve
-every future's result so failures are observed.
+`run_as_future=True` returns futures and preserves per-client queue order, but
+the work is process-local. Keep the process alive and retrieve every future's
+failure. Stop scheduled commit helpers and verify their last commit before the
+job exits.
 
-Stop scheduled commit helpers and verify their last commit before job exit.
+### Prefer server-side copies when eligible
 
-## Inference and Spaces quick reference
+Pass `CommitOperationCopy` with add and delete operations to `create_commit`
+for supported server-side copies. The copy still creates a repository commit
+and is limited by supported source, destination, revision, and repository
+contexts.
+
+### Verify large-file materialization
+
+Legacy Git LFS clients can use the compatibility bridge for Xet-backed
+repositories, but Xet and LFS differ in storage and performance. A successful
+generic clone may leave pointers rather than large-file bytes. Inspect filter
+and pointer state or use a Hub download API.
+
+## Inference and endpoint operations
 
 ### Distinguish routing from deployment
 
-`InferenceClient(..., provider="auto")` chooses an available provider for a
-supported model and task under current routing rules. It does not create or
-identify a dedicated Inference Endpoint.
+`InferenceClient(..., provider="auto")` selects an available routed provider
+for a supported model and task. It does not create or identify a dedicated
+Inference Endpoint, and the common surface does not guarantee a processor,
+region, isolation, scaling, billing model, or optional chat feature.
 
-Choose a named provider when processor, region, isolation, scaling, billing,
-or optional chat features matter. To use a dedicated deployment, target its
+Choose a named provider when those constraints matter, or target a deployed
 endpoint URL explicitly.
 
+```python
+from huggingface_hub import InferenceClient
+
+client = InferenceClient("org/model", provider="auto", token=token)
+```
+
 Hub-routed inference can use a Hugging Face token with the required inference
-permissions and billing association. A direct partner route uses that
-provider's documented key. Never send a partner key to an arbitrary model
-repository URL.
+permissions and billing association. Direct partner routes use that provider's
+documented key. Never send a partner key to an arbitrary model repository URL.
 
-### Wait for endpoint state
+### Poll endpoint changes
 
-Endpoint create and update operations are asynchronous. Poll the returned
-remote state and handle terminal failure before directing traffic to it.
+Endpoint create and update operations are asynchronous. Poll remote state,
+handle terminal failure, and only then send traffic. `scale_to_zero` retains
+configuration and allows a later request to cold-start serving; `pause`
+requires an explicit resume. Configure endpoint exposure separately from the
+source model repository's visibility.
 
-- `scale_to_zero` keeps configuration and allows a later request to cold-start.
-- `pause` requires an explicit resume.
-- Endpoint exposure is configured independently of source-repository privacy.
+### Match engines to multi-accelerator hardware
 
-### Make Space state explicit
+When vLLM or SGLang uses a multi-accelerator instance, set tensor or data
+parallelism explicitly. Those engines default to one accelerator, and the API
+rejects a mismatch. Use the current endpoint hardware discovery command or SDK
+before deployment, and see the inference reference for managed-engine payloads
+and exact CLI options.
 
-Ordinary Space filesystem data is ephemeral across restarts and rebuilds.
-Store durable data on provisioned persistent storage at its documented mount,
-or in an external service.
+## Space operations
 
-A sleeping Space wakes on access. A paused Space requires an explicit restart
-or resume. Restarting does not promise preservation of ephemeral files.
+README `suggested_hardware` and `suggested_storage` are recommendations, not
+allocations. Configure actual hardware and persistent storage in runtime
+settings. Use revision-pinned `preload_from_hub` selections for narrow staging,
+not as a replacement for dependency declarations, and stay within the custom
+header allowlist.
 
-README `suggested_hardware` and `suggested_storage` recommend settings; they do
-not allocate resources. Space variables are readable to users with settings
-access, while secrets become write-only in the settings interface after
-creation. OAuth configuration for user login does not automatically authorize
-the server process to read private repositories.
+The ordinary Space filesystem is ephemeral. Put durable state on provisioned
+persistent storage at its documented mount or in an external service. A
+sleeping Space wakes on access; a paused Space requires restart or resume, and
+restarting does not preserve ephemeral files.
 
-## Review checklist
+Variables are visible to users with settings access. Secrets become write-only
+through the settings UI or API after creation; both normally enter the runtime
+as environment variables. README `hf_oauth` settings configure user-login
+OAuth, but do not automatically authorize the server process to private
+repositories.
 
-- Confirm the installed Python requirement and API signatures.
-- Remove legacy client classes, CLI names, arguments, and transfer switches.
-- Configure HTTPX clients and catch transport versus Hub response errors.
-- Use explicit token behavior and safe redirect handling.
-- Guard sensitive writes with `parent_commit` where supported.
-- Copy central-cache files before editing and clean cache layers deliberately.
-- Preserve resumable-upload state and await process-local background work.
-- Distinguish routed inference, partner credentials, and dedicated endpoints.
-- Poll endpoint operations and provision Space persistence explicitly.
+## Working checklist
+
+1. Inspect the installed package metadata and callable signatures.
+2. Replace removed client APIs, arguments, CLI commands, and transport hooks.
+3. Make token selection and anonymous access intentional.
+4. Protect repository writes with `parent_commit` where races matter.
+5. Treat shared cache paths as immutable and clean both cache layers safely.
+6. Design large uploads around multiple commits and process-local background work.
+7. Distinguish routed inference, dedicated endpoints, and Space runtimes.
+8. Poll endpoint state and verify accelerator, engine, and parallelism choices.
+9. Put Space durability and authority in explicitly provisioned mechanisms.

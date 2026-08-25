@@ -1,123 +1,305 @@
 # Database, Query Builder, Schema, and Transactions
 
-## Contents
+## Additional JSON Schema constraints (2026-02)
 
-- [Connections, constructors, and inspection](#connections-constructors-and-inspection)
-- [Schema columns and indexes](#schema-columns-and-indexes)
-- [Query construction](#query-construction)
-- [Writes, transactions, and destructive operations](#writes-transactions-and-destructive-operations)
-- [Driver tooling and transport security](#driver-tooling-and-transport-security)
+Numeric schema types support `multipleOf`, while array schema types support `uniqueItems`.
 
-## Connections, constructors, and inspection
+## Arbitrary SQLite pragmas (2025-09)
 
-- **Multi-schema inspection** `[12.0-upgrade]`: `Schema::getTables()`,
-  `getViews()`, and `getTypes()` inspect every schema by default and accept a
-  string or array `schema:` filter. `getTableListing()` returns qualified names
-  unless `schemaQualified: false` is passed. `db:table` and `db:show` likewise
-  include every schema on MySQL, MariaDB, and SQLite.
-- **Low-level constructors** `[12.0-upgrade]`: construct `Blueprint` and
-  `Grammar` with a `Connection` first. `Grammar::setConnection()` and
-  `Connection::withTablePrefix()` are removed; use
-  `$connection->getTablePrefix()`. `Blueprint::getPrefix()` and the grammar
-  table-prefix getters and setters are deprecated.
-- **Native MariaDB CLI** `[12.0.0]`: database CLI operations use MariaDB-native
-  commands; install the corresponding binaries.
-- **PDO fetch modes** `[12.0.0]`: query-builder retrieval operations can select
-  a PDO fetch mode.
-- **Enum database connections** `[2025-09]`: database manager methods and model
-  connection properties and methods accept enum selectors.
-- **Database reconnection events** `[2025-12]`: reconnections dispatch
-  `ConnectionEstablished`; `SSL error: unexpected eof` is treated as a lost
-  connection.
-- **SQLite transaction modes** `[2025-08]`: configure `DEFERRED`, `IMMEDIATE`,
-  or `EXCLUSIVE` with `transaction_mode`.
-- **SQLite arbitrary pragmas** `[2025-09]`: configure additional pragmas
-  additively; existing option locations remain valid after the attempted move
-  was reverted.
-- **SQLite URI connections** `[2026-05]`: database names may use the `file:`
-  URI form with URI connection options.
-- **PostgreSQL transaction poolers** `[2026-06]`: connections support
-  transaction-pooler operation.
+SQLite connection configuration can set arbitrary pragmas. A follow-up attempt to move existing options into the pragmas configuration was reverted, so this support is additive and existing option locations remain valid.
 
-## Schema columns and indexes
+## Attributes without query conditions (2025-03)
 
-- **SQLite JSON and JSONB** `[2025-03]`: `$table->json()` and
-  `$table->jsonb()` create the supported native SQLite types.
-- **PostgreSQL nulls-not-distinct** `[2025-03]`: add
-  `->nullsNotDistinct()` to a unique index to treat null values as equal.
-- **MariaDB UUID fallback** `[2025-04]`: UUID columns use `char(36)` before
-  MariaDB 10.7, where the native UUID type is unavailable.
-- **Current date and year defaults** `[2025-05]`: `date` and `year` columns
-  support `useCurrent()`.
-- **Positioned morph columns** `[2025-08]`: `morphs()` and
-  `nullableMorphs()` accept `after:` to position both generated columns.
-- **Online indexes** `[2025-08]`: `->online()` emits concurrent index creation
-  on PostgreSQL and online creation on SQL Server.
-- **PostgreSQL virtual columns** `[2025-10]`: virtual columns are supported by
-  the PostgreSQL schema grammar.
-- **Instant column additions** `[2025-11]`: request instant column addition
-  where a compatible database can avoid a table rebuild.
-- **MySQL DDL locking** `[2026-01]`: schema changes can select supported MySQL
-  DDL lock behavior.
-- **PostgreSQL `tsvector` columns** `[2026-03-laravel-12]`: create native
-  search vectors with `$table->tsvector('search_document')`.
-- **MariaDB vector indexes** `[2026-06]`: use Laravel schema APIs for MariaDB
-  vector indexes.
-- **PostgreSQL conversions** `[2026-07]`: use
-  `->using($expression)->change()` to supply the conversion expression for a
-  changed column.
+Eloquent's `withAttributes()` can apply pending model attributes without also adding them as `where` clauses.
 
-## Query construction
+```php
+Post::query()
+    ->withAttributes(['tenant_id' => $tenantId], asConditions: false)
+    ->create(['title' => 'Draft']);
+```
 
-- **Literal values between columns** `[2025-07]`: use
-  `whereValueBetween($value, [$lowerColumn, $upperColumn])`.
-- **Subquery range bounds** `[2026-01]`: query-builder `between` variants accept
-  subqueries for values and for column-bound ranges.
-- **MySQL query timeouts** `[2026-02]`: apply `timeout()` to an individual
-  MySQL query.
-- **`DatePeriod` ranges** `[2026-02]`: `whereBetween()` accepts `DatePeriod`,
-  including periods with no end date.
-- **Eloquent subqueries in updates** `[2026-02]`: update values may be Eloquent
-  builders or relationship queries without conversion to base builders.
-- **Precomputed PostgreSQL vectors** `[2026-02]`: `whereFullText()` accepts a
-  vector option for an existing `tsvector` column.
-- **Caller-defined ordering** `[2026-03-laravel-12]`: use
-  `inOrderOf($column, $values)` to order rows by a supplied value sequence.
-- **Touching multiple columns** `[2026-03-laravel-12]`: `touch()` accepts an
-  array of timestamp columns.
-- **Semantic vector queries** `[13.0.0]`: PostgreSQL with `pgvector` supports
-  similarity queries such as `whereVectorSimilarTo()`, including embedding a
-  plain-language query.
-- **Sort direction enums** `[2026-05]`: ordering APIs accept the
-  `SortDirection` enum.
+## Caller-defined query ordering (2026-03-laravel-12)
 
-## Writes, transactions, and destructive operations
+Query builders provide `inOrderOf()` for ordering rows according to a supplied sequence of column values.
 
-- **Conditional migrations** `[2025-03]`: define `shouldRun(): bool` on a
-  migration for runtime gating.
-- **Prohibitable seeding** `[2025-04]`: `DB::prohibitDestructiveCommands()` can
-  block `db:seed`.
-- **Transaction rollback callbacks** `[2025-09]`: register rollback-only work
-  with `DB::afterRollback()`.
-- **Prohibitable schema dumps** `[2025-11]`: schema dumping participates in
-  destructive-command prohibition.
-- **Clean deadlock retries** `[2026-02]`: Laravel rolls back a lingering PDO
-  transaction before retrying a commit deadlock.
-- **Non-empty upsert keys** `[13.0-upgrade]`: MySQL and MariaDB `upsert()` throw
-  `InvalidArgumentException` when `uniqueBy` is empty.
-- **Joined MySQL deletes** `[13.0-upgrade]`: requested `ORDER BY` and `LIMIT`
-  are emitted. Unsupported database variants raise `QueryException` instead of
-  silently executing an unbounded delete.
-- **Schema dump without migration data** `[2026-06]`: pass
-  `schema:dump --without-migration-data` to omit migration records.
-- **Collision-free migration timestamps** `[2026-07]`: `make:migration`
-  generates ordered, collision-free prefixes for closely timed migrations.
+```php
+$orders = Order::query()
+    ->inOrderOf('status', ['pending', 'processing', 'complete'])
+    ->get();
+```
 
-## Driver tooling and transport security
+## Castable enums (2025-09)
 
-- **Disable MySQL schema SSL** `[2025-05]`: migration squash and restore can
-  explicitly disable SSL where client defaults request unavailable TLS.
-- **MySQL schema TLS credentials** `[2026-02]`: dump and load commands accept
-  configured SSL certificates and keys.
-- **Mode-less PostgreSQL full text** `[2025-11]`: issue PostgreSQL full-text
-  queries without naming a search mode.
+Enum types may implement Laravel's `Castable` contract, enabling an enum to select its own custom Eloquent caster.
+
+## Collision-free migration timestamps (2026-07)
+
+`make:migration` generates collision-free, ordered timestamp prefixes when migrations are created close together.
+
+## Conditional migrations (2025-03)
+
+A migration may define `shouldRun()` to decide at runtime whether it should execute.
+
+```php
+public function shouldRun(): bool
+{
+    return config('features.audit_log');
+}
+```
+
+## Configurable SQLite transaction modes (2025-08)
+
+SQLite connections may specify a transaction mode such as `DEFERRED`, `IMMEDIATE`, or `EXCLUSIVE`, allowing applications to choose when a transaction acquires its database lock.
+
+```php
+'transaction_mode' => 'IMMEDIATE',
+```
+
+## Current defaults for date and year columns (2025-05)
+
+Schema `date` and `year` columns now support `useCurrent()`, for example `$table->date('effective_on')->useCurrent()`.
+
+## Database reconnection handling (2025-12)
+
+Database reconnections now dispatch `ConnectionEstablished`, and an `SSL error: unexpected eof` is recognized as a lost connection.
+
+## Disabling SSL for MySQL schema operations (2025-05)
+
+MySQL migration squashing and restoration can explicitly disable SSL, which is needed when client defaults request TLS but the target server does not provide it.
+
+## Enum database connections (2025-09)
+
+Database manager methods and Eloquent model connection properties and methods accept enum connection selectors, avoiding manual conversion at each database call.
+
+## Failing transactional pivot operations (2026-03-laravel-12)
+
+`BelongsToMany` provides `*OrFail` transaction methods for pivot mutations that should fail atomically.
+
+```php
+$user->roles()->syncOrFail($roleIds);
+```
+
+## Filtering by attached models (2025-04)
+
+`whereAttachedTo()` filters an Eloquent query to models attached to a given model through a many-to-many relationship.
+
+```php
+$users = User::whereAttachedTo($role)->get();
+```
+
+## Instant column additions (2025-11)
+
+Schema operations now support instant column additions on compatible databases, avoiding the normal table-rebuild path where the database can apply the change instantly.
+
+## Iterable database-empty assertions (2026-07)
+
+`assertDatabaseEmpty()` accepts an iterable, allowing one assertion to verify multiple database targets.
+
+## Joined MySQL delete clauses (13.0-upgrade)
+
+MySQL joined deletes now include requested `ORDER BY` and `LIMIT` clauses instead of silently dropping them. Database variants that reject that syntax now raise `QueryException` rather than executing an unbounded delete.
+
+## JSON schema contract (2025-11)
+
+Laravel's JSON schema facilities now expose a contract alongside schema-generation improvements, allowing extensions to depend on an abstraction rather than a concrete implementation.
+
+## JSON Schema dependencies (2025-12)
+
+Laravel's JSON Schema facilities can now express dependencies between schema members instead of requiring dependent requirements to be modeled outside the schema.
+
+## JSON Schema deserialization and composition (2026-06)
+
+Illuminate JSON Schema can deserialize array schemas and multi-type unions, and schemas may use `anyOf` composition.
+
+## Literal values between columns (2025-07)
+
+Query builders can test whether a literal value falls between the values of two columns with `whereValueBetween()`.
+
+```php
+$active = Reservation::query()
+    ->whereValueBetween(now(), ['starts_at', 'ends_at'])
+    ->get();
+```
+
+## Low-level database constructors (12.0-upgrade)
+
+`Blueprint` and `Grammar` now require a `Connection` as their first constructor argument. `Grammar::setConnection()` and `Connection::withTablePrefix()` are removed; obtain prefixes with `$connection->getTablePrefix()` instead.
+
+```php
+$grammar = new MySqlGrammar($connection);
+$prefix = $connection->getTablePrefix();
+```
+
+`Blueprint::getPrefix()` and `Grammar::getTablePrefix()` / `setTablePrefix()` are deprecated.
+
+## MariaDB UUID fallback (2025-04)
+
+Schema UUID columns use `char(36)` on MariaDB versions older than 10.7, where the native UUID type is unavailable.
+
+## MariaDB vector indexes (2026-06)
+
+Laravel's schema support now includes MariaDB vector indexes.
+
+## Migration and locale event data (2025-12)
+
+Laravel dispatches a `MigrationSkipped` event for skipped migrations, and `LocaleUpdated` now includes the previous locale for listeners that need both sides of the change.
+
+## Migration names in lifecycle events (2026-05)
+
+`MigrationStarted` and `MigrationEnded` now include the migration name, allowing listeners to identify the migration being run.
+
+## Mode-less PostgreSQL full-text search (2025-11)
+
+PostgreSQL full-text queries may now be issued without selecting a named search mode.
+
+## More prohibitable commands (2026-06)
+
+`cache:clear` and `queue:flush` now participate in Laravel's command-prohibition mechanism.
+
+## Multi-schema database inspection (12.0-upgrade)
+
+`Schema::getTables()`, `getViews()`, and `getTypes()` now inspect every schema by default and accept `schema:` as a string or array to narrow the query. `getTableListing()` returns schema-qualified names by default; pass `schemaQualified: false` to receive unqualified names.
+
+```php
+$tables = Schema::getTables(schema: ['main', 'blog']);
+$names = Schema::getTableListing(schema: 'main', schemaQualified: false);
+```
+
+The `db:table` and `db:show` commands likewise include every schema on MySQL, MariaDB, and SQLite.
+
+## MySQL query timeouts (2026-02)
+
+MySQL query builders now provide `timeout()` for applying a timeout to an individual query.
+
+## Native MariaDB CLI integration (12.0.0)
+
+Database CLI operations for MariaDB now use native MariaDB commands, so environments invoking those operations must provide the corresponding binaries.
+
+## Non-empty upsert keys (13.0-upgrade)
+
+MySQL and MariaDB `upsert()` calls now require a non-empty `uniqueBy` value and throw `InvalidArgumentException` otherwise, even though those drivers use table primary and unique indexes for conflict detection.
+
+## Online index creation (2025-08)
+
+Schema index definitions can request online creation. Laravel emits concurrent index creation for PostgreSQL and online index creation for SQL Server.
+
+```php
+$table->index('email')->online();
+```
+
+## Parallel-test pre-migration setup (2025-12)
+
+Parallel database testing has a pre-migration hook, allowing database preparation to run after a test database is selected but before its migrations execute.
+
+## Polymorphic pivot table inference (13.0-upgrade)
+
+Inferred table names for polymorphic pivot models using custom pivot classes are now pluralized. Set the pivot model's table explicitly when retaining a previously inferred singular name.
+
+## Positioning polymorphic columns (2025-08)
+
+Schema blueprint `morphs()` and `nullableMorphs()` definitions accept an `after` argument, allowing both generated polymorphic columns to be positioned after an existing column.
+
+```php
+$table->morphs('commentable', after: 'body');
+```
+
+## PostgreSQL `tsvector` columns (2026-03-laravel-12)
+
+The schema builder supports PostgreSQL `tsvector` columns directly.
+
+```php
+$table->tsvector('search_document');
+```
+
+## PostgreSQL conversion expressions (2026-07)
+
+PostgreSQL migrations can use `->using(...)->change()` to supply a conversion expression when changing a column.
+
+## PostgreSQL precomputed full-text vectors (2026-02)
+
+`whereFullText()` accepts a vector option for querying precomputed `tsvector` columns instead of rebuilding the vector from source text.
+
+## PostgreSQL transaction poolers (2026-06)
+
+PostgreSQL connections now support transaction poolers.
+
+## PostgreSQL unique nulls-not-distinct indexes (2025-03)
+
+PostgreSQL unique indexes can treat null values as equal by using `nullsNotDistinct()`.
+
+```php
+$table->unique('external_id')->nullsNotDistinct();
+```
+
+## PostgreSQL virtual columns (2025-10)
+
+The PostgreSQL schema grammar now supports virtual columns, so schema definitions using them no longer require a PostgreSQL-specific workaround.
+
+## Prohibitable schema dumps (2025-11)
+
+The database schema dump command can now be blocked by Laravel's destructive-command prohibition.
+
+## Prohibiting database seeding (2025-04)
+
+`db:seed` is now a prohibitable command, so `DB::prohibitDestructiveCommands()` can prevent seeding along with other destructive database operations.
+
+## Query builder PDO fetch modes (12.0.0)
+
+Query builder operations can now select PDO fetch modes when retrieving results.
+
+## Query-builder sort directions (2026-05)
+
+Query builder ordering APIs now accept the `SortDirection` enum, extending enum-based directions beyond collection and `Arr` sorting.
+
+## Reporting non-unique `sole()` results (2026-06)
+
+`MultipleRecordsFoundException` instances raised by `sole()` are now reported, affecting exception reporting when a query unexpectedly returns multiple records.
+
+## Schema dumps without migration data (2026-06)
+
+The schema dump command accepts `--without-migration-data` to omit migration data from the dump.
+
+```shell
+php artisan schema:dump --without-migration-data
+```
+
+## SQLite JSON and JSONB columns (2025-03)
+
+The SQLite schema builder now supports native JSON and JSONB column types through its existing column helpers.
+
+```php
+$table->json('payload');
+$table->jsonb('snapshot');
+```
+
+## SQLite polymorphic exclusions (2025-11)
+
+SQLite connections now support Eloquent's `whereNotMorphedTo()` relationship query, bringing that polymorphic exclusion operation in line with other database drivers.
+
+## SQLite URI connections (2026-05)
+
+SQLite connections now accept URI-style database names using the `file:` prefix, allowing URI connection options to be supplied in the database value.
+
+## TLS credentials for MySQL schema operations (2026-02)
+
+MySQL schema dump and load commands can use configured SSL certificate and key values.
+
+## Touching multiple columns (2026-03-laravel-12)
+
+`touch()` accepts multiple columns, allowing one operation to update more than one timestamp column.
+
+```php
+$query->touch(['updated_at', 'indexed_at']);
+```
+
+## Transaction rollback callbacks (2025-09)
+
+Database connections support `afterRollback` callbacks for work that should run only after a transaction has rolled back.
+
+```php
+DB::afterRollback(fn () => releaseReservedResource());
+```
+
+## Unsetting JSON Schema flags (2026-05)
+
+Fluent JSON Schema boolean flags can now be unset after being enabled, which helps when refining or reusing a schema definition.

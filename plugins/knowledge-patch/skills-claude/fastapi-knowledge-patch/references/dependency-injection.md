@@ -1,70 +1,136 @@
 # Dependency injection
 
-Use this reference for dependency teardown, scope constraints, caching, callable forms, forward annotations, and response injection.
+## Match cleanup to resource use
 
-## `yield` teardown timing
+FastAPI 0.118.0 defers `yield` dependency teardown and `UploadFile` closure
+until after the response is sent (`2025-09`). A default request-scoped
+dependency therefore remains available to `StreamingResponse` for the whole
+stream.
 
-FastAPI 0.118 defers a `yield` dependency's exit code until after the response has been sent. This restores request-lifetime behavior needed by streaming handlers: a `StreamingResponse` can continue using a yielded session, file, or client, and uploaded files close only after transmission completes (`2025-09`).
+FastAPI 0.121 makes the lifetime explicit with `Depends(scope=...)`
+(`2025-11`):
 
-FastAPI 0.121 makes scope selectable at the dependency declaration (`2025-11`):
+| Scope | Exit timing | Allowed scoped sub-dependencies |
+| --- | --- | --- |
+| `"function"` | After the path operation returns, before the response is sent | Function or request scope |
+| `"request"` | After the response is sent | Request scope only |
 
-- `scope="function"`: run exit code after the path operation returns but before sending the response.
-- `scope="request"`: run exit code after sending the response. This is the default lifecycle when the resource must remain live during streaming.
-
-Scopes work anywhere a dependency is declared, including application-level parameterless dependencies. FastAPI 0.121.1 fixes `scope="function"` for that top-level parameterless case:
+Choose the shortest lifetime that still covers resource use:
 
 ```python
+from typing import Annotated
 from fastapi import Depends, FastAPI
 
-async def lifecycle():
-    resource = acquire_resource()
+app = FastAPI()
+
+def session():
+    value = open_session()
+    try:
+        yield value
+    finally:
+        value.close()
+
+@app.get("/items")
+def items(value: Annotated[Session, Depends(session, scope="function")]):
+    return read_items(value)
+```
+
+FastAPI 0.121.1 fixes function-scoped top-level dependencies. Use a release
+with that fix before depending on top-level function-scope cleanup timing.
+
+## Scope constraints preserve teardown order
+
+A request-scoped dependency may use only request-scoped sub-dependencies. A
+function-scoped dependency may use function- or request-scoped children. Exit
+code runs in reverse dependency order, so a parent must not outlive and then
+attempt to use a child that has already closed.
+
+```python
+from typing import Annotated
+from fastapi import Depends
+
+def connection():
+    resource = open_connection()
     try:
         yield resource
     finally:
-        release_resource(resource)
+        resource.close()
 
-app = FastAPI(dependencies=[Depends(lifecycle, scope="function")])
+def repository(
+    connection: Annotated[
+        Connection, Depends(connection, scope="request")
+    ],
+):
+    yield Repository(connection)
 ```
 
-## Scope constraints in dependency trees
+FastAPI 0.123 restores ordinary dependency caching only for unscoped trees
+with no scoped descendants. A dependency that declares a scope, or contains a
+scoped descendant, does not use the normal unscoped cache path.
 
-Preserve teardown ordering when nesting scoped `yield` dependencies:
+## Re-raise caught endpoint exceptions
 
-- A request-scoped dependency may have only request-scoped sub-dependencies.
-- A function-scoped dependency may have function- or request-scoped sub-dependencies.
+Exceptions from a path operation are thrown back into its `yield`
+dependencies. Since FastAPI 0.110.0, catching and swallowing one no longer
+forwards it automatically. Re-raise it or raise a deliberate replacement;
+otherwise the client may receive a `500` without a useful server log.
 
-The rule ensures that a dependency's exit code runs before its children are cleaned up, allowing the parent to use child resources during teardown. Reorganize any tree in which a request-scoped parent depends on a function-scoped child (`dependency-lifecycle`).
+```python
+import logging
+from typing import Annotated
+from fastapi import Depends, FastAPI
 
-## Caching with scopes
+logger = logging.getLogger(__name__)
+app = FastAPI()
 
-FastAPI 0.123.0 restores normal caching for a dependency tree containing no scopes. A dependency that declares a scope, or has any scoped sub-dependency, is excluded from that unscoped cache path. Do not assume that adding a scope preserves the same within-request reuse behavior (`2025-11`).
+class InternalError(Exception):
+    pass
 
-## Supported callable forms
+def guard():
+    try:
+        yield
+    except InternalError:
+        logger.exception("request failed")
+        raise
 
-FastAPI 0.123.5 recognizes `functools.partial()` as a dependable and follows `functools.wraps()` while resolving forward references and wrapped dependencies. FastAPI 0.123.10 completes support for combinations involving:
+@app.get("/")
+def read(_: Annotated[None, Depends(guard)]):
+    raise InternalError("failed")
+```
 
-- Partial and wrapped synchronous functions.
-- Partial and wrapped asynchronous functions.
-- Classes and asynchronous callable objects.
-- Callable classes passed directly rather than instantiated first.
+## Wrapped, partial, and callable dependencies
 
-Upgrade to 0.123.10 or newer before removing wrapper workarounds. Preserve `functools.wraps()` metadata in custom decorators so FastAPI can reach the original annotations.
+FastAPI 0.123.5 accepts `functools.partial()` and wrapped functions as
+dependencies, including forward-reference annotations. Later 0.123.x fixes
+cover combined partial/wrapped synchronous and asynchronous callables and a
+callable class passed as the dependency instead of an instance.
 
-## Deferred and nonstandard annotations
+```python
+from functools import partial
+from typing import Annotated
+from fastapi import Depends, FastAPI
 
-Several fixes remove the need to rewrite valid annotations merely for FastAPI inspection:
+app = FastAPI()
 
-- FastAPI 0.123.7 evaluates Python 3.10 stringified and postponed annotations correctly (`2025-11`).
-- FastAPI 0.124.1 handles models configured with `arbitrary_types_allowed=True`.
-- FastAPI 0.124.2 resolves unevaluated string annotations whose imports are guarded by `TYPE_CHECKING`.
-- FastAPI 0.128.1 extends guarded-import handling to Python 3.14 PEP 649 semantics.
-- FastAPI 0.128.2 correctly handles fields declared as `Json[list[str]]` and endpoint types declared with Python 3.12 PEP 695 `type` aliases (`2025-12`).
+def require_role(role: str) -> str:
+    return role
 
-Prefer upgrading over replacing these types with runtime-only annotations or duplicating imports outside `TYPE_CHECKING`.
+require_admin = partial(require_role, "admin")
 
-## Injecting a `Response`
+@app.get("/admin")
+def admin(role: Annotated[str, Depends(require_admin)]):
+    return {"role": role}
+```
 
-FastAPI 0.128.2 accepts `Response` as the type of an `Annotated` dependency parameter. A dependency may construct and supply the response without triggering an annotation conflict:
+FastAPI 0.124.2 also resolves non-evaluated strings and annotations referring
+to types imported under `TYPE_CHECKING`; FastAPI 0.128.1 carries that behavior
+into Python 3.14's PEP 649 annotation semantics (`2025-12`). Prefer upgrading
+over manually evaluating annotations or stripping wrappers.
+
+## Injecting a precise response type
+
+FastAPI 0.128.2 permits a dependency-bound parameter to retain its concrete
+`Response` annotation:
 
 ```python
 from typing import Annotated
@@ -72,14 +138,13 @@ from fastapi import Depends, FastAPI, Response
 
 app = FastAPI()
 
-def make_response() -> Response:
-    return Response("ok", media_type="text/plain")
+def text_response() -> Response:
+    return Response("ready", media_type="text/plain")
 
-@app.get("/")
-def root(response: Annotated[Response, Depends(make_response)]) -> Response:
+@app.get("/ready")
+def ready(response: Annotated[Response, Depends(text_response)]):
     return response
 ```
 
-## Frontend dependencies
-
-FastAPI 0.139.0 allows `app.frontend()` to receive dependencies (`2026-07`). Use them for checks that should apply to the whole static frontend, such as automatic cookie authentication, while retaining normal API-route precedence. See [frontend-cli-and-docs.md](frontend-cli-and-docs.md) for frontend routing behavior.
+This keeps dependency injection and static typing aligned without weakening
+the parameter annotation.

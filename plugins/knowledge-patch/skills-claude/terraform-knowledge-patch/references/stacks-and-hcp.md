@@ -1,14 +1,37 @@
 # Terraform Stacks and HCP Terraform
 
-Stack configuration and orchestration, service limits, execution, migration, registry workflows, governance, and billing visibility.
+## Components and deployments
 
-## Stack configuration and orchestration
+Stacks compose modules in `*.tfcomponent.hcl` and repeat the composition with
+different inputs in `*.tfdeploy.hcl`. Components in one Stack share a
+lifecycle; each deployment has isolated state and can approve or defer a Stack
+version independently (`terraform-stacks-and-hcp`).
 
-### Deployment groups and conditional auto-approval
+```hcl
+# stack.tfcomponent.hcl
+component "cluster" {
+  source    = "./eks"
+  inputs    = { aws_region = var.aws_region }
+  providers = { aws = provider.aws.this }
+}
 
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
+# deployments.tfdeploy.hcl
+deployment "west" {
+  inputs = { aws_region = "us-west-1" }
+}
+```
 
-Deployment groups replace the beta orchestration-rules model and attach shared approval policy to deployments; unassigned deployments receive an automatically created default group. Custom groups and auto-approve checks require HCP Terraform Premium, while default groups are available on all current plans.
+Terraform 1.13 exposes installed Stacks-plugin operations through
+`terraform stacks`; discover the actual subcommands with
+`terraform stacks -help` (`terraform-1.13.0`). Terraform 1.15 adds Stacks
+input-variable validation (`terraform-1.15.0`).
+
+## Deployment groups and approval
+
+Generally available deployment groups replace public-beta orchestration rules.
+HCP Terraform creates a group for deployments without a manual assignment.
+Default groups are available on current plans; custom groups and auto-approval
+checks require Premium (`terraform-stacks-and-hcp`).
 
 ```hcl
 deployment "canary" {
@@ -27,138 +50,87 @@ deployment_auto_approve "no_deletes" {
 }
 ```
 
-### Linked Stacks
+## Partial plans and links
 
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
+When unknown values prevent downstream planning, Stacks can return a partial
+plan and defer the remaining changes. This supports staged work such as
+creating a cluster before planning its dependents. An unapplied deployment
+does not prevent planning elsewhere in the Stack (`terraform-stacks-and-hcp`).
 
-Linked Stacks express dependencies between separately managed foundational and application Stacks, pass data across their boundary, and trigger downstream updates when an upstream change is detected. A Stack can link to at most 20 upstream Stacks and expose values to at most 25 downstream Stacks.
+Linked Stacks declare dependencies, pass data across boundaries, and trigger
+downstream updates. A Stack may link to at most 20 upstream Stacks and expose
+values to at most 25 downstream Stacks (`terraform-stacks-and-hcp`).
 
-### Partial plans through deferred changes
+## Availability and limits
 
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
+Production Stacks with backward-compatible APIs are available on current
+resources-under-management plans, not legacy HCP Terraform team plans. Limits
+are (`terraform-stacks-and-hcp`):
 
-Stacks can produce a partial plan instead of failing when downstream objects depend on values that remain unknown, then defer the unplannable changes to a later operation. This supports layered workloads such as creating a Kubernetes cluster before planning resources that require its endpoint, and an unapplied deployment does not prevent later Stack versions from being planned for it.
+- 20 deployments per Stack.
+- One deployment per deployment group.
+- 100 components per Stack.
+- 10,000 resources per Stack.
 
-### Registry sources for Stacks components
+Terraform 1.14.2 adds component-registry source resolution. In Stacks,
+`path.module` and `path.root` return documented relative paths starting in
+1.14.3; use 1.14.5 or later when `terraform stacks validate` resolves relative
+module paths (`terraform-1.14.0`).
 
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
+## Private execution and source control
 
-Starting in 1.14.2, Terraform Stacks can resolve component sources through a component registry.
+Stack deployments can run on self-hosted agents behind private networks and
+firewalls, and agent pools can be scoped to individual Stacks. VCS connectivity
+supports GitHub, GitLab, Azure DevOps Services, and Bitbucket, with IP
+allowlists for trusted HCP Terraform addresses
+(`terraform-stacks-and-hcp`).
 
-### Repeated deployments have isolated state
+HCP Terraform Premium and Terraform Enterprise can run module tests on
+self-hosted agents, giving tests the same access to private services and policy
+controls as plan and apply (`terraform-stacks-and-hcp`).
 
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
+## Registry publishing
 
-Define Stack instances with `deployment` blocks in a separate `*.tfdeploy.hcl` configuration layer. Deployments reuse the same components with different inputs, but each has an isolated state and can independently approve or defer a plan produced by a new Stack version.
+Private registries can publish reusable, versioned Stack component
+configuration whose outputs feed other component inputs. The artifact contains
+component configuration only, not deployment configuration
+(`terraform-stacks-and-hcp`).
 
-```hcl
-deployment "west-coast" {
-  inputs = {
-    aws_region     = "us-west-1"
-    instance_count = 2
-  }
-}
+HCP Terraform and Terraform Enterprise can publish a module from a selected
+directory in a VCS repository, and publishing can choose its module name and
+target provider. One-module-per-repository naming is no longer required
+(`terraform-stacks-and-hcp`).
 
-deployment "east-coast" {
-  inputs = {
-    aws_region     = "us-east-1"
-    instance_count = 1
-  }
-}
-```
+## Workspace migration
 
-### Stack component configuration
+Terraform Migrate 2.0 provides a public-beta workflow that extracts workspace
+configuration, generates Stack configuration, transfers state into a
+deployment, and creates and initializes the Stack. Use dry runs to validate
+the generated result without changing the source workspace
+(`terraform-stacks-and-hcp`).
 
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
+Terraform can address `cloud` workspaces by HCP resource ID starting in 1.9.5
+(`terraform-1.9.0`).
 
-Stacks add a configuration layer over existing Terraform modules and replace the traditional root-module organization with components that share a lifecycle. Define each component in a `*.tfcomponent.hcl` file with its module source, inputs, and explicit provider mappings.
+## Governance and integrations
 
-```hcl
-component "cluster" {
-  source = "./eks"
-  inputs = {
-    aws_region    = var.aws_region
-    instance_type = "t2.medium"
-  }
-  providers = {
-    aws = provider.aws.this
-  }
-}
-```
+- The Terraform MCP server can authenticate to HCP Terraform or Terraform
+  Enterprise, use public and private registry context for recommendations, and
+  create, run, or update account workspaces from an automation client
+  (`terraform-stacks-and-hcp`).
+- The Cloudability Governance run task adds cost estimates, recommendations,
+  quota violations, and financial guardrails to run details regardless of
+  whether a run starts in the UI, CLI, or VCS
+  (`terraform-stacks-and-hcp`).
+- A registry Sentinel policy set supplies pre-written AWS controls for NIST SP
+  800-53 Revision 5 (`terraform-stacks-and-hcp`).
 
-### Stack operations through the CLI
+## Artifact encryption and usage reporting
 
-*Terraform 1.13.0 — batch `terraform-1.13.0`.*
+Hold Your Own Key lets an organization control keys that encrypt sensitive
+state and plan artifacts before upload to HCP Terraform
+(`terraform-stacks-and-hcp`).
 
-The new `terraform stacks` command exposes operations supplied by the installed Stacks plugin. Its subcommands vary with the plugin implementation, so use `terraform stacks -help` to discover the available surface.
-
-### Stacks GA compatibility and service limits
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-Public-beta Stack configurations require updates for the GA format; GA provides backward-compatible APIs for production and is available on current resources-under-management plans, but not legacy HCP Terraform team plans. A Stack is limited to 20 deployments, one deployment per deployment group, 100 components, and 10,000 resources.
-
-## Execution, integration, and migration
-
-### Expanded VCS connections for Stacks
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-Stacks can connect to GitHub, GitLab, Azure DevOps Services, and Bitbucket. VCS connections also honor IP allowlists, allowing access to be restricted to trusted HCP Terraform addresses.
-
-### HCP-authenticated Terraform MCP server
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-The Terraform MCP server can authenticate to an HCP Terraform or Terraform Enterprise account. An AI client can then use private- and public-registry context for module recommendations and create, run, or update account workspaces without switching to a separate interface.
-
-### Module tests on self-hosted agents
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-HCP Terraform Premium and Terraform Enterprise can execute Terraform module tests on self-hosted agents. Tests can therefore access the same private services and policy-controlled environment used for plan and apply rather than requiring a separate hosted test environment.
-
-### Monorepo-aware private module publishing
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-The HCP Terraform and Terraform Enterprise private registries can publish a module by selecting both a VCS repository and a module directory within it. Publishing can also choose the module name and target provider instead of deriving them from the former one-module-per-repository naming convention.
-
-### Self-hosted execution for Stacks
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-HCP Terraform can run Stack deployments through self-hosted agents behind private networks or firewalls, and an agent pool can be scoped to particular Stacks. This brings Stack plan and apply execution under the same private execution model as workspaces.
-
-### Workspace-to-Stack migration
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-Terraform Migrate 2.0 adds a public-beta, CLI-driven workspace-to-Stack workflow that extracts workspace configuration, generates Stack configuration, transfers state into a deployment, and creates and initializes the Stack. It supports dry runs so the generated result can be validated without changing the source workspace.
-
-## Governance, security, and usage
-
-### Cloudability governance run task
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-The Cloudability Governance run task adds cost estimates, recommendations, quota violations, and financial guardrails to HCP Terraform run details. The same feedback appears whether a run begins in the UI, CLI, or through VCS.
-
-### Hold Your Own Key artifact encryption
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-HCP Terraform's generally available Hold Your Own Key feature lets an organization own the encryption keys used for sensitive Terraform artifacts. State and plan artifacts are encrypted before upload to HCP Terraform, so plaintext secrets are not sent to the service.
-
-### Pre-written AWS NIST policies
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-A pre-written Sentinel policy set is available for enforcing NIST SP 800-53 Revision 5 controls on AWS Terraform configurations. It can be adopted as a versioned registry policy set instead of implementing the control library from scratch.
-
-### Stack resource-usage visibility
-
-*Current service behavior — batch `terraform-stacks-and-hcp`.*
-
-The HCP Terraform Usage view reports `Billable Stacks resources` separately and also reports `Billable managed resources`, which combines Stack and workspace resources. Operators can therefore reconcile Stack adoption with resources-under-management billing.
-
+The HCP Terraform Usage view reports `Billable Stacks resources` separately.
+`Billable managed resources` is the combined total across Stacks and
+workspaces (`terraform-stacks-and-hcp`).

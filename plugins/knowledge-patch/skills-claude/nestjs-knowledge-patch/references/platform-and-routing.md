@@ -1,85 +1,74 @@
 # Platform and Routing
 
-## Runtime and default HTTP adapter
+Use this reference for runtime and HTTP-platform migration, middleware paths,
+request parsing, WebDAV routing, and application-context selection.
 
-NestJS 11 requires Node.js 20 or newer and no longer supports Node.js 16 or 18.
-The default Express platform integration uses Express 5. These requirements are
-part of the 11.0.0 changes.
+## Runtime and Default HTTP Platform
 
-Before upgrading, align local development, CI, container images, and deployment
-runtimes with Node.js 20 or newer. Review code and middleware that relies on
-Express-specific behavior against Express 5.
+As of `11.0.0`, NestJS requires Node.js 20 or newer; Node.js 16 and 18 are no
+longer supported. Align local development, CI, container images, and deployment
+runtimes before diagnosing framework behavior.
 
-## Fastify adapter migration
+The default Express platform integration uses Express 5. Recheck code and
+dependencies that depend on Express-specific middleware, routing, or error
+handling behavior.
 
-The following adapter changes belong to the 11.0-migration guidance.
-
-### CORS method allowlist
+## Fastify Adapter Migration
 
 With `@nestjs/platform-fastify` v11 and Fastify v5, CORS permits only safelisted
-methods by default. Explicitly list application methods such as `PUT`, `PATCH`,
-and `DELETE` when clients need them:
+methods by default. Explicitly configure every non-safelisted method the
+application accepts, including `PUT`, `PATCH`, and `DELETE` when applicable:
 
 ```typescript
-app.enableCors({
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-});
+app.enableCors({ methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] });
 ```
 
-Without an explicit list, a route can exist while browser preflight behavior
-still prevents calls using a non-safelisted method.
+Test browser preflights for each configured write method; successful routing on
+the server does not establish that the browser's CORS check will allow it.
 
-### Middleware matching syntax
+## Middleware Path Matching
 
-Nest middleware matching now uses the latest `path-to-regexp` syntax. An
-anonymous `(.*)` wildcard must become a named wildcard such as `*splat`:
+Nest middleware matching uses the latest `path-to-regexp` behavior. Replace an
+anonymous `(.*)` catch-all with a named wildcard:
 
 ```typescript
 consumer.apply(ApiMiddleware).forRoutes('*splat');
 ```
 
-This rule concerns middleware paths passed through Nest's matching layer.
-Ordinary Fastify route wildcards are unchanged and should not be mechanically
-rewritten as part of this migration.
+This change applies to Nest middleware matching. Ordinary Fastify route
+wildcards remain unchanged, so distinguish middleware declarations from native
+Fastify route patterns during migration.
 
-## Global middleware order
+## Built-In Date Parsing
 
-Global-module middleware runs before middleware from imported modules under the
-11.0-migration behavior. The position of the global module in the dependency
-graph does not change this precedence.
-
-If middleware ordering is observable—for example, one middleware expects state
-created by another—test the global middleware first, then the imported-module
-middleware. Do not rely on import placement to reverse the order.
-
-## HTTP method recognition
-
-The common, core, and Fastify packages consistently recognize WebDAV HTTP
-methods as of 11.0.0. WebDAV methods can participate in Nest routing rather than
-being rejected as unknown methods.
-
-## Built-in date transformation
-
-`ParseDatePipe` is exported from `@nestjs/common` as of 11.0.0. Apply it to an
-incoming parameter when the handler should receive a `Date`:
+`ParseDatePipe` is exported by `@nestjs/common`. Apply it to transform an
+incoming parameter into a `Date` before the handler runs:
 
 ```typescript
-import { ParseDatePipe, Query } from '@nestjs/common';
-
 find(@Query('since', ParseDatePipe) since: Date) {}
 ```
 
-The pipe performs the inbound transformation, so the parameter type and runtime
-value can both be `Date`.
+Use the handler's `Date` type to reflect the transformed value rather than
+leaving the parameter typed as its incoming string representation.
 
-## Platform migration checklist
+## WebDAV Method Recognition
 
-- Run all application environments on Node.js 20 or newer.
-- Account for Express 5 in default-adapter applications.
-- Enumerate every required CORS method for Fastify.
-- Convert middleware `(.*)` patterns to named wildcards.
-- Leave normal Fastify route wildcards alone.
-- Test global middleware before imported-module middleware.
-- Route WebDAV methods through the recognized method set where needed.
-- Replace custom date parsing with `ParseDatePipe` when its behavior fits.
+WebDAV HTTP methods are recognized consistently by the common, core, and Fastify
+packages. They can participate in Nest routing instead of being rejected as
+unknown methods.
 
+When exposing WebDAV endpoints, verify that any platform adapter, proxy, CORS
+configuration, and middleware path also accepts the desired method; framework
+recognition does not configure those external layers.
+
+## Selecting an Application Context
+
+`NestApplicationContext.select()` can override `abortOnError` for the selected
+context:
+
+```typescript
+const featureContext = app.select(FeatureModule, { abortOnError: false });
+```
+
+Use the option when failure policy for the selected module context should differ
+from the surrounding application context.

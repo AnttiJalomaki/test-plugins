@@ -1,93 +1,90 @@
 # Standard-library migrations and behavior
 
-## Contents
+## Required migrations
 
-- [Removed and renamed APIs](#removed-and-renamed-apis)
-- [Dynamic decoding](#dynamic-decoding)
-- [Collections and callback contracts](#collections-and-callback-contracts)
-- [Bit arrays, URI handling, and parsing](#bit-arrays-uri-handling-and-parsing)
-- [Compiler compatibility](#compiler-compatibility)
+### Ranges and dynamic decoding
 
-## Removed and renamed APIs
+`int.range` replaces the deprecated and removed `list.range`. Move range
+construction to the `int` module before upgrading.
 
-### Integer ranges
+Decoder combinators formerly in `gleam/dynamic` were deprecated and removed.
+Current decoders live in `gleam/dynamic/decode`, which has its own error type
+and a revised `new_primitive_decoder` API.
 
-`int.range` was added in stdlib v0.69. `list.range` was deprecated in that release and removed in v0.71. Current code must use the integer module.
+`decode.failure` now calls its expected-description label `expected`. When
+`decode.dict` fails, a string, float, or integer key is placed directly in the
+error path.
+
+`gleam/dynamic` gained the type-specific entry points `array`, `bit_array`,
+`bool`, `float`, `int`, `list`, `nil`, `properties`, and `string`. Its deprecated
+`from` function was retired.
 
 ### Result and function helpers
 
-`result.then` was deprecated in favor of `result.try` and later removed. `result.unwrap_both` and `function.tap` were removed by v0.68. Earlier removals include `function.compose`, `function.constant`, `function.apply*`, and `function.curry*`; `function.flip` remains deprecated.
+`result.then` was removed in favor of `result.try`. Also removed were
+`result.unwrap_both`, `function.tap`, `int.digits`, and `int.undigits`.
+`function.flip` is deprecated.
 
-### Other retired conveniences
+`io.debug` was replaced by `echo`, and `result.nil_error` by
+`result.replace_error`.
 
-Current stdlib no longer contains `int.digits`, `int.undigits`, `result.nil_error`, `bool.compare`, or `bool.to_int`. `io.debug` was removed in favor of the language-level `echo` expression.
+Removed convenience APIs also include:
+
+- `list.pop`, `list.pop_map`, and `list.at`;
+- `bool.compare` and `bool.to_int`;
+- the `function.compose`, `function.constant`, `function.apply*`, and
+  `function.curry*` families.
 
 ### List concatenation
 
-`list.concat` was deprecated in favor of `list.flatten` in v0.41 and removed in v0.52. `list.flatten` is the surviving helper.
+`list.flatten` was retained. Its temporary replacement, `list.concat`, was
+deprecated and then removed. Use `list.flatten` to concatenate a list of lists.
 
-### Directional string names
+### Directional strings
 
-Use `drop_start`, `drop_end`, `pad_start`, `pad_end`, `trim_start`, and `trim_end`. They replaced the former `*_left` and `*_right` APIs, which were removed in v0.54.
+Use `drop_start`, `drop_end`, `pad_start`, `pad_end`, `trim_start`, and
+`trim_end`. The corresponding functions ending in `_left` and `_right` were
+removed.
 
-### Queue, iterator, and regex packages
+### Packages replacing modules
 
-`gleam/queue`, `gleam/iterator`, and `gleam/regex` were deprecated in favor of the separate `gleam_deque`, `gleam_yielder`, and `gleam_regexp` packages, then removed from stdlib in v0.50.
+The removed `gleam/queue`, `gleam/iterator`, and `gleam/regex` modules are
+maintained as the `gleam_deque`, `gleam_yielder`, and `gleam_regexp` packages.
 
-### Builder and legacy collection modules
+`BytesBuilder` and `StringBuilder` became aliases of `BytesTree` and
+`StringTree` before the old builder modules were removed. `gleam/map` moved to
+`gleam/dict`. The old `base`, `bit_string`, and `bit_builder` modules gave way
+to `bit_array` and `bytes_tree`.
 
-`gleam/bytes_builder` and `gleam/string_builder` were deprecated in favor of `gleam/bytes_tree` and `gleam/string_tree`. The builder types first became aliases of their tree counterparts, then the modules were removed in v0.48.
+## Encoding and decoding behavior
 
-The older `bit_string`, `bit_builder`, `base`, and `map` modules were removed in v0.35 in favor of current bit-array, bytes-tree, and dictionary APIs.
+Base16 and Base64 encoders zero-pad non-byte-aligned bit arrays rather than
+raising. `bytes_tree` also zero-pads when adding one. Use
+`bit_array.pad_to_bytes` when that padding should be explicit.
 
-## Dynamic decoding
+URI percent encoding represents a space as `%20`. `uri.percent_decode` leaves
+`+` as a plus rather than converting it to a space. Query parsing applies
+query-string handling to `+`, while `uri.query_to_string` correctly preserves
+literal plus signs.
 
-### Decoder module migration
+`dynamic.optional_field` controls whether a key may be absent. If the key is
+present, its value must still satisfy the supplied decoder.
 
-`gleam/dynamic/decode` was added in v0.50 to replace decoder combinators in `gleam/dynamic`. The old API was deprecated in v0.53, and deprecated `dynamic` items were removed in v0.60.
+## Collection and string behavior
 
-The decoder module has had its own error type since v0.51. Its decoding API can index into the first eight elements of lists.
+`list.index_map` callbacks have the shape `fn(item, index)`, matching
+`list.index_fold`, rather than taking the index first.
 
-### Failure and dictionary paths
+`list.sort` is stable: elements that compare equal retain their relative order,
+so sorting on one key does not scramble an earlier ordering among ties.
 
-`dynamic/decode.failure` gained the `expected:` argument label in v0.67. Since v0.70, an error from `decode.dict` places a string, float, or integer dictionary key itself in the error path rather than a less specific representation.
+`string.split(value, on: "")` returns grapheme clusters rather than an error or
+a list of bytes.
 
-### Type-specific dynamic entry points
+Integer base-conversion failures use `Nil`; the former `InvalidBase` error type
+was removed.
 
-The `dynamic` module added `array`, `bit_array`, `bool`, `float`, `int`, `list`, `nil`, `properties`, and `string` in v0.60. `dynamic.classify` also recognises more Erlang types and describes Erlang tuples and JavaScript arrays as `Array` rather than `Tuple`.
+## Compiler requirement
 
-### Optional fields
-
-Since v0.40, `dynamic.optional_field` controls only whether a key is present; it does not make the field value optional. Represent a nullable or otherwise optional value in the value decoder itself.
-
-## Collections and callback contracts
-
-### Item-before-index callback order
-
-The callback passed to `list.index_map` has shape `fn(item, index) -> mapped`, not `fn(index, item) -> mapped`. The predicate parameter of `list.filter` and `set.filter` uses the label `keeping:`.
-
-### Stable sorting
-
-`list.sort` preserves the original relative order of elements that compare equal, guaranteed since v0.25.
-
-### Empty string separators
-
-`string.split(input, "")` returns the input as a list of graphemes; it does not fail or split into bytes.
-
-## Bit arrays, URI handling, and parsing
-
-### Padding unaligned bit arrays
-
-The Base64, URL-safe Base64, and Base16 encoders in `bit_array` pad a non-byte-aligned value with zero bits rather than raising. `bit_array.pad_to_bytes` performs the operation explicitly. Adding an unaligned bit array to a `bytes_tree` uses the same padding.
-
-### Percent and query decoding
-
-`uri.percent_encode` writes a space as `%20`, and `uri.percent_decode` does not translate `+` to a space. Query handling is separate: `uri.query_to_string` correctly handles literal plus signs, and JavaScript `uri.parse_query` decodes all plus characters correctly.
-
-### Invalid integer bases
-
-The `int` module's former `InvalidBase` error was replaced by `Nil`. Match `Nil` when handling an invalid-base conversion.
-
-## Compiler compatibility
-
-Recent stdlib releases require Gleam 1.9.0 or newer; the minimum compiler version was raised in stdlib v0.57.
+`gleam_stdlib` 0.57.0 raised its minimum compiler version to Gleam 1.9.0, and
+later releases retain that minimum.

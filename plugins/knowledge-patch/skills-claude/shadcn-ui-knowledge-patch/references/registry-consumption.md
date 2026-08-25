@@ -1,9 +1,11 @@
 # Registry Consumption
 
-## Configure Namespaced Registries
+## Namespaced Registries
 
-Address decentralized registry items as `@namespace/name`. Define the
-namespace in `components.json` with a URL template that contains `{name}`:
+The CLI addresses decentralized registry items as `@registry/name`. Define a
+namespace in `components.json` with a URL template containing `{name}`.
+Registry items can declare namespaced `registryDependencies` from one or more
+registries, and the CLI resolves them automatically.
 
 ```json
 {
@@ -17,12 +19,14 @@ namespace in `components.json` with a URL template that contains `{name}`:
 pnpm dlx shadcn add @acme/button
 ```
 
-A namespace must start and end with an alphanumeric character. Between those
-characters it may contain alphanumerics, hyphens, or underscores. The template
-may also use `{style}`, which expands to the project's current style.
+## Namespace and Request-template Constraints
 
-Object-form entries accept `url`, `headers`, and `params`. Environment
-variables expand in all three locations, and shell-style defaults are allowed:
+A namespace starts and ends with an alphanumeric character. Between those
+characters it may contain alphanumerics, hyphens, or underscores. A registry
+URL must contain `{name}` and may contain `{style}` for the project's selected
+style. Object-form entries may add `params`. Environment expansion works in
+URLs, headers, and parameters, including shell-style defaults such as
+`${REGISTRY_VERSION:-v2}`.
 
 ```json
 {
@@ -37,11 +41,12 @@ variables expand in all three locations, and shell-style defaults are allowed:
 }
 ```
 
-## Authenticate Private Registries
+## Private Registry Authentication
 
-Registry configuration supports basic authentication, bearer tokens, API-key
-query parameters, and arbitrary request headers. Keep secrets in environment
-variables rather than committing them:
+An object registry entry accepts `url` and `headers` with environment-variable
+interpolation. Supported authentication patterns include basic auth, bearer
+tokens, API-key query parameters, and arbitrary headers. If a variable is
+missing, the CLI names it; supply it through `.env` or `.env.local`.
 
 ```json
 {
@@ -56,14 +61,21 @@ variables rather than committing them:
 }
 ```
 
-When a required variable is absent, the CLI identifies it by name. Supply it
-through the process environment, `.env`, or `.env.local` as appropriate for the
-project.
+An authenticated backend can return a JSON `message` with a `401` or `403`.
+The CLI displays that message, allowing the backend to explain a missing token,
+expired subscription, or resource-specific restriction.
 
-## Discover Before Installing
+```ts
+return NextResponse.json(
+  { error: "Forbidden", message: "This component requires Design team access." },
+  { status: 403 }
+)
+```
 
-Use `view` to inspect an item, `search` to query a registry, and `list` to
-enumerate it:
+## Registry Discovery Commands
+
+Inspect one item with `view`, query items with `search`, or enumerate a
+registry with `list`.
 
 ```sh
 pnpm dlx shadcn view @acme/auth-system
@@ -71,20 +83,13 @@ pnpm dlx shadcn search @tweakcn -q "dark"
 pnpm dlx shadcn list @acme
 ```
 
-For an `add` operation, `--dry-run`, `--view`, and `--diff` provide more
-project-specific preflight information before any file is written.
+## Intentional Cross-registry Overrides
 
-## Resolve Dependencies and Overrides
-
-An item can use namespaced `registryDependencies`, including dependencies from
-several registries. The CLI resolves and installs dependencies before the item
-that requested them.
-
-Resolution deep-merges configuration including Tailwind settings, CSS
-variables, CSS, and environment variables. If multiple resolved files target
-the same path, the last resolved file wins. This permits an intentional layer:
-a custom item can depend on a third-party item and replace only chosen files or
-configuration.
+Registry dependencies install before the item that declares them. Resolution
+deep-merges Tailwind settings, CSS variables, CSS, environment variables, and
+similar configuration. For duplicate target file paths, the last resolved
+file wins. A custom item can therefore depend on a third-party item and
+replace only selected files or settings.
 
 ```json
 {
@@ -101,7 +106,12 @@ configuration.
 }
 ```
 
-Dependencies may also point to public GitHub items or local item JSON files:
+## GitHub and Local Registry Dependencies
+
+`registryDependencies` may name GitHub items or local item JSON files. Pin
+every GitHub dependency with its own tag or full commit SHA because references
+are not inherited. Bare names still mean built-in items, so dependencies from
+the same GitHub repository need the full address.
 
 ```json
 {
@@ -112,30 +122,59 @@ Dependencies may also point to public GitHub items or local item JSON files:
 }
 ```
 
-GitHub refs are not inherited. Give every GitHub dependency its own tag or full
-commit SHA for reproducibility. A bare name resolves to a built-in item, so a
-same-repository dependency still needs its full GitHub address.
+## Alias-relative File Targets
 
-## Install Complete Design Systems and Fonts
-
-A `registry:base` item can install a complete design-system payload:
-components, dependencies, CSS variables, fonts, and configuration. It also lets
-registry authors pin the intended primitive base.
-
-Fonts are independently installable `registry:font` items. Their metadata can
-declare the family, provider, import name, CSS variable, and subsets:
+A target may begin with `@components/`, `@ui/`, `@lib/`, or `@hooks/`; these
+resolve against the consumer's `components.json` directories independently of
+its import prefix. `@utils/` is unsupported because that alias denotes a file.
+The target may differ from the file's declared type and is required for
+`registry:page` and `registry:file`.
 
 ```json
 {
-  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
-  "name": "font-inter",
-  "type": "registry:font",
-  "font": {
-    "family": "'Inter Variable', sans-serif",
-    "provider": "google",
-    "import": "Inter",
-    "variable": "--font-sans",
-    "subsets": ["latin"]
+  "path": "registry/new-york/example/format-date.ts",
+  "type": "registry:ui",
+  "target": "@lib/format-date.ts"
+}
+```
+
+## Current CLI Registry Resolution
+
+The following behavior is from batch `4.16.1-4.18.0`.
+
+### Path-segmented Build Output
+
+From 4.16.1, `shadcn build` creates nested output directories for item names
+with path segments, such as `extension/foo`, instead of failing with `ENOENT`.
+
+### Dynamic Search Parameters and Titles
+
+Registry search parameters are forwarded to backends, enabling server-side
+search in dynamic registries. `searchRegistries` results include item titles,
+and fuzzy matching considers those titles.
+
+### SOCKS Registry Proxies
+
+The registry HTTP stack accepts SOCKS4 and SOCKS5 through `ALL_PROXY` or
+`all_proxy` when the value has a `socks*://` URL. A non-SOCKS `ALL_PROXY` is
+ignored. HTTP and HTTPS proxying continues to use `HTTP_PROXY`, `HTTPS_PROXY`,
+and `NO_PROXY`.
+
+```sh
+ALL_PROXY=socks5://127.0.0.1:1080 pnpm dlx shadcn@latest add button
+```
+
+### Merged Package and Component Registries
+
+From 4.18.0, declarations in top-level `package.json` and `components.json`
+are merged. If `components.json` is absent, the CLI can add registries to
+`package.json`. The `add`, `search`, `view`, and `init` commands resolve that
+configuration in memory without copying it into `components.json`.
+
+```json
+{
+  "registries": {
+    "@acme": "https://acme.example/r/{name}.json"
   }
 }
 ```

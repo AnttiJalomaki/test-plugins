@@ -1,205 +1,107 @@
 # Operations, Observability, and Alerting
 
-Use this reference for Query Insights, workload management, metrics and traces,
-Dashboards analysis, anomaly detection and forecasting, Alerting and
-Notifications, Job Scheduler, ISM, snapshots, replication, and operational
-diagnostics.
+## Investigating queries with Query Insights
 
-## Query Insights and live-query operations
+### Historical top queries
 
-### Historical top-N queries
+Query Insights 2.19.0 adds a Dashboards interface for historical top-N queries, drill-down, configuration, and retention. The backend can fetch by identifier and expire records automatically; the custom local-index-name setting is removed.
 
-- Query Insights 2.19.0 adds a Dashboards interface for historical top-N
-  queries, drill-downs, configuration, and retention.
-- The backend adds fetch-by-ID and automatic expiration in 2.19.0.
-- The custom local-index-name setting is removed in 2.19.0.
-- Query Insights can exclude selected indexes from insight queries and attach
-  metric labels to historical data in 3.1.0.
-- The Query Insights reader search limit increases to 500 in 3.2.0.
-- Top-N query records can include username and user roles in 3.5.0.
-- Wrapper endpoints around Query Insights settings provide finer-grained
-  access control in 3.5.0.
-- The 3.5.0 Top-N dashboard integrates Workload Management groups with
-  filtering and sorting.
-- Non-admin users in 3.6.0 can be limited to queries authorized by username and
-  shared backend roles.
-- The 3.6.0 rule-based recommendation service asynchronously analyzes top-N
-  queries and returns confidence and estimated impact.
-- Top-N data can be exported in 3.6.0 as timestamp-organized JSON to remote
-  blob repositories; S3 is supported in that release.
-- Dashboards 3.6.0 adds P90/P99 statistics plus distribution, line, and
-  heatmap visualizations.
-- The 3.7.0 Top Queries API can include recommendations with its
-  `recommendations` parameter.
+In 3.1.0, insight queries can exclude selected indexes and attach metric labels to historical data. Dashboards adds dedicated Live Queries and Workload Management views.
+
+Since 3.5.0, top-N records can include username and roles. Wrapper endpoints around Query Insights settings provide finer-grained access control, and the dashboard integrates Workload Management groups for filtering and sorting.
+
+OpenSearch 3.6.0 adds an asynchronous rules service that returns recommendations with confidence and estimated impact. Top-N data can export timestamp-organized JSON to remote blob repositories, with S3 supported initially. Dashboards adds P90/P99 statistics and distribution, line, and heatmap views.
+
+In 3.7.0, the Top Queries API accepts `recommendations` to include inline recommendations.
 
 ### Live and inflight queries
 
-- Query Insights 3.0.0 adds an inflight/live-queries API for real-time
-  monitoring.
-- The top-queries API adds `verbose` in 3.0.0, and Dashboards can render its
-  returned columns dynamically.
-- Live Queries responses include `isCancelled` in 3.1.0.
-- Dashboards 3.1.0 adds dedicated Live Queries and Workload Management views.
-- Inflight Queries in Dashboards supports multiple data sources in 3.2.0.
-- Live Queries can filter by workload group in 3.3.0, with bidirectional
-  navigation between group and live-query views.
-- Query Insights Dashboards adds version-aware settings in 3.4.0 and
-  multiple-data-source support on the Live Queries page.
-- Its 3.4.0 Workload Management view can use security attributes.
-- Live Queries 3.6.0 adds shard-level task details and an on-demand cache of
-  recently finished searches. Failed queries are explicitly tagged.
+OpenSearch 3.0.0 adds an inflight/live-queries API for real-time monitoring and a `verbose` option on the top-queries API. Dashboards renders returned columns dynamically.
 
-### Profiling
+In 3.1.0, Live Queries responses include `isCancelled`. In 3.2.0, Dashboards supports multiple data sources and the reader search limit rises to 500.
 
-- Query Insights 3.7.0 adds a Dev Tools profiler with shard-level timing and a
-  collapsible query hierarchy, plus navigation from Query Details.
+Since 3.3.0, Live Queries can filter by Workload Management group, with bidirectional Dashboards navigation between live queries and groups. The 3.4.0 page adds version-aware settings and multiple-data-source support and can use security attributes in its Workload Management view.
 
-## Workload management
+In 3.6.0, identity filters by username and shared backend roles ensure non-admins see only authorized data. Live Queries adds shard task detail, an on-demand finished-query cache, and explicit failed-query tags.
 
-- Index-based auto-tagging in 3.1.0 assigns workload groups through rules, so
-  requests need not all carry an explicit header tag.
-- Rule-based auto-tagging expands in 3.3.0 from index patterns to principal
-  attributes such as username and role.
-- Per-group settings in 3.7.0 can override search timeout, cancellation
-  interval, maximum bucket count, and other search settings for every request
-  routed to the group.
+The 3.7.0 Dev Tools profiler exposes shard timings and a collapsible query hierarchy with navigation from Query Details. Since 3.8.0, Live Queries records can contain username, roles, and backend roles for authorization-aware analysis.
 
-## Metrics, traces, and investigations
+## Applying workload management
 
-### Trace correlation and analysis
+Index-based auto-tagging in 3.1.0 assigns workload groups through rules, so clients need not always send a header tag. In 3.3.0, auto-tagging extends to principal attributes including username and role.
 
-- Observability 3.1.0 supports custom index names for OpenTelemetry spans,
-  logs, and service maps, mappings for non-OpenTelemetry log fields, and
-  cross-cluster trace search for trace-to-log correlation.
-- Trace Analytics 3.2.0 accepts Data Prepper 2.11 OpenTelemetry output.
-- Dashboards 3.2.0 makes service-map node and edge limits configurable.
-- The optional redesigned Discover interface in 3.3.0 unifies log analytics,
-  distributed tracing, automatic visualization selection, and context-aware
-  analysis.
-- Discover Traces 3.3.0 adds click-to-filter exploration. Disabled-by-default
-  AI tools add conversational query and visualization actions.
-- Dashboards investigations in 3.6.0 accept a hypothesis, track investigation
-  and step durations, and can rerun log analysis during reinvestigation.
+Since 3.7.0, each group can override search timeout, cancellation interval, maximum bucket count, and other search settings for every routed request.
 
-### Prometheus, APM, and metrics
+## Exploring logs, traces, and metrics
 
-- Dashboards 3.5.0 can query and visualize Prometheus data with logs and
-  traces, with PromQL autocomplete and gauge metrics.
-- The 3.5.0 APM interface adds configuration, service and service-detail
-  views, an application topology map, and service-correlation drill-downs.
-- The 3.6.0 one-command Observability Stack bundles the collector, Data
-  Prepper, OpenSearch, Prometheus, and Dashboards.
-- Performance Analyzer 3.6.0 adds a shard-operations collector.
-- The 3.7.0 Explore Metrics builder discovers Prometheus data sources and
-  synchronizes generated PromQL with its raw editor.
-- Dashboard variables in 3.7.0 use `$name` or `${name}` text substitution.
-- Visualization transformations can limit, sort, filter, aggregate, or
-  compute fields in 3.7.0 without rerunning the base query.
+### Discover and trace analytics
 
-### Agent traces
+The disabled-by-default experimental Discover experience in 2.19.0 adds SQL and PPL alongside DQL and Lucene, plus autocomplete and improved data selection.
 
-- Agent Traces 3.6.0 records agent, language-model, and tool spans through
-  OpenTelemetry, with a Python instrumentation SDK and Dashboards DAG and
-  token-usage views.
+OpenSearch 3.1.0 Observability can use custom index names for OpenTelemetry spans, logs, and service maps, map non-OpenTelemetry log fields, and correlate traces to logs across clusters.
 
-## Anomaly detection and forecasting
+In 3.2.0, Trace Analytics accepts Data Prepper 2.11 OpenTelemetry output, while Dashboards makes service-map node and edge limits configurable.
 
-### Detection controls
+OpenSearch 3.3.0 adds an optional unified Discover interface for log analytics, distributed tracing, automatic visualization selection, and context-aware analysis. Discover Traces supports click-to-filter exploration; separate conversational query and visualization actions remain disabled by default.
 
-- Anomaly Detection 2.19.0 can trigger independently on a feature's rise or
-  drop and apply moving suppression rules per feature.
-- Its optional structured result-index format flattens entity values and
-  arrays for querying and visualization.
-- Detection intervals longer than one hour are supported in 3.2.0.
-- Anomaly Detection 3.3.0 adds real-time frequency scheduling and a suggest
-  API; frequency is optional.
-- Detectors gain an optional auto-create field in 3.4.0.
-- Missing-feature reporting honors detector frequency in 3.4.0.
-- Dashboards 3.4.0 adds Daily Insights with index management and data
-  selection.
-- Anomalies can be correlated by temporal-overlap similarity in 3.5.0.
+In 3.8.0, experimental, disabled-by-default SQL support in Discover logs integrates the date picker across Logs, Visualization, and Statistics tabs.
 
-### Forecasting
+### Prometheus, APM, and packaged observability
 
-- Native forecasting in 3.1.0 builds a self-updating forecast from an index
-  with a timestamp field by incrementally retraining a Random Cut Forest.
-- Forecasts can feed Alerting, and Security adds forecasting roles and
-  permissions.
-- Anomaly Detection detectors can be provisioned and managed through Terraform
-  in 3.6.0.
+Dashboards 3.5.0 can query and visualize Prometheus alongside logs and traces, with PromQL autocomplete and gauges. Its APM interface adds configuration, service and service-detail pages, application topology, and service-correlation drill-downs.
 
-## Alerting and Notifications
+OpenSearch 3.6.0 adds a one-command Observability Stack bundling the collector, Data Prepper, OpenSearch, Prometheus, and Dashboards. Performance Analyzer adds a shard-operations collector.
 
-### Finding and request behavior
+In 3.7.0, Explore Metrics discovers Prometheus data sources and synchronizes generated PromQL with a raw editor. Dashboard variables use `$name` or `${name}` substitution, and visualization transformations can limit, sort, filter, aggregate, or compute fields without rerunning the base query.
 
-- Alerting 3.1.0 publishes a list of findings rather than one finding at a
-  time.
-- This is reverted in 3.2.0; Alerting again publishes individual findings.
-- Document-level monitor create/update requests reject index patterns in
-  3.1.0, and dry-run execution with an index pattern is prevented.
-- Alerting monitors can use custom user attributes in 3.3.0.
-- Alert trigger execution can apply access control to result data exposed in
-  its context in 3.5.0.
+The experimental 3.7.0 SLO catalog orders objectives by remaining error budget and supports burn-rate alerts and multi-window evaluation. A unified alerts view combines monitors and Prometheus rules and renders the Alertmanager routing tree read-only.
 
-### Monitor administration
+Since 3.8.0, metrics exploration can create alert rules directly. Prometheus metric rules support create, edit, clone, and delete through the Cortex ruler API, and Alert Manager manages anomaly detectors and forecasters.
 
-- `plugins.alerting.monitor.max_triggers` caps triggers per monitor in 3.6.0.
-- PPL/SQL monitor Dashboards configuration adds a lookback window in 3.6.0.
-- PPL monitor CRUD and manually triggered execution are available through
-  Alerting in 3.7.0, with RBAC checks on manual runs.
-- PPL monitor names can contain up to 100 characters in 3.7.0 rather than 30.
+### Investigations
+
+Dashboards 3.6.0 investigations accept a hypothesis, track total and step durations, and rerun log analysis during reinvestigation.
+
+## Detecting anomalies and forecasting
+
+### Feature controls and result storage
+
+Anomaly Detection 2.19.0 can trigger independently on a feature's rise or drop and apply per-feature moving suppression. An optional structured result-index format flattens entity values and arrays for easier queries and visualizations.
+
+In 3.1.0, Anomaly Detection builds a self-updating forecast from a timestamped index by incrementally retraining a Random Cut Forest. Forecasts feed Alerting, and the Security plugin adds forecasting roles and permissions.
+
+### Scheduling and authoring detectors
+
+OpenSearch 3.2.0 supports anomaly intervals longer than one hour. In 3.3.0, real-time frequency scheduling and a suggest API are added, and frequency is optional.
+
+Dashboards 3.4.0 adds Daily Insights with index management and data selection. Detectors gain an optional auto-create field, and missing-feature reporting honors detector frequency.
+
+In 3.5.0, anomalies can be correlated by temporal-overlap similarity. In 3.6.0, detectors can be provisioned and managed through Terraform.
+
+Since 3.8.0, single-stream detectors can use PPL as their source type and evaluate feature queries at runtime through PPL transport actions.
+
+## Operating alerts and notifications
+
+### Finding publication and request validation
+
+OpenSearch 3.1.0 temporarily changes Alerting to publish a list of findings rather than one at a time. Document-level monitor create and update reject index patterns, and dry-run execution with an index pattern is blocked.
+
+OpenSearch 3.2.0 reverts list publication: Alerting again publishes one finding at a time. Consumers should follow this later behavior.
+
+In 3.3.0, monitors can use custom user attributes. Since 3.5.0, trigger execution can apply access control to result data exposed in the action context.
 
 ### Destinations and scheduling
 
-- Mattermost is a notification-channel configuration type and Dashboards
-  notification destination in 3.5.0.
-- Alerting 3.7.0 adds EventBridge Scheduler CRUD and SQS-backed external
-  monitor scheduling.
-- Configure the two-role EventBridge model with `execution_role_arn`.
+OpenSearch 3.5.0 adds Mattermost as a notification-channel type and a Dashboards notification destination.
 
-### SLO and unified alert views
+In 3.6.0, `plugins.alerting.monitor.max_triggers` caps triggers per monitor, while PPL and SQL monitors receive a configurable Dashboards lookback window.
 
-- The experimental 3.7.0 SLO catalog orders objectives by remaining error
-  budget and supports burn-rate alerts and multi-window evaluation.
-- The experimental unified alerts view combines monitors and Prometheus rules
-  and renders the Alertmanager routing tree read-only.
+OpenSearch 3.7.0 adds EventBridge Scheduler CRUD and SQS-backed external monitor scheduling. Configure the two-role EventBridge design with `execution_role_arn`.
 
-## Index State Management and rollups
+### Multi-tenant restrictions
 
-### Transitions and actions
+With Alerting multi-tenancy enabled in 3.7.0, email, findings, chained actions, Job Scheduler indexes, and other unsupported actions are disabled. Pluggable-data-format domains reject non-PPL monitor CRUD.
 
-- ISM transitions add `no_alias` and `min_state_age` in 3.2.0.
-- ISM index patterns accept exclusion patterns in 3.4.0.
-- The 3.5.0 `convert_index_to_remote` action accepts an optional
-  `rename_pattern`.
-- The 3.5.0 `search_only` action supports reader/writer separation.
-- The 3.7.0 ISM Simulate API evaluates every policy transition against live
-  index metrics and reports the next state without modifying cluster state.
+For multi-tenant anomaly data sources, default or flattened result indexes and historical analysis are disabled. Unsupported routes return HTTP 501.
 
-### Rollups
-
-- Rollups add cardinality metrics and multi-tier rollup support in 3.5.0.
-
-## Analyzer and replication operations
-
-### Analyzer resource reloads
-
-- `_refresh_search_analyzers` adds `reload_cached_resources` in 3.7.0 for
-  hot-reloading resources such as Hunspell dictionaries.
-- The API works on metadata-write-blocked indexes such as CCR followers in
-  3.7.0.
-
-### Cross-cluster replication
-
-- Every CCR REST API accepts `cluster_manager_timeout` in 3.7.0.
-- Stop, pause, start, and resume can clear stale persistent tasks in 3.7.0.
-- Replication leaves `number_of_replicas` unchanged when a follower uses
-  `auto_expand_replicas` in 3.7.0.
-
-## Scheduler and snapshot services
-
-- `IntervalSchedule` accepts seconds as a unit in 3.2.0.
-- Job Scheduler 3.2.0 adds REST APIs to list jobs, optionally per node, list
-  all locks, or retrieve one lock.
-- Job Scheduler adds a Job History Service in 3.3.0.
-- Snapshot Management can delete manually created snapshots in 3.3.0.
+In 3.8.0, Alerting adds a filter-by-backend-roles access strategy that controls how role filtering determines access to Alerting objects.

@@ -1,17 +1,16 @@
 # SQL, Schema, and Optimizer
 
-Use this reference for generated keys, `ALTER TABLE`, stored-program syntax,
-collation resolution, subquery rewrites, EXPLAIN parsing, temporal values,
-grouping, and optimizer selection.
+Use this reference when generating DDL, validating SQL during an upgrade,
+parsing EXPLAIN output, or relying on optimizer and collation behavior.
 
-## Keys and DDL
+## DDL and schema requirements
 
-### `UNIQUE NOT NULL` is a primary-key equivalent
+### Treat UNIQUE NOT NULL as a primary-key equivalent
 
-For `CREATE` and `ALTER` in batch 9.7.0, a `UNIQUE NOT NULL` key counts as a
-primary-key equivalent. It prevents an extra generated invisible primary key
-when `sql_generate_invisible_primary_key=ON` and satisfies
-`sql_require_primary_key=ON`.
+For both `CREATE` and `ALTER`, a `UNIQUE NOT NULL` key counts as a primary-key
+equivalent. It satisfies `sql_require_primary_key=ON` and prevents an extra
+generated invisible primary key when
+`sql_generate_invisible_primary_key=ON`.
 
 ```sql
 CREATE TABLE events (
@@ -20,82 +19,75 @@ CREATE TABLE events (
 );
 ```
 
-### Empty-table column changes prefer INPLACE
+### Expect INPLACE for empty-table column changes
 
-For an empty InnoDB table in batch 9.2-9.3, `ALTER TABLE ... ADD COLUMN` and
-`DROP COLUMN` choose `INPLACE` rather than `INSTANT` by default. This avoids
-incrementing the row version. Specify an algorithm only when the deployment
-requires a particular execution path.
+For an empty InnoDB table, `ALTER TABLE ... ADD COLUMN` and `DROP COLUMN`
+select `INPLACE`, not `INSTANT`, by default. This avoids incrementing the row
+version. Request an algorithm explicitly only when the migration requires it.
 
-### `BINLOG` is no longer an unquoted label
+## Upgrade-sensitive SQL syntax
 
-`BINLOG` cannot be used as an unquoted label in a stored program in batch
-9.2-9.3. Quote or rename affected labels before upgrade:
+### Quote BINLOG labels
 
-```sql
-label_loop: LOOP
-  LEAVE label_loop;
-END LOOP;
-```
+`BINLOG` can no longer be an unquoted label in a stored program. Quote or
+rename such labels before upgrading.
 
-## Expression and query semantics
+### Update keyword handling
 
-### `IFNULL()` collation resolution
+In 9.7.2, `CUBE`, `EXTERNAL`, `QUALIFY`, and `TABLESAMPLE` are reserved
+keywords; quote or rename existing identifier uses. `MANUAL` and `PARALLEL`
+are recognized as non-reserved keywords.
 
-In batch 9.4-9.6, the `NONE` collation derivation is weaker than every other
-derivation. The other operand therefore determines comparison collation in
-expressions such as `IFNULL(...) LIKE ...`, instead of raising
-`ER_CANT_AGGREGATE_2COLLATIONS`.
-
-Collation aggregation considers only collations tied at the highest strength,
-and the former `IGNORABLE` derivation is renamed `NULL`.
-
-### More quantified subqueries become derived tables
-
-With `subquery_to_derived` enabled in batch 9.2-9.3, derived-table
-transformations cover:
-
-- `>`, `>=`, `<`, and `<=` with `ANY`;
-- the same operators with `ALL`;
-- the existing `=ANY`; and
-- the existing `<>ALL`.
-
-The transformation can apply in both `SELECT` and `WHERE`.
-
-### `GROUPING()` no longer requires `ROLLUP`
-
-`GROUPING()` is permitted in queries without `ROLLUP` in batch 9.4-9.6. SQL
-generators do not need to add a synthetic rollup merely to call the function.
-
-### Binary-protocol temporal values are validated
+### Validate binary-protocol temporal values
 
 Invalid temporal values received through the binary protocol are rejected even
-in non-strict SQL mode in batch 9.4-9.6. A client can no longer depend on silent
-adjustment simply because the session is non-strict.
+in non-strict SQL mode instead of being silently adjusted. Validate or sanitize
+bound values in clients that previously relied on adjustment.
 
-## EXPLAIN output contracts
+## Expressions and query behavior
 
-### JSON format version 2
+### Apply the revised IFNULL collation rules
 
-With `explain_json_format_version=2`, JSON EXPLAIN in batch 9.2-9.3:
+The `NONE` collation derivation is weaker than every other derivation, so the
+other operand controls comparison collation in expressions such as
+`IFNULL(...) LIKE ...` rather than raising
+`ER_CANT_AGGREGATE_2COLLATIONS`. Collation aggregation considers only
+collations tied at the highest strength, and the former `IGNORABLE` derivation
+is named `NULL`.
 
-- identifies schema `2.0`;
-- leaves only query attributes at the top level; and
-- adds `lookup_references` for index lookups.
+### Use expanded quantified-subquery transformations
 
-Version 1 output remains unchanged. In batch 9.4-9.6, `explain_format` defaults
-to `TREE` and `explain_json_format_version` defaults to version `2`. Pin formats
-in machine consumers and update JSON decoders before accepting the defaults.
+With `subquery_to_derived` enabled, derived-table transformations cover `>`,
+`>=`, `<`, and `<=` with either `ANY` or `ALL`, in addition to `=ANY` and
+`<>ALL`. They can apply in both `SELECT` and `WHERE`.
 
-## Hypergraph Optimizer
+### Use GROUPING without ROLLUP
 
-The Hypergraph Optimizer is available in Community Edition in batch 9.7.0. It
-can be selected at session, global, persisted, startup, or per-statement scope.
-For a session:
+`GROUPING()` is permitted in queries that do not use `ROLLUP`.
+
+### Preserve spatial reference data in GeoJSON
+
+Implicit geometry-to-JSON conversion adds a `crs` attribute so spatial
+reference information survives in JSON Duality Views. `ST_AsGeoJSON()` options
+2 and 4 always include a CRS URN.
+
+## Optimizer and EXPLAIN
+
+### Opt into the Hypergraph Optimizer
+
+The Hypergraph Optimizer is available in Community Edition. It can be selected
+at session, global, persisted, startup, or per-statement scope.
 
 ```sql
 SET optimizer_switch='hypergraph_optimizer=on';
 ```
 
-Measure plan and execution changes at the same scope at which the optimizer will
-be enabled. Option Tracker distinguishes usage of both optimizer types.
+### Expect the new default EXPLAIN formats
+
+`explain_format` defaults to `TREE`, and `explain_json_format_version` defaults
+to version `2`.
+
+With `explain_json_format_version=2`, JSON output identifies schema `2.0`,
+keeps only query attributes at the top level, and adds `lookup_references` for
+index lookups. Version 1 output is unchanged. Update parsers before changing
+the server default or preserve version 1 explicitly during migration.

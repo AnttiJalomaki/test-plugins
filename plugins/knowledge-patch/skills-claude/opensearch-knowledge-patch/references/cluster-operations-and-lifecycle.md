@@ -1,103 +1,127 @@
 # Cluster Operations and Data Lifecycle
 
-Use this reference for remote-store topology, ingestion and transport, Index
-State Management, replication, scheduler APIs, and remote plugin metadata.
+Use this reference for nodes, remote stores, ingestion, gRPC transport, index policies, replication, schedulers, snapshots, remote metadata, and codecs.
 
-## Remote store and reader/writer separation
+## Node roles, remote store, and sandboxing
+
+### Coordinating-only nodes
+
+In 3.0.0, an empty role list means a coordinating-only node:
+
+```yaml
+node.roles: []
+```
 
 ### Search-only remote-store indexes
 
-Since 3.0.0, remote-store-enabled clusters can separate indexing and search
-traffic. The `_scale` API can turn off every writer and make an index
-search-only, allowing indexing and search capacity to scale independently.
+OpenSearch 3.0.0 separates indexing and search traffic on remote-store-enabled clusters. The `_scale` API can stop all writers and make an index search-only, allowing independent scaling of reader and writer capacity.
 
-## Transport and ingestion
+### Java-agent security sandbox
 
-### Experimental transport and ingestion
+OpenSearch 3.0.0 replaces Java Security Manager with an agent that intercepts privileged calls. The policy-file design remains: grant privileged actions to individual codebases.
 
-OpenSearch 3.0.0 includes disabled-by-default protobuf-over-gRPC transport,
-pull-based ingestion from Apache Kafka and Amazon Kinesis with native
-backpressure, and GPU acceleration for vector operations.
+## Ingestion and transport
 
-### gRPC transport reaches general availability
+### Pull-based ingestion
 
-In 3.2.0, protobuf-over-gRPC becomes production-ready for bulk ingestion, with
-expanded search coverage, k-NN queries, and encryption in transit.
+- In 3.0.0, disabled-by-default pull ingestion supports Apache Kafka and Amazon Kinesis with native backpressure.
+- It becomes generally available in 3.6.0 and adds warmup settings and adaptive shard selection.
 
-### gRPC and Arrow transport coverage
+### gRPC transport
 
-Since 3.3.0, production gRPC supports term-level, full-text, geographic,
-Boolean, script, and nested queries, and OpenSearch protobuf Python packages
-are published to PyPI. A separate disabled-by-default Apache Arrow Flight
-transport provides secured server-side node-to-node streaming through
-`StreamTransportService`.
+- In 3.0.0, Protobuf-over-gRPC is disabled by default as an experimental transport.
+- In 3.2.0, it becomes production-ready for bulk ingestion, expands search and k-NN coverage, and supports encryption in transit.
+- In 3.3.0, search coverage expands to term-level, full-text, geographic, Boolean, script, and nested queries. OpenSearch protobuf Python packages are published to PyPI.
+- In 3.4.0, search adds `ConstantScoreQuery`, `FuzzyQuery`, `MatchBoolPrefixQuery`, `MatchPhrasePrefix`, `PrefixQuery`, and `MatchQuery`. Bulk requests accept CBOR, SMILE, and YAML documents.
+- In 3.5.0, hybrid queries run over gRPC. Circuit breakers and Security JWT authentication protect the transport.
+- In 3.6.0, Security adds Basic authentication for gRPC.
+- In 3.8.0, ML Commons adds token-streaming `PredictModelStream` and `ExecuteAgentStream` over Protobuf and HTTP/2.
 
-### Expanded gRPC requests
+### Arrow Flight and HTTP/3
 
-Since 3.4.0, gRPC search supports `ConstantScoreQuery`, `FuzzyQuery`,
-`MatchBoolPrefixQuery`, `MatchPhrasePrefix`, `PrefixQuery`, and `MatchQuery`.
-Bulk gRPC accepts documents encoded as CBOR, SMILE, or YAML.
+- A disabled-by-default 3.3.0 Apache Arrow Flight transport provides secured server-side node-to-node streaming through `StreamTransportService`.
+- Server-side HTTP/3 is a disabled-by-default experiment in 3.5.0.
 
-### Pull-based ingestion general availability
+### Streaming aggregation
 
-OpenSearch 3.6.0 makes pull-based ingestion generally available and adds warmup
-settings and adaptive shard selection.
+In 3.2.0, partial segment aggregation results stream to the coordinator rather than returning one response per shard. This moves high-cardinality reduction off data nodes.
 
 ## Index State Management and rollups
 
-### Index State Management transition conditions
+### Transition and pattern controls
 
-Since 3.2.0, ISM transitions support `no_alias` and `min_state_age`.
+- In 3.2.0, ISM transitions support `no_alias` and `min_state_age`.
+- In 3.4.0, index patterns can contain exclusion patterns.
+- In 3.8.0, rollover conditions accept `any_of` groups, allowing AND and OR condition groups in one policy.
 
-### Index State Management exclusions
+### Search-only and remote conversion
 
-Since 3.4.0, ISM index patterns can contain exclusion patterns.
+In 3.5.0, `convert_index_to_remote` accepts optional `rename_pattern`, and a `search_only` action supports reader/writer separation. Rollups add cardinality metrics and multi-tier rollup.
 
-### Index State Management and rollups
+### Policy simulation
 
-Since 3.5.0, `convert_index_to_remote` accepts optional `rename_pattern`, and
-the `search_only` action supports reader/writer separation. Rollups add
-cardinality metrics and multi-tier rollup support.
+The 3.7.0 ISM Simulate API evaluates every transition against live index metrics and reports the next state without mutating cluster state.
 
-### Index policy simulation and analyzer reloads
+## Analyzer resource reloads
 
-Since 3.7.0, ISM Simulate evaluates every policy transition against live index
-metrics and reports the next state without changing cluster state.
-`_refresh_search_analyzers` accepts `reload_cached_resources` to hot-reload
-resources such as Hunspell dictionaries and works on metadata-write-blocked
-indexes such as CCR followers.
+In 3.7.0, `_refresh_search_analyzers` accepts `reload_cached_resources` to hot-reload assets such as Hunspell dictionaries. It also works on metadata-write-blocked indexes, including CCR followers.
 
 ## Cross-cluster replication
 
-### Cross-cluster replication controls
+### Lifecycle actions
 
-Since 3.7.0, every replication REST API accepts `cluster_manager_timeout`.
-Stop, pause, start, and resume can clear stale persistent tasks. Replication
-leaves `number_of_replicas` unchanged when a follower uses
-`auto_expand_replicas`.
+- In 3.0.0, the ISM `unfollow` action invokes stop replication.
+- In 3.7.0, every CCR REST API accepts `cluster_manager_timeout`. Stop, pause, start, and resume can clear stale persistent tasks. Replication leaves `number_of_replicas` unchanged when a follower uses `auto_expand_replicas`.
+- In 3.8.0, start, stop, pause, and resume can act on several indexes matched by a pattern in one call.
 
-## Scheduler and snapshots
+### Autofollow naming
 
-### Second-level schedules and scheduler APIs
+In 3.8.0, autofollow accepts `follower_index_pattern` with a `{{leader_index}}` placeholder for collision-free follower names.
 
-Since 3.2.0, `IntervalSchedule` accepts seconds as a unit. Job Scheduler has
-REST APIs to list jobs, optionally by node, list all locks, and retrieve one
-lock.
+## Job Scheduler and external scheduling
 
-### Snapshot and scheduler operations
+### Job and lock APIs
 
-Since 3.3.0, Snapshot Management can delete manually created snapshots, and Job
-Scheduler provides a Job History Service.
+- In 3.2.0, `IntervalSchedule` accepts seconds. Job Scheduler can list jobs, optionally by node, list all locks, and retrieve one lock.
+- In 3.3.0, Job Scheduler adds a Job History Service.
 
-## Remote plugin metadata
+### External alert schedules
 
-### Remote metadata mutation controls
+In 3.7.0, Alerting adds EventBridge Scheduler CRUD and SQS-backed external scheduling. The two-role design uses `execution_role_arn`.
 
-Since 3.3.0, the Remote Metadata SDK supports global resources and
-sequence-number/primary-term concurrency controls on put and delete. Put,
-update, delete, and bulk operations accept refresh policies and timeouts.
+## Snapshots
 
-### Remote metadata encryption
+Snapshot Management 3.3.0 can delete snapshots that were created manually.
 
-Since 3.4.0, the Remote Metadata SDK can encrypt and decrypt customer data with
-customer-managed keys and can assume a role for those key operations.
+Searchable snapshots in 3.0.0 require `warm` nodes; the `search` role is insufficient.
+
+## Remote metadata
+
+### External metadata storage
+
+The 2.19.0 Remote Metadata SDK and repository wrapper let plugins store metadata outside system indexes on stateful nodes.
+
+### Concurrency and mutation
+
+In 3.3.0, global resources are supported. Put and delete accept sequence-number and primary-term concurrency controls. Put, update, delete, and bulk operations accept refresh policies and timeouts.
+
+### Encryption
+
+In 3.4.0, the SDK can use customer-managed keys for encryption and decryption and assume a role for those key operations.
+
+## Custom codecs
+
+- In 3.1.0, OpenSearch Custom Codecs supports Intel QAT-accelerated Zstandard.
+- In 3.2.0, Custom Codecs supports composite indexes.
+- In 3.5.0, `AdditionalCodecs` lets plugins such as k-NN, Neural Search, and Security Analytics register codecs across plugin boundaries.
+- In 3.6.0, vector metadata can use Zstandard compression.
+
+## Remote vector builds
+
+- Remote vector building is enabled by default in 3.1.0 through `index.knn.remote_index_build.enabled`.
+- In 3.2.0, terminal remote-build failure does not fall back to CPU.
+- In 3.7.0, remote builds support 1-bit scalar quantization.
+
+## Platform data limits
+
+OpenSearch 3.0.0 enforces a 512-byte bulk `_id` limit, maximum nested-query depth, JSON nesting to 1,000 levels, and property names to 50,000 bytes or characters depending on the source.

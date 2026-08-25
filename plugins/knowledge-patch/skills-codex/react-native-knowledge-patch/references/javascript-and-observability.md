@@ -1,87 +1,100 @@
-# JavaScript APIs and observability
+# JavaScript and observability
 
-## Uncaught errors and promise rejections
+## Error reporting semantics
 
-From 0.81, uncaught JavaScript errors retain their original message and stack,
+### Uncaught errors
+
+From 0.81, uncaught JavaScript errors include their original message and stack,
 their `cause`, and a component Owner Stack. Error backends may receive more
-thrown errors because some failures previously surfaced only through
-`console.error`. Update parsing, grouping, redaction, and ingestion-volume
-expectations.
+thrown errors because older releases surfaced some of them only through
+`console.error`; review grouping and ingestion-volume assumptions during an
+upgrade.
 
-From 0.82, uncaught promise rejections flow through `console.error` and the
-JavaScript error-reporting path instead of being swallowed. An upgrade can
-therefore reveal old application defects and sharply increase reports without a
-new rejection being introduced.
+### Unhandled promise rejections
 
-Only the literal boolean `false` retains the special behavior of
-`reportErrorsAsExceptions` in 0.86. Values such as `0`, `''`, `null`, or
-`undefined` no longer act as `false`; parse external configuration to a boolean
-before supplying the option.
+From 0.82, uncaught promise rejections are reported through `console.error` and
+the JavaScript error-reporting path instead of being swallowed. An upgrade can
+therefore expose old rejections and cause a sudden increase in backend reports.
+Fix the rejections rather than suppressing the new signal.
 
-## Performance APIs
+### `reportErrorsAsExceptions`
 
-The Web Performance subset becomes stable in 0.83. It includes:
+In 0.86.0, only the literal boolean `false` retains the special behavior of
+`reportErrorsAsExceptions`. Other falsey values do not behave as `false`.
+Normalize configuration values before passing them to this option.
+
+## Instrumentation callbacks
+
+The second argument passed to an
+`AppRegistry.setComponentProviderInstrumentationHook` callback is deprecated in
+0.86.0 because apps cannot use it. The argument is now a warning stub. Update
+callbacks to rely only on their first argument.
+
+## Web Performance APIs
+
+React Native 0.83 stabilizes a Web Performance subset:
 
 - `performance.now()` and `timeOrigin`
-- performance-entry queries
+- Performance entry queries
 - `mark()` and `measure()`
 - `PerformanceObserver`
 - `event` and `longtask` entries
 
-Observers work in production builds. The separate 0.83 canary channel adds
-`IntersectionObserver`; do not infer its stable availability from the stable Web
-Performance APIs.
+Observers work in production builds. The 0.83 canary channel separately adds
+`IntersectionObserver`; do not mistake that canary addition for the same stable
+API commitment.
 
-In 0.86, `PerformanceObserver.observe({type: 'event'})` defaults
-`durationThreshold` to 104 ms rather than reporting every event. Pass a threshold
-when shorter events matter:
+### Event Timing threshold
+
+In 0.86.0, `PerformanceObserver.observe({type: 'event'})` defaults
+`durationThreshold` to 104 ms instead of reporting every event. Pass an
+explicit threshold to collect shorter events:
 
 ```js
 observer.observe({type: 'event', durationThreshold: 16});
 ```
 
-## Instrumentation hook deprecation
+## DevTools diagnostics
 
-The second argument passed to an
-`AppRegistry.setComponentProviderInstrumentationHook` callback is deprecated in
-0.86 because applications cannot use it. It is now a warning stub. Define
-callbacks around the first argument only and remove reads, logging, or type
-assumptions involving the second.
+React Native 0.83 DevTools adds performance traces combining JavaScript,
+React, network, and User Timing tracks. React Native 0.86.0 adds a React Native
+Renderer operations track to those traces.
 
-## JavaScript API changes
+DevTools in 0.86.0 can use `Emulation.setEmulatedMedia` to emulate light or
+dark mode. This is useful for diagnosis, but app behavior should still be
+tested against real platform appearance changes.
+
+Network inspection captures `fetch`, `XMLHttpRequest`, and `<Image>` traffic,
+not arbitrary custom networking libraries. See the tooling reference for the
+removed in-app panels, Expo differences, and multi-client connections.
+
+## Appearance reset value
 
 From 0.82, `Appearance.setColorScheme()` no longer accepts `null` or
-`undefined`. Pass `'unspecified'` to reset the override.
-
-React Native 0.85 removes `StyleSheet.absoluteFillObject`. Use the already
-constructed style `StyleSheet.absoluteFill`:
+`undefined`. Reset the override with:
 
 ```js
 Appearance.setColorScheme('unspecified');
+```
+
+## Removed StyleSheet value
+
+React Native 0.85 removes `StyleSheet.absoluteFillObject`. Use the supported
+replacement:
+
+```js
 const fillStyle = StyleSheet.absoluteFill;
 ```
 
-React Native 0.84 fills gaps in `URL` and `URLSearchParams`, including standard
-properties and methods such as `hash`, `host`, `pathname`, `get`, `set`, and
-`delete`. Prefer these public APIs over local compatibility shims when the
-project's minimum version includes them.
+## URL standard-library coverage
 
-## DevTools diagnostics
+React Native 0.84 fills in missing `URL` and `URLSearchParams` properties and
+methods, including `hash`, `host`, `pathname`, `get`, `set`, and `delete`.
+Remove compatibility shims only after confirming that the app's pinned release
+contains every method it uses.
 
-React Native 0.83 DevTools adds network inspection for `fetch`,
-`XMLHttpRequest`, and `<Image>` requests. It also adds performance traces that
-combine JavaScript, React, network, and User Timing tracks. Custom networking
-libraries are not captured.
+## React APIs
 
-Expo's separate Network panel covers Expo-specific events, but does not provide
-initiators or Performance-panel integration. Choose the panel according to the
-transport and diagnostic data required.
-
-The old in-app Perf and Network tabs are removed in 0.84. From 0.85, multiple
-CDP clients, such as React Native DevTools and VS Code, may connect at the same
-time.
-
-React Native 0.86 performance traces add a React Native Renderer operations
-track. `Emulation.setEmulatedMedia` can emulate light or dark mode. DevTools
-connections derive WebSocket details from HTTPS development-server URLs, and
-iOS inspector and debugger URLs likewise follow an HTTPS bundle URL.
+React Native 0.83 includes React 19.2's `<Activity>` and `useEffectEvent` APIs.
+A hidden Activity preserves state, hides children, unmounts effects, and defers
+updates. In 0.85, hidden `Pressable` descendants retain their event listeners.

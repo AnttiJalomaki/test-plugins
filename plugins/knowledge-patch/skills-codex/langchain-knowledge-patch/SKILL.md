@@ -10,51 +10,69 @@ metadata:
 
 # LangChain Knowledge Patch
 
-Use this guide when choosing current LangChain, LangGraph, provider-integration,
-MCP-adapter, or Deep Agents APIs. Read the topic reference before changing an
-agent loop, middleware policy, graph state, streaming contract, or provider tool.
+Use this skill for LangChain, LangGraph, Deep Agents, provider integrations,
+and MCP adapter work. Start with the quick reference, then read the topic file
+that matches the task before changing code.
 
-## Reference index
+## Topic index
 
 | Reference | Topics |
 | --- | --- |
-| [Agents and tools](references/agents-and-tools.md) | `create_agent`, middleware hooks and policies, structured output, model profiles, tool runtime injection, dynamic tools, custom state, and `ToolNode` errors |
-| [Anthropic integration](references/anthropic.md) | Native schemas, tool metadata and streaming, effort, citations, caching, context management, provider tools, code execution, remote MCP, and tool search |
-| [Deep Agents](references/deep-agents.md) | Harness tools, filesystem and binary backends, protocol v2, background subagents, sandboxes, profiles, context storage, summarization, memory, and CLI use |
-| [LangGraph workflows](references/langgraph-workflows.md) | Typed stream and invoke results, event projections, delta checkpoints, timeouts and recovery, draining, JavaScript state schemas, node caching, fan-in, and reconnectable streams |
-| [MCP adapters](references/mcp.md) | Session lifetime, structured and multimodal results, resources, prompts, runtime-aware interceptors, callbacks, progress, logging, and elicitation |
-| [OpenAI integration](references/openai.md) | Official and Azure endpoints, custom and built-in tools, Responses routing and continuation, approvals, compaction, reasoning, PDF input, and prompt caching |
-| [v1 migration](references/v1-migration.md) | Package split, runtime floor, classic imports, agent migration, provider-neutral content blocks, rollout limits, and Google GenAI v4 |
+| [references/v1-migration.md](references/v1-migration.md) | Package split, runtime floor, JavaScript imports, content blocks, model profiles, and migration boundaries |
+| [references/agents-and-tools.md](references/agents-and-tools.md) | Agent construction, middleware, structured output, tools, runtime injection, state, and model routing |
+| [references/langgraph-workflows.md](references/langgraph-workflows.md) | State schemas, streaming, checkpoints, fault tolerance, draining, caching, and workflow results |
+| [references/deep-agents.md](references/deep-agents.md) | Deep-agent harness, filesystem and backends, subagents, sandboxes, context storage, and CLI |
+| [references/openai.md](references/openai.md) | OpenAI and Azure models, Responses API tools, continuation, compaction, reasoning, files, and caching |
+| [references/anthropic.md](references/anthropic.md) | Anthropic schemas, tool execution and discovery, caching, compaction, code execution, files, and MCP |
+| [references/mcp.md](references/mcp.md) | Sessions, structured results, resources, prompts, interceptors, callbacks, and elicitation |
 
-## Start with breaking changes
+## Breaking changes and deprecations
 
-### Replace legacy package imports
+### Use the v1 agent entry point
 
-The main Python and JavaScript packages now focus on core agent abstractions.
-Install the classic package only where migration cannot happen immediately:
+`langchain.agents.create_agent` is the LangGraph-backed model/tool loop. It
+supersedes deprecated `create_react_agent` from `langgraph.prebuilt`.
+LangGraph otherwise preserves backward compatibility, but
+`langgraph.prebuilt` is deprecated as enhanced agent functionality moves into
+`langchain.agents`.
 
-```sh
-uv pip install --upgrade langchain langgraph
+```python
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="openai:gpt-5",
+    tools=[get_weather],
+    system_prompt="Help the user by fetching the weather in their city.",
+)
+```
+
+### Account for the package split
+
+The Python main package is limited to core abstractions. Install
+`langchain-classic` for legacy APIs. Python 3.9 is unsupported; use Python
+3.10 or newer.
+
+```shell
+uv pip install --upgrade langchain
 uv pip install langchain-classic
+```
 
-npm install langchain @langchain/core @langchain/langgraph
+In JavaScript, use the unscoped `langchain` package with `@langchain/core`.
+Legacy chains, retrievers, indexing APIs, and community exports are in
+`@langchain/classic`; for example, replace `langchain/chains` with
+`@langchain/classic/chains`.
+
+```shell
+npm install langchain @langchain/core
 npm install @langchain/classic
 ```
 
-- Python requires 3.10 or newer.
-- Move legacy Python APIs to `langchain-classic`.
-- Move JavaScript chains, retrievers, indexing APIs, and community exports to
-  `@langchain/classic`; for example, replace `langchain/chains` with
-  `@langchain/classic/chains`.
-- Replace `langgraph.prebuilt.create_react_agent` with
-  `langchain.agents.create_agent`.
+### Use supported custom state
 
-### Use TypedDict agent state
-
-Custom agent state must extend `AgentState` as a `TypedDict`. Pydantic models and
-dataclasses are not accepted for this purpose. Put a schema on the middleware
-that owns the fields; reserve `create_agent(state_schema=...)` for compatibility
-with tool-only state.
+Custom agent state schemas must be `TypedDict` classes extending `AgentState`.
+Pydantic models and dataclasses are not accepted. Prefer middleware-owned
+`state_schema` when middleware hooks or tools use the fields;
+`create_agent(state_schema=...)` remains a shortcut for tool-only state.
 
 ```python
 from langchain.agents import AgentState
@@ -67,44 +85,44 @@ class PreferencesMiddleware(AgentMiddleware):
     state_schema = PreferencesState
 ```
 
-### Update Deep Agents backends
+### Migrate Deep Agents backends deliberately
 
-- Construct `StateBackend()` and `StoreBackend()` directly; runtime factories
-  such as `lambda rt: StateBackend(rt)` are deprecated.
-- In JavaScript, implement `BackendProtocolV2` structured results and report
-  failures in `error`. Use `readRaw()` for binary bytes and rename
-  `lsInfo`/`grepRaw`/`globInfo` to `ls`/`grep`/`glob`.
-- Use `adaptBackendProtocol` while migrating a v1 backend.
+JavaScript `BackendProtocolV2` returns structured results with an `error`
+field. `read()` returns `ReadResult.content`; `readRaw()` returns binary data
+as `Uint8Array`; and `lsInfo`/`grepRaw`/`globInfo` become
+`ls`/`grep`/`glob`. `adaptBackendProtocol` bridges v1 backends while the v1
+interfaces remain deprecated.
 
-### Migrate Google GenAI packages
+In Python, construct `StateBackend()` and `StoreBackend()` directly. Factory
+forms such as `backend=lambda rt: StateBackend(rt)` are deprecated.
 
-`langchain-google-genai` v4 uses Google's consolidated SDK for both Gemini API
-and Vertex AI. Expect small upgrade changes and migrate away from the
-corresponding deprecated `langchain-google-vertexai` packages.
+## Agent and middleware essentials
 
-## Build agents with `create_agent`
+### Select structured-output strategy inside the loop
 
-`create_agent` builds a LangGraph-backed model/tool loop. It accepts provider
-model strings, tools, a system prompt, middleware, state, and structured output.
+Structured output participates in the main model/tool loop. `response_format`
+can select provider-native or tool-based generation. Wrap a Pydantic schema in
+`ToolStrategy` to request tool calling.
 
 ```python
-from langchain.agents import create_agent
+from langchain.agents.structured_output import ToolStrategy
 
 agent = create_agent(
-    model="openai:gpt-5",
-    tools=[get_weather],
-    system_prompt="Fetch weather when needed and answer concisely.",
-    name="weather_assistant",
+    model="openai:gpt-4o-mini",
+    tools=[weather_tool],
+    response_format=ToolStrategy(WeatherReport),
 )
 ```
 
-Names become node identifiers when agents are embedded as subgraphs. Restrict
-them to letters, digits, underscores, and hyphens.
+Use `ToolStrategy.handle_errors` in Python or `handleErrors` in JavaScript to
+control schema-parse failures and multiple structured-output tool calls.
+Provider-native output can explicitly request strict schema adherence with
+Python `ProviderStrategy` or JavaScript `providerStrategy`.
 
-## Compose middleware deliberately
+### Know the six middleware hook pairs
 
-Python middleware subclasses `AgentMiddleware`; JavaScript uses
-`createMiddleware`. The lifecycle consists of these hook pairs:
+Python custom middleware subclasses `AgentMiddleware`; JavaScript uses
+`createMiddleware`. The hook pairs are:
 
 | Python | JavaScript |
 | --- | --- |
@@ -115,109 +133,102 @@ Python middleware subclasses `AgentMiddleware`; JavaScript uses
 | `after_model` | `afterModel` |
 | `after_agent` | `afterAgent` |
 
-Use bundled middleware for common policies:
+Bundled policies include human approval, context-limit summarization, PII
+handling, model retry with exponential backoff, and OpenAI moderation across
+user input, model output, and tool results.
 
-- `PIIMiddleware` supports named or regex detectors and `redact` or `block`.
-- `SummarizationMiddleware` supports token triggers and profile-aware behavior.
-- `HumanInTheLoopMiddleware` configures per-tool `approve`, `edit`, and `reject`.
-- Model-retry middleware provides configurable exponential backoff.
-- Content-moderation middleware can check user input, model output, and tool
-  results at one policy boundary.
+### Install runtime-discovered tools in both places
 
-JavaScript `dynamicSystemPromptMiddleware` results are additive: returned strings
-and `SystemMessage` objects extend existing system messages rather than replacing
-them.
+Filtering tools already registered with `create_agent` needs only
+`wrap_model_call`. A tool discovered at runtime must also be installed on its
+`ToolCallRequest` in `wrap_tool_call`; showing the definition to the model does
+not make the tool executable.
 
-## Choose structured output strategy
+### Inject runtime instead of exposing it to the model
 
-Structured output runs inside the agent loop. Use `ToolStrategy` when the model
-should emit a schema through tool calling; use `ProviderStrategy` for native
-schema generation. A model profile can infer native support.
+A tool may declare a model-hidden `runtime: ToolRuntime` argument. It exposes
+`state`, typed immutable `context`, `store`, `stream_writer`, `config`, and
+`tool_call_id`. The names `config` and `runtime` are reserved. Return `Command`
+to mutate state, and include a correlated `ToolMessage` when the model needs a
+result. Fields written by parallel tools need reducers.
 
-```python
-from langchain.agents import create_agent
-from langchain.agents.structured_output import ToolStrategy
-from pydantic import BaseModel
+### Keep structured-output routing models unbound
 
-class WeatherReport(BaseModel):
-    temperature: float
-    condition: str
+When middleware dynamically switches models for an agent using structured
+output, replacement models must not be pre-bound with `bind_tools`.
 
-agent = create_agent(
-    model="openai:gpt-4o-mini",
-    tools=[weather_tool],
-    response_format=ToolStrategy(WeatherReport, handle_errors=True),
-)
-```
+## Messages and content
 
-Python `handle_errors` and JavaScript `handleErrors` control schema-parse and
-multiple-output failures. Provider strategies can request strict schema
-adherence explicitly. If middleware switches models, replacement models must not
-already be bound with `bind_tools` when structured output is enabled.
+Use `.content_blocks` for a backward-compatible typed representation of
+reasoning, citations, tool calls, and server-side tool calls across providers.
+This lets streams, frontends, and memory stores avoid provider-specific
+response shapes. Read [references/v1-migration.md](references/v1-migration.md)
+for the integration rollout limits.
 
-## Use the unified tool runtime
+`system_prompt` on `create_agent` accepts a `SystemMessage`, including advanced
+content blocks, cache-control blocks, structured orchestration hints, and
+richer instructions.
 
-Declare `runtime: ToolRuntime` on a tool to receive model-hidden state, immutable
-typed context, store, stream writer, config, and tool-call ID. The argument names
-`runtime` and `config` are reserved. Return `Command` to update state, and include
-a correlated `ToolMessage` when the model needs the result.
+## Workflow essentials
 
-```python
-from langchain.messages import ToolMessage
-from langchain.tools import ToolRuntime, tool
-from langgraph.types import Command
+### Stream tokens from ordinary invocations
 
-@tool
-def set_language(language: str, runtime: ToolRuntime) -> Command:
-    return Command(update={
-        "preferred_language": language,
-        "messages": [ToolMessage(
-            content=f"Language set to {language}.",
-            tool_call_id=runtime.tool_call_id,
-        )],
-    })
-```
+In LangGraph, `stream_mode="messages"` emits `(message_chunk, metadata)` for
+model calls anywhere in a graph even when a node calls `model.invoke()`.
+Filter by metadata such as `langgraph_node` or model tags.
 
-Fields written by parallel tools need reducers. A tool discovered at runtime
-must be added in both `wrap_model_call` and `wrap_tool_call`; advertising it to
-the model does not install an executable implementation.
+### Choose the needed stream/result contract
 
-## Consume messages and streams through typed surfaces
+Python LangGraph opt-in `version="v2"` returns typed `StreamPart` values from
+stream methods and `GraphOutput` from invoke methods. Event streaming
+`version="v3"` provides typed run and chat-model projections while earlier
+event versions remain unchanged. Read the workflow reference before changing
+result access or checkpoint behavior.
 
-- Use `message.content_blocks` to normalize text, reasoning, citations, tool
-  calls, server-side tool calls, and multimodal content across integrations.
-- Use `stream_mode="messages"` to receive token chunks from ordinary
-  `model.invoke()` calls inside graph nodes; select calls with metadata such as
-  `langgraph_node` or model tags.
-- With LangGraph `version="v2"`, stream methods emit `StreamPart`, while invoke
-  methods return `GraphOutput.value` and `GraphOutput.interrupts`.
-- With event streaming `version="v3"`, consume typed run and model-call
-  projections instead of reconstructing events from provider-specific payloads.
+### Make tool errors explicit
 
-## Respect tool error boundaries
+`ToolNode` catches invocation errors by default but re-raises tool-execution
+errors. Set `handle_tool_errors` to `True`, a model-visible string, a callable,
+or a tuple of exception types when execution failures should be caught.
 
-`ToolNode` catches invocation errors by default but re-raises failures raised by
-tool execution. Set `handle_tool_errors` to `True`, a model-visible string, an
-exception handler, or a tuple of exception types when execution failures should
-return to the model.
+## Provider routing
 
-```python
-from langgraph.prebuilt import ToolNode
+### OpenAI
 
-node = ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
-```
+`ChatOpenAI` targets official API schemas only; it does not preserve
+non-standard fields from compatible third-party endpoints. Use the endpoint's
+provider-specific integration when those fields matter.
 
-## Keep provider behavior explicit
+`ChatOpenAI` selects the Responses API automatically when built-in tools,
+conversation-state IDs, or reasoning summaries require it. It can also be
+selected with `use_responses_api=True`. Read
+[references/openai.md](references/openai.md) for tool loops, continuation,
+compaction, reasoning, file inputs, and caching.
 
-Provider-native tools, response continuation, caching, context compaction, and
-approval loops have integration-specific contracts. Do not infer one provider's
-wire shape from another. Read the provider reference before binding server-side
-tools or retaining provider content blocks in message history.
+### Anthropic
 
-For MCP tools, decide whether each invocation may use a fresh session. Open an
-explicit session for server-side state, and use runtime-aware interceptors for
-tenant headers, policy checks, state updates, or rerouting.
+Anthropic client-side bash, computer-use, text-editor, and memory tool
+specifications only describe calls; the application must execute them and
+return correlated results. Use a tool carrying
+`extras["provider_tool_definition"]` or the supplied middleware implementations
+when `create_agent` should run that loop. Read
+[references/anthropic.md](references/anthropic.md) for schema enforcement,
+server tools, caching, files, discovery, and remote MCP.
 
-For Deep Agents, choose filesystem mutation policy, backend protocol, sandbox,
-subagent behavior, and persistence explicitly. Background subagents require a
-LangSmith Deployment.
+### MCP
+
+`MultiServerMCPClient` is stateless by default: each tool invocation gets a
+fresh `ClientSession`. Open `client.session()` explicitly when server context
+must persist across calls. Structured MCP content is an artifact and is not
+model-visible unless an interceptor copies it into result content.
+
+## Deep Agents
+
+`deepagents.create_deep_agent` builds a LangGraph-backed runnable and adds
+`write_todos` for adaptive plan tracking plus `task` for context-isolated
+delegation. Its virtual filesystem can route across composite backends, and
+persistent cross-thread memory uses the LangGraph Memory Store.
+
+Read [references/deep-agents.md](references/deep-agents.md) before working with
+filesystem mutation, binary files, background subagents, code execution,
+harness profiles, durable context, overflow summarization, or headless CLI use.

@@ -1,75 +1,69 @@
 # Upgrades and Raft
 
-## Upgrade and downgrade boundaries
+## Upgrade invariants
 
-Nomad aims to remain backward compatible across at least two point releases;
-for example, 1.7.x can coexist with 1.5.x. This is an operating goal, not
-downgrade support. Do not enable new features until every agent that needs them
-has been upgraded. In a federated deployment, that includes every agent in the
-region and the authoritative region's servers.
+Nomad aims for backward compatibility across at least two point releases, such as
+1.7.x with 1.5.x, but does not support downgrades (upgrade-procedure). Do not use
+new features until every relevant node is upgraded.
 
-Downgrades are unsupported:
+To downgrade a client, drain its allocations and remove its data directory.
+Safely downgrading servers requires reprovisioning the cluster.
 
-- To downgrade a client, drain its allocations and remove its data directory.
-- To downgrade servers safely, reprovision the cluster.
+Versions before 1.10.0 are outside the support floor established in batch 1.10.0.
 
-These constraints come from the `upgrade-procedure` batch.
+## Upgrade servers before clients
 
-Versions before 1.10.0 are outside the support floor (batch `1.10.0`).
+Upgrade servers one at a time, then upgrade clients. A client restart longer than
+`heartbeat_grace`—`10s` by default—can cause every allocation on that node to be
+rescheduled. When replacing old clients, drain them instead of upgrading in
+place.
 
-## Rolling upgrade order
+In a federated deployment, new features are not guaranteed until every agent in
+the region and the authoritative region's servers are upgraded.
 
-Upgrade servers one at a time, then upgrade clients. A client that takes longer
-than `heartbeat_grace` to restart can have all allocations rescheduled;
-`heartbeat_grace` defaults to `10s`. Drain old clients when replacing them
-instead of upgrading them in place.
+## Safely cycle servers
 
-For an in-place server upgrade, choose a shutdown signal that does not activate
-the configured `leave_on_terminate` or `leave_on_interrupt`. For example, when
-`leave_on_terminate` is enabled, use `SIGINT` rather than `SIGTERM`.
+For an in-place server upgrade, use a shutdown signal that does not trigger the
+configured `leave_on_terminate` or `leave_on_interrupt`. For example, with
+`leave_on_terminate` enabled, use `SIGINT`, not `SIGTERM`.
 
-After every server rejoins:
+After each server rejoins:
 
-1. Check cluster membership with `nomad server members`.
-2. Compare its `nomad agent-info` `last_log_index` with the other servers.
-3. Continue only after replication is current.
+1. Compare its `nomad agent-info` `last_log_index` with the other servers.
+2. Check membership with `nomad server members`.
+3. Proceed only when replication is current.
 
-When replacing a server, stop it and confirm it reaches `left`. If necessary,
-remove it explicitly:
+When replacing a server, stop it and confirm it is `left`, or remove it with:
 
 ```shell
 nomad server force-leave <server-id>
 ```
 
-## Enterprise preflight
+## Raft log store migration
 
-Before upgrading servers to Nomad Enterprise 1.6.0 or later, validate the
-license with the target binary:
+The server `raft_boltdb` parameter is deprecated in 2.0.0; use `raft_logstore`
+(batch 2.0-upgrade). Migrate from BoltDB to WAL with:
 
 ```shell
-nomad license inspect
+nomad operator raft migrate-backend
 ```
 
-Nomad 2.0.0 also introduces license and configuration changes for IBM Passport
-Advantage Online (PAO), from batch `2.0-upgrade`.
+The migration is not reversible in place. Returning to BoltDB requires a snapshot
+taken before migration. The `/v1/agent/self` response includes Raft log store
+details, and the WAL backend exposes Raft log store metrics.
 
-## Raft protocol 3 on a multi-server cluster
+## Raft protocol 3 on a cluster
 
-Raft protocol 3 requires Nomad 0.8.0 or later on every server. Once all servers
-use protocol 3, an older-protocol server cannot join: quorum membership
-identifies servers by node ID rather than IP address. The outage-recovery
-`peers.json` format changes as well.
+Raft protocol 3 requires Nomad 0.8.0 or later on every server. After all servers
+use it, an older-protocol server cannot join because quorum membership identifies
+servers by node ID rather than IP address. The outage-recovery `peers.json` format
+also changes.
 
-For a cluster with at least three servers:
-
-1. Stop and force-leave one server.
-2. Restart it using protocol 3.
-3. Verify `RaftProtocol` with `nomad operator raft list-peers`.
-4. Verify replication with `nomad agent-info`.
-5. Repeat one server at a time, leaving the leader until last.
-
-Set `raft_protocol = 3` explicitly only when upgrading to a Nomad version
-earlier than 1.3.0:
+For a cluster with at least three servers, stop and force-leave one server at a
+time, restart it with protocol 3, and verify `RaftProtocol` with
+`nomad operator raft list-peers` plus replication with `nomad agent-info`. Upgrade
+the leader last. Set `raft_protocol = 3` explicitly only when upgrading to a
+version earlier than 1.3.0.
 
 ```hcl
 server {
@@ -77,11 +71,11 @@ server {
 }
 ```
 
-## Raft protocol 3 on a single server
+## Raft protocol 3 on one server
 
-A single server cannot elect itself after an in-place protocol 3 restart unless
-a new-format `server/raft/peers.json` exists before the restart. Build it from
-the configured data directory, current leader address, and server node ID:
+A single server cannot elect itself after an in-place protocol 3 restart unless a
+new-format `server/raft/peers.json` is written before the restart. Derive the data
+directory, leader address, and node ID, then write:
 
 ```shell
 NOMAD_DATA_DIR=$(nomad agent-info -json | jq -r '.config.DataDir')
@@ -99,35 +93,22 @@ cat >"$NOMAD_DATA_DIR/server/raft/peers.json" <<EOF
 EOF
 ```
 
-The protocol procedures are from the `upgrade-procedure` batch.
+## Server join configuration migration
 
-## Raft log-store migration
+The deprecated `server.retry_join`, `server.retry_interval`,
+`server.retry_max`, and `server.start_join` parameters are removed in 2.1.0.
+Migrate them to `server.server_join` before that upgrade (batch 2.0-upgrade).
 
-The `raft_boltdb` server parameter is deprecated as of Nomad 2.0.0. Configure
-`raft_logstore` instead (batch `2.0-upgrade`).
+Unauthenticated CLI and API server joins are also deprecated in 2.0.4 and require
+an `agent:write` token in 2.1.0. See the identity and policy reference for leader,
+federation, and new-cluster guidance.
 
-Migrate an existing log store from BoltDB to WAL with:
+## Removed and ignored job behavior
 
-```shell
-nomad operator raft migrate-backend
-```
+Deprecated task-group disconnect fields have no effect in 1.10.0. Replace them
+with the `disconnect` block introduced in 1.8.
 
-Take a snapshot first. The migration cannot be reversed in place; returning to
-BoltDB requires restoring a snapshot captured before migration. After the
-migration, `/v1/agent/self` reports Raft log-store details, and the WAL backend
-exports Raft log-store metrics. These migration behaviors are from batch
-`2.0.0`.
-
-## Server join migration
-
-Manual `nomad server join` and Join Agent API calls without authentication are
-deprecated in 2.0.4. Nomad 2.1.0 requires a token with `agent:write`.
-
-- Run a node-addition command against the region leader.
-- Run a region-federation command against the authoritative region.
-- For a new cluster, prefer `server_join` with gossip encryption and mTLS.
-
-The legacy `server.retry_join`, `server.retry_interval`, `server.retry_max`,
-and `server.start_join` parameters are removed in 2.1.0. Migrate them to
-`server.server_join` before that upgrade. Both changes are recorded in batch
-`2.0-upgrade`.
+Token-based Consul and Vault allocation authentication and the remote task-driver
+interface are removed in 1.10.0. Migrate identities and custom drivers before the
+upgrade. Quota variable fields and related Go API types also require the migration
+documented in the identity and policy reference.

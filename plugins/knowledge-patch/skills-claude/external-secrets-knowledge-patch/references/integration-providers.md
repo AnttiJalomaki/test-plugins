@@ -1,123 +1,113 @@
 # Integration Providers
 
-Use this reference for provider-specific authentication, lookup, extraction,
-diagnostic, and maturity-sensitive behavior outside the major cloud and Vault
-families. Provider push semantics remain centralized in `push-secrets.md`.
+Use this reference for provider-specific authentication, lookup, diagnostic, and
+write behavior outside the major cloud, Kubernetes, Vault, and OpenBao providers.
+Feature parity is not implied by provider maturity.
 
 ## 1Password
 
 ### SDK provider
 
-- An SDK-based 1Password provider is available (0.17.0).
-- `GetSecretMap` has parity with the Connect provider (0.18.0).
-- A vault can be selected by UUID (0.18.0).
-- Native item IDs are supported (2.2.0).
-- `GetAllSecrets` enables bulk selections that require the all-secrets operation
-  (2.7.0).
-- Each client receives a fresh provider instance, avoiding a race that could
-  route operations to the wrong vault (2.5.0).
+- The SDK-based provider arrived in 0.17.0.
+- `GetSecretMap` reached parity with 1Password Connect in 0.18.0.
+- A vault can be selected by UUID from 0.18.0.
+- Native item IDs are supported from 2.2.0.
+- Multi-field `PushSecret` is supported from 2.3.0, completing its push
+  implementation.
+- A fresh provider instance is created per client from 2.5.0, preventing a race
+  that could route operations to the wrong vault.
+- `GetAllSecrets` is implemented from 2.7.0 for bulk selection workflows.
+- `PushSecret` honors `IfNotExists` from 2.8.0.
+- 1Password Environments are supported from 2.9.0.
 
-See `push-secrets.md` for SDK multi-field push behavior.
+### Connect and shared behavior
 
-### Connect and authorization behavior
-
-Authorization errors are retried (0.20.0), so transient authorization failures
-can recover without a manual resource change. See `push-secrets.md` for Connect
-write capability.
+- 1Password Connect is classified read-write from 0.18.0.
+- Authorization failures are retried from 0.20.0 so transient failures can
+  recover.
 
 ## Akeyless
 
-- `azure_ad` Workload Identity authentication uses `serviceAccountRef` (2.8.0).
-- `SecretStore` configuration accepts `ignoreCache` to bypass the Akeyless
-  Gateway cache (2.8.0).
-- `dataFrom.extract.property` can select a property whose value is nested JSON
-  (2.8.0).
-
-## Infisical
-
-- Missing-secret and incorrect-authentication errors that were previously
-  silent are surfaced (0.13.0).
-- `data` references can address secrets within paths (0.17.0).
-- Authentication methods are configurable (0.19.0).
-- Kubernetes authentication can use a Client JWT as its Reviewer JWT token
-  (0.20.0).
-- `dataFrom.find.path` filters by secret path rather than secret name (2.2.0).
-- Secret scopes accept an organization slug (2.7.0).
-- Push and HTTP 404 absence semantics are documented in `push-secrets.md`.
-
-## Delinea Secret Server
-
-- Fetching handles secret values that are not JSON (0.18.0).
-- Connections accept a domain field (0.20.0).
-- A secret can be fetched by path (0.20.0).
-- Provider connections configure TLS correctly (1.1.0).
-- Access-token authentication is supported (2.8.0).
+- Akeyless is classified read-write from 2.7.0, so `PushSecret` operations route
+  to it.
+- `azure_ad` Workload Identity through `serviceAccountRef` is supported from
+  2.8.0.
+- `SecretStore` accepts `ignoreCache` from 2.8.0 to bypass the Akeyless Gateway
+  cache.
+- `dataFrom.extract.property` can extract nested JSON from 2.8.0.
+- API failures are no longer misclassified as a missing item from 2.9.0, allowing
+  operational failures to be distinguished from actual absence.
 
 ## BeyondTrust
 
-- Provider configuration accepts an API-version parameter (0.14.0).
-- Get-secret calls accept `decrypt` to request decryption (1.3.0).
-- Secret creation supports API v3.2 (2.5.0).
-- BeyondTrust WorkloadCredentials is available as a provider (2.7.0).
-
-## Passbolt
-
-- The provider honors its refresh interval (0.14.0).
-- Passbolt V5 API support is available (2.2.0).
-- A custom CA bundle or CA provider can establish trust (2.4.0).
-- `ExternalSecret` accepts the `v5-custom-fields` resource type (2.6.0).
-
-## GitHub
-
-- GitHub provider errors are surfaced rather than hidden (0.17.0).
-- Organization-secret visibility and selected-repository preservation during
-  push are documented in `push-secrets.md`.
-
-## Grafana
-
-The service-account generator is documented in
-`templates-generators-and-cli.md`; chart dashboard discovery is documented in
-`helm-and-operations.md`.
-
-## Barbican
-
-Barbican is available as a provider (1.2.0). It supports `property` and
-`extract`, and `find.name.regexp` is interpreted as a regular expression rather
-than an exact name (2.8.0).
-
-## Cloud.ru Secret Manager
-
-Cloud.ru Secret Manager is supported (0.15.0), and its provider accepts paths
-(2.2.0).
-
-## Devolutions Server
-
-Devolutions Server is available as a provider (1.3.0). Entries can be addressed
-by name (2.4.0).
-
-## Keeper
-
-- Secrets can be looked up by ID or name (2.4.0).
-- `provider_api_calls_count` exposes provider API-call volume (2.6.0).
-
-## Doppler
-
-- OIDC authentication is supported (1.2.0).
-- Provider errors include the HTTP status, improving failure diagnosis (2.7.0).
-
-## Pulumi
-
-Pulumi authentication supports OIDC (2.5.0).
+- An API-version parameter is supported from 0.14.0.
+- Get-secret calls accept `decrypt` from 1.3.0.
+- Secret creation through API v3.2 is supported from 2.5.0.
+- BeyondTrust WorkloadCredentials became a provider in 2.7.0.
 
 ## Conjur
 
-Conjur supports certificate-based authentication (2.8.0). See
-`push-secrets.md` for its unsupported write operations.
+- From 2.4.0, unimplemented `PushSecret` and `DeleteSecret` operations return an
+  explicit error rather than appearing to work.
+- Certificate authentication is supported from 2.8.0.
 
-## Nebius MysteryBox
+## Delinea Secret Server
 
-Nebius MysteryBox is available as a provider (2.1.0).
+- Fetched non-JSON secrets are supported from 0.18.0.
+- Domain selection and lookup by path are supported from 0.20.0.
+- TLS connection configuration is applied correctly from 1.1.0.
+- `PushSecret` is supported from 2.3.0.
+- Access-token authentication is supported from 2.8.0.
 
-## OVHcloud
+## Devolutions Server
 
-OVHcloud is available as a provider (2.3.0).
+Devolutions Server became a provider in 1.3.0 and can address entries by name from
+2.4.0.
+
+## Doppler
+
+- OIDC authentication is supported from 1.2.0.
+- Provider errors include their HTTP status from 2.7.0.
+
+## GitHub
+
+- GitHub provider failures are surfaced from 0.17.0.
+- `GithubProvider.orgSecretVisibility` configures organization-secret visibility
+  from 2.3.0.
+- Updating an organization secret preserves selected repositories from 2.7.0.
+
+## Infisical
+
+- Missing-secret and incorrect-authentication errors are reported from 0.13.0
+  rather than failing silently.
+- `data` references can address secrets within paths from 0.17.0.
+- Authentication methods are configurable from 0.19.0.
+- Kubernetes authentication can use a Client JWT as its Reviewer JWT token from
+  0.20.0.
+- From 2.2.0, `dataFrom.find.path` filters by secret path rather than secret name.
+- `PushSecret` is supported from 2.7.0, and a 404 becomes `NoSecretErr` so missing
+  items follow absence semantics.
+- Secret scopes can include an organization slug from 2.7.0.
+
+## Passbolt
+
+- Configured `refreshInterval` is honored correctly from 0.14.0.
+- Passbolt V5 API is supported from 2.2.0.
+- Custom trust can use a CA bundle or CA provider from 2.4.0.
+- The `v5-custom-fields` resource type is supported in `ExternalSecret` from
+  2.6.0.
+
+## Keeper
+
+- Secrets can be retrieved by ID or name from 2.4.0.
+- `provider_api_calls_count` is exposed from 2.6.0.
+
+## Pulumi
+
+Pulumi authentication supports OIDC from 2.5.0.
+
+## Grafana integration
+
+Service-account generation is described in the templates and generators
+reference. For in-cluster Grafana, role propagation and optional token lifetime
+must match the target Grafana API.

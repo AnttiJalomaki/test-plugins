@@ -2,7 +2,7 @@
   "patch": "shadcn-ui-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T15:55:15Z",
+  "built_at": "2026-08-22T02:56:32Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -44,6 +44,11 @@
     },
     "registry-schema-and-api": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.16.1-4.18.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

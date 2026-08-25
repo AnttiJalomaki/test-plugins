@@ -1,11 +1,12 @@
 # Hypertables and chunks
 
-## Create and configure hypertables
+Use this reference for declarative hypertable DDL, dimensions, UUIDv7
+partitioning, triggers, and chunk lifecycle operations.
 
-### Declarative DDL
+## Declarative hypertable DDL
 
-The `CREATE TABLE ... WITH` hypertable API is available since 2.20.0.
-Columnstore can be enabled at creation time since 2.21.0:
+Hypertables can be created through `CREATE TABLE ... WITH` since 2.20.0. The
+declarative API accepts `columnstore` at creation time since 2.21.0:
 
 ```sql
 CREATE TABLE metrics (
@@ -19,124 +20,99 @@ CREATE TABLE metrics (
 );
 ```
 
-`partition_column` is optional since 2.23.0, and declarative columnstore
-creation automatically creates a columnstore policy. In the Apache 2 Edition,
-an explicit `columnstore=false` has not been required since 2.22.0.
+In 2.23.0, `partition_column` became optional, and enabling columnstore in a
+declarative definition began creating the columnstore policy automatically.
+In Apache 2 Edition since 2.22.0, declarative creation no longer needs an
+explicit `columnstore=false` option.
 
-The `tsdb` reloption prefix is an alias for `timescaledb` in `WITH` and `SET`
-clauses (since 2.19.0):
-
-```sql
-ALTER TABLE metrics SET (tsdb.enable_columnstore = true);
-```
-
-For existing hypertables, `columnstore` aliases `enable_columnstore` and
-`timescaledb.chunk_time_interval` changes the chunk interval (since 2.20.0):
+Existing hypertables can change their chunk interval through a reloption since
+2.20.0:
 
 ```sql
-ALTER TABLE metrics SET (timescaledb.columnstore = true);
 ALTER TABLE metrics SET (timescaledb.chunk_time_interval = '1 day');
 ```
 
-A single `ALTER TABLE SET` can combine PostgreSQL and TimescaleDB reloptions
-(since 2.23.0):
-
-```sql
-ALTER TABLE metrics SET (
-    fillfactor = 90,
-    timescaledb.columnstore = true
-);
-```
-
-Use `ALTER TABLE ONLY` to apply a setting only to future chunks:
-
-```sql
-ALTER TABLE ONLY metrics
-SET (timescaledb.orderby = 'time DESC');
-```
-
 The expert `timescaledb.default_chunk_time_interval` GUC controls the default
-interval for new hypertables (since 2.26.0). Leave it unchanged unless
-specifically recommended. Negative `chunk_interval` values are rejected since
-2.27.0.
+for new hypertables since 2.26.0. Leave it unchanged unless specifically
+recommended. Negative `chunk_interval` values are rejected as of 2.27.0.
 
-## Manage constraints, columns, and table state
+Primary-dimension information has been exposed in the information schema since
+2.20.0. Prefer that public metadata to private catalogs.
 
-- Columnstore tables accept foreign keys (since 2.20.0).
-- Compressed chunks accept `CHECK` constraints and columns carrying them, and
-  `ADD COLUMN` can include a unique constraint (since 2.20.0).
-- Compressed hypertables accept `DROP NOT NULL` (since 2.18.0), and compressed
-  chunks accept `SET NOT NULL` (since 2.19.0).
-- Compressed columns accept any immutable constant expression as a default
-  (since 2.25.0):
+## Partition columns and table modes
 
-```sql
-ALTER TABLE metrics ADD COLUMN scale integer DEFAULT (2 * 3);
-```
-
-- `ALTER COLUMN TYPE` is allowed with columnstore enabled when the hypertable
-  has no compressed chunks (since 2.24.0).
-- Hypertables can be unlogged since 2.23.0, trading durability for faster large
-  imports:
-
-```sql
-ALTER TABLE metrics SET UNLOGGED;
-```
-
-- The database owner can configure hypertables and policies (since 2.28.0).
-
-## Manage chunks
-
-### Split, merge, attach, and detach
-
-Chunk merging is supported since 2.18.0 and has a concurrent mode since 2.24.0.
-Merging is not supported for multidimensional hypertables.
-
-`split_chunk` can divide a large uncompressed chunk at a specified time since
-2.20.0 and supports compressed chunks since 2.21.0. Uncompressed chunks can
-also be manually attached to or detached from a hypertable since 2.21.0,
-similar to PostgreSQL partition attachment and detachment.
-
-### Dimension and range metadata
-
-Primary-dimension information is exposed in the information schema since
-2.20.0. UUIDv7 columns can partition hypertables since 2.22.0; chunk boundaries
-derive time from the UUID's embedded timestamp. Since 2.24.0, UUIDv7 ranges in
-the chunks informational view display as timestamps.
-
-Retention policies support UUIDv7-partitioned hypertables since 2.25.0:
+UUIDv7 columns can partition hypertables since 2.22.0; chunk boundaries derive
+from their embedded timestamps. Since 2.24.0, `time_bucket` accepts UUIDv7 and
+the chunks informational view renders UUIDv7 ranges as timestamps. Retention
+policies support UUIDv7 partitioning since 2.25.0:
 
 ```sql
 SELECT add_retention_policy('events', INTERVAL '30 days');
 ```
 
-## Use triggers correctly
+Hypertables can be made unlogged since 2.23.0, trading durability for faster
+large imports:
 
-Hypertables support transition-table triggers since 2.18.0, but creating such a
-trigger directly on a chunk is rejected. Event triggers can run for chunk
-creation since 2.20.0; they are disabled by default:
+```sql
+ALTER TABLE metrics SET UNLOGGED;
+```
+
+Cross-type comparisons against partition columns no longer risk wrong results
+or crashes as of 2.26.0.
+
+Adaptive chunking was removed in 2.28.0. Stop relying on adaptive chunk sizing
+before upgrading. Creating a child table that inherits from a hypertable is
+explicitly rejected since 2.27.0.
+
+## Trigger behavior
+
+Since 2.18.0, hypertables support transition-table triggers, but creating such
+a trigger directly on a chunk is rejected.
+
+Chunk-creation event triggers can run since 2.20.0. They default off behind:
 
 ```sql
 SET timescaledb.enable_event_triggers = on;
 ```
 
-`ENABLE TRIGGER` and `DISABLE TRIGGER` operate on hypertables since 2.27.0:
+Since 2.27.0, trigger state can be changed at the hypertable level:
 
 ```sql
 ALTER TABLE metrics DISABLE TRIGGER metrics_validate;
 ALTER TABLE metrics ENABLE TRIGGER metrics_validate;
 ```
 
-Creating a child table that inherits from a hypertable is explicitly rejected
-since 2.27.0.
+## Attach, detach, split, and merge chunks
 
-## Integrate PostgreSQL operations
+Uncompressed chunks can be manually attached to or detached from a hypertable
+since 2.21.0, providing PostgreSQL-like partition attachment and detachment.
 
-- When a hypertable is in a publication, chunks created after 2.25.0 are added
-  to that publication automatically.
-- Hypertables correctly support `MERGE WHEN NOT MATCHED BY SOURCE` since
-  2.28.0.
-- Cross-type partition-key comparisons received correctness and crash fixes in
-  2.26.0.
-- Since 2.28.0, updates that would unsafely change unique columns on compressed
-  chunks are rejected.
+`split_chunk` was introduced for large uncompressed chunks in 2.20.0 and
+extended to compressed chunks in 2.21.0. It divides at a specified time.
+
+Chunk merging is supported since 2.18.0, but not for multidimensional
+hypertables as clarified in 2.20.0. A concurrent merge mode is available since
+2.24.0.
+
+## Columnstore-related DDL
+
+Compressed hypertables accept `DROP NOT NULL` since 2.18.0, and compressed
+chunks accept `SET NOT NULL` since 2.19.0. Since 2.20.0, columnstore tables
+permit foreign keys, compressed chunks permit `CHECK` constraints and columns
+that carry them, and `ADD COLUMN` can include a unique constraint.
+
+Since 2.24.0, `ALTER COLUMN TYPE` is allowed while columnstore is enabled if no
+chunks are compressed:
+
+```sql
+ALTER TABLE metrics ALTER COLUMN value TYPE double precision;
+```
+
+## Publications, ownership, and `MERGE`
+
+New chunks are automatically added to a hypertable's publication since
+2.25.0.
+
+The database owner can configure hypertables and policies since 2.28.0.
+Hypertables also correctly handle `MERGE WHEN NOT MATCHED BY SOURCE` as of
+2.28.0.

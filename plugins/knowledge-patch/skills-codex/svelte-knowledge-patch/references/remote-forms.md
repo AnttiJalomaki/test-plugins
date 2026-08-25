@@ -1,80 +1,53 @@
 # Remote forms
 
-## Contents
-
-- [Values and schemas](#values-and-schemas)
-- [Payload and reset timing](#payload-and-reset-timing)
-- [Preflight and repeated forms](#preflight-and-repeated-forms)
-- [Submission and validation state](#submission-and-validation-state)
-- [Redirects](#redirects)
-- [Streaming uploads](#streaming-uploads)
-
 ## Values and schemas
 
-### Deep-partial values
+### Deep-partial nested values
 
-Remote form `.value()` and `.set(...)` use deep-partial types. A nested form
-shape can therefore be read or set without specifying every descendant field.
-Nested partial sets render correctly during SSR. This behavior is attributed to
-`sveltekit-2.53.0`.
+Remote form `.value()` and `.set(...)` use deep-partial types
+(`sveltekit-2.53.0`), so callers can provide only the nested descendants that
+are present. Nested sets are rendered correctly during SSR.
 
-### Optional fields
+### Match schemas to HTML payloads
 
-With TypeScript's `exactOptionalPropertyTypes`, optional fields in remote form
-schemas retain their intended optional behavior. This compatibility is
-attributed to `sveltekit-2.67.0`.
+Unchecked controls are omitted from HTML form data. Remote forms therefore
+warn when a checkbox-like boolean input is not optional in its schema. Empty
+file inputs are also omitted from the remote form payload
+(`sveltekit-2.66.0`).
 
-Model boolean controls as optional when the corresponding HTML control can be
-unchecked. HTML omits unchecked controls from submission data, and remote forms
-warn when such a boolean is required by the schema.
+Optional fields work with TypeScript's `exactOptionalPropertyTypes` setting
+(`sveltekit-2.67.0`); do not weaken form schemas merely to accommodate that
+compiler mode.
 
-## Payload and reset timing
-
-Empty file inputs are omitted from remote form data instead of being sent as an
-empty file value. Form reset happens one tick later, so code observing the same
-turn must not assume reset state is already visible. The boolean, empty-file,
-and reset-timing behavior is attributed to `sveltekit-2.66.0`.
-
-## Preflight and repeated forms
+### Chain preflight before repeated forms
 
 A `preflight(...)` schema applies correctly when chained before `for(...)`.
-Repeated form instances may safely use this order:
+This ordering can be used safely for repeated form instances.
 
-```js
-form.preflight(schema).for(item)
-```
+## Submission and navigation
 
-This chaining behavior is attributed to `sveltekit-2.66.0`.
+### Respect redirect targets
 
-## Submission and validation state
+Redirects produced by a remote form submission honor the form's `target`
+attribute (`sveltekit-2.54.0`), including targets that navigate a different
+browsing context.
 
-### Submission state
+### Use submission state directly
 
-Remote forms expose `submitted`. Use it to render UI based on whether the form
-has been submitted instead of mirroring that state locally.
+Remote forms expose `submitted` (`sveltekit-2.69.0`). Drive submitted-state UI
+from that property instead of maintaining duplicate local state.
 
-### Reset state
+## Reset and validation state
 
-Resetting a remote form clears both validation issues and touched-field state.
-The validation UI returns to a pristine state rather than retaining feedback
-from the previous submission.
+Form reset is deferred by one tick. A reset also clears validation issues and
+touched-field state, returning validation UI to a pristine state rather than
+retaining stale feedback.
 
-### Branch issue scoping
+`fields.branch.issues()` returns `undefined` when issues exist only on a
+descendant such as `fields.branch.leaf`. Do not treat a leaf issue as an
+additional branch-level issue.
 
-`fields.branch.issues()` returns `undefined` when issues exist only below that
-branch, such as on `fields.branch.leaf`. A descendant issue is not duplicated as
-a branch-level issue.
+## File uploads
 
-The `submitted`, pristine-reset, and branch-scoping behavior is attributed to
-`sveltekit-2.69.0`.
-
-## Redirects
-
-A redirect resulting from a remote form submission honors the form's `target`
-attribute. This includes a target that navigates another browsing context. This
-behavior is attributed to `sveltekit-2.54.0`.
-
-## Streaming uploads
-
-Form handling supports streaming file uploads. Use streaming where buffering the
-entire upload before processing would create unnecessary latency or memory use.
+Form handling supports streaming file uploads, allowing a file to be processed
+without buffering the complete upload first.

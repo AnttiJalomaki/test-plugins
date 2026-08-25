@@ -1,33 +1,43 @@
-# Lifecycle, snapshots, reindexing, and repositories
+# Lifecycle, Snapshots, Reindexing, and Repositories
 
-Use this reference when changing ILM or data-stream lifecycle, moving data,
-managing transforms, or validating repository behavior.
+## Reindexing and index migration
 
-## Reindexing and migration
+### Data-stream migration controls (9.0.0)
 
-### Data-stream migration controls
+REST and action APIs can create an index from a source and query, cancel, or
+throttle a data-stream migration reindex with `requests_per_second`.
+`_create_from` removes index blocks by default; control this with
+`remove_index_block`. Migration ignores closed source indices and filters
+deprecated settings from the destination.
 
-In 9.0.0, Elasticsearch adds REST and action support to create an index from a
-source index and to query, cancel, and throttle data-stream migration
-reindexing with `requests_per_second`. `_create_from` removes index blocks by
-default; control that with `remove_index_block`. Migration ignores closed
-source indices and filters deprecated destination settings.
+### Remove an index block (9.1.0)
 
-### Remote reindex controls
+Use the remove-block API for a named block:
 
-In 9.3.0, remote reindex accepts a convenience API-key parameter.
+```http
+DELETE /my-index/_block/write
+```
 
-In 9.4.0, remote reindexing gains a blocklist setting.
+### Reindex API controls (9.3.0 and 9.4.0)
 
-## ILM and index controls
+Remote reindex accepts a convenience API-key parameter as of 9.3.0. It gains a
+remote blocklist setting in 9.4.0.
 
-### Searchable-snapshot replication
+## ILM, data-stream lifecycle, and transforms
 
-In 9.0.0, the ILM `searchable_snapshot` action accepts `replicate_for`.
+### Searchable-snapshot replication (9.0.0)
 
-### Skipping ILM per index
+The ILM `searchable_snapshot` action accepts `replicate_for`.
 
-In 9.1.0, `index.lifecycle.skip` tells ILM not to process a particular index:
+### Transform upgrade and deletion behavior (9.0.0)
+
+Transforms have upgrade mode, automatic migration of `max_page_search_size`,
+and `extended_stats`. When `delete_dest_index=true`, deleting a transform whose
+destination is an alias deletes that alias's write index.
+
+### Skip ILM for one index (9.1.0)
+
+Set the index-scoped `index.lifecycle.skip` flag:
 
 ```http
 PUT my-index/_settings
@@ -36,76 +46,62 @@ PUT my-index/_settings
 }
 ```
 
-### Time-series unfollow ordering
+### Time-series ILM ordering (9.1.0)
 
-In 9.1.0, ILM injects an unfollow action before downsampling when necessary. A
-follower index waits until the leader's time-series end time has passed before
-unfollowing.
+ILM injects an unfollow action before downsampling when needed. A follower also
+waits until its leader's time-series end time passes before unfollowing.
 
-### Removing an index block
+### Index resolution and lifecycle responses (9.2.0)
 
-In 9.1.0, the remove-block API deletes a specified block:
+`_resolve/index` filters by index mode and returns the mode. ILM explain adds
+`age_in_millis`. The read-only action sets `indexing_complete` to `true`.
 
-```http
-DELETE /my-index/_block/write
-```
+### Downsampling controls (9.3.0)
 
-### Lifecycle response fields
+Data-stream lifecycle and ILM can choose among downsampling methods, and the
+Downsample API adds a sampling method. Force merge moves out of the downsample
+request and into the ILM action, where it can be disabled.
 
-In 9.2.0, ILM explain responses add `age_in_millis`, and the read-only action
-sets `indexing_complete` to `true`. `_resolve/index` can filter by index mode
-and includes the mode in its response.
+### Other lifecycle controls (9.3.0)
 
-### Downsampling controls
+The stop-datafeed API accepts `close_job`; transforms add a preview-index
+request. Stateful cross-cluster operation disables `_delete_by_query` and
+`_update_by_query`.
 
-In 9.3.0, data-stream lifecycle and ILM can choose among downsampling methods,
-and the Downsample API adds another sampling method. Force merge moves from the
-downsampling request into the ILM action, where it can be disabled.
+### Persistent tasks during shutdown (9.4.0)
 
-## Transforms and machine learning
+Persistent-task reassignment during node shutdown is opt-in. Shutdown status
+reports shard snapshot pauses.
 
-### Transform migration and deletion
+## Snapshots, archives, and repositories
 
-In 9.0.0, transforms gain upgrade mode, automatic migration of
-`max_page_search_size`, and `extended_stats`. With `delete_dest_index=true`,
-deleting a transform whose destination is an alias deletes the alias's write
-index.
+### Archive compatibility (9.0.0)
 
-### Preview and shutdown controls
+Archive and searchable-snapshot indices may come from N-2 versions, including
+supported 7.x segment cases used as archives in 8.x or 9.x.
 
-In 9.3.0, transforms add a preview-index request, and the stop-datafeed API
-accepts `close_job`.
+### S3 metadata support (9.0.0)
 
-## Snapshot and archive compatibility
+The `repository-s3` plugin supports IMDSv2.
 
-### N-2 archives
+### `repository-s3` uses AWS SDK v2 (8.19.0)
 
-In 9.0.0, archive and searchable-snapshot indices are allowed from N-2
-versions, including supported 7.x segment cases used as archives in 8.x or
-9.x.
+The plugin migrated from AWS SDK v1 to v2. Because behavior and configuration
+differ, test production repository settings before upgrading.
 
-### Snapshot filtering
+### Snapshot state filtering (9.1.0)
 
-In 9.1.0, the get snapshots API accepts a `state` query parameter.
+The get snapshots API accepts a `state` query parameter.
 
-## S3 repositories
+### Safer S3 repositories (9.2.0)
 
-### Metadata service support
+S3 repositories use conditional writes to avoid accidental overwrites and
+repository corruption, including on fully compatible S3 implementations. The
+S3 connection maximum idle time is configurable.
 
-In 9.0.0, `repository-s3` supports IMDSv2.
+### Repository operational settings (9.3.0)
 
-### AWS SDK v2 migration
+S3 repositories support an API-call timeout setting.
 
-In 8.19.0, `repository-s3` moves from AWS SDK v1 to v2. The SDKs differ in
-behavior and configuration, so test production repository settings before
-upgrading.
-
-### Conditional writes and connection lifetime
-
-In 9.2.0, S3 repositories use conditional writes to prevent accidental object
-overwrites and possible repository corruption, including on fully
-S3-compatible storage. The S3 connection maximum idle time is configurable.
-
-### API timeouts
-
-In 9.3.0, S3 repositories gain an API-call timeout setting.
+Known defects affecting GCS ADC and S3 analysis are documented in
+[deprecations-and-known-issues.md](deprecations-and-known-issues.md).

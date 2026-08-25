@@ -1,85 +1,81 @@
 # JavaScript Backend SDK
 
-## Create a backend client
+## Authenticate complete requests
+
+`authenticateRequest()` reports `isAuthenticated`; `isSignedIn` is deprecated.
+The state distinguishes `signed-in`, `signed-out`, and `handshake`, exposes
+`tokenType`, and converts to a session- or machine-shaped `Auth` via `toAuth()`.
 
 ```ts
-import { createClerkClient } from '@clerk/backend'
-
 const client = createClerkClient({
   publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
   secretKey: process.env.CLERK_SECRET_KEY,
 })
-```
-
-Supply `jwtKey` when session-token verification must avoid a network request.
-
-## Authenticate complete requests
-
-`authenticateRequest()` reports `isAuthenticated`; `isSignedIn` is deprecated. The request state distinguishes `signed-in`, `signed-out`, and `handshake`, exposes the accepted `tokenType`, and converts to the session- or machine-shaped `Auth` object through `toAuth()`.
-
-```ts
 const state = await client.authenticateRequest(request, {
   authorizedParties: ['https://app.example.com'],
 })
-
-if (!state.isAuthenticated) {
-  return new Response('Unauthorized', { status: 401 })
-}
 ```
 
-Reverse proxies and custom adapters must preserve authentication context, including:
-
-- `Authorization`
-- `Accept`
-- `Host`
-- `Origin`
-- `Referer`
-- `Sec-Fetch-Dest`
-- `User-Agent`
-- `X-Forwarded-Host`
-- `X-Forwarded-Proto`, or `CloudFront-Forwarded-Proto`
+Supplying `jwtKey` instead of depending on `secretKey` makes verification
+networkless. Adapters and reverse proxies must preserve `Authorization`,
+`Accept`, `Host`, `Origin`, `Referer`, `Sec-Fetch-Dest`, `User-Agent`,
+`X-Forwarded-Host`, and `X-Forwarded-Proto` or
+`CloudFront-Forwarded-Proto`.
 
 ## Token-aware Next.js routes
 
-Next.js `auth()` defaults to session tokens. API keys and OAuth tokens are rejected unless enabled through `acceptsToken`.
+Next.js `auth()` defaults to session tokens. Set `acceptsToken` for API keys,
+OAuth tokens, or mixed routes. Machine results expose `tokenType`, `scopes`,
+identity, and claims. On non-document requests, `auth.protect()` returns HTTP
+401 for failed machine authentication and 404 for failed session checks.
 
 ```ts
-const state = await auth({
-  acceptsToken: ['session_token', 'api_key'],
-})
-
+const state = await auth({ acceptsToken: ['session_token', 'api_key'] })
 if (!state.isAuthenticated) return new Response('Unauthorized', { status: 401 })
 if (state.tokenType === 'api_key' && !state.scopes?.includes('write:users')) {
   return new Response('Insufficient scope', { status: 401 })
 }
 ```
 
-Machine results expose `tokenType`, scopes, identity, and claims. On non-document requests, `auth.protect()` returns HTTP 401 for failed machine authentication and HTTP 404 for a failed session-token check.
-
-Protect a route group with `auth.protect({ token: 'api_key' })`, or use `token: 'any'` when every supported valid token type is acceptable.
+Use `auth.protect({ token: 'api_key' })` for an API-key route group or
+`token: 'any'` when every supported valid token type is acceptable.
 
 ## Built-in Next.js FAPI proxy
 
-`clerkMiddleware()` can proxy FAPI. A custom proxy path must also appear in the Next.js matcher.
+`clerkMiddleware()` can proxy FAPI. A custom proxy path must also appear in the
+Next.js matcher. App Router can export `GET`, `POST`, `PUT`, `DELETE`, and
+`PATCH` from `createFrontendApiProxyHandlers()` or call
+`clerkFrontendApiProxy(request)` in individual handlers.
 
 ```ts
 export default clerkMiddleware({
-  frontendApiProxy: {
-    enabled: true,
-    path: '/custom-clerk-proxy',
-  },
+  frontendApiProxy: { enabled: true, path: '/custom-clerk-proxy' },
 })
-
-export const config = {
-  matcher: ['/(api|trpc|custom-clerk-proxy)(.*)'],
-}
+export const config = { matcher: ['/(api|trpc|custom-clerk-proxy)(.*)'] }
 ```
 
-App Router code can export the `GET`, `POST`, `PUT`, `DELETE`, and `PATCH` handlers returned by `createFrontendApiProxyHandlers()`, or call `clerkFrontendApiProxy(request)` from individual handlers.
+## Multi-tenant API keys
 
-## User listing filters
+Clerk API keys support multi-tenant SaaS authentication. Treat them as a
+first-class Clerk credential type and explicitly enable `api_key` acceptance on
+routes that consume them.
 
-`getUserList()` accepts at most 100 values per identifier filter. Prefix entries in `userId`, `externalId`, or `organizationId` with `+` to require them and `-` to exclude them. `query` separately performs partial matching across identifiers and names.
+## Machine-to-machine token formats
+
+M2M creation accepts `tokenFormat: 'jwt'`; verify that format locally with
+`clerkClient.m2m.verify()` and the instance public key. Opaque tokens retain
+server-side verification and immediate revocation.
+
+```ts
+const m2mToken = await clerkClient.m2m.createToken({ tokenFormat: 'jwt' })
+const verified = await clerkClient.m2m.verify({ token: m2mToken.token })
+```
+
+## User list filters
+
+`getUserList()` accepts up to 100 values per identifier filter. Prefix `userId`,
+`externalId`, or `organizationId` values with `+` to require or `-` to exclude.
+`query` separately does partial matching over identifiers and names.
 
 ```ts
 const users = await client.users.getUserList({
@@ -88,16 +84,12 @@ const users = await client.users.getUserList({
 })
 ```
 
-## User migration inputs
+## User migration and self-service controls
 
-`createUser()` can import:
-
-- A password digest and hasher.
-- A TOTP secret.
-- Backup codes.
-- Original `createdAt` and `legalAcceptedAt` timestamps.
-
-Password- and legal-check bypasses are intended only for migrations.
+`createUser()` can import password digest and hasher, TOTP secret, backup codes,
+original `createdAt`, and `legalAcceptedAt`. Password and legal bypasses are for
+migrations. `updateUser()` separately controls self-deletion and Organization
+creation; `createOrganizationsLimit: 0` means unlimited.
 
 ```ts
 const user = await client.users.createUser({
@@ -106,11 +98,6 @@ const user = await client.users.createUser({
   passwordHasher: 'bcrypt',
   createdAt: new Date('2020-01-01T00:00:00Z'),
 })
-```
-
-`updateUser()` also controls whether the user can delete themselves or create Organizations. `createOrganizationsLimit: 0` means unlimited creation.
-
-```ts
 await client.users.updateUser(user.id, {
   deleteSelfEnabled: false,
   createOrganizationEnabled: true,
@@ -118,30 +105,34 @@ await client.users.updateUser(user.id, {
 })
 ```
 
-## Metadata replacement and merge
+## Metadata semantics
 
-Metadata supplied to `updateUser()` replaces the existing object. `updateUserMetadata()` deep-merges instead, retaining nested keys; a `null` value removes a key at any depth.
+Metadata passed to `updateUser()` replaces the existing object.
+`updateUserMetadata()` deep-merges instead, retaining nested keys and deleting
+any key set to `null`.
 
 ```ts
 await client.users.updateUserMetadata(userId, {
-  publicMetadata: {
-    profile: { timezone: 'UTC' },
-    obsoleteKey: null,
-  },
+  publicMetadata: { profile: { timezone: 'UTC' }, obsoleteKey: null },
 })
 ```
 
-## Session verification deprecation
+## Deprecated session verification
 
-`clerkClient.sessions.verifySession(sessionId, token)` is deprecated. Authenticate the complete request with `authenticateRequest()` or validate the JWT signature and claims.
+`clerkClient.sessions.verifySession(sessionId, token)` is deprecated. Use
+`authenticateRequest()` on the complete request or perform full JWT signature
+and claim validation.
 
-## Session claims and custom JWT templates
+## Session claims and JWT templates
 
-Keep custom session-token claims below 1.2 KB; the complete cookie must remain under the browser's roughly 4 KB limit. Fetch large metadata separately.
+Keep custom session claims below 1.2 KB so the full cookie remains below the
+browser's roughly 4 KB limit. Fetch large metadata separately.
 
-Custom JWT templates create tokens independent of a session. They automatically include `azp`, `exp`, `iat`, `iss`, `jti`, `nbf`, and `sub`, but cannot include session-bound `sid`, `v`, `pla`, or `fea`. Customize the session token when those claims are needed.
-
-A whole-value shortcode preserves its JSON type. Interpolation produces a string. Nested metadata uses dot notation, and `||` chooses the first operand that is neither `null` nor `false`.
+Custom JWT templates produce session-independent tokens. They include `azp`,
+`exp`, `iat`, `iss`, `jti`, `nbf`, and `sub`, but cannot include session-bound
+`sid`, `v`, `pla`, or `fea`. A whole-value shortcode preserves JSON type;
+interpolation returns a string; dot notation reads nested metadata; `||`
+selects the first operand that is neither `null` nor `false`.
 
 ```json
 {
@@ -150,19 +141,5 @@ A whole-value shortcode preserves its JSON type. Interpolation produces a string
 }
 ```
 
-Generate the token with `getToken({ template: 'service' })`. This makes a network request and counts against Backend API rate limits.
-
-## Machine-to-machine token formats
-
-M2M creation accepts `tokenFormat: 'jwt'`. Verify that format locally through `clerkClient.m2m.verify()` and the instance public key. The opaque format uses server-side verification and supports immediate revocation.
-
-```ts
-const m2mToken = await clerkClient.m2m.createToken({
-  tokenFormat: 'jwt',
-})
-const verified = await clerkClient.m2m.verify({ token: m2mToken.token })
-```
-
-## Multi-tenant API keys
-
-Clerk supports API keys as a first-class multi-tenant SaaS credential. Route authentication must explicitly accept `api_key`, validate its subject, and enforce scopes rather than treating the key as a session token.
+`getToken({ template: 'service' })` makes a network request and counts against
+Backend API rate limits.

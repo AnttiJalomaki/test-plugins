@@ -1,36 +1,50 @@
 # Windows, menus, and platform integration
 
-## Window creation, sizing, and appearance
+Use this reference for BrowserWindow defaults, navigation, menus, dialogs,
+notifications, shortcuts, printing, PDF behavior, and OS-specific integration.
 
-- Windows fullscreen mode hides the menu bar since 34.0.0, matching Linux.
-  This was announced earlier but first shipped in Electron 34.
-- `BrowserWindow` supports `roundedCorners` on Windows, and
-  `setVibrancy()` accepts an optional animation argument since 35.0.0.
-- `window.open()` recognizes `innerWidth` and `innerHeight` since 37.0.0; the
-  support was also released in Electron 35 and 36.
-- Since 39.0.0, `window.open()` always creates resizable popups. Preserve a
-  feature-string policy with a window-open handler:
+## Window appearance and geometry
+
+### Fullscreen menu bars on Windows
+
+Electron 34.0.0 hides the menu bar when a Windows window enters fullscreen,
+matching Linux. Earlier releases left it visible. Although this was announced
+for Electron 33, it first shipped in Electron 34.
+
+### Appearance controls
+
+Electron 35.0.0 gives `BrowserWindow.setVibrancy()` an optional animation
+parameter. The `roundedCorners` constructor option is also supported on Windows.
+
+### System accent and active-window border
+
+Electron 38.0.0 can customize the system accent color and highlight the active
+window border. This is also available in Electron 37. After setting a custom
+accent, Electron 40.0.0 can resume following the system value with:
 
 ```js
-webContents.setWindowOpenHandler((details) => ({
-  action: 'allow',
-  overrideBrowserWindowOptions: {
-    resizable: details.features.includes('resizable=yes'),
-  },
-}));
+window.setAccentColor(null);
 ```
 
-- `WebContents` emits `before-mouse-event` before delivering mouse input,
-  allowing prevention since 37.0.0; it was also released in Electron 36.
-- Set `webPreferences.focusOnNavigation` to `false` to prevent automatic focus
-  during navigation. Added in 41.0.0, this is also in Electron 40.
-- Frameless Wayland windows gain drop shadows and extended resize boundaries
-  in 41.0.0. Use constructor option `hasShadow: false` to remove decorations.
-- Frameless Linux windows have rounded corners by default since 43.0.0. Set
-  `roundedCorners: false` to opt out.
+The reset behavior is also available in Electron 38 and 39.
 
-Frameless Linux Window Controls Overlay follows native button availability,
-side, and title-bar layout since 43.0.0. Do not reserve a fixed control area:
+### Wayland frameless windows
+
+Electron 41.0.0 gives frameless Wayland windows drop shadows and extended resize
+boundaries. Set `hasShadow: false` in the constructor when the window must have
+no decorations.
+
+### Linux frameless-window corners
+
+Electron 43.0.0 gives frameless Linux windows rounded corners by default. Set
+`roundedCorners: false` to disable them.
+
+### Linux Window Controls Overlay
+
+Electron 43.0.0 makes frameless Window Controls Overlay follow the native Linux
+title-bar layout and user settings. Available controls and their side can vary.
+Do not reserve a fixed button area; constrain content with the provided
+environment variables:
 
 ```css
 .titlebar-content {
@@ -39,114 +53,280 @@ side, and title-bar layout since 43.0.0. Do not reserve a fixed control area:
 }
 ```
 
-Electron can customize the system accent color and active-window border since
-38.0.0, also available in Electron 37. After customization,
-`window.setAccentColor(null)` resumes the system color since 40.0.0, also
-available in Electron 38 and 39.
+### Window inner dimensions
 
-The custom `-electron-corner-smoothing` CSS property landed in Electron 36 and
-is documented in 37.0.0. It accepts `0%` through `100%`; `system-ui` resolves
-to 60% on macOS and 0% elsewhere. It affects corners, borders, outlines, and
-shadows:
-
-```css
-.box {
-  border-radius: 24px;
-  -electron-corner-smoothing: system-ui;
-}
-```
-
-## Menus, shortcuts, and input
-
-`WebContents.focusedFrame` identifies the focused frame. On macOS, pass it as
-`Menu.popup()`'s `frame` option to enable Writing Tools, Autofill, Services,
-and other focused-frame integrations (since 36.0.0):
+Electron 37.0.0 recognizes `innerWidth` and `innerHeight` in `window.open()`
+feature strings. The support also shipped in Electron 35 and 36.
 
 ```js
-menu.popup({
-  window: BrowserWindow.getFocusedWindow(),
-  frame: BrowserWindow.getFocusedWindow().webContents.focusedFrame,
+window.open('/child.html', '_blank', 'innerWidth=800,innerHeight=600');
+```
+
+### Resizable popups
+
+Electron 39.0.0 always creates `window.open()` popup windows as resizable. To
+preserve feature-string-controlled behavior, override generated window options:
+
+```js
+webContents.setWindowOpenHandler((details) => {
+  return {
+    action: 'allow',
+    overrideBrowserWindowOptions: {
+      resizable: details.features.includes('resizable=yes'),
+    },
+  };
 });
 ```
 
-Linux supports the `system-context-menu` event since 36.0.0. macOS 14.4 and
-later support menu sublabels, and macOS menus accept `palette` and `header`
-roles since 37.0.0.
+## Navigation and input
 
-`MenuItem` accepts and exposes `accessibilityLabel` for a screen-reader-friendly
-label since 43.0.0.
+### Restore navigation history
 
-Enable portal-backed global shortcuts with
-`--enable-features=GlobalShortcutsPortal` (since 35.0.0).
-`globalShortcut.setSuspended()` and `isSuspended()` suspend, resume, and query
-global shortcut handling since 43.0.0.
+Electron 35.0.0 adds `webContents.navigationHistory.restore(index, entries)` to
+restore a supplied navigation history and its selected entry.
 
-## Navigation, frames, and PDFs
+### Navigation focus control
 
-Restore supplied history and its selected entry with
-`webContents.navigationHistory.restore(index, entries)` since 35.0.0.
+Set `webPreferences.focusOnNavigation` to `false` in Electron 41.0.0 to prevent
+a `WebContents` from being focused automatically during navigation. The option
+is also available in Electron 40.
 
-PDF resources no longer create a separate guest `WebContents` since 41.0.0.
-Inspect the existing contents' frame tree when detecting a PDF.
+### Mouse-event interception
 
-`screen.dipToScreenPoint()` and `screen.screenToDipPoint()` work on Linux X11
-since 37.0.0, also released in Electron 35 and 36.
+`WebContents` emits `before-mouse-event` in Electron 37.0.0, allowing a listener
+to intercept and prevent mouse events before delivery. The event also shipped
+in Electron 36.
+
+### Linux workspace visibility
+
+Starting in Electron 37.0.0,
 `BrowserWindow.isVisibleOnAllWorkspaces()` returns `false` on Linux when the
-window is not currently visible since 37.0.0.
+window is not currently visible.
 
-## Dialogs, printing, and filesystem-facing UI
+### X11 coordinate conversion
 
-- A parented `dialog.showMessageDialog()` centers on its parent rather than the
-  monitor since 38.0.0.
-- `webContents.print({ usePrinterDefaultPageSize: true })` uses the printer's
-  default page size since 41.0.0.
-- `PrinterInfo.isDefault` and `PrinterInfo.status` were removed in 35.0.0 with
-  their Chromium counterparts.
-- Linux deprecated `showHiddenFiles` in 41.0.0 and stopped supporting it in
-  43.0.0. It remains supported on macOS and Windows.
-- Since 43.0.0, open/save dialogs with no `defaultPath` start in Downloads, or
-  Home when Downloads is absent, rather than restoring the last-used OS path.
-  Persist the chosen directory and pass it as `defaultPath` if needed.
-- Electron 35 supports file-dialog portals as old as version 3, but portal
-  backends before version 4 ignore `defaultPath`. Require version 4 when the
-  initial directory is essential:
+Electron 37.0.0 supports `screen.dipToScreenPoint(point)` and
+`screen.screenToDipPoint(point)` on Linux X11. This support also shipped in
+Electron 35 and 36.
+
+## Menus and shortcuts
+
+### Focused-frame macOS context menus
+
+Electron 36.0.0 adds `WebContents.focusedFrame`. Pass that frame through the new
+`Menu.popup()` `frame` option to enable macOS Writing Tools, Autofill, and
+Services integrations:
+
+```js
+import { BrowserWindow, Menu } from 'electron';
+
+const window = BrowserWindow.getFocusedWindow();
+const menu = Menu.buildFromTemplate([{ label: 'Copy', role: 'copy' }]);
+
+menu.popup({
+  window,
+  frame: window.webContents.focusedFrame,
+});
+```
+
+### Linux system context menus
+
+The `system-context-menu` event is supported on Linux starting in Electron
+36.0.0.
+
+### macOS menu additions
+
+Electron 37.0.0 supports menu sublabels on macOS 14.4 and later. macOS menus
+also recognize the `palette` and `header` item roles.
+
+### Accessible menu labels
+
+Electron 43.0.0 adds `accessibilityLabel` to `MenuItem` constructor options and
+properties for screen-reader-friendly labels.
+
+### Portal global shortcuts
+
+Electron 35.0.0 can use the desktop portal's global-shortcut support when
+launched with `--enable-features=GlobalShortcutsPortal`.
+
+### Suspend global shortcuts
+
+Electron 43.0.0 adds `globalShortcut.setSuspended()` and
+`globalShortcut.isSuspended()` to suspend, resume, and query global-shortcut
+handling.
+
+## Theme and accessibility preferences
+
+### System-integrated dark appearance
+
+Electron 36.0.0 adds
+`nativeTheme.shouldUseDarkColorsForSystemIntegratedUI`, which distinguishes the
+operating system's integrated-UI appearance from the application's selected
+theme.
+
+### Differentiate without color
+
+On macOS, Electron 42.0.0 exposes
+`nativeTheme.shouldDifferentiateWithoutColor` for the accessibility preference
+to distinguish information by means other than color.
+
+### macOS display safe area
+
+Electron 35.0.0 sets `NSPrefersDisplaySafeAreaCompatibilityMode` to `false` in
+its `Info.plist`, removing the “Scale to fit below built-in camera” app option.
+
+## Dialogs and downloads
+
+### Parent-centered message dialogs
+
+In Electron 38.0.0, `dialog.showMessageDialog()` centers on its parent window
+when one is supplied, rather than centering on the monitor.
+
+### Linux hidden files
+
+Electron 41.0.0 deprecates the `showHiddenFiles` dialog property on Linux while
+retaining it on macOS and Windows. Electron 43.0.0 removes Linux support for the
+option.
+
+### Portal `defaultPath`
+
+Electron 35 lowers the required Linux file-dialog portal version to 3, but
+portal backends older than version 4 do not support `defaultPath`. Require a new
+enough portal when that option is essential:
 
 ```sh
 electron --xdg-portal-required-version=4 .
 ```
 
-## Notifications and session-ending behavior
+### Initial directories and download destination
 
-Windows adds `query-session-end` and improves `session-end` events in 35.0.0.
+Electron 43.0.0 makes the user's Downloads folder the default destination for
+file downloads, with Home as the fallback when Downloads does not exist.
 
-Windows `Notification` `closed` events include a dismissal `reason` since
-41.0.0. Actions support buttons, select dropdowns, and replies; both features
-are also in Electron 40.
+In Electron 43, open/save dialog calls that omit `defaultPath` also start in
+Downloads, or Home if it does not exist, instead of allowing the OS to restore
+the last-used directory. Track and pass the directory to retain the old flow:
 
-Since 42.0.0, macOS notifications use `UNNotification`; applications must be
-code-signed or `Notification` emits `failed`. `Notification.getHistory()`
-reads macOS history, and constructor `id` and `groupId` provide stable identity
-and Notification Center grouping.
+```js
+const { dialog } = require('electron');
+const path = require('node:path');
 
-Windows notifications add `id`, `groupId`, `groupTitle`, and `urgency` in
-42.0.0. `Notification.handleActivation(callback)` handles clicks, replies, and
-action buttons even when activation cold-starts the app.
+let lastUsedPath;
+async function chooseFile() {
+  const result = await dialog.showOpenDialog({ defaultPath: lastUsedPath });
+  if (!result.canceled && result.filePaths.length) {
+    lastUsedPath = path.dirname(result.filePaths[0]);
+  }
+  return result;
+}
+```
 
-On macOS, `Notification.remove()`, `removeAll()`, and `removeGroup()` remove
-delivered notifications individually, in bulk, or by group since 43.0.0.
+## Notifications and session end
 
-## Desktop and accessibility integration
+### Windows session-ending events
 
-- Electron's `Info.plist` sets `NSPrefersDisplaySafeAreaCompatibilityMode` to
-  `false` since 35.0.0, removing “Scale to fit below built-in camera.”
-- `nativeTheme.shouldUseDarkColorsForSystemIntegratedUI` exposes the OS
-  integrated-UI dark appearance separately from the application's selected
-  theme since 36.0.0.
-- `nativeTheme.shouldDifferentiateWithoutColor` exposes the macOS accessibility
-  preference since 42.0.0.
-- `Tray` accepts `guid` on macOS to retain tray position across launches since
-  38.0.0, also available in Electron 37.
-- `app.getRecentDocuments()` works on Windows and macOS since 38.0.0, also
-  available in Electron 37.
-- `app.getPath('assets')` exposes the assets/resources directory since 38.0.0,
-  also available in Electron 37.
+Electron 35.0.0 adds the `query-session-end` event and improves the existing
+`session-end` events on Windows.
+
+### Windows notification actions
+
+In Electron 41.0.0, the Windows `Notification` `closed` event includes a
+`reason` property describing why it was dismissed. Notification actions support
+buttons, select dropdowns, and replies. Both additions are also available in
+Electron 40.
+
+### macOS signing requirement
+
+Electron 42.0.0 uses `UNNotification` rather than the deprecated
+`NSUserNotification` API. Applications must be code-signed for notifications
+to display; an unsigned application's `Notification` emits `failed`.
+
+### History, grouping, and activation
+
+Electron 42.0.0 adds these notification capabilities:
+
+- On macOS, `Notification.getHistory()` reads notification history. Constructor
+  options `id` and `groupId` provide identifiers and Notification Center
+  grouping.
+- On Windows, notifications accept `id`, `groupId`, `groupTitle`, and `urgency`.
+  `Notification.handleActivation(callback)` handles clicks, replies, and action
+  buttons even when a notification cold-starts the application.
+
+### Remove macOS notifications
+
+Electron 43.0.0 adds the static macOS methods `Notification.remove()`,
+`removeAll()`, and `removeGroup()` to remove delivered notifications
+individually, in bulk, or by group.
+
+## Printing and PDF
+
+### Printer information removals
+
+Electron 35.0.0 removes `PrinterInfo.isDefault` and `PrinterInfo.status` along
+with their upstream Chromium counterparts.
+
+### Printer-default page size
+
+Electron 41.0.0 adds `usePrinterDefaultPageSize: true` to
+`webContents.print()`:
+
+```js
+webContents.print({ usePrinterDefaultPageSize: true });
+```
+
+### PDF frame model
+
+In Electron 41.0.0, PDF resources no longer create a separate guest
+`WebContents`; they render inside the existing `WebContents`. Detect PDF
+resources by inspecting the frame tree rather than looking for another
+`WebContents`.
+
+### Per-frame PDF generation
+
+The 41.10.5-43.4.1 batch adds `WebFrameMain.printToPDF()` in Electron 42.9.0 and
+43.4.0. It renders one frame instead of the entire `WebContents`:
+
+```js
+const frame = browserWindow.webContents.mainFrame;
+const pdf = await frame.printToPDF({});
+```
+
+## Other OS integration
+
+### macOS system memory
+
+Electron 38.0.0 adds `fileBacked` and `purgeable` to
+`process.getSystemMemoryInfo()` on macOS. The fields are also available in
+Electron 37.
+
+### Persistent macOS tray identity
+
+Electron 38.0.0 supports the `Tray` constructor's `guid` option on macOS, so a
+tray icon can retain its position across launches. This is also available in
+Electron 37.
+
+### Recent documents
+
+`app.getRecentDocuments()` is supported on Windows and macOS in Electron 38.0.0
+and is also available in Electron 37.
+
+### MSIX auto-updates
+
+Electron 41.0.0 `autoUpdater` supports MSIX applications. An update server can
+publish MSIX and Squirrel.Mac updates with essentially the same JSON response
+format. MSIX support is also available in Electron 39.5.0 and 40.2.0.
+
+### Disable macOS geolocation
+
+Electron 41.0.0 supports the `--disable-geolocation` command-line flag:
+
+```js
+app.commandLine.appendSwitch('disable-geolocation');
+```
+
+### Aero Glass detection removal
+
+Electron 35.0.0 deprecates `systemPreferences.isAeroGlassEnabled()` without a
+replacement. Supported Windows versions no longer allow DWM composition to be
+disabled, and the method had returned `true` since Electron 23. Electron 36
+removes it; delete branches based on the method.

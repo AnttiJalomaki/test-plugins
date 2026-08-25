@@ -1,117 +1,128 @@
 # Security and upgrade boundaries
 
-Use fixed-version boundaries as upgrade gates. A feature-series label alone is not sufficient when the fix landed in a later patch release.
+Apply fixed releases before relying on configuration workarounds. A feature
+series is not a security boundary: later patch releases can carry fixes absent
+from the initial stable or mainline release.
 
-## Contents
+## Current-series gates
 
-- [HTTP/3 and QUIC](#http3-and-quic)
-- [TLS, OCSP, and encrypted upstreams](#tls-ocsp-and-encrypted-upstreams)
-- [HTTP/2, gRPC, and upstream parsers](#http2-grpc-and-upstream-parsers)
-- [Rewrite and charset processing](#rewrite-and-charset-processing)
-- [Mail authentication](#mail-authentication)
-- [WebDAV, MP4, and XML](#webdav-mp4-and-xml)
-- [Protocol and signed-link hardening](#protocol-and-signed-link-hardening)
+### Security boundaries within 1.29.x
 
-## HTTP/3 and QUIC
+The `1.29.0` series requires several later patch releases:
 
-### Upgrade older HTTP/3 deployments
+- Use 1.29.1 or newer for the `ngx_mail_smtp_module` `none`-authentication
+  memory disclosure, CVE-2025-53859.
+- Use 1.29.5 or newer to prevent plaintext injection into responses received
+  from SSL backends, CVE-2026-1642.
+- Use 1.29.7 or newer for WebDAV `COPY`/`MOVE` with `alias`
+  (CVE-2026-27654), MP4 parsing flaws (CVE-2026-27784 and CVE-2026-32647),
+  mail authentication retry crashes (CVE-2026-27651), PTR-record injection
+  into `auth_http` and SMTP `XCLIENT` (CVE-2026-28753), and stream
+  client-certificate OCSP bypass (CVE-2026-28755).
 
-- CVE-2024-24989 is a major NULL-pointer dereference affecting NGINX 1.25.3.
-- CVE-2024-24990 is a major use-after-free affecting 1.25.0 through 1.25.3.
+### Security boundaries within 1.30.x
 
-Upgrade these deployments to 1.25.4 or later.
+The initial `1.30.0` release lacks fixes delivered in later patch releases:
 
-NGINX 1.25.0 through 1.25.5 and 1.26.0 also contain four medium-severity HTTP/3 flaws:
+- Use 1.30.1 or newer for request injection with `proxy_set_body` and HTTP/2
+  backends (CVE-2026-42926), a rewrite-module heap overflow
+  (CVE-2026-42945), SCGI or uWSGI response overreads (CVE-2026-42946), a
+  UTF-8 `charset_map` response overread (CVE-2026-42934), HTTP/3 migration
+  address spoofing (CVE-2026-40460), and an `ssl_ocsp` DNS-response
+  use-after-free (CVE-2026-40701).
+- Use 1.30.2 or newer for the overlapping-capture rewrite heap overflow,
+  CVE-2026-9256.
+- Use 1.30.3 or newer for the heap overflow involving
+  `ignore_invalid_headers off`, large `large_client_header_buffers`, and a
+  crafted request proxied to HTTP/2 or gRPC (CVE-2026-42055), and for another
+  UTF-8 `charset_map` response overread (CVE-2026-48142).
 
-- CVE-2024-32760: buffer overwrite.
-- CVE-2024-31079: stack overflow and use-after-free.
-- CVE-2024-35200: NULL-pointer dereference.
-- CVE-2024-34161: memory disclosure.
+### HTTP/3 boundary after 1.31.0
 
-Upgrade the second group to 1.26.1, 1.27.0, or a later release.
+Use 1.31.2 or newer when HTTP/3 is enabled. Earlier builds can hit a
+use-after-free while processing a crafted QUIC session, corrupting worker
+memory or crashing the worker (CVE-2026-42530).
 
-### Limit stateless resets
+## TLS and early HTTP/3 floors
 
-NGINX 1.28.3 limits both the size and rate of QUIC stateless reset packets.
+### Client-verification context isolation
 
-### Validate a migrated address
+CVE-2025-23419 affects 1.11.4 through 1.27.3. Use 1.26.3, 1.27.4, or a newer
+release.
 
-NGINX 1.30.1 fixes CVE-2026-40460 by withholding a migrated client address from new QUIC streams until the address has been validated, closing an HTTP/3 spoofing path.
+### Early HTTP/3 flaws
 
-### Reject crafted QUIC sessions safely
+- CVE-2024-24989 and CVE-2024-24990 require 1.25.4 or newer.
+- CVE-2024-32760, CVE-2024-31079, CVE-2024-35200, and CVE-2024-34161 affect
+  1.25.0 through 1.25.5 and 1.26.0; use 1.26.1, 1.27.0, or newer.
 
-NGINX 1.31.2 fixes CVE-2026-42530, a use-after-free triggered by a crafted QUIC session that can corrupt worker memory or crash a worker.
+## Module and parser floors
 
-## TLS, OCSP, and encrypted upstreams
+### MP4 parser
 
-### Isolate SNI virtual-server sessions
+- CVE-2024-7347 requires 1.26.2 or 1.27.1.
+- CVE-2022-41741 and CVE-2022-41742 require 1.22.1 or 1.23.2.
+- CVE-2018-16845 is fixed in 1.14.1 and 1.15.6.
+- CVE-2012-2089 is fixed in 1.0.15 and 1.1.19.
 
-NGINX 1.27.4 fixes CVE-2025-23419. Before the fix, a TLS 1.3 session established for one SNI virtual server could be reused in another and bypass client-certificate verification. Upgrade deployments that combine TLS 1.3, SNI, and client certificates.
+### Resolver
 
-### Prevent plaintext injection from SSL backends
+- CVE-2021-23017 affects 0.6.18 through 1.20.0 and is fixed in 1.20.1 and
+  1.21.0.
+- CVE-2016-0742, CVE-2016-0746, and CVE-2016-0747 require 1.8.1 or 1.9.10.
+- CVE-2011-4315 requires 1.0.10 or 1.1.8.
 
-NGINX 1.28.2 fixes CVE-2026-1642 by preventing plaintext injection into responses from SSL backends.
+### HTTP/2 resource exhaustion
 
-### Honor an OCSP client-certificate rejection
+- CVE-2019-9511, CVE-2019-9513, and CVE-2019-9516 affect 1.9.5 through
+  1.17.2 and require 1.16.1 or 1.17.3.
+- CVE-2018-16843 and CVE-2018-16844 require 1.14.1 or 1.15.6.
 
-NGINX 1.28.3 fixes CVE-2026-28755 by preventing a stream TLS handshake from succeeding after OCSP rejects the client certificate.
+### Legacy request processing
 
-### Process OCSP DNS responses safely
+- CVE-2017-7529, the range-filter integer overflow, is fixed in 1.12.1 and
+  1.13.3.
+- CVE-2016-4450, the request-body NULL dereference, is fixed in 1.10.1 and
+  1.11.1.
 
-NGINX 1.30.1 fixes CVE-2026-40701, a use-after-free during DNS response processing when `ssl_ocsp` is enabled.
+### Legacy TLS, mail, and SPDY
 
-## HTTP/2, gRPC, and upstream parsers
+- CVE-2014-3616 requires 1.6.2 or 1.7.5.
+- CVE-2014-3556, the STARTTLS injection, requires 1.6.1 or 1.7.4.
+- CVE-2014-0088 is fixed in 1.5.11; CVE-2014-0133 is fixed in 1.4.7 and
+  1.5.12.
 
-### Construct proxied requests safely
+### Legacy request and backend-response parsing
 
-- NGINX 1.30.1 fixes CVE-2026-42926, data injection into requests proxied to HTTP/2 backends when `proxy_set_body` is used.
-- NGINX 1.30.3 fixes CVE-2026-42055, a heap overflow from crafted HTTP/2 or gRPC proxy requests when `ignore_invalid_headers off` is combined with large `large_client_header_buffers` values.
+- CVE-2013-4547 requires 1.4.4 or 1.5.7.
+- CVE-2013-2028 requires 1.4.1 or 1.5.0.
+- CVE-2013-2070 requires 1.2.9, 1.4.1, or 1.5.0.
+- CVE-2012-1180 requires 1.0.14 or 1.1.17.
 
-### Parse upstream response protocols safely
+## Platform and earliest-branch floors
 
-NGINX 1.30.1 fixes CVE-2026-42946, a heap overread while processing crafted SCGI or uWSGI responses. It also fixes incorrect transfer of proxied HTTP/0.9, SCGI, or uWSGI responses when the first line is only partially read.
+### nginx/Windows
 
-## Rewrite and charset processing
+- CVE-2011-4963 requires nginx/Windows 1.2.1 or 1.3.1.
+- CVE-2010-2266 requires at least 0.7.67 or 0.8.41.
+- CVE-2010-2263 requires at least 0.7.66 or 0.8.40.
+- Windows 8.3 filename issues require at least 0.7.65 or 0.8.33.
 
-### Patch rewrite captures
+### Earliest portable-build issues
 
-- NGINX 1.30.1 fixes CVE-2026-42945, a crafted-request heap overflow in `ngx_http_rewrite_module` that could permit arbitrary code execution.
-- NGINX 1.30.2 fixes CVE-2026-9256, another potentially exploitable heap overflow in configurations with overlapping captures.
+- CVE-2009-3555 requires 0.7.64 or 0.8.23.
+- CVE-2009-3898 requires 0.7.63 or 0.8.17.
+- CVE-2009-2629 and CVE-2009-3896 have branch-specific fixes beginning at
+  0.5.38, 0.6.39, 0.7.62, and 0.8.15 or 0.8.14, respectively.
 
-### Patch UTF-8 decoding
+### Unsanitized error-log data
 
-UTF-8 decoding through `charset_map` receives overread fixes in NGINX 1.30.1 for CVE-2026-42934 and in 1.30.3 for CVE-2026-48142.
+CVE-2009-4487 is listed as affecting all versions, with no non-vulnerable
+release. Treat error-log data as unsanitized; do not rely on an upgrade to
+change that property.
 
-## Mail authentication
+## Reporting and patch verification
 
-- NGINX 1.28.1 fixes CVE-2025-53859, worker-memory disclosure to the authentication server through crafted credentials used with `ngx_mail_smtp_module`'s `none` authentication method.
-- NGINX 1.28.3 fixes CVE-2026-27651, a crash during CRAM-MD5 or APOP authentication retry.
-- NGINX 1.28.3 fixes CVE-2026-28753, PTR-record injection into `auth_http` requests and backend SMTP XCLIENT commands.
-
-## WebDAV, MP4, and XML
-
-### Keep MP4 processing on a fixed release
-
-CVE-2024-7347 is a low-severity buffer overread in `ngx_http_mp4_module`. It affects NGINX 1.5.13 through 1.27.0 and is fixed at 1.26.2 and 1.27.1.
-
-NGINX 1.28.3 fixes two later crafted-MP4 flaws: CVE-2026-27784, which includes 32-bit platforms, and CVE-2026-32647. Both can crash `ngx_http_mp4_module` and may have greater impact.
-
-### Constrain WebDAV paths and relationships
-
-NGINX 1.28.3 fixes CVE-2026-27654, a buffer overflow in WebDAV COPY or MOVE requests handled in a location with `alias`. The flaw could change the source or destination path and escape the document root.
-
-From 1.31.0, `ngx_http_dav_module` rejects COPY or MOVE when source and destination are identical or have a parent-child collection relationship.
-
-### Keep external XSLT entities disabled
-
-FreeNginx no longer loads external character entities declared in an internal DTD subset by default. Enable `xml_external_entities` only where external entity loading is intentional and its trust boundary is understood.
-
-## Protocol and signed-link hardening
-
-### Reject hop-by-hop HTTP/2 and HTTP/3 fields
-
-From 1.31.0, NGINX rejects HTTP/2 and HTTP/3 requests containing `Connection`, `Proxy-Connection`, `Keep-Alive`, `Transfer-Encoding`, or `Upgrade`. It accepts `TE` only when the field value is `trailers`.
-
-### Compare secure links in constant time
-
-NGINX 1.31.2 compares `secure_link` hashes in constant time, reducing comparison-timing leakage during signed-link validation.
+Report NGINX security issues to `F5SIRT@f5.com` or use the methods in the
+project's `SECURITY.md`. Verify published security patches against one of the
+NGINX PGP public keys.

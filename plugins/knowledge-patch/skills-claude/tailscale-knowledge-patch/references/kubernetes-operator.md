@@ -1,85 +1,146 @@
 # Kubernetes Operator
 
-## Build highly available application proxies
+Use this reference for Operator-managed ingress and egress, ProxyGroups, the
+Kubernetes API proxy, Recorder, DNSConfig, multi-tailnet access, and deployment
+customization.
+
+## Proxy configuration and lifecycle
+
+### Dynamic reload and monitoring labels (since 1.80.0)
+
+Operator-created proxy `ServiceMonitor` objects can carry user-specified
+labels. Proxies dynamically reload changed `tailscaled` configuration;
+hostnames can take up to a minute to propagate. Restarting egress `ProxyGroup`
+replicas no longer interrupts cluster workloads accessing tailnet targets.
+
+### HA, multiplexing, and cross-cluster failover (since 1.84.0)
 
 Operator-managed Ingresses and Tailscale Kubernetes Services can use a
 `ProxyGroup` for multiple active proxy replicas and multiplex multiple
-applications across those replicas (1.84.0). Both resource types can expose
-applications across clusters. The Operator watches `EndpointSlice` objects
-cluster-wide and can fail over when a cluster has no healthy backends.
+applications over those replicas. Both resource types can expose applications
+across clusters. The Operator watches `EndpointSlice` objects cluster-wide and
+can fail over when a cluster has no healthy backends.
 
-Egress `ProxyGroup` replica restarts no longer interrupt cluster workloads
-that access tailnet targets (1.80.0). Direct connections to `ProxyGroup` Pods
-also improve when container image v1.86.2 advertises external node IP addresses
-as static endpoints (1.86.0).
+### Container state and direct endpoints (since 1.86.0)
 
-Operator-created proxy `ServiceMonitor` resources accept user-specified labels
-(1.80.0). Changed proxy `tailscaled` configuration reloads dynamically;
-hostname changes and similar values can take up to one minute to propagate.
+Container image 1.86.2 clears pod-specific state whenever it starts in
+Kubernetes. It improves direct connectivity to `ProxyGroup` Pods by using
+external node IP addresses as static endpoints.
 
-## Expose and validate Kubernetes resources
+## Ingress
 
-- An unset path on an Operator-managed Ingress defaults to `/` (1.84.0).
-- Configure Let's Encrypt staging certificates through the `ProxyClass` APIs
-  while testing Ingress TLS, avoiding production rate limits (1.82.0).
-- Apply `tailscale.com/http-redirect` to an Ingress to enable an HTTP-to-HTTPS
-  redirect (1.92.1).
-- The Operator supports custom Ingress class names (1.86.0).
-- `ProxyClass` accepts recommended annotations while retaining label support
-  (1.86.0).
-- A `DNSConfig` can assign a static cluster IP to nameservers (1.86.0), and
-  nameservers created by a `DNSConfig` default to the stable image (1.92.1).
-- The Operator validates ACL tags supplied through `tailscale.com/tags`. It
-  also rejects a cluster configuration in which more than one Tailscale
-  Kubernetes Service refers to the same Tailscale Service (1.86.0).
-- Tailscale Services are generally available, and Operator egress proxies can
-  send traffic to their virtual IPs (1.94.1).
+### Let's Encrypt staging certificates (since 1.82.0)
 
-## Run and observe the Kubernetes API proxy
+Operator 1.82 can issue Ingress TLS certificates from Let's Encrypt's staging
+environment through the ProxyClass APIs. Use staging during initial setup to
+avoid production rate limits.
 
-Operator v1.86.2 introduces the Kubernetes API proxy and `ProxyGroup` type
-`kube-apiserver` for a highly available proxy (1.86.0). Session recording was
-beta for `kubectl exec` in v1.82 (1.82.0), and later expanded to `kubectl
-attach` and `kubectl debug` (1.86.0).
+### Path and class behavior (since 1.84.0 and 1.86.0)
 
-Operator v1.94.1 adds beta audit logging for events passing through the API
-proxy. Audit events can be logged together with, or instead of, complete
-session recordings (1.94.1).
+An unset path on an Operator-managed Ingress defaults to `/`. The Operator also
+supports custom Ingress class names.
 
-Operator v1.96.5 removes `TS_EXPERIMENTAL_KUBE_API_EVENTS`; authorize API
-event collection through Tailscale ACLs instead (1.96.2).
+### HTTP-to-HTTPS redirects (since 1.92.1)
 
-For GitOps rendering, `apiServerProxyConfig.mode` and
-`apiServerProxyConfig.allowImpersonation` accept either booleans or strings,
-which avoids type churn under Argo CD (1.92.1).
+Apply `tailscale.com/http-redirect` to an Ingress to enable HTTP-to-HTTPS
+redirects.
 
-## Configure Recorder storage and identity
+## Kubernetes API proxy
 
-Recorder Pods can use AWS IRSA rather than static S3 credentials. Configure
-the name and annotations of the generated `ServiceAccount` (1.84.0).
+### Session recording (since 1.82.0 and 1.86.0)
 
-A `Recorder` resource can request multiple replicas for high availability,
-but a multi-replica deployment must use S3 storage (1.92.1). The default is a
-single-replica `StatefulSet` using the filesystem backend (1.96.2).
+The API server proxy can record `kubectl exec` session content; support later
+extends to `kubectl attach` and `kubectl debug`. This recording capability is
+beta.
 
-`tsrecorder` v1.92.3 can load its authentication key from the path named by
-`TS_AUTHKEY_FILE` (1.92.1):
+### Highly available proxy (since 1.86.0)
 
-```console
-export TS_AUTHKEY_FILE=/run/secrets/tailscale-auth-key
-```
+Operator 1.86.2 introduces the Tailscale Kubernetes proxy and the
+`kube-apiserver` `ProxyGroup` type for running its API server proxy in HA mode.
 
-## Authenticate and isolate Operator deployments
+### Audit events (since 1.94.1)
 
-Operator v1.92.3 supports provider-native identity-token authentication.
-Operator v1.92.4 fixes Helm rendering when no OAuth client secret is supplied
-(1.92.1).
+Operator 1.94.1 adds beta audit logging for events passing through its API
+server proxy. Log events in addition to, or instead of, full session
+recordings.
 
-Operator v1.96.5 adds a `Tailnet` custom resource for access to multiple
-tailnets and a `ProxyGroupPolicy` custom resource for controlling ProxyGroup
-creation by namespace. Ingress and egress ProxyGroup Pods can request a fresh
-auth key when needed (1.96.2).
+### ACL configuration replaces the environment flag (since 1.96.2)
 
-Container image v1.86.2 clears Pod-specific state whenever it starts inside
-Kubernetes, preventing identity state from leaking across Pod instances
-(1.86.0).
+Operator 1.96.5 removes `TS_EXPERIMENTAL_KUBE_API_EVENTS`. Configure the
+capability through Tailscale ACLs instead.
+
+## Recorder
+
+### AWS IRSA identity (since 1.84.0)
+
+Recorder pods can use AWS IRSA instead of static S3 credentials. Configure the
+generated `ServiceAccount` name and annotations.
+
+### High availability (since 1.92.1)
+
+Recorder resources can specify multiple replicas. A multi-replica deployment
+must use an S3 storage backend.
+
+### Deployment default (since 1.96.2)
+
+The `Recorder` CRD defaults to a single-replica `StatefulSet` with filesystem
+storage.
+
+## Configuration and validation
+
+### ProxyClass annotations and resource validation (since 1.86.0)
+
+`ProxyClass` can use recommended annotations and still accepts labels. The
+Operator validates ACL tags from `tailscale.com/tags` and requires that only
+one Tailscale Kubernetes Service in a cluster refer to a given Tailscale
+Service.
+
+### DNSConfig nameservers (since 1.86.0 and 1.92.1)
+
+`DNSConfig` nameservers can have a static cluster IP. The Operator later
+defaults nameservers deployed through `DNSConfig` to the stable image.
+
+### Argo CD values (since 1.92.1)
+
+Both boolean and string values are accepted for `apiServerProxyConfig.mode` and
+`apiServerProxyConfig.allowImpersonation`.
+
+## Workload identity and Helm
+
+### Provider-native identity (since 1.92.1)
+
+Operator 1.92.3 can authenticate with provider-native identity tokens.
+Operator 1.92.4 fixes Helm rendering when no OAuth client secret is set.
+
+### Tailnet-scoped identity (since 1.102.2)
+
+Workload identity federation configuration can be supplied through a `Tailnet`
+custom resource.
+
+## Multi-tailnet and namespace controls
+
+### Tailnet and ProxyGroupPolicy CRDs (since 1.96.2)
+
+Operator 1.96.5 adds `Tailnet` for multi-tailnet access and
+`ProxyGroupPolicy` for controlling ProxyGroup creation by namespace. Ingress
+and egress ProxyGroup pods can request a new auth key when needed.
+
+### Reused hostnames (since 1.102.2)
+
+ProxyGroup Services can use the same hostname in different tailnets without
+reconciliation failing.
+
+## Networking and deployment
+
+### In-cluster Peer Relays (since 1.102.2)
+
+The Operator can deploy Peer Relays in a cluster through a custom resource.
+
+### Deployment annotations (since 1.102.2)
+
+The Helm chart can apply annotations to the Operator's Deployment.
+
+### Dual-stack egress (since 1.102.2)
+
+Connector and egress-proxy resources support 4via6 when egressing from a
+dual-stack cluster. Egress `ProxyGroup` resources support IPv6.

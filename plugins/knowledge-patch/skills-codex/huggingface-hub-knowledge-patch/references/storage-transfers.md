@@ -1,103 +1,64 @@
 # Storage, cache, and transfer operations
 
-## Central cache paths are immutable
+## Central-cache paths are immutable inputs
 
-The central cache stores file content once under `blobs` and presents revision
-trees under `snapshots/{commit}` using links where the filesystem supports
-them. One physical blob can therefore back paths in multiple snapshots.
+The central cache stores content under `blobs` and exposes revision trees under
+`snapshots/{commit}` through links where supported. Editing a returned path can
+corrupt shared content or affect multiple snapshots. Copy cached content into
+a working directory before modifying it.
 
-Never modify a path returned from the central cache. Editing it can corrupt
-shared content or invalidate more than one snapshot. Copy the file to a
-working directory before modifying it.
-
-## `local_dir` behavior
-
-Passing `local_dir` materializes the selected files in that directory and
-writes resume metadata under:
-
-```text
-.cache/huggingface
-```
-
-Exclude this metadata from packages and publications. A local directory is
-convenient for editable material, but it provides less cross-project
-deduplication than the central cache.
+`local_dir` instead materializes selected files in the requested directory and
+writes resume metadata beneath `.cache/huggingface`. Exclude that metadata from
+publication. This mode generally provides less cross-project deduplication
+than the central cache.
 
 ## Clean cache layers deliberately
 
-Use supported cache commands to inspect and remove Hub content:
+Use supported commands to inspect and remove Hub cache content rather than
+deleting internal directories during active work:
 
-```bash
+```console
 hf cache ls
 hf cache rm
 hf cache prune
 ```
 
-Avoid deleting cache internals while active work may hold or create cache
-state.
-
-The Xet chunk cache is separate from Hub snapshots and repository refs:
-
-- removing snapshots does not necessarily remove Xet chunks;
-- clearing chunks does not update repository refs; and
-- logging out leaves previously downloaded private bytes on disk.
-
-Choose the cleanup target based on whether the goal is snapshot removal, Xet
-chunk removal, credential removal, or deletion of private local content.
+The Xet chunk cache is separate from Hub snapshots and repository refs.
+Removing snapshots does not necessarily remove chunks, and clearing chunks
+does not update repository refs. Logging out does not remove downloaded
+private bytes, so credential lifecycle and data-retention cleanup must be
+handled separately.
 
 ## Resumable large-folder uploads
 
-`upload_large_folder` stores hashing, pre-upload, and commit progress in the
-source folder's `.cache/huggingface`. A rerun can reuse finished work when it
-targets the same folder and repository.
+`upload_large_folder` persists hashing, pre-upload, and commit progress in the
+source folder's `.cache/huggingface`. Rerunning against the same folder and
+repository can reuse completed work.
 
-For reliable resumption:
+- Keep the metadata available until the upload is finished.
+- Do not modify source files during the run.
+- Do not treat resumability as transactional atomicity.
 
-- keep the progress metadata;
-- use the same source folder and repository;
-- do not modify source files while the operation runs; and
-- rerun after interruption instead of discarding state.
-
-The operation is not atomic. It can produce multiple repository commits, so
-some work may be visible before the full folder finishes.
-
-For an all-or-nothing release, upload to a staging branch or repository,
-validate the complete result, and promote it only after validation.
+The operation may create multiple commits. For an all-or-nothing release,
+upload to a staging branch or repository, validate it, and promote it only
+after validation succeeds.
 
 ## Process-local deferred uploads
 
-Upload calls with `run_as_future=True` return futures and preserve queue order
-for a given client. They are background tasks in the current process, not
-durable jobs submitted to a remote worker.
+Calls with `run_as_future=True` return futures and preserve each client's queue
+order. They are background tasks in the current process, not durable remote
+jobs.
 
-The caller must:
-
-- keep the process alive until the work finishes;
-- retrieve each future's result so failures are observed; and
-- avoid treating queue acceptance as successful upload completion.
-
-Scheduled commit helpers have the same shutdown concern. Stop them explicitly
-and verify their last commit before the job exits.
-
-## Server-side copies in commits
-
-`create_commit` accepts supported `CommitOperationCopy` operations alongside
-add and delete operations. Eligible copies occur server-side, so the client
-does not have to download and re-upload the bytes.
-
-A copy still creates a repository commit. It is subject to the client's
-supported source, destination, revision, and repository contexts; do not
-assume an arbitrary cross-context copy is valid.
+Keep the process alive until work finishes and retrieve every future's result
+so failures are observed. Stop scheduled commit helpers before process exit
+and verify their final commit.
 
 ## Xet and legacy Git LFS
 
-Xet-backed repositories expose a compatibility bridge for legacy Git LFS
-clients. This permits interoperability but does not make Xet and LFS identical
-in storage layout or performance behavior.
+Xet-backed repositories retain a compatibility bridge for legacy Git LFS
+clients, but Xet and LFS do not have identical storage or performance
+behavior.
 
-A generic Git clone can report success while materializing only repository
-metadata or large-file pointers. Before consuming the checkout:
-
-1. inspect its filter and pointer state;
-2. verify that required large-file bytes were materialized; and
-3. use a Hub download API when a normal clone does not resolve the content.
+A successful generic Git clone may contain repository metadata or pointers
+without materializing the large-file bytes. Verify filter and pointer state,
+or use a Hub download API when the work requires actual content.

@@ -8,196 +8,224 @@ metadata:
 ---
 
 
-# MapLibre Native
+# MapLibre Native Compatibility Guide
 
-Use this skill when working on MapLibre Native core, Android, iOS, Node, or
-Qt code; choosing a renderer backend; porting styles from MapLibre GL JS; or
-building offline and headless-rendering workflows.
+Use this skill when changing MapLibre Native applications, styles, renderers,
+offline storage, platform bindings, or source builds. First identify the target
+product and its pinned release: Android, iOS/Darwin, Node, and Qt advance on
+independent release lines and do not share one public core version.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [android.md](references/android.md) | Android upgrade breaks, renderer artifacts, camera and style features, offline regions, and ambient cache |
-| [ios.md](references/ios.md) | iOS upgrades, observers, snapshots, camera controls, style APIs, distribution, networking, and Metal plugin layers |
-| [desktop-bindings.md](references/desktop-bindings.md) | Node runtime support, rendering and request hooks, logging, and Qt 3 CMake, QML, deployment, and Android ABI setup |
-| [style-and-interop.md](references/style-and-interop.md) | Native style support, expressions, runtime mutation, and GL JS interoperability boundaries |
-| [architecture-and-rendering.md](references/architecture-and-rendering.md) | Repository boundaries, threading, tile preparation, drawables, shader and pass design, backend support, Linux builds, and render tests |
+| [Android](references/android.md) | SDK migrations, renderer artifacts, sources, offline storage, camera, and style behavior |
+| [iOS and Darwin](references/ios.md) | Distribution, sources, networking, camera, snapshots, observers, offline packs, and Metal layers |
+| [Architecture and rendering](references/architecture-and-rendering.md) | Core ownership, actors, tile preparation, drawables, backends, Linux builds, and render tests |
+| [Desktop bindings](references/desktop-bindings.md) | Node rendering and resource hooks; Qt libraries, QML, deployment, and Android ABIs |
+| [Style and interoperability](references/style-and-interop.md) | Style-spec differences, expressions, typed mutation, and Native/GL JS boundaries |
+
+## Working rules
+
+1. Read the platform dependency declaration before recommending an API or
+   renderer. Do not infer Android support from iOS, Node, Qt, or the shared
+   style specification.
+2. Distinguish packaged artifact defaults from source-build defaults. An
+   Android Maven coordinate, a Gradle source-build flavor, and a runtime
+   backend choice are separate decisions.
+3. Check Native Android and Native iOS support tables property by property.
+   Valid version 8 style JSON does not imply complete feature parity.
+4. Wait for the style-load callback before mutating typed sources, layers,
+   images, light, or transitions.
+5. Treat platform wrappers and the renderer as one build-time composition.
+   Shared style assets and fixtures do not create shared runtime APIs.
 
 ## Breaking changes and migrations
 
-### Select the Android renderer artifact deliberately
+### Android minimum SDK
 
-`org.maplibre.gl:android-sdk` uses Vulkan on Android 13. Use the OpenGL ES
-artifact when Vulkan is not intended:
+Android 12.0 raises `minSdk` from 21 to 23. Set the application to at least 23
+before upgrading.
+
+### Android renderer artifacts
+
+Android 13.0 makes `org.maplibre.gl:android-sdk` the Vulkan artifact. Keep
+OpenGL ES explicitly with:
 
 ```kotlin
 implementation("org.maplibre.gl:android-sdk-opengl:13.4.0")
 ```
 
-Vulkan surface snapshots require 13.3 or later, and Vulkan custom layers
-require 13.4 or later. Recheck color-relief and hillshade ordering when moving
-to Vulkan; 13.0.1 fixed those layers disappearing above fill layers.
+Vulkan surface snapshots require 13.3 or later and Vulkan custom layers
+require 13.4 or later. Android 13.5 adds the `multiBackend` Gradle flavor for
+runtime OpenGL/Vulkan selection. For a source checkout, `opengl` and `vulkan`
+remain build flavors and the broad-compatibility default is OpenGL.
 
-### Raise Android's minimum SDK before upgrading
+### Android synchronous GeoJSON
 
-Android 12 requires `minSdk` 23 or later. From 12.1, a failed
-`System.loadLibrary` throws instead of leaving the load failure silent, so
-make native-loading failures part of startup error handling.
-
-### Migrate synchronous GeoJSON configuration
-
-Android 13 removed the short-lived synchronous setter variants. Configure the
-source once and then use the normal update API:
+Android 12.3 introduced synchronous GeoJSON setters, but Android 13.0 removed
+the individual setters. Configure new sources and then use the ordinary update
+API:
 
 ```kotlin
 GeoJsonOptions().withSynchronousUpdate(true)
 ```
 
-iOS gained synchronous GeoJSON source updates separately; do not translate
-the Android construction pattern directly to Darwin APIs.
+For a source already attached to a style, Android 13.5 adds
+`setOverrideSynchronousUpdate`.
 
-### Retire legacy Android annotations
+### Node runtime and renderer
 
-The core `Annotation` hierarchy, including `Marker`, `Polyline`, `Polygon`,
-`MarkerOptions`, and `IconFactory`, is deprecated. Build new overlays with the
-separate MapLibre Annotation Plugin.
+Node.js 16 is unsupported from the Node 6.1 package line; the packaging path
+requires Node.js 18 or newer. The stable 6.4.1 binding explicitly supports
+Node.js 20, 22, and 24. Do not assume Node.js 26 support from the stable line.
+Linux and Windows use the drawable renderer; the legacy renderer is gone.
 
-### Require a supported Node runtime
+### Deprecated Android annotations
 
-The Node package no longer supports Node.js 16 because its packaging path
-requires Node.js 18 or newer. Stable binding 6.4.1 supports Node.js 20, 22,
-and 24; Node.js 26 belongs to the 6.5 prerelease line.
+The core `Annotation` family (`Marker`, `Polyline`, `Polygon`, their option
+types, and `IconFactory`) has been deprecated since 7.0.0. Use the separate
+MapLibre Annotation Plugin for new overlay work.
 
-Linux and Windows Node builds use the drawable renderer; code that assumes
-the removed legacy renderer must be updated.
+### Style and request behavior to recheck
 
-### Treat platform releases as independent
+- Android 13.1 stops scaling icons when offsets are used on pitched maps;
+  visually retest affected symbol styles.
+- iOS 6.22 cancels an in-flight style request when style JSON is loaded.
+- A native-library load failure throws from Android 12.1 onward instead of
+  failing silently.
+- When adopting the iOS 6.14 dynamic texture atlas, verify glyph loading in
+  existing styles.
 
-Android, iOS, Node, and Qt have separate release streams. Do not infer core or
-cross-platform feature parity from one platform's release number. Renderer
-backends are also selected at build time and compiled with the wrapper and
-core; they are not interchangeable runtime modules.
+## Renderer selection
 
-## High-use capabilities
+| Target | Practical choice |
+| --- | --- |
+| Android packaged SDK | Vulkan through `android-sdk`; OpenGL ES through `android-sdk-opengl`; `multiBackend` when runtime switching is required |
+| Android source build | `opengl` or `vulkan` Gradle flavor, setting the matching CMake option |
+| iOS | Metal is stable, recommended, and selected by the CMake or Bazel configuration |
+| Linux | OpenGL ES 3 and Vulkan are stable; WebGPU remains experimental |
+| Windows | OpenGL ES 3 is stable |
+| Node | Drawable renderer on Linux/Windows; Metal on macOS |
+| Qt 3 | OpenGL is the only stable backend; `QSG_RHI_BACKEND=opengl` can force it |
+
+Do not treat the shader-registry and named-render-pass design as proof that a
+platform SDK publicly exposes every operation. Consult the architecture
+reference before changing renderer internals.
+
+## Sources, tiles, and runtime state
 
 ### PMTiles and MLT
 
-- Android supports PMTiles from 11.8.0; PMTiles joins the ambient cache from
-  13.3.
-- iOS supports `pmtiles://` sources from 6.10. From 6.14, their metadata is
-  always interpreted with the XYZ tile scheme.
-- Node supports PMTiles from 6.1.
-- Android 12.1 and iOS 6.20 parse MLT vector-tile sources. Android 13.4 also
-  accepts FastPFOR-encoded MLT tiles.
+PMTiles is available in Android, iOS through `pmtiles://`, and Node. iOS 6.14
+always treats PMTiles metadata as XYZ; Android 13.3 includes PMTiles resources
+in the ambient cache. MLT parsing arrives in Android 12.1 and iOS 6.20, while
+Android 13.4 also accepts FastPFOR-encoded MLT tiles.
 
-When a Node style uses a custom URL scheme, its constructor `request` hook
-must resolve that scheme and return uncompressed resource bytes.
+### Feature state and custom vector data
 
-### Runtime feature state
+Android 13.4 exposes per-feature state. Android 13.5 repaints symbol paint
+properties that depend on changed feature state and adds `CustomVectorSource`
+for binary vector-tile delivery. Complete vector-tile feature-state updates are
+applied on the iOS 6.15 line.
 
-Vector-tile feature-state updates are applied completely in iOS 6.15 and
-later. Android exposes feature-state functionality from 13.4. Keep these
-platform boundaries explicit when sharing interaction logic.
+### Camera and visual capabilities
 
-### Camera and viewport controls
+Both mobile SDKs support camera roll on their newer lines. Frustum offsets can
+omit screen edges. Color-relief layers and updated hillshade algorithms are
+available on both; Android 13.0.1 fixes Vulkan color-relief and hillshade
+layers becoming invisible above fill layers.
 
-- iOS supports maximum camera bounds, configurable north snapping, frustum
-  offset, basic camera roll, and near-clipped projection access for custom
-  layers.
-- Android supports frustum offset from 12.2 and camera roll from 13.0.
-- Android 13.1 changed pitched-map icon offsets by disabling icon scaling when
-  offsets are present; visually recheck affected styles.
+## Style and expressions
 
-### Snapshot and headless rendering
+Native pitch is limited to 0–60 degrees. Root `centerAltitude`, `roll`, and
+`state`/global-state are unsupported on Android and iOS. A `glyphs` URL works,
+but omitting it for local fonts does not; root `font-faces` support begins in
+Android 11.13.0 and iOS 6.18.0.
 
-Android snapshots can hide attribution from 12.0.1 and accept padding from
-12.1. iOS can hide attribution and add snapshotter annotations from 6.21.
-iOS 6.26.1 exposes a headless Metal texture for direct interoperability.
-
-For desktop rendering, Node returns an asynchronous raw four-channel pixel
-buffer, while `mbgl-render` writes a PNG from a style. Use `xvfb-run` when
-Linux rendering has no X display.
-
-### Style and source evolution
-
-Color-relief layers and updated hillshade algorithms arrive in iOS 6.24 and
-Android 13.0. Rounded fill extrusions arrive in Android 13.4.
-
-Native styles are feature-specific rather than automatically equivalent to
-GL JS. Check Android and iOS support separately for every root property,
-source option, layer property, expression, and protocol. In particular:
-
-- `centerAltitude`, root `roll`, and global-state functionality are
-  unsupported on Android and iOS.
-- Native pitch is limited to 0–60 degrees.
-- A `glyphs` URL works, but omitting it for local fonts does not.
-- iOS has typed vector, raster, raster-DEM, GeoJSON, and image sources, but
-  not canvas or video sources.
-
-### Assertions and coercions
-
-`get` yields a generic value. Assert the concrete type required by the
-consumer:
+`get` returns the generic `value` type. Assert a concrete type when the
+consumer requires one:
 
 ```json
 ["string", ["get", "feature_property"]]
 ```
 
-Operators beginning with `to-` coerce and may include a fallback:
+Use a `to-*` coercion when conversion and a fallback are desired:
 
 ```json
 ["to-number", ["get", "feature_property"], 0]
 ```
 
-Android and iOS builders ultimately feed the shared C++ expression evaluator,
-but their typed property names and value wrappers remain platform-specific.
+Android and iOS builders feed the shared C++ expression evaluator. Check the
+platform's typed names rather than mechanically converting style JSON keys.
+Android 13.5 adds `split` and `join`, Unicode-correct string expressions, and
+alpha-bearing HSL color parsing.
 
-## Platform integration rules
+## Offline storage
 
-### Wait for a loaded style
+Keep explicit offline regions separate from the ambient cache. Pausing an
+explicit region does not make downloaded resources unavailable. Clearing the
+ambient cache retains resources required by offline regions. Database packing,
+resetting, and cache maintenance are asynchronous storage work and must stay
+off the frame-rendering path.
 
-On Android, mutate the loaded `Style` proxy with typed sources, layers,
-images, light, transitions, and ordered layer insertion. On iOS, use
-`MLNStyle`, `MLNSource`, and `MLNStyleLayer`. Do not derive typed native
-property names mechanically from style JSON names.
+On iOS, call `reloadPacks` after importing a database before reading
+`MLNOfflineStorage.sharedOfflineStorage.packs`. Newer `MLNOfflinePack` objects
+also expose the underlying region identifier.
 
-### Keep offline stores distinct
+## Node rendering checklist
 
-Android explicit offline regions and the ambient cache have different
-lifecycle and eviction rules. Clearing ambient data preserves resources
-needed by offline regions. Treat database packing, reset, invalidation, and
-metadata changes as asynchronous storage work, not frame work.
+- `Map.render` returns an asynchronous four-channel raw pixel buffer.
+- Constructor `ratio` controls high-density scale.
+- A custom `request` hook must handle every style resource and custom scheme;
+  successful data must be uncompressed bytes.
+- Listen to module `message` events for native style and resource failures.
+- `release()` permanently disables rendering but is safe in the render
+  callback because that callback retains its returned buffer.
 
-After iOS imports an offline database, call `reloadPacks` before reading
-`MLNOfflineStorage.sharedOfflineStorage.packs`.
+## Qt deployment checklist
 
-### Respect observer roles
+- Use `QMapLibre::Core`, `QMapLibre::Location`, or `QMapLibre::Widgets` CMake
+  targets rather than legacy names.
+- QML uses `import MapLibre 3.0`.
+- Deploy both `plugins/geoservices` and `qml/MapLibre` for Location/QML apps.
+- Include both `QMapLibre` and `QMapLibreWidgets` libraries for Widgets apps.
+- For Android multi-ABI builds, resolve `QMapLibre_DIR` below the common
+  `QMapLibre_Android_DIR` using `ANDROID_ABI`.
 
-A Map View owns viewport and configuration but does not render by itself. Map
-observers cover style, camera, idle, and render lifecycle changes; rendering
-observers cover frame events, which may propagate to map observers.
+## Linux rendering workflow
 
-On iOS, observer hooks are available from 6.12 and `sourceDidChange` from
-6.13. Layer observers receive source-layer and source-ID changes from 6.28.
+Use the `linux-opengl` preset with cloned submodules. It builds the GLFW tools
+and static libraries; current Wayland defaults also require
+`libegl1-mesa-dev`. Render local styles with `mbgl-render`; use `xvfb-run -a`
+on hosts without an X display. Render-fixture tests write actual and diff PNGs
+plus an HTML summary and can be narrowed with `--filter`.
 
-### Keep resource work asynchronous
+## Architecture guardrails
 
-Tile workers are actors. Parsing, layout, glyph/image dependencies, and
-collision metadata are coalesced per geometry tile before prepared buckets
-become backend resources. Do not introduce shared mutable cross-thread tile
-state or assume every intermediate camera state is replayed.
+- A platform Map View owns configuration and viewport state, not rendering.
+- Immutable actor messages cross threads; only one thread processes a worker
+  instance at a time.
+- The tile pyramid comes from viewport tile cover. Dirty state is refreshed
+  while unchanged tiles remain reusable.
+- Workers parse and lay out source data; backend builders upload prepared
+  buckets and emit drawables.
+- Shared drawable state owns cross-backend concerns. Backend subclasses own
+  resource binding, drawing, per-frame updates, and teardown.
+- Offscreen snapshots are callback-driven after drawing; do not force a
+  synchronous GPU stall into backend-neutral code.
 
-## Choosing the next reference
+## Release and backport work
 
-- For an Android dependency or API migration, start with
-  [android.md](references/android.md).
-- For Cocoa names, Swift distribution, observers, delegates, or plugin
-  layers, start with [ios.md](references/ios.md).
-- For server-side rendering or Qt deployment, use
-  [desktop-bindings.md](references/desktop-bindings.md).
-- For style portability and expressions, use
-  [style-and-interop.md](references/style-and-interop.md).
-- For core threading, renderer internals, backend selection, or Linux render
-  fixtures, use
-  [architecture-and-rendering.md](references/architecture-and-rendering.md).
+Android and iOS follow semantic versioning but have no fixed cadence or LTS
+line. For an older-series fix, request the platform release branch, submit the
+fix and changelog update to a branch such as `android-10.x.x`, and account for
+release-workflow changes that may also need backporting.
+
+## Final verification
+
+Before shipping a change, verify the exact platform dependency, backend,
+style-property support, thread or callback contract, resource URL schemes,
+offline-store semantics, and visual render fixtures. When application behavior
+or the checked-out source differs from this guide, prefer the manifest, code,
+tests, and observed behavior for that concrete build.

@@ -1,162 +1,117 @@
 # Flakes and Fetchers
 
-## Input declarations
+## Input declarations and lock files
 
-### Relative paths
+### Relative repository inputs (since 2.26.0)
 
-A flake can refer to another flake in the same repository with a relative
-`path:` input (since 2.26.0):
+A flake can reference another flake in its repository with
+`inputs.foo.url = "path:./foo";`. This changes the lock-file format; older Nix
+versions cannot read locks containing relative-path inputs.
 
-```nix
-inputs.foo.url = "path:./foo";
-```
+### Reproducible registry resolution (since 2.26.0, 2.33.0)
 
-This changes the lock-file representation. Older Nix versions cannot consume
-a lock containing relative-path input locks, so account for the oldest client
-that must read the repository.
+Lock generation for indirect references ignores system and user registries.
+It uses the global registry and command-line `--override-flake` values, so set
+input URLs explicitly when reproducibility matters. `nix registry resolve
+nixpkgs` prints the resolved flake reference without fetching or evaluation.
 
-### Git submodules and LFS
+### Channel tarballs as flake inputs (since nixos-25.05)
 
-A Git-backed flake can declare its own submodule requirement (since 2.27.0):
+The channel server implements the Lockable HTTP Tarball Protocol. A URL such
+as `https://channels.nixos.org/nixos-25.05/nixexprs.tar.xz` can be used
+directly as a lockable flake input.
 
-```nix
-inputs.self.submodules = true;
-```
+### Source information for non-flake inputs (since 2.30.0)
 
-Callers no longer need to supply `submodules = true`.
+Inputs with `flake = false` expose their parent source's `sourceInfo`, keeping
+the containing source distinct from an input below it. Select a subdirectory
+with `?dir=subdir`.
 
-The Git fetcher can materialize Git LFS objects when `lfs` is enabled (since
-2.27.0). A flake may declare `inputs.self.lfs = true`, or a Git URL may add
-`lfs=1`:
+### Nested lock preservation (since 2.31.0)
 
-```sh
-nix flake prefetch 'git+ssh://git@example.com/repo.git?lfs=1'
-```
+When an input reference changes during lock update, Nix consults that input's
+own lock file for nested inputs instead of fetching their latest versions.
 
-Git LFS over SSH honors `NIX_SSHOPTS` and the URL's port (since 2.31.0). It
-also follows the `git-lfs-authenticate` response to an API endpoint that need
-not be exposed on port 443.
+## Git-backed inputs
 
-Experimental Git-hashed store objects can use SHA-256 as well as SHA-1 (since
-2.31.0).
+### Self-declared submodules (since 2.27.0)
 
-### Non-flake source subdirectories
+A Git flake can set `inputs.self.submodules = true`; callers no longer need to
+add `submodules = true` themselves.
 
-Inputs with `flake = false` expose their parent source's `sourceInfo` (since
-2.30.0), distinguishing the containing source from an input below it. Select a
-subdirectory with `?dir=subdir`:
+### Git LFS materialization (since 2.27.0, 2.31.0)
 
-```nix
-inputs.data = {
-  url = "path:./vendor?dir=subdir";
-  flake = false;
-};
-```
+Set `inputs.self.lfs = true` or add `lfs=1` to a Git URL to materialize LFS
+objects. LFS-over-SSH honors `NIX_SSHOPTS`, uses the URL port, and follows the
+`git-lfs-authenticate` response when the API endpoint is not on port 443.
 
-## Lock-file resolution
+### SHA-256 Git hashing (since 2.31.0)
 
-When generating a lock for an indirect reference such as `nixpkgs`, Nix
-ignores system and user flake registries (since 2.26.0). It uses the global
-registry and command-line `--override-flake` values. Pin the URL when
-resolution must be reproducible:
+Experimental Git-hashed store objects support SHA-256 as well as SHA-1.
+
+### SCP-like Git URLs (since 2.35.2)
+
+`builtins.fetchGit` and Git `builtins.fetchTree` inputs accept SCP-like URLs,
+including verbatim `~` paths and bracketed IPv6 hosts.
 
 ```nix
-inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+builtins.fetchGit "host:~/relative/to/home"
+builtins.fetchTree { type = "git"; url = "user@[::1]:~/repo"; }
 ```
 
-When an input reference changes during an update, Nix consults that input's
-own lock file for its nested inputs (since 2.31.0). It preserves the versions
-chosen there rather than fetching each nested input's latest version.
+### GitHub parameter validation (since 2.35.2)
 
-Use `nix registry resolve` to resolve an indirect registry name and print the
-resulting flake reference without fetching or evaluating it (since 2.33.0):
+The `github:` fetcher rejects unknown URL parameters instead of ignoring them;
+for example, `tag` is invalid.
 
-```console
-$ nix registry resolve nixpkgs
-github:NixOS/nixpkgs/nixpkgs-unstable
-```
+## Prefetch, show, check, archive, and clone
 
-## Prefetch, archive, show, and check
+### Prefetch output links (since 2.27.0)
 
-`nix flake prefetch` accepts `--out-link` (since 2.27.0), so the prefetch can
-create a root for its result:
+`nix flake prefetch --out-link ./result REF` creates an output link for the
+prefetched result.
 
-```sh
-nix flake prefetch --out-link ./result <flake-reference>
-```
-
-`nix flake prefetch-inputs` fetches all inputs in parallel (since 2.31.0). It
-avoids serialized on-demand fetches but may fetch inputs that evaluation would
-not use.
+### Partial `flake show` around IFD (since 2.29.0)
 
 `nix flake show` skips outputs requiring import-from-derivation and continues
-showing the rest of the flake (since 2.29.0), rather than failing the entire
-command.
+showing the rest instead of failing the whole command.
 
-`nix flake archive` accepts `--no-check-sigs` (since 2.30.0). Use it when
-copying an archive directly to a remote store whose signature checks would
-otherwise block the operation:
+### Archive without signature checks (since 2.30.0)
 
-```sh
-nix flake archive --to ssh-ng://builder --no-check-sigs .
-```
+`nix flake archive --no-check-sigs` permits a direct copy to a remote store
+that would otherwise reject the operation during signature verification.
 
-This deliberately relaxes verification; scope it to a trusted transfer path.
+### Parallel input prefetch (since 2.31.0)
 
-When a derivation is substitutable, `nix flake check` may skip downloading its
-output (since 2.32.0). A successful check therefore does not guarantee that
-every checked output exists locally.
+`nix flake prefetch-inputs .` fetches all flake inputs in parallel. It avoids
+serialized evaluation-time fetches but may fetch inputs evaluation would not
+use.
 
-`nix flake clone` supports arbitrary input types rather than only Git-oriented
-ones (since 2.33.0), including tarball-backed flakes such as those hosted on
-FlakeHub.
+### Check realization behavior (since 2.32.0)
 
-## Tarballs and channels
+If a derivation is substitutable, `nix flake check` may leave it unrealized
+locally. A successful check does not imply every checked output is in the
+local store.
 
-The channel server implements the Lockable HTTP Tarball Protocol (since
-nixos-25.05), allowing a channel's `nixexprs.tar.xz` to be a flake input:
+### Clone non-Git inputs (since 2.33.0)
 
-```nix
-inputs.nixpkgs.url =
-  "https://channels.nixos.org/nixos-25.05/nixexprs.tar.xz";
-```
+`nix flake clone` supports arbitrary input types, including tarball-backed
+flakes and tarball flakes hosted on FlakeHub.
 
-Built-in channel URLs use `https://channels.nixos.org/` (since 2.33.0). The old
-`https://nixos.org/channels/` location redirects for now, but migrate stored
-URLs and network allowlists before that redirect disappears.
+### Check output paths and links (since 2.35.2)
 
-Tarball references using `file:` must use absolute paths (since 2.34.0).
-Relative `file:` paths are rejected rather than accepted ambiguously.
+`nix flake check` accepts `--print-out-paths` and `--out-link`. Without
+`--out-link`, it creates no output links.
 
-S3 source URLs accept `versionId` (since 2.33.0), allowing a versioned bucket
-object to be pinned reproducibly:
+## URL compatibility
 
-```text
-s3://bucket/key?region=us-east-1&versionId=abc123def456
-```
+### Built-in channel hostname (since 2.33.0)
 
-## Fetcher transport and policy
+Persisted channel URLs and allowlists should use
+`https://channels.nixos.org/`; the old `https://nixos.org/channels/` location
+redirects but that compatibility redirect may be retired.
 
-The derivation builder in `<nix/fetchurl.nix>`, also known as
-`builtin:fetchurl`, verifies TLS certificates (since 2.25.0). HTTPS requests to
-servers with invalid certificates fail. Evaluation-time `builtins.fetchurl`
-was not part of the affected old behavior.
+### Absolute `file:` tarball paths (since 2.34.0)
 
-Nixpkgs can configure fetchers globally (since nixos-25.11):
-
-- `rewriteURL` and `hashedMirrors` apply to `fetchurl`.
-- `gitConfig` or `gitConfigFile` apply to every `fetchgit`.
-- `npmRegistryOverrides` or `npmRegistryOverridesString` apply to
-  `fetchNpmDeps`.
-- Individual `fetchgit` calls accept `gitConfigFile` and `rootDir`.
-- Individual `fetchNpmDeps` calls accept `npmRegistryOverridesString`.
-
-Keep policy inputs explicit in evaluations that require reproducible source
-selection.
-
-## Chroot stores
-
-With a chroot store, the evaluator sees the union of host and chroot
-`/nix/store` contents (since 2.27.0). Host-store inputs remain accessible, and
-`builtins.path` plus `builtins.filterSource` operate correctly in that store
-mode.
+Tarball references using the `file:` scheme must contain absolute paths.
+Relative forms are rejected as ambiguous.

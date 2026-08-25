@@ -1,88 +1,131 @@
 # Identity, Policy, and Security
 
-## Authenticate workloads and automation
+Use this reference for tailnet policy, device posture, key protection,
+federated workload identity, Tailnet Lock, and management APIs.
 
-Nodes can authenticate through workload identity federation by passing an
-external identity token and its client ID (1.92.1):
+## Tailnet policy and posture
+
+### Country posture (since 1.80.0)
+
+The generally available `ip:country` geolocation attribute can be used in
+device posture checks.
+
+### Grants and `via` routing (since 1.84.0)
+
+Grants and the `via` routing field are generally available. `via` can require
+traffic to pass through selected exit nodes, subnet routers, or app connectors.
+New tailnets and policy files that have never been edited use grants rather
+than ACL syntax without changing their effective permissions.
+
+### App connectors (since 1.84.0)
+
+App connectors are generally available for securing tailnet access to SaaS
+applications.
+
+### GitOps policy repository URL (since 1.84.0)
+
+Set the external repository URL on the admin console's Policy file management
+page. The policy-file code comment is deprecated, and the admin-console value
+takes precedence when both are present.
+
+### Visual policy editor (since 1.86.0)
+
+A beta visual policy editor can manage the tailnet policy file.
+
+## Tailnet Lock and node keys
+
+### Tailnet Lock availability (since 1.84.0)
+
+Tailnet Lock is generally available. It can require verification of new node
+keys supplied by the coordination server before those keys are trusted.
+
+### Seamless node-key renewal (since 1.90.1)
+
+Clients preserve existing connections while re-authenticating during node-key
+renewal.
+
+### Node-key sealing (since 1.90.1)
+
+Node-key sealing is generally available and enabled by default on Linux,
+Windows, and macOS. Existing Linux nodes migrate automatically to sealed node
+keys during upgrade.
+
+### Stable Tailnet Lock JSON (since 1.92.1 and 1.94.1)
+
+`tailscale lock log --json` returns Authority Update Messages in a stable form.
+`tailscale lock status -json` returns tailnet key-authority data in a stable
+form. Preserve the different option spellings in scripts.
+
+## Encrypted state
+
+### State controls and posture (since 1.86.0)
+
+The `tsStateEncrypted` posture attribute reports whether client state is
+encrypted at rest.
+
+- Linux supports TPM-backed storage with `tailscaled --encrypt-state`.
+- Windows provides the TPM-backed `EncryptState` policy.
+- macOS uses `EncryptState` to store state in Keychain. The App Store client
+  always uses Keychain, and 1.86.4 applies policy changes without restarting
+  the system extension.
+
+```console
+tailscaled --encrypt-state
+```
+
+## Workload identity federation
+
+### Supplied identity tokens (since 1.92.1)
+
+Pass a client ID and identity token to `tailscale up`:
 
 ```console
 tailscale up --client-id=<client-id> --id-token=<identity-token>
 ```
 
-Federated identities can be managed with the Tailscale API,
-`tailscale-client-go-v2`, and the Terraform provider. Workload identities can
-also generate identity tokens automatically; use `--audience` to select the
-token audience (1.94.1):
+Federated identities can be managed through the Tailscale API,
+`tailscale-client-go-v2`, and the Terraform provider.
+
+### Automatic identity tokens (since 1.94.1)
+
+Workload identities can generate tokens automatically. Select their audience
+with:
 
 ```console
 tailscale up --audience=<audience>
 ```
 
-GitHub Actions and GitLab CI GitOps integrations accept provider-native
-identity-token authentication. Token-exchange failures are reported on the
-admin console's Trust credentials page (1.94.1). The container and Kubernetes
-Operator variants have their own support and configuration considerations;
-see their topic references.
+Provider-native identity-token authentication is supported by the GitHub
+Actions and GitLab CI GitOps integrations. Token-exchange errors appear on the
+admin console's Trust credentials page.
 
-On iOS and tvOS, auth keys work with custom coordination servers. Apple TV can
-use an auth key to join a tailnet. A custom coordination server URL may use
-HTTP with an explicit custom port (1.80.0).
+## Authentication scope and coordination servers
 
-The `AuthKey` system policy applies only while no user is logged in (1.96.2).
-Do not expect it to replace or reauthenticate an active user session.
+### AuthKey system policy scope (since 1.96.2)
 
-## Protect node keys and state
+The `AuthKey` system policy applies only when a user is not logged in.
 
-Node-key renewal preserves existing connections while the client
-reauthenticates (1.90.1). Node-key sealing is generally available and enabled
-by default on Linux, Windows, and macOS; upgrading an existing Linux node
-automatically migrates it to sealed node keys (1.90.1).
+### Apple clients and custom control servers (since 1.80.0)
 
-Tailnet Lock is generally available and can require the tailnet to verify new
-node keys received from the coordination server before trusting them (1.84.0).
-For programmatic consumers, `tailscale lock log --json` returns Authority
-Update Messages in a stable format (1.92.1), and
-`tailscale lock status -json` returns stable tailnet key-authority data
-(1.94.1).
+iOS and tvOS clients can use auth keys with custom coordination servers, and
+Apple TV can authenticate into a tailnet with an auth key. Custom coordination
+servers using HTTP with an explicit custom port are accepted.
 
-Encrypted-state controls differ by platform (1.86.0):
+## Tailnet management APIs
 
-- Linux supports TPM-backed storage with `tailscaled --encrypt-state`.
-- Windows provides the TPM-backed `EncryptState` system policy.
-- macOS uses `EncryptState` to store state in Keychain; the App Store client
-  always uses Keychain. Standalone macOS v1.86.4 applies policy changes without
-  restarting the system extension.
-- The `tsStateEncrypted` posture attribute reports whether client state is
-  encrypted at rest.
+### Paginated list-tailnets endpoint (since 1.102.2)
 
-## Author tailnet policy
+The endpoint returns 100 tailnets by default and accepts `limit` and `cursor`
+query parameters. Follow each response cursor until it is empty; use
+`totalCount` when the full count is needed.
 
-Grants and the `via` routing field are generally available (1.84.0). New
-tailnets and tailnet policy files that have never been edited use grants rather
-than ACL syntax, without changing effective permissions. Use `via` to require
-traffic to traverse selected exit nodes, subnet routers, or app connectors.
+### API-only tailnets (since 1.102.2)
 
-App connectors are generally available for securing access from a tailnet to
-SaaS applications (1.84.0). A beta visual policy editor can manage the tailnet
-policy file (1.86.0).
+An alpha API can create, list, and delete API-only tailnets within an
+organization.
 
-The admin console's Policy file management page stores the external URL for a
-GitOps policy repository. The older policy-file code comment is deprecated;
-if both values exist, the admin-console setting wins (1.84.0).
+### Admin console location (since 1.102.2)
 
-## Build posture checks
-
-The `ip:country` geolocation attribute is generally available for device
-posture checks (1.80.0). `tsStateEncrypted` can enforce encrypted-at-rest
-client state (1.86.0). The open-source macOS variant reports `node:osVersion`
-for OS-version posture evaluation (1.96.2).
-
-## Apply security corrections
-
-- Use a stable-line build containing the web-interface CSRF correction when
-  login attempts unexpectedly fail (1.86.0).
-- Control-plane connections through a CONNECT HTTPS proxy must verify the
-  destination hostname; the v1.86 stable line restores this behavior after a
-  regression (1.86.0).
-- Successful Tailscale SSH authentication on Linux emits a `LOGIN` message to
-  the kernel audit subsystem, enabling host audit-policy correlation (1.94.1).
+Use `console.tailscale.com` for the admin console. Authentication remains at
+`login.tailscale.com`, and `login.tailscale.com/admin/` redirects to the new
+console.

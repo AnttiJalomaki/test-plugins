@@ -1,16 +1,10 @@
 # Framework Core, Container, and Utilities
 
-Runtime requirements, contracts, the container, configuration, collections, strings, enums, and core helpers.
-
-Batch identifiers in section headings provide exact source attribution.
+Container behavior, contextual attributes, collections, strings, numbers, helpers, and framework contracts.
 
 ## `DatePeriod` range queries (2026-02)
 
 `whereBetween()` accepts `DatePeriod` boundaries and handles periods that do not have an end date.
-
-## Associative eager-loading keys (2026-02)
-
-Eager-loaded relationships now retain associative keys instead of reindexing their related results.
 
 ## Attribute-declared interface bindings (2025-06)
 
@@ -92,18 +86,6 @@ Custom contract implementations must add `Dispatcher::dispatchAfterResponse($com
 
 `Env::extend()` provides an extension point for registering custom adapters used to load environment variables.
 
-## Defaults when retrieving enum input (2025-05)
-
-Enum retrieval from request data accepts a default enum value when the key is absent or does not yield an enum: `$request->enum('status', Status::class, Status::Draft)`.
-
-## Dependency requirements (12.0-upgrade)
-
-Laravel 12 applications use `laravel/framework:^12.0`, PHPUnit 11, or Pest 3. Carbon 2 support is removed, so Carbon 3 is required.
-
-## Dependency requirements (13.0-upgrade)
-
-Laravel 13 applications use `laravel/framework:^13.0` and `laravel/tinker:^3.0`; update optional constraints to `laravel/boost:^2.0`, `phpunit/phpunit:^12.0`, or `pestphp/pest:^4.0` where applicable.
-
 ## Depth-limited array flattening (2026-03-laravel-12)
 
 `Arr::dot()` accepts a depth argument for limiting how deeply nested arrays are flattened.
@@ -111,10 +93,6 @@ Laravel 13 applications use `laravel/framework:^13.0` and `laravel/tinker:^3.0`;
 ```php
 $flattened = Arr::dot($data, depth: 2);
 ```
-
-## Enum-aware integration points (2025-12)
-
-Translator replacement values may be enums, and `Storage::fake()` accepts an enum as its disk name, avoiding manual scalar conversion at those call sites.
 
 ## Enum collection grouping (2025-09)
 
@@ -152,6 +130,10 @@ public function __construct(
 ) {}
 ```
 
+## Enum-aware integration points (2025-12)
+
+Translator replacement values may be enums, and `Storage::fake()` accepts an enum as its disk name, avoiding manual scalar conversion at those call sites.
+
 ## Expanded enum integration (2026-01)
 
 Session and cache APIs accept enum keys more broadly, including session `now()` / `flash()` and cache `flexible()` / `withoutOverlapping()`. Authorization ability checks accept `UnitEnum`, while `PendingBatch::onConnection()` and `Storage::persistentFake()` accept enum selectors.
@@ -188,10 +170,6 @@ $response = SalesCoach::make()->prompt('Analyze this sales transcript...');
 
 Custom `Json::$encoder` callbacks now receive the JSON encoding flags, so replacements can honor the same options as the default encoder.
 
-## Guided Boost upgrades (13.0-upgrade)
-
-Laravel Boost 2 can guide an installed Laravel 12 application through the upgrade with the `/upgrade-laravel-v13` command.
-
 ## Inherited framework attributes (2026-04)
 
 Model `CollectedBy` attributes, including those on abstract parents, controller `Middleware` attributes, and queued `WithoutRelations` attributes are inherited. A child model's `Table` attribute overrides its parent's.
@@ -203,6 +181,18 @@ Model `CollectedBy` attributes, including those on abstract parents, controller 
 ## Iterable fluent objects (2025-07)
 
 `Illuminate\Support\Fluent` is now iterable, so its attributes can be consumed directly with `foreach` and other iterable-aware code.
+
+## Keyed concurrency results (12.0-upgrade)
+
+`Concurrency::run()` preserves keys when given an associative array, so callers now receive a keyed result instead of a numerically indexed one.
+
+```php
+$result = Concurrency::run([
+    'first' => fn () => 2,
+    'second' => fn () => 4,
+]);
+// ['first' => 2, 'second' => 4]
+```
 
 ## Lazy and proxy object helpers (2025-12)
 
@@ -216,13 +206,13 @@ The support layer now includes `lazy` and `proxy` object helpers, providing firs
 
 `LazyCollection::takeUntilTimeout()` accepts a callback, allowing timeout-driven lazy iteration to trigger follow-up work when its time limit is reached.
 
-## Lazy creation values (2026-02)
+## Lazy exceptions in `throw_if()` (2025-10)
 
-`firstOrCreate()` and `createOrFirst()` accept a closure for their values payload, allowing creation attributes to be computed only when an insert is needed.
+`throw_if()` accepts a closure for lazily constructing the exception when its condition is true.
 
-## Line-break rejection in email addresses (2026-05)
-
-Email addresses containing line breaks are now rejected instead of reaching mail handling.
+```php
+throw_if($invalid, fn () => new DomainException('Invalid state'));
+```
 
 ## Literal translation delimiters (2026-01)
 
@@ -240,20 +230,6 @@ Closures registered through manager `extend()` methods are now bound to the mana
 
 `Str::is()` patterns now match across line breaks in multiline strings.
 
-## Nested array notation in `loadMissing` (2025-08)
-
-`loadMissing()` accepts nested relationship arrays in addition to flattened relationship paths.
-
-```php
-$post->loadMissing([
-    'comments' => ['author'],
-]);
-```
-
-## Nested policy discovery (12.0.0)
-
-Policy auto-discovery now follows parallel nested model and policy namespaces; for example, `App\Models\Admin\User` can discover `App\Policies\Admin\UserPolicy`.
-
 ## New macro extension points (2025-09)
 
 `RouteRegistrar` and `Illuminate\Support\Benchmark` are now macroable, so applications may add project-specific route-registration and benchmark helpers with their usual `macro()` APIs.
@@ -261,6 +237,10 @@ Policy auto-discovery now follows parallel nested model and policy namespaces; f
 ## Nullable defaults in method injection (13.0-upgrade)
 
 `Container::call()` now honors a nullable class parameter's default when no binding exists, matching constructor injection behavior. A parameter such as `?Carbon $date = null` now receives `null` rather than an automatically resolved `Carbon` instance.
+
+## Number parsing failures (2025-09)
+
+The locale-aware number parsing helpers may return `false`; callers of `Number::parseInt()` and `Number::parseFloat()` must account for parse failure rather than assuming a numeric result.
 
 ## Optional normalization before case conversion (2026-05)
 
@@ -278,14 +258,6 @@ A contextual attribute's resolution method receives the target reflection parame
 
 Laravel 13 depends on `symfony/polyfill-php85`, which may define globals such as `array_first()` and `array_last()` below PHP 8.5. Remove conflicting legacy helpers and use `Arr::first()` or related `Arr` methods when callback-based behavior is required.
 
-## PHP support window (12.0.0)
-
-Laravel 12 supports PHP 8.2 through 8.5. Bug fixes are scheduled through August 13, 2026, and security fixes through February 24, 2027.
-
-## PHP support window (13.0.0)
-
-Laravel 13 requires PHP 8.3 and supports PHP 8.3 through 8.5. Bug fixes are scheduled through Q3 2027 and security fixes through March 17, 2028.
-
 ## Remembered context values (2025-07)
 
 `Context::remember()` and `Context::rememberHidden()` lazily compute and store a value only when its visible or hidden context key is absent.
@@ -294,16 +266,42 @@ Laravel 13 requires PHP 8.3 and supports PHP 8.3 through 8.5. Bug fixes are sche
 $traceId = Context::remember('trace_id', fn () => (string) Str::uuid());
 ```
 
-## Requiring values within an array (2025-05)
-
-`Rule::contains()` builds a validation rule requiring an array input to contain specified values, as in `'features' => ['array', Rule::contains(['search', 'exports'])]`.
-
 ## Return-type-inferred container bindings (12.0.0)
 
 The container can infer the abstract being bound from a concrete closure's declared return type.
 
 ```php
 $app->bind(fn (): ServiceContract => new Service);
+```
+
+## Scoped context (2025-03)
+
+`Context::scope()` bounds temporary context changes to a callback and restores the surrounding context afterward.
+
+```php
+Context::scope(function () {
+    Context::add('tenant_id', 123);
+});
+```
+
+## Server-provided application base paths (2025-09)
+
+Application bootstrap may read `APP_BASE_PATH` from `$_SERVER`, allowing a host or bootstrap wrapper to set the base path before the application is loaded.
+
+```php
+$_SERVER['APP_BASE_PATH'] = '/srv/application';
+```
+
+## Singleton and scoped container attributes (2025-07)
+
+The container's `Singleton` and `Scoped` attributes declare a class's lifetime without service-provider binding code.
+
+```php
+#[Singleton]
+final class ExchangeRates {}
+
+#[Scoped]
+final class RequestState {}
 ```
 
 ## Static higher-order collection calls (2025-06)
@@ -332,9 +330,9 @@ public function __construct(
 ) {}
 ```
 
-## Subqueries as range bounds (2026-01)
+## Timeouts for concurrent runs (2026-05)
 
-Query-builder `between` conditions now accept subqueries in their boundary values and in the column-bound variant, allowing ranges whose limits are computed by another query.
+`Concurrency::run()` supports runtime timeouts, allowing a group of concurrent tasks to be bounded.
 
 ## Typed array accessors (2025-04)
 
@@ -352,11 +350,3 @@ Laravel's translation facilities expose typed accessors, avoiding manual narrowi
 ## Unicode-aware string trimming (2025-05)
 
 `Str::trim()` now removes the full set of invisible characters instead of only conventional whitespace, changing results for strings containing Unicode formatting or zero-width characters.
-
-## Updated dependency compatibility (2025-11)
-
-Laravel 12 now allows Resend 1.x and supports Symfony 7.4.
-
-## Wildcard trim exclusions (2025-12)
-
-`TrimStrings` middleware exclusions accept wildcard patterns, allowing one pattern to preserve matching nested inputs instead of enumerating every field.

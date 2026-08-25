@@ -1,113 +1,60 @@
 # MySQL, MariaDB, and SQLite
 
-## Async SQLite pooling
+## Async SQLite pooling default
 
-The `aiosqlite` dialect defaults to `AsyncAdaptedQueuePool`, replacing the
-previous connection-per-use behavior of `NullPool`. Existing code may now
-reuse connections and retain connection-scoped state for the lifetime of a
-pool entry.
-
-Opt into `NullPool` explicitly when every use must create and close a distinct
-connection:
+In 2.0.51, the `aiosqlite` dialect defaults to `AsyncAdaptedQueuePool` instead
+of `NullPool`. Code requiring a new connection per checkout must select
+`NullPool` explicitly:
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
-engine = create_async_engine(
-    "sqlite+aiosqlite:///app.db",
-    poolclass=NullPool,
-)
+engine = create_async_engine(url, poolclass=NullPool)
 ```
 
-Review tests or hooks that assumed a newly opened connection on every
-checkout.
+## Limited deletes and locking reads
 
-## SQLite `STRICT` tables
-
-Set `sqlite_strict=True` on `Table` to emit a SQLite `STRICT` table:
+MySQL and MariaDB `DELETE` statements accept integer-only `mysql_limit` and
+`mariadb_limit` through `Delete.with_dialect_options()` in 2.0.51:
 
 ```python
-from sqlalchemy import Column, Integer, MetaData, Table
+stmt = delete(t).with_dialect_options(mysql_limit=100)
+```
 
+On MySQL 8.0.1 and later, a locking read such as
+`select(t).with_for_update(read=True, skip_locked=True)` can render `FOR SHARE`
+with `NOWAIT` or `SKIP LOCKED`.
+
+## MariaDB-specific DDL option names
+
+With a `mariadb://` URL in 2.0.51, `mysql_with_parser` and `mysql_using` emit
+deprecation warnings. Replace them with `mariadb_with_parser` and
+`mariadb_using`. Supply both the `mysql_` and `mariadb_` variants when the same
+metadata definition must work with both dialects.
+
+## MySQL-Connector/Python
+
+The `mysql+mysqlconnector://` dialect supports modern MySQL and MariaDB again
+in 2.0.51. MariaDB connections require explicit charset and collation
+settings. Server-side cursors remain disabled for this driver.
+
+## MariaDB network types
+
+The MariaDB dialect supports the `INET4` and `INET6` SQL types as of 2.0.51.
+
+## SQLite strict tables
+
+Use `sqlite_strict=True` in 2.0.51 to create a SQLite `STRICT` table:
+
+```python
 event = Table(
     "event",
-    MetaData(),
+    metadata,
     Column("id", Integer),
     sqlite_strict=True,
 )
 ```
 
-Strict typing composes with a table that omits the rowid:
-
-```python
-event = Table(
-    "event",
-    MetaData(),
-    Column("id", Integer, primary_key=True),
-    sqlite_strict=True,
-    sqlite_with_rowid=False,
-)
-```
-
-The two dialect options control separate SQLite table characteristics and may
-be enabled together.
-
-## Limited deletes on MySQL and MariaDB
-
-MySQL and MariaDB `DELETE` statements accept their respective integer-only
-limit options through `Delete.with_dialect_options()`:
-
-```python
-from sqlalchemy import delete
-
-mysql_stmt = delete(t).with_dialect_options(mysql_limit=100)
-mariadb_stmt = delete(t).with_dialect_options(mariadb_limit=100)
-```
-
-Supply an integer, not an arbitrary SQL expression. Choose the option matching
-the compiled dialect when building dialect-specific statements.
-
-## MySQL locking reads
-
-On MySQL 8.0.1 and later, a read lock can render as `FOR SHARE` and combine
-with `NOWAIT` or `SKIP LOCKED`:
-
-```python
-stmt = select(t).with_for_update(
-    read=True,
-    skip_locked=True,
-)
-```
-
-Set `nowait=True` instead when immediate failure is required. Gate this SQL by
-the actual MySQL server version.
-
-## MariaDB-specific DDL option names
-
-When compiling through `mariadb://`, the MySQL-prefixed index options
-`mysql_with_parser` and `mysql_using` emit deprecation warnings. Prefer:
-
-- `mariadb_with_parser`; and
-- `mariadb_using`.
-
-If one metadata definition must compile for both MySQL and MariaDB, provide
-both dialect prefixes with equivalent values. Do not suppress the warning and
-assume the `mysql_` spelling will remain the MariaDB API.
-
-## MySQL-Connector/Python
-
-The `mysql+mysqlconnector://` dialect again supports modern MySQL and MariaDB.
-For MariaDB, configure charset and collation explicitly in the connection
-settings; do not rely on implicit defaults.
-
-Server-side cursors remain disabled for MySQL-Connector/Python. Streaming or
-memory assumptions must reflect the driver's actual cursor behavior rather
-than the capability of another MySQL DBAPI.
-
-## MariaDB network types
-
-The MariaDB dialect supports the server-native `INET4` and `INET6` SQL types.
-Use the dialect types when a schema must preserve those database types through
-DDL generation or reflection instead of reducing them to generic character
-columns.
+This composes with `sqlite_with_rowid=False`; both options can be set on the
+same `Table`.

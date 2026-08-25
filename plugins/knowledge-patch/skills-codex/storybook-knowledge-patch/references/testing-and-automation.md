@@ -1,35 +1,35 @@
 # Testing and automation
 
-## Test widget
+## Test widget and UI workflows
 
-Storybook's Test widget can run interaction tests and `axe-core` accessibility
-tests across all stories. It exposes results in the sidebar and watches files
-so that relevant tests rerun after changes.
+### Component and accessibility testing
 
-The widget also coordinates:
+The Test widget introduced for Storybook 9 can run interaction and `axe-core`
+accessibility tests across all stories (batch `9.0-10.0`). It:
 
-- Chromatic visual tests;
-- line coverage;
-- function coverage;
-- branch coverage.
+- exposes results in the sidebar;
+- watches files and reruns relevant tests;
+- coordinates Chromatic visual tests;
+- reports line, function, and branch coverage.
 
-Use the sidebar results to distinguish story-level failures, while retaining
-the underlying test and coverage outputs for CI diagnosis.
+Use the widget when a change should be exercised across the story catalog, not
+only through a single opened story.
 
-## UI-authored stories and Test Codegen
+### UI-authored stories and tests
 
-Stories can be created and edited from the Storybook UI. The Test Codegen addon
-records interactions and assertions and saves the resulting test without
-leaving Storybook.
+Storybook can create and edit stories in its UI (batch `9.0-10.0`). The Test
+Codegen addon records interactions and assertions and saves the resulting test
+without leaving Storybook.
 
-Review generated tests as maintained source: keep stable accessible queries,
-remove incidental interactions, and preserve only assertions that express the
-intended behavior.
+Review generated code before committing it, especially selectors and assertions
+whose stability depends on accessible roles or visible labels.
 
-## Globals at story, component, and project scope
+## Globals and test conditions
 
-A story or component can pin globals such as theme, viewport, locale, or
-background while leaving those globals configurable for other content:
+### Per-story and per-component globals
+
+Stories and components can pin theme, viewport, locale, background, or other
+globals while those values remain configurable elsewhere (batch `9.0-10.0`):
 
 ```ts
 export const Dark = {
@@ -38,24 +38,34 @@ export const Dark = {
 };
 ```
 
-Addon Vitest accepts `initialGlobals` at the test-project level. Use it when an
-entire project must execute with a fixed theme, viewport, locale, or other
-global. Do not confuse this project-wide initial state with a story's `globals`
-override.
+This is useful when one story expresses an invariant environment rather than
+merely an initial toolbar selection.
 
-## Cross-builder module automocking
+### Fixed globals for Vitest projects
 
-The `sb.mock` API is inspired by `vi.mock`, but it is a Storybook module-mocking
-facility that works with both Vite and Webpack builders. Its mocks remain
-available in development and static production builds.
+Addon Vitest accepts `initialGlobals` for a test project (since `10.5.0`). Use
+it to give an entire project a fixed theme, viewport, locale, or similar global
+state. Keep story-level invariants in `globals`; use `initialGlobals` when the
+test project itself owns the fixed condition.
 
-This makes `sb.mock` suitable for stories whose mocked behavior must work in a
-deployed static Storybook, rather than only inside a separate test process.
+## Module mocking
 
-## Story-bound tests
+### Builder-independent mocks
 
-CSF factory stories can experimentally attach named tests with `.test()`. The
-test callback receives the same testing context as a `play` function:
+Use `sb.mock` for module automocking with Vite and Webpack (batch `9.0-10.0`).
+Its API is modeled after `vi.mock`, but its important Storybook property is
+that mocks remain available in both development and static production builds.
+
+Prefer it when a story must behave the same in the dev server, test execution,
+and a deployed static Storybook.
+
+## Story-bound and server component tests
+
+### Named tests on CSF factory stories
+
+CSF factory stories can experimentally attach focused named tests with
+`.test()` (batch `9.0-10.0`). The callback receives the same testing context as
+`play`:
 
 ```ts
 Disabled.test('should be disabled', async ({ canvas, userEvent }) => {
@@ -65,27 +75,23 @@ Disabled.test('should be disabled', async ({ canvas, userEvent }) => {
 });
 ```
 
-This supports focused test-only stories. Such stories can be excluded from the
-sidebar so the navigation tree does not have to expose every test fixture.
+This supports test-only stories that can be excluded from the sidebar. Keep the
+story's render setup close to the attached assertion and use accessible queries
+for resilient generated output.
 
-CSF Next tag support also affects generated tests: a `skip` tag propagates to
-generated `.test` children. Check inherited tags when an expected generated
-test is skipped.
+### React Server Component tests
 
-## React Server Component tests
-
-React Server Components can be component-tested experimentally by running the
-server side in the browser. This removes the need to reserve every RSC test for
-an end-to-end environment. The underlying capability is also available for
+Storybook can experimentally component-test React Server Components by running
+their server side in the browser (batch `9.0-10.0`). This avoids limiting RSC
+coverage to end-to-end tests. The same underlying support is available for
 direct Vitest RSC tests.
 
-Treat this as experimental infrastructure and keep environment-specific server
-assumptions visible in test setup.
+## Visual review automation
 
-## Experimental visual review
+### Experimental review workflow
 
 Set `features.experimentalReview` to enable AI-curated visual changesets and
-search results:
+search results (since `10.5.0`):
 
 ```js
 export default {
@@ -93,8 +99,6 @@ export default {
 };
 ```
 
-The option is unset by default. This permits CLI integrations to enable the
-experimental review workflow deliberately instead of changing every project's
-default configuration.
-
-Batch attribution: `9.0-10.0`, `10.5.0`.
+The flag is unset by default so agent CLI plugins can opt into the experimental
+review workflow. Treat its results as review assistance rather than a
+replacement for deterministic interaction, accessibility, or visual tests.

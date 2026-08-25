@@ -1,82 +1,75 @@
-# WASI interface migration
+# WASI Interface Migration
 
-## Replace `wasi:io` concepts
+## WASI 0.2 interoperation (`wasi-0.3-guide`)
 
-The `wasi:io` package has no 0.3 release (wasi-0.3-guide). Map its concepts as
-follows:
+WASI 0.3 is additive, not a mandatory migration. A host may keep exposing
+WASI 0.2. A 0.3 runtime may also polyfill 0.2 by translating the component's
+imports into native 0.3 primitives at the host boundary.
 
-| `wasi:io` concept | Native replacement |
+Migrate primarily when a component needs composable async across component
+boundaries or needs the reshaped 0.3 interfaces.
+
+## Replacing `wasi:io`
+
+There is no 0.3 release of `wasi:io`. Translate its resources and operations
+as follows:
+
+| WASI 0.2 | WASI native async |
 | --- | --- |
 | `pollable` | `future<T>` |
 | `input-stream` | `stream<u8>` |
-| `output-stream` | a `stream<u8>` passed into a call |
+| `output-stream` | `stream<u8>` passed into a call |
 | polling | awaiting a future |
 | `subscribe()` | returning a future from the operation |
 
-Pair this mapping with the data-flow and completion patterns in
-[wasi-async.md](wasi-async.md).
+## HTTP reshaping
 
-## HTTP values and handler
-
-The reshaped `wasi:http` reduces nine request, response, body, out-parameter,
-and future resources to two principal values: `request` and `response`
-(wasi-0.3-guide).
-
-- Bodies are `stream<u8>`.
-- Trailers are delivered through a future.
-- A handler returns its response directly.
+`wasi:http` reduces nine request, response, body, out-parameter, and future
+resources to `request` and `response`. Bodies are `stream<u8>` values, and
+trailers use a future. The handler directly returns its response:
 
 ```wit
 handle: async func(request: request) -> result<response, error-code>;
 ```
 
-## HTTP worlds
+The `proxy` world is replaced by `service`. The `middleware` world both imports
+and exports the handler.
+
+## Socket capabilities and interfaces
+
+`wasi:sockets` removes the `network` resource that WASI 0.2 passed through
+bind, connect, and name lookup. Grant network access at the world level.
+
+The previous seven interfaces consolidate into `types` and `ip-name-lookup`.
+TCP `listen` directly returns `stream<tcp-socket>` instead of requiring a
+separate accept loop.
+
+## Filesystem, clocks, and CLI changes
+
+- Some filesystem methods become `async func`.
+- `wasi:clocks/wall-clock` becomes `system-clock`.
+- The clocks `datetime` type becomes `instant`.
+- CLI interfaces share the new `wasi:cli/types` interface.
+
+## Stable compatibility line (`wasi-0.3.0`)
+
+WASI 0.3.0 is ratified as stable. A component compiled for it remains
+compatible as later 0.3.x patch releases ship.
+
+## HTTP service and middleware roles
 
 The `service` world imports the HTTP `client` and exports the incoming
-`handler` (wasi-0.3.0):
+`handler`. The `middleware` world includes `service` and additionally imports
+a downstream `handler`, making it the successor to the WASI 0.2 `proxy` world.
 
 ```wit
 world service {
     import client;
     export handler;
 }
-```
 
-The `middleware` world includes `service` and imports a downstream `handler`.
-It is the successor to the 0.2 `proxy` world:
-
-```wit
 world middleware {
     include service;
     import handler;
 }
 ```
-
-Choose `service` for a terminal HTTP service. Choose `middleware` when the
-component must call the next handler and also expose a handler upstream.
-
-## Socket capabilities and interfaces
-
-The 0.3 socket design removes the `network` resource previously threaded
-through bind, connect, and name-lookup operations (wasi-0.3-guide). Network
-access is granted at the world level instead.
-
-The former seven socket interfaces consolidate into:
-
-- `types`; and
-- `ip-name-lookup`.
-
-TCP `listen` returns `stream<tcp-socket>` directly. Do not add a separate
-accept loop resource around that stream.
-
-## Filesystem, clocks, and CLI
-
-Additional interface changes in wasi-0.3-guide are:
-
-- some filesystem methods become `async func`;
-- `wasi:clocks/wall-clock` is renamed to `system-clock`;
-- the clocks `datetime` type is renamed to `instant`; and
-- CLI interfaces share the new `wasi:cli/types` interface.
-
-Update imports, generated type names, and async call sites together so that
-bindings do not retain a mixture of old and new interface shapes.

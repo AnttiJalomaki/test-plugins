@@ -1,12 +1,13 @@
 # Replication and Recovery
 
-Batch attribution: `17.0`, `18.0`.
+Use this reference for logical-slot failover, standby coordination,
+subscription behavior, replica conversion, and logical-replication tools. The
+changes are attributed to `17.0` and `18.0`.
 
-## Make logical slots survive publisher failover
+## Synchronize logical slots for failover
 
-Create a failover-capable logical slot with the fifth argument of
-`pg_create_logical_replication_slot()`, or set `failover = true` on a
-subscription.
+PostgreSQL 17 logical slots can be marked for failover with the fifth argument
+to `pg_create_logical_replication_slot()` or with a subscription option:
 
 ```sql
 SELECT *
@@ -20,39 +21,41 @@ CREATE SUBSCRIPTION orders_sub
   WITH (failover = true);
 ```
 
-On a standby, `sync_replication_slots` synchronizes failover slots and
-`pg_sync_replication_slots()` requests synchronization immediately.
-`synchronized_standby_slots` identifies physical standby slots that must catch
-up before decoded changes become visible to subscribers.
+Enable `sync_replication_slots` on the standby or call
+`pg_sync_replication_slots()` to request synchronization.
+`synchronized_standby_slots` lists physical standby slots that must catch up
+before decoded changes can become visible to subscribers. Coordinate the two
+settings so logical decoding cannot outrun the failover standby.
 
-Logical-slot diagnostics include `invalidation_reason` and `inactive_since`.
+## Convert and upgrade replicas without a new copy
 
-## Convert and upgrade replicas
+PostgreSQL 17 `pg_createsubscriber` converts a physical standby into a logical
+replica. `pg_upgrade` carries valid logical slots and full subscription state
+forward when the old cluster is PostgreSQL 17 or newer, allowing replication
+to resume without another data copy.
 
-`pg_createsubscriber` converts a physical standby to a logical replica. It can
-operate across every eligible database with `--all`, clean up after failure
-with `--clean`, and enable two-phase decoding with `--enable-two-phase`.
-
-An upgrade carries valid logical slots and complete subscription state forward,
-so replication can resume without a fresh data copy when the source cluster is
-PostgreSQL 17 or later.
-
-`pg_recvlogical --enable-failover` creates a failover-capable slot.
-`--enable-two-phase` replaces the deprecated `--two-phase` spelling, and
-`--drop-slot` no longer requires `--dbname`.
+Slot diagnostics include `invalidation_reason` and `inactive_since`.
 
 ## Bound replication resources
 
-`idle_replication_slot_timeout` automatically invalidates inactive slots.
-`max_active_replication_origins` separates the limit for active origins from
-`max_replication_slots`.
+PostgreSQL 18 `idle_replication_slot_timeout` automatically invalidates
+inactive slots. `max_active_replication_origins` separates the active-origin
+limit from `max_replication_slots`.
 
-## Publish generated columns and monitor apply conflicts
+## Publish generated columns intentionally
 
-A generated column named in a publication column list is published. When the
-publication has no column list, `publish_generated_columns` controls whether
-generated columns are sent.
+In PostgreSQL 18, generated columns named in a publication column list are
+published. Without a column list, `publish_generated_columns` decides whether
+generated columns are included.
 
-Subscription streaming defaults to `parallel`. `ALTER SUBSCRIPTION` can change
-the slot's two-phase behavior. Apply conflicts are written to the server log
-and counted in `pg_stat_subscription_stats`.
+Subscription streaming now defaults to `parallel`. `ALTER SUBSCRIPTION` can
+change the slot's two-phase behavior. Apply conflicts are logged and counted in
+`pg_stat_subscription_stats`.
+
+## Use current logical-replication utilities
+
+PostgreSQL 18 `pg_createsubscriber` adds `--all`, `--clean`, and
+`--enable-two-phase`. `pg_recvlogical --enable-failover` creates a
+failover-capable slot; `--enable-two-phase` replaces the deprecated
+`--two-phase` spelling. `pg_recvlogical --drop-slot` no longer requires
+`--dbname`.

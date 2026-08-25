@@ -1,74 +1,82 @@
-# Migration and dependency-build security
+# Migration and Dependency-Build Security
 
-This reference groups migration, dependency lifecycle-script controls, and
-patch safety. Relevant extraction markers include `2025-01`, `2025-02`,
-`2025-03`, `2025-04`, `2025-10`, `2025-12`, `2026-03`,
-`migration-10-to-11`, `11.0.0`, `11.4-11.5`, and `11.10-11.17`.
+Use this reference for pnpm 10-to-11 migration, dependency lifecycle-script
+permissions, dependency patches, and install-time source restrictions.
 
-## Migrate from pnpm 10 to pnpm 11
+## Migrate pnpm 10 Projects to pnpm 11
 
-Run the mechanical codemod at the workspace root:
+### Run the codemod first (batch `migration-10-to-11`)
+
+From the project root:
 
 ```sh
 pnpx codemod run pnpm-v10-to-v11
 ```
 
-Review each category after it runs:
+The codemod relocates supported configuration and updates the root
+package-manager declaration. Review every item below; several require manual
+work.
 
-- pnpm 11 does not read the `pnpm` field in `package.json`.
-- `.npmrc` is restricted to registry and authentication configuration.
-- Put all other settings in `pnpm-workspace.yaml` as camelCase keys.
-- Settings moved from a subproject `.npmrc` belong under
-  `packageConfigs["<project-name>"]`.
-- Replace `managePackageManagerVersions`, `packageManagerStrict`, and
-  `packageManagerStrictVersion` with `pmOnFail`; accepted values are
-  `download`, `ignore`, `warn`, and `error`.
-- Replace `auditConfig.ignoreCves` with `auditConfig.ignoreGhsas`. The codemod
-  can rename the field but cannot map CVE values; copy the corresponding GHSA
-  from the audit report's **More info** column.
-- `ignorePatchFailures` is removed. Every patch failure throws, so repair the
-  patch or remove the affected dependency.
-- Convert root `useNodeVersion` to `devEngines.runtime`. In subpackages,
-  manually replace `pnpm.executionEnv.nodeVersion` with that package's own
-  `devEngines.runtime` declaration.
-- Rename configuration environment variables from `npm_config_*` to
-  `pnpm_config_*` in CI, shells, and images. This does not prohibit the
-  user-supplied `npm_config_*` variables later restored to lifecycle scripts.
-- `pnpm link` needs a relative or absolute path; it no longer resolves a name
-  through the global store.
-- Bare `pnpm install -g` is removed. Use `pnpm add -g <package>`.
-- `pnpm server` is removed without replacement.
-- Scripts named `clean`, `setup`, `deploy`, or `rebuild` shadow built-ins. Use
-  `pnpm pm <name>` when the built-in is intended.
+### Move configuration
 
-## Runtime and platform prerequisites
+pnpm 11 no longer reads `package.json#pnpm`, and `.npmrc` is limited to
+authentication and registries. Move all other settings to camelCase keys in
+`pnpm-workspace.yaml`. The codemod stores subproject-specific `.npmrc` settings
+under `packageConfigs["<project-name>"]`.
 
-pnpm 11 requires Node.js 22 or newer and is distributed as pure ESM. The
-standalone executable requires glibc 2.27 or newer. Check CI base images and
-deployment hosts before changing the package-manager declaration.
+Replace `managePackageManagerVersions`, `packageManagerStrict`, and
+`packageManagerStrictVersion` with `pmOnFail`. Supported values are
+`download`, `ignore`, `warn`, and `error`.
 
-## Installation-policy defaults in pnpm 11
+Rename pnpm configuration environment variables from `npm_config_*` to
+`pnpm_config_*`.
 
-pnpm 11 defaults to:
+### Convert audit policy manually
+
+`auditConfig.ignoreCves` becomes `auditConfig.ignoreGhsas`. The codemod renames
+the key but cannot translate identifiers. For every CVE, use `pnpm audit` to
+find the corresponding GHSA in the More info column and replace the value.
 
 ```yaml
-minimumReleaseAge: 1440
-minimumReleaseAgeStrict: false
-blockExoticSubdeps: true
-strictDepBuilds: true
-optimisticRepeatInstall: true
-verifyDepsBeforeRun: install
+auditConfig:
+  ignoreGhsas:
+    - GHSA-xxxx-xxxx-xxxx
 ```
 
-Set `minimumReleaseAge: 0` only when intentionally opting out of the default
-one-day delay. Legacy `onlyBuiltDependencies`, `onlyBuiltDependenciesFile`,
-`neverBuiltDependencies`, `ignoredBuiltDependencies`, and `ignoreDepScripts`
-are unsupported; use `allowBuilds`.
+Later pnpm 11 releases prefer top-level `audit.level` and `audit.ignore`; see
+the registry and supply-chain reference.
 
-## Build controls in pnpm 10
+### Move runtime declarations
 
-pnpm 10 blocks dependency lifecycle scripts by default. Permit reviewed
-packages with `pnpm.onlyBuiltDependencies`:
+The codemod converts root `useNodeVersion` to `devEngines.runtime`. For each
+workspace subpackage, manually replace
+`package.json#pnpm.executionEnv.nodeVersion` with its own
+`devEngines.runtime` declaration.
+
+### Update removed or changed commands
+
+- `pnpm link <package-name>` no longer looks in the global store. Pass a
+  filesystem path, such as `pnpm link ./foo`.
+- Argument-free `pnpm install -g` is removed. Use
+  `pnpm add -g <package>`.
+- `pnpm server` is removed without replacement.
+- A package script named `clean`, `setup`, `deploy`, or `rebuild` shadows the
+  pnpm built-in. Use `pnpm pm <name>` to force the built-in.
+
+### Satisfy platform requirements (batch `11.0.0`)
+
+pnpm 11 requires Node.js 22 or newer and ships as pure ESM. The standalone
+executable requires glibc 2.27 or newer.
+
+Global installations now use isolated groups, and binaries live under
+`PNPM_HOME/bin`. Run `pnpm setup` after upgrading.
+
+## Dependency Build Permissions
+
+### pnpm 10 starts deny-by-default (batch `2025-01`)
+
+pnpm 10 skips dependency lifecycle scripts during installation unless the
+package appears in `pnpm.onlyBuiltDependencies`.
 
 ```json
 {
@@ -79,104 +87,198 @@ packages with `pnpm.onlyBuiltDependencies`:
 ```
 
 An empty `pnpm.neverBuiltDependencies` restores the older allow-all behavior.
-`pnpm.ignoredBuiltDependencies` blocks named packages without emitting the
-informational skipped-build message. `dangerouslyAllowAllBuilds` also allows
-every dependency script, globally or for one invocation:
+`pnpm.ignoredBuiltDependencies` keeps selected packages unbuilt without the
+informational skipped-build message.
 
-```sh
-pnpm config set dangerouslyAllowAllBuilds true
-pnpm install --dangerously-allow-all-builds
-```
-
-Use these broad exceptions sparingly. `strict-dep-builds=true` makes install
-fail when any dependency has an unreviewed build script.
-
-Review pending work with:
+Inspect and approve pending packages with:
 
 ```sh
 pnpm ignored-builds
 pnpm approve-builds
-pnpm approve-builds --global
 ```
 
-The global form reviews dependencies of globally installed packages. Adding
-an already-installed package to `onlyBuiltDependencies` causes the next
-install to run its previously skipped script.
+### Fail when builds have not been reviewed (batch `2025-02`)
 
-## One-command and persisted approval
+`strict-dep-builds=true` makes installation exit nonzero if any dependency has
+an unreviewed build script. pnpm 11 enables this behavior by default.
 
-`--allow-build=<package>` permits selected dependency scripts for `add`,
-`dlx`, and `create` workflows. A `dlx` or `create` target may run its own
-postinstall by default, but its dependencies remain blocked unless named.
+Use `pnpm approve-builds --global` to review scripts for dependencies of global
+packages.
+
+### Allow builds for one command (batch `2025-02`)
+
+The package invoked by `pnpm dlx` or `pnpm create` may run its own postinstall
+by default. Its dependencies remain blocked unless named with
+`--allow-build`.
+
+On `pnpm add`, the flag runs the named dependency scripts and records the
+packages for later installs:
 
 ```sh
 pnpm --allow-build=esbuild dlx bundle
 pnpm --allow-build=esbuild add bundle
 ```
 
-Earlier pnpm 10 writes these approvals into `onlyBuiltDependencies`; newer
-pnpm writes them into `allowBuilds`. `pnpm approve-builds --all` accepts every
-pending build without an interactive selector.
+Early pnpm 10 persists these decisions in `onlyBuiltDependencies`. Newer
+releases write to `allowBuilds` (batch `2026-03`).
 
-pnpm 11 also accepts package arguments and explicit denial:
+### Allow every dependency explicitly (batch `2025-04`)
+
+`dangerouslyAllowAllBuilds` permits all dependency build scripts and is
+equivalent to an empty `neverBuiltDependencies` list.
 
 ```sh
-pnpm approve-builds esbuild '!core-js'
+pnpm config set dangerouslyAllowAllBuilds true
+pnpm install --dangerously-allow-all-builds
 ```
 
-## Unified `allowBuilds`
+This is intentionally broad; prefer package-specific approvals.
 
-`allowBuilds` is the preferred map for both approval and denial. Matchers may
-include exact versions and `||` disjunctions:
+### Restrict approvals by version (batch `2025-10`)
+
+`onlyBuiltDependencies` accepts exact versions and `||` disjunctions:
+
+```yaml
+onlyBuiltDependencies:
+  - nx@21.6.4 || 21.6.5
+  - esbuild@0.25.1
+```
+
+### Unified allow and deny map (batch `2025-12`)
+
+`allowBuilds` replaces separate allowed and ignored lists. Map package or
+version matchers to true to allow scripts or false to block them.
 
 ```yaml
 allowBuilds:
   esbuild: true
   core-js: false
-  "nx@21.6.4 || 21.6.5": true
+  nx@21.6.4 || 21.6.5: true
 ```
 
-The older `onlyBuiltDependencies` also gained exact-version and `||` matchers
-before being removed in pnpm 11.
+When an already-installed package is newly allowed, the next install runs its
+previously skipped build (batch `2025-12`).
 
-Git-hosted dependencies cannot run `prepare` unless approved. pnpm 10.27 also
-honors `dangerouslyAllowAllBuilds` for them. In newer pnpm 11, an
-`allowBuilds` entry may match the repository URL without the resolved commit,
-so branch updates remain approved. A package-name-only matcher does not approve
-a Git artifact.
+### Approve non-interactively (batches `2026-03` and `11.0.0`)
 
-## Project lifecycle scripts
+`pnpm approve-builds --all` accepts every pending build without opening the
+selector.
 
-pnpm 10.1 added `preprepare` and `postprepare` around a project's `prepare`
-script. These are project scripts, distinct from blocked dependency build
-scripts.
+pnpm 11 also accepts positional package decisions. Prefix a package with `!`
+to deny it:
 
-## Dependency patches
+```sh
+pnpm approve-builds esbuild '!core-js'
+```
 
-`patchedDependencies` supports package name, range, and exact-version keys.
-Exact keys win over ranges, which win over name-only keys. Do not overlap
-ranges.
+### Remove all legacy controls in pnpm 11 (batch `11.0.0`)
+
+`onlyBuiltDependencies`, `onlyBuiltDependenciesFile`,
+`neverBuiltDependencies`, `ignoredBuiltDependencies`, and
+`ignoreDepScripts` are unsupported. Express all package allow and deny rules
+in `allowBuilds`.
+
+## Git Dependency Builds
+
+Starting in pnpm 10.26, a Git-hosted dependency cannot run `prepare` unless
+allowed by `onlyBuiltDependencies` or `allowBuilds`. pnpm 10.27 also honors
+`dangerouslyAllowAllBuilds` for Git dependencies (batch `2025-12`).
+
+An `allowBuilds` matcher may target the Git repository URL without a resolved
+commit, preserving approval when a branch advances. A package-name-only rule
+does not approve a Git-hosted artifact (batch `11.10-11.17`).
+
+## Dependency Patches
+
+### Select patches by range (batch `2025-03`)
+
+`patchedDependencies` accepts name-only, version-range, and exact-version
+keys. Exact keys win over ranges, which win over name-only keys. Avoid
+overlapping ranges.
 
 ```yaml
 patchedDependencies:
   foo: patches/foo-1.patch
-  "foo@^2.0.0": patches/foo-2.patch
+  foo@^2.0.0: patches/foo-2.patch
   foo@2.1.0: patches/foo-3.patch
 ```
 
-`foo@*` matches like a name-only key, except application failure is not
-ignored. In pnpm 10, the tri-state `ignorePatchFailures` policy behaves as
-follows:
+`foo@*` matches like a name-only key, except an application failure is not
+ignored.
 
-- unset: exact/range failures are errors; name-only failures are ignored;
-- `false`: every failure is an error;
+### Unused and failed patches in pnpm 10 (batch `2025-03`)
+
+`pnpm.allowNonAppliedPatches` was renamed to
+`pnpm.allowUnusedPatches`. The old name works with a deprecation warning.
+
+`ignorePatchFailures` is tri-state:
+
+- unset: exact/range patch failures are errors and name-only failures are
+  ignored;
+- `false`: every patch failure is an error;
 - `true`: every failure is a warning.
 
-`pnpm.allowNonAppliedPatches` was renamed to `pnpm.allowUnusedPatches`; the old
-name warns but remains supported in pnpm 10. pnpm 11 removes
-`ignorePatchFailures` and makes all failures fatal.
+### pnpm 11 patch policy (batch `migration-10-to-11`)
 
-Patch files are rejected if `diff --git` headers attempt to write, delete, or
-rename outside the patched package directory. Dependency aliases containing
-path-traversal segments are rejected while reading manifests and while linking
-`node_modules`.
+`ignorePatchFailures` is removed. Every patch failure throws; repair the patch
+or remove the affected dependency.
+
+Patch files may not escape the package directory. pnpm rejects
+`diff --git` headers that write, delete, or rename paths outside the patched
+package (batch `11.4-11.5`).
+
+## Source and Resolution Restrictions
+
+### Exotic transitive dependencies (batches `2025-12` and `11.0.0`)
+
+`blockExoticSubdeps` rejects exotic transitive sources such as `git+ssh:` and
+direct HTTPS tarballs. Direct dependencies may still use them. pnpm 11 enables
+this policy by default.
+
+```yaml
+blockExoticSubdeps: true
+```
+
+### Git and alias validation (batch `11.4-11.5`)
+
+Git resolutions require a full 40-character hexadecimal commit SHA. Dependency
+aliases with path-traversal segments are rejected when reading manifests and
+when linking into `node_modules`.
+
+### Tarball integrity
+
+HTTP tarballs receive a computed lockfile integrity on first fetch
+(batch `2025-12`). pnpm 10.34 fails changed locked checksums by default and
+requires the explicit `--update-checksums` acceptance path (batch `10.34.0`).
+Missing tarball integrity is fatal in pnpm 11 except for Git and local
+`file:` tarballs (batch `11.4-11.5`).
+
+See the installation reference for recovery rules and generated-tarball
+behavior.
+
+## Security-Related Installation Defaults
+
+pnpm 11 defaults the following settings (batch `11.0.0`):
+
+```yaml
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: false
+blockExoticSubdeps: true
+strictDepBuilds: true
+optimisticRepeatInstall: true
+verifyDepsBeforeRun: install
+```
+
+Set `minimumReleaseAge: 0` to opt out of the publication delay. Evaluate each
+default separately rather than disabling several protections to solve one
+compatibility problem.
+
+## Environment and Token-Helper Safety
+
+pnpm 10.27 rejects environment-variable references in `tokenHelper` and
+registry-scoped `<url>:tokenHelper` values (batch `2025-12`).
+
+Unscoped credentials are bound to the registry from the same configuration
+source at load time, preventing a later registry override from redirecting
+them. See the registry reference for the complete credential behavior
+(batch `10.34.0`).

@@ -1,86 +1,107 @@
 # Inference API
 
-Use this reference for endpoint definitions, request compatibility, chunking,
-provider integrations, and operational behavior.
+## Endpoint shape, requests, and compatibility
 
-## Endpoint and request controls
+### API expansion and route changes (9.0.0)
 
-### Unified APIs and service paths
+The Inference API adds unified chat completions, embedding and reranking
+backends, node-local rate limiting, and mTLS for the hosted inference service.
+Service paths gain a version prefix, and the sparse-embedding route changes.
 
-In 9.0.0, the Inference API adds unified chat completions, more embedding and
-reranking backends, node-local rate limiting, and mTLS for the hosted inference
-service. Service paths gain a version prefix and the sparse-embedding route
-changes.
+### Request and chunking options (9.1.0)
 
-### Request fields and chunking
+EIS sparse-inference request bodies rename `model_id` to `model`. The Perform
+Inference API exposes root-level `input_type` for `text_embedding` and adds
+common rerank options. Endpoints accept `none` to disable automatic chunking
+and support a recursive chunker.
 
-In 9.1.0, EIS sparse-inference request bodies rename `model_id` to `model`.
-The Perform Inference API exposes root-level `input_type` for
-`text_embedding` and adds common rerank options. Endpoints support `none` to
-disable automatic chunking and add a recursive chunker.
+### Scaling and endpoint compatibility (9.1.0)
 
-In 9.2.0, inference requests gain a configurable query timeout, and chunking
-settings no longer have an upper limit. Partial search results are disabled.
+Adaptive-allocation scale-to-zero is configurable and defaults to 24 hours.
+New Cohere endpoints use Cohere V2, and services can expose aliases.
 
-### Endpoint deletion and validation
+### Endpoint controls (9.2.0)
 
-In 9.2.0, invalid inference endpoints can be force-deleted when their model is
-invalid or stopping a deployment fails.
+Inference requests have a configurable query timeout, chunking settings no
+longer have an upper limit, and partial search results are disabled. An invalid
+endpoint can be force-deleted when its model is invalid or deployment shutdown
+fails.
 
-### Scaling and aliases
+### Endpoint controls (9.3.0)
 
-In 9.1.0, adaptive-allocation scale-to-zero is configurable and defaults to 24
-hours. Inference services can expose aliases.
+EIS dense and sparse services accept `max_batch_size`; unified responses report
+cached tokens; Jina AI embeddings support late chunking.
 
-### Batching, caching, and late chunking
+### Input and error requirements (9.4.0)
 
-In 9.3.0, EIS dense and sparse services accept `max_batch_size`, unified
-responses report cached tokens, and Jina AI embedding settings support late
-chunking.
+Chat-completion integrations support multimodal inputs and reasoning. Reasoning
+requests no longer accept `max_tokens`. Base64 embedding input must use a data
+URI. SageMaker `ElasticTextEmbeddingPayload` requires `similarity`. Inference
+timeouts return HTTP 504.
 
-## Tasks, licenses, and service compatibility
+### Secret parameters in maintenance releases
 
-### Expanded task coverage
+In 9.3.8 and 9.4.4, requests cannot override `secret_parameters`; see
+[breaking-changes.md](breaking-changes.md).
 
-In 9.3.0, the Inference API adds an embedding task type and EIS completion
-support. EIS requires a basic license.
+## Tasks and service integrations
 
-In 9.4.0, Jina AI and Elastic Inference Service add embedding tasks.
+### Service expansion (9.1.0)
 
-### Cohere and general endpoint compatibility
+Elasticsearch adds a custom inference service and Vertex AI chat/completion,
+Mistral and Hugging Face chat completion, DeepSeek, VoyageAI embedding and
+reranking, and SageMaker OpenAI-compatible chat and embedding integrations.
+Cohere supports binary embeddings, Jina AI accepts an embedding type, and
+Bedrock Cohere accepts task settings.
 
-In 9.1.0, new Cohere endpoints use the Cohere V2 API. Cohere gains binary
-embeddings, Jina AI accepts an embedding type, and Bedrock Cohere accepts task
-settings.
+### Service additions (9.2.0)
 
-## Provider integrations
+The API adds ContextualAI and Azure AI reranking; AI21, Google Model Garden
+Anthropic, Llama, and IBM watsonx completion/chat support. Vertex AI embeddings
+accept dimensions, OpenAI-compatible embedding and chat requests accept custom
+headers, and Gemini accepts a thinking budget.
 
-### Services added in 9.1.0
+### Tasks and providers (9.3.0)
 
-The Inference API adds a custom inference service; Vertex AI chat and
-completion; Mistral and Hugging Face chat completion; DeepSeek; VoyageAI
-embedding and rerank; and SageMaker OpenAI chat and embedding integrations.
+The API adds an embedding task and EIS completion; EIS requires a basic
+license. Integrations expand to Azure OpenAI-compatible and Groq chat
+completion, NVIDIA, OpenShift AI, and Google Model Garden for Meta, Mistral,
+Hugging Face, and AI21 models.
 
-### Services and options added in 9.2.0
+### Providers and inputs (9.4.0)
 
-The Inference API adds ContextualAI reranking; AI21, Google Model Garden
-Anthropic, Llama, and IBM watsonx completion and chat support; and Azure AI
-reranking. Provider-specific options include Vertex AI embedding dimensions,
-custom headers for OpenAI embedding and chat requests, and a Gemini thinking
-budget.
+The API adds Fireworks AI chat completion and embeddings, Amazon Bedrock chat
+completion, Jina AI and EIS embedding tasks, and Azure OpenAI-compatible custom
+headers and OAuth2.
 
-### Services added in 9.3.0
+## `semantic_text` and embedding defaults
 
-Provider coverage expands to Azure OpenAI and Groq chat completion, NVIDIA,
-OpenShift AI, and Google Model Garden integrations for Meta, Mistral, Hugging
-Face, and AI21 models.
+### General availability (8.18.0)
 
-### Services, authentication, and inputs added in 9.4.0
+The `semantic_text` mapping and integrated inference workflow are generally
+available. Search behavior is detailed in
+[search-and-vectors.md](search-and-vectors.md).
 
-The Inference API adds Fireworks AI chat completion and embeddings, Amazon
-Bedrock chat completion, Azure OpenAI custom headers and OAuth2, multimodal
-inputs, and reasoning for chat-completion integrations.
+### Vector configuration and chunking (9.1.0)
 
-Reasoning chat requests no longer accept `max_tokens`. Base64 embedding inputs
-must use data-URI format. SageMaker `ElasticTextEmbeddingPayload` requires
-`similarity`. Inference timeouts return HTTP 504.
+Mappings accept `index_options`, configurable chunking, and bit vectors;
+compatible services default new fields to BBQ. Empty content skips embedding
+generation. `semantic_text` subfields do not appear in field-capabilities
+responses. `sparse_vector` mappings have a default token-pruning setting.
+
+### Defaults and updates (9.3.0)
+
+An existing mapping can update `inference_id`. New fields default to ELSER on
+Elastic Inference Service when available, and support BFloat16.
+
+### Defaults (9.4.0)
+
+New fields inherit DiskBBQ indexing and BFloat16 storage. The default inference
+ID and service switch to Jina v5. The text-similarity rank retriever selects
+chunking defaults appropriate to its inference ID.
+
+## Deprecated inference behavior
+
+The `elser` service is deprecated as of 9.0. Avoid new endpoints and plan
+migration; see
+[deprecations-and-known-issues.md](deprecations-and-known-issues.md).

@@ -2,7 +2,7 @@
   "patch": "apollo-graphql-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T03:14:52Z",
+  "built_at": "2026-08-20T19:45:54Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -158,6 +158,11 @@
       "build": "included"
     },
     "2.16.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.2.10": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

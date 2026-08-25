@@ -1,96 +1,84 @@
-# Policy, security, and authentication
+# Policy, Security, and Authentication
 
-This reference draws on `release-notes-117`, `native-oidc`,
-`3.145.0-3.159.0`, `3.160.0-3.181.0`, `3.199.0-3.214.0`,
-`3.214.1-3.228.0`, `3.229.0-3.248.0`, and `3.249.0-3.254.0`.
+## Native OIDC login
 
-## OIDC and Pulumi Cloud login
+`pulumi login` exchanges an external identity provider OIDC token for a
+short-lived Pulumi Cloud token, avoiding a stored long-lived credential in CI
+(batch `native-oidc`). The organization must trust the issuer and authorize the
+claims and audience. `--oidc-token` accepts a raw token or `file://` path;
+`--oidc-org`, `--oidc-team`, and `--oidc-user` scope the result. Tokens expire in
+two hours by default; change this with `--oidc-expiration`.
 
-`pulumi login` accepts an external identity provider's OIDC token and exchanges
-it for a short-lived Pulumi Cloud token. The token lasts two hours by default;
-`--oidc-expiration` changes the lifetime. `--oidc-token` accepts a raw token or
-`file://` path. The Pulumi organization must trust the issuer and authorize the
-token's claims and audience (`native-oidc`).
+When a token is supplied, login defaults to Pulumi Cloud and infers organization,
+team, and user from JWT claims. OAuth refresh tokens in `credentials.json` cause
+a 401 to refresh the access token and retry once.
 
-```shell
-pulumi login \
-  --oidc-token file:///var/run/secrets/token \
-  --oidc-org my-org \
-  --oidc-team platform-team
-```
+Logout deletes all backend configuration, removes shared temporary credentials,
+and clears the current tokenless backend. `pulumi login --insecure` is retained
+in service secrets-manager state for self-signed backends.
 
-Use `--oidc-team` or `--oidc-user` to narrow the identity. When a token is
-given, the CLI defaults to Pulumi Cloud and can infer organization, team, and
-user from JWT claims (`3.214.1-3.228.0`).
+## Credential storage and provider login
 
-## Authentication lifecycle
+Set `PULUMI_CREDENTIAL_STORE` to opt into credential encryption with an
+operating-system-protected key. `pulumi env provider aws-login`, `azure-login`,
+and `gcp-login --export-env-vars` export standard provider SDK variables that
+reference login outputs.
 
-When `credentials.json` contains an OAuth refresh token, a 401 triggers one
-automatic access-token refresh and retry (`3.229.0-3.248.0`).
+## ESC environments
 
-Logout deletes all backend configuration, shared temporary agent credentials,
-and the current tokenless backend. This is a breaking behavior change; inspect
-the active login before automating logout (`3.229.0-3.248.0`).
+ESC can rotate long-lived credentials such as AWS IAM access keys on demand or
+on a schedule. Rotation uses two secrets for consumer transitions, separates
+administrator and consumer roles, and can call downstream webhooks.
 
-CLI-launched providers receive the active login through `PULUMI_API` and
-`PULUMI_ACCESS_TOKEN` (`3.229.0-3.248.0`).
+The ESC GitHub Action injects environment secrets and configuration into a
+workflow and can run ESC commands. It can pair with `pulumi/auth-actions` for
+OIDC-based Pulumi Cloud authentication. Opening an ESC environment projects
+files to disk and exposes their paths through environment variables for every
+output format.
 
-## Secret propagation and display
+`pulumi env open-request` submits the request for approval instead of leaving a
+draft; `--reason` supplies approver context. Local policy packs can resolve ESC
+environments.
 
-`preview` and `up --show-secrets` place plaintext secret values in terminal and
-captured output (`3.145.0-3.159.0`).
+## Policy installation and authoring
 
-When an invoke has a secret input but its provider cannot accept secrets, the
-engine marks outputs secret. The CLI's general secrets filter does not treat
-case-insensitive `true` and `false` as filter values
-(`3.214.1-3.228.0`). Node.js and Python hooks receive secrets as `Output`
-values (`3.199.0-3.214.0`). PCL can declare configuration values that must be
-read as secrets (`3.214.1-3.228.0`).
+`pulumi policy install` installs policy-pack dependencies; policy commands
+automatically install missing analyzer plugins. The engine supports severity
+overrides and the CLI displays each policy violation's severity.
 
-Automatic encrypted logs redact property-value secrets and can be shared with
-`pulumi logs share` (`3.249.0-3.254.0`).
+Go has a Policy as Code SDK; Automation API preview and up options can carry
+policy packs. The SDK exposes Pulumi `Context`, executable policy binaries, and
+full-stack validation through `policyx.NewStackValidationPolicy` and the
+`AnalyzeStack` RPC.
 
-Undecryptable `StackReference` outputs are omitted
-(`3.160.0-3.181.0`). Non-secret output reads and `pulumi about` no longer need
-the passphrase for passphrase-encrypted stacks (`3.249.0-3.254.0`).
+## Policy analysis
 
-## ESC operations
+`pulumi policy analyze` evaluates a pack against existing stack state.
+`--file <stack-export>` analyzes an export without stack selection or backend
+login. `pulumi policy new --runtime-options` supplies runtime settings.
 
-ESC rotates long-lived credentials such as AWS IAM access keys on a schedule or
-on demand. Rotation is declared in environments, keeps two secrets for smooth
-consumer transitions, supports separate administrator and consumer roles, and
-can invoke downstream-update webhooks (`release-notes-117`).
+Pulumi Insights can apply existing Policy as Code rules to discovered resources,
+including resources outside Pulumi IaC. Link Insights Accounts and stacks to
+Policy Groups to cover discovered AWS, Azure, OCI, and Kubernetes resources.
 
-The Pulumi ESC GitHub Action injects environment secrets/configuration into a
-workflow and can run ESC commands. Pair it with `pulumi/auth-actions` for
-OIDC-based tokenless Pulumi Cloud authentication (`release-notes-117`).
+## Secret behavior
 
-`pulumi env open-request` submits a request for approval rather than leaving a
-draft. Use `--reason` to add approver context (`3.249.0-3.254.0`).
+If an invoke has secret input and its provider lacks secret support, the engine
+marks the invoke outputs secret. Node.js and Python resource hooks receive
+secrets as `Output` values. Undecryptable stack-reference outputs are elided,
+and a missing Python stack-reference output does not raise.
 
-## Policy-pack lifecycle
+The general CLI secret filter does not consider case-insensitive `true` and
+`false` to be filter values. Automatic logs redact property secrets, but
+`preview` or `up --show-secrets` emits plaintext into terminal and captured logs.
 
-`pulumi policy install` installs policy-pack dependencies. Policy operations
-automatically install missing policy analyzer plugins
-(`3.214.1-3.228.0`).
+Reading non-secret stack outputs and running `pulumi about` no longer needs the
+passphrase for a passphrase-encrypted stack.
 
-The engine supports policy-severity overrides, and the CLI displays each
-violation's severity (`3.199.0-3.214.0`). Go Automation API preview and update
-options can carry policy packs (`3.160.0-3.181.0`).
+## Tracing
 
-## Analyze existing state and files
-
-`pulumi policy analyze` evaluates a policy pack against existing stack state;
-local packs can resolve ESC environments (`3.229.0-3.248.0`).
-
-`pulumi policy analyze --file <stack-export>` evaluates an exported state file
-without selecting a stack or logging into a backend. `pulumi policy new`
-accepts `--runtime-options`, and policy list/group list accept structured
-`--output` (`3.249.0-3.254.0`).
-
-## Insights-discovered resources
-
-Pulumi Insights can apply existing Policy as Code rules to discovered resources
-that are not managed by Pulumi IaC. Link Insights Accounts to Policy Groups
-alongside stacks to cover discovered AWS, Azure, OCI, and Kubernetes resources
-(`release-notes-117`).
+`--otel-traces` writes to a relative file or exports to gRPC, `grpcs://`, or
+HTTPS endpoints. Exporters accept header authentication and
+`OTEL_RESOURCE_ATTRIBUTES`. Provider OpenTracing spans are bridged into
+OpenTelemetry, and `TRACEPARENT` parents CLI spans beneath an existing trace
+(behavior spanning `3.214.1-3.228.0` and `3.255.0-3.258.0`).

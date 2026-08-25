@@ -1,162 +1,117 @@
 # Starlette
 
-Use this reference when FastAPI code directly uses Starlette lifespan, state, templates, middleware, requests, responses, tests, or WebSockets (`starlette-release-history`).
+## Migrate registration APIs before Starlette 1.0
 
-## Contents
+Starlette 1.0 removes these deprecated APIs:
 
-- [Starlette 1.0 migration](#starlette-10-migration)
-- [Typed lifespan and connection state](#typed-lifespan-and-connection-state)
-- [Templates in Starlette 1.0](#templates-in-starlette-10)
-- [Middleware and configuration](#middleware-and-configuration)
-- [Cookies](#cookies)
-- [Multipart forms](#multipart-forms)
-- [`TestClient`](#testclient)
-- [File responses and ranges](#file-responses-and-ranges)
-- [Streaming responses](#streaming-responses)
-- [WebSocket denial responses](#websocket-denial-responses)
+- `on_startup`, `on_shutdown`, `on_event()`, and `add_event_handler()`
+- router `startup()` and `shutdown()`
+- route, WebSocket-route, exception-handler, and middleware decorators
+- the `method` argument to `FileResponse`
 
-## Starlette 1.0 migration
-
-### Replace imperative lifecycle registration
-
-Starlette 1.0 removes these lifecycle APIs:
-
-- `on_startup` and `on_shutdown` constructor arguments on `Starlette` and `Router`.
-- `on_event()` and `add_event_handler()`.
-- `Router.startup()` and `Router.shutdown()`.
-
-Supply an async-context-manager `lifespan` instead.
-
-### Replace registration decorators
-
-Starlette 1.0 removes route, WebSocket-route, exception-handler, and middleware decorators. Pass `routes`, `exception_handlers`, and `middleware` to constructors. This is a Starlette change even though FastAPI retains or reimplements some compatibility APIs on its own classes.
-
-Starlette 1.0 also removes the `method=` argument from `FileResponse`.
-
-## Typed lifespan and connection state
-
-Starlette 0.52 supports dictionary-style state access. A `TypedDict` yielded from lifespan remains precisely typed through `Request[State]`. Starlette 1.0 extends the state generic to `WebSocket`:
+Use an async lifespan context manager and declarative `routes`, `middleware`,
+and `exception_handlers`. Starlette requires Python 3.10 or newer from 0.50.
 
 ```python
 from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
-from typing import TypedDict
-import httpx
 from starlette.applications import Starlette
-from starlette.requests import Request
-
-class AppState(TypedDict):
-    client: httpx.AsyncClient
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 
 @asynccontextmanager
-async def lifespan(app: Starlette) -> AsyncIterator[AppState]:
-    async with httpx.AsyncClient() as client:
-        yield {"client": client}
+async def lifespan(app):
+    yield
 
-async def endpoint(request: Request[AppState]):
-    client = request.state["client"]
+async def home(request):
+    return PlainTextResponse("ok")
+
+app = Starlette(
+    routes=[Route("/", home)],
+    lifespan=lifespan,
+)
 ```
 
-Use item access when retaining the `TypedDict`'s key-level type information matters.
+FastAPI 0.128.3 reimplements `on_event` across the accepted pre-1.0 Starlette
+range, but that compatibility layer does not restore the removed API in
+Starlette 1.0.
 
-## Templates in Starlette 1.0
+## Update Jinja template setup and calls
 
-`Jinja2Templates` changes in several ways:
-
-- Autoescaping is enabled by default.
-- `jinja2` must be installed when the templates integration is imported.
-- Arbitrary `**env_options` are no longer accepted; construct a `jinja2.Environment` and pass it with `env=`.
-- The legacy `TemplateResponse(name, context)` form is removed. Pass the request first: `templates.TemplateResponse(request, "index.html", context)`.
-
-Review rendered output for newly escaped values and update both template construction and response call sites during migration.
-
-## Middleware and configuration
-
-### Private-network CORS
-
-Starlette 0.51 adds `allow_private_network` to `CORSMiddleware`. Enable browser private-network access explicitly:
+Starlette 1.0 no longer accepts arbitrary `**env_options` in
+`Jinja2Templates`. Construct a `jinja2.Environment` and pass it through `env`.
+Call `TemplateResponse(request, name, ...)`, not the former name-first
+signature. Autoescaping is enabled by default, and importing
+`Jinja2Templates` requires Jinja2 to be installed.
 
 ```python
+from jinja2 import Environment, FileSystemLoader
+from starlette.templating import Jinja2Templates
+
+templates = Jinja2Templates(
+    env=Environment(
+        loader=FileSystemLoader("templates"),
+        autoescape=True,
+    )
+)
+
+async def page(request):
+    return templates.TemplateResponse(
+        request, "index.html", {"name": "Ada"}
+    )
+```
+
+## Private Network Access CORS
+
+Starlette 0.51 adds `allow_private_network` to `CORSMiddleware`. Starlette 1.0
+also returns an explicit origin, rather than `*`, when credentials are allowed.
+
+```python
+from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
+
+app = Starlette()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin],
+    allow_origins=["https://dashboard.example"],
+    allow_methods=["*"],
+    allow_credentials=True,
     allow_private_network=True,
 )
 ```
 
-Retain the usual origin controls; this flag opts into an additional browser access mode.
+## Set partitioned cookies
 
-### Environment-file encoding
-
-Starlette 0.49 adds `encoding` to `Config`:
-
-```python
-from starlette.config import Config
-
-config = Config(".env", encoding="utf-8")
-```
-
-Use it when environment files are not safely decoded by an implicit platform default.
-
-## Cookies
-
-Starlette 0.47 adds `partitioned` to `Response.set_cookie()`:
+Since Starlette 0.47, `Response.set_cookie()` accepts `partitioned=True` for
+cookies that should use partitioned storage:
 
 ```python
-response.set_cookie("session", token, partitioned=True)
-```
+from starlette.responses import Response
 
-Partitioned cookies are scoped by the browser's top-level site. Python 3.14 supplies the underlying cookie support; setting `partitioned=True` raises on older Python versions.
-
-## Multipart forms
-
-Starlette 0.40 adds `max_part_size` to `MultiPartParser`, and Starlette 0.44 exposes it through `Request.form()`:
-
-```python
-async with request.form(max_part_size=2 * 1024 * 1024) as form:
-    process(form)
-```
-
-Use the limit to bound individual multipart parts. In Starlette 0.46, the parser customization point named `max_file_size` is renamed to `spool_max_size`; update subclasses and configuration that controlled the in-memory spool threshold.
-
-## `TestClient`
-
-- Starlette 0.44 adds `client=(host, port)` to set the ASGI client address.
-- Starlette 0.43 removes deprecated `allow_redirects`; use `follow_redirects`.
-- Passing `timeout` is deprecated as of Starlette 0.46.
-
-```python
-with TestClient(
-    app,
-    client=("203.0.113.10", 50000),
-    follow_redirects=False,
-) as client:
-    response = client.get("/")
-```
-
-## File responses and ranges
-
-`FileResponse` handles HTTP `Range` requests, including multiple ranges, from Starlette 0.39. Do not remain on the initial affected range-handling releases:
-
-- Starlette 0.49.1 fixes a security vulnerability in range parsing.
-- Starlette 1.0 fixes additional multi-range response details.
-
-Test satisfiable, unsatisfiable, single-range, and multi-range requests when serving user-accessible files.
-
-## Streaming responses
-
-Starting in Starlette 0.42, a client disconnect while sending a `StreamingResponse` raises `ClientDisconnect`. Account for it in cleanup, middleware, error monitoring, and stream tests instead of assuming the send loop ends silently.
-
-Starlette 0.38 accepts `memoryview` in both `Response` and `StreamingResponse`. Return or yield an existing buffer view without first converting it to `bytes`.
-
-## WebSocket denial responses
-
-Starlette 0.37 supports the ASGI WebSocket Denial Response extension:
-
-```python
-await websocket.send_denial_response(
-    PlainTextResponse("Unauthorized", status_code=401)
+response = Response()
+response.set_cookie(
+    "session", "token", secure=True, partitioned=True
 )
 ```
 
-Starlette 0.41 additionally permits raising `HTTPException` before `websocket.accept()`. Starlette 1.0 allows `StreamingResponse` and `FileResponse` themselves to serve as denial responses.
+## Keep multipart limits distinct
+
+`Request.form(max_part_size=...)` limits each multipart part. In direct
+`MultiPartParser` configuration, Starlette 0.46 renames the former
+`max_file_size` setting to `spool_max_size`.
+
+```python
+from starlette.responses import PlainTextResponse
+
+async def submit(request):
+    form = await request.form(max_part_size=2 * 1024 * 1024)
+    return PlainTextResponse(str(form["value"]))
+```
+
+Do not treat the per-part limit and the in-memory spool threshold as the same
+control.
+
+## Handle streaming disconnects
+
+Since Starlette 0.42, `StreamingResponse` raises `ClientDisconnect` when the
+client drops. Middleware and code wrapping response transmission can catch and
+handle that explicit outcome rather than assuming the stream ended normally.

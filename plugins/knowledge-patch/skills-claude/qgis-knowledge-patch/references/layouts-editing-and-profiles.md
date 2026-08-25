@@ -1,135 +1,136 @@
 # Layouts, editing, and profiles
 
-## Layout legends and export
+Use this reference for digitizing, form behavior, merge policies, layout
+legends and charts, atlas framing, Geospatial PDF export, and elevation-profile
+persistence and presentation.
 
-### Wrap legend text
+## Snapping in the Georeferencer (since 3.42)
 
-Since 3.44, layout legend text can wrap automatically after a configured line
-length measured in millimeters.
+The Georeferencer includes snapping options and the Advanced Digitizing panel
+for placing reference points against existing geometry.
 
-### Select legend synchronization
+## Value-relation sorting (since 3.42)
 
-Since 4.0, the layout legend's former Auto update checkbox is replaced by
-**All Project Layers**, **Visible Layers**, and **Manual Layer Selection**.
-**Reset** replaces **Update All**. New legends default to Visible Layers,
-which follows visibility and layer-tree changes but does not filter by map
-extent. A global layout option can restore the previous default.
+Value Relation widgets can reverse their order or sort choices by a specified
+field.
 
-### Export layer-tree-aware Geospatial PDFs
+## Per-layer elevation-profile tolerance (since 3.42)
 
-Since 4.2, Print Layout Geospatial PDF export can preserve project groups,
-nesting, order, names, visibility, and group layers when the map item has no
-locked layers. It exports both visible and invisible project layers.
-Attributes are enabled for either all layers or none. Mutually exclusive
-groups are not supported.
+A vector layer's elevation properties can set `custom tolerance`, overriding
+the elevation-profile widget's global tolerance for that layer.
 
-## Layout grids, atlas, pictures, and charts
+## Auto-wrapped layout legends (since 3.44)
 
-### Control grid annotations by expression
+Layout legend text can wrap automatically after a configured line length
+measured in millimeters.
 
-Since 4.0, each layout-grid annotation can be shown or hidden by expression.
-Available variables are `@grid_axis`, `@grid_number`, `@grid_count`, and the
-one-based per-axis `@grid_index`.
+## Per-field merge policies (since 3.44)
 
-### Reshape atlas frames and isolate coverage
+Field configuration controls the initial value used by Merge Features.
+Policies include:
 
-Since 4.0, an atlas polygon can reshape a layout map item's frame for clipping
-and masking. A separate atlas option renders only the current coverage
-feature, avoiding expressions that hide all other coverage features.
+- Numeric Sum, Minimum, Maximum, and Geometry Weighted values.
+- Default Value.
+- Unset Field, falling back to the provider default or first feature.
+- Largest Geometry, based on length, area, or part count.
+- Set to Null.
 
-### Build data-driven charts
+## Project-wide scale calculation methods (since 3.44)
 
-Since 4.0, print and atlas layouts can contain chart items whose X and Y
-series come from source-layer expressions. Bar and line charts support
-filtering and ordered iteration; pie charts are also available.
+Projects calculate scale at the map top, bottom, middle, horizontal average,
+or equator. The choice affects new layout scale bars, displayed and API values
+such as `@map_scale`, scale-based visibility, Processing map renders, and
+server renders. It does not affect symbol sizes in map units. Equator mode is
+latitude-independent only for degree-based CRSs.
 
-Since 4.2, charts can derive X-axis categories from a source vector layer's
-renderer and reuse renderer symbol colors. A blank series counts matching
-features; a Y expression can instead sum a field or calculated value.
+## Profile subsection indicators (since 3.44)
 
-### Clip pictures by shapes
+Elevation profiles and Print Layout profile elements can show subsection
+indicators as vertical lines with custom symbology.
 
-Since 4.2, a layout picture can be clipped by a shape item. Both the picture
-and the clipping shape may be driven dynamically by atlas attributes.
+## Feature arrays along a line (since 4.0)
 
-## Feature and geometry editing
+A map tool can copy point, line, or polygon features into an array distributed
+along a line.
 
-### Create feature arrays along a line
+## Layout-legend synchronization modes (since 4.0)
 
-Since 4.0, a map tool can copy point, line, or polygon features into an array
-distributed along a line.
+The former Auto update checkbox is replaced by All Project Layers, Visible
+Layers, and Manual Layer Selection. Reset replaces Update All. New legends
+default to Visible Layers, which follows visibility and layer-tree changes but
+does not filter by map extent. A global layout option can restore the previous
+default.
 
-### Digitize Bézier curves, chamfers, and fillets
+## Data-defined layout-grid annotations (since 4.0)
 
-Since 4.0, the poly-Bézier/freeform map tool creates NURBS curves by dragging
-anchors and handles; `Alt`+click resets a point's handles. Polygon digitizing
-also supports chamfer and fillet tools.
+Each grid annotation can be shown or hidden by expression using `@grid_axis`,
+`@grid_number`, `@grid_count`, and one-based per-axis `@grid_index` variables.
 
-CAD floaters can display Cartesian or ellipsoidal area and total
-length/perimeter. Digitizing remains Cartesian, so the ellipsoidal display may
-differ from the resulting geometry.
+## Atlas frame and coverage controls (since 4.0)
 
-### Snap georeferencer points
+An atlas polygon can reshape a layout map item's frame for clipping and
+masking. A separate atlas option renders only the current coverage feature,
+avoiding expressions that suppress the other coverage features.
 
-Since 3.42, the Georeferencer provides snapping options and the Advanced
-Digitizing panel for placing reference points against existing geometry.
+## Data-driven layout charts (since 4.0)
 
-## Attribute forms and merge behavior
+Print and atlas layouts can contain chart items whose X and Y series come from
+source-layer expressions. Bar and line charts support filtering and ordered
+iteration; pie charts are also available.
 
-### Sort value relations
+## Bézier, chamfer, and fillet digitizing (since 4.0)
 
-Since 3.42, Value Relation widgets can reverse their order or sort choices by
-a specified field.
+The poly-Bézier/freeform map tool creates NURBS curves by dragging anchors and
+handles; `Alt`+click resets a point's handles. Polygon digitizing includes
+chamfer and fillet tools. CAD floaters can display Cartesian or ellipsoidal
+area and total length/perimeter. Digitizing stays Cartesian, so its ellipsoidal
+display can differ.
 
-### Set per-field merge policies
+## Raw attribute copying (since 4.0)
 
-Since 3.44, field configuration can define the initial value used by **Merge
-Features**. Available policies are numeric Sum, Minimum, Maximum, and Geometry
-Weighted values; Default Value; Unset Field; Largest Geometry; and Set to
-Null.
+Attribute tables and Identify Results can copy the literal provider value
+instead of the represented value produced by locale formatting, expressions,
+or display relations.
 
-Unset Field falls back to the provider default or the first feature. Largest
-Geometry compares length, area, or part count as appropriate.
+## Per-field remembered form values (since 4.0)
 
-### Copy raw provider attributes
+Attribute forms show a pin indicating whether the last captured value will be
+reused and let the user toggle it. Layer form configuration sets session reuse
+policies and their defaults or disables reuse for every field.
 
-Since 4.0, attribute tables and Identify Results can copy the literal provider
-value rather than the represented value produced by locale formatting,
-expressions, or display relations.
+## Automatic layout-legend inclusion (since 4.0)
 
-### Remember form values per field
+Vector, raster, mesh, and point-cloud layer properties have an enabled-by-default
+setting that controls whether the layer is added automatically to print-layout
+legends.
 
-Since 4.0, attribute forms display a pin showing whether the last captured
-value will be reused and allow the user to toggle it. Layer form configuration
-can set session reuse policies and their default, or disable reuse for all
-fields.
+## Persistent and synchronized elevation profiles (since 4.0)
 
-## Elevation profiles
+Save elevation profiles in the project and reopen, rename, or remove them via
+the project-level profile manager. Opt-in Synchronize Layers to Project mode
+mirrors groups, layer order, and the main layer tree into a profile.
+`QgsLayerTreeCustomNode` lets APIs represent non-layer application objects in
+layer trees.
 
-### Override profile tolerance per layer
+## Renderer-derived layout charts (since 4.2)
 
-Since 3.42, a vector layer's elevation properties can set **custom tolerance**
-to override the elevation profile widget's global tolerance for that layer.
+Layout charts can derive X-axis categories from a source vector layer's
+renderer and reuse its symbol colors. A blank series counts matching features;
+a Y expression can instead sum a field or calculated value.
 
-### Mark profile subsections
+## Shape-clipped layout pictures (since 4.2)
 
-Since 3.44, elevation profiles and Print Layout profile elements can display
-subsection indicators as vertical lines with custom symbology.
+A layout picture can be clipped by a shape item. Both pictures and shapes may
+be driven dynamically by atlas attributes.
 
-### Save and synchronize profiles
+## Layer-tree-aware Geospatial PDFs (since 4.2)
 
-Since 4.0, elevation profiles can be stored in the project and later reopened,
-renamed, or removed from the project-level profile manager. Opt-in
-**Synchronize Layers to Project** mirrors the main layer tree, including
-groups and order, into a profile.
+Print-layout Geospatial PDF export can preserve project groups, nesting, order,
+names, visibility, and group layers when the map item has no locked layers.
+Visible and invisible project layers are exported. Attributes are enabled for
+all layers or none, and mutually exclusive groups are unsupported.
 
-`QgsLayerTreeCustomNode` allows APIs to represent non-layer application
-objects in layer trees.
+## Processing actions in custom UI (since 4.2)
 
-## Coordinate reference systems
-
-### Configure a topocentric CRS
-
-Since 4.2, QGIS supports topocentric coordinate reference systems. An
-origin-point widget is enabled when **Topocentric CRS** is explicitly selected
-in the CRS chooser.
+Assign a Processing algorithm to a user-defined menu or toolbar. Triggering
+the action opens the algorithm's parameter and execution dialog.

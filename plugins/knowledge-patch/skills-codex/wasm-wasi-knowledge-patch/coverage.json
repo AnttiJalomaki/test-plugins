@@ -2,7 +2,7 @@
   "patch": "wasm-wasi-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T16:59:18Z",
+  "built_at": "2026-08-22T09:30:55Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -33,6 +33,11 @@
       "build": "included"
     },
     "wasi-0.3.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "wasi-0.3.1": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

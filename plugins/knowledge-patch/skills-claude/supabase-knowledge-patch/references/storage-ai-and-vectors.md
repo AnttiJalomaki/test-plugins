@@ -1,196 +1,183 @@
-# Storage, AI, and vectors
+# Storage, AI, and Vectors
 
-## S3 and object workflows
+Use this reference for Storage uploads and S3, Analytics and Vector buckets, embeddings, CDN behavior, and encryption integrations.
 
-### S3 authentication modes
+## Supabase JS compatibility (`supabase-js-2.101.0`)
 
-Preferred large-file endpoint: `https://<project-ref>.storage.supabase.co/storage/v1/s3`; it interoperates with REST and resumable objects. Generated S3 keys are server-only and bypass RLS across all buckets. To enforce user Storage RLS, use project ref as access-key ID, anon key as secret, and user JWT as AWS session token. Object versioning is unsupported.
+### Storage Analytics and Vector clients
+`storage-js` adds Analytics and Vector APIs; the Analytics surface is named `StorageAnalyticsClient`, and its `from()` method follows the `{ data, error }` convention. Vector query responses use `vectors` rather than `matches`.
+
+### Storage listing, downloads, and errors
+Bucket listing supports pagination and sorting, including sorting in list V2. Downloads expose fetch parameters, and `StorageError` exposes `status` and `statusCode`.
+
+## Embedding generation and refresh
+
+### Queue-backed automatic embedding updates
+The guide's reusable pattern defines generic `util.queue_embeddings` and `util.process_embeddings` helpers: row triggers put `{ id, schema, table, contentFunction, embeddingColumn }` jobs onto a `pgmq` queue, then `pg_cron` and `pg_net` send claimed batches to an Edge Function. Set the queue visibility timeout to the function timeout; the worker can connect through the built-in `SUPABASE_DB_URL`, delete only successful jobs, and leave failed or interrupted jobs to become visible for retry.
+
+```sql
+select pgmq.create('embedding_jobs');
+
+create trigger embed_documents_on_insert
+  after insert on documents
+  for each row
+  execute function util.queue_embeddings('embedding_input', 'embedding');
+
+select cron.schedule(
+  'process-embeddings',
+  '10 seconds',
+  $$ select util.process_embeddings(); $$
+);
+```
+
+### Avoiding stale embeddings during regeneration
+The generic worker requires an `id` primary key and a row-to-text content function, while an update trigger must watch every column that function reads. Existing vectors remain queryable during asynchronous regeneration unless a nullable embedding column is cleared first with a `before` row trigger; the guide's generic `util.clear_column` helper requires `hstore`.
+
+```sql
+create trigger clear_document_embedding_on_update
+  before update of title, content
+  on documents
+  for each row
+  execute function util.clear_column('embedding');
+```
+
+### Built-in Edge Function embeddings
+The Edge Runtime can generate embeddings without an external inference API through `Supabase.ai.Session`; its built-in surface currently supports only `gte-small`. Keep the session at module scope so requests reuse it, and enable mean pooling and normalization for sentence embeddings used with dot-product distance.
 
 ```ts
-const s3 = new S3Client({
-  forcePathStyle: true, region,
-  endpoint: `https://${projectRef}.storage.supabase.co/storage/v1/s3`,
-  credentials: {
-    accessKeyId: projectRef, secretAccessKey: anonKey,
-    sessionToken: session.access_token,
-  },
+const session = new Supabase.ai.Session('gte-small')
+const embedding = await session.run(input, {
+  mean_pool: true,
+  normalize: true,
 })
 ```
 
-### Cross-bucket copies and moves
+## Storage, S3, Analytics, and Vector APIs
 
-`copy()`/`move()` accept `destinationBucket`; limit is 5 GB and initiator becomes destination owner. Copy needs source `SELECT`, destination `INSERT`, plus `UPDATE` for upsert. Move needs `SELECT` and `UPDATE`.
-
-```ts
-await supabase.storage.from('avatars').copy(
-  'public/a.png', 'archive/a.png', { destinationBucket: 'avatars-archive' },
-)
-```
-
-### Signed resumable uploads
-
-TUS should use direct Storage host, fixed 6 MB chunks, `/storage/v1/upload/resumable`. Upload URLs expire in 24h and permit one concurrent writer. `createSignedUploadUrl({ upsert })` supplies a token for `x-signature`; races are first-completion-wins normally, last-completion-wins under upsert.
-
-### Storage file limits
-
-Global upload maximum is 50 MB Free and 500 GB Pro/Team; Enterprise varies. Bucket limits and MIME restrictions can only narrow the global limit.
-
-### New Storage error-code shape
-
-Storage is moving to `{ code, message }` with PascalCase codes such as `NoSuchBucket`, `EntityTooLarge`, `ResourceAlreadyExists`, `DatabaseTimeout`, `ResourceLocked`, `SlowDown`. Legacy `httpStatusCode`/lowercase may coexist. JavaScript should inspect `error.error`, `message`, `status`, `statusCode`.
-
-```json
-{ "code": "NoSuchKey", "message": "The specified key does not exist" }
-```
-
-### Storage object inspection and V2 listing
-
-Bucket scopes have `exists(path)` and `info(path)`; `info()` exposes size/type/timestamps and camel-case `lastModified`. Provisional `listV2()` separates metadata-rich `objects` from minimal `{ name, key? }` `folders`, returning `hasNext`/`nextCursor` for cursor pagination.
-
-## Analytics buckets and Iceberg
-
-### Analytics buckets and Iceberg
-
-Private-alpha Analytics buckets store Iceberg tables: catalog metadata in REST Catalog and Parquet behind S3. Managed ETL into them was removed; bring ingestion or use managed Database Replication to BigQuery.
+### Analytics buckets are Iceberg warehouses
+Private-alpha Analytics buckets store Parquet data behind an S3-compatible endpoint while a separate Iceberg REST Catalog manages namespaces, tables, schemas, partitions, and snapshots. Alpha defaults allow two Analytics buckets per project, ten namespaces per bucket, and ten tables per namespace.
 
 ```ts
 await supabase.storage.analytics.createBucket('analytics-data')
 ```
 
-### Connecting Iceberg clients
+### Analytics connections require two credential sets
+Iceberg clients authenticate catalog requests to `/storage/v1/iceberg` with the project service key and data requests to `/storage/v1/s3` with generated S3 credentials. PyIceberg, Spark, and DuckDB can use those two endpoints; Postgres can query and join the tables through the Iceberg Foreign Data Wrapper.
 
-Catalog bearer auth uses service key; data uses separate S3 keys and region. Bucket name is warehouse. PyIceberg, Spark, DuckDB use catalog `/storage/v1/iceberg` and data `/storage/v1/s3`.
-
-```py
-catalog = load_catalog(
-    "supabase-analytics", type="rest", warehouse="analytics-data",
-    uri=f"https://{project_ref}.supabase.co/storage/v1/iceberg",
-    token=service_key,
-    **{
-        "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
-        "s3.endpoint": f"https://{project_ref}.supabase.co/storage/v1/s3",
-        "s3.access-key-id": s3_access_key,
-        "s3.secret-access-key": s3_secret_key,
-        "s3.region": region,
-        "s3.force-virtual-addressing": False,
-    },
-)
+```sh
+curl 'https://<project-ref>.supabase.co/storage/v1/iceberg/v1/config?warehouse=<bucket>' \
+  -H 'Authorization: Bearer <service-key>'
 ```
 
-### Querying Analytics buckets from Postgres
-
-Dashboard **Query with Postgres** configures Iceberg FDW and foreign tables for ordinary SQL joins. Alpha defaults: 2 buckets/project, 10 namespaces/bucket, 10 tables/namespace. Usage is free during alpha; egress still bills.
-
-### Analytics bucket JavaScript client
-
-`supabase.storage.analytics` creates/deletes Iceberg buckets and lists only `ANALYTICS` buckets with limit/offset/sort options. Delete requires empty bucket.
-
-### iceberg-js
-
-`iceberg-js` is a minimal, platform-neutral JavaScript client for the Apache Iceberg REST Catalog API.
-
-## Vector buckets
-
-### Vector buckets and indexes
-
-Alpha Vector buckets are S3-backed stores for large backend search. Prefer pgvector for low-latency prototypes/smaller user-facing data. Each index fixes immutable `float32` type, dimension, and `cosine`, `euclidean`, or `l2` distance metric.
+### Vector indexes have an immutable schema
+An alpha Vector bucket contains indexes whose dimension, distance metric, and data type cannot be changed after creation; only `float32` is currently supported, with `cosine`, `euclidean`, or `l2` distance and at most 4,096 dimensions. Defaults allow ten Vector buckets per project and ten indexes per bucket.
 
 ```ts
-await supabase.storage.vectors.createBucket('embeddings')
 const bucket = supabase.storage.vectors.from('embeddings')
 await bucket.createIndex({
-  indexName: 'documents', dataType: 'float32', dimension: 1536,
+  indexName: 'documents',
+  dataType: 'float32',
+  dimension: 1536,
   distanceMetric: 'cosine',
 })
 ```
 
-### Vector writes and similarity queries
-
-`putVectors()` upserts keyed vectors with filterable metadata. `queryVectors()` takes a `float32` query, `topK`, filters, and return flags; lower distance is closer. Also use `getVectors()`, `deleteVectors()`, and continuation-token `listVectors()`.
+### Vector records and similarity queries
+Each vector has a string key, `data.float32`, and optional filterable metadata. `putVectors()` replaces an existing key, while queries rank the lowest distance first and can filter metadata before returning neighbors.
 
 ```ts
 const index = bucket.index('documents')
-await index.putVectors({ vectors: [{
-  key: 'doc-1', data: { float32: embedding },
-  metadata: { category: 'guide', published: true },
-}] })
+await index.putVectors({ vectors: [
+  { key: 'doc-1', data: { float32: embedding }, metadata: { category: 'guide' } },
+] })
+
 const { data } = await index.queryVectors({
-  queryVector: { float32: queryEmbedding }, topK: 5,
-  filter: { category: 'guide', published: true },
-  returnDistance: true, returnMetadata: true,
+  queryVector: { float32: queryEmbedding },
+  topK: 5,
+  filter: { category: 'guide' },
+  returnDistance: true,
+  returnMetadata: true,
 })
 ```
 
-### SQL access to Vector buckets
+The examples and index-creation guide batch writes at a maximum of 500 vectors, while the alpha limits table separately lists 1,000 vectors per insert/update request; use 500 as the conservative client batch until that contract converges.
 
-S3 Vector Wrapper exposes `key`, `data` (`embd`), `metadata`; use only `data <==> query` for similarity and rank with `embd_distance(data)`.
+### Vector buckets through Postgres
+The S3 Vector Wrapper exposes an index as a foreign table with `key`, `data`, and `metadata`. SQL similarity search uses the sole `<===>` search operator with the `embd` type, and `embd_distance(data)` exposes the computed distance.
 
 ```sql
 select key, metadata, embd_distance(data) as distance
 from s3_vectors.documents
 where data <==> '[0.1, 0.2, 0.3]'::embd
-order by embd_distance(data)
+order by distance
 limit 5;
 ```
 
-### Vector alpha limits
+### RLS-scoped S3 session credentials
+Generated S3 access keys are server-only credentials with full cross-bucket access that bypasses RLS. To scope an S3 client to a user, use the project reference as the access-key ID, the anon key as the secret, and the user's JWT as the session token; Storage validates the JWT and applies `storage` RLS.
 
-Defaults: 10 Vector buckets/project, 10 indexes/bucket, 4,096 dimensions. Limit insert/update operations to 500 vectors per batch; this is the conservative supported value while alpha source limits differ.
-
-### Vector bucket JavaScript client
-
-Use `supabase.storage.vectors` for buckets, `.from(bucket)` for indexes, `.index(index)` for `putVectors`, `getVectors`, `listVectors`, `deleteVectors`, `queryVectors`. Puts upsert keys; queries accept metadata filters and can return metadata/distance.
-
-## Automatic embeddings and scaling
-
-### Queue-backed automatic embedding updates
-
-Use `pgmq`, `pg_cron`, `pg_net`, and a Function so remote inference never occurs in a write transaction. Row triggers enqueue row ID plus embedding contract; scheduled processing reads batches and deletes only after the embedding is stored.
-
-Vault secret `project_url` holds hosted URL; local value is `http://api.supabase.internal:8000`. Invocation helper appends `/functions/v1/<name>` and reuses request Authorization when present.
-
-The generic worker expects numeric PK `id`; content function accepts the row type and returns text. Create separate insert and `update of` triggers and keep update columns aligned with all content-function dependencies.
-
-```sql
-create extension if not exists pgmq;
-create schema if not exists util;
-select pgmq.create('embedding_jobs');
-
-create trigger embed_documents_on_insert
-after insert on documents for each row
-execute function util.queue_embeddings('embedding_input', 'embedding');
-
-create trigger embed_documents_on_update
-after update of title, content on documents for each row
-execute function util.queue_embeddings('embedding_input', 'embedding');
-
-select cron.schedule('process-embeddings', '10 seconds',
-  $$ select util.process_embeddings(); $$);
+```ts
+const client = new S3Client({
+  forcePathStyle: true,
+  region,
+  endpoint: `https://${projectRef}.storage.supabase.co/storage/v1/s3`,
+  credentials: {
+    accessKeyId: projectRef,
+    secretAccessKey: anonKey,
+    sessionToken: session.access_token,
+  },
+})
 ```
 
-Stale vectors remain searchable until regeneration. If correctness outweighs coverage, a before-update trigger can null the embedding; the reusable `util.clear_column()` uses `hstore`.
+### S3 compatibility boundaries
+Objects uploaded through S3, REST, or resumable uploads are interoperable, and S3 presigned query URLs use Signature V4 after S3 access is enabled. S3 versioning, lifecycle configuration, bucket CORS configuration, ACLs, object locking, and server-side-encryption controls are not supported; multipart uploads are automatically aborted after 24 hours.
 
-### Embedding retries and failure tracing
+### Resumable-upload contract
+Supabase's TUS endpoint is `/storage/v1/upload/resumable`; large uploads should use the direct `*.storage.supabase.co` hostname and chunks of exactly `6 * 1024 * 1024` bytes. Each generated upload URL accepts `PATCH` requests for up to 24 hours and permits one concurrent writer; different URLs targeting one path are first-completion-wins, or last-completion-wins with `x-upsert: true`.
 
-Match `pgmq.read` visibility timeout to Function timeout, so failure reappears. The worker isolates batch jobs and returns 200 even with partial failures, with `x-completed-jobs`/`x-failed-jobs`. Inspect `net._http_response` and correlate `x-deno-execution-id` with logs.
-
-```sql
-select * from net._http_response
-where (headers->>'x-failed-jobs')::int > 0;
+```ts
+new tus.Upload(file, {
+  endpoint: `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`,
+  chunkSize: 6 * 1024 * 1024,
+  headers: { authorization: `Bearer ${accessToken}` },
+  metadata: { bucketName, objectName, contentType },
+})
 ```
 
-### Independently scalable vector projects
+A token from `createSignedUploadUrl(path, { upsert })` can authorize a resumable upload through the `x-signature` header.
 
-Put large collections in separate projects for independent scaling. Query directly with Vecs when possible. If the primary DB must expose a remote collection through normal clients, attach with `postgres_fdw` and a foreign table.
+### Cross-bucket copy and move
+`copy()` and `move()` accept `destinationBucket` and are limited to objects up to 5 GB. A copy needs `SELECT` on the source and `INSERT` on the destination (`UPDATE` as well for upsert); a move needs `SELECT` and `UPDATE`, removes the source, and assigns the initiating user as owner of the destination object.
 
-```sql
-create extension postgres_fdw;
-create server docs_server foreign data wrapper postgres_fdw
-  options (host 'db.example.supabase.co', port '5432', dbname 'postgres');
-create user mapping for authenticated server docs_server
-  options (user 'vector_reader', password '<password>');
+```ts
+await supabase.storage.from('source').move('old/file.bin', 'new/file.bin', {
+  destinationBucket: 'destination',
+})
 ```
 
-### Python vector client boundary
+### Object ownership uses `owner_id`
+New bucket and object ownership is derived from the JWT `sub` and stored in `owner_id`; the older `owner` field is deprecated. Resources created with a service key or through the Dashboard have no owner set, and ownership grants no access by itself—it must be enforced in RLS.
 
-Vecs fits data-science/ephemeral use and should get the Shared Pooler string. Production Python with versioned migrations should register pgvector through `pgvector-python` in Django, SQLAlchemy, SQLModel, psycopg, asyncpg, or Peewee.
+### New Storage error envelope
+Storage is transitioning from the legacy `{ httpStatusCode, code, message }` body to `{ code, message }` with names such as `NoSuchKey`, `ResourceAlreadyExists`, `ResourceLocked`, `DatabaseTimeout`, and `SlowDown`. A `NoSuchBucket` or `NoSuchKey` response can also mean RLS hid an existing resource; lock failures use `423`, database timeouts `504`, and throttling `503`.
+
+### Smart CDN invalidation does not clear browser caches
+On Pro and above, Smart CDN invalidates changed or deleted objects—including transformed images—at edge nodes, but propagation can take up to 60 seconds. `cacheControl` governs the browser cache independently, so frequently replaced assets should use versioned paths and potentially shorter browser TTLs.
+
+### Upload-size ceilings differ by path
+The global file-size limit is at most 50 MB on Free and 500 GB on Pro or Team, and a per-bucket limit cannot exceed it. Standard uploads can accept up to 5 GB but are recommended only through 6 MB; paid S3 single-request and multipart uploads support up to 500 GB.
+
+## JavaScript client behavior
+
+### Storage metadata timestamp naming
+`storage.from(bucket).info(path)` returns file size, content type, and timestamps. The Storage API field is `last_modified`, not `updated_at`, while the JavaScript client exposes it as `data.lastModified`.
+
+## Platform capabilities
+
+### JavaScript Iceberg catalog client
+`iceberg-js` is a minimal vendor-neutral JavaScript client for the Apache Iceberg REST Catalog API.
+
+## Platform capabilities (`1.26.08`)
+
+### Searchable field-level encryption with CipherStash
+The CipherStash integration adds field-level encryption with queryable ciphertext and zero-knowledge key management, without requiring schema changes.

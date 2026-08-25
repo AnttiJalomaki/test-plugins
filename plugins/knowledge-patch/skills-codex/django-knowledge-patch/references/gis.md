@@ -1,97 +1,79 @@
 # GIS and Spatial Features
 
-Batch attribution: `5.1`, `5.2`, `6.0`.
+## Use backend-specific spatial operations
 
-## Contents
+Spatial capabilities remain conditional on database versions:
 
-- [Spatial database operations](#spatial-database-operations)
-- [Curved and measured geometries](#curved-and-measured-geometries)
-- [OGR geometry APIs](#ogr-geometry-apis)
-- [GeoIP2 inputs and result fields](#geoip2-inputs-and-result-fields)
-- [GeoIP2 database selection](#geoip2-database-selection)
-- [Geometry widgets](#geometry-widgets)
-- [GIS API migrations](#gis-api-migrations)
+- `BoundingCircle` works with SpatiaLite 5.1+ (since 5.1).
+- `Collect` works with MySQL 8.0.24+ (since 5.1).
+- MySQL supports the `coveredby` and `covers` spatial lookups (since 5.2).
+- MariaDB 12.0.1+ supports `coveredby`, `isvalid`, `Collect`, `GeoHash`, and `IsValid`
+  (since 6.0).
 
-## Spatial database operations
+`FromWKB()` and `FromWKT()` accept an optional `srid`; Oracle ignores that argument (since 5.1).
+Treat every capability as a backend/version check, not a portable guarantee.
 
-Support depends on both Django and the spatial database version:
+## Work with dimensions, measures, curves, and geometry types
 
-- `BoundingCircle` works on SpatiaLite 5.1+ (since `5.1`).
-- `Collect` works on MySQL 8.0.24+ (since `5.1`).
-- MySQL supports the `coveredby` and `covers` lookups (since `5.2`).
-- MariaDB 12.0.1+ supports `coveredby`, `isvalid`, `Collect`, `GeoHash`, and `IsValid` (since
-  `6.0`).
-- `Rotate`, the `geom_type` lookup, and the `GeometryType()` function are available in `6.0`.
+OGR geometries expose `is_3d` and `set_3d()`. Measured geometries expose `is_measured`, `m`, and
+`set_measured()`. `centroid` is available on every supported geometry type (since 5.1). Replace
+assignment to `OGRGeometry.coord_dim` with `set_3d()`.
 
-Check the exact operation and database combination rather than assuming every spatial backend has
-the same function set.
+GDAL integration supports `CurvePolygon`, `CompoundCurve`, `CircularString`, `MultiSurface`, and
+`MultiCurve`. Use `OGRGeometry.has_curve`, `get_linear_geometry()`, and `get_curve_geometry()` to
+inspect and convert curved geometry (since 5.2).
 
-`FromWKB()` and `FromWKT()` accept an optional `srid` (since `5.1`). Oracle ignores that argument,
-so do not depend on it to assign or transform the SRID there.
+For GEOS and database expressions, `GEOSGeometry.hasm`, `Rotate`, the `geom_type` lookup, and
+`GeometryType()` add measured-dimension, rotation, and geometry-type operations (since 6.0).
 
-## Curved and measured geometries
+## Handle GeoIP2 inputs and database selection
 
-GDAL integration supports these curved geometry types (since `5.2`):
+`GeoIP2` accepts strings plus `ipaddress.IPv4Address` and `ipaddress.IPv6Address` objects.
+Country results include continent data and EU membership. City results include accuracy radius
+and region name; `metro_code` and `region_code` are the preferred names for the values also kept
+under the older `dma_code` and `region` keys (since 5.1).
 
-- `CurvePolygon`
-- `CompoundCurve`
-- `CircularString`
-- `MultiSurface`
-- `MultiCurve`
+When given a directory containing both city and country databases, `GeoIP2` opens only the city
+database when one is available. Pass the country database file path explicitly when country-only
+database selection matters.
 
-Use `OGRGeometry.has_curve` to detect curved content, `get_linear_geometry()` to obtain a linear
-form, and `get_curve_geometry()` to obtain the curved representation.
+Replace `GeoIP2.coords()` with `lon_lat()` and `GeoIP2.open()` with the constructor.
 
-For measured dimensions:
+## Validate spatial lookup inputs
 
-- `OGRGeometry.is_measured`, `.m`, and `set_measured()` are available since `5.1`.
-- `GEOSGeometry.hasm` is available since `6.0`.
+The 5.2.17 patch restricts spatial lookup inputs: a lookup no longer accepts a `dict` or a string
+that is not valid `GEOSGeometry` when that value would be passed to `GDALRaster`. This is a
+backward-incompatible validation change. Field assignment still accepts these types, so validate
+untrusted input at the lookup boundary rather than assuming assignment and lookup use identical
+coercion.
 
-Do not conflate a measured M dimension with the Z dimension.
+## Limit nested geometry collections
 
-## OGR geometry APIs
+WKT input permits at most 198 nested `GEOMETRYCOLLECTION` objects. WKB input permits at most 198
+collections in total across breadth and depth. GeoJSON input is unaffected (5.2.17).
 
-OGR geometries expose `is_3d` and `set_3d()` (since `5.1`). Assigning to `coord_dim` is deprecated;
-call `set_3d()` explicitly.
+`GEOSGeometry`, GIS form fields, and GIS model fields accept `max_geom_collections` to customize
+the limit:
 
-`centroid` works for every supported OGR geometry type (since `5.1`), rather than only the subset
-that formerly exposed it.
+```python
+from django.contrib.gis.geos import GEOSGeometry
 
-## GeoIP2 inputs and result fields
+geometry = GEOSGeometry(
+    "GEOMETRYCOLLECTION EMPTY",
+    max_geom_collections=50,
+)
+```
 
-`GeoIP2` accepts `ipaddress.IPv4Address` and `ipaddress.IPv6Address` instances in addition to
-textual addresses (since `5.1`).
+Choose a lower application limit when parsing untrusted or resource-sensitive payloads.
 
-Country results add:
+## Update geometry widgets
 
-- Continent data.
-- European Union membership.
+`BaseGeometryWidget.base_layer` selects the JavaScript map base layer (since 6.0). Built-in
+geometry widgets no longer render inline JavaScript, so custom widget templates that copied or
+extended the former markup may need to load or initialize scripts differently.
 
-City results add:
+## Respect dependency floors
 
-- Accuracy radius.
-- Region name.
-- `metro_code` as the current name for `dma_code`.
-- `region_code` as the current name for `region`.
-
-The old `dma_code` and `region` keys remain available, so consumers can migrate without an
-all-at-once schema change.
-
-## GeoIP2 database selection
-
-When initialized with a directory containing both city and country databases, `GeoIP2` opens only
-the city database when one is available (since `5.1`). Pass the country database file path
-explicitly when the operation must use that database.
-
-## Geometry widgets
-
-`BaseGeometryWidget.base_layer` selects the JavaScript map's base layer (since `6.0`). Built-in
-geometry widgets no longer render inline JavaScript. Update custom geometry-widget templates that
-copied or extended the previous inline-script markup, and verify their media assets and map
-initialization under Content Security Policy.
-
-## GIS API migrations
-
-- Replace `GeoIP2.coords()` with `GeoIP2.lon_lat()`.
-- Replace `GeoIP2.open()` with the `GeoIP2` constructor.
-- Replace assignment to `OGRGeometry.coord_dim` with `set_3d()`.
+GIS upgrades must also satisfy the platform floors in [upgrading.md](upgrading.md), including the
+PROJ, GDAL, PostGIS, and optional `geoip2` requirements. Run database-specific GIS tests whenever
+using an operation or lookup that is gated by a precise server version.

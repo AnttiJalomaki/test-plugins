@@ -1,167 +1,105 @@
 # Upgrades and Support
 
-Use this reference before selecting a release, changing minor versions, or
-deciding whether a problem should be fixed by upgrading to a later patch.
+## Pre-upgrade removals and defaults
 
-Versioned source attribution for this topic set: `upgrade-1.17`, `1.17`,
-`upgrade-1.18`, `1.18`, `upgrade-1.19`, `1.19`, `1.20`, `upgrade-1.21`, and
-`1.21`.
+### Stop enabling ValidateCAA `(upgrade-1.17)`
 
-## Upgrade-sensitive defaults
+The `ValidateCAA` feature gate is deprecated for removal in 1.18. Remove manual enablement before upgrading.
 
-### Private-key rotation and revision history
+### Private-key rotation and history `(upgrade-1.18)`
 
-In 1.18, `Certificate.spec.privateKey.rotationPolicy` defaults to `Always`
-instead of `Never`. Before upgrading, explicitly set `Never` on Certificates
-that must preserve their old keys. In 1.20,
-`DefaultPrivateKeyRotationPolicyAlways` became GA and ceased to be a
-configurable feature gate; the per-Certificate field is the way to override the
-default.
+`Certificate.spec.privateKey.rotationPolicy` defaults to `Always` rather than `Never`; explicitly set `Never` before upgrading Certificates that must retain old behavior. `Certificate.spec.revisionHistoryLimit` defaults to `1` rather than `nil`.
 
-Also in 1.18, `Certificate.spec.revisionHistoryLimit` defaults to `1` instead
-of `nil`. A resource that omits the field begins using that limit after the
-upgrade.
+### Direct ACME object RBAC `(upgrade-1.19)`
 
-### Renewal calculations
+From 1.19.6, `cert-manager-edit` no longer allows creating Challenges or creating, patching, or updating Orders. Ordinary Certificate-driven issuance is unaffected; direct-resource tooling needs explicit permissions.
 
-The 1.17 calculation fix for `renewBeforePercentage` can change the renewal
-time of existing Certificates. In 1.21, the same percentage calculation was
-fixed for durations longer than roughly three years; older behavior could
-reject such values or compute the wrong time. Review scheduled renewal times
-after either transition.
+### Controller ServiceAccount token RBAC `(upgrade-1.21)`
 
-### Cryptographic hashes for larger RSA keys
+The Helm chart stops creating the controller ServiceAccount's token-creation Role and RoleBinding. Add explicit RBAC or use a dedicated ServiceAccount before upgrading any issuer whose `serviceAccountRef.name` points to the controller account.
 
-From the 1.17 upgrade, 3072-bit RSA certificates use SHA-384 and 4096-bit RSA
-certificates use SHA-512. If rotation causes consumer failures, verify support
-for the stronger signature hash.
+### Prometheus override cleanup `(upgrade-1.21)`
 
-## Required upgrade preparation
+Delete `prometheus.servicemonitor.targetPort`, `prometheus.servicemonitor.path`, and `prometheus.podmonitor.path`; otherwise Helm schema validation fails. Replace custom uses of port name `tcp-prometheus-servicemonitor` with `http-metrics` and use fixed path `/metrics`.
 
-### Feature gates
+## Corrective patch releases
 
-- `ValidateCAA` is deprecated and was scheduled for removal in 1.18. Stop
-  enabling it manually.
-- `NameConstraints` and `UseDomainQualifiedFinalizer` are beta and enabled by
-  default in 1.17.
-- `AdditionalCertificateOutputFormats` is GA in 1.18 and no longer needs a
-  gate.
-- `OtherNames` is beta and enabled by default in 1.20.
-- `CAInjectorMerging` progressed from opt-in in 1.17, to beta and enabled by
-  default in 1.19, to GA and unconditional in 1.21. In 1.19 it could still be
-  disabled to obtain replacement semantics; in 1.21 it cannot.
-- Cainjector server-side apply is unconditional in 1.21, and the
-  `ServerSideApply` feature gate is deprecated.
+### 1.17 line `(1.17)`
 
-### 1.21 chart removals
+- Require 1.17.1+ for Cloudflare DNS-01 after the upstream API break.
+- Require 1.17.4+ for URI name constraints; earlier releases copied permitted URI domains into excluded URI domains.
+- ACME authorization uses a two-minute timeout from 1.17.3.
 
-The chart no longer creates the Role and RoleBinding that allow the controller
-to create tokens for its own ServiceAccount. Before upgrading, find issuers
-whose `serviceAccountRef.name` selects that account. Create the token-request
-RBAC explicitly or move the issuer to a dedicated ServiceAccount with its own
-RBAC. Vault Kubernetes authentication and Route53 are examples that can depend
-on this setup.
+### 1.18 line `(1.18)`
 
-Remove `prometheus.servicemonitor.targetPort`,
-`prometheus.servicemonitor.path`, and `prometheus.podmonitor.path`; chart schema
-validation rejects them. Metrics use the fixed `/metrics` path and the
-`http-metrics` port name. Custom scrape configuration must also stop referring
-to `tcp-prometheus-servicemonitor`.
+- Require 1.18.1+ to set `ACMEHTTP01IngressPathTypeExact: false` when exact solver paths conflict with ingress-nginx.
+- Do not rely on `global.rbac.disableHTTPChallengesRole`; it was added in 1.18.0 and removed in 1.18.2.
+- Larger PEM chains are handled from 1.18.3.
+- IPv6 HTTP-01 Host headers and mismatched-CSR-key backoff are corrected from 1.18.5.
 
-### API and RBAC consumers
+### 1.19 line `(1.19)`
 
-The deprecated `ObjectReference` type is removed in 1.21. Rebuild integrations
-against a current reference type before upgrading.
+Avoid 1.19.0. Version 1.19.1 reverts persisted CRD defaults for issuer-reference group and kind, preventing unnecessary reissuance, and restores trailing-dot DNS SANs. Use 1.19.2+ for correct merging of `global.nodeSelector` with component selectors.
 
-From 1.19.6, the aggregate `cert-manager-edit` ClusterRole does not permit
-creating Challenges or creating, patching, or updating Orders. Normal
-Certificate-driven issuance does not need those permissions. Grant explicit,
-narrow permissions only to tooling that directly manages these internal
-objects.
+### 1.20 line `(1.20)`
 
-The `global.rbac.disableHTTPChallengesRole` value appeared in 1.18.0 but was
-withdrawn in 1.18.2 because it was buggy. It is not a supported setting for the
-rest of the 1.18 series.
+- Use 1.20.1+ when inferred Gateway `parentRefs` interact with annotation overrides; 1.20.0 can duplicate references.
+- Use 1.20.1+ on OpenShift because 1.20.0 lacks issuer-finalizer RBAC required by the Order controller.
+- Use 1.20.2+ when setting both `webhook.config` and `webhook.volumes`; earlier releases can render invalid Helm YAML.
 
-## Patch-release selection
+### 1.21 line `(1.21)` `(1.21.1)`
 
-### 1.17 fixes
+Version 1.21.1 fixes a controller panic caused by `spec.renewal.policy: Disabled` in 1.21.0. It also lets DNS-01 issuers recover after a previously missing solver Secret is created; 1.21.0 can remain stuck at `InvalidSolver`.
 
-- Use at least 1.17.1 for Cloudflare DNS-01 issuance after a Cloudflare API
-  change broke earlier behavior.
-- Starting with 1.17.3, ACME challenge authorization has a two-minute timeout,
-  reducing premature `error waiting for authorization` failures.
-- Use at least 1.17.4 for URI name constraints. Earlier 1.17 versions copied
-  permitted URI domains into the CSR's excluded URI domains.
+## Feature-gate progression
 
-### 1.18 fixes and compatibility
+### Name constraints and finalizers `(1.17)`
 
-HTTP-01 solver Ingresses use `PathType: Exact`. With ingress-nginx strict path
-validation, use cert-manager 1.18.1 or later and disable
-`ACMEHTTP01IngressPathTypeExact`, disable ingress-nginx
-`strict-validate-path-type`, or run ingress-nginx 1.12.6+ or 1.13.2+.
+`NameConstraints` and `UseDomainQualifiedFinalizer` are beta and enabled by default. The former enables CA certificate name constraints; the latter avoids warnings with a domain-qualified finalizer.
 
-Starting in 1.18.3, larger PEM certificates and chains are accepted, including
-leaf certificates with many DNS names or other identities. Starting in 1.18.5,
-HTTP-01 accepts IPv6 Host headers, and mismatched issuer responses are rejected
-with backoff rather than causing an infinite reissuance loop.
+### Additional outputs `(1.18)`
 
-### 1.19 fixes
+`AdditionalCertificateOutputFormats` is GA, so remove its feature-gate configuration.
 
-Do not remain on 1.19.0. CRD defaults for `Certificate` and
-`CertificateRequest` issuer-reference group and kind could persist defaulted
-fields and trigger unnecessary reissuance. They were reverted in 1.19.1 so
-omitted fields again receive runtime defaults.
+### CA injection `(1.17)` `(1.19)` `(1.21)`
 
-The same 1.19.0 release rejected trailing-dot X.509 DNS SANs due to a dependency
-change. Support returned in 1.19.1. Use 1.19.2 or later when relying on
-`global.nodeSelector`; that release fixed merging with component selectors.
+`CAInjectorMerging` began as opt-in, became beta and enabled by default, and is now GA and unconditional. Replacement semantics cannot be restored with the old gate. Cainjector always uses server-side apply, making `ServerSideApply` deprecated.
 
-### 1.20 fixes
+### OtherNames and rotation `(1.20)`
 
-- 1.20.0 can generate duplicate Gateway `parentRef` entries when inferred
-  issuer configuration and Certificate annotation overrides are combined. Use
-  1.20.1 or later.
-- 1.20.0 omitted issuer-finalizer RBAC needed by the Order controller on
-  OpenShift. Use 1.20.1 or later.
-- Releases before 1.20.2 can render invalid Helm YAML when both
-  `webhook.config` and `webhook.volumes` are set. Use 1.20.2 or later for that
-  combination.
+`OtherNames` is beta and enabled by default. `DefaultPrivateKeyRotationPolicyAlways` is GA and cannot be disabled; set a Certificate's rotation policy explicitly instead.
 
-## Distribution and lifecycle
+### Gateway configuration `(1.21)`
 
-### OperatorHub installations
+Controller fields `enableGatewayAPI` and `enableGatewayAPIListenerSet` are deprecated in favor of `gatewayAPI.enabled` and `gatewayAPI.enableListenerSet`. The old fields still work during migration.
 
-Red Hat OpenShift and community OperatorHub catalogs stop at cert-manager
-1.16.5. To move an OperatorHub installation to 1.17 or later, select another
-distribution method rather than waiting for a newer catalog package.
+## Distribution and support policy
 
-### Support window
+### OperatorHub ending `(1.17)`
 
-Each minor is supported at least until the second subsequent minor ships. Only
-the latest patch on a supported branch receives support. At the
-support-lifecycle snapshot, 1.21 is supported until 1.23, 1.20 until 1.22, and
-1.19 and earlier are EOL; 1.22 was tentatively planned for November 2026.
+OperatorHub catalogs end at 1.16.5. Choose another distribution path for newer cert-manager releases.
 
-The currently published compatibility matrix is:
+### Release-driven support window `(support-lifecycle)`
+
+Each minor is supported at least until the second subsequent minor ships, and only the latest patch of each supported minor receives support. At the lifecycle snapshot, 1.21 remains supported until 1.23 and 1.20 until 1.22; 1.19 and earlier are EOL. Release 1.22 was tentatively planned for November 2026.
+
+### Kubernetes and OpenShift compatibility `(support-lifecycle)`
 
 | cert-manager | Supported and tested Kubernetes | Supported OpenShift |
-|:------------:|:-------------------------------:|:-------------------:|
-| 1.21 | 1.33-1.36 | 4.20-4.22 |
-| 1.20 | 1.32-1.35 | 4.19-4.21 |
+|:---:|:---:|:---:|
+| 1.21 | 1.33–1.36 | 4.20–4.22 |
+| 1.20 | 1.32–1.35 | 4.19–4.21 |
 
-OpenShift follows the Kubernetes version mapped to each OpenShift release.
-Mappings for unreleased OpenShift versions may be predictions.
+OpenShift support follows the release's mapped Kubernetes version. Mappings for OpenShift releases that do not yet exist may be predictions.
 
-A Kubernetes version can be supported without regular testing: maintainers
-still respond to reports and fix accepted bugs, but do not run regular
-end-to-end tests. Versions outside the supported range are generally neither
-tested nor fixed.
+### Supported versus tested `(support-lifecycle)`
 
-Security fixes are backported to the two supported branches and trigger an
-immediate patch. Critical regressions and upgrade bugs are also usually
-backported promptly. Older fixes or changes with runtime risk may be withheld
-from patch branches for stability.
+A supported-but-untested Kubernetes version does not receive regular end-to-end runs, but maintainers respond to and fix reported issues. Versions outside the supported range are generally neither tested nor fixed.
 
-Upstream has no LTS release and provides no updates after EOL. CyberArk offers
-a commercial 1.17 LTS through February 3, 2027.
+### Backport policy `(support-lifecycle)`
+
+Security issues are backported to both supported releases and immediately trigger a patch. Critical regressions and upgrade bugs are usually backported promptly. Long-standing fixes or changes with runtime risk may be withheld from patch branches to protect stability.
+
+### No upstream LTS `(support-lifecycle)`
+
+The cert-manager maintainers do not provide LTS releases or updates after EOL. CyberArk offers a commercial 1.17 LTS through February 3, 2027.

@@ -1,20 +1,26 @@
-# Frameworks and migrations
+# Frameworks and Migrations
 
-## Runtime and package format
+## Runtime and migration boundaries
 
-Storybook 10 is ESM-only. Its packages require a Node.js version with ESM
-`require()` support: Node.js 20.16+, 22.19+, or 24+.
+### Storybook 10 is ESM-only
 
-When an upgrade fails at process startup or package loading, confirm the active
-Node.js executable and CI runtime before changing Storybook configuration. A
-CommonJS-oriented workaround cannot restore a supported package format.
+Storybook 10 publishes ESM-only packages and requires a Node.js release with
+ESM `require()` support (batch `9.0-10.0`):
+
+- Node.js 20.16 or newer within the 20.x line;
+- Node.js 22.19 or newer within the 22.x line;
+- Node.js 24 or newer.
+
+If startup fails before project configuration is evaluated, check the running
+Node.js version before editing Storybook configuration. Rewriting installed
+packages to CommonJS does not address an unsupported runtime.
 
 ## Angular
 
-### Angular on Vite
+### Choose between Vite and Webpack deliberately
 
 The preview `@storybook/angular-vite` framework provides Vite-based Angular
-development, Docs, and testing:
+development, Docs, and testing (since `10.5.0`):
 
 ```js
 export default {
@@ -22,25 +28,28 @@ export default {
 };
 ```
 
-The Angular-to-Vite migration performs three important compatibility steps:
+The Angular-to-Vite migration should:
 
-- preserves `zone.js`;
-- installs `@analogjs/vite-plugin-angular`;
-- configures addon Vitest.
+- preserve `zone.js`;
+- install `@analogjs/vite-plugin-angular`;
+- configure addon Vitest.
 
-Inspect all three after an automated migration, particularly if the preview
-runs but interaction tests or Angular change detection behave differently.
+Verify those results after migration. The separate Angular Webpack framework
+also supports Angular 22, so Angular 22 alone is not a reason to select Vite.
 
-The Webpack-based Angular framework separately supports Angular 22. Choose a
-builder based on project needs rather than treating Vite as an Angular 22
-requirement.
+### Update Angular-Vite dependencies
+
+As of `10.5.1`, `@storybook/angular-vite` no longer declares
+`@angular/platform-browser-dynamic` as a peer dependency. Do not install that
+package only for Storybook. Its TypeScript peer range also accepts TypeScript
+6.
 
 ## Next.js
 
-### Vite-powered framework
+### Use the Vite-powered framework
 
-`@storybook/nextjs-vite` implements Next.js navigation, route, image, and font
-mocks on Vite. It is compatible with Storybook Test and Vitest.
+`@storybook/nextjs-vite` supplies Next.js navigation, route, image, and font
+mocks on Vite and works with Storybook Test and Vitest (batch `9.0-10.0`):
 
 ```ts
 export default {
@@ -48,47 +57,63 @@ export default {
 };
 ```
 
-Next.js 16 is supported without dropping support for older supported versions.
+The supported framework and test-runner combinations include Next.js 16 and
+Vitest 4 without dropping older supported versions.
 
-### Link behavior
+### Account for Link mock behavior
 
-The `next/link` mock supports the `as` prop. On a click, the mock calls the
-consumer's `onClick` handler before preventing the default action. Tests that
-assert ordering or inspect the event should reflect that sequence.
+The `next/link` mock supports the `as` prop and invokes a supplied `onClick`
+before preventing the browser's default action (since `10.5.0`). The Next.js
+Vite framework also provides a Link mock compatible with `useLinkStatus`.
 
-The Next.js Vite framework also supplies a Link mock compatible with
-`useLinkStatus`.
+When a navigation assertion depends on call order, assert the handler effect
+before checking prevented navigation.
 
-## Svelte and SvelteKit
+## Svelte
 
-- Svelte CSF supports Svelte 5 runes and snippets.
-- Storybook supports Svelte async components.
-- SvelteKit mocking includes `app/state`.
+Svelte CSF supports Svelte 5 runes and snippets (batch `9.0-10.0`). Storybook
+10 also supports async Svelte components, and its SvelteKit mocking includes
+`app/state`.
 
-These capabilities allow current Svelte syntax and application state APIs to be
-used directly in stories without maintaining legacy-only story variants.
+Use the framework mock rather than adding an unrelated application-state shim
+when a story imports from `app/state`.
 
 ## React Native
 
-React Native and React Native Web Storybooks can run side by side. The same
-stories can run on devices or simulators and participate in the web Storybook's
-Docs and Test addons. Prefer shared stories where platform behavior permits,
-with platform-specific setup kept in the respective Storybook environments.
+React Native and React Native Web Storybooks can run side by side (batch
+`9.0-10.0`). The same stories can therefore serve device or simulator
+workflows and the web-based Docs and Test addons.
+
+Keep platform-specific decorators or parameters narrow so shared stories
+remain portable between the native and web instances.
 
 ## TanStack Router
 
-`@storybook/tanstack-react` exports `TanStackPreview` for typing CSF Next
-previews. Its `RouteOptions` accepts either an `id` or a `path`, and route-group
-paths are normalized.
+### CSF typing and route definitions
 
-The integration no longer provides an Outlet mock. Stories that need an outlet
-must not rely on a formerly implicit integration mock.
+`@storybook/tanstack-react` exports `TanStackPreview` for CSF Next typing
+(since `10.5.0`). Route mocks accept either `id` or `path` in `RouteOptions`,
+normalize route groups, and no longer supply an Outlet mock.
 
-## Test-runner compatibility
+Do not build stories around an implicit Outlet. Add the layout or outlet
+behavior explicitly when the scenario needs it.
 
-Vitest 4 is supported without dropping older supported versions. Confirm the
-project's resolved Vitest and framework packages when diagnosing integration
-behavior because a broad manifest range may resolve differently across local
-and CI installs.
+### Hydration and router behavior
 
-Batch attribution: `9.0-10.0`, `10.5.0`.
+As of `10.5.1`, the package exports `Hydrate`:
+
+```ts
+import { Hydrate } from '@storybook/tanstack-react';
+```
+
+The integration also:
+
+- removes `@cloudflare/vite-plugin` from inherited Vite configuration;
+- waits for the router to load before completing story routing;
+- preserves explicit route and layout IDs when cloning routes;
+- honors component overrides supplied through `routeOverrides`;
+- resolves mock redirects through Vite;
+- renders real `href` values from the Link mock.
+
+Prefer assertions against the rendered `href` and loaded route state instead
+of assuming routing is complete synchronously.

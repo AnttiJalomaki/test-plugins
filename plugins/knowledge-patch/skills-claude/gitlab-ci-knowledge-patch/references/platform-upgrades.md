@@ -1,41 +1,30 @@
 # GitLab Platform Upgrade Guidance
 
-## Plan the upgrade path
+## Plan required GitLab 19 upgrade stops
 
-GitLab 19 required upgrade stops are `19.2`, `19.5`, `19.8`, and `19.11`.
-Visit every stop that lies between the installed and target versions. Also
-review every intervening release note and the notes specific to the
-installation method.
+Required GitLab 19 upgrade stops are `19.2`, `19.5`, `19.8`, and `19.11`. Stop at
+each one that lies between the current and target versions. Review the notes for
+every intervening version, including notes specific to Linux packages, Helm,
+Operator, Docker, or self-compiled installations as applicable.
 
-## Protect self-hosted service endpoints
+## Protect self-hosted Duo endpoints during the 19.2 upgrade
 
-A direct Linux package upgrade to 19.2.0 can clear local AI Gateway and Duo
-Agent Platform service URLs and reset related settings. Upgrade directly to
-19.2.1 or later.
+A direct Linux-package upgrade to `19.2.0` can clear local AI Gateway and Duo Agent
+Platform service URLs and reset related settings. Upgrade to `19.2.1` or later.
 
-If 19.2.0 already caused the reset, restore the endpoints under **Admin area**
-> **GitLab Duo** > **Configuration** > **Service endpoints**.
-
-## Prepare PostgreSQL and external key-value storage
-
-GitLab 19.0 requires PostgreSQL 17 for every installation method. Upgrade a
-packaged PostgreSQL 16 server or external PostgreSQL deployment before
-installing GitLab 19.
-
-Redis 6 is no longer supported. Move external deployments to Redis 7.0 or
-later, or Valkey 7.2, before the GitLab upgrade. The Redis bundled in the Linux
-package is already version 7 and does not need this migration.
+If `19.2.0` already caused the loss, restore the endpoints under **Admin area** >
+**GitLab Duo** > **Configuration** > **Service endpoints**.
 
 ## Handle the registry metadata database default
 
-For an existing Linux package or self-compiled installation without an
-explicit `registry['database']['enabled']` value, GitLab 19.0 defaults the
-registry metadata database to `prefer` mode. This mode falls back to legacy
-filesystem metadata when the database has not imported the data.
+For existing Linux-package and self-compiled installations without an explicit
+`registry['database']['enabled']`, GitLab 19.0 changes the registry metadata database
+to `prefer` mode. That mode falls back to legacy filesystem metadata until data has
+been imported.
 
-On 19.0.0 and 19.0.1, the fallback can make `/gitlab/v1/` routes return HTTP
-500. `/v2/` image pushes and pulls continue to work. Recover by temporarily
-disabling the database, reconfiguring, and restarting the registry:
+In `19.0.0` and `19.0.1`, the mode can cause `/gitlab/v1/` routes to return HTTP 500,
+although `/v2/` image pushes and pulls continue to work. Temporarily disable the
+database, reconfigure, and restart the registry:
 
 ```ruby
 registry['database'] = {
@@ -43,18 +32,12 @@ registry['database'] = {
 }
 ```
 
-Upgrade to 19.0.2 or later, then remove the temporary override.
+After upgrading to `19.0.2` or later, remove the temporary override.
 
-## Migrate container registry storage
+## Migrate registry object storage to `s3_v2`
 
-GitLab 19.0 removes the AWS SDK v1 `s3` registry driver and aliases `s3` to
-`s3_v2`. For a non-AWS S3-compatible backend:
-
-- make `regionendpoint` a complete URI;
-- enable path-style access if the backend requires it; and
-- set `checksum_disabled` when enhanced upload checksums are rejected.
-
-For example:
+GitLab 19.0 removes the legacy AWS SDK v1 `s3` registry driver and aliases `s3` to
+`s3_v2`. Configure `s3_v2` explicitly:
 
 ```ruby
 registry['storage'] = {
@@ -70,72 +53,76 @@ registry['storage'] = {
 }
 ```
 
-Deletion still sends CRC32 even with `checksum_disabled`. A backend that
-rejects that checksum must add support; there is no GitLab configuration
-workaround.
+For non-AWS S3-compatible storage, `regionendpoint` must be a complete URI. Set
+`checksum_disabled` when the backend rejects enhanced upload checksums. Registry
+deletion still sends CRC32; a backend that cannot accept it requires a backend-side
+change because GitLab has no configuration workaround.
+
+## Upgrade PostgreSQL before GitLab 19
+
+GitLab 19.0 requires PostgreSQL 17 for every installation method. Upgrade a packaged
+PostgreSQL 16 server or an external PostgreSQL deployment before installing GitLab
+19.
 
 ## Repair Geo OCI image-index replication
 
-Geo secondaries on 19.0.0 and 19.0.1 can silently omit OCI image-index tags.
-This includes multi-architecture image tags and BuildKit cache tags.
+Geo secondaries on `19.0.0` and `19.0.1` can silently omit OCI image-index tags,
+including multi-architecture image tags and BuildKit cache tags. Upgrade both Geo
+sites to `19.0.2` or later.
 
-Upgrade both sites to 19.0.2 or later. Existing repositories recover during
-verification, but that can take up to the default 90-day interval. Manually
-resync affected container repositories when recovery cannot wait.
+Existing repositories recover during verification, which can take as long as the
+default 90-day interval. Manually resync affected container repositories when
+immediate repair is required.
 
-## Move off unsupported operating-system packages
+## Leave unsupported Linux package platforms
 
-GitLab 18.11 is the final Linux package release for Ubuntu 20.04. Move to
-Ubuntu 22.04 or another supported operating system before upgrading to GitLab
-19.
+GitLab 18.11 is the final Linux-package release for Ubuntu 20.04. Move those hosts
+to Ubuntu 22.04 or another supported operating system before upgrading to GitLab 19.
 
-It is also the final package release for openSUSE Leap 15.6, SLES 12.5, and
-SLES 15.6. Installations that must remain on those SUSE systems need to
-migrate to a Docker deployment for GitLab 19.
+GitLab 18.11 is also the final package release for openSUSE Leap 15.6, SLES 12.5,
+and SLES 15.6. Installations that must remain on SUSE must move to a Docker
+deployment for GitLab 19.
+
+## Replace external Redis 6
+
+GitLab 19.0 removes Redis 6 support. Move external deployments to Redis 7.0 or later
+or to Valkey 7.2 before the GitLab upgrade. The Redis bundled with the Linux package
+is already version 7 and does not require this migration.
 
 ## Remove bundled Mattermost configuration
 
-GitLab 19.0 removes Mattermost from the Linux package. Migrate bundled-service
-users to a standalone Mattermost installation, then remove or comment out
-every `mattermost[...]` key in `/etc/gitlab/gitlab.rb`.
-
-Do this before upgrading. Otherwise `gitlab-ctl reconfigure` aborts.
-`gitlab-ctl check-config --version 19.0.x` does not detect the obsolete keys.
+GitLab 19.0 removes Mattermost from the Linux package. Migrate users of the bundled
+service to standalone Mattermost, then remove or comment out every
+`mattermost[...]` key in `/etc/gitlab/gitlab.rb` before upgrading. If any key
+remains, `gitlab-ctl reconfigure` aborts. `gitlab-ctl check-config --version 19.0.x`
+does not detect this problem.
 
 ## Externalize Spamcheck
 
-GitLab 19.0 removes bundled Spamcheck from both the Linux package and the Helm
-chart. Existing users must deploy it separately, for example with Docker. No
-Spamcheck data migration is required.
+GitLab 19.0 removes bundled Spamcheck from both the Linux package and Helm chart.
+Deploy it separately, for example with Docker, before relying on it after the
+upgrade. No Spamcheck data migration is required.
 
-## Prepare the Helm networking transition
+## Prepare Helm ingress for Envoy Gateway
 
-The GitLab 19.0 Helm chart defaults to Gateway API with Envoy Gateway instead
-of NGINX Ingress. The bundled NGINX Ingress can be explicitly re-enabled until
-its proposed removal in GitLab 20.0.
-
-The change does not affect:
-
-- an externally managed Ingress controller;
-- an externally managed Gateway API controller; or
-- the NGINX bundled in the Linux package.
+The GitLab 19.0 Helm chart defaults to Gateway API with Envoy Gateway rather than
+NGINX Ingress. The bundled NGINX Ingress can be explicitly re-enabled until its
+proposed removal in GitLab 20.0. Externally managed Ingress controllers, externally
+managed Gateway API controllers, and Linux-package NGINX are unaffected.
 
 ## Externalize Helm chart data services
 
-GitLab 19.0 removes the bundled Bitnami PostgreSQL, Bitnami Redis, and MinIO
-charts from both the GitLab Helm chart and the Operator. There are no bundled
-replacements. Configure external services before upgrading an installation
-that used these proof-of-concept components.
+GitLab 19.0 removes the bundled Bitnami PostgreSQL, Bitnami Redis, and MinIO charts
+from the GitLab Helm chart and Operator, without replacements. Configure external
+services before upgrading an installation that used these proof-of-concept
+components.
 
-## Clean orphaned RPM directories
+## Clean orphaned agent directories on RPM systems
 
-RPM installs of 19.0.0 through 19.0.2 and 19.1.0 can leave nonempty `.agents`
-and `.claude` directories under:
+RPM installations of `19.0.0` through `19.0.2` and `19.1.0` can leave nonempty
+`.agents` and `.claude` directories under
+`/opt/gitlab/embedded/service/gitlab-rails/` because RPM no longer owns them.
 
-```text
-/opt/gitlab/embedded/service/gitlab-rails/
-```
-
-RPM no longer owns those directories and therefore does not remove them.
-After reaching 19.0.3, 19.1.1, or 19.2 and later, inspect and manually remove
-these exact orphaned directories. DEB installations are unaffected.
+After reaching `19.0.3`, `19.1.1`, or `19.2` and later, check for and manually
+remove exactly those two directories. DEB installations are unaffected. Inspect
+their contents before removal so unrelated administrator-created data is not lost.

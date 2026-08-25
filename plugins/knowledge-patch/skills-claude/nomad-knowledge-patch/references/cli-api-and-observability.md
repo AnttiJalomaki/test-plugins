@@ -1,12 +1,32 @@
 # CLI, API, and Observability
 
-Use this reference when updating CLI automation, Go API consumers, event
-subscribers, dashboards, metrics queries, or placement diagnostics.
+## API response changes
 
-## CLI links and allocation group selection
+### ACL self-token status codes
 
-Common CLI commands display web UI URL hints by default and accept `-ui` to
-open the generated link. Disable hints server-side:
+In the `1.10-upgrade` guidance for Nomad 1.10.1,
+`/v1/acl/token/self` returns `200` with a body indicating ACLs are disabled when
+ACLs are off. It returns `403` when ACLs are on but no valid token is present.
+Both cases previously returned `404`.
+
+### Node resource fields
+
+In the `1.11-upgrade` guidance, the Go API fields `Node.Resources` and
+`Node.Reserved`, and their Read Node API equivalents, are deprecated and never
+populated. Use `Node.NodeResources` and `Node.ReservedResources`.
+
+### Missing allocation nodes
+
+Since 2.0.5, client allocation endpoints return `404` rather than `500` when an
+allocation's node cannot be found. API consumers can handle this as not found.
+
+## CLI behavior and flags
+
+### Web UI links
+
+Since 1.10.0, common CLI commands show web UI URL hints by default and accept
+`-ui` to open the generated link. Disable hints server-side or for one CLI
+environment:
 
 ```hcl
 ui {
@@ -14,45 +34,48 @@ ui {
 }
 ```
 
-For one CLI environment, set `NOMAD_CLI_SHOW_HINTS=0` or `false`. Account for
-the hint output in scripts that parse human-readable command output (source
-batch `1.10.0`).
+```shell
+NOMAD_CLI_SHOW_HINTS=0 nomad job status
+```
 
-`nomad alloc exec`, `nomad alloc logs`, and `nomad alloc fs` accept `-group`.
-Use it when task names or allocation context are ambiguous across task groups.
+The environment variable also accepts `false`.
 
-`nomad volume status` shows volume capabilities. `nomad volume delete` accepts
-a volume ID prefix and a wildcard namespace; resolve broad selectors before
-performing a deletion.
+### Allocation group selection
 
-## Evaluation and placement diagnostics
+Since 1.10.0, `nomad alloc exec`, `nomad alloc logs`, and `nomad alloc fs`
+accept `-group`.
 
-`nomad eval status` shows related evaluations, placed allocations, plan
-annotations, failed placements, and preemptions. More fields are visible
-without `-verbose`, so parsers of display output should not assume the older
-terse shape.
+### Structured job-plan output
 
-Reconciler annotations describe the intended plan before node-feasibility
-checks. `nomad alloc status -verbose` adds evaluated and rejected node counts
-and node scores. In the Go API, `Evaluations.Info` populates `RelatedEvals`
-(source batch `1.11.0`).
+Since 2.0.5, `nomad job plan` accepts `-json-output` and `-t` for structured
+plan output.
 
-## Go API migrations
+```shell
+nomad job plan -json-output ./job.nomad
+```
 
-The Go API fields `Node.Resources` and `Node.Reserved`, and the corresponding
-Read Node API fields, are deprecated and never populated. Use
-`Node.NodeResources` and `Node.ReservedResources` (source batch
-`1.11-upgrade`).
+### Abbreviated root key IDs
 
-Quota clients must replace `QuotaSpec.VariablesLimit` with
-`QuotaSpec.RegionLimit.Storage.Variables`. `QuotaSpec.RegionLimit` uses
-`QuotaResources` instead of `Resources`.
+Since 2.0.5, `nomad operator root keyring remove` accepts an abbreviated key ID.
 
-## Allocation metrics opt-in
+## Event streams
 
-Starting in 1.10.2, clients do not collect or publish allocation metrics when
-`telemetry.publish_allocation_metrics` is unset or false. Enable it explicitly
-on every client that must continue exporting those metrics:
+### CSI and plugin events
+
+Since 1.10.0, the event stream includes CSI volume and plugin events.
+
+### Variable events
+
+Since 2.0.0, Nomad variables emit events, so consumers can observe variable
+activity without polling.
+
+## Metrics and generated identifiers
+
+### Allocation metrics opt-in
+
+Starting in Nomad 1.10.2, clients no longer collect or publish allocation
+metrics when `telemetry.publish_allocation_metrics` is unset or false. Set it
+explicitly on clients that must continue exporting those metrics.
 
 ```hcl
 telemetry {
@@ -60,31 +83,31 @@ telemetry {
 }
 ```
 
-Do not diagnose absent allocation series solely as a scraper failure; inspect
-the client setting first (source batch `1.10-upgrade`).
+### Eval broker labels
 
-## Evaluation broker metric labels
-
-For dispatch and periodic jobs, the `job` label contains the parent job ID on:
+For dispatch and periodic jobs, the `job` label on these metrics now contains
+the parent job ID:
 
 - `nomad.nomad.broker.wait_time`
 - `nomad.nomad.broker.process_time`
 - `nomad.nomad.broker.response_time`
 - `nomad.nomad.broker.eval_waiting`
 
-The `nomad.nomad.broker.eval_waiting` metric no longer has an `eval_id` label.
-Update queries, recording rules, alerts, and dashboard grouping that depended
-on the child job ID or the removed label.
+The `nomad.nomad.broker.eval_waiting` metric also no longer has an `eval_id`
+label. Update queries and alerts that rely on the old labels.
 
-## Event stream additions
+### Check IDs and rendezvous hashes
 
-CSI volume and plugin events are included in the event stream. Nomad variables
-also emit events, so consumers can observe variable activity without polling
-(source batch `2.0.0`). Design subscribers to tolerate event types they do not
-consume and to preserve ordering and resumption behavior.
+Since 2.0.5, Nomad-native service check IDs use SHA-256, Consul check IDs have
+moved from SHA-1 to SHA-256, and service rendezvous hashes use SHA-256.
+Generated identifiers and rendezvous hashes can differ after an upgrade.
 
-## Enterprise reporting
+## Evaluation and placement diagnostics
 
-Automated Nomad Enterprise license utilization reporting includes detailed
-product-usage information. Review outbound reporting expectations and
-operational documentation when upgrading Enterprise servers.
+Since 1.11.0, `nomad eval status` shows related evaluations, placed allocations,
+plan annotations, failed placements, and preemptions, with more fields shown
+without `-verbose`. Reconciler annotations describe the intended plan before
+node-feasibility checks.
+
+`nomad alloc status -verbose` adds evaluated and rejected node counts and node
+scores. The Go API's `Evaluations.Info` populates `RelatedEvals`.

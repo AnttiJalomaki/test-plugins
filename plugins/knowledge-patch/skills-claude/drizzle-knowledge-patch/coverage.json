@@ -1,6 +1,8 @@
 {
   "patch": "drizzle-knowledge-patch",
-  "merged_at": "2026-07-15T01:19:46Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T00:42:17Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },

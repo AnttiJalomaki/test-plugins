@@ -1,174 +1,202 @@
 # Upgrades and Operations
 
-## Compatibility rules
+## Configuration parsing and validation
 
-HAProxy's deprecation sequence is LTS-aware. A working supported setup on a
-non-LTS branch is intended to continue working on the next LTS, and that LTS
-does not add warnings for supported configuration that was warning-free on the
-preceding non-LTS. A feature normally warns first in a non-LTS and becomes an
-error when removed in the following non-LTS, at least a year later.
+### Worker-owned parsing (since 3.1.0)
 
-Deprecated directives warn since 3.1.0 unless the global
-`expose-deprecated-directives` option is enabled. Use that switch for a bounded
-migration window, not to hide upgrade work.
+The master process only starts workers; workers parse configuration
+themselves. This removes parse-then-undo work from the master and makes reload
+operation more consistent, avoiding the older class of inconsistencies and
+file-descriptor leaks.
 
-### Name uniqueness
+### Duplicate names (3.1.0 to 3.3.0)
 
-Duplicate names began warning in 3.1.0 and became errors in 3.3.0. This covers
-names across the proxy-section families `frontend`, `listen`, `backend`,
-`defaults`, and `log-forward`, plus duplicate server names. HAProxy 3.1.0 had
-no other breaking configuration changes.
+Duplicate names across proxy-section families such as `frontend`, `listen`,
+`backend`, `defaults`, and `log-forward`, and duplicate server names, warn in
+3.1.0 and become breaking in 3.3.0. HAProxy 3.1 otherwise introduced no
+breaking changes.
 
-### Removed and deprecated facilities
+### Empty arguments (since 3.2.0)
 
-- `program` sections and legacy C mailers were deprecated in 3.1.0 and removed
-  in 3.3.0. Lua mailers are the supported replacement.
-- The OpenTracing filter was scheduled for deprecation in 3.1.0. It is
-  officially deprecated as of 3.4.0, with removal planned for 3.5; use the
-  OpenTelemetry add-on.
-- Backend `dispatch` and `option transparent` warn as deprecated since 3.3.0.
-- Global names beginning with `tune.quic.frontend` are deprecated; use
-  `tune.quic.fe`.
-- The global `master-worker` directive is deprecated; use command-line `-W` or
+Empty arguments, including empty environment variables inside double quotes,
+warn and were scheduled to become errors in the next version. Use `${NAME[*]}`
+when an intentionally empty environment expansion is required.
+
+### Startup diagnostics (since 3.3.0)
+
+- Running as root without a global `user` directive warns.
+- Leaving `expose-experimental-directives` enabled when no configured feature
+  needs it warns.
+- Oversized `thread-groups` ranges are trimmed with a warning against
+  `nbthreads`; an emptied group is fatal.
+- Static builds warn when `user` or `group` should be replaced by `uid` or
+  `gid`.
+
+## Deprecations and replacements
+
+### Warning controls and scheduled removals (since 3.1.0)
+
+Deprecated directives warn unless the global
+`expose-deprecated-directives` option is set.
+
+```haproxy
+global
+    expose-deprecated-directives
+```
+
+`program` sections and legacy C mailers were deprecated for removal in 3.3;
+after removal Lua mailers are the supported replacement. The `opentracing`
+filter was scheduled for deprecation in 3.3 and removal in 3.5.
+
+### New warnings and renamed directives (since 3.3.0)
+
+- Backend `dispatch` and `option transparent` warn as deprecated.
+- Global `tune.quic.frontend.*` directives should use `tune.quic.fe.*`.
+- Replace the global `master-worker` directive with command-line `-W` or
   `-Ws`.
-- `no-quic` was replaced by `tune.quic.listen on|off` in 3.3.0.
-- `compression-direction` is deprecated after the 3.4.0 split into request and
-  response compression filters.
-- `tune.takeover-other-tg-connections` is superseded and deprecated by
-  `tune.idle-pool.shared` in 3.4.0.
+- Replace global `no-quic` with `tune.quic.listen on` or
+  `tune.quic.listen off`.
 
-### Dispatch migrations before 3.5
+### Dispatch replacement
 
-Replace a fixed `dispatch` target with a regular server named `dispatch` at the
-same address. If legacy servers must remain in the backend, set their weights
-to zero to preserve dispatch behavior:
+Ahead of planned 3.5 removal, replace `dispatch <address>` with a regular
+server named `dispatch` at the same address. If the backend contains legacy
+servers, give the other servers weight zero to preserve dispatch behavior.
 
 ```haproxy
 backend legacy_dispatch
     server dispatch 192.0.2.10:8080
 ```
 
-Replace `transparent` or `option transparent` with a zero-address server. This
-retains routing to the original TPROXY destination:
+### Transparent dispatch replacement
+
+Ahead of planned 3.5 removal, replace `transparent` or `option transparent`
+with a server at `0.0.0.0`. This preserves routing to the original TPROXY
+address.
 
 ```haproxy
 backend original_destination
     server tproxy 0.0.0.0
 ```
 
-## Defaults and stricter validation
+### OpenTelemetry transition (since 3.4.0)
 
-### Balancing and abort behavior
+OpenTelemetry is available as an add-on replacing OpenTracing. OpenTracing is
+officially deprecated and remains scheduled for removal in 3.5.
 
-Since 3.3.0, a backend with no `balance` directive uses `random`, not
-`roundrobin`. The policy samples two servers and chooses the less-loaded one.
-Set `balance roundrobin` explicitly to preserve the former behavior. Since
-3.4.0, a tie in concurrent connections is broken using recent HTTP request
-rates, affecting distribution in large lightly loaded pools.
+## CPU and thread placement
 
-HTTP backends enable `option abortonclose` by default since 3.3.0, so HAProxy
-can stop work before an abandoned request reaches a server. The option is also
-valid in a frontend. Disable it explicitly only where server-side completion
-is required despite client departure.
+### Topology-aware placement (since 3.2.0)
 
-### Arguments, ACLs, and headers
+Automatic CPU binding considers packages, NUMA nodes, CCXs, L3 caches, cores,
+and threads. By default HAProxy still restricts itself to one NUMA node.
+Systems with more than 64 threads need additional configuration to use them
+all. Default limits rise to 1024 threads and 32 thread groups.
 
-Empty configuration arguments, including empty environment variables inside
-double quotes, warn since 3.2.0 and were scheduled to become errors in the next
-version. Use `${NAME[*]}` for an intentionally empty expansion.
+### New automatic defaults (since 3.3.0)
 
-Since 3.3.0, an ACL cannot specify multiple match types after `-m`; the
-configuration fails instead of silently choosing the last type. Ambiguous
-forms such as `path_beg -m reg` also warn.
+`cpu-policy` defaults to `performance`, so heterogeneous systems use only
+performance cores by default. Automatic placement uses all available cores
+and NUMA nodes and no longer has the previous 64-thread limit.
 
-`http-send-name-header` can no longer name `connection`, `content-length`,
-`host`, or `transfer-encoding`, because replacing them would make the outgoing
-HTTP request invalid.
+## DNS and connection protection
 
-## Master-worker and reload behavior
+### Process-wide DNS family selection (since 3.2.0)
 
-Since 3.1.0, the master only starts workers and workers parse configuration.
-This removes master-side parse-and-undo work and prevents the associated reload
-inconsistencies and file-descriptor leaks.
+The global `dns-accept-family` directive accepts `ipv4`, `ipv6`, and `auto` to
+disable an address family process-wide. `auto` probes IPv6 connectivity at
+boot and every 30 seconds to determine whether IPv6 resolution remains
+enabled.
 
-For crash investigation, `master-worker no-exit-on-failure` keeps other workers
-running when one worker segfaults. The default `mworker-max-reloads` is 50
-since 3.3.0.
+As of 3.3.0, `dns-accept-family` defaults to `auto`, enabling IPv4 and
+conditionally enabling IPv6 based on the recurring connectivity probe.
 
-Dynamic backends keep named `defaults` sections resident for runtime creation.
-If the deployment never creates backends dynamically, set global
-`tune.defaults.purge` to release that memory.
+### CPU-gated protocol-glitch enforcement (since 3.2.0)
 
-## CPU and threading changes
+The global `tune.glitches.kill.cpu-usage` sets a 0–100 CPU percentage above
+which connections exceeding a configured glitch threshold are killed. The
+default `0` kills at the threshold regardless of CPU load. A nonzero setting
+requires `tune.h2.fe.glitches-threshold` or
+`tune.quic.frontend.glitches-threshold`.
 
-Automatic CPU binding in 3.2.0 became topology-aware across packages, NUMA
-nodes, CCXs, L3 caches, cores, and hardware threads. That release still
-restricted HAProxy to one NUMA node by default, required extra configuration
-to use more than 64 threads, and raised limits to 1024 threads and 32 thread
-groups.
+## Command-line and build changes
 
-The 3.3.0 defaults supersede those constraints: `cpu-policy` defaults to
-`performance`, heterogeneous systems use only performance cores by default,
-automatic placement uses all available cores and NUMA nodes, and the previous
-64-thread automatic limit is gone.
+### Version query formats (since 3.3.0)
 
-Startup diagnostics since 3.3.0 trim oversized `thread-groups` ranges against
-`nbthreads` with a warning and reject a group left empty. A root process with
-no global `user` warns. Static builds warn when `user` or `group` should be
-`uid` or `gid`. Leaving `expose-experimental-directives` set when no selected
-feature requires it also warns.
+The CLI accepts `-vq` for the version, `-vqs` for the short form, and `-vqb`
+for the branch.
 
-`show dev` reports thread-to-CPU bindings for runtime verification.
+### Fast-forward control (since 3.3.0)
 
-## Build and command-line changes
+`tune.disable-fast-forward` is stable and can be configured without
+`expose-experimental-directives`.
 
-- The default `linux-glibc` target requires Linux 4.17 since 3.3.0, enabling
-  Kernel TLS support.
-- Install `halog` with `make install-admin`; it is no longer installed by
-  `make install` as of 3.3.0.
-- Use `haproxy -vq` for the version, `-vqs` for the short version, and `-vqb`
-  for the branch.
-- `tune.disable-fast-forward` is stable since 3.3.0 and no longer needs
-  `expose-experimental-directives`.
+### Crash debugging (since 3.3.0)
+
+`master-worker no-exit-on-failure` prevents all workers from being terminated
+when one encounters a segmentation fault.
+
+### Reload cap (since 3.3.0)
+
+The default `mworker-max-reloads` value is 50.
+
+### halog installation (since 3.3.0)
+
+Build and install the `halog` utility with `make install-admin` rather than
+`make install`.
+
+### Linux version floor (since 3.3.0)
+
+The default `linux-glibc` build target requires Linux 4.17 to support Kernel
+TLS.
 
 ## Branch and patch maintenance
 
-Since 1.8, HAProxy normally publishes two feature branches per year. Even
-minor-number branches are LTS and maintained for five years. Odd-numbered
-branches are short-lived stable branches, usually maintained for about 12 to
-18 months, for operators able to upgrade and roll back more frequently.
+### Choose branch and patch level separately
 
-Choose the feature branch and patch level separately. Conservative backports
-mean a maintained branch can receive fixes without taking a new feature
-branch. Keep the last component current and reproduce a problem on the latest
-patch before reporting it.
+Since 1.8, HAProxy normally emits two feature branches per year. Even-numbered
+branches are LTS releases maintained for five years. Odd-numbered branches are
+short-lived stable releases maintained for roughly 12–18 months for operators
+prepared to upgrade and roll back more often.
 
-At the 2026-07-28 branch-maintenance snapshot:
+On a maintained feature branch, keep the final bug-fix component current.
+Fixes are conservatively backported, so patch-level maintenance does not
+require adopting a new feature branch. Reproduce problems on the latest patch
+before reporting them.
 
-- 3.4.2 is fully maintained LTS through 2031-Q2.
-- 3.3.12 is fully maintained stable through 2027-Q1.
-- 3.2.21 is fully maintained LTS through 2030-Q2.
-- 3.0.25 is fully maintained LTS through 2029-Q2.
-- 2.8.26 receives critical fixes through 2028-Q2.
-- 2.6.31 receives critical fixes through 2027-Q2.
-- Every other released branch in that matrix is unmaintained.
+### Support snapshot
 
-Treat this list as a dated support snapshot, not a substitute for checking the
-current maintenance table.
+At the branch-maintenance snapshot of 2026-07-28, fully maintained releases
+were 3.4.2 (LTS through 2031-Q2), 3.3.12 (stable through 2027-Q1), 3.2.21 (LTS
+through 2030-Q2), and 3.0.25 (LTS through 2029-Q2). Branch 2.8 at 2.8.26
+through 2028-Q2 and branch 2.6 at 2.6.31 through 2027-Q2 received critical
+fixes only. Every other released branch in that matrix was unmaintained.
 
-## Reading maintenance bug queues
+### Interpret maintenance queues
 
-The pending-fixes table lists changes already queued for that maintenance
-branch's next release. A separate list of later development-branch fixes is
-only a candidate set: a fix may not affect the maintenance branch, and an
-applicable fix lands on development before backporting. At the snapshot, the
-latest 3.4, 3.3, and 3.2 releases each had zero queued known bugs even though
-later development fixes were listed.
+The pending-fixes table contains fixes already queued for the next release of
+that maintenance branch. A separate list of later development-branch fixes is
+only a candidate set: those fixes may not affect the maintenance branch, and
+applicable fixes land on development before being backported.
 
-Use severity to choose urgency:
+At that snapshot, the latest 3.4, 3.3, and 3.2 releases each had zero queued
+known bugs even though later development-branch fixes were listed.
 
-- `MINOR`: limited impact; rarely update for this alone.
-- `MEDIUM`: update or temporarily disable the affected feature.
-- `MAJOR`: upgrade as soon as possible.
-- `CRITICAL`: short-term reliability or security failure without a workaround;
-  expect an immediate release and upgrade.
+Use severity to interpret urgency:
+
+- `MINOR`: limited impact and seldom enough reason to update by itself.
+- `MEDIUM`: normally warrants updating or temporarily disabling the affected
+  feature.
+- `MAJOR`: requires upgrading as soon as possible.
+- `CRITICAL`: a short-term reliability or security issue without a workaround;
+  immediate release and upgrade are expected.
+
+## LTS-aware deprecation sequence
+
+A working, supported setup on a non-LTS branch is promised to continue working
+on the next LTS, so features are not removed between those branches. An LTS
+also avoids adding warnings for supported configurations that were warning-free
+on the preceding non-LTS.
+
+Deprecations normally warn first in a non-LTS and become errors when removed in
+the next non-LTS, at least a year later.

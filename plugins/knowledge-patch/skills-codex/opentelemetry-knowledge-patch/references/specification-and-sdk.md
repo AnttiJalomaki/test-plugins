@@ -4,134 +4,100 @@
 
 ### Environment-variable carriers
 
-Environment-variable context propagation carriers are Release Candidate.
-Their names follow POSIX.1-2024-aligned restrictions and normalization:
-
-- Normalize requested keys, carrier keys, and returned keys.
-- Read and return only normalized environment-variable names.
-- An empty name normalizes to `_`.
-- The specification does not prescribe caching behavior.
+The environment-variable carrier specification is Release Candidate. Apply
+POSIX.1-2024-aligned restrictions and normalization to requested names, carrier
+keys, and returned keys. Read and return only normalized environment-variable
+names; an empty name normalizes to `_`. The specification does not prescribe
+carrier caching.
 
 Context propagation also requires the W3C randomness flag.
 
-### Legacy compatibility
+### Legacy propagation and compatibility
 
-- The Jaeger and OT Trace propagators are deprecated; implementations are
-  optional.
-- The Zipkin exporter specification is deprecated; implementing it is
-  optional.
-- The specification's OpenTracing and OpenCensus compatibility requirements
-  are deprecated.
+- Jaeger and OT Trace propagators are deprecated; implementations may omit
+  them.
+- OpenTracing and OpenCensus compatibility requirements are deprecated.
 
-## Tracing and sampling APIs
+## Tracing and metrics APIs
 
-- `AlwaysRecord` is a stable sampler.
-- `TraceIdRatioBased` has been restored, but it has a deprecation timeline.
-- The Tracer `enabled` operation is stable.
-
-## Metrics APIs and export
-
-- Synchronous instruments' `Enabled` API is stable.
-- Synchronous instruments have a new in-development `Bind` API.
-- The periodic exporting `MetricReader` has an in-development
+- `AlwaysRecord` is stable.
+- `TraceIdRatioBased` has been restored but has a deprecation timeline.
+- Tracer `enabled`, synchronous instrument `Enabled`, and
+  `LogRecordProcessor.Enabled` are stable enablement checks.
+- Synchronous instruments add an in-development `Bind` API.
+- Periodic exporting `MetricReader` adds an in-development
   `maxExportBatchSize` parameter.
-- A metric stream name supplied by a View is not subject to instrument-name
+- Metric stream names supplied by a View are exempt from instrument-name
   syntax validation.
 
-## Logs, events, and profiles
+## Logs, profiles, and entities
 
-### Logging APIs and filtering
-
-- Logs have an optional ergonomic API.
-- Logger `Emit` has a stable optional `Exception` parameter.
-- Logger configuration adds `minimum_severity` and `trace_based`.
-- `LogRecordProcessor.Enabled` is stable.
-
-### Signal bridges and entity events
-
+- Logs add an optional ergonomic API. Logger `Emit` has a stable optional
+  `Exception` parameter; logger configuration adds `minimum_severity` and
+  `trace_based`.
 - The Logs specification defines an event-to-span-event bridge.
-- Entity information can be communicated as structured log events.
-
-### Profiles
-
-OpenTelemetry documents the Profiles signal and includes a Profiles data
-model. Supplementary documentation describes pprof integration.
+- Entity information can be represented as structured log events.
+- Profiles have a signal specification and data model, supplemented by pprof
+  documentation.
+- The specification defines Entity and adds Entity support to the Resource SDK
+  (batch `2026-08-stable`).
+- Standard OTLP exporter configuration includes maximum request- and
+  response-size options.
 
 ## Resources and attribute values
 
-### Resource meaning
+A Resource describes the observed entity, not necessarily the component that
+emitted the telemetry.
 
-A Resource describes the observed entity. It does not describe the component
-merely because that component technically emitted the telemetry.
-
-### Complex values
-
-Complex `AnyValue` attribute types and their limits are stable. Non-OTLP
-guidance covers:
-
-- Byte arrays.
-- Empty values.
-- Arrays and maps.
-- Nested values.
-
-In-development guidance recommends JSON-object string representations for
-attributes and attribute collections.
+Complex `AnyValue` attributes and their limits are stable. For non-OTLP
+transport, follow the dedicated guidance for byte arrays, empty values,
+arrays, maps, and nested values. JSON-object string representations for
+individual attributes and attribute collections remain in development.
 
 ## SDK self-observability
 
 An in-development SDK self-observability section applies across the Tracing,
-Metrics, and Logs SDK specifications. Supplementary guidance is
+Metrics, and Logs SDK specifications. Its supplementary guidance is
 non-normative.
 
 ## Declarative SDK configuration
 
-Significant parts of declarative configuration are stable:
+Significant portions of declarative configuration are stable:
 
 - `create` and `parse` defaults and validation are clarified.
-- `create` permits optional programmatic customization.
-- Strict YAML parsing is recommended.
+- `create` may accept optional programmatic customization.
+- Prefer strict YAML parsing.
 - Environment substitution may use language-specific prefixes.
-- Boolean environment-variable guidance applies to environment variables, not
-  to other configuration interfaces.
-
-### Names and unset behavior
-
+- The boolean environment-variable rules do not automatically apply to other
+  configuration interfaces.
 - `TracerConfig`, `MeterConfig`, and `LoggerConfig` use `enabled`, replacing
   `disabled`.
 - `ComponentProvider` is renamed to `PluginComponentProvider`.
 - `CreatePlugin` is renamed to `CreateComponent`.
 - An unset instrumentation configuration returns an empty object.
 
-## Prometheus and OpenMetrics
+## Prometheus and OpenMetrics interoperability
 
-### Exporter configuration keys
+### Exporter configuration
 
-Recommended Prometheus Metric Exporter properties are:
+Use `scope_info_enabled`, `target_info_enabled`, and
+`resource_constant_labels`. These replace `without_scope_info`,
+`without_target_info`, and `with_resource_constant_labels`.
 
-| Current property | Replaced property |
-| --- | --- |
-| `scope_info_enabled` | `without_scope_info` |
-| `target_info_enabled` | `without_target_info` |
-| `resource_constant_labels` | `with_resource_constant_labels` |
+The exporter host, port, temporality, version/format, scope-info,
+default-aggregation, resource-attribute, and client-library sections are
+stable.
 
-### Stable conversion and exporter behavior
+### Stable conversion paths
 
-Stable conversion paths cover these Prometheus-to-OTLP data types:
+Stable conversions cover:
 
-- Counters.
-- Gauges.
-- Summaries.
-- Classic histograms.
+- Prometheus counters, gauges, summaries, and classic histograms to OTLP.
+- OpenTelemetry sums, gauges, histograms, scope, attributes, exemplars, and
+  metadata to Prometheus.
 
-Stable OpenTelemetry-to-Prometheus conversion covers:
+An optional conversion maps OpenTelemetry Histograms to Prometheus Native
+Histograms with Custom Buckets.
 
-- Sums, gauges, and histograms.
-- Scope and attributes.
-- Exemplars and metadata.
-
-Exporter sections for host, port, temporality, version and format, scope
-information, default aggregation, resource attributes, and client-library
-behavior are stable.
-
-An optional conversion maps an OpenTelemetry Histogram to a Prometheus Native
-Histogram with Custom Buckets.
+The Zipkin exporter specification is deprecated, and implementing that
+exporter is optional.

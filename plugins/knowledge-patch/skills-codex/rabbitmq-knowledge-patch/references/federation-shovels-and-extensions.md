@@ -1,97 +1,119 @@
 # Federation, Shovels, and extensions
 
-Use this reference for inter-cluster links, in-cluster forwarding, broker
-interceptors, plugin integration, and commercial messaging extensions.
+## Federation
 
-## Exchange federation
+### Protocol and mixed-version support (`4.1.0`)
 
-- Exchange federation supports MQTTv5 consumers.
-- RabbitMQ 4.1.8 restores exchange-federation compatibility in mixed
-  4.2.x/4.1.x multi-node clusters.
-- Configure the AMQP 0-9-1 connection close timeout separately for exchange
-  and queue federation. Values are milliseconds and cannot exceed 5000:
+Exchange federation works with MQTTv5 consumers. RabbitMQ 4.1.8 restores
+exchange-federation compatibility in mixed 4.2.x/4.1.x multi-node clusters;
+keep mixed versions only for a rolling upgrade.
+
+### Connection-close timeout
+
+Starting in 4.1.8, configure the AMQP 0-9-1 close timeout separately for
+exchange and queue federation. Values are milliseconds and cannot exceed 5000:
 
 ```ini
 federation.exchanges.connection_close_timeout = 3000
 federation.queues.connection_close_timeout = 3000
 ```
 
-Federation link restart operations in management require the `policymaker`
-user tag.
+### Management permissions
 
-## Local Shovels
+Restarting a federation link through management requires the `policymaker`
+user tag (`4.3.0`).
 
-The `local` protocol option consumes and publishes within one cluster. These
-AMQP 1.0-based Shovels reuse intra-cluster connections and internal
-consumption, publishing, and credit-flow APIs instead of opening separate TCP
-connections. They cannot connect different clusters.
+## Shovels
 
-Resource alarms block direct in-cluster AMQP 0-9-1 Shovel connections just as
-they block network Shovel connections. This direct-connection rule does not
-describe the newer `local` transport.
+### Local protocol (`4.2.0`)
 
-Set a stable source consumer identity with `src-consumer-name`. It becomes:
+Use Shovel protocol option `local` to consume and publish within one cluster.
+It uses AMQP 1.0, reuses intra-cluster connections, and invokes internal
+consumption, publishing, and credit-flow APIs rather than opening separate TCP
+connections. It cannot connect different clusters.
 
-- the AMQP 0-9-1 source consumer tag
-- the local source consumer tag
-- the AMQP 1.0 source link identifier
+Direct AMQP 0-9-1 in-cluster Shovel connections are blocked by resource alarms
+just like network connections. That alarm behavior does not apply to the
+`local` protocol.
 
-Shovel management `DELETE` operations require the `policymaker` tag.
+### Source consumer names and lifetime
 
-## Native-protocol interceptors
+Set `src-consumer-name` to choose the AMQP 0-9-1 or local source consumer tag,
+or the AMQP 1.0 source link identifier. Dynamic Shovels accept
+`src-delete-after-duration`, which deletes the Shovel after at least the
+specified duration (`4.3.5`).
 
-Incoming and outgoing message interceptors cover AMQP 1.0, AMQP 0-9-1,
-MQTTv3, and MQTTv5. Plugins can implement validation, annotation, or side
-effects. Optional built-in interceptors add outgoing timestamps or the
+Deleting a Shovel through management requires `policymaker`.
+
+## Peer discovery
+
+The Kubernetes peer-discovery plugin no longer relies on the Kubernetes API.
+During first formation it attempts to join the node at index `0` as the seed;
+the behavior remains backward compatible.
+
+The AWS peer-discovery plugin uses IPv6 discovery endpoints in IPv6-only
+environments starting in 4.1.7. Consul discovery can be used without Consul
+service registration:
+
+```ini
+cluster_formation.registration.enabled = false
+```
+
+An infinite peer-discovery retry count is also valid:
+
+```ini
+cluster_formation.discovery_retry_limit = infinity
+```
+
+## Plugin extension points
+
+Plugins can mark queues and streams as protected against application deletion.
+Native-protocol incoming and outgoing message interceptors support AMQP 1.0,
+AMQP 0-9-1, MQTTv3, and MQTTv5. Custom interceptors can validate, annotate, or
+perform side effects; optional built-ins add outgoing timestamps or the
 publishing MQTT client's ID.
 
-## Event exchange
+The event-exchange plugin can publish internal events as AMQP 1.0, preserving
+list and map properties that AMQP 0-9-1 cannot preserve in the same way.
 
-The event exchange plugin can publish internal events using AMQP 1.0 instead
-of AMQP 0-9-1. AMQP 1.0 preserves complex properties such as lists and maps.
+Third-party plugins should use the dedicated data directory preserved during a
+Mnesia-to-Khepri migration. Non-whitelisted directories inside the node data
+directory may be removed when migration completes.
 
-## Plugin storage and protected resources
+## Tanzu extensions (`4.3-guides`)
 
-- Plugins can mark queues and streams as protected from application deletion.
-- During Mnesia-to-Khepri migration, third-party plugins should use the
-  dedicated directory that is preserved. Other non-whitelisted directories
-  under the node data directory can be removed at migration completion.
+### JMS queue type
 
-## Tanzu JMS queue
+The commercial Tanzu edition adds a Raft-backed JMS queue optimized for Qpid
+JMS and usable through AMQP 1.0, AMQP 0-9-1, STOMP, and MQTT. It supports:
 
-The Raft-backed JMS queue is optimized for Qpid JMS and also works with AMQP
-1.0, AMQP 0-9-1, STOMP, and MQTT.
+- Broker-side selectors after fields are indexed with queue argument
+  `x-selector-fields` or policy key `selector-fields`.
+- Non-destructive `QueueBrowser` inspection with selectors.
+- `MessageProducer.setDeliveryDelay(...)`.
 
-- Index fields using queue argument `x-selector-fields` or policy key
-  `selector-fields` before using broker-side selectors.
-- `QueueBrowser` supports non-destructive selector-based inspection.
-- `MessageProducer.setDeliveryDelay(...)` is supported.
+Consumer-timeout semantics for this queue type match quorum queues.
 
-## Spark Structured Streaming connector
+### Stream connector for Spark
 
-The `rabbitmq-stream` source reads streams and super streams. It supports:
+The Tanzu RabbitMQ Stream connector provides a `rabbitmq-stream` Spark
+Structured Streaming source for streams and super streams. It supports starting
+at head, tail, offset, or timestamp; field projection; per-trigger rate limits;
+and AMQP payload/property access. Important options include `uris`,
+`super.stream`, `starting.offsets`, and `rmq.stream.select.fields`.
 
-- starting at head, tail, offset, or timestamp
-- field projection
-- per-trigger rate limits
-- AMQP payload and property access
+### Stream Browser
 
-Relevant options include `uris`, `super.stream`, `starting.offsets`, and
-`rmq.stream.select.fields`.
+The commercial Stream Browser management plugin inspects streams and super
+streams from an offset, timestamp, head, or tail. It exposes AMQP 1.0 sections
+and the segment/chunk layout and can selectively download message sections.
 
-## Stream Browser
+### Delayed Queue
 
-The management extension can inspect streams and super streams from an offset,
-timestamp, head, or tail. It exposes AMQP 1.0 sections and segment/chunk
-layout, and can selectively download message sections.
+The archived community `rabbitmq-delayed-message-exchange` plugin is
+deprecated. Tanzu's Raft-backed Delayed Queue schedules messages using AMQP 1.0
+`x-opt-delivery-time` or `x-opt-delivery-delay`, then routes through exchanges
+when the delay expires.
 
-## Delayed Queue scheduler
-
-The Raft-backed Delayed Queue extension schedules messages through AMQP 1.0
-`x-opt-delivery-time` or `x-opt-delivery-delay`, then routes them through
-exchanges when the delay expires.
-
-Unlike quorum-queue delayed retries, this supports delayed fan-out. It also
-provides browsing, selective purge, and warm-standby replication. The
-community `rabbitmq-delayed-message-exchange` plugin is deprecated and
-archived.
+Unlike quorum-queue delayed retries, it supports delayed fan-out. It also
+provides browsing, selective purge, and warm-standby replication.

@@ -1,44 +1,47 @@
 # Queries and Runtime
 
-## SQL identifier and alias escaping
+## Secure SQL identifiers and aliases
 
-Values passed to `sql.identifier()` and `sql.as()` are properly escaped
-starting with 0.45.2.
+Starting with `drizzle-orm@0.45.2`, values passed to `sql.identifier()` and
+`sql.as()` are properly escaped.
 
-Earlier releases could leave these values improperly escaped.
+Earlier releases could leave those values improperly escaped. When an
+identifier or alias contains untrusted input, that behavior can expose the
+application to SQL injection.
 
-That behavior could expose an application to SQL injection when it used
-either helper.
+Upgrade to a corrected ORM release whenever either helper is used. Do not
+treat input filtering as a substitute for the helper's escaping correction.
 
-Upgrade when a project uses:
+## Audit procedure
 
-- `sql.identifier()`
-- `sql.as()`
+Search the codebase for both affected helpers:
 
-## Security review
+```text
+sql.identifier(
+sql.as(
+```
 
-Search the repository for both helper forms.
+At each call site:
 
-For each call site:
+1. Identify the installed `drizzle-orm` version.
+2. Trace where the identifier or alias value originates.
+3. Distinguish hard-coded values from runtime input.
+4. Upgrade if the code runs on a release without the correction.
+5. Retest values containing characters that require escaping.
+6. Record the upgrade as a security-relevant change.
 
-1. Identify the value passed to the helper.
-2. Determine whether the value is fixed in source or supplied dynamically.
-3. Confirm which `drizzle-orm` version executes the query.
-4. Upgrade if the project can run the earlier escaping behavior.
-5. Exercise the call site with nontrivial identifier or alias values.
+Prioritize call sites fed by request data, user configuration, stored data,
+or any other value outside the static query definition.
 
-Treat upgrading as the remediation for the helper behavior.
+## Review guidance
 
-Do not describe application-side checks as a substitute for the corrected
-escaping implementation.
+Do not conclude that a call site is safe merely because ordinary identifier
+or alias values work. The corrected behavior matters specifically for values
+that require escaping.
 
-## Scope
+When reporting the issue, name `sql.identifier()` or `sql.as()` directly and
+state whether the value is dynamic. This keeps the affected query boundary
+clear and makes the required package upgrade actionable.
 
-The corrected behavior applies specifically to values passed to the two
-helpers named above.
-
-Keep broader query-security findings separate unless repository evidence
-connects them to these helpers.
-
-When reporting the change, name the helper, the executing ORM version,
-and whether its value is dynamic.
+After upgrading, keep application-level validation that enforces business
+rules, but rely on the corrected helper behavior for SQL escaping.

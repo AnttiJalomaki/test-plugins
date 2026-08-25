@@ -8,95 +8,145 @@ metadata:
 ---
 
 
-
 # iOS SDK Knowledge Patch
 
-Use this skill when maintaining Apple-platform projects that depend on recent
-iOS SDK, Xcode, SwiftUI, UIKit, Foundation, StoreKit, Core Data, networking,
-Metal, or C-family toolchain behavior.
+Use this skill when building, reviewing, testing, or upgrading applications
+against recent iOS SDKs and Xcode toolchains. Start with the compatibility
+checks below, then open the topic reference that matches the affected code.
 
-Check the project's Xcode version, deployment targets, linked SDK, enabled
-entitlements, and affected frameworks before applying guidance. Several
-behaviors are SDK-linked: the runtime OS alone does not determine them.
+## How to Apply This Patch
 
-## Reference index
+1. Inspect the Xcode version, base SDK, deployment target, linked-on SDK, Swift
+   language mode, and device OS before changing code.
+2. Distinguish an SDK-linked behavior change from a runtime change. Several
+   behaviors below affect only binaries rebuilt with a newer SDK.
+3. Audit removals and deprecations before adopting new APIs or build defaults.
+4. Reproduce issues with the same SDK and toolchain used by CI and distribution.
+5. Prefer the project's manifests, compiler diagnostics, tests, and observed
+   behavior if they conflict with this guidance.
+
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [C++, Swift interop, and runtime](references/cpp-and-language-interop.md) | C and POSIX APIs, libxml2, libc++, Swift/C++ interop, Objective-C races |
-| [Graphics, media, and spatial APIs](references/graphics-media-and-spatial.md) | Broadcast Extensions, Nearby Interaction, Push to Talk, Metal 4 |
-| [Networking, security, and distribution](references/networking-security-and-distribution.md) | URL loading, TLS, IKEv2, semaphores, enterprise and App Store distribution |
-| [Persistence, Foundation, and commerce](references/persistence-foundation-and-commerce.md) | Core Data, Foundation formatting, AdAttributionKit, StoreKit |
-| [SwiftUI, UIKit, and documents](references/swiftui-uikit-and-documents.md) | Localization, controls, navigation, gestures, text, Writing Tools, screen access |
-| [Toolchain, build, and testing](references/toolchain-build-and-testing.md) | Xcode requirements, devices, Simulator, linker, modules, packages, tests |
+| [C++, Swift interop, and language runtime](references/cpp-and-language-interop.md) | C and C++ compatibility, libxml2 allocators, Swift interop, spans, ABI changes, and Objective-C race detection |
+| [Graphics, media, and spatial APIs](references/graphics-media-and-spatial.md) | Nearby Interaction, broadcast extensions, and Metal residency |
+| [Networking, security, and distribution](references/networking-security-and-distribution.md) | HTTP loading, TLS and VPN policy, entitlements, enterprise recovery, Safari extensions, attribution, and App Store uploads |
+| [Persistence, Foundation, and commerce](references/persistence-foundation-and-commerce.md) | Core Data, StoreKit, ISO-8601 parsing, fileports, and named semaphores |
+| [SwiftUI, UIKit, and text](references/swiftui-uikit-and-documents.md) | Localization, navigation, gestures, text direction, Writing Tools, picker sizing, and screen APIs |
+| [Toolchain, build, and testing](references/toolchain-build-and-testing.md) | Xcode host and device requirements, explicit modules, linking, package builds, diagnostics, Simulator fixes, and Swift Testing |
 
-## Start with migration blockers
+## Breaking Changes and Required Migrations
 
-Before changing code, identify whether the project is merely running on a new
-OS or is also being rebuilt with a new SDK. Prioritize these build- and
-link-sensitive changes:
+### Remove Core Data Ubiquity Options
 
-- Remove Core Data ubiquity options rejected by the iOS 26 SDK. Preserve the
-  local store, then move synchronization to `NSPersistentCloudKitContainer`
-  or SwiftData.
-- Replace the unrestricted VoIP Push to Talk entitlement with the Push to Talk
-  framework for apps built with the iOS 26 SDK or later.
-- Upgrade IKEv2 profiles and servers away from DES, 3DES, SHA1-96, SHA1-160,
-  and Diffie-Hellman groups below 14.
-- Replace `Transaction.currentEntitlement(for:)` with
-  `Transaction.currentEntitlements(for:)` so family-shared transactions are
-  included.
-- Replace libxml2 custom allocation entry points and allocator configuration
-  with the system `malloc`, `realloc`, `free`, and `strdup` family.
-- Treat `UIScreen.mainScreen` as deprecated on iOS, tvOS, and visionOS 26.
-- Audit binary boundaries containing libc++ unordered containers or `deque`
-  when empty allocators, comparators, or hashers participate in layout.
+When building with the newer SDK, the legacy Core Data ubiquity option keys are
+errors rather than warnings. Remove those keys and migrate synchronization to
+`NSPersistentCloudKitContainer` or SwiftData. Removing the keys preserves the
+local store but stops its synchronization.
 
-## Verify the toolchain and delivery path
+See [Persistence, Foundation, and commerce](references/persistence-foundation-and-commerce.md)
+for the complete key list and concurrency-import changes.
 
-Use the Xcode release that supplies the intended SDK and runs on the build
-host. Do not infer host compatibility from an application's deployment target.
-See the toolchain reference for exact host and device requirements.
+### Replace the Legacy Push to Talk Entitlement
 
-For App Store submissions, verify the current upload floor before archiving.
-The documented requirement in this patch applies from April 28, 2026: use
-Xcode 26 or later and a version 26 platform SDK.
+Applications built with the newer SDK cannot use
+`com.apple.developer.pushkit.unrestricted-voip.ptt`. Migrate to the Push to Talk
+framework rather than carrying the entitlement forward.
 
-When diagnosing build or test failures:
+### Raise Legacy Network Security Floors
 
-1. Record the Xcode, SDK, Swift language, and deployment-target versions.
-2. Distinguish a compiler or linker failure from a Simulator-runtime defect.
-3. Check whether Swift explicit modules became active automatically.
-4. Retest extensions and device-only features on physical hardware where the
-   Simulator does not expose them.
-5. Capture diagnostics with `devicectl diagnose`; it now collects from the Mac
-   and every available device by default.
+Newly linked applications default to TLS 1.2 for `URLSession` and Network
+framework connections. IKEv2 also drops DES, 3DES, SHA1-96, SHA1-160, and
+Diffie-Hellman groups below 14. Update endpoints, VPN profiles, and VPN servers;
+use an explicit minimum protocol only when a legacy endpoint cannot yet move.
 
-## Core Data migration checks
+### Stop Using libxml2 Custom Allocators
 
-The iOS 26 SDK changes concurrency imports:
+Replace libxml2 allocation functions with the system `malloc`, `realloc`,
+`free`, and `strdup` family. Remove `xmlMemSetup`, `xmlMemGet`, `xmlGcMemSetup`,
+`xmlGcMemGet`, and related allocator globals because libxml2 and libxslt now use
+the system allocator internally.
 
-- `NSManagedObject` is nonisolated and non-`Sendable`.
-- `NSManagedObjectContext` is nonisolated and `Sendable`.
-- `perform` and `performBlock` closures are imported as `Sendable`.
+### Use the Plural StoreKit Entitlement API
 
-Keep managed objects inside their context's scope. During migration, run with
-`-com.apple.CoreData.ConcurrencyDebug 1` to turn hidden misuse into actionable
-failures.
+Replace `Transaction.currentEntitlement(for:)` with
+`Transaction.currentEntitlements(for:)`. The singular API can omit
+family-shared transactions. Also require an App Store sign-in before treating
+`isEligibleForIntroOffer(for:)` as a meaningful eligibility result.
 
-Remove all obsolete `NSPersistentStoreUbiquitous*` keys and the related rebuild
-and metadata options. Removing them keeps the local store but stops that legacy
-sync path, so plan the replacement before shipping.
+### Fix Localization-Sensitive Text Construction
 
-## Networking and security defaults
+Do not interpolate a nonlocalized value directly into `LocalizedStringResource`,
+`String(localized:)`, or `AttributedString(localized:)`. Supply a localized value
+or explicitly use `String(describing:)` for an intentional description. Replace
+SwiftUI `Text` concatenation with interpolation so translations can reorder
+content.
 
-Apps linked on or after iOS 26 default `URLSession` and Network framework
-connections to TLS 1.2 minimum. Prefer upgrading endpoints. If a legacy service
-must be reached temporarily, set the minimum explicitly with
-`URLSessionConfiguration.tlsMinimumSupportedProtocolVersion` or
-`sec_protocol_options_set_min_tls_protocol_version`.
+### Audit SDK-Linked SwiftUI Behavior
 
-The newer URL loading stack is opt-in in iOS 18.4:
+For rebuilt applications, paragraph direction is content-based, button-like
+pickers use fitted sizing, and a `NavigationLink` produces one view instead of a
+view list in list contexts. Explicitly configure writing direction or button
+sizing where required, and move escaping `containerValue(_:_:)` modifiers
+outside the link.
+
+### Keep Indirect Metal Pipelines Resident
+
+With Metal 4 command encoders, add render and compute pipelines that support
+indirect command buffers to the residency set. Do this even when the current
+driver appears to tolerate a missing residency declaration.
+
+## Build and Runtime Compatibility
+
+### Match Xcode to Its Host
+
+Xcode 16.3 requires macOS Sequoia 15.2 or later. Xcode 16.4 requires macOS
+Sequoia 15.3 through macOS Tahoe 26.1. Xcode 26 requires macOS Sequoia 15.6 or
+later. Keep local and CI hosts within the selected Xcode release's supported
+range.
+
+### Respect Device Debugging Floors
+
+Xcode 16.3 supports on-device debugging for iOS and tvOS 15 or later, watchOS 7
+or later, and visionOS. Xcode 26 raises the watchOS floor to 8 while retaining
+the iOS and tvOS 15 floors.
+
+### Account for Explicit Swift Modules
+
+Swift explicit modules are enabled by default for Swift targets, except for
+targets using a pre-Swift-5 language version or Swift/C++ interoperability. If a
+severe compatibility issue blocks a build, use
+`SWIFT_ENABLE_EXPLICIT_MODULES=NO` as a temporary opt-out while fixing it.
+
+### Treat C++ Container Layout as ABI-Sensitive
+
+The toolchain can change the layout of `std::unordered_map`,
+`std::unordered_set`, their multi variants, and `std::deque` when rebound
+allocators share an empty base. Enclosing layouts can also change when an empty
+allocator, comparator, or hasher is reused through `[[no_unique_address]]` or
+empty inheritance. Rebuild ABI boundaries together and avoid persisting such
+layouts.
+
+### Diagnose Core Data Concurrency
+
+The imported concurrency annotations make `NSManagedObject` non-`Sendable` and
+`NSManagedObjectContext` `Sendable`; context `perform` closures are also
+`Sendable`. Keep managed objects inside their context's scope, and launch with
+`-com.apple.CoreData.ConcurrencyDebug 1` to catch violations.
+
+### Recognize Nonatomic Property Races
+
+A synthesized Objective-C nonatomic setter may temporarily store the sentinel
+`0x400000000000bad0` (`0xbad0` on 32-bit watchOS). A concurrent read that crashes
+on this value points to unsafe simultaneous property access.
+
+## High-Value API Changes
+
+### Opt In to the New HTTP Loading Mode
+
+Set `usesClassicLoadingMode` to `false` on a `URLSessionConfiguration` to test
+the new HTTP loader before it becomes the default:
 
 ```swift
 let configuration = URLSessionConfiguration.default
@@ -104,92 +154,56 @@ configuration.usesClassicLoadingMode = false
 let session = URLSession(configuration: configuration)
 ```
 
-Team-signed processes cannot use POSIX named semaphores to observe names
-created by a different development team. Treat this as an isolation boundary,
-not an intermittent synchronization failure.
+### Use StoreKit's Expanded Commerce Metadata
 
-## SwiftUI and UIKit migration checks
+Advanced Commerce purchases and
+`introductoryOfferEligibility(compactJWS:)` are available. New transaction data
+includes `appTransactionID`, `originalPlatform`, and `period`; the platform type
+is `AppStore.Platform`, and the former `watchOS` case is folded into `iOS`.
 
-For SDK-linked UI changes, test both newly built binaries and older binaries on
-the same OS. In particular:
+### Use SwiftUI Control and Section APIs
 
-- Paragraph direction for `Text`, `TextEditor`, and `TextField` follows content
-  in new builds. Set `AttributedString.writingDirection` per paragraph, or use
-  `.writingDirection(strategy: .layoutBased)` when layout direction must win.
-- Button-like picker styles use fitted sizing. Apply `buttonSizing(_:)` when
-  the picker should fill available space.
-- `NavigationLink` is a single view in list contexts. Put
-  `containerValue(_:_:)` outside the link when the value must escape its label
-  or `ButtonStyle`.
-- Use `highPriorityGesture(_:isEnabled:)` to precede native recognizers and
-  `simultaneousGesture(_:isEnabled:)` for equal priority.
-- Use `includesTextListMarkers` to choose whether TextKit 2 and Writing Tools
-  attributed strings contain list-marker text.
+`ControlSize` is comparable, and `controlSize(_:)` accepts a range that clamps
+the environment value. `sectionActions(content:)` adds section actions; they
+remain trailing on macOS and become individual form rows on iOS and iPadOS.
 
-Prefer `Text` interpolation over concatenation so localization can reorder
-content. When interpolating a deliberately nonlocalized value into a localized
-string, wrap it with `String(describing:)`; otherwise provide a localized value.
+### Select Gesture Priority Explicitly
 
-## StoreKit and attribution checks
+Use `highPriorityGesture(_:isEnabled:)` when a SwiftUI gesture must precede a
+native UIKit or AppKit recognizer. Use `simultaneousGesture(_:isEnabled:)` when
+both should receive equal priority.
 
-Advanced Commerce purchases and compact-JWS introductory-offer controls are
-available through StoreKit. Treat the signed eligibility option as a deliberate
-server decision: it can either apply an offer to an otherwise ineligible
-customer or prevent redemption.
+### Exercise Swift Testing Exit Paths
 
-When consuming transaction data, account for `appTransactionID`,
-`originalPlatform`, and `period`. `originalPlatform` uses `AppStore.Platform`;
-the former `watchOS` case is represented by `iOS`.
+Swift Testing can test code paths that terminate through `precondition()`,
+`fatalError()`, or another process exit. Use
+`swift test --attachments-path <directory>` to control attachment output.
 
-Do not present an unsigned user as introductory-offer eligible:
-`isEligibleForIntroOffer(for:)` returns `false` when no App Store account is
-signed in.
+### Use Background Nearby Interaction Deliberately
 
-For AdAttributionKit re-engagement, read the conversion tag from the
-re-engagement URL and pass it to `updateConversionValue`. Development postbacks
-for Xcode-built advertised apps can be exercised from the device's Ad
-Attribution Testing settings without a publisher app or prior store release.
+An application with an active Live Activity can perform Ultra Wideband ranging
+through Nearby Interaction while backgrounded. Tie background ranging to the
+Live Activity's active lifetime.
 
-## C, C++, Swift, and Objective-C checks
+## Common Diagnostic Traps
 
-Define `BUILD_FOR_APPLE_SDK` before including hvf headers when availability
-checking is required:
+- Safari extensions are absent from iOS and visionOS Simulator; test them on a
+  device.
+- An iOS 18.3 Simulator runtime used with Xcode 16.4 includes the fix for
+  `NSURLSession` requests that otherwise always timed out.
+- `isEligibleForIntroOffer(for:)` returns `false` when no App Store account is
+  signed in.
+- `ISO8601FormatStyle` accepts fractional seconds regardless of the
+  `includingFractionalSeconds` setting.
+- `UIScreen.mainScreen` is deprecated; audit existing uses and avoid adding new
+  dependencies on it.
+- The generic `std::char_traits` base template is temporarily restored but
+  remains deprecated and should not anchor new code.
+- `devicectl diagnose` collects a sysdiagnose from the Mac and every available
+  device by default; account for the broader collection scope.
 
-```c
-#define BUILD_FOR_APPLE_SDK 1
-```
+## Distribution Check
 
-Do not build new code around the restored generic `std::char_traits` template.
-Its return in Xcode 16.4 is temporary compatibility for nonstandard
-instantiations, and the base template remains deprecated.
-
-`MutableSpan` may be passed as an `inout` parameter without an experimental
-feature. Swift also inherits `SWIFT_SHARED_REFERENCE` from an annotated C++
-base type.
-
-A crash that reads `0x400000000000bad0` from a synthesized Objective-C
-nonatomic property setter is a race signal. Fix concurrent property access;
-do not treat the sentinel as application data.
-
-## Media and graphics checks
-
-An active Live Activity permits background Ultra Wideband ranging through
-Nearby Interaction. Broadcast Extensions have a higher memory limit on iOS and
-iPadOS 18.5, but quality still depends on available system resources.
-
-With Metal 4, place render and compute pipelines that support indirect command
-buffers in the residency set. The current driver may not enforce the rule, but
-code should satisfy it now.
-
-## Final validation
-
-Before declaring a migration complete:
-
-- Build every supported target with the selected Xcode release.
-- Exercise network connections against their real TLS and VPN endpoints.
-- Run Core Data with concurrency debugging enabled.
-- Test StoreKit account-signed-out and family-sharing paths.
-- Verify bidirectional text, picker sizing, list markers, and gesture ordering.
-- Check binary compatibility across C++ framework boundaries.
-- Run device-only extensions on hardware.
-- Confirm archive tooling meets the App Store upload requirement.
+Before uploading, verify that the archive was produced with an accepted Xcode
+and platform SDK. Current App Store submission requirements are detailed in
+[Networking, security, and distribution](references/networking-security-and-distribution.md).

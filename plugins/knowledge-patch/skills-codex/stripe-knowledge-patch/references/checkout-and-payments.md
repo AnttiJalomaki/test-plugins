@@ -1,199 +1,204 @@
 # Checkout and Payments
 
-## Stripe.js and Elements breaking changes
+## Checkout and Elements migrations
 
-### Removed and renamed entry points
+### Custom Checkout and initialization (`2025-03-31.basil`)
 
-- `redirectToCheckout` and the superseded messaging and bank Elements are removed in `2025-09-30.clover`.
-- Deprecated Stripe.js PaymentIntent, SetupIntent, and Sources methods are removed in `2026-03-25.dahlia`; migrate to their current replacements before upgrading.
-- `stripe.initCheckout(...)` is renamed to `stripe.initCheckoutElements(...)`.
-- `stripe.initEmbeddedCheckout(...)` is renamed to `stripe.createEmbeddedCheckoutPage(...)`.
+Checkout Sessions accept `ui_mode=custom`, allowing an Elements-based checkout
+backed by the Session. Use the new Checkout initialization flow rather than the
+hosted-page flow. The Payment Element's default layout also changes; configure
+the layout explicitly when preserving the previous rendering matters.
 
-### Initialization and updates
+### Removed entry points and synchronous initialization (`2025-09-30.clover`)
 
-- The custom Checkout UI introduced in `2025-03-31.basil` pairs custom `ui_mode` with `initCheckout` for an Elements-based Checkout experience.
-- In `2025-09-30.clover`, `initCheckout` is synchronous. Do not await it:
+`redirectToCheckout` and deprecated messaging and bank Elements are removed.
+Migrate callers to their replacement Checkout flow or replacement Elements.
 
-```js
-const checkout = stripe.initCheckout(options);
-```
+`initCheckout` is synchronous. Use its return value directly instead of
+awaiting it; Elements can mount without waiting for an initialization promise.
 
-- In `2026-03-25.dahlia`, `elements.update()` returns a Promise. Await it before work that depends on the update:
+### Saved methods and client-secret validation (`2025-09-30.clover`)
 
-```js
-await elements.update(options);
-```
+Elements with Checkout Sessions no longer requires saved payment methods to be
+enabled both on the Session and in the initialization call. Remove the duplicate
+opt-in. Do not reuse an Intent client secret in a state rejected by the new
+initialization check as capable of producing a broken payment form.
 
-- `options.layout.radios` no longer accepts booleans; use a supported non-boolean layout configuration.
-- Checkout Session `ui_mode` enum values change. Update validators and exhaustive switches.
+### Postal codes and Adaptive Pricing (`2025-09-30.clover`)
 
-### Defaults and state safety
+Checkout and the Payment Element no longer automatically collect card postal
+codes in Canada, the United Kingdom, or Puerto Rico. Collect them explicitly
+when required. Checkout Sessions remove `currency_conversion`; use
+`presentment_details` for Adaptive Pricing.
 
-- The Payment Element default layout changes in `2025-03-31.basil`. Configure the intended layout explicitly instead of depending on the former implicit default.
-- Elements blocks reuse of Intent client secrets in states that could render a broken payment form (`2025-09-30.clover`).
-- With Checkout Sessions, enabling saved payment methods on the Session is sufficient; do not also enable them in the initialization call.
-- The Address Element state value returned by `getValue()` and change events defaults to Latin-formatted characters in `2026-03-25.dahlia`. Do not assume native-script state text.
-- Payment Element future-usage configuration changes, including its interaction with payment-method options and Customer Sessions. Revalidate existing future-usage setup.
+## Checkout Session and Payment Link contracts
 
-## Checkout Session contracts
+### Customer Session, metadata, and optional fields (`2024-09-30.acacia`)
 
-### Session fields and updates
+Customer Sessions can enable the Payment Element, Checkout Sessions gain a
+metadata update method, and Checkout `LineItem.description` becomes optional.
+Product creation accepts `custom_unit_amount`.
 
-- Customer Sessions can enable the Payment Element (`2024-09-30.acacia`).
-- Checkout Sessions support metadata updates, and `LineItem.description` becomes optional.
-- Product creation accepts `custom_unit_amount`.
-- In `2025-03-31.basil`, Checkout Sessions remove shipping details, allow shipping-option updates, and add a permissions parameter.
-- Checkout Sessions and Payment Links add optional items.
-- Session updates use new semantics; update clients rather than assuming create-time behavior applies unchanged.
-- Payment Links custom fields can specify a default value.
+Checkout Sessions and Payment Links can require customer tax-ID collection,
+not merely enable it. Customer tax IDs add Swiss UID and Croatian OIB.
 
-### Postal code, branding, and names
+### Shipping, permissions, and optional items (`2025-03-31.basil`)
 
-- Checkout and the Payment Element no longer automatically collect postal codes for card payments in Canada, the United Kingdom, or Puerto Rico (`2025-09-30.clover`). Collect them explicitly if required.
-- Checkout Sessions add branding settings and collection of business or individual names.
-- Customer objects can store those business or individual names.
-- Product data can specify a unit of measurement.
+Checkout Sessions remove their shipping-details contract but allow
+shipping-option updates. Sessions gain a permissions parameter, and Checkout
+Sessions and Payment Links gain optional items. Payment Link custom fields also
+gain a default value.
 
-### Payment-method controls
+### Method controls, identity, and branding (`2025-09-30.clover`)
 
-- Checkout Sessions can exclude selected payment methods and set capture behavior per payment method (`2025-09-30.clover`).
-- PaymentIntents also support payment-method exclusion.
-- Treat an unavailable method as potentially intentional, and honor method-specific capture settings.
+Checkout Sessions and PaymentIntents can exclude selected payment methods.
+Checkout Sessions can also set per-method capture behavior. Use these controls
+when method availability or capture strategy differs instead of applying one
+Session-wide assumption.
 
-### Adaptive Pricing
+Checkout Sessions add business-name and individual-name collection and
+configurable branding. Products add a unit of measurement. Preserve the new
+fields in response models and generated types.
 
-- Checkout adds `presentment_details` in `2025-03-31.basil`, exposing customer-facing currency presentation for Adaptive Pricing.
-- Checkout Sessions remove `currency_conversion` in `2025-09-30.clover`; read the existing `presentment_details` field instead.
-- Adaptive Pricing Subscriptions later expose their own presentment details; see [billing.md](billing.md).
+### Mutable Payment Links (`2026-07-29.dahlia`)
 
-### Subscription tracking
+Payment Links can be updated with shipping options, consent collection, and
+future-usage settings. An existing link need not be replaced solely to change
+these checkout controls.
 
-In `2026-03-25.dahlia`, Checkout Session creation adds:
+## Payment-method contracts
 
-- an integration identifier for grouping and tracking Sessions; and
-- a pending-invoice-item interval for subscription payments.
+### Method-specific reporting (`2024-09-30.acacia`)
 
-## PaymentIntent line items
+BLIK adds a unique payer identifier, Affirm adds transaction IDs, Charges expose
+`authorization_code`, Klarna Charge payer details add country, and Amazon Pay
+Disputes add dispute type. Confirmation Tokens can expose CVC tokens through
+payment-method options and include the customer ID in their payment-method
+preview. Accept all additions in generated types and preview handling.
 
-### Availability and limits
+### Method availability (`2024-09-30.acacia`)
 
-PaymentIntents accept line items for cards, Klarna, and PayPal.
+Payment Links add Multibanco, Twint, and Zip; the PaymentMethodConfiguration API
+adds Twint; PaymentMethod brand and network enums add Girocard. Billing's
+Multibanco surface is described in [billing.md](billing.md).
 
-- Supply at most 200 items.
-- American Express receives only the first four items.
-- Automatic and manual capture are supported, including multicapture and overcapture.
-- Card line items are incompatible with partial or decrement authorization and with airline, lodging, car-rental, and other industry-specific metadata.
+### Reuse, mutability, and capture (`2025-03-31.basil`)
 
-### Required fields and program data
+Reusable Naver Pay, Billie, Satispay, and New Zealand BECS Direct Debit are
+added. Naver Pay fields are immutable after PaymentMethod creation, while the
+WeChat Pay client parameter is optional until confirmation. Interac card
+payments no longer support manual capture.
 
-Every `amount_details.line_items` entry requires:
+### Newer payment methods and outcomes (`2025-09-30.clover`)
 
-- `product_name`;
-- nonnegative `unit_cost` in the smallest currency unit; and
-- a positive integer `quantity`.
+MB WAY is available across Checkout and additional payment surfaces. Decline
+code behavior changes for Alma, Amazon Pay, Billie, Satispay, and South Korean
+payment methods. Submitted stablecoin payments gain a processing status, and
+Klarna disputes gain a chargeback-loss reason. Status, reason, and decline-code
+handling needs an unknown-value path.
 
-Put transaction identifiers under `payment_details`.
+The crypto token currency enum adds `cash`; accept it even though it represents
+cash rather than a blockchain token.
 
-- Level 2 card data requires `payment_details.order_reference` and transaction-level tax.
-- Level 3 adds per-line tax, `product_code`, and `unit_of_measure`.
-- Transaction-level and line-level tax are mutually exclusive.
-- Transaction-level and line-level discounts are mutually exclusive.
+### Intent constraints and non-reuse (`2026-07-29.dahlia`)
+
+Payment Intents and Setup Intents add `allowed_payment_method_types`, allowing
+eligible methods to be constrained per Intent rather than only through broader
+configuration. Samsung Pay and PAYCO accept `setup_future_usage=none`; send it
+when reuse is explicitly not intended.
+
+FPX supports additional banks. Treat the bank set as extensible. Funding
+instructions support CHAPS, so network validation and rendering must accept it.
+
+### Authentication and Radar context (`2026-07-29.dahlia`)
+
+3D Secure results add `data_share_only`. Accept it without treating it as an
+unknown authentication failure. Payment Intent Radar options add `referrer`;
+preserve it in Intent builders and serializers.
+
+## Errors, refunds, disputes, and records
+
+### Error-code growth (`2024-09-30.acacia`)
+
+The error-code surface adds transaction-limit failure and invalid
+mandate-reference-prefix failure cases for Bacs Direct Debit and SEPA Direct
+Debit. Handle them distinctly and retain an unknown branch.
+
+### Classification additions (`2024-09-30.acacia`)
+
+Credit Notes add email types, and card Disputes add case-type classification.
+Accept the new values in deserializers and exhaustive switches.
+
+### Refund and dispute attribution (`2026-07-29.dahlia`)
+
+Refunds expose customer and payment-method details. Preserve them rather than
+resolving every attribution through the original payment. Disputes expose the
+card network inside payment-method details; preserve the expanded nested shape
+and use the returned network directly when needed.
+
+### Payment Record listing (`2026-07-29.dahlia`)
+
+Payment Records have a list operation, allowing integrations to enumerate them
+without relying only on individually known identifiers.
+
+## List API migration (`2025-03-31.basil`)
+
+List APIs no longer support expanding `total_count`, and the `page` parameter is
+removed. Do not use either as a pagination or collection-size mechanism.
+
+## PaymentIntent line items (`billing-and-payments-v2`)
+
+### Request and response shape
+
+PaymentIntents accept up to 200 entries under `amount_details[line_items]` for
+cards, Klarna, and PayPal. Every entry requires `product_name`, a nonnegative
+`unit_cost`, and a positive `quantity`. Put transaction references in
+`payment_details`, and shipping, tax, and discounts in `amount_details`.
+
+Line items are omitted from responses by default. Expand
+`amount_details.line_items` when they are needed:
 
 ```sh
 curl https://api.stripe.com/v1/payment_intents \
-  -u "$STRIPE_SECRET_KEY:" \
-  -d amount=2100 \
+  -u "${STRIPE_SECRET_KEY}:" \
+  -d amount=2000 \
   -d currency=usd \
-  -d "payment_method_types[]=card" \
-  -d "payment_details[order_reference]=order_123" \
   -d "amount_details[line_items][0][product_name]=Widget" \
   -d "amount_details[line_items][0][unit_cost]=2000" \
   -d "amount_details[line_items][0][quantity]=1" \
-  -d "amount_details[line_items][0][tax][total_tax_amount]=100" \
-  -d "amount_details[line_items][0][product_code]=SKU001" \
-  -d "amount_details[line_items][0][unit_of_measure]=each"
+  -d "expand[0]=amount_details.line_items"
 ```
 
-### Card eligibility
+### Payment-method data and capture timing
 
-Card line-item programs cover US domestic and intra-EU Visa, Mastercard, and American Express transactions. Level 2 is limited to business, purchasing, and corporate cards; Level 3/Product 3 is limited to purchasing and corporate cards. Stripe accepts data that misses network MCC or tax requirements, so request success does not establish interchange-rate eligibility.
+Each line can carry card `commodity_code`; Klarna product, image, and reference
+data; and PayPal description, category, and seller data. Method-specific fields
+for multiple candidate methods may be supplied together even when not all are
+used.
 
-### Method-specific fields
-
-- Card lines can carry `commodity_code`.
-- Klarna lines can carry product and image URLs plus reference fields.
-- PayPal lines can carry `description`, `category`, and connected-account `sold_by`.
-- Supported method-specific fields may be sent even when another method is ultimately confirmed.
-- Klarna derives line amount as `(unit_cost * quantity) - discount_amount + tax.total_tax_amount`; do not send an explicit line amount.
-
-### Confirmation, capture, and retrieval
-
-- Supply line items at confirmation for either capture mode and retain them for later capture.
-- Alternatively, first supply or update line items during capture.
-- Capture-time line items are not supported for PayPal.
-- Responses omit line items by default. Request `expand[]=amount_details.line_items` to retrieve them.
+Lines supplied at confirmation persist for either capture mode. If omitted at
+confirmation, they can be supplied at capture and `amount_details` can be
+updated then. Surcharge, multi-capture, overcapture, and authorization-adjustment
+flows remain compatible. PayPal does not support capture-time line items.
 
 ### Arithmetic validation
 
-A line-item arithmetic mismatch returns HTTP 400 by default. Setting `amount_details[enforce_arithmetic_validation]=false` permits processing and exposes the mismatch in `amount_details.error`. Erroneous card line items are not sent to the networks and cannot qualify for Level 2 or Level 3 rates.
+By default, line items must reconcile with the PaymentIntent amount after
+shipping, discounts, and tax; otherwise the request fails with HTTP 400.
+Top-level and per-line tax are mutually exclusive, as are top-level and per-line
+discounts.
 
-```sh
--d "amount_details[enforce_arithmetic_validation]=false" \
--d "expand[]=amount_details.line_items"
-```
+`amount_details[enforce_arithmetic_validation]=false` lets a mismatched request
+proceed and exposes details in `amount_details.error`. Erroneous card lines are
+not sent to networks and cannot qualify for L2 or L3 savings.
 
-## Payment Records and reporting
+### L2, L3, and Product 3
 
-- Card properties on Payment Records have revised requirements in `2026-03-25.dahlia`.
-- Payment Records expose 3D Secure authentication properties.
-- Update readers and validators for the revised card shape instead of assuming earlier requirements.
+L2 requires transaction tax and `payment_details[order_reference]`. L3 or
+Product 3 additionally requires each line's product name, unit cost, quantity,
+product code, unit of measure, and line-level or transaction-level tax.
 
-## Confirmation Tokens and payment details
-
-In `2024-09-30.acacia`:
-
-- Confirmation Tokens can return CVC tokens on request and expose a Customer ID in the payment-method preview.
-- BLIK exposes its unique payer.
-- Affirm exposes transaction IDs.
-- Charges expose `authorization_code`.
-- Klarna exposes payer country.
-- Amazon Pay disputes expose a dispute type.
-
-## Cards, wallets, and local payment methods
-
-### In-person card details
-
-- Interac is supported as an in-person PaymentMethod (`2024-09-30.acacia`).
-- `card_present` Charges and PaymentMethods expose wallet details.
-- Girocard appears as a PaymentMethod brand and network.
-- Interac card-present payments no longer support manual capture in `2025-03-31.basil`.
-
-### Added and changed methods
-
-- Payment Links add Multibanco, Twint, and Zip; Billing adds Multibanco; and PaymentMethodConfiguration can configure Twint (`2024-09-30.acacia`).
-- Naver Pay PaymentMethods become reusable in `2025-03-31.basil`, but their Naver Pay fields are immutable after creation.
-- Billie, Satispay, and New Zealand BECS Direct Debit are added.
-- WeChat Pay no longer requires its client parameter before confirmation.
-- MB WAY is added in `2025-09-30.clover`.
-- UPI supports one-time and recurring payments in India in `2026-03-25.dahlia`.
-
-### Crypto and stablecoins
-
-- Submitted stablecoin payments expose a processing status (`2025-09-30.clover`).
-- The crypto token currency enum adds `cash`; do not assume every enum member denotes cryptocurrency.
-- Checkout can configure future usage at the crypto-payment-method level (`2026-03-25.dahlia`).
-- Crypto payments accept `Tempo` as a network value.
-
-## Tax IDs and payment errors
-
-### Customer tax IDs
-
-Customer tax IDs add Switzerland UID and Croatia OIB types in `2024-09-30.acacia`. Checkout and Payment Links can require Customer tax-ID collection.
-
-### Errors and classifications
-
-- Bacs Direct Debit and SEPA Direct Debit add distinct errors for exceeded transaction limits and invalid mandate-reference prefixes (`2024-09-30.acacia`).
-- Vault and Forward return HTTP 402 for upstream request timeouts (`2025-03-31.basil`).
-- SetupIntents add an error for mobile-wallet failures.
-- Decline-code sets change for Alma, Amazon Pay, Billie, Satispay, and South Korean payment methods in `2025-09-30.clover`; preserve an unknown-code path.
-- BalanceTransaction adds types for Stripe-balance payments, and Customer balance transactions add transaction types (`2025-03-31.basil`).
+The programs cover US-domestic and intra-EU Visa, Mastercard, and American
+Express transactions. American Express requires a direct agreement and
+receives only the first four items. Visa L2 ended in April 2026. API acceptance
+does not prove that MCC or tax rules qualify the payment for a reduced rate.

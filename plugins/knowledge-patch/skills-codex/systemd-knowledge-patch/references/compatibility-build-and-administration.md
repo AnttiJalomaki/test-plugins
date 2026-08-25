@@ -1,61 +1,142 @@
 # Compatibility, Builds, and Administration
 
-## Remove legacy cgroup and init interfaces
+## Platform and boot compatibility
 
-- In 256, legacy or hybrid cgroup v1 boot required `SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1` on the kernel command line, and the build-time `default-hierarchy` option could select only cgroup v2.
-- In 258, cgroup v1 support was removed entirely. Boot and nspawn always use the unified cgroup v2 hierarchy; the force override is no longer a migration path.
-- `initctl`, `runlevel`, `telinit`, `/dev/initctl`, runlevel utmp/wtmp records, and `init 3`-style state changes were removed in 258. `/forcefsck`, `/fastboot`, and `/forcequotacheck` were replaced by `fsck.mode=`, `fsck.repair=`, and `quotacheck.mode=` kernel options or credentials.
-- Native units are mandatory in 260: `systemd-sysv-generator`, `systemd-sysv-install`, `systemd-rc-local-generator`, and `rc-local.service` were removed. `-Dcompat-sysv-interfaces=yes` restores `runlevel[0-6].target` and `legacy.conf`, but does not load SysV scripts.
-- `getty@.service` now has an `[Install]` section and must be explicitly enabled (since 260):
+### Cgroup migration (256, 258)
 
-```sh
-systemctl enable --now getty@tty1.service
-```
+Version 256 refused legacy or hybrid cgroup v1 unless the kernel command line
+contained `SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1`; its build-time hierarchy
+choice was already cgroup v2-only. Version 258 removed cgroup v1 entirely for
+both boot and nspawn. Remove transitional overrides and require the unified
+hierarchy.
 
-## Meet platform and tool requirements
+### Hard platform and tool baselines (258, 259)
 
-- Systemd 258 requires Linux 5.4 or newer; 5.7 is recommended. Resolved and importd require OpenSSL.
-- Requirements announced for 260 are Linux 5.10, glibc 2.34, libxcrypt 4.4, util-linux 2.37, elfutils 0.177, OpenSSL 3.0, cryptsetup 2.4, libseccomp 2.4, and Python 3.9 (announced in 259).
-- Repart uses `mkfs.xfs` directory population and no longer has a protofile fallback. Populating XFS images therefore requires xfsprogs 6.17.0 or newer (since 260).
-- The old F20–F23 key remapping moved out of the hardware database. Before 258, upgrade to `xf86-input-evdev` 2.11.0 or newer and `xf86-input-libinput` 1.5.0 or newer (announced in 257).
-- TTY and PTY nodes default to `0600`, equivalent to `mesg n` instead of `mesg y`. A distribution that needs the former behavior can build with `-Dtty-mode=0620` (since 258).
+Version 258 requires Linux 5.4 (5.7 recommended), and resolved/importd require
+OpenSSL. Pair a v258 systemd-stub with ukify 257.9 or newer.
 
-## Package runtime-loaded dependencies
+Version 259 announced the next baseline: Linux 5.10, glibc 2.34, libxcrypt
+4.4, util-linux 2.37, elfutils 0.177, OpenSSL 3.0, cryptsetup 2.4, libseccomp
+2.4, and Python 3.9. It also announced last-definition-wins behavior for
+duplicate partitions in `RootImageOptions=` and the mount-image parameters of
+`ExtensionImages=` and `MountImages=`.
 
-- `liblz4`, `libzstd`, `liblzma`, `libkmod`, and `libgcrypt` became runtime `dlopen()` dependencies in 256. ELF dependency scans may miss them; omitting `libkmod` can prevent boot. ELF notes advertise optional sonames to packaging tools.
-- Audit, PAM, ACL, blkid, seccomp, SELinux, and most libmount integration also became weak runtime dependencies in 259. The service manager itself still requires libmount. Use `systemd-analyze dlopen-metadata` to inspect declared weak dependencies. Systemd no longer links to libcap.
-- Build with `-Dlink-executor-shared=false` when an upgrade might remove an old shared systemd library before PID 1 reexecutes; this leaves the pinned `systemd-executor` usable (since 257).
-- Standalone `systemd-tmpfiles` and `systemd-sysusers` builds expose full functionality. Features that need libmount are selected at installation time according to whether the runtime-loaded library exists (since 260).
+### TPM and filesystem tool requirements (259, 260)
 
-## Handle build-library transitions
+Systemd-boot and systemd-stub support only TPM 2.0 as of 259. Repart in 260
+uses the XFS directory-population support introduced in xfsprogs 6.17.0 and
+has no protofile fallback, so populated XFS images require that version or
+newer.
 
-- The Meson options `-Dintegration-tests=` and `-Dcryptolib=` were removed in 260.
-- Libidn support was removed; IDN requires libidn2. The obsolete `-Dlibidn=` switch is deprecated for later removal (since 260).
-- `-Dlibiptc=` is deprecated because networkd and nspawn now require nftables for NAT (since 259).
-- Meson's `libc=musl` enables an experimental, incomplete build. Without NSS-equivalent facilities, it disables nss-systemd, nss-resolve, `DynamicUser=`, homed, userdbd, foreign-ID allocation, unprivileged nspawn, and nsresourced; normal memory-pressure behavior for long-running services is also unavailable (since 259).
-- `sd_varlink_field_type_t` briefly used incompatible numeric values in 260-rc1. Recompile software built with rc1 headers against rc2 or final 260 headers.
+## Removed and changed interfaces
 
-## Use configuration search paths and disable drop-ins
+### Native units replace runlevels, SysV, and rc.local (258, 260)
 
-- Main configuration files are selected from `/etc`, `/run`, `/usr/local/lib`, then `/usr/lib`, using the first match. `kernel-install` uses this search and supports drop-ins; `systemd-udevd` supports `udev.conf` drop-ins (since 256).
-- Most configuration loaders ignore drop-in files ending in `.ignore`, allowing an installed drop-in to be disabled without deleting it (since 259).
+Version 258 removed `initctl`, `runlevel`, `telinit`, `/dev/initctl`, runlevel
+targets, `init 3`-style state changes, and runlevel utmp/wtmp records. Replace
+`/forcefsck`, `/fastboot`, and `/forcequotacheck` with the `fsck.mode=`,
+`fsck.repair=`, and `quotacheck.mode=` kernel options or credentials.
 
-## Generate stable fleet hostnames
+Version 260 then removed `systemd-sysv-generator`, `systemd-sysv-install`,
+`systemd-rc-local-generator`, and `rc-local.service`. Native units are
+required. `-Dcompat-sysv-interfaces=yes` restores runlevel targets and
+`legacy.conf`, not service-script loading.
 
-- Question marks in `/etc/hostname` are deterministically replaced by hexadecimal nibbles hashed from the machine ID. A shared `web-????????` image therefore receives a stable, distinct hostname on each machine (since 258).
+### Removed build and IDN options (260)
 
-## Describe the operating system
+The `-Dintegration-tests=` and `-Dcryptolib=` Meson options are gone. Libidn
+is unsupported and IDN requires libidn2; `-Dlibidn=` is obsolete and
+deprecated for later removal.
 
-- `os-release` accepts `RELEASE_TYPE=development|stable|lts|experimental`, plus `EXPERIMENT=` and `EXPERIMENT_URL=` for experimental builds (since 257).
-- `FANCY_NAME=` is a version-free display name and may contain ANSI sequences and non-ASCII glyphs. The manager, hostnamed, and `hostnamectl` prefer it over `PRETTY_NAME=` (since 260).
+### Input-key and EFI-option migration (257)
 
-```ini
-FANCY_NAME="Example Linux ◆"
-PRETTY_NAME="Example Linux 260"
-```
+Before v258, install `xf86-input-evdev` 2.11.0+ and
+`xf86-input-libinput` 1.5.0+ because F20-F23 microphone/touchpad remapping
+moved out of systemd's hardware database. Replace the deprecated
+`SystemdOptions` EFI variable and `bootctl systemd-efi-options` with
+credentials or configuration extensions.
 
-## Administrative behavior changes
+### Rebuild the v260-rc1 sd-varlink ABI (260)
 
-- Systemd no longer flushes nscd user and group caches automatically; arrange invalidation explicitly if a deployment relied on it (since 257).
-- `systemctl enqueue-marked` replaces deprecated `systemctl --marked`. `Markers=` accepts `needs-start` and `needs-stop` (since 260).
-- More command-line tools can use interactive Polkit authorization: systemd-sysext and `varlinkctl` gained it, and authorized unprivileged callers can use `systemd-ask-password` (since 260).
+Programs compiled with v260-rc1 headers must be rebuilt: rc1 briefly changed
+`sd_varlink_field_type_t` numeric values and rc2 restored them.
+
+### Getty instances need explicit enablement (260)
+
+`getty@.service` has an `[Install]` section and is inactive until explicitly
+enabled, for example `systemctl enable --now getty@tty1.service`.
+
+## Configuration, identity, and defaults
+
+### Main configuration search and inactive drop-ins (256, 259)
+
+Programs select the first main configuration file in `/etc`, `/run`,
+`/usr/local/lib`, then `/usr/lib`. Kernel-install follows this search and has
+drop-ins; udevd supports `udev.conf` drop-ins. Most configuration loaders in
+259 skip files ending `.ignore`, leaving them installed but inactive.
+
+### TTY privacy (258)
+
+TTY and PTY nodes default to `0600`, effectively `mesg n`. A distribution
+that deliberately needs the old `0620` default must build with
+`-Dtty-mode=0620`.
+
+### Clock, machine ID, and fleet hostname (257, 258)
+
+PID 1 and timesyncd choose the newest minimum time from the compiled epoch,
+`/usr/lib/clock-epoch`, and `/var/lib/systemd/timesync/clock`.
+`systemd.machine_id=firmware` derives the machine ID from SMBIOS or DeviceTree
+UUID on physical or virtual systems.
+
+Question marks in `/etc/hostname` are replaced deterministically with machine
+ID-derived hexadecimal nibbles. `ConditionVersion=` tests kernel, systemd, or
+glibc versions; `ConditionKernelModuleLoaded=` tests a loaded or built-in
+module.
+
+### OS release metadata (257, 260)
+
+`os-release` can declare `RELEASE_TYPE=` (`development`, `stable`, `lts`, or
+`experimental`) and `EXPERIMENT=`/`EXPERIMENT_URL=`. Version 260 adds
+`FANCY_NAME=` as a version-free display name, possibly with ANSI and non-ASCII
+text; manager, hostnamed, and hostnamectl prefer it over `PRETTY_NAME=`.
+
+### NSCD cache flushing was removed (257)
+
+Systemd no longer flushes nscd user/group caches as a side effect. Arrange
+cache invalidation explicitly if the deployment relies on it.
+
+### Journal and coredump storage defaults (256, 259)
+
+Coredumps default to two weeks of retention rather than three days. Journald
+defaults `Storage=` to `persistent`, independent of pre-existing
+`/var/log/journal`; `-Djournal-storage-default=` can change the build default.
+
+## Packaging and builds
+
+### Runtime-loaded dependencies (256, 259)
+
+Compression libraries (`liblz4`, `libzstd`, `liblzma`), libkmod, and libgcrypt
+moved to `dlopen()` in 256. Version 259 also weak-loads audit, PAM, ACL, blkid,
+seccomp, SELinux, and most libmount integration; the manager itself still
+requires libmount, and systemd no longer links libcap. Declare package feature
+dependencies explicitly—missing libkmod can prevent boot—and inspect notes
+with `systemd-analyze dlopen-metadata`.
+
+### Upgrade-safe executor linking (257)
+
+Build with `-Dlink-executor-shared=false` to keep PID 1's pinned
+`systemd-executor` usable when an upgrade removes an old shared systemd
+library before manager reexecution.
+
+### Musl is experimental (259)
+
+Meson's `libc=musl` build is not guaranteed. Without NSS-equivalent behavior,
+nss-systemd, nss-resolve, `DynamicUser=`, homed, userdbd, foreign-ID
+allocation, unprivileged nspawn, and nsresourced are disabled; normal
+long-running-service memory-pressure behavior is also unavailable.
+
+### Standalone tmpfiles and sysusers are full builds (260)
+
+Standalone systemd-tmpfiles and systemd-sysusers expose full functionality.
+Installation-time availability of the dlopen-loaded libmount controls the
+features that need it.

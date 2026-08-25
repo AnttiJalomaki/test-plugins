@@ -1,105 +1,79 @@
 # Replication and High Availability
 
-Use this reference when configuring source/replica links, Group Replication,
-semisynchronous replication, GTIDs, dependency tracking, or foreign-key
-replication visibility.
+Use this reference when changing replication channels, version topology, Group
+Replication, retry behavior, or binary-log assumptions.
 
-## Cross-version and transport policy
+## Version and transport compatibility
 
-### Replicating from a higher-version source
+### Allow a higher-version source explicitly
 
-In batch 9.7.0, `replica_allow_higher_version_source` controls whether a
-lower-version replica may replicate from a higher-version source. Do not infer
-compatibility from the connection succeeding; enable the variable only after
-checking the statements and row events the replica must apply.
+A lower-version replica accepts a higher-version source only when
+`replica_allow_higher_version_source` permits it. Set and review this variable
+as part of the topology change instead of assuming cross-version acceptance.
 
-### Encryption and GTIDs default on
+### Expect encrypted connections and GTIDs
 
-In batch 9.4-9.6, replication connections default to encryption:
+Replication connections default to encryption:
 
-```text
-SOURCE_SSL=1
-group_replication_ssl_mode=REQUIRED
-group_replication_recovery_use_ssl=ON
-```
+- `SOURCE_SSL=1`
+- `group_replication_ssl_mode=REQUIRED`
+- `group_replication_recovery_use_ssl=ON`
 
-`gtid_mode` also defaults to `ON`. Provision certificates and GTID-aware
-topology automation before relying on these defaults.
+`gtid_mode` also defaults to `ON`. Provision certificates and validate GTID
+behavior explicitly when upgrading an existing topology.
 
-## Group Replication management
+### Configure unlimited retries consistently
+
+Since 9.7.2, `SOURCE_RETRY_COUNT=0` consistently means unlimited retries for
+all receiver reconnect paths. A channel using zero continues after repeated
+transient connection failures instead of stopping unexpectedly.
+
+## Group Replication components
 
 ### Resource Manager
 
-The Group Replication Resource Manager monitors:
+The Group Replication Resource Manager monitors secondary applier lag, recovery
+lag, and memory. It ejects members that exceed:
 
-- secondary applier lag;
-- recovery lag; and
-- memory use.
+- `group_replication_resource_manager.applier_channel_lag`
+- `group_replication_resource_manager.recovery_channel_lag`
+- `group_replication_resource_manager.memory_used_limit`
 
-It ejects members that exceed
-`group_replication_resource_manager.applier_channel_lag`,
-`group_replication_resource_manager.recovery_channel_lag`, or
-`group_replication_resource_manager.memory_used_limit`. Automatic rejoin
-requires `group_replication_autorejoin_tries` greater than zero.
+Automatic rejoin requires `group_replication_autorejoin_tries` greater than
+zero.
 
-### Primary election
+### Primary Election
 
-The Primary Election component can prefer the most up-to-date failover candidate
-when it is installed on every member and:
+The Primary Election component can prefer the most up-to-date failover
+candidate. Install it on every member and set
+`group_replication_elect_prefers_most_updated.enabled=ON`.
 
-```text
-group_replication_elect_prefers_most_updated.enabled=ON
-```
+### Community Edition availability
 
-Mixed installation does not provide the intended election behavior. Both the
-Resource Manager and Primary Election component were introduced in the material
-for batch 9.2-9.3 and are available in Community Edition in batch 9.7.0.
-Community Edition also includes Replication Applier Metrics and Group
-Replication Flow Control Statistics.
+Community Edition includes the Replication Applier Metrics, Group Replication
+Flow Control Statistics, Group Replication Resource Manager, Group Replication
+Primary Election, and Telemetry components.
 
-## Parallelism and semisynchronous replication
+### Retire deprecated variables
 
-`replica_parallel_workers` has a minimum of `1` rather than `0` in batch
-9.2-9.3. In batch 9.4-9.6, `replica_parallel_type` and
-`group_replication_allow_local_lower_version_join` are removed.
+In `9.7.2`, `group_replication_communication_stack` and
+`group_replication_ip_allowlist` are deprecated and scheduled for removal.
+Avoid new dependencies and plan to remove both from existing configurations.
 
-The `semisync_master` and `semisync_slave` plugins are also removed. Use:
+## Binary-log behavior
 
-```text
-semisync_source
-semisync_replica
-```
+### Size dependency history for the new default
 
-Update plugin-loading configuration, variable names, and monitoring labels
-together.
+`binlog_transaction_dependency_history_size` defaults to `1000000` rather
+than `25000`; its maximum is now `10000000` rather than `1000000`. Set it
+explicitly if dependency-memory or parallel-apply assumptions require the old
+size.
 
-## Binary-log scheduling and visibility
+### Understand SQL-layer foreign keys
 
-### Dependency-history sizing
+Foreign-key constraints and cascades execute in the SQL layer, making their
+changes completely visible in binary logs and replication. Start with
+`innodb_native_foreign_keys` only when InnoDB-native handling must be retained.
 
-`binlog_transaction_dependency_history_size` defaults to `1000000`, up from
-`25000`, in batch 9.4-9.6. Its maximum rises from `1000000` to `10000000`.
-Reassess memory and parallel-apply behavior before preserving an old explicit
-value.
-
-### Foreign keys execute in the SQL layer
-
-Foreign-key constraints and cascades run in the SQL layer in batch 9.4-9.6, so
-their changes are completely visible in binary logs and replication. Start the
-server with `innodb_native_foreign_keys` only when InnoDB-native handling is
-required for compatibility.
-
-Test cascade-heavy workloads and downstream consumers when changing between the
-two enforcement paths.
-
-## Option tracking
-
-Option Tracker in batch 9.2-9.3 covers binary logging, replicas, Group
-Replication, and both optimizer types. Each feature exposes a global status item:
-
-```text
-option_tracker_usage:<feature_name>
-```
-
-The JSON usage field is a counter named `usedCounter`, not the former Boolean
-`used`. Monitoring parsers must accept the numeric contract.
+For semisynchronous replication, replace removed `semisync_master` and
+`semisync_slave` plugins with `semisync_source` and `semisync_replica`.

@@ -10,212 +10,190 @@ metadata:
 
 # Elasticsearch Knowledge Patch
 
-Use this skill when designing, upgrading, configuring, querying, or operating
-Elasticsearch and the work may depend on recent API, ES|QL, vector-search,
-inference, data-stream, lifecycle, mapping, security, or storage behavior.
-
-## How to use this skill
-
-1. Determine the exact Elasticsearch version and deployment type.
-2. Read the compatibility guidance before changing a cluster, client, plugin,
-   index template, mapping, query, or lifecycle policy.
-3. Open only the topic references needed for the task.
-4. Treat technical-preview features as unstable interfaces and verify their
-   availability in the target distribution.
-5. Prefer the project's mappings, templates, settings, tests, and observed API
-   responses when they differ from generic guidance.
-6. For mixed-version clusters, use behavior supported by every participating
-   node until the upgrade is complete.
+Use this skill when upgrading, configuring, querying, securing, or operating
+recent Elasticsearch clusters. Determine the exact server version, index mode,
+license, deployment type, and client behavior first. Then open the topic
+reference that matches the task; several defaults and APIs changed more than
+once.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [compatibility-and-known-issues.md](references/compatibility-and-known-issues.md) | Breaking changes, removals, deprecations, upgrade hazards, and version-specific workarounds |
-| [esql-and-querying.md](references/esql-and-querying.md) | ES|QL commands, joins, functions, time-series queries, partial results, views, PromQL, and cross-cluster/project search |
-| [search-vectors-and-inference.md](references/search-vectors-and-inference.md) | `semantic_text`, dense and sparse vectors, DiskBBQ, retrievers, reranking, and Inference API changes |
-| [data-streams-lifecycle-and-ingest.md](references/data-streams-lifecycle-and-ingest.md) | Failure stores, streams, ILM, downsampling, reindexing, transforms, and ingest processors |
-| [mappings-time-series-and-observability.md](references/mappings-time-series-and-observability.md) | Mapping types and limits, synthetic source, TSDB identity, metrics, logs, and diagnostics |
-| [security-cluster-and-storage.md](references/security-cluster-and-storage.md) | Authentication, TLS, entitlements, allocation, snapshots, repositories, connectors, and cluster operations |
+| [compatibility-and-known-issues.md](references/compatibility-and-known-issues.md) | Breaking changes, removals, deprecations, upgrade traps, and fixed-version workarounds |
+| [data-streams-lifecycle-and-ingest.md](references/data-streams-lifecycle-and-ingest.md) | Data streams, failure stores, ILM, downsampling, reindexing, transforms, and ingest |
+| [esql-and-querying.md](references/esql-and-querying.md) | ES\|QL commands, functions, joins, partial results, cross-cluster behavior, EQL, and external sources |
+| [mappings-time-series-and-observability.md](references/mappings-time-series-and-observability.md) | Mappings, TSDB, LogsDB, histograms, metrics, Prometheus, OTLP, and diagnostics |
+| [search-vectors-and-inference.md](references/search-vectors-and-inference.md) | Search, retrievers, vectors, semantic text, reranking, and inference integrations |
+| [security-cluster-and-storage.md](references/security-cluster-and-storage.md) | Security, TLS, entitlements, cluster APIs, cross-project routing, snapshots, and repositories |
 
-## Breaking changes first
+## Upgrade checks that prevent breakage
 
-### Require complete ES|QL and EQL results explicitly
+### Treat partial results as an explicit policy
 
-ES|QL may return partial results by default. Always inspect `is_partial` when
-partial results are acceptable. For correctness-sensitive requests, send
-`allow_partial_results=false`; the cluster-wide ES|QL setting is
-`esql.query.allow_partial_results: false`.
+ES|QL responses may be partial by default. Inspect `is_partial`; set
+`allow_partial_results=false` per request or
+`esql.query.allow_partial_results: false` cluster-wide when completeness is
+required. EQL likewise defaults `allow_partial_search_results` to `true`.
+With remote-cluster `skip_unavailable: true`, runtime failures, including a
+missing index, can produce a skipped or partial cluster instead of a fatal
+response.
 
-EQL also defaults `allow_partial_search_results` to `true`. Opt out when every
-shard must succeed.
+### Revalidate index patterns and removed request options
 
-When a remote cluster has `skip_unavailable: true`, ES|QL treats all of its
-runtime errors, including missing indices, as non-fatal and reports that
-cluster as skipped or partial.
+Quote an entire ES|QL remote pattern or none of it: both
+`FROM "remote:index"` and `FROM remote:index` are valid, while
+`FROM remote:"index"` is not. Parentheses require quoting. Remove these legacy
+uses:
 
-### Account for source-vector exclusion
+- highlighting `force_source`;
+- alias API `local`;
+- the unfreeze endpoint and reads from frozen indices;
+- the technical-preview `_knn_search` API;
+- Watcher search `types`;
+- `user_agent.ecs` and the removed GeoIP fallback option;
+- metadata-field `type`, `fields`, `copy_to`, and `boost` definitions.
 
-New indices enable `exclude_source_vectors` by default. Do not assume vector
-values are returned from `_source`; request vector inclusion or use the Fields
-API where supported. Reindex still carries vectors even when transparent
-source removal hides them.
+The `_source.mode` mapping attribute is a no-op. `random_score` without a field
+now uses `_seq_no`, and `date_histogram` rejects boolean values.
 
-### Update ILM downsampling assumptions
+### Account for changed defaults
 
-ILM downsampling no longer force-merges by default. If a policy relies on a
-merged downsampled index, add a force-merge action or set
-`force_merge_index: true` on the downsample action.
-
-### Update EC2 discovery configuration
-
-The `discovery-ec2` plugin uses AWS SDK v2, requires IMDSv2, ignores
-`discovery.ec2.protocol`, and removes legacy AWS SDK properties. Put the
-scheme directly in `discovery.ec2.endpoint`. Configure both the access key and
-secret key, or configure neither.
-
-### Audit removed APIs, settings, and parameters
-
-- Frozen indices and the unfreeze endpoint are removed.
-- The technical-preview `_knn_search` API is removed; use supported kNN query
-  and retriever forms.
-- Highlighting no longer accepts `force_source`.
-- Alias APIs no longer accept `local`.
-- `/_cluster/reroute` responses no longer contain cluster state.
-- The single-data-node disk-watermark setting is removed.
-- `client.type`, `tracing.apm.*`, and
-  `xpack.searchable.snapshot.allocate_on_rolling_restart` are removed.
-- The `user_agent` processor no longer accepts `ecs`.
-- Metadata-field definitions reject `type`, `fields`, `copy_to`, and `boost`.
-- Watcher searches no longer accept `types`.
-
-### Adjust changed defaults and parsing
-
-- Timeouts return HTTP 429 rather than a 5xx response.
-- Byte-size values accept at most two decimal places.
-- `random_score` without a field uses `_seq_no`.
-- `date_histogram` rejects boolean values.
+- New indices exclude vectors from `_source` by default.
 - LogsDB and TSDB text fields omit norms.
-- Logs data streams may use LogsDB automatically when enabling conditions hold.
+- Eligible `logs-*-*` data streams enable LogsDB by default.
+- ES|QL and EQL permit partial results by default.
+- Timeouts return HTTP 429, and byte sizes accept at most two decimal places.
 - JDK 24 removes `TLS_RSA` ciphers and TLSv1.1 from defaults.
-- An LDAP or Active Directory bind DN without a bind password prevents startup.
-- ES|QL index-pattern quoting is all-or-nothing: quote the complete
-  `remote:index` expression or none of it.
+- A bind DN without its bind password prevents LDAP or Active Directory startup.
+- API request `secret_parameters` cannot be overridden in 9.3.8 and 9.4.4.
 
-See the compatibility reference before any upgrade; it contains additional
-analyzer, platform, connector-privilege, synthetic-source, OTLP, inference,
-and Fleet-search changes.
+### Make downsampling policy explicit
 
-## Deprecations to remove from new work
+Starting in 9.4.0, ILM downsampling no longer force-merges its result by
+default. Add a force-merge action or set `force_merge_index: true` when the old
+behavior is required. OTLP histograms now map to `exponential_histogram`, and
+normalized `keyword` fields use native synthetic source.
 
-- Do not build new operational dependencies on ES|QL query logging.
-- Avoid the deprecated `logs` data-stream type.
-- Omit `aggregate_metric_double.default_metric` in new mappings.
-- Replace ILM rollover `max_size` with supported conditions.
-- Supply strict `true` or `false` values in settings and system properties.
-- Remove `indices.merge.scheduler.use_thread_pool`.
-- Write ES|QL metadata fields without brackets:
+### Rework EC2 discovery configuration
 
-```esql
-FROM my-index METADATA _id, _index
-```
+`discovery-ec2` uses AWS SDK v2 and requires IMDSv2. It ignores
+`discovery.ec2.protocol`; put `http://` in `discovery.ec2.endpoint` when needed.
+Remove `aws.secretKey` and
+`com.amazonaws.sdk.ec2MetadataServiceEndpointOverride`. Configure both
+`discovery.ec2.access_key` and `discovery.ec2.secret_key`, or neither.
 
-- Migrate away from the machine-learning flush API, the `elser` inference
-  service, and Behavioral Analytics CRUD APIs.
-- Recheck authorization assumptions around the built-in `reporting_user` role.
+### Review platform and allocation removals
 
-## High-value feature choices
+Remove `cluster.routing.allocation.disk.watermark.enable_for_single_data_node`.
+Do not expect cluster state in `/_cluster/reroute` responses. Also remove
+`client.type`, `tracing.apm.*`, and
+`xpack.searchable.snapshot.allocate_on_rolling_restart`. Machine learning is
+disabled on macOS x86_64, and the old `data_frame_transforms` roles are gone.
 
-### Choose a vector index deliberately
+## Deprecation priorities
 
-New vector indices and new `semantic_text` fields can default to DiskBBQ and
-BFloat16 storage. DiskBBQ reduces memory pressure, supports configurable
-quantization, and can keep raw rescoring vectors on disk, but its latency and
-license constraints differ from HNSW. Use `flat_index_threshold` for small
-HNSW fields and tune DiskBBQ kNN with `num_candidates` or
-`visit_percentage`.
+- Do not build new automation around ES|QL query logging; its use is deprecated
+  from 9.4.2.
+- Avoid the deprecated `logs` data-stream type and
+  `aggregate_metric_double.default_metric` mapping parameter.
+- Replace ILM `max_size` rollover conditions and remove
+  `indices.merge.scheduler.use_thread_pool`.
+- Supply strict `true` or `false` values in plugin analysis settings and boolean
+  system properties.
+- In ES|QL, write `METADATA _id, _index` without brackets.
+- Migrate from the machine-learning flush API, the `elser` inference service,
+  and Behavioral Analytics CRUD APIs.
+- Recheck authorization assumptions around the built-in `reporting_user` role,
+  which now derives authorization from reserved Kibana privileges.
 
-Use `rank_vectors` for late-interaction reranking when indexing every token
-vector into HNSW is too costly. Use retrievers or ES|QL reranking when the
-workflow needs fusion, normalization, contextual chunk scoring, or MMR result
-diversification.
+## Known-version hazards
 
-### Use `semantic_text` as an integrated workflow
+### Upgrade rather than preserve faulty behavior
 
-`semantic_text` supports integrated inference, query, highlighting, chunks,
-multi-fields, configurable vector index options, chunking, inference-ID
-updates, and dense or sparse semantics. Empty content skips embedding
-generation. Check mapping defaults during upgrades because the default
-service, model, vector element type, and index type have changed.
+- Upgrade 9.3.6 to 9.3.7 when valid trained-model requests hit overly strict
+  field limits.
+- Upgrade `repository-gcs` users of Application Default Credentials from 9.2.8
+  to 9.2.9 or from 9.3.3 to 9.3.4; the compatibility reference contains the
+  temporary entitlement-policy values.
+- Upgrade mixed-GPU clusters from 9.3.1 to 9.3.2 to stop repeated usage
+  serialization warnings.
+- Do not upgrade directly from 9.1.10 to 9.2.4; use 9.2.5 or later.
+- Upgrade shrunk TSDB or LogsDB indices from 9.1.0/9.1.1 to 9.1.2 before relying
+  on force merge.
+- On 9.1.0, disable `vector.rescoring.directio` when in-memory `bbq_hnsw`
+  searches regress; remove the override in 9.1.1.
+- On 9.0.3, keep `indices.merge.disk.check_interval` at `0s` to avoid shard-close
+  hangs under low disk.
 
-### Plan failure stores as part of ingestion
+### Query correctness and old-cluster history
 
-Failure stores can capture documents rejected by pipelines or mappings.
-Enable them in data-stream options or templates, query them with the
-`::failures` selector, set lifecycle retention, and use the
-`recover_failure_document` processor for remediation. New logs, telemetry, and
-APM streams may enable them by default.
+Two-key ES|QL `STATS` grouping can be wrong before 8.17.9, 8.18.7, and 9.0.4
+when the first keyword has more than 65,000 values. Upgrade, put the
+lower-cardinality key first, or filter cardinality. Match Windows filesystem
+casing exactly under 9.0 entitlements. A cluster that once ran 7.10.0–7.12.1
+may need stale Watcher templates deleted before Watcher can start.
 
-### Use ES|QL features by stability level
+## High-value capabilities
 
-ES|QL provides joins, branching, vector search, inference, time-series
-analytics, external sources, views, and PromQL integration. Some commands and
-functions remain technical preview. Confirm stability before exposing syntax
-through a public API or a durable saved query.
+### Failure-store workflow
 
-## Common workflows
+Enable a data-stream failure store through `PUT _data_stream/<name>/_options`
+or `template.data_stream_options.failure_store.enabled`. Query failed documents
+with `::failures`. New log, OTel, and APM streams may enable failure stores by
+default; use `recover_failure_document` to remediate documents. Failure stores
+have dedicated lifecycle controls and can participate in cross-cluster search.
 
-### Upgrade a cluster
+### ES|QL joins, branches, views, and metrics
 
-1. Identify every intermediate version and plugin.
-2. Read all breaking changes, deprecations, and known issues that touch the
-   path.
-3. Test S3 and EC2 plugins because both moved to AWS SDK v2 with behavior and
-   configuration differences.
-4. Verify vector-source retrieval, partial-result handling, TLS configuration,
-   analyzer output, and ILM downsampling.
-5. Run repository analysis and representative search, ingest, inference,
-   lifecycle, security, and recovery tests.
+Use `LOOKUP JOIN` to enrich rows from lookup indices; later behavior supports
+aliases, mixed numeric keys, multiple join fields, remote input, and expression
+predicates. `FORK` runs rows through branches and adds `_fork`. Views expose
+reusable pipelines as virtual indices, but cannot be queried with document- or
+field-level security. `PROMQL`, `METRICS_INFO`, and `TS_INFO` support metrics
+workflows; verify technical-preview status before making compatibility promises.
 
-### Design an ES|QL endpoint
+### Time-series storage and downsampling
 
-1. Decide whether partial results are allowed.
-2. Validate index modes, remote-cluster behavior, and full-pattern quoting.
-3. Request execution metadata when callers need shard or cluster detail.
-4. Reject profiling with text response formats.
-5. Preserve technical-preview status in the API contract.
+Use `exponential_histogram` for OTel histograms and the T-Digest field type for
+time-series metrics. Doc-values skippers default on for TSDB and LogsDB but are
+off generally. Synthetic TSDB IDs avoid indexing `_id`; new TSDB indices disable
+sequence numbers. The aggregate downsampling method preserves counter resets,
+while `last_value` keeps its storage-oriented behavior.
 
-### Design semantic or hybrid search
+### Vector search and semantic defaults
 
-1. Select `semantic_text`, `dense_vector`, `sparse_vector`, or `rank_vectors`
-   from the retrieval and storage requirements.
-2. Choose HNSW, flat quantization, or DiskBBQ from memory, latency, dimension,
-   precision, and licensing constraints.
-3. Select a retriever or ES|QL pipeline for fusion, normalization, reranking,
-   chunk scoring, and diversification.
-4. Verify whether vectors are available through `_source`, the Fields API, or
-   another explicit retrieval path.
-5. Test defaults with the exact inference endpoint and model.
+`semantic_text` integrates mapping and inference and supports standard text,
+sparse-vector, kNN, highlighting, multi-fields, and configurable chunking.
+Recent new fields default to DiskBBQ, BFloat16, and the Jina v5 inference
+configuration. DiskBBQ is designed for lower memory use; tune kNN with
+`num_candidates` or `visit_percentage`, and avoid it for low-dimensional
+vectors. Check licensing when carrying `bbq_disk` indices forward from 9.2.
 
-### Operate data streams
+### Retriever and reranking choices
 
-1. Inspect stream type, index mode, failure-store options, retention, and
-   lifecycle state.
-2. Query failures explicitly and preserve failure metadata during recovery.
-3. Check child-stream indexing restrictions before enabling streams.
-4. Verify downsampling method, force-merge behavior, counter-reset semantics,
-   and follower ordering.
-5. Treat TSDB synthetic IDs and disabled sequence numbers as constraints on
-   ID-dependent operations.
+Choose RRF for rank fusion, linear retrievers for weighted normalized scores,
+generic rescorers for request rescoring, `text_similarity_reranker` for semantic
+reranking, and MMR for diversification. Search also supports pinned and scripted
+retrievers, multi-vector `rank_vectors`, quantized-vector rescoring, and
+contextual `chunk_rescorer` snippets.
 
-## Validation principles
+## Working checklist
 
-- Validate syntax against the target cluster rather than inferring support
-  from a nearby release.
-- Treat defaults as part of the versioned contract.
-- Inspect warning headers and deprecation logs in automated tests.
-- Exercise both success and partial/failure responses for distributed queries.
-- Benchmark vector changes with representative dimensions, candidate counts,
-  memory pressure, and rescoring.
-- Test repository and security changes in a non-production cluster before
-  rollout.
+1. Read the server version from the cluster, not just a client dependency.
+2. Identify index mode: standard, LogsDB, TSDB, lookup, failure store, or
+   synthetic source.
+3. Check whether the feature is generally available, technical preview, or
+   experimental in the applicable release.
+4. For distributed queries, decide whether partial results are acceptable and
+   inspect per-cluster metadata.
+5. For mapping changes, verify defaults on newly created indices separately
+   from existing mappings.
+6. For inference or vector work, verify endpoint task, chunking, vector element
+   type, quantization, rescoring, memory, and license.
+7. For lifecycle work, distinguish main backing indices from failure-store
+   indices and make force merge explicit.
+8. For repository or security changes, test credentials, secure settings,
+   entitlements, TLS, and cloud SDK migration in a non-production cluster.
+9. Before an affected upgrade, read the compatibility reference and choose a
+   fixed target release instead of carrying a temporary workaround forward.

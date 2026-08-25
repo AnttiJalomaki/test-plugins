@@ -1,102 +1,96 @@
 # Identity and Policy
 
-## Client introduction and RPC identity
+## Client introduction and identity
 
-Clients can join with signed JWT introduction tokens. Token constraints can
-cover node names, node pools, and TTLs. Server enforcement levels control the
-introduction policy and produce violation logs and metrics.
-
-Create a token and pass it to the joining client:
+Nomad clients can join with signed JWT introduction tokens (since 1.11.0). Token
+claims can constrain node names, node pools, and TTLs. Server enforcement levels
+control the introduction policy and emit violation logs and metrics. After a client
+registers, servers issue and rotate a client identity used for RPC authentication
+alongside mTLS.
 
 ```shell
 nomad node intro create
-nomad agent -client-intro-token=<token>
-```
-
-After registration, servers automatically issue and rotate a client identity
-for RPC authentication. This identity is a second layer alongside mTLS.
-Inspect or renew it with:
-
-```shell
+nomad agent -client-intro-token
 nomad node identity get
 nomad node identity renew
 ```
 
-Client introduction and identity are from batch `1.11.0`.
+## ACL behavior and policy validation
 
-## Jobspec secrets
+The `/v1/acl/token/self` response changed in the 1.10-upgrade batch. With ACLs
+disabled it returns `200` and a body saying ACLs are disabled. With ACLs enabled
+but no valid token it returns `403`. Code that expected `404` in both cases must
+distinguish the new responses.
 
-The `secret` block fetches secrets from Nomad, Vault, or a custom
-secret-provider plugin for jobspec interpolation. Refer to a fetched key as:
+Policy writes are strict starting in 1.10.6: duplicate or invalid keys are rejected
+instead of ignored. Existing affected policies continue to operate, but correct
+their source documents before trying to write them again.
 
-```hcl
-${secret.secret_name.key}
-```
-
-The block is from batch `1.11.0`. Secrets-plugin execution has a 60-second
-timeout as of batch `2.0.0`; take that boundary into account for slow custom
-providers.
+Workload identity tokens can list and retrieve policies through the ACL API (since
+1.11.0).
 
 ## OIDC assertions and PKCE
 
 OIDC auth methods support private-key JWT client assertions instead of a client
-secret. PKCE works with either client secrets or assertions:
+secret (batch 1.10.0). PKCE works with either client secrets or assertions when
+`OIDCEnablePKCE: true` is set. Confirm that the identity provider also supports
+PKCE and enable it there when required.
 
-```text
-OIDCEnablePKCE: true
-```
+## Workload identity replaces allocation tokens
 
-The OIDC provider must support PKCE and may require it to be enabled separately.
-These auth-method changes are from batch `1.10.0`.
+Token-based Consul and Vault allocation authentication has been removed. A task
+with a `template` block no longer receives a Consul identity as a side effect.
+Declare the identity that the job needs rather than relying on either legacy
+behavior.
 
-## Allocation authentication migration
+Consul tokens issued through workload identity carry the issuing Nomad client's
+node ID in their metadata (since 2.0.5), which can be used to trace the token to
+the client.
 
-The deprecated token-based allocation authentication workflows for both Consul
-and Vault were removed. Migrate jobs to the supported identity mechanisms. A
-task containing a `template` block no longer receives a Consul identity as a
-side effect, so never rely on the block for implicit authentication.
+## Job specification secrets
 
-These removals are from batch `1.10.0`.
+The `secret` block fetches values from Nomad, Vault, or a custom secret-provider
+plugin for jobspec interpolation (since 1.11.0). Reference a fetched value as
+`${secret.secret_name.key}`. As of 2.0.5, task secrets
+also interpolate in service check `Header` and `Args` fields and service `Tags`.
 
-## ACL endpoint and policy behavior
+## Sentinel and namespace governance
 
-`/v1/acl/token/self` uses these statuses as of 1.10.1:
+Nomad Enterprise can evaluate dynamic host-volume specifications with Sentinel
+during creation, enforce per-namespace host-volume capacity quotas, and validate
+the requested node pool against the namespace's node-pool configuration (batch
+1.10.0).
 
-- ACLs disabled: `200`, with a body indicating that ACLs are disabled.
-- ACLs enabled but no valid token supplied: `403`.
-
-Both cases previously returned `404`.
-
-As of 1.10.6, policy writes containing duplicate or invalid keys are rejected
-instead of silently ignoring the bad keys. Existing affected policies continue
-to work, but their source documents must be fixed before they can be written
-again. These upgrade behaviors are from batch `1.10-upgrade`.
-
-Workload identity tokens can list or retrieve policies through the ACL API
-(batch `1.11.0`).
-
-## Sentinel and quota policy
-
-`nomad sentinel apply` requires an explicit `-scope` option.
-
-Enterprise dynamic host volume creation can:
-
-- evaluate volume specifications with Sentinel;
-- enforce per-namespace host-volume capacity quotas;
-- validate a requested node pool against the namespace's node-pool
-  configuration.
-
-The command and volume-governance rules are from batch `1.10.0`.
+`nomad sentinel apply` requires an explicit `-scope` option. Update automation
+that previously relied on an implicit scope.
 
 ## Quota API migration
 
 The quota `variables_limit` field and Go API `QuotaSpec.VariablesLimit` are
-deprecated for removal in 1.12. Replace them with:
+deprecated for removal in 1.12. Use `region_limit.storage.variables` and
+`QuotaSpec.RegionLimit.Storage.Variables`. In the 1.10.0 API, the type of
+`QuotaSpec.RegionLimit` also changes from `Resources` to `QuotaResources`.
 
-```text
-region_limit.storage.variables
-QuotaSpec.RegionLimit.Storage.Variables
+In Nomad Enterprise 2.0.5, disabling the use of cores in a quota no longer blocks
+jobs that specify either core or CPU resources.
+
+## Server-join authorization
+
+Unauthenticated `nomad server join` and Join Agent API calls are deprecated in
+2.0.4 and require a token with `agent:write` in 2.1.0 (batch 2.0-upgrade). Direct
+the command to the region leader when adding a node and to the authoritative
+region when federating. For a new cluster, prefer `server_join` with gossip
+encryption and mTLS.
+
+## Enterprise licensing
+
+Automated Enterprise license utilization reports contain detailed product-usage
+information starting in 1.10.6. Nomad Enterprise 2.0.0 also adds license and
+configuration changes for IBM Passport Advantage Online (PAO).
+
+Before an Enterprise server upgrade to 1.6.0 or later, follow the
+upgrade-procedure guidance and validate the license with the target binary:
+
+```shell
+nomad license inspect
 ```
-
-The Go API type of `QuotaSpec.RegionLimit` changes from `Resources` to
-`QuotaResources`. These schema and API changes are from batch `1.10.0`.

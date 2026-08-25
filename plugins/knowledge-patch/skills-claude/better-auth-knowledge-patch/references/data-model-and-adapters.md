@@ -2,15 +2,7 @@
 
 ## Identifier generation
 
-Configure primary-key generation under `advanced.database.generateId`. The old top-level `advanced.generateId` is removed. Use `"uuid"` for UUIDs and `"serial"` instead of removed `advanced.database.useNumberId`; MongoDB may use string IDs instead of ObjectIDs.
-
-```ts
-advanced: {
-  database: { generateId: "uuid" }, // or "serial"
-}
-```
-
-`generateId` can also be a function that returns `false` or `undefined` for individual models, delegating only those IDs to the database while generating the rest. Better Auth exposes and accepts serial IDs as numeric strings.
+`advanced.database.generateId` selects `"uuid"` or `"serial"` generation and replaces the removed top-level `advanced.generateId` and `useNumberId` settings (since 1.4.0). A callback may return `false` or `undefined` for selected models to delegate their IDs to the database. Serial values are exposed and accepted as numeric strings. MongoDB may use string IDs instead of ObjectIDs.
 
 ```ts
 advanced: {
@@ -21,23 +13,13 @@ advanced: {
 }
 ```
 
-## Experimental joins
+## Join-backed schema
 
-`experimental.joins` opts endpoints into database joins. All adapters support the mode. Enabling it changes the expected schema, so rerun migrations or schema generation.
+`experimental.joins: true` enabled join-backed endpoints in 1.4.0 across all adapters. Rerun migration or schema generation after enabling it. The organization multi-team change also removes `teamId` from `member` and adds the required `teamMembers` join table (since 1.3.0).
 
-```ts
-export const auth = betterAuth({ experimental: { joins: true } });
-```
+## Adapter packages and minimal imports
 
-## Schema and type tooling
-
-Better Auth uses Zod 4. A custom adapter may expose `createSchema` for CLI schema generation, and `inferAuth` infers client types from the client instance.
-
-The `AuthClient` helper is available for client typing. Generic `User` and `Session` exports replace removed `InferUser` and `InferSession`.
-
-## Extracted adapter packages
-
-Drizzle, Prisma, Kysely, MongoDB, and memory adapters have independent `@better-auth/*-adapter` packages, while the main package still re-exports them. Pair direct adapter imports with `better-auth/minimal` to avoid pulling the full distribution.
+Drizzle, Prisma, Kysely, MongoDB, and memory adapters have independent `@better-auth/*-adapter` packages (since 1.5-guide), while the main package still re-exports them. Pair direct imports with `better-auth/minimal` to avoid importing the full distribution.
 
 ```ts
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
@@ -48,11 +30,9 @@ const auth = betterAuth({
 });
 ```
 
-The adapter-test export at `better-auth/adapters/test` is removed. Adapter authors import `testAdapter` and `createTestSuite` from `@better-auth/test-utils/adapter`.
+## Native Cloudflare D1
 
-## Cloudflare D1
-
-A D1 binding can be passed directly as `database`. Better Auth auto-detects it and uses native execution, introspection, and `batch()` atomicity instead of unsupported interactive transactions.
+Pass a D1 binding directly as `database`. Better Auth auto-detects it and uses native execution, introspection, and `batch()` atomicity rather than unsupported interactive transactions.
 
 ```ts
 export default {
@@ -63,73 +43,48 @@ export default {
 } satisfies ExportedHandler<{ DB: D1Database }>;
 ```
 
+## Native transactions for direct instances
+
+Raw `better-sqlite3`, `node:sqlite`, `bun:sqlite`, `mysql2`, and `pg` objects passed directly as `database` support native adapter transactions (since 1.7.1), matching explicit `{ db }` and `{ dialect }` forms. Transaction-dependent plugins such as SCIM therefore work with quickstart direct-database configuration; PostgreSQL and MySQL test instances also support transactions.
+
 ## Drizzle schema mapping
 
-The Drizzle adapter expects logical Better Auth model names even when physical tables are renamed. Map tables through the adapter `schema`, use auth `modelName` and `fields` mappings, or set `usePlural: true` when every table is plural. Physical column names may differ while Drizzle property names remain unchanged.
+The Drizzle adapter receives logical Better Auth model names even when physical tables are renamed. Map tables through adapter `schema`, auth `modelName` and `fields`, or `usePlural: true`. Physical column names may change while Drizzle property names remain unchanged.
 
 ```ts
 database: drizzleAdapter(db, {
   provider: "pg",
-  schema: {
-    ...schema,
-    user: schema.users,
-  },
+  schema: { ...schema, user: schema.users },
 })
 ```
 
 ## Kysely dialects
 
-Better Auth accepts arbitrary Kysely relational dialects, including organization and community dialects beyond the core PostgreSQL, MySQL, SQLite, and MS SQL set. CLI schema generation and migration work with them.
-
-MS SQL requires an explicit dialect object and `type`. When passing a MySQL pool directly, set `timezone: "Z"` so stored times remain consistent.
+Any Kysely dialect is accepted, including organization and community dialects beyond the PostgreSQL, MySQL, SQLite, and MS SQL core set; CLI generation and migration are available. MS SQL needs an explicit dialect and type. A directly passed MySQL pool should use `timezone: "Z"`.
 
 ```ts
-export const auth = betterAuth({
-  database: {
-    dialect,
-    type: "mssql",
-  },
-});
+database: { dialect, type: "mssql" }
 ```
 
 ## Built-in SQLite drivers
 
-Alongside `better-sqlite3`, Better Auth accepts Node's experimental `node:sqlite` `DatabaseSync` on Node 22.5 or later and Bun's `bun:sqlite` database. Run CLI operations under Bun with `bunx --bun` so module types are recognized.
-
-```ts
-export const auth = betterAuth({
-  database: new DatabaseSync("database.sqlite"),
-});
-```
+Besides `better-sqlite3`, Better Auth accepts Node's experimental `node:sqlite` `DatabaseSync` on Node 22.5+ and Bun's `bun:sqlite` database. Run CLI operations under Bun with `bunx --bun` so module types are recognized.
 
 ## PostgreSQL non-default schemas
 
-Choose the Better Auth schema through PostgreSQL `search_path`, supplied in the connection URI, pool `options`, or database user's default. The schema must already exist with suitable privileges. `npx auth migrate` then inspects only that schema, ignores same-named tables elsewhere, and creates auth tables there.
+Set PostgreSQL `search_path` in the URI, pool `options`, or database-user default. Create the schema and privileges first. `npx auth migrate` then inspects only that schema, ignores same-named tables elsewhere, and creates auth tables there.
 
 ```ts
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString:
-      "postgres://user:password@localhost:5432/database?options=-c%20search_path%3Dauth",
-  }),
-});
+database: new Pool({
+  connectionString:
+    "postgres://user:password@localhost:5432/database?options=-c%20search_path%3Dauth",
+})
 ```
 
-## Adapter predicates
+## Schema and type tooling
 
-Any adapter can request case-insensitive string comparison by putting `mode: "insensitive"` on an individual `where` clause.
+Better Auth uses Zod 4. A custom adapter may supply `createSchema` to the CLI, and `inferAuth` derives server types from a client (since 1.3.0). `getMigrations` is imported from `better-auth/db/migration`, not the package root.
 
-```ts
-await adapter.findOne({
-  model: "user",
-  where: [{
-    field: "email",
-    value: "user@example.com",
-    mode: "insensitive",
-  }],
-});
-```
+## Transaction hook timing
 
-## Transaction boundaries
-
-Database `create.after`, `update.after`, and `delete.after` hooks run only after commit. If a follow-up write must be atomic, perform it through the adapter during the main operation rather than in an `after` hook.
+Database `create.after`, `update.after`, and `delete.after` hooks run only after the transaction commits. Atomic follow-up writes must occur in the adapter during the main operation.

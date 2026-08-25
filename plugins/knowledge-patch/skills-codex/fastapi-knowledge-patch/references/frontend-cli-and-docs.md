@@ -1,89 +1,86 @@
 # Frontend, CLI, and documentation
 
-Use this reference for serving static frontend builds, configuring the FastAPI CLI, deploying through the CLI, using Vibe support, and accounting for documentation-UI changes.
+## Static frontend mounting
 
-## Serve an existing frontend build
+### Application and router frontends
 
-Use `app.frontend()` or `router.frontend()` to serve an already-built static directory (`frontend-cli-and-protocol`):
+`app.frontend()` and `router.frontend()` serve already-built static output
+after normal path-operation matching (`frontend-cli-and-protocol`). API routes
+therefore win. The feature does not perform server-side rendering.
+
+Frontend responses remain inside application middleware and inherit
+dependencies declared on the application, router, and `include_router()`.
 
 ```python
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 app = FastAPI()
-app.frontend("/", directory="dist")
+router = APIRouter()
+router.frontend("/", directory="dist")
+app.include_router(router, prefix="/app")
 ```
 
-This facility serves static build output; it does not execute server-side rendering.
+### Fallback selection
 
-FastAPI checks ordinary path operations before frontend files. If an API route and a frontend asset resolve to the same path, the API route wins. This makes a root frontend compatible with separately declared API endpoints.
+The default `fallback="auto"` first prefers `404.html` and keeps status `404`.
+Without that file, it uses `index.html` only for a missing `GET` or `HEAD`
+browser navigation. Missing assets and other methods remain `404`. Pass
+`"index.html"` or `"404.html"` to choose explicitly, or `None` to disable
+fallbacks (`frontend-cli-and-protocol`).
 
-## Choose fallback behavior
+### Directory checks
 
-The default `fallback="auto"` distinguishes browser navigation from missing assets:
+By default, `frontend()` checks its directory during application creation and
+fails early if the build output is absent. Set `check_dir=False` when a later
+build stage creates it; a request still errors if it remains missing
+(`frontend-cli-and-protocol`).
 
-1. If the build contains `404.html`, serve it with status `404` for a missing path.
-2. Otherwise, serve `index.html` for a missing `GET` or `HEAD` browser-navigation path.
-3. Return `404` for missing assets and for other HTTP methods.
-
-Select the policy explicitly when required:
-
-- `fallback="index.html"`: choose the single-page-application entrypoint.
-- `fallback="404.html"`: choose the static not-found page.
-- `fallback=None`: disable frontend fallback.
-
-## Defer directory checks
-
-FastAPI validates the frontend directory when constructing the application by default. If a later build step creates it, set `check_dir=False`:
+FastAPI 0.141.0 adds development-oriented `check_dir="auto"` for projects run
+with `fastapi dev` (`2026-08`):
 
 ```python
-app.frontend("/", directory="dist", check_dir=False)
+app.frontend("/", directory="dist", check_dir="auto")
 ```
 
-If the directory is still missing when first requested, the request raises the directory error; deferral does not make an absent build valid.
+### Dependencies and response effects
 
-## Apply frontend-wide dependencies
+FastAPI 0.139.0 lets a frontend mount declare dependencies (`2026-07`), such
+as a frontend-wide cookie-authentication check:
 
-FastAPI 0.139.0 lets `app.frontend()` receive dependencies (`2026-07`). Use them for frontend-wide checks such as cookie authentication. The dependencies run before the frontend is served, while normal API-route precedence remains intact.
+```python
+from fastapi import Depends
 
-## Configure the CLI entrypoint
+app.frontend(
+    "/",
+    directory="dist",
+    dependencies=[Depends(require_frontend_session)],
+)
+```
 
-Store the application import string in `pyproject.toml` so `fastapi dev`, integrations, and editors can locate the app without a path argument:
+From FastAPI 0.141.1, those dependencies can also add response headers and
+schedule background tasks on the frontend response (`2026-08`). Older releases
+discard those response effects.
+
+## CLI application discovery and deployment
+
+Persist the import target in `pyproject.toml` so `fastapi dev`, editor
+integration, and deployment tools discover the same application without a
+repeated file path (`frontend-cli-and-protocol`):
 
 ```toml
 [tool.fastapi]
 entrypoint = "backend.main:app"
 ```
 
-This is persistent project configuration rather than a per-invocation discovery hint.
+FastAPI 0.116.0 adds `fastapi deploy` for FastAPI Cloud (`2025-07`). The
+`fastapi[standard]` extra installs `fastapi-cloud-cli`; use
+`fastapi[standard-no-fastapi-cloud-cli]` to opt out while retaining the other
+standard dependencies.
 
-## Deploy from the FastAPI CLI
+## Documentation and interactive tooling
 
-FastAPI 0.116 adds `fastapi deploy`, targeting FastAPI Cloud (`2025-07`):
+The bundled ReDoc UI moved to 2.x (`2025-06`). Recheck custom ReDoc integration
+code and visual snapshots.
 
-```console
-$ fastapi deploy
-```
-
-`fastapi[standard]` installs `fastapi-cloud-cli`, which provides the command. To retain the other standard dependencies without installing the Cloud CLI, use:
-
-```console
-$ pip install "fastapi[standard-no-fastapi-cloud-cli]"
-```
-
-## Vibe support
-
-FastAPI 0.135.3 adds the application `@app.vibe()` decorator and Vibe Coding support (`2026-03`):
-
-```python
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.vibe()
-def vibe():
-    return {"message": "hello"}
-```
-
-## ReDoc version
-
-The default FastAPI ReDoc UI uses ReDoc 2.x as of the `2025-06` batch. Update markup-sensitive tests, visual expectations, plugins, and customizations that were written for the earlier major version.
+FastAPI 0.135.3 adds `@app.vibe()` and its accompanying Vibe Coding support
+(`2026-03`).

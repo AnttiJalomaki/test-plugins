@@ -1,47 +1,36 @@
 # QUIC, HTTP, and Networking
 
-## QUIC admission and transport
+## QUIC handshake rules
 
-### Run rules during the initial handshake
-
-`quic-initial` rules, available in 3.1.0, run before the client finishes its
-QUIC handshake. Supported actions are `reject`, `accept`, `dgram-drop` for a
-silent drop, and `send-retry`. Use them for early source filtering and abuse
-control.
+Since 3.1.0, `quic-initial` rules run before the QUIC handshake completes.
+Supported actions are `reject`, `accept`, `dgram-drop` for a silent drop, and
+`send-retry`. Apply them to source filtering and early abuse prevention.
 
 ```haproxy
 quic-initial dgram-drop if { src 192.0.2.0/24 }
 ```
 
-### Pacing and memory controls
+## QUIC pacing and memory
 
-Selecting `quic-cc-algo` in 3.2.0 automatically enables transmit pacing, and
-`bbr` no longer needs experimental directives. Global
-`tune.quic.disable-tx-pacing` disables pacing.
+In 3.2.0, choosing `quic-cc-algo` automatically enables transmit pacing and
+`bbr` no longer needs experimental directives. Disable pacing with
+`tune.quic.disable-tx-pacing` only after measurement.
 
-An upload stream may consume 90% of connection memory by default. Adjust that
-share with `tune.quic.frontend.stream-data-ratio`. The optional global
-`tune.quic.frontend.max-tx-mem` caps transmit-buffer memory. `haproxy -vv`
-reports socket-owner and UDP GSO support for troubleshooting.
+QUIC upload streams may consume 90% of connection memory by default. Adjust
+that share with `tune.quic.frontend.stream-data-ratio`, and optionally bound
+global transmit-buffer memory with `tune.quic.frontend.max-tx-mem`.
+`haproxy -vv` reports socket-owner and UDP GSO support needed for diagnosis.
 
-In 3.4.0, `quic-cc-algo` is also valid on `server`, so frontend and backend
-congestion-control policies can differ; this addition was backported to 3.3.
-Global `tune.quic.fe.stream.max-total` caps lifetime requests on one incoming
-QUIC connection. At the cap HAProxy sends an HTTP/3 GOAWAY and closes after
-remaining transfers complete.
+HAProxy 3.4.0 also permits `quic-cc-algo` on `server`, so frontend and backend
+congestion control may differ; that change was backported to 3.3. The newer
+`tune.quic.fe.stream.max-total` caps requests over one connection, sends an
+HTTP/3 GOAWAY at the limit, and closes after remaining transfers finish.
 
-### Enable or disable QUIC globally
+## Experimental HTTP/3 backends
 
-Global `no-quic` is replaced in 3.3.0 by `tune.quic.listen on|off`, which
-controls QUIC for every frontend listener. Global names beginning with
-`tune.quic.frontend` are deprecated in favor of `tune.quic.fe`.
-
-## HTTP/3 and QMux backends
-
-### Native QUIC backend transport
-
-Experimental HTTP/3 backends in 3.3.0 prefix the server address with `quic4@`.
-They require `expose-experimental-directives` and ordinary backend TLS
+HAProxy 3.3.0 can reach backend servers over HTTP/3 and QUIC by prefixing the
+server address with `quic4@`. This is experimental, requires
+`expose-experimental-directives`, and still requires normal backend TLS
 verification.
 
 ```haproxy
@@ -52,16 +41,16 @@ backend webservers
     server web1 quic4@172.16.0.11:443 check ssl verify required ca-file /etc/haproxy/ssl/myca.pem
 ```
 
-Backend QUIC settings live under `tune.quic.be.*`, covering congestion
-control, idle timeouts, glitch thresholds, stream limits, pacing, and UDP GSO.
-The process-wide transmit-memory cap is `tune.quic.mem.tx-max`.
+Backend controls live under `tune.quic.be.*` for congestion control, idle
+timeouts, glitch limits, streams, pacing, and UDP GSO. Bound process-wide
+transmit memory with `tune.quic.mem.tx-max`.
 
-### QMux over TCP
+## Experimental QMux over TCP
 
-Experimental QMux in 3.4.0 carries QUIC frames over an ordered, reliable byte
-stream. It enables HTTP/3 between HAProxy endpoints when UDP is unavailable.
-Enable `expose-experimental-directives` and configure `alpn h3` on the relevant
-TCP `bind` or `server` line.
+QMux in 3.4.0 carries QUIC frames over an ordered, reliable byte stream. It
+allows HTTP/3 between HAProxy endpoints where UDP is unavailable. Enable
+experimental directives and advertise `alpn h3` on the relevant TCP `bind` or
+`server` line.
 
 ```haproxy
 global
@@ -71,67 +60,78 @@ backend webservers
     server web1 127.0.0.1:443 ssl verify none alpn h3,h2
 ```
 
-## HTTP overload and glitch controls
+## HTTP/2 overload controls
 
-### Bound HTTP/2 work
+HAProxy 3.4.0 adds:
 
-The following controls are available in 3.4.0:
+- `tune.h2.fe.max-frames-at-once` and
+  `tune.h2.be.max-frames-at-once` to cap each processing batch;
+- `tune.h2.fe.max-rst-at-once` to limit RST_STREAM work, where values 1–10
+  mitigate attacks but very low values can hurt interactive and gRPC latency;
+- `tune.h2.fe.max-total-streams` to recycle a connection after its lifetime
+  stream count;
+- `tune.streams-elasticity` to lower per-connection concurrency as frontend
+  `maxconn` pressure rises;
+- `rq-load` on `tune.h2.fe.max-concurrent-streams` for run-queue-based
+  adjustment, plus `min` as its advertised concurrency floor.
 
-- `tune.h2.fe.max-frames-at-once` and `tune.h2.be.max-frames-at-once` cap the
-  number of incoming frames processed as a batch.
-- `tune.h2.fe.max-rst-at-once` independently limits RST_STREAM processing.
-  Values from 1 through 10 mitigate reset attacks, but very low values may add
-  latency to interactive and gRPC traffic.
-- `tune.h2.fe.max-total-streams` recycles an incoming connection after its
-  lifetime stream limit.
-- `tune.streams-elasticity` reduces per-connection concurrency as the frontend
-  approaches `maxconn`.
-- `tune.h2.fe.max-concurrent-streams rq-load` adjusts advertised concurrency
-  from run-queue load, while `min` sets its advertised floor.
+The 3.4.0 `tune.h2.log-errors` chooses stream-scope, connection-only, or no
+HTTP/2 error logs. The default is the most verbose `stream` scope.
 
-Global `tune.h2.log-errors` chooses error logging at `stream` scope,
-connection-only scope, or not at all. Its default is the most verbose `stream`
-mode.
+## HTTP/1 glitch handling
 
-### Detect HTTP/1 glitches
+Glitch detection covers the HTTP/1 multiplexer in 3.4.0. Configure
+`tune.h1.fe.glitches-threshold` and `tune.h1.be.glitches-threshold` separately.
+When threshold termination is enabled, HAProxy starts graceful close at 75%
+of the threshold.
 
-In 3.4.0, glitch detection also covers the HTTP/1 mux. Set frontend and backend
-thresholds with `tune.h1.fe.glitches-threshold` and
-`tune.h1.be.glitches-threshold`. When threshold termination is active, HAProxy
-starts a graceful close at 75% rather than waiting to reach the limit.
+The earlier 3.2.0 global `tune.glitches.kill.cpu-usage` delays killing a
+connection over its glitch threshold until CPU reaches a configured 0–100
+percentage. Its default `0` kills at the threshold regardless of CPU load. A
+nonzero value requires either `tune.h2.fe.glitches-threshold` or
+`tune.quic.frontend.glitches-threshold`.
 
-### Gate glitch killing on CPU usage
+## Relaxed WebSocket parsing
 
-Global `tune.glitches.kill.cpu-usage` in 3.2.0 is a CPU percentage from 0 to
-100 above which over-threshold connections are killed. Its default `0` kills
-at the threshold regardless of CPU load. A nonzero value requires
-`tune.h2.fe.glitches-threshold` or `tune.quic.frontend.glitches-threshold`.
+Since 3.2.0, backend
+`accept-unsafe-violations-in-http-request` and
+`accept-unsafe-violations-in-http-response` also tolerate missing expected
+WebSocket headers. Keep these compatibility relaxations scoped to backends
+that require them.
 
-## DNS address-family policy
+## Retrying misdirected requests
 
-Global `dns-accept-family`, introduced in 3.2.0, accepts `ipv4`, `ipv6`, or
-`auto` and disables the unselected family process-wide. `auto` probes IPv6 at
-startup and every 30 seconds, enabling IPv6 resolution only while connectivity
-is available.
+The 3.2.0 `retry-on` directive accepts status `421`. Use it when a request can
+be misdirected to an upstream that cannot serve the requested authority.
 
-The directive defaults to `auto` starting in 3.3.0, so IPv4 is enabled and
-IPv6 is conditional unless the configuration selects a family explicitly.
+## Process-wide DNS family selection
 
-## TCP controls
+`dns-accept-family` was introduced in 3.2.0 with `ipv4`, `ipv6`, and `auto`.
+The `auto` mode probes IPv6 connectivity at boot and every 30 seconds. In
+3.3.0, `auto` became the default, so IPv4 stays enabled while IPv6 is enabled
+or disabled according to those probes. Set a family explicitly when network
+policy must not change dynamically.
 
-### TCP MD5 signatures
+## Per-socket congestion control and TCP MD5
 
-The `tcp-md5sig` argument on `bind` and `server` lines in 3.3.0 enables the TCP
-MD5 Signature Option, as commonly required by BGP peers whose sessions are
-proxied through HAProxy.
+Since 3.3.0, the `cc` argument on `bind` and `server` selects the TCP
+congestion-control algorithm for that listener or upstream. The `tcp-md5sig`
+argument on both lines enables the TCP MD5 Signature Option used by many BGP
+peers.
 
-### Per-endpoint congestion control
+## Directional byte counts
 
-The `cc` argument on `bind` and `server` lines in 3.3.0 selects the TCP
-congestion-control algorithm for that listener or upstream server.
+HAProxy 3.3.0 defines byte direction precisely:
 
-### Kernel send-buffer pressure
+- `req.bytes_in` aliases `bytes_in` for client-to-HAProxy bytes;
+- `req.bytes_out` counts HAProxy-to-server bytes;
+- `res.bytes_in` aliases `bytes_out` for server-to-HAProxy bytes;
+- `res.bytes_out` counts HAProxy-to-client bytes.
 
-Global `tune.notsent-lowat.client` and `tune.notsent-lowat.server`, added in
-3.2.0, limit kernel-side socket buffering and unacknowledged data. Use them to
-reduce connection memory where lower buffering is acceptable.
+Do not infer direction from the request/response prefix alone.
+
+## Uniform HTTP version fetches
+
+In 3.4.0, `req.ver` and `res.ver` consistently return `major.minor` for
+HTTP/1, HTTP/2, and HTTP/3. `capture.req.ver` and `capture.res.ver` return
+`HTTP/major.minor` for all three.

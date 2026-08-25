@@ -1,97 +1,95 @@
 # Styles, Sources, and Interoperability
 
+Use this reference when porting a style or application between Native
+platforms or between MapLibre GL JS and Native.
+
 ## Check compatibility feature by feature
 
 A valid version 8 style that works in MapLibre GL JS is not necessarily
-feature-equivalent on Native. For every root property, source option, layer
-property, and expression, check the separate Native Android and Native iOS
-support-table entries, minimum versions, and linked unsupported issues.
+feature-equivalent on Android or iOS. For each root property, source option,
+layer property, and expression, inspect the separate Native Android and Native
+iOS support entries, minimum versions, and linked unsupported issues.
 
-Protocol support arrives through Native releases rather than the GL JS
-protocol-registration API.
+Protocol support also arrives through Native releases. Do not assume the
+browser protocol-registration API exists on a Native target.
 
-## Shared assets are not shared runtime APIs
+## Root and camera differences
 
-MapLibre Native and GL JS share shaders, the style specification, and
-render-test fixtures. They do not share Map, Style, Layer, Glyph, TileWorker, or
-renderer implementations.
+Both Native Android and Native iOS lack `centerAltitude`, root `roll`, and
+root `state` or global-state functionality. Native pitch is limited to 0–60
+degrees rather than the wider browser ranges.
 
-Compatible style JSON and assets can cross the boundary, but visual fixture
-parity does not imply public API parity or complete feature parity. There is no
-one-to-one browser-to-Native method map: port styles and assets, then implement
-application integration against the target Native SDK.
+## Font handling
 
-## Root properties and camera limits
+Native supports a `glyphs` URL. Omitting it to use local fonts is unsupported
+on Android and iOS. Conversely, basic root `font-faces` support begins in
+Android 11.13.0 and iOS 6.18.0 even though MapLibre GL JS does not support the
+property.
 
-Native Android and iOS do not support:
+## iOS source classes
 
-- root `centerAltitude`;
-- root `roll`;
-- root `state` and global-state functionality.
+iOS represents vector, raster, raster-DEM, GeoJSON, and image sources with
+typed `MLN*Source` classes. Canvas and video sources are unsupported.
 
-Native pitch is limited to 0–60 degrees, narrower than the browser ranges.
+## Expression assertions and coercions
 
-## Glyphs and fonts
-
-A `glyphs` URL works in Native. Omitting it to use local fonts is unsupported on
-Android and iOS.
-
-Conversely, basic root `font-faces` support starts in Android 11.13.0 and iOS
-6.18.0 even though GL JS does not support that root property.
-
-Core glyphs are 24-pixel signed-distance-field bitmaps in a texture atlas packed
-in a protobuf container. Pixels inside an outline use values 192–255; outside
-pixels use 0–191. The representation supports GPU resizing, rotation, and halo
-rendering from the shared atlas.
-
-## Source support
-
-The iOS SDK maps vector, raster, raster-DEM, GeoJSON, and image sources to typed
-`MLN*Source` classes. Canvas and video sources are unsupported on iOS.
-
-PMTiles is available on Android, iOS, and Node. iOS addresses it through
-`pmtiles://` and treats PMTiles metadata as XYZ from 6.14. MLT parsing arrives
-in Android 12.1 and iOS 6.20; Android 13.4 supports FastPFOR-encoded MLT tiles.
-
-## Assertions and coercions
-
-Expression results include generic `value` and concrete types such as string,
-number, color, object, array, collator, and formatted text. Because `get`
-returns `value`, assert a concrete type when required by the consuming
-expression:
+Expression results include generic `value` plus concrete string, number,
+color, object, array, collator, and formatted-text types. Because `get`
+returns `value`, assert the required concrete type when the consuming
+expression needs one. A mismatched assertion fails during evaluation.
 
 ```json
 ["string", ["get", "feature_property"]]
 ```
 
-An assertion fails at evaluation time if the value has the wrong type.
-
-Operators whose names begin with `to-` are coercions rather than assertions and
-may include a fallback:
+Operators beginning with `to-` are coercions, not assertions, and can provide
+a fallback:
 
 ```json
 ["to-number", ["get", "feature_property"], 0]
 ```
 
-## Native expression construction
+## Native expression execution
 
 Android and iOS provide platform-specific expression builders, but the shared
-C++ core parses and evaluates the resulting expression. Do not assume that the
-surface syntax means a different evaluation engine.
+C++ core parses and evaluates the resulting expression. Android can construct
+a nested expression through typed builders:
 
-On iOS, layout and paint values use `NSExpression` with Cocoa values such as
-`UIColor`, `CGVector`, and `UIEdgeInsets`; the older style-function API is
-unsupported. Layer filters use `NSPredicate`.
+```java
+fillLayer.setProperties(
+    fillColor(interpolate(
+        exponential(0.5f), zoom(),
+        stop(1.0f, color(Color.RED)),
+        stop(5.0f, color(Color.BLUE)),
+        stop(10.0f, color(Color.GREEN))
+    ))
+);
+```
 
-## Loaded-style mutation
+## Runtime style mutation
 
-Wait for style loading to complete before runtime mutation.
+Wait until a style is loaded before mutation.
 
-Android mutates `org.maplibre.android.maps.Style` with typed sources, layers,
-images, light, transitions, and indexed or relative layer placement. iOS uses
-`MLNStyle`, `MLNSource`, and `MLNStyleLayer`.
+- Android mutates `org.maplibre.android.maps.Style` with typed sources,
+  layers, images, light, transitions, and indexed or relative layer placement.
+- iOS performs corresponding operations through `MLNStyle`, `MLNSource`, and
+  `MLNStyleLayer`.
 
-Always check the target SDK's typed property name. Do not infer it directly from
-the JSON spelling; for example, iOS uses `lineDashPattern`,
-`rasterHueRotation`, `iconImageName`, `iconScale`, `text`, `textFontNames`, and
-`textFontSize`.
+Check each platform's typed property names. Do not derive them mechanically
+from style JSON spelling.
+
+## What is shared with MapLibre GL JS
+
+The documented architecture shares shaders, the style specification, and
+render-test fixtures between MapLibre GL JS and Native. It does not share the
+runtime implementations of Map, Style, Layer, Glyph, TileWorker, or rendering.
+
+Compatible style JSON and assets can cross the boundary. Visual fixture
+parity does not establish public API parity or complete feature parity.
+
+## Porting applications
+
+There is no official one-to-one MapLibre GL JS-to-Native method mapping.
+Port shareable styles and assets, then implement application integration with
+the target Native SDK. Do not mechanically translate browser calls into
+Android, iOS, Node, or Qt calls.

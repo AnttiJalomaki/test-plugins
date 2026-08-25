@@ -1,14 +1,11 @@
-# State and plan encryption
+# State and Plan Encryption
 
-This reference incorporates the `1.7-state-encryption`, `1.9.0`, `1.11.0`,
-and `1.12.0` batch guidance.
+## Configuration graph (`1.7-state-encryption`)
 
-## Configuration graph and evaluation
-
-State and saved plans are encrypted independently. An encryption configuration
-declares a key provider, passes its result to a method, and assigns that method
-to `state`, `plan`, or both. `TF_ENCRYPTION` accepts the contents of the
-`encryption` block and merges over configuration in code.
+OpenTofu encrypts local or backend state and saved plans independently. The
+configuration graph connects a key provider to a method and selects that method
+for `state`, `plan`, or both. `TF_ENCRYPTION` accepts the contents of the
+`encryption` block and merges over the configuration written in code.
 
 ```hcl
 terraform {
@@ -31,21 +28,17 @@ terraform {
 }
 ```
 
-`enforced = true` prevents plaintext output when, for example, an
-environment-supplied method is missing. Variables and locals used here must be
-resolvable during `tofu init`; they cannot depend on state data or
-provider-defined functions.
+`enforced = true` prevents plaintext output when, for example, an environment-
+supplied method is absent. Variables and locals used here must resolve during
+`tofu init`; they cannot depend on state data or provider-defined functions.
 
-Since 1.11, inputs may also be supplied during apply for state and plan
-encryption. Every non-ephemeral input must equal its planned value. From
-1.11.4, JSON-form method configuration accepts `keys` as a normal expression
-or a template interpolation.
+## Plaintext migration, decryption, and rollover (`1.7-state-encryption`)
 
-## Plaintext migration, rollover, and decryption
-
-Enabling encryption does not implicitly authorize reading an existing
-plaintext artifact. Make the new method primary and explicitly permit the old
-representation as a fallback:
+Enabling encryption alone does not authorize OpenTofu to read an existing
+plaintext artifact. Make the new method primary and explicitly allow the old
+representation as a fallback. Reads try the primary and then fallbacks; every
+write uses the primary. After a successful `tofu apply` rewrites state, remove
+the fallback.
 
 ```hcl
 method "unencrypted" "migration" {}
@@ -58,33 +51,33 @@ state {
 }
 ```
 
-Reads try the primary and then the fallback. Every write uses the primary, so a
-successful `tofu apply` rewrites state. Only then remove the fallback.
-Encryption-configuration changes apply migrations automatically since 1.9.
+Use the same procedure to rotate keys or methods. To decrypt deliberately,
+reverse the configuration: make `unencrypted` primary, retain the old encrypted
+method as a fallback, disable enforcement, apply successfully, and only then
+remove encryption configuration.
 
-Use the same procedure for key or method rollover. To decrypt deliberately,
-make `unencrypted` primary, place the old encrypted method in `fallback`,
-disable enforcement, apply, and only then remove encryption configuration.
-Back up state, plans, and keys before any migration.
+From `1.9.0`, changing encryption configuration automatically applies the
+migration. This does not remove the need to preserve readable old methods or
+metadata during a rollover.
 
-## Stored metadata and compatibility
+## Stored metadata and compatibility (`1.7-state-encryption`)
 
 Encrypted artifacts store metadata tied to key-provider and method names.
-Renaming either may make the artifact unreadable. Roll through a fallback, or
-give the key provider a stable `encrypted_metadata_alias` before names need to
-differ. The alias is also useful when producer and remote-state consumer
-configurations use different labels.
+Renaming either can make the artifact unreadable. Roll names with a fallback,
+or assign a stable `encrypted_metadata_alias` before producer and consumer
+names need to differ, including between a state producer and a remote-state
+consumer.
 
-Documented providers and methods are guaranteed for only one additional minor
-release. `tofu plan` and `tofu apply` warn when an encryption component is
-deprecated; migrate it before the following minor upgrade.
+Documented key providers and methods are guaranteed for only one additional
+minor release. `tofu plan` and `tofu apply` warn when a deprecated provider or
+method must be migrated before the next minor upgrade.
 
-## Remote-state consumers
+## Remote-state data source decryption (`1.7-state-encryption`)
 
-Decrypting `terraform_remote_state` is separate from encrypting the current
-project. A default can cover every remote-state data source, and named entries
-can override it. Labels may target `<name>`, `<module>.<name>`, or indexed
-forms such as `<module>.<name>[0]`.
+Configure decryption for `terraform_remote_state` separately from the current
+project's state. A default can cover all data sources, and named entries can
+override it. Labels may target `<name>`, `<module>.<name>`, or indexed forms
+such as `<module>.<name>[0]`.
 
 ```hcl
 remote_state_data_sources {
@@ -97,20 +90,19 @@ remote_state_data_sources {
 }
 ```
 
-## Key providers
+## Key providers and AES-GCM (`1.7-state-encryption`)
 
-PBKDF2 accepts a passphrase of at least 16 characters or a chained provider
-result. Defaults are a 32-byte key, 600,000 iterations, a 32-byte salt, and
-SHA-512; SHA-256 is also supported.
+The PBKDF2 provider accepts a passphrase of at least 16 characters or a chained
+provider result. Defaults are a 32-byte key, 600,000 iterations, a 32-byte salt,
+and SHA-512; SHA-256 is also supported.
 
-Cloud-backed providers and their primary inputs are:
+Cloud-backed providers are:
 
 - `aws_kms`: `kms_key_id`, `key_spec`, and S3-style authentication.
 - `gcp_kms`: `kms_encryption_key`, `key_length`, and GCS-style authentication.
-- `azure_vault`: `vault_uri`, `vault_key_name`, `key_length`, always using
-  Entra ID.
-- `openbao`: `key_name`, optional `BAO_TOKEN` and `BAO_ADDR`, and an optional
-  Transit-engine path.
+- `azure_vault`: `vault_uri`, `vault_key_name`, `key_length`, and Entra ID.
+- `openbao`: `key_name`, optional `BAO_TOKEN` and `BAO_ADDR`, and a Transit
+  engine path.
 
 ```hcl
 method "aes_gcm" "main" {
@@ -119,14 +111,14 @@ method "aes_gcm" "main" {
 ```
 
 AES-GCM requires a 16-, 24-, or 32-byte provider key. Prefer a derivation
-provider or rotating key-management system over a short static key; repeated
-AES-GCM key use eventually reaches key-saturation limits.
+provider or a key-management system with rotation to a short static key;
+repeated use of one AES-GCM key eventually reaches key-saturation limits.
 
-## Experimental external hooks
+## External key providers and methods (`1.7-state-encryption`)
 
-An external key provider runs one `command`. An external method has separate
-`encrypt_command` and `decrypt_command` arrays and may receive a key-provider
-result.
+Experimental external hooks can fetch keys or implement encryption. A key
+provider runs one `command`; an external method has `encrypt_command` and
+`decrypt_command` arrays and may consume a key-provider result.
 
 ```hcl
 key_provider "external" "keys" {
@@ -139,21 +131,25 @@ method "external" "cipher" {
 }
 ```
 
-The program first emits one of these handshake objects:
+The external program first emits a protocol declaration:
 
-```json
-{"magic":"OpenTofu-External-Key-Provider","version":1}
-{"magic":"OpenTofu-External-Encryption-Method","version":1}
-```
+- Key provider: `{"magic":"OpenTofu-External-Key-Provider","version":1}`.
+- Method: `{"magic":"OpenTofu-External-Encryption-Method","version":1}`.
 
-Key-provider input is `null` during encryption and stored metadata during
-decryption. It returns base64 encryption and decryption keys plus optional
-metadata. Method input and output carry a base64 `payload` and an optional
-base64 `key`. Treat both hook types as experimental.
+Key-provider input is `null` for encryption or stored metadata for decryption.
+It returns base64 encryption and decryption keys plus optional metadata. Method
+input and output carry a base64 `payload` and optional base64 `key`.
 
-## Backend-side encryption
+## Apply-time encryption inputs (`1.11.0`)
 
-OpenTofu configuration encryption protects state and plan content before
-storage. Backend-side encryption is configured independently. The AzureRM
-backend adds support in 1.12.0 for both Customer-Provided Keys and
-Customer-Managed Keys for server-side encryption.
+Input values can be supplied during apply for state and plan encryption. Every
+non-ephemeral input must still equal its planned value. From 1.11.4, JSON-form
+method configuration accepts `keys` as either a normal expression or template
+interpolation; it no longer requires interpolation.
+
+## Backend encryption additions (`1.12.0`)
+
+The AzureRM backend supports Customer-Provided Keys and Customer-Managed Keys
+for server-side encryption. OpenBao-wrapped encryption data in early 1.12
+releases was affected by a security defect; follow the current patch-level
+floor in [upgrade-security-and-platforms.md](upgrade-security-and-platforms.md).

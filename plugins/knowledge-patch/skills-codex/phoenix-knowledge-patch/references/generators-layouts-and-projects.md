@@ -1,13 +1,14 @@
 # Generators, Layouts, and Generated Projects
 
-This topic reference incorporates generator and project behavior from batch
-`1.8.x`.
+Use this reference when creating a project or resource, adapting templates and
+layouts, or accounting for generator-created files and side effects. General
+generated-project behavior here is attributed to `1.8.x`.
 
-## Render Layouts as Function Components
+## Layouts are function components
 
-New applications keep a single `root.html.heex` around the render pipeline.
-Dynamic layouts such as `app.html.heex` are regular function components invoked
-from templates, not extra layouts configured in the render pipeline.
+New applications use a single `root.html.heex` around the render pipeline.
+Dynamic layouts such as `app.html.heex` are regular function components called
+from templates; do not configure them as additional render-pipeline layouts.
 
 ```heex
 <Layouts.app flash={@flash}>
@@ -15,61 +16,86 @@ from templates, not extra layouts configured in the render pipeline.
 </Layouts.app>
 ```
 
-When updating older code, pair this component model with module-qualified
-layout calls. Module-less layouts are deprecated.
+When upgrading controller layout calls, name the layout module explicitly:
 
-## Use Streamlined Generator Commands
+```elixir
+put_layout(conn, html: {MyAppWeb.Layouts, :print})
+```
 
-The context argument to `phx.gen.live`, `phx.gen.html`, and `phx.gen.json` is
-optional. When omitted, the generator derives the context from the plural
-resource name. `phx.gen.context` can similarly infer the context from the
-schema.
+Module-less layouts are deprecated.
+
+## Generate resources with inferred contexts
+
+The context argument is optional for `phx.gen.live`, `phx.gen.html`, and
+`phx.gen.json`. When omitted, the generator derives it from the plural resource
+name. `phx.gen.context` can also infer a context from the schema.
 
 ```console
 $ mix phx.gen.live Post posts title:string
 ```
 
-`phx.new` also offers an interactive mode:
+Once a default generator scope is configured, `phx.gen.schema`,
+`phx.gen.context`, `phx.gen.live`, `phx.gen.html`, and `phx.gen.json` emit
+ownership fields and scoped context calls. Pass `--scope organization` (or the
+appropriate configured name) to select a non-default scope.
+
+See [Scopes and Authentication](scopes-and-authentication.md) before editing
+the generated ownership field or removing the scope argument from a context
+function.
+
+## Use interactive project creation
+
+`phx.new` supports an interactive mode:
 
 ```console
 $ mix phx.new my_app --interactive
 ```
 
-Scope-aware generation is covered separately in
-[scopes-and-authentication.md](scopes-and-authentication.md). Once a default
-scope exists, schema and web generators produce ownership fields and scoped
-queries; use `--scope` to select a non-default scope.
+The interactive flow can collect project choices instead of requiring every
+choice as a command-line flag.
 
-## Include the Authentication JavaScript Asset
+## Generated themes and development settings
 
-`phx.gen.auth` warns when esbuild is unavailable. Its generated functionality
-assumes that `phoenix_html.js` is included in the JavaScript bundle, so confirm
-the asset is loaded when using a different bundler or asset setup.
+Tailwind-enabled projects include daisyUI-backed light, dark, and system
+themes.
 
-## Generated Application Defaults
+Generated development configuration also:
 
-Tailwind-enabled generated applications use daisyUI-backed light, dark, and
-system themes. The generated development setup:
+- honors the `PORT` environment variable; and
+- enables HEEx `:debug_tags_location` to make rendered elements traceable to
+  their template source during development.
 
-- Honors the `PORT` environment variable.
-- Enables HEEx `:debug_tags_location`.
+Generated `prod.exs` enables `force_ssl` by default. Check proxy and endpoint
+configuration before treating redirect behavior as an application routing
+bug.
 
-Generated `prod.exs` enables `force_ssl` by default. Review this setting
-against the deployment's proxy and TLS termination rather than assuming an
-older generated configuration.
+## Authentication assets
 
-## New-Project Tooling and Side Effects
+`phx.gen.auth` warns when esbuild is missing because the generated features
+expect `phoenix_html.js` to be included in the JavaScript bundle. Ensure the
+asset pipeline imports it, especially when replacing the generated JavaScript
+tooling.
 
-Review the whole generated tree before accepting a new-project diff:
+## Repository and container side effects
 
-- When Git is installed, `phx.new` initializes a repository.
-- `phx.new --docker` uses Debian trixie as its base image.
-- Generated projects include a `mix precommit` alias.
-- Generated projects include an `AGENTS.md` compatible with `usage_rules`.
-- A generated `usage_rules` directory supports synchronizing Phoenix
-  guidance.
+When Git is installed, `phx.new` initializes a repository. Account for that
+side effect when generating into a directory managed by a larger repository or
+by another source-control workflow.
 
-Repository initialization is a generator side effect, not merely a generated
-file. Account for it when invoking `phx.new` inside another repository or an
-automated build directory.
+The `--docker` option generates an image based on Debian trixie. Review native
+package names and installation commands when carrying forward customization
+from an older base image.
 
+## Generated development guidance
+
+New projects include a `mix precommit` alias for the generated pre-commit
+checks.
+
+They also include:
+
+- an `AGENTS.md` file compatible with `usage_rules`; and
+- a `usage_rules` directory used to synchronize Phoenix guidance.
+
+Preserve or deliberately replace these files when regenerating project
+scaffolding; they are part of the generated developer workflow rather than
+runtime application code.

@@ -1,24 +1,66 @@
 # Dynamic Resource Allocation
 
-Use this reference for ResourceClaims, ResourceSlices, device classes, DRA drivers, device sharing, health, binding, quotas, and DRA authorization.
+## API and driver migrations
 
-Entries are grouped by task; the parenthetical identifier is the source batch.
+### DRA adds a simpler beta API and device status (1.33-guide)
 
-## Advanced DRA sharing features are beta and default-on (1.36-guide)
+`resource.k8s.io/v1beta2` is the simplified beta API. Driver-owned per-device
+ResourceClaim status, including standardized network-interface data, is beta.
+Namespaced users with cluster `edit` may use DRA, and kubelet supports rolling
+driver upgrades without recreating ResourceSlices.
 
-Partitionable devices, consumable capacity, device taints and tolerations, ResourceClaim device status, pre-binding attachment checks, and extended-resource integration all graduate to beta with their feature gates enabled by default.
+### DRA claim limits and `All` semantics changed (1.33.0)
 
-## Alpha DRA users need upgrade migrations (1.34.0)
+`v1beta1` is deprecated in favor of `v1beta2`. A claim can reserve up to 256
+Pods, but a claim using the larger limit cannot downgrade to 1.32.0. An `All`
+request selects only nodes with at least one device; preserve a zero-device
+fallback with a prioritized alternative having `count: 0`.
 
-`resource.k8s.io/v1alpha3` now retains only `DeviceTaintRule`; clusters with claims, claim templates, device classes, or resource slices stored by a pre-1.32 cluster must delete and recreate them on Kubernetes 1.32 or newer before upgrading. The admin-access namespace label also changes from `resource.k8s.io/admin-access` to `resource.kubernetes.io/admin-access`; set both during a 1.33-to-1.34 transition, then remove the old label once downgrade is no longer needed.
+### The stable DRA API is `resource.k8s.io/v1` (1.34-guide)
 
-## Alpha partitionable-device data needs upgrade cleanup (1.35.0)
+Use `resource.k8s.io/v1` for `ResourceClaim`, `DeviceClass`,
+`ResourceClaimTemplate`, and `ResourceSlice`. Pods reference claims through
+`spec.resourceClaims`.
 
-The 1.35 partitionable-device schema is incompatible with 1.34; delete ResourceSlices using that alpha feature before upgrading or downgrading between the two releases. Devices from incomplete resource pools are no longer allocation candidates.
+### The DRA kubelet plugin protocol reaches v1 (1.34.0)
 
-## Avoid prebinding DRA Pods with `nodeName` (1.35-guide)
+Drivers should support stable kubelet gRPC v1. v1beta1 is deprecated and
+v1alpha4 removed. The 1.34
+`k8s.io/dynamic-resource-allocation/kubeletplugin` helper serves v1 and v1beta1
+for rolling upgrades.
 
-Setting `spec.nodeName` bypasses DRA scheduling and can leave a Pod consuming ordinary node resources while kubelet repeatedly waits for a missing, unallocated, or unreserved claim. Use an exact hostname selector to retain the scheduler's allocation flow.
+### Alpha DRA users need upgrade migrations (1.34.0)
+
+`resource.k8s.io/v1alpha3` retains only `DeviceTaintRule`. Delete and recreate
+claims, templates, classes, or slices stored by pre-1.32 clusters on 1.32 or
+newer before upgrading. The admin-access namespace label changes from
+`resource.k8s.io/admin-access` to `resource.kubernetes.io/admin-access`; set both
+during a 1.33-to-1.34 transition, then remove the old label when downgrade is no
+longer required.
+
+### Core DRA can no longer be disabled (1.35-guide)
+
+Stable `resource.k8s.io/v1` DRA is always enabled; the 1.34 off switch is gone.
+
+### Alpha partitionable-device data needs upgrade cleanup (1.35.0)
+
+The 1.35 partitionable-device schema is incompatible with 1.34. Delete slices
+using it before upgrade or downgrade. Devices in incomplete pools are not
+allocation candidates.
+
+## Claims, lifetime, placement, and quota
+
+### DRA claim choice controls sharing and lifetime (1.35-guide)
+
+A direct claim must already exist in the Pod namespace, may be shared among
+Pods, and is manually managed. A template creates a distinct claim per Pod and
+Kubernetes deletes it when the Pod terminates.
+
+### Avoid prebinding DRA Pods with `nodeName` (1.35-guide)
+
+`spec.nodeName` bypasses allocation and can leave a Pod consuming ordinary node
+resources while kubelet waits for an unallocated or unreserved claim. Preserve
+scheduler allocation with an exact selector:
 
 ```yaml
 spec:
@@ -26,33 +68,49 @@ spec:
     kubernetes.io/hostname: worker-1
 ```
 
-## Core DRA can no longer be disabled (1.35-guide)
+### DRA device requests consume additional quota keys (1.35.0)
 
-The stable `resource.k8s.io/v1` Dynamic Resource Allocation functionality, which still had an off switch in 1.34, is always enabled in 1.35.
+With extended-resource integration, charge a claim's worst-case device count to
+`requests.deviceclass.resource.k8s.io/<deviceclass>`. A class mapped to an
+extended resource also consumes `requests.<extended-resource-name>`.
 
-## Device health reporting now spans device plugins and DRA (1.36-guide)
+### DRA status writes require granular RBAC (1.36.0)
 
-The beta `allocatedResourcesStatus` field in Pod status reports `Unhealthy` or `Unknown` allocated devices from either traditional device plugins or DRA, and `kubectl describe pod` surfaces that state when diagnosing container failures.
+With `DRAResourceClaimGranularStatusAuthorization`, schedulers and controllers
+need `update` or `patch` on `resourceclaims/binding`. Drivers need
+`associated-node:update`, `arbitrary-node:update`, or patch equivalents on
+`resourceclaims/driver`, restricted to their driver `resourceNames`.
 
-## Device taint rules support dry runs (1.35-guide)
+## Selection, sharing, and capacity
 
-The alpha `resource.k8s.io/v1alpha3` `DeviceTaintRule` can taint devices selected by class, driver, pool, device, or CEL. Using `effect: None` reports affected devices, allocations, and Pods without scheduling or eviction effects; after review, change it to `NoExecute` to evict affected Pods.
+### DRA gains alpha device-selection controls (1.33-guide)
 
-## DeviceTaintRule has a separate feature gate (1.35.0)
+With core DRA enabled, `DRADeviceTaints`, `DRAPrioritizedList`, and
+`DRAPartitionableDevices` add taints/tolerations, ordered `firstAvailable`
+alternatives, and overlapping partitions. `DRAAdminAccess` permits
+`adminAccess` claims only in namespaces labeled
+`resource.k8s.io/admin-access: "true"` at this stage.
 
-`DRADeviceTaintRules` now controls DeviceTaintRule support independently; disabling it while leaving `DRADeviceTaints` enabled preserves driver-supplied taints in ResourceSlices.
+### More DRA integrations are beta and default-on (1.34-guide)
 
-## DRA adds a simpler beta API and device status (1.33-guide)
+Administrative access and prioritized `firstAvailable` requests are beta;
+`DRAPrioritizedList` is enabled by default. The kubelet PodResources API reports
+allocated DRA resources by default for node-local discovery.
 
-Dynamic Resource Allocation remains beta and adds `resource.k8s.io/v1beta2`; driver-owned per-device ResourceClaim status, including standardized network-interface data, is also beta. Namespaced users with the cluster `edit` role can use DRA, and kubelet now supports rolling driver upgrades without recreating ResourceSlices.
+### DRA gains alpha health, sharing, and compatibility controls (1.34-guide)
 
-## DRA binding has explicit readiness fields and a timeout (1.35-guide)
+`ResourceHealthStatus` exposes allocated-device health when the driver serves
+`DRAResourceHealth`. Extended-resource mapping lets existing workloads request
+DRA devices through container resources. `DRAConsumableCapacity` shares a
+device's advertised capacity across claims or requests, and binding conditions
+can hold Pod binding until external resources are ready.
 
-Devices can publish `bindingConditions`, `bindingFailureConditions`, and `bindsToNode` so the scheduler waits for external preparation before binding or abandons a failed allocation. The default wait is 600 seconds and can be changed with the DynamicResources plugin's `bindingTimeout` in `KubeSchedulerConfiguration`.
+### DRA can back ordinary extended-resource requests (1.35-guide)
 
-## DRA can back ordinary extended-resource requests (1.35-guide)
-
-The alpha `DRAExtendedResource` feature lets `DeviceClass.spec.extendedResourceName` map an existing extended resource to matching devices. Any DeviceClass can also be requested through `deviceclass.resource.kubernetes.io/<class-name>`, which creates an exact-count claim implicitly.
+`DRAExtendedResource` lets `DeviceClass.spec.extendedResourceName` map an
+existing extended resource to devices. Any class is also requestable as
+`deviceclass.resource.kubernetes.io/<class-name>`, creating an implicit
+exact-count claim.
 
 ```yaml
 resources:
@@ -60,55 +118,75 @@ resources:
     deviceclass.resource.kubernetes.io/gpu.example.com: "2"
 ```
 
-## DRA capacity can be consumed across claims (1.35-guide)
+### Partitionable DRA devices use shared counters (1.35-guide)
 
-A ResourceSlice device with `allowMultipleAllocations: true` can expose consumable capacity and a `requestPolicy`; claims request amounts through `devices.requests[*].exactly.capacity.requests`. Allocation status reports the consumed amount and a `shareID`, and CEL can require `device.allowMultipleAllocations == true` when whole-device fallback is undesirable.
+Put `sharedCounters` in a separate ResourceSlice from devices. Devices may refer
+through `consumesCounters` to counters in any slice in the same pool. Allocation
+requires sufficient remaining quantity in every referenced counter.
 
-## DRA claim choice controls sharing and lifetime (1.35-guide)
+### DRA capacity can be consumed across claims (1.35-guide)
 
-A directly referenced `ResourceClaim` must already exist in the Pod's namespace, can be shared by multiple Pods, and has a manually managed lifecycle. A `ResourceClaimTemplate` instead produces a separate claim per Pod and Kubernetes deletes that claim when its Pod terminates.
+A device with `allowMultipleAllocations: true` can expose consumable capacity
+and `requestPolicy`. Claims request quantities with
+`devices.requests[*].exactly.capacity.requests`; allocation status records the
+amount and a `shareID`. CEL may require
+`device.allowMultipleAllocations == true` to prevent whole-device fallback.
 
-## DRA claim limits and `All` semantics changed (1.33.0)
+### Advanced DRA sharing features are beta and default-on (1.36-guide)
 
-The `resource.k8s.io/v1beta1` API is deprecated for removal in 1.36 in favor of `v1beta2`; a ResourceClaim can now reserve up to 256 Pods instead of 32, but a claim using the larger limit cannot be downgraded to 1.32.0. An `All` device request now selects only nodes with at least one device; to retain the old zero-device fallback, use a prioritized alternative with `count: 0`.
+Partitionable devices, consumable capacity, taints/tolerations, claim device
+status, pre-binding attachment checks, and extended-resource integration are
+beta with their gates enabled by default.
 
-## DRA device requests consume additional quota keys (1.35.0)
+### DRA selection gains list and ordering controls (1.36.0)
 
-With `DRAExtendedResource`, a claim's worst-case device count is charged to `requests.deviceclass.resource.k8s.io/<deviceclass>`. A class mapped to an extended resource also consumes `requests.<extended-resource-name>`.
+DRA CEL supports `.includes` across scalar and list attributes, for example
+`device.attributes["dra.example.com"].model.includes("model-a")`.
+ResourceSlice controllers sort slices and pools lexicographically before
+allocation, so names can determine priority.
 
-## DRA gains alpha device-selection controls (1.33-guide)
+### DRA shared-capacity allocation no longer leaves schedulable Pods pending (1.36.3)
 
-With `DynamicResourceAllocation` also enabled, `DRADeviceTaints`, `DRAPrioritizedList`, and `DRAPartitionableDevices` add device taints and tolerations, ordered `firstAvailable` alternatives, and dynamically chosen overlapping partitions. `DRAAdminAccess` restricts claims using `adminAccess` to namespaces labeled `resource.k8s.io/admin-access: "true"`.
+The structured allocator now releases shared-counter reservations when a
+candidate is rejected or backtracked and preserves in-use markers when devices
+are shared. This avoids leaked or double-charged capacity that could leave a Pod
+pending despite sufficient device capacity.
 
-## DRA gains alpha health, sharing, and compatibility controls (1.34-guide)
+## Taints, health, and binding
 
-`ResourceHealthStatus` exposes allocated-device health in Pod status when the driver implements the `DRAResourceHealth` gRPC service. Extended-resource mapping lets existing workloads consume DRA-managed devices through container `resources`, while `DRAConsumableCapacity` lets capacity advertised in a device's `capacity` field be shared across claims or device requests; device binding conditions can delay Pod binding until external resources are ready.
+### Device taint rules support dry runs (1.35-guide)
 
-## DRA gains alpha workload and metadata integrations (1.36-guide)
+`resource.k8s.io/v1alpha3` `DeviceTaintRule` selects by class, driver, pool,
+device, or CEL. `effect: None` reports affected devices, allocations, and Pods
+without scheduling or eviction effects; after review, `NoExecute` evicts them.
 
-New alpha capabilities add native ResourceClaim support for higher-level workloads, expose device attributes through the downward API, report resource availability, allow list-valued device attributes, and integrate DRA-native resources with CPU management.
+### DeviceTaintRule has a separate feature gate (1.35.0)
 
-## DRA selection gains list and ordering controls (1.36.0)
+`DRADeviceTaintRules` independently controls rule objects. Disabling it while
+leaving `DRADeviceTaints` enabled preserves driver-supplied ResourceSlice taints.
 
-DRA CEL expressions can call `.includes`, for example `device.attributes["dra.example.com"].model.includes("model-a")`, across scalar and list attributes. ResourceSlice controllers also sort slices and pools lexicographically before allocation, so their names can determine allocation priority.
+### DRA binding has explicit readiness fields and a timeout (1.35-guide)
 
-## DRA status writes require granular RBAC (1.36.0)
+Devices publish `bindingConditions`, `bindingFailureConditions`, and
+`bindsToNode`; the scheduler waits for preparation or abandons a failed
+allocation. The default wait is 600 seconds and is configurable as
+`DynamicResources.bindingTimeout` in `KubeSchedulerConfiguration`.
 
-With the beta `DRAResourceClaimGranularStatusAuthorization` gate, schedulers and controllers need `update` or `patch` on `resourceclaims/binding`, while drivers need `associated-node:update` or `arbitrary-node:update` (or their patch equivalents) on `resourceclaims/driver`, restricted to their driver `resourceNames`.
+### Device health reporting now spans device plugins and DRA (1.36-guide)
 
-## More DRA integrations are beta and default-on (1.34-guide)
+Beta Pod `allocatedResourcesStatus` reports `Unhealthy` or `Unknown` devices
+from classic plugins or DRA. `kubectl describe pod` surfaces the state during
+container-failure diagnosis.
 
-Administrative access and prioritized `firstAvailable` requests graduate to beta, with `DRAPrioritizedList` enabled by default. Kubelet's PodResources API also reports allocated DRA resources by default so node-local agents can discover them.
+## Workload and node integration
 
-## Partitionable DRA devices use shared counters (1.35-guide)
+### DRA gains alpha workload and metadata integrations (1.36-guide)
 
-With `DRAPartitionableDevices`, a `sharedCounters` entry must live in a separate ResourceSlice from devices, but devices can reference it through `consumesCounters` from any ResourceSlice in the same pool. Allocation succeeds only while every referenced counter has enough remaining quantity.
+Alpha capabilities add native claims to higher-level workloads, expose device
+attributes through the downward API, report resource availability, support
+list-valued attributes, and integrate DRA-native resources with CPU management.
 
-## The DRA kubelet plugin protocol reaches v1 (1.34.0)
+### Static Pods cannot reference API objects (1.34.0)
 
-DRA drivers should support the stable kubelet gRPC v1 API; v1beta1 is deprecated and v1alpha4 is removed. The 1.34 `k8s.io/dynamic-resource-allocation/kubeletplugin` helper serves both v1 and v1beta1 for rolling upgrades.
-
-## The stable DRA API is `resource.k8s.io/v1` (1.34-guide)
-
-The core structured-parameter DRA types (`ResourceClaim`, `DeviceClass`, `ResourceClaimTemplate`, and `ResourceSlice`) graduate to `resource.k8s.io/v1` and are available by default; Pods continue to reference claims through `spec.resourceClaims`.
-
+Kubelet rejects static Pods referencing API objects, including arbitrary
+ResourceClaims, rather than running after mirror-Pod creation fails.

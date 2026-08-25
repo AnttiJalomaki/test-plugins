@@ -1,84 +1,132 @@
 # Synchronization and channels
 
-Use this reference when implementing or upgrading watch, broadcast, mpsc, oneshot, notification, locking, semaphore, or single-assignment flows.
+## Watch channels
 
-## Contents
+### Default senders (1.39.0)
 
-- [Watch and broadcast](#watch-and-broadcast)
-- [Mpsc channels and permits](#mpsc-channels-and-permits)
-- [Oneshot and notifications](#oneshot-and-notifications)
-- [Single assignment, locks, and semaphores](#single-assignment-locks-and-semaphores)
+`watch::Sender` implements `Default`, so it can participate in containers that
+derive `Default` when the stored value type satisfies the implementation's
+bounds.
 
-## Watch and broadcast
+### Cooperative receives (1.41.0)
 
-### Watch defaults and scheduling
+Watch receives consume Tokio's cooperative task budget. A loop over
+immediately ready changes cannot indefinitely monopolize an executor thread.
 
-Tokio 1.39.0 implements `Default` for `watch::Sender<T>` when `T: Default`. Structures containing a sender can therefore derive `Default` without constructing the channel manually.
+## Broadcast channels
 
-Since Tokio 1.41.0, watch operations participate in Tokio's cooperative scheduling. Continuously ready receive loops can yield after exhausting their cooperative budget.
+### Cooperative receivers (1.41.0)
 
-### Broadcast lifecycle APIs
+`broadcast::Receiver` participates in cooperative scheduling and yields after
+the task budget is exhausted.
 
-Tokio 1.44.0 adds two sender lifecycle tools:
+### Synchronize cloning (1.42.0)
 
-- Await `broadcast::Sender::closed()` until every receiver has gone away. Producers can stop generating work without polling receiver counts.
-- Use `broadcast::WeakSender` for non-owning access that does not keep the channel open.
+Tokio 1.42.0 clones `Send` but `!Sync` broadcast values without
+synchronization. Require at least 1.42.1 when such values can be broadcast;
+that release synchronizes the clone operation.
 
-Since Tokio 1.41.0, `broadcast::Receiver` also participates in cooperative scheduling.
+### Receiverless construction (1.43.0)
 
-### Broadcast correctness floors
+Starting in 1.43.3, a `broadcast::Sender` created with `Sender::new()` is
+closed while it has no receivers. Its state therefore reflects receiverless
+construction.
 
-- Tokio 1.42.1 fixes unsynchronized cloning when a broadcast value is `Send` but not `Sync`; do not use 1.42.0 for that case.
-- Tokio 1.43.3 correctly reports the receiverless channel created by `broadcast::Sender::new()` as closed.
+### Sender liveness (1.44.0)
 
-## Mpsc channels and permits
+- Await `broadcast::Sender::closed()` to detect when every receiver has gone
+  away.
+- Use `broadcast::WeakSender` for an observer or auxiliary handle that must not
+  keep the channel open.
 
-### Unwind safety
+## MPSC channels
 
-Tokio's mpsc types implement `UnwindSafe` as of 1.40.0. They can satisfy unwind-safety bounds around operations such as `catch_unwind` without an assertion wrapper solely for the channel type.
+### Unwind safety (1.40.0)
 
-### Channel identity
+Tokio mpsc types implement `UnwindSafe`, allowing them to satisfy bounds around
+panic-catching boundaries.
 
-Tokio 1.46.0 adds identity checks to `mpsc::OwnedPermit`:
+### Blocking batched receives (1.41.0)
 
-- `same_channel` compares owned permits.
-- `same_channel_as_sender` compares a permit with a sender.
+`mpsc::Receiver::blocking_recv_many` receives multiple queued messages into a
+collection from blocking code.
 
-Use these checks when routing reserved capacity without consuming it by sending a value.
+### Closed receivers (1.43.0)
 
-### Close and permit semantics
+Starting in 1.43.4, after `Receiver::close()` and exhaustion of buffered
+messages, `try_recv()` returns `TryRecvError::Disconnected` even if sender
+handles remain.
 
-- Tokio 1.43.4 makes a drained, explicitly closed `mpsc::Receiver::try_recv()` return `TryRecvError::Disconnected` rather than `TryRecvError::Empty`.
-- Tokio 1.51.3 fixes `mpsc::Receiver::len()` underflow.
-- The 1.51 line wakes receivers when an `OwnedPermit` is released.
-- The 1.51 line returns `TryRecvError::Empty` while a closed channel still has outstanding permits; the channel is not fully disconnected until those reservations are gone.
-- The 1.51 line avoids a `recv_many` panic when the channel is closed and the destination vector is already non-empty.
+```rust
+let (_tx, mut rx) = tokio::sync::mpsc::channel::<u8>(1);
+rx.close();
+assert!(matches!(
+    rx.try_recv(),
+    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+));
+```
 
-Use Tokio 1.51.3 when relying on the combined corrected semantics.
+### `recv_many` on a closed channel (1.47.0)
 
-## Oneshot and notifications
+Tokio 1.47.4 fixes a panic when `recv_many` receives into a non-empty
+destination vector after the channel closes. Require at least that patch when
+using this pattern.
 
-### Oneshot receiver inspection
+### Length observations (1.47.0)
 
-Tokio 1.44.0 adds synchronous state inspection to `oneshot::Receiver`:
+Tokio 1.47.5 fixes an mpsc `len()` underflow. Require at least that patch when
+channel-length observations affect behavior or diagnostics.
 
-- `is_empty()` reports whether no value is currently available.
-- `is_terminated()` reports whether the receiver can no longer produce a value.
+### Outstanding permits (1.47.0)
 
-These checks do not await or consume the receiver.
+Starting in 1.47.5:
 
-### Notification futures
+- `mpsc::OwnedPermit::release()` wakes waiting receivers;
+- a closed channel with outstanding permits reports `TryRecvError::Empty`, not
+  `Disconnected`, because those permits can still send values.
 
-Tokio 1.41.0 marks `Notified` as `#[must_use]`. Await or retain the future from `Notify::notified()`; ignoring it can become a build error when warnings are denied.
+### Receiver lifetime and reserve wakeups (1.53.1)
 
-Tokio 1.47.0 adds `Notify::notified_owned()`, returning an `OwnedNotified` without a lifetime parameter. Use it when a pending notification must be stored or moved without borrowing the `Notify` value.
+In 1.53.0:
 
-The 1.51 line also corrects `Notify::notify_waiters` priority. Prefer 1.51.3 for all synchronization corrections accumulated on that line.
+- dropping an `mpsc::Receiver` or `UnboundedReceiver` also drops its registered
+  waker even while senders remain;
+- a receiver is woken when a queued `reserve` or `reserve_many` operation
+  returns permits, avoiding a missed wakeup.
 
-## Single assignment, locks, and semaphores
+## Notifications
 
-Tokio 1.47.0 adds `tokio::sync::SetOnce`, a single-assignment cell similar in purpose to `std::sync::OnceLock`.
+### Must-use notification futures (1.41.0)
 
-Tokio 1.51.3 rejects an `RwLock` maximum-reader count of zero instead of accepting an unusable configuration.
+`Notified` is `#[must_use]`. Await, retain, or explicitly discard the future
+returned by `Notify::notified()`.
 
-The 1.51 line prevents semaphores from reopening after permits are forgotten. Do not rely on the earlier incorrect reopening behavior.
+### Owned notification futures (1.47.0)
+
+`Notify::notified_owned()` returns `OwnedNotified` without a lifetime
+parameter. Store or move it without borrowing its `Notify`.
+
+```rust
+let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+let notified = notify.clone().notified_owned();
+notify.notify_one();
+notified.await;
+```
+
+## Single-assignment state (1.47.0)
+
+`tokio::sync::SetOnce` provides single-assignment state similar to
+`std::sync::OnceLock`, including asynchronous waiting for the value to be set.
+
+## Locks and semaphores
+
+### Nonzero `RwLock` reader limit (1.47.0)
+
+Tokio 1.47.5 requires an explicitly configured `RwLock` maximum-reader limit
+to be nonzero. Do not pass zero to such a constructor.
+
+### Closed semaphores and forgotten permits (1.51.0)
+
+Tokio 1.51.1 fixes a semaphore reopening after permits are forgotten. Require
+at least that patch when code combines semaphore closure with permit
+forgetting.

@@ -1,152 +1,76 @@
 # Reporters and Integrations
 
-Relevant versioned source batches: `3.0.0`, `3.2.0`, `4.0.0`, and `4.1.0`.
+## Migrate custom reporters
 
-## Contents
+The public reporter lifecycle was redesigned in 3.0.0. Review reporters built around the previous `onTaskUpdate` callback instead of assuming the old lifecycle still applies.
 
-- [Migrate custom reporter lifecycles](#migrate-custom-reporter-lifecycles)
-- [Choose a built-in terminal reporter](#choose-a-built-in-terminal-reporter)
-- [Consume test annotations](#consume-test-annotations)
-- [Configure GitHub Actions job summaries](#configure-github-actions-job-summaries)
-- [Use the failure-only agent reporter](#use-the-failure-only-agent-reporter)
-- [Control runs with the public API](#control-runs-with-the-public-api)
-- [Collect and create specifications programmatically](#collect-and-create-specifications-programmatically)
-- [Integrate custom coverage output](#integrate-custom-coverage-output)
-- [Update VS Code extension settings and commands](#update-vs-code-extension-settings-and-commands)
-- [Avoid Vite type skew in integrations](#avoid-vite-type-skew-in-integrations)
+Test annotations are delivered through `onTestAnnotate`. The default terminal reporter prints them only for failed tests; `verbose` is the only terminal reporter that also prints annotations for passing tests. HTML and UI annotations require a call site in a test file.
 
-## Migrate custom reporter lifecycles
+JUnit, TAP, and TAP-flat retain annotation type and message but discard attachments. The GitHub Actions reporter maps `notice`, `warning`, and `error`; all other annotation types are treated as notices.
 
-The public reporter API configured through `reporters` was redesigned around a new lifecycle. Review custom reporters built around the previous `onTaskUpdate` API instead of assuming that callback remains the central update path.
+## Choose current built-in reporters
 
-The programmatic API exported from `vitest/node` was also redesigned. In `3.0.0` the replacement API was still marked experimental, with removal of that tag planned for a subsequent minor. Integrations should use the current surface rather than relying on the earlier experimental shape.
-
-## Choose a built-in terminal reporter
-
-The `basic` reporter was removed. Replace it with the default reporter and disable the summary when matching the old concise output:
+The `basic` reporter was removed in 4.0.0. The closest replacement is `default` with its summary disabled:
 
 ```ts
-import { defineConfig } from 'vitest/config'
-
 export default defineConfig({
   test: {
-    reporters: [
-      ['default', { summary: false }],
-    ],
+    reporters: [['default', { summary: false }]],
   },
 })
 ```
 
-Current tree behavior differs by reporter:
+The default reporter renders a test tree only for a single test file. Use `tree` to render it consistently. The `verbose` reporter prints each test as it finishes in every environment.
 
-- `default` renders a test tree only when the run contains a single test file.
-- `tree` always renders the test tree.
-- `verbose` prints every test as it finishes in all environments.
+## Configure GitHub Actions summaries
 
-## Consume test annotations
-
-Custom messages and attachments attached to a test are available to reporters through `onTestAnnotate`. They also appear in the UI and in HTML, JUnit, TAP, and GitHub Actions output, with format-specific limitations.
-
-Terminal behavior is intentionally selective:
-
-- The default reporter prints annotations only for failed tests.
-- `verbose` is the only terminal reporter that also prints annotations for passing tests.
-- Annotations related to a failed test are printed by the CLI.
-
-Other reporter behavior:
-
-- HTML and UI annotations need a call site in a test file.
-- JUnit, TAP, and TAP-flat discard attachments but preserve annotation type and message.
-- GitHub Actions maps `notice`, `warning`, and `error`; every other annotation type is emitted as a notice.
-
-Trace archives and browser failure artifacts can also arrive as annotations or artifact attachments. See [Browser Mode](browser-mode.md) for their creation rules.
-
-## Configure GitHub Actions job summaries
-
-The `github-actions` reporter writes test statistics and a flaky-test summary to `$GITHUB_STEP_SUMMARY` by default when running in GitHub Actions.
-
-Disable the summary or redirect it through `jobSummary`:
+In 4.1.0, the `github-actions` reporter writes test statistics and a flaky-test summary to `$GITHUB_STEP_SUMMARY` by default when running in GitHub Actions. Disable or redirect it through `jobSummary`:
 
 ```ts
 export default defineConfig({
   test: {
     reporters: [[
       'github-actions',
-      {
-        jobSummary: {
-          enabled: false,
-        },
-      },
+      { jobSummary: { enabled: false } },
     ]],
   },
 })
 ```
 
-Set `jobSummary.outputPath` instead when the summary should be written somewhere other than `$GITHUB_STEP_SUMMARY`.
+Set `jobSummary.outputPath` when the summary should be written elsewhere.
 
-## Use the failure-only agent reporter
+## Use failure-only output
 
-The `agent` reporter emits failures and their errors while suppressing passing output and logs from passing tests:
+The `agent` reporter added in 4.1.0 prints only failures and their errors. It suppresses passing output and logs from passing tests. Vitest selects it automatically in detected automated coding environments unless custom reporters are configured; set `AI_AGENT` for explicit detection or select it manually:
 
 ```ts
 export default defineConfig({
-  test: {
-    reporters: ['agent'],
-  },
+  test: { reporters: ['agent'] },
 })
 ```
 
-Vitest selects it automatically in detected coding-agent environments unless custom reporters are configured. Set the `AI_AGENT` environment variable for explicit detection, or list `agent` manually to make the choice deterministic.
+## Update editor integration settings
 
-## Control runs with the public API
+As of 4.1.0, the official VS Code extension does not keep Vitest running in the background unless continuous run is enabled manually or through `watchOnStartup`. The old `maximumConfigs` option is removed.
 
-The redesigned public Vitest API includes methods and properties for collection, watching, coverage, and run state:
+The extension adds Run Related Tests and Toggle Continuous Run actions, supports the Deno runtime, and provides a Debug Test action for browser tests.
 
-- `experimental_parseSpecifications` parses specifications without running them.
-- `watcher` controls runs when the default watcher is disabled.
-- `enableCoverage` turns coverage on dynamically.
-- `disableCoverage` turns coverage off dynamically.
-- `getSeed` returns the active sequencing seed.
-- `getGlobalTestNamePattern` returns the global test-name filter.
-- `waitForTestRunEnd` waits for the active run to finish.
+## Move from the early Node API
 
-Use the exact current names; do not substitute methods from the earlier Node API.
+The `vitest/node` programmatic API was redesigned in 3.0.0 and was still marked experimental in that release, with removal of that tag planned for the following minor. Integrations must not assume the pre-3 experimental shape.
 
-## Collect and create specifications programmatically
+The 4.0.0 public API added:
 
-`vitest list` can collect tests statically rather than executing every test file merely to discover its tests:
+- `experimental_parseSpecifications` to parse specifications without running them.
+- `watcher` controls for runs when the default watcher is disabled.
+- Dynamic `enableCoverage` and `disableCoverage` methods.
+- `getSeed` and `getGlobalTestNamePattern` accessors.
+- `waitForTestRunEnd` for completion synchronization.
 
-```sh
-vitest list
-```
+## Collect and run tests programmatically
 
-The programmatic API also provides:
+Vitest 4.1.0 added static collection through `vitest list`, avoiding test-file execution solely for discovery.
 
-- Specification filters accepted by `createSpecification`.
-- `runTestFiles` as an alternative to `runTestSpecifications`.
-- `allowWrite` and `allowExec` API options for integrations that need those capabilities.
-- `toTestSpecification` on reported tasks.
+The public API also added specification filters to `createSpecification`, `runTestFiles` as an alternative to `runTestSpecifications`, `allowWrite` and `allowExec` options, and `toTestSpecification` on reported tasks.
 
-Tag-aware programmatic runs use `tagsFilter` with `startVitest` or `createVitest`; `createSpecification` uses `testTagsFilter`. These are documented with expression rules in [Test APIs](test-apis.md).
-
-## Integrate custom coverage output
-
-The public API can toggle coverage with `enableCoverage` and `disableCoverage`. Configuration can also load custom reporters and providers, while custom coverage HTML can be integrated with Vitest's UI and HTML reporter. See [Projects and coverage](projects-and-coverage.md) for the module contracts and root-only configuration rules.
-
-## Update VS Code extension settings and commands
-
-The official extension does not keep a Vitest process running in the background unless continuous run is enabled manually or through `watchOnStartup`.
-
-Migration and capability notes:
-
-- The old `maximumConfigs` option was removed.
-- Run Related Tests is available as an action.
-- Toggle Continuous Run is available as an action.
-- Browser tests have a Debug Test action.
-- The Deno runtime is supported.
-
-Enable `watchOnStartup` only when a persistent process is wanted; otherwise the extension starts work on demand.
-
-## Avoid Vite type skew in integrations
-
-Vitest supports Vite 8 and reuses the project's installed `vite` package when possible. Editor and Node API integrations should use types from the resolved project toolchain so a second Vite copy does not create configuration type mismatches.
+Tag-aware tooling can pass `tagsFilter` to `startVitest` or `createVitest`, and `testTagsFilter` to `createSpecification`; see [Test APIs](test-apis.md).

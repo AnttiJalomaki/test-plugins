@@ -1,8 +1,15 @@
 # Playwright MCP Server
 
-## Installation and interaction pattern
+## Server and action model
 
-`@playwright/mcp` exposes Playwright browser automation to MCP clients and requires Node.js 18 or newer.
+The `mcp-and-test-agents` package guidance describes `@playwright/mcp` as a
+Node.js 18+ MCP server that drives Playwright through structured accessibility
+snapshots.
+
+Actions target the exact `ref` returned by a snapshot. Selectors are available
+as a fallback. Screenshots are for visual verification rather than action
+targeting. `browser_run_code` accepts either an async function of `page` or a
+source filename.
 
 ```json
 {
@@ -15,23 +22,21 @@
 }
 ```
 
-The server operates primarily on structured accessibility snapshots. Take a snapshot, then use the element `ref` it returns for an action. Screenshots are intended for visual verification rather than as action inputs.
+The browser is headed by default; use `--headless` to change that. `--browser`
+accepts `chrome`, `firefox`, `webkit`, or `msedge`.
 
-The browser is headed by default. Use `--headless` for headless operation or `--browser=chrome|firefox|webkit|msedge` to select a browser or channel.
+## Profiles and initial browser state
 
-Core tools cover snapshot-based navigation and interaction, tabs, dialogs, file uploads, console and network inspection, screenshots, and arbitrary Playwright code. `browser_run_code` accepts an `async (page) => { ... }` function or loads that function from `filename`. Snapshot, console, network, evaluation, and screenshot results can be written to files instead of returned inline.
+The default persistent profile keeps login state in a platform cache directory
+named for the browser channel and workspace hash. This gives separate profiles
+to separate projects. `--user-data-dir` overrides the directory.
 
-## Profiles and existing browsers
+`--isolated` discards state when the browser closes and can seed cookies and
+local storage with `--storage-state`. `--extension` attaches to existing Chrome
+or Edge tabs through the Playwright MCP Bridge extension.
 
-The default persistent profile retains login state. Profiles are partitioned by browser channel and MCP workspace.
-
-- `--isolated` uses an in-memory profile that is discarded when the browser closes.
-- Combine `--isolated` with `--storage-state=path/to/storage.json` to seed cookies and local storage.
-- `--extension` connects through the MCP Bridge extension to existing Chrome or Edge tabs.
-
-## Initial page and script setup
-
-Use `--init-page` one or more times to load TypeScript modules whose default export receives `{ page }`:
+`--init-page` loads a TypeScript module for page-level setup. Repeatable
+`--init-script` files instead run before page scripts in every page.
 
 ```ts
 // init-page.ts
@@ -44,68 +49,85 @@ export default async ({ page }) => {
 };
 ```
 
-Use `--init-script` to inject JavaScript before page scripts on every page. Initial-page modules run against a page, whereas init scripts run early in each document.
-
 ## Capability-gated tools
 
-Enable additional tool groups with `--caps`:
+Core accessibility-based automation and tab management are directly
+available. Additional `--caps` groups expose:
+
+| Capability | Added tools |
+| --- | --- |
+| `config` | Resolved configuration |
+| `network` | Request mocking and offline state |
+| `storage` | Cookie and Web Storage management plus storage-state save and restore |
+| `devtools` | Pause and resume, tracing, and video |
+| `vision` | Coordinate input |
+| `pdf` | PDF output |
+| `testing` | Locator and assertion helpers |
+
+```json
+{
+  "args": [
+    "@playwright/mcp@latest",
+    "--caps=network,storage,testing"
+  ]
+}
+```
+
+## Configuration
+
+`--config` loads JSON that can cover:
+
+- browser launch and context options;
+- CDP or remote endpoints;
+- server binding and capabilities;
+- output and console filtering;
+- network rules and test IDs;
+- timeouts, image responses, snapshots, and code generation.
+
+## File and origin guardrails
+
+File access is restricted to client workspace roots, or to the current
+directory if no roots are supplied. `file://` navigation is blocked unless
+`allowUnrestrictedFileAccess` or its CLI flag is enabled.
+
+Allowed- and blocked-origin rules filter browser requests, with the blocklist
+winning. They do not cover redirects and are explicitly not a security
+boundary.
+
+The `secrets` setting redacts matching response text only as a convenience.
+Deployment still needs client-level permissions and normal security controls.
+
+## Standalone HTTP server
+
+`--port` starts an HTTP server for workers or display-hosted environments.
+Clients connect to `/mcp`. `sharedBrowserContext` can make all HTTP clients
+reuse one context.
+
+```sh
+npx @playwright/mcp@latest --port 8931
+```
 
 ```json
 {
   "mcpServers": {
     "playwright": {
-      "command": "npx",
-      "args": ["@playwright/mcp@latest", "--caps=network,storage,testing"]
+      "url": "http://localhost:8931/mcp"
     }
   }
 }
 ```
 
-| Capability | Additional operations |
-| --- | --- |
-| `network` | Online/offline control; route, list, and unroute network mocks |
-| `storage` | Cookies, local/session storage, and storage-state operations |
-| `testing` | Locator generation and visibility, list, text, and value assertions |
-| `devtools` | Pause/resume, tracing, video, and chapter markers |
-| `vision` | Coordinate-based mouse operations |
-| `pdf` | PDF output |
-| `config` | Access to the final merged server configuration |
+The package exports `createConnection()` for programmatic attachment of an
+MCP SDK transport. Its supplied Docker image currently supports only headless
+Chromium.
 
-`browser_snapshot` accepts `selector` and `depth` to limit the returned accessibility tree.
+## Bundled package entry points
 
-Network inspection can include response bodies or headers, filter request URLs with a regular expression, and omit successful static resources by default. `browser_route` fulfills a glob pattern with a selected status, body, content type, and headers; the mock remains active until removed with `browser_unroute`.
+In `1.62.0`, Playwright bundles the MCP server and `playwright-cli`, so both
+can be launched through the main package instead of separate package entry
+points.
 
-## Configuration
-
-Pass `--config path/to/config.json` to use the typed configuration surface. It covers:
-
-- Browser launch and context options or remote browser endpoints.
-- Server binding and enabled capabilities.
-- Output paths and session saving.
-- Console reporting level and network rules.
-- Test-id attribute and action, navigation, and assertion timeouts.
-- Image responses, snapshot mode, and code generation.
-
-Most command-line settings also have a corresponding `PLAYWRIGHT_MCP_*` environment variable.
-
-## File, network, and secret guardrails
-
-File access is restricted to workspace roots supplied by the client, or to the current directory if the client supplies none. `file://` navigation is blocked unless `--allow-unrestricted-file-access` is set.
-
-`allowedHosts` protects against DNS rebinding. Allowed- and blocked-origin rules do not cover redirects and must not be treated as a security boundary. Similarly, `--secrets` masks matching dotenv values in tool responses as a convenience but is not a security boundary.
-
-## HTTP transport and shared contexts
-
-Start standalone HTTP transport on port 8931:
-
-```bash
-npx @playwright/mcp@latest --port 8931
+```sh
+npx playwright mcp
+npx playwright cli
 ```
-
-Configure clients with `url: "http://localhost:8931/mcp"`. Add `--shared-browser-context` when connected HTTP clients should reuse one browser context.
-
-The published Docker image currently supports headless Chromium only.
-
-## Embedded server
-
-Applications can import `createConnection` from `@playwright/mcp`, create a connection with Playwright-style browser configuration, and attach an MCP SDK transport programmatically.

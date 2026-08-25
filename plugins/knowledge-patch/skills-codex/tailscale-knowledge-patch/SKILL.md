@@ -10,224 +10,196 @@ metadata:
 
 # Tailscale Knowledge Patch
 
-Use this skill when implementing, reviewing, or operating current Tailscale
-clients, policy, containers, Kubernetes resources, Services, relays, or
-automation. It is especially useful when older examples may hide a changed
-default, a retired setting, an interactive prompt, or a stable-release
-boundary.
-
-## How to apply this patch
-
-1. Identify the deployed client, container, Operator, Terraform provider, and
-   platform independently; their release numbers and availability can differ.
-2. Check release caveats before copying commands into unattended automation.
-3. Check platform policy names and defaults before producing MDM profiles.
-4. For Kubernetes, distinguish the Operator version from the image used by
-   proxy, Recorder, and DNSConfig workloads.
-5. Prefer the stable JSON interfaces documented here when writing parsers.
-6. Follow the topic reference for complete behavior and compatibility notes.
+Use this skill before changing Tailscale client configuration, tailnet policy,
+Kubernetes Operator resources, containers, Services, routing, identity, or
+release automation. Start with the quick references below, then read the
+topic file that matches the work.
 
 ## Reference index
 
-| Reference | Topics |
+| Reference | Read when working on |
 | --- | --- |
-| [CLI and release automation](references/cli-and-release-automation.md) | Configuration commands, CI, noninteractive use, JSON output, release tracks, stable-line caveats |
-| [Managed clients and platforms](references/managed-clients-and-platforms.md) | System policy, authentication, encrypted state, desktop and mobile behavior, platform support |
-| [Kubernetes and containers](references/kubernetes-and-containers.md) | Operator proxies, API proxy, Recorder, DNSConfig, Ingress, container authentication and networking |
-| [Networking, routing, and Services](references/networking-routing-and-services.md) | DERP, DNS, exit nodes, Serve, Funnel, Services, Peer Relay, subnet routing |
-| [Identity, policy, and trust](references/identity-policy-and-trust.md) | Grants, posture, GitOps, workload identity, Tailnet Lock, policy editing |
-| [Integrations and observability](references/integrations-and-observability.md) | Terraform resources, log streaming, metrics, flow logs, audit events |
+| [CLI and release automation](references/cli-and-release-automation.md) | CLI parsing and inspection, automation, release tracks, and withdrawn or platform-specific builds |
+| [Identity, policy, and trust](references/identity-policy-and-trust.md) | Grants, posture, Tailnet Lock, encrypted state, node keys, workload identity, and policy administration |
+| [Integrations and observability](references/integrations-and-observability.md) | Terraform, APIs, log streaming, metrics, and admin-console integrations |
+| [Kubernetes and containers](references/kubernetes-and-containers.md) | Operator CRDs, proxy groups, API proxying, recording, images, authentication, and container behavior |
+| [Managed clients and platforms](references/managed-clients-and-platforms.md) | System policies, mobile and desktop clients, minimum platforms, UI behavior, and appliance packages |
+| [Networking, routing, and Services](references/networking-routing-and-services.md) | DNS, Serve, Funnel, Services, Peer Relays, DERP, exit nodes, subnet routing, Taildrive, and Tailscale SSH |
 
-## Breaking changes and deprecations
+## Breaking changes and migration checks
 
-### Treat release candidates and withdrawn builds explicitly
+### Audit repeated flags
 
-- Do not infer stability from an even version number. Several `.0` builds were
-  release candidates or internal-only; use the stable-line guidance in the
-  release reference.
-- Do not roll out Linux 1.98.1: that build was withdrawn because of a MagicDNS
-  interaction regression.
-- The 1.86.0 rollout was halted. On affected macOS installations, use the
-  later stable-line fixes for state-file reads and `EncryptState` startup.
+CLI commands reject repeated occurrences of the same flag. Check wrappers,
+shell aliases, container arguments, and generated commands for duplication.
+In containers, setting `--accept-dns` through `TS_EXTRA_ARGS` requires the
+image containing the compatibility fix described in the CLI reference.
 
-### Make CLI automation deterministic
+### Expect confirmation prompts
 
-- A command rejects repeated occurrences of the same flag. Normalize generated
-  argument lists before invocation.
-- Significant CLI actions can prompt for `y/n`. Do not assume an affected
-  command remains noninteractive merely because an older invocation was.
-- Container 1.84.0 could not apply `--accept-dns` through `TS_EXTRA_ARGS`;
-  use image 1.84.2 or later when relying on that combination.
+Significant CLI actions may prompt for `y/n` confirmation. Treat unattended
+jobs as potentially blocking and verify the exact command's non-interactive
+behavior before deploying automation.
 
-### Replace retired controls
+### Replace deprecated policy and naming forms
 
-- On macOS and iOS, use `AlwaysOn.Enabled` and
-  `AlwaysOn.OverrideWithReason`; `ForceEnabled` is deprecated.
-- On macOS, use `OnboardingFlow`; `TailscaleOnboardingSeen` is deprecated.
-- Store a GitOps policy repository URL in the admin console. The policy-file
-  code comment is deprecated, and the admin-console value wins if both exist.
-- On macOS, share Taildrive directories through the GUI; `tailscale drive` is
-  no longer provided there.
-- Do not set `TS_EXPERIMENTAL_KUBE_API_EVENTS`; configure Kubernetes API event
-  behavior through Tailscale ACLs.
+- Use `AlwaysOn.Enabled` and `AlwaysOn.OverrideWithReason` instead of the
+  deprecated Apple-platform `ForceEnabled` policy.
+- Use `OnboardingFlow` instead of the deprecated `TailscaleOnboardingSeen`
+  macOS policy.
+- Store the external GitOps repository URL in the admin console; the older
+  policy-file comment is deprecated and loses when both values exist.
+- Replace removed 4via6 MagicDNS name formats with a supported name form.
+- On macOS, configure Taildrive shares in the GUI because `tailscale drive`
+  is no longer available.
 
-### Account for changed defaults
+### Recheck removed and narrowed controls
 
-- New or never-edited tailnet policy files use grants syntax, with unchanged
-  effective permissions.
-- Node-key sealing is enabled by default on Linux, Windows, and macOS.
-- Services advertise automatically at startup. Set
-  `TS_EXPERIMENTAL_SERVICE_AUTO_ADVERTISEMENT=false` to opt out.
-- `Recorder` defaults to a one-replica `StatefulSet` with filesystem storage.
-- `AuthKey` system policy applies only while no user is logged in.
-- macOS 12 is the minimum supported macOS release.
+The Operator no longer uses `TS_EXPERIMENTAL_KUBE_API_EVENTS`; authorize API
+event behavior through tailnet policy. The `AuthKey` system policy applies
+only while no user is logged in. Do not assume either control has its older,
+broader effect.
 
-## High-value CLI patterns
+### Check platform and release constraints
 
-### Machine-readable DNS state
+macOS requires a newer supported floor, and several releases were release
+candidates, internal-only, delayed, withdrawn, or halted on particular
+platforms. Consult the release reference before pinning a client version,
+building a rollout, or treating a same-numbered build as universally
+available.
 
-```console
-tailscale dns status --json
-tailscale dns query example.internal --json
-```
+### Paginate tailnet listings
 
-Both DNS commands support JSON output. Select fields deliberately rather than
-parsing the human-readable form.
+The list-tailnets API is paginated. Follow returned cursors until empty rather
+than assuming one response contains the organization, and use `totalCount`
+when the complete count matters.
 
-### Wait for resources and assert an address
+## Policy, identity, and trust quick reference
 
-```console
-tailscale wait
-tailscale ip --assert=100.64.0.1
-```
+### Prefer grants for new policy
 
-`tailscale wait [flags]` waits until Tailscale resources are available for
-binding. `tailscale ip --assert` succeeds only when the requested address is
-one of the node's Tailscale IP addresses.
+New tailnets and never-edited policy files use grants syntax while retaining
+the same effective permissions. The generally available `via` field can
+require traffic to traverse selected exit nodes, subnet routers, or app
+connectors. Preserve existing semantics when translating ACLs.
 
-### Track the recommended exit node
+### Handle key trust deliberately
 
-```console
-tailscale up --exit-node=auto:any
-tailscale set --exit-node=auto:any
-```
+- Tailnet Lock can require verification of node keys supplied by the
+  coordination server.
+- Node-key sealing is enabled by default on major desktop platforms, and
+  existing Linux nodes migrate automatically when upgraded.
+- Reauthentication during node-key renewal preserves established
+  connections.
+- Use stable JSON forms of Tailnet Lock log and status output when writing
+  parsers.
 
-On Linux, Windows, and macOS, `auto:any` follows the recommended exit node and
-can switch as node availability or network conditions change. Supported Apple
-and Windows clients also expose this as the Recommended picker choice.
+### Select the right workload identity flow
 
-### Use stable Tailnet Lock JSON
+Nodes can authenticate with explicit client and identity tokens, or request
+identity tokens automatically for a selected audience. The Operator,
+containers, CI integrations, the API client, and Terraform have related but
+distinct federation paths. Read both the identity and Kubernetes references
+before replacing OAuth secrets or auth keys.
 
-```console
-tailscale lock log --json
-tailscale lock status -json
-```
+### Treat state encryption as posture
 
-Use these stable formats for Authority Update Messages and tailnet key
-authority status instead of scraping display output.
+Use the platform's supported encrypted-state mechanism and validate it with
+the `tsStateEncrypted` posture attribute. Linux uses TPM-backed daemon mode,
+Windows uses a TPM-backed policy, and macOS stores state in Keychain.
 
-### Authenticate a workload
+## Networking and Services quick reference
 
-Use an externally supplied identity token:
+### Account for automatic Service behavior
 
-```console
-tailscale up --client-id=<client-id> --id-token=<identity-token>
-```
+Tailscale Services are generally available, including hosting from `tsnet`.
+Clients accept Service virtual IPs independently of `--accept-routes`, and
+Services are advertised automatically at startup unless explicitly disabled.
+Review route assumptions and duplicate advertisements during migrations.
 
-Or ask a workload identity to generate a token for an audience:
+### Preserve source addresses where required
 
-```console
-tailscale up --audience=<audience>
-```
+Serve and Funnel can prepend a PROXY protocol header so a destination can
+receive the original client's source address and port. Enable it only when
+the destination expects and validates that protocol.
 
-Keep workload identity, OAuth, and auth-key flows distinct in deployment
-configuration. Containers and the Kubernetes Operator have their own support
-and version constraints.
+### Use current relay capabilities
 
-## High-value policy and security behavior
+Peer Relays can advertise static endpoints, discover Amazon EC2 addresses,
+run in Kubernetes, and expose endpoint and traffic metrics. Decide whether
+endpoint discovery or explicit endpoints are authoritative for the
+deployment.
 
-### Grants and routed access
+### Validate exit-node and DNS interactions
 
-Grants and the `via` field are generally available. Use `via` when traffic
-must traverse selected exit nodes, subnet routers, or app connectors. Validate
-generated policy against grants semantics instead of assuming ACL-only syntax.
+`auto:any` follows the recommended exit node as availability and network
+conditions change. DNS nameserver configuration can still send all domains
+to admin-configured resolvers while an exit node is active. Managed clients
+may permit an enforced exit-node choice with user override.
 
-### Encrypted state
+### Test Linux routing health
 
-- Linux supports TPM-backed state with `tailscaled --encrypt-state`.
-- Windows uses the TPM-backed `EncryptState` policy.
-- macOS uses `EncryptState` to put state in Keychain; the App Store client
-  always uses Keychain.
-- Test posture with `tsStateEncrypted` when access depends on encryption at
-  rest.
+Linux reports incorrect IP forwarding for subnet routers and exit nodes as a
+health check. Its firewall setup also uses `src_valid_mark` with `connmark` to
+avoid reverse-path filtering of routed packets. Investigate health warnings
+before changing firewall rules.
 
-### Managed disconnection and exit-node choice
+## Kubernetes and container quick reference
 
-- `tailscale down --reason` records a reason.
-- `ReconnectAfter` limits how long users may remain disconnected on Windows,
-  Android, and macOS where supported.
-- Combine `ExitNode.AllowOverride` with `ExitNodeID=auto:any` on Windows or
-  macOS to require an exit node while permitting user selection.
+### Use ProxyGroups for shared high availability
 
-## High-value Services and routing behavior
+Operator-managed Ingresses and Kubernetes Services can share multiple active
+proxy replicas through a `ProxyGroup`, multiplex applications, and expose
+backends across clusters. Preserve cluster-wide `EndpointSlice` visibility
+when depending on cross-cluster failover.
 
-### Tailscale Services
+### Choose API proxy recording deliberately
 
-Tailscale Services are generally available and can be hosted by `tsnet`.
-Clients accept Service virtual IPs on every platform regardless of
-`--accept-routes`; Operator egress proxies can target those VIPs. A Service
-destination may also be remote.
+The Kubernetes API proxy supports high availability, session recording, and
+audit events. Recording covers exec, attach, and debug sessions; audit logs
+can supplement or replace full recordings. Configure event authorization in
+tailnet policy.
 
-### Preserve client addresses through Serve or Funnel
+### Match Recorder replicas to storage
 
-Serve and Funnel can prepend a PROXY protocol header so the destination sees
-the original client source IP and port. Enable it only when the destination
-expects PROXY protocol.
+A `Recorder` defaults to a single-replica `StatefulSet` with filesystem
+storage. Multiple replicas require an S3 backend. When using AWS IRSA, set
+the generated ServiceAccount name and annotations instead of embedding static
+S3 credentials.
 
-### Linux routers
+### Separate tailnets and namespace authority
 
-Linux reports a health check when IP forwarding is wrong for a subnet router
-or exit node. Its firewall setup also uses `src_valid_mark` with `connmark` so
-reverse-path filtering does not discard routed packets.
+Use `Tailnet` resources for multi-tailnet access and identity configuration,
+and `ProxyGroupPolicy` resources to control which namespaces may create
+ProxyGroups. Reused hostnames are scoped by tailnet, so the same hostname can
+be valid in separate tailnets.
 
-## High-value Kubernetes behavior
+### Verify container compatibility details
 
-### Highly available application proxies
+Container behavior includes HTTP-only Serve configuration, OAuth and workload
+identity authentication, Kubernetes startup-state cleanup, automatic Service
+advertisement, auth keys loaded from files, and fallback to `iptables` on
+hosts without `nftables`. Read the container reference before changing image
+versions or entrypoint variables.
 
-Operator-managed Ingresses and Tailscale Kubernetes Services can share a
-`ProxyGroup` with multiple active replicas, multiplex applications, and expose
-backends across clusters. Cluster-wide `EndpointSlice` watching allows
-failover when one cluster has no healthy backend.
+## CLI and observability quick reference
 
-### Kubernetes API proxy
+### Prefer machine-readable output
 
-Use a `ProxyGroup` of type `kube-apiserver` for a highly available API server
-proxy. Recording covers `kubectl exec`, `kubectl attach`, and `kubectl debug`;
-audit events can be enabled alongside or instead of full recordings.
+Use JSON output for DNS queries and status, and the stable Tailnet Lock JSON
+forms for automation. Use `tailscale wait` before binding dependent resources
+and `tailscale ip --assert` when a script requires one specific node address.
 
-### Recorder storage
+### Inspect the local node directly
 
-Multiple Recorder replicas require S3 storage. A generated Recorder service
-account can use AWS IRSA, avoiding static S3 credentials. Verify the current
-default before relying on an omitted replica or storage field.
+Use `tailscale get`, `tailscale whoami`, and `tailscale service list` for
+preferences, identity, and visible Services. `tailscale status --peers=false`
+also reports the current device name.
 
-### Multi-tailnet and namespace controls
+### Monitor the relevant data plane
 
-Use the `Tailnet` custom resource for multi-tailnet access and
-`ProxyGroupPolicy` to control which namespaces may create ProxyGroups.
-Ingress and egress ProxyGroup pods can request a replacement auth key when
-needed.
-
-## Verification checklist
-
-- Confirm the intended build was actually published for the target platform.
-- Confirm commands cannot stop on an unexpected confirmation prompt.
-- Confirm generated arguments do not repeat flags.
-- Confirm MDM payloads use current policy names and platform scopes.
-- Confirm service advertisement is intentionally automatic or explicitly
-  disabled.
-- Confirm Operator authentication works without an accidentally required OAuth
-  secret.
-- Confirm multi-replica Recorders use S3.
-- Confirm custom DERP certificate and firewall pinning data are current.
-- Confirm parsers consume stable JSON output where one is available.
+Available signals include home-DERP selection, Peer Relay packet and byte
+forwarding, relay endpoint count, Serve traffic for Services, flow-log node
+details, Kubernetes audit events, and Linux kernel audit messages for
+successful Tailscale SSH authentication. Choose the metric or log at the
+layer where failure is expected.

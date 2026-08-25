@@ -10,45 +10,50 @@ metadata:
 
 # AWS SDK Knowledge Patch
 
-Coverage identifiers: `sdk-lifecycle-and-eol`, `shared-defaults-and-runtime-support`, `crypto-auth-and-rust-runtime`, and `service-client-launches`.
+Use this skill when upgrading an AWS SDK or CLI, changing a supported runtime,
+configuring shared SDK behavior, or implementing one of the service APIs in the
+reference index. Identify the language, SDK major version, runtime, service,
+and deployment environment before applying the guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [lifecycle-runtimes-and-packaging.md](references/lifecycle-runtimes-and-packaging.md) | Major-version lifecycle, migrations, .NET collection semantics, Python and Node.js support, JavaScript packaging, removed APIs |
-| [client-configuration-auth-and-retries.md](references/client-configuration-auth-and-retries.md) | Regional STS, 2026 retry behavior, authentication-scheme selection, SigV4a, W3C tracing, CBOR, post-quantum TLS |
-| [compute-deployment-and-networking.md](references/compute-deployment-and-networking.md) | CloudFormation, CodeBuild, EKS, ECS, EC2, Auto Scaling, VPC, Route 53, MSK, ACM, EVS, PCS |
-| [observability-security-and-governance.md](references/observability-security-and-governance.md) | CloudWatch, Config, Inspector, GuardDuty, Resource Explorer, IAM-authenticated OAuth, WAF, Artifact, Resilience Hub |
-| [data-marketplace-and-customer-services.md](references/data-marketplace-and-customer-services.md) | DataZone, Clean Rooms, AppConfig, Connect, OpenSearch, Places, billing, Marketplace, Partner Central, media APIs |
-| [serverless-ai-storage-and-cdk.md](references/serverless-ai-storage-and-cdk.md) | Lambda storage and durable execution, AgentCore, S3 Vectors, CDK Mixins |
+| [lifecycle-runtimes-and-packaging.md](references/lifecycle-runtimes-and-packaging.md) | SDK and tool lifecycle, runtime support, JavaScript packaging, removed clients |
+| [client-configuration-auth-and-retries.md](references/client-configuration-auth-and-retries.md) | STS endpoints, retries, authentication, credentials, checksums, tracing, protocols, TLS |
+| [compute-deployment-and-networking.md](references/compute-deployment-and-networking.md) | CloudFormation, compute, containers, databases, networking, migration, and recovery |
+| [observability-security-and-governance.md](references/observability-security-and-governance.md) | CloudWatch, Config, Inspector, GuardDuty, IAM, WAF, certificates, security, governance |
+| [data-marketplace-and-customer-services.md](references/data-marketplace-and-customer-services.md) | Analytics, data, customer experience, Marketplace, billing, location, and media APIs |
+| [serverless-ai-storage-and-cdk.md](references/serverless-ai-storage-and-cdk.md) | Lambda, AgentCore, Bedrock, SageMaker, vector storage, backups, and CDK Mixins |
 
-## Apply this patch
+## Apply the patch
 
-1. Identify the SDK language, major version, runtime, service client, and deployment environment.
-2. Check lifecycle and runtime support before changing dependencies or build targets.
-3. Check shared endpoint, retry, authentication, and transport defaults before relying on implicit configuration.
-4. Read the task-specific reference before generating service request shapes or enum values.
-5. Preserve explicit retry settings and other intentional compatibility overrides during migrations.
+1. Inspect manifests and lockfiles to identify the exact SDK and runtime line.
+2. Resolve lifecycle, runtime, and packaging requirements before editing code.
+3. Preserve explicit endpoint, retry, authentication, and backoff overrides.
+4. Open the task-specific reference before constructing service request shapes,
+   consuming response fields, or matching enums and errors.
+5. Treat service-side validation changes and removed fields as compatibility
+   work even when no SDK method name changed.
+6. Test generated clients against the selected runtime and the intended Region.
 
-## Breaking changes and required migrations
+## Breaking changes and migrations
 
-### Retired major versions
+### Migrate retired SDK and tool lines
 
-| Line | Lifecycle state | Required action |
-| --- | --- | --- |
-| AWS SDK for .NET v3 | Maintenance began March 1, 2026; support ended June 1, 2026 | Upgrade every `AWSSDK.*` package to 4.0.0 or later together; v3 and v4 packages cannot coexist |
-| AWS SDK for Go v1 | Support ended July 31, 2025 | Perform the one-time source migration to Go v2 |
-| AWS SDK for JavaScript v2 | Support ended September 8, 2025 | Move to modular v3; use the automated migration tool where useful |
-| AWS SDK for Java 1.x | End of support | Move to Java 2.x |
-| AWS Tools for PowerShell 4.x | End of support | Move to PowerShell 5.x |
-| AWS CLI 1.x | Maintenance announced | Prefer CLI 2.x for the current GA line |
+- AWS SDK for .NET v3 reached end of support on June 1, 2026. Upgrade all
+  `AWSSDK.*` packages together to 4.0.0 or later; v3 and v4 packages cannot
+  coexist.
+- AWS Tools for PowerShell v4 reached end of support on June 1, 2026. Move to
+  v5.
+- AWS CLI v1 is in its Maintenance Announcement phase. Prefer CLI v2 for new
+  deployments and upgrades.
 
-Maintenance lines receive only critical bug and security fixes: they do not gain new services, APIs, or Regions. End-of-support lines receive no releases.
+### Handle .NET v4 null collections
 
-### .NET v4 collection semantics
-
-Request and response collections now default to `null`, not empty collections. Null-check before iterating and preserve the distinction between unset and explicitly empty values.
+Request and response collection properties default to `null` in v4 rather
+than to empty collections. Null-check before iteration and preserve the
+difference between an unset collection and an explicitly empty collection.
 
 ```csharp
 if (response.Items is not null)
@@ -57,52 +62,68 @@ if (response.Items is not null)
 }
 ```
 
-`Amazon.AWSConfigs.InitializeCollections = true` temporarily restores v3-style initialization, at the cost of the new semantics and performance benefit.
+During migration only, this switch restores v3-style initialization:
 
-### JavaScript packaging and removed clients
+```csharp
+Amazon.AWSConfigs.InitializeCollections = true;
+```
 
-- IoT Events, IoT Events Data, Panorama, and SimSpace Weaver clients were removed in `2026-06`.
-- Bundler support was removed from `dist-cjs`; configure bundlers to consume `dist-es`.
-- JavaScript v3 ended Node.js 18 and pre-ES2023 support in January 2026. Node.js 20 and pre-ES2024 support are scheduled to end in January 2027.
-- Cloud9's public EC2-environment creation API removed Amazon Linux 2 from accepted AMI options in `2026-07`.
-- Outposts site requests now enforce a stricter `ContactPhoneNumber` pattern; previously accepted values can fail client-side or service validation.
+### Update JavaScript v3 packaging and clients
+
+- Bundlers must consume `dist-es`; bundler support was removed from `dist-cjs`.
+- IoT Events, IoT Events Data, Panorama, and SimSpace Weaver clients were
+  removed in `2026-06`.
+- Node.js 18 and pre-ES2023 support ended in January 2026. Node.js 20 and
+  pre-ES2024 support are scheduled to end in January 2027.
+- Pinning an older release can retain runtime compatibility, but does not
+  retain support, service updates, or fixes.
+
+### Update deprecated or restricted service integrations
+
+- Stop building new Amazon Cloud Directory integrations; the public CLI
+  reference marks the service end-of-support.
+- Chime SDK Voice proxy-session and Voice Connector proxy operations are
+  deprecated.
+- Amazon A2I is in maintenance mode; `StartHumanLoop` rejects accounts that
+  are not recognized as existing customers.
+- Marketplace SaaS metering integrations must use `CustomerAWSAccountId` and
+  `LicenseArn`; new integrations cannot rely on `CustomerIdentifier`.
+- Entity Resolution delete calls now raise a 404 `ResourceNotFoundException`
+  for a missing target. Make idempotent deletion handle that exception.
 
 ## Shared defaults
 
 ### Regional STS endpoints
 
-Since July 31, 2025, Python, PHP, C++, and .NET SDKs and AWS Tools for PowerShell default to Regional STS endpoints. AWS CLI v1 remains the exception among generally available SDKs and CLIs. Do not assume implicit STS traffic routes through `us-east-1`.
+Python, PHP, C++, and .NET SDKs and AWS Tools for PowerShell default to
+Regional STS endpoints. AWS CLI v1 remains the exception among generally
+available SDKs and CLIs. Do not assume implicit STS traffic uses the global
+endpoint or routes through `us-east-1`.
 
 ### Retry rollout
 
-The planned July 2025 default switch was postponed. Supporting releases can opt into updated `standard` and `adaptive` behavior now; it becomes the default in November 2026.
+Supporting releases can opt into the updated `standard` and `adaptive`
+behavior before it becomes the default in November 2026:
 
 ```sh
 export AWS_NEW_RETRIES_2026=true
 ```
 
-- An explicitly selected `legacy` mode remains unchanged.
-- Explicit maximum-attempt and backoff settings remain preserved.
-- Updated standard retries charge 14 quota tokens for transient errors and 5 for throttling against a 500-token budget.
+- Explicit `legacy`, maximum-attempt, and backoff settings remain unchanged.
+- Updated standard retries use a 500-token quota: transient errors cost 14
+  tokens and throttling errors cost 5.
 - Transient errors use a 50 ms base delay; throttling uses 1,000 ms.
-- DynamoDB and DynamoDB Streams use a 25 ms base delay and four attempts by default.
-- Long-polling operations delay before returning an error after quota exhaustion, avoiding hot loops.
-
-Before the rollout, unset `AWS_NEW_RETRIES_2026` to revert. Afterward, set individual retry options or use `AWS_RETRY_MODE=legacy` where supported.
-
-### Runtime cadence
-
-| Runtime | Current boundary |
-| --- | --- |
-| Python for Boto3, Botocore, CLI v1 | Python 3.9 support ended April 2026; 3.10 ends April 2027; 3.11 ends April 2028 |
-| Node.js for JavaScript v3 | Current LTS majors plus the most recently retired major for about eight months |
-| AWS CLI v2 | No local Python dependency |
-
-Pinning an older JavaScript v3 release may retain runtime compatibility, but does not restore support, service updates, or fixes.
+- DynamoDB and DynamoDB Streams use a 25 ms base delay and four attempts.
+- Long-polling operations delay before returning an error after quota
+  exhaustion, preventing hot loops.
+- After rollout, use individual overrides or `AWS_RETRY_MODE=legacy` where
+  supported; the opt-in flag is then ignored.
 
 ## Authentication and transport
 
-Set a priority order for supported authentication schemes in shared configuration:
+### Choose authentication schemes explicitly
+
+Current SDK lines and CLI v2 accept an ordered preference:
 
 ```ini
 [default]
@@ -110,15 +131,42 @@ auth_scheme_preference=sigv4a,sigv4
 sigv4a_signing_region_set=us-east-1,us-west-2
 ```
 
-Equivalent settings are `AWS_AUTH_SCHEME_PREFERENCE`, `AWS_SIGV4A_SIGNING_REGION_SET`, and `aws.authSchemePreference` on the JVM. Valid preferences are `sigv4`, `sigv4a`, and `httpBearerAuth`; if none is available, use the service default. SigV4a signs more slowly but remains valid across the configured Region set.
+The environment equivalents are `AWS_AUTH_SCHEME_PREFERENCE` and
+`AWS_SIGV4A_SIGNING_REGION_SET`; the JVM property is
+`aws.authSchemePreference`. Valid schemes are `sigv4`, `sigv4a`, and
+`httpBearerAuth`. Unsupported preferences fall back to the service default.
 
-JavaScript v3 now propagates W3C trace headers. Mail Manager can negotiate Smithy RPC v2 CBOR or AWS JSON 1.0 and automatically prioritizes the most performant supported protocol.
+### Keep transport dependencies current
 
-For future hybrid ECDH plus ML-KEM negotiation, keep TLS 1.3 enabled and keep SDK, CLI, and TLS dependencies up to date. Existing certificates remain usable for the planned ELB, API Gateway, and CloudFront rollout.
+- JavaScript v3 propagates W3C trace headers.
+- Several clients negotiate Smithy RPC v2 CBOR and prefer the most performant
+  supported protocol. Do not force CBOR for Pricing Calculator or BCM
+  Recommended Actions; their brief support was rolled back.
+- Future hybrid ECDH plus ML-KEM negotiation requires TLS 1.3 or later.
+  Existing certificates remain usable because the change affects session-key
+  negotiation, not certificate format.
 
-## Lambda Durable Functions
+## High-value service guidance
 
-Select durable execution when creating a function; it cannot be enabled later. Supported launch runtimes are Node.js 22 or 24 with JavaScript/TypeScript and Python 3.13 or 3.14. Bundle the durable SDK and publish production functions as versions so suspended executions replay against their starting version.
+### Deployment and containers
+
+- CloudFormation validates `CreateStack` and `UpdateStack` before deployment.
+  Use `DisableValidation` to skip it or `DeploymentConfig` for Express mode.
+- EKS supports version rollback timeout, cancellation, and cancellation
+  details; it also accepts request context for Pod Identity and control-plane
+  component tuning.
+- ECS circuit breakers accept a custom failure threshold and counting
+  mechanism. Express Mode detects CPU architecture automatically.
+- Auto Scaling supports reservations-first distribution and batch instance
+  termination.
+- Network Firewall container-association polling must handle `UPDATING`.
+
+### Lambda durable execution
+
+Choose durable execution when creating the function; it cannot be enabled
+later. Use Node.js 22 or 24 with JavaScript/TypeScript, or Python 3.13 or 3.14.
+Bundle the durable SDK and publish production code as versions so suspended
+executions replay against their starting version.
 
 ```python
 from aws_durable_execution_sdk_python import durable_execution, durable_step
@@ -132,11 +180,17 @@ def lambda_handler(event, context):
     return context.step(work(event["value"]))
 ```
 
-Use `context.wait()` for compute-free suspension, `wait_for_condition()` for polling, and `parallel()` or `map()` for concurrency. Keep retryable work inside steps: an unhandled exception outside a step terminates the execution.
+Use `context.step()` for checkpointed retries, `context.wait()` for
+compute-free suspension, `wait_for_condition()` for polling,
+`create_callback()` for external completion, and `parallel()` or `map()` for
+concurrency. An unhandled exception outside a step terminates the execution.
 
-## S3 Vectors
+### Vector search
 
-Create vector buckets and indexes separately. Match the index dimension to the embedding source, use `float32`, and choose cosine or Euclidean distance.
+For S3 Vectors, create vector buckets and indexes separately, use `float32`,
+match index dimension to the embedding source, and choose cosine or Euclidean
+distance. Each vector supports up to 50 metadata keys, at most 10 of them
+non-filterable, and queries return up to 100 results.
 
 ```sh
 aws s3vectors create-index \
@@ -147,11 +201,14 @@ aws s3vectors create-index \
   --distance-metric "$DISTANCE_METRIC"
 ```
 
-Each vector supports up to 50 metadata keys; up to 10 may be non-filterable. Query filters operate on filterable metadata, while responses can include metadata and distances.
+DynamoDB vector indexes provide approximate-nearest-neighbor search over
+embeddings stored in table items. Choose the storage model before generating
+requests; the S3 Vectors and DynamoDB APIs are distinct.
 
-## AgentCore
+### AgentCore
 
-Wrap any agent framework in `BedrockAgentCoreApp`, then use the starter toolkit for matching local and cloud payload contracts:
+Wrap an agent entry point in `BedrockAgentCoreApp`; local and cloud invocation
+use the same payload contract.
 
 ```sh
 agentcore configure --entrypoint my_agent.py
@@ -161,17 +218,31 @@ agentcore launch
 agentcore status
 ```
 
-At GA, every AgentCore service supports VPC connectivity, PrivateLink, CloudFormation, and tags. Use Memory for short- or long-term state, Identity for workload identities and vaulted credentials, Gateway for MCP access to Smithy, Lambda, or OpenAPI targets, and CloudWatch Transaction Search plus execution-role permissions for trace delivery.
+Use Memory for short- and long-term state, Identity for managed credentials,
+Gateway for MCP access to Smithy, Lambda, or OpenAPI targets, and CloudWatch
+Transaction Search plus execution-role permissions for traces. AgentCore also
+supports private networking, bring-your-own storage, gateway schema pinning,
+rate limits, customer EC2 runtime capacity, evaluators, and payment resources.
 
-## High-impact service changes
+### Observability and governance
 
-- CloudFormation now validates `CreateStack` and `UpdateStack` before deployment; use `DisableValidation` to skip or `DeploymentConfig` for Express mode.
-- EKS supports version rollback, rollback timeouts, cancellation, and cancellation details.
-- ECS deployment circuit breakers accept a custom threshold and failure-counting mechanism.
-- EC2 fleet launch-template overrides now include user data, key name, instance profile, and metadata options.
-- CloudWatch supports Logs-query alarms and wall-clock-aligned daily or weekly windows with time zones.
-- AWS Config can inventory third-party cloud resources; Inspector2 can scan supported Azure resources.
-- AppConfig supports experiments, and experiment APIs can return `ConflictException`.
-- Marketplace metering accepts records for 24 hours after an event while retaining the six-hour billing-cycle grace period.
+- CloudWatch can create alarms from Logs queries and use wall-clock-aligned
+  daily or weekly evaluation windows with optional time zones.
+- Observability Admin manages organization/account telemetry rules and
+  CloudWatch pipelines, including KMS encryption and tag propagation.
+- AWS Config can inventory third-party cloud resources; Inspector2 can scan
+  supported Azure resources.
+- IAM Policy Simulator evaluates SCP conditions and resource scoping and
+  reports explicit SCP denials as `explicitDeny`.
 
-Read the indexed reference for complete request fields, response fields, constraints, and examples before implementing any of these APIs.
+### Data and customer services
+
+- AppConfig supports experiments; Experiment Run APIs may return
+  `ConflictException`.
+- Marketplace `BatchMeterUsage` accepts records for 24 hours after an event,
+  while retaining the six-hour billing-cycle grace period.
+- OpenSearch optimized domains require `EngineMode=OPTIMIZED` with
+  `UseCase=OBSERVABILITY` or `MIXED`.
+- Connect, QuickSight, Clean Rooms, Glue, Redshift, Marketplace, and media
+  clients have substantial new request and response shapes. Read the indexed
+  service reference before implementing them.

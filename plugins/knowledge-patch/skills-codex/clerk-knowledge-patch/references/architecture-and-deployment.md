@@ -2,108 +2,126 @@
 
 ## Choose the integration tier
 
-Every application has the hosted Account Portal enabled by default.
+Every application enables hosted Account Portal by default. Portal pages can be
+customized only through Dashboard settings. Embedded prebuilt components allow
+CSS customization but do not expose their HTML or authentication-flow order.
+The beta Clerk Elements layer permits custom HTML and CSS for sign-in and
+sign-up while retaining control of flow order. Only an API-built custom flow
+controls the authentication logic itself.
 
-| Tier | Custom HTML/CSS | Control of flow order and authentication logic |
-| --- | --- | --- |
-| Account Portal | Dashboard options only | Clerk-owned |
-| Embedded prebuilt components | CSS, but not component HTML | Clerk-owned |
-| Clerk Elements | Custom HTML and CSS for sign-in/sign-up | Clerk-owned |
-| Custom API flow | Application-owned | Application-owned |
+## Link to Account Portal correctly
 
-Clerk Elements provides more visual control, but only a flow built from the API controls authentication logic.
-
-## Account Portal routing
-
-Production pages use `https://accounts.<your-domain>.com`:
-
-- `/sign-in`
-- `/sign-up`
-- `/user`
-- `/organization`
-- `/create-organization`
-
-A directly opened page has no application return target, so include `redirect_url`. The query parameters `email_address`, `phone_number`, `username`, `first_name`, and `last_name` prefill fields.
+Production portal pages are under `https://accounts.<your-domain>.com`, with
+paths including `/sign-in`, `/sign-up`, `/user`, `/organization`, and
+`/create-organization`. Add `redirect_url` to direct links because a directly
+opened portal page has no application return target. The query parameters
+`email_address`, `phone_number`, `username`, `first_name`, and `last_name`
+prefill corresponding fields.
 
 ```text
 https://accounts.example.com/sign-in?redirect_url=https://example.com/dashboard&email_address=user@example.com
 ```
 
-## Frontend and Backend API boundary
+## Keep Frontend and Backend APIs in their lanes
 
-Each application has a dedicated Frontend API (FAPI). Its hostname is encoded in the publishable key after `pk_test_` or `pk_live_`, in base64, with a trailing `$` delimiter.
+Each application has a dedicated Frontend API (FAPI). Its hostname is encoded
+in the publishable key after `pk_test_` or `pk_live_` and before a trailing `$`:
 
 ```ts
 const encoded = publishableKey.replace(/^pk_(?:test|live)_/, '')
 atob(encoded) // "example.accounts.dev$"
 ```
 
-FAPI handles a user's own flows and resources. Administrative operations spanning users belong to the secret-key Backend API. Direct FAPI calls are discouraged; direct Backend API use is supported when an SDK lacks an operation.
+FAPI handles the current user's flows and resources. Administrative multi-user
+work belongs to the secret-key Backend API. Direct FAPI integration is
+discouraged, while direct Backend API calls are a supported option.
 
-The Platform API is a separate server-side surface for workspace resources such as applications, domains, and application transfers. Do not treat these as session-scoped FAPI or ordinary instance-resource Backend API operations.
+The Platform API is a separate server-side surface for workspace resources such
+as Clerk applications, domains, and application transfers. Do not treat those
+operations as session-scoped FAPI calls or ordinary instance-resource Backend
+API calls.
 
-## Production token architecture
+## Understand production cookie topology
 
-The production source of truth is a long-lived `__client` JWT on the FAPI domain. It is `HttpOnly`, `SameSite=Lax`, and contains a client ID plus a rotating anti-fixation token.
+Production authentication uses two different JWTs:
 
-The `__session` JWT is different:
+- `__client` is long-lived, `HttpOnly`, and `SameSite=Lax` on the FAPI domain.
+  It is the source of truth and contains a client ID plus a rotating
+  anti-fixation token.
+- `__session` lasts 60 seconds, is `SameSite=Lax`, is not `HttpOnly`, and lives
+  on the exact application domain. The frontend SDK renews it every 50 seconds
+  through `/client/sessions/<id>/tokens`.
 
-- It lasts 60 seconds.
-- Browser code writes it to the application's exact domain.
-- It is `SameSite=Lax` and intentionally not `HttpOnly`.
-- The frontend SDK renews it every 50 seconds through `/client/sessions/<id>/tokens`.
-- It is deliberately not shared across subdomains. Send it as a bearer token to an API on another subdomain.
+`__session` deliberately does not span subdomains. Send its value as a bearer
+token when an API is on another subdomain.
 
-Development uses `__clerk_db_jwt` instead of this client-token architecture. Application code must not depend on the development-only object.
+## Preserve the server-rendered handshake
 
-## Server-rendered handshake
+An expired token during server rendering produces an authentication state of
+`handshake` and a 307 redirect through FAPI's `/v1/client/handshake`. The browser
+presents `__client`; the response tells the server SDK to set or clear
+`__session`. The payload is carried in the URL during development and in a
+cookie in production. Verify any replacement JWT before treating the request
+as signed in.
 
-If server rendering sees an expired session token, Clerk classifies the request as `handshake` and issues a 307 redirect through FAPI `/v1/client/handshake`. The browser presents `__client`; the response tells the server SDK whether to set or clear `__session`.
+Adapters and proxies must preserve Clerk's context headers so the handshake can
+complete.
 
-The handshake payload travels in the URL during development and in a cookie in production. Any replacement JWT is verified before the request becomes authenticated. Reverse proxies and custom adapters must preserve Clerk's authentication context headers.
+## Set component routing deliberately
 
-## Component routing defaults
+`<SignUp />`, `<SignIn />`, `<UserProfile />`, `<CreateOrganization />`, and
+`<OrganizationProfile />` support `path` and `hash` routing. Path routing is the
+default in Next.js, TanStack React Start, and React Router; other SDKs default to
+hash routing. The same nested step may therefore be
+`/sign-up/verify-email-address` or `/sign-up#verify-email-address`.
 
-`<SignUp />`, `<SignIn />`, `<UserProfile />`, `<CreateOrganization />`, and `<OrganizationProfile />` support `path` and `hash` routing.
+## Use the supported tenant topology
 
-- Next.js, TanStack React Start, and React Router default to path routing.
-- Other SDK integrations default to hash routing.
+Organizations implement a shared-user-pool B2B topology. One account may belong
+to several Organizations and hold a different role in each. Persist the
+Organization ID on application records and apply it to every tenant query.
+Clerk does not provide isolated user pools, domains, branding, policies, and
+limits for every platform customer.
 
-The same nested step may therefore appear as `/sign-up/verify-email-address` or `/sign-up#verify-email-address`.
-
-## Supported tenant topology
-
-Organizations implement a shared user pool: an account may belong to multiple Organizations and have a different Role in each. Store the Organization ID on tenant-owned application data and filter every tenant query by it.
-
-Clerk does not provide a platform topology in which every customer receives an isolated user pool, domain, branding, authentication policy, and limits.
-
-## Development, staging, and previews
+## Separate development, staging, and preview environments
 
 Development instances:
 
-- Are capped at 100 users.
-- Cannot transfer user data to production.
-- May use shared social credentials.
-- Use the development-only client object described above.
+- are capped at 100 users;
+- cannot transfer users to production;
+- may use shared social credentials; and
+- use the development-only `__clerk_db_jwt` instead of production client-token
+  architecture. Application code must not depend on that object.
 
-Clerk supplies Development and Production instances, not a separate Staging instance. Staging normally uses a separate application and domain, often with that application's Production instance; mirror settings manually.
+Clerk provides Development and Production instances only. Staging normally
+uses a separate application and domain, usually that application's Production
+instance, with settings mirrored manually.
 
-A preview that shares production users and configuration must use production keys on another subdomain of the same root domain. Provider-owned preview domains such as `*.vercel.app` can use only development keys. A preview backed by another Clerk application requires a different root domain, not just another subdomain of the production root.
+A preview sharing production users and settings must use production keys on a
+subdomain of the same root domain. Provider-owned preview domains such as
+`*.vercel.app` can use only development keys. A fully independent preview backed
+by another Clerk application needs a different root domain, not another
+subdomain of the production root.
 
-## Environment controls
+## Configure advanced environment controls
 
-- `CLERK_JWT_KEY`: verify session tokens without a network request.
-- `CLERK_ENCRYPTION_KEY`: 128-bit pseudorandom key used by Next.js to propagate dynamic `clerkMiddleware()` keys.
-- `CLERK_FAPI`: override FAPI routing.
-- `CLERK_PROXY_URL`: select a FAPI proxy.
-- `CLERK_JS_URL` and `CLERK_JS_VERSION`: control the hot-loaded browser SDK.
-- Next.js and Vite expose browser values through their `NEXT_PUBLIC_` and `VITE_` variants.
+- `CLERK_JWT_KEY` enables networkless session-token verification.
+- Next.js uses a 128-bit pseudorandom `CLERK_ENCRYPTION_KEY` to propagate
+  dynamic `clerkMiddleware()` keys.
+- `CLERK_FAPI` and `CLERK_PROXY_URL` override FAPI routing.
+- `CLERK_JS_URL` and `CLERK_JS_VERSION` select the hot-loaded browser SDK.
+  Browser-visible Next.js and Vite settings use `NEXT_PUBLIC_` and `VITE_`
+  prefixes respectively.
 
-`CLERK_JS` is deprecated; use `CLERK_JS_URL`. The old `*_AFTER_SIGN_IN_URL` and `*_AFTER_SIGN_UP_URL` variables are also deprecated. Fallback and force redirect variables take priority.
+`CLERK_JS` is deprecated; use `CLERK_JS_URL`. Old
+`*_AFTER_SIGN_IN_URL`/`*_AFTER_SIGN_UP_URL` settings are also deprecated, and
+fallback or force redirect settings take priority.
 
-## Astro server boundaries
+## Use Astro endpoint locals safely
 
-Astro endpoints read authentication synchronously from `locals.auth()`, fetch the Backend User with `await locals.currentUser()`, and obtain the Backend API client with `clerkClient(context)`.
+Astro endpoints obtain request authentication synchronously from
+`locals.auth()`, fetch the Backend User with `await locals.currentUser()`, and
+create a Backend API client with `clerkClient(context)`.
 
 ```ts
 export async function GET({ locals }) {
@@ -113,26 +131,24 @@ export async function GET({ locals }) {
 }
 ```
 
-Do not serialize the complete result of `currentUser()` because it contains `privateMetadata`.
+Do not serialize the complete result of `currentUser()` because it contains
+`privateMetadata`.
 
-For Astro `server` output, a page that opts into prerendering with `export const prerender = true` must set `isStatic={true}` on Clerk control components. For `hybrid` output, a page that opts out with `prerender = false` must use `isStatic={false}` so controls read server-side `locals`.
+## Control Next.js rendering boundaries
 
-Static controls emit a `clerk-*` custom-element wrapper. Put flex/grid layout classes on the Clerk control when the wrapper itself must participate in layout.
+Calling server-side `auth()` makes the entire route dynamic. Client `useAuth()`
+remains statically rendered by default. To expose client auth data on the first
+render, place `<ClerkProvider dynamic>` at the smallest useful layout, optionally
+within `<Suspense>` for partial prerendering, instead of making the root provider
+dynamic.
 
-```astro
----
-export const prerender = true
----
-<Show when="signed-in" isStatic={true} class="flex">Signed in</Show>
-```
+## Augment TypeScript authorization types
 
-## Next.js rendering boundaries
-
-Calling server-side `auth()` opts the complete route into dynamic rendering. Client-side `useAuth()` remains statically rendered by default. To make auth data available on first render, scope `<ClerkProvider dynamic>` to the smallest useful layout, optionally beneath `<Suspense>` for partial prerendering; avoid making the root provider dynamic unless the entire tree needs it.
-
-## TypeScript authorization augmentation
-
-Application claims, metadata, Roles, and Permissions are typed through global interfaces such as `CustomJwtSessionClaims` and `ClerkAuthorization`. Custom Permissions merge with the defaults, but a custom `role` union replaces the default `org:admin | org:member` union. Retain those values explicitly when still used.
+Application claims, metadata, roles, and permissions are typed through global
+interfaces such as `CustomJwtSessionClaims` and `ClerkAuthorization`. Custom
+permissions merge with system permissions, but declaring a custom `role` union
+replaces the defaults. Retain `org:admin` and `org:member` explicitly when the
+application still uses them.
 
 ```ts
 export {}
@@ -144,16 +160,20 @@ declare global {
 }
 ```
 
-## Dashboard workspace access
+## Respect Dashboard workspace roles
 
-Hobby and Pro workspaces have Owner and Viewer. Business adds Admin, Developer, and Support.
+Hobby and Pro workspaces expose Owner and Viewer. Business also has Admin,
+Developer, and Support:
 
-- Admin can manage instances, billing, secrets, users, and impersonation, but cannot delete or transfer applications.
-- Developer can change configuration and API keys and can impersonate only in development.
-- Support can impersonate and manage restrictions but cannot change configuration.
+- Admin manages instances, billing, secrets, users, and impersonation, but
+  cannot delete or transfer applications.
+- Developer changes configuration and API keys and may impersonate only in
+  development.
+- Support impersonates and manages restrictions without configuration access.
 - Viewer cannot read users or billing.
 
-## Application transfers
+## Transfer application ownership safely
 
-Moving an application between workspaces preserves API keys, settings, domains, and operation; only ownership changes. An application with a paid subscription can move only to a workspace that already has active billing information.
-
+Moving an application between workspaces preserves operation, keys, settings,
+and domains; only ownership changes. An application with a paid subscription
+can move only to a workspace that already has active billing information.

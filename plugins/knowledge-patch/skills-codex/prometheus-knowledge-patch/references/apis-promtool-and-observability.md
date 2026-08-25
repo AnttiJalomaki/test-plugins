@@ -1,179 +1,194 @@
-# HTTP APIs, promtool, and observability
+# APIs, Promtool, and Observability
 
-Use this reference when maintaining API clients, command pipelines, rule tests,
-feature detection, dashboards, or self-monitoring.
+Use this reference for HTTP API contracts, `promtool` behavior, query
+statistics, built-in diagnostics, and self-monitoring changes.
 
-## HTTP API response changes
+## HTTP API contracts
 
-### Query and rules APIs
+### Paginate rule groups defensively (3.1.0)
 
-The `/query` and `/query_range` endpoints accept a `limit` parameter from
-3.2.0:
+The rules API can paginate groups. Its `groupNextToken` field is present even
+when empty, so clients must accept the field whether or not another page exists.
+
+### Limit instant and range-query results (3.2.0)
+
+`/query` and `/query_range` accept `limit`:
 
 ```text
 /query?limit=100
 /query_range?limit=100
 ```
 
-The rules API can paginate rule groups from 3.1.0. Its `groupNextToken` field is
-present even when empty, so clients must accept it whether or not another page
-exists.
+### Read added status fields (3.2.0)
 
-### Status APIs
+The `/status` response includes `Node` and `ServerTime`.
 
-The `/status` response includes `Node` and `ServerTime` from 3.2.0.
+### Bound TSDB status processing (3.9.0)
 
-The loaded-block metadata endpoint `/v1/status/tsdb/blocks` is available from
-3.6.0.
+The TSDB status endpoint returns at most 10,000 sets of statistics. Clients must
+not assume its statistics are exhaustive or unbounded.
 
-From 3.9.0, the TSDB status endpoint returns at most 10,000 sets of statistics.
-Clients must not assume the response is an unlimited inventory.
+### Discover enabled server features (3.9.0)
 
-`/api/v1/status/self_metrics` returns the current JSON state of the server's
-own metrics from 3.12.0.
+Use `/api/v1/features` to inspect supported features rather than inferring them
+only from the version.
 
-### Feature and schema discovery
+### Consume the HTTP OpenAPI document (3.10.0)
 
-Use `/api/v1/features` from 3.9.0 to discover server capabilities instead of
-inferring them from the version.
+`/api/v1/openapi.yaml` serves an OpenAPI 3.2 contract for the HTTP API.
 
-Prometheus serves an OpenAPI 3.2 HTTP API document at
-`/api/v1/openapi.yaml` from 3.10.0.
+### Inspect self-metrics as JSON (3.12.0)
 
-The experimental search API added in 3.13.0 searches metric names, label names,
-and label values.
+`/api/v1/status/self_metrics` returns the current state of Prometheus's own
+metrics as JSON.
 
-With `search-api`, `--web.search.max-limit` limits each search request
-(`feature-flags`). Its default is `10000`; a request above it gets HTTP 400.
-The ordinary response default is `100` and is clamped to a lower operator cap.
-A cap of `0` permits unbounded requests and is unsafe on untrusted endpoints.
+### Parse duration expressions from the AST API (3.12.0)
 
-## Query statistics
+`/parse_ast` responses include duration expressions.
 
-From 3.13.0, query statistics expose `samplesRead`. They also expose
-`samplesReadPerStep` when `stats=all` and `promql-per-step-stats` are enabled.
-These fields measure storage I/O.
+### Use experimental metric and label search (3.13.0)
 
-Do not confuse them with `totalQueryableSamples`, which counts samples loaded
-into the evaluator and can count one reused sample in several range-vector
-windows. Use `prometheus_engine_query_samples_read_total` for the engine-wide
-storage-read counter.
+Experimental HTTP endpoints search metric names, label names, and label values.
 
-The same release corrects query accounting:
+### Cap search request limits (feature-flags)
 
-- range subqueries stop at the parent's last actual step when query end is not
-  step-aligned, avoiding inflated `peakSamples`, `query.max-samples`, and
-  storage reads;
-- an `@`-modified range beneath an at-modifier-unsafe function counts
-  `totalQueryableSamples` correctly after the first step.
+With `search-api`, `--web.search.max-limit` caps each search endpoint's
+requested `limit` and defaults to `10000`; excess requests get HTTP 400. The
+ordinary response default of `100` is clamped to a smaller operator cap.
+Setting the cap to `0` allows unbounded requests and is unsafe on untrusted
+endpoints.
 
-## Debug and operational endpoints
+## Query statistics and diagnostics
 
-Wall-time profiling is available at `/debug/pprof/fgprof` from 3.10.0.
+### Profile wall time on demand (3.10.0)
 
-The Status UI can delete time series and clean tombstones from 3.12.0.
+Use `/debug/pprof/fgprof` for web-exposed wall-time profiling.
 
-Prometheus 3.13.0 serves embedded third-party npm licenses at
-`/assets/third-party-licenses.txt`; images and tarballs no longer include the
-former `npm_licenses.tar.bz2` archive.
+### Correlate query logs with traces (3.11.0)
 
-## promtool configuration and linting
+When tracing is enabled, query-log entries include `traceID` and `spanID`.
 
-Promtool adds the `too-long-scrape-interval` lint from 3.2.0.
+### Distinguish storage reads from evaluator loads (3.13.0)
 
-Use `--ignore-unknown-fields` from 3.2.0 when fields unknown to the installed
-promtool should not fail validation.
+Query statistics expose `samplesRead`; with `stats=all` and
+`promql-per-step-stats`, they also expose `samplesReadPerStep`. These count
+storage I/O. `totalQueryableSamples` counts evaluator loads and can count a
+reused sample in multiple range windows. The engine-wide storage-read counter
+is `prometheus_engine_query_samples_read_total`.
 
-Promtool accepts PromQL feature flags from 3.4.0 so offline validation can use
-feature-gated syntax. From 3.10.0 it understands
-`promql-duration-expr` and `promql-extended-range-selectors`.
+Range subqueries stop at the parent's last actual step when the query end is
+not step-aligned, preventing inflated `peakSamples`, `query.max-samples`
+enforcement, and reads. An `@`-modified range under an at-modifier-unsafe
+function also counts `totalQueryableSamples` correctly after the first step.
 
-Relative paths inside the file supplied to `--http.config.file` resolve from
-that file's directory from 3.13.0, not from its parent directory. Adjust paths
-that depended on the previous extra parent traversal.
+### Restrict accepted statistics values (3.13.2-3.14.0)
 
-## promtool data commands
+For `/api/v1/query` and `/api/v1/query_range`, `stats` values other than `true`
+and `all` are deprecated. They still enable basic statistics but return a
+warning and will be rejected in the next major release.
+
+## Notification and rule self-monitoring
+
+### Count failed alerts, not batches (3.1.0)
+
+`prometheus_notifications_errors_total` increments by the number of affected
+alerts rather than once per failed notification batch. Update alerts and
+dashboards that interpreted each increment as one batch.
+
+### Monitor rule evaluation and Go mutex wait (3.1.0)
+
+Prometheus exports `rule_group_last_rule_duration_sum_seconds` and
+`go_sync_mutex_wait_total_seconds_total`.
+
+### Customize the mixin cluster label (3.3.0)
+
+Set the Prometheus mixin's `clusterLabel` when `cluster` is not the desired
+label name.
+
+### Bound Alertmanager notification batches (3.4.0)
+
+Use `--alertmanager.notification-batch-size` to cap a notification batch.
+
+### Account for Alertmanager metric dimensions (3.10.0)
+
+`prometheus_notifications_dropped_total`,
+`prometheus_notifications_queue_capacity`, and
+`prometheus_notifications_queue_length` have an `alertmanager` label. Queries
+that expected one unlabeled aggregate must aggregate or filter the new
+dimension.
+
+### Clean stale rule metrics on reload (3.13.2-3.14.0)
+
+Removing or renaming a rule group removes its stale
+`rule_group_last_rule_duration_sum_seconds` and
+`rule_group_last_restore_duration_seconds` series instead of leaking two series
+per reload.
+
+## Promtool input, output, and configuration
+
+### Lint long scrape intervals (3.2.0)
+
+Use the `too-long-scrape-interval` lint option to identify excessively long
+scrape intervals.
+
+### Ignore unsupported fields deliberately (3.2.0)
+
+`promtool` accepts `--ignore-unknown-fields` when unrecognized configuration
+fields should not fail validation.
+
+### Pipe OpenMetrics into block creation (3.3.0)
 
 `promtool tsdb create-blocks-from openmetrics` accepts OpenMetrics input from a
-pipe from 3.3.0.
+pipe.
 
-`promtool tsdb dump` supports a labels-only JSON format from 3.9.0:
+### Validate gated PromQL syntax (3.4.0)
 
-```text
-promtool tsdb dump --format seriesjson
-```
+`promtool` supports PromQL feature flags so offline checks can parse the same
+gated syntax as the server.
 
-`promtool push metrics` can send Remote Write 2.0 messages from 3.8.0 by
-selecting `--protobuf_message`.
+### Use fuzzy rule-test comparisons (3.5.0)
 
-`promtool query instant` accepts `--header` from 3.12.0, matching the range
-query command.
-
-## Rule and PromQL tests
-
-Rule unit tests accept fuzzy float64 comparison from 3.5.0:
+Rule unit tests can relax exact float64 matching:
 
 ```yaml
 fuzzy_compare: true
 ```
 
-They accept `start_timestamp` from 3.9.0 for time-sensitive tests. PromQL test
-`load` data accepts `@st` annotations for individual sample start timestamps
-from 3.12.0.
+### Set explicit rule-test start times (3.9.0)
 
-## Output streams
+Rule-unit-test definitions accept `start_timestamp` for time-sensitive cases.
 
-Promtool sends diagnostic/debug output to stderr from 3.11.0, preserving stdout
-for the primary result. Pipelines that merged or parsed both streams need to
-separate them.
+### Push Remote Write 2 messages (3.8.0)
 
-## Self-monitoring metrics
+`promtool push metrics` selects Remote Write 2 with `--protobuf_message`.
 
-### Rules and Go runtime
+### Parse gated duration and range syntax (3.10.0)
 
-Prometheus exports these metrics from 3.1.0:
+Promtool understands syntax associated with `promql-duration-expr` and
+`promql-extended-range-selectors` when the matching features are supplied.
 
-- `rule_group_last_rule_duration_sum_seconds`, the total duration of rule-group
-  evaluation;
-- `go_sync_mutex_wait_total_seconds_total`, Go mutex wait time.
+### Keep diagnostic output off stdout (3.11.0)
 
-### TSDB and histograms
+Promtool writes debug diagnostics to stderr, leaving stdout available for tool
+output. Adjust pipelines that merged or parsed both streams.
 
-Use `prometheus_tsdb_wal_replay_unknown_refs_total` and
-`prometheus_tsdb_wbl_replay_unknown_refs_total` from 3.4.0 for unknown series
-references during WAL/WBL replay.
+### Add headers to instant queries (3.12.0)
 
-Use `prometheus_tsdb_head_stale_series` from 3.6.0 for stale series in Head.
+`promtool query instant` accepts `--header`, matching `promtool query range`.
 
-Use `prometheus_tsdb_sample_ooo_delta` from 3.9.0 for the out-of-order distance
-of accepted and rejected samples.
+### Resolve HTTP-config paths from the config directory (3.13.0)
 
-PromQL, rule, service-discovery, and scrape instrumentation include native
-histograms alongside summaries from 3.9.0. Notification latency adds
-`prometheus_notifications_latency_histogram_seconds`.
+Relative paths inside the file passed to `--http.config.file` resolve from that
+file's directory, not its parent. Adjust configurations that depended on the
+old extra parent traversal.
 
-### Service discovery
+### Override the remote-write push path (3.13.2-3.14.0)
 
-Most `prometheus_sd_refresh` metrics include a `config` label with the job name
-from 3.9.0.
+`promtool push metrics` accepts `--remote-write.path` for backends that do not
+use the default endpoint.
 
-Use `prometheus_sd_last_update_timestamp_seconds` from 3.11.0 for the last
-update delivered to discovery consumers.
+### Validate fill modifiers (3.13.2-3.14.0)
 
-Per-job `prometheus_sd_refresh*` and
-`prometheus_sd_discovered_targets` series disappear when their scrape job is
-removed from 3.12.0.
-
-### Remote write and notifications
-
-Remote-write metric replacements are listed in
-[Remote read, remote write, and authentication](remote-io-and-auth.md).
-
-From 3.10.0, notification dropped, queue capacity, and queue length metrics have
-an `alertmanager` label. `prometheus_notifications_errors_total` counts
-affected alerts rather than failed batches from 3.1.0.
-
-## Mixin configuration
-
-The Prometheus mixin's `cluster` label is configurable through `clusterLabel`
-from 3.3.0.
+`promtool check rules` accepts
+`--enable-feature=promql-binop-fill-modifiers` so it can validate rules using
+`fill()`, `fill_left()`, and `fill_right()`.

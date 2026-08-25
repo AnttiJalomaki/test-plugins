@@ -1,52 +1,47 @@
 # Data Loading and Rendering
 
-## Contents
+## Single Fetch and returned values
 
-- [Loader and action return values](#loader-and-action-return-values)
-- [Server and client loaders](#server-and-client-loaders)
-- [Revalidation](#revalidation)
-- [Awaitable router operations](#awaitable-router-operations)
-- [Fetchers](#fetchers)
-- [Custom data strategies](#custom-data-strategies)
-- [Navigation and transition state](#navigation-and-transition-state)
-- [Error and match rendering behavior](#error-and-match-rendering-behavior)
-- [Prerender execution](#prerender-execution)
+### Direct values and promises (`7.0.0`)
 
-## Loader and action return values
-
-### Return values directly
-
-The `json()` and `defer()` helpers, deferred-data types and symbols, and the old multipart
-helpers `unstable_composeUploadHandlers`, `unstable_createMemoryUploadHandler`, and
-`unstable_parseMultipartFormData` are removed. With Single Fetch, return values and promises
-directly. Use `Response.json()` only when response semantics are required. Loaders and actions
-may return `undefined`.
+`json()`, `defer()`, and deferred-data symbols are removed. Under Single Fetch, return
+serializable values and promises directly; use `Response.json()` only for an actual
+response. Loaders and actions may return `undefined`.
 
 ```ts
 export function loader() {
-  return {
-    profile: getProfile(),
-    report: loadReport(),
-  };
+  return { report: loadReport() };
 }
 ```
 
-Single Fetch throws unwrapped redirect responses, matching the behavior before Single Fetch.
-Redirects are excluded from loader-data inference, so they do not pollute the successful data
-shape.
+Former v6 `v7_*` and Remix v2 `v3_*` behaviors are mandatory in v7: relative splats,
+transitions, fetcher persistence, normalized form methods, partial hydration, action
+revalidation, Single Fetch, lazy route discovery, abort reasons, and dependency
+optimization. Remove the old flags. `<RouterProvider fallbackElement>` is gone; put
+`hydrateFallbackElement`/`HydrateFallback` on root. During partial hydration the initial
+navigation remains `idle`.
 
-Framework loader serialization supports values beyond JSON primitives, including `Date`, `Map`,
-and `Set`. Server response typing preserves `ReadonlyMap` and `ReadonlySet` rather than widening
-them to mutable collections. Libraries can register additional turbo-stream-supported values
-with the provisional `unstable_SerializesTo` brand type.
+### Redirect and inference behavior (`7.1.0`)
 
-## Server and client loaders
+Single Fetch throws redirects unwrapped, as before Single Fetch. Redirect responses are
+excluded from loader-data inference and do not widen the data shape. Replace the removed
+`ServerRouter abortDelay` with an `entry.server` `streamTimeout` export.
 
-### Combine both sources under SSR
+### Rich values and type registration
 
-When a route exports both functions, `loader` provides the initial server/prerender value and
-`clientLoader` handles later browser navigations. The client loader can call `serverLoader()`
-and add client-only state.
+Framework loaders serialize and reconstruct values beyond JSON primitives, including
+`Map`, `Set`, and `Date` (`framework-mode`). Server response types preserve
+`ReadonlyMap` and `ReadonlySet` rather than widening them (`7.8.0`).
+
+For libraries, `unstable_SerializesTo` can register types understood by React Router's
+`turbo-stream` serialization (`7.2.0`). Treat the brand as unstable in that release.
+
+## Server and client loaders/actions
+
+### Combining both loaders (`framework-mode`)
+
+With SSR, `loader` provides the document/prerender value and `clientLoader` handles later
+browser navigation. A client loader can call `serverLoader()` and merge both sources.
 
 ```tsx
 import type { Route } from "./+types/profile";
@@ -54,179 +49,169 @@ import type { Route } from "./+types/profile";
 export async function loader() {
   return getServerProfile();
 }
-
 export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
   return { ...(await serverLoader()), theme: getLocalTheme() };
 }
-
 clientLoader.hydrate = true as const;
-
-export function HydrateFallback() {
-  return <p>Loading…</p>;
-}
+export function HydrateFallback() { return <p>Loading…</p>; }
 ```
 
-`clientLoader.hydrate = true as const` runs the client loader before initial hydration. A route
-with only a `clientLoader` receives this behavior implicitly; export `HydrateFallback` for the
-interim UI.
-
-If both loaders exist and hydration is enabled without a fallback, the server renders the route
-component while the client loader runs. Its first result must match the server loader data or
-hydration will mismatch. A client loader that only primes a cache should return
-`serverLoader()` on that initial run.
-
-For a purely static SPA build, server loader constraints depend on prerender configuration:
-without configured paths only the root loader runs at build time; a configured path may run its
-matched loaders. Dynamic fallback navigation needs a `clientLoader` because no server loader can
-revalidate there.
-
-### Wrap server mutations from the client
-
-In the browser, `clientAction` takes precedence over a route's `action`, but it receives
-`serverAction()` so client work can wrap the server mutation.
+`clientAction` takes precedence over `action` in the browser but may call
+`serverAction()` to wrap the server mutation with client work.
 
 ```ts
-export async function action() {
-  return updateOnServer();
-}
-
 export async function clientAction({ serverAction }: Route.ClientActionArgs) {
   invalidateClientCache();
   return serverAction();
 }
 ```
 
-## Revalidation
+### Hydrating client loaders (`data-loading-and-rendering`)
 
-### Mode defaults
+A route with `clientLoader` but no `loader` implicitly hydrates the client loader. Export
+`HydrateFallback` while that first browser-only load runs.
 
-Framework Mode with SSR revalidates loaders after every navigation and form submission. Data
-Mode does not, and SPA Mode follows Data Mode because it has no server loaders during navigation.
-Use a route's `shouldRevalidate` to make the final route-level decision.
+When both loaders exist and `clientLoader.hydrate = true`, omitting a fallback renders the
+route component on the server while the client loader runs during hydration. Its first
+result must equal server loader data or hydration will mismatch; cache-priming code should
+return `serverLoader()` on that pass.
 
-After an action returns a 4xx or 5xx response, Framework Mode supplies
-`defaultShouldRevalidate: false`. Code that returns the default no longer causes the older
-unintended revalidation.
+### SPA build-time loader rules (`7.2.0`)
 
-Call sites including `Form`, `submit`, `fetcher.Form`, `fetcher.submit`, `Link`, `navigate`, and
-`setSearchParams` accept `defaultShouldRevalidate`. Set it to `false` to make that call opt out
-of the standard default; each route's `shouldRevalidate` still receives the value and has the
-final say. The property was initially named `unstable_defaultShouldRevalidate`.
+With `ssr: false`, root may have a build-time `loader`. Without prerender, other loaders
+are forbidden; configured prerender paths may run their matched loaders. `headers` and
+`action` remain unavailable, and non-prerendered dynamic paths need `clientLoader`.
+`Route.HydrateFallbackProps.loaderData` is optional while child routes resolve.
 
-```tsx
-<Form method="post" defaultShouldRevalidate={false} />
-```
+## Revalidation and data strategies
 
-```ts
-navigate("?analytics-param=1", { defaultShouldRevalidate: false });
-```
+### Framework defaults (`framework-mode`)
 
-When this default is false, parent routes without their own `shouldRevalidate` are excluded from
-the Single Fetch request for new child-route data.
-
-An RSC server action can opt out of revalidation by including a hidden form input named
-`$SKIP_REVALIDATION`.
-
-## Awaitable router operations
-
-The operations returned by `useNavigate()`, `useSubmit()`, `useFetcher().load`,
-`useFetcher().submit`, and `useRevalidator().revalidate()` expose their underlying promises.
-Await them when subsequent work depends on completion.
+SSR Framework Mode revalidates route loaders after every navigation and form submission,
+unlike Data Mode. Override per route with `shouldRevalidate`. SPA Mode has no server
+loaders on navigation and therefore behaves like Data Mode.
 
 ```ts
-await navigate("/account");
-await submit(formData, { method: "post" });
-await fetcher.load("/resource");
-await revalidator.revalidate();
+export function shouldRevalidate() {
+  return false;
+}
 ```
 
-The navigation promise also tracks the full duration of `popstate`/POP history traversal in
-Framework and Data Mode:
+After an action returns a 4xx or 5xx, Framework Mode supplies
+`defaultShouldRevalidate: false` from `7.10.0`; overrides that return the default no
+longer cause unintended error revalidation.
+
+`Form`, `submit`, `fetcher.Form`, `fetcher.submit`, `Link`, `navigate`, and
+`setSearchParams` gained the provisional `unstable_defaultShouldRevalidate` in `7.11.0`.
+Set it false to opt out at the call site, while route `shouldRevalidate` retains final say.
+The option stabilizes as `defaultShouldRevalidate` in `7.15.0`; when false, parent routes
+without their own `shouldRevalidate` are excluded from the Single Fetch request for new
+child data.
+
+### Custom `dataStrategy`
+
+`unstable_dataStrategy` stabilized as `dataStrategy` in `7.0.0`. In `7.10.0`, rename
+`match.unstable_shouldCallHandler()` and `match.unstable_shouldRevalidateArgs` to
+`match.shouldCallHandler()` and `match.shouldRevalidateArgs`; `match.shouldLoad` is
+deprecated. From `7.11.0`, an insufficient custom result set produces errors for routes
+whose results are missing instead of leaving them unavailable.
+
+## Fetchers, navigation, and search parameters
+
+### Await operations (`7.0.0`)
+
+`useNavigate()`, `useSubmit()`, `fetcher.load`, `fetcher.submit`, and
+`revalidator.revalidate()` expose their completion promises. From `7.10.0`, navigate's
+promise covers the full `popstate` navigation, so back/forward travel can be awaited.
 
 ```ts
 await navigate(-1);
+await fetcher.submit(formData, { method: "post" });
 ```
 
-## Fetchers
+### Fetcher lifecycle
 
-Use `fetcher.reset()` to return a fetcher to its initial idle state. The provisional spelling
-was `fetcher.unstable_reset()`.
+`fetcher.unstable_reset()` resets to the initial `idle` state in `7.9.0`; it becomes
+`fetcher.reset()` in `7.10.0`. From `7.15.0`, `useFetchers()` preserves array identity
+until the fetcher collection actually changes, making memo/effect dependencies stable.
 
-```tsx
-const fetcher = useFetcher();
-<button onClick={() => fetcher.reset()}>Reset</button>;
-```
+`patchRoutesOnNavigation` receives `fetcherKey` in `7.3.0`; from `7.7.0`, fetcher-triggered
+callbacks receive a `path` without search parameters.
 
-`useFetchers()` keeps the returned array identity stable until its fetchers change, so effects
-and memoization do not rerun because of a newly allocated but equivalent snapshot.
+### Search-parameter isolation (`7.7.0`)
 
-For fetcher-triggered route discovery, `patchRoutesOnNavigation` receives the originating
-`fetcherKey`; its `path` contains only the pathname, not search parameters.
+The updater passed to `setSearchParams` receives a copy of the active
+`URLSearchParams`. Mutating it cannot alter router state before navigation succeeds, so a
+blocked navigation no longer desynchronizes it from `useLocation().search`.
 
-## Custom data strategies
+## Pending state and React transitions
 
-Use `match.shouldCallHandler()` and `match.shouldRevalidateArgs` in a custom `dataStrategy`.
-Their provisional names were `unstable_shouldCallHandler()` and
-`unstable_shouldRevalidateArgs`. The less capable `match.shouldLoad` is deprecated.
+### Transition controls (`7.10.0`)
 
-A custom strategy that returns too few results now produces explicit errors for routes without
-a result rather than leaving those routes in an indeterminate missing-result state.
-
-Client middleware receives the inner data-strategy results on the way back up the chain, which
-allows post-processing. It also runs on client navigations that have no loaders.
-
-## Navigation and transition state
-
-`useNavigation()` has a discriminated union for `idle`, `loading`, and `submitting`; checking
-`navigation.state` narrows the fields available in that state.
-
-`unstable_useRouterState()` consolidates an always-present `active` snapshot and an optional
-`pending` snapshot. Each contains location, search parameters, params, matches, navigation
-type/state, and submission data. It works only with Framework, Data, and RSC routers and throws
-without a data router.
-
-```tsx
-const { active, pending } = unstable_useRouterState();
-const location = pending?.location ?? active.location;
-```
-
-Transition controls are mode-specific. In Framework and Data Mode, leaving
-`unstable_transition` unset on `HydratedRouter` or `RouterProvider` preserves the normal
-`React.startTransition` wrapping. Setting it to `true` additionally wraps `Link` and `Form`
-navigations and exposes optimistic navigation/fetcher state through `React.useOptimistic`, which
-requires React 19. `false` disables transition and optimistic handling. Declarative Mode exposes
-the transition-only `useTransitions` prop on `BrowserRouter`; this was originally
-`unstable_useTransitions`.
+In Framework/Data Mode, leaving `unstable_transition` unset on `HydratedRouter` or
+`RouterProvider` preserves wrapping state updates in `React.startTransition`. `true` also
+wraps `Link`/`Form` navigation and uses React 19 `useOptimistic` for optimistic navigation
+and fetchers; `false` disables both. Declarative Mode offers transition-only
+`unstable_useTransitions` on `BrowserRouter`; that prop becomes `useTransitions` in
+`7.15.0`.
 
 ```tsx
 <RouterProvider router={router} unstable_transition={true} />
 <BrowserRouter useTransitions={false}>{children}</BrowserRouter>
 ```
 
-The updater callback passed to `setSearchParams` receives a copy of the current
-`URLSearchParams`. Mutating it cannot modify the router's internal instance before a navigation
-succeeds, so a blocked navigation no longer desynchronizes it from `useLocation().search`.
+### Router snapshots (`7.15.0`)
 
-## Error and match rendering behavior
+`unstable_useRouterState()` returns an always-present `active` snapshot and a `pending`
+snapshot during navigation. Each collects location, search params, params, matches,
+navigation type/state, and submission data. It works only in Framework, Data, and RSC
+modes and throws without a data router.
 
-SPA Mode reports synchronous initial-loader failures through `RouterProvider.onError`, allowing
-central reporting to cover initial rendering.
+```tsx
+const { active, pending } = unstable_useRouterState();
+const location = pending?.location ?? active.location;
+```
 
-Match-level loader data may be `undefined` while an error boundary renders, including when an
-earlier route loader failed. Guard `loaderData` access. `Route.MetaArgs.loaderData` is optional
-only when that route exports an `ErrorBoundary`; `Route.MetaArgs.data` also became possibly
-undefined before its later removal.
+`useNavigation()` has a properly discriminated `idle`/`loading`/`submitting` union from
+`7.16.0`, so testing `state` narrows state-specific fields.
 
-`<RouterProvider fallbackElement>` is removed. For partial hydration, put
-`hydrateFallbackElement` or `HydrateFallback` on the root route. Initial navigation remains
-`idle` while the fallback renders.
+## Prerendering and discovery
 
-## Prerender execution
+### Paths and output (`7.0.0`)
 
-`prerender: true` builds every static route but cannot invent parameter values. A callback or
-explicit list can add dynamic paths and resource routes. Set `prerender.concurrency` to perform
-build-time renders concurrently; the original key was `prerender.unstable_concurrency`.
+The Vite `prerender` callback emits `.html` and `.data` for chosen paths, including
+resource routes. `@react-router/serve` serves `.data` as `text/x-turbo`; output outside
+the asset directory has no explicit cache policy.
 
-Generated `.html` and `.data` files have distinct server behavior: `@react-router/serve` assigns
-`.data` the `text/x-turbo` content type, and prerendered files outside the asset directory have
-no automatic cache policy.
+`prerender: true` builds every static route from `routes.ts`, but parameterized routes
+still need explicit path values (`data-loading-and-rendering`). With `ssr: false`, whether
+`/` is included controls if `index.html` is generic or root-specific and whether
+`__spa-fallback.html` is emitted (`7.2.0`).
+
+Prerendering gained `prerender.unstable_concurrency` in `7.9.0`, renamed to
+`prerender.concurrency` in `7.15.0`. Multiple server bundles can be prerendered with the
+v8 Vite Environment API in `7.14.0`.
+
+### Link-driven route discovery (`data-loading-and-rendering`)
+
+Lazy discovery initially ships matched routes, batches rendered links into one manifest
+request, and patches routes before navigation. A faster click still works after awaiting
+discovery. Each route is fetched only once per session.
+
+## Route components and test rendering
+
+`createRoutesStub` passes route component props, including `loaderData`, from `7.6.0`, so
+tests can use prop-oriented route components directly.
+
+```tsx
+const RoutesStub = createRoutesStub([{
+  path: "/",
+  loader: () => ({ message: "hello" }),
+  Component({ loaderData }) {
+    return <p>{(loaderData as { message: string }).message}</p>;
+  },
+}]);
+```
+
+In `7.15.0`, synchronous initial-loader failures in SPA Mode reach `RouterProvider`'s
+`onError`, bringing those startup failures into centralized reporting.

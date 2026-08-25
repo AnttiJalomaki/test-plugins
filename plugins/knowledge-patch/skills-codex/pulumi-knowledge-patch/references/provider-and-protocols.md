@@ -1,114 +1,90 @@
-# Provider and protocol development
+# Provider and Protocol Development
 
-This reference consolidates `components-2025`, `3.145.0-3.159.0`,
-`3.160.0-3.181.0`, `3.199.0-3.214.0`, `3.214.1-3.228.0`,
-`3.229.0-3.248.0`, and `3.249.0-3.254.0`.
+## Configuration and context
 
-## Develop and debug local plugins
-
-`pulumi plugin run` executes a local binary plugin. Debug a source plugin with
-the exact form `--attach-debugger plugin=<name>` (`3.160.0-3.181.0`).
-
-Git plugins accept HTTPS URLs, repository subdirectories, and short commit
-hashes. An unversioned source resolves to the latest version; `GITHUB_TOKEN` and
-`GITLAB_TOKEN` are recognized. Plugin namespaces are inferred and cannot be
-overridden in `PulumiPlugin.yaml` (`3.145.0-3.159.0`).
-
-## Version compatibility contracts
-
-Plugins declare their supported CLI range with `requiredPulumiVersion` in
-`PulumiPlugin.yaml`; this replaces `pulumiVersionRange`.
-`ProviderHandshakeResponse.pulumi_version_range` is removed
-(`3.214.1-3.228.0`).
-
-## Configure and diff providers
-
-`Configure` calls receive the provider resource URN and ID, and explicit
-providers receive `DiffConfig` for replacement decisions just like default
-providers (`3.145.0-3.159.0`). Later host APIs require `Type` on both
-`Configure` and `DiffConfig` (`3.229.0-3.248.0`).
-
-Providers can ask the engine to refresh affected resources by default after a
-partial failure (`3.160.0-3.181.0`). Provider resources may define
-`EnvVarMappings` to rewrite environment variables before the provider sees
-them (`3.214.1-3.228.0`).
+Provider `Configure` receives the provider resource URN and ID. Explicit
+providers receive `DiffConfig` for replacement decisions just as default
+providers do. Go `AnalyzerResourceOptions` has `Parent`, and resource transforms
+receive the parent URN (batch `3.145.0-3.159.0`).
 
 Node.js provider constructors receive `ignoreChanges`, `replaceOnChanges`,
-`customTimeouts`, `retainOnDelete`, and `deletedWith`
-(`3.160.0-3.181.0`). Node.js and Python dynamic providers can return inputs
-from `read()` to retain diff inputs after refresh (`3.214.1-3.228.0`).
+`customTimeouts`, `retainOnDelete`, and `deletedWith`. Provider resources support
+`EnvVarMappings` to rewrite environment variables before forwarding them.
 
-## Invoke and call semantics
+## Invokes and calls
 
-Go, Node.js, and Python do not issue provider invokes whose resource
-dependencies are unknown. Node.js and Python wait for dependencies embedded in
-input properties while retaining compatibility for plain invokes receiving
-output arguments (`3.145.0-3.159.0`).
+Go, Node.js, and Python do not invoke a provider while resource dependencies are
+unknown. Node.js and Python wait for resource dependencies in inputs; their plain
+invoke APIs keep accepting output arguments for compatibility.
 
-Invokes carry a `preview` flag (`3.199.0-3.214.0`). Provider references passed
-as `__self__` on calls are honored, and resource references on the wire include
-`Name` and `Type` (`3.214.1-3.228.0`).
+Output-form invokes in Go, Node.js, Python, and PCL explicitly declare resource
+dependencies, including remote-component children, so preview yields unknown
+until creation completes. Go infers dependencies from arguments. A component's
+`providers` option applies to its parented invokes as well as its resources.
 
-Provider methods can return scalars. Go/Python SDK generation and Node.js
-program generation support them; Node.js uses `callSingle`
-(`3.160.0-3.181.0`). Go program generation emits provider `Call` requests
-(`3.214.1-3.228.0`).
+Provider invokes receive a `preview` flag. Methods may return scalar values;
+Go/Python generation supports them and Node.js generation uses `callSingle`.
+Go program generation can emit `Call`, and provider references for calls are
+carried through `__self__`.
 
-## Provider service changes
+## Recovery and hooks
 
-`StreamInvoke` was removed from the Provider service in 3.161.0; clients and
-providers must stop implementing that RPC (`3.160.0-3.181.0`).
+Providers can request a default refresh of affected resources after a partial
+failure; engine support arrived in 3.178.0. All provider errors are forwarded to
+error hooks for retry. Provider implementations in Node.js and Python have
+cancel handlers.
 
-The provider protocol and schema now include streaming
-`ResourceProvider.List`, exposed by Go's `plugin.Provider`
-(`3.229.0-3.248.0`).
+## RPC changes
 
-Provider and language runtimes support cancellation: Node.js and Python
-providers have cancel handlers; Bun, Go, Node.js, and Python wire cancellation
-to language-host runs; hosts send `Cancel` when closing plugins
-(`3.229.0-3.248.0`).
+`StreamInvoke` was removed from the Provider service in 3.161.0. Do not retain
+it in providers or protocol clients.
 
-## Language-host protocol
+The provider protocol and schema add streaming `ResourceProvider.List`, exposed
+through Go's `plugin.Provider`. `LanguageRuntime.RunPlugin2` is bidirectional
+streaming. Bun, Go, Node.js, and Python connect cancellation to language-host
+runs, and hosts send `Cancel` while closing plugins. `Language.Template` is
+available for language hosts.
 
-The language protocol includes `Language.Template` (`3.199.0-3.214.0`) and the
-bidirectional-streaming `LanguageRuntime.RunPlugin2` RPC
-(`3.229.0-3.248.0`).
+## Handshake and host contracts
 
-Provider handshakes can advertise schema-loader, package-resolver, and mapper
-service addresses. Providers launched by the CLI receive the active login in
-`PULUMI_API` and `PULUMI_ACCESS_TOKEN` (`3.229.0-3.248.0`).
+Provider handshakes may advertise schema-loader, package-resolver, and mapper
+service addresses. CLI-launched providers receive the active login in
+`PULUMI_API` and `PULUMI_ACCESS_TOKEN`.
 
-## Go provider host APIs
+Go `plugin.Host` is workspace-stateless. Boot and resolution APIs accept
+`plugin.Context`; plugin-loading functions dropped the `name` argument.
+`Configure` and `DiffConfig` require a resource `Type`, and PCL/schema binding
+requires an explicit schema loader (batch `3.229.0-3.248.0`).
 
-Go `plugin.Host` is workspace-stateless. Plugin boot and resolution methods
-take `plugin.Context`; plugin-loading functions no longer take `name`. PCL and
-schema binding require an explicit schema loader (`3.229.0-3.248.0`).
-
-Go's direct-repository plugin installer supports private GitHub and GitLab
-instances (`3.160.0-3.181.0`).
+Projects declare `requiredPulumiVersion` in `Pulumi.yaml`; Node.js exposes
+`requirePulumiVersion`, Python `require_pulumi_version`, Go
+`CheckPulumiVersion`, and generated .NET `RequirePulumiVersion`. Plugins declare
+their CLI range with `requiredPulumiVersion` in `PulumiPlugin.yaml`; the old
+`pulumiVersionRange` key and `ProviderHandshakeResponse.pulumi_version_range`
+field are removed.
 
 ## Schema authoring
 
-Schema names cannot contain whitespace/control characters, conflict with module
-paths, or use reserved package names `pulumi` and `input`. Modules below the
-index module are binding errors (`3.229.0-3.248.0`).
+Provider aliases may be written as type-token strings:
 
-Schemas may use type-token strings for aliases (`3.145.0-3.159.0`). They also
-support extension parameterization, string-enum provider outputs, and function
-`multiArgumentInputs`; Go and Python SDK/program generation understand the
-latter (`3.229.0-3.248.0`).
+```json
+{ "aliases": ["pkg:index:OldResource"] }
+```
 
-SDK generation supports references into parameterized and third-party packages
-(`3.214.1-3.228.0`) and extension-parameterized packages
-(`3.249.0-3.254.0`).
+Schema names cannot contain whitespace/control characters or conflict with
+module paths. `pulumi` and `input` are reserved package names, and a module below
+the index module is a strict binding error. Schemas support extension
+parameterization, string-enum provider outputs, and functions with
+`multiArgumentInputs` in Go/Python generation.
 
-## State conversion protocol
+SDK generation supports references into parameterized and third-party packages.
+On the wire, `ResourceReference` includes `Name` and `Type`. State converters
+receive schema-loader and package-resolver targets and can request named-
+ecosystem mappings.
 
-`ResourceImport` carries parent and properties. Converters can return provider
-resources, associate imports with them, receive a schema-loader target, and
-request named-ecosystem mappings (`3.249.0-3.254.0`).
+## Source and plugin development
 
-## Cross-language component hosts
-
-Python, Go, .NET, and Java source components start runtime-specific provider
-hosts; TypeScript and YAML require no distinct entrypoint (`components-2025`).
+Plugin URLs can resolve through the Registry, while `pulumi install --file`
+bypasses registry resolution. `pulumi plugin run` starts a local binary. Attach a
+debugger to a source plugin with exactly `--attach-debugger plugin=<name>`.
+Package commands can use `--server <URL>` to address a plugin server directly.

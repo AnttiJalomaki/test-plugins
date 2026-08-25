@@ -1,137 +1,118 @@
 # Observability, Alerting, and Dashboards
 
-Use this reference for metrics and traces, Discover and investigations,
-Alerting, Anomaly Detection, forecasting, notifications, and SLO views.
+Use this reference for logs, traces, metrics, dashboards, monitors, notifications, anomaly detection, forecasting, and investigation workflows.
 
-## Metrics, traces, and Discover
+## Discover, logs, and traces
 
-### ML Commons observability
+### Unified Discover
 
-Since 3.1.0, ML Commons integrates with the OpenSearch metrics framework and
-OpenTelemetry-compatible monitoring. It supports runtime instrumentation on
-selected code paths and scheduled collection of state-level metrics.
+- In 2.19.0, a disabled-by-default Discover view adds SQL and PPL alongside DQL and Lucene, with autocomplete and improved data selection.
+- In 3.3.0, an optional redesign unifies log analytics, distributed tracing, automatic visualization selection, and context-aware analysis. Discover Traces adds click-to-filter exploration; disabled-by-default AI tools add conversational query and visualization actions.
+- In 3.8.0, experimental Discover Logs runs SQL with date-picker integration across Logs, Visualization, and Statistics and is disabled by default.
 
-### Trace correlation across custom data
+### Trace Analytics
 
-Since 3.1.0, Observability can use custom index names for OpenTelemetry spans,
-logs, and service maps, map non-OpenTelemetry log fields, and search traces
-across clusters for trace-to-log correlation.
+- In 3.1.0, Observability can use custom indexes for OpenTelemetry spans, logs, and service maps, map non-OpenTelemetry log fields, and correlate traces to logs across clusters.
+- In 3.2.0, Trace Analytics accepts Data Prepper 2.11 OpenTelemetry output. Dashboards makes maximum service-map node and edge counts configurable.
+- In 3.5.0, APM adds configuration, service and service-detail views, an application topology map, and service-correlation drill-downs.
 
-### Trace Analytics compatibility and map limits
+### Agent and packaged observability
 
-Since 3.2.0, Trace Analytics accepts Data Prepper 2.11 OpenTelemetry output.
-Dashboards makes the service map's maximum node and edge counts configurable.
+In 3.6.0, Agent Traces captures agent, language-model, and tool spans through OpenTelemetry. A Python instrumentation SDK supports Dashboards DAG and token-usage views.
 
-### Unified Discover and trace analysis
+The 3.6.0 one-command Observability Stack bundles the collector, Data Prepper, OpenSearch, Prometheus, and Dashboards. Performance Analyzer adds a shard-operations collector.
 
-OpenSearch 3.3.0 adds an optional redesigned Discover interface for log
-analytics, distributed tracing, automatic visualization selection, and
-context-aware analysis. Discover Traces supports click-to-filter exploration.
-Disabled-by-default AI tools add conversational query and visualization
-actions.
+## Metrics and dashboards
 
-### Prometheus and APM in Dashboards
+### Prometheus and APM
 
-Since 3.5.0, Dashboards can query and visualize Prometheus data beside logs and
-traces, with PromQL autocomplete and gauge metrics. Its APM interface adds
-configuration, service and service-detail views, an application topology map,
-and service-correlation drill-downs.
+OpenSearch Dashboards 3.5.0 can query and visualize Prometheus beside logs and traces, with PromQL autocomplete and gauge metrics.
 
-### Agent traces and packaged observability
+### Explore Metrics
 
-Since 3.6.0, Agent Traces records agent, language-model, and tool spans through
-OpenTelemetry, with a Python instrumentation SDK plus Dashboards DAG and token
-usage views. A one-command Observability Stack bundles the collector, Data
-Prepper, OpenSearch, Prometheus, and Dashboards. Performance Analyzer adds a
-shard-operations collector.
+In 3.7.0, Explore Metrics discovers Prometheus data sources and keeps generated PromQL synchronized with the raw editor. Dashboard variables substitute `$name` or `${name}`. Visualization transformations can limit, sort, filter, aggregate, and compute fields without rerunning the base query.
 
-### Metrics exploration and dashboard templating
+### Metrics alert workflows
 
-Since 3.7.0, Dashboards has an Explore Metrics builder that discovers
-Prometheus sources and synchronizes generated PromQL with its raw editor.
-Dashboard variables substitute `$name` or `${name}`. Visualization
-transformations can limit, sort, filter, aggregate, or compute fields without
-rerunning the base query.
+In 3.8.0, Metrics exploration can create alert rules directly. Prometheus metric rules support create, edit, clone, and delete through the Cortex ruler API, and Alert Manager manages anomaly detectors and forecasters.
 
-### Experimental SLO and unified-alert views
+### SLOs and unified alerts
 
-OpenSearch 3.7.0 includes an experimental SLO catalog ordered by remaining
-error budget, with burn-rate alerts and multi-window evaluation. A unified
-alerts view combines monitors and Prometheus rules and renders the Alertmanager
-routing tree as read-only.
+The experimental 3.7.0 SLO catalog sorts objectives by remaining error budget and supports burn-rate alerts and multi-window evaluation. A unified alert view combines monitors with Prometheus rules and renders the Alertmanager routing tree read-only.
 
-### Investigation controls
+## Alerting
 
-Since 3.6.0, Dashboards investigations can accept a hypothesis, track total and
-per-step durations, and rerun log analysis during reinvestigation.
+### Finding publication compatibility
 
-## Anomaly Detection and forecasting
+- In 3.1.0, Alerting briefly publishes findings as a list rather than one at a time. Document-level monitor create and update reject index patterns, and dry-run execution with an index pattern is blocked.
+- In 3.2.0, list publication is reverted; Alerting again publishes an individual finding. Version-gate consumers across this transition.
 
-### Feature-level anomaly controls
+### Monitor execution and limits
 
-Since 2.19.0, Anomaly Detection can trigger independently on a feature's rise
-or drop and apply per-feature moving suppression rules. An optional structured
-result index flattens entity values and arrays for easier queries and
-visualizations.
+- In 3.3.0, monitors can use custom user attributes.
+- In 3.5.0, trigger execution can apply access control to result data exposed in its context.
+- In 3.6.0, `plugins.alerting.monitor.max_triggers` caps triggers per monitor. Dashboards adds a configurable lookback window for PPL and SQL monitors.
+- In 3.7.0, PPL monitor CRUD and manual execution are available through Alerting. Manual runs perform RBAC checks, and monitor names can be up to 100 characters rather than 30.
 
-### Native time-series forecasting
+### PPL Alerting API lifecycle
 
-Since 3.1.0, Anomaly Detection can build a self-updating forecast from an index
-with a timestamp field by incrementally retraining a Random Cut Forest.
-Forecasts feed Alerting, and Security provides forecasting roles and
-permissions.
+- In 3.4.0, PPL Alerting adds monitor execution and statistics, get/search/delete monitor calls, and alert retrieval and lifecycle operations. Alerting V2 roles are added to `roles.yml`; bucket-level Dashboards trigger definitions can include keyword filters.
+- In 3.6.0, experimental PPL Alerting assets are removed pending refactoring. Dashboards moves its APIs to v1 and no longer maintains separate legacy and PPL paths.
 
-### Longer anomaly-detection intervals
+### External schedules
 
-Since 3.2.0, Anomaly Detection supports intervals longer than one hour.
-
-### Alerting and anomaly-detection operations
-
-Since 3.3.0, Alerting monitors can use custom user attributes. Anomaly Detection
-supports real-time frequency scheduling and a suggest API, with frequency
-optional.
-
-### Anomaly Detection daily insights
-
-Since 3.4.0, Dashboards has a Daily Insights page with index management and data
-selection. Detectors have an optional auto-create field, and missing-feature
-reporting honors detector frequency.
-
-### Alerting and anomaly correlation
-
-Since 3.5.0, alert-trigger execution can enforce access control on result data
-in its context. Anomaly Detection can correlate anomalies by temporal-overlap
-similarity.
-
-### Alerting and anomaly-detection administration
-
-Since 3.6.0, `plugins.alerting.monitor.max_triggers` caps triggers per monitor,
-and Dashboards provides a configurable lookback window for PPL and SQL
-monitors. Anomaly Detection detectors can be provisioned and managed with
-Terraform.
-
-## Alerting request and scheduling behavior
-
-### Alerting request and payload changes
-
-In 3.1.0, Alerting publishes a list of findings rather than one at a time.
-Document-level monitor create and update requests reject index patterns, and a
-dry run with an index pattern is prevented.
-
-### Alerting finding publication reversion
-
-OpenSearch 3.2.0 reverts the list publication behavior introduced in 3.1;
-Alerting again publishes one finding at a time.
-
-### External alert scheduling
-
-Since 3.7.0, Alerting provides EventBridge Scheduler CRUD and SQS-backed
-external monitor scheduling. Configure its two-role EventBridge model with
-`execution_role_arn`.
+OpenSearch 3.7.0 adds EventBridge Scheduler CRUD and SQS-backed external monitor scheduling. Configure the two-role EventBridge design with `execution_role_arn`.
 
 ## Notifications
 
-### Mattermost notifications
+### Channels
 
-Since 3.5.0, Mattermost is available both as a notification-channel
-configuration type and as a Dashboards notification destination.
+Mattermost is a notification-channel type and a Dashboards destination in 3.5.0.
+
+### Configuration migration
+
+Notifications 3.6.0 adds `multi_tenancy_enabled` and changes its settings prefix. Review existing notification settings during upgrade.
+
+### Tenant restrictions
+
+Alerting multi-tenancy in 3.7.0 disables unsupported email, findings, chained actions, Job Scheduler indexes, and other actions. Pluggable-data-format domains reject non-PPL monitor CRUD, and unsupported routes return 501.
+
+In 3.8.0, Alerting and Notifications each add a filter-by-backend-roles access strategy for object filtering or role matching.
+
+## Anomaly Detection and forecasting
+
+### Feature controls and result shape
+
+In 2.19.0, detectors can trigger independently on a feature rise or drop and apply moving suppression per feature. An optional structured result-index format flattens entity values and arrays for easier querying and visualization.
+
+### Forecasting
+
+OpenSearch 3.1.0 adds native time-series forecasts over timestamped indexes. A self-updating Random Cut Forest incrementally retrains on new points, forecasts can feed Alerting, and Security includes forecasting roles and permissions.
+
+### Scheduling and insights
+
+- In 3.2.0, detector intervals may exceed one hour.
+- In 3.3.0, real-time frequency scheduling and a suggest API are available; frequency is optional.
+- In 3.4.0, Dashboards adds Daily Insights with index management and data selection. Detectors add optional auto-create fields, and missing-feature reporting honors detector frequency.
+
+### Correlation and administration
+
+- In 3.5.0, Anomaly Detection correlates anomalies by temporal-overlap similarity.
+- In 3.6.0, detectors can be provisioned and managed through Terraform.
+- In 3.8.0, single-stream detectors can use PPL as their source, evaluating feature queries through PPL transport actions.
+
+### Multi-tenant limitations
+
+For multi-tenant services in 3.7.0, Anomaly Detection data sources disable default or flattened result indexes and historical analysis.
+
+## Investigations
+
+Dashboards investigations in 3.6.0 can accept a hypothesis, record investigation and step durations, and rerun log analysis during reinvestigation.
+
+## Query Insights integration
+
+Query Insights views support historical top-N analysis, live inflight queries, query profiling, recommendations, multiple data sources, workload groups, and user-aware filtering. See [Search, Relevance, and Query Insights](search-relevance-and-insights.md) for API and authorization details.
+
+## Legacy removals
+
+OpenSearch 3.0.0 replaces Performance Analyzer RCA with Telemetry, removes Gantt Charts from the Dashboards bundle, and drops support for legacy Observability notebooks.

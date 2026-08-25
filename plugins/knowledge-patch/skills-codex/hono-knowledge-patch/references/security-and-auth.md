@@ -1,143 +1,150 @@
 # Security and Authentication
 
-## Contents
+## Pin the security patch floor
 
-- [JWT and JWK algorithm policy](#jwt-and-jwk-algorithm-policy)
-- [Token sources and JWK resolution](#token-sources-and-jwk-resolution)
-- [Claims, payloads, and keys](#claims-payloads-and-keys)
-- [Basic Auth success hooks](#basic-auth-success-hooks)
-- [CSP and user-agent blocking](#csp-and-user-agent-blocking)
-- [Required security patch levels](#required-security-patch-levels)
+For the 4.11 line, use `4.11.10` or newer. `4.11.7` fixes an IP-restriction
+bypass, prevents caching of `private` and `no-store` responses, blocks unintended
+Cloudflare static-asset key access through user-controlled paths, and escapes
+untrusted strings rendered by JSX `ErrorBoundary`. `4.11.10` strengthens a
+timing-safe comparison.
 
-## JWT and JWK algorithm policy
+For the 4.12 line, use `4.12.28` or newer and never remain below `4.12.27`.
+Patches in this line harden Lambda header and client-IP handling, static-file and
+SSG paths, IP restriction, cookies, SSE fields, body limits, credentialed CORS,
+JWT/JWK validation, cache variation, and JSX/CSS SSR. They also ignore
+`__proto__` segments in `parseBody({ dot: true })`.
 
-From v4.11.4, JWT and JWK/JWKS middleware require explicit algorithm configuration so an untrusted JWT header cannot choose the verification algorithm. `jwt` takes one `alg`; `jwk` takes an array containing asymmetric algorithms only.
+At these floors, Hono rejects control characters in SSE and cookie attributes,
+validates JSX tag and attribute names, isolates JSX context per request, requires
+the Bearer scheme for JWT/JWK middleware, validates NumericDate claims, and
+prevents authentication-varying responses from leaking through caches.
+
+## Require explicit verification algorithms
+
+Starting with `4.11.4`, JWT middleware requires one explicit `alg`, while
+JWK/JWKS middleware requires an `alg` array containing asymmetric algorithms.
+This prevents an untrusted token header from selecting verification behavior.
+`AlgorithmTypes` is exported from `4.11.5` for typing algorithm choices.
 
 ```ts
-import { jwk } from 'hono/jwk'
-import { jwt } from 'hono/jwt'
-
-jwt({ secret: 'it-is-very-secret', alg: 'HS256' })
-jwk({
+app.use('/session/*', jwt({ secret, alg: 'HS256' }))
+app.use('/admin/*', jwk({
   jwks_uri: 'https://example.com/.well-known/jwks.json',
   alg: ['RS256'],
-})
+}))
 ```
 
-JWT utilities also export `AlgorithmTypes`. JWKS `allowedAlgorithms` accepts values declared with `const`.
+## Choose the token source deliberately
 
-## Token sources and JWK resolution
-
-### Read JWTs from a custom header or cookie
-
-JWT middleware accepts `headerName` for a nonstandard request header (since 4.8.0):
+Since `4.8.0`, JWT middleware accepts `headerName` for a nonstandard header:
 
 ```ts
-jwt({ secret: 'secret-key', alg: 'HS256', headerName: 'X-Auth-Token' })
+app.use('/api/*', jwt({
+  secret,
+  alg: 'HS256',
+  headerName: 'X-Auth-Token',
+}))
 ```
 
-Set `cookie` to a cookie name to read the JWT from that cookie instead:
+Since `4.9.0`, JWK middleware has the matching `headerName` option. JWT
+middleware may instead read a token from a named cookie by setting `cookie`.
 
 ```ts
 app.use('/auth/*', jwt({
   secret: 'it-is-very-secret',
   alg: 'HS256',
-  cookie: 'access_token',
+  cookie: 'session',
 }))
 ```
 
-### Configure JWK authentication
+Authorization-header tokens must use the Bearer scheme. Treat custom headers and
+cookies as distinct trust boundaries, and keep cache variation aligned with the
+chosen credential source.
 
-JWK middleware also accepts `headerName` for a custom token header (since 4.9.0). Its `keys` and `jwks_uri` options may be functions that receive the request context, enabling request-dependent key resolution.
+## Configure JWK lookup and anonymous access
 
-With `allow_anon: true`, a request without a valid token continues and `jwtPayload` remains unset. Ensure downstream handlers explicitly support the anonymous case.
+Since `4.8.0`, `jwk({ allow_anon: true, ... })` lets a request continue when no
+valid token is available. In that case `jwtPayload` is not set. Both `keys` and
+`jwks_uri` may be functions receiving the context, enabling per-request or
+tenant-specific key resolution.
 
-JWT utilities export `verifyWithJwks` for JWKS verification outside the JWK middleware (since 4.9.0).
+Since `4.9.0`, `verifyWithJwks()` is available in the JWT utilities for verifying
+tokens against a JWKS outside JWK middleware. Apply the same explicit algorithm,
+issuer, and claim policy as middleware-based verification.
 
-JWT and JWK middleware accept only the `Bearer` authorization scheme in current 4.12 releases.
+## Validate issuer and temporal claims
 
-## Claims, payloads, and keys
+JWT middleware supports `iss` validation from `4.9.0`. Configure accepted
+issuers instead of duplicating issuer checks in handlers.
 
-### Validate the issuer
-
-JWT verification supports validation of the `iss` claim (since 4.9.0). Prefer this option to a separate application-level issuer check.
-
-### Control temporal-claim checks
-
-`verifyOptions.nbf`, `verifyOptions.iat`, and `verifyOptions.exp` control verification of those claims when present. Every check defaults to `true`; disable one only when that claim must be ignored.
+`verifyOptions.nbf`, `verifyOptions.iat`, and `verifyOptions.exp` control
+validation of those claims when present. All three default to `true`.
 
 ```ts
-jwt({
+app.use('/auth/*', jwt({
   secret: 'it-is-very-secret',
   alg: 'HS256',
-  verifyOptions: { iat: false },
-})
+  verifyOptions: { nbf: true, iat: true, exp: true },
+}))
 ```
 
-Current 4.12 JWT verification rejects falsy, non-numeric, and non-finite `exp`, `nbf`, and `iat` values. `decode()` and `decodeHeader()` reject malformed token structure. JWT utilities also accept single-line PEM keys.
+## Type authenticated context
 
-### Type the verified payload
-
-Use `JwtVariables` from `hono/jwt` as the application's Hono `Variables` type so `c.get('jwtPayload')` infers the verified payload:
+Use `JwtVariables` as the application's `Variables` type so
+`c.get('jwtPayload')` is inferred after JWT authentication.
 
 ```ts
 import { Hono } from 'hono'
-import { jwt, type JwtVariables } from 'hono/jwt'
+import type { JwtVariables } from 'hono/jwt'
 
 const app = new Hono<{ Variables: JwtVariables }>()
-app.use('/auth/*', jwt({ secret: 'it-is-very-secret', alg: 'HS256' }))
-app.get('/auth/me', (c) => c.json(c.get('jwtPayload')))
+app.get('/auth/page', (c) => c.json(c.get('jwtPayload')))
 ```
 
-## Basic Auth success hooks
+Since `4.12.0`, `bearerAuth` is generic over the application environment, so the
+context passed to `verifyToken` retains typed variables and bindings.
 
-Basic Auth accepts an async-capable `onAuthSuccess(c, username)` callback in 4.12, including when `verifyUser` is used. Use it to record identity or audit information without reparsing the header.
+## Run post-authentication work once
+
+Since `4.12.0`, Basic Auth accepts an async-capable
+`onAuthSuccess(c, username)` callback. It runs after either direct credential
+authentication or `verifyUser` succeeds, so use it to attach identity or audit
+state without parsing the header again.
 
 ```ts
-basicAuth({
-  username: 'hono',
-  password: 'secret',
-  onAuthSuccess: (c, username) => c.set('username', username),
-})
+app.use('/admin/*', basicAuth({
+  username,
+  password,
+  onAuthSuccess: (c, name) => c.set('user', name),
+}))
 ```
 
-## CSP and user-agent blocking
+## Generate cookie values safely
 
-### Add nonces to streamed JSX scripts
+Since `4.9.0`, `hono/cookie` exports `generateCookie()` and
+`generateSignedCookie()` for serializing ordinary and signed cookie values.
+Prefer these helpers to handwritten attribute strings, and keep the framework at
+the security floor that rejects control characters in cookie attributes.
 
-Provide `StreamingContext` with `value={{ scriptNonce: nonce }}` to add a CSP nonce to inline scripts emitted by streaming `Suspense` and `ErrorBoundary` (since 4.8.0). The response's CSP header must allow the same nonce.
+## Protect streamed JSX with CSP
 
-### Configure CSP reports
+Since `4.8.0`, place streamed `Suspense` or `ErrorBoundary` output inside a
+`StreamingContext` whose value contains `scriptNonce`, and allow that exact nonce
+in the response CSP. Generated inline scripts otherwise conflict with a
+nonce-restricted policy.
 
-Secure Headers content-security policies support `report-to` and `report-uri` directives from 4.11.0. Use them for violation reporting instead of constructing the CSP header manually.
+Secure Headers supports the CSP `report-to` and `report-uri` directives from
+`4.11.0`, allowing violation reports to be configured in middleware.
 
-### Block user agents
+## Block unwanted user agents
 
-`@hono/ua-blocker` accepts a string `blocklist` (since 4.8.0). `@hono/ua-blocker/ai-bots` exports the predefined `aiBots` list. `useAiRobotsTxt()` can serve `/robots.txt` that discourages those bots.
+Since `4.8.0`, `@hono/ua-blocker` provides `uaBlocker({ blocklist })`, the
+`aiBots` blocklist, and a robots.txt helper. Blocking rejects selected user
+agents; robots guidance only requests crawler cooperation, so select the
+mechanism according to the enforcement requirement.
 
-## Required security patch levels
+## Allow browser preflights through CSRF middleware
 
-### Hono 4.11
-
-Use at least v4.11.7 when the application uses any of these features:
-
-- IP restriction: fixes an IPv4 validation bypass.
-- Cache middleware on Deno, Bun, or Node.js: prevents caching responses marked `private` or `no-store`.
-- Cloudflare Workers static serving with user-controlled paths: prevents unintended internal asset-key reads.
-- JSX `ErrorBoundary` with untrusted data: escapes untrusted error strings.
-
-Use v4.11.10 or newer for the further strengthening of timing-safe comparison.
-
-### Hono 4.12
-
-Use at least v4.12.27 for the security fixes accumulated in the 4.12 line. They harden:
-
-- SSE control fields.
-- Cookie names and attributes.
-- Dotted body parsing.
-- Static and SSG paths.
-- IP matching.
-- JSX/CSS SSR escaping and request-context isolation.
-- Body limits for streamed requests and AWS Lambda requests.
-- Credentialed CORS with wildcard configuration.
-- Repeated headers and cookies in AWS adapters.
+In `4.13.3`, CSRF middleware exempts `OPTIONS` requests from validation. Browser
+preflights should therefore reach CORS handling without a CSRF failure; continue
+validating the state-changing request itself.

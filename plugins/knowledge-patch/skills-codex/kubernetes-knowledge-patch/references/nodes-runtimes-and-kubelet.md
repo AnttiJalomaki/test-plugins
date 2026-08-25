@@ -1,98 +1,139 @@
 # Nodes, Runtimes, and Kubelet
 
-Use this reference for kubelet and runtime configuration, node capabilities, cgroup behavior, lifecycle, pressure, and node-local APIs.
+## Cgroups, CPU, memory, and runtime support
 
-Entries are grouped by task; the parenthetical identifier is the source batch.
+### Manual cgroup-driver selection is deprecated (1.34-guide)
 
-## Cgroup CPU-priority conversion changed (project-news)
+Kubelet should discover the driver through CRI. `cgroupDriver` and
+`--cgroup-driver` are deprecated. Kubernetes 1.35 is the final release
+supporting containerd 1.x; use `kubelet_cri_losing_support` to identify nodes
+needing a runtime upgrade.
 
-Conversion from cgroup v1 CPU shares to cgroup v2 CPU weight now uses an improved formula, changing how CPU priority is allocated to Kubernetes workloads on affected systems.
+### cgroup v1 nodes cannot run kubelet (1.35-guide)
 
-## cgroup v1 nodes cannot run kubelet (1.35-guide)
+Kubelet fails to start on Linux without cgroup v2.
 
-Kubernetes 1.35 removes cgroup v1 support; kubelet fails to start on Linux systems that do not have cgroup v2 enabled.
+### CPU Manager adds stricter reservation controls (1.33.0)
 
-## CPU Manager adds stricter reservation controls (1.33.0)
+Static-policy `strict-cpu-reservation` reserves `reservedSystemCPUs` exclusively
+for daemons and interrupts. Guaranteed containers with exclusive integer CPUs
+run without CFS quota; set default-on `DisableCPUQuotaWithExclusiveCPUs=false`
+to restore quota.
 
-The static policy's `strict-cpu-reservation` option reserves `reservedSystemCPUs` exclusively for system daemons and interrupts. Guaranteed containers with exclusive integer CPU assignments now run without CFS quota; set the default-on `DisableCPUQuotaWithExclusiveCPUs` gate to `false` to restore quota enforcement if needed.
+### Topology Manager can support more NUMA nodes (1.35-guide)
 
-## Kubelet drops legacy configuration (1.34.0)
+Stable `max-allowable-numa-nodes` lifts the old eight-NUMA limit, though affinity
+calculation can degrade as NUMA count grows.
 
-The kubelet no longer accepts `--cloud-config` or `--register-schedulable`; remove them from service definitions before upgrading. `StreamingConnectionIdleTimeout` in kubelet configuration is also deprecated.
+### Kubelet exports cgroup v2 pressure metrics (1.36-guide)
 
-## Kubelet eviction settings can inherit missing defaults (1.33.0)
+Stable PSI support exposes CPU, memory, and I/O stall pressure.
 
-Set `mergeDefaultEvictionSettings` so explicitly configured `evictionHard`, `evictionSoft`, `evictionSoftGracePeriod`, and `evictionMinimumReclaim` signals override defaults while unspecified signals retain their defaults.
+### Memory QoS uses tiered cgroup v2 protection (1.36-guide)
 
-```yaml
-mergeDefaultEvictionSettings: true
-```
+Beta Memory QoS refines `memory.high` and `memory.min`, with metrics, livelock
+safeguards, and operator tunables for cgroup v2 memory protection.
 
-## Kubelet exports cgroup v2 pressure metrics (1.36-guide)
+### Cgroup CPU-priority conversion changed (project-news)
 
-Stable Pressure Stall Information support reports CPU, memory, and I/O contention, allowing operators and autoscalers to distinguish ordinary utilization from workloads that are actively stalled.
+The cgroup v1 CPU-shares to cgroup v2 CPU-weight conversion uses an improved
+formula, changing CPU priority for affected workloads.
 
-## Kubelet restarts preserve Pod readiness (1.35-guide)
+## User namespaces and operating systems
 
-After a kubelet restart or upgrade, kubelet restores existing container state from the runtime instead of transiently marking healthy Pods `NotReady`, avoiding needless removal from load balancers.
+### Pod user namespaces are beta and enabled by default (1.33-guide)
 
-## Kubelet user-namespace ranges are configurable (1.33.0)
+Linux Pods opt in with `hostUsers: false`. They need containerd 2.0+ or CRI-O,
+idmapped-mount support for root and every volume filesystem, and non-overlapping
+host ID ranges. NFS is unsupported; tmpfs Secret, ConfigMap, projected, and
+downward-API volumes need Linux 6.3.
 
-`KubeletConfiguration` gains `subidsPerPod`, allowing operators to size the subordinate-ID range assigned per user-namespaced Pod.
+### Kubelet user-namespace ranges are configurable (1.33.0)
 
-## Manual cgroup-driver selection is deprecated (1.34-guide)
+`KubeletConfiguration.subidsPerPod` sizes each Pod's subordinate-ID range.
 
-Kubelet should discover its cgroup driver from the CRI; both the `cgroupDriver` configuration field and `--cgroup-driver` are deprecated for eventual removal no earlier than 1.36. Kubernetes 1.35 is also the final release supporting containerd 1.x; `kubelet_cri_losing_support` identifies nodes that need a runtime upgrade.
+### User-namespaced Pods cannot use block devices (1.34.0)
 
-## Memory QoS uses tiered cgroup v2 protection (1.36-guide)
+Pods with `hostUsers: false` are rejected when they declare `volumeDevices`.
 
-The beta Memory QoS behavior refines how kubelet programs `memory.high` and `memory.min`, adding metrics, livelock safeguards, and operator tunables for memory protection on cgroup v2 nodes.
+### Host-network Pods can use user namespaces (1.35.0)
 
-## Node log queries require an explicit kubelet option (1.36-guide)
+Default-off alpha `UserNamespacesHostNetworkSupport` permits Linux Pods to
+combine `hostNetwork` and a user namespace.
 
-`NodeLogQuery` is GA and its feature gate is enabled by default, but kubelet must also set `enableSystemLogQuery: true`; queried node services must write beneath `/var/log`.
+## Kubelet configuration and startup
 
-```yaml
-enableSystemLogQuery: true
-```
+### Kubelet eviction settings can inherit missing defaults (1.33.0)
 
-## Node Readiness Controller accounts for infrastructure dependencies (project-news)
+Set `mergeDefaultEvictionSettings: true` so explicitly configured hard/soft
+eviction, grace period, and minimum-reclaim signals override defaults while
+unspecified signals retain their defaults.
 
-The Node Readiness Controller extends the usual binary node `Ready` model for environments where workload suitability also depends on infrastructure such as network and storage agents.
+### Kubelet drops legacy configuration (1.34.0)
 
-## Nodes can declare feature compatibility (1.35-guide)
+Remove `--cloud-config` and `--register-schedulable` before upgrade.
+`StreamingConnectionIdleTimeout` is deprecated.
 
-The alpha node-declaration framework publishes supported Kubernetes features in `Node.status.declaredFeatures`, allowing schedulers, admission controllers, and extensions to keep Pods that require newer features off incompatible nodes during version-skewed upgrades.
+### Remove kubelet's sandbox-image flag before upgrading (1.35.0)
 
-## Pod sandbox readiness is reported earlier (1.36.0)
+`--pod-infra-container-image` is removed and prevents startup. Kubeadm attempts
+to remove it from generated flags, but custom `extraArgs` require cleanup.
 
-Kubelet sets `PodReadyToStartContainers=True` immediately after sandbox creation rather than after image pulling, so consumers must not treat the condition as proof that images are already available.
+### The cgroup-v1 startup block has an explicit override (1.35.0)
 
-## Remove kubelet's sandbox-image flag before upgrading (1.35.0)
+The compatibility path requires both ignoring kubeadm `SystemVerification` and
+setting `failCgroupV1: false`; it is not a migration target.
 
-The `--pod-infra-container-image` flag is removed and prevents kubelet startup if it remains configured. Kubeadm upgrade attempts to remove it from `/var/lib/kubelet/kubeadm-flags.env`, but user-supplied `extraArgs` must be cleaned up manually.
+### Kubelet configuration-flag removal moves to 1.38 (1.34.10)
 
-## The cgroup-v1 startup block has an explicit override (1.35.0)
+Deprecated kubelet configuration flags and fallback behavior remain through
+1.37 to align with containerd 1.7 support. Remove reliance before 1.38.
 
-Kubeadm's `SystemVerification` check errors for a 1.35 kubelet on cgroup v1; proceeding requires both ignoring that preflight error and setting `failCgroupV1: false` in the `kube-system/kubelet-config` ConfigMap.
+## Node state and capability discovery
 
-## The node PodResources API lists only active Pods (1.34.0)
+### Pods receive selected Node topology labels (1.33.0)
 
-The node-local PodResources endpoint now excludes inactive Pods by default; disable `KubeletPodResourcesListUseActivePods` to temporarily restore the older listing behavior.
+At binding, Kubernetes copies `topology.k8s.io/zone`,
+`topology.k8s.io/region`, and `kubernetes.io/hostname` to the Pod, enabling
+downward-API access without Node read permission.
 
-## Topology Manager can support more NUMA nodes (1.35-guide)
+### The node PodResources API lists only active Pods (1.34.0)
 
-The stable `max-allowable-numa-nodes` Topology Manager policy option lifts the historical limit of eight NUMA nodes for large hosts, although affinity calculation can perform poorly as the NUMA count grows.
+Inactive Pods are excluded by default. Disable
+`KubeletPodResourcesListUseActivePods` only for temporary compatibility.
 
-## WebSocket streaming can reach kubelet directly (1.36.0)
+### Nodes can declare feature compatibility (1.35-guide)
 
-The beta, default-on `ExtendWebSocketsToKubelet` behavior sends WebSocket exec, attach, and port-forward requests directly to kubelets that advertise support through node-declared features, instead of translating or tunneling them at the API server.
+Alpha `Node.status.declaredFeatures` lets schedulers, admission, and extensions
+keep feature-dependent Pods off incompatible nodes during skewed upgrades.
 
-## Windows nodes gain lifecycle and networking graduations (1.34-guide)
+### Strict supplemental groups expose support and identity (1.35-guide)
 
-Graceful node shutdown is beta and default-on for Windows kubelets, which honor normal Pod hooks and grace periods after a Windows pre-shutdown notification. Windows kube-proxy Direct Service Return and overlay-network support are stable.
+GA strict groups need containerd 2.0+ or CRI-O 1.31+ and advertise support at
+`Node.status.features.supplementalGroupsPolicy`. Kubelet reports initial UID,
+GID, and groups in `status.containerStatuses[*].user.linux`; privileged
+processes can later change identity.
 
-## Windows Pods no longer support `hostNetwork` (1.33-guide)
+### Kubelet restarts preserve Pod readiness (1.35-guide)
 
-The alpha Windows host-network implementation is removed in 1.33; Windows HostProcess containers are unaffected and remain the option when host networking plus host-level access is required.
+After restart or upgrade, kubelet restores existing container runtime state
+instead of transiently marking healthy Pods NotReady.
 
+### Pod sandbox readiness is reported earlier (1.36.0)
+
+`PodReadyToStartContainers=True` is set immediately after sandbox creation, not
+after image pulling. Do not treat it as proof images are available.
+
+### Node Readiness Controller accounts for infrastructure dependencies (project-news)
+
+The controller extends binary Node Ready semantics for environments whose
+workload suitability also depends on network, storage, or other infrastructure
+agents.
+
+## CRI compatibility
+
+### CRI `KeyValue.value` JSON encoding returns to its pre-1.34 form (1.34.10)
+
+The `cri-api` JSON form of `KeyValue.value` reverts the encoding introduced by
+earlier 1.34 patch releases. JSON-serializing integrations should expect the
+pre-1.34 representation after upgrading to 1.34.10.

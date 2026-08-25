@@ -10,241 +10,170 @@ metadata:
 
 # Laravel Knowledge Patch
 
-Use this skill when upgrading or maintaining a Laravel application, package,
-queue driver, cache store, database integration, or contract implementation.
+Use this patch when implementing, reviewing, testing, or upgrading Laravel applications and framework extensions.
+Inspect `composer.json` first, then apply only guidance that exists in the application's installed framework version.
+Trust the manifest, lockfile, application code, and tests when they show behavior that differs from this guidance.
 
-Inspect `composer.json` and the lockfile before applying version-dependent
-behavior. Prefer application code, tests, configuration, and installed behavior.
-
-## Reference Index
+## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Framework core, container, and utilities](references/framework-core-and-container.md) | Runtime requirements, dependencies, contracts, container behavior, collections, strings, enums, and helpers |
-| [Database, Eloquent, and schema](references/database-eloquent-and-schema.md) | Queries, models, relationships, casts, migrations, schema operations, and database drivers |
-| [Queues, jobs, and scheduling](references/queues-jobs-and-scheduling.md) | Queue routing, job attributes, workers, metrics, batches, listeners, and schedules |
-| [HTTP, routing, requests, and processes](references/http-routing-and-processes.md) | HTTP clients, route matching, middleware, requests, responses, URIs, maintenance mode, and processes |
-| [Cache, sessions, Redis, and filesystems](references/cache-session-and-filesystem.md) | Cache contracts, serialization, locks, sessions, Redis, disks, uploads, and filesystem behavior |
-| [Validation, authentication, and security](references/validation-auth-and-security.md) | Validation rules, password handling, authentication, encryption, and request protection |
-| [Testing, CLI, and tooling](references/testing-cli-and-tooling.md) | Assertions, fakes, test isolation, Artisan commands, generators, and development tooling |
-| [Mail, notifications, and broadcasting](references/mail-notifications-and-broadcasting.md) | Mail transports, notification lifecycle, attachments, broadcasting, and delivery integrations |
-| [Views, resources, and frontend integration](references/views-resources-and-frontend.md) | Blade, views, API resources, pagination, Vite, Markdown, and JSON presentation |
-| [Events, observability, and operations](references/events-observability-and-operations.md) | Events, logging, exception reporting, health behavior, and runtime telemetry |
+| [Cache, sessions, and filesystems](references/cache-session-and-filesystem.md) | Cache stores and locks, Redis, sessions, disks, and filesystem URLs |
+| [Database, Eloquent, and schema](references/database-eloquent-and-schema.md) | Queries, models, relationships, casts, migrations, indexes, and driver behavior |
+| [Events, observability, and operations](references/events-observability-and-operations.md) | Logging, lifecycle events, maintenance mode, reloads, and failure reporting |
+| [Framework core and container](references/framework-core-and-container.md) | Container attributes, contracts, collections, strings, context, and helpers |
+| [HTTP, routing, and processes](references/http-routing-and-processes.md) | Requests, responses, routing, HTTP client, pagination, rate limits, and processes |
+| [Mail, notifications, and broadcasting](references/mail-notifications-and-broadcasting.md) | Mail transports, mailables, notification lifecycle, and broadcasting |
+| [Queues, jobs, and scheduling](references/queues-jobs-and-scheduling.md) | Drivers, jobs, batches, workers, deferred execution, and scheduler controls |
+| [Testing, CLI, and tooling](references/testing-cli-and-tooling.md) | Test isolation, fakes, dependency compatibility, Artisan, and development commands |
+| [Validation, authentication, and security](references/validation-auth-and-security.md) | Rules, login behavior, authorization, request forgery protection, and encryption |
+| [Views, resources, and frontend](references/views-resources-and-frontend.md) | Blade, API resources, Vite, starter kits, fonts, and images |
 
-## Upgrade Priorities
+## Major-upgrade triage
 
-For a Laravel 13 migration, resolve these changes before adopting optional
-features:
+### Runtime and package constraints
 
-1. Run PHP 8.3 or newer and update Composer constraints for
-   `laravel/framework:^13.0` and `laravel/tinker:^3.0`.
-2. Update optional tooling to `laravel/boost:^2.0`, PHPUnit 12, or Pest 4 as
-   applicable.
-3. Audit cache prefixes, Redis prefixes, session cookie names, serialized
-   cache payloads, and custom cache stores.
-4. Review custom framework contracts, HTTP response subclasses, queue
-   drivers, middleware references, and manager extensions.
-5. Exercise overlapping domain routes, Eloquent boot methods, polymorphic
-   pivot models, MySQL upserts, and joined deletes.
-6. Update exact rendering, mail, queue-event, and test assertions.
+- Laravel 13 requires PHP 8.3 and uses `laravel/framework:^13.0` plus `laravel/tinker:^3.0`.
+- Relevant Laravel 13 upgrades use Boost 2, PHPUnit 12, or Pest 4 constraints.
+- Laravel 12 uses `laravel/framework:^12.0`, Carbon 3, PHPUnit 11 or newer, or Pest 3.
+- Laravel 12 supports PHP 8.2 through 8.5; Laravel 13 supports PHP 8.3 through 8.5.
+- Beanstalkd applications moving to Laravel 13 need Pheanstalk 8; version 5 is no longer supported.
 
-Laravel Boost 2 can guide an installed Laravel 12 application through the
-upgrade:
+### Laravel 13 breaking changes
 
-```text
-/upgrade-laravel-v13
-```
+- Explicitly set `CACHE_PREFIX`, `REDIS_PREFIX`, and `SESSION_COOKIE` when old cache, Redis, or cookie identifiers must remain stable.
+- Cache stores must implement `touch($key, $seconds)`.
+- Cached PHP objects require an allow-list in `cache.serializable_classes`; the default rejects serialized classes.
+- Custom contract implementations must add the new dispatcher, response-factory, and email-verification methods.
+- MySQL and MariaDB `upsert()` require a non-empty `uniqueBy` argument.
+- Joined MySQL deletes now retain `ORDER BY` and `LIMIT`; unsupported variants fail instead of becoming unbounded deletes.
+- Do not instantiate a model recursively from its own boot or trait-boot methods.
+- Set custom polymorphic pivot table names explicitly when retaining an inferred singular table name.
+- Update custom HTTP response overrides so `throw()` and `throwIf()` accept callback parameters.
+- `JobAttempted::$exception` replaces the boolean `exceptionOccurred` property.
+- `QueueBusy::$connectionName` replaces `QueueBusy::$connection`.
+- Custom queue drivers must implement pending, delayed, reserved, and oldest-pending metrics.
+- Explicit-domain routes take precedence over routes without domains regardless of registration order.
+- Scheduling callbacks passed to `withScheduling()` are registered when `Schedule` resolves, not immediately.
+- Use `PreventRequestForgery` and `preventRequestForgery(...)`; the old CSRF middleware names are deprecated aliases.
+- Capture external values explicitly in manager extension closures because those closures are bound to the manager.
+- Re-register custom `Str` UUID, ULID, and random factories in each test setup that needs them.
+- Expect `Js::from()` to emit unescaped Unicode.
+- Remove legacy global helpers that conflict with PHP 8.5 polyfills.
+- Use the renamed Bootstrap 3 pagination views for direct references.
 
-Keep integration coverage around database writes, queue serialization, route
-matching, cache payloads, request protection, and application boot. Those
-areas include behavior changes that dependency updates alone cannot verify.
+### Laravel 12 breaking changes
 
-## Runtime and Dependency Changes
+- Convert custom `DatabaseTokenRepository` expiration arguments from minutes to seconds.
+- Expect associative input to `Concurrency::run()` to return keyed results.
+- Optional class-typed constructor parameters with defaults keep those defaults during container resolution.
+- Construct `Blueprint` and database grammars with a `Connection`; removed prefix mutators are unavailable.
+- `HasUuids` generates ordered UUIDv7 values; use `HasVersion4Uuids` when UUIDv4 must remain.
+- `Request::mergeIfMissing()` treats dotted keys as nested paths.
+- Duplicate route names resolve to the first registered route in cached and uncached routing.
+- Configure the local disk root explicitly to retain `storage/app`; the fallback is private storage.
+- Opt into SVG validation with `image:allow_svg` or `File::image(allowSvg: true)`.
+- Account for `Eloquent\Collection::partition()` returning a support collection.
+- Provide native MariaDB client binaries for database CLI operations.
 
-Laravel 13 requires PHP 8.3 and supports PHP 8.3 through 8.5. Laravel 12
-supports PHP 8.2 through 8.5.
+## High-value framework behavior
 
-Remove legacy global helpers that conflict with `symfony/polyfill-php85`.
-Below PHP 8.5 the polyfill may define names such as `array_first()` and
-`array_last()`. Use `Arr::first()` and related helpers when callback behavior
-is required.
+### Container and core
 
-Review optional queue dependencies during the upgrade. The Beanstalkd
-integration supports `pda/pheanstalk` 8.x and no longer supports 5.x.
+- Closure bindings can infer their abstract from a declared return type.
+- `Bind`, `BindWhen`, `Singleton`, and `Scoped` attributes reduce service-provider binding code.
+- Contextual attributes can inject context, database, cache, and other manager-selected values, including enum selectors.
+- Contextual attribute resolution can inspect the target reflection parameter.
+- `Context::scope()` restores surrounding context after a callback.
+- `Context::remember()` and `rememberHidden()` lazily populate missing values.
+- Collections support closure-based `pluck()`, enum grouping and keys, `reduceInto()`, and callback-aware `containsOneItem()`.
+- `LazyCollection` supports stepped ranges, heartbeats, and timeout callbacks.
+- `Arr` has typed getters, depth-limited `dot()`, and iterable-aware `every()`, `some()`, and `last()`.
+- Locale-aware number parsing can return `false`; handle failed parses explicitly.
+- `Str::trim()` removes invisible Unicode characters, while `studly()` and `pascal()` can normalize before conversion.
+- Concurrent runs accept timeouts, and process timeouts accept `CarbonInterval`.
 
-## Cache and Session Compatibility
+### Database and Eloquent
 
-Framework fallback cache prefixes, Redis prefixes, and session cookie names
-use hyphenated slugs with `-cache-`, `-database-`, and `-session` suffixes.
-Set these explicitly to retain existing identifiers:
+- Database inspection spans all schemas by default; request schemas and qualification behavior explicitly when needed.
+- PostgreSQL supports online indexes, virtual columns, `tsvector`, precomputed full-text vectors, transaction poolers, and conversion expressions for changed columns.
+- MariaDB supports UUID fallback behavior and vector indexes; SQLite supports JSON, JSONB, transaction modes, pragmas, URI filenames, and polymorphic exclusions.
+- MySQL schema operations support SSL credentials, DDL locks, and explicit SSL disabling for dump or restore workflows.
+- Eloquent supports automatic relationship loading, one-of-many through relationships, nested `relationLoaded()`, and nested-array `loadMissing()`.
+- Use the `Scope` attribute for local scopes; the earlier `NamedScope` name is obsolete.
+- `withAttributes(..., asConditions: false)` supplies creation attributes without adding query predicates.
+- `whereAttachedTo()`, `withoutGlobalScopesExcept()`, `whereValueBetween()`, and `inOrderOf()` cover common relationship and ordering cases.
+- Creation helpers accept lazy closure values, and pivot mutation methods have transactional `*OrFail` variants.
+- Value-object casts support mass assignment; first-party casts include binary, URI, fluent, HTML string, Unicode JSON, and mapped collections.
+- `getPrevious()` exposes values from immediately before the last save.
+- Stop using `orWhereKey()` and `orWhereKeyNot()` because current Laravel 13 patch releases removed them.
 
-```dotenv
-CACHE_PREFIX=example-cache-
-REDIS_PREFIX=example-database-
-SESSION_COOKIE=example-session
-```
+### HTTP and routing
 
-The default `cache.serializable_classes` value is `false`. Allow-list cached
-PHP object classes or migrate cached values to non-object payloads:
+- `Http::record()` records real outbound requests without faking responses.
+- `preventStrayRequests()` can allow selected real URL patterns.
+- HTTP batches support deferred execution, lifecycle hooks, request contexts, and bounded concurrency.
+- Pending HTTP methods can return fluent promises; pools and batches can construct requests with `newRequest()`.
+- HTTP connection and certificate failures surface through Laravel's HTTP exception abstraction.
+- `Response::json()` accepts JSON decoding flags such as `JSON_BIGINT_AS_STRING`.
+- `Request::get()` is deprecated; choose `input()`, `query()`, or another source-specific accessor.
+- `eventStream()` supports custom event names and initial messages.
+- Route metadata, parameter-name injection, closure source locations, and middleware-filtered listings improve routing tooling.
+- Malformed encoded cursors return `null`; validate the result before use.
+- The health route and maintenance mode can serve JSON-aware responses.
 
-```php
-'serializable_classes' => [
-    App\Data\CachedDashboardStats::class,
-],
-```
+### Queues and scheduling
 
-Custom cache stores must implement TTL extension through
-`touch($key, $seconds)`. Cache locks can also refresh their expiration for
-long-running work.
+- `Queue::route()` centralizes job routing; a single string means the queue name.
+- Queue jobs support class attributes for tries, backoff, timeout, failure-on-timeout, delay, and inherited debounce behavior.
+- Runtime queue selection overrides class-level queue attributes.
+- SQS supports fair queues, named credential providers, and disk-backed overflow payloads.
+- Redis Cluster works with queues and concurrency limiting.
+- Failover queues and caches emit failure events that identify the originating exception or underlying store.
+- Workers expose startup, idle, pause, resume, interruption, stopping, and stop-reason telemetry.
+- Queue inspection returns payload and queue details without backend-specific access.
+- Queue fakes inspect delayed and reserved jobs and expose before/after push hooks.
+- Scheduler pause, resume, reload interruption, group callbacks, and environment-filtered listings are available.
+- `schedule:list --json`, `queue:failed` JSON, and `queue:monitor` oldest-pending data support automation.
 
-## Container and Contract Changes
+### Cache, sessions, and filesystems
 
-Constructor resolution and `Container::call()` honor nullable class
-parameters with defaults. A parameter such as `?Carbon $date = null` receives
-`null` when no explicit binding exists.
+- `Cache::memo()` adds request-local memoization and supports `flexible()` stale-while-revalidate reads.
+- `Cache::funnel()` provides driver-independent concurrency limiting.
+- Cache locks can refresh expiration; database-lock pruning can be disabled.
+- Redis tagged-cache flushes are atomic and can use custom connections.
+- The cache session driver uses `SESSION_DRIVER=cache` with `SESSION_STORE` selecting the store.
+- Scoped disks inherit the parent disk's `throw` behavior.
+- Local disks support temporary upload URLs.
+- Served disks must have unique URIs, and generated filesystem URL paths are encoded.
 
-Custom implementations must account for added framework contract methods,
-including:
+### Validation and authentication
 
-- `Dispatcher::dispatchAfterResponse($command, $handler = null)`
-- the current `ResponseFactory::eventStream` signature
-- `MustVerifyEmail::markEmailAsUnverified()`
-- queue metrics such as `pendingSize`, `delayedSize`, `reservedSize`, and
-  `creationTimeOfOldestPendingJob`
+- `Rule::anyOf()` validates when any complete alternative rule set passes.
+- `Rule::contains()` and `in_array_keys` validate required array values or keys.
+- Strict boolean, numeric, integer, and form-request modes reject loose or unknown input.
+- The `image` rule excludes SVG unless explicitly allowed.
+- Uploaded files can be validated for character encoding.
+- Fluent password rules handle `required()` and `sometimes()` consistently and can stringify themselves.
+- `Auth::login()` regenerates the session identifier.
+- Bcrypt can enforce its 72-byte input limit.
+- Remember cookies store a MAC of the password hash, not the raw hash.
+- Decryption authenticates ciphertext against all configured rotated keys.
 
-Manager `extend()` callbacks are bound to the manager. Capture another object
-with `use (...)` instead of assuming it remains available as `$this`.
+### Views, resources, mail, and frontend
 
-Use `#[BindWhen]` for conditional container bindings. Contextual attributes
-can inspect their target reflection parameter, allowing parameter-specific
-resolution.
+- Models and collections can discover resources through convention or explicit resource attributes.
+- `JsonApiResource` supports JSON:API serialization and circular-reference deduplication.
+- Blade provides context blocks, isolated includes, stack detection, function or constant imports, and optimized fonts.
+- Vite can limit preloads and customize asset paths.
+- Resend supports raw and inline attachments.
+- Notifications expose failure transport exceptions, post-send hooks, custom queued job classes, and missing-model deletion behavior.
+- Mail supports Cloudflare Email Service and SES tenants.
 
-## Database and Eloquent Breakpoints
+## Working method
 
-MySQL and MariaDB `upsert()` require a non-empty `uniqueBy` argument. Joined
-MySQL deletes retain requested `ORDER BY` and `LIMIT` clauses; incompatible
-database variants raise `QueryException` instead of running an unbounded
-delete.
-
-Do not instantiate a model while that same model is still executing its
-`boot` or trait `boot*` methods. Laravel now raises `LogicException`; move the
-nested construction outside the boot cycle.
-
-Inferred table names for polymorphic pivot models using custom pivot classes
-are pluralized. Set `$table` explicitly when retaining an older singular
-name.
-
-Serialized Eloquent collections restore eager-loaded relations along with
-their models. Recheck queued payload size and code that previously expected
-relations to be absent after restoration.
-
-For schema work:
-
-- MariaDB supports vector indexes.
-- PostgreSQL connections support transaction poolers.
-- PostgreSQL column changes may use `->using(...)->change()` for conversion
-  expressions.
-- SQLite connections accept `file:` URI database names.
-
-## Routing and Request Protection
-
-Explicit-domain routes match before routes without domains, regardless of
-registration order. Test overlapping domain and non-domain definitions.
-
-The request-forgery middleware is `PreventRequestForgery` and validates the
-request origin through `Sec-Fetch-Site`. Replace direct references to the
-deprecated `VerifyCsrfToken` and `ValidateCsrfToken` aliases, and use
-`preventRequestForgery(...)` in application configuration.
-
-Routing unserialization restricts the classes it may instantiate. Avoid
-arbitrary custom objects in serialized route values.
-
-Routes can carry metadata, and `RouteParameter` can infer its route key from
-the attributed parameter name. Controllers may declare exclusions with
-`#[WithoutMiddleware]`.
-
-## Queues and Scheduling
-
-Centralize job destinations with `Queue::route()`:
-
-```php
-Queue::route(ProcessPodcast::class, connection: 'redis', queue: 'podcasts');
-```
-
-A single string passed to `Queue::route()` is the queue name. Class-level
-queue attributes include `#[Tries]`, `#[Backoff]`, `#[Timeout]`,
-`#[FailOnTimeout]`, and `#[Delay]`; runtime `onQueue()` selection takes
-precedence.
-
-Queue event consumers must use `QueueBusy::$connectionName`.
-`JobAttempted::$exception` contains an exception or `null` instead of exposing
-the old boolean occurrence flag.
-
-The scheduler has dedicated pause and resume commands:
-
-```shell
-php artisan schedule:pause
-php artisan schedule:resume
-```
-
-Schedules supplied through `ApplicationBuilder::withScheduling()` are
-registered when `Schedule` is resolved. Do not rely on immediate registration
-during bootstrap.
-
-Use queue inspection APIs instead of reaching into a backend directly.
-`InspectedJob` includes payload and queue information. Worker stopping events
-also expose processed-job count, last-job time, and memory usage.
-
-## HTTP and Process Behavior
-
-Pools created from `PendingRequest` default to concurrency two. Specify a
-different value explicitly when throughput or upstream limits require it.
-
-Laravel's HTTP client can act directly as a PSR client. HTTP fakes accept
-stream bodies, while `Http::query()` and the testing `query()` / `queryJson()`
-helpers expose request query data.
-
-Pending process timeouts and retry sleeps accept `CarbonInterval` values:
-
-```php
-Process::timeout(CarbonInterval::seconds(30))
-    ->run('php artisan report:build');
-```
-
-Malformed cursor decoding returns `null`; null-check `Cursor::fromEncoded()`
-when the value came from an untrusted request.
-
-## Attributes and Application Features
-
-Controller middleware and authorization checks may be colocated with
-`#[Middleware]` and `#[Authorize]`. Framework attributes declared on supported
-parents or traits are inherited, while a child model's `Table` attribute
-overrides its parent's.
-
-Laravel's provider-independent AI SDK supports agents, tools, embeddings,
-image and audio generation, and vector stores. The query builder can run
-semantic searches through PostgreSQL and `pgvector`:
-
-```php
-$documents = DB::table('documents')
-    ->whereVectorSimilarTo('embedding', 'Best wineries in Napa Valley')
-    ->limit(10)
-    ->get();
-```
-
-First-party image processing is available, and
-`ImageManager::fromStorage()` accepts enum disk selectors.
-
-## Rendering and Test Adjustments
-
-`Js::from()` emits unescaped Unicode by default. Update assertions that expect
-`\u` escape sequences.
-
-Direct Bootstrap 3 pagination view references are
-`pagination::bootstrap-3` and `pagination::simple-bootstrap-3`.
-
-Custom UUID, ULID, and random string factories registered through `Str` reset
-during test teardown. Register them in each applicable setup hook. Fake time
-also resets globally after every test.
-
-Use the linked references for the complete behavior set and exact attribution.
+1. Read the installed framework constraint and lockfile version.
+2. Start with the major-upgrade checks when changing framework versions.
+3. Open only the topic references relevant to the code under review.
+4. Preserve exact defaults and final option names; several entries document reverted or renamed APIs.
+5. Add regression tests for changed routing, serialization, queue, session, schema, and validation behavior.

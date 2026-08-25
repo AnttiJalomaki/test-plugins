@@ -1,18 +1,10 @@
 # Compatibility APIs
 
-## Anthropic Messages
+## Connect Anthropic Messages clients
 
-Ollama 0.14.0 and later accepts Anthropic Messages clients at the server root.
-Clients require an API key or auth token, but Ollama ignores its value.
+Ollama 0.14.0 and later accepts Anthropic Messages clients at the server root. Clients require an API key or authentication token, but Ollama ignores the value.
 
-Supported behavior includes:
-
-- multi-turn messages;
-- streaming;
-- system prompts;
-- tool calling;
-- extended thinking; and
-- image input.
+The compatibility layer supports multi-turn messages, streaming, system prompts, tool calling, extended thinking, and image input.
 
 ```sh
 export ANTHROPIC_AUTH_TOKEN=ollama
@@ -20,33 +12,21 @@ export ANTHROPIC_BASE_URL=http://localhost:11434
 claude --model gpt-oss:20b
 ```
 
-## OpenAI client setup
+## Use the supported OpenAI Chat Completions subset
 
-Point OpenAI clients at:
+Point OpenAI clients at `http://localhost:11434/v1/`. Their required API key is ignored.
 
-```text
-http://localhost:11434/v1/
-```
+`/v1/chat/completions` supports streaming usage, JSON mode, seeded output, tools, and vision. Image content must be base64 data rather than a remote URL.
 
-The client requires an API key, but the local server ignores its value.
+The endpoint does not support:
 
-## Chat Completions
+- `tool_choice`
+- Log probabilities
+- `logit_bias`
+- `user`
+- `n`
 
-`/v1/chat/completions` supports:
-
-- streamed usage;
-- JSON mode;
-- seeded output;
-- tools; and
-- vision.
-
-Image content must be base64 rather than a remote URL.
-
-Unsupported options are `tool_choice`, log probabilities, `logit_bias`,
-`user`, and `n`.
-
-Thinking models accept either `reasoning_effort` or `reasoning.effort`.
-Valid efforts are `"high"`, `"medium"`, `"low"`, `"max"`, and `"none"`.
+Thinking models accept either `reasoning_effort` or `reasoning.effort`. Valid efforts are `"high"`, `"medium"`, `"low"`, `"max"`, and `"none"`.
 
 ```json
 {
@@ -56,46 +36,25 @@ Valid efforts are `"high"`, `"medium"`, `"low"`, `"max"`, and `"none"`.
 }
 ```
 
-## Legacy Completions
+## Account for endpoint-specific limits
 
-`/v1/completions` accepts only a string `prompt`. It supports `suffix`.
+### Completions
 
-It does not support `best_of`, `echo`, log probabilities, `logit_bias`,
-`user`, or `n`.
+`/v1/completions` accepts only a string `prompt`. It supports `suffix`, but not `best_of`, `echo`, log probabilities, `logit_bias`, `user`, or `n`.
 
-## Embeddings
+### Embeddings
 
-`/v1/embeddings` accepts:
+`/v1/embeddings` accepts a string or array of strings, an encoding-format selector, and `dimensions`. It does not accept token arrays or `user`.
 
-- a string or an array of strings;
-- an encoding-format selector; and
-- `dimensions`.
+### Models
 
-It does not accept token arrays or `user`.
+For `/v1/models` and `/v1/models/{model}`, `created` is the model's last-modified time. `owned_by` is the Ollama username and defaults to `"library"`.
 
-## Model metadata
+## Keep Responses requests stateless
 
-For `/v1/models` and `/v1/models/{model}`:
+Ollama 0.13.3 adds `/v1/responses` with streaming, function tools, and reasoning summaries. It supports `input`, `instructions`, `temperature`, `top_p`, and `max_output_tokens`.
 
-- `created` is the model's last-modified time; and
-- `owned_by` is the Ollama username, defaulting to `"library"`.
-
-## Stateless Responses
-
-Ollama 0.13.3 adds `/v1/responses` with streaming, function tools, and
-reasoning summaries.
-
-Supported request fields include:
-
-- `input`;
-- `instructions`;
-- `temperature`;
-- `top_p`; and
-- `max_output_tokens`.
-
-The endpoint does not support `previous_response_id`, `conversation`, or
-`truncation`. Applications must preserve and resend their own conversation
-state.
+It does not support `previous_response_id`, `conversation`, or `truncation`. Applications must carry their own conversation state.
 
 ```python
 response = client.responses.create(
@@ -105,21 +64,32 @@ response = client.responses.create(
 print(response.output_text)
 ```
 
-## Work around hard-coded model names
+## Generate images through the experimental endpoint
 
-If a client insists on a default OpenAI model name, copy an existing model to
-that name:
+`/v1/images/generations` accepts `model`, `prompt`, and `size`. `response_format` must be `b64_json`.
+
+The endpoint does not support `n`, `quality`, `style`, or `user`. It is experimental and may change or be removed.
+
+```python
+response = client.images.generate(
+    model="x/z-image-turbo",
+    prompt="A robot learning to paint",
+    size="1024x1024",
+    response_format="b64_json",
+)
+```
+
+## Alias models for hard-coded defaults
+
+If a client insists on a default OpenAI model name, copy an existing Ollama model to that name and use the alias in API requests.
 
 ```sh
 ollama cp llama3.2 gpt-3.5-turbo
 ```
 
-Use the alias in subsequent API requests.
+## Set context size in a derived model
 
-## Set context outside the request
-
-The compatibility API has no request field for context size. Create and use a
-derived model instead:
+The OpenAI-compatible API has no request field for changing context size. Define `PARAMETER num_ctx` in a Modelfile, create the derived model, then use that name in requests.
 
 ```text
 FROM llama3.2
@@ -129,6 +99,3 @@ PARAMETER num_ctx 65536
 ```sh
 ollama create mymodel
 ```
-
-See [image-generation.md](image-generation.md) for the experimental
-`/v1/images/generations` contract.

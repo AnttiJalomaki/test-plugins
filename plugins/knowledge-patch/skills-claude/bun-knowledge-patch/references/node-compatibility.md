@@ -1,546 +1,380 @@
 # Node.js compatibility
 
-Use this reference when porting Node.js code or relying on core modules, module loading, native addons, workers, VM APIs, and compatibility boundaries.
+## Compatibility boundary
 
-Entries are grouped by developer task. When entries describe evolving behavior, the later attribution supersedes earlier defaults or limitations.
+### Known differences (`nodejs-compatibility`)
 
-## Compatibility boundaries and reported baseline
+The compatibility snapshot measured Bun against Node.js v23. Later releases
+closed several gaps, so distinguish persistent differences below from the
+closures in the next section.
 
-### Node.js compatibility additions *(1.2-guide)*
+- `node:wasi` remains partial.
+- `module.register()` is not implemented; use `Bun.plugin`. CJS
+  `module._extensions`, `_pathCache`, and `_cache` exist but are no-ops.
+  Overriding `require.cache` works for ESM and CJS. `syncBuiltinESMExports` and
+  `Module#load()` are missing.
+- `node:v8` serialize/deserialize use JavaScriptCore structured-clone bytes,
+  not V8's wire format. Do not persist or exchange them across Node and Bun.
+- Promise hooks behind `async_hooks.createHook()` do not fire; APIs built on
+  `AsyncLocalStorage` or `AsyncResource` work.
+- Worker options `stdin` and `trackedUnmanagedFds` remain ignored;
+  `moveMessagePortToContext` is missing. Child-process `Stream`, `proc.uid`, and
+  `proc.gid` were listed as missing; spawning now accepts uid/gid, but no later
+  entry adds the result properties or Stream export.
+- `process.loadEnvFile` is absent. `getActiveResourcesInfo`,
+  `getActiveResources`, and `setSourceMapsEnabled` are no-op stubs.
+- Assigning `process.title` was a no-op on macOS and Linux in the compatibility
+  snapshot; later guidance changes its default value but does not state that
+  assignment became effective.
+- Missing exports include util `getSystemErrorMap`, `getSystemErrorMessage`,
+  `transferableAbortSignal`, and `transferableAbortController`; crypto
+  `secureHeapUsed`, `setEngine`, and `setFips`; TLS `createSecurePair`.
 
-Bun can now create `node:http2` servers (enabling gRPC servers), use `node:dgram` UDP sockets, and run `node:cluster` workers. Cluster shared-port load balancing uses `reusePort`, which is only effective on Linux; `node:zlib` also gains Brotli, `node:v8` gains `getHeapSnapshot()`/`writeHeapSnapshot()`, and partial support for addons using V8's public C++ API lets more pre-N-API packages load.
+### Gaps closed (`1.4`, `1.4-3`)
 
-### Node.js 24 compatibility baseline *(since 1.2.18)*
+`node:sqlite`, `node:repl`, `node:trace_events`, and `node:domain` are
+implemented. Worker `resourceLimits`, `stdout`, `stderr`, and `eval` now work.
+Socket STARTTLS supports `upgradeTLS({ isServer: true })`, and cluster shares
+listeners.
 
-Bun now reports Node.js 24.3.0 through `process.version` and `process.versions.node` and updates its reported N-API version. Native addons can therefore select prebuilt binaries targeting Node.js 24.
+The direct socket-based `node:http` client closes earlier buffering and custom
+Agent gaps. Worker transfer marking, cross-thread messaging, IPC socket-handle
+passing through cluster, and util `getCallSites` also arrived later.
 
-### Node.js compatibility additions *(since 1.2.23)*
+Playwright, vitest pools/coverage, Datadog profiling, and OpenTelemetry HTTP/fs
+instrumentation consequently run under Bun.
 
-`node:http` servers now handle `CONNECT`, enabling HTTP proxies. `dns.resolve()` no longer passes an extra hostname to callbacks, promised A/AAAA resolutions return string arrays, and `process.report.getReport()` is now available on Windows.
+## Reported Node version and ABI
 
-### Diagnostics and tracing modules *(nodejs-compatibility)*
+### Version transitions (`1.2.18`, `1.4-2`, `1.4-3`)
 
-`node:diagnostics_channel` and `node:trace_events` are documented as fully implemented, so Node instrumentation using these standard surfaces does not require Bun-specific replacements.
+Bun first moved its reported Node version to v24.3.0 so Node 24 prebuilds could
+load. Bun 1.4 reports Node.js 26, `process.versions.modules` 147, and Node-API
+version 10 with Node 26 headers and five experimental `node_api_*` functions.
+Native addons therefore need the corresponding ABI build.
 
-### Low-level async hooks *(nodejs-compatibility)*
+`res.writeHeader()` is gone; use `res.writeHead()`. In paused streams,
+`readable.read()` without a size returns one buffered chunk rather than all
+content, unless `setEncoding()` is active.
 
-`node:async_hooks` implements `AsyncLocalStorage` and `AsyncResource`, but does not invoke V8 promise hooks. Low-level instrumentation that depends on those hooks is not Node-compatible.
+## Modules and resolution
+
+### Node path and CommonJS hooks (`1.2.2`, `1.2.9`)
+
+- Runtime bare imports search `NODE_PATH`; `bun build` also honors it
+  (`1.2.18`).
+- `--preserve-symlinks` and `NODE_PRESERVE_SYMLINKS=1` make a symlinked package
+  resolve dependencies from its real location.
+- `require.extensions[ext]` may call `module._compile`, and
+  `require.resolve(id, { paths })` works.
 
-### Child-process IPC limitations *(nodejs-compatibility)*
+### Module metadata and hooks (`1.2.6`, `1.2.19`, `1.3.2`)
 
-`node:child_process` omits `proc.gid`, `proc.uid`, and the exported `Stream` class, and its IPC cannot transfer socket handles. Node-to-Bun IPC can use JSON serialization.
+`module.children` is populated. `node:module` exports `SourceMap` and
+`findSourceMap()` with payload and line/column lookup.
 
-### Worker-thread option gaps *(nodejs-compatibility)*
+`Module._resolveFilename` overrides receive `options`, and Bun honors
+`options.paths`, rejecting non-arrays with `ERR_INVALID_ARG_TYPE`.
 
-`node:worker_threads` workers do not support the `stdin`, `stdout`, `stderr`, `trackedUnmanagedFds`, or `resourceLimits` options. The module also lacks `markAsUntransferable()` and `moveMessagePortToContext()`.
+`process.binding("http_parser")` exposes the llhttp-backed `HTTPParser`, also
+re-exported by `node:_http_common` (`1.2.16`).
 
-### Module-loader compatibility *(nodejs-compatibility)*
+### Namespace and feature properties (`1.2.19`, `1.2.21`)
 
-Overriding `require.cache` works for both ESM and CommonJS modules, but `node:module` lacks `syncBuiltinESMExports()`, `Module#load()`, and `module.register()`. Its `_extensions`, `_pathCache`, and `_cache` internals are no-ops; use `Bun.plugin()` instead of `module.register()`.
+`process.features.typescript` is `"transform"`; `require_module` and
+`openssl_is_boringssl` are true. ESM namespace objects do not inherit
+`Object.prototype`, so properties such as `toString` are absent.
 
-### Cryptography compatibility gaps *(nodejs-compatibility)*
+`@types/bun` detects whether `tsconfig.json` includes DOM libs. Without them,
+EventSource, Performance, and BroadcastChannel extend Node-compatible types
+rather than empty interfaces. The types also work with TypeScript 5.9 without
+`skipLibCheck`; sqlite transaction return types infer from callbacks
+(`1.2.20`).
 
-`node:crypto` does not implement `secureHeapUsed()`, `setEngine()`, or `setFips()`. Software that requires OpenSSL engine or FIPS controls cannot rely on those Node APIs under Bun.
+### Compile cache (`1.4-3`)
 
-### Other core-module omissions *(nodejs-compatibility)*
+`module.enableCompileCache(dir)` and `NODE_COMPILE_CACHE` persist bytecode
+between runs. This is separate from `bun build --bytecode`.
 
-`node:tls` lacks `createSecurePair()`, while `node:domain` lacks `Domain` and `active`. `node:util` lacks `getCallSite()`, `getCallSites()`, `getSystemErrorMap()`, `getSystemErrorMessage()`, `transferableAbortSignal()`, and `transferableAbortController()`.
+## HTTP, HTTPS, HTTP/2, and cluster
 
-### V8 serialization format *(nodejs-compatibility)*
+### Direct Node HTTP client (`1.4-3`)
 
-`node:v8`'s `serialize()` and `deserialize()` use JavaScriptCore's wire format rather than V8's, so their serialized data is not a Node-compatible interchange format. Most other `node:v8` methods remain unavailable; use `bun:jsc` for profiling.
+`http.ClientRequest` now uses net/TLS sockets, Node's parser, and an Agent pool.
+Bodies stream, custom Agents and lookup functions are honored, and keepalive,
+Upgrade, CONNECT, 1xx information events and `createConnection` behave like
+Node.
 
-### Process compatibility gaps *(nodejs-compatibility)*
+On the server, `headersTimeout`, `requestTimeout`, and `keepAliveTimeout` fire;
+timeouts emit raw 408 responses and use `connectionsCheckingInterval`.
+Pipelining and `maxRequestsPerSocket` work, sockets are real `net.Socket`s, and
+per-server `insecureHTTPParser`/`maxHeaderSize` are respected.
 
-`process.binding()` is only partially implemented, and `process.title` is a no-op on macOS and Linux. `getActiveResourcesInfo()`, `setActiveResourcesInfo()`, `getActiveResources()`, and `setSourceMapsEnabled()` are stubs, while `process.loadEnvFile()` is not implemented.
+### Earlier HTTP additions (`1.2-guide`, `1.2.10`, `1.2.23`)
 
-### Unsupported Node modules *(nodejs-compatibility)*
+- `node:http2` secure servers and gRPC work; `node:dgram` and `node:cluster`
+  are available. Cluster `reusePort` was Linux-only at introduction.
+- `createServer({ rejectNonStandardBodyWrites: true })` throws when writing a
+  body for HEAD; default behavior discards it.
+- HTTP servers handle CONNECT.
+- `http.Server.closeIdleConnections()` is implemented (`1.2.22`).
 
-The Node-compatible `node:repl` and `node:sqlite` modules are not implemented, even though Bun provides separate native REPL and SQLite facilities.
+### HTTP/2 and cluster expansion (`1.4-3`)
 
-### Inspector coverage boundary *(nodejs-compatibility)*
+- HTTP/2 supports push, HTTP/1 fallback, AltSvc/Origin frames, extended
+  CONNECT, and diagnostics channels.
+- Cluster implements round-robin descriptor passing, `SCHED_NONE`, UDP
+  clustering, and `worker.send(message, socket)` handle passing.
+
+## Workers and child processes
+
+### Worker environment and events (`1.2.13`)
+
+`setEnvironmentData` snapshots values into workers created later;
+`getEnvironmentData` reads them. `process` emits `worker` on creation. Worker
+was not marked stable at that point.
+
+Worker error events carry a real `Error` rather than a Web Worker `ErrorEvent`
+string (`1.2.14`). `Worker.getHeapSnapshot()` arrived in `1.2.15`.
+
+### Cross-thread behavior (`1.4-3`)
+
+- `postMessageToThread(threadId, value)` delivers a `workerMessage` event to
+  another thread.
+- `env: SHARE_ENV` makes process environments live and shared.
+- `markAsUntransferable` and `markAsUncloneable` work.
+- Workers expose heap statistics, CPU usage, and CPU profiling.
+- `terminate()` resolves only after descendant workers stop, with queued
+  messages delivered first.
+- Unsettled top-level await exits 13; worker `process.abort()` stops only that
+  worker; positional postMessage transfer lists transfer rather than clone.
 
-Other `node:inspector` APIs remain unavailable beyond the previously documented Profiler support.
+### Spawn and fork compatibility (`1.2.9`, `1.2.17`, `1.3.2`, `1.4-3`)
+
+- `maxBuffer` applies to Bun and child-process spawn APIs and kills the child
+  after the threshold.
+- `child_process.fork()` honors `execArgv`; `process._eval` contains `-e` code.
+- Synchronous spawn uses an isolated event loop, so timers/microtasks do not run
+  during it. Types expose `detached`, `lazy`, and `onDisconnect` under
+  `Bun.Spawn.BaseOptions`; `Spawn.OptionsObject` is deprecated.
+- Bun and child-process spawn honor uid/gid, drop supplementary groups first,
+  throw `EPERM` synchronously, and return `ENOTSUP` on Windows.
+- `child_process.spawn()` ignores `options.encoding`; output streams always
+  emit Buffer objects (`1.4-2`).
 
-### Modules without full compatibility guarantees *(nodejs-compatibility)*
+### No native addons (`1.2.13`)
 
-`node:wasi` is only partially implemented. `node:perf_hooks` exposes its APIs, but its Node.js test suite does not pass, so packages that require exact behavior need validation.
+`--no-addons` makes `process.dlopen()` throw `ERR_DLOPEN_DISABLED` and disables
+the `node-addons` export condition so packages may choose JS fallbacks.
 
-## Modules, loading, and resolution
+## Test API
 
-### `$NODE_PATH` module resolution *(since 1.2.2)*
+### Initial implementation (`1.2.6`)
 
-Bun now searches the module directories listed in `$NODE_PATH`, matching Node.js resolution for packages outside an ancestor `node_modules` directory.
+`node:test` runs through Bun's test runner. At introduction, subtests, mocks,
+snapshots, timers, reporters and the programmatic API were missing.
 
-```sh
-export NODE_PATH="/path/to/global/modules"
-bun run my-script.js
-```
+### Expanded Node test support (`1.4-3`)
 
-### CommonJS module metadata and built-in identity *(since 1.2.6)*
+Subtests through `t.test`, `t.describe`, or nested top-level test calls execute
+inline. Supported additions include plans, waitFor, getTestContext, mock timers,
+mocked properties, runtime skip/todo, tags, registered assertions, callback
+tests, and a per-test `t.mock` tracker.
 
-Bun now populates `module.children`, reports `module.id` as `"."` for the entry module, and preserves the `node:` prefix during resolution. An unknown prefixed built-in now throws `ERR_UNKNOWN_BUILTIN_MODULE` instead of being treated as an ordinary package name.
+Programmatic `run()` launches one child per file and returns a TestsStream with
+Node event ordering. `expectFailure` treats a throw as success and a pass as
+`expectedFailure`.
 
-### Custom CommonJS extension loaders *(since 1.2.9)*
+## Filesystem and path APIs
 
-Bun now supports `require.extensions`, allowing CommonJS code to register a loader for a file extension.
+### Glob evolution (`1.2.2`, `1.2.17`, `1.2.18`, `1.2.19`)
 
-```js
-require.extensions[".custom"] = (module, filename) => {
-  module._compile('module.exports = "loaded";', filename);
-};
-const value = require("./file.custom");
-```
+Node `fs.glob`, sync glob, and promise glob are implemented. The promise form is
+an async iterator. Initially one pattern was accepted and `withFileTypes` was
+missing; options later became optional, results began including directories,
+and the pattern argument gained arrays. `exclude` accepts a predicate or glob
+array, with `ignore` as an alias.
 
-### Additional CommonJS resolution paths *(since 1.2.9)*
+### Watches and file handles (`1.3.1`, `1.3.14`, `1.4-3`, `1.4-4`)
 
-`require.resolve()` now accepts a `paths` option containing additional directories to search.
+- `FileHandle.readLines()` gives backpressure-aware async line iteration.
+- Recursive Linux watches include directories created after start and
+  re-created files emit changes.
+- `fs.watch` accepts an ignore predicate; promise watch accepts AbortSignal.
+- On Linux/Windows kernel queue overflow, every live watcher receives
+  `("change", null)` rather than silently losing events.
+- `fs.mkdtempDisposable()` and FileHandle `pull()`/`writer()` are implemented.
 
-```js
-const path = require.resolve("module", { paths: ["./lib", "./src"] });
-```
+### Filesystem behavior changes (`1.2.13`, `1.4-2`, `1.4-3`)
 
-### Symlink-preserving module resolution *(since 1.2.9)*
+- Recursive `mkdirSync` on Windows returns the first created directory with the
+  `\\?\` prefix.
+- `fs.rmdir({ recursive: true })` rejects; use `fs.rm`.
+- `appendFile({ flag: "w" })` truncates. `fs.rm` rejects explicitly undefined
+  options; `fs.open` rejects an object `flags` value.
+- Errors expose Node's stable syscall names such as `stat` or `utime`, not raw
+  platform calls.
 
-Pass `--preserve-symlinks` or set `NODE_PRESERVE_SYMLINKS=1` to resolve modules from the symlink path instead of the symlink target's real path, preserving access to dependencies located beside the symlink.
+## Crypto, V8, VM, and WebAssembly
 
-### Node source-map APIs *(since 1.2.19)*
+### Crypto additions (`1.2.1`, `1.2.6`, `1.2.11`, `1.3.13`, `1.4`)
 
-`node:module` now provides the `SourceMap` class and `findSourceMap()`. A `SourceMap` exposes its payload and can map generated positions with `findEntry()`.
+- X25519 key-pair generation works; it previously threw NotSupportedError.
+- HKDF, prime generation/checking, and `vm.compileFunction()` are implemented.
+- Crypto key objects are real Secret/Public/PrivateKeyObject instances;
+  KeyObject and CryptoKey survive structured cloning and cloned keys compare
+  equal through `.equals()`.
+- SHA3-224/256/384/512 work in hashes, HMAC and WebCrypto. X25519
+  `deriveBits()` accepts null or zero length for all 32 bytes.
+- WebCrypto and node crypto expose post-quantum ML-DSA signatures and ML-KEM
+  encapsulation.
 
-### Consistent module-resolution errors *(since 1.2.20)*
+### VM modules and bytecode (`1.2.12`, `1.2.15`, `1.2.16`, `1.2.19`, `1.4-3`)
 
-Failures from `Bun.resolve()` and `Bun.resolveSync()` now consistently throw `Error` instances rather than potentially throwing raw values.
+- `vm.Script` can produce, create, and consume cached data.
+- `SourceTextModule` and `SyntheticModule` support linking, evaluation and
+  namespaces; vm.Module cached-data properties are implemented.
+- `vm.constants.DONT_CONTEXTIFY` creates a normally behaving global context.
+- Node 26 linking adds `linkRequests`, `instantiate`, `moduleRequests`,
+  `hasTopLevelAwait`, and `microtaskMode: afterEvaluate`.
 
-## Filesystem APIs
+### V8 and inspector (`1.2-guide`, `1.3.7`, `1.4-3`)
 
-### Node-compatible filesystem stats *(since 1.2.1)*
+Heap snapshots are available through `node:v8`; some V8 C++ API addons work
+despite JavaScriptCore. Inspector supports callback/promise Profiler-domain
+sampling. Later it adds a CDP server through `open`, `url`, `close`, and
+`waitForDebugger`, and v8 adds `GCProfiler` and
+`isStringOneByteRepresentation`.
 
-`fs.fstatSync()` now honors `{ bigint: true }` and returns `BigIntStats`. Constructing `new fs.Stats()` also matches Node by leaving numeric fields undefined and producing invalid date fields instead of zero-valued epoch data.
+### Async local storage (`1.4-3`)
 
-```js
-import fs from "node:fs";
-const stats = fs.fstatSync(0, { bigint: true });
-```
+`new AsyncLocalStorage({ name, defaultValue })` supports Node 26 constructor
+options. `withScope(value)` returns a disposable scope, so `using` can delimit
+storage without nesting a `run()` callback.
 
-### Node-compatible filesystem globbing *(since 1.2.2)*
+### WebAssembly (`1.2.20`, `1.4-3`)
 
-`node:fs` now provides `glob()` and `globSync()`, while `node:fs/promises` provides an async-iterable `glob()`. Only one pattern is currently supported; pattern arrays and the `withFileTypes` option are not yet available.
+Streaming compile/instantiate accept a Fetch promise. JavaScript Promise
+Integration is enabled by default through `WebAssembly.Suspending` and
+`WebAssembly.promising`. Memory64, multi-memory, relaxed SIMD, interpreter SIMD,
+and streaming `compileOptions` are implemented.
 
-```ts
-import { glob } from "node:fs/promises";
+## Streams, timers, and event loop
 
-for await (const file of glob("**/*.js", { cwd: "./src" })) {
-  console.log(file);
-}
-```
+### Stream operators (`1.4-3`)
 
-### Embedded files through `node:fs` *(since 1.2.3)*
+With `--experimental-stream-iter`, `node:stream/iter` and `node:zlib/iter`
+provide iterator-style operators such as map and filter.
 
-Files embedded in a compiled executable with a `file` import can now be passed to async `fs.readFile()` and `fs.stat()`, as well as sync `readFileSync()`, `statSync()`, and `existsSync()`.
+### Socket half-close (`1.4-3`)
 
-```ts
-import { promises as fs } from "node:fs";
-import asset from "./asset.txt" with { type: "file" };
+`net.Socket.end()` half-closes; call `destroy()` if complete teardown was
+intended. Net and Bun connect accept `localAddress`/`localPort`.
 
-const contents = await fs.readFile(asset);
-const stats = await fs.stat(asset);
-```
+### Timers (`1.2.16`, `1.2.18`, `1.3.7`)
 
-### Windows recursive-mkdir return paths *(since 1.2.13)*
+`node:timers/promises` accepts an AbortController directly in the options slot.
+`clearImmediate` no longer clears timeouts or intervals, although timeout and
+interval clear functions still clear all three. Timer handles expose Node's
+`_idleStart` monotonic timestamp.
 
-On Windows, recursive `fs.mkdirSync()` with an absolute path now returns the first created directory with its NT path prefix, such as `\\?\C:\path`, matching newer Node.js versions. Code comparing or reusing that return value must account for the prefixed form.
+### Compression streams and zlib (`1.2-guide`, `1.2.17`, `1.3.3`, `1.4-3`)
 
-### Directory-inclusive filesystem globs *(since 1.2.18)*
+Node zlib supports Brotli and zstd, including streaming, and later their
+dictionaries. Web `CompressionStream`/`DecompressionStream` support standard
+gzip/deflate formats plus Bun-only `brotli` and `zstd` names.
 
-`fs.glob()`, `fs.globSync()`, and `fs.promises.glob()` now include matching directories by default, equivalent to `Bun.Glob` scanning with `onlyFiles: false`.
+## Process, OS, and diagnostics
 
-```js
-import { globSync } from "node:fs";
-const entries = globSync("**/*", { cwd: "/tmp/project" });
-```
+### Process ref control (`1.2.11`)
 
-### `fs.watchFile` event semantics *(since 1.2.18)*
+`process.ref()`/`unref()` invoke an object's methods or its
+`Symbol.for("nodejs.ref")`/`unref` hooks and accept native handles.
 
-Reading a watched file and changing only its access time no longer triggers a change event. Calling `stop()` on its `StatWatcher` emits `stop` asynchronously on the next tick.
+`util.parseArgs({ allowNegative: true })` makes `--no-foo` set a boolean option
+false; omitted `args` defaults to `process.argv`.
 
-### Array patterns in `fs.glob` *(since 1.2.19)*
+### Process behavior (`1.2.4`, `1.2.19`, `1.3.13`, `1.3.14`, `1.4-2`)
 
-`node:fs` `glob()`, `globSync()`, and `promises.glob()` accept an array as the pattern argument, and `exclude` accepts an array of patterns.
+- Eval/print `process.argv` omits the old cwd `[eval]` placeholder and retains
+  all user arguments.
+- IPv6 network-interface `scope_id` became `scopeid`.
+- `process.ppid` calls `getppid()` on access so orphan detection stays current.
+- `process.execve()` replaces the process image, inherits stdio, closes other
+  fds, resets the signal mask, warns once, rejects workers, and is unavailable
+  on Windows. Worker use throws `ERR_WORKER_UNSUPPORTED_OPERATION`; Windows
+  throws `ERR_FEATURE_UNAVAILABLE_ON_PLATFORM`, and first use emits an
+  ExperimentalWarning.
+- `process.title` defaults to invoked `argv[0]`; `reallyExit()` does not emit
+  exit. Warnings print in Node format and listeners do not suppress default
+  output; use `--no-warnings`.
 
-```js
-import { globSync } from "node:fs";
-const files = globSync(["**/*.js", "**/*.ts"], { exclude: ["vendor/**"] });
-```
+### Environment and time zone (`1.4-3`)
 
-### Async line iteration from file handles *(since 1.3.1)*
+Changing `process.env.TZ` affects existing Date objects. Assigned environment
+values coerce to strings and structured cloning works. Warning-control flags
+for suppression, traces, redirect, and selected disabling are wired up.
 
-`FileHandle.readLines()` from `node:fs/promises` provides backpressure-aware async iteration, handles empty and CRLF lines, and accepts `createReadStream` options such as `encoding`.
+### OS values (`1.3.12`, `1.3.13`)
 
-```ts
-import { open } from "node:fs/promises";
-const file = await open("file.txt");
-try {
-  for await (const line of file.readLines({ encoding: "utf8" })) console.log(line);
-} finally {
-  await file.close();
-}
-```
+Linux availableParallelism/hardwareConcurrency and Bun's worker/JIT pools honor
+cgroup CPU quotas. `os.freemem()` uses Linux `MemAvailable`, including
+reclaimable page cache.
 
-### Recursive Linux file watching *(since 1.3.14)*
+### Diagnostics and tracing (`1.2.15`, `1.2.22`, `1.4-3`)
 
-On Linux, `fs.watch(path, { recursive: true })` now begins watching directories created after the watcher starts. Deleting and recreating a watched file also re-establishes its watch, so later modifications emit `change` events again.
+`perf_hooks.createHistogram()` was initially unavailable, then gained
+`record`, `min`, `max`, `mean`, `stddev`, `totalCount`, and `percentile`, with
+`lowest`, `highest`, and `figures` options. `monitorEventLoopDelay()` was later
+implemented too. Trace events write Chrome-format logs under the standard Node
+flags and categories.
 
-## Cryptography
+### TLS APIs (`1.4-3`)
 
-### X25519 key generation *(since 1.2.1)*
+`node:tls` adds session and keylog events, `SNICallback`, `ALPNCallback`, PFX,
+structured OpenSSL errors with code/library/reason, per-context
+`addCACert()`, and process-wide `setDefaultCACertificates()`.
 
-`node:crypto` key-pair generation now supports X25519 for Diffie-Hellman key exchange; both encoded keys can be requested with the usual Node options.
+## Utilities and web-platform compatibility
 
-```ts
-import crypto from "node:crypto";
+### Utility functions (`1.2.11`, `1.2.13`, `1.4-2`, `1.4-3`)
 
-const keys = crypto.generateKeyPairSync("x25519", {
-  publicKeyEncoding: { type: "spki", format: "der" },
-  privateKeyEncoding: { type: "pkcs8", format: "der" },
-});
-```
+- `util.parseArgs` accepts `allowNegative`; omitted args default to
+  `process.argv`.
+- `util.promisify()` warns on promise-returning functions and preserves name.
+- `util.styleText()` returns plain text for a non-TTY unless
+  `validateStream: false`.
+- `node:util` adds getCallSites, hex styleText colors, and `tty.WriteStream`.
 
-### Additional `node:crypto` APIs *(since 1.2.6)*
+### Text and Buffer (`1.2.12`, `1.4-3`)
 
-Bun now implements asynchronous and synchronous HKDF key derivation with `hkdf()`/`hkdfSync()`, plus prime generation and checking with `generatePrime()`/`generatePrimeSync()` and `checkPrime()`/`checkPrimeSync()`.
+TextDecoder rejects labels with NUL, normalizes `.encoding`, and coerces
+`fatal`. It later supports every WHATWG encoding and all documented labels.
+Buffer search methods accept an `end` parameter.
 
-```ts
-import { checkPrimeSync, generatePrimeSync, hkdfSync } from "node:crypto";
+`node:dns/promises` exports `getDefaultResultOrder()` and `getServers()`
+(`1.4-3`).
 
-const key = hkdfSync("sha256", "secret", "salt", "context", 32);
-const prime = generatePrimeSync(512);
-console.log(checkPrimeSync(prime)); // true
-```
+### TTY lifecycle (`1.2.22`)
 
-### Clonable Node crypto keys *(since 1.2.11)*
+Opening `/dev/tty` after stdin closes no longer fails with `ESPIPE`, and
+`tty.ReadStream` exposes `ref()` and `unref()`.
 
-`KeyObject` instances now use the full `SecretKeyObject`, `PublicKeyObject`, and `PrivateKeyObject` hierarchy, and both `KeyObject` and `CryptoKey` instances can be passed to `structuredClone()`. Separately, `crypto.generatePrime()` and `crypto.generatePrimeSync()` now return `ArrayBuffer` rather than `Buffer`.
+### Structured clone and namespace values (`1.4-2`)
 
-```js
-import crypto from "node:crypto";
+`structuredClone` preserves shared identity for Date, RegExp, Error subclasses,
+Blob, File, CryptoKey and similar values, and rejects non-object transfer-list
+entries with TypeError.
 
-const secret = crypto.generateKeySync("aes", { length: 128 });
-const clone = structuredClone(secret);
-console.log(secret.equals(clone)); // true
+### Miscellaneous additions
 
-const prime = crypto.generatePrimeSync(512);
-console.log(prime instanceof ArrayBuffer); // true
-```
-
-### SHA-3 crypto algorithms *(since 1.3.13)*
-
-WebCrypto and `node:crypto` support SHA3-224, SHA3-256, SHA3-384, and SHA3-512 for digests and HMAC operations. The names work with `createHash()`, `createHmac()`, `getHashes()`, `SubtleCrypto.digest()`, and HMAC signing and verification.
-
-```ts
-const digest = await crypto.subtle.digest(
-  "SHA3-256",
-  new TextEncoder().encode("hello"),
-);
-```
-
-### X25519 WebCrypto key agreement *(since 1.3.13)*
-
-`SubtleCrypto.deriveBits()` now accepts X25519 keys and rejects small-order public keys as required by RFC 7748. A `null` or zero bit length returns the complete 32-byte shared secret.
-
-```ts
-const local = await crypto.subtle.generateKey("X25519", false, ["deriveBits"]);
-const remote = await crypto.subtle.generateKey("X25519", false, ["deriveBits"]);
-const secret = await crypto.subtle.deriveBits(
-  { name: "X25519", public: remote.publicKey },
-  local.privateKey,
-  256,
-);
-```
-
-## VM, V8, inspector, and performance APIs
-
-### `vm.compileFunction()` *(since 1.2.6)*
-
-`node:vm` now implements `compileFunction()` for compiling source into a callable function with named parameters.
-
-```ts
-import * as vm from "node:vm";
-
-const add = vm.compileFunction("return left + right", ["left", "right"]);
-console.log(add(20, 22)); // 42
-```
-
-### Cached `node:vm` scripts *(since 1.2.12)*
-
-`vm.Script` now supports the `produceCachedData` and `cachedData` options plus `createCachedData()`, allowing compiled JavaScript bytecode to be reused.
-
-```js
-import { Script } from "node:vm";
-
-const source = 'console.log("Hello world!")';
-const script = new Script(source, { produceCachedData: true });
-const cachedData = script.createCachedData();
-const reused = new Script(source, { cachedData });
-```
-
-### ECMAScript modules in `node:vm` *(since 1.2.15)*
-
-`vm.SourceTextModule` can now evaluate ECMAScript modules in separate contexts, including linked imports, cached modules, and propagated errors.
-
-```js
-import vm from "node:vm";
-
-const context = vm.createContext({ value: 21 });
-const module = new vm.SourceTextModule("export const answer = value * 2", {
-  context,
-});
-await module.link(() => {
-  throw new Error("unexpected import");
-});
-await module.evaluate();
-console.log(module.namespace.answer); // 42
-```
-
-### Worker heap snapshots *(since 1.2.15)*
-
-`Worker.getHeapSnapshot()` from `node:worker_threads` now captures a V8 heap snapshot for an individual worker, enabling worker-specific memory investigation.
-
-### Performance histograms *(since 1.2.15)*
-
-`createHistogram()` from `node:perf_hooks` records sampled integer distributions with configured bounds and precision, exposing statistics such as minimum, maximum, mean, standard deviation, count, and percentiles.
-
-```js
-import { createHistogram } from "perf_hooks";
-
-const histogram = createHistogram({ lowest: 1, highest: 1_000_000, figures: 3 });
-histogram.record(100);
-histogram.record(200);
-console.log(histogram.percentile(50), histogram.totalCount);
-```
-
-### Synthetic VM modules *(since 1.2.16)*
-
-`vm.SyntheticModule` creates modules whose exports are populated by a callback, complementing source-text modules when values originate in host code.
-
-```js
-import vm from "node:vm";
-
-const module = new vm.SyntheticModule(["answer"], function () {
-  this.setExport("answer", 42);
-});
-await module.link(() => {});
-await module.evaluate();
-console.log(module.namespace.answer); // 42
-```
-
-### Non-contextified VM globals *(since 1.2.19)*
-
-`node:vm` now supports `vm.constants.DONT_CONTEXTIFY`. Passing it to `vm.createContext()` produces a context whose `globalThis` is the same ordinary object visible to the parent.
-
-```js
-import vm from "node:vm";
-const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
-console.log(vm.runInContext("globalThis", context) === context); // true
-```
-
-### Event-loop delay histograms *(since 1.2.22)*
-
-`monitorEventLoopDelay()` from `node:perf_hooks` returns an `IntervalHistogram` that samples event-loop delay in nanoseconds and supports `enable()`, `disable()`, percentile queries, and `reset()`.
-
-```ts
-import { monitorEventLoopDelay } from "node:perf_hooks";
-const delay = monitorEventLoopDelay({ resolution: 20 });
-delay.enable();
-await Bun.sleep(100);
-delay.disable();
-console.log(delay.percentile(99));
-```
-
-### CPU profiling through `node:inspector` *(since 1.3.7)*
-
-Bun now implements `Profiler.enable`, `disable`, `start`, `stop`, and `setSamplingInterval` through both `node:inspector` callback sessions and `node:inspector/promises`.
-
-```ts
-import inspector from "node:inspector/promises";
-const session = new inspector.Session();
-session.connect();
-await session.post("Profiler.enable");
-await session.post("Profiler.start");
-const { profile } = await session.post("Profiler.stop");
-```
-
-## Workers, processes, and timers
-
-### Node process-stream compatibility *(since 1.2.1)*
-
-`process.stdin.ref()` and `process.stdin.unref()` are now available, and pending `process.stdout.write()` operations keep the process alive until their output is handled.
-
-### Process-level ref controls *(since 1.2.11)*
-
-`process.ref(object)` and `process.unref(object)` control whether an object keeps the event loop alive. They dispatch to its `ref()`/`unref()` methods or the corresponding `Symbol.for("nodejs.ref")`/`Symbol.for("nodejs.unref")` hooks and also work with native timers.
-
-```js
-const interval = setInterval(() => {}, 1_000);
-process.unref(interval);
-```
-
-### Worker environment data *(since 1.2.13)*
-
-`node:worker_threads` now implements `setEnvironmentData()` and `getEnvironmentData()`, allowing a parent thread to make keyed data available to subsequently created workers.
-
-```js
-// main.js
-import { Worker, setEnvironmentData } from "node:worker_threads";
-setEnvironmentData("config", { timeout: 1_000 });
-new Worker("./worker.js");
-
-// worker.js
-import { getEnvironmentData } from "node:worker_threads";
-const config = getEnvironmentData("config");
-```
-
-### Worker creation events *(since 1.2.13)*
-
-Creating a `Worker` now emits a `"worker"` event on `process`; the listener receives the worker and can inspect properties such as `threadId`.
-
-```js
-process.on("worker", worker => console.log(worker.threadId));
-```
-
-### Worker-thread error objects *(since 1.2.14)*
-
-An unhandled exception in a `node:worker_threads` worker now emits an actual `Error` to the worker's `"error"` listener instead of the string-only `ErrorEvent` used by Web Workers.
-
-```js
-import { Worker } from "node:worker_threads";
-new Worker("./worker.js").on("error", error => {
-  console.log(error instanceof Error); // true
-});
-```
-
-### Forked-process runtime arguments *(since 1.2.17)*
-
-`child_process.fork()` now honors `execArgv`, passing Bun runtime flags to the child and exposing them through the child's `process.execArgv`.
-
-```js
-import { fork } from "node:child_process";
-
-fork("./child.js", { execArgv: ["--smol"] });
-```
-
-### Eval source process metadata *(since 1.2.17)*
-
-When Bun runs code with `-e` or `--eval`, `process._eval` now contains the evaluated source string for Node-compatible tooling that inspects it.
-
-```sh
-bun -e 'console.log(process._eval)'
-```
-
-### Timer cancellation boundaries *(since 1.2.18)*
-
-`clearImmediate()` no longer clears timeouts or intervals. `clearTimeout()` and `clearInterval()` continue to clear either kind of timer.
-
-### Process compatibility metadata and warnings *(since 1.2.19)*
-
-`process.features.typescript` is `"transform"`, while `process.features.require_module` and `process.features.openssl_is_boringssl` are `true`. The runtime now also respects `NODE_NO_WARNINGS`.
-
-### Async iteration of process output *(since 1.2.20)*
-
-`process.stdout` and `process.stderr` now implement `[Symbol.asyncIterator]` when backed by a TTY or pipe, enabling Node-compatible `for await` consumers.
-
-## Native addon compatibility
-
-### Buffer and Node-API compatibility *(since 1.2.3)*
-
-`node:buffer` now handles resizable `ArrayBuffer`s and growable shared buffers. For native addons, `napi_is_buffer()` recognizes typed arrays, `Buffer`, and `DataView`, while `napi_is_typedarray()` recognizes typed arrays.
-
-### Additional libuv symbols for native add-ons *(since 1.2.9)*
-
-N-API modules can now use `uv_mutex_destroy`, `uv_mutex_init`, `uv_mutex_init_recursive`, `uv_mutex_lock`, `uv_mutex_trylock`, `uv_mutex_unlock`, `uv_hrtime`, and `uv_once`.
-
-### Disabling native addons *(since 1.2.13)*
-
-The `--no-addons` flag prevents native addon loading: `process.dlopen()` throws `ERR_DLOPEN_DISABLED`, and package resolution disables the `"node-addons"` export condition so packages can select a non-native fallback.
-
-```sh
-bun --no-addons app.js
-```
-
-### Shared Node-API buffers *(since 1.2.18)*
-
-`napi_create_buffer_from_arraybuffer` now shares the input `ArrayBuffer` memory instead of cloning it, so mutations through either view affect the same backing storage.
-
-### Expanded V8 addon compatibility *(since 1.2.19)*
-
-The V8 C++ compatibility layer now implements core addon operations including `v8::Array::New`, `v8::Object::Get`, `v8::Object::Set`, and `v8::Value::StrictEquals`.
-
-### V8 addon value-type checks *(since 1.3.5)*
-
-Bun's V8 C++ compatibility layer now implements `v8::Value::IsMap()`, `IsArray()`, `IsInt32()`, and `IsBigInt()`, allowing native Node.js addons that use those checks to run without replacing them.
-
-## Utilities, globals, and API compatibility
-
-### Zero-filled unsafe buffers *(since 1.2.1)*
-
-Bun now accepts Node's `--zero-fill-buffers` flag; with it enabled, allocations such as `Buffer.allocUnsafe()` contain zeros rather than arbitrary memory.
-
-```sh
-bun --zero-fill-buffers script.js
-```
-
-### Negative `util.parseArgs` options *(since 1.2.11)*
-
-`util.parseArgs()` accepts `allowNegative: true`, mapping `--no-foo` to `foo: false`; when `args` is omitted, Bun now parses `process.argv` by default.
-
-```js
-const { values } = require("util").parseArgs({
-  args: ["--no-foo"],
-  allowNegative: true,
-  options: { foo: { type: "boolean" } },
-});
-console.log(values.foo); // false
-```
-
-### `util.promisify()` compatibility *(since 1.2.13)*
-
-Promisified functions now preserve the wrapped function's `name`. Promisifying a function that already returns a promise also emits a warning, matching Node.js behavior.
-
-### `DOMException` options *(since 1.2.13)*
-
-`DOMException` accepts an options object containing `name` and `cause`, making the causal error available on the resulting exception.
-
-```js
-const error = new DOMException("Request failed", {
-  name: "CustomError",
-  cause: new Error("Connection closed"),
-});
-```
-
-### Fluent `BroadcastChannel.unref()` *(since 1.2.14)*
-
-`BroadcastChannel.prototype.unref()` now returns the channel instance rather than `undefined`, so it can be used in a method chain.
-
-### Abort controllers as promise-timer options *(since 1.2.16)*
-
-The promise-based timers accept an `AbortController` itself as their options object, using its `signal` property to cancel the timer.
-
-```js
-import { setTimeout } from "node:timers/promises";
-
-const controller = new AbortController();
-const pending = setTimeout(100, undefined, controller);
-controller.abort();
-await pending; // rejects with AbortError
-```
-
-### Zstandard in `node:zlib` *(since 1.2.17)*
-
-`node:zlib` now supports Zstandard compression and decompression through synchronous, callback-based, and streaming APIs.
-
-```js
-import { zstdCompressSync, zstdDecompressSync } from "node:zlib";
-
-const compressed = zstdCompressSync(Buffer.from("hello"));
-console.log(zstdDecompressSync(compressed).toString());
-```
+- `node:net` exports `SocketAddress.parse()` (`1.2.4`).
+- `DOMException` accepts `{ name, cause }` as its second argument (`1.2.13`).
+- `URLPattern` is built in with test, exec, component patterns and regexp-group
+  reporting (`1.3.4`).
+- `readline/promises` interfaces are disposable; stdout/stderr are async
+  iterable (`1.3-guide`).
+- `--zero-fill-buffers` makes unsafe Buffer allocation zero-filled (`1.2.1`).
+- `Math.sumPrecise()` performs precise summation (`1.2.18`).
+- Iterator helpers include `Iterator.prototype.includes`; cyclic Array join or
+  toString throws RangeError (`1.4-4`).

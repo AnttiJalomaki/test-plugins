@@ -1,43 +1,46 @@
 # Services and data migrations
 
-## RabbitMQ queues and broker state
+The migration requirements in this reference are from `13-known-issues`.
 
-Convert classic HA queues to quorum queues before upgrading. There is no direct
+## RabbitMQ
+
+### Convert queues before the operating-system upgrade
+
+Classic HA queues must become quorum queues before upgrading. There is no direct
 Bookworm-to-Trixie broker upgrade path.
 
-Debian's recommended reset is to remove `/var/lib/rabbitmq/mnesia` after the operating
-system upgrade and restart the service. Preserve or recreate any needed state before
-using this destructive procedure.
+Debian's reset procedure removes `/var/lib/rabbitmq/mnesia` after the OS upgrade and
+then restarts the service. Inventory durable definitions and application-owned state,
+preserve what is required, and prove that it can be recreated before accepting that
+destructive step.
 
-## MariaDB crash-recovery boundary
+## MariaDB
 
-MariaDB 11.8 cannot perform crash recovery on a crashed 10.11 data directory. Stop
-MariaDB before upgrading and confirm `Shutdown complete` in its logs.
+### Require a clean 10.11 shutdown
 
-If shutdown was unclean, recover under 10.11 and then stop it cleanly again before the
-major upgrade.
+MariaDB 11.8 cannot crash-recover a crashed 10.11 data directory. Stop MariaDB before
+the package upgrade and confirm `Shutdown complete` in its logs.
 
-## Dovecot configuration migration
+If the stop was unclean, recover the directory under 10.11 first. Then stop it cleanly
+and re-check the logs before moving to 11.8.
+
+## Dovecot
+
+### Port configuration before downtime begins
 
 Dovecot 2.4 uses a configuration format incompatible with earlier releases, and the
-`replicator` feature has been removed. Port and test production mail configurations
-before the operating system upgrade instead of accepting extended downtime during it.
+`replicator` feature is removed. Port and test the production mail configuration
+before the OS upgrade. Do not rely on converting it during a maintenance window with
+the service already unavailable.
 
-## Bacula database schema
+## Bacula
 
-The Bacula director database migration can take hours or days. It temporarily needs
-about twice the database's current disk use, plus room for a dump under
+### Reserve time, migration space, and dump space
+
+The director database schema migration can take hours or days. It temporarily needs
+about twice the database's current disk use, plus space for a dump under
 `/var/cache/dbconfig-common/backups`.
 
-Running out of disk space during the migration can corrupt the database.
-
-## WirePlumber custom configuration
-
-WirePlumber uses a new configuration system. Defaults need no action, but port custom
-setups by using `/usr/share/doc/wireplumber/NEWS.Debian.gz`.
-
-## Legacy timezone names
-
-Names outside the region/city scheme, including `US/*`, moved to `tzdata-legacy`.
-The system timezone is converted automatically. Databases and services that copied an
-old name may still require `tzdata-legacy` to remain installed.
+Measure free space and migration duration in advance. Exhausting disk during the
+migration can corrupt the database, so define a stop threshold and recovery plan
+before upgrading.

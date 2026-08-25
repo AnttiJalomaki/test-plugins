@@ -1,48 +1,41 @@
 # Rules, Tests, and Integrations
 
-The changes in this reference apply to ESLint 10.0.0 unless a component
-version is stated explicitly.
+Use this reference when updating custom rules, strengthening rule tests,
+maintaining formatters, or reconciling scope, AST, and typed integrations.
 
-## Removed rule-context APIs
+## Removed rule APIs
 
-Custom rules and plugins must replace removed methods and properties:
+Deprecated rule APIs are removed (since 10.0.0). Replace `context` calls with
+the corresponding properties:
 
-| Removed API | Replacement |
+| Removed | Replacement |
 | --- | --- |
 | `context.getCwd()` | `context.cwd` |
 | `context.getFilename()` | `context.filename` |
 | `context.getPhysicalFilename()` | `context.physicalFilename` |
 | `context.getSourceCode()` | `context.sourceCode` |
 | `context.parserOptions` | `context.languageOptions` or `context.languageOptions.parserOptions` |
-| `context.parserPath` | No replacement |
 
-Do not invent a property substitute for `context.parserPath`; it was removed
-without a replacement.
+`context.parserPath` has no replacement. Redesign code that depends on it.
 
-## Removed `SourceCode` APIs
+The removed `SourceCode` methods have these replacements:
 
-Use the current token and spacing methods:
-
-| Removed API | Replacement |
+| Removed | Replacement |
 | --- | --- |
-| `SourceCode#getTokenOrCommentBefore()` | `getTokenBefore()` with `{ includeComments: true }` |
-| `SourceCode#getTokenOrCommentAfter()` | `getTokenAfter()` with `{ includeComments: true }` |
-| `SourceCode#isSpaceBetweenTokens()` | `isSpaceBetween()` |
-| `SourceCode#getJSDocComment()` | No replacement |
+| `getTokenOrCommentBefore()` | `getTokenBefore()` with `{ includeComments: true }` |
+| `getTokenOrCommentAfter()` | `getTokenAfter()` with `{ includeComments: true }` |
+| `isSpaceBetweenTokens()` | `isSpaceBetween()` |
 
-The `includeComments` option is essential when preserving the semantics of
-the two removed token-or-comment helpers. `getJSDocComment()` has no direct
-replacement, so callers need a different design for that behavior.
+`SourceCode#getJSDocComment()` has no replacement. Redesign that dependency
+instead of trying to preserve the removed call.
 
 ## `RuleTester` assertion requirements
 
-`RuleTester#run()` accepts `assertionOptions` alongside `valid` and
-`invalid` cases. It can require error cases to exercise a particular part of
-the reporting contract:
+`RuleTester#run()` accepts `assertionOptions` (since 10.0.0):
 
-- `requireMessage: true` allows either `message` or `messageId`.
-- `requireMessage: "message"` requires the exact `message` form.
-- `requireMessage: "messageId"` requires the exact `messageId` form.
+- `requireMessage: true` accepts either `message` or `messageId`.
+- `requireMessage: "message"` requires the literal `message` form.
+- `requireMessage: "messageId"` requires the `messageId` form.
 - `requireLocation: true` requires both `line` and `column`.
 - `requireData: true` requires `data` when the selected `messageId` template
   contains placeholders.
@@ -67,14 +60,15 @@ ruleTester.run("my-rule", rule, {
 });
 ```
 
-`requireData` is conditional on placeholders: a `messageId` alone does not
-make `data` mandatory when its template has none.
+Choose the strictness that reflects the rule's public contract. When enabling
+`requireData`, inspect the message template before deciding whether the case
+needs a `data` object.
 
-## TypeScript `this` and `max-params`
+## TypeScript `this` parameters in `max-params`
 
-The new `countThis: "never"` option makes `max-params` exclude a TypeScript
-`this` parameter from its count. This option supersedes the deprecated
-`countVoidThis`.
+The `max-params` rule accepts `countThis: "never"` (since 10.0.0). It excludes
+a TypeScript `this` parameter from the parameter count and supersedes the
+deprecated `countVoidThis` option.
 
 ```js
 export default [{
@@ -84,48 +78,72 @@ export default [{
 }];
 ```
 
-Use `countThis` when migrating configuration that used `countVoidThis` or
-when a TypeScript receiver annotation should not consume the parameter
-limit.
+## JSX identifiers participate in scope analysis
 
-## JSX identifiers participate in scope
+An identifier such as `Card` in `<Card />` is a normal reference to the
+in-scope variable (since 10.0.0). Update scope-based rules and their expected
+diagnostics accordingly:
 
-An identifier such as `Card` in `<Card />` is a normal reference to its
-in-scope variable. Scope-aware rules consequently no longer consider an
-imported JSX component unused merely because its only use is in JSX, and no
-longer overlook an undefined component merely because the reference is JSX.
-
-Update custom scope-based rule expectations and fixtures that encoded the
-older treatment of JSX identifiers.
+- do not report an imported JSX component as unused solely because its use is
+  in JSX;
+- do not miss an undefined component solely because its use is in JSX.
 
 ## Whole-source `Program.range`
 
-The `Program` AST node range spans the whole source. Leading and trailing
-comments and whitespace are included, rather than leaving the range at its
-previous narrower content boundaries.
+The `Program` AST node's `range` includes the whole source, including leading
+and trailing comments and whitespace (since 10.0.0). Integrations that assumed
+the earlier narrower span must not treat `Program.range` as the range of only
+the inner program content.
 
-Any integration that slices source text with `Program.range` must account
-for comments and whitespace at both ends.
+## Built-in types for Espree and ESLint Scope
 
-## Built-in Espree and scope types
-
-Espree 11.1.0 and ESLint Scope 9.1.0 include built-in type definitions. They
-replace the declarations previously provided by `@types/espree` and
+Espree 11.1.0 and ESLint Scope 9.1.0 include built-in type definitions (since
+10.0.0), replacing declarations previously supplied by `@types/espree` and
 `@types/eslint-scope`.
 
-The built-in definitions are not identical to those declaration packages.
-Typed rule, parser, or scope integrations may therefore require adjustments
-even if runtime behavior is unchanged.
+The built-in declarations are not identical to those packages. Remove the
+superseded declaration dependency, then expect typed integrations to require
+adjustments rather than assuming a drop-in replacement.
 
-## Explicit color intent for formatters
+## Formatter color intent
 
-The CLI conveys an explicit color choice through the context passed as the
-second argument to a formatter's `format()` method:
+The second argument to a formatter's `format()` method carries explicit CLI
+color intent (since 10.0.0):
 
-| CLI option | Formatter context |
-| --- | --- |
-| `--color` | `color: true` |
-| `--no-color` | `color: false` |
+- `--color` passes `color: true`.
+- `--no-color` passes `color: false`.
 
-Custom formatters can inspect this context value to honor the explicit
-styling choice rather than independently guessing whether to emit color.
+Custom formatters can inspect that value and honor the user's explicit style
+choice.
+
+## `Temporal` and `no-obj-calls`
+
+The ES2026 globals include `Temporal` (since 10.2.0). `no-obj-calls`
+recognizes it as a non-callable object, so with ES2026 globals enabled,
+`Temporal()` is reported instead of being treated as an undefined name.
+
+## Safer `no-var` fixes in TypeScript modules
+
+`no-var` can apply its fix inside TypeScript `TSModuleBlock` nodes (since
+10.2.0). It withholds an autofix when a variable is used before its
+declaration, avoiding a potentially unsafe conversion.
+
+## Removal edits and automatic semicolon insertion
+
+The `no-unused-labels` autofix and the `removeVar` suggestion from
+`no-unused-vars` account for automatic semicolon insertion when removing code
+(fixed in 10.8.1). Applying either edit no longer risks joining adjacent
+syntax in a way that changes how the result parses.
+
+## Meta-property names and identifier policies
+
+`id-denylist` and `id-match` ignore names in meta-properties (fixed in
+10.8.1). Grammar-defined names such as `meta` in `import.meta` and `target` in
+`new.target` no longer produce naming-policy diagnostics.
+
+## Accessor-rule corrections
+
+`getter-return` and `accessor-pairs` no longer produce the false-positive
+diagnostics corrected in 10.8.1. Projects that disabled or suppressed either
+rule to work around those diagnostics should re-check those exceptions after
+upgrading.

@@ -1,101 +1,160 @@
 # JSON and JSONB
 
-## Storage format and validation
+## Operators and insertion
 
-SQLite JSONB is an opaque internal BLOB. It is not binary-compatible with PostgreSQL JSONB and generally retains O(N) lookup behavior. Malformed JSONB may abort a statement or yield incorrect answers, but will not cause memory-safety failures.
+### Numeric-looking object keys (since 3.46.0)
 
-The one-argument `json_valid(X)` accepts canonical RFC 8259 text only. In `json_valid(X,flags)`:
-
-- Bit `1` accepts canonical text JSON.
-- Bit `2` accepts JSON5 text.
-- Bit `4` performs a quick superficial JSONB check.
-- Bit `8` performs a thorough JSONB check.
-
-Flags must be from 1 through 15; other values raise an error. `json_valid(NULL,...)` is `NULL`. Flag value `6` is the practical test for input plausibly usable by another JSON function. JSON nesting beyond 1000 levels is rejected. `jsonb(X)` checks only the outermost element when `X` already appears to be JSONB and is not a deep validator.
+For `->` and `->>`, a text right operand that looks numeric remains a string
+object label rather than being treated as an integer array index.
 
 ```sql
-SELECT json_valid('{x:35}'), json_valid('{x:35}', 6); -- 0, 1
+SELECT '{"0":"zero"}' -> '0';
 ```
 
-Since 3.45.1, a BLOB not recognized as JSONB is accepted as text JSON if conversion to the database text encoding yields valid JSON. A BLOB can be valid under both interpretations with different meanings; migrate legacy text-JSON BLOB columns to actual TEXT.
+### Negative array indexes (since 3.47.0)
 
-## JSON5 and normalization
-
-`json(X)` validates, minifies, and converts accepted JSON5 input to canonical JSON text. In addition to JSON5, SQLite accepts case-insensitive `Inf`/`Infinity` and `NaN`/`QNaN`/`SNaN`; NaN forms normalize to JSON `null`.
-
-Literal ASCII control characters inside JSON5 strings are accepted since 3.46.0. Since 3.50.0, a JSON5 `\0` escape followed by a digit is rejected.
-
-Duplicate object labels are currently accepted and preserved by `json()` and accepted by `json_object()`, but code must not rely on preservation in future versions.
-
-`json_pretty(X)` returns formatted JSON (since 3.46.0).
-
-## Paths and operators
-
-A path begins with exactly one `$`. Array indexes are zero-based; `[#-N]` counts from the right, and `[#]` addresses the slot after the last element for append operations.
+A negative integer on the right of `->>` selects an array element by counting
+from the end.
 
 ```sql
-SELECT json_set('[0,1,2]', '$[#]', 'new');
+SELECT '["first","middle","last"]' ->> -1; -- last
 ```
 
-`->` always returns RFC 8259 text JSON, including quoted strings and `null`. `->>` returns an SQL scalar. A bare text label or integer right operand is accepted as PostgreSQL-style shorthand for a path.
+### Array insertion (since 3.53.0)
 
-Negative integer right operands count backward from the end of an array (since 3.47.0):
+`json_array_insert()` and `jsonb_array_insert()` provide array insertion for
+JSON and JSONB.
+
+## Validation modes for text and JSONB
+
+One-argument `json_valid(X)` accepts only canonical RFC-8259 text. The
+optional flag bits are:
+
+- `1`: canonical text.
+- `2`: JSON5 text.
+- `4`: fast superficial JSONB check.
+- `8`: slower linear-time deep JSONB check.
+
+Flag `6` is the usual choice when JSON5 or plausible JSONB should be
+accepted.
 
 ```sql
-SELECT '["first","last"]' ->> -1; -- last
+SELECT json_valid(value, 6),
+       json_valid(value, 8);
 ```
 
-For `->` and `->>`, a text operand that looks numeric is an object label, not an array index (since 3.46.0):
+`jsonb(X)` itself examines only the outermost element when `X` already looks
+like JSONB. Malformed JSONB can raise an error or produce unreliable answers,
+though it will not cause memory-safety failures.
+
+## Legacy text JSON stored as BLOBs
+
+Since 3.45.1, a BLOB not accepted as JSONB may still be interpreted as text
+JSON when its bytes form valid JSON in the database encoding. Some BLOBs are
+valid under both interpretations: `x'33343535'` can represent JSONB integer
+`456` or text JSON integer `3456`. Convert legacy text JSON and store it as
+`TEXT`.
 
 ```sql
-SELECT '{"1":"one"}' ->> '1'; -- one
+UPDATE documents
+SET payload = CAST(payload AS TEXT)
+WHERE typeof(payload) = 'blob';
 ```
 
-## JSON arguments and value arguments
+## JSON5 input
 
-A parameter documented as JSON always parses its input. A parameter documented as `value` treats ordinary SQL text as a JSON string even if the text resembles an object or array. A value is inserted as structured JSON only when it comes directly from another JSON function or `->`; `->>` creates ordinary SQL text and is quoted.
+### Control characters and escape rejection
+
+JSON5 string literals may contain ASCII control characters as of 3.46.0. As
+of 3.50.0, JSON5 input rejects a `\0` escape followed by a digit.
+
+### SQLite-specific spellings
+
+In addition to JSON5, SQLite accepts `Inf` and `Infinity` in any letter case,
+and likewise accepts `QNaN` and `SNaN`. Every NaN spelling is interpreted as
+JSON `null`. Unquoted object keys may contain any non-whitespace character
+above U+007F.
 
 ```sql
-SELECT json_object('a', '[1,2]'), json_object('a', json('[1,2]'));
--- {"a":"[1,2]"} | {"a":[1,2]}
+SELECT json('[QNaN, snan]'); -- [null,null]
 ```
 
-Unicode escapes in ordinary SQL text supplied as a value remain literal text rather than being decoded. `json_quote(X)` likewise JSON-quotes an ordinary SQL number/string but is a no-op for a JSON-subtyped value returned by another JSON function.
+## Array length result states
 
-## Extraction and diagnostics
-
-- `json_array_length(X,P)` returns the length for an array, `0` for an existing non-array value, and `NULL` for a missing path.
-- `json_error_position(X)` returns zero for valid JSON/JSON5 or JSONB. Otherwise it gives the 1-based first error character for text or an approximate 1-based byte offset for a BLOB.
-- With one path, `json_extract()` returns SQL `NULL`, INTEGER/REAL, or dequoted TEXT for a scalar and text JSON for an array/object. With multiple paths it always returns a text JSON array.
-- `jsonb_extract()` differs only for arrays/objects, which it returns as JSONB.
-- `json_type(X,P)` returns `null`, `true`, `false`, `integer`, `real`, `text`, `array`, or `object`; it returns SQL `NULL` for a missing path. This distinguishes present JSON `null` from absence.
-
-## Ordered mutation
-
-`json_insert()` creates missing values without overwriting, `json_replace()` overwrites existing values without creating, and `json_set()` does both. Path/value pairs apply left to right, so an early edit may change the resolution of a later path.
+`json_array_length(X,P)` returns an array's length, `0` for an existing
+non-array, and SQL `NULL` for a missing path. Malformed JSON or a malformed
+path raises an error.
 
 ```sql
-SELECT json_set('{}', '$.a', json('{}'), '$.a.b', 1);
--- {"a":{"b":1}}
+SELECT json_array_length('{"a":[1],"b":2}', '$.a'),
+       json_array_length('{"a":[1],"b":2}', '$.b'),
+       json_array_length('{"a":[1],"b":2}', '$.c');
 ```
 
-`json_remove()` ignores absent paths and applies paths left to right; removing an array entry shifts later indexes. With no paths it only minifies. Removing `$` returns SQL `NULL`.
+## Mutation and aggregation
 
-`json_patch(T,P)` implements RFC 7396 MergePatch. A patch object's `null` member deletes the target member, while arrays are atomic and can only be replaced/deleted as a whole. `jsonb_patch()` uses the same semantics and returns JSONB.
+### Sequential removal and root deletion
 
-`json_array_insert()` and `jsonb_array_insert()` insert into text JSON and JSONB arrays respectively (since 3.53.0).
+Paths passed to `json_remove()` are applied left to right, so an earlier
+array deletion can change what a later index addresses. With no paths,
+`json_remove()` only minifies the input. Removing path `$` returns SQL
+`NULL`.
 
-The `jsonb_set()` family had a long-standing fault exposed by a 3.50.0 JSONB update optimization; it is fixed in 3.50.1.
+```sql
+SELECT json_remove('[0,1,2,3,4]', '$[0]', '$[2]'); -- [1,2,4]
+SELECT json_remove('{"x":1}', '$') IS NULL;         -- 1
+```
 
-## Object and array aggregates
+### Null object labels and JSONB update fix (since 3.50.0)
 
-- `json_group_object(label,value)` omits an element when `label` is `NULL` (since 3.50.0).
-- `jsonb_group_array(X)` and `jsonb_group_object(NAME,VALUE)` mirror the text-returning aggregates but return JSONB.
+`json_group_object()` omits entries whose label is `NULL`. Version 3.50.1
+fixes a long-standing `jsonb_set()`-family bug exposed by the 3.50.0 JSONB
+update optimization.
 
-## Table-valued traversal
+```sql
+WITH input(label, value) AS (VALUES(NULL, 1), ('kept', 2))
+SELECT json_group_object(label, value) FROM input;
+```
 
-`json_each(X[,P])` emits the selected value or its immediate children. `json_tree(X[,P])` recursively emits the subtree. Rows contain `key`, `value`, `type`, `atom`, `id`, `parent`, `fullkey`, and `path`, plus hidden `json` and `root` inputs.
+### Duplicate object labels
 
-`atom` contains an SQL scalar for primitive rows and is `NULL` for containers. `parent` is always `NULL` in `json_each()` and identifies the parent row in `json_tree()`. `id` is unique per traversal but its computation is not stable across versions.
+`json()` currently preserves duplicate object labels, and `json_object()`
+currently permits them, but neither behavior is guaranteed for future
+versions. Code requiring deterministic lookup or round-tripping should reject
+or normalize duplicate labels itself.
 
-Since 3.51.0, `jsonb_each()` and `jsonb_tree()` parallel those functions while keeping array/object rows in the `value` column as JSONB rather than converting them to text JSON.
+## Pretty-printing
+
+`json_pretty(X, indentation)` accepts text JSON or JSONB and uses its second
+argument as the indentation unit. Omitting it or passing `NULL` selects four
+spaces per level.
+
+```sql
+SELECT json_pretty(payload, '  ') FROM documents;
+```
+
+## Traversal
+
+### JSONB-preserving traversal (since 3.51.0)
+
+`jsonb_each()` and `jsonb_tree()` work like `json_each()` and `json_tree()`
+but keep array and object rows as JSONB in the `value` column.
+
+```sql
+SELECT fullkey, type, value
+FROM jsonb_tree(jsonb('{"items":[{"id":1}]}'));
+```
+
+### Traversal metadata
+
+`json_tree()` and `json_each()` expose `key`, `value`, `type`, `atom`, `id`,
+`parent`, `fullkey`, and `path`. `id` is internal and may change between
+releases; only uniqueness within one result is guaranteed. `fullkey` remains
+the absolute path in the original document even when traversal starts at a
+root argument. `path` names the containing array or object.
+
+```sql
+SELECT jt.fullkey, jt.atom, jt.type
+FROM documents AS d, json_tree(d.payload, '$.partlist') AS jt
+WHERE jt.type NOT IN ('object', 'array');
+```

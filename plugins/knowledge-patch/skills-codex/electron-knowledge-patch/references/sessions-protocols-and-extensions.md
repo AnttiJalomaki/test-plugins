@@ -1,61 +1,121 @@
 # Sessions, protocols, and extensions
 
-## Preloads and service workers
+Use this reference for session state, preload registration, service workers,
+request interception, storage, device APIs, custom protocols, and Chrome
+extensions.
 
-Electron 35.0.0 deprecates `Session.setPreloads()` and `getPreloads()`. Use
-per-script `registerPreloadScript()`, `unregisterPreloadScript()`, and
-`getPreloadScripts()` so independent components do not replace a shared list.
-Registration type may be `frame` or `service-worker`.
+## Session state
 
-A service-worker preload uses `ipcRenderer`; communicate from the main process
-through `ServiceWorkerMain.ipc`. `ServiceWorkers.startWorkerForScope()` starts
-a worker deliberately, and `running-status-changed` observes its state.
+### Shared-compression dictionaries
 
-Replace deprecated `session.serviceWorkers.fromVersionID(versionId)` with:
+Electron 34.0.0 sessions can inspect and clear shared dictionaries used by
+Brotli and Zstandard compression:
 
-- `getInfoFromVersionID(versionId)` for the information record; or
-- `getWorkerFromVersionID(versionId)` for the `ServiceWorkerMain` object.
+- `getSharedDictionaryUsageInfo()`
+- `getSharedDictionaryInfo(options)`
+- `clearSharedDictionaryCache()`
+- `clearSharedDictionaryCacheForIsolationKey(options)` for an isolation-key
+  scoped clear
 
-Dynamic ESM `import()` is available in preload scripts with context isolation
-disabled since 39.0.0; the feature was also released in Electron 37 and 38.
+### Storage quota option migration
 
-The experimental `contextBridge.executeInMainWorld(executionScript)` API can
-evaluate a script in the main world across the bridge (since 35.0.0). Keep the
-script and exposed surface narrowly scoped.
+Electron 36.0.0 removes the `syncable` quota type from
+`session.clearStorageData(options)` and deprecates the singular `options.quota`
+property. Because `temporary` is then the only quota type, callers should omit
+`quota`.
 
-## Web-request filters and protocol handlers
+Electron 42.0.0 removes the `quotas` object from
+`Session.clearStorageData(options)` with its upstream Chromium implementation.
+Do not pass `options.quotas` either.
 
-An empty `WebRequestFilter.urls` array no longer matches everything. Since
-35.0.0, use the explicit pattern:
+### Persistent File System API grants
+
+Electron 39.0.0 can persist File System API grant status within an Electron
+session. The support is also available in Electron 37 and 38. Choose the
+session or partition deliberately when persistence boundaries matter.
+
+### Cookie change causes
+
+Electron 41.0.0 refines the cookie `changed` event's causes:
+
+- Setting a new cookie reports `inserted`.
+- Deletion remains `explicit`.
+- Re-setting an identical cookie reports `inserted-no-change-overwrite`.
+- Changing only attributes while preserving the value reports
+  `inserted-no-value-change-overwrite`.
+
+Update exhaustive cause handling and avoid treating all insertions as value
+changes.
+
+## Preload scripts and service workers
+
+### Per-script preload registration
+
+Electron 35.0.0 deprecates `Session.setPreloads()` and `getPreloads()`. Use:
+
+- `registerPreloadScript()`
+- `unregisterPreloadScript()`
+- `getPreloadScripts()`
+
+Per-script registration prevents libraries from replacing the entire preload
+list. A registration's `type` can target `service-worker` as well as `frame`
+contexts.
+
+Attached service-worker preloads use `ipcRenderer`; the main process
+communicates through `ServiceWorkerMain.ipc`. Service-worker support also adds
+`ServiceWorkers.startWorkerForScope()` and the `running-status-changed` event.
+
+### Service-worker version lookup
+
+Electron 35.0.0 deprecates
+`session.serviceWorkers.fromVersionID(versionId)`. Use
+`getInfoFromVersionID(versionId)` for the information object or
+`getWorkerFromVersionID(versionId)` for the `ServiceWorkerMain` object.
+
+### Dynamic ESM imports in preloads
+
+Electron 39.0.0 preload scripts can use dynamic `import()` when context
+isolation is disabled. This support is also present in Electron 37 and 38. This
+does not remove the security reasons for retaining context isolation where
+possible.
+
+## Web request filtering
+
+### Match every URL explicitly
+
+In Electron 35.0.0, an empty `WebRequestFilter.urls` array no longer matches
+every URL. Use the explicit match pattern:
 
 ```js
 const filter = { urls: ['<all_urls>'] };
 ```
 
-Since 36.0.0, `excludeUrls` removes matching patterns from a broader filter.
+### Exclude URL patterns
 
-`net.request` accepts `bypassCustomProtocolHandlers` for requests that must
-skip registered application handlers. Added in 40.0.0, it is also present in
-Electron 38 and 39.
-
-The deprecated `null` value for `ProtocolResponse.session` was removed in
-37.0.0. Pass a session explicitly. To recreate a random independent session,
-create a unique partition with `session.fromPartition(randomString)`, while
-accounting for the overhead of single-purpose sessions.
-
-Requests through `net` in utility processes can use an Electron session since
-43.0.0.
-
-`app.getApplicationInfoForProtocol()` is supported on Linux since 43.0.0.
+Electron 36.0.0 adds `WebRequestFilter.excludeUrls`. Use it to omit matching URL
+patterns from an otherwise broader request filter.
 
 ## Extensions
 
-Electron 36.0.0 moves extension methods and lifecycle events from `Session` to
-`session.extensions`. Migrate `loadExtension()`, `removeExtension()`,
-`getExtension()`, `getAllExtensions()`, and `extension-loaded`,
-`extension-unloaded`, and `extension-ready` listeners to that object.
+### Session extension API migration
 
-Electron 42.0.0 adds the `allowExtensions` custom-scheme privilege:
+Electron 36.0.0 moves extension methods and events from `Session` to the
+`Extensions` object at `session.extensions`. Migrate these methods:
+
+- `session.loadExtension()`
+- `session.removeExtension()`
+- `session.getExtension()`
+- `session.getAllExtensions()`
+
+Use their `session.extensions` counterparts. Move listeners for
+`extension-loaded`, `extension-unloaded`, and `extension-ready` to the same
+object.
+
+### Extensions on custom protocols
+
+Electron 42.0.0 adds the `allowExtensions` scheme privilege. It lets Chrome
+extensions operate on a custom protocol registered with
+`protocol.registerSchemesAsPrivileged()`:
 
 ```js
 protocol.registerSchemesAsPrivileged([
@@ -66,70 +126,75 @@ protocol.registerSchemesAsPrivileged([
 ]);
 ```
 
-This allows Chrome extensions to operate on the privileged application
-protocol.
+### CSS injection in fallback frames
 
-Since 43.0.0, `chrome.scripting.insertCSS()` and `removeCSS()` follow Chrome's
-fallback-frame behavior. If an extension can access the creator page, CSS
-injection may affect its `about:blank` or `data:` child frame. Narrow targets,
-frame IDs, or match patterns if those frames must remain untouched.
+Electron 43.0.0 makes `chrome.scripting.insertCSS()` and `removeCSS()` match
+Chrome for fallback frames such as `about:blank` and `data:`. When an extension
+can access the page that created the frame, injection can also affect that
+frame. Applications that relied on fallback frames being skipped must narrow
+targets, frame IDs, or match patterns.
 
-## Storage, quotas, and downloads
+## Device and authentication APIs
 
-Electron 36.0.0 removes the `syncable` quota type and deprecates the singular
-`options.quota` property of `session.clearStorageData()`. `temporary` was the
-only remaining quota type, so omit `quota` entirely.
+### WebUSB configurations
 
-Electron 42.0.0 removes the separate plural `options.quotas` object with its
-upstream Chromium implementation. Do not pass it.
+Electron 39.0.0 exposes the `configurations` property on Electron WebUSB
+`USBDevice` objects.
 
-File System API grant status can persist within an Electron session since
-39.0.0; the support was also released in Electron 37 and 38. Decide whether a
-partition should retain grants when choosing persistent versus in-memory
-session storage.
+### WebUSB and Web Serial blocklists
 
-Since 43.0.0, file downloads default to the Downloads directory, falling back
-to Home if Downloads does not exist.
-
-## Authentication, permissions, and devices
-
-Permission handling covers `document.executeCommand('paste')` since 35.0.0.
-Treat it as a permission-controlled paste path rather than assuming a renderer
-command bypasses policy.
-
-WebSocket authentication is delivered through the `webContents` `login`
-event. Added in 41.0.0, the behavior is also in Electron 39 and 40.
-
-On macOS, Electron 42.0.0 adds Touch ID platform-authenticator configuration:
+Electron 37.0.0 applies Chromium's specification-defined WebUSB and Web Serial
+device blocklists. Disable them only when the application has a deliberate
+device policy:
 
 ```js
-app.configureWebAuthn({ touchID: { keychainAccessGroup } });
-```
+const { app } = require('electron');
 
-Use the session `select-webauthn-account` event to choose among discoverable
-credentials.
-
-Since 37.0.0, WebUSB and Web Serial enforce Chromium's specification-defined
-device blocklists. Disable only when application policy requires it:
-
-```js
 app.commandLine.appendSwitch('disable-usb-blocklist');
 app.commandLine.appendSwitch('disable-serial-blocklist');
 ```
 
-WebUSB `USBDevice` objects expose `configurations` since 39.0.0.
+### Touch ID WebAuthn on macOS
 
-## Cookies and shared dictionaries
+Electron 42.0.0 enables the Touch ID platform authenticator with
+`app.configureWebAuthn({ touchID: { keychainAccessGroup } })`. Handle the new
+session `select-webauthn-account` event when the user must choose among
+discoverable credentials.
 
-Since 41.0.0, cookie `changed` events distinguish write outcomes:
+### WebSocket authentication
 
-- a new cookie reports `inserted`;
-- deletion reports `explicit`;
-- an identical reset reports `inserted-no-change-overwrite`;
-- an attribute-only change that retains the value reports
-  `inserted-no-value-change-overwrite`.
+Electron 41.0.0 routes WebSocket authentication through the `login` event on
+`webContents`. This behavior is also available in Electron 39 and 40.
 
-Since 34.0.0, `Session` can inspect and clear Brotli and Zstandard shared
-compression dictionaries with `getSharedDictionaryUsageInfo()`,
-`getSharedDictionaryInfo(options)`, `clearSharedDictionaryCache()`, and
-isolation-key-scoped `clearSharedDictionaryCacheForIsolationKey(options)`.
+## Protocol requests and responses
+
+### Protocol-response sessions
+
+Electron 37.0.0 removes the deprecated `null` value for
+`ProtocolResponse.session`. To reproduce the former random independent-session
+behavior, create a uniquely named session with
+`session.fromPartition(randomString)` and assign it. Avoid unnecessary
+single-purpose sessions because each adds overhead.
+
+### Bypass custom protocol handlers
+
+Electron 40.0.0 adds `bypassCustomProtocolHandlers` to `net.request` for a
+request that must skip registered custom protocol handlers. The option is also
+available in Electron 38 and 39.
+
+### Opaque legacy-protocol responses
+
+The 41.10.5-43.4.1 corrections change cross-origin `no-cors` fetches handled by
+`registerFileProtocol()` or `registerHttpProtocol()`:
+
+- Electron 41.10.6
+- Electron 42.9.2
+- Electron 43.4.1
+
+These fetches now return opaque responses, matching `protocol.handle()`.
+Renderer code can no longer read their bodies as it could in earlier patch
+releases.
+
+### Linux protocol application information
+
+Electron 43.0.0 supports `app.getApplicationInfoForProtocol()` on Linux.

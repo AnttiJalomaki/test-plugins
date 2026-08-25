@@ -10,16 +10,16 @@ metadata:
 
 # Vitest Knowledge Patch
 
-Use this skill when configuring, migrating, extending, or debugging a modern Vitest suite. Start with the migration notes, then open the topic reference that matches the work.
+Use this skill when configuring, migrating, extending, or debugging a modern Vitest suite. Start with the migration checks, then open the topic reference that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Browser Mode](references/browser-mode.md) | Provider setup, instances, locators, debugging, traces, screenshots, and browser UI |
-| [Experimental features](references/experimental-features.md) | Native Node execution, file-system module cache, OpenTelemetry, import timings, changed-file providers, and leak detection |
-| [Migration and configuration](references/migration-and-configuration.md) | Workspace migration, compatibility changes, source-line filtering, and watch triggers |
-| [Projects and coverage](references/projects-and-coverage.md) | Project discovery and inheritance, scheduling, coverage providers/reporters, exclusions, and changed-file coverage |
+| [Browser Mode](references/browser-mode.md) | Providers, instances, locators, debugging, traces, screenshots, UI, and runtime behavior |
+| [Experimental features](references/experimental-features.md) | Native Node execution, module caching, telemetry, import timing, changed files, and leak detection |
+| [Migration and configuration](references/migration-and-configuration.md) | Workspace migration, compatibility changes, source-line filtering, watch triggers, and concurrency |
+| [Projects and coverage](references/projects-and-coverage.md) | Project discovery and inheritance, scheduling, coverage providers, reporters, and exclusions |
 | [Reporters and integrations](references/reporters-and-integrations.md) | Reporter migration, annotations, GitHub Actions, editor behavior, and programmatic APIs |
 | [Test APIs](references/test-apis.md) | Fixtures, hooks, annotations, tags, matchers, mocks, timers, metadata, and snapshots |
 
@@ -37,24 +37,24 @@ export default defineConfig({
 })
 ```
 
-The separate `vitest.workspace` file and `test.workspace` option are deprecated. A root config is not automatically a project. File-based project configs do not inherit root test options; inline projects can opt in with `extends: true`.
+The separate `vitest.workspace` file and `test.workspace` option are deprecated. A root config is not automatically a project. File-based project configs inherit no root test options; inline projects can opt in with `extends: true`.
 
-Keep these migration checks in view:
+Apply these migration checks:
 
-- Browser providers are factory functions from provider-specific packages, and browser context APIs come from `vitest/browser`.
-- `--browser` requires browser configuration; it no longer turns an arbitrary Node configuration into a browser configuration.
-- The `basic` reporter is gone. Use `['default', { summary: false }]` for the closest replacement.
-- Old `toBe*` spy assertions are deprecated; use the corresponding `toHaveBeen*` assertion or `toThrowError`.
-- File/worker contexts are available to suite hooks, but suite hooks no longer receive the undocumented `Suite` argument.
-- WebdriverIO and Preview actions now reject locators matching multiple elements unless that action sets `strict: false`.
-- Browser image comparison uses BlazeDiff, so existing visual results can change.
-- Vitest supports Vite 8 and reuses the project's installed Vite when possible.
+- Import browser-provider factories from their provider packages and call them. Import browser context APIs from `vitest/browser`.
+- Configure `test.browser` before using `--browser`; the flag does not convert a Node setup into a browser setup.
+- Replace the removed `basic` reporter with `['default', { summary: false }]`.
+- Replace deprecated `toBe*` spy assertions with their `toHaveBeen*` equivalents or `toThrowError`.
+- Remove any reliance on the undocumented `Suite` argument in suite hooks.
+- Expect WebdriverIO and Preview actions to reject locators matching multiple elements unless the action sets `strict: false`.
+- Review visual baselines because screenshot comparison changed.
+- Keep project names unique and keep coverage, reporters, and snapshot-path resolution at the root.
 
-See [Migration and configuration](references/migration-and-configuration.md) for the complete checklist and [Projects and coverage](references/projects-and-coverage.md) for resolution rules.
+See [Migration and configuration](references/migration-and-configuration.md) for the full checklist and [Projects and coverage](references/projects-and-coverage.md) for project resolution.
 
 ## Configure Browser Mode
 
-Use a production browser provider in CI or headless runs:
+Use a real automation provider for CI or headless execution:
 
 ```ts
 import { playwright } from '@vitest/browser-playwright'
@@ -73,21 +73,19 @@ export default defineConfig({
 })
 ```
 
-`@vitest/browser-preview` is a local event simulation environment, not a CI/headless provider. Use Playwright or WebdriverIO when real browser automation matters. `vitest init browser` can scaffold the dependencies and configuration.
-
-For a configured instance:
+`@vitest/browser-preview` is a local event-simulation environment, not a CI/headless provider. Scaffold with `vitest init browser`, or configure Playwright or WebdriverIO manually. Run a configured instance with:
 
 ```sh
 npx vitest --browser=chromium --browser.headless
 ```
 
-Use `page.frameLocator` for iframe content, custom methods through `locators.extend`, and `toBeInViewport({ ratio })` for visibility by intersection. Native browser module namespace objects are sealed; use `vi.mock('./module', { spy: true })` before configuring an exported function.
+Use `page.frameLocator` for iframe content, `locators.extend` for domain-specific queries, and `toBeInViewport({ ratio })` for intersection visibility. Native browser module namespace objects are sealed; use `vi.mock('./module', { spy: true })` before configuring an exported function.
 
 Open [Browser Mode](references/browser-mode.md) before adding traces, screenshot baselines, persistent contexts, custom locators, or debugger integration.
 
 ## Add traces and visual regression
 
-Playwright traces can be always-on or limited to retry/failure paths:
+Record Playwright traces on failure or retry without tracing every passing test:
 
 ```ts
 browser: {
@@ -99,9 +97,9 @@ browser: {
 }
 ```
 
-The other selective modes are `on-first-retry` and `on-all-retries`; `trace: 'on'` records every test. Add semantic trace entries with `page.mark`, `locator.mark`, and `vi.defineHelper`.
+Other selective modes are `on-first-retry` and `on-all-retries`; `trace: 'on'` records every test. Add semantic entries with `page.mark`, `locator.mark`, and `vi.defineHelper`.
 
-Visual baselines use the asynchronous browser assertion:
+Visual baselines use an asynchronous browser assertion:
 
 ```ts
 await expect(page.getByTestId('hero')).toMatchScreenshot('hero-section', {
@@ -109,11 +107,11 @@ await expect(page.getByTestId('hero')).toMatchScreenshot('hero-section', {
 })
 ```
 
-A missing baseline is written and the run fails intentionally. Review and commit the browser-and-platform-specific file, control animated content, and use `vitest --update` for deliberate changes.
+A missing baseline is written and the run fails intentionally. Review and commit the browser-and-platform-specific image, control continuously changing content, and use `vitest --update` for deliberate changes.
 
 ## Define projects explicitly
 
-`test.projects` accepts inline configs, config paths, directories, and glob patterns. Directory matches can become projects without config files; matched config files must follow Vitest/Vite config naming rules. Every project needs a unique resolved name.
+`test.projects` accepts inline configs, direct config paths, directories, and glob patterns. Directory matches can become projects without config files; matched config files must use supported Vitest/Vite config names.
 
 ```ts
 export default defineConfig({
@@ -130,7 +128,7 @@ export default defineConfig({
 })
 ```
 
-`coverage`, `reporters`, and `resolveSnapshotPath` are root-only. Use `defineProject` in file-based project configs so unsupported project properties fail type checking.
+Use `defineProject` in file-based project configs so unsupported project properties fail type checking. Projects with the same `groupOrder` run together; lower groups run first.
 
 ## Use scoped and builder fixtures
 
@@ -148,7 +146,7 @@ const test = baseTest
   })
 ```
 
-Use `test.aroundEach` or `test.aroundAll` when a transaction, tracing span, or async context must surround the test or suite. The callback must invoke the supplied runner.
+Use `test.aroundEach` or `test.aroundAll` when a transaction, tracing span, or async context must surround the test or suite. The callback must invoke its supplied runner.
 
 ## Catalog and filter tags
 
@@ -174,7 +172,7 @@ vitest --tags-filter="db && !flaky"
 vitest --list-tags
 ```
 
-Precedence is `not`, `and`, then `or`; repeated filter flags combine with AND. Tags on suites are inherited, and `@module-tag` applies file-wide. Open [Test APIs](references/test-apis.md) for conflict priority, TypeScript catalogs, UI/API filtering, and runtime checks.
+Precedence is `not`, `and`, then `or`; repeated filter flags combine with AND. Suite tags are inherited, and `@module-tag` applies file-wide. Open [Test APIs](references/test-apis.md) for conflict priority, TypeScript catalogs, UI/API filtering, and runtime checks.
 
 ## Attach annotations and metadata
 
@@ -189,9 +187,9 @@ test('creates a report', async ({ annotate }) => {
 
 Await annotations when later code depends on completion. Vitest waits for otherwise-unawaited annotation work before finishing the test. Use the independent `meta` test option for arbitrary machine-readable data.
 
-## Prefer the current assertion and mock APIs
+## Prefer current assertion and mock APIs
 
-- Use one `Matchers` augmentation for custom instance, asymmetric, and implementation matcher typing.
+- Augment `Matchers` once for custom instance, asymmetric, and implementation matcher typing.
 - Use `expect.assert(condition)` when an assertion signature must narrow a TypeScript type.
 - Use `expect.schemaMatching(schema)` with a Standard Schema v1 implementation inside equality assertions.
 - Bind `vi.spyOn` or `vi.fn` with `using` for automatic restoration where Explicit Resource Management is available.
@@ -204,11 +202,11 @@ The test context also has an `AbortSignal` that fires on timeout, interruption, 
 
 ## Choose coverage behavior deliberately
 
-Use `--coverage.changed` to run the selected tests but report only modified files. This is different from `--changed`, which narrows the tests themselves.
+Use `--coverage.changed` to run the selected tests but report only modified files. This differs from `--changed`, which narrows the tests themselves.
 
 Both built-in providers understand start/stop ignore regions. Preserve ignore comments through transforms with `-- @preserve`; V8 additionally supports branch, next-node, and whole-file directives.
 
-Custom Istanbul-compatible reporters can be loaded by package or absolute path. A custom provider uses `provider: 'custom'` with `customProviderModule`. See [Projects and coverage](references/projects-and-coverage.md) before implementing either interface.
+Custom Istanbul-compatible reporters can be loaded by package or absolute path. A custom provider uses `provider: 'custom'` with `customProviderModule`. Open [Projects and coverage](references/projects-and-coverage.md) before implementing either interface.
 
 ## Diagnose execution and imports
 
@@ -226,12 +224,10 @@ export default defineConfig({
 })
 ```
 
-This disables Vite transforms, plugins, aliases, `import.meta.env`, and Istanbul coverage. Native TypeScript and the optional mock-supporting Node loader have specific Node version requirements. Consult [Experimental features](references/experimental-features.md) before enabling it.
+This disables Vite transforms, plugins, aliases, `import.meta.env`, and Istanbul coverage. Native TypeScript and optional mock-supporting loader behavior have specific Node requirements. Consult [Experimental features](references/experimental-features.md) before enabling it; that reference also covers transformed-module caching, telemetry, import-duration budgets, and custom changed-file discovery.
 
-That reference also covers persistent transformed-module caching, OpenTelemetry instrumentation, import-duration budgets, and custom changed-file discovery.
+## Select reporters and integrations
 
-## Select reporters and programmatic APIs
+The reporter lifecycle no longer centers on `onTaskUpdate`; review custom implementations. Built-ins include `tree`, completion-oriented `verbose`, GitHub Actions summaries, and the failure-only `agent` reporter.
 
-The reporter lifecycle no longer centers on `onTaskUpdate`; review custom implementations. Useful built-ins include `tree`, completion-oriented `verbose`, GitHub Actions summaries, and the failure-only `agent` reporter.
-
-For tooling, prefer the current public APIs for static collection, specification creation/filtering, test-file runs, watcher control, dynamic coverage, and run completion. Open [Reporters and integrations](references/reporters-and-integrations.md) for exact method names and editor behavior.
+For tooling, prefer the current public APIs for static collection, specification creation and filtering, test-file runs, watcher control, dynamic coverage, and run completion. Open [Reporters and integrations](references/reporters-and-integrations.md) for exact method names and editor behavior.

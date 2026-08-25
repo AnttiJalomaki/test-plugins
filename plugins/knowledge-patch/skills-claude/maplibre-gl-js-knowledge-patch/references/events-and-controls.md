@@ -1,11 +1,12 @@
-# Events and controls
+# Events and Controls
 
-## Listener lifecycle
+## Listener registration and event typing
 
-`Evented.on()` returns a `Subscription` rather than the evented object as of
-5.0.0. Fluent registration such as `map.on('x', x).on('y', y)` does not work.
-Register each listener separately and retain subscriptions that must later be
-removed.
+### Listener subscriptions
+
+`Evented.on()` returns a `Subscription` rather than the evented object (since
+5.0.0). Fluent listener chains no longer work. Register separately and retain
+the subscription for later removal.
 
 ```js
 const moveSubscription = map.on('move', onMove);
@@ -13,10 +14,10 @@ map.on('zoom', onZoom);
 moveSubscription.unsubscribe();
 ```
 
-## Event maps and TypeScript
+### Extensible map event maps
 
-`MapEventType` is an interface rather than a type alias as of 5.8.0.
-Applications can add custom events with declaration merging:
+`MapEventType` is an interface in 5.8.0, allowing TypeScript declaration
+merging for application events.
 
 ```ts
 declare module 'maplibre-gl' {
@@ -26,16 +27,10 @@ declare module 'maplibre-gl' {
 }
 ```
 
-The 6.0.0 event type overhaul makes `Evented` abstract and generic over an
-event map. Sources expose `SourceEventType`, and the map event map includes
-roll lifecycle events and a typed `style.load` event.
+### Event classes and identification
 
-Replace removed `MapDataEvent` references with
-`MapSourceDataEvent | MapStyleDataEvent`. Rename `MapLibreZoomEvent` references
-to `MapBoxZoomEvent`.
-
-Events are classes in v6, but application code should discriminate them by
-their `type` field rather than by `instanceof` (migration-v5-v6):
+During migration-v5-v6, events become classes, but consumers should identify
+them through the `type` field rather than `instanceof`.
 
 ```js
 map.on('move', (event) => {
@@ -43,58 +38,103 @@ map.on('move', (event) => {
 });
 ```
 
-## Style load completion
+### Event type overhaul
 
-Since 5.16.0, `setStyle()` emits `style.load` when style JSON is applied as a
-diff as well as when the style is completely reloaded. Code that waits for the
-updated style can use one path for both cases.
+In 6.0.0:
+
+- `Evented` is abstract and generic over an event map.
+- Sources expose `SourceEventType`.
+- The map event map includes roll lifecycle and typed `style.load` events.
+- `MapDataEvent` is replaced by `MapSourceDataEvent | MapStyleDataEvent`.
+- `MapLibreZoomEvent` is renamed to `MapBoxZoomEvent`.
+
+```ts
+abstract class TypedEvents extends Evented<AppEventType> {}
+```
+
+### Typed event names
+
+Map event names passed to `on`, `once`, `listens`, and `fire` are checked by
+TypeScript in 6.1.0-6.4.1. Declaration merging is appropriate for a stable
+application event map; an explicit cast remains available for ad hoc names.
+
+```ts
+map.fire('app:ready' as any);
+map.on('app:ready' as any, handleAppReady);
+```
+
+## Map and style lifecycle events
+
+### Style loads after a diff
+
+When `setStyle()` receives style JSON and applies it as a diff, `style.load`
+is emitted (since 5.16.0). The same event can therefore gate work after a
+diffed update or a full style reload.
 
 ```js
 map.once('style.load', onStyleLoad);
 map.setStyle(nextStyle);
 ```
 
-## Geolocation
+### Request failures
 
-`GeolocateControl` emits `outofmaxbounds` only while
-`trackUserLocation` is enabled as of 5.8.0. Treat the event as part of active
-location tracking; do not expect it from one-off geolocation when tracking is
-disabled.
+Fetch failures, including CORS, DNS, and malformed URLs, surface as
+`AJAXError` instances through the map's `error` event (since 5.0.0). The error
+exposes request details to the handler.
 
-## Box zoom
+## Geolocation and motion
 
-Box zoom configuration exposes `boxZoom.boxZoomEnd` as of 5.20.0. Use it to
-customize completion behavior after a Shift-drag selection.
+### `outofmaxbounds` and tracking
 
-## Reduced motion
+`GeolocateControl` emits `outofmaxbounds` only when `trackUserLocation` is
+enabled (since 5.8.0). Treat it as an active location-tracking event.
 
-Map construction accepts `MapOptions.reduceMotion` as of 5.12.0:
+### Map-level reduced motion
+
+`MapOptions.reduceMotion` configures reduced-motion behavior during map
+construction (since 5.12.0).
 
 ```js
-const map = new Map({
-  container: 'map',
-  reduceMotion: true
-});
+const map = new Map({container: 'map', reduceMotion: true});
 ```
 
-## Popup placement
+## Popups and box zoom
 
-`Popup` accepts `padding` as of 5.16.0. Automatic placement keeps the popup
-away from map-container edges by that amount.
+### Popup edge padding
+
+`Popup` accepts `padding` to keep automatic placement away from map-container
+edges (since 5.16.0).
 
 ```js
 const popup = new Popup({padding: 16});
 ```
 
-## Marker state
+### Custom box-zoom completion
 
-Since 5.20.0, `Marker` and `MarkerOptions` accept numbers as well as strings
-for `opacity` and `opacityWhenCovered`.
+Box-zoom configuration exposes `boxZoom.boxZoomEnd` in 5.20.0. Use it to
+customize what happens after a Shift-drag box selection completes.
+
+## Marker visibility and accessibility
+
+### Numeric opacity and covered state
+
+`Marker` and `MarkerOptions` accept numbers or strings for `opacity` and
+`opacityWhenCovered` (since 5.20.0). A marker covered by 3D terrain or a globe
+receives `maplibregl-marker-covered` for state-specific styling.
 
 ```js
 new Marker({opacity: 1, opacityWhenCovered: 0.25});
 ```
 
-A marker covered by 3D terrain or a globe receives the
-`maplibregl-marker-covered` CSS class, allowing covered-state styling.
+### Default marker roles
+
+Default markers use `role="img"` while non-interactive and `role="button"`
+once interactive (6.1.0-6.4.1). Tests should expect the role to reflect the
+marker's current behavior.
+
+### Keyboard-operable dragging
+
+Default draggable markers are focusable and move one pixel per arrow-key press,
+or ten pixels with Shift (6.1.0-6.4.1). A custom marker element must provide
+its own focus and keyboard movement behavior.
 

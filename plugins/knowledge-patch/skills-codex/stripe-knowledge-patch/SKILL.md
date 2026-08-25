@@ -10,163 +10,181 @@ metadata:
 
 # Stripe Knowledge Patch
 
-## Use this patch
-
-Load this skill before changing a Stripe integration, selecting an API release, upgrading Stripe.js or an SDK, consuming events, or using preview APIs.
-
-Before editing code:
-
-1. Identify the request or account API version.
-2. Identify the SDK language, package version, and its pinned API release.
-3. Separate stable, public-preview, beta, and private-preview contracts.
-4. Determine whether each consumer receives snapshot events or thin event notifications.
-5. Read the breaking-change notes before relying on generated types or exhaustive enum handling.
+Load this skill before changing a Stripe integration, selecting an API release,
+upgrading Stripe.js or an SDK, consuming events, or using Accounts v2, billing
+credits, flexible billing, or PaymentIntent line items. Identify the API version,
+SDK version, and event format first, then open the relevant reference below.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [billing.md](references/billing.md) | Invoices, subscriptions, discounts, meters, Credit Grants, flexible billing, Trial Offers |
-| [checkout-and-payments.md](references/checkout-and-payments.md) | Checkout, Elements, Stripe.js, PaymentIntents, line items, Payment Records, payment methods, crypto |
-| [connect-and-accounts.md](references/connect-and-accounts.md) | Accounts v2, Connect, KYC, Financial Connections, balances, payouts, Treasury |
-| [events-and-releases.md](references/events-and-releases.md) | API release lifecycle, snapshot and thin events, destinations, retention, Batch Jobs |
-| [node-sdk.md](references/node-sdk.md) | Node SDK v18-v21 runtime, types, requests, API pins, and generated contracts |
-| [python-sdk.md](references/python-sdk.md) | Python SDK v12-v15 runtime, namespaces, objects, Decimal, events, and preview contracts |
-| [terminal-issuing-tax-and-risk.md](references/terminal-issuing-tax-and-risk.md) | Terminal, Issuing, Tax, Radar, Climate, disputes, and test helpers |
+| [billing.md](references/billing.md) | Invoices, subscriptions, meters, credits, schedules, and Billing Portal |
+| [checkout-and-payments.md](references/checkout-and-payments.md) | Checkout, Elements, PaymentIntents, payment methods, refunds, and line items |
+| [connect-and-accounts.md](references/connect-and-accounts.md) | Accounts v2, Connect, Financial Connections, balances, and top-ups |
+| [events-and-releases.md](references/events-and-releases.md) | API release cadence, snapshot and thin events, destinations, and retention |
+| [node-sdk.md](references/node-sdk.md) | Node SDK runtime, types, request behavior, API pins, and generated contracts |
+| [python-sdk.md](references/python-sdk.md) | Python SDK runtime, namespaces, objects, API pins, and generated contracts |
+| [terminal-issuing-tax-and-risk.md](references/terminal-issuing-tax-and-risk.md) | Terminal, Issuing, Tax, Radar, Identity, Treasury, and test helpers |
 
-## Release and contract selection
+## Start with the contract
 
-- Plant-named major API releases arrive twice yearly and can break compatibility.
-- Monthly releases retain the current plant name and add backward-compatible features.
-- Every API release has an associated SDK release, but SDK packages continue to use semantic versions.
-- Plan API and SDK upgrades together; do not infer an API contract from the SDK major alone.
-- Treat preview tags as distinct schemas. A nearby stable package or another preview build can expose different resources and field shapes.
-- API v2 responses can require `include` for stored values that otherwise appear as `null`.
+- Track the request or destination API version separately from the SDK package
+  version. Plant-named major API releases can break compatibility; monthly
+  releases with the same plant name are additive.
+- Treat Meter Events v2 as a distinct contract; do not assume the v1 request
+  and response shapes.
+- For Accounts v2, request include-dependent paths when their stored values are
+  needed; `null` alone does not prove that the value is unset.
+- Determine whether an event is a snapshot or a thin notification before
+  selecting its parser or deciding whether to fetch more state.
+- Keep generated enums forward-compatible. Payment methods, errors, statuses,
+  reasons, networks, and risk classifications all add values.
 
-## Highest-risk API migrations
+## Highest-risk billing migrations
 
-### Billing schemas and lifecycle
+- Replace removed top-level Invoice Item and Invoice Line Item price fields and
+  removed top-level tax properties with their newer representations.
+- Read billing periods from Subscription Items, not from the Subscription.
+- Do not assume that one payment settles an Invoice; multiple partial payments
+  are supported.
+- Replace Upcoming Invoice calls with Create Preview Invoice, and upgrade legacy
+  usage-based billing integrations before selecting the breaking contract.
+- Require a coupon end time and use the remaining duration and multi-discount
+  contracts instead of removed singular coupon or promotion-code parameters.
+- Stop sending Subscription Schedule `iterations`; allow billing-cycle-anchor
+  changes to affect projected phase dates.
+- New Subscriptions default to flexible billing mode. Set the intended mode
+  explicitly when lifecycle behavior must remain stable.
+- Partial capture or cancellation no longer creates a Refund. Reconcile from
+  the payment objects instead of waiting for a Refund.
 
-- Replace Invoice Item and Invoice Line Item top-level price fields with pricing configurations.
-- Replace top-level tax properties on Invoices, Invoice Line Items, and Credit Note Line Items with tax configurations.
-- Read current billing periods from subscription items, not the Subscription object.
-- Support multiple and partial Invoice payments; never assume one payment settles an Invoice.
-- Replace Upcoming Invoice methods with Create Preview Invoice and replace legacy usage billing with Meters.
-- Give coupons an end condition and migrate direct coupon fields to the newer promotion and discount-source shapes.
-- Remove Subscription Schedule `iterations`; represent phase duration with the supported duration fields.
-- New Subscriptions use flexible billing behavior by default. Set the desired mode explicitly when lifecycle details matter.
-- Do not infer a Refund from partial capture or payment cancellation; those operations no longer create one.
+## Checkout and Stripe.js migration rules
 
-See [billing.md](references/billing.md) for invoice, subscription, credit, and migration rules.
+- Remove `redirectToCheckout` and deprecated messaging and bank Elements before
+  taking the breaking Checkout surface.
+- `initCheckout` is synchronous: use its return value without awaiting it.
+- Remove the duplicate saved-payment-method opt-in between a Checkout Session
+  and Elements initialization.
+- Do not reuse an Intent client secret in a state rejected by initialization as
+  capable of producing a broken payment form.
+- Collect card postal codes explicitly when still required in Canada, the
+  United Kingdom, or Puerto Rico.
+- Read Adaptive Pricing from `presentment_details`, not removed
+  `currency_conversion`.
+- Set the Payment Element layout explicitly when preserving the former default
+  matters.
+- In subscription mode, do not assume that a Subscription exists before payment
+  completes.
 
-### Checkout, Elements, and Stripe.js
+## Accounts v2 quick reference
 
-- Remove `redirectToCheckout` and superseded messaging and bank Elements.
-- Replace removed legacy PaymentIntent, SetupIntent, and Sources helpers with current Stripe.js methods.
-- Rename `initCheckout` to `initCheckoutElements` and `initEmbeddedCheckout` to `createEmbeddedCheckoutPage` on the newer surface.
-- Do not await the earlier synchronous `initCheckout`; do await the newer Promise-returning `elements.update()`.
-- Stop passing booleans to `options.layout.radios`.
-- Review Payment Element future-usage configuration, Customer Session interaction, and Checkout `ui_mode` validation.
-- Configure a layout explicitly if the Payment Element's implicit default matters.
-- Collect postal codes explicitly when required for Canadian, UK, or Puerto Rican card payments.
-- Read Adaptive Pricing from `presentment_details`, not removed `currency_conversion`.
-- Do not reuse an Intent client secret in a state that can produce a broken payment form.
-
-See [checkout-and-payments.md](references/checkout-and-payments.md) for payment-method, Payment Record, crypto, and line-item details.
-
-### Accounts v2 and Connect
-
-- Model merchant, customer, and recipient roles as configurations of one `/v2/core/accounts` identity.
-- Where an API accepts `customer`, it can also accept `customer_account` for an Account with customer configuration.
-- Request `configuration.customer`, `configuration.merchant`, `identity`, and `requirements` with `include` when those values are needed.
-- Require `recipient.stripe_balance.stripe_transfers` for indirect charges.
-- Follow returned risk and onboarding requirements rather than always forcing external-account collection.
-- Allow the expanded Financial Connections filters and failure codes.
-
-See [connect-and-accounts.md](references/connect-and-accounts.md) for configuration, capability, balance, and payout details.
-
-### Event parsing
-
-- Parse API v1 snapshot events with webhook helpers; they contain an API-versioned resource snapshot and `previous_attributes`.
-- Parse thin notifications with the SDK event-notification parser, then call `fetchEvent()` or `fetchRelatedObject()` only when more data is needed.
-- Keep payloads away from the wrong parser; current SDKs raise on parser/payload mismatches.
-- Do not treat a thin notification's related object as event-time state: fetching it returns the latest resource state.
-- Restricted keys need read access to the event's resource; secret keys can retrieve all event types by default.
-- Design around the shorter delivery-attempt and resend window even though Workbench retains summaries longer.
-
-See [events-and-releases.md](references/events-and-releases.md) for retention windows, destination limits, and Azure delivery.
+- Model payment acceptance, customer charging, and transfer receipt as
+  `merchant`, `customer`, and `recipient` configurations on one Account.
+- For indirect charges, the recipient configuration uses
+  `stripe_balance.stripe_transfers`.
+- Request paths such as `configuration.merchant`, `identity`, and `requirements`
+  with `include` when their values are needed.
+- Where an API accepts `customer`, pass `customer_account=<acct_id>` for an
+  Accounts v2 object with customer configuration.
+- A v2 Account ID can be passed to Accounts v1 endpoints, but OAuth, recipient
+  service agreements, Treasury or Issuing capabilities, and some deprecated or
+  preview payment-method capabilities still require v1.
 
 ## Billing credits quick reference
 
-- Credit Grants apply only to metered subscription items reporting through Meters.
-- Currency must match, and the invoice `period_end` must be inside the grant's effective window.
-- Apply credit after discounts and before tax and the customer's invoice credit balance.
-- Credit is consumed at invoice finalization, so draft and preview allocations are provisional.
-- Within an invoice, displayed line order controls consumption; across invoices, finalization order controls it.
-- Order competing grants by priority, expiration, category, effective time, then creation time.
-- Void an entirely unused grant; expire a grant once any amount has been invoiced.
-- Voiding an Invoice restores its applied credit, but issuing a Credit Note does not.
-- Distinguish immutable-ledger `ledger_balance` from the broader `available_balance`.
-- Enforce the 100-unused-grant limit using the documented ledger-based counting rule.
+- Apply credit grants only to Meter-reported metered subscription items for the
+  business's own products and services, with matching currency, balance at
+  finalization, and an eligible invoice period end.
+- Credits apply after discounts but before tax and `invoice_credit_balance`.
+- Treat preview and draft allocations as provisional; credit commits at invoice
+  finalization.
+- Allocate by invoice finalization order, line order, then grant priority,
+  expiration, category, effective time, and creation time.
+- Void only a grant with no applied portion; expire remaining credit after any
+  portion has been used.
+- Voiding an Invoice restores applied grant balance. A Credit Note does not and
+  requires a new grant.
+- Distinguish available balance from immutable-ledger balance when enforcing the
+  100-unused-grant limit.
 
-## PaymentIntent line items quick reference
+## PaymentIntent line-item quick reference
 
-- Line items support cards, Klarna, and PayPal, with at most 200 entries; American Express receives only the first four.
-- Every line needs `product_name`, nonnegative `unit_cost`, and positive integer `quantity`.
-- Put transaction identifiers under `payment_details`.
-- Level 2 card data requires an order reference and transaction-level tax; Level 3 adds per-line tax, product code, and unit of measure.
-- Do not mix transaction-level and line-level tax, or transaction-level and line-level discounts.
-- Card line items cannot accompany partial or decrement authorization or airline, lodging, and car-rental metadata.
-- Capture-time line items are unsupported for PayPal.
-- Request `expand[]=amount_details.line_items`; line items are omitted from responses by default.
-- Keep arithmetic validation enabled unless mismatch handling is intentional. Invalid card arithmetic prevents network submission and Level 2/3 qualification.
+- Cards, Klarna, and PayPal accept at most 200 entries under
+  `amount_details[line_items]`.
+- Every entry needs `product_name`, nonnegative `unit_cost`, and positive
+  `quantity`; transaction references belong under `payment_details`.
+- Expand `amount_details.line_items` when responses need the lines because they
+  are omitted by default.
+- PayPal does not support capture-time line items.
+- Keep top-level and per-line tax mutually exclusive, and do the same for
+  discounts.
+- Arithmetic mismatches fail with HTTP 400 by default. Disabling enforcement
+  exposes `amount_details.error`, but erroneous card lines are not sent to the
+  networks and cannot qualify for L2 or L3 savings.
+- L2 needs transaction tax and `payment_details[order_reference]`; L3 or Product
+  3 additionally needs the documented per-item product fields and tax.
+
+## Event parsing and retrieval
+
+- Snapshot events contain an eventually consistent object snapshot and
+  `previous_attributes`, and remain tied to the destination API version.
+- Thin notifications carry identifiers. Fetch the related object for current
+  state, or fetch the complete v2 Event for `data` context and changes.
+- Parse and verify thin notifications with the endpoint secret before calling
+  `fetchRelatedObject()` or `fetchEvent()`.
+- A restricted key needs read access to the event type's underlying resource;
+  there is no generic event-read grant described by this contract.
+- Do not use no-verification Node parsers for unverified inbound payloads.
+- Use the snapshot parser for snapshot payloads and the event-notification
+  parser for notifications; current Node and Python SDKs raise on a mismatch.
 
 ## Node SDK upgrade guardrails
 
-- In v18, `Stripe.webhooks` and `stripe.webhooks` are objects, not factory functions.
-- Replace removed unscoped operation aliases with resource-owned type names.
-- Supply your own `@types/node` dependency when the application consumes Node types.
-- In v19, move v2 events under `Stripe.V2.Core`, use `parseEventNotification`, and adopt `StripeContext`.
-- Do not send `stripeAccount` and Stripe context together when the server would receive both headers.
-- Adjust v2 response code for optional properties and `V2DeletedObject`.
-- Change v2 list mocks to indexed query parameters.
-- Use at least v20.3.1 to avoid crashes from v2 list errors.
-- In v21, use `Stripe.Decimal` for every `decimal_string` field and Node 18 or newer.
-- Keep snapshot parsing on `webhooks.constructEvent` and thin parsing on `parseEventNotification`.
-
-See [node-sdk.md](references/node-sdk.md) for the complete pin table, runtime fixes, type removals, and generated contract changes.
+- Node v18 makes `Stripe.webhooks` and instance `webhooks` plain objects, not
+  factory functions, and removes deprecated unscoped type aliases.
+- From v18.1, `@types/node` is an optional peer dependency rather than an
+  unconditional dependency, and `rawRequest` accepts `host` and `streaming`.
+- Node v19 moves event types to `Stripe.V2.Core`, renames `parseThinEvent` to
+  `parseEventNotification`, removes `Stripe.ThinEvent`, and uses
+  `StripeContext` objects.
+- Do not send Stripe account and Stripe context headers together.
+- Node v20 indexes v2 array query parameters and uses `created` instead of the
+  former event-list comparison filters. Use v20.3.1 or later so v2 list failures
+  reject instead of crashing through an unhandled rejection.
+- Node v21 represents every `decimal_string` field with `Stripe.Decimal`; build
+  values with `Stripe.Decimal.from(...)` and serialize with `.toString()`.
+- Preserve v2 int64 strings instead of coercing them through JavaScript numbers.
+- Node v22.4 uses `OtherString` for non-exhaustive generated enums; switches
+  still require an unknown-value branch.
 
 ## Python SDK upgrade guardrails
 
-- In v12, await `StripeStreamResponseAsync.read_async()` rather than removed `read()`.
-- Move service access to `StripeClient.v1`; direct client accessors are deprecated.
-- In v13, use shared top-level request parameter classes and direct top-level exports.
-- Pass both Invoice ID and line-item ID to `InvoiceLineItem.modify`.
-- Use `parse_event_notification` and the typed notification classes for thin events.
-- In v15, require Python 3.9 or newer and send payloads to the correct event parser.
-- Treat every `decimal_string` field as `decimal.Decimal`, constructed from text.
-- `StripeObject` is not a `dict`; use attributes, bracket access, or `to_dict()`.
-- Treat beta and private-preview package pins as separate, evolving schemas.
-
-See [python-sdk.md](references/python-sdk.md) for installer requirements, compatibility removals, caller-owned async clients, and preview resources.
-
-## Cross-cutting enum and optionality rules
-
-- Avoid exhaustive switches without an unknown-value path; payment methods, decline codes, risk levels, cancellation reasons, crypto networks, and error-code unions continue to expand.
-- Honor fields that became optional, including Issuing Token card references and several reporting fields.
-- Honor fields that became required, especially generated SDK fields and preview contracts.
-- Preserve decimal quantities as decimal values rather than binary floats or ad hoc strings.
-- Treat public and private preview APIs as opt-in contracts and migrate each tagged build independently.
+- Python v12 renames async stream `read()` to `read_async()`.
+- Use `client.v1` for services; direct `StripeClient` service access is
+  deprecated from v13.
+- Python v13 requires both the Invoice ID and line-item ID when modifying an
+  Invoice Line Item, and moves request parameter types to shared top-level
+  names.
+- Python v13 replaces `parse_thin_event()` and `ThinEvent` with
+  `parse_event_notification()` and typed notification classes.
+- Import removed compatibility exports directly from `stripe`; use `File`
+  instead of `FileUpload` and `UrllibClient` instead of `Urllib2Client`.
+- Python v15 requires Python 3.9 or newer and represents every
+  `decimal_string` field as `decimal.Decimal`.
+- `StripeObject` is no longer a `dict`. Use attributes, bracket access, or
+  `.to_dict()` instead of `.get()`, `.update()`, or `.items()`.
 
 ## Implementation checklist
 
-- Pin and record the API version used by tests.
-- Verify the SDK's associated API release.
-- Regenerate or update local types after a major SDK change.
-- Test omitted, optional, nullable, and include-dependent fields separately.
-- Test webhook signature verification and parser selection with raw payloads.
-- Test event handlers with newly added enum values and unknown fallbacks.
-- Test Invoice previews against concurrent Credit Grant consumption.
-- Test Checkout and Elements initialization without relying on former defaults.
-- Test card line-item arithmetic and method-specific field behavior.
-- Keep preview-only models isolated from stable-contract code.
+- Track the API version and its directly associated SDK release during upgrades.
+- From Node v19, use the `latest`, `public-preview`, or `private-preview` npm
+  release tags rather than `beta`.
+- Update generated types for removed, required, optional, and newly added fields.
+- Request include-dependent Accounts v2 paths and use presence checks for
+  optional v2 properties.
+- Select the parser from the delivered snapshot or notification contract.
+- Preserve an unknown branch for generated enum and error unions.
+- Follow the distinct schedule rules when migrating flexible billing.
+- PaymentIntent line-item arithmetic validation is enabled by default; disabling
+  it exposes mismatch details through `amount_details.error`.

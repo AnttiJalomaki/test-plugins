@@ -1,48 +1,37 @@
 # Tooling and Platforms
 
-## React Performance Tracks
+React Performance Tracks are attributed to `19.2.0`; the platform additions are attributed to `react-conf-2025`.
 
-Chrome DevTools performance profiles now include custom React tracks:
+## Diagnose work with React Performance Tracks
 
-- **Scheduler** shows update priorities and scheduling delays.
-- **Components** relates render, mount, and Effect work to the component tree.
+React adds custom Scheduler and Components tracks to Chrome DevTools performance profiles. They align update priorities and scheduling delays with component render, mount, and Effect work.
 
-Use both tracks to identify blocked or unexpectedly expensive component work without first adding custom instrumentation.
+Use these tracks to attribute blocked or unexpectedly expensive work before adding custom instrumentation.
 
-## Canary Fragment refs
+## Use Canary Fragment refs without wrapper DOM
 
-Canary React supports refs on Fragments. A Fragment ref provides access to the collection of DOM nodes wrapped by the Fragment without adding a host wrapper solely to obtain a ref.
+Canary React adds refs for Fragments. A Fragment ref can interact with the DOM nodes wrapped by the Fragment without introducing an extra host element.
 
-Treat Fragment refs as Canary functionality.
+## Migrate React Native 0.82 to the New Architecture
 
-## React Native 0.82 architecture
+React Native 0.82 is New Architecture only. An application upgrading to 0.82 cannot remain on the legacy architecture.
 
-React Native 0.82 is New Architecture only. Applications upgrading to it can no longer remain on the legacy architecture.
+## Treat Hermes V1 as experimental
 
-## Hermes V1
+React Native 0.82 adds experimental Hermes V1 support. It is available for evaluation, but should not be presented as a stable runtime recommendation.
 
-React Native 0.82 includes experimental Hermes V1 support. It is available for evaluation, profiling, and compatibility testing, but its experimental status should remain explicit in release decisions.
+## Use web-aligned React Native APIs
 
-## Web-aligned DOM APIs
+React Native adds DOM APIs aligned with the web. These APIs improve compatibility for application code and libraries shared with React DOM.
 
-React Native adds DOM APIs aligned with the web. These APIs improve compatibility for application code and libraries shared between React Native and React DOM.
+## Inspect React Native performance with built-in tools
 
-## Performance APIs and tools
+React Native adds Performance APIs, a network panel, and a desktop app. Together they expand the platform's built-in performance inspection surface.
 
-React Native adds:
-
-- new Performance APIs;
-- a network panel; and
-- a desktop application for performance inspection.
-
-Prefer these built-in surfaces when investigating native scheduling, network, or runtime work before introducing separate instrumentation.
-
-## Virtual View
+## Model list visibility with Virtual View
 
 Virtual View is a React Native primitive for list rendering. It manages each item's visibility through three rendering modes:
 
-- `hidden`;
-- `pre-render`; and
-- `visible`.
-
-Use the modes to keep list work aligned with whether an item is off-screen, being prepared, or currently visible.
+- `hidden`
+- `pre-render`
+- `visible`

@@ -1,66 +1,60 @@
 # Migration, JSX, and DOM APIs
 
-The core changes in `1.9.0` affect compilation, package resolution, customized
-built-ins, boolean attributes, and native event registration.
-
 ## Build-time HTML validation
 
-The JSX compiler detects more invalid HTML structures that a browser would
-otherwise rewrite, including nested `<a>` elements. These structures can now
-fail the build instead of producing a different DOM tree at runtime.
+Since 1.9.0, the JSX compiler detects more invalid HTML structures that a
+browser would silently rewrite, including nested `<a>` elements. These
+structures can now fail the build instead of producing a different DOM tree at
+runtime.
 
-Validation is not exhaustive across every template shape. Do not infer that a
-successful build proves all generated HTML is structurally valid; fix every
-reported source nesting error.
+Validation is still incomplete across all template shapes. Treat a passing
+build as a useful check, not proof that every generated tree is valid HTML.
+When a new compiler version rejects a structure, fix the source markup instead
+of depending on browser repair.
 
-## Cross-runtime `solid-js/web` imports
+## Cross-runtime `solid-js/web` exports
 
-Server environments export the client-side compiler methods from
-`solid-js/web`, allowing a cross-environment import to resolve during a server
-build. The methods remain client-only: calling one on the server throws.
-
-Use the exports to keep shared module graphs resolvable, not to perform DOM or
-client compiler work during SSR.
+Server environments export client compiler methods from `solid-js/web` so
+shared imports resolve during server builds. The methods remain client-only:
+invoking one on the server still throws. Separate successful resolution from
+runtime safety when sharing modules between SSR and the browser.
 
 ## Package resolution without `browser`
 
-The package no longer publishes a `browser` field. Some bundlers resolved ESM
-exports correctly and then incorrectly reapplied `browser`, so removing the
-field avoids that second remapping.
-
-Legacy resolvers that do not understand package export conditions may stop
-finding the browser build. Upgrade or configure the resolver rather than
-assuming the old `browser` mapping still exists.
+The package no longer publishes a `browser` field. Some bundlers reapplied that
+field after resolving ESM exports, so keeping it produced incorrect builds.
+Resolvers must now understand package export conditions; legacy resolvers may
+fail to find the browser build and should be upgraded or configured for
+conditional exports.
 
 ## Customized built-in elements
 
-An element with an `is` attribute is recognized as a custom element and gets
-Solid's custom-element behavior:
+An intrinsic JSX element with an `is` attribute receives Solid's custom-element
+behavior:
 
 ```tsx
 <button is="fancy-button">Open</button>
 ```
 
-This covers customized built-ins rather than only autonomous custom-element
-tag names.
+Use this form for a customized built-in element rather than treating it as an
+ordinary built-in button.
 
 ## Explicit boolean attributes
 
-Use the `bool:` namespace to force boolean-attribute semantics when Solid
-would otherwise handle the name as a property. This is particularly useful
-for custom elements with boolean attributes:
+The `bool:` namespace forces boolean-attribute semantics for names Solid would
+otherwise handle as properties. It is particularly useful for custom elements:
 
 ```tsx
 <my-element bool:enable={isEnabled()} />
 ```
 
-The namespace controls attribute semantics; it is not merely a naming
-convention for the custom element.
+Use it only when presence and absence of the attribute carry the state; it is
+not merely shorthand for assigning a boolean property.
 
-## Non-delegated event listener objects
+## Listener objects for non-delegated events
 
-The `on:` syntax accepts an object with `handleEvent` and native event-listener
-options:
+The `on:` syntax accepts an event-listener object with `handleEvent` and browser
+listener options:
 
 ```tsx
 <div
@@ -69,11 +63,12 @@ options:
       event.preventDefault();
     },
     passive: false,
+    capture: true,
+    once: true,
   }}
 />
 ```
 
-The object can carry `once`, `passive`, or `capture`. Use this form instead of
-the deprecated `oncapture:` mechanism; it also allows future browser listener
+Supported options include `once`, `passive`, and `capture`. This form replaces
+the deprecated `oncapture:` mechanism and can accommodate additional listener
 options without requiring another JSX namespace.
-

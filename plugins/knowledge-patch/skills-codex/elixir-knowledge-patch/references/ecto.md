@@ -1,111 +1,94 @@
 # Ecto Queries, Schemas, and Repositories
 
-Batch attribution: `ecto-3.12`.
+## Build queries
 
-## Contents
+The following query capabilities are available in `ecto-3.12`.
 
-- [Query composition](#query-composition)
-- [Preloading](#preloading)
-- [Bulk inserts and repository writes](#bulk-inserts-and-repository-writes)
-- [Schemas, embeds, and changesets](#schemas-embeds-and-changesets)
-- [Adapter and extension migrations](#adapter-and-extension-migrations)
+- `Ecto.Query.is_named_binding` is a guard for recognizing named bindings.
+- `distinct`, `group_by`, `order_by`, and `window` accept subqueries.
+- `select_merge` works in more `insert_all` and subquery operations when the
+  merge fields are distinct.
+- `dynamic/2` accepts literal maps:
 
-## Query composition
+  ```elixir
+  dynamic([post], %{id: post.id, title: post.title})
+  ```
 
-### Recognize named bindings in guards
+- A macro at the root of `order_by` may expand to the whole ordering
+  expression.
+- A query may preload a subquery used as a `from` or `join` source.
+- Map-update expressions inside `select` accept dynamic values.
+- The right side of query `in` accepts any `Enumerable`, including a
+  `MapSet`:
 
-Use `Ecto.Query.is_named_binding` when guard code must determine whether a query binding is named.
+  ```elixir
+  from post in Post, where: post.id in ^MapSet.new(ids)
+  ```
 
-### Use subqueries in by-expressions
+## Preload associations
 
-Place subqueries in `distinct`, `group_by`, `order_by`, and `window` expressions. Ecto also expands macros at the root of `order_by`, allowing a macro to return the complete ordering expression rather than only a nested fragment.
+Custom preload functions may have arity two. They receive both the parent IDs
+and association metadata, allowing one callback to adapt its fetch to the
+association being loaded (`ecto-3.12`).
 
-### Merge and update selected maps
+## Insert and update through repositories
 
-Use `select_merge` in the expanded set of `insert_all` and subquery operations when merging distinct fields. Map-update expressions inside `select` accept dynamic values.
+For `Repo.insert_all/3` in `ecto-3.12`, the supplied query may contain only a
+source, without an explicit `select`, and it may use Ecto update syntax.
 
-Use literal maps directly in `dynamic/2`:
-
-```elixir
-dynamic([post], %{id: post.id, title: post.title})
-```
-
-### Accept any enumerable in `in`
-
-The right side of query `in` can be any value implementing `Enumerable`, not only the previously recognized concrete collections:
-
-```elixir
-from post in Post, where: post.id in ^MapSet.new(ids)
-```
-
-## Preloading
-
-### Preload subquery sources
-
-Preload a subquery used as the source of a `from` or `join` expression.
-
-### Receive association metadata in custom preloaders
-
-Define a custom preload function with arity two to receive both the parent IDs and the association metadata. Keep using arity one when only the IDs are needed.
-
-## Bulk inserts and repository writes
-
-### Supply source-only and update queries to `insert_all`
-
-The query passed to `Repo.insert_all/3` may consist only of its source, without an explicit `select`. It may also use Ecto update syntax.
-
-### Intentionally allow stale operations
-
-Pass `allow_stale: true` to a repository operation on a struct or changeset only when a stale write should be accepted rather than rejected:
+Repository operations on a stale struct or changeset accept
+`allow_stale: true` when the write is intentionally allowed to proceed instead
+of raising a stale-entry error:
 
 ```elixir
 Repo.update(changeset, allow_stale: true)
 ```
 
-## Schemas, embeds, and changesets
+Do not make this a blanket default; it suppresses an important concurrency
+check.
 
-### Attach options to validation messages
+## Define schemas and embeds
 
-Several `Ecto.Changeset` validators accept `{message, opts}` as their message value, allowing a custom message to retain the options associated with it.
+- Mark generated or otherwise read-only fields with `writable: :never`:
 
-### Mark fields read-only
+  ```elixir
+  field :generated_value, :string, writable: :never
+  ```
 
-Use the `:writable` field option to prevent repository writes:
+- Give `embeds_one` an embedded-struct default rather than `nil` with
+  `defaults_to_struct: true`:
 
-```elixir
-field :generated_value, :string, writable: :never
-```
+  ```elixir
+  embeds_one :profile, Profile, defaults_to_struct: true
+  ```
 
-### Default a one-to-one embed to its struct
+- Store Elixir duration values with the Ecto `:duration` type:
 
-Set `defaults_to_struct: true` when an `embeds_one` field should default to the embedded struct instead of `nil`:
+  ```elixir
+  field :elapsed, :duration
+  ```
 
-```elixir
-embeds_one :profile, Profile, defaults_to_struct: true
-```
+These schema options were added in `ecto-3.12`.
 
-### Store durations
+## Validate and cast changes
 
-Use the Ecto `:duration` type for Elixir duration values:
+Several `Ecto.Changeset` validators accept `{message, opts}` as the custom
+message, preserving the options associated with that validation message
+(`ecto-3.12`).
 
-```elixir
-field :elapsed, :duration
-```
+When a custom inner type in `{:map, type}` or `{:array, type}` returns a cast
+error, Ecto now propagates that nested error instead of replacing it with a
+generic container error.
 
-### Preserve nested custom cast errors
+## Maintain adapters and custom types
 
-For `{:map, type}` and `{:array, type}`, Ecto propagates cast errors returned by the inner custom type instead of replacing them with a generic container error. Preserve and surface that more specific error information in changeset handling.
+Adapter integrations upgrading to `ecto-3.12` must represent `distinct`,
+`group_by`, `order_by`, and `window` as `Ecto.Query.ByExpr` structs rather than
+`Ecto.Query.QueryExpr` structs.
 
-## Adapter and extension migrations
+The private parameterized-type representation is now
+`{:parameterized, {module, state}}`. Never construct or inspect that tuple;
+instantiate the type through `Ecto.ParameterizedType.init/2`.
 
-### Handle `ByExpr`
-
-Represent `distinct`, `group_by`, `order_by`, and `window` expressions as `Ecto.Query.ByExpr` structs in adapters. Code expecting `Ecto.Query.QueryExpr` for these expressions must be updated.
-
-### Initialize parameterized types through the public API
-
-The private form is `{:parameterized, {module, state}}`. Do not construct or match that representation; instantiate parameterized types with `Ecto.ParameterizedType.init/2`.
-
-### Remove `:array_join`
-
-The `:array_join` query join type that had been added for ClickHouse support is removed. Replace extension code that emitted or matched it with adapter-specific supported syntax.
+The `:array_join` join type that existed for ClickHouse support has been
+removed. Remove callers and adapter clauses that still emit it.

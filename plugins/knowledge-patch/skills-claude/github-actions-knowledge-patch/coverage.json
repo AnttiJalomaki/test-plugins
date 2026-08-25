@@ -1,6 +1,8 @@
 {
   "patch": "github-actions-knowledge-patch",
-  "merged_at": "2026-07-26T23:38:51Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T05:53:06Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -12,6 +14,16 @@
     },
     "platform-2026": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-07-28": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-07-30": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

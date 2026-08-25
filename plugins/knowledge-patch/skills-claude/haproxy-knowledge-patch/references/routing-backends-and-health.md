@@ -1,49 +1,12 @@
 # Routing, Backends, and Health
 
-## Runtime-created backends
+## Backend protocols and balancing
 
-The Runtime API can create, publish, unpublish, and delete complete backends
-without a reload since 3.4.0. Creation and publication are distinct: routing
-cannot use a backend until it is published.
+### SPOP-native backends (since 3.1.0)
 
-```text
-add backend test-backend from mydefaults mode http
-add server test-backend/server1 127.0.0.1:3000 check
-enable server test-backend/server1
-enable health test-backend/server1
-publish backend test-backend
-```
-
-A disabled or unpublished backend chosen by `use_backend` or
-`default_backend` is skipped unless `force-be-switch` is set.
-
-Safe deletion is a staged drain:
-
-1. Put every server into maintenance.
-2. Wait for each server's `srv-removable` state.
-3. Delete each server.
-4. Unpublish the backend.
-5. Wait for `be-removable`.
-6. Delete the backend.
-
-Named `defaults` sections stay in memory to seed dynamic creation. Set global
-`tune.defaults.purge` when dynamic backends are not used and this retained
-state should be released.
-
-## Balancing behavior
-
-A backend with no explicit `balance` uses `random` since 3.3.0 rather than
-`roundrobin`. Random balancing uses a power-of-two choice: sample two servers
-and choose the less-loaded one. Configure `balance roundrobin` when order is
-required.
-
-Since 3.4.0, two random candidates with equal concurrent-connection counts are
-compared by recent HTTP request rate. This affects large pools in which many
-servers otherwise appear equally loaded.
-
-SPOP-native backends introduced in 3.1.0 use `mode spop`. SPOE is implemented
-as a mux, these backends accept any load-balancing algorithm, and idle
-connections can be shared across threads. Existing SPOA agents stay compatible:
+SPOE is implemented as a mux and adds the `mode spop` backend mode. SPOP
+backends can use any load-balancing algorithm and share idle connections
+between threads. Existing SPOA agents remain compatible.
 
 ```haproxy
 backend spoa_agents
@@ -52,66 +15,92 @@ backend spoa_agents
     server agent1 127.0.0.1:12345
 ```
 
-## Retries and pacing policies
+### Random is the default (since 3.3.0)
 
-`set-retries` is available in `tcp-request` and `http-request` rules since
-3.1.0. It chooses the retry count per request from a literal or evaluated
-policy:
+A backend without an explicit `balance` directive uses `random` instead of
+`roundrobin`. The random policy uses a power-of-two choice: it samples two
+servers and selects the less-loaded one. Configure `balance roundrobin` to
+retain the former behavior.
+
+### Random tie-breaking (since 3.4.0)
+
+When the two random candidates have equal concurrent-connection counts,
+HAProxy also compares their recent HTTP request rates. This changes
+distribution in large pools where many servers previously appeared equally
+loaded.
+
+## Retry and stream behavior
+
+### Dynamic retry counts (since 3.1.0)
+
+The `set-retries` action is available in `tcp-request` and `http-request`
+rules, allowing runtime selection of the retry count for a particular
+application path or client.
 
 ```haproxy
 http-request set-retries 0 if METH_POST
 ```
 
-`retry-on` accepts status 421 since 3.2.0, allowing a request misdirected to a
-backend server that cannot serve it to be retried elsewhere.
+### Retrying status 421 (since 3.2.0)
 
-The `pause` action delays request or response processing for a fixed number of
-milliseconds or a sample expression (since 3.2.0). It can slow rate-limit
-offenders, but it deliberately occupies transaction time:
+`retry-on` accepts HTTP status `421`, allowing a request misdirected to an
+incapable backend server to be retried.
 
-```haproxy
-http-request pause 250
-http-response pause 250
-```
+### Abort-on-close defaults (since 3.3.0)
 
-## Connection limits and idle pools
+Backends in `mode http` enable `option abortonclose` by default. This allows
+work to stop before an abandoned client request is sent to a server. The
+option is also valid in a frontend.
 
-Server `strict-maxconn` makes `maxconn` count open TCP connections rather than
-concurrent HTTP requests (since 3.2.0). Use it for upstreams with a hard socket
-limit.
+### Stream settings after backend selection (since 3.4.3)
 
-Server `check-reuse-pool` performs health checks over idle pooled connections
-instead of opening a new connection. This reduces connection and TLS handshake
-cost and supports reverse-HTTP permanent connections.
+Custom stream timeouts and maximum retry counts are initialized correctly
+when selecting a backend. Rules that set those values no longer lose their
+intended behavior during backend assignment.
 
-Global `tune.idle-pool.shared` introduced in 3.4.0 controls cross-thread idle
-server connection sharing:
+## Server limits and pools
 
-- `on`: share inside a thread group.
-- `full`: share across all threads.
-- `off`: disable sharing, primarily for debugging.
+### Strict connection caps (since 3.2.0)
+
+The server argument `strict-maxconn` makes `maxconn` count open TCP
+connections rather than concurrent HTTP requests. Use it when a backend has a
+hard connection limit.
+
+### Health checks on pooled connections (since 3.2.0)
+
+The server argument `check-reuse-pool` performs health checks over idle pooled
+connections rather than opening new ones. This reduces connection and TLS
+handshake overhead and supports reverse-HTTP permanent connections.
+
+### Shared idle pools (since 3.4.0)
+
+The global `tune.idle-pool.shared` setting controls cross-thread sharing of
+idle server connections:
+
+- `on` shares within a thread group.
+- `full` shares across all threads.
+- `off` disables sharing for debugging.
 
 It supersedes and deprecates `tune.takeover-other-tg-connections`.
 
-## Health-check definitions
+## Health checks
 
-### Startup gating
+### Host headers in legacy HTTP checks (since 3.1.0)
 
-Server `init-state` introduced in 3.1.0 can keep a server down at startup or
-after maintenance until its first health check succeeds. Use it where an
-optimistic initial state could send traffic too early.
+`option httpchk` supports a Host header directly. A fake string in the
+`httpchk` line is no longer needed to encode that header.
 
-### Host in legacy HTTP checks
+### Health-gated server initialization (since 3.1.0)
 
-`option httpchk` accepts a Host header directly since 3.1.0. Do not encode it
-through the older fake-string workaround in the `httpchk` line.
+The server `init-state` setting can keep a server down at startup or after it
+leaves maintenance until its first health check succeeds.
 
-### Reusable sections
+### Reusable health-check sections (since 3.4.0)
 
-A named `healthcheck` section introduced in 3.4.0 can contain any supported
-check type and its `http-check` or `tcp-check` actions. Servers select one with
-the `healthcheck` argument, so servers in the same backend can use different
-checks and definitions can be reused across backends:
+A named `healthcheck` section can hold any supported check type and its
+`http-check` or `tcp-check` actions. A server selects it with the
+`healthcheck` argument. Different servers in one backend can therefore use
+different checks, and definitions can be reused across backends.
 
 ```haproxy
 healthcheck mycheck
@@ -123,20 +112,27 @@ backend webservers
     server web1 10.0.0.1:80 check healthcheck mycheck
 ```
 
-## Backend TLS transports
+## Runtime-created backends
 
-Server-side TLS derives SNI from the HTTP `host` header automatically since
-3.3.0. `sni-auto` and `no-sni-auto` govern normal traffic;
-`check-sni-auto` and `no-check-sni-auto` govern checks.
+### Creation and publication (since 3.4.0)
 
-Experimental backend HTTP/3 uses a `quic4@` address and normal backend TLS
-verification. QMux in 3.4.0 instead carries HTTP/3/QUIC frames over TCP between
-HAProxy endpoints with `alpn h3`. See the networking reference for complete
-experimental enablement and tuning.
+The Runtime API can add, publish, unpublish, and delete complete backends
+without a reload. A backend is unavailable for routing until published.
+Disabled or unpublished backends selected by `use_backend` or
+`default_backend` are skipped unless `force-be-switch` is set.
 
-## Client-abort behavior
+```text
+add backend test-backend from mydefaults mode http
+add server test-backend/server1 127.0.0.1:3000 check
+enable server test-backend/server1
+enable health test-backend/server1
+publish backend test-backend
+```
 
-Since 3.3.0, HTTP backends enable `option abortonclose` by default. HAProxy can
-stop work before forwarding an abandoned client request to a server. The
-option is newly valid in frontends as well; make the desired behavior explicit
-for workflows that must complete after client disconnect.
+For safe removal, put each server into maintenance, wait for `srv-removable`,
+and delete it. Then unpublish the backend, wait for `be-removable`, and delete
+the backend.
+
+Named `defaults` sections remain in memory for dynamic creation. A deployment
+that does not use dynamic backends can release that memory with the global
+`tune.defaults.purge` directive.

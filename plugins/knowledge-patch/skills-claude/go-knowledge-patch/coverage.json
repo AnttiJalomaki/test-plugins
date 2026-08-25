@@ -1,6 +1,8 @@
 {
   "patch": "go-knowledge-patch",
-  "merged_at": "2026-07-15T01:09:42Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T09:06:51Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -36,6 +38,16 @@
       "build": "included"
     },
     "1.26.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.27.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "rolling-2026-08-19": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

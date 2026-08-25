@@ -1,569 +1,308 @@
 # Raster processing and formats
 
-Use this reference for the task areas below. Batch labels identify when each behavior entered the covered compatibility history.
+## Warping, transformation, and resampling
 
-## Warping, reprojection, and georeferencing
+### Transformer and warper capabilities (`3.11.0`)
 
-### Invalid GCP-derived geotransforms
+The transformer supports homographies. Warping adds `MODE_TIES`, bases mode
+resampling on source-pixel coverage, and permits a mode value of `-1`.
+Transformer options include `ALLOW_BALLPARK=NO`, `ONLY_BEST=AUTO|YES|NO`,
+source/destination axis-mapping controls, and `HEIGHT_DEFAULT` for RPC height.
+`ogr2ogr -ct_opt` exposes ballpark, best-operation, and differing-operation
+warning controls.
 
-*Batch: 3.10.2*
+### Extents and reprojection
 
-`GDALGCPsToGeoTransform()` now returns `FALSE` when it generates an invalid geotransform, allowing callers to reject the conversion instead of using an invalid result.
+- `gdalwarp -te` plus `-te_srs` uses `TransformBounds()` to obtain the target
+  extent (`3.11.1`).
+- Reprojection directly to COG works again after an earlier regression
+  (`3.11.2`).
+- Large rasters, globally extensive WMTS input, and longitude ranges of at
+  least 360 degrees no longer trigger affected failures or an inappropriate
+  `CENTER_LONG` in Web Mercator (`3.11.4`).
+- TPS warping defaults to `SOURCE_EXTRA=5` (`3.11.4`).
+- Polar-to-geographic geometry reprojection is corrected in the core and in
+  unified vector reprojection (`3.11.5`).
+- Homography transformations scale correctly on overviews (`3.12.3`).
 
-### Warping empty source windows
+### Source windows, nodata, and initialization
 
-*Batch: 3.10.3*
+The MEM warper handles empty source windows with nonzero nodata (`3.10.3`).
+Pansharpening tolerates input extents differing by less than one multispectral
+pixel (`3.10.3`).
 
-Warping with the MEM driver now handles an empty source window correctly when the nodata value is nonzero.
+`UNIFIED_SRC_NODATA=YES` no longer applies an inappropriate destination-nodata
+avoidance (`3.12.2`). Multi-threaded interruption is reliable and worker-thread
+warps avoid a deadlock (`3.12.4`). Bilinear, cubic, cubic-spline, and Lanczos
+correctly process NaN samples when nodata is NaN (`3.12.4`).
 
-### Warp and coordinate-operation controls
+Earlier destination-buffer initialization warned and zero-filled for
+`INIT_DEST=NO_DATA` without nodata (`3.11.5`). The later command contract makes
+that request fail; `RESET_DEST_PIXELS=YES|NO` resets an existing destination to
+destination nodata or zero (`3.13.0`).
 
-*Batch: 3.11.0*
+### Working types and changed samples
 
-The transformer adds a Homography type, while the warper adds `MODE_TIES`, uses source-pixel coverage for mode resampling, and permits a mode of `-1`. Transformer options now include `ALLOW_BALLPARK=NO`, `ONLY_BEST=AUTO/YES/NO`, source/destination axis-mapping controls, and `HEIGHT_DEFAULT` as the fallback RPC height; `ogr2ogr -ct_opt` exposes the ballpark, best-operation, and differing-operation-warning controls.
+`GDALWarpResolveWorkingDataType()` examines band types before defaulting to
+`UInt8`; nearest-neighbor has a dedicated `Int8` path (`3.12.3`). RMS overview
+normalization is corrected and may change affected values.
 
-### Reprojecting directly to COG
+RasterIO resampling works in the output buffer type by default
+(`3.13-migration`), so Byte-to-Float32 non-nearest output can be fractional.
+Set `bOperateInBufType` false for the prior behavior.
 
-*Batch: 3.11.2*
+Lanczos no longer applies its special validity threshold when fewer than half
+the contributing pixels are valid, changing masked/nodata edges (`3.13.1`).
+The SSE2 conversion path maps NaN to zero for signed 8-, 16-, and 32-bit
+integer targets, matching the scalar path.
 
-`gdalwarp` can again reproject into Cloud Optimized GeoTIFF output, fixing a regression introduced in 3.11.0.
+For GCP transformers (`3.12.2`), `MAX_GCP_ORDER` is ignored with
+`METHOD=GCP_TPS`; negative values are sanitized with
+`METHOD=GCP_POLYNOMIAL`.
 
-### Transformations involving ESRI authority codes
+### Sum, mode, and viewshed correctness
 
-*Batch: 3.11.2*
+Sum-resampled warps avoid chunk-boundary artifacts (`3.12.1`). Mode resampling
+accounts for Float16/CFloat16 NaNs (`3.11.4`). Viewshed DEM and GROUND modes
+accept values outside Byte range (`3.12.3`).
 
-Coordinate transformation works when one input CRS carries a code labeled as EPSG that is actually an ESRI code.
+## Raster statistics, contours, and masks
 
-### Large, global, and TPS warps
+### Precision and nodata behavior
 
-*Batch: 3.11.4*
+`GDALFPolygonize()` preserves Float64 precision. Statistics correct Float64
+standard deviation in SSE2/AVX2 paths and use Float64 precision for Float32
+mean and deviation (`3.12.1`).
 
-Warping large rasters no longer fails in cases such as globally extensive WMTS inputs, and a whole longitude range of at least 360 degrees is no longer given an inappropriate `CENTER_LONG` when targeting Web Mercator. TPS warping now defaults to `-wo SOURCE_EXTRA=5`.
+`GDALZonalStats` handles polygons outside the raster, while unified zonal stats
+avoids overflow for huge coordinates (`3.12.1`).
 
-### Polar-to-geographic reprojection
+`ComputeRasterMinMax()` and `GetHistogram()` require exact equality to exclude
+an integer nodata value; a nearby integer is no longer treated as nodata
+(`3.13.2`). Constant, non-Byte histograms where `min == max` work correctly
+(`3.11.4`).
 
-*Batch: 3.11.5*
+### Contours and masks
 
-Geometry reprojection from a polar CRS to geographic coordinates is corrected in both the core transformation path and `gdal vector reproject`.
+Constant-valued contour generation returns success (`3.10.1`), and all-nodata
+contouring succeeds with an empty layer (`3.12.2`). A selected mask in
+`gdal_translate -of COG -b 1 -b 2 -b 3 -b mask` becomes a regular alpha-tagged
+band and no longer crashes with source overviews (`3.11.5`).
 
-### Reprojection, resizing, tiling, and viewshed controls
+`GDALNoDataMaskBand::IRasterIO()` avoids Byte corruption when line spacing is
+larger than buffer width (`3.11.4`). `raster as-features --skip-nodata` no
+longer drops non-nodata features (`3.12.4`).
 
-*Batch: 3.12.0*
+## VRT and processed raster composition
 
-`gdal raster reproject` adds `-j`/`--num-threads` and defaults to `ALL_CPUS`, while `gdal raster resize` adds `--resolution`. Raster tiling supports `--parallel-method=fork` on non-Windows systems or `spawn`, emits `stacta.json`, and can terminate a pipeline; viewshed adds angular, pitch, and minimum-distance masking.
+### Embedded and processed VRTs
 
-### Sum-resampled warps
+Processed datasets read source scale and offset (`3.10.1`). A simple or complex
+source can embed a `VRTDataset`, and processed VRT adds `OutputBands` for output
+count and types (`3.11.0`). VRT source XML accepts a `name` attribute
+(`3.12.1`).
 
-*Batch: 3.12.1*
+Raw-file VRT access is restricted by default (`3.12-migration`). Review the
+runtime policy and `GDAL_VRT_ENABLE_RAWRASTERBAND`; the same name is a build
+gate (`3.12.0`).
 
-`gdalwarp -r sum` no longer introduces artifacts related to chunked processing.
+### Derived bands and expressions
 
-### GCP transformer option handling
+VRT functions support arbitrary expressions, reclassification, and `mul` or
+`sum` with a band and constant (`3.11.0`). Later functions add nodata-aware
+`mean`, `median`, `geometric_mean`, `harmonic_mean`, `mode`, `argmin`, and
+`argmax`; `min`/`max` take optional `k`, muparser adds `fmod`, expression
+coordinates expose `_CENTER_X_`/`_CENTER_Y_`, and `vrt://` adds `transpose`
+(`3.12.0`).
 
-*Batch: 3.12.2*
+`ComplexSource` calculation and transfer types are corrected (`3.12.1`).
+Nearest-neighbor VRT reads use common coordinate rounding; threading is disabled
+for neighboring sources not integer-aligned to the output so results are
+deterministic (`3.12.1`). Strided derived-band reads zero-initialize output
+correctly (`3.12.3`), and implicit derived-band overviews work (`3.12.4`).
 
-`GDALTransformer()` ignores `MAX_GCP_ORDER` when `METHOD=GCP_TPS`; with `METHOD=GCP_POLYNOMIAL`, negative `MAX_GCP_ORDER` values are sanitized.
+Derived functions later add `area`, `quantile`, and `round`; `vrt://` accepts a
+`block` option (`3.13.0`).
 
-### Multiband MiraMon geotransforms
+### Source overviews and pansharpened VRTs
 
-*Batch: 3.12.2*
+A single-source VRT exposes every source overview, and VRTPansharpen tolerates
+sources with different overview counts (`3.11.2`). Pansharpened overview bands
+inherit full-resolution nodata (`3.11.5`). Serialization works when panchromatic
+and multispectral extents differ, and source vertical orientation is detected
+correctly (`3.12.2`).
 
-The MiraMonRaster driver now reports the correct dataset geotransform when a dataset has several bands.
+## COG, GeoTIFF, and TIFF readers
 
-### Warp data types
+### COG creation and layout
 
-*Batch: 3.12.3*
+COG supports `INTERLEAVE=BAND` and `TILE`, useful for hyperspectral data
+(`3.11.0`), and complex types (`3.11.4`). It later implements random-write
+`GDALDriver::Create()` (`3.13.0`). `COGCreate()` always uses BigTIFF for its
+temporary file, avoiding classic-TIFF intermediate limits (`3.13.2`).
 
-`GDALWarpResolveWorkingDataType()` now examines band data types before falling back to `UInt8`, and nearest-neighbor warping has a dedicated `Int8` path. Signed-byte inputs therefore no longer depend on byte-oriented working-type behavior.
+Multithreaded `BuildOverviews()` works for multiband COG datasets (`3.13.3`).
+Overview cleanup exposes layout-break guidance and clean removal preserves the
+layout (`3.11.1`).
 
-### Homography overviews and viewshed value ranges
+### GeoTIFF data types, compression, and metadata
 
-*Batch: 3.12.3*
+GTiff accepts Float16 and DNG 1.7 JPEG XL compression value `52546`
+(`3.10.1`). A multithreaded compressed result can be read immediately after
+creation (`3.10.3`). Float16 accepts `PREDICTOR=3`, and creation honors
+`GDAL_DISABLE_READDIR_ON_OPEN=TRUE` (`3.12.3`).
 
-Homography GCP transformations now apply the correct scaling factor on overviews. Viewshed DEM and GROUND modes also accept values outside the `Byte` range.
+GTiff and COG warn when `JXL_DISTANCE` or `JXL_ALPHA_DISTANCE` is set without
+`JXL_LOSSLESS=NO`; JPEG XL Byte conversion is corrected (`3.11.4`).
 
-### Reprojected and non-square-pixel extents
+GTiff reads ArcGIS `.tif.vat.dbf` raster attribute tables and preserves
+premultiplied alpha together with COG and warping (`3.11.0`). It reads and
+writes the `GDAL_METADATA` TIFF tag, including supported `json:*` domains
+(`3.12.0`). ENVI wavelength, FWHM, and bad-band sidecars are consumed, and
+`LAYOUT=COG` is reported for structurally valid COGs even without a GDAL ghost
+area (`3.13.0`).
 
-*Batch: 3.12.3*
+### TIFF reader behavior
 
-`gdaltindex` now uses GDALWarp when computing reprojected extents. `gdal2tiles` also computes the correct extent for source rasters with non-square pixels.
+LIBERTIFF is a native, thread-safe, read-only GeoTIFF driver (`3.11.0`). It
+reads WEBP RGBA where opaque strips omit alpha (`3.11.2`), converts RGB
+pixel-interleaved data to RGBA buffers (`3.11.5`), and reads BigTIFF nodata
+strings occupying four through eight bytes (`3.13.1`).
 
-### Georeferencing validation
+## Tiling, mosaics, and GTI
 
-*Batch: 3.12.3*
+### GTI STAC and source metadata
 
-The netCDF driver uses a stored `GeoTransform` attribute only when it is consistent with the dimension variables. The RPFTOC driver now georeferences polar zones correctly.
+GTI can use STAC GeoParquet without `assets.image.href` (`3.10.1`). It
+recognizes asset `proj:epsg`/`proj:transform`, top-level `proj:code`, `proj:wkt2`
+and `proj:projjson`, EO bands under any asset name, all `common_names`, central
+wavelength/FWHM, and raster-band scale/offset. It exposes `SRS` and carries a
+sample tile color table for one-band datasets.
 
-### Multithreaded warp interruption
+South-up tiles are accepted and warped north-up (`3.12.1`). STAC GeoParquet
+recognizes `stac_extensions`, top-level `bands`, and EO 2.0; URL rewriting is
+limited to collection catalogs.
 
-*Batch: 3.12.4*
+GTI accepts SQL instead of a layer/table for selecting tiles; `s3://` STAC
+references map to `/vsis3/` (`3.12.0`). `WARPING_MEMORY_SIZE` controls warp
+memory, and unnecessary destination alpha is omitted (`3.12.3`). Relative
+paths in XML and `.gti.gpkg` resolve from the main file, and masked overview
+reads no longer fail from a missing band map (`3.12.4`).
 
-Multithreaded warps detect progress interruption more reliably, and warping initiated from a worker thread avoids a potential deadlock.
+`SRS_BEHAVIOR=OVERRIDE|REPROJECT` and `INTERLEAVE=BAND|PIXEL` are available;
+on-the-fly warp honors the selected interleave (`3.13.0`). Unreadable tile
+sources make raster reads fail (`3.11.5`).
 
-### Resampling with NaN nodata
+### Tiling and raster mosaics
 
-*Batch: 3.12.4*
+MVT can emit more than one tile at zoom zero (`3.10.2`). Unified raster tiling
+supports excluded/nodata thresholds (`3.11.1`), fork or spawn parallelism and
+STACTA output (`3.12.0`), and automatic source-overview selection (`3.13.1`).
 
-Bilinear, cubic, cubic-spline, and Lanczos resampling now handle NaN values correctly when the band's nodata value is also NaN.
+Raster mosaic requires `--resolution` with target-aligned pixels (`3.12.2`).
+Pansharpening can read a small edge window (`3.13.2`).
 
-### Warp destination initialization
+## JPEG-family, PNG, WEBP, AVIF, and HEIF
 
-*Batch: 3.13.0*
+### JPEG, JPEG XL, and JP2
 
-`gdalwarp` now fails when `INIT_DEST=NO_DATA` is requested without a nodata value. The new `RESET_DEST_PIXELS=YES|NO` warp option can completely reset an existing destination to destination nodata or zero.
+JPEG reads FLIR little-endian 16-bit PNG thermal payloads. It keeps
+`IRWindowTransmission` separate from temperature and fixes the relative
+humidity metadata subdomain (`3.11.1`). JPEGXL reads Float16 as Float32
+(`3.11.0`) and converts non-Byte input to Byte correctly (`3.11.4`).
 
-### Absent GeoHEIF geotransforms
+JP2OpenJPEG avoids duplicate type/association entries in the CDEF box for
+three-gray-band-plus-alpha output (`3.12.4`). JP2GROK adds Grok-based read/write
+under AGPLv3 (`3.13.0`); it handles Float32, Float64, and 16-bit output buffers
+and supports genuinely single-threaded decoding (`3.13.2`).
 
-*Batch: 3.13.1*
+### AVIF and HEIF
 
-A GeoHEIF dataset that has no geotransform no longer reports one.
+AVIF reads images larger than 10 MB (`3.10.3`). HEIF adds tile reads,
+`CreateCopy()`, and read-only GeoHEIF with libheif 1.19; AVIF adds read-only
+GeoHEIF with the development libavif current at that release (`3.11.0`).
 
-### Vertical-shift unit metadata
+Later, HEIF writes single-band images and AVIF encodes/decodes 16-bit data with
+libavif 1.4+ (`3.13.0`). A GeoHEIF without a transform no longer reports one
+(`3.13.1`).
 
-*Batch: 3.13.1*
+### Color maps
 
-For a 3D-to-3D vertical-shift warp, `gdalwarp` no longer copies the source unit type to the output file.
+`gdal raster color-map` accepts current GMT `.cpt` files (`3.13.1`).
 
-## VRT, pansharpening, and derived bands
+### PNG and WEBP
 
-### VRT processed-dataset scaling
+PNG caches non-band-one reads correctly (`3.11.2`). It reads/writes
+`BACKGROUND_COLOR` dataset metadata and supports `ZLEVEL=0` uncompressed
+output (`3.12.0`). WEBP supports `.wld` worldfiles (`3.12.0`), and WEBP
+MBTiles can be updated (`3.10.3`).
 
-*Batch: 3.10.1*
+## Specialized imagery and terrain formats
 
-Processed VRT datasets now read scale and offset from their source dataset.
+### GRIB, NITF, Sentinel, DIMAP, and Leveller
 
-### Pansharpening nearly aligned inputs
+GRIB2 reads Transverse Mercator with negative false easting/northing and scale
+factors other than 0.9996 (`3.10.3`). NITF represents SAR I/Q as one complex
+band, Sentinel-2 recognizes `S2C_`, DIMAP reports PNEO FWHM and RPC
+`HEIGHT_DEFAULT`, and Leveller accepts document versions through 12 (`3.11.0`).
 
-*Batch: 3.10.3*
+NITF extended-header TREs are read correctly (`3.12.1`); RPFIMG coverage
+latitude/longitude values are corrected (`3.12.2`). All `WAVE_LENGTH_UNIT`
+cases in BANDSB are parsed (`3.13.1`). NITF accepts `IC=C4` for CADRG
+(`3.13.2`), and creation accepts `NOW` for `NITF_FDT`/`NITF_IDATIM` plus CADRG
+writing (`3.13.0`). `gdal driver rpftoc create` builds CADRG A.TOC indexes.
 
-Pansharpening no longer reports I/O errors when the extents of the panchromatic and multispectral bands differ by less than one multispectral-band resolution.
+Sentinel-2 geolocation tolerates expected missing granules (`3.12.2`). DIMAP2
+reports `CLOUD_COVERAGE` and `SNOW_COVERAGE` (`3.13.2`).
 
-### Embedded resources and VRT expression dependencies
+### ENVI, HF2, MRF, and MiraMon
 
-*Batch: 3.11.0*
+ENVI warns or errors when samples, lines, or bands exceed `INT_MAX`
+(`3.11.4`). It later handles multiband BSQ datasets whose band offset exceeds
+`INT_MAX`, restoring behavior affected in the previous line (`3.13.3`).
 
-CMake adds `EMBED_RESOURCE_FILES` and `USE_ONLY_EMBEDDED_RESOURCE_FILES` for compiling resource files into libgdal. `muparser` is strongly recommended as a build and runtime dependency for C++ VRT expressions; header-only `exprtk` may be added alongside it for advanced expressions, at an approximately 8 MB library-size cost.
+HF2 reads negative elevations (`3.12.2`). MRF decodes masked naked Lerc2 with
+liblerc 3+ (`3.13.1`), and caching configuration is renamed from
+`MRF_BYPASSCACHING` to `MRF_ENABLE_CACHING` (`3.13.2`).
 
-### Richer VRT composition
+MiraMonRaster first appears read-only (`3.12.0`), fixes multiband geotransforms
+(`3.12.2`), and later gains creation (`3.13.0`).
 
-*Batch: 3.11.0*
+### RCM, AIVector, E57, and CPHD
 
-VRT pixel functions can evaluate arbitrary expressions, reclassify values, and apply `mul` or `sum` with a constant factor to one band. A `<SimpleSource>` or `<ComplexSource>` may embed a `<VRTDataset>` instead of naming a source file, and processed VRTs gain an `OutputBands` element for declaring output count and data types.
+RCM and AIVector are new read-only drivers (`3.11.0`). Read-only E57 2D images
+and CPHD data are exposed through the multidimensional API (`3.13.0`).
 
-### Complete VRT overview exposure
+## Georeferencing and metadata correctness
 
-*Batch: 3.11.2*
+### Raster geotransforms and spatial metadata
 
-A single-source VRT exposes all source overviews regardless of their size. `VRTPansharpen` also tolerates source bands with differing numbers of overviews when generating virtual overviews.
+- Pansharpening tolerates nearly aligned inputs (`3.10.3`).
+- GTiff/COG can create R,G,B,NIR without explicit `PHOTOMETRIC` (`3.11.4`).
+- HDF4 skips nodata longitude/latitude while creating GCPs (`3.11.5`).
+- Vertical-shift 3D warps do not copy the source unit type to output
+  (`3.13.1`).
+- `gdalinfo` STAC transform order and floating nodata metadata are correct
+  (`3.12.1`).
 
-### Nodata on pansharpened VRT overviews
+### Raster read boundaries and buffers
 
-*Batch: 3.11.5*
+Block RasterIO avoids integer overflow on huge rasters, and sliced
+multidimensional `IAdviseRead()` computes parent bounds for non-unit steps
+(`3.13.2`). A small edge window can be pansharpened without a window error.
 
-`VRTPansharpenedRasterBand` overview bands now inherit the nodata value of the full-resolution band.
+Unix file reads recover from a buffering regression (`3.13.3`).
 
-### VRT derived-band functions and expressions
+## MBTiles, MVT, DTED, and miscellaneous formats
 
-*Batch: 3.12.0*
-
-VRT pixel functions add `mean`, `median`, `geometric_mean`, `harmonic_mean`, `mode`, `argmin`, and `argmax`, and now account for nodata; `min` and `max` accept an optional `k` constant. Muparser expressions add `fmod`, derived-band expressions expose `_CENTER_X_` and `_CENTER_Y_`, and `vrt://` accepts a `transpose` option.
-
-### `ComplexSource` calculation types
-
-*Batch: 3.12.1*
-
-`gdal raster calc` and `VRTDerivedRasterBand` now use the correct computation and transfer data types with a `ComplexSource`.
-
-### Pansharpened VRT serialization and orientation
-
-*Batch: 3.12.2*
-
-Pansharpened VRTs now serialize correctly when the panchromatic and multispectral bands have different extents. The vertical-orientation test for input datasets is also corrected.
-
-### Strided VRT derived-band reads
-
-*Batch: 3.12.3*
-
-`VRTDerivedRasterBand::IRasterIO()` correctly zero-initializes output buffers when line spacing differs from pixel spacing multiplied by the buffer width.
-
-### Implicit VRT derived-band overviews
-
-*Batch: 3.12.4*
-
-`VRTDerivedRasterBand` now creates implicit overviews correctly.
-
-### VRT derived functions and block selection
-
-*Batch: 3.13.0*
-
-VRT derived bands add `area`, `quantile`, and `round` pixel functions. The `vrt://` connection protocol also accepts a `block` option.
-
-### Out-of-range nodata warnings in separate VRTs
-
-*Batch: 3.13.1*
-
-`gdalbuildvrt -separate` warns when a nodata value is outside the range of the target band type.
-
-## Raster analysis, masks, and overviews
-
-### Raster utility options and stricter behavior
-
-*Batch: 3.11.0*
-
-`gdalbuildvrt` adds `-co` and `-resolution same|compatible`; `gdaldem` derives scale from the CRS and adds `-xscale`/`-yscale`; `gdallocationinfo` can query corners; `rgb2pct` adds `--creation-option`; `gdal2xyz` can write to VSI paths; and `gdalenhance` is now installed and documented. `gdal_translate -projwin` includes partially covered pixels and transforms the full bounds, translation and warping reject invalid numeric options, nodata is copied only when exactly representable, polygonized contours omit min/max fields, and `gdal2tiles` applies source nodata even without reprojection.
-
-### Raster reads with masks, NaNs, and constant histograms
-
-*Batch: 3.11.4*
-
-`GDALNoDataMaskBand::IRasterIO()` no longer corrupts Byte-band reads when `nLineSpace > nBufXSize`. Overview mode resampling accounts for `NaN` in `Float16` and `CFloat16`, while `GetDefaultHistogram()` handles constant-valued non-Byte data where `min == max`.
-
-### COG translation with a selected mask band
-
-*Batch: 3.11.5*
-
-`gdal_translate -of COG -b 1 -b 2 -b 3 -b mask ...` can translate an RGB dataset with overviews without crashing; the selected mask becomes a regular output band tagged as alpha.
-
-### Zonal statistics at and beyond raster bounds
-
-*Batch: 3.12.1*
-
-`GDALZonalStats` handles affected polygons outside the raster extent, while `gdal raster zonal-stats` avoids integer overflow for geometries with huge coordinate values.
-
-### All-nodata contour inputs
-
-*Batch: 3.12.2*
-
-Contouring an all-nodata raster now succeeds with an empty output layer instead of emitting an error.
-
-### RMS overview normalization
-
-*Batch: 3.12.3*
-
-RMS overview resampling uses a corrected normalization formula, changing values produced by affected overviews.
-
-### Palette, zonal, and rasterization controls
-
-*Batch: 3.13.0*
-
-`gdal raster rgb-to-palette` adds `--output-nodata`, `--no-dither`, and `--bit-depth`; zonal statistics accepts `--include-field ALL|NONE`, `--include-geom`, and an output layer. Rasterization can derive one output size from the other size and the input extent when one size is zero.
-
-### Current GMT color tables
-
-*Batch: 3.13.1*
-
-`gdal raster color-map` accepts current GMT `.cpt` color-table files.
-
-### Automatic source-overview selection for tiling
-
-*Batch: 3.13.1*
-
-`gdal raster tile` now selects an appropriate source overview automatically.
-
-### BigTIFF nodata values in LIBERTIFF
-
-*Batch: 3.13.1*
-
-LIBERTIFF correctly reads a BigTIFF nodata value whose string representation occupies four through eight bytes.
-
-### Masked naked Lerc2 files
-
-*Batch: 3.13.1*
-
-The MRF driver can decode naked Lerc2 files containing masks when built with liblerc 3.0 or newer.
-
-### Raster reads at edges, strides, and large sizes
-
-*Batch: 3.13.2*
-
-Pansharpening can read a small window at a raster edge without a window error. Sliced multidimensional arrays compute correct parent bounds for `IAdviseRead()` with a step other than one, and block-based `RasterIO()` avoids integer overflow on huge rasters.
-
-### Exact integer nodata statistics
-
-*Batch: 3.13.2*
-
-`ComputeRasterMinMax()` and `GetHistogram()` now require an exact integer match when excluding a nodata value, changing results in cases that previously treated a different integer as nodata.
-
-## Raster formats and driver behavior
-
-### JPEG XL from DNG in GeoTIFF
-
-*Batch: 3.10.1*
-
-The GTiff driver supports `Float16` and TIFF compression value `52546`, the JPEG XL encoding defined by DNG 1.7.
-
-### ESRI fallback in `importFromEPSG()`
-
-*Batch: 3.10.1*
-
-`OGRSpatialReference::importFromEPSG()` tries an ESRI lookup when a code looks like an ESRI code and emits a warning when that fallback succeeds.
-
-### AVIF images larger than 10 MB
-
-*Batch: 3.10.3*
-
-The AVIF driver can now read images larger than 10 MB.
-
-### GRIB2 Transverse Mercator variants
-
-*Batch: 3.10.3*
-
-The GRIB2 driver now reads Transverse Mercator definitions with negative easting/falsing values or a scale factor other than `0.9996`.
-
-### Immediate reads of compressed multithreaded GeoTIFF output
-
-*Batch: 3.10.3*
-
-A compressed GeoTIFF created in multithreaded mode can now be read immediately after creation, fixing a regression introduced in 3.10.1.
-
-### WEBP-compressed MBTiles updates
-
-*Batch: 3.10.3*
-
-The MBTiles driver can now update datasets that use WEBP compression.
-
-### New data-source drivers
-
-*Batch: 3.11.0*
-
-The read-only OGR ADBC driver can access DuckDB or Parquet datasets when libduckdb is installed, while LIBERTIFF provides a native thread-safe read-only GeoTIFF reader. Read-only RCM and AIVector drivers are also new.
-
-### Removed drivers and writers
-
-*Batch: 3.11.0*
-
-Removed raster drivers are BLX, BT, CTable2, ELAS, FIT, GSAG, GSBG, JP2Lura, OZI OZF2/OZFX3, Rasterlite v1, R object `.rda`, RDB, SDTS, SGI, XPM, and DIPex; removed vector drivers are Geoconcept Export, OGDI, SDTS, SVG, Tiger, and UK .NTF. Write support was removed from Interlis 1/2, ADRG, PAux, MFF, MFF2/HKV, LAN, NTv2, BYN, USGSDEM, and ISIS2.
-
-### Other upgrade compatibility changes
-
-*Batch: 3.11.0*
-
-The OpenCL warper and the unofficial `gdalwarpsimple` and `ogrdissolve` applications were removed; the OGR `Memory` driver is deprecated and aliases the unified `MEM` driver, and the shared-library major version was bumped. FileGDB update and creation now route through OpenFileGDB, while PDF creation no longer supports `GEO_ENCODING=OGC_BP`.
-
-### Dataset capabilities and metadata
-
-*Batch: 3.11.0*
-
-Driver metadata now reflects update capabilities, and `GDAL_DCAP_CREATE_SUBDATASETS` identifies drivers supporting `APPEND_SUBDATASET=YES`; `GDALMDArray::AsClassicDataset()` accepts `BAND_IMAGERY_METADATA` for per-band imagery metadata. `GDAL_CACHEMAX` accepts memory units, new built-in tile matrix sets include `WorldMercatorWGS84Quad`, `PseudoTMS_GlobalMercator`, and `GoogleCRS84Quad`, and raster APIs now reject `GDT_Unknown` and `GDT_TypeCount`.
-
-### COG and TIFF creation behavior
-
-*Batch: 3.11.0*
-
-COG creation supports `INTERLEAVE=BAND` and `TILE`, notably for hyperspectral data. GTiff reads ArcGIS-style `.tif.vat.dbf` raster attribute tables, and GTiff, COG, and warping preserve premultiplied-alpha information from source TIFFs.
-
-### Additional imagery-format capabilities
-
-*Batch: 3.11.0*
-
-HEIF gains tile reading, `CreateCopy()`, and read-only GeoHEIF support with libheif 1.19; AVIF gains read-only GeoHEIF support with the libavif development version current at release time, and JPEGXL reads Float16 as Float32. DIMAP exposes PNEO FWHM and RPC `HEIGHT_DEFAULT`, NITF represents SAR I/Q pairs as one complex band, Sentinel-2 recognizes `S2C_` names, and Leveller accepts document versions through 12.
-
-### Restored GSBG raster support
-
-*Batch: 3.11.1*
-
-The GSBG driver for Golden Software Surfer Binary Grid 6.0 is restored after its removal in 3.11.0.
-
-### FLIR thermal JPEG handling
-
-*Batch: 3.11.1*
-
-The JPEG driver reads FLIR thermal images stored as little-endian 16-bit PNG data. It exposes `IRWindowTransmission` separately instead of overwriting `IRWindowTemperature`, and corrects the metadata subdomain for `RelativeHumidity`.
-
-### Restored GSAG raster support
-
-*Batch: 3.11.2*
-
-The GSAG driver for Golden Software ASCII Grid is available again after its removal in 3.11.0.
-
-### WEBP-compressed RGBA in LIBERTIFF
-
-*Batch: 3.11.2*
-
-LIBERTIFF reads WEBP-compressed RGBA images even when a fully opaque tile or strip omits its alpha component.
-
-### PNG caching without a band-one read
-
-*Batch: 3.11.2*
-
-The PNG driver correctly caches other bands even when reading does not begin with band 1.
-
-### Fractional seconds at the minute boundary
-
-*Batch: 3.11.2*
-
-`OGRParseDate()` parses a seconds value of `59.999999` as `59.999` rather than rounding it to `60.0`.
-
-### Restored BT raster support
-
-*Batch: 3.11.4*
-
-The BT driver is available again after its removal in 3.11.0.
-
-### Complex COG and RGB-NIR GeoTIFF creation
-
-*Batch: 3.11.4*
-
-The COG driver can create datasets with complex data types. The GTiff driver can create R, G, B, NIR files without an explicit `PHOTOMETRIC` creation option.
-
-### JPEG XL conversion and lossy-option diagnostics
-
-*Batch: 3.11.4*
-
-`gdal_translate non_byte.jxl byte.jxl -ot Byte` now converts JPEG XL data correctly. GTiff and COG emit warnings when `JXL_DISTANCE` or `JXL_ALPHA_DISTANCE` is used without `JXL_LOSSLESS=NO`.
-
-### ENVI dimension validation
-
-*Batch: 3.11.4*
-
-The ENVI driver warns or errors when its samples, lines, or bands exceed `INT_MAX`, instead of accepting an unsupported dimension.
-
-### Destination initialization warning semantics
-
-*Batch: 3.11.5*
-
-`InitializeDestinationBuffer()` no longer returns `CE_Failure` when `INIT_DEST=NO_DATA` is requested without a nodata value. It still warns and zero-initializes the destination buffer.
-
-### LIBERTIFF RGB-to-RGBA reads
-
-*Batch: 3.11.5*
-
-LIBERTIFF correctly reads an RGB pixel-interleaved file into an RGBA pixel-interleaved buffer.
-
-### Leap-second date parsing
-
-*Batch: 3.11.5*
-
-`OGRParseDate()` accepts timestamps containing leap seconds.
-
-### Native-precision floating-point raster analysis
-
-*Batch: 3.12.1*
-
-`GDALFPolygonize()` now processes Float64 rasters at their native precision instead of converting values to Float32. `ComputeStatistics()` corrects Float64 standard deviations with SSE2/AVX2 and uses Float64 precision for Float32 mean and standard-deviation calculations.
-
-### NITF extended-header TREs
-
-*Batch: 3.12.1*
-
-The NITF driver now reads TREs stored in the extended header correctly.
-
-### RLE4-compressed BMP decoding
-
-*Batch: 3.12.2*
-
-The BMP driver now decodes RLE4-compressed images correctly.
-
-### Negative HF2 elevations
-
-*Batch: 3.12.2*
-
-The HF2 driver now reads negative elevation values correctly.
-
-### NITF RPFIMG coverage coordinates
-
-*Batch: 3.12.2*
-
-The NITF specification data corrects previously inverted latitude and longitude values in the RPFIMG `CoverageSectionSubheader`.
-
-### Sentinel-2 geolocation with missing granules
-
-*Batch: 3.12.2*
-
-Geolocation-enabled Sentinel-2 subdatasets now tolerate expected missing granules.
-
-### Restored ESRI WKT output
-
-*Batch: 3.12.3*
-
-`gdalinfo -wkt_format WKT1_ESRI` is supported again.
-
-### Float16 GeoTIFF prediction
-
-*Batch: 3.12.3*
-
-The GTiff driver accepts `Float16` data with `PREDICTOR=3`. Creating a GeoTIFF also honors `GDAL_DISABLE_READDIR_ON_OPEN=TRUE` without listing the output directory.
-
-### Driver connection and subdataset parsing
-
-*Batch: 3.12.3*
-
-GeoRaster preserves double quotes in database connection strings. `GDALGetSubdatasetInfo()` now handles netCDF subdataset names whose endpoint includes a port number.
-
-### JP2 gray-plus-alpha channel definitions
-
-*Batch: 3.12.4*
-
-The JP2OpenJPEG writer no longer emits duplicate type/association pairs in the CDEF box for JPEG 2000 files containing three gray bands plus alpha.
-
-### Raster blending, creation, and editing
-
-*Batch: 3.13.0*
-
-`gdal raster blend` adds multiply, screen, overlay, hard-light, darken, lighten, color-dodge, and color-burn modes. Raster creation can be a pipeline step and replicates `--like` tiling where possible, while raster editing can set color interpretation, scale, offset, and a color map or remove a color table.
-
-### Raster sampling, selection, and matching
-
-*Batch: 3.13.0*
-
-`gdal raster pixel-info` can promote values to Z, take position datasets and layers, carry selected fields, write an output dataset, and run in a pipeline. Raster selection accepts color interpretations such as `red`, `alpha`, or `nir` and an `--exclude` mode, while raster reprojection adds `--like`.
-
-### New raster data-source drivers
-
-*Batch: 3.13.0*
-
-New read-only drivers expose E57 two-dimensional images and CPHD data through the multidimensional API. JP2GROK provides JPEG 2000 reading and writing through the AGPLv3-licensed Grok toolkit.
-
-### New random-write and product writers
-
-*Batch: 3.13.0*
-
-COG implements `GDALDriver::Create()` for random-write creation, MiraMonRaster gains creation, and S102 v3.0 plus S104/S111 v2.0 gain `CreateCopy()` writing. NITF adds CADRG writing, HEIF can write single-band images, and AVIF supports 16-bit encoding and decoding with libavif 1.4 or later.
-
-### Raster format creation and open options
-
-*Batch: 3.13.0*
-
-NITF creation accepts `NOW` for `NITF_FDT` and `NITF_IDATIM`; MBTiles adds `ELEVATION_TYPE`; PDF adds `SAVE_DPI_TO_PAM`; and `gdal driver rpftoc create` builds CADRG A.TOC indexes. GTiff consumes ENVI sidecars for wavelength, FWHM, and bad-band metadata and reports `LAYOUT=COG` for structurally valid COGs even without GDAL's ghost area.
-
-### Restored legacy drivers and ABI change
-
-*Batch: 3.13.0*
-
-The OGR Tiger and UK .NTF drivers are restored after their 3.11 removal, although both remain candidates for future removal. The shared library major version is bumped, so binary dependents must be rebuilt or use matching GDAL libraries.
-
-### Lanczos validity-threshold removal
-
-*Batch: 3.13.1*
-
-Lanczos warping no longer applies a special case when fewer than half of the contributing source pixels are valid, so results around masks and nodata may differ from earlier releases.
-
-### NaN conversion to signed integers
-
-*Batch: 3.13.1*
-
-The SSE2 `GDALCopyWords()` path now converts floating-point NaN values to zero for signed 8-, 16-, and 32-bit integer destinations, matching the scalar path.
-
-### NITF wavelength units
-
-*Batch: 3.13.1*
-
-The NITF driver parses every `WAVE_LENGTH_UNIT` case in the `BANDSB` TRE.
-
-### BigTIFF temporary files during COG creation
-
-*Batch: 3.13.2*
-
-`COGCreate()` always creates its temporary file as BigTIFF, so large COG creation is not constrained by a classic-TIFF intermediate.
-
-### JP2Grok output-buffer handling
-
-*Batch: 3.13.2*
-
-JP2Grok handles `Float32`, `Float64`, and 16-bit output buffers and supports a genuinely single-threaded decode path.
-
-### NITF CADRG compression identification
-
-*Batch: 3.13.2*
-
-The NITF driver accepts `IC=C4` when `PRODUCT_TYPE=CADRG`.
+- MBTiles updates WEBP-compressed datasets (`3.10.3`) and later accepts
+  `ELEVATION_TYPE` (`3.13.0`).
+- MVT reads zero-padded files (`3.11.5`) and exposes tile-coordinate fields
+  (`3.13.0`).
+- `DTED_ASSUME_COMPLIANT` bypasses conversion below -16000 (`3.12.0`).
+- RLE4 BMP decoding is corrected (`3.12.2`).
+- PDF creation can persist DPI to PAM with `SAVE_DPI_TO_PAM` (`3.13.0`).
+- TileDB claims `/vsis3/` paths only when they use `.tdb` or have no extension,
+  avoiding unrelated suffixed objects (`3.13.1`).
+- S-10x writers and validators use corrected `dataCodingFormat` enumeration
+  names (`3.13.3`).

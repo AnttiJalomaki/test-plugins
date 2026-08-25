@@ -1,35 +1,83 @@
 # Upstreams and proxying
 
-## Contents
+## Backend protocols and response handling
 
-- [Connection reuse and limits](#connection-reuse-and-limits)
-- [Discovery, persistence, and balancing](#discovery-persistence-and-balancing)
-- [HTTP protocol features](#http-protocol-features)
-- [Retries and response acceptance](#retries-and-response-acceptance)
-- [Per-attempt controls](#per-attempt-controls)
-- [Upstream TLS configuration](#upstream-tls-configuration)
-- [Correctness fixes](#correctness-fixes)
+### Forward proxied response trailers
 
-## Connection reuse and limits
-
-### Account for default upstream keepalive
-
-Since 1.29.7, upstream connection caching defaults to `keepalive 32 local;` per worker. The number limits idle cached connections, not every open upstream connection. `local` prevents reuse across different locations even when they resolve to the same server address; omit `local` to permit such reuse, or set `keepalive 0` to disable caching.
+Since `1.27.2`, `proxy_pass_trailers on` forwards trailer fields to the client.
+For an HTTP/1.1 upstream, advertise trailer support.
 
 ```nginx
-upstream backend {
-    server 127.0.0.1:8080;
-    keepalive 64 local;
+location / {
+    proxy_pass http://backend;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "te";
+    proxy_set_header TE "trailers";
+    proxy_pass_trailers on;
 }
 ```
 
-HTTP upstream proxying also defaults to HTTP/1.1 from 1.29.7. The older explicit `proxy_http_version 1.1` plus cleared `Connection` header pattern is needed only on earlier versions.
+### HTTP/2 backends
 
-### Understand connection caps
+Since 1.29.4, `ngx_http_proxy_module` can use HTTP/2 to an upstream. Set the
+version explicitly.
 
-Without an upstream `zone`, `max_conns` is enforced separately by each worker. Even with a zone, cached idle connections mean the total of active and idle connections can exceed `max_conns`.
+```nginx
+location / {
+    proxy_http_version 2;
+    proxy_pass https://backend;
+}
+```
 
-NGINX Plus `queue` holds requests when no server can be selected immediately. NGINX returns 502 if the queue fills or its timeout expires.
+### Protocol-appropriate authority headers
+
+Since `1.31.4`, HTTP/2 and gRPC backend requests always carry `:authority`,
+and HTTP/1.1 backend requests always carry `Host`. Routing and validation can
+rely on the appropriate authority header being present.
+
+### Partial upstream response first lines
+
+Version 1.30.1 correctly transfers proxied HTTP/0.9, SCGI, and uWSGI responses
+whose first response line is not read in one operation.
+
+## Discovery, state, and server selection
+
+### Runtime DNS and SRV discovery
+
+Since 1.27.3, ordinary upstreams support `resolver`, `resolver_timeout`, and
+the `resolve` and `service` server parameters. A dynamically resolved group
+requires `zone`. For SRV, use a portless hostname; the lowest numeric priority
+is primary and later priorities are backups.
+
+```nginx
+upstream api {
+    zone api 64k;
+    resolver 192.0.2.53 valid=30s;
+    resolver_timeout 5s;
+    server api.example.com service=http resolve;
+}
+```
+
+### Persistent dynamic upstream state
+
+The Plus `state` directive persists a dynamically managed server list and its
+parameters. Do not combine it with static `server` directives or edit its file
+directly. Changes made during reload or binary upgrade can be lost.
+
+```nginx
+upstream backend {
+    zone backend 64k;
+    state /var/lib/nginx/state/servers.conf;
+}
+```
+
+### Connection caps and overflow queues
+
+Without `zone`, `max_conns` is per worker. Even with a zone, multiple workers
+and cached idle connections can put active plus idle totals above the limit.
+The Plus `queue` holds requests while no server is selectable and returns 502
+on capacity or timeout. A one-server group ignores `max_fails`, `fail_timeout`,
+and `slow_start`.
 
 ```nginx
 upstream backend {
@@ -39,139 +87,124 @@ upstream backend {
 }
 ```
 
-In a group containing only one server, NGINX ignores `max_fails`, `fail_timeout`, and `slow_start` and never marks that server unavailable.
+### Response-time balancing
 
-## Discovery, persistence, and balancing
-
-### Resolve upstream servers at runtime
-
-From 1.27.3, ordinary builds support upstream-level `resolver` and `resolver_timeout`, plus server parameters `resolve` and SRV-oriented `service`. A dynamically resolved group must use shared memory with `zone`.
-
-```nginx
-upstream api {
-    zone api 64k;
-    resolver 10.0.0.53 valid=30s;
-    resolver_timeout 5s;
-    server api.example.com resolve;
-}
-```
-
-For SRV discovery, add a service such as `service=http` to query `_http._tcp`. Records at the lowest numeric priority become primary servers; records at other priorities become backups.
-
-### Persist dynamically managed servers in NGINX Plus
-
-The NGINX Plus `state` directive persists a dynamically managed upstream's server list and parameters. Do not combine it with static `server` directives or edit its file manually. Changes made during reload or binary upgrade can be lost.
+Since `1.31.0`, `least_time` selects backends using observed response time.
 
 ```nginx
 upstream backend {
-    zone backend 64k;
-    state /var/lib/nginx/state/servers.conf;
+    least_time header;
+    server 192.0.2.10:8080;
+    server 192.0.2.11:8080;
 }
 ```
 
-### Use sticky sessions and draining in standard builds
+### Session affinity
 
-Since 1.29.6, `sticky` and the upstream-server parameters `route` and `drain` are available outside NGINX Plus. `sticky` can use an NGINX-generated cookie, an application-provided route, or a learned server-created session. A drained server receives only requests already bound to it.
+Since 1.29.6, HTTP upstreams support `sticky`; upstream servers support
+`route` and `drain`.
+
+```nginx
+upstream app {
+    sticky cookie route;
+    server app1.example route=a;
+    server app2.example route=b;
+    server app3.example route=c drain;
+}
+```
+
+## Keepalive and retry behavior
+
+### Keepalive and HTTP/1.1 defaults
+
+Since 1.29.7, upstream and proxied keepalive are enabled by default,
+`proxy_http_version` defaults to 1.1, and no `Connection` proxy header is sent
+by default. The `local` parameter scopes an explicitly configured upstream
+keepalive cache.
 
 ```nginx
 upstream backend {
-    server backend1.example.com route=a;
-    server backend2.example.com route=b;
-    sticky cookie srv_id httponly secure samesite=lax;
+    server backend.example:8080;
+    keepalive 64 local;
 }
 ```
 
-Use the configure option `--without-http_upstream_sticky_module` to disable the module. The older `--without-http_upstream_sticky` spelling is deprecated from 1.31.0.
+### FreeNGINX failure and stale-cache handling
 
-### Balance by response time
+Since FreeNGINX 1.29.5, a server is marked failed for a configured
+`proxy_next_upstream` status of 500, 502, 503, 504, or 429 even when no retry
+target is available. `stale-if-error` is applied in that situation too.
 
-From 1.31.0, `least_time` is available in `upstream` blocks for response-time-based backend selection.
+## Dynamic Plus request controls
 
-### Inspect the final selected endpoint in NGINX Plus
+### Conditional admission of selected servers
 
-NGINX Plus provides:
-
-- `$upstream_last_addr` since 1.29.3: address or UNIX socket of the last selected server.
-- `$upstream_last_server_name` since 1.25.3: configured name of the last selected server.
-
-Use the configured name for upstream TLS SNI when selection and retries can change the target.
-
-```nginx
-proxy_ssl_server_name on;
-proxy_ssl_name $upstream_last_server_name;
-```
-
-## HTTP protocol features
-
-### Proxy to HTTP/2 backends
-
-Since 1.29.4, `proxy_http_version 2;` sends proxied requests to HTTP/2 backends. Include `ngx_http_v2_module` in the build.
-
-### Forward response trailers
-
-Since 1.27.2, `proxy_pass_trailers on;` allows upstream response trailers to reach the client. Advertise trailer handling to the upstream as well.
+Plus 1.29.3 adds `proxy_allow_upstream`. Before each connection attempt, every
+condition must be nonempty and not `0`; denial can fail over through
+`proxy_next_upstream denied`.
 
 ```nginx
-proxy_set_header Connection "te";
-proxy_set_header TE "trailers";
-proxy_pass_trailers on;
+geo $upstream_last_addr $allow_backend {
+    volatile;
+    default        0;
+    10.10.0.0/24  1;
+}
+
+proxy_allow_upstream $allow_backend;
+proxy_next_upstream error timeout denied;
 ```
 
-### Pass Early Hints
+### Bind every connection attempt
 
-From 1.29.0, NGINX handles HTTP 103 responses from proxy and gRPC backends. Use `early_hints` to control whether an upstream's preliminary hints are delivered before its final response.
+Plus 1.29.3 adds `proxy_bind_dynamic`, which repeats `proxy_bind` for every
+connection attempt, including retries for one proxied request.
 
-### Authenticate HTTP proxy use and tunnel traffic
+```nginx
+proxy_bind $remote_addr transparent;
+proxy_bind_dynamic on;
+```
 
-From 1.31.0, NGINX includes `ngx_http_tunnel_module`. The `auth_basic`, `satisfy`, and `auth_delay` directives can also authenticate proxy use.
+### Per-server proxy request instances
 
-## Retries and response acceptance
-
-### Count a terminal response as a failure
-
-Since FreeNginx 1.29.5, a 500, 502, 503, 504, or 429 named in `proxy_next_upstream` still marks the upstream failed when no next server is available. In the same situation, FreeNginx honors the `stale-if-error` Cache-Control extension.
-
-### Control legacy or malformed backend responses
-
-FreeNginx 1.29.1 rejects HTTP/0.9 responses from proxied servers by default; `proxy_allow_http09` opts in. It ignores interim 1xx responses and adds `proxy_allow_duplicate_chunked` to control acceptance of duplicate chunked encoding.
-
-## Per-attempt controls
-
-### Recreate the request for every backend
-
-NGINX Plus `proxy_request_dynamic on;` creates a separate request instance for every attempted backend. Request fields can therefore depend on the selected server rather than being frozen before retries.
+Plus 1.29.3 adds `proxy_request_dynamic`. It creates a new request instance for
+each selected server, allowing server-specific request fields.
 
 ```nginx
 proxy_request_dynamic on;
 proxy_set_header Host $upstream_last_server_name;
 ```
 
-### Admit backends conditionally
+### Last selected upstream variables
 
-NGINX Plus `proxy_allow_upstream` evaluates each variable-capable condition before a connection attempt. It allows the backend only when every value is nonempty and not `0`. A denial counts as an unsuccessful attempt; include `denied` in `proxy_next_upstream` to try another server.
+Plus `$upstream_last_addr` contains the last selected address or UNIX socket;
+`$upstream_last_server_name` contains its configured name and can drive SNI.
 
 ```nginx
-proxy_allow_upstream $allow;
-proxy_next_upstream error timeout denied;
+proxy_ssl_server_name on;
+proxy_ssl_name $upstream_last_server_name;
 ```
 
-### Bind each connection attempt
+## Rate limits and certificate material
 
-NGINX Plus `proxy_bind_dynamic on;` performs the configured `proxy_bind` operation for every connection attempt instead of once for the entire proxied request.
+### Variable upstream read-rate limit
 
-### Set a variable read limit
-
-Since 1.27.0, `proxy_limit_rate` accepts variables. It limits upstream response reads per request and takes effect only when proxy response buffering is enabled.
+Since 1.27.0, the byte-per-second `proxy_limit_rate` accepts variables. It works
+only with response buffering, applies per request, and is disabled by `0`.
 
 ```nginx
+map $request_uri $upstream_read_rate {
+    default  0;
+    ~^/bulk/ 512k;
+}
+
 proxy_limit_rate $upstream_read_rate;
 ```
 
-## Upstream TLS configuration
-
 ### Cache variable-selected client certificates
 
-Since 1.27.4, `proxy_ssl_certificate_cache` caches client certificates and keys whose file names use variables. `max` sets the LRU capacity; `inactive` and `valid` default to 10 seconds and 60 seconds.
+Since 1.27.4, `proxy_ssl_certificate_cache` caches variable-selected upstream
+client certificates and keys. `max` sets LRU capacity; `inactive` and `valid`
+default to 10 and 60 seconds.
 
 ```nginx
 proxy_ssl_certificate       $proxy_ssl_server_name.crt;
@@ -179,25 +212,32 @@ proxy_ssl_certificate_key   $proxy_ssl_server_name.key;
 proxy_ssl_certificate_cache max=1000 inactive=20s valid=1m;
 ```
 
-### Load encrypted variable-selected keys
+### Upstream TLS key logging
 
-NGINX 1.27.5 fixes variable-based certificate and encrypted-key loading when passwords come from `grpc_ssl_password_file`, `proxy_ssl_password_file`, or `uwsgi_ssl_password_file`. This dynamic upstream TLS setup had been broken since 1.23.1.
-
-### Log upstream TLS keys in NGINX Plus
-
-Since 1.27.2, NGINX Plus `proxy_ssl_key_log` writes proxied HTTPS connection secrets in SSLKEYLOGFILE format for tools such as Wireshark. Protect the output as key material.
+Plus `proxy_ssl_key_log`, added in 1.27.2, writes upstream TLS secrets in
+SSLKEYLOGFILE format. Protect the file as secret data because it permits
+captured traffic to be decrypted.
 
 ```nginx
 proxy_ssl_key_log /var/log/nginx/upstream.keys;
 ```
 
-## Correctness fixes
+## FreeNGINX backend compatibility
 
-### Avoid configuration and failover crashes
+### Proxy response defaults
 
-- NGINX 1.28.1 fixes a worker crash when `try_files` is combined with a URI-bearing `proxy_pass`.
-- NGINX 1.28.2 fixes a use-after-free after switching to the next gRPC or HTTP/2 backend.
+FreeNGINX 1.29.1 rejects HTTP/0.9 upstream responses by default, ignores
+interim 1xx responses, and provides opt-ins for legacy HTTP/0.9 and duplicate
+chunked encoding.
 
-### Retain HTTP/2 backend connections
+```nginx
+location /legacy {
+    proxy_pass http://legacy;
+    proxy_allow_http09 on;
+    proxy_allow_duplicate_chunked on;
+}
+```
 
-NGINX 1.30.1 restores caching of HTTP/2 backend connections when `proxy_set_body` or `proxy_pass_request_body` is used.
+### Certificates for IP-address backends
+
+FreeNGINX 1.29.1 can verify TLS backend certificates issued for IP addresses.

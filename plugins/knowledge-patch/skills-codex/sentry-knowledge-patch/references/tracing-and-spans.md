@@ -1,36 +1,35 @@
 # Tracing, sampling, and spans
 
-Use this reference for sampler migrations, OpenTelemetry setup, trace
-continuation, stream mode, span filtering, and current span attributes.
+## Span send hooks
 
-## Span hooks and custom scopes (9.0.0-guide)
+Beginning with `9.0.0-guide`, `beforeSendSpan` receives root spans as well as
+child spans. Returning `null` can no longer drop a span; control which spans are
+recorded through integration configuration, or use the filtering mechanism for
+the active trace lifecycle.
 
-`beforeSendSpan` receives root spans as well as child spans. It cannot drop a
-span by returning `null`; control which spans are recorded through integration
-configuration.
+## Custom scopes passed to startSpan
 
-Outside Node.js, `startSpan({ scope })` clones the supplied scope. Mutations to
-the current scope stay inside the callback. Also mutate the original custom
-scope when a change must persist:
+Outside Node.js, `startSpan({ scope })` clones the supplied scope in
+`9.0.0-guide`. Mutating the current scope inside the callback remains local to
+that callback. Make persistent changes on the original scope too:
 
 ```js
-startSpan({ name: "work", scope: customScope }, () => {
-  getCurrentScope().setTag("local", "yes");
+Sentry.startSpan({ name: "work", scope: customScope }, () => {
+  Sentry.getCurrentScope().setTag("local", "yes");
   customScope.setTag("persistent", "yes");
 });
 ```
 
-## Sampling migration and additions
+## Sampling context migration
 
-For the v9 migration (9.0.0-guide):
+For `9.0.0-guide`, replace `samplingContext.request` with
+`samplingContext.normalizedRequest`. `transactionContext` is removed; fields
+such as `name` are top-level sampling-context properties. Replace
+`enableTracing` with `tracesSampleRate`.
 
-- Replace `samplingContext.request` with `normalizedRequest`.
-- Remove `transactionContext`; fields such as `name` are top-level sampling
-  context fields.
-- Replace `enableTracing` with `tracesSampleRate`.
-- Node.js no longer calls `tracesSampler` for every span.
-- Treat an explicitly `undefined` `tracesSampleRate` as absent, allowing a
-  downstream service to decide sampling.
+Node.js does not invoke `tracesSampler` for every span. An explicitly
+`undefined` `tracesSampleRate` is treated as absent so downstream services can
+make the sampling decision.
 
 ```js
 Sentry.init({
@@ -39,89 +38,77 @@ Sentry.init({
 });
 ```
 
-In 9.0.0, the sampler receives `parentSampleRate` and an
-`inheritOrSampleWith` helper for parent-aware decisions.
+In `9.0.0`, the sampler gains `inheritOrSampleWith` and receives
+`parentSampleRate`, enabling explicit parent-aware decisions.
 
-## OpenTelemetry setup
+## Strict trace continuation
 
-Replace the removed `addOpenTelemetryInstrumentation()` with the
-`openTelemetryInstrumentations` initialization option (9.0.0-guide):
+Core adds `strictTraceContinuation` in `10.0.0` for opting into stricter inbound
+trace-continuation behavior:
 
 ```js
-Sentry.init({
-  openTelemetryInstrumentations: [new GenericPoolInstrumentation()],
-});
+Sentry.init({ strictTraceContinuation: true });
 ```
 
-`skipOpenTelemetrySetup: true` also configures `httpIntegration({ spans:
-false })` by default. `registerEsmLoaderHooks` accepts only `boolean` or
-`undefined` and defaults to wrapping modules used by OpenTelemetry
-instrumentation.
+## OpenAI instrumentation attributes
 
-Node-based v10 SDKs require OpenTelemetry 2.x/0.20x dependencies and current
-instrumentation releases (10.0.0-guide). If a project cannot use OpenTelemetry
-2, keep Sentry SDK v9 or use `@sentry/node-core`, whose OpenTelemetry peer
-ranges are wider. Sentry SDK v10 remains compatible with Sentry self-hosted
-24.4.2 and newer.
+In `10.0.0`, OpenAI instrumentation records tool-call attributes and instruments
+streamed Node.js responses. The response-object attribute is renamed from
+`ai.response.object` to `gen_ai.response.object`; update telemetry queries and
+processors using the old key.
 
-## Trace continuation and AI spans (10.0.0)
+## HTTP, cache, and state-graph attributes
 
-- Set `strictTraceContinuation: true` to opt into stricter trace-continuation
-  behavior.
-- OpenAI instrumentation records tool-call attributes and instruments streamed
-  responses in Node.js.
-- Rename telemetry queries from `ai.response.object` to
-  `gen_ai.response.object`.
+At `10.68.0`, DataLoader spans set `cache.key`, and Redis delete operations are
+captured as `cache.remove`. Parameterized `http.server` spans carry
+`http.route`, `url.full`, and `url.path`; core fetch instrumentation also adds
+`url.full`.
 
-## Current span semantics (10.68.0)
+Core also exposes `instrumentStateGraph`, making state-graph instrumentation a
+supported SDK capability.
 
-- DataLoader spans set `cache.key`; Redis delete operations use
-  `cache.remove`.
-- Parameterized `http.server` spans carry `http.route`, `url.full`, and
-  `url.path`. Core fetch instrumentation also emits `url.full`.
-- Use the core `instrumentStateGraph` API for state-graph instrumentation.
-- Filter `stackFrameVariables` by variable name when only selected captured
-  variables should be retained.
-- React Router uses its instrumentation API by default. Do not assume the
-  older instrumentation path is automatically selected.
+## Stream mode configuration
 
-## Stream mode configuration (streamed-spans)
-
-SDK 10.66.0 and newer can opt into stream mode. It sends completed spans in
-periodic batches instead of retaining a transaction until its root span ends.
-Service spans replace transactions as service entry points, and the
-transaction mode's 1,000-span ceiling does not apply. Stream mode becomes the
-default in SDK 11. Cordova and Electron do not support it.
-
-Configure server and serverless SDKs directly:
+The `streamed-spans` guidance applies to SDK 10.66.0 and newer. Stream mode
+sends completed spans in periodic batches rather than retaining the whole
+transaction until the root ends. It becomes the default in SDK 11. Service
+spans replace transactions as service entry points, and the transaction mode's
+1,000-span ceiling does not apply. Cordova and Electron do not support stream
+mode.
 
 ```js
+// Server and serverless SDKs
 Sentry.init({ tracesSampleRate: 1, traceLifecycle: "stream" });
-```
 
-Configure direct browser SDKs with the integration:
-
-```js
+// Direct browser SDKs
 Sentry.init({
   tracesSampleRate: 1,
   integrations: [Sentry.spanStreamingIntegration()],
 });
 ```
 
-Tracing mode is per SDK, so transaction-mode and stream-mode services can join
-the same distributed trace. Completed spans flush every five seconds by
-default, when 1,000 spans are buffered, when the batch-size limit is reached,
-or on `Sentry.flush()` and `Sentry.close()`.
+Trace lifecycle is scoped per SDK, so services using transaction and stream
+mode can participate in the same distributed trace. Completed spans flush
+every five seconds by default, at 1,000 buffered spans, at the batch size limit,
+and on `Sentry.flush()` or `Sentry.close()`.
 
-## Stream-aware filtering
+## Stream-aware span hooks
 
-Wrap `beforeSendSpan` with `Sentry.withStreamedSpan()`. An unwrapped hook causes
-fallback to transaction mode.
+In stream mode, wrap `beforeSendSpan` with `Sentry.withStreamedSpan()`. An
+unwrapped hook makes the SDK fall back to transaction mode.
+
+The wrapped callback receives `StreamedSpanJSON`, where:
+
+- `description` becomes `name`.
+- Processed `data` becomes raw `attributes`.
+- `timestamp` becomes `end_timestamp`.
+- `op` moves to `attributes["sentry.op"]`.
+- Status is `"ok"` or `"error"`.
 
 ```js
 Sentry.init({
   traceLifecycle: "stream",
-  beforeSendSpan: Sentry.withStreamedSpan((span) => {
+  beforeSendSpan: Sentry.withStreamedSpan(span => {
     if (span.attributes?.["sentry.op"] === "db.query") {
       span.name = "[filtered]";
     }
@@ -130,24 +117,15 @@ Sentry.init({
 });
 ```
 
-The hook receives `StreamedSpanJSON`. Map fields as follows:
+`beforeSendTransaction` is unavailable in stream mode. Migrate rules that drop
+transactions to `ignoreSpans`.
 
-| Transaction representation | Streamed representation |
-| --- | --- |
-| `description` | `name` |
-| processed `data` | raw `attributes` |
-| `timestamp` | `end_timestamp` |
-| `op` | `attributes["sentry.op"]` |
-| richer status | `"ok"` or `"error"` |
+## Start-time span dropping
 
-`beforeSendTransaction` is unavailable. Move transaction-dropping rules to
-`ignoreSpans`.
-
-## Start-time dropping and attributes
-
-`ignoreSpans` evaluates the initial span name and attributes when the span
-starts. Later renaming or enrichment cannot affect the decision. Rules accept
-name strings, regular expressions, or name-and-attribute objects:
+Stream mode evaluates `ignoreSpans` when a span starts, using only its initial
+name and attributes. Later renaming or enrichment cannot affect the choice.
+Rules may be name strings, regular expressions, or objects matching a name and
+attributes.
 
 ```js
 Sentry.init({
@@ -160,8 +138,11 @@ Sentry.init({
 });
 ```
 
-Dropping a service span drops its descendants. Dropping a child reparents its
-children to the nearest retained ancestor.
+Dropping a service span also drops its descendants. Dropping a child reparents
+its children to the nearest retained ancestor.
 
-Stream mode does not copy `Sentry.setTag()` or `Sentry.setTags()` values to
-spans, though tags still apply to errors. Use attribute APIs for span data.
+## Attributes replace span tags in stream mode
+
+`Sentry.setTag()` and `Sentry.setTags()` continue to apply to errors but do not
+apply their values to streamed spans. Record span-relevant metadata with the
+attribute APIs as well.

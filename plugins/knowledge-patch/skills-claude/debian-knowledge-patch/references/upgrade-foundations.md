@@ -1,59 +1,77 @@
 # Upgrade foundations
 
-## Check boot-partition capacity
+This checklist consolidates upgrade-critical behavior from `13-known-issues`; use the
+topic references for full service and subsystem details.
 
-Systems installed with Debian 10 or earlier are especially likely to have undersized
-boot partitions. Before upgrading, ensure a separate `/boot` is at least 768 MB with
-roughly 300 MB free.
+## Inventory the host before changing repositories
 
-An LVM-backed `/boot` can be enlarged with `lvextend`.
+Record whether the host has:
 
-## Interpret usrmerge warnings correctly
+- SSH as its only access path;
+- a separate `/boot`, particularly on installations originating with Debian 10 or
+  earlier;
+- encrypted mounts or plain-mode dm-crypt entries;
+- RabbitMQ, MariaDB, Dovecot, or Bacula state;
+- `i40e` interfaces, ACPI `_SUN` naming, or hard-coded interface names;
+- local policy in `/etc/sysctl.conf`;
+- custom OpenLDAP TLS, strongSwan, WirePlumber, Samba, or libvirt configuration;
+- third-party `armel` or `armhf` binaries;
+- packages and commands scheduled for replacement.
 
-During the upgrade, warnings that `dpkg` cannot delete old nonempty directories under
-paths such as `/lib/firmware` are a consequence of usrmerge finalization and can be
-ignored.
+Back up configuration and state, document recovery access, and define rollback points
+for every matching risk.
 
-Do not generalize this exception to unrelated `dpkg` errors.
+## Establish remote and boot recovery
 
-## Sequence high-risk work
+Before an SSH-supervised upgrade, install `openssh-server`
+`1:9.2p1-2+deb12u7` or later from `stable-updates`. Open a second session and verify
+that required environment variables no longer depend on `~/.pam_environment`.
 
-Before the operating system upgrade:
+Require a separate `/boot` to be at least 768 MB with about 300 MB free. An LVM-backed
+boot logical volume can be enlarged with `lvextend`. Confirm that rescue media or an
+out-of-band console is usable before continuing.
 
-1. Prepare OpenSSH for remote access and verify boot-partition space.
-2. Record plain-mode dm-crypt parameters and ensure encrypted mounts have their needed
-   package.
-3. Convert RabbitMQ queues, cleanly stop MariaDB, port Dovecot configuration, and
-   reserve Bacula migration space where applicable.
-4. Port custom network, WirePlumber, strongSwan, OpenLDAP, Samba, and libvirt setup.
+## Prepare storage and stateful services
 
-After `apt full-upgrade` but before reboot:
+Verify `systemd-cryptsetup` is installed. Pin the creation parameters for every
+plain-mode dm-crypt volume in `/etc/crypttab`; do not infer them from new defaults.
 
-1. Predict important interface names with `udevadm test-builtin net_setup_link`.
-2. Review the installed libvirt and Samba feature packages.
-3. Verify `systemd-cryptsetup` on systems with encrypted filesystems.
+Complete queue conversion and state preservation for RabbitMQ. Confirm a clean
+MariaDB 10.11 shutdown. Test the Dovecot 2.4 configuration. Measure Bacula database,
+backup, and temporary-space requirements. Treat these as prerequisites, not cleanup.
 
-Use the topic references for the exact requirements; this sequence does not replace
-their service-specific recovery planning.
+## Upgrade packages and inspect the result
 
-## Complete migrations before Forky
+After `apt full-upgrade` and before reboot:
 
-### Container and build tooling
+1. Review libvirt, Samba, timezone, WirePlumber, strongSwan, OpenLDAP, and removed
+   package transitions.
+2. Confirm local sysctl policy exists under `/etc/sysctl.d/` and test unprivileged
+   ping for the intended users.
+3. Test every critical interface name:
 
-- `libnss-docker` depends on a Docker API removed after Engine 26. Migrate away from
-  that dependency.
-- Replace `sbuild-debian-developer-setup` with `sbuild --chroot-mode=unshare`.
-- Move Debian LXD users to Incus with tools in `incus-extra`.
+   ```bash
+   udevadm test-builtin net_setup_link /sys/class/net/<interface>
+   ```
 
-### Input methods
+4. Add a `systemd.link` file if the predicted name differs from the configured name.
+5. Reconfirm `/boot` free space and the presence of `systemd-cryptsetup`.
+6. Treat usrmerge warnings about old nonempty directories such as `/lib/firmware` as
+   harmless, but investigate unrelated `dpkg` errors.
 
-Replace fcitx 4 with `fcitx5`.
+## Verify after reboot
 
-### DHCP software
+Check SSH login, all encrypted mounts, interface names and addresses, local sysctl
+values, unprivileged ping, and every migrated stateful service. Confirm that SCSI
+consumers do not depend on missing `sg3-utils-udev` properties and that legacy
+timezone consumers still resolve their names.
 
-- NetworkManager and systemd-networkd need no ISC DHCP client.
-- `ifupdown` can use `dhcpcd-base`.
-- Servers should move from ISC DHCP to Kea.
+Exercise application paths that use OpenLDAP TLS, Samba feature packages, libvirt
+drivers or storage backends, WirePlumber customization, and strongSwan management.
 
-Also complete the sudo LDAP and OpenSSH GSS-API package migrations described in
-[security-networking.md](security-networking.md).
+## Schedule forward migrations
+
+Before the following release upgrade, migrate `sudo-ldap`, OpenSSH GSS-API packaging,
+fcitx 4, Debian LXD, `sbuild-debian-developer-setup`, `libnss-docker`, and ISC DHCP
+deployments. Record these as owned work with deadlines; a successful Trixie reboot
+does not complete them.

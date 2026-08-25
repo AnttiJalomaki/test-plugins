@@ -1,137 +1,126 @@
 # Layout, Animation, and Graphics
 
-## Lookahead and bounds
+Use this reference for lookahead and shared transitions, custom layouts and modifier nodes, lazy infrastructure, shadows, shaders, color interop, and painters.
 
-### Bounds animation (1.8.0)
+## Lookahead bounds animation (1.8.0)
 
-`Modifier.animateBounds` animates size and position changes inside a lookahead
-scope. `LazyGrid` and Pager support lookahead, keeping lookahead and approach
-passes distinct for scrolling, retained and composed items, disposal, and item
-animation targets.
+`Modifier.animateBounds` animates size and position changes within a lookahead scope. `LazyGrid` and Pager support lookahead, separating lookahead from approach passes for scrolling, retained or composed items, disposal, and item-animation targets.
 
-### Shared-transition finalization (1.10.0)
+Code that observes placement or lifetime must account for both passes instead of treating lookahead as ordinary final layout.
 
-Shared-transition APIs are stable. They support dynamic enablement, fallback
-target bounds for disposed targets, initial gesture velocity, coordinates in a
-lookahead scope, and `Modifier.skipToLookaheadPosition`. Skip-to-size and
-skip-to-position modifiers are active only during a shared transition by
-default.
+## Animation API finalization (1.8.0)
 
-Replace `ScaleToBounds` with `scaleToBounds`. The lambda-taking
-`SharedContentConfig` factory and `clipInOverlayDuringTransition` parameter are
-removed. `BoundsTransform` now follows `SizeTransform`.
+Keyframes with Arcs and Splines are stable, as is the `AnimatedImageVector` API suite. The `sharedElement` parameter formerly named `state` is now `sharedContentState`; use the new named argument at call sites.
 
-### Lookahead visual debugging (1.11.0)
+## Flow-layout deprecations (1.8.0)
 
-`LookaheadAnimationVisualDebugging`,
-`CustomizedLookaheadAnimationVisualDebugging`, and
-`LookaheadAnimationVisualDebugConfig` visualize target bounds, trajectories,
-shared-element matches, and active transitions for shared elements and
-`Modifier.animatedBounds`.
+`ContextualFlowRow` and `ContextualFlowColumn` are deprecated. Experimental `FlowRow` and `FlowColumn` overloads with an `overflow` parameter are also deprecated.
 
-## Animation APIs
+Prefer overloads without `overflow`; their behavior remains `Clip`. Many contextual-row cases can use `FlowRow`, while less common virtualization or placement needs may require a custom layout.
 
-### Finalized animation APIs (1.8.0)
+## Custom modifier-node hooks (1.8.0)
 
-Keyframes with arcs and splines and the `AnimatedImageVector` API family are
-stable. The `sharedElement` argument formerly named `state` is now
-`sharedContentState`; named call sites must migrate.
+`DelegatableNode` receives `onDensityChange` and `onLayoutDirectionChange`. `PointerInputModifierNode.touchBoundsExpansion` enlarges the hit bounds of one pointer-input node.
 
-### Veil transitions (1.10.0)
+`BringIntoViewResponderModifierNode` exposes bring-into-view behavior at modifier-node level and allows platform implementations.
 
-`unveilIn` and `veilOut` are `EnterTransition` and `ExitTransition` options that
-animate an overlay in front of content entering or leaving `AnimatedVisibility`
-or `AnimatedContent`.
+## BasicText layer behavior (1.8.0)
 
-### Animation-state behavior (1.11.0)
+`BasicText` no longer adds an implicit `graphicsLayer`. Add `Modifier.graphicsLayer()` explicitly when clipping, isolation, transforms, or another layer-dependent effect relies on it.
 
-`SeekableTransitionState` handles off-UI-thread changes made through
-`Snapshot.withMutableSnapshot()` without processing the transition on that
-thread. `InfiniteRepeatableSpec` prevents zero-duration cycles. Custom
-`AnimationSpec` implementations have their `visibilityThreshold` honored by
-`animateFloatAsState`.
+## Custom lazy layouts and prefetching (1.9.0)
 
-## Flow, flex, and grid layouts
+`LazyLayout`, `LazyLayoutItemProvider`, and `LazyLayoutMeasureScope` are stable, along with `LazyLayoutMeasurePolicy`.
 
-### Flow-layout deprecations (1.8.0)
+The empty `LazyLayoutPrefetchState` constructor and its precomposition and premeasure scheduling methods are stable. Custom `PrefetchScheduler` use is deprecated; rely on automatic internal scheduling.
 
-`ContextualFlowRow` and `ContextualFlowColumn` are deprecated. Experimental
-`FlowRow` and `FlowColumn` overloads with an `overflow` parameter are also
-deprecated. Prefer overloads without `overflow`, which continue to clip.
-Ordinary contextual-row cases can often use `FlowRow`; unusual virtualization
-or measurement needs may require a custom layout.
+## Drop and inner shadows (1.9.0)
 
-### FlexBox (1.11.0)
+Shadow modifier APIs plus `DropShadowPainter` and `InnerShadowPainter` support custom drop and inner shadows. Share generated shadow infrastructure across call sites when possible instead of regenerating it for every use.
 
-`FlexBox` is a configurable superset of `Row`, `Column`, `FlowRow`, and
-`FlowColumn`, with grow, shrink, wrapping, direction, and alignment through
-`FlexBoxConfig` and `Modifier.flex`. Its DSL uses function calls such as
-`grow(1f)`, not property assignment. Content that cannot shrink enough
-overflows the main axis; add `Modifier.clipToBounds()` when clipping is wanted.
+## Shaders, layers, and packed colors (1.9.0)
 
-### Non-lazy Grid (1.11.0)
+`CompositeShader` and `CompositeShaderBrush` combine two shaders. `ShaderBrush.transform` applies a shader transformation matrix. `graphicsLayer` accepts `blendMode` and `colorFilter`.
 
-Experimental `Grid` provides explicit two-dimensional layout with fixed,
-percentage, flexible, and content-sized tracks and `Modifier.gridItem()`
-placement. Opt in with `ExperimentalGridApi`.
+Compose packed colors are not directly comparable with Android `ColorLong` values. Convert with `toColorLong()` and `fromColorLong()` before comparison or platform interop.
 
-`GridConfigurationScope.constraints` exposes available size. `GridTrackSize.Auto`
-ranges from min-content to max-content. When a flexible track contains a
-`SubcomposeLayout` such as `LazyColumn`, use `MinMax(0.dp, 1.fr)` to avoid
-intrinsic queries.
+## Frame-rate requests (1.9.0)
 
-## Modifier-node infrastructure
+Use `Modifier.preferredFrameRate` to request a numeric frame rate or `FrameRateCategory` from `androidx.compose.ui`. It replaces `requestedFrameRate`; `FrameRateCategory.NoPreference` is removed.
 
-### Density, direction, pointer bounds, and bring-into-view (1.8.0)
+## Shared transitions (1.10.0)
 
-`DelegatableNode` has `onDensityChange` and `onLayoutDirectionChange` hooks.
-`PointerInputModifierNode.touchBoundsExpansion` expands one pointer-input
-node's hit bounds. `BringIntoViewResponderModifierNode` supplies a node-level,
-platform-implementable bring-into-view mechanism.
+Shared-transition APIs are stable and support:
 
-### Layout and lazy node migrations (1.10.0)
+- dynamic enablement;
+- fallback target bounds when a target is disposed;
+- initial gesture velocity;
+- lookahead-scope coordinates;
+- `Modifier.skipToLookaheadPosition`.
 
-`UnplacedStateAwareModifierNode` is finalized as
-`UnplacedAwareModifierNode`, notified when a formerly placed layout becomes
-unplaced. Rename `DelegatableNode.invalidateLayoutForSubtree` to
-`invalidateMeasurementForSubtree`. Foundation adds
-`BeyondBoundsLayoutModifierNode` for focus-search layout and
-`LazyLayoutKeyIndexMap` with a default implementation factory.
+Skip-to-size and skip-to-position modifiers default to active only during a shared transition.
 
-### Measurement-only nodes (1.11.0)
+Apply these migrations:
 
-Custom nodes that only need `onRemeasured()` should implement
-`MeasuredSizeAwareModifierNode` instead of the broader
-`LayoutAwareModifierNode`.
+- replace `ScaleToBounds` with `scaleToBounds`;
+- remove the lambda-taking `SharedContentConfig` factory;
+- remove `clipInOverlayDuringTransition`;
+- treat `BoundsTransform` as following `SizeTransform`.
 
-## Shadows, shaders, layers, and frame rate
+## Veil transitions (1.10.0)
 
-### Custom shadows (1.9.0)
+`unveilIn` and `veilOut` are `EnterTransition` and `ExitTransition` options. They animate an overlay in front of content entering or exiting `AnimatedVisibility` or `AnimatedContent`.
 
-Shadow modifiers, `DropShadowPainter`, and `InnerShadowPainter` support custom
-drop and inner shadows. Share generated shadow infrastructure across call
-sites rather than recreating it for every draw.
+## Modifier-node and lazy infrastructure (1.10.0)
 
-### Shader and packed-color interop (1.9.0)
+`UnplacedStateAwareModifierNode` is finalized as `UnplacedAwareModifierNode`, notified when a previously placed layout becomes unplaced.
 
-`CompositeShader` and `CompositeShaderBrush` combine shaders.
-`ShaderBrush.transform` applies a shader transformation matrix. A
-`graphicsLayer` accepts `blendMode` and `colorFilter`.
+Rename `DelegatableNode.invalidateLayoutForSubtree` to `invalidateMeasurementForSubtree`. Foundation also adds `BeyondBoundsLayoutModifierNode` for focus-search layout and `LazyLayoutKeyIndexMap` with a default implementation factory.
 
-Compose packed colors are not directly comparable with Android `ColorLong`
-values. Convert using `toColorLong()` and `fromColorLong()`.
+## Lookahead visual debugging (1.11.0)
 
-### Per-composable frame-rate requests (1.9.0)
+`LookaheadAnimationVisualDebugging`, `CustomizedLookaheadAnimationVisualDebugging`, and `LookaheadAnimationVisualDebugConfig` visualize target bounds, trajectories, shared-element matches, and active-transition state for shared elements and `Modifier.animatedBounds`.
 
-Use `Modifier.preferredFrameRate` with a rate or `FrameRateCategory` from
-`androidx.compose.ui`. It replaces `requestedFrameRate`.
-`FrameRateCategory.NoPreference` was removed.
+## Animation state behavior (1.11.0)
 
-## Layout checklist
+`SeekableTransitionState` handles off-UI-thread changes made inside `Snapshot.withMutableSnapshot()` without processing the transition on that thread.
 
-- Distinguish lookahead target measurement from approach-pass animation.
-- Do not use a non-lazy `Grid` when content needs lazy composition.
-- Clip FlexBox overflow explicitly only when that visual policy is desired.
-- Update named arguments after animation API parameter renames.
-- Keep node interfaces as narrow as the callbacks actually required.
-- Convert platform and Compose packed-color representations before comparison.
+`InfiniteRepeatableSpec` prevents zero-duration cycles. Custom `AnimationSpec` implementations have their `visibilityThreshold` honored by `animateFloatAsState`.
+
+## FlexBox (1.11.0)
+
+`FlexBox` is a configurable superset of `Row`, `Column`, `FlowRow`, and `FlowColumn`. `FlexBoxConfig` and `Modifier.flex` control grow, shrink, wrapping, direction, and alignment.
+
+The DSL uses calls such as `grow(1f)`, not property assignment. Content that cannot shrink enough overflows the main axis; add `Modifier.clipToBounds()` when overflow must be clipped.
+
+## Explicit non-lazy Grid (1.11.0)
+
+The experimental `Grid` composable provides CSS-like two-dimensional layout with fixed, percentage, flexible, and content-sized tracks plus `Modifier.gridItem()` placement. Opt in with `ExperimentalGridApi`.
+
+`GridConfigurationScope.constraints` exposes available size. `GridTrackSize.Auto` ranges from min-content to max-content. When a flexible track contains a `SubcomposeLayout` such as `LazyColumn`, use `MinMax(0.dp, 1.fr)` to avoid intrinsic queries.
+
+## Draw visibility and measurement nodes (1.11.0)
+
+`Modifier.visible` suppresses drawing while retaining occupied layout space.
+
+A custom modifier node that only needs `onRemeasured()` should implement `MeasuredSizeAwareModifierNode` rather than the broader `LayoutAwareModifierNode`.
+
+## Wide-color-gamut graphics (1.12.0)
+
+On API 29 and newer, `Paint` and `Shader` preserve non-sRGB colors such as Adobe RGB and Display P3. Older Android releases fall back to sRGB.
+
+## Mesh-gradient painter (1.12.0)
+
+`MeshGradientPainter` replaces `Modifier.meshGradient` and renders with the hardware-accelerated `Canvas.drawMesh`. Install the painter through `Modifier.paint`.
+
+```kotlin
+val meshPainter = remember {
+    MeshGradientPainter(rows = 1, columns = 1, hasBicubicColor = true) {
+        setVertex(0, 0, Offset(0f, 0f), Color.Red)
+        setVertex(0, 1, Offset(1f, 0f), Color.Blue)
+        setVertex(1, 0, Offset(0f, 1f), Color.Green)
+        setVertex(1, 1, Offset(1f, 1f), Color.Yellow)
+    }
+}
+Box(Modifier.paint(meshPainter))
+```

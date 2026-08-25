@@ -2,7 +2,7 @@
   "patch": "nestjs-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T08:46:44Z",
+  "built_at": "2026-08-21T14:23:31Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -21,7 +21,14 @@
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "11.2.1": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "11.2.1"
+  ]
 }

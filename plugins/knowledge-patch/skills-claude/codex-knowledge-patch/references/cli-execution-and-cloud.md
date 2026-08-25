@@ -1,97 +1,95 @@
 # CLI execution and cloud workflows
 
-## Non-interactive execution
+## Directory-scoped resume
 
-`codex exec`, with alias `codex e`, runs a prompt non-interactively. Pass the
-prompt as an argument or pass `-` to read it from stdin.
-
-```bash
-printf '%s\n' 'Inventory the package licenses' | \
-  codex exec - --json --output-schema result.schema.json \
-  --output-last-message final.txt
-```
-
-Execution options include:
-
-- `--json` emits JSONL state-change events.
-- `--output-schema FILE` constrains the final response with a JSON Schema.
-- `--output-last-message FILE` writes the final natural-language response to a
-  separate file.
-- `--ephemeral` avoids saving rollout files.
-- `--skip-git-repo-check` permits work outside a Git repository.
-
-## Resume or fork a session
-
-Continue a scripted session with `codex exec resume [SESSION_ID]`; include a
-follow-up prompt or images when needed.
-
-```bash
-codex exec resume --last "Continue with the next package"
-```
-
-For scripted and interactive resume, `--last` selects the newest session scoped
-to the current working directory. `--all` includes sessions from other
-directories.
+Interactive resume defaults to sessions associated with the current working
+directory. `--all` broadens the picker; `--last` or a session ID bypasses the
+picker.
 
 ```bash
 codex resume --last
-codex fork --last
+codex exec resume --last "Continue with the implementation"
 ```
 
-`codex fork [SESSION_ID]` creates a new thread while preserving the original
-transcript instead of continuing the source session.
+Non-interactive work resumes through `exec resume`. Resumed work retains its
+transcript, plan history, and approvals. Resume continues the same session;
+fork creates a new thread while retaining the source transcript.
 
-## Submit cloud tasks
+## Scripted output contracts
 
-`codex cloud` opens a picker for browsing tasks and applying their results
-locally. Submit directly with an environment ID. `--attempts` accepts one to
-four and requests that many independent solutions.
+`codex exec` accepts a prompt as an argument or reads it from stdin when the
+prompt is `-`.
+
+```bash
+printf '%s\n' 'Inventory licenses' | codex exec - --json \
+  --output-schema result.schema.json \
+  --output-last-message final.txt
+```
+
+- `--json` emits JSONL state-change events.
+- `--output-schema` constrains the final response with JSON Schema.
+- `--output-last-message` saves only the final natural-language response.
+- `--ephemeral` prevents rollout-file persistence.
+- `--skip-git-repo-check` permits use outside a Git repository.
+
+## Isolated local review
+
+`/review` launches a dedicated reviewer without modifying the working tree.
+Choose a base-branch diff, all uncommitted changes, one commit, or custom
+instructions. The reviewer uses the current session model unless
+`review_model` overrides it in configuration.
+
+## Cloud submission
+
+`codex cloud` opens a task picker. `codex cloud exec` submits directly to a
+configured environment and accepts one to four independent attempts.
+Submission failures exit nonzero. In the picker, `Ctrl+O` selects an
+environment.
 
 ```bash
 codex cloud exec --env ENV_ID --attempts 3 "Summarize open bugs"
 ```
 
-Submission failures return a nonzero exit status for scripts and CI.
+## Cloud listing and task application
 
-## List and apply cloud tasks
+`codex cloud list` supports environment filtering, cursor pagination, and a
+result limit from 1 through 20. JSON output contains a `tasks` array and may
+contain a `cursor` for the next page.
 
-`codex cloud list` supports environment filtering, a result limit from 1 to 20,
-cursor pagination, and JSON output. Its JSON object contains a `tasks` array and
-an optional next cursor.
+`codex apply TASK_ID` applies the latest diff for a cloud task, reports the
+patched files, and exits nonzero when `git apply` conflicts.
 
 ```bash
 codex cloud list --env ENV_ID --limit 20 --json
-```
-
-`codex apply TASK_ID`, with alias `codex a`, applies the task's latest diff
-locally and reports the patched files. It exits nonzero when `git apply`
-encounters conflicts.
-
-```bash
 codex apply TASK_ID
 ```
 
-## Plugin marketplace sources
+## CLI plugins
 
-Register marketplaces from `owner/repo` shorthand, Git or SSH URLs, or local
-marketplace roots. Pin a Git source with `--ref` and request sparse checkout
-paths with repeatable `--sparse`.
+The CLI can browse and add plugins from configured marketplaces, extending
+terminal work with team tools and data.
+
+## Marketplace source administration
+
+`codex plugin marketplace add` accepts repository shorthand, Git or SSH URLs,
+or a local marketplace root. Pin a Git source with `--ref` and request sparse
+checkout paths with repeatable `--sparse`.
 
 ```bash
-codex plugin marketplace add owner/repo@v1 --sparse marketplace
+codex plugin marketplace add owner/repo --ref release \
+  --sparse plugins/team
 codex plugin marketplace upgrade
 ```
 
-`upgrade [name]` refreshes one named Git marketplace or all registered Git
-marketplaces when no name is supplied. `remove` unregisters a marketplace.
+`upgrade` refreshes one named Git marketplace or all configured marketplaces.
+`remove` deletes a configured marketplace source.
 
-## Repository and review workflows
+## Desktop launcher
 
-- `/diff` includes staged, unstaged, and untracked changes.
-- `/mention PATH` attaches a file to the conversation.
-- `/init` scaffolds repository instructions.
-- `/review` inspects the working tree for behavioral problems and missing
-  tests. It uses the current session model unless `review_model` is configured.
+`codex app [PATH]` opens the installed desktop app or starts its installer when
+the app is absent. macOS opens the supplied workspace path. Windows prints the
+path to open after installation.
 
-For `/plugins` and `/agent`, see
-[tui-and-session-controls.md](tui-and-session-controls.md).
+```bash
+codex app .
+```

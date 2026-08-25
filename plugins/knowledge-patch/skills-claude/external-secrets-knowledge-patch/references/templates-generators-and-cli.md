@@ -1,84 +1,110 @@
 # Templates, Generators, and CLI
 
-Use this reference for rendering behavior, template functions, credential
-generators, CLI workflows, and platform release artifacts.
+Use this reference for template evaluation, helper functions, certificate data,
+credential generators, and local rendering workflows.
 
 ## Template evaluation and values
 
-- Templates accept non-standard delimiters, which avoids collisions with secret
-  content or another embedded template language that uses the defaults (0.15.0).
-- Value-scope processing preserves the native value instead of coercing it to a
-  string (0.19.0).
-- Values loaded through `templateFrom` are decoded before template evaluation
-  (2.7.0).
-- Generic target paths preserve mixed-case components (2.7.0).
-- Slice notation resolves correctly in the parser (2.7.0).
-- Environment is included when group variables are selected (0.18.0).
+### Rendering template data and secrets (since 0.13.0)
 
-## Template helpers and removals
+A renderer for template data and secrets is available through `esoctl`; the
+release action names the command `esoctl` rather than `render`. Use it to validate
+rendered output without depending on an older command name.
 
-- `certSANs` extracts subject alternative names from a certificate (2.2.0).
-- `hexdec` converts hexadecimal input to decimal (2.7.0).
-- `getHostByName` was removed (2.3.0). Remove DNS lookups from templates and
-  provide the resolved value through a controlled input instead.
+### Non-standard delimiters (since 0.15.0)
 
-## Metadata and source processing
+Templates can select non-default delimiters. Use them when secret content or an
+embedded template language conflicts with the ordinary delimiters.
 
-- `result.jsonpath` in a `dataFrom` request can itself be templated (0.18.0).
-- Secret metadata can request decoded values explicitly (0.15.0).
-- Secret templates can define finalizers on generated Secrets (0.20.0).
-- A configurable null-byte policy applies to sources (2.3.0).
+### Native values (since 0.19.0)
 
-The API and lifecycle consequences of these features are covered in
-`api-and-reconciliation.md`.
+Value-scoped processing preserves the original value instead of coercing it to a
+string. Convert explicitly only where a downstream template operation requires a
+string.
 
-## Registry credential generators
+### Templated JSONPath (since 0.18.0)
 
-- Quay is available as a generator source (0.13.0).
-- Cloudsmith can generate container-registry authentication credentials
-  (0.20.0).
-- GitLab deploy-token generation is available (2.8.0).
-- The AWS ECR authorization-token generator accepts custom ECR endpoints
-  (0.18.0) and resolves credentials through the AWS credential chain (0.19.0).
+`result.jsonpath` in `dataFrom` can itself be templated, so the extraction path can
+be selected dynamically.
 
-## Grafana service-account generator
+### Decoded templateFrom data (since 2.7.0)
 
-A Grafana service-account generator is available (0.14.0). Its in-cluster
-integration passes the requested role when creating the service account
-(0.15.0). `SecondsToLive` is optional, so a manifest need not set an explicit
-token lifetime (2.8.0).
+Values loaded through `templateFrom` are decoded before use in templates. Avoid a
+second decode that would corrupt already-decoded input.
 
-## SSH key generator
+### Mixed case and slice notation (since 2.7.0)
 
-The SSH key generator was added in 0.19.0 and supports ECDSA keys as of 1.1.0.
-Validate key type and downstream parser support when rotating from another key
-algorithm.
+Generic target paths preserve mixed-case path components. The template parser also
+resolves slice notation correctly.
 
-## MFA token generator
+## Template functions
 
-An MFA token generator is available (0.18.0). Its length option is optional, and
-the same release corrected length handling. Omit the option for the default or
-set it deliberately; do not retain a workaround for the earlier behavior.
+### Certificate SAN extraction (since 2.2.0)
 
-## Bootstrap generators and validation
+Use `certSANs` to extract subject alternative names from certificate input.
 
-`esoctl` provides bootstrap-generator commands (1.0.0). Generator references
-validate `externalsecret_type` (1.0.0), so a mistyped or mismatched reference is
-rejected rather than passed through to reconciliation.
+### Hexadecimal conversion (since 2.7.0)
 
-The `STSSessionToken` generator removed its JWT-token authentication option in
-0.19.0. Migrate those generator configurations to another supported
-authentication path.
+Use `hexdec` to convert hexadecimal input to decimal during template rendering.
 
-## Rendering with esoctl
+### Removed DNS lookup (since 2.3.0)
 
-The template-data and secret renderer is exposed through `esoctl` (0.13.0). The
-release action and installed executable use the name `esoctl`, not `render`.
-Use it to evaluate template inputs before applying a resource when debugging
-delimiters, native values, decoding, functions, or source selection.
+`getHostByName` is no longer available. Replace templates that depend on DNS
+lookups with data supplied through an explicit, controlled input.
 
-## Release binaries
+## Template output details
 
-Native `darwin_arm64` artifacts are available for Apple Silicon macOS (1.1.0).
-For container-image signatures, provenance, and SBOM attestations, see
-`security-and-support.md`.
+- Certificate-only PKCS#12 bundles, without a private key, are accepted from
+  0.20.0.
+- Secret templates can add finalizers to generated Secrets from 0.20.0.
+- Source null-byte policy is configurable from 2.3.0.
+- Environment is considered when selecting group variables from 0.18.0.
+
+## Credential generators
+
+### Quay (since 0.13.0)
+
+Quay is available as a generator source.
+
+### Grafana service accounts
+
+The Grafana service-account generator arrived in 0.14.0. In-cluster integration
+improved in 0.15.0, including passing the requested role through during account
+creation. `SecondsToLive` became optional in 2.8.0, so callers need not provide an
+explicit token lifetime.
+
+### MFA tokens (since 0.18.0)
+
+The MFA token generator has an optional length setting, and its length handling is
+corrected. Omit length to use generator defaults.
+
+### SSH keys
+
+The SSH key generator arrived in 0.19.0 and gained ECDSA output in 1.1.0.
+
+### Registry credentials
+
+- ECR authorization-token generation accepts custom endpoints from 0.18.0 and
+  resolves credentials through the AWS chain from 0.19.0.
+- Cloudsmith registry credentials can be generated from 0.20.0.
+- GitLab deploy-token generation is available from 2.8.0.
+
+### STS session tokens
+
+The `STSSessionToken` generator no longer supports JWT-token authentication from
+0.19.0. Move generator configurations to another supported authentication route.
+
+## Generator validation and bootstrap
+
+- `generatorRef` validates `externalsecret_type` from 1.0.0; invalid references
+  that previously passed admission are rejected.
+- `esoctl` includes bootstrap-generator commands from 1.0.0.
+- Cluster-generator processing is controlled by the Helm
+  `processClusterGenerator` boolean from 0.20.0.
+
+## Push templating
+
+A `PushSecret` can use `template` and `templateFrom` to construct outgoing values
+before `data[].match` or `dataTo` mappings run. For bulk expansion, the template is
+applied first, followed by key conversion, matching, and rewriting. Consult the
+PushSecret reference for conflict and bundle semantics.

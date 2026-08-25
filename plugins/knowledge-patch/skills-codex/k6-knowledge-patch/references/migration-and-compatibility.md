@@ -1,143 +1,132 @@
 # Migration and Compatibility
 
-## Apply the support contract
+## Compatibility policy
 
-k6 follows Semantic Versioning beginning with 1.0.0: breaking changes are
-reserved for major releases and receive prior deprecation warnings. Each major
-version receives critical fixes for at least two years, and the supported
-public API surface is explicitly delineated for extensions and integrations.
-Keep integrations on that public surface rather than relying on internal Go
-packages or accidental behavior.
+k6 follows Semantic Versioning: breaking changes occur only in major releases
+and receive advance deprecation warnings (since 1.0.0). Each major receives
+critical fixes for at least two years, and the supported public API for
+extensions and integrations is explicitly delineated.
 
-## Complete the v2 migration
+## Build toolchains
 
-### Update Go module imports and JSON handling
+Building k6 requires Go 1.24 or newer from 1.4.0. From 1.7.0, the minimum is
+Go 1.25 and the default toolchain is Go 1.26. Pin the toolchain to the k6 line
+being built rather than applying the newest requirement to an older branch.
 
-k6 v2 uses the Go module path `go.k6.io/k6/v2` (2.0.0). Extensions and external
-Go packages must update every import:
+## Script and execution migration
 
-```go
-import "go.k6.io/k6/v2/js/modules"
-```
+### Replace removed live control
 
-Public k6 Go types no longer provide easyjson-generated `MarshalJSON` and
-`UnmarshalJSON` methods. Use standard `encoding/json` marshaling instead.
+The v2 line removes the `externally-controlled` executor and the `k6 pause`,
+`resume`, `scale`, and `status` commands (since 2.0.0). There are no direct
+replacements. Choose an executor such as `ramping-vus`, `constant-vus`, or
+`constant-arrival-rate`; scripts that keep `externally-controlled` do not
+start.
 
-### Replace live test control
+### Opt in to the HTTP API
 
-The `externally-controlled` executor and the `k6 pause`, `resume`, `scale`, and
-`status` commands were removed without replacements in 2.0.0. Tests using that
-executor do not start. Choose an executor such as `ramping-vus`, `constant-vus`,
-or `constant-arrival-rate` and redesign any external live-control workflow.
-
-### Migrate Cloud CLI and script options
-
-The following interfaces were removed in 2.0.0:
-
-- top-level `k6 login`
-- positional `k6 cloud script.js`
-- `--upload-only`
-- `k6 login influxdb`
-- `options.ext.loadimpact`
-
-Use `k6 cloud login`, `k6 cloud run`, and `k6 cloud upload`. Provide InfluxDB
-credentials with `K6_INFLUXDB_*`, and move Cloud fields to `options.cloud`.
-See [Cloud and secrets](cloud-and-secrets.md) for commands and project
-resolution.
-
-### Remove obsolete environment switches
-
-Delete these v2-removed switches from deployment configuration (2.0.0):
-
-- `K6_OTEL_SINGLE_COUNTER_FOR_RATE`; the single-counter Rate shape is final.
-- `K6_BINARY_PROVISIONING`; automatic extension resolution is the normal path.
-- `K6_ENABLE_COMMUNITY_EXTENSIONS`; community extensions use the default build
-  service.
-
-`K6_AUTO_EXTENSION_RESOLUTION` remains only as an explicit disable switch.
-
-### Move the configuration file
-
-k6 v2 no longer reads or migrates
-`{USER_CONFIG_DIR}/loadimpact/config.json` (2.0.0). Move it to
-`{USER_CONFIG_DIR}/k6/config.json`, or create a current file with `k6 cloud
-login`.
-
-### Update CI exit-code handling
-
-A Cloud run aborted by the system, limits, a script error, the user, or timeout
-returns `97` in v2 (2.0.0). Success remains `0`; threshold aborts remain `99`.
-Treat `97` as a failing CI result.
-
-### Opt into the HTTP API
-
-The k6 HTTP API no longer listens on `localhost:6565` by default in v2
-(2.0.0). Use `--address` or `K6_ADDRESS` when a controller needs it:
+The v2 HTTP API does not listen on `localhost:6565` by default (since 2.0.0).
+Enable it explicitly with `--address` or `K6_ADDRESS`:
 
 ```sh
 k6 run --address=localhost:6565 script.js
 ```
 
-### Use built-in and provisioned components
+## Cloud migration
 
-The web dashboard is built into k6 v2 (2.0.0):
+### Replace removed commands and options
 
-```sh
-k6 run --out=web-dashboard script.js
+The v2 CLI removes top-level `k6 login`, positional `k6 cloud script.js`, and
+`--upload-only` (since 2.0.0). Use `k6 cloud login`, `k6 cloud run`, and
+`k6 cloud upload`. Supply InfluxDB credentials through `K6_INFLUXDB_*`
+variables rather than `k6 login influxdb`.
+
+Move `options.ext.loadimpact` fields to `options.cloud`; the old namespace is
+not accepted in v2 (since 2.0.0).
+
+### Update CI exit handling
+
+A v2 Cloud run aborted by the system, a limit, a script error, the user, or a
+timeout exits `97` rather than `0` (since 2.0.0). Success stays `0` and a
+threshold abort stays `99`.
+
+### Decide whether to use Cloud secrets
+
+In v2, local Cloud execution enables the built-in Cloud secret source unless
+`--no-cloud-secrets` is passed (since 2.0.0). On the maintained v1 line, that
+implicit source was later disabled by default (since 1.8.1). Make the desired
+source explicit in cross-major automation.
+
+## Configuration paths
+
+The v2 line no longer reads, migrates, or falls back to
+`{USER_CONFIG_DIR}/loadimpact/config.json` (since 2.0.0). Move the file to
+`{USER_CONFIG_DIR}/k6/config.json` or regenerate it with `k6 cloud login`.
+
+## Output and metric migration
+
+### Remove the Rate fallback
+
+Delete `K6_OTEL_SINGLE_COUNTER_FOR_RATE`; it is removed in v2 (since 2.0.0).
+Consumers must accept the single Rate counter labeled with `zero` and
+`nonzero`.
+
+### Replace deprecated output names
+
+Use `opentelemetry` instead of `experimental-opentelemetry`, and use
+`K6_OTEL_EXPORTER_PROTOCOL` instead of `K6_OTEL_EXPORTER_TYPE` (since 1.4.0).
+
+### Replace browser FID
+
+Move thresholds and integrations from `browser_web_vital_fid` to
+`browser_web_vital_inp`; FID was planned for removal in v2 (since 1.3.0).
+
+## Extension migration
+
+### Update Go imports
+
+The v2 Go module path is `go.k6.io/k6/v2` (since 2.0.0). Update every k6 import
+in extensions and external Go packages:
+
+```go
+import "go.k6.io/k6/v2/js/modules"
 ```
 
-Remove the separate xk6-dashboard extension. Archives now preserve pre-manifest
-`k6/x/` constraints in `metadata.json`, and provisioned `k6 x` subcommands
-receive `K6_PROVISION_HOST_VERSION`. See
-[Extensions and dependencies](extensions-and-dependencies.md) for the full
-resolution workflow.
+### Replace generated JSON methods
 
-## Track build toolchain requirements
+Public v2 k6 Go types no longer provide easyjson-generated `MarshalJSON` and
+`UnmarshalJSON` methods (since 2.0.0). Use standard `encoding/json` marshaling.
 
-The source-build floor changes with the k6 line:
+### Remove provisioning switches
 
-- Building 1.4.0 requires Go 1.24 or newer.
-- Building 1.7.0 requires Go 1.25 or newer; its default Go toolchain is 1.26.
+Delete `K6_BINARY_PROVISIONING` and `K6_ENABLE_COMMUNITY_EXTENSIONS`; both are
+removed in v2 (since 2.0.0). Community extensions use the default build
+service. `K6_AUTO_EXTENSION_RESOLUTION` is needed only to turn automatic
+resolution off.
 
-Use the requirement for the k6 line being compiled, not a floor copied from an
-older build image.
+### Preserve archive dependencies
 
-## Run containers with the numeric user
+The v2 archive format records pre-manifest `k6/x/` constraints in the
+`dependencies` field of `metadata.json` (since 2.0.0). Provisioned `k6 x`
+commands receive `K6_PROVISION_HOST_VERSION`, enabling compatibility decisions
+based on the invoking host.
 
-The container image selects numeric UID `12345` rather than a named `k6` user
-(since 1.1.0). Kubernetes manifests generally do not need to set `runAsUser`
-solely to translate the old user name. Align writable volume ownership with UID
-`12345`.
+## Module deprecations
 
-## Pin Docker release lines intentionally
+- Replace `k6/experimental/redis` with the official Redis extension (since
+  1.5.0).
+- Replace `k6/experimental/websockets` with `k6/websockets`; the API is
+  unchanged (since 1.6.0).
+- Treat the URL-hosted `k6-testing` assertion library as preview, with possibly
+  incomplete matchers and coverage (since 1.2.0).
 
-In v2, prereleases and maintenance releases from older majors no longer update
-Docker `:latest` or the GitHub latest-release marker (2.0.0). Floating major
-tags such as `grafana/k6:v1` track a selected major line. Use a major tag when
-accepting updates within one major, or an exact tag for fully reproducible
-runs.
+## Distribution and dashboard migration
 
-## Audit deprecations before they become removals
+The web dashboard is part of the v2 binary and runs with
+`k6 run --out=web-dashboard`; remove the separate xk6-dashboard dependency
+(since 2.0.0).
 
-- Summary `--no-summary` and `K6_NO_SUMMARY` are deprecated; use
-  `--summary-mode=disabled` (1.3.0).
-- Summary mode `legacy` is deprecated; move to `compact` or `full` (1.3.0).
-- `experimental-opentelemetry` and `K6_OTEL_EXPORTER_TYPE` are deprecated; use
-  `opentelemetry` and `K6_OTEL_EXPORTER_PROTOCOL` (1.4.0).
-- `k6/experimental/redis` is deprecated in favor of the official Redis
-  extension (1.5.0).
-- `k6/experimental/websockets` is deprecated; use `k6/websockets` (1.6.0).
-- Replace First Input Delay integrations with Interaction to Next Paint;
-  `browser_web_vital_fid` was planned for v2 removal (1.3.0).
-
-## Post-upgrade verification
-
-After changing versions:
-
-1. Run `k6 deps --json` on both source and archives.
-2. Exercise Cloud cancellation and threshold-abort paths and assert their
-   distinct exit codes.
-3. Verify Rate consumers handle the labeled single-counter representation.
-4. Confirm controllers explicitly enable the HTTP API.
-5. Run browser redirect tests and remove duplicate-metric workarounds.
-6. Check container volume permissions against UID `12345`.
+Prereleases and maintenance releases from older majors no longer update
+Docker `:latest` or GitHub's latest-release marker in the v2 release scheme.
+Use floating `:vN` tags such as `grafana/k6:v1` to follow a selected major, or
+pin an exact image for reproducibility (since 2.0.0).

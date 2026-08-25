@@ -1,125 +1,115 @@
-# CLI, automation, distribution, and libraries
+# CLI, Automation, and Libraries
 
-This reference covers command and integration surfaces from `1.7.0` through
-`1.12.0`.
+## Concise and JSON command output (`1.7.0`)
 
-## Concise and structured output
+`tofu plan -concise` omits state-refresh logs. `tofu init -json` and
+`tofu get -json` expose machine-readable output for automation.
 
-`tofu plan -concise` omits state-refresh logs since 1.7. `tofu init -json` and
-`tofu get -json` expose JSON output for automation.
+OpenTofu follows the XDG Base Directory Specification, allowing its files to
+use standard XDG locations instead of product-specific home-directory paths.
 
-Since 1.10, `tofu apply -concise` suppresses progress-like output while
-retaining final results for non-streaming automation.
+## Generated configuration and provider schemas (`1.8.0`)
 
-In 1.12, `-json-into=FILENAME` writes the same machine-readable stream as
-`-json` while preserving normal human output on stdout:
+`tofu plan -generate-config-out=generated.tf` emits JSON-shaped values as
+`jsonencode(...)`, not quoted JSON strings. `TF_STATE_PERSIST_INTERVAL`
+configures the state-write interval. `tofu providers schema -json` includes
+provider-defined function schemas.
 
-```bash
-tofu plan -json-into=plan-events.json
-```
+## Go distribution and registry libraries (`1.8.0`)
 
-Streaming commands can target an IPC object such as a named pipe or
-`/dev/fd/N` for concurrent consumption.
+TofuDL locates the latest OpenTofu release, verifies its signature, downloads
+it, and extracts the binary. Its tooling can mirror releases into air-gapped
+environments. The experimental `libregistry` library provides structured
+registry metadata access and building blocks for independent registry tools.
 
-## Generated and schema output
+## Plan exclusions (`1.9.0`)
 
-Since 1.8, `tofu plan -generate-config-out=generated.tf` renders JSON-shaped
-values with `jsonencode(...)`, rather than quoting JSON text.
+`tofu plan -exclude=ADDRESS` skips the selected object and everything that
+depends on it. This complements `-target=ADDRESS`, which includes selected
+objects and their requirements.
 
-`tofu providers schema -json` includes provider-defined function schemas.
+## Disclosure and diagnostics (`1.9.0`)
 
-Since 1.11, configuration can be inspected without first producing a plan:
+`-show-sensitive` unmasks sensitive values for `tofu plan`, `tofu apply`, and
+other commands returning configuration or state. Treat its output as secret.
+Use `-consolidate-warnings` and `-consolidate-errors` to control diagnostic
+summarization.
 
-```bash
-tofu show -json -config
-tofu show -json -config -module=modules/example
-```
+`tofu console` accepts multiline expressions inside brackets or across
+backslash-escaped newlines.
 
-The configuration JSON includes each input variable's type constraint and
-whether the input is required.
+## Reusable selectors and concise apply (`1.10.0`)
 
-## Plan selection
-
-Since 1.9, `tofu plan -exclude=ADDRESS` skips the selected object and every
-dependent object. This complements `-target`, which includes selected objects
-and their requirements.
-
-Since 1.10, reusable address lists can be loaded from files:
+`-target-file` and `-exclude-file` read lists of resource-instance addresses.
+`tofu apply -concise` suppresses progress-like output while retaining final
+results, which is useful for non-streaming automation.
 
 ```text
 tofu plan -target-file=targets.txt
 tofu plan -exclude-file=deferred.txt
+tofu apply -concise
 ```
 
-## Sensitive and diagnostic output
+## Explicit state and plan display (`1.10.0`)
 
-Since 1.9, `-show-sensitive` unmasks sensitive values for `tofu plan`,
-`tofu apply`, and other commands that return configuration or state. Use it
-only when the output channel is trusted.
-
-Commands also accept `-consolidate-warnings` and `-consolidate-errors` to
-control diagnostic summarization.
-
-`tofu console` accepts multiline expressions within brackets or across
-backslash-escaped newlines. In 1.12 it also accepts `-lock=false` and
-`-lock-timeout=DURATION`:
-
-```bash
-tofu console -lock-timeout=30s
-```
-
-## Explicit state and plan inspection
-
-OpenTofu 1.10 adds explicit forms:
+Use explicit input selection for scripts:
 
 ```text
 tofu show -state
 tofu show -plan=PLANFILE
 ```
 
-They select current state or a saved plan. The older positional form remains
-supported.
+The older positional form for a saved plan remains supported.
 
-## Destroy behavior
+## Experimental initialization tracing (`1.10.0`)
 
-In 1.12, this command suppresses errors for objects forgotten during destroy
-and exits successfully:
+Environment-controlled OpenTelemetry tracing can send partial `tofu init`
+traces to a collector operated by the user. Support is experimental and the
+trace currently contains limited detail.
 
-```bash
-tofu destroy -suppress-forget-errors
+## Configuration JSON without a plan (`1.11.0`)
+
+`tofu show -json -config` emits a machine-readable configuration summary
+without first creating a plan. Add `-module=DIR` to inspect one module.
+Configuration JSON includes each input variable's type constraint and whether
+it is required.
+
+```text
+tofu show -json -config
+tofu show -json -config -module=modules/example
 ```
 
-Use it only when forgetting those objects is intentional.
+## Validation and registry request controls (`1.11.0`)
 
-## Validation and registry client controls
+`tofu validate` can validate non-root modules that declare extra provider
+configurations through `configuration_aliases`. Registry retry counts and
+request timeouts can be configured in CLI configuration as well as with
+environment variables.
 
-Since 1.11, `tofu validate` can validate a non-root module that declares extra
-provider configurations through `configuration_aliases`.
+## Simultaneous terminal and JSON output (`1.12.0`)
 
-Registry retry counts and request timeouts can be configured in the CLI
-configuration as well as through environment variables.
+`-json-into=FILENAME` writes the same streaming machine output as `-json` while
+preserving human-readable output on stdout. The destination can be a normal
+file or an IPC object such as a named pipe or `/dev/fd/N`.
 
-## XDG and browser environment behavior
+```text
+tofu plan -json-into=plan-events.json
+```
 
-OpenTofu follows XDG Base Directory locations since 1.7.
+## Destroy and console controls (`1.12.0`)
 
-`OPENTOFU_USER_AGENT`, which fully replaced the default HTTP User-Agent, is
-removed in 1.12. On Unix, `tofu login` honors `BROWSER` when it contains a
-single command that accepts the URL as its sole argument. An inherited
-`BROWSER` value can therefore change login's launch behavior.
+`tofu destroy -suppress-forget-errors` suppresses errors for objects forgotten
+during destroy and exits successfully. `tofu console` accepts `-lock=false` and
+`-lock-timeout=DURATION`.
 
-## Experimental initialization tracing
+```text
+tofu destroy -suppress-forget-errors
+tofu console -lock-timeout=30s
+```
 
-Since 1.10, environment-controlled OpenTelemetry tracing can send partial
-`tofu init` traces to a collector controlled by the operator. The feature is
-experimental and currently exposes limited detail.
+## Environment compatibility (`1.12.0`)
 
-## Go integration libraries
-
-TofuDL locates the latest OpenTofu release, verifies its signature, downloads
-it, and extracts the binary. It also provides tooling to mirror releases into
-air-gapped environments.
-
-The experimental `libregistry` library provides structured registry metadata
-and building blocks for independent registry tooling. Treat its API as
-unstable.
+`OPENTOFU_USER_AGENT`, which completely replaced the default HTTP User-Agent,
+has been removed. On Unix, `tofu login` honors `BROWSER` when it names a single
+command that accepts the URL as its only argument. An inherited environment
+value can therefore change how the login browser launches.

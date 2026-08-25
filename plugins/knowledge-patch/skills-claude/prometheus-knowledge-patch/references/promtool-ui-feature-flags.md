@@ -1,177 +1,159 @@
 # Promtool, UI, and Feature Flags
 
-## Promtool configuration and rule checks
+## Automatic reload begins experimental (`3.0.0`)
 
-`promtool` adds the `too-long-scrape-interval` lint option for excessive scrape
-intervals (since 3.2.0). Use `--ignore-unknown-fields` when a configuration
-contains fields the installed promtool does not recognize (since 3.2.0).
+The initial automatic-reload capability was enabled with:
 
-Rule unit tests accept fuzzy float64 comparisons from 3.5.0:
+```text
+--enable-feature=auto-reload-config
+```
+
+It later expands to referenced files and becomes stable; prefer the stable
+configuration behavior on versions that provide it. The example console
+JavaScript and templates are no longer bundled, so console users supply them.
+
+## Lint and parser controls (`3.2.0`)
+
+`promtool` adds the `too-long-scrape-interval` lint option. Use
+`--ignore-unknown-fields` when a newer configuration contains fields the local
+tool does not recognize and ignoring them is intentional.
+
+## Piped block creation (`3.3.0`)
+
+`promtool tsdb create-blocks-from openmetrics` accepts OpenMetrics input from a
+pipe.
+
+## Feature-aware PromQL checks (`3.4.0`)
+
+`promtool` accepts PromQL feature flags, allowing offline validation to parse
+the same gated syntax as the server.
+
+## Fuzzy rule tests (`3.5.0`)
+
+Rule-unit tests can opt into tolerant float64 comparisons:
 
 ```yaml
 fuzzy_compare: true
 ```
 
-Rule-unit-test definitions accept `start_timestamp` for an explicit test origin
-(since 3.9.0). PromQL test `load` blocks accept `@st` on individual samples for
-start timestamps (since 3.12.0).
+## Target relabel traces and Remote Write 2 (`3.8.0`)
 
-Promtool understands feature-gated PromQL syntax when the matching flags are
-selected (since 3.4.0). In particular, support for `promql-duration-expr` and
-`promql-extended-range-selectors` syntax was added in 3.10.0.
+The target UI displays each relabeling step for a discovered target, explaining
+how labels change and why a target is dropped.
 
-## Promtool data and query commands
+`promtool push metrics` sends Remote Write 2 messages when the desired message
+type is selected with `--protobuf_message`.
 
-`promtool tsdb create-blocks-from openmetrics` reads OpenMetrics input from a
-pipe (since 3.3.0).
+## Time-stable tests and compact dumps (`3.9.0`)
 
-Dump series labels only as JSON from 3.9.0:
+Rule-unit tests accept `start_timestamp`, making time-sensitive tests start at
+an explicit instant. Emit labels-only JSON from a TSDB with:
 
 ```text
 promtool tsdb dump --format seriesjson
 ```
 
-Select a Remote Write 2.0 protobuf message for `promtool push metrics` with
-`--protobuf_message` (since 3.8.0).
+## Previously gated syntax (`3.10.0`)
 
-`promtool query instant` accepts `--header`, matching `query range` (since
-3.12.0).
+`promtool` understands `promql-duration-expr` and
+`promql-extended-range-selectors`, so checks can parse queries using those
+feature gates.
 
-Debug diagnostics go to stderr rather than stdout (since 3.11.0). Pipelines can
-therefore preserve stdout as command output, but pipelines that merged both
-streams may need adjustment.
+## Stable stdout for pipelines (`3.11.0`)
 
-Relative paths inside a file passed through `--http.config.file` resolve from
-that file's directory, not an additional parent directory (since 3.13.0).
+`promtool` sends debug diagnostics to stderr. Keep stderr separate when stdout
+is parsed as command output.
 
-## Web UI changes
+## Stable reload, maintenance UI, and query headers (`3.12.0`)
 
-Example console JavaScript and templates are no longer bundled (since 3.0.0);
-provide custom console files if using that feature.
+Automatic configuration reload is stable. The Status menu includes a UI for
+deleting time series and cleaning tombstones.
 
-The target UI can show a discovered target's relabeling trace, including how it
-was dropped (since 3.8.0). An alerting rule that has not evaluated appears in
-the `unknown` state from 3.8.0.
+`promtool query instant` accepts `--header`, matching range-query support.
+PromQL test `load` blocks accept `@st` annotations for sample start timestamps.
 
-The Status menu provides time-series deletion and tombstone cleanup from 3.12.0.
-Prometheus 3.13.0 includes the `sanitize-html` fix for CVE-2026-44990; use it or
-later for exposed UIs. Third-party license text is available at
-`/assets/third-party-licenses.txt` from that release.
+## HTTP configuration paths (`3.13.0`)
 
-## Discovering active features
+Relative paths inside a `--http.config.file` file resolve from that file's own
+directory rather than its parent. The binary serves third-party licenses at
+`/assets/third-party-licenses.txt`; release assets no longer include
+`npm_licenses.tar.bz2`.
 
-Use `/api/v1/features` to inspect supported server features (since 3.9.0).
-Do not infer runtime activation from a release string alone; inspect startup
-flags and configuration too.
+## Current feature-gate behavior (`feature-flags`)
 
-## PromQL gates
+### Prefer configuration for extra scrape metrics
 
-### Experimental functions
+`extra-scrape-metrics` is deprecated. Use `extra_scrape_metrics: true` globally
+or per scrape configuration. Stored metrics include `scrape_timeout_seconds`,
+`scrape_sample_limit`, and `scrape_body_size_bytes`; zero sample limit means
+unlimited, and failed body size is `-1` for a size-limit failure or `0` for
+other failures.
 
-Use the current spelling (`feature-flags`):
+### Use the current experimental-function spelling
 
-```text
---enable-feature=promql-experimental-functions
-```
+Use `--enable-feature=promql-experimental-functions`. Experimental function
+names, syntax, and semantics can change.
 
-Names, syntax, and semantics under this gate are unstable. Functions introduced
-under an earlier experimental-functions spelling include the range-extrema
-timestamp helpers (since 3.5.0) and `first_over_time()` /
-`ts_of_first_over_time()` (since 3.7.0).
+### Pin scrape protocol order with zero injection
 
-### Duration expressions
+Without explicit `scrape_protocols`, `created-timestamp-zero-ingestion` prefers
+`PrometheusProto`, `OpenMetricsText1.0.0`, `OpenMetricsText0.0.1`, then
+`PrometheusText0.0.4`.
 
-`promql-duration-expr` enables `step()` plus duration-bound helpers (`3.6.0`).
-The experimental `min()` and `max()` spellings became `min_of()` and `max_of()`
-in 3.13.0. Promtool can parse this gated syntax from 3.10.0.
+### Satisfy start-timestamp encoding prerequisites
 
-### Extended range selectors
+`st-storage` requires float chunks to resolve to XOR2 and needs
+`histograms-st-encoding` for native- and float-histogram start timestamps.
+`SamplesV2` WAL records need Prometheus 3.11 or later. These block formats can
+break downgrade and downstream compatibility.
 
-`promql-extended-range-selectors` enables experimental `anchored` and `smoothed`
-selectors (since 3.7.0). Their constraints are fixed (`feature-flags`):
+`use-start-timestamps` enables `start_timestamp()` but is incompatible with
+extended selectors. `st-synthesis` rewrites scraped cumulative streams, does
+not support remote write or OTLP, and has strict out-of-order and append-failure
+state behavior; review the storage reference before enabling it.
 
-- `anchored`: `resets`, `changes`, `rate`, `increase`, or `delta`.
-- `smoothed`: `rate`, `increase`, or `delta`.
-- No extended selector supports a subquery.
-- A recording or alerting group using `smoothed` needs `query_offset` of at
-  least one scrape interval.
+### Bound concurrent rule evaluation
 
-### Type and unit labels
+`concurrent-rule-eval` applies only to dependency-free rules in a group. Cap
+the resulting query load with `--rules.max-concurrent-evals` (default `4`).
 
-`type-and-unit-labels` exposes experimental metric type and unit metadata as
-labels (since 3.5.0). OTLP metrics receive `__type__` and `__unit__` from 3.6.0,
-and outgoing Remote Write 2 series carry them from 3.7.0.
+### Pick exactly one OTLP delta strategy
 
-These names are reserved (`feature-flags`): ingestion metadata overwrites user
-values, metadata WAL values beat conflicting Remote Write 2 labels, and PromQL
-drops them where it would drop `__name__`.
+`otlp-native-delta-ingestion` and `otlp-deltatocumulative` are mutually
+exclusive. Raw deltas need aligned `sum_over_time()` queries and an explicit
+label when mixed with cumulative data.
 
-## Ingestion gates
+### Protect reserved metadata labels
 
-### OTLP delta handling
+With `type-and-unit-labels`, ingestion metadata wins over input values for
+`__type__` and `__unit__`. Operations that drop `__name__` also drop them.
 
-`otlp-deltatocumulative` converts delta temporality while maintaining in-memory
-per-series state (since 3.2.0). `otlp-native-delta-ingestion` stores raw deltas
-and is mutually exclusive with conversion (`feature-flags`). Raw delta series
-must be summed over an interval; counter-rate functions are not correct for
-them.
+### Linux direct I/O
 
-### Created-timestamp zero ingestion
+`--enable-feature=use-uncached-io` uses direct I/O for chunk writes on Linux,
+bypassing the page cache.
 
-`created-timestamp-zero-ingestion` no longer emits extra `_created` series
-(since 3.0.0). It can write OTLP starts as zero samples (since 3.7.0).
+### Respect extended-selector limits
 
-Unless `scrape_protocols` is explicit, the gate changes negotiation preference
-to protobuf first, then OpenMetrics 1.0.0, OpenMetrics 0.0.1, and Prometheus text
-0.0.4 (`feature-flags`).
+`anchored` is limited to `resets`, `changes`, `rate`, `increase`, and `delta`;
+`smoothed` is limited to `rate`, `increase`, and `delta`. Neither supports
+subqueries. Rules using `smoothed` need `query_offset` of at least one scrape
+interval.
 
-### Start-timestamp storage and use
+### Cap search requests
 
-`st-storage` stores start timestamps in TSDB/Agent WAL and exports them through
-Remote Write 2 (since 3.11.0). It requires XOR2 for float chunks and
-`histograms-st-encoding` for histogram start timestamps; `SamplesV2` WAL data
-requires 3.11 or later to replay (`feature-flags`).
+With `search-api`, `--web.search.max-limit` defaults to `10000`. Larger limits
+return HTTP 400; `0` means unbounded and is unsafe on an untrusted endpoint.
 
-`use-start-timestamps` changes rate and reset evaluation and enables
-`start_timestamp()` (since 3.12.0 and `feature-flags`). It cannot be combined
-with extended selectors.
+## Current promtool compatibility (`3.13.2-3.14.0`)
 
-`st-synthesis` derives missing starts for scraped cumulative series (since
-3.12.0). It drops and uses the first sample as a subtraction baseline, does not
-support remote write or OTLP, rejects relevant out-of-order samples, and clears
-state after append failure (`feature-flags`).
+Duration expressions are enabled by default, so `promql-duration-expr` is a
+no-op, and stable `first_over_time` no longer needs the experimental-functions
+gate.
 
-## Storage and runtime gates
+`promtool push metrics --remote-write.path` supports backends with a
+non-default remote-write endpoint. Validate fill modifiers in rules with
+`promtool check rules --enable-feature=promql-binop-fill-modifiers`.
 
-`metadata-wal-records` writes metadata for automatic metrics into the WAL (since
-3.2.0).
-
-`fast-startup` writes active-series state to `series_state.json` for restart
-reuse (since 3.11.0).
-
-`xor2-encoding` selects XOR2 block encoding (since 3.11.0). The runtime
-`storage.tsdb.chunk_encoding.floats` setting can choose XOR2 independently from
-3.13.0. ST-capable experimental encodings create downgrade and interoperability
-boundaries.
-
-`use-uncached-io` performs Linux direct-I/O chunk writes and bypasses page cache
-(`feature-flags`); it has no effect as a portable non-Linux feature.
-
-## Configuration and rule gates
-
-`auto-reload-config` was experimental in 3.0.0, learned to watch referenced
-rule and scrape files in 3.4.0, and is stable from 3.12.0.
-
-`concurrent-rule-eval` evaluates dependency-free rules within a group in
-parallel (`feature-flags`). Bound the added query load with
-`--rules.max-concurrent-evals`, default 4.
-
-The deprecated `extra-scrape-metrics` feature flag is replaced by the global or
-job-local `extra_scrape_metrics: true` configuration (`feature-flags`).
-
-## Search gate
-
-`search-api` enables experimental metric-name and label search endpoints (since
-3.13.0). `--web.search.max-limit` defaults to 10000, returns HTTP 400 above the
-cap, clamps the normal response default of 100 to a smaller cap, and permits
-unsafe unbounded requests when set to zero (`feature-flags`).
+`promtool check config` does not contact AWS IMDS when a supported AWS discovery
+configuration omits `region`.

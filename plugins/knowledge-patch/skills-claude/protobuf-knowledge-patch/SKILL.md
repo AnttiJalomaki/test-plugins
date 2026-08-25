@@ -8,179 +8,224 @@ metadata:
 ---
 
 
+# Protocol Buffers Knowledge Patch
 
-# Protocol Buffers
-
-Use this skill when upgrading Protocol Buffers, regenerating code, adopting
-Editions, or diagnosing compiler/runtime behavior that differs across recent
-releases. Start with the compatibility rules, then open the language or tooling
-reference that matches the project.
+Use this skill when upgrading `protoc`, a language runtime, generated code, build
+rules, or an Editions schema. It captures compatibility rules, removed APIs,
+stricter validation, and generated-API changes that are easy to miss during an
+otherwise routine dependency update.
 
 ## How to use this patch
 
-1. Read the compiler, plugin, and runtime versions from the actual build.
-2. Identify every language runtime loaded by the process; shared release
-   numbers do not imply equal language-package majors.
-3. Check generated-code compatibility before changing schema or application
-   code.
-4. Apply breaking migrations before enabling new Edition features.
-5. Regenerate code and run boundary, JSON, recursion, and reflection tests that
-   exercise the affected APIs.
+1. Identify the exact `protoc`, plugin, runtime, and generated-code versions in
+   the project. A shared protobuf release number maps to different package majors.
+2. Read the compatibility rules before changing only one component. C++ and Rust
+   require exact gencode/runtime matches; other languages have bounded windows.
+3. Open the reference matching the affected build system, schema, or language.
+4. Regenerate code after upgrades, then compile and exercise parsing, JSON,
+   reflection, deep-input, and bounds-sensitive paths.
+5. Treat poisoned-gencode warnings and deprecation diagnostics as migration
+   work, not harmless noise.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [Build and tooling](references/build-and-tooling.md) | CMake, Bazel, `protoc`, toolchains, packages, and distribution |
-| [Compatibility and lifecycle](references/compatibility-and-lifecycle.md) | Generated-code/runtime rules, release numbering, support, and language baselines |
-| [C++](references/cpp.md) | Removed APIs, string views, arenas, repeated fields, JSON, and safety checks |
-| [Editions and schema](references/editions-and-schema.md) | Edition 2024/2026 features, visibility, naming, imports, options, and validation |
-| [Java, C#, and Objective-C](references/java-csharp-objective-c.md) | Runtime, code-generation, descriptor, JSON, recursion, and packaging changes |
-| [PHP and Ruby](references/php-and-ruby.md) | Runtime baselines, reflection, JSON, generated setters, RBS, and JRuby |
-| [Python](references/python.md) | Removed APIs, map behavior, descriptors, formatting, NumPy, upb, and recursion |
-| [Rust and Go](references/rust-and-go.md) | Rust generated APIs and traits; Go Editions API and enum naming |
+| --- | --- |
+| [Build and tooling](references/build-and-tooling.md) | CMake dependency fetching, Bazel toolchains and Bzlmod, Python rules, package layout, `protoc` output paths |
+| [Compatibility and lifecycle](references/compatibility-and-lifecycle.md) | Gencode/runtime windows, language package numbering, supported lines, cadence, Android and JRuby policy |
+| [C++](references/cpp.md) | Removed APIs, string views, arenas, repeated fields, bounds checks, debug output, Edition-generated APIs |
+| [Editions and schema](references/editions-and-schema.md) | Edition 2024/2026 features, visibility, naming, imports, descriptor labels, compiler validation |
+| [Java, C#, and Objective-C](references/java-csharp-objective-c.md) | Java enum and initialization APIs, recursion, C# packages and UTF-8, Objective-C unknown fields and descriptors |
+| [PHP and Ruby](references/php-and-ruby.md) | Runtime baselines, JSON strictness, generated setters, reflection, RBS, JRuby |
+| [Python](references/python.md) | Runtime baselines, removed reflection APIs, field validation, formatting, recursion, NumPy, free-threading |
+| [Rust and Go](references/rust-and-go.md) | Rust generated traits and views, exact-version rule, Go Opaque API and enum-prefix controls |
 
-## Breaking changes first
+## Breaking-change triage
 
-### Pair generated code with a compatible runtime
+### Keep compiler, plugins, generated code, and runtimes coherent
 
-- Never run generated code against a runtime older than the compiler and plugin
-  that produced it, including patch-version mismatches.
-- C++ and Rust require an exact generated-code/runtime release match. C++ does
-  not promise ABI stability across minor or patch releases.
-- Most other runtimes accept major `V` generated code on runtime `V` and
-  `V+1`, but not `V+2`. Older minor generated code can run on later runtimes in
-  the same major.
-- Python generated code from 3.20.0 onward has an extended descriptor-based
-  window through at least runtime 8.x.
-- Do not load multiple major versions of one runtime into a process. Security
-  fixes can still require a paired runtime upgrade and regeneration.
+- Never run gencode against a runtime older than the compiler/plugin that
+  produced it, even when only the patch number differs.
+- Match C++ and Rust gencode to the runtime exactly. Do not assume C++ ABI
+  stability across minor or patch releases.
+- For most other languages, gencode from runtime major V remains supported
+  through V+1, but not V+2. Python gencode from 3.20.0 has an extended window.
+- Do not load multiple protobuf runtime majors into one process.
+- Regenerate on every release update; compatibility windows are for staged
+  upgrades and existing artifacts, not a preferred steady state.
 
-### Respect the new tool and language floors
+See [compatibility and lifecycle](references/compatibility-and-lifecycle.md).
 
-- Protobuf 30 requires C++17. Its Python 6.30 runtime requires Python 3.9 or
-  newer.
-- The Ruby runtime requires Ruby 3.1 or newer beginning with release 31.
-- Protobuf 34 requires Bazel 8, Python 3.10, and PHP 8.2; Bazel also defaults
-  dependency setup to Bzlmod rather than WORKSPACE.
-- Regenerate Objective-C code older than 3.22 before using the 4.30 runtime.
+### Account for language-specific package majors
 
-### Replace descriptor label access
+The shared protobuf release is not the package major. For example, shared
+release `34.1` maps to Java `4.34.1` and C# `3.34.1`. Compare the shared release
+and the language package coordinate before deciding whether an upgrade is
+major-breaking.
 
-Do not infer modern cardinality or presence from `FieldDescriptor.label` or
-`getLabel`. Use `isRepeated`, `isRequired`, and `hasPresence`; use
-`hasOptionalKeyword` or the real containing oneof only when that exact proto3
-distinction is needed. The deprecated C++, Python, and PHP label accessors are
-removed in release 34.
+### Regenerate after removed reflection APIs
 
-### Audit removed runtime APIs
+- Replace descriptor `label` access with semantic predicates such as
+  `isRepeated`, `isRequired`, and `hasPresence`; removed accessors cannot be
+  restored by pinning only the compiler.
+- In Python, replace removed factory and symbol-database creation methods with
+  `message_factory.GetMessageClass()` or `GetMessageClassesForFiles()`.
+- In Objective-C, regenerate code older than 3.22 before using current runtime
+  entry points.
 
-- C++: replace `Arena::CreateMessage` with `Arena::Create`, query an arena from
-  the value, replace `JsonOptions` with `JsonPrintOptions`, and stop calling
-  removed arena-taking field-container constructors.
-- Python: build dynamic classes with `message_factory.GetMessageClass()` or
-  `GetMessageClassesForFiles()` and replace the legacy generic service API with
-  an RPC-specific plugin.
-- Objective-C: migrate to the ordering-preserving `GPBUnknownFields` model and
-  use error-returning merge APIs.
-- PHP: use the nested `Field\Kind` and `Field\Cardinality` types and the public
-  `Google\Protobuf\RepeatedField`.
+## Build-system migration
 
-### Treat debug strings as logs, not serialization
+### CMake dependency policy
 
-C++ debug-string and stringify output can be redacted, carries a randomized
-process prefix, and is not parseable TextFormat. Serialize with the binary
-format, or explicitly use a TextFormat printer when parseable unredacted text
-is required.
+The old provider switches are gone. Installed dependencies are preferred and
+missing pinned dependencies may be fetched. Use:
 
-### Validate repeated-field ranges before calling C++ APIs
+```sh
+cmake . -Dprotobuf_LOCAL_DEPENDENCIES_ONLY=ON
+cmake . -Dprotobuf_FORCE_FETCH_DEPENDENCIES=ON
+```
 
-Repeated-field access and mutation increasingly abort on invalid bounds.
-Validate indices and counts before `Get`, `ExtractSubrange`, `DeleteSubrange`,
-`UnsafeArenaExtractSubrange`, `ReleaseLast`, or `SwapElements`. Reflection code
-must also stop calling the removed `MutableRepeatedFieldRef<T>::Reserve()`.
+Enable protobuf test targets explicitly when building its source tests; they are
+no longer part of the default CMake build. Installed CMake packages also omit
+private generator headers.
 
-### Use absolute compiler output locations
+### Bazel toolchains and dependencies
 
-The release 35 `protoc` CLI rejects file writes whose output path is relative.
-Resolve generator output directories to absolute paths before invoking the
-compiler.
+- Bazel 8 is the minimum for the newer build rules, and Bzlmod becomes the
+  default dependency mode.
+- Move from native `--proto_toolchain_for*` and `--proto_compiler` flags toward
+  platform toolchain resolution with
+  `--incompatible_enable_proto_toolchain_resolution`.
+- Use `ProtoInfo.transitive_sources`, not the removed `transitive_imports`.
+- Put Edition option-only imports in `option_deps`; this requires Bazel 8.
+- Pin `@protobuf//bazel/flags:prefer_prebuilt_proto` if the changed default
+  would alter reproducible compiler selection.
 
-## Editions quick reference
+See [build and tooling](references/build-and-tooling.md) for flag paths and the
+Windows and Python-rule transitions.
 
-### Visibility is a schema rule
+## C++ migration essentials
 
-Edition 2024 defaults to exporting top-level symbols while keeping nested
-symbols local. Use `export` and `local` explicitly when imports need a different
-boundary. Visibility checking also applies to service request and response
-types, so every method type must be visible from the service file.
+### Language and borrowed strings
 
-### Prefer feature options over removed syntax
+C++17 is required. Several descriptor/name APIs now return
+`absl::string_view`; do not assume `data()` is null-terminated, and copy into
+`std::string` where ownership or termination is required. Edition-generated
+string and enum-name APIs can also default to views.
 
-- Replace weak imports used only for options with `import option`; in Bazel,
-  place them in `option_deps`.
+### Arenas and repeated fields
+
+- Use `Arena::Create`, not `Arena::CreateMessage`.
+- Do not construct `RepeatedField`, `RepeatedPtrField`, or `Map` directly from
+  `Arena*`; those constructors were removed.
+- Validate all indices and ranges before `Get`, `ExtractSubrange`,
+  `DeleteSubrange`, `UnsafeArenaExtractSubrange`, `ReleaseLast`, or
+  `SwapElements`; invalid access can abort.
+- Do not access an arena oneof message after clearing it. Debug/ASAN builds now
+  diagnose that stale access.
+- Review assumptions about `RepeatedPtrField` copies, moves, and unsafe arena
+  operations after its chunked-layout change.
+
+### Debug text is not serialization
+
+Debug stringification redacts `debug_redact` fields, adds a randomized prefix,
+and is not parseable TextFormat. Serialize with the binary format, or explicitly
+use `TextFormat.printer().printToString(proto)` when unredacted parseable text is
+required.
+
+See [C++](references/cpp.md) for the full removal and generated-API tables.
+
+## Editions and schema essentials
+
+### Edition 2024
+
+- C++ strings default to view behavior, and enum-name helpers can return
+  `absl::string_view`.
+- Strict naming-style enforcement is enabled by default.
+- Visibility defaults to exported top-level symbols and local nested symbols;
+  use `export` and `local` deliberately.
+- Replace `java_multiple_files` with `nest_in_file_class` behavior and use
+  `java_outer_classname` when the filename-derived `*Proto` name is unsuitable.
+- Replace weak declarations used only for custom options with `import option`.
 - Replace `ctype` with `features.(pb.cpp).string_type`.
-- Use `features.(pb.java).nest_in_file_class` rather than the removed
-  `java_multiple_files` option in Edition 2024.
-- Edition 2026 C++ schemas must remove `cc_api_version`,
-  `cc_utf8_verification`, and `cc_enable_arenas`.
 
-### Anticipate generated API changes
+### Edition 2026
 
-- Edition 2024 C++ string fields and enum-name helpers default to borrowed
-  views. Copy when ownership or null termination is required.
-- Go Editions 2024 and 2026 default to the Opaque API. Select `API_HYBRID` for
-  a staged migration or `API_OPEN` to preserve direct field access.
-- Edition 2026 can opt C++ repeated fields into proxy accessors and can set a
-  generated C++ namespace independently of the proto package.
-- Edition 2026 enum values can declare custom JSON strings.
+- Field names that collide after language-specific conversion can be rejected.
+- Go defaults generated APIs to Opaque; select Open or Hybrid explicitly when
+  direct field access is still required.
+- C++ repeated-field proxy access is opt-in, while generated C++ namespaces can
+  be separated from proto packages.
+- Enum values can define custom JSON strings.
+- Remove `cc_api_version`, `cc_utf8_verification`, and `cc_enable_arenas` from
+  schemas selecting this edition.
 
-## High-value runtime features
+See [Editions and schema](references/editions-and-schema.md),
+[C++](references/cpp.md), and [Rust and Go](references/rust-and-go.md).
 
-### C++
+## Runtime-focused checks
 
-- Use `Arena::Ptr` and `Arena::UniquePtr` to express ownership of arena-related
-  values.
-- Use protobuf messages and enums directly as Abseil flag values; enum vectors
-  are supported too.
-- `FieldMaskUtil::TrimMessage` now trims repeated message fields.
+### Python
 
-### Python and upb
+- Confirm the interpreter baseline before upgrading; newer packages require
+  Python 3.10 or later.
+- Stop assigning `bool` to integer or enum fields, and expect invalid
+  `Timestamp`/`Duration` conversion to raise `TypeError`.
+- Pass both key and value to scalar-map `setdefault`; do not call `setdefault`
+  for message-valued maps.
+- Set text-format recursion limits for untrusted input and test deep dynamic
+  descriptors against stricter upb validation.
+- Free-threaded Python is supported by upb, including fixes for lazy-init and
+  repeated-field-presence races.
 
-- Repeated scalar fields support NumPy-oriented access.
-- Set the optional text-format recursion-depth limit for untrusted or deeply
-  nested text.
-- The upb runtime supports free-threaded Python and fixes races in lazy message
-  initialization and repeated-field presence.
+See [Python](references/python.md).
 
-### Java, C#, PHP, and Ruby
+### Java and C#
 
-- Java lite supports the `large_enum` feature.
-- `Google.Protobuf.Tools` includes well-known-type proto files for packaged C#
-  compiler invocations.
-- PHP can emit JSON fields equal to their defaults and exposes reflection
-  presence through `hasPresence()`.
-- Ruby code generation can emit RBS declarations.
+- Expect deprecation diagnostics from generated Java `isInitialized()` when a
+  message has no required fields.
+- Test recursion limits for Java JSON `Any` nesting and C# JSON well-known types.
+- Resolve well-known-type imports from the `include` directory shipped in
+  `Google.Protobuf.Tools`.
+
+See [Java, C#, and Objective-C](references/java-csharp-objective-c.md).
+
+### PHP, Ruby, and JRuby
+
+- Confirm PHP 8.2 or newer and Ruby 3.1 or newer before adopting the relevant
+  runtimes.
+- Treat JSON numeric, range, oneof, string, `Infinity`, and `NaN` validation as
+  input-contract changes.
+- Update PHP reflection to `hasPresence()` and account for typed generated
+  setters and honored proto2/Editions defaults.
+- JRuby uses FFI by default and remains best-effort rather than officially
+  supported.
+
+See [PHP and Ruby](references/php-and-ruby.md).
 
 ### Rust and Go
 
-- Rust optional accessors return standard `Option`, and `MessageMut` requires
-  `Send`.
-- Rust view APIs accept more generic references and support const `ProtoStr`.
-- Go can strip enum prefixes at file, enum, or enum-value scope, with a
-  generate-both mode for migrations.
+- Replace `protobuf::Optional` in generated Rust accessor integrations with the
+  standard `Option`.
+- Satisfy the `Send` bound now required by Rust `MessageMut`.
+- Update map-trait integrations from `ProxiedInMapValue` to `MapValue`, and do
+  not treat floating-point values as map keys.
+- For Go Editions code, choose `API_OPEN`, `API_HYBRID`, or `API_OPAQUE`
+  intentionally and stage enum-prefix removal with the generate-both mode.
 
-## Upgrade verification checklist
+See [Rust and Go](references/rust-and-go.md).
 
-- Regenerate all checked-in outputs with the selected compiler and plugins.
-- Confirm package majors rather than assuming the shared release number is the
-  package major.
-- Compile reflection code without deprecated label or optional-keyword APIs.
-- Exercise invalid indices, recursive inputs, malformed descriptors, and
-  out-of-range JSON numeric values.
-- Compare any golden JSON whose map-key sorting or default-value emission may
-  change.
-- Check CMake fetching policy, Bazel toolchain registration, Bzlmod setup, and
-  prebuilt-compiler selection explicitly.
-- Verify schema visibility, option-only dependencies, generated namespaces,
-  and language-specific Edition features.
+## Upgrade validation checklist
+
+- Regenerate all checked-in artifacts with the selected compiler and plugins.
+- Compile every generated-language target with warnings enabled.
+- Exercise reflection and descriptor parsing, especially custom options and
+  malformed dynamic descriptors.
+- Test JSON parsing and serialization, default-value emission, and out-of-range
+  numeric input where relevant.
+- Test deeply nested binary, JSON, text-format, and well-known-type inputs under
+  configured recursion limits.
+- Run bounds-sensitive repeated-field and recursive `CopyFrom` tests in a debug
+  or sanitizer build.
+- Verify symbol visibility, generated names, file output paths, and option-only
+  dependency declarations after changing Editions or build rules.

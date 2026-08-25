@@ -1,12 +1,12 @@
 # Interoperability and Portability
 
-Batch attribution: `interop-and-portability`.
+## Run Elixir in the browser
 
-## Run Elixir-facing code in browsers
+### Popcorn on AtomVM WebAssembly
 
-### Use Popcorn on AtomVM WebAssembly
-
-Popcorn runs an extensive Elixir subset in the browser on AtomVM's WebAssembly target. Register a process through `Popcorn.Wasm` and invoke JavaScript directly:
+Popcorn runs an extensive Elixir subset in a browser on AtomVM's WebAssembly
+target. A process can register through `Popcorn.Wasm` and invoke JavaScript
+directly (`interop-and-portability`):
 
 ```elixir
 def init(_) do
@@ -16,11 +16,15 @@ def init(_) do
 end
 ```
 
-Choose it when the AtomVM-compatible subset and direct process-to-JavaScript bridge fit the application.
+Choose it when an AtomVM-compatible subset and direct JavaScript calls fit the
+application.
 
-### Build isomorphic Phoenix interfaces with Hologram
+### Hologram client-side components
 
-Hologram transpiles Elixir syntax trees to JavaScript and supplies Phoenix-based components, routing, templates, and client/server communication. Use `~HOLO` templates and handle browser events in client-side `action/3` callbacks:
+Hologram is a Phoenix-based isomorphic framework that transpiles Elixir syntax
+trees to JavaScript. It provides components, routing, templates, and
+client-server communication. Components use `~HOLO` templates and can dispatch
+browser events to `action/3` entirely on the client:
 
 ```elixir
 def template, do: ~HOLO"""<svg $pointer_down="start_drawing"></svg>"""
@@ -30,11 +34,13 @@ def action(:start_drawing, _params, component) do
 end
 ```
 
-## Implement native functions
+## Write native functions
 
-### Wrap C++ NIFs with Fine
+### C++ with Fine
 
-Fine derives NIF argument and return conversion from a C++ function signature. It supports Elixir structs and converts C++ exceptions into Elixir exceptions:
+Fine wraps the C++ NIF API and converts arguments and return values from the
+function signature. It supports Elixir structs and turns C++ exceptions into
+Elixir exceptions (`interop-and-portability`):
 
 ```cpp
 #include <fine.hpp>
@@ -44,9 +50,11 @@ FINE_NIF(add, 0);
 FINE_INIT("Elixir.Example");
 ```
 
-### Embed Zig with Zigler
+### Inline Zig with Zigler
 
-Zigler compiles embedded Zig during the Elixir build without separate build scripts or glue. The resulting functions are exposed on the Elixir module. `mix format` formats the Zig, and IEx's `h` helper displays its documentation:
+Zigler compiles embedded Zig at build time without separate build scripts or
+glue. `mix format` formats the Zig, IEx `h` exposes its documentation, and the
+functions appear directly on the Elixir module:
 
 ```elixir
 Mix.install([:zigler])
@@ -60,11 +68,11 @@ defmodule Example do
 end
 ```
 
-## Embed other language runtimes
+## Embed Python
 
-### Run Python in-process with Pythonx
-
-Pythonx embeds Python in the same operating-system process, converts values between Python and Elixir, and provisions Python plus packages from a `uv` project declaration:
+Pythonx runs Python in the same OS process, converts Elixir and Python values,
+and can provision Python plus packages from a `uv` project declaration
+(`interop-and-portability`):
 
 ```elixir
 Mix.install([{:pythonx, "~> 0.4.0"}])
@@ -84,8 +92,11 @@ np.int64(x) + np.int64(2)
 """
 ```
 
-Ordinary Python execution remains serialized by the GIL across Elixir processes. Native packages can release the GIL during CPU-intensive work or I/O.
+Regular Python execution remains serialized by the GIL across Elixir
+processes. Native packages may release it during CPU-intensive work or I/O.
 
-### Connect Swift as a distributed node
+## Join the Erlang distribution from Swift
 
-Use the Swift Erlang Actor System to let Swift programs communicate with Erlang and Elixir as distributed nodes. It is a newer alternative to implementing the distribution protocol directly.
+The Swift Erlang Actor System lets a Swift program communicate with Erlang and
+Elixir as a distributed node. It is a newer alternative to implementing the
+distribution protocol directly (`interop-and-portability`).

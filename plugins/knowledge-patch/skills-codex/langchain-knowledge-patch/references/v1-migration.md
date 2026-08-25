@@ -1,53 +1,14 @@
 # v1 Migration and Core Types
 
-## Package and runtime boundary
+## Agent and package migration
 
-LangChain v1 narrows the main package to core agent abstractions. Keep new code
-on the main package and install a classic package only while migrating legacy
-chains, retrievers, indexing APIs, and community exports.
+### `create_agent` and the LangGraph boundary (`1.0-guide`)
 
-### Python
-
-Python 3.9 is no longer supported; use Python 3.10 or newer.
-
-```sh
-uv pip install --upgrade langchain
-uv pip install langchain-classic
-```
-
-Move legacy imports to `langchain_classic` while replacing them with current
-agent, model, tool, or retrieval abstractions. Do not assume that an import which
-existed under `langchain` remains re-exported from the slim package.
-
-### JavaScript
-
-The `1.0.0` package migration uses the unscoped `langchain` package alongside
-`@langchain/core`. Legacy APIs live in `@langchain/classic`.
-
-```sh
-npm install langchain @langchain/core
-npm install @langchain/classic
-```
-
-Update subpaths as well as package dependencies. For example:
-
-```ts
-// Before
-import { SomeChain } from "langchain/chains";
-
-// Migration location
-import { SomeChain } from "@langchain/classic/chains";
-```
-
-The scoped package names shown in the separate `1.0-guide` conflict with the
-release-specific names above; the merged guidance follows the `1.0.0` entry.
-
-## Agent migration
-
-`langchain.agents.create_agent` is the LangGraph-backed model/tool loop for v1.
-It supersedes the deprecated `create_react_agent` from `langgraph.prebuilt` and
-adds middleware, structured output in the loop, typed state, and provider model
-strings.
+`langchain.agents.create_agent` is a LangGraph-backed model/tool loop that
+supersedes deprecated `create_react_agent` in `langgraph.prebuilt`. Middleware
+hooks customize each loop step. Bundled middleware covers human approval of
+tool calls, conversation summarization near context limits, and pattern-based
+PII redaction.
 
 ```python
 from langchain.agents import create_agent
@@ -55,65 +16,93 @@ from langchain.agents import create_agent
 agent = create_agent(
     model="openai:gpt-5",
     tools=[get_weather],
-    system_prompt="Help the user by fetching weather when needed.",
+    system_prompt="Help the user by fetching the weather in their city.",
 )
 ```
 
-LangGraph 1.0 otherwise preserves backward compatibility, but
-`langgraph.prebuilt` is deprecated as the enhanced agent implementation moves to
+LangGraph otherwise preserves backward compatibility, but
+`langgraph.prebuilt` is deprecated as enhanced agent functionality moves to
 `langchain.agents`.
 
-```sh
+```shell
 uv pip install --upgrade langgraph
 npm install @langchain/langgraph@latest
 ```
 
-Do not translate every legacy chain into a hand-written graph automatically.
-First determine whether `create_agent` plus middleware expresses the same model,
-tool, state, approval, retry, and output policies.
+### Package split and Python runtime floor
 
-## Provider-neutral content blocks
+The LangChain main package is narrowed to core abstractions. Python legacy APIs
+move to the separately installed `langchain-classic`. Python 3.9 is
+unsupported; the Python release requires 3.10 or newer. For JavaScript package
+names, use the dedicated migration below.
 
-Messages expose `.content_blocks`, a backward-compatible typed representation of
-complex content. It normalizes text, reasoning traces, citations, ordinary tool
-calls, server-side tool calls, and multimodal data so streaming code, frontends,
-and memory stores do not need a separate shape for every provider.
-
-```python
-for block in message.content_blocks:
-    handle(block)
+```shell
+uv pip install --upgrade langchain
+uv pip install langchain-classic
 ```
 
-Use `.content_blocks` for structured inspection and retain provider blocks whose
-protocol requires them in later history. Use convenience text accessors only
-when non-text blocks can safely be ignored.
+### JavaScript package and subpath names (`1.0.0`)
+
+JavaScript v1 upgrades the unscoped `langchain` package alongside
+`@langchain/core`. Legacy chains, retrievers, indexing APIs, and community
+exports move to `@langchain/classic`; for example, `langchain/chains` becomes
+`@langchain/classic/chains`.
+
+```shell
+npm install langchain @langchain/core
+npm install @langchain/classic
+```
+
+### Google GenAI v4 migration
+
+`langchain-google-genai` v4 uses Google's consolidated Generative AI SDK and
+places Gemini API and Vertex AI access behind one integration. Upgrades may
+require small changes. Corresponding packages in
+`langchain-google-vertexai` are deprecated.
+
+## Messages and content blocks
+
+### Provider-neutral blocks
+
+Messages expose `.content_blocks`, a backward-compatible typed
+representation shared across providers. It normalizes reasoning traces,
+citations, tool calls, and server-side tool calls so streams, frontends, and
+memory stores do not need provider-specific response shapes.
+
+```python
+blocks = message.content_blocks
+```
 
 ### Initial rollout limits
 
-At the v1 release, Python content blocks were supported by these integrations:
+At `1.0.0`, Python content blocks are supported only by
+`langchain-anthropic`, `langchain-aws`, `langchain-openai`,
+`langchain-google-genai`, and `langchain-ollama`. JavaScript support is limited
+to `langchain`, `@langchain/core`, `@langchain/anthropic`, and
+`@langchain/openai`.
 
-- `langchain-anthropic`
-- `langchain-aws`
-- `langchain-openai`
-- `langchain-google-genai`
-- `langchain-ollama`
+## Model capability profiles (`1.1.0`)
 
-JavaScript support was limited to:
+Chat models expose `.profile` with declarative capability data such as
+structured-output, function-calling, and JSON-mode support. Profiles come from
+the cross-provider models.dev index, allowing agent logic to inspect support
+without hard-coding it per model.
 
-- `langchain`
-- `@langchain/core`
-- `@langchain/anthropic`
-- `@langchain/openai`
+```python
+capabilities = chat_model.profile
+```
 
-Check the integration before depending on normalized blocks in a mixed-provider
-application. A model response may still expose provider-specific data that the
-common block contract does not preserve.
+Summarization middleware consults profiles to choose when and how to summarize,
+enabling flexible triggers and provider-specific behavior for long-running
+sessions. `ProviderStrategy` can also be inferred from a model profile, so an
+agent can select native structured output without hand-written provider
+capability logic.
 
-## `SystemMessage` as an agent prompt
+## Rich system prompts
 
-`create_agent(system_prompt=...)` accepts a `SystemMessage`, not only a string.
-Use it for cache-control blocks, structured orchestration hints, and other rich
-content that cannot be represented by a plain prompt string.
+`create_agent(system_prompt=...)` accepts a `SystemMessage`. This enables
+cache-control blocks, structured orchestration hints, richer instructions, and
+advanced content blocks.
 
 ```python
 from langchain.agents import create_agent
@@ -126,17 +115,16 @@ agent = create_agent(
 )
 ```
 
-In JavaScript, prompt middleware is now compositional: values returned by
-`dynamicSystemPromptMiddleware` extend existing system messages. Returning a
-string or `SystemMessage` no longer replaces the prompt assembled so far.
+## Built-in retry and moderation middleware
 
-## Google GenAI v4
+Built-in model-retry middleware provides configurable exponential backoff for
+transient provider endpoint errors, allowing recovery without custom retry
+wrappers.
 
-`langchain-google-genai` v4 is rebuilt on Google's consolidated Generative AI
-SDK. It provides Gemini API and Vertex AI access through one integration.
-Upgrades can require small changes, and the corresponding packages in
-`langchain-google-vertexai` are deprecated.
+OpenAI moderation can run as middleware over user input, model responses, and
+tool-returned content, providing one safety layer at all three boundaries.
 
-Audit imports, client construction, credentials, and provider-specific options
-when upgrading; do not preserve a deprecated Vertex AI package merely because
-the common LangChain model interface is unchanged.
+## Core tracing metadata (`core-1.5.6`)
+
+LangChain Core incorporates gateway metadata into traces, making gateway
+context available to tracing consumers without separate propagation.

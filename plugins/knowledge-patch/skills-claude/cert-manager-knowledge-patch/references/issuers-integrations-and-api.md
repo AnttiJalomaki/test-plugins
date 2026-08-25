@@ -1,116 +1,71 @@
 # Issuers, Integrations, and API Clients
 
-Use this reference for Vault, Venafi, and Azure integration settings, issuer
-selection, and typed API client migrations.
+## Cainjector and CA bundle rotation
+
+The CA bundle merge behavior evolved by release:
+
+- In 1.17, opt in with `CAInjectorMerging` to append a new CA certificate
+  instead of replacing the bundle, preserving overlap during rotation.
+- In 1.19, the gate is beta and enabled by default; explicitly disable it only
+  when replacement semantics are required.
+- In 1.21, merging is GA and unconditional. The gate can no longer restore
+  replacement semantics. Cainjector also always uses server-side apply, and
+  the `ServerSideApply` feature gate is deprecated.
+
+Cainjector's `--ignore-namespaces` flag excludes named namespaces while
+watching Secrets for CA injection (`1.21`).
 
 ## Vault issuers
 
-### TLS server-name validation
+Vault issuers can set the TLS server name used to validate the Vault server's
+certificate (`1.18`). From 1.20, generated ServiceAccount tokens include the
+Vault server address in their default audiences.
 
-Since `1.18`, a Vault Issuer can specify the server name used to validate the
-certificate presented by the Vault server. Configure it when the URL host and
-certificate identity differ; do not disable validation to work around a name
-mismatch.
+In 1.21, Vault can authenticate through IRSA, EKS Pod Identity, or ambient
+EC2/ECS credentials instead of a long-lived AWS Secret.
 
-### Token audiences
-
-In `1.20`, service account tokens generated for Vault issuers include the Vault
-server address among their default audiences. Ensure the Vault authentication
-role accepts that audience when validating projected tokens.
-
-### AWS IAM authentication
-
-In `1.21`, Vault issuers can authenticate through IRSA, EKS Pod Identity, or
-ambient EC2/ECS credentials. These modes avoid storing a long-lived AWS Secret;
-select the mechanism matching the workload environment and constrain its AWS
-and Vault roles.
-
-### Reject parent traversal
-
-In `1.21`, validation rejects `..` path segments in `spec.vault.path` and in
-authentication mount paths. Migrate configurations that depended on path
-joining to explicit canonical Vault paths before upgrading.
+Issuer validation rejects `..` parent-traversal segments in `spec.vault.path`
+and authentication mount paths rather than letting path joining resolve them
+(`1.21`).
 
 ## Venafi issuers
 
-### Custom client ID
+Username/password authentication can use a custom client ID instead of the
+fixed default (`1.17`). In 1.20, the
+`venafi.cert-manager.io/custom-fields` annotation on an Issuer or ClusterIssuer
+provides base custom fields; Certificate values can override or append them.
 
-Since `1.17`, Venafi username/password authentication can use a custom client
-ID instead of the fixed default.
+From 1.21, invalid OAuth credentials use the `AuthFailed` condition reason so
+they can be distinguished from transient failures, and PANW NGTS is supported
+as a backend.
 
-### Layered custom fields
+## Azure DNS issuers
 
-In `1.20`, the `venafi.cert-manager.io/custom-fields` annotation on an Issuer
-or ClusterIssuer supplies base custom fields. Values on a Certificate can
-override or append to that base. Keep shared policy at issuer scope and only
-place request-specific differences on the Certificate.
+AzureDNS supports explicit `tenantID` selection when managed identities are
+used with service principals (`1.17`). For private zones, set the 1.20
+`zoneType` field to `AzurePrivateZone`.
 
-### Authentication conditions and backends
+## Issuer readiness
 
-In `1.21`, Venafi issuers use the `AuthFailed` condition reason to distinguish
-invalid OAuth credentials from transient failures. Alert or retry based on the
-reason rather than treating every readiness failure alike. PANW NGTS is also
-supported as a Venafi backend.
+DNS issuer credential Secrets are validated before an issuer becomes Ready
+(`1.21`). Secret misconfiguration is therefore surfaced instead of silently
+accepted. Version 1.21.1 also requeues an ACME DNS-01 issuer after a previously
+missing referenced Secret is created; 1.21.0 can remain stuck at
+`Ready=False`, reason `InvalidSolver`.
 
-## Azure DNS
+## Kubernetes API ergonomics
 
-### Explicit tenant selection
-
-Since `1.17`, the AzureDNS provider accepts `tenantID` when managed identities
-are used with service principals. Set it for explicit tenant selection in
-multi-tenant environments.
-
-### Private zones
-
-Since `1.20`, the Azure DNS-01 solver accepts `zoneType` for private zones:
-
-```yaml
-spec:
-  acme:
-    solvers:
-      - dns01:
-          azureDNS:
-            zoneType: AzurePrivateZone
-```
-
-## Issuer references and queries
-
-### Resource short names
-
-Since `1.18`, `Issuer` and `ClusterIssuer` have the short names `iss` and
-`ciss`:
+`Issuer` and `ClusterIssuer` have the short names `iss` and `ciss` (`1.18`):
 
 ```console
 kubectl get iss
 kubectl get ciss
 ```
 
-### Field-selectable references
+Generated apply-configuration types allow clients to build type-safe
+server-side apply requests for cert-manager resources instead of unstructured
+payloads (`1.19`).
 
-In `1.20`, CRDs expose `.spec.issuerRef.group`, `.spec.issuerRef.kind`, and
-`.spec.issuerRef.name` as selectable fields. Resources can be queried without a
-client-side scan:
-
-```console
-kubectl get certificates --field-selector spec.issuerRef.name=example-issuer
-```
-
-### Avoid the 1.19.0 persisted defaults
-
-Version 1.19.0 added CRD-level defaults for the issuer-reference group and kind
-on Certificate and CertificateRequest. Those persisted defaults could trigger
-unnecessary certificate reissuance and were reverted in 1.19.1. Use 1.19.1 or
-later so omitted fields retain runtime defaulting behavior.
-
-## Kubernetes API client changes
-
-### Type-safe server-side apply
-
-Since `1.19`, generated apply-configuration types are available for
-cert-manager resources. Clients can construct type-safe server-side apply
-requests rather than using unstructured apply payloads.
-
-### Removed `ObjectReference`
-
-In `1.21`, the deprecated `ObjectReference` API type was removed. Update API
-clients and integrations to the applicable typed reference before upgrading.
+The 1.20 CRDs make `spec.issuerRef.group`, `spec.issuerRef.kind`, and
+`spec.issuerRef.name` field-selectable. The deprecated `ObjectReference` API
+type is removed in 1.21; migrate integrations that still import or emit it.

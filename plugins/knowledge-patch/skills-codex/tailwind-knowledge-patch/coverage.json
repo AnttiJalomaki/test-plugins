@@ -1,6 +1,8 @@
 {
   "patch": "tailwind-knowledge-patch",
-  "merged_at": "2026-07-15T05:16:23Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T05:56:28Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -32,6 +34,11 @@
     },
     "tailwind-news": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.3.3": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

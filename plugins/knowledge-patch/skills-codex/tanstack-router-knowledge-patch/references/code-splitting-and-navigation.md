@@ -1,15 +1,19 @@
-# Code splitting and navigation control
+# Code Splitting and Navigation
 
-## Route-directory encapsulation
+## Encapsulate a file route in a directory
 
-A file route can move from `posts.tsx` to `posts/route.tsx` without extra
-configuration. Use the directory form to colocate the route with its lazy
-render files and other route-specific modules.
+Move a file route from `posts.tsx` to `posts/route.tsx` without extra
+configuration. This keeps the route and its related split files together.
 
-## Automatic file-route splitting
+## Use automatic splitting only through a bundler plugin
 
-`autoCodeSplitting` belongs to the bundler plugin. It does not work with
-`@tanstack/router-cli` by itself.
+`autoCodeSplitting` is a bundler-plugin feature; `@tanstack/router-cli` alone
+does not implement it. Automatic splitting lazily extracts only `component`,
+`errorComponent`, `pendingComponent`, and `notFoundComponent`.
+
+Loaders, `beforeLoad`, search validation, context, static data, links, scripts,
+styles, and all other matching configuration remain in the critical chunk.
+Place the router plugin before the framework plugin.
 
 ```ts
 plugins: [
@@ -18,23 +22,11 @@ plugins: [
 ]
 ```
 
-The framework plugin must come after the router plugin. Automatic splitting
-extracts only:
+## Define manual lazy file boundaries
 
-- `component`;
-- `errorComponent`;
-- `pendingComponent`;
-- `notFoundComponent`.
-
-Loaders, `beforeLoad`, search validation, context, static data, links, scripts,
-styles, and all other matching configuration remain in the critical route
-chunk.
-
-## Manual lazy file boundaries
-
-Without automatic splitting, keep critical options in the normal route file.
-Put the four supported render options in a matching `.lazy.tsx` file created
-with `createLazyFileRoute`.
+Without automatic splitting, retain critical options in the normal route file
+and move the four supported render options into a matching `.lazy.tsx` file
+created with `createLazyFileRoute`.
 
 ```tsx
 // routes/posts.tsx
@@ -44,14 +36,16 @@ export const Route = createFileRoute('/posts')({ loader: fetchPosts })
 export const Route = createLazyFileRoute('/posts')({ component: Posts })
 ```
 
-The `__root` route cannot be split. If a route has no critical configuration,
-delete its empty normal file; the generated route tree supplies a virtual anchor
-for its lazy file.
+The `__root` route cannot be split. When a route has no critical configuration,
+remove its empty normal file; the generated route tree supplies a virtual
+anchor for the lazy file.
 
-## Code-defined routes and lazy loaders
+## Split code-based routes and loaders
 
-For code-defined routes, create a lazy render module with `createLazyRoute` and
-attach it with `Route.lazy()`:
+Attach a `createLazyRoute` result to a code-defined route with `Route.lazy()`.
+A loader can instead be imported by name with `lazyFn`, although its context
+usually needs an explicit `LoaderContext` type. File-based loaders can only be
+split by automatic splitting with customized bundling options.
 
 ```tsx
 // posts.lazy.tsx
@@ -61,11 +55,7 @@ const postsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/posts',
 }).lazy(() => import('./posts.lazy').then((mod) => mod.Route))
-```
 
-Use `lazyFn` to import a named loader separately:
-
-```tsx
 const dataRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/report',
@@ -73,36 +63,36 @@ const dataRoute = createRoute({
 })
 ```
 
-The loader module generally needs an explicit `LoaderContext` type. File-based
-loaders cannot use this manual `lazyFn` pattern; split them only through
-automatic splitting with customized bundling options.
+## Reuse lazy components after resolution
 
-## Resolver-based navigation blocking
+Since 1.170.28, a code-split lazy route component remains resolved across
+later visits. Revisiting the route does not show pending UI solely to resolve
+that same component again.
 
-`useBlocker` supplies typed `current` and `next` locations to `shouldBlockFn`.
-Returning `true` blocks navigation. With `withResolver: true`, the blocker
-enters a pending blocked state and waits for the application to resolve it:
+## Resolve blocked navigation explicitly
+
+`useBlocker.shouldBlockFn` receives typed `current` and `next` locations. A
+true result blocks navigation. With `withResolver: true`, the blocker enters
+the blocked state and waits for the returned `proceed` or `reset` callback.
+`enableBeforeUnload` independently controls the native reload or tab-close
+prompt.
 
 ```tsx
 const { status, proceed, reset } = useBlocker({
-  shouldBlockFn: ({ current, next }) => formIsDirty,
+  shouldBlockFn: () => formIsDirty,
   withResolver: true,
   enableBeforeUnload: formIsDirty,
 })
 
 if (status === 'blocked') {
-  // “Leave” calls proceed(); “Stay” calls reset().
+  // Connect proceed() to Leave and reset() to Stay.
 }
 ```
 
-`proceed()` permits the navigation and `reset()` cancels it. The
-`enableBeforeUnload` option separately controls the browser-native prompt for a
-reload or tab close; resolver mode does not replace that setting.
+## Make asynchronous blocker decisions
 
-## Asynchronous blocker decisions
-
-Without resolver mode, `shouldBlockFn` may return a promise while custom UI asks
-for a decision. Resolve `true` to cancel navigation and `false` to allow it.
+Without resolver mode, `shouldBlockFn` may return a promise for custom UI.
+Resolve it to `true` to cancel navigation or `false` to permit navigation.
 
 ```tsx
 useBlocker({
@@ -110,6 +100,3 @@ useBlocker({
     formIsDirty ? askWhetherToLeave().then((leave) => !leave) : false,
 })
 ```
-
-Take care when adapting a dialog whose result is phrased as “leave?” because its
-boolean must be inverted to answer the blocker's “block?” question.

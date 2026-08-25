@@ -1,115 +1,184 @@
 # Engine API Compatibility and Deprecations
 
-Use this reference before generating requests, negotiating versions, decoding responses, or maintaining long-lived event and progress parsers.
+## Version negotiation and floors
 
-## Version floors and negotiation
+- Engine 26.0.0 removes APIs older than v1.24.
+- Engine 29.0 through 29.2 require v1.44 or later and introduce v1.52.
+- Engine 29.3 lowers the daemon floor to v1.40. A client that must also talk to
+  Engine 29.0–29.2 still needs v1.44 or newer.
+- Do not assume the CLI or Go client's supported floor equals the raw daemon's
+  floor; negotiate and test the actual client/daemon pair.
 
-- API v1.44 deprecates versions older than v1.24 (Engine 25.0.0). Engine 26.0.0 removes versions below v1.24.
-- For clients below API v1.44, Engine 26.0.0 preserves the earlier non-recursive behavior of read-only mounts.
-- Engine 29.0 through 29.2 require daemon API v1.44 or newer. Engine 29.3 lowers the daemon minimum to v1.40.
-- The v29 CLI and Go client removed compatibility and negotiation below v1.44. A raw older client can therefore reach a 29.3 daemon at versions that the current v29 client cannot negotiate.
+Daemon debug and pprof endpoints are available under `/v<API-version>/` since
+28.0.0, so a consistently version-prefixed client need not switch to
+unversioned paths.
 
-## Image list and inspection
+## Events and streamed JSON
 
-- API v1.44 removes `VirtualSize` from `GET /images/json` and `GET /images/{id}/json`.
-- API v1.44 deprecates image-inspect `Container` and `ContainerConfig`; Engine 26.0.0 removes them from `GET /images/{name}/json`.
-- When image config has no `Created`, newer APIs omit the field. Through v1.43 it remains `0001-01-01T00:00:00Z`.
-- Image-search results always return `is_automated=false` starting with Engine 26.0.0. The deprecated `is-automated=true` filter matches nothing and `is-automated=false` is a no-op; `IsAutomated` and the filter were deprecated in v1.44.
-- Image inspect's always-empty, non-spec `Config` fields are deprecated starting in 27.0.1: `Hostname`, `Domainname`, `AttachStdin`, `AttachStdout`, `AttachStderr`, `Tty`, `OpenStdin`, `StdinOnce`, `Image`, `NetworkDisabled`, `MacAddress`, and `StopTimeout`.
-- API v1.48 adds `Manifests` for platform manifests and build attestations. On a multi-platform containerd image store it also adds image `Descriptor`, while container list and inspect add `ImageManifestDescriptor`.
-- API v1.49 lets `GET /images/{name}/json` select one variant using JSON-encoded OCI `platform`; this is mutually exclusive with `manifests`.
-- API v1.50 adds a JSON-encoded `platforms` array to `DELETE /images/{name}`, allowing selected platform content to be deleted without removing every variant.
-- API v1.52 omits unset image `Parent`, `Comment`, `DockerVersion`, `Author`, and `Config`. It omits `GraphDriver` with the containerd backend and omits empty `OnBuild`.
-- Starting in Engine 29.3, `GET /images/json?identity=1` returns manifest summaries and can include per-manifest identity information.
+Engine 25.0.0 adds containerd-store push, pull, and save image events. Engine
+27.0.1 emits image `create` for build results whether or not they are tagged.
 
-## Image attestations
+Engine 29 labels its newline-delimited event stream `application/x-ndjson`.
+API v1.52 omits legacy event fields `status`, `id`, and `from`, and can negotiate
+RFC 7464 `application/json-seq`. API v1.53 also accepts `application/jsonl`.
+JSON text sequences have record separators; do not feed them to an ordinary
+NDJSON parser.
 
-API v1.55 adds `GET /images/{name}/attestations` for in-toto statements:
+JSON progress streams deprecate `error` and `progress` in favor of
+`errorDetail` and `progressDetail` since 28.0.0.
 
-- Pass `platform` to select one image variant.
-- Repeat `type` to filter by predicate-type URI.
-- Pass `statement=true` to include statement bodies.
-- Without `statement=true`, the endpoint returns descriptors and predicate types without reading statement blobs.
+## Image responses and operations
 
-```http
-GET /v1.55/images/example:latest/attestations?statement=true
+Engine 26.0.0 removes `Container` and `ContainerConfig` from image inspect and
+omits missing `Created`; APIs v1.43 and earlier receive
+`0001-01-01T00:00:00Z` instead.
+
+API v1.48 adds image `Manifests`; with the containerd store, it adds target OCI
+`Descriptor`, while container inspect/list add `ImageManifestDescriptor`.
+These descriptors require a multi-platform store.
+
+API v1.49 lets `GET /images/{name}/json` select a JSON-encoded `platform`,
+mutually exclusive with `manifests`. API v1.50 adds `platforms` to
+`DELETE /images/{name}`. Engine 29's load and export endpoints accept repeated
+`platform` query parameters.
+
+Engine 29 makes image inspect sparse: empty `Parent`, `Comment`,
+`DockerVersion`, `Author`, and unset `Config` are omitted; `GraphDriver` is
+omitted under the containerd backend. Engine 29.2 adds trusted-origin
+`Identity`; Engine 29.3 adds the image-list `identity` query option.
+
+### Attestations in API v1.55
+
+`GET /images/{name}/attestations` returns attestation descriptors and predicate
+metadata. `platform` selects a variant and defaults to the host platform;
+repeated `type` values filter in-toto predicate URIs; `statement=true` includes
+statement bodies.
+
+## Container inspection and lists
+
+Engine 27.0.1 container-list responses add annotations. Engine 29
+`GET /containers/json` adds `Health`.
+
+API v1.52 removes these top-level container-inspection network fields:
+bridge, hairpin mode, link-local addresses, secondary addresses, endpoint ID,
+gateway, IP address/prefix length, IPv6 gateway/address/prefix, and MAC address.
+Read per-endpoint data from `NetworkSettings.Networks`.
+
+API v1.52 also makes container-level `Config.MacAddress` obsolete in favor of
+endpoint settings. Network inspect gains per-subnet IPAM allocation statistics.
+Engine 29.3 makes `POST /networks/{id}/connect` apply
+`EndpointSettings.MacAddress` as requested.
+
+## Container create and update
+
+### Mount fields
+
+Engine 26.0.0 exposes volume subpaths through `VolumeOptions.Subpath`. Clients
+using API versions below v1.44 retain legacy non-recursive read-only behavior;
+they must not assume nested mounts are read-only.
+
+API v1.48 warns when `Config.VolumeDriver` is combined with
+`HostConfig.Mounts`; the container-wide volume driver does not configure those
+mount entries.
+
+### Empty port bindings
+
+API v1.52 deprecates turning an empty `PortBindings` list into one binding with
+empty `HostIP` and `HostPort` at start. Creation warns. Omit an unused mapping
+or send the exact binding instead of relying on future backfill.
+
+### Live block-I/O changes
+
+API v1.55 makes `BlkioWeightDevice`, `BlkioDeviceReadBps`,
+`BlkioDeviceWriteBps`, `BlkioDeviceReadIOps`, and `BlkioDeviceWriteIOps`
+effective in `POST /containers/{id}/update`. They were formerly ignored.
+Omitted or `null` values preserve rules; empty arrays clear them.
+
+### Removed resource fields
+
+API v1.52 removes `KernelMemoryTCP` from update, inspect, and `GET /info`.
+Older APIs may accept it without applying it.
+
+## Network schema
+
+API v1.45 endpoint `Aliases` contains only aliases explicitly supplied at
+creation and no longer includes the container short ID. Use `DNSNames`, added
+in v1.44, when the name, hostname, explicit aliases, and short ID are needed.
+
+Create and connect support endpoint driver options and per-interface sysctls;
+use `IFNAME`. Service network attachments accept driver options as well.
+
+## Swarm API
+
+API v1.44 service create/update can set `Seccomp` and `AppArmor` in
+`ContainerSpec.Privileges`. It deprecates request-level `Networks` in favor of
+`TaskTemplate.Networks`.
+
+Engine 27.0.1 service create/update adds `OomScoreAdj`. It also accepts
+`HostConfig.Mounts.TmpfsOptions.Options` during container or service creation.
+
+Engine 29 adds service/task `SwapBytes` and `MemorySwappiness` corresponding to
+the CLI's swap controls.
+
+## Disk usage redesign
+
+API v1.52 adds `ImagesUsage`, `ContainersUsage`, `VolumesUsage`, and
+`BuildCacheUsage` to `GET /system/df`; `?verbose=1` requests detail. In v1.52,
+legacy fields coexist except they are unpopulated in verbose mode. API v1.53
+removes `LayersSize`, `Images`, `Containers`, `Volumes`, and `BuildCache`.
+
+## Daemon information and capabilities
+
+`GET /info` additions:
+
+- v1.44: `CDISpecDirs`, empty unless experimental support is active.
+- v1.49: `FirewallBackend`.
+- v1.50: `DiscoveredDevices`, currently CDI-discovered devices.
+
+Engine 27.0.1 also adds containerd socket and namespace details to `GET /info`.
+
+Since 28.0.0, `BridgeNfIptables` and `BridgeNfIp6tables` always report false;
+API v1.49 omits them. The `Expected` commit fields are also scheduled for
+omission in v1.49.
+
+Engine 29.2 adds experimental NRI reporting in `docker info` and can serve gRPC
+natively on its daemon socket.
+
+## Session transports
+
+API v1.53 deprecates `POST /grpc` and `POST /session`. Migrate integrations off
+those transport endpoints before removal; native daemon-socket gRPC is a
+separate Engine 29.2 capability and should be discovered rather than assumed.
+
+## Remote daemon TLS and CLI quoting
+
+From Engine 27.0.1, a non-local TCP listener with explicit `--tls=false` or
+`--tlsverify=false` prevents startup. Use verified TLS, Unix socket, or SSH;
+`tcp://localhost` is exempt.
+
+Special quote stripping for equals-form `--tlscacert=...`, `--tlscert=...`, and
+`--tlskey=...` is deprecated in 28.4 and removed in 29. Pass a path containing
+spaces as a separate shell argument:
+
+```console
+docker --tlscert "/path with spaces/cert.pem" info
 ```
 
-## Container create, update, and inspect
+## Deprecated and removed API surface
 
-- Container list responses include annotations starting in 27.0.1.
-- Container and service create requests accept mount tmpfs options through `HostConfig.Mounts.TmpfsOptions.Options` starting in 27.0.1.
-- Container create accepts `writable-cgroups=true` in `HostConfig.SecurityOpt` starting in 28.0.0:
+- Since 25.0.0, search `IsAutomated` and filter `is-automated` are deprecated.
+- The image-inspect `Config` fields that model container runtime defaults rather
+  than image configuration are deprecated since 27.0.1.
+- Since 28.0.0, non-distributable-artifact registry fields remain `null`
+  through v1.48 and disappear in v1.49.
+- Engine 28.0.0 removes API CORS and external graph-driver extensions.
+- Engine 29 removes legacy event fields in v1.52 and old disk-usage fields in
+  v1.53; build clients around explicit versioned response models.
 
-```json
-{"HostConfig":{"SecurityOpt":["writable-cgroups=true"]}}
-```
+## Parser checklist
 
-- Container `StartedAt` is recorded before startup and is guaranteed to precede `FinishedAt` starting in 27.0.1.
-- API v1.52 adds health-check status as `Health` in `GET /containers/json` and adds storage information to container inspection.
-- Top-level `Config.MacAddress` is obsolete in v1.52 and later. Use per-endpoint settings; `POST /networks/{id}/connect` correctly applies them as of Engine 29.3.
-- API v1.52 removes deprecated top-level bridge, endpoint, IP, gateway, MAC, hairpin, link-local, and secondary-address fields from container `NetworkSettings`. Read per-network values from `NetworkSettings.Networks`.
-- `KernelMemoryTCP` is removed from `GET /info` and container inspection at v1.52; values sent to container update are ignored.
-- API v1.52 deprecates start-time backfill that turns an empty `PortBindings` list into one empty binding. Build the desired binding explicitly before v1.53 removes the behavior.
-
-## Live block-I/O updates
-
-API v1.55 makes these `POST /containers/{id}/update` fields effective; older implementations ignored them:
-
-- `BlkioWeightDevice`
-- `BlkioDeviceReadBps`
-- `BlkioDeviceWriteBps`
-- `BlkioDeviceReadIOps`
-- `BlkioDeviceWriteIOps`
-
-Omit a field or send `null` to preserve its current rules. Send an empty array to clear all rules for that resource type. Per-device weights remain deprecated with cgroup v1.
-
-## Network API
-
-- API v1.44 adds `DNSNames` containing the container name, hostname, network aliases, and short ID.
-- Starting with v1.45, per-network `Aliases` contains only aliases explicitly supplied at create time; it no longer automatically contains the short ID. Use `DNSNames` when all DNS identities are needed.
-- On daemons supporting API v1.44, `POST /networks/create` rejects duplicate names for every request version. `CheckDuplicate` is deprecated and unnecessary.
-- API v1.48 stops migrating container-wide `HostConfig.Sysctls` entries that name `eth0` into endpoint driver options. Send interface sysctls directly in endpoint driver options with the `IFNAME` placeholder.
-- API v1.52 exposes per-subnet IPAM allocation statistics in network inspection.
-
-## Swarm and service API
-
-- Service create and update accept `OomScoreAdj` starting in 27.0.1.
-- API v1.44 accepts `Seccomp` and `AppArmor` under service `ContainerSpec.Privileges`.
-- When a Swarm service is updated through an API earlier than v1.44, `Healthcheck.StartInterval` is correctly ignored starting in 27.0.1.
-- Service and task resources expose swap controls as `SwapBytes` and `MemorySwappiness` for list, inspect, create, and update.
-
-## Events, progress, and content negotiation
-
-- Image builds emit an image `create` event even when the image is untagged (since 27.0.1).
-- API v1.52 declares the events endpoint as `application/x-ndjson` and omits legacy event fields `status`, `id`, and `from`.
-- API v1.52 accepts RFC 7464 `application/json-seq` for `GET /events`; v1.53 also accepts `application/jsonl`. Select framing with `Accept`:
-
-```http
-GET /v1.53/events HTTP/1.1
-Accept: application/json-seq
-```
-
-- Streaming clients must consume structured `errorDetail` and `progressDetail`. Legacy `error` and `progress` are deprecated and can become empty or disappear (since 28.0.0).
-
-## System information and disk usage
-
-- `GET /info` reports the containerd socket and the namespaces used for containers and plugins starting in 27.0.1.
-- API v1.44 adds `CDISpecDirs`; it is an empty list when experimental features are disabled.
-- API v1.50 adds `DiscoveredDevices`, initially containing CDI `DeviceInfo` records reported by device drivers.
-- Engine 29.2 adds an `NRI` section to `docker info`.
-- API v1.52 adds `os_type` to `GET /containers/{id}/stats`.
-- API v1.52 redesigns `GET /system/df` around `ImagesUsage`, `ContainersUsage`, `VolumesUsage`, and `BuildCacheUsage`; pass `verbose=1` for detail.
-- Starting in v1.53, `/system/df` no longer returns legacy `LayersSize`, `Images`, `Containers`, `Volumes`, or `BuildCache` fields.
-- `BridgeNfIptables` and `BridgeNfIp6tables` in `GET /info` are always false as of 28.0.0 and scheduled for removal in v1.49.
-- Registry fields related to non-distributable artifacts are always `null` through v1.48 and scheduled for removal in v1.49.
-
-## Build prune API
-
-API v1.48 renames `POST /build/prune` parameter `keep-bytes` to `reserved-space` and adds `max-used-space` and `min-free-space`. Match these to the Buildx cache-policy filters described in [buildx.md](buildx.md).
-
-## Deprecated configuration and endpoints
-
-- Daemon `--api-cors-header` and its `daemon.json` setting were deprecated in 27.0.1 and removed in 28.0.0.
-- API v1.53 deprecates `POST /grpc` and `POST /session`; do not create new dependencies on them.
-- Native gRPC can now be served on the Engine API listener, but it is separate from the deprecated `/grpc` tunnel semantics.
+1. Negotiate the API and branch on its schema, not only Engine version.
+2. Model optional fields as optional and distinguish absent, `null`, and empty.
+3. Read endpoint network data from `NetworkSettings.Networks`.
+4. Choose and correctly frame one event media type.
+5. Do not parse human CLI output as a substitute for a stable API contract.

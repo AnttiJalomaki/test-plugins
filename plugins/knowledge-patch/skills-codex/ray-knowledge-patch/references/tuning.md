@@ -1,12 +1,14 @@
 # Ray Tune
 
-## Emitting function-trainable results
+## Function-trainable results
 
-A function trainable has three result-emission forms:
+A function trainable has three result-emission styles:
 
 - call `tune.report()` for intermediate metrics;
 - return a dictionary for only the final result; or
 - yield dictionaries for successive results.
+
+`tune.report()` is not supported inside a class-based `Trainable`.
 
 ```python
 def objective(config):
@@ -14,12 +16,11 @@ def objective(config):
         yield {"score": score}
 ```
 
-Do not use `tune.report()` inside a class-based `Trainable`.
+## Time-budgeted open-ended sampling
 
-## Open-ended sampling with a time budget
-
-Set `num_samples=-1` together with `time_budget_s` to keep creating trials
-until the wall-clock budget expires.
+Set `num_samples=-1` together with `time_budget_s` to keep generating
+trials until the wall-clock budget expires. A finite `num_samples` caps the
+number of trials.
 
 ```python
 tuner = tune.Tuner(
@@ -28,25 +29,23 @@ tuner = tune.Tuner(
 )
 ```
 
-A finite `num_samples` instead places a hard cap on the number of trials.
-
 ## Scheduler compatibility
-
-Checkpoint requirements and search-algorithm support vary by scheduler:
 
 | Scheduler | Checkpointing | Search algorithm compatibility |
 | --- | --- | --- |
-| ASHA | Requires no checkpointing | Compatible |
-| Median Stopping | Requires no checkpointing | Compatible |
+| ASHA | Not required | Compatible |
+| Median Stopping | Not required | Compatible |
 | HyperBand | Required | Compatible |
 | BOHB | Required | Only `TuneBOHB` |
 | PBT | Required | Incompatible |
 | PB2 | Required | Incompatible |
 
-Choose the search algorithm and checkpoint behavior together with the
-scheduler rather than configuring them independently.
-
 ## Dynamic trial resources
 
-`ResourceChangingScheduler` can wrap any other scheduler. Use it to change a
-trial's resource requirements while tuning is in progress.
+`ResourceChangingScheduler` can wrap any other scheduler and change trial
+resource requirements while tuning is running.
+
+## Search integrations
+
+For `2.56.0-2.57.0`, `OptunaSearch` requires `optuna>=3.0.0`, and
+`BayesOptSearch` exposes configurable float-hash precision.

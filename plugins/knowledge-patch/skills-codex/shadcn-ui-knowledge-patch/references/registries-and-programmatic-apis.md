@@ -1,9 +1,11 @@
 # Registries and Programmatic APIs
 
-## Configure namespaced registries
+## Namespaced registry configuration
 
-CLI 3.0 addresses decentralized registry items as `@registry/name`. Configure a
-namespace in `components.json` with a URL template containing `{name}`:
+CLI 3.0 addresses decentralized registry items as `@registry/name`. Define each
+namespace in `components.json` with a URL template containing `{name}`. Registry
+items may declare namespaced `registryDependencies` from one or several
+registries; the CLI resolves them automatically.
 
 ```json
 {
@@ -17,19 +19,11 @@ namespace in `components.json` with a URL template containing `{name}`:
 pnpm dlx shadcn add @acme/button
 ```
 
-An item can declare namespaced `registryDependencies` from one or several
-registries. The CLI resolves all of them automatically. This namespaced workflow
-comes from `cli-3-and-mcp`.
-
-## Follow namespace and URL-template constraints
-
 A namespace must start and end with an alphanumeric character. Between those
-ends it may contain alphanumerics, hyphens, or underscores. A registry URL must
-contain `{name}` and may contain `{style}` for the project's current style.
-
-Object-form entries can add `params`. Environment expansion works in the URL,
-headers, and parameters, including shell-style defaults such as
-`${REGISTRY_VERSION:-v2}`:
+characters it may contain alphanumerics, hyphens, or underscores. URLs require
+`{name}` and may use `{style}` for the current project style. Object-form entries
+may add `params`. The URL, headers, and parameters support environment expansion
+and shell-style defaults such as `${REGISTRY_VERSION:-v2}`.
 
 ```json
 {
@@ -44,13 +38,12 @@ headers, and parameters, including shell-style defaults such as
 }
 ```
 
-These constraints come from `registry-configuration`.
+## Authentication and proxies
 
-## Authenticate private registries
-
-A registry entry can be an object with `url` and `headers`. CLI 3.0 supports
-basic authentication, bearer tokens, API-key query parameters, and custom
-headers. Values can interpolate environment variables:
+An object registry entry accepts `url` and `headers`, including environment
+interpolation. Basic authentication, bearer tokens, API-key query parameters,
+and custom headers are supported. Missing variables are named in the error and
+may be supplied through `.env` or `.env.local`.
 
 ```json
 {
@@ -65,13 +58,9 @@ headers. Values can interpolate environment variables:
 }
 ```
 
-When a variable is missing, the CLI names it in the error. Supply variables via
-`.env` or `.env.local`; do not commit their secret values. Private-registry
-authentication comes from `cli-3-and-mcp`.
-
-An authenticated registry can return a JSON `message` with a `401` or `403`.
-The CLI displays the message, allowing the service to explain a missing token,
-expired subscription, or resource-specific access restriction:
+An authenticated registry may return a JSON `message` with a `401` or `403`.
+The CLI displays that message, allowing the server to explain a missing token,
+expired subscription, or resource-specific restriction.
 
 ```ts
 return NextResponse.json(
@@ -80,74 +69,27 @@ return NextResponse.json(
 )
 ```
 
-This response behavior comes from `registry-configuration`.
-
-## Compose source registries
-
-A root `registry.json` can include other registry files. Only the root needs
-`name` and `homepage`:
-
-```json
-{
-  "$schema": "https://ui.shadcn.com/schema/registry.json",
-  "name": "acme",
-  "homepage": "https://acme.com",
-  "include": [
-    "components/ui/registry.json",
-    "hooks/registry.json"
-  ]
-}
-```
-
-`shadcn build` resolves all includes into a flat registry with no `include`
-field and preserves item file paths relative to the root.
-
-Validate the source before building:
+The registry HTTP stack accepts SOCKS4 and SOCKS5 proxy URLs through `ALL_PROXY`
+or `all_proxy` (batch `4.16.1-4.18.0`). It ignores a non-SOCKS `ALL_PROXY` value.
+HTTP and HTTPS proxies continue to use `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NO_PROXY`.
 
 ```sh
-pnpm dlx shadcn registry validate
+ALL_PROXY=socks5://127.0.0.1:1080 pnpm dlx shadcn@latest add button
 ```
 
-Validation covers the root, included registries, item schemas, duplicate item
-names, include rules, and local file paths. It reports all actionable errors in
-one run and does not require a prior build. Composition and validation come from
-`registry-composition-and-github`.
+## Configuration precedence and merging
 
-## Load source registries dynamically
+`getRegistriesConfig(cwd)` reads `components.json`; when that file is absent,
+it falls back to top-level `registries` in `package.json`. Registry declarations
+from both files are merged. The CLI can add registries to `package.json` when
+`components.json` is absent, and `add`, `search`, `view`, and `init` resolve them
+there in memory without copying them to `components.json`.
 
-Dynamic registry routes can load the composed registry or one resolved item
-from the documented `shadcn/registry` entry point:
-
-```ts
-import { loadRegistry, loadRegistryItem } from "shadcn/registry"
-
-const registry = await loadRegistry()
-const item = await loadRegistryItem(name)
-```
-
-## Distribute items from GitHub
-
-Any public GitHub repository with a root `registry.json` can be addressed as
-`<username>/<repo>/<item>`:
-
-```sh
-pnpm dlx shadcn@latest add acme/toolkit/project-conventions
-```
-
-The CLI reads the source registry and resolves its includes. The author does not
-need to run `shadcn build`, publish generated item JSON, or host a registry
-server. A `registry:item` can carry arbitrary project files, including
-documentation, editor settings, agent instructions, workflows, templates, and
-codemods. GitHub source registries come from
-`registry-composition-and-github`.
-
-## Control dependency ordering and overrides
-
-Registry dependencies install before the item that declares them. Resolution
-deep-merges Tailwind settings, CSS variables, CSS, environment variables, and
-other configuration. When resolved items target the same file path, the last
-resolved file wins. This permits a custom item to depend on a third-party item
-and override only selected files or settings:
+Registry dependencies install before the dependent item. Resolution deep-merges
+Tailwind configuration, CSS variables, CSS, and environment variables. For
+duplicate target file paths, the last resolved file wins, allowing a custom item
+to depend on a third-party item and override only selected files or config.
 
 ```json
 {
@@ -164,57 +106,97 @@ and override only selected files or settings:
 }
 ```
 
-Use duplicate target paths only as intentional overrides. This resolution model
-comes from `registry-configuration`.
+## Composable source registries
 
-## Publish design-system and font items
-
-A `registry:base` item can carry a complete design system: components,
-dependencies, CSS variables, fonts, and configuration. It also pins the desired
-primitive base for initialization.
-
-Fonts are separately installable `registry:font` items. Their metadata includes
-the provider, import name, family, CSS variable, and subsets:
+A root `registry.json` may use `include` to compose items from other registry
+files. Only the root must define `name` and `homepage`. `shadcn build` resolves
+the includes into a flattened registry without an `include` property while
+preserving item file paths relative to the root.
 
 ```json
 {
-  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
-  "name": "font-inter",
-  "type": "registry:font",
-  "font": {
-    "family": "'Inter Variable', sans-serif",
-    "provider": "google",
-    "import": "Inter",
-    "variable": "--font-sans",
-    "subsets": ["latin"]
-  }
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "acme",
+  "homepage": "https://acme.com",
+  "include": [
+    "components/ui/registry.json",
+    "hooks/registry.json"
+  ]
 }
 ```
 
-These item types come from `cli-v4-and-presets`.
+Item names with path segments such as `extension/foo` produce nested output
+directories instead of an `ENOENT` failure from 4.16.1 (batch
+`4.16.1-4.18.0`).
 
-## Use documented programmatic entry points
+Dynamic routes can load the composed registry or one resolved item from the
+stable `shadcn/registry` entry point:
 
-Only documented subpath imports are stable. CLI command internals are not a
-public API. For CLI 3.0 consumers:
+```ts
+import { loadRegistry, loadRegistryItem } from "shadcn/registry"
 
-- replace `fetchRegistry` with `getRegistry`;
-- replace `resolveRegistryTree` with `resolveRegistryItems`; and
-- import registry schemas from `shadcn/schema`.
+const registry = await loadRegistry()
+const item = await loadRegistryItem(name)
+```
+
+## GitHub source registries and local dependencies
+
+A public GitHub repository with a root `registry.json` is addressable as
+`<username>/<repo>/<item>`. The CLI reads the source and resolves includes, so
+the author does not need to run `shadcn build`, publish generated item JSON, or
+host a registry server. A `registry:item` can distribute arbitrary project files
+such as documentation, editor settings, agent instructions, workflows,
+templates, and codemods.
+
+```sh
+pnpm dlx shadcn@latest add acme/toolkit/project-conventions
+```
+
+`registryDependencies` also accepts GitHub items and local item JSON files. Pin
+each GitHub dependency with its own tag or full commit SHA because refs are not
+inherited. Bare names resolve to built-in items, so same-repository dependencies
+need their full GitHub address.
+
+```json
+{
+  "registryDependencies": [
+    "acme/ui/button#v1.2.0",
+    "./editor.json"
+  ]
+}
+```
+
+## File targets and aliases
+
+Targets beginning with `@components/`, `@ui/`, `@lib/`, or `@hooks/` resolve
+against the consumer's `components.json` directories rather than its import
+prefix. `@utils/` is unsupported because that alias denotes a file. A target may
+route a file somewhere different from its declared type, and `registry:page`
+and `registry:file` entries require a target.
+
+```json
+{
+  "path": "registry/new-york/example/format-date.ts",
+  "type": "registry:ui",
+  "target": "@lib/format-date.ts"
+}
+```
+
+## Stable APIs and schema migration
+
+Direct API consumers should replace `fetchRegistry` with `getRegistry` and
+`resolveRegistryTree` with `resolveRegistryItems`. Registry schemas are exported
+from `shadcn/schema`. Existing `components.json` files and installed components
+remain compatible. Only documented subpath imports are stable APIs; CLI command
+internals are not public API.
 
 ```ts
 import { registryItemSchema } from "shadcn/schema"
 ```
 
-Existing `components.json` files and installed components remain compatible.
-The API migration itself comes from `cli-3-and-mcp`; the more detailed API
-behavior below comes from `registry-schema-and-api`.
-
-## Resolve configuration and control caching
-
-Registry fetches cache by resolved URL for the process lifetime and deduplicate
-concurrent in-flight requests. Disable the cache for fresh reads in servers and
-watchers:
+Registry fetching uses a process-lifetime, resolved-URL cache by default and
+deduplicates concurrent in-flight requests. Disable caching for fresh reads in
+servers or watchers.
 
 ```ts
 const config = await getRegistriesConfig(process.cwd())
@@ -224,17 +206,14 @@ const items = await getRegistryItems(["@acme/button"], {
 })
 ```
 
-`getRegistriesConfig(cwd)` reads `components.json`. If that is absent, it falls
-back to the top-level `registries` property in `package.json`.
+## Non-interactive installation and errors
 
-## Install registry items without prompts
-
-`addRegistryItems` writes files and applies dependencies, environment variables,
-CSS, and Tailwind configuration without prompting. It throws instead of exiting
-and skips existing files unless `overwrite` is true.
-
-The function does not load project configuration. Pass a resolved configuration
-with aliases and `resolvedPaths`:
+`addRegistryItems` installs files, dependencies, environment variables, CSS,
+and Tailwind configuration without prompting. It throws rather than exiting and
+skips existing files unless `overwrite` is enabled. It does not load project
+configuration; pass a resolved config containing aliases and `resolvedPaths`.
+A registries-only config is sufficient only for universal `registry:item` or
+`registry:file` payloads with explicit file targets.
 
 ```ts
 const cwd = process.cwd()
@@ -247,75 +226,28 @@ await addRegistryItems(["@acme/agent"], {
 })
 ```
 
-A registries-only configuration is sufficient only for universal
-`registry:item` or `registry:file` payloads whose files all declare explicit
-targets.
-
-## Handle typed registry failures
-
-Registry functions throw `RegistryError` subclasses rather than terminating the
-process. Branch on `RegistryErrorCode` or catch the specific classes for:
-
-- missing registries or items;
-- authentication;
-- network fetches;
-- configuration;
-- local files;
-- parsing and validation;
-- invalid namespaces; and
-- missing environment variables.
+Registry functions throw `RegistryError` subclasses. Handle `RegistryErrorCode`
+or the specific classes for missing items, authentication, fetches,
+configuration, local files, parsing, validation, invalid namespaces, and missing
+environment variables.
 
 ```ts
 try {
   await getRegistry("@unknown")
 } catch (error) {
   if (error instanceof RegistryNotFoundError) {
-    // Recover from an unknown registry.
+    // recover from an unknown registry
   }
 }
 ```
 
-## Pin GitHub and local dependencies
+## Programmatic presets
 
-`registryDependencies` may reference GitHub items or local item JSON files. A
-GitHub dependency does not inherit a ref from its parent, so give every GitHub
-dependency its own tag or full commit SHA for reproducibility. Bare names still
-resolve to built-in items; a dependency from the same GitHub repository must use
-its full GitHub address.
-
-```json
-{
-  "registryDependencies": [
-    "acme/ui/button#v1.2.0",
-    "./editor.json"
-  ]
-}
-```
-
-## Route files with consumer aliases
-
-A file target can start with `@components/`, `@ui/`, `@lib/`, or `@hooks/`.
-These resolve against the corresponding directories in the consumer's
-`components.json`, independently of the import prefix. `@utils/` is not
-supported because that alias identifies a file rather than a directory.
-
-The target may send a file somewhere different from the location implied by its
-declared type. A target is required for `registry:page` and `registry:file`.
-
-```json
-{
-  "path": "registry/new-york/example/format-date.ts",
-  "type": "registry:ui",
-  "target": "@lib/format-date.ts"
-}
-```
-
-## Encode and decode preset codes
-
-`encodePreset` accepts a partial preset, fills missing fields from
-`DEFAULT_PRESET_CONFIG`, and returns a version-prefixed, URL-safe code.
-`decodePreset` returns the complete defaulted configuration, or `null` when the
-code is absent or invalid.
+`encodePreset` accepts a partial preset, fills omitted fields from
+`DEFAULT_PRESET_CONFIG`, and returns a version-prefixed URL-safe code.
+`decodePreset` returns the complete defaulted configuration or `null` for a
+missing or invalid code. `shadcn/preset` also exports validators, random-preset
+helpers, Base62 helpers, and `PRESET_*` option constants.
 
 ```ts
 import { decodePreset, encodePreset } from "shadcn/preset"
@@ -324,5 +256,9 @@ const code = encodePreset({ style: "vega", theme: "blue", radius: "large" })
 const preset = decodePreset(code)
 ```
 
-`shadcn/preset` also exports validators, random-preset helpers, Base62 helpers,
-and the `PRESET_*` option constants used by theme tooling.
+## Dynamic search behavior
+
+Registry search parameters are forwarded to registry backends, allowing a
+dynamic registry to execute the search server-side. `searchRegistries` results
+include item titles, and fuzzy matching considers those titles. These behaviors
+are recorded in batch `4.16.1-4.18.0`.

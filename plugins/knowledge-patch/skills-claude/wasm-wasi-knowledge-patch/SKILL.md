@@ -8,216 +8,200 @@ metadata:
 ---
 
 
-# WebAssembly and WASI Compatibility Guide
+# WebAssembly and WASI
 
-Use this skill when authoring WIT, composing components, targeting current core
-WebAssembly, or moving a WASI component between the synchronous 0.2 interfaces
-and the native-async 0.3 interfaces.
+Use this skill when writing, reviewing, or migrating Core WebAssembly, WIT,
+Component Model, or WASI code. Start with the compatibility notes below, then
+open the reference file that matches the work.
 
-## Reference map
+## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [WIT language and composition](references/wit-language.md) | Identifiers, documentation, result shorthand, types, resources, interface reuse, worlds, and packages |
-| [Core WebAssembly](references/core-webassembly.md) | Evergreen standard, standardized proposals, 64-bit and multiple memories, exceptions, determinism, annotations, and JavaScript strings |
-| [Async component model](references/async-component-model.md) | Streams, futures, ownership, scheduling, coroutine styles, and completion-oriented I/O |
-| [WASI interface migration](references/wasi-interface-migration.md) | 0.2 interoperation, interface replacements, HTTP, sockets, clocks, CLI, and initial tooling |
+| [WIT language and composition](references/wit-language.md) | Identifiers, comments, results, types, resources, imports, worlds, packages, maps, and interface instances |
+| [Core WebAssembly](references/core-webassembly.md) | Live standards, standardized proposals, 64-bit and multiple memories, exceptions, determinism, annotations, and JavaScript strings |
+| [WASI interface migration](references/wasi-interface-migration.md) | 0.2 interoperation, `wasi:io` replacement, stream-based I/O, HTTP, sockets, clocks, CLI, and toolchains |
+| [Async Component Model](references/async-component-model.md) | Async WIT values, ownership, scheduling, language bindings, service, and middleware roles |
 
-## Start with the compatibility boundary
+## Migration and compatibility first
 
-Before changing code, identify all three boundaries:
+### Treat WASI 0.3 as additive
 
-1. Is the artifact a core Wasm module or a component?
-2. Is its interface written against WASI 0.2 or WASI 0.3?
-3. Does it need synchronous host calls, or composable async across components?
+Do not force every component to migrate from 0.2. Hosts may continue exposing
+0.2, and a 0.3 runtime can polyfill 0.2 imports at the host boundary.
 
-Do not treat WASI 0.3 as a mandatory replacement for 0.2. Hosts can keep
-exposing 0.2, and a 0.3 runtime can translate 0.2 imports to native 0.3
-primitives. Migrate when the reshaped interfaces or cross-component async are
-valuable.
+Migrate when the design needs composable async across component boundaries or
+depends on reshaped 0.3 interfaces.
 
-For a native-async component, audit ownership as well as types:
+### Replace `wasi:io` concepts
 
-- `stream<T>` and `future<T>` are Canonical ABI values, not resources.
-- Passing either across a component boundary transfers ownership.
-- Neither value can be borrowed.
-- The host schedules suspended work across the complete component graph.
+There is no 0.3 release of `wasi:io`. Translate its resources as follows:
 
-## High-impact WASI 0.3 changes
-
-### Replace readiness-shaped I/O
-
-There is no WASI 0.3 release of `wasi:io`. Translate its resource-oriented
-patterns as follows:
-
-| WASI 0.2 shape | WASI 0.3 shape |
+| WASI 0.2 concept | WASI 0.3 shape |
 | --- | --- |
 | `pollable` | `future<T>` |
 | `input-stream` | `stream<u8>` |
-| host-owned `output-stream` | caller-supplied `stream<u8>` |
-| poll an operation | await its future |
-| call `subscribe()` | return a future from the operation |
+| `output-stream` | A `stream<u8>` passed into an operation |
+| Polling | Awaiting a future |
+| `subscribe()` | Returning a future from the operation |
 
-Keep streamed data and terminal completion separate for read-like work:
+### Separate read data from completion
+
+Model reads as a data stream plus an independent terminal-result future:
 
 ```wit
 read-via-stream: func(offset: filesize)
     -> tuple<stream<u8>, future<result<_, error-code>>>;
 ```
 
-The completion future resolves even if the caller stops consuming or drops the
-data stream. Use this shape for files, stdin, TCP receives, and directory
+The completion future resolves even when the caller samples or drops the data
+stream early. Apply this shape to files, stdin, TCP receives, and directory
 listings.
 
-Reverse the direction for writes. The guest supplies bytes and waits for the
-host to finish consuming them:
+### Reverse write data flow
+
+Pass a byte stream to the host and await the future returned after consumption:
 
 ```wit
 write-via-stream: func(data: stream<u8>)
     -> future<result<_, error-code>>;
 ```
 
-This pattern applies to stdout, stderr, filesystem writes, and TCP sends.
+Use this pattern for stdout, stderr, filesystem writes, and TCP sends instead
+of acquiring a host-owned output resource and pushing bytes into it.
 
 ### Collapse split operations
 
-Replace `start-foo`/`finish-foo` plus an intervening `pollable` with one call.
-Make genuinely host-suspending work an `async func`:
+Replace 0.2 `start-foo`/`finish-foo` pairs and their `pollable` with one call.
+Use `async func` when the host operation suspends, as TCP connect does. A split
+that only enabled nonblocking dispatch, such as bind or listen, may become a
+plain `func`.
 
-```wit
-connect: async func(remote-address: ip-socket-address)
-    -> result<_, error-code>;
-```
+### Reshape HTTP roles and values
 
-An operation split only to permit nonblocking dispatch, such as bind or listen,
-may become a plain `func`.
-
-### Reshape HTTP roles
-
-The HTTP surface uses `request` and `response` rather than the former family of
-nine request, response, body, out-parameter, and future resources. Bodies are
-`stream<u8>` values, trailers arrive through a future, and a handler returns
-its response directly:
+Use `request` and `response` rather than the former nine-resource design.
+Represent bodies as `stream<u8>`, trailers as a future, and return the response
+directly from the handler:
 
 ```wit
 handle: async func(request: request) -> result<response, error-code>;
 ```
 
-Use the `service` world for an endpoint that imports the HTTP `client` and
-exports the incoming `handler`. Use `middleware` when the component also
-imports a downstream `handler`; it succeeds the 0.2 `proxy` role.
+Use the `service` world for an HTTP service and `middleware` when a component
+both accepts requests and invokes a downstream handler. Do not retain the 0.2
+`proxy` world name.
 
-### Update capabilities and names
+### Update sockets and shared interfaces
 
-- Grant socket network access at the world level; do not pass a `network`
-  resource through bind, connect, or name lookup.
-- Use the consolidated socket `types` and `ip-name-lookup` interfaces.
-- Consume TCP listeners as `stream<tcp-socket>` rather than through a separate
-  accept loop.
-- Expect some filesystem methods to be `async func`.
-- Rename clock `wall-clock` to `system-clock` and `datetime` to `instant`.
-- Share CLI types through `wasi:cli/types`.
+Grant network access at the world level rather than threading a `network`
+resource through bind, connect, and lookup operations. Expect socket APIs to
+consolidate into `types` and `ip-name-lookup`, with TCP `listen` returning a
+`stream<tcp-socket>`.
 
-## Native async rules
+Account for async filesystem methods, the clock renames from `wall-clock` to
+`system-clock` and `datetime` to `instant`, and shared CLI types in
+`wasi:cli/types`.
 
-Declare suspension and incremental values directly in WIT:
+### Verify the initial toolchain floor
 
-```wit
-interface handler {
-    handle: async func(request: string) -> result<string, u32>;
-    body: func() -> tuple<stream<u8>, future<result>>;
-}
-```
+For the first 0.3 release line, use Wasmtime 46+, `wit-bindgen` 0.46+ with its
+`async` feature, and `wkg` 0.15+. JavaScript hosts use jco's `preview3-shim`.
+Rust builds currently need nightly when stable Rust's bundled
+`wasm-component-ld` is too old for output from `wit-bindgen` 0.58.
 
-The host owns one event loop for all composed components. Completing a future
-schedules its awaiting task even when the value has crossed several component
-boundaries. The producer can be the host, another component, or the same
-component.
+## High-value new capabilities
 
-The ABI reports completion rather than readiness. A port that fundamentally
-needs `epoll`- or `kqueue`-style readiness can emulate that layer, but the
-component interface should retain completion semantics.
+### Use native async WIT values
 
-Bindings may implement stackful and stackless coroutines side by side. For
-example, Go can expose synchronous-looking calls and blocking stream operations
-while the runtime parks only the calling goroutine at an ABI boundary.
+Use `stream<T>` for incrementally produced ordered values, `future<T>` for one
+later value, and `async func` for a call that may suspend. Streams and futures
+are Canonical ABI values, so they can be parameters, results, and forwarded
+across component boundaries.
 
-## WIT authoring quick reference
+Treat every stream or future as an owned handle. Passing it across a component
+boundary transfers ownership; unlike a resource handle, it cannot be borrowed.
 
-### Names, comments, and results
+### Design for completion-based scheduling
 
-- Write ASCII kebab-case identifiers. Each hyphen-delimited word must be all
-  lowercase or all uppercase.
-- Prefix a keyword used as a name with `%`.
-- Use `///` or `/** ... */` to document the following item.
-- Ordinary `/* ... */` comments may nest.
-- `result<T>` omits the error payload.
-- `result<_, E>` omits the success payload.
-- Bare `result` omits both payloads.
-- Do not rely on a NaN payload surviving an interface boundary; WIT logically
-  exposes one `nan` value.
+The host runs one event loop across composed components. Delivering a future
+value schedules its waiter even after the future crosses several boundaries.
+The producer may be the host, another component, or the same component.
 
-### Types and resources
+The ABI reports completion, not readiness. Emulate an `epoll`- or
+`kqueue`-style readiness layer only when ported software requires one.
 
-User-defined records and variants cannot declare type parameters. Only built-in
-types such as `list<T>`, `option<T>`, and `result<T, E>` are generic.
+### Use 64-bit and multiple memories deliberately
 
-A resource may declare at most one `constructor`. Its ordinary methods receive
-an implicit borrowed `self`; `static func` members receive no `self`.
-`borrow<resource>` loans a handle for one call. Passing an owned resource handle
-transfers the duty to destroy it eventually.
+A memory or table may use `i64` addresses, giving a theoretical 16 EiB address
+space rather than 4 GiB. Web embeddings still cap a 64-bit memory at 16 GiB.
 
-### Reuse and composition
+A module may define or import multiple memories, access them directly, and
+copy data between them. This enables separate address spaces and removes a
+module-merging limitation.
 
-Import interface types with mandatory braces, even for one type:
+### Use native exception dispatch
+
+Declare payload data on exception tags. Handler blocks dispatch with tag/label
+pairs or catch-all labels to choose where control continues after a throw.
+
+### Request determinism explicitly
+
+Use the deterministic execution profile when results must reproduce across
+participating platforms. It constrains floating-point NaN generation and
+relaxed SIMD edge cases whose base semantics otherwise allow several results.
+Ordinary relaxed SIMD may still choose any specified legal outcome.
+
+### Use current WIT composition features
+
+Import types with mandatory braces:
 
 ```wit
 use types.{point};
 ```
 
-The referenced interface can live in another peer `.wit` file in the same
-package. Worlds can import or export whole interfaces or individual functions,
-declare inline interfaces, and `include` another world. Refer to an external
-interface as `package/interface`; package resolution belongs to tooling.
+Compose worlds from whole interfaces, individual functions, inline
+interfaces, and `include`. Let tooling resolve external `package/interface`
+names.
 
-A package ID is `namespace:name` with optional `@semver`. Peer `.wit` files in
-one directory can form one package. Only one file needs the package declaration;
-if several repeat it, every declaration must match.
+Use `map<K, V>` for dynamic key-value collections. When one component needs
+several instances of the same interface under different names, use the
+Component Model `implements` feature and require compatible runtimes and
+toolchains.
 
-## Core WebAssembly quick reference
+## WIT correctness checklist
 
-Treat the Candidate Recommendation as an evergreen standard whose hosted
-specification receives fixes and format updates in place.
+- Keep identifiers ASCII kebab-case; each hyphen-delimited word is wholly
+  lowercase or wholly uppercase.
+- Prefix a keyword used as a name with `%`.
+- Use `///` or `/** ... */` for documentation of the following item.
+- Allow nesting only for ordinary `/* ... */` comments.
+- Use `result<T>`, `result<_, E>`, or bare `result` when a payload is absent.
+- Do not depend on a NaN payload surviving a WIT interface crossing.
+- Parameterize only built-in generic types; records and variants are not
+  generic.
+- Give a resource at most one constructor.
+- Remember that ordinary resource methods borrow implicit `self`; static
+  functions have no `self`.
+- Treat `borrow<resource>` as call-scoped and owned handles as responsibility
+  transfers.
+- Keep peer `.wit` files for one package in one directory.
+- Use `namespace:name` with optional `@semver` for package IDs.
+- Ensure repeated package declarations match exactly.
 
-WebAssembly 2.0 standardized SIMD, bulk memory and table operations, multi-value
-results and block inputs, typed tables and references, non-trapping float-to-int
-conversions, and sign extension while remaining backward-compatible.
+## Review checklist
 
-When targeting WebAssembly 3.0, account for:
-
-- `i64` address types for memories and tables;
-- multiple directly addressable memories and cross-memory copies;
-- native exception tags, throws, and handler dispatch;
-- an opt-in deterministic profile for NaN generation and relaxed SIMD edges;
-- generic, optionally ignored text annotations;
-- importable JavaScript string builtins;
-- garbage collection, typed references, tail calls, and relaxed SIMD.
-
-An `i64` memory has a theoretical 16 EiB address space, but the Web embedding
-limits a 64-bit memory to 16 GiB. Do not infer practical allocation limits from
-the core address width.
-
-## Initial WASI 0.3 toolchain check
-
-For the initial WASI 0.3 release line, verify:
-
-- Wasmtime 46 or newer; WASI 0.3 and `component-model-async` are enabled by
-  default.
-- `wit-bindgen` 0.46 or newer with its `async` feature.
-- `wkg` 0.15 or newer for 0.3 packages.
-- jco's `preview3-shim` for JavaScript host bindings.
-
-Rust builds currently need nightly because stable Rust includes a
-`wasm-component-ld` too old for the 0.3 output emitted by `wit-bindgen` 0.58.
-Consult the migration reference before assuming the general minimum alone is
-sufficient for that Rust path.
+- Identify whether each boundary is Core Wasm, WIT, a component, or a WASI
+  interface before choosing syntax and ownership rules.
+- Check the host, runtime, bindings generator, package tooling, and linker
+  together when adopting WASI async features.
+- Trace ownership of every resource, stream, and future across calls.
+- Confirm terminal errors remain observable when data streams are ignored or
+  dropped early.
+- Replace 0.2 readiness resources and split operations with their 0.3 async
+  shapes only where migration is actually needed.
+- Validate world-level capabilities, especially network access, separately
+  from interface value types.
+- Require 0.3.1-capable tooling before emitting `map<K, V>` or depending on
+  multiple named instances through `implements`.
+- Open the relevant reference file before finalizing code; the references
+  preserve details intentionally condensed here.

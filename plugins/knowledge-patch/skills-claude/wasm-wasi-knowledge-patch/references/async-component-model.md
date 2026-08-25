@@ -1,18 +1,21 @@
 # Async Component Model
 
-Native async declarations first appear in the `wasi-0.2-guide` material; the
-ratified ownership and scheduling behavior is attributed to `wasi-0.3.0`.
+Use this reference when designing asynchronous WIT interfaces, transferring
+async values between components, or defining HTTP service roles. It includes
+guidance from `wasi-0.2-guide` and `wasi-0.3.0`.
 
-## Value forms
+## Native async values and functions
 
-WIT uses three native async forms:
+WASI 0.3 adds three native forms:
 
-- `stream<T>` represents ordered values produced incrementally.
+- `stream<T>` represents incrementally produced ordered values.
 - `future<T>` represents one value delivered later.
-- `async func` marks a call that can suspend.
+- `async func` represents a call that may suspend.
 
-Streams and futures are Canonical ABI values. They can appear as parameters and
-results and can be forwarded through component boundaries.
+Streams and futures are Canonical ABI values rather than resources. They can
+be parameters, results, and values forwarded across component boundaries. The
+runtime schedules async calls, while bindings expose the host language's normal
+async form.
 
 ```wit
 interface handler {
@@ -21,85 +24,49 @@ interface handler {
 }
 ```
 
-Bindings should expose these operations through the host language's customary
-async form.
+## Stable compatibility within the 0.3 line
 
-## Ownership across boundaries
+WASI 0.3.0 is a ratified stable release. Components compiled for it are
+guaranteed to continue working as later 0.3.x patch releases ship.
 
-Each `stream<T>` and `future<T>` acts as an owned handle. Passing one across a
-component boundary transfers ownership to the callee.
+## Async handle ownership
 
-Unlike a resource handle, a stream or future cannot be borrowed. Do not model a
-shared reference to either value in a binding.
+Every `stream<T>` and `future<T>` behaves as an owned handle. Passing one across
+a component boundary transfers ownership to the callee. Unlike a resource
+handle, a stream or future cannot be borrowed.
 
-## Host-wide scheduling
+## Host-wide completion scheduling
 
-The host operates one event loop shared by all composed components. Delivering
-a future value schedules its waiting task even when the future has traveled
-through multiple component boundaries.
+The host manages one event loop shared by all composed components. Delivering
+a future value schedules its awaiting task even after the future crosses
+multiple component boundaries. The producer can be the host, a different
+component, or the same component.
 
-The producer may be:
-
-- the host;
-- another component;
-- the same component as the consumer.
-
-This host-wide rule lets independently composed components suspend and resume
-without assigning an event loop to each component.
-
-## Completion, not readiness
-
-The async ABI is completion-based. Operations deliver their result when work
-completes rather than merely reporting that a file descriptor is ready.
-
-Software whose internal design requires an `epoll`- or `kqueue`-style readiness
-layer can emulate one during a port, but that emulation sits above the
-completion-oriented ABI.
+The ABI is completion-based rather than readiness-based. When porting software
+that requires readiness notifications, an `epoll`- or `kqueue`-style layer can
+be emulated on top.
 
 ## Stackful and stackless bindings
 
-Stackful and stackless coroutines can coexist on the async ABI. A language
-binding is not forced into one implementation strategy.
+The async ABI supports stackful and stackless coroutines together. Go bindings
+can expose synchronous-looking functions and blocking stream operations: the
+runtime parks only the calling goroutine at the ABI boundary and resumes it
+when the stream is ready.
 
-Go bindings can expose synchronous-looking functions and blocking stream
-operations. At an ABI boundary, the runtime parks only the calling goroutine
-and resumes it when the stream becomes ready.
+## HTTP service and middleware roles
 
-## Separate read data from completion
-
-A read-like operation returns a data stream and a separate future for its
-terminal result:
-
-```wit
-read-via-stream: func(offset: filesize)
-    -> tuple<stream<u8>, future<result<_, error-code>>>;
-```
-
-The future resolves even when the caller consumes only part of the stream or
-drops it immediately. The caller can therefore learn whether the operation
-succeeded without draining all data.
-
-This shape is used for:
-
-- filesystem reads;
-- stdin;
-- TCP receives;
-- directory listings.
-
-## Reverse write data flow
-
-For a write, the guest passes a byte stream to the host and receives a future
-that completes after the host consumes it:
+The `service` world imports the HTTP `client` and exports the incoming
+`handler`. The `middleware` world includes `service` and also imports a
+downstream `handler`, making it the successor to the 0.2 `proxy` world.
 
 ```wit
-write-via-stream: func(data: stream<u8>)
-    -> future<result<_, error-code>>;
+world service {
+    import client;
+    export handler;
+}
+
+world middleware {
+    include service;
+    import handler;
+}
 ```
-
-This replaces pushing bytes through a host-owned output-stream resource. The
-pattern applies to stdout, stderr, filesystem writes, and TCP sends.
-
-## Stable compatibility line
-
-WASI 0.3.0 is a stable, ratified release. Components compiled for 0.3.0 are
-guaranteed to remain usable as later 0.3.x patch releases ship.

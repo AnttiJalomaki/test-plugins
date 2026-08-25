@@ -1,25 +1,19 @@
 # Observability, Statistics, and Planning
 
-Batch attribution: `17.0`, `18.0`.
+Use this reference for server controls, I/O tuning, logging, progress views,
+statistics APIs, and plan inspection. It incorporates the operational changes
+from `17.0` and `18.0`.
 
-## Contents
+## Apply server safety and timeout controls
 
-- [Server controls](#restrict-server-changes-and-bound-transactions)
-- [Asynchronous I/O](#configure-asynchronous-io)
-- [SLRU caches](#size-slru-caches)
-- [Vacuum monitoring](#monitor-vacuum-and-maintenance)
-- [I/O, WAL, checkpoints, and waits](#inspect-io-wal-checkpoints-and-waits)
-- [Statistics reset and restore](#reset-and-restore-statistics)
-- [EXPLAIN](#interpret-expanded-explain-output)
-- [pg_stat_statements](#track-query-lifecycle-with-pg_stat_statements)
-- [Logging](#log-connection-and-locking-detail)
-- [Memory, files, and NUMA](#inspect-memory-semaphores-files-and-numa-placement)
+PostgreSQL 17 adds:
 
-## Restrict server changes and bound transactions
-
-`allow_alter_system` can disable `ALTER SYSTEM`. `transaction_timeout` limits
-the total duration of a transaction. `event_triggers` can temporarily disable
-event triggers while debugging.
+- `allow_alter_system`, which can disable `ALTER SYSTEM`.
+- `transaction_timeout`, which limits total transaction duration.
+- `event_triggers`, which can temporarily disable event triggers for
+  debugging.
+- `huge_pages_status`, which reports whether huge pages are in use and is
+  especially useful with `huge_pages = try`.
 
 ```conf
 allow_alter_system = off
@@ -27,102 +21,104 @@ transaction_timeout = '10min'
 event_triggers = off
 ```
 
-`huge_pages_status` reports whether huge pages are actually active, which is
-particularly useful with `huge_pages = try`.
+PostgreSQL 18 `num_os_semaphores` reports the operating-system semaphore
+requirement. `max_files_per_process` now counts only files opened by a backend.
 
-## Configure asynchronous I/O
+## Configure SLRU caches and built-in collations
 
-`io_method` selects the asynchronous I/O implementation.
-`io_combine_limit` and `io_max_combine_limit` tune request combining.
-`pg_aios` shows active asynchronous file handles.
+PostgreSQL 17 provides platform-independent built-in `C` and `C.UTF-8`
+collations. It also makes SLRU caches configurable with
+`commit_timestamp_buffers`, `multixact_member_buffers`,
+`multixact_offset_buffers`, `notify_buffers`, `serializable_buffers`,
+`subtransaction_buffers`, and `transaction_buffers`. Commit-timestamp,
+transaction, and subtransaction caches otherwise scale with `shared_buffers`.
+
+## Tune asynchronous I/O
+
+PostgreSQL 18 selects its asynchronous I/O subsystem with `io_method`.
+`io_combine_limit` and `io_max_combine_limit` tune request combining, and
+`pg_aios` reports active file handles.
 
 `effective_io_concurrency` and `maintenance_io_concurrency` default to 16 and
-may be positive even on systems without `fadvise()` support.
+may be positive even on systems without `fadvise()` support. Do not preserve an
+old zero-default assumption in configuration generators.
 
-## Size SLRU caches
+## Monitor vacuum and analyze
 
-Configure SLRU cache sizes with `commit_timestamp_buffers`,
-`multixact_member_buffers`, `multixact_offset_buffers`, `notify_buffers`,
-`serializable_buffers`, `subtransaction_buffers`, and `transaction_buffers`.
-When not set explicitly, the commit-timestamp, transaction, and subtransaction
-caches scale with `shared_buffers`.
+PostgreSQL 17 `pg_stat_progress_vacuum` adds `indexes_total` and
+`indexes_processed`. Its compatibility renames are documented in the migration
+reference. Checkpoint statistics move from `pg_stat_bgwriter` to
+`pg_stat_checkpointer`, and `pg_wait_events` provides descriptions for wait
+events.
 
-## Monitor vacuum and maintenance
+With PostgreSQL 18 `track_cost_delay_timing` enabled, vacuum/analyze delay time
+appears in progress views, verbose output, and logs. Table statistics add total
+time columns for manual and automatic vacuum/analyze.
 
-`pg_stat_progress_vacuum` renamed `max_dead_tuples` to
-`max_dead_tuple_bytes` and `num_dead_tuples` to `num_dead_item_ids`. It also
-adds `dead_tuple_bytes`, `indexes_total`, and `indexes_processed`.
+## Reset statistics with the right scope
 
-With `track_cost_delay_timing` enabled, vacuum and analyze delay time appears
-in progress views, verbose output, and logs. Table statistics contain total-time
-columns for manual and automatic vacuum and analyze.
+Since PostgreSQL 17, `pg_stat_reset_shared()` with no argument or `NULL` resets
+all shared statistics. Passing `'slru'`, or invoking `pg_stat_reset_slru()` with
+no argument, resets every SLRU statistic.
 
-## Inspect I/O, WAL, checkpoints, and waits
+PostgreSQL 18 exposes per-backend work through
+`pg_stat_get_backend_io()` and `pg_stat_get_backend_wal()`;
+`pg_stat_reset_backend_stats()` resets those values.
 
-Checkpoint statistics live in `pg_stat_checkpointer` rather than
-`pg_stat_bgwriter`. `pg_wait_events` provides human-readable wait-event
-descriptions.
+## Follow I/O, WAL, and checkpoint view changes
 
-`pg_stat_get_backend_io()` and `pg_stat_get_backend_wal()` report per-backend
-activity. Reset those figures with `pg_stat_reset_backend_stats()`.
+PostgreSQL 18 `pg_stat_io` gains byte counts and WAL activity and removes
+`op_bytes`. WAL timing moves into `pg_stat_io` from `pg_stat_wal`, whose
+write/sync columns are removed. Checkpoint, SLRU, and parallel-worker views add
+further counters. Consumers should select named columns rather than depending
+on a historical view shape.
 
-`pg_stat_io` includes byte counts and WAL activity and no longer exposes
-`op_bytes`. WAL timing moved into `pg_stat_io` from `pg_stat_wal`; the latter's
-write and sync columns were removed. Checkpoint, SLRU, and parallel-worker
-views expose additional counters.
+## Log connection and lock behavior
 
-## Reset and restore statistics
+PostgreSQL 18 `log_connections` accepts fine-grained connection stages while
+retaining Boolean settings. `log_line_prefix` gains `%L` for the client IP
+address, and `log_lock_failures` records failures such as
+`SELECT ... NOWAIT`.
 
-`pg_stat_reset_shared()` with no argument or `NULL` resets all shared
-statistics. Pass `'slru'` to reset all SLRU statistics, or call
-`pg_stat_reset_slru()` with no argument.
+## Restore or clear optimizer statistics
 
-Use `pg_restore_relation_stats()` and `pg_restore_attribute_stats()` to install
-optimizer statistics for a relation or column. Use
-`pg_clear_relation_stats()` and `pg_clear_attribute_stats()` to remove them.
+PostgreSQL 18 provides `pg_restore_relation_stats()`,
+`pg_restore_attribute_stats()`, `pg_clear_relation_stats()`, and
+`pg_clear_attribute_stats()` for per-relation and per-column optimizer
+statistics. These are distinct from dump/restore utility switches and from
+ordinary statistics reset functions.
 
-## Interpret expanded EXPLAIN output
+## Read current EXPLAIN output
 
-`EXPLAIN` option `MEMORY` reports planner memory. `SERIALIZE` measures the work
-of converting result rows to wire formats. `BUFFERS` includes local-block
-read/write timings, and JIT output includes `deform_counter` details.
+PostgreSQL 17 `EXPLAIN` adds `MEMORY` for planner memory and `SERIALIZE` for the
+cost of converting rows to wire formats. `BUFFERS` includes local-block
+read/write timings, and JIT output includes `deform_counter` details:
 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS, MEMORY, SERIALIZE TEXT)
 SELECT * FROM orders;
 ```
 
-`EXPLAIN ANALYZE` includes buffer statistics automatically. Row counts may be
-fractional, and plan nodes report index lookup counts. Output also covers full
-WAL buffers; memory and disk use for materialization, window functions, and
-CTEs; window arguments; parallel bitmap cache activity; and disabled nodes.
+PostgreSQL 18 `EXPLAIN ANALYZE` includes buffer statistics automatically and
+uses fractional row counts. It reports per-node index lookups, complete WAL
+buffer information, memory and disk usage for material/window/CTE nodes,
+window arguments, parallel bitmap cache activity, and disabled nodes.
 
-## Track query lifecycle with pg_stat_statements
+## Update pg_stat_statements integrations
 
-`pg_stat_statements` renamed `blk_read_time` and `blk_write_time` to
-`shared_blk_read_time` and `shared_blk_write_time`. It adds
-`local_blk_read_time`, `local_blk_write_time`, `stats_since`, and
-`minmax_stats_since`.
+PostgreSQL 17 adds `local_blk_read_time`, `local_blk_write_time`, `stats_since`,
+and `minmax_stats_since`. A fourth `minmax_only` argument to
+`pg_stat_statements_reset()` resets only minimum/maximum values. Normalization
+uses placeholders for `CALL` arguments, savepoint names, two-phase commit GIDs,
+and tracked `DEALLOCATE` names.
 
-A fourth `minmax_only` argument to `pg_stat_statements_reset()` resets only
-minimum and maximum values. `CALL` arguments, savepoint names, two-phase commit
-GIDs, and tracked `DEALLOCATE` names are normalized to placeholders.
+PostgreSQL 18 assigns query IDs to `CREATE TABLE AS` and `DECLARE`, allowing
+them to be tracked. `SET` values are parameterized to prevent entry bloat. The
+view adds requested/launched parallel-worker counts and `wal_buffers_full`.
 
-`CREATE TABLE AS` and `DECLARE` receive query IDs and can be tracked. `SET`
-values are parameterized to avoid entry proliferation. The view includes
-parallel-worker request and launch counts plus `wal_buffers_full`.
+## Inspect NUMA placement
 
-## Log connection and locking detail
-
-`log_connections` accepts fine-grained connection-stage reporting while still
-accepting Boolean values. `log_line_prefix` supports `%L` for the client IP
-address. `log_lock_failures` reports failures such as `SELECT ... NOWAIT`.
-
-## Inspect memory, semaphores, files, and NUMA placement
-
-`num_os_semaphores` reports the operating-system semaphore requirement.
-`max_files_per_process` counts only files opened by a backend.
-
-NUMA-aware builds use `--with-libnuma`. Inspect availability and placement with
+For a PostgreSQL 18 build configured with `--with-libnuma`, use
 `pg_numa_available()`, `pg_shmem_allocations_numa`, and
-`pg_buffercache_numa`.
+`pg_buffercache_numa` to inspect whether NUMA support exists and how shared
+memory and buffers are placed.

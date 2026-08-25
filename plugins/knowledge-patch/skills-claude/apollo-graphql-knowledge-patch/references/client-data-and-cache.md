@@ -1,257 +1,127 @@
-# Apollo Client data, cache, and refetch behavior
+# Apollo Client Data, Cache, and Refetch Behavior
 
-## Result completeness and Suspense
+Use this reference when changing query lifecycles, cache policies, fragments, mutations, mocks, or automatic refetching.
 
-### `dataState` (`4.0.0`)
+## Hooks, observable queries, and mutations
 
-`ObservableQuery` and data-returning React hooks expose:
+### Suspense-aware fragment reads
 
-- `empty`: `data` is `undefined`.
-- `partial`: partial cache data is present with `returnPartialData`.
-- `streaming`: an incremental result is unfinished.
-- `complete`: data is fully satisfied.
+Since 3.13.0, `useSuspenseFragment` is a drop-in replacement for `useFragment` that suspends until the requested fragment data is complete. Put the loading state in a Suspense boundary.
 
-During `@defer` streaming, `loading` remains `true` and `networkStatus` is
-`NetworkStatus.streaming`.
+### Query lifecycle callbacks deprecated
 
-```ts
-const { data, dataState } = useQuery(QUERY, { returnPartialData: true });
-if (dataState === "complete") renderCompleteResult(data);
-```
+Since 3.13.0, `onCompleted` and `onError` on both `useQuery` and `useLazyQuery` are deprecated. Do not build new lifecycle logic around them, and plan to migrate existing uses.
 
-### Suspense fragments (`3.13.0`)
+### Type-safe previous data in `ObservableQuery.updateQuery`
 
-`useSuspenseFragment` is a drop-in `useFragment` replacement that suspends until
-the requested fragment is complete, leaving its Suspense boundary responsible for
-loading UI.
-
-For multipart queries such as `@defer`, query deduplication remains active until
-the final response chunk, not merely the first result.
-
-## Incremental delivery
-
-### Opt-in handlers (`client-v4-migration`)
-
-Client 4 requires `incrementalHandler`; it initially supports the 2022-08-24
-protocol through `Defer20220824Handler`. Enable custom-link incremental result
-types and GraphQL Code Generator masking types with `TypeOverrides`.
+Since 3.13.0, the first previous-data callback argument is deprecated because it may be partial despite its complete-data type. Read `previousData` and `complete` from the second argument; return `undefined` to skip an update.
 
 ```ts
-import { Defer20220824Handler } from "@apollo/client/incremental";
-import { GraphQLCodegenDataMasking } from "@apollo/client/masking";
-
-const client = new ApolloClient({
-  cache,
-  link,
-  incrementalHandler: new Defer20220824Handler(),
-});
-
-declare module "@apollo/client" {
-  interface TypeOverrides
-    extends Defer20220824Handler.TypeOverrides,
-      GraphQLCodegenDataMasking.TypeOverrides {}
-}
+observableQuery.updateQuery(
+  (_unsafe, { previousData, complete }) => complete ? previousData : undefined
+);
 ```
 
-### GraphQL.js alpha 9 (`4.1.0`)
+### `useMutation` completion errors reject
 
-Use `GraphQL17Alpha9Handler` only for servers that implement the GraphQL.js 17
-alpha 9 incremental format. Older formats still require their matching handler.
+Since 3.13.0, an exception from a `useMutation` `onCompleted` callback rejects the mutation promise and is not passed to `onError`. Catch it from the returned promise.
+
+### `useMutation.ignoreResults` deprecated
+
+Since 3.13.0, `ignoreResults` is deprecated and can cause extra renders after removal. For a mutation whose result should not synchronize into component state, use `useApolloClient()` and call `client.mutate()`.
+
+### Multipart query deduplication lasts through completion
+
+Since 3.13.0, deduplication of multipart queries such as `@defer` remains active until the final response chunk, not merely the first chunk.
+
+### Correct `subscribeToMore` callback variable type
+
+Since 3.13.0, `variables` in the second argument of a `subscribeToMore` callback is typed as the parent query's variables, not the subscription's variables.
+
+### Watched-query lifecycle and refetch semantics changed
+
+In the Client 4 migration, `notifyOnNetworkStatusChange` defaults to `true`, and an uncached `ObservableQuery` emits a loading result immediately. Queries are tracked only while subscribed: `"active"` and `"all"` refetches exclude unobserved queries, named standby queries are refetched, and from 4.0.11 a `skipToken` query is excluded until first executed with variables.
+
+### Error policies govern every error source
+
+In the Client 4 migration, network errors obey `errorPolicy`: `none` rejects, `all` resolves with `result.error`, and `ignore` resolves without the error. `ObservableQuery` reports failures in `next` results rather than terminating through `error`; subscription GraphQL errors do likewise, although an unrecoverable network failure can terminate a subscription.
+
+### Result completeness and streaming state
+
+Since 4.0.0, `ObservableQuery` and data-returning React hooks expose `dataState`: `empty` means `data` is `undefined`, `partial` is possible with `returnPartialData`, `streaming` means `@defer` delivery is unfinished, and `complete` means fully satisfied. During streaming, `loading` stays `true` and `networkStatus` is `NetworkStatus.streaming`.
+
+### `fetchMore` options no longer inherit uniformly
+
+Since 4.0.0, `fetchMore` has its own default `errorPolicy: "none"`. Without a replacement query, variables are shallow-merged; with one, supplied variables are used as-is. It throws for a `cache-only` query.
+
+### Mutation contexts can derive from hook defaults
+
+Since 4.1.0, the `context` passed to the mutate function returned by `useMutation` may be a callback receiving the hook-level context, so per-execution fields can extend rather than replace defaults.
 
 ```ts
-const client = new ApolloClient({
-  cache,
-  link,
-  incrementalHandler: new GraphQL17Alpha9Handler(),
-});
+await mutate({ context: base => ({ ...base, urgent: true }) });
 ```
 
-`Defer20220824Handler` and `GraphQL17Alpha2Handler` support `@stream`. Encountering
-`@stream` without an incremental handler throws. The older defer protocol lacks
-stream metadata and truncates the existing array on the first chunk; the
-stream-aware default merge truncates on the final chunk.
+## Fragments, cache writes, and local state
 
-## Fragment sources
+### Supertype field policies stay isolated
 
-`useFragment`, `useSuspenseFragment`, and `client.watchFragment` accept an array in
-`from` and return index-aligned data (`4.1.0`). Fragment watches accept
-`from: null`, producing `{ data: null, dataState: "complete", complete: true }`.
-`readFragment`, `watchFragment`, and `updateFragment` expose `from`.
+Since 3.14.0, a subtype's field-policy setup no longer overwrites or merges into field policies declared on a supertype.
+
+### Local state is an opt-in subsystem
+
+In the Client 4 migration, `@client` requires `new LocalState({ resolvers })` passed as `localState`. Resolver context is `{ requestContext, client, phase }`; ordinary resolution warns and converts `undefined` to `null`; non-scalar objects require `__typename`; thrown resolver errors become GraphQL errors; and `@export` requires a matching variable definition with non-null values for required variables.
+
+### Custom caches require fragment matching
+
+In the Client 4 migration, custom cache implementations must provide `fragmentMatches`. `InMemoryCache` already does; `LocalState` throws when a custom cache does not.
+
+### Fragment APIs accept richer sources
+
+Since 4.1.0, `useFragment`, `useSuspenseFragment`, and `client.watchFragment` accept an array in `from` and return an index-aligned data array. Fragment watches accept `from: null` and emit `{ data: null, dataState: "complete", complete: true }`. `readFragment`, `watchFragment`, and `updateFragment` expose `from`.
+
+### Cache writes carry extensions into merge functions
+
+Since 4.1.0, `cache.write`, `cache.writeQuery`, and `client.writeQuery` accept `extensions`; field-policy `merge` functions receive them. Extensions received from operations are also forwarded during cache writes.
+
+### Partial array reads preserve `undefined` entries
+
+Since 4.1.0, `InMemoryCache` preserves explicit `undefined` items returned by an array field's `read` function, allowing partial arrays to trigger a network fetch.
+
+### Custom caches coordinate `@client` resolution
+
+Since 4.1.0, a cache `read` for an `@client` field receives `existing: undefined`, so default parameters work. A custom `ApolloCache` may return `true` from `resolvesClientField`; `false` or no implementation makes `LocalState` warn and fall back to `null`.
+
+### Fully skipped queries return an empty object
+
+Since 4.1.0, a query whose every field is skipped returns `{}` rather than `null`; this also prevents `useSuspenseQuery` from suspending indefinitely.
+
+## Mocks and refetch events
+
+### Mock variables are matched in `request.variables`
+
+Since 4.0.0, `MockLink` removes `variableMatcher`. Set `request.variables` to a predicate to match multiple variable sets.
 
 ```ts
-const { data } = useFragment({
-  fragment: ItemFragment,
-  from: [firstItem, secondItem],
-});
+{ request: { query: QUERY, variables: vars => vars.id !== undefined }, result }
 ```
 
-`preloadQuery.toPromise(queryRef)` is the supported promise conversion; the
-`queryRef.toPromise()` method was deprecated in `3.14.0` and removed in Client 4.
+### Event-driven query refetching
 
-From `4.2.0`, preloaded query references incorporate declared watch-query defaults.
-For example, a declared `errorPolicy: "all"` yields
-`PreloadedQueryRef<TData, TVariables, "complete" | "streaming" | "empty">`.
-
-## Cache reads, writes, and policies
-
-### Extensions in merge functions (`4.1.0`)
-
-`cache.write`, `cache.writeQuery`, and `client.writeQuery` accept `extensions`.
-These values and extensions received from GraphQL operations are forwarded to
-field-policy `merge` options.
-
-```ts
-client.writeQuery({
-  query: ITEMS_QUERY,
-  data: { items },
-  extensions: { source: "prefetch" },
-});
-```
-
-### Partial arrays
-
-`InMemoryCache` preserves `undefined` items returned by an array field's `read`
-function. The array can therefore represent partial data and trigger a network
-fetch for the complete list.
-
-### Supertype policy isolation (`3.14.0`)
-
-Subtype field policies no longer overwrite or merge into policies declared on a
-supertype. Configuring a subtype cannot mutate the inherited policy definition.
-
-### Local fields and custom caches
-
-Using `@client` in Client 4 requires `new LocalState({ resolvers })` in the
-client's `localState` option. Resolver context is
-`{ requestContext, client, phase }`. Normal resolution converts `undefined` to
-`null` with a warning; non-scalar objects need `__typename`; thrown resolver
-failures become GraphQL errors; and `@export` needs a matching variable definition
-with values for required variables.
-
-A custom cache must implement `fragmentMatches`; `InMemoryCache` already does.
-Without it, `LocalState` throws.
-
-When a cache read handles an `@client` field, `existing` is `undefined` rather than
-forced `null`, so default parameters work (`4.1.0`). A custom `ApolloCache` can
-return `true` from `resolvesClientField` to tell `LocalState` it supplies a field.
-Returning `false` or omitting the method produces a warning and `null`.
-
-### Fully skipped operations (`4.1.0`)
-
-When every field is skipped, query data is `{}` rather than `null`. This also
-prevents `useSuspenseQuery` from suspending indefinitely.
-
-## Mutations and typed defaults
-
-### Context callback (`4.1.0`)
-
-The mutate function returned by `useMutation` accepts `context` as a callback. It
-receives hook-level context so call-specific values can extend defaults.
-
-```ts
-const [mutate] = useMutation(SAVE_ITEM, {
-  context: { trace: true },
-});
-
-await mutate({
-  context: hookContext => ({ ...hookContext, urgent: true }),
-});
-```
-
-### Signature style (`4.2.0`)
-
-Set `TypeOverrides.signatureStyle` to `"modern"` for document-inferred,
-default-aware signatures without declaring a required default option. `"classic"`
-temporarily keeps generic-taking signatures, but declared defaults then stop
-affecting result types.
-
-```ts
-declare module "@apollo/client" {
-  interface TypeOverrides {
-    signatureStyle: "modern";
-  }
-}
-```
-
-For multiple clients with conflicting defaults, declare a narrow union under
-`DeclareDefaultOptions.WatchQuery`. Optional `errorPolicy` also includes runtime
-default `"none"` in inferred results.
-
-```ts
-declare module "@apollo/client" {
-  namespace ApolloClient.DeclareDefaultOptions {
-    interface WatchQuery {
-      errorPolicy?: "all" | "ignore";
-    }
-  }
-}
-```
-
-`client.query` data is non-nullable when effective `errorPolicy` is `"none"`.
-`ApolloClient.MutateResult<TData, TErrorPolicy>` maps:
-
-- `"none"` to `data: TData` and no error.
-- `"all"` to possibly undefined data and optional error.
-- `"ignore"` to possibly undefined data and no error.
-
-`client.mutate` and `useMutation` use the declared mutation default unless the
-call overrides `errorPolicy`; `useMutation.Result.error` is `undefined` for
-`"ignore"`.
-
-## Event-driven refetching (`4.2.0`)
-
-Automatic focus and connectivity refetching is opt-in through
-`RefetchEventManager`. Built-in `windowFocusSource` and `onlineSource` events
-refetch active queries by default.
+Since 4.2.0, automatic event refetching is opt-in through `RefetchEventManager`. Built-in `windowFocusSource` and `onlineSource` events refetch active queries by default. `refetchOn` accepts a boolean, an event map, or a predicate receiving the source and payload; local maps merge with `defaultOptions.watchQuery.refetchOn`, so omitted local events retain the default behavior.
 
 ```ts
 const manager = new RefetchEventManager({
-  sources: {
-    windowFocus: windowFocusSource,
-    online: onlineSource,
-  },
+  sources: { windowFocus: windowFocusSource, online: onlineSource },
 });
-
-const client = new ApolloClient({
-  cache,
-  link,
-  refetchEventManager: manager,
-  defaultOptions: { watchQuery: { refetchOn: false } },
-});
-
-useQuery(DASHBOARD_QUERY, {
-  refetchOn: { windowFocus: true },
-});
+const client = new ApolloClient({ cache, link, refetchEventManager: manager });
+useQuery(QUERY, { refetchOn: { windowFocus: true } });
 ```
 
-`refetchOn` accepts a boolean, a per-event map, or a predicate receiving source and
-payload. Per-query maps merge with `defaultOptions.watchQuery.refetchOn`; omitted
-events continue to use the default boolean or predicate.
+### Custom refetch events and handlers
 
-Augment `RefetchEvents` to define custom payloads, supply an Observable source, or
-register `true` for an imperative-only event and call `emit`.
+Since 4.2.0, augment `RefetchEvents` for typed custom payloads and provide an Observable source, or register `true` and call `emit()` imperatively. Per-event `handlers` may replace the active-query refetch and receive `matchesRefetchOn`; `defaultHandler` or `setDefaultEventHandler` changes the fallback. A handler returns `RefetchQueriesResult` or `void` to skip refetching.
 
-```ts
-declare module "@apollo/client" {
-  interface RefetchEvents {
-    userTriggered: void;
-  }
-}
+### Preloaded query refs honor watch-query defaults
 
-const events = new RefetchEventManager({
-  sources: { userTriggered: true },
-});
-events.emit("userTriggered");
-```
-
-Per-event `handlers` can replace normal active-query refetching and receive
-`matchesRefetchOn` for applying query settings. `defaultHandler` or
-`setDefaultEventHandler` changes the fallback. A handler returns
-`RefetchQueriesResult`, or `void` to skip.
-
-## Awareness and static rendering (`4.1.0`)
-
-Enhanced client awareness can travel through headers as well as request extensions.
-
-`prerenderStatic` returns the value from its `renderFunction` and reports `aborted`
-correctly, supporting React 19.2 `resumeAndPrerender` flows.
+Since 4.2.0, `preloadQuery` incorporates declared `DeclareDefaultOptions.WatchQuery` settings. For example, an `errorPolicy: "all"` declaration produces `PreloadedQueryRef<TData, TVariables, "complete" | "streaming" | "empty">`.

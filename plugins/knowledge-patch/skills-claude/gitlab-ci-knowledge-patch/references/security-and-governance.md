@@ -1,51 +1,63 @@
 # Security, Secrets, and Governance
 
-## Store pipeline secrets
+## Limit CI job tokens to project resources
 
-GitLab Secrets Manager enters open beta in 19.0 for Premium and Ultimate
-customers on GitLab.com and GitLab Self-Managed. Project and group Owners can
-store, retrieve, and reference secrets scoped to their project or group.
+Since 18.0, projects on GitLab.com and GitLab Self-Managed can use beta fine-grained
+job-token permissions to limit a CI job token to specific project resources instead
+of inheriting the triggering user's full permissions. The beta is available in all
+tiers. Grant only the resources the job actually needs and retain an explicit
+review step while adopting the beta.
 
-Pipeline access is restricted to jobs that explicitly request a secret. Keep
-that request boundary visible in pipeline review rather than treating stored
-secrets as globally available variables.
+## Store pipeline secrets in GitLab Secrets Manager
 
-The service is governed by the beta support policy and might not be ready for
-production workloads. Evaluate that status before relying on it for critical
-secrets.
+Since 19.0, GitLab Secrets Manager is in open beta for Premium and Ultimate
+customers on GitLab.com and GitLab Self-Managed. Project and group Owners can store,
+retrieve, and reference secrets scoped to their project or group. Limit access to
+pipeline jobs that explicitly request each secret. The service remains under the
+beta support policy and may not be ready for production-critical secrets.
 
-## Enforce scheduled pipelines from a policy project
+## Enforce centrally scheduled pipeline policies
 
-Scheduled pipeline execution policies in 19.2 let a security policy project
-define one schedule and enforce it across every project in scope. They do not
-require a matching change to each project's `.gitlab-ci.yml`.
+Since 19.2, scheduled pipeline execution policies can define a schedule once in a
+security policy project and enforce it across every project in scope without
+changing each project's `.gitlab-ci.yml`.
 
-Each policy creates a separate pipeline independently of commit activity.
-Configuration can cover:
+Each policy launches a separate pipeline on a daily, weekly, or monthly cadence,
+independent of commit activity. Configure the time zone, distribute execution within
+the allowed window, and select the target branch centrally.
 
-- daily, weekly, or monthly cadence;
-- time zone;
-- distribution within an execution window; and
-- target branch.
+## Automatically remediate vulnerable dependencies
 
-Use the central policy when the same compliance or security workload must run
-consistently across many projects.
+Since 19.2, dependency scanning auto-remediation is available in beta on GitLab.com,
+GitLab Self-Managed, and GitLab Dedicated. When enabled, it monitors projects and
+opens merge requests that update vulnerable dependencies to safe patch or minor
+versions by default.
 
-## Remediate vulnerable dependencies
+The credit-consuming Agentic Breaking Change Resolution option also permits major
+upgrades. It can analyze a failed update pipeline, the dependency changelog, and
+code usage; commit compatibility fixes to the same merge request; and rerun the
+pipeline until it passes. Review generated major-version changes and credit policy
+before enabling that path.
 
-Dependency scanning auto-remediation is beta in 19.2 on GitLab.com, GitLab
-Self-Managed, and GitLab Dedicated. Once enabled, it monitors projects and
-opens merge requests that move vulnerable dependencies to safe versions.
+## Apply the 19.2.1 security patch
 
-The default scope is patch and minor upgrades. Enabling the
-credit-consuming Agentic Breaking Change Resolution also allows major
-upgrades. For a failed update pipeline, it can:
+GitLab 19.2.1 fixes 13 vulnerabilities, including three high-severity issues.
+Install it immediately on affected Self-Managed 19.2 systems. The equivalent fixed
+releases are `19.1.3` and `19.0.5`. GitLab.com is already patched, and GitLab
+Dedicated customers do not need to act.
 
-1. analyze the dependency changelog;
-2. inspect how the project uses the dependency;
-3. commit compatibility fixes to the same merge request; and
-4. rerun the pipeline until it passes.
+## Assess affected CI/CD and authorization paths
 
-Keep the major-upgrade behavior distinct from default auto-remediation when
-estimating risk, review effort, and credit use.
+The high-severity issues fixed in 19.2.1 could allow:
 
+- A Developer to retrieve unauthorized information through Workhorse.
+- An authenticated user to change another user's CI/CD configuration through
+  pipeline schedule inputs.
+- An unauthenticated user to cause denial of service through merge-request
+  discussions.
+
+The patch also closes a protected-branch approval bypass, unauthorized pipeline
+test-report access, cross-project information disclosure in Duo Code Review, and a
+Duo Workflows bypass of administrator tool-governance policies. Include these paths
+in exposure review and incident scoping, even if the three high-severity cases do
+not match the deployment's initial threat model.

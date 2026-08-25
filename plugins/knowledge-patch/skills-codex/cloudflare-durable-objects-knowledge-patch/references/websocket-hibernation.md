@@ -1,10 +1,12 @@
 # WebSocket hibernation
 
-## Select the hibernation API
+## Accept sockets through the Durable Object state
 
-Accept the server side of an inbound WebSocket with
-`ctx.acceptWebSocket()` and handle wake-up events through Durable Object class
-methods such as `webSocketMessage()` and `webSocketClose()`.
+For hibernation, accept the server endpoint with `ctx.acceptWebSocket()` and
+handle wake-up events in Durable Object methods such as `webSocketMessage()` and
+`webSocketClose()`. The standard `ws.accept()` path does not enable hibernation.
+Only inbound WebSockets served by the object can hibernate; outbound WebSockets
+cannot.
 
 ```ts
 export class Room extends DurableObject {
@@ -14,49 +16,37 @@ export class Room extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  webSocketMessage(
-    ws: WebSocket,
-    message: string | ArrayBuffer,
-  ) {
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     ws.send(message);
   }
 }
 ```
 
-The standard `ws.accept()` path does not enable hibernation. Only inbound
-WebSockets served by the Durable Object can hibernate; outbound WebSockets
-cannot.
+## Serialized attachments
 
-## Persist bounded per-socket state
-
-`serializeAttachment(value)` saves a structured-clone snapshot with the socket
-across hibernation. The limit is 16,384 bytes. Mutating the original value does
-not update the snapshot; call the method again.
-
-`deserializeAttachment()` returns the latest snapshot or `null`. The
-attachment is lost when either side closes, so larger or longer-lived state
-belongs in Durable Object storage.
+`serializeAttachment(value)` stores a structured-clone snapshot with a socket
+across hibernation. The snapshot is limited to 16,384 bytes; subsequent changes
+to the original value are not saved unless `serializeAttachment()` is called
+again. `deserializeAttachment()` returns the latest snapshot or `null`.
 
 ```ts
 server.serializeAttachment({ userId });
 
-webSocketMessage(
-  ws: WebSocket,
-  message: string | ArrayBuffer,
-) {
-  const state = ws.deserializeAttachment() as {
-    userId: string;
-  };
+webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+  const state = ws.deserializeAttachment() as { userId: string };
   ws.send(`${state.userId}: ${message}`);
 }
 ```
 
-## Tag accepted sockets
+The attachment disappears when either endpoint closes. Store larger or
+longer-lived state in Durable Object storage.
 
-`acceptWebSocket()` may associate at most 10 tags of at most 256 characters
-each with a socket. `getWebSockets(tag)` filters attached sockets, and
-`getTags(ws)` retrieves a socket's tags. `getTags()` throws if that socket was
-not accepted by the Durable Object.
+## Tags
+
+`acceptWebSocket()` can assign at most 10 tags, each no longer than 256
+characters. `getWebSockets(tag)` filters attached sockets by one tag.
+`getTags(ws)` returns a socket's tags and throws if that socket was not accepted
+by this Durable Object.
 
 ```ts
 this.ctx.acceptWebSocket(server, ["room:42"]);
@@ -64,11 +54,13 @@ const roomSockets = this.ctx.getWebSockets("room:42");
 const tags = this.ctx.getTags(server);
 ```
 
-## Handle keepalives without waking the object
+## Wake-free auto-responses
 
-`setWebSocketAutoResponse()` installs one request/response pair for the
-runtime to handle without waking the object. Each string is limited to 2,048
-characters. Omitting the pair clears the configuration.
+`setWebSocketAutoResponse()` installs a single request/response pair that the
+runtime handles without waking the object. Both strings are limited to 2,048
+characters. Omitting the pair clears the configured response, while
+`getWebSocketAutoResponseTimestamp(ws)` continues to report the time of that
+socket's last automatic response.
 
 ```ts
 this.ctx.setWebSocketAutoResponse(
@@ -76,24 +68,21 @@ this.ctx.setWebSocketAutoResponse(
 );
 ```
 
-`getWebSocketAutoResponseTimestamp(ws)` still reports the most recent
-auto-response time for that socket after the pair is cleared.
-
-## Bound event execution time
+## Event runtime limit
 
 `setHibernatableWebSocketEventTimeout(milliseconds)` limits a hibernatable
-event to at most 604,800,000 ms, or seven days. Passing `0` or omitting the
-value clears the limit. The getter returns the current millisecond value or
+event to at most 604,800,000 ms, or seven days. Pass `0` or omit the value to
+clear the limit. The getter returns the active number of milliseconds or
 `null`.
 
 ```ts
 this.ctx.setHibernatableWebSocketEventTimeout(30_000);
 ```
 
-## Account for the closing handshake
+## Close-handshake visibility
 
-A server-closed socket may remain in `CLOSING` and continue to appear in
-`getWebSockets()` until its peer completes the close handshake. With
+A server-closed socket can remain in `CLOSING` and continue appearing in
+`getWebSockets()` until its peer completes the closing handshake. With
 compatibility date `2026-04-07` or later, the default
-`web_socket_auto_reply_to_close` flag automatically completes the handshake,
-so sockets reach `CLOSED` sooner.
+`web_socket_auto_reply_to_close` flag automatically completes the handshake so
+the socket reaches `CLOSED` sooner.

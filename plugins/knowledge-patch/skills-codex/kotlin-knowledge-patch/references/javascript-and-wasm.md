@@ -1,140 +1,65 @@
 # JavaScript and Wasm
 
-## Gradle task and provider migrations
+## Build layout and Gradle APIs
 
-### Environment specifications
+### Separate Wasm infrastructure
 
-Plugin code should replace direct mutable extension assignments with `*EnvSpec` Gradle properties, for example:
+Wasm files and dependencies live under `build/wasm`, not `build/js`. Use `kotlinWasmNpmInstall`, `wasmRootPackageJson`, and `Wasm*` plugin/environment types instead of JS-only `kotlinNpmInstall` and `rootPackageJson`. Apply custom Binaryen configuration per project or module, not only at the root.
 
-```kotlin
-the<NodeJsEnvSpec>().version.set("2.0.0")
-```
+Replace direct mutable runtime extension assignments in plugins with `*EnvSpec` properties, for example `the<NodeJsEnvSpec>().version.set("2.0.0")`; ordinary build scripts are adapted automatically. D8 and Binaryen types must come from Wasm packages, `NodeJsExec.create()` becomes `register()`, and removed `ExperimentalWasmDsl`/`ExperimentalDceDsl` and npm/Yarn internal APIs may no longer be used.
 
-Ordinary build scripts are adapted automatically.
+### Task-name migrations
 
-Deprecated npm/Yarn internals, JavaScript utility APIs, and the old `ExperimentalWasmDsl` and `ExperimentalDceDsl` annotations produce errors. D8 and Binaryen types must come from the Wasm package, `NodeJsExec.create()` becomes `register()`, and compiler configuration must use `compilerOptions` rather than `kotlinOptions` properties.
+Replace old run/webpack aliases:
 
-### Removed task aliases
+- `wasmJsRun` and `wasmJsBrowserRun` → `wasmJsBrowserDevelopmentRun`
+- `wasmJsNodeRun` → `wasmJsNodeDevelopmentRun`
+- `wasmJsBrowserWebpack` → `wasmJsBrowserProductionWebpack` or `wasmJsBrowserDistribution`
+- use corresponding `jsBrowserDevelopmentRun`, `jsNodeDevelopmentRun`, `jsBrowserProductionWebpack`, and `jsBrowserDistribution` names for JS
 
-Replace the removed Wasm aliases as follows:
+Every Wasm `*DevRun` task now serves Kotlin sources automatically. Remove custom `devServer.static` source serving, and never expose these development tasks as production/cloud hosting because they publish source.
 
-| Removed alias | Replacement |
-| --- | --- |
-| `wasmJsRun`, `wasmJsBrowserRun` | `wasmJsBrowserDevelopmentRun` |
-| `wasmJsNodeRun` | `wasmJsNodeDevelopmentRun` |
-| `wasmJsBrowserWebpack` | `wasmJsBrowserProductionWebpack` or `wasmJsBrowserDistribution` |
+### NPM layout and publication
 
-The JS equivalents are `jsBrowserDevelopmentRun`, `jsNodeDevelopmentRun`, `jsBrowserProductionWebpack`, and `jsBrowserDistribution`.
-
-## Separate Wasm build infrastructure
-
-Wasm files and dependencies move from `build/js` to `build/wasm`. Use `kotlinWasmNpmInstall` and `wasmRootPackageJson` instead of the JS-only `kotlinNpmInstall` and `rootPackageJson`, plus the new `Wasm*` plugin and environment-spec types. Apply custom Binaryen configuration per project or module rather than only at the root.
-
-For `wasmJs`, Kotlin tooling packages live under the Kotlin user home while user packages remain in `build/wasm/node_modules`; project lockfiles contain only user dependencies. KGP creates `yarn.lock` only when the project has npm dependencies. Kotlin/JS retains the combined layout in the corresponding 2.2 tooling generation.
+For `wasmJs`, Kotlin tooling packages live under the Kotlin user home and user dependencies in `build/wasm/node_modules`; project lockfiles contain only user dependencies. KGP creates `yarn.lock` only when npm dependencies exist. Kotlin/JS retained the combined layout in 2.2.20.
 
 The `org.jetbrains.kotlin.npm-publish` Gradle plugin publishes Kotlin/JS and Kotlin/Wasm artifacts to NPM.
 
-## Debugging and development servers
+Kotlin 2.4.10 makes `kotlinUpgradeYarnLock` regenerate the lock even when `kotlinNpmInstall` is up-to-date, preventing a following `kotlinStoreYarnLock` failure.
 
-Development Wasm builds enable browser custom formatters by default, but the formatters must also be enabled in browser developer tools. Production builds still need `-Xwasm-debugger-custom-formatters`.
+## Debugging, tests, and execution
 
-Pass `-Xwasm-generate-dwarf` to embed DWARF for standalone Wasm VMs and debuggers that support it.
+Development Wasm builds enable browser custom formatters by default, though browser developer tools must also enable them. Production builds still need `-Xwasm-debugger-custom-formatters`. Use `-Xwasm-generate-dwarf` to embed DWARF for compatible standalone runtimes and debuggers.
 
-KGP serves Kotlin sources automatically for every Wasm `*DevRun` task. Remove old custom `devServer.static` setup to avoid conflicts. These tasks expose source files and must not be hosted in cloud or production environments.
+Kotlin 2.1.21 restores custom environment variables on `KotlinJsTest` tasks and fixes the Wasm test startup error `export startUnitTests was not found` from 2.1.20.
 
-## Wasm runtime behavior
+Within Kotlin/JS `nodejs`, call `passCliArgumentsToMainFunction()` to strip the Node executable and script paths from `main` arguments, leaving only user CLI arguments.
 
-### Browser requirements
+The legacy JS backend's `KotlinJsDce`, `dceTask`, and related compiler-option DSLs are removed. JS IR performs dead-code elimination and `@JsExport` retains public exports.
 
-Kotlin/Wasm browser applications require both WebAssembly garbage collection and legacy exception-handling proposal support. This remains a deployment constraint even where baseline WebAssembly is available.
+## JavaScript interop
 
-The `wasm-js` target is Beta, with a stronger stability commitment than its former Experimental status.
+### Plain objects, modules, and exports
 
-### Exception handling
+`@JsPlainObject` copying is a companion operation so inheritance works: use `User.copy(user, age = 35)`, not `user.copy(...)`.
 
-On browsers with `WebAssembly.JSTag`—Chrome 115+, Firefox 129+, or Safari 18.4+—JavaScript errors retain details through Wasm and Kotlin exceptions reach JavaScript as catchable errors instead of opaque `WebAssembly.Exception` wrappers. Older browsers retain the previous behavior.
+Files annotated `@file:JsModule` may contain type aliases. Multiplatform `expect` declarations may use `@JsExport` when the JS `actual` is also annotated and all types are exportable. Exported `Promise<Unit>` maps to TypeScript `Promise<void>`.
 
-Kotlin 2.2.21 fixes Wasm exception handling on Safari 18.2 and 18.3 and in JavaScriptCore, where JavaScript exceptions could fail while crossing the Wasm boundary.
+`@JsExport.Default` emits ES-module `export default` for a class, object, function, or property; other module systems treat it as ordinary `@JsExport`. `@JsQualifier` may annotate an individual external function or class instead of an entire file.
 
-For WASI, `wasmWasi` emits the current WebAssembly exception-handling proposal by default for compatibility with modern standalone runtimes. `wasmJs` retains legacy handling unless `-Xwasm-use-new-exception-proposal` is supplied.
+### Companion objects and suspend APIs
 
-### Module initialization
+Exported interface companions use `Foo.Companion.bar()` consistently across module systems instead of old module-specific forms such as `Foo.getInstance().bar()`. Collection factories stay direct, such as `KtList.fromJsArray(...)`. `@JsStatic` in an exported interface companion exposes `Foo.bar()` directly.
 
-Kotlin/Wasm performs module initialization during Wasm module instantiation rather than through a later external `_initialize()` call. Code using `@EagerInitialization` can run before module initialization completes and fail, so avoid the annotation unless required.
+With `-Xenable-suspend-function-exporting`, exported suspend functions and types map to JavaScript async/Promise APIs, including async overrides.
 
-### Runtime reflection names
+### Long values and arrays
 
-The earlier behavior rejects `KClass.qualifiedName` rather than silently returning an empty string. Add `-Xwasm-kclass-fqn` to store names and permit the call, accepting a binary-size increase.
+`-Xes-long-as-bigint` maps Kotlin `Long` to JavaScript `BigInt` for ES2020. Exporting a declaration containing `Long` additionally needs `-XXLanguage:+JsAllowLongInExportedDeclarations`. With the flag enabled, `LongArray` maps to `BigInt64Array` rather than `Array<bigint>`.
 
-Qualified names are now stored and available by default on Wasm targets, without `-Xwasm-kclass-fqn`, improving compatibility with reflection code ported from the JVM.
+### TypeScript implementations of Kotlin interfaces
 
-## JavaScript export and module interop
-
-### Expanded exports
-
-Files marked `@file:JsModule` may contain type aliases. `@JsExport` is allowed on multiplatform `expect` declarations when the JS `actual` is also annotated and all types are exportable. Exported `Promise<Unit>` results map to TypeScript `Promise<void>`.
-
-With `-Xenable-suspend-function-exporting`, `@JsExport` exposes suspend functions and types containing them as JavaScript async/`Promise` APIs, including async overrides.
-
-`@JsExport.Default` exports a class, object, function, or property as an ES-module `export default`; in other module systems it behaves like ordinary `@JsExport`.
-
-### Companions and static members
-
-Exported interface companions are accessed as `Foo.Companion.bar()` in every module system, replacing module-specific `Foo.bar()` or `Foo.getInstance().bar()` forms. Exported collection factories remain directly available, for example `KtList.fromJsArray(...)`.
-
-An exported interface companion may mark members with `@JsStatic`, exposing `Foo.bar()` directly just as class companions do.
-
-Kotlin 2.2.21 fixes ES-module exports for interfaces with companions. Kotlin 2.3.21 fixes incorrect TypeScript for `@JsStatic` suspend functions in class companions.
-
-### Qualifiers
-
-`@JsQualifier` can annotate an individual external function or class rather than forcing all qualified externals into a file-level annotation.
-
-```kotlin
-@JsQualifier("jsPackage")
-private external fun jsFun()
-```
-
-### Plain objects
-
-`@JsPlainObject` copy support moved from an instance method to the interface companion so it works with inheritance:
-
-```kotlin
-val changed = User.copy(user, age = 35)
-```
-
-Do not call `user.copy(age = 35)` for this API.
-
-## JavaScript numeric interop
-
-`-Xes-long-as-bigint` maps Kotlin `Long` to JavaScript `BigInt` for ES2020 output. Exported declarations containing `Long` additionally require `-XXLanguage:+JsAllowLongInExportedDeclarations`.
-
-With the flag enabled, Kotlin/JS represents `LongArray` with `BigInt64Array` instead of `Array<bigint>`, allowing direct use with JavaScript typed-array APIs.
-
-Kotlin 2.2.21 removes an accidental standard-library dependency on an ES2020-compatible engine caused by a `BigInt` type literal.
-
-## JavaScript objects and TypeScript implementations
-
-### Callable JavaScript objects on Wasm
-
-On `wasmJs`, `@nativeInvoke` marks an `operator fun invoke` member of an external class or interface so Kotlin calls compile to direct calls of the JavaScript object. This Experimental bridge emits a compiler warning and may change or be removed.
-
-```kotlin
-import kotlin.js.nativeInvoke
-
-@OptIn(ExperimentalWasmJsInterop::class)
-external class JsAction {
-    @nativeInvoke
-    operator fun invoke(data: String)
-}
-
-val action = JsAction()
-action("Run task")
-```
-
-### Implementing Kotlin interfaces in TypeScript
-
-With `-Xenable-implementing-interfaces-from-typescript` and generated TypeScript definitions, external implementations identify themselves with the exported interface symbol and can reuse Kotlin defaults through `Interface.DefaultImpls`.
+With generated definitions and `-Xenable-implementing-interfaces-from-typescript`, JavaScript/TypeScript implementations identify themselves through the exported interface symbol and may call Kotlin defaults through `Interface.DefaultImpls`.
 
 ```kotlin
 js {
@@ -145,41 +70,48 @@ js {
 }
 ```
 
-```typescript
-class JsonProcessor implements DataProcessor {
-  readonly [DataProcessor.Symbol] = true;
-  async process(): Promise<string> { return "processed"; }
+### Reflection and transpilation
+
+Kotlin/JS provides experimental `KClass.isInterface` under `ExperimentalStdlibApi`.
+
+Kotlin/JS may delegate transpilation to experimental SWC while the compiler still targets up to ES2015. Enable `kotlin.js.delegated.transpilation=true` in `gradle.properties`.
+
+## Wasm interop and runtime
+
+### Browser requirements and exception behavior
+
+Kotlin/Wasm browser applications require WebAssembly garbage collection and legacy exception handling. On browsers with `WebAssembly.JSTag`—Chrome 115+, Firefox 129+, or Safari 18.4+ in the source guidance—JavaScript errors retain details across Wasm and Kotlin exceptions are catchable JavaScript errors; older browsers retain opaque wrapper behavior.
+
+Kotlin 2.2.21 repairs exception crossings on Safari 18.2/18.3 and JavaScriptCore. Older exception support can expose opaque `WebAssembly.Exception` wrappers. For `wasmWasi`, Kotlin 2.3 emits the current WebAssembly exception proposal by default; `wasmJs` retains legacy handling unless given `-Xwasm-use-new-exception-proposal`.
+
+The `wasm-js` target is Beta. The standard library supplies DOM and Fetch declarations; declare absent/custom browser APIs through ordinary JavaScript interop.
+
+### Qualified class names and initialization
+
+Kotlin 2.2 Wasm rejects `KClass.qualifiedName` unless `-Xwasm-kclass-fqn` stores names at a binary-size cost. Kotlin 2.3 enables qualified names by default.
+
+Wasm module initialization now runs during instantiation rather than a later `_initialize()` call. `@EagerInitialization` can execute too early; avoid it unless required.
+
+### Callable JavaScript objects
+
+On `wasmJs`, experimental `@nativeInvoke` on `operator fun invoke` in an external class/interface compiles a Kotlin call into a direct call of the JavaScript object. It currently emits a warning and may change.
+
+```kotlin
+@OptIn(ExperimentalWasmJsInterop::class)
+external class JsAction {
+    @nativeInvoke
+    operator fun invoke(data: String)
 }
 ```
 
-## Browser and Node APIs
+## Patch-level JS and Wasm repairs
 
-The Kotlin/Wasm standard library supplies browser declarations including DOM and Fetch APIs, so applications need not recreate those externals. Declare missing or custom browser APIs with the same JavaScript interop facilities used to expose Kotlin code to JavaScript.
+- Kotlin 2.2.10 repairs npm cache entries from release candidates and Node tests unable to load Mocha.
+- Kotlin 2.2.21 fixes ES-module interface-companion exports and removes an accidental ES2020 engine requirement caused by a `BigInt` literal.
+- Kotlin 2.3.21 supports compiler-plugin-generated top-level declarations during incremental JS compilation and fixes false exportability warnings, missing whole-program serializers, incorrect TypeScript for companion `@JsStatic` suspend functions, and bad standard-library source maps.
+- Kotlin 2.3.21 repairs incremental Wasm KLIB compilation.
+- Kotlin 2.4.10 repairs `multimodule-closed-world` incremental compilation omitting files from the output directory; upgrade instead of compensating for incomplete output.
 
-Calling `passCliArgumentsToMainFunction()` in a Kotlin/JS `nodejs` block removes the Node executable and script paths from the array passed to `main`, leaving only user CLI arguments:
+## Distribution fallback
 
-```kotlin
-kotlin { js { nodejs { passCliArgumentsToMainFunction() } } }
-```
-
-Kotlin/JS provides Experimental `KClass.isInterface`; opt in with `ExperimentalStdlibApi`.
-
-## Transpilation
-
-Kotlin/JS can delegate transpilation to SWC while the compiler itself targets up to ES2015. Enable the Experimental path in `gradle.properties`:
-
-```properties
-kotlin.js.delegated.transpilation=true
-```
-
-## Patch-sensitive JS and Wasm fixes
-
-Kotlin 2.1.21 restores custom environment variables configured on `KotlinJsTest` tasks and fixes the `export startUnitTests was not found` failure that prevented Wasm tests after upgrading to 2.1.20.
-
-Kotlin 2.2.10 repairs unusable npm build-cache entries from release candidates and Node.js tests that could not load `mocha`.
-
-Kotlin 2.2.21 fixes Kotlin/JS interface companion exports and an accidental ES2020 engine requirement. It also repairs Wasm exceptions on Safari and JavaScriptCore as described above.
-
-Kotlin 2.3.21 supports top-level declarations generated by compiler plugins during incremental JS compilation. It fixes false exportability warnings in multi-module builds, missing serializers with `whole-program` IR granularity, incorrect TypeScript for `@JsStatic` suspend companion functions, and bad standard-library source-map data.
-
-The same patch fixes KLIB compilation failures when Kotlin/Wasm incremental compilation is enabled.
+When a browser may lack required Wasm features, Compose Multiplatform's `composeCompatibilityBrowserDistribution` packages JS and Wasm browser distributions together so the application can fall back to JS.

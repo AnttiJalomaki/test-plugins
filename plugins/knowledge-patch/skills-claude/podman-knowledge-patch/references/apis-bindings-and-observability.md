@@ -1,223 +1,129 @@
 # APIs, bindings, and observability
 
-Use this reference for remote transport, Libpod and Compat contracts, Go bindings, inspect/list
-fields, event consumers, and other machine-readable interfaces.
+## Remote connections and transport coverage
 
-## Remote connections and transport
+### TLS and connection URLs
 
-### TCP path prefixes
+Remote clients and `podman system service` support TLS and mutual TLS, including certificate-based
+client authentication (since 5.7.0). Register protected TCP endpoints with
+`podman system connection add`. TCP connection URLs retain and use an HTTP path prefix rather than
+discarding it (since 5.3.0).
 
-Since 5.3.0, `podman system connection add` preserves and uses HTTP path prefixes embedded in
-`tcp://` URLs.
+Commands that establish TLS connections can expose `--tls-details` for loading custom tuning from
+a `containers-tls-details.yaml(5)` profile (6.0.0).
 
-### TLS and mutual TLS
+On Windows, machine VMs expose a Unix socket on the host filesystem that forwards API traffic into
+the VM (since 5.3.0).
 
-Since 5.7.0, both the remote client and `podman system service` support TLS and mutually
-authenticated TLS, including certificate-based client authentication. Register a TLS-protected
-TCP endpoint with `podman system connection add`.
+### Features that differ between local and remote clients
 
-### TLS detail profiles
+The remote client supports volume import/export, `podman build --build-context`, artifact commands,
+and artifact REST bindings (since 5.6.0). Early `podman quadlet install`, `list`, `print`, and `rm`
+commands were deliberately local-only; do not infer remote coverage from local CLI availability.
 
-Since 6.0.0, commands that establish TLS connections can expose `--tls-details` for custom tuning
-read from a `containers-tls-details.yaml(5)` file.
+## API baselines and request handling
 
-### Remote command coverage
+### Compat baseline and empty JSON bodies
 
-Since 5.6.0, the remote client supports:
+The Docker-compatible API baseline is 1.44 (since 6.0.0). Endpoints that accept JSON also accept an
+empty request body rather than rejecting it.
 
-- `podman volume import` and `podman volume export`;
-- `podman build --build-context`;
-- artifact commands and corresponding REST bindings.
+### Build and Kubernetes request bodies
 
-Quadlet `install`, `list`, `print`, and `rm` were local-only when introduced in 5.6.0.
+- The Images Build API `Platform` query parameter accepts comma-separated platforms such as
+  `linux/amd64,linux/arm64`, enabling one multi-platform request (since 5.2.0).
+- Compat and Libpod Images Build accept `nohosts=true` to suppress `/etc/hosts` creation during a
+  build (since 5.4.0).
+- The Kubernetes YAML Play API accepts compressed context directories with content type
+  `application/x-tar` (since 5.3.0).
 
-## Go module and bindings
+### Local artifact, image, and pull endpoints
 
-### Module path
+`POST /libpod/local/artifacts/add` loads an artifact from the service host instead of receiving a
+tar archive (since 6.0.0). `POST /libpod/local/images` requires an absolute `path` query parameter.
 
-For 6.0.0, change imports from:
+The Libpod image Pull endpoint streams progress when `pullProgress=true` and returns an error HTTP
+status on pull failure rather than always returning 200.
 
-```go
-github.com/containers/podman/v5
-```
+## Container, image, and secret API contracts
 
-to:
+### Go binding source compatibility
 
-```go
-go.podman.io/podman/v6
-```
+In the REST Go bindings, `containers.Commit()` returns `types.IDResponse`, replacing the previous
+identically shaped type (since 5.5.0). `containers.ExecCreate()` also takes a
+`handlers.ExecCreateConfig` whose embedded struct differs from the earlier definition; update code
+that relied on assignment through the old embedding.
 
-### Container binding changes
+For the v6 Go module, import `go.podman.io/podman/v6`. The artifact remove binding no longer takes a
+redundant `nameOrID` argument (6.0.0).
 
-Since 5.5.0:
+### Compat create and exec inputs
 
-- `containers.Commit()` returns `types.IDResponse` instead of the previous identically shaped
-  type;
-- `containers.ExecCreate()` receives a `handlers.ExecCreateConfig` with a different embedded
-  struct, so assignments relying on the old promotion/embedding can fail.
+Compat Container Create accepts `HostConfig.CgroupnsMode` and honors `base_hosts_file` from
+`containers.conf` (since 5.6.0). Container creation also honors a volume `subpath` and the Libpod
+`OCIRuntime` field (6.0.0).
 
-### Artifact removal signature
+Compat and Libpod exec-session creation at `/containers/$CID/exec` honors `ConsoleSize`
+(5.8.6-6.1.0).
 
-Podman 6.0.0 removes the redundant `nameOrID` argument from `artifacts.Remove()`.
+### Compat response shape changes
 
-## Compatible API baseline
+- System Info adds `DefaultAddressPools`, and Ping reports `Builder-Version: 1` (since 5.6.0).
+- System DF removes `BuilderSize`; image lists always include `shared-size`, using `-1` when it was
+  not requested; image inspect omits `VirtualSize` at Docker API 1.44 and newer (since 5.6.0).
+- Forced container deletion removes only stopped containers, and container list/inspect status
+  strings are translated to Docker-compatible values (since 5.6.0).
+- Compat Image Inspect no longer returns `ContainerConfig`; read `Config`, matching Docker API 1.45
+  behavior (since 5.7.0).
+- Compat container-list entries include health-check data in `Health` and include `HostConfig`
+  (6.0.0).
+- Compat image Push ends with a JSON object containing the pushed tag, digest, and size (6.0.0).
 
-Since 6.0.0, the supported Docker-compatible API baseline is 1.44. Requests that take JSON accept
-an empty body instead of rejecting it.
+### Secret and Quadlet routes
 
-## Container API contracts
+The Compat secret-removal route is plural: `DELETE /secrets/{name}`. It replaces the incorrectly
+named `/secret/{name}` path (since 5.8.0).
 
-### Corrected create inputs
+The Libpod API exposes Quadlet discovery and management:
 
-Since 6.0.0, API container creation honors:
+- `GET /libpod/quadlets/json` lists units (since 5.7.0).
+- `GET /libpod/quadlets/{name}/file` returns a unit file and
+  `GET /libpod/quadlets/{name}/exists` checks existence (since 5.8.0).
+- `POST /libpod/quadlets` installs one or more units.
+- `DELETE /libpod/quadlets` removes one or more units, while
+  `DELETE /libpod/quadlets/{name}` removes one.
 
-- volume `subpath`;
-- the Libpod `OCIRuntime` field.
+## Inspection and machine-readable output
 
-Compat Container Create has also honored CDI devices since 5.4.0. Since 5.6.0, it accepts
-`HostConfig.CgroupnsMode` and respects `base_hosts_file` from `containers.conf`.
+### Inspect fields
 
-### List and inspect responses
+Manifest inspection includes annotations (since 5.3.0). Container inspection adds
+`HostConfig.AutoRemoveImage`, `Config.ExposedPorts`, `Config.StartupHealthCheck`, and `SubPath` in
+applicable `Mounts` entries. Environment-variable secrets are omitted from inspect output rather
+than disclosed.
 
-Since 6.0.0, Compat container-list responses include health-check data in `Health` and include
-`HostConfig`.
+Container inspection includes each joined network's ID, and remote-API-created containers no
+longer report a synthetic create command (since 5.4.0). For a one-element container command,
+inspect can put that element only in `Path`; parsers must accept an empty `Args`
+(5.8.6-6.1.0).
 
-Since 5.6.0:
+### List and info output
 
-- forced Compat deletion removes only stopped containers;
-- container list and inspect responses translate status values to Docker-compatible forms.
+- `podman image list --format json` adds `Repository` and `Tag` (6.0.0).
+- An unset inspected `MemorySwappiness` is `nil`, not `-1` (6.0.0).
+- `{{json .Labels}}` for container, pod, and volume lists emits comma-separated `key=value` text,
+  not a JSON object (6.0.0).
+- `podman info` reports every configured image store rather than only one (since 5.4.0).
+- `podman info` reports CDI spec directories and discovered CDI devices (6.0.0).
+- `podman info` adds free host memory alongside used and total memory (5.8.6-6.1.0).
 
-### Image-created container inspection
+## Events and operational visibility
 
-Container inspection added these fields in 5.3.0:
+Network create/remove events are emitted (since 5.4.0), and secret create/remove events are
+emitted (since 5.5.0). Event consumers can use a key-only `label=KEY` filter (since 5.7.0).
 
-- `HostConfig.AutoRemoveImage`;
-- `Config.ExposedPorts`;
-- `Config.StartupHealthCheck`;
-- `SubPath` on each applicable `Mounts` entry.
+Container `died` events add `OOMKilled`; artifact events cover create, pull, push, and remove; pod
+and volume events include labels as attributes (6.0.0).
 
-Since 5.4.0, inspection includes the ID of each joined network. Containers created through the
-remote API no longer report a spurious create command.
-
-### Secret visibility
-
-Environment-variable secrets used by a container have been omitted from `podman inspect` since
-5.3.0.
-
-## Image and artifact API contracts
-
-### Image pull
-
-Since 6.0.0, the Libpod image Pull endpoint:
-
-- streams progress when `pullProgress=true`;
-- returns an error HTTP status on pull failure instead of always returning 200.
-
-### Image push completion
-
-Since 6.0.0, Compat Image Push ends with a JSON object containing the pushed tag, digest, and
-size.
-
-### Image inspection compatibility
-
-- Since 5.6.0, image inspection omits `VirtualSize` for Docker API 1.44 and newer.
-- Since 5.7.0, Compat Image Inspect omits `ContainerConfig`; read `Config` instead, matching Docker
-  API v1.45 behavior.
-
-### Artifact and local routes
-
-Use the images, builds, and artifacts reference for the stable artifact routes and
-`POST /libpod/local/artifacts/add`. Since 6.0.0, `POST /libpod/local/images` requires an absolute
-`path` query parameter.
-
-## Quadlet API
-
-### List
-
-Since 5.7.0:
-
-```http
-GET /libpod/quadlets/json
-```
-
-lists Quadlets.
-
-### File, existence, install, and removal
-
-Since 5.8.0, the Libpod API includes:
-
-| Operation | Route |
-| --- | --- |
-| Read a unit file | `GET /libpod/quadlets/{name}/file` |
-| Test existence | `GET /libpod/quadlets/{name}/exists` |
-| Install one or more units | `POST /libpod/quadlets` |
-| Remove one or more units | `DELETE /libpod/quadlets` |
-| Remove one named unit | `DELETE /libpod/quadlets/{name}` |
-
-## Compat secrets route
-
-Since 5.8.0, remove a secret through the plural route:
-
-```http
-DELETE /secrets/{name}
-```
-
-It replaces the incorrectly named `/secret/{name}` route.
-
-## System and storage API fields
-
-### Compat system information
-
-Since 5.6.0:
-
-- Compat System Info includes `DefaultAddressPools`;
-- Compat Ping reports `Builder-Version: 1`.
-
-### Compat disk-usage and image-list responses
-
-Since 5.6.0:
-
-- Compat System DF omits `BuilderSize`;
-- image listing always includes `shared-size`, using `-1` when the value was not requested.
-
-## Inspection and machine-readable CLI output
-
-### Manifest and image output
-
-- `podman manifest inspect` has emitted manifest annotations since 5.3.0.
-- `podman image list --format json` includes `Repository` and `Tag` since 6.0.0.
-
-### `podman info`
-
-- Since 5.4.0, `podman info` reports every configured image store rather than only one.
-- Since 6.0.0, it reports CDI specification directories and discovered CDI devices.
-- It no longer reports one storage.conf path because unified configuration can source several
-  files.
-
-### Inspection values and label templates
-
-Since 6.0.0:
-
-- an unset `MemorySwappiness` is `nil`, not `-1`;
-- `{{json .Labels}}` in container, pod, and volume list templates emits comma-separated
-  `key=value` pairs rather than a JSON object.
-
-## Events
-
-### Resource coverage
-
-- Network create/remove events have been emitted since 5.4.0.
-- Secret create/remove events have been emitted since 5.5.0.
-- Since 6.0.0, artifact events cover `create`, `pull`, `push`, and `remove`.
-
-### Expanded attributes
-
-Since 6.0.0:
-
-- container `died` events include `OOMKilled`;
-- pod and volume events include their labels as attributes.
-
-### Label filter matching
-
-Since 5.7.0, `podman events --filter label=KEY` supports a key-only label match; a value is not
-required.
+Quadlet generator errors are written to standard error as well as `/dev/kmsg`, allowing tools such
+as `systemd-analyze --generators verify` to display them (5.8.6-6.1.0).

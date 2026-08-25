@@ -1,16 +1,45 @@
 # SSR, Hydration, and Routing
 
-Batch attribution: 19-guides, 19.0.0, 20-guides, 20.0.0, 21-platform-guides, 21.0.0, 22.0.0.
+## Incremental hydration
 
-## Configure server routes with the stabilized contract
+Enable incremental hydration with
+`provideClientHydration(withIncrementalHydration())`; this also enables event
+replay. SSR renders a hydrated `@defer` block's main template, while the client
+leaves it dehydrated until a hydrate trigger fires. Regular `on` triggers still
+govern later client-side rendering. (`19-guides`)
 
-Hybrid applications can choose server rendering, client rendering, or build-time prerendering per route. The stabilized contract uses:
+```ts
+bootstrapApplication(App, {
+  providers: [provideClientHydration(withIncrementalHydration())],
+});
+```
 
-- a slashless `path`;
-- `renderMode`, not the preview name `mode`;
-- `getPrerenderParams`, not the preview name `getPrerenderPaths`.
+```html
+@defer (on idle; hydrate on interaction) {
+  <heavy-panel />
+} @placeholder {
+  <panel-skeleton />
+}
+```
 
-The parameter callback runs at build time. It has an injection context, but `inject()` must be called synchronously before any `await`.
+Multiple hydrate triggers are ORed. A nested trigger hydrates ancestor
+boundaries from the top down. `hydrate when` can fire only on the top-most
+dehydrated block. `hydrate never` suppresses initial hydration for the entire
+nested subtree, but not a later client render. (`19-guides`)
+
+## Server-route contract
+
+The v19 developer-preview contract used leading-slash paths, `mode`, and
+`getPrerenderPaths`; its callback ran in an injection context (`19.0.0`). The
+stabilized contract uses slashless paths, `renderMode`, and
+`getPrerenderParams`. Treat the old spellings as preview-only history.
+(`20-guides`)
+
+`getPrerenderParams` runs at build time and must call `inject()` synchronously
+before any `await`. Parameterized prerendering can choose `Server`, `Client`, or
+`None` fallback, with server rendering as the default. Routes also accept static
+`headers` and `status`. Router `redirectTo` rules become HTTP redirects during
+SSR and `<meta http-equiv="refresh">` redirects when prerendered. (`20-guides`)
 
 ```ts
 export const serverRoutes: ServerRoute[] = [{
@@ -24,218 +53,102 @@ export const serverRoutes: ServerRoute[] = [{
 }];
 ```
 
-For prerendered parameters, `fallback` can be `Server`, `Client`, or `None`; server rendering is the default. A server route can also declare static `headers` and `status`.
+## Request-scoped server state
 
-Router `redirectTo` rules have platform-specific output:
-
-- server rendering emits an HTTP redirect;
-- prerendering emits a `<meta http-equiv="refresh">` redirect.
-
-The Angular 19 developer-preview form allowed leading-slash paths and used `mode` plus `getPrerenderPaths`:
-
-```ts
-const previewRoutes: ServerRoute[] = [
-  {path: '/login', mode: RenderMode.Server},
-  {path: '/dashboard', mode: RenderMode.Client},
-  {
-    path: '/product/:id',
-    mode: RenderMode.Prerender,
-    async getPrerenderPaths() {
-      return [{id: '1'}, {id: '2'}];
-    },
-  },
-];
-```
-
-Recognize that shape when migrating it, but do not use it for current code.
-
-## Build for static hosting
-
-An SSR-enabled build prerenders the application and normally still emits a server runtime. Set `outputMode` to `static` to omit that runtime for a fully static deployment:
-
-```json
-{
-  "build": {
-    "options": {
-      "outputMode": "static"
-    }
-  }
-}
-```
-
-Routes that require request-time rendering are incompatible with a purely static deployment.
-
-## Access request-scoped state safely
-
-These tokens from `@angular/core` expose state for the current render:
-
-- `REQUEST`: the Web `Request`;
-- `RESPONSE_INIT`: mutable response initialization;
-- `REQUEST_CONTEXT`: context passed to the rendering engine.
-
-They are `null` during builds, client-side rendering, static generation, and development route extraction. Always branch for `null`.
+`REQUEST`, `RESPONSE_INIT`, and `REQUEST_CONTEXT` from `@angular/core` expose
+the current Web `Request`, mutable response initialization, and engine context.
+They are `null` during builds, CSR, SSG, and development route extraction.
+Top-level server `useValue` providers persist across requests, so request data
+requires `useFactory`. (`20-guides`)
 
 ```ts
 const request = inject(REQUEST);
 const response = inject(RESPONSE_INIT);
-
 if (request && response) {
   response.status = request.headers.has('Authorization') ? 200 : 401;
 }
 ```
 
-Top-level server providers configured with `useValue` persist across requests. Use `useFactory` for a value that must be created per request.
+## Pending asynchronous work
 
-## Choose the server engine for the runtime
+The v19 zoneless SSR API applied `pendingUntilEvent(injector)` to an Observable
+to keep rendering pending until it emitted (`19.0.0`). The current operator is
+zero-argument `pendingUntilEvent()` and keeps rendering pending through an
+emission, completion, error, or unsubscription. (`21-platform-guides`)
 
-### Node.js
-
-`AngularNodeAppEngine` from `@angular/ssr/node` accepts Node requests. Pair it with `writeResponseToNodeResponse` and `createNodeRequestHandler`:
-
-```ts
-const engine = new AngularNodeAppEngine();
-const response = await engine.handle(req);
-
-if (response) {
-  writeResponseToNodeResponse(response, res);
-}
-```
-
-### Web-standard runtimes
-
-`AngularAppEngine` from `@angular/ssr` consumes and returns standard Web `Request` and `Response` objects. Wrap it with `createRequestHandler`:
-
-```ts
-const engine = new AngularAppEngine();
-
-export const handler = createRequestHandler(
-  request => engine.render(request),
-);
-```
-
-## Register pending zoneless work
-
-Zoneless SSR serializes once no work remains registered with `PendingTasks`. Router navigation and `HttpClient` requests are registered by Angular. Wrap application-owned promises in `PendingTasks.run()`:
+For other application-owned work, use `PendingTasks.run()` or pair `add()` with
+its cleanup callback in `finally`. Router navigation and `HttpClient` requests
+are registered by Angular; without other registered work, zoneless SSR
+serializes. (`21-platform-guides`)
 
 ```ts
 import {inject, PendingTasks} from '@angular/core';
-
 const pending = inject(PendingTasks);
-pending.run(async () => {
-  state.set(await loadRenderedState());
-});
+pending.run(async () => state.set(await loadRenderedState()));
 ```
 
-For manual lifecycle control, call `add()` and invoke its cleanup callback in `finally`.
+## Static and portable server builds
 
-For Observables, use `pendingUntilEvent()`. It holds rendering until the source emits, completes, errors, or is unsubscribed:
+An SSR-enabled build normally prerenders and still emits a server file. Set
+`outputMode: "static"` to omit the server runtime for static hosting.
+(`20-guides`)
+
+```json
+{"build":{"options":{"outputMode":"static"}}}
+```
+
+`AngularNodeAppEngine` from `@angular/ssr/node` handles Node requests and pairs
+with `writeResponseToNodeResponse` and `createNodeRequestHandler`. For non-Node
+runtimes, `AngularAppEngine` from `@angular/ssr` renders standard Web `Request`
+objects to `Response` objects through `createRequestHandler`. (`20-guides`)
 
 ```ts
-stream$.pipe(pendingUntilEvent()).subscribe();
+const nodeEngine = new AngularNodeAppEngine();
+const response = await nodeEngine.handle(req);
+if (response) writeResponseToNodeResponse(response, res);
+
+const webEngine = new AngularAppEngine();
+export const handler = createRequestHandler(request => webEngine.render(request));
 ```
 
-The Angular 19 form required an injector argument—`pendingUntilEvent(injector)`—so remove that argument when migrating to the current zero-argument operator.
+## HTTP transfer cache
 
-## Incremental hydration
-
-Enable incremental hydration through `provideClientHydration(withIncrementalHydration())`:
+The hydration transfer cache defaults to unauthenticated `GET` and `HEAD`
+requests and includes no response headers. `withHttpTransferCacheOptions` can
+filter requests and include selected headers, idempotent `POST` requests, or
+requests with authorization headers. Per-call `transferCache: false` disables
+it, a per-call object can set `includeHeaders`, and
+`withNoHttpTransferCache()` disables it globally. (`20-guides`)
 
 ```ts
-bootstrapApplication(App, {
-  providers: [
-    provideClientHydration(withIncrementalHydration()),
-  ],
-});
-```
+provideClientHydration(withHttpTransferCacheOptions({
+  includeHeaders: ['ETag'],
+  includePostRequests: true,
+  filter: request => !request.url.includes('/api/profile'),
+}));
 
-This also enables event replay. For a hydrated `@defer` block, Angular renders the main template during SSR, then leaves the client content dehydrated until a hydrate trigger fires.
-
-```html
-@defer (on idle; hydrate on interaction) {
-  <heavy-panel />
-} @placeholder {
-  <panel-skeleton />
-}
-```
-
-Trigger semantics matter:
-
-- ordinary `on` triggers still govern later client-side renders;
-- multiple hydrate triggers are ORed;
-- a trigger in a nested boundary hydrates its ancestors from the top down;
-- `hydrate when` can fire only on the top-most dehydrated block;
-- `hydrate never` prevents initial hydration of the entire nested subtree, but does not prohibit a later client render.
-
-Post-render callbacks can still run before a component has hydrated. Do not assume that “after render” always means a dehydrated subtree is safe for arbitrary DOM work.
-
-## Configure viewport defer triggers
-
-An `@defer` viewport trigger can receive `IntersectionObserver` options, including `rootMargin`, to begin loading before the trigger intersects the viewport:
-
-```html
-<div #trigger>Load boundary</div>
-
-@defer (on viewport({trigger, rootMargin: '100px'})) {
-  <section>Content</section>
-}
-```
-
-The compiler diagnostic for ineffective defer triggers identifies unreachable or redundant combinations. Fix the combination instead of suppressing the check.
-
-## Control HTTP transfer caching
-
-The hydration transfer cache includes unauthenticated `GET` and `HEAD` requests by default and transfers no response headers. Configure the global policy with `withHttpTransferCacheOptions`:
-
-```ts
-provideClientHydration(
-  withHttpTransferCacheOptions({
-    includeHeaders: ['ETag'],
-    includePostRequests: true,
-    filter: request => !request.url.includes('/api/profile'),
-  }),
-);
-```
-
-The policy can:
-
-- include selected response headers;
-- include idempotent `POST` requests;
-- include requests that carry authorization headers;
-- filter requests entirely.
-
-Override one call with `transferCache: false` or an object containing its own `includeHeaders`:
-
-```ts
 http.get('/api/private', {transferCache: false});
 ```
 
-Use `withNoHttpTransferCache()` to disable transfer caching globally.
+Transfer-cache keys preserve repeated parameter values; `/items?tag=a&tag=b`
+does not collide with a request whose later `tag` values differ (`20.3.28`).
 
-## Observe and clean up navigation
+## Router lifecycle and browser navigation
 
-`Router.currentNavigation` is a `Signal<Navigation | null>`, allowing reactive inspection of the navigation currently in progress:
-
-```ts
-const currentNavigation = inject(Router).currentNavigation;
-```
-
-Angular 22 adds two experimental lifecycle features:
-
-- `withExperimentalPlatformNavigation()` integrates the router with the browser Navigation API, intercepting both `RouterLink` and ordinary anchor navigations while using the native navigation lifecycle and scroll restoration.
-- `withExperimentalAutoCleanupInjectors()` destroys dependency injectors for routes that are no longer active.
+The experimental platform-navigation feature intercepts both `RouterLink` and
+ordinary anchors, using the browser Navigation API lifecycle and scroll
+restoration. (`22.0.0`)
 
 ```ts
 bootstrapApplication(AppComponent, {
-  providers: [
-    provideRouter(
-      routes,
-      withExperimentalPlatformNavigation(),
-      withExperimentalAutoCleanupInjectors(),
-    ),
-  ],
+  providers: [provideRouter(routes, withExperimentalPlatformNavigation())],
 });
 ```
 
-When a custom `RouteReuseStrategy` discards a cached route, call `destroyDetachedRouteHandle()` to destroy its component through the supported API.
+Use `withExperimentalAutoCleanupInjectors()` to destroy injectors for routes no
+longer active. When a custom `RouteReuseStrategy` discards a cached route, call
+`destroyDetachedRouteHandle()` to destroy its component. (`22.0.0`)
 
-Angular DevTools includes route visualization and a Transfer State tab; see [UI Libraries, Platform Data, and DevTools](ui-platform-and-devtools.md).
+Protocol-relative URL handling is now limited to serialization. Outside URL
+serialization, strings beginning with `//` receive no special router treatment.
+(`22.1.2`)

@@ -1,131 +1,86 @@
 # Providers and operations
 
-Use this reference for provider connectivity and discovery, listener ownership,
-plugin execution, server protocol limits, and patch-line maintenance.
+## Use systemd socket activation
 
-## Let systemd own listeners
+Systemd can own listening sockets and pass them to Traefik (3.1.0). Coordinate
+socket units, service units, and Traefik entry points so only one component
+binds each address. Socket activation also supports UDP routing (3.4.0).
 
-Traefik supports systemd socket activation for listening sockets (since 3.1.0)
-and extends it to UDP routing (since 3.4.0). Define socket units with the
-protocol and address expected by each entry point, then ensure the service is
-started with the inherited descriptors. Test both process restart and socket
-traffic so the unit relationship is verified rather than merely loaded.
+## Connect infrastructure providers
 
-## Authenticate and bound provider requests
+Docker and Swarm providers support HTTP Basic Authentication for protected
+provider endpoints (3.2.0). Store endpoint credentials outside committed
+configuration.
 
-- Docker and Swarm providers support HTTP Basic Authentication when connecting
-  to a protected provider endpoint (since 3.2.0).
-- HTTP-provider requests include a `Host` header (since 3.3.0), allowing a
-  configuration endpoint behind host-based routing to select the right virtual
-  host.
-- The HTTP provider accepts `maxResponseBodySize` (since 3.7.0). Bound the
-  downloaded dynamic configuration to limit memory exposure and reject an
-  unexpectedly large provider response.
-- Docker and Swarm providers automatically negotiate the Docker API version
-  (since 3.7.0), avoiding a fixed client-version assumption.
+The Nomad provider can watch catalog changes instead of polling, enabling
+event-driven configuration refreshes (3.2.0).
 
-Keep provider credentials out of labels and logs. Verify authentication,
-virtual-host selection, size-limit rejection, and refresh behavior against the
-real endpoint.
+Docker, ECS, Docker Swarm, Consul Catalog, and Nomad label providers can set
+backend server URLs directly through labels (3.4.0). Validate label ownership
+because labels can now determine full upstream URLs.
 
-## Configure label-derived backends
+ECS supports IPv6 endpoint discovery, while Docker can discover containers that
+are not currently running (3.6.0). Account for readiness separately from
+discovery.
 
-Docker, ECS, Docker Swarm, Consul Catalog, and Nomad can define backend server
-URLs directly through provider labels (since 3.4.0). Use a complete URL suited
-to the target provider and verify that label precedence produces the intended
-server URL.
+Docker and Swarm providers negotiate the Docker API version automatically
+(3.7.0), reducing the need to pin a provider-side API version.
 
-HTTP services can also preserve the path already present in a configured
-backend server URL (since 3.2.0). Enable that service behavior when the label's
-URL path must survive proxying.
+## Configure the HTTP provider safely
 
-## Choose discovery and refresh behavior
+HTTP-provider requests include a `Host` header, allowing host-routed endpoints
+to serve dynamic configuration correctly (3.3.0).
 
-- Nomad can watch catalog changes rather than poll them (since 3.2.0). Choose
-  the event-driven mode when prompt refreshes are required, and test reconnect
-  behavior after the watch is interrupted.
-- ECS discovery supports IPv6 (since 3.6.0).
-- Docker discovery can include containers that are not running (since 3.6.0).
-  Filter deliberately if stopped-container metadata must not produce routes.
-- Kubernetes Ingress can publish Services of type `ExternalName` through
-  Traefik (since 3.6.0).
-- Consul, Consul Catalog, and Nomad log their provider namespace during startup
-  (since 3.6.0). Use that message to verify namespace selection in multi-tenant
-  deployments.
+The provider's `maxResponseBodySize` bounds downloaded configuration responses
+(3.7.0). Set it to limit memory and trust exposure without blocking legitimate
+configuration payloads.
 
-## Fail closed on plugin loading
+## Bound protocol resources
 
-`AbortOnPluginFailure` makes startup abort when a plugin cannot be loaded (since
-3.3.0). Enable it when silently continuing without required middleware would
-weaken routing or security policy.
+The server's maximum incoming request-header size is configurable (3.2.0).
+Choose a limit that accommodates required headers while constraining oversized
+requests.
 
-Plugin manifests can permit unsafe operations in the Yaegi interpreter (since
-3.5.0), and plugins can use syscalls (since 3.6.0). Both capabilities widen the
-code and operating-system surface available to a plugin. Before enabling one:
+HTTP/2 servers expose HPACK table-size controls for tuning header compression
+(3.6.0). Treat these as capacity and interoperability settings rather than
+application routing policy.
 
-1. inspect the manifest and source;
-2. verify why the capability is necessary;
-3. constrain filesystem, process, network, and container privileges around the
-   Traefik process; and
-4. make plugin-load failure visible or fatal according to policy.
+FastProxy rejects CONNECT requests. Use the regular proxy path for CONNECT
+tunnels (3.7.11). Starting in 3.7.9, Traefik defers CONNECT payloads until the
+backend accepts the tunnel, discards CONNECT bodies before ForwardAuth, and
+does not return CONNECT requests to the connection pool.
 
-## Tune server protocol limits
+## Control plugin failure and authority
 
-The maximum incoming request-header size is configurable (since 3.2.0). Pick a
-limit that admits legitimate cookies and forwarding chains while bounding
-header-based resource use.
+`AbortOnPluginFailure` makes startup fail when a plugin cannot load rather than
+continuing without it (3.3.0). Enable it where the plugin is required for
+correctness or security.
 
-HTTP/2 servers expose configurable HPACK table sizes (since 3.6.0). Tune these
-only with an understood peer and workload requirement; changes affect header
-compression state and memory use.
+Plugin manifests can permit unsafe Yaegi operations (3.5.0), and plugins can
+use syscalls (3.6.0). Both capabilities expand executable authority. Review the
+manifest, code, provenance, and runtime isolation before enabling them.
 
-Health-check paths are validated as path-only values (since 3.7.0). Replace any
-absolute health-check URL with a path and configure the backend address in the
-service server definition.
+## Maintain provider integrations
 
-## Handle WebSocket compatibility
+Authentication middleware warns when `maxBodySize` is unset (3.6.0). Treat the
+warning as a prompt to make body-forwarding limits explicit.
 
-Traefik 3.3.0 has a WebSocket-upgrade issue. A deployment that must remain on
-that release should disable HTTP/2 extended CONNECT when launching Traefik:
+Traefik's Redis integration requires Redis keyspace notifications for update
+notifications. Enable them before relying on Redis-driven refresh behavior
+(3.7.11).
 
-```sh
-GODEBUG=http2xconnect=0 traefik
-```
+## Select a maintained patch release
 
-Patched 3.7 releases allow WebSocket upgrades with `h2c` backends. Exercise a
-real upgrade and bidirectional traffic when changing either the Traefik patch
-level or the backend protocol.
+The 3.7 line accumulated security corrections after its initial release
+(3.7.0):
 
-## Watch authentication body warnings
+- 3.7.5 fixes CVE-2026-54761 and CVE-2026-54762.
+- 3.7.6 fixes CVE-2026-54763 through CVE-2026-54765.
+- 3.7.7 fixes three additional advisories.
+- 3.7.8 fixes GHSA-8rxv-jg7p-wvg3.
+- 3.7.9 fixes GHSA-3ccp-42pg-hgv6.
+- 3.7.10 fixes GHSA-fgjj-px3w-67xx, GHSA-62fc-8686-hfmq, and
+  GHSA-6765-c87h-8mrf.
 
-Authentication middleware warns when `maxBodySize` is not configured (since
-3.6.0). Treat the startup/runtime warning as a request to choose an explicit
-forwarded-body limit, especially when ForwardAuth sends request bodies to an
-authorization service.
-
-## Maintain the 3.7 patch line
-
-The 3.7 line includes security and compatibility fixes after 3.7.0:
-
-- 3.7.5 addresses CVE-2026-54761 and CVE-2026-54762.
-- 3.7.6 addresses CVE-2026-54763 through CVE-2026-54765.
-- 3.7.7 addresses three additional advisories and also sanitizes paths produced
-  by `ReplacePathRegex`.
-
-Deployments staying on the 3.7 line should upgrade to 3.7.7 rather than remain
-on 3.7.0. After upgrading, retest TLS option isolation, SNI checks, certificate
-selection, redirects, CORS, path rewriting, and WebSocket behavior because the
-patch line also corrects those request-handling paths.
-
-## Validate operations
-
-1. Restart under the target service manager and verify inherited TCP and UDP
-   sockets.
-2. Force provider authentication, timeout, oversized-response, disconnect, and
-   reconnect cases.
-3. Compare discovered services with the intended labels and provider filters.
-4. Deliberately fail a required plugin in a non-production environment and
-   verify the configured startup policy.
-5. Confirm request-header, HPACK, health-path, and authentication-body limits.
-6. Run the patch-line routing and TLS regression cases before promoting the
-   image.
+Deployments staying on that line should move to 3.7.11 rather than an earlier
+patch (3.7.11).

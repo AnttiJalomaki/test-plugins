@@ -1,28 +1,25 @@
-# Route matching, parameters, and route errors
+# Matching and Parameters
 
-## Deterministic segment matching
+## Expect deterministic segment-priority matching
 
-Route matching traverses a segment trie rather than sorting and scanning a flat
-route list. Ambiguous branches are explored by segment priority:
+Matching traverses a segment trie rather than sorting and scanning a flat route
+list. It explores ambiguous static, dynamic, optional, and wildcard branches
+by priority. A fully static branch can win immediately, and wildcard branches
+are considered last. Matching therefore does not depend on browser sorting
+behavior.
 
-- fully static branches can win immediately;
-- dynamic and optional branches are considered in deterministic priority order;
-- wildcard branches are considered last.
+## Break candidate ties with parameter priority
 
-Do not rely on file discovery order, route declaration order, or browser sort
-behavior to decide among ambiguous candidates.
+Set `params.priority` when otherwise competing route candidates need an
+explicit tie-breaker. It complements the segment-priority matcher; it is not a
+replacement for designing unambiguous paths.
 
-## Parameter priority
+## Reject candidates from parameter parsing
 
-Set `params.priority` on routes that remain competing candidates after normal
-segment matching. It is a tie-breaker, not a substitute for an unambiguous route
-shape.
-
-## Rejecting a candidate during parameter parsing
-
-As an experimental behavior, `params.parse` may return `false` to reject an
-incoming route candidate and let matching continue. A thrown parse error has a
-different meaning: if that route is selected, the error surfaces on the match.
+`params.parse` may experimentally return `false` to skip an incoming route
+candidate. Throwing from the parser still surfaces a parse error on the route
+that is selected. Outgoing typed route-template links continue to resolve the
+exact route and then call `params.stringify`.
 
 ```tsx
 const reportRoute = createRoute({
@@ -36,27 +33,14 @@ const reportRoute = createRoute({
 })
 ```
 
-This candidate-rejection path applies to incoming URL matching. Outgoing typed
-links made from a route template still perform exact route lookup and then call
-`params.stringify`; they do not search for a different candidate based on
-`params.parse`.
-
-## Component-thrown not-found errors
+## Throw not-found results from components
 
 A component may throw `notFound()` without an explicit `routeId`. The route's
-`notFoundComponent` can handle it, and framework error boundaries preserve the
-not-found error rather than converting it to a generic error.
+`notFoundComponent` handles it, and framework error boundaries preserve the
+not-found error.
 
-```tsx
-function Invoice() {
-  const invoice = useInvoice()
-  if (!invoice) throw notFound()
-  return <InvoiceView invoice={invoice} />
-}
-```
+## Preserve primitive `beforeLoad` failures
 
-## Primitive values thrown from `beforeLoad`
-
-Router error handling preserves primitive values thrown from `beforeLoad`.
-Consumers that inspect route errors must therefore not assume every caught value
-is an `Error` instance.
+Primitive values thrown from `beforeLoad` remain intact as they pass through
+router error handling. Code consuming route errors should not assume every
+failure is an `Error` instance.

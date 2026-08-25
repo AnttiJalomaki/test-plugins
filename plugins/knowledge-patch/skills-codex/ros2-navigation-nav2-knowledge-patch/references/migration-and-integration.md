@@ -2,135 +2,89 @@
 
 ## Distribution support status
 
-- Rolling Ridley is the development distribution.
-- Kilted Kaiju and Jazzy Jalisco have active support.
-- Humble Hawksbill is maintained.
-- Iron Irwini and Galactic Geochelone are end-of-life.
+Rolling Ridley is the development distribution. Kilted Kaiju and Jazzy Jalisco
+have active support, Humble Hawksbill is maintained, and Iron Irwini and
+Galactic Geochelone are end-of-life. Account for backports and mixed package
+sources by checking installed interfaces rather than inferring them solely from
+the distribution name.
 
-Use the installed distribution and package manifests as the final authority
-when a migration below is distribution-dependent.
+## Stamped velocity is the default
 
-## Action error propagation
+Nav2 command-velocity publishers and subscribers use
+`geometry_msgs/TwistStamped` by default without changing their topic names.
+Timestamps allow consumers to reject stale commands. Set
+`enable_stamped_cmd_vel: false` on every affected node only when retaining the
+legacy `Twist` interface; a partially migrated pipeline has incompatible topic
+types.
 
-Nav2 action results carry contextual `error_msg` strings through BT Navigator.
-The old `error_code_names` parameter causes a startup exception. Replace it
-with prefixes:
+## Multi-pose actions and waypoint status
 
-```yaml
-error_code_name_prefixes: [compute_path, follow_path, spin, route]
-```
+`NavigateThroughPoses`, `ComputePathThroughPoses`, and related BT nodes use
+`nav_msgs/Goals` instead of a raw vector of `PoseStamped` messages. Read
+navigation poses from `poses.goals` and compute-path goals from `goals.goals`.
 
-Each relevant BT action node must expose matching `error_code_id` and
-`error_msg` ports:
-
-```xml
-<FollowPath path="{path}"
-            error_code_id="{follow_path_error_code}"
-            error_msg="{follow_path_error_msg}"/>
-```
-
-Custom actions and navigators should propagate both fields so callers retain
-the failure's component-specific context.
-
-## Stamped velocity migration
-
-Nav2 `cmd_vel` publishers and subscribers use `geometry_msgs/TwistStamped` by
-default without changing topic names. The timestamp permits stale-command
-rejection, but every endpoint in the command chain must agree on the message
-type. Audit controllers, smoothers, collision safety, muxes, bridges, hardware
-drivers, record/replay tools, and tests.
-
-Only keep the legacy `geometry_msgs/Twist` interface by setting the following
-on every affected node:
-
-```yaml
-enable_stamped_cmd_vel: false
-```
-
-## Multi-pose actions and waypoint statuses
-
-`NavigateThroughPoses`, `ComputePathThroughPoses`, and their BT nodes use
-`nav_msgs/Goals` instead of a raw vector of `PoseStamped` values. Access the
-fields as follows:
-
-- Navigation action poses: `poses.goals`
-- Compute-path goals: `goals.goals`
-
-`NavigateThroughPoses` reports `WaypointStatus` entries with `PENDING`,
-`COMPLETED`, `SKIPPED`, or `FAILED`. This replaces `MissedWaypoint`. Any BT
-node that prunes or transforms a multi-pose request must preserve the status
-list through matching `input_waypoint_statuses` and
-`output_waypoint_statuses` ports.
+`NavigateThroughPoses` reports `WaypointStatus` values: `PENDING`, `COMPLETED`,
+`SKIPPED`, and `FAILED`. This replaces `MissedWaypoint`. A pruning BT node must
+carry the status array beside the goal list through matching
+`input_waypoint_statuses` and `output_waypoint_statuses` ports so indices remain
+aligned.
 
 ## Namespaced bringup
 
-`use_namespace` was removed from `nav2_bringup`. The `namespace` launch
-argument is always applied and defaults to `/`.
+`use_namespace` was removed from `nav2_bringup`. `namespace` is always applied
+and defaults to `/`. Shared RViz and parameter files should use relative topics,
+such as `scan`, so they resolve beneath the robot namespace. An absolute topic,
+such as `/scan`, intentionally stays global.
 
-Shared parameter and RViz files should use relative topics such as `scan` so
-they resolve beneath the robot namespace. An absolute topic such as `/scan`
-deliberately remains global. A costmap layer that needs the parent costmap's
-namespace instead of its own private layer namespace can use
-`joinWithParentNamespace()`.
+Costmap layers can call `joinWithParentNamespace()` when a topic should resolve
+beneath the parent costmap rather than beneath the layer's private namespace.
 
-Test multi-robot launch files for accidental global topics, duplicated node
-names, and parameters that were formerly guarded by `use_namespace`.
+## Nav2 ROS wrapper migration
 
-## Nav2 ROS lifecycle wrappers
-
-`nav2_ros_common` replaces the lifecycle utilities formerly provided by
-`nav2_util`. Custom plugins and task servers should use `nav2::LifecycleNode`
-and create Nav2 wrappers through the lifecycle node's factories instead of
-constructing wrappers directly:
+In Lyrical, `nav2_ros_common` replaces the `nav2_util` lifecycle utilities.
+Custom plugins and task servers should derive from or use
+`nav2::LifecycleNode` and create Nav2 service, action, publisher, and
+subscription wrappers through that lifecycle node's `create_*` factories.
+Do not construct the wrappers directly.
 
 ```cpp
 main_client_ = node->create_client<SrvT>(service_name, false);
 action_client_ = node->create_action_client<ActionT>(action_name, callback_group);
 ```
 
-The wrapper contract also changes in these ways:
+When QoS is omitted, wrappers use `nav2::qos::StandardTopicQoS`: reliable,
+volatile, depth 10. An explicit subscription QoS argument now follows the
+callback. Service callbacks include the `rmw_request_id_t` request header.
 
-- An omitted QoS profile uses `nav2::qos::StandardTopicQoS`: reliable,
-  volatile, depth 10.
-- An explicit subscription QoS argument comes after the callback.
-- Service callbacks include the `rmw_request_id_t` request header.
-- Wrappers use `introspection_mode` and `allow_parameter_qos_overrides`.
-- Remove `action_server_result_timeout`; it no longer exists.
+Wrapper configuration uses `introspection_mode` and
+`allow_parameter_qos_overrides`. Remove `action_server_result_timeout`; that
+parameter no longer exists.
 
-Create services, actions, publishers, and subscriptions with the matching
-`create_*` factory so lifecycle activation and deactivation remain coherent.
+## Service and navigator introspection
 
-## Lifecycle bonds
-
-`bond_heartbeat_period` defaults to `0.25` seconds for lifecycle nodes and
-Lifecycle Manager, increased from `0.1`. An explicit older value still wins.
-Remove or update explicit values when the new default is intended, and account
-for the chosen heartbeat in failure-detection timing tests.
-
-## Service and behavior-tree introspection
-
-`service_introspection_mode` accepts:
-
-- `disabled` (the default)
-- `metadata`
-- `contents`
-
-Choose `contents` only when request and response bodies may be exposed safely.
-The two standard navigators also provide disabled-by-default Groot 2 live
-monitoring, blackboard JSON inspection, and selection of a different BT XML in
-a new goal request.
+`service_introspection_mode` accepts `disabled`, `metadata`, or `contents` and
+defaults to `disabled`. The standard navigate-to-pose and
+navigate-through-poses navigators also offer disabled-by-default Groot 2 live
+monitoring, blackboard JSON inspection, and BT XML selection on a new goal.
+Enable content introspection only when the data exposure and overhead are
+acceptable.
 
 ## RViz navigation panel
 
-The Nav2 panel can select BT XML per request, accept exact coordinates and
+The Nav2 panel can select BT XML for each request, accept exact coordinates and
 frame IDs, and build, edit, save, or load multi-goal lists for
-`NavigateThroughPoses` and Waypoint Following. Use these controls to reproduce
-the same tree, frame, and goal list when investigating action behavior.
+`NavigateThroughPoses` and Waypoint Following.
+
+## Lifecycle bond timing
+
+`bond_heartbeat_period` defaults to `0.25` seconds for lifecycle nodes and
+Lifecycle Manager, up from `0.1`. Explicit old values still win; remove or
+update them to adopt the newer default.
 
 ## Isolated middleware tests
 
-Build with the following CMake option when `rmw_zenoh_cpp` tests should run
-without a separately launched Zenoh router:
+Use the following CMake option to run `rmw_zenoh_cpp` tests without launching a
+separate Zenoh router:
 
 ```text
 --cmake-args -DUSE_ISOLATED_TESTS=ON

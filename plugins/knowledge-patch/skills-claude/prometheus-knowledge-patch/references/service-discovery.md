@@ -1,20 +1,39 @@
 # Service Discovery
 
-## Kubernetes
-
-### API compatibility
+## Kubernetes and Consul migration (`3.0.0`)
 
 Kubernetes discovery no longer supports `discovery.k8s.io/v1beta1`
-EndpointSlices or `networking.k8s.io/v1beta1` Ingresses (since 3.0.0). Clusters
-that expose only those beta APIs cannot serve the corresponding discovery
-roles.
+EndpointSlices or `networking.k8s.io/v1beta1` Ingresses. Clusters exposing only
+those beta APIs cannot serve the corresponding roles. Endpoint discovery now
+recognizes sidecar containers.
 
-### Target construction and metadata
+Consul catalog discovery supports server-side catalog filters, reducing the
+result set before target processing.
 
-Endpoint discovery recognizes sidecar containers when constructing targets
-(since 3.0.0).
+## OpenStack load balancers (`3.2.0`)
 
-Discovery can attach namespace metadata (since 3.6.0):
+OpenStack discovery includes Octavia load balancers.
+
+## Scaleway address metadata (`3.3.0`)
+
+Scaleway exposes `__meta_scaleway_instance_public_ipv4_addresses` and
+`__meta_scaleway_instance_public_ipv6_addresses`. It no longer sets the older
+`__meta_meta_scaleway_instance_public_ipv4` when the public address is IPv6.
+
+## STACKIT and Hetzner filtering (`3.5.0`)
+
+STACKIT Cloud has a native discovery provider. Hetzner discovery accepts
+`label_selector` to filter servers before relabeling:
+
+```yaml
+hetzner_sd_configs:
+  - role: hcloud
+    label_selector: environment=production
+```
+
+## Kubernetes namespace metadata (`3.6.0`)
+
+Attach namespace metadata to Kubernetes targets:
 
 ```yaml
 kubernetes_sd_configs:
@@ -23,104 +42,73 @@ kubernetes_sd_configs:
       namespace: true
 ```
 
-Pod-role configurations accept node-role selectors (since 3.11.0). Pod targets
-also expose `__meta_kubernetes_pod_deployment_name`,
-`__meta_kubernetes_pod_cronjob_name`, and
-`__meta_kubernetes_pod_job_name` for controller identities.
+## Unified AWS discovery (`3.8.0`)
 
-Kubernetes discovery no longer creates duplicate targets for `*DualStack`
-EndpointSlice policies (since 3.11.0).
+The unified AWS discovery option covers EC2, Lightsail, and ECS services.
 
-## AWS
+## Refresh attribution (`3.9.0`)
 
-### Unified and provider-specific roles
+Most `prometheus_sd_refresh` metrics have a `config` label containing the job
+name, making refresh behavior attributable to a discovery configuration.
 
-The unified AWS discovery configuration covers EC2, Lightsail, and ECS (since
-3.8.0). AWS discovery adds MSK in 3.10.0 and ElastiCache and RDS roles in
-3.11.0. EC2 discovery again honors its configured `endpoint` in 3.11.0.
+## MSK and provider build tags (`3.10.0`)
 
-RDS discovery can filter instances (since 3.13.0), narrowing results before
-target processing.
+AWS discovery adds an MSK role. Custom builds can remove all bundled providers
+with the `remove_all_sd` Go build tag and selectively restore providers with
+`enable_<sd name>_sd` tags.
 
-### Addresses and credentials
+## Provider additions and metadata migrations (`3.11.0`)
 
-EC2 discovery can use IPv6 target addresses (since 3.12.0). When both address
-families exist, private IPv4 remains the default.
+Consul Health API filtering uses `health_filter` from 3.11.2; the general
+`filter` is no longer incorrectly sent to the Health API.
 
-ECS, MSK, RDS, and ElastiCache configurations accept optional `external_id`
-(since 3.12.0).
-
-### Custom builds
-
-Use the `remove_all_sd` Go build tag to remove every bundled provider, then
-restore selected providers with `enable_<sd name>_sd` tags (since 3.10.0). This
-supports smaller custom binaries.
-
-## Azure
-
-Azure service discovery supports Azure Workload Identity (since 3.11.0).
-System-assigned managed identity also works with an empty `client_id`. Remote
-write has separate Azure identity and certificate options described in the
-remote-storage reference.
-
-## Consul
-
-Consul catalog discovery supports server-side catalog filters, reducing results
-before relabel processing (since 3.0.0).
-
-From 3.11.2, use `health_filter` for Health API filtering (`3.11.0`). The
-general `filter` parameter is no longer incorrectly applied to that API.
-
-## Hetzner
-
-HCloud discovery accepts `label_selector` for server-side filtering (since
-3.5.0):
-
-```yaml
-hetzner_sd_configs:
-  - role: hcloud
-    label_selector: environment=production
-```
-
-For the `robot` role, migrate `__meta_hetzner_datacenter` to
-`__meta_hetzner_robot_datacenter`; the old form remains for compatibility
-(`3.11.0`). The HCloud form of `__meta_hetzner_datacenter` was scheduled to stop
-working after July 1, 2026. Replace
+For Hetzner `robot`, migrate `__meta_hetzner_datacenter` to
+`__meta_hetzner_robot_datacenter`; the old label remains compatible there.
+For `hcloud`, migrate location labels from
 `__meta_hetzner_hcloud_datacenter_location` and
-`__meta_hetzner_hcloud_datacenter_location_network_zone` with
+`__meta_hetzner_hcloud_datacenter_location_network_zone` to
 `__meta_hetzner_hcloud_location` and
-`__meta_hetzner_hcloud_location_network_zone`.
+`__meta_hetzner_hcloud_location_network_zone`. The old hcloud datacenter form
+was scheduled to stop working after July 1, 2026.
 
-## Scaleway
+AWS discovery adds ElastiCache and RDS roles, and EC2 once again honors its
+configured `endpoint`. Azure discovery supports Workload Identity and accepts
+an empty `client_id` for system-assigned managed identity.
 
-Scaleway targets expose `__meta_scaleway_instance_public_ipv4_addresses` and
-`__meta_scaleway_instance_public_ipv6_addresses` (since 3.3.0). The singular
-`__meta_meta_scaleway_instance_public_ipv4` is no longer set when the public
-address is IPv6.
+Kubernetes pod discovery accepts node-role selectors. Pod targets expose
+`__meta_kubernetes_pod_deployment_name`,
+`__meta_kubernetes_pod_cronjob_name`, and
+`__meta_kubernetes_pod_job_name`. DualStack EndpointSlice policies no longer
+create duplicate targets.
 
-## OpenStack
+Monitor the consumer-delivery time with
+`prometheus_sd_last_update_timestamp_seconds`.
 
-OpenStack discovery includes Octavia load balancers (since 3.2.0).
+## New providers, external IDs, and IPv6 (`3.12.0`)
 
-## STACKIT
+Prometheus discovers DigitalOcean Managed Databases and Outscale Cloud VMs;
+the latter uses `outscale_sd_configs`.
 
-STACKIT Cloud discovery is available from 3.5.0. Fixed 3.12 releases stop
-exposing its credentials in plaintext through `/-/config` (`3.12.0`); upgrade
-before using it on an endpoint where configuration can be viewed.
+ECS, MSK, RDS, and ElastiCache configurations accept `external_id`. EC2 can use
+IPv6 target addresses; when both families exist, private IPv4 remains default.
 
-## DigitalOcean and Outscale
+Removing a scrape job removes its per-job `prometheus_sd_refresh*` and
+`prometheus_sd_discovered_targets` series.
 
-DigitalOcean Managed Databases can be discovered (since 3.12.0). Outscale Cloud
-VM discovery uses `outscale_sd_configs` (since 3.12.0).
+## RDS filtering (`3.13.0`)
 
-## Discovery observability and lifecycle
+RDS discovery supports server-side instance filters.
 
-Most `prometheus_sd_refresh` metrics carry a `config` label with the job name
-(since 3.9.0). `prometheus_sd_last_update_timestamp_seconds` records the last
-update delivered to consumers (since 3.11.0).
+## Provider removals and reliability (`3.13.2-3.14.0`)
 
-When a scrape job is removed, its per-job `prometheus_sd_refresh*` and
-`prometheus_sd_discovered_targets` series are removed as well (since 3.12.0).
+Hetzner `hcloud` targets no longer expose `__meta_hetzner_datacenter` because
+the Cloud API removed it. Relabel rules must use the replacement location
+labels. Oracle Cloud Infrastructure compute targets are available through
+`oci_sd_configs`.
 
-The target UI can display the complete relabel trace for a discovered or dropped
-target (since 3.8.0).
+Offline `promtool check config` no longer contacts AWS IMDS when `region` is
+omitted for EC2, ECS, RDS, MSK, ElastiCache, or Lightsail.
+
+Docker and Docker Swarm discovery time out unresponsive `unix`, `npipe`, and
+`tcp` hosts instead of freezing on stale targets. Docker Swarm avoids panics on
+plugin and network-attachment services, and IPv6-only containers are discovered.

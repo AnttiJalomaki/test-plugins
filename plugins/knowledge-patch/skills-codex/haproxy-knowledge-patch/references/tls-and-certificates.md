@@ -1,13 +1,10 @@
 # TLS and Certificates
 
-## Frontend certificate policy
+## Per-certificate frontend policy
 
-### Attach TLS policy to a `crt-store` certificate
-
-Frontend directive `ssl-f-use`, added in 3.2.0, references a certificate from a
-`crt-store` independently of `bind`. It can attach per-certificate TLS
-versions, ALPN, cipher suites, and signature algorithms without maintaining an
-external crt-list.
+The 3.2.0 frontend `ssl-f-use` directive references a certificate in a
+`crt-store` independently of `bind`. It can attach certificate-specific TLS
+versions, ALPN, ciphers, and signature algorithms without a separate crt-list.
 
 ```haproxy
 crt-store my_files
@@ -18,41 +15,12 @@ frontend mysite
     ssl-f-use crt "@my_files/foo" ssl-min-ver TLSv1.2
 ```
 
-### Encrypted Client Hello
+## HTTP-01 ACME workflow
 
-The experimental `ech` argument on a TLS `bind` in 3.3.0 enables Encrypted
-Client Hello. It requires global `expose-experimental-directives`, and clients
-must be able to retrieve the corresponding public key through DNS.
-
-## Backend TLS
-
-### Automatic SNI
-
-HAProxy 3.3.0 derives backend TLS SNI from the HTTP `host` header automatically.
-Use `sni-auto` and `no-sni-auto` to control it for traffic; use
-`check-sni-auto` and `no-check-sni-auto` for health checks. Combining
-`strict-sni` with `default-crt` on a frontend `bind` now produces a warning.
-
-### Protected private keys
-
-Global `ssl-passphrase-cmd` in 3.3.0 points to a script that returns the
-passphrase for a protected TLS private key. HAProxy first retries passphrases
-that it has already retrieved before invoking the script again.
-
-```haproxy
-global
-    ssl-passphrase-cmd /usr/local/bin/tls-key-passphrase
-```
-
-## ACME certificate automation
-
-### Built-in HTTP-01 flow
-
-The built-in ACME implementation introduced experimentally in 3.2.0 is
-designed for one load balancer and requires
-`expose-experimental-directives`. An `acme` section defines the directory,
-account, HTTP-01 challenge, and virtual challenge map. A `crt-store` load ties
-a certificate and its domains to that account.
+Experimental built-in ACME in 3.2.0 is intended for one load balancer and
+requires `expose-experimental-directives`. An `acme` section configures the
+directory, account, HTTP-01 challenge, and virtual map; the `crt-store` load
+associates certificate domains and an account.
 
 ```haproxy
 global
@@ -72,45 +40,90 @@ crt-store my_files
 ```
 
 The HTTP frontend must serve `/.well-known/acme-challenge/` from the ACME map.
-Use `acme renew @my_files/example` to start issuance and `acme status` to list
-tasks. The issued certificate exists only in process memory until output from
-`dump ssl cert @my_files/example` is saved to a file.
+`acme renew @my_files/example` starts issuance and `acme status` lists tasks.
+The resulting certificate is only in running memory until saved with
+`dump ssl cert @my_files/example`.
 
-### DNS-01 flow
+## DNS-01 ACME workflow
 
-ACME gains DNS-01 challenges in 3.3.0 through HAProxy Data Plane API 3.3. The
-API communicates with the DNS provider and saves issued certificates on the
-load balancer filesystem. The design still targets a single load balancer;
-operators of multiple instances must synchronize the certificates themselves.
+HAProxy 3.3.0 adds DNS-01 through Data Plane API 3.3. The API talks to the DNS
+provider and saves issued certificates to the load balancer filesystem. The
+workflow still targets a single load balancer; synchronize certificates
+manually when several instances terminate TLS.
 
-### Trace certificate automation
-
-The `acme` trace source added in 3.3.0 exposes certificate-automation events:
+The `acme` trace source exposes automation events:
 
 ```haproxy
 traces
     trace acme sink stdout level user event +any verbosity clean start now
 ```
 
-The Runtime API `trace` command also has an `ssl` source for TLS events since
-3.2.0.
+The Master CLI `dpapi` event ring can also carry ACME notifications.
 
-## Runtime certificate management
+## Automatic backend SNI
 
-### Add aliases to a crt-list
+From 3.3.0, server-side TLS derives SNI automatically from the HTTP `host`
+header. Use `sni-auto` and `no-sni-auto` for traffic and
+`check-sni-auto` and `no-check-sni-auto` for health checks. Combining
+`strict-sni` with `default-crt` on a frontend `bind` warns because the
+policies conflict.
 
-`add ssl crt-list` stops requiring a certificate filesystem path to match its
-in-memory name in 3.3.0. This allows `crt-store` aliases to work with a
-crt-list, but the caller must ensure that each supplied path or alias identifies
-the intended certificate.
+## Protected private keys
 
-### Dump certificates to disk
+The 3.3.0 global `ssl-passphrase-cmd` names a script that returns the
+passphrase for an encrypted key. Previously obtained passphrases are tried
+before the script is invoked again.
 
-The `haproxy-dump-certs` utility added in 3.3.0 writes certificates obtained
-through the stats socket or master socket to the filesystem. This is useful for
-persisting certificates that otherwise exist only in the running process.
+```haproxy
+global
+    ssl-passphrase-cmd /usr/local/bin/tls-key-passphrase
+```
 
-### Identify the selected certificate
+Make the script non-interactive, tightly permissioned, and safe under reload.
 
-The `ssl_fc_crtname` fetch added in 3.4.0 returns the name of the certificate
-selected for the incoming TLS connection.
+## Experimental Encrypted Client Hello
+
+The 3.3.0 `ech` argument on a TLS `bind` enables Encrypted Client Hello and
+requires `expose-experimental-directives`. Clients must retrieve the matching
+public key from DNS, so test DNS publication and fallback behavior together.
+
+## Certificate-list aliases
+
+Since 3.3.0, Runtime API `add ssl crt-list` no longer requires a certificate
+filesystem path to match its in-memory name, enabling `crt-store` aliases with
+`crt-list`. The caller must ensure the supplied path or alias resolves to the
+intended certificate.
+
+Use the 3.3.0 `haproxy-dump-certs` utility to persist certificates retrieved
+through a stats or master socket.
+
+## TLS tracing and ClientHello samples
+
+The Runtime API trace command gained the `ssl` source in 3.2.0. ClientHello
+capability fetches from the same release are `req.ssl_cipherlist`,
+`req.ssl_keyshare_groups`, `req.ssl_sigalgs`, and
+`req.ssl_supported_groups`; they return binary values. Also,
+`accept_date` and `request_date` fall back to session time when a failure
+occurs before a stream exists.
+
+The 3.4.0 `ssl_fc_crtname` fetch returns the name of the selected incoming
+certificate.
+
+## Binary and cryptographic converters
+
+HAProxy 3.3.0 adds `base2`, which renders each input byte as eight binary
+digits, and `le2dec`, which renders little-endian chunks as unsigned decimal.
+`aes_gcm_enc` and `aes_gcm_dec` accept an optional AAD argument.
+
+HAProxy 3.4.0 adds `jwt_decrypt_cert`, `jwt_decrypt_secret`, and
+`jwt_decrypt_jwk` for JWT decryption with a certificate, base64-encoded secret,
+or JSON Web Key. `aes_cbc_enc` and `aes_cbc_dec` operate on raw bytes using
+AES-128, AES-192, or AES-256 CBC according to their bits argument. Validate
+input encodings explicitly and keep authentication requirements distinct from
+encryption.
+
+## TLS 1.3 KeyUpdate limits
+
+HAProxy 3.4.3 adds `tune.ssl.keyupdate-rate-limit` to bound peer-triggered TLS
+1.3 KeyUpdate processing. Set a deliberate limit on public listeners and
+monitor rejected or delayed update behavior during rollout.

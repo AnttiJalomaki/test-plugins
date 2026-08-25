@@ -1,249 +1,181 @@
 # Cloud, VSI, builds, and bindings
 
-Use this reference for the task areas below. Batch labels identify when each behavior entered the covered compatibility history.
+## Build-system and dependency compatibility
+
+### Core build controls (`3.11.0`)
+
+CMake can embed resource files with `EMBED_RESOURCE_FILES` and restrict runtime
+lookups with `USE_ONLY_EMBEDDED_RESOURCE_FILES`. `muparser` is strongly
+recommended for C++ VRT expressions; optional header-only `exprtk` enables
+advanced expressions at roughly 8 MB of library-size cost.
 
-## Cloud, HTTP, and virtual filesystems
+The exported CMake package provides GDAL library targets and publicly exports
+`GDAL_DEBUG` for debug builds. `USE_PRECOMPILED_HEADERS` defaults to `OFF`.
+Ubuntu `ubuntu-full` amd64 images may add Oracle, ECW, and MrSID drivers, which
+remain disabled by default.
+
+### Algorithm and raw-VRT feature gates (`3.12.0`)
 
-### AWS IAM Identity Center support in `/vsis3/`
+`GDAL_ENABLE_ALGORITHMS` can omit algorithms beneath the unified command. The
+build now succeeds with it disabled (`3.12.4`).
 
-*Batch: 3.10.1*
+`GDAL_VRT_ENABLE_RAWRASTERBAND` can compile out raw VRT support and is also a
+runtime option. Independently, raw VRT file access is restricted by default;
+deployments requiring raw files must account for the
+`vrtrawrasterband_restricted_access` policy.
 
-The S3 virtual filesystem now supports AWS Single Sign-On (AWS IAM Identity Center), enabling `/vsis3/` access through that authentication system.
+### Dependency-specific fixes
 
-### Portability-layer debug and URL handling
+- Poppler 25.02 builds work (`3.10.2`); compatibility later extends through
+  25.10 (`3.11.5`), 26.01 (`3.12.2`), 26.02 (`3.12.3`), 26.04 (`3.12.4`),
+  26.06 (`3.13.1`), and 26.08 development versions (`3.13.2`).
+- `WIN32_LEAN_AND_MEAN` builds work (`3.10.3`).
+- MongoDB builds against `mongo-cpp-driver` 4+ (`3.11.4`).
+- Arrow/Parquet works with libarrow 23 and precompiled headers; LIBKML works
+  with Boost 1.90, Clang 21, and C++23 (`3.12.2`).
+- Parallel HDF5 is supported (`3.12.3`); libhdf5 2.1 headers redefining
+  `_POSIX_C_SOURCE` are tolerated (`3.12.4`).
+- CMake 4.4 and SWIG 4.5 development versions are supported (`3.13.2`).
+- JP2Grok requires Grok 20.3.2+ (`3.13.1`) and then `libjp2grok` 20.3.5+
+  (`3.13.2`).
 
-*Batch: 3.10.1*
+When `BUILD_PYTHON_BINDINGS=OFF`, CMake does not search for Python (`3.13.2`).
 
-`CPLDebug` accepts `YES`, `TRUE`, and `1`. `CPLGetPath()` and `CPLGetDirname()` now handle `/vsicurl?` and URL-encoded paths, while `CPLFormFilename()` strips a relative `../...` path when it is joined to an absolute path.
+## S3 authentication and behavior
 
-### HTTP headers for GeoJSON-like drivers
+### Identity Center and credential flows
 
-*Batch: 3.10.1*
+`/vsis3/` supports AWS IAM Identity Center/SSO (`3.10.1`). The SSO cache-file
+location and region handling were corrected later, and path-specific options
+are honored by directory reads (`3.11.4`).
 
-GeoJSON-like drivers combine `GDAL_HTTP_HEADERS` with the driver-generated `Accept` header, so custom headers no longer displace the driver's content-negotiation header.
+New connections using EC2 credentials no longer take the WebIdentity path
+(`3.11.5`). S3 also supports `credential_process` and directory buckets
+(`3.12.0`). `AWS_S3_ENDPOINT` may include an `http://` or `https://` prefix
+(`3.11.0`).
 
-### HTTP retries for SSL connection timeouts
+### S3 and redirect safety
 
-*Batch: 3.10.3*
+When `/vsicurl/` follows an S3-like redirect, authentication from the original
+URL is not forwarded (`3.12.2`). Path-specific redirect-authorization policy
+is available; multi-range reads retry HTTP 429 and 5xx responses (`3.13.0`).
 
-The CPL HTTP layer now retries errors reported as `SSL connection timeout`.
+## Azure, Google, Swift, and WebHDFS
+
+- Changing authentication invalidates cached `/vsigs/` and `/vsiaz/` file and
+  directory state (`3.10.3`).
+- `/vsigs/` supports batch unlink and bearer-token file metadata via
+  `GDAL_HTTP_HEADERS`; `/vsiswift/` forwards HTTP options while listing, and
+  `/vsiwebhdfs/` forwards them for listing, deletion, and directory creation
+  (`3.11.1`).
+- `/vsiaz/ ReadDir()` works with `AZURE_NO_SIGN_REQUEST=YES` (`3.11.4`).
+- Cloud VSI paths lexically squash `/./` and `/../`; set
+  `GDAL_HTTP_PATH_VERBATIM` to preserve them (`3.12.0`).
+- TileDB adds `/vsiaz/` access, while STACTA understands `gs://`, `az://`, and
+  `azure://` URL templates (`3.12.0`).
+- `/vsigs/` recognizes Google Cloud Run for GCE authentication (`3.13.0`).
+- Azure/ADLS option metadata includes `AZURE_STORAGE_ACCESS_TOKEN` and
+  `AZURE_STORAGE_SAS_TOKEN` (`3.13.2`).
 
-### Cloud filesystem cache invalidation after authentication changes
+## HTTP and `/vsicurl/`
+
+### Headers, query strings, and connection limits (`3.11.0`)
+
+`VSICURL_QUERY_STRING` is path-specific. A `/vsicurl?` URL accepts
+`header.<key>=<value>`. `GDAL_HTTP_MAX_CACHED_CONNECTIONS` and
+`GDAL_HTTP_MAX_TOTAL_CONNECTIONS` bound connections. Cache and chunk sizes
+accept memory units. `/vsicurl_streaming/` follows HTTP 303 redirects.
+
+GeoJSON-like drivers combine `GDAL_HTTP_HEADERS` with their generated `Accept`
+header, so custom headers do not suppress content negotiation (`3.10.1`).
+
+### Retry, redirect, and size fixes
+
+- CPL HTTP retries `SSL connection timeout` (`3.10.3`).
+- `/vsicurl_streaming/` reports correct sizes; `/vsicurl/` handles 302 replies
+  to `HEAD` (`3.12.2`).
+- If `HEAD` advertises byte ranges without `Content-Length`, `/vsicurl/` retries
+  using a limited-range `GET` (`3.12.4`).
+- Nginx directory listings produced with `autoindex_exact_size off` yield
+  correct sizes (`3.13.2`).
+- `/vsicurl?header_file=...` accepts only permitted filenames (`3.13.2`).
+
+### Cache and open controls
 
-*Batch: 3.10.3*
+`VSIFOpenEx2L()` accepts `CACHE=ON/OFF` to control post-close caching of
+curl-style files (`3.12.0`). Java exposes full and partial `/vsicurl/` cache
+clearing (`3.13.0`).
 
-When authentication parameters change, `/vsigs/` and `/vsiaz/` invalidate cached file and directory state instead of retaining results obtained with the previous credentials.
+## VSI operations and archives
 
-### Cloud and `/vsicurl/` request controls
+### APIs and CLI-visible behavior
 
-*Batch: 3.11.0*
+Public facilities include `VSIGlob()` and `VSIMove()` (`3.11.0`). Unix,
+Win32, sparse-file, and archive handles may be closed repeatedly and are also
+closed by their destructors (`3.11.2`). A single-file `gdal vsi list` displays
+its modification timestamp (`3.13.1`).
 
-`VSICURL_QUERY_STRING` is a path-specific option, `/vsicurl?` URLs accept `header.<key>=<value>`, and `GDAL_HTTP_MAX_CACHED_CONNECTIONS` plus `GDAL_HTTP_MAX_TOTAL_CONNECTIONS` bound connection caching. `CPL_VSIL_CURL_CACHE_SIZE` and `CPL_VSIL_CURL_CHUNK_SIZE` accept memory units, `/vsicurl_streaming/` follows HTTP 303 redirects, and `AWS_S3_ENDPOINT` may include an `http://` or `https://` prefix.
+`VSISync()` includes empty files in either direction when multithreaded cloud
+synchronization is enabled (`3.13.2`).
 
-### New CPL and VSI helpers
+### Archive and path fixes
 
-*Batch: 3.11.0*
+`/vsirar/` reads a single-file archive without returning a negative read count
+(`3.11.4`). Path APIs handle `/vsicurl?` and URL-encoded paths, and forming a
+filename strips a leading `../...` when joined to an absolute path (`3.10.1`).
 
-New public helpers include `CPLIsInteractive()`, `CPLIsDebugEnabled()`, `VSIGlob()`, `VSIMove()`, `CPLGetKnownConfigOptions()`, `CPLErrorOnce()`, and `CPLDebugOnce()`, along with safe path-manipulation functions. C++ callers also gain `CPLTurnFailureIntoWarningBackuper`, `CPLErrorAccumulator`, and `CPLQuietWarningsErrorHandler`.
+## Python packaging and runtime
 
-### HTTP-aware cloud filesystem operations
+### Installation and supported runtimes
 
-*Batch: 3.11.1*
+On Debian, binding installation works with a Python interpreter not supplied
+by Debian (`3.10.2`). Free-threaded/no-GIL Python 3.13+ builds are supported
+(`3.12.1`). With setuptools 77+, package metadata declares Python 3.9 as the
+minimum because those setuptools releases do not support 3.8 (`3.13.2`).
 
-`/vsigs/` supports `UnlinkBatch()` and `GetFileMetadata()` when an OAuth2 bearer token is supplied through `GDAL_HTTP_HEADERS`. `/vsiswift/` forwards HTTP options for listing, while `/vsiwebhdfs/` forwards them for listing, deletion, and directory creation.
+### Virtual filesystems and accepted inputs (`3.11.0`)
 
-### Repeatable VSI handle closure
+Python exposes `osgeo.gdal.VSIFile` and `osgeo.gdal_fsspec`; importing the
+latter registers GDAL VSI handlers as fsspec `AbstractFileSystem`
+implementations. `Driver.CreateVector()` is exposed through SWIG.
 
-*Batch: 3.11.2*
+`Dataset.ReadAsMaskedArray()` is available, and `ReadAsArray()` methods accept
+`mask_resample_alg`. `gdal.VectorTranslate()` accepts
+`relatedFieldNameMatch`. `osr.SpatialReference()` accepts a CRS definition,
+`Driver.Create()` accepts NumPy types, and `Rename()`/`CopyFiles()` accept
+`os.PathLike`.
 
-Unix, Win32, sparse-file, and archive VSI handles may have `Close()` called more than once, and their destructors also close them.
+`GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY` accepts `YES/1/ON/TRUE` and
+`NO/0/OFF/FALSE`.
 
-### AWS SSO and cloud-directory reads
+### Arrays, algorithms, and options
 
-*Batch: 3.11.4*
+- Zero-stride arrays can be written through dataset and band `WriteArray()`
+  (`3.11.4`).
+- `Band.BlockWindows()` is available, a band can be input to `CreateCopy()`,
+  Boolean NumPy types map correctly, Boolean output avoids Float64 promotion,
+  and config option values are string-coerced (`3.12.0`).
+- `gdal.alg.*` methods accept `progress` (`3.12.1`).
+- `Dataset.AdviseRead()` and `Band.AdviseRead()` accept keyword arguments;
+  dataset calls default to all bands. `Feature.SetField()` accepts NumPy values
+  (`3.13.0`).
+- List-form open options such as `options=["-oo", "FOO=BAR"]` are parsed by
+  `VectorTranslate()` and similar methods (`3.13.1`).
 
-AWS SSO authentication now uses the correct cache-file location and region parameter. `/vsis3/` directory reads honor path-specific options, and `/vsiaz/` `ReadDir()` works with `AZURE_NO_SIGN_REQUEST=YES`.
+## Other binding contracts
 
-### Single-file RAR reads
+C# adds `VSIGetMemFileBuffer` (`3.11.0`) and
+`SpatialReference.FindMatches` (`3.11.1`). SWIG `AddFieldDomain()` propagates
+errors or exceptions (`3.11.1`), `Feature.GetDefnRef()` retains the returned
+definition (`3.12.1`), and relationship capability constants are exposed
+(`3.13.0`). Java dataset closure no longer double-frees (`3.11.4`).
 
-*Batch: 3.11.4*
+## Build and runtime checklist
 
-`/vsirar/` no longer returns a negative read result when opening an archive made from a single file through a path such as `/vsirar/the.rar`.
-
-### MongoDB C++ driver 4 compatibility
-
-*Batch: 3.11.4*
-
-The MongoDB driver builds against `mongo-cpp-driver` version 4 and later.
-
-### EC2 credentials for new `/vsis3/` connections
-
-*Batch: 3.11.5*
-
-New `/vsis3/` connections using EC2 credentials no longer incorrectly go through the WebIdentity authentication path.
-
-### S3 authentication, directory buckets, and cloud paths
-
-*Batch: 3.12.0*
-
-`/vsis3/` supports S3 directory buckets and AWS `credential_process` authentication. Cloud VSI paths squash `/./` and `/../` by default; set `GDAL_HTTP_PATH_VERBATIM` to preserve them, and use the new `CACHE=ON/OFF` option of `VSIFOpenEx2L()` to control post-close caching for `/vsicurl/`-style files.
-
-### Cloud-backed tiled formats
-
-*Batch: 3.12.0*
-
-STACTA recognizes `gs://`, `az://`, and `azure://` URL templates, reads WEBP and JPEG XL tiles, and can retry failed `/vsicurl/` access through the matching cloud VSI handler. TileDB adds `/vsiaz/` support.
-
-### Redirects and file sizes in curl-backed VSI
-
-*Batch: 3.12.2*
-
-`/vsicurl_streaming/` now sets file sizes correctly, and `/vsicurl/` handles HTTP 302 responses to `HEAD` requests. Authentication sent to an original URL is no longer propagated to an S3-like redirect.
-
-### Lexical path normalization
-
-*Batch: 3.12.3*
-
-The portability API adds `CPLLexicallyNormalize()` for normalizing file paths.
-
-### `/vsicurl/` size discovery without `Content-Length`
-
-*Batch: 3.12.4*
-
-When an initial `HEAD` response advertises `Accept-ranges: bytes` but omits `Content-Length`, `/vsicurl/` retries with a limited-range `GET`.
-
-### Custom VSI handler compatibility
-
-*Batch: 3.13.0*
-
-`VSIVirtualHandle::Read()` and `Write()` now take one `size_t` count instead of separate size and member counts, requiring custom handlers to update overrides. Handler installation can take a `shared_ptr`, and virtual handles add little-endian `ReadLSB()` and `WriteLSB()` helpers.
-
-### Cloud and configuration controls
-
-*Batch: 3.13.0*
-
-`CPL_NULL_VALUE` passed to `CPLSetConfigOption()` explicitly masks an environment variable with a null value. `/vsicurl/` redirect-authorization policy can be path-specific, multi-range reads retry HTTP 429 and 5xx responses, and `/vsigs/` recognizes Google Cloud Run for GCE authentication.
-
-### Single-file VSI timestamps
-
-*Batch: 3.13.1*
-
-`gdal vsi list` displays the last-modification timestamp when its target is a single file.
-
-### TileDB identification on S3
-
-*Batch: 3.13.1*
-
-The TileDB driver identifies `/vsis3/` paths only when they have a `.tdb` extension or no extension, avoiding claims on other suffixed objects.
-
-### Azure access-token options
-
-*Batch: 3.13.2*
-
-The Azure/ADLS handler's option metadata now includes `AZURE_STORAGE_ACCESS_TOKEN` and `AZURE_STORAGE_SAS_TOKEN`.
-
-### `/vsicurl/` header files and Nginx listings
-
-*Batch: 3.13.2*
-
-The `header_file` value in a `/vsicurl?` URL is now restricted to permitted filenames. `/vsicurl/` also reports correct file sizes from Nginx directory listings generated with `autoindex_exact_size off`.
-
-### Empty files in multithreaded cloud sync
-
-*Batch: 3.13.2*
-
-`VSISync()` now includes empty files when multithreaded synchronization is used in either direction with cloud storage.
-
-### MRF cache configuration rename
-
-*Batch: 3.13.2*
-
-The MRF caching configuration replaces `MRF_BYPASSCACHING` with `MRF_ENABLE_CACHING`; deployments setting the former variable must migrate to the latter.
-
-## Builds, packaging, and dependencies
-
-### Building with Poppler 25.02
-
-*Batch: 3.10.2*
-
-GDAL 3.10.2 fixes compilation against Poppler 25.02.00.
-
-### Debian Python installation with an external Python
-
-*Batch: 3.10.2*
-
-On Debian, the Python bindings' install target now works with a Python version not provided by Debian.
-
-### Windows builds with `WIN32_LEAN_AND_MEAN`
-
-*Batch: 3.10.3*
-
-GDAL now builds when `WIN32_LEAN_AND_MEAN` is defined.
-
-### CMake and packaged-build controls
-
-*Batch: 3.11.0*
-
-The CMake package now exports GDAL library targets, exports `GDAL_DEBUG` publicly for debug builds, and offers `USE_PRECOMPILED_HEADERS` with a default of `OFF`. Ubuntu `ubuntu-full` amd64 images can optionally add the Oracle, ECW, and MrSID drivers, which remain disabled by default.
-
-### Poppler 25.10 build compatibility
-
-*Batch: 3.11.5*
-
-GDAL now builds with Poppler 25.10 while retaining compatibility with older Poppler versions.
-
-### Build-time feature gates and public raster headers
-
-*Batch: 3.12.0*
-
-CMake adds `GDAL_ENABLE_ALGORITHMS` to omit algorithms beneath `gdal`, plus `GDAL_VRT_ENABLE_RAWRASTERBAND` to compile out raw VRT bands; the latter also exists as a runtime configuration option. Raster implementation types are now available through installed public C++ headers such as `gdal_dataset.h`, `gdal_rasterband.h`, `gdal_geotransform.h`, and `gdal_raster_cpp.h`.
-
-### Python no-GIL builds and algorithm progress
-
-*Batch: 3.12.1*
-
-The Python bindings support Python 3.13 and later free-standing/no-GIL builds. Dynamically generated `gdal.alg.*()` methods also accept a `progress` keyword argument.
-
-### Build compatibility with newer dependencies
-
-*Batch: 3.12.2*
-
-Arrow and Parquet builds work with libarrow 23.0 when precompiled headers are enabled, the PDF driver supports Poppler 26.01.0, and LIBKML builds with Boost 1.90, Clang 21, and C++23.
-
-### Poppler and parallel HDF5 builds
-
-*Batch: 3.12.3*
-
-The PDF driver builds with Poppler 26.02.0, and the build system properly supports parallel HDF5.
-
-### Build compatibility
-
-*Batch: 3.12.4*
-
-Builds configured with `-DGDAL_ENABLE_ALGORITHMS=OFF` now succeed. The PDF driver builds against Poppler 26.04.00, and HDF5 builds tolerate libhdf5 2.1 headers that redefine `_POSIX_C_SOURCE`.
-
-### Build compatibility and JP2Grok dependency
-
-*Batch: 3.13.1*
-
-GDAL builds against Poppler 26.06.00, and the JP2Grok driver now requires Grok 20.3.2 or newer.
-
-### Build configuration and dependency requirements
-
-*Batch: 3.13.2*
-
-With `BUILD_PYTHON_BINDINGS=OFF`, CMake no longer searches for Python. Builds support CMake 4.4, Poppler 26.08 development versions, and SWIG 4.5 development versions; the JP2Grok driver now requires `libjp2grok` 20.3.5 or newer.
-
-### Python packaging with recent setuptools
-
-*Batch: 3.13.2*
-
-When setuptools 77 or newer is used, the bindings declare Python 3.9 as their minimum because those setuptools versions do not support Python 3.8.
-
-## Language bindings
-
-### Binding-level virtual filesystem support
-
-*Batch: 3.11.0*
-
-SWIG bindings add `Driver.CreateVector()`, and C# adds `VSIGetMemFileBuffer`. Python adds `osgeo.gdal.VSIFile` and `osgeo.gdal_fsspec`, whose import registers GDAL VSI handlers as fsspec `AbstractFileSystem` implementations.
+1. Match ABI and dependency versions before enabling optional drivers.
+2. Set algorithm and raw-VRT feature gates deliberately.
+3. Test cloud auth refresh, path-specific options, and cache invalidation.
+4. Scope HTTP headers and query strings by path; validate redirect credential
+   policy.
+5. Explicitly close output datasets and verify flush errors.
+6. Test the exact Python packaging toolchain and interpreter mode in use.

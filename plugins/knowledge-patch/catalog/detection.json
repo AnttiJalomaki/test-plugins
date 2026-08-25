@@ -1,7 +1,54 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-31T12:55:14Z",
+  "generated_at": "2026-08-25T01:43:45Z",
   "rules": [
+    {
+      "id": "adyen-knowledge-patch",
+      "short_label": "Adyen",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "adyen",
+        "adyen api",
+        "adyen checkout",
+        "adyen knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "java",
+        "csharp",
+        "python",
+        "php",
+        "ruby",
+        "go",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "checkout",
+        "webhooks",
+        "payment-methods",
+        "platforms"
+      ],
+      "paths": {
+        "claude": "skills-claude/adyen-knowledge-patch",
+        "codex": "skills-codex/adyen-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/adyen-knowledge-patch/coverage.json",
+        "codex": "skills-codex/adyen-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@adyen/",
+          "composer.json::adyen/",
+          ".env*::ADYEN_API_KEY"
+        ]
+      }
+    },
     {
       "id": "agopengps-knowledge-patch",
       "short_label": "AgOpenGPS",
@@ -582,6 +629,48 @@
       }
     },
     {
+      "id": "apple-pay-knowledge-patch",
+      "short_label": "Apple Pay",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "apple pay",
+        "apple pay knowledge patch",
+        "apple pay on the web",
+        "applepay"
+      ],
+      "languages": [
+        "javascript",
+        "typescript",
+        "swift",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "wallets",
+        "checkout",
+        "merchant-validation",
+        "payment-tokens"
+      ],
+      "paths": {
+        "claude": "skills-claude/apple-pay-knowledge-patch",
+        "codex": "skills-codex/apple-pay-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/apple-pay-knowledge-patch/coverage.json",
+        "codex": "skills-codex/apple-pay-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/*.{js,ts,tsx}::ApplePaySession",
+          "**/*.entitlements::com.apple.developer.in-app-payments",
+          ".env*::APPLE_PAY_MERCHANT_ID"
+        ]
+      }
+    },
+    {
       "id": "arch-knowledge-patch",
       "short_label": "Arch Linux",
       "coverage_kind": "rolling",
@@ -1033,6 +1122,48 @@
       }
     },
     {
+      "id": "bigcommerce-knowledge-patch",
+      "short_label": "BigCommerce",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "big commerce",
+        "bigcommerce",
+        "bigcommerce api",
+        "bigcommerce knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "graphql",
+        "json"
+      ],
+      "tags": [
+        "ecommerce",
+        "storefront",
+        "graphql",
+        "checkout",
+        "webhooks"
+      ],
+      "paths": {
+        "claude": "skills-claude/bigcommerce-knowledge-patch",
+        "codex": "skills-codex/bigcommerce-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/bigcommerce-knowledge-patch/coverage.json",
+        "codex": "skills-codex/bigcommerce-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@bigcommerce/",
+          ".env*::BIGCOMMERCE_STORE_HASH",
+          ".env*::BIGCOMMERCE_ACCESS_TOKEN"
+        ]
+      }
+    },
+    {
       "id": "biome-knowledge-patch",
       "short_label": "Biome",
       "coverage_kind": "versioned",
@@ -1078,8 +1209,8 @@
       "id": "bun-knowledge-patch",
       "short_label": "Bun",
       "coverage_kind": "versioned",
-      "covered_through": "1.3.14",
-      "coverage_label": "1.3.14",
+      "covered_through": "1.4.0",
+      "coverage_label": "1.4.0",
       "aliases": [
         "bun",
         "bun js",
@@ -2112,6 +2243,53 @@
       }
     },
     {
+      "id": "dhl-shipping-knowledge-patch",
+      "short_label": "DHL Shipping",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
+      "aliases": [
+        "dhl",
+        "dhl parcel api",
+        "dhl shipping",
+        "dhl shipping knowledge patch",
+        "mydhl api"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java",
+        "csharp",
+        "php",
+        "json",
+        "xml"
+      ],
+      "tags": [
+        "shipping",
+        "logistics",
+        "labels",
+        "customs",
+        "merchant-api"
+      ],
+      "paths": {
+        "claude": "skills-claude/dhl-shipping-knowledge-patch",
+        "codex": "skills-codex/dhl-shipping-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/dhl-shipping-knowledge-patch/coverage.json",
+        "codex": "skills-codex/dhl-shipping-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          ".env*::DHL_API_KEY",
+          ".env*::DHL_SITE_ID",
+          "**/*.{js,ts,py,php,java,cs}::api-eu.dhl.com"
+        ]
+      }
+    },
+    {
       "id": "dioxus-knowledge-patch",
       "short_label": "Dioxus",
       "coverage_kind": "versioned",
@@ -2407,6 +2585,53 @@
         ]
       },
       "covered_from": "1.2.0"
+    },
+    {
+      "id": "easypost-knowledge-patch",
+      "short_label": "EasyPost",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "easy post",
+        "easypost",
+        "easypost api",
+        "easypost knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "ruby",
+        "go",
+        "java",
+        "csharp",
+        "php",
+        "json"
+      ],
+      "tags": [
+        "shipping",
+        "logistics",
+        "labels",
+        "tracking",
+        "carrier-api"
+      ],
+      "paths": {
+        "claude": "skills-claude/easypost-knowledge-patch",
+        "codex": "skills-codex/easypost-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/easypost-knowledge-patch/coverage.json",
+        "codex": "skills-codex/easypost-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@easypost/api",
+          "requirements*.txt::easypost",
+          ".env*::EASYPOST_API_KEY"
+        ]
+      }
     },
     {
       "id": "elasticsearch-knowledge-patch",
@@ -2904,6 +3129,51 @@
           "requirements*.txt::fastapi",
           "poetry.lock::name = \"fastapi\"",
           "uv.lock::name = \"fastapi\""
+        ]
+      }
+    },
+    {
+      "id": "fedex-shipping-knowledge-patch",
+      "short_label": "FedEx Shipping",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "fedex",
+        "fedex api",
+        "fedex shipping",
+        "fedex shipping knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java",
+        "csharp",
+        "php",
+        "json"
+      ],
+      "tags": [
+        "shipping",
+        "logistics",
+        "labels",
+        "tracking",
+        "merchant-api"
+      ],
+      "paths": {
+        "claude": "skills-claude/fedex-shipping-knowledge-patch",
+        "codex": "skills-codex/fedex-shipping-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/fedex-shipping-knowledge-patch/coverage.json",
+        "codex": "skills-codex/fedex-shipping-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          ".env*::FEDEX_CLIENT_ID",
+          ".env*::FEDEX_CLIENT_SECRET",
+          "**/*.{js,ts,py,php,java,cs}::apis.fedex.com"
         ]
       }
     },
@@ -3616,6 +3886,49 @@
           "requirements*.txt::google-genai",
           "go.mod::google.golang.org/genai",
           "pom.xml::com.google.genai"
+        ]
+      }
+    },
+    {
+      "id": "google-pay-knowledge-patch",
+      "short_label": "Google Pay",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "google pay",
+        "google pay knowledge patch",
+        "googlepay",
+        "gpay"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "java",
+        "kotlin",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "wallets",
+        "checkout",
+        "tokenization",
+        "web-payments"
+      ],
+      "paths": {
+        "claude": "skills-claude/google-pay-knowledge-patch",
+        "codex": "skills-codex/google-pay-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/google-pay-knowledge-patch/coverage.json",
+        "codex": "skills-codex/google-pay-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@google-pay/",
+          "**/*.{html,js,ts,tsx}::pay.google.com/gp/p/js/pay.js",
+          "**/*.gradle*::com.google.android.gms:play-services-wallet"
         ]
       }
     },
@@ -5221,6 +5534,52 @@
       }
     },
     {
+      "id": "magento-adobe-commerce-knowledge-patch",
+      "short_label": "Magento / Adobe Commerce",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
+      "aliases": [
+        "adobe commerce",
+        "magento",
+        "magento 2",
+        "magento adobe commerce",
+        "magento adobe commerce knowledge patch",
+        "magento open source"
+      ],
+      "languages": [
+        "php",
+        "javascript",
+        "typescript",
+        "graphql",
+        "json",
+        "xml"
+      ],
+      "tags": [
+        "ecommerce",
+        "php",
+        "graphql",
+        "extensions",
+        "adobe-commerce"
+      ],
+      "paths": {
+        "claude": "skills-claude/magento-adobe-commerce-knowledge-patch",
+        "codex": "skills-codex/magento-adobe-commerce-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/magento-adobe-commerce-knowledge-patch/coverage.json",
+        "codex": "skills-codex/magento-adobe-commerce-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "composer.json::magento/product-",
+          "app/etc/env.php",
+          "bin/magento"
+        ]
+      }
+    },
+    {
       "id": "maplibre-gl-js-knowledge-patch",
       "short_label": "MapLibre GL JS",
       "coverage_kind": "versioned",
@@ -5378,6 +5737,88 @@
       "covered_from": "Matter 1.4.1"
     },
     {
+      "id": "medusa-knowledge-patch",
+      "short_label": "Medusa",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "medusa",
+        "medusa commerce",
+        "medusa knowledge patch",
+        "medusajs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "json"
+      ],
+      "tags": [
+        "ecommerce",
+        "typescript",
+        "headless-commerce",
+        "workflows",
+        "storefront"
+      ],
+      "paths": {
+        "claude": "skills-claude/medusa-knowledge-patch",
+        "codex": "skills-codex/medusa-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/medusa-knowledge-patch/coverage.json",
+        "codex": "skills-codex/medusa-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@medusajs/medusa",
+          "package.json::@medusajs/framework",
+          "medusa-config.*"
+        ]
+      }
+    },
+    {
+      "id": "mercur-knowledge-patch",
+      "short_label": "Mercur",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "mercur",
+        "mercur knowledge patch",
+        "mercur marketplace",
+        "mercurjs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "json"
+      ],
+      "tags": [
+        "ecommerce",
+        "marketplace",
+        "medusa",
+        "vendors",
+        "payouts"
+      ],
+      "paths": {
+        "claude": "skills-claude/mercur-knowledge-patch",
+        "codex": "skills-codex/mercur-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/mercur-knowledge-patch/coverage.json",
+        "codex": "skills-codex/mercur-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@mercurjs/",
+          "package.json::mercur",
+          "medusa-config.*::mercur"
+        ]
+      }
+    },
+    {
       "id": "model-context-protocol-knowledge-patch",
       "short_label": "Model Context Protocol (MCP)",
       "coverage_kind": "range",
@@ -5427,6 +5868,51 @@
         ]
       },
       "covered_from": "2025-03-26"
+    },
+    {
+      "id": "mollie-knowledge-patch",
+      "short_label": "Mollie",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "mollie",
+        "mollie api",
+        "mollie knowledge patch",
+        "mollie payments"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "php",
+        "python",
+        "ruby",
+        "java",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "checkout",
+        "subscriptions",
+        "webhooks",
+        "connect"
+      ],
+      "paths": {
+        "claude": "skills-claude/mollie-knowledge-patch",
+        "codex": "skills-codex/mollie-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/mollie-knowledge-patch/coverage.json",
+        "codex": "skills-codex/mollie-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@mollie/",
+          "composer.json::mollie/",
+          ".env*::MOLLIE_API_KEY"
+        ]
+      }
     },
     {
       "id": "mongodb-knowledge-patch",
@@ -6730,6 +7216,96 @@
       }
     },
     {
+      "id": "paddle-knowledge-patch",
+      "short_label": "Paddle",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "paddle",
+        "paddle api",
+        "paddle billing",
+        "paddle knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "go",
+        "php",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "billing",
+        "merchant-of-record",
+        "subscriptions",
+        "webhooks"
+      ],
+      "paths": {
+        "claude": "skills-claude/paddle-knowledge-patch",
+        "codex": "skills-codex/paddle-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/paddle-knowledge-patch/coverage.json",
+        "codex": "skills-codex/paddle-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@paddle/",
+          "**/*.{js,ts,tsx}::Paddle.Initialize",
+          ".env*::PADDLE_API_KEY"
+        ]
+      }
+    },
+    {
+      "id": "paypal-knowledge-patch",
+      "short_label": "PayPal",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "paypal",
+        "paypal api",
+        "paypal checkout",
+        "paypal knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java",
+        "csharp",
+        "php",
+        "ruby",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "checkout",
+        "subscriptions",
+        "webhooks",
+        "merchant-onboarding"
+      ],
+      "paths": {
+        "claude": "skills-claude/paypal-knowledge-patch",
+        "codex": "skills-codex/paypal-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/paypal-knowledge-patch/coverage.json",
+        "codex": "skills-codex/paypal-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@paypal/",
+          "**/*.{html,js,ts,tsx}::paypal.com/sdk/js",
+          ".env*::PAYPAL_CLIENT_ID"
+        ]
+      }
+    },
+    {
       "id": "pgvector-knowledge-patch",
       "short_label": "pgvector",
       "coverage_kind": "versioned",
@@ -6986,6 +7562,48 @@
       }
     },
     {
+      "id": "polar-knowledge-patch",
+      "short_label": "Polar",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "polar",
+        "polar billing",
+        "polar knowledge patch",
+        "polar sh"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "billing",
+        "merchant-of-record",
+        "subscriptions",
+        "webhooks"
+      ],
+      "paths": {
+        "claude": "skills-claude/polar-knowledge-patch",
+        "codex": "skills-codex/polar-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/polar-knowledge-patch/coverage.json",
+        "codex": "skills-codex/polar-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@polar-sh/",
+          "pyproject.toml::polar-sdk",
+          ".env*::POLAR_ACCESS_TOKEN"
+        ]
+      }
+    },
+    {
       "id": "polars-knowledge-patch",
       "short_label": "Polars",
       "coverage_kind": "versioned",
@@ -7110,6 +7728,97 @@
           ".env*::DATABASE_URL=postgres",
           "**/compose*.yaml::image: postgres",
           "**/docker-compose*.yml::image: postgres"
+        ]
+      }
+    },
+    {
+      "id": "posti-matkahuolto-knowledge-patch",
+      "short_label": "Posti / Matkahuolto",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
+      "aliases": [
+        "matkahuolto",
+        "matkahuolto shipping",
+        "posti",
+        "posti matkahuolto",
+        "posti matkahuolto knowledge patch",
+        "posti shipping"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java",
+        "csharp",
+        "php",
+        "json",
+        "xml"
+      ],
+      "tags": [
+        "shipping",
+        "finland",
+        "pickup-points",
+        "labels",
+        "merchant-api"
+      ],
+      "paths": {
+        "claude": "skills-claude/posti-matkahuolto-knowledge-patch",
+        "codex": "skills-codex/posti-matkahuolto-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/posti-matkahuolto-knowledge-patch/coverage.json",
+        "codex": "skills-codex/posti-matkahuolto-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          ".env*::POSTI_API_KEY",
+          ".env*::MATKAHUOLTO_CLIENT_ID",
+          "**/*.{js,ts,py,php,java,cs}::api.posti.fi"
+        ]
+      }
+    },
+    {
+      "id": "prestashop-knowledge-patch",
+      "short_label": "PrestaShop",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "presta shop",
+        "prestashop",
+        "prestashop api",
+        "prestashop knowledge patch"
+      ],
+      "languages": [
+        "php",
+        "javascript",
+        "typescript",
+        "smarty",
+        "json"
+      ],
+      "tags": [
+        "ecommerce",
+        "php",
+        "modules",
+        "checkout",
+        "back-office"
+      ],
+      "paths": {
+        "claude": "skills-claude/prestashop-knowledge-patch",
+        "codex": "skills-codex/prestashop-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/prestashop-knowledge-patch/coverage.json",
+        "codex": "skills-codex/prestashop-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "composer.json::prestashop/prestashop",
+          "config/settings.inc.php::_PS_VERSION_",
+          "app/config/parameters.php::database_prefix"
         ]
       }
     },
@@ -8372,6 +9081,48 @@
       "covered_from": "1.84.0"
     },
     {
+      "id": "saleor-knowledge-patch",
+      "short_label": "Saleor",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "saleor",
+        "saleor cloud",
+        "saleor graphql",
+        "saleor knowledge patch"
+      ],
+      "languages": [
+        "python",
+        "graphql",
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "ecommerce",
+        "graphql",
+        "headless-commerce",
+        "apps",
+        "checkout"
+      ],
+      "paths": {
+        "claude": "skills-claude/saleor-knowledge-patch",
+        "codex": "skills-codex/saleor-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/saleor-knowledge-patch/coverage.json",
+        "codex": "skills-codex/saleor-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@saleor/",
+          ".env*::SALEOR_API_URL",
+          ".env*::SALEOR_APP_TOKEN"
+        ]
+      }
+    },
+    {
       "id": "sbom-spdx-cyclonedx-knowledge-patch",
       "short_label": "SBOM / SPDX / CycloneDX",
       "coverage_kind": "multi-product",
@@ -8644,6 +9395,93 @@
           "package.json::\"shadcn\"",
           "components/ui/*.tsx",
           "registry.json::\"$schema\""
+        ]
+      }
+    },
+    {
+      "id": "shopify-knowledge-patch",
+      "short_label": "Shopify",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "shopify",
+        "shopify api",
+        "shopify app",
+        "shopify knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "graphql",
+        "liquid",
+        "json"
+      ],
+      "tags": [
+        "ecommerce",
+        "graphql",
+        "apps",
+        "checkout",
+        "liquid"
+      ],
+      "paths": {
+        "claude": "skills-claude/shopify-knowledge-patch",
+        "codex": "skills-codex/shopify-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/shopify-knowledge-patch/coverage.json",
+        "codex": "skills-codex/shopify-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "shopify.app.toml",
+          "package.json::@shopify/",
+          "**/*.liquid"
+        ]
+      }
+    },
+    {
+      "id": "shopware-knowledge-patch",
+      "short_label": "Shopware",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "shopware",
+        "shopware 6",
+        "shopware api",
+        "shopware knowledge patch"
+      ],
+      "languages": [
+        "php",
+        "javascript",
+        "typescript",
+        "vue",
+        "twig",
+        "xml"
+      ],
+      "tags": [
+        "ecommerce",
+        "php",
+        "store-api",
+        "extensions",
+        "storefront"
+      ],
+      "paths": {
+        "claude": "skills-claude/shopware-knowledge-patch",
+        "codex": "skills-codex/shopware-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/shopware-knowledge-patch/coverage.json",
+        "codex": "skills-codex/shopware-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "composer.json::shopware/core",
+          "composer.json::shopware/platform",
+          ".shopware-project.yml"
         ]
       }
     },
@@ -8947,6 +9785,53 @@
           "Cargo.toml::sqlx",
           "Cargo.lock::name = \"sqlx\"",
           ".sqlx/query-*.json"
+        ]
+      }
+    },
+    {
+      "id": "square-knowledge-patch",
+      "short_label": "Square",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "square",
+        "square api",
+        "square knowledge patch",
+        "square payments"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java",
+        "csharp",
+        "php",
+        "ruby",
+        "go",
+        "json"
+      ],
+      "tags": [
+        "payments",
+        "orders",
+        "catalog",
+        "webhooks",
+        "web-payments"
+      ],
+      "paths": {
+        "claude": "skills-claude/square-knowledge-patch",
+        "codex": "skills-codex/square-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/square-knowledge-patch/coverage.json",
+        "codex": "skills-codex/square-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::square",
+          "package.json::@square/web-sdk",
+          ".env*::SQUARE_ACCESS_TOKEN"
         ]
       }
     },
@@ -10141,6 +11026,51 @@
       }
     },
     {
+      "id": "ups-shipping-knowledge-patch",
+      "short_label": "UPS Shipping",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "ups",
+        "ups api",
+        "ups shipping",
+        "ups shipping knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "java",
+        "csharp",
+        "php",
+        "json"
+      ],
+      "tags": [
+        "shipping",
+        "logistics",
+        "labels",
+        "tracking",
+        "merchant-api"
+      ],
+      "paths": {
+        "claude": "skills-claude/ups-shipping-knowledge-patch",
+        "codex": "skills-codex/ups-shipping-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ups-shipping-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ups-shipping-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          ".env*::UPS_CLIENT_ID",
+          ".env*::UPS_CLIENT_SECRET",
+          "**/*.{js,ts,py,php,java,cs}::onlinetools.ups.com"
+        ]
+      }
+    },
+    {
       "id": "uv-knowledge-patch",
       "short_label": "uv",
       "coverage_kind": "range",
@@ -10182,6 +11112,47 @@
         ]
       },
       "covered_from": "0.6.0"
+    },
+    {
+      "id": "vendure-knowledge-patch",
+      "short_label": "Vendure",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "vendure",
+        "vendure api",
+        "vendure commerce",
+        "vendure knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "graphql"
+      ],
+      "tags": [
+        "ecommerce",
+        "typescript",
+        "graphql",
+        "plugins",
+        "headless-commerce"
+      ],
+      "paths": {
+        "claude": "skills-claude/vendure-knowledge-patch",
+        "codex": "skills-codex/vendure-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vendure-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vendure-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::@vendure/core",
+          "package.json::@vendure/admin-ui",
+          "vendure-config.*"
+        ]
+      }
     },
     {
       "id": "vercel-ai-sdk-knowledge-patch",
@@ -10597,6 +11568,92 @@
           "**/wireguard/*.conf",
           "**/*.conf::PrivateKey =",
           "**/*.netdev::Kind=wireguard"
+        ]
+      }
+    },
+    {
+      "id": "woocommerce-knowledge-patch",
+      "short_label": "WooCommerce",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "woo",
+        "woo commerce",
+        "woocommerce",
+        "woocommerce knowledge patch"
+      ],
+      "languages": [
+        "php",
+        "javascript",
+        "typescript",
+        "json"
+      ],
+      "tags": [
+        "ecommerce",
+        "wordpress",
+        "checkout",
+        "payments",
+        "extensions"
+      ],
+      "paths": {
+        "claude": "skills-claude/woocommerce-knowledge-patch",
+        "codex": "skills-codex/woocommerce-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/woocommerce-knowledge-patch/coverage.json",
+        "codex": "skills-codex/woocommerce-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "wp-content/plugins/woocommerce/woocommerce.php",
+          "composer.json::woocommerce/woocommerce",
+          "package.json::@woocommerce/"
+        ]
+      }
+    },
+    {
+      "id": "wordpress-knowledge-patch",
+      "short_label": "WordPress",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
+      "aliases": [
+        "gutenberg",
+        "wordpress",
+        "wordpress knowledge patch",
+        "wp core"
+      ],
+      "languages": [
+        "php",
+        "javascript",
+        "typescript",
+        "html",
+        "css",
+        "json"
+      ],
+      "tags": [
+        "cms",
+        "php",
+        "plugins",
+        "themes",
+        "block-editor"
+      ],
+      "paths": {
+        "claude": "skills-claude/wordpress-knowledge-patch",
+        "codex": "skills-codex/wordpress-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/wordpress-knowledge-patch/coverage.json",
+        "codex": "skills-codex/wordpress-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [],
+        "files": [
+          "wp-config.php",
+          "wp-content/plugins/**",
+          "wp-content/themes/**"
         ]
       }
     },

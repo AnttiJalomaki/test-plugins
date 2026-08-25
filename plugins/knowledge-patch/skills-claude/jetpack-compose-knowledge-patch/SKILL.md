@@ -10,201 +10,174 @@ metadata:
 
 # Jetpack Compose
 
-Use this skill when upgrading or maintaining AndroidX Compose UI, Foundation,
-Runtime, Animation, testing, or Material 3 code. Check the project's Compose
-BOM and individually pinned artifacts before applying guidance because the
-libraries release independently.
+Use this skill when implementing, upgrading, reviewing, or testing AndroidX
+Compose UI, Foundation, Runtime, Material 3, compiler-plugin, or BOM code.
+Treat those artifacts as separately versioned products: inspect the module's
+Gradle declarations, version catalog, and resolved dependency graph before
+applying guidance.
 
-## How to use this patch
+## Working Method
 
-1. Inspect the module's Compose BOM, direct artifact versions, Kotlin plugin,
-   Android Gradle Plugin, `compileSdk`, and `minSdk`.
-2. Open the topic reference that matches the code being changed.
-3. Apply advice only to artifacts at or beyond the version cited beside it.
-4. Prefer current APIs over temporary compatibility flags; several flags were
-   removed in later Foundation and UI releases.
-5. Run Compose UI tests with the dispatcher and accessibility artifacts that
-   match the selected testing API generation.
+1. Identify the affected surface: build setup, runtime/state, input and focus,
+   layout/graphics, text, Material 3, Android hosting, or testing.
+2. Check the resolved version of every relevant artifact. A BOM aligns the
+   artifacts it manages but does not make every Compose-related product share
+   one release number.
+3. Search the topic reference below for renamed, removed, or behavior-changing
+   APIs before editing call sites.
+4. Prefer the replacement API over compatibility flags. Several migration
+   flags existed briefly and were removed in later releases.
+5. Compile the affected source set, run Compose lint, and exercise UI tests on
+   the scheduler and host configuration used by the project.
+6. For Android-only behavior, verify API-level guards, window ownership,
+   insets, resources, and View/Compose interop rather than assuming common-code
+   behavior applies unchanged.
 
-## Reference index
+## Topic Index
 
 | Reference | Topics |
 | --- | --- |
-| [Setup, Runtime, and State](references/setup-runtime-state.md) | Toolchain floors, BOMs, runtime annotations, saveable state, retention, composition, diagnostics |
-| [Input, Scrolling, and Focus](references/input-scroll-focus.md) | Focus, gestures, overscroll, 2D scrolling, lazy layout, visibility, pointer input |
-| [Layout, Animation, and Graphics](references/layout-animation-graphics.md) | Lookahead, shared transitions, layout nodes, FlexBox, Grid, shadows, shaders, frame rate |
-| [Material 3 Components](references/material3-components.md) | Material 3 dependencies, navigation, text fields, search, pickers, tooltips, sheets, sliders, color |
-| [Platform, Window, and Interop](references/platform-window-interop.md) | Insets, window geometry, Android hosts, resources, clipboard, paint, platform interop |
-| [Semantics, Accessibility, and Testing](references/semantics-accessibility-testing.md) | Semantics migrations, accessibility checks, test dispatchers, test rules, host theme |
-| [Text, Autofill, and Resources](references/text-autofill-resources.md) | Semantic autofill, text sizing and overflow, editing, context menus, selection, transliteration |
+| [Setup, Runtime, and State](references/setup-runtime-state.md) | Toolchain floors, BOMs, compiler reports, pausable composition, retained and saveable state, diagnostics |
+| [Input, Scrolling, and Focus](references/input-scroll-focus.md) | Focus, pointer and trackpad input, haptics, overscroll, scrolling, visibility callbacks, indicators |
+| [Layout, Animation, and Graphics](references/layout-animation-graphics.md) | Lookahead, shared transitions, FlexBox/Grid, lazy infrastructure, modifier nodes, shadows, shaders, mesh gradients |
+| [Text, Autofill, and Resources](references/text-autofill-resources.md) | Text fields, autosizing, annotations, autofill, selection, fonts, resources, clipboard |
+| [Material 3 Components](references/material3-components.md) | Component migrations, state APIs, navigation, pickers, tooltips, sheets, sliders, color and inset changes |
+| [Platform, Window, and Interop](references/platform-window-interop.md) | Insets, window geometry, ComposeView hosting, dialogs/popups, paint and color interop, frame rate |
+| [Semantics, Accessibility, and Testing](references/semantics-accessibility-testing.md) | Semantics tree changes, accessibility, test artifacts, schedulers, hybrid UI scoping |
 
-## Upgrade blockers and removed APIs
+## Breaking Changes First
 
-### Align the Android toolchain
+### Toolchain and platform floors
 
-- Starting with Compose 1.12, use `compileSdk = 37` and Android Gradle Plugin
-  9. This does not require `targetSdk = 37`.
-- Compose Animation, Foundation, Runtime, and UI 1.10.0 require API 23 or
-  newer. Artifacts built with Kotlin 2.0 require Kotlin Gradle Plugin 2.0.0 or
-  newer.
-- Compose lint 1.9.0 requires AGP 8.8.2 and Android Studio Ladybug or newer.
-  On an older AGP, select standalone Lint 8.8.2 with
-  `android.experimental.lint.version=8.8.2`.
+- Compose Animation, Foundation, Runtime, and UI require Android API 23 or
+  newer from 1.10.0.
+- Artifacts built with Kotlin 2.0 require Kotlin Gradle Plugin 2.0.0 or newer.
+- Compose 1.12 Android builds require `compileSdk = 37` and Android Gradle
+  Plugin 9; `targetSdk` remains an independent choice.
+- Compose lint from 1.9.0 requires AGP 8.8.2 or standalone Lint 8.8.2 and an
+  Android Studio Ladybug-era toolchain or newer.
 
-### Finish the indication migration
+See [Setup, Runtime, and State](references/setup-runtime-state.md) before an
+upgrade changes the build.
 
-After recompiling against Foundation 1.9.0, indication-less `clickable`,
-`combinedClickable`, `selectable`, `toggleable`, and `triStateToggleable`
-overloads require an `IndicationNodeFactory` from `LocalIndication`. A legacy
-`Indication` can cause a runtime crash. Migrate it or temporarily use an
-explicit-indication overload. The compatibility flag was removed in 1.10.0.
+### Indication migration
 
-### Remove obsolete behavior flags
+After recompiling against 1.9.0, interaction modifiers whose overload omits an
+explicit `Indication` require `LocalIndication` to provide an
+`IndicationNodeFactory`. A legacy `Indication` can fail at runtime. Migrate the
+implementation or use an explicit-indication overload while bridging. The
+temporary `isNonComposedClickableEnabled` escape hatch is absent from 1.10.0.
 
-Delete assignments to behavior flags that disappeared when their behavior
-became permanent. This includes the Foundation flags for non-composed
-clickables, on-scroll callbacks, fling continuation, drag pickup, nested
-prefetch, pointer-velocity and interop fixes, immediate tap dispatch,
-non-suspending clickable input, text-field D-pad navigation, and keep-in-view
-focus observation. Also remove the UI semantic-autofill flag and the Runtime
-movable-content flags.
+### State and lifecycle changes
 
-### Migrate renamed and removed APIs
+- Remove custom keys from `rememberSaveable`; positional scoping is now the
+  supported behavior.
+- A cancelled `PausableComposition` must be disposed and cannot be reused.
+- Install custom retained-value stores with
+  `LocalRetainedValuesStoreProvider`; do not provide the local directly.
+- `retain` keeps values across temporary hierarchy removal without
+  serialization. Do not retain keys or values that can leak resources; mark
+  unsuitable types with `@DoNotRetain`.
 
-- Replace `FocusProperties.enter` and `exit` with `onEnter` and `onExit`.
-- Pass `fallback` to `Modifier.focusRestorer()` instead of a lambda.
+### Semantics and test structure
+
+`background`, `border`, and `graphicsLayer` can add semantics nodes. Tests that
+assert exact parent/child/sibling structure are brittle; tag the intended node
+or use an ancestor matcher. Replace `invisibleToUser()` with
+`hideFromAccessibility()`, and retrieve a semantics ID through
+`fetchSemanticsNode().id`.
+
+### Text and autofill migrations
+
 - Replace `AutoSize` with `TextAutoSize`.
-- Replace `invisibleToUser()` with `hideFromAccessibility()`.
-- Replace `Snapshot.id` with `snapshotId`.
-- Replace `currentCompositeKeyHash` with `currentCompositeKeyHashCode`.
-- Replace `TabRow` and `ScrollableTabRow` with primary or secondary variants.
-- Replace `Modifier.onFirstVisible()` with `onVisibilityChanged()` plus
-  explicit prior-visibility tracking.
-- Replace `RetainedValuesStore.getExitedValueOrDefault` with
-  `consumeExitedValueOrDefault`.
-- Use `android.graphics.Paint` and `Paint.nativePaint`, not `NativePaint` and
-  `asFrameworkPaint()`.
+- Replace deprecated autofill APIs with semantic `fillableData` and
+  `onFillData`; text autofill needs matching UI and Foundation support.
+- `TextFieldState.edit {}` creates an undo entry. Explicitly call
+  `undoState.clearHistory()` when programmatic edits should reset history.
+- Use `OutputTransformation` plus `TextFieldBuffer.addStyle`; the interim
+  `AnnotatedOutputTransformation` API is gone.
 
-## Runtime, state, and dependency quick reference
+### Layout and animation removals
 
-### Use the BOM consistently
+- Replace deprecated contextual flow layouts and overflow overloads with
+  ordinary `FlowRow`/`FlowColumn` or a custom layout.
+- Replace `ScaleToBounds` with `scaleToBounds`; removed shared-transition
+  factories and parameters have no direct compatibility flag.
+- Replace `Modifier.meshGradient` with a `MeshGradientPainter` installed via
+  `Modifier.paint`.
 
-Import the same Compose platform in application and instrumented-test
-configurations, then omit versions from individual Compose dependencies:
+### Material 3 dependency and component changes
 
-```kotlin
-val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
-implementation(composeBom)
-androidTestImplementation(composeBom)
-implementation("androidx.compose.material3:material3")
-```
+- Material 3 no longer brings in `material-icons-core`. Declare it explicitly
+  only when maintaining existing icons; prefer Material Symbols vector XML.
+- Stable Material 3 excludes expressive and component-override APIs that still
+  carried their experimental annotations. Use a compatible artifact line when
+  those APIs are required.
+- `TabRow` and `ScrollableTabRow` are deprecated; select the appropriate
+  primary or secondary variant.
+- Custom `ColorScheme` construction must supply fixed roles and surface
+  container roles.
 
-Use `compose-bom-alpha` for the newest alpha-or-better artifacts or
-`compose-bom-beta` for beta-or-better artifacts. These testing BOMs may also
-resolve some libraries to stable versions.
+## High-Value APIs
 
-### Choose the right state lifetime
+### Observe placement and visibility precisely
 
-- Use `rememberSaveable` for serializable state that must survive recreation.
-  Do not pass its deprecated custom `key`; positional scoping prevents state
-  sharing and loss in nested lazy layouts.
-- Use `rememberSerializable` for the `KSerializer` overload.
-- Use `retain` for nonserialized values that should outlive a temporary exit
-  from the composition. Avoid resource-leaking keys and mark unsuitable types
-  with `@DoNotRetain`.
-- Install custom retention stores with `LocalRetainedValuesStoreProvider` and
-  use `ManagedRetainedValuesStore` rather than directly providing the local.
+Use `Modifier.onLayoutRectChanged` for debounced or throttled root-, window-,
+or screen-relative bounds. Use `onVisibilityChanged` for visibility state;
+`onFirstVisible` was deprecated because it could fire after every re-entry.
+Custom nodes can use `onVisibilityChangedNode()`.
 
-### Treat pausable and retained lifecycles explicitly
+### Build advanced layouts
 
-Pausable composition requires compiler support. Check `isApplied` and
-`isCancelled`; dispose a cancelled pausable composition because reuse throws.
-Use `RetainedEffect` for retention lifetime work and `onUnused` for values
-abandoned before use.
-
-## Input, scrolling, and focus quick reference
-
-### Configure semantic autofill
-
-Text autofill in Compose 1.8.0 requires both UI and Foundation 1.8 or newer.
-Use semantic autofill APIs and `FillableData.createFrom(value)`. In 1.10.0,
-use `fillableData` and `onFillData` rather than `onAutofillText`; date values
-are available through `dateMillisValue`.
-
-### Own overscroll exactly once
-
-Use `rememberPlatformOverscrollFactory` and `LocalOverscrollFactory`. Provide
-`null` to disable overscroll or create a factory with `color` and `padding` to
-customize it. A custom `OverscrollEffect` may split event handling and drawing
-with `withoutVisualEffect` and `withoutEventHandling`; never draw one effect
-twice.
+`Modifier.animateBounds` animates lookahead size and position. `FlexBox`
+provides grow, shrink, wrapping, direction, and alignment. Experimental `Grid`
+provides explicit two-dimensional tracks and placement. Stable lazy-layout
+primitives support custom measure policies and internally scheduled prefetch.
 
 ### Handle modern scrolling
 
-- Use `Modifier.scrollable2D` and `Scrollable2DState` for two-axis input; the
-  `canScroll` contract takes an `Offset`.
-- Use `Modifier.scrollableArea()` when scrolling also needs bounds clipping
-  and automatic content-direction handling.
-- Read scrollbar state from `ScrollableState.scrollIndicatorState`, or build
-  a custom indicator with `Modifier.scrollIndicator` and
-  `ScrollIndicatorFactory`.
-- Direct composition reads of `ScrollState.value` and
-  `PagerState.currentPageOffsetFraction` are frequently invalidating.
+Use `scrollable2D` for two-axis motion, `scrollableArea()` for scrolling plus
+bounds clipping, and `ScrollIndicatorState` or `Modifier.scrollIndicator` for
+indicator integrations. An `OverscrollEffect` can separate event handling from
+drawing, but the same effect must never be drawn twice.
 
-## Layout, animation, and graphics quick reference
+### Choose the right persistence lifetime
 
-### Animate with lookahead and shared transitions
+- `remember`: composition lifetime.
+- `retain`: survives temporary hierarchy removal without serialization.
+- `rememberSaveable` or `rememberSerializable`: state restoration with
+  supported saved-state encoding.
 
-Use `Modifier.animateBounds` inside a lookahead scope. Shared-transition APIs
-support dynamic enablement, disposed-target fallback bounds, initial gesture
-velocity, lookahead coordinates, and `skipToLookaheadPosition`. Use
-`scaleToBounds`; removed `ScaleToBounds` and legacy configuration parameters
-must not remain in upgraded code.
+Check key lifetime, registry ownership, Android parcelability, and disposal
+requirements in [Setup, Runtime, and State](references/setup-runtime-state.md).
 
-### Select a general or explicit layout
+### Host Compose beyond a standard activity
 
-Use `FlexBox` with `FlexBoxConfig` and `Modifier.flex` for grow, shrink,
-wrapping, direction, and alignment. Its DSL uses `grow(1f)` calls. Content
-that cannot shrink may overflow, so add `clipToBounds()` when needed.
+`ComposeViewContext` can compose an unattached `ComposeView`. Dialogs and
+popups can receive custom window tokens, and window types enable service-owned
+overlay hosts. Treat these as Android platform integration and verify token,
+lifecycle, and permission ownership.
 
-Use experimental `Grid` for explicit two-dimensional tracks and placement.
-When a flexible track contains a `SubcomposeLayout`,
-`MinMax(0.dp, 1.fr)` avoids intrinsic queries.
+### Test deterministically
 
-## Material 3 quick reference
+The v2 Compose UI test APIs use `StandardTestDispatcher` by default. Advance
+their shared scheduler explicitly, such as with `runCurrent()`. Older test APIs
+retain unconfined behavior unless an `effectContext` variant is configured.
+Use `onRootWithViewInteraction` to scope node lookup inside one View hierarchy
+in hybrid interfaces.
 
-### Declare icons intentionally
+## Upgrade Checklist
 
-Material 3 1.4.0 no longer brings in `material-icons-core`. Declare it only
-for existing icon usage; for new work prefer Material Symbols Vector Drawable
-XML.
-
-### Use state-backed components
-
-- Prefer `TextFieldState` overloads for text fields and the stable decoration
-  APIs; use `SecureTextField` or `OutlinedSecureTextField` for passwords.
-- Drive collapsed and expanded search surfaces with `SearchBarState`; use
-  `ExpandedFullScreenSearchBar` or `ExpandedDockedSearchBar` for the expanded
-  window.
-- Hoist sliders with `rememberSliderState` or `rememberRangeSliderState`.
-- Drive carousels through `CarouselState`, including `currentItem` and
-  programmatic scrolling.
-
-### Account for changed defaults
-
-- Selected navigation item labels use `colorScheme.secondary`.
-- `TooltipBox` defaults `focusable` to `false`; plain and rich tooltip maximum
-  widths are 200 dp and 320 dp.
-- Default component insets include display cutouts, and bottom sheets use
-  `WindowInsets.safeDrawing.Top`.
-- Custom `ColorScheme` construction should supply fixed roles and
-  surface-container roles.
-
-## Testing quick reference
-
-Accessibility checks live in `ui-test-accessibility` without a rule and
-`ui-test-junit4-accessibility` when invoked on a JUnit 4 rule. Compose UI
-testing v2 uses `StandardTestDispatcher` by default, exposes the shared
-`TestCoroutineScheduler`, and requires explicit scheduling such as
-`runCurrent()` for queued coroutines. Deprecated test APIs retain
-`UnconfinedTestDispatcher` behavior.
+- Resolve actual artifact versions and BOM constraints.
+- Verify `minSdk`, `compileSdk`, AGP, Kotlin, and lint compatibility.
+- Search for removed behavior-flag assignments and deprecated overloads.
+- Check `LocalIndication`, saveable-state keys, retained-store installation,
+  and pausable-composition disposal.
+- Review focus clearing, insets consumption, window rulers, and host tokens.
+- Re-run semantics tests without relying on an exact incidental tree shape.
+- Advance queued test coroutines when using standard-dispatcher test APIs.
+- Test API-level fallbacks for fonts, wide-gamut graphics, credential requests,
+  date types, and Android-only properties.
+- Confirm overscroll and modifier-node drawing occurs exactly once.
+- Prefer direct node tags, state-backed text/component APIs, and explicit
+  lifecycle ownership in new code.

@@ -1,28 +1,36 @@
 # Core Planning and Pipelines
 
-## ROS 2 Jazzy planning changes
+## Jazzy platform and planning changes
 
-Source batch: `jazzy-release`.
+### Jazzy 2.10 LTS baseline
 
-MoveIt 2 2.10 targets ROS 2 Jazzy Jalisco LTS and Rolling Ridley, replacing
-Humble as the recommended MoveIt release. On Jazzy, install ROS Debian binaries
-on Ubuntu Noble 24.04 or build from source.
+For the `jazzy-release`, MoveIt 2 version 2.10 targets ROS 2 Jazzy Jalisco LTS
+and Rolling Ridley, replacing Humble as the recommended MoveIt release. On
+Jazzy, install ROS Debian binaries on Ubuntu Noble 24.04 or build from source.
 
-Relative to Humble, the Jazzy release adds:
+Jazzy also adds parallel planning pipelines, so multiple pipelines can
+participate in planning instead of relying on one pipeline. It ships a new
+STOMP implementation and updates trajectory processing across TOTG, Ruckig,
+and Butterworth filtering.
 
-- execution of multi-DOF trajectories;
-- parallel planning pipelines;
-- a new STOMP motion-planner implementation; and
-- trajectory-processing updates for TOTG, Ruckig, and Butterworth filtering.
+### Planning pipeline and adapter migration
 
 The planning pipeline and its API were refactored to represent request and
-response adapters more clearly. Treat existing Humble-era pipeline integrations
-as migration-sensitive.
+response adapters more clearly. Treat Humble-era pipeline integrations as
+migration-sensitive.
 
-## Planning and execution with `moveit_py`
+### Multi-DOF trajectories
 
-`MoveItPy.get_planning_component()` returns the planning API for one group. The
-plan result carries the trajectory; the `MoveItPy` instance executes it.
+Jazzy adds execution of multi-DOF trajectories. Since 2.15.0, MoveIt also
+populates their `velocities` and `accelerations`; consumers should no longer
+assume these fields are empty.
+
+## `moveit_py` planning
+
+### Group planning and execution
+
+`MoveItPy.get_planning_component()` returns a group-specific planning API. The
+plan result carries the trajectory, and the `MoveItPy` instance executes it.
 
 ```python
 moveit = MoveItPy(node_name="moveit_py")
@@ -36,15 +44,15 @@ if result:
 ```
 
 Named SRDF states use `set_start_state(configuration_name=...)` or
-`set_goal_state(configuration_name=...)`. To use a `RobotState` as the goal,
-call `set_goal_state(robot_state=...)`.
+`set_goal_state(configuration_name=...)`. Supply a `RobotState` goal with
+`set_goal_state(robot_state=...)`.
 
-## Named planning-parameter profiles
+### Named planning parameter profiles
 
-`planning_pipelines.pipeline_names` selects the pipelines loaded in a
+`planning_pipelines.pipeline_names` selects the pipelines loaded into a
 `moveit_py` node. Separate top-level profiles map reusable names to
-`plan_request_params`. A profile can select the pipeline, planner ID, attempt
-count, velocity and acceleration scaling, and planning time.
+`plan_request_params`. A profile can select a pipeline, planner ID, attempt
+count, scaling factors, and planning time.
 
 ```yaml
 planning_pipelines:
@@ -63,9 +71,11 @@ chomp_profile:
     planning_time: 1.5
 ```
 
-For parallel planning, `MultiPipelinePlanRequestParameters` receives the
-`MoveItPy` instance and profile names, not just planner-plugin names. Supply it
-through the dedicated `multi_plan_parameters` argument.
+### Parallel planning profile selection
+
+Construct `MultiPipelinePlanRequestParameters` with the `MoveItPy` instance and
+the names of parameter profiles, not merely planner plugin names. Pass it using
+the dedicated `multi_plan_parameters` argument.
 
 ```python
 params = MultiPipelinePlanRequestParameters(
@@ -74,12 +84,11 @@ params = MultiPipelinePlanRequestParameters(
 result = arm.plan(multi_plan_parameters=params)
 ```
 
-## Constraint goals
+### Constraint goals
 
-Pass constraint messages as a list through
+Pass constraint messages as a list to
 `set_goal_state(motion_plan_constraints=...)`. The joint-constraint helper
-builds a constraint from a populated `RobotState` and its target joint model
-group.
+constructs one from a populated `RobotState` and target joint model group.
 
 ```python
 state.joint_positions = {"panda_joint1": -1.0, "panda_joint2": 0.7}
@@ -90,12 +99,14 @@ constraint = construct_joint_constraint(
 arm.set_goal_state(motion_plan_constraints=[constraint])
 ```
 
-## Planning-scene monitor contexts
+## Planning scene access
 
-Planning-scene access is scoped. Use `read_write()` for collision-object or
-state changes and `read_only()` for checks. After changing scene state or
-solving IK, update the state so transforms and collision checks see the new
-values.
+### Planning scene monitor contexts
+
+Use `read_write()` for collision-object changes and `read_only()` for checks.
+After modifying the scene state or solving IK, call `scene.current_state.update()`
+or `robot_state.update()` so transforms and collision checks use the changed
+state.
 
 ```python
 monitor = moveit.get_planning_scene_monitor()
@@ -112,16 +123,24 @@ with monitor.read_only() as scene:
     )
 ```
 
-Calling `robot_state.update()` is equivalent when working with a standalone
-state object.
-
 ## Built-in planning adapters
 
-- `CheckStartStateBounds` can clamp a slightly out-of-bounds start joint to its
-  URDF limit, subject to its configured tolerance.
-- `ValidateWorkspaceBounds` supplies a 10 m x 10 m x 10 m workspace only when
-  the request does not specify one.
-- `CheckStartStateCollision` samples nearby states according to
-  `jiggle_fraction` and a retry limit.
+- `CheckStartStateBounds` may clamp a slightly out-of-bounds starting joint to
+  its URDF limit, subject to its configured tolerance.
+- `ValidateWorkspaceBounds` supplies a 10 m by 10 m by 10 m workspace only when
+  the request omits one.
+- `CheckStartStateCollision` samples nearby states using `jiggle_fraction` and
+  a retry limit.
 - `ResolveConstraintFrames` rewrites constraints expressed in object subframes,
   such as `cup/handle`, into object or robot frames.
+
+## Downstream CMake linkage
+
+Since 2.15.0, downstream packages should link exported namespaced MoveIt CMake
+targets instead of passing MoveIt dependencies to `ament_target_dependencies()`.
+
+```cmake
+target_link_libraries(my_target
+  moveit_ros_planning::moveit_ros_planning
+)
+```

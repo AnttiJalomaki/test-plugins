@@ -1,28 +1,13 @@
 # AuthKit for Next.js
 
-## Contents
-
-- [App Router setup](#app-router-setup)
-- [Cookies](#cookies)
-- [Callbacks and deployment overrides](#callbacks-and-deployment-overrides)
-- [Proxy and middleware](#proxy-and-middleware)
-- [Composable responses and cache safety](#composable-responses-and-cache-safety)
-- [Server and client authentication](#server-and-client-authentication)
-- [Session and access-token refresh](#session-and-access-token-refresh)
-- [Eager authentication](#eager-authentication)
-- [API keys and custom sessions](#api-keys-and-custom-sessions)
-- [PKCE and callback CSRF checks](#pkce-and-callback-csrf-checks)
+Use this reference for App Router integration, cookies, callbacks, proxy or
+middleware behavior, route protection, session refresh, and client token state.
 
 ## App Router setup
 
-`@workos-inc/authkit-nextjs` targets the App Router. Configure:
-
-- a client ID;
-- an API key;
-- a public redirect URI; and
-- a session-cookie password containing at least 32 characters.
-
-Implement the callback as an App Router route handler:
+`@workos-inc/authkit-nextjs` targets the App Router. Configure a client ID, API
+key, public redirect URI, and session-cookie password of at least 32
+characters. Define the callback as a route handler:
 
 ```ts
 // app/callback/route.ts
@@ -31,42 +16,36 @@ import { handleAuth } from '@workos-inc/authkit-nextjs';
 export const GET = handleAuth({ returnPathname: '/dashboard' });
 ```
 
-Configure a default Logout URI in the dashboard before using sign-out.
+Signing out requires a default Logout URI in the WorkOS dashboard.
 
-## Cookies
+## Cookie configuration
 
-The session cookie defaults to:
+The encrypted session cookie defaults to:
 
-| Setting | Default | Override |
-| --- | --- | --- |
-| Name | `wos-session` | `WORKOS_COOKIE_NAME` |
-| SameSite | `Lax` | `WORKOS_COOKIE_SAMESITE` |
-| Maximum age | 400 days | `WORKOS_COOKIE_MAX_AGE` |
-| Domain | current host | `WORKOS_COOKIE_DOMAIN` |
+- name `wos-session`;
+- `SameSite=Lax`; and
+- a 400-day maximum age.
 
-`SameSite=None` forces a secure cookie. To share sessions across applications,
-set `WORKOS_COOKIE_DOMAIN` and use the same cookie password in every
-participating application.
+Override these with `WORKOS_COOKIE_NAME`, `WORKOS_COOKIE_MAX_AGE`,
+`WORKOS_COOKIE_DOMAIN`, and `WORKOS_COOKIE_SAMESITE`. `SameSite=None` forces a
+secure cookie. Apps sharing sessions through `WORKOS_COOKIE_DOMAIN` must also
+use the same cookie password.
 
-## Callbacks and deployment overrides
+## Callback data and deployment overrides
 
-`handleAuth` accepts `returnPathname`, `baseURL`, `onSuccess`, and
-`onError`. A successful callback supplies:
+`handleAuth` accepts `returnPathname`, `baseURL`, `onSuccess`, and `onError`.
+Successful callbacks receive the user, access and refresh tokens, impersonator,
+upstream OAuth tokens, organization ID, authentication method, and opaque
+string `state`. `authenticationMethod` is present only at initial login.
 
-- the user, access token, and refresh token;
-- the impersonator and upstream OAuth tokens;
-- the organization ID;
-- the authentication method; and
-- opaque string `state`.
+Set `baseURL` when the request host visible inside a container or reverse proxy
+differs from the public host. A proxy or middleware `redirectUri` option can
+override the environment value for dynamic deployments.
 
-`authenticationMethod` is present only on initial login. Set `baseURL` when a
-container's request host differs from its public host. For dynamic deployments,
-set the proxy or middleware `redirectUri` option to override the environment
-redirect URI.
+## Next.js 16 proxy migration
 
-## Proxy and middleware
-
-Use a root-level `proxy.ts` and `authkitProxy` with Next.js 16 or newer:
+Next.js 16 or newer uses root-level `proxy.ts` and `authkitProxy`. Next.js 15 or
+earlier uses `middleware.ts` and `authkitMiddleware`.
 
 ```ts
 import { authkitProxy } from '@workos-inc/authkit-nextjs';
@@ -75,98 +54,84 @@ export default authkitProxy();
 export const config = { matcher: ['/', '/admin/:path*'] };
 ```
 
-Use `middleware.ts` and `authkitMiddleware` with Next.js 15 or earlier.
-Exclude static paths such as `/_next/static`, `/_next/image`, and
+Exclude static assets such as `/_next/static`, `/_next/image`, and
 `favicon.ico` from broad matchers.
 
-To protect every matched route except explicit public paths:
+## Compose custom proxy responses safely
+
+`authkit(request)` returns `session`, internal `headers`, and
+`authorizationUrl`. Pass every resulting response through
+`handleAuthkitHeaders(request, headers, options)`. The helper:
+
+- propagates server authentication state without leaking internal values;
+- normalizes relative redirects;
+- uses HTTP 303 for redirects after POST or PUT;
+- strips injected `x-workos-*` request values; and
+- merges safe cookie and cache headers.
+
+For rewrites, partition the internal values with `partitionAuthkitHeaders`, then
+apply them with `applyResponseHeaders`. Authenticated contexts receive private
+or no-cache directives without disabling caching for public requests.
+
+## Protect routes at the proxy
+
+Enable `middlewareAuth.enabled` to require authentication for every matched
+path except entries in `unauthenticatedPaths`, which uses Next.js matcher-style
+globs. `signUpPaths` independently marks protected paths that should redirect
+with the sign-up screen hint.
 
 ```ts
 import { authkitProxy } from '@workos-inc/authkit-nextjs';
 
 export default authkitProxy({
-  middlewareAuth: {
-    enabled: true,
-    unauthenticatedPaths: ['/', '/about'],
-  },
+  middlewareAuth: { enabled: true, unauthenticatedPaths: ['/', '/about'] },
   signUpPaths: ['/account/sign-up'],
 });
 ```
 
-`unauthenticatedPaths` uses Next.js matcher-style globs. `signUpPaths`
-independently marks protected paths that should redirect with the sign-up screen
-hint.
-
-## Composable responses and cache safety
-
-For custom proxy logic, `authkit(request)` returns `session`, internal
-`headers`, and `authorizationUrl`. Pass every response through:
-
-```ts
-handleAuthkitHeaders(request, headers, options)
-```
-
-The helper:
-
-- propagates server authentication data without leaking internal headers;
-- normalizes relative redirects;
-- uses status 303 for POST and PUT redirects;
-- strips injected `x-workos-*` values; and
-- safely merges cookie and cache headers.
-
-For rewrites, use `partitionAuthkitHeaders` with `applyResponseHeaders`.
-Authenticated contexts receive private/no-cache directives, while public
-requests retain their normal caching behavior.
-
 ## Server and client authentication
 
-Use `withAuth()` in server components. It returns the authenticated state,
-access token, and active feature flags.
+Server components call `withAuth()`. Client components import
+`AuthKitProvider` and `useAuth` from
+`@workos-inc/authkit-nextjs/components`. Both auth readers accept
+`ensureSignedIn: true`; `withAuth` also returns the access token and active
+feature flags.
 
-In client components, import `AuthKitProvider` and `useAuth` from
-`@workos-inc/authkit-nextjs/components`. Both server and client auth readers
-accept `ensureSignedIn: true`. When passing server-provided `initialAuth` to
-the provider, omit the access token.
+When hydrating the provider with server `initialAuth`, omit the access token so
+it is not serialized into client state.
 
-## Session and access-token refresh
+## Refresh sessions and tokens
 
-`refreshSession` refreshes server-side user, role, and permission data and can
-switch organization context. On the client, call:
+`refreshSession` updates server-side user, role, and permission data and can
+switch organization context. Client code calls
+`refreshAuth({ organizationId })`. `useAccessToken` refreshes before expiry,
+supports explicit refresh with loading and error state, and stays synchronized
+with `refreshAuth`.
 
-```ts
-await refreshAuth({ organizationId });
-```
+Code calling `authkit` directly can observe refreshes with
+`onSessionRefreshSuccess` and `onSessionRefreshError`.
 
-`useAccessToken` refreshes before expiry, exposes manual refresh with loading
-and error state, and stays synchronized with `refreshAuth`. When calling
-`authkit` directly, observe refreshes through `onSessionRefreshSuccess` and
-`onSessionRefreshError`.
+## Eager client authentication
 
-## Eager authentication
-
-`eagerAuth: true` makes the access token available on the initial client render
-through a 30-second cookie. The cookie is created only for initial page loads,
-not API or prefetch requests, and the client immediately consumes and deletes it.
-
-Use `useAccessToken().getAccessToken()` when a service cannot wait for the
-normal asynchronous fetch. Accept the brief JavaScript exposure and apply normal
-XSS protections.
+Set `eagerAuth: true` only when the access token must exist on initial client
+render. It places the token in a 30-second cookie only for initial page loads,
+not API or prefetch requests. Client JavaScript immediately consumes and
+deletes it. Use `useAccessToken().getAccessToken()` for services that cannot
+wait for normal asynchronous token retrieval, and account for the brief
+JavaScript exposure with standard XSS defenses.
 
 ## API keys and custom sessions
 
-`validateApiKey()` parses the request's Bearer header and validates an AuthKit
-API key for a public endpoint.
+`validateApiKey()` parses the Bearer header and validates an AuthKit API key for
+public endpoints. For a self-hosted or custom authentication flow,
+`saveSession(session, requestOrUrl)` stores an access token, refresh token,
+user, and optional impersonator in the encrypted cookie after direct User
+Management authentication.
 
-For a self-hosted or custom authentication flow, call
-`saveSession(session, requestOrUrl)` after direct User Management
-authentication. Store the access token, refresh token, user, and optional
-impersonator in the encrypted session cookie.
-
-## PKCE and callback CSRF checks
+## PKCE and CSRF callback behavior
 
 AuthKit Next.js v3 always uses PKCE and sealed OAuth state. Remove
-`WORKOS_ENABLE_PKCE`.
-
-The short-lived `wos-auth-verifier` cookie must match callback `state`. The
-former URL-state-only fallback is unavailable. Handle missing cookies as
-`Auth cookie missing` and mismatched state as `OAuth state mismatch`.
+`WORKOS_ENABLE_PKCE`. The short-lived `wos-auth-verifier` cookie must match the
+callback `state`; the URL-state-only fallback no longer exists. A missing cookie
+fails with `Auth cookie missing`, while a mismatch fails with
+`OAuth state mismatch`.

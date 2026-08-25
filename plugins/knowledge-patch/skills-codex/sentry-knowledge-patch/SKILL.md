@@ -8,183 +8,198 @@ metadata:
 ---
 
 
-# Sentry JavaScript SDK
+# Sentry JavaScript SDK Knowledge Patch
 
-Use this skill when configuring, upgrading, or debugging Sentry JavaScript SDKs.
-Start with the installed `@sentry/*` package versions and the application's
-runtime and framework versions. Apply version-dependent guidance only when it
-matches the project, and prefer the manifest, code, tests, and observed runtime
-behavior when they disagree with assumptions.
+Use this skill when upgrading, configuring, or debugging Sentry JavaScript SDKs,
+especially when code crosses major SDK versions, framework wrappers, tracing,
+structured logs, or modern server runtimes.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migrations-and-runtime.md](references/migrations-and-runtime.md) | Runtime floors, package and API removals, sessions, renamed integrations, low-level APIs |
-| [tracing-and-spans.md](references/tracing-and-spans.md) | Sampling, OpenTelemetry, span hooks, strict continuation, span streaming, telemetry attributes |
-| [logging-privacy-and-events.md](references/logging-privacy-and-events.md) | Structured logs, console ingestion, shared attributes, PII, feedback, event enrichment |
-| [frameworks-and-builds.md](references/frameworks-and-builds.md) | Next.js, Remix, SvelteKit, Nuxt, Vue, Astro, NestJS, Prisma, serverless, source maps |
-| [modern-server-frameworks.md](references/modern-server-frameworks.md) | Elysia, Hono, Nitro, TanStack Start, request controls, middleware ordering, tunneling |
+| [migrations-and-runtime.md](references/migrations-and-runtime.md) | Runtime floors, removed packages and APIs, client internals, OpenTelemetry compatibility |
+| [frameworks-and-builds.md](references/frameworks-and-builds.md) | Framework wrappers, source maps, serverless runtimes, build integrations |
+| [logging-privacy-and-events.md](references/logging-privacy-and-events.md) | Structured logs, privacy, sessions, feedback, console and event behavior |
+| [tracing-and-spans.md](references/tracing-and-spans.md) | Sampling, propagation, span hooks, stream mode, telemetry attributes |
+| [modern-server-frameworks.md](references/modern-server-frameworks.md) | Elysia, Hono, Nitro, and TanStack Start setup |
 
-## Upgrade workflow
+## Upgrade triage
 
-1. Inventory every direct `@sentry/*` dependency, bundler plugin, Lambda
-   layer, preload file, and framework wrapper.
-2. Confirm Node.js, browser, Deno, TypeScript, and framework support before
-   changing packages.
-3. Remove deleted options and APIs before debugging new behavior. Do not keep
-   obsolete options as inert compatibility shims.
-4. Update integration factory names and any filters keyed by integration
-   `name` values.
-5. Recheck sampling, session tracking, source-map generation, upload, and
-   deletion independently; they no longer share all former defaults.
-6. Audit user data, request bodies, IP inference, console capture, logs, and
-   replay behavior after migration.
-7. Exercise errors, traces, logs, source maps, flush behavior, and graceful
-   shutdown in the actual deployment runtime.
+Before changing code:
 
-## Breaking-change quick reference
+1. Identify the installed Sentry SDK major and every framework-specific Sentry
+   package.
+2. Check the application runtime, framework, router, Prisma, OpenTelemetry, and
+   bundler-plugin versions against the relevant compatibility notes.
+3. Search for removed options, imports, integrations, wrappers, and low-level
+   extension types before updating dependencies.
+4. Review source-map generation, upload, deletion, and release naming as one
+   build pipeline.
+5. Verify sampling, session tracking, error filtering, and privacy behavior with
+   focused tests after migration.
 
-### Runtime and package floors
+## Major migration quick reference
 
-- Expect ES2020 in SDK packages.
-- Require Node.js 18.0.0 generally; require Node.js 18.19.1 for the ESM-only
-  Astro, Nuxt, and SvelteKit SDKs.
-- Require Deno 2.0 and TypeScript 5.0.4.
-- Transpile the SDK for browsers older than Chrome/Edge 80, Safari 14, iOS
-  Safari 14.4, Firefox 74, Opera 67, or Samsung Internet 13.
-- Do not combine current SDKs with Remix 1.x, TanStack Router 1.63.0 or older,
-  SvelteKit 1.x, Ember 3.x or older, or Prisma 5.x.
+### Runtime floors
 
-### Migrate to v9
+SDK packages may emit ES2020. Node-based packages require Node.js 18.0.0, while
+the ESM-only Astro, Nuxt, and SvelteKit packages require Node.js 18.19.1. Deno
+2.0 and TypeScript 5.0.4 are the corresponding floors. Transpile for browser
+targets older than Chrome or Edge 80, Safari 14, iOS Safari 14.4, Firefox 74,
+Opera 67, or Samsung Internet 13.
 
-- Replace `enableTracing` with `tracesSampleRate`; replace
-  `samplingContext.request` with `normalizedRequest` and read former
-  `transactionContext` fields directly from the sampling context.
-- Replace `autoSessionTracking` with `browserSessionIntegration`,
-  `httpIntegration`, or the default `processSessionIntegration`, depending on
-  the session type.
-- Import surviving `@sentry/utils` and deprecated `@sentry/types` exports from
-  `@sentry/core`; remove dependencies on the metrics API and Hub APIs.
-- Replace `captureUserFeedback()` with `captureFeedback()` and rename payload
-  `comments` to `message`.
-- Replace `hasTracingEnabled()` with `hasSpansEnabled()` and treat `Scope` as a
-  class rather than the removed interface.
-- Import Deno from `npm:@sentry/deno`, not `deno.land`.
+### Removed tracing switches and sampler fields
 
-### Migrate to v10
-
-- Upgrade directly consumed or pinned Sentry bundler plugins to their v4
-  major line.
-- Move `_experiments.enableLogs` and `_experiments.beforeSendLog` to top-level
-  initialization options.
-- Replace custom `BaseClient` use with `Client`; replace `logger` and `Logger`
-  with `debug` and `SentryDebugLogger`.
-- Upgrade Node OpenTelemetry dependencies to the 2.x/0.20x line, remain on
-  Sentry v9 when that is impossible, or evaluate `@sentry/node-core` for its
-  wider OpenTelemetry peer ranges.
-- Remove FID-dependent processing and use INP-oriented processing where
-  appropriate.
-- Use the unified `SentryNodeServerlessSDKv10` Lambda layer for ESM and
-  CommonJS deployments.
-
-## Tracing quick reference
-
-### Sampling
+Replace `enableTracing` with `tracesSampleRate`. In `tracesSampler`, use
+`normalizedRequest` instead of `request`, and read transaction fields such as
+`name` directly from the sampling context instead of `transactionContext`.
+Node.js invokes the sampler for trace decisions rather than once per span.
 
 ```js
 Sentry.init({
-  tracesSampler: ({ name, normalizedRequest, parentSampleRate, inheritOrSampleWith }) =>
+  tracesSampler: ({ name, normalizedRequest, inheritOrSampleWith }) =>
     name === "/health-check" ? 0 : inheritOrSampleWith(0.5),
 });
 ```
 
-An explicitly `undefined` `tracesSampleRate` is absent, allowing a downstream
-service to decide. Node.js does not invoke `tracesSampler` for every child
-span. Use `strictTraceContinuation: true` only when stricter incoming trace
-continuation is intended.
+An explicitly `undefined` `tracesSampleRate` is treated as absent, allowing a
+downstream service to make its own sampling decision.
 
-### Stream spans
+### Span hooks cannot drop spans
 
-For SDK 10.66.0 and newer, opt a server SDK into periodic span delivery:
+`beforeSendSpan` receives root and child spans but cannot drop one by returning
+`null`. Configure recording or use the appropriate filtering feature instead.
+When stream mode is enabled, wrap the hook with `Sentry.withStreamedSpan()` or
+the SDK falls back to transaction mode.
 
-```js
-Sentry.init({
-  tracesSampleRate: 1,
-  traceLifecycle: "stream",
-  beforeSendSpan: Sentry.withStreamedSpan((span) => span),
-});
-```
+### Session tracking is integration-based
 
-Use `spanStreamingIntegration()` for direct browser SDKs. Keep
-`beforeSendSpan` wrapped with `withStreamedSpan`; an unwrapped hook falls back
-to transaction mode. Replace transaction-dropping rules with `ignoreSpans`,
-which evaluates only initial names and attributes when each span starts.
-
-Do not expect `setTag()` or `setTags()` values on streamed spans. Record span
-data with attributes while retaining tags when errors also need them.
-
-## Logs quick reference
-
-Enable logs at the top level, emit a required message, and attach searchable
-attributes as the second argument:
+Remove `autoSessionTracking`. Browser sessions use
+`browserSessionIntegration`, server request sessions use `httpIntegration`, and
+Node.js process sessions use the default `processSessionIntegration`.
 
 ```js
 Sentry.init({
-  enableLogs: true,
   integrations: [
-    Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
+    Sentry.httpIntegration({ trackIncomingRequestsAsSessions: false }),
   ],
 });
-
-Sentry.setAttributes({ org_id: org.id, user_tier: user.tier });
-Sentry.logger.info("Order created", { orderId: "order_456" });
 ```
 
-Use `Sentry.logger.fmt` when interpolated values should become searchable
-attributes. Logs within active spans or supported browser replays gain trace
-or replay correlation automatically.
+### Core package and client changes
 
-## Privacy and event quick reference
+Do not import from the unpublished `@sentry/utils`; move remaining imports from
+it, and deprecated `@sentry/types` imports, to `@sentry/core`. Removed hub and
+metrics APIs have no direct compatibility shim. Custom clients use `Client`
+directly; `BaseClient` is no longer available in the next major line.
 
-Browser SDKs do not request backend IP inference by default. Enable it only
-deliberately:
+### OpenTelemetry boundary
+
+Node-based v10 packages require the OpenTelemetry 2.x/0.20x generation. Stay on
+the prior Sentry major when OpenTelemetry 2 is unavailable, or use
+`@sentry/node-core` where its wider peer ranges fit. Pass custom instrumentation
+through `openTelemetryInstrumentations`; `addOpenTelemetryInstrumentation()`
+is removed.
+
+### Feedback and browser privacy
+
+Replace `captureUserFeedback()` with `captureFeedback()` and rename payload
+`comments` to `message`. Browser SDKs no longer request backend IP inference by
+default; enable `sendDefaultPii` only when intended. Express user data is not
+copied from `request.user`; call `Sentry.setUser()` explicitly.
+
+### Framework wrapper selection
+
+Use the explicit `V6` or `V7` React Router wrapper matching the installed router
+major. NestJS applications use `@sentry/nestjs`, `SentryGlobalFilter`, and
+`@SentryExceptionCaptured`. SolidStart uses `withSentry`; Vue tracing options
+belong under `vueIntegration({ tracingOptions })`.
+
+### Next.js configuration
+
+Pass SDK options directly to `withSentryConfig`; do not use the discontinued
+`sentry` property in Next config. Set a deterministic release explicitly when
+needed. The removed `hideSourceMaps` option has no replacement.
+
+```js
+export default withSentryConfig(nextConfig, {
+  release: { name: "my-release" },
+  sourcemaps: { deleteSourcemapsAfterUpload: false },
+});
+```
+
+## High-value current capabilities
+
+### Structured logs
+
+Enable top-level `enableLogs` and `beforeSendLog`. Emit logs with
+`Sentry.logger` and attach searchable attributes as the second argument; use
+`Sentry.logger.fmt` for parameterized messages.
+
+```js
+Sentry.init({ enableLogs: true, beforeSendLog: log => log });
+Sentry.logger.info("Order created", { orderId: "order_456" });
+Sentry.logger.info(Sentry.logger.fmt`User ${userId} purchased ${productName}`);
+```
+
+Use `Sentry.setAttribute()` or `Sentry.setAttributes()` for attributes shared by
+logs and metrics. Scope methods provide app-wide or operation-local placement.
+
+### Streamed spans
+
+SDKs that support stream mode can send completed spans in periodic batches
+instead of retaining the full transaction. Configure `traceLifecycle: "stream"`
+on server SDKs, or install `spanStreamingIntegration()` in direct browser SDKs.
+
+```js
+Sentry.init({ tracesSampleRate: 1, traceLifecycle: "stream" });
+```
+
+Use `ignoreSpans` for start-time dropping. Rules see only the initial name and
+attributes. A dropped service span drops descendants; dropping a child reparents
+its retained children. Record span metadata with attributes because scope tags
+do not propagate to spans in stream mode.
+
+### Framework data controls
+
+Elysia, Hono, Nitro, and TanStack Start accept `dataCollection` controls for
+automatic request enrichment. Disable user data and request bodies explicitly
+where collection is not permitted.
 
 ```js
 Sentry.init({
-  sendDefaultPii: true,
   dataCollection: { userInfo: false, httpBodies: [] },
 });
 ```
 
-`requestDataIntegration` does not infer an Express user from `request.user`;
-call `Sentry.setUser()` explicitly. For Elysia, Hono, Nitro, and TanStack Start,
-use `dataCollection` to turn off default user information and request-body
-capture.
+### Error selection and trace continuation
 
-## Framework selection
+Use `strictTraceContinuation` when stricter inbound trace continuation is
+required. Fastify and supported modern framework integrations expose
+`shouldHandleError` for application-specific capture policy.
 
-| Work area | Read first |
-| --- | --- |
-| Next.js, Remix, Astro, Vue, Nuxt, SvelteKit, SolidStart | [frameworks-and-builds.md](references/frameworks-and-builds.md) |
-| NestJS, Prisma, React Router, Fastify | [frameworks-and-builds.md](references/frameworks-and-builds.md) |
-| AWS Lambda, Cloud Run, Cloudflare runtime behavior | [frameworks-and-builds.md](references/frameworks-and-builds.md) |
-| Elysia 1.4+ | [modern-server-frameworks.md](references/modern-server-frameworks.md#elysia) |
-| Hono 4+ | [modern-server-frameworks.md](references/modern-server-frameworks.md#hono) |
-| Nitro 3 beta | [modern-server-frameworks.md](references/modern-server-frameworks.md#nitro) |
-| TanStack Start 1.0 RC | [modern-server-frameworks.md](references/modern-server-frameworks.md#tanstack-start) |
+```js
+Sentry.init({
+  strictTraceContinuation: true,
+  integrations: [
+    Sentry.fastifyIntegration({
+      shouldHandleError: error => shouldReport(error),
+    }),
+  ],
+});
+```
 
 ## Verification checklist
 
-- Run the application in each deployed module format and runtime.
-- Verify the correct release identifier; do not rely on a Next.js Build ID.
-- Confirm source maps are generated, uploaded, and retained or deleted as
-  intended.
-- Capture a handled error, an unhandled framework error, and an error excluded
-  by `shouldHandleError` where configured.
-- Verify parent sampling, distributed trace continuation, and service-span
-  behavior across mixed tracing modes.
-- Flush or close the SDK in short-lived and serverless processes.
-- Inspect emitted log attributes, trace correlation, replay correlation, HTTP
-  route attributes, and any user or body data.
-- Check bundler warnings for instrumented modules marked external.
+- Build every client and server bundle and inspect source-map output and cleanup.
+- Exercise one sampled and one unsampled distributed trace across service
+  boundaries.
+- Confirm error hooks, framework filters, and serverless flushes complete before
+  responses terminate.
+- Verify session counts after replacing legacy automatic tracking.
+- Inspect an event for user, IP, request-body, stack-variable, and console
+  handling according to the intended privacy policy.
+- Query logs and spans using the new attribute names before changing dashboards.
+- Test development, preview, and production entry points when instrumentation is
+  preloaded with `--import`.

@@ -1,12 +1,10 @@
 # Google Play Target API Policy
 
-Use this reference to distinguish submission eligibility from continued
-discoverability. The policy facts are from the `play-target-api-policy` batch.
+Source batch: `play-target-api-policy`.
 
 ## New apps and updates
 
-Beginning 31 August 2026, Google Play requires these target API levels for new
-apps and app updates:
+From 31 August 2026, new apps and app updates must meet these target API floors:
 
 | Form factor | Minimum target API |
 | --- | ---: |
@@ -16,12 +14,15 @@ apps and app updates:
 | Android TV | 34 |
 | Android XR | 34 |
 
-## Existing-app discoverability
+Evaluate each packaged form factor independently rather than applying the
+mobile floor to every artifact.
 
-To remain discoverable to new users whose device runs a newer Android version
-than the app targets, existing apps need these lower floors:
+## Existing-app availability
 
-| Form factor | Minimum target API for discoverability |
+To remain discoverable to new users whose devices run a newer Android version
+than the app targets, existing apps must meet these lower floors:
+
+| Form factor | Minimum target API for broad discovery |
 | --- | ---: |
 | Mobile and Android Auto | 35 |
 | Wear OS | 34 |
@@ -29,17 +30,16 @@ than the app targets, existing apps need these lower floors:
 | Android Automotive OS | 32 |
 | Android XR | 34 |
 
-Below the applicable floor, an app remains available to new users only on
-devices whose OS API level is no higher than the app's target. Previous
-installers can still discover, reinstall, and use the app on every supported
-OS version.
+Below the relevant floor, an app remains available to new users only when the
+device OS API is no higher than the app's target API. Previous installers can
+still discover, reinstall, and use the app on every supported OS version.
 
-## Extension and exemption
+## Extensions and exemptions
 
-An affected app can request an extension through its Play Console policy
-warning or notification. An approved extension preserves full distribution
-until 1 November 2026.
+Affected apps can request an extension from the Play Console policy warning or
+notification. An approved extension preserves full distribution until
+1 November 2026.
 
 Permanently private apps restricted to an organisation are exempt.
-Automotive-form-factor apps bundled into the same package remain discoverable
-to all Google Play users.
+Automotive-form-factor apps bundled in the same package remain discoverable to
+all Google Play users.

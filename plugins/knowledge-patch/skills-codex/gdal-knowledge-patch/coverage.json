@@ -2,7 +2,7 @@
   "patch": "gdal-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T05:51:42Z",
+  "built_at": "2026-08-21T08:47:44Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -103,6 +103,11 @@
       "build": "included"
     },
     "3.13.2": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.13.3": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

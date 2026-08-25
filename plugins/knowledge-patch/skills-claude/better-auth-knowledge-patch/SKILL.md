@@ -28,7 +28,7 @@ Use this skill when implementing, upgrading, debugging, or reviewing Better Auth
 | [payments.md](references/payments.md) | Autumn, Stripe, Polar, Creem, Dodo Payments, and Openfort |
 | [plugin-development-and-testing.md](references/plugin-development-and-testing.md) | Middleware, plugin context, error codes, adapter predicates, lifecycle hooks, testing, and OpenAPI |
 | [sessions-cookies-and-security.md](references/sessions-cookies-and-security.md) | Stateless auth, session placement, cookie cache, rate limits, CSRF/origin checks, secret rotation, and token storage |
-| [upgrades-and-cli.md](references/upgrades-and-cli.md) | Standalone CLI, ESM, package alignment, release tracks, runtime compatibility, and removed exports |
+| [upgrades-and-cli.md](references/upgrades-and-cli.md) | Standalone CLI, ESM, package alignment, release tracks, runtime compatibility, and migration safety |
 
 ## Breaking changes and migrations
 
@@ -43,7 +43,7 @@ npx auth generate --adapter prisma
 npx auth upgrade
 ```
 
-The distribution is ESM-only. Convert CommonJS loading before upgrading.
+The distribution is ESM-only. Convert CommonJS loading before upgrading. The CLI refuses to add a required column without a default to a populated table; plan a staged migration instead.
 
 ### Update extracted package imports
 
@@ -57,9 +57,7 @@ import { apiKey } from "@better-auth/api-key";
 import { oauthProvider } from "@better-auth/oauth-provider";
 ```
 
-Redis-backed secondary storage is installed from `@better-auth/redis-storage`.
-
-Database adapters also have `@better-auth/*-adapter` packages. Direct adapter imports paired with `better-auth/minimal` reduce the imported distribution.
+Redis-backed secondary storage is installed from `@better-auth/redis-storage`. Database adapters also have `@better-auth/*-adapter` packages; direct adapter imports paired with `better-auth/minimal` reduce the imported distribution.
 
 ### Apply schema migrations before serving traffic
 
@@ -69,7 +67,7 @@ Important schema changes include:
 - Rename API-key `userId` to `referenceId` and add `configId`.
 - Rename OIDC `redirectURLs` to `redirectUrls`.
 - Migrate legacy OAuth-provider tables, secrets, and token values before switching providers.
-- Generate tables for Agent Auth, dynamic organization roles, activity tracking, and persisted billing when those features are enabled.
+- Generate tables for Agent Auth, dynamic organization roles, activity tracking, persisted billing, and managed SCIM connections when enabled.
 - Rerun generation or migration after enabling database joins.
 
 ### Replace removed and renamed APIs
@@ -79,7 +77,7 @@ await authClient.requestPasswordReset({ email }); // not forgotPassword
 await auth.api.accountInfo({ query });             // GET/query, not POST/body
 ```
 
-Use `createAdapterFactory` instead of `createAdapter`, `afterEmailVerification` instead of `onEmailVerification`, and `permissions` instead of the organization model's `permission` field. See the migration reference for removed endpoint, type, export, and callback details.
+Use `createAdapterFactory` instead of `createAdapter`, `afterEmailVerification` instead of `onEmailVerification`, and `permissions` instead of the organization model's `permission` field. See the migration reference for removed endpoints, types, exports, callbacks, and adapter-test imports.
 
 ### Treat post-transaction hooks correctly
 
@@ -140,7 +138,7 @@ plugins: [
 ]
 ```
 
-Mount both well-known metadata handlers at the issuer. A separate API also needs protected-resource metadata and should validate access tokens with `verifyAccessToken`, a resource client, or introspection for opaque tokens.
+Mount both well-known metadata handlers at the issuer. A separate API also needs protected-resource metadata and should validate access tokens with `verifyAccessToken`, a resource client, or introspection for opaque tokens. Missing scopes return an RFC 6750 `insufficient_scope` challenge that clients can use for escalation.
 
 ### Retire the legacy MCP authorization server
 
@@ -150,8 +148,10 @@ Move authorization-server duties from the legacy built-in MCP plugin to `@better
 
 - Allowlist the OIDC discovery URL and every resolved endpoint.
 - Keep SAML assertion replay protection and response-correlation validation enabled.
+- Require assertion signatures and metadata enforcement where the deployment policy calls for them.
 - Export all five SCIM methods: `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 - Authorize SCIM token issuance and choose hashed, encrypted, or custom token storage.
+- Treat managed SCIM connection and credential methods as trusted server-only administration.
 
 ## Hooks and background work
 
@@ -177,7 +177,7 @@ Plugin hooks remain matcher/handler entries. A plugin `init()` receives the live
 - Keep Electron auth state and cookies in the main process and align protocol, callback path, client ID, and trusted origin across server, web, and desktop clients.
 - Pair Expo server/client plugins with secure storage; send `getCookie()` manually for non-client requests.
 - Enable Workers AsyncLocalStorage compatibility before constructing auth.
-- Follow the custom Set-Cookie bridge for Waku Server Actions.
+- Follow the custom `Set-Cookie` bridge for Waku Server Actions.
 
 ## Agent Auth essentials
 
@@ -188,6 +188,7 @@ Use `@better-auth/agent-auth` for registration, approval, grant enforcement, and
 ## Adapter and plugin reminders
 
 - `advanced.database.generateId` may delegate selected models to the database by returning `false` or `undefined`.
+- Raw SQLite, MySQL, and PostgreSQL database instances support native adapter transactions.
 - Adapter predicates support per-clause `mode: "insensitive"`.
 - Custom session fields are recomputed on every fetch and bypass cookie/secondary caches.
 - Passkey registration can run without a session only when the supplied context is securely validated.

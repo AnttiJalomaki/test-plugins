@@ -1,61 +1,58 @@
 # Drivers, Plugins, and Platforms
 
-Use this reference for external plugin activation, custom task drivers,
-Docker, raw_exec, QEMU, executor failures, secrets plugins, and platform
-support.
+## Plugin loading and compatibility
 
-## External plugin activation
+### External plugin configuration
 
-An executable in `plugin_dir` runs only when a matching `plugin` configuration
-block exists. Unconfigured executables are skipped (source batch `1.10.0`).
-Inventory the directory and configuration together; copying a binary alone no
-longer activates it.
+Since 1.10.0, executables in `plugin_dir` run only when a matching `plugin`
+configuration block exists. Unconfigured plugins are skipped.
 
-## Removed remote-task interface
+### Remote task-driver removal
 
-Task drivers no longer support remote tasks. This is a breaking change for
-custom drivers that implemented that interface. Remove the remote-task path
-and redesign execution around supported local task-driver behavior before
-upgrading.
+Since 1.10.0, task drivers no longer support remote tasks. This breaks custom
+drivers that used that interface.
 
-## Docker and raw_exec configuration
+### Driver network hash removal
 
-The Docker driver plugin accepts `image_pull_timeout`; use it to set the image
-pull boundary explicitly when registry or image size requires more time.
+Since 2.0.5, `DriverNetwork.Hash` has been removed from the `plugin/drivers`
+package. Update custom driver plugins that reference the method before building
+against Nomad 2.0.5.
+
+### Secrets plugin timeout
+
+Since 2.0.0, the secrets plugin execution timeout is 60 seconds, changing when
+slow plugin operations time out.
+
+## Driver configuration and execution
+
+### Docker and raw_exec additions
+
+Since 1.10.0, the Docker driver plugin accepts `image_pull_timeout`.
 
 The `raw_exec` driver accepts `denied_envvars` in both driver and task
-configuration, and supports selecting the task user on Windows. Review both
-configuration levels when explaining why an environment variable is missing.
+configuration and supports selecting the task user on Windows.
 
-Executor failures in the `exec`, `raw_exec`, `java`, and `qemu` task drivers
-report exit code `-1`. Treat this as an executor-launch failure rather than an
-application exit status.
+### Executor failure exit code
 
-## QEMU machine configuration
+Since 1.10.0, executor failures in the `exec`, `raw_exec`, `java`, and `qemu`
+task drivers report exit code `-1`.
 
-Starting in 1.11.1, QEMU tasks accept `emulator` and `machine_type`, with
-defaults of `qemu-system-x86_64` and `pc` (source batch `1.11-upgrade`). The
-`kvm` accelerator no longer forces machine type `host`.
+## QEMU behavior
 
-A `resources.cores` value supplies `-smp` only when the user has not supplied
-a custom `-smp` flag. If topology differs from expectations, check both the
-resources block and custom QEMU arguments.
+### Machine configuration
 
-Starting in 1.11.2, QEMU filesystem environment variables expose host file
-paths instead of relative container paths such as `/alloc` and `/local`.
-Update jobspecs and guest-launch arguments that consumed those variables; do
-not translate the new values as though they were paths inside a container.
+Nomad 1.11.1 adds QEMU task fields `emulator` and `machine_type`, defaulting to
+`qemu-system-x86_64` and `pc`.
 
-## Secrets plugin timeout
+The `kvm` accelerator no longer forces machine type `host`. A `resources.cores`
+value supplies `-smp` only when the user has not provided a custom `-smp` flag.
 
-Secret-provider plugin execution times out after 60 seconds (source batch
-`2.0.0`). Keep provider calls within the boundary and ensure failures surface
-enough context to distinguish provider latency from authorization or
-interpolation errors.
+### Filesystem environment paths
+
+In Nomad 1.11.2, filesystem environment variables exposed by the QEMU driver
+contain host file paths instead of relative container paths such as `/alloc`
+and `/local`. Update jobspecs that use those variables.
 
 ## Platform support
 
-Nomad Enterprise 2.0 supports the Linux `ppc64le` CPU architecture. Validate
-task artifacts, driver binaries, plugins, and container images for that
-architecture independently; Nomad agent support does not make workload
-dependencies portable automatically.
+Nomad Enterprise 2.0 adds Linux support for the `ppc64le` CPU architecture.

@@ -1,59 +1,72 @@
 # Billing
 
-## Stripe boundary and service limits
+## Keep Clerk Billing separate from Stripe Billing
 
-Clerk uses Stripe as its payment processor, but Clerk Plans and Subscriptions are not Stripe Billing objects. Payment and customer records appear in Stripe. A Stripe account connected to Clerk must not already be linked to another platform, and development and production require separate Stripe accounts.
+Stripe is Clerk Billing's payment processor, but Clerk Plans and Subscriptions
+are not Stripe Billing objects. Payment and customer records do appear in
+Stripe. An existing Stripe account must not already be connected to another
+platform, and development and production need separate Stripe accounts.
 
-Current constraints:
+Clerk Billing:
 
-- USD only.
-- Clerk is not the merchant of record.
-- No native refunds.
-- No native tax or VAT calculation.
-- No native 3D Secure confirmation.
-- Unavailable in Brazil, India, Malaysia, Mexico, Singapore, and Thailand.
-- A refund issued directly in Stripe does not update Clerk income or MRR calculations.
+- processes USD only;
+- is not a merchant of record;
+- does not provide native refunds, tax/VAT calculation, or 3D Secure
+  confirmation; and
+- is unavailable in Brazil, India, Malaysia, Mexico, Singapore, and Thailand.
 
-## Plans and default behavior
+Refunding through Stripe does not adjust Clerk's income or MRR calculations.
 
-User and Organization Plans may be enabled together. Enabling Billing assigns every new user or Organization the free default Plan.
+## Understand default Plans
 
-Cancellation, non-payment, and a downgrade from a paid Plan return the payer to the default. The default Plan cannot be replaced, but its name, slug, and public visibility can change.
+User Plans and Organization Plans can run together. Enabling Billing assigns
+every new payer the free default Plan. Cancellation, non-payment, and a
+downgrade from a paid Plan return the payer to that default.
 
-The `Publicly available` setting controls whether Plans and Features appear in `<PricingTable />`, `<UserProfile />`, and `<OrganizationProfile />`.
+The default Plan cannot be replaced, although its name, slug, and public
+visibility can change. `Publicly available` controls whether Plans and Features
+appear in `<PricingTable />`, `<UserProfile />`, or `<OrganizationProfile />`.
 
-## Features and Custom Permissions
+## Gate Custom Permissions with Features
 
-If Billing is enabled in an instance that already has Custom Permissions, Clerk adds their corresponding Features to the free Organization Plan to preserve access.
+When Billing is enabled for an instance that already has Custom Permissions,
+Clerk adds their corresponding Features to the free Organization Plan to keep
+existing access working. A permission such as `org:teams:manage` is emitted in
+session tokens and API responses, and passes `has()`, only while the active Plan
+contains its `teams` Feature. Otherwise `has()` returns `false`, even if the
+member was granted the permission.
 
-A Permission such as `org:teams:manage` appears in session tokens and API responses and passes `has()` only while the active Plan contains the `teams` Feature. If the Feature is absent, the check returns `false` even when the member was assigned that Permission.
+## Schedule price transitions correctly
 
-Always authorize access with `has()` or `<Show>`; do not infer entitlement from a displayed Subscription alone.
+- Free to paid starts and charges immediately only when there is no active
+  Subscription. If a canceled Subscription is still running, the new paid Plan
+  remains upcoming until it ends.
+- Paid to paid begins after the current paid period.
+- Paid to free schedules the default Plan at the current period boundary.
 
-## Price-transition timing
+## Implement the free-trial lifecycle
 
-- Free to paid: activates and charges immediately only when no other Subscription is active.
-- Free to paid while a canceled Subscription remains active: the new paid Plan is upcoming until the old Subscription ends.
-- Paid to paid: begins after the current paid period.
-- Paid to free: schedules the default Plan at the current period boundary.
+Only a customer who has never paid for a Subscription and never used a trial is
+eligible. A payment method is required by default. If that requirement is
+disabled, a customer without a method is not charged automatically at expiry.
 
-## Free-trial lifecycle
+Cancellation retains access until the original trial end. An uncanceled trial
+charges the default payment method at expiry. Clerk emits
+`subscriptionItem.freeTrialEnding` and sends the customer email three days
+before expiry, or immediately for a trial shorter than three days. Only active
+trials can be managed; an extension must be between 1 and 365 days.
 
-A customer is eligible only if they have never paid for a Subscription and have never used a trial.
+## Build custom checkout
 
-- A payment method is required by default.
-- If that requirement is disabled, a customer without a payment method is not charged automatically at expiry.
-- Canceling preserves access until the original trial end.
-- An uncanceled trial charges the default payment method at expiry.
-- Clerk sends `subscriptionItem.freeTrialEnding` and customer email three days before expiry, or immediately for a trial shorter than three days.
-- Only active trials can be managed.
-- Extensions must be from 1 through 365 days.
+Next.js and React expose experimental checkout primitives from `/experimental`.
+`useCheckout()` accepts `{ for, planId, planPeriod }` or receives shared state
+from `<CheckoutProvider />`. Its data remains null until `start()`. Wrap
+consumers in `<ClerkLoaded>` and `<Show when="signed-in">`.
 
-## Experimental React checkout
-
-Next.js and React export custom checkout primitives from `/experimental`. `useCheckout()` accepts `{ for, planId, planPeriod }` directly or receives shared state from `<CheckoutProvider />`. Its data fields remain `null` until `start()`.
-
-Wrap consumers in `<ClerkLoaded>` and `<Show when="signed-in">`.
+Existing cards supply `paymentMethodId` to `confirm()`. New-card flows render
+`<PaymentElement />` inside `<PaymentElementProvider checkout={checkout}>`.
+After confirmation, `finalize()` synchronizes client/server identity and
+revalidates server-component authorization.
 
 ```tsx
 function Checkout({ paymentMethodId }) {
@@ -68,78 +81,48 @@ function Checkout({ paymentMethodId }) {
   }
 
   return (
-    <button onClick={async () => {
-      const { error } = await checkout.confirm({ paymentMethodId })
-      if (!error) {
-        await checkout.finalize({
-          navigate: ({ decorateUrl }) =>
-            window.location.assign(decorateUrl('/')),
-        })
-      }
-    }}>
+    <button
+      onClick={async () => {
+        const { error } = await checkout.confirm({ paymentMethodId })
+        if (!error) {
+          await checkout.finalize({
+            navigate: ({ decorateUrl }) =>
+              window.location.assign(decorateUrl('/')),
+          })
+        }
+      }}
+    >
       Complete purchase
     </button>
   )
 }
 ```
 
-Existing cards pass `paymentMethodId` to `confirm()`. New cards render `<PaymentElement />` inside `<PaymentElementProvider checkout={checkout}>`. After confirmation, `finalize()` synchronizes frontend and backend identity state and revalidates server-component authorization.
+## Read Billing data without authorizing from it
 
-## Experimental Billing data hooks
+Experimental `usePlans()`, `useSubscription()`, `usePaymentMethods()`,
+`usePaymentAttempts()`, and `useStatements()` expose user or Organization data.
+Their pagination supports options and state such as `infinite`, `pageSize`,
+`hasNextPage`, and `fetchNext`. `useSubscription()` is for display and refresh;
+authorization still belongs in `has()` or `<Show>` and on the server.
 
-The Next.js and React `/experimental` entry points expose:
+## Choose frontend or backend plan selectors
 
-- `usePlans()`
-- `useSubscription()`
-- `usePaymentMethods()`
-- `usePaymentAttempts()`
-- `useStatements()`
+Frontend `clerk.billing` defaults payer-specific reads to the current user when
+`orgId` is absent. It can read Plans, Subscriptions, statements, and payment
+attempts or start checkout. `getPlans()` returns publicly visible Plans only and
+selects a payer with `for: 'user' | 'organization'`.
 
-They support pagination options and state such as `infinite`, `pageSize`, `hasNextPage`, and `fetchNext`. `useSubscription()` is for display and refresh, not authorization.
+The Backend SDK uses
+`clerkClient.billing.getPlanList({ payerType: 'user' | 'org' })`; its maximum
+list limit is 500.
 
-## Authenticated Billing drawers
+## Configure discounts and promo codes
 
-`<CheckoutButton />` and `<SubscriptionDetailsButton />` come from React, Next.js, and Vue experimental entry points. They throw unless nested inside `<Show when="signed-in">`.
+Discounts may be reusable percentage or fixed-amount reductions for one cycle,
+a fixed number of cycles, or indefinitely. Fixed discounts can specify separate
+monthly and annual amounts. A Dashboard-applied discount affects an active
+Subscription and can be revoked for the next renewal.
 
-Both default to the current user. With `for="organization"`, they also throw unless an Organization is active.
-
-```tsx
-import {
-  CheckoutButton,
-  SubscriptionDetailsButton,
-} from '@clerk/nextjs/experimental'
-
-<Show when="signed-in">
-  <CheckoutButton planId="cplan_123" planPeriod="month" />
-  <SubscriptionDetailsButton />
-</Show>
-```
-
-## Frontend Billing API
-
-The frontend `clerk.billing` resource defaults payer-specific reads to the current user when `orgId` is absent. It can read Plans, Subscriptions, statements, and payment attempts, and it can start checkout.
-
-`getPlans()` returns only publicly visible Plans and chooses the payer with `for: 'user' | 'organization'`.
-
-## Backend plan selector
-
-The JavaScript Backend SDK uses `clerkClient.billing.getPlanList({ payerType: 'user' | 'org' })` to select a payer and list Plans:
-
-```ts
-await clerkClient.billing.getPlanList({
-  payerType: 'user', // or 'org'
-})
-```
-
-The maximum `limit` is 500.
-
-## Administrative details
-
-Python `clerk.billing` can list Plans and prices, create customer-specific prices, manage Subscription items and free trials, create price transitions, and read statements and payment attempts.
-
-- Custom prices use cents, have a 100-cent minimum, and default to USD.
-- Cancellation defaults to the end of the period unless `end_now=True`.
-- Repeating a trial extension with the same future timestamp is idempotent.
-- `create_price()` accepts `supported_billing_periods`; created and listed prices return it.
-- Statement group-item and payment-attempt totals include `discounts`.
-- User and Organization resources can read Subscriptions and credit balances and adjust credit balances.
+Checkout promo codes can cap total redemptions, allow only new subscribers, and
+report redemption counts.

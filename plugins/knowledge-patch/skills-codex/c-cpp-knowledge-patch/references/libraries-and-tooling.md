@@ -1,156 +1,117 @@
 # Libraries and Tooling
 
-Pin the standard library, formatter, libclang, and compiler-plugin interfaces
-separately from the compiler driver. Their source and ABI changes can affect a
-build even when core language compilation succeeds.
+Use this reference for standard-library upgrades, modules, machine diagnostics, formatter configuration, compiler embedding, AST tooling, bindings, and plugins.
 
-## Standard-library behavior
+## libstdc++ source migration
 
-### libstdc++ assertions and assumptions
+### Include owning headers directly
 
-Unoptimized GCC 15 builds enable libstdc++ debug assertions by default
-(`gcc-15.1`). `_GLIBCXX_NO_ASSERTIONS` disables them, but first treat a new
-assertion as evidence of invalid program behavior.
+GCC 15 (`gcc-15.1-porting`) exposes fewer transitive headers. Include `<stdint.h>` for global fixed-width integer typedefs, `<cstdint>` for their `std::` forms, and `<ostream>` for stream declarations, `std::endl`, and `std::flush`.
 
-### Library additions
+Remove compatibility headers that now warn: replace `<cstdbool>` and `<cstdalign>` with nothing, `<ccomplex>` with `<complex>`, and `<ctgmath>` with `<cmath>`, `<complex>`, or both.
 
-GCC 15's experimental C++26 library work includes (`gcc-15.1`):
+### Constrain iterator adaptors accurately
 
-- `views::concat`, `views::to_input`, and `views::cache_latest`;
-- constexpr sorting and raw-memory algorithms;
-- `<stdbit.h>` and `<stdckdint.h>`;
-- `std::is_virtual_base_of` and member `visit`;
-- compile-time checking of `std::format` arguments.
-
-Its C++23 library adds the `std` and `std.compat` modules, flat associative
-containers, range constructors and modifiers, and range and tuple formatting.
-
-GCC 16 adds `std::mdspan`, starts/ends-with range algorithms, shift algorithms,
-and `allocate_at_least` for C++23 (`gcc-16.1`). Its C++26 library adds:
-
-- `std::simd`, `std::inplace_vector`, and `std::optional<T&>`;
-- `std::copyable_function`, `std::function_ref`, `std::indirect`, and
-  `std::polymorphic`;
-- `std::owner_equal`, `<debugging>`, and string-view overloads;
-- padded `mdspan` layouts, `std::philox_engine`, and
-  `std::atomic_ref::address()`.
-
-### Behavior and ABI changes
-
-On targets supporting 128-bit integers, GCC 16 treats `__int128` as integral in
-strict dialects as well as GNU modes (`gcc-16.1`). Traits such as
-`std::is_integral<__int128>` can therefore change constraints and overload
-selection.
-
-`std::generate_canonical` adopts P0952R2 and produces changed sequences. Define
-`_GLIBCXX_USE_OLD_GENERATE_CANONICAL` only when temporary reproduction of the
-old sequence is necessary.
-
-A C++17 `std::variant` layout correction affects the combination of an empty
-base and first member; `_GLIBCXX_USE_VARIANT_CXX17_OLD_ABI` temporarily restores
-the old layout. Formerly experimental C++20 components also change ABI,
-including atomic waiting, semaphores, syncstream, format-argument
-representation, partial ordering, some stop-token/variant combinations, and
-some range adaptors. Rebuild objects that exchange those types or state.
-
-## clang-format
-
-### Clang 20 configuration
-
-Clang 20 adds (`clang-20.1`):
-
-- `BreakBinaryOperations`, `TemplateNames`, and
-  `RemoveEmptyLinesInUnwrappedLines`;
-- `KeepFormFeed` (enabled by GNU style) and
-  `AllowShortNamespacesOnASingleLine`;
-- `VariableTemplates`, `WrapNamespaceBodyWithEmptyLines`, and
-  `IndentExportBlock`;
-- `PenaltyBreakBeforeMemberAccess`;
-- `AlignFunctionDeclarations` within `AlignConsecutiveDeclarations`.
-
-`ReflowComments` adds `IndentOnly` and renames boolean values to
-`Never`/`Always`. Ignore files support bash globstar. C has its own formatter
-language, and a file can force its language in a leading comment such as:
+The GCC 15.1 (`gcc-15.1-porting`) `std::vector` range constructor recognizes C++20 iterator concepts and may select a stronger optimized path. An adaptor that exposes invalid operations unconditionally can fail during instantiation. Constrain each operation to the wrapped iterator's real capability, using equivalent SFINAE in older modes:
 
 ```cpp
-// clang-format Language: ObjC
+iterator_adaptor& operator--()
+  requires std::bidirectional_iterator<Iter>
+{
+  --iter;
+  return *this;
+}
 ```
 
-### Clang 21 configuration
+### Debug assertions
 
-Clang 21 adds `BreakBeforeTemplateCloser`, `BinPackLongBracedList`,
-`EnumTrailingComma`, `OneLineFormatOffRegex`, `SpaceAfterOperatorKeyword`, and
-`MacrosSkippedByRemoveParentheses` (`clang-21.1`).
+GCC 15 (`gcc-15.1`) enables libstdc++ debug assertions by default in unoptimized builds. Define `_GLIBCXX_NO_ASSERTIONS` only when the build intentionally needs the former unchecked behavior.
 
-### Clang 22 configuration
+## Standard-library feature additions
 
-`AlignAfterOpenBracket` is boolean in Clang 22; `AlwaysBreak` and `BlockIndent`
-values are deprecated (`clang-22.1`). New controls include:
+### GCC 15 library facilities
 
-- `SpaceInEmptyBraces`, `NumericLiteralCase`, and
-  `IndentPPDirectives: Leave`;
-- the `BreakAfterOpenBracket*` and `BreakBeforeCloseBracket*` families;
-- `AlignPPAndNotPP`.
+GCC 15 (`gcc-15.1`) adds experimental C++26 facilities including `views::concat`, `views::to_input`, `views::cache_latest`, constexpr sorting and raw-memory algorithms, `<stdbit.h>`, `<stdckdint.h>`, `std::is_virtual_base_of`, member `visit`, and compile-time type checking for `std::format` arguments.
 
-Integer-separator `*MinDigits` keys are renamed to `*MinDigitsInsert`, and new
-`*MaxDigitsSeparator` keys are available.
+Its C++23 library adds the `std` and `std.compat` modules, flat associative containers, range constructors and modifiers, and range and tuple formatting.
+
+### GCC 16 library facilities
+
+GCC 16 (`gcc-16.1`) adds C++23 `std::mdspan`, starts/ends-with range algorithms, shift algorithms, and `allocate_at_least`.
+
+C++26 additions include `std::simd`, `std::inplace_vector`, `std::optional<T&>`, `std::copyable_function`, `std::function_ref`, `std::indirect`, `std::polymorphic`, `std::owner_equal`, `<debugging>`, string-view overloads, padded `mdspan` layouts, `std::philox_engine`, and `std::atomic_ref::address()`.
+
+## Modules and precompiled artifacts
+
+Clang 20 (`clang-20.1`) makes `-fmodules-reduced-bmi` the non-experimental spelling for reduced BMIs.
+
+Clang 22 (`clang-22.1`) enables Reduced BMI mode by default for C++20 modules. Two-phase module builds must handle the reduced artifact, and projects must not depend on implementation details discarded from it.
+
+GCC 16 (`gcc-16.1`) adds `--compile-std-module` for experimental C++20 modules. It builds the `<bits/stdc++.h>` header unit and the `std` and `std.compat` modules before explicit inputs; after that header unit exists, eligible standard-header includes can become imports.
+
+## Machine-readable diagnostics
+
+GCC 15 (`gcc-15.1`) deprecates the `json` value of `-fdiagnostics-format=` in favor of SARIF. `-fdiagnostics-add-output=` can emit several formats from one compilation, while `-fdiagnostics-set-output=` provides more explicit output control.
+
+GCC 16 (`gcc-16.1`) removes the JSON value entirely. Diagnostic consumers must use SARIF.
+
+## Compiler discovery and embedding
+
+### GCC installation discovery
+
+Clang 22 (`clang-22.1`) warns with `-Wgcc-install-dir-libstdcxx` when automatic discovery selects the highest GCC installation but it lacks libstdc++ headers while another complete installation exists. Install or remove headers consistently, choose a tree with `--gcc-install-dir`, or deliberately suppress with `-Wno-gcc-install-dir-libstdcxx`.
+
+### Clang library dependencies
+
+Clang 22 (`clang-22.1`) moves option-related code from `clangDriver` into the new `clangOptions` library. Downstream tools may need both. `clangFrontend` no longer depends transitively on `clangDriver`, so consumers that use driver APIs must link it explicitly.
+
+## clang-format configuration
+
+### Clang 20 schema
+
+Clang 20 (`clang-20.1`) adds `BreakBinaryOperations`, `TemplateNames`, `RemoveEmptyLinesInUnwrappedLines`, `KeepFormFeed`, `AllowShortNamespacesOnASingleLine`, `VariableTemplates`, `WrapNamespaceBodyWithEmptyLines`, `IndentExportBlock`, and `PenaltyBreakBeforeMemberAccess`. GNU style enables `KeepFormFeed`.
+
+`AlignConsecutiveDeclarations` gains `AlignFunctionDeclarations`. `ReflowComments` gains `IndentOnly` and renames boolean values to `Never`/`Always`. Ignore files understand bash globstar. C becomes its own formatting language, and a top-of-file comment such as `// clang-format Language: ObjC` can force a header's language.
+
+### Clang 21 schema
+
+Clang 21 (`clang-21.1`) adds `BreakBeforeTemplateCloser`, `BinPackLongBracedList`, `EnumTrailingComma`, `OneLineFormatOffRegex`, `SpaceAfterOperatorKeyword`, and `MacrosSkippedByRemoveParentheses`.
+
+### Clang 22 schema
+
+Clang 22 (`clang-22.1`) makes `AlignAfterOpenBracket` boolean; `AlwaysBreak` and `BlockIndent` are deprecated. It adds `SpaceInEmptyBraces`, `NumericLiteralCase`, `IndentPPDirectives: Leave`, `BreakAfterOpenBracket*`, `BreakBeforeCloseBracket*`, and `AlignPPAndNotPP`.
+
+Integer-separator `*MinDigits` keys become `*MinDigitsInsert`, and new `*MaxDigitsSeparator` keys set upper separator grouping limits.
 
 ## libclang and Python bindings
 
-### Layout and pretty-printing
+### Layout and pretty-printing APIs
 
-Clang 20 adds `clang_isBeforeInTranslationUnit`, policy-controlled
-`clang_getTypePrettyPrinted`, `clang_visitCXXBaseClasses`, and
-`clang_getOffsetOfBase` (`clang-20.1`). Python bindings expose pretty printing,
-base iteration, virtual-base queries, and base offsets. Affected string-returning
-Python APIs return `""` instead of `None` when absent. Static access to
-`CompletionChunk` or `CompletionString` properties is an error.
+Clang 20 (`clang-20.1`) adds `clang_isBeforeInTranslationUnit`, policy-controlled `clang_getTypePrettyPrinted`, `clang_visitCXXBaseClasses`, and `clang_getOffsetOfBase`. Python bindings expose pretty printing, base iteration, virtual-base queries, and base offsets.
 
-### Cursor and query behavior
+Affected Python string-returning interfaces return `""` rather than `None` when absent. Accessing `CompletionChunk` or `CompletionString` properties statically is an error.
 
-Clang 21 adds libclang inline-assembly queries, `clang_visitCXXMethods`, and
-`clang_getFullyQualifiedName`; duplicate binary-opcode APIs are deprecated
-(`clang-21.1`). Python's `Cursor.from_location` returns `None` instead of a null
-cursor, and most cursor methods reject null cursors. The bindings add hashable
-cursors, attribute/template queries, method visitation, fully qualified names,
-and `File` equality.
+### Method and assembly queries
 
-Clang 22 changes Python failure/null handling further (`clang-22.1`):
+Clang 21 (`clang-21.1`) adds libclang inline-assembly queries, `clang_visitCXXMethods`, and `clang_getFullyQualifiedName`; duplicate binary-opcode APIs are deprecated.
 
-- `Token.cursor` returns `None` instead of a null cursor.
-- `TypeKind.ELABORATED` is no longer emitted and `AccessSpecifier.NONE` is
-  removed.
-- `TranslationUnit.reparse()` raises on errors.
-- `LIBCLANG_LIBRARY_PATH` and `LIBCLANG_LIBRARY_FILE` select libclang.
-- Cursor language and inline-function queries, plus previously missing cursor,
-  type, and exception kinds, are exposed.
+Python's `Cursor.from_location` returns `None` rather than a null cursor, and most cursor methods reject null cursors. Bindings add hashable cursors, attribute/template queries, method visits, fully qualified names, and `File` equality.
 
-## Embedding Clang and AST tooling
+### Failure and null handling
 
-Clang 22 moves option code from `clangDriver` into `clangOptions`; downstream
-tools may need both libraries (`clang-22.1`). `clangFrontend` no longer depends
-transitively on `clangDriver`, so users of driver APIs must link it explicitly.
+Clang 22 (`clang-22.1`) makes `Token.cursor` return `None` rather than a null cursor, stops producing `TypeKind.ELABORATED`, removes `AccessSpecifier.NONE`, and makes `TranslationUnit.reparse()` raise on errors.
 
-AST interface changes in Clang 22 include:
+`LIBCLANG_LIBRARY_PATH` and `LIBCLANG_LIBRARY_FILE` can select libclang. Bindings expose cursor language, inline-function queries, and previously missing cursor, type, and exception kinds.
 
-- `VarTemplateSpecializationDecl::getTemplateArgsAsWritten()` returns null for
-  implicit instantiations.
-- Conflicting anonymous-record members are injected as invalid
-  `IndirectFieldDecl`s.
-- Abbreviated function templates and generic lambdas have valid begin
-  locations.
-- `elaboratedType` and `dependentTemplateSpecializationType` matchers are
-  removed.
-- `MatchFinderOptions::IgnoreSystemHeaders`,
-  `hasConditionVariableStatement` for `for`, `while`, and `switch`, and
-  `arrayTypeLoc` are added.
+## AST tooling interfaces
 
-## GCC plugins
+Clang 22 (`clang-22.1`) makes `VarTemplateSpecializationDecl::getTemplateArgsAsWritten()` return null for implicit instantiations. Anonymous-record members are injected as invalid `IndirectFieldDecl`s even on name conflicts, while abbreviated function templates and generic lambdas receive valid begin locations.
 
-GCC 16 moves diagnostic internals under `gcc/diagnostics/` and into the
-`diagnostics::` namespace (`gcc-16.1-porting`). Plugins using context, paths,
-sinks, buffering, SARIF, printing, or edit APIs need new headers and source
-changes. Important replacements are:
+The `elaboratedType` and `dependentTemplateSpecializationType` matchers are removed. Additions include `MatchFinderOptions::IgnoreSystemHeaders`, `hasConditionVariableStatement` for `for`, `while`, and `switch`, and the `arrayTypeLoc` matcher.
+
+## GCC plugin migration
+
+GCC 16 (`gcc-16.1-porting`) moves diagnostic internals below `gcc/diagnostics/` and into the `diagnostics::` namespace. Plugins using context, path, sink, buffering, SARIF, printing, or edit internals need new headers and source changes. Major replacements include:
 
 | Old API | New API |
 | --- | --- |

@@ -1,83 +1,14 @@
 # Repair, Topology, and Coordination
 
-## Built-in AutoRepair
-
-### Scheduler model
-
-Cassandra includes an in-process automated repair scheduler (since 5.0.8),
-backporting CEP-37 behavior. Recurring repairs no longer have to be scheduled
-exclusively by an external orchestrator, although external operational
-coordination may still be needed around upgrades and disk protection.
-
-### Task duration
-
-AutoRepair has a minimum repair-task-duration setting (since 5.0.8). Use it
-when scheduled work must respect a minimum run time rather than allowing every
-task to end sooner.
-
-### Repair types
-
-`preview_repaired` is accepted as an AutoRepair repair type (since 5.0.8).
-This lets the scheduler run preview-repaired work rather than limiting that
-workflow to manually orchestrated repair.
-
-### Mixed-major-version behavior
-
-The scheduler stops when it detects two major Cassandra versions (since
-5.0.8). During a mixed-major-version upgrade:
-
-- do not assume scheduled repair remains active;
-- distinguish an intentional scheduler stop from a hung repair;
-- provide an upgrade-period repair plan if repair must continue.
-
-### Disk protection
-
-Full AutoRepair observes disk-protection safeguards (since 5.0.8). If a full
-scheduled repair does not proceed, inspect disk-protection conditions before
-retrying or treating the scheduler as defective.
-
-### Progress reporting
-
-AutoRepair reports expected versus actual repair bytes and expected versus
-actual keyspaces (since 5.0.8). Compare both dimensions when deciding whether
-work is progressing, incomplete, or divergent from its plan.
-
-## Manual repair behavior
-
-### Long-running repairs
-
-Repairs that run for a long time are not automatically failed prematurely
-(since 5.0.4). Do not infer failure solely from crossing an older implicit
-duration expectation; inspect actual repair state.
-
-### Repair flushes and SAI
-
-When repair flushes a partial partition or row modification, SAI marks the
-index non-empty (since 5.0.5). Queries after such a flush should not lose
-visibility merely because index state remained incorrectly empty.
-
 ## Gossip and endpoint state
 
-### Restart-safe state
+### Restart-safe gossip state
 
-A delayed gossip shutdown message cannot overwrite a restarted node's fresh
-startup state (since 5.0.3). This prevents a successfully restarted node from
-remaining falsely marked down because stale shutdown information arrived
-late.
+Delayed gossip shutdown messages do not overwrite a restarted node's fresh
+startup state (since 5.0.3), preventing a restarted node from remaining falsely
+marked down.
 
-### Non-normal nodes
-
-Gossip-only and bootstrapping nodes receive data-center, rack, and host-ID
-endpoint state (since 5.0.3). Topology consumers can expect these fields even
-before a node reaches normal state.
-
-### Concurrent endpoint updates
-
-Gossip converges when multiple endpoint-state fields are updated concurrently
-(since 5.0.5). A multi-field update should not leave peers permanently split
-across different endpoint-state combinations.
-
-### Token metadata validation
+### Token metadata consistency check
 
 `nodetool checktokenmetadata` checks whether `TokenMetadata` is synchronized
 with gossip endpoint state (since 5.0.3):
@@ -86,56 +17,104 @@ with gossip endpoint state (since 5.0.3):
 nodetool checktokenmetadata
 ```
 
-Run it when token ownership or topology views disagree, especially after
-restart or bootstrap events.
+### Endpoint state for non-normal nodes
 
-## Hints and replica coordination
+Gossip-only and bootstrapping nodes receive DC, rack, and host-ID endpoint
+state (since 5.0.3).
 
-### Hint expiration
+### Gossip convergence during multi-field updates
 
-Hint TTL is calculated from the request start time rather than from the
-timeout time (since 5.0.3). Expiry therefore reflects the age of the original
-request.
+Gossip converges when multiple fields in an endpoint state are updated
+concurrently (since 5.0.5).
 
-### Schema mismatch
+## Hints and batchlog placement
 
-A schema mismatch no longer categorically blocks hint delivery (since 5.0.3).
-Do not diagnose the mere presence of schema disagreement as proof that hints
-cannot be delivered.
+### Hint expiry origin
 
-### Mixed-version Paxos
+Hint expiry calculates TTL from the request start time rather than the timeout
+time (since 5.0.3).
 
-Mixed-version Paxos no longer hangs on TTL commits or enters an infinite loop
-(since 5.0.4). Rolling-upgrade validation should include TTL-bearing Paxos
-workloads because these operations have a specific corrected mixed-version
-path.
+### Hint delivery during schema mismatch
 
-### Parallel transfers
+Hints may be delivered while schemas mismatch (since 5.0.3); a mismatch no
+longer categorically blocks delivery.
 
-`MAX_PARALLEL_TRANSFERS` is honored correctly (since 5.0.5). Transfer planning
-and throttling can rely on the configured limit being enforced.
+### Configurable batchlog endpoint strategies
 
-## Batchlog endpoint placement
-
-Batchlog endpoint selection accepts four strategies (since 5.0.3):
-
-- `random_remote`
-- `prefer_local`
-- `dynamic_remote`
-- `dynamic`
-
-For example:
+Batchlog endpoint selection supports `random_remote`, `prefer_local`,
+`dynamic_remote`, and `dynamic` (since 5.0.3):
 
 ```yaml
 batchlog_endpoint_strategy: dynamic_remote
 ```
 
-Choose the strategy deliberately for the desired local or remote placement;
-the setting is not limited to a single built-in selection behavior.
+## Paxos and replica coordination
 
-## Streaming compatibility
+### Mixed-version Paxos stability
 
-Zero-copy streaming is automatically disabled for legacy SSTables that use
-the old Bloom-filter format (since 5.0.7). Those SSTables fall back to a
-compatible streaming path. A fallback for such files is expected and should
-not be treated as proof that zero-copy streaming is globally disabled.
+Mixed-version Paxos operation does not hang on TTL commits or enter an infinite
+loop (since 5.0.4).
+
+### Parallel transfer limits
+
+`MAX_PARALLEL_TRANSFERS` is honored correctly (since 5.0.5).
+
+### Deterministic TTL updates
+
+Updating a column with a new TTL but the same expiration time is deterministic
+(since 5.0.5), avoiding replica repair mismatches.
+
+### Documented Paxos v2 configuration
+
+The shipped `cassandra.yaml` includes the Paxos v2 option and its configuration
+information (since 5.0.9), making the choice visible in the standard template.
+
+## Repair behavior
+
+### Long-running repairs
+
+Long-running repairs are not automatically failed prematurely (since 5.0.4).
+
+### `StorageService` JMX availability during bootstrap
+
+The `StorageService` JMX MBean is available during bootstrap (since 5.0.5),
+enabling repair and topology management visibility before normal state.
+
+## AutoRepair scheduler
+
+### Built-in automated repair
+
+Cassandra includes the CEP-37 in-process automated repair scheduler (since
+5.0.8), so recurring repair orchestration can run inside Cassandra instead of
+requiring an entirely external scheduler.
+
+### Minimum AutoRepair task duration
+
+The scheduler has a minimum repair-task-duration setting (since 5.0.8),
+allowing scheduled work to be bounded by a minimum run time.
+
+### `preview_repaired` AutoRepair type
+
+AutoRepair supports `preview_repaired` as a repair type (since 5.0.8).
+
+### Mixed-major-version AutoRepair shutdown
+
+The repair scheduler stops when it detects two major Cassandra versions (since
+5.0.8). Do not assume scheduled repairs continue during a mixed-major rolling
+upgrade.
+
+### Disk protection for full AutoRepair
+
+Full AutoRepair observes disk protection (since 5.0.8), preventing scheduled
+full repair from proceeding without regard to disk-protection conditions.
+
+### AutoRepair progress observability
+
+AutoRepair reports expected versus actual repair bytes and expected versus
+actual keyspaces (since 5.0.8).
+
+### Parallel AutoRepair execution
+
+AutoRepair supports `parallel_repair_count` greater than one without an
+`AssertionError` in `hasReplicaWithOngoingRepair` (since 5.0.9), allowing
+parallel repair configurations to operate as configured.

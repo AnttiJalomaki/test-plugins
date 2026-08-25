@@ -1,50 +1,21 @@
 # Security, Identity, and Governance
 
-Use this reference for ACL semantics, client and workload identity, OIDC, job
-secrets, allocation authentication, and policy enforcement.
+## Allocation and workload identity
 
-## ACL API and policy writes
+### Removed token-based allocation authentication
 
-In Nomad 1.10.1, `/v1/acl/token/self` returns status codes that distinguish
-configuration from authentication failure:
+Since 1.10.0, deprecated token-based allocation authentication for Consul and
+Vault has been removed. A task containing a `template` block also no longer
+receives an implicit Consul identity; jobs must not rely on that side effect.
 
-- With ACLs disabled, it returns `200` and a body indicating that ACLs are
-  disabled.
-- With ACLs enabled but no valid token, it returns `403`.
+### Client introduction and identity
 
-Both cases previously returned `404`; update clients that treated `404` as
-either condition (source batch `1.10-upgrade`).
+Since 1.11.0, clients can join with signed JWT introduction tokens that
+constrain node names, node pools, and TTLs. Server enforcement levels control
+introduction policy and emit violation logs and metrics.
 
-Starting in 1.10.6, policy writes containing duplicate or invalid keys are
-rejected rather than silently ignoring the bad keys. Existing affected
-policies keep operating, but their source documents must be corrected before
-they can be written again.
-
-Workload identity tokens can list and retrieve policies through the ACL API
-(source batch `1.11.0`). Review policy access independently from the workload's
-other capabilities.
-
-## OIDC client authentication
-
-OIDC auth methods can use a private-key JWT client assertion instead of sending
-a client secret. PKCE works with either client secrets or assertions. Enable it
-with:
-
-```text
-OIDCEnablePKCE: true
-```
-
-The OIDC provider must support PKCE and may require it to be enabled in provider
-configuration. Keep assertion-key handling, provider capabilities, and PKCE
-configuration aligned (source batch `1.10.0`).
-
-## Client introduction and RPC identity
-
-Clients can join with signed JWT introduction tokens. Token constraints can
-cover node names, node pools, and TTLs; server enforcement levels determine the
-introduction policy and produce violation logs and metrics. After registration,
-servers automatically issue and rotate a client identity for RPC
-authentication. This identity is a second layer alongside mTLS.
+After registration, servers automatically issue and rotate a client identity
+for RPC authentication as a second layer alongside mTLS.
 
 ```shell
 nomad node intro create
@@ -53,39 +24,55 @@ nomad node identity get
 nomad node identity renew
 ```
 
-Use introduction tokens only for initial admission; use the issued identity
-commands to inspect or renew post-registration credentials.
+### ACL API access with workload identities
 
-## Job specification secrets
+Since 1.11.0, workload identity tokens can list or retrieve policies through
+the ACL API.
 
-The jobspec `secret` block fetches values from Nomad, Vault, or a custom
-secret-provider plugin for interpolation. Reference a fetched key as:
+### Consul workload-token metadata
 
-```hcl
-${secret.secret_name.key}
-```
+Since 2.0.5, Consul tokens created through workload identity carry the issuing
+Nomad client's node ID in their metadata, allowing a token to be traced to the
+client that issued it.
 
-Keep provider selection, access policy, and interpolation scope explicit.
-Secret-provider plugin execution has a 60-second timeout; slow operations now
-fail at that boundary (source batch `2.0.0`).
+## OIDC authentication
 
-## Consul and Vault allocation authentication
+Since 1.10.0, OIDC auth methods support private key JWT client assertions as an
+alternative to sending a client secret. PKCE works with client secrets or
+assertions and is enabled with `OIDCEnablePKCE: true`. The OIDC provider must
+support PKCE and may need it enabled.
 
-The deprecated token-based allocation authentication workflows for both
-Consul and Vault have been removed. Migrate jobs and cluster configuration to
-supported identity-based workflows.
+## ACL policy validation
 
-A task with a `template` block no longer receives a Consul identity as a side
-effect. Declare the identity the task actually needs instead of relying on the
-presence of a template block (source batch `1.10.0`).
+Nomad 1.10.6 rejects policy writes containing duplicate or invalid keys instead
+of silently ignoring them. Existing affected policies keep working, but their
+source documents must be corrected before they can be written again.
 
-## Sentinel and volume governance
+## Sentinel and quotas
 
-`nomad sentinel apply` requires the `-scope` option. Update scripts and operator
-runbooks so every applied policy selects its intended scope explicitly.
+### Required Sentinel scope
 
-Nomad Enterprise can evaluate dynamic host-volume specifications with Sentinel
-during creation, enforce per-namespace host-volume capacity quotas, and
-validate a requested node pool against the namespace's node-pool
-configuration. Treat all three checks as possible causes of a rejected volume,
-even when its storage-specific fields are valid.
+Since 1.10.0, `nomad sentinel apply` requires `-scope`.
+
+### Dynamic host volume governance
+
+Since 1.10.0, Nomad Enterprise can evaluate volume specifications with Sentinel
+during creation, apply per-namespace host-volume capacity quotas, and validate
+a requested node pool against the namespace's node-pool configuration.
+
+### Enterprise quota core controls
+
+Since 2.0.5, disabling the use of cores in an Enterprise quota no longer blocks
+jobs that specify either cores or CPU resources.
+
+## Enterprise licensing
+
+### License utilization reporting
+
+The `1.10-upgrade` guidance for Nomad Enterprise 1.10.6 adds detailed
+product-usage information to automated license utilization reporting.
+
+### IBM PAO licensing
+
+The `2.0-upgrade` guidance for Nomad 2.0.0 includes license and configuration
+changes that enable IBM Passport Advantage Online (PAO).

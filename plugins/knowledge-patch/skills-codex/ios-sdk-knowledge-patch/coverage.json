@@ -2,7 +2,7 @@
   "patch": "ios-sdk-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-31T10:24:00Z",
+  "built_at": "2026-08-21T08:58:49Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -27,6 +27,11 @@
       "codex": "gaps",
       "build": "included"
     },
+    "2026-08-17": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
+    },
     "26.6-rc": {
       "kind": "versioned",
       "codex": "gaps",
@@ -38,5 +43,7 @@
       "build": "retired"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "2026-08-17"
+  ]
 }

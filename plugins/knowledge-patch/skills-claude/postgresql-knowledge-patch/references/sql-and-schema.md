@@ -1,79 +1,145 @@
 # SQL, Types, and Schema Design
 
-Batch attribution: `18-uuid-guide`, `17.0`, `18.0`.
+## Define richer partitioned tables (17.0)
 
-## Contents
+Partitioned tables may have identity columns and table access methods. They
+may also have exclusion constraints when every partition-key column uses
+equality, while other columns use the constraint's exclusion operators.
 
-- [UUIDv7](#generate-and-inspect-uuidv7-values)
-- [Generated columns](#choose-virtual-or-stored-generated-columns)
-- [RETURNING and MERGE](#return-old-and-new-row-images)
-- [Temporal constraints](#model-temporal-uniqueness-and-referential-coverage)
-- [Partitions, indexes, and constraints](#design-partitions-indexes-and-constraints)
-- [Privileges](#delegate-maintenance-and-inspect-privileges)
-- [Collations and foreign tables](#use-portable-and-nondeterministic-collations)
-- [Types and conversions](#work-with-expanded-type-and-conversion-behavior)
-- [PL/pgSQL](#use-richer-procedural-type-references-and-calls)
-- [Event triggers](#audit-logins-with-event-triggers)
+## Change generated expressions and reset DDL choices (17.0)
 
-## Generate and inspect UUIDv7 values
-
-`uuidv7([shift interval])` generates time-ordered UUIDs from a millisecond Unix
-timestamp, sub-millisecond timestamp data, and randomness. The optional interval
-shifts the timestamp embedded in the result.
+Replace a stored generated column's expression with `SET EXPRESSION`.
+`SET STATISTICS DEFAULT` replaces the older `-1` spelling, and
+`ALTER TABLE ... SET ACCESS METHOD DEFAULT` selects the configured default
+table access method.
 
 ```sql
-SELECT uuidv7(),
-       uuidv7(interval '-1 hour');
+ALTER TABLE order_lines
+  ALTER COLUMN total SET EXPRESSION AS (quantity * unit_price);
+ALTER TABLE order_lines
+  ALTER COLUMN sku SET STATISTICS DEFAULT;
+```
+
+## Audit logins with event triggers (17.0)
+
+Event triggers can fire for the `login` event. `REINDEX` is also included in
+event-trigger command reporting.
+
+```sql
+CREATE EVENT TRIGGER audit_login
+ON login
+EXECUTE FUNCTION app.record_login();
+```
+
+## Use expanded MERGE semantics (17.0)
+
+`MERGE` can target updatable views, use `WHEN NOT MATCHED BY SOURCE`, and
+return rows. In `RETURNING`, `merge_action()` identifies whether an output row
+was inserted, updated, or deleted.
+
+```sql
+MERGE INTO inventory AS i
+USING current_stock AS s ON i.sku = s.sku
+WHEN MATCHED THEN UPDATE SET quantity = s.quantity
+WHEN NOT MATCHED THEN INSERT (sku, quantity) VALUES (s.sku, s.quantity)
+WHEN NOT MATCHED BY SOURCE THEN DELETE
+RETURNING merge_action(), i.*;
+```
+
+## Represent infinite intervals and add enum values transactionally (17.0)
+
+`interval` accepts positive and negative infinity. A newly added enum value
+may be used immediately when its enum type was created earlier in the same
+transaction; immediate use remains disallowed for pre-existing enum types.
+
+## Use the session zone without repeating it (17.0)
+
+`to_timestamp()` format strings accept `TZ` for abbreviations or numeric
+offsets and `OF` for numeric offsets. `AT LOCAL` uses the session time zone
+when adding or removing time-zone information.
+
+```sql
+SELECT timestamp '2024-09-26 12:00' AT LOCAL;
+```
+
+## Declare arrays from anchored PL/pgSQL types (17.0)
+
+Array notation may follow `%TYPE` or `%ROWTYPE` when the base is not already
+an array. `%TYPE` may reference a column whose declared type is composite.
+
+```plpgsql
+DO $$
+DECLARE
+  pending app.orders%ROWTYPE[];
+  destination app.shipments.address%TYPE;
+BEGIN
+  NULL;
+END $$;
+```
+
+## Use portable built-in collations and configurable SLRUs (17.0)
+
+The built-in collation provider supplies platform-independent `C` and
+`C.UTF-8`. SLRU cache sizes are configurable with
+`commit_timestamp_buffers`, `multixact_member_buffers`,
+`multixact_offset_buffers`, `notify_buffers`, `serializable_buffers`,
+`subtransaction_buffers`, and `transaction_buffers`. Commit-timestamp,
+transaction, and subtransaction caches otherwise scale with `shared_buffers`.
+
+## Generate and inspect UUIDv7 values (18-uuid-guide)
+
+`uuidv7([shift interval])` creates time-ordered UUIDs from a millisecond Unix
+timestamp, sub-millisecond timestamp data, and randomness. Its optional
+interval shifts the embedded timestamp.
+
+```sql
+SELECT uuidv7(), uuidv7(interval '-1 hour');
 ```
 
 `uuid_extract_timestamp(uuid)` returns `timestamp with time zone` for UUID
-versions 1 and 7, and `NULL` for other versions. Treat the extracted value as
-implementation-dependent metadata; it need not exactly equal the creation
-time. `uuid_extract_version(uuid)` returns a `smallint` version for RFC 9562
-variants and `NULL` for other variants.
+versions 1 and 7 and `NULL` for other versions. The decoded timestamp is
+implementation-dependent and need not exactly match generation time.
+`uuid_extract_version(uuid)` returns a `smallint` for RFC 9562 variants and
+`NULL` for other variants.
 
 ```sql
 WITH generated AS (SELECT uuidv7() AS id)
-SELECT uuid_extract_timestamp(id),
-       uuid_extract_version(id)
+SELECT uuid_extract_timestamp(id), uuid_extract_version(id)
 FROM generated;
 ```
 
-## Choose virtual or stored generated columns
+## Use equality-capable non-B-tree indexes (18.0)
 
-Generated columns are virtual by default and compute on read. Add `STORED` for
-write-time materialization.
+Unique non-B-tree indexes can support partition keys and materialized views
+when their access method supplies equality semantics.
+
+## Grant new object privileges (18.0)
+
+`pg_get_acl()` retrieves ACL details, and `has_largeobject_privilege()` checks
+large-object permissions. `ALTER DEFAULT PRIVILEGES` can define large-object
+defaults. Membership in `pg_signal_autovacuum_worker` authorizes signaling
+autovacuum workers.
+
+## Choose virtual or stored generated columns (18.0)
+
+Generated columns are virtual by default and compute on read. Add `STORED`
+when write-time materialization is required.
 
 ```sql
 CREATE TABLE line_item (
   quantity integer,
   unit_price numeric,
-  total numeric GENERATED ALWAYS AS (quantity * unit_price)
-);
-
-CREATE TABLE stored_line_item (
-  quantity integer,
-  unit_price numeric,
-  total numeric GENERATED ALWAYS AS (quantity * unit_price) STORED
+  virtual_total numeric
+    GENERATED ALWAYS AS (quantity * unit_price),
+  stored_total numeric
+    GENERATED ALWAYS AS (quantity * unit_price) STORED
 );
 ```
 
-Replace a stored generated expression without rebuilding the column definition:
+## Reference old and new row images in RETURNING (18.0)
 
-```sql
-ALTER TABLE order_lines
-  ALTER COLUMN total SET EXPRESSION AS (quantity * unit_price);
-```
-
-Use `SET STATISTICS DEFAULT` instead of the older `-1` spelling. Likewise,
-`ALTER TABLE ... SET ACCESS METHOD DEFAULT` selects the configured default
-table access method.
-
-## Return old and new row images
-
-`INSERT`, `UPDATE`, `DELETE`, and `MERGE` can explicitly refer to `old` and
-`new` in `RETURNING`. Rename these special aliases when they conflict with
-table or column names.
+`INSERT`, `UPDATE`, `DELETE`, and `MERGE` expose `old` and `new` in
+`RETURNING`. Rename those aliases when they conflict with identifiers.
 
 ```sql
 UPDATE products
@@ -81,25 +147,19 @@ SET price = price * 1.05
 RETURNING id, old.price AS previous_price, new.price AS current_price;
 ```
 
-`MERGE` can target an updatable view, act on `WHEN NOT MATCHED BY SOURCE`, and
-return affected rows. `merge_action()` reports `INSERT`, `UPDATE`, or `DELETE`
-for each output row.
+## Derive foreign tables and use nondeterministic collations (18.0)
 
-```sql
-MERGE INTO inventory AS i
-USING current_stock AS s ON i.sku = s.sku
-WHEN MATCHED THEN UPDATE SET quantity = s.quantity
-WHEN NOT MATCHED THEN
-  INSERT (sku, quantity) VALUES (s.sku, s.quantity)
-WHEN NOT MATCHED BY SOURCE THEN DELETE
-RETURNING merge_action(), i.*;
-```
+`CREATE FOREIGN TABLE ... LIKE` derives a foreign table from a local table.
+`LIKE` and text-position functions accept nondeterministic collations. The
+built-in `PG_UNICODE_FAST` collation combines Unicode case mapping with
+code-point-order sorting.
 
-## Model temporal uniqueness and referential coverage
+## Enforce temporal keys (18.0)
 
-Put `WITHOUT OVERLAPS` on the last column of a primary or unique key to require
-non-overlapping ranges. Put `PERIOD` on the last foreign-key column to require
-the referenced ranges collectively to cover the referencing range.
+Place `WITHOUT OVERLAPS` on the final column of a primary or unique key to
+reject overlapping ranges. Place `PERIOD` on the final foreign-key and
+referenced-key columns to require referenced ranges to cover the referencing
+range.
 
 ```sql
 CREATE TABLE room_prices (
@@ -117,107 +177,27 @@ CREATE TABLE bookings (
 );
 ```
 
-## Design partitions, indexes, and constraints
+## Control constraint enforcement and inheritance (18.0)
 
-Partitioned tables support identity columns and table access methods. They can
-also have exclusion constraints when every partition-key column is compared
-for equality; non-key columns may use the constraint's other exclusion
-operators.
+Declare `CHECK` and foreign-key constraints `NOT ENFORCED`; inspect the result
+in `pg_constraint.conenforced`. `NOT NULL` constraints are represented in
+`pg_constraint`, can be named or marked `NOT VALID`, and accept
+`ALTER CONSTRAINT ... [NO] INHERIT`. Partitioned tables accept `NOT VALID`
+foreign keys and parent-only constraint drops.
 
-Unique non-B-tree indexes can support partition keys and materialized views
-when the index access method provides equality semantics.
+## Apply Unicode transformations and aggregate complex values (18.0)
 
-`CHECK` and foreign-key constraints may be declared `NOT ENFORCED`. Inspect
-that state through `pg_constraint.conenforced`.
+`casefold()` performs Unicode-aware caseless transformation, including
+mappings that change string length. Unicode case conversion supports
+conditional, title-case, and one-to-many mappings. `MIN()` and `MAX()` can
+aggregate arrays and composite values.
 
-`NOT NULL` constraints are represented in `pg_constraint`. They can be named,
-marked `NOT VALID`, and changed with `ALTER CONSTRAINT ... [NO] INHERIT`.
-Partitioned tables also support `NOT VALID` foreign keys and parent-only
-constraint drops.
+## Use new formatting and procedural syntax (18.0)
 
-## Delegate maintenance and inspect privileges
-
-`MAINTAIN` is a per-table privilege for `VACUUM`, `ANALYZE`, `REINDEX`,
-`REFRESH MATERIALIZED VIEW`, `CLUSTER`, and `LOCK TABLE`. The predefined
-`pg_maintain` role grants maintenance capability without conferring ownership
-or general superuser access.
-
-```sql
-GRANT MAINTAIN ON TABLE app.orders TO maintenance_bot;
-GRANT pg_maintain TO operations_role;
-```
-
-Use `pg_get_acl()` to retrieve ACL details and
-`has_largeobject_privilege()` to test large-object rights.
-`ALTER DEFAULT PRIVILEGES` can establish defaults for large objects.
-Membership in `pg_signal_autovacuum_worker` permits signaling autovacuum
-workers.
-
-## Use portable and nondeterministic collations
-
-The platform-independent built-in collation provider supplies `C` and
-`C.UTF-8`. `PG_UNICODE_FAST` provides Unicode case mapping with code-point-order
-sorting.
-
-`LIKE` and text-position functions accept nondeterministic collations.
-`CREATE FOREIGN TABLE ... LIKE` can derive a foreign table's columns from a
-local table.
-
-## Work with expanded type and conversion behavior
-
-`interval` accepts positive and negative infinity. A newly added enum value can
-be used immediately when its enum type was itself created earlier in the same
-transaction; immediate use remains disallowed for a pre-existing enum type.
-
-`to_timestamp()` format strings accept `TZ` for abbreviations or numeric offsets
-and `OF` for numeric offsets. `AT LOCAL` uses the session time zone while adding
-or removing time-zone information.
-
-```sql
-SELECT timestamp '2024-09-26 12:00' AT LOCAL;
-```
-
-Integer-to-`bytea` casts use two's-complement representation, and reverse casts
-are supported.
-
-`casefold()` performs Unicode-aware caseless transformation, including mappings
-that change string length. Unicode case conversion supports conditional,
-title-case, and one-to-many mappings. `MIN()` and `MAX()` can aggregate arrays
-and composite values.
-
-`to_number()` accepts the `RN` Roman-numeral pattern, and `EXTRACT()` accepts
-`WEEK`.
+`to_number()` accepts the `RN` Roman-numeral pattern, and `EXTRACT()` has a
+`WEEK` option. PL/pgSQL cursor arguments accept `=>` as well as `:=`. The
+regular-expression function family accepts named arguments.
 
 ```sql
 SELECT to_number('XIV', 'RN');
-```
-
-## Use richer procedural type references and calls
-
-In PL/pgSQL, `%TYPE` and `%ROWTYPE` may be followed by array notation when the
-base reference is not already an array. `%TYPE` can reference a column whose
-declared type is composite.
-
-```plpgsql
-DO $$
-DECLARE
-  pending app.orders%ROWTYPE[];
-  destination app.shipments.address%TYPE;
-BEGIN
-  NULL;
-END $$;
-```
-
-Cursor arguments accept `=>` as well as `:=`. The regular-expression function
-family accepts named arguments.
-
-## Audit logins with event triggers
-
-Event triggers can fire on `login`, and event-trigger command reporting covers
-`REINDEX`.
-
-```sql
-CREATE EVENT TRIGGER audit_login
-ON login
-EXECUTE FUNCTION app.record_login();
 ```

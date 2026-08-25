@@ -1,25 +1,12 @@
 # Notifications, Security, and Packaging
 
-## ASAR integrity
+## Renderer privilege boundaries
 
-ASAR integrity is stable since 39.0.0. When enabled, Electron verifies
-packaged `app.asar` against a build-time hash and terminates the application
-when the hash is absent or mismatched. Electron Packager 19 separately enables
-ASAR packaging by default.
+### Clipboard migration
 
-Since 41.0.0, macOS bundles can embed a digest of their ASAR Integrity
-metadata, validating the metadata itself at launch. Use `@electron/asar`
-4.1.0 or later, then re-sign the application:
-
-```bash
-asar integrity-digest on /path/to/YourApp.app
-```
-
-## Clipboard isolation
-
-Direct Electron `clipboard` API use in renderers is deprecated since 40.0.0.
-Move privileged calls to a preload and expose only required operations through
-`contextBridge`:
+At 40.0.0, direct use of Electron's `clipboard` API in renderer processes was
+deprecated. Move privileged operations to a preload and expose only what the page
+needs:
 
 ```js
 const { clipboard, contextBridge } = require('electron');
@@ -29,66 +16,90 @@ contextBridge.exposeInMainWorld('clipboardAPI', {
 });
 ```
 
-Electron 44 removes Electron's `clipboard` module from renderer processes.
-Use `navigator.clipboard` for ordinary access, retaining a narrow preload
-bridge only for advanced Electron operations.
+The forward `breaking-changes` guidance says Electron 44 no longer exposes the
+Electron `clipboard` module to renderers. Prefer `navigator.clipboard` for
+ordinary access, or the narrow preload bridge for advanced operations.
 
-## Notifications
+Since 35.0.0, permission handling also covers
+`document.executeCommand('paste')`; account for it in permission handlers.
 
-### Windows behavior
+### Disabling macOS geolocation
 
-The 41.0.0 notes record a `reason` on the Windows `Notification` `closed`
-event, identifying why it was dismissed, plus action buttons, select
-dropdowns, and replies. Both additions are also available in Electron 40.
+Since 41.0.0, disable location services for a macOS application with:
+
+```js
+app.commandLine.appendSwitch('disable-geolocation');
+```
+
+## ASAR integrity
+
+### Stable integrity enforcement
+
+Since 39.0.0, ASAR integrity is stable. When enabled, it verifies packaged
+`app.asar` against its build-time hash and forcefully terminates the application
+if the hash is missing or mismatched. Electron Packager 19 separately enables
+ASAR packaging by default.
+
+### macOS integrity digest
+
+Since 41.0.0, macOS applications can embed a digest of their ASAR Integrity data
+so the integrity metadata itself is validated at launch. With `@electron/asar`
+4.1.0 or later, enable the digest and then re-sign the application:
+
+```bash
+asar integrity-digest on /path/to/YourApp.app
+```
+
+## Updates and package formats
+
+### MSIX auto-updates
+
+`autoUpdater` supports MSIX applications in Electron 39.5.0 and 40.2.0, and in
+the 41.0.0 line. An update server can publish MSIX and Squirrel.Mac updates using
+essentially the same JSON response format.
+
+## Safe storage
+
+Since 42.0.0, asynchronous `safeStorage` functionality enables several additional
+storage backends. Prefer the asynchronous surface when using those backends.
+
+## macOS notifications
+
+### Signing requirement
+
+Since 42.0.0, macOS notifications use `UNNotification` instead of deprecated
+`NSUserNotification`. The application must be code-signed for notifications to
+display; an unsigned application's `Notification` emits `failed`.
+
+### History and grouping
+
+Also since 42.0.0, `Notification.getHistory()` reads macOS notification history.
+The constructor's `id` and `groupId` options provide custom identity and
+Notification Center grouping.
+
+### Removing delivered notifications
+
+Since 43.0.0, macOS `Notification` exposes static `remove()`, `removeAll()`, and
+`removeGroup()` methods for removing one delivered notification, all delivered
+notifications, or a group.
+
+## Windows notifications
+
+### Dismissal reasons and rich actions
+
+Since Electron 40, including 41.0.0, the Windows `Notification` `closed` event
+includes `reason`, identifying why it was dismissed. Notification actions support
+buttons, select dropdowns, and replies.
+
+### Identity, grouping, urgency, and cold-start activation
 
 Since 42.0.0, Windows notifications accept `id`, `groupId`, `groupTitle`, and
-`urgency`. `Notification.handleActivation(callback)` processes clicks,
-replies, and action buttons even when a notification cold-starts the
-application.
+`urgency`. Use `Notification.handleActivation(callback)` for clicks, replies, and
+action buttons, including activations that cold-start the application.
 
-### macOS behavior
+## macOS media packaging requirement
 
-Since 42.0.0, macOS notifications use `UNNotification` rather than deprecated
-`NSUserNotification`. The application must be code-signed for notifications
-to display; an unsigned application's `Notification` emits `failed`.
-
-`Notification.getHistory()` reads macOS notification history. Constructor
-options `id` and `groupId` add custom identifiers and Notification Center
-grouping.
-
-Since 43.0.0, static macOS `Notification.remove()`, `removeAll()`, and
-`removeGroup()` remove delivered notifications individually, in bulk, or by
-group.
-
-## Authentication, privacy, and storage
-
-- Since 41.0.0, `--disable-geolocation` disables macOS location services:
-
-  ```js
-  app.commandLine.appendSwitch('disable-geolocation');
-  ```
-
-- The 41.0.0 notes record a macOS `utilityProcess` `disclaim` option for TCC
-  disclaiming; the option is also present in Electron 39 and 40.
-- Since 42.0.0,
-  `app.configureWebAuthn({ touchID: { keychainAccessGroup } })` enables the
-  macOS Touch ID platform authenticator. The session
-  `select-webauthn-account` event selects among discoverable credentials.
-- Since 42.0.0, asynchronous `safeStorage` functionality enables additional
-  storage backends.
-
-## Printing and auto-updates
-
-- `PrinterInfo.isDefault` and `PrinterInfo.status` were removed in 35.0.0
-  together with their upstream Chromium properties.
-- Since 41.0.0, pass `usePrinterDefaultPageSize: true` to
-  `webContents.print()` to use the printer's default page size:
-
-  ```js
-  webContents.print({ usePrinterDefaultPageSize: true });
-  ```
-
-- The 41.0.0 notes record MSIX support in `autoUpdater`. An update server can
-  publish MSIX and Squirrel.Mac updates with essentially the same JSON
-  response format. This support is also available in Electron 39.5.0 and
-  40.2.0.
+Since 39.0.0, desktop audio capture on macOS 14.2 or later requires
+`NSAudioCaptureUsageDescription` in `Info.plist`. Without it, the newer capture
+path can produce silent audio without an error. See the graphics and media
+reference for the temporary feature-disable switch.

@@ -20,12 +20,12 @@ reference that matches the work.
 | Reference | Topics |
 | --- | --- |
 | [references/specification-and-sdk.md](references/specification-and-sdk.md) | Context propagation, signal APIs, resources, attributes, declarative SDK configuration, Prometheus interoperability |
-| [references/semantic-conventions-protocols.md](references/semantic-conventions-protocols.md) | Generative AI, RPC, exception logs, HTTP, GraphQL, browser, database, and Oracle conventions |
+| [references/semantic-conventions-protocols.md](references/semantic-conventions-protocols.md) | Generative AI, RPC, exception logs, HTTP, GraphQL, browser, messaging, and database conventions |
 | [references/semantic-conventions-platforms.md](references/semantic-conventions-platforms.md) | Process, service, system, V8, Kubernetes, application, cloud, runtime, SDK, event, mainframe, NFS, and profile conventions |
-| [references/collector-core-configuration.md](references/collector-core-configuration.md) | Collector schemas, reload, Go APIs, component names, error defaults, Host Metrics, self-telemetry, and OpAMP |
+| [references/collector-core-configuration.md](references/collector-core-configuration.md) | Collector schemas, reload, Go APIs, component names, error defaults, Host Metrics, self-telemetry, OpAMP, and lifecycle integration |
 | [references/collector-pipelines-processing.md](references/collector-pipelines-processing.md) | OTTL, lookup and transform processors, W3C-aware sampling, component telemetry, profiles, and behavior corrections |
-| [references/collector-exporters-extensions.md](references/collector-exporters-extensions.md) | Datadog, Elasticsearch, OpenSearch, Kafka, SignalFx, file and load-balancing exporters, encoding, OIDC, and database authentication |
-| [references/collector-receivers.md](references/collector-receivers.md) | Receiver units and schemas, database receivers, AWS, Datadog, RabbitMQ, file stats, Journald, webhook, and timeout behavior |
+| [references/collector-exporters-extensions.md](references/collector-exporters-extensions.md) | Datadog, Elasticsearch, OpenSearch, Kafka, SignalFx, cloud exporters, file and load-balancing exporters, encoding, OIDC, and storage |
+| [references/collector-receivers.md](references/collector-receivers.md) | Receiver units and schemas, database receivers, AWS, Datadog, RabbitMQ, file stats, Journald, webhook, DNS, and timeout behavior |
 
 ## Breaking changes and deprecations
 
@@ -72,6 +72,9 @@ reference that matches the work.
   `service.peer.namespace`.
 - Use `process.unix.file_descriptor.count` or
   `process.windows.handle.count`, not `process.open_file_descriptor.count`.
+- Paging-fault metrics are `k8s.pod.paging.faults`,
+  `k8s.node.paging.faults`, and `container.paging.faults`; the old names had a
+  `.memory` segment.
 - Use the singularized and reordered system and Kubernetes metric names
   documented in the references; several old plural or word-order variants no
   longer match the conventions.
@@ -82,10 +85,15 @@ reference that matches the work.
   `configgrpc.DefaultBalancerName`.
 - Replace deprecated `xconfmap.WithForceUnmarshaler` with
   `confmap.WithForceUnmarshaler`.
+- Do not rely on promoted fields from embedded `confighttp.ServerConfig` in
+  zpages `Config` or embedded `configauth.Config` in `confighttp.AuthConfig`;
+  use their named fields.
 - The failover connector no longer accepts `retry_gap` or `max_retries`.
-- The JMX receiver code has been removed.
-- Rename the AWS ECS attributes processor type from `awsecsattributes` to
-  `aws_ecs_attributes`; there is no alias for the old name.
+- The JMX receiver and `kafkatopicsobserver` have been removed. Replace Kafka
+  topic-observer rules with `kafkareceiver` topic regex support.
+- Rename component types `awsecsattributes` to `aws_ecs_attributes`,
+  `azuremonitor` to `azure_monitor`, and `sqlquery` to `sql_query`. Only the
+  old `sqlquery` name has a deprecated alias.
 - `cumulativetodelta` and `spanpruning` survive only as deprecated aliases for
   `cumulative_to_delta` and `span_pruning`.
 - Routing, filter, and transform processing now default top-level
@@ -95,7 +103,14 @@ reference that matches the work.
 - Host Metrics now aggregates CPU time and utilization across logical CPUs by
   default, omits the `cpu` attribute, and enables
   `system.cpu.logical.count`.
+- File Log `ordering_criteria.top_n: 0` now means all files. Set `1`
+  explicitly for the old behavior and prepare for explicit `top_n` when
+  `sort_by` is used.
 - File exporter output is mode `0644`, including rotated files.
+- Queue dashboards must separate post-batch
+  `otelcol_exporter_queue_batch_send_size*` from enqueue-time
+  `otelcol_exporter_enqueue_size*`; the former exists only with
+  `sending_queue.batch`.
 - Histogram dashboards must account for power-of-two buckets from 128 B
   through 16 MiB for both core batch-send-size metrics.
 
@@ -127,8 +142,10 @@ reference that matches the work.
   `trace_based`.
 - Logs can bridge an event into a span event and can represent entity
   information as structured events.
-- Profiles now have a signal specification, data model, and supplementary
-  pprof guidance.
+- Profiles have a signal specification, data model, and supplementary pprof
+  guidance.
+- Entity is defined in the specification and supported by the Resource SDK;
+  OTLP exporter configuration includes request- and response-size limits.
 
 ### Resources and attributes
 
@@ -201,13 +218,14 @@ receivers:
    conventions, an SDK, Collector core, or Contrib.
 2. Check stability labels and feature-gate defaults before treating a feature
    as generally available.
-3. Audit renamed attributes, metrics, component types, and configuration keys
-   before an upgrade.
-4. Recheck metric units, aggregation, required attributes, and cardinality;
-   several receiver and convention changes affect dashboards and alerts.
+3. Audit renamed attributes, metrics, component types, configuration keys,
+   and Go embedded-field access before an upgrade.
+4. Recheck metric units, instrument kinds, aggregation, required attributes,
+   and cardinality; several receiver and convention changes affect dashboards
+   and alerts.
 5. For sensitive fields such as exception messages, query parameters, and
    GraphQL documents, make capture an explicit and sanitized choice.
 6. For Collector gates, distinguish default-on from default-off behavior and
    confirm mutually exclusive gates before deployment.
-7. Open the matching reference for the complete conditions, allowed values,
-   and receiver- or exporter-specific details.
+7. Open the matching reference for complete conditions, allowed values, and
+   receiver- or exporter-specific details.

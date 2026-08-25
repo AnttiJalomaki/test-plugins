@@ -2,7 +2,7 @@
   "patch": "consul-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T04:07:53Z",
+  "built_at": "2026-08-21T00:08:38Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -34,6 +34,11 @@
     },
     "automated-upgrades": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.0.3": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

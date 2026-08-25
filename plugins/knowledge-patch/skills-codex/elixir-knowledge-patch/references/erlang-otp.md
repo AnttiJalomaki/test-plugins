@@ -1,26 +1,12 @@
 # Erlang/OTP Runtime and Libraries
 
-Batch attribution: `otp-27`, `otp-28`, and `otp-29`.
+## Write Erlang source
 
-## Contents
+### Keep documentation beside code
 
-- [Write and document Erlang source](#write-and-document-erlang-source)
-- [Use comprehensions deliberately](#use-comprehensions-deliberately)
-- [Work with processes and messages](#work-with-processes-and-messages)
-- [Build shells and terminal programs](#build-shells-and-terminal-programs)
-- [Encode JSON and match regular expressions](#encode-json-and-match-regular-expressions)
-- [Use collections and storage](#use-collections-and-storage)
-- [Trace, profile, and measure coverage](#trace-profile-and-measure-coverage)
-- [Analyze types and unsafe code](#analyze-types-and-unsafe-code)
-- [Migrate warnings and code loading](#migrate-warnings-and-code-loading)
-- [Use native records](#use-native-records)
-- [Harden network and archive operations](#harden-network-and-archive-operations)
-
-## Write and document Erlang source
-
-### Keep Markdown documentation beside code
-
-Store documentation in Markdown through `-doc` next to the spec and implementation. OTP documentation uses ExDoc rather than separate Erl_Docgen XML files:
+OTP source documentation uses Markdown in `-doc` attributes beside the spec
+and implementation, rendered by ExDoc rather than maintained as separate
+Erl_Docgen XML (`otp-27`):
 
 ```erlang
 -doc """
@@ -29,9 +15,11 @@ Returns `N` copies of `Elem`.
 -spec duplicate(N, Elem) -> [Elem].
 ```
 
-### Use triple-quoted strings
+### Use multiline strings and sigils
 
-`"""` delimits multiline strings. The indentation before the closing delimiter is removed from every content line, while any deeper indentation remains. Quotes and backslashes in the body are literal rather than escapes:
+Triple quotes delimit multiline strings. The indentation before the closing
+delimiter is removed from every content line, deeper indentation is preserved,
+and quotes and backslashes inside are literal (`otp-27`):
 
 ```erlang
 Text = """
@@ -40,75 +28,86 @@ Text = """
        """.
 ```
 
-### Choose binary and list-string sigils
+String sigils choose representation and escaping:
 
-- `~b` creates a UTF-8 binary with escapes.
-- `~B` creates a UTF-8 binary without escapes.
-- Bare `~` behaves like `~b` for inline strings and `~B` for triple-quoted strings.
-- `~s` and `~S` create list strings with and without escaping.
+- `~b` is an escaped UTF-8 binary; `~B` is an unescaped UTF-8 binary.
+- Bare `~` behaves like `~b` inline and `~B` with triple quotes.
+- `~s` and `~S` produce list strings with and without escaping.
 
 ```erlang
 Utf8 = ~B[Greek: Γνῶθι σαυτόν],
 Tabbed = ~b"abc\txyz".
 ```
 
-### Account for `maybe` being enabled
+### Account for language feature changes
 
-The compiler enables `maybe_expr` by default, so remove the old `-feature(maybe_expr, enable).` requirement. Quote the atom as `'maybe'`. Disable the feature only when required with `erlc -disable-feature maybe_expr` or `-feature(maybe_expr, disable).`.
+The `maybe_expr` feature is enabled by default in `otp-27`; write the atom as
+`'maybe'`. Disable the feature only when necessary with
+`erlc -disable-feature maybe_expr` or `-feature(maybe_expr, disable)`.
 
-### Write based floating-point literals
-
-Floating-point literals support arbitrary bases. A second `#` introduces the exponent marker:
+OTP `otp-28` adds arbitrary-base floating-point literals. A second `#`
+introduces the exponent marker:
 
 ```erlang
 2#0.011.       %% 0.375
 16#0.011#e5.  %% 4352.0
 ```
 
-## Use comprehensions deliberately
+## Build comprehensions
 
-### Fail on generator mismatches
-
-Use `<:-` for strict list and map generators and `<:=` for strict binary generators. A non-matching value fails instead of being silently skipped; keep the relaxed operators when skipping is intended:
+Strict generators from `otp-28` fail on an input that does not match their
+pattern instead of silently skipping it. Use `<:-` for list and map generators
+and `<:=` for binary generators; keep the relaxed operators when skipping is
+intentional.
 
 ```erlang
 [X || {ok, X} <:- [{ok, 1}, {ok, 2}]].
 ```
 
-### Zip generators
-
-Join any number of list, binary, or map generators with `&&` to iterate in parallel rather than taking a Cartesian product. Zipped generators may be combined with ordinary generators and filters:
+Join generators with `&&` to zip them in parallel rather than form a Cartesian
+product. List, binary, and map generators may be combined with other
+generators and filters:
 
 ```erlang
 [{X, Y} || X <- [1, 2] && Y <- [a, b]].
 %% [{1,a},{2,b}]
 ```
 
-### Assign within comprehensions
+OTP `otp-29` adds two more forms:
 
-With the experimental `compr_assign` feature enabled, use `Pattern = Expr` as a qualifier that binds a computed value for later filters or output. It has the strict semantics of `Pattern <-:- [Expr]`. Without the feature, OTP 29 rejects matches in qualifiers rather than treating the resulting value as a boolean filter.
+- A list comprehension may place multiple expressions before `||`, emitting
+  several values per iteration without temporary lists and flattening:
 
-```erlang
--feature(compr_assign, enable).
+  ```erlang
+  [I, -I || I <- lists:seq(1, 5)].
+  %% [1,-1,2,-2,3,-3,4,-4,5,-5]
+  ```
 
-selected(List) ->
-    [H || E <- List, H = erlang:phash2(E), H rem 10 =:= 0].
-```
+- With experimental `compr_assign` enabled, `Pattern = Expr` in the qualifier
+  list binds a computed value for later filters or output. It has the strict
+  semantics of `Pattern <-:- [Expr]`. Without the feature, a match in a
+  qualifier is rejected instead of treated as a Boolean filter.
 
-### Emit multiple values per iteration
+  ```erlang
+  -feature(compr_assign, enable).
 
-Place multiple expressions before `||` to append several values for each iteration without building temporary lists and flattening:
-
-```erlang
-[I, -I || I <- lists:seq(1, 5)].
-%% [1,-1,2,-2,3,-3,4,-4,5,-5]
-```
+  selected(List) ->
+      [H || E <- List, H = erlang:phash2(E), H rem 10 =:= 0].
+  ```
 
 ## Work with processes and messages
 
-### Send priority signals safely
+### Label unregistered processes
 
-A receiving process must opt in by creating an alias with `alias([priority])`. Send to that alias with `erlang:send/3` and the `priority` option. Priority messages are inserted before ordinary messages but retain signal ordering among themselves:
+`proc_lib:set_label/1` assigns an arbitrary term to the current process, and
+`proc_lib:get_label/1` reads a process label. Labels appear in shell `i/0`,
+Observer, and crash dumps (`otp-27`).
+
+### Send priority signals
+
+A receiving process must opt in by creating a priority alias. Send to that
+alias with `erlang:send/3` and the `priority` option. Priority messages move
+ahead of ordinary messages while preserving signal ordering (`otp-28`):
 
 ```erlang
 PrioAlias = alias([priority]),
@@ -116,46 +115,35 @@ erlang:send(PrioAlias, urgent, [priority]),
 true = unalias(PrioAlias).
 ```
 
-Use `exit/3` for priority exit signals. Add `priority` to `erlang:link/2` or `erlang:monitor/3` when link- or monitor-generated signals must be prioritized.
+Use `exit/3` for priority exit signals. Pass `priority` to `erlang:link/2` or
+`erlang:monitor/3` to prioritize link- or monitor-generated signals.
 
-### Label unregistered processes
+### Hibernate without unwinding
 
-Call `proc_lib:set_label/1` in the current process and retrieve a label with `proc_lib:get_label/1`. Labels appear in shell `i/0`, Observer, and crash dumps, making anonymous processes identifiable.
-
-### Schedule fun-based timers
-
-`timer:apply_after/2,3`, `timer:apply_interval/*`, and `timer:apply_repeatedly/*` accept funs directly. For a timer that may outlive a hot-code upgrade, pass a remote fun and its arguments:
-
-```erlang
-timer:apply_after(1000, fun io:put_chars/1, ["done\n"]).
-```
-
-### Hibernate without discarding the stack
-
-`erlang:hibernate/0` reduces the calling process's memory while waiting for the next message and preserves the call stack. This differs from `erlang:hibernate/3`:
+`erlang:hibernate/0` reduces the current process's memory while it waits for
+the next message and preserves the current call stack. This differs from
+`erlang:hibernate/3`, which starts from a specified MFA (`otp-28`).
 
 ```erlang
 erlang:hibernate().
 ```
 
-## Build shells and terminal programs
+## Use the shell and standard input
 
-### Rely on lazy standard input
+Standard input is lazy in `otp-28`: it is read only when an operation such as
+`io:get_line/2` asks for it. Programs no longer need `-noinput` merely to stop
+eager consumption.
 
-Standard input is read only when an operation such as `io:get_line/2` asks for it. Programs no longer need `-noinput` merely to prevent eager consumption.
-
-### Select raw `noshell` input
-
-`noshell` remains cooked by default. A custom shell can select raw mode to receive keystrokes without Enter and bypass line editing and terminal echo:
+`noshell` mode remains cooked by default, but a custom shell can select raw
+mode for keystrokes without Enter, line editing, or terminal echo:
 
 ```erlang
 shell:start_interactive({noshell, raw}),
 Chars = io:get_chars("", 1024).
 ```
 
-### Capture shell-local functions
-
-The shell accepts `fun Name/Arity` for auto-imported BIFs and shell-local functions, including a local function defined after the fun value was created:
+The shell accepts `fun Name/Arity` for auto-imported BIFs and shell-local
+functions, including a local function defined after the fun value was made:
 
 ```erlang
 1> F = fun id/1.
@@ -164,60 +152,65 @@ The shell accepts `fun Name/Arity` for auto-imported BIFs and shell-local functi
 42
 ```
 
-### Produce ANSI terminal output
+## Encode JSON
 
-Use `io_ansi:format/2` to return a styled binary or `io_ansi:fwrite/2` to write it directly:
-
-```erlang
-io_ansi:fwrite([bold, red, "wrong answer: ", "~p\n"], [99]).
-```
-
-## Encode JSON and match regular expressions
-
-### Use STDLIB JSON
-
-The `json` module supplies `json:decode/1` and `json:encode/1`. Object keys decode to binaries by default, preventing unbounded atom creation:
+STDLIB's `json` module provides `json:decode/1` and `json:encode/1` (`otp-27`).
+Decoded object keys are binaries by default, avoiding unbounded atom creation.
 
 ```erlang
 Map = json:decode(<<"{\"ok\":true}">>),
 Json = json:encode(Map).
 ```
 
-Use `json:decode/3` with decoder callbacks such as `object_push`. Use `json:encode/2` with a recursive custom encoder, delegating ordinary map and value handling to `json:encode_map/2` and `json:encode_value/2`.
+For custom behavior, `json:decode/3` accepts callbacks such as `object_push`.
+`json:encode/2` accepts a recursive custom encoder that can delegate to
+`json:encode_map/2` and `json:encode_value/2`.
 
-### Migrate regex assumptions to PCRE2
+## Schedule work
 
-The `re` module uses PCRE2. Its stricter parser rejects some previously tolerated invalid escapes; updated Unicode properties and branch-reset behavior can alter matches and splits. Never reuse the internal value from `re:compile/2` on another node or OTP version.
+The `timer` fun APIs accept funs directly: `timer:apply_after/2,3`, the
+`apply_interval/*` family, and the `apply_repeatedly/*` family (`otp-27`). For
+timers that may survive hot-code upgrades, pass a remote fun and its arguments:
 
-## Use collections and storage
+```erlang
+timer:apply_after(1000, fun io:put_chars/1, ["done\n"]).
+```
 
-### Compare and transform sets through their APIs
+## Work with collections and storage
 
-`sets`, `gb_sets`, and `ordsets` each provide `is_equal/2`, `map/2`, and `filtermap/2`. Use `is_equal/2` instead of term equality because equal sets may have different internal representations.
+### Sets, trees, arrays, and maps
 
-### Traverse ETS while retrieving objects
+In `otp-27`, `sets`, `gb_sets`, and `ordsets` each add `is_equal/2`, `map/2`,
+and `filtermap/2`. Compare sets with `is_equal/2`, not term equality, because
+equal sets may have different internal representations.
 
-Use `ets:first_lookup/1`, `next_lookup/2`, `last_lookup/1`, and `prev_lookup/2` to combine key traversal with object lookup. Use the default-object form of `ets:update_element/4` for a missing key:
+OTP `otp-29` validates the ordering passed to `gb_sets:from_ordset/1` and
+`gb_trees:from_orddict/1`, raising `badarg` rather than constructing corrupt
+data. Use `gb_trees:from_list/1` when input is not already ordered.
+
+The `array` module adds `concat/1,2`, `slice/3`, `shift/2`, fun-driven
+constructors `from/2,3`, index-bounded traversal forms such as `foldl/5`, and
+the `mapfold` families, including `mapfoldl/3` and `sparse_mapfoldr/5`.
+
+Map key order is still undefined, but in `otp-29` all traversal mechanisms for
+one map produce the same order, including `maps:keys/1`, `maps:to_list/1`, map
+comprehensions, and iterators.
+
+### Traverse and update ETS efficiently
+
+`ets:first_lookup/1`, `next_lookup/2`, `last_lookup/1`, and `prev_lookup/2`
+combine key traversal with object lookup (`otp-27`). `ets:update_element/4`
+adds a default object for a missing key:
 
 ```erlang
 ets:update_element(Tab, Key, {2, Value}, {Key, Default}).
 ```
 
-### Expand array workflows
+### Keep immutable graph versions
 
-The `array` module provides `concat/1,2`, `slice/3`, `shift/2`, fun-driven constructors `from/2,3`, index-bounded traversal such as `foldl/5`, and `mapfold` families including `mapfoldl/3` and `sparse_mapfoldr/5`.
-
-### Treat map traversal as consistently ordered, not sorted
-
-Map key order remains undefined, but every traversal mechanism for a given map now produces the same order. This includes `maps:keys/1`, `maps:to_list/1`, map comprehensions, and iterators. Do not infer a semantic sort order from that consistency.
-
-### Validate ordered tree and set input
-
-`gb_sets:from_ordset/1` and `gb_trees:from_orddict/1` validate ordering and raise `badarg` for invalid input rather than constructing corrupt values. Use `gb_trees:from_list/1` when input is not already ordered.
-
-### Use persistent functional graphs
-
-The immutable `graph` module is the functional counterpart to `digraph` and `digraph_utils`. Every modification returns a new graph and leaves earlier versions usable:
+The `graph` module in `otp-29` is the immutable counterpart to `digraph` and
+`digraph_utils`: each modifying operation returns a new graph, so prior
+versions remain usable.
 
 ```erlang
 G0 = graph:new(),
@@ -228,85 +221,74 @@ G3 = graph:add_edge(G2, a, b).
 
 ## Trace, profile, and measure coverage
 
-### Profile through `tprof`
-
-Use one API for call counts, time, and allocation:
+The unified `tprof` API in `otp-27` profiles call count, time, or allocation:
 
 ```erlang
 tprof:profile(M, F, Args,
               #{type => call_count | call_time | call_memory}).
 ```
 
-Call counting observes all processes. Time and memory profiling observe the caller and processes it spawns.
+Call counting covers all processes. Time and memory cover the caller and the
+processes it spawns.
 
-### Isolate trace sessions
+Kernel's `trace` module creates independent sessions with separate tracer,
+process, and function configuration. Use `trace:session_create/3`,
+`trace:process/4`, `trace:function/4`, and `trace:session_destroy/1`. Legacy
+`erlang:trace/3` clients still share one global session.
 
-Create independent Kernel `trace` sessions with `trace:session_create/3`, configure them with `trace:process/4` and `trace:function/4`, and release them with `trace:session_destroy/1`. Each session owns its tracer and configuration, so migrated tools do not overwrite one another. Users of `erlang:trace/3` still share a global session.
+On JIT-capable systems, Cover automatically uses low-overhead native coverage.
+Start coverage before regular module execution with
+`erl +JPcover function_counters`, and query it using
+`code:get_coverage(function, Module)`.
 
-### Use native coverage
+## Harden archives, TLS, and SSH
 
-On JIT-capable runtimes, Cover automatically uses low-overhead native coverage. Start coverage before normal module execution with `erl +JPcover function_counters`, and query it with `code:get_coverage(function, Module)`.
+### Bound archive extraction
 
-## Analyze types and unsafe code
+Pass `{max_size, Size}` to `erl_tar` extraction to cap total extracted data
+and protect a destination from disk-filling archives (`otp-29`).
 
-### Declare nominal Dialyzer types
+### Migrate application archives
 
-Use `-nominal` when structurally identical types must be incompatible by name in function inputs, outputs, and specifications. A nominal type remains compatible with a structurally identical non-nominal, non-opaque type:
+Putting application archives on the code path is deprecated in `otp-27`, as
+are archive handling in `erl_prim_loader`, archive lookup through
+`code:lib_dir/2`, and `-code_path_choice`. Strict code-path choice is now the
+default; archive users can temporarily select `-code_path_choice relaxed`.
 
-```erlang
--nominal meter() :: integer().
--nominal foot() :: integer().
+A single archive embedded in an escript remains supported. Access its data
+files through `escript:extract/2` for forward compatibility.
 
--spec as_meter(integer()) -> meter().
-as_meter(X) -> X.
-```
+### Validate OCSP stapling
 
-### Find unsafe calls
-
-The compiler warns for calls to functions marked always unsafe. Compile with `erlc +warn_possibly_unsafe_function` to diagnose conditionally dangerous operations such as atom creation. Xref understands `-unsafe` attributes and adds `unsafe_function_calls`, `undocumented_function_calls`, and `private_function_calls` analyses:
-
-```erlang
-xref:analyze(S, unsafe_function_calls).
-```
-
-### Use bounded integer guards
-
-`is_integer/3` checks both the type and inclusive bounds, avoiding range comparisons that accidentally accept floats:
-
-```erlang
-is_digit(C) -> is_integer(C, $0, $9).
-```
-
-## Migrate warnings and code loading
-
-### Replace old-style `catch`
-
-OTP 28 offers the opt-in `warn_deprecated_catch` warning for `catch Expr`, with per-module suppression through `-compile(nowarn_deprecated_catch)`. OTP 29 enables the warning by default. Prefer `try ... catch` so only the intended exception class is handled:
+Enable SSL client validation of a server's stapled OCSP response with
+`{stapling, staple}`, normally alongside trusted CA certificates (`otp-27`):
 
 ```erlang
-Result = try work()
-         catch
-             throw:Reason -> {error, Reason}
-         end.
+ssl:connect(Host, 443,
+            [{cacerts, public_key:cacerts_get()}, {stapling, staple}]).
 ```
 
-### Enable additional construct warnings where useful
+### Apply stronger defaults deliberately
 
-Use `warn_obsolete_bool_op` to find `and` and `or`. The compiler also warns when a variable is bound inside a subexpression and used afterward, or when a match confusingly unifies constructors such as `{a,B} = {Y,Z}`. Move the binding outward and write the latter as `{a=Y,B=Z}`.
+In `otp-29`, SSL and SSH prefer hybrid ML-KEM-768/X25519 key exchange and
+automatically fall back for older peers. SSH daemons no longer enable shell,
+exec, or SFTP by default; opt into only the required services:
 
-### Account for safer code-path precedence
+```erlang
+ssh:daemon(Port, [{shell, {shell, start, []}},
+                  {exec, erlang_eval},
+                  {subsystems, [ssh_sftpd:subsystem_spec([])]}
+                  | Options]).
+```
 
-The code server places the current working directory last rather than first, preventing a local BEAM file from shadowing an OTP or application module of the same name.
+## Adopt OTP 29 language and safety features
 
-### Avoid deprecated archive loading
+### Treat native records as experimental
 
-Putting application archives on the code path is deprecated, as are archive support in `erl_prim_loader`, archive lookup through `code:lib_dir/2`, and `-code_path_choice`. The default path choice is `strict`; archive users can temporarily request `-code_path_choice relaxed`.
-
-A single archive embedded in an escript remains supported. Access its data files through `escript:extract/2` for future-safe behavior.
-
-## Use native records
-
-The experimental `-record #name{}` form declares a runtime-native record instead of a tuple-backed record. Construction, update, matching, and field access retain familiar record syntax. Definitions are module-private unless exported with `-export_record`; refer to an exported record externally as `#module:name{}`. Expect possible breaking changes while the feature remains experimental.
+`-record #name{}` declares a runtime-native record in `otp-29`. Construction,
+update, matching, and field access use familiar record syntax. Records are
+module-private unless listed in `-export_record`; external references use
+`#module:name{}`. The feature is experimental and may break between releases.
 
 ```erlang
 -module(geom).
@@ -317,28 +299,61 @@ The experimental `-record #name{}` form declares a runtime-native record instead
 make_vec(X, Y) -> #vec{x=X, y=Y}.
 ```
 
-## Harden network and archive operations
+### Audit unsafe calls and code-path assumptions
 
-### Validate stapled OCSP responses
-
-Enable SSL client validation of a server's stapled OCSP response with `{stapling, staple}`, normally alongside trusted CA certificates:
-
-```erlang
-ssl:connect(Host, 443,
-            [{cacerts, public_key:cacerts_get()}, {stapling, staple}]).
-```
-
-### Bound tar extraction
-
-Pass `{max_size, Size}` to `erl_tar` extraction to cap total extracted data and prevent disk-filling archives.
-
-### Opt into SSH services
-
-SSL and SSH prefer hybrid ML-KEM-768/X25519 key exchange and automatically fall back when a peer lacks support. SSH daemons no longer enable shell, exec, or SFTP services by default; explicitly enable only the services the application needs:
+The compiler warns for functions marked always unsafe. Enable
+`erlc +warn_possibly_unsafe_function` to diagnose conditionally dangerous
+calls such as atom creation. Xref understands `-unsafe` and adds the
+`unsafe_function_calls`, `undocumented_function_calls`, and
+`private_function_calls` analyses:
 
 ```erlang
-ssh:daemon(Port, [{shell, {shell, start, []}},
-                  {exec, erlang_eval},
-                  {subsystems, [ssh_sftpd:subsystem_spec([])]}
-                  | Options]).
+xref:analyze(S, unsafe_function_calls).
 ```
+
+The code server now puts the current working directory last, so a local BEAM
+file cannot shadow an OTP or application module with the same name.
+
+### Update warnings and guards
+
+Old-style `catch Expr` warns by default in `otp-29`. In `otp-28`, opt into the
+same warning with `warn_deprecated_catch`, and suppress a project setting for
+one module with `-compile(nowarn_deprecated_catch)`. Prefer `try ... catch` to
+avoid unintentionally hiding runtime errors:
+
+```erlang
+-compile(warn_deprecated_catch).
+
+Result = try work()
+         catch
+             throw:Reason -> {error, Reason}
+         end.
+```
+
+`warn_obsolete_bool_op` opts into warnings for `and` and `or`. The compiler
+also warns when a variable is bound inside a subexpression then used later, or
+when a match confusingly unifies constructors such as `{a,B} = {Y,Z}`. Move
+the binding outward and write the latter as `{a=Y,B=Z}`.
+
+Use `is_integer/3` to verify both integer type and bounds without accidentally
+accepting floats:
+
+```erlang
+is_digit(C) -> is_integer(C, $0, $9).
+```
+
+### Produce ANSI terminal output
+
+The `io_ansi` module builds styled terminal content. `format/2` returns a
+binary containing ANSI sequences, while `fwrite/2` writes it (`otp-29`):
+
+```erlang
+io_ansi:fwrite([bold, red, "wrong answer: ", "~p\n"], [99]).
+```
+
+## Recompile regular expressions
+
+The `re` module uses PCRE2 in `otp-28`. Its stricter parser rejects formerly
+tolerated invalid escapes, while changed Unicode property data and
+branch-reset behavior can alter matches and splits. The internal result of
+`re:compile/2` changed and must not be reused across nodes or OTP versions.

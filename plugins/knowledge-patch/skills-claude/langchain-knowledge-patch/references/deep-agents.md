@@ -1,15 +1,13 @@
 # Deep Agents
 
-## Harness and orchestration tools
+## Harness and orchestration
 
 `deepagents` is a standalone LangChain package. `create_deep_agent` builds a
-LangGraph-backed runnable and adds orchestration tools alongside caller-supplied
-tools:
+LangGraph-backed runnable and adds `write_todos` for adaptive plan tracking and
+`task` for context-isolated delegation to specialized subagents alongside
+caller-supplied tools.
 
-- `write_todos` tracks and revises an adaptive plan.
-- `task` delegates context-isolated work to specialized subagents.
-
-```sh
+```shell
 pip install -U deepagents
 ```
 
@@ -17,7 +15,6 @@ pip install -U deepagents
 from deepagents import create_deep_agent
 
 def get_weather(city: str) -> str:
-    """Get weather for a city."""
     return f"It's always sunny in {city}!"
 
 agent = create_deep_agent(
@@ -25,150 +22,82 @@ agent = create_deep_agent(
     system_prompt="You are a helpful assistant",
 )
 result = agent.invoke({
-    "messages": [{
-        "role": "user",
-        "content": "What is the weather in SF?",
-    }]
+    "messages": [{"role": "user", "content": "What is the weather in SF?"}]
 })
 ```
 
-Design delegated tasks so the subagent receives all required context but does not
-inherit unrelated conversation state.
+## Filesystem mutation and backends
 
-## Filesystem mutation policy
+### Control exposed filesystem operations
 
-The Python v0.7 alpha adds a `delete` tool for files and recursive directory
-removal. A backend that cannot delete hides the tool automatically.
+The Python v0.7 alpha adds `delete` for files and recursive directory removal.
+Backends without deletion support hide it automatically. `write_file` now
+overwrites existing paths rather than failing, while `edit_file` remains the
+targeted-edit tool. `FilesystemMiddleware(tools=...)` allowlists the filesystem
+tools exposed to the model.
 
-`write_file` now overwrites an existing path instead of failing. Use `edit_file`
-for a targeted change where wholesale replacement is not intended.
+### Handle binary files and direct backend construction
 
-Configure `FilesystemMiddleware(tools=...)` with an allowlist to limit which
-filesystem operations the agent can see. Treat write, overwrite, and recursive
-delete as separate authorities even if one backend supports all three.
+Python `read_file` handles PDFs, audio, and video as well as images. State and
+Store backends use a binary-capable stored-file format. Construct
+`StateBackend()` and `StoreBackend()` directly; factory forms such as
+`backend=lambda rt: StateBackend(rt)` are deprecated.
 
-## Replacing default middleware
+### Migrate JavaScript backends to protocol v2
 
-Passing a Python `middleware=` instance whose `.name` matches a default
-middleware now replaces that default in place. The rule also applies to
-middleware configured on a subagent.
+`BackendProtocolV2` returns structured `ReadResult`, `LsResult`, `GrepResult`,
+and `GlobResult` objects. Failures appear in an `error` field rather than raw
+return values or exceptions. `read()` returns `ReadResult.content`; `readRaw()`
+returns binary data as `Uint8Array`. Rename `lsInfo`, `grepRaw`, and `globInfo`
+to `ls`, `grep`, and `glob`. `adaptBackendProtocol` bridges v1 implementations
+while v1 interfaces remain deprecated.
 
-Use the same name when customizing a default; a differently named instance is
-additional middleware. This avoids the former duplicate-middleware error while
-preserving deterministic placement in the stack.
+### Compose storage and memory
 
-## Binary-capable backends
+The virtual filesystem can use a custom backend or combine backends with
+composite routing. Persistent memory across conversation threads uses the
+LangGraph Memory Store.
 
-Python `read_file` handles PDFs, audio, video, and images. State and Store
-backends use a binary-capable stored-file representation.
+`ContextHubBackend` stores skills, memories, and other agent files as
+LangSmith Hub commits. Each write receives commit history and durable storage
+without provisioning a separate LangGraph store.
 
-Construct these backends directly:
+## Middleware replacement and profiles
 
-```python
-state_backend = StateBackend()
-store_backend = StoreBackend()
-```
+A Python `middleware=` instance, including one attached to a subagent,
+replaces a default middleware in place when its `.name` matches the default.
+This customizes defaults without the former duplicate-middleware error.
 
-Factory forms such as `backend=lambda rt: StateBackend(rt)` are deprecated.
-Update custom composition code to pass direct instances and preserve binary data
-instead of assuming every stored file is UTF-8 text.
-
-## JavaScript backend protocol v2
-
-`BackendProtocolV2` returns structured result objects:
-
-- `ReadResult`
-- `LsResult`
-- `GrepResult`
-- `GlobResult`
-
-Failures are reported in each result's `error` field rather than as raw values or
-exceptions. `read()` returns `ReadResult.content`; `readRaw()` returns binary data
-as `Uint8Array`.
-
-Rename protocol methods as follows:
-
-| v1 | v2 |
-| --- | --- |
-| `lsInfo` | `ls` |
-| `grepRaw` | `grep` |
-| `globInfo` | `glob` |
-
-Use `adaptBackendProtocol` to bridge an existing v1 implementation. The v1
-interfaces remain available only as deprecated migration surfaces.
+`HarnessProfile` registers provider- or model-specific bundles that
+`create_deep_agent` applies when selecting a model. A profile can alter the
+system prompt, tools, middleware, and subagent defaults without changing the
+agent-construction call site.
 
 ## Background subagents
 
-Python and JavaScript can launch non-blocking subagent tasks while the user keeps
-interacting with the parent agent. This facility requires LangSmith Deployment.
-
-Account for the fact that parent state may advance before a background result
-arrives. Define how late results are correlated, merged, displayed, or discarded
-instead of treating background delegation like a blocking `task` call.
+Python and JavaScript Deep Agents can launch non-blocking background subagent
+tasks while the user continues interacting with the parent. This facility
+requires LangSmith Deployment.
 
 ## Code execution and sandboxes
 
 Python v0.6 adds experimental `CodeInterpreterMiddleware`. It provides code
-execution and programmatic tool calling in a scoped QuickJS runtime.
+execution and programmatic tool calling in a scoped QuickJS runtime. Separate
+pluggable full-sandbox integrations are available through `langchain-modal`,
+`langchain-daytona`, and `langchain-runloop`.
 
-Full-sandbox integrations are separate packages:
+## Context overflow and provider state
 
-- `langchain-modal`
-- `langchain-daytona`
-- `langchain-runloop`
+Conversation summarization runs inside the model node through
+`wrap_model_call`, leaving full message history in graph state. It also
+triggers automatically after `ContextOverflowError`; `langchain-anthropic`
+and `langchain-openai` are the integrations stated to support that error.
 
-Choose the QuickJS middleware for scoped in-process language execution and a
-pluggable sandbox when the task needs a fuller operating-system environment.
-Neither choice removes the need for tool authorization, resource limits, and
-output validation.
-
-## Harness profiles
-
-`HarnessProfile` registers a provider- or model-specific bundle applied by
-`create_deep_agent` during model selection. A profile can modify:
-
-- the system prompt;
-- tools;
-- middleware;
-- subagent defaults.
-
-This keeps provider tuning outside the agent-construction call site. Audit the
-effective profile when a model change unexpectedly alters available tools or
-delegation behavior.
-
-## Versioned context storage
-
-`ContextHubBackend` stores skills, memories, and other agent files as LangSmith
-Hub commits. Every write gains commit history and durable storage without a
-separate LangGraph store.
-
-Use commit history for rollback and provenance, but still define naming,
-retention, and access policy for memories and skills shared across runs.
-
-## Overflow summarization
-
-Conversation summarization runs inside the model node through `wrap_model_call`.
-The graph state retains the full message history; the summarized view is prepared
-for the model call instead of destructively replacing state.
-
-Summarization also triggers automatically after `ContextOverflowError`.
-`langchain-anthropic` and `langchain-openai` are the integrations stated to
-support that error signal.
-
-This behavior matters to checkpoint size and replay: full history remains in
-state even when the model sees a compacted view.
-
-## OpenAI Responses defaults
-
-In Python, model strings beginning with `"openai:"` use the Responses API by
-default. To disable response storage while retaining reasoning continuity,
-initialize the model explicitly with `store=False` and request encrypted
-reasoning content.
+Model strings beginning with `"openai:"` use the Responses API by default.
+To disable response storage, initialize the model explicitly with
+`store=False` and include encrypted reasoning content.
 
 ```python
-from langchain.chat_models import init_chat_model
-from deepagents import create_deep_agent
-
 agent = create_deep_agent(
     model=init_chat_model(
         "openai:...",
@@ -179,21 +108,7 @@ agent = create_deep_agent(
 )
 ```
 
-Keep encrypted reasoning blocks in the protocol state needed for continuation;
-do not display or transform them as ordinary text.
+## CLI automation
 
-## Composite backends and memory
-
-The virtual filesystem can use one custom backend or route different paths to
-multiple backends through composite routing. Make routing rules unambiguous so a
-read, write, edit, or delete reaches the intended persistence boundary.
-
-For memory that persists across conversation threads, use LangGraph's Memory
-Store. Do not confuse checkpointed per-thread graph state with cross-thread
-memory.
-
-## Headless CLI
-
-The Deep Agents CLI supports both an interactive coding-agent mode and a
-scriptable runner. Pass `-n` when piping tasks for non-interactive execution so
-automation does not wait for an interactive prompt.
+The Deep Agents CLI is both an interactive coding agent and a scriptable
+runner. Pass `-n` when piping tasks for non-interactive execution.

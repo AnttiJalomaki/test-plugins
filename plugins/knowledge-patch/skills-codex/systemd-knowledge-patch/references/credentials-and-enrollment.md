@@ -1,29 +1,76 @@
 # Credentials and Enrollment
 
-## Encrypt credentials for users and services
+## Encrypted credentials
 
-- `systemd-creds encrypt` and `decrypt` accept `--user` and `--uid=` so an encrypted credential can be bound to a specific unprivileged user (since 256).
-- Encrypted credentials work in user services. A system service using `PrivateDevices=` or `DeviceAllow=`/`DevicePolicy=` obtains TPM decryption through `systemd-creds.socket` rather than automatic access to the TPM device (since 258).
-- `ImportCredential=` can rename a credential while importing it (since 257).
-- Mount units accept `SetCredential=`, `LoadCredential=`, `ImportCredential=`, and the related credential directives (since 258).
+### User-bound credentials (256)
 
-## Handle encrypted input formats safely
+`systemd-creds encrypt` and `decrypt` accept `--user` and `--uid=` to bind
+encrypted service credentials to a specific unprivileged user.
 
-- `systemd-creds cat` expects a base64-encoded encrypted credential, matching `decrypt` and `LoadCredentialEncrypted=`. Encode callers' raw encrypted binary input before passing it (since 257).
-- The key selector formerly called `tpm2-absent` is named `null`. It supplies neither confidentiality nor integrity; `systemd-creds decrypt --allow-null` is required in the original explicit-policy interface (since 256).
-- Decryption later added `--refuse-null` and the corresponding Varlink behavior. If neither allow nor refuse is specified, a null-key credential is conditionally accepted when UEFI Secure Boot is reported off. Automation should always choose one policy explicitly (since 259).
+### Base64 input for `systemd-creds cat` (257)
 
-## Enroll encrypted storage
+`systemd-creds cat` expects base64-encoded encrypted credentials, consistent
+with `decrypt` and `LoadCredentialEncrypted=`. Encode callers' raw binary
+credential data first.
 
-- The block-device argument to `systemd-cryptenroll` is optional. If omitted, the tool derives it from the backing device of `/var`, often the root LUKS volume. Automation should name the device whenever that inference could target the wrong volume (since 256).
-- Cryptenroll supports PKCS#11 public keys and EC keys. A new slot can be enrolled while an existing slot is unlocked through TPM2 (since 256).
-- `password-cache=yes|no|read-only` in crypttab controls cryptsetup password caching. `fido2-pin=`, `fido2-up=`, and `fido2-uv=` independently require FIDO2 PIN, user presence, and user verification (since 257).
-- The `has-tpm2` probe moved from `systemd-creds` to `systemd-analyze` (since 257).
-- Repart partition definitions accept `TPM2PCRs=` and a binary `KeyFile=` for LUKS setup, rather than requiring those inputs only on the command line (since 259).
-- Crypttab's `fixate-volume-key=` binds an entry to a hash derived from the encrypted volume key. Repart can generate the matching information (since 260).
+### Null-key policy (256, 259)
 
-## Maintain keys and certificates
+The key selector formerly called `tpm2-absent` is `null`; it provides neither
+confidentiality nor integrity. Decryption requires an intentional policy.
+`--allow-null` accepts it and `--refuse-null` rejects it. If neither is set,
+acceptance remains conditional on UEFI Secure Boot being reported off, so
+automation should always choose explicitly.
 
-- `systemd-keyutil extract-certificate` prints an X.509 certificate. `extract-public` is the explicit public-key verb; `public` remains a compatibility alias (since 260).
-- Existing homed accounts can receive a recovery key with `homectl update --recovery-key=` (since 259).
-- For TPM PCR-lock enrollment, signed and locally managed compound policies, changed default PCR masks, and NvPCRs, see [Boot, UKIs, and TPM Policy](boot-uki-and-tpm.md).
+### User services and sandboxed system services (258)
+
+Encrypted credentials work for user services. A system service restricted by
+`PrivateDevices=` or `DeviceAllow=`/`DevicePolicy=` decrypts through
+`systemd-creds.socket` instead of receiving automatic TPM device access.
+
+## LUKS and hardware enrollment
+
+### Implicit cryptenroll target (256)
+
+With no device argument, `systemd-cryptenroll` derives a block device from the
+backing device of `/var`, commonly the root LUKS volume. Automation should pass
+the device explicitly when that inference is unsafe. Enrollment also supports
+PKCS#11 public keys and EC keys and can add a new slot while unlocking the old
+one through TPM2.
+
+### FIDO2 and compound PCR controls (257)
+
+Crypttab `password-cache=yes|no|read-only` controls password caching.
+`fido2-pin=`, `fido2-up=`, and `fido2-uv=` separately govern PIN, user
+presence, and verification. Unlocking may combine vendor-signed PCR policy
+with local pcrlock policy. Probe TPM2 through `systemd-analyze has-tpm2`.
+
+### Empty TPM PCR enrollment defaults (258)
+
+New cryptenroll, repart, and creds TPM2 enrollments use an empty PCR mask,
+not literal PCR 7. Add managed pcrlock and signed PCR 11 policy when those
+guarantees are needed.
+
+### Recovery keys for existing homed users (259)
+
+`homectl update --recovery-key=` adds a recovery key after account creation.
+First-boot homed no longer asks for login shell or supplementary groups unless
+its prompt controls request them.
+
+## Image keys and certificates
+
+### Repart encryption input (259)
+
+Partition definitions accept `TPM2PCRs=` for TPM-bound encryption and
+`KeyFile=` for binary LUKS keys. Repart is also exposed over Varlink.
+
+### Integrity and volume-key pinning (260)
+
+Repart `Integrity=`/`IntegrityAlgorithm=` enables dm-integrity for LUKS.
+Image dissection policy can require `encryptedwithintegrity`. Crypttab
+`fixate-volume-key=` pins an entry to a hash derived from the volume key, and
+repart can generate the required data.
+
+### Certificate and public-key extraction (260)
+
+Use `systemd-keyutil extract-certificate` for X.509 output and
+`extract-public` for a public key. The old `public` verb remains an alias.

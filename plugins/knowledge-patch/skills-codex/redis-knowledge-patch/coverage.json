@@ -1,6 +1,8 @@
 {
   "patch": "redis-knowledge-patch",
-  "merged_at": "2026-07-26T23:03:16Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T00:52:50Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -11,6 +13,11 @@
       "build": "included"
     },
     "8.8.1": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "8.10.0": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

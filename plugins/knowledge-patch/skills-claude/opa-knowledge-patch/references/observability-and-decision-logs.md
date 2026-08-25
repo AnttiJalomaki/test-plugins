@@ -1,44 +1,20 @@
 # Observability and Decision Logs
 
-## Metrics
+Use this reference for decision-log buffering and delivery, masking, labels,
+file logging, Prometheus metrics, OpenTelemetry tracing, and correlation.
 
-Prometheus configuration accepts custom histogram buckets for
-`bundle_loading_duration_ns` (since 1.0.0), letting operators choose useful
-ranges for slow bundle loads.
+## Decision-log delivery
 
-Topdown metrics count outbound network requests made by the `http.send`
-built-in (since 1.9.0).
+### Mask values inside arrays (`1.1.0`)
 
-Distributed tracing can export Prometheus metrics through OTLP (since 1.17.0),
-so an OTLP collector can receive OPA runtime metrics.
+Decision-log masking can address array keys. Use it to redact sensitive values
+that occur within arrays, not only values beneath object keys.
 
-## Tracing
+### Choose the event-based buffer (`1.3.0`)
 
-Discovery participates in distributed tracing, and server tracing accepts
-additional OpenTelemetry resource attributes (since 1.2.0). Use the attributes
-to attach deployment-specific resource identity.
-
-Distributed tracing supports HTTP collectors when
-`distributed_tracing.type: http` and exposes finer-grained batch span
-processor configuration (since 1.3.0):
-
-```yaml
-distributed_tracing:
-  type: http
-```
-
-## Decision identification and masking
-
-`opa exec` includes the decision ID in its output (since 1.2.0), enabling
-correlation with decision logs and traces.
-
-Decision-log masking can address array keys (since 1.1.0), so sensitive
-elements within arrays can be removed before upload.
-
-## Buffers and upload timing
-
-Set `decision_logs.reporting.buffer_type` to `event` for a lower-contention
-event-based buffer (since 1.3.0):
+Set `decision_logs.reporting.buffer_type` to `event` to reduce lock contention
+under high request load. The tradeoff is that the event buffer, unlike the
+default, does not provide precise memory-footprint guarantees.
 
 ```yaml
 decision_logs:
@@ -46,16 +22,18 @@ decision_logs:
     buffer_type: event
 ```
 
-The event buffer improves high-load lock contention, but does not offer the
-default buffer's precise memory-footprint guarantee.
+### Preserve upload caps (`1.5.0`)
 
-Decision-log uploads preserve their adaptive uncompressed-size limit, and the
-plugin derives configuration boundaries from `upload_size_limit_bytes` (since
-1.5.0). Configured upload caps remain effective throughout upload handling.
+Decision-log uploads retain the adaptive uncompressed-size limit, and the
+decision plugin derives configuration boundaries from
+`upload_size_limit_bytes`. Configured upload caps therefore remain in force
+throughout upload handling.
 
-Set `decision_logs.reporting.trigger` to `immediate` to upload as soon as the
-configured chunk-size criteria are met (since 1.13.0). The configured delay is
-still the latest time an upload occurs:
+### Upload as soon as a chunk fills (`1.13.0`)
+
+Set `decision_logs.reporting.trigger` to `immediate` to upload events as soon
+as the configured chunk-size criteria are met. The upload delay remains the
+latest time at which an upload occurs.
 
 ```yaml
 decision_logs:
@@ -63,12 +41,55 @@ decision_logs:
     trigger: immediate
 ```
 
-## Rotating server and decision logs
+## Correlation and labels
 
-Logger plugins implement Go's `log/slog.Handler` (since 1.15.0). Select a
-runtime logger with `server.logger_plugin` and point `decision_logs.plugin` to
-the same plugin to share output. The built-in `file_logger` writes rotating
-structured JSON:
+### Correlate `opa exec` output (`1.2.0`)
+
+`opa exec` results include the decision ID. Consumers can correlate execution
+results directly with decision logs or traces.
+
+### Emit rule labels (`1.17.0`)
+
+Metadata annotations accept `labels`. Labels from every successfully evaluated
+rule merge with inner-scope precedence:
+
+```text
+subpackages < package < document < rule
+```
+
+OPA deduplicates the merged labels and emits them in the top-level
+`rule_labels` array. Both the runtime and Go SDK process the annotations by
+default.
+
+```rego
+# METADATA
+# scope: package
+# labels:
+#   service: authz
+#   severity: info
+package myapp
+
+# METADATA
+# labels:
+#   severity: low
+#   team: platform
+allow if input.role == "admin"
+```
+
+The resulting labels include the inner override:
+
+```json
+{"rule_labels":[{"service":"authz","severity":"low","team":"platform"}]}
+```
+
+## File logging
+
+### Route runtime and decisions through a rotating file (`1.15.0`)
+
+Logger plugins use Go's `log/slog.Handler`. Select a runtime logger with
+`server.logger_plugin` and route decision logs to the same plugin with
+`decision_logs.plugin`. The built-in `file_logger` writes structured JSON and
+supports rotation:
 
 ```yaml
 server:
@@ -87,31 +108,41 @@ plugins:
     level: info
 ```
 
-Custom builds can register another handler. Use `BufferedLogger` to retain
-startup logs emitted before plugin initialization.
+Custom builds can register another `slog.Handler`. Use `BufferedLogger` when
+startup messages emitted before plugin initialization must reach that handler.
 
-## Rule labels
+## Metrics
 
-Metadata annotations accept `labels` (since 1.17.0). Labels from every
-successfully evaluated rule merge with inner-scope precedence:
-`subpackages` < `package` < `document` < `rule`. OPA deduplicates them and
-emits the result as the top-level `rule_labels` array. The runtime and Go SDK
-process these annotations by default.
+### Tune bundle-loading histogram buckets (`1.0.0`)
 
-```rego
-# METADATA
-# scope: package
-# labels:
-#   service: authz
-#   severity: info
-package myapp
+Prometheus configuration accepts custom buckets for
+`bundle_loading_duration_ns`. Choose ranges that expose the bundle-loading
+latencies relevant to the deployment.
 
-# METADATA
-# labels:
-#   severity: low
-#   team: platform
-allow if input.role == "admin"
+### Count outbound built-in requests (`1.9.0`)
+
+Topdown metrics include a counter for network requests made by `http.send`.
+Use it to observe policy-driven outbound HTTP activity directly.
+
+### Export Prometheus metrics through OTLP (`1.17.0`)
+
+Distributed-tracing configuration can export Prometheus metrics via OTLP, so
+an OTLP collector can receive OPA runtime metrics.
+
+## Distributed tracing
+
+### Trace discovery and identify resources (`1.2.0`)
+
+The discovery plugin participates in distributed tracing. OPA server tracing
+also accepts additional OpenTelemetry resource attributes so traces can carry
+deployment-specific resource identity.
+
+### Send spans to HTTP collectors (`1.3.0`)
+
+Set `distributed_tracing.type` to `http` to use an HTTP collector. Distributed
+tracing also exposes finer-grained batch span processor settings.
+
+```yaml
+distributed_tracing:
+  type: http
 ```
-
-The resulting labels include `service: authz`, `severity: low`, and
-`team: platform`.

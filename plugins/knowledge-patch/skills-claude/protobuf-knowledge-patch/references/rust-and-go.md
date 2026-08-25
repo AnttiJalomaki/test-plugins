@@ -1,43 +1,46 @@
 # Rust and Go generated APIs
 
-## Rust `MessageMut` sendability (`34.0`)
+## Rust exact-version compatibility
 
-`MessageMut` includes a `Send` bound. Implementations and generic code must be
-safe to move across threads and satisfy that bound; thread-confined wrapper
-types may need redesign.
+Rust generated code and its runtime must use the exact same protobuf release.
+Regenerate whenever the runtime changes.
 
-## Standard optional accessors (`35.0`)
+## `MessageMut` sendability (`34.0`)
 
-Generated Rust `_opt()` accessors return the standard `Option` type instead of
-`protobuf::Optional`. Replace named uses, conversions, and trait implementations
-that depend on the old wrapper.
+The Rust `MessageMut` trait includes a `Send` bound. Custom implementations and
+generic code using the trait must satisfy cross-thread sendability.
+
+## Standard optional type (`35.0`)
+
+Generated `_opt()` accessors return the standard `Option` type instead of
+`protobuf::Optional`. Update explicit type names, conversions, trait bounds, and
+wrappers that mentioned the old protobuf-specific type.
 
 ## Generated `XyzView` collisions (`35.0`)
 
-If one generated scope contains direct siblings named `Xyz` and `XyzView`, the
-Rust generator mangles the `XyzView` type. Regeneration can therefore change a
-previously referenced identifier; consume the new generated name rather than
-assuming the unmangled form.
+When one generated scope contains direct siblings named `Xyz` and `XyzView`,
+the generator mangles the `XyzView` type. Code referring to the former generated
+identifier must be updated after regeneration.
 
 ## Generic field traits (`35.0`)
 
-Rust adds `Singular` for types permitted as simple fields and revises its map
-traits. `ProxiedInMapValue` is removed in favor of `MapValue`. `f32` and `f64`
-also no longer incorrectly satisfy the map-key trait. Update generic bounds and
-aliases to match the actual field category.
+The runtime adds `Singular` for types allowed as simple fields and revises map
+traits. Replace the removed `ProxiedInMapValue` alias with `MapValue`. Do not
+treat `f32` or `f64` as satisfying the map-key trait; their prior conformance was
+incorrect.
 
 ## View ergonomics (`35.0`)
 
 `ProtoStr` is usable in const contexts. In addition, `&T` implements `AsView`
-whenever `T` does, so generic view-taking functions can accept references
-without byte-slice conversions or local adapter traits.
+whenever `T` implements it, so generic view-taking code can accept references
+without converting to byte slices or adding an adapter.
 
-## Go Opaque API default (`edition-2026-guide`)
+## Go Editions API level (`edition-2026-guide`)
 
-`features.(pb.go).api_level` defaults to `API_OPEN` for Edition 2023 and
-`API_OPAQUE` for Editions 2024 and 2026. Opaque generated structs hide fields
-behind accessors. Select `API_HYBRID` to expose fields and accessors during a
-staged migration, or `API_OPEN` to preserve direct access.
+`features.(pb.go).api_level` defaults to `API_OPEN` in Edition 2023 and to
+`API_OPAQUE` in Editions 2024 and 2026. Opaque generated APIs hide struct fields
+behind accessors. Select `API_OPEN` to preserve direct field access, or
+`API_HYBRID` to expose both fields and accessors during migration.
 
 ```proto
 edition = "2026";
@@ -49,12 +52,11 @@ option features.(pb.go).api_level = API_HYBRID;
 
 ## Go enum-prefix stripping (`edition-2026-guide`)
 
-Edition 2024 and later expose `features.(pb.go).strip_enum_prefix` at file,
-enum, and enum-value scope:
+Edition 2024 and later support `features.(pb.go).strip_enum_prefix` at file,
+enum, and enum-value scopes:
 
-- `STRIP_ENUM_PREFIX_KEEP` preserves existing generated names and is the
-  default.
-- `STRIP_ENUM_PREFIX_GENERATE_BOTH` emits both forms for migration.
+- `STRIP_ENUM_PREFIX_KEEP` is the default and preserves generated names.
+- `STRIP_ENUM_PREFIX_GENERATE_BOTH` produces both spellings for migration.
 - `STRIP_ENUM_PREFIX_STRIP` removes the repeated enum-name prefix.
 
 ```proto

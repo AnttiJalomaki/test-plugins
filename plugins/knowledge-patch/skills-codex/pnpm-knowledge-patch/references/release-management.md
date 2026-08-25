@@ -1,9 +1,8 @@
-# Workspace release and update management
+# Workspace Release and Update Management
 
-## Changes and versioning
+## Native changes and recursive versioning (11.10-11.17)
 
-pnpm 11.10–11.17 includes native changesets-compatible release management
-(`11.10-11.17`):
+`pnpm change` writes changesets-compatible intent files. `pnpm change status` previews the release plan, and `pnpm version -r` consumes it with dependent propagation, fixed groups, `maxBump`, filtering, dry runs, changelogs, and a committed consumption ledger. An unpublished package debuts at its manifest version without applying pending intents until its next release. `pnpm version from-git` is supported.
 
 ```sh
 pnpm change
@@ -12,87 +11,33 @@ pnpm version -r --dry-run
 pnpm version from-git
 ```
 
-- `pnpm change` writes release-intent files compatible with changesets.
-- `pnpm change status` previews the release plan.
-- `pnpm version -r` consumes intents with dependent propagation, fixed groups,
-  `maxBump`, filtering, dry runs, changelog generation, and a committed
-  consumption ledger.
-- `pnpm version from-git` derives versions from Git state.
+## Release lanes and changelog storage (11.10-11.17)
 
-An unpublished package debuts at the version already in its manifest. Pending
-intents do not apply until its next release.
+`pnpm lane <name> --filter <pkg>` moves packages to `X.Y.Z-<lane>.N` prerelease lanes; `pnpm lane main` moves them back. Configure lanes under `versioning.lanes`.
 
-## Prerelease lanes
-
-Move packages onto a named prerelease lane or back to the main line:
+`versioning.changelog.storage` defaults to `registry`, composing changelogs at publish time without committing `CHANGELOG.md`. Use `repository` for committed changelog files.
 
 ```sh
 pnpm lane next --filter my-package
 pnpm lane main --filter my-package
 ```
 
-`pnpm lane <name>` assigns versions in the form `X.Y.Z-<lane>.N`. Configuration
-lives under `versioning.lanes`.
+## Major-version bands with epics (11.10-11.17)
 
-`versioning.changelog.storage` defaults to `registry`, which composes
-changelogs during publish without committing `CHANGELOG.md`. Select
-`repository` when changelog files should be committed.
+`versioning.epics` ties member packages to a lead package. Lead major `M` restricts members to majors `M*100` through `M*100+99`; a member cannot cross the band until the lead advances. A stable lead-major release rebases members to the new band floor. Membership accepts package name, directory, and negated selectors.
 
-## Epics and major-version bands
+## Generate intents from dependency updates (11.10-11.17)
 
-`versioning.epics` associates member packages with a lead package. If the lead
-major is `M`, members are limited to majors `M*100` through `M*100+99`. A
-member cannot cross the band until the lead advances.
-
-Publishing a stable lead-major release rebases members to the new band's floor.
-Epic membership accepts package-name, directory, and negated selectors.
-
-## Convergence overrides
-
-An empty-range override selector such as `"pkg@"` changes only dependency
-edges whose declared ranges accept the exact override value. This converges
-compatible consumers without forcing incompatible ones:
-
-```yaml
-overrides:
-  "form-data@": 4.0.6
-```
-
-The override value must be exact. pnpm warns when all declared ranges accept a
-newer possible convergence target.
-
-## Generate intents from dependency updates
-
-`pnpm update --changeset` writes release intents for workspace packages whose
-dependencies change:
-
-- Dependency or optional-dependency changes produce a patch intent.
-- Peer-dependency changes produce a major intent.
-- Catalog consumers are included.
-
-Enable this by default and opt out per command when needed:
+`pnpm update --changeset` writes a patch intent for workspace packages whose dependencies or optional dependencies changed, and a major intent when peer dependencies changed. Catalog consumers are included. Set `update.changeset: true` for the default and use `--no-changeset` per command. Without `.changeset/config.json`, pnpm warns and writes no intent.
 
 ```yaml
 update:
   changeset: true
 ```
 
-```sh
-pnpm update --no-changeset
-```
+## Update GitHub Actions dependencies (11.10-11.17)
 
-Without `.changeset/config.json`, pnpm warns and writes no intent.
-
-## Update workflow actions
-
-`pnpm outdated` and interactive `pnpm update` inspect dependencies in workflow
-files. Non-interactive updates require `--include-github-actions` or
-`update.githubActions: true`.
-
-Updates pin exact commit SHAs and preserve release tags in comments.
-`update.githubActionsServer` selects a GitHub Enterprise base URL; otherwise
-pnpm uses `GITHUB_SERVER_URL`, then `https://github.com`. Setting
-`githubActions: false` disables workflow-action inspection everywhere.
+`pnpm outdated` and interactive `pnpm update` inspect workflow actions. Non-interactive updates opt in with `--include-github-actions` or `update.githubActions: true`. Updates pin exact commits and preserve release tags in comments. `update.githubActionsServer` selects an Enterprise base URL; otherwise `GITHUB_SERVER_URL` and then `https://github.com` are used. Set `githubActions: false` to skip actions everywhere.
 
 ```yaml
 update:
@@ -100,25 +45,10 @@ update:
   githubActionsServer: https://github.example.com
 ```
 
-## Current update configuration
+## Empty recursive plans are valid JSON (2026-08)
 
-Top-level `update` replaces `updateConfig` in pnpm 11.10–11.17. The deprecated
-form remains until the next major, but the new section wins if both appear.
-Use `update.ignoreDeps` for dependency-name patterns:
+`pnpm version -r --json` prints `[]` when no pending changes exist, so automation can parse both empty and non-empty output.
 
-```yaml
-update:
-  ignoreDeps:
-    - webpack
-    - "@babel/*"
+```sh
+pnpm version -r --json
 ```
-
-Top-level `audit` similarly replaces `auditConfig` and `auditLevel`; see
-[security-audit-sbom.md](security-audit-sbom.md).
-
-## Staged and atomic publication
-
-Use `pnpm stage` to keep a release hidden until approval, or
-`pnpm publish --recursive --batch` for registry-supported all-or-nothing
-workspace publication. Command details and authentication behavior are in
-[registries-auth-publishing.md](registries-auth-publishing.md).

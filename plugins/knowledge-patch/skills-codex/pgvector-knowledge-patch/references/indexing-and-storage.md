@@ -1,109 +1,65 @@
 # Indexing and Storage
 
-## Storage limits versus approximate-index limits
+## Cast arrays to sparse vectors
 
-The base types accept more data than some approximate indexes can index:
-
-| Type | Storage maximum | HNSW | IVFFlat |
-| --- | ---: | --- | --- |
-| `vector` | 16,000 dimensions | Up to 2,000 dimensions | Supported, up to 2,000 dimensions |
-| `halfvec` | 16,000 dimensions | Up to 4,000 dimensions | Supported, up to 4,000 dimensions |
-| `bit` | 64,000 bits | Up to 64,000 bits | Supported, up to 64,000 bits |
-| `sparsevec` | 16,000 nonzero elements | Up to 1,000 nonzero elements | Not supported |
-
-HNSW also supports sparse vectors, L1 distance, and Jaccard distance.
-
-## Rows omitted from approximate indexes
-
-All approximate indexes omit `NULL` embeddings. Cosine indexes additionally
-omit zero vectors. These omissions can lower result counts independently of
-filters, iterative-scan limits, or probe settings.
-
-## Sparse vectors
-
-### Literals and indexes
-
-A `sparsevec(n)` literal has the form `{index:value,...}/dimensions`. Indices
-are one-based, consistent with PostgreSQL arrays.
+PostgreSQL arrays can be cast directly to `sparsevec`.
 
 ```sql
-INSERT INTO items (embedding) VALUES ('{1:1,3:2,5:3}/5');
-CREATE INDEX ON items USING hnsw (embedding sparsevec_cosine_ops);
+SELECT ARRAY[1, 0, 2]::sparsevec;
 ```
 
-Choose the corresponding `sparsevec_*_ops` operator class for the distance
-metric. PostgreSQL arrays can be cast directly to `sparsevec` (since the 0.8
-line), so array-valued inputs do not need an intermediate literal.
+Since 0.8.6, an array-to-`sparsevec` cast enforces the type's nonzero-element
+limit. Oversized arrays can no longer bypass the constraint through a cast.
+Validate or reduce sparse inputs before casting them.
 
-## Binary-quantized HNSW indexes
+## Keep storage and HNSW limits separate
 
-Binary quantization reduces HNSW index size, but Hamming distance is lossy. Use
-it to retrieve a larger candidate set, then re-rank those candidates with the
-original embeddings to preserve recall.
+A stored `sparsevec` value may contain as many as 16,000 nonzero elements. An
+HNSW index supports no more than 1,000 nonzero elements, so a valid stored
+value may still be unindexable.
+
+HNSW supports sparse operator classes such as `sparsevec_l2_ops`:
 
 ```sql
-CREATE INDEX ON items USING hnsw
-  ((binary_quantize(embedding)::bit(3)) bit_hamming_ops);
-
-SELECT * FROM (
-  SELECT * FROM items
-  ORDER BY binary_quantize(embedding)::bit(3)
-    <~> binary_quantize('[1,-2,3]')
-  LIMIT 20
-) AS candidates
-ORDER BY embedding <=> '[1,-2,3]'
-LIMIT 5;
+CREATE INDEX ON items USING hnsw (embedding sparsevec_l2_ops);
 ```
 
-## Subvector expression indexes
+Use the operator class that matches the query's distance operation. IVFFlat
+does not support `sparsevec`.
 
-Index a cast `subvector` expression to narrow the first-stage search. Retrieve a
-wider candidate set, then re-rank it using the complete embedding. The indexed
-expression, dimension cast, and operator class must match the query expression.
+## Account for values omitted from approximate indexes
 
-```sql
-CREATE INDEX ON items USING hnsw
-  ((subvector(embedding, 1, 3)::vector(3)) vector_cosine_ops);
-```
+HNSW and IVFFlat do not index `NULL` vectors. Their cosine-distance indexes
+also omit zero vectors.
 
-## Mixed dimensions in one column
+These omissions can make a nearest-neighbor query return fewer rows after an
+approximate index is added, even when the query's scan-depth settings are high
+enough. Inspect the column values and operator class before increasing scan
+limits.
 
-An unconstrained `vector` column can contain embeddings with different
-dimensions. Each approximate index, however, must target rows of one dimension.
-Use a partial expression index and repeat both its predicate and cast in every
-nearest-neighbor query that should use it.
+## Upgrade before IVFFlat builds on 32-bit systems
 
-```sql
-CREATE INDEX ON embeddings USING hnsw
-  ((embedding::vector(3)) vector_l2_ops)
-  WHERE model_id = 123;
+pgvector 0.8.6 fixes a buffer overflow during IVFFlat index builds on 32-bit
+systems. Upgrade before creating, reindexing, or otherwise rebuilding an
+IVFFlat index on a 32-bit deployment.
 
-SELECT * FROM embeddings
-WHERE model_id = 123
-ORDER BY embedding::vector(3) <-> '[3,1,2]'
-LIMIT 5;
-```
+This fix concerns the build path. Query-time probe or iterative-scan settings
+do not make an affected build safe.
 
-## Preserve higher precision while indexing
-
-When stored values must retain more precision than the index type, keep them in
-`double precision[]` or `numeric[]`. Optionally constrain the dimension that
-must be convertible, then build a lower-precision expression index for search.
-
-```sql
-ALTER TABLE items
-  ADD CHECK (vector_dims(embedding::vector) = 3);
-
-CREATE INDEX ON items USING hnsw
-  ((embedding::vector(3)) vector_l2_ops);
-```
-
-## HNSW vacuum maintenance
+## Reindex HNSW before vacuuming
 
 Vacuuming a table with an HNSW index can be slow. Reindex the HNSW index
-concurrently before vacuuming the table.
+concurrently first, and then vacuum the table.
 
 ```sql
 REINDEX INDEX CONCURRENTLY index_name;
 VACUUM table_name;
 ```
+
+Run the commands separately and replace the placeholders with the actual index
+and table names. The concurrent reindex reduces blocking compared with a plain
+reindex, but it still consumes build resources; plan memory and worker limits
+for the deployment.
+
+For container shared-memory sizing and hosted compute controls, see
+[deployment.md](deployment.md).

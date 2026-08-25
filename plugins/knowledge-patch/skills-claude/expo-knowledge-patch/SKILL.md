@@ -17,11 +17,11 @@ Use this skill when upgrading, configuring, or implementing an Expo application 
 | Reference | Topics |
 |---|---|
 | [Runtime upgrades and tooling](references/runtime-upgrades-and-tooling.md) | React Native and React pairing, platform floors, Hermes, templates, CLI, config loading, Metro, resolvers, removals and deprecations |
-| [Router, UI, and web](references/router-ui-and-web.md) | Expo Router migrations and native APIs, Expo UI, web rendering, bars, blur, widgets, sharing, DOM components |
-| [Native modules and integration](references/native-modules-and-integration.md) | Modules Core, precompiled and inline modules, generated interfaces, brownfield hosts, scaffolding, Expo MCP |
-| [Data, files, and networking](references/data-files-and-networking.md) | File transfers and watching, SQLite, object APIs, global fetch, server adapters, crypto |
-| [Media, devices, and platform services](references/media-devices-and-platform-services.md) | Audio, video, image, camera, browser, location, maps, haptics, assets, development launcher |
-| [EAS updates and distribution](references/eas-updates-and-distribution.md) | Hermes bytecode diffs, EAS Build behavior, Convex integration, Expo Go distribution |
+| [Router, UI, and web](references/router-ui-and-web.md) | Expo Router migrations and native APIs, Expo UI, web rendering, status and navigation bars, blur, and DOM components |
+| [Native modules and integration](references/native-modules-and-integration.md) | Modules Core, precompiled and inline modules, generated interfaces, brownfield hosts, scaffolding, and Expo MCP |
+| [Data, files, and networking](references/data-files-and-networking.md) | File transfers and watching, SQLite, object APIs, global fetch, server adapters, and crypto |
+| [Media, devices, and platform services](references/media-devices-and-platform-services.md) | Audio, video, image, camera, browser, location, maps, haptics, assets, widgets, sharing, and development launcher |
+| [EAS updates and distribution](references/eas-updates-and-distribution.md) | Hermes bytecode diffs, EAS Build behavior, Convex integration, and Expo Go distribution |
 
 ## Establish the installed target
 
@@ -37,7 +37,7 @@ Native toolchain floors also moved. Check Xcode and deployment targets before di
 
 ### Configure Hermes by SDK
 
-Hermes v1 changes from an opt-in source build to the default runtime across the covered SDKs. For an earlier opt-in, both source-build settings and the matching compiler override are required:
+Hermes v1 changes from an opt-in source build to the default runtime across the applicable SDKs. For the earlier opt-in, both source-build settings and the matching compiler override are required:
 
 ```json
 {

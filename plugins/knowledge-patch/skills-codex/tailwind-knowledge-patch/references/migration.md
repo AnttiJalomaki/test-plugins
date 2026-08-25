@@ -1,99 +1,46 @@
 # Migration and Compatibility
 
-Use this reference when upgrading an existing project or deciding whether a compatibility fallback preserves the intended result.
+## Rename linear gradient utilities
 
-## Move Configuration Into CSS
-
-The configuration transition is documented in source batch `4.0.0-configuration`.
-
-The primary configuration surface is CSS. Import Tailwind and define framework tokens in `@theme`:
-
-```css
-@import "tailwindcss";
-
-@theme {
-  --color-brand: oklch(0.62 0.16 252);
-}
-```
-
-Use `@config` to load an existing JavaScript configuration and `@plugin` to load legacy plugins while migrating. CSS and legacy definitions merge where possible; CSS wins when they cannot be merged.
-
-Three JavaScript configuration options have no legacy bridge:
-
-| Legacy option | Migration |
-|---|---|
-| `corePlugins` | Remove it; this option is unsupported. |
-| `safelist` | Express literal candidates with `@source inline()`. |
-| `separator` | Remove it; this option is unsupported. |
-
-Do not move custom properties mechanically from `:root` and expect new utilities. Only appropriately named variables in a top-level `@theme` block generate matching framework APIs.
-
-## Rename Linear Gradient Utilities
-
-The gradient migration comes from source batch `4.0.0`.
-
-Linear gradient utilities use `bg-linear-*` rather than `bg-gradient-*`:
-
-```html
-<!-- Before -->
-<div class="bg-gradient-to-r from-indigo-500 to-pink-500"></div>
-
-<!-- After -->
-<div class="bg-linear-to-r from-indigo-500 to-pink-500"></div>
-```
-
-Angles can be supplied directly as utility values:
+The `4.0.0` linear-gradient family uses `bg-linear-*` instead of `bg-gradient-*`. Update directional classes such as `bg-gradient-to-r` to `bg-linear-to-r`. Angles can be supplied directly as values.
 
 ```html
 <div class="bg-linear-45 from-indigo-500 via-purple-500 to-pink-500"></div>
 ```
 
-## Review Gradient Color Interpolation
+Unmodified gradients interpolate in OKLAB. Add a color-space modifier such as `/srgb` or `/oklch` only when a particular interpolation space is required.
 
-Gradients interpolate in OKLAB by default. Add a color-space modifier when a design depends on another interpolation mode:
+## Replace deprecated logical positioning names
 
-```html
-<div class="bg-linear-to-r/srgb from-indigo-500 to-teal-400"></div>
-<div class="bg-linear-to-r/oklch from-indigo-500 to-teal-400"></div>
-```
+The logical-property families recorded in `4.3.0` deprecate `start-*` and `end-*` positioning classes. Replace them with `inset-s-*` and `inset-e-*` respectively.
 
-The modifier works with linear, radial, and conic gradient families. In browsers that do not support explicit interpolation, the declaration falls back to the browser's default interpolation behavior, so compare the fallback visually instead of assuming identical colors.
-
-## Understand Older-Browser Fallbacks
-
-Compatibility fallbacks are documented in source batch `4.1.0`.
-
-Fallback output covers:
-
-- `oklab` colors;
-- colors with opacity modifiers;
-- registered-custom-property behavior used by shadows;
-- registered-custom-property behavior used by transforms;
-- registered-custom-property behavior used by gradients.
-
-These fallbacks improve rendering in older Safari and Firefox releases. Full-fidelity output still targets modern browser capabilities such as Safari 16.4 and later. Explicit gradient interpolation falls back to the browser default when that syntax is unavailable.
-
-Test the actual utilities a project uses: a valid fallback can be visually different from the modern declaration, especially for interpolation and color mixing.
-
-## Replace Deprecated Logical Positioning
-
-Logical-property migration is represented by source batch `4.3.0` and belongs to the 4.2 utility set.
-
-Replace the deprecated `start-*` and `end-*` positioning utilities:
-
-| Deprecated | Replacement | CSS axis |
+| Deprecated | Replacement | Axis edge |
 |---|---|---|
 | `start-*` | `inset-s-*` | Inline start |
 | `end-*` | `inset-e-*` | Inline end |
 
-Related logical positioning utilities include `inset-bs-*` and `inset-be-*` for block start and block end. Prefer these logical forms when the layout must follow writing direction.
+Use `inset-bs-*` and `inset-be-*` for block-start and block-end positioning. Review mixed physical and logical positioning carefully under right-to-left and vertical writing modes.
 
-## Migration Checklist
+## Remove unsupported legacy options
 
-- Replace `bg-gradient-*` with `bg-linear-*` and inspect interpolation-sensitive designs.
-- Move API-producing tokens into top-level `@theme` blocks.
-- Replace a legacy safelist with explicit `@source inline()` candidates.
-- Remove unsupported `corePlugins` and `separator` settings.
-- Replace `start-*` and `end-*` with `inset-s-*` and `inset-e-*`.
-- Test opacity colors, transforms, shadows, and gradients in the oldest supported browsers.
-- Keep `@config` and `@plugin` only where the legacy bridge is still needed.
+`@config` can bridge a v3 JavaScript configuration, but the `corePlugins`, `safelist`, and `separator` options are not supported. Move framework tokens and configuration into CSS, and replace safelisting with explicit `@source inline()` candidates.
+
+```css
+@source inline("{hover:,focus:,}bg-brand");
+```
+
+CSS definitions merge with legacy definitions where possible and otherwise take precedence.
+
+## Older-browser fallbacks
+
+The `4.1.0` behavior adds fallbacks for:
+
+- `oklab` colors.
+- Opacity-modified colors.
+- Registered-custom-property features used by shadows, transforms, and gradients in older Safari and Firefox.
+
+Explicit gradient interpolation falls back to the browser default when the requested color-space syntax is unsupported. Full-fidelity rendering still targets modern browsers such as Safari 16.4 and later, so test important gradients and effects in older targets.
+
+## Windows CJK font selection
+
+As recorded in `4.3.3`, the default sans stack uses explicit platform fonts instead of `system-ui` and `ui-sans-serif`. This allows CJK text on Windows to follow the page's `lang` attribute. Preserve correct language metadata on the document when relying on platform CJK font selection.

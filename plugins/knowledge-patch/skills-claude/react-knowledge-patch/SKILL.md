@@ -10,7 +10,8 @@ metadata:
 
 # React Knowledge Patch
 
-Use the quick references below for implementation decisions, then open the linked topic file for complete constraints and edge cases.
+Use the quick references below for implementation decisions, then open the
+linked topic file for complete constraints and edge cases.
 
 ## Index
 
@@ -26,49 +27,58 @@ Use the quick references below for implementation decisions, then open the linke
 
 ## Critical: patch RSC deployments
 
-Applications with an RSC-capable framework, bundler, or plugin can be vulnerable even if application code declares no Server Functions. Update these together:
+Applications with an RSC-capable framework, bundler, or plugin can be
+vulnerable even if application code declares no Server Functions. Update
+React, React DOM, and the installed RSC transport together:
 
 ```sh
 npm install react@latest react-dom@latest \
   react-server-dom-webpack@latest
 ```
 
-Substitute the installed `react-server-dom-*` transport, and also update the framework or RSC plugin that integrates it. Initial fixes were followed by additional denial-of-service and source-exposure fixes, so target the latest patched release rather than an initial fixed version. Hosting mitigations are not a substitute.
+Substitute the installed `react-server-dom-*` transport. Also update the
+framework or RSC plugin that integrates it. Initial remote-code-execution
+fixes were followed by denial-of-service and source-exposure fixes, so target
+the latest patched release rather than an initial fixed version. Hosting
+mitigations are not a substitute.
 
-Client-only applications with no RSC-capable integration are unaffected. React Native monorepos have narrower remediation rules; read [Security](references/security.md) before changing their React versions.
+Client-only applications with no RSC-capable integration are unaffected.
+React Native monorepos have narrower remediation rules; read
+[Security](references/security.md) before changing their React versions.
 
 ## Breaking configuration and output changes
 
 ### Hooks ESLint v6
 
-The `recommended` preset is now an ESLint flat-config preset:
-
-```js
-import reactHooks from "eslint-plugin-react-hooks";
-
-export default [reactHooks.configs.recommended];
-```
-
-For an eslintrc project, select the legacy preset explicitly:
+The `recommended` preset is now an ESLint flat-config preset. Existing
+eslintrc projects must select the legacy preset explicitly:
 
 ```yaml
 extends:
   - plugin:react-hooks/recommended-legacy
 ```
 
-Remove `eslint-plugin-react-compiler`; compiler linting lives in `eslint-plugin-react-hooks@latest` and does not require the compiler package to be installed.
+Remove `eslint-plugin-react-compiler`; compiler linting lives in
+`eslint-plugin-react-hooks@latest` and does not require the compiler package
+to be installed.
 
 ### Generated IDs
 
-The default `useId` prefix is now `_r_`. It replaces the earlier `:r:` and `«r»` forms, making IDs valid as `view-transition-name` values and XML 1.0 names. Update snapshots or logic that exposes generated IDs; do not depend on the exact generated text.
+The default `useId` prefix is now `_r_`. It replaces the earlier `:r:` and
+`«r»` forms, making IDs valid as `view-transition-name` values and XML 1.0
+names. Update snapshots or logic that exposes generated IDs; do not depend on
+the exact generated text.
 
 ### React Native 0.82
 
-React Native 0.82 supports only the New Architecture. An application upgrading to it cannot retain the legacy architecture. Hermes V1 support is experimental, not a stable runtime recommendation.
+React Native 0.82 supports only the New Architecture. An application
+upgrading to it cannot retain the legacy architecture. Hermes V1 support is
+experimental, not a stable runtime recommendation.
 
 ## Activity: preserve and prepare hidden UI
 
-Use `<Activity>` when hidden content should keep component and DOM state or prepare likely navigation targets:
+Use `<Activity>` when hidden content should retain component and DOM state or
+prepare a likely navigation target:
 
 ```jsx
 <Activity mode={activeTab === "posts" ? "visible" : "hidden"}>
@@ -76,21 +86,24 @@ Use `<Activity>` when hidden content should keep component and DOM state or prep
 </Activity>
 ```
 
-In `hidden` mode, React:
+Initially hidden children render at low priority without mounting Effects.
+They can warm Suspense-enabled data, `lazy` code, or a cached Promise consumed
+with `use`; fetching initiated inside an Effect does not run. Effects are
+cleaned up while hidden and recreated on reveal.
 
-- keeps component and DOM state;
-- hides retained DOM with `display: none`;
-- cleans up Effects and recreates them on reveal;
-- processes updates at low priority; and
-- can warm Suspense data, `lazy` code, or a cached Promise consumed with `use`.
+During SSR, an initially hidden Activity is omitted from the response and
+client-rendered while visible content hydrates. A visible Activity stays in
+the HTML and forms a selective-hydration boundary, which can isolate slow
+hydration even if it never becomes hidden.
 
-Fetching initiated inside an Effect does not run while initially hidden. Retained `<video>`, `<audio>`, or `<iframe>` elements can continue browser-owned behavior after Effect cleanup, so cleanup must stop that behavior explicitly.
-
-During SSR, an initially hidden Activity is omitted from the response and rendered on the client while visible content hydrates. A visible Activity remains in HTML and creates a selective-hydration boundary, which can isolate slow hydration even if it never becomes hidden.
+Hidden content uses `display: none` and retains its DOM. Browser-owned
+behavior from `<video>`, `<audio>`, or `<iframe>` can continue after Effect
+cleanup, so cleanup must explicitly stop that behavior.
 
 ## Effect Events: latest values without dependencies
 
-`useEffectEvent` callbacks read the latest committed props and state without adding those values to an Effect dependency list:
+`useEffectEvent` callbacks read the latest committed props and state without
+adding those values to an Effect dependency list:
 
 ```jsx
 const onConnected = useEffectEvent(() => {
@@ -103,11 +116,15 @@ useEffect(() => {
 }, [roomId]);
 ```
 
-The callback intentionally changes identity on every render. Do not place it in a dependency array, call it during render or from an ordinary event handler, or pass it to another component or Hook. Call it only from an Effect or another Effect Event local to the same component. `useEffect`, `useLayoutEffect`, and `useInsertionEffect` may call it.
+The callback intentionally changes identity on every render. Do not place it
+in a dependency array, call it during render or from an ordinary event
+handler, or pass it to another component or Hook. Call it only from an Effect
+or another Effect Event local to the same component.
 
 ## Partial pre-rendering
 
-`prerender` can return a cacheable or immediately served `prelude` plus reusable `postponed` state. Persist that state and resume the same tree later for dynamic content:
+`prerender` can return a cacheable or immediately served `prelude` plus
+reusable `postponed` state. Persist that state and resume the same tree later:
 
 ```jsx
 import { resume } from "react-dom/server";
@@ -132,11 +149,14 @@ Choose the continuation by output target:
 | Resume dynamic output | `resume` | `resumeToPipeableStream` |
 | Finish as static HTML | `resumeAndPrerender` | `resumeAndPrerenderToNodeStream` |
 
-Node supports the Web Streams APIs, but the Node-stream variants are faster there. Web Streams also do not provide compression by default.
+Prefer Node-stream variants on Node because they are faster. Web Streams do
+not provide compression by default.
 
 ## Cancel work at the RSC cache boundary
 
-`cacheSignal()` is RSC-only. It returns a signal that aborts when the surrounding `cache()` lifetime ends because rendering completed, aborted, or failed:
+`cacheSignal()` is RSC-only. It returns a signal that aborts when the
+surrounding `cache()` lifetime ends because rendering completed, aborted, or
+failed:
 
 ```jsx
 import { cache, cacheSignal } from "react";
@@ -149,7 +169,8 @@ async function Component() {
 }
 ```
 
-Pass the signal to cancellable work so work whose result can no longer enter the cache stops consuming resources.
+Pass the signal to cancellable work so a result that can no longer enter the
+cache stops consuming resources.
 
 ## Adopt the compiler deliberately
 
@@ -159,7 +180,11 @@ Compiler 1.0 tracks optional-chain accesses and indexed reads directly:
 const selectedName = users[selected]?.profile?.name;
 ```
 
-New Expo projects on SDK 54 or newer enable the compiler by default. Vite and Next.js expose compiler-enabled starter choices instead. Compiler releases can change memoization boundaries and reveal latent Rules-of-React violations through changed Effect dependency behavior. Without strong end-to-end coverage, pin an exact version and test upgrades manually:
+New Expo projects on SDK 54 or newer enable the compiler by default. Vite and
+Next.js expose compiler-enabled starter choices instead. Compiler releases
+can change memoization boundaries and reveal latent Rules-of-React violations
+through changed Effect dependency behavior. Without strong end-to-end
+coverage, pin an exact version and test upgrades manually:
 
 ```sh
 npm install --save-dev --save-exact babel-plugin-react-compiler@1.0.0
@@ -167,7 +192,9 @@ npm install --save-dev --save-exact babel-plugin-react-compiler@1.0.0
 
 ## View Transitions are Canary and DOM-only
 
-React owns `document.startViewTransition()`. A synchronous `setState` does not activate a `<ViewTransition>` boundary; use a Transition-driven update, `useDeferredValue`, or a Suspense reveal:
+React owns `document.startViewTransition()`. A synchronous `setState` does not
+activate a `<ViewTransition>` boundary; use a Transition-driven update,
+`useDeferredValue`, or a Suspense reveal:
 
 ```jsx
 <ViewTransition enter="slide-in" exit="slide-out">
@@ -177,12 +204,24 @@ React owns `document.startViewTransition()`. A synchronous `setState` does not a
 startTransition(() => setShow(value => !value));
 ```
 
-React classifies activation as `enter`, `exit`, `update`, or `share`. Shared elements require matching, unique `name` values across removed and inserted trees. Type-specific classes use `addTransitionType`; imperative event handlers must return cleanup that cancels interrupted animation work.
+React classifies activation as `enter`, `exit`, `update`, or `share`. Shared
+elements require matching, unique `name` values across removed and inserted
+trees. Type-specific classes use `addTransitionType`; imperative event
+handlers must return cleanup that cancels interrupted animation work.
 
-Routers must unblock a pending Navigation in `useLayoutEffect`; waiting for `useEffect` deadlocks transition measurement. Animating browser back navigation requires the Navigation API because legacy `popstate` transitions must finish synchronously and are skipped.
+Routers must unblock a pending Navigation in `useLayoutEffect`; waiting for
+`useEffect` deadlocks transition measurement. Animating browser back
+navigation requires the Navigation API because legacy `popstate` transitions
+must finish synchronously and are skipped.
 
 ## Diagnose rendering performance
 
-Chrome DevTools performance profiles now receive React Scheduler and Components tracks. Use them to correlate update priorities and scheduling delays with component render, mount, and Effect work before adding custom instrumentation.
+Chrome DevTools performance profiles now receive React Scheduler and
+Components tracks. Use them to correlate update priorities and scheduling
+delays with component render, mount, and Effect work before adding custom
+instrumentation.
 
-Streaming SSR may briefly hold completed Suspense boundaries so nearby boundaries reveal together. React abandons the delay when it could harm metrics such as the 2.5-second LCP threshold, so never depend on every boundary being batched.
+Streaming SSR may briefly hold completed Suspense boundaries so nearby
+boundaries reveal together. React abandons the delay when it could harm
+metrics such as the 2.5-second LCP threshold, so never depend on every
+boundary being batched.

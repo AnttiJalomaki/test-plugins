@@ -1,74 +1,55 @@
 # Caching and Prefetching
 
-Batch attributions used here: `15.4.0`, `16.0-guide`, `16.0.0`, `16.2.0`, `16.3.0`, and `release-catalogs`.
+## Cache Components
 
-## Cache Components setup and directive scope
+### Enabling and directive scope (`16.0-guide`)
 
-Enable Cache Components before adding `use cache` (`16.0-guide`):
+Enable Cache Components before using `use cache`:
 
 ```ts
-// next.config.ts
 const nextConfig = { cacheComponents: true }
 export default nextConfig
 ```
 
-The directive can apply at three scopes:
+The directive may cover every export in a file, one async component, or one
+async function. A fully cached route needs the directive in both its layout
+and page because those segments are separate cache entries.
 
-- At file scope, caching every export. Every exported function in that file must be async.
-- Inside one async component.
-- Inside one async function.
+At file scope, exported functions must be async. As clarified in `16.3.1`,
+literal exports may coexist with them:
 
-A layout and page are distinct cache entries. Put the directive in both when the whole route should be cached.
+```ts
+'use cache'
 
-```tsx
-async function CachedShell({ children }: { children: React.ReactNode }) {
-  'use cache'
-  return <main><header>Cached</header>{children}</main>
+export const source = 'catalog'
+
+export async function getSource() {
+  return source
 }
 ```
 
-The earlier `experimental.dynamicIO` preview flag in `15.4.0` was renamed to `cacheComponents` in Next.js 16. Do not combine the old and new names.
+### Compiler-generated keys (`16.0-guide`)
 
-## Compiler-generated cache keys
+A key includes the build ID, a function ID derived from its location and
+signature, serialized arguments or props, and captured outer-scope values.
+Development also includes an HMR hash. New builds invalidate all entries;
+different arguments or closure values create separate entries. Do not assemble
+keys manually.
 
-Do not build cache keys manually. Next.js includes all of these inputs (`16.0-guide`):
+### Serialization and pass-through composition (`16.0-guide`)
 
-- The build ID, so a deployment invalidates prior entries.
-- A function ID derived from its source location and signature.
-- Serialized function arguments or component props.
-- Captured outer-scope values.
-- An HMR hash during development.
+Arguments follow Server Component serialization, while returned values follow
+the broader Client Component serialization. Cached functions can return JSX,
+but class and `URL` instances cannot be cache-key inputs. Non-serializable
+children and Server Actions can pass through by reference only when cached code
+does not inspect or invoke them.
 
-Different arguments or closure values therefore create separate entries automatically.
+### Request data and React cache isolation (`16.0-guide`)
 
-```tsx
-async function loadForUser(userId: string) {
-  async function getData(filter: string) {
-    'use cache'
-    return (await fetch(`/api/users/${userId}/data?filter=${filter}`)).json()
-  }
-
-  return getData('active')
-}
-```
-
-The entry above varies by both `userId` and `filter`.
-
-## Serialization and composition
-
-Arguments use Server Component serialization. Class instances and `URL` instances cannot be cache-key inputs. Return values use the less restrictive Client Component serialization, so a cached function may return JSX (`16.0-guide`).
-
-Non-serializable children and Server Actions can pass through a cached component as references without affecting the entry only when cached code does not inspect the child or invoke the Action. This makes a cached shell around dynamic content possible, but does not make arbitrary non-serializable values safe key material.
-
-## Request data and cache isolation
-
-A cached scope cannot directly read:
-
-- `cookies()`.
-- `headers()`.
-- Request-time `searchParams`.
-
-Resolve those values outside the scope and pass only the serializable data that affects the result (`16.0-guide`).
+Cached scopes cannot directly read `cookies()`, `headers()`, or request-time
+`searchParams`. Resolve those outside and pass serializable values in. Each
+cached scope also has isolated `React.cache` state, so values placed in a React
+cache outside the boundary are unavailable inside it.
 
 ```tsx
 import { cookies } from 'next/headers'
@@ -84,21 +65,18 @@ async function CachedTheme({ theme }: { theme: string }) {
 }
 ```
 
-Cached scopes also receive an isolated `React.cache` scope. A value placed in a React cache outside the boundary is not visible from inside it.
+### Storage and lifetime (`16.0-guide`)
 
-## Storage, profiles, and platform behavior
+Server entries use memory by default. They generally do not survive requests
+on serverless instances, but persist on self-hosted servers, where
+`cacheMaxMemorySize` bounds them. Custom `cacheHandlers` and a
+platform-provided `'use cache: remote'` handler are available. Browser entries
+honor `stale` with a 30-second minimum. Static export is unsupported, and
+adapter support varies by platform.
 
-Server entries use an in-memory store by default (`16.0-guide`). On serverless instances, that store typically does not survive across requests; on self-hosted servers it can persist and is bounded by `cacheMaxMemorySize`.
-
-Applications can supply custom `cacheHandlers`, and a deployment environment can provide a `'use cache: remote'` handler. Support varies by adapter. Static export does not support these cached entries.
-
-Browser entries honor a profile's `stale` value, with a minimum of 30 seconds. The default profile is:
-
-- Five minutes stale.
-- Fifteen minutes revalidate.
-- No time-based expiry.
-
-Call `cacheLife()` to select another profile. Cache lifetime values for `expire` and `revalidate` are normalized and validated earlier in the `release-catalogs` canary line, including explicit handling for `Infinity`; expect invalid values to fail close to configuration.
+The default profile is 5 minutes stale, 15 minutes revalidate, and no
+time-based expiry. `cacheLife` changes it, while `cacheTag` associates entries
+for cross-layer invalidation.
 
 ```ts
 import { cacheLife, cacheTag } from 'next/cache'
@@ -111,97 +89,58 @@ export async function getProducts() {
 }
 ```
 
-`cacheTag()` associates the entry with tags that can invalidate both server and client cache layers.
+### Invalidation APIs (`16.0.0`)
 
-## Invalidation and refresh semantics
+- `revalidateTag(tag, profile)` takes a named/custom `cacheLife` profile or an
+  inline `{ expire: seconds }` value and provides stale-while-revalidate
+  behavior. The one-argument form is deprecated.
+- Server Action-only `updateTag()` expires tagged data immediately with
+  read-your-writes semantics.
+- Server Action-only `refresh()` refreshes uncached data shown elsewhere
+  without touching cached content.
 
-Next.js 16 separates three operations (`16.0.0`):
+Cache `expire` and `revalidate` values are normalized and validated earlier in
+the line documented by `release-catalogs`, including explicit handling for
+`Infinity`, so invalid values surface closer to configuration.
 
-| API | Context | Behavior |
-| --- | --- | --- |
-| `revalidateTag(tag, profile)` | Server contexts | Stale-while-revalidate according to a `cacheLife` profile |
-| `updateTag(tag)` | Server Actions only | Immediately expires tagged content for read-your-writes |
-| `refresh()` | Server Actions only | Refreshes uncached content shown elsewhere without touching cached content |
+### Diagnostics and timeouts (`16.0-guide`)
 
-`revalidateTag()` accepts a profile such as `'max'`, a custom named profile, or an inline `{ expire: seconds }`. Its old one-argument form is deprecated.
-
-```ts
-'use server'
-
-import { refresh, updateTag } from 'next/cache'
-
-export async function saveProfile() {
-  await db.profiles.save()
-  updateTag('profile')
-  refresh()
-}
-```
-
-Use `updateTag` after a mutation when the Action must immediately read the new value. Use profiled `revalidateTag` when eventual consistency is acceptable.
-
-## Cache diagnostics and prerender stalls
-
-Set the private diagnostic flag for verbose cache and ISR output (`16.0-guide`):
+Set `NEXT_PRIVATE_DEBUG_CACHE=1` for verbose cache and ISR logs. Development
+replays cached-function logs with a `Cache` prefix.
 
 ```sh
 NEXT_PRIVATE_DEBUG_CACHE=1 npm run dev
 ```
 
-Development replays logs produced by cached functions and prefixes them with `Cache`.
+During prerendering, a cached function that awaits request-specific or
+uncached Promises created outside its boundary times out after 50 seconds.
+Calling `cookies()` or `headers()` directly inside the boundary fails
+immediately.
 
-During prerendering, a cached function times out after 50 seconds if it waits for a request-specific or uncached Promise that was created outside its boundary. Calling `cookies()` or `headers()` directly inside the cached function fails immediately instead of waiting for that timeout. Resolve request values first, and create uncached work on the correct side of the cache boundary.
+## Segment prefetching
 
-## Link and router prefetch controls
+### Incremental route prefetching (`16.0.0`)
 
-`router.prefetch()` accepts `onInvalidate`, which runs when prefetched data becomes stale (`15.4.0`). The callback can schedule another prefetch.
+Prefetching downloads a shared layout once and then requests only segments
+missing from the cache. It cancels work when a link leaves the viewport,
+prioritizes hover and viewport re-entry, and prefetches again after
+invalidation. Expect more individual requests but less total data.
 
-```tsx
-'use client'
+### One-response prefetching (`16.2.0`)
 
-import { useRouter } from 'next/navigation'
-
-export function WarmDashboard() {
-  const router = useRouter()
-
-  return (
-    <button
-      onMouseEnter={() =>
-        router.prefetch('/dashboard', {
-          onInvalidate: () => router.prefetch('/dashboard'),
-        })
-      }
-    >
-      Dashboard
-    </button>
-  )
-}
-```
-
-`<Link prefetch="auto">` is an explicit alias for the default `prefetch={undefined}` behavior (`15.4.0`).
-
-Partial prerendering also supports intercepted dynamic routes as of `15.4.0`; do not disable PPR merely because a route is intercepted and dynamic.
-
-## Segment-aware prefetching
-
-Next.js 16 route prefetching downloads a shared layout once and requests only segments missing from the cache (`16.0.0`). It may make more individual requests while transferring less total data. The scheduler:
-
-- Cancels prefetch work when a link leaves the viewport.
-- Prioritizes hover and viewport re-entry.
-- Automatically prefetches again after invalidation.
-
-## Single-response and cached navigation experiments
-
-`experimental.prefetchInlining` combines every prefetched segment for one route into one response (`16.2.0`):
+`experimental.prefetchInlining` combines all prefetched segment data for a
+route into one response. This reduces prefetching to one request per link, but
+duplicates shared-layout data instead of reusing it from the segment cache.
 
 ```ts
-export default {
-  experimental: { prefetchInlining: true },
-}
+export default { experimental: { prefetchInlining: true } }
 ```
 
-This reduces prefetching to one request per link but duplicates shared-layout data instead of reusing it from the segment cache.
+### Cached navigations (`16.2.0`)
 
-`experimental.cachedNavigations` independently caches static and dynamic Server Component data from navigations and initial HTML loads for instant repeat visits. It requires Cache Components.
+`experimental.cachedNavigations` independently caches static and dynamic
+Server Component data from navigations and initial HTML loads for instant
+repeat visits. It requires Cache Components.
 
 ```ts
 export default {
@@ -210,23 +149,21 @@ export default {
 }
 ```
 
-## Partial Prefetching and instant routes
+### Partial Prefetching (`16.3.0`)
 
-With Cache Components, `partialPrefetching` fetches and session-caches one reusable loading shell for each distinct route in production instead of one response per link (`16.3.0`). The Navigation Inspector can pause a development navigation at that shell.
+Top-level `partialPrefetching` makes production prefetching fetch and
+session-cache one reusable loading shell per distinct route instead of one
+response per link. The Navigation Inspector can pause at that shell during
+development.
 
 ```ts
 const nextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
 }
-
 export default nextConfig
 ```
 
-The associated controls have deliberately different costs:
-
-- Default partial prefetching fetches the reusable loading shell.
-- `<Link prefetch={true}>` also fetches per-link synchronous or cached content known at build time.
-- `export const prefetch = 'allow-runtime'` extends prefetch work to request-time cached content, increasing server load.
-
-When development or build diagnostics identify server work that blocks an instant route, stream it behind `Suspense`, cache it with `use cache`, or put `export const instant = false` in the page or layout to accept the server-bound navigation explicitly.
+`<Link prefetch={true}>` also fetches per-link synchronous or cached content
+known at build time. `export const prefetch = 'allow-runtime'` extends that
+work to request-time cached content at the cost of more server load.

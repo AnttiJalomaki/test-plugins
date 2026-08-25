@@ -1,38 +1,66 @@
 # CLI, API, and Extensions
 
-## Diff and resource inspection
+## Diff and resource commands
 
-- Server-side diff is stable and supported in CLI workflows since 3.2.0. Use
-  it when the comparison needs server behavior rather than only local rendering.
-- The CLI adds `get-resource` in 3.2.0 for retrieving one Application resource.
-  Prefer it when automation needs a single resource rather than parsing a
-  complete Application resource tree.
+Server-side diff is stable for CLI workflows as of 3.2.0. Use it when the
+server's admission and defaulting behavior must participate in the preview.
 
-## Credential input
+The CLI also adds `get-resource` in 3.2.0 to retrieve one resource belonging to
+an Application. Prefer it over fetching an entire Application resource set
+when scripts need a single object.
 
-In 3.2.0, `bcrypt` prompts for a password when `--password` is omitted. An
-Argo CD password can also be read from standard input. Prefer prompting or a
-protected stdin pipeline over command-line arguments, which can leak through
-shell history or process inspection.
+## Password and log input
 
-## CLI extension and log behavior
+The `bcrypt` command prompts when `--password` is omitted, and the Argo CD
+password can be read from standard input (3.2.0). Prefer either route over argv
+or shell history. Pod-log search supports case matching since 3.0.0; set the
+matching behavior explicitly in scripts where case changes the result set.
 
-- CLI plugin support was added in 3.1.0. Treat plugin binaries and their command
-  namespaces as part of the workstation trust and compatibility surface.
-- Pod-log search can match case since 3.0.0. Select case behavior explicitly
-  when scripts depend on exact capitalization.
+## CLI plugins
 
-## Exec and port forwarding
+The CLI supports plugins that add commands as of 3.1.0. Treat plugin binaries
+as part of the CLI trust boundary, pin their provenance, and avoid command-name
+collisions with built-in operations.
 
-Pod exec and port forwarding use WebSockets instead of SPDY since 3.0.0.
-Reverse proxies, load balancers, and authentication intermediaries must allow
-the HTTP connection upgrade and preserve the connection for the session.
-Diagnose failures at the intermediary as well as at `argocd-server`.
+## Namespace-aware commands
 
-## Authenticated extension requests
+ApplicationSet-in-any-namespace is stable in 3.5.0. `argocd appset` commands
+can target an ApplicationSet namespace, and previously missing `argocd app`
+subcommands accept `--app-namespace`. Make the namespace explicit in
+multi-tenant automation rather than relying on a default.
 
-Since 3.2.0, the server passes the authenticated user ID to extensions in a
-request header. Extensions can use this to associate work with the caller, but
-they should trust it only when the request is received through the authenticated
-Argo CD server. Strip or overwrite client-supplied identity headers at the
-trusted boundary to prevent confusion with server-provided identity.
+## Typed event responses
+
+Event-listing APIs return Argo CD's typed `EventList` in 3.5.0. Clients that
+assumed an untyped Kubernetes list must decode the typed response and preserve
+its Argo CD schema.
+
+## Core mode
+
+The CLI honors `--kube-context` when it constructs core-mode REST configuration
+as of 3.5.0. Verify context selection in scripts that access more than one
+cluster; do not assume the current kubeconfig context overrides the flag.
+
+## Application user interface
+
+In 3.5.0, New-App creation supports multi-source Applications, the network
+view understands Gateway API resources, and Application lists can filter by
+repository URL or target revision. Use the richer views for investigation and
+authoring, but preserve exact source and revision values in API-driven
+automation.
+
+## Extensions and caller identity
+
+### Trust only server-supplied identity
+
+Since 3.2.0, the server forwards the authenticated user ID to extensions in a
+request header. Consume that identity only behind the authenticated Argo CD
+server. A direct client must not be able to spoof the same header and gain the
+server's trust.
+
+### Upgrade UI extensions to React 19
+
+The UI uses React 19 in 3.5.0. Custom UI extensions must follow the React 19
+extension upgrade guidance; `ReactJSXRuntime` is available as a global for
+extension integration. Test mounting, shared runtime assumptions, and build
+output before deploying an older extension bundle.

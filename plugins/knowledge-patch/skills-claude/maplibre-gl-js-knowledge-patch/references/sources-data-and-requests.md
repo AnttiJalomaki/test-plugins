@@ -1,25 +1,11 @@
-# Sources, data, and requests
+# Sources, Data, and Requests
 
-## Feature intersection and queries
+## Vector-tile formats and identifiers
 
-`StyleLayer.queryIntersectsFeature` takes one
-`QueryIntersectsFeatureParams` object instead of positional parameters as of
-5.0.0. Wrap every former argument in the corresponding object field.
+### MapLibre Tiles encoding
 
-Globe-view `queryRenderedFeatures` handles queries that cross the
-international date line as of 5.4.0. Applications no longer need to split
-those queries.
-
-## Cluster feature IDs
-
-For clustered circle data configured with `promoteId`, an unclustered feature
-receives its promoted ID and a clustered feature receives `cluster_id` as of
-5.0.0. Do not rely on the earlier undefined ID for unclustered features.
-
-## Vector source encodings
-
-Vector sources support MapLibre Tiles by setting `encoding: 'mlt'` as of
-5.12.0:
+Vector sources consume MapLibre Tiles by setting `encoding: 'mlt'` (since
+5.12.0).
 
 ```js
 map.addSource('mlt-data', {
@@ -29,15 +15,25 @@ map.addSource('mlt-data', {
 });
 ```
 
+### Cluster feature IDs with `promoteId`
+
+For clustered circle data using `promoteId`, an unclustered feature receives
+its promoted ID and a clustered feature receives `cluster_id` (since 5.0.0).
+Do not expect the unclustered feature ID to be undefined.
+
 ## Tile level of detail and overscaling
 
-Public tile level-of-detail control is available as of 5.4.0. Applications can
-influence tile selection without reaching into internal behavior.
+### Public LOD control
 
-In 5.12.0, `MapOptions.experimentalZoomLevelsToOverscale` selects how many zoom
-levels are sliced and how many are scaled during vector-tile overscaling. This
-can improve high-zoom performance. A value of `4` or less can also avoid
-Safari crashes in affected scenarios.
+Tile level-of-detail control is exposed through the public API in 5.4.0, so
+applications can influence tile selection without relying on internals.
+
+### Experimental slicing in v5
+
+`MapOptions.experimentalZoomLevelsToOverscale` in 5.12.0 controls how many
+zoom levels are sliced versus scaled during vector-tile overscaling. It can
+improve high-zoom performance. A value of `4` or less can prevent Safari
+crashes in affected scenarios.
 
 ```js
 const map = new Map({
@@ -46,10 +42,11 @@ const map = new Map({
 });
 ```
 
-The option is promoted to `zoomLevelsToOverscale` for v6
-(migration-v5-v6). It can change rendering and
-`queryRenderedFeatures()` results. Set it explicitly to `undefined` to retain
-the previous overscaling behavior.
+### Promoted slicing option
+
+During migration-v5-v6, the option becomes `zoomLevelsToOverscale`. Slicing
+can change rendering and `queryRenderedFeatures()` results. Set it explicitly
+to `undefined` to retain the previous overscaling behavior.
 
 ```js
 const map = new Map({
@@ -58,30 +55,36 @@ const map = new Map({
 });
 ```
 
-## GeoJSON updates
+## GeoJSON updates and representation
 
-GeoJSON-VT-backed GeoJSON data supports updates, including diff updates, as of
-5.20.0. A complete static tile index is no longer required for every change.
+### Updating GeoJSON-VT-backed data
 
-In 6.0.0, `GeoJSONSource.setData` accepts only its data argument. The
-`waitForCompletion` parameter is removed, and the method no longer returns the
-source instance. Do not pass the former second argument or chain a source
-method from the result.
+GeoJSON data backed by GeoJSON-VT can be updated, including through diff
+updates, in 5.20.0. A complete tile index no longer has to remain static.
+
+### `GeoJSONSource.setData`
+
+In 6.0.0, `setData` accepts only the data argument. Its `waitForCompletion`
+parameter is removed and it no longer returns the source instance. Do not pass
+a second argument or chain from the call.
 
 ```js
 source.setData(nextData);
 ```
 
-Nested objects in GeoJSON feature properties are encoded and decoded back into
-objects in 6.0.0. Their serialized form uses the `__$json__` prefix. This is a
-breaking change for integrations that consumed the previous unsupported object
-representation.
+### Nested feature properties
 
-## Request transforms
+Nested objects in GeoJSON feature properties are encoded and parsed back as
+objects in 6.0.0. Their serialized representation uses the `__$json__` prefix.
+Code must not rely on the former unsupported representation or treat the
+internal prefix as an application data contract.
 
-`setTransformRequest` accepts an asynchronous callback as of 5.20.0.
-`RequestParameters.referrerPolicy` controls the referrer policy for tile
-requests.
+## Request customization and workers
+
+### Async transforms and referrer policy
+
+`setTransformRequest` accepts an async callback in 5.20.0.
+`RequestParameters.referrerPolicy` controls the policy for tile requests.
 
 ```js
 map.setTransformRequest(async (url) => ({
@@ -90,45 +93,43 @@ map.setTransformRequest(async (url) => ({
 }));
 ```
 
-## Missing style images
+### Imported worker scripts
 
-In v6, a `styleimagemissing` listener cannot satisfy the current image request
-by calling `Map#addImage`. Register `Map#setMissingStyleImageResolver` instead
-(migration-v5-v6). The resolver may be synchronous or asynchronous. An
-asynchronous resolver must add the image before its promise settles.
+Scripts imported into workers can communicate with the worker environment and
+call `makeRequest` starting in 5.20.0.
 
-```js
-map.setMissingStyleImageResolver(async (id) => {
-  const image = await generateImage(id);
-  map.addImage(id, image);
-});
-```
+### Image request behavior
 
-The `styleimagemissing` event remains useful for observing images that remain
-unresolved.
+Image requests always send `Accept: image/webp` in 5.20.0. The earlier Edge 18
+detection workaround was removed with other legacy browser paths.
 
-## URL hash parsing
-
-Hash-based location control uses `URLSearchParams` parsing and normalization in
-6.0.0. Encoded locations such as `#10%2F3.00%2F-1.00` are accepted, while a
-bare `#foo` normalizes to `#foo=`.
-
-## Terrain and source validation
+## Source validation
 
 In 6.0.0, `map.setTerrain` validates its terrain configuration, and
-`raster-dem` sources passed to `map.addSource` are no longer exempt from
-validation.
+`raster-dem` sources passed to `map.addSource` are no longer skipped during
+validation. A custom source registered with `addSourceType`, however, does not
+invalidate the whole style merely because the style specification lacks a
+schema for it.
 
-A custom source type registered with `addSourceType` no longer invalidates the
-whole style merely because the style specification has no schema for that
-custom type.
+## Raster and image sources
 
-## Raster alpha data
+### Raw alpha channel data
 
-`RasterTileSource#setPremultiplyAlpha(false)` preserves raw RGBA values when
-the alpha channel carries data rather than opacity as of 6.0.0.
+Use `RasterTileSource#setPremultiplyAlpha(false)` in 6.0.0 to preserve raw
+RGBA when the alpha channel carries data rather than opacity.
 
 ```js
 map.getSource('raw-raster').setPremultiplyAlpha(false);
+```
+
+### Decoded image updates
+
+`ImageSource.updateImage` accepts an already-decoded `HTMLImageElement`,
+`HTMLCanvasElement`, `ImageBitmap`, or `ImageData` in `{image}` in
+6.1.0-6.4.1, avoiding another request.
+
+```js
+const source = map.getSource('overlay');
+source.updateImage({image: decodedImage});
 ```
 

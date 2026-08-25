@@ -1,138 +1,140 @@
-# State, backends, locking, and installation
+# State, Backends, Locking, and Installation
 
-Use this reference for persistent state, backend authentication, lock
-coordination, plugin caches, and package verification.
+## S3 credential workflow transition (`1.7.0`)
 
-## S3 credentials
+The S3 backend defaults `use_legacy_workflow` to `false`, following AWS CLI and
+SDK credential precedence and preferring backend configuration over environment
+variables. Setting it to `true` was only a temporary compatibility measure.
 
-In 1.7.0, the S3 backend changed the default of `use_legacy_workflow` to
-`false`. Credential resolution follows AWS CLI/SDK precedence and prefers
-backend configuration over environment variables. The option was a temporary
-compatibility escape hatch:
+OpenTofu `1.8.0` removes `use_legacy_workflow`; delete the argument before
+upgrading because the standard workflow is the only supported behavior.
 
-```hcl
-terraform {
-  backend "s3" {
-    use_legacy_workflow = true
-  }
-}
-```
+## Local-state crash persistence (`1.7.0`)
 
-OpenTofu 1.8.0 removes the argument; remove it before upgrading. Standard
-credential discovery is the only supported behavior.
+Local state does not immediately persist every in-memory `state.Write()`. A
+hard crash during apply may leave no in-progress state file to inspect, matching
+other state managers. Do not treat the absence of such a file as proof that no
+remote operations occurred.
 
-S3 module source addresses adopt AWS CLI/SDK-style credential discovery in
-1.11.0. The selected source can therefore change after upgrade, and schemes
-such as IAM roles for service accounts become available.
+## HTTP backend headers (`1.7.0`)
 
-The S3 backend recognizes credentials issued by `aws login` in 1.12.0.
+The HTTP backend accepts user-defined request headers in backend configuration,
+supporting services that require custom authentication or routing headers.
 
-## S3 locking and object behavior
+## Initialization-time backend values (`1.8.0`)
 
-The 1.10 S3 backend can lock state in S3 itself without DynamoDB. Use 1.10.2 or
-later when the bucket requires server-side encryption: that patch sends the
-`x-amz-server-side-encryption` header for the lockfile.
+Backend configuration can use variables and locals available during early
+evaluation. Keep all dependencies resolvable during `tofu init`; sensitive
+values are prohibited from 1.9 because initialization would expose them. See
+[language-modules-and-lifecycle.md](language-modules-and-lifecycle.md) for the
+full early-evaluation contract.
 
-The S3 backend can tag state-snapshot and lock objects in 1.11 and can use the
-`eusc-de-east-1` AWS European Sovereign Cloud region.
+## AzureRM timeout and HTTP tracing (`1.9.0`)
 
-`skip_s3_checksum` in 1.10 also disables the AWS SDK's S3 integrity checks.
-That may help incomplete S3-compatible implementations, but it broadens what
-the setting bypasses.
+The AzureRM backend accepts `timeout_seconds`, defaulting to 300 seconds. HTTP
+backend trace logs include request and response bodies; logs can therefore
+contain sensitive backend data and require secret-safe handling.
 
-## PostgreSQL layout and locking
+## OCI module and provider distribution (`1.10.0`)
 
-The 1.10 `pg` backend accepts `table_name` and `index_name`, allowing separate
-tables for multiple states in one database. Finer-grained locks stop unrelated
-configurations from contending.
+Modules support the `oci:` source-address scheme, and OCI registries can serve
+as provider mirrors. Both module and provider artifacts can therefore use OCI
+registry distribution, including for air-gapped environments.
 
-Do not run 1.10 and older OpenTofu processes against the same database. Their
-incompatible locking implementations can permit conflicting writes and data
-loss.
+## Native S3 state locking (`1.10.0`)
 
-## AzureRM backend
+The S3 backend can lock state directly in S3 rather than relying on DynamoDB.
+Use 1.10.2+ when the bucket requires server-side encryption; that patch sends
+the `x-amz-server-side-encryption` header for the lockfile.
 
-The backend accepts `timeout_seconds` since 1.9, with a 300-second default.
+## PostgreSQL tables and locking (`1.10.0`)
 
-In 1.11, it ignores deprecated `endpoint`/`ARM_ENDPOINT` and
-`msi_endpoint`/`ARM_MSI_ENDPOINT`. Use `MSI_ENDPOINT` instead of the latter,
-and do not set `environment` together with `metadata_host`. Refresh an existing
-working directory with:
+The `pg` backend accepts `table_name` and `index_name`, allowing separate state
+tables in one database. Finer-grained locks prevent unrelated configurations
+from contending.
 
-```bash
-tofu init -reconfigure
-```
+Do not mix 1.10-or-newer and older OpenTofu processes in the same database.
+Their incompatible locking implementations can allow conflicting writes and
+state loss.
 
-Use `-reconfigure`, not `-migrate-state`, because the change does not move
-state.
+## Concurrent global provider cache (`1.10.0`)
 
-New 1.11 authentication settings include:
+Multiple OpenTofu processes can share the global provider cache if the
+filesystem supports file locking. Use 1.10.5+ to avoid a lock-contention bug
+with `TF_PLUGIN_CACHE_DIR`, and retain a valid `.terraform.lock.hcl` in every
+project that uses the cache.
+
+## Backend operations and proxies (`1.10.0`)
+
+The HTTP backend supports `tofu force-unlock`. The OSS backend honors standard
+proxy variables, including `NO_PROXY`.
+
+`skip_s3_checksum` also disables the AWS SDK's S3 integrity checks. This can
+help incomplete S3-compatible services but broadens the verification bypass;
+enable it only for a known compatibility requirement.
+
+## Provider installation compatibility (`1.10.0`)
+
+During `tofu init`, a lock entry for certain providers on
+`registry.terraform.io` can select the same version rebuilt and republished on
+`registry.opentofu.org`. This mapping applies only to providers that OpenTofu
+rebuilds and republishes, not arbitrary third-party providers.
+
+For unsigned provider ZIP sources, the lock file records a locally verified
+`zh:` archive checksum alongside `h1:`. This improves verification when the
+same artifact is later installed from a different source.
+
+## AzureRM migration and authentication (`1.11.0`)
+
+The AzureRM backend ignores deprecated `endpoint`/`ARM_ENDPOINT` and
+`msi_endpoint`/`ARM_MSI_ENDPOINT`. Use `MSI_ENDPOINT` instead of the latter and
+do not set `environment` with `metadata_host`. Refresh the working directory
+with `tofu init -reconfigure`, not `-migrate-state`, because state is not being
+moved.
+
+Authentication controls include:
 
 - `use_cli`, defaulting to `true`.
 - `use_aks_workload_identity`, defaulting to `false`.
 - `client_id_file_path` and `client_secret_file_path`.
 - Inline `client_certificate`.
 
-In 1.12, AzureRM adds Azure DevOps and Azure Pipelines workload identity
-federation. It also supports Customer-Provided Keys and Customer-Managed Keys
-for backend server-side encryption.
+## S3 module credentials and backend additions (`1.11.0`)
 
-## HTTP, OSS, and GCS backends
+S3 module source addresses use AWS CLI/SDK credential discovery instead of the
+old custom sequence. An upgrade can select a different credential source and
+adds schemes such as IAM roles for service accounts.
 
-The HTTP backend accepts custom request headers since 1.7. Its trace logs
-include request and response bodies since 1.9, so protect trace output from
-credential or state disclosure.
+The S3 backend can tag state snapshot and lock objects and can use buckets in
+the `eusc-de-east-1` AWS European Sovereign Cloud region. From 1.11.5, the GCS
+backend has `universe_domain` for sovereign GCP services.
 
-The HTTP backend supports `tofu force-unlock` since 1.10. The OSS backend
-honors standard proxy variables, including `NO_PROXY`.
+## Cross-platform provider lock hashes (`1.12.0`)
 
-The GCS backend adds `universe_domain` in 1.11.5 for sovereign GCP services.
-
-## Local persistence
-
-Since 1.7, the local state manager no longer persists every in-memory
-`state.Write()` immediately. A hard crash during apply may leave no
-in-progress state file to inspect, matching other state managers.
-
-`TF_STATE_PERSIST_INTERVAL` controls the state-write interval since 1.8.
-
-## Concurrent provider caches
-
-Since 1.10, multiple OpenTofu processes can share the global provider cache
-when its filesystem supports file locking. Use 1.10.5 or later to avoid a
-lock-contention bug with `TF_PLUGIN_CACHE_DIR`. Every project using the cache
-must retain a valid `.terraform.lock.hcl`.
-
-## Provider source compatibility and checksums
-
-During `tofu init` in 1.10, a lock entry for certain providers on
-`registry.terraform.io` may select the same version republished on
-`registry.opentofu.org`. This applies only to providers OpenTofu rebuilds and
-republishes, not arbitrary third-party providers.
-
-For unsigned provider ZIP sources, the lock file records a locally verified
-`zh:` archive checksum alongside `h1:`. This improves verification when the
-same provider is installed again from another source.
-
-When 1.12 installs directly from OpenTofu Registry, `tofu init` records the
-complete set of `zh:` and `h1:` hashes for every supported platform. The first
-initialization after upgrade may add many `h1:` entries to
+When `tofu init` installs directly from OpenTofu Registry, it records the full
+set of `zh:` and `h1:` hashes for all supported platforms. The first
+initialization after upgrading can add many `h1:` entries to
 `.terraform.lock.hcl`.
 
-`tofu providers lock` remains necessary when installation uses an alternative
-source. A `network_mirror` may opt to trust all hashes reported by that mirror.
+When initialization uses another source, continue to run
+`tofu providers lock`. A `network_mirror` can opt to trust all hashes reported
+by that mirror.
 
-## Module and provider distribution
+## Private module download credentials (`1.12.0`)
 
-Since 1.10, module packages accept the `oci:` source-address scheme and OCI
-registries can serve as provider mirrors. These surfaces support registry-based
-distribution in connected and air-gapped environments.
+A module registry can instruct OpenTofu to reuse its API credentials for
+package downloads. When the registry serves the package itself, this removes
+the need for a separate `.netrc` credential.
 
-A module registry may tell 1.12 clients to reuse registry API credentials for
-package downloads. This removes the need for a separate `.netrc` credential
-when the registry itself serves the package.
+## Backend authentication and encryption (`1.12.0`)
 
-For a non-AWS origin, an S3 module source beginning with `s3::http://` uses
-plaintext HTTP in 1.12 instead of silently changing to HTTPS. Official AWS
-hostnames remain the exception; review non-AWS URLs before relying on the new
-behavior.
+The S3 backend discovers credentials issued by `aws login`. The AzureRM backend
+adds Azure DevOps and Azure Pipelines workload identity federation and supports
+Customer-Provided Keys and Customer-Managed Keys for server-side encryption.
+
+## S3 module HTTP scheme (`1.12.0`)
+
+For a non-AWS origin, a module source beginning with `s3::http://` uses
+plaintext HTTP rather than silently switching to HTTPS. Official AWS hostnames
+remain the exception. Treat an explicit non-AWS HTTP address as unencrypted
+transport and avoid sending credentials or sensitive modules over it.

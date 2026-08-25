@@ -1,139 +1,229 @@
 # Buildx, Bake, Imagetools, and Builders
 
-Use this reference for Buildx and Bake inputs, source-policy enforcement, exporters, Imagetools, builder drivers, provenance, credentials, and resource controls.
+## Exporters and output control
 
-## Build and Bake inputs
+### Tar destinations
 
-- `docker buildx bake --var NAME=VALUE` directly assigns a Bake variable without requiring an environment variable of the same name (since 0.31.0):
+Buildx 0.30.0 makes the tar exporter create missing parent directories for its
+destination. Nested output paths no longer need a separate preparation step.
+
+### Registry exports
+
+Since 0.31.0, an image made in the Docker image store is not unpacked locally
+when export starts with `--push` or `-o type=registry`. Do not treat a
+registry-oriented export as evidence that local unpacked content exists.
+
+### Replacement-mode local exports
+
+Buildx 0.35.0 local output supports `mode=delete`, replacing the destination
+rather than merging into it. By default the destination must be under the
+working directory; elsewhere requires `--allow=buildx.local.delete` or TUI
+confirmation. Multi-platform use requires BuildKit 0.31.0 or later.
 
 ```console
-docker buildx bake --var TAG=v1.2.3
+docker buildx build --output type=local,dest=./out,mode=delete .
 ```
 
-- Bake can disable host-environment lookups so its configuration is evaluated without ambient environment values (since 0.31.0).
-- Bake expressions add `semvercmp` for semantic-version comparisons (since 0.31.0).
-- Bake expressions add `formattimestamp` and `unixtimestampparse` for time conversion (since 0.33.0).
-- Remote Bake builds preserve Git context subdirectories and avoid inconsistent contents when a context path includes a subdirectory (since 0.33.0).
-- An empty `BUILDKIT_SYNTAX` build-argument override is accepted starting in 0.33.0.
+Treat this as a destructive operation: validate the resolved destination and
+grant the permission narrowly.
 
-## Source-policy lifecycle
+### Default OCI artifacts
 
-### Define and run Rego policies
+Buildx 0.36.1 adds environment variable `BUILDX_NO_DEFAULT_OCI_ARTIFACT` as an
+alternative to `oci-artifact=false` when that output option is not explicit.
 
-Buildx 0.31.0 introduces experimental Rego source policy for local build contexts:
+```console
+BUILDX_NO_DEFAULT_OCI_ARTIFACT=true docker buildx build .
+```
 
-- A matching `Dockerfile.rego` or `app.Dockerfile.rego` loads automatically.
-- Pass additional policy configuration with `build --policy` or a Bake target's `policy` key.
-- Use `buildx policy eval` and `buildx policy test`; policies can use custom built-ins and gitsign checks.
+## Imagetools
+
+### Preserve and capture metadata
+
+Buildx 0.30.0 `imagetools create` preserves attestation manifests and
+Cosign-based manifest signatures while assembling an image.
+
+Buildx 0.32.0 adds `--metadata-file`, allowing automation to capture the
+created descriptor and digest without parsing human output.
+
+```console
+docker buildx imagetools create \
+  --tag registry.example/app:latest \
+  --metadata-file metadata.json alpine:latest
+```
+
+### Authentication and OCI layouts
+
+Buildx 0.32.0 aligns Imagetools authentication with builds, including scoped
+credentials and automatic Docker Hardened Images credential fallback.
+
+Buildx 0.33.0 makes `imagetools create` and `inspect` accept OCI layout paths as
+sources and destinations, including mixed layout/registry workflows.
+
+### Descriptor validation
+
+Buildx 0.36.0 validates file-loaded descriptor inputs more strictly. Older
+automation may now fail; correct the descriptor instead of assuming all
+previously accepted input was valid.
+
+## Builders and command lifecycle
+
+### Builder aliases
+
+Buildx 0.30.0 deprecates `docker buildx install` and `uninstall`. Invoke
+`docker buildx` directly instead of installing aliases under `docker builder`.
+
+### Remote-builder timeouts
+
+Buildx 0.32.0 adds `--timeout` to many commands. Bound waits to remote builders
+where available and handle deadline failure separately from build failure.
+
+### Kubernetes persistence
+
+Buildx 0.34.0 Kubernetes builders can use persistent storage. The driver
+options replace the deployment with a StatefulSet backed by a persistent
+volume claim; account for stateful rollout and cleanup semantics.
+
+### BuildKit image authenticity
+
+Buildx 0.36.0 extends the default source policy to authenticate BuildKit release
+images when `buildx create` makes a `docker-container` builder. This protects
+the builder image itself, not only sources used by its builds.
+
+## Bake variables, functions, and paths
+
+### Direct and isolated variables
+
+Buildx 0.31.0 adds `bake --var NAME=VALUE` and an option to disable environment
+lookups. Use them to make evaluation inputs explicit and reproducible.
+
+```console
+docker buildx bake --var VERSION=1.2.3
+```
+
+Bake's standard library also gains `semvercmp` in 0.31.0. Buildx 0.33.0 adds
+`formattimestamp` and `unixtimestampparse`.
+
+### Bake-file-relative paths
+
+Buildx 0.36.0 can resolve files relative to the Bake file rather than the
+current directory:
+
+```console
+BUILDX_BAKE_FILE_RELATIVE_PATHS=true docker buildx bake -f ./build/docker-bake.hcl
+```
+
+### Secret source overrides
+
+Buildx 0.36.0 lets a Bake override replace the source of an already-declared
+secret. This supports caller-controlled secret locations without editing the
+Bake definition; retain secret scoping and avoid logging the replacement.
+
+## Named contexts and source identity
+
+Buildx 0.32.0 gives same-named contexts in different projects distinct shared
+keys. This prevents destination overwrites at some performance cost and
+requires Dockerfile 1.22.0 or later.
+
+The same release preserves a named context's original URL in request metadata,
+allowing provenance and integrations to retain remote source identity. Buildx
+0.32.1 fixes failures when secret credentials build directly from a private Git
+remote.
+
+## Source policies
+
+### Local policy introduction
+
+Buildx 0.31.0 introduces experimental Rego policy for local contexts. A
+matching `Dockerfile.rego` or `app.Dockerfile.rego` auto-loads; `build --policy`
+selects a policy explicitly. Bake auto-loads policies and accepts target
+`policy`. Use `buildx policy eval` and `policy test` while authoring.
 
 ```console
 docker buildx build --policy ./policy.rego .
 ```
 
-Buildx 0.32.0 extends source-policy validation to Git and HTTP build sources:
+### Remote sources and attestations
+
+Buildx 0.32.0 extends policy to Git and HTTP sources. New builtins validate
+signed Sigstore bundle attestations for HTTP artifacts and can retrieve
+attestations from GitHub. Policies can inspect `input.image.provenance` and use
+provenance materials as secondary inputs; that provenance input requires
+BuildKit 0.28.0 or later.
+
+Buildx 0.33.0 adds `verify_http_pgp_signature`. `policy eval` gains
+`--platform` and `-f -`; long flag `--filename` becomes deprecated in favor of
+`--file`.
 
 ```console
-docker buildx build --policy ./policy.rego https://github.com/example/project.git
+docker buildx policy eval --platform linux/amd64 -f - \
+  docker.io/library/alpine:latest < policy.rego
 ```
 
-### Verify artifacts and provenance
+Buildx 0.36.0 adds `array.flatten` and OPA template strings to policy authoring.
 
-- Buildx 0.32.0 adds policy built-ins for signed Sigstore bundle attestations on HTTP artifacts and can retrieve attestations automatically through the GitHub API.
-- Policies can inspect attestation fields through `input.image.provenance`; provenance materials arrive as secondary policy inputs. This requires BuildKit 0.28.0 or later.
-- Buildx 0.33.0 adds `verify_http_pgp_signature` for PGP verification of HTTP sources.
-- `buildx policy eval` accepts `--platform` for image-source selection and `-f -` for a policy on standard input (since 0.33.0).
-- `policy eval --filename` is renamed to `--file`; the old spelling is deprecated (since 0.33.0).
+### Default Docker pipeline verification
 
-### Apply policy globally
+Buildx 0.34.0 can cryptographically verify Docker-provided
+`docker/dockerfile`, `docker/dockerfile-upstream`, and
+`docker/buildkit-syft-scanner` images through an opt-in default policy selected
+with `BUILDX_DEFAULT_POLICY`. This verification is intended to become the
+default in a later release, so test both explicit policy and future-default
+behavior. Buildx 0.36.0 extends default checking to the BuildKit release image
+used by a new docker-container builder.
 
-- `docker buildx bake --policy` supplies global policy-evaluation options starting in 0.34.0; policy settings need not live only on individual targets.
-- Set `BUILDX_DEFAULT_POLICY` to enable a built-in policy that cryptographically verifies Docker-provided pipeline images (since 0.34.0).
-- The built-in policy covers `docker/dockerfile`, `docker/dockerfile-upstream`, and the `docker/buildkit-syft-scanner` image used for SBOM generation. It is opt-in in 0.34.0 but intended to become the default later.
+### Bake-wide policy options
 
-### Inspect build-step network traffic
+Buildx 0.34.0 adds global `bake --policy`, in addition to automatic discovery
+and target-level configuration.
 
-With BuildKit 0.31.0 or later, a policy can return `caps: { "exec.proxy": true }` to opt into the exec proxy (since Buildx 0.35.0). Network requests made by run steps then appear as ordinary `input.http` sources to policy rules.
+```console
+docker buildx bake --policy ./policy.rego
+```
 
-Enable the proxy for the entire builder instead when appropriate:
+### Build-step network proxy
+
+With BuildKit 0.31.0 or later, Buildx 0.35.0 policies can opt a build into the
+exec proxy by returning `caps: {"exec.proxy": true}`. Normal `input.http`
+rules can then govern build-step requests. A builder-wide opt-in is:
 
 ```console
 docker buildx create --buildkitd-flags '--proxy-network'
 ```
 
+## Resources
+
+Buildx 0.35.0 adds per-build CPU and memory constraints through build
+`--resource` or Bake target `resource`. It requires BuildKit 0.31.0 or later and
+Dockerfile 1.25.0 or later. Detect those dependencies before emitting the
+option.
+
 ## Credentials
 
-- Buildx can load Docker configuration scoped to particular repositories or authorization scopes instead of only registry-wide configuration (since 0.31.0).
-- When credentials for Docker Hardened Images (`dhi.io`) or Docker Scout registries are absent, authentication falls back to Docker Hub credentials (since 0.31.0).
+Buildx 0.31.0 loads Docker configurations scoped to repositories or auth
+scopes. Constrain credentials narrowly. Docker Hardened Images and Docker Scout
+registries fall back to Docker Hub credentials when no registry-specific
+credential is present; Buildx 0.32.0 brings the same libraries and fallback to
+Imagetools.
 
-## Exporters and local outputs
+## Debugging and provenance
 
-- The tar exporter creates missing parent directories for its output automatically (since 0.30.0):
+The DAP debugger becomes generally available in Buildx 0.33.0 and no longer
+needs experimental features.
 
-```console
-docker buildx build --output type=tar,dest=out/releases/image.tar .
-```
-
-- Docker-store exports with `--push` or `--output type=registry` skip local unpacking (since 0.31.0).
-- Local output for `build` and `bake` accepts `mode=delete` to replace the destination directory rather than merging into it (since 0.35.0):
-
-```console
-docker buildx build --output type=local,dest=out,mode=delete .
-```
-
-- Without extra approval, a delete-mode destination must be below the working directory.
-- For another destination, pass `--allow=buildx.local.delete` or confirm in the TUI.
-- Multi-platform delete mode requires BuildKit 0.31.0 or later.
-
-## Cache space policy
-
-`docker buildx prune` accepts these space-policy filters starting with the Engine 28.0.0 toolchain:
-
-- `reserved-space`
-- `max-used-space`
-- `min-free-space`
-- `keep-bytes`
-
-Engine API v1.48 renames `POST /build/prune` parameter `keep-bytes` to `reserved-space` and adds `max-used-space` and `min-free-space`; account for the CLI/API name boundary.
-
-## CPU, memory, and device access
-
-- `docker buildx build --resource` and Bake's `resource` key set CPU and memory limits starting in 0.35.0.
-- Resource limits require BuildKit 0.31.0 or later and Dockerfile v1.25.0 or later.
-- Engine builder configuration includes a `device` entitlement for builds requiring device access.
-
-## Imagetools and OCI layouts
-
-- `docker buildx imagetools create` preserves attestation manifests and Cosign manifest signatures rather than discarding them (since 0.30.0).
-- `imagetools create --metadata-file` writes properties of the newly created image, including its descriptor and digest (since 0.32.0):
+Buildx 0.30.0 `docker-container` builders can add a GitHub Actions payload to
+provenance with `provenance-add-gha=true`:
 
 ```console
-docker buildx imagetools create --metadata-file image-metadata.json -t registry.example/app:latest registry.example/app:amd64 registry.example/app:arm64
+docker buildx create --driver=docker-container \
+  --driver-opt=provenance-add-gha=true
 ```
 
-- `imagetools create` and `imagetools inspect` accept OCI-layout paths as sources and destinations; layout paths can be combined with registry references (since 0.33.0).
-- Local OCI-layout definitions handle Windows paths correctly (since 0.34.0).
+## Upgrade checklist
 
-## Named contexts
-
-- Starting in 0.32.0, identically named contexts in different projects receive distinct shared keys, preventing one project's destination from overwriting another's.
-- This cross-project isolation can reduce performance and requires Dockerfile 1.22.0 or later.
-
-## Builder drivers and persistence
-
-- The `docker-container` driver can add a GitHub Actions payload to provenance with `provenance-add-gha=true` (since 0.30.0):
-
-```console
-docker buildx create --driver=docker-container --driver-opt=provenance-add-gha=true
-```
-
-- The Kubernetes driver gains persistent-storage options in 0.34.0. Enabling them changes the builder from its transient form to a StatefulSet with a persistent volume claim.
-
-## Timeouts and debugging
-
-- Many Buildx commands accept `--timeout` to bound waits for remote-builder responses (since 0.32.0).
-- The DAP debugger is generally available and no longer requires the experimental-features flag (since 0.33.0).
-
-## Installation and release artifacts
-
-- `docker buildx install` and `docker buildx uninstall` are deprecated (since 0.30.0). Invoke `docker buildx` directly instead of installing aliases below `docker builder`.
-- Buildx release artifacts are signed and built with Docker GitHub Builder starting in 0.31.0.
+1. Remove dependency on builder aliases and human-readable Imagetools output.
+2. Verify whether registry output should be locally unpacked.
+3. Resolve Bake variables, secret sources, and paths from explicit inputs.
+4. Test source policy against every source class and builder image in scope.
+5. Grant deletion, network proxy, filesystem, device, CPU, and memory
+   capabilities as narrowly as possible.

@@ -1,135 +1,116 @@
-# CLI, scripts, and runtimes
+# CLI, Scripts, and Runtimes
 
-This reference covers pnpm version selection, script semantics, package
-initialization, recursive execution, runtime provisioning, global packages,
-inspection, and diagnostics. Relevant extraction markers include `2025-01`,
-`2025-02`, `2025-04`, `2025-05-06`, `2025-07`, `2025-09`, `2025-10`,
-`2025-11`, `2025-12`, `2026-01-02`, `migration-10-to-11`, `11.0.0`,
-`11.1-11.3`, `11.4-11.5`, `11.6-11.9`, and `11.10-11.17`.
+Use this reference for command invocation, script behavior, initialization,
+runtime provisioning, global tools, and diagnostics.
 
-## Package-manager selection
+## CLI Selection and Package-Manager Declarations
 
-pnpm 10 enables `managePackageManagerVersions` by default and selects its CLI
-from the root `packageManager` field:
+### Automatic version selection (batch `2025-01`)
+
+`manage-package-manager-versions` is enabled by default in pnpm 10, so the root
+`packageManager` declaration selects the pnpm CLI. Installing `pnpm` or
+`@pnpm/exe` through `pnpm add --global` fails; use `pnpm self-update`.
+
+The declaration must not prefix its version with `v` (batch `2025-02`):
 
 ```json
-{
-  "packageManager": "pnpm@10.1.0"
-}
+{ "packageManager": "pnpm@10.4.0" }
 ```
 
-The version cannot have a `v` prefix. Use `pnpm@10.4.0`, not
-`pnpm@v10.4.0`. Installing `pnpm` or `@pnpm/exe` via `pnpm add --global`
-fails while version management is active; use `pnpm self-update`.
+When pnpm switches CLI versions it disables `managePackageManagerVersions` to
+avoid another automatic switch (batch `2025-10`).
 
-When pnpm explicitly switches to a different CLI, it disables
-`managePackageManagerVersions` to avoid another automatic switch. pnpm 11
-replaces the related switching/failure settings with `pmOnFail`.
+### pnpm 11 package-manager policy (batches `migration-10-to-11` and `11.0.0`)
 
-`pnpm with` runs one command under a one-off pnpm version and bypasses the
-project's package-manager pin. pnpm 11's self-updater and package-manager
-switcher can install the native pnpm 12 build from `next-12`:
+`pmOnFail` replaces `managePackageManagerVersions`, `packageManagerStrict`, and
+`packageManagerStrictVersion`. Its values are `download`, `ignore`, `warn`,
+and `error`.
+
+With `init-package-manager` enabled, `pnpm init` writes
+`devEngines.packageManager` instead of `packageManager`. It may contain a
+range; pnpm records and reuses a compatible resolved CLI in the lockfile.
+Use `pnpm with` for a one-off pnpm version that bypasses a project pin.
+
+pnpm 11 can self-update or switch from a package-manager declaration to the
+native pnpm 12 build published under `next-12`; the installed package is the
+unscoped `pnpm` package even when the old executable came from `@pnpm/exe`
+(batch `11.10-11.17`).
 
 ```sh
 pnpm self-update next-12
 ```
 
-That installation uses the unscoped `pnpm` package even when upgrading from
-`@pnpm/exe`.
+## Package Initialization and Setup
 
-## Script argument handling
+### Manifest shape (batches `2025-05-06`, `2025-12`, and `11.0.0`)
 
-`pnpm test` passes every argument after `test` to the underlying script, just
-like `pnpm run test`; no `--` separator is required:
+`pnpm init --init-type=module` creates a manifest with `"type": "module"`.
+New pnpm 11 manifests use ESM by default. `pnpm init --bare` emits only the
+required fields.
 
 ```sh
-pnpm test --watch
+pnpm init --init-type=module
+pnpm init --bare
 ```
 
-`pnpm dlx` recognizes its own options between `dlx` and the executed command,
-including options before a `--` separator.
+### Shell and global setup (batches `2025-05-06` and `11.0.0`)
 
-## Script selection and failures
+`pnpm setup` supports Nushell. In pnpm 11, global binaries moved to
+`PNPM_HOME/bin`, so rerun setup after upgrading.
 
-Hidden scripts whose names begin with `.` are excluded from `pnpm run` listings
-and cannot be invoked directly; other scripts may invoke them.
+Do not run `pnpm setup`, `pnpm self-update`, or global-mutating commands under
+`sudo`: they operate in root's home and warn now; pnpm 12 will reject them
+with `ERR_PNPM_SUDO_NOT_SUPPORTED`. Read-only commands such as
+`pnpm bin --global` are unaffected (batch `2026-08`).
 
-Use a slash-delimited regular expression to run every matching script. The
-restored `--sequential` or `-s` forces `workspaceConcurrency` to one across and
-inside packages:
+## Running Package Scripts
+
+### Argument and environment behavior (batches `2025-01` and `2025-04`)
+
+`pnpm test` passes every following argument to the script; no `--` separator
+is needed. Installation runs a project's `preprepare` and `postprepare`.
+Scripts receive `npm_package_json`.
+
+Under pnpm 10, `NODE_ENV=production` no longer controls which dependency types
+are installed. Script metadata is limited to the `npm_package_*` values for
+`name`, `version`, `bin`, `engines`, and `config`.
+
+### pnpm 11 script behavior (batches `migration-10-to-11` and `11.0.0`)
+
+A script named `clean`, `setup`, `deploy`, or `rebuild` shadows the built-in
+command. Use `pnpm pm <name>` for the built-in.
+
+Scripts whose names start with `.` are hidden from `pnpm run` and may be
+invoked only from other scripts. Command banners are written as
+`$ command` to stderr, leaving stdout available to pipelines. Lifecycle scripts
+no longer receive config-derived `npm_config_*` variables, though well-known
+`npm_*` variables remain.
+
+User-supplied `npm_config_*` variables again reach lifecycle scripts in later
+pnpm 11 releases, but this does not restore variables synthesized from pnpm
+configuration (batch `11.6-11.9`).
+
+### Select and sequence scripts (batch `11.10-11.17`)
+
+Pass a slash-delimited regular expression to `pnpm run` to run every matching
+script. `--sequential` or `-s` sets `workspaceConcurrency` to one across and
+within packages.
 
 ```sh
 pnpm run --sequential "/^build:.*/"
 ```
 
-A non-recursive `pnpm run --no-bail` continues through all matched scripts but
-exits nonzero if any fail, matching recursive behavior.
+A non-recursive `pnpm run --no-bail` continues all matching scripts but exits
+nonzero if any failed (batch `11.6-11.9`).
 
-Package scripts named `clean`, `setup`, `deploy`, or `rebuild` shadow built-in
-commands in pnpm 11. Force a built-in with `pnpm pm <name>`.
+## Runtime Provisioning
 
-Inside `pnpm add`, short flags mean:
+### Project runtimes (batch `2025-07`)
 
-- `-d`: `--save-dev`;
-- `-p`: `--save-prod`;
-- `-o`: `--save-optional`;
-- `-e`: `--save-exact`.
-
-`-F` aliases `--filter` generally.
-
-## Script environment and output
-
-pnpm 10 reduced automatic `npm_package_*` values to `name`, `version`, `bin`,
-`engines`, and `config`, and later added `npm_package_json` with the manifest
-path.
-
-pnpm 11 prints `$ command` to stderr, keeping script stdout pipe-friendly, and
-prints project identity only when running in a different directory. Lifecycle
-scripts no longer receive variables derived from pnpm config, although
-well-known `npm_*` variables remain.
-
-Later pnpm 11 again preserves `npm_config_*` variables explicitly supplied by
-the user, such as `npm_config_platform_arch`. This does not restore variables
-automatically derived from configuration.
-
-Reporter output for `pnpm store` and `pnpm config` commands also goes to stderr.
-
-## Recursive workspaces
-
-`pnpm -r pack` packs every workspace project:
-
-```sh
-pnpm -r pack
-```
-
-The default `workspaceConcurrency` is
-`Math.min(os.availableParallelism(), 4)`, so recursive execution uses at most
-four concurrent tasks unless configured otherwise.
-
-## Package initialization
-
-pnpm 10 can create an ESM manifest when `initType` is `module` or the command
-sets it directly:
-
-```sh
-pnpm init --init-type=module
-```
-
-`pnpm init --bare` creates a manifest with only required fields. In pnpm 11,
-new packages default to `"type": "module"`. With `initPackageManager` enabled,
-`pnpm init` writes `devEngines.packageManager` instead of `packageManager`.
-That declaration may be a range; pnpm stores the resolved version in the
-lockfile and reuses it while compatible.
-
-`pnpm setup` supports Nushell. Run setup after upgrading to pnpm 11 because
-global binaries move to `PNPM_HOME/bin`.
-
-## Project runtimes
-
-`devEngines.runtime` can provision Node.js, Deno, or Bun for each workspace
-project. Install resolves the requested range, records an exact version and
-checksum in the lockfile, and uses the local runtime for scripts. Initially
-`onFail` supported only `download`.
+`devEngines.runtime` declares Node.js, Deno, or Bun for a workspace project.
+Installation resolves its range, locks the exact version and checksum, and
+runs project scripts with the local runtime. `onFail` initially supported only
+`download`.
 
 ```json
 {
@@ -143,130 +124,129 @@ checksum in the lockfile, and uses the local runtime for scripts. Initially
 }
 ```
 
-The legacy `nodeVersion` setting must be an exact semantic version; ranges and
-tags error:
+`nodeVersion`, when used, must be an exact semantic version rather than a range
+or tag (batch `2025-09`).
 
-```yaml
-nodeVersion: 22.20.0
-```
+### Dependency-owned runtimes (batch `2025-11`)
 
-In pnpm 11, `pnpm runtime set` replaces `pnpm env use`. It saves development
-runtimes by default and production runtimes with `--save-prod` or `-P`:
+A dependency may declare `engines.runtime`. pnpm downloads that Node.js
+runtime, binds the dependency's CLI to it, and uses it for the dependency's
+`postinstall` regardless of the global Node.js version.
+
+### Runtime migration and validation
+
+The pnpm 11 codemod moves a root `useNodeVersion` setting to
+`devEngines.runtime`. Manually replace each subpackage's
+`pnpm.executionEnv.nodeVersion` with that subpackage's own runtime declaration
+(batch `migration-10-to-11`).
+
+Ranges in `devEngines.runtime` and `engines.runtime` are enforced for Node.js,
+Deno, and Bun when `onFail` is `warn` or `error`. Invalid resolved versions
+report `ERR_PNPM_BAD_RUNTIME_VERSION` (batch `11.4-11.5`).
+
+`pnpm runtime set <name> <version>` writes `devEngines.runtime` by default.
+Use `--save-prod` or `-P` for `engines.runtime` (batch `11.4-11.5`).
 
 ```sh
 pnpm runtime set node 24.0.0
 pnpm runtime set node 24.0.0 --save-prod
 ```
 
-`pnpm install --no-runtime`, equivalent to `runtime: false`, skips downloading
-and linking lockfile-managed runtimes without removing their lockfile entries;
-frozen validation therefore still passes.
+`pnpm install --no-runtime`, equivalent to `runtime: false`, skips fetching and
+linking declared runtimes without removing their lockfile records; frozen
+validation still succeeds (batch `11.1-11.3`).
 
-Runtime ranges in `devEngines.runtime` and `engines.runtime` are validated for
-Node.js, Deno, and Bun when `onFail` is `warn` or `error`. An invalid resolved
-version produces `ERR_PNPM_BAD_RUNTIME_VERSION`.
+`pnpm outdated` and interactive updates include dependencies declared with
+`runtime:` specifiers (batch `11.1-11.3`).
 
-`pnpm outdated` and interactive update include project runtimes declared with
-`runtime:` specifiers.
+Runtime download mirrors now belong in `nodeDownloadMirrors` in
+`pnpm-workspace.yaml`, replacing `node-mirror:<channel>` in `.npmrc`
+(batch `11.0.0`).
 
-## Dependency-owned runtimes
+## Command-Line Targeting
 
-A dependency may declare `engines.runtime`. pnpm installs the requested Node.js
-version, binds the dependency's CLI to it, and runs that dependency's
-`postinstall` under it regardless of the global Node.js version.
+### Architecture overrides (batch `2025-07`)
 
-```json
-{
-  "engines": {
-    "runtime": {
-      "name": "node",
-      "version": "^24.11.0",
-      "onFail": "download"
-    }
-  }
-}
+`pnpm install`, `add`, and `dlx` accept `--cpu`, `--libc`, and `--os` to
+override configured supported architectures for that command.
+
+### dlx parsing and catalogs (batches `2025-07` and `2026-01-02`)
+
+`pnpm dlx` recognizes its options between `dlx` and the executable, including
+before `--`. `pnpm dlx` and `pnpx` also accept catalog-backed versions:
+
+```sh
+pnpm dlx shx@catalog:
 ```
 
-Publishing may use `publishConfig.engines` to expose different runtime
-requirements from those used for development:
+Packages invoked through `dlx` or `create` may run their own postinstall, while
+their dependencies still require `--allow-build`; see the build-security
+reference.
 
-```json
-{
-  "engines": { "node": ">=24" },
-  "publishConfig": { "engines": { "node": ">=20" } }
-}
-```
+### Short flags (batch `11.0.0`)
 
-Configure runtime mirrors in pnpm 11 with `nodeDownloadMirrors`:
+`-F` aliases `--filter`. Within `pnpm add`, `-d`, `-p`, `-o`, and `-e` mean
+`--save-dev`, `--save-prod`, `--save-optional`, and `--save-exact`.
 
-```yaml
-nodeDownloadMirrors:
-  release: https://my-mirror.example.com/download/release/
-```
+## Inspecting Dependencies
 
-This replaces `node-mirror:<channel>` from `.npmrc`.
+### Finder functions (batch `2025-09`)
 
-## Global package groups
+Top-level `finders` in a pnpmfile define predicates for `pnpm list` and
+`pnpm why`. Select one with `--find-by=<name>`. Return `true` for a match or a
+string to match and display that string as extra result information.
 
-pnpm 11 isolates each `pnpm add -g` group with its own manifest, lockfile, and
-`node_modules` under `{pnpmHomeDir}/global/v11/{hash}/`. Removing one package
-removes its group; updating creates another group.
+### Lockfile and reverse-tree views (batches `2025-11` and `2026-01-02`)
 
-Space-separated arguments make independent groups. Comma-separated names make
-one shared group whose packages are removed together:
+`pnpm list --lockfile-only` reads the expected graph without requiring
+`node_modules`. `pnpm why` places the queried package at the root and walks
+through dependents back to workspace roots.
+
+Running `pnpm view` without a package name searches upward for the nearest
+manifest and queries its package name (batch `11.6-11.9`).
+
+## Global Package Groups
+
+pnpm 11 stores each global installation group under
+`{pnpmHomeDir}/global/v11/{hash}/` with its own manifest, lockfile, and
+`node_modules`. Removing one member removes the group; updating produces a new
+group. `pnpm link --global` and argument-free `pnpm link` are removed; use
+`pnpm add -g .` for the former workflow (batch `11.0.0`).
+
+Space-separated names create separate groups; comma-separated names share a
+group and are removed together (batch `11.1-11.3`):
 
 ```sh
 pnpm add -g foo bar
 pnpm add -g foo,bar qar
 ```
 
-Bare `pnpm install -g`, `pnpm link --global`, and argument-free `pnpm link` are
-removed. `pnpm add -g .` replaces the old global-link workflow.
+Review build scripts for global package dependencies with
+`pnpm approve-builds --global` (batch `2025-02`). Select installation groups
+with `pnpm update --global --interactive` (batch `2026-08`).
 
-## Inspection and maintenance commands
+## Maintenance and Diagnostics
 
-pnpm 11 adds or changes these commands:
+pnpm 11 adds or changes these commands (batch `11.0.0`):
 
 - `pnpm ci` cleans workspace `node_modules` and performs a frozen install.
-- `pnpm clean --lockfile` also removes the lockfile.
-- `pnpm peers check` reports peer issues from the lockfile.
+- `pnpm clean --lockfile` also removes the root lockfile.
+- `pnpm peers check` reports lockfile peer problems.
+- `pnpm runtime set` replaces `pnpm env use`.
 - `pnpm pack-app` builds Node.js single-executable applications.
-- `pnpm sbom` emits CycloneDX 1.7 or SPDX 2.3 JSON.
-- `pnpm with` runs a chosen pnpm version once.
-
-`pnpm why` now roots its output at the searched package and walks dependents
-back toward workspace roots, reversing the older forward-tree presentation.
-Custom `.pnpmfile.cjs` `finders` define predicates for `pnpm list` and
-`pnpm why`, selected by `--find-by=<name>`. A finder returns `true` or a string;
-the string is also printed as match information.
-
-```js
-module.exports = {
-  finders: {
-    react17: (ctx) =>
-      ctx.readManifest().peerDependencies?.react === "^17.0.0",
-  },
-}
-```
-
-```sh
-pnpm why --find-by=react17
-```
-
-Running `pnpm view` without a package name finds the nearest manifest upward
-and queries the package named there.
-
-## Doctor
+- `pnpm sbom` produces CycloneDX 1.7 or SPDX 2.3 JSON.
 
 `pnpm doctor` checks installation method, global-bin `PATH`, store/cache
-writability, supported filesystem link strategies, registry connectivity, and
-an end-to-end offline `file:` install. It exits nonzero on failures.
+writability, supported link strategies, registry connectivity, and an offline
+`file:` install. Failures produce a nonzero status; `--offline` skips network
+checks, `--json` emits structured output, and `--benchmark` times filesystem
+and install checks (batch `11.10-11.17`).
 
-```sh
-pnpm doctor --json
-pnpm doctor --offline
-pnpm doctor --benchmark
-```
+`pnpm cache path` prints the metadata cache. Cache it with the lockfile
+verification log; `pnpm store prune` preserves that log (batch `2026-08`).
 
-Use `--offline` to omit network checks, `--json` for structured output, and
-`--benchmark` for filesystem and install timings.
+Reporter output from `pnpm store` and `pnpm config` subcommands goes to stderr
+so stdout is safe to capture (batch `11.6-11.9`).
+
+`pnpm version -r --json` prints `[]` when no pending release changes exist,
+keeping empty and non-empty output valid JSON (batch `2026-08`).

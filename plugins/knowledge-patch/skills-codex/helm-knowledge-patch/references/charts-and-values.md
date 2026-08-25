@@ -1,72 +1,76 @@
 # Charts, Templates, and Values
 
-This reference organizes chart-facing guidance from batch `4.2.3`.
+## Chart creation
 
-## Experimental chart API v3
+### Select experimental chart API v3 explicitly
 
-The Helm 4 SDK can handle multiple chart API versions.
+The Helm 4 SDK handles multiple chart API versions (since 4.2.3). Helm 4.2
+exposes `helm create --chart-api-version` when the experimental chart v3 gate
+is enabled.
 
-Helm 4.2 exposes `helm create --chart-api-version` when the experimental v3
-gate is enabled. Creating a v3 chart requires both the gate and the option:
+Use both the environment gate and the version option:
 
 ```sh
 HELM_EXPERIMENTAL_CHART_V3=1 helm create demo --chart-api-version v3
 ```
 
-Keep these conditions distinct:
+The option does not enable experimental v3 by itself. Preserve the gate in
+scripts and test environments that create v3 charts, and do not assume SDK
+code will only encounter one chart API version.
 
-- `HELM_EXPERIMENTAL_CHART_V3=1` enables the experimental v3 path.
-- `--chart-api-version v3` requests v3 for the chart being created.
-- The SDK's multiple-version support is the broader embedding capability.
+## Template command cleanup
 
-Do not assume the creation option is generally available without the
-experimental gate.
+### Remove deprecated note flags
 
-## Deprecated template note flags
-
-Helm 4.2 deprecates two unused `helm template` flags:
+Helm 4.2 deprecates two unused `helm template` flags (since 4.2.3):
 
 - `--hide-notes`
 - `--render-subchart-notes`
 
-Scripts should stop relying on or passing these flags. When updating a
-wrapper:
+Remove these flags from scripts, wrappers, CI commands, and documentation.
+They should not be retained as required compatibility switches because they
+are unused.
 
-1. Remove the flags from generated command lines.
-2. Remove configuration fields whose only purpose is to select them.
-3. Update command assertions and fixtures that expect them.
+## Values coalescing
 
-Their deprecation is tied to the flags being unused; do not preserve them as
-if they still control required rendering behavior.
+### Retest chart-default nil handling
 
-## Nil values during coalescing
+Helm 4.2 changes how chart-default nil values are coalesced (since 4.2.3):
 
-Helm 4.2 changes how chart-default nil values participate in values
-coalescing:
+- A chart-default `nil` value is no longer copied into the coalesced values.
+- `nil` is preserved when the chart default is an empty map.
 
-- Chart-default `nil` values are no longer copied into coalesced values.
-- When the chart default is an empty map, `nil` is preserved.
+Retest charts whose overrides rely on nil cleanup, empty-map defaults, or
+subchart coalescing. Inspect the final coalesced values and the rendered
+manifests; do not assume cleanup follows the earlier behavior.
 
-Retest charts when their overrides depend on:
+Useful fixtures include:
 
-- Nil cleanup.
-- An empty-map default.
-- Subchart values coalescing.
+1. A scalar or key whose chart default is explicitly `nil`.
+2. A key whose chart default is an empty map and whose override is `nil`.
+3. A parent/subchart values case that previously depended on nil cleanup.
 
-Inspect the resulting coalesced values in those cases. Do not assume a nil
-value will be copied from chart defaults or cleaned up exactly as it was
-before this change.
+## Chart file access
 
-## Focused chart review
+### Iterate empty files safely
 
-A Helm 4 major-version migration does not automatically require every Helm 3
-chart to change. For chart-focused work, prioritize concrete affected areas:
+Helm 3.21.4 prevents `.Files.Lines` from panicking when the requested chart
+file is empty. Charts that iterate optional or generated files no longer need
+to add content solely to avoid this crash.
 
-- Experimental chart API version selection.
-- Automation that still passes deprecated template note flags.
-- Overrides and subcharts that depend on nil coalescing.
-- Packaging workflows that expect reproducible archives.
-- Cache workflows that assume identity follows source location.
+Keep an empty-file fixture when the chart supports generated or optional
+files. The template should iterate the file successfully and produce the
+chart-defined empty result rather than requiring filler content.
 
-The packaging and caching behaviors are detailed in
-[operations-and-delivery.md](operations-and-delivery.md).
+## Chart verification
+
+When changing creation, templates, or values:
+
+1. Set `HELM_EXPERIMENTAL_CHART_V3=1` and pass
+   `--chart-api-version v3` together for experimental v3 chart creation.
+2. Exercise SDK code with every chart API version that the application uses.
+3. Remove the deprecated `helm template` note flags from automation.
+4. Compare final coalesced values for nil defaults, empty-map defaults, and
+   parent/subchart overrides.
+5. Render the resulting manifests, not only the intermediate values.
+6. Run `.Files.Lines` against an empty chart file on maintained Helm 3 code.

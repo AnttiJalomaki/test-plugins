@@ -1,23 +1,21 @@
 # Helm and Operations
 
-Use this reference when installing, upgrading, scoping, or operating ESO. Render
-the chart and inspect live CRDs: chart values, controller processes, admission,
-and conversion are related but independently configurable.
+Use this reference when rendering the chart, operating controller components, or
+building ESO. Always inspect the values schema for the exact chart installed.
 
-## Image and chart distribution
+## Images, chart delivery, and releases
 
-### Image repository migration
+### Default image registry (since 1.1.0)
 
-The chart's default controller image moved from
+The default image repository moved from
 `oci.external-secrets.io/external-secrets/external-secrets` to
-`ghcr.io/external-secrets/external-secrets` (1.1.0). The old image domain is
-being retired and is only temporarily available. Update repository overrides
-and mirrors; the Helm chart repository remains on GitHub Pages.
+`ghcr.io/external-secrets/external-secrets` because the old registry is being
+retired. The chart repository remains on GitHub Pages. Move any pinned or
+overridden repository to GHCR.
 
-### Flux OCIRepository
+### Flux OCI chart layer (since 2.2.0)
 
-Flux installations that fetch the chart through `OCIRepository` must select and
-extract the Helm chart content layer (2.2.0):
+Flux `OCIRepository` users must select and extract the Helm chart content layer:
 
 ```yaml
 apiVersion: source.toolkit.fluxcd.io/v1
@@ -35,14 +33,31 @@ spec:
     operation: extract
 ```
 
-## CRDs, controllers, webhooks, and conversion
+### Release and custom-build targets
 
-CRD installation defaults on. Disabling a CRD does not disable its reconciler;
-pair every disabled `crds.create*` value with the corresponding `process*`
-value. Otherwise the controller logs errors because the CRD is absent.
-Disabling the webhook also requires disabling CRD conversion, or the API server
-continues to call a conversion endpoint that does not exist
-(operations-and-security).
+- Native `darwin_arm64` artifacts are published from 1.1.0 for Apple Silicon.
+- Every provider has a build tag from 1.1.0, allowing custom binaries to omit
+  unwanted providers.
+
+## Workload customization
+
+- Init containers can be configured for controller deployments from 0.19.0.
+- Global chart values became available in 1.2.0 for common deployment settings.
+- `hostUsers` can be controlled from 1.3.0.
+- Chart-managed certificate algorithms can be controlled from 1.3.0.
+- `hostAliases` can be assigned to chart-managed pods from 2.0.0.
+- `schedulerName` and `runtimeClassName` are opt-in pod settings from 2.9.0.
+- HTTP/2 serving became configurable in 0.20.0, including the ability to disable
+  it for a stricter security posture.
+
+## Controller selection and CRDs
+
+### Keep resource and reconciler switches paired
+
+CRD installation defaults on. Disabling a CRD does not stop its reconciler, so
+pair each `crds.create*` switch with the corresponding `process*` switch. Disabling
+the webhook also requires disabling CRD conversion, or the API server keeps
+calling a nonexistent conversion endpoint.
 
 ```yaml
 crds:
@@ -54,56 +69,22 @@ webhook:
   create: false
 ```
 
-Related controls:
+### Controller switches
 
-- `processClusterGenerator` determines whether cluster-scoped generators are
-  processed (0.20.0).
-- A controller flag enables or disables SecretStore reconciliation (1.2.0).
-- The chart handles missing Prometheus CRDs according to a configurable install
-  policy (0.20.0); choose it explicitly in clusters without those CRDs.
-- `ValidatingWebhookConfiguration` accepts annotations (0.16.0).
-- SecretStore webhook `failurePolicy` is obtained dynamically (2.0.0), and the
-  chart applies the configured policy to `ClusterSecretStore` admission
-  (2.4.0).
-- Legacy beta API serving is configurable for the migration window (1.3.0).
+- `processClusterGenerator` controls cluster-scoped generator processing from
+  0.20.0.
+- A controller flag can enable or disable SecretStore reconciliation from 1.2.0.
+- The chart can control behavior when Prometheus CRDs are absent from 0.20.0.
 
-## Namespace-scoped installation
+## Availability and leader election
 
-Namespaced `ExternalSecret` and `SecretStore` resources cannot make
-cross-namespace references to a store, Secret, or other namespaced referent.
-Cluster-scoped resources need separate scrutiny because they span namespaces.
+The controller defaults to one replica. Leader election is available, while its
+liveness, readiness, and PodDisruptionBudget are disabled by default. Webhook and
+cert-controller readiness is enabled by default, but each also defaults to one
+replica with liveness and PDB disabled.
 
-For namespace-only operation (operations-and-security):
-
-```yaml
-scopedRBAC: true
-scopedNamespace: payments
-```
-
-Scoped RBAC implicitly disables cluster-scoped controllers. If `scopedRBAC` is
-enabled and `scopedNamespace` is absent, the chart defaults the namespace to
-`.Release.Namespace` (2.5.0).
-
-## Workload customization
-
-The chart supports:
-
-- init containers for External Secrets deployments (0.19.0);
-- global values for shared deployment configuration (1.2.0);
-- `hostUsers` control (1.3.0);
-- certificate algorithm selection (1.3.0);
-- pod `hostAliases` for static hostname mappings (2.0.0).
-
-## Probes, replicas, and disruption budgets
-
-Availability settings are mostly opt-in (operations-and-security):
-
-- The controller defaults to one replica; leader election, liveness, readiness,
-  and PodDisruptionBudget are disabled.
-- Webhook and cert-controller readiness is enabled, but each defaults to one
-  replica with liveness and PDB disabled.
-
-A deliberate controller configuration can look like:
+Enable the controls needed for the availability target, and assign separate lease
+IDs to independent ESO deployments sharing a namespace:
 
 ```yaml
 replicaCount: 2
@@ -117,113 +98,63 @@ podDisruptionBudget:
   enabled: true
 ```
 
-Feature details:
+- The controller gained a liveness probe in 0.20.0.
+- Deployment readiness-probe configuration arrived in 2.2.0.
+- Cert-controller and webhook liveness probes arrived in 2.4.0.
+- Webhook `startupProbe` configuration arrived in 2.8.0.
+- `--leader-election-id` allows explicit HA identity from 2.4.0.
+- Leader-election lease timings are configurable from 2.8.0.
+- A chart flag can enable the cert-manager leader from 2.1.0.
 
-- A controller liveness probe is available (0.20.0).
-- The chart accepts percentage PodDisruptionBudget values (0.18.0).
-- A controller Deployment readiness probe is configurable (2.2.0).
-- Webhook and cert-controller liveness probes are available (2.4.0).
-- An explicit zero `minAvailable` or `maxUnavailable` still renders the PDB spec
-  (2.6.0).
-- A webhook Deployment startup probe is configurable (2.8.0).
+## PodDisruptionBudgets
 
-## Leader election
+- PDB values expressed as percentages render correctly from 0.18.0.
+- The PDB spec renders when `minAvailable` or `maxUnavailable` is explicitly zero
+  from 2.6.0; zero is no longer mistaken for unset.
 
-- A cert-manager leader flag is available (2.1.0).
-- `--leader-election-id` allows independent HA deployments to use distinct
-  election identities (2.4.0).
-- Leader-election lease timings are configurable (2.8.0).
+## RBAC rendering and scoping
 
-Give multiple ESO installations in the same namespace distinct lease IDs.
-Change timing values only after accounting for replica count, failure-detection
-time, API latency, and disruption budgets.
-
-## RBAC
-
-### ServiceAccount TokenRequest
-
-The chart renders the `serviceaccounts/token` create rule only when required
-(2.5.0). Provider authentication through `serviceAccountRef` needs TokenRequest
-access, but the default controller role can create tokens for every
-ServiceAccount in its scope. Disable the broad grant and add one named grant per
-referenced account (operations-and-security):
-
-```yaml
-rbac:
-  serviceAccountTokenCreate: false
-```
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: eso-token-provider-reader
-  namespace: payments
-rules:
-  - apiGroups: [""]
-    resources: ["serviceaccounts/token"]
-    resourceNames: ["provider-reader"]
-    verbs: ["create"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: eso-token-provider-reader
-  namespace: payments
-subjects:
-  - kind: ServiceAccount
-    name: external-secrets
-    namespace: external-secrets
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: eso-token-provider-reader
-```
-
-TokenRequest bodies use the URL namespace, fixing namespace inconsistency
-(2.6.0). Keep the Role in the target namespace and verify the controller subject
-and bound `resourceNames`.
-
-### Controller-specific and aggregate permissions
-
-- Write permissions for `externalsecrets` are gated by
-  `processClusterExternalSecret` (2.5.0).
-- Cert-controller RBAC is limited to the CRDs it manages and the webhook Secret
-  (2.7.0).
+- The `serviceaccounts/token` create rule is rendered conditionally from 2.5.0,
+  avoiding the permission when unused.
+- Write access to `externalsecrets` is gated by `processClusterExternalSecret`
+  from 2.5.0.
+- With `scopedRBAC` enabled and no `scopedNamespace`, the namespace defaults to
+  `.Release.Namespace` from 2.5.0.
+- Cert-controller RBAC is limited to its managed CRDs and webhook Secret from
+  2.7.0.
 - `aggregateToAdmin` controls chart RBAC aggregation into the Kubernetes admin
-  role (2.8.0).
+  role from 2.8.0.
+- An optional chart-managed `NetworkPolicy` is available from 2.8.0.
 
-The chart still aggregates some access into standard roles by default; review
-view, edit, and admin role impact as part of a least-privilege installation.
+## Webhooks and certificates
 
-## Metrics, health, and logging
+- `ValidatingWebhookConfiguration` annotations are supported from 0.16.0.
+- SecretStore `failurePolicy` is determined dynamically from 2.0.0.
+- The chart applies `failurePolicy` to the `ClusterSecretStore` webhook from
+  2.4.0.
+- Cert-controller metrics Service annotations render correctly from 2.1.0.
 
-- Metrics can be served securely (0.20.0).
-- Authentication and authorization for metrics can use `FilterProvider`
-  (2.5.0).
-- Cert-controller metrics Service annotations are applied correctly (2.1.0).
-- Target Secret deletion and data-key changes are logged (2.7.0).
-- `storeRequeueInterval` exposes store requeue cadence as a chart value (2.7.0).
-- HTTP/2 serving is configurable and can be disabled for a security posture
-  that forbids it (0.20.0).
+## Metrics and dashboards
 
-Grafana dashboard resources accept extra labels for installations where multiple
-Grafana selectors coexist (0.20.0).
+- Secure metrics serving became available in 0.20.0.
+- Authentication and authorization through `FilterProvider` became available for
+  metrics in 2.5.0.
+- Keeper exposes `provider_api_calls_count` from 2.6.0.
+- Grafana dashboard resources accept extra labels from 0.20.0, allowing different
+  Grafana selectors to discover separate dashboards.
 
-## NetworkPolicy and ports
+When creating network rules, expected inbound ports are controller metrics 8080
+and optional health 8082; webhook admission 10250, metrics 8080, health 8081; and
+cert-controller metrics 8080, health 8081.
 
-An optional chart NetworkPolicy is available (2.8.0), but it must be adapted to
-the actual exfiltration paths. The controller needs egress to the Kubernetes API
-and selected secret providers; webhook and cert controller need the API. Allow
-DNS and prefer private provider endpoints.
+## Requeueing and logs
 
-Expected ingress endpoints (operations-and-security):
+- Failed reconciliations retry substantially less aggressively from 0.14.0.
+- `storeRequeueInterval` is exposed through chart values from 2.7.0.
+- Secret deletions and Secret data-key changes are logged from 2.7.0.
 
-| Component | Ports |
-| --- | --- |
-| Controller | metrics `8080`; optional health `8082` |
-| Webhook | admission `10250`; metrics `8080`; health `8081` |
-| Cert controller | metrics `8080`; health `8081` |
+## Dashboard and monitoring defaults
 
-Policy enforcement should also deny unused providers, constrain allowed remote
-key prefixes, and restrict `ClusterSecretStore` references.
+Do not assume observability controls are enabled merely because the chart renders
+secure pod contexts. Metrics TLS/authentication and NetworkPolicy default off.
+Enable them deliberately and scope access to the intended monitoring clients.

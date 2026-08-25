@@ -1,146 +1,146 @@
 # Architecture and Rendering
 
+Use this reference to trace ownership, threading, tile preparation, drawable
+construction, renderer backends, and release boundaries.
+
 ## Repository and release boundaries
 
-The C++ core lives under `include/mbgl` and `src/mbgl`. Android reaches it
-through JNI. iOS uses the shared Objective-C++ Darwin layer. Node packages it as
-`@maplibre/maplibre-gl-native`. Part of the Qt binding is maintained in the
-separate `maplibre-native-qt` repository.
+The C++ core lives in `include/mbgl` and `src/mbgl`. Android reaches it
+through JNI. iOS shares an Objective-C++ Darwin layer. Node publishes it as
+`@maplibre/maplibre-gl-native`. Part of the Qt binding lives in the separate
+`maplibre-native-qt` repository.
 
-Android, iOS, Node, and Qt have separate release streams. There is no single
-public C++ core version that identifies every platform release.
+Android, iOS, Node, and Qt have independent release streams. No single public
+C++ core version identifies all platform releases, so always diagnose against
+the platform package and version actually in use.
 
-Android and iOS use semantic versioning but have no fixed release cadence or
-LTS releases. To backport a fix, request an older-series branch, submit the fix
-and changelog update to `platform-x.x.x` such as `android-10.x.x`, and account
-for any release-workflow changes that also require backporting. A release is
-attempted after the backport merges.
+Android and iOS follow semantic versioning but have no fixed cadence or LTS
+line. To backport a fix, request an older-series branch and submit the code
+plus changelog update to a branch such as `android-10.x.x`. A release is
+attempted after merge; workflow changes needed by that release may require a
+separate backport.
 
-## Build-time composition
+## Build-time platform composition
 
-CMake covers platform builds. Bazel is also used for iOS and several core
-desktop targets. The renderer backend is selected at build time; the platform
-wrapper and core renderer compile together rather than acting as interchangeable
-runtime components.
+CMake drives platform builds. Bazel is also used for iOS and several core
+desktop targets. Normally the backend is selected at build time, and the
+platform wrapper and core renderer are compiled together rather than loaded
+as independently interchangeable runtime parts. Android's `multiBackend`
+flavor is the explicit runtime-selection exception.
 
-## Map views and observers
+## Views, observers, and threads
 
-A platform Map View owns viewport and map configuration but has no rendering
-capability itself.
+### Map View responsibilities
 
-Map observers cover configuration and lifecycle changes such as style, camera,
-idle, and render start or completion. Rendering observers cover frame-level
+A platform Map View owns the viewport and map configuration but has no drawing
+capability by itself. Map observers cover style, camera, idle, and render
+start/completion lifecycle events. Rendering observers cover frame-level
 events, and rendering events can propagate to map observers.
 
-## Actors and render threads
+### Actor and render threading
 
-Core rendering work crosses threads as immutable actor messages, including
-callable messages delivered through typed mailboxes. Each platform supplies the
-core concurrency primitives.
+Core work crosses threads as immutable actor messages, including callable
+messages delivered through typed mailboxes. A worker pool prepares tiles while
+one render loop draws the currently available state. iOS runs this loop on the
+UI thread. Android uses a separate `GLSurfaceView` `GLThread` and batches UI
+changes for it. Each platform supplies the concurrency primitives used by the
+core.
 
-A worker pool prepares tiles while one render loop draws the available state.
-iOS runs the render loop on the UI thread. Android uses a separate
-`GLSurfaceView` `GLThread` and batches UI changes for it.
+### Android handoff
 
-## Tile-worker contracts
+The Java Map View initializes the device renderer and a JNI-backed native Map
+View peer. That peer wraps the generic Map component. A native `MapRenderer`
+actor forwards platform rendering events to the core renderer. `Transform`
+stores combined global camera and viewport state rather than one operation;
+observer notifications allow the renderer to derive rotation, pitch,
+projection, resize, and camera transforms.
 
-Geometry, raster, and elevation workers do not share a worker base class. Their
-matching tile types inherit the common `Tile` base.
+## Tile worker contracts
 
-A worker is an actor accepting its matching tile type. Its messages may run on
-any thread, provided only one thread processes a given worker instance at a
-time.
-
-## Android-to-core render handoff
-
-Android's Java Map View initializes the device renderer and a JNI-backed native
-Map View peer. That peer wraps the generic Map component. The native
-`MapRenderer` actor passes platform rendering events to the core renderer.
-
-`Transform` stores combined global camera and viewport state; it does not
-represent a single operation. Observer notifications allow the renderer to
-derive rotation, pitch, projection, resize, and camera transforms.
+Geometry, raster, and elevation workers do not inherit from a common worker
+base. Their tile types inherit from `Tile`, and each worker actor accepts its
+matching tile type. Its messages may execute on any thread, but only one
+thread may process a particular worker instance at a time.
 
 ## Tile cover and render tree
 
-For a tile source, `RenderSource::update` creates the tile pyramid selected by
-the viewport tile cover.
+For a tile source, `RenderSource::update` computes the tile pyramid selected
+by the viewport's tile cover. The render orchestrator creates an ordered tree
+of render layers, render sources, and atlas-backed items without drawing it.
+Unchanged tiles remain reusable; dirty tile or style state is updated.
 
-The render orchestrator builds an ordered render tree from render layers,
-render sources, and atlas-backed items, but does not draw it. Unchanged tiles
-remain reusable while dirty tile or style state is updated.
+## Geometry work coalescing
 
-## Geometry-tile coalescing
-
-Work is queued per unique geometry tile. Updates arriving during parsing or
-layout are folded into the newest combined state for the next pass instead of
+Work is queued per unique geometry tile. Updates that arrive during parsing or
+layout are folded into the newest combined state for the next pass rather than
 replaying every intermediate camera state.
 
-Parsing discovers required glyphs and images. Dependency arrivals may move the
-worker through `NeedsSymbolLayout` or `NeedsParse`. Finalization waits for
-parsing and symbol dependencies before emitting geometry, resource references,
+Parsing discovers glyph and image dependencies. Dependency arrivals can move
+a worker through `NeedsSymbolLayout` or `NeedsParse`. Finalization waits for
+parsing and symbol dependencies, then emits geometry, resource references,
 and collision metadata.
 
-## From source data to backend resources
+## Resource preparation
 
 The preparation path loads style resources, TileJSON, tiles, glyphs, and
 sprites through the file source and cache. Workers parse and lay out source
-data layer by layer.
+data layer by layer. Prepared buckets become Drawables and are uploaded with
+backend-specific resource builders.
 
-Prepared buckets become drawables and are uploaded through backend-specific
-resource builders. Descriptions that end the pipeline in OpenGL buffers predate
-this abstraction; OpenGL ES, Metal, and Vulkan consume the same higher-level
-tile state.
+Descriptions that stop at OpenGL buffers predate this abstraction. OpenGL ES,
+Metal, and Vulkan all consume the same higher-level prepared tile state.
+
+## Glyph atlas
+
+Glyphs are 24-pixel signed-distance-field bitmaps packed in a texture atlas
+inside a protobuf container. Interior pixels use values `192`–`255`; exterior
+pixels use `0`–`191`. The shared atlas lets the GPU resize and rotate glyphs
+and render halos.
 
 ## Drawable and Builder boundary
 
-Layers supply shader selection, attribute arrays, uniforms or uniform structs,
-and geometry to a backend-specific Builder. The Builder emits Drawables.
-
-Shared Drawable state handles cross-backend concerns such as transitions and
-tile tracking. Backend subclasses own upload and binding, direct or indirect
+Layers supply shader selection, attribute arrays, uniforms or uniform
+structs, and geometry to a backend-specific Builder. The Builder emits
+Drawables. Shared Drawable state handles cross-backend transitions and tile
+tracking. Backend subclasses own upload and binding, direct or indirect
 drawing, per-frame updates, and resource teardown.
 
-## Shader modularization contract
+## Shader registry contract
 
-The accepted renderer design replaces opaque per-program handling with a
-generic shader representation and a thread-safe registry keyed by well-known
-names.
-
-Its architectural contract supports:
+The modular renderer uses a generic shader representation and a thread-safe
+registry keyed by well-known names. The design supports:
 
 - shader source or precompiled references;
 - named uniforms or uniform structs;
-- calculation shaders;
+- calculation shaders; and
 - adding or replacing a shader before a layer requests it.
 
-These are design requirements, not a promise that each operation is exposed by
-every platform's public API.
+These are architecture requirements. They do not imply that every operation
+is exposed through every platform's public API.
 
 ## Render passes and offscreen targets
 
-The modularization design calls for named, ordered passes whose outputs may feed
-later passes; empty passes are omitted.
+The modular design uses named, ordered passes whose outputs can feed later
+passes; empty passes are omitted. Offscreen targets specify size and bit
+depth, allow geometry to choose a target, and can be queried or snapshotted.
+Snapshot callbacks run after drawing completes, avoiding a forced render-flow
+stall on non-OpenGL backends.
 
-Offscreen targets carry size and bit-depth settings, allow geometry to select
-targets, and support querying or snapshotting. Snapshot callbacks run after
-drawing completes, avoiding a requirement for non-OpenGL backends to stall the
-render flow.
+## Backend support matrix
 
-## Stable and experimental backends
+| Backend | Stable support |
+| --- | --- |
+| OpenGL ES 3 | Android, Linux, Windows, Linux/Windows Node, and Qt 3 |
+| Vulkan | Android and Linux; a macOS CMake path uses MoltenVK |
+| Metal | Default and recommended on iOS; used by macOS Node since Node 6.0 |
+| WebGPU | Experimental |
 
-OpenGL ES 3 is stable on Android, Linux, Windows, Linux and Windows Node builds,
-and Qt 3. Stable Qt 3 supports only OpenGL.
+Stable Qt 3 supports OpenGL only.
 
-Vulkan is stable on Android and Linux and has a macOS CMake route through
-MoltenVK. Metal is the stable default and recommended iOS backend and has
-powered macOS Node rendering since Node 6.0. WebGPU backends remain
-experimental.
+## Source-build selectors
 
-## Backend selectors
-
-Android source builds provide `opengl` and `vulkan` Gradle flavors. They set
-`MLN_WITH_OPENGL=ON` and `MLN_WITH_VULKAN=ON`, respectively. The checkout's
-broad-compatibility default is OpenGL.
-
-iOS selects Metal through CMake or Bazel configuration.
+Android source builds expose `opengl` and `vulkan` Gradle flavors, setting
+`MLN_WITH_OPENGL=ON` and `MLN_WITH_VULKAN=ON` respectively. The checkout's
+broad-compatibility default is OpenGL. This differs from the standard
+published Android 13 artifact, whose default renderer is Vulkan. iOS selects
+Metal through CMake or Bazel configuration.

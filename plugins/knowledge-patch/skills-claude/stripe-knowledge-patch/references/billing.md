@@ -1,143 +1,205 @@
 # Billing, Invoicing, and Subscriptions
 
-## Breaking billing migrations
+## Billing alerts and meters
 
-### Pricing, tax, and discount shapes
+### Usage-based Billing Alerts API (`2024-09-30.acacia`)
 
-- In `2025-03-31.basil`, Invoice Items and Invoice Line Items replace top-level price fields with pricing configurations.
-- Invoices, Invoice Line Items, and Credit Note Line Items replace top-level tax properties with tax configurations. Manual invoice tax amounts add jurisdiction level and taxability reason.
-- Coupons without an end time are unsupported. Parameters on Coupons and Promotion Codes that belonged to the singular-discount model are removed when stackable discounts are used.
-- In `2025-09-30.clover`, Promotion Codes refer to coupons through a polymorphic `promotion` field, and Discounts replace `coupon` with `source`.
+Billing Alerts are resources with API endpoints, subscription- and
+subscription-item-scoped contextual filters, and triggered-alert event and
+webhook support. Configure and observe usage thresholds through the API rather
+than polling them externally.
 
-### Invoice payment and period assumptions
+### Meter Events v2 (`2024-09-30.acacia`)
 
-- An Invoice can have multiple payments, including partial payments. Never assume one payment settles the Invoice (`2025-03-31.basil`).
-- Billing periods live on Subscription Items; subscription-level current-period start and end fields are removed.
-- Partial capture and payment cancellation no longer create a Refund object. Base refund logic on actual Refund resources and events.
+Use the new v2 endpoints to submit Meter Events. Treat them as a separate v2
+contract; do not assume v1 request and response shapes.
 
-### Preview and legacy usage APIs
+### Meter aggregation and events (`2025-03-31.basil`)
 
-- Use Create Preview Invoice in place of Upcoming Invoice methods.
-- Legacy usage-based billing is removed. Report usage through Meters.
-- Invoicing resources expose a `parent` field that identifies how each resource was generated.
+Meters support the `last` aggregation formula, which bills from the final event
+in a time range instead of summing events. Event types also cover Billing Meters
+and billing credits.
 
-## Subscription lifecycle
+### Legacy usage and preview removal (`2025-03-31.basil`)
 
-### Flexible billing defaults and explicit selection
+Replace Upcoming Invoice API methods with Create Preview Invoice. Legacy
+usage-based billing is removed, so migrate those integrations before selecting
+this contract.
 
-- New Subscriptions default to flexible billing mode in `2025-09-30.clover`. Set `billing_mode` explicitly if classic lifecycle behavior is required.
-- Creating or fully modifying a flexible Subscription through the API requires `2025-06-30.basil` or later.
-- Migration changes only subsequent activity. It does not recalculate existing resources such as pending proration Invoice Items.
-- The selected mode and proration display behavior are nested under `billing_mode`.
+## Invoice models and processing
 
-```sh
-curl https://api.stripe.com/v1/subscriptions \
-  -u "$STRIPE_SECRET_KEY:" \
-  -H "Stripe-Version: 2025-06-30.basil" \
-  -d "items[0][price]=$PRICE_ID" \
-  -d "customer=$CUSTOMER_ID" \
-  -d "billing_mode[type]=flexible" \
-  -d "billing_mode[flexible][proration_discounts]=itemized"
-```
+### Pricing, tax, and provenance (`2025-03-31.basil`)
 
-### Mode inheritance and Dashboard scope
+The newer price model replaces top-level price fields on Invoice Items and
+Invoice Line Items. Replacement tax representations likewise supersede
+top-level tax properties on Invoices, Invoice Line Items, and Credit Note Line
+Items. Invoicing resources add `parent` to describe how they were generated.
+Migrate serializers and field access, and accept the provenance shape.
 
-- When creating a Subscription Schedule with `from_subscription`, omit `billing_mode`; the Schedule inherits the Subscription's mode, and specifying both produces an error.
-- Changing modes requires a new Subscription.
-- The Dashboard billing-mode default affects the Dashboard subscription editor and Dashboard-created Payment Links and Pricing Tables.
-- That Dashboard setting does not select the mode for API-created Subscriptions or migrations. This is separate from the API-version behavior under which newly created Subscriptions default to flexible mode.
+### Multiple payments and manual tax (`2025-03-31.basil`)
 
-### Schedules, anchors, trials, and proration
+An Invoice can receive multiple partial payments. Reconciliation must not
+assume that one payment settles it. Manual tax amounts expose jurisdiction level
+and taxability reason; preserve both.
 
-- Subscription Schedule phases no longer accept `iterations`; express phase length with supported duration fields (`2025-09-30.clover`).
-- Phase-end computation now accounts for billing-cycle-anchor changes.
-- Customer Portal configurations can define trial behavior.
-- Proration discount amounts can be itemized, which changes line-level rendering.
-- In `2026-03-25.dahlia`, Checkout Session subscription creation can set a pending-invoice-item interval for the billing interval of pending items.
-- Subscriptions add a retention-policy cancellation reason. Event consumers and exhaustive switches must accept it.
+### Rendering templates (`2024-09-30.acacia`)
 
-### Subscription-item Trial Offers
+Invoice Rendering Templates are API resources with retrieve and archive
+operations. Invoices and Customers can reference a template, and templates
+support versions. Persist both template and intended version when reproducible
+rendering matters.
 
-The public-preview Trial Offers API creates and manages trials for individual Subscription Items (`2026-03-25.dahlia`). Keep this contract isolated from stable subscription code.
+### Bulk and timed processing (`2024-09-30.acacia`)
 
-## Invoice operations and rendering
+Invoices support bulk line-item operations and automatic finalization at a
+configured time. Due and overdue Invoice events can replace per-line mutations
+and external due-date polling where appropriate.
 
-### Automation and line items
+### Credit Notes (`2024-09-30.acacia`)
 
-- Bulk Invoice Line Item operations and automatic Invoice finalization are available (`2024-09-30.acacia`).
-- Billing emits events when Invoices become due or overdue.
-- Credit Notes add email types.
-- Invoice Items and Invoice Line Items accept decimal quantities with up to 12 decimal places on create and update (`2026-03-25.dahlia`).
-- Credit Note Line Items expose metadata.
+Credit Notes add email types. Deserializers and exhaustive handling must accept
+the additional values.
 
-### Rendering templates
+### Invoice presentation inherited from upstream (`2026-07-29.dahlia`)
 
-Invoice Rendering Templates are API resources with retrieve, archive, and version operations. Associate them with Invoices or Customers (`2024-09-30.acacia`).
+Subscription Schedules and Quotes can specify Invoice descriptions, footers,
+and custom fields. Preserve these presentation settings so generated Invoices
+can inherit them.
 
-### Hosted Invoice Page
+### Subscription metadata in previews (`2026-07-29.dahlia`)
 
-- The Hosted Invoice Page supports Klarna (`2025-03-31.basil`).
-- It can save a payment method for later one-time payments.
+Invoice previews accept subscription metadata. Include the intended metadata
+when the preview must reflect the planned Subscription context.
+
+### Alipay for send-invoice collection (`2026-07-29.dahlia`)
+
+Invoices and Subscriptions using send-invoice collection support Alipay. Do not
+restrict Alipay to immediate-collection surfaces.
+
+## Discounts, coupons, and promotion sources
+
+### Coupon and stacked-discount migration (`2025-03-31.basil`)
+
+Discount coupons require an end time. The singular coupon and promotion-code
+parameters used with stackable discounts are removed; use the remaining
+duration and multi-discount contracts.
+
+### Promotion and discount source shapes (`2025-09-30.clover`)
+
+Promotion Codes reference Coupons through a polymorphic promotion field.
+Discounts add `source` and remove `coupon`; resolve discount origin through
+`source`.
+
+### Proration discount details (`2025-09-30.clover`)
+
+Proration discount amounts can be itemized. Consumers must accept the breakdown
+instead of assuming discounts are only aggregate.
+
+### Item discounts in pending updates (`2026-07-29.dahlia`)
+
+Pending Subscription updates support item-level discounts. Builders must not
+assume all pending discounts apply only to the Subscription.
+
+## Subscription lifecycle and schedules
+
+### Item-level billing periods (`2025-03-31.basil`)
+
+Read billing periods from individual Subscription Items; they no longer live on
+the Subscription.
+
+### Schedule phase contracts (`2025-09-30.clover`)
+
+Stop sending the removed Subscription Schedule `iterations` parameter.
+Phase-end computation accounts for billing-cycle-anchor changes, so projected
+phase dates can change when an anchor resets.
+
+### Phase trials (`2026-07-29.dahlia`)
+
+Subscription Schedule phases add `trial`. Builders and serializers should use
+and preserve phase-level trial configuration.
+
+### Portal update behavior and trials
+
+Billing Portal subscription-update configuration no longer has to update
+products and prices (`2024-09-30.acacia`), so other update behavior can be
+enabled without forcing catalog changes. Customer Portal configuration also
+adds trial behavior (`2025-09-30.clover`).
+
+## Flexible billing
+
+### Default mode (`2025-09-30.clover`)
+
+New Subscriptions default to flexible billing mode. Set the intended mode
+explicitly when lifecycle behavior must remain stable across an API-version
+upgrade.
+
+### Migration semantics
+
+Migrating an existing Subscription to flexible billing requires API version
+`2025-06-30.basil` or later and is irreversible. It changes only new activity;
+it does not recalculate existing resources such as pending proration Invoice
+Items. After migration:
+
+- credit prorations use the originally debited amount;
+- usage is charged at the price in effect when reported; and
+- the billing-cycle anchor is never reset automatically.
+
+### Subscription schedules
+
+An active Subscription with a schedule can migrate only through the migrate
+API, not the Dashboard, and the schedule's `billing_mode` updates automatically.
+A schedule that has not started and has no active Subscription must be canceled
+and recreated as flexible. A schedule created with `from_subscription` inherits
+the mode and rejects an explicit `billing_mode`.
 
 ## Billing credits
 
-### Credit Grant lifecycle
+### Scope and invoice eligibility
 
-A Credit Grant progresses through `pending`, `granted`, `depleted`, `expired`, or `voided` states.
+Credit Grants can represent prepaid or promotional credit for the business's
+own products and services. They cannot represent gift cards, stored value,
+third-party payments, or digital-wallet balances.
 
-- Omit `effective_at` to make the grant immediately effective.
-- Set `expires_at` or call the expire endpoint to end remaining credit.
-- Void a grant only if none of it has ever been applied to an Invoice.
-- Once any credit has been applied, expire the remainder instead of voiding it.
+They apply only to metered Subscription Items reported through Meters when all
+of these conditions hold:
 
-### Eligibility and application point
+- Invoice `period_end >= effective_at`;
+- if present, `period_end < expires_at`;
+- currency matches; and
+- balance exists at Invoice finalization.
 
-Billing credits apply only to Subscription Items whose metered Prices report usage through Meters. They do not apply to:
+They do not apply to one-off Invoices, one-time setup items, licensed prices, or
+legacy Usage Records.
 
-- one-off Invoices;
-- one-time Subscription Invoice Items;
-- licensed Prices; or
-- legacy Usage Records.
+### Application order and commitment
 
-The Invoice `period_end` must be within the Credit Grant's effective and expiration window, and currencies must match. Stripe applies the credit after discounts but before taxes and the Customer's `invoice_credit_balance`.
+Credits apply after discounts and before taxes and `invoice_credit_balance`.
+A grant can be scoped to selected metered prices. Allocation on drafts and
+previews is provisional; credit becomes committed only at Invoice finalization.
 
-### Applicability and allocation order
+Allocation follows this order:
 
-- An applicability scope can restrict a grant to selected metered Prices.
-- Across Invoices, the Invoice that finalizes first consumes credit first.
-- Within one Invoice, lines consume credit in displayed order.
-- Competing grants are ordered by lower numeric `priority`, earlier `expires_at`, `promotional` category, earlier `effective_at`, and earlier creation time.
+1. Invoice finalization order.
+2. Line order within an Invoice.
+3. Lower numeric grant priority.
+4. Earlier expiration.
+5. Promotional category.
+6. Earlier effective time.
+7. Earlier creation time.
 
-### Finalization and balance views
+### Grant state and reversals
 
-- Credit is consumed only when an Invoice finalizes. Preview and draft allocations are provisional and can change if another Invoice finalizes first.
-- Shared provisional credit can delay billing-threshold triggers.
-- `ledger_balance` reflects the immutable ledger.
-- `available_balance` also accounts for expired credit and transactions not yet recorded in the ledger.
+Grant states are pending, granted, depleted, expired, and voided. Void a grant
+only before any portion has been applied; otherwise expire its remaining
+credit. Voiding an Invoice restores its applied balance and immediately expires
+that balance if the grant is already past `expires_at`. A Credit Note does not
+restore credit; issue a new grant instead.
 
-### Restoration
+### Ledger balances and the grant limit
 
-- Voiding an Invoice reinstates its applied credit. If the grant is already past `expires_at`, the restored amount expires immediately.
-- A Credit Note does not restore applied billing credit. Issue a new Credit Grant when restoration is required.
+Credit Balance Summary distinguishes available balance from ledger balance.
+The latter is backed by immutable, append-only Credit Balance Transactions.
 
-### Unused-grant limit
-
-A Customer can have at most 100 unused grants. An unvoided, unexpired grant counts when it is pending or has a positive `ledger_balance`. Because counting uses `ledger_balance`, a grant with zero available balance can still count until invoice finalization, depletion, expiration, or voiding.
-
-## Meters, alerts, and test controls
-
-### Billing Alerts and Meter Events v2
-
-In `2024-09-30.acacia`, Billing Alert resources and endpoints add contextual filters, Subscription and Subscription Item support, and triggered-alert events for webhook consumers. Meter Events v2 endpoints are also available.
-
-Meters add a `last` aggregation formula in `2025-03-31.basil`. New webhook types cover Billing Meters and billing credits.
-
-### Test Clocks and Billing Portal
-
-- Advancing `test_helpers.test_clock` accepts `target_frozen_time` (`2024-09-30.acacia`).
-- Test Clock helpers require status details.
-- Billing Portal updates do not have to change Subscription products or Prices.
-
-## Adaptive Pricing subscriptions
-
-Adaptive Pricing Subscriptions expose `presentment_details` in `2026-03-25.dahlia`, extending customer-facing currency presentation data from Checkout to Subscriptions.
+A Customer can have at most 100 unused grants. Count a grant from pending state
+or positive ledger balance, not available balance. A grant reserved on a draft
+Invoice can therefore still count while its available balance is zero.

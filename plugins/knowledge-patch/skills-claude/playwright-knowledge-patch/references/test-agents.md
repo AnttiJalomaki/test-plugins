@@ -1,43 +1,40 @@
 # Built-in Test Agents
 
-## Generate current definitions
+## Generate client definitions
 
-Initialize the three bundled test agents with the loop matching the consuming client:
+Playwright ships planner, generator, and healer definitions. Generate the set
+for the consuming client loop:
 
 ```bash
 npx playwright init-agents --loop=vscode
 ```
 
-The command generates static definitions. Regenerate them after every Playwright upgrade so their instructions and MCP tools match the installed release.
+Choose the corresponding supported loop for VS Code, OpenCode, or another
+supported client integration. The VS Code loop requires VS Code 1.105 or newer.
+Regenerate definitions after every Playwright upgrade so their instructions and
+MCP tools stay synchronized with the installed release.
 
-## Planner, generator, and healer
+## Planner
 
-The workflow splits responsibility among three roles:
+The planner explores the live application and writes a Markdown plan under
+`specs/`. It starts from a seed test so application state and project-specific
+setup are ready before exploration.
 
-1. The planner explores the live application and writes a human-readable Markdown plan under `specs/`.
-2. The generator consumes that plan, verifies locators and assertions against the live application, and writes Playwright tests under `tests/`.
-3. The healer runs a failing test, replays its steps, repairs locators, waits, or data, and reruns until the test passes or guardrails stop it.
+## Generator
 
-If the healer determines that product behavior itself is broken, it can skip the test instead of forcing an artificial passing repair.
+The generator turns a plan into executable tests under `tests/`. It verifies
+selectors and assertions against the application instead of merely copying
+planned text.
 
-## Seed tests
+## Healer
 
-A seed test provides a ready-to-use page and project-specific fixtures. It also serves as the style example for generated tests.
+The healer replays a failure, proposes repairs to locators, waits, or data, and
+reruns until the test passes or its guardrails stop it. It may skip a test when
+the application's behavior itself appears broken.
 
-```ts
-// tests/seed.spec.ts
-import { test } from './fixtures';
+## Seed tests and audit links
 
-test('seed', async ({ page }) => {
-  // Establish the application state used for planning and generation.
-});
-```
-
-Before exploring, the planner runs the seed with global setup, project dependencies, hooks, and fixtures. A plan can begin from the seed or from scratch and can also receive a product-requirements document.
-
-## Plans and generated suites
-
-- Plans are stored in `specs/*.md`.
-- Generated suites are stored in `tests/`.
-- Generated tests align one-to-one with specs where feasible.
-- Generated files retain comments that link each test to its source spec and seed test, preserving an auditable path from intent and setup to implementation.
+A planner seed test supplies the ready-to-use page, fixtures, hooks, global
+setup, and project dependencies. It also serves as the style template for
+generated tests. Generated test comments can link each test back to its source
+plan and seed, preserving the artifact trail from `specs/` to `tests/`.

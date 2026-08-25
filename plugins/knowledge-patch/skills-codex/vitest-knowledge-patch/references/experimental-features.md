@@ -1,22 +1,10 @@
 # Experimental Features
 
-Relevant versioned source batch: `4.1.0`.
-
-## Contents
-
-- [Execute with native Node imports](#execute-with-native-node-imports)
-- [Control the optional native Node loader](#control-the-optional-native-node-loader)
-- [Persist transformed modules between reruns](#persist-transformed-modules-between-reruns)
-- [Instrument runs with OpenTelemetry](#instrument-runs-with-opentelemetry)
-- [Measure import durations](#measure-import-durations)
-- [Replace Git changed-file discovery](#replace-git-changed-file-discovery)
-- [Detect asynchronous resource leaks](#detect-asynchronous-resource-leaks)
-
-Experimental options can change shape or carry substantial performance and compatibility tradeoffs. Enable them for a specific need, and document why the suite relies on them.
+Experimental options can change and may trade compatibility or runtime cost for diagnostics. Enable them narrowly and keep the constraints below with the configuration.
 
 ## Execute with native Node imports
 
-Set `experimental.viteModuleRunner: false` to execute test files, source files, and setup files through native Node imports:
+Set `experimental.viteModuleRunner: false` to execute tests, source, and setup files through native Node imports (4.1.0):
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -30,24 +18,9 @@ export default defineConfig({
 })
 ```
 
-This mode disables the behavior supplied by Vite's module runner, including:
+This disables Vite transforms, plugins, aliases, `import.meta.env`, and Istanbul coverage. Native TypeScript requires Node 22.18+ or 23.6+. Mock and hoist support uses Node's module-loader API and requires Node 22.15+.
 
-- Vite transforms and plugins
-- Vite aliases
-- `import.meta.env`
-- Istanbul coverage
-
-Native TypeScript execution requires Node 22.18 or newer, or Node 23.6 or newer. Supporting `vi.mock` and `vi.hoisted` in this mode relies on Node's module-loader API and requires Node 22.15 or newer.
-
-## Control the optional native Node loader
-
-When `experimental.viteModuleRunner` is `false`, `experimental.nodeLoader` defaults to `true`. The loader supplies transformations needed for:
-
-- `import.meta.vitest`
-- `vi.mock`
-- `vi.hoisted`
-
-Disable it only if the native-import suite uses none of those features and the loader work is unwanted:
+When the Vite module runner is disabled, `experimental.nodeLoader` defaults to `true`. It transforms native execution to support `import.meta.vitest`, `vi.mock`, and `vi.hoisted`. Disable it only when none of those features are used:
 
 ```ts
 export default defineConfig({
@@ -60,13 +33,11 @@ export default defineConfig({
 })
 ```
 
-## Persist transformed modules between reruns
+## Persist transformed modules
 
-`test.experimental.fsModuleCache` stores transformed modules on disk for reuse across reruns. It defaults to `false` and does not affect Browser Mode.
+`test.experimental.fsModuleCache` persists transformed modules between reruns. It defaults to `false`, does not affect Browser Mode, and is cleared by `vitest --clearCache`.
 
 ```ts
-import { defineConfig } from 'vitest/config'
-
 export default defineConfig({
   test: {
     experimental: {
@@ -77,17 +48,13 @@ export default defineConfig({
 })
 ```
 
-`fsModuleCachePath` defaults to `node_modules/.experimental-vitest-cache`. It is independent of both `test.cache.dir` and Vite's `cacheDir`. Clear stored entries with:
+`fsModuleCachePath` defaults to `node_modules/.experimental-vitest-cache` independently of `test.cache.dir` and Vite's `cacheDir`.
 
-```sh
-vitest --clearCache
-```
+Transforms that depend on external state must register `experimental_defineCacheKeyGenerator` from `configureVitest` to prevent stale results. Returning `false` skips caching for a module. Set `api.vitest.experimental.ignoreFsModuleCache` on plugins whose configuration is irrelevant to cache keys.
 
-Transform plugins that depend on external state must participate in cache-key generation or stale transforms can be reused. Register `experimental_defineCacheKeyGenerator` from the plugin's `configureVitest` hook. A generator can return `false` to skip caching a module. A plugin that is irrelevant to transform cache keys can set `api.vitest.experimental.ignoreFsModuleCache`.
+## Instrument with OpenTelemetry
 
-## Instrument runs with OpenTelemetry
-
-`experimental.openTelemetry` loads a configured SDK in the main thread and before every test file:
+`experimental.openTelemetry` loads a configured SDK in the main thread and before each test file. The root-relative `sdkPath` must be directly executable by Node without Vitest transforms and must default-export a started SDK. `browserSdkPath` supplies the browser SDK.
 
 ```ts
 export default defineConfig({
@@ -103,18 +70,11 @@ export default defineConfig({
 })
 ```
 
-The root-relative `sdkPath` must be directly executable by Node without Vitest transforms and must default-export an already-started SDK. `browserSdkPath` supplies the browser-side SDK.
-
-Instrumentation is disabled by default and can add substantial overhead. It is intended primarily for local performance debugging rather than routine suite execution.
+Instrumentation is disabled by default and can add substantial overhead. Use it primarily for local performance debugging.
 
 ## Measure import durations
 
-`experimental.importDurations` records two timings:
-
-- Self time excludes time spent in static imports.
-- Total time includes static-import time but excludes the current module's transform time.
-
-Configure printing, budgets, and thresholds together:
+`experimental.importDurations` records self time excluding static imports and total time including imports but excluding the current module's transform.
 
 ```ts
 export default defineConfig({
@@ -124,27 +84,20 @@ export default defineConfig({
         print: 'on-warn',
         failOnDanger: true,
         limit: 20,
-        thresholds: {
-          warn: 150,
-          danger: 750,
-        },
+        thresholds: { warn: 150, danger: 750 },
       },
     },
   },
 })
 ```
 
-CLI output supports `print: true` and `print: 'on-warn'` with the `default`, `verbose`, and `tree` reporters. The UI can toggle the timing breakdown independently.
+CLI output supports `print: true` or `'on-warn'` with the `default`, `verbose`, and `tree` reporters. The UI toggles the breakdown independently. `failOnDanger` fails the run and forces the breakdown when an import crosses the danger threshold.
 
-`failOnDanger` fails the run when an import exceeds the danger threshold and forces the breakdown to be shown. Defaults are:
+Default thresholds are 100 ms for warnings and 500 ms for danger. `limit` defaults to `0`, or to `10` when printing, failure enforcement, or the UI is enabled.
 
-- Warning threshold: 100 ms
-- Danger threshold: 500 ms
-- `limit`: `0` normally, or `10` when printing, failure enforcement, or the UI is enabled
+## Supply changed files from another VCS
 
-## Replace Git changed-file discovery
-
-`experimental.vcsProvider` replaces the default Git-based file discovery used by `--changed`. Supply an object directly or a module path whose default export implements `findChangedFiles`:
+`experimental.vcsProvider` replaces the default Git-based file discovery behind `--changed`. Supply an object or a module path whose default export implements `findChangedFiles({ root, changedSince })` and returns file paths. `changedSince` can be a string or boolean.
 
 ```ts
 export default defineConfig({
@@ -160,26 +113,14 @@ export default defineConfig({
 })
 ```
 
-`findChangedFiles({ root, changedSince })` returns file paths. `changedSince` is an optional string or boolean.
+This changes test selection for `--changed`; it is separate from `--coverage.changed`, which limits the coverage report.
 
-This changes how `--changed` discovers files; it is separate from `--coverage.changed`, which limits coverage output to modified files while retaining the selected test set.
+## Detect asynchronous leaks
 
-## Detect asynchronous resource leaks
-
-Enable async leak detection temporarily to find leaked timers, handles, and unresolved asynchronous resources with source locations:
+Vitest 4.1.0 can report leaked timers, handles, and unresolved resources with source locations:
 
 ```sh
 vitest --detect-async-leaks
 ```
 
-The equivalent configuration is:
-
-```ts
-export default defineConfig({
-  test: {
-    detectAsyncLeaks: true,
-  },
-})
-```
-
-Leak detection uses `node:async_hooks` and adds runtime overhead, so it is best used as a focused diagnostic rather than left on for every run.
+The equivalent configuration is `test: { detectAsyncLeaks: true }`. Detection uses `node:async_hooks` and adds runtime overhead, so enable it temporarily while diagnosing leaks.

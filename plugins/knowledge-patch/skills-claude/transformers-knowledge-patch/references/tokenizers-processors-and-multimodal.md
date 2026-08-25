@@ -1,151 +1,207 @@
 # Tokenizers, processors, and multimodal inputs
 
-## Migrate tokenizer construction
+## Tokenizer backend and call migration
 
-Transformers 5.0.0 unifies tokenizer implementations behind
-`TokenizersBackend`, `SentencePieceBackend`, `PythonBackend`, or
-`MistralCommonBackend`. `AutoTokenizer.from_pretrained()` still chooses the
-backend automatically. `PythonBackend` replaces the former
-`PreTrainedTokenizer` role for custom Python tokenizers, and
-`PreTrainedTokenizerBase` is the minimal backend-independent API.
+### Unified backends and blank construction (5.0.0)
 
-- A tokenizer backed by `tokenizers` can be constructed blank for training or
-  directly from `vocab` and `merges` (5.0.0).
-- Constructors do not accept a `vocab_file` path. Use `from_pretrained()` for
-  file-based loading (5.0.0).
-- `AutoTokenizer` no longer guesses tokenizer type from a model directory name
-  when config lacks `model_type` as of 5.2.0. Repositories that relied on a
-  substring such as `bert` must declare the model type.
-- A later class-selection change that chose the wrong tokenizer for models such
-  as DeepSeek R1 was reverted in 5.7.0.
-- `PreTrainedTokenizerFast` skips `clean_up_tokenization` for BPE tokenizers as
-  of 5.7.0.
-- DeepSeek OCR automatic tokenizer mapping selects the intended class in 5.8.0.
+Each tokenizer now uses one of `TokenizersBackend`, `SentencePieceBackend`,
+`PythonBackend`, or `MistralCommonBackend`; `AutoTokenizer.from_pretrained()`
+selects it. `PythonBackend` replaces the old `PreTrainedTokenizer` role for
+custom Python tokenizers, while `PreTrainedTokenizerBase` is the minimal
+backend-independent API.
+
+Tokenizers backed by `tokenizers` can be created empty for training or from
+`vocab` and `merges`. Their constructor does not accept `vocab_file`; use
+`from_pretrained` for file-based loading.
 
 ```python
-from transformers import LlamaTokenizer
-
 blank = LlamaTokenizer()
 tokenizer = LlamaTokenizer(vocab=vocab, merges=merges)
 ```
 
-## Migrate tokenizer calls and subclass contracts
+### Calls, decoding, and chat-template returns (5.0.0)
 
-- `encode_plus()` is deprecated in 5.0.0; call the tokenizer.
-- `decode()` handles single and batched inputs in 5.0.0, so a batched value does
-  not require `batch_decode()`.
-- `apply_chat_template()` returns `BatchEncoding` in 5.0.0. Select fields such
-  as `input_ids`; do not assume a raw tensor or list of token IDs.
-- `sanitize_special_tokens()` and base-class target-mode helpers including
-  `as_target_tokenizer()` were removed in 5.0.0. Use `text_target=`.
-- `prepare_seq2seq_batch()` is deprecated and `BatchEncoding.words()` is
-  replaced by `word_ids()` in 5.0.0.
-- Custom tokenizer subclasses no longer inherit working base implementations of
-  `create_token_type_ids_from_sequences`, `prepare_for_model`,
-  `build_inputs_with_special_tokens`, or `truncate_sequences` in 5.0.0.
-  Implement them or use `PythonBackend`.
-- `Siglip2Tokenizer` enforces the preprocessing defaults used during training
-  as of 5.1.0.
+Call a tokenizer directly instead of using deprecated `encode_plus`. `decode`
+accepts single and batched inputs, so `batch_decode` is not required.
+`apply_chat_template` returns a `BatchEncoding`; select `input_ids` or another
+field instead of treating its result as a tensor or token-ID list.
 
 ```python
-encoded = tokenizer(["hello", "world"])
-texts = tokenizer.decode(encoded["input_ids"])
 chat = tokenizer.apply_chat_template(messages, return_tensors="pt")
 input_ids = chat["input_ids"]
+```
 
-model_inputs = tokenizer(
-    source_texts,
-    text_target=target_texts,
-    max_length=128,
-    return_tensors="pt",
-)
+### Target encoding and subclass contracts (5.0.0)
+
+`sanitize_special_tokens()` and target-mode helpers such as
+`as_target_tokenizer()` were removed. Use `text_target`; treat
+`prepare_seq2seq_batch()` as deprecated and replace `BatchEncoding.words()`
+with `word_ids()`.
+
+```python
+model_inputs = tokenizer(source_texts, text_target=target_texts)
 model_inputs["labels"] = model_inputs.pop("input_ids_target")
 ```
 
-## Save special tokens and templates
+Custom tokenizer subclasses must implement
+`create_token_type_ids_from_sequences`, `prepare_for_model`,
+`build_inputs_with_special_tokens`, and `truncate_sequences`, or inherit the
+behavior through `PythonBackend`; the base implementations are gone.
 
-- New tokenizer saves consolidate named special tokens into
-  `tokenizer_config.json` and added tokens into `tokenizer.json` beginning in
-  5.0.0. Older `special_tokens_map.json` and `added_tokens.json` remain readable
-  but are no longer written.
-- `special_tokens_map` contains only named attributes. Put additional values in
-  `extra_special_tokens`; `additional_special_tokens` is converted for
-  compatibility, and extended special-token accessors were removed (5.0.0).
-- Multiple raw chat-template files can be saved and loaded as of 4.52.1.
-- `apply_chat_template()` can prefill custom fields such as
-  `reasoning_content` and `thinking` as of 5.9.0.
-- `Trainer` synchronizes special-token settings from the tokenizer into model
-  configuration at training time as of 4.56.0.
+### Serialization and special-token layout (5.0.0)
 
-## Build multimodal chat content
+New saves put named special tokens in `tokenizer_config.json` and added tokens
+in `tokenizer.json`. Older `special_tokens_map.json` and `added_tokens.json` are
+still read but no longer written. `special_tokens_map` contains named
+attributes only; put extra tokens in `extra_special_tokens`.
+`additional_special_tokens` is converted for compatibility, and extended
+special-token accessors were removed.
 
-- Chat templates can load audio from video inputs in 4.51.0.
-- `apply_chat_template()` accepts in-memory video values, not only paths and
-  URLs, in 4.55.0.
-- `ProcessorMixin.apply_chat_template()` correctly loads PIL image inputs in
-  4.57.0.
-- OpenAI-style `image_url` content entries are accepted by
-  `apply_chat_template()` as of 5.2.0.
-- `make_batched_video()` accepts five-dimensional arrays in 5.1.0.
-- Multimodal callers can pass `mm_token_type` as non-padded lists in 5.4.0.
-- The standard embedding input name is plural `inputs_embeds` in 5.2.0; rename
-  integrations that still accept `input_embeds`.
-- Vision-language models share a Qwen2-VL-derived 3D position-ID interface from
-  5.3.0. Update custom processors or code that builds position IDs manually for
-  affected Ernie and GLM4V models.
+### Type inference and selection (5.2.0, 5.7.0, 5.8.0)
 
-## Select and extend image/video processors
+`AutoTokenizer` no longer infers a type from substrings such as `bert` in a
+directory name when configuration lacks `model_type`; old repositories must
+declare it. A later class-selection change that chose the wrong tokenizer for
+models such as DeepSeek R1 was reverted. Automatic DeepSeek OCR loading now
+selects its intended tokenizer class.
 
-- Most vision and vision-language models gain torch/torchvision-backed fast
-  processors for CPU and CUDA in 4.52.1.
-- Fast processors expand to SuperPoint, SegFormer, Janus, DeepSeek-VL, and
-  DeepSeek-VL Hybrid in 4.55.0.
-- Video processors are separate classes beginning in 4.52.1.
-- In 5.4.0, separate `BaseImageProcessor` and `BaseImageProcessorFast` classes
-  are replaced by one backend architecture. The
-  `image_processing_utils_fast` module is removed; custom processors migrate to
-  `image_processing_utils`.
-- `AutoProcessor.from_pretrained()` forwards Hub keyword arguments as of 5.4.0
-  rather than silently discarding them.
-- PIL-backed image processors no longer incorrectly require `torchvision` in
-  5.5.0, so PIL-only preprocessing works without that dependency.
+### Tokenizer cleanup behavior (5.4.0, 5.7.0)
 
-## Respect model-specific preprocessing
+Llama 3 conversion sets `clean_up_tokenization_spaces=False`.
+`PreTrainedTokenizerFast` skips `clean_up_tokenization` for BPE tokenizers.
 
-- `Dinov2ForImageClassification` handles checkpoints with register tokens
-  correctly as of 4.52.1.
-- PerceptionLM receives video input and preprocesses non-tiled images correctly
-  in 4.56.0. The same release repairs Fuyu image inference, Qwen-VL video beam
-  search, LLaVA-OneVision batch inference, and tensor-device placement for
-  Idefics2, Idefics3, and SmolVLM.
-- Image-text inference supports batch sizes above one in 4.57.0.
-- `WhisperFeatureExtractor` keeps `input_features` and `attention_mask` at
-  consistent lengths in 4.57.0.
-- Fast `center_crop` matches the slow implementation as of 4.57.0.
-- LFM2-VL preserves native image resolution through 512×512 without forced
-  upscaling or aspect-ratio distortion. Larger inputs are divided into 512×512
-  patches, and the 1.6B model also gets a global thumbnail (4.57.0).
-- `BeitImageProcessorFast.reduce_label` returns `labels`, not `label`, and Janus
-  resizing rounds dimensions rather than truncating them in 5.1.0.
-- `Llava-OneVision` accepts `image_sizes` in 5.1.0.
+## Reproducibility and tokenizer-aware training
 
-### Gemma 4 image budget
+### Whole-word masking (4.51.0)
 
-Gemma 4's processor in 5.5.0 preserves aspect ratio while targeting one of 70,
-140, 280, 560, or 1,120 soft tokens per image; 280 is the default. Total pixels
-must fit the selected patch budget, and processed height and width must each be
-divisible by 48.
+`DataCollatorForWholeWordMask` accepts a seed, making random masking
+reproducible.
 
-Do not apply ordinary ImageNet mean/std normalization. Gemma 4 patch embeddings
-perform their final scaling to `[-1, 1]` internally.
+### Training-time special tokens (4.56.0)
 
-### Full versus pooled text embeddings
+`Trainer` aligns special-token settings in the model configuration with the
+tokenizer at training time.
 
-`text_embeds` for SAM3, EdgeTAM, and SAM3-Lite-Text expects full text embeddings
-as of 5.9.0. Callers that pass pooler output must switch to the unpooled
-sequence representation.
+### Model-specific preprocessing defaults (5.1.0)
 
-## Make masking reproducible
+`Siglip2Tokenizer` enforces the text preprocessing used during training.
+`BeitConfig.segmentation_indices` migrated to `out_indices`, and
+`BeitImageProcessorFast.reduce_label` returns `labels`, not `label`.
 
-`DataCollatorForWholeWordMask` accepts a seed in 4.51.0. Set it explicitly when
-tests or training restarts require identical random whole-word masks.
+## Processor architecture
+
+### Fast processors (4.52.1, 4.55.0)
+
+Most vision and vision-language families can use torch/torchvision functional
+fast image processors on CPU or CUDA. Fast implementations expanded to
+SuperPoint, SegFormer, Janus, DeepSeek-VL, and DeepSeek-VL Hybrid in 4.55.0.
+
+### Separate video processors and templates (4.52.1)
+
+Video processors are separate classes. Saving and loading multiple raw chat
+template files is supported. `Dinov2ForImageClassification` correctly handles
+checkpoints with register tokens.
+
+### Unified image-processor backend (5.4.0)
+
+The split between `BaseImageProcessor` and `BaseImageProcessorFast` was
+replaced by one backend architecture. `image_processing_utils_fast` was
+removed; import from `image_processing_utils` and update custom processors.
+
+### PIL-only and CUDA interpolation behavior (5.5.0, 5.15.1)
+
+PIL-backed processors can run without `torchvision`. On CUDA, requested Lanczos
+interpolation falls back to bicubic, so accelerator output can differ from CPU
+Lanczos preprocessing.
+
+## Chat, embedding, and multimodal input contracts
+
+### Audio and video chat inputs (4.51.0, 4.55.0)
+
+Chat templates can load audio from video input. `apply_chat_template` accepts
+in-memory videos as well as paths and URLs.
+
+### OpenAI-style image entries (5.2.0)
+
+`apply_chat_template` accepts content entries using the `image_url` form.
+
+### Custom field prefilling (5.9.0)
+
+Chat templates can prefill custom fields such as `reasoning_content` and
+`thinking`.
+
+### Standard plural embedding argument (5.2.0)
+
+Model inputs use `inputs_embeds`; rename integrations that pass the singular
+`input_embeds`.
+
+```python
+outputs = model(inputs_embeds=embeddings)
+```
+
+### Multimodal position IDs (5.3.0)
+
+Vision-language models use a shared Qwen2-VL-derived interface for 3D position
+IDs. Update custom processors and manual position-ID code for affected models,
+including Ernie and GLM4V.
+
+### Token types and nested language embeddings (5.4.0, 5.9.0)
+
+Multimodal inputs may supply `mm_token_type` as non-padded lists. Generic
+`get_input_embeddings` and `set_input_embeddings` now find a multimodal
+model's nested `language_model` component.
+
+### SAM3-family text embeddings (5.9.0)
+
+`text_embeds` for SAM3, EdgeTAM, and SAM3-Lite-Text means full text embeddings,
+not pooler output. Update callers that pass pooled representations.
+
+### Private helper removal (5.15.1)
+
+Do not call private multimodal processor helpers such as `_is_url` or
+`_build_image_tokens`; they were removed. Use public processor and chat-template
+inputs.
+
+## Image, video, and audio behavior
+
+### Pipeline post-processing and speech dithering (4.50.0)
+
+The `image-text-to-text` pipeline accepts post-processing keyword arguments.
+`Speech2TextFeatureExtractor` exposes dithering.
+
+### Gemma 3n image prompt (4.53.0)
+
+The `image-text-to-text` pipeline can pair an image URL with text containing
+`<image_soft_token>` for Gemma 3n.
+
+### Video and batch correctness (4.56.0, 4.57.0)
+
+PerceptionLM receives video and correctly preprocesses non-tiled images. Fixes
+also cover Fuyu image inference, Qwen-VL video beam search, LLaVA-OneVision
+batch inference, and tensor devices in Idefics2, Idefics3, and SmolVLM.
+Image-text inference supports batches larger than one, and
+`ProcessorMixin.apply_chat_template` correctly loads PIL images.
+
+`WhisperFeatureExtractor` keeps `input_features` and `attention_mask` lengths
+consistent, and fast `center_crop` matches the slow path.
+
+### Model-specific processor changes (5.1.0)
+
+Janus resizing rounds dimensions instead of truncating them, so small numeric
+differences are expected. LLaVA-OneVision accepts `image_sizes`, GLM-Image can
+batch more than one image, `Sam3VideoModel` can disable its progress bar, and
+`make_batched_video` handles five-dimensional arrays. `CLIPOutput` includes
+attentions, and Flash Attention utilities accept one-dimensional `position_ids`.
+
+### Gemma 4 fixed-budget preprocessing (5.5.0)
+
+The processor preserves aspect ratio and targets 70, 140, 280, 560, or 1,120
+soft tokens per image; 280 is the default. Pixels must fit the selected patch
+budget, and processed height and width must both be divisible by 48. Do not
+apply ImageNet mean/std normalization: patch embedding performs final scaling
+to `[-1, 1]` internally.
+
+### Result-affecting vision correction (5.6.0)
+
+Qwen2.5-VL no longer applies temporal RoPE scaling to still images. Re-baseline
+affected outputs after upgrading.

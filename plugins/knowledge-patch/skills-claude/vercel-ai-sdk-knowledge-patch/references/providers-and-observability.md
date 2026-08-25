@@ -1,104 +1,100 @@
-# Providers, telemetry, and observability
+# Providers, Telemetry, and Observability
 
-## Provider capability additions
+## Provider capabilities added in 4.0
 
-The `4.0.0` provider updates added:
+Provider support includes these additions from 4.0.0:
 
-- Cohere v2 and Cohere tool calling;
-- OpenAI predicted outputs and prompt caching;
+- Cohere v2 and tool calling.
+- OpenAI predicted outputs and prompt caching.
 - Google Generative AI and Google Vertex AI fine-tuned models, schemas, tool choice,
-  and frequency penalty;
-- Google Vertex AI text embeddings; and
-- Amazon Titan embeddings through Amazon Bedrock.
+  and frequency penalty.
+- Google Vertex AI text embeddings.
+- Amazon Titan embeddings through Bedrock.
 
-These are provider capabilities, not guarantees of identical behavior across every
-model. Keep provider package versions compatible with the core package and pass
-provider-specific options when the portable surface does not express a feature.
+## Provider integrations added in 4.1
 
-## Provider integrations
+Version 4.1.0 adds a dedicated OpenAI-compatible provider and first-party integrations
+for Replicate, Fireworks, Together AI, DeepInfra, DeepSeek, and Cerebras. Google Vertex
+AI 2.0 adds search grounding, and the OpenAI provider supports the then-latest reasoning
+models.
 
-The `4.1.0` line added a dedicated OpenAI-compatible provider and first-party
-integrations for:
+## Anthropic computer-use tools
 
-- Replicate;
-- Fireworks;
-- Together AI;
-- DeepInfra;
-- DeepSeek; and
-- Cerebras.
-
-Google Vertex AI 2.0 added search grounding, and the OpenAI provider added support for
-newer reasoning models. An OpenAI-compatible endpoint can share a protocol shape
-without sharing every native OpenAI behavior, so test streaming, tools, structured
-output, usage, and error mapping against the actual endpoint.
-
-## Portable reasoning control
-
-`generateText` and `streamText` accept a top-level `reasoning` value that maps to each
-provider's native reasoning controls:
+The Anthropic provider supplies versioned Computer, Text Editor, and Bash tools for
+Claude 3.5 Sonnet. The application must implement each tool's `execute` behavior.
+Convert results to text or image content with `experimental_toToolResultContent`, use
+`maxSteps` for multi-action runs, and isolate this beta capability from sensitive data,
+preferably in a virtual machine. (since 4.0.0)
 
 ```ts
+const computer = anthropic.tools.computer_20241022({
+  displayWidthPx: 1920,
+  displayHeightPx: 1080,
+  execute: async ({ action, coordinate, text }) =>
+    action === 'screenshot'
+      ? { type: 'image', data: getScreenshot() }
+      : executeComputerAction(action, coordinate, text),
+  experimental_toToolResultContent: result =>
+    typeof result === 'string'
+      ? [{ type: 'text', text: result }]
+      : [{ type: 'image', data: result.data, mimeType: 'image/png' }],
+});
+
 await generateText({
-  model,
-  prompt,
-  reasoning: 'high',
+  model: anthropic('claude-3-5-sonnet-20241022'),
+  prompt: 'Move the cursor to the center and take a screenshot.',
+  tools: { computer },
+  maxSteps: 10,
 });
 ```
 
-Use top-level `reasoning` when the application needs portable intent. Keep
-`providerOptions` for settings that have no portable equivalent or require exact
-provider semantics.
+## Portable and provider-native reasoning controls
 
-## Global telemetry (`2026-07`)
-
-`registerTelemetry` installs a process-level integration for:
-
-- model calls;
-- generation steps;
-- tool calls;
-- embeddings;
-- reranking; and
-- agents.
-
-OpenTelemetry support lives in `@ai-sdk/otel`:
+`generateText` and `streamText` accept top-level `reasoning`, which maps to native
+provider reasoning controls. Keep `providerOptions` when the application needs a
+provider-specific setting that the portable option does not expose. (since 2026-07)
 
 ```ts
-import { OpenTelemetry } from '@ai-sdk/otel';
-import { generateText, registerTelemetry } from 'ai';
+await generateText({ model, prompt, reasoning: 'high' });
+```
 
+## Global telemetry
+
+Register one global integration with `registerTelemetry` for model calls, steps, tools,
+embeddings, reranking, and agents. OpenTelemetry support lives in `@ai-sdk/otel`.
+Runtime and tool context is excluded unless explicitly selected; export only safe
+fields. (since 2026-07)
+
+```ts
 registerTelemetry(new OpenTelemetry());
 
 await generateText({
   model,
   prompt,
-  runtimeContext: {
-    userId: 'user_123',
-  },
+  runtimeContext: { userId: 'user_123' },
   telemetry: {
     functionId: 'research-agent',
-    includeRuntimeContext: {
-      userId: true,
-    },
-  },
-  onStepEnd({ stepNumber, usage }) {
-    recordStep(stepNumber, usage);
+    includeRuntimeContext: { userId: true },
   },
 });
 ```
 
-Runtime context and tool context are excluded from telemetry unless explicitly
-selected. This is a data-boundary feature: opt in only the fields that are safe and
-useful to export. Never assume that placing secrets in scoped context automatically
-makes every custom instrumentation integration safe; audit the integration too.
+## Lifecycle and tracing events
 
-## Lifecycle callbacks and tracing-channel events
+Use portable `onStart`, `onStepEnd`, and `onEnd` hooks for call lifecycle handling.
+Instrumentation packages can instead subscribe to structured events on the Node.js
+`ai:telemetry` tracing channel. Telemetry covers model, step, tool, embedding,
+reranking, and agent operations. (since 2026-07)
 
-Calls expose consistent `onStart`, `onStepEnd`, and `onEnd` lifecycle hooks for
-operation-level and step-level observation. Use these stable hooks for application
-metrics, usage recording, and cleanup.
+Language-model-call end callbacks and their telemetry spans expose provider metadata.
+(since 2026-08)
 
-Instrumentation packages can also subscribe to structured events through the Node.js
-`ai:telemetry` tracing channel. Prefer that channel for reusable instrumentation that
-must observe SDK activity without wrapping each call. Keep observer failure isolated
-from application correctness, and redact prompt, context, tool input, and output data
-according to the application's privacy policy.
+## Cartesia audio models
+
+The Cartesia provider supports Sonic 3.5 speech generation, Ink-Whisper batch
+transcription, and Ink 2 realtime transcription. (since 2026-08)
+
+## Batch APIs
+
+Batch APIs are available across the core, provider, gateway, and provider-utility
+layers. (since 2026-08)

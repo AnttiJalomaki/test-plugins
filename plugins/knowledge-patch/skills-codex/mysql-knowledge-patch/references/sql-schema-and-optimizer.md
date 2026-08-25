@@ -1,17 +1,13 @@
 # SQL, Schema, and Optimizer
 
-Use this reference for generated keys, `ALTER TABLE`, stored-program syntax,
-collation resolution, subquery rewrites, EXPLAIN parsing, temporal values,
-grouping, and optimizer selection.
+## Keys and DDL algorithms
 
-## Keys and DDL
+### Primary-key equivalents (9.7.0)
 
-### `UNIQUE NOT NULL` is a primary-key equivalent
-
-For `CREATE` and `ALTER` in batch 9.7.0, a `UNIQUE NOT NULL` key counts as a
-primary-key equivalent. It prevents an extra generated invisible primary key
-when `sql_generate_invisible_primary_key=ON` and satisfies
-`sql_require_primary_key=ON`.
+For both `CREATE` and `ALTER`, a `UNIQUE NOT NULL` key is a primary-key
+equivalent. It satisfies `sql_require_primary_key=ON` and prevents creation of an
+extra generated invisible primary key when
+`sql_generate_invisible_primary_key=ON`.
 
 ```sql
 CREATE TABLE events (
@@ -20,82 +16,85 @@ CREATE TABLE events (
 );
 ```
 
-### Empty-table column changes prefer INPLACE
+### Empty InnoDB tables (9.2-9.3)
 
-For an empty InnoDB table in batch 9.2-9.3, `ALTER TABLE ... ADD COLUMN` and
-`DROP COLUMN` choose `INPLACE` rather than `INSTANT` by default. This avoids
-incrementing the row version. Specify an algorithm only when the deployment
-requires a particular execution path.
+On an empty InnoDB table, `ALTER TABLE ... ADD COLUMN` and `DROP COLUMN` choose
+`INPLACE`, rather than `INSTANT`, by default. This avoids incrementing the row
+version. Request an algorithm explicitly when automation requires one.
 
-### `BINLOG` is no longer an unquoted label
+## Parser and expression compatibility
 
-`BINLOG` cannot be used as an unquoted label in a stored program in batch
-9.2-9.3. Quote or rename affected labels before upgrade:
+### Stored-program labels (9.2-9.3)
 
-```sql
-label_loop: LOOP
-  LEAVE label_loop;
-END LOOP;
-```
+`BINLOG` cannot be an unquoted label in a stored program. Quote or rename affected
+labels before upgrading.
 
-## Expression and query semantics
+### `IFNULL()` collation resolution (9.4-9.6)
 
-### `IFNULL()` collation resolution
+The `NONE` derivation is weaker than every other collation derivation, so the
+other operand determines comparison collation in expressions such as
+`IFNULL(...) LIKE ...` instead of raising `ER_CANT_AGGREGATE_2COLLATIONS`.
+Aggregation considers only collations tied at the highest strength, and the old
+`IGNORABLE` derivation is named `NULL`.
 
-In batch 9.4-9.6, the `NONE` collation derivation is weaker than every other
-derivation. The other operand therefore determines comparison collation in
-expressions such as `IFNULL(...) LIKE ...`, instead of raising
-`ER_CANT_AGGREGATE_2COLLATIONS`.
+### Temporal values over the binary protocol (9.4-9.6)
 
-Collation aggregation considers only collations tied at the highest strength,
-and the former `IGNORABLE` derivation is renamed `NULL`.
+Invalid temporal values sent through the binary protocol are rejected even when
+SQL mode is non-strict; they are no longer silently adjusted.
 
-### More quantified subqueries become derived tables
+### `GROUPING()` use (9.4-9.6)
 
-With `subquery_to_derived` enabled in batch 9.2-9.3, derived-table
-transformations cover:
+`GROUPING()` is valid in queries that do not use `ROLLUP`.
 
-- `>`, `>=`, `<`, and `<=` with `ANY`;
-- the same operators with `ALL`;
-- the existing `=ANY`; and
-- the existing `<>ALL`.
+### Keyword changes (9.7.2)
 
-The transformation can apply in both `SELECT` and `WHERE`.
+`CUBE`, `EXTERNAL`, `QUALIFY`, and `TABLESAMPLE` are reserved keywords. Quote or
+rename identifiers using them. `MANUAL` and `PARALLEL` are recognized as
+non-reserved keywords.
 
-### `GROUPING()` no longer requires `ROLLUP`
+## Subqueries and optimizer selection
 
-`GROUPING()` is permitted in queries without `ROLLUP` in batch 9.4-9.6. SQL
-generators do not need to add a synthetic rollup merely to call the function.
+### Quantified comparisons (9.2-9.3)
 
-### Binary-protocol temporal values are validated
+With `subquery_to_derived` enabled, derived-table transformation covers `>`,
+`>=`, `<`, and `<=` combined with `ANY` or `ALL`, in addition to `=ANY` and
+`<>ALL`. It can apply in both `SELECT` and `WHERE`.
 
-Invalid temporal values received through the binary protocol are rejected even
-in non-strict SQL mode in batch 9.4-9.6. A client can no longer depend on silent
-adjustment simply because the session is non-strict.
+### Hypergraph Optimizer (9.7.0)
 
-## EXPLAIN output contracts
-
-### JSON format version 2
-
-With `explain_json_format_version=2`, JSON EXPLAIN in batch 9.2-9.3:
-
-- identifies schema `2.0`;
-- leaves only query attributes at the top level; and
-- adds `lookup_references` for index lookups.
-
-Version 1 output remains unchanged. In batch 9.4-9.6, `explain_format` defaults
-to `TREE` and `explain_json_format_version` defaults to version `2`. Pin formats
-in machine consumers and update JSON decoders before accepting the defaults.
-
-## Hypergraph Optimizer
-
-The Hypergraph Optimizer is available in Community Edition in batch 9.7.0. It
-can be selected at session, global, persisted, startup, or per-statement scope.
-For a session:
+The Hypergraph Optimizer is available in Community Edition. Select it at session,
+global, persisted, startup, or per-statement scope. For example:
 
 ```sql
 SET optimizer_switch='hypergraph_optimizer=on';
 ```
 
-Measure plan and execution changes at the same scope at which the optimizer will
-be enabled. Option Tracker distinguishes usage of both optimizer types.
+## EXPLAIN contracts
+
+### JSON format version 2 (9.2-9.3)
+
+When `explain_json_format_version=2`, JSON EXPLAIN identifies schema `2.0`, keeps
+only query attributes at the top level, and adds `lookup_references` for index
+lookups. Version 1 output is unchanged.
+
+### New default formats (9.4-9.6)
+
+`explain_format` defaults to `TREE`, and `explain_json_format_version` defaults to
+`2`. Update parsers and snapshot tests that assumed traditional or JSON v1
+output.
+
+## Spatial JSON output
+
+### CRS preservation (9.4-9.6)
+
+Implicit geometry-to-JSON conversion adds a `crs` member so spatial-reference
+information survives in JSON Duality Views. `ST_AsGeoJSON()` options `2` and `4`
+always include a CRS URN.
+
+## Foreign-key execution
+
+### SQL-layer enforcement (9.4-9.6)
+
+Foreign-key constraints and cascades run in the SQL layer, making their changes
+fully visible in the binary log and replication. Use the startup option
+`innodb_native_foreign_keys` to retain InnoDB-native handling.

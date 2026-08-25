@@ -1,163 +1,141 @@
 # Architecture and rendering
 
-## Repository and release boundaries
+Use this reference for core ownership, threading, tile preparation, drawable
+construction, backend support, Linux source builds, and render-fixture tests.
 
-The C++ core lives under `include/mbgl` and `src/mbgl`
-(`core-architecture`). Android reaches it through JNI, iOS through the shared
-Objective-C++ Darwin layer, and Node distributes it as
-`@maplibre/maplibre-gl-native`. Part of the Qt binding lives in the separate
-`maplibre-native-qt` repository.
+## Repository and product boundaries (`core-architecture`)
 
-Android, iOS, Node, and Qt have separate release streams. There is no single
-public C++ core version that identifies all platform releases.
+The C++ core lives under `include/mbgl` and `src/mbgl`. Android reaches it
+through JNI, iOS through the shared Objective-C++ Darwin layer, and Node ships
+it as `@maplibre/maplibre-gl-native`. Part of the Qt binding is maintained in
+the separate `maplibre-native-qt` repository.
 
-Android and iOS use semantic versioning but have no fixed release cadence or
-LTS releases. To backport a fix, request an older-series branch, then submit
-the fix and changelog change to a branch named `platform-x.x.x`, such as
-`android-10.x.x`. After it merges, a release is attempted. Changes to the
-release workflow may also need backporting.
+Android, iOS, Node, and Qt release independently. There is no single public
+C++ core version that identifies all four platform releases.
 
-## Build-time platform composition
+CMake covers platform builds. Bazel is also used for iOS and several core
+desktop targets. A build selects the renderer backend and compiles it together
+with the platform wrapper; they are not independently interchangeable runtime
+components.
 
-CMake covers platform builds; Bazel is also used for iOS and several core
-desktop targets (`core-architecture`). The build selects the renderer
-backend. The platform wrapper and core renderer are compiled together rather
-than combined as independently interchangeable runtime components.
+## Map views, observers, and render handoff
 
-## Map views and observers
+### View and observer responsibilities (`core-architecture`)
 
 A platform Map View owns viewport and map configuration but has no rendering
-capability itself (`core-architecture`). Map observers handle configuration
-and lifecycle changes including style, camera, idle, and render
-start/completion. Rendering observers handle frame-level events, and
-rendering events can propagate to map observers.
+capability itself. Map observers receive configuration and lifecycle changes,
+including style, camera, idle, and render start/completion events. Rendering
+observers receive frame-level events, which can propagate to map observers.
 
-On Android, the Java Map View initializes the device renderer and a JNI-backed
-native Map View peer (`render-pipeline`). The peer wraps the generic Map
-component. Its native `MapRenderer` actor passes platform rendering events to
-the core renderer.
+### Android-to-core handoff (`render-pipeline`)
+
+The Android Java Map View initializes the device renderer and a JNI-backed
+native Map View peer. That peer wraps the generic Map component. The native
+`MapRenderer` actor carries platform rendering events to the core renderer.
 
 `Transform` stores the combined global camera and viewport state; it does not
-represent one operation. Observer notifications allow the renderer to derive
-rotation, pitch, projection, resize, and camera transforms.
+represent one transformation operation. Observer notifications let the
+renderer derive rotation, pitch, projection, resize, and camera transforms.
 
-## Actor and render threading
+## Threading and tile workers
+
+### Actor and render threading (`core-architecture`)
 
 Core rendering work crosses threads as immutable actor messages, including
-callable messages delivered through typed mailboxes (`core-architecture`).
-A worker pool prepares tiles while one render loop draws the currently
-available state.
+callable messages delivered through typed mailboxes. A worker pool prepares
+tiles while one render loop draws the currently available state. iOS runs that
+loop on the UI thread. Android uses a separate `GLSurfaceView` `GLThread` and
+batches UI changes for it. Each platform supplies the core concurrency
+primitives.
 
-iOS runs the render loop on the UI thread. Android uses a separate
-`GLSurfaceView` `GLThread` and batches UI changes for it. Each platform
-provides the core concurrency primitives.
+### Worker type contracts (`core-architecture`)
 
-## Tile-worker contracts
+Geometry, raster, and elevation tile workers do not share a worker base class.
+Their matching tile types instead derive from the common `Tile` base. A worker
+is an actor accepting its matching tile type. Its messages may execute on any
+thread, but only one thread may process a given worker instance at a time.
 
-Geometry, raster, and elevation workers do not inherit from a shared worker
-base (`core-architecture`). Their corresponding tile types inherit from the
-common `Tile` base. A worker is an actor that accepts its matching tile type.
-Messages may run on any thread, provided only one thread processes a given
-worker instance at a time.
+### Geometry work coalescing (`render-pipeline`)
 
-## Glyph atlas
+Work is queued per unique geometry tile. Updates received during parsing or
+layout are folded into the newest combined state for the next pass rather than
+replaying every intermediate camera state.
 
-Glyphs are 24-pixel signed-distance-field bitmaps in a texture atlas packed in
-a protobuf container (`core-architecture`). Pixels inside an outline have
-values `192`–`255`; outside pixels have values `0`–`191`. This shared atlas
-allows GPU resizing, rotation, and halo rendering.
+Parsing discovers required glyphs and images. Dependency arrivals can move a
+worker through `NeedsSymbolLayout` or `NeedsParse`. Finalization waits for both
+parsing and symbol dependencies before emitting geometry, resource references,
+and collision metadata.
 
-## Tile cover and render-tree construction
+## Tile cover and render-tree construction (`render-pipeline`)
 
-For a tile source, `RenderSource::update` produces the tile pyramid selected
-by the viewport's tile cover (`render-pipeline`). The render orchestrator
-builds an ordered render tree from render layers, render sources, and
-atlas-backed items but does not draw the tree itself.
+For a tile source, `RenderSource::update` builds the tile pyramid selected by
+the viewport's tile cover. The render orchestrator then creates an ordered
+render tree from render layers, render sources, and atlas-backed items; it does
+not draw that tree itself. Dirty tile or style state is updated while unchanged
+tiles remain reusable.
 
-Unchanged tiles remain reusable. Dirty tile or style state is updated.
+The preparation path loads style resources, TileJSON, tiles, glyphs, and
+sprites through the file source and cache, then parses and lays out source data
+layer by layer on workers. Prepared buckets become drawables and are uploaded
+through backend-specific resource builders. Descriptions that end at OpenGL
+buffers predate this abstraction: OpenGL ES, Metal, and Vulkan consume the same
+higher-level prepared tile state.
 
-## Geometry-tile coalescing
+## Glyph atlas (`core-architecture`)
 
-Work is queued per unique geometry tile (`render-pipeline`). Updates arriving
-during parsing or layout are folded into the latest combined state for the
-next pass instead of replaying every intermediate camera state.
+Glyphs are delivered as 24-pixel signed-distance-field bitmaps in a texture
+atlas packed in a protobuf container. Pixels inside an outline use values
+`192`–`255`; outside pixels use `0`–`191`. The GPU can resize and rotate glyphs
+and render halos from the shared atlas.
 
-Parsing discovers needed glyphs and images. When dependencies arrive, the
-worker may enter `NeedsSymbolLayout` or `NeedsParse`. Finalization waits for
-parsing and symbol dependencies before emitting geometry, resource
-references, and collision metadata.
+## Drawables and backend builders (`render-pipeline`)
 
-## Prepared tiles and backend resources
+Layers feed shader selection, attribute arrays, uniforms or uniform structs,
+and geometry into a backend-specific Builder, which emits Drawables. Shared
+Drawable state owns cross-backend concerns such as transitions and tile
+tracking. Backend subclasses own upload and binding, direct or indirect draws,
+per-frame updates, and resource teardown.
 
-Preparation loads style resources, TileJSON, tiles, glyphs, and sprites
-through the file source and cache (`render-pipeline`). Workers parse and lay
-out source data layer by layer.
+## Shader and render-pass design (`render-pipeline`)
 
-Prepared buckets become drawables and are uploaded through backend-specific
-resource builders. Descriptions that end the pipeline at OpenGL buffers
-predate this abstraction; OpenGL ES, Metal, and Vulkan consume the same
-higher-level tile state.
+The modular renderer design replaces opaque per-program handling with a
+generic shader representation and a thread-safe registry keyed by well-known
+names. Its contract supports:
 
-## Drawable and Builder boundary
+- shader source or references to precompiled shaders;
+- named uniforms or uniform structs;
+- calculation shaders; and
+- adding or replacing a shader before a layer requests it.
 
-Layers provide shader selection, attribute arrays, uniforms or uniform
-structs, and geometry to a backend-specific Builder (`render-pipeline`). The
-Builder emits Drawables.
+These are architectural requirements, not a promise that every platform's
+public API exposes each operation.
 
-Shared Drawable state handles cross-backend concerns such as transitions and
-tile tracking. Backend subclasses own upload and binding, direct or indirect
-drawing, per-frame updates, and resource teardown.
+The same design calls for named, ordered render passes whose outputs may feed
+later passes; empty passes are omitted. Offscreen targets carry size and
+bit-depth settings, allow geometry to choose targets, and support querying or
+snapshotting. Snapshots use callbacks after drawing completes so a
+non-OpenGL backend need not stall the render flow.
 
-## Shader modularization contract
+## Stable backend matrix (`rendering-platforms`)
 
-The accepted renderer design uses a generic shader representation and a
-thread-safe registry keyed by well-known names (`render-pipeline`). The
-contract supports:
-
-- shader source or references to precompiled shaders
-- named uniforms or uniform structs
-- calculation shaders
-- adding or replacing a shader before a layer requests it
-
-These are architectural requirements, not a promise that every operation is
-available through every platform's public API.
-
-## Render passes and offscreen targets
-
-The modularization design calls for named, ordered passes whose outputs can
-feed later passes; empty passes are omitted (`render-pipeline`).
-
-Offscreen targets carry size and bit-depth settings, allow geometry to choose
-targets, and support querying or snapshotting. Snapshots use callbacks after
-drawing completes so non-OpenGL backends do not have to stall render flow.
-
-## Stable backend matrix
-
-Backend support is platform-specific (`rendering-platforms`):
-
-| Backend | Stable platforms and constraints |
+| Backend | Stable targets and qualifications |
 | --- | --- |
-| OpenGL ES 3 | Android, Linux, Windows, Linux/Windows Node, and Qt 3; stable Qt 3 supports only OpenGL |
+| OpenGL ES 3 | Android, Linux, Windows, Linux/Windows Node, and Qt 3; Qt 3 supports only OpenGL |
 | Vulkan | Android and Linux; macOS has a CMake route through MoltenVK |
-| Metal | Stable default and recommended iOS backend; used by macOS Node since Node 6.0 |
+| Metal | Stable default and recommended backend on iOS; used by macOS Node since Node 6.0 |
 | WebGPU | Experimental |
 
-## Source-build backend selection
-
-Android source builds provide `opengl` and `vulkan` Gradle flavors
-(`rendering-platforms`). They set `MLN_WITH_OPENGL=ON` and
-`MLN_WITH_VULKAN=ON`, respectively. A repository checkout defaults to the
-broad-compatibility OpenGL flavor. iOS selects Metal through CMake or Bazel
+Android source builds expose `opengl` and `vulkan` Gradle flavors, setting
+`MLN_WITH_OPENGL=ON` or `MLN_WITH_VULKAN=ON`. The checkout's
+broad-compatibility default is OpenGL. iOS selects Metal in its CMake or Bazel
 configuration.
 
-## Linux OpenGL development build
+## Linux OpenGL development build (`rendering-platforms`)
 
-On Ubuntu 22.04 or later, clone submodules and use the `linux-opengl` preset
-(`rendering-platforms`). It builds GLFW development tools and can produce
-static libraries for other C++ projects.
-
-The preset defaults to Wayland and therefore also needs
-`libegl1-mesa-dev`. `libsqlite3-dev` is optional because SQLite may be
+On Ubuntu 22.04 or later, clone submodules and use the `linux-opengl` preset.
+It builds GLFW development tools and can emit static libraries for other C++
+projects. The preset defaults to Wayland and therefore needs
+`libegl1-mesa-dev`. `libsqlite3-dev` is optional because SQLite can be
 vendored.
 
 ```bash
@@ -169,31 +147,38 @@ cmake --preset linux-opengl
 cmake --build build-linux-opengl --target mbgl-render
 ```
 
-## Linux image rendering
+## Linux image rendering (`rendering-platforms`)
 
-`mbgl-render` accepts a style URL or file and writes a PNG
-(`rendering-platforms`). A local style may address an MBTiles database with
-an absolute `mbtiles:///path/to/data.mbtiles` source URL.
+`mbgl-render` accepts a style URL or file and writes a PNG. In a local style,
+address an MBTiles database with an absolute
+`mbtiles:///path/to/data.mbtiles` source URL.
 
 ```bash
 ./build-linux-opengl/bin/mbgl-render --style style.json --output out.png
 ```
 
 On a remote or containerized host without an X display, install `xvfb` and
-`xauth`, then run the renderer through a virtual display:
+`xauth`, then use a virtual display:
 
 ```bash
 xvfb-run -a ./build-linux-opengl/bin/mbgl-render --style style.json --output out.png
 ```
 
-## Linux render fixtures
+## Linux render-fixture runner (`rendering-platforms`)
 
-Linux render tests compare each fixture's rendered PNG with `expected.png`
-and leave `actual.png` and `diff.png` beside it (`rendering-platforms`). They
-also generate an HTML summary next to the manifest. Run the whole manifest or
-select fixtures with `--filter`:
+The runner compares each fixture's rendered PNG with `expected.png`, leaves
+`actual.png` and `diff.png` beside it, and writes an HTML summary next to the
+manifest. Run the full manifest or narrow it with `--filter`:
 
 ```bash
 ./build-linux-opengl/mbgl-render-test-runner --manifestPath metrics/linux-clang8-release-style.json
 ./build-linux-opengl/mbgl-render-test-runner --manifestPath metrics/linux-clang8-release-style.json --filter "render-tests/fill-visibility/visible"
 ```
+
+## Release and backport policy (`core-architecture`)
+
+Android and iOS use semantic versioning but have no fixed release cadence or
+LTS releases. For an older-series backport, request the branch, then submit the
+fix and changelog update to a branch named `platform-x.x.x`, for example
+`android-10.x.x`. A release is attempted after merge. Release-workflow changes
+may themselves need backporting for the older branch to publish successfully.

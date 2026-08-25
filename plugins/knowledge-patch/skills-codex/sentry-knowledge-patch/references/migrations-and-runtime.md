@@ -1,102 +1,127 @@
 # Migrations and runtime compatibility
 
-Use this reference for dependency upgrades, removed APIs, renamed integrations,
-runtime support, session behavior, and low-level extension points.
+## Runtime, language, browser, and framework floors
 
-## Runtime and dependency compatibility (9.0.0-guide)
+For the `9.0.0-guide` migration, SDK packages may contain ES2020. Node.js
+packages require Node.js 18.0.0, except the ESM-only Astro, Nuxt, and SvelteKit
+SDKs, which require 18.19.1. Deno 2.0 and TypeScript 5.0.4 are the other runtime
+and language floors.
 
-- SDK packages may contain ES2020. General Node.js support starts at 18.0.0;
-  the ESM-only Astro, Nuxt, and SvelteKit SDKs start at Node.js 18.19.1. Deno
-  starts at 2.0 and TypeScript at 5.0.4.
-- Native browser support starts at Chrome/Edge 80, Safari 14, iOS Safari 14.4,
-  Firefox 74, Opera 67, and Samsung Internet 13. Transpile the SDK for older
-  targets.
-- Support is dropped for Remix 1.x, TanStack Router 1.63.0 and lower,
-  SvelteKit 1.x, Ember 3.x and lower, and Prisma 5.x.
-- Use Lambda layer `SentryNodeServerlessSDKv9` for v9. The v8 update line uses
-  `SentryNodeServerlessSDKv8`.
-- Import `@sentry/deno` through npm:
+Native browser support starts at Chrome and Edge 80, Safari 14, iOS Safari
+14.4, Firefox 74, Opera 67, and Samsung Internet 13. Transpile the SDK when
+older targets are required.
+
+Support is dropped for Remix 1.x, TanStack Router 1.63.0 and lower, SvelteKit
+1.x, Ember 3.x and lower, and Prisma 5.x.
+
+## Serverless layer names
+
+The v9 AWS Lambda layer is `SentryNodeServerlessSDKv9`; updates remaining on v8
+use `SentryNodeServerlessSDKv8` (`9.0.0-guide`). The v10 layer is
+`SentryNodeServerlessSDKv10` and is unified for ESM and CommonJS deployments
+(`10.0.0`).
+
+## Package and primary API removals
+
+As of `9.0.0-guide`, `@sentry/utils` is not published and `@sentry/types` is
+deprecated. Their remaining exports move to `@sentry/core`. The metrics API,
+`getCurrentHub()`, `Hub`, and `getCurrentHubShim()` are removed. Replace
+`debugIntegration` with send hooks and `sessionTimingIntegration` with explicit
+event context.
+
+The `9.0.0` core also removes `TransactionNamingScheme`, `arrayify()`,
+`flatten()`, `getDomElement()`, `makeFifoCache()`, `memoBuilder`, `urlEncode()`,
+the deprecated `Request` type, and `validSeverityLevels`. React removes
+`getNumberOfUrlSegments()`, Next.js removes `experimental_captureRequestError`,
+and the `nitro-utils` package is dropped.
+
+`recordDroppedEvent()` no longer accepts an event argument, and
+`hasTracingEnabled()` is renamed to `hasSpansEnabled()`. The `shutdownTimeout`
+option type moves from core to Node. The `Scope` type interface becomes the
+`Scope` class, and React `ErrorBoundary` changes the type of `componentStack`.
+
+## Client and logger internals
+
+During the v9 migration, custom clients must extend `BaseClient`
+(`9.0.0-guide`). In v10, `BaseClient` is removed, so custom clients use `Client`
+directly (`10.0.0-guide`). This is a version succession rather than an
+interchangeable choice.
+
+The internal `logger` value and `Logger` type are removed in favor of `debug`
+and `SentryDebugLogger` (`10.0.0-guide`). These changes do not remove the public
+structured logging API documented separately.
+
+## Low-level extension API migrations
+
+For `9.0.0-guide` custom extensions:
+
+- Include `sampleRand` in custom propagation contexts.
+- Replace `spanId` with optional `propagationSpanId`.
+- Enrich requests with `httpRequestToRequestData()` and assign its result to
+  `event.request`.
+- Replace `generatePropagationContext()` with `generateTraceId()`.
+- Use the literal `"baggage"` instead of `BAGGAGE_HEADER_NAME`.
+- Replace `IntegrationClass` with `Integration` or `IntegrationFn`.
+- Extend `BaseClient` only while targeting the v9 client API; use `Client`
+  directly after moving to v10.
+
+## OpenTelemetry setup and compatibility
+
+`addOpenTelemetryInstrumentation()` is removed in `9.0.0-guide`. Supply custom
+instrumentation at initialization:
+
+```js
+Sentry.init({
+  openTelemetryInstrumentations: [new GenericPoolInstrumentation()],
+});
+```
+
+`skipOpenTelemetrySetup: true` also configures `httpIntegration({ spans: false
+})` by default. `registerEsmLoaderHooks` accepts only a boolean or `undefined`
+and defaults to wrapping modules used by OpenTelemetry instrumentation.
+
+Node-based v10 SDKs move to OpenTelemetry 2.x/0.20x dependencies and current
+instrumentation releases (`10.0.0-guide`). Projects unable to use OpenTelemetry
+2 must stay on Sentry v9 or use `@sentry/node-core`, whose peer ranges are
+wider. V10 remains compatible with Sentry self-hosted 24.4.2 and newer.
+
+## Prisma instrumentation
+
+The bundled `prismaIntegration` targets Prisma 6 and drops Prisma 5 support in
+`9.0.0-guide`. Prisma 6 does not require the `tracing` preview feature. To
+instrument a different version, install its matching `@prisma/instrumentation`,
+pass a `PrismaInstrumentation` through `prismaInstrumentation`, and retain
+`previewFeatures = ["tracing"]` for pre-v6 Prisma when required.
+
+```js
+Sentry.init({
+  integrations: [
+    Sentry.prismaIntegration({
+      prismaInstrumentation: new PrismaInstrumentation(),
+    }),
+  ],
+});
+```
+
+## Renamed Node.js integrations
+
+In `9.0.0-guide`, `processThreadBreadcrumbIntegration` becomes
+`childProcessIntegration`, and its integration name changes from
+`ProcessAndThreadBreadcrumbs` to `ChildProcess`. `vercelAIIntegration` changes
+its name from `vercelAI` to `VercelAI`. Update integration-name filters as well
+as factory calls.
+
+## Deno distribution
+
+`@sentry/deno` is no longer published on `deno.land` (`9.0.0-guide`). Import it
+from npm:
 
 ```js
 import * as Sentry from "npm:@sentry/deno";
 ```
 
-## Packages, core APIs, and integrations (9.0.0-guide)
+## Protocol and peer support additions
 
-- `@sentry/utils` is no longer published. `@sentry/types` is deprecated. Move
-  their remaining exports to `@sentry/core`.
-- Remove uses of the metrics API, `getCurrentHub()`, `Hub`, and
-  `getCurrentHubShim()`.
-- Replace `debugIntegration` with send hooks. Replace
-  `sessionTimingIntegration` with explicit event context.
-- Rename `processThreadBreadcrumbIntegration` to `childProcessIntegration`.
-  Its integration name also changes from `ProcessAndThreadBreadcrumbs` to
-  `ChildProcess`; update integration-name filters.
-- The `vercelAIIntegration` integration name changes from `vercelAI` to
-  `VercelAI`; update name-based filtering.
-
-## Session tracking and selection
-
-`autoSessionTracking` is removed (9.0.0-guide). Use the integration matching
-the session kind:
-
-- Browser sessions: `browserSessionIntegration`.
-- Server request sessions: `httpIntegration`.
-- Node.js process sessions: the default `processSessionIntegration`.
-- To disable browser sessions, remove `browserSessionIntegration`.
-- To disable server request sessions, configure
-  `httpIntegration({ trackIncomingRequestsAsSessions: false })`.
-
-Core always selects the session on the isolation scope (9.0.0). When more than
-one scope carries session state, do not assume a current-scope session wins.
-
-## Low-level extensions (9.0.0-guide)
-
-- Include `sampleRand` in custom propagation contexts. Replace `spanId` with
-  the optional `propagationSpanId`.
-- Enrich requests with `httpRequestToRequestData()` and assign its result to
-  `event.request`.
-- Replace `generatePropagationContext()` with `generateTraceId()`.
-- Replace `BAGGAGE_HEADER_NAME` with the literal header name `"baggage"`.
-- In v9 custom clients extend `BaseClient`.
-- Replace `IntegrationClass` with `Integration` or `IntegrationFn`.
-
-## Remaining v9 API and type changes (9.0.0)
-
-- Core removes `TransactionNamingScheme`, `arrayify()`, `flatten()`,
-  `getDomElement()`, `makeFifoCache()`, `memoBuilder`, `urlEncode()`, the
-  deprecated `Request` type, and `validSeverityLevels`.
-- React removes `getNumberOfUrlSegments()`.
-- Next.js removes `experimental_captureRequestError`.
-- `recordDroppedEvent()` no longer accepts an event argument.
-- Rename `hasTracingEnabled()` to `hasSpansEnabled()`.
-- The `shutdownTimeout` option type moves from core to Node.
-- The `Scope` interface is replaced by the `Scope` class.
-- React's `ErrorBoundary` changes its `componentStack` type.
-- The `nitro-utils` package is dropped.
-
-## Core migration to v10 (10.0.0-guide)
-
-- `BaseClient` is removed. Custom clients must use `Client` directly. This
-  supersedes the v9 instruction to extend `BaseClient`.
-- The `logger` value and `Logger` type are removed. Use `debug` and
-  `SentryDebugLogger`.
-- Move `_experiments.enableLogs` and `_experiments.beforeSendLog` to the
-  top-level initialization options `enableLogs` and `beforeSendLog`.
-- Remove Replay's `_experiments.autoFlushOnFeedback`; feedback now triggers a
-  replay flush by default.
-- Browser SDKs no longer report First Input Delay. Replace FID processing,
-  filters, alerts, and dashboards with Interaction to Next Paint equivalents
-  where appropriate.
-
-## Packaging and runtime behavior in v10 (10.0.0)
-
-- Sentry SDK bundler plugins move to their v4 major line. Update pins and
-  direct plugin consumers for that major-version boundary.
-- Use the unified `SentryNodeServerlessSDKv10` AWS Lambda layer for ESM and
-  CommonJS.
-- Unified serverless detection recognizes Cloud Run and applies relevant
-  serverless behavior automatically.
-- Cloudflare Workflow instrumentation accepts non-UUID instance IDs. Durable
-  Object instrumentation preserves synchronous methods instead of converting
-  them to asynchronous methods.
+Core supports stable MCP SDK v2 in `10.69.0-10.70.0`. Solid and SolidStart
+support `@solidjs/router` v1, Gatsby permits React 19 in its peer dependency
+range, and the SvelteKit worker entry point exports `metrics`.

@@ -2,7 +2,7 @@
   "patch": "rabbitmq-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T13:28:49Z",
+  "built_at": "2026-08-21T22:34:08Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -38,6 +38,11 @@
       "build": "included"
     },
     "4.3.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.3.5": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

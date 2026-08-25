@@ -1,73 +1,60 @@
 # Storage, SQL, and recovery
 
-## Use the SQLite and synchronous KV surfaces
+## Exhaust SQL cursors before `await`
 
-A SQLite-backed object's private database is available through
-`ctx.storage.sql`. The backend also exposes synchronous KV operations through
-`ctx.storage.kv`: `get`, `put`, `delete`, and `list` return immediately rather
-than promises.
+A `SqlStorageCursor` is not a stable snapshot across an `await`. If iteration
+resumes after the object yields, it can observe later mutations, including
+writes made in a later implicit transaction that ultimately rolls back.
+Materialize the result synchronously before yielding.
 
 ```ts
-this.ctx.storage.kv.put("profile:42", { name: "Ada" });
-const profile = this.ctx.storage.kv.get("profile:42");
+const rows = this.ctx.storage.sql.exec("SELECT * FROM users").toArray();
+await fetch("https://example.com", {
+  method: "POST",
+  body: JSON.stringify(rows),
+});
 ```
 
-`list()` returns key-value pairs in UTF-8 key order. It supports inclusive
-`start`, exclusive `startAfter` and `end`, plus `prefix`, `reverse`, and
-`limit`. An unbounded call loads every result into memory.
+## `exec()` and cursor semantics
 
-Embedded SQLite includes FTS5 and `fts5vocab`, JSON functions and operators,
-and math functions.
+One `exec()` call may contain semicolon-separated statements, but parameter
+bindings apply only to the last statement and the returned cursor represents
+only that statement. The cursor's object iterator and `raw()` iterator consume
+the same position. `one()` throws unless the result has exactly one row.
 
-## Consume SQL cursors before yielding
+## Transactions use storage callbacks
 
-A `SqlStorageCursor` is not a stable snapshot across an `await`. Resumed
-iteration may observe later mutations, including writes made in a later
-implicit transaction that eventually rolls back. Materialize results
-synchronously before yielding.
-
-```ts
-const rows = this.ctx.storage.sql.exec(
-  "SELECT * FROM users",
-).toArray();
-await sendRows(rows);
-```
-
-One `exec()` call may contain semicolon-separated statements. Bindings apply
-only to the last statement, and the returned cursor represents only that
-statement. The cursor and its `raw()` iterator share and consume one position.
-`one()` throws unless exactly one row is returned.
-
-## Use storage transaction callbacks
-
-`sql.exec()` rejects transaction statements such as `BEGIN TRANSACTION` and
-`SAVEPOINT`. Use `transactionSync()` for synchronous SQL or KV work. Its
-callback must not return a promise, its return value passes through, and an
-exception rolls back the transaction.
+`sql.exec()` rejects transaction-control statements such as `BEGIN TRANSACTION`
+and `SAVEPOINT`. Use `transactionSync()` for synchronous SQL or synchronous KV
+operations. Its callback must not return a promise; its value becomes the
+transaction's return value, and a thrown exception rolls the transaction back.
 
 ```ts
-const result = this.ctx.storage.transactionSync(() => {
+this.ctx.storage.transactionSync(() => {
   this.ctx.storage.sql.exec(
     "UPDATE counters SET value = value + 1 WHERE id = ?",
     counterId,
   );
-  return "updated";
 });
 ```
 
-For a SQLite-backed object, direct `ctx.storage` operations, including SQL
-queries, participate in `transaction()`. The older `txn` wrapper is obsolete
-for this backend.
+For SQLite-backed objects, direct `ctx.storage` operations—including SQL
+queries—participate in `transaction()`. The older `txn` wrapper is obsolete on
+this backend.
 
-## Restore the full database with PITR
+## Embedded SQLite extensions
 
-Point-in-time recovery bookmarks cover the entire SQLite database, including
-values written through the KV API. A bookmark can target approximately any
-time in the preceding 30 days.
+The private database supports FTS5, including `fts5vocab`, as well as SQLite's
+JSON functions and operators and math functions. These can be called directly
+from the object's SQL.
 
-`onNextSessionRestoreBookmark()` schedules an exact restore for the next
-restart and returns a pre-restore bookmark that can undo it. Bookmark strings
-compare chronologically using ordinary lexical comparison.
+## Point-in-time recovery
+
+PITR bookmarks cover the whole SQLite database, including values written using
+the KV API. A bookmark can target approximately any point in the previous 30
+days. `onNextSessionRestoreBookmark()` schedules an exact restore for the next
+session and returns a pre-restore bookmark that can reverse it. Ordinary lexical
+string comparison orders bookmarks chronologically.
 
 ```ts
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -82,16 +69,22 @@ PITR is unavailable in local development. `ctx.abort()` forcibly resets the
 object and logs an uncatchable error carrying its optional message; it is also
 unavailable under `wrangler dev`.
 
-## Reset storage and alarms deliberately
+## Synchronous KV on SQLite
 
-With compatibility date `2026-02-24` or later, `ctx.storage.deleteAll()`
-deletes both stored data and the alarm on KV- and SQLite-backed objects. A
-separate `deleteAlarm()` is unnecessary at those dates. Earlier compatibility
-dates still require it for a complete reset.
+`ctx.storage.kv` supplies immediate `get`, `put`, `delete`, and `list` methods
+without promises. `list()` returns key-value pairs ordered by UTF-8 key bytes.
+Its bounds are inclusive `start`, exclusive `startAfter` and `end`, plus
+`prefix`, `reverse`, and `limit`. An unbounded list loads every matching value
+into memory, so apply a limit for large keyspaces.
 
-## Call the Worker's own exports through the context
+```ts
+this.ctx.storage.kv.put("profile:42", { name: "Ada" });
+const profile = this.ctx.storage.kv.get("profile:42");
+```
 
-`ctx.exports` contains loopback bindings to the Worker's top-level exports and
-has the same semantics as `ExecutionContext.ctx.exports`. Do not confuse this
-runtime property with the deployment-time class lifecycle map also named
-`exports`.
+## Loopback Worker exports
+
+`ctx.exports` exposes loopback bindings to the Worker's own top-level exports
+with the same semantics as `ExecutionContext.ctx.exports`. Do not confuse this
+runtime property with Wrangler's deployment-time Durable Object lifecycle map,
+which is also named `exports`.

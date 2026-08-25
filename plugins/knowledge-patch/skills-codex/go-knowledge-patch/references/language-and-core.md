@@ -1,72 +1,44 @@
 # Language and Core Library
 
-Batch coverage: `1.23-guide`, `1.23.0`, `1.24.0`, `1.25.0`, `1.26.0`.
+## Iteration and templates
 
-## Contents
+### Function-range iterator protocol (`1.23-guide`)
 
-- [Function iterators](#function-iterators)
-- [Templates](#templates)
-- [Language changes](#language-changes)
-- [Errors and reflection](#errors-and-reflection)
-- [Parsing and matching](#parsing-and-matching)
+`for range` accepts functions of the forms `func(func() bool)`,
+`func(func(V) bool)`, and `func(func(K, V) bool)`. The iterator calls its
+`yield` argument for each item and must stop as soon as `yield` returns false;
+an early loop exit makes the compiler-provided `yield` return false.
 
-## Function iterators
+The `iter` package names the one- and two-value forms `iter.Seq[V]` and
+`iter.Seq2[K, V]`; there is no `Seq0`. Container APIs conventionally expose an
+`All` method returning one of these types.
 
-### Push-iterator protocol
+### Converting push iterators to pull iterators (`1.23-guide`)
 
-A `for range` loop over a function accepts exactly these iterator shapes:
+`iter.Pull` converts an `iter.Seq[V]` into `next func() (V, bool)` and a
+`stop` function, which is especially useful when consuming sequences in
+lockstep. Call `stop` whenever consumption can end before `next` reports false;
+deferring it unconditionally is the simplest safe pattern.
 
-```go
-func(func() bool)
-func(func(V) bool)
-func(func(K, V) bool)
-```
+### Iterator APIs in `slices` and `maps` (`1.23-guide`)
 
-The iterator calls `yield` for every item and must stop when it returns false. An early loop exit causes the compiler-provided `yield` to return false.
+`slices` provides `All`, `Values`, `Collect`, `AppendSeq`, `Backward`,
+`Sorted`, `SortedFunc`, `SortedStableFunc`, and `Chunk` for iterator production
+and consumption. `maps` provides iterator-based `All`, `Keys`, `Values`,
+`Collect`, and `Insert`. For example, `slices.Sorted(maps.Keys(m))` collects a
+map's keys into a sorted slice.
 
-The `iter` package names the one- and two-value forms `iter.Seq[V]` and `iter.Seq2[K, V]`; there is no `Seq0`. Container APIs conventionally expose an `All` method:
+### Enabling the language feature (`1.23-guide`)
 
-```go
-func (s *Set[E]) All() iter.Seq[E] {
-	return func(yield func(E) bool) {
-		for value := range s.m {
-			if !yield(value) {
-				return
-			}
-		}
-	}
-}
+Range over functions requires language version 1.23 or later. Update the module
+with `go get go@1.23`, change only its directive with
+`go mod edit -go=1.23`, or isolate the syntax in a file guarded by
+`//go:build go1.23`.
 
-for value := range set.All() {
-	fmt.Println(value)
-}
-```
+### Template `else with` (`1.23.0`)
 
-Range-over-function syntax requires language version 1.23 or later. Select it with `go get go@1.23`, change only the directive with `go mod edit -go=1.23`, or isolate the syntax in a file guarded by `//go:build go1.23`.
-
-### Pull iteration
-
-`iter.Pull` converts `iter.Seq[V]` to `next func() (V, bool)` and a `stop` function, which is useful for consuming multiple sequences in lockstep. Call `stop` whenever iteration might end before `next` returns false; unconditional `defer` is the simplest safe pattern.
-
-```go
-next, stop := iter.Pull(seq)
-defer stop()
-for value, ok := next(); ok; value, ok = next() {
-	use(value)
-}
-```
-
-### `slices` and `maps`
-
-Use the iterator-aware `slices` APIs `All`, `Values`, `Collect`, `AppendSeq`, `Backward`, `Sorted`, `SortedFunc`, `SortedStableFunc`, and `Chunk`. Use `maps.All`, `Keys`, `Values`, `Collect`, and `Insert` for map iteration and collection.
-
-```go
-keys := slices.Sorted(maps.Keys(m))
-```
-
-## Templates
-
-`text/template` accepts `else with`, avoiding a nested fallback `with`:
+`text/template` accepts `else with`, avoiding a nested `with` when selecting a
+fallback value:
 
 ```gotemplate
 {{with .Primary}}
@@ -78,21 +50,32 @@ keys := slices.Sorted(maps.Keys(m))
 {{end}}
 ```
 
-Template `range` also accepts iterator functions and integer values.
+### Iterator ranges in templates (`1.24.0`)
 
-## Language changes
+`text/template` accepts `range` over iterator functions and integer values.
 
-### Initialized pointers with `new`
+### Reflection iterators (`1.26.0`)
 
-The built-in `new` accepts an expression and returns a pointer to a new variable initialized with that expression's value. Use it for optional pointer fields without a temporary.
+`reflect.Type` has `Fields`, `Methods`, `Ins`, and `Outs` iterators.
+`reflect.Value` has `Fields` and `Methods`; value iteration yields both field
+or method metadata and its corresponding `Value`.
+
+## Generics, expressions, and literals
+
+### Initialized pointers with `new` (`1.26.0`)
+
+`new` accepts an expression and returns a pointer to a new variable initialized
+with that value. This makes optional pointer fields possible without a
+temporary:
 
 ```go
 person := Person{Age: new(yearsSince(born))}
 ```
 
-### Self-referential generic constraints
+### Self-referential generic constraints (`1.26.0`)
 
-A generic type may refer to itself in its own type-parameter list, enabling F-bounded interfaces:
+A generic type may refer to itself in its own type-parameter list, permitting
+F-bounded constraints:
 
 ```go
 type Adder[A Adder[A]] interface {
@@ -100,19 +83,54 @@ type Adder[A Adder[A]] interface {
 }
 ```
 
-### Immediate nil-pointer checks
+### Generic methods (`1.27.0`)
 
-Nil checks that had been delayed by compiler behavior now occur at the dereference point required by the language. Code that dereferences a possibly nil result before checking its accompanying error can therefore panic earlier. Check the error immediately after the call.
+Methods on non-parameterized receiver types may declare their own type
+parameters. Methods on parameterized types still cannot add type parameters,
+and generic methods cannot implement interface methods.
 
-## Errors and reflection
+```go
+type Store struct{}
 
-### Wrapped `driver.Valuer` errors
+func (Store) Identity[T any](value T) T { return value }
+```
 
-`DB.Query`, `DB.Exec`, and `DB.QueryRow` wrap errors returned by `database/sql/driver.Valuer`. Use `errors.Is` or `errors.As` to inspect the original cause.
+### Broader struct-literal keys (`1.27.0`)
 
-### Type-safe wrapped-error extraction
+A struct literal key may use any field selector valid for the struct type, not
+only a directly declared top-level field.
 
-`errors.AsType[E]` is a generic form of `errors.As` that returns the matched value and a boolean.
+### Function-value type inference (`1.27.0`)
+
+Type inference applies whenever a generic function is assigned or converted to
+a matching function type:
+
+```go
+func identity[T any](value T) T { return value }
+var intIdentity func(int) int = identity
+```
+
+## Errors, time, and cancellation
+
+### Wrapped `driver.Valuer` errors (`1.23.0`)
+
+Errors returned by `database/sql/driver.Valuer` are wrapped by `DB.Query`,
+`DB.Exec`, and `DB.QueryRow`, so callers can inspect the original cause with
+`errors.Is` or `errors.As`.
+
+### Strict time-zone offsets (`1.23.0`)
+
+`time.Parse` and `time.ParseInLocation` reject out-of-range time-zone offsets.
+
+### Immediate nil-pointer checks (`1.25.0`)
+
+Dereferencing a possibly nil result before checking its accompanying error now
+panics at the dereference, as the language requires, correcting delayed checks
+present since 1.21. Check the error immediately after the call.
+
+### Type-safe error extraction (`1.26.0`)
+
+`errors.AsType[E]` returns a type-safe matched error value and a boolean:
 
 ```go
 if pathErr, ok := errors.AsType[*os.PathError](err); ok {
@@ -120,16 +138,44 @@ if pathErr, ok := errors.AsType[*os.PathError](err); ok {
 }
 ```
 
-### Reflection iterators
+### Signal cancellation causes (`1.26.0`)
 
-`reflect.Type` provides `Fields`, `Methods`, `Ins`, and `Outs` iterators. `reflect.Value` provides `Fields` and `Methods`; value iteration yields both field or method metadata and the corresponding `Value`.
+`signal.NotifyContext` records an error identifying the received signal as the
+context's cancellation cause, available through `context.Cause`.
 
-## Parsing and matching
+## Source analysis and generated positions
 
-### Time-zone offsets
+### Source-analysis APIs (`1.25.0`)
 
-`time.Parse` and `time.ParseInLocation` reject time-zone offsets that are out of range rather than accepting them.
+`ast.PreorderStack` traverses with the enclosing-node stack,
+`token.FileSet.AddExistingFiles` assembles a set from existing files, and
+`types.Var.Kind` plus `types.LookupSelection` expose variable classification
+and selections. AST package-merging APIs and `parser.ParseDir` are deprecated.
 
-### Unicode categories in regular expressions
+### Source-tooling APIs and literal positions (`1.26.0`)
 
-`regexp/syntax` recognizes `Any`, `ASCII`, `Assigned`, `Cn`, `LC`, and long category aliases. Category names are case-insensitive and ignore spaces, underscores, and hyphens. `unicode.CategoryAliases` exposes the aliases, and category `C` now includes the exposed unassigned-code-point category `Cn`.
+`ast.ParseDirective` parses conventional comments such as `//go:generate`, and
+`token.File.End` returns a file's end position. `ast.BasicLit.ValueEnd` records
+the exact literal end; tools changing `ValuePos` must also update or clear
+`ValueEnd` to avoid formatting differences.
+
+### Relative `//line` paths (`1.27.0`)
+
+Relative filenames in `//line` and `/*line*/` directives resolve against the
+directory containing the directive's source file. Generators should make paths
+relative to the generated source file's directory.
+
+## Regular expressions and Unicode
+
+### Unicode category matching (`1.25.0`)
+
+`regexp/syntax` accepts `Any`, `ASCII`, `Assigned`, `Cn`, `LC`, and long
+category aliases. Names are matched case-insensitively while spaces,
+underscores, and hyphens are ignored. `unicode.CategoryAliases` exposes aliases,
+and category `C` includes the newly exposed unassigned-code-point category
+`Cn`.
+
+### Unicode 17 (`1.27.0`)
+
+The `unicode` package and system-wide Unicode support use Unicode 17 rather
+than Unicode 15.

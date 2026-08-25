@@ -1,45 +1,27 @@
 # Platform Products and Operations
 
-## Contents
-
-- [Admin Portal](#admin-portal)
-- [Connect](#connect)
-- [MCP authorization](#mcp-authorization)
-- [WorkOS CLI](#workos-cli)
-- [Pipes](#pipes)
-- [Radar](#radar)
-- [Vault BYOK](#vault-byok)
-- [Audit Logs and log streaming](#audit-logs-and-log-streaming)
-- [Organization API keys](#organization-api-keys)
-- [Stripe Seat Sync](#stripe-seat-sync)
-- [Email delivery and suppression](#email-delivery-and-suppression)
-- [AuthKit analytics](#authkit-analytics)
-
-## Admin Portal
-
-Admin Portal supports a BYOK intent. Use it when directing an administrator into
-customer-managed key configuration.
+Use this reference to select and integrate Connect, MCP, CLI authentication,
+Pipes, Radar, Vault BYOK, Audit Logs, email delivery, analytics, Stripe, and
+Agents.
 
 ## Connect
 
-Connect authorization can let a user select an organization. Connect also
-supports:
+Connect applications can let users select an organization during
+authorization. Connect supports JWT templates for MCP and OAuth applications
+and Client ID Metadata Documents for MCP clients.
 
-- JWT templates for MCP and OAuth applications; and
-- Client ID Metadata Documents for MCP clients.
+The Node SDK has a Connect module. Automatic pagination accepts pagination
+options and serializes them when following pages.
 
 ## MCP authorization
 
-Choose among the MCP-oriented products according to the surrounding
-authentication architecture:
-
-- Use AuthKit to authorize MCP servers.
-- Use Standalone OAuth to add OAuth to a server that retains its existing
-  authentication.
-- Use Pipes MCP as a deployable MCP server that grants time-limited access to
+- AuthKit can authorize an MCP server with hosted user authentication.
+- Standalone OAuth adds OAuth to a server that keeps its existing
+  authentication system.
+- Pipes MCP is a deployable MCP server that grants time-limited access to
   third-party data connections.
 
-## WorkOS CLI
+## WorkOS CLI and command-line authentication
 
 Bootstrap an AuthKit integration with:
 
@@ -47,65 +29,62 @@ Bootstrap an AuthKit integration with:
 npx workos@latest
 ```
 
-AuthKit also supports secure authentication for users of command-line
-applications.
+AuthKit can also authenticate users of command-line applications. Use the
+public-client PKCE flow and retain the verifier in secure storage across
+process restarts.
 
 ## Pipes
 
-Use Pipes to let application users connect third-party accounts. Supported
-connections include:
+Pipes lets application users connect accounts from Asana, Box, Dropbox, Front,
+GitLab, HelpScout, HubSpot, Intercom, Jira, and Sentry.
 
-- Asana;
-- Box;
-- Dropbox;
-- Front;
-- GitLab;
-- HelpScout;
-- HubSpot;
-- Intercom;
-- Jira; and
-- Sentry.
+The SDK additions attributed to `10.10.0` add Pipes API-key installation plus
+Data Integration operations and models.
 
-## Radar
+## Radar and headless AuthKit
 
-Use Radar signup controls to:
+Radar can block disposable email services and traffic from selected countries
+or regions. It can challenge suspicious signups by SMS.
 
-- block disposable email services;
-- block traffic from selected countries or regions; and
-- challenge suspicious signups by SMS.
+The Node SDK exposes Radar, includes Radar fields on headless AuthKit methods,
+supports completing challenges, and returns typed challenge errors.
 
-## Vault BYOK
+## Vault and BYOK
 
-WorkOS Vault accepts customer-managed encryption keys from AWS KMS and Azure Key
-Vault.
+Vault supports customer-managed encryption keys from AWS KMS and Azure Key
+Vault. Admin Portal provides a BYOK intent.
+
+In Node SDK v10, object listing returns auto-paginatable object summaries and
+generated key and object response fields use camelCase. Vault also supports
+rekeying, object-list filters, and version checks when deleting objects. Handle
+the typed `vault.byok_key.verification_completed` event.
 
 ## Audit Logs and log streaming
 
-Stream Audit Log data to Microsoft Sentinel.
-
-## Organization API keys
-
-Manage API keys belonging to organizations through the API.
-
-## Stripe Seat Sync
-
-Use Stripe Seat Sync to send active organization-member counts to Stripe
-automatically.
+List Audit Log schemas with `auditlogs.listSchemas`. Audit Logs can stream data
+to Microsoft Sentinel. Embeddable administration also provides a log-streaming
+widget.
 
 ## Email delivery and suppression
 
-Send WorkOS email through a customer's:
+WorkOS can deliver email through a customer's Amazon SES, Postmark, Resend,
+SendGrid, or Mailgun account. Applications can check suppressed addresses and
+remove them from the suppression list.
 
-- Amazon SES;
-- Postmark;
-- Resend;
-- SendGrid; or
-- Mailgun account.
+## Analytics and billing
 
-Check whether an email address is suppressed and remove it from the suppression
-list when appropriate.
+AuthKit Add-ons send signup, sign-in, and related events to Google Analytics or
+Segment. Stripe Seat Sync sends active organization-member counts to Stripe
+automatically.
 
-## AuthKit analytics
+## Agents
 
-Use AuthKit Add-ons to send signup, sign-in, and related events to Google
-Analytics or Segment.
+The SDK contracts attributed to `10.10.0` add
+`linkClaimAttemptToExternalUser`, agent-registration read methods, credential
+validation, and the agent registration ID in API-key validation results.
+
+## Request behavior for platform clients
+
+The HTTP client supports configurable automatic retries (`10.10.0`). DELETE
+requests also retain parameters supplied through `{ query: ... }` in that SDK
+contract, which matters for platform operations that filter or scope deletion.

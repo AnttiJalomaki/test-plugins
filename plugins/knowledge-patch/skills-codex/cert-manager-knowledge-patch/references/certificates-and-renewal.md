@@ -1,53 +1,65 @@
 # Certificates and Renewal
 
-Use this reference for Certificate API behavior, key rotation, renewal timing,
-keystore output, subject handling, and issuance safety.
+## Private keys and signing
 
-## Private keys and revision history
+### Rotation defaults to `Always` `(upgrade-1.18)`
 
-`spec.privateKey.rotationPolicy` defaults to `Always` from 1.18. Set it to
-`Never` on a Certificate that must reuse its prior private key. From 1.20, the
-default-Always behavior is GA and cannot be disabled globally through
-`DefaultPrivateKeyRotationPolicyAlways`.
+`Certificate.spec.privateKey.rotationPolicy` defaults to `Always` rather than `Never`. Before upgrading, explicitly set `Never` on Certificates whose consumers cannot tolerate key rotation:
 
-`spec.revisionHistoryLimit` defaults to `1` from 1.18. Set an explicit value
-when a different number of old CertificateRequests must be retained.
+```yaml
+spec:
+  privateKey:
+    rotationPolicy: Never
+```
 
-While a Certificate is being deleted, its controller does not create a new
-CertificateRequest or Secret (since 1.17). Automation should not expect child
-resources to be replenished during finalization.
+### Rotation feature gate is gone `(1.20)`
 
-## Renewal scheduling
+`DefaultPrivateKeyRotationPolicyAlways` is GA and cannot be disabled. Control behavior with each Certificate's `rotationPolicy`.
 
-The 1.17 correction to `renewBeforePercentage` can shift the computed renewal
-time of existing Certificates. The 1.21 implementation also handles durations
-longer than approximately three years correctly; previous behavior could reject
-them or calculate a wrong renewal time.
+### RSA hash selection `(upgrade-1.17)`
 
-The Certificate API adds `renewalPolicies` in 1.21 for more expressive renewal
-scheduling alongside `renewBefore` and `renewBeforePercentage`.
+RSA certificates with 3072-bit keys use SHA-384, and those with 4096-bit keys use SHA-512. If rotation breaks a consumer, verify its support for the stronger hash.
 
-Failed CertificateRequests use exponential backoff with a configurable maximum
-duration. The default ceiling is 32 hours. Set it through
-`--certificate-request-maximum-backoff-duration`, the controller configuration,
-or Helm:
+### Signature algorithm selection `(1.18)`
+
+Select a signature algorithm when a CA or relying consumer requires a particular algorithm.
+
+## Renewal scheduling and retries
+
+### Corrected percentage calculations `(1.17)`
+
+The `renewBeforePercentage` calculation follows its specification, so an upgrade can change renewal time for Certificates that use it.
+
+### Long-duration percentages `(1.21)`
+
+`renewBeforePercentage` works correctly for durations longer than approximately three years. Earlier behavior could reject such Certificates or compute the wrong renewal time.
+
+### Renewal policies `(1.21)`
+
+The Certificate API adds `renewalPolicies` for expressive scheduling alongside `renewBefore` and `renewBeforePercentage`.
+
+### Disabled renewal correction `(1.21.1)`
+
+In 1.21.0, `spec.renewal.policy: Disabled` can panic the controller. Upgrade to 1.21.1 or later when using disabled renewal.
+
+### CertificateRequest retry ceiling `(1.21)`
+
+Failed CertificateRequests use exponential backoff capped at 32 hours by default. Change the maximum with `--certificate-request-maximum-backoff-duration`, controller configuration, or Helm:
 
 ```yaml
 config:
   certificateRequestMaximumBackoffDuration: 8h
 ```
 
-If an issuer returns an already-expired certificate, 1.21 stops the response
-from causing an infinite reissuance loop. From 1.18.5, a returned certificate
-whose public key does not match the CSR is rejected before storage and issuance
-fails with backoff instead of looping.
+### Revision history `(upgrade-1.18)`
+
+`Certificate.spec.revisionHistoryLimit` defaults to `1` rather than `nil`; omitted fields adopt the new limit after upgrade.
 
 ## Keystores and output formats
 
-A Certificate can set `spec.keystores.jks.password` or
-`spec.keystores.pkcs12.password` directly (since 1.17). A literal password is
-mutually exclusive with that keystore's `passwordSecretRef`. It exists for
-software that requires a password and does not improve keystore security.
+### Literal keystore passwords `(1.17)`
+
+`spec.keystores.jks.password` and `spec.keystores.pkcs12.password` accept literals. Each is mutually exclusive with its corresponding `passwordSecretRef`. A literal supports software that insists on a password but does not strengthen keystore security.
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -66,59 +78,50 @@ spec:
     - example.com
 ```
 
-`AdditionalCertificateOutputFormats` is GA in 1.18, so additional formats are
-always enabled without a feature gate.
+### Additional outputs are GA `(1.18)`
 
-The `Modern2026` PKCS#12 profile added in 1.21 uses AES-256 and SHA-256 KDFs
-instead of legacy 3DES or RC2 and is compatible with FIPS 140-3 requirements.
+Additional certificate output formats are always enabled and no longer need the `AdditionalCertificateOutputFormats` feature gate.
 
-PEM decoding size limits are configurable in 1.20 for certificates or keys
-that exceed normal decoder limits. From 1.18.3, cert-manager can parse larger
-PEM certificates and chains, including leaves containing many DNS names or
-other identities.
+### FIPS-compatible PKCS#12 `(1.21)`
 
-## Algorithms and subjects
+The `Modern2026` PKCS#12 profile uses AES-256 and SHA-256 KDFs instead of legacy 3DES or RC2 and is compatible with FIPS 140-3 requirements.
 
-Signature algorithm selection is configurable from 1.18, allowing a
-Certificate to meet a CA or consumer's algorithm requirement.
+## Names, constraints, and validity
 
-During the 1.17 transition, RSA key size changes also select stronger hashes:
-3072-bit keys use SHA-384 and 4096-bit keys use SHA-512. Confirm consumer
-compatibility before rotating affected certificates.
+### Name constraints defaults `(1.17)`
 
-From 1.18, an IP address in `commonName` is put into `ipAddresses` rather than
-being incorrectly added to DNS subject alternative names.
+`NameConstraints` is beta and enabled by default, enabling CA certificate name constraints. Require 1.17.4 or later on that minor branch: earlier 1.17 releases copied permitted URI domains into excluded URI domains in CSRs.
 
-Trailing-dot DNS names in X.509 SAN fields were rejected in 1.19.0 because of
-a dependency change. Use 1.19.1 or later, which restores support.
+### IP common names `(1.18)`
 
-## Name constraints and other names
+When `commonName` is an IP address, cert-manager places it in `ipAddresses` instead of the DNS SAN list.
 
-`NameConstraints` became beta and enabled by default in 1.17. URI constraints
-require 1.17.4 or later: earlier 1.17 releases incorrectly copied permitted URI
-domains into the excluded URI domains of the CSR.
+### OtherNames `(1.20)`
 
-`OtherNames` is beta and enabled by default in 1.20.
+The `OtherNames` feature is beta and enabled by default.
 
-## Annotations on generated Certificates
+### Large PEM objects `(1.18)` `(1.20)`
 
-The controller's `--extra-certificate-annotations` option accepts annotation
-keys to copy from an Ingress or Gateway to its generated Certificate (since
-1.18).
+Since 1.18.3, cert-manager parses larger PEM certificates and chains, including leaf certificates with many identities. Operators can also configure PEM decoding size limits when certificates or keys exceed normal decoder limits.
 
-Changes to the Duration or `RenewBefore` annotation on an Ingress or Gateway
-immediately update the generated Certificate from 1.20.
+## Issuance safety
 
-Cert-shim also understands `cert-manager.io/alt-names` and
-`cert-manager.io/ip-sans` on ingress-like resources from 1.21. See the Gateway
-and Ingress reference for the source-resource behavior.
+### No new children during deletion `(1.17)`
 
-## Validity monitoring
+While a Certificate is being deleted, its controller does not create new CertificateRequest or Secret objects.
 
-Two gauges added in 1.18 expose a Certificate's issuance and expiration
-timestamps:
+### Mismatched issuer responses `(1.18)`
 
-```text
-certmanager_certificate_not_before_timestamp_seconds
-certmanager_certificate_not_after_timestamp_seconds
-```
+Since 1.18.5, a certificate whose public key does not match its CSR is rejected before storage. Issuance backs off instead of entering an infinite reissuance loop.
+
+### Already-expired issuer responses `(1.21)`
+
+An issuer response containing an already-expired certificate stops without entering an infinite reissuance loop.
+
+### Issuer-reference default regression `(1.19)`
+
+CRD defaults added in 1.19.0 for Certificate and CertificateRequest issuer-reference group and kind could force unnecessary reissuance. They were reverted in 1.19.1; use 1.19.1 or later so omitted fields retain the earlier runtime-default behavior instead of being persisted as API defaults.
+
+### Trailing-dot DNS SANs `(1.19)`
+
+Version 1.19.0 rejected trailing-dot DNS names in X.509 SANs after a dependency change. Version 1.19.1 restores them.

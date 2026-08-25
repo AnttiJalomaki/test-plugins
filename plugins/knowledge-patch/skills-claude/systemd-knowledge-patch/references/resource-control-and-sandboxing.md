@@ -1,48 +1,77 @@
 # Resource Control and Sandboxing
 
-## Enforce a unified cgroup hierarchy
+## Cgroup accounting and workload limits
 
-- Cgroup v1 was force-enableable in 256 but removed in 258; current boot and nspawn operation require unified cgroup v2.
-- PID 1 mounts cgroup2 with `memory_hugetlb_accounting` when the kernel supports it, so HugeTLB usage contributes to a cgroup's memory-controller accounting (since 259).
-- `MemoryZSwapWriteback=` controls the kernel's `memory.zswap.writeback` cgroup knob (since 256).
+### Zswap, OOM inputs, and HugeTLB (256, 257, 259)
 
-## Create private namespaces
+`MemoryZSwapWriteback=` controls `memory.zswap.writeback`. Generators receive
+`SYSTEMD_SOFT_REBOOTS_COUNT`, and
+`ManagedOOMMemoryPressureDurationSec=` chooses the PSI interval used with
+`ManagedOOMMemoryPressureDurationLimit=`. On supporting kernels, PID 1 mounts
+cgroup2 with `memory_hugetlb_accounting`, so HugeTLB contributes to overall
+cgroup memory usage.
 
-- `PrivateUsers=identity` creates a user namespace with identity mappings for the first 65,536 IDs. `PrivateUsers=full` identity-maps the full 32-bit UID range (since 257 and 258).
-- `PrivateUsers=managed` asks `systemd-nsresourced` for a dynamic, transient range of 65,536 UIDs and GIDs (since 260).
-- `PrivatePIDs=yes` runs a service as PID 1 in a private PID namespace with matching `/proc` (since 257).
-- `ProtectHostname=private[:hostname]` provides a writable private hostname (since 258).
-- `UserNamespacePath=` joins a service to an existing user namespace (since 259).
+### Slice concurrency and directory quotas (258)
 
-```ini
-[Service]
-PrivateUsers=managed
-ProtectHostname=private:worker
-PrivatePIDs=yes
-```
+`ConcurrencySoftMax=` queues excess slice members; `ConcurrencyHardMax=` fails
+jobs beyond the active-and-queued limit. Nested slices create hierarchical
+pools. `StateDirectoryAccounting=`/`StateDirectoryQuota=`,
+`CacheDirectoryAccounting=`/`CacheDirectoryQuota=`, and
+`LogsDirectoryAccounting=`/`LogsDirectoryQuota=` enforce ext4/XFS project
+quotas and expose usage in `systemctl status`; btrfs is unsupported.
 
-## Isolate temporary files and cgroups
+### Per-unit OOM counters and pre-kill hooks (259, 260)
 
-- `PrivateTmp=disconnected` supplies separate tmpfs mounts for both `/tmp` and `/var/tmp` (since 257).
-- For an early-boot unit combining `PrivateTmp=yes` and `DefaultDependencies=no`, an absent explicit `/tmp` requirement now yields a disconnected `/tmp`. Without explicit `/var` ordering, no private `/var/tmp` mount is created (since 260).
-- `ProtectControlGroups=private` creates a private cgroup namespace and mount; `strict` also makes it read-only (since 257).
-- `ProtectSystem=` is also a manager setting and defaults on in the initrd, so initrd code must not assume `/usr` is writable (since 256).
+Process-spawning units expose `OOMKills` for kernel kills and
+`ManagedOOMKills` for systemd-oomd kills. Components may register a Varlink
+hook in oomd's designated hook directory to run synchronously before a cgroup
+is killed.
 
-## Delegate namespace and BPF capabilities
+## User and process namespaces
 
-- `DelegateNamespaces=` selects namespaces owned by a unit's private user namespace (since 258).
-- `PrivateBPF=` creates a private bpffs. The `BPFDelegate*=` settings selectively delegate BPF operations (since 258).
-- Nsresourced can delegate multiple UID/GID ranges and its resources to nested containers; see [Containers and Virtual Machines](containers-and-virtual-machines.md).
+### Namespace modes (257, 258, 260)
 
-## Limit slices and service storage
+- `PrivateUsers=identity` identity-maps the first 65,536 IDs.
+- `PrivateUsers=full` identity-maps the complete 32-bit ID range.
+- `PrivateUsers=managed` asks nsresourced for a transient 65,536-ID range.
+- `PrivatePIDs=yes` makes the service PID 1 in a private PID namespace with a
+  matching `/proc`.
+- `ProtectControlGroups=private` creates a private cgroup namespace and mount;
+  `strict` also makes it read-only.
+- `ProtectHostname=private[:hostname]` provides a writable private hostname.
 
-- `ConcurrencySoftMax=` queues excess units in a slice until capacity becomes available. `ConcurrencyHardMax=` fails jobs beyond the hard active-plus-queued limit. Nested slices form hierarchical workload pools (since 258).
-- `StateDirectoryQuota=`/`StateDirectoryAccounting=`, `CacheDirectoryQuota=`/`CacheDirectoryAccounting=`, and `LogsDirectoryQuota=`/`LogsDirectoryAccounting=` enforce per-unit project quotas and expose usage in `systemctl status` (since 258).
-- Managed-directory quotas support ext4 and XFS, not btrfs (since 258).
+### Namespace and BPF delegation (258)
 
-## Control service resources and scheduling
+`DelegateNamespaces=` selects namespaces owned by the unit's private user
+namespace. `PrivateBPF=` supplies a private bpffs; use the `BPFDelegate*=`
+settings to grant only the required BPF operations.
 
-- `StateDirectory=`, `RuntimeDirectory=`, `CacheDirectory=`, `LogsDirectory=`, and `ConfigurationDirectory=` accept a trailing `:ro`. `BindLogSockets=` controls whether logging AF_UNIX sockets enter a mount sandbox (since 257).
-- `CPUSchedulingPolicy=ext` selects the kernel SCHED_EXT scheduler. `MemoryTHP=` independently controls transparent huge pages for a service (since 260).
-- `ManagedOOMMemoryPressureDurationSec=` chooses the PSI measurement interval used with `ManagedOOMMemoryPressureDurationLimit=` (since 257).
-- Other components can register a Varlink socket in the designated hook directory to run synchronously before systemd-oomd kills a cgroup (since 260).
+### Join an existing namespace (259)
+
+`UserNamespacePath=` puts a service in an existing user namespace. Transient
+services may receive their root through `RootDirectoryFileDescriptor` rather
+than a path.
+
+## Filesystem and execution isolation
+
+### Manager protection and sandbox resources (256, 257)
+
+`ProtectSystem=` is a manager setting and is enabled by default in the initrd,
+so initrd code must not assume `/usr` is writable. `BindLogSockets=` controls
+whether logging sockets enter a mount sandbox. `StateDirectory=`,
+`RuntimeDirectory=`, `CacheDirectory=`, `LogsDirectory=`, and
+`ConfigurationDirectory=` accept trailing `:ro`; `ImportCredential=` can
+rename imported credentials.
+
+### Private temporary directories (257, 260)
+
+`PrivateTmp=disconnected` supplies separate tmpfs mounts for `/tmp` and
+`/var/tmp`. For early-boot units combining `PrivateTmp=yes` with
+`DefaultDependencies=no`, no explicit `/tmp` requirement now means a
+disconnected `/tmp`; without explicit `/var` ordering there is no private
+`/var/tmp`, which can alter visibility and ordering.
+
+### Schedulers and huge pages (260)
+
+`CPUSchedulingPolicy=ext` selects SCHED_EXT. `MemoryTHP=` independently
+controls transparent-huge-page behavior for a service.

@@ -10,215 +10,191 @@ metadata:
 
 # PHP Knowledge Patch
 
-Use this skill when upgrading PHP applications, extensions, build images, or
-runtime configuration, and when adopting recent language or extension APIs.
-Start with the migration checks below, then open the reference that matches the
-code being changed.
+Use this skill when writing, reviewing, debugging, or migrating PHP code whose
+behavior may depend on recent language, runtime, extension, or security changes.
+
+## How to use this patch
+
+1. Determine the application's PHP version from `composer.json`, platform
+   configuration, the runtime, or the deployment image.
+2. Read the reference file for the subsystem being changed.
+3. Apply only guidance relevant to the application's version and enabled
+   extensions.
+4. Prefer explicit validation and exception handling where formerly permissive
+   APIs now reject inputs.
+5. Run the project's tests under every PHP version it supports, with production
+   extensions and INI settings represented.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Language and runtime](references/language-and-runtime.md) | Syntax, types, object behavior, reflection, serialization, errors, attributes, closures, constants, cloning |
-| [Configuration, filesystem, and SPL](references/configuration-filesystem-and-spl.md) | INI changes, OPcache, sessions, CSV, streams, filesystem APIs, SPL collections and files |
-| [Databases and PDO](references/databases-and-pdo.md) | PDO and driver subclasses, MySQLi, PostgreSQL, SQLite, Firebird, DBA, ODBC |
-| [Networking, crypto, and processes](references/networking-crypto-and-processes.md) | cURL, OpenSSL, LDAP, PCNTL, sockets, filters, mail, native dependencies |
-| [XML, SOAP, and XSL](references/xml-soap-and-xsl.md) | DOM, XML handlers, SimpleXML, XMLReader/Writer, SOAP, XPath, XSLT |
-| [Text, internationalization, and media](references/text-intl-and-media.md) | PCRE, mbstring, Intl, locale, formatting, GD, EXIF, HEIF, SVG, Tidy |
+| [Language and runtime](references/language-and-runtime.md) | Syntax, types, closures, attributes, constants, cloning, errors, comparisons, and lifecycle behavior |
+| [Configuration, filesystem, and SPL](references/configuration-filesystem-and-spl.md) | INI changes, OPcache, streams, directories, serialization, SPL objects, and deployment patch levels |
+| [Databases and PDO](references/databases-and-pdo.md) | PDO, MySQLi, PostgreSQL, Firebird, SQLite, DBA, and ODBC |
+| [Networking, crypto, and processes](references/networking-crypto-and-processes.md) | cURL, OpenSSL, LDAP, PCNTL, sockets, SNMP, mail, and process-facing APIs |
+| [Text, internationalization, and media](references/text-intl-and-media.md) | PCRE, mbstring, Intl, CSV, filters, hashing, compression, GD, EXIF, and formatting |
+| [XML, SOAP, and XSL](references/xml-soap-and-xsl.md) | XML handlers, DOM/XPath, SimpleXML, SOAP, XSLT, and libxml-backed behavior |
 
-## Upgrade triage
+## Migration priorities
 
-1. Run the test suite with all deprecations visible:
+### Replace deprecated syntax and core idioms
 
-   ```ini
-   error_reporting=E_ALL
-   display_errors=1
-   ```
-
-2. Search for removed or deprecated syntax and APIs:
-
-   ```sh
-   rg '\((boolean|integer|double|binary)\)|`[^`]*`'
-   rg 'trigger_error\s*\([^,]+,\s*E_USER_ERROR'
-   rg '\b(__sleep|__wakeup|setAccessible)\s*\('
-   rg '\b(curl_close|curl_share_close|finfo_close|imagedestroy|xml_parser_free)\s*\('
-   ```
-
-3. Audit calls whose invalid-input behavior changed from warnings, coercion, or
-   sentinel values to `TypeError`, `ValueError`, or another exception.
-
-4. Inspect every PHP and extension INI file. Remove obsolete extension-loading
-   directives and deprecated session settings before evaluating runtime
-   behavior.
-
-5. Test database connections with the production driver and server versions;
-   driver-specific parsing, credential precedence, fetch flags, and timeout
-   codes can change behavior without a syntax error.
-
-6. Exercise shutdown paths, output handlers, serialization, cloning, XML
-   callbacks, and cyclic comparisons explicitly. These paths often escape
-   ordinary request tests.
-
-## Highest-priority deprecations
-
-### Replace legacy language forms
-
-- Use `(bool)`, `(int)`, `(float)`, and `(string)` instead of the long cast
-  aliases.
-- End `case` labels with `:`, not `;`.
-- Call `shell_exec()` explicitly instead of using backticks.
+- Replace `(boolean)`, `(integer)`, `(double)`, and `(binary)` with canonical
+  casts.
+- End `case` labels with `:` and replace backtick execution with an explicit
+  process API.
 - Replace non-numeric string `++` with `str_increment()`.
-- Use the empty string explicitly instead of `null` when an empty array key is
-  intended.
-- Replace `trigger_error(..., E_USER_ERROR)` with an exception for recoverable
-  failure or `exit()` for intentional termination.
+- Do not use `null` as an array offset or `array_key_exists()` key; use the
+  empty string explicitly only when that is the intended key.
+- Replace `trigger_error(..., E_USER_ERROR)` with an exception or `exit()`.
+- Avoid deriving non-CLI `argc` and `argv` from a query string.
 
-### Modernize lifecycle hooks
+### Modernize object lifecycle hooks
 
-- Prefer `__serialize()` and `__unserialize()` to `__sleep()` and
-  `__wakeup()`.
+- Implement `__serialize()` and `__unserialize()` instead of `__sleep()` and
+  `__wakeup()` in new or migrated code.
 - Make `__debugInfo()` return an array.
-- Do not produce output recursively from inside an output handler.
-- Let handle objects clean themselves up; explicit close/free calls for cURL,
-  file-info, GD image, and XML parser objects are deprecated.
+- Let object handles clean themselves up instead of calling deprecated close or
+  destroy functions for cURL, fileinfo, GD, or XML parser objects.
+- Do not take an indirect reference to a readonly property during cloning.
 
-### Make implicit arguments explicit
+### Remove deprecated configuration assumptions
 
-- Supply the CSV `escape` argument to `fgetcsv()`, `fputcsv()`, `str_getcsv()`,
-  and matching `SplFileObject` methods.
-- Pass a real directory handle to `readdir()`, `rewinddir()`, and
-  `closedir()`.
-- Use three-argument PostgreSQL fetch/field calls with `row: null`.
-- Pass no `key_length` to `openssl_pkey_derive()`.
-- Stop using a query string to synthesize non-CLI `argc` and `argv`.
+- Remove `disable_classes`; it no longer has an effect.
+- Remove obsolete separate OPcache module loading directives.
+- Select an explicit JIT mode; a nonzero buffer alone does not enable JIT.
+- Stop changing deprecated session ID, cookie, and trans-SID directives.
+- Give directory functions explicit handles and CSV functions explicit escape
+  arguments.
 
-### Move to named or driver-specific APIs
+### Update extension entry points
 
-- Replace ambiguous legacy overloads with their named DatePeriod, Intl, LDAP,
-  Reflection, and stream-context entry points.
-- Prefer `Pdo\*` driver constants and driver-subclass methods to prefixed
-  members on base `PDO`.
-- Replace deprecated MySQLi administrative helpers with SQL where appropriate,
-  and use `mysqli_stmt_execute()` instead of `mysqli_execute()`.
-- Replace SPL collection aliases such as `contains()`, `attach()`, and
-  `detach()` with their `offset*()` forms.
+- Prefer named factory or operation methods over legacy overloaded signatures
+  in DatePeriod, Intl calendars, LDAP, Reflection, and stream contexts.
+- Move PDO driver constants and methods to their driver-specific classes.
+- Replace legacy SPL aliases with the corresponding `offset*()` methods.
+- Pass real callables to XML, DOM XPath, and XSL APIs.
+- Replace resource checks for migrated handles with object-aware failure checks.
 
-## Behavior changes to test
+## Behavior changes to audit
 
-### Exceptions and warnings
+### Exceptions and validation
 
-- Recursive comparison now throws `Error`.
-- Many extension APIs reject invalid ranges, modes, encodings, ports, locales,
-  signal lists, configuration keys, or callback results with exceptions.
-- Failed `Tidy` construction throws.
-- Invalid SimpleXML XPath result kinds warn and return `false`.
-- Destructuring non-arrays and unrepresentable float-to-integer casts warn.
-- Sendmail transport failures now warn and make `mail()` return `false`.
+Many extension APIs now throw `TypeError` or `ValueError` for malformed ranges,
+encodings, locales, ports, signal data, configuration keys, and option values.
+Validate untrusted input before the call and catch exceptions only where the
+application can recover.
 
-Catch only errors the application can handle. Validate user input before
-calling an extension rather than depending on former fallback behavior.
+Particularly review:
 
-### Objects replace resources
+- GD quality, scale, filter, and speed arguments;
+- Intl locales, time zones, resource offsets, and calendars;
+- mbstring encodings and conversion maps;
+- PCNTL signal masks, waits, executable arguments, and environments;
+- SNMP hosts, ports, timeouts, and retries;
+- socket ports, address hints, and multicast contexts;
+- Tidy configuration keys and read-only settings;
+- XML, XSL, CSV, hash, and serialization option validation.
 
-DBA, ODBC, SOAP internals, and stream buckets use dedicated objects. Replace
-`is_resource()` checks with the documented object type or an explicit
-`=== false`/null failure check. Do not assume a handle-closing function is still
-the lifetime boundary.
+### Comparisons, casts, and fetch state
 
-### Iteration and fetch state
+- Recursive value comparisons throw `Error` and can be caught.
+- Loose object/boolean comparisons consistently use the object's boolean cast.
+- Unrepresentable float-to-integer conversions warn, including `NAN`.
+- PDO fetch-mode mutation during a fetch throws; use only valid flag
+  combinations and supported fetch methods.
+- SimpleXML XPath expressions that do not return node sets warn and return
+  `false`.
 
-- SimpleXML helper calls and string casts no longer rewind iteration.
-- PDO rejects fetch-mode changes during a fetch and enforces valid fetch-flag
-  combinations.
-- `PDO::FETCH_CLASS` constructor arguments follow ordinary named-argument and
-  by-reference rules.
+### Build and runtime assumptions
 
-### Runtime and build configuration
-
-- A nonzero JIT buffer alone does not activate JIT; set a JIT mode.
-- OPcache is built in, so remove legacy module-loading lines while retaining
-  `opcache.enable` settings.
-- Remove `disable_classes`; it no longer exists.
-- Review updated ICU, ODBC, Firebird, SOAP/session, and OpenSSL requirements
-  before rebuilding PHP.
+- OPcache is part of the runtime rather than a separately loaded module.
+- Intl and ODBC have newer native dependency assumptions.
+- SOAP/session and runtime-linker combinations can affect extension startup.
+- Internal extension constants may now expose declared types.
+- Upload and temporary filenames are longer than older assumptions allowed.
 
 ## High-value additions
 
-### Constant expressions and properties
+### Constant expressions and attributes
 
-Closures, first-class callables, and casts can be used in constant expressions
-and defaults. Non-class constants can carry attributes. Properties gain more
-precise declaration tools: property-level `#[\Override]`, asymmetric
-visibility for static properties, and final promoted properties.
+Closures, first-class callables, and casts can be used in constant expressions,
+including attributes and property or parameter defaults. Attributes can also
+decorate compile-time non-class constants, and `#[\Deprecated]` can mark them.
 
-Clone-time property replacement can update selected properties, including
-readonly properties:
+```php
+const LENGTH = strlen(...);
+
+#[\Deprecated]
+const LEGACY_MODE = 1;
+```
+
+### Properties and cloning
+
+Properties can use `#[\Override]`; static properties can use asymmetric
+visibility; promoted properties can be final. Function-style `clone` can
+replace properties, including readonly properties, while copying an object.
 
 ```php
 $copy = clone($original, ['id' => $newId]);
 ```
 
-Use this in value-object update methods, but keep constructor and clone
-invariants aligned.
+### Safer failure handling
 
-### Failure-oriented APIs
-
-`FILTER_THROW_ON_FAILURE` converts filter validation failures to exceptions:
+`FILTER_THROW_ON_FAILURE` turns validation failure into an exception. It is
+mutually exclusive with `FILTER_NULL_ON_FAILURE`.
 
 ```php
 $id = filter_var($input, FILTER_VALIDATE_INT, FILTER_THROW_ON_FAILURE);
 ```
 
-Do not combine it with `FILTER_NULL_ON_FAILURE`.
+Fatal errors now carry backtraces, and sendmail transport failures are visible
+through warnings and a `false` return from `mail()`.
 
-Fatal errors now include backtraces, improving crash diagnosis. Keep log
-redaction and size limits in mind because traces can expose arguments and
-application paths.
+### HTTP and transport controls
 
-### cURL capabilities and redirects
+- Use cURL's feature list for direct capability detection.
+- Install prerequisite and debug callbacks where request instrumentation needs
+  them, respecting incompatible cURL options.
+- Choose a redirect mode instead of treating follow-location as only boolean.
+- Use persistent cURL share handles for safe cross-request connection reuse.
+- Use the large infile-size option where the legacy option is 32-bit limited.
 
-Use `curl_version()['feature_list']` for named capability checks. Pre-request
-and debug callbacks add connection-time policy and observability. Select an
-explicit redirect mode when `true` is too broad, use persistent share handles
-for safe cross-request connection reuse, and select the large file-size option
-on platforms where the older option is 32-bit.
+### Database-specific connections
 
-### Database and session capabilities
+Use `PDO::connect()` or a driver-specific PDO subclass when concrete driver
+functionality matters. Driver-aware SQL parsing reduces placeholder mistakes in
+quoted identifiers and comments. SQLite can select the transaction mode used by
+subsequent `beginTransaction()` calls.
 
-- `PDO::connect()` and direct construction can return driver-specific
-  subclasses.
-- SQLite can set deferred, immediate, or exclusive transaction behavior for
-  later `beginTransaction()` calls.
-- Cookie APIs accept the `partitioned` option.
-
-Verify browser requirements when setting partitioned cookies; the option does
-not replace other required cookie attributes.
-
-### Internationalization and document processing
+### Internationalization and media
 
 - `IntlListFormatter` formats localized conjunction, disjunction, and unit
-  lists when the required ICU is present.
-- DOM XPath and XSLT registration APIs accept native callables.
-- Namespaced SOAP class maps, namespace-aware XSL parameters, SOAP reason
-  languages, and selectable URI parsers reduce ad hoc protocol handling.
-- Image inspection recognizes more metadata, HEIF/HEIC, and optionally SVG;
-  consume the reported dimension units rather than assuming pixels.
+  lists when the required ICU support is present.
+- Image inspection recognizes HEIF/HEIC and, with libxml, SVG, while reporting
+  dimension units that are not always pixels.
+- PCRE adds variable-length lookbehind, longer named captures, and restricted
+  caseless matching, but also changes parsing of some older patterns.
+
+### Cookies, SOAP, and XSL
+
+- Cookie APIs accept the `partitioned` option.
+- SOAP supports namespaced class maps, date/time serialization, schema enum
+  cases, reason-text languages, and selectable URI parser backends.
+- XSL accepts native callbacks, quote-safe parameters, namespaced parameters,
+  and configurable evaluation limits.
 
 ## Review checklist
 
-- [ ] Deprecations are visible in CI and no handler hides them.
-- [ ] Deprecated syntax, overloads, constants, methods, and INI settings are
-      removed or deliberately isolated.
-- [ ] Invalid-input paths are tested for their new exception or warning type.
-- [ ] Resource checks account for migrated object handles.
-- [ ] JIT and OPcache configuration is explicit and free of obsolete loading
-      directives.
-- [ ] PDO behavior is tested per driver, including parser, DSN, fetch, and
-      transaction differences.
-- [ ] Session identifiers, serialization keys, and cookie options work with
-      the configured storage and clients.
-- [ ] XML, SOAP, XSL, PCRE, mbstring, and Intl behavior is covered with real
-      production data.
-- [ ] Build images satisfy current extension dependency floors.
-- [ ] New callbacks and fatal backtraces do not leak secrets into logs.
+- Search deprecation logs rather than suppressing them.
+- Exercise both successful and invalid-input paths.
+- Check return types where resources became objects or integers became
+  booleans.
+- Review extension-specific constants, methods, constructor overloads, and
+  default arguments.
+- Audit regexes under the bundled PCRE behavior.
+- Verify INI files and native-library prerequisites in deployment images.
+- Confirm database behavior with the actual driver and server versions.
+- Pin a currently secured patch release on every supported PHP branch.
 

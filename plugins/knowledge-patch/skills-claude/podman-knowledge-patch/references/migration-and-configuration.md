@@ -1,212 +1,168 @@
 # Migration and configuration
 
-Use this reference for host upgrades, configuration discovery, database conversion, build
-prerequisites, and maintenance-release safety requirements.
+## Platform and dependency prerequisites
 
-## BoltDB-to-SQLite migration
+### Kernel and companion-project floors
 
-### Warning and automatic migration behavior
+Podman requires Linux kernel 5.2 or newer because it depends on the new mount API (since 5.2.0).
+For a Podman 6 deployment, pair the engine with Buildah 1.44.0, Skopeo 1.23, Netavark and Aardvark
+2.0.0, and containers/common configuration 0.68.0 (6.0.0).
 
-- Podman 5.6.0 warns that BoltDB will be removed in 6.0, but that warning is hidden by default.
-- Podman 5.7.0 shows the warning by default. Set `SUPPRESS_BOLTDB_WARNING=true` only as a
-  temporary suppression while planning migration.
-- Podman 5.8.0 attempts to migrate a legacy BoltDB database to SQLite on reboot and adds
-  `podman system migrate --migrate-db` for environments where reboot migration is unavailable.
+Podman 6 removes Intel macOS and Windows 10 support, cgroups v1, iptables networking, CNI, and
+`slirp4netns`. Migrate to cgroups v2, nftables, Netavark, and Pasta as appropriate. Remove the
+slirp-only global `--network-cmd-path` option.
 
-### Avoid the 5.8.0 partial-database path
+Remote-client support on cgroups v1 Linux was restored in 6.0.2, but that does not restore cgroups
+v1 support to the Podman 6 engine.
 
-Do not migrate persistent installations with Podman 5.8.0 when Quadlets are present. That path
-can leave a partial `db.sql`, and Podman has no automatic recovery for it. Upgrade to 5.8.1 or
-later before migrating.
+### Source-build requirements
 
-If the damaged installation has no persistent containers, pods, or volumes, move `db.sql` aside,
-reboot with 5.8.1 or later, and let migration retry. Do not use this recovery shortcut when state
-must be retained.
+The minimum Go toolchain advanced from Go 1.22 in 5.3.0, to Go 1.23 in 5.5.0, Go 1.24 in 5.7.0,
+and Go 1.25 in 6.0.0. Match the toolchain to the Podman source being built rather than using the
+oldest value in that progression.
 
-### Run a safe manual migration (`system-migration`)
-
-Prefer a reboot because it minimizes races with other Podman processes. If manual migration is
-necessary:
-
-1. Stop every other Podman command.
-2. Stop socket- or systemd-activated `podman system service` processes.
-3. Stop Quadlets.
-4. Run the migration.
-
-```console
-podman system migrate --migrate-db
-```
-
-The legacy database remains available if conversion fails.
-
-## Host and component requirements
-
-### Linux and build-tool floors
-
-Podman has required Linux kernel 5.2 or newer since 5.2.0 because it uses the new kernel mount
-API. Building Podman itself requires these Go versions:
-
-| Podman release | Minimum Go version |
-| --- | --- |
-| 5.3.0 | Go 1.22 |
-| 5.5.0 | Go 1.23 |
-| 5.7.0 | Go 1.24 |
-| 6.0.0 | Go 1.25 |
-
-### Podman 6 companion components
-
-Pair Podman 6.0.0 with:
-
-- Buildah 1.44.0;
-- Skopeo 1.23;
-- Netavark 2.0.0 and Aardvark 2.0.0;
-- configuration files compatible with containers/common 0.68.0.
-
-### Removed hosts and legacy stacks
-
-Podman 6.0.0 removes support for Intel Macs, Windows 10, cgroups v1, iptables networking, CNI,
-and `slirp4netns`. Move to supported hosts, cgroups v2, nftables, Netavark, and Pasta as
-appropriate. The `slirp4netns`-only global `--network-cmd-path` option is also removed.
-
-## Unified configuration resolution (`6.0-guide`)
-
-Podman 6 uses `go.podman.io/storage/pkg/configfile` to give `containers.conf`, `storage.conf`,
-and `registries.conf` the same resolution model.
-
-### Location tiers
-
-On Linux and macOS, resolution considers:
-
-- vendor files under `/usr/share/containers`;
-- administrator files under `/etc/containers`;
-- user files under `$XDG_CONFIG_HOME/containers`, falling back to `$HOME/.config/containers`;
-- `<name>.rootful.conf.d` and `<name>.rootless.conf.d` directories;
-- per-UID rootless drop-in directories.
-
-FreeBSD substitutes `/usr/local/share` and `/usr/local/etc`. Windows uses `ProgramData` and
-`APPDATA`.
-
-### Main-file selection
-
-Read exactly one main file: the highest-priority existing user file, otherwise the administrator
-file, otherwise the vendor file. An empty user main file still suppresses both lower-tier main
-files.
-
-### Drop-in precedence
-
-Collect drop-ins from every applicable tier after selecting the main file:
-
-1. If files in later locations have the same filename as earlier files, mask the earlier copy.
-2. Sort all remaining `.conf` files globally by filename.
-3. Apply them in that order, with lexicographically later files taking priority.
-
-Location tier does not outrank the final global filename order. For example, a vendor
-`99-vendor.conf` can override a user `33-user.conf` when both survive masking.
-
-### Environment overrides
-
-Each config supports `CONTAINERS_<NAME>_CONF` and `CONTAINERS_<NAME>_CONF_OVERRIDE`:
-
-- `CONTAINERS_<NAME>_CONF` selects one file and disables all normal main-file and drop-in
-  loading.
-- `CONTAINERS_<NAME>_CONF_OVERRIDE` loads one final override after the normal stack.
-
-Containers-specific names are `CONTAINERS_CONF` and `CONTAINERS_CONF_OVERRIDE`. Other examples
-include `CONTAINERS_STORAGE_CONF`, `CONTAINERS_STORAGE_CONF_OVERRIDE`,
-`CONTAINERS_REGISTRIES_CONF`, and `CONTAINERS_REGISTRIES_CONF_OVERRIDE`.
-
-```console
-CONTAINERS_STORAGE_CONF_OVERRIDE=/tmp/storage-test.conf podman info
-```
-
-### Append TOML string arrays
-
-String arrays normally replace earlier values. Append to an earlier array with the shared marker:
-
-```toml
-field = ["val", {append=true}]
-```
-
-### Containers configuration specifics
-
-- Do not use `/etc/containers/containers.rootless.conf`; place rootless and rootful customization
-  in the corresponding drop-in directories.
-- Keep `podman --module` for `containers.conf` only. Modules load after regular configuration.
-- Since 5.7.0, `containers.conf` supports `log_path` for the default `k8s-file` log location and
-  `runtimes_flags` for default OCI runtime flags.
-
-### Storage configuration specifics
-
-- Replace deprecated `rootless_storage_path` with `graphroot` in a rootless drop-in.
-- Storage-library users must cache `DefaultStoreOptions()`; `ReloadConfigurationFile()`,
-  `UpdateStoreOptions()`, and `Save()` are removed.
-- Because storage configuration may come from several files, `podman info` no longer reports one
-  storage.conf path.
-
-### Registry configuration specifics
-
-- Convert registries.conf V1 to V2.
-- Replace obsolete `REGISTRIES_CONFIG_PATH` with `CONTAINERS_REGISTRIES_CONF`.
-- Treat the public Go `V2RegistriesConf` type as deprecated.
-- Explicit `SystemRegistriesConfPath` or `SystemRegistriesConfDirPath` values still bypass normal
-  lookup and the configuration environment variables.
-
-Do not confuse `registries.d` with `registries.conf.d`. Both `registries.d` and registry
-`certs.d` search the unified vendor, administrator, root-mode, per-user, and XDG locations.
-`policy.json` gains user/XDG and `/usr/share/containers` fallback lookup, but no drop-ins.
-
-### Service process behavior
-
-The Podman system service no longer reloads configuration in place. Stop and restart the service
-process to apply configuration changes.
-
-## Packaging and downstream builds
-
-### Build provenance
-
-Since 5.4.0, Makefile builds accept `BUILD_ORIGIN`. The value identifies the builder in both
-`podman version` and `podman info`:
+Makefile builds accept `BUILD_ORIGIN`, which appears in `podman version` and `podman info`
+(since 5.4.0):
 
 ```console
 BUILD_ORIGIN=distribution make
 ```
 
-### SQLite linking
+Makefile builds dynamically link sqlite3 when its headers and library are installed (since 5.6.0).
+Non-Makefile packagers can force dynamic linkage with the `libsqlite3` build tag.
 
-Since 5.6.0, Makefile builds dynamically link sqlite3 when its library and headers are installed.
-Non-Makefile packaging can force dynamic linking with the `libsqlite3` build tag.
+## Unified configuration lookup
 
-## Maintenance-release compatibility and security
+The configuration behavior in this section comes from the `6.0-guide` batch and applies to
+`containers.conf`, `storage.conf`, and `registries.conf` through the shared
+`go.podman.io/storage/pkg/configfile` loader.
 
-### Runtime and build compatibility
+### Locations
 
-- Podman 5.6.1 restores container startup with runc 1.3.0 or later.
-- Podman 5.6.2 restores Containerfile builds that combine a non-root user with cache mounts.
-- Podman 5.7.1 restores rootless user-namespace recreation when both Conmon and the rootless
-  pause process are killed unexpectedly.
+On Linux and macOS, the loader considers vendor files under `/usr/share/containers`, administrator
+files under `/etc/containers`, and user files under `$XDG_CONFIG_HOME/containers` with a fallback
+to `$HOME/.config/containers`. It also supports `<name>.rootful.conf.d`,
+`<name>.rootless.conf.d`, and per-UID rootless drop-in directories.
 
-### Kubernetes YAML host overwrite
+FreeBSD uses `/usr/local/share` and `/usr/local/etc`; Windows uses `ProgramData` and `APPDATA`.
 
-Podman 5.6.1 fixes CVE-2025-9566. Crafted symlinks in `ConfigMap` or `Secret` volumes processed by
-`podman kube play` could overwrite host content. Do not process untrusted Kubernetes YAML with an
-earlier affected release.
+### Main-file precedence
 
-### Runtime container escape
+Read only the highest-priority existing main file:
 
-Podman 5.7.0 fixes CVE-2025-52881. Arbitrary-write gadgets and procfs write redirects in runc
-could allow container escape or denial of service.
+1. User.
+2. Administrator.
+3. Vendor.
 
-### Hyper-V machine image path injection
+An empty user main file still suppresses the administrator and vendor main files. Do not merge all
+main files.
 
-Podman 5.8.2 fixes CVE-2026-33414. Commands embedded in a `podman machine init --image` path
-could execute in the Windows Hyper-V host's PowerShell session.
+### Drop-in precedence
 
-### Build-context escape
+After choosing the main file, collect drop-ins from all applicable tiers. A file in a later
+location masks an earlier same-named file. Sort the remaining files globally by filename and let
+lexicographically later names win. Location tier no longer decides the final collision: a vendor
+`99-*.conf` can override a user `33-*.conf`.
 
-Podman 5.8.3 fixes CVE-2026-44517. `ADD` or `COPY` from a malicious Git repository or tar archive
-could include files outside the build context.
+String arrays replace earlier arrays by default. Append to an earlier array with the shared TOML
+marker:
 
-### Image environment leakage
+```toml
+field = ["val", {append=true}]
+```
 
-Podman 5.8.4 fixes CVE-2026-57231. Malformed image `Env` entries could expose host environment
-variables inside containers.
+### Environment-selected files
+
+`CONTAINERS_<NAME>_CONF` selects one file and disables ordinary main-file and drop-in loading.
+`CONTAINERS_<NAME>_CONF_OVERRIDE` loads one final override after the ordinary stack.
+
+Concrete names include `CONTAINERS_CONF`, `CONTAINERS_CONF_OVERRIDE`,
+`CONTAINERS_STORAGE_CONF`, `CONTAINERS_STORAGE_CONF_OVERRIDE`, and
+`CONTAINERS_REGISTRIES_CONF`.
+
+```console
+CONTAINERS_STORAGE_CONF_OVERRIDE=/tmp/storage-test.conf podman info
+```
+
+## Configuration migrations
+
+### Containers and storage configuration
+
+`/etc/containers/containers.rootless.conf` is no longer searched. Put rootless and rootful changes
+in their respective drop-ins. `podman --module` remains containers.conf-only and loads modules
+after normal configuration.
+
+In storage.conf, replace `rootless_storage_path` with `graphroot` in a rootless drop-in. Storage
+library clients should cache `DefaultStoreOptions()`; `ReloadConfigurationFile()`,
+`UpdateStoreOptions()`, and `Save()` are removed.
+
+### Registries and policy configuration
+
+Registries.conf V1 and `REGISTRIES_CONFIG_PATH` are unsupported. Use V2 and
+`CONTAINERS_REGISTRIES_CONF`. The public Go `V2RegistriesConf` type is deprecated. Explicit
+`SystemRegistriesConfPath` or `SystemRegistriesConfDirPath` values still bypass both normal lookup
+and configuration environment variables.
+
+`registries.d` is distinct from `registries.conf.d`. Both `registries.d` and registry `certs.d`
+search unified vendor, administrator, root-mode, per-user, and XDG locations. `policy.json` gains
+user/XDG and `/usr/share/containers` fallbacks but no drop-ins.
+
+### Service reload and information output
+
+The Podman system service does not reload configuration in-process. Stop and restart the service
+to apply changes. Because storage settings can come from multiple files, `podman info` no longer
+reports one storage.conf path.
+
+## BoltDB-to-SQLite migration
+
+### Warnings and preferred migration path
+
+Podman 5.6.0 warns that BoltDB is being retired, although the warning was hidden until 5.7.0. The
+visible warning can be temporarily suppressed with `SUPPRESS_BOLTDB_WARNING=true`.
+
+Prefer reboot-driven migration because it minimizes races with other Podman processes. For manual
+migration (`system-migration`), stop all Podman commands first, especially socket-activated
+`podman system service` processes and Quadlets:
+
+```console
+podman system migrate --migrate-db
+```
+
+The legacy database is retained if migration fails.
+
+### Avoid the 5.8.0 partial-database path
+
+The 5.8.0 migrator can leave a partial SQLite database when Quadlets exist and has no automatic
+recovery. Use 5.8.1 or later. When there are no persistent containers, pods, or volumes to preserve,
+move `db.sql` aside and reboot with a fixed release to retry; otherwise preserve the databases and
+recover deliberately.
+
+## Reset behavior
+
+`podman system reset` preserves the user's `podman.sock` (since 5.5.0). Cleanup automation must not
+expect reset to remove that socket.
+
+## Security and compatibility maintenance
+
+### Runtime and Kubernetes fixes
+
+- 5.6.1 prevents crafted `ConfigMap` or `Secret` symlinks in `kube play` YAML from overwriting host
+  content and restores startup with runc 1.3.0 or newer.
+- 5.6.2 restores non-root Containerfile builds that use cache mounts.
+- 5.7.0 addresses CVE-2025-52881, an arbitrary-write/procfs path in runc that could allow
+  container escape or denial of service.
+- 5.7.1 restores rootless namespace recreation after both Conmon and the rootless pause process
+  terminate unexpectedly.
+
+### Machine, build-context, environment, and Quadlet fixes
+
+- 5.8.2 fixes CVE-2026-33414, where a crafted Hyper-V machine image path could execute commands in
+  a Windows host PowerShell session. It also fixes `unless-stopped` reboot behavior and Quadlet
+  entrypoint/health-command parsing.
+- 5.8.3 fixes CVE-2026-44517, where malicious Git or tar build contexts could escape `ADD`/`COPY`
+  boundaries.
+- 5.8.4 fixes CVE-2026-57231, where malformed image `Env` entries could expose host environment
+  variables.
+- 5.8.6 fixes CVE-2026-19730: `podman quadlet install --replace` truncates the destination, avoiding
+  stale trailing content when the replacement is shorter.
+- 6.0.1 fixes stale Pasta/Pesto forwarding rules after rootless bridge restarts or reloads.

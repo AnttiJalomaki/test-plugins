@@ -10,40 +10,41 @@ metadata:
 
 # Vercel AI SDK Knowledge Patch
 
-Use this skill when implementing or reviewing TypeScript applications built with the
-`ai` package, AI SDK UI, provider packages, agents, workflows, or `@ai-sdk/mcp`.
-Start with the breaking-change notes, then load the topic reference that matches the
-work. Preserve provider-specific options when a top-level abstraction does not expose
-the required capability.
+Use this skill for TypeScript applications built with the `ai` package, AI SDK UI,
+provider packages, agents, workflows, generated media, or `@ai-sdk/mcp`. Confirm the
+application's installed core and provider versions before applying version-dependent
+names. Start with migrations and breaking changes, then load the topic reference for
+the work at hand.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migrations.md](references/migrations.md) | Runtime requirements, codemods, renamed APIs, deprecations, and result semantics |
-| [agents-and-tools.md](references/agents-and-tools.md) | Agent loops, step control, tools, approvals, timeouts, workflows, and harnesses |
-| [generation-and-media.md](references/generation-and-media.md) | Text streams, structured output, PDFs, files, images, speech, transcription, and video |
-| [mcp-and-runtimes.md](references/mcp-and-runtimes.md) | MCP transports, schemas, resources, prompts, elicitation, apps, drift, and managed assets |
-| [providers-and-observability.md](references/providers-and-observability.md) | Provider capabilities, integrations, reasoning controls, telemetry, and lifecycle events |
-| [ui-and-streams.md](references/ui-and-streams.md) | `useChat`, persistence, data streams, direct agent transport, approvals, and realtime UI |
+| [migrations.md](references/migrations.md) | Runtime requirements, migration, renamed APIs, deprecations, and result semantics |
+| [agents-and-tools.md](references/agents-and-tools.md) | Agent loops, tools, approvals, timeouts, workflows, harnesses, and code-mode routing |
+| [generation-and-media.md](references/generation-and-media.md) | Text and object generation, files, images, speech, transcription, video, and batches |
+| [mcp-and-runtimes.md](references/mcp-and-runtimes.md) | MCP clients, schemas, resources, prompts, apps, elicitation, and drift detection |
+| [providers-and-observability.md](references/providers-and-observability.md) | Provider capabilities, integrations, reasoning controls, telemetry, and lifecycle data |
+| [ui-and-streams.md](references/ui-and-streams.md) | `useChat`, persistence, data streams, direct transport, approvals, realtime, and stream errors |
 
 ## Breaking changes first
 
-### Runtime and modules
+### Runtime and packages
 
-When targeting the v7 API line:
+For the v7 API line, require Node.js 22 or newer and ESM imports. CommonJS
+`require()` is unsupported. Upgrade `ai` and every provider package together, run the
+codemod, and manually review semantic changes:
 
-- Require Node.js 22 or newer.
-- Use ESM imports; CommonJS `require()` is unsupported.
-- Upgrade `ai` and every provider package together.
-- Run `npx @ai-sdk/codemod v7`, then review semantic changes manually.
+```sh
+npx @ai-sdk/codemod v7
+```
 
-The earlier 4.0 migration also removed deprecated APIs. Its codemods cover much of the
-mechanical work, but they do not eliminate the need to follow the migration guide.
+Version 4.0 also removed deprecated APIs. Its codemods handle much of the mechanical
+migration, but consult the migration guide for manual work.
 
-### Renamed APIs
+### Current names and deprecations
 
-For v7-targeted code, use the current names:
+Use these names in v7-targeted code:
 
 | Earlier name | Current name |
 | --- | --- |
@@ -55,18 +56,20 @@ For v7-targeted code, use the current names:
 | `experimental_output` | `output` |
 | `experimental_prepareStep` | `prepareStep` |
 | `experimental_telemetry` | `telemetry` |
+| `experimental_repairToolCall` | `repairToolCall` |
+| `experimental_repairText` | `repairText` |
+| `Experimental_GeneratedImage` | `GeneratedFile` |
 
-System messages placed directly in `prompt` or `messages` require
-`allowSystemInMessages: true`. Tool-level `needsApproval`, result-instance response
-methods, and Vue's `Chat` class are deprecated; prefer call-level `toolApproval`,
-top-level response helpers, and `useChat`.
+The repair options retain deprecated experimental aliases. System messages embedded
+in `prompt` or `messages` require `allowSystemInMessages: true`. Tool-level
+`needsApproval`, result-instance response methods, and Vue's `Chat` class are
+deprecated; use call-level `toolApproval`, top-level response helpers, and `useChat`.
 
 ### Multi-step result scope
 
 Top-level multi-step results accumulate `content`, tool calls and results, files,
-sources, warnings, and usage across the whole run. Use `finalStep` when only the last
-step is relevant. Request and response bodies are no longer retained unless explicitly
-requested.
+sources, warnings, and usage for the whole run. Use `finalStep` for last-step-only
+values. Request and response bodies are retained only when explicitly requested.
 
 ```ts
 const totalUsage = await result.usage;
@@ -76,12 +79,12 @@ console.log(totalUsage, finalStep.usage);
 
 ## Agent control quick reference
 
-### Stop conditions
+### Bound every loop
 
-`ToolLoopAgent` defaults to `isStepCount(20)`. `stopWhen` is evaluated after a step
-that produced tool results; arrays use OR semantics. A loop also stops on a normal
-finish without tool calls, a tool without `execute`, or an approval-required call.
-Use `isLoopFinished()` only when natural completion is safe without a step cap.
+`ToolLoopAgent` defaults to `isStepCount(20)`. `stopWhen` runs after a step that
+produced tool results, and arrays have OR semantics. A loop also stops after normal
+completion without tool calls, a tool call with no `execute`, or an approval request.
+Use `isLoopFinished()` only when uncapped natural completion is intentional.
 
 ```ts
 const agent = new ToolLoopAgent({
@@ -91,147 +94,133 @@ const agent = new ToolLoopAgent({
 });
 ```
 
-### Reconfigure each step
+### Reconfigure steps and calls
 
-`prepareStep` receives the current model, zero-based `stepNumber`, prior `steps`,
-outgoing `messages`, and runtime context. It can replace the model or messages and
-restrict `activeTools` or `toolChoice`; return `{}` to keep constructor settings.
+`prepareStep` sees the current model, zero-based `stepNumber`, previous `steps`,
+outgoing `messages`, and runtime context. It may replace the model or messages,
+restrict `activeTools`, choose tools, and override per-call settings; return `{}` to
+retain constructor settings. `ToolLoopAgent.prepareCall` can inspect and override the
+top-level `reasoning` setting.
 
 For explicit completion, combine `toolChoice: 'required'` with a terminal tool that
-has no `execute`. The terminal payload remains available through `staticToolCalls`.
+has no `execute`. Read its typed payload from `staticToolCalls`.
 
-### Typed outputs and UI
+### Typed state and output
 
-Declare `output: Output.object(...)` on the agent for a validated, inferred
-`generate().output`. Derive persisted and rendered chat types with
-`InferAgentUIMessage<typeof agent>`, and serve them with
+Declare `output: Output.object(...)` on an agent for validated, inferred
+`generate().output`. Derive UI and persistence types with
+`InferAgentUIMessage<typeof agent>` and serve them with
 `createAgentUIStreamResponse`.
 
-Constructor-level and call-level lifecycle callbacks compose. If both define the same
-callback, the constructor callback runs first; the call callback does not replace it.
+Use `runtimeContext` for typed orchestration state shared across preparation,
+approvals, callbacks, telemetry, and agents. Use a tool's `contextSchema` with
+`toolsContext` for private, tool-scoped values; only that tool receives validated
+`context`.
 
-### Context boundaries
+Constructor-level and call-level lifecycle callbacks compose. When both define the
+same callback, the constructor callback runs first.
 
-Use `runtimeContext` for typed orchestration state shared across step preparation,
-approvals, callbacks, telemetry, and agents. Use a tool's `contextSchema` plus
-`toolsContext` for private, tool-scoped configuration; only that tool receives its
-validated `context`.
+### Approvals return, then replay
 
-### Approvals are return and replay
-
-An approval request ends the current generation. Preserve `result.response.messages`,
-append matching `tool-approval-response` parts in a `tool` message, and invoke the
-model again. Call-level `toolApproval` can require a user decision, decide
-automatically, or use a typed policy. Use signed approvals and revalidate input and
-policy when replay crosses a trust boundary.
+Approval does not suspend generation. Preserve `result.response.messages`, append
+matching `tool-approval-response` parts in a `tool` message, then invoke generation
+again. Call-level `toolApproval` can request user review, decide automatically, or use
+a typed policy. Sign approvals and revalidate input and policy when replay crosses a
+trust boundary.
 
 ## Tool execution quick reference
 
-- `execute(input, context)` can read `toolCallId`, conversation `messages`, and the
-  request `abortSignal`.
-- `dynamicTool` keeps static inference for known tools while exposing `dynamic: true`
-  for runtime-defined calls that need validation or casting.
-- An async-generator `execute` streams preliminary values; its last value is the final
-  tool result.
-- `onInputStart` and `onInputDelta` observe streamed argument construction;
-  `onInputAvailable` receives validated complete input in both streaming and
-  non-streaming generation.
-- Media returned by `execute` does not automatically reach the model. Implement
-  `toModelOutput`, preferably with inline media bytes where provider URL support is
-  uncertain.
-- Use `experimental_repairToolCall` to replace malformed calls or return `null` to
-  decline repair. Distinguish `NoSuchToolError`, `InvalidToolArgumentsError`,
-  `ToolExecutionError`, and `ToolCallRepairError`.
+- `execute(input, context)` can read `toolCallId`, conversation `messages`, the
+  request `abortSignal`, scoped `context`, and an optional sandbox session.
+- `dynamicTool` retains static inference for known tools while marking runtime-loaded
+  calls and results with `dynamic: true`; validate or cast their unknown values.
+- An async-generator `execute` streams preliminary values; its last value is final.
+- `onInputStart` runs before validated `onInputAvailable` in streaming and
+  non-streaming calls; `onInputDelta` observes streaming argument chunks.
+- Media returned from `execute` does not automatically reach the model. Implement
+  `toModelOutput`, favoring inline bytes when provider URL support is uncertain.
+- Use `repairToolCall` to replace malformed calls or return `null`; distinguish
+  `NoSuchToolError`, `InvalidToolArgumentsError`, `ToolExecutionError`, and
+  `ToolCallRepairError`.
 
-Generation and agents accept total, step, idle-chunk, default-tool, and per-tool
-timeouts. Timeout aborts surface as `TimeoutError`. A supplied `SandboxSession` reaches
-tools as `experimental_sandbox` and supports working directories, environment values,
+Generation and agents accept total, step, first-content, idle-chunk, default-tool, and
+per-tool timeouts. Timeouts surface as `TimeoutError`; first-content and idle-chunk
+budgets apply only to streaming. A supplied `SandboxSession` reaches tools as
+`experimental_sandbox` and supports working directories, environment values,
 streaming output, and abort signals.
 
-Use `WorkflowAgent` when execution must survive restarts, deployments, interruptions,
-or delayed approvals. Use `HarnessAgent` to expose an external agent runtime through
-the standard `Agent` interface, including resumable sessions and interrupted turns.
+Use `WorkflowAgent` when execution must survive restarts, deployments,
+interruptions, or delayed approvals. Use experimental `HarnessAgent` to adapt an
+external runtime to the standard `Agent` interface and resume sessions or interrupted
+turns.
 
 ## Streaming and structured output quick reference
 
-`streamText` starts immediately but progresses under consumer backpressure: always
-consume a returned stream. Streaming generation failures arrive through `onError` or
-an in-band `error` part; tool failures become `tool-error` parts. Non-streaming schema
-and generation failures still throw.
+`streamText` begins immediately but advances under consumer backpressure. Always
+consume a returned stream. Generation errors arrive through `onError` or in-band
+`error` parts; tool failures become `tool-error` parts. Non-streaming schema and
+generation failures still throw. Await response-piping helpers to catch both stream
+read and write errors.
 
-Stream transforms run in order before callbacks and result promises. A transform that
-calls `stopStream` must emit synthetic `finish-step` and `finish` events so downstream
-consumers complete. Exceptions in experimental lifecycle observer hooks are swallowed
-and do not fail generation.
+Transforms run in order before callbacks and result promises. A transform that calls
+`stopStream` must emit synthetic `finish-step` and `finish` events. Exceptions in
+experimental lifecycle observer hooks are swallowed and do not fail generation.
 
-For structured output:
+For structured results:
 
-- Agents can own an `Output.object` schema directly.
+- Agents can own an `Output.object` schema.
 - Text generation can combine tools with a final validated output in a multi-step run.
-- `NoObjectGeneratedError` retains raw text, response metadata, usage, and cause.
+- `NoObjectGeneratedError` preserves raw text, response metadata, usage, and cause.
 - Array mode preserves transforms, coercions, defaults, and pipes.
 - JSON extraction and repair can recover malformed structured output and tool calls.
 
-## UI and transport quick reference
+## UI and MCP quick reference
 
-`useChat` supports client-to-server chat IDs, server-assigned response message IDs,
-and `appendResponseMessages` for persistence. `createDataStreamResponse` can emit
-custom data and message annotations before or alongside generation; merge a
-`streamText` result with `mergeIntoDataStream`.
+`useChat` can send client chat IDs, receive server-assigned response message IDs, and
+persist with `appendResponseMessages`. `createDataStreamResponse` emits custom data
+and annotations before or beside generation; merge `streamText` with
+`mergeIntoDataStream`. `DirectChatTransport` connects `useChat` directly to an agent.
 
-`DirectChatTransport` connects `useChat` directly to an `Agent` without a separate
-route transport. UI flows can submit approval responses automatically, use async
-`sendAutomaticallyWhen` conditions, and preserve provider metadata across streams and
-turns. Experimental realtime hooks normalize browser WebSocket sessions, ephemeral
-tokens, audio transcription, client tools, and `UIMessage[]` state.
+Create MCP clients with `@ai-sdk/mcp`. Prefer HTTP in deployments and stdio locally.
+Keep the client open through generation and close it afterward. Passing `schemas` to
+`client.tools()` limits discovery and types inputs. An `outputSchema` validates
+`structuredContent`, falls back to JSON parsed from text, and throws if neither is
+valid; without it the tool returns raw `CallToolResult`.
 
-## MCP quick reference
+Treat MCP resources as application-selected context and prompts as user-selected
+templates. Elicitation requires an advertised capability and a handler returning
+`accept`, `decline`, or `cancel`. Before exposing remotely described tools, persist a
+trusted `fingerprintTools` snapshot and compare later definitions with
+`detectToolDrift`.
 
-Create MCP clients from `@ai-sdk/mcp`. Prefer HTTP for deployments and stdio only for
-local servers. Keep the client open through generation and close it afterward. The
-lightweight adapter does not provide session management, resumable streams, or
-notification reception.
+## Media, providers, and telemetry quick reference
 
-Passing `schemas` to `client.tools()` limits discovery to named tools and adds typed
-inputs. An `outputSchema` validates `structuredContent`, falls back to JSON parsed from
-text, and throws when neither yields a valid value. Without one, execution returns the
-raw `CallToolResult`.
-
-Treat resources as application-selected context and prompts as user-selected server
-templates. Elicitation requires both an advertised capability and a registered handler
-that returns `accept`, `decline`, or `cancel`.
-
-Before exposing remotely described tools, persist a trusted `fingerprintTools`
-snapshot and compare later definitions with `detectToolDrift`. The application owns
-snapshot storage and the policy for detected drift.
-
-## Media and provider quick reference
-
-- Compatible providers accept PDF bytes as a `file` message part with
+- Compatible providers accept PDFs as `file` message parts with
   `mimeType: 'application/pdf'`.
-- `uploadFile` and `uploadSkill` create reusable provider references instead of
-  resending bytes or skill files.
+- `uploadFile` and `uploadSkill` create reusable provider references.
 - `generateSpeech`, `transcribe`, `SpeechResult`, `TranscriptionResult`, and
-  `generateImage` are stable APIs.
-- Canonical `file` parts may contain inline data, URLs, provider references, or
-  text-backed content.
-- Experimental video generation supports aborts and bounded downloads; reference
-  inputs can include images and video.
-- Top-level `reasoning` provides portable reasoning effort while `providerOptions`
-  remains available for provider-specific controls.
+  `generateImage` are stable; canonical `file` parts support bytes, URLs, provider
+  references, or text content.
+- Streaming transcription has one consumer: read `fullStream` before awaiting result
+  promises when both incremental and final values are required.
+- Experimental video supports aborts, bounded downloads, image and video references,
+  polling or webhooks, durable polling delays, and provider-specific adaptive ratios.
+- Top-level `reasoning` supplies portable effort control; keep `providerOptions` for
+  provider-specific settings.
 
-Register one global telemetry integration with `registerTelemetry`. OpenTelemetry lives
-in `@ai-sdk/otel`. Runtime and tool context is excluded unless explicitly selected;
-include only fields safe to export. Use `onStart`, `onStepEnd`, and `onEnd` for portable
-lifecycle handling, or subscribe instrumentation to the Node.js `ai:telemetry` tracing
-channel for structured events.
+Register one telemetry integration with `registerTelemetry`; OpenTelemetry is in
+`@ai-sdk/otel`. Runtime and tool context is excluded unless explicitly selected.
+Portable lifecycle hooks are `onStart`, `onStepEnd`, and `onEnd`; Node.js
+instrumentation can subscribe to the `ai:telemetry` tracing channel. Include only
+context fields safe to export.
 
 ## Implementation checklist
 
-1. Confirm the target API line before choosing renamed or experimental symbols.
-2. Bound every agent loop and long-running tool with stop rules, timeouts, and aborts.
-3. Consume streams and handle their in-band error parts.
+1. Confirm the installed API line before selecting stable, deprecated, or
+   experimental names.
+2. Bound loops and long-running tools with stop rules, timeouts, and abort signals.
+3. Consume streams, await piping helpers, and handle in-band failures.
 4. Persist complete response messages before replaying approvals.
-5. Validate runtime-defined tools, MCP outputs, and remotely supplied tool definitions.
+5. Validate runtime-defined tools, MCP outputs, and remotely supplied definitions.
 6. Keep secrets in tool-scoped context and opt telemetry fields in deliberately.
 7. Use durable workflows for operations that must survive process boundaries.

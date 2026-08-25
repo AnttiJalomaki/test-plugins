@@ -1,170 +1,317 @@
 # Rust 2024 Edition
 
-Use this reference when migrating an existing crate, reviewing edition-sensitive code, or selecting the Cargo resolver and formatting style. The core edition batch is `edition-2024`; later supplemental migration details are grouped with it.
+This reference consolidates the `edition-2024` and
+`edition-2024-supplemental` batches, plus edition-specific changes from
+`1.85.0`, `1.88.0`, and `1.91.0`.
 
-## Migration workflow
+## Migration workflow and blind spots
 
-Set the crate's `edition`, run `cargo fix --edition`, and review the result before compiling under the new edition. Automatic edits preserve compilation where possible but cannot prove unsafe preconditions, intended temporary lifetimes, macro rule priority, global symbol uniqueness, or formatting policy.
+The edition is selected with `edition = "2024"` in `Cargo.toml`. Run
+`cargo fix --edition`; it is driven by the `rust-2024-compatibility` lint
+group. Individual migration lints can be enabled with `#![warn(...)]` while a
+crate remains on edition 2021.
 
-## Syntax and pattern grammar
+`cargo fix` has two important blind spots:
 
-### Guarded-string token reservation
+- Macro bodies use the defining crate's edition. An exported `macro_rules!`
+  macro never invoked in its own crate is not exercised by migration lints and
+  may break callers after the bump—for example, one expanding `let dyn = 1;` or
+  relying on `$x:pat` not matching `A | B`. Test exported macros inside the
+  defining crate before migrating.
+- Doctests are not edited. Run `cargo test` after the edition bump and pin an
+  example with an `edition2018` code-fence tag if it cannot yet migrate.
 
-The edition reserves one or more `#` immediately before a string literal and two or more consecutive `#` characters. Inputs such as `m!(#"text"#)` and `m!(###)` no longer parse; insert whitespace to keep the tokens separate. Use `rust_2024_guarded_string_incompatible_syntax` or `cargo fix --edition` to find cases.
+Individual Cargo targets may override the package edition, allowing staged
+migration:
 
-### `gen` keyword reservation
+```toml
+[[bin]]
+name = "my-binary"
+edition = "2018"
+```
 
-`gen` is reserved for future generator blocks. Rename existing identifiers or write them as raw identifiers such as `r#gen`; `keyword_idents_2024` supports migration.
+`cargo fix --edition` defaults to `--all-targets`; use its target-selection
+flags with per-target editions. Trying a future edition before stabilization
+requires `cargo-features = ["edition20xx"]` before `[package]` and nightly.
 
-### `let` chains
+## Unsafe boundaries
 
-Top-level `let` expressions may be operands of an `&&` chain in `if` and `while`, interleaved with boolean conditions. They cannot be parenthesized or joined by `||`.
+### Foreign blocks and items
+
+Foreign blocks require `unsafe extern`. Items inside may be `safe` or
+`unsafe`; an unqualified item defaults to unsafe. The item qualifiers work in
+all editions since 1.82.
 
 ```rust
-if let Some(first) = iter.next()
-    && *first > 0
-    && let Some(second) = iter.next()
-{
-    use_pair(first, second);
+unsafe extern "C" {
+    pub safe fn sqrt(x: f64) -> f64;
+    pub unsafe fn strlen(p: *const std::ffi::c_char) -> usize;
+    pub fn free(p: *mut core::ffi::c_void);
+    pub safe static IMPORTANT_BYTES: [u8; 256];
 }
 ```
 
-### Fully explicit patterns after match ergonomics
+Migration lint: `missing_unsafe_on_extern`.
 
-After a pattern elides a reference and changes the default binding mode away from `move`, explicit `mut`, `ref`, `ref mut`, `&`, and `&mut` are rejected. Make the reference prefix fully explicit. The `rust_2024_incompatible_pat` lint and `cargo fix --edition` can rewrite affected patterns.
+### Unsafe attributes
+
+`no_mangle`, `export_name`, and `link_section` must use `unsafe(...)` because
+they can break linking even on otherwise safe code.
 
 ```rust
-let &[ref x, mut y] = &[(), ()];
+// SAFETY: no other global function uses this name.
+#[unsafe(no_mangle)]
+pub fn example() {}
+
+#[unsafe(export_name = "loop")]
+fn arduino_loop() {}
 ```
 
-### Broader macro `expr` fragments
+Migration lint: `unsafe_attr_outside_unsafe`.
 
-`$e:expr` now matches const blocks and `_`, which can change which declarative-macro arm wins. The compatibility rewrite to `expr_2021` preserves the old grammar; keep `expr` when the broader matching behavior is intended.
+### Unsafe operations inside unsafe functions
+
+An `unsafe fn` body is not implicitly an unsafe block. Put each unsafe
+operation in an explicit `unsafe { ... }`; `unsafe_op_in_unsafe_fn` warns by
+default.
 
 ```rust
-macro_rules! evaluate {
-    ($value:expr) => { consume($value) };
-    (const $value:expr) => { consume_const($value) };
+unsafe fn get_unchecked<T>(x: &[T], i: usize) -> &T {
+    unsafe { x.get_unchecked(i) }
 }
 ```
 
-## Iteration, inference, and opaque types
+### Environment mutation
 
-### Boxed-slice iteration
+`std::env::set_var`, `std::env::remove_var`, and deprecated
+`CommandExt::before_exec` are unsafe functions in edition 2024. Environment
+mutation is unsound if another thread may be running; there is no general safe
+replacement, so audit rather than blindly wrap each call.
 
-`Box<[T]>` has implemented `IntoIterator` since Rust 1.80, but earlier editions hide it from method-call lookup. In 2024, `boxed.into_iter()` consumes the box and yields `T`; use `boxed.iter()` for `&T`. Direct `for value in boxed` yields owned values in every edition on compilers with the implementation.
+```rust
+// SAFETY: this point in startup is single-threaded.
+unsafe { std::env::set_var("FOO", "123") };
+```
 
-### Never-type fallback
+Migration lint: `deprecated_safe_2024`.
 
-An unconstrained never-to-any coercion falls back to `!`, not `()`. Specify unit where code relied on implicit unit inference, particularly generic `f()?` calls or panicking closures. `never_type_fallback_flowing_into_unsafe` is deny-by-default in this edition.
+### References to mutable statics
+
+`static_mut_refs` is deny-by-default. It covers explicit and implicit
+references, including `println!("{NUMS:?}")` and `NUMS.len()`. Prefer an
+atomic, `Mutex<T>`, `OnceLock`/`LazyLock`, or a `Sync` wrapper around
+`UnsafeCell`; where a mutable static is unavoidable, form `&raw const` or
+`&raw mut` instead of first creating `&mut STATE as *mut _`. There is no
+automatic migration.
+
+```rust
+static mut STATE: GlobalState = GlobalState::new();
+unsafe { example_ffi(&raw mut STATE) };
+```
+
+## Opaque-type capture
+
+Return-position `impl Trait` in edition 2024 implicitly captures every
+in-scope generic parameter, including lifetimes. This matches RPITIT and
+`async fn`; earlier bare functions and inherent methods captured a lifetime
+only when it appeared syntactically in the bounds.
+
+```rust
+fn f_implicit(_: &()) -> impl Sized {}
+// Edition 2021: equivalent to `impl Sized + use<>`.
+// Edition 2024: equivalent to `impl Sized + use<'_>`.
+```
+
+The all-edition `use<...>` bound states the capture set, and `use<>` captures
+nothing:
+
+```rust
+fn capture<'a, T>(x: &'a (), y: T) -> impl Sized + use<'a, T> { (x, y) }
+fn no_capture<'a>(_: &'a ()) -> impl Sized + use<> {}
+```
+
+In-scope parameters include outer-impl generics, `for<'a>` binder lifetimes,
+and the anonymous type parameter created by argument-position `impl Trait`.
+That anonymous parameter is the case the migration lint cannot rewrite: name it
+before putting it in `use<...>`.
+
+Replace the `Captures<(&'a (), T)>` trick and the outlives trick
+(`impl Sized + 'a` plus a gratuitous `T: 'a`) with `use<'a, T>` in any edition,
+or rely on implicit capture in edition 2024. Migration lint:
+`impl_trait_overcaptures`.
+
+## Temporary scopes and drop order
+
+### `if let` scrutinees
+
+Scrutinee temporaries now drop when the then-block ends or before entering
+`else`, rather than after the entire `if let`. This can release an `RwLock`
+read guard before the else branch tries to write.
+
+To preserve the old lifetime, rewrite to `match`, whose scrutinee temporary
+lives through the expression. The `if_let_rescope` migration lint makes this
+rewrite, so review it: preserving old semantics may preserve an existing
+deadlock.
+
+From `1.91.0`, this edition rule also applies to temporaries created by `pin!`,
+`format_args!`, `write!`, and `writeln!` in an `if let` scrutinee. A separate
+future-incompatibility lint warns about further shortening that lands later.
+
+### Tail expressions
+
+Temporaries in a block, function, or closure tail expression drop at that
+block's end, before its locals, instead of extending outward. This permits:
+
+```rust
+fn f() -> usize {
+    let c = RefCell::new("..");
+    c.borrow().len()
+}
+```
+
+It rejects code that relied on extension, such as
+`let x = { &String::from("1234") }.len();`. Lift the block into a `let` to
+re-enable temporary lifetime extension. The `tail_expr_drop_order` lint warns
+only where a non-trivial `Drop` is involved and has no semantics-preserving
+automatic rewrite.
+
+## Never-type fallback
+
+When the compiler cannot infer the type to which `!` coerces, edition 2024
+falls back to `!` rather than `()`. Typical failures include a generic `f()?`,
+`panic!()` in a closure with a trait-constrained return type, and an
+inference-dependent branch paired with `return`.
 
 ```rust
 f::<()>()?;
 run(|| -> () { panic!() });
+() = if true { Default::default() } else { return };
 ```
 
-### Return-position `impl Trait` capture
+`never_type_fallback_flowing_into_unsafe` is deny-by-default;
+`dependency_on_unit_never_type_fallback` provides an advance warning before
+migration. Both become deny-by-default on every edition in `1.92.0`, so code
+on earlier editions can start failing. They remain lints and can be allowed.
+When an affected crate is compiled as a dependency Cargo warns instead of
+failing; the denial applies when that crate is built directly.
 
-Without a `use<...>` bound, a return-position opaque type captures every in-scope type, const, and lifetime parameter, including parameters on an outer `impl`. A newly captured lifetime can prevent an otherwise independent value from being `'static`. Use precise capture to preserve non-capture; name an argument-position `impl Trait` parameter before listing it.
+## Patterns, conditions, and iteration
+
+### Match ergonomics reservations
+
+In an inherited non-move binding mode, explicit `mut`, `ref`, and `ref mut`
+bindings are rejected, as are `&`/`&mut` patterns that reset that mode. For
+example, `let [ref x] = &[()];` no longer compiles; bind through the reference
+or match the value. Migration lint: `rust_2024_incompatible_pat`.
+
+### Let chains
+
+As of `1.88.0`, `if` and `while` conditions may join `let` expressions and
+boolean conditions with `&&`. Bindings are visible in later links and the body,
+and patterns may be refutable or irrefutable. This remains an error in edition
+2021 regardless of compiler version because it depends on the new `if let`
+temporary scope.
 
 ```rust
-fn value<'a, T>(_: &'a (), value: T) -> impl Sized + use<T> { value }
+if let Channel::Stable(v) = release_info()
+    && let Semver { major, minor, .. } = v
+    && major == 1
+    && minor == 88
+{ /* ... */ }
 ```
 
-## Temporary scope and destruction order
+### Boxed-slice iteration
 
-### `if let` scrutinees
+Method-call syntax `boxed_slice.into_iter()` yields `T` rather than `&T`.
+Use `.iter()` to retain borrowed iteration. The `boxed_slice_into_iter` lint is
+warn-by-default in all editions.
 
-Scrutinee temporaries live through the successful arm but drop before `else`, permitting resources such as read locks to be reacquired there. Rewrite to `match` when the pre-2024 lifetime through both arms is intentional. The `if_let_rescope` lint identifies affected expressions.
+## Prelude and macro grammar
 
-From 1.91.0, temporaries produced by `pin!`, `format_args!`, `write!`, and `writeln!` in an `if let` scrutinee consistently obey this shortened scope.
+### Prelude collisions
 
-### Tail expressions
-
-Temporaries in a function, closure, or block tail may drop at that block's end before local bindings. This can make `c.borrow().len()` valid as a function tail when `c` is a local `RefCell`, but makes `{ &String::from("1234") }.len()` invalid. Introduce a local when the inner value must live longer. `tail_expr_drop_order` warns for nontrivial destructors but has no automatic rewrite.
-
-## Unsafe and foreign interfaces
-
-### Unsafe foreign blocks and items
-
-Declare every foreign block `unsafe extern`. Items may be explicitly `safe` or `unsafe`; an unqualified declaration remains unsafe. Marking an item safe commits the block author to the correctness of its foreign signature.
+`Future` and `IntoFuture` join the prelude. A custom trait method such as
+`poll` can become ambiguous on a type that also implements `Future`; use fully
+qualified syntax. Migration lint: `rust_2024_prelude_collisions`.
 
 ```rust
-unsafe extern "C" {
-    pub safe fn sqrt(value: f64) -> f64;
-    pub unsafe fn strlen(value: *const core::ffi::c_char) -> usize;
-    pub fn free(value: *mut core::ffi::c_void);
+<_ as MyPoller>::poll(&core::pin::pin!(async {}));
+```
+
+### Expression fragments
+
+`expr` macro fragments also match `const { ... }` and `_`. `expr_2021`
+preserves the narrower grammar. The
+`edition_2024_expr_fragment_specifier` lint rewrites `expr` to `expr_2021`, but
+usually retain `expr` unless a newly matched input would shadow a later rule.
+
+```rust
+macro_rules! example {
+    ($e:expr) => { "first rule" };
+    (const $e:expr) => { "second rule" };
 }
 ```
 
-### Unsafe attributes
+`missing_fragment_specifier` is a hard error: every `macro_rules!`
+metavariable needs a fragment kind.
 
-Write `no_mangle`, `export_name`, and `link_section` as `#[unsafe(...)]`. Migration can wrap the attribute but cannot verify symbol uniqueness, ABI expectations, or section invariants.
+### Reserved identifiers and tokens
 
-```rust
-// SAFETY: this is the program's only definition of `device_loop`.
-#[unsafe(export_name = "device_loop")]
-pub fn run() {}
-```
+`gen` is reserved; change identifiers to `r#gen`. Migration lint:
+`keyword_idents_2024`.
 
-### Unsafe operations inside unsafe functions
+Guarded strings—one or more `#` immediately followed by a string literal—and
+two or more consecutive `#` characters are reserved. Macro inputs such as
+`demo!(#"foo"#)` or `demo!(###)` must insert whitespace to keep tokens
+separate. Migration lint: `rust_2024_guarded_string_incompatible_syntax`.
 
-`unsafe_op_in_unsafe_fn` warns by default. An unsafe function makes calling it unsafe but does not justify every unsafe operation in its body; wrap each operation in an explicit block or deliberately configure the lint.
+Raw lifetimes can be written as `'r#ident` since edition 2021, which lets a
+`'gen` lifetime migrate to `'r#gen`. In editions 2015/2018, the same characters
+tokenize separately; when moving macro input to 2021+, `my_macro!('r#foo)` may
+need to become `my_macro!('r# foo)`.
 
-```rust
-unsafe fn get_unchecked<T>(values: &[T], index: usize) -> &T {
-    unsafe { values.get_unchecked(index) }
-}
-```
+## Cargo manifest migration
 
-### Mutable statics
+- The `[project]` table is removed; use `[package]`.
+- Underscore dependency-key spellings such as `default_features` are removed;
+  use `default-features`.
+- On a workspace-inherited dependency, a member's
+  `default-features = false` is an error if the workspace declaration enables
+  default features. Put the setting in `[workspace.dependencies]`.
+- Resolver v3 is the edition default.
 
-`static_mut_refs` is deny-by-default and includes implicit borrows from formatting or method calls. Prefer an immutable static containing an atomic, lock, `OnceLock`, or `LazyLock`. If global reasoning is unavoidable, form `&raw const` or `&raw mut` pointers and confine unsafe access.
+## Doctests
 
-### Environment and pre-exec mutation
+Edition 2024 combines doctests into one executable. `1.85.0` silently fell
+back to per-doctest compilation because of a bug; `1.85.1` restores combining
+and can expose tests that passed only while isolated.
 
-`std::env::set_var`, `std::env::remove_var`, and deprecated Unix `CommandExt::before_exec` require unsafe calls. Mutate the environment only when no other thread can run; migrate `before_exec` to the also-unsafe `pre_exec` when appropriate. The `deprecated_safe_2024` rewrite inserts blocks but cannot prove these conditions.
+Use the `standalone_crate` code-fence tag when a doctest must remain its own
+crate. Rustdoc already separates `compile_fail` and `edition*` tests, tests with
+crate-level attributes such as `#![feature(...)]` or `global_allocator`, and
+macros using `$crate`. It cannot detect code observing its own source position
+or module path, such as `Location::caller().line()` or `type_name`; test these
+after migration.
 
-## Prelude and method resolution
+For `#![doc = include_str!("../README.md")]`, `include!`, `include_str!`, and
+`include_bytes!` inside README doctests resolve relative to the Markdown file,
+not the Rust source. This path change has no automatic migration.
 
-`std::future::Future` and `IntoFuture` enter the prelude. Their methods can conflict with another in-scope trait; `rust_2024_prelude_collisions` migrates affected calls to fully qualified syntax such as `<_ as MyPoller>::poll(value)`.
+## Formatting style edition
 
-## Cargo behavior
-
-### Resolver 3
-
-For a normal 2024 package, Cargo implies resolver 3 and `resolver.incompatible-rust-version = "fallback"`, making dependency selection aware of Rust-version compatibility. The resolver is workspace-global; a virtual workspace has no package edition from which to infer it and must opt in.
-
-```toml
-[workspace]
-resolver = "3"
-```
-
-### Manifest spelling
-
-The edition rejects `[project]` in favor of `[package]` and the underscore aliases `default_features`, `crate_type`, `proc_macro`, `dev_dependencies`, and `build_dependencies` in favor of hyphenated forms. `cargo fix --edition` updates these spellings.
-
-### Inherited dependency defaults
-
-A member may specify `default-features = false` on a `{ workspace = true }` dependency only when the matching `[workspace.dependencies]` entry also disables defaults. The previously ineffective member-only form is now an error; another workspace member can still enable defaults through feature unification.
-
-## Doctests and included documentation
-
-Rustdoc attempts to compile compatible doctests from a 2024 crate into one executable, though each test still runs in a separate process. It separates `compile_fail` blocks, explicit-edition blocks, crate or global attributes, and macros that use `$crate`. Add the `standalone_crate` code-block tag when generated locations or `type_name` paths must remain isolated.
-
-When `#[doc = include_str!(...)]` includes Markdown that itself uses `include!`, `include_str!`, or `include_bytes!`, resolve nested paths relative to the Markdown file rather than the Rust source. Adjust old paths manually.
-
-## Rustfmt style edition
-
-Formatting style can be selected independently of parsing edition. `--edition 2024` selects both; `--style-edition 2024` or the following setting changes only formatting:
+Rustfmt's `style_edition` is separate from the language edition and defaults to
+the crate edition. It can also be selected in `rustfmt.toml` or with
+`--style-edition`:
 
 ```toml
-# rustfmt.toml
 style_edition = "2024"
 ```
 
-The 2024 style intentionally changes comment alignment and accidental formatting inside comments, long strings, array patterns, impl generics, complex return types, nested tuple access, macro calls, attributed `let`-`else`, and several match, closure, and where-clause layouts. Running `cargo fmt` applies the migration; isolate this churn as a formatting-only change when useful.
-
-Sorting is identifier-aware: it ignores `r#`, so `r#async` sorts as `async`; it uses Unicode lexicographic order and compares numeric suffixes naturally, placing names such as `NonZeroU8`, `NonZeroU16`, `NonZeroU32`, and `NonZeroU64` in numeric order.
-
-These supplemental migration details correspond to `edition-2024-supplemental`.
+The 2024 style sorts raw identifiers by the name without `r#`, sorts embedded
+integers in version order, and sorts lowercase module names after uppercase
+type names in `use` lists. It also collapses some single-expression blocks,
+formats tuple-field access without a separating space, adds a block around a
+closure whose only expression is a loop, changes indentation around comments
+and impl generics, removes blank lines from `where` clauses, and adds
+semicolons to `return`/`break`/`continue` in match-arm blocks. Budget for a
+large formatting-only change.

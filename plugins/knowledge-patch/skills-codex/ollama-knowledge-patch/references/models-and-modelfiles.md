@@ -1,9 +1,8 @@
-# Models, imports, and Modelfiles
+# Models, Imports, and Modelfiles
 
-## Import GGUF artifacts
+## Import local GGUF models
 
-Ollama 0.30 accepts either a GGUF file or a directory containing GGUF files in
-a Modelfile's `FROM`.
+A Modelfile `FROM` accepts a GGUF file or a directory containing GGUF files.
 
 ```text
 FROM ./my-model.Q4_K_M.gguf
@@ -14,8 +13,9 @@ ollama create -f Modelfile my-model
 ollama run my-model
 ```
 
-Tool calling remains available when the imported GGUF supports it. Verify
-`ollama show` lists the `tools` capability before passing it to an integration:
+## Preserve tool calling in GGUF imports
+
+Tool calling carries over when the imported GGUF supports it. Confirm the capability before using the model with an integration:
 
 ```sh
 ollama show my-model
@@ -24,10 +24,33 @@ ollama launch hermes --model my-model
 ollama launch openclaw --model my-model
 ```
 
+The `ollama show` output must list the `tools` capability.
+
+## Give coding integrations at least 64K context
+
+Set Ollama's context length to at least 64,000 tokens for coding tools. Recommended local tags are `glm-4.7-flash`, `qwen3-coder`, and `gpt-oss:20b`. Cloud tags with full context include `glm-4.7:cloud`, `minimax-m2.1:cloud`, `gpt-oss:120b-cloud`, and `qwen3-coder:480b-cloud`.
+
+At 64K context, `glm-4.7-flash` requires about 23 GB of local VRAM.
+
+```sh
+ollama pull glm-4.7-flash
+# Or use the hosted full-context variant:
+ollama pull glm-4.7:cloud
+```
+
+## Run Gemma 4 from the library
+
+Gemma 4 is available under the `gemma4` tag.
+
+```sh
+ollama run gemma4
+```
+
 ## Import Safetensors weights
 
-A Modelfile can build from a directory of Safetensors weights when the
-architecture is supported. When the Modelfile is stored with the weights:
+A Modelfile can build from a directory containing Safetensors weights for a supported architecture. Direct import supports Llama, Mistral/Mixtral, Gemma, and Phi-3 models, including fine-tunes fused with their foundation model.
+
+When the Modelfile is alongside the weights, use:
 
 ```text
 FROM .
@@ -37,30 +60,20 @@ FROM .
 ollama create my-model
 ```
 
-Direct import supports Llama, Mistral/Mixtral, Gemma, and Phi-3, including
-fine-tunes that have been fused with their foundation model.
+## Apply Safetensors or GGUF adapters
 
-## Apply adapters
-
-`ADAPTER` accepts:
-
-- a directory containing a Safetensors adapter; or
-- a GGUF adapter file.
-
-The path may be absolute or relative to the Modelfile.
+`ADAPTER` accepts either a Safetensors adapter directory or a GGUF adapter file. Its path may be absolute or relative to the Modelfile.
 
 ```text
 FROM llama3.2
 ADAPTER ./adapter.gguf
 ```
 
-`FROM` must name the exact base used during fine-tuning. A different base can
-produce erratic results. For Safetensors adapters, prefer non-quantized
-adapters over QLoRA adapters because framework quantization methods differ.
+`FROM` must identify the exact base model used for fine-tuning; another base can produce erratic results. For Safetensors adapters, prefer non-quantized adapters rather than QLoRA adapters because framework quantization methods differ.
 
 ## Quantize during CLI creation
 
-`ollama create` accepts `-q` or `--quantize` for an FP16 or FP32 source model.
+`ollama create` accepts `-q` or `--quantize` to convert an FP16 or FP32 source model while creating the Ollama model.
 
 ```text
 FROM /path/to/fp16-model
@@ -70,37 +83,32 @@ FROM /path/to/fp16-model
 ollama create --quantize q4_K_M my-model
 ```
 
-## Declare a minimum version
+## Require a minimum Ollama version
 
-Use `REQUIRES` to declare the minimum Ollama version needed by a model.
+Use the Modelfile `REQUIRES` instruction to declare the minimum Ollama version required by a model.
 
 ```text
 FROM llama3.2
 REQUIRES 0.14.0
 ```
 
-## Use and alias library models
+## Alias a model for hard-coded client defaults
 
-Gemma 4 is available under the `gemma4` tag:
-
-```sh
-ollama run gemma4
-```
-
-## Run MLX-specific models
-
-On Apple Silicon, the MLX engine supports NVIDIA's model-optimized NVFP4
-format, including imported NVFP4 artifacts and dedicated model tags.
-
-The initial Qwen coding preview needs more than 32 GB of unified memory.
-Newer MLX tags can be run directly or passed to an integration:
+When a client insists on a default OpenAI model name, copy an existing Ollama model to that name and use the alias in requests.
 
 ```sh
-ollama run qwen3.5:35b-a3b-coding-nvfp4
-ollama run gemma4:12b-mlx
-ollama launch pi --model gemma4:12b-mlx
+ollama cp llama3.2 gpt-3.5-turbo
 ```
 
-For digest-addressed uploads and REST quantization, see
-[native-api.md](native-api.md). For aliases and compatibility-client context
-configuration, see [compatibility-apis.md](compatibility-apis.md).
+## Set compatibility-API context in a derived model
+
+The OpenAI-compatible API has no request field for context size. Create a derived model with `PARAMETER num_ctx`, then use the derived name in requests.
+
+```text
+FROM llama3.2
+PARAMETER num_ctx 65536
+```
+
+```sh
+ollama create mymodel
+```

@@ -1,30 +1,25 @@
 # Programmatic APIs
 
-## Import Stable Entry Points
+## API Migration
 
-Only documented package subpaths are stable public APIs. Do not import CLI
-command internals. Registry schemas are exposed from `shadcn/schema`:
+Existing `components.json` files and installed components remain compatible,
+but direct API consumers should replace `fetchRegistry` with `getRegistry` and
+`resolveRegistryTree` with `resolveRegistryItems`. Registry schemas now come
+from the `shadcn/schema` public subpath.
 
 ```ts
 import { registryItemSchema } from "shadcn/schema"
 ```
 
-Direct API consumers should replace earlier names:
+## Public API Boundary and Registry Configuration
 
-- `fetchRegistry` becomes `getRegistry`.
-- `resolveRegistryTree` becomes `resolveRegistryItems`.
+Only documented subpath imports are stable APIs; CLI command internals are not
+public. `getRegistriesConfig(cwd)` reads `components.json`, or falls back to
+top-level `registries` in `package.json`.
 
-Existing `components.json` files and installed components remain compatible;
-the rename matters to code that calls the package API directly.
-
-## Resolve Registry Configuration
-
-`getRegistriesConfig(cwd)` reads `components.json`. If that file is absent, it
-falls back to a top-level `registries` entry in `package.json`.
-
-Registry fetches use resolved-URL caching for the lifetime of the process by
-default and deduplicate concurrent in-flight requests. Disable caching when a
-server or watcher must observe upstream changes immediately:
+Registry fetches use process-lifetime resolved-URL caching by default and
+deduplicate concurrent in-flight requests. Disable caching for servers and
+watchers that require fresh registry reads.
 
 ```ts
 const config = await getRegistriesConfig(process.cwd())
@@ -34,20 +29,20 @@ const items = await getRegistryItems(["@acme/button"], {
 })
 ```
 
-## Install Without Prompts
+## Non-interactive Installation
 
-`addRegistryItems` applies files, dependencies, environment variables, CSS,
-and Tailwind configuration without prompting. It throws errors rather than
-exiting the host process. Existing files are skipped unless `overwrite` is
-enabled.
+`addRegistryItems` writes files and applies dependencies, environment
+variables, CSS, and Tailwind configuration without prompting. It throws rather
+than exiting and skips existing files unless `overwrite` is enabled.
 
-The function does not load project configuration. Pass a resolved config that
-contains aliases and `resolvedPaths`:
+The function does not load project configuration. Pass a resolved configuration
+containing aliases and `resolvedPaths`. A registries-only configuration is
+sufficient only for universal `registry:item` or `registry:file` payloads whose
+files provide explicit targets.
 
 ```ts
 const cwd = process.cwd()
 const config = await getRegistriesConfig(cwd)
-
 await addRegistryItems(["@acme/agent"], {
   cwd,
   config,
@@ -56,15 +51,12 @@ await addRegistryItems(["@acme/agent"], {
 })
 ```
 
-A registries-only config is sufficient only for universal `registry:item` or
-`registry:file` payloads whose files all have explicit targets.
+## Typed Registry Failures
 
-## Handle Typed Failures
-
-Registry functions throw `RegistryError` subclasses. Recover by a specific
-error class or `RegistryErrorCode` for failures involving missing items,
-authentication, fetches, configuration, local files, parsing, validation,
-invalid namespaces, or missing environment variables.
+Registry functions throw subclasses of `RegistryError` rather than terminating
+the process. Branch on `RegistryErrorCode` or specific classes for missing
+items, authentication, fetch failures, configuration, local files, parsing,
+validation, invalid namespaces, and missing environment variables.
 
 ```ts
 try {
@@ -76,29 +68,18 @@ try {
 }
 ```
 
-Do not assume library calls terminate the process; decide at the application
-boundary whether to retry, report, skip, or fail.
+## Programmatic Preset Codes
 
-## Encode and Decode Presets
-
-Use the `shadcn/preset` entry point for programmatic preset codes:
+`encodePreset` accepts a partial preset, fills omitted values from
+`DEFAULT_PRESET_CONFIG`, and returns a version-prefixed URL-safe code.
+`decodePreset` returns the full defaulted configuration, or `null` for a
+missing or invalid code. `shadcn/preset` also exports validators, random-preset
+helpers, Base62 helpers, and the `PRESET_*` option constants used by theme
+tooling.
 
 ```ts
 import { decodePreset, encodePreset } from "shadcn/preset"
 
-const code = encodePreset({
-  style: "vega",
-  theme: "blue",
-  radius: "large",
-})
-
+const code = encodePreset({ style: "vega", theme: "blue", radius: "large" })
 const preset = decodePreset(code)
 ```
-
-`encodePreset` accepts a partial preset, fills omitted values from
-`DEFAULT_PRESET_CONFIG`, and returns a version-prefixed, URL-safe code.
-`decodePreset` returns the fully defaulted configuration, or `null` when the
-code is missing or invalid.
-
-The same entry point exports preset validators, random-preset helpers, Base62
-helpers, and the `PRESET_*` option constants used by theme tooling.

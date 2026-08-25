@@ -1,42 +1,29 @@
 # Providers and Authentication
 
-## Contents
-
-- [Database-backed account linking](#database-backed-account-linking)
-- [Credentials failures](#credentials-failures)
-- [Email providers](#email-providers)
-- [Experimental passkeys](#experimental-passkeys)
-- [OAuth provider customization](#oauth-provider-customization)
-- [Apple and redirect proxies](#apple-and-redirect-proxies)
-
 ## Database-backed account linking
 
-When a database and multiple authentication methods are configured, Auth.js attempts to link a later sign-in to existing `User` and `Account` records if the email matches.
+When a database and multiple authentication methods are configured, Auth.js
+tries to link a later sign-in to existing `User` and `Account` records if the
+email address matches. The email-verification guarantees of every enabled
+provider therefore become part of the account-linking security boundary.
 
-Treat each enabled provider's email-verification behavior as part of the account-linking trust boundary. A provider that does not strongly establish email ownership can make an email match unsafe even when every other provider verifies email reliably.
+Before adding a provider, determine whether it verifies email ownership to the
+same standard as the existing providers. Do not assume equal email strings
+alone demonstrate that both identities have the same owner.
 
-Before adding an authentication method:
+## Credentials failures and public codes
 
-1. Determine whether and when it marks an email as verified.
-2. Check whether attackers can choose or change the asserted email.
-3. Exercise sign-in against an existing account with the same email.
-4. Confirm that the resulting `User` and `Account` linkage matches the intended policy.
+The effect of returning `null` from a Credentials provider's `authorize`
+callback depends on how authentication was invoked:
 
-## Credentials failures
+- A built-in sign-in page redirects to
+  `?error=CredentialsSignin&code=credentials`.
+- A form action or custom server-side caller receives a thrown
+  `CredentialsSignin` and must catch it.
 
-### Built-in pages
-
-Return `null` from `authorize` to reject credentials. A built-in-page flow redirects with these query values:
-
-```text
-?error=CredentialsSignin&code=credentials
-```
-
-### Form actions and server-side handling
-
-Expect the same rejection to surface as a thrown `CredentialsSignin` in a form action or custom server-side flow. Catch it at the application boundary and return or redirect with an appropriate response.
-
-Subclass `CredentialsSignin` to replace the public `code`:
+Subclass `CredentialsSignin` to choose a different URL-visible `code`. Because
+that value is public, use a generic classification and never encode whether a
+specific account exists or which credential failed.
 
 ```ts
 class InvalidLoginError extends CredentialsSignin {
@@ -52,15 +39,16 @@ Credentials({
 })
 ```
 
-The code is visible in the URL. Use a generic value that does not reveal whether the username, password, account state, or another secret caused rejection.
-
 ## Email providers
 
-All providers with `type: "email"` require a database adapter for the verification-token flow.
+Every email-type provider requires a database adapter to store and consume
+verification tokens.
 
-### Loops
+### Loops magic links
 
-Create a Loops transactional template before configuring the provider. The template must contain the case-sensitive `url` variable, which receives the magic link. Configure both credentials explicitly:
+Create the Loops transactional template before enabling the provider. The
+template must accept the case-sensitive `url` variable containing the magic
+link. Configure both the API key and transactional-template ID.
 
 ```ts
 Loops({
@@ -69,9 +57,12 @@ Loops({
 })
 ```
 
-### Custom HTTP email service
+### Custom HTTP email delivery
 
-Represent an arbitrary HTTP mail service as a raw email provider. `sendVerificationRequest` receives the recipient in `identifier` and the magic link in `url`.
+An arbitrary HTTP email service can be represented by a raw provider object
+with `type: "email"`. Implement `sendVerificationRequest`; its input contains
+the recipient in `identifier` and the magic link in `url`. Start sign-in with
+the provider's configured `id`.
 
 ```ts
 NextAuth({
@@ -82,40 +73,26 @@ NextAuth({
       name: "Email",
       type: "email",
       maxAge: 60 * 60 * 24,
-      async sendVerificationRequest({ identifier, url }) {
-        await sendMagicLinkOverHttp({ recipient: identifier, url })
-      },
+      sendVerificationRequest,
     },
   ],
 })
 ```
 
-Initiate sign-in with the provider's `id`, such as `http-email`.
-
 ## Experimental passkeys
 
-Passkeys remain experimental. Require all of the following:
+Passkey support is experimental and requires all of the following:
 
-- Node.js 20 or later.
-- A compatible database adapter.
-- The adapter migration that adds an `Authenticator` table.
-- `@simplewebauthn/server@9.0.3` as the server peer dependency.
+- Node.js 20 or newer.
+- A compatible database adapter and its migration for an `Authenticator`
+  table.
+- `@simplewebauthn/server@9.0.3`.
 - The singular `Passkey` provider.
 - `experimental.enableWebAuthn: true`.
 
-The known package floors are:
-
-| Package | Floor |
-| --- | --- |
-| `next-auth` | `5.0.0-beta.17` |
-| `@auth/sveltekit` | `1.0.2` |
-| `@auth/prisma-adapter` | `1.3.3` |
-| `@auth/unstorage-adapter` | `2.1.0` |
-| `@auth/drizzle-adapter` | `1.1.1` |
-
-Treat these as passkey feature floors, not recommended pins. Apply newer security floors too; in particular, use `@auth/sveltekit@1.11.1` or later to include the Nodemailer security fix.
-
-Install and configure the server pieces:
+The current compatible package floors are `next-auth@5.0.0-beta.17`,
+`@auth/sveltekit@1.0.2`, `@auth/prisma-adapter@1.3.3`,
+`@auth/unstorage-adapter@2.1.0`, and `@auth/drizzle-adapter@1.1.1`.
 
 ```bash
 npm install @simplewebauthn/server@9.0.3
@@ -129,34 +106,36 @@ export default {
 }
 ```
 
-The built-in sign-in page exposes the passkey action automatically after configuration.
+The built-in sign-in page exposes the configured passkey action automatically.
 
-### Custom passkey pages
+### Custom registration and sign-in
 
-Also install `@simplewebauthn/browser@9.0.1` and import the WebAuthn-specific helper:
+A custom page also needs `@simplewebauthn/browser@9.0.1`. Import the WebAuthn
+variant of `signIn` from `next-auth/webauthn`.
+
+Only an already authenticated user should register another passkey, using
+`action: "register"`. An unauthenticated user signs in without that option.
 
 ```ts
 import { signIn } from "next-auth/webauthn"
-```
 
-Let an authenticated user register another passkey with `action: "register"`. Let an unauthenticated user sign in without that option:
-
-```ts
 await signIn("passkey", { action: "register" })
 await signIn("passkey")
 ```
 
 ## OAuth provider customization
 
-### Persist custom fields
+### Persist additional fields
 
-Return additional fields from an OAuth provider's `profile()` callback to persist them on `User`. Use its `account()` callback to add fields to, or omit unneeded fields from, the associated `Account` row.
+Return additional properties from an OAuth provider's `profile()` callback to
+persist them on the `User`. Use its `account()` callback to add fields to or
+omit unneeded fields from the associated `Account` row.
 
-Keep schema migrations synchronized with any new persisted fields.
+### Override nested defaults
 
-### Override nested options
-
-Options passed to a built-in OAuth provider are deeply merged with the provider defaults. Override only the nested value that needs to change:
+Options passed to a built-in OAuth provider are deeply merged with its
+defaults. Override only the needed nested value rather than reproducing the
+complete provider configuration.
 
 ```ts
 Auth0({
@@ -164,9 +143,11 @@ Auth0({
 })
 ```
 
-### Set a provider-specific transport
+### Install a provider-specific transport
 
-Assign a fetch-compatible proxy or other custom transport to the symbol-keyed `[customFetch]` option. This confines the transport override to that provider's OAuth traffic.
+Assign a fetch-compatible proxy or transport to the symbol-keyed
+`[customFetch]` option. This scopes the custom transport to that provider's
+OAuth traffic.
 
 ```ts
 NextAuth({
@@ -174,6 +155,8 @@ NextAuth({
 })
 ```
 
-## Apple and redirect proxies
+### Avoid redirect proxies with Apple
 
-The Apple provider does not support Auth.js `RedirectProxyUrl`. If a deployment normally shares a redirect proxy across environments, use a different callback strategy for Sign in with Apple.
+The Apple provider does not support Auth.js `RedirectProxyUrl`. A deployment
+that otherwise uses a shared redirect proxy must choose another callback
+strategy for Sign in with Apple.

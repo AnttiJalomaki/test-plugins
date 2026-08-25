@@ -1,49 +1,112 @@
 # Build and distribution
 
-Use this reference for build prerequisites and configure controls, the JIT, cross-compilation and platform targets, and distribution artifacts.
+## Configure and source builds
 
-## Build prerequisites and configure
+### Experimental JIT modes (`whatsnew-3.13`)
 
-### Build prerequisites and ABI-specific metadata (Python 3.13)
-Building CPython now needs C11 atomics (or supported compiler intrinsics), regenerating `configure` needs Autoconf 2.71 and aclocal 1.16.5, and the `sqlite3` extension needs SQLite 3.15.2 or newer. System `libmpdec` is now preferred by default, and POSIX pkg-config names include ABI flags, such as `python-3.13t.pc` for free-threaded builds and `python-3.13d.pc` for debug builds.
+`--enable-experimental-jit` accepts `no`, `yes`, `yes-off`, or `interpreter`; a
+bare option means `yes`. `interpreter` enables only the Tier 2 interpreter. JIT
+builds need LLVM at build time but have no JIT runtime dependency.
+`PYTHON_JIT=0` disables an enabled build, while `PYTHON_JIT=1` enables a
+`yes-off` build.
 
-### Source-build controls (Python 3.14)
-Regenerating `configure` now requires Autoconf 2.72, and recommended compiler safety options are enabled by default; `--disable-safety` or `--enable-slower-safety` selects the tradeoff. Windows extensions may define `Py_NO_LINK_LIB` to suppress pragma-based `python3*.lib` linking, while `WITH_FREELISTS` and `--without-freelists` have been removed.
+```sh
+./configure --enable-experimental-jit=yes-off
+PYTHON_JIT=1 ./python app.py
+```
 
-### Build-system controls (Python 3.15 preview)
-Frame pointers are enabled by default on supported platforms and propagated through `sysconfig`; custom native build systems should preserve equivalent compiler flags, while CPython itself can opt out with `--without-frame-pointers`. The implicit bundled-`libmpdec` fallback is removed, so bundled use must be requested explicitly with `--without-system-libmpdec`.
+### Python 3.13 build requirements
 
-Distributors can supply explanations for separately packaged or missing standard-library modules with `--with-missing-stdlib-config=FILE`. `--with-pymalloc-hugepages` builds 2 MiB huge-page arenas with safe fallback, but runtime use still requires `PYTHON_PYMALLOC_HUGEPAGES=1`.
+CPython requires C11 atomics, or GCC atomics or MSVC interlocked intrinsics.
+Regenerating `configure` requires Autoconf 2.71 with aclocal 1.16.5, and the
+`sqlite3` module requires SQLite 3.15.2 or later. System `libmpdec` is the
+default. Pkg-config filenames include ABI flags, such as `python-3.13t.pc` and
+`python-3.13d.pc`.
 
-## JIT
+### Python 3.14 source controls
 
-### Experimental JIT build modes (Python 3.13)
-`--enable-experimental-jit=yes` builds an enabled JIT (`PYTHON_JIT=0` disables it), `yes-off` builds it disabled (`PYTHON_JIT=1` enables it), and `interpreter` enables only the Tier 2 interpreter. Windows uses `PCbuild/build.bat --experimental-jit` or `--experimental-jit-interpreter`, and JIT builds require LLVM only at build time.
+Regenerating `configure` requires Autoconf 2.72. Recommended compiler safety
+flags are on by default; `--disable-safety` and `--enable-slower-safety` control
+them. Official Android binaries are available. Emscripten is tier 3 and
+supports `ctypes`, `termios`, and `fcntl`.
 
-### Experimental JIT in official binaries (Python 3.14)
-Official macOS and Windows binaries include the experimental JIT in a disabled state; set `PYTHON_JIT=1` to test it, and query `sys._jit.is_available()` or `is_enabled()` before relying on it. It remains unsuitable for production and unavailable in free-threaded builds.
+### Python 3.15 source controls
 
-### JIT and source-build controls (3.15.0b3)
-JIT builders can set `CFLAGS_JIT`, override the tool directory with `LLVM_TOOLS_INSTALL_DIR`, or select an unsupported LLVM version with `LLVM_VERSION`. Configure also accepts `--disable-epoll` and `--enable-static-libpython-for-interpreter`; the latter keeps building a shared library under `--enable-shared` while statically linking the interpreter executable.
+Select the bundled `libmpdec` fallback explicitly with
+`--without-system-libmpdec`; JIT builds require LLVM 21. Distributors can
+provide missing-module messages through `--with-missing-stdlib-config=FILE`.
+Huge-page pymalloc requires both `--with-pymalloc-hugepages` and
+`PYTHON_PYMALLOC_HUGEPAGES=1`.
 
-## Cross-compilation and platform targets
+### Frame-pointer contract
 
-### Platform and cross-build baselines (3.14.0)
-The Windows runtime baseline is Windows 10, Android's minimum is 7.0/API 24, the default iOS minimum is 13.0, and Emscripten builds require Node 18 or newer. Windows source builds require Python 3.10 or newer; `--with-emscripten-target` is removed, and the WASI target triple is now `wasm32-wasip1`.
+Supported Python 3.15 builds enable frame pointers by default. Native
+extensions should preserve the matching compiler flags so stack unwinding
+remains intact. `--without-frame-pointers` opts CPython out.
 
-### Apple application embedding controls (3.14.0)
-`PyConfig.use_system_logger` now defaults on for iOS and off for macOS, and embedded macOS/iOS apps can redirect standard output and error to the system log. Source builds also accept `--with-app-store-compliance` to patch out known App Store review problems.
+### Additional JIT and configure controls
 
-### Cross-build and platform changes (3.15.0b3)
-CPython now targets POSIX 2024 rather than POSIX 2008, and WASI cross-builds require an explicit `HOSTRUNNER`; downstream WASI builders may pass `--enable-wasm-dynamic-linking` even though CPython itself does not implement it. `RUNSHARED` is preserved during cross-compilation for executable shared builds, `build-details.py` is omitted by `make altinstall`, and `pybuilddir.txt` is the sole source-tree landmark rather than `Modules/Setup.local`.
+Python 3.15.0b3 JIT builders can select tools with `LLVM_VERSION`,
+`LLVM_TOOLS_INSTALL_DIR`, and `CFLAGS_JIT`. Configure adds `--disable-epoll`
+and `--enable-static-libpython-for-interpreter`; the latter builds a statically
+linked interpreter alongside a shared libpython.
 
-### Windows free-threaded build layouts (3.15.0b3)
-Windows free-threaded source builds use paths and ordinary executable names such as `PCbuild/amd64t/python.exe`. Normal non-free-threaded installs also include a `python3t.dll` compatibility library, allowing them to load extensions linked against that DLL.
+## Runtime and artifact inspection
 
-## Distribution metadata and artifacts
+### Linux perf integration
 
-### Static build metadata (Python 3.14)
-Every installation now places `build-details.json` in `sysconfig.get_path('stdlib')`, exposing build information to launchers and cross-compilation tools without executing the interpreter.
+`PYTHON_PERF_JIT_SUPPORT` or `-X perf_jit` enables advanced JIT integration for
+Linux `perf`, allowing Python profiling without frame pointers.
 
-### Distribution and platform changes (Python 3.14)
-Official Android binaries are now published, and Emscripten is a tier-3 platform with `ctypes`, `termios`, and `fcntl` support. Python 3.14 and later release artifacts no longer carry PGP signatures; verification uses the accompanying Sigstore materials.
+### Static build metadata and signatures
+
+Python 3.14 installations include `build-details.json` under
+`sysconfig.get_path("stdlib")`, allowing inspection without executing the
+interpreter. Python 3.14 release artifacts use Sigstore materials rather than
+PGP signatures.
+
+### Prebuilt JIT availability
+
+As recorded in `3.13.15-3.14.7`, official macOS and Windows Python 3.14 binaries
+include the experimental JIT, so testing it there does not require a source
+build.
+
+## Startup and packaging defenses
+
+### Isolated ensurepip lookup
+
+Python 3.15.0b3 `ensurepip` does not search the current working directory for
+`pip-*.whl`, preventing ambient files from replacing its bundled wheel.
+
+### Path-initialization diagnostics
+
+Startup warns when path initialization cannot find a valid standard library.
+`-X pathconfig_warnings` and `PYTHON_PATHCONFIG_WARNINGS` control these warnings.
+
+## Cross-builds and platform artifacts
+
+### WASI, iOS, and Linux perf
+
+Python 3.15.0b3 WASI cross-builds require an explicit `HOSTRUNNER`, preserve
+`RUNSHARED`, and accept `--enable-wasm-dynamic-linking` for downstream use. iOS
+XCframework slices include dynamic-libpython linkage and privacy manifests. The
+Linux perf trampoline is available on musl `x86_64` and `aarch64`.
+
+### Windows free-threaded layouts
+
+Free-threaded Windows builds use ABI-specific directories with ordinary
+filenames, such as `PCbuild/amd64t/python.exe`. Regular Windows installs include
+a `python3t.dll` compatibility copy so non-free-threaded runtimes can load
+extensions linked to that name.
+
+### Windows install manager
+
+Windows release manifests can be installed with `py install 3.13` or
+`py install 3.14`. The new manager is replacing the traditional installer, but
+traditional installers remain available throughout the Python 3.14 and 3.15
+release series.
+
+### macOS floors
+
+Python 3.13 raises its minimum supported macOS version from 10.9 to 10.13. The
+Python 3.14.7 macOS installer requires macOS 10.15 or later.

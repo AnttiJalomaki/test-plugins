@@ -1,74 +1,251 @@
 # Observability, security, and governance
 
-## Telemetry and alarms
+Use this reference for telemetry, alarms, log management, identity, security
+services, certificate flows, compliance, resilience, and organization-level
+controls.
 
-### Observability Admin
+## CloudWatch and telemetry
 
-Observability Admin supports organization- and account-level telemetry rules and CloudWatch pipelines for metrics (since `2026-06`). Choose rule scope deliberately when centralizing telemetry across accounts.
+### Observability Admin telemetry rules (2026-06)
 
-### CloudWatch alarms
+The Observability Admin client manages account- and organization-level
+telemetry rules and CloudWatch pipelines for metrics.
 
-CloudWatch adds `PutLogAlarm` for alarms evaluated directly from CloudWatch Logs query results (since `2026-06`). Alarm evaluation windows can align to wall-clock boundaries and optionally use a time zone for daily or weekly periods.
+### Wall-clock CloudWatch alarm windows (2026-06)
 
-### CloudWatch Logs storage tiers
+CloudWatch alarms can use wall-clock-aligned daily or weekly evaluation windows
+with optional time-zone support, rather than only sliding windows.
 
-`PutStorageTierPolicy` and `GetStorageTierPolicy` manage the account-level Intelligent Tiering policy that moves infrequently accessed logs to lower-cost storage tiers (since `2026-07`). The scope is the account policy, not an individual log group's standalone setting.
+### CloudWatch Logs-query alarms (2026-06)
 
-### Synthetics environment encryption
+`PutLogAlarm` creates alarms directly from CloudWatch Logs query results.
 
-CloudWatch Synthetics can use a customer-managed KMS key to encrypt a canary Lambda function's environment variables at rest (since `2026-07`). Grant both canary execution and service paths the required KMS permissions.
+### CloudWatch Logs intelligent-tiering policy (2026-07)
 
-## Inventory and organization governance
+`PutStorageTierPolicy` and `GetStorageTierPolicy` configure account-level
+Intelligent Tiering that moves infrequently accessed logs to lower-cost tiers.
 
-### Resource Explorer metadata
+### CloudWatch anomaly-detector identifiers (2026-07-2)
 
-Resource Explorer `Search` and `ListSupportedResourceTypes` responses include CloudFormation resource-type fields, and `ServiceView` includes `SLRec` (since `2026-06`). Update strict response decoders and use the CloudFormation fields for type-aware tooling.
+`PutAnomalyDetector` and `DescribeAnomalyDetectors` return an
+`AnomalyDetectorId`. Use it to identify a specific detector for describe and
+delete operations.
 
-### Identity Center replicated instances
+### Observability Admin telemetry-rule extensions (2026-07-2)
 
-SSO Admin `ListInstances` returns `PrimaryRegion` and `Regions` for replicated instances (since `2026-06`). Use these fields instead of assuming an instance has only the endpoint Region through which it was listed.
+Account- and organization-level telemetry rules can enable ALB and Bedrock
+Knowledge Base logs and can use customer-managed KMS keys.
 
-### AWS Config
+### AMP collector destinations (2026-07-2)
 
-- `PutConnector`, `GetConnector`, `DeleteConnector`, and `ListConnectors` manage third-party cloud connectors (since `2026-07`). `PutThirdPartyServiceLinkedConfigurationRecorder` enables recording of connected providers' resources.
-- `PutOrganizationConfigRule` and `PutOrganizationConformancePack` support tag-on-create for organization-managed rules and conformance packs (since `2026-07`). Include required governance tags in the creation call rather than relying on a follow-up operation.
+Amazon Managed Service for Prometheus collectors can send datasets to
+CloudWatch and can use an Amazon OpenSearch Service exporter.
 
-### Inspector2
+### CloudWatch Logs alarm inputs (2026-07-2)
 
-Inspector2 vulnerability management covers Azure virtual machines, container registries, and function apps (since `2026-07`). It also supports per-member-account scan configuration, so delegated-administrator automation should not assume one uniform scan setting.
+`LogGroupIdentifiers` is optional for CloudWatch log alarms. Do not require it
+in local schemas.
 
-## Detection, authorization, and compliance
+### CloudWatch Logs lookup tables (2026-07-2)
 
-### GuardDuty
+CloudWatch Logs can create or update lookup tables from a query by passing its
+`queryId`. A lookup table can also be a scheduled-query destination that
+refreshes after every run.
 
-GuardDuty detector schemas add the `AI Analyst` enum value (since `2026-07`). Ensure exhaustive enum handling preserves or recognizes this value.
+### Observability Admin tag propagation (2026-08)
 
-### IAM-authenticated Sign-In OAuth
+CloudWatch Logs centralization rules accept `TagPropagationConfiguration` to
+synchronize source log-group tags to destination groups with configurable
+conflict resolution.
 
-AWS Sign-In adds three IAM-authenticated operations (since `2026-07`):
+### CloudWatch Logs index categories (2026-08)
 
-- `CreateOAuth2TokenWithIAM` implements the OAuth 2.0 client-credentials flow.
-- `IntrospectOAuth2TokenWithIAM` inspects a token.
-- `RevokeOAuth2TokenWithIAM` revokes a token.
+`DescribeFieldIndexes` can filter field indexes by `DEFAULT`, `CUSTOM`, `AUTO`,
+and `INACTIVE` categories.
 
-Sign these calls with IAM credentials; do not substitute the non-IAM OAuth operations when the IAM-authenticated contract is required.
+## Certificates, encryption, and web protection
 
-### WAF and AgentCore
+### ACM ACME certificate issuance (2026-06)
 
-WAF web ACL association APIs accept Bedrock AgentCore Gateway resources (since `2026-06`), including association, disassociation, lookup, and resource-listing operations.
+ACM can use ACME to issue public certificates for customer-managed
+infrastructure such as on-premises servers and Kubernetes clusters.
 
-AgentCore Gateway inbound authorizers can map allowed scopes to separate advertised scopes (since `2026-07`). Keep authorization enforcement scopes distinct from scopes published to tool clients when configuring this mapping.
+### WAF protection for AgentCore Gateway (2026-06)
 
-### Artifact Assurance Assistant
+WAF `AssociateWebACL`, `DisassociateWebACL`, `GetWebACLForResource`, and
+`ListResourcesForWebACL` support Bedrock AgentCore Gateway resources.
 
-AWS Artifact provides Assurance Assistant APIs for creating and managing compliance inquiries, with tagging support (since `2026-07`). Include tag permissions in automation that creates inquiries.
+### Synthetics canary environment encryption (2026-07)
 
-## Resilience Hub v2
+CloudWatch Synthetics canaries can use a customer-managed KMS key to encrypt
+their Lambda environment variables at rest.
 
-Resilience Hub v2 adds the following assessment controls (since `2026-07`):
+### WAF pre-parse transformations (2026-07-2)
 
-- Filter and sort assessments by failure mode.
-- Filter `ListResources` by resource type.
-- Represent cross-Region and cross-account topology edges.
-- Report data-recovery achievability status.
-- Report dependency-discovery progress at finer granularity.
+WAF can normalize raw query strings before parsing rules whose `FieldToMatch`
+is `SingleQueryArgument` or `AllQueryArguments`. Ten additional text
+transformations include options matching ModSecurity v3 behavior.
+
+### ACM email-to-DNS validation migration (2026-08)
+
+ACM can change an existing email-validated certificate to DNS validation. Use
+this migration rather than replacing the certificate solely to change method.
+
+### Private CA RSASSA-PSS signing (2026-08)
+
+AWS Private CA supports the RSASSA-PSS certificate-signing algorithm. Accept it
+in signing-algorithm selections and generated models.
+
+## IAM and Identity Center
+
+### IAM Identity Center replication metadata (2026-06)
+
+SSO Admin `ListInstances` returns `PrimaryRegion` and `Regions` for replicated
+instances.
+
+### IAM Policy Simulator SCP semantics (2026-07-2)
+
+The IAM Policy Simulator evaluates SCP conditions and resource scoping, returns
+`explicitDeny` for explicit SCP denials, and reports cross-account decisions
+more accurately. Update expected decisions in policy tests.
+
+### DSQL peer-removal authorization (2026-07-2)
+
+DSQL `UpdateCluster` checks `RemovePeerCluster` permission against the specific
+cluster being removed rather than a wildcard resource. Scope IAM policies to
+the peer cluster ARN.
+
+### Organization-level Identity Center instances (2026-07-2)
+
+IAM Identity Center can create an organization-level instance without enabling
+multi-account permissions. Permissions can be enabled during creation or later;
+the required service-linked roles are provisioned when enabled.
+
+### IAM account access manager client (2026-08)
+
+The IAM account access manager client maps IAM roles to IAM Identity Center
+users and groups. Use it for centrally managed account-access assignments.
+
+## Config, Inspector, GuardDuty, and Security Hub
+
+### GuardDuty AI Analyst detectors (2026-07)
+
+GuardDuty detector models include an AI Analyst enum value. Treat detector enums
+as open to this value.
+
+### AWS Config third-party cloud connectors (2026-07)
+
+AWS Config adds `PutConnector`, `GetConnector`, `DeleteConnector`, and
+`ListConnectors` for third-party cloud providers, plus
+`PutThirdPartyServiceLinkedConfigurationRecorder` for their service-linked
+recorders.
+
+### Inspector2 Azure coverage and member scan settings (2026-07)
+
+Inspector2 extends vulnerability management to Azure VMs, container registries,
+and function apps, and adds per-member-account scan configuration.
+
+### AWS Config tags on organization resources (2026-07)
+
+`PutOrganizationConfigRule` and `PutOrganizationConformancePack` support tags at
+creation time.
+
+### GuardDuty AI Protection findings (2026-07-2)
+
+GuardDuty AI Protection findings expose Bedrock guardrail, model, observation,
+and continuous-scan details. `GuardrailArn` and `GuardrailVersion` are
+deprecated; consume the `guardrails` list instead.
+
+### GuardDuty filter lifecycle metadata (2026-07-2)
+
+`GetFilter` returns `createdAt`, `updatedAt`, and a version number incremented
+on every update, allowing revision tracking and optimistic comparisons.
+
+### Security Hub V2 free-trial status (2026-08)
+
+`ListFreeTrialStatusesV2` reports free-trial states for Security Hub and each
+opt-in feature.
+
+## Resilience, compliance, and advisory services
+
+### Resource Explorer CloudFormation metadata (2026-06)
+
+Resource Explorer `Search` and `ListSupportedResourceTypes` responses contain
+CloudFormation resource-type fields. `ServiceView` also exposes `SLRec`.
+
+### Resilience Hub v2 assessment controls (2026-07)
+
+Resilience Hub v2 supports failure-mode assessment filtering and sorting,
+resource-type filtering in `ListResources`, cross-Region and cross-account
+topology edges, data-recovery achievability status, and finer-grained
+dependency-discovery progress.
+
+### Artifact Assurance Assistant (2026-07)
+
+Artifact provides Assurance Assistant APIs for managing compliance inquiries,
+including tags.
+
+### License Manager usage resets (2026-07-2)
+
+`CreateLicenseVersion` accepts `ResetUsage`. `true` resets entitlement usage to
+zero; `false` or omission preserves it. Set it explicitly when reset semantics
+matter.
+
+### Systems Manager Automation warnings (2026-07-2)
+
+Systems Manager Automation responses expose `WarningMessage`. Surface these
+non-fatal warnings instead of treating success as warning-free.
+
+### Trusted Advisor resource recommendations (2026-07-2)
+
+`ListRecommendationsForResource` retrieves recommendations for a resource ARN.
+`CheckSummary` exposes `resourceArnQueryable`, `awsResourceTypes`,
+`checkGranularity`, and `recommendationId`.
+
+### Security Agent repository branch overrides (2026-07-2)
+
+Security Agent integrated-repository configuration accepts a branch override,
+and task responses include active task hours.
+
+### Security Agent budgets and revalidation (2026-08)
+
+Security Agent penetration tests and code reviews can set a maximum task-hour
+budget. Use the `REVALIDATION` job type to re-check previously reported
+findings.
+
+### Security Agent email MFA (2026-08)
+
+Security Agent actors accept `enableEmailMfa`. When enabled, responses supply
+`mfaForwardingAddress` for forwarding login codes during penetration tests.
+
+### Device Farm generated insights (2026-08)
+
+Device Farm models expose service-generated insights for runs, jobs, and tests.
+Treat these insights as additional response data rather than client-computed
+results.
+
+## Account governance and limits
+
+### Cognito provisioned API limits (2026-07)
+
+Cognito User Pools provides `GetProvisionedLimit` and `UpdateProvisionedLimit`
+for reading and changing provisioned API rate limits.
+
+### Cognito SMS delivery and factor inspection (2026-07-2)
+
+`SmsConfigurationType` accepts `EumsSms` to send MFA and verification messages
+through AWS End User Messaging instead of SNS. `AdminGetUserAuthFactors`
+returns configured password, SMS, email, and TOTP factors.
+
+### QuickSight permission controls (2026-07-2)
+
+QuickSight custom permissions can govern trigger scheduling, inbound email, and
+Quick Event triggers, with deny-by-default governance fields. Profiles can
+control Amazon Quick access through browser extensions and Microsoft Word,
+Outlook, Excel, and PowerPoint add-ins.
+
+### QuickSight governance APIs (2026-08)
+
+QuickSight provides APIs for Microsoft Purview DLP configuration, approval
+policies on asset sharing, and limit profiles for index storage and per-user
+agent hours.

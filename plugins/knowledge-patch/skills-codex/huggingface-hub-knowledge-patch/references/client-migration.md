@@ -1,119 +1,97 @@
 # Client migration and packaging
 
-## Runtime compatibility
+## Python and dependency compatibility
 
-The v1 client migration guidance in this reference is attributed to
-`huggingface-hub-v1-client`.
+The `huggingface-hub-v1-client` transition initially required Python 3.9 or
+newer, but later 1.x releases may raise that floor. Read `Requires-Python` from
+the installed release's package metadata rather than treating Python 3.9 as a
+guarantee for the entire 1.x line.
 
-Version 1.0 initially requires Python 3.9 or newer. Later 1.x releases may
-raise the minimum, so derive compatibility from the installed release's
-package metadata instead of treating Python 3.9 as a permanent 1.x floor.
+Optional and CLI dependency groups changed with v1. Packaging should select
+the extra that the installed release actually supports, or declare the needed
+direct dependency. Do not preserve an old extra name solely because it worked
+before the migration.
 
-## HTTP client migration
+Deprecated TensorFlow and Keras utilities were removed from the core client.
+Framework integrations should own serialization and model-card callbacks and
+call Hub primitives for remote operations.
 
-The client replaced both `requests` and `aiohttp` with HTTPX. Update code at
-all of these boundaries:
+## HTTPX migration
 
-| Old assumption | Current behavior |
-| --- | --- |
-| Transport exceptions come from `requests` or `aiohttp` | Transport failures are based on `httpx.HTTPError` |
-| Hub response failures use a generic transport exception | Hub responses use the `HfHubHttpError` hierarchy |
-| `configure_http_backend` installs a backend | Use `set_client_factory` or `set_async_client_factory` |
-| Calls accept `proxies=` | Configure proxies on a global or custom HTTPX client |
+The client replaced both `requests` and `aiohttp` with HTTPX.
 
-Configure TLS, timeouts, transports, and mocks through the HTTPX client as
-well. Audit exception handlers and test fixtures in addition to request calls;
-otherwise an application can compile while no longer catching or simulating
-the correct failure type.
+- Transport failures are based on `httpx.HTTPError`.
+- Hub response failures use the `HfHubHttpError` hierarchy.
+- `configure_http_backend` gives way to `set_client_factory` and
+  `set_async_client_factory`.
+- Proxies, TLS configuration, timeouts, transports, and mocks belong on the
+  global or custom HTTPX client, not legacy per-call `proxies=` arguments.
 
-## Removed abstractions
+Update exception handlers, retry predicates, test doubles, and instrumentation
+together. A compatibility layer that only replaces imports can still miss
+changed exception ancestry and client lifetime.
 
-Three old client abstractions are gone:
+## Removed client abstractions
 
-- Replace `Repository` with `HfApi` or supported Git/Xet tooling for
+`Repository`, `HfFolder`, and `InferenceApi` were removed.
+
+- Use `HfApi` commit-oriented HTTP operations or supported Git/Xet tooling for
   repository work.
-- Replace `HfFolder` with `login`, `logout`, `auth_switch`, and `get_token`.
-- Replace `InferenceApi` with `InferenceClient` or
-  `AsyncInferenceClient`.
+- Use `login`, `logout`, `auth_switch`, and `get_token` for authentication.
+- Use `InferenceClient` or `AsyncInferenceClient` for inference.
 
-Moving from `Repository` to commit-oriented HTTP operations is not only a
-rename. Re-evaluate conflict handling, atomicity boundaries, and any behavior
-that depended on a local Git worktree.
+Moving from `Repository` to commit operations changes conflict handling,
+atomicity, and local-worktree behavior. Re-evaluate those properties rather
+than treating `HfApi` as a drop-in local Git wrapper.
 
-## Command-line migration
+## CLI migration
 
-The `huggingface-cli` executable was replaced by `hf`. Update scripts and
-runbooks to the current command families, such as:
+The `huggingface-cli` executable was replaced by `hf`. Update shell scripts,
+container health checks, documentation, and command allowlists to current
+families such as:
 
-```bash
-hf auth
-hf download
-hf upload
-hf cache
+```console
+hf auth --help
+hf download --help
+hf upload --help
+hf cache --help
 ```
 
-Do not leave an old executable name hidden in CI images, shell wrappers, or
-authentication instructions.
+## Authentication and download arguments
 
-## Authentication argument migration
-
-The `use_auth_token` alias was removed. Code and downstream wrappers must
-expose and pass `token`:
-
-```python
-api.model_info("org/model", token=token)
-```
-
-When adapting a wrapper, change its public argument rather than translating an
-indefinitely retained compatibility alias.
-
-## Download argument migration
+The `use_auth_token` alias was removed. Direct callers and downstream wrappers
+must expose and pass `token`.
 
 Downloads no longer accept:
 
-- `resume_download`
-- `force_filename`
-- `local_dir_use_symlinks`
+- `resume_download`: supported cache behavior handles resumption where
+  applicable.
+- `force_filename`: use the returned path and current destination controls.
+- `local_dir_use_symlinks`: use current `local_dir` materialization behavior.
 
-Supported cache behavior handles resumption where applicable. Use returned
-paths, `force_download`, the central cache, and current `local_dir` behavior
-instead of recreating the removed controls.
+The central cache, `local_dir`, returned paths, and `force_download` cover the
+remaining supported decisions; do not recreate removed filename or symlink
+semantics in a wrapper without an application-specific need.
 
 ```python
-snapshot_download("org/model")
-```
+from huggingface_hub import HfApi, snapshot_download
 
-Do not infer a forced filename by concatenating a directory with an expected
-name; consume the returned path.
+api = HfApi()
+info = api.model_info("org/model", token=token)
+path = snapshot_download("org/model")
+```
 
 ## Upload return values
 
-Upload methods return commit-oriented information or URLs rather than the old
-file-CDN abstraction. Follow the exact return type documented for the
-installed v1 operation.
+Upload methods return current commit-oriented information or URLs rather than
+the old file-CDN abstraction. Follow the exact v1 return type for the method in
+use. Do not rely on an older result's truthiness, concatenate it with strings,
+or infer local Git-wrapper semantics from it.
 
-In particular, remove code that depends on:
+## Xet-first large-file migration
 
-- truthiness of the old result object;
-- string concatenation with an assumed CDN path; or
-- local Git-wrapper semantics that are not part of an HTTP commit result.
-
-## Xet-first transfers
-
-Xet is the supported large-file transfer path and integrates automatically
-through `hf_xet`. The `hf_transfer` integration was removed, so
-`HF_HUB_ENABLE_HF_TRANSFER` no longer enables it.
-
-`HF_XET_HIGH_PERFORMANCE` is the relevant high-performance switch. Enable it
-only when its documented resource tradeoff is appropriate for the host.
-
-## Framework and dependency boundaries
-
-Deprecated TensorFlow and Keras helpers were removed from the core client.
-Framework integrations should own serialization and model-card callbacks,
-then call Hub primitives for remote operations.
-
-Optional and CLI dependency groups changed with v1. Packaging should select
-the extra or direct dependency actually supported by the installed release;
-do not assume a historical extra still installs the required framework or CLI
-components.
+Xet is integrated automatically through `hf_xet` as the supported large-file
+path. The
+`hf_transfer` integration was removed, and `HF_HUB_ENABLE_HF_TRANSFER` no
+longer activates it. Enable `HF_XET_HIGH_PERFORMANCE` only when its documented
+resource tradeoff is acceptable for the host.

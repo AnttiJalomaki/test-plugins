@@ -1,52 +1,80 @@
 # Migration, Packages, and Tooling
 
-## Contents
+## Package consolidation and entry points
 
-- [Package and import migration](#package-and-import-migration)
-- [Runtime and dependency requirements](#runtime-and-dependency-requirements)
-- [Framework compiler and Vite tooling](#framework-compiler-and-vite-tooling)
-- [Configuration and source-file tooling](#configuration-and-source-file-tooling)
-- [Scaffolding and local developer support](#scaffolding-and-local-developer-support)
-- [Project direction](#project-direction)
-- [Versioned batch attribution](#versioned-batch-attribution)
+### V7 package moves (`7.0.0`)
 
-## Package and import migration
-
-### Consolidated packages
-
-In v7, `react-router-dom`, `@remix-run/react`, `@remix-run/server-runtime`,
-`@remix-run/router`, and `@remix-run/testing` were consolidated into `react-router`.
-`react-router-dom` remained only as a re-export shim. `react-router-native` and
-`react-router-dom-v5-compat` were removed. The Cloudflare Pages and Workers packages
-converged on `@react-router/cloudflare`.
-
-Import runtime-neutral APIs from `react-router`, not from an adapter. Cookie and session
-helpers such as `createCookieSessionStorage` also moved there; their low-level `*Factory`
-APIs were removed. Adapter-specific APIs remain in packages such as `@react-router/node`.
+V7 consolidates `react-router-dom`, `@remix-run/react`,
+`@remix-run/server-runtime`, `@remix-run/router`, and `@remix-run/testing` into
+`react-router`. `react-router-dom` is only a v7 re-export shim. The native and v5
+compatibility packages are removed. Cloudflare Pages and Workers packages converge on
+`@react-router/cloudflare`; import runtime-neutral APIs from `react-router`, not adapters.
 
 ```ts
 import { redirect, useLoaderData } from "react-router";
 import { createFileSessionStorage } from "@react-router/node";
 ```
 
-In v8, the compatibility `react-router-dom` package is removed completely. Import
-`RouterProvider` and `HydratedRouter` from `react-router/dom`; import other former DOM-package
-APIs from `react-router`.
+Browser/hash framework renderers use `HydratedRouter` or `RouterProvider` from
+`react-router/dom`, which enables `ReactDOM.flushSync()`. Memory/non-DOM routers import
+`RouterProvider` from `react-router`.
+
+### V8 removes the compatibility package (`8.0.0`)
+
+`react-router-dom` no longer exists. Import DOM renderers from `react-router/dom` and all
+other former DOM-package APIs from `react-router`.
 
 ```ts
 import { Link } from "react-router";
 import { HydratedRouter, RouterProvider } from "react-router/dom";
 ```
 
-Framework client entries use `HydratedRouter` from `react-router/dom`. Manual browser and
-hash routers should use that entry point's `RouterProvider` to enable `ReactDOM.flushSync()`.
-Memory and other non-DOM routers use `RouterProvider` from `react-router`.
+## Runtime, modules, and sessions
 
-### Public API replacement names
+### V7 floors and native globals (`7.0.0`)
 
-Apply these v7 replacements:
+Framework packages require Node 20 and React/React DOM 18. `installGlobals()` is removed
+because native Fetch and Web Crypto globals are expected. Cookie/session APIs including
+`createCookieSessionStorage` come from `react-router`; low-level `*Factory` variants are
+removed. A project pinned to `isbot@3` and using the default server entry must move to
+`isbot@5`.
 
-| Removed or old | Replacement |
+### V8 floors and output (`8.0.0`)
+
+V8 requires Node 22.22.0+, React 19.2.7+, and Vite 7+, publishes ESM-only packages, and
+targets ES2022. Only the newest minor on a Maintenance LTS Node line is supported, so a
+React Router minor may raise the minimum Node minor.
+
+### Server entry rendering (`8.2.0`)
+
+Without a custom `entry.server.tsx`, Framework Mode uses `renderToReadableStream` unless
+the app depends on `@react-router/node`, `@react-router/express`, or
+`@react-router/serve`; those Node adapters retain `renderToPipeableStream`. A Node app
+without a custom entry can opt into Web Streams:
+
+```ts
+import type { Config } from "@react-router/dev/config";
+
+export default {
+  future: { unstable_enableNodeReadableStream: true },
+} satisfies Config;
+```
+
+## Removed helpers and renamed public APIs
+
+### Data and upload removals (`7.0.0`)
+
+`json`, `defer`, deferred-data types/symbols, `unstable_composeUploadHandlers`,
+`unstable_createMemoryUploadHandler`, and `unstable_parseMultipartFormData` are removed.
+Return promises and serializable data directly under Single Fetch, or call
+`Response.json()` when a real response is required. Loaders/actions may return
+`undefined`.
+
+### Public-name migration (`7.0.0`)
+
+Apply these renames:
+
+| Old | New |
 | --- | --- |
 | `createRemixStub` | `createRoutesStub` |
 | `RemixContext` | `FrameworkContext` |
@@ -57,153 +85,113 @@ Apply these v7 replacements:
 | `unstable_dataStrategy` | `dataStrategy` |
 | `unstable_patchRoutesOnNavigation` | `patchRoutesOnNavigation` |
 
-The public low-level `createBrowserHistory`, `createHashHistory`, and `createMemoryHistory`
-constructors were removed in favor of `create*Router`. For migration of
-`unstable_HistoryRouter` only, `UNSAFE_createBrowserHistory`, `UNSAFE_createHashHistory`, and
-`UNSAFE_createMemoryHistory` are available; do not use them in new applications.
+Low-level `createBrowserHistory`, `createHashHistory`, and `createMemoryHistory` are
+removed in favor of `create*Router` APIs. Later, `7.12.0` exposes
+`UNSAFE_createBrowserHistory`, `UNSAFE_createHashHistory`, and
+`UNSAFE_createMemoryHistory` only to migrate `unstable_HistoryRouter`; do not use them
+for new code.
 
-In v8, remove `hasErrorBoundary` from route objects, `<Route>` props, and lazy route
-definitions. `MapRoutePropertiesFunction` need not return it because the router infers error
-boundary presence.
+### Stream timeout (`7.1.0`)
 
-## Runtime and dependency requirements
-
-### Remove obsolete future flags
-
-The former v6 `v7_*` and Remix `v3_*` flags are not optional in v7. Their behaviors for
-relative splats, React transitions, fetcher persistence, form methods, partial hydration, action
-revalidation, Single Fetch, lazy route discovery, abort reasons, and dependency optimization are
-unconditional. Remove the corresponding flag settings rather than carrying them forward.
-
-`<RouterProvider fallbackElement>` was removed in the same migration. Put
-`hydrateFallbackElement` or `HydrateFallback` on the root route; its initial navigation remains
-`idle` during partial hydration.
-
-### v7 application floors
-
-Framework packages initially required Node 20 and React/React DOM 18. `installGlobals()` was
-removed because native Fetch and Web Crypto globals are expected. Apps pinning `isbot@3` while
-using the default server entry needed `isbot@5`.
-
-The Express adapter accepts Express 5. In v8 its Express 4 peer range starts at 4.22.2 and
-continues to accept Express 5; `@react-router/serve` uses Express 5.2.1.
-
-### v8 application floors
-
-React Router v8 requires Node 22.22.0+, React 19.2.7+, and Vite 7+. Packages are ESM-only and
-target ES2022. On Maintenance LTS Node lines only the latest minor branch is supported, so a
-React Router minor may raise the minimum supported Node minor.
-
-## Framework compiler and Vite tooling
-
-### Vite-only framework builds
-
-The old esbuild compiler is removed. Use the renamed Vite entry points:
-
-```ts
-import { reactRouter } from "@react-router/dev/vite";
-import { cloudflareDevProxy } from "@react-router/dev/vite/cloudflare"; // v7 only
-```
-
-The plugin's former `manifest` option is replaced by `buildEnd({ buildManifest })`.
-`reactRouterConfig.publicPath` is removed. When Vite manifests are enabled, find them beneath
-the individual build directories, for example `build/client/.vite/manifest.json`.
-
-Tooling support was added for Vite 6 (7.1.0), Vite 7 (7.6.3), and Vite 8 (7.14.0).
-The experimental Vite Environment API started behind
-`future.unstable_viteEnvironmentApi`, was renamed to `future.v8_viteEnvironmentApi`, and is
-unconditional in v8. The experimental spelling was not recommended for production. While that
-flag existed, a plugin replacing the SSR
-environment, such as `@cloudflare/vite-plugin`, could appear before or after React Router's
-plugin. With the v8 behavior enabled, the dev tool can prerender multiple server bundles.
-
-In v8, `@react-router/dev/vite/cloudflare` is removed; use `@cloudflare/vite-plugin`.
-Wrangler 3 is unsupported. Earlier v7 tooling accepted Wrangler 4 as an optional peer.
-
-### Preview and server entry behavior
-
-Framework production builds can be served with `vite preview`. In v8, preview-server
-prerendering is the only implementation; remove `future.unstable_previewServerPrerendering`.
-
-As of 8.2.0, apps without a custom `entry.server.tsx` default to
-`renderToReadableStream` unless they depend on `@react-router/node`, `@react-router/express`, or
-`@react-router/serve`; those Node adapters retain `renderToPipeableStream`. A Node app without
-a custom entry can opt into Web Streams with:
-
-```ts
-import type { Config } from "@react-router/dev/config";
-
-export default {
-  future: { unstable_enableNodeReadableStream: true },
-} satisfies Config;
-```
-
-The obsolete `abortDelay` prop on `ServerRouter` was removed with deferred data. Export the
-Single Fetch timeout from `entry.server` instead:
+`ServerRouter` no longer accepts the old deferred-data `abortDelay`. Export the Single
+Fetch timeout from `entry.server` instead:
 
 ```ts
 export const streamTimeout = 10_000;
 ```
 
-## Configuration and source-file tooling
+### Error-boundary metadata (`8.0.0`)
 
-`@react-router/dev` accepts route config files ending in `.ts`, `.js`, `.mts`, or `.mjs`.
-It loads environment variables before evaluating `routes.ts`, so route selection can use
-`VITE_`-prefixed `import.meta.env` values.
+Remove `hasErrorBoundary` from route objects, `<Route>`, and lazy definitions. The router
+infers it, and `MapRoutePropertiesFunction` no longer needs to return it.
+
+## Framework compiler and Vite
+
+### Vite-only compiler (`7.0.0`)
+
+The esbuild compiler is gone. Import `reactRouter` from `@react-router/dev/vite` and the
+v7 Cloudflare proxy from `@react-router/dev/vite/cloudflare`. Replace the plugin
+`manifest` option with `buildEnd({ buildManifest })`; remove
+`reactRouterConfig.publicPath`. Enabled Vite manifests are written per build, for example
+`build/client/.vite/manifest.json`.
 
 ```ts
-import { route, type RouteConfig } from "@react-router/dev/routes";
-
-const routes: RouteConfig = [];
-if (import.meta.env.VITE_ENV_ROUTE === "my-route") {
-  routes.push(route("my-route", "routes/my-route.tsx"));
-}
-export default routes;
+import { reactRouter } from "@react-router/dev/vite";
+import { cloudflareDevProxy } from "@react-router/dev/vite/cloudflare";
 ```
 
-Framework type generation provides declarations for `virtual:react-router/server-build`.
-Patch 7.4.1 made those declarations work with TypeScript `moduleDetection: "force"`.
+Vite support progressed through Vite 6 in `7.1.0`, Vite 7 in `7.6.0` (added by 7.6.3),
+and Vite 8 in `7.14.0`. Use the version supported by the installed React Router release.
 
-Generated type registration under `.react-router/types` means a future/config flag can enable
-its corresponding types automatically; do not add a duplicate manual `declare module
-"react-router"` augmentation. In v8, the Data Mode `Future` augmentation and the middleware
-gating type formerly exported as `UNSAFE_MiddlewareEnabled` are removed.
+### Environment API evolution
 
-Patch 7.16 rejects the obsolete `future.unstable_trailingSlashAwareDataRequests` spelling during
-config resolution. Its dev tooling warns about the approaching `v8_middleware`,
-`v8_splitRouteModules`, `v8_viteEnvironmentApi`, `v8_passThroughRequests`, and
-`v8_trailingSlashAwareDataRequests` defaults; resolve those warnings before a major upgrade.
+`7.2.0` introduced `future.unstable_viteEnvironmentApi` as experimental and unsuitable
+for production. Under that flag, `7.4.0` permits a plugin replacing the SSR environment,
+such as `@cloudflare/vite-plugin`, before or after React Router's plugin. The flag became
+`future.v8_viteEnvironmentApi` in `7.10.0`, enabled multiple-bundle prerendering in
+`7.14.0`, and was removed in `8.0.0` when the behavior became mandatory.
 
-## Scaffolding and local developer support
+V8 also makes preview-server prerendering the sole implementation and removes
+`future.unstable_previewServerPrerendering`. Framework production builds can be exercised
+with `vite preview` starting in `7.11.0`.
 
-`create-react-router` detects Deno at version 2.0.5 or newer. With older Deno, select it with
-`--package-manager deno`. As of 8.2.0, `@react-router/dev` and the scaffolder also recognize
-the `nub` package manager.
+### Cloudflare v8 development (`8.0.0`)
 
-The v8 scaffolder uses native `fetch`, so it no longer inherits implicit `HTTPS_PROXY`
-support from the previous fetch implementation.
+The `@react-router/dev/vite/cloudflare` proxy export is removed. Use
+`@cloudflare/vite-plugin`. `@react-router/dev` no longer supports Wrangler 3.
 
-Generated projects can include the official React Router skill at
-`.agents/skills/react-router`. Interactive runs default to yes, and `--yes` or non-interactive
-runs include it; pass `--no-agent-skills` to omit it.
+## Adapters and ecosystem compatibility
+
+- `7.3.0`: `@react-router/express` accepts Express 5.
+- `7.5.0`: the optional `@react-router/dev` peer accepts Wrangler 4.
+- `7.7.0`: `create-react-router` detects Deno 2.0.5+; on older Deno, pass
+  `--package-manager deno`. Route config accepts `.mts` and `.mjs`, and the Remix config
+  adapter exports `DefineRouteFunction` as well as `DefineRoutesFunction`.
+- `7.18.0`: `@react-router/architect` accepts `useRequestContextDomainName` so API Gateway
+  request context can supply the request URL host; this is the intended v8 default when
+  it matches the deployment.
+- `8.0.0`: Express v4 must be at least 4.22.2; Express 5 remains accepted and
+  `@react-router/serve` uses Express 5.2.1.
+- `8.2.0`: development tooling and scaffolding recognize the `nub` package manager.
+
+## Generated and local tooling
+
+### Route configuration file and virtual-module types
+
+Framework routes move to an explicit `app/routes.ts` `RouteConfig` in `7.0.0`.
+`flatRoutes()` from `@react-router/fs-routes` retains file-route discovery, and
+`@react-router/remix-config-routes-adapter` bridges Remix callbacks.
+
+`7.4.0` adds generated declarations for `virtual:react-router/server-build`; 7.4.1 also
+supports `moduleDetection: "force"`. In `7.6.0`, generated `+types/*` stops exporting
+`Info`, and the provisional `react-router/route-module` entry moves to
+`react-router/internal`.
+
+### Scaffolding behavior
+
+In `8.0.0`, `create-react-router` switches to native `fetch`, so it no longer inherits
+implicit `HTTPS_PROXY` support from the old implementation.
+
+In `8.1.0`, generated projects can include the official skill under
+`.agents/skills/react-router`. Interactive creation defaults to yes; `--yes` and
+non-interactive creation include it. Pass `--no-agent-skills` to opt out.
 
 ```sh
 create-react-router my-app --no-agent-skills
 ```
 
-The `react-router` package includes a subset of version-matched official Markdown at
-`node_modules/react-router/docs`. It excludes generated API docs, community material, and
-tutorials.
+### Version-matched local docs (`7.17.0`)
 
-## Project direction
+The `react-router` package includes selected official Markdown in
+`node_modules/react-router/docs`. It excludes generated API docs, tutorials, and community
+content.
+
+## Project-line caution
+
+The migration guide announced React Server Component previews, stable middleware,
+granular Data Mode lazy loading from v7.5, and automatic Framework route-module splitting
+from v7.2 (`7.0-guide`). Treat those as distinct capabilities, not one mode.
 
 Remix 3 is a separate, ground-up modular toolkit with its own component model and no React
-dependency. It is not a compatible next release or drop-in upgrade for a React-based Remix v2
-application; no preview was available when this direction was announced.
-
-## Versioned batch attribution
-
-The version-specific details in this skill derive from batches `7.0-guide`, `7.0.0`, `7.1.0`,
-`7.2.0`, `7.3.0`, `7.4.0`, `7.5.0`, `7.6.0`, `7.7.0`, `7.8.0`, `7.9.0`, `7.10.0`,
-`7.11.0`, `7.12.0`, `7.13.0`, `7.14.0`, `7.15.0`, `7.16.0`, `7.17.0`, `7.18.0`,
-`8.0.0`, `8.1.0`, and `8.2.0`.
+dependency (`project-direction-and-route-modules`). It is not a drop-in Remix v2 upgrade,
+and no preview was available in the source guidance.

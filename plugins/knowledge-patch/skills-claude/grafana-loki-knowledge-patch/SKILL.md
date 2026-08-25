@@ -8,83 +8,88 @@ metadata:
 ---
 
 
-# Grafana Loki
+# Grafana Loki Knowledge Patch
 
-Load this skill when upgrading, configuring, deploying, operating, or integrating
-Grafana Loki. Start with the upgrade hazards below, then open the topic reference
-that matches the work.
+Use this skill when changing Loki configuration, LogQL, ingestion pipelines,
+object storage, deletion, Kafka-backed ingestion, Helm deployments, Operator
+resources, or Loki command-line integrations.
+
+## Working method
+
+1. Identify the deployment surface: direct Loki configuration, Helm chart,
+   Loki Operator, client, or API consumer.
+2. Check the breaking-change and deprecation notes before adopting a new
+   feature or changing generated configuration.
+3. Read the topic reference that matches the work; related behavior is grouped
+   by task rather than release chronology.
+4. Preserve tenant boundaries when enabling ingestion, query, or limit
+   features. Many controls are explicitly per tenant.
+5. Test Helm rendering, configuration validation, and API behavior in the
+   deployment's actual mode before rollout.
+6. Treat patch-level notes as behavior that may differ within a minor-release
+   series.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrades-and-deprecations.md](references/upgrades-and-deprecations.md) | Breaking behavior, removals, deprecations, and migration checkpoints |
-| [helm-and-operator.md](references/helm-and-operator.md) | Helm values and rendering, workloads, persistence, Loki Operator, and OpenShift |
-| [ingestion-and-metadata.md](references/ingestion-and-metadata.md) | Push handling, sharding, limits, labels, structured metadata, OTLP, and agents |
-| [queries-apis-and-patterns.md](references/queries-apis-and-patterns.md) | LogQL, query correctness, caching, APIs, patterns, limits, and scheduler behavior |
-| [storage-deletion-and-kafka.md](references/storage-deletion-and-kafka.md) | Object stores, TSDB, deletion, Kafka, compactor, index gateway, and caches |
-| [clients-observability-and-operations.md](references/clients-observability-and-operations.md) | CLI tools, tracing, UI, monitoring, networking, commands, and containers |
+| [clients-observability-and-operations.md](references/clients-observability-and-operations.md) | Logcli, lokitool, Lambda-promtail, Fluent clients, tracing, health, UI, networking |
+| [helm-and-operator.md](references/helm-and-operator.md) | Helm rendering, workloads, persistence, authentication, Loki Operator behavior |
+| [ingestion-and-metadata.md](references/ingestion-and-metadata.md) | Time sharding, OTLP, structured metadata, distributor limits, labels, policies |
+| [queries-apis-and-patterns.md](references/queries-apis-and-patterns.md) | LogQL, query APIs, Parquet, caches, limits, patterns, label responses |
+| [storage-deletion-and-kafka.md](references/storage-deletion-and-kafka.md) | Object stores, TSDB, delete requests, compactor workers, Kafka, block builder |
+| [upgrades-and-deprecations.md](references/upgrades-and-deprecations.md) | Breaking changes, removals, migrations, deprecated deployment modes and charts |
 
-## Upgrade hazards first
+## Upgrade hazards
 
-### Replace Promtail with Grafana Alloy
+### Move Promtail workloads to Alloy
 
-Promtail was deprecated after its code moved to Grafana Alloy, then removed in
-3.7.3. Use Alloy's migration documentation and configuration-conversion
-utility. Do not apply the removal to Lambda-promtail; it remains a separate
-component.
+Promtail has been removed after its earlier deprecation. Move its configuration
+to Grafana Alloy using the migration documentation and configuration-conversion
+utility. Do not apply this removal to Lambda-promtail, which remains separate.
 
-The Promtail image also stopped shipping `wget`. Replace probes, scripts, or
-derived-image steps that call it before adopting the affected image.
+### Audit label precedence
 
-### Review storage and legacy configuration
+Parsed labels no longer override structured metadata with the same name. Any
+pipeline or query that depended on parsed-field precedence needs an explicit
+compatibility check.
 
-BoltDB storage and additional legacy configuration and API endpoints are
-deprecated. Audit them before an upgrade. Removed ksonnet configurations cannot
-be carried forward.
+### Revalidate scheduler sizing assumptions
 
-For Helm object-store values, use:
+The scheduler accounts for total compute capacity, and worker threads are
+shared across scheduler connections. These execution changes are breaking;
+check concurrency, fairness, and sizing assumptions after upgrading.
 
-```yaml
-object_store:
-  storage_prefix: loki
-```
+### Review Operator ingestion behavior
 
-Do not retain the former `object_store.prefix` key.
+The Operator's OTLP attribute-dropping behavior is breaking. OpenShift's
+default stream labels also changed. Inspect generated pipelines, tenant
+authorization, labels, and queries before rollout.
 
-### Recheck labels and metadata
+### Replace deprecated deployment paths
 
-Parsed labels no longer override structured metadata with the same name. This
-is a breaking semantic change, so test parsers and queries that depend on
-name collisions.
+Simple Scalable Deployment mode is deprecated and scheduled for removal before
+Loki 4.0. The community `LGTM-distributed`, `loki-canary`, `loki-distributed`,
+and `loki-simple-scalable` charts are deprecated as well. Plan a supported
+deployment topology instead of expanding those paths.
 
-Operator-managed OTLP attribute dropping and the changed default OpenShift
-stream labels are also breaking changes. Compare generated ingestion behavior
-before rollout.
+### Remove obsolete image assumptions
 
-### Rebaseline scheduling
+The Promtail image no longer includes `wget`. Loki containers now use `/` as
+their working directory. Update probes, derived images, and scripts that rely
+on either the binary or a previous relative working directory.
 
-The scheduler accounts for total compute capacity and shares worker threads
-across scheduler connections. Both changes can alter query execution and are
-classified as breaking; load-test concurrency and capacity assumptions.
+### Update removed and renamed configuration
 
-### Update deployment assumptions
-
-Simple Scalable Deployment is deprecated and scheduled for removal before Loki
-4.0. The community `LGTM-distributed`, `loki-canary`, `loki-distributed`, and
-`loki-simple-scalable` charts are deprecated as well.
-
-The open-source Loki chart moved to `grafana-community/helm-charts`. Update
-source references and chart-update automation. The GEL chart is maintained
-separately.
-
-Loki container images now use `/` as their working directory. Make paths
-explicit in derived images and scripts that previously relied on a relative
-working directory.
+Ksonnet configuration was removed. BoltDB and additional legacy configuration
+and API surfaces were deprecated. Helm object-store values use
+`object_store.storage_prefix`, not `object_store.prefix`.
 
 ## High-value ingestion controls
 
-### Enable old-log time sharding per tenant
+### Enable time-sharded ingestion per tenant
+
+Use the tenant override when long out-of-order ingestion must be accepted:
 
 ```yaml
 shard_streams:
@@ -92,119 +97,127 @@ shard_streams:
 ```
 
 Loki adds `__time_shard__` so a resulting stream covers at most half of
-`max_chunk_age`, normally one hour. This allows long out-of-order ingestion
-without rejecting very old entries as too far behind.
+`max_chunk_age`, normally one hour. Account for the internal label in stream
+analysis while keeping it out of user-facing assumptions.
 
-### Extract structured metadata during ingestion
+### Extract structured metadata at ingest time
 
-Tenant configuration can promote values from ordinary labels, existing
-structured-metadata keys, or fields parsed from JSON and `logfmt` lines into
-structured metadata. Account for metadata bytes in limit planning, and avoid
-duplicating a value that is already supplied as a stream label.
+Configure per-tenant extraction from ordinary labels, existing structured
+metadata, or values parsed from `logfmt` and JSON. Avoid emitting a duplicate
+metadata key from both a stream label and an extracted field; Loki suppresses
+that duplicate.
 
-### Apply limits at the distributor
+### Enforce limits at the distributor
 
-Distributor limit checks can enforce or dry-run. Aggregated metric streams are
-exempt from normal label enforcement, and rate-limit reasons identify stream
-labels. `MaxRecvMsgSize` controls the uncompressed request limit.
+Distributor-side limit checks can enforce or dry-run. Aggregated-metric streams
+are exempt from ordinary label enforcement, rejection reasons identify stream
+labels, and OTLP entry-metadata bytes count toward enforcement. Configure the
+uncompressed receive ceiling with `MaxRecvMsgSize`.
 
-Ingestion policies can override stream limits. Default policy mappings merge
-with tenant mappings; a tenant mapping does not replace the defaults wholesale.
+### Override limits by ingestion policy
 
-### Use tenant-specific Kafka ingestion
-
-Kafka ingestion can select topics per tenant, consume records through multiple
-clients, and feed the block-building path. Use the Helm `block_builder`
-configuration when deploying that path.
+Stream limits can vary by ingestion policy. Default policy mappings merge with
+tenant mappings, so a tenant override does not discard every default mapping.
 
 ## High-value query and API controls
 
-### Return Parquet
+### Request columnar results
 
-Select Parquet from the query API when downstream processing benefits from a
-columnar response rather than decoding the ordinary query response.
+The query API can return Parquet, which is suitable for direct use by columnar
+data tooling. Negotiate the response format in the API client rather than
+post-converting a text response.
 
-### Disable range-query caching when necessary
+### Handle stricter API responses
 
-From 3.7.3, a `query_range` request can opt out of caching. Use this for request
-paths where a cached result is undesirable; do not disable caching globally
-without measuring the cost.
+An empty push request returns HTTP 422. Interval-limit violations return HTTP
+400. Treat both as actionable client errors rather than successful no-ops or
+generic server failures.
 
-### Scale deletion processing
+### Disable range-query caching when needed
 
-The experimental horizontally scalable compactor delegates queued deletion
-work to workers. This scales large deletes and backlogs, while index compaction
-and retention stay in the singleton Compactor.
+`query_range` requests can opt out of caching. Use that control for callers
+that require uncached evaluation while leaving normal cache behavior intact for
+other traffic.
 
-Deletion requests can also use SQLite. Query-time filtering uses each request's
-stored completion time to reduce the set it must consider.
+### Use tenant applied limits
 
-### Persist detected patterns
+The applied-limits endpoint reports the configuration effective for a tenant
+and supports response filtering with an allowlist. A nonexistent tenant
+receives default limits, so absence is not indicated by an empty response.
 
-Behind its feature flag, the pattern ingester can persist patterns as
-aggregated metrics for later queries. Bound persistence by volume and
-frequency; volume-based filtering is available, and detected level is emitted
-as structured metadata. The Patterns API accepts multi-tenant queries.
+### Persist and query patterns
 
-## High-value Helm controls
+Patterns can be stored as aggregated metrics behind a feature flag and queried
+later. Bound persistence by volume and frequency, and use pattern-ingester
+volume filtering where appropriate.
 
-### Treat selected values as templates
+## High-value storage and deletion controls
 
-The chart evaluates `tpl` for read, write, and backend pods and for
-`pattern_ingester`, `ingester_client`, `loki.operational_config`, and
-`nameOverride`. Preserve deliberate literal template syntax with the
-appropriate Helm escaping.
+### Choose delete-request storage deliberately
 
-### Choose chart-managed or full storage configuration
+SQLite can store delete requests and uses each request's stored completion time
+to narrow query-time filtering. For horizontally scalable deletion, the
+experimental compactor path delegates queued deletion work to workers while
+keeping index compaction and retention in the singleton Compactor.
 
-The chart exposes full storage configuration, can bypass its generated
-S3/GCS/Azure configuration, and permits separate ruler storage. Avoid mixing
-the generated and bypass paths accidentally.
+### Put deletion markers in object storage
 
-### Tune workload placement and persistence
+The compactor can persist chunk-deletion markers in object storage instead of
+local disk. Include the filesystem-backend repair for Thanos object-store
+delete requests when selecting an applicable patch release.
 
-Use topology spread constraints for admin API, distributed, and SingleBinary
-workloads where supported. Configure PVC access modes, claim-template labels,
-and `volumeAttributesClassName` deliberately. StatefulSet scale-down retains
-PVCs, while StatefulSet deletion may delete them.
+### Configure object-store compatibility explicitly
 
-### Control the Operator's network behavior
+Loki uses the shared Thanos object-store client and supports Swift through
+`thanos.io/objstore`. Account for provider-specific controls such as custom GCS
+endpoints, Windows MinIO delimiters, S3 Object Lock checksums, and accepted
+dashes in `storage_prefix`.
 
-The Operator can create NetworkPolicies with a LokiStack, suppress ingress,
-customize the gateway server certificate, configure Swift TLS CA material, and
-use virtual-host-style S3 access. On OpenShift 4.20 it no longer creates
-NetworkPolicies automatically.
+### Scale Kafka-backed ingestion
 
-## High-value operational changes
+Kafka ingestion supports tenant-specific topics and multiple Kafka clients.
+Deploy record consumers and the block-building path through the chart's
+`block_builder` configuration when adopting that architecture.
 
-### Keep Jaeger environment configuration during tracing migration
+## Helm and Operator checkpoints
 
-Loki uses OpenTelemetry internally instead of OpenTracing, but still accepts
-`JAEGER_`-prefixed environment configuration and exports Jaeger-format traces.
+### Render values, then inspect the manifests
 
-### Inspect effective tenant limits
+The chart applies `tpl` to several pod and component values, including
+`nameOverride`, `pattern_ingester`, `ingester_client`, and
+`loki.operational_config`. Render representative tenant and environment values
+to catch unintended template evaluation.
 
-Use the applied-limits endpoint to retrieve a tenant's configured limits and
-optionally filter fields with an allowlist. A nonexistent tenant returns
-default limits.
+### Validate storage generation and bypasses
 
-### Use the current operational commands
+The chart can expose the full storage configuration, bypass generated
+S3/GCS/Azure settings, and configure ruler storage separately. Bucket-name
+validation is conditional for S3 URLs, MinIO, local disk, and local ruler
+storage; validate the chosen backend rather than assuming one universal rule.
 
-`logcli` includes deletion commands and custom request headers. `loki health`
-provides a health command, and the ruler checker can validate a namespace and
-group. `lokitool` supports regex namespace filtering and the updated ruler
-path.
+### Review persistence lifecycle
 
-## Working method
+PVC access modes, claim-template labels, and `volumeAttributesClassName` are
+configurable. PVCs are retained on StatefulSet scale-down but remain deletable
+with the StatefulSet, so distinguish scaling behavior from deletion behavior.
 
-1. Identify whether the task concerns an upgrade, Helm, the Operator,
-   ingestion, queries, storage, or operations.
-2. Read the matching reference before changing configuration.
-3. Check the breaking and deprecated behavior for any adjacent subsystem.
-4. Preserve tenant-specific semantics when applying global defaults.
-5. Validate rendered Helm resources and generated Operator resources, not only
-   their input values.
-6. Exercise ingestion, queries, deletion, and storage against the actual
-   backend in a staging environment.
-7. Confirm HTTP status codes and response formats in clients that make strict
-   assumptions.
+### Check Operator platform defaults
+
+The Operator supports GCP Workload Identity, Swift TLS CAs, virtual-host S3,
+NetworkPolicies, custom gateway certificates, and ingress suppression. Platform
+defaults vary: OCP 4.20 no longer gets automatic NetworkPolicies, and AWS STS
+deployments receive their region through an environment variable.
+
+## Validation checklist
+
+- Render Helm templates with the exact values used in production.
+- Run Loki configuration validation, including ruler remote-write settings.
+- Exercise empty pushes, interval-limit failures, label precedence, and tenant
+  limits in API integration tests.
+- Verify object-store paths, credentials, delimiters, checksums, and deletion
+  markers against the selected backend.
+- Test IPv4/IPv6 discovery and memberlist advertise-address selection on the
+  actual interfaces.
+- Confirm migrations away from Promtail and deprecated deployment charts.
+- Check patch-level behavior before relying on query caching, timestamp
+  alignment, S3 fixes, or merged label sketches.

@@ -1,78 +1,179 @@
 # Core HTTP and runtime behavior
 
-## Connections and listeners
+## Request parsing and protocol conformance
 
-### Preserve a minimum keep-alive lifetime
+### Strict HTTP/2 and HTTP/3 connection headers
 
-Since 1.27.4, `keepalive_min_timeout` sets a period during which NGINX will not close a keep-alive client connection from the server side. The protection also applies during graceful shutdown.
+Since 1.31.0, NGINX rejects HTTP/2 and HTTP/3 requests containing
+`Connection`, `Proxy-Connection`, `Keep-Alive`, `Transfer-Encoding`, or
+`Upgrade`. It accepts `TE` only when its value is `trailers`. Strip other
+hop-by-hop fields when translating protocols.
 
-```nginx
-keepalive_min_timeout 5s;
-```
+### Authority and chunked-body parsing
 
-### Use portless bracketed IPv6 addresses
+Since 1.29.4, request-line host and port syntax, `Host`, and `:authority` are
+validated according to RFC 3986. A lone LF is rejected as a line terminator in
+chunked request and response bodies. Test clients and upstreams that relied on
+the older permissive parser.
 
-Since 1.27.3, a bracketed IPv6 address without a port is valid in `proxy_bind`, `fastcgi_bind`, `grpc_bind`, `memcached_bind`, `scgi_bind`, and `uwsgi_bind`. `ngx_http_realip_module` accepts the same address form.
+### Header-count limits
 
-```nginx
-proxy_bind [2001:db8::10];
-```
-
-### Enable listener TCP keepalive on macOS
-
-From 1.29.0, macOS supports the `so_keepalive` parameter on `listen`.
+Since 1.29.8, `max_headers` sets an explicit limit on HTTP header-field count.
 
 ```nginx
-listen 443 ssl so_keepalive=on;
+http {
+    max_headers 100;
+}
 ```
 
-### Measure connection lifetime
+### FreeNGINX host parsing
 
-`$connection_time` reports the client connection's lifetime in seconds with millisecond resolution. Unlike request time, it spans a long-lived or reused connection and can distinguish connection reuse from a slow individual request.
+FreeNGINX 1.29.1 applies stricter syntax checks to the `Host` header. In the
+request line it also accepts host names containing `_` and other formerly
+rejected characters, plus zone identifiers in IPv6 addresses.
 
-## Request authority and protocol handling
+## Response behavior
 
-### Handle Host and authority correctly
+### Early Hints
 
-NGINX 1.28.1 fixes handling for equal `Host` and `:authority` fields over HTTP/2 and for an explicit port in `Host` over HTTP/3.
+Since 1.29.0, proxy and gRPC backends may supply HTTP 103 responses. Use
+`early_hints` to decide whether to forward preliminary hints before the final
+response.
 
-### Reconstruct an authority with optional port
+```nginx
+location / {
+    proxy_pass http://backend;
+    early_hints on;
+}
+```
 
-Since 1.29.3, `$request_port` prefers the URI authority's port, then the `Host` header's port. `$is_request_port` is `:` only when that result is nonempty. Concatenate the variables to yield either `host:port` or `host` without producing a stray colon:
+### Explicit header and trailer inheritance
+
+Since 1.29.3, `add_header_inherit` and `add_trailer_inherit` can merge a nested
+configuration's fields with its inherited parent set rather than replacing the
+parent set.
+
+```nginx
+add_header_inherit merge;
+add_trailer_inherit merge;
+```
+
+### FreeNGINX MIME and charset defaults
+
+FreeNGINX 1.27 maps `.js` and `.mjs` to `text/javascript`, and `.md` and
+`.markdown` to `text/markdown`. Both media types are in the default
+`charset_types` list, so charset processing applies without extra setup.
+
+## Variables and mappings
+
+### Explicit request-port reconstruction
+
+Since 1.29.3, `$request_port` holds an explicitly supplied request port and
+`$is_request_port` expands to `:` only when that value is nonempty.
 
 ```nginx
 proxy_set_header Host $host$is_request_port$request_port;
 ```
 
-### Complete explicit split allocations
+### Volatile and wildcard-loaded geo maps
 
-From 1.31.0, a `split_clients` variable no longer becomes empty when every percentage is explicit and the allocations total exactly 100%.
+The `geo` block accepts `volatile` since 1.29.3, and its `include` accepts
+wildcards since 1.29.8.
 
-## Responses, files, and filters
+```nginx
+geo $site_group {
+    volatile;
+    include /etc/nginx/geo/*.conf;
+}
+```
 
-### Serve cached files with direct I/O
+### Complete split-client allocations
 
-In FreeNginx 1.29.0, `directio` also applies to responses served from cache. Cached files therefore follow the configured direct-I/O threshold and behavior.
+Since 1.31.2, a `split_clients` mapping no longer produces an empty value when
+all percentages are explicit and total 100%.
 
-### Apply leaky-bucket transfer controls
+```nginx
+split_clients $request_id $bucket {
+    50% a;
+    50% b;
+}
+```
 
-FreeNginx 1.29.0 changes `limit_rate` to a leaky-bucket algorithm and makes `limit_rate_after` the permitted burst size. It also adds:
+### Request timing across clock changes
 
-- `send_min_rate` for a minimum response-send rate.
-- `client_body_min_rate` for a minimum request-body receive rate.
+FreeNGINX 1.29.0 keeps `$request_time` correct across system clock changes, so
+clock adjustments do not distort recorded durations.
 
-Re-evaluate existing rate and burst values during migration because the semantics changed.
+## Rate and connection controls
 
-### Use current MIME defaults
+### Minimum keep-alive lifetime
 
-In the FreeNginx 1.27 line, the defaults map `.js` and `.mjs` to `text/javascript`, and `.md` and `.markdown` to `text/markdown`. Both MIME types are included in the default `charset_types` value.
+Since 1.27.4, `keepalive_min_timeout` prevents NGINX from closing a reusable
+client connection from the server side during the configured interval,
+including during graceful worker shutdown. The default is `0`.
 
-## Build and runtime compatibility
+```nginx
+keepalive_min_timeout 5s;
+```
 
-### Build HTTP/2 and HTTP/3 with current GCC
+### FreeNGINX leaky-bucket response limits
 
-NGINX 1.28.0 builds with GCC 15 when HTTP/2 or HTTP/3 is enabled. It also builds with GCC 14 or newer under `-O3 -flto` when HTTP/3 is enabled.
+FreeNGINX 1.29.0 changes `limit_rate` to a leaky-bucket algorithm and makes
+`limit_rate_after` the allowed burst size. Review previous tuning because its
+transmission pattern changes. `send_min_rate` and `client_body_min_rate` add
+minimum rates for response sending and request-body receipt.
 
-### Account for the Windows toolchain baseline
+## Listeners, modules, and builds
 
-From 1.29.0, the native nginx/Windows binary is built with Windows SDK 10. Use that SDK baseline when reproducing binary behavior or investigating build compatibility.
+### Multipath listeners
+
+Since 1.29.7, `listen` accepts `multipath`.
+
+```nginx
+listen 443 ssl multipath;
+```
+
+### HTTP tunneling and proxy authentication
+
+NGINX 1.31 adds `ngx_http_tunnel_module` for HTTP tunneling. `auth_basic`,
+`satisfy`, and `auth_delay` can authenticate access to proxies.
+
+### WebDAV relationship checks
+
+NGINX 1.31 rejects `COPY` or `MOVE` when source and destination are identical
+or have a parent-child collection relationship. Restructure self-referential
+or nested collection moves.
+
+### Sticky-module configure option
+
+Use `--without-http_upstream_sticky_module`. The older
+`--without-http_upstream_sticky` option is deprecated.
+
+### HTTP/2 and HTTP/3 compiler compatibility
+
+NGINX 1.28.0 fixes GCC 15 build failures with `ngx_http_v2_module` or
+`ngx_http_v3_module`, and GCC 14-or-newer failures with `-O3 -flto` and
+`ngx_http_v3_module`.
+
+## FreeNGINX filters, paths, and filesystem behavior
+
+### External XSLT entities
+
+FreeNGINX 1.29.3 no longer loads external character entities declared in an
+internal DTD subset by default. Enable the old behavior only when a trusted
+transformation requires it.
+
+```nginx
+xml_external_entities on;
+```
+
+### Corrected relative paths
+
+FreeNGINX 1.29.3 corrects relative-path handling for `working_directory`,
+`google_perftools_profiles`, `geoip_country`, `geoip_city`, `geoip_org`, and
+`xml_entities`. Recheck configurations that relied on earlier resolution.
+
+### XFS largeio cache accounting
+
+FreeNGINX 1.29.4 corrects disk-cache size calculation on XFS filesystems
+mounted with `largeio`.

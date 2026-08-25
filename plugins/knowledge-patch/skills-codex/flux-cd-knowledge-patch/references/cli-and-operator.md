@@ -1,41 +1,45 @@
 # CLI and Flux Operator
 
-## Debug merged configuration
+## Inspect merged reconciliation inputs
 
-Since 2.5.0, these commands print the effective values after merging inline
-configuration with referenced ConfigMaps and Secrets:
+Since 2.5.0, the debug commands show effective values after inline data is
+merged with referenced ConfigMaps and Secrets:
 
-```bash
+```shell
 flux debug kustomization --show-vars
 flux debug helmrelease --show-values
 ```
 
-Referenced Secret values are printed in clear text. Treat the terminal,
-captured output, logs, and pasted diagnostics as sensitive.
+Referenced Secret values are printed in clear text. Do not paste this output
+into tickets or persistent logs without redaction.
 
-## Stable OCI artifact commands
+## Work with OCI artifacts
 
-Since 2.6.0, these artifact commands are stable:
+The following artifact commands and media types are stable as of 2.6.0:
 
-- `flux build artifact`
-- `flux push artifact`
-- `flux pull artifact`
-- `flux tag artifact`
-- `flux diff artifact`
-- `flux list artifacts`
+```shell
+flux build artifact
+flux push artifact
+flux pull artifact
+flux tag artifact
+flux diff artifact
+flux list artifacts
+```
 
-The associated stable media types are
-`application/vnd.cncf.flux.config.v1+json` for configuration and
-`application/vnd.cncf.flux.content.v1.tar+gzip` for content.
+- Config media type: `application/vnd.cncf.flux.config.v1+json`
+- Content media type: `application/vnd.cncf.flux.content.v1.tar+gzip`
 
-## CLI plugins
+Use the stable media types when producing or consuming Flux-compatible OCI
+artifacts outside the CLI.
 
-Since 2.9.0, the Flux CLI installs independently versioned plugins under
-`~/fluxcd/plugins` and exposes each one as `flux <plugin>`. The initial catalog
-includes Mirror for declarative registry mirroring and Schema for JSON Schema
-and CEL validation.
+## Manage CLI plugins
 
-```bash
+The 2.9.0 CLI discovers independently versioned plugins under
+`~/fluxcd/plugins` and exposes each plugin as `flux <plugin>`. The initial
+catalog includes Mirror for declarative registry mirroring and Schema for JSON
+Schema and CEL validation.
+
+```shell
 flux plugin search
 flux plugin install schema@0.5.0
 flux plugin list
@@ -43,26 +47,33 @@ flux plugin update schema
 flux plugin uninstall schema
 ```
 
-Pin plugin versions or immutable digests in reproducible automation.
+Pin plugin versions or immutable digests in automation; an unpinned update can
+change behavior independently of the core Flux CLI.
 
-## Receiver triggering
+## Trigger a Receiver
 
-Since 2.9.0, invoke a Receiver without hand-building its webhook request:
+Since 2.9.0, invoke a configured Receiver without hand-building its webhook
+request:
 
-```bash
+```shell
 flux trigger receiver
 ```
 
-Generic Receivers can authenticate these requests by validating an OIDC ID
-token instead of an HMAC shared secret.
+The Receiver still enforces its configured HMAC or OIDC authentication and
+resource filtering.
 
-## Flux Operator Web UI
+## Use the Flux Operator Web UI
 
-The Flux Operator Web UI added by 2.8.0 provides cluster and GitOps-resource
+The Flux Operator Web UI added in 2.8.0 provides cluster and GitOps-resource
 monitoring, rollout inspection, delivery graphs, and RBAC-guarded actions. It
-supports OIDC single sign-on together with Kubernetes RBAC for multi-tenant
-clusters.
+supports OIDC single sign-on and Kubernetes RBAC for multi-tenant clusters.
 
-Its 2.9.0 additions include a workload dashboard for Deployments, StatefulSets,
-DaemonSets, and CronJobs, plus a multi-pod, multi-container log viewer.
-Workload actions and log access use Kubernetes RBAC through user impersonation.
+In 2.9.0-era Operator releases, the UI also provides:
+
+- a workload dashboard for Deployments, StatefulSets, DaemonSets, and CronJobs;
+- a log viewer spanning multiple pods and containers;
+- workload actions and log access authorized through Kubernetes RBAC with user
+  impersonation.
+
+Treat UI access as cluster access: configure OIDC identity mapping and RBAC
+rules for the intended tenant boundaries.

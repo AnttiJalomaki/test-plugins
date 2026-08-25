@@ -10,173 +10,235 @@ metadata:
 
 # LiteLLM Knowledge Patch
 
-Use this patch when implementing, reviewing, operating, or upgrading LiteLLM SDK, Router, or Proxy deployments.
-Start with the compatibility and security checks below, then load only the topic references needed for the task.
+Use this skill when configuring, upgrading, or operating LiteLLM SDK, Router,
+or Proxy deployments. Start with the breaking-behavior checklist, then load the
+topic reference that matches the task. Prefer the application's pinned version,
+configuration, and observed behavior when they differ from this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [routing-and-resilience.md](references/routing-and-resilience.md) | Rate-limit enforcement, routing groups, ordered tiers, affinity, retries, fallbacks, health checks, and timeouts |
-| [identity-budgets-and-keys.md](references/identity-budgets-and-keys.md) | Spend enforcement, tag budgets, key defaults and rotation, team behavior, JWTs, and rate limits |
-| [proxy-security-and-networking.md](references/proxy-security-and-networking.md) | Validation, tenant isolation, authentication checks, MCP ingress, HTTP transport, hardening, and request bounds |
-| [providers-protocols-and-mcp.md](references/providers-protocols-and-mcp.md) | Provider/model support, protocol bridges, Claude context handling, A2A, MCP authentication, filtering, and guardrails |
-| [deployment-configuration.md](references/deployment-configuration.md) | Credentials, environment exposure, prompt framing, tokenizers, Redis separation, and config convergence |
-| [operations-and-observability.md](references/operations-and-observability.md) | OpenTelemetry, drain behavior, database topology, Redis protection, Python runtime, and operational sizing |
+| [deployment-configuration.md](references/deployment-configuration.md) | Config discovery, credentials, database pools and replicas, runtime support, image verification, environment exposure, prompt framing, and tokenizers |
+| [identity-budgets-and-keys.md](references/identity-budgets-and-keys.md) | Authentication, teams, virtual keys, aliases, budgets, rotation, spend reports, and key-generation policy |
+| [operations-and-observability.md](references/operations-and-observability.md) | Telemetry, health state, Redis coordination, draining, timeouts, rate limiting, reporting, and Admin UI operations |
+| [providers-protocols-and-mcp.md](references/providers-protocols-and-mcp.md) | Provider/model support, protocol bridges, A2A, MCP authentication and filtering, guardrails, and response normalization |
+| [proxy-security-and-networking.md](references/proxy-security-and-networking.md) | SSRF defenses, request validation, tenant isolation, explicit grants, network controls, hardening, and signed images |
+| [routing-and-resilience.md](references/routing-and-resilience.md) | Routing groups, tiering, failover, fallbacks, pre-call checks, affinity, auto-routing, mirroring, and health filtering |
 
-## Apply the patch
+## Breaking-behavior checklist
 
-1. Identify whether the code uses the SDK, `Router`, Proxy configuration, or management APIs.
-2. Check the breaking and security-sensitive behaviors before changing configuration.
-3. Read the routing reference when retries, fallbacks, limits, health, or sticky routing are involved.
-4. Read the identity reference before changing budgets, teams, virtual keys, or key generation.
-5. Read the protocol reference for Chat, Responses, Messages, MCP, A2A, or provider capability mapping.
-6. Validate defaults explicitly; several protections and enforcement modes are opt-in.
-7. Test multi-worker or multi-pod behavior with shared Redis state where the feature requires it.
+### Spend limits throttle instead of revoking
 
-## Breaking-change checks
+A virtual key that exceeds its budget is rate-limited; it is no longer revoked.
+Do not use key-revocation state as the signal that a spend limit was reached.
+Update automation to recognize the rate-limit response and preserve the key for
+the next reset period.
 
-### Spend limits throttle rather than revoke
+### Request-parameter checks cover every input location
 
-Crossing a key budget now rate-limits the key instead of revoking it. Do not rely on spend exhaustion to invalidate credentials or to create an irreversible hard stop. Treat revocation and budget enforcement as separate controls.
+Parameter policy now checks body, path, and form values consistently. A request
+that previously bypassed a restriction by moving a value out of the JSON body
+may now be rejected. Exercise all endpoint encodings during an upgrade.
 
-### Proxy fallback test flags no longer work
+### Provider `finish_reason=error` becomes `stop`
 
-The Proxy strips these incoming fields:
+The generic provider adapter normalizes an `error` finish reason to `stop`.
+Clients that need error detection must use the request status, exception, or
+other error metadata rather than the original finish-reason string.
 
-- `mock_testing_fallbacks`
-- `mock_testing_context_fallbacks`
-- `mock_testing_content_policy_fallbacks`
+### Telemetry attribute names changed
 
-They remain usable only with direct `Router` calls. Exercise a real provider failure in a non-production environment when testing Proxy fallbacks.
+Move queries for LiteLLM-specific errors to the `litellm.*` namespace.
+Streaming spans use `gen_ai.response.time_to_first_chunk`, failed calls emit
+`gen_ai.client.operation.exception`, and v2 error spans expose `error.*` again.
 
-### OpenTelemetry attribute names changed
+### Custom authentication does not imply common checks
 
-Update queries and dashboards that used old LiteLLM error keys. LiteLLM-specific details are under `litellm.*`; streaming spans use `gen_ai.response.time_to_first_chunk`; failed calls emit `gen_ai.client.operation.exception`; v2 error spans expose `error.*` again.
+`custom_auth_run_common_checks` defaults to `false`. Enable it when custom-auth
+requests must still pass model allowlists, budgets, and rate limits.
 
-### Team aliases can bypass ordering and failover
+```yaml
+general_settings:
+  custom_auth_run_common_checks: true
+```
 
-Request team deployments through `model_info.team_public_model_name`. A stale team `model_aliases` mapping can collapse the public name to one internal deployment. Remove that database alias, or temporarily set `LITELLM_ENABLE_TEAM_STALE_ALIAS_BYPASS=true` while upgrading.
+### Proxy mock fallback flags do nothing
 
-### SSRF validation is on by default
-
-`litellm_settings.user_url_validation` rejects URLs resolving to private, loopback, link-local, or otherwise non-global addresses. `user_url_allowed_hosts` matches the URL hostname exactly, including its port; for split-horizon DNS, allowlist the public hostname.
-
-### Security boundaries have explicit escape hatches
-
-- Responses IDs are user-bound unless `disable_responses_id_security` removes that protection.
-- Non-admin spend-list results are caller-scoped unless `legacy_unscoped_spend_list_endpoints` restores global results.
-- Client metadata tags remain usable unless `reject_clientside_metadata_tags` is enabled.
-- Custom authentication does not run common model, budget, and rate-limit checks unless `custom_auth_run_common_checks` is enabled.
+The Proxy strips `mock_testing_fallbacks`,
+`mock_testing_context_fallbacks`, and
+`mock_testing_content_policy_fallbacks`. Direct `Router` calls may still use
+them. Test Proxy fallback behavior by causing a real provider failure in an
+isolated environment.
 
 ## Routing quick reference
 
-### Enforce deployment RPM and TPM
+### Enforce deployment rate limits
 
-Configured deployment `rpm` and `tpm` normally inform routing. Add the pre-call check to reject over-limit calls with 429 and `retry-after: 60`:
+Deployment `rpm` and `tpm` normally influence selection rather than blocking
+traffic. Add the pre-call check to reject excess traffic with HTTP 429 and
+`retry-after: 60`.
 
 ```yaml
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: provider/chat
+      rpm: 60
+      tpm: 90000
 router_settings:
   optional_pre_call_checks: [enforce_model_rate_limits]
 ```
 
-RPM enforcement is exact. TPM is best-effort because actual token use is recorded after the response. Share Redis state across Proxy instances.
+RPM enforcement is exact. TPM is best-effort because actual usage is recorded
+after the response. Share Redis state across Proxy instances.
 
-### Partition routing strategies
+### Understand retry and fallback order
 
-Use `routing_groups` to apply separate strategies to disjoint model-name sets:
+The Router exhausts `num_retries` before moving to another model group. It has
+separate ordered routes for context-window, content-policy, and other errors.
+A model-specific fallback mapping wins over `default_fallbacks`.
+
+```yaml
+litellm_settings:
+  num_retries: 3
+  request_timeout: 10
+  allowed_fails: 3
+  cooldown_time: 30
+  default_fallbacks: [emergency]
+```
+
+`request_timeout` bounds one attempt. `allowed_fails` and `cooldown_time`
+control when a deployment leaves selection and for how long.
+
+### Use ordered deployment tiers
+
+Set `order` in `litellm_params`; lower numbers run first. The configured
+strategy balances deployments tied within a tier. Each tier receives its
+retries before promotion, and model-level fallbacks run only after every tier.
+
+```yaml
+model_list:
+  - model_name: chat
+    litellm_params: {model: provider/primary, order: 1}
+  - model_name: chat
+    litellm_params: {model: provider/secondary, order: 2}
+```
+
+### Enable context-window checks explicitly
+
+Set `router_settings.enable_pre_call_checks: true` to filter undersized
+same-group deployments and raise `ContextWindowExceededError` before sending a
+request. Set `model_info.max_input_tokens` when discovery is insufficient and
+`model_info.base_model` when the deployment name hides the underlying model.
 
 ```yaml
 router_settings:
-  routing_strategy: simple-shuffle
-  routing_groups:
-    - group_name: latency-sensitive
-      models: [premium-chat]
-      routing_strategy: latency-based-routing
-      routing_strategy_args: {ttl: 60}
+  enable_pre_call_checks: true
+model_list:
+  - model_name: chat
+    litellm_params: {model: provider/chat}
+    model_info:
+      max_input_tokens: 8000
 ```
 
-A model can appear in only one group, `default` is reserved, and ungrouped models inherit the top-level strategy. Runtime updates through `Router.update_settings()` or `/config/update` rebuild group state.
+### Preserve encrypted-response affinity
 
-### Build ordered deployment tiers
-
-Set `litellm_params.order`; lower values run first. The routing strategy balances deployments tied within a tier, retries are exhausted inside each tier, and model-level fallbacks run only after all tiers fail.
-
-### Enable async weighted failover
-
-For `simple-shuffle`, `enable_weighted_failover: true` re-picks a weighted, rate-limited same-group peer after an async failure before crossing to `fallbacks`. It does not affect synchronous calls, is capped by `max_fallbacks` (default `5`), and leaves context-window and content-policy errors on their own routes.
-
-### Route encrypted Responses continuations
-
-Assign every deployment a distinct `model_info.id` and enable:
+Encrypted Responses items can only continue on the deployment key that created
+them. Give deployments unique `model_info.id` values and enable:
 
 ```yaml
 router_settings:
   optional_pre_call_checks: [encrypted_content_affinity]
 ```
 
-Encrypted `rs_...` items then return to the deployment key that created them while ordinary traffic remains balanced.
+Ordinary requests remain load-balanced.
 
-### Select retry and fallback routes
+## Security quick reference
 
-The Router exhausts `num_retries` before crossing model groups and maintains distinct ordered routes for context-window, content-policy, and remaining errors. `request_timeout` bounds each attempt; `allowed_fails` and `cooldown_time` decide when a deployment leaves selection. A model-specific fallback mapping overrides `default_fallbacks`.
+### Keep URL validation enabled
 
-Request-scoped fallbacks may replace `model`, `messages`, `temperature`, and other inputs for an attempt, including embeddings and image generation. `disable_fallbacks: true` in the request or virtual-key metadata disables failover.
+`litellm_settings.user_url_validation` defaults to `true` and blocks fetches
+whose DNS result is private, loopback, link-local, or otherwise non-global.
+Allowlisted hosts must exactly match the URL hostname, including its port. For
+split-horizon DNS, allowlist the public hostname, not its private address.
 
-### Enforce context windows before provider calls
+### Choose fail-open or fail-closed budgets deliberately
 
-Set `router_settings.enable_pre_call_checks: true`. Use `model_info.max_input_tokens` to override a known limit and `model_info.base_model` when a deployment name hides the underlying model. If no deployment fits, `ContextWindowExceededError` can enter `context_window_fallbacks`.
+`fail_closed_budget_enforcement` defaults off. When enabled, every budgeted
+request is verified against the database and returns 503 if neither Redis nor
+the database can establish spend. `allow_requests_on_db_unavailable` permits an
+unchecked key and is suitable only for private-network deployments.
 
-## Security and operations quick reference
+### Preserve tenant isolation defaults
 
-### Choose fail-open or fail-closed budgets
+Responses IDs are user-bound by default. Do not set
+`disable_responses_id_security` unless cross-user access is intentional.
+Non-admin spend-list endpoints are caller-scoped; use
+`legacy_unscoped_spend_list_endpoints` only for a controlled migration. Enable
+`reject_clientside_metadata_tags` to prevent callers from changing budget tags.
 
-`fail_closed_budget_enforcement` is off by default. Enabling it checks every budgeted request against the database and returns 503 when neither Redis nor the database can establish spend. `allow_requests_on_db_unavailable` intentionally permits unchecked virtual keys and is suitable only for private-network deployments.
+### Harden the deployment surface
 
-### Protect optional endpoints and interfaces
+HSTS is opt-in with `LITELLM_ENABLE_HSTS` and applies only over HTTPS.
+`DISABLE_ADMIN_UI`, `NO_DOCS`, `NO_OPENAPI`, and `NO_REDOC` independently
+remove interfaces. Secret redaction defaults on; do not set
+`LITELLM_DISABLE_REDACT_SECRETS=true` unless logs are otherwise protected.
 
-- `enable_drain_endpoint` is off by default. Without `drain_endpoint_token`, `/health/drain` is unauthenticated; otherwise callers need `X-Drain-Token`.
-- `LITELLM_ENABLE_HSTS` is opt-in and applies only over HTTPS.
-- `DISABLE_ADMIN_UI`, `NO_DOCS`, `NO_OPENAPI`, and `NO_REDOC` disable their respective interfaces independently.
-- Secret redaction is on unless `LITELLM_DISABLE_REDACT_SECRETS=true`.
-- File-backed OIDC credentials default to `/var/run/secrets,/run/secrets`; override with `LITELLM_OIDC_ALLOWED_CREDENTIAL_DIRS`.
+## Identity and budget quick reference
 
-### Bound work and disconnects
+### Configure tag budgets as independent objects
 
-Set `max_request_size_mb` and `max_response_size_mb` to reject oversized traffic. `pass_through_request_timeout` defaults to 600 seconds, with endpoint-specific values taking precedence. `cancel_on_disconnect: true` cancels a non-streaming upstream request and records 499 after the client leaves.
+Tag budgets require PostgreSQL and are created with `/tag/new`. Attach tags to
+a key or request. A multi-tag request is charged to every tag and is rejected
+when any one tag is over budget.
 
-### Share health and affinity state deliberately
-
-`enable_health_check_routing` filters unhealthy deployments. Set a staleness threshold and optionally ignore transient 408/429 probe failures. `use_shared_health_check` stores health state in Redis. Sticky routing uses `deployment_affinity` or `session_affinity`; global affinity checks may be overridden per group with `model_group_affinity_config`.
-
-## High-use feature quick reference
-
-### Use per-tag and directional limits
-
-A virtual key can enforce per-tag RPM. Router deployments can limit input TPM and output TPM independently, and local rate-limit errors can trigger gateway fallbacks. The v3 limiter reserves TPM before calls unless `LITELLM_TPM_TOKEN_RESERVATION_ENABLED=false` switches enforcement to actual post-call usage.
-
-### Hide compatibility aliases
-
-Use the object form to accept an alias without advertising it from model discovery endpoints:
-
-```yaml
-router_settings:
-  model_group_alias:
-    legacy-chat:
-      model: chat
-      hidden: true
+```json
+{"name":"engineering","max_budget":500,"soft_budget":400,"budget_duration":"30d"}
 ```
 
-### Mirror traffic silently
+### Apply key-generation defaults and ceilings
 
-Router traffic mirroring sends a production request to a secondary model for evaluation. Its response is collected in the background and does not change the primary response or its latency.
+`default_key_generate_params` fills omitted fields.
+`upperbound_key_generate_params` clamps requested values to administrative
+ceilings rather than rejecting the request. Use `key_generation_settings` to
+restrict team and personal key creation by role and require attribution fields.
 
-### Separate response and coordination Redis
+### Rotate with an explicit cutover
 
-Coordination Redis may be configured independently from the response cache. The usage cache can be built from `REDIS_*` variables, and the `general_settings` request allowlist is applied to LiteLLM globals.
+`/key/{key}/regenerate` can update key parameters while rotating. Set
+`grace_period` to keep old and new strings valid together; omit it or pass an
+empty value to revoke the old string immediately.
 
-### Use the new gateway and protocol features
+## Operational quick reference
 
-The gateway can register and invoke A2A agents alongside model and MCP routes. Chat Completions forwards `verbosity`; protocol bridges preserve custom-tool round trips, allowlists, and translated `reasoning_tokens`. MCP supports delegated credentials, OAuth token exchange, semantic tool filtering, and pre-call guardrail scanning.
+### Separate coordination Redis from response caching
 
-For syntax, defaults, constraints, and management endpoints, use the corresponding topic reference rather than inferring behavior from this overview.
+Coordination Redis may be configured independently of the response cache. The
+usage cache can be built from `REDIS_*` variables, and the request allowlist in
+`general_settings` is applied to LiteLLM globals.
+
+### Drain safely
+
+`enable_drain_endpoint` exposes `GET /health/drain` for pre-stop hooks and is
+off by default. Without `drain_endpoint_token` it is unauthenticated; with a
+token, callers must send the matching `X-Drain-Token`. `cancel_on_disconnect`
+cancels abandoned non-streaming upstream work and records status 499.
+
+### Distinguish stall timeouts
+
+`ttft_timeout` detects no first token and internally streams even a nominally
+non-streaming call. `stream_idle_timeout` detects excessive inter-token gaps.
+Use `LITELLM_MAX_STREAMING_DURATION_SECONDS` for total lifetime and
+`LITELLM_STREAM_INACTIVITY_TIMEOUT_SECONDS` when keepalives arrive without
+content chunks.
+
+## Working method
+
+1. Identify whether the task concerns SDK calls, direct `Router`, or Proxy.
+2. Read the matching topic reference before changing configuration.
+3. Check defaults and scope: global, model group, deployment, team, key, or
+   request.
+4. For multi-instance deployments, identify which state must be in Redis.
+5. Test error paths, tenant boundaries, cooldowns, and upgrade-sensitive input
+   locations in a non-production environment.

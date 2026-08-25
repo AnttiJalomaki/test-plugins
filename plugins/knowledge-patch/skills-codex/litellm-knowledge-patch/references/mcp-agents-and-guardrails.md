@@ -1,53 +1,69 @@
-# MCP, agents, and guardrails
+# MCP, Agents, and Guardrails
 
-## A2A agent gateway
+## Agent gateway
 
-Add and invoke A2A agents through the same gateway that serves model and MCP
-routes. A deployment does not need a separate agent gateway.
+### A2A agent gateway
 
-## Client-held MCP credentials
+The gateway can register and invoke A2A agents beside model and MCP routes, so
+the deployment does not need a separate agent gateway.
 
-MCP server configuration supports `true_passthrough` and `oauth_delegate`
-authentication modes, with upstream OAuth discovery bound to each server
-(since 1.93.0).
+## Client-held MCP authorization
 
-Use the `dcr_bridge` path to carry client-held credentials in a sealed
-envelope. It exposes discovery and registration/token relays and requires
-PKCE S256.
+### Client-held MCP credentials
 
-## OAuth token exchange
+Since 1.93.0, MCP servers support `true_passthrough` and `oauth_delegate` auth
+modes, with upstream OAuth discovery bound to the individual server. The
+`dcr_bridge` route transports client-held credentials in a sealed envelope and
+provides discovery plus registration and token relays. The flow requires PKCE
+S256.
 
-Set the MCP server `auth_type` to `oauth2_token_exchange` and select the
-`entra_obo` token-exchange profile for on-behalf-of calls. The REST API and
-dashboard support this configuration. Persist the selected `oauth2_flow`
-explicitly; startup backfills older missing values. Outbound concurrency
-limits also apply to on-behalf-of tool calls.
+### MCP OAuth token exchange
 
-## Semantic filtering
+Since 1.93.0, MCP server configuration accepts the `oauth2_token_exchange`
+authentication type and the `entra_obo` token-exchange profile through both
+the REST API and dashboard. The chosen `oauth2_flow` is persisted explicitly,
+and legacy null values are backfilled during startup. Outbound concurrency
+limits apply to on-behalf-of MCP tool calls.
 
-The MCP semantic filter expands `litellm_proxy` tools before it filters them.
-It reports the number of tools removed and preserves full tool names in its
-response header. Context-window failures are surfaced and fail closed rather
-than bypassing the filter.
+### MCP ingress origin and explicit grants
 
-## Guardrails
-
-Model Armor supports MCP tool-call scanning in `pre_mcp_call` and
-`during_mcp_call` modes. Content Filter supports `pre_mcp_call`.
-
-With `skip_unscannable_attachments`, Model Armor passes reference-only
-attachments through and does not apply an attachment-count cap.
-
-## Ingress origin and trusted proxies
-
-For MCP OAuth behind ingress, set `PROXY_BASE_URL` to the exact public origin
+Behind ingress, set `PROXY_BASE_URL` to the exact public origin for MCP OAuth,
 without a path or trailing slash. It takes precedence over forwarded headers.
+Otherwise, `use_x_forwarded_for` is trusted only when the immediate peer is in
+`mcp_trusted_proxy_ranges`.
 
-Without `PROXY_BASE_URL`, `use_x_forwarded_for` is honored only when the
-immediate peer belongs to `mcp_trusted_proxy_ranges`.
+`require_key_mcp_access_defined` prevents an empty virtual-key grant from
+inheriting the team's MCP servers. `require_end_user_mcp_access_defined`
+requires an explicit end-user grant as well.
 
-## Explicit MCP grants
+## Tool selection and filtering
 
-Set `require_key_mcp_access_defined` to prevent an empty virtual-key grant
-from inheriting the team's MCP servers. Set
-`require_end_user_mcp_access_defined` to require an explicit end-user grant.
+### MCP semantic filtering
+
+Since 1.93.0, the semantic filter expands `litellm_proxy` tools before it
+filters, reports the number of removed tools, and preserves whole tool names
+in its response header. Context-window failures are surfaced and the filter
+fails closed.
+
+## Guardrail coverage
+
+### MCP-aware guardrails
+
+Since 1.93.0, Model Armor can inspect MCP tool calls in `pre_mcp_call` and
+`during_mcp_call` modes. Content Filter supports `pre_mcp_call`. With
+`skip_unscannable_attachments`, Model Armor passes reference-only attachments
+through and no longer applies an attachment-count limit.
+
+### Rubrik and Responses guardrail coverage
+
+Since 1.97.0, the Rubrik guardrail supports prompt moderation, response-text
+blocking, buffered streaming, and failure logging. A blocked request is
+attributed to its caller. Output scanning also covers the
+`/openai/v1/responses` alias.
+
+## Agent-client administration
+
+### Claude Code skill updates
+
+Since 1.97.0, Claude Code skill registration is create-only. Use the separate
+`PUT` route to update an existing registration.

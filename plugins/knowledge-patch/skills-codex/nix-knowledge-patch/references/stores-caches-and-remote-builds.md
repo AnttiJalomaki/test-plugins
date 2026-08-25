@@ -1,192 +1,217 @@
 # Stores, Caches, and Remote Builds
 
-## Store-path lifetime and durability
+## Local and chroot stores
 
-Enable `fsync-store-paths` to durably write new store paths before registering
-them as valid (since 2.25.0). It reduces corruption risk after a crash or power
-loss and defaults to `false`.
+### Explicit build-hook discovery (since 2.25.0)
 
-```ini
-fsync-store-paths = true
-```
-
-`nix copy` accepts `--profile` and `--out-link` (since 2.26.0).
-`--profile` points a profile at the top-level copied path; `--out-link`
-creates symlinks to top-level copied paths. Creating the root during the copy
-closes the garbage-collection race that exists when rooting afterward.
-
-```sh
-nix copy --from ssh://server \
-  --profile /nix/var/nix/profiles/system "$path"
-```
-
-When a substituter has a store object but lacks something in its closure, Nix
-does not combine that partial substitution with local builds for the missing
-pieces (since 2.30.0). Configure overlay caches alongside their underlying
-cache, or the client may build more paths locally:
-
-```ini
-substituters = https://overlay.example https://cache.nixos.org
-```
-
-## Garbage collection
-
-`nix store roots-daemon` serves runtime GC roots over a Unix socket (since
-2.34.0). It allows collection when the main daemon cannot scan `/proc` because
-it lacks `CAP_SYS_PTRACE`. Select it with `use-roots-daemon`; this and the
-tolerant-GC setting require the experimental `local-overlay-store` feature.
-
-The local-store setting `ignore-gc-delete-failure` makes GC warn and continue
-when an unprivileged process cannot delete a store path (since 2.34.0):
-
-```ini
-ignore-gc-delete-failure = true
-```
-
-Use it only when leaving undeletable paths is preferable to failing the
-collection.
-
-## Remote builders and SSH stores
-
-Separately packaged `libnixstore` cannot infer a Nix binary directory for the
-default `build-hook` (since 2.25.0). Programs linking it and using remote
-builds must put Nix binaries on `PATH` or set `build-hook` explicitly. The Perl
+Separately packaged `libnixstore` no longer provides a useful default path to
+the Nix binary directory. Applications linking it and using remote builds must
+put Nix executables on `PATH` or set `build-hook` explicitly. The Perl
 bindings no longer expose `getBinDir`.
 
-`NIX_SSHOPTS` uses shell-style handling of spaces and quotes (since 2.26.0),
-supporting complex options such as quoted proxy commands consistently across
-SSH-based Nix commands:
+### Durable path registration (since 2.25.0)
 
-```sh
-export NIX_SSHOPTS='-o ProxyCommand="ssh -W %h:%p ..."'
+`fsync-store-paths = true` durably writes new store paths before registering
+them as valid, reducing corruption after power loss or a crash. It defaults to
+`false`.
+
+### Host paths visible in chroot stores (since 2.27.0)
+
+An evaluator using a chroot store sees the union of host and chroot
+`/nix/store` contents. Host-store inputs remain accessible, and
+`builtins.path` plus `builtins.filterSource` work in chroot stores.
+
+### Runtime roots daemon (since 2.34.0)
+
+`nix store roots-daemon` serves runtime GC roots over a Unix socket, avoiding
+`/proc` scanning when the main daemon lacks `CAP_SYS_PTRACE`. Select it with
+`use-roots-daemon`; this and tolerant GC require the experimental
+`local-overlay-store` feature.
+
+### Tolerant garbage collection (since 2.34.0)
+
+The experimental local-store setting `ignore-gc-delete-failure = true` warns
+and continues when an unprivileged process cannot delete a path.
+
+### Unprivileged namespace wrapper (since 2.34.0)
+
+On Linux, `libexec/nix-nswrapper` can run the daemon with full sandboxing in
+an unprivileged user namespace. Allocate its build-user IDs in `/etc/subuid`
+and `/etc/subgid`; Nixpkgs exposes `nix.daemonUser` and `nix.daemonGroup` for
+the setup.
+
+### Chroot-store daemon sockets (since 2.35.2)
+
+A local chroot store derives its default daemon socket from the store's
+`state` directory. For `nix-daemon --store /foo/bar`, the socket is
+`/foo/bar/nix/var/nix/daemon-socket/socket`. Preserve another location with
+`nix daemon --socket-path ...` and connect with the matching `unix://` URL.
+
+### Sandbox xattr behavior (since 2.35.2)
+
+The Linux sandbox returns `ENOTSUP` for `listxattr`, `llistxattr`, and
+`flistxattr`, matching other xattr calls. Builds cannot enumerate host
+extended attributes such as `security.selinux`.
+
+### Selective recursive deletion (since 2.35.2)
+
+`nix store delete --recursive --skip-alive` deletes only dead paths in an
+argument's closure; `--skip-live` is an alias. Add `--also-referrers` to make
+referrers eligible too.
+
+## Roots, copies, signing, and closures
+
+### Root paths during copy (since 2.26.0)
+
+`nix copy` accepts `--profile` for one top-level copied path and `--out-link`
+for links to top-level copied paths. Creating roots during the copy closes the
+window in which concurrent GC could delete a result.
+
+### Multiple signing keys (since 2.29.0)
+
+The `secret-keys` store-URI parameter accepts a comma-separated file list, so
+a copy can sign paths with multiple keys during rotation.
+
+```text
+file:///tmp/store?secret-keys=/tmp/key1,/tmp/key2
 ```
 
-SSH store URIs used by `--store`, related flags, and remote-builder
-configuration accept ports (since 2.31.0):
+### Incomplete substituted closures (since 2.30.0)
+
+Nix does not combine a partially available substituted closure with local
+builds for its missing references. Configure an overlay cache together with
+the underlying cache or clients may build more paths locally.
+
+## SSH stores
+
+### Shell-style `NIX_SSHOPTS` (since 2.26.0)
+
+`NIX_SSHOPTS` parses spaces and quotes with shell-like rules, so quoted proxy
+commands work consistently across SSH-backed Nix commands.
+
+### Ports in store URIs (since 2.31.0)
+
+SSH and SSH-ng store references accept ports with hostnames, IPv4, and
+bracketed IPv6 addresses.
 
 ```text
 ssh://user@example.com:2222
 ssh-ng://[b573:6a48:e224:840b:6007:6275:f8f7:ebf3]:22
 ```
 
-Scoped IPv6 addresses must percent-encode the zone separator as `%25` (since
-2.31.0); literal `%` is no longer valid:
+### Scoped IPv6 URI syntax (since 2.31.0)
 
-```text
-[fe80::1%2518]
-```
+Encode a scoped IPv6 zone separator `%` as `%25`, for example
+`[fe80::1%2518]`. Literal-percent forms are invalid.
 
-## HTTP substituters
+## HTTP caches and transfers
 
-HTTP substituter `connect-timeout` defaults to five seconds instead of having
-no limit (since 2.29.0). Override it for intentionally slow or intermittently
-reachable caches.
+### Builtin fetcher TLS verification (since 2.25.0)
 
-`narinfo-cache-meta-ttl` controls how long `/nix-cache-info` metadata stays
-cached locally (since 2.34.0); the default is seven days. `nix store info
---refresh` forces a renewed cache-validity check.
+The `<nix/fetchurl.nix>` `builtin:fetchurl` derivation builder verifies TLS
+certificates, so invalid HTTPS certificates fail. This is distinct from the
+evaluation-time `builtins.fetchurl` behavior.
 
-```ini
-narinfo-cache-meta-ttl = 3600
-```
+### Connection timeout default (since 2.29.0)
+
+`connect-timeout` defaults to five seconds rather than unlimited. Override it
+for caches that legitimately establish connections more slowly.
+
+### Compressed cache metadata and logs (since 2.32.0)
+
+HTTP stores can compress `.narinfo`, `.ls`, and build-log uploads with
+`narinfo-compression`, `ls-compression`, and `log-compression`. The HTTP
+`Content-Encoding` header advertises the codec for transparent decompression.
+
+### Cache metadata lifetime (since 2.34.0)
+
+`narinfo-cache-meta-ttl` controls how long `/nix-cache-info` is cached, in
+seconds; the default is seven days. `nix store info --refresh` forces a new
+cache-validity check.
+
+### HTTPS client certificates (since 2.34.0)
 
 HTTPS substituter URLs accept `tls-certificate` and `tls-private-key` for
-mutual TLS (since 2.34.0):
+mutual TLS.
 
-```text
-https://cache.example?tls-certificate=/path/cert.pem&tls-private-key=/path/key.pem
-```
+### Supported content encodings (since 2.34.0)
 
-HTTP cache metadata and logs can use transparent compression (since 2.32.0):
+HTTP decompression follows linked libcurl capabilities. `deflate` and the
+deprecated `x-gzip` alias join `br`, `zstd`, and `gzip`; nonstandard `xz` and
+`bzip2` encodings are rejected. Distribution builds must link libcurl with
+the desired codec libraries.
 
-- `narinfo-compression` controls `.narinfo`.
-- `ls-compression` controls `.ls`.
-- `log-compression` controls uploaded build logs.
+### Optional HTTP/3 (since 2.35.2)
 
-Compression is advertised through `Content-Encoding`, and compatible clients
-decompress it:
+Set `http3 = true` or pass `--http3` to request HTTP/3 with fallback to
+HTTP/2 or HTTP/1.1. Nix silently ignores it when libcurl lacks HTTP/3 support.
 
-```sh
-nix copy --to \
-  'http://cache.example.com?narinfo-compression=gzip&ls-compression=gzip' \
-  /nix/store/...
-nix store copy-log --to \
-  'http://cache.example.com?log-compression=br' \
-  /nix/store/...
-```
+### Retry policy (since 2.35.2)
 
-HTTP decompression follows libcurl capabilities (since 2.34.0). Supported
-encodings include `deflate`, deprecated `x-gzip`, `br`, `zstd`, and `gzip`;
-nonstandard `xz` and `bzip2` are rejected. Distribution builds must link
-libcurl to the codec libraries they need.
+Transfers honor `Retry-After`, treat HTTP 429 and 503 as rate-limited, and
+support full-jitter backoff through `filetransfer-retry-delay`,
+`filetransfer-retry-delay-rate-limited`, `filetransfer-retry-max-delay`, and
+`filetransfer-retry-jitter`. `download-attempts` aliases
+`filetransfer-retry-attempts`; HTTP and S3 URIs accept per-store `retry-*`
+overrides.
 
-## S3 caches
+### Authentication status codes (since 2.35.2)
 
-### Credentials
+HTTP 401 and 407 from binary caches are authentication errors, not missing
+objects. Only 403 retains the missing-object behavior required for unlistable
+S3 buckets.
 
-The S3 client supports the STS profile credentials provider (since 2.29.0),
-including credentials established by `aws sso login`.
+## S3 binary caches
 
-Nix 2.34.2 restores container-native providers:
+### Credential providers (since 2.29.0, 2.34.0)
 
-- STS WebIdentity for EKS IRSA, CI OIDC, and other
-  `AssumeRoleWithWebIdentity` flows, using `AWS_WEB_IDENTITY_TOKEN_FILE` and
-  role variables.
-- ECS metadata credentials for ECS tasks and EKS Pod Identity, using
-  `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` or
-  `AWS_CONTAINER_CREDENTIALS_FULL_URI`.
+S3 caches support STS profile credentials, including credentials produced by
+`aws sso login`. Nix 2.34.2 restores STS WebIdentity for EKS IRSA and OIDC
+`AssumeRoleWithWebIdentity` workflows plus ECS metadata credentials for ECS
+tasks and EKS Pod Identity. Use `AWS_WEB_IDENTITY_TOKEN_FILE` and role variables, or
+`AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` /
+`AWS_CONTAINER_CREDENTIALS_FULL_URI`.
 
-### Uploads
+### Multipart uploads (since 2.33.0)
 
-S3 cache traffic uses HTTP through curl SigV4 as of 2.33.0. Authenticated
-operation requires curl 7.75.0 or later and `aws-crt-cpp`; without
-`aws-crt-cpp`, only public buckets are accessible.
+S3 traffic uses curl SigV4. Authenticated use requires curl 7.75.0 or later
+and `aws-crt-cpp`; builds without it can read only public buckets. The store
+parameters are `multipart-upload` (default `false`), `multipart-threshold`
+(default 100 MiB), and `multipart-chunk-size` (default/minimum 5 MiB).
+`buffer-size` aliases `multipart-chunk-size`.
 
-Multipart upload settings are:
+### Pinned objects and storage classes (since 2.33.0)
 
-- `multipart-upload`, default `false`.
-- `multipart-threshold`, default 100 MiB.
-- `multipart-chunk-size`, default and minimum 5 MiB.
-- `buffer-size`, now an alias for `multipart-chunk-size`.
+Use `versionId` to pin an object in a versioned bucket. `storage-class`
+selects the class for regular and multipart uploads; when omitted, the bucket
+default applies.
 
-The `storage-class` store parameter applies to both regular and multipart
-uploads (since 2.33.0). Omission uses the bucket default:
+### Addressing style (since 2.34.0)
 
-```sh
-nix copy --to 's3://my-bucket?storage-class=INTELLIGENT_TIERING' "$path"
-```
+`addressing-style=auto` uses virtual-hosted URLs for standard AWS endpoints
+and path-style URLs for custom endpoints or dotted bucket names. `path`
+forces the deprecated path form. `virtual` cannot be used with dotted bucket
+names.
 
-S3 addressing defaults to `addressing-style=auto` (since 2.34.0). Standard AWS
-endpoints use virtual-hosted URLs; custom endpoints and dotted bucket names
-use path style. `path` forces the deprecated path form. `virtual` forces
-virtual-hosted addressing and is invalid for dotted bucket names.
+## Hooks and content-addressed traces
 
-```text
-s3://my-bucket/key?region=us-east-1&addressing-style=path
-```
+### Graceful build-hook termination (since 2.35.2)
 
-### Signing
+Nix terminates `build-hook` with `SIGTERM`, not `SIGKILL`. Hooks can trap the
+signal and clean up.
 
-The `secret-keys` store URI parameter accepts a comma-separated key-file list
-(since 2.29.0), allowing copied paths to receive multiple signatures during a
-key rotation:
+### Concurrent post-build hooks (since 2.35.2)
 
-```sh
-nix copy --to 'file:///tmp/store?secret-keys=/tmp/key1,/tmp/key2' \
-  "$(nix build --print-out-paths nixpkgs#hello)"
-```
+`post-build-hook` runs asynchronously with up to `max-jobs` instances.
+Dependent builds wait for their instance, but hook implementations must be
+safe when instances overlap.
 
-## Cache creation and logging
+### Build traces replace realisations (since 2.35.2)
 
-Nixpkgs `mkBinaryCache` creates zstd-compressed caches by default (since
-nixos-25.05). Set `compression = "xz";` to retain the previous output format.
-
-`json-log-path` mirrors every Nix log message as JSON to a file or Unix socket
-(since 2.30.0):
-
-```ini
-json-log-path = /var/log/nix.json
-```
-
-Use a socket when a collector should consume logs continuously, and arrange
-rotation and permissions when writing a file.
+The experimental content-addressed derivation feature keys build traces by
+derivation path and output name and records only resolved derivations. `nix
+realisation` is renamed to `nix store build-trace`; cache entries move from
+`realisations/<hash>!<output>.doi` to
+`build-trace-v2/<drvName>/<outputName>.doi`. JSON is split into `key` and
+`value`, `dependentRealisations` is removed, and signatures use structured
+objects.

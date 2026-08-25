@@ -1,23 +1,16 @@
 # Projects and Workspaces
 
-Use this reference for project metadata, initialization, workspace membership,
-package build behavior, and project-oriented commands.
+Use this reference for initialization, project metadata, builds, workspace
+membership, dependency groups, and project checks.
 
-## Contents
+## Project Version and Initialization
 
-- [Project Versions and Initialization](#project-versions-and-initialization)
-- [Workspace Inspection and Selection](#workspace-inspection-and-selection)
-- [Workspace and Path Dependencies](#workspace-and-path-dependencies)
-- [Dependency Groups and Request Validation](#dependency-groups-and-request-validation)
-- [Build Configuration and Metadata](#build-configuration-and-metadata)
+### Distinguish project and executable versions
 
-## Project Versions and Initialization
-
-### Manage the project version explicitly
-
-In the 0.6-0.8 batch, `uv version` became the project-version command. It reads
-or updates the current project's version, locks and syncs after an update, and
-supports pre-release bumps.
+`uv version` reads or updates the current project's version, supports
+pre-release bumps, and locks and syncs after an update. It errors outside a
+project rather than reporting the uv executable's version; use
+`uv self version` for that. (Batch `0.6-0.8`.)
 
 ```console
 uv version
@@ -26,113 +19,129 @@ uv version --short
 uv self version
 ```
 
-Outside a project, `uv version` is an error; it no longer falls back to uv's
-own version. Use `uv self version` for the installed uv executable.
+### Choose packaged or unpackaged initialization
 
-### Initialize with current defaults
+For `uv init --package` and `uv init --lib`, `uv_build` replaced `hatchling`
+as the default backend; select `--build-backend hatchling` when that backend
+is required. (Batch `0.6-0.8`.)
 
-`uv init --package` and `uv init --lib` use `uv_build` rather than `hatchling`
-as their default backend. Select the earlier default explicitly when needed:
-
-```console
-uv init --package --build-backend hatchling
-```
-
-Across the 0.9-0.10 batch, `uv init --project` was deprecated in favor of a
-positional target path. `UV_INIT_BARE` is the environment-level control for
-bare initialization.
-
-### Project metadata is optional
-
-A `pyproject.toml` may contain supported non-project configuration without a
-`[project]` table. Do not assume every uv configuration file describes a
-Python package.
-
-## Workspace Inspection and Selection
-
-### Use stable workspace utilities
-
-`uv workspace list` and `uv workspace dir` are stable scripting commands.
-Request paths when scripts need member locations:
+`uv init <name>` later became packaged by default: it declares `uv_build`,
+creates `src/<name>` plus a project script, and installs the project into its
+environment. Existing projects do not change. Use `--no-package` for the
+former unpackaged `main.py` layout, and widen an existing `uv_build` upper
+bound to admit 0.12 when appropriate, for example
+`uv_build>=0.11.32,<0.13`. (Since `0.12.5`.)
 
 ```console
-uv workspace list --paths
-uv workspace dir
+uv init example
+uv init --no-package example
 ```
 
-`uv workspace metadata` includes best-effort information about the active
-environment by default as of 0.11.32. Its output can therefore reflect the
-environment from which the command is invoked.
+`uv init --project` is deprecated; use `uv init <target>` instead.
+`UV_INIT_BARE` supplies environment-level control for bare initialization.
+(Batch `0.9-0.10`.)
 
-### Select projects for checks
+### Use configuration-only pyproject files
 
-Preview `uv check` can target one workspace package or all packages rather
-than only the default target:
+A `pyproject.toml` can contain supported non-project configuration without a
+`[project]` table. Do not add placeholder project metadata merely to make uv
+read its configuration. (Batch `0.6-0.8`.)
 
-```console
-uv check --package my-package
-uv check --all-packages
-```
+## Build Configuration and Validation
 
-Treat package-selection support as preview behavior.
+### Configure one package's build
 
-## Workspace and Path Dependencies
+`--config-settings-package` applies build settings to one package. Preview
+configuration can extend a package's build requirements with
+`extra-build-dependencies` and can optionally match those requirements to
+runtime versions. (Batch `0.6-0.8`.)
 
-### Expect dependencies to be installed
+### Validate build metadata strictly
 
-Path dependencies and workspace members used as dependencies are built and
-installed by default even when they have no explicit build system. uv uses the
-legacy setuptools backend when necessary. To keep a source or dependent
-project virtual, mark it non-package:
+`uv build` requires UTF-8 license files and errors when a
+`project.license-files` glob matches nothing. `uv_build` rejects invalid
+classifiers and warns about legacy license classifiers. (Batch `0.9-0.10`.)
+
+## Workspace Membership and Path Sources
+
+### Package path and workspace dependencies by default
+
+Path dependencies and workspace-member dependencies are built and installed
+even without an explicit build system; uv uses the legacy setuptools backend
+when needed. Set `package = false` on the source or dependent project when it
+must remain virtual. (Batch `0.6-0.8`.)
 
 ```toml
 [tool.uv.sources]
 foo = { path = "./foo", package = false }
 ```
 
-### Control automatic membership
+### Control implicit workspace membership
 
-Inside a workspace, `uv add <subdirectory>` adds that target as a workspace
-member by default. Pass `--no-workspace` when the dependency should remain
-outside the workspace relationship.
+Inside a workspace, `uv add <subdirectory>` adds the target as a workspace
+member by default. Pass `--no-workspace` to add the path dependency without
+that relationship. (Batch `0.6-0.8`.)
 
-### Express package-level installation conflicts
+### Model conflicting installation modes
 
-Preview workspace conflicts can make packages mutually exclusive, not just
-features or groups. A workspace source may set `editable = false`, and
-`--editable` can override the annotation. Different editable settings are
-allowed only when the corresponding groups are declared conflicting.
+Preview package-level workspace conflicts can express mutually exclusive
+packages. Workspace sources may set `editable = false`, and `--editable` can
+override that annotation. Different editable settings are allowed only when
+their groups are declared conflicting. (Batch `0.6-0.8`.)
 
-## Dependency Groups and Request Validation
+### Request root groups explicitly for selected members
 
-`default-groups = "all"` activates every dependency group by default. A group
-can declare its own Python requirement:
+From a workspace member, commands can address dependency groups defined at
+the workspace root. Workspace sources can also reference a member of another
+workspace by path. Syncing or exporting a selected member does not include the
+root's default groups unless those groups are requested explicitly. (Since
+`0.12.5`.)
 
-```toml
-[tool.uv.dependency-groups]
-docs = { requires-python = ">=3.11" }
+## Workspace Discovery and Metadata
+
+### Use stable workspace discovery commands
+
+`uv workspace list` and `uv workspace dir` are stable scripting interfaces;
+`uv workspace list --paths` emits member paths. (Batch `0.9-0.10`.)
+
+```console
+uv workspace list --paths
+uv workspace dir
 ```
 
-`tool.uv.required-environments` marks target environments as mandatory for
-wheel coverage.
+### Treat active-environment metadata as invocation-dependent
 
-Request validation is deliberately strict:
+`uv workspace metadata` includes best-effort information about the active
+environment by default. Its output can therefore vary with the environment
+from which it is invoked. (Since `0.11.32`.)
 
-- A nonexistent local extra is an error.
-- A dependency group absent from a frozen lockfile is an error.
-- An unknown dependency-group object specifier is an error.
-- `--frozen` conflicts with `--no-sources`.
-- Arbitrary executable-name requests in `.python-version` files are ignored.
+Preview `uv workspace metadata --sync --active` can explicitly target the
+active virtual environment. A `.venv` file may point to a centralized project
+environment, including when a workspace is reached through symlinks. (Since
+`0.12.5`.)
 
-## Build Configuration and Metadata
+## Project and Script Checks
 
-`--config-settings-package` applies build configuration to one package.
-Preview configuration can add `extra-build-dependencies` for a package and can
-optionally match their versions to runtime dependency versions.
+### Select workspace packages in `uv check`
 
-Build metadata validation is stricter in the 0.9-0.10 batch:
+Preview `uv check --package <name>` checks one workspace package, and
+`uv check --all-packages` checks every package instead of only the default
+target. (Since `0.11.32`.)
 
-- `uv build` requires license files to be UTF-8.
-- A `project.license-files` glob that matches nothing is an error.
-- `uv_build` rejects invalid classifiers.
-- `uv_build` warns about legacy license classifiers.
+```console
+uv check --package my-package
+uv check --all-packages
+```
+
+### Apply fixes and control project installation
+
+Preview `uv check --fix` applies automatic fixes.
+`--no-install-project` or `UV_NO_INSTALL_PROJECT` installs dependencies
+without building or installing the project. Scripts are checked only when
+`--script` is provided. (Since `0.12.5`.)
+
+```console
+uv check --fix
+uv check --no-install-project
+uv check --script script.py
+```

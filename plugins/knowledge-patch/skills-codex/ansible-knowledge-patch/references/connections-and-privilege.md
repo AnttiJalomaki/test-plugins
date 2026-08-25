@@ -1,28 +1,27 @@
 # Connections and Privilege Escalation
 
-The connection changes in this reference are attributed to batch
-`2.19-2.20`.
+## SSH password and key handling
 
-## SSH Password and Agent Handling
+The SSH connection defaults to `SSH_ASKPASS` for password prompting
+(`2.19-2.20`). The `ansible`, `ansible-playbook`, and `ansible-console`
+commands can create or reuse an SSH agent.
 
-The SSH connection defaults to `SSH_ASKPASS` for passwords.
-`ansible`, `ansible-playbook`, and `ansible-console` can spawn or reuse an SSH
-agent.
+Inventory variables can provide a private key and its passphrase:
 
-The variables `ansible_ssh_private_key` and
-`ansible_ssh_private_key_passphrase` allow a private key and its passphrase to
-be loaded from variables. Keep these values under the same secret-handling
-controls as key files and vault data.
+```yaml
+ansible_ssh_private_key: "{{ vault_private_key }}"
+ansible_ssh_private_key_passphrase: "{{ vault_private_key_passphrase }}"
+```
 
-Use `SSH_AGENT_EXECUTABLE` to select the agent executable. Use
-`ANSIBLE_SSH_VERBOSITY` or the inventory variable `ansible_ssh_verbosity` to
-increase SSH-only verbosity without increasing all Ansible output.
+Use `SSH_AGENT_EXECUTABLE` to select the SSH agent executable. Use
+`ANSIBLE_SSH_VERBOSITY` or `ansible_ssh_verbosity` when extra diagnostics
+should apply only to the SSH connection.
 
-## Paramiko and Transport Configuration
+## Paramiko and removed settings
 
-The Paramiko connection is deprecated for removal in 2.21. Migrate explicit
-`paramiko` inventory settings and connection dependencies to the SSH
-connection before using that release.
+The Paramiko connection was deprecated for removal in 2.21. Migrate
+configuration and inventory to the SSH connection rather than introducing or
+retaining a Paramiko dependency.
 
 The following configuration was removed in 2.20:
 
@@ -30,22 +29,19 @@ The following configuration was removed in 2.20:
 - `PARAMIKO_HOST_KEY_AUTO_ADD`
 - `PARAMIKO_LOOK_FOR_KEYS`
 
-Remove these settings rather than attempting to preserve their old selection
-or key-discovery behavior.
+## Local become behavior
 
-## Local Connection Become Behavior
+The local connection has these become settings:
 
-The local connection adds two become settings:
+- `become_strip_preamble` defaults to true.
+- `become_success_timeout` defaults to 10 seconds.
 
-| Setting | Default | Effect |
-| --- | --- | --- |
-| `become_strip_preamble` | `true` | Strips the privilege-escalation preamble |
-| `become_success_timeout` | 10 seconds | Limits the wait for successful escalation |
+Account for the stripped preamble when parsing become output and for the
+timeout when privilege escalation is slow. `sudo_chdir` changes the working
+directory before invoking `sudo`.
 
-If automation parses become output, test it with preamble stripping enabled.
-If escalation legitimately takes longer, set a deliberate success timeout
-instead of relying on an unbounded wait.
+## Sensitive Windows transport output
 
-The `sudo_chdir` setting changes directory before invoking `sudo`. Account for
-the pre-escalation working directory when commands depend on relative paths,
-environment files, or directory permissions.
+Since the 2.19.10/2.20.6 patch lines, PSRP and WinRM do not log raw standard
+output and standard error at verbosity 5 when `no_log: true` is set. Do not
+add logging workarounds that would re-expose those secrets.

@@ -1,271 +1,173 @@
-# Apollo Router Connectors, coprocessors, Rhai, and plugins
+# Apollo Router Connectors, Coprocessors, Rhai, and Plugins
 
-## Connector adoption and versioning
+Use this reference for Connector schemas and transport, coprocessor stages, Rhai behavior, and native Rust plugin migrations.
 
-Apollo Connectors became generally available in Router `2.0.0`. Deployments using
-the preview form should follow the GA schema upgrade path.
+## Apollo Connectors
 
-The default Connector specification changes by Router release. Router `2.14.0`
-resolves an unversioned “latest/default” link to `connect/v0.3`; an explicit
-`connect/v0.2` link remains on v0.2.
+### Apollo Connectors are generally available
 
-From `2.16.0`, linking to `https://specs.apollo.dev/connect/v0.4` is sufficient to
-opt in. `connectors.preview_connect_v0_4` is a deprecated no-op.
+Since 2.0.0, Apollo Connectors are GA and provide a declarative GraphQL model over REST services. Preview deployments should follow the GA upgrade path.
 
-`connectors.subgraphs` is deprecated in `2.15.0`; rename it to
-`connectors.sources` before Router 3.
+### Connector TLS and client authentication
 
-## Connector mapping language
+Since 2.1.0, configure custom CAs and mutual TLS under `tls.connector.sources`, keyed by `subgraph_name.source_name`, with `certificate_authorities` and `client_authentication.{certificate_chain,key}`.
 
-### URI expressions (`2.2.0`)
+### Connector context directives are preserved
 
-Expressions can appear anywhere in or after a URI path, including query parameter
-names. Expression results remain percent-encoded. Literal `[` and `]` are no
-longer encoded unless invalid in a URI, and trailing slashes are preserved. Some
-placements require Federation 2.11+.
+Router 2.1.2 fixes introduction of a Connector dropping `@context` and `@fromContext`; deployments using them need 2.1.2+.
 
-```graphql
-@connect(http: { GET: "/users?{$args.filterName}={$args.filterValue}" })
-```
+### Connector header propagation
 
-### Response content types (`2.3.0`)
+Since 2.2.0, use `headers.connector.all` or `headers.connector.sources.<subgraph>.<source>`. Router YAML overrides headers set by schema `@connect` or `@source`.
 
-Connector responses ending in `/json` or `+json` are parsed as JSON. `text/plain`
-is decoded as a UTF-8 string available as `$`. Other content types become JSON
-`null`; a missing header still assumes JSON. Deserialization failure produces
-`CONNECTOR_DESERIALIZE` with `Response deserialization failed`.
+### Connector URI expressions and encoding
 
-Variables work inside nested input arguments from `2.3.0`.
+Since 2.2.0, expressions may appear anywhere in or after the URI path, including query-parameter names. Expression results remain percent-encoded; valid literal `[`/`]` are no longer encoded and trailing slashes are preserved. Some placements require Federation 2.11+.
 
-### JSON parsing (`2.14.0`)
+### Connectors honor response content types
 
-`->jsonParse` converts a JSON string into a structured value for immediate
-selection. Non-string and invalid-JSON inputs fail; inferred shape is `unknown`.
+Since 2.3.0, media types ending `/json` or `+json` parse as JSON; `text/plain` becomes a UTF-8 string at `$`; other types become JSON `null`. Missing `Content-Type` assumes JSON. Deserialization failure returns `CONNECTOR_DESERIALIZE` / `Response deserialization failed`.
+
+### Connector variables work in nested input arguments
+
+Since 2.3.0, variables inside nested input arguments are accepted by Connector operations.
+
+### SigV4 configurations recover from the 2.3 regression
+
+Since 2.4.0, Router fixes the 2.3.0 startup/access regression affecting otherwise valid SigV4 service configurations.
+
+### Connector JSON parsing
+
+Since 2.14.0, mapping expressions may apply `->jsonParse` to a JSON string and select from the result. Non-string or invalid JSON fails; inferred shape is `unknown`.
 
 ```text
 payload->jsonParse { users { name } }
 ```
 
-### Connect v0.4 syntax (`2.15.0`)
+### Connectors default to specification v0.3
 
-Nested selections accept commas, object-property shorthand is valid, and
-top-level object literals do not need `$()`. A primitive after `name:` is a literal
-rather than a `$` lookup; qualify REST keys explicitly, especially names invalid
-in GraphQL. The v0.2 and v0.3 parsers are unchanged.
+Since 2.14.0, latest/default Connector resolution selects `connect/v0.3`; schemas explicitly linked to `connect/v0.2` remain there.
 
-```text
-{ id, address { street, city }, next: $."@odata.nextLink" }
-```
+### Connector v0.4 unifies selections and object literals
 
-String methods include:
+Since 2.15.0, `connect/v0.4` allows commas in nested selections, object-property shorthand, and top-level object literals without `$()`. Primitive values after `name:` are literals, not `$` lookups; qualify intended lookups, especially invalid GraphQL identifiers. v0.2/v0.3 parsing is unchanged.
 
-- `->split(separator[, limit])`; the separator may come from data, empty separators
-  split into UTF-8 characters, and `limit` caps result count.
-- `->trim`, `->trimStart`, and `->trimEnd`, which remove Unicode whitespace.
+### Connector string mapping methods
 
-All reject non-string inputs.
+Since 2.15.0, `->split(separator[, limit])` supports dynamic separators, UTF-8 character splitting for an empty separator, and result limits. `->trim`, `->trimStart`, and `->trimEnd` remove Unicode whitespace. All reject non-string inputs.
 
-An `@connect` may omit `http` and resolve a field, including a nested mutation, by
-applying `selection` to arguments or enclosing-object data. A requestless mapping
-cannot use response body data, `$status`, or `$response`; composition rejects such
-transport-derived references.
+### Requestless Connector mappings
 
-### v0.4 validation and migration (`2.16.0`)
+Since 2.15.0, `@connect` may omit `http` and resolve by applying its `selection` to arguments or enclosing-object data, including nested mutations. Such mappings cannot reference response data, `$status`, or `$response`; composition rejects transport-derived references.
 
-Composition recognizes fields beneath list-producing arrow methods such as
-`->entries` and accepts nested scalar-list projections such as
-`data->map(@->map(@->toString))`.
+### Connector source configuration key
 
-Self-referential Connector input types compose without an infinite schema walk;
-shape inference stops the cycle at an unknown shape.
+Since 2.15.0, replace deprecated `connectors.subgraphs` with `connectors.sources`; the old key warns and is scheduled for Router 3.x removal.
 
-The separate `connect-migrate` tool evaluates selections under their linked
-version and v0.4, classifying deterministic `$.` rewrites, unchanged expressions,
-and cases needing judgment. It is not in the Router runtime; build it from
-`apollo-federation` with the non-default `connect-migrate` Cargo feature.
+### Recursive Connector input types
 
-## Connector traffic, TLS, and headers
+Since 2.16.0, self-referential Connector input types compose safely; expression shape resolution stops cycles at unknown shape.
 
-### Traffic shaping (`2.1.0`)
+### Connector error extensions deep-merge
 
-Target all Connectors with `traffic_shaping.connector.all`, or a source with
-`traffic_shaping.connector.sources` keyed by `subgraph_name.source_name`.
-Connector traffic shaping does not support `deduplicate_query`.
+Since 2.16.0, when `isSuccess` is false, configured `errors.extensions` deep-merges with defaults, so a nested custom `http` object retains default `http.status`.
 
-```yaml
-traffic_shaping:
-  connector:
-    all:
-      timeout: 5s
-    sources:
-      connector-graph.random_person_api:
-        global_rate_limit:
-          capacity: 20
-          interval: 1s
-        timeout: 1s
-```
+### Connector v0.4 list selection validation
 
-### TLS (`2.1.0`)
+Since 2.16.0, v0.4 composition recognizes fields under list-producing methods such as `->entries` and does not misclassify nested scalar-list projections such as `data->map(@->map(@->toString))` as object groups.
 
-Configure source-specific certificate authorities and mutual TLS under
-`tls.connector.sources`:
+### Connector v0.4 no longer needs a preview flag
 
-```yaml
-tls:
-  connector:
-    sources:
-      connector-graph.random_person_api:
-        certificate_authorities: ${file.ca.crt}
-        client_authentication:
-          certificate_chain: ${file.client.crt}
-          key: ${file.client.key}
-```
+Since 2.16.0, linking `https://specs.apollo.dev/connect/v0.4` opts in. `connectors.preview_connect_v0_4` is a deprecated no-op and should be removed.
 
-### Header propagation (`2.2.0`)
+### Connector v0.4 migration CLI
 
-Use `headers.connector.all` or `headers.connector.sources`, keyed by
-`<subgraph>.<source>`. Router YAML overrides headers defined through `@connect` or
-`@source`.
-
-```yaml
-headers:
-  connector:
-    all:
-      request:
-        - propagate:
-            named: x-client-header
-    sources:
-      connector-graph.random_person_api:
-        request:
-          - insert:
-              name: x-inserted-header
-              value: hello
-```
+Since 2.16.0, the separate `connect-migrate` tool compares a selection under its linked version and v0.4, classifying deterministic `$.` rewrites, unchanged selections, and manual cases. It is not in Router runtime; build it from `apollo-federation` with non-default Cargo feature `connect-migrate`.
 
 ## Coprocessors
 
-### Validation and stage endpoints
+### Coprocessor execution errors preserve null data
 
-Coprocessor GraphQL response validation defaults to enabled from `2.5.0` and
-handles subscription termination responses. Disable at the coprocessor level only
-when deliberately accepting nonconforming responses:
+Since 2.2.0, a coprocessor GraphQL execution error returning `data: null` preserves that member in the client response.
 
-```yaml
-coprocessor:
-  response_validation: false
-```
+### Coprocessor response validation
 
-From `2.8.0`, router, supergraph, execution, and subgraph stages may each define a
-`url` overriding the global URL.
+Since 2.5.0, top-level `coprocessor.response_validation` controls validation of GraphQL responses from coprocessors and defaults on. Subscription termination responses are handled correctly.
 
-### Connector stages and Unix sockets (`2.12.0`)
+### Per-stage coprocessor endpoints
 
-Colocated coprocessors may communicate over Unix sockets. They can also run at
-`ConnectorRequest` and `ConnectorResponse`, receiving URI, headers, body, context,
-and service identity as appropriate.
+Since 2.8.0, router, supergraph, execution, and subgraph stages may each set a `url` overriding the global URL; global-only configurations remain valid.
 
-```yaml
-coprocessor:
-  url: http://localhost:3007
-  connector:
-    all:
-      request:
-        uri: true
-        headers: true
-        body: true
-        context: all
-        service_name: true
-      response:
-        headers: true
-        body: true
-        context: all
-        service_name: true
-```
+### Coprocessor Unix sockets
 
-Invalid non-UTF-8 header values now produce a warning naming the header while
-valid headers continue through `externalize_header_map`; the entire conversion no
-longer fails.
+Since 2.12.0, colocated coprocessors may communicate over Unix domain sockets rather than TCP.
 
-### Selective response bodies (`2.14.0`)
+### Connector-stage coprocessors
 
-At supergraph, execution, and subgraph response stages, select `data`, `errors`,
-and `extensions` independently. Boolean `body` remains accepted. A coprocessor may
-modify only received fields; omitted fields retain original values.
+Since 2.12.0, coprocessors can run at `ConnectorRequest` and `ConnectorResponse`, with connector URI, headers, body, context, and service identity available where appropriate.
 
-```yaml
-coprocessor:
-  supergraph:
-    response:
-      body:
-        data: false
-        errors: true
-        extensions: true
-```
+### Non-UTF-8 coprocessor headers degrade gracefully
 
-### Context and response conditions
+Since 2.12.0, `externalize_header_map` warns with the invalid header name and returns all remaining valid headers instead of failing conversion.
 
-Router `2.13.0` fixes the `context: true` merge regression that deleted returned
-keys; the `context: deprecated` workaround is unnecessary.
+### Coprocessor `context: true` no longer deletes keys
 
-In `2.16.0`, at parallel subgraph stages a response can delete only keys sent to
-its stage, preventing deletion of keys concurrently added elsewhere.
+Since 2.13.0, merging a coprocessor response with `context: true` preserves returned keys, fixing the v2.10 regression that required `context: deprecated`.
 
-Response-stage calls such as `on: response` can test request headers with
-`exists: { request_header: x-name }` (`2.13.0`). The request-stage result is
-retained for response-time evaluation.
+### Response-stage conditions can test request headers
+
+Since 2.13.0, response-stage coprocessor calls and telemetry events such as `on: response` may use `exists: { request_header: x-name }`; the test is resolved at request time and retained for response evaluation.
+
+### Selective coprocessor response bodies
+
+Since 2.14.0, supergraph, execution, and subgraph response stages can select `body.data`, `body.errors`, and `body.extensions` independently. Boolean `body` remains valid. A coprocessor can change only received fields; omitted fields keep original values.
+
+### Coprocessor context deletion is stage-scoped
+
+Since 2.16.0, at parallel subgraph stages, a coprocessor response may delete only context keys sent to that stage and cannot erase keys concurrently added by another stage.
 
 ## Rhai
 
-Rhai can read and rewrite `request.uri.scheme` and
-`request.subgraph.uri.scheme` (`2.1.0`):
+### Rhai can read and rewrite URI schemes
 
-```rhai
-request.subgraph.uri.scheme = "https";
-```
+Since 2.1.0, Rhai exposes `request.uri.scheme` and `request.subgraph.uri.scheme` as read/write, allowing HTTP-to-HTTPS rewrites.
 
-With `--hot-reload`, Rhai source edits trigger the same reload as configuration or
-schema changes. Router `2.4.0` preserves multipart upload `Content-Type` through
-Rhai processing, avoiding
-`invalid multipart request: Content-Type is not multipart/form-data`.
+### Rhai uses general hot reload
 
-`apollo.router.operations.rhai.duration` is a seconds histogram for every callback
-(`2.14.0`); `rhai.stage` and `rhai.succeeded` identify location and outcome.
+Since 2.1.0, with `--hot-reload`, Rhai source edits trigger the same Router reload as schema/config changes.
 
-Rhai interns strings by default. Set `intern_strings: false` when high-concurrency
-creation of new strings causes write-lock contention:
+### Rhai no longer breaks multipart upload content types
 
-```yaml
-rhai:
-  scripts: ./rhai
-  main: main.rhai
-  intern_strings: false
-```
+Since 2.4.0, Rhai preserves multipart upload `Content-Type`, avoiding `invalid multipart request: Content-Type is not multipart/form-data` failures.
 
-## External services and transports
+### Rhai callback duration metric
 
-Subgraph endpoints can use Unix sockets from `2.13.0`. Put the request path in the
-URL query, for example `unix:///tmp/some.sock?path=some_path`.
+Since 2.14.0, `apollo.router.operations.rhai.duration` records every callback in seconds with `rhai.stage` and `rhai.succeeded`.
 
-For subgraphs, Connectors, and coprocessors,
-`experimental_http2: http2only` uses prior-knowledge h2c without TLS (`2.13.0`).
-Plain `enable` without TLS remains HTTP/1.1 because no h2c upgrade is performed.
+### Configurable Rhai string interning
 
-Trusted insecure graph-artifact registry hostnames can be allowlisted for HTTP
-pulls (`2.13.0`), supporting private registries and pull-through caches.
+Since 2.14.0, `rhai.intern_strings: false` disables default interning and may avoid write-lock contention when high-concurrency workloads continually create new strings.
 
-Router releases may be downloaded through a proxy mirror when direct GitHub
-access is unavailable (`2.1.0`).
+## Rust plugins and native extensions
 
-## Correctness fixes and extension behavior
+### Rust plugin APIs and service lifecycle changed
 
-Router `2.1.2` preserves Federation `@context` and `@fromContext` when adding a
-Connector. Router `2.4.0` fixes the 2.3 SigV4 regression that rejected some valid
-configurations at startup.
+For router-v2-migration, `cargo-scaffold` is removed, although generated plugins still compile. A `tower::Service` pipeline is built once and cloned per request; construction hooks are not per-request.
 
-When a Connector's `isSuccess` expression is false, configured
-`errors.extensions` deep-merges with defaults (`2.16.0`). A custom nested `http`
-object therefore retains default `http.status`.
+- Replace `oneshot_checkpoint_async()` with `checkpoint_async()`.
+- Replace `OneShotAsyncCheckpointLayer` with `AsyncCheckpointLayer`; call `.buffered()` before `.service(...)`.
+- Replace `ExtensionsMutex::lock()` with `with_lock()`, `TestHarness::build()` with `build_supergraph()`, and `PluginInit::{new,try_new}()` with `{builder,try_builder}()`.
+- Removed without listed replacements: `services::router::Response::map`, `SchemaSource::File.delay`, and `ConfigurationSource::File.delay`.
+- Remove `Context::busy_time`, `Context::enter_active_request`, `BusyTimer`, and `BusyTimerGuard`; spans already carry processing duration.
 
-Connector custom-instrument selectors are described in
-`router-observability.md`; downstream response limits and connection metrics are
-covered by the security and observability references.
+### Rust plugins must emit metrics through OpenTelemetry
+
+For router-v2-migration, `tracing` fields prefixed `counter.`, `histogram.`, `monotonic_counter.`, or `value.` no longer convert to metrics and log errors. Create instruments from `apollo_router::metrics::meter_provider()`.
+
+### Rust plugin gauges are exported
+
+Since 2.1.0, gauges created through `apollo_router::metrics::meter_provider()`, including `.u64_gauge()`, are exported.
+
+### OpenTelemetry HTTP helpers deprecated
+
+Since 2.16.0, replace `apollo_router::otel_compat::{HeaderExtractor, HeaderInjector}` with identical `opentelemetry_http::{HeaderExtractor, HeaderInjector}` types from `opentelemetry_http` 0.31+.

@@ -2,42 +2,53 @@
 
 ## Runtime-aware module loading
 
-As of `drizzle-kit@0.31.10`, module loading depends on the runtime used to
-launch Drizzle Kit.
+As of `drizzle-kit@0.31.10`, the CLI chooses module loading according to the
+runtime that launches it.
 
-| Launch runtime | Loading path |
+| Launch runtime | Module-loading path |
 | --- | --- |
-| Node | Use the `tsx` loader instead of `esbuild-register` |
-| Bun | Bypass `tsx` and use Bun's native import system |
-| Deno | Bypass `tsx` and use Deno's native import system |
+| Node | Uses the `tsx` loader instead of `esbuild-register` |
+| Bun | Bypasses `tsx` and uses Bun's native import system |
+| Deno | Bypasses `tsx` and uses Deno's native import system |
 
-The Node change allows the CLI to load both ESM and CommonJS projects.
+On the Node path, `tsx` allows Drizzle Kit to load both ESM and CommonJS
+projects.
 
-## Diagnosis workflow
+## Diagnose loading failures
 
-When Drizzle Kit fails to load configuration or project modules:
+Begin with the real project command rather than assuming that Drizzle Kit is
+running under Node.
 
-1. Capture the command that launches the CLI.
-2. Identify whether Node, Bun, or Deno executes it.
-3. Check the installed `drizzle-kit` version.
-4. Select the loading path from the table above.
-5. Inspect only the dependencies and configuration relevant to that path.
-6. Reproduce through the same runtime after making a change.
+1. Record the installed `drizzle-kit` version.
+2. Record whether Node, Bun, or Deno launches the CLI.
+3. Identify the project's module format.
+4. Map the failure to the loader path in the table above.
+5. Reproduce the problem with the same runtime and command.
+6. Apply loader-specific changes only to the path that actually runs.
+7. Retest both configuration loading and source-module loading.
 
-For a Node launch, do not assume that `esbuild-register` is still the
-active loader.
+## Node projects
 
-For a Bun or Deno launch, do not diagnose the native import path as if it
-were controlled by Node's `tsx` loader.
+For a Node launch on `drizzle-kit@0.31.10` or newer, investigate the `tsx`
+path. Do not restore `esbuild-register` based on behavior from an older CLI
+release.
 
-## Review notes
+Because the current Node path supports ESM and CommonJS projects, first
+separate a genuine module-format problem from a stale loader assumption.
 
-Keep these distinctions explicit in a review or handoff:
+## Bun and Deno projects
 
-- `drizzle-kit` version
-- launch runtime
-- project module format
-- loader or native import path actually exercised
+Bun and Deno do not use Drizzle Kit's Node `tsx` path. Diagnose their native
+import behavior instead.
 
-This prevents a fix for one runtime from being applied to a different
-runtime path.
+Adding or changing `tsx` solely to affect a Bun or Deno launch does not target
+the loader that those runtimes use.
+
+## Handoff checklist
+
+Report all of the following:
+
+- the `drizzle-kit` version;
+- the runtime that launched the CLI;
+- whether the tested path used Node's `tsx` loader or native imports; and
+- whether the project modules were ESM or CommonJS.

@@ -1,153 +1,108 @@
 # Database and Data API
 
-## Connections and configuration
+## Nearest-replica routing for the Data API (launch-week-14)
 
-### Dedicated pgBouncer poolers
+Data API (PostgREST) requests can route to the nearest read replica to reduce network latency. This is the default for all load-balancer endpoints.
 
-Paid plans can use a co-located dedicated pgBouncer pooler. The choices are direct connections, shared Supavisor pooling, and dedicated pgBouncer pooling.
+## Dedicated database poolers (launch-week-14)
 
-### Pooler capacity accounting
+Paid plans can use a database-co-located pgBouncer pooler. Projects now have three connection options: direct connections, the shared Supavisor pooler, or the dedicated pgBouncer pooler.
 
-Supavisor session and transaction modes share one backend pool-size budget; dedicated pgBouncer has a separate budget of the same configured size. Running both at 30 can consume 60 backend connections, plus direct and platform connections. Client caps are separate; Supavisor session mode is also bounded per role/database pair.
+## Pooler connection budgets are independent
 
-### Serverless connection-string switches
+Supavisor and the dedicated PgBouncer pooler each receive the configured pool-size budget independently, so a size of 30 can produce 60 pooled backend connections in addition to direct connections. Compute-tier client limits are also enforced separately for each pooler.
 
-Supavisor transaction mode uses port 6543 and has no prepared statements. Prisma runtimes need `?pgbouncer=true` plus a port-5432 direct or session URL for migrations. A manually configured Vercel Edge connection instead appends `?workaround=supabase-pooler.vercel` to the transaction URI.
+## Vercel Edge pooler workaround
 
-### Hosted Postgres configuration lifecycle
+When a Vercel Edge application uses the transaction-pooler URI as `POSTGRES_URL`, append the Supabase pooler workaround query parameter.
 
-`postgres-config update` merges system overrides unless `--replace-existing-overrides`; changes may restart primary and replicas. `--no-restart` leaves postmaster settings pending and risks replica divergence if nodes restart separately. SQL `RESET` does not remove CLI overrides—use `postgres-config delete`. Revisit overrides after compute changes because they supersede generated tuning.
+```dotenv
+POSTGRES_URL="postgres://postgres.<ref>:<password>@<region>.pooler.supabase.com:6543/postgres?workaround=supabase-pooler.vercel"
+```
+
+## Hosted Postgres configuration lifecycle
+
+`postgres-config update` merges overrides by default; `--replace-existing-overrides` replaces them, and CLI v2 reloads or restarts the primary and replicas according to each setting's context. `--no-restart` can leave `postmaster` settings pending and replicas inconsistent, while any custom override supersedes Supabase's compute-specific optimization and should be reviewed after a compute change.
 
 ```sh
-supabase --experimental --project-ref <ref> postgres-config update \
-  --config max_connections=200
-supabase --experimental --project-ref <ref> postgres-config delete \
-  --config max_connections
+supabase --experimental --project-ref <ref> postgres-config update --config shared_buffers=250MB
 ```
 
-### Supautils privilege boundary
+## Data API timeout layers
 
-The preinstalled `supautils` lets project `postgres` change an allowlist of normally superuser-only role settings and create event triggers. It does not grant general superuser access: `COPY ... FROM PROGRAM` and `ALTER USER ... WITH SUPERUSER` remain unavailable.
-
-### Database timeout layers
-
-Dashboard/Data API query timeout is configurable only to 60 seconds. Default role limits are 3s `anon`, 8s `authenticated`, inherited 8s `service_role` if unset, and no role timeout for `postgres` under the two-minute global cap. Session settings require direct or Supavisor session connections. An RPC can set its own `statement_timeout`; API role changes require PostgREST reload.
+Dashboard and client queries have a maximum configurable timeout of 60 seconds; defaults are 3 seconds for `anon`, 8 seconds for `authenticated`, inherited 8 seconds for an unset `service_role`, and a global two-minute cap for `postgres`. A session timeout works only over direct or session-mode port 5432, while role changes used by PostgREST require a config reload.
 
 ```sql
-create or replace function long_task() returns void
-language sql set statement_timeout to '30s'
-as $$ select pg_sleep(10) $$;
+alter role authenticated set statement_timeout = '10s';
+notify pgrst, 'reload config';
 ```
 
-## Extensions and maintenance
+## API query plans are opt-in
 
-### Packaged extension upgrades
-
-A new packaged extension version reaches a project only after an Infrastructure software upgrade or General Settings restart. Pure-SQL extensions remain directly installable through SQL or `database.dev`.
-
-### pg_net commit and retention behavior
-
-`net.http_get/post/delete` enqueue only after the surrounding transaction commits. Queue/response tables are unlogged, responses expire after six hours, and the supported baseline is roughly 200 requests/sec. POST bodies must be JSON; PUT/PATCH are unavailable. Changing TTL or batch size needs worker restart.
+Client-library `.explain()` works for reads, RPCs, and writes but is disabled by default because plans expose database structure. Enable `pgrst.db_plan_enabled` on `authenticator`; production deployments should use `pgrst.db_pre_request` to reject `application/vnd.pgrst.plan` requests except from trusted callers.
 
 ```sql
-alter role postgres set pg_net.ttl to '24 hours';
-alter role postgres set pg_net.batch_size to 100;
+alter role authenticator set pgrst.db_plan_enabled = 'true';
+notify pgrst, 'reload config';
+```
+
+## Hypothetical indexes must stay in one connection
+
+HypoPG indexes are visible only in the connection that created them. Because Supabase commonly connects through a pooler, submit `hypopg_create_index(...)` and the corresponding `EXPLAIN` together in one query.
+
+## Hosted PGAudit is role-scoped
+
+Supabase permits PGAudit configuration only at role scope; setting `pgaudit.log = 'write'` on `authenticator` captures PostgREST writes made as `anon`, `authenticated`, or `service_role`. `pgaudit.log_parameter` is unavailable because it can leak secrets, and `pgaudit.log_rows` should be avoided unless logged row counts are truly needed.
+
+```sql
+alter role authenticator set pgaudit.log to 'write';
+```
+
+## `pg_net` starts work after commit
+
+`net.http_get`, `net.http_post`, and `net.http_delete` enqueue requests that begin only after the transaction commits; responses live in the unlogged `net._http_response` table for six hours by default. The default request timeout is two seconds and the supported rate is 200 requests per second; POST bodies must be JSON, and PATCH/PUT are unsupported.
+
+```sql
+alter role postgres set pg_net.ttl = '24 hours';
+alter role postgres set pg_net.batch_size = 500;
 select net.worker_restart();
 ```
 
-### Hosted PGAudit restrictions
+## Planner-cost guardrails
 
-Hosted PGAudit is configurable only at role scope. `pgaudit.log_parameter` is unavailable because parameters may expose secrets. Audit all Data API write roles once by setting `pgaudit.log = 'write'` on `authenticator`.
+`pg_plan_filter` is already loaded through `shared_preload_libraries`; set `plan_filter.statement_cost_limit` to reject plans above a chosen estimated total cost. `plan_filter.limit_select_only = true` is not a read-only guarantee because a `SELECT` can call a mutating function.
 
-### Dashboard CSV import limit
+## Online repacking on hosted projects
 
-Dashboard CSV import stops at 100 MB. Use `pgloader` or `COPY` for larger data rather than the Data API.
+Hosted projects require `pg_repack` 1.5.2 or newer and every CLI invocation must use `-k`/`--no-superuser-check`. A full-table repack also needs a primary key or non-null unique index and roughly twice the table-plus-index size in free disk space.
 
-### Prisma's dedicated database role
+## `pgsodium` is pending deprecation
 
-Use a separate `BYPASSRLS CREATEDB` Prisma login, scoped current/default privileges to Prisma-managed schemas, and grant it to `postgres` so Dashboard sees its DDL. Never let Prisma own `auth` or `storage`, or platform migrations appear as drift.
+Do not start new `pgsodium` or Transparent Column Encryption deployments on Supabase; a migration cycle is planned because of operational complexity and misconfiguration risk. Vault is not being deprecated and its public interface remains unchanged when its implementation moves away from `pgsodium`.
 
-```sql
-create user prisma with password '<password>' bypassrls createdb;
-grant prisma to postgres;
-grant usage, create on schema public to prisma;
-grant all on all tables in schema public to prisma;
-grant all on all routines in schema public to prisma;
-grant all on all sequences in schema public to prisma;
-alter default privileges for role postgres in schema public grant all on tables to prisma;
-alter default privileges for role postgres in schema public grant all on routines to prisma;
-alter default privileges for role postgres in schema public grant all on sequences to prisma;
-```
+## Postgres 17 extension migration
 
-### pg_repack without superuser
+TimescaleDB is unavailable on Supabase Postgres 17, so migrate hypertables to native partitioned tables before upgrading; `pg_partman` can pre-create partitions and apply retention only if `run_maintenance_proc()` is scheduled regularly. `pgjwt` is likewise deprecated on Postgres 17 and must be dropped before the upgrade.
 
-Hosted `pg_repack` 1.5.2+ works without superuser only when every invocation uses `-k`/`--no-superuser-check`. Full-table repack needs about twice table-plus-index disk and a primary key or non-partial unique index on non-null columns.
+## OrioleDB projects are a separate public alpha
 
-```sh
-pg_repack -k -h db.<project-ref>.supabase.co -U postgres -d postgres \
-  --no-order --table public.events
-```
+OrioleDB must be selected when creating a new project, where it becomes the default table storage engine and supplies a hidden `ctid` primary key if none is declared. The alpha supports only B-tree indexes, so extension index types such as pgvector HNSW are unavailable.
 
-## Database engines and replication
+## Wrappers do not provide RLS
 
-### TimescaleDB removal in Postgres 17
+Foreign tables created through Supabase Wrappers must live in a private, unexposed schema because FDWs do not enforce Row Level Security. Expose only filtered `SECURITY DEFINER` functions with an empty `search_path`, and revoke their default `public`/`anon` execute privileges before granting access deliberately.
 
-TimescaleDB remains on Postgres 15 but not 17. Migrate every hypertable/dependency and drop it before upgrade. Use native partitioning, optionally `pg_partman`; unique keys must include partition keys and maintenance must be scheduled. `time_bucket()` and compression policies have no replacement.
+## Managed replication currently targets BigQuery
 
-```sql
-call partman.run_maintenance_proc();
-select cron.schedule('@hourly', $$call partman.run_maintenance_proc()$$);
-```
+Supabase ETL replication is a private alpha whose only managed destination is BigQuery; Analytics Buckets replication is no longer available. Source tables need primary keys, custom types and automatic schema changes are unsupported, rows are capped at 10 MB, and BigQuery table names cannot begin or end with `_`; replicated data uses versioned backing tables behind stable views so truncation can switch versions.
 
-### OrioleDB project type
+## Replication pipelines require explicit lifecycle handling
 
-OrioleDB is a separate Public Alpha Postgres image chosen only at project creation. It is the default storage engine for ordinary tables; every table has a primary key (hidden `ctid` if omitted). Only B-tree indexes are supported, excluding HNSW.
+Restart a pipeline after changing its publication, including automatic additions from `FOR ALL TABLES` or `FOR TABLES IN SCHEMA`; deleting a destination table while the pipeline runs recreates it. Stopping during a transaction lasting more than a few minutes can replay the whole transaction and duplicate changes already sent, so downstream consumers must deduplicate when exactly-once behavior matters.
 
-### Postgres 17 logical-replication access
+## Restricting the exposed Data API schema
 
-Logical replication always uses direct connections. On Postgres 17+, `postgres` can grant a separate replication login and an external subscriber can subscribe to a read replica; older projects require `postgres` as replication user.
-
-### Managed BigQuery replication
-
-Dashboard Replication is a private-alpha Supabase ETL pipeline with BigQuery as its managed destination. Create a Postgres publication and attach it in Dashboard. Source tables need primary keys; custom types, automatic schema changes, and transformations are unsupported.
-
-### BigQuery destination layout
-
-Each table is a BigQuery view backed by a `_version` data table. Source `TRUNCATE` creates a new version and repoints the view. Rows cannot exceed 10 MB; table names cannot start or end with `_`.
-
-### Replication pipeline lifecycle
-
-Publication changes require restart, even with automatic new-table inclusion. Deleting a destination table during execution recreates it. Stopping queues WAL; restart can replay part of a long transaction and create duplicates without deduplication. Reset copy-phase table errors individually; streaming errors fail the pipeline until fixed and restarted.
-
-### ETL removal and initial-copy behavior
-
-Removing a table from a publication leaves destination data intact. Generated columns are unsupported. Writes during initial copy collect in WAL and replay when streaming begins.
-
-### Nearest-replica Data API routing
-
-PostgREST requests can route to the nearest read replica; load-balancer endpoints use this by default.
-
-## Data API exposure and keys
-
-### Secure-by-default Data API exposure
-
-New projects made automatic exposure of new `public` tables opt-out on April 28, 2026 and secure-by-default on May 30. Explicit grants are now required for PostgREST/GraphQL. Project creation has a default-privileges switch; Dashboard can expose individual tables/functions.
-
-```sql
-grant select on table public.catalog to anon, authenticated;
-```
-
-### pg_graphql is now opt-in
-
-New projects do not enable `pg_graphql`; projects older than 30 days without GraphQL requests may have it disabled. Enable in Extensions or preserve in migrations:
-
-```sql
-create extension pg_graphql;
-```
-
-### Restricting the exposed Data API schema
-
-Disabling **Enable Data API** also disables client-library database access and REST/GraphQL. To replace `public` with `api`, remove `public` from Exposed schemas and Extra search path, disable `pg_graphql`, list `api` first, and grant deliberately. Custom schemas do not receive `public`'s automatic `anon`/`authenticated` privileges.
+Disabling the Data API also disables REST, GraphQL, and database access through the client libraries. To expose a dedicated schema instead, remove `public` from both **Exposed schemas** and **Extra search path**, disable `pg_graphql`, put the new schema first in the exposed list, and grant schema and table privileges explicitly.
 
 ```sql
 create schema if not exists api;
@@ -156,80 +111,63 @@ grant select on table api.catalog to anon;
 grant select, insert, update, delete on table api.catalog to authenticated;
 ```
 
-### Restricted OpenAPI schema visibility
+## Data API error mapping and logs
 
-With publishable keys, the complete OpenAPI table/column specification requires elevated permission; a public key is no longer also a schema-enumeration credential.
+Data API errors use either PostgreSQL SQLSTATE values or grouped `PGRST` codes: foreign-key and uniqueness violations map to `409`, undefined functions or tables to `404`, insufficient privilege to `401` for anonymous callers or `403` for authenticated callers, and `PGRST003` means a `504` connection-pool wait timeout. Database failures appear in `postgres_logs` under the `authenticator` role, while API failures appear in `edge_logs` through `proxy_status`; PostgREST codes are captured in logs only on version 14 or later.
 
-## Plans, errors, and request controls
+## Pre-request context and custom HTTP failures
 
-### Data API execution plans
-
-`.explain()` works for reads, writes, and RPCs but is off because plans reveal schema. Enable on `authenticator`, reload, and in production use `pgrst.db_pre_request` to restrict plan media types.
+Set `pgrst.db_pre_request` on `authenticator` and reload PostgREST to run a function before every Data API request; it can inspect `request.method`, `request.path`, `request.headers`, `request.cookies`, and JWT settings through `current_setting()`. Raising SQLSTATE `PGRST` with JSON `message` and `detail` values controls the response body, status, and headers; database-writing rate limits cannot cover `GET` or `HEAD` because those requests run read-only and may use read replicas.
 
 ```sql
-alter role authenticator set pgrst.db_plan_enabled to 'true';
+create function public.check_request()
+returns void
+language plpgsql
+security definer
+as $$
+begin
+  if current_setting('request.headers', true)::json->>'x-plan' is null then
+    raise sqlstate 'PGRST' using
+      message = json_build_object(
+        'code', 'quota', 'message', 'Payment Required')::text,
+      detail = json_build_object('status', 402)::text;
+  end if;
+end;
+$$;
+
+alter role authenticator
+  set pgrst.db_pre_request = 'public.check_request';
 notify pgrst, 'reload config';
 ```
 
-```ts
-const { data, error } = await supabase.from('instruments').select().explain()
-```
+## Secure-by-default Data API exposure
 
-### Data API error mapping and logs
+New projects no longer automatically expose new tables in `public`: explicit Postgres grants are required before PostgREST or GraphQL can reach them. The dashboard also has per-table and per-function exposure toggles plus a project-creation switch for default privileges; this secure behavior becomes the default for all new projects on May 30, 2026.
 
-Errors contain `code`, `details`, `hint`, `message`. `23503`/`23505` map to 409; `42501` to 401 unauthenticated or 403 authenticated; `PGRST003` to 504; `PGRST116` to 406. Ambiguity `PGRST201/203` is 300. Disabled aggregates `PGRST123` and max-affected `PGRST124/128` are 400.
+## GraphQL is now opt-in
 
-PostgREST codes appear in logs only with PostgREST 14+: database failures in Postgres logs under `authenticator`; API codes as `proxy_status` in edge logs.
-
-### Pre-request context and custom HTTP failures
-
-`pgrst.db_pre_request` can read method, path, headers, cookies, and JWT settings via `current_setting()`. Register on `authenticator` and reload. `raise sqlstate 'PGRST'` accepts JSON `message` for code/message/details/hint and JSON `detail` for status/status_text/headers.
+New projects no longer enable `pg_graphql` automatically, and existing projects older than 30 days with no GraphQL requests can also have it disabled; projects that use GraphQL must enable the extension deliberately.
 
 ```sql
-alter role authenticator set pgrst.db_pre_request = 'public.check_request';
-notify pgrst, 'reload config';
+create extension pg_graphql;
 ```
 
-Database-backed rate limit counters can write only during POST/PUT/PATCH/DELETE; GET/HEAD transactions are read-only and may use replicas.
+## Read-only OpenAPI retrieval
 
-## Generated and typed database clients
+A Management API endpoint can retrieve a project's database OpenAPI specification with only the **Read-only project database access** permission, allowing CLI and third-party integrations to inspect it without broader project access.
 
-### Generated Python database types
+## Transactional Table Editor staging
 
-CLI 2.66.0+ generates Pydantic row types and `TypedDict` insert/update payloads from hosted or local schemas.
+The **Queue table operations** feature preview stages inserts, updates, and deletes, shows them in a diff, and commits the batch in one transaction instead of saving each edit immediately.
 
-```sh
-npx supabase gen types --lang=python --project-id "$PROJECT_REF" \
-  --schema public > database_types.py
-npx supabase gen types --lang=python --local > database_types.py
-```
+## Dashboard query and index assistance
 
-### Typed JSON selectors in supabase-js
+The dashboard adds Explain/Analyze diagrams and an Index Advisor, while feature-preview table filters can translate natural-language requests into Postgres filters and the Assistant can suggest query optimizations.
 
-Since 2.48.0, replacing generated `Json` with a concrete JSON type infers nested `->` and text `->>` selections. Override row only or row/insert/update. `MergeDeep` needs `strictNullChecks`.
+## Expanded Foreign Data Wrapper capabilities
 
-```ts
-type AppDatabase = MergeDeep<DatabaseGenerated, {
-  public: { Tables: { settings: { Row: {
-    data: { bar: { baz: number }; en: 'ONE' | 'TWO' } | null
-  } } } }
-}>
-const { data } = await createClient<AppDatabase>(url, key)
-  .from('settings').select('data->bar->baz, data->>en')
-```
+Wrappers 0.6.0 adds an OpenAPI FDW, Snowflake timeout support, and Clerk CRUD; the Infura wrapper exposes live Ethereum data to SQL, and Postgres FDWs now support asynchronous streaming.
 
-### Postgres Language Server
+## Extension version pinning is ignored (1.26.08)
 
-The Postgres LSP supplies SQL completion, syntax diagnostics, type checking, and linting as a VS Code extension and npm package.
-
-### Dashboard query and index assistance
-
-The Table Editor has an Index Advisor, Explain/Analyze diagram rendering, preview natural-language filters, and query-performance suggestions.
-
-### Staged Table Editor operations
-
-The **Queue table operations** preview stages inserts/updates/deletes, displays a diff, and commits them in one transaction.
-
-### New Foreign Data Wrapper capabilities
-
-An Infura wrapper exposes live Ethereum data. Wrappers 0.6.0 adds an OpenAPI FDW, Snowflake timeouts, Clerk CRUD, and async streaming for Postgres FDWs.
+From August 5, explicit versions in `CREATE EXTENSION` or `ALTER EXTENSION` no longer select the installed version; Supabase installs the default version and emits a warning.

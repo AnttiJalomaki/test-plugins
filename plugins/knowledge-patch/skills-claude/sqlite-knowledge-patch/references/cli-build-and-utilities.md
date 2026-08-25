@@ -1,58 +1,118 @@
 # CLI, Builds, and Utilities
 
-## Interactive and batch output
+## Configure and build systems
 
-Since 3.53.0, interactive shell sessions default to Unicode box output and right-align numbers in tabular modes. Batch sessions retain the legacy output format. The Query Result Formatter library supplies fixed-pitch query formatting and is also exposed by the Tcl interface's `format` method.
+### Canonical-source builds (since 3.48.0)
 
-Other display behavior since 3.51.0:
+The canonical-source `configure` script uses Autosetup instead of GNU
+Autoconf. Most targets require only a C compiler plus `make` or `nmake`. The
+amalgamation tarball's build system is unchanged at that point. Tcl remains
+required for tests and Tcl-based accessory programs such as
+`sqlite3_analyzer`.
 
-- `box` and `column` modes account for double-wide characters.
-- `.timer` reports microseconds.
-- `.width` values are capped at 30,000.
+### Amalgamation-tarball builds (since 3.49.0)
 
-The shell avoids writing most raw control characters as of 3.50.0. `.dump` encodes special characters with `unistr()` unless `--escape` mode is disabled.
+The precompiled amalgamation tarball's main `configure` script also uses
+Autosetup instead of Autotools, completing the build-system change. The
+deprecated TEA subdirectory still uses Autotools.
 
-## Shell scripting and dot-commands
+### Installation (3.47.1)
 
-As of 3.53.0:
+The `make install` target once again honors `DESTDIR`.
 
-- An existing, non-empty command-line file with a `*.sql` or `*.txt` name is executed as a script.
-- An unquoted trailing semicolon on a dot-command is ignored.
-- `.timer once` times only the next statement.
-- `.progress --timeout S` interrupts a statement after `S` seconds.
-- `.indexes PATTERN` matches index names rather than indexed table names and accepts additional options. Update scripts that relied on table-name matching.
+## Tcl support and behavior
 
-Startup and `.open` accept `--ifexists` since 3.51.0. `.imposter` is read-only, works with `VACUUM`, and no longer requires `--unsafe-testing`.
+SQLite 3.47.0 supports Tcl 9. Tcl 8.5 and later are expected to continue
+working, but that compatibility is no longer guaranteed.
 
-The `.www` command and the shell's `median()`, `percentile()`, `percentile_cont()`, and `percentile_disc()` extension functions arrived in 3.47.0.
+As of 3.51.0, Tcl `eval -asdict` supplies each row as a dictionary. A Tcl
+user-defined function may `break` to return SQL `NULL`.
 
-## Canonical-source and amalgamation builds
+## Bundled build features and provenance
 
-- Starting in 3.48.0, the canonical source tree's `./configure` uses Autosetup rather than GNU Autoconf. Common build targets need only a C compiler and `make`/`nmake`; tests and Tcl-based accessories such as `sqlite3_analyzer` still require Tcl. The `sqlite3-autoconf-NNNNNNN.tar.gz` build was not changed in that release.
-- Starting in 3.49.0, the main `configure` script in the precompiled amalgamation tarball also uses Autosetup. The deprecated TEA subdirectory still depends on Autotools.
-- The 3.47.1 `make install` target again honors `DESTDIR`.
-- Custom JavaScript/WASM builds can select 64-bit WASM through normal `make` starting in 3.51.0, while canonical builds remain 32-bit.
+As of 3.51.0:
 
-## Windows build targets
+- `SQLITE_SCM_BRANCH`, `SQLITE_SCM_TAGS`, and `SQLITE_SCM_DATETIME` expose
+  the source check-in's branch, tags, and timestamp.
+- The amalgamation contains `carray` and `percentile`, but they remain
+  disabled unless built with `SQLITE_ENABLE_CARRAY` or
+  `SQLITE_ENABLE_PERCENTILE`.
+- Non-canonical 64-bit WASM builds can be produced with `make`; canonical
+  builds remain 32-bit.
 
-`SQLITE_USE_STDIO_FOR_CONSOLE` was removed in 3.49.0 because it was nonfunctional. Windows command-line tools can define `SQLITE_USE_W32_FOR_CONSOLE_IO` to use Win32 console APIs; this option does not affect the SQLite core.
+## CLI functions and utility programs
 
-Windows RT ceased to be supported in 3.53.0.
+### Aggregate extensions and utility behavior
 
-## Tcl integration
+- The CLI adds the `median()`, `percentile()`, `percentile_cont()`, and
+  `percentile_disc()` extension functions and the `.www` command.
+- The release adds the experimental `sqlite3_rsync` program.
+- `sqlite3_analyzer` reports `WITHOUT ROWID` statistics separately.
+- `sqldiff` no longer creates an empty database when its second path is
+  absent.
+- Version 3.47.1 fixes Windows line endings in `sqlite3_rsync.exe`.
 
-The SQLite Tcl interface supports Tcl 9 as of 3.47.0. Tcl 8.5 and later are expected to keep working but are no longer guaranteed.
+### `sqlite3_rsync` behavior (since 3.50.0)
 
-Since 3.51.0, Tcl `eval -asdict` returns row data as a dict instead of an array. A Tcl-defined SQL function may use `break` to return SQL `NULL`.
+`sqlite3_rsync` no longer requires WAL mode and uses less bandwidth when the
+source and replica are already similar. On macOS, the remote executable can
+be found in `$HOME/bin`, `/usr/local/bin`, or `/opt/homebrew/bin`. Use 3.50.1
+or later because 3.50.0 can omit the replica's final page.
 
-## `sqlite3_rsync`
+As of 3.53.0, `sqlite3_rsync` supports `-p` and `--port` to select a port.
 
-The experimental `sqlite3_rsync` utility appeared in 3.47.0; 3.47.1 corrects Windows line endings in `sqlite3_rsync.exe`.
+## CLI control-character escaping
 
-Since 3.50.0 it no longer requires WAL mode, transfers less data when databases are already similar, and on macOS searches `$HOME/bin`, `/usr/local/bin`, and `/opt/homebrew/bin` for the remote executable. Use 3.50.1 or later because 3.50.0 could omit the replica's final page.
+As of 3.50.0, the CLI avoids emitting most control characters directly.
+`.dump` encodes special characters with `unistr()` unless escape mode is off.
+A dump containing such values consequently requires `unistr()` support when
+restored unless that escaping is disabled.
 
-Since 3.53.0, `-p` / `--port` selects the remote port.
+## Shell behavior and display
 
-## Analyzer and diff utilities
+### Startup, imposter, width, timing, and display controls
 
-`sqlite3_analyzer` reports `WITHOUT ROWID` table statistics separately as of 3.47.0. `sqldiff` no longer creates an empty database when its second database path does not exist.
+- As of 3.51.0, `--ifexists` is accepted at startup and by `.open`.
+- As of 3.51.0, `.imposter` is read-only and usable with `VACUUM` without
+  `--unsafe-testing`.
+- As of 3.51.0, `.width` is capped at 30,000.
+- As of 3.51.0, `.timer` reports values in microseconds.
+- As of 3.51.0, `box` and `column` modes handle double-wide characters.
+
+```text
+sqlite3 --ifexists existing.db
+.open --ifexists existing.db
+```
+
+### Query Result Formatter and output defaults (since 3.53.0)
+
+The Query Result Formatter library formats query results for fixed-pitch
+displays and is exposed through the Tcl interface's `format` method.
+Interactive CLI sessions default to Unicode box output and right-justify
+numbers in tabular modes. Batch sessions retain the legacy format.
+
+### Scripts and one-shot controls (since 3.53.0)
+
+A non-empty `*.sql` or `*.txt` file named as a command-line argument is
+executed as a script. An unquoted trailing semicolon on a dot-command is
+ignored. `.timer once` times only the next SQL statement, and
+`.progress --timeout S` interrupts statements after `S` seconds.
+
+```text
+sqlite3 app.db setup.sql
+.timer once
+.progress --timeout 5
+```
+
+### `.indexes` pattern matching (since 3.53.0)
+
+The `.indexes PATTERN` argument matches index names instead of names of
+indexed tables. This can change existing shell-script results.
+
+## Windows build and platform support
+
+`SQLITE_USE_STDIO_FOR_CONSOLE` was removed in 3.49.0. Windows
+command-line-tool builds can define `SQLITE_USE_W32_FOR_CONSOLE_IO` to use
+Win32 console APIs without affecting the SQLite core.
+
+Windows RT is no longer supported as of 3.53.0.

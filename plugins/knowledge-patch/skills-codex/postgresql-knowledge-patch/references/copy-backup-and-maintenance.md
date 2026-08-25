@@ -1,63 +1,60 @@
 # COPY, Backup, and Maintenance
 
-Batch attribution: `17.0`, `18.0`.
+Use this reference when moving data, taking physical backups, running
+maintenance, or scripting PostgreSQL utilities. The versioned behavior here is
+drawn from the `17.0` and `18.0` batches.
 
-## Contents
+## Make maintenance functions safe
 
-- [Safe maintenance search paths](#make-maintenance-functions-safe-under-restricted-search-paths)
-- [Vacuum inheritance and controls](#vacuum-parent-and-child-relations-intentionally)
-- [Tolerant COPY](#skip-bad-copy-rows-with-an-explicit-limit)
-- [Incremental physical backups](#build-and-combine-incremental-physical-backups)
-- [Dump and restore controls](#filter-dumps-and-control-restore-transactions)
-- [Initialization and maintenance utilities](#use-initialization-and-maintenance-utility-controls)
-- [File behavior](#choose-file-extension-and-file-copy-behavior)
-
-## Make maintenance functions safe under restricted search paths
-
-`ANALYZE`, `CLUSTER`, `CREATE INDEX`, `CREATE MATERIALIZED VIEW`,
-`REFRESH MATERIALIZED VIEW`, `REINDEX`, and `VACUUM` invoke functions with a
-safe `search_path`. Functions used by expression indexes or materialized views
-must schema-qualify non-default objects or declare their own path.
+Since PostgreSQL 17, `ANALYZE`, `CLUSTER`, `CREATE INDEX`,
+`CREATE MATERIALIZED VIEW`, `REFRESH MATERIALIZED VIEW`, `REINDEX`, and
+`VACUUM` invoke functions with a safe `search_path`. Functions used by
+expression indexes or materialized views must schema-qualify non-default
+objects or declare a suitable path:
 
 ```sql
 ALTER FUNCTION app.normalize(text)
   SET search_path = pg_catalog, app;
 ```
 
-## Vacuum parent and child relations intentionally
+The per-table `MAINTAIN` privilege and predefined `pg_maintain` role delegate
+`VACUUM`, `ANALYZE`, `REINDEX`, `REFRESH MATERIALIZED VIEW`, `CLUSTER`, and
+`LOCK TABLE` without granting ownership or superuser rights:
 
-`VACUUM` and `ANALYZE` on an inheritance parent process its children. Add
-`ONLY` to retain parent-only behavior, especially for a partitioned parent.
+```sql
+GRANT MAINTAIN ON TABLE app.orders TO maintenance_bot;
+GRANT pg_maintain TO operations_role;
+```
+
+## Account for inherited maintenance
+
+PostgreSQL 18 `VACUUM` and `ANALYZE` process inheritance children when run on
+a parent. Use `ONLY` to retain parent-only behavior, especially for a
+partitioned parent:
 
 ```sql
 VACUUM (ONLY, ANALYZE) measurements;
 ```
 
-Large `maintenance_work_mem` and `autovacuum_work_mem` values are no longer
-silently capped at 1 GB for `VACUUM`. `vacuum_buffer_usage_limit` defaults to
-2 MB.
-
 `vacuum_max_eager_freeze_failure_rate` controls eager freezing of all-visible
-pages, and the server-level `vacuum_truncate` controls relation-file
-truncation. `autovacuum_worker_slots` is a restart-time ceiling within which
-`autovacuum_max_workers` can change at runtime.
+pages, and server-level `vacuum_truncate` controls relation-file truncation.
+`autovacuum_worker_slots` is a restart-time ceiling within which
+`autovacuum_max_workers` can change at runtime;
 `autovacuum_vacuum_max_threshold` caps the fixed dead-tuple trigger.
 
-Progress details include `indexes_total` and `indexes_processed` in
-`pg_stat_progress_vacuum`. See
-[Observability, Statistics, and Planning](observability-and-planning.md) for
-the remaining progress and timing changes.
+In PostgreSQL 17, `VACUUM` stopped silently capping its memory at 1 GB when
+`maintenance_work_mem` or `autovacuum_work_mem` is larger, and
+`vacuum_buffer_usage_limit` changed its default to 2 MB.
 
-## Skip bad COPY rows with an explicit limit
+## Load imperfect input deliberately
 
-`COPY FROM` uses `ON_ERROR stop` by default. Choose `ON_ERROR ignore` to discard
-conversion failures and inspect `pg_stat_progress_copy.tuples_skipped`.
-`LOG_VERBOSITY` controls rejected-row reporting. In CSV mode,
-`FORCE_NULL *` or `FORCE_NOT_NULL *` applies its conversion rule to every
-column.
+### PostgreSQL 17 controls
 
-`REJECT_LIMIT` bounds the number of discarded rows. `LOG_VERBOSITY silent`
-suppresses rejected-row messages.
+`COPY FROM` accepts `ON_ERROR ignore` instead of the default `stop`.
+`LOG_VERBOSITY` controls rejected-row reporting,
+`pg_stat_progress_copy.tuples_skipped` reports the skipped count, and
+`FORCE_NULL *` or `FORCE_NOT_NULL *` applies its CSV conversion rule to every
+column:
 
 ```sql
 COPY staging_orders FROM '/imports/orders.csv'
@@ -65,30 +62,34 @@ WITH (
   FORMAT csv,
   HEADER,
   ON_ERROR ignore,
-  REJECT_LIMIT 100,
-  LOG_VERBOSITY silent,
+  LOG_VERBOSITY verbose,
   FORCE_NULL *
 );
 ```
 
-Server-side `COPY FROM` does not interpret `\.` as end-of-file in CSV input.
-psql still recognizes it for CSV read from `STDIN`, but it must be alone on its
-line. Older psql clients can therefore mishandle `\copy` against a PostgreSQL
-18 server.
+### PostgreSQL 18 controls
+
+Add `REJECT_LIMIT` to bound discarded rows and use `LOG_VERBOSITY silent` when
+rejection messages are unwanted:
+
+```sql
+COPY staging_orders FROM '/imports/orders.csv'
+WITH (FORMAT csv, ON_ERROR ignore, REJECT_LIMIT 100, LOG_VERBOSITY silent);
+```
 
 `COPY TO` accepts populated materialized views. `COPY FREEZE` rejects foreign
-tables rather than silently ignoring `FREEZE`.
+tables instead of silently ignoring `FREEZE`.
 
-## Build and combine incremental physical backups
+### Treat CSV end markers according to the data source
 
-Enable WAL summaries with `summarize_wal` and retain enough history with
-`wal_summary_keep_time`. Inspect availability and contents through
-`pg_available_wal_summaries()`, `pg_wal_summary_contents()`, and
-`pg_get_wal_summarizer_state()`.
+PostgreSQL 18 server-side `COPY FROM` treats `\.` as CSV data rather than EOF.
+psql still recognizes an otherwise empty `\.` line as the end of CSV supplied
+through `STDIN`. Older psql clients can therefore mishandle `\copy` against an
+18 server.
 
-`pg_basebackup --incremental` takes a backup relative to an earlier manifest.
-`pg_combinebackup` merges a full backup and its incrementals into a synthetic
-full backup.
+## Build incremental physical backups
+
+PostgreSQL 17 incremental backups depend on WAL summaries:
 
 ```conf
 summarize_wal = on
@@ -100,46 +101,57 @@ pg_basebackup -D /backup/inc \
 pg_combinebackup /backup/full /backup/inc -o /backup/combined
 ```
 
-`pg_combinebackup --link` can hard-link eligible files, and
-`pg_verifybackup` accepts tar-format backups.
+Set `wal_summary_keep_time` long enough for the backup cadence.
+`pg_available_wal_summaries()`, `pg_wal_summary_contents()`, and
+`pg_get_wal_summarizer_state()` expose summary availability, contents, and
+summarizer state. `pg_combinebackup` combines the full backup and incrementals
+into a synthetic full.
 
-## Filter dumps and control restore transactions
+PostgreSQL 18 adds `pg_combinebackup --link` to hard-link eligible files, and
+`pg_verifybackup` accepts tar backups.
 
-`pg_dump`, `pg_dumpall`, and `pg_restore` accept object include/exclude rules
-through `--filter`. `pg_dump --exclude-extension` omits extension-owned
-objects. `pg_restore --transaction-size` batches restored objects into bounded
-transactions.
+## Use current initialization and maintenance utilities
 
-`pg_dump --statistics` includes optimizer statistics. Dump and restore tools
-support `--statistics-only`, `--no-statistics`, `--no-data`, and `--no-schema`.
-`--sequence-data` preserves sequence state that other selection rules would
-exclude. `--no-policies` omits row-level-security policy processing when the
-destination uses different governance.
-
-## Use initialization and maintenance utility controls
-
-`--sync-method` is shared by `initdb`, `pg_basebackup`, `pg_checksums`,
-`pg_dump`, `pg_rewind`, and `pg_upgrade`. `initdb --no-sync-data-files` skips
-heap and index syncing without disabling every sync operation as `--no-sync`
-does.
-
+PostgreSQL 17 utilities share `--sync-method` across `initdb`,
+`pg_basebackup`, `pg_checksums`, `pg_dump`, `pg_rewind`, and `pg_upgrade`.
 `reindexdb`, `vacuumdb`, and `clusterdb` can combine object patterns with
-`--all` to process matching objects across databases.
-`vacuumdb --missing-stats-only` fills only missing statistics; it must be used
-with an analyze mode by a superuser.
+`--all` to process matches across databases.
 
-`pg_resetwal --char-signedness` changes the recorded default signedness.
+PostgreSQL 18 adds:
 
-## Choose file extension and file-copy behavior
+- `initdb --no-sync-data-files`, which skips heap/index syncing without
+  disabling every sync as `--no-sync` does.
+- `vacuumdb --missing-stats-only`, which fills only absent statistics, requires
+  an analyze mode, and must run as superuser.
+- `pg_resetwal --char-signedness`, which changes the recorded default
+  signedness.
 
-On filesystems where `posix_fallocate()` disables BTRFS compression or causes
-spurious XFS `ENOSPC` errors, set `file_extend_method = write_zeros` to restore
-zero-block file extension.
+## Filter and control dump/restore
+
+PostgreSQL 17 `pg_dump`, `pg_dumpall`, and `pg_restore` accept object
+include/exclude rules through `--filter`. `pg_dump` adds
+`--exclude-extension`, and `pg_restore --transaction-size` groups objects into
+bounded transactions.
+
+PostgreSQL 18 `pg_dump --statistics` includes optimizer statistics. Dump and
+restore tools add `--statistics-only`, `--no-statistics`, `--no-data`, and
+`--no-schema`; `--sequence-data` retains otherwise excluded sequence state.
+`--no-policies` omits row-level-security policy processing for migration into
+a differently governed system.
+
+Patched PostgreSQL 17 dump scripts use psql's `\restrict` mode so text emitted
+by the source server cannot inject later meta-commands during restore.
+
+## Select file operations for the environment
+
+On updated 17.x servers, `file_extend_method = write_zeros` avoids
+`posix_fallocate()` where that call disables BTRFS compression or produces
+spurious XFS `ENOSPC` failures:
 
 ```conf
 file_extend_method = write_zeros
 ```
 
-`file_copy_method` selects copying or cloning for
+In PostgreSQL 18, `file_copy_method` chooses copying versus cloning for
 `CREATE DATABASE ... STRATEGY=FILE_COPY` and
 `ALTER DATABASE ... SET TABLESPACE`.

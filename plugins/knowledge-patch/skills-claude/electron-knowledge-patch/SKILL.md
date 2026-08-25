@@ -10,82 +10,79 @@ metadata:
 
 # Electron Knowledge Patch
 
-Use this skill when upgrading, packaging, or implementing an Electron
-application whose behavior depends on recent Electron APIs and embedded
-Chromium, Node.js, or V8 changes. Check the application's pinned Electron
-version before applying version-specific advice. Prefer the application's
-manifest, lockfile, code, and tests when they disagree with general guidance.
+Use this skill when writing, reviewing, or upgrading Electron applications. Check the
+project's pinned Electron version first and apply guidance only when the relevant
+change has shipped in that version. Treat the application manifest, lockfile, code,
+and tests as authoritative when they disagree with this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrades-and-runtime.md](references/upgrades-and-runtime.md) | Runtime stacks, support lifecycle, operating-system floors, binary installation, companion artifacts |
-| [sessions-networking-and-extensions.md](references/sessions-networking-and-extensions.md) | Sessions, preloads, service workers, web requests, protocols, storage, extensions, WebUSB and Web Serial |
-| [processes-diagnostics-and-runtime.md](references/processes-diagnostics-and-runtime.md) | Frame lifecycle, utility processes, Node.js flags, crash and OOM diagnostics, cookies, PDF frames |
-| [windows-input-and-platform-ui.md](references/windows-input-and-platform-ui.md) | BrowserWindow, menus, navigation, dialogs, shortcuts, Wayland/X11, appearance and platform UI |
-| [graphics-media-and-native-image.md](references/graphics-media-and-native-image.md) | Offscreen rendering, shared textures, color spaces, NativeImage, CSS corners and desktop capture |
-| [notifications-security-and-packaging.md](references/notifications-security-and-packaging.md) | Notifications, ASAR integrity, WebAuthn, safe storage, clipboard isolation, MSIX and signing |
+| [Upgrades and runtime](references/upgrades-and-runtime.md) | Embedded runtimes, platform requirements, support windows, installation, and artifacts |
+| [Sessions, networking, and extensions](references/sessions-networking-and-extensions.md) | Sessions, service workers, protocols, requests, storage, extensions, and WebAuthn |
+| [Processes, diagnostics, and runtime behavior](references/processes-diagnostics-and-runtime.md) | Frames, utility processes, diagnostics, command-line handling, PDF, and process exits |
+| [Windows, input, and platform UI](references/windows-input-and-platform-ui.md) | BrowserWindow, menus, shortcuts, dialogs, printing, navigation, and desktop integration |
+| [Graphics, media, and NativeImage](references/graphics-media-and-native-image.md) | Offscreen rendering, shared textures, capture, color management, and image APIs |
+| [Notifications, security, and packaging](references/notifications-security-and-packaging.md) | Notifications, clipboard isolation, ASAR integrity, safe storage, updates, and signing |
 
-## Breaking changes to handle first
+## Upgrade triage
 
-### Prepare for the next major release
+### Prepare for removals
 
-- Electron 44 requires macOS 13 or later; do not ship it to macOS 12.
-- Electron 44 removes the Electron `clipboard` module from renderer
-  processes. Use `navigator.clipboard` for ordinary access, or expose narrowly
-  scoped preload functions through `contextBridge`.
-- Electron 44 stops publishing 32-bit `chromedriver`, `mksnapshot`, and
-  `ffmpeg`, and stops publishing Windows x86 `node.lib` on the headers CDN.
-- Electron 43 is the final series with Windows x86 and Linux ARMv7 prebuilt
-  Electron binaries. Plan a supported architecture migration before its
-  January 2027 end of life.
+- Electron 44 removes the renderer `clipboard` module. Prefer
+  `navigator.clipboard`, or expose narrowly scoped advanced operations from a
+  preload with `contextBridge`.
+- Electron 44 requires macOS 13 or later and stops publishing 32-bit companion
+  artifacts. Electron 43 is the final prebuilt line for Windows x86 and Linux
+  ARMv7.
+- Linux `showHiddenFiles` was deprecated in Electron 41 and removed in Electron
+  43. Do not rely on it outside macOS and Windows.
+- `webContents` no longer emits `plugin-crashed`.
+- `PrinterInfo.isDefault` and `PrinterInfo.status` are gone.
+- Remove `systemPreferences.isAeroGlassEnabled()` branches; the API has no
+  replacement.
 
-### Replace removed and deprecated APIs
+### Migrate deprecated APIs
 
 - Replace `Session.setPreloads()` and `getPreloads()` with
   `registerPreloadScript()`, `unregisterPreloadScript()`, and
   `getPreloadScripts()`.
 - Replace `session.serviceWorkers.fromVersionID()` with
-  `getInfoFromVersionID()` or `getWorkerFromVersionID()`, according to whether
-  information or a `ServiceWorkerMain` object is needed.
-- Move extension operations and events from `Session` to
-  `session.extensions`.
+  `getInfoFromVersionID()` or `getWorkerFromVersionID()`.
+- Move extension methods and events from `session` to `session.extensions`.
 - Replace `NativeImage.getBitmap()` with `toBitmap()`.
-- Replace `webFrame.routingId` and `findFrameByRoutingId()` with
-  `frameToken`, `findFrameByToken()`, and main-process
+- Replace `webFrame.routingId` and `findFrameByRoutingId()` with `frameToken`
+  and `findFrameByToken()`; resolve main-process tokens with
   `webFrameMain.fromFrameToken()`.
-- Remove `quota`/`quotas` options from `Session.clearStorageData()` and remove
-  the obsolete `syncable` quota type.
-- Replace Chromium's `--host-rules` with `--host-resolver-rules`.
-- Remove `webContents` `plugin-crashed` handlers and
-  `systemPreferences.isAeroGlassEnabled()` branches.
-- On Linux, stop passing `showHiddenFiles` to file dialogs.
+- Stop passing `quota` or `quotas` to `Session.clearStorageData()`.
+- Read `console-message` data from the event object and use `lineNumber`.
+- Use `--host-resolver-rules` instead of Chromium's deprecated `--host-rules`.
 
-### Account for changed defaults
+### Audit changed defaults
 
-- On Wayland, Electron chooses native Wayland automatically. Pass
+- An empty web-request `urls` array matches nothing; use `['<all_urls>']` when
+  every URL is intended.
+- Electron runs natively on Wayland when available. Pass
   `--ozone-platform=x11` only when Xwayland behavior is required.
-- GTK 4 is the default on GNOME. Use `--gtk-version=3` before startup only
-  when an application must coexist with GTK 2/3 symbols.
-- Offscreen rendering uses a constant device scale factor of `1.0`; set
-  `webPreferences.offscreen.deviceScaleFactor` explicitly for other output
-  scales.
-- Downloads and dialogs without `defaultPath` now start in Downloads, falling
-  back to Home. Persist and pass a directory explicitly to preserve a
-  last-used-directory workflow.
-- Linux frameless windows have rounded corners by default, and their Window
-  Controls Overlay follows the native title-bar layout. Use
-  `roundedCorners: false` when required and size content with the
-  `titlebar-area-*` CSS environment values.
+- Offscreen rendering uses device scale factor `1.0`; set
+  `webPreferences.offscreen.deviceScaleFactor` explicitly for another scale.
 - `window.open()` popups are always resizable unless
   `setWindowOpenHandler()` overrides `resizable`.
+- Downloads and dialogs without `defaultPath` start in Downloads, falling back
+  to Home. Persist and pass a directory to retain last-used behavior.
+- `app.commandLine` lowercases switches and arguments. Read application-specific
+  arguments from `process.argv`.
+- A utility-process `process.exit()` is synchronous, so buffered output may not
+  flush.
 
-## High-value migration patterns
+## Security-critical behavior
 
-### Isolate clipboard access
+### Keep renderer privileges narrow
 
-Keep privileged clipboard operations in a preload:
+Direct renderer access to Electron's clipboard API is deprecated before its
+removal. Put privileged work in the main or preload context and expose the
+smallest possible surface:
 
 ```js
 const { clipboard, contextBridge } = require('electron');
@@ -95,19 +92,66 @@ contextBridge.exposeInMainWorld('clipboardAPI', {
 });
 ```
 
-Expose only the operations the page needs. Prefer the browser Clipboard API
-when it is sufficient.
+Sandboxed windows opened by a top-level frame inherit the opener's sandbox
+restrictions. `<webview>` and `window.open()` also inherit
+`nodeIntegrationInWorker`; do not assume a child silently resets security
+preferences.
 
-### Register preloads independently
+### Package and sign correctly
 
-Use per-script registration so libraries do not overwrite one another's
-preload lists. Select `frame` or `service-worker` as the registration type.
-Service-worker preloads use `ipcRenderer`; the main process receives their IPC
-through `ServiceWorkerMain.ipc`.
+- Stable ASAR integrity terminates the app when the packaged archive hash is
+  absent or mismatched. On macOS, embed the ASAR-integrity digest and re-sign.
+- macOS notifications require a code-signed application; unsigned apps emit
+  `failed` instead of displaying the notification.
+- Desktop capture with audio on macOS 14.2 or later needs
+  `NSAudioCaptureUsageDescription` or the CoreAudio Tap path can return silent
+  audio without an error.
+- `allowExtensions: true` is required when Chrome extensions must access a
+  privileged custom protocol.
 
-### Preserve popup resize policy
+## High-value APIs
 
-Translate the feature string into explicit window options:
+### Diagnose hung and failed renderers
+
+To collect a JavaScript stack from an unresponsive renderer, enable the feature
+and serve the matching Document Policy header:
+
+```js
+app.commandLine.appendSwitch(
+  'enable-features',
+  'DocumentPolicyIncludeJSCallStacksInCrashReports',
+);
+
+webContents.on('unresponsive', async () => {
+  console.log(await webContents.mainFrame.collectJavaScriptCallStack());
+});
+```
+
+Use `WebFrameMain.detached` for unloading state and `isDestroyed()` for final
+destruction. Heap tracing and renderer out-of-memory diagnostics can also capture
+JavaScript evidence.
+
+### Register per-context preloads
+
+Preload registrations can target either `frame` or `service-worker`. A service
+worker preload uses `ipcRenderer`; communicate from the main process through
+`ServiceWorkerMain.ipc`. Use `startWorkerForScope()` and
+`running-status-changed` when lifecycle control is needed.
+
+### Filter requests explicitly
+
+```js
+const filter = {
+  urls: ['<all_urls>'],
+  excludeUrls: ['https://example.test/private/*'],
+};
+```
+
+Use `net.request({ bypassCustomProtocolHandlers: true })` when a request must
+skip registered protocol handlers. WebSocket authentication arrives through the
+`webContents` `login` event.
+
+### Control popups and navigation
 
 ```js
 webContents.setWindowOpenHandler((details) => ({
@@ -118,87 +162,76 @@ webContents.setWindowOpenHandler((details) => ({
 }));
 ```
 
-### Make Linux title bars adaptive
+Set `webPreferences.focusOnNavigation` to `false` when navigation must not focus
+the `WebContents`. Restore captured history with
+`webContents.navigationHistory.restore(index, entries)`.
 
-Do not assume which side contains window controls:
+### Render frames to PDF
 
-```css
-.titlebar-content {
-  left: env(titlebar-area-x, 0px);
-  width: env(titlebar-area-width, 100%);
-}
+Patch releases add per-frame PDF output:
+
+```js
+const frame = browserWindow.webContents.mainFrame;
+const pdf = await frame.printToPDF({});
 ```
 
-### Diagnose a hung renderer
+PDF resources render inside the existing `WebContents`, so detection should
+inspect the frame tree rather than wait for a guest `WebContents`.
 
-Enable `DocumentPolicyIncludeJSCallStacksInCrashReports` before the app is
-ready and serve the renderer with
-`Document-Policy: include-js-call-stacks-in-crash-reports`. An
-`unresponsive` handler can then await
-`webContents.mainFrame.collectJavaScriptCallStack()`.
+### Work with notifications
 
-### Handle utility-process behavior deliberately
+- On Windows, use `Notification.handleActivation()` for clicks, replies, and
+  actions that can cold-start the app.
+- Use notification IDs and group IDs for grouping; macOS also exposes history
+  and removal APIs.
+- Windows notification actions support buttons, selects, and replies, while the
+  `closed` event reports a dismissal `reason`.
 
-- Listen for the utility process `error` event to capture fatal V8 diagnostic
-  reports.
-- An unhandled rejection now warns instead of crashing. Install a handler
-  that calls `process.exit(1)` when fail-fast behavior is required.
-- `process.exit()` is synchronous, so pending output may not flush.
-- Accept `"memory-eviction"` anywhere child-process exit reasons are decoded.
+### Handle graphics predictably
 
-## Packaging and security checkpoints
+- Shared-texture `paint` payload fields live beneath `handle`.
+- Imported textures support NV12, NV16, and P010LE; external textures can become
+  `VideoFrame` objects.
+- `NativeImage` normalizes profiled input to sRGB. Pass a `colorSpace` option to
+  `toBitmap()` when source-space output or another conversion is required.
+- Use an options object for `createFromNamedImage(name, { hslShift })`; the
+  positional HSL array is deprecated.
 
-- Stable ASAR integrity terminates an application when its packaged ASAR hash
-  is absent or mismatched. On macOS, use `@electron/asar` 4.1.0 or later to
-  embed an integrity digest, then re-sign the application.
-- Code-sign macOS applications that display notifications; unsigned
-  applications receive the Notification `failed` event.
-- Add `NSAudioCaptureUsageDescription` for desktop-capture audio on macOS
-  14.2 or later.
-- Use `app.configureWebAuthn({ touchID: { keychainAccessGroup } })` for the
-  macOS Touch ID platform authenticator.
-- The `electron` npm package downloads its binary on first execution rather
-  than in `postinstall`. With `--ignore-scripts`, run `npx install-electron`
-  explicitly. Do not use the removed `ELECTRON_SKIP_BINARY_DOWNLOAD`.
-- macOS debug-symbol tooling must consume `dsym.tar.xz`, not `dsym.zip`.
+## Platform checks
 
-## Rendering and image checkpoints
+### macOS
 
-- Shared-texture offscreen rendering is GPU accelerated. Its `paint` payload
-  nests `sharedTextureHandle`, `planes`, and `modifier` under `handle`.
-- Imported textures can become `VideoFrame` objects and support NV12, NV16,
-  and P010LE formats; offscreen output can use RGBAF16 in scRGB HDR.
-- Images with profiles are normalized to sRGB. `NativeImage.toBitmap()`
-  defaults to sRGB conversion; pass a `colorSpace` when source-space output or
-  another conversion is required.
-- Pass `hslShift` inside an options object to
-  `nativeImage.createFromNamedImage()`.
+- Pass `WebContents.focusedFrame` to `Menu.popup({ frame })` for Writing Tools,
+  Autofill, and Services integration.
+- Use `nativeTheme.shouldUseDarkColorsForSystemIntegratedUI` for system UI and
+  `shouldDifferentiateWithoutColor` for the accessibility preference.
+- Configure Touch ID WebAuthn through `app.configureWebAuthn()` and handle
+  discoverable-account selection on the session.
 
-## Platform behavior checkpoints
+### Linux
 
-- On Windows, fullscreen hides the menu bar. `query-session-end` and improved
-  `session-end` events cover session shutdown.
-- On macOS, parented message dialogs center on the parent, and notifications
-  use the signed-app-only `UNNotification` path.
-- Read application-specific command-line arguments from `process.argv`;
-  `app.commandLine` lowercases switches and arguments.
-- For file-dialog portals older than version 4, `defaultPath` is unsupported.
-  Require portal version 4 when that option is essential.
-- Treat `XDG_CURRENT_DESKTOP` as the real desktop environment; do not expect
-  Electron to replace it with `Unity` or provide
-  `ORIGINAL_XDG_CURRENT_DESKTOP`.
+- GTK 4 is the GNOME default. Force GTK 3 before startup when native dependencies
+  cannot coexist with GTK 4.
+- Frameless windows have rounded corners; disable with `roundedCorners: false`.
+- Window Controls Overlay follows the native title-bar button layout. Position
+  content with `env(titlebar-area-x)` and `env(titlebar-area-width)`.
+- Portal file-dialog backends older than version 4 ignore `defaultPath`; require
+  portal version 4 when that option is essential.
 
-## Working method
+### Windows
 
-1. Read the pinned Electron version and the target operating systems and
-   architectures.
-2. Start with breaking changes, removed APIs, platform floors, and changed
-   defaults.
-3. Open the topic reference for the subsystem being changed.
-4. Apply only behavior available in the pinned version, including backported
-   availability when noted.
-5. Exercise platform-specific paths on their real backend: native Wayland
-   versus Xwayland, portal versus native dialogs, and signed versus unsigned
-   macOS bundles.
-6. Test packaging, preload isolation, process failures, and renderer lifecycle
-   behavior in addition to the happy path.
+- Fullscreen hides the menu bar.
+- `query-session-end` supports pre-shutdown handling, alongside improved
+  `session-end` behavior.
+- `roundedCorners` is supported, and MSIX applications can use `autoUpdater`.
+
+## Verification checklist
+
+1. Confirm the pinned Electron version and supported operating systems.
+2. Search for removed and deprecated APIs before changing dependencies.
+3. Test renderer sandbox, preload, protocol, and child-window inheritance.
+4. Exercise Wayland/X11, GTK, macOS signing, and Windows packaging paths used by
+   the application.
+5. Re-test offscreen scale, image color, media capture, dialogs, notifications,
+   printing, and PDF behavior where applicable.
+6. Inspect process-exit reasons and utility-process logs under failure.

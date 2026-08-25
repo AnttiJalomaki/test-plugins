@@ -10,64 +10,81 @@ metadata:
 
 # Argo CD Knowledge Patch
 
-Use this skill when upgrading or configuring Argo CD, authoring Applications or
-ApplicationSets, extending the CLI or API, configuring repositories and Source
-Hydrator, or updating health, security, and observability integrations. Start
+Use this skill when upgrading or configuring Argo CD, writing Applications or
+ApplicationSets, integrating repositories and Source Hydrator, operating the
+CLI or API, or updating security, health, and observability behavior. Start
 with the behavior changes below, then open the reference for the task at hand.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Applications, projects, and sync](references/applications-projects-and-sync.md) | Comparison, reconciliation, automated sync, sync windows, dry runs, server-side apply |
-| [ApplicationSets and generators](references/applicationsets-and-generators.md) | Progressive Sync, deletion order, Pull Request and Git generators, generator values and status |
-| [Repositories, rendering, and hydration](references/repositories-rendering-and-hydration.md) | Repository identity, OCI, config-management plugins, Kustomize, Source Hydrator |
-| [CLI, API, and extensions](references/cli-api-and-extensions.md) | Server-side diff, resource retrieval, plugins, password input, logs, exec, extensions |
-| [Security, identity, and RBAC](references/security-identity-and-rbac.md) | Log permissions, fine-grained RBAC, tokens, bearer auth, SSO, static assets |
-| [Operations and observability](references/operations-and-observability.md) | Repo-server contention, Redis, probes, OpenTelemetry, metrics, logs, pod view |
-| [Resource health and actions](references/resource-health-and-actions.md) | Built-in health coverage, scaling, rollout controls, Job and Numaplane actions |
+| [Applications, projects, and sync](references/applications-projects-and-sync.md) | Comparison, reconciliation, automated sync, sync windows, apply and replace behavior |
+| [ApplicationSets and generators](references/applicationsets-and-generators.md) | Progressive Sync, generators, concurrency, namespaces, deletion, status and UI |
+| [Repositories, rendering, and hydration](references/repositories-rendering-and-hydration.md) | Helm, Git, OCI, Kustomize, plugins, webhooks, Source Hydrator and Source Integrity |
+| [CLI, API, and extensions](references/cli-api-and-extensions.md) | Diff and resource commands, plugins, namespaces, core mode, typed events and UI extensions |
+| [Security, identity, and RBAC](references/security-identity-and-rbac.md) | Authorization defaults, tokens, SSO, impersonation, Secret masking and static assets |
+| [Operations and observability](references/operations-and-observability.md) | Repo-server, Redis, transport, probes, metrics, tracing, logging and caching |
+| [Resource health and actions](references/resource-health-and-actions.md) | Built-in health coverage, corrected states, scaling, rollout and lifecycle actions |
 
 ## Upgrade-critical behavior changes
 
-### Audit log and resource RBAC
+### Revalidate authorization
 
-- Log access now enforces RBAC by default. Grant explicit log permissions to
-  every role that must read pod logs.
-- Fine-grained RBAC inheritance is disabled by default. Recheck policies that
-  expected an Application permission to flow to its resources.
-- User-defined roles and policies receive referential-integrity checks. Fix
-  dangling role or policy references instead of relying on permissive loading.
-
-Treat these as authorization changes, not UI-only changes. Test both the CLI
-and API with representative project roles after an upgrade.
+- Log access enforces RBAC by default. Give every role that reads pod logs an
+  explicit permission and test both CLI and API access.
+- Fine-grained RBAC inheritance is disabled by default. Policies that granted
+  an Application permission and expected it to flow to resources need review.
+- User-defined roles and policies undergo referential-integrity checks. Repair
+  dangling references rather than relying on permissive loading.
+- Server operations can use impersonation, including logs and deletes. Treat
+  any compatibility switch that relaxes strict enforcement as a temporary
+  migration control.
 
 ### Recheck comparison and reconciliation assumptions
 
-- Comparison-option defaults changed. Make behavior-critical options explicit
-  rather than carrying forward assumptions from an older installation.
-- Known interim resources are excluded by default, changing which transient
-  resources participate in comparison and reconciliation.
-- Application health is stored in Redis by default. Include Redis state and
-  compression configuration when diagnosing stale or missing health.
-- A failed sync retry may use a newer revision instead of staying pinned to
-  the revision selected by the original attempt. Automation must not assume
-  that every retry deploys identical Git content.
+- Comparison-option defaults changed, and known interim resources are excluded
+  by default. Make behavior-critical comparison settings explicit.
+- Diff filtering preserves manager-owned descendants, and annotation backfill
+  must not replace an annotation already present on the live resource.
+- A failed sync retry can move to a newer revision. Automation must not assume
+  every attempt deploys the content selected by the original attempt.
+- The replace path preserves non-ignored fields. Server-side apply remains on
+  apply semantics without also running auth reconciliation.
+- Setting the reconciliation timeout to zero disables soft expiry but does not
+  disable use of the diff cache.
 
-### Check transport and repository scale
+### Validate rendering changes
 
-- Pod exec and port forwarding use WebSockets instead of SPDY. Proxies and
-  ingress layers must pass the WebSocket upgrade correctly.
-- Large monorepos can trigger repo-server lock contention severe enough to
-  require pod restarts. The release notes defer the fix to a later patch, so
-  monitor repo-server health and plan the patch-level upgrade.
-- Kubernetes 1.32 is supported, but cluster compatibility does not remove the
-  need to validate Argo CD CRDs, admission policies, and extensions.
+Manifest generation uses Helm 4. Test charts against its rendering behavior,
+especially dependency builds and value-file selection. Wildcard patterns are
+accepted in `valueFiles`, values objects render as YAML in logs, and dependency
+builds honor the repository `insecure` setting.
+
+```yaml
+spec:
+  source:
+    helm:
+      valueFiles:
+        - values-*.yaml
+```
+
+### Review repository and hydration trust boundaries
+
+- Source Hydrator is beta and can use separate dry-source and sync-source
+  repositories. Diff and manifest operations use the dry source's revision.
+- Source Integrity provides opt-in alpha verification for dry sources. Gate it
+  according to the deployment's tolerance for alpha behavior.
+- Repo-server supports mutual TLS. Align certificates, trust roots, endpoints,
+  and rotation before requiring client authentication.
+- Azure DevOps repositories can use a service principal; Git and OCI
+  repositories can use Azure workload identity.
 
 ## Application and sync quick reference
 
 ### Enable automated sync explicitly
 
-`SyncPolicy.automated.enabled` makes automation intent explicit:
+Set automation intent on `SyncPolicy.automated.enabled`:
 
 ```yaml
 spec:
@@ -76,12 +93,13 @@ spec:
       enabled: true
 ```
 
-Review generated manifests and overlays for an omitted `enabled` field when
-the desired state depends on unambiguous automated-sync behavior.
+Review generators and overlays for omitted values when the intended behavior
+depends on unambiguous automated sync.
 
-### Configure missing-resource dry runs at Application scope
+### Configure missing-resource dry runs deliberately
 
-`SkipDryRunOnMissingResource` can be declared once for the Application:
+Set `SkipDryRunOnMissingResource` once at Application scope when a sync creates
+a type before applying instances of it:
 
 ```yaml
 spec:
@@ -90,131 +108,112 @@ spec:
       - SkipDryRunOnMissingResource=true
 ```
 
-Use it when a sync creates a type before applying instances of that type. Keep
-the scope deliberate: skipping a dry run also removes an early validation
-signal for genuinely missing APIs.
+Skipping the dry run also removes an early signal for genuinely missing APIs.
 
-### Review server-side apply migration
+### Plan field-manager migration
 
-Server-side apply has controls for field-manager migration. Before enabling or
-changing them, identify the existing manager, the intended Argo CD manager,
-and fields shared with other controllers. Inspect managed fields after the
-first migrated sync instead of treating a successful apply as proof of safe
-ownership transfer.
+Before changing server-side apply migration controls, identify the current
+manager, the desired Argo CD manager, and fields shared with other controllers.
+Inspect managed fields after the first migrated sync. A successful apply alone
+does not prove safe ownership transfer.
 
-### Make sync-window intent visible
+### Make sync-window intent explicit
 
-- AppProject sync windows accept a `description`; use it to record the reason,
-  owner, and expected exception path.
-- Sync-window matching has an opt-in AND operator. Enable it only when all
-  configured selectors must match; the default matching assumption may differ.
-
-### Inspect what actually synced
-
-Sync-result resource records include container images. Use them when checking
-which image accompanied a successful or failed deployment. Resource
-customization also applies to `CustomResourceDefinition` objects, so audit CRD
-customizations when comparison or health behavior changes cluster-wide.
+- Add a `description` that records purpose, owner, and exception path.
+- Enable AND matching only when every configured selector must match.
+- Use the overrun option only when an in-progress sync may continue past the
+  window's end.
 
 ## ApplicationSet quick reference
 
 ### Treat Progressive Sync as lifecycle control
 
-Progressive Sync is available in the UI, and generated Applications can be
-deleted in order when it is enabled. Design deletion stages as carefully as
-creation and update stages; downstream teardown can depend on upstream
-resources remaining available.
+Progressive Sync is visible in the UI, and generated Applications can be
+deleted in order. Design teardown stages as carefully as rollout stages because
+later deletion may depend on earlier resources remaining available.
 
-### Handle generator results explicitly
+### Handle empty and filtered generator results
 
-Pull Request generators can expose values to generated templates. Filters are
-provider-specific: Bitbucket Cloud supports target-branch filtering, Gitea
-supports label filtering, and Pull Request generation can filter by title.
-A missing repository yields zero results rather than an ApplicationSet error,
-so alert on an unexpected empty set.
+- Pull Request generators expose template values and can filter by title.
+  Bitbucket Cloud adds target-branch filtering; Gitea adds label filtering.
+- A missing repository returns zero results instead of failing the
+  ApplicationSet. Alert when an empty set is unexpected.
+- Git file generators can exclude files. Generators expose `repository_id`,
+  which is safer than parsing a clone URL for a stable repository key.
+- Repository discovery can filter archived repositories.
 
-Git file generators can exclude files, and generators can provide
-`repository_id`. Prefer repository identity over parsing a clone URL when the
-generated template needs a stable repository key.
+### Make concurrent deletion safe
 
-### Bound status growth
+ApplicationSets can manage generated Applications concurrently. During
+deletion, keep the controller's finalizer behavior intact: it retains the
+finalizer while children terminate and verifies terminating Applications
+against the API server.
 
-ApplicationSet status includes `status.resourcesCount`, and the default limit
-for status resources changed. Use the count to distinguish intentional
-truncation from missing generator output, and configure limits explicitly when
-status consumers require predictable cardinality.
+### Bound status consumption
+
+ApplicationSet status exposes `status.resourcesCount`, while the default limit
+for status resources changed. Use the count to distinguish truncation from
+missing generator output and configure an explicit limit for consumers that
+need predictable cardinality.
 
 ## Repository and rendering quick reference
 
 ### Preserve Source Hydrator intent
 
-- Webhooks recognize `sourceHydrator` fields.
-- Commit messages can be templated.
-- The source repository can authenticate through a credential template.
+- Webhooks recognize `sourceHydrator` fields and hydration commit messages are
+  templatable.
+- A credential template can authenticate the source repository.
 - Hydration preserves files it did not generate and places `.gitattributes` at
-  the hydrated repository root.
-
-Do not implement hydration cleanup by deleting unknown files; that conflicts
-with the preservation behavior. Review generated commit messages for useful,
-non-secret provenance.
+  the hydrated repository root. Do not clean hydration output by deleting
+  unknown files.
+- Queue concurrency is configurable, and the README template can be managed
+  dynamically from `argocd-cm`.
 
 ### Update manifest-generation inputs
 
-- Config-management plugins receive environment variables whose values are
-  empty. Distinguish an empty value from an absent variable in plugin code.
-- Manifest generation exposes the project as `ARGOCD_APP_PROJECT_NAME`.
-- Kustomize label handling supports `--include-templates`, and integrations can
-  ignore missing components.
-- Git and OCI repositories can use Azure workload identity. OCI source support
-  is beta, so gate it according to the deployment's tolerance for beta APIs.
+- Config-management plugins receive variables even when values are empty;
+  distinguish an empty value from an absent variable.
+- Manifest generation exposes the project through
+  `ARGOCD_APP_PROJECT_NAME`.
+- Kustomize supports label `--include-templates` and can ignore missing
+  components.
+- OCI sources are beta. Apply the same repository-authentication and rollout
+  discipline used for other beta APIs.
 
-## Access and CLI quick reference
+## CLI, API, and extension quick reference
 
-### Use the current CLI capabilities
+- Server-side diff is stable in CLI workflows; `get-resource` retrieves one
+  resource belonging to an Application.
+- CLI plugins add commands. Namespace-aware `argocd appset` and `argocd app`
+  operations avoid relying on a single control-plane namespace.
+- `bcrypt` prompts when `--password` is omitted. Argo CD and Helm registry
+  passwords can be supplied through standard input, keeping secrets out of
+  process arguments and shell history.
+- Event-list APIs return Argo CD's typed `EventList`; update clients that assume
+  an untyped Kubernetes list.
+- Custom UI extensions must follow React 19 integration guidance and can use
+  the exposed `ReactJSXRuntime` global.
 
-- Server-side diff is stable in CLI workflows.
-- `get-resource` retrieves one resource belonging to an Application.
-- CLI plugins can add commands.
-- `bcrypt` prompts when `--password` is omitted; the Argo CD password can also
-  be supplied through standard input. Avoid putting secrets in argv or shell
-  history.
-- Pod-log search can perform case matching.
-
-### Propagate caller identity safely
-
-The server forwards the authenticated user ID to extensions in a request
-header. Extensions should use that identity only within the trust boundary of
-the authenticated Argo CD server and must not accept a spoofable direct-client
-header as equivalent evidence.
-
-Bearer-token authentication is supported. OAuth2 login also accepts
-`--sso-host` to choose the SSO callback host; align that host with externally
-reachable routing and registered redirect URLs.
-
-## Operations, health, and observability
+## Operations, health, and observability quick reference
 
 ### Keep traces connected
 
-OpenTelemetry trace context propagates across HTTP requests. Preserve trace
-headers in proxies and extensions, and use the manifest-provided environment
-references for `otlp.attrs` when composing deployment overlays.
+OpenTelemetry context propagates over HTTP. Preserve trace headers across
+proxies and extensions, use the manifest environment references for
+`otlp.attrs`, and configure `ARGOCD_REPO_SERVER_OTLP_HEADERS` when repo-server
+export needs headers.
 
-### Expand probes and metrics deliberately
+### Protect repo-server availability
 
-- `argocd-server` exposes a gRPC health check suitable for operational probes.
-- Cluster metrics can add cluster names and labels.
-- GitHub API rate-limit and sync-duration metrics are available.
-- Log timestamp formatting is configurable, and klog follows the configured
-  log format.
-- Node labels can be propagated into the Application pod view.
+Large monorepos can cause lock contention severe enough to require repo-server
+pod restarts. Monitor saturation and restart frequency, expose the parallelism
+limit metric, and plan the patch-level upgrade that contains the deferred fix.
+Enable pprof from the parameters ConfigMap only within an appropriate access
+boundary.
 
-High-cardinality cluster labels and node labels can increase storage or UI
-costs. Select only labels used by dashboards, alerts, or operators.
+### Prefer built-in health and actions
 
-### Use built-in health and actions before custom Lua
-
-Built-in health coverage has expanded across common operators, Gateway API,
-policy, database, telemetry, and rollout resources. Resource actions now cover
-parameterized scaling, rollout flow control, Job lifecycle operations, and
-Numaplane promotion. Check the health-and-actions reference before maintaining
-a custom health script or action with overlapping behavior.
+Built-in health and resource actions cover common operators, Gateway API,
+policy, database, telemetry, scaling, rollout, Job, and Numaplane workflows.
+Check the health-and-actions reference before maintaining overlapping custom
+Lua.

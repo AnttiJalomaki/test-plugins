@@ -1,50 +1,63 @@
 # Data, Files, and Networking
 
-## Transfer and watch files
+## File system
 
-SDK 55 file-system writes can append data.
+### Writes and transfers
 
-SDK 56 expands the object API:
+Batch `55` adds append support to file-system writes.
 
-- `File.downloadFileAsync()` reports progress and accepts an `AbortSignal`.
-- File and directory copy/move operations accept `overwrite`.
-- `file.createUploadTask()` and `File.createDownloadTask()` create cancellable, resumable transfer tasks.
-- `File.upload()` handles simple uploads.
+Batch `56` expands transfers and picking:
+
+- `File.downloadFileAsync()` supports progress reporting and `AbortSignal` cancellation.
+- `copy` and `move` accept `overwrite`.
+- `file.createUploadTask()` and `File.createDownloadTask()` create cancellable, resumable tasks.
+- `File.upload()` handles a simple upload.
 - `File.pickFileAsync()` accepts multiple files and MIME types.
 - Experimental `File.watch()` and `Directory.watch()` subscribe to changes.
 
-`File` and `Directory` `copy()` and `move()` are asynchronous and return promises. Await them. Use `copySync()` or `moveSync()` only when synchronous I/O is intentional.
+`File` and `Directory` `copy()` and `move()` are asynchronous and return promises. Await them:
 
-## Query and inspect SQLite
+```ts
+await file.copy(destination);
+await directory.move(destination);
+```
 
-SDK 55 adds an on-device database inspector and an automatically parameterized tagged-template API:
+When blocking behavior is intentional, use `copySync()` or `moveSync()`.
+
+## Object-oriented data APIs
+
+The `/next` variants of `expo-contacts`, `expo-media-library`, and `expo-calendar` first introduced object-oriented `SharedObject` APIs. These mutate objects directly instead of passing IDs and support richer queries.
+
+The Calendar, Contacts, and MediaLibrary object APIs are stable in SDK 56. They add granular property loading and Builder-style queries; the original APIs are deprecated.
+
+## SQLite and cryptography
+
+### Parameterized SQL and inspection
+
+`expo-sqlite` provides an on-device database inspector and an automatically parameterized tagged-template API:
 
 ```ts
 const rows = await db.sql`SELECT * FROM users WHERE age > ${age}`;
 ```
 
-Use interpolation rather than constructing SQL text manually. In SDK 56, `expo-sqlite` uses native `ArrayBuffer` blobs and adds statement bind parameters and session changesets.
+Do not interpolate a hand-built SQL string when the tagged template can bind the value.
 
-## Adopt stable object APIs
+### Binary data and sessions
 
-The `/next` variants of `expo-contacts`, `expo-media-library`, and `expo-calendar` preview object-oriented SharedObject APIs in SDK 55. They mutate objects directly rather than passing IDs and provide richer queries.
+In SDK 56, `expo-sqlite` stores blobs with native `ArrayBuffer`, supports statement bind parameters, and adds session changesets.
 
-In SDK 56, the object-oriented Calendar, Contacts, and MediaLibrary APIs are stable. They support granular property loading and Builder-style queries; the original APIs are deprecated.
+`expo-crypto` adds AES-GCM in SDK 55.
 
-## Use the global Expo fetch
+## Server runtime
 
-`expo/fetch` supplies `globalThis.fetch` in SDK 56, so application code does not need a manual import. Restore the React Native implementation only when required:
+`expo-server` replaces `@expo/server` and provides server-runtime and hosting adapters. Expo Web's server-side rendering and data-loader APIs remain preview surfaces; validate deployment adapters against the selected rendering mode.
+
+## Global fetch
+
+`expo/fetch` supplies `globalThis.fetch` in SDK 56, so application code does not need to import it manually. To deliberately restore React Native fetch, set:
 
 ```sh
 EXPO_PUBLIC_USE_RN_FETCH=1
 ```
 
-On Android, Expo fetch can decompress Brotli, gzip, and zstd responses. It also supports `AbortSignal.timeout()` and `AbortSignal.any()`.
-
-## Host Expo server code
-
-`expo-server` replaces `@expo/server` in SDK 55. It provides server-runtime and hosting adapters; update package imports rather than keeping the old package name.
-
-## Encrypt with Expo Crypto
-
-`expo-crypto` adds AES-GCM support in SDK 55.
+On Android, Expo fetch decompresses Brotli, gzip, and zstd responses. It also implements `AbortSignal.timeout()` and `AbortSignal.any()` for timeout and composed cancellation.

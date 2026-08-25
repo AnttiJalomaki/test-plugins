@@ -1,106 +1,127 @@
 # Managed Agents and Administration
 
-## Managed Agents surface
+This reference consolidates Managed Agents guidance from `release-lifecycle`
+and `2026-08-01-2026-08-19`.
 
-Claude Managed Agents provides API-managed agents, containers, built-in
-tools, and server-sent event streaming. Core endpoints require:
+## Core beta contract
+
+Claude Managed Agents provides API-managed agents, containers, built-in tools,
+and server-sent event streaming. Use the following beta header on the core
+surface; memory-list endpoints use a different header described below.
 
 ```text
 Anthropic-Beta: managed-agents-2026-04-01
 ```
 
-Memory-list endpoints use a later beta header described below.
+## Start sessions and override one run
 
-## Session startup and overrides
+`POST /v1/sessions` accepts up to 50 `initial_events`. They may be
+`user.message` or `user.define_outcome` events. A non-empty list begins the
+agent loop in the session-creation call.
 
-`POST /v1/sessions` accepts at most 50 `initial_events` of type
-`user.message` or `user.define_outcome`. A non-empty list starts the agent loop
-in the same call.
+An agent with `type: "agent_with_overrides"` may replace model, system prompt,
+tools, MCP servers, or skills for that session without modifying the stored
+agent.
 
-An agent with `type: "agent_with_overrides"` may replace the model, system
-prompt, tools, MCP servers, or skills for only that session, without changing
-the stored agent.
+## Model settings and concurrent updates
 
-Put `effort` inside the agent's `model` object.
+Put `effort` inside the agent's `model` object, not at the agent root. Put
+`inference_geo` there as well when creating an agent, or override the inference
+location for one session.
 
-## Agent update concurrency
+When updating an agent, include `version` to request optimistic concurrency. A
+version mismatch returns 409. Omit it only when an unconditional update is
+intentional.
 
-Supplying `version` in an agent update enables optimistic concurrency. A
-version mismatch returns HTTP 409. Omitting `version` applies the update
-unconditionally.
-
-## Session and thread streams
+## Session and thread event streams
 
 `GET /v1/sessions/{session_id}/events/stream` accepts `event_deltas[]` to emit
 `event_start` and `event_delta` previews before the complete `agent.message`.
+The thread-level `/threads/{thread_id}/stream` accepts the same parameter but
+previews only that thread.
 
-The thread route `/threads/{thread_id}/stream` accepts the same parameter but
-previews only the selected thread.
-
-Session listings return both `prev_page` and `next_page`. Pass either cursor
-back through `page`.
+Session listings return `prev_page` and `next_page`; pass either cursor back
+through `page`.
 
 ## Memory-list header cutover
 
-For `GET /v1/memory_stores/{memory_store_id}/memories`, use:
+For `GET /v1/memory_stores/{memory_store_id}/memories`, replace the core header
+with:
 
 ```text
 Anthropic-Beta: agent-memory-2026-07-22
 ```
 
-The new contract:
+The endpoint now:
 
-- Uses stable server ordering.
-- Ignores `order_by` and `order`.
-- Accepts `depth` as 0, 1, or omitted.
-- Requires `path_prefix` to end in `/` and match whole path segments.
+- Uses stable server ordering and ignores `order_by` and `order`.
+- Accepts `depth` values of 0, 1, or omitted.
+- Requires `path_prefix` to end in `/` and match complete path segments.
 
-This header replaces `managed-agents-2026-04-01` on memory endpoints. Sending
-both returns HTTP 400. Old cursors cannot be reused. Explicit SDK beta lists
-must replace the old header rather than append the new one. The old header
-adopted the same list semantics on July 22.
+Sending both the memory and core beta headers returns 400. Old cursors cannot
+be reused. SDK code that passes explicit beta lists must replace the old value,
+not append the new one. The old header adopted the same list semantics on July
+22, but it is no longer the header for memory endpoints.
 
-## Memory, orchestration, and execution
+## Memory, dreams, and execution
 
-Memory and multiagent orchestration are public beta under the standard
-Managed Agents header. Dreams uses `dreaming-2026-04-21` to reorganize a
-memory store from earlier sessions.
+Memory and multiagent orchestration are public beta under the standard Managed
+Agents header. Dreams uses `dreaming-2026-04-21` to reorganize a memory store
+based on earlier sessions.
 
-Agents may run in self-hosted sandboxes and alter MCP-server or tool
-configuration during an active session.
+Agents may execute in self-hosted sandboxes and change MCP-server or tool
+configuration during an active session. A tool output longer than 100,000
+characters spills to a sandbox file; the model receives a truncated preview
+and the file path. Preserve the path for later tool or agent access.
 
-Tool output over 100,000 characters spills into a sandbox file. The model
-receives a truncated preview and the file path.
-
-## Secrets
+## Vaults and secret injection
 
 Vaults support environment-variable secrets and background refresh for
-`mcp_oauth`. An `injection_location` controls substitution at egress into
-request headers, the body, or both.
+`mcp_oauth`. `injection_location` controls egress substitution into request
+headers, request bodies, or both. Keep raw credentials out of prompts and tool
+results; use vault injection at the external boundary.
 
 ## Schedules and webhooks
 
-Sessions may run on cron schedules.
+Sessions may run on cron schedules. Webhooks cover session, thread, vault,
+agent, deployment, deployment-run, environment, and memory-store lifecycles.
+Events named `session.thread_*` identify their thread with
+`session_thread_id`.
 
-Webhooks cover session, thread, vault, agent, deployment, deployment-run,
-environment, and memory-store lifecycles. Events named
-`session.thread_*` carry `session_thread_id`.
+## Hard spend budgets
 
-## Mid-conversation instructions
+A session can have a hard spend cap calculated at public list rates. When it is
+reached, the session pauses with `stop_reason: "budget_reached"`. Changing or
+removing the budget resumes the session.
 
-Fable 5, Mythos 5, and Opus 4.8 accept a `role: "system"` message in the
-`messages` array immediately after a user turn, without a beta header. This
-changes instructions while preserving the earlier prompt cache.
+A deployment-level budget applies independently to every session the
+deployment starts; it is not one shared allowance across all deployment
+sessions.
 
-## Enterprise users and key lifetimes
+## Advisor roster entries
 
-The Enterprise user-management API manages members, invites, groups, and
-roles. Group and custom-role operations require
-`ce-user-management-2026-07-13`; member and invite operations do not.
+The primary session thread can consult an advisor model in the middle of a
+turn. Add `{"type": "advisor"}` plus the advisor model to the agent's
+multiagent roster. The advisor must be at least as capable as the agent's own
+model.
 
-An Admin key with `read:org_audit` may call every user-management `GET`
-endpoint.
+This roster facility is distinct from the request-level beta advisor tool in
+[Tools and streaming](tools-and-streaming.md).
 
-Console-created API and Admin API keys may now expire. Existing keys are
-unchanged. Keys with a lifetime of at least seven days trigger a
-pre-expiration email, and the Admin API reports the expiration.
+## Repository-mounted skills
+
+When a session mounts a GitHub repository, it discovers skills beneath the
+repository root's `.claude/skills` directory at session startup. Those skills
+remain available for that session. Ensure required skill files are present
+before session creation; later repository changes are not a substitute for the
+startup discovery step.
+
+## Operational checklist
+
+- Keep core and memory beta headers mutually exclusive on memory routes.
+- Supply update versions when overwrites must be prevented.
+- Treat delta previews as provisional until the complete event arrives.
+- Persist spill-file paths from oversized tool results.
+- Monitor session and deployment budgets independently.
+- Validate advisor capability ordering when building the roster.
+- Confirm repository skill discovery in a fresh mounted session.

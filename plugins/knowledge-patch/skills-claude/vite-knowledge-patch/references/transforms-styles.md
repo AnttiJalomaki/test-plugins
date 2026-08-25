@@ -1,26 +1,31 @@
 # Transforms, TypeScript, and Styles
 
-## Lightning CSS compatibility
+## Remove the Sass Legacy API
 
-When `css.transformer` is `'lightningcss'`, CSS files can import external CSS
-files (since 8.1.0):
+Vite `7.0.0` removes support for the Sass legacy API. Projects still relying
+on that interface must migrate before upgrading to Vite 7.
+
+Search both project configuration and dependencies that customize Sass. A
+successful install alone does not show that the removed build-time interface
+is no longer used.
+
+## Use Expanded Lightning CSS Interoperability
+
+Since `8.1.0`, projects using `css.transformer: 'lightningcss'` can:
+
+- Import external CSS files from CSS files.
+- Let plugins register file dependencies.
+
+These capabilities remove two earlier compatibility gaps with the PostCSS
+transformer.
 
 ```ts
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  css: {
-    transformer: 'lightningcss',
-  },
+  css: { transformer: 'lightningcss' },
 })
 ```
 
-Plugins used with the Lightning CSS transformer can also register file
-dependencies. External CSS imports and plugin file-dependency registration
-close two earlier compatibility gaps with the PostCSS transformer.
-
-## Sass legacy API removal
-
-Vite no longer supports the Sass legacy API (since 7.0.0). Migrate any project
-or integration that still depends on that deprecated API before upgrading;
-there is no compatibility path through the removed support.
+Plugin authors can register the files their CSS work depends on, while
+applications can keep external CSS imports when selecting Lightning CSS.

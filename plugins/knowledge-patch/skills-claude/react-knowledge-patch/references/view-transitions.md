@@ -1,53 +1,39 @@
 # View Transitions
 
-The `<ViewTransition>` and `addTransitionType` APIs described by `19.2-guide` are available in the Canary channel and currently target only the DOM.
+## Activate Canary DOM transitions through React
 
-## Activation
-
-React owns the underlying `document.startViewTransition()` call. Do not call it around React updates yourself.
-
-A normal synchronous `setState` does not activate a boundary. These update sources can activate View Transitions:
-
-- `startTransition`;
-- `useTransition`;
-- `useDeferredValue`; and
-- a Suspense reveal.
+In `19.2-guide`, `<ViewTransition>` and `addTransitionType` are Canary APIs and
+work only in the DOM. React owns the underlying
+`document.startViewTransition()` call. An ordinary synchronous `setState`
+does not activate a boundary. Activation can come from an update driven by
+`startTransition` or `useTransition`, `useDeferredValue`, or a Suspense reveal:
 
 ```jsx
 <ViewTransition enter="slide-in" exit="slide-out">
   {show && <Panel />}
 </ViewTransition>
 
-startTransition(() => {
-  setShow(value => !value);
-});
+startTransition(() => setShow(value => !value));
 ```
 
-React classifies each activation as `enter`, `exit`, `update`, or `share`.
+React classifies activation as `enter`, `exit`, `update`, or `share`. For
+enter and exit, place the boundary before any host DOM wrapper in the inserted
+or removed subtree. An Activity becoming visible or hidden during a
+Transition also activates enter or exit while retaining its state.
 
-For `enter` and `exit`, place the `<ViewTransition>` boundary before any host DOM wrapper in the inserted or removed subtree:
+## Select classes by trigger and type
 
-```jsx
-// The boundary directly observes insertion and removal.
-{show && (
-  <ViewTransition enter="slide-in" exit="slide-out">
-    <section>...</section>
-  </ViewTransition>
-)}
-```
+In `19.2-guide`, the `default`, `enter`, `exit`, `update`, and `share` props
+accept one of:
 
-When an Activity becomes visible or hidden during a Transition, it activates `enter` or `exit` while preserving the Activity subtree's state.
+- `"auto"`
+- `"none"`
+- a view-transition class
+- an object keyed by types registered with `addTransitionType`
 
-## Classes and transition types
-
-The `default`, `enter`, `exit`, `update`, and `share` props accept:
-
-- `"auto"`;
-- `"none"`;
-- one view-transition class name; or
-- an object whose keys are types registered with `addTransitionType`.
-
-`default="none"` disables every trigger that is not configured explicitly.
+`default="none"` disables every unspecified trigger. Style the transition
+with class selectors such as `::view-transition-old(.slide-left)` instead of
+manually assigning browser transition names.
 
 ```jsx
 <ViewTransition
@@ -63,40 +49,19 @@ startTransition(() => {
 });
 ```
 
-Style the class through its view-transition pseudo-elements:
+## Pair shared elements carefully
 
-```css
-::view-transition-old(.slide-left) {
-  animation-name: leave-left;
-}
+Set `name` only to pair different mounted and removed trees as a shared
+element transition (`19.2-guide`). Names must be unique among every boundary
+mounted at the same time. A matching removed and inserted pair within one
+Transition activates `share`, which takes precedence over `enter` and `exit`.
 
-::view-transition-new(.slide-left) {
-  animation-name: enter-left;
-}
-```
+## Clean up imperative animations
 
-Do not implement class-based transitions by manually assigning browser view-transition names.
-
-## Shared elements
-
-Set `name` only when pairing different mounted and removed trees as one shared element:
-
-```jsx
-<ViewTransition name={`photo-${photo.id}`} share="photo-morph">
-  <img src={photo.src} alt="" />
-</ViewTransition>
-```
-
-Every `name` must be unique among all simultaneously mounted View Transition boundaries. A matching removed and inserted pair within one Transition activates `share`; `share` takes precedence over `enter` and `exit` for that pair.
-
-## Imperative event handlers
-
-`onEnter`, `onExit`, `onUpdate`, and `onShare` receive:
-
-1. an instance with `old`, `new`, `group`, and `imagePair` pseudo-elements plus its `name`; and
-2. an array of active transition types.
-
-Use the pseudo-elements with the Web Animations API when class-based animation is insufficient:
+In `19.2-guide`, `onEnter`, `onExit`, `onUpdate`, and `onShare` receive two
+arguments: an instance and an array of transition types. The instance exposes
+the `old`, `new`, `group`, and `imagePair` pseudo-elements plus its `name`.
+Return cleanup from each handler so interrupted Web Animations are cancelled:
 
 ```jsx
 <ViewTransition
@@ -105,7 +70,6 @@ Use the pseudo-elements with the Web Animations API when class-based animation i
       [{ opacity: 0 }, { opacity: 1 }],
       { duration: types.includes("fast") ? 150 : 300 },
     );
-
     return () => animation.cancel();
   }}
 >
@@ -113,10 +77,12 @@ Use the pseudo-elements with the Web Animations API when class-based animation i
 </ViewTransition>
 ```
 
-Return a cleanup function from every handler so interrupted animations and other imperative work are cancelled.
+## Unblock routers before measurement
 
-## Router integration
+React waits for a pending Navigation before measuring the transition
+(`19.2-guide`). A router that blocks Navigation on React must unblock it in
+`useLayoutEffect`; waiting for `useEffect` deadlocks transition measurement.
 
-React waits for a pending Navigation before measuring a transition. If a router blocks that Navigation on React, it must unblock in `useLayoutEffect`. Waiting for `useEffect` creates a deadlock because measurement waits for navigation while navigation waits for an Effect that cannot run.
-
-Transitions initiated by legacy `popstate` must finish synchronously, so React skips their animations. A router needs the Navigation API to animate browser back navigation.
+Transitions started from legacy `popstate` must finish synchronously, so React
+skips their animations. A router needs the Navigation API to animate browser
+back navigation.

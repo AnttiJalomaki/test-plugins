@@ -1,132 +1,118 @@
 # Prisma Postgres and product surfaces
 
-Use this reference when provisioning or operating Prisma Postgres, choosing local versus hosted connections, integrating through APIs or MCP, or working with Prisma Compute and Prisma Next.
+## Provision and link Prisma Postgres
 
-## Contents
-
-- [Provision Prisma Postgres](#provision-prisma-postgres)
-- [Develop with local databases](#develop-with-local-databases)
-- [Connect directly and pool connections](#connect-directly-and-pool-connections)
-- [Choose a region and integration](#choose-a-region-and-integration)
-- [Use backups, metrics, and account controls](#use-backups-metrics-and-account-controls)
-- [Automate with the Management API](#automate-with-the-management-api)
-- [Operate through MCP](#operate-through-mcp)
-- [Deploy with Prisma Compute](#deploy-with-prisma-compute)
-- [Evaluate Prisma Next](#evaluate-prisma-next)
-
-## Provision Prisma Postgres
-
-Prisma Postgres became generally available in 6.4.0. Start an interactive project with the database-aware init path:
+Prisma Postgres became generally available in 6.4.0. `prisma init --db` was
+the initial CLI provisioning entry point:
 
 ```sh
 npx prisma init --db
 ```
 
-Prompt-driven scaffolding arrived in 6.6.0. `--prompt` generates a schema from a natural-language description and deploys it to a new Prisma Postgres instance; `--vibe` is an alias.
+`prisma init --prompt` can derive a schema from a natural-language description
+and deploy it to a new instance; `--vibe` is an alias (6.6.0).
 
 ```sh
 npx prisma init --prompt "Simple habit tracker application"
 ```
 
-For a temporary database without authentication, use `create-db` (6.13.0):
+For an existing local project, `prisma postgres link` links a Prisma Postgres
+database and introduced the `prisma postgres` command group (7.6.0).
 
 ```sh
-npx create-db
+npx prisma postgres link
 ```
 
-The database expires after 24 hours unless claimed into a Prisma Console account. Use machine-readable output in scripts (6.15.0):
+`prisma bootstrap` inspects project state and runs only missing setup steps:
+scaffold or initialize, authenticate and link a database, install dependencies,
+migrate, generate, and seed. It confirms side effects, skips completed steps on
+reruns, accepts templates, and supports non-interactive API credentials plus a
+database ID (7.7.0).
 
 ```sh
-npx create-db --json
+npx prisma@latest bootstrap
+npx prisma@latest bootstrap --template nextjs
+npx prisma@latest bootstrap --api-key "$PRISMA_API_KEY" --database "db_abc123"
 ```
 
-Use `prisma bootstrap` for a state-aware end-to-end setup and `prisma postgres link` for an existing project; their command behavior is detailed in the tooling reference.
+`npx create-db` creates an authentication-free temporary Prisma Postgres
+database that expires after 24 hours unless claimed (6.13.0). Add `--json` to
+obtain script-consumable connection details (6.15.0).
 
-## Develop with local databases
+## Run and manage local instances
 
-`prisma dev` starts local Prisma Postgres without Docker and prints a Prisma connection URL (6.8.0):
+`prisma dev` starts a local Prisma Postgres server without Docker and prints a
+connection URL (6.8.0). Put that URL in a PostgreSQL datasource; migrations and
+queries then work as they do against a hosted instance. Local databases persist
+across runs, multiple instances can run concurrently, and `prisma init` chose
+local Prisma Postgres by default as of 6.9.0.
 
 ```sh
 npx prisma dev
 ```
 
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = "prisma+postgres://localhost:51213/?api_key=..."
-}
-```
+Use `prisma dev stop <globs>` to stop matching instances and
+`prisma dev rm <globs>` to remove their persisted files. These commands also
+manage instances started from the editor extension (6.11.0).
 
-The schema example reflects the original command behavior; current projects put the CLI datasource URL in Prisma Config.
+The editor's local database management does not require a Console login as of
+6.15.0. An Early Access direct `postgres://` URL for local instances appeared
+in 6.10.0, allowing normal PostgreSQL tools and non-Prisma libraries to connect.
 
-Local databases persist across runs and multiple instances can run concurrently as of 6.9.0. That release also made local Prisma Postgres the default database chosen by `prisma init`.
+## Choose direct, pooled, and cached connections
 
-Manage instances by glob with `prisma dev stop <globs>` and `prisma dev rm <globs>`, added in 6.11.0:
-
-```sh
-prisma dev stop mydb
-prisma dev rm mydb
-```
-
-`stop` stops matching instances; `rm` removes them from the file system. These commands can also manage instances started by the editor extension.
-
-Local instances can expose a standard `postgres://` URL for non-Prisma tools, an Early Access capability introduced in 6.10.0. The editor extension can push a local instance to the hosted service (6.10.0), while its local database management UI no longer requires a Console login (6.15.0).
-
-## Connect directly and pool connections
-
-New hosted databases began supplying standard PostgreSQL TCP URLs in 6.9.0, letting PostgreSQL clients such as Drizzle, Kysely, TypeORM, and command-line tools connect without Prisma ORM. At introduction, serverless environments could instead use Prisma's Early Access serverless driver. The direct connection path became generally available for production use in 6.17.0.
-
-Use serverless connection options only when the execution environment requires them. The standard URL keeps the database interoperable with PostgreSQL tooling.
-
-Opt into pooling on a direct Prisma Postgres URL with `pool=true` (6.19.0):
+Standard `postgres://` TCP URLs for hosted Prisma Postgres appeared in 6.9.0
+and became generally available for production in 6.17.0. Use them with normal
+PostgreSQL tools and libraries. The initial release also offered an Early
+Access serverless driver for serverless environments. Add `pool=true` to opt
+into pooling on a direct URL (6.19.0):
 
 ```text
 postgres://.../postgres?sslmode=require&pool=true
 ```
 
-Prisma Postgres provides native pooling. Prisma Accelerate is positioned as the caching layer (7.0.0); existing Accelerate URLs continue to work and current clients receive them through `accelerateUrl`.
+Prisma Postgres provides the pooled database layer. Prisma Accelerate is the
+dedicated cache layer; existing Accelerate connection strings continue to
+work, while current clients pass one through `accelerateUrl` (7.0.0).
 
-## Choose a region and integration
+## Operate instances in Prisma Console
 
-Region additions include:
+The Console can restore an automated backup from its **Backups** tab (6.9.0).
+It also supports revoking connected OAuth applications immediately (6.14.0).
 
-- Asia Pacific (Singapore), `ap-southeast-1` (6.8.0).
+Console reporting expanded in 6.17.0 with estimated upcoming invoices, total
+storage, database counts, cumulative operations, and operations per day. Since
+6.18.0, per-database views also show total egress, average response size,
+average query duration, and query-caching guidance.
+
+Prisma Postgres regions added during this stream include:
+
+- Singapore, `ap-southeast-1` (6.8.0).
 - San Francisco, `us-west-1` (6.9.0).
 - Frankfurt, `eu-central-1` (6.11.0).
 
-Prisma Postgres entered the Vercel Marketplace in 6.7.0, supporting dashboard provisioning, Vercel billing, and one-click application connection. By 6.11.0 it worked with all PostgreSQL Vercel templates, including applications using Drizzle ORM or Postgres.js.
-
-Additional integrations:
-
-- Pipedream workflows can provision and use databases in response to connected-application events without custom provisioning scripts (6.15.0).
-- A database can be added to a Stripe project through the one-command integration in the `product-updates` batch; it includes spending limits and CLI plan changes.
-
-A private Early Access capability introduced in 6.7.0 allows frontend applications to access Prisma Postgres directly under fine-grained TypeScript security rules. It requires admission to that private program; do not treat it as a generally available client architecture.
-
-## Use backups, metrics, and account controls
-
-The Console **Backups** tab can restore a database to an automated backup selected by the user (6.9.0).
-
-Console operational and billing surfaces include:
-
-- Estimated upcoming invoice, total storage, database count, cumulative operations, and operations per day (6.17.0).
-- Per-database total egress, average response size, average query duration, and query-caching guidance (6.18.0).
-- A Pricing Calculator based on predicted storage and operation counts for operation-based plans (6.11.0).
-- Query Insights embedded in Studio for investigating slow queries beside the browsed data (`product-updates`).
-
-Prisma Console lists connected OAuth applications and can revoke an application's access immediately (6.14.0).
-
-Prisma Postgres can enable `pgvector` in Early Access (6.13.0), but that release does not provide native Prisma ORM vector fields or operators. Create the extension in a custom migration and use TypedSQL for vector operations.
+The Pricing Calculator estimates plan charges from expected storage and
+operation counts (6.11.0).
 
 ## Automate with the Management API
 
-The Prisma Postgres REST Management API was introduced in 6.13.0 for programmatic project and database operations. It can provision and delete databases, create or retrieve connection strings, and manage Console projects.
+The Management API first supported provisioning and deleting databases,
+creating or retrieving connection strings, and managing Console projects in
+6.13.0. It became GA in 6.15.0 and can create a project without a default
+database, allowing project and database provisioning to be separate steps.
 
-The API became generally available in 6.15.0. A project no longer needs an automatically created default database, so project creation and database provisioning can be independent steps.
+Prisma Compute's Public Beta API exposes `/v1/apps` and `/v1/deployments`,
+including deployment logs and failed-build diagnostics (product-updates).
 
-## Operate through MCP
+Prisma Platform stores credentials at
+`~/.config/prisma-platform/auth.json`. Since 7.9.0 the file is created with
+mode `0o600` and its directory with `0o700`; preserve those private
+permissions.
 
-The local Prisma Postgres MCP server entered Preview in 6.6.0. It can create databases, design schemas, and work through migrations via the Prisma CLI:
+## Use MCP administration and documentation surfaces
+
+The CLI-hosted Prisma Postgres MCP server began in Preview in 6.6.0 and can
+create databases, design schemas, and work through migrations:
 
 ```json
 {
@@ -139,24 +125,44 @@ The local Prisma Postgres MCP server entered Preview in 6.6.0. It can create dat
 }
 ```
 
-The hosted MCP endpoint added in 6.10.0 can manage databases and connection strings, create and re-instantiate backups, execute SQL, and introspect schemas:
+A remote server added database and connection-string management, backup
+creation and re-instantiation, plain SQL, and schema introspection (6.10.0):
 
 ```sh
 npx -y mcp-remote https://mcp.prisma.io/mcp
 ```
 
-The Prisma MCP server can also answer cited documentation questions about Prisma ORM, Prisma Postgres, and Prisma Compute without extra setup (`product-updates`).
+The Prisma MCP server can also answer cited documentation questions about
+Prisma ORM, Prisma Postgres, and Prisma Compute without extra setup
+(product-updates). It deliberately does not expose a migration-reset tool;
+destructive resets go through the guarded CLI path as of 7.9.0.
 
-## Deploy with Prisma Compute
+## Use marketplace and workflow integrations
 
-Prisma Compute is in Public Beta in the `product-updates` batch. It deploys TypeScript applications beside Prisma Postgres and supports custom domains and database branches.
+- Vercel Marketplace can provision, bill, and one-click connect Prisma
+  Postgres (6.7.0). Since 6.11.0 it works with every Vercel PostgreSQL template,
+  including templates using other database libraries.
+- The editor extension can push a local instance to the cloud (6.10.0).
+- Pipedream workflows can provision and use Prisma Postgres in response to
+  connected-application events (6.15.0).
+- A Stripe project can add a database with one command, with spending limits
+  and CLI plan changes (product-updates).
 
-Define deployment configuration in `prisma.compute.ts`. If a deployment regresses, restore any prior service version from Prisma Console.
+An invite-only direct-frontend feature uses TypeScript security rules for
+fine-grained database access (6.7.0). Treat it as private Early Access rather
+than a generally available application architecture.
 
-The Compute Management API manages Public Beta services through `/v1/apps` and `/v1/deployments`. It also exposes deployment logs and failed-build diagnostics, allowing automation without the dashboard.
+## Account for extension and next-generation product surfaces
 
-## Evaluate Prisma Next
+Prisma Postgres can enable `pgvector`, but Prisma ORM did not provide native
+vector support when introduced. Create the extension in custom migration SQL
+and use TypedSQL for vector operations (6.13.0).
 
-Prisma Next adds schema-language support for scalar lists and MongoDB enums, reads native PostgreSQL enums, and previews migrations (`product-updates`). Setup paths exist for both new and existing PostgreSQL and MongoDB projects.
+Prisma Next adds scalar list fields, MongoDB enums, native PostgreSQL enum
+reading, migration previews, and setup paths for new or existing PostgreSQL
+and MongoDB projects (product-updates).
 
-Prisma ORM's current major support for MongoDB differs from Prisma Next's advertised MongoDB schema capabilities; do not assume one product's compatibility statement applies to the other.
+Prisma Compute entered Public Beta with TypeScript applications deployed next
+to Prisma Postgres, database branches, and custom domains. Configure it in
+`prisma.compute.ts`; use Prisma Console to roll back to any earlier service
+version (product-updates).

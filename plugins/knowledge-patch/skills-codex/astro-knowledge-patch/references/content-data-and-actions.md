@@ -1,15 +1,14 @@
 # Content, data, and Actions
 
-## Build-time collection loaders
+## Build-time loader IDs and parsing
 
-### `glob()` IDs
+The 5.0-guides behavior for `glob()` is:
 
-The `glob()` loader derives URL-friendly IDs from filenames. An entry's `slug` field overrides that generated ID, while `generateId` applies a collection-wide mapping and receives the source entry path; it can preserve source casing or apply another convention (`5.0-guides`).
+- IDs are URL-friendly forms of filenames.
+- An entry's `slug` overrides its generated ID.
+- `generateId({ entry })` receives the source entry path and can preserve casing or apply another collection-wide mapping.
 
 ```ts
-import { defineCollection } from 'astro:content';
-import { glob } from 'astro/loaders';
-
 const authors = defineCollection({
   loader: glob({
     base: './src/data/authors',
@@ -19,13 +18,9 @@ const authors = defineCollection({
 });
 ```
 
-### Single-file data
-
-`file()` turns one JSON or YAML array/object, or the top-level tables of one TOML file, into entries (`5.0-guides`). Array members must have unique `id` values, object keys become IDs, and IDs are not generated automatically. A synchronous or asynchronous `parser` can handle formats such as CSV or select an array nested inside JSON.
+Also in 5.0-guides, `file()` turns one JSON or YAML array/object, or the top-level tables of a TOML file, into entries. Array items need unique `id` values; object keys become IDs; IDs are not generated automatically. A sync or async `parser` can parse CSV or select a nested array:
 
 ```ts
-import { file } from 'astro/loaders';
-
 const dogs = defineCollection({
   loader: file('src/data/pets.json', {
     parser: (text) => JSON.parse(text).dogs,
@@ -33,23 +28,25 @@ const dogs = defineCollection({
 });
 ```
 
-The `glob()` loader parses `.toml` files natively as of `5.12.0`:
+Projects extending `astro/tsconfigs/base`, or no built-in Astro template, must enable both `strictNullChecks` and `allowJs`; the `strict` and `strictest` templates already do.
 
-```ts
-const spacecraft = defineCollection({
-  loader: glob({ pattern: '*.toml', base: './src/content/spacecraft' }),
-});
-```
+Since 5.12.0, `glob()` parses `.toml` files natively. Since 5.17.0, `retainBody: false` omits raw `entry.body` to shrink large data stores while retaining `entry.rendered.html` and `entry.filePath`; it defaults to `true`.
 
-### Collection TypeScript settings and schemas
+## Generated schemas
 
-Projects that extend `astro/tsconfigs/base`, or use no built-in Astro template, must enable both `strictNullChecks` and `allowJs`. The `strict` and `strictest` templates already do so (`5.0-guides`).
+Astro writes one schema per collection to `.astro/collections/<name>.schema.json` (5.0-guides). JSON files can use a relative `$schema`; VS Code `json.schemas` and `yaml.schemas` can associate it with file groups.
 
-Astro generates one JSON Schema per collection at `.astro/collections/<name>.schema.json`. A JSON file can use a relative `$schema` path; editor settings such as VS Code's `json.schemas` and `yaml.schemas` can associate a generated schema with file groups (`5.0-guides`).
+## Live collections
 
-### Rendering loader-provided Markdown
+Live collections in 5.0-guides fetch at request time, require an on-demand adapter, and do not persist through the Content Layer. Export them from `src/live.config.ts` with `defineLiveCollection()`. There are no built-in live loaders: a custom loader implements `loadCollection` and `loadEntry`, not the build-time loader's `load`.
 
-A custom loader's context provides `renderMarkdown(content)`, which uses project Markdown settings and plugins and returns `{ html, metadata }` (`5.9.0`). Store that value as the entry's `rendered` property to enable the normal `render(entry)` and `<Content />` flow:
+An optional Zod schema validates and transforms at runtime and overrides loader-supplied types. Runtime MDX and image optimization are unsupported.
+
+`getLiveCollection(name, filters)` returns `{ entries, error }`; `getLiveEntry(name, id)` returns `{ entry, error }`. Filters are loader-specific. `render(entry)` works only if the loader supplied `rendered`. Handle loader errors or Astro's `LiveEntryNotFoundError`, `LiveCollectionValidationError`, `LiveCollectionCacheHintError`, and `LiveCollectionError` from `astro/content/runtime` rather than treating every missing result alike.
+
+## Rendering loader-provided Markdown
+
+Since 5.9.0, a custom loader's context provides `renderMarkdown(content)`, using project Markdown settings and returning `{ html, metadata }`. Store it as the entry's `rendered` value to enable `render(entry)` and `<Content />`:
 
 ```ts
 async load({ renderMarkdown, store }) {
@@ -65,93 +62,22 @@ async load({ renderMarkdown, store }) {
 }
 ```
 
-### Omitting raw bodies
+## Deferred rendering and storage
 
-For large `glob()` collections, `retainBody: false` omits raw source from `entry.body` and reduces the content data store (`5.17.0`). It defaults to `true`. Rendered Markdown remains in `entry.rendered.html` and `entry.filePath` remains available.
+In 7.0.1-7.2.4, `glob({ deferRender: true })` delays rendering supported content until a page renders it, reducing sync/build memory; the default is `false`.
 
-```ts
-const blog = defineCollection({
-  loader: glob({
-    pattern: '**/*.md',
-    base: './src/content/blog',
-    retainBody: false,
-  }),
-});
-```
+The same batch adds `experimental.collectionStorage: 'chunked'`, which replaces `.astro/data-store.json` with content-addressed files under `.astro/data-store/`. Use `{ type: 'chunked', chunkSize }` to choose a chunk size.
 
-## Live collections
-
-Live collections load on every request rather than persisting through the Content Layer and therefore require an on-demand adapter (`5.0-guides`). Export them from `src/live.config.ts` with `defineLiveCollection()`. There are no built-in live loaders: a custom live loader implements `loadCollection` and `loadEntry` rather than a build-time loader's `load`.
-
-```ts
-import { defineLiveCollection } from 'astro:content';
-import { apiLoader } from './loaders/api-loader';
-
-const products = defineLiveCollection({
-  loader: apiLoader({ endpoint: process.env.API_URL }),
-});
-
-export const collections = { products };
-```
-
-An optional Zod schema validates and transforms results at runtime and takes precedence over types supplied by the loader. Live collections do not support runtime MDX or image optimization.
-
-### Query results and rendering
-
-- `getLiveCollection(name, filters)` returns `{ entries, error }`; filters are defined by the loader.
-- `getLiveEntry(name, id)` returns `{ entry, error }`.
-- `render(entry)` works only if the loader returned a `rendered` property.
-- Loader-defined errors can coexist with `LiveEntryNotFoundError`, `LiveCollectionValidationError`, `LiveCollectionCacheHintError`, and `LiveCollectionError` from `astro/content/runtime`. Handle network, missing-entry, cache-hint, and validation failures separately.
-
-```astro
----
-export const prerender = false;
-import { getLiveEntry } from 'astro:content';
-import { LiveEntryNotFoundError } from 'astro/content/runtime';
-
-const id = Astro.params.id;
-if (id === undefined) return Astro.redirect('/404');
-const { entry, error } = await getLiveEntry('products', id);
-if (error instanceof LiveEntryNotFoundError) Astro.response.status = 404;
----
-```
+Content entries can expose an optional loader-provided `digest`, suitable as an incremental `getStaticPaths()` cache key.
 
 ## Astro DB
 
-Text columns can declare an `enum` array to narrow their generated TypeScript type to a string union (`5.13.0`). The option performs no runtime validation, so application code must tolerate values that have been added, removed, or changed.
+Since 5.13.0, `column.text({ enum: [...] })` narrows the generated TypeScript type to a string union but performs no runtime validation. Application code must tolerate enum evolution.
 
-```ts
-import { column, defineTable } from 'astro:db';
+Since 5.14.0, `@astrojs/db` accepts `mode: 'web'` for libSQL in non-Node runtimes such as workerd and Deno; `node` remains the default.
 
-const User = defineTable({
-  columns: {
-    rank: column.text({ enum: ['user', 'mod', 'admin'] }),
-  },
-});
-```
+## Actions and framework state
 
-For non-Node runtimes such as Cloudflare workerd and Deno, configure `@astrojs/db` with `mode: 'web'` to use the web-runtime libSQL driver. `node` remains the default (`5.14.0`).
+Astro 5.14.0 stabilizes `withState()` and `getActionState<T>()` from `@astrojs/react/actions`. `withState()` adapts an Astro Action for React `useActionState()`, while `getActionState(context)` retrieves prior state in the handler; remove the former `experimental_` prefixes.
 
-## Actions
-
-### Extracting accepted input
-
-`ActionInputSchema<T>` from `astro:actions` extracts an Action's Zod input schema (`5.16.0`). Pass it to `z.input<>` to derive the accepted input data type without duplicating the schema.
-
-```ts
-import { type ActionInputSchema, defineAction } from 'astro:actions';
-import { z } from 'astro/zod';
-
-const contactAction = defineAction({
-  accept: 'form',
-  input: z.object({ email: z.string().email(), message: z.string() }),
-  handler: ({ email, message }) => ({ success: true }),
-});
-
-type ContactSchema = ActionInputSchema<typeof contactAction>;
-type ContactInput = z.input<ContactSchema>;
-```
-
-### React action state
-
-The stable `withState()` helper adapts an Astro Action for React's `useActionState()`, and `getActionState<T>(context)` reads the previous state in the action handler (`5.14.0`). Import both from `@astrojs/react/actions` without their former `experimental_` prefixes.
+Since 5.16.0, `ActionInputSchema<T>` from `astro:actions` extracts an Action's Zod schema. Use `z.input<ActionInputSchema<typeof action>>` to obtain accepted input data without duplicating the schema.

@@ -1,11 +1,14 @@
 # Routing, SSR, and Integrations
 
-## Route definitions
+## Typed route definitions
 
-`Routes` requires a `fallback`; the fallback is no longer an optional prop on
-`Router` (since 0.7.0). Paths are typed segments rather than unvalidated
-strings. `path!` supplies concise migration syntax. Use `ParentRoute` for a
-route with children and `FlatRoutes` when routes are not nested:
+Route definitions changed in 0.7.0:
+
+- Put the required `fallback` on `Routes`, not `Router`.
+- Use `FlatRoutes` for unnested routes.
+- Use `ParentRoute` for routes with children.
+- Replace string paths with typed path segments; `path!` is the concise
+  migration syntax.
 
 ```rust
 view! {
@@ -17,47 +20,41 @@ view! {
 }
 ```
 
-Route fallbacks can set a custom response status or redirect (since 0.8.0),
-instead of being limited to fallback view content.
+## Multi-valued parameters
 
-## Parameters
-
-`ParamsMap` stores multiple query-string values for each key (since 0.7.0).
+`ParamsMap` can hold multiple query-string values for one key (since 0.7.0).
 Its API distinguishes appending from replacing and fetching one value from
-fetching all values. Choose the operation that matches whether repeated query
-parameters are meaningful.
+fetching every value. Choose the operation explicitly rather than assuming a
+single-value map.
 
-The `Params` derive macro works on stable Rust (since 0.8.0), so typed
-parameter structs do not require nightly solely for that derive.
+The `Params` derive macro works on stable Rust as of 0.8.0; typed parameter
+structs no longer need nightly solely for the derive.
 
-## Reactive protection and transitions
+## Reactive protection and fallback responses
 
-`ProtectedRoute` reacts whenever its condition changes and participates in
-Suspense (since 0.7.0). Authorization conditions may therefore depend on a
-resource or other asynchronous reactive state; they are not checked only once
-during navigation.
+`ProtectedRoute` reacts when its condition changes and participates in
+Suspense (since 0.7.0). Authorization can therefore depend on Resources or
+other asynchronous reactive state rather than being checked only once during
+navigation.
+
+Route fallbacks can set a custom response status or redirect as of 0.8.0;
+they are not limited to rendering fallback view content.
+
+## Browser view transitions
 
 Set `transition=true` on `Routes` or `FlatRoutes` to use the browser View
-Transition API. During navigation the router places these CSS hooks on the
-document element:
+Transition API during navigation (since 0.7.0). Style the classes placed on
+the document element:
 
-- `.routing-progress`;
-- `.router-back`;
-- `.router-outlet-{n}`.
-
-Use them to distinguish progress, backward navigation, and nested outlets.
-
-## Islands navigation
-
-The `islands-router` features add client-side navigation to islands
-applications (since 0.8.0) without forcing the entire application to hydrate.
-This is separate from the base `islands` feature.
+- `.routing-progress`
+- `.router-back`
+- `.router-outlet-{n}`
 
 ## Application-owned document shell
 
-SSR applications return the entire HTML document shell (since 0.7.0),
-including the doctype, document elements, reload and hydration support, and
-metadata:
+SSR applications own and return the complete HTML document as of 0.7.0. The
+shell must include `<!DOCTYPE html>`, `html`, `head`, and `body`, together with
+`AutoReload`, `HydrationScripts`, and `MetaTags`.
 
 ```rust
 pub fn shell(options: LeptosOptions) -> impl IntoView {
@@ -75,18 +72,22 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 }
 ```
 
-Do not rely on the integration to add those pieces around an application-only
-body.
+## SSR and hydration entry points
 
-## Configuration, routes, and hydration entry points
-
-`get_configuration` is synchronous. `.leptos_routes(...)` no longer takes a
-`LeptosOptions` argument. Hydrating an SSR application uses
-`leptos::mount::hydrate_body`; `mount_to_body` is specifically for CSR.
+`get_configuration` is synchronous as of 0.7.0. The
+`.leptos_routes(...)` integration no longer accepts `LeptosOptions`. Hydrated
+applications should enter through `leptos::mount::hydrate_body`; use
+`mount_to_body` only for client-side rendering.
 
 ## Axum integration
 
-The integration targets Axum 0.8 (since 0.8.0), including its changed route
-syntax. Leptos reexports some Axum types, so upgrade an application's direct
-Axum dependency at the same time to avoid mismatched integration types and
-APIs.
+The integration targets Axum 0.8 as of 0.8.0, including its changed route
+syntax. Upgrade a direct Axum dependency alongside Leptos because Leptos
+reexports some Axum types.
+
+## Islands routing
+
+Enable the `islands-router` features introduced in 0.8.0 to add client-side
+navigation to islands applications without hydrating the whole application.
+The base islands Cargo feature is named `islands`; `experimental-islands` was
+renamed in 0.7.0.

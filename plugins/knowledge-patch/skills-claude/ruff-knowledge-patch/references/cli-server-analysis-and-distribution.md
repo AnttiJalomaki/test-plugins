@@ -1,109 +1,110 @@
 # CLI, server, analysis, and distribution
 
-Use this reference for command behavior, automation output, editor integration,
-dependency graphs, file discovery, containers, binaries, and source builds.
+Use this reference for command behavior, machine output, editor integrations,
+dependency graphs, containers, release artifacts, and source builds.
 
-## Formatting commands and exit status
+## CLI behavior and output
 
-`ruff format --exit-non-zero-on-format` writes formatting changes but exits
-nonzero if it modified any files (0.11.0):
+### Format and fail
+
+Since 0.11.0, `ruff format --exit-non-zero-on-format` writes formatting changes
+and returns a nonzero status when it modifies files:
 
 ```console
 ruff format --exit-non-zero-on-format .
 ```
 
-In 0.16.0-guide, `ruff format --check` accepts the linter's output formats,
-including CI annotation formats:
+This differs from a check-only command because the working tree is changed.
+
+### Watch output
+
+In 0.15.0, `ruff check --watch` respects `--output-format` and defaults to the
+`full` format.
+
+### Fix diffs and format-check output
+
+In 0.16.0-guide, `ruff check` and `ruff format --check` include fix diffs in
+human-readable output. Scripts that scrape logs should not assume the earlier
+shape. `ruff format --check` also accepts linter output formats, including CI
+annotation formats:
 
 ```console
 ruff format --check --output-format github .
 ```
 
-Both `ruff check` and `ruff format --check` now include fix diffs in their
-human-readable output. Wrappers that parse logs need to tolerate the added
-diffs (0.16.0-guide).
+### Nullable JSON fields
 
-## Watch mode and structured output
-
-`ruff check --watch` respects `--output-format` and defaults to `full`
-(0.15.0).
-
-JSON consumers must accept null for `filename`, `location`, `end_location`,
-`fix.edits[].location`, and `fix.edits[].end_location`. These fields no longer
-always use empty strings or row-1/column-1 placeholders (0.16.0-guide).
+Also in 0.16.0-guide, JSON output can use `null` for `filename`, `location`,
+`end_location`, `fix.edits[].location`, and `fix.edits[].end_location`. These
+values replace placeholder empty strings or row-1/column-1 locations. JSON
+schemas and consumers must make every listed field nullable.
 
 ## Language server
 
-Server logging is controlled solely by `logLevel`, whose default is `info`.
-The LSP `trace` value no longer enables or disables logging. Code-action
-requests ignore diagnostics produced by other sources (0.9.0).
+### Logging and code actions
 
-`ruff.printDebugInformation` no longer produces logging output (0.10.0).
+In 0.9.0, server logging is controlled only by `logLevel`, which defaults to
+`info`. The LSP `trace` setting no longer toggles logging. Code-action requests
+ignore diagnostics produced by other sources.
 
-The server can use `uv` as an alternative formatter backend (0.13.0).
+In 0.10.0, `ruff.printDebugInformation` no longer produces logging output.
 
-Preview output, LSP hovers, and code actions prefer human-readable rule names
-in 0.15.0. `ruff rule` accepts those names, while unknown selectors warn rather
-than fail.
+### Formatter backend and file coverage
 
-The server supports formatting labeled Python code blocks in Markdown. Its file
-handling follows configured extension mappings, including an explicit mapping
-such as this for Quarto files (0.15.0):
+The 0.13.0 server can use `uv` as an alternative formatter backend.
 
-```toml
-[tool.ruff]
-extension = { qmd = "markdown" }
-```
+Preview Markdown formatting in 0.15.0 is also supported by the language server.
+Configured extension mappings participate in later server handling.
+
+In 0.16.1, the server lints TOML files, correctly indexes excluded nested Ruff
+workspaces, and handles unknown enumeration values in LSP messages without
+failing.
+
+### Human-readable rule names
+
+In 0.15.0 preview, LSP hovers and code actions prefer human-readable rule names.
+The 0.16.1 preview option can opt out and retain code-oriented names while
+leaving other preview features on.
 
 ## Dependency-graph analysis
 
-`ruff analyze graph` accepts a virtual environment so dependency analysis can
-resolve imports installed there (0.11.0).
+Since 0.11.0, `ruff analyze graph` accepts a virtual environment, allowing it
+to resolve imports from that environment.
 
-Dependency analysis can skip imports in `TYPE_CHECKING` blocks, operate on
-Jupyter notebooks, and use configured `src` directories when resolving imports
-(0.14.0).
+In 0.14.0, dependency analysis can skip imports inside `TYPE_CHECKING` blocks.
+Graphs work with Jupyter notebooks and use configured `src` directories when
+resolving imports.
 
-Because the isort implementation checks a module's full path against the
-configured project root or roots, nested modules can change first-party
-classification and import section (0.11.0).
-
-## Input discovery and executable files
-
-Preview discovery includes `*.pyw` by default (0.14.0).
-
-Markdown discovery became a preview default in 0.15.5, and Markdown formatting
-became default behavior in 0.16.0-guide. Unlabeled code fences are not treated
-as Python by the introduced Markdown formatter; labeled Python, `pycon`, and
-Quarto markers are supported. Configured extensions participate in discovery,
-code-block language selection, and server handling.
-
-`EXE003` accepts `uv run` shebangs (0.11.0).
+Use the same environment, source roots, and guard conventions as the project to
+avoid graph classifications that differ from runtime or lint behavior.
 
 ## Container images
 
-The `ruff:alpine` image moved from Alpine 3.20 to 3.21 in 0.10.0-guide. The
-`ruff:alpine3.20` tag is no longer updated.
-
-By 0.15.0, `ruff:alpine` uses Alpine 3.23. `ruff:debian` and
-`ruff:debian-slim` use Debian 13 “Trixie.” Pin an explicit image tag and base
-variant when operating-system packages matter.
-
-## Binaries, source distributions, and release artifacts
-
-Source distributions stopped including `rust-toolchain.toml` in 0.12.0.
-Downstream packagers can build with a toolchain compatible with Ruff's minimum
-supported Rust version rather than the higher release-build toolchain.
-
-Version 0.14.12 was published to PyPI without a GitHub release or tag because
-of a WASM publishing issue. Version 0.14.13 has identical contents and serves
-as the follow-up release (0.14.0).
+In 0.10.0-guide, `ruff:alpine` moves from Alpine 3.20 to 3.21, and the
+`ruff:alpine3.20` image stops receiving updates.
 
 In 0.15.0:
 
-- source builds require Rust 1.91 or newer;
-- release binaries no longer include big-endian `ppc64`; and
-- WASM artifacts are no longer attached to GitHub releases.
+- `ruff:alpine` moves to Alpine 3.23;
+- `ruff:debian` and `ruff:debian-slim` use Debian 13 “Trixie”; and
+- deployment assumptions based on the prior base images should be retested.
 
-Account for those changes in downstream packaging, architecture matrices, and
-artifact download scripts.
+## Binaries, WASM, and releases
+
+Ruff 0.14.12 was published on PyPI without a corresponding GitHub release or
+tag because of a WASM publishing issue. Version 0.14.13 has identical contents
+and is the follow-up. Release mirroring must tolerate that missing tag.
+
+In 0.15.0, release binaries no longer include big-endian `ppc64`, and WASM
+artifacts are no longer attached to GitHub releases. Consumers of those
+artifacts need a different distribution path or supported target.
+
+## Source builds
+
+Source distributions stop pinning the release Rust toolchain in 0.12.0: they no
+longer contain `rust-toolchain.toml`. Downstream packagers may use a toolchain
+compatible with Ruff's minimum supported Rust version rather than the higher
+release-build toolchain.
+
+In 0.15.0, source builds require Rust 1.91 or newer. Reconcile this minimum with
+distribution toolchains before upgrading build recipes.

@@ -1,102 +1,54 @@
 # Semantic Metadata and Artifacts
 
-Use this reference when authoring Semantic Layer or OSI YAML, adding metadata
-to resources, or consuming generated artifacts and structured logs. Relevant
-extraction sections: 1.9.0, 1.10.0, and 1.12.0.
+Use this reference for Semantic Layer and OSI parsing, metadata configuration, manifest and log fields, artifact uploads, and telemetry.
 
-## Semantic manifest and query features
+## Semantic Layer schema additions (1.9.0)
 
-Core 1.9 semantic manifests can represent:
+Semantic manifests can represent cumulative type parameters, metric `time_granularity`, and sub-daily granularities. Time-spine YAML accepts new time-spine settings and uniquely named `custom_granularities`. Saved queries accept `order_by` and `limit`.
 
-- cumulative type parameters;
-- metric `time_granularity`;
-- sub-daily granularities.
+## Expanded resource metadata (1.10.0)
 
-Time-spine YAML supports expanded time-spine settings and uniquely named
-`custom_granularities`. Saved queries accept `order_by` and `limit`.
+Saved queries accept `tags`. Groups accept `description` and `config.meta`; exposures accept tags and meta config. Semantic Layer dimensions, measures, and entities accept meta config. Column meta and tags propagate to tests, and offset windows support custom grains.
 
-Core 1.10 adds tags to saved queries. Offset windows support custom grains.
+## Artifact, log, lock-file, and upload fields (1.10.0)
 
-## Semantic metadata config
+Artifact metadata includes an invocation-start timestamp and quoting configuration. Manifest nodes and columns include `doc_blocks`. Structured-log `node_info` includes `node_checksum`, and package lock entries include `name`. Core can also upload artifacts to dbt Cloud.
 
-Core 1.10 expands metadata support:
+Consumers should tolerate additive fields and distinguish manifest data from command-only output.
 
-- groups accept `description` and `config.meta`;
-- exposures accept tags and meta config;
-- Semantic Layer dimensions, measures, and entities accept meta config;
-- column config meta and tags propagate to tests on that column.
+## V2 Semantic Layer YAML (1.12.0)
 
-Keep metadata in `config` where the resource schema expects it rather than
-relying on unsupported top-level custom properties.
-
-## V2 Semantic Layer YAML
-
-Core 1.12 parses new-style V2 Semantic Layer YAML for:
+Core parses new-style V2 Semantic Layer YAML for:
 
 - standalone and model-attached metrics;
 - entities and derived entities;
 - derived dimensions;
 - `agg_time_dimension`;
-- object-style Semantic Model config;
+- object-style Semantic Model config; and
 - `primary_entity`.
 
-Model-as-Semantic-Model and column-dimension parsing are explicitly not fully
-ready in this release. Treat these two surfaces as incomplete even though
-other V2 forms parse.
+Model-as-Semantic-Model and column-dimension parsing are explicitly not fully ready in this release. Validate the emitted manifest before making downstream tooling depend on those shapes.
 
-## OSI documents
+## OSI documents (1.12.0)
 
-Core reads OSI documents from `OSI/` or `osi/` into the manifest. The OSI
-directory is configurable. Parsing also writes an OSI document, so tooling
-that watches the project or target outputs should account for this generated
-file.
+Core reads OSI documents from `OSI/` or `osi/` into the manifest. Their directory is configurable, and an OSI document is written after parsing. Treat the configured directory and generated document as part of parse-time inputs and outputs.
 
-## Macro and analysis properties
+## Compilation and tooling outputs (1.12.0)
 
-Macro property entries accept `config` containing `meta` and `docs`:
+`dbt compile` writes compiled snapshot SQL under `target/compiled/`. The Jinja `graph` includes unit tests. `NodeStatus` and `RunStatus` include `Reused`.
 
-```yaml
-macros:
-  - name: cents_to_dollars
-    config:
-      meta: {owner: finance}
-      docs: {show: true}
+Model rows from `dbt ls --output json` include runtime-only `direct_parents`, containing nearest public ancestors. This field does not alter `manifest.json`.
+
+## OpenTelemetry node and hook spans (1.12.1)
+
+Core 1.12.1 can emit OpenTelemetry spans for node and hook execution when `--snowflake-projects-otel` is supplied. Instrumentation is off by default.
+
+```bash
+dbt build --snowflake-projects-otel
 ```
 
-Analyses can be enabled or disabled in `dbt_project.yml` at project or folder
-scope:
+Hook spans identify the hook and transaction phase, include node context and status, and are omitted when a call executes no hooks.
 
-```yaml
-analyses:
-  my_project:
-    staging:
-      +enabled: false
-```
+## Deprecated-version warnings (1.12.1)
 
-## Artifact additions
-
-Core 1.10 adds:
-
-- an invocation-start timestamp and quoting configuration to artifact
-  metadata;
-- `doc_blocks` to manifest nodes and columns;
-- `node_checksum` to structured-log `node_info`;
-- `name` to package lock entries;
-- support for uploading artifacts to dbt Cloud.
-
-Consumers should tolerate these additive fields and should use the invocation
-start timestamp when correlating artifacts with logs.
-
-## Compilation and tooling outputs
-
-Core 1.12 changes several integration surfaces:
-
-- `dbt compile` writes compiled snapshot SQL beneath `target/compiled/`.
-- The Jinja `graph` includes unit tests.
-- Python-model parsing recognizes `config.meta_get`.
-- `NodeStatus` and `RunStatus` add `Reused`.
-- Model records from `dbt ls --output json` gain runtime-only
-  `direct_parents`, listing the nearest public ancestors.
-
-`direct_parents` does not change `manifest.json`; do not expect it in stored
-manifest nodes merely because it appears in `dbt ls` output.
+Core 1.12.2 warns when the installed dbt version is deprecated. Do not suppress this as an ordinary project-schema diagnostic; use it to schedule a runtime upgrade.

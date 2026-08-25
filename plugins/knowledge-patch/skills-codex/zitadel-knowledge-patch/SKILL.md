@@ -10,7 +10,7 @@ metadata:
 
 # Zitadel Knowledge Patch
 
-Use the reference index to load only the material relevant to the task. Start with the breaking changes below when upgrading, generating clients, replacing Login, migrating Actions, or operating a self-hosted installation.
+Use the reference index to load only the material relevant to the task. Start with the breaking changes when upgrading, generating clients, replacing Login, migrating Actions, or operating a self-hosted installation.
 
 ## Reference index
 
@@ -30,14 +30,14 @@ Use the reference index to load only the material relevant to the task. Start wi
 
 ### Reassess licensing before an upgrade
 
-- Treat the server repository as AGPLv3-licensed.
+- Treat the server repository as AGPLv3-licensed beginning with version 3.
 - Include license obligations in the upgrade review before deploying a newer server.
 
 ### Migrate CockroachDB before upgrading
 
 - Do not attempt an in-place upgrade from CockroachDB: current storage is PostgreSQL-only.
-- Use the mirror workflow to move the event history and required static data.
-- Preserve the source encryption keys, keep the selected mirror scope consistent, rerun setup at the destination, and verify the result.
+- Use the mirror workflow to move event history and required static data.
+- Preserve source encryption keys, keep the selected mirror scope consistent, rerun setup at the destination, and verify the result.
 - Read [concepts-and-migrations.md](references/concepts-and-migrations.md) and [self-hosting-and-operations.md](references/self-hosting-and-operations.md) before planning the migration.
 
 ### Prefer resource-based APIs
@@ -50,23 +50,24 @@ Use the reference index to load only the material relevant to the task. Start wi
 
 ### Migrate new automation to Actions V2
 
-- Treat Actions V1 as frozen and scheduled for removal.
+- Treat Actions V1 as frozen and planned for removal.
 - Host V2 handlers as HTTP endpoints, create a target, and bind its ID to request, response, function, or event execution conditions.
 - Remember that enabling V2 does not disable V1; prevent duplicate side effects during staged migration.
 - Verify HMAC, JWT, or JWE payloads according to the configured target payload type.
+- Legacy embedded Actions cannot rely on importing server filesystem paths.
 
 ### Design custom Login around sessions
 
 - Use Login V2 and the Session API for new custom Login implementations.
 - Treat every returned session token as a replacement and persist only the latest token.
 - Complete OIDC, SAML, or device requests with an `IAM_LOGIN_CLIENT` credential and the authenticated session.
-- Redirect the browser to the returned callback data instead of constructing the protocol callback yourself.
-- Keep a passkey Login UI on the relying-party domain used to enroll credentials.
+- Redirect the browser to returned callback data instead of constructing the protocol callback.
+- Keep passkey Login on the relying-party domain used to enroll credentials.
 
 ### Deploy the server as containers
 
 - Use the container path for current self-hosting; do not rely on the old direct-Linux installation.
-- Use Docker Compose as a development-oriented topology, not as an automatic production recommendation.
+- Treat Docker Compose as a development topology, not an automatic production recommendation.
 - Run `init` once per installation, `setup` for every deployed binary, and `start` only after setup succeeds.
 - Route traffic to a new replica only after readiness succeeds.
 
@@ -100,6 +101,11 @@ Use the reference index to load only the material relevant to the task. Start wi
 
 For JWT profiles, set `iss` and `sub` to the required same identifier, use the exact public origin as `aud`, and send the downloaded key ID as `kid`.
 
+### Use dynamic clients deliberately
+
+- RFC 7591 dynamic client registration and RFC 7592 dynamic client management are available in version 4.17.0.
+- Treat dynamically registered clients as managed protocol resources and apply the same redirect, authentication, and token-policy validation used for statically created applications.
+
 ## Login and session quick reference
 
 ### Complete an OIDC request
@@ -111,7 +117,7 @@ For JWT profiles, set `iss` and `sub` to the required same identifier, use the e
 5. POST the session ID and latest token to the auth-request resource.
 6. Redirect to its returned `callbackUrl`.
 
-Use the equivalent `/v2/saml/saml_requests/{id}` bridge for SAML. For HTTP-POST binding, submit the returned `RelayState` and `SAMLResponse` to the returned ACS URL.
+Use the equivalent `/v2/saml/saml_requests/{id}` bridge for SAML. For HTTP-POST binding, submit returned `RelayState` and `SAMLResponse` values to the returned ACS URL.
 
 ### Apply authentication policy deliberately
 
@@ -120,6 +126,8 @@ Use the equivalent `/v2/saml/saml_requests/{id}` bridge for SAML. For HTTP-POST 
 - Treat a zero lockout maximum as disabled, but a zero MFA-initialization lifetime as suppression of the setup prompt.
 - Require verified contact data before SMS or email OTP enrollment.
 - Use recovery codes as a supported MFA method and activate them when added.
+- Treat a user-verified passkey as satisfying MFA during current session-validity checks.
+- Require authentication before WebAuthn, U2F, TOTP, or OTP enrollment; do not expose browser OTP delivery through `returnCode`.
 
 ### Rotate Web Keys safely
 
@@ -150,6 +158,7 @@ Create it at `POST /v2/actions/targets`, retain its target ID and signing key, t
 - For a deliberate client error, return HTTP 200 from an interrupting target with `forwardedStatusCode` and `forwardedErrorMessage`.
 - Expect only the best matching condition to run: method over service over all, or event over group over all.
 - Treat event executions as post-storage reactions, never pre-operation guards.
+- Use `appendMetadataRaw` when an Action must append raw metadata, and account for actor information in userinfo Actions when relevant.
 
 ## Self-hosting quick reference
 
@@ -160,7 +169,7 @@ Create it at `POST /v2/actions/targets`, retain its target ID and signing key, t
 - Send the core API hop over HTTP/2 or h2c. HTTP/1.1 upstream transport is insufficient.
 - Route `/ui/v2/login` to the Login container and other traffic to the core container.
 
-### Preserve the secret and database boundaries
+### Preserve secret and database boundaries
 
 - Supply a master key of exactly 32 bytes; do not store it in the database it decrypts.
 - Back up PostgreSQL, especially `eventstore.events`; application containers are stateless.
@@ -179,7 +188,9 @@ Create it at `POST /v2/actions/targets`, retain its target ID and signing key, t
 - Validate JWT identity-provider `exp`, `iat`, audience, issuer, and signature claims.
 - Bind authorization codes, refresh tokens, and token exchanges to the correct client and permitted scopes.
 - Require a verified external email before identity-provider auto-linking.
+- Prevent external identity-provider pre-hijacking and reject Login V2 authentication for deactivated organizations.
+- Require permission checks for passkey enrollment codes and the MFA prompt before 2FA enrollment.
 - Protect outbound Action, identity-provider, and HTTP-provider connections with target restrictions and the protected HTTP client.
 - Escape usernames before embedding them in LDAP filters.
 - Use exact HTTPS redirects outside Development Mode and understand its glob syntax before enabling it.
-- Review [release-changes-by-topic.md](references/release-changes-by-topic.md) for maintenance releases that alter authorization, login, proxy, projection, or token validation behavior.
+- Review [release-changes-by-topic.md](references/release-changes-by-topic.md) for maintenance releases that alter authorization, Login, proxy, projection, token validation, or metrics behavior.

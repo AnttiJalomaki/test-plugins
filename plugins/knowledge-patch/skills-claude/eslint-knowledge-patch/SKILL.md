@@ -10,102 +10,92 @@ metadata:
 
 # ESLint Knowledge Patch
 
-Load this skill when upgrading ESLint, diagnosing flat-config discovery,
-maintaining custom rules or formatters, or updating rule tests and typed
-integrations. Start with the breaking-change checks below, then open the
-topic reference that matches the work.
+Load this skill when upgrading ESLint, migrating configuration, maintaining
+custom rules or formatters, updating rule tests, or debugging typed and AST
+integrations. Start with the breaking-change checks, then open the reference
+that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Configuration and migration](references/configuration-and-migration.md) | Runtime prerequisites, config lookup, legacy configuration removal, recommended rules, release lifecycle |
-| [Rules, tests, and integrations](references/rules-tests-and-integrations.md) | Rule API replacements, `RuleTester`, TypeScript parameters, JSX scope, AST ranges, bundled types, formatter color intent |
+| [Configuration and migration](references/configuration-and-migration.md) | Runtime support, flat-config discovery, legacy removal, language selection, suppressions, recommended rules, lifecycle |
+| [Rules, tests, and integrations](references/rules-tests-and-integrations.md) | Rule APIs, `RuleTester`, TypeScript and JSX behavior, AST ranges, autofixes, bundled types, formatters |
 
 ## Upgrade triage
 
 For an ESLint 10 upgrade, check these areas in order:
 
-1. Confirm the Node.js runtime is at least 20.19.0 and is not Node.js 21.x or
-   23.x.
-2. If `eslint.config.ts` or another TypeScript config is loaded through Jiti,
-   require Jiti 2.2.0 or later.
-3. Remove reliance on `.eslintrc.*`, `.eslintignore`, `/* eslint-env */`, and
-   deleted legacy CLI flags.
-4. Re-evaluate config selection now that lookup starts beside every linted
-   file rather than at the process working directory.
-5. Update custom rules and plugins away from removed `context` and
-   `SourceCode` APIs.
-6. Tighten or repair `RuleTester` cases with the appropriate
-   `assertionOptions` contract.
-7. Re-run lint without changing configuration first: `eslint:recommended`
-   enables additional rules and may produce new diagnostics.
+1. Confirm Node.js is at least 20.19.0 and is not a 21.x or 23.x release.
+2. Require Jiti 2.2.0 or later when it loads a TypeScript config.
+3. Remove `.eslintrc.*`, `.eslintignore`, `/* eslint-env */`, and deleted
+   legacy CLI flags.
+4. Resolve configuration from each linted file's directory, not from the
+   invocation directory.
+5. Update custom rules away from removed `context` and `SourceCode` APIs.
+6. Repair `RuleTester` cases and select deliberate `assertionOptions`.
+7. Re-run the recommended configuration and review newly enabled rules.
+8. For typed integrations, require TypeScript 5.3 or later and review the
+   bundled Espree and ESLint Scope declarations.
 
-## Breaking: runtime prerequisites
+## Runtime gates
 
 ESLint 10 does not support:
 
-- Node.js versions earlier than 20.19.0
-- any Node.js 21.x release
-- any Node.js 23.x release
+- Node.js versions earlier than 20.19.0;
+- any Node.js 21.x release;
+- any Node.js 23.x release.
 
 TypeScript configuration loading through Jiti requires Jiti 2.2.0 or later.
-Check both the runtime selected by local tooling or CI and the installed Jiti
-version before diagnosing configuration-load failures.
+Check the runtime used by local scripts and every CI job before investigating
+config-load failures.
 
-## Breaking: configuration is resolved per file
+## Configuration is resolved per linted file
 
-Configuration lookup now begins in the directory of each linted file. It no
-longer begins in the current working directory.
+Configuration lookup starts beside each linted file. One command can therefore
+select different `eslint.config.*` files for targets in different directories.
 
-One command can therefore select different `eslint.config.*` files for files
-in different directories. In a monorepo or nested project, reason about each
-target file separately:
+When files behave differently:
 
-1. Identify the linted file's directory.
-2. Determine which config is found from that directory.
-3. Repeat for each target that behaves differently.
-4. Do not use the invocation directory as the lookup anchor.
+1. Start at the first target file's directory.
+2. Determine which config is discovered from there.
+3. Repeat for each other target.
+4. Do not use the process working directory as the lookup anchor.
 
-The `v10_config_lookup_from_file` feature flag has been removed because this
-behavior is the default.
+The `v10_config_lookup_from_file` feature flag is gone because this behavior is
+the default.
 
-## Breaking: the eslintrc system is gone
+## Flat configuration is the only configuration system
 
-Do not use the legacy configuration path as a fallback. ESLint 10 behaves as
-follows:
+Do not fall back to eslintrc behavior in ESLint 10.
 
-| Legacy mechanism | ESLint 10 behavior |
+| Legacy mechanism | Current behavior |
 | --- | --- |
 | `ESLINT_USE_FLAT_CONFIG` | Ignored |
 | `.eslintrc.*` | Not read |
 | `.eslintignore` | Not read |
-| `/* eslint-env */` comments | Reported as errors |
+| `/* eslint-env */` | Reported as an error |
 | `--no-eslintrc` | Removed |
 | `--env` | Removed |
 | `--resolve-plugins-relative-to` | Removed |
 | `--rulesdir` | Removed |
 | `--ignore-path` | Removed |
 
-The programmatic legacy surface is also removed:
+The programmatic legacy surface is removed too:
 
 - `loadESLint()` always returns `ESLint`.
 - `Linter` rejects `configType: "eslintrc"`.
-- `Linter#defineParser()`, `defineRule()`, `defineRules()`, and `getRules()`
-  no longer exist.
+- `Linter#defineParser()`, `defineRule()`, `defineRules()`, and `getRules()` are
+  unavailable.
 - `/use-at-your-own-risk` no longer exports `LegacyESLint` or
   `FileEnumerator`.
 - `shouldUseFlatConfig()` always returns `true`.
 
-See
-[Configuration and migration](references/configuration-and-migration.md)
-for the complete migration inventory and config-discovery implications.
+## Replace removed rule APIs
 
-## Breaking: deprecated rule APIs are removed
+Use properties in place of removed context accessors:
 
-Replace removed context methods with properties:
-
-| Removed | Use |
+| Removed | Replacement |
 | --- | --- |
 | `context.getCwd()` | `context.cwd` |
 | `context.getFilename()` | `context.filename` |
@@ -115,27 +105,27 @@ Replace removed context methods with properties:
 
 `context.parserPath` has no replacement.
 
-Replace removed `SourceCode` methods as follows:
+Use these `SourceCode` replacements:
 
-| Removed | Use |
+| Removed | Replacement |
 | --- | --- |
 | `getTokenOrCommentBefore()` | `getTokenBefore()` with `{ includeComments: true }` |
 | `getTokenOrCommentAfter()` | `getTokenAfter()` with `{ includeComments: true }` |
 | `isSpaceBetweenTokens()` | `isSpaceBetween()` |
 
 `SourceCode#getJSDocComment()` has no replacement. Treat both no-replacement
-cases as redesign points rather than trying to preserve the old call shape.
+cases as integration redesign points.
 
-## Testing: enforce complete `RuleTester` errors
+## Make `RuleTester` expectations explicit
 
-`RuleTester#run()` accepts an `assertionOptions` object:
+`RuleTester#run()` accepts `assertionOptions`:
 
 - `requireMessage: true` accepts either `message` or `messageId`.
 - `requireMessage: "message"` requires `message`.
 - `requireMessage: "messageId"` requires `messageId`.
 - `requireLocation: true` requires both `line` and `column`.
-- `requireData: true` requires `data` when a `messageId` template contains
-  placeholders.
+- `requireData: true` requires `data` when the selected `messageId` template
+  contains placeholders.
 
 ```js
 ruleTester.run("my-rule", rule, {
@@ -157,15 +147,23 @@ ruleTester.run("my-rule", rule, {
 });
 ```
 
-Choose the strictness that matches the rule's public contract. When
-`requireData` is enabled, inspect the selected message template before
-deciding whether a test case needs `data`.
+Choose strictness to match the rule's public test contract. Inspect the message
+template before deciding whether `requireData` requires a `data` object.
 
-## Rules: TypeScript `this` parameters
+## Language-aware configuration and rules
 
-The `max-params` rule has `countThis: "never"`, which excludes a TypeScript
-`this` parameter from the parameter count. It supersedes the deprecated
-`countVoidThis` option.
+Configuration objects can set `language`. Rule metadata can set
+`meta.languages` to declare language compatibility. Use both when configuring
+non-JavaScript language plugins or publishing a multi-language rule.
+
+With ES2026 globals enabled, `Temporal` is defined but non-callable.
+`no-obj-calls` reports `Temporal()` instead of treating `Temporal` as an
+undefined name.
+
+## TypeScript-specific rule behavior
+
+`max-params` supports `countThis: "never"`, which excludes a TypeScript `this`
+parameter and supersedes the deprecated `countVoidThis` option.
 
 ```js
 export default [{
@@ -175,52 +173,43 @@ export default [{
 }];
 ```
 
-## Scope analysis: JSX identifiers are references
+`no-var` can fix declarations inside `TSModuleBlock`. It withholds the autofix
+when a variable is used before its declaration, avoiding an unsafe conversion.
 
-An identifier such as `Card` in `<Card />` is a normal reference to the
-in-scope variable. Scope-based rules should no longer:
+## Re-check rule results after patch upgrades
 
-- report an imported JSX component as unused solely because its use is JSX;
-- miss an undefined component solely because its use is JSX.
+In 10.8.1, removal edits from `no-unused-labels` and the `removeVar` suggestion
+from `no-unused-vars` avoid automatic-semicolon-insertion hazards. The edits no
+longer risk joining adjacent syntax into a different parse.
 
-Account for this when updating expected diagnostics for scope-sensitive
-rules.
+Also in 10.8.1:
 
-## AST integrations: `Program.range`
+- `id-denylist` and `id-match` ignore grammar-defined meta-property names such
+  as `meta` in `import.meta` and `target` in `new.target`.
+- `getter-return` and `accessor-pairs` avoid corrected false positives.
 
-The `Program` node's range includes the entire source, including leading and
-trailing comments and whitespace. Code that assumed the previous narrower
-range must not use `Program.range` as a proxy for only the inner program
-content.
+Revisit suppressions or disabled rules that worked around those diagnostics.
 
-## Typed integrations
+## Integration checks
 
-Espree 11.1.0 and ESLint Scope 9.1.0 ship built-in type definitions. These
-replace declarations formerly supplied by `@types/espree` and
-`@types/eslint-scope`, but the built-in definitions are not identical.
-Expect typed integrations to need adjustments rather than assuming a
-drop-in declaration swap.
+- JSX component identifiers are ordinary scope references. Scope-based rules
+  should neither mark a JSX-only import unused nor miss an undefined JSX name.
+- `Program.range` covers the entire source, including leading and trailing
+  comments and whitespace.
+- Espree 11.1.0 and ESLint Scope 9.1.0 provide built-in types. Remove redundant
+  `@types/espree` and `@types/eslint-scope` declarations carefully because the
+  bundled types are not identical.
+- Formatter `format()` receives explicit `color: true` or `color: false` in
+  its second argument for `--color` or `--no-color`.
+- Bulk-suppression functionality is available programmatically; integrations
+  need not shell out to the CLI workflow.
 
-## Formatter integrations
+## Final migration check
 
-When the CLI receives `--color` or `--no-color`, it passes explicit intent in
-the second argument to a formatter's `format()` method:
+The ESLint 10 `eslint:recommended` set enables additional rules, so new
+diagnostics do not necessarily mean configuration discovery failed. Run lint
+without changing configuration first and classify the new findings.
 
-- `--color` produces `color: true`.
-- `--no-color` produces `color: false`.
-
-Custom formatters can read this value and honor the user's explicit styling
-choice.
-
-## Recommended configuration and support window
-
-The ESLint 10 `eslint:recommended` configuration contains additional rules.
-New diagnostics after an upgrade may therefore be caused by the changed
-recommended set even when project configuration is otherwise unchanged.
-
-ESLint 9.x is in maintenance for critical, security, and cross-major
-compatibility fixes only, and reaches end of life on 2026-08-06. Use that
-date when deciding whether to defer an ESLint 10 migration.
-
-For exhaustive details, edge conditions, and API inventories, follow the
-reference index rather than inferring legacy compatibility.
+ESLint 9.x receives only critical, security, and cross-major compatibility
+fixes during maintenance and reaches end of life on 2026-08-06. Use that date
+when evaluating a deferred migration.

@@ -1,12 +1,13 @@
 # Forms, Validation, and Persistence
 
-Use this reference for Blazor validation, Minimal API form values, prerendered state, enhanced
-navigation, and circuit restoration.
+## Source-generated validation
 
-## Recursive source-generated Blazor validation
+### Validate nested objects and collections
 
-Recursive validation is available in batch `10.0`. Register it with `AddValidation`, define the
-model in a C# file rather than a Razor file, and annotate the root type with `[ValidatableType]`.
+Register the validation services, define the model in a C# file rather than a
+Razor file, and annotate its root with `[ValidatableType]` (since 10.0). This
+enables recursive validation of nested objects and collections without
+reflection.
 
 ```csharp
 builder.Services.AddValidation();
@@ -16,61 +17,39 @@ public sealed class Order
 {
     [Required]
     public string? Number { get; set; }
-
-    public ShippingAddress? Address { get; set; }
-
-    public List<OrderLine> Lines { get; set; } = [];
 }
 ```
 
-The generated validator traverses nested objects and collections without reflection.
+Apply `[SkipValidation]` to a property or type that must be excluded. If a
+validatable model belongs to another assembly, call `AddValidation` in that
+assembly and in the application.
 
-- Put `[SkipValidation]` on a property or type that must not be traversed.
-- If a model lives in another assembly, that assembly and the application must both call
-  `AddValidation` so the generated registrations are available.
-- Keep the root model discoverable by the source generator; a type declared only inside a Razor
-  file does not meet this requirement.
+### Bind empty form fields to nullable values
 
-## Nullable values in Minimal API form models
+For a complex `[FromForm]` parameter, an empty string posted to a nullable
+value-type property binds as `null` instead of causing a parse failure (since
+10.0). Keep explicit validation when `null` is not acceptable; do not rely on a
+binding error to reject the empty value.
 
-For a complex `[FromForm]` parameter, an empty string posted to a nullable value-type property
-binds to `null` instead of producing a parse failure (batch `10.0`). Do not preserve validation
-workarounds that translate empty strings solely to avoid the earlier binder failure. Continue to
-validate `null` when the domain requires a value.
+## Persistent component state
 
-## Declarative prerendered-state persistence
+### Declare prerendered state
 
-The migration guidance in batch `10.0-migration` adds `[PersistentState]` as the concise option
-for components and services that need to persist state across prerendering. Use it in place of
-the imperative `PersistentComponentState` callback pattern when declarative persistence is
-sufficient.
+Components and services can mark state with `[PersistentState]`
+(`10.0-migration`). Prefer this declarative approach when it can replace manual
+coordination through `PersistentComponentState`.
 
-```csharp
-[PersistentState]
-public WeatherForecast[]? Forecasts { get; set; }
-```
+### Control updates, restoration, and serialization
 
-The imperative service remains appropriate when persistence timing or selection requires custom
-control.
+`[PersistentState]` has controls for later lifecycle transitions (since 10.0):
 
-## Persistence controls
+- Set `AllowUpdates = true` to accept state updates during enhanced-navigation
+  refreshes.
+- Use `RestoreBehavior.SkipInitialValue` to suppress restoration during
+  prerendering.
+- Use `RestoreBehavior.SkipLastSnapshot` to suppress restoration during
+  reconnection.
+- Use `RegisterOnRestoring` for imperative restoration control.
 
-Batch `10.0` adds controls for serialization, enhanced navigation, and restoration:
-
-- Register `PersistentComponentStateSerializer<T>` to replace JSON persistence for a type.
-- Set `[PersistentState(AllowUpdates = true)]` when state should update during an
-  enhanced-navigation refresh.
-- Use `RestoreBehavior.SkipInitialValue` to avoid restoring the initial prerendered value.
-- Use `RestoreBehavior.SkipLastSnapshot` to avoid restoring the last reconnect snapshot.
-- Call `RegisterOnRestoring` for imperative restoration logic.
-
-Choose the restoration behavior according to the transition being handled. Prerender-to-
-interactive hydration, enhanced navigation, and circuit reconnection are distinct transitions;
-a value appropriate for one may be stale in another.
-
-## Server circuit resumption
-
-Server-side Blazor circuit state can survive an extended connection loss or a proactive pause
-and resume without discarding unsaved state. A full-page refresh is the boundary: it creates a
-new page and does not resume the old circuit. Do not promise persistence across refresh unless
-the state is also stored outside the circuit.
+Register `PersistentComponentStateSerializer<T>` to replace JSON serialization
+for a particular state type.

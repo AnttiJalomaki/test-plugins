@@ -1,53 +1,101 @@
-# Camera, globe, and terrain
+# Camera, Globe, and Terrain
 
-## Projection selection
+## Projection and globe presentation
 
-Projection type can be provided as an expression as of 5.0.0. Vertical
-Perspective is also available as a projection mode.
+### Expression-driven projection and Vertical Perspective
 
-## Globe rendering
+Projection type may be supplied as an expression, and Vertical Perspective is
+available as a projection mode (since 5.0.0). Later, `global-state` became
+valid in `projection.type`, so application state can select the projection
+(6.1.0-6.4.1).
 
-Globe mode, terrain on the globe, and realistic globe atmosphere are available
-as of 5.0.0. Sky rendering is disabled on the globe and blends back in during
-a transition to Mercator. Fog is disabled for the unsupported combination of
-Terrain3D and globe.
+```js
+map.setProjection({
+  type: ['global-state', 'projection']
+});
+```
 
-## Camera orientation
+### Globe, terrain, atmosphere, sky, and fog
 
-The camera supports pitch beyond 90 degrees and a roll angle as of 5.0.0.
+Globe mode supports terrain and an optional realistic atmosphere (since
+5.0.0). Sky rendering is disabled on the globe and blends back during a
+transition to Mercator. Fog is disabled for the unsupported Terrain3D-on-globe
+combination.
+
+### Spherical light transitions
+
+Style light-position transitions interpolate in spherical coordinates in
+6.0.0, not Cartesian coordinates. The path preserves radial distance and can
+look different from the same transition in an earlier application.
+
+## Globe queries and coordinates
+
+### Queries across the international date line
+
+`queryRenderedFeatures` handles globe-view query regions that cross the
+international date line (since 5.4.0). Do not split these query regions merely
+to work around wrapping.
+
+### Unprojection at the horizon
+
+On a globe, `unproject` clamps a point to the visible horizon instead of
+returning a coordinate beyond the globe's visible surface (since 5.4.0).
+
+### Marker drag longitude
+
+Globe marker drag coordinates no longer carry an erroneous `+360` or `-360`
+longitude offset (since 5.4.0). Use the longitude directly.
+
+## Camera movement and fitting
+
+### Pitch, roll, and drag rotation
+
+The camera supports pitch beyond 90 degrees and a roll angle (since 5.0.0).
 Drag rotation pivots around the center of the screen.
 
-## Globe coordinates and queries
+### `zoomSnap` in camera methods
 
-`queryRenderedFeatures` supports globe queries across the international date
-line as of 5.4.0; callers do not need to split a crossing query.
+`zoomSnap` applies to programmatic camera changes (since 5.20.0):
 
-On a globe map, `unproject` clamps points to the visible horizon rather than
-returning a coordinate beyond the visible globe as of 5.4.0.
-
-Marker drag coordinates on globe maps no longer contain an erroneous ±360°
-longitude offset as of 5.4.0. Drag handlers should use the reported longitude
-without compensating for a full-world wrap.
-
-## Terrain elevation
-
-`queryTerrainElevation` returns actual altitude as of 5.0.0. Update any
-calculation that assumes its earlier numeric semantics.
-
-## Camera fitting and zoom snapping
-
-As of 5.20.0, `MapOptions.zoomSnap` applies to programmatic camera methods:
-
-- `fitBounds` and `fitScreenCoordinates` snap downward to keep the requested
-  bounds visible.
+- `fitBounds` and `fitScreenCoordinates` snap downward so the requested bounds
+  remain visible.
 - `jumpTo`, `easeTo`, and `flyTo` snap to the nearest valid increment.
 - In Vertical Perspective, `fitBounds` honors its `maxZoom` option.
 
-## Terrain skirts
+### Drag sensitivity
 
-`MapOptions.terrainSkirtLength` controls terrain skirt length as of 6.0.0.
-Applications with transparent map backgrounds can tune it to suppress visible
-vertical artifacts at terrain edges.
+`MapOptions.rotateSpeed` and `MapOptions.pitchSpeed` specify degrees of bearing
+or pitch change per dragged pixel (6.1.0-6.4.1).
+
+```js
+const map = new Map({
+  container: 'map',
+  rotateSpeed: 0.5,
+  pitchSpeed: 0.25
+});
+```
+
+### Reduced motion
+
+Set `MapOptions.reduceMotion` to configure reduced-motion behavior at map
+construction time (since 5.12.0).
+
+```js
+const map = new Map({container: 'map', reduceMotion: true});
+```
+
+## Terrain elevation and edges
+
+### Actual elevation values
+
+`queryTerrainElevation` returns actual altitude in 5.0.0. Revisit calculations
+that assumed the earlier numeric semantics.
+
+### Configurable terrain skirts
+
+`MapOptions.terrainSkirtLength` controls terrain skirt length in 6.0.0. Tune
+it when a transparent map background exposes vertical artifacts at terrain
+edges.
 
 ```js
 const map = new Map({
@@ -56,9 +104,22 @@ const map = new Map({
 });
 ```
 
-## Light transitions
+## Projection data for custom rendering
 
-Style light-position transitions interpolate in spherical rather than
-Cartesian coordinates in 6.0.0. The transition preserves radial distance, so
-the rendered path can differ from the same transition under v5 behavior.
+### Mercator matrices
+
+Custom layers on Mercator receive non-translated matrices starting in 5.0.0.
+Remove assumptions or compensating transforms written for translated matrices.
+
+### Supported projection data
+
+Custom-layer render argument objects expose `getProjectionData` in 6.0.0.
+Use the render argument rather than internal map transforms to obtain current
+projection data.
+
+### Live globe transitions
+
+`CustomRenderMethodInput.defaultProjectionData.projectionTransition` reports
+the live globe-to-Mercator transition in 6.1.0-6.4.1 rather than remaining at
+`1`. Use it to synchronize a custom layer with built-in layers.
 

@@ -1,15 +1,12 @@
 # Language and Compiler Features
 
-This reference groups language work rather than release chronology. The
-relevant extraction batch identifiers are `10.0-guides` and `10.0`.
+Guidance in this file is attributed to `10.0-guides` and `10.0`.
 
-## Extension Members
+## C# Extension Members
 
-C# 14 extension blocks extend a type with more than instance methods. They can
-declare instance properties and methods, static properties and methods, and
-operators.
-
-A named receiver makes the members in the block instance members:
+C# 14 extension blocks can add instance properties and methods, static properties
+and methods, and operators to an extended type. A block with a named receiver
+defines instance members; omitting the receiver name permits static members.
 
 ```csharp
 public static class SequenceExtensions
@@ -21,15 +18,12 @@ public static class SequenceExtensions
 }
 ```
 
-Omit the receiver name when declaring static extension members. Keep the block
-inside a static containing class, and choose the form according to whether a
-member needs an instance receiver.
-
 ## Field-Backed Properties
 
-The contextual `field` token accesses a compiler-synthesized property backing
-field. It lets an accessor add behavior without declaring and maintaining a
-separate field:
+The contextual `field` token refers to a compiler-synthesized backing field, so
+an accessor can validate or transform a value without declaring a separate
+field. In a type that already declares an identifier named `field`, use `@field`
+or `this.field` to refer to the declared identifier.
 
 ```csharp
 public string Message
@@ -39,92 +33,56 @@ public string Message
 }
 ```
 
-`field` is contextual. In a type that already declares an identifier named
-`field`, use `@field` or `this.field` when referring to that existing member.
-Review such types carefully during migration because an unqualified token in
-an accessor can acquire the new contextual meaning.
-
 ## First-Class Span Conversions
 
-C# 14 adds implicit conversions among arrays, `Span<T>`, and
-`ReadOnlySpan<T>`. Span types also participate more naturally in composed
-conversions, extension receiver binding, and generic type inference.
+C# 14 adds implicit conversions among arrays, `Span<T>`, and `ReadOnlySpan<T>`.
+Span types also participate more naturally as extension receivers, in composed
+conversions, and in generic type inference. Span-aware overload resolution can
+therefore select a different overload after moving code to C# 14; compile and test
+ambiguous call sites rather than assuming the previous selection remains.
 
-This changes more than convenience syntax. Overload resolution can select a
-different method when new span conversions make candidates applicable or
-change which conversion is better. Recompile and test overload-heavy APIs,
-especially APIs that expose both array and span forms.
+## Unbound Generic Types in `nameof`
 
-## Unbound Generics in `nameof`
-
-`nameof` accepts an unbound generic type. Supply the arity commas but no type
-arguments:
-
-```csharp
-string name = nameof(List<>); // "List"
-```
-
-This avoids inventing a closed constructed type merely to retrieve the generic
-type's simple name.
+`nameof` accepts an unbound generic type. For example, `nameof(List<>)` evaluates
+to `"List"` without a type argument.
 
 ## Modifiers on Implicitly Typed Lambda Parameters
 
-Simple lambda parameters can use `scoped`, `ref`, `in`, `out`, or
-`ref readonly` without explicit parameter types:
+Simple lambda parameters may use `scoped`, `ref`, `in`, `out`, or `ref readonly`
+without explicit parameter types. `params` still requires an explicitly typed
+parameter list.
 
 ```csharp
 TryParse<int> parse = (text, out result) => int.TryParse(text, out result);
 ```
 
-`params` is the exception: it still requires an explicitly typed parameter
-list. Preserve modifier agreement with the target delegate and use explicit
-types when inference does not communicate the intended signature clearly.
+## Partial Constructors and Events
 
-## Partial Constructors
-
-An instance constructor can be partial. It has exactly one defining
-declaration and one implementing declaration. Only the implementing
-constructor may provide a `this()` or `base()` initializer. This makes the
-initializer part of the implementation rather than generated declaration
-metadata.
-
-## Partial Events
-
-An event can be partial, again with exactly one defining and one implementing
-declaration. The defining declaration is field-like. The implementing event
-provides the `add` and `remove` accessors. Do not supply competing
-implementations or accessors on the defining half.
+Instance constructors and events may be partial. Each has exactly one defining
+declaration and one implementing declaration. Only the implementing constructor
+may specify `this()` or `base()`. For a partial event, the defining declaration is
+field-like and the implementing declaration supplies `add` and `remove`
+accessors.
 
 ## User-Defined Compound Assignment
 
-A type can declare dedicated compound-assignment operators. This allows
-`value += other` and related operations to have purpose-built behavior instead
-of always being synthesized from the corresponding binary operator and an
-assignment conversion. When a mutable or high-performance type defines both,
-do not assume the compound form is semantically identical to `value = value +
-other`.
+C# 14 permits user-defined compound-assignment operators. A type can provide
+dedicated compound-assignment behavior instead of relying only on the matching
+binary operator.
 
 ## Null-Conditional Assignment
 
-Null-conditional element and member access can appear on the left of simple or
-compound assignment:
+`?.` and `?[]` can be used on the left side of simple and compound assignments.
+The right side is evaluated only when the receiver is non-null. `++` and `--`
+remain unsupported in this form.
 
 ```csharp
 customer?.Order = GetCurrentOrder();
 customer?.Balance += payment;
-cache?[key] = value;
 ```
-
-The right-hand side is evaluated only when the receiver is non-null. This is
-important when it has side effects or is expensive. Null-conditional `++` and
-`--` are not supported; express those updates another way.
 
 ## Visual Basic Runtime-API Compatibility
 
-The Visual Basic compiler understands and enforces `unmanaged` generic
-constraints exposed by runtime APIs. It also respects
-`OverloadResolutionPriorityAttribute`, including for Span-oriented overloads.
-This removes ambiguities and aligns overload selection with newer runtime API
-designs. When a shared library exposes prioritized or span overloads, test its
-Visual Basic callers rather than adding workarounds for the previous compiler
-behavior.
+The Visual Basic compiler enforces `unmanaged` generic constraints and respects
+`OverloadResolutionPriorityAttribute`. This enables Span-oriented overload
+selection and resolves ambiguities consistently with newer runtime APIs.

@@ -1,160 +1,133 @@
 # Authentication and access control
 
-Use this reference for login behavior, OAuth, SAML, JWT, SCIM, service
-accounts, identities, RBAC scopes and actions, audit policy, and Enterprise
-access-control automation.
+## Service accounts and login controls
 
-## Login and local authentication
+### API-key migration and removal
 
-- In 11.5.0, authentication gains a setting for the maximum failed login
-  attempts before lockout.
-- In 11.6.0, login-attempt validation can key on IP address.
-- In 12.2.0, a setting can disable username-based brute-force protection.
-- In 13.0.0, passwordless magic-link authentication is removed from both
-  frontend and backend.
+On the first 11.6 startup, Grafana migrates API keys to service accounts; allow for authentication-object migration during startup and update operational inventory. (11.6.0)
 
-## API keys and service accounts
+API-key endpoints and API-key authentication code are removed. Replace all remaining API-key clients with service accounts. (12.1.0)
 
-- In 11.6.0, startup migrates existing API keys to service accounts. Expect an
-  authentication-object migration on the first startup.
-- In 12.1.0, API-key endpoints and API-key authentication code are removed.
-  Move clients to service accounts or another supported identity.
+### Brute-force and lockout behavior
 
-## OAuth and session behavior
+Authentication can set the maximum login attempts before lockout. (11.5.0)
 
-- In 11.5.0, OAuth providers may authenticate token exchange with
-  `client_secret_jwt`. Once refresh retries are exhausted, Grafana returns an
-  error instead of silently continuing.
-- In 11.6.0, `ssoSettingsSAML` becomes generally available and enabled by
-  default.
-- In 12.1.0, improved OAuth and SAML session handling becomes enabled by
-  default. Authentication adds Azure/Entra workload identity and can extract
-  user information from an access token.
-- In 12.3.0, Enterprise query caching is disabled for data sources with
-  `oauthPassThru=true`; this avoids sharing cached results across per-user
-  OAuth identities.
-- In 12.4.0, OAuth can verify ID-token signatures and can require a refresh
-  token when `use_refresh_token` is enabled. SSO settings add PATCH.
-- In 13.0.0, SSO logins remember the last organization used.
+Login-attempt validation can key on IP address. (11.6.0)
 
-## SAML, LDAP, and enterprise SSO
+A setting can disable username-based brute-force protection. Keep this distinct from other lockout dimensions when choosing the policy. (12.2.0)
 
-- In 11.5.0, Enterprise SAML can set EntityID. Single logout carries NameID and
-  SessionIndex for a complete SLO exchange.
-- In 12.1.0, `ssoSettingsLDAP` is enabled by default.
-- In 12.4.0, SCIM becomes generally available.
-- In 13.0.0, Azure integrations support certificate authentication.
+## OAuth, SAML, LDAP, and SSO
 
-## JWT
+### OAuth token handling
 
-- In 11.6.0, JWT authentication accepts `TlsSkipVerify`.
-- In 12.0.0, JWT identities can map to Grafana organization roles.
-- In 12.2.0, JWT accepts `tls_client_ca` and
-  `jwk_set_bearer_token_file`.
-- In 13.1.0, JWT accepts inline public keys.
+OAuth providers can authenticate token exchange with `client_secret_jwt`. Once token-refresh retries are exhausted, Grafana returns an error instead of silently proceeding. (11.5.0)
+
+Improved session handling for OAuth and SAML is enabled by default. Azure/Entra workload identity and access-token user-info extraction are supported. (12.1.0)
+
+OAuth can validate ID-token signatures. When `use_refresh_token` is enabled, it can require refresh tokens. SSO settings have a PATCH endpoint. (12.4.0)
+
+SSO login remembers the user's last organization. Azure integrations support certificate authentication. Passwordless magic-link authentication is removed from both frontend and backend. (13.0.0)
+
+### SAML and LDAP
+
+Enterprise SAML accepts a configurable EntityID. Single logout includes the NameID and SessionIndex needed for the SLO exchange. (11.5.0)
+
+`ssoSettingsSAML` is generally available and enabled by default. (11.6.0)
+
+`ssoSettingsLDAP` is enabled by default. (12.1.0)
+
+## JWT authentication
+
+JWT authentication supports `TlsSkipVerify`. (11.6.0)
+
+JWT identities can be mapped to organization roles. (12.0.0)
+
+JWT accepts `tls_client_ca` and `jwk_set_bearer_token_file`. (12.2.0)
+
+JWT also accepts inline public keys. (13.1.0)
 
 ## SCIM identity lifecycle
 
-- In 12.1.0, Enterprise SCIM group PATCH can add or remove members and update
-  `externalId`. User PATCH ignores unsupported fields. Team `externalId` is
-  updateable.
-- In 12.2.0, SCIM can reject login for users not provisioned by SCIM, and an
-  update may set an empty `externalId`. DELETE now deletes a user rather than
-  disabling the account.
-- In 12.4.0, SCIM is generally available.
+Group PATCH can add or remove members and change `externalId`. User PATCH ignores unsupported fields, and team `externalId` values can be changed. (12.1.0)
 
-## Dashboard, snapshot, and library access
+Enterprise SCIM can reject login for users that were not provisioned. Updates may clear `externalId`. DELETE now deletes a user rather than disabling the account, so downstream lifecycle expectations must change. (12.2.0)
 
-- In 11.5.0, create and delete snapshot operations receive separate RBAC roles
-  and can be granted independently.
-- In 12.0.0, `viewers_can_edit` is removed. Anonymous access enforces the
-  configured Viewer organization role.
-- In 12.0.0, dashboard endpoints under `/apis` perform fine-grained access
-  checks.
-- In 12.1.0, library-panel RBAC is generally available and enabled by default;
-  the `libraryPanelRBAC` flag is removed.
-- From 12.3.2 within 12.3.0, dashboard API requests enforce previously missing
-  scope checks. Avatar endpoints require sign-in and honor their timeout, so
-  anonymous avatar retrieval no longer works.
-- In 13.0.0, pushing to Grafana Live is protected by RBAC.
+SCIM is generally available. (12.4.0)
 
-## Data-source and plugin permissions
+GroupAttributeSync routes are removed; clients must stop calling them. (13.1.0)
 
-- In 11.6.0, plugin roles may include `plugins:write`. Drilldown access
-  requires `datasources:explore`.
-- In 11.6.0 Enterprise, a data-source query requires `query`; `read` no longer
-  satisfies that authorization check.
-- In 12.0.0, data-source label-based access control is available as a
-  self-service public preview.
-- In 12.1.0 Enterprise, data-source LBAC rules can filter by team.
-- In 12.2.0, the plugin basic-role seeder stops granting plugin-app access.
-- In 12.3.0, correlations no longer accept `org_id=0`; use a concrete
-  organization ID for records and requests.
+User-deletion audit events include the user name. (13.2.0)
 
-## Alerting permissions
+## Role-based access control
 
-- In 12.0.0, Alertmanager requests can provide `reqAction` for RBAC checks.
-- In 12.4.0, Enterprise alert enrichment gets separate read and write
-  permissions, and template testing gets a dedicated permission.
-- During the 13.0-upgrade,
-  `GET /api/alertmanager/grafana/api/v2/status` changes from
-  `alert.notifications:read` to
-  `alert.notifications.system-status:read`. Add the action to custom roles;
-  administrators inherit it through `fixed:alerting.notifications:writer`.
-- In 13.0.0, managed routes have access control. Provisioning can use
-  resource-specific permissions and protected fields; notification APIs
-  enforce provenance permissions.
+### Plugin, drilldown, and query permissions
 
-## Custom-role migration
+Plugin roles may include `plugins:write`. Drilldown access requires `datasources:explore`. In Enterprise, `query` is required for data-source queries; `read` is not an alternative. (11.6.0)
 
-The 13.0-upgrade tightens role validation. Create, update, delete, or assignment
-operations can fail when API-, Terraform-, or file-provisioned roles contain
-deprecated permissions.
+The plugin basic-role seeder no longer automatically grants plugin-app access. Audit explicit application grants after upgrade. (12.2.0)
 
-- A global role cannot carry a data-source UID scope such as
-  `datasources:uid:<uid>`. Recreate it with a new UID as a non-global role;
-  existing role scope cannot be changed in place. Set `datasource_type` on
-  data-source permission resources where possible.
-- Remove `fixed:annotations.dashboard:writer`,
-  `fixed:annotations.dashboard:reader`, and `annotations:type:dashboard`.
-  Dashboard annotations use dashboard or folder View/Edit/Admin permissions.
-- Replace `annotations:*` with `annotations:type:organization` for
-  organization annotations and dashboard/folder permissions for dashboard
-  annotations.
+### Dashboard, library, and snapshot permissions
 
-## Role writes and maintenance
+Snapshot create and delete operations have separate RBAC roles. (11.5.0)
 
-- In 12.3.0, RBAC writes persist action sets rather than expanded actions.
-  Role-management clients should retain action-set references.
-- In 12.4.0, `grafana cli admin flush-rbac-seed-assignment` clears seeded RBAC
-  assignments.
-- In 13.0.0 Enterprise, `/access-control/assignments/search` and the
-  `IncludeMapped` parameter on
-  `GET /access-control/users/{userId}/roles` are removed. Stop sending the
-  deprecated role version on writes; Grafana increments it.
-- In 13.0.0, Usage Insights changes dashboard and data-source identifiers from
-  numeric IDs to UIDs.
+Dashboard endpoints under `/apis` perform fine-grained access checks, and `kubernetesClientDashboardsFolders` is enabled by default. (12.0.0)
 
-## Audit controls
+Library-panel RBAC is generally available and enabled by default; `libraryPanelRBAC` is removed. Library elements can no longer be configured as library variables. (12.1.0)
 
-- In 12.2.0 Enterprise, audit settings can control recording of data-source
-  query request and response bodies.
-- In 12.4.0 Enterprise, Loki audit delivery gains retry and timeout settings.
-- In 13.0.0 Enterprise, query request and response bodies are excluded from
-  audit events by default. Opt in explicitly where required, accounting for
-  the sensitivity and volume of those bodies.
+Starting in 12.3.2, dashboard API requests enforce previously missing scope checks. Avatar requests require sign-in and respect their timeout, so anonymous avatar retrieval no longer works. (12.3.0)
 
-## Cloud migration authorization
+### Data-source and organization scoping
 
-- In 11.5.0, the Cloud Migration assistant has a dedicated RBAC role.
-- In 12.4.0, the feature toggle is replaced by a configuration option that can
-  disable Cloud Migrations.
+Data-source label-based access control is available as a self-service public-preview feature. (12.0.0)
 
-## Restricted-recipient and secret controls
+Enterprise LBAC rules can filter by team. (12.1.0)
 
-- In 11.5.0, Enterprise reporting can restrict recipient email domains.
-- In 13.1.0, alerting can limit email contact-point recipients to organization
-  members. Enterprise reporting adds its own organization-member recipient
-  limit.
-- In 13.1.0, the AWS Secrets Keeper UI supports guided create, edit, activate,
-  deactivate, and delete operations.
+Correlations cannot use `org_id=0`; records and requests need a concrete organization ID. (12.3.0)
+
+### Grafana Live
+
+Pushing data to Grafana Live is protected by RBAC. Grant a purpose-specific action instead of assuming authenticated users can push. (13.0.0)
+
+## Custom roles and permission migrations
+
+### Annotation permission replacements
+
+Role creation, update, deletion, and assignment can fail when API-, Terraform-, or file-provisioned roles contain deprecated actions. Remove `fixed:annotations.dashboard:writer`, `fixed:annotations.dashboard:reader`, and `annotations:type:dashboard`; use dashboard or folder View/Edit/Admin permissions for dashboard annotations. Replace `annotations:*` with `annotations:type:organization` for organization annotations and dashboard/folder permissions for dashboard annotations. (13.0-upgrade)
+
+### Global data-source scopes
+
+A global role cannot carry a scope such as `datasources:uid:<uid>`. Recreate it with a new UID as a non-global role because role scope cannot be changed in place. Set `datasource_type` on data-source permission resources where possible. (13.0-upgrade)
+
+### Action sets and role writes
+
+RBAC writes persist action sets only. Automation should preserve action-set references rather than expecting expanded individual actions to be written. (12.3.0)
+
+The CLI command `grafana cli admin flush-rbac-seed-assignment` clears seeded RBAC assignments when maintenance requires it. (12.4.0)
+
+Enterprise removes `/access-control/assignments/search` and the `IncludeMapped` argument from `GET /access-control/users/{userId}/roles`. Stop sending the deprecated role version on writes; Grafana increments it automatically. (13.0.0)
+
+## Viewer and anonymous behavior
+
+`viewers_can_edit` is removed. Anonymous access enforces the configured Viewer organization role. (12.0.0)
+
+## Cloud migration access
+
+Cloud Migrations is enabled by default in 11.5, and a dedicated migration-assistant role controls access. (11.5.0)
+
+The Cloud Migrations feature toggle is removed. Use the configuration setting when the feature must be disabled. (12.4.0)
+
+## Auditing and sensitive data
+
+Enterprise query auditing can independently control recording of data-source request and response bodies. (12.2.0)
+
+Enterprise query caching is disabled for a data source with `oauthPassThru=true`, preventing per-user OAuth credentials from being mixed with cached results. (12.3.0)
+
+Enterprise audit delivery to Loki can configure retries and a timeout. (12.4.0)
+
+Data-source request and response bodies are disabled in Enterprise audit logs by default. Opt in only when their diagnostic value outweighs the sensitivity and volume. (13.0.0)
+
+Loki usage-insights events include the public-dashboard UID. (13.2.0)
+
+## Enterprise identity administration
+
+The AWS Secrets Keeper UI supports guided creation, editing, activation, deactivation, and deletion. Apply the same change-control expectations to every lifecycle action. (13.1.0)

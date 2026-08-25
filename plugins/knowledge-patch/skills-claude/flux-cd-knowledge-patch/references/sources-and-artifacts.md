@@ -1,44 +1,35 @@
-# Sources and artifacts
+# Sources and Artifacts
 
 ## OCIRepository and artifact commands
 
-Since 2.6.0, `OCIRepository` is GA at
-`source.toolkit.fluxcd.io/v1`. It is backward compatible with `v1beta2`, so
-manifests can migrate by changing only `apiVersion`.
+`OCIRepository` is GA at `source.toolkit.fluxcd.io/v1` (since 2.6.0). The API
+is backward compatible with `v1beta2`, so update a manifest by changing only
+its `apiVersion`.
 
 These artifact commands are stable:
 
-```shell
-flux build artifact
-flux push artifact
-flux pull artifact
-flux tag artifact
-flux diff artifact
-flux list artifacts
-```
+- `flux build artifact`
+- `flux push artifact`
+- `flux pull artifact`
+- `flux tag artifact`
+- `flux diff artifact`
+- `flux list artifacts`
 
-The stable media types are:
-
-- config: `application/vnd.cncf.flux.config.v1+json`
-- content: `application/vnd.cncf.flux.content.v1.tar+gzip`
+The Flux config media type
+`application/vnd.cncf.flux.config.v1+json` and content media type
+`application/vnd.cncf.flux.content.v1.tar+gzip` are stable as well.
 
 ## Registry provider validation
 
-Since 2.6.0, `OCIRepository` and `ImageRepository` reject a `.spec.provider`
-that does not match the repository URL.
-
-Use `aws`, `azure`, or `gcp` only with the corresponding cloud registry when
-automatic OIDC authentication is intended. For public repositories or
-image-pull-secret authentication, omit the provider or set it to `generic`.
-
-The opt-in `ObjectLevelWorkloadIdentity` feature gate permits identity to be
-assigned per object and tenant for OCIRepository and ImageRepository registry
-access.
+Since 2.6.0, OCIRepository and ImageRepository reject `.spec.provider` values
+that do not match the repository URL. Use `aws`, `azure`, or `gcp` only with a
+matching cloud registry and automatic OIDC authentication. For public access
+or image-pull-Secret authentication, omit the provider or set it to `generic`.
 
 ## GitRepository checkout and transport
 
-Since 2.6.0, `GitRepository` v1 accepts directories in `.spec.sparseCheckout`
-to fetch only selected paths:
+`GitRepository` v1 accepts a directory list in `.spec.sparseCheckout` to fetch
+only selected paths (since 2.6.0):
 
 ```yaml
 spec:
@@ -47,38 +38,46 @@ spec:
     - clusters/production
 ```
 
-HTTPS Git repositories also support mutual TLS. Since 2.7.0, GitHub App
-authentication for GitRepository can be combined with mTLS.
+HTTPS GitRepository connections support mutual TLS (since 2.6.0). GitHub App
+authentication can also use mTLS (since 2.7.0).
 
-## Git commit verification
+## Git identity and verification
 
-Since 2.9.0, `GitRepository.spec.verify` accepts SSH-signed commits in addition
-to GPG signatures.
-
-AWS CodeCommit access and `flux bootstrap` also support AWS Workload Identity,
-allowing keyless access to CodeCommit.
+`GitRepository.spec.verify` can verify SSH-signed commits in addition to GPG
+signatures (since 2.9.0). GitRepository access and `flux bootstrap` can use AWS
+CodeCommit Workload Identity for keyless AWS authentication.
 
 ## OCI and image verification
 
-Cosign v3 verification for OCI artifacts and container images is supported
-since 2.8.0.
+OCI artifact and container-image verification supports Cosign v3 (since
+2.8.0).
 
-Since 2.9.0, source-controller can use a custom Sigstore trusted root for
-keyless OCI artifact and container image verification. This supports
-air-gapped installations with self-hosted Rekor and Fulcio infrastructure.
+Source-controller accepts a custom Sigstore trusted root for keyless
+verification of OCI artifacts and images (since 2.9.0). Use it to point an
+air-gapped installation at self-hosted Rekor and Fulcio trust infrastructure.
+
+## Registry compatibility
+
+OCIRepository supports Helm's encoding of SemVer build metadata in OCI tags
+(since 2.9.4). Source-controller supports GCP sovereign-cloud artifact
+registries in the same release.
 
 ## ArtifactGenerator and ExternalArtifact
 
-The optional source-watcher component was introduced in 2.7.0. Enable it at
-bootstrap or installation:
+### Enable source-watcher (since 2.7.0)
 
-```text
---components-extra=source-watcher
+Install the optional source-watcher component with:
+
+```shell
+flux bootstrap ... --components-extra=source-watcher
 ```
 
-`ArtifactGenerator` can combine content from `GitRepository`,
-`OCIRepository`, and `Bucket` sources, or split a monorepo into independently
-revised `ExternalArtifact` objects:
+`ArtifactGenerator` can combine GitRepository, OCIRepository, and Bucket
+content into an `ExternalArtifact`, or split a monorepo into artifacts with
+independent revisions.
+
+Since 2.9.4, the OCI `flux-manifests` artifact includes source-watcher, so an
+ArtifactGenerator deployment can use that distribution.
 
 ```yaml
 apiVersion: source.extensions.fluxcd.io/v1beta1
@@ -108,18 +107,22 @@ spec:
           strategy: Merge
 ```
 
-Kustomizations consume generated output with
-`sourceRef.kind: ExternalArtifact`. A HelmRelease uses
-`spec.chartRef.kind: ExternalArtifact`. With multiple artifact entries and
-path-specific `copy.from` globs, only the artifact whose paths changed
-triggers its deployment.
+A HelmRelease consumes a generated artifact through `spec.chartRef` with
+`kind: ExternalArtifact`. For monorepo decomposition, use multiple artifact
+entries with path-specific `copy.from` globs. Kustomizations can consume each
+result with `sourceRef.kind: ExternalArtifact`, so only the artifact whose
+paths changed triggers its deployment.
 
-Since 2.8.0, ArtifactGenerator can extract and modify Helm charts while
-producing output.
+### Helm chart processing (since 2.8.0)
 
-Since 2.9.0, `ArtifactGenerator.spec.pathPattern` discovers matching monorepo
-directories. Named captures become variables for artifact names, labels, and
-copy rules:
+ArtifactGenerator can extract and modify Helm charts while creating an
+artifact.
+
+### Directory discovery (since 2.9.0)
+
+`ArtifactGenerator.spec.pathPattern` discovers matching monorepo directories
+and emits one ExternalArtifact for each match. Named captures become template
+variables for artifact names, labels, and copy rules:
 
 ```yaml
 spec:
@@ -135,3 +138,5 @@ spec:
           to: "@artifact/"
 ```
 
+Flux 2.9.4 changes the ArtifactGenerator CRD schema. Upgrade the CRD and
+source-watcher controller together.

@@ -1,9 +1,10 @@
 # Patch Index
 
-Generated at `2026-07-31T12:55:14Z`.
+Generated at `2026-08-25T01:43:45Z`.
 
 | Patch | Covers | Languages | Tags |
 | --- | --- | --- | --- |
+| Adyen (`adyen-knowledge-patch`) | rolling coverage | typescript, javascript, java, csharp, python, php, ruby, go, json | payments, checkout, webhooks, payment-methods, platforms |
 | AgOpenGPS (`agopengps-knowledge-patch`) | 6.8.5 | csharp, cpp, c, typescript, javascript | precision-agriculture, autosteer, agopengps, csharp, cpp, c, typescript, javascript |
 | Apache Airflow (`airflow-knowledge-patch`) | 3.3.0 | python, yaml, bash | workflow-orchestration, data-pipelines, scheduling, airflow, python, yaml, bash |
 | Alembic (`alembic-knowledge-patch`) | 1.18.0 | python, sql | database-migrations, sqlalchemy, alembic, python, sql |
@@ -16,6 +17,7 @@ Generated at `2026-07-31T12:55:14Z`.
 | Apache Kafka (`apache-kafka-knowledge-patch`) | 4.3.0 | java, scala, properties, shell | event-streaming, messaging, pubsub, kraft, data-pipelines, connectors, java |
 | Apache Spark (`apache-spark-knowledge-patch`) | 4.2.0 | scala, python, java, sql, r | distributed-computing, data-engineering, dataframes, sql, stream-processing, pyspark, machine-learning |
 | Apollo GraphQL (`apollo-graphql-knowledge-patch`) | current compatibility guidance | typescript, javascript, graphql, yaml, rust | graphql, api, client, server, federation, routing, typescript |
+| Apple Pay (`apple-pay-knowledge-patch`) | rolling coverage | javascript, typescript, swift, json | payments, wallets, checkout, merchant-validation, payment-tokens |
 | Arch Linux (`arch-knowledge-patch`) | rolling coverage | bash | linux, rolling-release, packages, system-administration, pacman |
 | Argo CD (`argo-cd-knowledge-patch`) | 3.0.0–3.2.0 | yaml | kubernetes, gitops, deployment, continuous-delivery, operations |
 | ASP.NET Core (`aspnet-core-knowledge-patch`) | 10.0 | csharp, razor, json, yaml | web-framework, dotnet, minimal-api, mvc, razor, dependency-injection, csharp |
@@ -26,8 +28,9 @@ Generated at `2026-07-31T12:55:14Z`.
 | Axum (`axum-knowledge-patch`) | 0.8.0 | rust, toml | web-framework, routing, middleware, extractors, async |
 | Microsoft Azure (`azure-knowledge-patch`) | rolling coverage | bicep, json, yaml, hcl, bash, powershell, python, typescript, csharp, go, java | cloud, bicep, azurerm, infrastructure-as-code, iam, authentication, networking |
 | Better Auth (`better-auth-knowledge-patch`) | 1.6.0 | typescript, javascript | authentication, sessions, oauth, plugins, typescript |
+| BigCommerce (`bigcommerce-knowledge-patch`) | rolling coverage | typescript, javascript, graphql, json | ecommerce, storefront, graphql, checkout, webhooks |
 | Biome (`biome-knowledge-patch`) | 2.5.0 | typescript, javascript, json, css | linting, formatting, tooling, javascript, css |
-| Bun (`bun-knowledge-patch`) | 1.3.14 | typescript, javascript, json | runtime, package-manager, bundler, testing, javascript |
+| Bun (`bun-knowledge-patch`) | 1.4.0 | typescript, javascript, json | runtime, package-manager, bundler, testing, javascript |
 | C and C++ (`c-cpp-knowledge-patch`) | current compatibility guidance | c, cpp | systems-programming, compilers, gcc, clang, c-cpp, c, cpp |
 | Caddy (`caddy-knowledge-patch`) | 2.11.1 | caddyfile, json | web-server, reverse-proxy, tls, routing, configuration |
 | Cargo (`cargo-knowledge-patch`) | 1.97.0 | rust, toml | rust, package-manager, build-tool, cargo, toml |
@@ -50,6 +53,7 @@ Generated at `2026-07-31T12:55:14Z`.
 | Debian (`debian-knowledge-patch`) | 13.0 | bash | linux, packages, apt, system-administration, security |
 | Deno (`deno-knowledge-patch`) | 2.9.0 | typescript, javascript, json | runtime, permissions, typescript, javascript, tooling |
 | Dev Containers (`devcontainers-knowledge-patch`) | current compatibility guidance | json, jsonc, dockerfile, yaml, shell, typescript | development-environments, containers, specification, cli, configuration, tooling |
+| DHL Shipping (`dhl-shipping-knowledge-patch`) | current compatibility guidance | typescript, javascript, python, java, csharp, php, json, xml | shipping, logistics, labels, customs, merchant-api |
 | Dioxus (`dioxus-knowledge-patch`) | 0.8.0-alpha.1 | rust | ui, reactivity, fullstack, routing, hot-reload, desktop, mobile |
 | Django (`django-knowledge-patch`) | 6.0.8 | python | web-framework, orm, migrations, templates, async |
 | DNF5 (`dnf5-security-updates-knowledge-patch`) | 5.4.1 | bash | linux, packages, security, updates, rpm |
@@ -57,6 +61,7 @@ Generated at `2026-07-31T12:55:14Z`.
 | .NET and C# (`dotnet-csharp-knowledge-patch`) | current compatibility guidance | csharp | dotnet, csharp, runtime, language, dotnet-csharp |
 | Drizzle ORM (`drizzle-knowledge-patch`) | 1.0.0-beta.19 | typescript | orm, sql, migrations, schema, database |
 | DuckDB (`duckdb-knowledge-patch`) | 1.2.0–1.5.0 | sql, python | database, analytics, sql, embedded, data-science |
+| EasyPost (`easypost-knowledge-patch`) | rolling coverage | typescript, javascript, python, ruby, go, java, csharp, php, json | shipping, logistics, labels, tracking, carrier-api |
 | Elasticsearch (`elasticsearch-knowledge-patch`) | 9.4.0 | java, json, yaml, esql, painless | search, analytics, database, indexing, vectors, esql, java |
 | Electron (`electron-knowledge-patch`) | 43.0.0 | javascript, typescript, html, css, json | desktop, chromium, nodejs, runtime, ipc, webview, javascript |
 | Elixir (`elixir-knowledge-patch`) | 1.20.0-rc | elixir | functional-programming, beam, otp, phoenix, liveview |
@@ -68,6 +73,7 @@ Generated at `2026-07-31T12:55:14Z`.
 | Express (`express-knowledge-patch`) | 5.2.x | javascript, typescript | web-framework, nodejs, http, express, javascript, typescript |
 | External Secrets Operator (`external-secrets-knowledge-patch`) | 2.8.0 | yaml, go, json, shell | kubernetes, secrets, operators, security, cloud, automation |
 | FastAPI (`fastapi-knowledge-patch`) | 0.135.3 | python | api, async, web-framework, validation, openapi |
+| FedEx Shipping (`fedex-shipping-knowledge-patch`) | rolling coverage | typescript, javascript, python, java, csharp, php, json | shipping, logistics, labels, tracking, merchant-api |
 | Fedora Linux (`fedora-knowledge-patch`) | 44 | bash | linux, packages, dnf, system-administration, selinux |
 | Fluent Bit (`fluent-bit-knowledge-patch`) | 5.0.9 | yaml, c, lua | logging, observability, log-forwarding, metrics, plugins, telemetry |
 | Flutter (`flutter-knowledge-patch`) | 3.44.0 | dart | mobile, ui, widgets, dart, cross-platform |
@@ -84,6 +90,7 @@ Generated at `2026-07-31T12:55:14Z`.
 | GNSS (`gnss-navigation-knowledge-patch`) | current compatibility guidance | cpp, python | satellite-navigation, gps, positioning, rtk, ppp |
 | Go (`go-knowledge-patch`) | 1.26.0 | go | language, toolchain, modules, concurrency, generics |
 | Google Gemini API (`google-gemini-api-knowledge-patch`) | rolling coverage | python, typescript, javascript, go, java, json, bash | ai, llm, gemini, hosted-api, tools, structured-outputs, function-calling |
+| Google Pay (`google-pay-knowledge-patch`) | rolling coverage | typescript, javascript, java, kotlin, json | payments, wallets, checkout, tokenization, web-payments |
 | gpsd (`gpsd-knowledge-patch`) | 3.27 | c, python, bash | gps, gnss, daemon, positioning, nmea |
 | Gradle (`gradle-knowledge-patch`) | 9.6.1 | groovy, kotlin, java | build-tool, jvm, kotlin-dsl, groovy, gradle, kotlin, java |
 | Grafana (`grafana-knowledge-patch`) | 13.1.0 | typescript, go, json, yaml, ini | observability, dashboards, metrics, visualization, monitoring, alerting, plugins |
@@ -119,10 +126,14 @@ Generated at `2026-07-31T12:55:14Z`.
 | Lit (`lit-knowledge-patch`) | current compatibility guidance | typescript, javascript, html, css | web-components, templates, ssr, signals, reactivity, frontend, typescript |
 | LiteLLM (`litellm-knowledge-patch`) | 1.93.0 | python, yaml, json | llm, proxy, model-routing, ai, litellm, python, yaml, json |
 | LlamaIndex (`llamaindex-knowledge-patch`) | current compatibility guidance | python | rag, agents, retrieval, ai, integrations, llamaindex, python |
+| Magento / Adobe Commerce (`magento-adobe-commerce-knowledge-patch`) | current compatibility guidance | php, javascript, typescript, graphql, json, xml | ecommerce, php, graphql, extensions, adobe-commerce |
 | MapLibre GL JS (`maplibre-gl-js-knowledge-patch`) | 6.0.0 | typescript, javascript, html, css, json | maps, webgl, geospatial, vector-tiles, rendering, frontend, typescript |
 | MapLibre Native (`maplibre-native-knowledge-patch`) | current compatibility guidance | cpp, kotlin, java, swift, objective-c, javascript, typescript, qml, cmake, json | maps, geospatial, vector-tiles, rendering, mobile, android, ios |
 | Matter (IoT) (`matter-iot-knowledge-patch`) | Matter 1.4.1–Matter 1.6 | cpp, python, kotlin, java | iot, smart-home, connectivity, standards, security, commissioning, protocol |
+| Medusa (`medusa-knowledge-patch`) | rolling coverage | typescript, javascript, json | ecommerce, typescript, headless-commerce, workflows, storefront |
+| Mercur (`mercur-knowledge-patch`) | rolling coverage | typescript, javascript, json | ecommerce, marketplace, medusa, vendors, payouts |
 | Model Context Protocol (MCP) (`model-context-protocol-knowledge-patch`) | 2025-03-26–2025-11-25 | typescript, javascript, python, json | ai, tools, protocol, mcp, agents, client, server |
+| Mollie (`mollie-knowledge-patch`) | rolling coverage | typescript, javascript, php, python, ruby, java, json | payments, checkout, subscriptions, webhooks, connect |
 | MongoDB (`mongodb-knowledge-patch`) | 8.2 | javascript, json | database, document-store, aggregation, replication, sharding |
 | MoveIt 2 (`moveit2-knowledge-patch`) | 2.14.3 | cpp, python, cmake, yaml, xml | robotics, motion-planning, manipulation, ros2, kinematics, control, cpp |
 | MQTT (`mqtt-knowledge-patch`) | MQTT 5.0–MQTT-SN 2.0 CSD01 | c, cpp, python, javascript | messaging, iot, protocol, pubsub, realtime, networking, security |
@@ -151,15 +162,20 @@ Generated at `2026-07-31T12:55:14Z`.
 | OpenSSL (`openssl-tls-knowledge-patch`) | 4.0.0 | c, bash | cryptography, tls, certificates, pki, security |
 | OpenTelemetry (`opentelemetry-knowledge-patch`) | current compatibility guidance | yaml, json, go, python, typescript, java | observability, tracing, metrics, logs, collector |
 | OpenTofu (`opentofu-knowledge-patch`) | 1.12.0 | hcl, go, bash, json | infrastructure-as-code, hcl, terraform-compatible, opentofu, go, bash, json |
+| Paddle (`paddle-knowledge-patch`) | rolling coverage | typescript, javascript, python, go, php, json | payments, billing, merchant-of-record, subscriptions, webhooks |
+| PayPal (`paypal-knowledge-patch`) | rolling coverage | typescript, javascript, python, java, csharp, php, ruby, json | payments, checkout, subscriptions, webhooks, merchant-onboarding |
 | pgvector (`pgvector-knowledge-patch`) | 0.8.5 | sql | vectors, embeddings, similarity-search, postgresql, indexing |
 | Phoenix (`phoenix-knowledge-patch`) | 1.8.x | elixir, javascript | web-framework, elixir, liveview, phoenix, javascript |
 | PHP (`php-knowledge-patch`) | 8.5.0 | php | language, web, runtime, php |
 | Playwright (`playwright-knowledge-patch`) | 1.61.0 | typescript, javascript, python | testing, browser, automation, e2e, fixtures |
 | pnpm (`pnpm-knowledge-patch`) | 11.17.0 | typescript, javascript, json, yaml | package-manager, javascript, monorepo, pnpm, typescript, json, yaml |
 | Podman (`podman-knowledge-patch`) | 6.0.0 | bash, yaml | containers, images, pods, compose, rootless |
+| Polar (`polar-knowledge-patch`) | rolling coverage | typescript, javascript, python, json | payments, billing, merchant-of-record, subscriptions, webhooks |
 | Polars (`polars-knowledge-patch`) | 1.41.0 | python, rust, sql | dataframes, analytics, arrow, polars, python, rust, sql |
 | PostGIS (`postgis-knowledge-patch`) | 3.6.1 | sql | spatial, database, gis, geometry, geography |
 | PostgreSQL (`postgresql-knowledge-patch`) | 18.0 | sql | database, sql, transactions, replication, indexing |
+| Posti / Matkahuolto (`posti-matkahuolto-knowledge-patch`) | current compatibility guidance | typescript, javascript, python, java, csharp, php, json, xml | shipping, finland, pickup-points, labels, merchant-api |
+| PrestaShop (`prestashop-knowledge-patch`) | rolling coverage | php, javascript, typescript, smarty, json | ecommerce, php, modules, checkout, back-office |
 | Prisma (`prisma-knowledge-patch`) | 7.8.0 | typescript | orm, schema, migrations, database, client |
 | PROJ (`proj-knowledge-patch`) | 9.8.1 | cpp, c, cmake, sql | geospatial, coordinate-systems, projections, proj, cpp, c, cmake, sql |
 | Prometheus (`prometheus-knowledge-patch`) | 3.13.0 | go, yaml, promql | monitoring, metrics, promql, prometheus, go, yaml |
@@ -188,12 +204,15 @@ Generated at `2026-07-31T12:55:14Z`.
 | Ruby (`ruby-knowledge-patch`) | 4.0.0 | ruby | language, runtime, gems, ruby |
 | Ruff (`ruff-knowledge-patch`) | 0.16.0 | python, toml, json | python, linter, formatter, ruff, toml, json |
 | Rust (`rust-knowledge-patch`) | 1.84.0–1.97.0 | rust, toml | language, cargo, ownership, async, edition-2024 |
+| Saleor (`saleor-knowledge-patch`) | rolling coverage | python, graphql, typescript, javascript | ecommerce, graphql, headless-commerce, apps, checkout |
 | SBOM / SPDX / CycloneDX (`sbom-spdx-cyclonedx-knowledge-patch`) | current compatibility guidance | json, yaml, xml, protobuf, markdown | supply-chain, sbom, spdx, cyclonedx, security, standards, compliance |
 | SELinux (`selinux-knowledge-patch`) | current compatibility guidance | bash, cil | linux, security, policy, labels, access-control |
 | Sentry JavaScript SDK (`sentry-knowledge-patch`) | 10.68.0 | javascript, typescript | error-tracking, observability, javascript, sentry, typescript |
 | Serde (`serde-knowledge-patch`) | 1.0.220 | rust | serialization, deserialization, derive, formats, rust |
 | Service Workers and Progressive Web Apps (`service-workers-pwa-knowledge-patch`) | current compatibility guidance | javascript, typescript, html, css, json | web-platform, offline, pwa, service-workers, caching, workbox, javascript |
 | shadcn/ui (`shadcn-ui-knowledge-patch`) | 4.16.0 | typescript, tsx, javascript, jsx, css, json | components, react, tailwind, ui, design-system, registry, typescript |
+| Shopify (`shopify-knowledge-patch`) | rolling coverage | typescript, javascript, graphql, liquid, json | ecommerce, graphql, apps, checkout, liquid |
+| Shopware (`shopware-knowledge-patch`) | rolling coverage | php, javascript, typescript, vue, twig, xml | ecommerce, php, store-api, extensions, storefront |
 | Sigstore Cosign (`sigstore-cosign-knowledge-patch`) | 3.0.0–3.1.2 | bash, yaml, json | supply-chain, signing, verification, containers, security |
 | SLSA (`slsa-knowledge-patch`) | 1.2 | yaml, json | supply-chain, provenance, builds, security, compliance |
 | SolidJS (`solidjs-knowledge-patch`) | current compatibility guidance | typescript, javascript, tsx, jsx | frontend, reactivity, signals, components, ssr |
@@ -201,6 +220,7 @@ Generated at `2026-07-31T12:55:14Z`.
 | SQLAlchemy (`sqlalchemy-knowledge-patch`) | 2.0.37–2.0.51 | python, sql | python, orm, sql, database, async |
 | SQLite (`sqlite-knowledge-patch`) | 3.46.0–3.53.0 | sql | database, sql, embedded, transactions, indexing |
 | SQLx (`sqlx-knowledge-patch`) | 0.9.0 | rust, sql | database, async, queries, macros, migrations |
+| Square (`square-knowledge-patch`) | rolling coverage | typescript, javascript, python, java, csharp, php, ruby, go, json | payments, orders, catalog, webhooks, web-payments |
 | Storybook (`storybook-knowledge-patch`) | 9.0–10.5.0 | typescript, javascript, tsx | frontend, components, testing, documentation, ui |
 | Stripe (`stripe-knowledge-patch`) | rolling coverage | typescript, javascript, python, ruby, go, java, php | payments, billing, checkout, webhooks, connect |
 | Supabase (`supabase-knowledge-patch`) | rolling coverage | typescript, javascript, python, dart, swift, kotlin, sql | backend, database, authentication, realtime, storage |
@@ -228,7 +248,9 @@ Generated at `2026-07-31T12:55:14Z`.
 | TypeScript (`typescript-knowledge-patch`) | 7.0.0 | typescript | language, types, compiler, javascript, modules |
 | Ubuntu (`ubuntu-knowledge-patch`) | 26.04 | bash | linux, packages, apt, system-administration, lts |
 | Unbound (`unbound-knowledge-patch`) | 1.25.0 | c, bash | dns, resolver, security, unbound, c, bash |
+| UPS Shipping (`ups-shipping-knowledge-patch`) | rolling coverage | typescript, javascript, python, java, csharp, php, json | shipping, logistics, labels, tracking, merchant-api |
 | uv (`uv-knowledge-patch`) | 0.6.0–0.11.32 | python, toml, bash | python, package-manager, projects, virtual-environments, tooling |
+| Vendure (`vendure-knowledge-patch`) | rolling coverage | typescript, javascript, graphql | ecommerce, typescript, graphql, plugins, headless-commerce |
 | Vercel AI SDK (`vercel-ai-sdk-knowledge-patch`) | 6.0 | typescript | ai, streaming, agents, tools, generative-ui |
 | Vite (`vite-knowledge-patch`) | 8.1.0 | typescript, javascript, json | build-tool, dev-server, bundling, hmr, frontend |
 | Vitest (`vitest-knowledge-patch`) | 4.1 | typescript, javascript | testing, unit-testing, mocking, coverage, vite |
@@ -238,6 +260,8 @@ Generated at `2026-07-31T12:55:14Z`.
 | WebAuthn / Passkeys (`webauthn-passkeys-knowledge-patch`) | current compatibility guidance | javascript, typescript, json | authentication, passkeys, webauthn, fido2, security |
 | WebGPU / WGSL (`webgpu-knowledge-patch`) | Chrome 133–Chrome 150 | typescript, javascript, wgsl, cpp | graphics, gpu, wgsl, web-platform, webgpu, typescript, javascript, cpp |
 | WireGuard (`wireguard-knowledge-patch`) | 1.0.20260223 | ini, bash, c | vpn, networking, security, linux, wireguard, ini, bash, c |
+| WooCommerce (`woocommerce-knowledge-patch`) | rolling coverage | php, javascript, typescript, json | ecommerce, wordpress, checkout, payments, extensions |
+| WordPress (`wordpress-knowledge-patch`) | rolling coverage | php, javascript, typescript, html, css, json | cms, php, plugins, themes, block-editor |
 | WorkOS (`workos-knowledge-patch`) | 8.10 | typescript, javascript, go, python, ruby, php | authentication, sso, scim, directory-sync, organizations |
 | Zephyr RTOS (`zephyr-knowledge-patch`) | 4.4.0 | c, cpp, python, yaml | rtos, embedded, iot, firmware, toolchain, drivers, realtime |
 | Zig (`zig-knowledge-patch`) | 0.15.1 | zig | language, comptime, build-system, memory, cross-compilation |

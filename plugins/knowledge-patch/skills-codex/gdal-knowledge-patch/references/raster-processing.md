@@ -1,291 +1,208 @@
 # Raster Processing
 
-RasterIO, warping, resampling, nodata, masks, statistics, VRT composition, and raster algorithms.
+## Warping and coordinate operations
+
+- **Empty source windows (3.10.3).** MEM-backed warping handles an empty
+  source window when nodata is nonzero.
 
-## All-nodata contour inputs
+- **Transformer and warp controls (3.11.0).** Transformers support Homography.
+  The warper adds `MODE_TIES`, uses source-pixel coverage for mode resampling,
+  and accepts a mode value of `-1`. Transformer options include
+  `ALLOW_BALLPARK=NO`, `ONLY_BEST=AUTO|YES|NO`, source/destination axis mapping,
+  and `HEIGHT_DEFAULT` for RPC fallback height. `ogr2ogr -ct_opt` exposes the
+  ballpark, best-operation, and differing-operation-warning controls.
 
-*Batch 3.12.2*
+- **Bounds transformation (3.11.1).** With both `-te` and `-te_srs`,
+  `gdalwarp` obtains the target extent through
+  `OGRCoordinateTransformation::TransformBounds()`.
 
-Contouring an all-nodata raster now succeeds with an empty output layer instead of emitting an error.
+- **Direct COG reprojection (3.11.2).** `gdalwarp` can reproject directly to
+  COG output again after the 3.11.0 regression.
+
+- **Global and TPS warps (3.11.4).** Large/global warps, including world-scale
+  WMTS input, no longer fail in the affected cases. Longitude spans of at
+  least 360 degrees are not assigned an inappropriate `CENTER_LONG` when
+  targeting Web Mercator. TPS defaults to `-wo SOURCE_EXTRA=5`.
+
+- **Destination initialization transition.** With `INIT_DEST=NO_DATA` but no
+  nodata value, 3.11.5 warns and initializes to zero without returning failure
+  (3.11.5). The same request fails in 3.13.0; use
+  `RESET_DEST_PIXELS=YES|NO` to reset an existing destination to nodata or zero
+  when required (3.13.0).
+
+- **Unified source nodata (3.12.2).** `UNIFIED_SRC_NODATA=YES` no longer
+  triggers inappropriate destination-nodata avoidance.
 
-## Arrow and directory-oriented vector capabilities
+- **Working types (3.12.3).** `GDALWarpResolveWorkingDataType()` considers band
+  types before falling back to UInt8. Nearest-neighbor warping has a dedicated
+  Int8 path, so signed bytes do not rely on unsigned-byte working behavior.
 
-*Batch 3.13.0*
+- **Multithread interruption (3.12.4).** Multithreaded warps detect progress
+  cancellation more reliably, and a warp started from a worker thread avoids
+  a possible deadlock.
 
-Arrow field creation and batch writing support string-view values, and the C API gains `OGR_L_GetAttributeFilter()`. A new driver capability identifies directories that may contain multiple vector layers and is advertised by Shapefile, MapInfo, CSV, FlatGeobuf, and MiraMonVector.
+- **Output-buffer calculation (3.13-migration).** RasterIO resampling and VRT
+  work in the output buffer type by default. Set `bOperateInBufType=false` to
+  opt out.
 
-## BigTIFF nodata values in LIBERTIFF
+- **Lanczos validity semantics (3.13.1).** Lanczos no longer uses a special
+  case when fewer than half the contributing pixels are valid; output near
+  masks and nodata can differ.
 
-*Batch 3.13.1*
+- **Vertical-shift metadata (3.13.1).** A 3D-to-3D vertical-shift warp does not
+  copy the source unit type to the output.
 
-LIBERTIFF correctly reads a BigTIFF nodata value whose string representation occupies four through eight bytes.
+## Resampling, nodata, masks, and statistics
 
-## COG and TIFF creation behavior
+- **Nodata location queries (3.11.2).** `gdallocationinfo` again handles nodata
+  correctly after the 3.10.0 regression.
 
-*Batch 3.11.0*
+- **Masks, half-precision NaNs, and constant histograms (3.11.4).**
+  `GDALNoDataMaskBand::IRasterIO()` preserves Byte reads when
+  `nLineSpace > nBufXSize`. Overview mode resampling accounts for NaN in
+  Float16 and CFloat16. `GetDefaultHistogram()` handles constant non-Byte data
+  where `min == max`.
 
-COG creation supports `INTERLEAVE=BAND` and `TILE`, notably for hyperspectral data. GTiff reads ArcGIS-style `.tif.vat.dbf` raster attribute tables, and GTiff, COG, and warping preserve premultiplied-alpha information from source TIFFs.
+- **Float precision in analysis (3.12.1).** `GDALFPolygonize()` processes
+  Float64 at native precision. `ComputeStatistics()` corrects Float64 standard
+  deviation under SSE2/AVX2 and uses Float64 precision for Float32 mean and
+  standard deviation.
 
-## Complete VRT overview exposure
+- **Zonal statistics bounds (3.12.1).** `GDALZonalStats` handles affected
+  polygons outside the raster. `gdal raster zonal-stats` avoids integer
+  overflow for extremely large geometry coordinates.
 
-*Batch 3.11.2*
+- **Complex source types (3.12.1).** `gdal raster calc` and
+  `VRTDerivedRasterBand` use the correct computation and transfer types for a
+  `ComplexSource`.
 
-A single-source VRT exposes all source overviews regardless of their size. `VRTPansharpen` also tolerates source bands with differing numbers of overviews when generating virtual overviews.
+- **Sum resampling (3.12.1).** `gdalwarp -r sum` avoids the former
+  chunk-processing artifacts.
 
-## Complex COG and RGB-NIR GeoTIFF creation
+- **NaN nodata resampling (3.12.4).** Bilinear, cubic, cubic-spline, and
+  Lanczos correctly process NaN when band nodata is also NaN.
 
-*Batch 3.11.4*
+- **NaN to signed integers (3.13.1).** SSE2 `GDALCopyWords()` converts
+  floating NaN to zero for signed 8-, 16-, and 32-bit integer output, matching
+  the scalar path.
 
-The COG driver can create datasets with complex data types. The GTiff driver can create R, G, B, NIR files without an explicit `PHOTOMETRIC` creation option.
+- **Exact integer nodata exclusion (3.13.2).** `ComputeRasterMinMax()` and
+  `GetHistogram()` require exact integer equality when excluding nodata; cases
+  that previously treated a different integer as nodata now produce different
+  statistics.
 
-## Degenerate line geometries in MIF
+## VRTs and derived raster bands
 
-*Batch 3.12.2*
+- **Processed source scale and offset (3.10.1).** A processed VRT reads scale
+  and offset from its source dataset.
 
-The MITAB `.mif` reader now accepts line strings and multi-line strings containing one point or no points.
+- **Expression and embedded-source composition (3.11.0).** VRT pixel
+  functions support arbitrary expressions, reclassification, and `mul`/`sum`
+  with a constant factor on one band. `<SimpleSource>` and `<ComplexSource>`
+  can embed a `<VRTDataset>` instead of naming a file. Processed VRTs use
+  `OutputBands` to declare output count and types.
 
-## Destination initialization warning semantics
+- **Complete overview exposure (3.11.2).** A single-source VRT exposes all
+  source overviews regardless of size. `VRTPansharpen` accepts source bands
+  with differing overview counts when generating virtual overviews.
 
-*Batch 3.11.5*
+- **Pansharpened overview nodata (3.11.5).**
+  `VRTPansharpenedRasterBand` overviews inherit full-resolution nodata.
 
-`InitializeDestinationBuffer()` no longer returns `CE_Failure` when `INIT_DEST=NO_DATA` is requested without a nodata value. It still warns and zero-initializes the destination buffer.
+- **Derived functions and coordinates (3.12.0).** VRT pixel functions add
+  `mean`, `median`, `geometric_mean`, `harmonic_mean`, `mode`, `argmin`, and
+  `argmax` with nodata handling. `min` and `max` accept a `k` constant.
+  Muparser adds `fmod`; expressions expose `_CENTER_X_` and `_CENTER_Y_`; and
+  `vrt://` accepts `transpose`.
 
-## Empty GML curves
+- **Source schema and deterministic reads (3.12.1).** VRT source types accept
+  a `name` XML attribute. Nearest reads use generic raster-band coordinate
+  rounding. Multithreading is disabled for neighboring sources not aligned to
+  integer output coordinates so results remain deterministic.
 
-*Batch 3.11.1*
+- **Pansharpen serialization and orientation (3.12.2).** Pansharpened VRTs
+  serialize correctly when panchromatic and multispectral extents differ; the
+  input vertical-orientation test is corrected.
 
-The GML geometry parser interprets `<gml:Curve><gml:segments/></gml:Curve>` as `LINESTRING EMPTY`.
+- **Strided derived reads (3.12.3).** `VRTDerivedRasterBand::IRasterIO()`
+  zero-initializes output correctly when line spacing differs from pixel
+  spacing times buffer width.
 
-## Exact integer nodata statistics
+- **Implicit derived overviews (3.12.4).** `VRTDerivedRasterBand` creates
+  implicit overviews correctly.
 
-*Batch 3.13.2*
+- **Additional functions and block selection (3.13.0).** VRT derived bands add
+  `area`, `quantile`, and `round`; `vrt://` accepts `block`.
 
-`ComputeRasterMinMax()` and `GetHistogram()` now require an exact integer match when excluding a nodata value, changing results in cases that previously treated a different integer as nodata.
+## Pansharpening, contours, terrain, and viewshed
 
-## FlatGeobuf output without a spatial index
+- **Constant contours (3.10.1).** `GDALContourGenerateEx()` returns `CE_None`
+  for a constant raster.
 
-*Batch 3.10.1*
+- **Nearly aligned pansharpening (3.10.3).** Inputs whose extents differ by
+  less than one multispectral resolution no longer cause I/O errors.
 
-With `SPATIAL_INDEX=NO`, the FlatGeobuf writer accepts a dataset with no features and handles empty geometries as null geometries.
+- **Terrain azimuth (3.10.3).** `gdaldem` accepts zero and negative `-az`
+  values, for example `-az 0`.
 
-## Geodesic lengths for open line strings
+- **Terrain scaling and nodata (3.11.0).** `gdaldem` derives scale from the CRS
+  and adds `-xscale`/`-yscale`. `gdal2tiles` applies source nodata even without
+  reprojection.
 
-*Batch 3.10.2*
+- **Non-north-up terrain (3.11.5).** Aspect, TPI, and TRI are corrected for
+  non-north-up rasters; hillshade, slope, and roughness are corrected for
+  rotated rasters.
 
-`GeodesicLength()` works on non-closed line strings again; a regression in 3.10.0 had limited it to closed line strings.
+- **All-nodata contours (3.12.2).** Contouring succeeds with an empty output
+  layer instead of erroring.
 
-## GML 3D geometry discovery
+- **Homography and viewshed ranges (3.12.3).** Homography overview scaling is
+  correct. Viewshed DEM and GROUND modes accept values outside Byte range.
 
-*Batch 3.12.1*
+- **Viewshed controls (3.12.0).** Viewshed supports angular, pitch, and
+  minimum-distance masks.
 
-The GML reader accepts 3D geometries whose `srsName` is three-dimensional even without `srsDimension='3'`. When several geometry elements exist and the last one is consistently selected, that geometry column now receives a name.
+- **Current GMT palettes (3.13.1).** `gdal raster color-map` accepts current
+  GMT `.cpt` files.
 
-## GTI relative paths and masked overview reads
+## Raster algebra and composition
 
-*Batch 3.12.4*
+- **Band algebra API (3.12.0).** C, C++, and Python support band arithmetic,
+  comparisons, `AsType()`, and functions including `abs()`, `sqrt()`, logs,
+  `min()`, `max()`, `mean()`, and `IfThenElse()`.
 
-Relative filenames in GTI XML or `.gti.gpkg` indexes are resolved relative to the main file. Downsampled requests on a GTI dataset with a mask band and overviews no longer fail with a `panBandMap[0]` missing-band error.
+- **Calculation and mosaic controls (3.12.0).** `gdal raster calc` handles
+  nodata, `--flatten`, and `--dialect=muparser|builtin`; the built-in dialect
+  can create one output band from all bands of one input. Raster mosaic accepts
+  `--pixel-function` and `--pixel-function-arg`; mosaic and stack accept
+  `--absolute-path`.
 
-## GTI unreadable-source failures
+- **Inputs without geotransforms (3.12.3).** `gdal raster calc` processes
+  sources with no geotransform.
 
-*Batch 3.11.5*
+- **Pipeline-supplied raster inputs (3.12.1).** `gdal raster compare`, `info`,
+  and `tile` work when their input is supplied outside the pipeline string.
+  `calc` accepts nested-pipeline inputs.
 
-A GTI raster read now fails when one of its sources is unreadable instead of allowing the failed source read to pass unnoticed.
+- **Blend and edit expansion (3.13.0).** Blend adds multiply, screen, overlay,
+  hard-light, darken, lighten, color-dodge, and color-burn. Raster creation can
+  be a pipeline step and copies `--like` tiling where possible. Editing can set
+  color interpretation, scale, offset, and a color map, or remove a table.
 
-## Implicit VRT derived-band overviews
+## Raster dimensions, windows, and overview behavior
 
-*Batch 3.12.4*
+- **Double target sizes (3.10.2).** `gdal_rasterize -ts` accepts doubles such
+  as `-ts 1024.0 512.0`.
 
-`VRTDerivedRasterBand` now creates implicit overviews correctly.
+- **RMS overview normalization (3.12.3).** RMS resampling uses the corrected
+  normalization formula, changing affected overview values.
 
-## ISO-compliant GML center-point circles
+- **Target-aligned mosaics (3.12.2).** `gdal raster mosaic` requires
+  `--resolution` whenever `--target-aligned-pixels` is present.
 
-*Batch 3.10.2*
+- **Edge and huge RasterIO reads (3.13.2).** Pansharpening reads small windows
+  at raster edges without window errors. Block RasterIO avoids integer
+  overflow on huge rasters.
 
-`gml:CircleByCenterPoint()` now returns a five-point `CIRCULARSTRING`, complying with ISO/IEC 13249-3:2011.
-
-## JSON-FG and Parquet evolution
-
-*Batch 3.12.0*
-
-JSON-FG is updated to specification 0.3.0 with read/write support for curve and measured geometries. Parquet gains editable-layer update support, reads and writes the Parquet `GEOMETRY` type with libarrow 21 or later, and adds a `COMPRESSION_LEVEL` layer creation option.
-
-## Lanczos validity-threshold removal
-
-*Batch 3.13.1*
-
-Lanczos warping no longer applies a special case when fewer than half of the contributing source pixels are valid, so results around masks and nodata may differ from earlier releases.
-
-## Large, global, and TPS warps
-
-*Batch 3.11.4*
-
-Warping large rasters no longer fails in cases such as globally extensive WMTS inputs, and a whole longitude range of at least 360 degrees is no longer given an inappropriate `CENTER_LONG` when targeting Web Mercator. TPS warping now defaults to `-wo SOURCE_EXTRA=5`.
-
-## LIBKML creation types
-
-*Batch 3.11.1*
-
-The LIBKML driver advertises Date, Time, DateTime, and Integer64 fields during creation, mapping them to strings, and maps boolean fields correctly.
-
-## LIBKML field-name collisions
-
-*Batch 3.12.2*
-
-When a LIBKML simple field has the same name as a core attribute, the driver appends `2` to the simple field's name.
-
-## Masked naked Lerc2 files
-
-*Batch 3.13.1*
-
-The MRF driver can decode naked Lerc2 files containing masks when built with liblerc 3.0 or newer.
-
-## More general OGR VRT source regions
-
-*Batch 3.10.1*
-
-An OGR VRT `SrcRegion` accepts any geometry type, as does `SetSpatialFilter()`, and `SrcRegion.clip` is applied correctly at the `OGRVRTLayer` level.
-
-## Multipolygon results from edge-built polygons
-
-*Batch 3.11.5*
-
-`OGRBuildPolygonFromEdges()` returns a multipolygon when the edges require one, including for affected DXF `HATCH` geometries. Callers must therefore be prepared for a multipolygon result.
-
-## Multithreaded warp interruption
-
-*Batch 3.12.4*
-
-Multithreaded warps detect progress interruption more reliably, and warping initiated from a worker thread avoids a potential deadlock.
-
-## Native-precision floating-point raster analysis
-
-*Batch 3.12.1*
-
-`GDALFPolygonize()` now processes Float64 rasters at their native precision instead of converting values to Float32. `ComputeStatistics()` corrects Float64 standard deviations with SSE2/AVX2 and uses Float64 precision for Float32 mean and standard-deviation calculations.
-
-## Nodata on pansharpened VRT overviews
-
-*Batch 3.11.5*
-
-`VRTPansharpenedRasterBand` overview bands now inherit the nodata value of the full-resolution band.
-
-## Pansharpened VRT serialization and orientation
-
-*Batch 3.12.2*
-
-Pansharpened VRTs now serialize correctly when the panchromatic and multispectral bands have different extents. The vertical-orientation test for input datasets is also corrected.
-
-## Pansharpening nearly aligned inputs
-
-*Batch 3.10.3*
-
-Pansharpening no longer reports I/O errors when the extents of the panchromatic and multispectral bands differ by less than one multispectral-band resolution.
-
-## Parquet list-field handling
-
-*Batch 3.12.1*
-
-The Parquet driver adds the `LISTS_AS_STRING_JSON=YES/NO` open option. `SetIgnoredFields()` also works for fields whose type is a list of structures.
-
-## PostgreSQL string truncation restored
-
-*Batch 3.11.3*
-
-The PostgreSQL driver again truncates strings as intended, restoring behavior that was broken in 3.11.1.
-
-## Raster band algebra API
-
-*Batch 3.12.0*
-
-The C, C++, and Python APIs support arithmetic and comparison directly on raster bands, type conversion with `AsType()`, and algebra functions including `abs()`, `sqrt()`, logarithms, `min()`, `max()`, `mean()`, and `IfThenElse()`.
-
-## Raster reads with masks, NaNs, and constant histograms
-
-*Batch 3.11.4*
-
-`GDALNoDataMaskBand::IRasterIO()` no longer corrupts Byte-band reads when `nLineSpace > nBufXSize`. Overview mode resampling accounts for `NaN` in `Float16` and `CFloat16`, while `GetDefaultHistogram()` handles constant-valued non-Byte data where `min == max`.
-
-## Repeated GMLAS string-list elements
-
-*Batch 3.10.3*
-
-The GMLAS driver now reads every value when a `StringList` field is represented by a repeated element.
-
-## Resampling with NaN nodata
-
-*Batch 3.12.4*
-
-Bilinear, cubic, cubic-spline, and Lanczos resampling now handle NaN values correctly when the band's nodata value is also NaN.
-
-## Richer VRT composition
-
-*Batch 3.11.0*
-
-VRT pixel functions can evaluate arbitrary expressions, reclassify values, and apply `mul` or `sum` with a constant factor to one band. A `<SimpleSource>` or `<ComplexSource>` may embed a `<VRTDataset>` instead of naming a source file, and processed VRTs gain an `OutputBands` element for declaring output count and data types.
-
-## RMS overview normalization
-
-*Batch 3.12.3*
-
-RMS overview resampling uses a corrected normalization formula, changing values produced by affected overviews.
-
-## S-102 products without uncertainty
-
-*Batch 3.11.1*
-
-The S102 driver opens products that have no uncertainty component and retrieves nodata correctly when only a depth component is present.
-
-## SQLite 3.49.1 with double-quoted strings disabled
-
-*Batch 3.10.3*
-
-The SQLite SQL dialect and the GeoPackage driver now work with SQLite 3.49.1 built or configured with `SQLITE_DQS=0`.
-
-## Strided VRT derived-band reads
-
-*Batch 3.12.3*
-
-`VRTDerivedRasterBand::IRasterIO()` correctly zero-initializes output buffers when line spacing differs from pixel spacing multiplied by the buffer width.
-
-## Unified-source-nodata warping
-
-*Batch 3.12.2*
-
-Warping with `UNIFIED_SRC_NODATA=YES` no longer applies inappropriate destination-nodata avoidance.
-
-## VRT derived functions and block selection
-
-*Batch 3.13.0*
-
-VRT derived bands add `area`, `quantile`, and `round` pixel functions. The `vrt://` connection protocol also accepts a `block` option.
-
-## VRT derived-band functions and expressions
-
-*Batch 3.12.0*
-
-VRT pixel functions add `mean`, `median`, `geometric_mean`, `harmonic_mean`, `mode`, `argmin`, and `argmax`, and now account for nodata; `min` and `max` accept an optional `k` constant. Muparser expressions add `fmod`, derived-band expressions expose `_CENTER_X_` and `_CENTER_Y_`, and `vrt://` accepts a `transpose` option.
-
-## VRT processed-dataset scaling
-
-*Batch 3.10.1*
-
-Processed VRT datasets now read scale and offset from their source dataset.
-
-## VRT source schema and deterministic reads
-
-*Batch 3.12.1*
-
-The VRT XML schema permits a `name` attribute on source types. Nearest-neighbor reads use the generic raster-band coordinate rounding, and multithreading is disabled for neighboring sources that are not aligned to an integer output coordinate so pixel output remains deterministic.
-
-## Warping empty source windows
-
-*Batch 3.10.3*
-
-Warping with the MEM driver now handles an empty source window correctly when the nodata value is nonzero.
-
-## WEBP-compressed RGBA in LIBERTIFF
-
-*Batch 3.11.2*
-
-LIBERTIFF reads WEBP-compressed RGBA images even when a fully opaque tile or strip omits its alpha component.
+- **Separate-VRT nodata warnings (3.13.1).** `gdalbuildvrt -separate` warns
+  when nodata lies outside the target band type.

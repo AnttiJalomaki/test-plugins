@@ -1,37 +1,38 @@
 # Vue Router 5
 
-## Package and build migration
+## Package and file-based routing migration
 
-### File-based routing is part of Vue Router
+### Move the unplugin into Vue Router
 
-Vue Router 5 folds `unplugin-vue-router` into the core package (5.0.0).
-Applications that did not use the plugin can generally move from Vue Router 4
-without code changes, apart from the IIFE distribution behavior described
-below. Plugin users should remove `unplugin-vue-router` and change imports:
+Vue Router 5 merges `unplugin-vue-router` into the router package (since
+5.0.0). Remove the separate dependency. Import the Vite plugin from
+`vue-router/vite`; other build adapters, integration utilities, and types are
+under `vue-router/unplugin`. That entry also exposes `resolveOptions`.
 
 ```ts
 import VueRouter from 'vue-router/vite'
-import type {
-  EditableTreeNode,
-  Options,
-} from 'vue-router/unplugin'
+import type { Options, EditableTreeNode } from 'vue-router/unplugin'
 ```
 
-The Vite plugin comes from `vue-router/vite`. Other build adapters, integration
-utilities, and types come from `vue-router/unplugin`; the newly exposed
-`resolveOptions` also comes from that entry point.
+Except for the IIFE distribution change below, applications that did not use
+the old plugin can generally upgrade from Vue Router 4 without source changes.
 
-Remove the obsolete `unplugin-vue-router/client` type reference. Prefer writing
-the generated declaration under `src`, where normal TypeScript includes will
-find it:
+### Generate route declarations where TypeScript includes them
+
+Remove the `unplugin-vue-router/client` type reference. Prefer generating the
+declaration under `src` so normal TypeScript include patterns discover it:
 
 ```ts
 VueRouter({ dts: 'src/routes.d.ts' })
 ```
 
-### Bundled Volar integrations
+### Configure bundled Volar route typing
 
-Use Vue Router's own Volar plugins for file-based route typing:
+The router bundles `vue-router/volar/sfc-typed-router` and
+`vue-router/volar/sfc-route-blocks` (since 5.0.0). The typed-router plugin
+infers a page route from its file location, which types no-argument
+`useRoute()` and template `$route`. Set `compilerOptions.rootDir` when the
+project root must be explicit.
 
 ```json
 {
@@ -45,31 +46,22 @@ Use Vue Router's own Volar plugins for file-based route typing:
 }
 ```
 
-`vue-router/volar/sfc-typed-router` infers the current page route from its file
-location. Consequently, no-argument `useRoute()` and template `$route` receive
-that page's parameter types. Set `compilerOptions.rootDir` when tooling cannot
-infer the intended project root.
+### Use route definition schema support
 
-### Distribution constraints
+Vue Router 5 includes a JSON schema for route definitions, so schema-aware
+editors and tools can validate route data and offer completions.
 
-The experimental entry point is ESM-only (5.1.0); CommonJS consumers cannot
-load it directly. Vite is an optional peer dependency, so installing Vue Router
-without Vite is supported when the Vite integration is unused.
+## Data loaders
 
-The IIFE build no longer bundles `@vue/devtools-api` (5.0.0), because Devtools
-v8 has no IIFE build. Supply Devtools separately when an IIFE-based workflow
-needs it.
+The experimental data-loader integration described by the 5.0-migration
+batch runs outside component setup. Loaders are collected and awaited during
+navigation and support parallel deduplicated fetching, loading and error
+state, SSR, and prefetching. Basic loaders rerun on every relevant navigation;
+the Colada implementation uses `@pinia/colada`.
 
-## Experimental data loaders
+### Install the plugin before the router
 
-The data-loader integration is experimental (5.0-migration). A loader runs
-outside component setup and is collected and awaited as part of navigation.
-The system supports parallel fetching with deduplication, loading and error
-state, SSR, and prefetching. Basic loaders always rerun; the Colada
-implementation uses `@pinia/colada`.
-
-Install `DataLoaderPlugin` before the router so it can participate in the
-initial navigation:
+Plugin order matters for initial navigation:
 
 ```ts
 import { createApp } from 'vue'
@@ -84,9 +76,13 @@ app.use(router)
 app.mount('#app')
 ```
 
-Define a loader with `defineBasicLoader()` and export it from the page component
-so the router discovers it. When the implementation lives in another module,
-the page must still re-export it:
+### Export loaders from their pages
+
+Define a loader with `defineBasicLoader()` and export it from the page so the
+router can discover it. When its implementation lives elsewhere, re-export it
+from the page. A route change reruns it and delays navigation until it resolves.
+Other callers of the composable share the fetching instance and receive
+`data`, `isLoading`, `error`, and `reload`.
 
 ```vue
 <script lang="ts">
@@ -103,46 +99,69 @@ const { data: user, isLoading, error, reload } = useUserData()
 </script>
 ```
 
-Route changes rerun the basic loader and delay navigation until it resolves.
-Calling its returned composable elsewhere shares the same fetching instance and
-exposes `data`, `isLoading`, `error`, and `reload`.
+## Typed routes, parameters, and query values
 
-## Typed route definitions and matching
+### Validate parsers and generated declarations
 
-### Query parameters
+File-based routing throws at runtime when a referenced parameter parser is
+missing (since 5.0.0). Parser types are included in generated declarations,
+even when the declaration file sits outside the project root.
 
-Experimental typed routing treats query parameters as optional by default
-(5.0.0). Code that reads a declared query key must handle absence.
+### Treat query values as optional and validated
 
-Invalid query-parameter formats produce a runtime warning and the invalid
-values are filtered instead of causing route matching to fail (5.1.0). Query
-parameter values may also be `undefined`.
+Experimental typed query parameters are optional by default (since 5.0.0).
+Since 5.1.0, invalid query formats warn at runtime and invalid values are
+filtered rather than causing route matching to fail. Values may be
+`undefined`, so readers must handle absent declared keys.
 
-### Page and parameter typing
+### Use stronger page parameter types
 
 `definePage()` type-checks `params.path` and strictly types parameter defaults
-(5.1.0). Type errors now expose path configurations or defaults that do not
-match the declared parameter.
+(since 5.1.0). Incompatible paths and default values should be fixed at type
+checking time.
 
-File-based parameters support raw parameter parsers. Raw parser types are
-forced to arrays, and a string can be supplied as a parser for convenience.
-Repeatable parameters may also be embedded within a subsegment.
+### Use raw and repeatable parameter support correctly
 
-At runtime, file-based routing throws when a referenced parameter parser is
-missing (5.0.0). Parser types are inserted automatically into generated
-declarations, even when the declaration file is outside the project root.
+File-based parameters support raw parsers (since 5.1.0). Raw parser types are
+forced to arrays; a string may be supplied as a convenience parser.
+Experimental matching also supports repeatable parameters embedded in a
+subsegment.
 
-Vue Router includes a JSON schema for route definitions, allowing schema-aware
-editors and tools to validate route data and provide completion.
+The file-based unplugin rejects malformed `[x+hh]` character codes (since
+5.2.0). Both digits must be hexadecimal:
 
-### Configurable router type
+```text
+valid:   [x+2F]
+invalid: [x+2G]
+```
 
-The global `Router` type can be overridden (5.1.0). When the experimental types
-configuration is enabled, `useRouter()` also returns the configured override
-rather than the default global router type.
+## Router types and installation boundaries
 
-## Navigation lifecycle
+The global `Router` type is configurable (since 5.1.0). When experimental
+types are enabled, the override also controls the return type of `useRouter()`.
 
-When a kept-alive component is reactivated for a different route, its
-navigation guards run (5.0.0). Cached route components must not assume that
-reactivation skips route guards.
+`vue-router/experimental` is ESM-only (since 5.1.0); CommonJS consumers cannot
+load it directly. Vite is an optional peer dependency, so installations that
+do not use the Vite integration do not need Vite.
+
+Vue Router permits Pinia 4 starting with 5.2.0.
+
+## Runtime and distribution behavior
+
+### Run guards for kept-alive route changes
+
+When a cached component is reactivated for a different route, its navigation
+guards run (since 5.0.0). Do not assume a KeepAlive transition skips guards.
+
+### Ignore obsolete asynchronous scroll results
+
+When navigations overlap, the router ignores a result from an older async
+`scrollBehavior` after a newer navigation takes over (since 5.2.0). Tests for
+custom scrolling should cover overlapping navigations rather than expecting
+stale work to move the page.
+
+### Supply Devtools for IIFE builds
+
+The IIFE build no longer bundles `@vue/devtools-api` (since 5.0.0), because
+Devtools v8 has no IIFE build. Include Devtools separately if this distribution
+needs it.

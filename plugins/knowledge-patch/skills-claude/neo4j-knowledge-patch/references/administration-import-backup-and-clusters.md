@@ -1,30 +1,20 @@
 # Administration, Import, Backup, and Clusters
 
-Use this reference for `neo4j-admin`, Cypher administration commands, database
-seeding, cluster allocation, Fleet Manager, Ops Manager, and Cypher Shell.
+## Database creation and seeding
 
-## Database seeding
+### Seed option contract (2025.06)
 
-### Current option contract
+Cypher 25 removes `seedCredentials`; obtain cloud-seed credentials through the
+cloud provider's built-in mechanism. Replace `existingDataSeedInstance` with
+`existingDataSeedServer`, and use `seedSourceDatabase` to filter the restored
+backup artifacts. `existingData` is deprecated and is now optional.
 
-Cypher 25 changes database-seed options as follows:
+`CREATE DATABASE` accepts Java `Long` parameters as well as `Int` parameters.
 
-- `seedCredentials` is removed. Supply cloud-seed credentials through the
-  cloud provider's built-in credential mechanism.
-- `existingDataSeedInstance` becomes `existingDataSeedServer`.
-- `seedSourceDatabase` filters the restored backup artifacts.
-- `existingData` is deprecated and is now optional.
-- `CREATE DATABASE` accepts Java `Long` parameters as well as `Int` parameters.
+### Cluster-local seeds for sharded property databases (2026.04.0)
 
-`S3SeedProvider` is replaced by `CloudSeedProvider` from 5.26. For filesystem
-seeds, use `FileSeedProvider`: `URLConnectionSeedProvider` no longer supports
-`file` locations in either Cypher 5 or Cypher 25.
-
-### Cluster-local sharded database seeds
-
-A sharded property database can be seeded from artifacts in cluster members'
-seed-repository folders. Supply `server://` locations in `seedUri` (since
-2026.04.0):
+Seed a sharded property database from artifacts in cluster members' seed
+repository folders by passing `server://` locations in `seedUri`:
 
 ```cypher
 CREATE DATABASE spd OPTIONS {
@@ -32,190 +22,176 @@ CREATE DATABASE spd OPTIONS {
 }
 ```
 
-## Import
+### Seed-provider migrations
 
-### Backup-format and identity options
+Use `CloudSeedProvider` instead of `S3SeedProvider` from 5.26. For filesystem
+seeds, use `FileSeedProvider`; `URLConnectionSeedProvider` no longer supports
+`file` locations in either Cypher 5 or Cypher 25.
 
-`neo4j-admin database import` and `neo4j-admin database copy` accept
-`--compress` when `--target-format=backup` produces backup-format output.
+## Backup and copy operations
 
-Multi-column identities can use `INTEGER` ID types instead of being forced to
-`STRING`, so composite keys retain their intended type.
+### Produce compressed backup-format output (2026.04.0)
 
-### Graph-type schema during import
+`neo4j-admin database copy` and `neo4j-admin database import` accept
+`--compress` when output uses `--target-format=backup`.
 
-For a full import, the preview command below can be passed through `--schema`:
+### Depend on the documented inspection order (2026.04.0)
 
-```cypher
-ALTER CURRENT GRAPH TYPE SET { ... }
-```
+`neo4j-admin backup inspect` sorts by append index. Entries sharing an append
+index are ordered by time. Automation may use that ordering contract.
 
-For an incremental import, `--schema` accepts graph-type additions, removals,
-and alterations (since 2026.06.0):
+### Bound copy memory by the whole operation
 
-```cypher
-ALTER CURRENT GRAPH TYPE ADD { ... }
-ALTER CURRENT GRAPH TYPE DROP { ... }
-ALTER CURRENT GRAPH TYPE ALTER { ... }
-```
-
-This extends graph-type schema changes beyond the full-import path.
-
-### Bad-entry tolerance
-
-From 2025.12, both `neo4j-admin database import full` and `incremental` default
-`--bad-tolerance` to `-1`, meaning unlimited, instead of `1000`. Specify a
-finite value when import should stop after a bounded number of malformed
-entries.
-
-### Progress log locations
-
-Import progress changes location across releases:
-
-- In 2026.03 it moves from
-  `server/logs/neo4j-admin-import-yyyy-MM-dd.HH.mm.ss.log` to
-  `server/data/imports/dbname-yyyy-MM-dd.HH.mm.ss/import.log`.
-- In 2026.04 the generated import-information directory moves back under
-  `server/logs/`.
-
-Determine the location from the installed release rather than hard-coding a
-single path.
-
-Vector-specific import parsing is documented in the vector reference.
-
-## Database copy and migration memory
-
-From 2025.01, `neo4j-admin database copy --from-pagecache=<size>` limits
-off-heap memory for the entire copy operation, covering reads and writes, not
-only the source read cache. The clearer equivalent is:
+Since 2025.01, `neo4j-admin database copy --from-pagecache=<size>` limits
+off-heap memory across both reads and writes, rather than only the source read
+cache. Prefer the clearer equivalent:
 
 ```text
 --max-off-heap-memory=<size>
 ```
 
-For `neo4j-admin database migrate`, replace the deprecated `--page-cache`
-option with the same `--max-off-heap-memory` option.
+### Filter user metadata in backups
 
-## Backup operations
-
-### Inspection order
-
-`neo4j-admin backup inspect` orders output by append index. If entries share an
-append index, time breaks the tie. Consumers that depend on inspection order
-should use that contract.
-
-### Aggregate command
-
-Replace the deprecated:
-
-```text
-neo4j-admin database aggregate-backup
-```
-
-with:
-
-```text
-neo4j-admin backup aggregate
-```
-
-### User-filtered metadata
-
-From 2025.10, include only named users and their role assignments in backup
-metadata with:
+Since 2025.10, include only named users and their role assignments with:
 
 ```text
 --include-metadata=users=alice,bob
 ```
 
-## Page-cache I/O
+### Use current backup and migration commands
 
-Linux deployments can opt into initial `io_uring` support for the background
-page evictor and checkpointer (since 2026.04.0):
-
-```properties
-server.memory.pagecache.async=true
-```
-
-Validate kernel, filesystem, and workload behavior before enabling the option
-in production.
-
-## Administrative result contracts
-
-Cypher 25 changes several results and errors:
-
-- `SHOW TRANSACTIONS.startTime` and `currentQueryStartTime` are
-  `ZONED DATETIME`, not `STRING`.
-- Unavailable values in several transaction columns are `null`.
-- Administration commands with `WAIT` report cluster state through
-  notifications instead of result rows.
-- Revoking a privilege that cannot exist raises an error.
-
-Update deserializers, scripts, and tests accordingly.
-
-## Allocation and topology
-
-From 2025.12 in Cypher 25, `dbms.setDefaultAllocationNumbers()` accepts the
-additional `propertyShardReplicas` input, and
-`dbms.showTopologyGraphConfig()` returns `propertyShardReplicas`.
-
-Enterprise Edition settings `initial.server.allowed_databases` and
-`initial.server.denied_databases` accept wildcard database-name patterns from
-2025.12. Their minimum value length is reduced from three characters to one.
-
-## Server-management and cluster procedures
-
-`dbms.cluster.cordonServer()`,
-`dbms.cluster.setAutomaticallyEnableFreeServers()`, and
-`dbms.cluster.uncordonServer()` require `SERVER MANAGEMENT`. Relying on a broad
-admin privilege for these calls is deprecated; grant the specific privilege.
-
-Migrate cluster procedure calls as follows:
+Replace deprecated invocations as follows:
 
 ```text
-dbms.cluster.recreateDatabase() -> dbms.recreateDatabase()
-dbms.cluster.routing.getRoutingTable() -> dbms.routing.getRoutingTable()
-dbms.cluster.uncordonServer() -> ENABLE SERVER
+neo4j-admin database aggregate-backup -> neo4j-admin backup aggregate
+neo4j-admin database migrate --page-cache -> --max-off-heap-memory
 ```
 
-Cypher 25 also replaces or removes:
+## Import workflows
+
+### Preserve integer composite identities (2026.04.0)
+
+Multi-column identities in `neo4j-admin import` may use `INTEGER` ID types;
+they no longer need to be coerced to `STRING`.
+
+### Apply graph types through import schemas
+
+In 2026.05.0, full import accepts the preview command
+`ALTER CURRENT GRAPH TYPE SET {…}` through `neo4j-admin database import full
+--schema`.
+
+In 2026.06.0, incremental import additionally accepts `ALTER CURRENT GRAPH
+TYPE ADD/DROP/ALTER {…}` through `--schema`.
+
+### Parse vector input safely (2026.06.0)
+
+The `--vector-delimiter` character must differ from both `--delimiter` and
+`--quote`. The importer can also read vectors directly from native Parquet
+list types.
+
+### Set bad-entry tolerance explicitly
+
+Since 2025.12, full and incremental import default `--bad-tolerance` to `-1`,
+meaning unlimited. Set a finite value when the operation must abort after a
+bounded number of bad entries.
+
+### Locate import-progress logs by release
+
+The log layout changed twice:
+
+- In 2026.03, progress moved from
+  `server/logs/neo4j-admin-import-yyyy-MM-dd.HH.mm.ss.log` to
+  `server/data/imports/dbname-yyyy-MM-dd.HH.mm.ss/import.log`.
+- In 2026.04, the generated import-information directory moved back beneath
+  `server/logs/`.
+
+Discover the effective path instead of hard-coding the oldest flat filename.
+
+## Graph types and schema administration
+
+### Use graph types in production (2026.06.0)
+
+`GRAPH TYPE` is generally available for schema definition, enforcement, and
+validation. To obtain graph-shaped inspection output, use:
+
+```cypher
+SHOW CURRENT GRAPH TYPE AS GRAPH
+```
+
+The result contains lists of virtual nodes and relationships rather than the
+string representation.
+
+### Inspect and create constraints in Cypher 25 (2025.06)
+
+`SHOW [NODE|RELATIONSHIP] PROPERTY UNIQUENESS CONSTRAINTS` is accepted, and
+`PROPERTY` is optional. Returned type names are
+`NODE_PROPERTY_UNIQUENESS` and `RELATIONSHIP_PROPERTY_UNIQUENESS`.
+
+Do not supply `indexProvider` to index or constraint creation commands; that
+option has been removed.
+
+## Cluster allocation and topology
+
+### Configure property-shard replicas
+
+In Cypher 25 from 2025.12,
+`dbms.setDefaultAllocationNumbers()` accepts `propertyShardReplicas`.
+`dbms.showTopologyGraphConfig()` returns the same field.
+
+### Partition concurrent writes before they begin (2026.06.0)
+
+`CALL { … } IN CONCURRENT TRANSACTIONS` supports `DISJOINT BY`. Use it when
+rows can be partitioned into disjoint write sets: scheduling occurs before
+transactions begin, preventing lock contention and deadlocks in workloads
+such as merges under unique constraints and relationship creation.
+
+### Move server groups to tags
+
+Replace catch-up strategies `connect-randomly-to-server-group` and
+`connect-randomly-within-server-group` with their `*-server-tags` forms.
+Move the related settings:
 
 ```text
-dbms.cluster.readReplicaToggle() -> dbms.cluster.secondaryReplicationDisable()
-dbms.quarantineDatabase() -> dbms.unquarantineDatabase()
+db.cluster.raft.leader_transfer.priority_group
+  -> db.cluster.raft.leader_transfer.priority_tag
+server.cluster.catchup.connect_randomly_to_server_group
+  -> server.cluster.catchup.connect_randomly_to_server_tags
+server.groups
+  -> initial.server.tags
 ```
-
-`dbms.setDatabaseAllocator()` is removed without replacement. The deprecated
-`dbms.upgrade()` and `dbms.upgradeStatus()` procedures are also removed in
-Cypher 25; automation must not invoke them.
 
 ## Fleet and operations management
 
-### Discover and register local deployments
+### Discover and register local servers (2026.05.0)
 
-The server includes a local-network discovery service. Run:
+The server includes local-network discovery. Run `neo4j-admin fleet discover`
+to list deployments, then use `neo4j-admin` bulk registration to register them
+with Fleet Manager for Aura Console display.
 
-```text
-neo4j-admin fleet discover
-```
+Enterprise Fleet Management is no longer bundled with the DBMS package as of
+2026.04.0 because it is included in Neo4j. Enterprise also includes Neo4j Ops
+Manager 1.15.1, which supports any-to-any Neo4j upgrades.
 
-to list discovered servers. `neo4j-admin` can then bulk-register them with
-Fleet Manager for display in the Aura Console.
+### Use Cypher Shell system information on Infinigraph
 
-Enterprise Fleet Management is no longer bundled separately with the DBMS
-package because fleet-management capability is included in Neo4j.
+Cypher Shell `:sysinfo` supports Infinigraph deployments as of 2026.05.0.
 
-Neo4j Ops Manager 1.15.1, included with Enterprise, supports any-to-any Neo4j
-upgrades.
+## Administrative result contracts
 
-## Cypher Shell
+### Handle typed and notification results (2025.06)
 
-From 2025.08, disable shell history for a session with:
+In Cypher 25, `SHOW TRANSACTIONS.startTime` and
+`currentQueryStartTime` are `ZONED DATETIME`, not `STRING`. Unavailable values
+in several transaction columns are `null`.
 
-```text
-cypher-shell --history disable
-```
+Administration commands using `WAIT` report cluster state as notifications,
+not result rows. Revoking a privilege that cannot exist now raises an error.
 
-Cypher Shell now defaults `--error-format` to `gql`. Scripts that require a
-different error representation should pass the option explicitly.
+### Track CDC commit time (2026.06.0)
 
-The `:sysinfo` command supports Infinigraph deployments.
+`db.cdc.current()` returns `txCommitTime` alongside the transaction identifier,
+allowing a CDC client to retrieve its most recent transaction's commit time.
+
+Use the `db.cdc.*` namespace. The beta `cdc.current()`, `cdc.earliest()`, and
+`cdc.query()` procedures are deprecated in favor of `db.cdc.current()`,
+`db.cdc.earliest()`, and `db.cdc.query()`.

@@ -1,174 +1,194 @@
 # Data Sources, Databases, and QGIS Server
 
-## Catalogs, services, and connection behavior
+## Catalogs, geocoding, and cloud assets
 
-### Snapping in the Georeferencer (3.42)
+### STAC search and footprints
 
-The Georeferencer includes snapping options and the Advanced Digitizing panel
-for placing reference points against existing geometry.
+Since 3.42, the Data Source Manager STAC client searches catalogs, applies
+advanced result filters, shows or hides result footprints, and highlights the
+selected item's footprint.
 
-### STAC catalog search and footprints (3.42)
+Since 4.2, STAC can open cloud-optimized assets from Azure and Google storage
+and formats beyond GeoTIFF, including JPEG 2000, TileDB, and point clouds. The
+asset must carry a `cloud-optimized` MIME label or a supported asset-type
+declaration.
 
-The Data Source Manager STAC client can search catalogs, apply advanced result
-filters, show or hide result footprints on the map, and highlight the selected
-item's footprint.
+### Nominatim country filters
 
-### Nominatim country filtering (3.44)
+Since 3.44, the Nominatim Geocoder Locator can restrict results to a
+comma-separated set of two-letter country codes.
 
-The Nominatim Geocoder Locator can restrict results to countries using a
-comma-separated list of two-letter country codes.
+### Planetary Computer authentication
 
-### WFS feature and request modes (3.44)
-
-WFS connection URIs and UI accept `featureMode`: `default` retains server
-behavior, `SimpleFeatures` simplifies returned features, and
-`ComplexFeatures` disables simplification. A connection can use POST instead
-of the default GET.
-
-### Selectable OAPIF feature formats (4.0)
-
-OGC API Features connections can select advertised formats rather than always
-using GeoJSON. Choices include GML with or without a described schema or
-bulk-download link. GML schema handling can use the simple parser or GDAL
-GMLAS according to feature mode. `lastFeatureFormatEncoding` supplies the
-default for new connections.
-
-### Planetary Computer authentication (4.0)
-
-The authentication manager supports SAS signing for the open Microsoft
-Planetary Computer and SAS plus OAuth2 for Pro GeoCatalogs. The auth
-configuration works with STAC, GDAL, and point-cloud layers and is carried in
+Since 4.0, the authentication manager supports SAS signing for the open
+Microsoft Planetary Computer and SAS plus OAuth2 for Pro GeoCatalogs. The auth
+configuration works with STAC, GDAL, and point-cloud layers and is preserved in
 their data-source URIs.
 
-### Persistent WMS image-format selection (4.0)
+## WMS and temporal sources
 
-WMS connections detect server-advertised image formats and persist the
-preferred/default format for later use.
+### WMS-T group and raster ranges
 
-### SensorThings 2.0 (4.2)
+Since 3.44, a WMS-T layer-tree group can recursively derive a time dimension
+from its children. Disabling the dimension on a group stops its children's
+dimensions propagating upward. Group dimensions can include OGC WMS/ISO 8601
+date ranges; a raster can use one fixed date/time for both ends of its range.
 
-SensorThings layers support version 2.0 and the Sensing, Sampling, and
-Relations extensions. The Browser and Data Source Manager detect service
-version and extensions dynamically.
+### Persistent image formats
 
-### Changed ESRI REST Browser layout (4.2)
+Since 4.0, WMS connections detect server-advertised image formats and persist
+the preferred/default choice in settings.
 
-The Browser collapses duplicate FeatureServer-vector and MapServer-raster
-entries into the FeatureServer item; raster loading moves to its context menu.
-The MapServer `All layers` pseudo-layer is replaced by a context-menu action on
-the map service.
+### Highlight-label frames
 
-### Broader cloud STAC assets (4.2)
+Since 4.2, QGIS Server WMS requests can style highlight-label frames with
+`HIGHLIGHT_LABELFRAMEBACKGROUNDCOLOR`,
+`HIGHLIGHT_LABELFRAMEOUTLINECOLOR`,
+`HIGHLIGHT_LABELFRAMEOUTLINEWIDTH`, and `HIGHLIGHT_LABELFRAMESIZE`. Scope a
+parameter to a map when needed, for example
+`MAP0:HIGHLIGHT_LABELFRAMESIZE=5`.
 
-STAC can open cloud-optimized assets from Azure and Google storage and formats
-beyond GeoTIFF, including JPEG 2000, TileDB, and point clouds, when the asset
-has a `cloud-optimized` MIME label or a supported asset-type declaration.
+## WFS, OAPIF, and SensorThings
 
-## Temporal services and authentication
+### WFS feature and request modes
 
-### Temporal controls for WMS-T groups and rasters (3.44)
+Since 3.44, WFS connection URIs and the UI accept `featureMode`. `default`
+keeps server behavior, `SimpleFeatures` simplifies results, and
+`ComplexFeatures` disables simplification. Each connection can use POST instead
+of the default GET.
 
-WMS-T layer-tree groups recursively compute and expose a time dimension from
-children. Disabling the feature on a group prevents its children's dimensions
-from propagating to the parent. Group dimensions can contain OGC WMS/ISO 8601
-date ranges; a raster can use one fixed datetime to infer both temporal ends.
+### Selectable OAPIF feature formats
 
-### Extra OAuth2 tokens as headers (3.44)
+Since 4.0, OGC API Features connections can select advertised formats instead
+of always choosing GeoJSON. Choices include GML with or without a described
+schema or bulk-download link. Depending on feature mode, GML schema handling
+uses the simple parser or GDAL GMLAS; `lastFeatureFormatEncoding` supplies the
+default for new connections.
 
-Advanced OAuth2 configuration can attach additional values returned by the
-token endpoint as HTTP(S) request headers for any OAuth2 service.
+The default QGIS Server OAPIF root changed in 4.0 from `/wfs3` to `/ogcapi`.
+Use `QGIS_SERVER_API_WFS3_ROOT_PATH` to configure another path. Since 4.2, the
+service can export FlatGeobuf.
 
-### OAuth2 token auto-refresh (4.0)
+### SensorThings service detection
 
-OAuth2 connections refresh tokens automatically while in use. Periodic
-cleanup and layer removal stop refresh for unused connections.
+Since 4.2, SensorThings layers support version 2.0 and the Sensing, Sampling,
+and Relations extensions. The Browser and Data Source Manager dynamically
+detect the service version and available extensions.
 
-## Database import and Browser administration
+## Database import and SQL
 
-### PostGIS raster storage controls (3.42)
+### Database import mapping and filtering
 
-The PostgreSQL raster provider can save raster styles in PostGIS. A connection
-can hide raster overview tables listed by the `raster_overviews` view from the
-Browser.
+Since 3.44, imports can rename or exclude fields, set exact destination types,
+change source expressions, create fields, filter by extent/expression/current
+selection, and normalize field names to upper- or lowercase.
 
-### Database import mapping and filtering (3.44)
+Dragging one layer to a Browser data source opens controls for destination
+name, replacement, primary key, geometry column, CRS, and table comment.
+Multi-layer drops still import immediately. This dialog does not support
+Oracle.
 
-Imports can rename fields, select exact destination types, change source
-expressions, exclude or add fields, filter by extent/expression/selection, and
-uppercase or lowercase field names. Dragging one layer to a Browser data
-source opens controls for destination name, replacement, primary key, geometry
-column, CRS, and table comment. Multi-layer drag imports immediately. This
-dialog does not support Oracle.
+### SQL execution and persistence
 
-### SQL query persistence (3.44)
+Since 3.42, supported layers can execute SQL from their project-layer context
+menu. Since 3.44, the Browser Execute SQL dialog can insert, save, and remove
+stored queries in the project or user profile, and exposes query history in the
+Browser workflow. Execute SQL and Update SQL dialogs can save and load `.sql`
+files.
 
-The Browser Execute SQL dialog can insert, save, and remove queries stored in
-the project or user profile, and exposes query history in the Browser
-workflow. Execute SQL and Update SQL can save and load `.sql` files.
+### SQL Server query layers
 
-### PostgreSQL Browser management (3.44)
+Since 3.44, SQL Server queries can be loaded as map layers from the Browser,
+and the SQL of an existing query layer can be updated.
 
-The Browser can rename, delete, duplicate, or move PostGIS-stored QGIS
-projects to another schema. It can move PostgreSQL tables between schemas and
-rename their fields.
+## PostgreSQL and PostGIS
 
-### Single-schema PostgreSQL connections (3.44)
+### Raster styles and overview visibility
 
-A PostgreSQL connection can be restricted to one schema, limiting the Browser
-and data-source selector to matching tables.
+Since 3.42, the PostgreSQL raster provider can save raster styles in PostGIS. A
+connection can hide raster overview tables listed by the PostGIS
+`raster_overviews` view from the Browser.
 
-### SQL Server query layers (3.44)
+### Single-schema connections
 
-SQL Server queries can be loaded as map layers from the Browser, and the SQL
-of existing query layers can be updated.
+Since 3.44, a PostgreSQL connection can be restricted to one schema, limiting
+both the Browser and data-source selector to matching tables.
 
-### Browser database administration (4.0)
+### Browser management
 
-Supporting providers let the Browser edit table comments and create or delete
-spatial indexes. PostgreSQL layer properties show current-user table
-privileges, estimated row count, and spatial-index information.
+Since 3.44, the Browser can rename, delete, duplicate, or move PostGIS-stored
+QGIS projects to another schema. It can also move PostgreSQL tables across
+schemas and rename their fields.
 
-### GeoPackage field-domain maintenance (4.0)
+Since 4.0, supporting providers let the Browser edit table comments and create
+or delete spatial indexes. PostgreSQL layer properties report the current
+user's table privileges, estimated row count, and spatial-index information.
 
-GeoPackage field domains can be updated or deleted with GDAL 3.12 or later.
+### Project import, comments, and history
 
-### PostgreSQL project import and versioning (4.0)
-
-The Browser can save the open project to a PostgreSQL schema or batch-import
-projects from a directory, adding suffixes such as `_1` on collisions. Stored
-projects can have comments shown in Browser tooltips. PostgreSQL projects can
-enable automatic history and use QGIS dialogs to save, load, edit, and restore
+Since 4.0, the Browser can save the open project to a PostgreSQL schema or
+batch-import projects from a folder. Name collisions receive suffixes such as
+`_1`; stored-project comments appear in Browser tooltips. PostgreSQL projects
+can enable automatic history and use dialogs to save, load, edit, and restore
 earlier versions.
 
-## QGIS Server configuration and output
+### GeoPackage field domains
 
-### Configurable server project cache (3.44)
+Since 4.0, GeoPackage field domains can be updated or deleted when QGIS uses
+GDAL 3.12 or later.
 
-`QGIS_SERVER_PROJECT_CACHE_SIZE` configures the QCache cost used for the
-server project cache instead of the former hardcoded value.
+## Authentication and project safety
 
-### Server metadata on layer-tree groups (3.44)
+### Extra OAuth2 tokens as headers
 
-Groups can publish keywords, data URL and format, attribution title and URL,
-metadata URLs, and legend URL and format through GetCapabilities, in addition
-to short name, title, and abstract. If no legend URL is set, a legend is
-generated by default.
+Since 3.44, advanced OAuth2 configuration can attach additional values returned
+by the token endpoint as HTTP(S) request headers for any OAuth2 service.
 
-### HTML GetFeatureInfo maptip-only mode (4.0)
+### Automatic token refresh
 
-A project setting can make HTML GetFeatureInfo use only the layer maptip. Its
-WMS vendor parameter is `WITH_MAPTIP=HTML_FI_ONLY_MAPTIP`.
+Since 4.0, OAuth2 connections refresh tokens automatically while in use.
+Periodic cleanup and layer removal stop refresh for unused connections.
 
-### Retrying invalid QGIS Server layers (4.0)
+### Localized metadata
 
-`QGIS_SERVER_RETRY_BAD_LAYERS=true` retests layers previously accepted as bad
-on every request and restores them when their dependency recovers.
+Since 4.0, key project and layer metadata participates in project translation,
+so translated values can feed layouts, map decorations, and other consumers.
 
-### Changed OAPIF server root (4.0)
+## Browser presentation
 
-The default OAPIF root changes from `/wfs3` to `/ogcapi`. Set
-`QGIS_SERVER_API_WFS3_ROOT_PATH` when another path is required.
+### ESRI REST consolidation
 
-### FlatGeobuf OAPIF export (4.2)
+Since 4.2, the Browser collapses duplicate FeatureServer-vector and
+MapServer-raster entries into the FeatureServer item. Raster loading moves to
+its context menu. The MapServer `All layers` pseudo-layer is likewise replaced
+by a context-menu action on the map service.
 
-QGIS Server's OGC API Features service can export FlatGeobuf.
+## QGIS Server operation and metadata
+
+### Project cache sizing
+
+Since 3.44, `QGIS_SERVER_PROJECT_CACHE_SIZE` configures the QCache cost used by
+the server project cache instead of a hardcoded value.
+
+### Layer-tree group metadata
+
+Since 3.44, groups can publish keywords, data URL and format, attribution title
+and URL, metadata URLs, and legend URL and format in GetCapabilities, in
+addition to short name, title, and abstract. When no legend URL is set, QGIS
+generates a legend by default.
+
+### Maptip-only HTML GetFeatureInfo
+
+Since 4.0, a project-level server setting can make HTML GetFeatureInfo use only
+the layer maptip. The corresponding WMS vendor parameter is
+`WITH_MAPTIP=HTML_FI_ONLY_MAPTIP`.
+
+### Retrying bad layers
+
+Since 4.0, `QGIS_SERVER_RETRY_BAD_LAYERS=true` makes every request retest layers
+previously accepted as bad and return them to service when dependencies
+recover.
+
+### Mesh GetFeatureInfo
+
+Since 4.0, QGIS Server can answer GetFeatureInfo requests for mesh layers.

@@ -1,288 +1,209 @@
 # Runtime and Web Platform
 
-V8 and JavaScript features, Web-compatible globals, events, URLs, timers, utilities, and REPL behavior.
+Use this reference for runtime and web platform work.
 
-## Contents
+## 24.14.1 security hardening (`24.14.0`)
 
-- [JavaScript and V8](#javascript-and-v8)
-- [Web-compatible globals and storage](#web-compatible-globals-and-storage)
-- [Events, aborts, and timers](#events-aborts-and-timers)
-- [URLs, readline, REPL, and utilities](#urls-readline-repl-and-utilities)
-- [Runtime semantics](#runtime-semantics)
-- [Core runtime behavior](#core-runtime-behavior)
+In 24.14.1, HTTP `headersDistinct` and `trailersDistinct` become null-prototype objects, and the Permission Model adds missing checks for affected `node:fs/promises` operations and `fs.realpath.native()`; use `Object.hasOwn()` for these header collections and grant the required filesystem permissions. The release also hardens WebCrypto HMAC and KMAC comparisons, HTTP/2 flow-control error handling, URL handling, and array-index hash collisions, so deployments on 24.14.0 should upgrade.
 
-## JavaScript and V8
+## 24.4.1 security fixes (`24.4.0`)
 
-### 24.4.1 security update (since 24.4.0)
+Node.js 24.4.1 fixes CVE-2025-27209, a V8 HashDoS involving RapidHash, and CVE-2025-27210, where Windows reserved device names could bypass path-traversal protection in `path.normalize()`. Deployments on 24.4.0 should upgrade to 24.4.1.
 
-Node.js 24.4.1 fixes CVE-2025-27209, a V8 RapidHash HashDoS, and CVE-2025-27210, in which Windows reserved device names such as `CON`, `PRN`, and `AUX` could bypass path-traversal protection in `path.normalize()`. Deployments on 24.4.0 should upgrade to 24.4.1.
+## `URLSearchParams(null)` string conversion (`26.4.0`)
 
-### `Float16Array` V8 serialization (since 23.5.0)
+`new URLSearchParams(null).toString()` now produces `null=` as required by the URL standard instead of treating `null` as no parameters.
 
-The `node:v8` serializer and deserializer can now round-trip `Float16Array` values.
+## Aborted readline promises (`23.8.0`)
 
-### Built-in `Uint8Array` base64 and hex conversion (since 25.0.0)
+Aborting a promise-based readline operation no longer leaves its promise unresolved.
 
-V8 14.1 adds direct base64 and hexadecimal conversion methods to `Uint8Array`, avoiding intermediate `Buffer` or string conversion.
+## Custom REPL error handling (`25.9.0`)
+
+Programmatic REPLs can now customize error handling, and the REPL no longer depends on `node:domain`. Embedded REPLs should use the explicit error-handling facility instead of relying on domain interception.
+
+## Deep-comparison and inspection corrections (`24.13.0`)
+
+Node.js 24.13.1 corrects deep comparison for `Map` and `Set` values containing mixed types. `util.inspect()` now limits property output to own properties, so diagnostics and snapshots that exposed inherited state can change.
+
+## Default Web APIs (`25.0.0`)
+
+Web Storage is enabled without `--experimental-webstorage`, and `ErrorEvent` is available as a global. Code using these browser-compatible APIs no longer needs the Web Storage opt-in flag or an `ErrorEvent` polyfill.
+
+## Deprecated process feature probes (`23.4.0`)
+
+`process.features.ipv6`, `process.features.uv`, and the `process.features.tls_*` properties are deprecated and should no longer be used for capability checks.
+
+## Detectable missing Web Storage (`26.0.0`)
+
+Accessing `globalThis.localStorage` without a configured storage file now returns `undefined`. `QuotaExceededError` is also derived from `DOMException`, allowing standard DOM-exception checks.
 
 ```js
-const bytes = Uint8Array.fromHex('deadbeef');
-console.log(bytes.toBase64()); // 3q2+7w==
-console.log(Uint8Array.fromBase64('SGVsbG8=').toHex()); // 48656c6c6f
+if (globalThis.localStorage !== undefined) localStorage.setItem('key', 'value');
 ```
 
-### Other stability promotions (since 25.4.0)
+## Disposable readline interfaces (`23.10.0`)
 
-The one-shot `crypto.hash()` API and `v8.queryObjects()` are now stable. The `--heapsnapshot-near-heap-limit`, `--build-snapshot`, and `--build-snapshot-config` CLI options are stable as well.
+Readline interfaces now support `Symbol.dispose`, enabling protocol-based cleanup with `rl[Symbol.dispose]()`.
 
-### Temporal enabled by default (since 26.0.0)
+## DOMException serialization (`24.3.0`)
 
-The global `Temporal` date/time API is enabled by default, so applications can use it without a startup flag.
+`DOMException` values are now supported by Node's serialization and deserialization machinery, so they can round-trip through APIs backed by it.
+
+## Float16Array V8 serialization (`23.5.0`)
+
+The `node:v8` serialization APIs now handle `Float16Array` values.
+
+## Legacy API removals and runtime deprecations (`23.0.0`)
+
+`process.assert()` and `zlib.bytesRead` are removed, while many legacy scalar `util.is*()` predicates are moved to end-of-life status. The `crypto.fips` property is runtime-deprecated in favor of `crypto.getFips()` and `crypto.setFips()`, and `fs.Dirent.path` is runtime-deprecated in favor of `parentPath`.
+
+## Legacy API retirements (`24.0.0`)
+
+`tls.createSecurePair()`, `tls.Server.prototype.setOptions()`, and the private `OutgoingMessage._headers` and `_headersList` fields are removed. `url.parse()` is runtime-deprecated, while constructing REPL or zlib classes without `new` is deprecated.
+
+## Legacy JavaScript API removals (`25.0.0`)
+
+`SlowBuffer`, `assert.CallTracker`, the multi-argument form of `assert.fail()`, the `process` `multipleResolves` event, and callback-based `worker.terminate()` are end-of-life. Use `Buffer.allocUnsafeSlow()`, a single-message `assert.fail()`, and the promise returned by `worker.terminate()`; child-process code must also use the public `channel` property instead of `_channel`.
+
+## Loose equality for nullish array elements (`24.14.0`)
+
+`assert.deepEqual()` now correctly handles loose comparisons of arrays containing `undefined` and `null`. Use `deepStrictEqual()` when those values must remain distinct.
+
+## Missing and undefined Error causes differ (`23.3.0`)
+
+Assertion comparisons now distinguish an `Error` with no `cause` from one whose `cause` property is explicitly `undefined`.
 
 ```js
-const release = Temporal.PlainDate.from('2026-05-05');
-console.log(release.add({ months: 1 }).toString());
+import assert from 'node:assert/strict';
+
+assert.deepStrictEqual(
+  new Error('boom'),
+  new Error('boom', { cause: undefined }),
+); // throws
 ```
 
-### V8 13.6 built-ins (since 24.0.0)
+## Native-error detection migration (`24.2.0`)
 
-The V8 update exposes `Float16Array` and adds `RegExp.escape()` and `Error.isError()`. `RegExp.escape()` safely turns arbitrary text into a literal pattern fragment, while `Error.isError()` provides a built-in error-brand check.
-
-```js
-const samples = new Float16Array([1 / 3, 2 / 3]);
-const input = 'a+b';
-const exact = new RegExp(`^${RegExp.escape(input)}$`);
-console.log(samples.length, exact.test('a+b'), Error.isError(new Error()));
-```
-
-### V8 14.6 collection and iterator APIs (since 26.0.0)
-
-`Map` and `WeakMap` now provide `getOrInsert()` and `getOrInsertComputed()` for eager or lazy insertion on a miss. `Iterator.concat()` sequences multiple iterables into one iterator.
+`util.isNativeError()` is deprecated in favor of `Error.isError()`.
 
 ```js
-const cache = new Map();
-const value = cache.getOrInsertComputed('answer', () => 42);
-const values = [...Iterator.concat([1, 2], new Set([3]))];
-```
-
-
-## Web-compatible globals and storage
-
-### DOM-compatible quota errors (since 26.0.0)
-
-`QuotaExceededError` is now a `DOMException`-derived interface, so quota failures can be handled through the standard DOM exception hierarchy.
-
-### Global `CloseEvent` (since 23.0.0)
-
-`CloseEvent` is now available as a global Web API, so close events can be constructed without an import.
-
-```js
-const event = new CloseEvent('close', { code: 1000, reason: 'done' });
-```
-
-### Global `ErrorEvent` (since 25.0.0)
-
-`ErrorEvent` is now exposed globally, so browser-compatible error events can be constructed without another implementation.
-
-```js
-const event = new ErrorEvent('error', {
-  message: 'request failed',
-  error: new Error('request failed'),
-});
-```
-
-### Missing `localStorage` is now detectable (since 26.0.0)
-
-When no local-storage file is configured, accessing the global `localStorage` now returns `undefined` rather than throwing. Code can feature-detect it before use: `if (globalThis.localStorage !== undefined) localStorage.setItem('key', 'value');`.
-
-### Missing `localStorage` paths (since 25.2.0)
-
-Accessing the global `localStorage` getter now throws when no storage path is configured. Start processes that use it with a storage path, for example `node --localstorage-file=./local-storage.json app.js`.
-
-### Serializable `DOMException` values (since 24.3.0)
-
-Node's serialization and deserialization machinery now supports `DOMException` values and treats them as native errors, so they can round-trip instead of being rejected or degraded.
-
-### Web Storage enabled by default (since 25.0.0)
-
-The Web Storage implementation, including the global `localStorage`, is now enabled without `--experimental-webstorage`.
-
-```js
-localStorage.setItem('theme', 'dark');
-console.log(localStorage.getItem('theme'));
-```
-
-
-## Events, aborts, and timers
-
-### `AbortSignal` listener warnings (since 23.5.0)
-
-`AbortSignal` no longer emits the default memory-leak warning when many listeners are attached.
-
-### Dependent `AbortSignal` ordering (since 23.0.0)
-
-When a source signal aborts, dependent signals are now marked aborted before the source's abort listeners run. An observer can therefore rely on an `AbortSignal.any()` result already reflecting the state change:
-
-```js
-const controller = new AbortController();
-const dependent = AbortSignal.any([controller.signal]);
-controller.signal.addEventListener('abort', () => {
-  console.assert(dependent.aborted);
-});
-controller.abort();
-```
-
-### EventTarget listener counts (since 25.4.0)
-
-`events.listenerCount()` now accepts an `EventTarget` as well as an `EventEmitter`, so `listenerCount(target, 'message')` can count listeners registered with `addEventListener()`.
-
-### Invalid timer delays (since 23.0.0)
-
-Passing a negative or `NaN` delay to timer APIs now emits a warning. Normalize untrusted delay values before passing them to `setTimeout()` or `setInterval()`.
-
-### Passive event listeners (since 24.10.0)
-
-Node's `EventTarget` now honors `{ passive: true }`: calling `preventDefault()` from a passive listener does not cancel the event, so listeners that must suppress default behavior cannot be passive.
-
-### Removed `multipleResolves` event (since 25.0.0)
-
-The deprecated `process` `multipleResolves` event has been removed, so promise-settlement diagnostics cannot rely on that event.
-
-### Zero maximum-listener settings (since 23.8.0)
-
-`events.getMaxListeners()` now recognizes and reports a configured maximum of `0` instead of treating that value as absent.
-
-
-## URLs, readline, REPL, and utilities
-
-### `URLPattern` in `node:url` (since 23.8.0)
-
-The standard `URLPattern` constructor is now exported from `node:url`; it is not yet a global in Node 23.8, with global availability beginning in Node 24.
-
-```js
-import { URLPattern } from 'node:url';
-
-const pattern = new URLPattern({ pathname: '/users/:id' });
-console.log(pattern.exec('https://example.com/users/42').pathname.groups.id);
-```
-
-### `URLSearchParams(null)` serialization (since 26.4.0)
-
-For standards compatibility, constructing `URLSearchParams` with `null` now serializes as `null=`.
-
-```js
-new URLSearchParams(null).toString(); // 'null='
-```
-
-### An explicit no-style format (since 24.2.0)
-
-`util.styleText()` now accepts the `none` format, so dynamic styling code can deliberately request no ANSI styling with `styleText('none', text)`.
-
-### Cloneable `File` objects (since 23.0.0)
-
-Node's `File` objects can now pass through structured cloning, including worker messaging, without losing their `File` identity.
-
-```js
-import { File } from 'node:buffer';
-
-const copy = structuredClone(new File(['data'], 'data.txt'));
-console.log(copy.name); // data.txt
-```
-
-### Configurable `util.deprecate()` wrappers (since 25.2.0)
-
-`util.deprecate()` now accepts an options argument, allowing each deprecation wrapper to be configured beyond its function, message, and code inputs.
-
-### Custom REPL error handling (since 25.9.0)
-
-Embedded REPLs can now customize error handling instead of relying solely on the built-in handling path.
-
-### Disposable readline interfaces (since 23.10.0)
-
-Readline interfaces now support `Symbol.dispose`; call `rl[Symbol.dispose]()` when an interface should participate in explicit resource cleanup.
-
-### Multiline REPL editing (since 24.1.0)
-
-The REPL now supports vertical cursor movement and editing multiline commands while they are still being entered, complementing the multiline history support added in 24.0.0.
-
-### New API deprecations (since 24.2.0)
-
-`util.isNativeError()` is deprecated in favor of `Error.isError()`. Passing an empty string as child-process `options.shell` is also deprecated, and classes exported by `node:http` should be constructed with `new` rather than called as functions.
-
-### Proxy inspection output (since 26.0.0)
-
-`util.inspect()` now marks proxied objects as proxies. Logged output and snapshots that include proxies can therefore differ after upgrading.
-
-### Removed legacy `util` helpers (since 23.0.0)
-
-`util.log()` and the legacy `util.isBoolean()`, `isBuffer()`, `isDate()`, `isError()`, `isFunction()`, `isNull()`, `isNullOrUndefined()`, `isNumber()`, `isObject()`, `isPrimitive()`, `isRegExp()`, `isString()`, `isSymbol()`, and `isUndefined()` helpers have reached end-of-life. Replace them with language checks, `Buffer.isBuffer()`, or the corresponding `util.types` predicate where one exists; `util._extend()` was not removed in this release.
-
-### Runtime-deprecated legacy APIs (since 24.0.0)
-
-`url.parse()` is now runtime-deprecated; use the WHATWG `URL` constructor. Calling REPL and zlib classes without `new` is deprecated, and `repl.builtinModules` is deprecated in favor of `module.builtinModules`.
-
-After the 24.0.1 reversal, `SlowBuffer` remains available but runtime-deprecated rather than removed; use `Buffer.allocUnsafeSlow()` instead.
-
-### Stable terminal text styling (since 23.5.0)
-
-`util.styleText()` is now stable rather than experimental.
-
-### Unicode lines and multiline REPL history (since 24.0.0)
-
-Readline now recognizes Unicode line-separator characters as line boundaries. The REPL also stores multiline input as a multiline history entry, allowing it to be recalled and edited as a unit.
-
-
-## Runtime semantics
-
-### Explicit resource management (since 24.0.0)
-
-The `using` and `await using` declarations are available for deterministic cleanup through `Symbol.dispose` and `Symbol.asyncDispose`. A resource is disposed automatically when control leaves its declaration scope.
-
-```js
-{
-  using resource = {
-    [Symbol.dispose]() {
-      console.log('disposed');
-    },
-  };
+if (Error.isError(value)) {
+  console.error(value);
 }
 ```
 
-### Removed and corrected error codes (since 23.0.0)
+## Non-throwing `statSync` probes for `ENOTDIR` (`23.9.0`)
 
-`ERR_CRYPTO_SCRYPT_INVALID_PARAMETER` has been removed, so callers must not depend on that code for invalid scrypt options. The misspelled `ERR_TLS_PSK_SET_IDENTIY_HINT_FAILED` code is now `ERR_TLS_PSK_SET_IDENTITY_HINT_FAILED`.
+`fs.statSync(path, { throwIfNoEntry: false })` now treats `ENOTDIR` like a missing entry and returns `undefined` when an intermediate path component is not a directory.
 
+## Options for `util.deprecate()` (`25.2.0`)
 
-## Core runtime behavior
+`util.deprecate()` now accepts options in addition to its existing function, message, and code inputs, extending what libraries can control when creating a deprecated wrapper.
 
-### Empty `NO_COLOR` values (since 24.4.0)
+## Partial comparisons of URLs and Files (`23.7.0`)
 
-An empty `NO_COLOR` environment variable is now treated as absent and no longer disables color; set it to a non-empty value when color should be suppressed.
+`assert.partialDeepStrictEqual()` now handles `URL` instances and `File` prototypes correctly.
 
-### Runtime deprecations (since 23.0.0)
+## Partial error comparisons (`23.11.0`)
 
-`crypto.fips` is runtime-deprecated; use `crypto.getFips()` and `crypto.setFips()`. `fs.Dirent.prototype.path` is runtime-deprecated in favor of `dirent.parentPath`, and short GCM authentication tags now trigger DEP0182 unless `authTagLength` is supplied when creating the decipher.
+`assert.partialDeepStrictEqual()` now supports partial comparison of `Error` objects, so expected error details can match a subset of the actual error.
 
-### Stability promotions (since 26.4.0)
+```js
+import assert from 'node:assert/strict';
 
-Connection block-list APIs are now release candidates, while the Argon2 and key encapsulation/decapsulation crypto APIs are stable.
+const actual = new Error('failed', { cause: new Error('disk') });
+assert.partialDeepStrictEqual(actual, new Error('failed'));
+```
 
-### Stable disposal symbols (since 24.2.0)
+## Passive event listeners follow spec behavior (`24.10.0`)
 
-Node's `Symbol.dispose` and `Symbol.asyncDispose` support has graduated from experimental status.
+For listeners registered with `{ passive: true }`, `preventDefault()` no longer cancels the event.
 
-### Time-zone data 2025a (since 23.8.0)
+```js
+const target = new EventTarget();
+const event = new Event('work', { cancelable: true });
+target.addEventListener('work', (value) => value.preventDefault(), {
+  passive: true,
+});
+target.dispatchEvent(event);
+console.log(event.defaultPrevented); // false
+```
 
-Bundled time-zone data now models Paraguay as permanently `-03` from spring 2024 and improves pre-1991 data for the Philippines.
+## Patch-level `localStorage` access change (`25.2.0`)
 
-### Time-zone data 2025b (since 24.0.0)
+Node.js 25.2.0 made `localStorage` access throw when its storage path was missing. Node.js 25.2.1 reverted that behavior as too breaking for an experimental API, so applications supporting both patch releases must not assume property access has the same outcome.
 
-The bundled time-zone database is updated to release 2025b, so `Date` and `Intl` calculations use that ruleset rather than the 2025a data shipped in Node.js 23.8.
+## Runtime deprecation warnings (`26.0.0`)
 
-### Updated trust and time-zone data (since 25.4.0)
+Calling the dedicated-thread `module.register()` API now emits a runtime deprecation warning; prefer `module.registerHooks()` where synchronous hooks are suitable. The stream behavior covered by DEP0201 and crypto APIs covered by DEP0203 and DEP0204 also advance to runtime deprecations.
 
-The bundled root certificate set now follows NSS 3.117, and the bundled time-zone database is updated to 2025c. TLS trust decisions and `Date` or `Intl` results use those updated datasets.
+## Runtime precise-coverage startup (`24.18.0`)
 
-### Updated trust and time-zone data (since 25.9.0)
+Inspector precise coverage can now be started from JavaScript at runtime, allowing coverage tooling to begin precise collection without requiring it to be active from process startup.
 
-The bundled root certificate set now follows NSS 3.121, and the bundled time-zone database is updated to 2026a.
+## Runtime security hardening (`24.13.0`)
+
+Stack-overflow exceptions in `async_hooks` are now rethrown (CVE-2025-59466), and unsafe Buffer creation no longer relies on the zero-fill toggle (CVE-2025-55131). These are security fixes; affected deployments should upgrade rather than attempt application-level workarounds.
+
+## Stability changes in 24.13.1 (`24.13.0`)
+
+`--heapsnapshot-near-heap-limit`, `--build-snapshot`, `--build-snapshot-config`, `crypto.hash()`, and `v8.queryObjects()` are stable in 24.13.1. Synchronous `module.registerHooks()` is release candidate, while dedicated-thread `module.register()` is classified as active development.
+
+## Stable and expanded explicit disposal (`24.2.0`)
+
+`Symbol.dispose` and `Symbol.asyncDispose` support is no longer experimental. `Worker` now supports async disposal, and event-loop delay histograms support disposal, allowing both resources to be managed with `await using` or `using`.
+
+```js
+import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { Worker } from 'node:worker_threads';
+
+await using worker = new Worker(new URL('./worker.mjs', import.meta.url));
+using delay = monitorEventLoopDelay();
+delay.enable();
+```
+
+## Stricter timer and pipeline handling (`23.0.0`)
+
+Negative or `NaN` timer delays now emit a warning. `stream.pipeline()` also rejects piping into an already closed or destroyed destination, so callers must replace or reopen such a destination rather than reusing it.
+
+## String input to `url.format()` is deprecated (`24.14.0`)
+
+The legacy `url.format(urlString)` form is documented as deprecated under DEP0169. Migrate string URL handling to the WHATWG `URL` API.
+
+## System error messages (`23.1.0`)
+
+`util.getSystemErrorMessage(err)` provides the system error message for an error code.
+
+```js
+import { getSystemErrorMessage } from 'node:util';
+
+console.log(getSystemErrorMessage(-2));
+```
+
+## Temporal and V8 14.6 collection APIs (`26.0.0`)
+
+The global `Temporal` API is enabled by default. `Map` and `WeakMap` gain `getOrInsert()` and `getOrInsertComputed()`, while `Iterator.concat()` sequences multiple iterables.
+
+```js
+const cache = new Map();
+cache.getOrInsertComputed('answer', () => 42);
+const values = [...Iterator.concat([1, 2], new Set([3]))];
+```
+
+## Time-zone data 2025a (`23.8.0`)
+
+The bundled time-zone data is updated to 2025a, including Paraguay's permanent UTC−03 offset and improved pre-1991 data for the Philippines.
+
+## URL Pattern API (`23.8.0`)
+
+`URLPattern` is now exported from `node:url`; it is not a global in Node.js 23, but becomes one in Node.js 24.
+
+```js
+import { URLPattern } from 'node:url';
+const route = new URLPattern({ pathname: '/users/:id' });
+```
+
+## Zero listener limits (`23.8.0`)
+
+`events.getMaxListeners()` now correctly recognizes an explicitly configured maximum of `0` instead of treating it as absent.

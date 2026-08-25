@@ -10,33 +10,33 @@ metadata:
 
 # htmx Knowledge Patch
 
-Use this skill when implementing, reviewing, debugging, or upgrading htmx applications.
-Start with the migration notes when touching established code, then open the topic
-reference that matches the task.
+Use this skill when implementing, reviewing, debugging, or upgrading htmx
+applications. For established applications, begin with the migration guidance,
+then open the topic reference that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Migration and configuration](references/migration-and-configuration.md) | Extension packaging, distribution builds, removed APIs, Shadow DOM, maintenance policy |
+| [Migration and configuration](references/migration-and-configuration.md) | Extension packaging, module builds, changed defaults, removed APIs, Shadow DOM, maintenance policy |
 | [Events and JavaScript](references/events-and-javascript.md) | Trigger sources and filters, polling, asynchronous confirmation, inheritance |
-| [History and caching](references/history-and-caching.md) | History restoration, snapshot safety, cache variants, cache bypass |
-| [Requests and validation](references/requests-and-validation.md) | Request defaults, URL validation, CORS, form validation, boosted CSRF tokens |
-| [Swaps and responses](references/swaps-and-responses.md) | Scrolling, literal text, out-of-band content, status handling, redirects |
-| [Extensions and security](references/extensions-and-security.md) | CSP nonces, attribute mutation, URL parameters, JSON forms |
+| [History and caching](references/history-and-caching.md) | History restoration, snapshot safety, full-page and fragment cache variants |
+| [Requests and validation](references/requests-and-validation.md) | Native validation, URL allowlisting, CORS, boosted-navigation CSRF tokens |
+| [Swaps and responses](references/swaps-and-responses.md) | Literal text, out-of-band content, ordered status handling, redirect headers |
+| [Extensions and security](references/extensions-and-security.md) | CSP nonces, attribute mutation, URL parameters, cache bypass, JSON forms |
 
 ## Breaking migrations first
 
 ### Upgrade separately distributed extensions
 
-Extensions no longer share the core package's versioning. Audit each installed
-extension independently. In particular, upgrade the SSE extension and replace
-the removed `hx-sse` and `hx-ws` attributes with the attributes supplied by the
-corresponding extensions.
+Extensions are versioned outside the core repository. Audit and upgrade each
+installed extension independently. Most 1.x extensions still work, but the SSE
+extension has a breaking change and must be upgraded. Replace the removed
+`hx-sse` and `hx-ws` attributes with the corresponding extension attributes.
 
-See [Migration and configuration](references/migration-and-configuration.md#extension-packaging-and-removed-attributes).
+See [Migration and configuration](references/migration-and-configuration.md#separately-distributed-extensions).
 
-### Load the build for the actual module system
+### Load the build for the module system
 
 | Consumer | Distribution |
 | --- | --- |
@@ -54,8 +54,8 @@ import htmx from "htmx.org/dist/htmx.esm.js";
 ### Account for changed defaults
 
 Requests are same-origin-only by default, `DELETE` values use URL parameters,
-and swap scrolling is instant. Restore the earlier behaviors only when the
-application depends on them:
+and swap scrolling is instant. Restore earlier behavior only where the
+application depends on it:
 
 ```js
 htmx.config.methodsThatUseUrlParams = ["get"];
@@ -63,14 +63,14 @@ htmx.config.selfRequestsOnly = false;
 htmx.config.scrollBehavior = "smooth";
 ```
 
-If cross-origin requests are enabled, add an explicit `htmx:validateUrl`
-allowlist and configure CORS for htmx headers. See
-[Requests and validation](references/requests-and-validation.md#cross-origin-requests).
+If cross-origin requests are enabled, enforce an explicit
+`htmx:validateUrl` allowlist and configure CORS for the htmx headers. See
+[Requests and validation](references/requests-and-validation.md#cross-origin-request-allowlisting).
 
 ### Replace removed JavaScript and attribute APIs
 
-Use one `hx-on:<event>` attribute per inline handler; the multi-event `hx-on`
-form is removed.
+Use one `hx-on:<event>` attribute per inline handler; the legacy multi-event
+`hx-on` form is removed.
 
 ```html
 <button hx-post="/save" hx-on:click="this.disabled = true">Save</button>
@@ -89,8 +89,9 @@ htmx.swap(document.querySelector("#result"), "<p>Updated</p>", {
 
 ### Confirm requests asynchronously
 
-`htmx:confirm` fires for every request trigger, even without `hx-confirm`.
-Cancel the event and call `event.detail.issueRequest()` only after approval:
+`htmx:confirm` fires for every request trigger, including triggers without
+`hx-confirm`. Cancel the event, then call `event.detail.issueRequest()` only
+after approval:
 
 ```js
 document.body.addEventListener("htmx:confirm", (event) => {
@@ -105,37 +106,35 @@ document.body.addEventListener("htmx:confirm", (event) => {
 ### Stop server-driven polling
 
 For an `hx-trigger="every ..."` request, return HTTP status `286` when the
-server wants htmx to stop polling.
+server should stop the poll.
 
 ### Report native validation when desired
 
-Invalid forms are blocked, but native validation UI and first-invalid-control
-focus are disabled by default. Enable them with:
+Invalid form requests are blocked, but native validation UI and focus on the
+first invalid control are disabled by default. Enable them with:
 
 ```js
 htmx.config.reportValidityOfForms = true;
 ```
 
-Use `hx-validate="true"` when a non-form request trigger must run validation.
+Use `hx-validate="true"` when a non-form request trigger must validate too.
 
 ## High-value swap and response controls
 
-### Swap literal text safely
+### Swap literal text
 
-Use the core `textContent` swap style when the response must be inserted as
-text rather than parsed as HTML:
+Use the core `textContent` swap style when the response must be assigned as
+literal text instead of parsed as HTML:
 
 ```html
-<button hx-get="/source" hx-target="#result" hx-swap="textContent">
-  Show source
-</button>
+<button hx-get="/source" hx-target="#result" hx-swap="textContent">Show source</button>
 <pre id="result"></pre>
 ```
 
 ### Return context-sensitive out-of-band elements
 
-Wrap elements such as table rows in `<template>` so the response parser does
-not discard them outside their required HTML context:
+Wrap elements such as table rows in `<template>` so they retain the parsing
+context that a free-standing response node lacks:
 
 ```html
 <template>
@@ -145,7 +144,7 @@ not discard them outside their required HTML context:
 </template>
 ```
 
-To process only top-level out-of-band fragments:
+Process only top-level out-of-band fragments with:
 
 ```js
 htmx.config.allowNestedOobSwaps = false;
@@ -153,26 +152,24 @@ htmx.config.allowNestedOobSwaps = false;
 
 ### Handle response statuses in order
 
-`htmx.config.responseHandling` is ordered; the first matching regular
-expression wins. Prepend specific cases before broad defaults:
+`htmx.config.responseHandling` uses the first matching regular expression.
+Prepend specific rules ahead of broad defaults:
 
 ```js
 htmx.config.responseHandling.unshift({
-  code: "422",
-  swap: true,
-  error: false
+  code: "422", swap: true, error: false
 });
 ```
 
-Do not attach `HX-Redirect`, `HX-Location`, or `HX-Trigger` to an HTTP redirect
-and expect htmx to process it: the browser consumes `3xx` responses first.
-Return a non-redirect response when using those headers.
+The browser consumes HTTP `3xx` responses before htmx can process htmx-specific
+headers. Return a non-redirect response when using `HX-Redirect`, `HX-Location`,
+or `HX-Trigger`.
 
 ## History and cache safety
 
 Every pushed URL must be able to return a complete document after a history
-cache miss. A miss carries `HX-History-Restore-Request: true`; prevent ordinary
-`HX-Request` fragment negotiation from interfering with restoration:
+cache miss. A miss carries `HX-History-Restore-Request: true`; when ordinary
+`HX-Request` handling selects fragments, use:
 
 ```js
 htmx.config.historyRestoreAsHxRequest = false;
@@ -180,26 +177,23 @@ htmx.config.historyRestoreAsHxRequest = false;
 
 Use `refreshOnHistoryMiss` when a hard refresh is the intended fallback.
 
-When a URL must not be snapshotted, place `hx-history="false"` anywhere in the
-current document or loaded fragment. Keep a custom `hx-history-elt` present on
-every page, and use `htmx:beforeHistorySave` to undo temporary DOM mutations.
+Place `hx-history="false"` anywhere in the current document or loaded fragment
+when its URL must not be snapshotted. Keep a custom `hx-history-elt` present on
+every page, and undo temporary DOM mutations in `htmx:beforeHistorySave`.
 
-For URLs that serve both documents and fragments, send `Vary: HX-Request` and
-distinct ETags. If the cache cannot vary on that header, enable:
-
-```js
-htmx.config.getCacheBusterParam = true;
-```
+For URLs that serve both complete documents and fragments, send
+`Vary: HX-Request` and distinct ETags. If the cache cannot vary on that header,
+enable `htmx.config.getCacheBusterParam = true`.
 
 ## Trigger and inheritance rules
 
-The selector in `from:<selector>` is resolved once. It does not automatically
-track later DOM additions. In trigger filters, names resolve against the event
-before the global scope, and `this` is the element carrying `hx-trigger`.
+The selector in `from:<selector>` is resolved once, so it does not track later
+DOM additions. Trigger-filter names resolve against the triggering event before
+the global scope, and `this` is the element carrying `hx-trigger`.
 
-Clear a single inherited attribute with an `unset` value, such as
-`hx-confirm="unset"`. Use `hx-disinherit` to block selected inheritance. To
-make inheritance opt-in globally, set:
+Clear a single inherited attribute with an `unset` value such as
+`hx-confirm="unset"`. Use `hx-disinherit` to block selected inheritance. To make
+inheritance opt-in globally, set:
 
 ```js
 htmx.config.disableInheritance = true;
@@ -227,14 +221,12 @@ choosing between similarly shaped URL or JSON extensions.
 - Keep same-origin-only requests unless cross-origin access is necessary.
 - Cancel `htmx:validateUrl` for destinations outside an explicit allowlist.
 - Allow htmx request headers and expose required response headers in CORS.
-- Apply `inlineStyleNonce` before htmx loads when CSP protects inline styles.
+- Configure `inlineStyleNonce` before htmx loads when CSP protects inline styles.
 - Put rotating boosted-navigation CSRF tokens inside content that is replaced.
 - Prefer framework-provided hidden CSRF inputs when available.
 
 ## Working approach
 
-Preserve working behavior unless a fix or feature requires a change. The
-project favors compatibility, configuration switches for behavioral
-improvements, and extensions for experimentation. Upgrade selectively for the
-bug fixes or features the application needs, and test extensions independently
-from core.
+Preserve working behavior unless a fix or feature requires change. Prefer
+configuration switches for behavioral improvements and extensions for new
+functionality. Upgrade selectively when a particular fix or feature is needed.

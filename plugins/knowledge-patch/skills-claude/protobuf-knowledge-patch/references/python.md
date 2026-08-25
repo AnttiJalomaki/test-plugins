@@ -1,85 +1,77 @@
 # Python and upb runtime
 
-## Runtime baseline (`30.0-migration`)
+## Interpreter and package baselines (`30.0-migration`, `34.0-migration`)
 
-The Python package major moves from 5.29.x to 6.30.x and requires Python 3.9 or
-newer. Protobuf `34.0-migration` raises the interpreter minimum again to Python
-3.10.
+The Python package first moved from 5.29.x to 6.30.x with a Python 3.9 minimum.
+The later v34 runtime raises the interpreter requirement to Python 3.10 or
+newer. Check both the protobuf package coordinate and interpreter before
+upgrading.
 
-## Closed-enum assignment (`30.0-migration`)
+## Removed reflection and factory APIs (`30.0-migration`)
 
-Python and upb setters reject values that are invalid for closed enums under
-Edition 2023. Validate integer-to-enum conversions before assignment rather
-than depending on an unknown numeric value being stored.
+The runtime removed `reflection.ParseMessage`, `reflection.MakeClass`, prototype
+and creation methods on `MessageFactory` and `SymbolDatabase`, and the
+`GetMessages` methods on those classes. Use:
 
-## Removed dynamic-message APIs (`30.0-migration`)
+- `message_factory.GetMessageClass()` for one descriptor;
+- `message_factory.GetMessageClassesForFiles()` for files.
 
-The following are removed:
+The legacy `service` RPC interfaces must be replaced with RPC-specific generator
+plugins. The C++-extension-only `GetDebugString` has no replacement.
 
-- `reflection.ParseMessage` and `reflection.MakeClass`;
-- prototype and creation methods on `MessageFactory` and `SymbolDatabase`; and
-- the corresponding `GetMessages` methods.
+## Closed enums and scalar assignment (`30.0-migration`, `34.0-announcement`)
 
-Use `message_factory.GetMessageClass()` for one descriptor or
-`GetMessageClassesForFiles()` for a file set. Replace legacy `service` RPC
-interfaces with an RPC-specific generator plugin. The C++-extension-only
-`GetDebugString` has no replacement.
+Python and upb setters reject values outside a closed enum under Edition 2023.
+They also reject `bool` assigned to an integer or enum field instead of
+implicitly converting it. Invalid-type conversion to `Timestamp` or `Duration`
+raises `TypeError`, not `AttributeError`; update exception handling accordingly.
 
 ## Map `setdefault` (`30.0-migration`)
 
-`ScalarMap.setdefault` requires both key and value. Message-valued maps reject
-`setdefault` entirely; initialize the entry through the message-map API instead.
+`ScalarMap.setdefault` requires both a key and a value. Message-valued maps
+reject `setdefault` entirely because synthesizing a message value through that
+mapping method is unsupported.
 
-## Nested class qualification (`30.0-migration`)
+## Nested generated names (`30.0-migration`)
 
-Generated nested message classes include the outer message in `__qualname__`
-while preserving the short `__name__`. For example, `Foo.Bar.__qualname__` is
-`"Foo.Bar"`, while `Foo.Bar.__name__` remains `"Bar"`. Update reflection,
-pickling assumptions, and name-based tests accordingly.
+A nested generated message class includes its outer message in `__qualname__`
+while retaining the short `__name__`. For example, `Foo.Bar.__qualname__` is
+`"Foo.Bar"`, while `Foo.Bar.__name__` remains `"Bar"`.
 
-## Scalar assignment and WKT conversions (`34.0-announcement`)
+## Removed formatting controls (`34.0-announcement`)
 
-Assigning `bool` to an enum or integer field is rejected instead of converting
-it implicitly. Invalid-type conversion to `Timestamp` or `Duration` raises
-`TypeError` rather than `AttributeError`; exception handlers must catch the
-newly correct type.
+JSON serialization no longer accepts the deprecated `float_precision` option.
+Text-format serialization no longer accepts `float_format` or `double_format`.
+Remove those keyword arguments rather than attempting to preserve the old
+formatting behavior.
 
-## Removed formatting options (`34.0-announcement`)
+## Repeated-field initialization errors (`34.0`)
 
-The JSON serializer no longer accepts deprecated `float_precision`. Text-format
-serialization no longer accepts `float_format` or `double_format`. Remove these
-arguments and validate output using the runtime's standard float rendering.
-
-## Descriptor label removal (`34.0-migration`)
-
-`FieldDescriptor.label` is removed. Use `is_repeated`, `is_required`, and
-presence-oriented APIs rather than reconstructing a legacy label.
-
-## Repeated-field initialization and NumPy (`34.0`)
-
-Scalar repeated fields expose a NumPy binding for direct array-oriented
-interoperability.
-
-Message construction through keyword arguments no longer suppresses some
+Message construction through keyword arguments no longer silently swallows some
 errors involving repeated fields. Invalid repeated-field initialization can now
-raise immediately; do not treat construction as successful until it returns.
+raise an exception; do not assume partially accepted input.
 
-## Descriptor parsing and Editions in upb (`34.0`)
+## NumPy repeated-scalar binding (`34.0`)
 
-upb performs additional validation of descriptor `syntax` and `edition`, so
-malformed dynamic descriptor data can be rejected. upb generators also enable
-Edition 2024.
+Scalar repeated fields provide a NumPy binding for direct array-oriented
+interoperability. Prefer the binding when transferring compatible scalar arrays
+instead of manually iterating values.
 
 ## Recursion limits (`34.0`, `35.0`)
 
-Python and upb add recursion guards for nested messages. Python `text_format`
-also accepts an optional recursion-depth limit. Set it when parsing untrusted or
-deeply nested text to bound recursive work, and handle limit exhaustion as a
-normal parse failure.
+Python and upb guard recursive nesting in message processing. Python
+`text_format` also accepts an optional recursion-depth limit. Set the limit when
+parsing untrusted or deeply nested text-format input, and test rejection at the
+boundary.
+
+## Strict descriptor parsing (`34.0`)
+
+upb validates `syntax` and `edition` more thoroughly when parsing descriptors.
+Malformed dynamic descriptor data that older releases accepted can be rejected.
 
 ## Free-threaded Python (`35.0`)
 
-The upb runtime supports free-threaded Python. The release fixes races in lazy
-message initialization and repeated-field presence handling that affected that
-mode. Exercise concurrent initialization and mutation paths when enabling a
-free-threaded interpreter.
+The upb runtime supports free-threaded Python. The same release fixes races in
+lazy message initialization and repeated-field presence handling that affected
+that mode. Test native extensions and concurrency-sensitive message paths in the
+free-threaded build rather than assuming ordinary-CPython behavior.

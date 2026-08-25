@@ -1,168 +1,173 @@
 # Processing, Geometry, and Raster Workflows
 
-## Processing outputs and workflow controls
+## Metadata, merging, and plotting
 
-### Layer-metadata Processing algorithms (3.42)
+### Layer-metadata algorithms
 
-Native algorithms can copy metadata between layers, apply metadata from QMD,
-export metadata to QMD, append history, update only non-empty fields, and set
-basic fields including identifiers, title, language, CRS, abstract, and fees.
+Since 3.42, the native toolbox can copy metadata between layers, apply metadata
+from QMD, export metadata to QMD, append history, update only non-empty fields,
+and set basic fields including identifier, title, language, CRS, abstract, and
+fees.
 
-### Expression-driven scatterplot hover text (3.42)
+### Merge provenance and policies
 
-Vector Layer Scatterplot can derive optional hover text from a QGIS
-expression.
+Since 3.42, Merge Vector Layers can add source `layer` and `path` attributes to
+the output. The option is enabled by default for backward compatibility.
 
-### Merge Vector Layers provenance fields (3.42)
+Since 3.44, per-field configuration can select the initial Merge Features
+value. Policies include numeric Sum, Minimum, Maximum, and Geometry Weighted;
+Default Value; Unset Field, which falls back to the provider default or first
+feature; Largest Geometry, based on length, area, or part count; and Set to
+Null.
 
-Merge Vector Layers can add source `layer` and `path` attributes. The option is
-enabled by default for backward compatibility.
+### Plot labeling and hover text
 
-### Plot titles and logarithmic axes (3.42)
+Since 3.42, Vector Layer Scatterplot can derive optional hover text from an
+expression. Scatterplot, Barplot, and Boxplot accept plot and axis titles. An
+empty axis title falls back to the field name; a single space suppresses it.
+Scatterplots also support logarithmic scaling on either axis.
 
-Scatterplot, Barplot, and Boxplot accept plot and axis titles. An empty axis
-title falls back to the field name; a single space suppresses it. Scatterplots
-also support logarithmic scaling on either axis.
+## Geometry checking and repair
 
-### Processing workflow additions (3.44)
+### Check and fix geometry
 
-QGIS includes a native clone of SAGA Fill Sinks (Wang & Liu), including the
-source implementation's existing behavior and bugs. Both Raster Calculator
-interfaces expose raster creation options. Batch Processing accepts temporary
-output layers.
+Since 3.42, Geometry Checker operations are available under Check Geometry and
+Fix Geometry in the Processing Toolbox. Checks return an error-only layer plus
+point locations and identifiers. Fixes return corrected features plus point
+locations and a per-feature report.
 
-### Named temporary Processing outputs (4.0)
+Since 4.2, Check Holes has an area threshold that excludes holes larger than
+the threshold from errors. With SFCGAL 2.3, Approximate Medial Axis accepts
+`extendToEdges` to extend skeleton endpoints to the input boundary.
 
-Processing results can remain temporary while carrying a user-selected layer
-name. The memory-chip icon continues to identify temporary results.
+### Polygon orientation
 
-### Hub-distance algorithm replacement (4.0)
-
-The C++ Hub Distance algorithm replaces Distance to Nearest Hub (Points) and
-Distance to Nearest Hub (Line to Hub) and provides both optional outputs. The
-two older algorithms are deprecated.
-
-## Geometry checking, digitizing, and vector output
-
-### Geometry checks and fixes in Processing (3.42)
-
-Geometry Checker operations appear under Check Geometry and Fix Geometry.
-Checks output an error-only layer plus point error locations and identifiers.
-Fixes output a corrected layer, point locations, and a per-feature fix report.
-
-### Feature arrays along a line (4.0)
-
-A map tool can copy point, line, or polygon features into an array distributed
-along a line.
-
-### Bézier, chamfer, and fillet digitizing (4.0)
-
-The poly-Bézier/freeform tool creates NURBS curves by dragging anchors and
-handles; `Alt`+click resets a point's handles. Polygon digitizing has chamfer
-and fillet tools. CAD floaters can show Cartesian or ellipsoidal area and
-total length/perimeter. Digitizing remains Cartesian, so ellipsoidal display
-can differ.
-
-### Polygon orientation algorithms (4.0)
-
-`native:forcecw` produces clockwise exterior and counter-clockwise interior
-rings; `native:forceccw` uses the inverse convention. `native:forcecw`
+Since 4.0, `native:forcecw` creates clockwise exterior and counter-clockwise
+interior rings; `native:forceccw` creates the inverse. `native:forcecw`
 replicates the existing right-hand-rule operation.
 
-### Network validation algorithms (4.0)
+### Concave hulls and polygon gaps
 
-Validate Network reports invalid direction values, near-but-unconnected nodes,
-and nodes too close to segments. It returns bad source features plus line
-features describing topology errors. Extract Network Endpoints identifies
-sources/sinks by edge direction or degree-one dead ends regardless of
-direction.
+Since 4.2, Concave Hull by Feature accepts polygon and line inputs directly, so
+polygon interiors participate without prior vertex extraction. Fill Gaps
+Between Polygons creates an outer, potentially non-convex hull without
+intersecting polygon interiors. GEOS concave-hull-of-polygons functionality is
+also exposed to PyQGIS.
 
-### Z-aware reprojection (4.0)
+### Native SFCGAL integration
 
-Reproject Layer has an optional boolean parameter to transform Z coordinates
-along with horizontal coordinates.
-
-### Vector audit, filtering, and packaging outputs (4.0)
-
-Delete Duplicate Geometries can emit removed duplicates. Remove Parts by
-Length/Area drops undersized parts or entire single-part features. Package
-Layers can transform to a destination CRS and filter every input by extent; a
-packaged layer is still created empty when no features intersect.
-
-### Native SFCGAL integration (4.0)
-
-QGIS can use SFCGAL through `QgsSfcgalEngine` and the conversion-reducing
-`QgsSfcgalGeometry` wrapper. Approximate Medial Axis makes a simplified line
+Since 4.0, use SFCGAL through `QgsSfcgalEngine` and the conversion-reducing
+`QgsSfcgalGeometry` wrapper. Approximate Medial Axis produces a simplified line
 skeleton from a shape's 2D projection and ignores Z.
 
-### Geometry-check and medial-axis controls (4.2)
+## Digitizing and feature creation
 
-Check Holes has an area threshold that excludes holes larger than the
-threshold from error results. With SFCGAL 2.3, Approximate Medial Axis accepts
-`extendToEdges` to extend skeleton endpoints to the polygon boundary.
+### Georeferencer snapping
 
-### Concave hulls of polygons (4.2)
+Since 3.42, the Georeferencer includes snapping options and the Advanced
+Digitizing panel, allowing reference points to be placed against existing
+geometry.
 
-Concave Hull by Feature accepts polygons and lines directly, so polygon
-interiors are considered without vertex extraction. Fill Gaps Between
-Polygons creates an outer, possibly non-convex hull without intersecting
-polygon interiors. The GEOS concave-hull-of-polygons function is exposed to
-PyQGIS.
+### Arrays along a line
 
-## Raster and terrain processing
+Since 4.0, a map tool can copy point, line, or polygon features into an array
+distributed along a line.
 
-### Raster-extrema extraction (3.42)
+### Bézier, chamfer, and fillet tools
 
-Raster Zonal Min/Max emits minimum and maximum pixel-center points for every
-polygon zone. Extract Min/Max Pixel emits extrema for a selected raster band
-and returns only one point when multiple pixels tie.
+Since 4.0, the poly-Bézier/freeform map tool creates NURBS curves by dragging
+anchors and handles; `Alt`+click resets a point's handles. Polygon digitizing
+has chamfer and fillet tools. CAD floaters can show Cartesian or ellipsoidal
+area and total length/perimeter, but digitizing remains Cartesian, so an
+ellipsoidal display can differ from the stored construction.
 
-### Elevation-profile image generation (3.42)
+## Raster analysis and output
 
-A Processing algorithm renders elevation-profile images, allowing a model to
-generate profiles for multiple curves.
+### Extrema extraction
 
-### Raster rank (3.44)
+Since 3.42, Raster Zonal Min/Max outputs minimum and maximum pixel-center points
+for every polygon zone. Extract Min/Max Pixel handles a chosen raster band and
+returns only one point when multiple pixels tie for an extreme.
 
-Raster rank selects a requested rank from input raster values per cell. For
-`[10, 20, 30, 40]`, ranks `2` and `-2` return `20` and `30`. By default,
-NoData is excluded and only an unavailable rank yields NoData. An alternate
-mode propagates NoData if any input cell is NoData.
+### Raster rank
 
-### Explicit Cloud Optimized GeoTIFF output (4.0)
+Since 3.44, Raster rank selects a requested rank from input values at each cell.
+For `[10, 20, 30, 40]`, ranks `2` and `-2` return `20` and `30`. By default it
+excludes NoData and emits NoData only when the rank is unavailable; alternate
+mode propagates NoData when any input is NoData.
 
-Raster export and Save dialogs can request COG optimization and pyramids when
-GDAL 3.13+ is available. A Processing algorithm can bulk-convert a raster
-directory. Processing must pass `-of COG` explicitly because COG and GTiff
-share `.tif` and `.tiff` extensions.
+### Terrain-raster tools
 
-### Terrain-raster processing controls (4.0)
+Since 4.0, Processing includes feature-preserving DEM smoothing, native
+Gaussian blur, and total-curvature algorithms. Slope, aspect, hillshade, and
+ruggedness expose output NoData and raster-creation options.
 
-Processing includes feature-preserving DEM smoothing, native Gaussian blur,
-and total-curvature algorithms. Slope, aspect, hillshade, and ruggedness expose
-output NoData and raster-creation options.
+### Cloud Optimized GeoTIFF
 
-### GDAL dataset identification (4.0)
+Since 4.0, Raster Export and Save can request COG optimization and pyramids when
+GDAL 3.13 or later is available, and a Processing algorithm can bulk-convert a
+directory. Pass `-of COG` for Processing output because `.tif` and `.tiff` do
+not distinguish the COG and GTiff drivers.
 
-GDAL Data Identification exposes automated dataset metadata extraction and
-requires GDAL 3.13 or later.
+### GDAL data identification
 
-### WMS-aware raster extraction (4.0)
+Since 4.0, GDAL Data Identification exposes automated dataset metadata
+extraction and requires GDAL 3.13 or later.
 
-Clip Raster by Extent and Clip Raster by Mask Layer can request WMS input at a
-reference scale and service resolution, preserving scale-dependent rendering.
-Service resolution defaults to 96 DPI. Supporting APIs are
+### WMS-aware extraction
+
+Since 4.0, Clip Raster by Extent and Clip Raster by Mask Layer can request WMS
+input at a reference scale and service resolution, preserving scale-dependent
+rendering. Resolution defaults to 96 DPI. Supporting APIs are
 `QgsProcessingRasterLayerDefinition` and `QgsWmsUtils`.
 
-## Temporal and coordinate behavior
+## General Processing workflow
 
-### Accumulating temporal raster pixels (4.0)
+### Added raster and batch controls
 
-Raster layers in represent-temporal-values mode can accumulate pixels over
-time, matching cumulative single-date/time vector behavior so raster and
-vector animation frames advance together.
+Since 3.44, QGIS includes a native clone of SAGA Fill Sinks (Wang & Liu),
+including the source implementation's existing behavior and bugs. Both Raster
+Calculator interfaces expose raster creation options, and Batch Processing
+accepts temporary output layers.
 
-### Topocentric CRS support (4.2)
+### Named temporary outputs
 
-QGIS supports topocentric coordinate reference systems. An origin-point widget
-is enabled when Topocentric CRS is explicitly selected in the CRS chooser.
+Since 4.0, a result can stay temporary while carrying a user-selected layer
+name. The memory-chip icon continues to mark it as temporary.
+
+### Reproject Z values
+
+Since 4.0, Reproject Layer has an optional boolean parameter to transform Z
+coordinates together with horizontal coordinates.
+
+### Vector audit, filtering, and packaging
+
+Since 4.0, Delete Duplicate Geometries can output the removed duplicates.
+Remove Parts by Length/Area drops undersized parts or entire single-part
+features. Package Layers can transform to a destination CRS and filter all
+inputs by extent; it still creates an empty packaged layer when no features
+intersect.
+
+### Network validation
+
+Since 4.0, Validate Network reports invalid direction values,
+near-but-unconnected nodes, and nodes too close to segments. It returns bad
+source features and lines describing topology errors. Extract Network Endpoints
+finds sources/sinks by edge direction or degree-one dead ends regardless of
+direction.
+
+### Hub distance replacement
+
+Since 4.0, the C++ Hub Distance algorithm replaces Distance to Nearest Hub
+(Points) and Distance to Nearest Hub (Line to Hub) and offers both optional
+outputs. The older algorithms are deprecated.
+
+### Elevation-profile images
+
+Since 3.42, a Processing algorithm renders elevation-profile images and can
+generate profiles for multiple curves from a workflow.
+
+### Mesh surface export
+
+Since 3.42, Mesh: Surface to Polygon exports a mesh surface as a MultiPolygon
+layer.

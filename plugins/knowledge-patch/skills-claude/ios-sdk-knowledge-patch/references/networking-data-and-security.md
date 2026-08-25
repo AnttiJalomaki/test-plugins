@@ -1,12 +1,11 @@
 # Networking, Data, and Security
 
-Use this reference for HTTP loading, Core Data migration and concurrency,
-date parsing, cross-process primitives, VPN profiles, and transport security.
+## HTTP loading and transport security
 
-## URLSession HTTP Loading Mode
+### New URLSession loading mode (18.4)
 
-iOS 18.4 (`18.4`) adds a newer HTTP loading mode. Opt a configuration into it
-by setting `usesClassicLoadingMode` to `false`:
+Set `usesClassicLoadingMode` to `false` to opt a configuration into the new HTTP
+loading mode. It is planned to become the default in a future release.
 
 ```swift
 let configuration = URLSessionConfiguration.default
@@ -14,38 +13,39 @@ configuration.usesClassicLoadingMode = false
 let session = URLSession(configuration: configuration)
 ```
 
-Classic loading remains the default for now, but the newer mode is planned to
-become the default in a future release. Test protocol, proxy, authentication,
-cache, and timing-sensitive behavior before adopting it broadly.
+Test redirects, authentication, proxies, caching, uploads, and cancellation
+before changing a shared session configuration.
 
-## iOS 18.3 Simulator URLSession Timeouts
+### iOS 18.3 Simulator request recovery (18.5)
 
-Xcode 16.4 (`18.5`) fixes an iOS 18.3 Simulator runtime defect that caused
-`NSURLSession` requests to time out and fail consistently. If this exact symptom
-appears with the older toolchain/runtime combination, update Xcode before
-rewriting networking code or weakening timeout policy.
+Xcode 16.4 fixes an iOS 18.3 Simulator runtime defect that caused
+`NSURLSession` requests to time out and fail consistently. When reproducing that
+specific failure, confirm both the Xcode version and selected Simulator runtime.
 
-## Core Data Concurrency Imports
+### TLS 1.2 default minimum (26.0)
 
-The iOS 26 SDK (`26.0`) imports the principal Core Data concurrency types as
-follows:
+For apps linked on or after iOS 26 or macOS 26, `URLSession` and Network
+framework connections default to TLS 1.2 instead of TLS 1.0. Upgrade legacy
+servers where possible. To make a deliberate transitional exception, configure
+one of:
 
-- `NSManagedObject` is nonisolated and non-`Sendable`.
-- `NSManagedObjectContext` is nonisolated and `Sendable`.
-- The `perform` and `performBlock` families accept `Sendable` closures.
+- `URLSessionConfiguration.tlsMinimumSupportedProtocolVersion`
+- `sec_protocol_options_set_min_tls_protocol_version`
 
-Rebuilding can expose new concurrency warnings. Keep each managed object inside
-its context's scope instead of sending it across isolation boundaries. During
-testing, launch with this argument to catch confinement violations:
+Keep the exception scoped and test the actual negotiated protocol.
 
-```text
--com.apple.CoreData.ConcurrencyDebug 1
-```
+### IKEv2 algorithm removals (26.0)
 
-## Removed Core Data Ubiquity Options
+IKEv2 VPNs no longer support DES, 3DES, SHA1-96, SHA1-160, or Diffie-Hellman
+groups below 14. Update both the client profile and VPN server; changing only one
+side leaves negotiation incompatible.
 
-The iOS and macOS 26 SDKs (`26.0`) reject these legacy store options at build
-time; binaries built with older SDKs log warnings:
+## Core Data migration and isolation
+
+### Removed ubiquity options (26.0)
+
+Apps built with the iOS or macOS 26 SDK receive errors for these obsolete Core
+Data options:
 
 - `NSPersistentStoreUbiquitousContentNameKey`
 - `NSPersistentStoreUbiquitousContentURLKey`
@@ -54,44 +54,38 @@ time; binaries built with older SDKs log warnings:
 - `NSPersistentStoreUbiquitousContainerIdentifierKey`
 - `NSPersistentStoreRebuildFromUbiquitousContentOption`
 
-Removing the options preserves a local store but stops its synchronization.
-Move synchronization to `NSPersistentCloudKitContainer` or SwiftData rather
-than silently accepting a local-only store.
+Older builds log warnings instead. Removing the options preserves the local
+store but stops synchronization. Migrate synchronization to
+`NSPersistentCloudKitContainer` or SwiftData.
 
-## ISO-8601 Fractional Seconds
+### Concurrency-safe access (26.0)
 
-In the iOS 26 SDK (`26.0`), `ISO8601FormatStyle` accepts fractional seconds
-regardless of the `includingFractionalSeconds` setting. Do not use that setting
-as strict input rejection or validation policy; validate separately if a wire
-format must prohibit fractions.
+The SDK's newer concurrency annotations make contexts transferable but not the
+managed objects they contain. Keep `NSManagedObject` use scoped to its context's
+`perform` work, and use `-com.apple.CoreData.ConcurrencyDebug 1` to diagnose
+violations. See the language reference for the exact imported annotations.
 
-## Team-Scoped POSIX Named Semaphores
+## XML allocation
 
-On iOS 26 (`26.0`), processes signed with a Team ID entitlement cannot use
-`sem_open` or `sem_unlink` to observe a named semaphore created by another
-development team. Design named-semaphore coordination within one signing team,
-and use another supported IPC mechanism for cross-team communication.
+### libxml2 custom allocators are deprecated (18.4)
 
-## IKEv2 Cryptography Removal
+On iOS 18.4, replace the libxml2 allocation functions as follows:
 
-iOS 26 (`26.0`) removes IKEv2 support for:
+| Deprecated call | Replacement |
+| --- | --- |
+| `xmlMalloc()`, `xmlMallocAtomic()` | `malloc()` |
+| `xmlRealloc()` | `realloc()` |
+| `xmlFree()` | `free()` |
+| `xmlMemStrdup()` | `strdup()` |
 
-- DES and 3DES
-- SHA1-96 and SHA1-160
-- Diffie-Hellman groups below 14
+Stop configuring allocators through `xmlMemSetup()`, `xmlMemGet()`,
+`xmlGcMemSetup()`, `xmlGcMemGet()`, or their corresponding global variables.
+libxml2 and libxslt now use the system allocator internally.
 
-Update both the client VPN profile and the VPN server.
+## GPU resource residency
 
-## TLS 1.2 Minimum
+### Metal 4 indirect command buffers (26.0)
 
-For apps linked on or after iOS 26 or macOS 26 (`26.0`), `URLSession` and the
-Network framework default to TLS 1.2 rather than TLS 1.0 as their minimum.
-
-When a legacy endpoint truly requires an older protocol, make the exception
-explicit with one of these APIs:
-
-- `URLSessionConfiguration.tlsMinimumSupportedProtocolVersion`
-- `sec_protocol_options_set_min_tls_protocol_version`
-
-Prefer upgrading the endpoint. Keep any lower minimum narrowly scoped and test
-the exact linked binary because this is linked-on behavior.
+When using Metal 4 command encoders, add render and compute pipelines that
+support indirect command buffers to the residency set. Do this even though the
+Metal driver does not currently enforce the requirement.

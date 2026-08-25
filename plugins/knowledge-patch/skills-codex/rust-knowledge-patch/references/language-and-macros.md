@@ -1,195 +1,79 @@
 # Language, Traits, Macros, and Diagnostics
 
-Use this reference for cross-edition compiler behavior, type-system changes, pattern and macro compatibility, and lint-driven upgrade failures.
+## Traits, coercions, and opaque types
 
-## Traits, coherence, and opaque types
+- **Lint nesting (since 1.84.0):** `#[deny(lint)]` nested under `#[forbid(lint)]` is accepted as a no-op; the outer prohibition still applies.
+- **Trait-object weakening (since 1.84.0):** a coercion may discard a non-auto principal trait while retaining auto traits, such as coercing `&(dyn Display + Send)` to `&dyn Send`.
+- **Unsized implementations (since 1.87.0):** an impl for an unsized type may omit a required method whose bounds include `Self: Sized`.
+- **Associated-item bounds (since 1.92.0):** repeated bounds for one associated item are accepted except in trait objects. Associated-type item bounds take precedence over where-clause bounds when proving auto traits and `Sized`.
+- **Downstream `Pin` impls (since 1.92.0):** a downstream crate may no longer implement `DerefMut` directly for `Pin<LocalType>`; remove or redesign such impls.
+- **RPITIT visibility (since 1.96.0):** return-position `impl Trait` in traits errors when its hidden types are too private.
 
-### Coherence and trait objects
+## Inference, temporaries, and const evaluation
 
-- Trait-implementation overlap uses the next-generation trait solver (1.84.0). An upgrade can newly report `conflicting implementations` for previously accepted unsound overlap, or accept impl sets whose non-overlap the older solver could not establish.
-- A trait-object coercion may discard its non-auto principal trait while retaining auto traits (1.84.0):
+- **Const-generic inference (since 1.89.0):** `_` may stand for an inferred const-generic argument in expressions, but remains forbidden in item signatures.
+- **Lifetime syntax lint (since 1.89.0):** `mismatched_lifetime_syntaxes` warns when elision connects input and output lifetimes written in different syntax categories. Spell a hidden output lifetime as `'_`; this supersedes `elided_named_lifetimes`.
+- **Tuple-constructor extension (since 1.89.0):** temporary lifetime extension in a `let` initializer passes through tuple-struct and tuple-variant constructors.
+- **Constants referencing mutable/external memory (since 1.90.0):** such references may appear in a constant's final value, but that constant cannot be used as a pattern.
+- **Self-writing statics (since 1.90.0):** const evaluation rejects a static initializer that writes to the same static.
+- **Macro-argument lifetimes (since 1.92.0):** arguments of non-extended `pin!` and formatting macros no longer receive incidental temporary lifetime extension; bind borrowed temporaries first.
+- **Const promotion (since 1.95.0):** const blocks are no longer evaluated to decide whether enclosing fallible expressions can be implicitly promoted. Typed const-evaluation copies handle padding more consistently and can rarely reject pointer bytes that reach padding.
+- **Array inference (since 1.95.0):** array coercions may contribute fewer constraints, so code relying on them can need explicit types.
+- **Never coercions (since 1.96.0):** tuple expressions now consistently apply never-type coercions.
+- **Const-generic checking (since 1.96.0):** const-generic argument types are checked in more positions.
+- **Float inference (since 1.97.0):** using `f32: From<{float}>` to constrain an otherwise unconstrained float produces a future-compatibility warning.
 
-  ```rust
-  fn keep_only_send(value: &(dyn std::fmt::Display + Send)) -> &dyn Send {
-      value
-  }
-  ```
+## Patterns, captures, and imports
 
-- Trait-object upcasting is stable through references, smart pointers such as `Arc`, and raw pointers (1.86.0). Raw objects must carry valid vtables even temporarily.
-- An impl for an unsized type may omit a required method whose `Self: Sized` bound cannot hold (1.87.0).
+- **Open-beginning ranges (since 1.87.0):** `..EXPR` is accepted directly after unary `!`, `-`, and `*`; macro matching around these token sequences can change.
+- **Binding and drop order (since 1.91.0):** bindings are lowered in written order, and primary-binding order determines destruction order. Test destructuring with visible `Drop` effects.
+- **Precise closure capture (since 1.94.0):** pattern capture is more precise. A non-`move` closure may move one field and borrow another instead of moving the whole value, changing borrow errors and drop timing.
+- **Path-keyword aliases (since 1.95.0):** path-segment keywords can be imported when renamed, such as `use crate as root`; unrenamed `use $crate::{self};` is rejected.
+- **`if let` guards (since 1.95.0):** match guards may bind patterns with `if let`; those patterns do not contribute to exhaustiveness.
+- **Non-exhaustive discriminants (since 1.95.0):** matching a single-variant `#[non_exhaustive]` enum now reads its discriminant and can change closure capture.
+- **Struct self-imports (since 1.96.0):** `use S::{self as Other}` is rejected because a `{self}` import requires a module parent.
+- **Path and pattern syntax (since 1.97.0):** generic arguments on module path segments are rejected even for generic enum-variant reexports, and tuple-index shorthand is rejected in struct patterns.
 
-### Precise capture and associated types
+## Configuration and built-in macros
 
-- Trait methods may constrain return-position `impl Trait` capture with `use<...>` (1.87.0). For example, `fn value<'a>(&'a self) -> impl Sized + use<Self>` may depend on `Self` without capturing `'a`.
-- Impls with `?Sized` bounds on recursive types containing associated-type projections can newly fail and may require refactoring (1.89.0).
-- The same associated item may be bounded more than once in a generic trait bound, but not in a trait object (1.92.0): `Iterator<Item: Copy, Item: Send>`.
-- Associated-item bounds are preferred over equivalent where-clause bounds when proving that the associated type is `Sized` or implements an auto trait (1.92.0).
-- A downstream crate may no longer implement `DerefMut` for `Pin<LocalType>` (1.92.0); redesign code that used such an impl.
-- Return-position `impl Trait` types in traits are rejected when their visibility is too private for the exposed interface (1.96.0).
-- `Eq::assert_receiver_is_total_eq` is deprecated, and a manual impl that defines it receives a future-compatibility warning (1.95.0).
+- **Raw cfg identifiers (since 1.85.0):** Cargo cfg expressions accept keyword-shaped names as raw identifiers such as `r#gen`; bare keywords warn for future incompatibility.
+- **Checked `test` cfg (since 1.85.0):** direct `rustc --check-cfg` users must register `test` explicitly with `--check-cfg=cfg(test)`; Cargo registers it in this release.
+- **Const-block macro arguments (since 1.87.0):** standard macros such as `assert_eq!` and `vec!` accept `const { ... }` expressions.
+- **Boolean cfg predicates (since 1.88.0):** `cfg(true)` and `cfg(false)` work in `cfg`, `cfg_attr`, `cfg!`, and Cargo target tables, replacing empty `all()`/`any()` tricks.
+- **Stored `format_args!` (since 1.89.0):** formatted arguments containing placeholders may be bound to a variable for later use, subject to normal borrow lifetimes.
+- **`$crate` construction (since 1.90.0):** `proc_macro::Ident::new` accepts `$crate`.
+- **Prelude macro resolution (since 1.94.0):** standard macros arrive through the prelude instead of injected `#[macro_use]`. Same-named glob imports can become ambiguous; explicitly import the intended macro. `ambiguous_panic_imports` also covers affected `no_std` code glob-importing `std`.
+- **Compile-time selection (since 1.95.0):** `cfg_select!` expands the first matching item or expression arm and supports `_` as fallback.
+- **Forwarded cfg expressions (since 1.96.0):** macros may forward an `expr` metavariable into `cfg`.
+- **Pattern assertions (since 1.96.0):** import `assert_matches!` or `debug_assert_matches!` from `core` or `std`; failures render the value with `Debug`.
 
-## Inference, lifetimes, captures, and drop order
+## Declarative and procedural macro compatibility
 
-### Const-generic and array inference
+- **Defining-crate edition (since 1.85.0):** when an exported macro expands to define another `macro_rules!`, the inner macro uses the external defining crate's edition, not the consumer's.
+- **Invalid constructs rejected (since 1.87.0):** macros in `#![crate_name]`, attributes on `..` in struct patterns, order-dependent trait objects, and `ptr_cast_add_auto_to_object` cases are errors. Repeated associated-type bindings on `dyn` types are not deduplicated, and flattened `format_args!` is disallowed in const contexts.
+- **ABI strings in pointer types (since 1.87.0):** unsupported ABI strings on function pointers warn even when they occur in dependencies.
+- **Expansion visibility (since 1.87.0):** procedural macros no longer observe expanded `cfg(true)` attributes. Declarative macros depending on the old pasted-token representation can fail; match the relevant input as `tt` where appropriate.
+- **Span locations (since 1.88.0):** `proc_macro::Span` exposes stable `line`, `column`, `start`, `end`, `file`, and `local_file`.
+- **Fragment specifiers (since 1.89.0):** every metavariable matcher needs an explicit fragment kind; `missing_fragment_specifier` is an unconditional error.
+- **Expression semicolons (since 1.91.0):** `semicolon_in_expressions_from_macros` is deny-by-default when an expression-position `macro_rules!` expansion ends in `;`, ahead of a hard error.
+- **Export arguments (since 1.92.0):** `invalid_macro_export_arguments` is deny-by-default and reported in dependencies.
 
-- `_` may be an inferred const-generic argument when context determines it (1.89.0), including `[false; _]`. It remains invalid in item signatures such as declared function return types or const item types.
-- Array-repeat `Copy` requirements now affect inference only at the end of type checking (1.89.0).
-- Generic const parameter defaults are type-checked, and more ill-typed const-generic arguments are rejected (1.88.0 and 1.96.0).
-- Array coercions can provide fewer inference constraints, so affected expressions may require explicit types (1.95.0).
+## Lints and newly rejected code
 
-### Lifetime spelling and extension
-
-- `mismatched_lifetime_syntaxes` warns when elision connects input and output lifetimes but the signature spells the two sides inconsistently (1.89.0). For example, prefer `Iter<'_, u8>` over `Iter<u8>` when tied to an elided input; this lint supersedes `elided_named_lifetimes`.
-- Temporary lifetime extension passes through tuple-struct and tuple-variant constructors (1.89.0), allowing a borrowed temporary to live for the enclosing `let`:
-
-  ```rust
-  struct Wrapped<'a>(&'a String);
-  let value = Wrapped(&String::from("temporary"));
-  ```
-
-- Temporary extension no longer reaches arguments of `pin!` and formatting macros when the macro call itself is in a non-extending position (1.92.0).
-- Lifetime bounds are checked for types mentioning only type parameters (1.95.0); add correct bounds rather than relying on their former omission.
-
-### Patterns, captures, and destruction
-
-- Pattern bindings are lowered in written order, and primary-binding order determines drop order (1.91.0). Test code whose destructors have visible side effects.
-- Pattern-aware closure capture can move one field while borrowing another rather than moving the whole variable (1.94.0). This may expose borrow errors or change destruction timing.
-- Matching a single-variant `#[non_exhaustive]` enum now reads its discriminant (1.95.0), which can make a closure capture a value it did not capture before.
-- Struct-field shorthand patterns using the accidentally accepted `mut ref` or `mut ref mut` combinations are feature-gated again (1.95.0).
-- Never values are always coerced in tuple expressions (1.96.0).
-- Some `#[repr(Int)]` enums with fields of uninhabited zero-sized types have corrected layouts (1.96.0); do not infer language-level guarantees from the former layout.
-- The encoding of some enums without an explicit representation changed (1.97.0). Treat unspecified layout as non-contractual.
-
-### Const promotion and evaluation compatibility
-
-- Expressions containing fallible operations are no longer implicitly promoted when promotion eligibility would require evaluating a const block (1.95.0).
-- Typed const-evaluation copies handle padding more consistently (1.95.0), which can rarely reject a const or static when bytes from part of a pointer would enter padding.
-- A static initializer that writes to the same static is rejected during const evaluation (1.90.0).
-
-## Conditions, patterns, and configuration syntax
-
-### Match guards
-
-Match arms may bind a pattern with an `if let` guard (1.95.0). Bindings from the arm pattern and guard are available in the body; guard patterns do not contribute to exhaustiveness.
-
-```rust
-match value {
-    Some(x) if let Ok(y) = compute(x) => println!("{x}, {y}"),
-    _ => {}
-}
-```
-
-### `cfg_select!`
-
-`cfg_select!` expands the first true `cfg` arm, with `_` as a fallback, for either items or expressions (1.95.0).
-
-```rust
-cfg_select! {
-    unix => { fn platform() -> &'static str { "unix" } }
-    target_pointer_width = "32" => { fn platform() -> &'static str { "32-bit" } }
-    _ => { fn platform() -> &'static str { "other" } }
-}
-```
-
-### Forwarding expressions to `cfg`
-
-An `expr` metavariable captured by `macro_rules!` can be forwarded as a `cfg` predicate (1.96.0):
-
-```rust
-macro_rules! cfg_item {
-    ($condition:expr, $item:item) => {
-        #[cfg($condition)]
-        $item
-    };
-}
-cfg_item!(unix, fn platform_only() {});
-```
-
-### Pattern assertions
-
-`assert_matches!` and `debug_assert_matches!` display the value with `Debug` on failure (1.96.0). They are not in the prelude; import them from `core` or `std`.
-
-## Declarative and procedural macros
-
-### Edition and parsing behavior
-
-- When an external crate's exported `macro_rules!` macro defines another declarative macro, the nested macro body uses the defining crate's edition (1.85.0), not the consuming crate's edition.
-- Open-beginning ranges can be parsed after unary `!`, `-`, or `*`, potentially changing macro matching (1.87.0).
-- Standard macros such as `assert_eq!` and `vec!` accept `const { ... }` expressions (1.87.0).
-
-### Rejected or changed macro constructs
-
-- Macro calls inside `#![crate_name]` are rejected (1.87.0).
-- Procedural macros cannot observe expanded `cfg(true)` attributes (1.87.0).
-- Some invalid pasted-token declarative macros must be rewritten, often by capturing a `tt` fragment (1.87.0).
-- `missing_fragment_specifier` is an unconditional error (1.89.0).
-- `semicolon_in_expressions_from_macros` is deny-by-default for expression-position expansions ending in `;` (1.91.0), ahead of a hard error.
-- `invalid_macro_export_arguments` is deny-by-default, and malformed `#[macro_export(...)]` is reported in dependencies (1.92.0).
-- Invalid numeric suffixes in field positions and shebangs inside `--cfg` or `--check-cfg` are rejected (1.91.0).
-- An expression-context `include!(...)` no longer strips a leading shebang from its input (1.94.0).
-
-### Prelude and import ambiguity
-
-- Standard-library macros arrive through the prelude instead of injected `#[macro_use]` (1.94.0). A same-named glob import can become ambiguous and require an explicit import.
-- Ambiguous glob reexports are visible across crate boundaries (1.94.0).
-- Ambiguity between `core::panic!` and `std::panic!` is reported by `ambiguous_panic_imports` (1.94.0).
-- Path-segment keywords may be imported when renamed, but `use $crate::{self};` without renaming is rejected (1.95.0).
-- Ambiguously glob-imported traits receive `ambiguous_glob_imported_traits`, and derive helper attributes conflicting with built-in attributes receive a future-compatibility warning (1.95.0).
-
-## Lints and diagnostic policy
-
-### Lint-level semantics
-
-- An inner `#[deny(...)]` under an outer `#[forbid(...)]` is a harmless no-op rather than an attempted weakening (1.84.0).
-- `rustc --check-cfg` no longer declares `test` automatically (1.85.0). Direct compiler invocations must pass `--check-cfg=cfg(test)`; Cargo still declares it.
-- `unknown_or_malformed_diagnostic_attributes` is a group containing the individually configurable `unknown_diagnostic_attributes`, `misplaced_diagnostic_attributes`, `malformed_diagnostic_attributes`, and `malformed_diagnostic_format_literals` (1.90.0).
-- Impls and impl items inherit `dead_code` levels from their corresponding traits and trait items (1.94.0).
-- `unused_visibilities` warns on visibility applied to `const _` declarations (1.94.0).
-- The allow-by-default `dead_code_pub_in_binary` finds unused public items in binary crates (1.97.0).
-
-### Function, pointer, and expression diagnostics
-
-- Direct function-pointer comparison triggers `unpredictable_function_pointer_comparisons` (1.85.0); use `std::ptr::fn_addr_eq` for deliberate address comparison. From 1.89.0, the lint also reaches comparisons generated by external macros.
-- `double_negations` warns on forms such as `--x`, which are two negations rather than decrement (1.86.0).
-- `dangerous_implicit_autorefs` warns when dereferencing a raw pointer causes an implicit autoref (1.88.0) and becomes deny-by-default in 1.89.0.
-- `invalid_null_arguments` detects null passed where the called operation requires non-null (1.88.0).
-- Ignoring `[T; N]::map` warns (1.89.0).
-- `function_casts_as_integer` and `const_item_interior_mutations` warn by default, while `deref_nullptr` is deny-by-default (1.93.0).
-- `uninhabited_static` is deny-by-default and is reported in dependencies (1.96.0).
-- Depending on `f32: From<{float}>` to infer an otherwise unconstrained float receives a future-compatibility warning (1.97.0).
-
-### Never type and must-use behavior
-
-- Never-type future-compatibility warnings are reported in dependencies from 1.89.0.
-- `never_type_fallback_flowing_into_unsafe` and `dependency_on_unit_never_type_fallback` are deny-by-default when building the affected crate directly (1.92.0). Cargo only warns when the crate is a dependency; projects can explicitly allow them.
-- `unused_must_use` does not warn for `Result<(), E>` or `ControlFlow<B, ()>` when `E` or `B` is uninhabited, such as `!` or `Infallible` (1.92.0).
-- From 1.97.0, `Result<T, Uninhabited>` and `ControlFlow<Uninhabited, T>` are treated like `T` for must-use checking, so only the payload's requirement controls the warning.
-
-### Attribute and identifier diagnostics
-
-- Rust identifiers use Unicode 17, and lifetime identifiers are NFC-normalized (1.94.0).
-- Code-generation attributes on body-free trait methods receive a future-compatibility warning because they currently have no effect (1.94.0).
-- Name-resolution deprecation lints are deny-by-default and are reported in dependencies (1.91.0).
-- Bare `...` parameters outside foreign blocks are future-incompatible, and keyword cfg predicates are rejected (1.93.0).
-- Meaningless `#[test]` placement, malformed `#[should_panic]` and `#[link]`, trait modifiers on inherent impls, `static` closures, and relaxed associated-type bounds such as `TraitRef<AssocTy: ?Sized>` are rejected (1.91.0 and 1.93.0).
-- Empty `export_name`, malformed `link` or `link_name` parameters, and invalid Mach-O `link_section` specifiers are rejected (1.97.0).
-
-## Newly enforced type and syntax rules
-
-- `ptr_cast_add_auto_to_object` and order-dependent trait objects became hard errors; associated types on `dyn` types are no longer deduplicated (1.87.0).
-- Formatting width and precision are capped at 16 bits on every target (1.87.0).
-- `#[bench]` without `#![feature(custom_test_frameworks)]`, some always-true-pattern borrow cases, and vector values passed through an ABI without the required target feature are rejected (1.88.0).
-- Unsupported ABI strings are rejected everywhere, including function-pointer trait impls (1.90.0).
-- `proc_macro_derive` arguments are validated even when the attribute is on the crate root (1.90.0).
-- Coroutine captures must be drop-live, and `let-else` bindings receive stricter drop checking (1.91.0).
-- A cast may no longer freely change lifetime bounds on a `dyn` type, and well-formedness is checked before where-clause normalization (1.94.0).
-- Struct imports such as `use S::{self as Other};` and unsizing into `Pin<Foo>` when `Foo` lacks `Deref` are rejected (1.96.0).
-- Generic arguments on module path segments and tuple-index shorthand in struct patterns are rejected (1.97.0).
-
-## Removed or deprecated compiler surfaces
-
-- The unstable `-Zpolymorphize` flag was removed (1.85.0).
-- The no-op crate attributes `#![no_start]` and `#![crate_id]` were removed, and casting a fieldless enum with `Drop` to an integer is a hard error (1.86.0).
-- `wasm_c_abi` became a hard error in 1.86.0; `wasm-bindgen` must be at least 0.2.89.
-- `std::intrinsics::drop_in_place` was removed (1.89.0). The accidentally stable intrinsic entries `copy`, `copy_nonoverlapping`, and `write_bytes` are proper intrinsics, cannot coerce to function pointers, and add no debug assertions against undefined behavior.
-- Constants and functions in `std::char` are deprecated in favor of primitive `char` APIs (1.97.0).
+- **Missing ABI (since 1.86.0):** `missing_abi` warns for bare `extern {}` and `extern fn`; omission still means `"C"`, but spell it explicitly.
+- **Double negation (since 1.86.0):** `double_negations` warns on `--x`, which is two negations, not decrement.
+- **Hard compatibility errors (since 1.86.0):** `wasm_c_abi` is a hard error; use `wasm-bindgen` 0.2.89 or newer. Integer casts of fieldless enums implementing `Drop` also error, and `#![no_start]`/`#![crate_id]` are removed.
+- **Raw-pointer diagnostics (since 1.88.0):** `dangerous_implicit_autorefs` warns when a raw-pointer dereference forms an implicit reference and was scheduled to become deny-by-default in the next release; `invalid_null_arguments` catches invalid null arguments.
+- **Custom test attributes (since 1.88.0):** `#[bench]` without `#![feature(custom_test_frameworks)]` is a hard error.
+- **Diagnostic lint group (since 1.90.0):** configure `unknown_diagnostic_attributes`, `misplaced_diagnostic_attributes`, `malformed_diagnostic_attributes`, and `malformed_diagnostic_format_literals` separately or through `unknown_or_malformed_diagnostic_attributes`.
+- **Unsupported ABIs (since 1.90.0):** unsupported `extern "abi"` strings are rejected in all positions, including trait impls for function-pointer types.
+- **Pointer escape and transmute lints (since 1.91.0):** `dangling_pointers_from_locals` and `integer_to_ptr_transmutes` warn by default. Name-resolution deprecation lints are deny-by-default and reported in dependencies.
+- **Never-type migration (since 1.92.0):** `never_type_fallback_flowing_into_unsafe` and `dependency_on_unit_never_type_fallback` are deny-by-default for direct builds. Dependency builds produce Cargo warnings; fix inference instead of relying on `allow`.
+- **Low-level defaults (since 1.93.0):** `function_casts_as_integer` warns on direct function-item-to-integer casts; `const_item_interior_mutations` warns on mutation of interior-mutable const values; `deref_nullptr` is deny-by-default; out-of-range `repr(C)` enum discriminants warn for future incompatibility.
+- **Trait lint inheritance (since 1.94.0):** impls and their items inherit `dead_code` levels from the matching trait/items. `unused_visibilities` warns on visibility attached to anonymous `const _`.
+- **Unicode identifiers (since 1.94.0):** Unicode data is version 17 and lifetime identifiers are NFC-normalized.
+- **Cross-crate diagnostics (since 1.94.0):** casts may not freely change lifetime bounds on `dyn` types, expression-position `include!` no longer strips a leading shebang, and ambiguous glob reexports are visible across crate boundaries. Codegen attributes on body-free trait methods warn because they have no effect.
+- **Upgrade checks (since 1.95.0):** lifetime bounds involving only type parameters and more visibility-related ambiguous imports are checked. Future warnings cover ambiguously glob-imported traits, derive helpers conflicting with built-ins, and manual `Eq::assert_receiver_is_total_eq`; accidental `mut ref` and `mut ref mut` shorthand patterns are feature-gated again.
+- **Uninhabited statics (since 1.96.0):** `uninhabited_static` is deny-by-default and reported in dependencies.
+- **Other 1.96.0 rejections:** unsizing into `Pin<Foo>` requires `Foo: Deref`, and `#![reexport_test_harness_main]` is feature-gated again.
+- **Uninhabited results (since 1.97.0):** `unused_must_use` treats `Result<T, Uninhabited>` and `ControlFlow<Uninhabited, T>` like `T`. `dead_code_pub_in_binary` is an allow-by-default lint for unused public binary-crate APIs.

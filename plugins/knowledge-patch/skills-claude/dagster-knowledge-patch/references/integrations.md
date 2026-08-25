@@ -1,142 +1,183 @@
 # Integrations
 
-Use this reference when configuring integration packages and Components. Check
-the installed integration package independently from core Dagster.
+## Integration-wide Component behavior
+
+### Pools and extension points
+
+The `dagster-dbt`, `dagster-dlt`, and `dagster-sling` integrations gained pool
+support in 1.10.0.
+
+Since 1.11.0, Airbyte, Fivetran, Power BI, Sling, and dlt Components expose an
+overridable `get_asset_spec`. Airbyte and Fivetran also expose `execute`, while
+`DbtProjectComponent` exposes `get_asset_spec` and `get_asset_check_spec`.
+Airbyte and Fivetran Components no longer reserve their former `io_manager`,
+`airbyte`, or `fivetran` resource keys.
+
+### State-backed discovery
+
+Airbyte, Fivetran, Power BI, Airflow, and dbt project Components adopted
+`StateBackedComponent` in 1.12.0. Generated GitHub Actions workflows refresh
+their persisted discovery state during deployment. In 1.13.0, state-backed
+integrations default to `LOCAL_FILESYSTEM` rather than
+`legacy_code_server_snapshots`.
 
 ## dbt
 
-### Execution engines and project controls
+### Engines and execution controls
 
-In 1.11.0, `dagster-dbt` supports dbt Core 1.10 and preview use of the dbt
-Fusion CLI without code changes. `dbt-core` remains required for dbt Cloud;
-Fusion is preferred when both engines are installed. Configure component
-execution with `DbtProjectComponent.cli_args`.
+As of 1.11.0, `dagster-dbt` supports dbt Core 1.10 and preview use of the dbt
+Fusion CLI without code changes. `dbt-core` remains required for dbt Cloud, and
+Fusion is preferred when both engines are installed.
 
-In 1.12.0, dbt Core 1.11 is supported. `DbtProject` and
-`DbtProjectComponent` expose `prepare_project_cli_args` for manifest-generation
-arguments, and an installed `dbt-core` is preferred for manifest parsing.
-`DbtProjectComponent.op_config_schema` customizes runtime configuration.
-
+`DbtProjectComponent.cli_args` customizes execution. The environment variables
 `DAGSTER_DBT_CLOUD_POLL_INTERVAL` and `DAGSTER_DBT_CLOUD_POLL_TIMEOUT` control
 dbt Cloud polling (1.11.0).
 
-### dbt Cloud and asset metadata
+In 1.12.0, `DbtProjectComponent.op_config_schema` can define runtime config.
+`DbtProject` and the Component expose `prepare_project_cli_args` for
+manifest-generation arguments. `dagster-dbt` supports dbt Core 1.11 and prefers
+an installed `dbt-core` for manifest parsing.
+
+### Cloud, partitions, and translation
 
 `DbtCloudComponent` loads dbt Cloud projects as assets and can add a polling
-sensor for Cloud job runs (1.12.0). The `dbt_cloud_assets` decorator accepts
+sensor for Cloud job runs as of 1.12.0. The `dbt_cloud_assets` decorator accepts
 `partitions_def` for partitioned assets.
 
-As of 1.13.0, `DbtCloudComponent` supports custom `translation`; it and the
-workspace accept a configurable job pool. `DbtProjectComponent.include_metadata`
-accepts `"insights"` in YAML for Dagster+ Insights tracking.
+In 1.13.0, `DagsterDbtTranslatorSettings.enable_source_metadata` defaults to
+`True`, so dbt source table names remap upstream asset keys by default.
+`DbtCloudComponent` adds custom `translation`; the Component and workspace
+accept a configurable job pool. `DbtProjectComponent.include_metadata` accepts
+`"insights"` for Dagster+ Insights tracking in YAML.
 
-`DagsterDbtTranslatorSettings.enable_source_metadata` defaults to `True` in
-1.13.0, so dbt source table names remap upstream asset keys by default. Audit
-keys when upgrading. dbt views can opt into virtual assets automatically.
-
-The dbt Cloud integration was beta in 1.11.0. A preview
-`SnowflakeDbtProjectComponent` for native Snowflake dbt orchestration arrived
-in 1.13.0.
+dbt views can be represented as virtual assets with
+`enable_dbt_views_as_virtual_assets` (1.13.0).
 
 ## Airbyte
 
-`AirbyteWorkspaceComponent`, renamed from `AirbyteCloudWorkspaceComponent`,
-and `@airbyte_assets` support Airbyte OSS and Enterprise as of 1.11.0.
+`AirbyteWorkspaceComponent`, renamed from `AirbyteCloudWorkspaceComponent`, and
+`@airbyte_assets` support Airbyte OSS and Enterprise as of 1.11.0.
 
-`AirbyteWorkspace` added these controls in 1.12.0:
+In 1.12.0, `AirbyteWorkspace` adds `poll_previous_running_sync`,
+`max_items_per_page`, `poll_interval`, `poll_timeout`, and
+`cancel_on_termination` controls.
 
-- `poll_previous_running_sync`
-- `max_items_per_page`
-- `poll_interval`
-- `poll_timeout`
-- `cancel_on_termination`
+The 1.13-upgrade removed `AirbyteState`; use `AirbyteJobStatusType`.
+`build_airbyte_assets()` also removed `legacy_freshness_policy` and
+`auto_materialize_policy`.
 
-Airbyte Components use the state-backed discovery model. Review the local
-filesystem default described in the Components reference.
+As of 1.13.16, transient Airbyte API failures honor `request_max_retries` rather
+than failing a sync after its first transient error.
 
 ## Fivetran
 
-`FivetranWorkspace` is GA as of 1.11.0. In 1.12.0, the integration added a
-polling sensor that converts externally triggered syncs into materializations.
-Workspace controls include `request_backoff_factor`, `retry_on_reschedule`,
-and resync operations for request failures and quota-rescheduled syncs.
+`FivetranWorkspace` became GA in 1.11.0.
 
-The Fivetran Component can fetch column-level metadata with
+In 1.12.0, the integration adds a polling sensor that represents externally
+triggered syncs as materializations. `FivetranWorkspace` also supports
+`request_backoff_factor`, `retry_on_reschedule`, and resync operations for
+request failures and quota-rescheduled syncs.
+
+The Fivetran Component can opt into column-level metadata through
 `fetch_column_metadata` as of 1.13.0.
 
 ## Databricks
 
-The 1.11.0 integration added `PipesDatabricksServerlessClient`, a preview
-`DatabricksAssetBundleComponent`, Spark Python and Python Wheel serverless
-tasks, and `notebook_task` support in `PipesDatabricksClient`.
+Dagster 1.11.0 added `PipesDatabricksServerlessClient`, a preview
+`DatabricksAssetBundleComponent`, Spark Python and Python Wheel serverless tasks,
+and `notebook_task` support in `PipesDatabricksClient`.
 
-`DatabricksWorkspaceComponent` discovers jobs as assets and cancels a
-Databricks job when its Dagster run is terminated (1.12.0).
-`DatabricksAssetBundleComponent` is subsettable by task at the job level and
-uses the Databricks CLI to resolve bundle-variable references.
+In 1.12.0, `DatabricksWorkspaceComponent` discovers Databricks jobs as assets and
+cancels them when their Dagster run terminates. `DatabricksAssetBundleComponent`
+is subsettable by task at the job level and uses the Databricks CLI to resolve
+bundle variable references.
 
 `DatabricksClientResource.credentials_strategy` accepts the Databricks SDK
 `CredentialsStrategy` protocol for federated or custom authentication as of
 1.13.0.
 
-## BI and analytics systems
+## Looker, Power BI, and Sigma
 
-### Tableau
+The 1.13-upgrade removed `DagsterLookerResource.build_defs`,
+`PowerBIWorkspace.build_defs`, and `SigmaOrganization.build_defs`. Load specs
+with `load_looker_asset_specs`, `load_powerbi_asset_specs`, or
+`load_sigma_asset_specs`, then pass them to `Definitions`. Loader translator
+arguments now require instances rather than classes.
 
-`TableauComponent` can create materializable embedded and published datasource
-assets (1.12.0). Enable refresh with
-`enable_embedded_datasource_refresh` and
-`enable_published_datsource_refresh`—note the spelling of `datsource` in the
-published option. Filter with `workbook_selector` and `project_selector`.
+```python
+defs = Definitions(
+    assets=load_looker_asset_specs(
+        looker_resource,
+        dagster_looker_translator=MyTranslator(),
+    )
+)
+```
 
-### Additional Components
+Deprecated translator key helpers were also removed. Override
+`get_asset_spec(...)` and derive keys from its returned `AssetSpec`.
 
-Components added in 1.12.0 cover Sigma, Looker, Tableau, Omni, Census, and
-Polytomic. Declarative resource Components were also added for AWS, Azure, and
-GCP.
+## Tableau and other BI Components
 
-The 1.13.0 preview integrations include `SodaScanComponent` for Soda Core.
-Looker, Power BI, and Sigma definition-loading removals are covered in the
-upgrade reference.
+Since 1.12.0, `TableauComponent` can make embedded and published datasource
+assets materializable with `enable_embedded_datasource_refresh` and
+`enable_published_datsource_refresh`. Filter workbooks and projects with
+`workbook_selector` and `project_selector`.
 
-## Data movement and orchestration Components
+The 1.12.0 Component catalog also added Sigma, Looker, Tableau, Omni, Census, and
+Polytomic, plus declarative AWS, Azure, and GCP resource Components.
 
-The Airflow Component was beta in 1.11.0. Power BI, Sling, dlt, Airbyte, and
-Fivetran expose Component extension points described in the Components
-reference.
+## Airflow, Sling, and dlt
 
-`DltLoadCollectionComponent` accepts `partitions_def` and `backfill_policy`
-as of 1.13.0.
+The Airflow Component was beta in 1.11.0. Sling and Airflow moved
+`asset_post_processors` to top-level `post_processors`, and
+`SlingReplicationCollectionComponent` moved from `sling`/`resource` configuration
+to direct `connections`.
 
-## Database and table IO
+In 1.12.0, dbt and Sling translators removed `get_freshness_policy` and stopped
+parsing legacy freshness-policy configuration.
 
-The `dagster-snowflake-polars` package introduced in 1.11.0 provides
-`SnowflakePolarsIOManager`. The Apache Iceberg IO manager was preview at that
-time.
+`DltLoadCollectionComponent` accepts `partitions_def` and `backfill_policy` as of
+1.13.0.
 
-`BigQueryIOManager.write_mode` accepts `truncate`, `replace`, or `append` as
-of 1.12.0.
+## Cloud data and IO managers
 
-The new 1.13.0 packages `dagster-clickhouse`,
-`dagster-clickhouse-pandas`, and `dagster-clickhouse-polars` provide native
-resources, IO managers, and `dg` Components.
+### Snowflake, BigQuery, Iceberg, and Delta Lake
 
-As of 1.13.0, BigQuery, Snowflake, and DuckDB IO managers skip empty DataFrame
-writes and log a warning instead of creating a table from degenerate inferred
-types.
+The `dagster-snowflake-polars` package introduced
+`SnowflakePolarsIOManager` in 1.11.0. The Apache Iceberg IO manager was preview.
 
-## Pipes and cloud execution
+Since 1.12.0, `BigQueryIOManager.write_mode` may be `truncate`, `replace`, or
+`append`.
+
+In 1.13.0, BigQuery, Snowflake, and DuckDB IO managers skip empty-DataFrame
+writes and warn. They do not create a degenerate table from inferred types.
+
+`dagster-deltalake` and `dagster-deltalake-polars` require `deltalake>=1.0.0`
+as of 1.11.0, without a user-facing API change.
+
+### ClickHouse and Snowflake-native dbt
+
+The 1.13.0 `dagster-clickhouse`, `dagster-clickhouse-pandas`, and
+`dagster-clickhouse-polars` packages provide native resources, IO managers, and
+`dg` Components. Preview additions include `SodaScanComponent` for Soda Core and
+`SnowflakeDbtProjectComponent` for native dbt orchestration on Snowflake.
+
+## Azure and Pipes
 
 Dagster Pipes added `PipesAzureMLClient` and Azure Blob Storage support in
 1.12.0.
 
-Preview `PipesCompositeMessageReader` handles concurrent message streams in a
-single Pipes session as of 1.13.0.
-`PipesK8sClient.run(delete_pod_on_completion=False)` retains the pod.
-`PipesEMRServerlessClient.dashboard_refresh_interval` controls Spark-dashboard
-refresh and has a longer default so UI URLs remain valid while runs execute.
+In 1.13.0, ADLS2 and Blob Storage utilities, resources, Components, and compute
+logging accept `endpoint_suffix` for sovereign clouds; the compute-log Helm
+setting is `endpointSuffix`.
 
-## Microsoft Teams and PowerAutomate
+## Microsoft Teams
 
-`dagster-msteams` can send Adaptive Card messages to PowerAutomate flows as of
-1.10.0.
+Since 1.10.0, `dagster-msteams` can send Adaptive Card messages to PowerAutomate
+flows.
+
+## Dagstermill and Airlift
+
+In 1.13.0, `dagstermill` requires `papermill>=2.0.0` and raises its default
+Jupyter kernel-startup timeout from 60 to 120 seconds. `dagster-airlift` supports
+Python 3.12, 3.13, and 3.14.

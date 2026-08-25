@@ -1,148 +1,153 @@
 # Helm and Deployment
 
-Render the chart with the exact values used by the installation and inspect the
-resulting workloads, services, storage configuration, and Loki configuration.
+Use this reference while editing values, rendering manifests, or validating
+workload lifecycle. Render the exact chart version used by the deployment;
+several values are templates rather than literal strings.
 
-## Ownership and checksum behavior
+## Rendering, names, and ownership
 
-Since 3.4.0, ConfigMap and Secret checksums are computed only over `.data`.
-Changes outside that field do not affect these rollout checksums.
+### Template evaluation
 
-The installation manager, not a chart template, sets `managed-by`. Do not add
-a competing template-owned value when integrating the chart with a manager.
+The chart restored `tpl()` evaluation for read, write, and backend pods in
+3.5.0. By 3.6.0 it also applied `tpl` to `pattern_ingester`,
+`ingester_client`, and `loki.operational_config`. In 3.7.0, `nameOverride` is
+templated as well. Quote and scope template expressions carefully, then inspect
+rendered names and configuration rather than reading the values file as the
+final result.
 
-Ruler and index-gateway templates include their namespace. Headless backend
-gRPC ports declare `appProtocol: tcp`.
+Provisioners can be namespaced as of 3.5.0. Ruler and index-gateway templates
+include their namespace as of 3.4.0, which matters to name-based policy,
+ownership, and diff tooling.
 
-## Ruler and test rendering
+### Ownership and rollout checksums
 
-Ruler configuration renders only while the ruler is enabled and has a default
-WAL directory (3.4.0). Setting `test.enabled=false` suppresses the test pod.
+Since 3.4.0, the installation manager—not the chart template—sets
+`managed-by`. ConfigMap and Secret checksums are computed only over `.data`.
+Metadata-only changes therefore do not have the same checksum-triggered rollout
+effect as data changes.
 
-Since 3.6.0, ruler pods can run the rules sidecar, alert rules may carry custom
-annotations, and ruler storage can be separate from the main Loki storage.
+### Tests and ruler rendering
 
-## Deployment controls
+Set `test.enabled=false` to suppress the chart test pod. Ruler configuration is
+rendered only when the ruler is enabled and receives a default WAL directory.
+These behaviors date to 3.4.0.
 
-The chart added overrides-exporter support in 3.4.0. It also exposes
-`topologySpreadConstraints` for admin-api pods and distributed deployments.
-Zone-aware replication splits the ingester HPA, and rollout-group values and
-ingester names can use a prefix.
+## Services and ports
 
-`topologySpreadConstraints` also applies to SingleBinary in 3.7.0. Verify that
-topology keys and selectors match the cluster's labels.
-
-## Templated values and namespacing
-
-In 3.5.0, `tpl()` evaluation was restored for read, write, and backend pods,
-and provisioners can be namespaced.
-
-In 3.6.0, `tpl` applies to:
-
-- `pattern_ingester`;
-- `ingester_client`; and
-- `loki.operational_config`.
-
-In 3.7.0, `nameOverride` is evaluated with `tpl`. Treat all of these values as
-templates and validate their rendered form, especially when values contain
-literal template delimiters.
-
-## Object storage and ruler storage
-
-Use `object_store.storage_prefix` instead of the former `object_store.prefix`
-as of 3.5.0.
-
-The chart exposes the full storage configuration in 3.6.0. It can bypass the
-generated S3, GCS, and Azure configuration and supports separate ruler
-storage. Inspect the effective configuration to ensure the bypass path does
-not coexist with unintended generated values.
-
-Chunk bucket names are not required in 3.7.0 when using an S3 URL, MinIO, or
-local disk. Ruler bucket names are optional with local ruler storage. The
-global image registry also applies to sidecars.
-
-## Services and monitoring
-
-The nginx Service no longer receives a ServiceMonitor as of 3.5.0. Add
-monitoring explicitly if the installation still requires nginx service
-metrics.
+Headless backend gRPC ports declare `appProtocol: tcp` as of 3.4.0. The nginx
+service no longer receives a ServiceMonitor as of 3.5.0; monitoring automation
+must not depend on that generated object.
 
 In 3.7.0, the chart can toggle the query-frontend gRPC load-balancing port and
-set the Service `trafficDistribution` field. Ensure clients and traffic policy
-match the rendered ports.
+set the Service `trafficDistribution` field. Validate clients and cluster
+support when changing either value.
 
-## Caches and authentication
+## Workload topology and scaling
 
-The chart supports external Memcached and an L2 chunks cache as of 3.6.0.
-Validate cache addresses, fallback behavior, and consistency expectations for
-both cache levels.
+### Topology controls
 
-Tenant authentication may receive a password hash instead of a plaintext
-password. Supply the form expected by the selected chart values and gateway
-configuration.
+The 3.4.0 chart adds `topologySpreadConstraints` for admin-api pods and
+distributed deployments. Zone-aware replication splits the ingester HPA, and
+rollout-group values and ingester names can be prefixed.
 
-## Block builder and Operational UI
+SingleBinary gains `topologySpreadConstraints` in 3.7.0. Render selectors and
+topology keys to ensure the constraints match the generated pod labels.
 
-The chart exposes `block_builder` configuration for deploying Kafka-backed
-record consumption in 3.6.0.
+### Startup and readiness
 
-Enabling the Operational UI in the chart enables its server APIs on queriers;
-the gateway forwards UI requests to them. The UI JavaScript itself is provided
-by a Grafana plugin.
+The 3.7.0 chart adds startup probes for distributor and read workloads and
+makes the canary `readinessProbe` configurable. Its filesystem group change
+policy becomes `OnRootMismatch`; account for existing volume ownership when
+testing startup.
 
-## Canary controls
+### Canary mode and batching
 
-The canary can run as a Deployment instead of a DaemonSet and can batch log
-pushes as of 3.6.0.
-
-In 3.7.0, its `readinessProbe` is configurable, and the canary accepts an
-arbitrary label set for its query. Keep the pushed and queried labels aligned
-when customizing either side.
+As of 3.6.0, the canary can run as a Deployment instead of a DaemonSet and can
+batch log pushes. Pick a controller based on the coverage behavior required,
+and include batching in latency and failure tests.
 
 ## Init containers and user namespaces
 
-User namespaces are supported as of 3.6.0. Configurable init containers are
-available across backend, bloom, distributor, query, read, and write
-workloads. Check volume mounts, security contexts, and startup dependencies in
-each workload that receives an init container.
+The 3.6.0 chart supports user namespaces and configurable init containers for
+backend, bloom, distributor, query, read, and write workloads. Check security
+contexts, volume ownership, ordering, and the effective configuration for every
+enabled workload rather than assuming one shared pod template.
 
-## Probes and pod startup
-
-Distributor and read workloads gained startup probes in 3.7.0. The filesystem
-group change policy is `OnRootMismatch`; account for existing volume ownership
-rather than expecting a recursive ownership change on every start.
-
-## Persistence
+## Persistence and volume lifecycle
 
 PVC access modes and claim-template labels are configurable as of 3.6.0. PVCs
 are retained when a StatefulSet scales down but remain deletable with the
-StatefulSet.
+StatefulSet. Align this lifecycle with the storage class and operational backup
+policy.
 
-In 3.7.0, `volumeAttributesClassName` can be set on volume claim templates.
-Confirm storage-driver support before applying it.
+The 3.7.0 chart supports `volumeAttributesClassName` on volume claim templates.
+Validate the Kubernetes and CSI support before setting it.
 
 ## DNS configuration
 
-`dnsConfig` renders for backend, read, write, SingleBinary, and table-manager
-workloads as of 3.7.0. Validate every affected pod template when introducing
-custom resolvers or search domains.
+In 3.7.0, `dnsConfig` renders for backend, read, write, SingleBinary, and
+table-manager workloads. Confirm that each enabled workload gets the expected
+resolver options and that values do not exceed platform constraints.
 
-## Memberlist and IPv6
+## Storage generation and validation
 
-Memberlist respects configured interface names when selecting its advertise
-address as of 3.4.0. In 3.5.0, IPv6 interfaces listed in
-`common.instance_interface_names` are valid advertise-address sources, and the
-query frontend can resolve IPv6 addresses.
+The chart exposes the full storage configuration as of 3.6.0 and can bypass
+generated S3, GCS, and Azure settings. Use bypass mode only when supplying a
+complete configuration. Separate ruler storage is supported.
 
-`common.instance_enable_ipv6` is propagated to every component as of 3.6.0.
-Review the rendered setting across mixed component types.
+Object-store values use `object_store.storage_prefix`, not
+`object_store.prefix`, as of 3.5.0. The object-store client accepts dashes in
+`storage_prefix` as of 3.6.0.
 
-## Chart repository and meta-monitoring
+With 3.7.0 chart validation, a chunk bucket name is not required when using an
+S3 URL, MinIO, or local disk. A ruler bucket name is optional with local ruler
+storage. Do not add dummy bucket values merely to satisfy older validation
+assumptions.
 
-Effective March 16, 2026, the open-source Loki chart moved to
-`grafana-community/helm-charts` for community maintenance. Update repository
-references and automation; the GEL chart remains separately maintained.
+## Ruler integration
 
-Meta-monitoring responsibilities moved from the Grafana meta-monitoring chart
-to the Grafana Kubernetes Monitoring chart in 3.6.0. Migrate values and release
-ownership rather than continuing to extend the former chart.
+Ruler pods can run the rules sidecar as of 3.6.0, and alert rules can carry
+custom annotations. Render sidecar mounts, discovery configuration, and rule
+metadata together. Separate ruler storage can be wired independently of the
+main storage configuration.
+
+## Caches and authentication
+
+The 3.6.0 chart can use external Memcached and an L2 chunks cache. Validate
+addresses, timeouts, credentials, and failure behavior for each layer.
+
+Tenant authentication can receive a password hash rather than plaintext.
+Confirm the selected value is already in the expected hashed form; do not hash
+or encode it twice in templating.
+
+## Kafka block-builder deployment
+
+The Helm chart exposes `block_builder` configuration as of 3.6.0 for the path
+that consumes Kafka records and builds blocks. Coordinate chart topology with
+the Kafka clients and tenant-topic strategy described in the ingestion
+reference.
+
+## Global images and sidecars
+
+As of 3.7.0, the global image registry applies to sidecars. In restricted or
+mirrored environments, verify both primary images and every generated sidecar
+resolve through the intended registry.
+
+## Chart source migration
+
+On March 16, 2026, the open-source chart moved to
+`grafana-community/helm-charts`; the GEL chart did not move with it. Update
+source URLs and automation as part of the 3.7.0 migration, then compare the
+rendered resources before deployment.
+
+## Render-time checklist
+
+- Evaluate every `tpl`-enabled value with production-like inputs.
+- Diff names, namespaces, labels, ownership metadata, and checksum annotations.
+- Verify gRPC ports, `trafficDistribution`, probes, and ServiceMonitor objects.
+- Check topology constraints and zone-aware HPA output.
+- Inspect user namespaces, init containers, security contexts, and DNS settings.
+- Test PVC retention, access modes, labels, and volume attribute classes.
+- Confirm storage generation or bypass mode supplies a complete valid config.
+- Resolve primary, canary, rules-sidecar, and other sidecar images through the
+  intended registry.

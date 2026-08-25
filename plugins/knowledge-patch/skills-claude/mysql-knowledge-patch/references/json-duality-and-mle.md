@@ -1,114 +1,101 @@
 # JSON Duality Views and MLE
 
 Use this reference for relational-to-JSON mappings, DML through Duality Views,
-stored JavaScript routines, database APIs, reusable libraries, localization, and
-WebAssembly.
+or stored JavaScript and WebAssembly libraries.
 
-## JSON Duality View definition and metadata
+## JSON Duality Views
 
-Batch 9.4-9.6 adds:
+### Define and inspect views
 
-```sql
-CREATE JSON DUALITY VIEW ...
-ALTER JSON DUALITY VIEW ...
-```
-
-`DROP VIEW` and `SHOW CREATE VIEW` also apply to JSON Duality Views. Documents
-selected from a view contain `_metadata.etag`.
+`CREATE JSON DUALITY VIEW` and `ALTER JSON DUALITY VIEW` expose relational data
+as JSON documents. `DROP VIEW` and `SHOW CREATE VIEW` also work with these
+views. Selected documents carry `_metadata.etag`.
 
 Inspect mappings through these Information Schema tables:
 
-- `JSON_DUALITY_VIEWS`;
-- `JSON_DUALITY_VIEW_TABLES`;
-- `JSON_DUALITY_VIEW_COLUMNS`; and
-- `JSON_DUALITY_VIEW_LINKS`.
+- `JSON_DUALITY_VIEWS`
+- `JSON_DUALITY_VIEW_TABLES`
+- `JSON_DUALITY_VIEW_COLUMNS`
+- `JSON_DUALITY_VIEW_LINKS`
 
-### Per-table DML tags
+### Control DML per table
 
-A view definition can allow `INSERT`, `UPDATE`, or `DELETE` per table, or deny
-operations with `NO INSERT`, `NO UPDATE`, and `NO DELETE`. Runtime DML is checked
-against the tags.
+A view definition can grant `INSERT`, `UPDATE`, or `DELETE` per table, or use
+`NO INSERT`, `NO UPDATE`, and `NO DELETE` to prohibit individual operations.
+Runtime DML is checked against those tags.
 
-In batch 9.7.0, Community Server permits `INSERT`, `UPDATE`, and `DELETE`
-through JSON Duality Views. DML also supports auto-increment columns, including
-automatic generation of primary-key values.
+Community Server permits `INSERT`, `UPDATE`, and `DELETE` through JSON Duality
+Views. DML also supports auto-increment columns, including automatic
+primary-key value generation.
 
-### Preserve spatial reference information
+### Preserve coordinate reference systems
 
-Implicit geometry-to-JSON conversion adds a `crs` attribute in batch 9.4-9.6,
-so spatial-reference information survives in JSON Duality Views.
-`ST_AsGeoJSON()` options 2 and 4 now always include a CRS URN.
+Implicit geometry-to-JSON conversion adds a `crs` attribute. This keeps
+spatial-reference information in Duality View documents. `ST_AsGeoJSON()`
+options 2 and 4 always include a CRS URN.
 
 ## Stored JavaScript SQL types
 
-In batch 9.2-9.3, stored JavaScript programs add:
+### Map ENUM, SET, DECIMAL, and BIT deliberately
 
-- `ENUM` and `SET` arguments;
-- complete `DECIMAL` and `NUMERIC` input, output, bind, and return support.
+Stored JavaScript supports `ENUM` and `SET` arguments and full
+`DECIMAL`/`NUMERIC` input, output, bind, and return paths. Decimal values are
+JavaScript strings by default; `decimalType=NUMBER` requests numbers and should
+only be used when JavaScript precision is sufficient.
 
-Decimals become JavaScript strings by default. Use `decimalType=NUMBER` only
-when conversion to a JavaScript number and its precision tradeoff are intended.
+Stored JavaScript routines also accept MySQL `BIT` values.
 
-Batch 9.4-9.6 adds the MySQL `BIT` type and brings the runtime to ECMAScript
-2025.
-
-## Localization
+### Understand locale lifetime
 
 The JavaScript `Intl` API uses MySQL locale names with underscores converted to
-dashes. A routine retains the locale from its first invocation in a session
-until the locale is reset. Reset or isolate sessions when locale-sensitive code
-must change behavior between calls.
+dashes. A routine keeps the locale from its first invocation in a session until
+the locale is reset.
 
 ## Database and transaction APIs
 
-JavaScript routines in batch 9.2-9.3 can:
+JavaScript routines can:
 
-- obtain stored functions with `Schema.getFunction()`;
-- obtain stored procedures with `Schema.getProcedure()`;
-- pass `OUT` and `INOUT` values through `mysql.arg()`; and
-- access user variables as `session` properties.
+- call stored functions and procedures through `Schema.getFunction()` and
+  `Schema.getProcedure()`;
+- create `OUT` and `INOUT` arguments with `mysql.arg()`;
+- access user variables as `session` properties;
+- start, commit, and roll back transactions;
+- control autocommit and savepoints and handle `SqlError`;
+- call `rand()`, `sleep()`, `uuid()`, and `isUUID()` wrappers for the
+  corresponding built-ins.
 
-The transaction API provides start, commit, rollback, autocommit, savepoints,
-and `SqlError`. The runtime also exposes `rand()`, `sleep()`, `uuid()`, and
-`isUUID()` for the corresponding built-ins.
+## Reusable libraries
 
-## Reusable JavaScript libraries
+### Create and evolve JavaScript libraries
 
-The initial library DDL in batch 9.2-9.3 includes:
-
-- `CREATE LIBRARY`;
-- `DROP LIBRARY`;
-- `SHOW CREATE LIBRARY`; and
-- routine `USING` clauses.
-
-MySQL 9.3 adds `ALTER LIBRARY`, `SHOW LIBRARY STATUS`, library comments,
-`ALTER PROCEDURE/FUNCTION ... USING`, and dynamic imports:
+`CREATE LIBRARY`, `DROP LIBRARY`, `SHOW CREATE LIBRARY`, and routine `USING`
+clauses provide reusable MLE libraries. Later additions include
+`ALTER LIBRARY`, `SHOW LIBRARY STATUS`, comments,
+`ALTER PROCEDURE/FUNCTION ... USING`, and dynamic imports.
 
 ```javascript
 let module = await import(`/db1/lib_${object_type}`)
 return module.default.print()
 ```
 
-## WebAssembly libraries
+### Import WebAssembly safely
 
-In batch 9.4-9.6, an MLE library can contain hexadecimal or base64-encoded
-WebAssembly:
+MLE libraries can contain hexadecimal or base64-encoded WebAssembly through
+`CREATE LIBRARY ... LANGUAGE WASM` and be imported from a routine's `USING`
+clause.
 
 ```sql
-CREATE LIBRARY example_wasm
+CREATE LIBRARY math_wasm
   LANGUAGE WASM
   AS '0061736d...';
 ```
 
-Import it through a routine's `USING` clause. WebAssembly libraries cannot use:
+WebAssembly libraries cannot use MySQL-specific APIs or WASI system, clock, or
+I/O services.
 
-- MySQL-specific APIs;
-- WASI system calls;
-- WASI clock calls; or
-- WASI I/O calls.
+## Runtime and memory
 
-## Runtime memory
-
-On-premises `mle.memory_max` defaults to 5% of physical memory in batch
-9.4-9.6, bounded to at least 0.4 GB and at most 32 GB. Include that automatic
-allocation when planning server memory.
+MLE JavaScript supports ECMAScript 2025. For on-premises deployments,
+`mle.memory_max` defaults to 5% of physical memory, bounded to the range from
+0.4 GB through 32 GB. Set an explicit value when automatic memory sizing does
+not fit the workload.

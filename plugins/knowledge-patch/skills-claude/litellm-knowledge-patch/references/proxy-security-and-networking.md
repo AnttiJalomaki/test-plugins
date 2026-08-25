@@ -1,39 +1,110 @@
 # Proxy security and networking
 
-## URL, request, and upload validation
+## SSRF validation for fetched URLs
 
-`litellm_settings.user_url_validation` defaults to `true`. It rejects fetched URLs whose DNS answer is private, loopback, link-local, or otherwise non-global. `user_url_allowed_hosts` must match the hostname exactly as written in the URL, including a port. With split-horizon DNS, allowlist the public hostname rather than its private answer.
+`litellm_settings.user_url_validation` defaults to `true`. It blocks URLs whose
+DNS result is private, loopback, link-local, or otherwise non-global.
+`user_url_allowed_hosts` entries must exactly match the URL hostname, including
+a port when present. With split-horizon DNS, allowlist the public hostname, not
+the private address to which it resolves.
 
-`enable_json_schema_validation` validates all requests. `enable_key_alias_format_validation` restricts aliases to 2–255 characters, requires alphanumeric first and last characters, and permits only `a-zA-Z0-9_-/.@` between them. `require_managed_files: true` makes `POST /v1/files` require `target_model_names` and reject classic provider uploads with 400.
+## Request, key-alias, and upload validation
 
-Set `max_request_size_mb` to reject oversized requests and `max_response_size_mb` to withhold oversized model responses. `pass_through_request_timeout` separately bounds custom and native-provider pass-through requests at 600 seconds by default; an endpoint-specific timeout wins.
+`enable_json_schema_validation` opts all requests into schema validation.
+`enable_key_alias_format_validation` requires aliases to be 2–255 characters,
+start and end with an alphanumeric character, and use only
+`a-zA-Z0-9_-/.@` internally.
 
-## Authentication and tenant isolation
+`require_managed_files: true` makes `POST /v1/files` require
+`target_model_names` and rejects classic provider uploads with HTTP 400.
 
-`custom_auth_run_common_checks` defaults to `false`; enable it to run model allowlists, budget checks, and rate limits after custom authentication.
+## Checks across input locations
 
-Responses IDs are bound to user information by default. `disable_responses_id_security` removes this cross-user protection. Non-admin `/spend/keys` and `/spend/users` results are caller-scoped by default; `legacy_unscoped_spend_list_endpoints` restores the old global view. `reject_clientside_metadata_tags` stops request-supplied tags from changing budget attribution.
+In 1.97.0, request-parameter checks cover body, path, and form inputs
+consistently. This is breaking for calls that previously bypassed a check by
+placing a value in a different input location.
 
-`fail_closed_budget_enforcement` checks every budgeted request against the database and returns 503 if neither Redis nor the database can establish spend. `allow_requests_on_db_unavailable` deliberately permits unchecked virtual-key requests and is intended only for private-network deployments.
+## Common checks after custom authentication
 
-## MCP public origins, proxies, and grants
+`custom_auth_run_common_checks` defaults to `false`. Enable it when custom-auth
+requests must also pass model allowlists, budget checks, and rate limits.
 
-For MCP OAuth behind ingress, set `PROXY_BASE_URL` to the exact public origin, with no path or trailing slash. It takes precedence over forwarded headers. Without it, `use_x_forwarded_for` is honored only when the immediate peer lies inside `mcp_trusted_proxy_ranges`.
+## Fail-closed budget enforcement
 
-`require_key_mcp_access_defined` prevents an empty key grant from inheriting the team's MCP servers. `require_end_user_mcp_access_defined` requires an explicit end-user grant.
+`fail_closed_budget_enforcement` defaults off. When enabled, every budgeted
+request is checked against the database and returns 503 when neither Redis nor
+the database can establish spend.
 
-## Outbound HTTP controls
+`allow_requests_on_db_unavailable` instead allows requests whose virtual key
+cannot be checked. Reserve that setting for private-network deployments.
 
-The aiohttp transport ignores `HTTP_PROXY` and `HTTPS_PROXY` by default. Set `AIOHTTP_TRUST_ENV=true` to honor them. Connector limits default to unlimited (`0`). Socket keepalive is off unless `AIOHTTP_SO_KEEPALIVE` is set; its idle, interval, and probe-count defaults are 60 seconds, 30 seconds, and 5 probes.
+## Tenant isolation
 
-## Drain, disconnect, and hardening switches
+Responses IDs are tied to user information by default.
+`disable_responses_id_security` removes the cross-user protection. Non-admin
+`/spend/keys` and `/spend/users` results are caller-scoped;
+`legacy_unscoped_spend_list_endpoints` restores the global view.
+`reject_clientside_metadata_tags` prevents callers from supplying tags that
+manipulate budget attribution.
 
-`enable_drain_endpoint` exposes `GET /health/drain` for pre-stop hooks and is off by default. With no `drain_endpoint_token`, the endpoint is unauthenticated; when a token is set, callers must send the matching `X-Drain-Token`.
+## Drain endpoint protection and disconnects
 
-`cancel_on_disconnect: true` cancels a non-streaming upstream request after its client leaves and records the cancellation as 499.
+`enable_drain_endpoint` exposes `GET /health/drain` and defaults off. Without
+`drain_endpoint_token`, the route is unauthenticated. When configured, the
+caller must send the matching `X-Drain-Token`.
 
-HSTS is opt-in through `LITELLM_ENABLE_HSTS` and applies only when served over HTTPS. `DISABLE_ADMIN_UI`, `NO_DOCS`, `NO_OPENAPI`, and `NO_REDOC` remove exposed interfaces independently. Log secret redaction is enabled unless `LITELLM_DISABLE_REDACT_SECRETS=true`. `LITELLM_OIDC_ALLOWED_CREDENTIAL_DIRS` restricts file-backed OIDC tokens; the default roots are `/var/run/secrets,/run/secrets`.
+`cancel_on_disconnect: true` cancels an abandoned non-streaming upstream call
+and records status 499.
 
-## MCP-aware content inspection
+## Request and pass-through bounds
 
-Model Armor can scan MCP tool calls in `pre_mcp_call` and `during_mcp_call` modes. Content Filter supports `pre_mcp_call`. With `skip_unscannable_attachments`, Model Armor passes through reference-only attachments and does not impose an attachment-count cap.
+`max_request_size_mb` rejects oversized requests. `max_response_size_mb`
+prevents oversized model output from being returned. The custom/native-provider
+`pass_through_request_timeout` defaults to 600 seconds; a timeout defined for a
+specific endpoint takes precedence.
+
+## MCP public origin and trusted proxies
+
+For MCP OAuth behind ingress, set `PROXY_BASE_URL` to the exact public origin
+with no path or trailing slash. It takes precedence over forwarded headers.
+Without it, `use_x_forwarded_for` is honored only when the direct peer is in
+`mcp_trusted_proxy_ranges`.
+
+## Explicit MCP grants
+
+`require_key_mcp_access_defined` prevents an empty key grant from inheriting
+the team's MCP servers. `require_end_user_mcp_access_defined` requires an
+explicit end-user grant.
+
+## Outbound proxy and socket behavior
+
+aiohttp ignores `HTTP_PROXY` and `HTTPS_PROXY` by default. Enable environment
+proxy discovery with `AIOHTTP_TRUST_ENV=true`. Connector limits default to
+unlimited (`0`). Socket keepalive is disabled unless
+`AIOHTTP_SO_KEEPALIVE` is enabled; idle, interval, and probe-count values then
+default to 60 seconds, 30 seconds, and 5 probes.
+
+## Deployment hardening switches
+
+`LITELLM_ENABLE_HSTS` opts into HSTS and only takes effect over HTTPS.
+`DISABLE_ADMIN_UI`, `NO_DOCS`, `NO_OPENAPI`, and `NO_REDOC` independently
+remove public interfaces.
+
+Log secret redaction is enabled by default unless
+`LITELLM_DISABLE_REDACT_SECRETS=true`. `LITELLM_OIDC_ALLOWED_CREDENTIAL_DIRS`
+restricts file-backed OIDC tokens; its default is
+`/var/run/secrets,/run/secrets`.
+
+## Docker image signature verification
+
+All LiteLLM Docker images in 1.97.0 are signed with the Cosign key introduced at
+commit `0112e53`. Pin the immutable commit when verifying an image:
+
+```shell
+cosign verify \
+  --key https://raw.githubusercontent.com/BerriAI/litellm/0112e53046018d726492c814b3644b7d376029d0/cosign.pub \
+  ghcr.io/berriai/litellm:v1.97.0
+```
+
+The more readable tag-relative `v1.97.0/cosign.pub` URL depends on repository
+tag protection.

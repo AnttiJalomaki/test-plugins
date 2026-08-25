@@ -1,91 +1,82 @@
 # Build and Operations
 
-## PCRE2 migration and compiled expressions
+## Produce release artifacts separately
 
-The `re` module uses PCRE2 starting in OTP 28.0. Pattern validation is
-stricter: invalid escapes including `\M`, `\i`, `\B`, or `\8` can now raise
-`badarg`. Unicode property results can change with newer property data, and
-branch-reset groups can alter `re:split/3` output. Recompile and retest both
-accepted and rejected patterns during an upgrade.
-
-Do not persist or transfer the internal value returned by `re:compile/2`; it
-is not reusable across Erlang nodes or OTP versions. OTP 28.1 adds supported
-export and import operations for compiled regular expressions so they can be
-transferred safely between node instances. Use that path instead of treating
-the internal value as portable.
-
-## Release artifacts
-
-In OTP 28.4, `make release` puts only runtime code in the release directory.
-Documentation and tests have separate targets:
+Since 28.4, `make release` places only runtime code in the release directory.
+Generate the other deliverables explicitly:
 
 ```text
-make release
 make release_docs
 make release_tests
 ```
 
-Update packaging jobs that assumed the main release target also produced docs
-or test artifacts.
+Update packaging and CI jobs that assumed documentation or tests were part of
+the runtime release tree.
 
-## Embedded third-party implementations
+## Select embedded third-party implementations
 
-OTP 28.5 adds explicit configuration for the implementations used by affected
-embedded components:
+Since 28.5, configure the affected embedded components with:
 
 ```text
 ./configure --enable-use-embedded-3pp-alternatives
+./configure --disable-use-embedded-3pp-alternatives
 ```
 
-`--enable-use-embedded-3pp-alternatives` forces suitable external
-alternatives, while `--disable-use-embedded-3pp-alternatives` selects all
-bundled implementations. By default, bundled implementations are selected
-except that an available operating-system `zlib` is preferred.
+The enable form forces suitable external alternatives; the disable form
+selects every bundled implementation. By default, bundled implementations are
+used except that an available OS `zlib` is preferred.
 
-The affected components are `zstd`, `zlib`, Ryu with STL, OpenSSL, and Tcl.
-External alternatives have these prerequisites:
+The affected components and requirements are:
 
 - `zstd` 1.5.6 or newer;
 - `zlib` 1.2.5 or newer;
-- C++17 for Ryu; and
-- glibc 2.32 `strerrorname_np()` for Tcl.
+- Ryu with STL and a C++17 compiler;
+- Tcl with glibc 2.32's `strerrorname_np()`;
+- OpenSSL, for which no external replacement is needed because OTP uses its
+  own MD5 implementation.
 
-OpenSSL needs no external replacement because OTP uses its own MD5
-implementation. At runtime, inspect `erlang:system_info(embedded_3pps)` for a
-map describing the embedded implementations in use.
+At runtime, `erlang:system_info(embedded_3pps)` returns a map describing the
+embedded implementations in use. Use it to verify the built artifact rather
+than inferring the result from the build host.
 
-## Memory advice selection
+## Audit code-path precedence
 
-The emulator flag `+Mumadtn <bool>` in OTP 28.1 selects `MADV_DONTNEED`
-instead of `MADV_FREE`:
+In 29.0, the current working directory (`.`) moved from the first to the last
+entry in the default code path. A local BEAM file therefore no longer shadows
+an OTP or application module unless the path is changed explicitly. Remove
+tests and launch scripts that depended on implicit local precedence.
+
+## Tune memory reclamation
+
+Since 28.1, `+Mumadtn <bool>` selects `MADV_DONTNEED` instead of
+`MADV_FREE`:
 
 ```text
 erl +Mumadtn true
 ```
 
-Make this an explicit runtime choice where operating-system memory behavior is
-part of deployment tuning.
+Choose deliberately when operating-system reclamation behavior or memory
+accounting requires it.
 
-## Windows platform changes
+## Build encrypted crash-dump support
 
-OTP 28.1 permits NIFs and linked-in drivers to load on Windows while Erlang is
-running in an Erlang source tree. This enables native-code builds and tests in
-that layout.
+Since 29.0, pass `--enable-encrypted-crash-dumps` while configuring Erlang/OTP
+to build the runtime with encrypted-crash-dump support. Ensure the operational
+dump-handling path matches the resulting build capability.
 
-OTP 29.0 ends production of 32-bit Erlang/OTP builds for Windows. Move build,
-packaging, and deployment pipelines to a supported architecture before
-upgrading.
+## Account for platform support changes
 
-## Vulnerability metadata
+OTP 29.0 no longer supplies a 32-bit Windows build. Migrate affected deployment
+and test lanes to a supported architecture.
 
-Starting with OTP 28.3, each release has an OpenVEX statement under
+Since 28.1, Windows can load NIFs and linked-in drivers while Erlang runs in an
+Erlang source tree. Native-code build and test workflows no longer need to
+relocate the runtime solely to enable loading in that layout.
+
+## Feed OpenVEX data to scanners
+
+Since 28.3, OTP publishes per-release OpenVEX statements under
 `https://erlang.org/download/vex/`, for example `otp-28.openvex.json`. These
-statements identify reported CVEs that do not affect Erlang/OTP so scanners can
-avoid false positives. The SPDX 2.3 source SBOM links to the OpenVEX document
-through a security external reference.
-
-## Crash-dump builds
-
-OTP 29.0 can be built with encrypted crash-dump support by passing
-`--enable-encrypted-crash-dumps` to `configure`. Coordinate this build choice
-with the operational process for retaining and reading crash dumps.
+statements record published CVEs that do not affect Erlang/OTP so scanners can
+avoid false positives. The SPDX 2.3 source SBOM links to the statement through
+a security external reference.

@@ -1,116 +1,125 @@
 # Python, Environments, and Platforms
 
-Use this reference for interpreter discovery, managed Python installations,
-virtual environments, Python pins, and target-platform behavior.
+Use this reference for interpreter selection, managed Python installation,
+virtual environments, tool interpreter pins, target platforms, and images.
 
-## Contents
+## Interpreter Selection and Discovery
 
-- [Interpreter Requests and Discovery](#interpreter-requests-and-discovery)
-- [Managed Python Installation and Upgrade](#managed-python-installation-and-upgrade)
-- [Virtual Environment Semantics](#virtual-environment-semantics)
-- [Tool Interpreter Pins](#tool-interpreter-pins)
-- [Cross-Platform Targets](#cross-platform-targets)
+### Honor the correct Python request source
 
-## Interpreter Requests and Discovery
+`uv python install` respects `UV_PYTHON`, which takes precedence over
+`.python-version`. In `uv pip compile`, `-p` aliases `--python`, not
+`--python-version`. A missing version request may use another interpreter with
+overridden tags, but a missing requested path or implementation is an error.
+(Batch `0.6-0.8`.)
 
-### Understand request precedence
+Arbitrary executable-name requests in `.python-version` are ignored. Use a
+supported version or implementation request rather than relying on a local
+executable alias. (Batch `0.6-0.8`.)
 
-In the 0.6-0.8 batch, `uv python install` began honoring `UV_PYTHON`, including
-its precedence over `.python-version`.
+### Enforce managed and unmanaged preferences
 
-For `uv pip compile`, `-p` aliases `--python`, not `--python-version`. If a
-requested version is unavailable, uv may use another interpreter with
-overridden tags. A missing requested path or requested implementation is an
-error rather than a candidate for substitution.
+Interpreters found on `PATH` must satisfy `--managed-python`,
+`--no-managed-python`, or the configured Python preference unless explicitly
+requested or supplied by an active virtual environment. Changing the
+preference can invalidate and recreate the project environment. (Batch
+`0.6-0.8`.)
 
-Interpreters discovered on `PATH` must satisfy `--managed-python`,
-`--no-managed-python`, or the configured Python preference. Explicit requests
-and an active virtual environment are exceptions. Changing the preference can
-invalidate and recreate an existing project environment.
+### Understand Python 3.14 selection
 
-### Account for Python 3.14 selection
+Python 3.14 replaces 3.13 as the default stable version for an unversioned
+install or automatic download when no system interpreter or pin applies. For
+3.14+, discovery may choose a free-threaded interpreter without an explicit
+`t` suffix; installs still prefer a GIL-enabled build, and `3.14+gil` requires
+one. (Batch `0.9-0.10`.)
 
-In the 0.9-0.10 batch, Python 3.14 replaced 3.13 as the stable default for an
-unversioned install or automatic download when no system interpreter or pin
-applies.
+### Prefer newer standard builds on a tie
 
-For Python 3.14 and newer, discovery may select a free-threaded interpreter
-without an explicit `t` suffix. Installation still prefers a GIL-enabled
-build. A request such as `3.14+gil` requires a GIL-enabled interpreter.
+When equally prioritized interpreters match a request, uv prefers newer
+versions and standard variants. Pin the implementation, version, or GIL mode
+when tie-breaking must not affect reproducibility. (Since `0.12.5`.)
 
-## Managed Python Installation and Upgrade
+## Managed Python Installation
 
-### Know which executables are created
+### Account for PATH and Windows registration
 
-`uv python install` puts a versioned executable such as `python3.13` in a
-`PATH` directory by default. On Windows it also registers installations with
-the `py` launcher. These executables expose only the base standard-library
-environment.
+`uv python install` creates a versioned executable such as `python3.13` in a
+`PATH` directory by default and may register the install with the Windows
+`py` launcher. These executables expose only the base standard-library
+environment. Use `--default` for unversioned names, `--no-bin` or
+`UV_PYTHON_INSTALL_BIN=0` to suppress links, and `--no-registry` or
+`UV_PYTHON_INSTALL_REGISTRY=0` to suppress registration. (Batch `0.6-0.8`.)
 
-- Use `--default` for unversioned executable names.
-- Use `--no-bin` or `UV_PYTHON_INSTALL_BIN=0` to suppress bin links.
-- Use `--no-registry` or `UV_PYTHON_INSTALL_REGISTRY=0` to suppress Windows
-  launcher registration.
+### Supply a custom managed-Python catalog
 
-Custom managed-Python metadata can be selected with
-`UV_PYTHON_DOWNLOADS_JSON_URL` or the `python-downloads-json-url` setting in
-`uv.toml`.
+Select custom managed-Python metadata with
+`UV_PYTHON_DOWNLOADS_JSON_URL` or `python-downloads-json-url` in `uv.toml`.
+(Batch `0.6-0.8`.)
 
-### Upgrade managed installations
+### Upgrade managed interpreters
 
 `uv python upgrade` and `uv python install --upgrade` are stable. Minor-version
-indirection lets virtual environments follow newly installed patch versions.
-Both commands support `--compile-bytecode` to precompile the standard library.
-
+indirection lets virtual environments follow newly installed patch versions;
+both commands support `--compile-bytecode` for the standard library.
 `uv pip compile --python-version` can download a missing requested interpreter
-when possible.
+when possible. (Batch `0.9-0.10`.)
 
 ### Use implementation-specific executable names
 
-Managed alternative implementations avoid CPython name collisions:
+Managed PyPy, GraalPy, and Pyodide executables use names such as `pypy3.10`,
+`graalpy3.10`, and `pyodide3.12`, avoiding collisions with CPython. uv can use
+Python 3.6 interpreters, and Pyodide discovery supports Windows. (Batch
+`0.9-0.10`.)
 
-- PyPy uses names such as `pypy3.10`.
-- GraalPy uses names such as `graalpy3.10`.
-- Pyodide uses names such as `pyodide3.12`.
+## Virtual Environments and Tool Interpreters
 
-uv can use Python 3.6 interpreters, and Pyodide discovery supports Windows.
+### Make virtual-environment removal explicit
 
-## Virtual Environment Semantics
+Interactive `uv venv` prompts before removing an existing environment.
+`--clear` or `UV_VENV_CLEAR=1` confirms removal; `--no-clear` disables removal
+prompts. uv refuses to remove a directory that is not a virtual environment.
+(Batch `0.6-0.8`.)
 
-### Protect existing directories
-
-In interactive use, `uv venv` prompts before removing an existing virtual
-environment. Use `--clear` or `UV_VENV_CLEAR=1` to confirm removal, or
-`--no-clear` to disable removal prompts. uv refuses to remove a directory that
-is not a virtual environment.
-
-### Understand layered ephemeral runs
-
-`uv run --with` caches the environment containing the requested requirements,
-but runs through a fresh empty environment layered over that cache. Code that
-inspects or mutates its runtime environment is not operating directly on the
-cached layer.
-
-### Build relocatable environments deliberately
+### Understand relocatable environment limits
 
 Preview behavior can make virtual environments relocatable by default, with
-`UV_VENV_RELOCATABLE` as the environment-level control. Relocatable
-environments omit `activate.csh` because that activation script embeds
-absolute paths.
+`UV_VENV_RELOCATABLE` as the environment control. Relocatable environments do
+not generate `activate.csh`, because that script embeds absolute paths.
+(Batch `0.9-0.10`.)
 
-## Tool Interpreter Pins
+### Reference a centralized environment
+
+A `.venv` file may contain the path to a centralized project environment.
+Such environments can be reused when a workspace is reached through symlinks.
+Preview `uv workspace metadata --sync --active` can target the active virtual
+environment. (Since `0.12.5`.)
+
+### Apply global Python pins to tools carefully
 
 `uv tool run` and newly created `uv tool install` environments honor a
-compatible global Python pin when `--python` is absent. An existing tool keeps
-its interpreter until it is reinstalled or passed `--python`. A Python version
-previously set explicitly for the tool remains authoritative.
+compatible global Python pin when `--python` is absent. Existing tools retain
+their interpreter until reinstalled or passed `--python`; a prior explicit
+tool Python remains authoritative. (Batch `0.9-0.10`.)
 
-## Cross-Platform Targets
+## Platform Targets
+
+### Request older Linux compatibility explicitly
 
 The `linux` alias for `--python-platform` targets `manylinux_2_28`, not
-`manylinux_2_17`. Request `x86_64-manylinux_2_17` explicitly when that older
-compatibility level is required.
+`manylinux_2_17`. Use `x86_64-manylinux_2_17` explicitly for the older target.
+The platform option also applies to `uv sync`, `uv pip check`, `uv run`, and
+`uv tool`; supported targets include Android and iOS tags, RISC-V Linux, and
+AArch64 Windows. (Batch `0.6-0.8`.)
 
-`--python-platform` is supported by `uv sync`, `uv pip check`, `uv run`, and
-`uv tool`. Platform support includes Android and iOS tags, explicit RISC-V
-Linux targets, and explicit AArch64 Windows targets.
+### Track container and binary removals
+
+Floating Debian and Alpine images use Debian 13 Trixie and Alpine 3.22. The
+Bookworm, Alpine 3.21, and Python 3.8 tags are no longer published. Prebuilt
+big-endian PPC64 binaries are removed; PPC64LE remains supported. (Batch
+`0.9-0.10`.)
+
+### Choose a writable tool bin directory in images
+
+Derived uv images set `UV_TOOL_BIN_DIR=/usr/local/bin`, putting tool installs
+on `PATH`. Override it when an unprivileged container user cannot write there.
+(Batch `0.6-0.8`.)

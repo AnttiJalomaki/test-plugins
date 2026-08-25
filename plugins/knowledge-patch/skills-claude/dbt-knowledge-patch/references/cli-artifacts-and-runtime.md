@@ -1,93 +1,146 @@
 # CLI, Artifacts, and Runtime
 
-## Quiet and machine-readable output
+## Quiet Command Results
 
-In the `1.9.0` batch, `dbt show` and `dbt compile` retain parseable JSON or text
-results with `--quiet`. Automation can suppress event logs without discarding
-the command result.
+In `1.9.0`, `dbt show` and `dbt compile` retain parseable JSON or text results
+when run with `--quiet`. Automation can suppress event logs without losing the
+command result.
 
-Core 1.11.0 lets `dbt ls --output json --output-keys` select nested paths:
+## Empty and Sample Runs
+
+Snapshots accept `--empty`, and Jinja code can inspect `flags.EMPTY`:
+
+```jinja
+{% if flags.EMPTY %}
+  -- schema-only execution
+{% endif %}
+```
+
+Core 1.10 introduces sample mode and enables it for `dbt build`. The final CLI
+folds the separate `--sample-window` parameter into `--sample`. Sampling also
+applies to referenced seeds and follows snapshot dependency graphs.
+
+Core 1.12 adds empty seed relations. `dbt seed --empty` creates selected seed
+tables without loading their rows:
+
+```bash
+dbt seed --empty --select customers
+```
+
+## Command Behavior
+
+`dbt docs serve` accepts `--host` and defaults to `127.0.0.1`. Bind to an
+external address, for example `--host 0.0.0.0`, only when generated docs must
+be reachable beyond localhost.
+
+`dbt deps`, `dbt clean`, and `dbt init` no longer change the process working
+directory. Embedded callers must manage paths explicitly.
+
+From Core 1.9.1, a `PartialSuccess` result returns a nonzero exit status. CI
+checks must not assume that partial success exits zero.
+
+Core 1.12 adds ad-hoc SQL through `dbt run-operation --sql`, without requiring
+a wrapper macro. Macros invoked by `run-operation` may call `ref()` on private
+and protected models.
+
+```bash
+dbt run-operation --sql 'select count(*) from {{ ref("orders") }}'
+```
+
+## Listing and Compilation Output
+
+From `1.11.0`, `dbt ls --output json --output-keys` accepts nested key paths:
 
 ```bash
 dbt ls --output json --output-keys name config.materialized
 ```
 
-## Docs serving and working directory
+In `1.12.0`:
 
-`dbt docs serve` accepts `--host` and defaults to `127.0.0.1`. Bind to all
-interfaces only when remote reachability is deliberate:
+- `dbt compile` writes compiled snapshot SQL under `target/compiled/`.
+- The Jinja `graph` includes unit tests.
+- Python-model parsing recognizes `config.meta_get`.
+- `NodeStatus` and `RunStatus` add `Reused`.
+- Model records emitted by `dbt ls --output json` add runtime-only
+  `direct_parents`, the nearest public ancestors. This field is not added to
+  `manifest.json`.
 
-```bash
-dbt docs serve --host 0.0.0.0
-```
+## Artifacts, Logs, and Package Locks
 
-`dbt deps`, `dbt clean`, and `dbt init` no longer change the process working
-directory. Embedded callers that depended on that side effect must manage paths
-explicitly.
+Core `1.10.0` expands machine-readable metadata:
 
-## Catalogs, artifacts, logs, and lock files
+- Artifact metadata gains an invocation-start timestamp and quoting config.
+- Manifest nodes and columns gain `doc_blocks`.
+- Structured-log `node_info` gains `node_checksum`.
+- Package lock entries gain `name`.
+- Core can upload artifacts to dbt Cloud.
 
-Core 1.10.0 parses `catalogs.yml`; from 1.10.12, `parse`, `seed`, and `test` do
-so as well. Catalog integration accepts `file_format`. Catalog V2 details are in
-[project-config-and-semantic-layer.md](project-config-and-semantic-layer.md).
+## Catalog File Loading
 
-Core 1.10.0 also adds:
+Core parses `catalogs.yml`; from 1.10.12 it also parses that file during
+`parse`, `seed`, and `test`. Catalog integration configuration accepts
+`file_format`.
 
-- an invocation-start timestamp and quoting config to artifact metadata;
-- `doc_blocks` to manifest nodes and columns;
-- `node_checksum` to structured-log `node_info`;
-- `name` to package lock entries;
-- support for uploading artifacts to dbt Cloud.
+With Core 1.12, every command that requires a manifest loads catalog
+configuration. See the project-configuration reference for Catalog V2 and
+database-name precedence.
 
-Core 1.12.0 writes compiled snapshot SQL under `target/compiled/`. `NodeStatus`
-and `RunStatus` add `Reused`. Model records from `dbt ls --output json` include
-a runtime-only `direct_parents` field containing the nearest public ancestors;
-this does not change `manifest.json`.
+## External V2 Parser
 
-## External V2 parser
-
-Core 1.12.0 adds `--use-v2-parser`, which bypasses Core's parser, runs an
-external parser, and loads the resulting `manifest.json` back into the runtime
-manifest. Choose the command with `--v2-parser` or
-`DBT_ENGINE_V2_PARSER`; the default is
-`dbt-core-experimental-parser parse`. It may also be configured under project
-`flags` and requires `dbt-core-experimental-parser>=2.0.0a4`.
+`--use-v2-parser` bypasses Core's parser, invokes an external parser, and loads
+the resulting `manifest.json` into the runtime manifest. Choose the parser
+command using `--v2-parser`, `DBT_ENGINE_V2_PARSER`, or project `flags`. The
+default is `dbt-core-experimental-parser parse`.
 
 ```bash
 dbt parse --use-v2-parser \
   --v2-parser "dbt-core-experimental-parser parse"
 ```
 
-## Ad-hoc SQL and input limits
+Core 1.12 initially requires `dbt-core-experimental-parser>=2.0.0a4`. The
+`1.12.1` batch records a Core 1.12.2 increase to `2.0.0b1`.
 
-Core 1.12.0 lets `dbt run-operation --sql` execute ad-hoc SQL or Jinja without
-a wrapper macro:
+## OpenTelemetry
+
+Core 1.12.1 emits OpenTelemetry spans for node and hook execution when
+`--snowflake-projects-otel` is supplied. Instrumentation is off by default.
 
 ```bash
-dbt run-operation --sql 'select count(*) from {{ ref("orders") }}'
+dbt build --snowflake-projects-otel
 ```
 
-`MAXIMUM_SEED_SIZE_MIB` makes the seed-size ceiling configurable. The
-`--sqlparse` option configures SQL parser limits instead of requiring a pinned
-`sqlparse` release.
+Hook spans identify the hook and transaction phase, omit calls that execute no
+hooks, and include node context and status.
 
-## Runtime compatibility
+## Fusion Manifests
 
-The 1.9 line drops Python 3.8 and raises the minimum `dbt-adapters` version to
-1.9.0.
+After Core loads a Fusion-generated manifest, it reparses adapter macros from
+the locally installed `dbt-<adapter>` package. Execution therefore uses macros
+from the installed adapter version, not the adapter copy that was present when
+Fusion compiled the manifest.
 
-Core 1.10.0 adds Python 3.13 support and allows Pydantic v1 or v2. Patch
-releases in this line:
+## Python and Dependency Compatibility
 
-- require JSON Schema 4.19.1 or newer;
-- move to Protobuf 6;
-- cap `sqlparse` below 0.5.5;
-- require `dbt-common>=1.37.3`;
-- set the `dbt-adapters` lower bound to 1.16.5 from 1.10.10;
-- temporarily cap `dbt-adapters` below 1.24 in 1.10.21, then restore the upper
-  bound to below 2.0 in 1.10.22.
+The 1.9 line removes Python 3.8 support and requires `dbt-adapters>=1.9.0`.
 
-Core 1.11.0 drops Python 3.9, requiring Python 3.10 or newer.
+Core 1.10 adds Python 3.13 support and works with Pydantic v1 or v2. Its patch
+releases also:
 
-Core 1.12.0 supports Python 3.14 and raises minimum dependencies to Click
-8.3.0, `dbt-common` 1.37.3, and `dbt-adapters` 1.24.5.
+- Require JSON Schema 4.19.1 or newer.
+- Move to Protobuf 6.
+- Cap `sqlparse` below 0.5.5.
+- Require `dbt-common>=1.37.3`.
+- Set the `dbt-adapters` lower bound to 1.16.5 from 1.10.10.
+- Temporarily cap `dbt-adapters<1.24` in 1.10.21, then restore `<2.0` in
+  1.10.22.
+
+Core 1.11 drops Python 3.9; use Python 3.10 or newer.
+
+Core 1.12 supports Python 3.14 and requires Click 8.3.0,
+`dbt-common>=1.37.3`, and `dbt-adapters>=1.24.5`.
+
+## Configurable Parser and Seed Limits
+
+Core 1.12 makes the `MAXIMUM_SEED_SIZE_MIB` limit configurable. Its new
+`--sqlparse` option configures SQL-parser limits, avoiding the need to solve
+parser limits by pinning a particular `sqlparse` release.

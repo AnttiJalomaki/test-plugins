@@ -19,11 +19,12 @@ modern Storybook project. It is especially useful when work touches:
 - Angular, Next.js, Svelte, React Native, or TanStack Router integrations;
 - the Test widget, Vitest, module mocks, story-bound tests, or React Server
   Component tests;
-- React CSF factories, CSF Next, tags, MDX, Docs, Controls, or docgen;
-- Vite builder options, manager customization, or experimental automation.
+- React CSF factories, tags, MDX, Docs, Controls, or docgen;
+- Vite builder options, manager customization, linting, or experimental
+  automation.
 
 Treat the project's manifest, lockfile, configuration, and observed behavior as
-authoritative. Check the installed Storybook packages before applying an API or
+authoritative. Check installed Storybook packages before applying an API or
 migration note from this skill.
 
 ## Reference index
@@ -32,8 +33,8 @@ migration note from this skill.
 | --- | --- |
 | [Frameworks and migrations](references/frameworks-and-migrations.md) | ESM runtime, Angular, Next.js, Svelte, React Native, and TanStack Router |
 | [Testing and automation](references/testing-and-automation.md) | Test widget, Codegen, globals, Vitest, mocks, story tests, RSC tests, and visual review |
-| [Story authoring and docs](references/story-authoring-and-docs.md) | CSF factories, CSF Next, tags, MDX, Docs APIs, and React docgen |
-| [Configuration and manager](references/configuration-and-manager.md) | Vite config loading, experimental CLI behavior, browser launch controls, favicon, and viewport warnings |
+| [Story authoring and docs](references/story-authoring-and-docs.md) | CSF factories, tags, MDX, Docs APIs, React docgen, and metadata |
+| [Configuration and manager](references/configuration-and-manager.md) | Vite config loading, CLI behavior, browser controls, manager assets, viewport warnings, and lint/setup integration |
 
 ## Breaking changes and deprecations
 
@@ -46,20 +47,28 @@ supports ESM through `require()`:
 - Node.js 22.19 or newer within the 22.x line;
 - Node.js 24 or newer.
 
-If startup fails before Storybook evaluates project configuration, verify the
-Node.js runtime first. Do not try to repair an unsupported runtime by rewriting
-Storybook's installed packages to CommonJS.
+If startup fails before project configuration is evaluated, verify the Node.js
+runtime first. Do not rewrite installed Storybook packages to CommonJS.
 
 ### Removed and discouraged APIs
 
-- `ExternalDocs` is deprecated. Avoid introducing new uses and account for the
-  deprecation during Docs migrations.
-- The legacy `defaultViewport` parameter now warns. A passing preview with this
-  parameter is not warning-free and should still be migrated.
-- TanStack Router integration no longer supplies an Outlet mock. Do not design
-  new route stories around an implicit Storybook-provided Outlet.
+- `ExternalDocs` is deprecated. Avoid new uses and account for it in Docs
+  migrations.
+- The legacy `defaultViewport` parameter emits a warning. A working preview
+  that uses it still needs migration.
+- TanStack Router integration no longer supplies an Outlet mock. Route stories
+  must not depend on an implicit Storybook-provided Outlet.
 
-### Angular builder choice matters
+### Angular dependency expectations
+
+`@storybook/angular-vite` does not require
+`@angular/platform-browser-dynamic` solely for Storybook. Do not add that
+package unless the application itself needs it. The framework's TypeScript
+peer range accepts TypeScript 6.
+
+## Framework quick reference
+
+### Angular on Vite
 
 `@storybook/angular-vite` is a preview framework for Vite-powered Angular
 development, Docs, and testing:
@@ -70,17 +79,15 @@ export default {
 };
 ```
 
-The Angular-to-Vite migration preserves `zone.js`, installs
-`@analogjs/vite-plugin-angular`, and configures addon Vitest. Verify those
-pieces after migration. Angular 22 support is also available through the
-separate Webpack framework, so do not infer that Angular 22 requires Vite.
-
-## Framework quick reference
+After an Angular-to-Vite migration, verify that it preserved `zone.js`,
+installed `@analogjs/vite-plugin-angular`, and configured addon Vitest. Angular
+22 is also supported by the separate Webpack framework; Angular 22 does not by
+itself require Vite.
 
 ### Next.js on Vite
 
 Use the Vite-powered framework when the project needs Next.js navigation,
-route, image, and font mocks together with Storybook Test and Vitest:
+route, image, and font mocks with Storybook Test and Vitest:
 
 ```ts
 export default {
@@ -88,39 +95,38 @@ export default {
 };
 ```
 
-The `next/link` mock understands `as`. Its click behavior invokes `onClick`
-before preventing the default browser action. The Next.js Vite framework also
-provides a Link mock compatible with `useLinkStatus`.
+The `next/link` mock understands `as`, calls `onClick` before preventing the
+default browser action, and includes compatibility with `useLinkStatus`.
 
 ### Other framework integrations
 
-- Svelte CSF supports Svelte 5 runes and snippets.
-- Svelte stories can use async components, and SvelteKit mocking covers
-  `app/state`.
+- Svelte CSF supports Svelte 5 runes and snippets, async components, and
+  SvelteKit mocking for `app/state`.
 - React Native and React Native Web Storybooks can run side by side, sharing
   stories between devices or simulators and web-based Docs and Test addons.
-- `@storybook/tanstack-react` exports `TanStackPreview` for CSF Next typing.
-  TanStack route options accept either `id` or `path`, and route groups are
-  normalized.
-- Compatibility includes Next.js 16 and Vitest 4 while retaining support for
-  older supported versions.
+- `@storybook/tanstack-react` exports `TanStackPreview` for CSF Next typing and
+  `Hydrate` for hydration integration.
+- TanStack route options accept either `id` or `path`; route groups are
+  normalized, route cloning preserves explicit IDs, and component overrides
+  are honored.
+- Compatibility includes Next.js 16 and Vitest 4 without dropping older
+  supported versions.
 
 ## Testing quick reference
 
 ### Test widget and generated tests
 
 The Test widget can run interaction and `axe-core` accessibility tests across
-all stories, put results in the sidebar, and watch files to rerun the relevant
-tests. It also coordinates Chromatic visual tests and line, function, and
-branch coverage.
+all stories, show results in the sidebar, and watch files to rerun relevant
+tests. It coordinates visual tests and line, function, and branch coverage.
 
-Storybook's UI can create and edit stories. The Test Codegen addon can record
-interactions and assertions and save the generated test without leaving the UI.
+Storybook's UI can create and edit stories. The Test Codegen addon records
+interactions and assertions and saves the generated test from within the UI.
 
 ### Pin test conditions with globals
 
-A story or component can pin globals such as theme, viewport, locale, or
-background while those globals remain selectable elsewhere:
+A story or component can pin theme, viewport, locale, background, or other
+globals while those values remain selectable elsewhere:
 
 ```ts
 export const Dark = {
@@ -135,8 +141,7 @@ theme, viewport, locale, or other global state.
 ### Mock modules across builders
 
 Use `sb.mock` for module automocking with either Vite or Webpack. The mock is
-available both during development and in static production builds, unlike
-test-runner-only mocks that disappear from a built Storybook.
+available during development and in static production builds.
 
 ### Attach focused tests to factory stories
 
@@ -151,10 +156,9 @@ Disabled.test('should be disabled', async ({ canvas, userEvent }) => {
 });
 ```
 
-This supports test-only stories that can be excluded from the sidebar. React
+This supports test-only stories that are excluded from the sidebar. React
 Server Components can also be component-tested experimentally by running their
-server side in the browser; the same underlying work supports direct Vitest
-RSC tests.
+server side in the browser; the same work supports direct Vitest RSC tests.
 
 ## Authoring and Docs quick reference
 
@@ -173,7 +177,7 @@ export const Primary = meta.story({
 });
 ```
 
-Older CSF formats remain supported, so factory adoption can be incremental.
+Older CSF formats remain supported, so adoption can be incremental.
 
 ### Tags and story filtering
 
@@ -189,18 +193,18 @@ export default {
 ```
 
 CSF Next supports tag types. A `skip` tag propagates to generated `.test`
-children, so account for inherited skipping when generated tests are missing.
+children, so inherited skipping can explain missing generated tests.
 
 ### MDX, Docs, and component metadata
 
-Addon Docs resolves CSF4 modules even when they have no default export.
-Standalone MDX can give `Meta` an explicit `id`:
+Addon Docs resolves CSF4 modules even without a default export. Standalone MDX
+can give `Meta` an explicit `id`:
 
 ```mdx
 <Meta id="guides-introduction" title="Guides/Introduction" />
 ```
 
-`ActionItem` accepts `ariaLabel`. For unified React metadata across MCP, Docs,
+`ActionItem` accepts `ariaLabel`. For shared React metadata across MCP, Docs,
 Controls, ArgTypes, and `react-component-meta`, enable the experimental
 worker-backed docgen service:
 
@@ -219,8 +223,10 @@ export default {
   when `STORYBOOK_FEATURE_AI_CLI` is enabled. It accepts `-p` as shorthand for
   `--port` and discovers instances by working directory or config directory.
 - Agent-driven development does not automatically open a browser. `BROWSER`
-  and `BROWSER_ARGS` are honored when browser launch behavior is requested.
-- A favicon injected through `manager-head` can override the manager default.
+  and `BROWSER_ARGS` are honored when browser launch is requested.
+- A favicon injected through `manager-head` overrides the manager default.
+- The Storybook ESLint plugin exposes metadata for oxlint-based rule setups.
+- Follow AI setup guidance with `msw-storybook-addon` v3.
 
-Use the linked references for the full task-oriented details and migration
-caveats before changing framework, test, or authoring configuration.
+Use the linked references for task-oriented details and migration caveats
+before changing framework, test, authoring, or manager configuration.

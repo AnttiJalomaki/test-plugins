@@ -10,71 +10,63 @@ metadata:
 
 # OpenTofu Knowledge Patch
 
-Use this skill when writing, reviewing, upgrading, testing, or operating
-OpenTofu configurations. Check the project's required OpenTofu version and
-lock file first. Apply only guidance available to that version, and prefer the
-configuration, tests, provider schemas, and observed behavior when they differ
-from general guidance.
+Use this skill when writing, reviewing, upgrading, testing, or operating OpenTofu configurations. Check the project's required version and lock file first, then apply only guidance available to that version. Prefer the configuration, provider schemas, tests, and observed CLI behavior when they disagree with general guidance.
 
 ## Reference index
 
 | Reference | Topics |
 |---|---|
-| [state-and-plan-encryption.md](references/state-and-plan-encryption.md) | Encryption graphs, migrations, rollover, remote state, key providers, external hooks |
-| [language-modules-and-lifecycle.md](references/language-modules-and-lifecycle.md) | Early evaluation, provider functions, expressions, ephemeral values, moves, removals, lifecycle |
-| [backends-distribution-and-platforms.md](references/backends-distribution-and-platforms.md) | Backend changes, credentials, locking, registries, caches, integrity, operating-system boundaries |
-| [cli-automation-and-output.md](references/cli-automation-and-output.md) | Planning selectors, output modes, JSON, state inspection, console, diagnostics, tracing |
-| [testing-and-go-tooling.md](references/testing-and-go-tooling.md) | Test mocks and overrides, cleanup, remote modules, test variables, TofuDL, libregistry |
+| [backends-distribution-and-platforms.md](references/backends-distribution-and-platforms.md) | Backend migrations, credentials, locking, registries, installation, platforms, and transport security |
+| [cli-automation-and-output.md](references/cli-automation-and-output.md) | Planning selectors, JSON and concise output, diagnostics, console, environment variables, and tracing |
+| [language-modules-and-lifecycle.md](references/language-modules-and-lifecycle.md) | Early evaluation, modules, provider instances and functions, expressions, imports, moves, lifecycle, and ephemeral data |
+| [state-and-plan-encryption.md](references/state-and-plan-encryption.md) | Encryption graph, migration, rollover, remote-state decryption, key providers, and external hooks |
+| [testing-and-go-tooling.md](references/testing-and-go-tooling.md) | Mocks, overrides, test variables and providers, cleanup recovery, TofuDL, and registry tooling |
 
-## Upgrade blockers and deprecations
+## Security and upgrade gates
 
-### Remove obsolete S3 compatibility settings
+### Apply current security patch floors
 
-- OpenTofu 1.8 removes the S3 backend's `use_legacy_workflow` argument. Remove
-  it before upgrading; standard AWS CLI and SDK credential precedence is the
-  only workflow.
-- S3 module sources adopt that same credential discovery in 1.11, so an
-  upgrade can select a different credential source.
-- OpenTofu 1.12 removes `OPENTOFU_USER_AGENT`; do not use it to replace the
-  default HTTP User-Agent.
+- OpenTofu 1.6 is unsupported and receives no further security updates; upgrade to at least 1.7.
+- Use OpenTofu 1.12.6 or 1.11.14 before installing OCI modules or providers; older builds can disclose origin credentials across redirects.
+- Those patch levels also prevent crafted relative URLs from an untrusted registry or backend from exhausting CPU or memory during `tofu init`.
+- The 1.11 series ends at 1.11.14; move installations on that branch to a newer release series.
+- For any 1.12 deployment, prefer the latest patch. Earlier patches also had defects involving SSH, wrapped encryption data, revoked SSH CA keys, and malicious Git URLs.
+- Use 1.11.4 or later when provider or module installation may process untrusted ZIP archives.
+
+### Respect platform and transport boundaries
+
+- OpenTofu 1.10 requires Linux kernel 3.2+ or macOS 11+; 1.11 requires macOS 12+.
+- The 1.12 series is the last planned to support macOS 12. WinRM warns in 1.12 and is planned to fail in 1.13; migrate Windows provisioners to SSH.
+- OpenTofu 1.11 rejects SHA-1 TLS signatures and malformed SSH certificates whose signing key is itself a certificate key.
+- Do not use `ghcr.io/opentofu/opentofu` as a base for custom images on 1.10 or later.
+
+## Breaking backend changes
+
+### Remove the legacy S3 credential switch
+
+The S3 backend changed to standard AWS CLI/SDK credential precedence in 1.7. Its temporary `use_legacy_workflow = true` compatibility switch was removed in 1.8. Delete the argument before upgrading and verify which credential source wins.
+
+S3 module sources adopt the same standard discovery in 1.11. This may silently select a different source, while enabling mechanisms such as IAM roles for service accounts.
 
 ### Do not mix PostgreSQL locking generations
 
-OpenTofu 1.10 changes PostgreSQL backend locking. Never run 1.10 and older
-processes against the same database: their incompatible locks can allow
-conflicting writes and data loss.
+OpenTofu 1.10 uses finer-grained PostgreSQL backend locks. Never run it alongside older OpenTofu processes against the same database: incompatible locking can allow conflicting writes and data loss. Use `table_name` and `index_name` to isolate states where appropriate.
 
 ### Reconfigure AzureRM authentication
 
-OpenTofu 1.11 ignores `endpoint`/`ARM_ENDPOINT` and
-`msi_endpoint`/`ARM_MSI_ENDPOINT`. Use `MSI_ENDPOINT` where applicable, avoid
-combining `environment` with `metadata_host`, and refresh the working directory:
+OpenTofu 1.11 ignores deprecated `endpoint`/`ARM_ENDPOINT` and `msi_endpoint`/`ARM_MSI_ENDPOINT`. Replace the latter with `MSI_ENDPOINT`, avoid combining `environment` with `metadata_host`, and refresh the working directory with:
 
 ```bash
 tofu init -reconfigure
 ```
 
-Use `-reconfigure`, not `-migrate-state`, because these authentication changes
-do not move state.
+Do not use `-migrate-state` for this authentication-only change.
 
-### Respect security and platform floors
+## State and plan encryption
 
-- OpenTofu 1.10 requires Linux kernel 3.2+ or macOS 11+.
-- OpenTofu 1.11 requires macOS 12+, rejects SHA-1 TLS signatures, and rejects
-  malformed SSH certificates signed by a certificate key.
-- Use 1.11.4+ when installing providers or modules from potentially untrusted
-  ZIP archives.
-- Use the latest 1.12 patch available, at least 1.12.4 for the documented
-  security fixes and safe saved plans involving `lifecycle.destroy = false`.
-- OpenTofu 1.12 is the last planned macOS 12 series. WinRM warns in 1.12 and is
-  planned to fail in 1.13; move Windows provisioners to SSH.
-- The `ghcr.io/opentofu/opentofu` image is not supported as a base for custom
-  images from 1.10 onward.
+### Configure both artifacts deliberately
 
-## Encrypt state and saved plans safely
-
-State and saved-plan encryption are configured independently. Connect a key
-provider to a method, then assign the method to `state`, `plan`, or both:
+Wire a key provider to a method, then select the method independently for `state` and `plan`. Encryption inputs must be resolvable during initialization unless using the apply-time input support added later.
 
 ```hcl
 terraform {
@@ -89,29 +81,27 @@ terraform {
       method   = method.aes_gcm.main
       enforced = true
     }
+    plan {
+      method   = method.aes_gcm.main
+      enforced = true
+    }
   }
 }
 ```
 
-Existing plaintext or old-key artifacts need an explicit fallback. Reads try
-the primary method and then fallbacks; writes always use the primary. Run a
-successful operation to rewrite the artifact before removing the fallback.
+`TF_ENCRYPTION` contains the body of the `encryption` block and merges over configuration. `enforced = true` prevents plaintext output when an expected method is missing.
 
-Encryption values normally must be available during initialization. OpenTofu
-1.11 can also accept apply-time inputs, but every non-ephemeral value must
-match the planned value. Configure `terraform_remote_state` decryption
-separately from encryption of the current project's state.
+### Migrate with fallbacks and stable names
 
-See [state-and-plan-encryption.md](references/state-and-plan-encryption.md) for
-metadata-name stability, supported key providers, AES-GCM requirements,
-external protocol shapes, decryption, and remote-state selectors.
+Make the new method primary and the old encrypted or plaintext representation a fallback. Reads try fallbacks; writes always use the primary, so a successful write performs migration. Reverse the arrangement to decrypt intentionally.
 
-## Treat initialization as a separate evaluation phase
+Do not casually rename key providers or methods because encrypted metadata records their names. Use a staged fallback or a stable `encrypted_metadata_alias`. Configure `terraform_remote_state` decryption separately from the current project's state.
 
-OpenTofu can evaluate variables and locals early for backend arguments and
-module `source` and `version`. These expressions must be available before
-providers and state. Sensitive values cannot be used where initialization or
-module installation would expose them.
+## Initialization-time configuration
+
+### Keep early-evaluated values static
+
+Module `source` and `version`, plus backend arguments, may use variables and locals. Their dependency graph must be available during initialization and cannot rely on provider-defined functions or state data. Sensitive values cannot appear in backend configuration or module source locations.
 
 ```hcl
 variable "module_source" {
@@ -120,110 +110,76 @@ variable "module_source" {
 }
 
 module "network" {
-  source  = var.module_source
-  version = var.module_version
+  source = var.module_source
 }
 ```
 
-Use `const = true` in OpenTofu 1.12 to state the static-evaluation contract.
-For older 1.8 configurations, `TOFU_ENABLE_STATIC_SENSITIVE=1` opts into the
-sensitive marking that became standard in 1.9.
+Use `const = true` when an input is part of the static initialization contract. An OpenTofu-specific `.tofu` file masks the same-named `.tf` file, allowing an OpenTofu form plus a Terraform-compatible fallback.
 
-An identically named `.tofu` file masks its `.tf` counterpart. This lets a
-module keep a Terraform-compatible fallback while placing OpenTofu-only syntax
-in the `.tofu` file.
+## Lifecycle and refactoring
 
-## Use current lifecycle and state-refactoring primitives
+### Prefer explicit lifecycle controls
 
-OpenTofu 1.10 supports provider-assisted cross-resource-type `moved` blocks
-and richer `removed` blocks with lifecycle and provisioner configuration.
-OpenTofu 1.12 adds dynamic `prevent_destroy`, provider-defined import
-identities, and state-only removal directly on a managed resource:
+Use `lifecycle.enabled` for resources or modules that should have zero or one instance. It is clearer than conditional `count`, but a module with local provider configurations rejects `enabled` from 1.11.4.
 
 ```hcl
-resource "example_object" "detached" {
+module "servers" {
+  source = "./servers"
+
   lifecycle {
-    prevent_destroy = var.protect
-    destroy         = false
+    enabled = var.enable_servers
   }
 }
 ```
 
-`destroy = false` forgets the object instead of asking the provider to destroy
-it. Use 1.12.4+ when a saved plan might replace such a resource.
+In OpenTofu 1.12, `prevent_destroy` can depend on module symbols and managed resources can use `lifecycle { destroy = false }` to remove an object from state without destroying it. Use 1.12.4+ when saving a plan that might replace such a resource.
 
-For optional single-instance resources and modules, OpenTofu 1.11 provides
-`lifecycle.enabled`. From 1.11.4, modules with local provider configurations
-reject it, just as they reject `count`, `for_each`, and `depends_on`.
+### Refactor declaratively
 
-## Keep secrets out of plans and state
+- Cross-type `moved` blocks can ask providers to migrate state between resource types.
+- `removed` blocks may include lifecycle and provisioner configuration.
+- An `import` block can use provider-defined `identity` data instead of only a string `id`.
+- `replace_triggered_by` now reacts when its referenced resource is itself being replaced.
 
-OpenTofu 1.11 adds ephemeral variables, outputs, and provider-defined
-resources. Their values live in memory for one phase and are never persisted
-to a plan or state. Provider-defined write-only managed-resource attributes
-likewise accept secret input without retaining it. Both features require
-provider schema support.
+## Ephemeral and write-only data
 
-Do not infer that an ordinary sensitive value is ephemeral: sensitivity hides
-display, while ephemerality controls persistence.
+OpenTofu 1.11 supports ephemeral variables, outputs, and provider-defined resources. Their values live only in memory for one operation phase and are not stored in plans or state. Provider-defined write-only resource attributes accept secrets without persisting a copy. Both features require provider schema support.
 
-## Use planning and automation controls deliberately
+Inputs supplied during apply may configure encryption. Every non-ephemeral input must still equal the value recorded during planning.
 
-`-exclude` removes an address and its dependants from a plan; `-target`
-includes an address and its requirements. OpenTofu 1.10 also accepts reusable
-address lists:
+## Expressions and provider selection
+
+- Provider functions use `provider::<provider_name>::<function>(...)` and may depend on provider configuration.
+- Aliased provider configurations can use `for_each`; resources and modules select instances dynamically.
+- `&&` and `||` short-circuit, so a skipped operand cannot fail while dereferencing a null value.
+- `element(collection, -1)` selects the final item using wrapped negative indexing.
+- A module `version = null` behaves as if the argument were omitted.
+- `yamldecode` supports `<<` merge tags whose value is a sequence of mappings.
+
+## Planning and automation
+
+### Select work explicitly
+
+`-exclude=ADDRESS` omits the object and its dependents, complementing `-target`, which selects an object and its requirements. Use `-target-file` and `-exclude-file` for reusable address lists.
 
 ```bash
 tofu plan -target-file=targets.txt
 tofu plan -exclude-file=deferred.txt
-tofu apply -concise
 ```
 
-Use `-show-sensitive` only when disclosure is intentional. For simultaneous
-human and machine output in OpenTofu 1.12, write JSON events separately:
+### Separate human and machine output
 
-```bash
-tofu plan -json-into=plan-events.json
-```
+- `-concise` removes refresh or progress-like noise from plan and apply while preserving final results.
+- `-json-into=FILE` retains normal terminal output and writes the JSON event stream separately.
+- `tofu show -json -config [-module=DIR]` inspects configuration without first creating a plan.
+- `-show-sensitive` deliberately unmasks sensitive output; use it only where disclosure is acceptable.
 
-The target can be a regular file or, for streaming consumers, an IPC object
-such as a named pipe or `/dev/fd/N`.
+## Testing essentials
 
-## Inspect configuration, state, and plans explicitly
+- Use `mock_provider`, `mock_resource`, and `mock_data` for provider-level fakes.
+- Use `override_resource`, `override_data`, and `override_module` for targeted values; overrides can be scoped inside a mock provider.
+- `mock_provider` supports `for_each`; test-file variable blocks can call functions.
+- Generated mocks follow provider schemas more closely, and invalid mock or override fields are errors. Fix stale shapes instead of relying on permissive validation.
+- When cleanup fails, `tofu test` writes state so remaining resources can be recovered and managed.
 
-Prefer the explicit OpenTofu 1.10 selectors:
-
-```bash
-tofu show -state
-tofu show -plan=PLANFILE
-```
-
-OpenTofu 1.11 can emit configuration JSON without creating a plan:
-
-```bash
-tofu show -json -config
-tofu show -json -config -module=modules/example
-```
-
-The configuration form includes variable type constraints and whether each
-variable is required. See
-[cli-automation-and-output.md](references/cli-automation-and-output.md) for
-diagnostic consolidation, console input and locking, concise modes, JSON
-schemas, destroy controls, and experimental initialization tracing.
-
-## Test with scoped doubles
-
-Use `mock_provider` for provider-wide fake schemas and data, and
-`override_resource`, `override_data`, or `override_module` for specific
-targets. Overrides may be nested in a mock provider when they should apply
-only to that mock.
-
-Mocks deliberately became stricter: invalid mock or override fields are
-errors, and newer generated values follow provider schemas more closely.
-Correct stale test shapes instead of depending on unchecked fields.
-
-When cleanup fails, `tofu test` writes state so remaining objects can be
-recovered. Test-file providers can use prior run outputs, mocked providers can
-use `for_each`, and test variables can call functions. Full examples and
-version-specific constraints are in
-[testing-and-go-tooling.md](references/testing-and-go-tooling.md).
+Read [testing-and-go-tooling.md](references/testing-and-go-tooling.md) before upgrading a test suite, because variable scope, provider references, mock validation, and remote modules have version-dependent behavior.

@@ -1,42 +1,39 @@
 # ES|QL
 
-Use this reference for query construction, feature gating, response handling,
-and time-series analytics. Features marked technical preview should not be
-treated as stable application contracts.
+## Joins, views, and branching
 
-## Sources, views, joins, and branching
+### `LOOKUP JOIN` enrichment (8.18.0)
 
-### `LOOKUP JOIN` foundations
+The technical-preview `LOOKUP JOIN` combines an ES|QL result with records from
+a lookup index. Use it to add reference data or correlate events.
 
-In 8.18.0, the technical-preview `LOOKUP JOIN` command combines an ES|QL result
-with matching records from a lookup index. Use it to enrich results with
-reference data or correlate events across indices.
+### Join aliases, operations, and restrictions (9.1.0)
 
-In 9.1.0 it accepts aliases and mixed numeric join fields. ES|QL also adds a
-technical-preview `COMPLETION` command, slow logging, and list/get query APIs.
+`LOOKUP JOIN` accepts aliases and mixed numeric join fields. A remote `ENRICH`
+cannot follow a `LOOKUP JOIN`, and search functions are rejected on
+non-standard index modes. This release also adds a technical-preview
+`COMPLETION` command, slow logging, and list/get query APIs.
 
-In 9.2.0, `LOOKUP JOIN` accepts multiple join fields and, in technical preview,
-expression predicates. Input may include remote indices, and a remote `ENRICH`
-can follow the join:
+### Multi-field, expression, and remote joins (9.2.0)
+
+`LOOKUP JOIN` accepts multiple fields and technical-preview expression
+predicates. Input may include remote indices, and a remote `ENRICH` may now
+follow the join.
 
 ```esql
 FROM index1
 | LOOKUP JOIN lookup_index ON field1, field2
 ```
 
-In 9.3.0, full-text functions and Lucene-pushable conditions can operate on
-lookup-index fields after `LOOKUP JOIN`.
+### Full-text predicates after joins (9.3.0)
 
-### Join restrictions
+Full-text functions and Lucene-pushable conditions can operate on lookup-index
+fields after `LOOKUP JOIN`.
 
-In 9.1.0, ES|QL rejects search functions on non-standard index modes, and a
-remote `ENRICH` cannot follow a `LOOKUP JOIN`. The latter restriction is
-relaxed in 9.2.0 as described above.
+### `FORK` (9.1.0)
 
-### `FORK`
-
-In 9.1.0, the technical-preview `FORK` command sends every input row through
-multiple branches, merges the results, and adds an `_fork` discriminator:
+Technical-preview `FORK` sends every input row through multiple branches,
+merges their output, and adds an `_fork` discriminator.
 
 ```esql
 FROM test
@@ -46,115 +43,71 @@ FROM test
 | SORT _fork
 ```
 
-Cross-cluster `FORK` support is released in 9.3.0. In 9.4.0, `FORK` and
-subquery branches no longer receive implicit limits.
+Cross-cluster `FORK` is supported as of 9.3.0. In 9.4.0, `FORK` and subquery
+branches no longer receive implicit limits.
 
-### Views
+### ES|QL views (9.4.0)
 
-In 9.4.0, views are virtual indices whose fields come from reusable ES|QL
-pipelines. A `FROM` clause can mix indices, views, and wildcards; each named
-view runs its own pipeline. View CRUD is authorized as index actions, deletion
-can target multiple views, and views cannot be queried when document- or
-field-level security applies.
+Views are virtual indices whose fields come from reusable ES|QL pipelines.
+`FROM` can mix indices, views, and wildcards, and each named view runs its own
+pipeline. View CRUD uses index-action authorization; deletion can target
+multiple views. Views cannot be queried under document- or field-level
+security.
 
-### External data sources
+## Full-text, inference, and vector processing
 
-In 9.4.0, external sources add Azure and Google Cloud Storage plugins,
-multi-endpoint Arrow Flight, and ORC alongside Parquet, CSV/TSV, and NDJSON.
-Compressed input supports GZIP, Zstandard, BZIP2, LZ4, Snappy, and Brotli.
-Azure, GCS, and S3 sources can use anonymous `auth=none`; CSV adds bracketed
-multivalue parsing and configurable error policies.
+### Full-text scoring (9.0.0)
 
-### PromQL source and Prometheus endpoints
+Use `METADATA _score` to expose scores. ES|QL scores disjunctions of full-text
+functions, permits full-text and non-full-text conditions in the same
+disjunction, and supports scoring outside snapshot builds.
 
-In 9.4.0, the technical-preview `PROMQL` source command runs PromQL and pipes
-its result into the remainder of an ES|QL query:
+### Query functions (9.0.0)
 
-```esql
-PROMQL index=k8s-downsampled start="2026-02-17T08:00:00Z" end="2026-02-17T09:00:00Z" step=30m avg_bytes=(avg(rate(network.total_bytes_in[30m])))
-| SORT avg_bytes DESC, step
-```
+ES|QL adds technical-preview `KQL`, a term query, hash functions, and options
+for `MATCH` and `QSTR`. Named identifier and pattern parameters are available
+outside snapshot builds.
 
-The default-enabled Prometheus plugin adds technical-preview remote write at
-`POST /_prometheus/api/v1/write` and instant-query, range-query, series, and
-label endpoints below `/_prometheus/api/v1/`.
+### Full-text expressions (9.1.0)
 
-## Full text, expressions, and row processing
+Technical-preview `MATCH_PHRASE`, list-form `LIKE`, `ROUND_TO`, `::date` inline
+casts, and arbitrary `DATE_TRUNC` intervals are available. Full-text functions
+work in `STATS`, and `LIMIT` accepts parameters.
 
-### Scoring and query functions
+### Text and inference functions (9.3.0)
 
-In 9.0.0, ES|QL can expose `METADATA _score` and score disjunctions of
-full-text functions. Full-text and non-full-text conditions can participate in
-the same disjunction, and scoring is no longer snapshot-only.
+Technical-preview `CHUNK` accepts optional `chunking_settings`, and
+technical-preview `TOP_SNIPPETS` returns high-scoring field snippets.
+`TEXT_EMBEDDING` and `SCORE` are enabled in release builds; the inference
+command supports cross-cluster search; `COMPLETION` and `RERANK` have usage
+limits.
 
-The same release adds a technical-preview `KQL` function, a term query, hash
-functions, and options for `MATCH` and `QSTR`. Named identifier and pattern
-parameters also leave snapshot status.
+### Vector and KNN support (9.2.0)
 
-In 9.1.0, ES|QL adds technical-preview `MATCH_PHRASE`, list-form `LIKE`,
-arbitrary intervals for `DATE_TRUNC`, `ROUND_TO`, and `::date` inline casts.
-Full-text functions can be used in `STATS`, and `LIMIT` accepts parameters.
+ES|QL supports `dense_vector`, a KNN function, `v_hamming` for Hamming distance,
+and `v_magnitude` for vector magnitude.
 
-### Sampling and change detection
+### Vector and full-text querying (9.3.0)
 
-In 9.1.0, ES|QL adds a `SAMPLE` aggregation function, random sampling, and the
-`change_point` processing command.
+Vector-similarity functions are available. KNN accepts `k` and
+`visit_percentage`.
 
-### General language additions
+### Vector and reranking support (9.4.0)
 
-In 9.3.0, ES|QL adds `MV_INTERSECTION`, `GROUP BY ALL`, `network_direction`,
-multiple patterns for `GROK`, parameterized `LIKE` and `RLIKE`, and an
-`outputField` option for `TOP`. The histogram data type is released.
+Dense vectors support equality, inequality, `COALESCE`, arithmetic, `SUM`,
+`COUNT`, `PRESENT`, and `ABSENT`. Dense-vector functions, `TEXT_EMBEDDING`, and
+`RERANK` are generally available. ES|QL adds an MMR diversification command,
+and the MMR retriever accepts `semantic_text`.
 
-In 9.4.0, ES|QL adds `JSON_EXTRACT`, `MV_UNION`, `MV_DIFFERENCE`,
-`MV_INTERSECTS`, `USER_AGENT`, `REGISTERED_DOMAIN`, `URI_PART`, and a sparkline
-aggregation. Spatial additions are `ST_DIMENSION`, `ST_GEOMETRYTYPE`,
-`ST_ISEMPTY`, `ST_BUFFER`, `ST_SIMPLIFY`, and
-`ST_SIMPLIFYPRESERVETOPOLOGY`. `date_range` fields and timezone-aware date
-formatting, conversion, and arithmetic are supported.
+## Time-series and metric analysis
 
-### Grouping and row behavior
+### Sliding-window aggregations (9.3.0)
 
-In 9.4.0, technical-preview `LIMIT BY` limits rows per group and accepts
-evaluatable grouping functions such as `BUCKET`. `SET approximate` enables
-approximate analytical queries. `ROW` supports intra-row field references,
-`MV_EXPAND` is generally available, and technical-preview
-`unmapped_fields="load"` can load partially mapped fields.
-
-## Dates, analytics, and spatial data
-
-### `date_nanos`
-
-In 9.0.0, `date_nanos` works with `IN`, date extraction, formatting and
-difference functions, bucketing, comparison with millisecond dates, and
-implicit casting.
-
-### Statistical and spatial functions
-
-In 9.0.0, ES|QL adds `STD_DEV`, spatial extent aggregation, `ST_ENVELOPE`,
-`ST_XMIN`, `ST_XMAX`, `ST_YMIN`, and `ST_YMAX`, plus some statistics over
-`aggregate_metric_double`.
-
-In 9.2.0, it adds `ABSENT` and `ABSENT_OVER_TIME`, list-form `RLIKE`, and
-`MIN`/`MAX` for unsigned longs. Geohash, geotile, and geohex grid types are
-supported, including in `ST_INTERSECTS` and `ST_DISJOINT`.
-
-### `aggregate_metric_double` semantics
-
-In 9.4.0, non-native ES|QL aggregations such as `STD_DEV` can consume
-`aggregate_metric_double` using the average derived from `sum` and
-`value_count`. Native `min`, `max`, `sum`, `avg`, and `count` continue to use
-their corresponding subfields.
-
-## Time-series analytics
-
-### Sliding windows and date controls
-
-In 9.3.0, time-series aggregations accept an optional window as their second
-argument. The window must be a multiple of the `TBUCKET` or `BUCKET` interval
-and otherwise defaults to that interval. ES|QL also adds `TRANGE`; timezone
-support for `DATE_TRUNC`, `BUCKET`, `TBUCKET`, and `DATE_DIFF`; and locale and
-timezone arguments for `DATE_PARSE`.
+Time-series aggregations accept an optional window as their second argument.
+In this release, the window must be a multiple of the `TBUCKET` or `BUCKET`
+interval and defaults to that interval. `TRANGE` is available; `DATE_TRUNC`,
+`BUCKET`, `TBUCKET`, and `DATE_DIFF` accept timezones; `DATE_PARSE` accepts
+locale and timezone arguments.
 
 ```esql
 TS metrics
@@ -162,24 +115,25 @@ TS metrics
 | STATS avg(rate(requests, 10m)) BY TBUCKET(1m), host
 ```
 
-In 9.4.0, windows may be smaller than their bucket and need not be an exact
-multiple. Target-count `TBUCKET` can omit explicit bounds when the request
-supplies a timestamp range:
+### Flexible windows and counter resets (9.4.0)
+
+Windows may be smaller than their bucket and need not be exact multiples.
+Target-count `TBUCKET` may omit bounds when the request provides a timestamp
+range.
 
 ```esql
 TS metrics | STATS AVG(RATE(requests, 15m)) BY TBUCKET(10m), host
 ```
 
-The 9.4.0 default `aggregate` downsampling method stores the first counter
-value and auxiliary documents for detected resets, preserving resets in later
-rate calculations. `last_value` retains its storage-oriented behavior.
+The default `aggregate` downsampling method stores a counter's first value and
+auxiliary reset documents so later rate calculations preserve resets.
+`last_value` retains its storage-oriented behavior.
 
-### Metric and series discovery
+### Metric and series discovery (9.4.0)
 
-In 9.4.0, `METRICS_INFO` after a `TS` source returns one row per metric with
-its data stream, unit, metric and field types, and dimension fields. `TS_INFO`
-returns one row per metric-and-series pair and a `dimensions` JSON object with
-the series labels:
+After `TS`, `METRICS_INFO` emits one row per metric with data stream, unit,
+metric and field types, and dimensions. `TS_INFO` emits one row per metric and
+series, with a `dimensions` JSON object for labels.
 
 ```esql
 TS my_data_stream
@@ -187,58 +141,108 @@ TS my_data_stream
 | SORT metric_name, dimensions
 ```
 
-## Vectors and inference inside ES|QL
+### `aggregate_metric_double` semantics (9.4.0)
 
-### Dense vectors and KNN
+Non-native aggregations such as `STD_DEV` consume the average derived from the
+`sum` and `value_count` subfields. Native `min`, `max`, `sum`, `avg`, and
+`count` use their corresponding subfields.
 
-In 9.2.0, ES|QL adds the `dense_vector` field type and a KNN function,
-`v_hamming` for Hamming distance, and `v_magnitude` for vector magnitude.
+## Analytics, fields, and row behavior
 
-In 9.3.0, it adds vector-similarity functions; KNN accepts `k` and
-`visit_percentage`.
+### Analytics and spatial functions (9.0.0)
 
-In 9.4.0, dense vectors support equality, inequality, `COALESCE`, arithmetic,
-`SUM`, `COUNT`, `PRESENT`, and `ABSENT`. Dense-vector functions are generally
-available.
+ES|QL adds `STD_DEV`, spatial extent aggregation, `ST_ENVELOPE`, `ST_XMIN`,
+`ST_XMAX`, `ST_YMIN`, and `ST_YMAX`, plus some statistics over
+`aggregate_metric_double`.
 
-### Text embedding, reranking, and snippets
+### `date_nanos` coverage (9.0.0)
 
-In 9.3.0, technical-preview `CHUNK` accepts optional `chunking_settings`, while
-technical-preview `TOP_SNIPPETS` returns the best snippets for a field.
-`TEXT_EMBEDDING` and `SCORE` are enabled in release builds; the inference
-command supports cross-cluster search; and `COMPLETION` and `RERANK` have usage
-limits.
+`date_nanos` works with `IN`, date extraction, formatting and difference,
+bucketing, comparisons with millisecond dates, and implicit casting.
 
-In 9.4.0, `TEXT_EMBEDDING` and `RERANK` are generally available. ES|QL adds an
-MMR diversification command.
+### Schema and output behavior (9.0.0)
 
-## Request, schema, and result behavior
+`CATEGORIZE` accepts nulls and multiple groupings. Initial unmapped-field
+support is present. `CASE`, `GREATEST`, and `LEAST` implicitly cast numbers.
+`RENAME` processes sequentially like `EVAL`, and text formats omit null columns.
 
-### Schema and text output
+### Sampling and change detection (9.1.0)
 
-In 9.0.0, `CATEGORIZE` accepts nulls and multiple groupings, and initial
-unmapped-field support is available. `CASE`, `GREATEST`, and `LEAST` perform
-implicit numeric casting. `RENAME` processes sequentially like `EVAL`, and text
-formats drop null columns.
+ES|QL adds a `SAMPLE` aggregation, random sampling, and `change_point`.
 
-### Partial and asynchronous results
+### `INLINE STATS` (9.2.0)
 
-In 9.0.0, EQL supports partial shard results. Async ES|QL can return partial
-results on demand, async get supports formatting, and in-progress
-cross-cluster responses include CCS metadata.
+`INLINE STATS` is available in release builds as a technical preview, with
+filters and cross-cluster search.
 
-### Cross-cluster status
+### Monitoring, patterns, and spatial fields (9.2.0)
 
-ES|QL cross-cluster querying is generally available in 8.19.0 rather than a
-technical-preview feature.
+Use `ABSENT`, `ABSENT_OVER_TIME`, and list-form `RLIKE`. `MIN` and `MAX` support
+unsigned longs. Geohash, geotile, and geohex grids work with spatial processing,
+including `ST_INTERSECTS` and `ST_DISJOINT`.
 
-### Request parameters and metadata
+### Language additions (9.3.0)
 
-In 9.2.0, ES|QL adds a `SET` instruction, multivalued query parameters, and
-`include_execution_metadata`; `_tsid` is available as metadata. Profiling is
-rejected for text response formats.
+ES|QL adds `MV_INTERSECTION`, `GROUP BY ALL`, `network_direction`, multiple
+patterns for `GROK`, parameterized `LIKE` and `RLIKE`, and `TOP.outputField`.
+The histogram type is available in release builds.
 
-### `INLINE STATS`
+### Functions and field coverage (9.4.0)
 
-In 9.2.0, `INLINE STATS` is available in release builds as a technical preview,
-including filters and cross-cluster search support.
+New functions include `JSON_EXTRACT`, `MV_UNION`, `MV_DIFFERENCE`,
+`MV_INTERSECTS`, `USER_AGENT`, `REGISTERED_DOMAIN`, `URI_PART`, and a sparkline
+aggregation. Spatial additions are `ST_DIMENSION`, `ST_GEOMETRYTYPE`,
+`ST_ISEMPTY`, `ST_BUFFER`, `ST_SIMPLIFY`, and
+`ST_SIMPLIFYPRESERVETOPOLOGY`. `date_range` fields and timezone-aware date
+formatting, conversion, and arithmetic are supported.
+
+### Group and row behavior (9.4.0)
+
+Technical-preview `LIMIT BY` limits rows per group and accepts evaluatable
+grouping functions such as `BUCKET`. `SET approximate` enables approximate
+analytics. `ROW` can reference fields created earlier in the same row,
+`MV_EXPAND` is generally available, and technical-preview
+`unmapped_fields="load"` loads partially mapped fields.
+
+## External sources and Prometheus
+
+### External data sources (9.4.0)
+
+External sources include Azure and Google Cloud Storage plugins,
+multi-endpoint Arrow Flight, and ORC in addition to Parquet, CSV/TSV, and
+NDJSON. Compression support includes GZIP, Zstandard, BZIP2, LZ4, Snappy, and
+Brotli. Azure, GCS, and S3 sources accept anonymous `auth=none`; CSV supports
+bracketed multivalues and configurable error policies.
+
+### PromQL and Prometheus-compatible APIs (9.4.0)
+
+Technical-preview `PROMQL` runs PromQL as a source and pipes its result into
+the remainder of an ES|QL query.
+
+```esql
+PROMQL index=k8s-downsampled start="2026-02-17T08:00:00Z" end="2026-02-17T09:00:00Z" step=30m avg_bytes=(avg(rate(network.total_bytes_in[30m])))
+| SORT avg_bytes DESC, step
+```
+
+The default-enabled Prometheus plugin provides technical-preview remote write
+at `POST /_prometheus/api/v1/write`, plus instant-query, range-query, series,
+and label endpoints below `/_prometheus/api/v1/`.
+
+## Request, metadata, and cross-cluster behavior
+
+### Partial query results (9.0.0)
+
+EQL supports partial shard results. Async ES|QL can return partial results on
+demand, async get supports formatting, and in-progress cross-cluster responses
+include CCS metadata.
+
+### Cross-cluster querying is generally available (8.19.0)
+
+ES|QL cross-cluster querying is generally available rather than technical
+preview.
+
+### Request and metadata controls (9.2.0)
+
+ES|QL adds `SET`, multivalued query parameters, and
+`include_execution_metadata`; `_tsid` is available through `METADATA`.
+Profiling requests are rejected for text response formats.

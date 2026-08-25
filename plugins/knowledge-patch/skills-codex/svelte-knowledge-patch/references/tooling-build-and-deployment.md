@@ -1,82 +1,79 @@
 # Tooling, build, and deployment
 
-## Contents
+## Build artifacts
 
-- [Build output](#build-output)
-- [TypeScript and generated types](#typescript-and-generated-types)
-- [Vite integration](#vite-integration)
-- [CLI and configuration](#cli-and-configuration)
-- [Hydration and deployment targets](#hydration-and-deployment-targets)
+### Clientless builds
 
-## Build output
-
-### Omit an unused client build
-
-When every route has client-side rendering disabled, SvelteKit skips the client
-build. Disable CSR for the full route tree at its root when appropriate:
+When every route has CSR disabled, SvelteKit skips the client build entirely
+(`sveltekit-2.65.0`). Disable CSR for the complete route tree from the root
+layout when a fully server-rendered application is intended:
 
 ```js
 // src/routes/+layout.js
 export const csr = false;
 ```
 
-Do not make deployment logic depend on an unused client bundle being present.
+Do not make deployment steps depend on client artifacts in this configuration.
 
-### Inline cleanly
+### Inline bundles
 
-With `bundleStrategy: 'inline'`, builds do not emit unused JavaScript bundle and
-stylesheet files alongside the inlined output.
+With `bundleStrategy: 'inline'`, builds no longer emit unused bundle and
+stylesheet files beside the inlined output.
 
-The clientless and inline build behavior is attributed to
-`sveltekit-2.65.0`.
+### Precompressed Markdown
 
-### Precompress Markdown
+Prerender precompression includes `.md` and `.mdx` files
+(`sveltekit-2.66.0`). Deployments that serve precompressed artifacts can serve
+generated Markdown through the same path.
 
-Prerender precompression includes `.md` and `.mdx` files. Deployments that serve
-precompressed artifacts can serve compressed generated Markdown as well. This
-behavior is attributed to `sveltekit-2.66.0`.
+## TypeScript and Vite
 
-## TypeScript and generated types
+### Add Node types only when needed
 
-SvelteKit's generated TypeScript configuration no longer adds
-`types: ['node']`. A project without Node-specific code does not need
-`@types/node` solely to satisfy generated configuration. This behavior is
-attributed to `sveltekit-2.66.0`.
+Generated TypeScript configuration no longer injects `types: ['node']`.
+Projects without Node-specific source do not need `@types/node` merely to
+satisfy SvelteKit's generated configuration.
 
-Svelte's language tools and SvelteKit support TypeScript 6. Upgrade without
-adding a Svelte-specific TypeScript compatibility workaround.
+Svelte language tools and SvelteKit support TypeScript 6 without Svelte-specific
+compatibility workarounds.
 
-## Vite integration
+### Forward Svelte plugin options
 
-Options not handled directly by the `sveltekit` Vite plugin are forwarded to
-`vite-plugin-svelte`. Supply its supported plugin options through
-`sveltekit(...)`. This forwarding is attributed to `sveltekit-2.66.0`.
+Options not handled by the `sveltekit` Vite plugin are forwarded to
+`vite-plugin-svelte`, allowing those plugin options to be supplied through
+`sveltekit(...)`.
 
-SvelteKit does not unnecessarily override a user-provided Vite 8
-`codeSplitting` setting. Keep an explicit project setting when it is intentional.
-This behavior is attributed to `sveltekit-2.67.0`.
+### Preserve Vite code splitting
+
+An explicit Vite 8 `codeSplitting` setting remains effective
+(`sveltekit-2.67.0`); SvelteKit does not unnecessarily replace it.
 
 ## CLI and configuration
 
-The Svelte CLI supports community add-ons. `sv create` can also scaffold a
-project from a Svelte Playground, allowing a working playground example to seed
-a local project.
+The Svelte CLI supports community add-ons, and `sv create` can scaffold a
+project from a Svelte Playground.
 
-Svelte configuration accepts function values. Use a function when configuration
-behavior cannot be represented as static data.
+Svelte configuration accepts function values, allowing behavior that cannot be
+represented as static configuration data alone.
 
-## Hydration and deployment targets
+## Hydration, adapters, and runtimes
 
-### Content Security Policy
+Svelte can hydrate applications under a Content Security Policy. CSP-protected
+pages no longer need to treat client hydration as incompatible.
 
-Svelte supports client hydration under a Content Security Policy. A protected
-page does not need to treat hydration as categorically incompatible with CSP.
+SvelteKit can set up its Cloudflare adapter automatically, reducing the amount
+of deployment-specific configuration required for Cloudflare projects.
 
-### Cloudflare
+The supported tooling and runtime matrix includes Deno.
 
-SvelteKit can configure its Cloudflare adapter automatically, reducing the
-deployment-specific setup required for a Cloudflare target.
+## Package and compiler-tooling updates
 
-### Deno
+Import `defineEnvVars` from `@sveltejs/kit/env`
+(`svelte-5.56.5-5.56.9-kit-2.70.0-2.70.3`):
 
-The supported Svelte tooling and runtime matrix includes Deno.
+```js
+import { defineEnvVars } from '@sveltejs/kit/env';
+```
+
+The Svelte compiler `print` API accepts an `indent` option so compiler tooling
+can control indentation in printed output.

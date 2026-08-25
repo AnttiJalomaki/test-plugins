@@ -1,72 +1,87 @@
 # Upgrades and deprecations
 
-## Agent migration
+## Promtail migration and removal
 
-- Promtail is deprecated in 3.4.0 because its code moved into Grafana Alloy.
-  Alloy supplies migration guidance and a configuration-conversion utility.
-  Lambda-promtail is explicitly outside this deprecation.
-- Promtail is removed as of 3.7.3. Move Promtail configurations to Alloy;
-  Lambda-promtail remains available.
-- The Promtail Docker image no longer contains `wget` (3.4.0). This breaks
-  probes, scripts, and derived images that assumed the binary was present.
+Promtail was deprecated in 3.4.0 after its code moved into Grafana Alloy. Alloy
+provides migration guidance and a configuration-conversion utility.
 
-## Storage, configuration, and chart lifecycle
+Promtail is removed as of 3.7.3. Complete migration before adopting a release
+with the removal. Lambda-promtail is explicitly outside both the deprecation
+and removal and should not be migrated on that basis alone.
 
-- BoltDB storage, additional legacy configuration options, and legacy API
-  endpoints are deprecated in 3.4.0. Inventory each before upgrading.
-- Deprecated ksonnet configurations are removed in 3.5.0; this is a breaking
-  cleanup rather than an alias or automatic migration.
-- Simple Scalable Deployment mode is deprecated in 3.6.0 and scheduled for
-  removal before Loki 4.0.
-- The community `LGTM-distributed`, `loki-canary`, `loki-distributed`, and
-  `loki-simple-scalable` Helm charts are deprecated in 3.6.0.
-- Effective March 16, 2026, the open-source chart associated with 3.7.0 moved
-  to `grafana-community/helm-charts` for community maintenance. Update chart
-  source references and automation. The GEL chart remains separately
-  maintained.
-- Meta-monitoring responsibilities moved in 3.6.0 from the Grafana
-  meta-monitoring Helm chart to the Grafana Kubernetes Monitoring Helm chart.
+## Promtail image tool removal (3.4.0)
 
-## Breaking ingestion and label behavior
+The Promtail Docker image no longer contains `wget`. This breaks probes,
+scripts, and derived images that invoke it. Replace the dependency or provide
+the tool explicitly in a derived image.
 
-- Operator support for dropping OTLP attributes is classified as breaking in
-  3.5.0. Review Operator-generated ingestion behavior and retained attributes.
-- Parsed labels no longer override same-named structured metadata (3.7.0).
-  Audit parser pipelines and queries that depend on collision precedence.
-- The Operator's default OpenShift stream labels change in 3.7.0. Treat this
-  as a breaking label-set change affecting selectors, cardinality, retention,
-  and dashboards.
+## Legacy storage, configuration, and APIs (3.4.0)
 
-## Breaking query execution
+The BoltDB store is deprecated together with additional legacy configuration
+options and API endpoints. Audit all three surfaces before upgrading; a storage
+migration alone does not cover removed configuration or callers of legacy APIs.
 
-- Scheduler capacity accounting now uses total compute capacity (3.7.0).
-- Worker threads are shared across all scheduler connections (3.7.0).
+## Removed ksonnet configuration (3.5.0)
 
-Both scheduler changes are classified as breaking. Re-test fairness,
-concurrency, saturation, and capacity calculations together.
+Deprecated ksonnet configuration is removed. This is a breaking change. Move
+remaining deployment generation to a supported mechanism before upgrading.
 
-## Deployment compatibility
+## Tracing backend migration (3.6.0)
 
-- Helm object-store values use `object_store.storage_prefix` rather than
-  `object_store.prefix` as of 3.5.0.
-- The nginx service no longer receives a ServiceMonitor in 3.5.0. Move any
-  scraping expectation to the intended monitoring resources.
-- Loki Dockerfiles set `/` as the working directory in 3.7.0. Make relative
-  paths explicit in scripts and derived images.
-- On OpenShift Container Platform 4.20, the Operator no longer deploys
-  NetworkPolicies automatically (3.7.0). Supply policies separately when the
-  cluster requires them.
+Loki replaces internal OpenTracing with OpenTelemetry. Configuration remains
+available through `JAEGER_`-prefixed environment variables, and trace export
+remains in Jaeger format. Update observability expectations while preserving
+the still-supported configuration contract.
 
-## Upgrade verification checklist
+## Meta-monitoring chart migration (3.6.0)
 
-1. Convert or replace Promtail before adopting a release where it is absent.
-2. Search image customizations for `wget` and relative-path assumptions.
-3. Replace the old object-store prefix key and render the chart.
-4. Remove ksonnet-era configuration and audit deprecated stores and endpoints.
-5. Compare structured metadata and stream-label collisions in representative
-   entries.
-6. Compare OpenShift stream labels and network isolation before and after
-   Operator reconciliation.
-7. Load-test scheduler behavior using the deployment's real worker and
-   connection counts.
-8. Update chart repositories and meta-monitoring ownership.
+Meta-monitoring responsibilities move from the Grafana meta-monitoring Helm
+chart to the Grafana Kubernetes Monitoring Helm chart. Update chart ownership,
+values, and automation accordingly.
+
+## Operational UI packaging (3.6.0)
+
+The Operational UI JavaScript moves to a Grafana plugin, but its server APIs
+remain in Loki. Helm UI enablement activates those APIs on queriers, and the
+gateway routes UI requests to them. Upgrade the client packaging and server
+routing together.
+
+## Deployment-mode and community-chart deprecations (3.6.0)
+
+Simple Scalable Deployment mode is deprecated and scheduled for removal before
+Loki 4.0.
+
+The community charts `LGTM-distributed`, `loki-canary`, `loki-distributed`, and
+`loki-simple-scalable` are also deprecated. Avoid starting new deployments on
+these paths and plan migrations for existing installations.
+
+## Open-source chart repository transfer (3.7.0)
+
+Effective March 16, 2026, the open-source Loki Helm chart moved to
+`grafana-community/helm-charts` for community maintenance. The GEL chart remains
+separately maintained. Update repository references and dependency automation
+without redirecting GEL chart sources.
+
+## Parsed-label precedence (3.7.0)
+
+Parsed labels no longer override same-named structured metadata. This breaking
+change affects pipelines and queries with collisions. Add explicit tests for
+the intended value source.
+
+## Scheduler execution model (3.7.0)
+
+The scheduler now accounts for total compute capacity, and worker threads are
+shared across scheduler connections. Both changes are breaking. Revisit sizing,
+concurrency, and fairness assumptions during the upgrade.
+
+## Operator breaking changes (3.5.0, 3.7.0)
+
+The Operator's ability to drop OTLP attributes arrives as a breaking ingestion
+change. Later, default OpenShift stream labels change as another breaking
+update. Inspect generated configuration and dependent queries for both.
+
+## Container working directory (3.7.0)
+
+Loki Dockerfiles set the container working directory to `/`. Derived images and
+scripts that use relative paths must resolve them from the filesystem root or
+set their own working directory explicitly.

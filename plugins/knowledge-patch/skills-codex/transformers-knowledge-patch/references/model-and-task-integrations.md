@@ -1,190 +1,274 @@
 # Model and task integrations
 
-Use this reference to identify native architectures, supported modalities, task heads, input limits, and integration-specific caveats. Loading, processor, quantization, and distributed constraints remain in their topic references.
+Use this catalog to identify native architecture, modality, task, and important
+checkpoint capabilities. Entries are grouped by developer task rather than by
+release.
 
 ## Language and reasoning models
 
-### Dense, hybrid, and encoder-decoder families
+### Dense, MoE, and hybrid decoders
 
-- Ernie 4.5 includes a dense 0.3B text model (since 4.54.0).
-- LFM2 provides 350M, 700M, and 1.2B models aimed at CPU, GPU, and NPU edge deployment (since 4.54.0).
-- DeepSeek V2, Doge, xLSTM, and ModernBERT Decoder are supported. ModernBERT Decoder is causal and handles sequences through 8,192 tokens (since 4.54.0).
-- EXAONE 4.0 supports reasoning and non-reasoning modes, tools, and English, Korean, and Spanish (since 4.54.0).
-- Arcee, Falcon H1, dots.llm1, SmolLM3, and the encoder-decoder T5Gemma family are supported (since 4.53.0).
-- MiniMax-Text-01 supports inference contexts up to four million tokens (since 4.53.0).
-- The GLM-4.1V architecture shipped before any corresponding checkpoint was available (since 4.53.0).
-- Qwen3 and Qwen3MoE architectures shipped before their weights; DeepSeek-V3 remained work in progress in that release (since 4.51.0).
+- **Gemma 3** (4.50.0) joins the library alongside the image-safety
+  **ShieldGemma 2** integration.
+- **Qwen3** and **Qwen3MoE** architectures ship in 4.51.0 before their model
+  weights. The **DeepSeek-V3** contribution is still marked work in progress in
+  that release.
+- **GraniteMoeHybrid** and low-bit **BitNet** arrive in 4.52.1.
+- **Arcee**, **MiniMax-Text-01**, **T5Gemma**, **Falcon H1**, **dots.llm1**, and
+  **SmolLM3** arrive in 4.53.0. T5Gemma is an encoder-decoder Gemma family;
+  MiniMax-Text-01 supports inference contexts up to four million tokens.
+- **Ernie 4.5** dense 0.3B, **LFM2**, **DeepSeek V2**, **ModernBERT Decoder**,
+  **Doge**, **xLSTM**, and **EXAONE 4.0** arrive in 4.54.0. ModernBERT Decoder
+  handles up to 8,192 tokens. EXAONE 4.0 supports reasoning and non-reasoning
+  modes, tools, and English, Korean, and Spanish. LFM2 provides 350M, 700M, and
+  1.2B variants aimed at edge CPU, GPU, and NPU use.
+- Native **GPT-OSS 20B and 120B** loading arrives in 4.55.0, including MXFP4
+  mixture-of-experts weights and a default tensor-parallel plan for 120B.
+- **Ovis2**, **HunYuan**, **Seed-OSS**, and **GLM-4.5V** are integrated in
+  4.56.0.
+- **Qwen3-Next**, **VaultGemma**, **LongCat-Flash**, **FlexOlmo**, **BLT**,
+  **OLMO3**, and **Ministral** arrive in 4.57.0. Qwen3-Next combines Gated
+  DeltaNet and attention in an 80B-A3B checkpoint. VaultGemma is a 1B
+  differentially private research checkpoint limited to 1,024 tokens.
+  LongCat-Flash has 128K context, reasoning, and tool use. FlexOlmo domain
+  experts can be included or excluded at inference. BLT tokenizes UTF-8 bytes
+  with dynamic patching rather than using a fixed vocabulary.
+- **K-EXAONE** through EXAONE-MoE and the 1.96B **Youtu-LLM** with 128K context
+  arrive in 5.1.0. Youtu-LLM exposes `use_deterministic` for consistent
+  execution.
+- **GLM-5** through `GlmMoeDsa`, including DeepSeek Sparse Attention, plus
+  **Qwen3.5**, **Qwen3.5 MoE**, and **Ernie 4.5 VL MoE** arrive in 5.2.0. The
+  first Qwen3.5 checkpoint is a 397B-total, 17B-active native vision-language
+  architecture with hybrid Gated Delta Networks and sparse MoE layers.
+- **OLMo Hybrid** (5.3.0) interleaves full attention with Gated DeltaNet and
+  maintains both KV and recurrent cache state. **Nemotron 3** is supported, and
+  Qwen3.5 gains sequence classification.
+- **Gemma 4** (5.5.0) has pretrained and instruction variants at 1B, 13B, and
+  27B parameters.
+- **Laguna XS.2** (5.7.0) permits per-layer query-head counts while preserving
+  one KV-cache shape; its sigmoid router uses element-wise scores plus learned
+  per-expert bias. **SonicMoe** also becomes a supported architecture.
+- **DeepSeek-V4-Flash**, **DeepSeek-V4-Pro**, and Base variants arrive in 5.8.0
+  with hybrid local/long-range attention, Manifold-Constrained
+  Hyper-Connections, and a static token-to-expert hash table in early MoE
+  layers.
+- **Cohere2Moe** supports **Command A+** in 5.9.0 with hybrid sliding/full
+  attention, shared and routed experts, a very large context, and a corrected
+  tensor-parallel plan. **HRM-Text** is a non-chat base autoregressive model
+  with slow planning and fast computation stacks, PrefixLM attention, per-head
+  sigmoid gates, and parameterless RMSNorm.
+- **Inkling** (5.15.1) is a 975B-total, 41B-active general-purpose multimodal
+  architecture for multilingual, coding, tool-use, and conversation.
+  **DeepSeek-V3.2** adds DeepSeek Sparse Attention; **MiMo-V2-Flash** provides a
+  256K extended context with reduced KV storage; **ZAYA1** uses compressed
+  convolutional attention and a nonlinear MoE router; **MiniCPM3** combines
+  Multi-head Latent Attention, dense SwiGLU, and explicit residual scaling.
+- **GraniteSWA**, **GraniteMoeSWA**, **A.X-K1**, **A.X-K2**, **Cosmos3**,
+  **Cosmos3 Edge**, **TIPSv2**, and **TIPSv2 DPT** are additional architectures
+  supported in 5.15.1.
 
-### Long-context, byte-level, and hybrid-attention models
+### Encoders, embeddings, and classifiers
 
-- Qwen3-Next combines Gated DeltaNet and attention and includes an 80B-A3B checkpoint (since 4.57.0).
-- LongCat-Flash provides a 128K context with reasoning and tool use (since 4.57.0).
-- BLT uses vocabulary-free UTF-8 byte tokenization with dynamic patching (since 4.57.0).
-- OLMo Hybrid interleaves full attention and Gated DeltaNet linear attention; its cache carries KV and recurrent state (since 5.3.0).
-- EuroBERT is a bidirectional Llama-like multilingual encoder with an 8,192-token sequence length (since 5.3.0).
-- Mistral 4 is a unified instruction/reasoning model with text and image inputs and a 256K context (since 5.4.0).
-- HRM-Text is a base autoregressive model without instruction tuning or chat templates. It uses slow abstract-planning and fast detailed-computation recurrent stacks, PrefixLM attention, per-head sigmoid output gates, and parameterless RMSNorm (since 5.9.0).
+- **ModernBERT** gains question answering in 4.51.0.
+- **EuroBERT** (5.3.0) is a bidirectional Llama-like multilingual encoder with
+  an 8,192-token sequence length.
+- **Jina Embeddings v3** (5.4.0) provides multilingual, task-specific
+  embeddings, five built-in LoRA adapters, and sequences up to 8,192 tokens.
+- **NomicBERT** (5.5.0) is a native dense embedding model with an 8,192-token
+  context for search, clustering, and classification. Prefix inputs with the
+  appropriate task instruction.
+- **OpenAI Privacy Filter** (5.6.0) provides bidirectional on-premises token
+  classification for PII detection and masking, producing per-token
+  probabilities across eight categories and coherent decoded spans in one
+  forward pass.
+- OLMo-family sequence-classification heads and Nemotron-H MLP mixers arrive in
+  5.6.0. Qwen Thinker base checkpoints can load without a generative head.
 
-### Expert and domain-composition models
+## Multimodal language and agentic models
 
-- GPT-OSS 20B and 120B are mixture-of-experts reasoning models with MXFP4 MoE weights. The 20B form fits in 16 GB; the 120B form fits in 80 GB and has a default tensor-parallel plan (since 4.55.0).
-- FlexOlmo exposes independently trained domain experts that can be included or excluded at inference (since 4.57.0).
-- OLMO3 and Ministral are supported language-model architectures (since 4.57.0).
-- K-EXAONE is supported through EXAONE-MoE (since 5.1.0).
-- GLM-5 uses the `GlmMoeDsa` architecture and DeepSeek Sparse Attention (since 5.2.0).
-- Qwen3.5 and Qwen3.5 MoE are supported; the first Qwen3.5 checkpoint is a native vision-language model with 397B total and 17B active parameters, hybrid Gated Delta Networks, and sparse MoE layers (since 5.2.0).
-- GraniteMoeHybrid is supported as a hybrid mixture-of-experts architecture (since 4.52.1).
-- Gemma 4 has pretrained and instruction-tuned 1B, 13B, and 27B variants (since 5.5.0).
-- Nemotron 3 is supported, and Qwen3.5 has a sequence-classification head (since 5.3.0).
-- Cohere2Moe supports Command A+, with hybrid sliding-window/full attention, shared and routed experts, and a very large context window (since 5.9.0).
+### Image, video, audio, and text inputs
 
-### Specialized language architectures
+- **Aya Vision** (4.50.0) accepts images and text across 23 languages.
+  **Mistral 3.1** adds vision and a 128K context. **SmolVLM2** accepts
+  multi-image and video input. **SigLIP2 NaFlex** preserves variable aspect
+  ratios and resolutions.
+- **Llama 4 Maverick and Scout** use `Llama4ForConditionalGeneration` in
+  4.51.0 and accept text and images. The documented setup installs
+  `transformers[hf_xet]`. **Phi-4 Multimodal** accepts text, images, and audio,
+  emits text, and supports 128K context.
+- **Qwen2.5-Omni** (4.52.1) accepts text, images, audio, and video and streams
+  text and speech. **Janus** and **Janus-Pro** accept image and text and emit
+  text or images; select one output mode because interleaved image/text output
+  is unsupported. **InternVL3** also joins the multimodal integrations.
+- **Gemma 3n** (4.53.0) accepts text, image, video, and audio and emits text.
+  **GLM-4.1V** architecture code ships before any matching checkpoint.
+- **Voxtral** (4.54.0) adds audio input to Ministral-based language models for
+  transcription, translation, Q&A, summarization, and voice-driven function
+  calling. Mini 3B and Small 24B checkpoints have 32K context and support up to
+  30 minutes of transcription or 40 minutes of broader audio understanding.
+  **DeepSeek VL** accepts images and text and emits text.
+- **Command A Vision** (4.55.0) supports captioning, visual question answering,
+  and document/chart understanding.
+- **Qwen3-VL** (4.57.0) includes dense and MoE Instruct and Thinking variants.
+  **LFM2-VL** accepts text and variable-resolution images; it preserves native
+  resolution through 512×512, patches larger inputs, and gives its 1.6B variant
+  a global thumbnail. **Qwen3 Omni MoE** provides unified multimodal generation.
+- **Mistral 4** (5.4.0) unifies instruction and reasoning modes with text and
+  image input and a 256K context.
+- **Muse Glimmer** (5.15.1) combines a 2B ViT-style perception encoder with a
+  28B text decoder for local agentic multimodal applications and ships under
+  Apache 2.0. **Inkling** accepts text, images, and audio and produces text.
+  The **Kimi K2.5**
+  architecture used by K2.5 through K2.7 supports native multimodal agentic and
+  coding tasks. **MiniMax-M3-VL** combines a CLIP-style tower and 3D rotary
+  positions with a mixed dense/sparse MoE text decoder and block-sparse
+  attention.
 
-- VaultGemma is a 1B differentially private research checkpoint with a 1,024-token sequence length (since 4.57.0).
-- Laguna XS.2 is a MoE decoder whose layers may use different query-head counts while preserving one KV-cache shape. Its sigmoid router combines element-wise gate scores with learned expert bias for auxiliary-loss-free balancing (since 5.7.0).
-- SonicMoe is supported as an architecture (since 5.7.0).
-- DeepSeek-V4-Flash, DeepSeek-V4-Pro, and Base variants replace Multi-head Latent Attention with hybrid local/long-range attention, use Manifold-Constrained Hyper-Connections instead of residual connections, and apply a static token-to-expert hash table in the first MoE layers (since 5.8.0).
-- EXAONE 4.5 is a 33B open-weight vision-language model with a 1.2B visual encoder, 153,600-token vocabulary, contexts through 256K, and Multi-Token Prediction (since 5.8.0).
-- Youtu-LLM is a 1.96B model with a 128K context and an optional deterministic-execution mode (since 5.1.0).
-- Nemotron-H supports MLP mixers, and Qwen Thinker base checkpoints load without a generative head (since 5.6.0).
+### Safety and moderation
 
-## General multimodal and vision-language models
+- **ShieldGemma 2** classifies image-safety categories (4.50.0).
+- **Llama Guard 4** provides multimodal moderation (4.52.1).
 
-### Image, text, video, and unified generation
+## Vision, video, and geometry
 
-- Gemma 3, Aya Vision, Mistral 3.1, SmolVLM2, and SigLIP2 are integrated (since 4.50.0). Aya Vision handles image and text across 23 languages; Mistral 3.1 adds vision and a 128K context; SmolVLM2 supports multiple images and video; SigLIP2 NaFlex preserves variable aspect ratios and resolutions.
-- Llama 4 Maverick and Scout load through `Llama4ForConditionalGeneration` and accept text and images. The documented setup installs `transformers[hf_xet]` (since 4.51.0):
+### Detection and segmentation
 
-```bash
-pip install -U 'transformers[hf_xet]'
-```
+- **SAM-HQ** adds promptable high-quality segmentation in 4.52.1; fine-tuning
+  is not supported in that release. **D-FINE** provides object detection.
+- **EoMT** provides pipeline-compatible image segmentation (4.54.0) and can
+  use a DINOv3 backbone as of 5.1.0.
+- **MM Grounding DINO** (4.55.0) supports zero-shot grounding and detection
+  with its original checkpoints and LLMDet checkpoints.
+- **Florence-2** (4.56.0) supports prompted captioning, detection, and
+  segmentation. **SAM 2** provides point- or box-prompted image and video
+  segmentation.
+- **EdgeTAM** (4.57.0) targets mobile real-time video segmentation.
+- **VidEoMT** (5.4.0) provides online video segmentation.
+- **SAM3-LiteText** (5.6.0) combines SAM3's ViT-H encoder with a compact
+  distilled MobileCLIP text encoder for lightweight vision-language
+  segmentation.
+- **DEIMv2** (5.7.0) supplies eight real-time detector sizes from X through
+  Atto. Larger variants adapt single-scale DINOv3 features with a Spatial
+  Tuning Adapter; the smallest use pruned HGNetv2 backbones.
 
-- Phi-4 Multimodal accepts text, images, and audio, produces text, and has a 128K-token context (since 4.51.0).
-- Qwen2.5-Omni accepts text, images, audio, and video and streams both text and speech responses (since 4.52.1).
-- Janus and Janus-Pro accept images and text and can generate text or images. Select one output mode; interleaved image-and-text output is unsupported (since 4.52.1).
-- InternVL3 and MLCD are supported (since 4.52.1).
-- Gemma 3n accepts text, image, video, and audio and produces text (since 4.53.0).
-- GLM-4.5V, Ovis2, HunYuan, and Seed-OSS are supported (since 4.56.0).
-- Qwen3-VL includes dense and MoE Instruct and Thinking variants; Qwen3 Omni MoE provides unified multimodal generation (since 4.57.0).
-- LFM2-VL accepts text and variable-resolution images. It preserves native resolution through 512×512 and patches larger images; the 1.6B variant also uses a thumbnail (since 4.57.0).
-- Ernie 4.5 VL MoE is supported (since 5.2.0); its later model/config names follow vLLM and SGLang conventions (since 5.3.0).
+### Visual representation, matching, and depth
 
-### Vision-language understanding and action
+- **Prompt Depth Anything** (4.50.0) produces metric depth maps from an iPhone
+  LiDAR prompt. **Distill Any Depth** is added in 4.51.0.
+- **V-JEPA 2** (4.53.0) adds a video encoder and action-conditioned world
+  model. **LightGlue** matches local features between image pairs and can pair
+  with SuperPoint for pose or homography estimation.
+- **AIMv2** vision encoders, **PerceptionLM** image/video understanding, and
+  **EfficientLoFTR** correspondence and pose/homography estimation arrive in
+  4.54.0.
+- **DINOv3** dense visual features and **MetaCLIP 2** multilingual image-text
+  representation arrive in 4.56.0.
+- **VideoPrism** (5.15.1) is a frozen general-purpose video encoder. **RADIO**
+  emits both image-level embeddings and dense spatial features at variable
+  input resolutions.
 
-- Command A Vision supports captioning, visual question answering, and document/chart understanding through the Cohere2 Vision integration (since 4.55.0).
-- DeepSeek VL consumes images and text and returns text (since 4.54.0).
-- PerceptionLM performs image and video understanding (since 4.54.0).
-- PI0 adds vision-language-action inference, generating robot actions from visual observations and language instructions (since 5.4.0).
-- Music Flamingo handles audio-language understanding and reasoning across speech, sound, and music for audio sequences up to 20 minutes (since 5.5.0).
-- AudioFlamingoNext checkpoints are supported (since 5.9.0).
+## Documents, OCR, and visual retrieval
 
-## Vision, segmentation, detection, and matching
+### Layout, OCR, and formula recognition
 
-### Segmentation and grounding
+- **ColQwen2** (4.53.0) treats document pages as images and produces
+  multi-vector embeddings for late-interaction retrieval.
+- **Kosmos-2.5** (4.56.0) performs spatially grounded OCR and
+  image-to-Markdown conversion.
+- **PP-DocLayoutV3** and **GLM-OCR** (5.1.0) can form a two-stage document
+  pipeline: instance-segmented layout and reading-order analysis, followed by
+  parallel recognition.
+- **PP-DocLayoutV2** (5.3.0) combines RT-DETR element detection/classification
+  with pointer-network reading order. **ModernVBert** pairs ModernBERT and
+  SigLIP for visual-document understanding and retrieval;
+  **ColModernVBert** emits ColPali-style multi-vector document embeddings.
+- **UVDoc** (5.4.0) rectifies single images or batches. **SLANeXt** recognizes
+  table structure. **PP-OCRv5** mobile/server detectors and recognizers handle
+  multilingual document and scene text. **PPLCNet** covers document
+  orientation, tables, and text-line orientation; **PPLCNetV3** is a
+  CPU-oriented vision backbone.
+- **Qianfan-OCR** (5.6.0) is a 4B image-to-text document model for structured
+  parsing, table extraction, chart understanding, document Q&A, and key-value
+  extraction. Layout-as-Thought emits structured layout before the result.
+  **SLANet** and **SLANet_plus** add lightweight CPU-oriented table structure
+  recognition.
+- **Granite 4.1 Vision** (5.8.0) handles document chart, table, and semantic
+  key-value extraction using SigLIP2, Window Q-Former projectors, and eight
+  visual-feature injection points. **PP-FormulaNet-L** and
+  **PP-FormulaNet_plus-L** recognize mathematical formulas and table structures.
+- **PP-OCRv6** (5.15.1) provides official medium, small, and tiny detection and
+  recognition weights for server-to-edge deployment.
 
-- SAM-HQ provides promptable high-quality segmentation, but its integration does not support fine-tuning (since 4.52.1).
-- EoMT is pipeline-compatible for image segmentation (since 4.54.0) and can use a DINOv3 backbone (since 5.1.0).
-- Florence-2 supports prompted captioning, detection, and segmentation; SAM 2 supports point- or box-prompted image and video segmentation (since 4.56.0).
-- EdgeTAM provides mobile-oriented real-time video segmentation (since 4.57.0).
-- VidEoMT performs online video segmentation (since 5.4.0).
-- SAM3-LiteText combines SAM3's ViT-H image encoder with a compact distilled MobileCLIP text encoder (since 5.6.0).
-- MM Grounding DINO performs zero-shot object grounding and detection with original MM Grounding DINO or LLMDet checkpoints (since 4.55.0).
+## Speech, audio, and music
 
-### Detection and visual features
+### Recognition and transcription
 
-- D-FINE object detection and BitNet are supported (since 4.52.1).
-- DINOv3 provides dense visual features; MetaCLIP 2 provides multilingual image-text representations (since 4.56.0).
-- DEIMv2 offers real-time object detection in eight sizes from X through Atto. Larger versions use a Spatial Tuning Adapter to turn single-scale DINOv3 features into multiple scales; the smallest use pruned HGNetv2 backbones (since 5.7.0).
-- AIMv2 vision encoders and EoMT are supported (since 4.54.0).
+- **Kyutai STT** (4.53.0) performs streaming-codec speech recognition through
+  bilingual `kyutai/stt-1b-en_fr` and English-only `kyutai/stt-2.6b-en`.
+- **ParakeetForCTC** arrives in 4.57.0. **Parakeet TDT** is a distinct Parakeet
+  integration in 5.9.0.
+- **Moonshine** gains streaming in 5.1.0.
+- **VoxtralRealtime** (5.2.0) performs low-latency incremental ASR on arriving
+  chunks rather than requiring a whole file.
+- **VibeVoice ASR** (5.3.0) processes up to 60 minutes of 24 kHz audio with
+  hotwords, transcription, diarization, timestamps, more than 50 languages,
+  and code-switching.
+- **Granite Speech Plus** (5.8.0) provides prompted speech-to-text with speaker
+  annotations and word-level timestamps. Its projector combines the final
+  speech-encoder state with configurable intermediate states.
+- **Nemotron 3.5 ASR** (5.15.1) supports multilingual cached streaming and
+  batch transcription with 80, 160, 560, or 1,120 ms chunks; Nemotron ASR
+  Streaming is English-only. **Qwen3 ASR** adds automatic language detection,
+  multilingual transcription, and forced alignment for timestamping an
+  existing transcript. `ParakeetForRNNT` adds greedy RNN-T decoding over a Fast
+  Conformer encoder.
 
-### Feature matching and geometry
+### Speech, sound, and music generation
 
-- LightGlue matches local features between image pairs and can pair with SuperPoint for pose or homography estimation (since 4.53.0).
-- EfficientLoFTR produces image correspondences for pose or homography estimation (since 4.54.0).
-- Native LightGlue loading does not use remote code; remove `trust_remote_code=True` and load it normally (since 5.5.0).
+- **CSM** adds contextual text-to-speech in 4.52.1.
+- **Dia** (4.53.0) provides dialogue-oriented text-to-speech with nonverbal
+  cues and audio conditioning.
+- **X-Codec** (4.56.0) provides semantic-aware audio tokenization, music
+  continuation, and text-to-sound synthesis.
+- **VibeVoice Acoustic Tokenizer** (5.2.0) supports the continuous tokenization
+  design used by long-form, multi-speaker speech synthesis.
+- **Higgs Audio V2** (5.3.0) supports single- and multi-speaker generation and
+  zero-shot voice cloning. Its separate 24 kHz tokenizer encodes speech, music,
+  and sound at 25 fps without diffusion.
+- **Music Flamingo** (5.5.0) handles audio-language reasoning across speech,
+  sound, and music for inputs up to 20 minutes.
+- **AudioFlamingoNext** checkpoints are supported in 5.9.0.
 
-## Document, OCR, and retrieval models
+## Time series, science, earth, and robotics
 
-### Layout analysis and recognition
+- **TimesFM** adds time-series forecasting in 4.52.1;
+  `AutoModelForTimeSeriesPrediction` becomes directly importable in 4.53.0.
+- **TimesFM 2.5** (5.3.0) is a decoder-only zero-shot forecaster with
+  continuous quantile prediction.
+- **EVOLLA** (4.54.0) generates protein language over sequences, structures,
+  and user queries.
+- **CHMv2** (5.4.0) estimates forest-canopy height from high-resolution optical
+  satellite imagery.
+- **PI0** (5.4.0) performs vision-language-action inference, generating robot
+  actions from visual observations and instructions.
 
-- PP-DocLayoutV3 predicts instance-segmented document layout and reading order. Pair it with GLM-OCR for a two-stage layout-analysis then parallel-recognition workflow (since 5.1.0).
-- PP-DocLayoutV2 combines RT-DETR element detection/classification with pointer-network reading-order prediction (since 5.3.0).
-- GLM-OCR recognizes complex documents (since 5.1.0).
-- Qianfan-OCR is a 4B end-to-end image-to-text document model for structured parsing, tables, charts, document QA, and key-information extraction. Layout-as-Thought emits structured layout before the final answer (since 5.6.0).
-- Kosmos-2.5 performs spatially grounded OCR and image-to-Markdown conversion (since 4.56.0).
+## Image generation and diffusion
 
-### Document geometry, tables, and formulas
+- **MLCD** and **Janus/Janus-Pro** add image-generation-related task support in
+  4.52.1; Janus callers select text or image output rather than interleaving.
+- **GLM-Image** supports batch sizes greater than one as of 5.1.0.
+- **DiffusionGemma** (5.15.1) generates text by iteratively denoising token
+  blocks with multi-canvas sampling instead of strict left-to-right decoding;
+  the integration is trainable.
 
-- UVDoc rectifies single or batched document images (since 5.4.0).
-- SLANeXt recognizes table structure; PP-OCRv5 mobile/server detector and recognizer families cover multilingual document and scene text (since 5.4.0).
-- PPLCNet supplies document-orientation, table, and text-line orientation classifiers, while PPLCNetV3 is a CPU-oriented vision backbone (since 5.4.0).
-- SLANet and SLANet_plus provide lightweight CPU-oriented table-structure recognition for documents and natural scenes (since 5.6.0).
-- PP-FormulaNet-L and PP-FormulaNet_plus-L perform lightweight image-to-text recognition of formulas and table structures in document and natural-scene images (since 5.8.0).
+## Model-specific execution switches
 
-### Visual-document representation and retrieval
-
-- ColQwen2 encodes document pages as images and returns multi-vector embeddings for late-interaction retrieval (since 4.53.0).
-- ModernVBert combines ModernBERT with a SigLIP vision encoder for visual-document understanding and retrieval (since 5.3.0).
-- ColModernVBert produces ColPali-style multi-vector document-image embeddings for relevance scoring (since 5.3.0).
-- Granite 4.1 Vision targets chart, table, and semantic key-value extraction. It combines a SigLIP2 encoder with Window Q-Former projectors and injects visual features at eight language-model points (since 5.8.0).
-
-## Speech, audio, and acoustic-token models
-
-### Speech recognition
-
-- Kyutai STT uses streaming-codec recognition. `kyutai/stt-1b-en_fr` is bilingual; `kyutai/stt-2.6b-en` is English-only (since 4.53.0).
-- Parakeet provides CTC recognition through `ParakeetForCTC` (since 4.57.0). Parakeet TDT is a distinct additional integration (since 5.9.0).
-- Moonshine supports streaming (since 5.1.0).
-- VoxtralRealtime performs low-latency incremental ASR over arriving audio chunks (since 5.2.0).
-- VibeVoice ASR processes up to 60 minutes of 24 kHz audio with hotwords, joint transcription, diarization, timestamps, 50+ languages, and code-switching (since 5.3.0).
-- Granite Speech Plus provides prompted speech-to-text with speaker annotations and word timestamps. Its projector concatenates final speech-encoder states with a configurable subset of intermediate states (since 5.8.0).
-
-### Audio-language and speech generation
-
-- CSM provides contextual text-to-speech (since 4.52.1).
-- Dia provides dialogue-oriented speech synthesis with nonverbal cues and audio conditioning (since 4.53.0).
-- Voxtral extends Ministral models with audio for transcription, translation, audio Q&A/summarization, and voice-driven function calls. `mistralai/Voxtral-Mini-3B-2507` and `mistralai/Voxtral-Small-24B-2507` have 32K contexts and handle up to 30 minutes of transcription or 40 minutes of broader audio understanding (since 4.54.0).
-- Higgs Audio V2 supports one or multiple speakers and zero-shot voice cloning. Its separate 24 kHz tokenizer encodes speech, music, and sound at 25 fps without diffusion (since 5.3.0).
-- Music Flamingo supports audio-language reasoning over clips through 20 minutes (since 5.5.0).
-
-### Acoustic tokenization
-
-- X-Codec provides semantic-aware audio tokenization, music continuation, and text-to-sound synthesis (since 4.56.0).
-- VibeVoice Acoustic Tokenizer supports continuous audio-token designs for long-form multi-speaker synthesis (since 5.2.0).
-
-## Embeddings, moderation, time series, and science
-
-### Embeddings and classification
-
-- ModernBERT has a question-answering module (since 4.51.0).
-- DeepSeek V3 provides `DeepseekV3ForTokenClassification` (since 4.57.0).
-- NomicBERT is a native dense-embedding model with an 8,192-token context for search, clustering, and classification; inputs use task-specific instruction prefixes (since 5.5.0).
-- Jina Embeddings v3 provides multilingual task-specific embeddings with five built-in LoRA adapters and sequences through 8,192 tokens (since 5.4.0).
-- OpenAI Privacy Filter performs bidirectional token classification for on-premises PII detection and masking in one forward pass. It emits per-token probabilities over eight privacy categories and coherent decoded spans (since 5.6.0).
-- Llama Guard 4 and ShieldGemma 2 provide multimodal moderation and image-safety category classification, respectively (since 4.52.1 and 4.50.0).
-
-### Forecasting and depth
-
-- TimesFM supports time-series forecasting, and `AutoModelForTimeSeriesPrediction` is directly importable (since 4.52.1 and 4.53.0):
-
-```python
-from transformers import AutoModelForTimeSeriesPrediction
-```
-
-- TimesFM 2.5 is a decoder-only zero-shot forecaster with continuous quantile prediction (since 5.3.0).
-- Prompt Depth Anything produces metric depth maps using an iPhone LiDAR prompt (since 4.50.0).
-
-### Scientific and earth-observation tasks
-
-- EVOLLA generates protein-language output from protein sequences, structures, and user queries (since 4.54.0).
-- CHMv2 estimates forest-canopy height from high-resolution optical satellite imagery (since 5.4.0).
-- V-JEPA 2 supplies video-encoder and action-conditioned world-model support (since 4.53.0).
-- Distill Any Depth is integrated (since 4.51.0).
-
-## Integration selection checklist
-
-1. Confirm the task head exists, not only the base architecture.
-2. Check modality, context/audio/image limits, and processor normalization.
-3. Note architecture-only or work-in-progress integrations without released weights.
-4. Verify unsupported training or output modes such as SAM-HQ fine-tuning and Janus interleaving.
-5. Consult the loading and multimodal references for native-vs-remote loading, cache, device, and preprocessing requirements.
+- `Sam3VideoModel` can disable its progress bar, and LLaVA-OneVision accepts
+  `image_sizes` (5.1.0).
+- VITS forward calls accept `speaking_rate`, for example
+  `model(**inputs, speaking_rate=1.2)` (5.3.0).
+- Gemma 4 Assistant (5.8.0) supplies Multi-Token Prediction speculative
+  decoding; see the generation reference for cache reuse and verification.
+- **EXAONE 4.5** (5.8.0) is a 33B vision-language model with a 1.2B visual
+  encoder, 153,600-token vocabulary, contexts up to 256K, and Multi-Token
+  Prediction.

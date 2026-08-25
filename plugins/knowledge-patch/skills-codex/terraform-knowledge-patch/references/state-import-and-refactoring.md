@@ -1,235 +1,123 @@
 # State, Import, and Refactoring
 
-Declarative removal, cross-type moves, import identities, generated configuration, plan/state compatibility, and persistence.
+## State compatibility and planning (`terraform-1.7.0`)
 
-## Removal and resource moves
+Terraform 1.7 writes input validations into state again. If state is shared across minor lines, including through `terraform_remote_state`, readers on 1.3, 1.4, and 1.5 must be at least 1.3.10, 1.4.7, and 1.5.7 respectively. Pre-1.3 and 1.6 or later readers are unaffected.
 
-### Configuration-driven state removal
+When a `postcondition` or `prevent_destroy` rule rejects a proposed change, Terraform 1.7 plan output retains both the proposed change and its diagnostic rather than replacing the change with the error.
 
-*Terraform 1.7.0 — batch `terraform-1.7.0-guide`.*
+Terraform 1.9 restores entirely unknown blocks that older plan rendering omitted; 1.9.6 also renders complete changes inside unknown nested blocks (`terraform-1.9.0`). Starting in 1.9.8, `terraform plan` validates provider requirements recorded in state as well as current configuration requirements.
 
-The `removed` block makes state removal declarative, bulk-capable, and visible in a plan. Setting `destroy = false` removes the addressed resource or module from state without destroying the underlying object, providing a workflow-safe alternative to an immediate `terraform state rm`.
+Terraform 1.9.0 through 1.9.3 can run irrelevant variable validations during destroy planning and fail against incomplete state. Terraform 1.9.4 fixes that path.
+
+Terraform 1.10 refresh-only plans containing only output changes are applyable, so applying them records the refreshed outputs (`terraform-1.10.0`). Terraform 1.14.2 prevents a failed resource-instance apply from leaving that instance with empty state (`terraform-1.14.0`).
+
+## Cross-resource-type moves (`terraform-1.8.0`)
+
+A `moved` block can transfer an object between resource types only when the target provider declares a conversion from the source type.
 
 ```hcl
-removed {
-  from = aws_instance.example
-
-  lifecycle {
-    destroy = false
-  }
+moved {
+  from = old_service.example
+  to   = new_service.example
 }
 ```
 
-### Cross-type moves and richer removals
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-OpenTofu `moved` blocks can now migrate remote objects and state automatically between supported resource types. `removed` blocks now accept `lifecycle` and `provisioner` configuration, bringing destroy behavior and destroy-time cleanup under the declarative removal workflow.
-
-### Destroy-time provisioners in `removed` blocks
-
-*Terraform 1.9.0 — batch `terraform-1.9.0-guide`.*
-
-A `removed` block can now retain provisioners that run while Terraform destroys the removed resource instances. This allows the resource declaration to be deleted without losing required destroy-time cleanup behavior.
+Terraform 1.9 can directly move an existing `null_resource` object to `terraform_data` (`terraform-1.9.0-guide`).
 
 ```hcl
-removed {
-  from = aws_instance.example
-
-  lifecycle {
-    destroy = true
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "./decommission.sh"
-  }
-}
-```
-
-### Direct moves from `null_resource` to `terraform_data`
-
-*Terraform 1.9.0 — batch `terraform-1.9.0-guide`.*
-
-The cross-resource-type refactoring mechanism can now migrate the deprecated `null_resource` type directly to `terraform_data`, preserving the tracked object across its new address instead of requiring manual state removal and import.
-
-```hcl
-resource "terraform_data" "bootstrap" {}
-
 moved {
   from = null_resource.bootstrap
   to   = terraform_data.bootstrap
 }
 ```
 
-### Dynamic lifecycle decisions
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-Managed resources can now derive `prevent_destroy` from other values in the same module, allowing a shared module to protect production objects while permitting replacement elsewhere. The new `destroy = false` lifecycle argument instead forgets a managed object without asking its provider to destroy it.
+In Terraform 1.10, a resource type that collides with a top-level block or reserved keyword needs the explicit `resource.` prefix in a `moved` address.
 
 ```hcl
-resource "example_database" "main" {
-  lifecycle {
-    prevent_destroy = var.protect_database
+moved {
+  from = resource.data.old_name
+  to   = resource.data.new_name
+}
+```
+
+Terraform 1.9 also accepts the optional `resource.` prefix in target addresses, such as `resource.aws_instance.example`.
+
+## Removed blocks and destroy-time cleanup (`terraform-1.9.0-guide`)
+
+Terraform 1.9 permits destroy-time provisioners in `removed` blocks, preserving cleanup after the original resource declaration is deleted.
+
+```hcl
+removed {
+  from = null_resource.cleanup
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "cleanup-command"
   }
 }
+```
 
-resource "example_service" "retained" {
+Terraform 1.9.0 through 1.9.4 skip such provisioners when the removed resource is in a nested module; use 1.9.5 or later.
+
+OpenTofu 1.10 permits `lifecycle` configuration inside a `removed` block, so the replacement declaration can control how remaining instances are treated (`opentofu-1.10.0`).
+
+OpenTofu 1.12 also permits `lifecycle { destroy = false }` on a managed resource, removing its object from state without asking the provider to destroy the remote object (`opentofu-1.12.0`).
+
+```hcl
+resource "example_service" "legacy" {
   lifecycle {
     destroy = false
   }
 }
 ```
 
-`tofu destroy -suppress-forget-errors` exits successfully when such resources are intentionally forgotten during a destroy operation.
+During a broader destroy, `tofu destroy -suppress-forget-errors` suppresses errors caused by resources being forgotten and exits successfully.
 
-### Nested-module `removed` provisioners require 1.9.5
+## Import generation and validation
 
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
+Terraform 1.8 configuration generation for imports recognizes string values containing valid JSON and emits `jsonencode(...)` rather than opaque string literals.
 
-In Terraform 1.9.0 through 1.9.4, provisioners in `removed` blocks were skipped when the resource was in a nested module. Use 1.9.5 or later when relying on destroy-time cleanup in that situation.
+Terraform 1.9 rejects an `import` block that targets a nonexistent module instead of silently ignoring it. Terraform 1.9.7 quotes generated map keys containing whitespace; 1.9.8 quotes every key whose syntax would otherwise be invalid, so use 1.9.8 when arbitrary keys can occur.
 
-### Replacement and failed-apply state fixes
-
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
-
-Terraform 1.14.1 fixes combinations of `replace_triggered_by` and `-replace` that previously failed to replace some instances. Starting in 1.14.2, an instance apply failure no longer leaves that instance's state empty; 1.14.8 also prevents a relevant-attribute display crash after provider upgrades.
-
-### Reserved resource types in `moved` blocks
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-Resource types whose names collide with top-level blocks or reserved keywords must now use the `resource.` address prefix inside `moved` blocks, in the form `resource.<type>.<name>`.
-
-## Import and generated configuration
-
-### `for_each` in import blocks
-
-*Terraform 1.7.0 — batch `terraform-1.7.0-guide`.*
-
-An `import` block can expand over a collection, including across module instances, instead of requiring one block per resource instance.
+Terraform 1.12 import blocks may set provider-defined `identity` instead of `id`; the attributes are mutually exclusive (`terraform-1.12.0`).
 
 ```hcl
 import {
-  for_each = local.buckets
-  to       = aws_s3_bucket.example[each.key]
-  id       = each.value
+  to       = example_resource.item
+  identity = var.item_identity
 }
 ```
 
-### Generated import configuration uses `jsonencode`
+Terraform 1.14 list resources and `terraform query` can discover infrastructure and generate import configuration. Providers can improve generated configuration through the `GenerateResourceConfiguration` RPC; see the CLI reference for query-file syntax and commands.
 
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
+## Local state paths
 
-When import-driven configuration generation encounters a string containing valid JSON, Terraform now emits a `jsonencode(...)` call instead of one quoted string. The generated structure is easier to read and to generalize by replacing individual values with expressions.
-
-### Generated map-key escaping
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-Configuration generation in 1.9.7 quotes map keys containing whitespace, and 1.9.8 extends quoting to all keys that would otherwise be invalid syntax.
-
-### Import iteration cannot depend on its target
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-A `for_each` expression in an `import` block may not reference the resource being imported, so its collection must come from independent inputs.
-
-### Import-block validation and destroy behavior
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-Import blocks that point into nonexistent modules now raise an error instead of being silently ignored, so they must be fixed or removed during upgrade. An import block also no longer blocks a destroy when its target object has already been deleted.
-
-### Provider-defined import identities
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-An `import` block can use the new `identity` attribute to identify a resource by provider-defined attributes instead of a single `id`; `identity` and `id` are mutually exclusive.
-
-### Provider-generated import configuration
-
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
-
-The new `GenerateResourceConfiguration` RPC lets providers produce more precise configuration during import. Starting in 1.14.1, its protocol request includes state information for generators that need it.
-
-### Simpler generated primitive strings
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-Configuration generation with `plan -generate-config-out` now simplifies string attributes that contain primitive values such as numbers or booleans.
-
-### Workspace import and OSS proxy behavior
-
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
-
-`terraform import` now retrieves all workspace variables, including inherited variable-set values that the workspace does not override. OSS backend operations now use the backend's proxy support instead of bypassing it.
-
-## State and plan behavior
-
-### Applyable refresh-only output changes
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-A refresh-only plan whose only changes are to outputs is now applyable, allowing those refreshed output values to be recorded without an unrelated resource change.
-
-### Configurable state persistence interval
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-`TF_STATE_PERSIST_INTERVAL` configures the interval at which OpenTofu persists state, allowing operators to tune state-write cadence for long-running operations.
-
-### Destroy-path behavior across the 1.9 line
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-OpenTofu skips import-block processing during `tofu destroy` and correctly handles `create_before_destroy` replacements when refresh is disabled. Starting in 1.9.4, variable validations no longer interfere with destroy operations.
-
-### Local state CLI migration
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-The `-state` flag is deprecated for `terraform plan`, `apply`, and `refresh`. Configure the `path` attribute in a `local` backend instead.
-
-### Local-state crash behavior
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-Local state writes now follow the state-manager persistence contract instead of persisting every intermediate write. This improves large-state performance, but a hard crash during apply may no longer leave an in-progress local state file.
-
-### Optional `resource.` address prefix
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-Address targets now correctly accept the optional `resource.` prefix, such as `resource.aws_instance.web`.
-
-### Refactoring across resource types
-
-*Terraform 1.8.0 — batch `terraform-1.8.0-guide`.*
-
-Terraform 1.8 extends `moved` blocks to changes between resource types, including cross-provider moves, but only when the provider declares support for the particular conversion. This replaces the previous remove-from-state, configuration update, and re-import sequence for supported resources.
+Terraform 1.10 deprecates `-state` on `plan`, `apply`, and `refresh`. Configure the path through the local backend instead.
 
 ```hcl
-resource "myprovider_new_resource_type" "example" {
-  # resource attributes
-}
-
-moved {
-  from = myprovider_old_resource_type.example
-  to   = myprovider_new_resource_type.example
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
 }
 ```
 
-### State compatibility after restoring input validations
+OpenTofu 1.10 expands `tofu show` with explicit `-state` and `-plan=FILE` forms while retaining the older zero-or-one-positional-argument syntax.
 
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
+## Write-only arguments (`terraform-1.11.0-guide`)
 
-Terraform 1.7 writes input validations into state again. For cross-minor state readers such as `terraform_remote_state`, use at least 1.3.10, 1.4.7, or 1.5.7 on those respective series; releases before 1.3 and releases from 1.6 onward are unaffected.
+Provider-declared write-only managed-resource arguments accept ephemeral or ordinary values. Terraform sends them on every operation but never persists or diffs them. Increment the provider-specific stored companion version or trigger argument to make rotation visible.
 
-### State migration interoperability
+```hcl
+ephemeral "random_password" "db_password" {
+  length = 16
+}
 
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
+resource "aws_db_instance" "example" {
+  password_wo         = ephemeral.random_password.db_password.result
+  password_wo_version = 1
+}
+```
 
-`tofu show` and `tofu state show` can read affected state files whose provider addresses refer to the Terraform Registry, avoiding an inspection failure during migration.
-
+Provider implementations must follow additional schema and lifecycle contracts described in the Plugin Framework reference.

@@ -1,46 +1,62 @@
 # Media, Devices, and Platform Services
 
-## Build audio experiences
+## Audio
 
-In SDK 55, `expo-audio` adds lock-screen controls, background recording, cross-platform playlists, native preloading, iOS earpiece routing, and broader web recording and media support.
+Batch `55` adds the following `expo-audio` capabilities:
 
-SDK 56 adds `useAudioStream` for live microphone buffers, plus status and control fields for live streams.
+- Lock-screen controls and background recording.
+- Cross-platform playlists and native preloading.
+- iOS earpiece routing.
+- Broader web recording and media support.
 
-## Configure video playback
+Batch `56` adds `useAudioStream` for live microphone buffers and live-stream status and control fields.
 
-SDK 55 `expo-video` adds:
+`expo-av` is removed from Expo Go and no longer receives patches. Migrate supported media work to the dedicated audio and video packages, and test native behavior in a development build.
 
-- `seekTolerance` and `scrubbingModeOptions`.
-- Multi-view Android picture-in-picture.
-- Richer track metadata.
-- Android `PlayerBuilderOptions` and `buttonOptions`.
+## Video and image
 
-Migrate thumbnail generation from `expo-video-thumbnails` to `expo-video.generateThumbnailsAsync`. Track `bitrate` is split into `averageBitrate` and `peakBitrate`, and `allowsFullscreen` becomes `fullscreenOptions.enable`.
+`expo-video` adds `seekTolerance`, `scrubbingModeOptions`, multi-view Android picture-in-picture, richer track metadata, and Android `PlayerBuilderOptions` and `buttonOptions`.
 
-## Load authenticated and platform-native images
+Migrate renamed and relocated video APIs:
 
-`expo-image` adds iOS HDR and SF Symbols in SDK 55. Android image requests can include cookies for authenticated resources.
+- Replace `expo-video-thumbnails` with `expo-video.generateThumbnailsAsync`.
+- Replace track `bitrate` with `averageBitrate` and `peakBitrate`.
+- Replace `allowsFullscreen` with `fullscreenOptions.enable`.
 
-## Capture camera content
+`expo-image` supports iOS HDR and SF Symbols. On Android it can send cookies with authenticated image requests.
 
-`expo-camera` adds recording stabilization, an Android front-camera screen flash, and an option to disable the barcode API in SDK 55.
+## Camera, browser, location, maps, and haptics
 
-## Complete browser authentication
+`expo-camera` adds recording stabilization, an Android front-camera screen flash, and an opt-out for the barcode API.
 
-`expo-web-browser` adds universal-link callbacks for authentication in SDK 55.
+`expo-web-browser` supports universal-link callbacks for authentication.
 
-## Report location accuracy
+iOS location permission responses distinguish full from reduced accuracy. Apple Maps can force light or dark appearance.
 
-iOS location permission responses distinguish full from reduced accuracy in SDK 55. Handle reduced accuracy as a valid permission outcome rather than assuming every grant supplies precise coordinates.
+`expo-haptics` supports Safari in SDK 56. `expo-asset` accepts GLB models.
 
-## Control Apple Maps appearance
+Android push notifications error in Expo Go and require a development build.
 
-Apple Maps can force light or dark appearance in SDK 55, independently of the surrounding application theme when needed.
+## Widgets and Live Activities
 
-## Use browser haptics and 3D assets
+The alpha `expo-widgets` package initially builds iOS home-screen widgets and Live Activities with `@expo/ui`. Shared objects manage timelines, Live Activity lifecycle, and push-to-start tokens.
 
-In SDK 56, `expo-haptics` supports Safari and `expo-asset` accepts GLB models.
+In SDK 56, `expo-widgets` is stable. Widgets and Live Activities can access the full environment without pre-rendering.
 
-## Configure the development launcher
+## Inbound sharing
 
-The SDK 56 `expo-dev-launcher` config plugin adds `defaultLaunchURL`, `skipOnboarding`, and `showMenuAtLaunch` options.
+Experimental inbound support in `expo-sharing` adds an iOS share-extension target and Android intent filters through a config plugin. Shared data is delivered through deep links, so validate both native target generation and route handling.
+
+## Android blur
+
+`expo-blur` is stable on Android 12+ using `RenderNode`. Wrap background content in `BlurTargetView` for Android-capable blur layouts. Rename `experimentalBlurMethod` to `blurMethod`; the older implementations remain usable on their previously supported platforms.
+
+## Clipboard and cellular migration
+
+Clipboard listener events no longer contain `content`; call `getStringAsync()` to read current text after the event.
+
+Deprecated cellular carrier constants are removed. Affected iOS methods return `null`.
+
+## Development launcher
+
+The `expo-dev-launcher` config plugin adds `defaultLaunchURL`, `skipOnboarding`, and `showMenuAtLaunch` options.

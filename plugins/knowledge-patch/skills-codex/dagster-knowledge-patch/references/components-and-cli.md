@@ -1,25 +1,52 @@
 # Components and CLI
 
-## Component authoring
+## Authoring Components
 
-Components are production-ready and recommended for new projects (1.11.0).
-Declare definitions in `defs.yaml` or implement typed Python `Component`
-subclasses. Decorate Python helpers with `@template_var` to expose them to
-YAML. `build_defs_for_component` builds definitions outside a `defs` folder.
-Templates can compose Components through `load_component_at_path` and
-`build_defs_at_path` for code that still targets that API generation:
+### Components as the project default (since 1.11.0)
+
+Components are the recommended starting point for new projects. Declare them
+in `defs.yaml` or implement typed Python `Component` subclasses. Decorate
+Python helpers with `@template_var` to expose them to YAML.
+
+`build_defs_for_component` builds definitions outside a `defs` folder.
+Templates can compose components with `load_component_at_path` and
+`build_defs_at_path` on the 1.11 surface.
 
 ```yaml
 deps:
   - "{{ load_component_at_path('dbt_ingest').asset_key_for_model('customers') }}"
 ```
 
-For the current `ComponentLoadContext` names, use `load_component` and
-`build_defs`; see the upgrade reference for the compatibility-method removal.
+### Loading and configuration migration (since 1.11.0)
 
-## Template scopes
+`load_defs` is deprecated and no longer public; use
+`load_from_defs_folder(path)`. Sling and Airflow Components replaced
+`asset_post_processors` with top-level `post_processors`.
+`SlingReplicationCollectionComponent` takes `connections` directly rather
+than the deprecated `sling` YAML field or Python `resource` argument.
 
-As of 1.12.0, templates expose:
+### State-backed Components (since 1.12.0)
+
+`StateBackedComponent` separates persisted discovery state from YAML or Python
+configuration. It supports local state, versioned storage, and code-server
+snapshots. Airbyte, Fivetran, Power BI, Airflow, and dbt project Components use
+this model. Generated GitHub Actions deployment workflows refresh their state.
+
+### Local state default (since 1.13.0)
+
+State-backed integrations such as Airbyte and Fivetran now default to
+`LOCAL_FILESYSTEM` storage rather than `legacy_code_server_snapshots`.
+Configure storage when local persistence does not match the deployment model.
+
+## Template scope and configuration
+
+### Current loading helpers (since 1.12.0)
+
+`ComponentLoadContext.build_defs_at_path` and `load_component_at_path` were
+renamed to `build_defs` and `load_component`, with the old forms retained only
+for compatibility before their 1.13 removal.
+
+Component templates expose:
 
 - automation conditions, partition definitions, and `FreshnessPolicy` through
   `dg`;
@@ -32,74 +59,81 @@ As of 1.12.0, templates expose:
 {{ context.load_component("warehouse") }}
 ```
 
-## State-backed Components
+### Resource typing and secret fields (since 1.11.0 and 1.12.0)
 
-`StateBackedComponent` separates persisted discovery state from YAML or Python
-configuration (1.12.0). It supports local state, versioned storage, and
-code-server snapshots. Airbyte, Fivetran, Power BI, Airflow, and dbt project
-Components use the model, and generated deployment workflows refresh their
-state.
+Configurable resource fields accept union annotations such as `Foo | Bar`.
+Hide a resource parameter in the UI by adding
+`json_schema_extra={"dagster__is_secret": True}` to its Pydantic field.
 
-In 1.13.0, state-backed integrations such as Airbyte and Fivetran default to
-`LOCAL_FILESYSTEM` rather than `legacy_code_server_snapshots`. Configure
-storage explicitly if code-server snapshot behavior is required.
+### YAML scalar behavior (since 1.13.0)
 
-## Core `dg` workflow
+Date-like YAML strings such as `"2021-10-30"` stay strings rather than being
+converted to datetimes.
 
-The stable `dg` CLI covers the project lifecycle (1.11.0):
+## Project creation and local development
 
-- `dg scaffold` creates definitions and project objects.
-- `dg dev` starts local development.
-- `dg launch` launches work.
-- `dg list` inspects definitions.
-- `dg check` validates configuration and definitions.
-- `dg utils` hosts utilities.
+### Stable `dg` workflow (since 1.11.0)
 
-`create-dagster project` creates the modern `src/` plus `defs/` layout, sets
-up local `dg`, and does not require an active Python environment.
+The `dg` CLI groups project work under:
 
-Additional commands include `dg list component-tree`, `dg check toml`,
-`dg mcp`, `dg api secret list`, and `dg api secret get`. Validation of
-`requirements.env` is opt-in for `dg check yaml`. MCP dependencies live in
-the `dagster-dg-cli` `ai` extra rather than the base CLI.
+- `dg scaffold` for scaffolding;
+- `dg dev` for the local UI;
+- `dg launch` for launches;
+- `dg list` for definitions;
+- `dg check` for validation;
+- `dg utils` for utilities.
 
-## Definition-querying APIs
+`create-dagster project` supersedes `dagster project scaffold`. It creates the
+modern `src/` plus `defs/` layout, includes local `dg` setup, and does not
+require an active Python environment.
 
-The 1.12.0 `dg api` surface includes:
+### Additional development tools (since 1.11.0)
+
+Available commands include `dg list component-tree`, `dg check toml`,
+`dg mcp`, `dg api secret list`, and `dg api secret get`.
+`requirements.env` validation is opt-in for `dg check yaml`. MCP dependencies
+live in the `dagster-dg-cli` `ai` extra rather than the base CLI.
+
+## Scaffolding and deployment commands
+
+### Deployment artifacts (since 1.12.0)
+
+`dg scaffold build-artifacts` generates Docker and deployment configuration
+for ECR, DockerHub, GHCR, ACR, or GCR. `dg scaffold github-actions` generates
+Serverless- or Hybrid-aware CI. `dg plus deploy configure` prepares an existing
+project for Dagster+ and can also scaffold GitLab CI workflows.
+
+### Removed and replacement commands (since 1.12.0)
+
+All `dagster project` commands were removed in favor of `create-dagster`.
+`dg docs integrations` became `dg utils integrations`.
+`dagster-cloud ci check` is deprecated; use `dg plus deploy start`, which also
+performs deployment validation.
+
+### Definition-querying API (since 1.12.0)
+
+The `dg api` surface includes:
 
 - `schedule list` and `schedule get`;
 - `job list` and `job get`;
 - `asset-check list` and `asset-check get-executions`;
 - `asset get-partition-status`.
 
-In 1.13.0, `dg api run launch` launches through the Dagster+ API.
+These commands cover schedule, job, check-execution, and partition-status
+metadata.
 
-## Deployment scaffolding
+### Dagster+ authentication and project configuration (since 1.12.0)
 
-`dg scaffold build-artifacts` generates Docker and deployment configuration
-for ECR, DockerHub, GHCR, ACR, or GCR (1.12.0).
-`dg scaffold github-actions` generates Serverless- or Hybrid-aware CI.
-Generated GitHub Actions workflows also refresh state-backed Component state
-during deployment.
+- Authenticate in the EU region with `dg plus login --region eu`.
+- Inspect active CLI configuration with `dg plus config view`.
+- Set `agent_queue` and `image` under `[tool.dg.project]` for generated
+  `dagster_cloud.yaml`.
+- `dg plus pull env` merges secrets into an existing `.env` without replacing
+  locally defined entries.
 
-`dg plus deploy configure` prepares an existing project for Dagster+ and can
-scaffold GitLab CI. Use `dg plus deploy start` for deployment validation and
-deployment startup.
+### CLI changes (since 1.13.0)
 
-## Dagster+ CLI configuration
-
-For EU authentication, use `dg plus login --region eu`. Inspect active CLI
-configuration with `dg plus config view`.
-
-`[tool.dg.project]` accepts `agent_queue` and `image` to populate generated
-`dagster_cloud.yaml`. `dg plus pull env` merges secrets into an existing
-`.env` without replacing locally defined values.
-
-Values of `DG_PROJECT_PYTHON_EXECUTABLE` in a project `.env` follow
-`python-dotenv` syntax in 1.13.0, including `export`, quoting, and trailing
+`dg utils integrations` was removed. Use `dg api run launch` to launch through
+the Dagster+ API. Values for `DG_PROJECT_PYTHON_EXECUTABLE` in a project
+`.env` follow `python-dotenv` rules, including `export`, quoting, and trailing
 comments.
-
-## Development database controls
-
-`dg dev` and `dagster dev` accept database-pool controls in 1.12.0,
-including `--db-pool-recycle` and `--db-pool-pre-ping`.

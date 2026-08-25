@@ -1,647 +1,276 @@
 # Data, storage, and Key Vault
 
-Database services, App Configuration, Storage, Azure Files, NetApp Files, Key Vault, and Managed HSM.
+## PostgreSQL Flexible Server
 
-## Databases and caches
+### Version and command lifecycle
 
-### Announced PostgreSQL flexible-server interface changes (2.86.0)
+- `2.72.0` capability-gates upgrades to PostgreSQL 17.
+- `2.73.0` creation defaults to PostgreSQL 17 and disables default-database
+  creation; its SKU comes from location capabilities. Explicitly set version,
+  SKU, and database choice. `stop-replication` is removed in favor of
+  `replica promote`; create/upgrade no longer support PostgreSQL 12.
+- `2.75.0` extends end-of-life handling to PostgreSQL 11 and 12; do not depend
+  on provisioning them.
+- `2.80.0` removes Single Server `az postgres server`, `db`, and `server-logs`.
+  Flexible-server create no longer defaults `--version` and removes
+  `--create-default-database`/`--database-name`.
+- `2.82.0` deprecates `index-tuning` in favor of `autonomous-tuning`, including
+  list-index and list-table recommendations, and adds PostgreSQL 18 upgrades.
+- `2.85.0` announces removal of `long-term-retention`; avoid new automation.
+- `2.86.0` announces network-resource behavior changes for create, replica,
+  restore, geo-restore, and revive-dropped, and deprecates `--cluster-option`.
+- `2.87.0` upgrade stops constraining version through a CLI enum.
 
-Create, replica-create, restore, geo-restore, and revive-dropped operations
-now warn of an upcoming breaking behavioral change involving network
-resources. Flexible-server creation also announces the deprecation of
-`--cluster-option`; treat both interfaces as transitional in automation.
+### Creation, networking, and HA
 
-### Capability-gated PostgreSQL 17 upgrades (2.72.0)
+- `2.68.0` create supports elastic clusters with
+  `--cluster-option ElasticCluster`; list adds `--show-cluster`, update adds
+  `--node-count`, and the identity/Fabric-mirroring groups support system
+  identity and database mirroring.
+- `2.69.0` geo-restore adds `--restore-time`; Fabric mirroring operations are
+  disabled for HA servers at this point in the CLI history.
+- `2.71.0` create can add an administrator with Entra auth enabled and no
+  longer creates an unusable password when password auth is disabled.
+- `2.73.0` public access is disabled when the public-access argument is `None`;
+  some update operations now prompt, affecting unattended scripts.
+- `2.77.0` disallows Premium SSD v2 with Burstable tier for create/update/
+  restore. It bypasses Fabric-mirroring validation on existing PostgreSQL 11/12
+  servers when changing HA status.
+- `2.82.0` allows PostgreSQL 17+ HA servers to start Fabric mirroring, reversing
+  the earlier restriction; create/update expose zonal resiliency and allow HA
+  with `PremiumV2_LRS`.
+- `2.83.0` SSDV2 servers can create replicas and use geo-restore.
+- `2.84.0` adds `az postgres flexible-server migrate-network`.
+- `2.86.0` replica create accepts `PremiumV2_LRS`; SSDv2 size increases no
+  longer restart the server, and create/upgrade reject SSDv2 before version 14.
+- `2.87.0` removes create/update `--high-availability`; use
+  `--zonal-resiliency`.
 
-`az postgres flexible-server upgrade --version` now checks the server
-capability API and permits PostgreSQL 17 when that capability is available.
+### Replicas, clusters, backup, and maintenance
 
-### Cosmos DB burst capacity (2.68.0)
+- `2.70.0` adds index-tuning option operations (later redirected to autonomous
+  tuning).
+- `2.76.0` replica create/promote supports elastic clusters.
+- `2.82.0` elastic-cluster database name defaults to `None`. Backup, DB,
+  firewall-rule, identity, LTR, Entra admin, migration, parameter, and replica
+  list accept `--ids`; replica create `--name` selects the replica name.
+- `2.87.0` backup create auto-generates its name. Backup, DB, firewall-rule,
+  migration, and replica create now consistently use `--name` and
+  `--server-name`; update scripts using older parameter names.
+- `2.88.0` create/restore/geo-restore/replica create add federated and backup-
+  federated client IDs for multi-tenant registration. The CLI spelling is
+  `az postgresql flexible-server maintenance-event`; it supports list, show,
+  apply-now, and reschedule.
+- `2.89.0` upgrade `--validate-only` performs PVC without applying the upgrade.
 
-`az cosmosdb create` and `az cosmosdb update` accept
-`--enable-prpp-autoscale` to enable or disable the burst-capacity feature.
+## MySQL Flexible Server
 
-### Cosmos DB fleets and local authentication (2.82.0)
+### Defaults and storage controls
 
-`az cosmosdb fleet` is the new command group for Cosmos DB fleets. Account
-create and update also accept `--disable-local-auth` so local authentication
-can be disabled.
+- `2.68.0` create, restore, replica create, and geo-restore accept
+  `--storage-redundancy` for zone-redundant HA storage.
+- `2.71.0` changes create defaults for `--auto-scale-iops` and `--version`;
+  always pass both for reproducible provisioning.
+- `2.72.0` create adds `--backup-interval`; restore adds `--faster-restore`, and
+  replica create adds `--faster-provisioning` for automatic IOPS scaling.
+- `2.74.0` BC SKU creation defaults storage redundancy to local; pass it when
+  another redundancy is required.
+- `2.76.0` create/update expose revised storage redundancy and backup interval,
+  so update can now change backup interval.
+- `2.87.0` backup create, restore, geo-restore, and replica operations remove
+  `--storage-redundancy`; remove it from current scripts.
 
-### Cosmos DB region offlining (2.70.0)
+### Versions, logs, backup, mirroring, and maintenance
 
-`az cosmosdb offline-region` can take a region in a Cosmos DB account offline.
-
-### Cosmos DB restore validation behavior (2.76.0)
-
-`az cosmosdb restore` no longer performs the CLI-side validations that could
-time out for large restores or report incorrect errors; restore requests now
-proceed without those checks.
-
-### Cosmos DB SQL full-text policies (2.74.0)
-
-`az cosmosdb sql container` now supports Full Text Policy configuration.
-
-### Cross-subscription MySQL operations (2.83.0)
-
-MySQL flexible-server `restore`, `geo-restore`, and `replica create` now
-support targeting a different subscription.
-
-### Cross-subscription SQL geo-replication (2.75.0)
-
-`az sql db replica create` can specify the partner subscription ID when
-creating a cross-subscription geo-replica.
-
-### Deleting on-demand MySQL backups (2.82.0)
-
-`az mysql flexible-server backup delete` can delete an on-demand backup.
-
-### Fabric workspaces in Cosmos DB ACL bypasses (2.84.0)
-
-`az cosmosdb update --network-acl-bypass-resource-ids` now accepts Microsoft
-Fabric workspace resource IDs.
-
-### MySQL 8.4 upgrades (2.77.0)
-
-`az mysql flexible-server upgrade --version 8.4` is now supported.
-
-### MySQL Accelerated Logs (2.78.0)
-
-`az mysql flexible-server create` and `update` support Accelerated Logs for
-the GeneralPurpose tier.
-
-### MySQL backup and accelerated restore controls (2.72.0)
-
-MySQL flexible-server creation accepts `--backup-interval`. Restore accepts
-`--faster-restore` to enable automatic IOPS scaling, and replica creation
-accepts `--faster-provisioning` for the same behavior while provisioning.
-
-### MySQL backup interval updates (2.76.0)
-
-MySQL flexible-server create/update exposes the revised
-`--storage-redundancy` option and `--backup-interval`; unlike the earlier
-create-only support, update can now set the backup interval.
-
-### MySQL BC storage-redundancy default (2.74.0)
-
-`az mysql flexible-server create` now defaults storage redundancy to local
-redundancy for BC SKUs; pass the redundancy explicitly when provisioning must
-not inherit this changed default.
-
-### MySQL flexible-server default changes (2.71.0)
-
-In a breaking change, `az mysql flexible-server create` changes the defaults
-for both `--auto-scale-iops` and `--version`. Reproducible provisioning should
-pass both values explicitly rather than inheriting the CLI defaults.
+- `2.77.0` supports upgrade to MySQL 8.4.
+- `2.78.0` create/update support Accelerated Logs for GeneralPurpose.
+- `2.82.0` backup delete removes an on-demand backup.
+- `2.83.0` restore, geo-restore, and replica create can target another
+  subscription.
+- `2.89.0` mirroring enable/disable controls Fabric Mirroring. Update adds
+  `--maintenance-batch Default|Batch1|Batch2`; omission preserves the current
+  batch.
 
 ```bash
-az mysql flexible-server create --resource-group "$RESOURCE_GROUP" \
-  --name "$SERVER" --auto-scale-iops "$AUTO_SCALE_IOPS" \
-  --version "$MYSQL_VERSION"
+az mysql flexible-server update --resource-group "$RESOURCE_GROUP" \
+  --name "$SERVER" --maintenance-batch Batch1
 ```
 
-### MySQL flexible-server storage redundancy (2.68.0)
-
-`--storage-redundancy` is available on flexible-server create, restore,
-replica create, and geo restore to request HA storage with zone redundancy.
-
-### MySQL storage-redundancy argument removed (2.87.0)
-
-MySQL flexible-server backup create, restore, geo-restore, and replica
-operations no longer accept `--storage-redundancy`; remove it from scripts
-before upgrading the CLI.
-
-### Neon Postgres Service Connector (2.71.0)
-
-Service Connector's workload-specific `connection create neon-postgres`
-commands can create connections to Neon Postgres Serverless.
-
-### PostgreSQL 11 and 12 end-of-life handling (2.75.0)
-
-`az postgres flexible-server create` extends its end-of-life handling to
-PostgreSQL 11 and 12, so provisioning should not rely on creating either
-version.
-
-### PostgreSQL authentication during creation (2.71.0)
-
-`az postgres flexible-server create` can add an administrator while
-`--active-directory-auth` is enabled. When `--password-auth` is disabled, the
-command no longer generates an otherwise unusable password.
-
-### PostgreSQL autonomous tuning and version 18 upgrades (2.82.0)
-
-The `az postgres flexible-server index-tuning` group is deprecated and
-redirects to `az postgres flexible-server autonomous-tuning`. Use its
-`list-index-recommendations` and `list-table-recommendations` commands;
-`az postgres flexible-server upgrade` also supports PostgreSQL 18.
-
-### PostgreSQL cluster, list, and replica arguments (2.82.0)
-
-Elastic-cluster creation has a database-name field that defaults to `None`.
-The `backup`, `db`, `firewall-rule`, `identity`, `long-term-retention`,
-`microsoft-entra-admin`, `migration`, `parameter`, and `replica` list commands
-accept `--ids`; `replica create --name` can choose the read-replica name.
-
-### PostgreSQL command and creation removals (2.80.0)
-
-The Single Server groups `az postgres server`, `az postgres db`, and
-`az postgres server-logs` are removed. Flexible-server creation no longer has
-a default for `--version` and drops `--create-default-database` and
-`--database-name`.
-
-### PostgreSQL command and version removals (2.73.0)
-
-`az postgres flexible-server stop-replication` is removed; use
-`az postgres flexible-server replica promote`. Flexible-server create and
-upgrade also no longer support PostgreSQL 12.
-
-### PostgreSQL disk-tier restriction and legacy HA updates (2.77.0)
-
-Premium SSD v2 can no longer be used with the Burstable compute tier by
-`az postgres flexible-server create`, `update`, or `restore`. For existing
-PostgreSQL 11 and 12 servers, `az postgres flexible-server update` now
-bypasses Fabric mirroring validation so that high-availability status can be
-changed.
-
-### PostgreSQL elastic-cluster replicas (2.76.0)
-
-`az postgres flexible-server replica create` and `promote` now support elastic
-clusters.
-
-### PostgreSQL flexible-server argument changes (2.87.0)
-
-Flexible-server create/update removes `--high-availability`; use
-`--zonal-resiliency` instead. Upgrade no longer constrains `--version` with a
-CLI enum, and backup creation no longer requires a backup name because one is
-generated automatically.
-
-The `backup`, `db`, `firewall-rule`, `migration`, and `replica` create
-commands now consistently use `--name` and `--server-name`; update scripts
-whose old parameter names differ.
-
-### PostgreSQL flexible-server creation defaults (2.73.0)
-
-Creation now defaults `--create-default-database` to Disabled and the
-PostgreSQL version to 17. The default SKU is selected from the location
-capability API, so scripts needing stable choices should pass these values
-explicitly.
-
-### PostgreSQL flexible-server elastic clusters (2.68.0)
-
-Create an elastic cluster with `--cluster-option ElasticCluster`, include
-elastic clusters in list results with `--show-cluster`, and scale one with
-the update command's `--node-count`. The flexible-server `identity` and
-`fabric-mirroring` command groups also support system-assigned managed
-identity and database mirroring to Fabric.
-
-### PostgreSQL HA storage and mirroring (2.82.0)
-
-For PostgreSQL 17 or later, an HA-enabled flexible server may now start Fabric
-mirroring, reversing the earlier HA restriction. Flexible-server create and
-update also expose zonal resiliency for HA and allow HA with `PremiumV2_LRS`
-storage.
-
-### PostgreSQL index-tuning options (2.70.0)
-
-`az postgres flexible-server index-tuning` gains operations for tuning
-options.
-
-### PostgreSQL long-term-retention removal (2.85.0)
-
-The `az postgres flexible-server long-term-retention` command group now
-announces its upcoming removal; avoid introducing new automation that
-depends on it.
-
-### PostgreSQL multi-tenant identity and maintenance events (2.88.0)
-
-Flexible-server create, restore, geo-restore, and replica create accept
-`--federated-client-id` and `--backup-federated-client-id` for multi-tenant
-application registration. The new `az postgresql flexible-server
-maintenance-event` list, show, apply-now, and reschedule commands manage
-maintenance events.
-
-### PostgreSQL network-mode migration (2.84.0)
-
-The new `az postgres flexible-server migrate-network` command migrates a
-flexible server's network mode.
-
-### PostgreSQL Premium SSDv2 behavior (2.86.0)
-
-Read-replica creation accepts `--storage-type PremiumV2_LRS`. Increasing the
-storage size of a Premium SSDv2 server no longer requires a restart, while
-create and upgrade now reject SSDv2 for PostgreSQL versions earlier than 14.
-
-### PostgreSQL restore time and HA mirroring restriction (2.69.0)
-
-`az postgres flexible-server geo-restore` gains `--restore-time`. Fabric
-mirroring start/stop/update-databases operations are disabled for HA servers.
-
-### PostgreSQL SSDV2 replica and geo-restore support (2.83.0)
-
-PostgreSQL flexible-server create, georestore, and replica operations now
-allow SSDV2 servers to create replicas and perform geo-restores.
-
-### PostgreSQL update prompts and public access (2.73.0)
-
-Some flexible-server update operations now ask for user confirmation, which
-changes unattended command behavior. Creation now disables public network
-access when its public-access argument is `None`.
-
-### Redis zoning and system-identity connections (2.69.0)
-
-`az redis create` and `az redis update` gain `--zonal-allocation-policy` for
-choosing cache zones. `az webapp connection create redis` gains
-`--system-identity`.
-
-### Soft-deleted SQL server lifecycle (2.84.0)
-
-`az sql server create` and `update` accept `--soft-delete-retention-days`.
-The new `az sql server deleted-server show` and `list` commands inspect
-deleted servers, and `az sql server restore` restores one.
-
-### SQL long-term retention and failover groups (2.76.0)
-
-`az sql ltr-policy set` removes the unused `--access-tier` option, so callers
-must stop passing it. `az sql failover-group create` now supports multiple
-partner failover groups.
-
-### SQL long-term-retention immutability (2.78.0)
-
-The `az sql db ltr-backup` group adds commands for LTR immutability.
-
-### SQL Managed Instance memory sizing (2.82.0)
-
-`az sql mi create` and `update` can set the managed instance's memory size in
-GB.
-
-### SQL serverless-to-provisioned updates (2.79.0)
-
-When `az sql db update` moves a database from serverless to provisioned, it
-no longer overwrites the selected service-level objective.
-
-### Versionless SQL TDE keys (2.84.0)
-
-Azure SQL server and database commands now support versionless Transparent
-Data Encryption keys.
-
-## App Configuration and dashboards
-
-### Anonymous App Configuration access (2.83.0)
-
-App Configuration commands now accept `anonymous` for `--auth-mode`.
-
-### App Configuration custom token audiences (2.70.0)
-
-`az appconfig` operations using `--auth-mode login` can now use a custom token
-audience.
-
-### App Configuration feature-management schema and timestamps (2.69.0)
-
-Key-value import/export and feature show/list commands now understand the
-Microsoft feature-management schema. File exports can set
-`AZURE_APPCONFIG_FM_COMPATIBILE` for backward compatibility, and datetime
-inputs for key-value restore/show/list and revision list accept timezone
-offsets.
-
-### App Configuration import from AKS ConfigMaps (2.77.0)
-
-`az appconfig kv import` can now import key-values from an AKS ConfigMap.
-
-### App Configuration network security perimeters (2.87.0)
-
-App Configuration store create/update operations and the
-`network-security-perimeter-configuration` command now support Network
-Security Perimeter configuration.
-
-### App Configuration retention and feature tag filters (2.76.0)
-
-`az appconfig create/update` can set the key-value revision retention period.
-Feature `list`, `delete`, and `set` operations now support tag filters.
-
-### App Configuration serialization (2.78.0)
-
-`az appconfig kv export` escapes keys only for properties-file output.
-`az appconfig kv set` and `import` now accept JSON comments.
-
-### App Configuration snapshot references (2.87.0)
-
-`az appconfig kv set-snapshot-reference` creates a snapshot-reference
-key-value, and `az appconfig kv list` can list key-values from a snapshot
-reference.
-
-### App Configuration tag filters and dry runs (2.75.0)
-
-Tag filtering is now supported by App Configuration key-value
-export/import/list/delete, restore, and revision-list operations.
-`az appconfig kv import`, `export`, and `restore` also accept `--dry-run`.
-
-### App Configuration telemetry (2.85.0)
-
-App Configuration store create/update can link an Application Insights
-resource, and `az appconfig feature set` can enable telemetry for a feature
-flag.
-
-### Grafana-backed dashboards (2.82.0)
-
-`az monitor dashboard` now supports dashboards with Grafana.
-
-### New App Configuration and App Service SKUs (2.72.0)
-
-`az appconfig create` and `az appconfig update` support the Developer SKU.
-`az appservice plan create` supports the Pv4 and Pmv4 App Service Plan
-families.
-
-## Storage, files, and NetApp Files
-
-### Azure Files NFS operations (2.71.0)
-
-The storage share, directory, and file commands support NFS file shares, and
-`az storage file hard-link create` creates hard links for NFS files.
-
-### Azure Files restore after source-account deletion (2.77.0)
-
-`az backup restore restore-azurefileshare` now supports restores whose source
-storage account has been deleted by including the required source resource ID
-in the request.
-
-### Azure Files Vault Standard backup policies (2.69.0)
-
-The `az backup` command group now supports AFS Vault Standard policies.
-
-### Azure NetApp Files clone splitting (2.78.0)
-
-`az netappfiles volume splitclonefromparent` splits a clone from its parent;
-volume creation also accepts `--grow-pool-clone-split`.
-
-### Azure NetApp Files configuration changes (2.73.0)
-
-`az volume-group create` no longer requires `--proximity-placement-group`.
-NetApp account create/update accepts `--federated-client-id` for cross-tenant
-customer-managed keys and `--nfs-v4-id-domain` for NFSv4 user-ID mapping.
-
-### Azure NetApp Files cool-access tiering (2.70.0)
-
-`az netappfiles volume create` and `az netappfiles volume update` accept
-`--cool-access-tiering-policy`.
-
-### Azure NetApp Files encryption-key transitions (2.70.0)
-
-`az netappfiles account change-key-vault` changes the Key Vault or Managed HSM
-used to encrypt an account's volumes. `get-key-vault-status` supplies Key Vault
-information for `transitiontocmk`, which transitions all volumes in a VNet to
-a different Microsoft-managed or Key Vault key source; it fails when targeted
-volumes share an encryption sibling set with another account's volumes.
-
-### Azure NetApp Files ransomware and quota reports (2.85.0)
-
-NetApp Files volume create/update accepts
-`--desired-ransomware-protection-state`. The new
-`az netappfiles volume ransomware-report` group exposes advanced ransomware
-reports, while `az netappfiles volume list-quota-report` lists volume quota
-reports.
-
-### Cross-tenant user-delegation SAS (2.86.0)
-
-The blob, container, share, file, queue, and filesystem `generate-sas`
-commands accept `--user-delegation-tid` to issue a user-delegation SAS for a
-different tenant.
-
-### DMS location and NetApp endpoint type (2.80.0)
-
-`az dms project create` no longer requires `--location`. NetApp volume create
-and update no longer accept the read-only `--endpoint-type` argument.
-
-### Event Hubs network security perimeter configuration (2.76.0)
-
-`az eventhubs namespace nsp-configuration show` and `list` expose namespace
-network security perimeter configuration.
-
-### File-service transport encryption requirements (2.83.0)
-
-`az storage account file-service-properties update` adds
-`--require-smb-encryption-in-transit` and
-`--require-nfs-encryption-in-transit`.
-
-### Flexible Azure NetApp Files throughput (2.78.0)
-
-Pool and volume creation accept `Flexible` as a service level, and
-`az netappfiles pool create` accepts `--custom-throughput-mibps`.
-
-### Geo-priority replication (2.79.0)
-
-Storage-account create and update accept
-`--enable-blob-geo-priority-replication` for Geo SLA. Object-replication
-policy create and update accept `--priority-replication` for priority
-replication.
-
-### Managed-identity OAuth for SMB shares (2.78.0)
-
-`az storage account create` and `update` accept `--enable-smb-oauth`, allowing
-managed identities to access SMB shares through OAuth.
-
-### NetApp Files Cache and Bucket resources (2.87.0)
-
-The new `az netappfiles cache` and `az netappfiles volume bucket` command
-groups manage Cache and Bucket resources.
-
-### NetApp Files subvolume deprecations (2.88.0)
-
-The `az netappfiles subvolume` command group is deprecated, as is
-`--enable-subvolumes` on NetApp Files volume create and update. Both are
-announced for removal in a future release.
-
-### NetApp Files volume interface changes (2.87.0)
-
-For `az netappfiles volume create`, the default for `--network-features` is
-now `Standard`. The `az netappfiles volume update
---remote-volume-resource-id` option is deprecated.
-
-### NetApp Files volume-group networking and replication filtering (2.81.0)
-
-`az netappfiles volume-group create` accepts `--network-features` for volume
-groups. `az netappfiles volume replication list` accepts `--exclude` to omit
-deleted replications.
-
-### NFS file listing (2.79.0)
-
-`az storage file list` now handles NFS shares; `--include` remains unsupported
-for those shares.
-
-### NFS file-share symbolic links (2.78.0)
-
-`az storage file symoblic-link create` and `show` manage symbolic links on
-NFS file shares.
-
-### OAuth file listing without Reader access (2.83.0)
-
-`az storage file list` now works with OAuth when the caller does not have
-Reader access.
-
-### OAuth for Azure Files batch transfers (2.75.0)
-
-`az storage file upload-batch` and `az storage file download-batch` now
-support OAuth login.
-
-### Object-replication metrics (2.78.0)
-
-`az storage account or-policy create` and `update` accept `--enable-metrics`
-to enable object-replication metrics.
-
-### Oracle Azure NetApp Files volume groups (2.74.0)
-
-`az netappfiles volume-group create` now supports Oracle in ANF Volume Groups.
-
-### Provisioned Azure Files controls (2.70.0)
-
-`az storage account create --sku` adds `StandardV2_LRS`, `StandardV2_ZRS`,
-`PremiumV2_LRS`, and `PremiumV2_ZRS` for provisioned v2 accounts, and
-`az storage account file-service-usage` reports file-service usage. Share
-create/update gains `--paid-bursting-enabled`,
-`--paid-bursting-max-bandwidth-mibps`, and `--paid-bursting-max-iops` for
-provisioned v1, plus `--provisioned-bandwidth-mibps` and `--provisioned-iops`
-for provisioned v2.
-
-### Snapshot virtual-directory access (2.71.0)
-
-`az storage share create` accepts
-`--enable-snapshot-virtual-directory-access` for snapshot virtual-directory
-access.
-
-### Storage account and blob-service controls (2.87.0)
-
-Storage account create/update accepts the `Smart` value for `--access-tier`
-and adds `--allowed-copy-scope`. Blob-service-properties update can configure
-static website enablement, index documents, and the 404 document through
-`--enable-static-website`, `--index-document`,
-`--default-index-document-path`, and `--error-document-404-path`; object
-replication policy create/update also accepts `--tags-replication`.
-
-### Storage failover and listing behavior (2.80.0)
-
-`az storage account failover --failover-type` now accepts `Unplanned`.
-`az storage file list` now returns its additional information even when no
-protocol is explicitly selected.
-
-### Storage IPv6 endpoints and network rules (2.83.0)
-
-Storage account create/update adds `--publish-ipv6-endpoint`, while
-`az storage account network-rule add` and `remove` add `--ipv6-address`.
-
-### Storage SAS expiration actions (2.75.0)
-
-`az storage account create` and `az storage account update` accept
-`--sas-expiration-action` as part of the account's SAS policy.
-
-### Storage-account migration confirmation (2.73.0)
-
-`az storage account migration start` now asks for confirmation before
-migrating an account between redundancy options.
-
-### Storage-account network security perimeters (2.79.0)
-
-The `az storage account network-security-perimeter-configuration` group adds
-`list`, `show`, and `reconcile` operations for network security perimeters.
-
-### Storage-account zone placement (2.78.0)
-
-`az storage account create` and `update` accept `--zones` and
-`--zone-placement-policy` for zones and availability-zone pinning.
-
-### TLS 1.0 and 1.1 inputs are coerced to TLS 1.2 (2.83.0)
-
-On storage account create/update, passing `--min-tls-version tls1_0` or
-`tls1_1` now sets the value to `tls1_2`.
-
-### User-delegation SAS expansion (2.82.0)
-
-`az storage blob generate-sas`, `az storage container generate-sas`,
-`az storage fs generate-sas`, `az storage fs file generate-sas`, and
-`az storage fs directory generate-sas` accept `--user-delegation-oid`; the
-filesystem-file command is new. `az storage share generate-sas`,
-`az storage file generate-sas`, and `az storage queue generate-sas` add that
-option together with `--as-user`.
+## Azure SQL and Database Migration Service
+
+### Database, failover, retention, and recovery
+
+- `2.75.0` SQL DB replica create accepts a partner subscription ID for cross-
+  subscription geo-replication.
+- `2.76.0` `sql ltr-policy set` removes unused `--access-tier`; failover-group
+  create supports multiple partner groups.
+- `2.78.0` `sql db ltr-backup` adds LTR immutability commands.
+- `2.79.0` serverless-to-provisioned DB update preserves the chosen service-
+  level objective.
+- `2.82.0` SQL Managed Instance create/update can set memory GB.
+- `2.84.0` server/database operations support versionless TDE keys. SQL server
+  create/update add soft-delete retention; deleted-server show/list inspect
+  deleted servers and server restore recovers one.
+- The old SQL control-plane API retirement and non-equivalent operation groups
+  are detailed in the deployment/governance reference.
+
+In `2.80.0`, DMS project create no longer requires location.
+
+## Cosmos DB
+
+- `2.68.0` account create/update add `--enable-prpp-autoscale` for burst
+  capacity.
+- `2.70.0` `az cosmosdb offline-region` takes an account region offline.
+- `2.74.0` SQL containers support Full Text Policy.
+- `2.76.0` restore removes timeout-prone CLI-side validation and sends the
+  restore request directly.
+- `2.82.0` adds the `az cosmosdb fleet` group; account create/update can
+  disable local auth.
+- `2.84.0` network ACL bypass resource IDs accept Microsoft Fabric workspaces.
+
+## Azure Storage accounts and SAS
+
+### Account security, networking, and lifecycle
+
+- `2.75.0` account create/update add `--sas-expiration-action`.
+- `2.78.0` account create/update add `--enable-smb-oauth`, zones, and
+  zone-placement policy. Object-replication policy create/update adds metrics.
+- `2.79.0` the network-security-perimeter-configuration group supports list,
+  show, and reconcile. Account create/update add blob Geo SLA priority;
+  object-replication policy adds priority replication.
+- `2.80.0` account failover accepts `--failover-type Unplanned`.
+- `2.83.0` file-service properties add required SMB/NFS encryption-in-transit
+  switches; account create/update add IPv6 endpoint publication, network-rule
+  add/remove add IPv6 addresses, and TLS 1.0/1.1 input is coerced to TLS 1.2.
+- `2.87.0` account create/update accept Smart access tier and allowed copy
+  scope. Blob-service properties can configure static website enablement,
+  index/default-index path, and 404 document; object replication adds tag
+  replication.
+
+### User-delegation SAS
+
+`2.82.0` blob/container/filesystem/filesystem-file/filesystem-directory SAS
+commands add `--user-delegation-oid` (filesystem file is new); share/file/queue
+also add it with `--as-user`. `2.86.0` extends blob, container, share, file,
+queue, and filesystem SAS with `--user-delegation-tid` for another tenant.
+
+### Output and migration prompts
+
+`2.73.0` storage-account redundancy migration now prompts before starting.
+`2.75.0` consumption usage represents missing values as JSON null rather than
+the string `None`; fixed parsers must change.
+
+## Azure Files and NFS
+
+### Provisioned file shares
+
+`2.70.0` adds account SKUs `StandardV2_LRS`, `StandardV2_ZRS`,
+`PremiumV2_LRS`, and `PremiumV2_ZRS` plus file-service usage reporting. Share
+create/update adds paid-bursting controls for provisioned v1 and provisioned
+bandwidth/IOPS for v2.
+
+### NFS, links, OAuth, and listing
+
+- `2.71.0` share/directory/file commands support NFS; hard-link create manages
+  NFS hard links. Share create adds snapshot virtual-directory access.
+- `2.75.0` file upload-batch/download-batch support OAuth.
+- `2.78.0` the CLI command is spelled `az storage file symoblic-link`; its
+  create/show operations manage NFS symlinks.
+- `2.79.0` file list supports NFS, but `--include` does not.
+- `2.80.0` file list returns additional information without an explicit
+  protocol.
+- `2.83.0` file list with OAuth works without Reader access.
+
+### Azure Backup for Files
+
+- `2.69.0` Backup supports Azure Files Vault Standard policies.
+- `2.77.0` Azure Files share restore works after source-account deletion when
+  the source resource ID is supplied.
+
+## Azure NetApp Files
+
+### Encryption, throughput, and data protection
+
+- `2.70.0` account `change-key-vault` changes the Key Vault/Managed HSM used by
+  volumes. `get-key-vault-status` feeds `transitiontocmk`, which transitions
+  VNet volumes but fails when the target shares an encryption sibling set with
+  another account. Volume create/update adds cool-access tiering policy.
+- `2.73.0` account create/update adds federated client ID for cross-tenant CMK
+  and NFSv4 ID domain; volume-group create no longer requires a proximity
+  placement group.
+- `2.74.0` volume-group create supports Oracle.
+- `2.78.0` volume splitclonefromparent splits clones; create can grow the pool
+  during clone split. Pools/volumes accept Flexible service level and pool
+  create adds custom throughput.
+- `2.81.0` volume-group create adds network features; volume replication list
+  can exclude deleted replications.
+- `2.85.0` volume create/update adds desired ransomware-protection state;
+  ransomware-report and list-quota-report expose reports.
+- `2.87.0` volume create defaults network features to Standard; update remote-
+  volume-resource-ID is deprecated. New cache and volume-bucket groups manage
+  those resources.
+- `2.89.0` volume create adds `--breakthrough-mode`.
+
+### Interface removals
+
+`2.80.0` NetApp volume create/update removes read-only `--endpoint-type`.
+`2.88.0` deprecates the subvolume group and volume
+`--enable-subvolumes`; both are announced for removal.
+
+## Azure Backup and recovery
+
+- `2.70.0` restore-disks accepts `--target-zone NoZone`.
+- `2.73.0` VM protection supports trusted VMs with Standard policy.
+- `2.74.0` Backup container/item/policy/protection supports ASE and Backup adds
+  HANA Snapshot.
+- `2.76.0` restore-disks `--cvm-os-des-id` selects the DES for a restored
+  confidential VM OS disk.
+- `2.78.0` protection reconfigure moves protection to another vault.
+- `2.79.0` deleted-vault list/undelete recovers deleted Backup vaults.
+- `2.89.0` Azure Backup CLI operations support cost-management settings.
 
 ## Key Vault and Managed HSM
 
-### Base64 key-operation digests (2.68.0)
+### Key operations and network rules
 
-`az keyvault key sign` and `az keyvault key verify` now accept a base64-encoded
-string in `--digest`, so callers no longer need a different representation
-for that input.
+- `2.68.0` key sign/verify accept base64 in `--digest`.
+- `2.69.0` Key Vault/HSM update with default action Deny preserves an explicit
+  `--bypass` rather than replacing it with the default.
+- `2.71.0` Managed HSM creation supports the C SKU family.
+- `2.78.0` HSM creation can set IP rules; network-rule add/remove/list/wait
+  supports HSM.
+- `2.82.0` key create/import add `--default-data-disk-policy` for default SKR.
+- `2.87.0` Application Gateway cert use with Managed HSM is described in the
+  networking reference.
+- `2.88.0` key show/list adds AES key size. Preview `ekm-connection` manages
+  External Key Manager connections; key create `--external-key-id` creates an
+  EKM-backed HSM key.
 
-### Control-plane API lifecycle (key-vault-api-and-access-control)
+### Control-plane lifecycle (`key-vault-api-and-access-control`)
 
-Stable API `2026-02-01` and preview API `2026-03-01-preview` are available in
-public Azure, Azure operated by 21Vianet, and Azure Government; production
-workloads should use the stable version. Control-plane versions before
-`2026-02-01` retire on February 27, 2027, and preview versions other than
-`2026-04-01-preview` are deprecated with 90 days' notice; data-plane APIs are
+Stable `2026-02-01` and preview `2026-03-01-preview` exist in public Azure,
+21Vianet, and Government; production should use stable. Versions before
+`2026-02-01` retire February 27, 2027. Preview versions other than
+`2026-04-01-preview` are deprecated on 90 days' notice. Data-plane APIs are
 unaffected.
 
-### Control-plane client upgrade floor (key-vault-api-and-access-control)
+Management SDK floors include .NET `Azure.ResourceManager.KeyVault` 1.4.0,
+Go `armkeyvault/v2`, and current JavaScript/Python/Java ARM Key Vault clients.
+Cloud Shell uses the latest API, so its scripts must already be compatible.
 
-Management clients must move to API-compatible releases, including
-`Azure.ResourceManager.KeyVault` 1.4.0 or later for .NET, `armkeyvault/v2`
-for Go, and the latest `@azure/arm-keyvault`, `azure-mgmt-keyvault`, or
-`azure-resourcemanager-keyvault` for JavaScript, Python, or Java. Older
-clients stop working when their API versions retire, and Cloud Shell always
-uses the latest API version, so its scripts must already be compatible.
+### RBAC default and access-policy opt-out
 
-### Default SKR policy for Key Vault keys (2.82.0)
-
-`az keyvault key create` and `import` accept `--default-data-disk-policy` to
-configure the default SKR policy for data disks.
-
-### Explicitly retain access policies (key-vault-api-and-access-control)
-
-Access policies remain supported, but new vaults using the new API must set
-`enableRbacAuthorization` to `false`; the latest CLI exposes the same choice
-through an explicit flag.
+For vault creation with API `2026-02-01` or later, omitted
+`enableRbacAuthorization` means true. Updates do not change an existing model,
+and an existing null still means access policies. To retain access policies on
+new creation, explicitly set false:
 
 ```bash
 az keyvault create --name "$vault_name" --resource-group "$resource_group" \
   --enable-rbac-authorization false
 ```
 
-### Key Vault AES output (2.88.0)
-
-`az keyvault key show` and `list` now include the AES key size in their
-output, so fixed-schema consumers must tolerate the additional value.
-
-### Key Vault network-rule updates (2.69.0)
-
-When `--default-action Deny` is supplied to `az keyvault update` or
-`az keyvault update-hsm`, the command no longer overwrites an explicitly
-selected `--bypass` value with its default.
-
-### Managed HSM C SKU family (2.71.0)
-
-`az keyvault create` supports the C SKU family when creating a Managed HSM.
-
-### Managed HSM external keys (2.88.0)
-
-The preview `az keyvault ekm-connection` group manages External Key Manager
-connections. `az keyvault key create --external-key-id` creates an
-EKM-backed external key on Managed HSM.
-
-### Managed HSM IP network rules (2.78.0)
-
-`az keyvault create --network-acls-ips` can set Managed HSM IP rules at
-creation, and `network-rule add/remove/list/wait` now supports Managed HSM.
-
-### Permissions required to change access models (key-vault-api-and-access-control)
-
-Changing the property requires `Microsoft.KeyVault/vaults/write`. The portal
-also requires `Microsoft.Authorization/roleAssignments/write` so an operator
-can grant Key Vault RBAC roles after the switch and avoid a lockout.
-
-### Private endpoint limits are enforced (key-vault-api-and-access-control)
-
-Key Vault now enforces its per-vault private-endpoint limits. Vaults over the
-limit must reduce their endpoint count or obtain an exception through support.
-
-### RBAC becomes the create-time default (key-vault-api-and-access-control)
-
-For vaults created through API version `2026-02-01` or later, omitting
-`enableRbacAuthorization` now means `true`. This applies only to creation:
-updating an existing vault with the new API does not change its access model,
-and an existing `null` value continues to mean access policies.
+Changing the property needs `Microsoft.KeyVault/vaults/write`; the portal also
+needs `Microsoft.Authorization/roleAssignments/write` to grant roles and avoid
+lockout. Enforced per-vault private-endpoint limits require excess endpoints
+to be removed or a support exception.

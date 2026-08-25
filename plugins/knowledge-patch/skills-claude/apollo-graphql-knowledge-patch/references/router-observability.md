@@ -1,421 +1,282 @@
-# Apollo Router observability and telemetry
+# Apollo Router Observability and Telemetry
 
-## Router v2 OpenTelemetry migration (`router-v2-migration`)
+Use this reference when migrating metrics, configuring selectors/exporters, controlling cardinality and sampling, or interpreting Router operational signals.
 
-### Removed metric replacements
+## Router 2 telemetry migration
 
-Migrate dashboards and alerts as follows:
+### OpenTelemetry metric replacements
 
-- `apollo_router_http_request_retry_total` becomes
-  `http.client.request.duration` with `http.request.resend_count`; set
-  `default_requirement_level: recommended`.
-- `apollo_router_timeout` becomes status 504 on
-  `http.server.request.duration` or `http.client.request.duration`.
-- `apollo_router_http_requests_total` and
-  `apollo_router_http_request_duration_seconds` become server and client request
-  duration instruments.
-- `apollo_router_session_count_total` becomes
-  `apollo.router.open_connections` (available from `2.1.0`);
-  `apollo_router_session_count_active` becomes `http.server.active_requests`.
-- `apollo_require_authentication_failure_count` becomes server duration with 401.
-- `apollo_authentication_failure_count` and
-  `apollo_authentication_success_count` become
-  `apollo.router.operations.authentication.jwt`, distinguished by the
-  presence/value of `authentication.jwt.failed`.
-- `apollo_router_deduplicated_subscriptions_total` becomes
-  `apollo.router.operations.subscriptions` with `subscriptions.deduplicated`.
-- Derive cache hit/miss counts from `apollo.router.cache.hit.time` and
-  `apollo.router.cache.miss.time`.
-- `apollo_router_span` and `apollo_router_processing_time` have no direct
-  replacement. Request spans expose `busy_ns` and `idle_ns` for synthesized
-  overhead.
+For router-v2-migration, move removed Router metrics to OpenTelemetry instruments or attributes:
 
-Remaining Router metrics use dotted names:
+- `apollo_router_http_request_retry_total`: use `http.client.request.duration` with `http.request.resend_count`; set `default_requirement_level: recommended`.
+- `apollo_router_timeout`: use status 504 on `http.server.request.duration` or `http.client.request.duration`.
+- `apollo_router_http_requests_total` and `apollo_router_http_request_duration_seconds`: use server/client request duration.
+- `apollo_router_session_count_total`: use `apollo.router.open_connections` (from 2.1.0); `apollo_router_session_count_active`: use `http.server.active_requests`.
+- `apollo_require_authentication_failure_count`: use server duration status 401.
+- `apollo_authentication_failure_count` and `apollo_authentication_success_count`: use `apollo.router.operations.authentication.jwt` and the presence/value of `authentication.jwt.failed`.
+- `apollo_router_deduplicated_subscriptions_total`: use `apollo.router.operations.subscriptions` with `subscriptions.deduplicated`.
+- Cache hit/miss counts: derive from `apollo.router.cache.hit.time` and `apollo.router.cache.miss.time`.
+- `apollo_router_span` and `apollo_router_processing_time` have no direct replacement; request spans expose `busy_ns` and `idle_ns` for synthetic overhead.
+
+### Router metrics use dotted names
+
+For router-v2-migration, rename underscore metrics:
 
 ```text
-apollo_router_opened_subscriptions          → apollo.router.opened.subscriptions
-apollo_router_cache_hit_time                → apollo.router.cache.hit.time
-apollo_router_cache_size                    → apollo.router.cache.size
-apollo_router_cache_miss_time               → apollo.router.cache.miss.time
-apollo_router_state_change_total            → apollo.router.state.change.total
-apollo_router_span_lru_size                 → apollo.router.exporter.span.lru.size
-apollo_router_uplink_fetch_count_total      → apollo.router.uplink.fetch.count.total
-apollo_router_uplink_fetch_duration_seconds → apollo.router.uplink.fetch.duration.seconds
+apollo_router_opened_subscriptions          -> apollo.router.opened.subscriptions
+apollo_router_cache_hit_time                -> apollo.router.cache.hit.time
+apollo_router_cache_size                    -> apollo.router.cache.size
+apollo_router_cache_miss_time               -> apollo.router.cache.miss.time
+apollo_router_state_change_total            -> apollo.router.state.change.total
+apollo_router_span_lru_size                 -> apollo.router.exporter.span.lru.size
+apollo_router_uplink_fetch_count_total      -> apollo.router.uplink.fetch.count.total
+apollo_router_uplink_fetch_duration_seconds -> apollo.router.uplink.fetch.duration.seconds
 ```
 
-### Defaults
-
-`telemetry.instrumentation.spans.mode` defaults to `spec_compliant`,
-`telemetry.apollo.signature_normalization_algorithm` to `enhanced`, and
-`telemetry.apollo.metrics_reference_mode` to `extended`.
-
-GraphOS operation usage through OTLP is enabled under `otlp_tracing_sampler`.
-Replace the pre-v1.61 `experimental_otlp_tracing_sampler` name.
-
-### Selector and attribute migration
-
-Removed `subgraph_response_body` becomes `subgraph_response_data` or
-`subgraph_response_errors`; each payload part is its own JSONPath root.
-
-```yaml
-attributes:
-  value:
-    subgraph_response_data: $.test
-  error_code:
-    subgraph_response_errors: $[*].extensions.extra_code
-```
-
-Static metric attributes move from
-`telemetry.exporters.metrics.common.attributes` to `common.resource`. Dynamic
-attributes belong on instruments.
-
-```yaml
-telemetry:
-  instrumentation:
-    instruments:
-      router:
-        http.server.request.duration:
-          attributes:
-            content_type:
-              request_header: content-type
-              default: application/json
-  exporters:
-    metrics:
-      common:
-        resource:
-          env_full_name: deployment_env
-```
-
-Conditional logging moves from removed
-`telemetry.exporters.logging.experimental_when_header` to conditions on router,
-supergraph, or subgraph `telemetry.instrumentation.events`. At subgraph stages,
-read the original client header with `supergraph_request_header`. Dynamic metric
-configuration belongs under `telemetry.instrumentation.instruments`.
-
-### Plugin metrics
-
-The Router no longer converts `tracing` fields prefixed `counter.`,
-`histogram.`, `monotonic_counter.`, or `value.` into metrics and logs an error for
-them. Rust plugins must obtain OpenTelemetry instruments from
-`apollo_router::metrics::meter_provider()`. Plugin gauges, including
-`.u64_gauge()`, export correctly from `2.1.0`.
-
-### Jaeger and Zipkin
-
-The dedicated Jaeger exporter is removed. Keep Jaeger propagation if necessary,
-but export over OTLP to collector ports 4317 (gRPC) or 4318 (HTTP).
-
-```yaml
-telemetry:
-  exporters:
-    tracing:
-      propagation:
-        jaeger: true
-      otlp:
-        enabled: true
-```
-
-Native Zipkin export is deprecated in `2.13.0` and cannot set a service name; use
-Zipkin's OTLP endpoint.
-
-## Core metrics and resource visibility
-
-### Cardinality
-
-`apollo.router.telemetry.metrics.cardinality_overflow` increments when a batch
-exceeds the default 2,000 attribute combinations and excess attributes are
-ignored (`2.1.0`).
-
-Router `2.16.0` adds
-`telemetry.exporters.metrics.common.cardinality_limit` and per-view
-`views[].cardinality_limit`. Overflow combinations collapse into a series with
-`otel_metric_overflow="true"`. Raising limits increases memory usage.
-
-```yaml
-telemetry:
-  exporters:
-    metrics:
-      common:
-        cardinality_limit: 5000
-        views:
-          - name: http.server.request.duration
-            cardinality_limit: 20000
-```
-
-A view without `aggregation` now preserves the instrument's native counter or
-gauge aggregation. Specify histogram aggregation when existing dashboards require
-`_bucket`, `_sum`, and `_count`.
+### Telemetry defaults changed
 
-### Active pipelines (`2.1.0`)
+For router-v2-migration, `telemetry.instrumentation.spans.mode` defaults to `spec_compliant`, `telemetry.apollo.signature_normalization_algorithm` to `enhanced`, and `telemetry.apollo.metrics_reference_mode` to `extended`. GraphOS usage reporting via OTLP defaults on under `otlp_tracing_sampler`; replace pre-1.61 `experimental_otlp_tracing_sampler`.
 
-`apollo.router.pipelines` counts active request pipelines by `schema.id`, optional
-`launch.id`, and `config.hash`, revealing old pipelines held by long operations
-after reload.
+### Response selectors are split by payload part
 
-### Allocator and request memory
+For router-v2-migration, replace removed `subgraph_response_body` with `subgraph_response_data` or `subgraph_response_errors`; each selected part is its JSONPath root.
 
-Linux builds using default `global-allocator` expose jemalloc active, allocated,
-mapped, metadata, resident, and retained metrics (`2.5.0`):
+### Custom metric attributes moved
 
-```text
-apollo_router_jemalloc_active
-apollo_router_jemalloc_allocated
-apollo_router_jemalloc_mapped
-apollo_router_jemalloc_metadata
-apollo_router_jemalloc_resident
-apollo_router_jemalloc_retained
-```
+For router-v2-migration, static metric attributes move from `telemetry.exporters.metrics.common.attributes` to `common.resource`. Put dynamic values on individual instruments under `telemetry.instrumentation.instruments`.
 
-`apollo.router.request.memory` covers full-request allocations and
-`apollo.router.query_planner.memory` planning jobs (`2.11.0`). Both expose
-`allocation.type` and `context`, and require Unix, `global-allocator` enabled, and
-`dhat-heap` disabled.
+### Jaeger export moves to OTLP
 
-### Router overhead and duration
+For router-v2-migration, the `jaeger` exporter is removed. Keep Jaeger propagation if needed and export through OTLP; enable OTLP on the collector at 4317 (gRPC) or 4318 (HTTP).
 
-Enable `apollo.router.overhead` to measure Router processing excluding subgraph and
-Connector waits (`2.8.0`); coprocessor request time is currently included.
+### Conditional logging uses telemetry events
 
-The router `request_duration` selector measures elapsed time from arrival
-(`2.14.0`). Units are float seconds or integer milliseconds/nanoseconds and can
-drive attributes or conditions.
+For router-v2-migration, replace `telemetry.exporters.logging.experimental_when_header` with conditions under `telemetry.instrumentation.events` at router, supergraph, or subgraph request/response stages. At a subgraph stage, read the original client header with `supergraph_request_header`.
 
-### Connection acquisition (`2.15.0`)
+## Error and request selectors
 
-`apollo.router.connection.acquire.duration` records new TCP or Unix connection
-setup to a subgraph, Connector, or coprocessor. Pool hits are not recorded. Use
-`network.transport` plus `subgraph.name`, `connector.source.name`, or `coprocessor`
-for attribution.
+### Cardinality-overflow telemetry
 
-## HTTP and span attributes
+Since 2.1.0, `apollo.router.telemetry.metrics.cardinality_overflow` increments when a metric batch crosses cardinality 2,000 and excess attributes are ignored.
 
-`http.route` contains only the matched path, never the query string, from `2.3.0`;
-`/graphql?operation=value` records `/graphql`.
+### Value-completion error metrics
 
-Every outbound `http_request` span carries `http.response.status_code` from
-`2.11.0`; failures also carry `error.type`.
+Since 2.1.0, value-completion failures absent from the GraphQL errors array count in `apollo.router.graphql.error` and `apollo.router.operations.error` with `code="RESPONSE_VALIDATION_FAILED"`.
 
-Attributes configured under `telemetry.instrumentation.spans.http_client` attach
-to the `http_request` span, not `subgraph_request`, from `2.12.0`.
+### Error codes on connector and demand-control spans
 
-That section does not support conditions or a `static` selector (`2.13.0`);
-configuring either prevents startup.
+Since 2.1.0, Connector and demand-control error spans include span events carrying their GraphQL error codes.
 
-The `http_client` span can record request headers inserted by Rhai (`2.8.0`):
+### Extended error telemetry preview
 
-```yaml
-telemetry:
-  instrumentation:
-    spans:
-      mode: spec_compliant
-      http_client:
-        attributes:
-          http.request.header.some_rhai_header:
-            request_header: some_rhai_header
-```
+Since 2.1.0, rename `telemetry.apollo.errors.experimental_otlp_error_metrics` to `telemetry.apollo.errors.preview_extended_error_metrics`. Extended metrics honor subgraph `send`. `telemetry.apollo.errors.subgraph.[all|(subgraph name)].redaction_policy` accepts `ErrorRedactionPolicy.Strict` or `ErrorRedactionPolicy.Extended`; with `redact: true`, Extended permits `extensions.code` to Studio.
 
-Router `2.13.0` makes `http.client.response.body.size` and
-`http.server.response.body.size` report compressed bytes consistently for client,
-subgraph, and Connector responses, including when `Content-Length` is absent.
+### Safelist logs distinguish bypassed enforcement
 
-Standard router-span attributes `client.name`, `client.version`, `http.route`, and
-`http.request.method` can be aliased from `2.14.0`. Default emission is unchanged.
-In `2.16.0`, `client.name` and `client.version` metric attributes can again use
-selectors, not just booleans or aliases.
+Since 2.3.0, unknown-operation safelist logs include `enforcement_skipped`: `false` means externally rejected, `true` means an internal operation intentionally bypassed enforcement.
 
-## Errors and response selectors
+### Router response bodies are available to telemetry
 
-### Extended error metrics
+Since 2.3.0, the `response_body` selector can capture a Router response in an attribute. Treat it as potentially sensitive and high-cardinality.
 
-Rename `telemetry.apollo.errors.experimental_otlp_error_metrics` to
-`preview_extended_error_metrics` (`2.1.0`). Extended metrics honor each subgraph's
-`send` value.
-`telemetry.apollo.errors.subgraph.[all|(subgraph name)].redaction_policy` can be
-`ErrorRedactionPolicy.Strict` or `ErrorRedactionPolicy.Extended`; with
-`redact: true`, Extended permits `extensions.code` to reach Studio.
+### Connector and demand-control traces include error details
 
-With `telemetry.apollo.errors.preview_extended_error_metrics: enabled`, counted
-Connector and demand-control errors already emit code events. Router `2.16.0` extends
-`graphql.error.extensions.code` span events to counted subgraph, supergraph,
-execution, parse, and validation errors.
+Since 2.3.0, GraphOS traces include original message and path for Connector/demand errors as well as codes.
 
-Value-completion failures count as `RESPONSE_VALIDATION_FAILED`; Connector and
-demand-control spans carry their corresponding GraphQL codes.
+### GraphQL error selectors are consistently boolean
 
-### Response bodies and errors
+Since 2.4.0, `on_graphql_error` returns `false`, not absent, when no error exists, matching `subgraph_on_graphql_error`; it works at supergraph as well as router stage.
 
-`response_body: true` captures a Router response body from `2.3.0`.
+### Router response-error selector
 
-Prefer `response_errors` from `2.7.0` when only GraphQL errors are needed; its
-JSONPath root is the response error array.
+Since 2.7.0, `response_errors` selects only the Router response's GraphQL error array, with that array as JSONPath root, avoiding full-body capture.
 
-```yaml
-response_errors: "$.[0].message"
-```
+### Entity errors retain service attribution
 
-Router `2.16.0` adds `response_errors_count`, counting matches from a JSONPath, and
-`response_errors_field`, evaluating a path per error and returning a string array.
+Since 2.7.0, Apollo metrics for `_entities` fetch errors include the responsible subgraph/Connector service rather than attributing them to Router.
 
-Entity-fetch errors include responsible service attribution from `2.7.0`.
+### Active subgraph requests selector
 
-### Cache and active-request selectors
+Since 2.9.0, custom telemetry may use the documented `active_subgraph_requests` selector.
 
-`response_cache_control` exposes computed subgraph `Cache-Control` values
-(`2.9.0`), for example `max_age` as a seconds histogram.
+### Request context IDs in telemetry
 
-The `active_subgraph_requests` attribute selector is documented and available from
-`2.9.0`.
+Since 2.13.0, `context_id: true` exposes a unique request ID to router, supergraph, subgraph, and Connector instrumentation. Rhai exposes the same ID as `request.id`.
 
-Connector instruments can select `supergraph_operation_name`,
-`supergraph_operation_kind`, named `request_context`, and
-`connector_on_response_error` (`2.6.0`). The last is true when `is_successful`
-fails, or status is non-200 when no condition exists.
-`connector_request_mapping_problems` and
-`connector_response_mapping_problems` also accept a boolean “has any problem”
-form.
+### Response-error telemetry aggregates
 
-## Metrics configuration and exports
+Since 2.16.0, `response_errors_count` counts matches from a JSONPath over the response error array, while `response_errors_field` evaluates per error and returns matching values as a string array.
 
-### Prometheus resources (`2.4.0`)
+### Counted GraphQL errors emit code span events
 
-Prometheus exports resources through `target_info` by default. Set
-`resource_selector: all` to attach resource attributes to every Prometheus metric;
-OTLP is unaffected.
+Since 2.16.0, with `telemetry.apollo.errors.preview_extended_error_metrics: enabled`, counted subgraph, supergraph, execution, parse, and validation errors emit `graphql.error.extensions.code` events, extending Connector/demand coverage.
 
-### Units and views
+## Operational metrics
 
-Duration instruments convert recorded values to configured `s`, `ms`, `us`, or
-`ns` from `2.8.0`; seconds remain recommended. OpenTelemetry views can rename
-Router instruments.
+### Active pipeline gauge
 
-Default histogram buckets span 0.001–10.0 seconds (`2.11.0`). Configure
-`telemetry.exporters.metrics.common.buckets` to cover longer timeouts or long
-observations will accumulate at the top boundary.
+Since 2.1.0, `apollo.router.pipelines` counts active pipelines by `schema.id`, optional `launch.id`, and `config.hash`, revealing old pipelines retained by long requests/subscriptions after reload.
 
-### OpenTelemetry endpoint environment variables
+### Configurable delivery for realtime Apollo metrics
 
-Router `2.4.0` began honoring `OTEL_EXPORTER_OTLP_ENDPOINT`,
-`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, and
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, with occasional spurious errors on
-unencrypted endpoints despite successful delivery.
+Since 2.1.0, high-cardinality realtime Studio metrics use a secondary path scheduled by `telemetry.apollo.batch_processor.scheduled_delay`; other Apollo metrics remain fixed at 60 seconds. `telemetry.apollo.batch_processor.max_export_timeout` also controls the Apollo OTLP metrics `PeriodicReader`.
 
-By `2.11.0`, the generic endpoint could redirect Studio export and caused a startup
-warning. Router `2.13.0` refuses to start when any of those endpoint variables is
-set. Remove inherited values and use Router configuration.
+### Router-service client metadata changes reach telemetry
 
-### Proxy and HTTP transport
+Since 2.3.0, a router-service plugin's changes to `apollo::telemetry::client_name` or `apollo::telemetry::client_version` propagate to spans/traces.
 
-GraphOS OTLP over HTTP respects `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` from
-`2.14.0`; TLS inspection requires the proxy root in Router trust.
+### `http.route` excludes the query string
 
-Experimental Apollo telemetry HTTP transport is controlled by
-`telemetry.apollo.experimental_otlp_metrics_protocol` and
-`telemetry.apollo.experimental_otlp_tracing_protocol`; gRPC remains preferred.
+Since 2.3.0, Router spans record only the matched path in `http.route`: `/graphql?operation=value` records `/graphql`, preventing query-string-driven cardinality.
 
-### Per-exporter sampling (`2.16.0`)
+### Prometheus metrics can carry resource attributes
 
-OTLP, Zipkin, Datadog, and Apollo exporters accept absolute `sampler` fractions.
-An exporter cannot exceed `telemetry.exporters.tracing.common.sampler`; Datadog's
-setting is ignored when agent sampling is on.
+Since 2.4.0, Prometheus publishes resources only through `target_info` by default. `resource_selector: all` adds configured resource attributes to every Prometheus metric and does not affect OTLP.
 
-```yaml
-telemetry:
-  exporters:
-    tracing:
-      common:
-        sampler: 0.1
-      otlp:
-        enabled: true
-        sampler: 0.02
-```
+### Open-subscription metrics identify the operation
 
-## Apollo and GraphOS reporting
+Since 2.4.0, `apollo.router.opened.subscriptions` includes `graphql.operation.name`.
 
-### Batch processors
+### Linux jemalloc metrics
 
-Realtime high-cardinality metrics use a secondary delivery path whose interval
-follows `telemetry.apollo.batch_processor.scheduled_delay`; other Apollo metrics
-keep 60 seconds (`2.1.0`).
-`telemetry.apollo.batch_processor.max_export_timeout` also controls the Apollo OTLP
-metrics `PeriodicReader`.
+Since 2.5.0, Linux builds with default `global-allocator` report `apollo_router_jemalloc_active`, `apollo_router_jemalloc_allocated`, `apollo_router_jemalloc_mapped`, `apollo_router_jemalloc_metadata`, `apollo_router_jemalloc_resident`, and `apollo_router_jemalloc_retained`, distinguishing application use, allocator metadata, resident/mapped memory, and retained virtual mappings.
 
-Router `2.7.0` allows destination-specific settings:
+### Anonymous telemetry opt-out does not disable fleet detection
 
-- `tracing.batch_processor` for Apollo OTLP and usage-report traces.
-- `metrics.otlp.batch_processor` for Apollo OTLP metrics.
-- `metrics.usage_reports.batch_processor` for usage-report metrics.
+Since 2.5.0, `APOLLO_TELEMETRY_DISABLED` disables anonymous telemetry only, not identifiable fleet-detector metrics.
 
-Old `telemetry.apollo.batch_processor` values remain fallbacks. OTLP metrics
-`scheduled_delay` does not affect configuration-gauge metrics.
+### GraphOS-only subgraph fetch histogram
 
-### Subgraph Insights flag progression
+Since 2.6.0, `telemetry.apollo.experimental_subgraph_metrics` enables an uncustomizable fetch-duration histogram sent only to GraphOS. Use `http.client.request.duration` for third-party/customized export. This flag is superseded below.
 
-The GraphOS-only fetch-duration histogram began as
-`telemetry.apollo.experimental_subgraph_metrics` (`2.6.0`), became
-`preview_subgraph_metrics` (`2.7.0`), then GA `subgraph_metrics` (`2.8.0`).
-It cannot be customized or exported to third-party backends; use
-`http.client.request.duration` for a customizable equivalent.
+### Redis cache operational metrics
 
-### Anonymous telemetry and fleet detection
+Since 2.6.0, stable Redis cache metrics are `apollo.router.cache.redis.connections`, `apollo.router.cache.redis.command_queue_length`, `apollo.router.cache.redis.commands_executed`, `apollo.router.cache.redis.redelivery_count`, and `apollo.router.cache.redis.errors`. Experimental metrics `experimental.apollo.router.cache.redis.network_latency_avg`, `experimental.apollo.router.cache.redis.latency_avg`, `experimental.apollo.router.cache.redis.request_size_avg`, and `experimental.apollo.router.cache.redis.response_size_avg` may change. `metrics_interval` defaults to one second.
 
-`APOLLO_TELEMETRY_DISABLED` disables anonymous telemetry only (`2.5.0`); it does
-not disable identifiable fleet-detector metrics.
+### Connector custom-instrument selectors
 
-## Redis cache metrics (`2.6.0`)
+Since 2.6.0, Connector instruments can select `supergraph_operation_name`, `supergraph_operation_kind`, a named `request_context`, and `connector_on_response_error`. The last is true when `is_successful` fails or, without that condition, status is non-200. `connector_request_mapping_problems` and `connector_response_mapping_problems` also accept a boolean “any problem” form.
 
-Stable query-plan-cache metrics include:
+### Separate Apollo batch-processor tuning
 
-- `apollo.router.cache.redis.connections` initially, replaced by
-  `apollo.router.cache.redis.clients` in `2.8.0`.
-- `apollo.router.cache.redis.command_queue_length`.
-- `apollo.router.cache.redis.commands_executed`.
-- `apollo.router.cache.redis.redelivery_count`.
-- `apollo.router.cache.redis.errors`, classified by type.
+Since 2.7.0, tune `tracing.batch_processor`, `metrics.otlp.batch_processor`, and `metrics.usage_reports.batch_processor` independently. Old `telemetry.apollo.batch_processor` values are fallback. OTLP metrics `scheduled_delay` does not affect configuration-gauge metrics.
 
-Experimental averages are
-`experimental.apollo.router.cache.redis.network_latency_avg`,
-`experimental.apollo.router.cache.redis.latency_avg`,
-`experimental.apollo.router.cache.redis.request_size_avg`, and
-`experimental.apollo.router.cache.redis.response_size_avg`; their names or
-behavior may change. Redis `metrics_interval` controls collection and defaults to
-one second.
+### Subgraph Insights flag renamed
 
-## Operation, state, and streaming metrics
+Since 2.7.0, replace `experimental_subgraph_metrics` with `preview_subgraph_metrics`.
 
-`apollo.router.opened.subscriptions` includes `graphql.operation.name` from
-`2.4.0`.
+### Duration instruments honor configured units
 
-Names in `apollo.router.state.change.total` lose their `_redacted` suffix in
-`2.9.0` (for example, `updateconfiguration_redacted` becomes
-`updateconfiguration`); `UpdateLicense` still appends license state.
+Since 2.8.0, duration instruments convert values to configured `s`, `ms`, `us`, or `ns` instead of always seconds. Seconds remain recommended unless the backend requires otherwise.
 
-`apollo.router.operations.subscriptions.events` counts data events but excludes
-ping, pong, and close from `2.9.0`.
+### Direct router-overhead metric
 
-`apollo.router.operations.recursion` and
-`apollo.router.operations.lexical_tokens` expose parser complexity from `2.12.0`.
+Since 2.8.0, enable `apollo.router.overhead` to measure Router processing excluding subgraph/Connector waits; coprocessor request time remains included.
 
-`context_id: true` adds the unique request ID to router, supergraph, subgraph, and
-Connector instrumentation (`2.13.0`); Rhai exposes it as `request.id`.
+### Metric renaming through OpenTelemetry views
 
-```yaml
-telemetry:
-  instrumentation:
-    spans:
-      router:
-        attributes:
-          request.id:
-            context_id: true
-```
+Since 2.8.0, rename telemetry instruments through OpenTelemetry views to match backend indexing or organizational conventions.
 
-Streaming termination reason attributes and counters introduced in `2.14.0` are
-listed in `router-execution-and-delivery.md`.
+### Outgoing HTTP header span attributes
 
-## Logging
+Since 2.8.0, `http_client` spans can record headers added by Rhai through a `request_header` selector.
 
-For stdout and file JSON formatters, `expand_json_string_values: true` emits string
-attributes containing valid JSON arrays or objects as native JSON (`2.14.0`).
-OTLP exporters are unaffected.
+### Subgraph Insights metrics are generally available
 
-Router-service plugins that update `apollo::telemetry::client_name` or
-`apollo::telemetry::client_version` now affect spans and traces (`2.3.0`).
+Since 2.8.0, replace `preview_subgraph_metrics` with GA `subgraph_metrics`.
+
+### Cache-Control telemetry selector
+
+Since 2.9.0, `response_cache_control` exposes computed subgraph response Cache-Control values such as `max_age` to custom instruments.
+
+### State-change metric event names
+
+Since 2.9.0, `apollo.router.state.change.total` event names drop `_redacted` (`updateconfiguration_redacted` becomes `updateconfiguration`); `UpdateLicense` still appends license state.
+
+### Request allocation histograms
+
+Since 2.11.0, `apollo.router.request.memory` covers a whole request and `apollo.router.query_planner.memory` covers planning jobs, with `allocation.type` and `context`. They require Unix, `global-allocator`, and no `dhat-heap`.
+
+### Outbound HTTP spans expose response status
+
+Since 2.11.0, every `http_request` span, including subgraph calls, has `http.response.status_code`; unsuccessful responses also have `error.type`.
+
+### Histogram buckets should cover configured timeouts
+
+Since 2.11.0, default buckets range from `0.001` to `10.0` seconds. Configure `telemetry.exporters.metrics.common.buckets` to cover larger deployment timeouts or long observations collapse at the top boundary.
+
+### Parser-complexity metrics
+
+Since 2.12.0, `apollo.router.operations.recursion` reports parser recursion and `apollo.router.operations.lexical_tokens` reports lexical-token count.
+
+### HTTP client attributes move spans
+
+Since 2.12.0, configured `telemetry.instrumentation.spans.http_client` attributes attach to `http_request`, not `subgraph_request`; update span queries/processors.
+
+### HTTP response-body size metrics use compressed bytes
+
+Since 2.13.0, `http.client.response.body.size` and `http.server.response.body.size` consistently report compressed bytes for client, subgraph, and Connector responses, even without `Content-Length`.
+
+### Native values in JSON logs
+
+Since 2.14.0, stdout/file JSON formatters with `expand_json_string_values: true` emit strings containing valid JSON objects/arrays as native JSON. OTLP is unaffected.
+
+### Router request-duration selector
+
+Since 2.14.0, router-service `request_duration` measures arrival-to-current elapsed time for custom values/conditions in float seconds or integer milliseconds/nanoseconds.
+
+### Streaming termination telemetry
+
+Since 2.14.0, spans expose `apollo.subscription.end_reason` (`server_close`, `subgraph_error`, `heartbeat_delivery_failed`, `client_disconnect`, `schema_reload`, `config_reload`) and `apollo.defer.end_reason` (`completed`, `client_disconnect`). Counters are `apollo.router.operations.subscriptions.terminated.client`, `apollo.router.operations.subscriptions.rejected`, and `apollo.router.operations.subscriptions.terminated.subgraph`.
+
+### Aliases for standard router-span attributes
+
+Since 2.14.0, router spans can alias `client.name`, `client.version`, `http.route`, and `http.request.method` without changing default emission.
+
+### Connection acquisition telemetry
+
+Since 2.15.0, `apollo.router.connection.acquire.duration` measures only new TCP/Unix connections to subgraphs, Connectors, or coprocessors—not pool hits. Attribute with `network.transport` plus `subgraph.name`, `connector.source.name`, or `coprocessor`.
+
+### Router client attributes accept selectors
+
+Since 2.16.0, standard router metric attributes `client.name` and `client.version` again accept selectors, in addition to boolean/alias forms.
+
+## Exporters, cardinality, and sampling
+
+### Standard OTLP endpoint environment variables are supported
+
+Since 2.4.0, Router initially honored `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; the default HTTP metrics endpoint also received the correct path. Unencrypted endpoints could emit spurious errors despite delivery. Later releases reverse this behavior below.
+
+### Generic OTLP endpoints can override Studio export
+
+Since 2.11.0, `OTEL_EXPORTER_OTLP_ENDPOINT` could take precedence and redirect traces away from Studio, producing a startup warning. This is superseded below.
+
+### OTLP endpoint environment variables prevent startup
+
+Since 2.13.0, Router refuses startup if `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` is set because these override built-in telemetry configuration. Remove inherited definitions.
+
+### OpenTelemetry and Zipkin exporter migration
+
+Since 2.13.0, Router uses OpenTelemetry Rust 0.31.0; downstream unstable API users must update. Native Zipkin export is deprecated and cannot set service name; use Zipkin's OTLP endpoint.
+
+### `http_client` span attributes have selector restrictions
+
+Since 2.13.0, attributes under `telemetry.instrumentation.spans.http_client` reject conditions and the `static` selector at startup.
+
+### GraphOS OTLP exporters honor HTTP proxies
+
+Since 2.14.0, HTTP GraphOS OTLP export honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`; TLS-inspecting proxies require their root CA in the Router trust store.
+
+### Experimental HTTP transport for Apollo telemetry
+
+Since 2.14.0, `telemetry.apollo.experimental_otlp_metrics_protocol` and `telemetry.apollo.experimental_otlp_tracing_protocol` enable HTTP transport; gRPC remains preferred.
+
+### Configurable metric cardinality
+
+Since 2.16.0, `telemetry.exporters.metrics.common.cardinality_limit` overrides the default 2,000 combinations and `views[].cardinality_limit` overrides one metric. Overflow collapses into `otel_metric_overflow="true"`; monitor `apollo.router.telemetry.metrics.cardinality_overflow` and remember higher limits use more memory.
+
+A view without `aggregation` now preserves counter/gauge aggregation rather than becoming a histogram. Explicitly request histogram aggregation if dashboards need `_bucket`, `_sum`, and `_count`.
+
+### Per-exporter trace sampling
+
+Since 2.16.0, OTLP, Zipkin, Datadog, and Apollo exporters may set independent absolute `sampler` fractions no higher than `telemetry.exporters.tracing.common.sampler`. Datadog ignores its field when agent sampling is on.

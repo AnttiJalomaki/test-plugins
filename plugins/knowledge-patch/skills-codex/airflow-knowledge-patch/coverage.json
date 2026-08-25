@@ -2,7 +2,7 @@
   "patch": "airflow-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T02:24:35Z",
+  "built_at": "2026-08-20T19:19:02Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -28,6 +28,11 @@
       "build": "included"
     },
     "3.3.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.3.1": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

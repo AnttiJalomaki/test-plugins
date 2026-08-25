@@ -1,112 +1,99 @@
 # Python, ORM, and Typing
 
-The behaviors below are attributed to the `2.0.51` extraction batch.
+## Python runtime compatibility
 
-## Python 3.14 dependency and annotation behavior
+### Python 3.14 and free-threaded builds
 
-Python 3.14 environments now receive `greenlet` automatically when installing
-SQLAlchemy. Installation logic should not retain a Python-3.14-specific
-workaround that separately adds the ordinary `greenlet` dependency.
+Python 3.14 automatically receives `greenlet` through SQLAlchemy's dependency
+metadata. PEP 649 handling supports deferred relationship targets in
+`MappedAsDataclass` and unresolved annotation names encountered during ORM
+introspection.
 
-PEP 649 deferred-annotation handling covers two ORM cases:
+Free-threaded Python 3.13t and 3.14t have initial runtime fixes. Do not infer
+wheel availability from runtime support: free-threaded PyPI wheels remain a
+SQLAlchemy 2.1 feature. This guidance is from 2.0.51.
 
-- deferred relationship targets used by `MappedAsDataclass`; and
-- unresolved annotation names encountered while the ORM introspects a mapped
-  class.
+### Python 3.15
 
-Keep annotations as annotations rather than eagerly evaluating them in an
-application workaround. When diagnosing a remaining failure, establish which
-Python annotation semantics are active and inspect the exact class namespace.
+SQLAlchemy 2.0.52 adds and tests Python 3.15 support, including the runtime
+compatibility changes needed for that interpreter.
 
-SQLAlchemy also includes initial runtime corrections for free-threaded Python
-3.13t and 3.14t. These fixes do not mean that the 2.0 release line publishes
-free-threaded wheels on PyPI: those wheels are a 2.1-only feature. A deployment
-on a free-threaded interpreter must account for the artifact it can actually
-install or build.
+## Declarative annotations
 
-## Exact union matching in `type_annotation_map`
+### Union keys are exact
 
-A key in `registry.type_annotation_map` that is a union matches that complete
-union, not each member:
+`registry.type_annotation_map` matches a union entry only to that exact union.
+For example, a `float | Decimal` entry does not also map `Mapped[float]`.
+PEP 604 union syntax and `typing.Union` resolve consistently, so duplicate
+entries are not needed merely because the spelling differs.
+
+### PEP 695 aliases and `NewType`
+
+A PEP 695 alias can resolve from:
+
+- an explicit map entry for the alias;
+- an entry for its immediate target; or
+- a generic alias whose target wraps
+  `Annotated[..., mapped_column(...)]`.
+
+Recursive alias-chain traversal and implicit `NewType` resolution remain
+deprecated in the 2.0 line and are disallowed in 2.1. Add explicit annotation
+map entries or flatten alias chains before upgrading.
+
+## Dataclass integration
+
+ORM attribute constructors that accept dataclass options also accept
+`dataclass_metadata`. SQLAlchemy forwards the mapping to the generated
+dataclass field's `metadata`:
 
 ```python
-from decimal import Decimal
-from sqlalchemy import Numeric
-from sqlalchemy.orm import registry
+from sqlalchemy.orm import Mapped, mapped_column
 
-mapper_registry = registry(
-    type_annotation_map={
-        float | Decimal: Numeric(),
-    }
+name: Mapped[str] = mapped_column(
+    dataclass_metadata={"ui": "label"},
 )
 ```
 
-The entry above applies to an annotation of `float | Decimal`; it does not
-cause `Mapped[float]` to use `Numeric`. Add a separate `float` entry if that is
-the desired mapping.
+Read the value from the generated dataclass field metadata.
 
-PEP 604 spelling (`A | B`) and `typing.Union[A, B]` spelling resolve
-consistently. Treat them as equivalent forms of the same union rather than
-maintaining parallel mappings.
+## Composite loading
 
-## PEP 695 aliases and deprecations
-
-A PEP 695 type alias can resolve from an explicit annotation-map entry for the
-alias or from an entry for its immediate target. Resolution also supports a
-generic alias around an `Annotated` target containing
-`mapped_column(...)`.
-
-Keep the resolution path shallow and explicit. Recursive alias chains and
-implicit `NewType` resolution are deprecated in SQLAlchemy 2.0 and disallowed
-in 2.1. Migrate either by flattening the alias or by adding a direct
-`type_annotation_map` entry for the public annotation used by the mapped
-attribute.
-
-When preparing for 2.1, search mapped annotations for:
-
-- aliases whose target is another alias;
-- a chain with more than one implicit target lookup; and
-- `NewType` annotations that have no explicit annotation-map key.
-
-## Dataclass field metadata
-
-ORM attribute constructors that accept dataclass options accept
-`dataclass_metadata`. The value is forwarded to the generated
-`dataclasses.Field.metadata` mapping:
-
-```python
-from dataclasses import fields
-from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
-
-class Customer(MappedAsDataclass, Base):
-    __tablename__ = "customer"
-
-    id: Mapped[int] = mapped_column(primary_key=True, init=False)
-    name: Mapped[str] = mapped_column(
-        dataclass_metadata={"ui": "label"},
-    )
-
-metadata = fields(Customer)[1].metadata
-```
-
-This metadata belongs to the Python dataclass field. Do not substitute
-`Column.info` when a dataclass-aware consumer reads `Field.metadata`, and do
-not assume `dataclass_metadata` changes emitted DDL.
-
-## Deferred and selective loading of composites
-
-Composite attributes can be passed directly to `defer()`, `undefer()`, and
-`load_only()`:
+`defer()`, `undefer()`, and `load_only()` support mapped composite attributes:
 
 ```python
 from sqlalchemy import select
-from sqlalchemy.orm import defer, load_only, undefer
+from sqlalchemy.orm import load_only
 
-only_point = select(Location).options(load_only(Location.point))
-without_point = select(Location).options(defer(Location.point))
-with_point = select(Location).options(undefer(Location.point))
+stmt = select(Location).options(load_only(Location.point))
 ```
 
-Use the mapped composite attribute (`Location.point`) as the option target.
-This lets a loading policy operate on the composite as one ORM attribute
-instead of requiring callers to spell out its component columns.
+Pass the composite attribute, not a string name, so the loading plan addresses
+the composite at the ORM level.
+
+## Loader-option wildcard validation
+
+A dotted string ending in `"*"`, such as
+`Load(A).joinedload("bs.*")`, raises `ArgumentError` rather than silently
+matching nothing. Loader options reject string attribute names, so express
+paths with mapped attributes.
+
+The bare wildcard remains valid:
+
+```python
+Load(A).lazyload("*")
+```
+
+This validation behavior is from 2.0.52.
+
+## Explicit subqueries for `aliased()`
+
+Passing a `select()` or `union()` directly to `aliased()` emits a deprecation
+warning in 2.0 while retaining implicit subquery coercion. SQLAlchemy 2.1
+raises instead. Construct the subquery explicitly:
+
+```python
+alias = aliased(User, select(User).subquery())
+```
+
+Apply the same explicit conversion to union constructs before passing them to
+`aliased()`.

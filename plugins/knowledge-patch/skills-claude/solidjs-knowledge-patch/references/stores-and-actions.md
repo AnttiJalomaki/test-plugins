@@ -1,76 +1,70 @@
 # Stores, Actions, and Submissions
 
-## Action lifecycle and names
+## Action lifecycle and results
 
-Actions support `onComplete`, expose errors, and return fully processed
-responses. Use these contracts rather than adding a separate completion or
-response-normalization layer around every action.
+Actions support `onComplete`, expose errors, and return their fully processed
+responses. Use `onComplete` for completion handling, and do not assume the raw
+handler return value is the action's final result.
 
-Navigation clears only completed actions. Do not assume an unfinished action
-disappears merely because the location changed.
+Navigation clears only completed actions. Pending actions remain observable, so
+application cleanup must not depend on every action disappearing when a route
+changes.
 
-User-supplied `name` values are honored by both `action` and `createAsync`.
-For an action, the supplied name is hashed instead of being discarded in favor
-of the fixed name `mutate`.
+## Action and async-data names
 
-## Submission and route-parameter types
+User-provided names are honored by both `action` and `createAsync`. An action
+hashes its supplied name instead of forcing every action to the fixed name
+`"mutate"`. Code that keys diagnostics, submissions, or UI state by name must
+accept the hashed action identity.
 
-Import `Submission` from the package top level.
+## Submission and parameter exports
 
-`SearchParams` is an exported type. Its values can be optional and can contain
-arrays; `Params` values can likewise be optional. The object returned by
-`useParams()` supports the `in` operator for presence checks.
+`Submission` is exported from the package top level. Import it there rather
+than from an internal path.
 
-These widened shapes matter when an action or submission reconstructs route
-state. Do not narrow them to required scalar strings without application-level
-validation.
+`SearchParams` is also a public exported type. Search-parameter values may be
+optional or arrays, and `Params` values may be optional. Reflect those unions
+when an action derives input from route state.
 
 ## Form bodies
 
-Form actions default to URL-encoded bodies. `URLSearchParams` is accepted when
-the encoding is not `multipart/form-data`.
+Form actions use URL-encoded bodies by default. `URLSearchParams` is accepted
+when the encoding is not `multipart/form-data`:
 
-Choose the body representation to match the encoding:
+```ts
+const body = new URLSearchParams({ title: "Example" });
+```
 
-- Use URL-encoded form behavior by default.
-- Pass `URLSearchParams` for a compatible non-multipart request.
-- Use the appropriate multipart body when the encoding is
-  `multipart/form-data`; do not pass `URLSearchParams` in that case.
+Do not pass `URLSearchParams` for a multipart form; construct the body that
+matches the selected encoding.
 
-## Revalidation
+## Revalidation sentinels
 
-An empty string or an empty array means no revalidation. Preserve that
-sentinel behavior instead of interpreting either value as a request to
-revalidate every query.
+An empty string or an empty array means no revalidation. Preserve these values
+as intentional sentinels rather than expanding them into a default route or
+global invalidation.
 
-## Response filtering and redirects
+## Response processing and redirects
 
-Response helpers now return `Response` objects. Both the former `cache` helper
-and `action` filter those results; after migrating the data helper, apply the
-same behavior to `query`-based code.
+Response helpers return `Response` objects, while router data and action
+helpers filter or process those objects under their own contracts. Account for
+that processing before reading a returned value as a raw `Response`.
 
-Handle the associated response details explicitly:
+Absolute redirects produced inside server-side calls using the former `cache`
+helper are forwarded to the client. When migrating those calls to `query`,
+retain redirect forwarding and use `query().handleResponse()` when response
+headers must survive processing.
 
-- Forward an absolute redirect produced inside a server-side `cache` call (or
-  its `query` replacement) to the client.
-- Preserve headers through `query()`'s `handleResponse()`.
-- Consume the fully processed response returned by an action.
-- Preserve multiple `Set-Cookie` headers on SolidStart 2 alpha redirect
-  responses.
+Redirect responses can carry multiple `Set-Cookie` headers. Preserve every
+header rather than joining them incorrectly or retaining only one.
 
-## Single-flight mutations
+## Single-flight mutation navigation
 
-Solid Router can pair the `solidstart-1.0.0` server-function transport with a
-mutation to begin loading the destination page immediately after the update.
-It can stream that destination data in the mutation response while the client
-performs the redirect.
+Solid Router can combine mutation, redirect, and destination loading through
+the server-function transport (solidstart-1.0.0). After the mutation, the
+router starts loading the destination and streams that data in the mutation
+response while the browser performs the redirect.
 
-Use this single-flight path to combine:
-
-1. The server update.
-2. The redirect decision.
-3. The next page's data loading.
-
-This avoids imposing a sequential post-mutation fetch waterfall. Coordinate
-the action's processed response, redirect, and revalidation rules rather than
-starting an unconditional second client fetch after navigation.
+Use this flow when the next route depends on the mutation. It avoids a
+sequential mutation-response, redirect, and next-page-fetch waterfall while
+keeping destination data loading in the router lifecycle.

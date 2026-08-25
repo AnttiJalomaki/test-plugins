@@ -8,195 +8,215 @@ metadata:
 ---
 
 
-
 # Grafana Loki Knowledge Patch
 
-Use this skill when upgrading, configuring, deploying, or debugging Grafana
-Loki installations whose behavior may depend on recent Loki, Loki Operator,
-Helm chart, LogQL, storage, or ingestion changes.
-
-Check the deployed Loki, chart, and Operator versions before applying
-version-sensitive guidance. Treat manifests, generated configuration, runtime
-behavior, and focused tests as authoritative for the installation.
-
-## How to use this skill
-
-1. For an upgrade, start with the breaking-change checklist below and then
-   open the migration reference.
-2. Identify whether the deployment uses the Loki Helm chart, Loki Operator,
-   SingleBinary, distributed mode, or a legacy deployment mode.
-3. Open the task-specific reference from the index; several changes span both
-   Loki configuration and deployment templates.
-4. Verify tenant overrides separately from global defaults, especially for
-   ingestion, limits, Kafka, and deletion processing.
-5. Exercise storage and query changes against the configured backend before a
-   production rollout.
+Use this skill when implementing, upgrading, deploying, or operating Grafana
+Loki and the work may depend on recent LogQL, ingestion, storage, Helm,
+Operator, deletion, API, or command-line behavior. Inspect the deployment's
+Loki and chart versions before applying version-sensitive guidance, then read
+every topic reference relevant to the task.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migrations-and-breaking-changes.md](references/migrations-and-breaking-changes.md) | Promtail migration, removed tooling and ksonnet, deprecated stores and deployment modes, label precedence, scheduler behavior, and container assumptions |
-| [helm-and-deployment.md](references/helm-and-deployment.md) | Chart ownership, templating, services, workloads, caches, persistence, probes, storage rendering, repository transfer, and IPv6 deployment behavior |
-| [ingestion-labels-and-limits.md](references/ingestion-labels-and-limits.md) | Time sharding, structured metadata, relabeling, distributor limits, ingestion policies, Kafka, detected fields, and request handling |
-| [queries-apis-and-cli.md](references/queries-apis-and-cli.md) | Query correctness, Parquet, endpoint routing, caches, Patterns and Drilldown APIs, limits, `logcli`, `lokitool`, health, and rule checking |
-| [storage-deletion-and-compaction.md](references/storage-deletion-and-compaction.md) | Thanos clients, object stores, SQLite delete requests, scalable deletion workers, deletion markers, index-gateway sharding, and S3 compatibility |
-| [operator-integrations-and-observability.md](references/operator-integrations-and-observability.md) | Loki Operator behavior, OpenShift, OTLP, tracing, Fluent plugins, meta-monitoring, and Operational UI integration |
+| [Migrations and breaking changes](references/migrations-and-breaking-changes.md) | Promtail, deployment modes, removed configuration, changed defaults, chart ownership, and upgrade hazards |
+| [Helm and deployment](references/helm-and-deployment.md) | Chart rendering, workloads, probes, persistence, DNS, caches, storage wiring, and services |
+| [Ingestion, labels, and limits](references/ingestion-labels-and-limits.md) | Stream sharding, structured metadata, relabeling, distributor limits, Kafka, policies, and label discovery |
+| [Operator, integrations, and observability](references/operator-integrations-and-observability.md) | Loki Operator, OTLP, OpenTelemetry tracing, Fluent integrations, monitoring, networking, and Operational UI |
+| [Queries, APIs, and command-line tools](references/queries-apis-and-cli.md) | LogQL semantics, query results, endpoints, caching, Patterns, `logcli`, `lokitool`, ruler checks, and label sketches |
+| [Storage, deletion, and compaction](references/storage-deletion-and-compaction.md) | Object stores, Thanos clients, SQLite delete requests, scalable deletion, deletion markers, and index gateways |
 
-## Breaking changes and deprecations
+## Handle breaking changes first
 
-### Migrate away from Promtail
+### Move Promtail users to Alloy
 
-- Promtail was deprecated after its code moved into Grafana Alloy and was
-  removed as of Loki 3.7.3.
-- Use the Alloy migration documentation and configuration-conversion utility
-  for Promtail configurations.
-- Do not apply the Promtail removal to Lambda-promtail; it remains separate.
+Promtail was deprecated after its code moved into Grafana Alloy and was removed
+as of 3.7.3. Use the migration documentation and configuration-conversion
+utility. Do not apply that removal to Lambda-promtail, which remains separate.
 
-### Audit legacy storage and deployment choices
+Audit Promtail image extensions and health checks independently: the image no
+longer contains `wget`, so scripts, probes, and derived images must provide a
+different client or package the tool themselves.
 
-- BoltDB storage, legacy configuration options, and legacy API endpoints are
-  deprecated. Inventory them before an upgrade.
-- Deprecated ksonnet configuration was removed in 3.5.0.
+### Preserve label and query semantics
+
+Parsed labels no longer replace same-named structured metadata. Treat this as a
+breaking precedence change and update pipelines or assertions that relied on
+the parsed value winning.
+
+Range-query evaluation aligns timestamps to the step grid as of 3.7.3, and the
+query engine no longer silently discards `OR` operations. Recheck golden
+results, alert evaluations, and cache expectations around both changes.
+
+### Recheck scheduler capacity assumptions
+
+Scheduler accounting uses total compute capacity, and worker threads are
+shared across all scheduler connections. Both execution changes are breaking;
+revisit sizing, concurrency assumptions, and performance tests rather than
+carrying forward per-connection worker calculations.
+
+### Audit removed and deprecated deployment paths
+
 - Simple Scalable Deployment is deprecated and scheduled for removal before
-  Loki 4.0. The community `LGTM-distributed`, `loki-canary`,
-  `loki-distributed`, and `loki-simple-scalable` charts are deprecated too.
+  Loki 4.0.
+- The community `LGTM-distributed`, `loki-canary`, `loki-distributed`, and
+  `loki-simple-scalable` charts are deprecated.
+- Deprecated ksonnet configurations are removed.
+- BoltDB storage, legacy configuration options, and legacy API endpoints are
+  deprecated and require an upgrade audit.
+- The open-source Loki chart moved to the
+  `grafana-community/helm-charts` repository on March 16, 2026; the GEL chart
+  remains maintained separately.
 
-### Review behavior changes that affect existing automation
+### Check Operator-specific breakage
 
-- The Promtail image no longer includes `wget`; replace image probes, derived
-  image steps, or scripts that invoke it.
-- Operator OTLP attribute dropping was introduced as a breaking change.
-- Parsed labels no longer override same-named structured metadata.
-- Scheduler workers are shared across connections and scheduling accounts for
-  total compute capacity; both engine changes are breaking.
-- Loki images now use `/` as the working directory. Make relative paths in
-  derived images and scripts explicit.
-- Default OpenShift stream labels changed; review selectors, dashboards, and
-  retention rules when upgrading the Operator.
+Dropping OTLP attributes through the Operator is classified as breaking.
+OpenShift's default stream labels also changed, so validate tenant selectors,
+dashboards, alerts, and retention rules after an Operator upgrade.
 
-## Per-tenant ingestion quick reference
+On OCP 4.20, the Operator no longer creates NetworkPolicies automatically.
+Supply the required policies explicitly when isolation depends on them.
 
-### Time-shard long out-of-order streams
+### Update container-relative paths
 
-Enable time sharding in the applicable tenant override:
+Loki containers now use the filesystem root as their working directory.
+Derived images, entrypoints, and scripts must not assume the previous relative
+path base.
 
-```yaml
-shard_streams:
-  time_sharding_enabled: true
-```
+## Upgrade checklist
 
-Loki adds `__time_shard__` and limits each resulting stream to at most half of
-`max_chunk_age`, normally one hour. This prevents very old entries in a long
-stream from being rejected as too far behind. The Operator can also enable the
-feature.
+1. Identify the Loki binary, Helm chart, and Operator versions separately.
+2. Read the migration reference and inventory Promtail, ksonnet, BoltDB,
+   legacy endpoints, and deprecated chart or deployment-mode dependencies.
+3. Compare values files with renamed and newly templated settings, especially
+   `object_store.storage_prefix`, storage generation bypasses, ruler storage,
+   authentication, caches, and workload persistence.
+4. Validate ingestion with empty pushes, structured metadata, OTLP byte
+   accounting, policy limits, Kafka topics, and time sharding.
+5. Re-run representative LogQL queries for parsed-label precedence, range
+   timestamps, `OR`, offsets, `approx_topk`, JSON parsing, and byte comparisons.
+6. Exercise storage, compaction, retention, and delete-request workflows with
+   the deployment's actual object-store client and filesystem behavior.
+7. Check Operator-generated networking, certificates, object-store addressing,
+   authorization, metrics authentication, and OpenShift-specific resources.
+8. Verify probes, sidecars, relative paths, Services, PVC retention, DNS, and
+   topology placement in rendered manifests before rollout.
 
-### Extract structured metadata at ingestion
+## Ingestion quick reference
 
-Tenant configuration can extract fields from:
+### Enable tenant-scoped time sharding deliberately
 
-- ordinary stream labels;
-- existing structured-metadata keys; and
-- fields parsed from JSON or `logfmt` log lines.
+Set `shard_streams.time_sharding_enabled: true` for tenants that must accept
+logs far outside the ordinary out-of-order window. Loki adds
+`__time_shard__`, limiting each resulting stream to at most half of
+`max_chunk_age`—normally one hour.
 
-Account for structured-metadata bytes in distributor sizing and limits. Loki
-unescapes JSON metadata strings and suppresses duplicates that appear in both
-stream labels and extracted fields.
+### Treat structured metadata as a first-class ingestion path
 
-### Apply limits in the right layer
+Tenant configuration can extract structured metadata from labels, existing
+metadata, or fields parsed from JSON and `logfmt` lines. Account for metadata
+bytes in OTLP limits, suppress duplicates sourced from both labels and
+extracted fields, and expect JSON strings to be unescaped.
 
-- Distributors can enforce limits or evaluate them in dry-run mode.
-- Aggregated metric streams bypass ordinary label enforcement.
-- Per-policy stream limits override the applicable ingestion policy; default
-  policy mappings are merged with tenant mappings rather than replaced.
-- `MaxRecvMsgSize` controls the distributor's uncompressed message-size
-  ceiling, and truncated lines receive an identifier.
+Automatic log-level discovery handles nested JSON, removes colons from detected
+levels, and accepts numeric boolean detected-label values. The pattern ingester
+can emit detected level as structured metadata.
+
+### Place and explain distributor enforcement
+
+Limits may be enforced in distributors or checked there in dry-run mode.
+Aggregated metric streams bypass ordinary label enforcement, and rate-limit
+reasons identify stream labels rather than only a hash. Configure the
+uncompressed receive ceiling with distributor `MaxRecvMsgSize` and recognize
+the identifier placed on truncated lines.
+
+### Merge policy mappings
+
+Per-policy stream limits can override ingestion limits. Per-tenant
+ingestion-policy mappings merge with defaults; they do not replace the default
+mapping wholesale.
 
 ## Query and API quick reference
 
-### Protect correctness during upgrades
+### Review status-code and routing changes
 
-- Offsets now apply correctly to `last_over_time`, `first_over_time`, and
-  `quantile_over_time`; `approx_topk` is mapped in all cases.
-- The query-path `json` parser no longer risks corrupting log lines.
-- In 3.7.3, range-query evaluation timestamps align to the step grid, and the
-  engine no longer silently drops `OR` operations.
-- Parsed labels yield to same-named structured metadata.
+- An empty push request returns HTTP 422.
+- Interval-limit violations return HTTP 400.
+- Label-values requests work with `server.http_path_prefix`.
+- Aggregated metric queries are accepted only from Logs Drilldown.
+- Requests for an unknown tenant through the applied-limits endpoint return
+  default limits.
 
-### Use current response and cache controls
+### Use corrected LogQL behavior
 
-- Query responses can use Parquet for direct columnar processing.
-- Starting in 3.7.3, `query_range` requests can disable caching.
-- The Patterns API accepts multi-tenant queries.
-- Empty push requests return HTTP 422; interval-limit violations return HTTP
-  400.
+Offsets apply correctly to `last_over_time`, `first_over_time`, and
+`quantile_over_time`; `approx_topk` is mapped in all cases; the query-path JSON
+parser preserves log lines; zero-byte comparisons are valid; and detected
+fields recognize byte units.
+
+Query APIs can return Parquet for columnar consumers. Query-range requests can
+disable caching as of 3.7.3, and multi-tenant requests are accepted by the
+Patterns API.
+
+### Preserve label sketches
+
+In 3.7.6, query-range `MergeLabels` preserves sketch data while merging label
+responses. Consumers should use the returned sketch instead of assuming merged
+results omit it.
 
 ## Storage and deletion quick reference
 
-### Check object-store client compatibility
+### Match the object-store client to its compatibility details
 
-- Object-store access moved to the shared Thanos client, including Swift
-  support through `thanos.io/objstore`.
-- Thanos storage prefixes accept dashes.
-- S3 preserves regions already supplied by the configuration chain and adds a
-  SHA-256 checksum for Object Lock `PutObject` calls as of 3.7.2.
-- If the legacy S3 client uses `chunk_delimiter`, include the 3.7.4 index-file
-  fix in validation.
+Loki moved object-store access to the shared Thanos client and added Swift via
+`thanos.io/objstore`. Verify provider-specific behavior: custom GCS endpoints,
+Swift TLS CAs, Windows MinIO delimiters, S3 region preservation, Object Lock
+checksums, and legacy S3 index filenames all have distinct guidance.
 
-### Scale deletion processing deliberately
+### Scale deletion without moving singleton work
 
-The experimental horizontally scalable compactor delegates queued deletion
-work to workers, but index compaction and retention remain in the singleton
-Compactor. Object-backed chunk-deletion markers remove the local-disk
-dependency; deployments using the Thanos filesystem backend also need the
-3.7.4 delete-request repair.
+The experimental scalable deletion path delegates queued delete work from the
+Compactor to workers. Index compaction and retention remain in the singleton
+Compactor. SQLite delete-request storage uses stored completion times to narrow
+query-time filtering, while object-backed deletion markers avoid local-disk
+state.
 
-## Helm deployment quick reference
+## Helm and Operator quick reference
 
-### Render user-supplied templates consistently
+### Render values before rollout
 
-The chart applies `tpl` to read, write, and backend pods and to
-`pattern_ingester`, `ingester_client`, `loki.operational_config`, and
-`nameOverride`. Validate rendered names and configuration with the exact chart
-values used by the deployment.
+The chart applies `tpl` in more locations, including `nameOverride`, read,
+write, backend, pattern-ingester, ingester-client, and operational
+configuration. Render charts in CI to catch evaluation, namespace, generated
+storage, and ownership differences.
 
-### Plan chart ownership and repository changes
+### Validate workload lifecycle
 
-- The installation manager, rather than templates, sets `managed-by`.
-- Checksums for ConfigMaps and Secrets cover only `.data`.
-- The open-source Loki chart moved to `grafana-community/helm-charts` on
-  March 16, 2026; update source references and automation. The GEL chart is
-  maintained separately.
+Check startup and readiness probes, SingleBinary topology spreading, canary
+Deployment mode, configurable init containers, PVC access modes and labels,
+retention-on-scale-down behavior, `volumeAttributesClassName`, and per-workload
+`dnsConfig`.
 
-### Validate workload lifecycle controls
+### Treat generated Operator resources as version-sensitive
 
-- Distributor and read workloads support startup probes, and SingleBinary
-  accepts `topologySpreadConstraints`.
-- Canary readiness is configurable, and the pod security context uses
-  `fsGroupChangePolicy: OnRootMismatch`.
-- StatefulSet PVCs remain on scale-down but may be deleted with the
-  StatefulSet. Confirm claim-template labels, access modes, and
-  `volumeAttributesClassName` before changing persistence.
+The Operator can suppress ingress, customize gateway certificates, deploy
+NetworkPolicies, configure virtual-host S3 and Swift TLS, and apply
+OpenTelemetry authorization semantics. Metrics authentication no longer
+depends on `kube-rbac-proxy` as of 3.7.3, and AWS STS deployments receive their
+region through an environment variable.
 
-## Operator and observability quick reference
+## Route work to the detailed references
 
-- The Operator supports managed GCP Workload Identity, virtual-host-style S3,
-  Swift TLS CAs, optional NetworkPolicies, custom gateway certificates, and
-  suppression of ingress.
-- OpenTelemetry replaces OpenTracing internally while retaining
-  `JAEGER_`-prefixed configuration and Jaeger-format export.
-- Metrics authentication no longer depends on `kube-rbac-proxy` as of 3.7.3.
-- For OCP 4.20, do not assume the Operator creates NetworkPolicies; add the
-  desired policy explicitly.
-
-## Verification checklist
-
-- Render Helm manifests and inspect effective Loki configuration.
-- Test ingestion with representative labels, structured metadata, empty
-  batches, oversized messages, and out-of-order streams.
-- Compare query results around step boundaries, offsets, `OR`, label
-  collisions, cache controls, and HTTP error behavior.
-- Exercise deletion requests through the configured object-store client and
-  backend.
-- Confirm Operator-generated identities, certificates, networking, storage,
-  and authorization on the target Kubernetes or OpenShift version.
+- For upgrade planning, removals, changed defaults, or compatibility audits,
+  read `migrations-and-breaking-changes.md` first.
+- For chart values, rendered resources, workloads, persistence, caches, and
+  Services, read `helm-and-deployment.md`.
+- For push paths, labels, structured metadata, limits, policies, or Kafka,
+  read `ingestion-labels-and-limits.md`.
+- For Loki Operator, OTLP, tracing, monitoring, Fluent, or Operational UI,
+  read `operator-integrations-and-observability.md`.
+- For LogQL, query APIs, labels, Patterns, ruler tooling, or CLI behavior,
+  read `queries-apis-and-cli.md`.
+- For object storage, index gateways, compaction, retention, or deletion,
+  read `storage-deletion-and-compaction.md`.

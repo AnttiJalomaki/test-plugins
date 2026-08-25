@@ -10,31 +10,61 @@ metadata:
 
 # Cloudflare Durable Objects
 
-Use this skill when designing, implementing, migrating, testing, or debugging
-Durable Object classes, bindings, storage, alarms, placement, or hibernating
-WebSockets.
+Use this skill when designing, configuring, deploying, testing, or debugging
+Cloudflare Durable Objects. Start with the quick references below, then load the
+topic file that matches the task. Treat project configuration, installed package
+types, runtime behavior, and tests as the final authority for this rolling
+service surface.
 
-Inspect the Worker configuration, compatibility date, class exports, bindings,
-and storage backend before giving advice. Treat deployment configuration and
-namespace state as part of the program: code alone neither creates nor safely
-removes a Durable Object namespace.
+## How to use this skill
+
+1. Identify the namespace's storage backend and whether the Worker uses legacy
+   `migrations` or the declarative `exports` lifecycle map.
+2. Preserve already-provisioned namespace state. A code export alone does not
+   create a namespace, storage backends cannot be changed in place, and lifecycle
+   operations need deliberately ordered deployments.
+3. Check the Worker's compatibility date before relying on date-gated behavior.
+4. Read the relevant reference file before changing concurrency, storage,
+   placement, WebSockets, lifecycle declarations, alarms, or test isolation.
+5. Exercise restart, eviction, and mixed-version behavior where correctness
+   depends on in-memory state or a coordinated rollout.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [deployment-and-class-lifecycle.md](references/deployment-and-class-lifecycle.md) | SQLite versus legacy KV, `exports`, migrations, rename, delete, and cross-Worker transfer |
-| [storage-sql-and-recovery.md](references/storage-sql-and-recovery.md) | SQL cursors, transactions, synchronous KV, PITR, `deleteAll()`, and loopback exports |
-| [identity-and-placement.md](references/identity-and-placement.md) | Names, jurisdictions, ID spaces, and location hints |
-| [concurrency-alarms-and-runtime.md](references/concurrency-alarms-and-runtime.md) | Gates, atomic writes, hibernation, eviction, uniqueness, alarms, and rollout safety |
-| [websocket-hibernation.md](references/websocket-hibernation.md) | Hibernatable handlers, attachments, tags, auto-responses, event limits, and closing |
-| [testing-and-local-development.md](references/testing-and-local-development.md) | Workers Vitest configuration, typed bindings, HTTP tests, alarms, eviction, and persistence |
+| [deployment-and-class-lifecycle.md](references/deployment-and-class-lifecycle.md) | SQLite adoption, `exports`, migrations, renames, deletion, transfers, environments, deployment restrictions |
+| [storage-sql-and-recovery.md](references/storage-sql-and-recovery.md) | SQL cursors, transactions, synchronous KV, extensions, point-in-time recovery, loopback exports |
+| [identity-and-placement.md](references/identity-and-placement.md) | Names, jurisdictions, ID spaces, placement hints |
+| [concurrency-alarms-and-runtime.md](references/concurrency-alarms-and-runtime.md) | Input/output gates, hibernation, eviction, schema migrations, alarms, shutdown, rollout compatibility |
+| [websocket-hibernation.md](references/websocket-hibernation.md) | Hibernatable handlers, attachments, tags, auto-responses, event timeouts, close behavior |
+| [testing-and-local-development.md](references/testing-and-local-development.md) | Workers Vitest setup, typed bindings, HTTP integration, storage lifetime, alarms, eviction, local persistence |
 
-## Resolve lifecycle and backend choices first
+## Deployment and storage decisions
 
-For a new class, create a SQLite-backed namespace. In legacy migrations, use
-`new_sqlite_classes`; in declarative configuration, use a live `exports` entry
-with `"storage": "sqlite"`.
+### Prefer SQLite for new namespaces
+
+Create new classes with SQLite storage. In legacy lifecycle configuration, use
+`new_sqlite_classes`; in declarative lifecycle configuration, set
+`"storage": "sqlite"` on each live class.
+
+```toml
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRoom"]
+```
+
+SQLite-backed objects provide SQL, point-in-time recovery, and synchronous KV
+access. Existing KV-backed namespaces remain usable, but there is no in-place
+migration from their storage to SQLite. New KV namespace creation is restricted,
+so do not choose `new_classes` for a new deployment.
+
+### Choose one lifecycle system
+
+Wrangler accepts either the ordered `migrations` array or the declarative
+`exports` map, never both. Under `exports`, every desired or existing namespace
+needs an entry; live entries need `storage`, and lifecycle tombstones must omit
+it. A live configured class missing from Worker code causes deployment to fail.
 
 ```jsonc
 {
@@ -47,67 +77,49 @@ with `"storage": "sqlite"`.
 }
 ```
 
-Do not mix `exports` and `migrations` in one Worker. Existing Workers may retain
-ordered, tagged migrations, but deployment of `exports` makes the conversion
-one-way. Preserve each existing backend exactly: `sqlite` for a namespace made
-by `new_sqlite_classes`, and `legacy-kv` for one made by `new_classes`.
+Migration-to-`exports` conversion preserves namespace data when every active
+class is declared with its original backend (`sqlite` or `legacy-kv`), but the
+switch is one-way. Read the lifecycle reference before converting, renaming,
+deleting, or transferring a class.
 
-An exported class without configuration is ignored. Conversely, every live
-entry needs matching code and a `storage` value. The `deleted`, `renamed`, and
-`transferred` tombstones must not specify `storage`; the receiving
-`expecting-transfer` state does require the namespace's backend.
+### Stage lifecycle operations
 
-Lifecycle operations require `wrangler deploy`. They are incompatible with
-gradual deployment and `wrangler versions upload`, and rollback cannot cross a
-lifecycle change.
+- For a rename, first deploy the new implementation under both class names;
+  then deploy the old-name `renamed` tombstone and new live entry; remove the
+  code alias only after the rollout.
+- For a cross-Worker transfer, deploy `expecting-transfer` on the target first,
+  commit with `transferred` on the source, then make the target entry live and
+  change bindings last.
+- Keep tombstones until reconciliation explicitly reports them safe to remove.
+  Deletion is blocked while code exports the class or any Worker still binds to
+  its namespace.
+- Apply lifecycle changes only with a full `wrangler deploy`. Upload-only,
+  gradual deployment, and rollback across a lifecycle change are unsupported.
 
-## Make destructive lifecycle changes in stages
+## SQL and transaction safety
 
-Before deleting a class, remove all account-wide bindings to its namespace and
-remove the class from code. Keep the `deleted` tombstone until reconciliation
-explicitly reports it safe to remove.
+### Materialize cursors before yielding
 
-For a zero-downtime rename:
-
-1. Deploy the new class while re-exporting it under the old name; do not change
-   `exports` yet.
-2. Deploy an old-name `renamed` tombstone and a live new-name entry while the
-   code alias remains.
-3. Remove the alias only after rollout completes.
-
-```ts
-export class NewName extends DurableObject {
-  // ...
-}
-export { NewName as OldName };
-```
-
-For a cross-Worker declarative transfer, deploy the target's
-`expecting-transfer` entry first without a self-binding. Then deploy the
-source's `transferred` tombstone. Only afterward make the target entry live,
-add its binding, and remove or redirect the source binding. Both Workers must
-share the account and dispatch-namespace context.
-
-## Use SQLite storage with synchronous boundaries in mind
-
-SQLite-backed objects expose both `ctx.storage.sql` and synchronous
-`ctx.storage.kv`. The SQL database is private to the object, has a 10 GB limit,
-and includes FTS5, JSON, and math functions.
-
-Materialize a SQL cursor before any `await`; iteration resumed afterward is not
-a stable snapshot and may observe later writes, even writes later rolled back.
+A `SqlStorageCursor` is not a stable snapshot across `await`. Convert results
+with `toArray()` or otherwise exhaust the cursor synchronously before external
+I/O; resumed iteration can observe later writes, even from a transaction that
+eventually rolls back.
 
 ```ts
-const rows = this.ctx.storage.sql
-  .exec("SELECT * FROM users")
-  .toArray();
+const rows = this.ctx.storage.sql.exec("SELECT * FROM users").toArray();
 await sendRows(rows);
 ```
 
-Do not send `BEGIN`, `SAVEPOINT`, or other transaction statements through
-`sql.exec()`. Use `transactionSync()` for synchronous SQL or KV work. Its
-callback must not return a promise, its value is returned to the caller, and
-throwing rolls the transaction back.
+Within a multi-statement `exec()`, bindings and the returned cursor belong only
+to the final statement. Cursor iteration and `raw()` share one position, and
+`one()` requires exactly one returned row.
+
+### Use storage transaction APIs
+
+Do not issue `BEGIN`, `SAVEPOINT`, or other transaction-control SQL through
+`sql.exec()`. Use `transactionSync()` for synchronous SQL or KV work; its
+callback cannot return a promise, passes its return value through, and rolls
+back when it throws.
 
 ```ts
 this.ctx.storage.transactionSync(() => {
@@ -118,102 +130,75 @@ this.ctx.storage.transactionSync(() => {
 });
 ```
 
-On a SQLite-backed object, direct storage operations also participate in
-`transaction()`; do not use the obsolete `txn` wrapper for this backend.
+On SQLite-backed objects, direct storage operations participate in
+`transaction()`; do not retain the obsolete `txn` wrapper. For schema changes,
+track versions in an ordinary table—`PRAGMA user_version` is unsupported—and
+run constructor migrations inside `blockConcurrencyWhile()`.
 
-## Respect gate boundaries
+## Concurrency and lifecycle safety
 
-Awaited Durable Object storage operations receive input-gate protection.
-External I/O such as `fetch()` or R2 does not: another request may interleave
-while it is awaited. Re-read a version or precondition after external I/O
-before writing dependent state.
+Storage awaits receive input-gate protection; external `fetch()`, R2, and other
+non-storage awaits do not. After such I/O, re-read or revalidate any version or
+precondition before committing dependent state.
 
 Pending storage writes hold outgoing responses and network requests behind the
-output gate. Consecutive writes with no intervening `await` are coalesced into
-one atomic implicit transaction.
+output gate. Consecutive writes without an intervening `await` are coalesced
+into one atomic implicit transaction; an `await` ends that boundary.
 
-```ts
-this.ctx.storage.sql.exec(
-  "UPDATE accounts SET balance = balance - ? WHERE id = ?",
-  amount,
-  from,
-);
-this.ctx.storage.sql.exec(
-  "UPDATE accounts SET balance = balance + ? WHERE id = ?",
-  amount,
-  to,
-);
-return "transferred";
-```
+Do not depend on a shutdown callback—none exists for eviction, deployment, or
+runtime replacement. Persist checkpoints incrementally. Also keep Worker-to-
+object request and RPC contracts compatible across adjacent releases because
+rollouts can temporarily pair new Worker code with an older object instance.
 
-Run SQLite schema changes from the constructor under
-`blockConcurrencyWhile()`, tracking versions in an ordinary table.
-`PRAGMA user_version` is unavailable.
+Alarms are non-recurring and can run more than once. Schedule the next alarm
+explicitly, make handlers idempotent, and use `retryCount` when deciding whether
+to install a fresh alarm before retries are exhausted.
 
-## Treat memory as disposable
+## Identity and placement
 
-There is no shutdown hook before eviction, deployment, or runtime replacement.
-Persist checkpoints incrementally.
+Use `namespace.jurisdiction()` for residency constraints. Jurisdiction scopes
+have distinct ID spaces: an ID belongs to its scope, although an unscoped
+namespace can resolve a restricted ID. The same name therefore maps to different
+IDs in `eu`, `us`, and `fedramp`.
 
-An otherwise quiescent object may hibernate after about 10 seconds, lose all
-memory, and run its constructor again on the next event. Timers, unfinished
-events, an awaited in-progress `fetch()`, or standard WebSocket API use prevent
-hibernation. Hibernatable client WebSockets remain connected.
+`ctx.id.name` exists only when the object was reached by name, subject to the
+documented length and lookup limitations. `ctx.id.jurisdiction` survives string
+round-trips. Placement `locationHint` values affect only first placement and do
+not move an existing object.
 
-Active outbound `connect()` or WebSocket connections defer eviction, but each
-connection does so for at most 15 minutes. When all close, the normal
-70–140-second inactivity window begins.
+## WebSocket hibernation
 
-## Make alarms and resets idempotent
+Enable hibernation with `ctx.acceptWebSocket(server)` and handle messages and
+closes in Durable Object class methods. Calling the standard `ws.accept()` does
+not enable hibernation, and outbound WebSockets cannot hibernate.
 
-Alarms are non-recurring and can be delivered more than once. Schedule the
-next alarm explicitly, make the handler idempotent, and use
-`AlarmInvocationInfo.retryCount` when arranging a fresh alarm before retries
-are exhausted.
+Persist per-connection state with `serializeAttachment()` within its 16,384-byte
+limit, and write longer-lived or larger state to Durable Object storage. Use
+tags for bounded grouping, auto-responses for wake-free request/reply pairs,
+and the hibernatable event timeout when a handler needs an explicit runtime cap.
 
-With compatibility date `2026-02-24` or later, `ctx.storage.deleteAll()` also
-deletes the alarm on both storage backends. Earlier dates need an explicit
-`deleteAlarm()` for a full reset.
+## Testing essentials
 
-## Use the hibernation WebSocket API end to end
+Workers Vitest 4 uses the `cloudflareTest()` Vite plugin and a Wrangler config
+that declares the bindings and lifecycle configuration. Type test `env` through
+`ProvidedEnv`. Exercise the Worker's public HTTP route with
+`exports.default.fetch()` and call a binding from `env` for direct stub tests.
 
-Accept the server socket with `ctx.acceptWebSocket()` and implement class
-handlers such as `webSocketMessage()` and `webSocketClose()`. Calling
-`ws.accept()` selects the standard API and prevents hibernation. Only inbound
-WebSockets served by the object can hibernate.
+Eviction helpers reset instances while preserving storage. Use
+`evictDurableObject()` for a named stub, its `{ webSockets: "close" }` option for
+the non-hibernating socket path, and `evictAllDurableObjects()` for all running
+instances. `runDurableObjectAlarm()` reports whether it found and ran an alarm.
 
-```ts
-const [client, server] = Object.values(new WebSocketPair());
-this.ctx.acceptWebSocket(server, ["room:42"]);
-return new Response(null, { status: 101, webSocket: client });
-```
+## Pre-deployment checklist
 
-Persist small per-connection state with `serializeAttachment()`. It stores a
-structured-clone snapshot of at most 16,384 bytes; call it again after a
-mutation. Store larger or longer-lived state in Durable Object storage.
-
-## Test process boundaries, not only methods
-
-Configure Workers Vitest 4 with `vitest@^4.1.0`,
-`@cloudflare/vitest-pool-workers`, and the `cloudflareTest()` Vite plugin
-pointing to the Wrangler configuration.
-
-Exercise the Worker's HTTP route through `exports.default.fetch()` and call a
-stub from `env` for direct object tests. Use `runDurableObjectAlarm()` for
-scheduled alarms and the eviction helpers from `cloudflare:test` to verify
-constructor re-entry and loss of in-memory state.
-
-Eviction preserves durable storage, and storage for a named object persists
-across tests in the same file. Use distinct IDs when tests need isolation.
-
-## Review checklist
-
-- Confirm the Worker compatibility date and the namespace's existing backend.
-- Confirm that code, bindings, and either `exports` or `migrations` agree.
-- Stage renames and transfers in the documented deployment order.
-- Materialize SQL cursors before yielding and use storage transaction APIs.
-- Revalidate state after non-storage I/O.
-- Persist progress without relying on shutdown or in-memory lifetime.
-- Make alarm handlers and mixed-version Worker/object calls tolerant of retry
-  and rollout overlap.
-- Test eviction, alarm execution, storage persistence, and WebSocket wake-up.
+- Confirm every live namespace and retained tombstone is represented in the
+  chosen lifecycle configuration.
+- Verify storage backend declarations against the namespaces that already
+  exist; never infer them from the current class implementation.
+- Audit all `await` boundaries between reads and dependent writes.
+- Verify alarms are idempotent and reschedule themselves when recurring work is
+  intended.
+- Test a fresh construction, hibernation wake-up, explicit eviction, and any
+  WebSocket close path the application relies on.
+- Keep lifecycle tombstones and compatibility shims through the entire rollout,
+  then remove them only when reconciliation or deployment sequencing permits.

@@ -10,79 +10,142 @@ metadata:
 
 # HAProxy Knowledge Patch
 
-Use this skill when configuring, upgrading, operating, or extending current
-HAProxy deployments. Start with the breaking-change notes, then load the topic
-reference that matches the task. Validate configuration with the exact binary
-that will run it, especially when deprecated or experimental directives are
-involved.
+Use this skill for HAProxy configuration, migration, routing, Runtime API,
+Lua, logging, TLS, QUIC, health-check, and operations work involving the
+behaviors documented here. Determine the deployed branch and patch level,
+then apply only guidance that matches it.
 
 ## Reference index
 
 | Reference | Topics |
-| --- | --- |
-| [Upgrades and operations](references/upgrades-and-operations.md) | Breaking defaults, deprecations, reloads, CPU placement, builds, support branches |
-| [TLS, QUIC, and networking](references/tls-quic-and-networking.md) | Certificates, ACME, SNI, QUIC/H3/QMux, DNS, TCP and socket tuning |
-| [Routing, backends, and health](references/routing-backends-and-health.md) | Dynamic backends, balancing, retries, connection pools, health checks, SPOP |
-| [HTTP policy and data handling](references/http-policy-and-data-handling.md) | Compression, filters, protocol defenses, fetches, converters, request actions |
-| [Logging and observability](references/logging-and-observability.md) | Log profiles, traces, termination diagnostics, statistics, Prometheus |
-| [Runtime API and Lua](references/runtime-api-and-lua.md) | Master CLI, runtime commands, certificate operations, Lua pattern and socket APIs |
+|---|---|
+| [HTTP policy and data handling](references/http-policy-and-data-handling.md) | Compression, filters, delay actions, HTTP limits, samples, converters, ACLs, and Protobuf |
+| [Logging and observability](references/logging-and-observability.md) | Log profiles, traces, termination diagnostics, statistics, metrics, and error logging |
+| [Routing, backends, and health](references/routing-backends-and-health.md) | Balancing, retries, dynamic backends, SPOP, connection pools, and health checks |
+| [Runtime API and Lua](references/runtime-api-and-lua.md) | Master CLI sessions, Runtime API commands, certificate operations, and Lua APIs |
+| [TLS, QUIC, and networking](references/tls-quic-and-networking.md) | Certificate policy, ACME, SNI, QUIC, HTTP/3, QMux, and socket controls |
+| [Upgrades and operations](references/upgrades-and-operations.md) | Breaking changes, deprecations, CPU defaults, startup diagnostics, branch maintenance, and upgrades |
 
-## Upgrade blockers first
+## Breaking changes and migration priorities
 
-### Preserve an intentional balancing policy
+### Make proxy and server names unique
 
-Since 3.3.0, a backend without `balance` uses `random`, with a power-of-two
-choice, instead of `roundrobin`. Make the old behavior explicit before an
-upgrade:
+Duplicate names across `frontend`, `listen`, `backend`, `defaults`, and
+`log-forward` families, and duplicate server names, warned in 3.1 and became
+breaking in 3.3. Rename collisions before moving to 3.3.
+
+### Preserve the old balancing policy explicitly
+
+A backend without `balance` uses `random` rather than `roundrobin` in 3.3.
+Configure the former policy explicitly when distribution must remain the same:
 
 ```haproxy
 backend application
     balance roundrobin
 ```
 
-The random tie-breaker changed again in 3.4.0: equal connection counts are
-resolved using recent HTTP request rates.
+### Account for abort-on-close
 
-### Account for early client aborts
+HTTP backends enable `option abortonclose` by default in 3.3, allowing work to
+stop before an abandoned request reaches a server. The option is also valid in
+a frontend.
 
-HTTP backends enable `option abortonclose` by default since 3.3.0. Explicitly
-disable it only if an abandoned client request must still reach the server.
-The option is also accepted in frontends.
+### Update compression configuration
 
-### Remove duplicate names
+Request and response compression use `filter comp-req` and `filter comp-res`
+in 3.4. The shared compression filter and direction setting are replaced, and
+`compression-direction` is deprecated.
 
-Warnings introduced in 3.1.0 became configuration errors in 3.3.0. Keep names
-unique across `frontend`, `listen`, `backend`, `defaults`, and `log-forward`
-sections, and keep server names unique in their applicable scope.
+```haproxy
+backend application
+    filter comp-res
+    compression algo gzip
+    compression type text/html text/plain application/json
+```
 
-### Migrate removed and deprecated directives
+Use `filter-sequence` when execution order must differ from declaration order.
+A declared filter omitted from the sequence is skipped.
 
-- `program` sections and legacy C mailers were removed in 3.3.0; use Lua
-  mailers.
-- Replace `dispatch <address>` with `server dispatch <address>` before 3.5.
-- Replace `transparent` or `option transparent` with a server at `0.0.0.0`
-  before 3.5.
-- Replace `tune.quic.frontend.*` names with `tune.quic.fe.*`.
-- Start master-worker mode with `-W` or `-Ws`, not the deprecated global
-  `master-worker` directive.
-- Replace `no-quic` with `tune.quic.listen on|off`.
-- Replace shared `filter compression` plus direction selection with
-  `filter comp-req` and `filter comp-res`; `compression-direction` is
-  deprecated.
-- Use `tune.idle-pool.shared`; `tune.takeover-other-tg-connections` is
-  superseded and deprecated.
-- Move OpenTracing integrations to the OpenTelemetry add-on before the planned
-  OpenTracing removal in 3.5.
+### Replace deprecated dispatch forms
 
-Use `expose-deprecated-directives` only as a temporary compatibility aid. Empty
-configuration arguments warn in 3.2.0 and are intended to become errors; write
-`${NAME[*]}` when an empty environment expansion is deliberate.
+Ahead of planned 3.5 removal, replace `dispatch <address>` with a regular
+server named `dispatch` at the same address. Give other legacy servers weight
+zero when that is necessary to preserve dispatch behavior.
 
-## High-value configuration changes
+```haproxy
+backend legacy_dispatch
+    server dispatch 192.0.2.10:8080
+```
 
-### Create a backend without reloading
+Replace `transparent` or `option transparent` with a zero-address server to
+preserve routing to the original TPROXY address:
 
-Runtime-created backends in 3.4.0 are invisible to routing until published:
+```haproxy
+backend original_destination
+    server tproxy 0.0.0.0
+```
+
+### Update renamed and retired directives
+
+- Replace global `tune.quic.frontend.*` names with `tune.quic.fe.*` names.
+- Replace global `no-quic` with `tune.quic.listen on` or
+  `tune.quic.listen off`.
+- Replace the global `master-worker` directive with command-line `-W` or
+  `-Ws`.
+- Treat backend `dispatch` and `option transparent` as deprecated.
+- `program` sections and legacy C mailers were deprecated in 3.1 with removal
+  scheduled for 3.3; Lua mailers are the supported replacement after removal.
+- OpenTracing is deprecated and scheduled for removal in 3.5; OpenTelemetry
+  is available as its add-on replacement.
+
+### Fix configuration validation failures
+
+- An ACL can no longer specify multiple match types after `-m`; the
+  configuration fails instead of silently using the final type.
+- Ambiguous combinations such as `path_beg -m reg` warn.
+- `http-send-name-header` cannot target `connection`, `content-length`,
+  `host`, or `transfer-encoding`.
+- Empty arguments warn in 3.2 and were scheduled to become errors in the next
+  version. Use `${NAME[*]}` for an intentionally empty environment expansion.
+
+## Security and correctness priorities
+
+### Protect the statistics administration interface
+
+Stats administration remains documented as vulnerable to CSRF. Stats POST
+requests validate `Origin`, and `stats admin` operations honor `stats scope`,
+so scoped administration cannot reach excluded proxies.
+
+### Bound TLS 1.3 KeyUpdate work
+
+Use `tune.ssl.keyupdate-rate-limit` to place an explicit rate bound on
+peer-triggered TLS 1.3 KeyUpdate processing.
+
+### Apply protocol abuse controls
+
+- `quic-initial` rules can reject, accept, silently drop a datagram with
+  `dgram-drop`, or `send-retry` during the QUIC handshake.
+- `tune.glitches.kill.cpu-usage` gates threshold-based connection termination
+  by CPU usage; its default `0` kills at the configured threshold regardless
+  of load.
+- HTTP/2 frame and RST_STREAM batch limits can constrain overload and reset
+  attacks. Values from 1 through 10 for `tune.h2.fe.max-rst-at-once` mitigate
+  RST attacks, though very low values can add interactive or gRPC latency.
+- HTTP/1 glitch thresholds exist independently for frontend and backend
+  multiplexers; graceful close begins at 75% of the threshold when
+  threshold-based termination is enabled.
+
+### Expect stricter Protobuf conversion
+
+Protobuf lookup rejects nested-path bypasses and deprecated group wire types.
+Inputs relying on either behavior fail conversion.
+
+## Routing and health quick reference
+
+### Create a backend at runtime
+
+A runtime-created backend is unavailable for routing until published. Build
+it, enable its server and health, and publish it:
 
 ```text
 add backend test-backend from mydefaults mode http
@@ -92,129 +155,86 @@ enable health test-backend/server1
 publish backend test-backend
 ```
 
-For removal, put servers in maintenance, wait for `srv-removable`, delete the
-servers, unpublish the backend, wait for `be-removable`, then delete it. A
-disabled or unpublished backend selected by `use_backend` or `default_backend`
-is skipped unless `force-be-switch` is set.
+For safe removal, place every server in maintenance, wait for
+`srv-removable`, delete the servers, unpublish the backend, wait for
+`be-removable`, and delete the backend.
 
 ### Reuse health-check definitions
 
-Named `healthcheck` sections in 3.4.0 can contain a check type and its
-`http-check` or `tcp-check` actions:
+A named `healthcheck` section can contain a supported check type and its
+`http-check` or `tcp-check` actions. Select it from a server with the
+`healthcheck` argument.
+
+### Select retry behavior dynamically
+
+`set-retries` works in `tcp-request` and `http-request` rules. Custom stream
+timeouts and maximum retries remain initialized correctly after backend
+selection.
 
 ```haproxy
-healthcheck ready_h2
-    type httpchk
-    http-check connect alpn h2
-    http-check send meth HEAD uri /health ver HTTP/2 hdr Host www.example.com
-
-backend application
-    server app1 10.0.0.1:80 check healthcheck ready_h2
+http-request set-retries 0 if METH_POST
 ```
 
-Use server `init-state` when traffic must wait for the first successful health
-check. Use `check-reuse-pool` to run checks on idle pooled connections, and
-`strict-maxconn` when a server limit applies to open TCP connections rather
-than concurrent HTTP requests.
+Use `retry-on 421` when a misdirected request should be retried against a
+different capable backend server.
 
-### Separate compression directions and order filters
+### Enforce a backend connection ceiling
 
-```haproxy
-backend application
-    filter comp-res
-    compression algo gzip
-    compression type text/html text/plain application/json
-```
+Add server argument `strict-maxconn` when `maxconn` must count open TCP
+connections rather than concurrent HTTP requests.
 
-`filter-sequence` controls execution independently of declaration order. A
-declared filter omitted from the sequence does not run, which is useful when
-ordering compression and bandwidth limiting but can silently disable a filter.
+## TLS and QUIC quick reference
 
-### Apply per-certificate frontend TLS policy
+### Attach policy to a certificate
 
-Use `ssl-f-use` to select a `crt-store` certificate and attach its TLS versions,
-ALPN, ciphers, or signature algorithms independently of `bind`:
+Use frontend `ssl-f-use` to reference a certificate in `crt-store` and attach
+certificate-specific TLS versions, ALPN, ciphers, or signature algorithms
+without an external crt-list.
 
-```haproxy
-crt-store site_certs
-    load crt "example.pem" alias "example"
+### Handle automatic backend SNI
 
-frontend public_https
-    bind :443 ssl
-    ssl-f-use crt "@site_certs/example" ssl-min-ver TLSv1.2
-```
+HAProxy derives server-side SNI from the HTTP `host` header in 3.3.
+`sni-auto` and `no-sni-auto` control traffic behavior; `check-sni-auto` and
+`no-check-sni-auto` control health checks.
 
-Server-side TLS now derives SNI from the HTTP `host` header by default. Control
-traffic with `sni-auto` or `no-sni-auto`, and checks with `check-sni-auto` or
-`no-check-sni-auto`.
+### Distinguish experimental transports
 
-## Protocol and overload safeguards
+- Backend HTTP/3 uses a `quic4@` server address and requires
+  `expose-experimental-directives` plus normal backend TLS verification.
+- QMux carries QUIC frames over an ordered reliable byte stream and requires
+  `expose-experimental-directives` with `alpn h3` on the relevant TCP
+  `bind` or `server` line.
+- Encrypted Client Hello uses the experimental `ech` bind argument, and
+  clients must retrieve its public key from DNS.
 
-- `quic-initial` rules can `accept`, `reject`, silently `dgram-drop`, or
-  `send-retry` before a QUIC handshake finishes.
-- `tune.h2.fe.max-frames-at-once`, `tune.h2.be.max-frames-at-once`, and
-  `tune.h2.fe.max-rst-at-once` bound HTTP/2 work; RST limits from 1 to 10
-  mitigate attacks but low values may increase interactive or gRPC latency.
-- `tune.h2.fe.max-total-streams` retires long-lived incoming connections.
-  `tune.streams-elasticity` reduces concurrency near `maxconn`, and
-  `tune.h2.fe.max-concurrent-streams` supports `rq-load` and a `min` floor.
-- HTTP/1 glitch thresholds are `tune.h1.fe.glitches-threshold` and
-  `tune.h1.be.glitches-threshold`; graceful close starts at 75 percent of a
-  terminating threshold.
-- `tune.glitches.kill.cpu-usage` gates threshold termination by CPU usage. Its
-  default `0` kills regardless of load; a nonzero value needs an H2 or QUIC
-  glitch threshold.
-- `tune.quic.fe.stream.max-total` sends HTTP/3 GOAWAY after a connection's
-  lifetime request cap, then closes after active transfers finish.
+## Observability and runtime quick reference
 
-## Diagnostics and observability
+### Log at transaction stages
 
-Use transaction-stage `log profile` definitions for destination-specific
-formats at `accept`, `request`, `connect`, `response`, `close`, or `error`.
-`do-log` emits extra records and, since 3.4.0, may select a profile per action:
+`log profile` assigns destination-specific formats at `accept`, `request`,
+`connect`, `response`, `close`, `error`, or `any`. `do-log` emits additional
+logs during processing and can select a profile per invocation in 3.4.
 
 ```haproxy
 http-request do-log profile syslog
 ```
 
-Tracing is supported and controllable through the Runtime API. Select the
-narrowest source (`h1`, `h2`, `h3`, `quic`, `qmux`, `ssl`, `acme`, `fcgi`,
-`spop`, `peers`, or `check`) and stop it after diagnosis.
+### Use focused supported tracing
 
-Add `term_events` to access logs when the full sequence of request termination
-states matters. For selective error context, combine `bs.debug_str` or
-`fs.debug_str` with `when(condition)` and inspect `last_entity` and
-`waiting_entity`.
+Tracing is supported and controlled through the Runtime API. Sources include
+`h1`, `h2`, `h3`, `quic`, `qmux`, `fcgi`, `spop`, `peers`, `check`, `ssl`,
+and `acme`.
 
-The Prometheus endpoint exposes `haproxy_sticktable_local_updates` per stick
-table. `show stat typed` marks experimental shared-memory metrics `P` or `V`,
-while `show info` reports map and ACL line additions and removals.
+### Preserve statistics only across reloads
 
-## Runtime and scripting cautions
+Experimental shared-memory statistics require
+`expose-experimental-directives`, `shm-stats-file`, and unique `guid` values
+on participating frontends, backends, and servers. They survive reloads but
+not process restarts.
 
-- `@@<relative-pid>` keeps a Master CLI worker session interactive and carries
-  prompt mode into the worker; `prompt` accepts `n`, `i`, and `p`.
-- ACME certificates initially held only in memory must be persisted with
-  `dump ssl cert`; `haproxy-dump-certs` can write socket-obtained certificates.
-- `add ssl crt-list` accepts `crt-store` aliases without verifying that the
-  filesystem path matches the in-memory name. The caller must validate it.
-- Lua fetch booleans remain integer `0` and `1` unless
-  `tune.lua.bool-sample-conversion normal` is configured.
-- Use `core.get_patref` for mutable ACL or Map references, including atomic
-  whole-file replacement through `prepare()` and `commit()`.
-- `AppletTCP:receive()` accepts an optional timeout for periodic work.
+## Applying the references
 
-## Operational checklist
-
-1. Pin a feature branch and keep its bug-fix component current.
-2. Check the branch support state and reproduce issues on its newest patch.
-3. Run configuration validation with the deployment binary.
-4. Review warnings for deprecated, empty, experimental, privilege, CPU, and
-   thread-group configuration.
-5. Make changed defaults explicit when old behavior is required.
-6. Treat experimental ACME, ECH, shared statistics, backend HTTP/3, and QMux
-   as opt-in features requiring `expose-experimental-directives`.
-7. On reload, verify worker, socket, statistics, and dynamically created
-   backend state according to the feature's persistence rules.
-8. Use the topic references for exact directives, sample semantics, and
-   migration details before editing production configuration.
+Open the reference matching the current task before changing configuration.
+Keep version-dependent syntax tied to its stated introduction or transition,
+especially for compression, QUIC naming, balancing defaults, deprecations,
+and experimental features.

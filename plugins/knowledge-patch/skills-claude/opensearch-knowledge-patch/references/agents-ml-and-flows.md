@@ -1,182 +1,113 @@
 # Agents, ML Commons, and Flow Framework
 
-Use this reference for agent registration and execution, memory, tools,
-connectors, MCP transport, ML inference processing, and Flow Framework.
+Use this reference for agent architectures, tools, memory, connectors, inference, MCP integration, Flow Framework, and application provisioning.
 
-## Flow authoring and provisioning
+## Agentic search lifecycle
 
-### Flow authoring and provisioning
+### From experiment to production
 
-Since 2.19.0, OpenSearch Flow in Dashboards composes custom ML application
-flows, including RAG and vector-search workflows. Flow Framework supports
-synchronous workflow provisioning. `WorkflowRequest` no longer has `useCase`
-or `defaultParams`.
+- In 3.2.0, disabled-by-default agentic search introduces an agentic query clause and a request processor that translates natural language to OpenSearch DSL through planning, execution, and summarization.
+- In 3.3.0, agentic search becomes generally available. Agents select tools, generate queries, retain multi-turn context, and use custom search templates. Conversational agents can use `QueryPlanningTool` and carry an agent summary and memory ID.
+- In 3.4.0, Dashboards adds a redesigned no-code agentic-search flow with external MCP, search templates, conversational memory, single-model support, and agent summaries. Agentic query processing preserves the request's source parameter.
+- In 3.6.0, planning supports aliases and wildcard index patterns, custom fallback queries, embedding-model selection for neural queries, and reranking.
 
-### Flow and replication lifecycle changes
+### Unified V2 agents
 
-Since 3.0.0, Dashboards Flow Framework accepts ingestion input as JSON Lines.
-Index State Management's `unfollow` action invokes stop replication for
-cross-cluster replication.
+- In 3.6.0, the disabled-by-default unified registration API provisions connector, model, agent, and parameter mappings in one request. Its `conversational_v2` agent accepts plain text, multimodal content blocks, and conversation history without custom connector configuration.
+- In 3.7.0, unified registration and `conversational_v2` become production-ready. V2 `inferenceConfig.model_parameters` values are honored instead of ignored.
 
-### Flow configuration and templates
+## Agent memory and context
 
-Since 3.1.0, Flow Framework thread-pool sizes are configurable. Dashboards
-provides a sparse-encoder semantic-search workflow, and Flow Framework includes
-a data-summary template that uses a log-pattern agent.
+### Memory containers and sessions
 
-## Connectors and inference processing
+- In 3.2.0, ML Commons adds memory-container create, read, update, and delete operations. AI memory can add, search, update, and delete records; agents can receive current date/time and configure message-history limits.
+- In 3.3.0, agentic memory becomes generally available and enabled by default, with semantic fact extraction, preference learning, and conversation summarization. Sessions add message IDs and update times; container deletion can choose whether to delete contained memories.
+- In 3.6.0, long-term memory supports semantic and hybrid retrieval, memory types accept message arrays, and context managers add a structured post-memory hook.
+- In 3.7.0, fact extraction can use constrained structured output.
 
-### ML connectors and agent tool inputs
+### Context management
 
-Since 2.19.0, ML Commons provides a built-in Cohere multimodal preprocessor
-selectable by function name, plus preprocessing and postprocessing for Bedrock
-reranking. DeepSeek and Amazon Rekognition are trusted endpoints.
-Conversational-agent tools can receive action inputs as parameters and use
-language-model-generated inputs as search parameters.
+In 3.5.0, agent hooks can run at several execution stages. Built-in context strategies include automatic truncation, summarization, and sliding windows before LLM requests. Conversation memory persists structured context and intermediate tool reasoning and validates misconfiguration.
 
-### ML connector request behavior
+### Retention
 
-Since 3.1.0, inline model connectors do not require a connector name.
-Schema-defined strings remain strings during validation instead of being
-coerced, and the ML inference request processor's Update Query step parses
-nested JSON objects.
-
-### ML connector actions
-
-Since 3.5.0, ML Commons connectors support custom-named actions and the PUT and
-DELETE HTTP methods, so one connector can expose a wider external REST surface.
-
-### ML connector runtime controls
-
-Since 3.7.0, connector headers accept per-request `${parameters.*}`
-substitutions, such as `X-Trace-ID: ${parameters.trace_id}`. Outbound connector
-paths add private-IP and ReDoS protection and consistently enforce
-`trusted_connector_endpoints_regex`.
-
-## Agent registration and execution
-
-### Experimental MCP and reflective agents
-
-OpenSearch 3.0.0 includes disabled-by-default native Model Context Protocol
-integration. ML Commons adds an MCP server and sessions plus a
-plan-execute-reflect agent with user-supplied prompts.
-
-### Agent and MCP lifecycle APIs
-
-Since 3.1.0, Update Agent can modify model IDs, workflow tools, and prompts.
-Experimental MCP adds list-tools and update-tools APIs, persists tools in a
-system index across restarts, and permits a custom SSE endpoint for the client.
-
-### Experimental agentic search
-
-OpenSearch 3.2.0 introduces disabled-by-default agentic search: an agentic query
-clause and a request processor translate natural-language questions to
-OpenSearch DSL through planning, execution, and summarization workflows.
-
-### Agentic search general availability
-
-In 3.3.0, agentic search becomes generally available. Agents can select tools,
-generate queries, keep multi-turn context, and use custom search templates.
-Conversational agents can use Query Planning Tool and carry an agent summary
-and memory ID.
-
-### Agentic-search authoring
-
-Since 3.4.0, Dashboards has a redesigned no-code agentic-search flow with
-external MCP and search-template integration, conversational memory,
-single-model support, and agent summaries. Agentic query processing preserves
-the request's source parameter.
-
-### Agent context hooks and conversation memory
-
-Since 3.5.0, context-management hooks run at different execution stages and can
-truncate, summarize, or use sliding windows before language-model requests.
-Conversation memory persists conversation context and intermediate tool
-reasoning in a structured form and validates misconfiguration.
-
-### Experimental agent and web protocols
-
-OpenSearch 3.5.0 includes disabled-by-default Agent-User Interaction (AG-UI)
-event streaming for connecting agents to user interfaces and disabled-by-default
-server-side HTTP/3.
-
-### Conversational V2 agents
-
-OpenSearch 3.6.0 introduces a disabled-by-default unified registration API that
-creates the connector, model, agent, and parameter mappings in one request.
-Its `conversational_v2` agent accepts plain text, multimodal content blocks,
-and conversation history without custom connector configuration.
-
-### Production-ready unified agents
-
-In 3.7.0, unified registration and `conversational_v2` become production-ready.
-V2 `inferenceConfig.model_parameters` values are honored rather than ignored,
-and agentic-memory fact extraction can use constrained structured output.
-
-## Planning, memory, and context
-
-### Agent tools and memory
-
-Since 3.2.0, ML Commons includes a query-planning tool, Execute Tool API, and
-memory-container lifecycle APIs. Memory supports add, search, update, and
-delete. Agents can receive current date and time and configure message-history
-limits.
-
-### Persistent agentic memory and sessions
-
-In 3.3.0, agentic memory is generally available and enabled by default, with
-semantic fact extraction, preference learning, and conversation summarization.
-Sessions include message IDs and update times. Deleting a memory container can
-optionally delete its memories.
-
-### Agentic-search planning and memory
-
-Since 3.6.0, planning supports aliases, wildcard index patterns, custom fallback
-queries, embedding-model selection for neural queries, and reranking. Long-term
-memory supports semantic and hybrid retrieval, memory types accept message
-arrays, and context managers have a structured post-memory hook.
-
-### Agent and embedding runtime options
-
-Since 3.6.0, conversational, AG-UI, and plan-execute-reflect agents can report
-token usage. Text-embedding models support `LAST_TOKEN` pooling for decoder-only
-models and `NONE` for outputs that are already pooled.
+In 3.8.0, disabled-by-default retention policies can delete expired sessions, long-term memories, and history entries by age or count. Use cluster-wide defaults or per-container policy settings.
 
 ## Tools and processor chains
 
-### Processor chains and agent tools
+### Tool execution
 
-Since 3.3.0, ML Commons processor chains run sequential transformations through
-10 processor types, including JSONPath filters, regular expressions,
-conditions, and array iteration, and can invoke models and tools. New built-ins
-include scratchpad read/write, index insight, log pattern analysis, and data
-distribution. Execute Tool is enabled by default.
+- In 2.19.0, conversational-agent tools can receive action inputs as parameters and use generated inputs as search parameters.
+- In 3.2.0, ML Commons adds a query-planning tool and Execute Tool API.
+- In 3.3.0, Execute Tool becomes enabled by default. Built-ins add scratchpad read/write, index insight, log-pattern analysis, and data-distribution tools.
+- In 3.6.0, new built-ins retrieve documents surrounding a selected document and compare metric percentiles between baseline and selection periods. `LogPatternAnalysisTool` accepts a service filter.
+- In 3.7.0, `AbstractRetrieverTool` adds `input_schema` for function calling, and `VectorDBTool` accepts runtime overrides during agentic search.
 
-### Built-in agent tools
+### Processor chains
 
-Since 3.6.0, built-in tools can retrieve documents surrounding a selected
-document and compare metric percentiles across baseline and selection periods.
-`LogPatternAnalysisTool` accepts a service filter.
+ML Commons 3.3.0 processor chains apply sequential transformations with 10 processor types, including JSONPath filters, regular expressions, conditions, and array iteration. A chain can invoke models and tools.
 
-### Agent tool contracts
+### Relevance Agent
 
-Since 3.7.0, `AbstractRetrieverTool` has `input_schema` for function calling,
-and `VectorDBTool` accepts runtime parameter overrides during agentic search.
+The disabled-by-default 3.6.0 Relevance Agent uses a multi-agent Dashboards workflow to analyze user behavior, propose relevance changes, and validate them by offline evaluation.
 
-## MCP and streaming transport
+## MCP and agent protocols
 
-### MCP and inference streaming
+### Native MCP lifecycle
 
-Since 3.3.0, the ML Commons MCP server uses Streamable HTTP with role-based
-authorization and deprecates SSE transport. MCP connectors can be Streamable
-HTTP clients for external servers. Separately, disabled-by-default SSE APIs
-stream partial remote-model predictions and agent execution results.
+- In 3.0.0, disabled-by-default native MCP support integrates OpenSearch with external agents. ML Commons adds an MCP server, sessions, and a plan-execute-reflect agent with user prompts.
+- In 3.1.0, the Update Agent API can change an agent's model IDs, workflow tools, and prompts.
+- In 3.1.0, experimental MCP adds list-tools and update-tools APIs, persists tools in a system index across restarts, and lets the MCP client use a custom SSE endpoint.
+- In 3.3.0, the ML Commons MCP server uses Streamable HTTP with role authorization and deprecates its SSE transport. MCP connectors can act as Streamable HTTP clients for external servers.
+- In 3.8.0, external MCP connectors work with Flow and Conversational Flow agents, covering all four agent architectures. Connector-level tool-description overrides change how tools are presented without changing the external server.
 
-## Application generation
+### Streaming protocols
 
-### OpenSearch Launchpad
+- In 3.3.0, separate disabled-by-default SSE APIs stream partial remote-model predictions and agent results.
+- In 3.5.0, the disabled-by-default AG-UI protocol streams events between agents and user interfaces. Server-side HTTP/3 is also experimental.
+- In 3.8.0, `PredictModelStream` and `ExecuteAgentStream` provide token-by-token remote prediction and agent execution over Protobuf and HTTP/2.
 
-Since 3.6.0, Launchpad turns sample documents and conversational requirements
-into a local search application. It provisions semantic encoding, cluster
-configuration, architecture, and a working UI and integrates the result with
-an IDE.
+## Connectors and inference
+
+### Request construction
+
+- In 2.19.0, ML inference search-request extensions accept additional model-specific fields. A `template` query can leave placeholders unresolved until a search request processor assigns them.
+- In 3.1.0, inline model connectors no longer require a connector name. Schema strings remain strings during validation instead of being coerced, and the inference request processor's Update Query step parses nested JSON objects.
+- In 3.5.0, connectors support custom action names and PUT and DELETE, allowing a connector to expose broader REST operations.
+- In 3.7.0, connector headers accept per-request substitutions such as `X-Trace-ID: ${parameters.trace_id}`.
+
+### Preprocessing and providers
+
+OpenSearch 2.19.0 adds a built-in Cohere multimodal preprocessor selected by function name, Bedrock reranking pre- and postprocessing, and trusted endpoints for DeepSeek and Amazon Rekognition.
+
+### Connector network controls
+
+In 3.7.0, outbound connector paths add private-IP and ReDoS protections and consistently enforce `trusted_connector_endpoints_regex`. Validate the resolved endpoint, not only the template.
+
+### Runtime options and guardrails
+
+- In 3.6.0, conversational, AG-UI, and plan-execute-reflect agents can report token use. Text-embedding models add `LAST_TOKEN` pooling for decoder-only models and `NONE` when output is already pooled.
+- In 3.8.0, `ModelGuardrail` and `LocalRegexGuardrail` fail closed when evaluation errors occur. Integrations must handle denial on the error path.
+
+## ML Commons observability
+
+In 3.1.0, ML Commons integrates with the OpenSearch metrics framework and OpenTelemetry-compatible monitoring. It supports runtime instrumentation on selected paths and scheduled collection of state-level metrics.
+
+Agent Traces in 3.6.0 records agent, language-model, and tool spans through OpenTelemetry. A Python instrumentation SDK and Dashboards DAG and token-usage views are available.
+
+## Flow Framework and application provisioning
+
+### Flow authoring
+
+- In 2.19.0, OpenSearch Flow in Dashboards composes ML application flows, including RAG and vector-search workflows. Flow Framework supports synchronous provisioning, and `WorkflowRequest` removes `useCase` and `defaultParams`.
+- In 3.0.0, Dashboards Flow Framework changes ingestion input to JSON Lines.
+- In 3.1.0, Flow Framework thread-pool sizes are configurable. Dashboards adds a sparse-encoder semantic-search template, and Flow Framework adds a data-summary template using a log-pattern agent.
+
+### Resource isolation and sharing
+
+- In 2.19.0, tenant isolation covers Flow Framework and ML Commons connectors, models, tasks, deployments, predictions, agents, search, and configuration.
+- In 3.4.0, Flow Framework joins centralized resource sharing and access control. See the security reference for ownership and migration requirements.
+
+### Launchpad
+
+OpenSearch Launchpad in 3.6.0 turns sample documents and conversational requirements into a local search application. It provisions semantic encoding, cluster configuration, architecture, and a working UI, then integrates the project with an IDE.

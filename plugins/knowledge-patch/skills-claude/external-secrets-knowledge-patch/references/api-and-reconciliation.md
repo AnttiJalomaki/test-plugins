@@ -1,39 +1,23 @@
 # API Resources and Reconciliation
 
-Use this reference for `ExternalSecret`, `ClusterExternalSecret`, store, target,
-status, refresh, validation, and namespace behavior. Provider-specific fields are
-in the provider references; outgoing-secret behavior is in `push-secrets.md`.
+Use this reference for resource semantics, status, validation, refresh behavior,
+selectors, and controller reconciliation. Provider-specific authentication and
+capabilities are covered in the provider references.
 
-## API version and schema transitions
+## ExternalSecret refresh semantics
 
-- Provider examples use `apiVersion: external-secrets.io/v1` (0.17.0). Prefer
-  the stable API and check the installed CRD rather than copying an older beta
-  example.
-- Serving the legacy beta API can be toggled during migration (1.3.0). This is a
-  transition control, not a reason to leave manifests on the beta version.
-- `ExternalSecretRewrite` has validation constraints (0.19.0), and invalid
-  rewrite definitions are rejected at admission instead of reaching reconcile.
-- Namespace values in namespaced `secretRef` configurations are validated
-  (0.20.0). Do not rely on a later provider error for an invalid cross-namespace
-  reference.
-- `generatorRef` validates `externalsecret_type` (1.0.0). A reference that used
-  to bypass that check must be corrected to a supported type.
-- CRDs expose selectable fields (0.20.0), so supported resource fields can be
-  queried with Kubernetes field selectors.
+### Refresh policies (`api-v1`)
 
-## Refresh policies and state
+`Periodic` is the default policy. With `refreshInterval: 0`, the controller fetches
+and creates once but does not update later. `OnChange` ignores the interval and
+refreshes only after `ExternalSecret` metadata or spec changes.
 
-`Periodic` is the default policy. A zero `refreshInterval` fetches and creates
-the target once, but performs no later periodic updates. `OnChange` ignores the
-interval and reacts only to changes in the `ExternalSecret` metadata or spec.
-
-`CreatedOnce` is stateful: its status lets ESO restore a target Secret that was
-changed or deleted while the same `ExternalSecret` survives. Deleting and
-recreating the `ExternalSecret` loses that status, so ESO can overwrite a target
-that still exists. Creation policy does not prevent this recreation-time write
-(api-v1).
-
-For a generated credential that must survive deletion and never be replaced:
+`CreatedOnce` stores its progress in status. It repairs a target Secret that is
+changed or deleted while the same `ExternalSecret` object survives, but deleting
+and recreating the `ExternalSecret` resets that status and can overwrite an
+existing target. Creation policies do not prevent this recreation-time rewrite.
+For a generated credential that must survive deletion and reject replacement, use
+an orphaned, immutable target:
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -55,45 +39,36 @@ spec:
         key: app/password
 ```
 
-Additional timing behavior:
+### Manual refresh annotations (`api-v1`)
 
-- An `ExternalSecret` can define sync windows that gate periodic refreshes
-  (2.7.0). A healthy object can therefore remain unchanged outside its window.
-- `SecretStore.refreshInterval` accepts duration strings (2.8.0).
-- Failed reconciliations use a much less aggressive retry cadence than earlier
-  behavior (0.14.0). Do not infer a stalled controller from the lack of rapid
-  retries.
-- SecretStore reconciliation itself can be enabled or disabled by a controller
-  flag (1.2.0). Check this flag when stores never update status.
-
-## Manual refresh
-
-The annotation names differ by resource (api-v1):
+An `ExternalSecret` uses the unqualified `force-sync` annotation when its refresh
+policy permits manual refresh. A `ClusterExternalSecret` uses
+`external-secrets.io/force-sync`; setting, changing, or deleting it propagates to
+each owned `ExternalSecret`.
 
 ```sh
 kubectl annotate es my-es force-sync=$(date +%s) --overwrite
 kubectl annotate ces my-ces external-secrets.io/force-sync=$(date +%s) --overwrite
 ```
 
-An `ExternalSecret` responds only when its refresh policy supports the action.
-For a `ClusterExternalSecret`, setting, changing, or deleting
-`external-secrets.io/force-sync` propagates the change to every owned child.
+### Sync windows (since 2.7.0)
 
-## Target creation and content
+`ExternalSecret` supports sync windows that gate periodic refreshes. Account for
+the window when diagnosing a healthy object whose periodic update has not run.
 
-- An `ExternalSecret` source can select a dynamic target rather than requiring a
-  target fixed in advance (1.0.0).
-- `CreateOrMerge` is accepted as a target creation policy (2.8.0).
-- Certificate processing accepts PKCS#12 bundles containing certificates but no
-  private key (0.20.0).
-- `objectMeta` and `ownerReferences` propagate to target resources (2.3.0).
+### Optional strategy fields (since 2.9.0)
 
-### Metadata copying is replaced by template metadata
+The API no longer materializes defaults for optional `ExternalSecret` strategy
+fields. Clients, diffs, and manifest pipelines must tolerate omitted fields not
+being written back.
 
-Labels and annotations on the `ExternalSecret` are normally copied to its target
-Secret. Once `target.template.metadata` configures a category, that template
-metadata replaces the implicit copy. Empty maps explicitly suppress copying
-(api-v1):
+## Target construction and metadata
+
+### Template metadata replaces implicit copying (`api-v1`)
+
+Labels and annotations on an `ExternalSecret` normally copy to the target Secret.
+Once `target.template.metadata` is configured, its maps replace implicit copying;
+empty maps explicitly suppress copying.
 
 ```yaml
 spec:
@@ -104,15 +79,39 @@ spec:
         annotations: {}
 ```
 
-See `templates-generators-and-cli.md` for data selection, delimiters, native
-values, functions, renderer commands, `templateFrom`, and generator behavior.
+### Dynamic targets (since 1.0.0)
+
+ExternalSecret sources can choose a target dynamically instead of fixing it in
+advance. Validate the selected target and its ownership semantics just as for a
+static target.
+
+### Ownership propagation (since 2.3.0)
+
+`objectMeta` and `ownerReferences` propagate to target resources. This matters for
+garbage collection and for generic targets whose lifecycle follows another
+resource.
+
+### Creation policies (since 2.8.0)
+
+`ExternalSecret.spec.target.creationPolicy` accepts `CreateOrMerge` in addition to
+the earlier policies. Use it when the target may need to be created and then
+merged rather than wholly replaced.
+
+### Finalizers (since 0.20.0)
+
+Secret templates can add finalizers to generated Secrets. Separately, a
+`SecretStore` referenced by a `PushSecret` with `deletionPolicy: Delete` receives a
+finalizer so remote deletion can finish before store removal.
 
 ## ClusterExternalSecret fan-out
 
-`ClusterExternalSecret.spec.namespaceSelectors` is a list and its entries are
-ORed. The singular `namespaceSelector` and the explicit `namespaces` field are
-deprecated. If the desired child name already exists, ESO reports that namespace
-as failed rather than taking ownership of the object (api-v1).
+### Plural selectors (`api-v1`)
+
+`ClusterExternalSecret.spec.namespaceSelectors` is a list, and its selectors are
+ORed. The singular `namespaceSelector` and explicit `namespaces` fields are
+deprecated in favor of this list. If a selected namespace already contains a
+colliding `ExternalSecret`, the controller records a failed namespace instead of
+taking over the object.
 
 ```yaml
 spec:
@@ -123,23 +122,21 @@ spec:
         shared-credentials: "true"
 ```
 
-Every generated child normally polls the upstream provider independently, so
-provider calls grow linearly with namespaces. To fetch once, create one source
-`ExternalSecret` in a dedicated namespace, expose its resulting Secret through a
-Kubernetes-provider `ClusterSecretStore`, and have the `ClusterExternalSecret`
-replicate through that store. Only the source object then contacts the upstream
-provider (api-v1).
+### Reduce upstream provider calls (`api-v1`)
 
-The Helm chart gates write permissions for `externalsecrets` on
-`processClusterExternalSecret` (2.5.0). Disabling that controller no longer
-leaves the write permission enabled.
+Every generated `ExternalSecret` polls the upstream provider independently, so
+calls grow linearly with selected namespaces. At large scale, fetch once into a
+dedicated namespace, expose that Secret through a Kubernetes-provider
+`ClusterSecretStore`, and fan out from that store. Only the source object then
+calls the upstream provider.
 
-## ClusterSecretStore access conditions
+## Stores and access control
 
-A `ClusterSecretStore` can restrict which namespaces may reference it with
-`spec.conditions`. Label selectors, explicit namespace names, and regular
-expressions are separate ORed alternatives; satisfying any one grants access
-(api-v1).
+### ClusterSecretStore namespace conditions (`api-v1`)
+
+`ClusterSecretStore.spec.conditions` can restrict referencing namespaces.
+Label-selector, explicit-name, and regular-expression conditions are ORed; any
+matching condition grants access.
 
 ```yaml
 spec:
@@ -153,27 +150,11 @@ spec:
         - "tenant-.*"
 ```
 
-Namespaced `ExternalSecret` and `SecretStore` objects still cannot reference a
-different namespaced store, Secret, or other namespaced referent. A
-cluster-scoped resource needs a separate scope and authorization review.
+### SecretStore retries (`api-v1`)
 
-## Store status, lifecycle, and retries
-
-- A `SecretStore` can report unknown status when its state cannot be determined
-  (0.20.0). Preserve the distinction between unknown and a known failure.
-- A store can be marked deprecated so operators can identify it as a migration
-  target (1.2.0).
-- A store backed by an unmaintained provider produces warning events from both
-  the controller and admission webhook. The annotation below suppresses only
-  the controller warning; the admission warning cannot be disabled (api-v1):
-
-```yaml
-metadata:
-  annotations:
-    external-secrets.io/ignore-maintenance-checks: "true"
-```
-
-A namespaced `SecretStore` can configure HTTP retries (api-v1):
+A namespaced `SecretStore` can define `retrySettings.maxRetries` and
+`retrySettings.retryInterval`. The v1 API documentation lists this support only
+for AWS, HashiCorp Vault, IBM, and Doppler.
 
 ```yaml
 spec:
@@ -182,19 +163,55 @@ spec:
     retryInterval: 10s
 ```
 
-The v1 API documentation lists these retry settings only for AWS, HashiCorp
-Vault, IBM, and Doppler providers. Do not assume another provider consumes them.
+### Status, deprecation, and refresh
 
-## Webhook and controller-visible behavior
+- Since 0.20.0, a `SecretStore` can report unknown status rather than inventing a
+  known state when its condition cannot be determined.
+- Since 1.2.0, stores can be designated deprecated so consumers can identify and
+  migrate away from them.
+- Since 2.8.0, `SecretStore.refreshInterval` accepts duration strings.
+- Since 1.2.0, a controller flag can enable or disable SecretStore reconciliation.
+- Failed reconciliations retry much less aggressively from 0.14.0; do not rely on
+  the older rapid retry cadence.
 
-- Webhook-provider requests include the `ExternalSecret` namespace, enabling a
-  namespace-aware endpoint (0.20.0).
-- `ValidatingWebhookConfiguration` accepts annotations (0.16.0).
-- The validating webhook obtains `failurePolicy` for `SecretStore` dynamically
-  (2.0.0), and the chart applies its configured policy to the
-  `ClusterSecretStore` webhook (2.4.0).
-- Tabular output includes `storeType` (0.14.0).
-- `ExternalSecret` and `PushSecret` printer output includes a Last Sync column
-  (2.2.0).
-- The controller logs target Secret deletion and data-key changes (2.7.0), which
-  helps distinguish intended reconcile effects from external mutation.
+### Unmaintained-provider warnings (`api-v1`)
+
+Stores backed by a provider without an explicit maintainer emit controller and
+admission-webhook warning events. This annotation suppresses only the controller
+warning; the admission warning cannot be disabled:
+
+```yaml
+metadata:
+  annotations:
+    external-secrets.io/ignore-maintenance-checks: "true"
+```
+
+## Validation and API visibility
+
+- `ExternalSecretRewrite` validation rejects invalid rewrite configurations from
+  0.19.0.
+- `generatorRef` validates `externalsecret_type` from 1.0.0.
+- Namespaces in `secretRef` are validated from 0.20.0 rather than accepted for a
+  later runtime failure.
+- CRDs declare supported fields selectable from 0.20.0, enabling Kubernetes field
+  selectors.
+- Tabular output includes `storeType` from 0.14.0.
+- `ExternalSecret` and `PushSecret` printers include Last Sync from 2.2.0.
+- Provider examples use stable `apiVersion: external-secrets.io/v1` from 0.17.0.
+- Serving the legacy beta API became configurable in 1.3.0 for migration periods.
+
+## Admission and webhook context
+
+- `ValidatingWebhookConfiguration` accepts annotations from 0.16.0.
+- Webhook provider calls include the `ExternalSecret` namespace from 0.20.0,
+  enabling namespace-aware webhook logic.
+- The SecretStore validating-webhook `failurePolicy` became dynamic in 2.0.0.
+- The chart applies `failurePolicy` to the `ClusterSecretStore` webhook from
+  2.4.0.
+
+## Source processing details
+
+- Secret metadata can request decoded-value representation from 0.15.0.
+- Source null-byte policy is configurable from 2.3.0.
+- Group-variable selection became environment-aware in 0.18.0.
+- ConfigMap access through `CAProvider` works correctly from 2.4.0.

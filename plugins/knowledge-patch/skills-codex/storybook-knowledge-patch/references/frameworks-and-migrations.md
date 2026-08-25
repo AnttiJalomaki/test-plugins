@@ -1,20 +1,25 @@
 # Frameworks and migrations
 
-## Runtime and package format
+## Runtime and migration prerequisites
 
-Storybook 10 is ESM-only. Its packages require a Node.js version with ESM
-`require()` support: Node.js 20.16+, 22.19+, or 24+.
+### ESM-only packages
 
-When an upgrade fails at process startup or package loading, confirm the active
-Node.js executable and CI runtime before changing Storybook configuration. A
-CommonJS-oriented workaround cannot restore a supported package format.
+Storybook 10 packages are ESM-only (batch `9.0-10.0`). The runtime must support
+loading ESM through `require()`:
+
+- Node.js 20.16 or newer on the 20.x line;
+- Node.js 22.19 or newer on the 22.x line;
+- Node.js 24 or newer.
+
+Check `node --version` before investigating configuration when the process
+fails during startup. Do not patch installed packages back to CommonJS.
 
 ## Angular
 
-### Angular on Vite
+### Choose the Angular framework deliberately
 
 The preview `@storybook/angular-vite` framework provides Vite-based Angular
-development, Docs, and testing:
+development, Docs, and testing (since `10.5.0`):
 
 ```js
 export default {
@@ -22,25 +27,28 @@ export default {
 };
 ```
 
-The Angular-to-Vite migration performs three important compatibility steps:
+An Angular-to-Vite migration should:
 
-- preserves `zone.js`;
-- installs `@analogjs/vite-plugin-angular`;
-- configures addon Vitest.
+- preserve `zone.js`;
+- install `@analogjs/vite-plugin-angular`;
+- configure addon Vitest.
 
-Inspect all three after an automated migration, particularly if the preview
-runs but interaction tests or Angular change detection behave differently.
+Verify all three after running the migration. The Webpack framework separately
+supports Angular 22, so that Angular version does not force a Vite migration.
 
-The Webpack-based Angular framework separately supports Angular 22. Choose a
-builder based on project needs rather than treating Vite as an Angular 22
-requirement.
+### Angular-Vite dependencies
+
+As of `10.5.1`, `@storybook/angular-vite` no longer declares
+`@angular/platform-browser-dynamic` as a peer dependency. Do not install it
+solely to satisfy Storybook. Its TypeScript peer range also accepts TypeScript
+6.
 
 ## Next.js
 
 ### Vite-powered framework
 
-`@storybook/nextjs-vite` implements Next.js navigation, route, image, and font
-mocks on Vite. It is compatible with Storybook Test and Vitest.
+`@storybook/nextjs-vite` supplies Next.js navigation, route, image, and font
+mocks on Vite (batch `9.0-10.0`). It integrates with Storybook Test and Vitest:
 
 ```ts
 export default {
@@ -48,47 +56,56 @@ export default {
 };
 ```
 
-Next.js 16 is supported without dropping support for older supported versions.
+Compatibility includes Next.js 16 and Vitest 4 while retaining older supported
+versions.
 
 ### Link behavior
 
-The `next/link` mock supports the `as` prop. On a click, the mock calls the
-consumer's `onClick` handler before preventing the default action. Tests that
-assert ordering or inspect the event should reflect that sequence.
+The `next/link` mock supports `as` and calls the provided `onClick` before it
+prevents the default action (since `10.5.0`). The Next.js Vite framework also
+provides a Link mock compatible with `useLinkStatus`.
 
-The Next.js Vite framework also supplies a Link mock compatible with
-`useLinkStatus`.
+When a click assertion depends on ordering, assert the handler effect before
+checking prevented navigation.
 
-## Svelte and SvelteKit
+## Svelte and React Native
 
-- Svelte CSF supports Svelte 5 runes and snippets.
-- Storybook supports Svelte async components.
-- SvelteKit mocking includes `app/state`.
+### Svelte support
 
-These capabilities allow current Svelte syntax and application state APIs to be
-used directly in stories without maintaining legacy-only story variants.
+Svelte CSF supports Svelte 5 runes and snippets (batch `9.0-10.0`). Storybook 10
+also supports async Svelte components and SvelteKit mocking for `app/state`.
 
-## React Native
+### Paired native and web workflows
 
-React Native and React Native Web Storybooks can run side by side. The same
-stories can run on devices or simulators and participate in the web Storybook's
-Docs and Test addons. Prefer shared stories where platform behavior permits,
-with platform-specific setup kept in the respective Storybook environments.
+React Native and React Native Web Storybooks can run side by side (batch
+`9.0-10.0`). The same story set can serve devices or simulators while web-based
+Storybook supplies Docs and Test addons.
 
 ## TanStack Router
 
-`@storybook/tanstack-react` exports `TanStackPreview` for typing CSF Next
-previews. Its `RouteOptions` accepts either an `id` or a `path`, and route-group
-paths are normalized.
+### Types, route options, and removed mocks
 
-The integration no longer provides an Outlet mock. Stories that need an outlet
-must not rely on a formerly implicit integration mock.
+`@storybook/tanstack-react` exports `TanStackPreview` for CSF Next typing (since
+`10.5.0`). `RouteOptions` accepts either `id` or `path`, and route groups are
+normalized. The integration no longer provides an Outlet mock, so provide
+explicit route layout behavior where a story needs one.
 
-## Test-runner compatibility
+### Hydration and routing behavior
 
-Vitest 4 is supported without dropping older supported versions. Confirm the
-project's resolved Vitest and framework packages when diagnosing integration
-behavior because a broad manifest range may resolve differently across local
-and CI installs.
+`@storybook/tanstack-react` exports `Hydrate` as of `10.5.1`:
 
-Batch attribution: `9.0-10.0`, `10.5.0`.
+```ts
+import { Hydrate } from '@storybook/tanstack-react';
+```
+
+The inherited Vite configuration removes `@cloudflare/vite-plugin`. Story
+routing also:
+
+- waits for the router to load before proceeding;
+- preserves explicit route and layout IDs when cloning routes;
+- honors component overrides supplied through `routeOverrides`;
+- resolves mock redirects through Vite;
+- renders real `href` values from the Link mock.
+
+These behaviors matter to tests that inspect links, redirect resolution, or
+cloned route identity.

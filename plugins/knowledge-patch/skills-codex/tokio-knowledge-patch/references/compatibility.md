@@ -1,110 +1,148 @@
 # Compatibility and upgrade floors
 
-Use this reference when selecting dependency versions, raising a compiler floor, or reviewing an upgrade for behavior that can break builds or production assumptions.
+## Compiler and dependency requirements
 
-## Contents
+| Package version | Minimum requirement | Upgrade effect |
+| --- | --- | --- |
+| Tokio 1.39.0 | Rust 1.70 | Update older Rust toolchains before upgrading Tokio. |
+| Tokio 1.48.0 | Rust 1.71 | Update toolchains older than Rust 1.71. |
+| `tokio-util` 0.7.12 | Rust 1.70 | Establishes the Rust 1.70 floor. |
+| `tokio-util` 0.7.17 | Rust 1.71 | Raises the earlier floor again. |
+| `tokio-util` 0.7.18 | Tokio 1.44.0 | Raises the minimum Tokio dependency. |
+| `tokio-stream` 0.1.13 | Rust 1.56 | Raises the crate's Rust floor. |
+| `tokio-stream` 0.1.15 | Rust 1.63 | Raises the floor again. |
+| `tokio-stream` 0.1.16 | Rust 1.70 | Raises the floor to Rust 1.70. |
+| `tokio-stream` 0.1.14 | Tokio 1.15 | Required so `timeout_repeating` compiles. |
 
-- [Compiler and dependency floors](#compiler-and-dependency-floors)
-- [Safe Tokio patch releases](#safe-tokio-patch-releases)
-- [Source and behavior migrations](#source-and-behavior-migrations)
-- [Unstable build configuration](#unstable-build-configuration)
+Tokio 1.53.0 accidentally exceeded its declared Rust 1.71 minimum on Windows
+because its signal handler used `OnceLock::wait`. Use 1.53.1 when Windows
+signal support must build on that minimum toolchain.
 
-## Compiler and dependency floors
+## Patch-release safety
 
-### Tokio
+### Sound broadcast cloning (1.42.0)
 
-- Tokio 1.39.0 raises the minimum supported Rust version (MSRV) to 1.70.
-- Tokio 1.48.0 raises the MSRV again to 1.71.
+Tokio 1.42.0 clones `Send` but `!Sync` broadcast values without
+synchronization. This is a soundness issue. Require at least 1.42.1 whenever a
+broadcast channel may carry such a value; that release synchronizes cloning.
 
-Check the workspace compiler, CI matrix, container images, and downstream library policy before raising either dependency floor.
+### Process and channel fixes (1.43.0)
 
-### Companion crates
+- Use at least 1.43.2 when pidfd-backed child waiting is active; it fixes a
+  panic caused by a spurious pidfd wakeup.
+- Starting in 1.43.3, a `broadcast::Sender` created with `Sender::new()` is
+  closed while it has no receivers.
+- Starting in 1.43.4, a closed and drained `mpsc::Receiver::try_recv()` returns
+  `TryRecvError::Disconnected` even while sender handles still exist.
 
-- `tokio-util` 0.7.12 requires Rust 1.70 or newer.
-- `tokio-util` 0.7.17 requires Rust 1.71 or newer.
-- `tokio-util` 0.7.18 raises its Tokio dependency floor to 1.44.0. Satisfy both its Rust and Tokio floors.
-- `tokio-stream` 0.1.16 requires Rust 1.70 or newer.
+### WASM metrics regression (1.45.0)
 
-These changes belong to the included `tokio-util` and `tokio-stream` batches.
+Tokio 1.45.0 can make previously valid `Instant::now()` calls panic on
+`wasm32-unknown-unknown` because of time-based metrics. Version 1.45.1 disables
+those metrics on that target; require at least that patch release.
 
-## Safe Tokio patch releases
+### Spawn-location metadata (1.46.0)
 
-### 1.39 line
+Unstable `TaskMeta::spawned_at` reports incorrect locations in 1.46.0 for tasks
+created by `tokio::spawn`, although `Runtime::spawn` locations and tracing
+event locations are unaffected. Require at least 1.46.1 when hooks consume
+this metadata.
 
-Tokio 1.39.0 is yanked because of a buggy timer-wheel change. Tokio 1.39.1 reverts that change, 1.39.2 restores `select!` expressions that rely on temporary lifetime extension, and 1.39.3 restores Unix abstract-namespace socket addresses. Prefer 1.39.3 when constrained to this line.
+### Macro, channel, and lock fixes (1.47.0)
 
-### 1.42 line
+- Require at least 1.47.2 if `join!` or `try_join!` can collide with
+  macro-internal identifiers.
+- Require at least 1.47.4 when `recv_many` can receive into a non-empty vector
+  after a channel closes; earlier patch releases can panic.
+- Require at least 1.47.5 when mpsc `len()` accuracy matters; it fixes a length
+  underflow.
+- Starting in 1.47.5, releasing an `mpsc::OwnedPermit` wakes waiting receivers.
+- Starting in 1.47.5, `try_recv()` returns `TryRecvError::Empty`, not
+  `Disconnected`, when a closed mpsc channel still has outstanding permits
+  that can send values.
+- Version 1.47.5 rejects a zero maximum-reader limit for `RwLock`; keep the
+  explicitly configured limit nonzero.
 
-Tokio 1.42.1 fixes unsynchronized cloning in `broadcast` channels carrying values that implement `Send` but not `Sync`. Do not remain on 1.42.0 when such values can traverse a broadcast channel.
+### Semaphore, UDP, and io_uring fixes (1.51.0)
 
-### 1.43 line
+Use at least 1.51.1 when any of these behaviors matter:
 
-Prefer Tokio 1.43.4 when constrained to this line:
+- a closed semaphore must remain closed after permits are forgotten;
+- Linux UDP receives must surface pending errors reported through `SO_ERROR`;
+- cancelling an unstable io_uring file-open operation must not leak its file
+  descriptor.
 
-- 1.43.2 fixes process-driver panics caused by spurious pidfd wakeups.
-- 1.43.3 marks the receiverless channel made by `broadcast::Sender::new()` as closed.
-- 1.43.4 makes a drained, explicitly closed `mpsc::Receiver::try_recv()` return `TryRecvError::Disconnected` instead of `TryRecvError::Empty`.
+### Blocking-pool regression (1.52.0)
 
-### 1.45 line
+The new sharded blocking queue in 1.52.0 can make `spawn_blocking` hang.
+Version 1.52.1 reverts that queue. Require at least 1.52.1 on this release line
+when using the blocking pool.
 
-Tokio 1.45.0 can panic on `wasm32-unknown-unknown` because time-based metrics call `Instant::now()`. Tokio 1.45.1 disables those metrics on that target; require at least that patch release.
+### Later patch-line fixes (1.53.1)
 
-### 1.46 line
+- Tokio 1.53.1 restores Windows signal support on the Rust 1.71 minimum after
+  the 1.53.0 regression described above.
+- Tokio 1.51.4 and 1.52.4 fix runtimes skipping the driver when a
+  `before_park` callback schedules work. Use the applicable patch release when
+  such a hook can make work ready.
 
-Unstable `TaskMeta::spawned_at` reports the wrong source location to runtime task hooks for work launched with `tokio::spawn` in 1.46.0. Tokio 1.46.1 corrects hook locations; task-tracing event locations were already correct.
+## Changed inputs and diagnostics
 
-### 1.51 line
+### Reject blocking standard sockets (1.44.0)
 
-Prefer Tokio 1.51.3 when constrained to this line. The line's synchronization fixes include:
+Tokio's socket `from_std` conversions panic when passed a blocking socket. Set
+nonblocking mode before transferring the socket.
 
-- Prevent `mpsc::Receiver::len()` underflow.
-- Wake receivers when an `OwnedPermit` is released.
-- Return `TryRecvError::Empty` while a closed channel still has outstanding permits.
-- Reject an `RwLock` maximum-reader count of zero.
-- Correct `Notify::notify_waiters` priority.
-- Avoid a `recv_many` panic when a closed channel is read into a non-empty destination vector.
-- Prevent semaphores from reopening after permits have been forgotten.
+```rust
+let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+listener.set_nonblocking(true)?;
+let listener = tokio::net::TcpListener::from_std(listener)?;
+```
 
-Tokio 1.51.1 also surfaces Linux UDP `SO_ERROR` failures from receive operations. With unstable io_uring enabled, it avoids leaking a file descriptor when an open operation is cancelled.
+### Reject zero event intervals (1.50.0)
 
-### 1.52 line
+`runtime::Builder::event_interval(0)` panics. Validate configuration-derived
+values before constructing the runtime.
 
-Tokio 1.52.0's sharded `spawn_blocking` queue can cause blocking jobs to hang. Tokio 1.52.1 reverts that queue; require at least 1.52.1.
+### Default thread-name change (1.50.0)
 
-## Source and behavior migrations
+The default runtime thread name is short enough to fit Linux's thread-name
+limit. Tests, filters, and diagnostics that match the old default should set an
+explicit runtime thread name or accept the new value.
 
-### Results that must be used
+### Caller-aware timeout diagnostics (1.53.1)
 
-- Since 1.40.0, `JoinHandle::abort_handle()` is `#[must_use]`. Bind, use, or explicitly discard its returned handle when warnings are denied.
-- Since 1.41.0, `Notified` is `#[must_use]`. Await, store, or explicitly discard the future returned by `Notify::notified()`.
+`time::timeout_at` is `#[track_caller]` as of 1.53.0. Panics now report the
+caller's location instead of an internal Tokio location.
 
-### Runtime and socket preconditions
+## Unstable build configuration and removals
 
-- Since 1.44.0, Tokio networking `from_std` constructors panic for blocking sockets. Call the standard socket's `set_nonblocking(true)` before conversion.
-- Since 1.46.0, `LocalSet::poll` and the `LocalSet` drop path reject Tokio's in-place blocking operation. Use `spawn_blocking` or perform the blocking work outside the local set.
-- Since 1.50.0, `runtime::Builder::event_interval(0)` panics. Validate dynamically derived values and require a nonzero interval.
+### Alternate runtime removal (1.45.0)
 
-### Deprecated and changed APIs
+The unstable alternate multi-threaded runtime was removed. Migrate code using
+that experimental runtime to a supported runtime flavor before upgrading.
 
-- Tokio 1.49.0 deprecates `TcpStream::set_linger` and `TcpSocket::set_linger`. Migrate code or handle the warning explicitly.
-- Tokio 1.50.0 adds `TcpStream::set_zero_linger()` as the supported way to request a zero-duration linger and an abortive close.
-- Tokio 1.46.0 changes unstable `runtime::Builder::build_local` to take `LocalOptions` by value: use `build_local(options)`, not `build_local(&options)`.
-- Tokio 1.45.0 removes the unstable alternate multi-threaded runtime. Move experimental users to a supported runtime implementation.
+### Local builder signature (1.46.0)
 
-### Observable behavior
+Unstable `runtime::Builder::build_local` takes `LocalOptions` by value. Pass
+`options`, not `&options`.
 
-- Since 1.40.0, displaying a `JoinError` for a panicked task includes the panic message. Update exact diagnostic assertions and log-processing assumptions.
-- Since 1.50.0, Tokio's default runtime thread name is short enough for Linux's thread-name limit. Configure `Builder::thread_name` when external tooling depends on a fixed label.
-- Since 1.50.0, a spawned task is destroyed before its `JoinHandle` completes. After `await` returns, destructors for state retained by the task future have already run.
-- Since 1.50.0, signal listeners are guaranteed not to yield `None`. Use a separate cancellation branch instead of relying on stream closure to stop a listener.
+### Feature selection (1.48.0)
 
-## Unstable build configuration
+Select the unstable `taskdump` and `io_uring` subsystems with Cargo features,
+replacing their former custom `--cfg` switches.
 
-Tokio 1.48.0 moves the unstable `taskdump` and `io_uring` modes from custom `--cfg` flags to Cargo features. Put these opt-ins in dependency feature configuration.
+## Platform availability
 
-Enabling io_uring does not guarantee that it remains active or that every operation uses it:
-
-- Since 1.49.0, Tokio disables the io_uring backend after `EPERM`.
-- Since 1.50.0, Tokio checks kernel opcode support before choosing an operation.
-
-Keep a working fallback path and avoid using feature presence as proof of runtime kernel support.
+- Tokio 1.41.0 enables filesystem configuration for WASI targets.
+- Tokio 1.43.0 adds networking support for Haiku OS.
+- Tokio 1.43.0 supports `SignalKind::info()` and realtime signals on illumos.
+- Tokio 1.44.0 handles Windows `CTRL_CLOSE`, `CTRL_LOGOFF`, and
+  `CTRL_SHUTDOWN` console events.
+- Tokio 1.46.0 adds networking support for Cygwin and supports Android
+  `pipe::OpenOptions::read_write`.
+- Tokio 1.51.0 supports `get_peer_cred` on Hurd and networking on
+  `wasm32-wasip2`.
+- Tokio 1.53.0 adds NuttX networking, exposes `UCred::pid` on FreeBSD, obtains
+  QNX peer credentials through `getpeereid`, and supports unstable task dumps
+  on s390x.

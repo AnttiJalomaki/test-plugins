@@ -1,78 +1,102 @@
-# Flutter tooling, builds, assets, and plug-ins
-
-## Contents
-
-- [Widget Preview](#widget-preview)
-- [Dart and Flutter MCP server](#dart-and-flutter-mcp-server)
-- [DevTools and IDE editing](#devtools-and-ide-editing)
-- [Assets](#assets)
-- [Plug-in scaffolding and metadata](#plug-in-scaffolding-and-metadata)
-- [CLI contract changes](#cli-contract-changes)
-- [SDK metadata and project creation](#sdk-metadata-and-project-creation)
-- [Release channels and archive provenance](#release-channels-and-archive-provenance)
+# Flutter tooling, builds, assets, and plugins
 
 ## Widget Preview
 
-Widget Preview is experimental. Annotate a top-level widget-building function with
-`@Preview`; the old interim `WidgetPreview` wrapper is removed (`3.32.0`). The preview
-scaffold defaults to Flutter Web.
+### Annotation and scaffold evolution
+
+The experimental preview tool detects top-level `@Preview` builders and generates a
+scaffold that initially defaults to Flutter Web. The interim `WidgetPreview` wrapper
+is removed; put configuration on the annotation (3.32.0).
+
+```dart
+@Preview()
+Widget preview() => const Example();
+```
+
+The annotation replaced separate `height` and `width` parameters with `size` and
+added `theme`, `brightness`, and localization (3.35.0):
 
 ```dart
 @Preview(size: Size(320, 640), brightness: Brightness.dark)
 Widget preview() => const Example();
 ```
 
-The annotation uses `size` rather than separate `height` and `width` arguments, and
-supports theme, brightness, and localization configuration. `Preview` is not `final`,
-so reusable annotations can subclass it. `MultiPreview` produces several variants,
-and `group` organizes related previews.
+`Preview` is no longer final, so it can be subclassed for reusable annotations.
+`MultiPreview` creates variants and `group` groups them. Private constants are valid
+annotation arguments, but callable wrappers and themes must have public, statically
+accessible names (3.38-guide).
 
-Private constants are valid annotation arguments. Function-valued wrappers and
-themes must have public, statically accessible names. Rich custom annotations may
-contain collection and record values (`3.44.0`).
+Custom preview annotations can contain collection and record values (3.44.0).
 
-### IDE and command integration
+### IDE and Inspector behavior
 
-VS Code and IntelliJ/Android Studio integrate with the Previewer and initially filter
-the environment to the selected source file. The environment can also filter by
-group, name, script URI, or package URI (`3.44-guide`). Flutter Inspector is embedded;
-if project widgets are absent, add the project package directory in Inspector
-settings.
+VS Code and IntelliJ/Android Studio initially filter the preview environment to the
+selected source file (3.38-guide). Later filtering can select group, name, script
+URI, or package URI (3.44-guide).
 
-Transitive `dart:ffi` and `dart:io` imports can compile in a preview, but invoking
-those platform APIs still fails. Use web-compatible conditional imports on callable
-paths.
+The previewer embeds Flutter Inspector. If project widgets are missing, add the
+project package directory in Inspector settings. Transitive `dart:ffi` and
+`dart:io` imports can compile, but invoking those platform APIs in a preview fails;
+use web-compatible conditional paths (3.41-guide).
 
-The preview command supports `--web-server` and `--machine`. Move `--dtd-url` after
-`widget-preview start`; it is no longer a global option.
+### Command integration
 
-## Dart and Flutter MCP server
+The preview command accepts `--web-server` and `--machine`. `--dtd-url` belongs to
+`widget-preview start` rather than the global command; update automation that passed
+it globally (3.38.0).
 
-The Dart and Flutter MCP server ships on the stable Dart SDK channel (`3.35-guide`).
-MCP clients can inspect a running widget tree, manage dependencies, use analyzer
-feedback, and call `read_package_uris` to resolve and read project `package:` URIs,
-including dependency source (`dart-3.11.0`).
+## Developer tools and MCP
 
-Compatible clients can discover and connect to running applications and request hot
-reload after an edit without manual connection setup.
+The redesigned inspector is enabled by default and keeps on-device selection active
+until explicitly exited. The Logging tool filters severity and shows severity,
+category, zone, and isolate metadata (3.29.0).
 
-## DevTools and IDE editing
+The Property Editor in VS Code and IntelliJ-family IDEs edits widget properties and
+shows documentation (3.32-guide).
 
-- The redesigned Inspector is enabled by default. On-device widget selection remains
-  active across selections until explicitly exited.
-- The Logging view filters by severity and shows severity, category, zone, and isolate
-  metadata (`3.29.0`).
-- The Flutter Property Editor in VS Code and JetBrains IDEs edits widget properties
-  and displays their documentation.
-- The Flutter IntelliJ plug-in expanded installation support to CLion, GoLand, and
-  PyCharm. Do not use that expanded support as a reason to retain a deprecated SDK.
+The Dart and Flutter MCP server is included in stable Dart and can inspect running
+widget trees, dependencies, and analyzer feedback (3.35-guide). It later added
+`read_package_uris` for reading project and dependency `package:` sources
+(dart-3.11.0).
 
-## Assets
+Compatible tools can discover a running app and trigger hot reload after edits
+without manual connection setup (3.44-guide). Keep the running SDK and application
+as the source of truth for available server operations.
 
-### Platform-specific bundles
+## Generated files and metadata
 
-Limit an asset to named target platforms through its `pubspec.yaml` entry
-(`3.41-guide`):
+### Flutter and asset manifests
+
+Custom scripts must read SDK metadata from `bin/cache/flutter.version.json`; the
+Flutter SDK root `version` file is removed (3.38-guide).
+
+`AssetManifest.json` is not generated by default (3.38-guide). Consumers must use a
+supported asset API rather than assume this file exists.
+
+Flutter no longer generates or reads `.flutter-plugins`. Scripts should consume
+`.flutter-plugins-dependencies` instead (3.35.0).
+
+The synthetic `package:flutter_gen` package is removed. Import generated
+localization source from its actual output; `flutter: generate: true` remains valid
+for non-synthetic generation (3.32.0).
+
+### Plugin metadata and templates
+
+For a platform implementation with no native code, omit `pluginClass` instead of
+setting `pluginClass: none` (3.35-guide).
+
+The Objective-C plugin template is deprecated; generate Apple plugins in Swift.
+Omit `dartPluginClass` when there is no Dart plugin class instead of setting it to
+`'none'` (3.38.0).
+
+The `plugin_ffi` template is deprecated. Use the standard plugin template with FFI
+support (3.44-guide).
+
+## Assets, hooks, and shaders
+
+### Platform-specific assets (3.41-guide)
+
+Limit an asset to named targets in `pubspec.yaml`:
 
 ```yaml
 flutter:
@@ -84,91 +108,105 @@ flutter:
       platforms: [windows, linux, macos]
 ```
 
-This keeps unrelated platform assets out of the output bundle.
+### Native and data assets
 
-### Manifest and generated packages
+Native assets reached preview with workspace-defined hook values; development
+dependency native assets are built by
+`flutter test integration_test` (3.35.0).
 
-`AssetManifest.json` is not emitted by default. Build scripts must use supported
-asset APIs rather than assuming that file exists. The synthetic
-`package:flutter_gen` package is removed; `flutter: generate: true` remains valid only
-with non-synthetic output, which application code imports from its real source path.
+Build hooks and code assets are stable by 3.38.0, and Flutter tooling supports
+package-provided data assets. Hooks run in dependency order for run, build, and
+test; see the Dart tooling reference for hook environment and code-asset identity.
 
-### Data, native, and shader assets
+### Shader build rules
 
-Build hooks and code assets are stable, and Flutter tooling supports package-provided
-data assets (`3.38.0`). Native assets are a preview feature; their hooks can consume
-user-defined values from the workspace `pubspec.yaml`, and assets from development
-dependencies are built for `flutter test integration_test`.
+Do not list one shader as both a shader and an ordinary asset; this is a build error
+(3.41.0). Shader assets support build flavors and asset transformers (3.44.0), so
+inclusion and preprocessing may vary per flavor.
 
-Shader declarations support flavors and asset transformers. Do not declare one shader
-both as a shader and as an ordinary asset; this is a build error.
+Flutter tooling no longer bundles SkSL data and removed the iOS SkSL build target
+(3.32.0). Remove capture, warm-up bundle, and build-target assumptions.
 
-## Plug-in scaffolding and metadata
+## CLI contracts
 
-- `.flutter-plugins` is removed. Custom scripts must consume
-  `.flutter-plugins-dependencies`.
-- Omit `pluginClass` for a platform implementation with no native code; do not write
-  `pluginClass: none`.
-- Omit `dartPluginClass` when there is no Dart class; `dartPluginClass: 'none'`
-  produces a warning.
-- The Objective-C Apple plug-in template is deprecated; generate Swift plug-ins.
-- The `plugin_ffi` template is deprecated. Use the standard plug-in template with FFI
-  support.
-- Apple plug-ins must add Swift Package Manager support; see the Apple reference.
+### Removed and renamed options
 
-## CLI contract changes
-
-### Removed or renamed options
-
-- Use `flutter assemble --dart-define` or `-D`; `--define` and `-d` are deprecated.
-- Use `--no-dds` to disable DDS. `--disable-dds` and `--no-disable-dds` are removed.
-- Remove `--fast-start`, `--web-hot-reload`, and the selectable
-  `--explicit-package-dependencies` mode.
-- The web service-worker `--pwa-strategy` option is deprecated.
-
-`flutter assemble` accepts empty Dart defines. `flutter build` without a target exits
-with status 1, so scripts must supply the build target.
+- `flutter assemble` accepts `--dart-define` and `-D`; `--define` and `-d` are
+  deprecated (3.38.0).
+- `--disable-dds` and `--no-disable-dds` are removed; use `--no-dds`
+  (3.38.0).
+- `--fast-start` is removed (3.38.0).
+- Remove deprecated `--web-hot-reload`; use the current web workflow
+  (3.44-guide).
+- `flutter build` without a target exits with status 1. `flutter assemble` accepts
+  empty Dart defines (3.41.0).
+- Chrome launches no longer inject `--no-sandbox` automatically (3.41.0).
 
 ### Build and run controls
 
-- `flutter run --profile-startup` profiles startup.
-- `flutter run --profile-microtasks` profiles `dart:async` microtask scheduling.
-- Linux and Windows builds accept `--config-only`.
-- `flutter test --ignore-timeouts` leaves time limits to an external harness.
-- `flutter test --no-uninstall integration_test` preserves the installed target app.
-- Chrome-device launches no longer add `--no-sandbox` automatically.
+Use `flutter run --profile-startup` for startup profiling. Linux and Windows build
+commands accept `--config-only`. `flutter build web --static-assets-url` selects a
+separate static-asset base URL (3.38.0).
 
-Web-only controls, including `--static-assets-url`, `--base-href`, Wasm dry runs,
-minification, template defines, and cross-origin isolation, are in the web reference.
+`flutter test --ignore-timeouts` disables test timeouts (3.32.0), while
+`flutter test --no-uninstall integration_test` preserves an installed integration
+test app (3.44.0). Use either only when the harness requires it.
 
-## SDK metadata and project creation
+`flutter create` now writes `pubspec.lock` so the initial dependency resolution is
+pinned (3.44.0).
 
-Read Flutter SDK version metadata from `bin/cache/flutter.version.json`; the SDK-root
-`version` file is removed. `flutter create` now emits `pubspec.lock`, pinning the
-versions chosen by the initial dependency resolution.
+## IDE and host support
 
-The tool exposes framework version information at runtime, and
-`PlatformDispatcher.instance.engineId` distinguishes engines in a multi-engine
-process.
+Flutter IntelliJ plugin M87 supports CLion, GoLand, and PyCharm. IDE support for
+Flutter SDKs older than 3.13 is deprecated, and SDKs older than 3.16 were scheduled
+next (3.35-guide).
 
-## Release channels and archive provenance
+Windows tooling supports Visual Studio 2026 (3.41.0). Apple command-line tools run
+natively on Apple Silicon without Rosetta, while Intel Mac development-host support
+is planned to end (3.44-guide).
 
-A branch cutoff is the deadline for a change to reach Dart's `main` or Flutter's
-`master` branch and be guaranteed for the next stable train. The published 2026
-targets were February 3.41
-(January 6 cutoff), May 3.44 (April 7), August 3.47 (July 7), and November 3.50
-(October 6). Treat these as planning windows rather than a substitute for checking an
-actual archive.
+## Release channels and artifacts
 
-Roughly every third beta is promoted to stable. Beta normally ships on the first
-Wednesday of a month, and a fix commonly reaches beta about two weeks after landing
-on main. The main channel has no installation bundles; obtain it from the repository:
+### Cadence (release-and-news-catalogs)
+
+A branch cutoff is the deadline for a change to land on Dart `main` or Flutter
+`master` and be guaranteed for the next stable. The published 2026 targets were
+3.41 in February (January 6 cutoff), 3.44 in May (April 7), 3.47 in August (July 7),
+and 3.50 in November (October 6).
+
+Roughly every third beta becomes stable. Beta usually ships on the first Wednesday
+of the month, and a main-branch fix typically reaches beta in about two weeks.
+Unlike beta and stable, the main channel has no install bundles and must be cloned:
 
 ```sh
 git clone -b main https://github.com/flutter/flutter.git
 ./flutter/bin/flutter --version
 ```
 
-Flutter SDK archives use modified calendar versioning. Each Windows, macOS, or Linux
-release records architecture, Git ref, release date, bundled Dart version, and JSON
-provenance. Archive downloads include SLSA provenance for verifying artifact origin.
+### Provenance and stable identity
+
+Flutter uses modified calendar versioning. An archive records architecture, Git
+ref, release date, bundled Dart version, and JSON provenance. Archive downloads
+carry SLSA provenance for source verification (release-and-news-catalogs).
+
+The 3.47.0 stable Linux archive is
+`stable/linux/flutter_linux_3.47.0-stable.tar.xz`, built from
+`4cf24164269a5ebf0c16a028a00727d0e77bbb05` and bundling Dart 3.13.0. Verify its
+SHA-256:
+
+```sh
+echo '26cd99d3d94b1367e6b50535a18aeef0282c10a535bbe3ec493534dcdab75296  flutter_linux_3.47.0-stable.tar.xz' | sha256sum --check
+```
+
+The stable release date is August 12, 2026. Pin both version and verified artifact
+identity in reproducible SDK bootstrap code.
+
+## Tooling verification
+
+- Run analyzer and configured plugin diagnostics.
+- Launch previews from CLI and supported IDEs; test filters, custom annotations,
+  platform conditionals, Inspector visibility, and machine output.
+- Search automation for removed flags and generated-file assumptions.
+- Build every platform and flavor; inspect asset, shader, native/data-asset, and
+  plugin metadata warnings.
+- Verify SDK downloads through published checksums and provenance.

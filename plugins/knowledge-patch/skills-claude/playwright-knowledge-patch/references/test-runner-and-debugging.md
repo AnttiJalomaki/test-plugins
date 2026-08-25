@@ -1,28 +1,25 @@
 # Test Runner and Debugging
 
-## Removed support and supported platforms
+## Removed support and platform changes
 
-As of 1.59.1:
+- WebKit no longer supports macOS 14 (since 1.59.1).
+- `@playwright/experimental-ct-svelte` was removed (since 1.59.1).
+- Ubuntu 26.04 is supported (since 1.61.0).
 
-- WebKit no longer supports macOS 14.
-- The JavaScript package `@playwright/experimental-ct-svelte` has been removed.
+## Command-line debugging
 
-Playwright supports Ubuntu 26.04 as of 1.61.0.
-
-## CLI-controlled debugging
-
-Start tests with the CLI debugger and attach to their named bound-browser session (since 1.59.1):
+Run a test with the command-controlled debugger, attach to its bound session,
+and step it (since 1.59.1):
 
 ```bash
 npx playwright test --debug=cli
 playwright-cli attach
+step-over
 ```
-
-The attached session accepts debugger commands such as `step-over`, allowing a paused test to be controlled without a graphical debugger.
 
 ## Command-line trace inspection
 
-Open a trace and inspect it entirely from the command line (since 1.59.1):
+Inspect a saved trace without opening the GUI (since 1.59.1):
 
 ```bash
 npx playwright trace open trace.zip
@@ -33,20 +30,23 @@ snapshot <id> --name after
 close
 ```
 
-- `actions` lists trace actions.
-- `action <id>` shows a selected action.
-- `snapshot <id> --name before|after` selects the before or after snapshot.
-- `close` closes the trace session.
+`tracing.start({ live: true })` enables live trace updates.
 
-For live recording updates, start tracing with `tracing.start({ live: true })`.
+## Trace retention across retries
 
-## Trace retention for retries
+Trace mode `'retain-on-failure-and-retries'` records every attempt and retains
+all attempt traces when any attempt fails (since 1.59.1). This preserves both
+passing and failing executions of a flaky test for comparison.
 
-Trace mode `'retain-on-failure-and-retries'` records every test attempt but retains all attempt traces only if an attempt fails (since 1.59.1). This keeps both passing and failing attempts for a flaky test together for comparison.
+```ts
+export default defineConfig({
+  use: { trace: 'retain-on-failure-and-retries' },
+});
+```
 
-## Video retry modes
+## Video retry modes and soft polling
 
-The test `video` option supports the following retry-aware modes (since 1.61.0):
+The test `video` option accepts three retry-aware choices (since 1.61.0):
 
 - `'on-all-retries'`
 - `'retain-on-first-failure'`
@@ -56,27 +56,64 @@ The test `video` option supports the following retry-aware modes (since 1.61.0):
 export default defineConfig({
   use: { video: 'retain-on-failure-and-retries' },
 });
-```
 
-These align video collection with the runner's trace-mode choices.
-
-## Soft polling assertions
-
-Polling assertions can be soft (since 1.61.0), collecting a failure without immediately stopping the test:
-
-```ts
 await expect.soft.poll(async () => readStatus()).toBe('ready');
 ```
 
-## Runner configuration and reporter data
+`expect.soft.poll()` performs a polling assertion whose final failure is
+reported softly instead of immediately stopping the test.
 
-The following runner and reporting surfaces were added in 1.61.0:
+## Isolated retry scheduling
 
-- `fullConfig.argv` snapshots the runner's `process.argv`, including application-specific arguments supplied after `--`.
-- `fullConfig.failOnFlakyTests` exposes the effective flaky-test policy to reporters and other consumers of full configuration.
-- `testInfo.errors` expands an `AggregateError` into separate error entries.
+`testConfig.retryStrategy` controls retry ordering (since 1.62.0). The default
+`'immediate'` schedules a retry as soon as a worker becomes available.
+`'isolated'` defers retries until the end, then runs them serially in one worker
+to reduce interference with the main suite.
+
+```ts
+export default defineConfig({
+  retries: 2,
+  retryStrategy: 'isolated',
+});
+```
+
+## Reporter preprocessing
+
+A reporter's `preprocess()` hook runs after configuration resolution but before
+`onBegin()` (since 1.62.0). Through its `TestRun`, it can mark individual tests
+skipped, excluded, fixed, or failing before execution begins.
+
+```ts
+class MyReporter {
+  async preprocess({ suite, testRun }) {
+    for (const test of suite.allTests()) {
+      if (shouldSkip(test)) testRun.skip(test);
+    }
+  }
+}
+```
+
+## Runner and reporter data
+
+The following additions date to 1.61.0:
+
+- `fullConfig.argv` captures the runner's `process.argv`, including custom
+  arguments after `--`.
+- `fullConfig.failOnFlakyTests` exposes the effective flaky-test policy.
+- `testInfo.errors` expands an `AggregateError` into separate entries.
 - `-G` is shorthand for `--grep-invert`.
 
-## Recording coverage
+## Merged-file grouping in HTML reports
 
-HAR and trace recordings include WebSocket requests as of 1.61.0.
+Enable merged-file grouping directly with the HTML reporter's `mergeFiles`
+option (since 1.62.0), instead of relying only on the report UI.
+
+```ts
+export default defineConfig({
+  reporter: [['html', { mergeFiles: true }]],
+});
+```
+
+## WebSockets in recordings
+
+HAR and trace recordings include WebSocket requests (since 1.61.0).

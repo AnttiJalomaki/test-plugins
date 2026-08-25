@@ -19,8 +19,8 @@ connection settings, test targets, or modules that depend on current
 1. Determine the installed or pinned `ansible-core` version from dependency
    manifests, execution-environment definitions, or lockfiles.
 2. Inspect the affected playbooks and plugins for the migration points below.
-3. Open the topic reference before changing behavior that depends on exact
-   configuration names, defaults, or plugin APIs.
+3. Open the topic reference before changing behavior that depends on an exact
+   configuration name, default, result type, or plugin API.
 4. Prefer project tests and observed runtime behavior when a project carries
    compatibility shims or backports.
 
@@ -29,10 +29,10 @@ connection settings, test targets, or modules that depend on current
 | Reference | Topics |
 | --- | --- |
 | [templating.md](references/templating.md) | Trust, single-pass evaluation, native values, strict conditionals, lazy templating, `omit`, sandboxing, and JSON profiles |
-| [plugins-and-extensions.md](references/plugins-and-extensions.md) | Controller-side I/O, callback and strategy migrations, Jinja plugins, markers, builtin names, and `module_utils` packages |
-| [connections-and-privilege.md](references/connections-and-privilege.md) | SSH agents and askpass, Paramiko removal, connection verbosity, local become, and `sudo_chdir` |
-| [playbooks-cli-and-inventory.md](references/playbooks-cli-and-inventory.md) | CLI flags, inventory parsing, diagnostics, deprecated play syntax, argument-spec validation, and Galaxy compatibility |
-| [modules-facts-and-windows.md](references/modules-facts-and-windows.md) | Fact access, file/package modules, result types, UTF-8 enforcement, Windows execution, and module patch behavior |
+| [plugins-and-extensions.md](references/plugins-and-extensions.md) | Controller-side I/O, callback and strategy migrations, Jinja plugins, markers, builtin names, vars plugins, and collection packages |
+| [connections-and-privilege.md](references/connections-and-privilege.md) | SSH agents and askpass, Paramiko migration, connection verbosity, local become, and `sudo_chdir` |
+| [playbooks-cli-and-inventory.md](references/playbooks-cli-and-inventory.md) | CLI flags, inventory parsing, diagnostics, deprecated play syntax, argument-spec validation, and Galaxy behavior |
+| [modules-facts-and-windows.md](references/modules-facts-and-windows.md) | Fact access, file and package modules, result types, UTF-8 enforcement, Windows execution, and module patch behavior |
 | [testing-runtime-and-security.md](references/testing-runtime-and-security.md) | `ansible-test` environments and timeout diagnostics, supported runtimes, maintenance dates, and security fixes |
 
 ## Highest-Priority Migration Checks
@@ -65,8 +65,8 @@ when: "{{ service_enabled | bool }}"
   when they are supplied as strings.
 - A conditional must produce a boolean. Use an explicit comparison or a
   suitable conversion instead of relying on truthiness.
-- Compatibility mode for broken conditionals is temporary and should only
-  support a staged migration.
+- Treat `ALLOW_BROKEN_CONDITIONALS` as a short-lived migration aid, not a
+  permanent compatibility mode.
 
 ```yaml
 - name: Use an explicit boolean conversion
@@ -104,7 +104,7 @@ when: "{{ service_enabled | bool }}"
   `ansible.builtin.<name>` form.
 - Python packages below `module_utils` may contain `__init__.py`.
 
-### Callback, strategy, and Jinja migration
+### Callback, strategy, vars, and Jinja migration
 
 - Callback plugins must derive from `CallbackBase`.
 - Replace the v1 callback API and `v2_on_any` with the specific `v2_`
@@ -115,6 +115,7 @@ when: "{{ service_enabled | bool }}"
   top-level argument.
 - Code using `environment.getitem` must handle `MarkerError` and return a
   marker, or explicitly opt in to marker values.
+- Vars plugins must inherit `BaseVarsPlugin` and implement `get_vars`.
 
 ## Connection and Privilege Quick Reference
 
@@ -129,12 +130,11 @@ when: "{{ service_enabled | bool }}"
 - Use `ANSIBLE_SSH_VERBOSITY` or `ansible_ssh_verbosity` for SSH-only
   verbosity.
 
-### Removed and deprecated transports
+### Deprecated transports and removed settings
 
-- Do not introduce a Paramiko dependency; migrate inventory and configuration
-  to the SSH connection.
-- Remove `DEFAULT_TRANSPORT=smart`,
-  `PARAMIKO_HOST_KEY_AUTO_ADD`, and `PARAMIKO_LOOK_FOR_KEYS`.
+- Migrate Paramiko connection use to the SSH connection.
+- Remove `DEFAULT_TRANSPORT=smart`, `PARAMIKO_HOST_KEY_AUTO_ADD`, and
+  `PARAMIKO_LOOK_FOR_KEYS`.
 - For the local connection, account for `become_strip_preamble` defaulting to
   true and `become_success_timeout` defaulting to 10 seconds.
 - `sudo_chdir` changes directory before invoking `sudo`.

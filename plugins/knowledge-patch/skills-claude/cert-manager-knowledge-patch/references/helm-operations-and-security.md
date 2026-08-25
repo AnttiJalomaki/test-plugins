@@ -1,51 +1,30 @@
 # Helm, Operations, and Security
 
-Use this reference for chart composition, scheduling, Pod identity, RBAC,
-NetworkPolicy, controller scope, and operational cleanup.
-
 ## Chart composition and templating
 
-### Dependency toggle
+Both ServiceAccount annotation keys and values are evaluated through Helm
+`tpl`, so workload-identity annotations can derive values from the rest of the
+chart (`1.17`).
 
-Since `1.17`, the chart accepts an `enabled` value. A parent chart can use it to
-toggle cert-manager when declaring cert-manager as a dependency.
+When cert-manager is a dependency, the chart-level `enabled` value lets a
+parent chart toggle it. Configured image pull Secrets are added to Deployments
+even when the chart does not create ServiceAccounts.
 
-### Templated ServiceAccount annotations
-
-Since `1.17`, both keys and values in chart-managed ServiceAccount annotations
-are evaluated with Helm's `tpl` function. Workload-identity annotation names
-and values can therefore derive from other chart values. Treat untrusted chart
-values as template input rather than plain strings.
-
-### Pull secrets without managed ServiceAccounts
-
-Since `1.17`, configured image pull secrets are attached to Deployments even
-when the chart is configured not to create ServiceAccounts.
-
-### Percentage PodDisruptionBudgets
-
-Since `1.17`, `podDisruptionBudget.minAvailable` and
-`podDisruptionBudget.maxAvailable` accept percentages:
+PodDisruptionBudget values accept percentages for both `minAvailable` and
+`maxAvailable`:
 
 ```yaml
 podDisruptionBudget:
   minAvailable: "50%"
 ```
 
-Set only the field appropriate for the disruption policy.
+## Scheduling and runtime isolation
 
-### Webhook config and volumes
+### Common node selection
 
-Use 1.20.2 or later when both `webhook.config` and `webhook.volumes` are set.
-Earlier releases can render invalid Helm YAML for that combination.
-
-## Scheduling and isolation
-
-### Common node selector
-
-The `global.nodeSelector` value in `1.19` applies a common selector to all
-cert-manager components. Use 1.19.2 or later, which correctly merges it with
-component-level settings:
+`global.nodeSelector` applies to all cert-manager chart components (`1.19`).
+Use 1.19.2 or later because it correctly merges the global selector with each
+component's selector.
 
 ```yaml
 global:
@@ -53,94 +32,73 @@ global:
     kubernetes.io/os: linux
 ```
 
-### Kubernetes user namespaces
+### User namespaces and runtime classes
 
-On Kubernetes 1.33 or later, the experimental setting below configures all
-chart-managed Pods to use Kubernetes user namespaces:
+On Kubernetes 1.33 or later, experimental `global.hostUsers: false` runs all
+chart-managed cert-manager Pods in Kubernetes user namespaces. It is unset by
+default for compatibility with older Kubernetes releases.
 
-```yaml
-global:
-  hostUsers: false
-```
-
-It is unset by default to keep the `1.19` chart compatible with Kubernetes
-versions before 1.33.
-
-### Runtime classes
-
-In `1.21`, runtime classes can be configured for cert-manager components and
-HTTP-01 solver Pods. The solver chart value is:
+Runtime classes are configurable for components and HTTP-01 solver Pods in
+1.21. The solver chart value is:
 
 ```yaml
 acmesolver:
   runtimeClassName: gvisor
 ```
 
-### Container identity defaults
+### Container identities
 
-In `1.20`, the default container UID changed from `1000` to `65532`, and the
-default GID changed from `0` to `65532`. Update admission policy, security
-context assertions, and volume ownership assumptions before rollout.
+From 1.20, default container UID and GID are both `65532`, replacing UID `1000`
+and GID `0`. Adjust admission policies and volume permissions that encode the
+old identities.
 
 ## NetworkPolicy
 
-### IPv6 defaults
+The default chart network policy includes IPv6 rules from 1.19, supporting
+dual-stack and IPv6-only clusters without a patched cert-manager policy. From
+1.20, the chart can create NetworkPolicy resources for every cert-manager
+Deployment to apply isolation across all deployed components.
 
-Since `1.19`, the chart's default network policy contains IPv6 rules. Dual-stack
-and IPv6-only clusters no longer need a locally patched policy for ordinary
-cert-manager traffic.
-
-### Policies for every Deployment
-
-In `1.20`, the chart can create NetworkPolicy resources for every cert-manager
-Deployment. Enable this when chart-managed network isolation is desired, then
-validate DNS, Kubernetes API, issuer endpoint, webhook, and monitoring flows.
-
-## RBAC changes
-
-### HTTP challenge role value is unavailable
-
-`global.rbac.disableHTTPChallengesRole` was added in 1.18.0 and removed in
-1.18.2 because of a bug. Do not configure it for the remainder of the 1.18
-line.
-
-### Direct Challenge and Order access
-
-Starting in 1.19.6, the aggregate `cert-manager-edit` ClusterRole no longer
-allows creation of Challenges or creation, patching, and updating of Orders.
-Normal Certificate-driven issuance is unaffected. Grant dedicated permissions
-to tooling that intentionally manages these internal resources.
-
-### Controller ServiceAccount token creation
-
-In `upgrade-1.21`, the chart stopped creating the Role and RoleBinding that let
-the controller create tokens for its own ServiceAccount. When an issuer's
-`serviceAccountRef.name` points to that ServiceAccount, create the RBAC
-explicitly or migrate to a dedicated ServiceAccount with its own permissions.
-Vault Kubernetes auth and Route53 are common affected configurations.
-
-### OpenShift Order-controller fix
-
-Version 1.20.0 omitted issuer-finalizer RBAC required by the Order controller
-on OpenShift. Version 1.20.1 restored it; OpenShift installations should use
-1.20.1 or later.
-
-## Controller scope and finalizers
+## RBAC and controller scope
 
 ### Namespace-scoped operation
 
-Since `1.18`, `--namespace=<namespace>` limits cert-manager to that namespace
-and disables cluster-scoped controllers. Do not expect ClusterIssuer or other
-cluster-scoped reconciliation in this mode.
+`--namespace=<namespace>` restricts cert-manager to that namespace and disables
+cluster-scoped controllers (`1.18`). Account for the unavailable cluster-wide
+reconcilers when choosing this mode.
 
-### Domain-qualified finalizer
+### Withdrawn HTTP challenge value
 
-`UseDomainQualifiedFinalizer` became beta and enabled by default in `1.17`.
-The domain-qualified finalizer avoids Kubernetes warnings and does not require
-manual feature-gate enablement.
+`global.rbac.disableHTTPChallengesRole` appeared in 1.18.0 but was removed in
+1.18.2 because of a bug. Do not use it elsewhere in the 1.18 line.
 
-## Completed Job cleanup
+### ServiceAccount token permissions
 
-In `1.21`, set the opt-in Helm value
-`startupapicheck.ttlSecondsAfterFinished` to let Kubernetes' TTL-after-finished
-controller delete the completed startup API check Job.
+The 1.21 chart no longer creates controller-ServiceAccount token `Role` and
+`RoleBinding` resources. An issuer whose `serviceAccountRef.name` points to
+that account needs explicit RBAC or a dedicated ServiceAccount with its own
+permissions.
+
+From 1.19.6, aggregate `cert-manager-edit` permissions also exclude creating
+Challenges and creating, updating, or patching Orders. Direct internal-resource
+automation needs separate RBAC.
+
+## Component and Job cleanup
+
+Set the opt-in `startupapicheck.ttlSecondsAfterFinished` value to let
+Kubernetes' TTL-after-finished controller clean up the completed startup API
+check Job (`1.21`).
+
+The `--acme-http01-solver-extra-labels` controller flag lets Helm
+`global.commonLabels` propagate to dynamically created solver Pods, Services,
+Ingresses, and Gateway API HTTPRoutes.
+
+## Version-specific chart hazards
+
+- On OpenShift, use 1.20.1 or later. Version 1.20.0 lacks issuer-finalizer RBAC
+  required by the Order controller.
+- Use 1.20.2 or later when both `webhook.config` and `webhook.volumes` are set;
+  prior releases can render invalid YAML.
+- Remove `prometheus.servicemonitor.targetPort`,
+  `prometheus.servicemonitor.path`, and `prometheus.podmonitor.path` before a
+  1.21 upgrade. Their fixed replacements are `/metrics` and `http-metrics`.

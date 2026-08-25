@@ -1,66 +1,38 @@
 # Compiler and Hooks Lint
 
-The compiler behavior is attributed to `compiler-1.0.0`; the ESLint v6 configuration shipped with the React 19.2 tooling updates.
+Compiler behavior is attributed to batch `compiler-1.0.0`; the Hooks ESLint v6 configuration change is attributed to `19.2.0`.
 
-## Dependency tracking
+## Track optional chains and indexed reads
 
-Compiler 1.0 can track optional-chain accesses and indexed reads as memoization dependencies. Keep idiomatic expressions such as this intact:
+Compiler 1.0 can track optional-chain accesses and array indices as memoization dependencies. These reads can participate directly in generated memoization:
 
 ```jsx
 const selectedName = users[selected]?.profile?.name;
 ```
 
-These reads can participate directly in generated memoization; they do not need to be rewritten merely to make dependency tracking work.
+## Consolidate compiler linting in the Hooks plugin
 
-## Consolidated lint plugin
+Remove `eslint-plugin-react-compiler` and use `eslint-plugin-react-hooks@latest`. The Hooks plugin contains the compiler-powered rules, its `recommended` preset incorporates compiler linting, and linting does not require the compiler itself to be installed. The plugin's compiler-powered rules are also available for explicit configuration.
 
-Compiler linting moved into the Hooks plugin. Remove `eslint-plugin-react-compiler` and install the current Hooks plugin:
-
-```sh
-npm remove eslint-plugin-react-compiler
-npm install --save-dev eslint-plugin-react-hooks@latest
-```
-
-The Hooks plugin's recommended preset includes compiler-powered linting, and linting does not require `babel-plugin-react-compiler` to be installed. The plugin also exposes compiler-powered rules for projects that opt into additional checks.
-
-## ESLint flat config
-
-In v6, `recommended` is a flat-config preset:
-
-```js
-// eslint.config.js
-import reactHooks from "eslint-plugin-react-hooks";
-
-export default [
-  reactHooks.configs.recommended,
-];
-```
-
-An eslintrc project must use the explicitly named legacy preset:
+Hooks ESLint v6 changed `recommended` into an ESLint flat-config preset. Existing eslintrc projects must choose the legacy preset explicitly:
 
 ```yaml
 extends:
   - plugin:react-hooks/recommended-legacy
 ```
 
-Do not leave an eslintrc project on `plugin:react-hooks/recommended` after upgrading to v6.
+## Account for starter defaults
 
-## Starter defaults
+New Expo projects on SDK 54 or newer enable the compiler by default. Vite and Next.js do not make it unconditional; `create-vite` and `create-next-app` offer compiler-enabled starter choices.
 
-Compiler adoption differs across starters:
+Check the generated project configuration instead of assuming that all starters use the same default.
 
-- Expo SDK 54 and newer enable the compiler by default for newly created applications.
-- `create-vite` offers a compiler-enabled choice.
-- `create-next-app` offers a compiler-enabled choice.
+## Pin compiler upgrades when coverage is weak
 
-## Upgrade policy
+Compiler releases can change memoization boundaries. Those changes may expose latent Rules-of-React violations by changing Effect dependency behavior.
 
-Compiler releases can change memoization boundaries. Those changes can expose latent Rules-of-React violations, especially through different Effect dependency behavior.
-
-When end-to-end coverage is not strong enough to detect behavioral changes, save the compiler package at an exact version instead of accepting a SemVer range:
+When strong end-to-end coverage is unavailable, save an exact compiler version instead of a SemVer range and test each upgrade manually:
 
 ```sh
 npm install --save-dev --save-exact babel-plugin-react-compiler@1.0.0
 ```
-
-Test each compiler upgrade manually before updating the pin.

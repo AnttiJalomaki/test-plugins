@@ -1,121 +1,89 @@
 # Troubleshooting
 
-## Model conversion and engine generation
+## Intermittent output and visualization issues
 
-### MobileSAM fails to convert to ONNX
+In 4.0.0, running `isaac_ros_h264_decoder` alongside
+`isaac_ros_h264_encoder` can intermittently leave the decoder without output.
+DOPE can miss objects in manipulation workflows, DetectNet can emit overlapping
+duplicate boxes because of its DBScan implementation, and the Nvblox RealSense
+people-segmentation example can display an incorrect RViz color overlay.
 
-PyTorch 2.6 changes the `weights_only` default, which can break the MobileSAM
-conversion flow in 4.0.0. Restore the earlier load behavior for the conversion
-process:
+For Isaac Sim 5.1, if the Nvblox sample scene fails to load normally, open it
+through Content Window → Samples → NvBlox → `nvblox_sample_scene.usd` (4.0.0).
 
-```bash
-export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
-```
+## FoundationStereo FP16 conversion memory
 
-Scope the environment variable to the conversion process; it is a loading
-compatibility workaround, not a general runtime requirement.
+FoundationStereo FP16 conversion can run out of memory with the TensorRT
+version used by Isaac ROS 4.1.0.
 
-### FoundationStereo FP16 conversion runs out of memory
-
-FoundationStereo conversion in FP16 can exhaust memory because of the
-TensorRT version used by Isaac ROS 4.1.0. Treat this as a known stack-specific
-conversion limit.
-
-### DOPE cannot build a TensorRT Plan on AGX Thor
-
-The 4.1.0 DOPE quickstart cannot convert the model from ONNX to a TensorRT Plan
-on Jetson AGX Thor because the model contains unsupported layers. This is
-separate from the runtime issue where DOPE can fail to detect objects in
-manipulation workflows.
-
-### PeopleNet has no TensorRT engine
-
-The quickstart expects `trtexec` at
-`/usr/src/tensorrt/bin/trtexec`. If it is not installed there, manually
-generating the TensorRT engine might be required.
-
-## Environment and backend failures
-
-### SAM2 visualization fails outside Docker
-
-In the 4.1.0 Virtual Environment flow, a NumPy mismatch can break the SAM2
-visualization script. Downgrading NumPy to 1.26.4 is a possible workaround.
-The SAM2 quickstart dependency problems affecting Virtual Environment and Bare
-Metal are fixed in 4.5.0.
-
-### Triton PyTorch backend is selected
+## Unsupported Triton PyTorch backend
 
 The Triton Inference Server PyTorch backend is not supported in Isaac ROS
-4.1.0. Select a supported inference path rather than debugging that backend as
-if it were part of the supported matrix.
+4.1.0.
 
-### RealSense stops publishing on JetPack 7
+## DOPE conversion on AGX Thor
 
-The RealSense SDK could become unstable and stop publishing images in the
-4.0.0 JetPack 7 flow. Use the dedicated Isaac ROS 4.1.0 RealSense-on-JetPack-7
-setup procedure, which addresses that stability problem.
+The DOPE quickstart cannot convert its ONNX model to a TensorRT Plan on Jetson
+AGX Thor because the model contains unsupported layers (4.1.0).
 
-## Missing or intermittent output
+## DNN stereo output gaps
 
-### H.264 decoder has no output
+DNN stereo with RealSense, ZED, or Isaac Sim can intermittently omit disparity
+or point-cloud output because the decoder does not synchronize `CameraInfo`
+messages with disparity tensors (4.5.0).
 
-Running `isaac_ros_h264_decoder` alongside `isaac_ros_h264_encoder` can
-intermittently leave the decoder without output. Reproduce with both nodes
-active; testing them only in isolation misses the known interaction.
+## PeopleNet TensorRT engine setup
 
-When moving to the native V4L2 H.264 path in 4.5.0, also recheck revised QoS
-behavior and dynamic image-size handling.
+If `trtexec` is absent from `/usr/src/tensorrt/bin/trtexec`, the PeopleNet
+quickstart may require manual TensorRT engine generation (4.5.0).
 
-### DNN stereo omits disparity or point clouds
+## Isaac Sim stereo point-cloud visualization
 
-With RealSense, ZED, or Isaac Sim, the DNN stereo decoder can intermittently
-omit disparity or point-cloud output because it does not synchronize
-`CameraInfo` messages with disparity tensors (4.5.0). Inspect arrival timing
-and synchronization before diagnosing the CUDA point-cloud path.
+The Isaac Sim stereo-image-processing workflow may fail to show its point cloud
+in RViz because of `PointCloud2` conversion or frame metadata (4.5.0).
 
-### NITROS Bridge topics do not arrive
+## Live-camera SAM2 GPU exhaustion
 
-NITROS Bridge topics from Isaac Sim 5.1 might not arrive through DDS in the
-4.0.0 stack. This breaks the object-following manipulation simulation
-tutorial. Isolate the bridge and DDS boundary before changing the manipulation
-workflow.
+After adding an object prompt, `isaac_ros_segment_anything2` pipelines with a
+live ZED or RealSense camera may continuously consume GPU memory until CUDA
+runs out of memory (4.6.0).
 
-## Incorrect or absent visualization
+## RealSense Visual SLAM mask encoding
 
-### Nvblox sample scene does not load
+The RealSense segmentation-mask workflow sends a `mono8` infrared stream to a
+DNN encoder expecting `rgb8`. The encoder terminates on a fatal assertion, and
+Visual SLAM receives no mask (4.6.0).
 
-Open it through Content Window → Samples → NvBlox →
-`nvblox_sample_scene.usd`.
+## Jetson VPI RealSense SGM
 
-### Isaac Sim stereo point cloud is absent in RViz
+The `isaac_ros_stereo_image_proc` RealSense SGM workflow can encounter a VPI
+backend error on Jetson Orin or Thor. The error exits the component container
+and prevents disparity or point-cloud output (4.6.0).
 
-The stereo-image-processing workflow can fail to visualize its point cloud
-because of `PointCloud2` conversion or frame metadata. Confirm the conversion
-and frame information before concluding that stereo output is absent.
+## Manipulation action-server stalls
 
-### Nvblox people segmentation has the wrong overlay
+In multi-object pick-and-place, a stalled goal may ignore cancellation or
+shutdown and retain the action server. Later goals are then rejected (4.6.0).
+Resolve the active goal and server state instead of submitting repeated goals.
 
-The Nvblox RealSense people-segmentation example can show an incorrect RViz
-color overlay. Keep the display defect distinct from segmentation and mapping
-correctness.
+## Simulated manipulation failures
 
-### DetectNet produces overlapping boxes
+In the simulated UR10e pick-and-place workflow, grasp planning for
+`mac_and_cheese` can fail with `TRAJECTORY_OPTIMIZATION_FAILURE`, aborting the
+goal or reporting partial success. The RT-DETR object-following workflow can
+produce unstable detections, and the reach policy can fail while loading its
+checkpoint (4.6.0).
 
-DetectNet can emit overlapping duplicate boxes because of its DBScan
-implementation. Check detector post-processing before looking for duplicate
-message publication.
+## Gear Assembly test failure on Debian
 
-## Hardware and policy boundaries
+The Gear Assembly pose-estimation accuracy test may fail to launch on Debian
+because `parse_joint_state_from_yaml()` omits the required `joint_names`
+argument. The robot then cannot move above the peg stand for the visual
+pose-error check (4.6.0).
 
-### Fast-FoundationStereo is selected for commercial work
+## DetectNet Triton repository hygiene
 
-Fast-FoundationStereo is a research-only model in 4.5.0. Use
-FoundationStereo for commercial work.
-
-### Unitree G1 hands lower during teleoperation
-
-On physical hardware, G1 hands can lower after several minutes because of
-motor temperature limits. Check hand motor temperature before debugging the
-controller, firmware 1.5.1 acknowledgement handling, or revised bridge
-defaults.
-
+DetectNet can fail during Triton initialization when the model repository
+contains stale or non-Triton models. Remove unrelated models, or put Triton
+models under `${ISAAC_ROS_WS}/isaac_ros_assets/models/triton`, before launching
+the workflow (4.6.0).

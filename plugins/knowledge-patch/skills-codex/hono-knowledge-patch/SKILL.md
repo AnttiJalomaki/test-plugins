@@ -8,32 +8,40 @@ metadata:
 ---
 
 
-# Hono 4.8–4.12 Knowledge Patch
+# Hono Knowledge Patch
 
-## Use this patch
+## When to use this patch
 
-- Read the security section before changing authentication, caching, static serving, CORS, IP restrictions, cookies, JSX/CSS SSR, or streaming.
-- Read the relevant topic reference before implementing or reviewing Hono code.
-- Preserve explicit JWT/JWK algorithms and the current patch-level security floor.
-- Treat client path/query inputs as wire-format strings even when server validation coerces them.
-- Use runtime-specific exports for adapters and static generation.
+Load this patch when writing, reviewing, debugging, or upgrading Hono applications,
+middleware, RPC clients, static generation, JSX, streaming, runtime adapters, or
+the Hono CLI.
+
+Before changing an existing project, inspect its `hono` and `@hono/*` versions in
+the package manifest and lockfile. Apply version-specific advice only when the
+installed dependency contains that behavior. Prefer the project's code, types,
+tests, and observed runtime behavior when they disagree with this guidance.
+
+Read the security reference before changing authentication, caching, static-file
+or SSG paths, CORS, IP restrictions, cookies, SSE, body limits, or JSX/CSS SSR.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Routing and requests](references/routing-and-requests.md) | HEAD dispatch, route introspection, trailing slashes, raw requests and bytes, query/body behavior, proxy headers, locale fallback, Unix sockets |
-| [Client, RPC, validation, and testing](references/client-rpc-validation-testing.md) | `hc` URLs and inputs, response typing/parsing, query serialization, validator rules, Standard Schema, `testClient`, `app.request()` |
-| [Security and authentication](references/security-and-auth.md) | JWT/JWK algorithms and sources, Basic Auth hooks, CSP, bot blocking, security patch floors |
-| [Middleware, runtimes, and integrations](references/middleware-runtimes-integrations.md) | cache, CORS, compression, context exports, adapters, Service Workers, MCP, MIME and logging |
-| [Rendering, streaming, and SSG](references/rendering-streaming-ssg.md) | streaming lifecycle, SSG plugins and route mapping, JSX DOM, view transitions, renderer and CSS options |
-| [Hono CLI](references/cli.md) | `docs`, `search`, `request`, `serve`, and `optimize` commands |
+| [Routing and requests](references/routing-and-requests.md) | Route introspection, mounted apps, request parsing, proxy headers, slashes, locales, Unix sockets, router correctness |
+| [Client, RPC, validation, and testing](references/client-rpc-validation-testing.md) | `hc`, typed URLs and responses, serializers, validators, raw requests, test bindings |
+| [Security and authentication](references/security-and-auth.md) | JWT/JWK, Basic and Bearer Auth, cookies, CSP, bot blocking, CSRF, security floors |
+| [Middleware, runtimes, and integrations](references/middleware-runtimes-integrations.md) | Cache, CORS, compression, Pretty JSON, adapters, MCP, MIME, execution context, logging |
+| [Rendering, streaming, and SSG](references/rendering-streaming-ssg.md) | Streaming lifecycle, Service Workers, SSG plugins and mapping, JSX DOM, view transitions |
+| [Hono CLI](references/cli.md) | Documentation lookup, in-process requests, development serving, optimized router builds |
 
 ## Breaking changes, deprecations, and security floors
 
-### Require explicit JWT algorithms
+### Configure JWT and JWK algorithms explicitly
 
-From v4.11.4 in the 4.11.0 line, configure the algorithm instead of allowing a token header to select it. `jwt` takes one `alg`; `jwk` takes an array of asymmetric algorithms.
+Starting with `4.11.4`, `jwt` requires one explicit `alg`, and JWK/JWKS
+middleware requires an `alg` array containing asymmetric algorithms. Never let
+an untrusted token header choose the verification algorithm.
 
 ```ts
 import { jwk } from 'hono/jwk'
@@ -43,11 +51,16 @@ app.use('/session/*', jwt({ secret, alg: 'HS256' }))
 app.use('/admin/*', jwk({ jwks_uri, alg: ['RS256'] }))
 ```
 
-Use v4.11.7 or newer for the 4.11 security fixes and v4.11.10 or newer for stronger timing-safe comparison. On 4.12, use at least v4.12.27 for the accumulated security fixes. See [Security and authentication](references/security-and-auth.md) for the affected features.
+Use `4.11.10` or newer on the 4.11 line. Use `4.12.28` or newer on the 4.12
+line, and never remain below `4.12.27`. These floors include fixes across IP
+restriction, caches, static paths, authentication, cookies, SSE, request bodies,
+CORS, and JSX/CSS rendering. See the security reference for the complete
+behavioral checklist.
 
 ### Replace deprecated startup and SSG hooks
 
-Start Service Worker apps with the standalone helper introduced in 4.8.0; do not add new uses of `app.fire()`.
+Start a Service Worker application with the standalone helper introduced in
+`4.8.0`; do not add new uses of `app.fire()`.
 
 ```ts
 import { fire } from 'hono/service-worker'
@@ -55,21 +68,28 @@ import { fire } from 'hono/service-worker'
 fire(app)
 ```
 
-Pass `SSGPlugin` objects in `toSSG(..., { plugins })`. Legacy SSG hook options are deprecated as of 4.9.0. Use `defaultPlugin()` for normal generation and put `redirectPlugin()` before it when generating redirect pages.
+Legacy SSG hook options are deprecated as of `4.9.0`. Pass `SSGPlugin` objects
+through `toSSG(..., { plugins })`. Supplying a custom plugin list disables the
+implicit default plugin, so add `defaultPlugin()` explicitly when its normal
+non-200 filtering is still required.
 
-### Account for changed request and route behavior
+### Treat changed wire and routing behavior as compatibility boundaries
 
-- Every `HEAD` request is converted to `GET` before matching, and its response body is removed. Put HEAD-specific work in middleware that inspects `c.req.method`; `app.head()` and `app.on('HEAD', ...)` do not run.
-- Multiple-handler route types now include responses from middleware and earlier handlers (since 4.10.0).
-- Proxy handling strips or processes hop-by-hop headers according to RFC 9110; do not depend on those headers passing through unchanged.
-- Validator body targets receive `{}` when the request lacks the matching `Content-Type`; header validation keys are lowercase.
-- `hc` does not URL-encode path parameters. Encode normal values yourself, or intentionally use a regexp parameter when a raw value may span slashes.
+- `hc` path and query values remain strings even if server validation coerces
+  them. Path parameters are not URL-encoded; encode ordinary values yourself.
+- JSON and form validators receive `{}` when `Content-Type` does not match the
+  target. Header-validator keys are lowercase.
+- Proxy handling follows RFC 9110 for hop-by-hop headers; do not depend on those
+  headers passing through unchanged.
+- Router fixes in `4.13.3` correct suffix wildcards and prevent wildcard routes
+  from overmatching path prefixes. Retest fallback and nested wildcard routes.
 
 ## Client and RPC quick reference
 
-### Build typed URLs and paths
+### Generate exact URLs and paths
 
-Pass a literal base URL as the second `hc` type argument to make `$url()` return an exact `TypedURL` (since 4.11.0).
+Pass a literal base URL as the second `hc` type parameter to preserve it in the
+`TypedURL` returned by `$url()`.
 
 ```ts
 const client = hc<typeof app, 'https://api.example.com'>(
@@ -78,7 +98,7 @@ const client = hc<typeof app, 'https://api.example.com'>(
 const url = client.posts[':id'].$url({ param: { id: '42' } })
 ```
 
-Use `$path()` when only a router path or cache key is needed (since 4.12.0).
+Use `$path()` when only the interpolated path and query string are needed.
 
 ```ts
 const path = client.posts[':id'].$path({
@@ -87,63 +107,77 @@ const path = client.posts[':id'].$path({
 })
 ```
 
-Use `buildSearchParams` on `hc` for custom query conventions. Keep all `param` and `query` values as strings. Per-call `{ init }` has final precedence over the method, body, and headers generated by `hc`.
+Set `buildSearchParams` in the `hc` options for nonstandard query conventions.
+Per-call `{ init }` values have final precedence and may override the method,
+body, or headers generated by `hc`.
 
-### Type shared and status-specific responses
+### Parse and type responses
 
-Use `ApplyGlobalResponse` to add responses from global middleware or `onError()` to every route schema. It is exported from `hono/client` from v4.12.1. Use `PickResponseByStatusCode` in later 4.12 releases to select a status variant. Augment `NotFoundResponse` when the application has a typed custom 404 body.
-
-### Parse and preserve requests
-
-`parseResponse()` accepts an `hc` response promise, selects a parser from `Content-Type`, and throws `DetailedError` for a non-OK response (since 4.9.0).
+`parseResponse()` chooses a parser from `Content-Type` and throws a structured
+`DetailedError` for a non-success response.
 
 ```ts
 import { parseResponse } from 'hono/client'
 
-const data = await parseResponse(client.posts.$get())
+const result = await parseResponse(client.posts.$get())
 ```
 
-Use `cloneRawRequest(c.req)` when middleware or a validator has already consumed the body and the raw `Request` must be sent elsewhere.
+Use `ApplyGlobalResponse` for responses introduced by global middleware or
+`onError()`, `PickResponseByStatusCode` for one status branch, and module
+augmentation of `NotFoundResponse` for a typed custom 404. Multiple-handler
+route inference includes responses from middleware and earlier handlers.
+
+Use `cloneRawRequest(c.req)` when a validator or middleware has consumed the body
+but an integration still needs a reconstructed raw `Request`.
 
 ## Authentication quick reference
 
-### Choose a token source deliberately
+### Choose token sources and claims deliberately
 
-- `jwt` accepts `headerName` for a nonstandard header and `cookie` for a named cookie.
-- `jwk` accepts `headerName`; `keys` and `jwks_uri` may be context-dependent functions.
-- `jwk({ allow_anon: true, ... })` allows unauthenticated continuation and leaves `jwtPayload` unset when no valid token is available.
-- JWT and JWK middleware accept only the `Bearer` authorization scheme.
+- `jwt` accepts `headerName` for a custom header or `cookie` for a named cookie.
+- `jwk` accepts `headerName`; `keys` and `jwks_uri` may be functions of context.
+- `jwk({ allow_anon: true, ... })` permits unauthenticated continuation.
+- JWT middleware can validate `iss`; `verifyOptions` controls `nbf`, `iat`, and
+  `exp`, all enabled by default when those claims are present.
+- JWT and JWK middleware require the Bearer scheme when reading authorization.
+- Use `JwtVariables` in the application's `Variables` type for typed
+  `c.get('jwtPayload')` access.
 
-Use `JwtVariables` in the application's `Variables` type so `c.get('jwtPayload')` is typed. Configure issuer validation and temporal-claim checks rather than duplicating them in handlers.
-
-### Add post-authentication work
-
-Use Basic Auth's async-capable `onAuthSuccess(c, username)` hook to record identity or audit state after successful authentication, including when using `verifyUser`.
+Use Basic Auth's async-capable `onAuthSuccess(c, username)` hook for identity or
+audit state after either direct credential checks or `verifyUser` succeeds.
 
 ## Middleware and runtime quick reference
 
-### Configure cache safety and variation
+### Keep cache and CORS variation safe
 
 - Select stored statuses with `cacheableStatusCodes`.
-- Handle unavailable runtime caches with `onCacheNotAvailable`.
+- Handle an unavailable Cache API with `onCacheNotAvailable`.
 - Configured `Vary` headers contribute to cache keys.
-- Responses with `Vary: Authorization` or `Vary: Cookie` are not cached.
-- Current patch releases also refuse responses marked `private` or `no-store`.
+- Do not cache responses with `Vary: Authorization`, `Vary: Cookie`, `private`,
+  or `no-store` behavior.
+- `allowMethods` may vary by request origin.
+- `4.13.3` adds `Origin` to `Vary` on CORS preflight responses and exempts
+  `OPTIONS` requests from CSRF validation.
 
-### Select content dynamically
+### Use runtime-specific facilities
 
-`cors({ allowMethods })` accepts a function of the request origin. Compression accepts `contentTypeFilter`; start custom checks from `COMPRESSIBLE_CONTENT_TYPE_REGEX`. MessagePack is recognized as compressible.
-
-### Use adapter exports directly
-
-- Import `upgradeWebSocket` and `websocket` directly from the Bun adapter.
+- Import `upgradeWebSocket` and `websocket` directly from `hono/bun`.
+- Configure binary response content types in the AWS Lambda adapter.
 - Import `getConnInfo` from the AWS Lambda, Cloudflare Pages, or Netlify adapter.
-- Configure AWS Lambda binary content types when returning binary bodies.
-- Use `http+unix` URLs for HTTP over Unix sockets.
+- Use the `http+unix` URL scheme for HTTP over Unix domain sockets.
+- Cloudflare execution contexts expose `props` and can type `exports` through
+  module augmentation.
+- `Context` is a public runtime export from `hono` for integrations needing the
+  class rather than only its structural type.
+
+Compression accepts `contentTypeFilter`; use
+`COMPRESSIBLE_CONTENT_TYPE_REGEX` as the base for custom rules. MessagePack is
+compressible. Pretty JSON accepts `force: true` and, with the `4.13.3` fix,
+recognizes structured media types ending in `+json`.
 
 ## Rendering, streaming, and SSG quick reference
 
-### Stop long-lived streams on abort
+### Stop producers when a stream aborts
 
 ```ts
 return streamSSE(c, async (stream) => {
@@ -154,9 +188,12 @@ return streamSSE(c, async (stream) => {
 })
 ```
 
-Producer errors after streaming begins do not reach `app.onError()`. Supply the streaming helper's third callback to finish or close the existing stream; it cannot replace the response. Under Wrangler, set `Content-Encoding: Identity` when its streaming behavior requires the workaround.
+Use `stream.onAbort()` for cleanup. Errors after streaming begins go to the
+helper's optional third callback, not `app.onError()`, because the response can
+no longer be replaced. Under Wrangler, try `Content-Encoding: Identity` when
+streaming behavior requires the workaround.
 
-### Compose the SSG plugin pipeline
+### Compose static generation explicitly
 
 ```ts
 import { defaultPlugin, redirectPlugin, toSSG } from 'hono/ssg'
@@ -166,22 +203,27 @@ await toSSG(app, fs, {
 })
 ```
 
-Use `ssgParams()` to enumerate parameterized pages, `disableSSG()` to exclude a route, `onlySSG()` for generation-only routes, and `isSSGContext(c)` for generation-specific output. Node.js accepts a filesystem argument; the Bun and Deno adapter entry points do not.
+Use `ssgParams()` for parameterized pages, `disableSSG()` to omit a route,
+`onlySSG()` for generation-only routes, and `isSSGContext(c)` for conditional
+output. Node.js accepts a promise-based filesystem argument; Bun and Deno expose
+filesystem-bound adapter entry points.
 
-### Protect streamed JSX
-
-Give `StreamingContext` a `scriptNonce` and allow the same nonce in the response CSP whenever streamed `Suspense` or `ErrorBoundary` output may emit inline scripts. CSP configuration also supports `report-to` and `report-uri`.
+For streamed `Suspense` or `ErrorBoundary` content, set `scriptNonce` on
+`StreamingContext` and allow the same nonce in CSP. `jsxRenderer()` may derive
+options per request, and `createCssContext()` accepts `classNameSlug`.
 
 ## CLI quick reference
 
-Install `@hono/cli` for the `hono` command.
+Install `@hono/cli` to get the `hono` command.
 
 ```sh
 hono search "basic auth"
-hono docs /docs/api/routing
+hono docs /docs/middleware/builtin/basic-auth
 hono request -P /api/users -X POST -d '{"name":"Ada"}' src/index.ts
 hono serve --use 'logger()' src/index.ts
 hono optimize src/index.ts
 ```
 
-`request` runs `app.request()` in-process. `serve` starts at `http://localhost:7070` and can inject repeated `--use` middleware. `optimize` emits a precomputed `PreparedRegExpRouter` entry at `dist/index.js`.
+`request` invokes `app.request()` in-process. `serve` defaults to
+`http://localhost:7070` and accepts repeated `--use` expressions. `optimize`
+emits a `PreparedRegExpRouter` entry at `dist/index.js`.

@@ -1,43 +1,86 @@
 # Security, Identity, and RBAC
 
-## Log access authorization
+## Log access and fine-grained RBAC
 
-RBAC enforcement for logs is enabled by default since 3.0.0. Roles that could
-previously view logs without an explicit permission may lose access. Exercise
-log access with representative users after an upgrade and grant only the
-required project and resource scope.
+RBAC enforcement for logs is enabled by default in 3.0.0. Grant explicit log
+permissions to every role that needs pod-log access, then test CLI and API
+paths with representative identities.
 
-## Fine-grained Application RBAC
+Fine-grained RBAC inheritance is disabled by default in 3.0.0. Review policies
+that expected an Application permission to flow to its resources and replace
+implicit access with explicit rules where necessary.
 
-Fine-grained RBAC inheritance is disabled by default since 3.0.0. Policies
-that depended on an Application permission being inherited by its resources
-need review. Express required child-resource permissions directly instead of
-assuming the older inheritance behavior remains implicit.
+User-defined roles and policies receive referential-integrity checks in 3.0.0.
+Fix dangling references before upgrade rather than relying on permissive
+loading.
 
-Argo CD also checks user-defined roles and policies for referential integrity
-since 3.0.0. Resolve references to missing or renamed roles and policies as a
-configuration error rather than expecting them to be accepted silently.
+## Tokens and bearer authentication
 
-## Authentication and SSO
+Bearer-token authentication is supported (3.0.0). Apply the same transport,
+storage, expiration, and scope controls used for other reusable credentials.
 
-- Bearer-token authentication is supported since 3.0.0. Apply the same token
-  lifetime, storage, transport, and redaction controls used for other API
-  credentials.
-- Microsoft Entra SSO can use Azure workload identity since 3.0.0, avoiding a
-  long-lived client secret in supported Azure deployments.
-- OAuth2 login configuration accepts `--sso-host` since 3.2.0. Set it when the
-  externally visible SSO callback host differs from the server's ordinary host,
-  and keep redirect registration and proxy routing aligned with that value.
+The UI can delete every expired token for a project role in one operation
+(3.1.0). Use the bulk cleanup while preserving audit evidence required by the
+deployment.
 
-## Project-role token cleanup
+## Microsoft Entra ID
 
-Since 3.1.0, the UI can delete all expired tokens for a project role in one
-operation. Use bulk removal to reduce stale credential records, while treating
-the operation as cleanup rather than revocation of tokens that remain valid.
+Microsoft Entra SSO can use Azure workload identity (3.0.0). For Entra ID
+tokens without `jti`, Argo CD uses `uti` as the token ID (3.4.6), so token
+handling must not require `jti` unconditionally.
 
-## Static asset boundary
+Microsoft Entra ID group-claim overflow can be resolved through a Microsoft
+Graph API lookup (3.5.0). Provision that lookup's identity and permissions when
+group membership can exceed the token claim capacity.
 
-The static-assets endpoint is hardened against symlink traversal since 3.1.0.
-Do not build an extension or packaging flow that relies on following symlinks
-outside the intended static-assets tree. Keep the patched behavior in place
-rather than weakening path validation to restore such access.
+## OAuth2 and OIDC sessions
+
+OAuth2 login accepts `--sso-host` for choosing the callback host (3.2.0).
+Align it with externally reachable routing and registered redirect URLs.
+
+OIDC refresh tokens can renew expired sessions instead of forcing a new login
+(3.4.6). Configure session expectations around refresh-token availability and
+lifetime.
+
+The OIDC UserInfo endpoint URL can be customized rather than relying only on
+provider discovery (3.5.0). Use the override when discovery does not identify
+the endpoint the deployment must call.
+
+## Dex configuration
+
+Environment-variable substitution in Dex configuration works again in 3.3.13
+after a regression. Revalidate substituted values during upgrade, especially
+where a previous workaround materialized values before Dex read the config.
+
+## Server-operation impersonation
+
+Impersonation is beta and applies to server operations such as logs and
+deletes in 3.5.0. Strict impersonation enforcement can be disabled for
+compatibility. Treat disabling it as a deliberate security exception and test
+authorization for each affected operation.
+
+## Destination and cluster credentials
+
+Global projects support `destinationServiceAccounts` (3.5.0), extending
+destination service-account policy beyond individually defined projects.
+Review global precedence and intended destination access before rollout.
+
+Cluster `ExecProviderConfig` has `ProvideClusterInfo` and `Config` fields
+(3.5.0). These allow exec credential providers to receive cluster information
+and provider-specific configuration; pass only what the provider needs.
+
+## Server cache namespace filtering
+
+Objects from namespaces that are not allowed are removed before entering the
+server cache (3.5.0). Security tests should verify cache-backed retrieval and
+not only final response filtering.
+
+## Static assets and Secret diff output
+
+The static-assets endpoint is hardened against symlink traversal (3.1.0).
+Keep external static content and custom extensions compatible with the
+protected path behavior rather than weakening the endpoint.
+
+Server-side diff prevents CLI Secret-mask spoofing and masks Secret content in
+the last-applied-configuration annotation (3.3.13). Avoid logging or persisting
+older unmasked diff output during migration.

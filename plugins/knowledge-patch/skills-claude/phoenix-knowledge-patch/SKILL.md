@@ -10,41 +10,49 @@ metadata:
 
 # Phoenix Knowledge Patch
 
-Use this skill when maintaining or generating Phoenix applications whose code may rely on current generator, authentication, routing, endpoint, channel, or JavaScript behavior.
+Use this skill when creating or upgrading Phoenix applications, changing
+generated authentication or scopes, configuring endpoints and routers, or
+working on Channels and the JavaScript client. Apply the migration and security
+notes before adopting newer generator output.
 
-Check the application's Phoenix dependency before applying version-specific advice. Prefer the application's configuration, generated code, tests, and observed behavior when they differ from this guidance.
-
-## Reference index
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [references/scopes-and-auth.md](references/scopes-and-auth.md) | Generator scopes, ownership-aware contexts, nested route scopes, magic-link authentication, sudo mode, authentication migration |
-| [references/runtime-security-and-routing.md](references/runtime-security-and-routing.md) | Runtime prerequisites, layouts, browser headers, controller and router deprecations, endpoint configuration, channels, LongPoll, verified routes, assigns |
-| [references/generators-client-and-testing.md](references/generators-client-and-testing.md) | Generator CLI changes, auth assets, project tooling, JavaScript socket and Presence behavior, guarded channel assertions |
+| [Scoped Data Access and Authentication](references/scopes-and-auth.md) | Generator scopes, route-aware ownership, magic links, sudo mode, auth migration |
+| [Runtime, Security, Routing, and Realtime Behavior](references/runtime-security-and-routing.md) | Runtime requirements, layouts, headers, endpoints, routers, Channels, LongPoll, Presence, logging |
+| [Generators, JavaScript Clients, and Channel Tests](references/generators-client-and-testing.md) | Generator commands and side effects, assigns, guarded assertions, socket and Presence client behavior |
 
-## Breaking changes and deprecations
+## Breaking Changes and Upgrade Hazards
 
-### Declare controller formats
+### Meet the runtime requirement
 
-Every `use Phoenix.Controller` must provide `:formats`; use an empty list when the controller has no formats.
+Phoenix 1.8 requires Erlang/OTP 25 or later. Check production, CI, and local
+runtime versions before upgrading dependencies.
+
+### Make controller formats explicit
+
+Every `use Phoenix.Controller` must now provide `:formats`; use an empty list
+when the controller intentionally has no formats.
 
 ```elixir
 use Phoenix.Controller, formats: [:html]
 ```
 
-Replace deprecated controller configuration:
-
-- Remove `:namespace` and `:put_default_views` options.
-- Use module-qualified layouts.
-- Move trailing-slash URL generation from the router's deprecated `:trailing_slash` option to `Phoenix.VerifiedRoutes`.
+Replace deprecated controller options `:namespace` and `:put_default_views`.
+Module-less layouts are also deprecated, so identify the layout module:
 
 ```elixir
 put_layout(conn, html: {MyAppWeb.Layouts, :print})
 ```
 
-### Read endpoint compile-time configuration explicitly
+The router's `:trailing_slash` option is deprecated. Move trailing-slash URL
+generation to `Phoenix.VerifiedRoutes`.
 
-Do not use the former injected `config` variable inside `Phoenix.Endpoint`. Read compile-time settings with `Application.compile_env/3`.
+### Read endpoint compile-time settings explicitly
+
+The injected `config` variable is unavailable inside `Phoenix.Endpoint`.
+Read compile-time endpoint settings with `Application.compile_env/3`:
 
 ```elixir
 @value Application.compile_env(
@@ -54,11 +62,14 @@ Do not use the former injected `config` variable inside `Phoenix.Endpoint`. Read
 )
 ```
 
-Audit settings that exist only in runtime configuration: code that now reads them at compile time can otherwise fail during boot.
+Audit settings supplied only at runtime; code that now expects them at compile
+time can otherwise fail while booting after an upgrade.
 
 ### Treat layouts as components
 
-Generated applications use one `root.html.heex` around the render pipeline. Invoke dynamic layouts such as the application layout as function components from templates.
+New applications keep a single `root.html.heex` around the render pipeline.
+Invoke dynamic layouts such as the application layout from templates as
+function components:
 
 ```heex
 <Layouts.app flash={@flash}>
@@ -66,29 +77,59 @@ Generated applications use one `root.html.heex` around the render pipeline. Invo
 </Layouts.app>
 ```
 
-Do not configure module-less layouts or expect an additional dynamic layout in the render pipeline.
+### Review browser embedding policy
 
-### Respect stricter verified routes
+Without an explicit Content Security Policy, `put_secure_browser_headers`
+sets `content-security-policy` to `base-uri 'self'; frame-ancestors 'self';`.
+Define an explicit policy when third parties must embed the application. The
+function no longer emits the deprecated `x-download-options` or
+`x-frame-options` headers.
 
-Do not invoke `use Phoenix.VerifiedRoutes` more than once in a module, and do not interpolate a list into a verified route. Both forms raise in Phoenix 1.8.6.
+### Migrate generated authentication deliberately
 
-For stable query strings in tests, opt into deterministic parameter ordering:
+Generators do not retrofit existing authentication code. To migrate an older
+password-registration flow, add a new migration that makes
+`hashed_password` nullable; do not edit an already-run migration. Set the
+field to `nil` for all still-unconfirmed accounts to prevent credential
+pre-stuffing.
+
+That cleanup can invalidate a password chosen moments before deployment. Run
+it during low traffic, or add magic-link login without immediately replacing
+the existing password flow. See the authentication reference for the complete
+generated flow.
+
+### Account for LongPoll security and limits
+
+LongPoll is opt-in from Phoenix 1.8.2 onward. Phoenix 1.8.6 fixes nd-JSON
+body-splitting memory exhaustion, and Phoenix 1.8.9 enforces a 100-event batch
+limit. A high-frequency application that can exceed that limit should upgrade
+to 1.8.7 before moving to 1.8.9. See the runtime reference for transport
+recovery and token behavior.
+
+### Respect verified-route strictness
+
+Phoenix 1.8.6 raises if `use Phoenix.VerifiedRoutes` occurs more than once in
+a module or if a list is interpolated into a verified route. Remove duplicate
+uses and construct query data without list interpolation.
+
+For stable test output, enable deterministic query-parameter sorting:
 
 ```elixir
 config :phoenix, sort_verified_routes_query_params: true
 ```
 
-### Enforce supported runtime and transport limits
+## Scoped Generation
 
-Phoenix 1.8 requires Erlang/OTP 25 or later.
+### Pass scopes through context boundaries
 
-Phoenix 1.8.9 limits each transport to 100 channel processes by default through `max_channels_per_transport`. Raise the option deliberately when one client legitimately multiplexes more than 100 channels.
+`mix phx.gen.auth Accounts User users` generates `Accounts.Scope` and normally
+registers a default user scope. Browser requests receive `:current_scope`
+through `fetch_current_scope_for_user`, and generated LiveViews receive it
+through a mount hook.
 
-LongPoll is opt-in from Phoenix 1.8.2 onward. Account for its security fixes and 100-event request batch limit before enabling it for high-frequency traffic.
-
-## Generated scopes and authorization boundaries
-
-Treat a generated scope as a data-access boundary, not merely a convenient assign. Generated context functions accept the scope first and restrict queries by its owner.
+Once a default is configured, schema, context, LiveView, HTML, and JSON
+generators produce ownership fields and scoped queries. Keep the scope as the
+first argument to context operations:
 
 ```elixir
 def list_posts(%Scope{} = scope) do
@@ -96,101 +137,67 @@ def list_posts(%Scope{} = scope) do
 end
 ```
 
-After defining a default scope, these generators emit ownership fields and scoped queries:
+Place generated authenticated LiveView routes in the authenticated
+`live_session`; otherwise the scope is not mounted before scoped operations.
 
-- `phx.gen.schema`
-- `phx.gen.context`
-- `phx.gen.live`
-- `phx.gen.html`
-- `phx.gen.json`
+### Configure the ownership and route identities separately
 
-Keep authenticated generated LiveView routes in the authenticated `live_session`; its mount hook must establish `:current_scope` before generated operations run.
+A scope declaration controls its assign, owner lookup, schema association,
+fixtures, and generated test setup. Only one configured scope may be the
+default. Select another with `--scope`.
 
-### Configure one default scope
+For nested routes, `route_prefix` and `route_access_path` can expose a slug
+while `access_path` and `schema_key` retain an internal database identifier.
+Load a route-selected organization through the existing user scope, then
+replace `:current_scope` in both the browser plug and LiveView `on_mount`
+hook. The scopes reference contains complete configurations and edge cases.
 
-Declare scopes under the application `:scopes` configuration. Only one may be the default. The core ownership settings are:
+## Authentication Quick Reference
 
-- `module` and `assign_key` for the scope value.
-- `access_path` for the owner's identifier.
-- `schema_key`, `schema_type`, and `schema_table` for generated persistence.
-- `test_data_fixture` and `test_setup_helper` for generated tests.
+Phoenix 1.8 generated authentication is magic-link-first. Registration no
+longer collects a password, and password authentication is opt-in. Generated
+`UserAuth` includes `require_sudo_mode` for sensitive actions that demand
+recent authentication.
 
-Use `schema_migration_type` when the migration column type differs from `schema_type`. Set `schema_table: nil` to generate a plain scope-id column instead of a foreign key.
+In browser pipelines, `require_authenticated_user` must run after
+`fetch_current_scope_for_user`. Also keep `phoenix_html.js` in the JavaScript
+bundle; `phx.gen.auth` warns if esbuild is unavailable because generated
+features assume that asset is present.
 
-The fixture module must expose `<name>_scope_fixture/0`, and generated controller or LiveView tests must be able to import the configured setup helper.
+## Routing and Realtime Quick Reference
 
-See [references/scopes-and-auth.md](references/scopes-and-auth.md) for complete configuration examples.
+### Parameterize plugs in a scope
 
-### Select and derive non-default scopes safely
+`Phoenix.Router.pipe_through/1` accepts plug-and-options tuples alongside named
+pipelines:
 
-Pass `--scope <name>` to select a non-default configured scope. `route_prefix` controls nested generated routes, while `route_access_path` may use a URL-facing value such as a slug independently from the database ownership key.
-
-For route-derived organization scope:
-
-1. Load the organization through the already-authorized user scope.
-2. Replace `:current_scope` in a browser plug.
-3. Perform the same replacement in a LiveView `on_mount` hook.
-
-This preserves authorization for nested lookups while allowing generated paths to use the configured slug.
-
-## Authentication quick reference
-
-The generated authentication flow is magic-link-first:
-
-- Registration no longer asks for a password.
-- Email confirmation and magic-link login are generated by default.
-- Password authentication is opt-in.
-- `require_sudo_mode` protects sensitive actions by requiring recent authentication.
-- `fetch_current_scope_for_user` must run before `require_authenticated_user`.
-
-`mix phx.gen.auth Accounts User users` generates `Accounts.Scope`, registers a default user scope unless another default exists, assigns `:current_scope` for browser requests, and installs corresponding LiveView mounting behavior. Generated controllers and LiveViews pass the scope to context operations.
-
-The generator expects `phoenix_html.js` in the JavaScript bundle and warns when esbuild is unavailable.
-
-### Migrate older generated auth cautiously
-
-Generated authentication code is not upgraded automatically.
-
-For a full migration from password-at-registration:
-
-1. Add a new migration that makes `hashed_password` nullable; do not edit an old migration.
-2. Set `hashed_password` to `nil` for every account that remains unconfirmed to prevent credential pre-stuffing.
-3. Address the race in which a newly registered user may lose a chosen password: deploy during low traffic or add magic links without immediately replacing the existing flow.
-
-## Security and production defaults
-
-When no Content Security Policy is supplied, `put_secure_browser_headers` sets:
-
-```text
-base-uri 'self'; frame-ancestors 'self';
+```elixir
+scope "/admin", MyAppWeb.Admin do
+  pipe_through [:browser, {MyAppWeb.RequireRole, role: :admin}]
+end
 ```
 
-Supply an explicit policy when third-party framing is intentional. Do not depend on the removed `x-download-options` or `x-frame-options` defaults.
+### Bound channels per transport
 
-Generated production configuration enables `force_ssl` by default.
+Phoenix 1.8.9 defaults `max_channels_per_transport` to `100`. Raise it
+explicitly only for clients intentionally multiplexing more than 100 channel
+processes over one transport.
 
-Phoenix 1.8.7 masks a `token` parameter in logs by default alongside `password`. Phoenix 1.8.9 also hardens JavaScript Presence against keys matching `Object.prototype` members.
+### Handle LongPoll and transport failures
 
-## Common generator workflows
+LongPoll transport tokens may be sent in a header. This 1.8-line mechanism is
+expected to change in Phoenix 1.9. When a LongPoll batch `POST` times out,
+`phoenix.js` closes and retries the transport instead of leaving it stalled.
+JavaScript transport errors are identifiable, so client handlers can separate
+connection-layer failures from other socket errors.
 
-The context argument is optional for `phx.gen.live`, `phx.gen.html`, and `phx.gen.json`; it defaults from the plural resource name. `phx.gen.context` can infer its context from the schema.
+## Common New APIs
 
-```console
-$ mix phx.gen.live Post posts title:string
-$ mix phx.new my_app --interactive
-```
+### Bulk and functional assigns
 
-Use `--scope` when the generated resource belongs to a non-default boundary:
-
-```console
-$ mix phx.gen.live Blog Post posts title:string body:text --scope organization
-```
-
-New project generation may initialize a Git repository, provide interactive creation, and add project-level tooling. See [references/generators-client-and-testing.md](references/generators-client-and-testing.md) for the generated files and side effects.
-
-## Assigns and channel-test helpers
-
-`Phoenix.Socket.assign/2` accepts a function over existing assigns and merges the returned map. `Phoenix.Controller.assign/2` accepts the same functional form as well as maps and keyword lists.
+`Phoenix.Socket.assign/2` accepts a function of current assigns and merges the
+returned map. `Phoenix.Controller.assign/2` accepts that form, maps, and keyword
+lists.
 
 ```elixir
 socket = Phoenix.Socket.assign(socket, fn assigns ->
@@ -200,14 +207,25 @@ end)
 conn = Phoenix.Controller.assign(conn, current_user: user, locale: "en")
 ```
 
-Use guards directly with `assert_push`, `assert_broadcast`, and `assert_reply` when validating received payload shapes:
+### Guard channel assertions
+
+`assert_push`, `assert_broadcast`, and `assert_reply` accept guards, allowing
+payload constraints in the receive assertion:
 
 ```elixir
 assert_push "updated", payload when is_map(payload)
 ```
 
-## JavaScript transport behavior
+### Use streamlined generators
 
-Expect the JavaScript socket to stop reconnect attempts while the page is hidden. LongPoll can use `fetch()` when `XMLHttpRequest` is unavailable, and Presence accepts a custom dispatcher for `presence_diff` broadcasts.
+The context argument for `phx.gen.live`, `phx.gen.html`, and `phx.gen.json` is
+optional and defaults from the plural name. `phx.gen.context` can infer its
+context from the schema, and `phx.new` offers interactive setup.
 
-See the client reference for the related generator and testing behavior.
+```console
+$ mix phx.gen.live Post posts title:string
+$ mix phx.new my_app --interactive
+```
+
+Open the generator reference before scripting these commands because new
+projects also create or select additional tooling and repository files.

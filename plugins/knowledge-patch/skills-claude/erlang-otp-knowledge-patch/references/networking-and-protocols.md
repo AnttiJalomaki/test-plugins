@@ -2,88 +2,74 @@
 
 ## DNS
 
-### Per-call resolver configuration
+### Per-call resolver options (since 28.1)
 
-Since 28.1, option-list variants allow direct resolver calls to override
-settings without changing shared configuration:
+Option-list variants allow a direct resolver call to override settings without changing shared configuration: `inet_res:gethostbyname/4`, `inet_res:getbyname/4`, and `inet_res:gethostbyaddr/3`.
 
-- `inet_res:gethostbyname/4`
-- `inet_res:getbyname/4`
-- `inet_res:gethostbyaddr/3`
+### TSIG and error atoms (since 28.1)
 
-### TSIG and error atoms
-
-The internal `inet_dns_tsig` and `inet_res` modules in 28.1 verify the correct
-TSIG timestamp. Their two undocumented DNS error atoms were corrected to the
-RFC names `notauth` and `notzone`; update code that matches the former
-incorrect atoms.
+The internal `inet_dns_tsig` and `inet_res` modules verify the correct TSIG timestamp. Two undocumented DNS error atoms were corrected to the RFC names `notauth` and `notzone`; update code matching the former incorrect atoms.
 
 ## TCP and sockets
 
-### Keepalive and user timeout
+### Keepalive and user timeout (since 28.3)
 
-Since 28.3, `gen_tcp` supports `TCP_KEEPCNT`, `TCP_KEEPIDLE`, and
-`TCP_KEEPINTVL`. `TCP_USER_TIMEOUT` is supported by both `gen_tcp` and
-`socket`.
+`gen_tcp` supports `TCP_KEEPCNT`, `TCP_KEEPIDLE`, and `TCP_KEEPINTVL`. Both `gen_tcp` and `socket` support `TCP_USER_TIMEOUT`.
 
-### Batched messages
+### Batched datagram operations (since 29.0)
 
-The socket implementation adds `recvmmsg()` and `sendmmsg()` operations in
-29.0 to receive or send multiple messages per call.
+The socket implementation supports `recvmmsg()` and `sendmmsg()` operations for receiving or sending multiple messages per call.
 
-### Accepted-socket inheritance
+### SCTP peeloff inheritance (since 29.0.1)
 
-Since 29.0.2, the `gen_tcp_socket` accept path inherits options in the same
-way as classic `gen_tcp`.
+An IPv6 SCTP socket returned by peeloff inherits its parent socket's options.
 
-### SCTP peeloff
+### Accepted-socket option inheritance (since 29.0.2)
 
-Since 29.0.1, an IPv6 SCTP socket returned by peeloff inherits the parent
-socket's options.
+The `gen_tcp_socket` accept path inherits options in the same way as classic `gen_tcp`.
 
-## HTTP client
+### Timeout closure notification (since 29.0.4)
 
-### Bounded `Retry-After` handling
+When `send_timeout` and `send_timeout_close` are enabled and a send times out, the socket owner receives the expected `tcp_closed` message.
 
-Starting in 28.4, `httpc:request/4,5` retries once by default after a
-`Retry-After` response and then returns the error response instead of
-retrying indefinitely. The HTTP option `{autoretry, timeout()}` controls the
-behavior. Configure it or implement an application retry policy when the
-default is unsuitable.
+## HTTP and FTP clients
+
+### Bounded automatic retries (since 28.4)
+
+After a `Retry-After` response, `httpc:request/4,5` retries once by default and then returns the error response instead of retrying indefinitely. `{autoretry, timeout()}` controls this behavior; configure it or implement an application retry policy when more retries are required.
 
 ```erlang
 HttpOptions = [{autoretry, RetryTimeout}].
 ```
 
-### Cross-origin redirects
+### Redirect credential boundaries (since 29.0.2)
 
-Since 29.0.2, when `httpc` follows a redirect whose host or port changes, it
-removes these headers:
+When `httpc` follows a redirect whose host or port changes, it removes authorization, proxy-authorization, cookie, referer, and origin headers. A client that deliberately forwards credentials must explicitly authorize the new target.
 
-- authorization
-- proxy-authorization
-- cookie
-- referer
-- origin
+### Passive FTP host validation (since 29.0.2)
 
-A client that intentionally forwards credentials across the boundary must
-explicitly authorize the new target.
+FTP clients reject passive-mode replies that redirect the data connection to an arbitrary host.
 
-## FTP
+## SNMP, Diameter, and Megaco
 
-Since 29.0.2, FTP clients reject passive-mode responses that redirect the
-data connection to an arbitrary host instead of following the supplied
-address.
+### SNMP USM error responses (since 29.0.1)
 
-## TLS distribution
+`snmpm_usm:generate_outgoing_msg/5` no longer crashes with `badmatch` while building an error response for an unknown user or engine ID.
 
-Since 29.0.2, Erlang distribution over TLS enforces the same-LAN restriction
-when `check_ip` is enabled. Connections accepted by older patch levels may be
-rejected. Verify the intended LAN boundary and certificate setup during
-rollout.
+### Zero-length Diameter AVPs (since 29.0.4)
 
-## SNMP
+`diameter_dist:route_session/2` no longer loops indefinitely for a zero-length non-Session-Id AVP or crashes for a zero-length Session-Id AVP with code 263.
 
-Since 29.0.1, `snmpm_usm:generate_outgoing_msg/5` no longer crashes with
-`badmatch` while building an error response for an unknown user or engine ID.
+### Bounded Megaco property names (since 29.0.4)
 
+The Megaco flex scanner rejects a property parameter name longer than 452 bytes in a text-encoded H.248 message without overflowing its error buffer or crashing the VM.
+
+## Erlang Port Mapper Daemon
+
+### Denial-of-service mitigation (since 29.0.4)
+
+ERTS 17.0.4 mitigates a denial-of-service attack in `epmd`. Release notes classify the change as a potential incompatibility.
+
+### Localhost binding regression fix (since 29.0.5)
+
+ERTS 17.0.5 restores `epmd` localhost binding broken by 29.0.4. Install it when loopback-bound configurations fail after the mitigation. The ERTS application patch can be applied independently to a full OTP 29 installation.

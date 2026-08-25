@@ -10,70 +10,108 @@ metadata:
 
 # Alembic Knowledge Patch
 
-Use this skill when upgrading Alembic, configuring migration environments,
-writing operations, extending the command layer, or diagnosing autogenerate
-output. Check the installed Alembic, Python, SQLAlchemy, and database versions
-before applying version-sensitive advice.
+Use this skill when upgrading Alembic, reviewing generated migrations, writing
+operation extensions, or diagnosing configuration and revision-graph behavior.
+Check the installed Alembic, Python, and SQLAlchemy versions before applying
+version-dependent guidance. Treat project configuration, migration history,
+and backend behavior as authoritative.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [compatibility-and-configuration.md](references/compatibility-and-configuration.md) | Runtime and build requirements, yanked package, TOML and INI configuration, paths |
-| [autogenerate-and-rendering.md](references/autogenerate-and-rendering.md) | Diff detection, operation rendering, naming conventions, dialect comparisons |
-| [operations-and-ddl.md](references/operations-and-ddl.md) | Conditional DDL, column comments, inline primary and foreign keys |
-| [revisions-cli-and-extensions.md](references/revisions-cli-and-extensions.md) | Revision layout, head checks, merge splicing, commands, plugins, implementations |
+| [Compatibility and configuration](references/compatibility-and-configuration.md) | Runtime and build requirements, packaging, TOML and INI configuration, path APIs |
+| [Autogenerate and rendering](references/autogenerate-and-rendering.md) | Indexes, constraints, defaults, dialect arguments, rename rewriters, custom writers |
+| [Operations and DDL](references/operations-and-ddl.md) | Conditional DDL, inline keys and references, SQL Server comments, offline base moves |
+| [Revisions, CLI, and extensions](references/revisions-cli-and-extensions.md) | Revision identifiers and paths, head checks, merge splicing, commands, plugins, operation implementations |
 
-## Check installation prerequisites first
+## Upgrade blockers first
 
-- Alembic 1.17 requires Python 3.10 or newer. Python 3.9 is supported by 1.15
-  and 1.16, but Python 3.8 is not.
-- Alembic 1.18 requires SQLAlchemy 1.4.23 or newer. Earlier 1.15-era
-  installations accepted SQLAlchemy 1.4.0 or newer; SQLAlchemy 1.3 is not
-  supported there.
-- Do not pin Alembic 1.15.0. Its wheel omitted template files after the PEP 621
-  packaging move. Use 1.15.1 or later in that series.
-- Building from source requires setuptools 77.0.3 or newer.
+### Match the runtime floor
 
-## Update path configuration
+- Alembic 1.15 requires Python 3.9+ and SQLAlchemy 1.4+.
+- Alembic 1.17 requires Python 3.10+.
+- Alembic 1.18 requires SQLAlchemy 1.4.23+.
 
-Prefer the `path_separator` setting for INI configuration. It applies to both
-`version_locations` and `prepend_sys_path`; `os` selects `os.pathsep` and is
-portable across platforms.
+Do not select an Alembic version independently of its application runtime and
+SQLAlchemy dependency. For the complete packaging notes, read
+[Compatibility and configuration](references/compatibility-and-configuration.md).
+
+### Avoid the yanked 1.15.0 wheel
+
+The 1.15.0 wheel omitted migration templates after the packaging move to PEP
+621. Use 1.15.1 or later in that series so `alembic init` and template-driven
+workflows have the required files.
+
+### Remove colons from custom revision identifiers
+
+Custom revision IDs cannot contain `:` because it denotes revision ranges.
+Replace values such as `REV:1` with an unambiguous form such as `REV_1` before
+creating or resolving revisions.
+
+### Adopt cross-platform path separation
+
+Use the shared `path_separator` option for both `version_locations` and
+`prepend_sys_path`:
 
 ```ini
 [alembic]
 path_separator = os
 ```
 
-`path_separator` supersedes `version_path_separator`. Omitting the new setting
-retains legacy splitting behavior but emits a deprecation warning.
+This selects `os.pathsep`. The older `version_path_separator` is superseded;
+omitting the new option retains legacy splitting only with a deprecation
+warning.
 
-Source and generation settings may instead live in `pyproject.toml`, including
-local paths and post-write hooks. TOML lists avoid separator ambiguity, and
-`%(here)s` is relative to the TOML file's parent. Keep database connectivity
-and logging in `alembic.ini` or `env.py`. When `env.py` supplies them, the
-`pyproject` initialization template can operate without `alembic.ini`.
+## Autogenerate safety checks
 
-## Guard revision identifiers and deployment state
+### Preserve finalized names
 
-Custom revision identifiers cannot contain `:` because it denotes revision
-ranges. Replace identifiers such as `REV:1` with forms such as `REV_1`.
+Reflected constraint and index names are rendered through `Operations.f()`.
+Keep that wrapper when reviewing or editing generated migrations, especially
+when a naming convention uses `%(constraint_name)s`:
 
-Use the head check in automation when merely printing the current revision is
-not sufficient:
-
-```console
-alembic current --check-heads
+```python
+op.drop_constraint(op.f("uq_account_name"), "account", type_="unique")
 ```
 
-The Python equivalent is `command.current(config, check_heads=True)`. It raises
-`DatabaseNotAtHead` if any head is unapplied; the CLI exits nonzero.
+Removing `op.f()` can cause a convention to transform a final database name a
+second time.
 
-## Add conditional schema operations
+### Understand named `CHECK` detection
 
-On backends that support the clauses, opt into conditional column and
-constraint DDL:
+Named `CHECK` additions and removals are detected by default. The comparison
+is name-only, so changing an expression without renaming the constraint does
+not create a diff. The behavior comes from the
+`alembic.autogenerate.checkconstraint_byname` plugin and can be disabled via
+`autogenerate_plugins`.
+
+### Treat filtered foreign-key targets as placeholders
+
+If `include_name` or reflected schema selection excludes a referenced table,
+autogenerate no longer fails merely because of the missing target. An
+`include_object` callback can instead receive a placeholder target containing
+only its name, schema, and referenced columns. Do not assume that object is a
+fully reflected table.
+
+### Review dialect-sensitive comparisons
+
+- PostgreSQL sequence defaults with server-added `::regclass` casts should not
+  recur as changes on non-primary-key columns.
+- MySQL `ENUM` comparison detects value membership changes but ignores value
+  order.
+- Sequence-valued dialect arguments such as `postgresql_include` render
+  `Column` objects as string column names.
+
+See [Autogenerate and rendering](references/autogenerate-and-rendering.md) for
+all rendering corrections, including labeled indexes, boolean deferrability,
+rewriter-driven renames, and configured operation prefixes.
+
+## Safer operation authoring
+
+### Use conditional DDL explicitly
+
+On supporting backends, request conditional syntax directly:
 
 ```python
 op.add_column(
@@ -90,13 +128,12 @@ op.drop_constraint(
 )
 ```
 
-Autogenerate `Rewriter` recipes can set the same flags so rendered migration
-files carry the conditional behavior.
+Custom `Rewriter` recipes can set the same flags for generated migrations.
 
-## Choose inline column constraints explicitly
+### Opt in to inline primary keys
 
-`Column(primary_key=True)` does not make `ADD COLUMN` render an inline primary
-key. Pass `inline_primary_key=True` explicitly:
+`Column(primary_key=True)` alone does not make `ADD COLUMN` emit `PRIMARY KEY`.
+Pass `inline_primary_key=True` when inline syntax is intended and supported:
 
 ```python
 op.add_column(
@@ -106,11 +143,13 @@ op.add_column(
 )
 ```
 
-This preserves PostgreSQL `SERIAL` behavior while requesting inline
-`PRIMARY KEY` syntax on a supporting backend.
+The explicit opt-in preserves PostgreSQL `SERIAL` behavior by default.
 
-To render a foreign key inside `ADD COLUMN` rather than as a separate
-`ADD CONSTRAINT`, pass `inline_references=True`:
+### Opt in to inline foreign-key references
+
+Pass `inline_references=True` to render `REFERENCES` inside `ADD COLUMN` rather
+than as a separate `ADD CONSTRAINT` on PostgreSQL, Oracle, MySQL 5.7+, and
+MariaDB 10.5+:
 
 ```python
 op.add_column(
@@ -125,49 +164,27 @@ op.add_column(
 )
 ```
 
-This is supported on PostgreSQL, Oracle, MySQL 5.7+, and MariaDB 10.5+.
-Actions and attributes including `ON DELETE`, `ON UPDATE`, `DEFERRABLE`,
-`INITIALLY`, and `MATCH` remain part of the inline reference.
+Inline rendering also carries `ON DELETE`, `ON UPDATE`, `DEFERRABLE`,
+`INITIALLY`, and `MATCH`. Consult
+[Operations and DDL](references/operations-and-ddl.md) for backend details and
+offline version-table behavior.
 
-## Work with corrected autogenerate output
+## Revision and extension workflows
 
-Expect generated migrations to preserve several details that older recipes
-may have worked around:
+### Verify deployment state against every head
 
-- Index expressions retain labels, allowing PostgreSQL operator classes keyed
-  by a label name to render correctly.
-- `UniqueConstraint.deferrable` renders as the Python booleans `True` or
-  `False`, not quoted text.
-- `AlterColumnOp.modified_name` set by a rewriter is honored. Rename detection
-  is still not automatic.
-- Embedded `ExecuteSQLOp` directives use the configured
-  `alembic_module_prefix` rather than a hardcoded `op.` prefix.
-- Reflected constraint and index names are wrapped with `Operations.f()` so a
-  naming convention does not transform an already-final name again.
-- Sequence-valued PostgreSQL arguments such as `postgresql_include` render
-  `Column` objects as string column names.
+Use the CLI when a deployment gate must fail unless all heads are applied:
 
-When consuming `AutogenerateDiffsDetected`, use its revision context to format
-or route detected diffs from a command wrapper.
+```console
+alembic current --check-heads
+```
 
-## Account for dialect-specific comparison behavior
+Programmatically, call `command.current(..., check_heads=True)`. A mismatch
+raises `DatabaseNotAtHead`; the CLI exits nonzero.
 
-- PostgreSQL comparison ignores server-added `::regclass` casts on sequence
-  defaults for non-primary-key columns, preventing recurring unchanged diffs.
-- MySQL `ENUM` comparison detects values present on only one side but ignores
-  ordering-only changes.
-- Excluding a foreign-key target with `include_name`, or omitting its schema
-  from reflection, no longer raises `NoReferencedTableError`. An
-  `include_object` callback may receive a placeholder target table containing
-  only its name, schema, and referenced columns.
-- SQL Server supports `Operations.alter_column(comment=...)` for adding,
-  changing, or deleting column comments.
+### Create nested date-based revision paths correctly
 
-## Organize revision files by date
-
-`file_template` can contain directory separators, and Alembic creates the
-directories. Enable recursive version locations so subsequent commands
-discover the nested revisions:
+`file_template` can contain directory separators and creates those directories:
 
 ```toml
 [tool.alembic]
@@ -175,52 +192,40 @@ file_template = "%(year)d/%(month).2d/%(day).2d_%(rev)s_%(slug)s"
 recursive_version_locations = true
 ```
 
-## Extend commands and operations
+Always enable recursive version locations for this layout so later commands
+can discover nested revisions.
 
-Register application-specific CLI functions with the public command API:
+### Distinguish nominal and effective heads
 
-```python
-command_line.register_command(my_command)
-```
+Call `ScriptDirectory.get_heads(consider_depends_on=True)` when dependencies
+must affect head calculation. It excludes nominal heads used as another
+revision's `depends_on`, matching effective heads stored after upgrades.
 
-To override an existing operation implementation, pass `replace=True`:
+### Choose the supported extension point
 
-```python
-@Operations.implementation_for(CreateTableOp, replace=True)
-def create_table(operations, operation):
-    ...
-```
+- Register application CLI commands with `CommandLine.register_command()`.
+- Replace an existing operation implementation with
+  `Operations.implementation_for(..., replace=True)`.
+- Use the `Plugin` interface for automatically loaded third-party operations,
+  implementations, and autogenerate comparators.
+- Select comparison plugins per environment with
+  `EnvironmentContext.configure(autogenerate_plugins=...)`.
 
-Use the `Plugin` interface for automatically loaded third-party extensions.
-Plugins can register operations and implementations and add comparators with
-`Plugin.add_autogenerate_comparator()`. Select comparison plugins per migration
-environment through
-`EnvironmentContext.configure(autogenerate_plugins=...)`. Existing add-ons do
-not need to adopt plugin entry points.
+Existing add-ons can continue without plugin entry points. See
+[Revisions, CLI, and extensions](references/revisions-cli-and-extensions.md)
+for merge splicing and full extension details.
 
-## Handle nonstandard revision graphs
+## Review checklist
 
-Create a merge revision from non-head revisions with:
-
-```console
-alembic merge --splice rev_a rev_b
-```
-
-The programmatic `command.merge()` API accepts the matching `splice`
-parameter.
-
-For the effective heads that would be represented after all upgrades, account
-for `depends_on` relationships:
-
-```python
-heads = script.get_heads(consider_depends_on=True)
-```
-
-This excludes nominal heads that are dependencies of another revision.
-
-## Respect public path API boundaries
-
-Public command, configuration, and script APIs that accept paths also accept
-`os.PathLike`. Public path-returning accessors still return strings. Do not
-depend on the representation of private underscored APIs; they may return
-`pathlib.Path` after the path-handling refactor.
+1. Confirm the runtime and dependency floors before changing the Alembic pin.
+2. Check path parsing and recursive revision discovery after configuration
+   changes.
+3. Run autogenerate and review names, dialect arguments, defaults, constraints,
+   and filtered objects rather than accepting output blindly.
+4. Test conditional and inline DDL on every supported database backend.
+5. Exercise online and `--sql` paths separately when migration state handling
+   matters.
+6. Verify all effective heads in deployment checks, including `depends_on`
+   relationships.
+7. Test custom commands, writers, rewriters, and plugins through their public
+   extension APIs.

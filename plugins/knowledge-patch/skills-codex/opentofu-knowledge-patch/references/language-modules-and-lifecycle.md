@@ -1,31 +1,23 @@
-# Language, modules, providers, and lifecycle
+# Language, Modules, Providers, and Lifecycle
 
-This reference organizes language guidance from `1.7.0`, `1.8.0`, `1.9.0`,
-`1.10.0`, `1.11.0`, and `1.12.0`.
+## Provider-defined functions (`1.7.0`)
 
-## Provider functions and templates
+Providers can expose functions, including functions selected dynamically from
+provider configuration. Invoke them as
+`provider::<provider_name>::<funcname>(args)`.
 
-Providers can expose configuration-dependent functions. Call one with the
-provider namespace:
+## Recursive file templates (`1.7.0`)
 
-```hcl
-provider::<provider_name>::<funcname>(args)
-```
+`templatefile` can recursively call `templatefile`, with a default maximum call
+depth of 1024. This allows composition of file-backed templates without an
+external preprocessing step.
 
-The provider may select the implementation dynamically from its configuration.
-Provider-defined function schemas also appear in
-`tofu providers schema -json`.
+## Early evaluation for modules and backends (`1.8.0`)
 
-Since 1.7, `templatefile` may call `templatefile` recursively. The default
-maximum call depth is 1024, enabling composition of file-backed templates
-without a separate preprocessor.
-
-## Early-evaluated module and backend inputs
-
-Since 1.8, variables and locals may be evaluated early enough for module
-`source`, module `version`, and backend arguments. Expressions must use values
-available during initialization; dynamic provider configuration was not part
-of the 1.8 feature.
+Variables and locals can be evaluated early enough for module `source` and
+`version` and for backend configuration. Restrict the expressions to values
+available during initialization; dynamic provider configuration was not added
+with this feature.
 
 ```hcl
 variable "module_version" {
@@ -48,41 +40,26 @@ module "network" {
 }
 ```
 
-OpenTofu prompts for variables required by early evaluation since 1.9.
+From 1.8.3, `TOFU_ENABLE_STATIC_SENSITIVE=1` opts into sensitive marking for
+variables used in module sources, module versions, and backend configuration.
+Without the opt-in, the 1.8 line warns for compatibility; this marking is the
+default from 1.9.
+
+OpenTofu 1.9 prompts for input variables required during early evaluation.
 Sensitive values are prohibited in backend configuration and module source
 locations because initialization or module installation would expose them.
 
-On the 1.8 line from 1.8.3, set
-`TOFU_ENABLE_STATIC_SENSITIVE=1` to opt into sensitive marking for variables
-used in module sources, module versions, and backend configuration. Without
-the opt-in, 1.8 warns for compatibility; the behavior is the default in 1.9.
+## OpenTofu-specific source files (`1.8.0`)
 
-Since 1.12, `const = true` explicitly requires an input to be compatible with
-static evaluation:
+An OpenTofu-specific `.tofu` file masks the identically named `.tf` file. If
+both `main.tofu` and `main.tf` exist, OpenTofu ignores `main.tf`. A module can
+therefore keep a Terraform-compatible `.tf` fallback while adding OpenTofu-only
+syntax in the matching `.tofu` file.
 
-```hcl
-variable "module_source" {
-  type  = string
-  const = true
-}
-```
+## Iterated aliased providers (`1.9.0`)
 
-## OpenTofu-specific files and constraints
-
-If both `main.tofu` and `main.tf` exist, OpenTofu ignores `main.tf`. A module
-can therefore retain a Terraform-compatible `.tf` fallback while using
-OpenTofu-only syntax in the identically named `.tofu` file.
-
-The 1.12 `language` configuration block separates OpenTofu version constraints
-from constraints for other software. A module containing this block requires
-OpenTofu 1.12 or later, so do not adopt it when older-version compatibility is
-required.
-
-## Provider configuration instances
-
-Since 1.9, an aliased provider configuration may use `for_each`. `each.key`
-configures each instance, and different resource instances can select
-different provider instances.
+An aliased provider configuration can use `for_each`. `each.key` can configure
+each provider instance, and resources can select different members.
 
 ```hcl
 provider "aws" {
@@ -93,22 +70,24 @@ provider "aws" {
 }
 ```
 
-Since 1.10, dynamic instance keys used in a resource's `provider` selection or
-a module's `providers` map are converted to strings automatically.
+## Module interface deprecations (`1.10.0`)
 
-## Module interface contracts
+Module authors can mark input variables and outputs deprecated. Callers that
+use the deprecated interface receive warnings, allowing an interface to be
+phased out before removal.
 
-Module authors can mark input variables and output values deprecated since
-1.10. Consumers referencing those interfaces receive warnings.
+## Cross-type moves and controlled removals (`1.10.0`)
 
-A module `version` expression may be `null` since 1.10, which is equivalent to
-omitting the argument.
+`moved` blocks can transfer a remote object between resource instances of
+different types while migrating its state. `removed` blocks can contain
+`lifecycle` and `provisioner` configuration to control how remaining instances
+are handled.
 
-## Boolean, indexing, and encoding expressions
+## Short-circuiting and negative indexing (`1.10.0`)
 
-Since 1.10, `&&` and `||` short-circuit. A skipped right operand is not
-evaluated and therefore cannot fail while dereferencing a null value.
-`element` also wraps negative indexes, with `-1` selecting the last value.
+`&&` and `||` short-circuit, so a skipped right operand cannot fail while
+dereferencing an absent value. `element` wraps negative indices; `-1` selects
+the final element.
 
 ```hcl
 locals {
@@ -117,50 +96,29 @@ locals {
 }
 ```
 
-The built-in `terraform` provider has functions for encoding and decoding
-`.tfvars` data and for encoding arbitrary values as OpenTofu expression
-syntax.
+## Configuration expression additions (`1.10.0`)
 
-## Sensitivity and validation
+A module `version` may be `null`, which is equivalent to omitting it. Dynamic
+instance keys in a resource `provider` selection or module `providers`
+selection are automatically converted to strings.
 
-Since 1.11, `issensitive` returns unknown when its argument is unknown.
-Configurations that feed this result into plan-time-only contexts such as
-`count` or `for_each` must first ensure the argument is known.
+The built-in `terraform` provider adds functions to encode and decode `.tfvars`
+data and to encode arbitrary values as OpenTofu expression syntax.
 
-Other 1.11 expression changes are:
+## Ephemeral values and write-only attributes (`1.11.0`)
 
-- Object constructors assigned to object-typed inputs warn about undeclared
-  attribute names.
-- `regex` and `regexall` accept long Unicode property names such as
-  `\p{Letter}`.
-- `fileset` accepts literal metacharacters escaped with backslashes.
+Ephemeral input variables, outputs, and provider-defined resources live only in
+memory for one operation phase and are never stored in plans or state.
+Providers can expose write-only managed-resource attributes for secrets such as
+initial passwords or private keys, accepting a value without retaining a copy.
+Both ephemeral resource types and write-only attributes require provider
+support.
 
-Since 1.12, comparing a complex value with `null` produces a sensitive boolean
-only when the whole value is sensitive, not merely when a nested attribute is
-sensitive. The result can therefore feed plan-time contexts such as
-`lifecycle.enabled`.
+## Conditional existence with `lifecycle.enabled` (`1.11.0`)
 
-`yamldecode` now supports a YAML `<<` merge tag whose value is a sequence of
-mappings, as well as a single mapping.
-
-References to provider schema attributes or blocks marked deprecated produce
-warnings. Use `-deprecation=` to control or disable those diagnostics.
-
-## Ephemeral and write-only values
-
-Since 1.11, input variables, output values, and provider-defined resources can
-be ephemeral. Their values exist in memory for one operation phase and are
-never persisted in saved plans or state.
-
-Providers can expose write-only managed-resource attributes so an initial
-password, private key, or similar secret can be submitted without OpenTofu
-retaining it. Ephemeral resource types and write-only attributes both require
-explicit provider support.
-
-## Conditional resources and modules
-
-`lifecycle.enabled` expresses the zero-or-one-instance case without using
-`count = condition ? 1 : 0`:
+Resources and modules can use `lifecycle.enabled` when they should have either
+zero or one instances. Its lifecycle placement avoids colliding with a real
+argument or module input named `enabled`.
 
 ```hcl
 module "servers" {
@@ -174,16 +132,32 @@ module "servers" {
 ```
 
 From 1.11.4, a module containing local provider configurations rejects
-`enabled`, matching its existing restrictions on `count`, `for_each`, and
-`depends_on`.
+`enabled`, matching its restrictions on `count`, `for_each`, and `depends_on`.
 
-## Destruction controls
+## Expression and validation changes (`1.11.0`)
 
-Since 1.12, `lifecycle.prevent_destroy` can refer to symbols in the same
-module, including input variables. A managed resource can also set
-`lifecycle.destroy = false` to remove the object only from state:
+- `issensitive(unknown)` now returns unknown. Ensure its input is known before
+  using the result in plan-time-only contexts such as `count` or `for_each`.
+- Object constructors assigned to object-typed inputs warn about undeclared
+  attribute names.
+- `regex` and `regexall` accept long Unicode property names such as
+  `\p{Letter}`.
+- `fileset` can match literal metacharacters escaped with backslashes.
+
+## Dynamic destruction lifecycle (`1.12.0`)
+
+`lifecycle.prevent_destroy` can refer to other symbols in the same module,
+including inputs. `lifecycle.destroy = false` on a managed resource removes the
+object from state without asking the provider to destroy it. Use 1.12.4+ when
+saving a plan that may replace a resource with `destroy = false`; earlier 1.12
+releases fail in that situation.
 
 ```hcl
+variable "protect_database" {
+  type    = bool
+  default = true
+}
+
 resource "example_database" "main" {
   lifecycle {
     prevent_destroy = var.protect_database
@@ -197,19 +171,50 @@ resource "example_object" "detached" {
 }
 ```
 
-Use 1.12.4 or later when saving a plan that may replace a resource with
-`destroy = false`; earlier 1.12 releases fail in that case.
+## Provider-defined import identities (`1.12.0`)
 
-`replace_triggered_by` now triggers when the referenced resource is itself
-being replaced. Previously it reacted only when the reference was updated.
+An `import` block can identify an object with an `identity` object conforming
+to the resource type's provider-defined identity schema, instead of only a
+plain `id` string.
 
-## Moves, removals, and imports
+## Static input contracts (`1.12.0`)
 
-Since 1.10, `moved` blocks may move remote objects between instances of
-different resource types while migrating state. `removed` blocks may contain
-`lifecycle` and `provisioner` configuration to control the remaining
-instances.
+Set `const = true` on an input variable to require its assigned value to be
+compatible with static evaluation. This makes an initialization-time contract
+explicit.
 
-Since 1.12, an `import` block may use an `identity` object conforming to the
-provider-defined identity schema for the resource type instead of a plain
-`id` string.
+```hcl
+variable "module_source" {
+  type  = string
+  const = true
+}
+```
+
+## OpenTofu language constraints (`1.12.0`)
+
+The `language` configuration block separates OpenTofu version constraints from
+constraints for other software. A module that uses it requires OpenTofu 1.12
+or later, so do not adopt it in a module that must retain older compatibility.
+
+## Replacement propagation (`1.12.0`)
+
+`replace_triggered_by` now replaces a resource when the referenced resource is
+itself being replaced. Previously it triggered only when the reference was
+updated.
+
+## Null comparisons and sensitivity (`1.12.0`)
+
+Comparing a complex value with `null` produces a sensitive boolean only when
+the whole value is sensitive, not merely when a nested attribute is sensitive.
+The comparison can therefore feed plan-time contexts such as a resource or
+module `enabled` argument when only nested data is sensitive.
+
+## Provider deprecation diagnostics (`1.12.0`)
+
+References to resource attributes or blocks that a provider marks deprecated
+produce warnings. `-deprecation=` can disable those diagnostics when needed.
+
+## YAML merge sequences (`1.12.0`)
+
+`yamldecode` supports YAML's `<<` merge tag with a sequence of mappings, in
+addition to a single mapping.

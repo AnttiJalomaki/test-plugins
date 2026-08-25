@@ -1,83 +1,82 @@
 # Search, JSON, and Time Series
 
-Use this reference when creating vector indexes, combining text and vector
-queries, profiling hybrid searches, storing homogeneous floating-point arrays,
-or aggregating Time Series data.
+## Vector Set result controls
 
-## Vector Set query controls
-
-`VSIM` gains controls in early Redis 8 maintenance releases:
-
-- `WITHATTRIBS` returns an element's JSON attribute starting in 8.0.3.
-- `EPSILON` sets a maximum distance starting in 8.0.4.
-
-Vector Set remains marked preview in the integrated component distribution.
+Redis 8.0.3 adds `WITHATTRIBS` to `VSIM`, returning an element's JSON
+attribute. Redis 8.0.4 adds `EPSILON`, which sets a maximum distance.
 
 ## Compressed vector indexes
 
 Redis 8.2 adds the compressed `SVS-VAMANA` vector-index type. Redis 8.2.2
 allows the `BUILD_INTEL_SVS_OPT` build flag for Intel optimizations.
 
-The proprietary LeanVec and LVQ Intel optimizations were removed from Redis
-Open Source in 8.2.1. Do not preserve build or deployment assumptions that
-depend on those removed implementations.
+Do not plan around proprietary LeanVec or LVQ Intel optimizations: they were
+removed from Redis Open Source in 8.2.1.
 
 ## Hybrid search and fused scoring
 
-Redis 8.4 adds `FT.HYBRID` with two result-combination methods:
+Redis 8.4 adds `FT.HYBRID`, supporting RRF and LINEAR result combination. In
+the original 8.4 behavior:
 
-- RRF
-- LINEAR
+- filtering after `COMBINE` is unavailable;
+- the default response contains only `key_id` and `score`; and
+- `EXPLAINSCORE`, `YIELD_DISTANCE_AS`, and `WITHCURSOR` are unsupported.
 
-The original 8.4 behavior has important limitations:
+The `KNN` clause later gains an argument that requests fewer candidates per
+shard. `FT.PROFILE HYBRID` profiles `FT.HYBRID` queries. These additions are
+recorded in batch `8.8.1`.
 
-- Filtering after `COMBINE` is unavailable.
-- The default response contains only `key_id` and `score`.
-- `EXPLAINSCORE` is unsupported.
-- `YIELD_DISTANCE_AS` is unsupported.
-- `WITHCURSOR` is unsupported.
+## Search scorer configuration
 
-Redis 8.8 extends the `KNN` clause with an argument that requests fewer
-candidates per shard. `FT.PROFILE HYBRID` adds profiling for `FT.HYBRID`
-queries.
+The Redis 8.4 line adds `search-default-scorer` for choosing the default text
+and tag scorer. `BM25STD` is the new default.
 
-## Default Search scorer
+## Alias enumeration and language stemming
 
-The 8.4 line adds `search-default-scorer` for selecting the default text and tag
-scorer. `BM25STD` is the new default.
+Redis 8.10 adds `FT.ALIASLIST`, which returns all aliases for an index. Search
+also gains stemming support for Malay and Tagalog.
 
-## Search ACL boundary
+## Empty field-name rejection
 
-An ACL user can create, modify, or read a Search index only when the user's key
-patterns cover a superset of the index prefixes. This condition is separate
-from membership in the broader or component-specific command categories.
+Redis 8.10 changes `FT.CREATE` and `FT.ALTER` to reject an empty string as a
+field name instead of silently accepting it. Validate generated schemas and
+migration input before sending either command.
 
 ## Homogeneous floating-point JSON arrays
 
-Redis 8.8 adds `FPHA` to `JSON.SET`. The argument specifies the floating-point
-type for a homogeneous floating-point array.
+Redis 8.8 extends `JSON.SET` with `FPHA`. The argument specifies the
+floating-point type used by a homogeneous floating-point array.
 
 ## Multiple Time Series aggregators
 
-Redis 8.8 lets these commands apply multiple aggregators in one operation:
+Redis 8.8 lets `TS.RANGE`, `TS.REVRANGE`, `TS.MRANGE`, and `TS.MREVRANGE`
+apply multiple aggregators in one command.
 
-- `TS.RANGE`
-- `TS.REVRANGE`
-- `TS.MRANGE`
-- `TS.MREVRANGE`
+## NaN handling
 
-## NaN handling and counts
+Redis 8.6 accepts NaN values in Time Series and adds the `COUNTNAN` and
+`COUNTALL` aggregators. Code that previously assumed every stored sample was a
+regular number must handle NaN explicitly.
 
-Redis 8.6 permits NaN Time Series values and adds two aggregators:
+## Timestamp-grouped range queries
 
-- `COUNTNAN`
-- `COUNTALL`
+Redis 8.10 adds `TS.NRANGE` and `TS.NREVRANGE`. They query ranges across
+multiple time series and group results by timestamp.
 
-## Time Series ACL boundary
+## Blocking Time Series reads
 
-`TS.MGET`, `TS.MRANGE`, and `TS.MREVRANGE` return an error when any matching
-key is unreadable. `TS.QUERYINDEX` operates on metadata and does not require
-read permission for the keys it matches.
+Redis 8.10 adds `TS.READ`, including optional blocking reads from time series.
+Treat the blocking form as a connection-management concern in clients and
+connection pools.
 
-These Search, JSON, and Time Series changes are drawn from batches `8.0-8.6`
-and `8.8.1`; the sections remain grouped by developer task.
+## Label discovery
+
+Redis 8.10 adds `TS.QUERYLABELS`, which returns labels and their label values.
+
+## Excluding empty series
+
+Redis 8.10 extends `TS.MRANGE` and `TS.MREVRANGE` with `EXCLUDEEMPTY`, omitting
+series that report no samples.
+
+The Redis 8.10 Search and Time Series additions in this reference derive from
+the `8.10.0` batch.

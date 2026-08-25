@@ -1,71 +1,149 @@
 # Images, Manifests, Archives, and Registries
 
-Use this reference for image listing, image-store differences, platform-specific operations, archive behavior, image identity, and removed registry formats.
+## Listing and inspection
 
-## List and inspect images
+### Timestamp filtering
 
-- `docker image ls` accepts `--filter=until=<timestamp>` to exclude images newer than a timestamp (since 25.0.0):
+Since 25.0.0, image listings accept `--filter=until=<timestamp>` for inventory
+and age-based cleanup.
 
 ```console
-docker image ls --filter=until=2024-01-01
+docker image ls --filter 'until=2024-01-01T00:00:00Z'
 ```
 
-- Engine 29 changes the default image-list presentation to a collapsed tree and omits untagged images unless `--all` is supplied. Use an explicit `--format` in scripts instead of parsing the human view.
-- Image inspection now includes `Identity`: a local build reference, the repository origin for a pull, or verified-signature information from valid signed provenance.
-- Starting with 29.3, `GET /images/json?identity=1` can return manifest summaries and optional per-manifest identity. See [engine-api.md](engine-api.md) for API omission rules.
+### Default listing format
 
-## OCI archives and platform selection
+Engine 29 changes `docker image ls` to a collapsed tree view, hides untagged
+images unless `--all` is set, stops truncating names, and removes `VirtualSize`
+from JSON and formatting output. Automation should use an explicit `--format`
+and should not infer completeness from the default table.
 
-- `docker image save` produces OCI-compliant tar archives (since 25.0.0).
-- With the containerd image store, `docker image push --platform` selects one platform manifest from a multi-platform image (since 27.0.1):
+### Sparse image inspection
+
+Engine 26.0.0 removes image-inspect `Container` and `ContainerConfig`. It omits
+missing `Created`; API v1.43 and older still receive a zero timestamp. API
+consumers must tolerate the missing optional timestamp.
+
+Engine 28.0.0 inspection adds `Manifests`, including platform manifests and
+attestations. With the containerd store it adds target OCI `Descriptor`;
+container inspect/list add platform `ImageManifestDescriptor`. Descriptor data
+requires a multi-platform store.
+
+Engine 29 omits empty `Parent`, `Comment`, `DockerVersion`, `Author`, and unset
+`Config`; it also omits `GraphDriver` with the containerd backend. Parsers must
+tolerate absent optional fields.
+
+Engine 29.2 adds image `Identity`, describing trusted origin such as local build,
+pulled repository, or verified signed provenance. Engine 29.3 adds `identity`
+to `GET /images/json` to request manifest summaries and available identity.
+
+The nonstandard, always-default image `Config` fields `Hostname`, `Domainname`,
+`AttachStdin`, `AttachStdout`, `AttachStderr`, `Tty`, `OpenStdin`, `StdinOnce`,
+`Image`, `NetworkDisabled`, `MacAddress`, and `StopTimeout` are deprecated since
+27.0.1. Do not treat them as meaningful image configuration.
+
+## Containerd image store
+
+Engine 25.0.0 adds push, pull, and save image events; legacy schema-1 pulls;
+pull/push of all tags; registry tokens; `sha256:`-prefixed truncated IDs; and a
+container-use count to the containerd image store.
+
+Fresh Engine 29 installations default to that store, while upgrades keep their
+existing store and `userns-remap` prevents use of it. Engine 29.7.0 makes
+daemon-wide concurrent download and upload limits actually cap transfers on
+the containerd store. Set both to zero to retain prior unlimited behavior.
+
+```json
+{
+  "max-concurrent-downloads": 0,
+  "max-concurrent-uploads": 0
+}
+```
+
+## Archives and platform selection
+
+### OCI image-save archives
+
+Since 25.0.0, `docker image save` emits OCI-compliant tar archives. External
+consumers should handle them as OCI rather than assuming older Docker-specific
+archive details.
+
+### Push one platform
+
+With the containerd store, Engine 27.0.1 supports `docker image push
+--platform` to select one local manifest. The experimental API push parameter
+contains a JSON-encoded OCI Platform.
 
 ```console
 docker image push --platform linux/amd64 registry.example/app:tag
 ```
 
-- The experimental API equivalent accepts `platform` as a JSON-encoded OCI Platform value.
-- `docker load`, `docker save`, and `docker history` accept single-platform selection starting in 28.0.0. With the containerd image store, `docker load --platform` fails when the requested platform is absent instead of loading another variant:
+### Load, save, and history platforms
+
+Engine 28.0.0 adds single-platform selection to `docker load`, `docker save`,
+and `docker history`. Engine 29 accepts comma-separated lists for image load and
+save; the load/export APIs use repeated `platform` query parameters.
 
 ```console
-docker save --platform=linux/amd64 -o app.tar app:tag
-docker load --platform=linux/amd64 -i app.tar
-docker history --platform=linux/amd64 app:tag
+docker image load --platform linux/amd64,linux/arm64 -i image.tar
 ```
 
-- Engine 29 extends `docker image load` and `docker image save` to comma-separated platform lists. Their API endpoints accept repeated `platform` query parameters:
+API v1.49 lets image inspect select one JSON-encoded OCI `platform`, mutually
+exclusive with `manifests`. API v1.50 adds `platforms` to image deletion for
+selected OCI platforms.
 
-```console
-docker image save --platform linux/amd64,linux/arm64 -o app.tar app:tag
-```
+## Image formats and registry behavior
 
-- API v1.49 can inspect one selected image platform, and v1.50 can delete selected platforms. See [engine-api.md](engine-api.md).
+Engine 26.0.0 disables deprecated image formats by default. Inventory and
+migrate repositories that still require them before upgrading.
 
-## Containerd image store
+Engine 29 stops loading pre-Docker-1.10 images.
 
-- Engine 25.0.0 adds image push, pull, and save events; legacy schema1 pulls; push-all-tags and `docker pull -a`; registry-token support; image-use container counts; and registry authentication keyed by the domain in the image reference.
-- Engine 26.0.0 exports Prometheus metrics for the store and, with `--userns-remap`, isolates images into distinct containerd namespaces.
-- Fresh Engine 29 installations use the containerd image store by default, but upgrades retain their current store. The default does not yet apply with `userns-remap`.
-- API responses differ by backend. Image and container responses can expose manifest descriptors, while `GraphDriver` can be absent with containerd; see [engine-api.md](engine-api.md).
+IPv6 loopback counts as an insecure registry address since 28.0.0. Registry
+credentials and special Desktop/Compose behavior are covered in their component
+references rather than inferred from this address rule.
 
-## Manifests, attestations, and provenance
+## Attestations, provenance, and trust
 
-- API v1.48 image inspect adds `Manifests` for platform manifests and build attestations.
-- With a multi-platform containerd store, v1.48 image responses also add `Descriptor`; container list and inspect add `ImageManifestDescriptor` for the manifest used to create a container.
-- API v1.55 adds an image-attestation endpoint that can return descriptors, predicate types, and optionally in-toto statements. See [engine-api.md](engine-api.md).
-- Buildx Imagetools preserves attestations and signatures and can write image metadata. See [buildx.md](buildx.md).
+### Attestation retrieval
 
-## Legacy formats and registry compliance
+API v1.55 adds `GET /images/{name}/attestations`. `platform` selects a variant
+and defaults to the daemon host platform. Repeated `type` filters by in-toto
+predicate URI. `statement=true` reads and includes statement bodies; without it,
+the response carries descriptor and predicate metadata.
 
-- Pulling deprecated image formats is disabled by default in 26.0.0.
-- Engine 28.2 removes pull and push support for Docker Image v1 and manifest v2 schema 1. Republish images as OCI or manifest v2 schema 2.
-- Engine 28.2 removes the tag fallback previously used when a registry failed to pull a manifest by its resolved digest. A non-compliant registry can now fail; conform to the OCI Distribution Specification.
-- Engine 29 stops loading image formats older than Docker 1.10.
+### Supply-chain metadata during image assembly
 
-## Non-distributable artifact configuration
+Buildx 0.30.0 Imagetools preserves attestation manifests and Cosign manifest
+signatures when creating a new image. Buildx 0.32.0 can write the created
+descriptor and digest to a metadata file, and Engine 29 inspection can expose
+trusted `Identity`. Keep each layer of evidence distinct: preserved manifests,
+creation metadata, and daemon-verified origin are not interchangeable.
 
-- `--allow-nondistributable-artifacts` and its `daemon.json` counterpart are inert and warn starting in 28.0.0.
-- Related registry fields in `GET /info` are always `null` through API v1.48 and are scheduled to disappear in v1.49. Do not gate behavior on them.
+### Docker Content Trust removal
 
-## Image-backed mounts
+Engine 29 removes Docker Content Trust commands from the CLI. The command can
+be built as a separate plugin when legacy workflows require it. New automation
+should use explicit signing, provenance, and source-policy verification.
 
-Mount image content directly with `--mount type=image` (since 28.0.0); use `image-subpath` to select content within the source image. See [runtime.md](runtime.md) for syntax and mount migration details.
+## Search metadata deprecation
+
+Since 25.0.0, API field `IsAutomated` and `docker search` filter `is-automated`
+are deprecated. Stop using automated-build state from Docker Hub search as a
+selection signal.
+
+## Mounting images
+
+Engine 28.0.0 introduces image-backed mounts and `image-subpath`; Engine 29.7.0
+makes `type=image` non-experimental. Compose later pins image mount sources as
+part of reconciliation. See the runtime and Compose references for mount and
+convergence details.
+
+## Registry and archive checks
+
+1. Detect the image store and install history.
+2. Select platforms explicitly for push, inspect, delete, load, save, and
+   history where the operation supports it.
+3. Accept sparse inspection fields and new descriptor/identity data.
+4. Verify archive and registry media types before dropping old compatibility.
+5. Preserve attestation and signature manifests when assembling indexes.

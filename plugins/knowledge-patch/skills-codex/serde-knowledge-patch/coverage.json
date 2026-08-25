@@ -1,8 +1,10 @@
 {
   "patch": "serde-knowledge-patch",
-  "merged_at": "2026-07-12T22:31:01Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T02:08:23Z",
   "streams": {
-    "codex": "codex-gpt-5.6-sol"
+    "codex": "codex-gpt-5.6-sol-r2"
   },
   "batches": {
     "1.0.220-serde-core": {
@@ -22,6 +24,11 @@
     },
     "serde-json-value-apis": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.0.221": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

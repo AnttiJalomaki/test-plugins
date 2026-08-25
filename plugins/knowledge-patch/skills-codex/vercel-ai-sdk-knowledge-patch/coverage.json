@@ -1,6 +1,8 @@
 {
   "patch": "vercel-ai-sdk-knowledge-patch",
-  "merged_at": "2026-07-15T04:47:14Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T07:59:35Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -37,6 +39,11 @@
     },
     "sdk-and-mcp-overview": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-08": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

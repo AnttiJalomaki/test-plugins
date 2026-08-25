@@ -1,100 +1,62 @@
 # Networking, processes, and signals
 
-Use this reference for socket conversion and options, operating-system coverage, child-process construction and cleanup, and shutdown signal handling.
+## Socket conversion and address APIs
 
-## Contents
-
-- [Socket construction and addresses](#socket-construction-and-addresses)
-- [TCP and UDP behavior](#tcp-and-udp-behavior)
-- [Networking target coverage](#networking-target-coverage)
-- [Child processes](#child-processes)
-- [Signals and shutdown](#signals-and-shutdown)
-
-## Socket construction and addresses
-
-### Convert only nonblocking sockets
-
-Tokio 1.44.0 makes networking `from_std` constructors panic when the supplied standard-library socket is blocking. Set nonblocking mode before conversion:
+- Tokio Unix `SocketAddr` gains standard address conversions in 1.41.0, and
+  abstract socket-path behavior is restored in that release after a regression.
+- Tokio `from_std` socket conversions reject blocking sockets from 1.44.0 and
+  panic if one is passed. Set nonblocking mode before conversion.
 
 ```rust
-let listener = std::net::TcpListener::bind(addr)?;
-listener.set_nonblocking(true)?;
-let listener = tokio::net::TcpListener::from_std(listener)?;
+let socket = std::net::TcpListener::bind(addr)?;
+socket.set_nonblocking(true)?;
+let socket = tokio::net::TcpListener::from_std(socket)?;
 ```
 
-### Unix socket addresses
+- `Unix SocketAddr::as_abstract_name()` arrives in 1.48.0 for retrieving an
+  abstract address's name bytes.
+- Tokio 1.53.0 adds more Unix `SocketAddr` inspection methods; require that
+  release when code depends on the expanded surface.
 
-- Tokio 1.41.0 adds conversions between Tokio's Unix `SocketAddr` and the standard library's Unix socket address type.
-- Tokio 1.46.0 implements `Clone` for `tokio::net::unix::SocketAddr`.
-- Tokio 1.48.0 adds `SocketAddr::as_abstract_name()`, returning the bytes of an abstract-namespace name when present.
+## TCP, UDP, and target capabilities
 
-Tokio 1.39.3 restores Unix abstract-namespace socket-address support after the regression on the earlier 1.39 patch releases.
-
-## TCP and UDP behavior
-
-### TCP shutdown and linger
-
-Tokio 1.46.0 fixes `TcpStream::shutdown` incorrectly returning an error on macOS. Require that version or newer when callers treat successful shutdown as an invariant.
-
-Tokio 1.49.0 deprecates `TcpStream::set_linger` and `TcpSocket::set_linger`. Tokio 1.50.0 provides `TcpStream::set_zero_linger()` for the supported zero-duration case:
-
-```rust
-stream.set_zero_linger()?;
-```
-
-Use it only when an abortive close is intended; normal close remains graceful.
-
-### Socket options
-
-- Tokio 1.48.0 adds `TcpStream::quickack()` and `TcpStream::set_quickack()` for the TCP quick-acknowledgement option on supported targets.
-- Tokio 1.49.0 adds the IPv6 `TCLASS` socket option, avoiding a lower-level socket API for traffic-class configuration.
-
-### Linux UDP errors
-
-Tokio 1.51.1 surfaces Linux UDP `SO_ERROR` failures from receive operations. Handle these receive errors instead of assuming they remain hidden in socket state.
-
-## Networking target coverage
-
-- Tokio 1.43.0 adds networking support for Haiku OS.
-- Tokio 1.46.0 adds networking support for Cygwin targets.
-- Tokio 1.51.0 adds networking support for `wasm32-wasip2`.
-- Tokio 1.51.0 adds peer-credential lookup on GNU Hurd.
-
-Filesystem support for WASI and Android pipe support are covered separately in [io-and-filesystem.md](io-and-filesystem.md).
+- Networking support arrives for Haiku in 1.43.0 and Cygwin in 1.46.0.
+- `TcpStream::shutdown` succeeds reliably on macOS from 1.46.0 instead of
+  returning a spurious error.
+- `TcpStream::quickack()` and `set_quickack()` arrive in 1.48.0 where the target
+  exposes TCP quick acknowledgements.
+- IPv6 `TCLASS` socket-option support arrives in 1.49.0.
+- `TcpStream::set_linger` and `TcpSocket::set_linger` are deprecated from
+  1.49.0. For abortive close, use `TcpStream::set_zero_linger()` from 1.50.0.
+- Networking supports `wasm32-wasip2`, and Hurd gains `get_peer_cred`, from
+  1.51.0. On Linux, UDP receive operations surface pending `SO_ERROR` errors
+  from 1.51.1.
+- Tokio 1.53.0 adds NuttX networking, FreeBSD `UCred::pid`, and QNX peer
+  credentials through `getpeereid`.
 
 ## Child processes
 
-### Process groups and spawning
-
-Tokio 1.40.0 stabilizes `tokio::process::Command::process_group`, allowing Unix child process groups to be configured without unstable APIs.
-
-Tokio 1.45.0 adds `tokio::process::Command::spawn_with`. Tokio 1.48.0 broadens its callback to `FnOnce`, so the callback may consume captured values.
-
-### Cleanup races and driver fixes
-
-Since Tokio 1.44.0, `Child::start_kill()` does not fail merely because the child exited normally before cleanup won the race.
-
-Tokio 1.43.2 fixes process-driver panics caused by spurious pidfd wakeups. Prefer at least that patch release on the 1.43 line, and 1.43.4 for all fixes on the line.
-
-## Signals and shutdown
-
-### illumos
-
-Tokio 1.43.0 makes `SignalKind::info()` available on illumos and adds realtime-signal support there.
-
-### Windows console events
-
-Tokio 1.44.0 correctly handles the Windows `CTRL_CLOSE`, `CTRL_LOGOFF`, and `CTRL_SHUTDOWN` console signal events. Include them in shutdown handling where the application must flush or clean up during these session events.
-
-### Listener lifetime
-
-Tokio 1.50.0 guarantees that signal listeners do not return `None`. Combine signal waiting with an independent cancellation condition:
+- Stable Unix `Command::process_group` arrives in 1.40.0 for configuring the
+  process group before spawn.
 
 ```rust
-tokio::select! {
-    _ = signal.recv() => handle_signal(),
-    _ = cancellation.cancelled() => return,
-}
+let mut command = tokio::process::Command::new("worker");
+command.process_group(0);
+let child = command.spawn()?;
 ```
 
-Do not use listener exhaustion as the application's shutdown mechanism.
+- Tokio 1.43.2 fixes a process panic caused by spurious pidfd wakeups.
+- `Child::start_kill()` treats an already-exited child as a successful cleanup
+  race from 1.44.0.
+- `Command::spawn_with` arrives in 1.45.0 and accepts an `FnOnce` callback from
+  1.48.0, allowing the callback to consume captures.
+
+## Signals
+
+- On illumos, `SignalKind::info()` and realtime signals are supported from
+  1.43.0.
+- Windows console close, logoff, and shutdown events are handled from 1.44.0.
+- Signal listeners never return `None` from 1.50.0. Use explicit cancellation
+  rather than end-of-stream as the shutdown condition.
+- Tokio 1.53.0 accidentally breaks Windows signal builds at the Rust 1.71
+  minimum; use 1.53.1 for the restored implementation.

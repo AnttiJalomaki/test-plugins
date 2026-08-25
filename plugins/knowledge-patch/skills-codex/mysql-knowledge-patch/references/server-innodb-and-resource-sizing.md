@@ -1,94 +1,59 @@
 # Server, InnoDB, and Resource Sizing
 
-Use this reference when deploying in containers, setting automatic-memory
-inputs, tuning InnoDB background work, configuring change buffering, or sizing
-Thread Pool.
+## Container and host resource discovery
 
-## Server resource discovery
+### Container-aware InnoDB defaults (9.2-9.3)
 
-### CPU sets are authoritative
+InnoDB derives buffer-pool instances, page cleaners, purge threads, read threads,
+parallel-read threads, log-writer threads, and dedicated-server redo capacity
+from container CPU limits. It derives `temptable_max_ram` and, with
+`--innodb-dedicated-server`, `innodb_buffer_pool_size` from the container memory
+limit.
 
-In batch 9.7.0, the server observes limits imposed by the cpuset cgroup
-controller and derives its available logical CPU count from the assigned CPU
-set. Capacity calculations should use the server-reported count rather than the
-host total.
+### Server memory and reported resources (9.4-9.6)
 
-### Accessible resources are logged
+`back_log` defaults to `10000`. `server_memory` caps the physical-memory value
+used to derive automatic defaults; it is not a hard process-memory limit. The
+error log always reports the logical CPU and physical-memory totals accessible to
+the server.
 
-In batch 9.4-9.6, the error log always reports the server's accessible logical
-CPU and physical-memory totals. Capture those lines when diagnosing different
-automatic defaults between hosts or containers.
+### Cpuset cgroups (9.7.0)
 
-## General sizing defaults
+The server observes the cpuset cgroup controller and calculates its available
+logical CPU count from the assigned CPU set, not only from broader container CPU
+limits.
 
-`back_log` defaults to `10000` in batch 9.4-9.6.
+## InnoDB behavior and diagnostics
 
-The new `server_memory` variable caps the physical-memory amount considered
-when the server derives automatic configuration defaults. It is not a hard
-process-memory limit. Use operating-system or container controls for a hard
-limit, and account for all explicitly sized caches and components.
+### Change buffering (9.4-9.6)
 
-## Container-aware InnoDB defaults
+`innodb_change_buffer_max_size` defaults to `5`, and
+`innodb_change_buffering` defaults to `ALL` for secondary-index changes. Set them
+explicitly when the workload was tuned for prior behavior.
 
-In batch 9.2-9.3, InnoDB derives these settings from container CPU limits:
+### Conditional log-writer threads (9.4-9.6)
 
-- buffer-pool instances;
-- page cleaners;
-- purge threads;
-- read threads;
-- parallel-read threads;
-- log-writer threads; and
-- dedicated-server redo capacity.
+When binary logging is off, `innodb_log_writer_threads` defaults off at four or
+fewer logical CPUs and on above four. With binary logging on, the threshold is 32
+logical CPUs. An explicit configuration always wins.
 
-It derives `temptable_max_ram` from the container memory limit. With
-`--innodb-dedicated-server`, it also derives `innodb_buffer_pool_size` from that
-limit. Compare resolved values, not host resources, during performance triage.
+### Redo-log diagnostics (9.4-9.6)
 
-## Change buffering
-
-In batch 9.4-9.6:
-
-- `innodb_change_buffer_max_size` defaults to `5`; and
-- `innodb_change_buffering` defaults to `ALL` for secondary-index changes.
-
-An upgrade can therefore change both the amount and kinds of buffered work.
-Preserve old behavior explicitly only after measuring write and recovery costs.
-
-## Conditional log-writer threads
-
-The default for `innodb_log_writer_threads` depends on binary logging and the
-available logical CPU count in batch 9.4-9.6:
-
-| Binary logging | Default off | Default on |
-| --- | --- | --- |
-| Off | 4 or fewer CPUs | More than 4 CPUs |
-| On | 32 or fewer CPUs | More than 32 CPUs |
-
-An explicitly configured value is unchanged.
-
-## Thread Pool hardware awareness
-
-Thread Pool can derive and validate defaults from available VCPUs for:
-
-- `thread_pool_size`;
-- transaction limits;
-- query threads per group;
-- the scheduling algorithm; and
-- unused-thread limits.
-
-In batch 9.4-9.6, invalid values are corrected with warnings. Treat a warning as
-configuration drift: inspect the effective value rather than assuming the
-configured value took effect.
-
-## Redo-log diagnostics
-
-Redo warnings and `MONITOR` output now report:
-
-- the current LSN;
-- total log capacity; and
-- used log capacity.
-
-In batch 9.4-9.6,
-`ER_IB_WRN_REDO_DISABLED_INFO` and
+Redo warnings and `MONITOR` output report current LSN, total log capacity, and
+used capacity. `ER_IB_WRN_REDO_DISABLED_INFO` and
 `ER_IB_MSG_LOG_WRITER_WAIT_ON_NEW_LOG_FILE_INFO` replace their less-informative
-predecessors. Update alert matching and parsers to the new identifiers.
+predecessors.
+
+## Thread Pool sizing
+
+### Hardware-aware configuration (9.4-9.6)
+
+Thread Pool can derive and validate defaults from available VCPUs for
+`thread_pool_size`, transaction limits, query threads per group, scheduling
+algorithm, and unused-thread limits. Invalid settings are corrected with
+warnings, so monitor startup logs after changing available CPUs.
+
+### Unused-thread default (9.7.2)
+
+`thread_pool_max_unused_threads` defaults to `32`, up from `2`. Set it explicitly
+to preserve the former idle-thread limit.

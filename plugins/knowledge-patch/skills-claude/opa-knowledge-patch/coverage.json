@@ -2,7 +2,7 @@
   "patch": "opa-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T11:58:37Z",
+  "built_at": "2026-08-21T16:34:41Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -73,6 +73,11 @@
       "build": "included"
     },
     "1.18.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.19.0": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

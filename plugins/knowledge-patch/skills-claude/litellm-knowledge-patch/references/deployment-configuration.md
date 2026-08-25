@@ -1,8 +1,37 @@
 # Deployment configuration
 
-## Reusable named credentials
+## Runtime and package support
 
-Top-level `credential_list` entries provide rotatable credentials shared by deployments through `litellm_credential_name`. Every entry needs a `credential_info` mapping, even when empty.
+### Python 3.14 installation
+
+As of 1.93.0, package metadata permits Python 3.14 with an upper bound of
+`<3.15`. Compatible releases of `redisvl`, `pypdf`, `openapi-core`, and the
+native-bridge dependencies are included for this runtime.
+
+### Admin UI build runtime
+
+The 1.97.0 Admin UI toolchain targets Node.js 24. Its bootstrap flow selects
+that dashboard version floor through nvm or fnm.
+
+## Config source discovery
+
+`CONFIG_FILE_PATH` starts `litellm` from a mounted configuration without a
+`--config` argument. A bucket name and object key can load the file from S3;
+set `LITELLM_CONFIG_BUCKET_TYPE=gcs` to use GCS instead.
+
+```shell
+CONFIG_FILE_PATH=/path/to/config.yaml
+
+LITELLM_CONFIG_BUCKET_NAME=litellm-proxy
+LITELLM_CONFIG_BUCKET_OBJECT_KEY=proxy-config.yaml
+LITELLM_CONFIG_BUCKET_TYPE=gcs
+```
+
+## Shared named credentials
+
+Top-level `credential_list` entries allow several deployments to use one
+rotatable credential set through `litellm_credential_name`. Every entry needs
+a `credential_info` mapping, even when it is empty.
 
 ```yaml
 model_list:
@@ -18,9 +47,10 @@ credential_list:
     credential_info: {}
 ```
 
-## Environment-scoped exposure
+## Environment-scoped model exposure
 
-Set `LITELLM_ENVIRONMENT` to `production`, `staging`, or `development`. `model_info.supported_environments` then exposes a model only in the selected environments.
+Set `LITELLM_ENVIRONMENT` to `production`, `staging`, or `development`, then
+list allowed environments in `model_info.supported_environments`.
 
 ```yaml
 model_list:
@@ -30,9 +60,11 @@ model_list:
       supported_environments: [production, staging]
 ```
 
-## Prompt framing
+## Per-model prompt framing
 
-A Proxy model can override automatically detected prompt formatting in `litellm_params`. The template accepts initial and final text, per-role `pre_message` and `post_message`, and `bos_token` and `eos_token`.
+A Proxy model can override automatically detected prompt formatting under
+`litellm_params`. The template supports initial and final text, per-role
+`pre_message` and `post_message` strings, plus `bos_token` and `eos_token`.
 
 ```yaml
 model_list:
@@ -48,7 +80,9 @@ model_list:
 
 ## Custom token counting
 
-`model_info.custom_tokenizer` makes `/utils/token_counter` use a specified Hugging Face tokenizer for that Proxy model. Private tokenizers can supply `auth_token`.
+Set `model_info.custom_tokenizer` to make `/utils/token_counter` use a chosen
+Hugging Face tokenizer for the Proxy model. A private tokenizer may receive an
+`auth_token`.
 
 ```yaml
 model_info:
@@ -58,12 +92,28 @@ model_info:
     auth_token: os.environ/HUGGINGFACE_API_KEY
 ```
 
-## Config discovery and convergence
+## Database topology and convergence
 
-`CONFIG_FILE_PATH` starts `litellm` from a mounted config without `--config`. Alternatively, set `LITELLM_CONFIG_BUCKET_NAME` and `LITELLM_CONFIG_BUCKET_OBJECT_KEY` for S3; `LITELLM_CONFIG_BUCKET_TYPE=gcs` selects GCS.
+`DATABASE_URL_READ_REPLICA` sends read-only Prisma operations to a reader while
+writes stay on `DATABASE_URL`. With `IAM_TOKEN_DB_AUTH=true`, LiteLLM refreshes
+tokens for both connections.
 
-`supported_db_objects` limits which stored object classes are loaded. `proxy_config_reload_interval_seconds` controls cross-pod database refresh and defaults to 30 seconds.
+`database_disable_prepared_statements` adds `pgbouncer=true`.
+`database_extra_connection_params` takes precedence over that generated value.
+Use `supported_db_objects` to limit which persisted object classes are loaded.
+`proxy_config_reload_interval_seconds` controls cross-pod database refresh and
+defaults to 30 seconds.
 
-## Redis separation and globals
+## Per-worker pools and timeout layers
 
-Coordination Redis can be independent of the response cache. The usage cache can be constructed from `REDIS_*` environment variables. The request allowlist in `general_settings` is applied to LiteLLM globals.
+`database_connection_pool_limit` applies to each worker. Compute total possible
+connections as instances times workers times this value. The general database
+call timeout is distinct from connection-open and idle/silent socket timeouts.
+
+```yaml
+general_settings:
+  database_connection_pool_limit: 10
+  database_connection_timeout: 60
+  database_connect_timeout: 15
+  database_socket_timeout: 300
+```

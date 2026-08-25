@@ -3,81 +3,70 @@
 ## Route Server
 
 `nav2_route` computes and tracks routes over a predefined graph. It can replace
-free-space global planning, or provide long-range graph structure while a
-planner supplies the locally feasible path. Route progress can invoke
-contextual operations on node and edge events, such as changing a speed limit
-or activating equipment.
+free-space global planning or provide long-range graph structure while another
+planner produces a locally feasible path. Route progress can trigger contextual
+operations on node and edge events, such as changing a speed limit or activating
+equipment.
 
-Choose graph edges and event operations with failure recovery in mind: graph
-progress describes route context, while the local planner remains responsible
-for nearby geometric feasibility when the two are combined.
+## Route corner smoothing
 
-### Corner smoothing
-
-Route Server can replace graph corners with tangent circular arcs by enabling
-`smooth_corners` and configuring `smoothing_radius`. It falls back to linear
-interpolation for nearly straight edges or when an arc does not fit within its
-adjacent edges. The requested radius is therefore a preference rather than a
-guarantee at every graph node.
+Route Server can replace graph corners with tangent circular arcs through
+`smooth_corners` and `smoothing_radius`. It falls back to linear interpolation
+for nearly straight edges or whenever an arc cannot fit inside its adjacent
+edges.
 
 ## Loopback simulation
 
 `nav2_loopback_sim` integrates commanded velocity into ideal odometry for tests
-and high-level simulations without physics or localization error.
+and high-level simulation. It deliberately excludes physics and localization
+error.
 
-In Lyrical it is a C++ node with an embedded clock publisher. Launch only
-`loopback_simulator`, rather than a separate clock component. `speed_factor` is
-dynamically adjustable, and these additional parameters are available:
+In Lyrical it becomes a C++ node with an embedded clock publisher. Launch only
+`loopback_simulator`, rather than a separate clock publisher. `speed_factor` is
+dynamically adjustable, and the simulator also supports `publish_scan`,
+`odom_publish_dur`, and `scan_noise_std`.
 
-- `publish_scan`
-- `odom_publish_dur`
-- `scan_noise_std`
-
-Use it for navigation-logic tests, not for validating wheel slip, collision
-dynamics, localization degradation, or actuator response.
-
-## Docking capabilities and migration
+## Dock types and direction
 
 Docking supports charging and non-charging static infrastructure as well as
-dynamic docks. Available integration points include a
-`simple_non_charging_dock` plugin and an RViz docking panel.
+dynamic docks. The built-in options include `simple_non_charging_dock`, and
+RViz provides a docking panel.
 
-Docking-server collision checking is enabled by default. The former server
-parameter `dock_backwards` moves to each plugin as `dock_direction`, whose
-values are `forward` (the default) or `backward`.
+Docking Server collision checking is enabled by default. The old server-wide
+`dock_backwards` setting moves to each plugin as `dock_direction`, whose values
+are `forward` (the default) or `backward`.
 
-For simple plugins, `reverse_to_dock: true` permits detection from a forward
-staging pose followed by dead-reckoning backward into the dock. This is
-different from globally reversing all docking motion; configure the plugin's
-direction and detection approach together.
+For simple plugins, `reverse_to_dock: true` allows detection from a forward
+staging pose followed by dead-reckoned backward entry. This is distinct from a
+plugin whose normal docking direction is backward.
 
-### Lyrical detection and plugin changes
+## Docking plugin migration
 
-External detection rotations for simple dock plugins change from the order
-Rz→Rx→Ry to Rx→Ry→Rz. Recalculate any non-default transform configuration that
-uses all axes; copying the same angles changes the resulting rotation.
+In Lyrical, external detection rotations for simple dock plugins change from
+Rz→Rx→Ry to Rx→Ry→Rz. Recalculate non-default configurations that use
+all three axes; reusing the old angles changes the composed rotation.
 
-Custom `ChargingDock` and `NonChargingDock` plugins must implement:
+Custom `ChargingDock` and `NonChargingDock` plugins must implement
+`startDetectionProcess()` and `stopDetectionProcess()`. Simple plugins add:
 
-- `startDetectionProcess()`
-- `stopDetectionProcess()`
+- `detector_service_name`
+- `detector_service_timeout`
+- `subscribe_toggle`
 
-Simple plugins also add `detector_service_name`, `detector_service_timeout`,
-and `subscribe_toggle` for on-demand perception.
+These parameters support on-demand perception and its service/subscription
+coordination.
 
 ## Following Server
 
 The `opennav_following` server follows either a dynamically detected object or
-a named reference frame while maintaining a configured distance. It can use
-topic-based detections or TF tracking. Choose the input mode based on whether
-the target has a stable transform identity; configure loss-of-target behavior
-and safety components around that choice.
+a named reference frame while maintaining a configured distance. It supports
+topic-based detections and TF-based tracking.
 
-## Behavior Server context
+## Behavior Server shared collision context
 
-Behavior plugins share raw local and global costmaps, their published
-footprints, and TF frame names. The server runs plugins at `10.0` Hz by default
-and uses a `0.1`-second transform tolerance.
+Behavior plugins share the raw local and global costmaps, published footprints,
+and TF frames. The server runs plugins at `10.0` Hz by default with a `0.1`
+second transform tolerance.
 
 ```yaml
 behavior_server:
@@ -93,13 +82,10 @@ behavior_server:
     transform_tolerance: 0.1
 ```
 
-Verify that raw costmaps, published footprints, and frames all represent the
-same robot namespace and timestamp domain.
-
 ## Default behaviors and request-owned inputs
 
 Without an override, Behavior Server loads Spin, BackUp, DriveOnHeading, and
-Wait. Configured plugin names also become their action-server names.
+Wait. Configured plugin names become their action-server names.
 
 ```yaml
 behavior_plugins: [spin, backup, drive_on_heading, wait]
@@ -113,13 +99,13 @@ wait:
   plugin: nav2_behaviors::Wait
 ```
 
-Wait duration and Spin distance come from the action request. BackUp and
-DriveOnHeading also receive distance, speed, and time allowance from each
-request rather than server parameters.
+Wait duration, Spin distance, and the BackUp or DriveOnHeading distance, speed,
+and time allowance belong to each action request rather than server parameters.
 
-`DriveOnHeading`, `BackUp`, and `Spin` accept
-`disable_collision_checks`, default `false`. The first two also have these
-motion defaults:
+## Collision bypass and linear-motion limits
+
+Spin, BackUp, and DriveOnHeading accept `disable_collision_checks`, default
+`false`. BackUp and DriveOnHeading also support these defaults:
 
 ```yaml
 acceleration_limit: 2.5
@@ -127,13 +113,13 @@ deceleration_limit: -2.5
 minimum_speed: 0.10
 ```
 
-Disabling collision checks transfers safety responsibility outside the
-behavior; it should be an explicit, bounded operational choice.
+Disabling checks transfers collision responsibility outside the behavior; keep
+the default for normal autonomous operation.
 
-## Spin limits
+## Spin motion limits
 
-Spin projects collision risk `2.0` seconds ahead by default. Its default
-angular limits are:
+Spin projects collision risk `2.0` seconds ahead by default and bounds angular
+motion to `0.4`–`1.0` rad/s with a `3.2` rad/s² acceleration limit.
 
 ```yaml
 simulate_ahead_time: 2.0
@@ -142,14 +128,10 @@ max_rotational_vel: 1.0
 rotational_acc_lim: 3.2
 ```
 
-The velocity values are in rad/s and the acceleration limit is in rad/s².
-Check the footprint, costmap update rate, and actuator limits when changing the
-projection horizon or acceleration.
-
 ## Assisted teleoperation
 
-`AssistedTeleop` is not in the default behavior list and must be added
-explicitly. It listens on `cmd_vel_teleop` and, by default, projects motion for
+AssistedTeleop is not in the default behavior list. Add it explicitly when
+needed. It listens on `cmd_vel_teleop` and, by default, projects motion for
 `1.0` second in `0.1`-second steps.
 
 ```yaml
@@ -160,6 +142,3 @@ projection_time: 1.0
 simulation_time_step: 0.1
 cmd_vel_teleop: cmd_vel_teleop
 ```
-
-Treat this as collision-aware command projection, not autonomous path
-planning; the operator remains the source of the desired command.

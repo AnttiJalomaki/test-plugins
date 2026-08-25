@@ -1,90 +1,94 @@
 # Security and networking
 
-## Preserve SSH access during remote upgrades
+Unless noted otherwise, the upgrade behavior in this reference comes from
+`13-known-issues`.
 
-An interrupted SSH-supervised upgrade can leave the host unreachable. Before upgrading
-remotely, install `openssh-server` version `1:9.2p1-2+deb12u7` or later from
-`stable-updates`. That version is included in Debian 12.12 and later.
+## Preserve remote access
 
-## OpenSSH compatibility removals
+### Upgrade OpenSSH before a remote OS upgrade
+
+An interrupted SSH-supervised upgrade can leave a Bookworm host unreachable. Install
+`openssh-server` version `1:9.2p1-2+deb12u7` or later from `stable-updates` before
+starting; that fix is included in Debian 12.12 and later.
+
+Keep another recovery path available when possible, and validate a second SSH session
+before changing packages.
+
+### Replace removed compatibility mechanisms
 
 New SSH sessions no longer read `~/.pam_environment` by default. Move required
-variables to shell startup files or another mechanism.
+variables to shell startup files or another suitable mechanism.
 
-DSA keys cannot be re-enabled as of OpenSSH 9.8p1. Replace them. For a device that
-offers no other key type, use the `ssh1` command from `openssh-client-ssh1` only as a
-last-resort compatibility path.
+DSA keys cannot be re-enabled as of OpenSSH 9.8p1. Replace them. Reserve the `ssh1`
+command from `openssh-client-ssh1` for devices offering no other key type.
 
-## OpenSSH GSS-API packaging
+## Preserve encrypted storage
 
-Debian's main OpenSSH packages will drop GSS-API authentication and key exchange in
-Forky. A Trixie system that relies on `GSSAPI*` options should install the currently
-transitional `openssh-client-gssapi` or `openssh-server-gssapi` package so the
-separately built implementation is retained later.
+### Install systemd-cryptsetup
 
-## Encrypted filesystem discovery
+Automatic discovery and mounting of encrypted filesystems moved to
+`systemd-cryptsetup`. It is normally pulled in by systemd's Recommends, but verify the
+package is installed before rebooting an upgraded encrypted host.
 
-Automatic discovery and mounting of encrypted filesystems moved to the new
-`systemd-cryptsetup` package. Systemd normally installs it through Recommends, but
-verify that it is present before rebooting an upgraded encrypted system.
+### Pin plain-mode dm-crypt parameters
 
-## Plain-mode dm-crypt parameters
+Plain dm-crypt does not store the parameters used to create a device. Trixie's new
+defaults are `cipher=aes-xts-plain64` and `hash=sha256`; using them on old data can
+make that data look random.
 
-Trixie changes plain-mode defaults to `cipher=aes-xts-plain64` and `hash=sha256`.
-Unlike LUKS, plain mode does not store these parameters. Applying different parameters
-can make existing data appear random.
-
-For a device created with Bookworm defaults, record the following in `/etc/crypttab`:
+For a device created with Bookworm defaults, put the following parameters in
+`/etc/crypttab` before rebooting:
 
 ```text
 cipher=aes-cbc-essiv:sha256,size=256,hash=ripemd160
 ```
 
-## sysctl and unprivileged ping
+Verify the existing configuration rather than attempting repair or reinitialization
+when data becomes unreadable after an upgrade.
 
-`systemd-sysctl` no longer reads `/etc/sysctl.conf`. Put local settings in
-`/etc/sysctl.d/*.conf` and review `/usr/lib/sysctl.d/50-default.conf` from
+## Move sysctl policy and verify ping
+
+`systemd-sysctl` no longer reads `/etc/sysctl.conf`. Move local settings into
+`/etc/sysctl.d/*.conf`, and review `/usr/lib/sysctl.d/50-default.conf` supplied by
 `linux-sysctl-defaults`.
 
-`iputils-ping` now uses ICMP datagram sockets instead of `CAP_NET_RAW`. Unprivileged
-access depends on `net.ipv4.ping_group_range`, normally supplied by
-`linux-sysctl-defaults`.
+`iputils-ping` uses ICMP datagram sockets instead of `CAP_NET_RAW`. Unprivileged ping
+therefore depends on `net.ipv4.ping_group_range`, which is normally supplied by the
+defaults package. Test the intended service users and containers explicitly.
 
-## Network-interface names
+## Keep network interfaces addressable
 
-Interface names can change on systems using the `i40e` driver or firmware that exposes
-the ACPI `_SUN` object newly honored by systemd 257.
-
-After `apt full-upgrade` and before reboot, test each important interface:
+Systemd 257 can rename interfaces using the `i40e` driver or firmware whose ACPI
+`_SUN` object is newly honored. After `apt full-upgrade` and before reboot, test each
+critical interface:
 
 ```bash
 udevadm test-builtin net_setup_link /sys/class/net/<interface>
 ```
 
-Pin the old name with a `systemd.link` file when required.
+If a name would change, pin the old name with a `systemd.link` file and verify the
+network configuration refers to it.
 
-## OpenLDAP TLS provider
+## Migrate TLS and IPsec configuration
 
-`libldap2` and `slapd` now use OpenSSL rather than GnuTLS. This changes available TLS
-options and their behavior. When no CA certificates are configured, the system trust
-store is loaded automatically; explicitly configure trusted CAs to avoid that default.
+### OpenLDAP
 
-## strongSwan service transition
+`libldap2` and `slapd` use OpenSSL rather than GnuTLS. Available TLS options and their
+behavior differ. If no CA certificates are configured, the system trust store loads
+automatically; configure trusted CAs explicitly when that broad trust is unwanted.
 
-The replacement stack uses `charon-systemd`, `swanctl`, and `/etc/swanctl/conf.d`
-instead of the legacy `ipsec` command and `/etc/ipsec.conf`.
+### strongSwan
 
-Existing installations keep working while `charon-daemon` remains installed, but the
-`strongswan` metapackage now selects the new dependencies.
+The replacement stack uses `charon-systemd`, `swanctl`, and
+`/etc/swanctl/conf.d` rather than the legacy `ipsec` command and `/etc/ipsec.conf`.
+Existing installations continue to work while `charon-daemon` remains installed, but
+the `strongswan` metapackage now selects the new dependencies. Port custom deployment
+and management scripts deliberately.
 
-## Incomplete `sg3-utils` udev properties
+## Refresh Secure Boot databases
 
-Because of a Trixie `sg3-utils` bug, SCSI devices do not receive all properties normally
-injected by `sg3-utils-udev`. Migrate away from dependencies on those properties or be
-prepared for failures after reboot.
+This Bookworm maintenance change is from `12.15`.
 
-## sudo features scheduled for removal
-
-Forky will remove `sudo-ldap`. Migrate to `libsss-sudo` before that upgrade or privilege
-escalation rules may disappear. The `sudo_logsrvd` input/output logging service may also
-be removed unless it gains a maintainer.
+Bookworm's `fwupd` 2.0.20 can update the UEFI Secure Boot CA, KEK, and DBX databases.
+Apply the needed database updates because the 2013 UEFI Secure Boot CA used to sign
+bootloaders has expired.

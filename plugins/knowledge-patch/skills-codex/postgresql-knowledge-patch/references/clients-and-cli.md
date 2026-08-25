@@ -1,89 +1,121 @@
 # Clients, Authentication, and Command-Line Tools
 
-Batch attribution: `17.0`, `18.0`.
+Use this reference for connection security, libpq and protocol compatibility,
+interactive psql workflows, pgbench, and failure handling. Version-dependent
+items below retain the full `17.0` and `18.0` batch attribution.
 
-## Migrate password authentication and configure OAuth
+## Authentication and TLS
 
-MD5 password authentication is deprecated. `CREATE ROLE` and `ALTER ROLE` warn
-when setting an MD5 password unless `md5_password_warnings` is disabled.
+### Move away from MD5 authentication
 
-`oauth` is a `pg_hba.conf` authentication method. The server loads token
-validation libraries named by `oauth_validator_libraries`, while libpq provides
-the corresponding OAuth connection options. Building OAuth support from source
+MD5 password authentication is deprecated in PostgreSQL 18. Setting an MD5
+password with `CREATE ROLE` or `ALTER ROLE` warns unless
+`md5_password_warnings` is disabled. Migrate both stored passwords and
+`pg_hba.conf` rules instead of suppressing the warning indefinitely.
+
+PostgreSQL 18 accepts `oauth` as a `pg_hba.conf` method. Server token
+validation is provided by libraries listed in `oauth_validator_libraries`, and
+libpq has matching OAuth connection options. A source build with OAuth support
 requires `--with-libcurl`.
 
-## Configure TLS negotiation
+TLS configuration adds `ssl_tls13_ciphers`. The former `ssl_ecdh_curve` name
+still works, but `ssl_groups` is the multi-valued replacement and defaults to
+a set that includes X25519.
 
-`sslnegotiation=direct` makes libpq begin TLS immediately, avoiding the usual
-negotiation round trip. It requires ALPN and a PostgreSQL 17-or-newer server.
+### Negotiate TLS directly
+
+Since PostgreSQL 17, `sslnegotiation=direct` starts TLS immediately and avoids
+the usual negotiation round trip:
 
 ```text
 host=db.example dbname=app sslmode=require sslnegotiation=direct
 ```
 
-Server TLS settings include `ssl_tls13_ciphers`. The multi-valued `ssl_groups`
-replaces `ssl_ecdh_curve`, although the old name remains accepted; the default
-group list includes X25519.
+Direct negotiation requires ALPN and a PostgreSQL 17-or-newer server. Later
+17.x libpq releases also discard unauthenticated server error text received
+before SSL or GSS negotiation.
 
-Later security updates make libpq discard unauthenticated server error text
-received before SSL or GSS negotiation. Its escaping functions also validate
-input encoding, so applications and intermediaries must agree on that encoding.
+### Treat encoding and TLS debug output as sensitive
 
-## Cancel, stream, and pipeline libpq operations
+Updated 17.x libpq escaping functions validate the input encoding, so the
+application and intermediary must agree on that encoding. PostgreSQL 18 adds
+`sslkeylogfile` for exporting TLS key material during debugging; protect that
+file because it can make captured traffic decryptable.
 
-The current cancel API can operate in blocking or nonblocking mode and reuses
-the existing encrypted connection. It replaces the old cancellation behavior,
-which was blocking and could not preserve encrypted transport.
+## libpq and wire protocol
 
-`PQsetChunkedRowsMode()` returns query results in chunks.
-`PQsendPipelineSync()` queues a pipeline synchronization point without
-necessarily flushing immediately. `PQchangePassword()` hashes a new role
-password before sending it.
+### Use the current cancellation and result APIs
 
-## Negotiate protocol versions
+PostgreSQL 17's replacement cancel API supports blocking and nonblocking
+cancellation while reusing the encrypted connection. This avoids the old
+blocking, unencrypted-only cancellation behavior.
 
-Wire protocol 3.2 supports 256-bit cancel keys. `PQfullProtocolVersion()`
-reports the negotiated protocol, and libpq connection parameters and
-environment variables can bound acceptable protocol versions.
+Other PostgreSQL 17 additions are:
 
-Clients are notified when `search_path` changes. `PQtrace()` traces
-authentication and every other protocol message. `sslkeylogfile` exports TLS
-key material for debugging. Updated public signatures use `int64_t` instead of
-the deprecated `pg_int64` type.
+- `PQsetChunkedRowsMode()` to return results in chunks.
+- `PQsendPipelineSync()` to queue a pipeline synchronization point without
+  necessarily flushing immediately.
+- `PQchangePassword()` to hash a new role password before sending it.
 
-## Use prepared statements and pipeline mode in psql
+### Bound protocol compatibility deliberately
 
-psql supplies `\parse`, `\bind_named`, and `\close_prepared` for named prepared
-statements.
+Wire protocol 3.2 in PostgreSQL 18 supports 256-bit cancel keys. Use
+`PQfullProtocolVersion()` and the new connection parameters or environment
+variables to bound acceptable protocol versions when compatibility matters.
 
-Pipeline control uses `\startpipeline`, `\syncpipeline`, `\sendpipeline`,
-`\endpipeline`, `\flushrequest`, `\flush`, and `\getresults`. The `%P` prompt
-escape and `PIPELINE_*_COUNT` variables expose pipeline state.
+Clients are notified when `search_path` changes, and `PQtrace()` can trace
+authentication and every other protocol message. Public APIs affected by the
+type cleanup use `int64_t` rather than deprecated `pg_int64`.
 
-## Control psql display, fetching, and watch behavior
+## psql prepared statements and pipelines
 
-`\watch` supports a `min_rows` stopping condition, and `WATCH_INTERVAL` sets
-its default delay. Connection attempts can be canceled with Control-C.
-`FETCH_COUNT` applies to row-returning statements even when they are not
-`SELECT`.
+PostgreSQL 18 psql adds `\parse`, `\bind_named`, and `\close_prepared` for
+named prepared statements. Its explicit pipeline commands are
+`\startpipeline`, `\syncpipeline`, `\sendpipeline`, `\endpipeline`,
+`\flushrequest`, `\flush`, and `\getresults`. `%P` and the
+`PIPELINE_*_COUNT` variables expose pipeline state.
 
-Backslash-command output honors `\pset null`. `\dp` displays `(none)` for
-explicitly empty privileges while leaving default privileges blank.
+PostgreSQL 17 also added `\syncpipeline`, which explicitly sends a pipeline
+synchronization message from a pgbench script.
 
-Appending `x` to a list command requests expanded output. `\conninfo` uses a
-richer tabular display. Function and operator descriptions show leakproof
-status, partition descriptions show access methods, and `\dx` includes an
-extension's default version.
+## psql display, watch, and connection behavior
 
-## Run pgbench with compatible option names
+PostgreSQL 17 psql behavior includes:
 
-`pgbench -d` now selects the database and `--dbname` is its long form. Use
-`--debug` instead of the old `-d` debug meaning. `--exit-on-abort` stops a run
-after any client aborts, and `\syncpipeline` explicitly sends pipeline
-synchronization messages.
+- `\watch` has a `min_rows` stopping condition.
+- Control-C can cancel a connection attempt.
+- `FETCH_COUNT` applies to row-returning statements beyond `SELECT`.
+- Backslash-command output honors `\pset null`.
+- `\dp` shows `(none)` for explicitly empty privileges while leaving default
+  privileges blank.
 
-## Recover from asynchronous notification failures
+PostgreSQL 18 adds `WATCH_INTERVAL` as the default `\watch` delay. Appending
+`x` to list commands requests expanded output, `\conninfo` uses a richer
+tabular display, function/operator descriptions show leakproof status,
+partition descriptions show access methods, and `\dx` shows each extension's
+default version.
 
-If an updated server reports an error while a client consumes an asynchronous
-`NOTIFY`, that error is promoted to `FATAL` and the connection closes. Reconnect:
-the failure indicates that a notification may have been lost.
+## pgbench compatibility
+
+The old PostgreSQL 17 `pgbench -d` debug spelling became `--debug`; `-d` now
+selects the database and `--dbname` is its long spelling. `--exit-on-abort`
+stops the run after any client aborts.
+
+## Client-side failure semantics
+
+### Reconnect after notification-consumption errors
+
+In updated 17.x releases, any error while consuming asynchronous `NOTIFY` is
+promoted to `FATAL` and closes the connection. Reconnect because a notification
+may have been lost; continuing on the same connection is not possible.
+
+### Respect trusted PL/Perl restrictions
+
+Updated trusted PL/Perl rejects changes to `%ENV`; only `plperlu` retains that
+capability.
+
+## Session time-zone parsing
+
+PostgreSQL 18 gives session time-zone abbreviations precedence over entries in
+`timezone_abbreviations`. Audit applications that depend on a conflicting
+abbreviation definition.

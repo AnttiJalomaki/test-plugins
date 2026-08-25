@@ -1,6 +1,8 @@
 {
   "patch": "biome-knowledge-patch",
-  "merged_at": "2026-07-15T01:03:49Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-20T22:17:02Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -66,6 +68,11 @@
       "build": "included"
     },
     "2.5.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.5.1": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

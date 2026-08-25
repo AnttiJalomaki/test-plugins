@@ -1,107 +1,157 @@
 # Server, Cluster, and Storage
 
-## Cluster health and Raft membership
+## Cluster health and removed nodes
 
-- `sys/health` reports whether a node was removed and whether a standby can
-  heartbeat the active. Default failure codes are 530 for removed nodes and 474
-  for unhealthy HA nodes; override them with `removedcode` and
-  `haunhealthycode`.
-- `sys/seal-status` and `vault status` expose `removed_from_cluster`. Seal
-  status also gains `migration_done_at_epoch`.
-- A removed node with existing Raft data is rejected by
-  `sys/storage/raft/join`; removed nodes stop serving requests, shut down, and
-  seal.
-- Seal HA will not persist the barrier keyring unless every seal is healthy.
-  Later 1.19 fixes allow new nodes to join Seal-HA clusters.
-- With seal wrap enabled, AppRole secrets are seal-wrapped.
-  `detect_deadlocks` accepts `sealwrap`, and selected seal-wrap and managed-key
-  values can come from environment variables or files.
-- A root token can relock a namespace.
+### Health and seal-status fields
 
-## Privileged system operations
+`sys/health` reports whether the node was removed and whether a standby can
+heartbeat the active node. Default failure codes are 530 for removed and 474
+for unhealthy HA, configurable through `removedcode` and `haunhealthycode`.
+`sys/seal-status` and `vault status` include `removed_from_cluster`; seal status
+also includes `migration_done_at_epoch`. (`1.19-changelog`)
 
-- `sys/generate-root`,
-  `sys/replication/dr/secondary/generate-operation-token`, and `sys/rekey`
-  authenticate callers by default. A primary-generated root token can
-  authenticate to a DR secondary.
-- Restore legacy unauthenticated behavior only when required:
+### Removed Raft data
+
+`sys/storage/raft/join` rejects a removed node that still has integrated-storage
+data. A removed node stops serving requests and is shut down and sealed. Do not
+reuse its data directory to rejoin it. (`1.19-changelog`)
+
+## Listener and request limits
+
+### JSON body limits
+
+HTTP handling accepts `max_json_depth`, `max_json_string_value_length`,
+`max_json_object_entry_count`, and `max_json_array_element_count`. Rate-limit
+quotas run before these JSON limits. (`1.19-changelog`)
+
+### Token header size
+
+Listeners bound `X-Vault-Token` and `Authorization: Bearer` contents using
+`max_token_header_size`, which defaults to 8 KB. Set `-1` only when an unlimited
+header is intentional. (`2.0-changelog`)
 
 ```hcl
-enable_unauthenticated_access = [
-  "generate-root",
-  "generate-operation-token",
-  "rekey",
-]
+max_token_header_size = -1
 ```
 
-- Rekey cancellation requires the operation nonce from 1.19.6 onward.
-- The mounts API can unset `allowed_response_headers`.
+### Response headers
 
-## Request parsing and forwarding
+Mount tuning can unset `allowed_response_headers`. (`1.21-changelog`)
 
-- Configure `max_json_depth`, `max_json_string_value_length`,
-  `max_json_object_entry_count`, and `max_json_array_element_count`. Rate-limit
-  quotas are evaluated before JSON limits.
-- Vault removes Vault tokens from `Authorization` before forwarding to plugin
-  backends unless `Authorization` is explicitly configured as a passthrough
-  request header.
-- Client addresses from `X-Forwarded-For` must parse as valid IPv4 or IPv6.
-- Listeners support `max_token_header_size` for `X-Vault-Token` and bearer
-  authorization contents. The default is 8 KB; `-1` disables the limit.
-- Canonicalize all API paths. 1.19.19 redirects `/./`, `/../`, and `//` after
-  1.19.16 rejected non-canonical paths. A mount tuneable can trim trailing
-  slashes on POST. A trailing-slash LIST now honors a more-specific deny
-  instead of falling through to a broad allow.
+## Memory locking and containers
 
-## Integrated storage snapshots and recovery
+Integrated storage has no default for `disable_mlock`; set it explicitly to
+`true` or `false`, or Vault refuses to start. (`1.20-changelog`)
 
-- Enterprise snapshot recovery can read, list, and recover KV v1 and cubbyhole
-  secrets. Later 1.20 patches add database static roles and credentials and the
-  SSH plugin CA.
-- Send the snapshot ID using `X-Vault-Recover-Snapshot-Id`; the
-  `recover_snapshot_id` query parameter is deprecated. `RECOVER` is accepted
-  alongside `POST` and `PUT`.
-- `vault recover -from` restores an item under a different live path.
-- Unload a stuck snapshot with:
+Containers run as `vault` and no longer carry `cap_ipc_lock`, so they cannot
+call `mlock()`. Use `disable_mlock = true` and control swapping on the host or
+container runtime. (`1.19-changelog`)
 
-```shell
-vault operator raft snapshot unload -force
+## Raft snapshots and recovery
+
+### Recovery contents
+
+Enterprise can load an integrated-storage snapshot and read, list, and recover
+KV v1 and cubbyhole secrets. Later 1.20 releases add database static roles and
+credentials and the SSH plugin CA. (`1.20-changelog`)
+
+KV v2 recovery can restore in place or copy from a different source path within
+the same mount and namespace. (`2.0.4`)
+
+### Request format and alternate destinations
+
+Move the snapshot ID from deprecated `recover_snapshot_id` to the
+`X-Vault-Recover-Snapshot-Id` header. `RECOVER` is accepted alongside `POST` and
+`PUT`. `vault recover -from` restores an item to a different live path.
+(`1.21-changelog`)
+
+### Loading, unloading, and delegated permission
+
+Raft automated snapshots accept `autoload_enabled`; generated snapshots are
+loaded automatically when enabled. Snapshot-management and recovery permissions
+are separate, allowing recovery delegation without snapshot-administration
+access. (`1.21-changelog`)
+
+Clear a stuck loaded snapshot with
+`vault operator raft snapshot unload -force` or:
+(`1.21-changelog`)
+
+```text
+DELETE sys/storage/raft/snapshot-load/{snapshot_id}?force=true
 ```
 
-  The API equivalent is
-  `DELETE sys/storage/raft/snapshot-load/{snapshot_id}?force=true`.
-- Automated snapshot configurations support `autoload_enabled`. Generated
-  snapshots are loaded automatically for recovery when enabled.
-- Snapshot-management and recovery permissions are separate, allowing
-  delegated recovery without snapshot-management access.
-- Integrated storage rejects `performance_multiplier <= 0`.
+## Seal HA and seal wrap
 
-## Physical storage and network configuration
+Seal HA refuses to persist the barrier keyring unless every seal is healthy.
+Later 1.19 patches let new nodes join Seal-HA clusters. `detect_deadlocks`
+accepts `sealwrap`; AppRole secrets are seal-wrapped when seal wrap is active.
+Selected sensitive seal-wrap and managed-key values can come from environment
+variables or files. (`1.19-changelog`)
 
-- PostgreSQL physical storage can authenticate with AWS IAM, Azure MSI, or GCP
-  IAM identities.
-- MySQL storage can read `VAULT_MYSQL_USERNAME` and `VAULT_MYSQL_PASSWORD`.
-- DynamoDB storage can change its table to per-request billing.
-- Raft auto-join can force IPv4 on dual-stack networks.
-- Agent, Proxy, server, and other configuration displays canonicalize IPv6 per
-  RFC 5952.
-- SIGHUP reloads additional Raft settings. The effective values also appear at
-  `/sys/config/state/sanitized`.
+Enterprise 1.19 has an unresolved duplicate unseal or seal-wrap HSM-key issue
+requiring the documented workaround. (`1.19`)
 
-## Diagnostics and lifecycle
+Enterprise 1.19.18 has an unresolved condition in which seal wrapping can cause
+Raft quorum failure, with no workaround listed. (`1.19`)
 
-- `pprof-dump-dir` writes startup profile dumps.
-- `enable_post_unseal_trace` and `post_unseal_trace_directory` capture
-  post-unseal Go traces.
-- `vault lease renew --fail-if-not-fulfilled` fails when the requested renewal
-  cannot be fulfilled, so chained commands can stop reliably.
-- The default API client honors `Retry-After`; rate-limit delays round up to
-  whole seconds.
-- Enterprise `remove_irrevocable_lease_after` deletes irrevocable leases after
-  that duration past expiry. A nonzero setting has a minimum of two days.
+## Raft and storage configuration
 
-## Server-generated state reports
+### Live reload and validation
 
-The sudo-protected `sys/reporting/scan` endpoint writes Vault-state report files
-to `reporting_scan_directory`. Treat that directory as sensitive operational
-output.
+SIGHUP reloads additional Raft settings, and `/sys/config/state/sanitized`
+reports them. (`1.19-changelog`)
+
+Integrated storage rejects `performance_multiplier` values less than or equal
+to zero. (`2.0-changelog`)
+
+### Network discovery and canonical addresses
+
+Agent, Proxy, server, and other configuration displays canonicalize IPv6 using
+RFC 5952. Raft auto-join can force IPv4 on dual-stack networks.
+(`1.19-changelog`)
+
+### Cloud storage credentials and billing
+
+The DynamoDB storage backend can modify its table to use per-request billing.
+(`1.19-changelog`)
+
+The PostgreSQL physical storage backend can authenticate with AWS IAM, Azure
+MSI, or GCP IAM identities. (`1.20-changelog`)
+
+The MySQL physical storage backend can read `VAULT_MYSQL_USERNAME` and
+`VAULT_MYSQL_PASSWORD`. (`1.20-changelog`)
+
+## Diagnostics and state capture
+
+`pprof-dump-dir` writes startup profile dumps. `enable_post_unseal_trace` and
+`post_unseal_trace_directory` enable and place post-unseal Go traces.
+(`1.19-changelog`)
+
+The sudo-protected `sys/reporting/scan` endpoint writes state-report files to
+`reporting_scan_directory`. Protect the output directory. (`1.21-changelog`)
+
+## Configuration parsing
+
+Duplicate attributes in server and policy HCL were deprecated, then became
+errors. The temporary `VAULT_ALLOW_PENDING_REMOVAL_DUPLICATE_HCL_ATTRIBUTES`
+warning mode is removed, so duplicate attributes always fail parsing.
+(`1.19-changelog`, `1.21-changelog`, `2.0.4`)
+
+## Licensing and security modes
+
+Vault Enterprise accepts IBM PAO license keys. This license type requires a
+`license_entitlement` stanza in server configuration. (`2.0-changelog`)
+
+Enterprise `common_criteria_mode` restricts listener TLS cipher suites. It also
+tightens PKI chain, validation-time, `NotBefore`, key-usage, and uploaded-chain
+validation. (`2.0-changelog`)
+
+## Consistency and memory-sensitive operations
+
+Invalid cross-cluster Server-Side Consistent Tokens sent to an active
+performance secondary prefer HTTP 403 instead of HTTP 412. Update clients that
+classify the failure by status. (`2.0.4`)
+
+Core and Transit random-byte APIs permit larger outputs and pseudorandom output
+seeded from random sources. Large requests consume proportionally more memory.
+(`2.0-changelog`)

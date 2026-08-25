@@ -1,77 +1,112 @@
 # Async I/O and filesystem
 
-Use this reference for Tokio I/O types, file buffering, pipes, borrowed AIO registration, target availability, and unstable io_uring filesystem behavior.
+## General I/O primitives
 
-## Contents
+### Seekable empty readers (1.39.0)
 
-- [General async I/O](#general-async-io)
-- [Files and filesystem targets](#files-and-filesystem-targets)
-- [Pipes and AIO registration](#pipes-and-aio-registration)
-- [Unstable io_uring filesystem backend](#unstable-io_uring-filesystem-backend)
+`tokio::io::Empty` implements `AsyncSeek`. It can be passed directly to
+generic asynchronous I/O code that requires a seekable reader.
 
-## General async I/O
+### Simplex streams (1.40.0)
 
-### Seekable empty readers
+`io::util::SimplexStream` provides a one-direction asynchronous I/O primitive
+for code that does not need a duplex connection. `tokio-util` 0.7.18 also
+provides `tokio_util::io::simplex`.
 
-Tokio 1.39.0 implements `AsyncSeek` for `tokio::io::Empty`. An empty reader can now satisfy generic bounds that require both asynchronous reading and seeking.
+### Immediate `AsyncFd` operations (1.42.0)
 
-### Simplex streams
+`AsyncFd::try_io` and `AsyncFd::try_io_mut` attempt I/O without waiting,
+through shared and mutable access respectively, on the registered source.
 
-Tokio 1.40.0 adds `util::SimplexStream` to Tokio's I/O utilities. Use the provided simplex-stream type instead of maintaining an ad hoc one.
+### Pinned `!Unpin` values (1.45.0)
 
-The companion `tokio-util` 0.7.18 release separately adds the `tokio_util::io::simplex` constructor; select the API belonging to the crate already used by the component.
+Some Tokio I/O trait implementations no longer impose `Unpin`, allowing them
+to operate on appropriately pinned `!Unpin` values without an unnecessary
+bound.
 
-### Pinned I/O values
+## Files and reader composition
 
-Tokio 1.45.0 removes `Unpin` requirements from some I/O trait implementations. Compatible pinned `!Unpin` I/O values can use those implementations without an extra wrapper whose only job is to satisfy `Unpin`.
+### File buffer limits (1.48.0)
 
-### Nameable chained readers
+`File::max_buf_size()` returns a Tokio file's configured maximum buffer size.
+Cloning a `File` preserves that limit rather than reverting to another value.
 
-Tokio 1.48.0 publicly exports `tokio::io::Chain`, the concrete type returned by `AsyncReadExt::chain`. Use it in fields, aliases, and function signatures that need to name a chained reader.
+### Public chained-reader type (1.48.0)
 
-## Files and filesystem targets
+`tokio::io::Chain` is the public concrete type returned by
+`AsyncReadExt::chain`. APIs and stored state can name it directly.
 
-### File buffer limits
+### Zero-length chained reads (1.53.1)
 
-Tokio 1.48.0 adds `File::max_buf_size()` for reading a file's configured maximum buffer size. Cloning a `File` now preserves that setting, so code no longer needs to reapply the limit to each clone.
+As of 1.53.0, `tokio::io::Chain` does not treat a zero-length read request as
+end-of-file. Reading into an empty destination no longer advances prematurely
+to the second reader.
 
-### WASI filesystem availability
+### Owned OS handles (1.53.1)
 
-Tokio 1.41.0 enables its filesystem configuration for `wasi` targets. Filesystem-gated Tokio APIs are no longer removed solely because the target is WASI.
+Tokio 1.53.0 adds `From<OwnedFd>` and `From<OwnedHandle>` implementations for
+`tokio::fs::File`. Owned Unix descriptors and Windows handles can transfer
+directly into an asynchronous file.
 
-## Pipes and AIO registration
+```rust
+let file: tokio::fs::File = owned_fd.into();
+```
 
-### Android read-write pipes
+## Pipes and AIO
 
-Tokio 1.46.0 supports `pipe::OpenOptions::read_write` on Android. A pipe can be opened for both reading and writing on that target.
+### Android read-write pipes (1.46.0)
 
-### Nonblocking Unix pipe access
+Android supports `pipe::OpenOptions::read_write`, allowing a pipe to be opened
+for both reading and writing.
 
-Tokio 1.52.0 adds `try_io` to `unix::pipe::Sender` and `unix::pipe::Receiver`. Use it to attempt custom nonblocking I/O against a pipe endpoint while preserving readiness handling.
+### Immediate Unix pipe I/O (1.52.0)
 
-### Borrowed AIO sources
+Unix pipe sender and receiver types provide `try_io`, allowing an immediate
+I/O attempt through either endpoint.
 
-Tokio 1.52.0 adds `AioSource::register_borrowed`. It provides an I/O-safety-aware path for registering a borrowed resource without transferring ownership to the AIO source.
+### Borrowed AIO registration (1.52.0)
 
-## Unstable io_uring filesystem backend
+`AioSource::register_borrowed` registers a borrowed source without
+transferring ownership and makes the ownership relationship explicit for I/O
+safety.
 
-### Enablement and fallback
+## Unstable io_uring filesystem support
 
-Tokio 1.48.0 moves io_uring opt-in to a Cargo feature instead of a custom `--cfg` flag.
+### Build configuration (1.48.0)
 
-Treat the backend as opportunistic even when the feature is enabled:
+Select the unstable `io_uring` subsystem with a Cargo feature rather than its
+former custom `--cfg` switch.
 
-- Tokio 1.49.0 disables io_uring after an `EPERM` result.
-- Tokio 1.50.0 checks whether the running kernel supports an opcode before using that operation.
+### Writes and opens (1.48.0)
 
-Keep normal filesystem behavior available as a fallback; feature enablement alone is not evidence that a particular operation will use io_uring.
+The unstable io_uring filesystem backend supports:
 
-### Operation coverage
+- `tokio::fs::write`;
+- `File::open`;
+- files opened through `OpenOptions`.
 
-- Tokio 1.48.0 allows unstable io_uring to back `fs::write`, `File::open`, and `OpenOptions`.
-- Tokio 1.49.0 allows unstable io_uring to back `tokio::fs::read`.
-- Tokio 1.52.0 allows the `AsyncRead` implementation for `tokio::fs::File` to use io_uring.
+### Whole-file reads and permission failures (1.49.0)
 
-### Cancellation correctness
+- `tokio::fs::read` can use the unstable io_uring backend.
+- Tokio disables that backend after `EPERM`. Enabling it does not guarantee it
+  remains active at runtime.
 
-Tokio 1.51.1 fixes a file-descriptor leak when an io_uring open operation is cancelled. Require at least that patch release when cancellation can race file opening.
+### Cancelled opens (1.51.0)
+
+Tokio 1.51.1 fixes a file-descriptor leak when an unstable io_uring open is
+cancelled. Require at least that patch for cancellable opens.
+
+### `File` asynchronous reads (1.52.0)
+
+With unstable io_uring filesystem support enabled, `File` can perform its
+`AsyncRead` operations through that backend.
+
+### Existence checks and renaming (1.53.1)
+
+Tokio 1.53.0 adds unstable io_uring support for `tokio::fs::try_exists` and
+file renaming.
+
+## Standard output ordering (1.53.1)
+
+Writes made through multiple Tokio standard-output handles can be reordered.
+Reuse or synchronize one handle whenever output order matters.

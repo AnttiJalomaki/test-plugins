@@ -1,281 +1,158 @@
 # Widgets and theming
 
-## Contents
+## Material visual defaults and themes
 
-- [Material and Cupertino package transition](#material-and-cupertino-package-transition)
-- [Theme type and property migrations](#theme-type-and-property-migrations)
-- [Navigation components](#navigation-components)
-- [Material visual defaults](#material-visual-defaults)
-- [Forms and validation](#forms-and-validation)
-- [Dropdowns and autocomplete](#dropdowns-and-autocomplete)
-- [Radio, switch, and controlled state](#radio-switch-and-controlled-state)
-- [Expand and collapse](#expand-and-collapse)
-- [Menus](#menus)
-- [Cupertino controls](#cupertino-controls)
-- [Material interaction controls](#material-interaction-controls)
-- [Tooltips](#tooltips)
-- [Input decoration and shapes](#input-decoration-and-shapes)
-- [Time picker](#time-picker)
-- [Lists and callback migrations](#lists-and-callback-migrations)
-
-## Material and Cupertino package transition
-
-The in-framework Material and Cupertino libraries are frozen at their final feature
-set (`3.44-guide`). Development is moving to independently versioned `material_ui`
-and `cupertino_ui` packages, and the in-framework libraries were scheduled for
-deprecation in the next stable release. Check a project's dependency strategy before
-adding a component that exists only in the package line.
-
-## Theme type and property migrations
-
-Use data-oriented theme values consistently:
-
+- In 3.29.0, set `year2023: false` on progress indicators or `Slider`, or on
+  `ProgressIndicatorThemeData.year2023`/`SliderThemeData.year2023`, to opt into the refreshed
+  Material 3 appearance. `FadeForwardsPageTransitionsBuilder` supplies the newer
+  navigation transition.
 - Replace `ThemeData.dialogBackgroundColor` with
-  `DialogThemeData.backgroundColor`.
-- Replace `ThemeData.indicatorColor` with `TabBarThemeData.indicatorColor`.
-- Supply `CardThemeData`, `DialogThemeData`, and `TabBarThemeData` to
-  `ThemeData.cardTheme`, `ThemeData.dialogTheme`, and `ThemeData.tabBarTheme`, not the
-  old component classes.
-- Remaining component themes such as `AppBarTheme`, `BottomAppBarTheme`, and
-  `InputDecorationTheme` likewise use `...ThemeData` values (`3.35-guide`).
-- Replace `AppBarTheme.color` and `AppBarThemeData.color` with `backgroundColor`.
-- Move `ButtonStyleButton.iconAlignment` to `ButtonStyle.iconAlignment` or the
-  relevant `styleFrom` helper.
-- Replace `Switch.activeColor` with `activeThumbColor`.
+  `DialogThemeData.backgroundColor`, and move button icon alignment to
+  `ButtonStyle.iconAlignment` or `styleFrom` (3.29.0).
+- Replace `ThemeData.indicatorColor` with `TabBarThemeData.indicatorColor` and use
+  `CardThemeData`, `DialogThemeData`, and `TabBarThemeData` values
+  for `ThemeData.cardTheme`, `dialogTheme`, and `tabBarTheme` (`3.32-guide`).
+  Remaining component themes, including `AppBarTheme`,
+  `BottomAppBarTheme`, and `InputDecorationTheme`, likewise use `...ThemeData`
+  forms (`3.35-guide`).
+- Move deprecated `Switch.activeColor` to `activeThumbColor`, and app-bar theme
+  `color` to `backgroundColor` (3.35.0).
+- `FloatingActionButtonTheme` and `SnackBarTheme` widgets provide subtree-scoped
+  overrides without changing root `ThemeData` (3.41.0).
+- Material and Cupertino libraries reached their final in-framework feature set in
+  `3.44-guide` and are moving to independently versioned `material_ui` and
+  `cupertino_ui` packages; in-framework versions were scheduled for deprecation.
 
-`FloatingActionButtonTheme` and `SnackBarTheme` widgets apply component theme
-overrides to one subtree without modifying root `ThemeData` (`3.41.0`).
+## Menus and anchored controls
 
-## Navigation components
+- `RawMenuAnchor` is the unstyled primitive under Material `MenuAnchor`
+  (`3.32-guide`). `MenuController` can be subclassed in 3.38.0.
+- Material 3 `MenuAnchor` animations are off by default; set `animated: true`.
+  `SubmenuButton.hoverOpenDelay` controls pointer-hover opening (`3.44-guide`).
+- Audit custom `RawMenuAnchor` behavior because close callback ordering changed
+  (`3.44-guide`).
+- `CupertinoMenuAnchor` and `CupertinoMenuItem` provide Cupertino anchored menus
+  without Material (3.44.0).
 
-`NavigationRail` can scroll. `NavigationDrawer` accepts a header and footer, allowing
-navigation chrome to stay inside the component instead of being composed around it.
+## Forms, fields, and validation
 
-## Material visual defaults
+- `FormField` error output can be any widget, and `onTapUpOutside` customizes field
+  behavior (`3.32-guide`). `InputDecoration.hint` accepts a widget when `hintText`
+  is too restrictive (3.32.0).
+- `FormField.onReset` handles field-specific clearing. `DropdownMenuFormField`
+  integrates Material 3 dropdowns with forms (`3.35-guide`).
+- Do not use `Form` directly as a sliver; wrap it in `SliverToBoxAdapter`. Replace
+  `DropdownButtonFormField.value` with `initialValue` (`3.35-guide`).
+- `AutovalidateMode.onUserInteractionIfError` enables interaction validation when
+  a field has an error (3.41.0).
+- `DropdownMenu` also adds `cursorHeight`, an external `menuController`, and a
+  `focusNode` hook for its trailing-icon button; `MenuController` is subclassable
+  (3.38.0).
+- `DropdownMenu<T>` requires non-nullable `T`; `DropdownMenu.selectOnly` adds selection-only
+  behavior. `DropdownMenu` and its form-field variant accept `decorationBuilder`,
+  and the form field accepts `errorBuilder` (3.41.0).
+- `DropdownButton.enabled` expresses enabled state separately from `onChanged`
+  (`breaking-change-guides`).
+- Form state exposes registered `fields`; `clearError` clears form or individual
+  `FormFieldState` errors without resetting values (3.44.0).
+- Replace `InputDecoration.maintainHintHeight` with `maintainHintSize`; use
+  `ShapedInputBorder` to adapt a `ShapeBorder` (`breaking-change-guides`,
+  `3.44-guide`).
 
-### Progress indicators and sliders
+## Selection and editing controls
 
-The refreshed Material 3 `CircularProgressIndicator`, `LinearProgressIndicator`, and
-`Slider` designs were initially opt-in through `year2023: false` on the component,
-`ProgressIndicatorThemeData.year2023`, or `SliderThemeData.year2023` (`3.29.0`):
+- `SelectionListener` reports selection details and
+  `SelectableRegionSelectionStatusScope` reports changing/final state (3.29.0).
+- Material `Autocomplete` supports keyboard navigation (3.32.0). It accepts an
+  external `focusNode` and `textEditingController` in 3.35.0.
+- Text input accepts Android `hintLocales` and `selectAllOnFocus` controls automatic
+  full selection (3.35.0). iOS inline prediction is an opt-in experimental
+  `enableInlinePrediction` behavior (`3.44-guide`).
+- Web `SelectableRegion` preserves constraints and multiline copy line breaks
+  (`3.44-guide`).
 
-```dart
-CircularProgressIndicator(year2023: false);
-Slider(value: value, onChanged: onChanged, year2023: false);
-```
+## Expansion, radio, and external state
 
-Check the active SDK before retaining the transitional property. Slider value
-indicators can be configured to remain visible. Both progress indicators can receive
-an `AnimationController` when their motion must be driven externally.
-
-### Dialog sizing
-
-Material dialogs have a default maximum width of 560 dp. Override it with
-`AlertDialog.constraints` or `SimpleDialog.constraints` only when the design needs a
-different width (`3.35.0`).
-
-## Forms and validation
-
-`FormField` can build an arbitrary error widget, not only error text. `FormField.onReset`
-runs field-specific clearing logic during `Form.reset`.
-
-Use `AutovalidateMode.onUserInteractionIfError` when interaction-driven validation
-should activate only while a field has an error:
-
-```dart
-Form(
-  autovalidateMode: AutovalidateMode.onUserInteractionIfError,
-  child: fields,
-)
-```
-
-Form state exposes registered fields through `fields`. `clearError` clears a form or
-individual `FormFieldState` validation error without resetting its value:
-
-```dart
-for (final field in formKey.currentState!.fields) {
-  field.clearError();
-}
-```
-
-A `Form` is not a sliver. Wrap it in `SliverToBoxAdapter` inside a
-`CustomScrollView`.
-
-## Dropdowns and autocomplete
-
-`DropdownMenuFormField` integrates a Material 3 dropdown with form state. Replace
-`DropdownButtonFormField.value` with `initialValue`.
-
-`DropdownMenu<T>` requires a non-nullable `T`. It supports:
-
-- `DropdownMenu.selectOnly` for selection-only behavior;
-- `decorationBuilder` on the menu and form-field forms;
-- `errorBuilder` on `DropdownMenuFormField`;
-- `cursorHeight`;
-- an external `menuController`;
-- a focus-node hook for the trailing-icon button.
-
-`MenuController` is not `final`, so specialized controllers may extend it.
-
-`DropdownButton` has an explicit `enabled` property and no longer requires
-`onChanged`. Express enabled state independently:
-
-```dart
-DropdownButton<String>(
-  enabled: canSelect,
-  onChanged: handleSelection,
-  items: items,
-)
-```
-
-Material `Autocomplete` supports keyboard traversal and accepts external `focusNode`
-and `textEditingController` values. Set a `RawAutocomplete` options-view direction to
-`OptionsViewOpenDirection.mostSpace` to open on the side with more room.
-
-## Radio, switch, and controlled state
-
-Move shared value and change handling for `Radio`, `CupertinoRadio`, and
-`RadioListTile` into a surrounding `RadioGroup`; per-control `groupValue` and
-`onChanged` are deprecated.
-
-Control radio appearance with `RadioListTile.radioInnerRadius` per tile, or
-`RadioThemeData.innerRadius` and `RadioThemeData.side` application-wide. A
-`ChipThemeData.deleteIconColor` may be a `WidgetStateColor`.
-
-`ExpansionTile`, `RadioListTile`, and `SwitchListTile` accept
-`WidgetStatesController`, allowing application code to observe or drive interaction
-state. `IconButton.statesController` programmatically controls its `WidgetState`-based
-visual states.
-
-## Expand and collapse
-
-`Expansible` is the widget-layer primitive for themed expansion controls.
-`RawMenuAnchor` is the unstyled menu primitive below Material's `MenuAnchor`
-(`3.32-guide`). Replace deprecated `ExpansionTileController` with reusable
-`ExpansibleController`.
-
-Move `Expansible` duration and curve options from individual animation properties to
-one `AnimationStyle`. `ExpansionTile.splashColor` controls its interaction splash.
-`CupertinoExpansionTile` supplies the corresponding iOS-style control.
-
-## Menus
-
-### Material and raw menus
-
-Material 3 `MenuAnchor` animations are disabled by default; set `animated: true` to
-enable them. `SubmenuButton.hoverOpenDelay` controls hover-to-open delay. The ordering
-of close callbacks on `RawMenuAnchor` changed, so custom menu state must not depend on
-the old callback order.
-
-### Cupertino menus
-
-`CupertinoMenuAnchor` and `CupertinoMenuItem` provide Cupertino-styled anchored menus
-on top of `RawMenuAnchor` without a Material dependency (`3.44.0`).
-
-## Cupertino controls
-
-### Buttons and segmented controls
-
-Replace `CupertinoButton.minSize` with independent `minWidth` and `minHeight` values:
-
-```dart
-CupertinoButton(
-  minWidth: 44,
-  minHeight: 36,
-  onPressed: submit,
-  child: const Text('Submit'),
-)
-```
-
-Set `CupertinoSlidingSegmentedControl.isMomentary` when a segment should trigger an
-action without remaining selected (`3.38-guide`).
-
-### Activity, date, and action controls
-
-- `CupertinoLinearActivityIndicator` provides a linear activity control.
-- `CupertinoDatePicker.selectableDayPredicate` rejects individual dates.
-- `CupertinoCheckbox` has an adjusted default desktop size.
-- `CupertinoActionSheetAction` can receive keyboard focus.
-- `CupertinoDynamicColor`-specific methods such as `withAlpha` and `withOpacity` are
-  deprecated; call the standard `Color` APIs.
-
-Cupertino sheet navigation and scroll coordination are in the navigation reference.
+- `Expansible` is the widget-layer expand/collapse primitive; migrate
+  `ExpansionTileController` to `ExpansibleController` (`3.32-guide`). Move its
+  animation settings into `AnimationStyle` (3.41.0).
+- `CupertinoExpansionTile` provides the Cupertino counterpart (`3.35-guide`).
+- Move `Radio`, `CupertinoRadio`, and `RadioListTile` group value/change state into
+  `RadioGroup` (`3.35-guide`).
+- Style radios through `RadioListTile.radioInnerRadius`,
+  `RadioThemeData.innerRadius`, and `RadioThemeData.side`. A chip delete icon can
+  use `WidgetStateColor` through `ChipThemeData.deleteIconColor` (3.38.0).
+- `ExpansionTile`, `RadioListTile`, and `SwitchListTile` accept
+  `WidgetStatesController`; `TabBar` accepts `TabBarScrollController` (3.44.0).
 
 ## Material interaction controls
 
-- `Badge.count(maxCount: ...)` caps the displayed count.
-- `InkWell.onLongPressUp` reports release after a long press.
-- `TableRowInkWell.onHover` reports row hover changes.
-- `AppBar.automaticallyImplyActions` controls inference of action widgets.
-- `CarouselView.itemClipBehavior` controls child clipping.
-- `TabBar.onHover` and `onFocusChange` expose tab interaction, and
-  `TabBarScrollController` provides external scroll control.
-- `SearchAnchor` accepts `viewOnOpen`, while `SearchAnchor.bar` accepts `onOpen`.
-- `CalendarDatePicker.calendarDelegate` supports non-Gregorian date systems.
-- `animationStyle` customizes `showDialog`, `showAdaptiveDialog`, and `DialogRoute`
-  transitions.
+- `TabBar` reports `onHover` and `onFocusChange`. `SearchAnchor` adds `viewOnOpen`
+  and `SearchAnchor.bar` adds `onOpen`. `CalendarDatePicker.calendarDelegate`
+  supports non-Gregorian logic (`3.32-guide`).
+- `NavigationRail` can scroll, `NavigationDrawer` accepts header/footer, and slider
+  value indicators can remain visible (`3.35-guide`).
+- `IconButton.statesController` drives programmatic widget states
+  (`3.38-guide`).
+- `Badge.count(maxCount: ...)` caps counts; `InkWell.onLongPressUp` and
+  `TableRowInkWell.onHover` report interactions. `ExpansionTile.splashColor`,
+  `AppBar.automaticallyImplyActions`, and `CarouselView.itemClipBehavior` control
+  splash, inferred actions, and clipping (3.38.0).
+- `CircularProgressIndicator` and `LinearProgressIndicator` accept an
+  `AnimationController` for externally synchronized animation (3.38.0).
+- Non-web Material buttons default to the basic arrow cursor, not the click cursor
+  (3.41.0).
+- `CarouselView` adds infinite looping and `onIndexChanged`;
+  `CarouselController.leadingItem` reports the leading item (`3.44-guide`).
 
-Material buttons use the basic arrow cursor by default on native platforms, not the
-web-style click cursor.
+## Cupertino controls
 
-## Tooltips
+- `CupertinoButton.minSize` is deprecated; use independent `minWidth` and
+  `minHeight` (3.32.0).
+- `CupertinoAlertDialog` and `CupertinoActionSheet` use the rounded-superellipse
+  shape introduced in `3.32-guide`.
+- `CupertinoSlidingSegmentedControl.isMomentary` triggers without retaining
+  selection (`3.38-guide`).
+- `CupertinoLinearActivityIndicator` is a linear activity control.
+  `CupertinoDatePicker.selectableDayPredicate` rejects dates, full-height sheets
+  stretch upward, and `CupertinoCheckbox` has an adjusted desktop default size
+  (3.38.0).
+- Standard `Color` methods replace deprecated `CupertinoDynamicColor`-specific
+  `withAlpha` and `withOpacity` (`3.38-guide`).
+- `CupertinoActionSheetAction` can receive keyboard focus (3.41.0), and
+  `CupertinoSheet.showDragHandle` supplies a native-styled handle
+  (`3.41-guide`).
 
-Replace `Tooltip.height` with `Tooltip.constraints`:
+## Dialogs, tooltips, and temporary UI
 
-```dart
-Tooltip(
-  message: 'Refresh',
-  constraints: const BoxConstraints(minHeight: 24),
-  child: const Icon(Icons.refresh),
-)
-```
+- `showDialog`, `showAdaptiveDialog`, and `DialogRoute` accept `animationStyle`
+  (`3.32-guide`). Material dialogs default to
+  maximum width 560 dp; override through `AlertDialog.constraints` or
+  `SimpleDialog.constraints` (3.35.0).
+- Replace `Tooltip.height` with `Tooltip.constraints` (3.32.0). Tooltip placement
+  is customizable; `RawTooltip` exposes its widget, and `PlatformMenu`/
+  `PlatformMenuItem` support tooltip text (3.41.0).
+- A `SnackBar` with an action no longer auto-dismisses (`3.38-guide`).
+- `showTimePicker` accepts `initialTime: null` when opened directly in text-input
+  mode (3.38.0).
 
-Tooltip placement is customizable, and `RawTooltip` exposes the tooltip widget for
-low-level composition. `PlatformMenu` and `PlatformMenuItem` support tooltip text.
+## Shapes, alignment, and paint
 
-## Input decoration and shapes
+- Use `RoundedSuperellipseBorder`, `ClipRSuperellipse`, and matching canvas/path
+  APIs for continuous corners (`3.32-guide`). Web gained native support in 3.35.0.
+- `AlignmentGeometry` exposes directional members such as `.centerStart`
+  instead of requiring `AlignmentDirectional` (3.41.0).
+- `ColorFilter.saturation` provides direct saturation adjustment (3.41.0).
+- Variable-font weight axes now follow the `fontWeight`/`FontWeight` setting
+  starting in Flutter 3.41
+  (`breaking-change-guides`).
 
-`InputDecoration.hint` accepts an arbitrary widget. Replace
-`maintainHintHeight` with `maintainHintSize`.
+## Callback and type migrations
 
-`ShapedInputBorder` adapts any `ShapeBorder` to a Material input border, including a
-continuous-corner superellipse:
-
-```dart
-const InputDecoration(
-  border: ShapedInputBorder(shape: RoundedSuperellipseBorder()),
-)
-```
-
-## Time picker
-
-`showTimePicker` can begin with no selected time when it opens directly in input mode
-(`3.38.0`):
-
-```dart
-await showTimePicker(
-  context: context,
-  initialEntryMode: TimePickerEntryMode.input,
-  initialTime: null,
-);
-```
-
-## Lists and callback migrations
-
-Flutter reports a debug error when `ListTile` is wrapped in a colored widget. Remove
-or restructure that wrapper.
-
-In separated `ListView` and `SliverList` constructors, replace
-`findChildIndexCallback` with `findItemIndexCallback`:
-
-```dart
-ListView.separated(
-  findItemIndexCallback: (key) => indexFor(key),
-  itemBuilder: itemBuilder,
-  separatorBuilder: separatorBuilder,
-  itemCount: itemCount,
-)
-```
-
-Replace `ReorderableListView.onReorder` with `onReorderItem`; its `newIndex` already
-accounts for removing the item before reinsertion.
+- Replace separated-list `findChildIndexCallback` with `findItemIndexCallback` and
+  `ReorderableListView.onReorder` with `onReorderItem`; the new reorder index is
+  already adjusted (`breaking-change-guides`, `3.44-guide`).
+- `IconData` and `TextDecoration` are final; do not subclass them.
+  `ExtendSelectionByPageIntent` is removed (3.44.0).
+- Colored wrappers around `ListTile` trigger a Flutter 3.44 debug error; restructure
+  that coloring (`breaking-change-guides`).

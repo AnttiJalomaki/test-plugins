@@ -1,6 +1,8 @@
 {
   "patch": "flutter-knowledge-patch",
-  "merged_at": "2026-07-15T03:44:45Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T06:22:38Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -122,6 +124,11 @@
     },
     "breaking-change-guides": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.47.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

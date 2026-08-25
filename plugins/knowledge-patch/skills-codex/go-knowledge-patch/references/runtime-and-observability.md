@@ -1,81 +1,93 @@
 # Runtime and Observability
 
-Batch coverage: `1.23.0`, `1.25-guide`, `1.25.0`, `1.26.0`.
+## Garbage collection and process sizing
 
-## Contents
+### Experimental Green Tea garbage collector (`1.25-guide`)
 
-- [Garbage collection](#garbage-collection)
-- [Scheduling](#scheduling)
-- [Tracing and profiles](#tracing-and-profiles)
-- [Memory layout and diagnostics](#memory-layout-and-diagnostics)
-- [Signals and scheduler metrics](#signals-and-scheduler-metrics)
+The initial Green Tea collector is selected at build time with
+`GOEXPERIMENT=greenteagc`. This version is opt-in and does not include the
+later vector acceleration.
 
-## Garbage collection
+### Container-aware `GOMAXPROCS` (`1.25.0`)
 
-### Green Tea rollout
+On Linux, the default `GOMAXPROCS` is capped by a lower cgroup CPU bandwidth
+limit. On every OS, the runtime periodically updates its default as CPU
+availability changes. Explicit `GOMAXPROCS` settings disable this behavior;
+`containermaxprocs=0` and `updatemaxprocs=0` disable its two parts, while
+`runtime.SetDefaultGOMAXPROCS` restores the runtime-selected value.
 
-Green Tea was opt-in at build time in Go 1.25:
+### Green Tea garbage collection by default (`1.26.0`)
 
-```sh
-GOEXPERIMENT=greenteagc go build ./...
-```
+Green Tea is the default collector. `GOEXPERIMENT=nogreenteagc` temporarily
+restores the former collector for diagnostics in toolchains that still provide
+the switch; the 1.26 guidance describes this opt-out as expected to disappear
+in 1.27.
 
-That implementation did not yet contain the later vector acceleration. Green Tea is the default collector in Go 1.26. Use `GOEXPERIMENT=nogreenteagc` to disable it temporarily at build time; this opt-out is expected to disappear in Go 1.27.
+### Randomized 64-bit heap bases (`1.26.0`)
 
-## Scheduling
+The runtime randomizes the heap base at startup on 64-bit platforms. Tools and
+cgo code must not assume predictable heap addresses.
+`GOEXPERIMENT=norandomizedheapbase64` temporarily disables randomization at
+build time.
 
-### Container-aware `GOMAXPROCS`
+## Tracing, profiling, and metrics
 
-On Linux, the default `GOMAXPROCS` is capped by a lower cgroup CPU bandwidth limit. On every OS, the runtime periodically updates the default as CPU availability changes.
+### Recoverable crash traces (`1.23.0`)
 
-Any explicit `GOMAXPROCS` setting disables automatic selection. `GODEBUG=containermaxprocs=0` disables the cgroup-aware cap, and `GODEBUG=updatemaxprocs=0` disables periodic updates. Call `runtime.SetDefaultGOMAXPROCS` to restore the runtime-selected value after an override.
+The runtime flushes active trace data during an uncaught panic, and the trace
+tool attempts to recover usable events from a partially broken trace. Events
+leading up to a crash are therefore usually inspectable.
 
-### Timer channel compatibility
+### Runtime trace flight recorder (`1.25.0`)
 
-Go 1.27 is scheduled to ignore `asynctimerchan`, after which timers will always use synchronous channels.
+`runtime/trace.FlightRecorder` retains a configurable recent window in an
+in-memory ring. Call `WriteTo` after a significant event to save the preceding
+trace instead of continuously writing a full trace.
 
-## Tracing and profiles
+### Linux runtime mapping labels (`1.25.0`)
 
-### Recoverable crash traces
+On kernels with anonymous VMA-name support, mappings receive labels such as
+`[anon: Go: heap]`. Set `GODEBUG=decoratemappings=0` to suppress them.
 
-The runtime flushes active trace data on an uncaught panic. The trace tool attempts to recover usable events from partially broken traces, so events leading up to a crash are usually inspectable.
+### Experimental goroutine-leak profiles (`1.26.0`)
 
-### Flight recorder
+`GOEXPERIMENT=goroutineleakprofile` adds the `runtime/pprof` profile
+`goroutineleak` and `/debug/pprof/goroutineleak`. Detection finds goroutines
+blocked on unreachable synchronization primitives, but can miss primitives
+reachable through globals or runnable goroutines.
 
-`runtime/trace.FlightRecorder` continuously retains a configurable recent window in an in-memory ring buffer. Call `WriteTo` after a significant event to save only the preceding trace instead of continuously writing a full trace.
+### Scheduler metrics (`1.26.0`)
 
-### Experimental goroutine-leak profile
+`runtime/metrics` exposes goroutine-state counts under `/sched/goroutines`,
+known OS threads under `/sched/threads:threads`, and the lifetime count under
+`/sched/goroutines-created:goroutines`.
 
-Build with `GOEXPERIMENT=goroutineleakprofile` to add the `runtime/pprof` profile named `goroutineleak` and the `/debug/pprof/goroutineleak` endpoint.
+### Local-only trace listener shorthand (`1.27.0`)
 
-Detection identifies goroutines blocked on unreachable synchronization primitives. It can miss primitives still reachable through globals or runnable goroutines, so an empty profile does not prove the absence of leaks.
+`go tool trace -http=:6060` listens only on localhost. Use an explicit address
+such as `-http=0.0.0.0:6060` when remote access is intended.
 
-## Memory layout and diagnostics
+### Goroutine labels in tracebacks (`1.27.0`)
 
-### Randomized 64-bit heap bases
+Programs selecting language version 1.27 or later include goroutine labels in
+traceback header lines by default. Labels may contain sensitive data; use
+`GODEBUG=tracebacklabels=0` to suppress them.
 
-The runtime randomizes the heap base at startup on 64-bit platforms. Fix tools and cgo code that assume predictable addresses. `GOEXPERIMENT=norandomizedheapbase64` temporarily restores the older build-time behavior.
+### Stable goroutine-leak profiling (`1.27.0`)
 
-### Linux mapping labels
+The `goroutineleak` pprof profile and HTTP endpoint are generally available.
+The `GOEXPERIMENT=goroutineleakprofile` setting is deleted.
 
-On Linux kernels that support anonymous VMA names, runtime mappings have labels such as `[anon: Go: heap]`. Set `GODEBUG=decoratemappings=0` to suppress them.
+## Cleanup, finalizers, and sensitive execution
 
-### Cleanup and finalizer checks
+### Cleanup and finalizer diagnostics (`1.25.0`)
 
-`runtime.AddCleanup` callbacks execute concurrently and in parallel. Make callbacks safe for concurrent execution and continue to hand off long blocking work rather than performing it inline.
+`runtime.AddCleanup` callbacks run concurrently and in parallel. Callbacks must
+tolerate concurrent execution and should hand off long blocking work.
+`GODEBUG=checkfinalizers=1` checks common finalizer and cleanup mistakes on each
+GC cycle and periodically reports queue lengths.
 
-Set `GODEBUG=checkfinalizers=1` to check common finalizer and cleanup mistakes on every GC cycle and periodically report queue lengths.
+### Secret-mode inheritance (`1.27.0`)
 
-## Signals and scheduler metrics
-
-### Signal cancellation causes
-
-`signal.NotifyContext` records an error identifying the received signal as the context's cancellation cause. Retrieve it with `context.Cause`.
-
-### Scheduler metrics
-
-`runtime/metrics` adds:
-
-- `/sched/goroutines` for goroutine-state counts.
-- `/sched/threads:threads` for known OS threads.
-- `/sched/goroutines-created:goroutines` for the total number of goroutines created.
+Under experimental `runtime/secret`, goroutines created while secret mode is
+active execute in secret mode themselves.

@@ -1,67 +1,108 @@
 # Language and Runtime
 
-## Comprehensions and generators
+## Write strict and parallel comprehensions
 
 ### Strict generators
 
-OTP 28.0 adds strict comprehension generators. A relaxed generator silently
-skips a value that does not match its pattern; a strict generator fails on
-that value. Use `<:-` for list and map generators and `<:=` for binary
-generators.
+Since 28.0, use `<:-` for strict list and map generators and `<:=` for strict
+binary generators. A value that does not match the generator pattern raises
+instead of being silently skipped:
 
 ```erlang
 [X || {ok, X} <:- [{ok, 1}, error, {ok, 3}]].
 %% ** exception error: no match of right hand side value error
 ```
 
-Choose strict generators when malformed input is an invariant violation, and
-keep the older operators when filtering by pattern is intentional.
+The existing generator operators remain relaxed.
 
 ### Zip generators
 
-OTP 28.0 also lets generators joined by `&&` advance in parallel. This
-produces a zip rather than a Cartesian product. Any number of list, binary, or
-map generators may be zipped, and the zipped group may be mixed with other
-generators and filters.
+Join generators with `&&` to consume them in parallel rather than forming a
+Cartesian product:
 
 ```erlang
 [{X, Y} || X <- [1, 2] && Y <- [a, b]].
 %% [{1,a},{2,b}]
 ```
 
-### Assignments and multiple output values
+Any number of list, binary, or map generators can be zipped and mixed with
+other generators and filters.
 
-In OTP 29.0, a match used as a comprehension qualifier is a compile error by
-default. Previously it could compile and fail later because the matched value
-was treated as a non-Boolean filter. Assignment qualifiers are experimental;
-enable them per module or runtime:
+### Assignment qualifiers
+
+Since 29.0, using a match as a comprehension qualifier is a compile error by
+default instead of compiling and later failing as a non-boolean filter. Enable
+the experimental feature with `-feature(compr_assign, enable).` or
+`erl -enable-feature compr_assign`. Then `P = E` behaves like the strict
+generator `P <-:- [E]`:
 
 ```erlang
 -feature(compr_assign, enable).
-%% or: erl -enable-feature compr_assign
-
 hashes(Items) ->
     [H || Item <- Items, H = erlang:phash2(Item), H rem 10 =:= 0].
 ```
 
-With `compr_assign` enabled, `P = E` behaves as the strict generator
-`P <-:- [E]`. A comprehension may also emit several comma-separated values on
-each iteration:
+### Multiple emitted values
+
+Since 29.0, a comprehension may emit multiple comma-separated values for each
+iteration:
 
 ```erlang
 [I, -I || I <- lists:seq(1, 3)].
 %% [1,-1,2,-2,3,-3]
 ```
 
-Syntax Tools 4.0.2 in OTP 28.2 annotates map comprehensions and map generators
-in abstract syntax. Abstract-form visitors must recognize them rather than
-assuming every comprehension or generator is a list or binary construct.
+## Use new expression and guard forms
 
-## Native records
+### Left-associative calls
 
-OTP 29.0 introduces experimental native records. A native record is a runtime
-type rather than the tagged tuple used for a traditional record. The leading
-`#` in the declaration distinguishes it:
+Since 29.0, function application is left associative. `f(X)(Y)` is accepted
+and means `(f(X))(Y)`.
+
+### Bounded integer checks
+
+Since 29.0, `is_integer(Term, LowerBound, UpperBound)` returns true only when
+all three arguments are integers and
+`LowerBound =< Term =< UpperBound`. Prefer it to range guards that can
+accidentally accept floats:
+
+```erlang
+is_digit(C) -> is_integer(C, $0, $9).
+```
+
+### Based floating-point literals
+
+Since 28.0, floating-point literals support bases other than ten, including a
+based exponent introduced by a second `#`:
+
+```erlang
+2#0.011.       %% 0.375
+16#0.011#e5.  %% 4352.0
+```
+
+This syntax can preserve an exact non-decimal or bit-level representation, as
+in `2#0.10101#e8`.
+
+## Represent domain types
+
+### Nominal Dialyzer types
+
+Since 28.0, declare types with `-nominal` when identical representations must
+remain distinct:
+
+```erlang
+-nominal meter() :: integer().
+-nominal foot() :: integer().
+```
+
+`meter()` and `foot()` are incompatible in input and output specifications. A
+nominal type is still compatible with a non-opaque, non-nominal type of the
+same structure, such as `integer()`.
+
+### Experimental native records
+
+OTP 29.0 introduces experimental native records as runtime types rather than
+tagged tuples:
 
 ```erlang
 -record #vec{x = 0.0, y = 0.0}.
@@ -70,138 +111,131 @@ type rather than the tagged tuple used for a traditional record. The leading
 make_vec(X, Y) -> #vec{x = X, y = Y}.
 ```
 
-Construction, update, matching, and field access use familiar record syntax.
-Values print with the defining module, for example `#geom:vec{...}`.
-Definitions are private by default. Code in another module can perform a
-field-free match such as `#geom:vec{}`, but construction and field-aware
-matching require the defining module to declare `-export_record([vec])`.
+They use familiar record construction, update, match, and field syntax and
+print with their defining module, such as `#geom:vec{...}`. Definitions are
+private by default. Another module may make a field-free match such as
+`#geom:vec{}`, but construction and field-aware matching require
+`-export_record([vec])` in the defining module. The feature may still change
+incompatibly.
 
-Do not treat the experiment as representation-stable. OTP 29.0.1 corrects
-native-record programs that could crash the compiler and comparisons that
-could return the wrong value or crash ERTS. It also fixes a rare compiler
-optimization that could invert a Boolean result. Use 29.0.1 as the minimum
-patch level for a native-record deployment.
+OTP 29.0.1 fixes a rare optimization that could invert a Boolean result,
+native-record programs that could crash the compiler, and comparisons that
+could return a wrong result or crash ERTS. Treat that patch as the minimum for
+native-record experiments.
 
-OTP 29.0.2 further corrects native-record analysis in Dialyzer, formatting by
-`io_lib:bformat/2`, and a crash caused by a tuple-record operation inside a
-native-record anonymous update. Update the complete OTP installation rather
-than selectively patching one affected application.
+OTP 29.0.2 additionally fixes native-record Dialyzer analysis,
+`io_lib:bformat/2` formatting, and a crash caused by a tuple-record operation
+inside a native-record anonymous update. Update the complete OTP installation
+rather than selectively patching an application.
 
-## Functions, guards, numbers, and types
+## Apply compiler diagnostics
 
-Function application is left associative in OTP 29.0. An expression such as
-`f(X)(Y)` is accepted and means `(f(X))(Y)`.
+### Old-style `catch`
 
-The guard BIF `is_integer(Term, LowerBound, UpperBound)` returns `true` only
-when all three arguments are integers and the term is within the inclusive
-bounds. It avoids the common bug where comparison-based range guards also
-accept floats:
+Since 29.0, the old-style `catch Expr` warning is enabled by default. In 28.0
+it was available through `warn_deprecated_catch`, with
+`-compile(nowarn_deprecated_catch).` as a module-level override. Migrate to
+targeted `try ... catch` clauses to avoid swallowing unrelated runtime errors.
 
-```erlang
-is_digit(C) -> is_integer(C, $0, $9).
-```
+### Exported variables, match aliases, and Boolean operators
 
-OTP 28.0 adds based floating-point literals. A second `#` can introduce a
-based exponent:
+Since 29.0, the compiler warns by default when a variable escapes a
+subexpression and when a match aliases patterns that unify constructors.
+Temporary migration escape hatches are `nowarn_export_var_subexpr` and
+`nowarn_match_alias_pats`.
 
-```erlang
-2#0.011.       %% 0.375
-16#0.011#e5.  %% 4352.0
-```
+Enable `warn_obsolete_bool_op` to find eager `and` and `or` operations that
+should generally become `andalso` and `orelse`, or `,` and `;` in guards.
 
-This notation can preserve an exact non-decimal or bit-level representation,
-as in `2#0.10101#e8`.
+### Deprecations planned for OTP 30
 
-Dialyzer in OTP 28.0 supports nominal declarations:
+Since 29.0, old-style guard type tests such as `integer` and `atom` are
+deprecated and scheduled for removal in OTP 30. The `odbc` application and the
+`ftp` and `ct_ftp` modules have the same status. Remove dependencies rather
+than suppressing the migration work.
 
-```erlang
--nominal meter() :: integer().
--nominal foot() :: integer().
-```
+### Unsafe functions and `xref`
 
-The two nominal types are incompatible in function input and output specs
-despite identical representations. A nominal type remains compatible with a
-non-opaque, non-nominal type of the same structure, such as `integer()`.
+Since 29.0, functions can carry `-unsafe` attributes, and the compiler warns by
+default about calls to OTP functions classified as always unsafe. Enable
+`warn_possibly_unsafe_function` for conditional cases, including atom-creating
+functions.
 
-## Compiler diagnostics and analysis
+`xref:analyze/2` provides `unsafe_function_calls`,
+`undocumented_function_calls`, and `private_function_calls`. `xref` now
+applies `ignore_xref` declarations after analysis instead of requiring each
+build tool to implement that filter.
 
-OTP 28.0 provides the opt-in compiler option `warn_deprecated_catch` for
-finding `catch Expr`. A module can temporarily suppress a project-wide
-setting with `-compile(nowarn_deprecated_catch).`, but a targeted
-`try ... catch` prevents unrelated runtime errors from being swallowed.
+Since 29.0.2, analyzing a BEAM file without debug information and with
+`moduledoc(false)` returns an error rather than crashing. Callers must handle
+the error result.
 
-The old-style `catch` warning is enabled by default in OTP 29.0. Two more
-default warnings cover a variable exported from a subexpression and a match
-whose aliased patterns unify constructors. Their migration escape hatches are
-`nowarn_export_var_subexpr` and `nowarn_match_alias_pats`.
+## Manage processes and signals
 
-The opt-in `warn_obsolete_bool_op` finds eager `and` and `or` uses that should
-usually be `andalso` and `orelse`, or `,` and `;` in guards.
+### Priority messages and signals
 
-Old-style guard type tests such as `integer` and `atom` are deprecated in OTP
-29.0 and scheduled for removal in OTP 30. The `odbc` application and `ftp` and
-`ct_ftp` modules have the same removal schedule.
-
-Functions may be marked with `-unsafe`. The compiler warns by default about
-calls to OTP functions classified as always unsafe. Enable
-`warn_possibly_unsafe_function` to also report conditional hazards such as
-functions that create atoms.
-
-`xref:analyze/2` adds the predefined `unsafe_function_calls`,
-`undocumented_function_calls`, and `private_function_calls` analyses. `xref`
-now applies `ignore_xref` declarations itself as a post-analysis filter; build
-tools should not duplicate that filtering.
-
-Compiling with `to_abstr` in OTP 29.0 retains source `-doc` attributes in the
-generated `.abstr` file. Abstract-code consumers and BEAM-targeting languages
-can preserve the documentation metadata.
-
-When a BEAM file has no debug information and has `moduledoc(false)`, OTP
-29.0.2 makes `xref` return an error rather than crash. Callers must handle the
-error result.
-
-## Process and signal behavior
-
-`erlang:hibernate/0` in OTP 28.0 minimizes the calling process's memory while
-it waits for the next message. Unlike `erlang:hibernate/3`, it retains the
-call stack.
-
-Priority messages in OTP 28.0 require a capability-bearing alias:
+Since 28.0, a receiver opts in by creating `alias([priority])`. A sender uses
+the alias with the `priority` option to place a message ahead of ordinary
+messages while preserving signal order:
 
 ```erlang
 PrioAlias = alias([priority]),
 erlang:send(PrioAlias, Message, [priority]).
 ```
 
-The `priority` send option places the message ahead of ordinary messages while
-preserving signal order. A send through the same alias without the option is
-ordinary, and `unalias/1` revokes the capability. Use
-`exit(PrioAlias, Reason, [priority])` for a priority exit signal. For link and
-monitor signals generated by events, give the `priority` option to
-`erlang:link/2` or `erlang:monitor/3`.
+Sending through the alias without the option is ordinary, and `unalias/1`
+revokes the capability. Use `exit(PrioAlias, Reason, [priority])` for a
+priority exit signal. For event-generated link and monitor signals, pass
+`priority` to `erlang:link/2` or `erlang:monitor/3`.
 
-## Collections and persistent structures
+### Stack-preserving hibernation
 
-OTP 29.0 expands `array` with `prepend/2`, `append/2`, `concat/1,2`,
-`slice/3`, `shift/2`, `from/2,3`, index-bounded traversals such as `foldl/5`,
-and map-fold families including `mapfoldl/3` and `sparse_mapfoldr/5`.
+Since 28.0, `erlang:hibernate/0` minimizes the calling process's memory while
+waiting for its next message. Unlike `erlang:hibernate/3`, it does not discard
+the call stack.
 
-The array's internal representation also changed. An array term serialized
-with `term_to_binary/1` on an older OTP release is incompatible with OTP 29;
-migrate or regenerate stored values rather than carrying them across the
-upgrade.
+### Idempotent persistent-term insertion
 
-Map order remains undefined, but OTP 29.0 makes all standard iteration forms
-produce a given map's elements in the same order. This aligns
-`maps:keys/1`, `maps:values/1`, `maps:to_list/1`, default iterators, and map
-comprehensions. Do not infer that the order is sorted or stable across maps.
+Since 28.4, `persistent_term:put_new/2` returns quickly when the same key and
+value are already present. It raises `badarg` when the key exists with a
+different value:
 
-`gb_sets:from_ordset/1` and `gb_trees:from_orddict/1` now check their input and
-reject unordered values instead of building invalid structures. For example,
+```erlang
+persistent_term:put_new(config, Config).
+```
+
+## Work with collections
+
+### Expanded `array` API and serialization boundary
+
+Since 29.0, `array` adds:
+
+- `prepend/2`, `append/2`, and `concat/1,2`;
+- `slice/3`, `shift/2`, and `from/2,3`;
+- index-bounded traversals such as `foldl/5`; and
+- map-fold families such as `mapfoldl/3` and `sparse_mapfoldr/5`.
+
+Its internal representation changed. Array terms serialized with
+`term_to_binary/1` on earlier releases are incompatible and must be rebuilt
+rather than carried through the upgrade unchanged.
+
+### Consistent but undefined map iteration
+
+Since 29.0, `maps:keys/1`, `maps:values/1`, `maps:to_list/1`, default
+iterators, and map comprehensions produce a given map's elements in the same
+order. The order remains undefined: it is neither sorted nor a stability
+guarantee.
+
+### Checked ordered construction
+
+Since 29.0, `gb_sets:from_ordset/1` and `gb_trees:from_orddict/1` reject
+unordered input instead of creating invalid structures. For example,
 `gb_sets:from_ordset([3,2,1])` raises `badarg` with reason `not_ordset`.
 
-The new `graph` module is a persistent functional counterpart to `digraph`
-and `digraph_utils`. Modifications return new graphs while older values remain
+### Persistent functional graphs
+
+Since 29.0, `graph` is a persistent functional counterpart to `digraph` and
+`digraph_utils`. A modification returns a new graph while prior values remain
 usable:
 
 ```erlang
@@ -211,17 +245,21 @@ G2 = graph:add_vertex(G1, b),
 G3 = graph:add_edge(G2, a, b).
 ```
 
-In OTP 28.4, `persistent_term:put_new/2` returns quickly if the same key and
-value are already present. If the key exists with a different value, it
-raises `badarg`:
+## Compile and transfer regular expressions
 
-```erlang
-persistent_term:put_new(config, Config).
-```
+Since 28.0, `re` uses PCRE2. Pattern validation is stricter: invalid escapes
+such as `\M`, `\i`, `\B`, or `\8` can raise `badarg`. Unicode property
+results can change with updated property data, and branch-reset groups can
+change `re:split/3` output. Retest stored patterns and result assumptions.
 
-## Code loading
+The internal value returned by `re:compile/2` is not safe to reuse across
+nodes or OTP versions. Since 28.1, use the supported export/import path for
+compiled regular expressions when transferring them between Erlang node
+instances; never transfer the internal value directly.
 
-The current working directory is the last entry in the OTP 29.0 default code
-path. A BEAM in `.` no longer takes precedence over an OTP or application
-module unless code explicitly changes the path. Make development overrides
-and test doubles explicit.
+## Reject malformed External Term Format
+
+Since 29.0.4, `binary_to_term` no longer corrupts the heap when an invalid
+tuple declares an arity of 2^31 or larger, and crafted ETF payloads no longer
+crash ERTS. Continue treating untrusted term decoding as a security boundary
+and do not depend on former crash behavior.

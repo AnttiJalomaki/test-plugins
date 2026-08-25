@@ -8,95 +8,96 @@ metadata:
 ---
 
 
-
 # Cloudflare Workers Knowledge Patch
+
+Use this skill when implementing, migrating, testing, or deploying Cloudflare
+Workers. Start with the compatibility date and Wrangler configuration, then
+open only the reference files relevant to the task.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [Wrangler and deployment](references/wrangler-and-deployment.md) | Wrangler v4 migration, local and remote commands, authentication profiles, generated runtime types |
-| [Vite development and testing](references/vite-development-and-testing.md) | Vite plugin configuration, auxiliary Workers, build deployment, production-build integration tests |
-| [Runtime compatibility](references/runtime-compatibility.md) | Compatibility-date gates, Fetch and Cache behavior, JavaScript and stream APIs, tracing, email, Dynamic Workers |
-| [Node.js compatibility](references/nodejs-compatibility.md) | `nodejs_compat`, process and environment behavior, modules and stubs, timers, performance, API corrections |
-| [RPC and WebSockets](references/rpc-and-websockets.md) | RPC entrypoints and capabilities, ownership, pipelining, placement, message limits, WebSocket behavior |
-| [Static Assets and Pages migration](references/static-assets-and-pages-migration.md) | Asset routing and bindings, Pages conversion, exclusions, builds, previews, headers, redirects, domains |
+| --- | --- |
+| [runtime-compatibility.md](references/runtime-compatibility.md) | Compatibility gates, Fetch and Cache behavior, JavaScript and stream APIs, Access, tracing, Dynamic Workers |
+| [nodejs-compatibility.md](references/nodejs-compatibility.md) | `nodejs_compat`, process and environment behavior, native APIs, stubs, timers, runtime types |
+| [rpc-and-websockets.md](references/rpc-and-websockets.md) | Workers RPC capabilities and ownership, pipelining, cross-language calls, WebSocket behavior |
+| [static-assets-and-pages-migration.md](references/static-assets-and-pages-migration.md) | Static Assets routing and deployment, Pages migration, preview and domain caveats |
+| [vite-development-and-testing.md](references/vite-development-and-testing.md) | Vite plugin configuration, auxiliary Workers, production-build integration tests, local traces |
+| [wrangler-and-deployment.md](references/wrangler-and-deployment.md) | Wrangler v4 migration, local versus remote resources, authentication, types, startup inspection, Builds |
 
-## Use this patch
+## Triage compatibility-date changes first
 
-1. Read the Wrangler reference before upgrading to Wrangler v4, scripting a
-   resource command, selecting an account, or committing generated runtime
-   types.
-2. Read the runtime and Node.js references before changing a compatibility date
-   or flag. A date change can alter request, module, stream, and serialization
-   behavior together.
-3. Read the RPC and WebSocket reference before passing stubs, streams, requests,
-   responses, or application-defined objects across a binding.
-4. Read the Static Assets reference before replacing Workers Sites or Pages.
-   Asset-first routing and Worker-first middleware must be configured
-   deliberately.
-5. Read the Vite reference when local behavior must match `workerd`, when a
-   build contains auxiliary Workers, or when tests need a production bundle.
+Before changing code, read `compatibility_date` and `compatibility_flags` from
+the active Wrangler configuration. Many runtime differences below are date
+gated and have explicit rollback flags.
 
-## Breaking changes and migration priorities
+For dates from `2026-08-04`, Node.js compatibility is on by default. Opting out
+requires both flags:
 
-### Migrate before adopting Wrangler v4
+```jsonc
+{
+  "compatibility_date": "2026-08-04",
+  "compatibility_flags": ["no_nodejs_compat", "no_nodejs_compat_v2"]
+}
+```
 
-Wrangler v4 does not support Node.js 16 and follows the Node.js release
-lifecycle. Its bundled esbuild moves from 0.17.19 to 0.24, wildcard dynamic
-imports include every matching file, and later Wrangler minor releases may
-change the pre-1.0 esbuild version.
+Earlier dates do not change. Positive Node.js compatibility flags on a new
+date are redundant and local tooling may ignore them.
 
-Replace removed interfaces:
+When upgrading an existing Worker, specifically regression-test:
 
-| Removed | Replacement |
-|---|---|
+- `process.env` population at `2025-04-01` with `nodejs_compat`.
+- Static Asset navigation fallback ordering at `2025-04-01`.
+- cross-origin `Authorization` stripping at `2025-09-01`.
+- optional runtime properties becoming present with `undefined` at
+  `2025-12-03`.
+- `require()` default-export interop at `2026-01-22`.
+- iterable request and response bodies at `2026-02-19`.
+- WebSocket close, binary, and half-open behavior in March 2026.
+- Node-compatible timer handles at `2026-02-10`.
+
+See [runtime compatibility](references/runtime-compatibility.md) and
+[Node.js compatibility](references/nodejs-compatibility.md) for flags and
+edge cases.
+
+## Migrate to Wrangler v4
+
+Wrangler v4 requires a supported Node.js release and no longer supports
+Node.js 16. Its bundled esbuild moved from 0.17.19 to 0.24; minor Wrangler
+updates may also move pre-1.0 esbuild versions and alter bundling. Wildcard
+dynamic imports include every matching file, so inspect bundle contents.
+
+Replace removed commands and settings:
+
+| Removed or deprecated | Use |
+| --- | --- |
 | `legacy_assets` | Static Assets |
 | `node_compat` | `nodejs_compat` |
 | `getBindingsProxy()` | `getPlatformProxy()` |
-| `publish` | `deploy` |
-| `pages publish` | `pages deploy` |
-| `generate` | `npm create cloudflare@latest` |
+| `wrangler publish` | `wrangler deploy` |
+| `wrangler pages publish` | `wrangler pages deploy` |
+| `wrangler generate` | `npm create cloudflare@latest` |
 | `wrangler version` | `wrangler --version` |
+| `usage_model` | Remove it; it has no effect |
 
-Remove `usage_model`; it has no effect. Workers Sites and service environments
-using `legacy_env` are deprecated in favor of Static Assets and Wrangler
-environments.
+Workers Sites and service environments using `legacy_env` are deprecated;
+prefer Static Assets and Wrangler environments.
 
-### Make remote resource access explicit
-
-Wrangler commands capable of both local and remote operation default to local.
-Pass `--remote` when a KV or R2 script intends to access account data:
+Resource commands default to local operation. Add `--remote` when a command
+must operate on account data:
 
 ```sh
 wrangler kv key get --binding MY_KV "my-key" --remote
 ```
 
-### Audit behavior when advancing compatibility dates
+Read [Wrangler and deployment](references/wrangler-and-deployment.md) before
+changing authentication, generated types, Builds, or deployment commands.
 
-These gates are especially likely to require code changes:
+## Configure Static Assets deliberately
 
-| Date | Behavior |
-|---|---|
-| `2025-04-01` | Bindings populate `process.env`; Static Assets navigation fallback precedes the Worker unless Worker-first routing applies |
-| `2025-09-01` | Cross-origin redirects strip `Authorization`; end-of-life Node APIs are removed under `nodejs_compat` |
-| `2025-12-03` | Optional runtime fields may exist with value `undefined` |
-| `2026-01-20` | RPC parameter stubs are duplicated instead of transferred |
-| `2026-01-22` | `require()` returns a default export when present |
-| `2026-02-19` | Iterable request and response bodies stream instead of being coerced |
-| `2026-03-03` | Rejection timing and WebSocket close-reason validation change |
-| `2026-03-10` | WebSockets automatically answer Close frames |
-| `2026-03-17` | WebSocket binary messages default to `Blob` |
-| `2026-03-24` | Encoding streams and writable-writer backpressure behavior change |
-
-Use the documented rollback flag only while adapting code; do not assume a
-single flag restores unrelated gates from the same date.
-
-### Replace Pages routing assumptions explicitly
-
-Workers Static Assets does not infer SPA or 404 fallback from files. Configure
-`not_found_handling`, and configure `run_worker_first` for authentication,
-logging, APIs, or middleware that must run before assets:
+`assets.directory` deploys static files and Worker code together. Exact asset
+matches bypass the Worker by default; misses invoke `main`. Add an asset
+binding only when Worker code must delegate to the asset service:
 
 ```jsonc
 {
@@ -110,66 +111,19 @@ logging, APIs, or middleware that must run before assets:
 }
 ```
 
-Omit `binding` for an assets-only Worker. With a `main`, the Worker can delegate
-to `env.ASSETS.fetch(request)`.
+An assets-only Worker must omit `binding`. Unlike Pages, Workers does not infer
+SPA or 404 behavior, so set `not_found_handling`. From `2025-04-01`, navigation
+fallback can run before the Worker unless `run_worker_first` applies.
 
-### Treat Node stubs as import compatibility only
+For a Pages migration, preserve the compatibility date, replace
+`pages_build_output_dir` with `assets.directory`, and explicitly recreate
+function-first routes. See
+[Static Assets and Pages migration](references/static-assets-and-pages-migration.md).
 
-Several `nodejs_compat` modules import successfully without exposing their host
-facility. Do not infer functional child processes, worker threads, SQLite,
-Inspector, or similar facilities from successful imports. Module-specific
-enable and disable flags control individual stub rollouts.
+## Choose the right development and test path
 
-### Update RPC ownership assumptions
-
-RPC calls are asynchronous even when the callee is synchronous. Functions and
-`RpcTarget` instances cross as capabilities, while streams, requests, and
-responses transfer ownership.
-
-```ts
-using counter = await env.COUNTERS.create();
-await counter.increment();
-const value = await counter.value;
-```
-
-Since `2026-01-20`, a stub in call parameters is duplicated for the call, so
-forwarding no longer disposes the caller's stub. A callee retaining a received
-parameter stub beyond the call must still save `stub.dup()`.
-
-### Adapt WebSocket close and binary handling
-
-From `2026-03-10`, an incoming Close frame triggers an automatic reply and the
-socket is already `CLOSED` before the `close` event. Use
-`ws.accept({ allowHalfOpen: true })` only for an upgrade-created socket that
-must preserve the old half-open phase.
-
-From `2026-03-17`, set the type before accepting when `ArrayBuffer` is required:
-
-```ts
-ws.binaryType = "arraybuffer";
-ws.accept();
-```
-
-Durable Object hibernatable WebSocket handlers continue receiving
-`ArrayBuffer`.
-
-## High-value configuration
-
-### Generate types from actual Worker configuration
-
-Run `wrangler types` to generate `worker-configuration.d.ts` from compatibility
-dates, flags, bindings, and module rules. Include it with
-`compilerOptions.types`, add `@types/node` for `nodejs_compat`, and detect drift
-in CI:
-
-```sh
-wrangler types --check
-```
-
-The root of `@cloudflare/workers-types` v5 contains the latest stable types;
-experimental APIs are under `/experimental`, and dated entrypoints are gone.
-
-### Use the Workers Vite plugin for runtime-faithful development
+The Cloudflare Vite plugin executes application code in `workerd` while
+retaining Vite HMR:
 
 ```ts
 import { cloudflare } from "@cloudflare/vite-plugin";
@@ -178,53 +132,83 @@ import { defineConfig } from "vite";
 export default defineConfig({ plugins: [cloudflare()] });
 ```
 
-Application code runs in `workerd` while Vite retains HMR. The plugin supports
-SPA, SSR, static, and API applications. Deploy every auxiliary Worker
-separately; deploying the entry Worker does not deploy the others.
+Requests enter through the main Worker even when `auxiliaryWorkers` are
+configured. Builds emit separate subdirectories, and each auxiliary Worker
+must be deployed separately.
 
-### Select authentication intentionally
+Use Wrangler's `createTestHarness()` for integration tests against production
+builds. It supersedes `unstable_startWorker()` and `unstable_dev()` and can
+dispatch requests, reset storage, expose logs, mock outbound requests, and
+integrate with Playwright.
 
-Named OAuth profiles can be activated for a directory tree:
+See [Vite development and testing](references/vite-development-and-testing.md)
+for configuration precedence, persisted state, inspector defaults, tunnels,
+and harness lifecycle.
 
-```sh
-wrangler auth create client-a
-wrangler auth activate client-a ~/clients/client-a
-wrangler deploy --profile client-a
+## Use RPC as capability-based async calls
+
+RPC requires compatibility date `2024-04-03` or later, or the `rpc` flag.
+Public `WorkerEntrypoint` methods are callable through Service Bindings and
+Durable Object methods through object bindings. Every remote call is async,
+even when the implementation is synchronous.
+
+Functions become callable stubs in their originating Worker. Classes crossing
+RPC must extend `RpcTarget`; accessing a remote property also requires
+`await`. Prefer one `RpcTarget` over plain objects containing many functions,
+because each plain function creates a separate stub.
+
+Use promise pipelining to avoid an unnecessary round trip:
+
+```ts
+using pendingCounter = env.COUNTERS.create();
+await pendingCounter.increment();
 ```
 
-Keep `account_id` when a project should be constrained to one account.
-`CLOUDFLARE_API_TOKEN` takes precedence in automation.
+Streams, `Request`, and `Response` transfer ownership. Clone or `tee()` values
+that the sender still needs. Forwarded stubs cannot be persisted beyond the
+participating execution contexts. RPC ignores Smart Placement.
 
-## Implementation checklist
+Read [RPC and WebSockets](references/rpc-and-websockets.md) for stub lifetime,
+parameter duplication, message limits, Python interoperability, and WebSocket
+compatibility gates.
 
-- Inspect `compatibility_date` and `compatibility_flags` before explaining
-  runtime behavior.
-- Separate Wrangler CLI locality from Vite remote-binding defaults.
-- Distinguish implemented Node APIs from import-only stubs.
-- Test optional fields by value, such as `obj.key !== undefined`, rather than
-  with property-presence checks.
-- Clone a `Request` or `Response`, or `tee()` a readable stream, before an RPC
-  send when the caller still needs it.
-- Deploy Vite auxiliary Workers from their generated `dist` configurations.
-- Put `.assetsignore` inside the configured asset directory.
-- Charge and latency-model Worker-first asset middleware as normal Worker
-  invocations.
-- Use `createTestHarness()` for tests against production-built Workers.
+## Handle WebSocket gates explicitly
 
-## Detailed guidance
+The maximum WebSocket message size is 32 MiB. Client failures surface as
+catchable JavaScript exceptions.
 
-- Read [Wrangler and deployment](references/wrangler-and-deployment.md) for the
-  complete CLI migration, authentication, and type-generation behavior.
-- Read [Vite development and testing](references/vite-development-and-testing.md)
-  for plugin resolution, state, inspector, remote bindings, auxiliary builds,
-  and the integration-test harness.
-- Read [Runtime compatibility](references/runtime-compatibility.md) before
-  changing dates or flags that affect fetch, cache, streams, JavaScript APIs,
-  tracing, email, or Dynamic Workers.
-- Read [Node.js compatibility](references/nodejs-compatibility.md) for the
-  module matrix, process changes, environment population, stubs, timers, and
-  Node-specific corrections.
-- Read [RPC and WebSockets](references/rpc-and-websockets.md) for capabilities,
-  ownership, forwarding, pipelining, placement, and socket protocol changes.
-- Read [Static Assets and Pages migration](references/static-assets-and-pages-migration.md)
-  for routing, project conversion, exclusions, builds, previews, and domains.
+From `2026-03-03`, close reasons over 123 UTF-8 bytes throw `SyntaxError`. From
+`2026-03-10`, receipt of a Close frame sends the reciprocal frame and marks the
+socket closed before the event. A proxy requiring the old half-open phase must
+accept an upgrade-created socket with `{ allowHalfOpen: true }`.
+
+From `2026-03-17`, `binaryType` defaults to `"blob"`. Set it to
+`"arraybuffer"` before `accept()` when needed. Hibernatable Durable Object
+handlers continue receiving `ArrayBuffer`.
+
+## Generate runtime types from configuration
+
+Prefer `wrangler types` so declarations match the Worker's compatibility date,
+flags, bindings, and module rules:
+
+```sh
+wrangler types
+wrangler types --check
+```
+
+Include `worker-configuration.d.ts` through `compilerOptions.types`; add
+`@types/node` with Node.js compatibility. The root of
+`@cloudflare/workers-types` v5 contains current stable types, experimental APIs
+live under `/experimental`, and dated package entrypoints no longer exist.
+
+## Validate before deployment
+
+1. Confirm the active Wrangler configuration and compatibility date.
+2. Run `wrangler types --check` when generated declarations are committed.
+3. Exercise the production bundle through `createTestHarness()`.
+4. Inspect startup cost with `wrangler check startup` when initialization is
+   material.
+5. Use local trace and log correlation to find binding and subrequest latency.
+6. Deploy auxiliary Workers individually, then deploy the entry Worker.
+7. Pass `--remote` only for resource commands intentionally targeting account
+   data.

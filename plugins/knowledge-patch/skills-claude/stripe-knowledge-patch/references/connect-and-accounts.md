@@ -2,73 +2,121 @@
 
 ## Accounts v2
 
-### Unified identities
+### Configuration and identity model
 
-Accounts v2 represents merchant, customer, and recipient roles as configurations of one `/v2/core/accounts` object. Do not maintain parallel mappings between connected-account and Customer objects when a unified Account is appropriate.
+Accounts v2 uses `/v2/core/accounts` and is documented with
+`Stripe-Version: 2026-07-29.preview`. One Account can add `merchant`, `customer`,
+and `recipient` configurations so it can accept payments, be charged as a
+Customer, or receive transfers without recollecting identity.
 
-Any API that accepts `customer` also accepts `customer_account` with an Account whose customer configuration is active.
+Capabilities live below configurations. `merchant` includes `card_payments`
+and `stripe_balance.payouts`; `recipient` includes
+`stripe_balance.stripe_transfers`, which is required for indirect charges.
 
-```sh
-curl https://api.stripe.com/v1/setup_intents \
-  -u "$STRIPE_SECRET_KEY:" \
-  -H "Stripe-Version: 2025-09-30.preview" \
-  -d customer_account=acct_123 \
-  -d "payment_method_types[]=card" \
-  -d confirm=true \
-  -d usage=off_session
-```
+### Include-dependent values
 
-### Configurations and capabilities
+Some response properties contain values while others return `null` regardless
+of their actual values. Request needed paths such as
+`configuration.merchant`, `identity`, and `requirements` with `include`. Never
+interpret an include-dependent `null` as proof that the property is unset.
 
-- The `merchant` configuration carries capabilities such as `card_payments` and `stripe_balance.payouts`.
-- The `recipient` configuration carries `stripe_balance.stripe_transfers`.
-- `recipient.stripe_balance.stripe_transfers` is required for indirect charges.
+### Customer accounts and v1 interoperability
 
-### Include-dependent responses
+Where a request accepts a Customer as `customer`, an Accounts v2 object with
+customer configuration can be supplied as `customer_account=<acct_id>`.
 
-Accounts v2 can return properties as `null` regardless of stored value unless their paths are requested with `include`. Request the data needed by the code, including paths such as:
+A v2 Account ID can be passed to Accounts v1 endpoints. Those endpoints return
+a v1-shaped object while updating the corresponding v2 properties. Continue to
+use v1 for OAuth, recipient service agreements, Treasury or Issuing
+capabilities, and specified deprecated or preview payment-method capabilities.
 
-- `configuration.customer`;
-- `configuration.merchant`;
-- `identity`; and
-- `requirements`.
+## Connect account contracts
 
-Treat omitted inclusion and genuinely absent values as different states in clients and tests.
+### Risk details and Account Link defaults (`2024-09-30.acacia`)
 
-## Connect requirements and balance settings
+Connected Accounts expose additional risk-verification details. Account Link
+API v1 applies additional defaults; revalidate the resulting link configuration
+when code previously depended on omitted values.
 
-### Verification and KYC
+### Verification and identity (`2025-03-31.basil`)
 
-- Connected Accounts expose risk-verification details in `2024-09-30.acacia`.
-- In `2025-03-31.basil`, Connect adds error codes for required verifications and exposes more Account KYC data.
-- `Person.political_exposure` changes from free-form text to an enum; update validators and preserve unknown enum handling.
-- The Balance Settings API exposes account balance and payout configuration in `2025-09-30.clover`.
-- Connect adds a distinct business-type validation error.
+Connect adds error codes for required verifications and exposes more Account
+KYC data. The Person object's political-exposure property changes from a
+free-form string to an enum. Update generated types and keep enum handling
+tolerant.
 
-### Returned requirements
+### Business validation and balance settings (`2025-09-30.clover`)
 
-In `2026-03-25.dahlia`, the Capabilities API exposes risk requirements. Account Sessions no longer require external-account collection for some connected accounts. Onboarding should follow the returned requirements rather than always forcing external-account collection.
+Connect adds a distinct business-type validation error. It also adds a Balance
+Settings API for Account balance and payout settings. Accept the validation case
+and use the API when configuring those settings.
 
-### Account Link defaults
+### Singapore address fields (`2026-07-29.dahlia`)
 
-Account Link API v1 applies additional defaults when fields are omitted (`2024-09-30.acacia`). Code that must distinguish an explicit choice from a server default should send the desired value.
+Account address schemas expand for Singapore compliance in both Accounts v1 and
+Accounts v2. Synchronization and validation must preserve the additions across
+either API generation.
+
+### Smart Disputes components (`2026-07-29.dahlia`)
+
+Account Session embedded components add Smart Disputes management. Platforms
+can expose it through component configuration.
+
+### Rejection and reversal (`2026-07-29.dahlia`)
+
+Platforms can reject Connected Accounts that retain non-zero balances and can
+control whether rejection pauses payouts. A reversal operation can undo a
+platform rejection, so do not model rejection as irreversible.
 
 ## Financial Connections
 
-### Filters and session creation
+### Collection filters (`2024-09-30.acacia`)
 
-Financial Connections adds Account subcategory filtering and expands filters accepted by Session creation in `2024-09-30.acacia`.
+Financial Connections supports account-subcategory filtering and expands
+Session filters. Constrain returned Accounts during collection instead of
+filtering only after retrieval when appropriate.
 
-### PaymentMethod creation failures
+### PaymentMethod creation failures (`2025-09-30.clover`)
 
-Creating PaymentMethods from Financial Connections Accounts can return additional failure codes in `2025-09-30.clover`. Surface and branch on these cases rather than reducing them to unknown errors.
+Creating PaymentMethods from Financial Connections Accounts adds failure error
+codes. Error handling must be forward-compatible with those creation failures.
 
-## Identity and Treasury
+### Explicit Session configuration (`2026-07-29.dahlia`)
 
-- Identity Verification Sessions can link to Customers (`2024-09-30.acacia`).
-- Outbound Treasury wires expose CHIPS tracking details.
-- ReceivedDebit failures add a classification for international transactions.
+Financial Connections Sessions add explicit configuration options. Declare the
+intended configuration at creation instead of relying entirely on implicit
+behavior.
 
-## Payouts
+### Deactivation events (`2026-07-29.dahlia`)
 
-Payout Methods v2 publicly preview foreign-currency payout support in `2026-03-25.dahlia`. Keep preview payout-method schemas separated from stable Connect payout models.
+Deactivation notifications cover both Accounts and Authorizations. Integrations
+can react to those lifecycle changes instead of discovering them only through a
+later API call.
+
+## Balances and transactions
+
+### Transaction classifications (`2025-03-31.basil`)
+
+Balance Transactions add types for payments made with a Stripe balance, and
+Customer balance transactions add types. Exhaustive handling must accept the
+new classifications.
+
+## Customer identity
+
+### Business and individual names (`2025-09-30.clover`)
+
+Customers can store business and individual names. Preserve both in Customer
+schemas and synchronization instead of assuming a single personal-name shape.
+
+### Verification Session attribution (`2024-09-30.acacia`)
+
+Identity Verification Sessions can be linked to Customers. Preserve that
+association when ingesting or creating Sessions.
+
+## Treasury attribution and failures
+
+### Wires and received debits (`2024-09-30.acacia`)
+
+Treasury outbound wires expose CHIPS tracking details. ReceivedDebit failures
+add a value for international-transaction failures. Preserve the tracking data
+and accept the expanded failure enum.

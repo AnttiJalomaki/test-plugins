@@ -10,85 +10,68 @@ metadata:
 
 # Flux CD Knowledge Patch
 
-Use this skill when upgrading, configuring, or troubleshooting Flux controllers,
-APIs, authentication, reconciliation, artifacts, image automation, or event
-delivery. Start with the upgrade checks because removed APIs and changed Helm
-defaults can block reconciliation or alter release behavior.
+Use this skill when writing, reviewing, migrating, or troubleshooting Flux
+manifests, controller flags, CLI workflows, source authentication, image
+automation, notification delivery, or Flux Operator installations.
+
+Prefer the project's installed CRDs, controller versions, manifests, and live
+behavior when they disagree with this guidance. Flux controllers and CRDs are
+upgraded as a coordinated set, and feature gates must be enabled on the
+controller that implements the feature.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrades-and-platforms.md](references/upgrades-and-platforms.md) | Required API migrations, breaking defaults, feature migrations, Kubernetes and OpenShift support |
-| [kustomizations-and-helm.md](references/kustomizations-and-helm.md) | Health, dependencies, deletion, apply ordering, decryption, values, retries, inventory, config watches |
-| [sources-auth-and-artifacts.md](references/sources-auth-and-artifacts.md) | Git and OCI sources, GitHub Apps, Workload Identity, signing, verification, ArtifactGenerator |
-| [image-automation.md](references/image-automation.md) | Stable image APIs, digest pinning, providers, commit templates, sparse checkout, signing |
-| [notifications-and-receivers.md](references/notifications-and-receivers.md) | Event metadata, commit status, providers, OpenTelemetry, pull-request comments, Receiver filtering and OIDC |
-| [cli-and-operator.md](references/cli-and-operator.md) | Debug commands, artifact and plugin commands, Receiver triggering, Flux Operator Web UI |
+| [CLI and Operator](references/cli-and-operator.md) | Debug commands, artifact commands, plugins, migrations, Operator UI |
+| [Image automation](references/image-automation.md) | Stable APIs, digest pinning, cloud auth, commit templates, refspec safety |
+| [Kustomizations and Helm](references/kustomizations-and-helm.md) | Health, apply, deletion, SOPS, values, dependencies, retries, inventory |
+| [Notifications and Receivers](references/notifications-and-receivers.md) | Event metadata, commit statuses, comments, transports, traces, webhook auth |
+| [Sources, auth, and artifacts](references/sources-auth-and-artifacts.md) | Git and OCI sources, Workload Identity, verification, ArtifactGenerator |
+| [Upgrades and platforms](references/upgrades-and-platforms.md) | Required migrations, removed APIs, CRD coordination, support windows |
 
-## Upgrade checks
+## Upgrade safety first
 
-### Migrate stored APIs before installing new CRDs
+Before upgrading, inspect stored API versions and run:
 
-Run the migration while the old APIs are still served:
-
-```bash
+```shell
 flux migrate
 ```
 
-Then verify that stored objects use APIs retained by the target release. The
-critical removal boundaries are:
+The 2.7, 2.8, and 2.9 CRDs remove successive beta APIs. A manifest's current
+`apiVersion` does not prove that the object stored in etcd has been migrated.
+Read [upgrades and platforms](references/upgrades-and-platforms.md) for the
+exact removed versions.
 
-- Before Flux 2.7, migrate objects stored as the `v1beta1` source,
-  kustomize, Helm, image, or notification APIs.
-- Before Flux 2.8, migrate the remaining `v1beta2` source, kustomize, and Helm
-  APIs.
-- Before Flux 2.9, migrate `image.toolkit.fluxcd.io/v1beta2` and
-  `notification.toolkit.fluxcd.io/v1beta2` objects.
+Upgrade CRDs with their controllers. This is especially important when using
+`ArtifactGenerator` or `ImageUpdateAutomation`, whose schemas changed in a
+2.9 maintenance release. Repository manifests can be migrated with
+`flux migrate -f` where supported.
 
-See [upgrades-and-platforms.md](references/upgrades-and-platforms.md) for the
-exact removed API groups and the GCR Receiver Secret requirement.
+### Breaking Helm post-render behavior
 
-### Preserve Helm behavior deliberately
+The HelmRelease post-render default is `combined`, so hooks pass through
+post-rendering. A chart that requires the former behavior must explicitly use
+`nohooks` before the controller upgrade.
 
-Helm v4 changes new releases to server-side apply and makes kstatus health
-checking the default. Existing stored releases remain on client-side apply
-until explicitly opted in. Enable `UseHelm3Defaults` when the earlier apply and
-health behavior is required.
+### Image automation refspec restrictions
 
-The HelmRelease post-render default later changes from `nohooks` to `combined`.
-If hooks must bypass post-rendering, set the strategy explicitly to `nohooks`
-before the upgrade.
+Remove force-update and ref-deletion operations from
+`ImageUpdateAutomation` refspecs. They are rejected by current controllers.
 
-### Update image automation manifests and templates
+### Registry provider validation
 
-Use `image.toolkit.fluxcd.io/v1` for `ImageRepository`, `ImagePolicy`, and
-`ImageUpdateAutomation`. Replace removed image-reflector-controller `autologin`
-flags with `ImageRepository.spec.provider`. Replace commit-template uses of
-`.Updated` and `.Changed.ImageResult` with `.Changed.FileChanges`,
-`.Changed.Objects`, or `.Changed.Changes`.
+For `OCIRepository` and `ImageRepository`, set `spec.provider` to `aws`,
+`azure`, or `gcp` only when the registry URL matches and automatic OIDC is
+intended. For public registries and pull-secret authentication, omit it or use
+`generic`.
 
-## High-value configuration
+## Kustomization health and ownership
 
-### Reconcile when referenced configuration changes
-
-Add this label to a referenced ConfigMap or Secret:
-
-```yaml
-metadata:
-  labels:
-    reconcile.fluxcd.io/watch: Enabled
-```
-
-It can trigger immediate reconciliation for Kustomization substitution,
-decryption, and kubeConfig references; HelmRelease values and kubeConfig
-references; and Receiver Secrets. At controller scope,
-`--watch-configs-label-selector=owner!=helm` watches every matching reference
-without requiring the per-object label.
-
-### Extend health and dependency readiness with CEL
-
-Teach a Kustomization how to evaluate a custom kind:
+Use `spec.healthCheckExprs` to teach Flux readiness semantics for custom
+resources. Select the API version and kind, then define CEL `failed` and
+`current` expressions. With `wait: true`, dependents wait until resources are
+current.
 
 ```yaml
 spec:
@@ -100,14 +83,11 @@ spec:
       current: "status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')"
 ```
 
-Dependency entries for both Kustomizations and HelmReleases can also use CEL
-readiness expressions. A health expression can omit `kind` when it should
-apply to every kind in an API group.
+For an API-group-wide rule, omit `kind`. Dependency entries in
+`Kustomization.spec.dependsOn` and `HelmRelease.spec.dependsOn` can also use
+CEL readiness expressions.
 
-### Ignore fields owned by another controller
-
-Use `Kustomization.spec.ignore` to exclude selected fields from drift detection
-and apply:
+Use `Kustomization.spec.ignore` when another controller owns selected fields:
 
 ```yaml
 spec:
@@ -118,95 +98,141 @@ spec:
         - /spec/replicas
 ```
 
-This lets an HPA, for example, own `/spec/replicas` without Flux fighting it.
+This keeps fields such as HPA-managed replicas out of drift detection and
+apply. See [Kustomizations and Helm](references/kustomizations-and-helm.md) for
+deletion policies, apply staging, decryption, and feature-gate interactions.
 
-### Make failed Helm releases recover promptly
+## Helm reconciliation defaults
 
-Use the `RetryOnFailure` install or upgrade strategy. If enabling
-`CancelHealthCheckOnNewRevision` for helm-controller, also enable
-`DefaultToRetryOnFailure`; otherwise a cancellation can leave a release stuck
-under the no-retry default. A canceled check reports `HealthCheckCanceled` in
-the `Ready` condition.
+New Helm releases use Helm v4 server-side apply and kstatus health checks.
+Existing stored releases continue with client-side apply until opted in. Use
+the `UseHelm3Defaults` feature gate only when the previous apply and health
+behavior is required.
 
-## Authentication and supply-chain choices
+For quicker recovery, enable `CancelHealthCheckOnNewRevision` on
+helm-controller together with `DefaultToRetryOnFailure`. Cancellation can be
+caused by source or spec changes, watched ConfigMaps or Secrets, manual
+reconciliation, or Receiver triggers, and reports `HealthCheckCanceled`.
 
-### Match registry providers to repository URLs
+Use `RetryOnFailure` for install and upgrade retries. Inspect
+`HelmRelease.status.inventory` to see the managed object set.
 
-For `OCIRepository` and `ImageRepository`, use `aws`, `azure`, or `gcp` only
-when the registry matches and automatic OIDC authentication is intended. For a
-public repository or image-pull-secret authentication, omit `.spec.provider`
-or set it to `generic`; mismatches are rejected.
+`HelmRelease.valuesFrom` literal mode treats the entire referenced key as one
+string, matching `helm install --set-literal`; it does not parse types or
+expand dotted property names.
 
-### Prefer object-level identity where available
+## Source and identity choices
 
-The `ObjectLevelWorkloadIdentity` gate supports per-object and per-tenant
-identities. Applicable paths include Kustomization SOPS KMS access, OCI and
-image registries, buckets, Azure DevOps Git repositories, notification
-providers, and remote EKS, AKS, or GKE reconciliation. Newer source flows also
-support AWS CodeCommit and Vault-compatible services through Kubernetes
-Workload Identity. Check the exact fields in
-[sources-auth-and-artifacts.md](references/sources-auth-and-artifacts.md).
+Use the stable `source.toolkit.fluxcd.io/v1` API for `OCIRepository`; migration
+from `v1beta2` requires only an `apiVersion` change. Git repositories support
+directory-based sparse checkout, HTTPS mutual TLS, GitHub App authentication,
+and several object-level Workload Identity paths.
 
-### Verify and sign with the intended trust model
+Create GitHub App credentials with:
 
-OCI artifact and container image verification supports Cosign v3. Source
-verification can use a private Sigstore trusted root for self-hosted Rekor and
-Fulcio. GitRepository verification accepts SSH-signed commits, while image
-automation and bootstrap can create SSH-signed commits.
+```shell
+flux create secret githubapp github-auth \
+  --app-id=1 \
+  --app-installation-id=2 \
+  --app-private-key=~/private-key.pem
+```
 
-## Artifact and image workflows
+Reference the Secret through `spec.secretRef.name`. Supported flows can look
+up the installation ID from the repository owner, so it need not always be
+provided. Read [sources, auth, and artifacts](references/sources-auth-and-artifacts.md)
+before choosing static credentials, controller identity, or object identity.
 
-### Compose or split artifacts
+## ArtifactGenerator workflows
 
-Enable the optional source-watcher during bootstrap or installation with
-`--components-extra=source-watcher`. `ArtifactGenerator` can combine
-GitRepository, OCIRepository, and Bucket content into `ExternalArtifact`
-objects, split monorepos by path-specific copy globs, and process Helm charts.
-`spec.pathPattern` can discover directories and use named captures in generated
-artifact names, labels, and copy rules.
+Install the optional source-watcher component with:
 
-### Pin image tags to observed digests
+```shell
+flux bootstrap ... --components-extra=source-watcher
+```
 
-Set `ImagePolicy.spec.digestReflectionPolicy: Always`. Image automation can
-then write `<registry>/<name>:<tag>@<digest>`. For resources that store image
-parts separately, use the `:name`, `:tag`, and `:digest` policy markers.
+`ArtifactGenerator` can combine Git, OCI, and Bucket content, split a monorepo
+into independently revised `ExternalArtifact` objects, and extract or modify
+Helm charts. `spec.pathPattern` discovers matching directories; named captures
+become variables in artifact names, labels, and copy rules.
 
-## Events, observability, and receivers
+Point a `Kustomization` source or a `HelmRelease.spec.chartRef` at an
+`ExternalArtifact`. Path-specific outputs prevent unrelated monorepo changes
+from triggering every deployment.
 
-### Carry deployment identity through events
+## Image digest pinning
 
-Annotations on Kustomizations and HelmReleases can add notification metadata.
-Use `event.toolkit.fluxcd.io/image` for the full updated image,
-`event.toolkit.fluxcd.io/change_request` for pull or merge request comments,
-and `event.toolkit.fluxcd.io/commit` for commit statuses.
+Set `ImagePolicy.spec.digestReflectionPolicy: Always` to track the latest
+digest. Image automation can then write
+`<registry>/<name>:<tag>@<digest>`. For resources that split image fields, use
+the `:name`, `:tag`, and `:digest` markers:
 
-Git status providers can compute a monorepo-safe identifier with
-`Provider.spec.commitStatusExpr`. An `otel` Provider turns source events into
-root spans and consuming Kustomization or HelmRelease events into child spans.
+```yaml
+image:
+  repository: docker.io/my-org/my-app # {"$imagepolicy": "flux-system:my-app:name"}
+  tag: latest # {"$imagepolicy": "flux-system:my-app:tag"}
+  digest: sha256:ec0119... # {"$imagepolicy": "flux-system:my-app:digest"}
+```
 
-### Secure and target Receiver triggers
+The image APIs are stable at `image.toolkit.fluxcd.io/v1`. Update old commit
+templates away from removed `.Updated` and `.Changed.ImageResult` fields.
+Details are in [image automation](references/image-automation.md).
 
-A Receiver can filter its declared resources with CEL. Generic Receivers can
-validate an OIDC ID token in place of an HMAC shared secret, and can be invoked
-with:
+## Reactive configuration
 
-```bash
+To reconcile immediately when a referenced ConfigMap or Secret changes, label
+that object:
+
+```yaml
+metadata:
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+```
+
+Alternatively, configure the relevant controller with
+`--watch-configs-label-selector=owner!=helm`. This applies to supported
+Kustomization, HelmRelease, and Receiver references; consult the detailed
+reference for the exact fields.
+
+## Notifications, status, and Receivers
+
+Flux object annotations can enrich notification events. Use
+`event.toolkit.fluxcd.io/commit` for commit status providers and
+`event.toolkit.fluxcd.io/change_request` for pull or merge request comment
+providers. Comment providers update a deduplicated deployment-status comment
+without an intermediary CI workflow.
+
+`Provider.spec.commitStatusExpr` can derive per-cluster or per-tenant status
+identifiers with CEL. `proxySecretRef` and `certSecretRef` supply proxy and
+mutual-TLS material. A Provider of type `otel` converts reconciliation events
+into related source-rooted traces.
+
+Receivers can filter resources with CEL. Generic Receivers can validate an
+OIDC ID token instead of an HMAC shared secret and can be invoked with:
+
+```shell
 flux trigger receiver
 ```
 
-## Debugging cautions
+See [notifications and Receivers](references/notifications-and-receivers.md)
+for provider types, GitHub App and cloud authentication, GCR requirements, and
+event metadata behavior.
 
-Inspect effective merged inputs with:
+## Debugging and operational tooling
 
-```bash
+Inspect fully merged configuration with:
+
+```shell
 flux debug kustomization --show-vars
 flux debug helmrelease --show-values
 ```
 
-These commands print values read from referenced Secrets in clear text. Treat
-terminal output, logs, captures, and copied diagnostics as sensitive.
+These commands print referenced Secret values in clear text. Treat terminal
+output, logs, and captured transcripts as sensitive.
 
-For HelmRelease inventory questions, inspect `.status.inventory`. For UI-based
-rollout, workload, and multi-pod log inspection, the Flux Operator Web UI uses
-Kubernetes RBAC and user impersonation; grant only the actions and log access
-the operator should have.
+The CLI supports independently versioned plugins under `~/fluxcd/plugins`.
+Pin versions or immutable digests in reproducible automation. The Flux
+Operator UI provides GitOps rollout views, workload dashboards, multi-pod and
+multi-container logs, and RBAC-guarded actions using user impersonation.
+
+Read [CLI and Operator](references/cli-and-operator.md) for stable artifact
+commands, plugin lifecycle commands, and UI authentication details.

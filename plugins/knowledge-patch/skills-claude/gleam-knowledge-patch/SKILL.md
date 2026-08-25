@@ -10,187 +10,182 @@ metadata:
 
 # Gleam Knowledge Patch
 
-Included topic batches: `language-tour`, `externals-and-ffi`, `conventions-and-patterns`, `tooling-and-configuration`, and `stdlib-release-history`.
+Use this skill for Gleam language, compiler, build-tool, package, standard-library,
+editor, target, and foreign-function-interface work where current compatibility
+details matter.
+
+## How to use this skill
+
+1. Identify whether the task concerns language behavior, editor actions, packaging,
+   conventions, standard-library migration, or target interoperation.
+2. Read the matching reference before proposing syntax, configuration, commands,
+   migrations, or foreign value representations.
+3. Apply only the guidance relevant to the requested target and workflow.
+4. Preserve explicit qualifications such as deprecation, target differences,
+   publication-only failures, and warnings versus errors.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [language-and-diagnostics.md](references/language-and-diagnostics.md) | Syntax and semantics, assertions, debugging, constants, guards, patterns, bit arrays, formatter behavior, compiler diagnostics |
-| [editor-and-refactoring.md](references/editor-and-refactoring.md) | Navigation, rename, generation, refactoring, completion, code actions, language-server operation |
-| [packages-build-and-config.md](references/packages-build-and-config.md) | Dependencies, publishing, Hex authentication and ownership, project layout, documentation, exports, CI, `gleam.toml` |
-| [targets-and-ffi.md](references/targets-and-ffi.md) | Erlang and JavaScript targets, shipments and escripts, source maps, externals, runtime representations, JavaScript interop |
-| [conventions-and-patterns.md](references/conventions-and-patterns.md) | Naming, annotations, imports, shared packages, tool configuration, source boundaries, Sans-I/O, opaque FFI types |
-| [stdlib-migrations-and-behavior.md](references/stdlib-migrations-and-behavior.md) | Removed and renamed APIs, package migrations, dynamic decoding, bit arrays, URI behavior, list and string edge cases |
+| [Language and diagnostics](references/language-and-diagnostics.md) | Language syntax and semantics, assertions, constants, patterns, guards, bit arrays, compiler warnings |
+| [Editor and refactoring](references/editor-and-refactoring.md) | Language-server navigation, generation, completion, rename, extraction, and pattern actions |
+| [Packages, build, and configuration](references/packages-build-and-config.md) | Dependencies, Hex, publishing, exports, project configuration, documentation, and build behavior |
+| [Targets and FFI](references/targets-and-ffi.md) | Erlang and JavaScript generation, deployments, source maps, external modules, and runtime representations |
+| [Standard-library migrations and behavior](references/stdlib-migrations-and-behavior.md) | Removed and replacement APIs, decoder changes, collections, strings, URI handling, sorting, and version requirements |
+| [Conventions and patterns](references/conventions-and-patterns.md) | Naming, annotations, errors, imports, shared types, configuration placement, Sans-I/O, and FFI boundaries |
 
-Read the reference matching the work before changing code. Treat the quick reference below as a migration checklist, not as a replacement for the detailed files.
+## Breaking changes and migrations
 
-## Breaking changes and deprecations
+### Hex authentication
 
-### Configuration spelling
+- Hex authentication uses OAuth2 exclusively, with MFA for write operations and
+  short-lived access tokens.
+- The first Hex use revokes legacy tokens stored by Gleam.
+- The password that encrypts local tokens must contain at least eight characters.
 
-Use snake case in `gleam.toml`:
+### Configuration spellings
 
-```toml
-[dev_dependencies]
-gleeunit = ">= 1.0.0 and < 2.0.0"
+- Use `dev_dependencies` and `tag_prefix` in `gleam.toml`.
+- The hyphenated `dev-dependencies` and `tag-prefix` forms still work but are
+  deprecated.
+- Use `gleam fix` to rewrite deprecated Gleam syntax across a project.
 
-[repository]
-tag_prefix = "my_package-v"
-```
+### Dynamic decoding
 
-`dev-dependencies` and `tag-prefix` still parse but are deprecated. New JavaScript options also use snake case, including `source_maps` and `typescript_declarations`.
+- Import decoder combinators from `gleam/dynamic/decode`, not `gleam/dynamic`.
+- The decoder module has its own error type and a revised
+  `new_primitive_decoder` API.
+- `dynamic.optional_field` makes the key optional; a present value must still
+  satisfy its decoder.
 
-### Publishing requirements
+### Retired standard-library APIs
 
-Before publishing, ensure that:
+- Replace `list.range` with `int.range` and `result.then` with `result.try`.
+- Use `list.flatten`, not the removed `list.concat`, for concatenating lists.
+- Use string APIs ending in `_start` and `_end`; the `_left` and `_right`
+  variants were removed.
+- Use `gleam_deque`, `gleam_yielder`, and `gleam_regexp` instead of the removed
+  queue, iterator, and regex standard-library modules.
+- `io.debug` was replaced by `echo`; `result.nil_error` was replaced by
+  `result.replace_error`.
 
-- The package has an authored README, not the untouched `gleam new` placeholder.
-- Every published module exposes at least one public type or function.
-- Package modules normally live below the package namespace.
-- `licences`, `description`, and `repository` are present.
-- No development-only module or dependency leaks into the package.
-- Hex authentication can complete the short-lived OAuth2 and MFA flow.
+### JavaScript FFI representations
 
-Publishing a `0.*` version or a package using the `gleam_` prefix requires explicit confirmation. See [packages-build-and-config.md](references/packages-build-and-config.md).
+- Use the generated custom-type constructor, predicate, and accessor exports,
+  rather than compiler-internal custom-type representations.
+- Construct and inspect lists, results, and bit arrays through the generated
+  prelude API.
+- `Nil` is JavaScript `undefined`; tuples are JavaScript arrays representing
+  immutable values and must not be mutated.
+- Use regular compiled Gleam functions to construct `Dict` values.
 
-### Language migrations
+### Publishing checks
 
-- Replace deprecated discard aliases such as `_ as value` with `value`.
-- Keep the returned value from immutable updates; discarded pure calls now warn.
-- Replace full-list length checks for emptiness with patterns, `items == []`, or `items != []`.
-- Remove meaningless `opaque` from private custom types.
-- Use the supported generated JavaScript constructor, predicate, and accessor exports rather than compiler-internal custom-type layouts.
+- Package modules should normally live below the package namespace.
+- Publishing warns and asks for confirmation about namespace collisions,
+  unofficial names beginning with `gleam_`, and `0.*` package versions.
+- Modules without public definitions block publishing.
+- A missing README or the default README from `gleam new` blocks publishing.
 
-### Standard-library migrations
+## High-use language features
 
-- Use `int.range`, not removed `list.range`.
-- Use `gleam/dynamic/decode`, not the retired decoder API in `gleam/dynamic`.
-- Use `list.flatten`, not removed `list.concat`.
-- Use `drop_start`, `drop_end`, `pad_start`, `pad_end`, `trim_start`, and `trim_end`, not the old left/right names.
-- Use `gleam_deque`, `gleam_yielder`, and `gleam_regexp` instead of the removed queue, iterator, and regex modules.
-- Use `gleam/bytes_tree` and `gleam/string_tree` instead of removed builder modules.
-- Replace removed helpers such as `result.then`, `result.unwrap_both`, `function.tap`, `int.digits`, and `io.debug` with their current equivalents.
-
-Read [stdlib-migrations-and-behavior.md](references/stdlib-migrations-and-behavior.md) before upgrading old code.
-
-## Language quick reference
-
-### Assertions and debugging
-
-Use Boolean `assert` when failure should panic with test-friendly expression details:
-
-```gleam
-assert telecom.is_up(key, strict, 2025) as "internet must be available"
-```
-
-Add `as "message"` to `let assert` as well. Use `echo expression` to print the value and source location to standard error without changing the value; add `as "message"` for context. Remove all module `echo` expressions with the language-server action before publishing.
-
-### Constants
-
-Constants now support record updates, list prepending from another constant list, and `todo` placeholders:
+### Debugging and assertions
 
 ```gleam
-pub const dev = HttpConfig(..base, port: 4000)
-pub const mammals = ["platypus", ..viviparous]
-pub const pending = Pokemon(number: 173, name: todo, hp: todo)
+echo 11 as "lucky number"
+assert telecom.is_up(key, strict, 2025) as "My internet must always be up!"
+let assert Ok(regex) = regex.compile("ab?c+") as "This regex is always valid"
 ```
 
-A program containing a constant `todo` can be analysed but cannot run.
+- `echo` prints the value and source location to standard error, can appear in
+  a pipeline without consuming the value, and triggers a publish warning when
+  left in the project.
+- `assert` panics on `False` and records the source expression and relevant
+  values for test frameworks.
+- Both `echo` and assertions accept custom messages with `as`.
 
-### Guards, pipes, and records
+### Records and constants
 
-String concatenation with `<>` is valid in `case` guards. For `value |> function(1, 2)`, Gleam first tries `function(value, 1, 2)` and, if the types reject that call, tries `function(1, 2)(value)`.
+- Updating a field may change a generic record's type parameter.
+- Record-update syntax and list prepending with spread syntax are valid in
+  constant expressions.
+- Constants may contain `todo` and remain analysable, but a program containing
+  such a constant cannot run because constants are evaluated at compile time.
 
-Record updates can safely change a generic parameter:
+### Guards and patterns
 
-```gleam
-pub fn replace(data: Named(a), replacement: b) -> Named(b) {
-  Named(..data, value: replacement)
-}
-```
-
-Access a field on a multi-variant custom type only when its label, position, and type agree across every possible variant, or after a pattern narrows the variant.
+- String concatenation with `<>` is valid in case guards.
+- Alternative patterns must bind identical names with identical types and may
+  not be nested inside another pattern.
+- A record field accessor on a multi-variant type works without refinement only
+  when every variant has that field in the same position and with the same type.
+- Empty blocks are accepted as incomplete placeholders with a warning.
 
 ### Bit arrays
 
-A segment defaults to an 8-bit integer and `size(n)` counts bits unless another unit is supplied. Use `:bits` for any alignment and `:bytes` for byte-aligned data. UTF codepoint segments accept endianness, and pattern sizes can contain calculations.
+- Segment `size(n)` counts units and `unit` defaults to one bit.
+- Integer segments default to 8 bits and float segments to 64 bits.
+- Use `bits` for any-sized bit arrays and `bytes` when byte alignment is required.
+- UTF codepoint segments can specify endianness, and pattern sizes may contain
+  calculations.
 
-Check target support before relying on bit-array forms. JavaScript supports unaligned and dynamic segments, 16-bit floats, UTF-16/UTF-32, and unit options, but integer pattern segments wider than 52 bits are truncated and warn.
+## High-use editor actions
 
-## Build and package quick reference
+The language server can:
 
-### Development and CI
+- find references and rename types and values project-wide;
+- rename local variables, function arguments, modules, constructors in
+  constants, and variables bound in string-prefix patterns;
+- generate missing local or qualified functions with inferred annotations;
+- generate custom-type variants, exhaustive matches, dynamic decoders, and JSON
+  encoders;
+- convert calls to pipelines and `use` expressions to callback calls and back;
+- add or fill labels in calls and record patterns, using matching in-scope
+  variables where possible;
+- add annotations to every top-level definition or replace type holes with
+  inferred types;
+- extract constants, expressions, anonymous-function bodies, assignment values,
+  and consecutive pipeline segments;
+- merge equal case branches, collapse nested cases, expand discards and ignored
+  fields, remove unreachable clauses, and remove redundant record updates;
+- create a missing imported module's source file;
+- provide folding ranges and document highlights.
 
-Put development-only modules in `dev/`, give `<package>_dev` a `main`, and run:
+Read [Editor and refactoring](references/editor-and-refactoring.md) before relying
+on the exact scope or output of any action.
 
-```sh
-gleam dev
-gleam dev --no-print-progress
-gleam build --warnings-as-errors
-gleam format --check src test
-```
-
-`src/` cannot import development dependencies or `dev/`/`test/`; `test/` can import from all dependency scopes and source directories.
-
-### Dependencies
-
-Use Git dependencies with an explicit `ref`, inspect resolution, and audit updates:
-
-```toml
-[dependencies]
-gleam_stdlib = { git = "https://github.com/gleam-lang/stdlib.git", ref = "957b83b" }
-shared = { path = "../shared" }
-```
+## High-use package and build commands
 
 ```sh
 gleam deps tree
-gleam deps tree --package package_c
-gleam deps tree --invert package_b
 gleam deps outdated
+gleam update
+gleam dev --no-print-progress
+gleam export package-information
+gleam export package-interface --out build/package-interface.json
+gleam export escript
 ```
 
-Do not combine `--package` and `--invert`. Resolution errors now show the constraint chains that caused conflicts, and update commands report changed packages and available major releases.
+- `gleam deps tree` accepts either `--package` or `--invert`, but not both.
+- `gleam deps outdated` shows current and latest versions and prints a summary
+  count even when no package is outdated.
+- Development tooling may live in `dev/` and run through `gleam dev` without
+  entering production output.
+- An exported escript is a single runnable Erlang-target file for machines with
+  Erlang installed.
 
-### JavaScript output
+## Target reminders
 
-```toml
-[javascript]
-runtime = "bun"
-source_maps = true
-typescript_declarations = true
-```
+- JavaScript and BEAM have different float overflow behavior; float division by
+  zero produces zero on both targets.
+- JavaScript source maps require `javascript.source_maps = true`, and map files
+  must be served with the generated JavaScript.
+- External functions may combine an `@external` annotation with a Gleam fallback
+  body for targets without that external implementation.
+- Elixir calls use `@external(erlang, ...)` with the VM module's `Elixir.` prefix;
+  macros cannot be called this way.
+- Local JavaScript external paths are relative to the Gleam source file.
 
-Choose `node`, `deno`, or `bun`; `node` is the default. Serve `.map` files beside generated JavaScript. Configure Deno permissions under `[javascript.deno]`.
-
-### Erlang distribution
-
-Use `gleam export erlang-shipment` for a relocatable directory with cross-platform launchers. Use `gleam export escript` for one executable file that can run on a machine with Erlang installed.
-
-## FFI quick reference
-
-### External declarations
-
-Give an external function a Gleam body to provide a fallback on targets without a matching `@external`. For external types, attach target-specific definitions:
-
-```gleam
-@external(erlang, "erlang", "map")
-@external(javascript, "../dict.d.mts", "Dict")
-pub type Dict(key, value)
-```
-
-JavaScript external paths are runtime module specifiers relative to the declaring Gleam file; install bare npm dependencies separately. Source directories can contain `.mjs`, `.js`, `.cjs`, `.mts`, `.cts`, `.jsx`, and `.tsx` external modules.
-
-### Runtime values
-
-Respect exact boundary representations:
-
-- On BEAM, `String` is a UTF-8 binary, `Nil` is `nil`, `Result` is `{ok, Value}` or `{error, Value}`, fieldless variants are snake-case atoms, variants with fields are tagged tuples, and `Dict` is a map.
-- In JavaScript, `Nil` is `undefined`, tuples are immutable arrays, and Gleam numeric constraints still apply even though both number types use JavaScript numbers.
-- Construct and inspect lists, results, bit arrays, and custom types with the generated prelude or module APIs documented in [targets-and-ffi.md](references/targets-and-ffi.md).
-
-## Editor workflow
-
-Run the bundled server with `gleam lsp` from a project root. It supports multiple projects and unsaved buffers, follows each project's target, does not run project code, and only formats files outside a Gleam project.
-
-Use current actions to generate functions, variants, encoders and decoders; exhaustively match values; add labels and annotations; correct operators; rename symbols or modules; and extract variables, constants, functions, pipeline segments, or assignment values. Read [editor-and-refactoring.md](references/editor-and-refactoring.md) for exact scope and edge cases.
+Read [Targets and FFI](references/targets-and-ffi.md) before writing external
+declarations or manually constructing foreign runtime values.

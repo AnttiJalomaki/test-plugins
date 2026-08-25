@@ -1,26 +1,38 @@
 # Requests and Validation
 
-## Request-method and origin defaults
+## Understand request defaults
 
-`DELETE` request values are sent as URL parameters, while requests are
-restricted to the same origin by default. Restore the earlier method behavior
-or allow cross-origin requests only when an application explicitly depends on
-it:
+Requests are same-origin-only by default. `DELETE` values use URL parameters;
+to restrict URL parameters to `GET` and restore the earlier behavior, set:
 
 ```js
 htmx.config.methodsThatUseUrlParams = ["get"];
+```
+
+Only disable the same-origin guard when cross-origin access is required:
+
+```js
 htmx.config.selfRequestsOnly = false;
 ```
 
-Changing `methodsThatUseUrlParams` to only `get` moves `DELETE` values away
-from the URL. Disabling `selfRequestsOnly` must be paired with destination
-validation and correct CORS policy.
+## Report native form validation
 
-## Cross-origin requests
+htmx blocks invalid form requests but, for compatibility, does not show the
+browser's validation UI or focus the first invalid input by default. Enable
+that behavior with:
 
-After cross-origin requests are enabled, `htmx:validateUrl` exposes the parsed
-destination as `event.detail.url` and indicates same-host destinations through
-`event.detail.sameHost`. Cancel the event to deny a destination:
+```js
+htmx.config.reportValidityOfForms = true;
+```
+
+Use `hx-validate="true"` when a non-form request trigger should also run
+validation.
+
+## Allowlist cross-origin destinations
+
+After enabling cross-origin requests, handle `htmx:validateUrl` as an explicit
+allowlist. The event exposes `detail.url` and `detail.sameHost`; cancel it to
+deny a destination:
 
 ```js
 document.body.addEventListener("htmx:validateUrl", (event) => {
@@ -31,29 +43,12 @@ document.body.addEventListener("htmx:validateUrl", (event) => {
 });
 ```
 
-Browser CORS checks still apply. The remote origin must allow the htmx request
-headers the application sends and expose any htmx response headers the client
-needs to read.
+CORS must permit the htmx request headers and expose the htmx response headers
+the client needs to read.
 
-## Native form validation
+## Keep CSRF tokens fresh during boosted navigation
 
-htmx blocks a form request when native constraint validation fails. For
-compatibility, it does not display the browser's validation UI or focus the
-first invalid control by default. Enable both behaviors with:
-
-```js
-htmx.config.reportValidityOfForms = true;
-```
-
-Use `hx-validate="true"` when a non-form element initiating a request should
-also invoke validation.
-
-## CSRF tokens and boosted navigation
-
-An inherited `hx-headers` value can attach a CSRF token to every request, but
-boosted navigation does not replace the `<html>` or `<body>` element. A token
-stored only on either element can become stale when the server rotates it.
-
-Put a rotating token on an element that the boosted navigation actually
-replaces. Framework-provided hidden form inputs are another safe choice when
-the framework refreshes and validates them as part of normal responses.
+An inherited `hx-headers` value can send a CSRF token with every request, but
+`hx-boost` does not replace the `<html>` or `<body>` elements. Put a rotating
+token on an element that boosted navigation actually replaces. When the
+server framework provides hidden CSRF form inputs, prefer those inputs.

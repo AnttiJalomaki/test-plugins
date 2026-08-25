@@ -1,19 +1,11 @@
 # Security, Observability, and CSP
 
-## Contents
+## Action-origin protection
 
-- [Cross-origin action protection](#cross-origin-action-protection)
-- [Security fixes that require patched releases](#security-fixes-that-require-patched-releases)
-- [CSP nonces and generated output](#csp-nonces-and-generated-output)
-- [Subresource integrity](#subresource-integrity)
-- [Client error reporting](#client-error-reporting)
-- [Runtime instrumentation](#runtime-instrumentation)
-- [JSON-LD output](#json-ld-output)
+### Default cross-origin rejection
 
-## Cross-origin action protection
-
-UI-route submissions from external origins are rejected by default. Add only intentional
-origins to `allowedActionOrigins` in `react-router.config.ts`.
+Since 7.12.0, submissions from external origins to UI routes are rejected by
+default. List intentionally trusted origins in `allowedActionOrigins`.
 
 ```ts
 export default {
@@ -21,12 +13,17 @@ export default {
 };
 ```
 
-Since 7.13.1, the glob `**` matches every domain; use it only to intentionally disable origin
-restriction. Rejected origins return a client-error `400`, not `500`, and RSC flows render the
-corresponding error UI.
+The same release validated redirect locations and escaped scroll-restoration keys,
+addressing its CSRF and two XSS advisories.
 
-Custom servers can replace `allowedActionOrigins` on the imported server build before passing it
-to `createRequestHandler`. This permits deployment-specific allowlists.
+In 7.13.0, the `**` glob began matching every domain. Use it only to deliberately
+allow every origin. A failed check returns a client-error 400 rather than 500;
+7.13.1 also renders the appropriate error UI for RSC flows.
+
+### Dynamic allowlists for custom servers
+
+A custom server may replace `allowedActionOrigins` on the imported server build
+before passing it to `createRequestHandler`, allowing deployment-specific hosts.
 
 ```ts
 import { createRequestHandler } from "@react-router/express";
@@ -46,120 +43,130 @@ async function getBuild() {
 app.use(createRequestHandler({ build: getBuild }));
 ```
 
-Origin validation compares against the host on the adapter-constructed `Request` URL, not raw
-HTTP headers. Test mutations behind production reverse proxies. `@react-router/serve` and
-Express without `trust proxy` may require the internal host in the allowlist if that is what the
-adapter constructs.
+### Proxy and adapter host behavior
 
-For Architect/API Gateway, `@react-router/architect`'s `createRequestHandler` accepts
-`useRequestContextDomainName` to derive the URL host from the request context. This option was
-introduced before becoming the v8 default; enable it when that domain source matches the
-deployment.
+As of 7.18.0, action-origin validation compares against the host in the
+adapter-constructed `Request` URL rather than reading request headers directly.
+Test mutations behind the real reverse proxy. `@react-router/serve` and Express
+without `trust proxy` may need the internal host in `allowedActionOrigins` if that is
+what the adapter puts in the request URL.
 
-## Security fixes that require patched releases
+`@react-router/architect` can set `useRequestContextDomainName` on
+`createRequestHandler` to derive the request host from API Gateway request context.
+This becomes the default in v8; enable it when that context matches the
+deployment architecture.
 
-- Version 7.4.1 fixes CVE-2025-31137, where insufficient port sanitization in `Host` and
-  `X-Forwarded-Host` could manipulate URLs and pollute caches. Do not deploy 7.4.0.
-- The 7.9 line fixes JSON-LD XSS through `Meta` in 7.9.0, unauthorized file access caused by
-  unsigned `createFileSessionStorage` cookies in 7.9.4, and untrusted-path external redirects in
-  7.9.6. Upgrade that line to at least 7.9.6 for all three.
-- Version 7.10.1 raises `valibot` to `^1.2.0` for GHSA-vqpr-j7v3-hqw9; users of
-  `@react-router/dev` should not remain on 7.10.0.
-- Version 7.11.0 updates `@react-router/serve` dependencies `compression` and `morgan` for the
-  `on-headers` advisory GHSA-76c9-3jph-rj3q.
-- Version 7.12 validates redirect locations and escapes scroll-restoration keys, addressing its
-  CSRF and two XSS advisories in addition to enabling origin protection.
-- Version 7.13.2 escapes redirect locations embedded in prerendered redirect HTML.
+## Security patch levels
 
-## CSP nonces and generated output
+### Host-header sanitization
 
-Pass nonces to framework rendering components whose generated elements must satisfy policy:
+React Router 7.4.1 fixes CVE-2025-31137, where insufficient port sanitization in
+`Host` and `X-Forwarded-Host` could manipulate URLs and pollute caches. Upgrade from
+7.4.0 rather than relying on proxy behavior.
+
+### The 7.9 patch line
+
+Applications on the 7.9 line should use at least 7.9.6. The line includes:
+
+- 7.9.0: JSON-LD XSS through `Meta`.
+- 7.9.4: unauthorized file access through unsigned
+  `createFileSessionStorage` cookies.
+- 7.9.6: unexpected external redirects from untrusted paths.
+
+### Generated and dependency output
+
+Version 7.13.2 escapes redirect locations embedded in prerendered redirect HTML.
+For dependency-only fixes, 7.10.1 updates `valibot` for
+GHSA-vqpr-j7v3-hqw9, and `@react-router/serve` 7.11.0 updates `compression` and
+`morgan` for GHSA-76c9-3jph-rj3q.
+
+## Content Security Policy
+
+### Nonce propagation
+
+Nonce coverage expanded across releases:
+
+- In 7.8.0, `Links` and `PrefetchPageLinks` gained `nonce`, applying it to their
+  generated link elements.
+- In 7.12.0, `<Scripts nonce>` also applied the nonce to the SRI-generated import-map
+  script.
+- In 7.13.0, the nonce passed to `Links` reached inline critical CSS.
+- In 7.15.0, the nonce passed to `Scripts` reached generated
+  `<link rel="modulepreload">` elements.
+- In 7.18.0, nonce-aware SSR components inherited `ServerRouter`'s nonce when they
+  did not receive one directly.
 
 ```tsx
-<Links nonce={nonce} crossOrigin="anonymous" />
+<ServerRouter nonce={nonce} />
+<Links nonce={nonce} />
 <PrefetchPageLinks page="/account" nonce={nonce} />
 <Scripts nonce={nonce} />
 ```
 
-Nonce propagation covers these generated resources:
+Inspect actual rendered HTML under the production CSP. Explicit component values can
+still override inherited server values.
 
-- `Links` and `PrefetchPageLinks` generated link elements.
-- Inline `criticalCss` emitted with `Links`.
-- The SRI-generated import-map script emitted with `Scripts`.
-- `<link rel="modulepreload">` elements emitted with `Scripts`.
+### Subresource integrity and link attributes
 
-`Links` also accepts the standard `crossOrigin` prop and forwards it to generated links.
+SRI began behind `future.unstable_subResourceIntegrity` in 7.5.0 and generated an
+import map whose browser scripts carried `integrity` metadata. The top-level stable
+name is `subResourceIntegrity` as of 7.15.0.
 
-Nonce-aware SSR components fall back to the `nonce` on `ServerRouter` when they do not receive
-their own value. This allows strict nonce policies without wiring the same nonce to every
-component, while explicit component values can still be supplied.
+`Links` accepts `crossOrigin` as of 7.13.0 and forwards it to generated links.
 
-## Subresource integrity
-
-Subresource integrity generation began behind `future.unstable_subResourceIntegrity`; it
-generates an import map with `integrity` metadata for browser-loaded scripts. The stable config
-is top-level `subResourceIntegrity`.
-
-```ts
-export default {
-  subResourceIntegrity: true,
-};
+```tsx
+<Links crossOrigin="anonymous" nonce={nonce} />
 ```
-
-When SRI and nonce CSP are combined, pass the nonce to `<Scripts>` so its generated import map
-also receives it.
 
 ## Client error reporting
 
-Use the stable `onError` prop on `RouterProvider` or `HydratedRouter`. It was introduced as
-`unstable_onError` and later stabilized.
-
-```tsx
-<RouterProvider router={router} onError={reportError} />
-```
-
-The callback receives the error and an information object with `location`, `params`, optional
-React `errorInfo`, and the matched route `pattern` where available. The second argument replaced
-an earlier callback signature, and `pattern` was originally named `unstable_pattern`.
+`RouterProvider` and `HydratedRouter` gained provisional `unstable_onError` in
+7.8.0. In 7.9.0, its second argument became an object containing `location`,
+`params`, and optional React `errorInfo`, a breaking change for initial adopters.
 
 ```ts
-function reportError(
+function onError(
   error: unknown,
   info: {
     location: Location;
     params: Params;
     errorInfo?: React.ErrorInfo;
-    pattern?: string;
   },
 ) {
-  sendError({ error, ...info });
+  report(error, info);
 }
 ```
 
-SPA Mode invokes `RouterProvider.onError` for synchronous failures from initial loaders, so the
-same central reporter covers those startup failures.
+The context added the uninterpolated route `unstable_pattern` in 7.10.0. The callback
+stabilized as `onError` in 7.11.0, and `pattern` lost its prefix in 7.15.0. Group
+reports by pattern as well as concrete location to prevent high-cardinality route
+parameters.
 
-## Runtime instrumentation
+SPA Mode reports synchronous initial-loader errors through `RouterProvider.onError`
+as of 7.15.0.
 
-The `instrumentations` API can wrap server handlers, client navigation and fetch work, loaders,
-actions, middleware, and `route.lazy`. It began as `unstable_instrumentations`; related type names
-also lost their `unstable_` prefixes.
+## Instrumentation
 
-Register instrumentations through:
+### Registration and coverage
 
-- an `instrumentations` export from `entry.server.tsx`;
-- the `HydratedRouter` prop in `entry.client.tsx`; or
-- the `createBrowserRouter` option in Data Mode.
+The 7.9.0 `unstable_instrumentations` API can wrap server handlers, browser
+navigations and fetches, loaders, actions, middleware, and `route.lazy`. Register it
+through an `entry.server.tsx` export, `HydratedRouter` in `entry.client.tsx`, or
+`createBrowserRouter` in Data Mode.
 
-Handler, loader, action, and middleware arguments expose `url` and the uninterpolated route
-`pattern`, such as `/blog/:slug`, for normalized aggregation. These fields were originally
-`unstable_url` and `unstable_pattern`. `Location.mask` is optional. Static handler `query` and
-`queryRoute` use `normalizePath`, formerly `unstable_normalizePath`.
+Loaders, actions, and middleware received `unstable_pattern`, the uninterpolated
+route pattern such as `/blog/:slug`. In 7.15.0, these stabilized as
+`instrumentations` and `pattern`; instrumentation type names also lost
+`unstable_`. Handler and instrumentation arguments use normalized `url` and
+`pattern`.
 
-After outer server `handler` and router `navigate`/`fetch` instrumentations complete, the result
-exposes normalized URL, pattern, and params at `result.meta`; server handlers also expose
-`result.statusCode`. The metadata is available after matching even though the outer layer began
-before routes were known.
+### Outer result metadata
+
+Since 8.1.0, completed server `handler` and router `navigate` or `fetch`
+instrumentations expose matched metadata at `result.meta`: normalized `url`, route
+`pattern`, and `params`. Server handler results additionally expose
+`result.statusCode`. This lets an outer layer aggregate by route even though it runs
+before matching.
 
 ```ts
 export const instrumentations = [{
@@ -178,12 +185,3 @@ export const instrumentations = [{
   },
 }];
 ```
-
-Prefer `pattern` over the concrete pathname for route-level grouping, and include normalized
-`url`, params, and status only where their cardinality is acceptable.
-
-## JSON-LD output
-
-`MetaDescriptor` accepts an array of `LdJsonObject` values for `script:ld+json`, allowing one
-script to contain multiple schemas. Keep all values structured rather than hand-building markup;
-patched router releases include JSON-LD escaping fixes.

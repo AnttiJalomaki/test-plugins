@@ -2,125 +2,52 @@
 
 ## Typed configuration imports
 
-`astro:config/client` and `astro:config/server` expose typed project configuration throughout an Astro project while the client module includes only a safe subset (`5.2.0`). They began behind `experimental.serializeConfig` and became stable without the flag in `5.7.0`.
+Astro 5.2.0 introduced typed `astro:config/client` and `astro:config/server` imports behind `experimental.serializeConfig`; the client module exposes only a safe subset. They became stable in 5.7.0, so remove the flag.
 
-```ts
-import { trailingSlash } from 'astro:config/client';
-```
+## Host allowlists
 
-## Programmatic configuration
+Since 5.4.0, `server.allowedHosts` limits dev and preview responses by `Host` header to reduce DNS-rebinding risk. The CLI equivalent for either command is `--allowed-hosts=host1,host2`. Allow only controlled domains. Since 6.2.0, adapter preview entrypoints receive this list too.
 
-`astro/config` exports `mergeConfig(base, partial)` and `validateConfig(value)` (`5.4.0`). `mergeConfig` layers a partial configuration with the same rules used by an integration's `updateConfig`; `validateConfig` validates a candidate and fills defaults.
+## Programmatic configuration and builds
 
-The `build()` API accepts a second `BuildOptions` argument (`5.4.0`):
+Since 5.4.0, `mergeConfig(base, partial)` applies integration-style `updateConfig` layering, while `validateConfig(value)` validates and fills defaults.
 
-- `devOutput` creates a development-style build and defaults to `false`.
-- `teardownCompiler` controls cleanup of the compiler WASM instance and defaults to `true`.
+The same batch adds a second `BuildOptions` argument to `build(config, options)`: `devOutput` creates a development-style build and defaults to `false`; `teardownCompiler` controls cleanup of compiler WASM and defaults to `true`.
 
-```js
-import { build } from 'astro';
+## HTML, style, and script output
 
-await build({}, {
-  devOutput: true,
-  teardownCompiler: false,
-});
-```
+Astro normally reverses multiple generated `<style>` and `<script>` tags. Since 5.5.0, `experimental.preserveScriptOrder` emits both in definition order; reorder code that compensated for reversal.
 
-## Development server security
+Since 6.2.0, `compressHTML: 'jsx'` strips whitespace using JSX rules: indented multiline text joins with spaces, while `<pre>` content is preserved.
 
-`server.allowedHosts` restricts `astro dev` and `astro preview` responses to requests whose `Host` header matches a configured hostname, reducing DNS-rebinding exposure (`5.4.0`). The CLI form is `--allowed-hosts=host1,host2`. Allow only domains under project control.
+## Development UI and preview controls
 
-Adapter preview entrypoints receive the same `allowedHosts` value and should enforce it in their own servers (`6.2.0`).
+Since 5.13.0, `experimental.chromeDevtoolsWorkspace` configures the project as a Chrome DevTools workspace so edits in the Sources panel save to local files.
 
-## Generated tag order
+Since 5.17.0, `devToolbar.placement` sets a project default such as `bottom-left`; each developer may still override it through the toolbar.
 
-Astro normally reverses multiple `<style>` and `<script>` tags in generated HTML. `experimental.preserveScriptOrder` emits both tag types in definition order (`5.5.0`). Remove any compensating source-order reversal when enabling it.
+In the terminal running `astro preview` since 5.16.0, type `o` then Enter to open a browser or `q` then Enter to stop the server.
 
-## Developer tools
+## Rust compiler
 
-### Chrome workspace
+Astro 6.0.0 provides the experimental Rust `.astro` compiler after installing `@astrojs/compiler-rs` and enabling `experimental.rustCompiler`. The Astro 7 alpha described in 6.2.0 makes it the default and only compiler, so remove that flag when testing the alpha.
 
-`experimental.chromeDevtoolsWorkspace` configures the dev server as a Chrome DevTools workspace source, allowing edits in the Sources panel to be written back to local project files (`5.13.0`).
+## Structured logging
 
-### Dev toolbar placement
+Astro 6.2.0 introduced `experimental.logger` with `logHandlers.json()` or `{ entrypoint }`; CLI `--experimentalJson` selected JSON for dev, sync, and build. A custom entrypoint default-exports a factory returning `AstroLoggerDestination`; its `write()` receives `AstroLoggerMessage`, and `matchesLevel()` from `astro/logger` filters levels.
 
-`devToolbar.placement` defines a project-wide default toolbar position so it does not overlap fixed UI (`5.17.0`). Individual developers can still override the position through the toolbar.
+In 7.0.0, move configuration to top-level `logger` and replace the flag with `--json`. `logHandlers.compose()` sends messages to multiple destinations, such as console plus JSON.
 
-```js
-export default defineConfig({
-  devToolbar: { placement: 'bottom-left' },
-});
-```
+In 7.0.1-7.2.4, `logger.entrypoint` accepts `URL` objects and project-relative paths beginning `./` or `../`, resolved from the project root; package specifiers and absolute paths remain valid. `AstroRuntimeLogger` is now public for typing runtime logger functions.
 
-### Preview shortcuts
+## Managed background servers
 
-In the terminal attached to `astro preview`, enter `o` to open the site in a browser or `q` to stop the preview server (`5.16.0`).
+Since 7.0.0, `astro dev --background` waits for readiness, prints URL/PID, and detaches. Repeated starts return the lockfile-managed instance; `/_astro/status` reports readiness. Use `astro dev status`, `logs`, and `stop`. Detected automation environments may enable this mode automatically.
 
-## Compiler selection
+In 7.0.1-7.2.4, `astro preview --background` follows the same pattern with `preview status`, `logs --follow`, and `stop`. Detected automation may enable it; set `ASTRO_PREVIEW_BACKGROUND=0` to opt out.
 
-Astro 6 can try the Rust-based `.astro` compiler by installing `@astrojs/compiler-rs` and enabling `experimental.rustCompiler` (`6.0.0`):
+Use `astro dev --ignore-lock` to start an untracked parallel foreground server. It cannot combine with `--background`, automatic background mode, or `--force`; management subcommands do not see it.
 
-```sh
-npm install @astrojs/compiler-rs
-```
+## Package-manager detection
 
-```js
-export default defineConfig({
-  experimental: { rustCompiler: true },
-});
-```
-
-When testing the Astro 7 alpha described in `6.2.0`, the Rust compiler became the default and only compiler, so the experimental flag had to be removed.
-
-## HTML compression
-
-`compressHTML: 'jsx'` strips whitespace with JSX rules for consistent output between `.astro` and `.tsx` (`6.2.0`). Indented multiline text is joined with spaces, while content inside `<pre>` is preserved.
-
-```js
-export default defineConfig({
-  compressHTML: 'jsx',
-});
-```
-
-## Structured and custom logging
-
-### Preview API
-
-`experimental.logger` accepts the built-in JSON handler or a package-backed custom handler (`6.2.0`):
-
-```js
-import { defineConfig, logHandlers } from 'astro/config';
-
-export default defineConfig({
-  experimental: { logger: logHandlers.json() },
-});
-```
-
-The equivalent CLI switch was `--experimentalJson` for `astro dev`, `astro sync`, and `astro build`. A custom declaration uses `logger: { entrypoint: '@org/custom-logger' }`. The module default-exports a factory returning an `AstroLoggerDestination`; its `write()` method receives `AstroLoggerMessage` values and can use `matchesLevel()` from `astro/logger` for filtering.
-
-### Stable API
-
-Astro 7 moves `logger` to the top level and replaces `--experimentalJson` with `--json` (`7.0.0`). `logHandlers.compose()` sends messages to several destinations:
-
-```js
-import { defineConfig, logHandlers } from 'astro/config';
-
-export default defineConfig({
-  logger: logHandlers.compose(
-    logHandlers.console(),
-    logHandlers.json(),
-  ),
-});
-```
-
-JSON logging is selected automatically when the managed background server is activated by a recognized automation environment.
-
-## Managed background development server
-
-`astro dev --background` waits for readiness, prints the URL and process ID, and detaches (`7.0.0`). Repeated starts return the lockfile-managed existing instance. Use the readiness endpoint at `/_astro/status` or the management commands:
-
-```sh
-astro dev status
-astro dev logs
-astro dev stop
-```
+In 7.0.1-7.2.4, Astro install commands also inspect `package.json` `devEngines` when detecting the package manager.

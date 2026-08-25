@@ -1,26 +1,14 @@
 # Migration and Runtime
 
-Batch attributions used here: `15.5.0`, `16.0-guide`, `16.0.0`, `16.1.0`, and `release-catalogs`.
+## Runtime and browser floors (`16.0.0`)
 
-## Runtime minimums
+Next.js 16 requires Node.js 20.9 or newer and TypeScript 5.1 or newer. Its supported browser floor is Chrome 111, Edge 111, Firefox 111, and Safari 16.4.
 
-Next.js 16 requires all of the following:
+## From Middleware to Proxy (`15.5.0`, `16.0-guide`)
 
-- Node.js 20.9 or newer.
-- TypeScript 5.1 or newer.
-- Chrome 111, Edge 111, Firefox 111, or Safari 16.4 and newer.
+Next.js 15.5 made the Node.js Middleware runtime stable, but it remained opt-in through `export const config = { runtime: 'nodejs' }`. Next.js 16 renamed Middleware to Proxy. Migrate to the new convention rather than preserving the old filename/runtime opt-in.
 
-Raise CI, deployment, and local-development versions before debugging framework-level failures (`16.0.0`).
-
-## Middleware-to-Proxy migration
-
-Middleware gained a stable but opt-in Node.js runtime in `15.5.0`:
-
-```ts
-export const config = { runtime: 'nodejs' }
-```
-
-Next.js 16 renames the convention to Proxy (`16.0-guide`). Place the single supported `proxy.ts` next to `app` or `pages`, either at the root or under `src`, and export a named `proxy` function or a default function.
+Place the one supported `proxy.ts` beside `app` or `pages`, either at the project root or under `src`. Export a named `proxy` function or a default function.
 
 ```ts
 import { NextResponse, type NextRequest } from 'next/server'
@@ -32,17 +20,11 @@ export function proxy(request: NextRequest) {
 export const config = { matcher: '/about/:path*' }
 ```
 
-Use Proxy for request-dependent rewrites, redirects, response headers, and optimistic checks. It is not the place for slow fetching or complete authorization. `fetch` cache options, revalidation settings, and tags have no effect inside Proxy.
+Use Proxy for request-dependent rewrites, redirects, headers, and optimistic checks. Avoid slow data fetching and full authorization there. `fetch` cache, revalidation, and tag options have no effect in Proxy.
 
-## Mandatory asynchronous request APIs
+## Asynchronous request APIs (`16.0.0`, `16.3.1`)
 
-Synchronous access to request-bound APIs is removed (`16.0.0`). Await:
-
-- Page and layout `params`.
-- Page `searchParams`.
-- `cookies()`, `headers()`, and `draftMode()`.
-- `params` in metadata image routes.
-- Every `id` returned by `generateImageMetadata`; the route receives it as a `Promise<string>`.
+Synchronous request-bound access is removed. Pages must await `params` and `searchParams`; code must await `cookies()`, `headers()`, and `draftMode()`.
 
 ```tsx
 export default async function Page({ params }: PageProps<'/blog/[slug]'>) {
@@ -51,49 +33,64 @@ export default async function Page({ params }: PageProps<'/blog/[slug]'>) {
 }
 ```
 
-Do not hide synchronous access behind casts. Move callers to async boundaries and propagate `await` through their call sites.
+Metadata image routes receive asynchronous `params`, and every ID returned by `generateImageMetadata` is exposed as a `Promise<string>`.
 
-## Removed features and configuration
+In 16.3.1, `headers()` again exposes a live view of the incoming request rather than a detached view. It remains asynchronous; code that needs current request headers should still await it.
 
-The following are removed in Next.js 16 (`16.0.0`):
+## Removed APIs and configuration (`15.4.0`, `15.5.0`, `16.0.0`)
 
-- AMP APIs and AMP configuration.
-- The `next lint` command.
-- `serverRuntimeConfig` and `publicRuntimeConfig`; use environment variables instead.
-- Development-indicator options `appIsrStatus`, `buildActivity`, and `buildActivityPosition`.
-- `experimental.ppr` and route-level `export const experimental_ppr`.
+Remove or replace the following during a Next.js 16 migration:
+
+- AMP APIs and configuration.
+- `next lint`; use the ESLint CLI or another linter.
+- `serverRuntimeConfig` and `publicRuntimeConfig`; use environment variables.
+- `appIsrStatus`, `buildActivity`, and `buildActivityPosition` development-indicator options.
+- `experimental.ppr` and `export const experimental_ppr`.
 - `unstable_rootParams()`.
+- `experimental.turbopack`; move options to top-level `turbopack`.
 
-Move Turbopack options from `experimental.turbopack` to the top-level `turbopack` key. `next build` no longer performs linting.
+Before removal, `unstable_rootParams` was server-only and unsupported in Client Components. Do not preserve it while migrating.
 
-### Linter transition
-
-In `15.5.0`, `next lint` was deprecated, while `next build` still ran lint validation when an ESLint configuration existed. Migrate directly to the ESLint CLI with:
+The 15.5.0 linter codemod converts `next lint` usage to the ESLint CLI:
 
 ```sh
 npx @next/codemod@latest next-lint-to-eslint-cli .
 ```
 
-New applications can choose ESLint, Biome, or no linter. In Next.js 16, run the chosen linter separately because neither `next lint` nor build-time linting remains. `@next/eslint-plugin-next` now defaults to ESLint Flat Config (`16.0.0`).
+In 15.5, `next build` still validated lint when it found an ESLint configuration. In Next.js 16, `next build` no longer runs linting. New projects may select ESLint, Biome, or no linter.
 
-## Command upgrades and runtime behavior
+## Output isolation and project locks (`16.0.0`)
 
-Use the framework upgrade command introduced in `16.1.0`:
+`next dev` and `next build` use separate output directories, allowing development and builds to run concurrently. A project lockfile still prevents conflicting instances of the same command.
+
+## Parallel-route fallback requirement (`16.0.0`)
+
+Every parallel-route slot must provide `default.js`. A missing fallback fails the build. Call `notFound()` or return `null` to preserve an intentionally empty fallback.
+
+```tsx
+import { notFound } from 'next/navigation'
+
+export default function Default() {
+  notFound()
+}
+```
+
+## Framework upgrade command (`16.1.0`)
+
+Upgrade Next.js directly with:
 
 ```sh
 next upgrade
 ```
 
-`next dev` and `next build` use separate output directories, allowing them to run concurrently. A project lockfile still prevents conflicting instances of commands from operating on the same application (`16.0.0`).
+## Dynamic Pages API-route localization rollback (`16.3.1`)
 
-To use Node.js native TypeScript stripping for configuration, pass `--experimental-next-config-strip-types` to `next dev`, `next build`, or `next start`; see the configuration reference for details.
+Next.js 16.3.1 reverted the recent i18n localization change for dynamic Pages Router API routes and restored the prior behavior. Do not depend on the temporary localization behavior for routes such as `pages/api/[slug].ts`.
 
-## React Server Components security updates
+## Restored WebAssembly compiler publication (`release-catalogs`)
 
-The `release-catalogs` batch identifies urgent fixes:
+Next.js 16.2.10 and 15.5.20 contain no code changes. They restore publication of `@next/swc-wasm-web`, which had accidentally been omitted beginning with 16.2.4 and 15.5.15.
 
-- CVE-2025-66478 is a critical remote-code-execution vulnerability affecting Next.js 15.x and 16.x.
-- CVE-2025-55184 is a denial-of-service vulnerability that additionally affects Next.js 13.x and 14.x.
-- CVE-2025-55183 can expose source code and additionally affects Next.js 13.x and 14.x.
+## React Server Components security updates (`release-catalogs`)
 
-Upgrade every affected application to a patched release immediately. Do not treat framework configuration as a substitute for installing the security update.
+CVE-2025-66478 is a critical remote-code-execution vulnerability affecting Next.js 15.x and 16.x. CVE-2025-55184, a denial-of-service issue, and CVE-2025-55183, a source-code exposure issue, also affect 13.x and 14.x. Upgrade every affected application to a patched release immediately.

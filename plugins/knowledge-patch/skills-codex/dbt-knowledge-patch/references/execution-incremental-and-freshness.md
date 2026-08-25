@@ -1,15 +1,10 @@
 # Execution, Incremental Models, and Freshness
 
-Use this reference for time-windowed execution, retries, reduced-data runs, and
-freshness-driven orchestration. Relevant extraction sections: 1.9-guides,
-1.9.0, 1.10.0, 1.11.0, and 1.12.0.
+Use this reference for microbatch models, hooks and retries, source and model freshness, snapshots, seeds, and schema-only execution.
 
-## Microbatch incremental strategy
+## Microbatch incremental models (1.9-guides)
 
-The `microbatch` incremental strategy splits large time-series models into
-independently replaceable time batches. dbt auto-filters direct `ref()` and
-`source()` inputs that declare `event_time`; write model SQL for one batch and
-do not add an `is_incremental()` filter merely to bound time.
+The `microbatch` incremental strategy divides large time-series models into independently replaceable batches. dbt automatically filters direct `ref()` and `source()` parents that declare `event_time`, so the model SQL describes one batch and does not need an `is_incremental()` filter.
 
 ```sql
 {{ config(
@@ -25,12 +20,7 @@ do not add an `is_incremental()` filter merely to bound time.
 select * from {{ ref('stg_events') }}
 ```
 
-`begin`, `event_time`, and `batch_size` are required. Valid batch sizes are
-`hour`, `day`, `month`, and `year`. `lookback` defaults to one batch.
-`concurrent_batches: true` or `false` overrides automatic parallelism
-detection.
-
-Configure each direct parent separately:
+Set `event_time` independently on each direct parent that should be filtered:
 
 ```yaml
 models:
@@ -39,82 +29,30 @@ models:
       event_time: my_time_field
 ```
 
-An unconfigured parent is fully scanned for every batch. To opt a configured
-parent out of automatic filtering, deliberately render it with
-`ref('stg_events').render()`.
+An unconfigured parent is scanned completely for every batch. Use `ref('stg_events').render()` to deliberately opt a configured parent out of automatic filtering.
 
-Adapter requirements differ: PostgreSQL additionally requires `unique_key`,
-while Spark and BigQuery require `partition_by`.
+`begin`, `event_time`, and `batch_size` are required. Batch sizes are `hour`, `day`, `month`, or `year`. `lookback` defaults to one batch; `concurrent_batches: true` or `false` overrides automatic parallelism detection. PostgreSQL additionally requires `unique_key`, while Spark and BigQuery require `partition_by`.
 
-## Backfills, hooks, and retry
-
-A backfill needs both event-time bounds:
+Backfills require both UTC bounds:
 
 ```bash
 dbt run --event-time-start "2024-09-01" --event-time-end "2024-09-04"
 ```
 
-`event_time`, `begin`, and both CLI bounds are interpreted as UTC. `dbt retry`
-reruns only failed batches. It honors `--threads`; from 1.10.20, it recomputes
-batches using the original invocation time instead of the retry time.
-
-Microbatch model Jinja has a `batch` context object. Pre-hooks run only for the
-first batch and post-hooks only for the last batch.
-
-A custom microbatch strategy macro must be paired with this project flag:
+`event_time`, `begin`, and both CLI bounds are interpreted as UTC. `dbt retry` reruns only failed batches. A custom microbatch strategy macro also needs this project behavior flag:
 
 ```yaml
 flags:
   require_batched_execution_for_custom_microbatch_strategy: true
 ```
 
-## Sample mode
+## Microbatch context, hooks, and retries (1.10.0)
 
-Core 1.10 introduces sample mode and enables it for `dbt build`. The finalized
-CLI folds the separate sample-window parameter into `--sample`. Sampling
-extends to referenced seeds and through snapshot dependency graphs, so a
-sampled build can reduce upstream input consistently rather than sampling only
-the selected model.
+Model Jinja receives a `batch` context object. Pre-hooks execute only on the first batch and post-hooks only on the last. `dbt retry` honors `--threads`. From Core 1.10.20, a retry recomputes batches with the original invocation time rather than the retry time.
 
-## Empty and schema-only execution
+## Query-driven source freshness (1.10.0)
 
-Snapshots accept `--empty`. Jinja can detect an empty run:
-
-```jinja
-{% if flags.EMPTY %}
-  -- schema-only execution
-{% endif %}
-```
-
-Core 1.12 adds empty seed relations:
-
-```bash
-dbt seed --empty --select customers
-```
-
-This creates seed tables without inserting rows, which is useful for preparing
-schemas or ancestors for unit tests. Managed-function unit tests commonly use:
-
-```bash
-dbt build --select "+my_model_to_test" --empty
-```
-
-## Source freshness
-
-Source freshness can live under `config`; explicitly configured null freshness
-values are preserved (since 1.9.0).
-
-```yaml
-sources:
-  - name: raw
-    config:
-      freshness:
-        warn_after: {count: 12, period: hour}
-```
-
-Source and table configs accept either `loaded_at_field` or
-`loaded_at_query`. A query can calculate freshness when there is no suitable
-column expression:
+Source and table configs accept `loaded_at_field` and `loaded_at_query`, so freshness may be calculated by a SQL query:
 
 ```yaml
 sources:
@@ -125,15 +63,9 @@ sources:
           loaded_at_query: "select max(_loaded_at) from raw.events"
 ```
 
-From Core 1.10, `dbt source freshness` runs project hooks by default through
-the matured `source_freshness_run_project_hooks` behavior. Setting the flag to
-`false` temporarily retains legacy behavior but warns; Core 2.0 removes the
-flag.
+## Model freshness (1.10.0 and 1.11.0)
 
-## Model freshness
-
-Model freshness for adaptive jobs is config-only. In 1.10 it is skipped
-without `build_after`, and `build_after` requires both `count` and `period`:
+Model freshness for adaptive jobs is config-only. It is skipped without `build_after`. A time-driven `build_after` requires both `count` and `period`:
 
 ```yaml
 models:
@@ -145,8 +77,7 @@ models:
           period: hour
 ```
 
-Core 1.11 adds update-driven freshness. An `updates_on` trigger can stand alone
-without `count` or `period`:
+An update-driven trigger may instead specify `updates_on` without `count` or `period`:
 
 ```yaml
 models:
@@ -157,11 +88,36 @@ models:
           updates_on: any
 ```
 
-The later form is additive behavior, not a reason to remove time-based
-freshness from existing models.
+## Snapshot hard-delete handling (1.9-guides)
 
-## Configurable input limits
+`hard_deletes` accepts `ignore` (the default), `invalidate`, and `new_record`. `invalidate` closes a deleted row by setting `dbt_valid_to`; `new_record` records the deletion as a new row and adds `dbt_is_deleted`.
 
-Core 1.12 makes the `MAXIMUM_SEED_SIZE_MIB` seed-size limit configurable. The
-new `--sqlparse` option configures SQL-parser limits, replacing the need to pin
-a particular `sqlparse` release solely to control parser limits.
+```yaml
+snapshots:
+  - name: my_snapshot
+    config:
+      unique_key: id
+      strategy: timestamp
+      updated_at: updated_at
+      hard_deletes: new_record
+```
+
+Legacy `invalidate_hard_deletes` remains supported but cannot be combined with `hard_deletes`. Existing snapshot tables are not migrated automatically; migrate their schema and data before changing modes, or use the new mode only for new snapshots. PostgreSQL, BigQuery, Snowflake, and Redshift support this config.
+
+## Empty-run context (1.9.0)
+
+Snapshots support `--empty`, and Jinja can inspect `flags.EMPTY`:
+
+```jinja
+{% if flags.EMPTY %}
+  -- schema-only execution
+{% endif %}
+```
+
+## Empty seed relations (1.12.0)
+
+`dbt seed --empty` creates selected seed tables without loading their rows, which supports schema-only setup:
+
+```bash
+dbt seed --empty --select customers
+```

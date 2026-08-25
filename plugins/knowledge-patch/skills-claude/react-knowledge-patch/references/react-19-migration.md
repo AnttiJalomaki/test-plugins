@@ -1,31 +1,29 @@
 # React 19 Migration and Compatibility
 
-## Generated `useId` values
+## Update assumptions about generated IDs
 
-The default generated prefix changed across React 19 patch lines:
+Since `19.2.0`, the default `useId` prefix is `_r_`. React 19.0 used `:r:` and
+React 19.1 used `«r»`. The new form is valid as a `view-transition-name` and
+as an XML 1.0 name.
 
-| Release | Prefix |
-|---|---|
-| 19.0 | `:r:` |
-| 19.1 | `«r»` |
-| 19.2.0 | `_r_` |
+Rendered output and snapshots that expose generated IDs will change. Update
+affected snapshots and code, and avoid making application logic depend on the
+exact generated text.
 
-The `_r_` form is valid both as a CSS `view-transition-name` value and as an XML 1.0 name. Server-rendered output, tests, and snapshots that expose generated IDs will change.
+## Add nonces to hoistable styles
 
-Treat `useId` values as opaque. Update snapshots where the change is expected, and remove application logic that parses or depends on a generated prefix.
+Since `19.2.0`, React DOM accepts a `nonce` on hoistable styles. Supply the CSP
+nonce when these styles must run under a nonce-based Content Security Policy.
 
-## CSP nonces for hoistable styles
+## Keep pinned minor lines patched
 
-React DOM accepts a `nonce` on hoistable styles, allowing them to pass a nonce-based Content Security Policy.
+The `news-and-versions` maintenance guidance listed the June 2026 patch
+targets for projects pinned to a React 19 minor line:
 
-## Maintained React 19 patch levels
+- React 19.2: `19.2.7`
+- React 19.1: `19.1.8`
+- React 19.0: `19.0.7`
 
-For projects intentionally pinned to a React 19 minor line, the June 2026 listed patch targets are:
-
-| Minor line | Patch target |
-|---|---|
-| 19.2 | `19.2.7` |
-| 19.1 | `19.1.8` |
-| 19.0 | `19.0.7` |
-
-Security remediation can require a newer release than an application's current pin. Update `react`, `react-dom`, and any RSC transport coherently; see [Security](security.md) for the RSC-specific rules and the React Native monorepo exception.
+Treat these as the listed patch levels for that maintenance snapshot. Security
+remediation may require a newer patched release; follow the latest-release
+guidance in [Security](security.md) for RSC-capable deployments.

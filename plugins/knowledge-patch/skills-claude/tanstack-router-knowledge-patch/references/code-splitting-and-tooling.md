@@ -1,39 +1,36 @@
 # Code Splitting, Route Generation, and Build Tooling
 
-## Route-directory encapsulation
+## Encapsulate a route in its own directory
 
-A file route can move from a flat file such as `posts.tsx` to
-`posts/route.tsx` without extra configuration. This makes it possible to
-colocate the eager route module with its split components and related files.
+Move a file route from `posts.tsx` to `posts/route.tsx` without additional
+configuration. Related route and split files can then be colocated in the same
+directory.
 
-## Automatic file-route splitting
+## Enable automatic file-route splitting
 
-`autoCodeSplitting` is implemented by a bundler plugin. It is not available
-from `@tanstack/router-cli` alone. Register the router plugin before the
-framework plugin:
+`autoCodeSplitting` is a bundler-plugin feature; `@tanstack/router-cli` alone
+cannot perform it. The plugin lazily extracts only `component`,
+`errorComponent`, `pendingComponent`, and `notFoundComponent`.
+
+Loaders, `beforeLoad`, search validation, context, static data, links, scripts,
+styles, and other matching configuration stay in the critical chunk.
 
 ```ts
 plugins: [
   tanstackRouter({ autoCodeSplitting: true }),
-  react(),
+  react(), // Keep the framework plugin after the router plugin.
 ]
 ```
 
-Automatic splitting lazily extracts only these render options:
+## Create manual lazy file boundaries
 
-- `component`
-- `errorComponent`
-- `pendingComponent`
-- `notFoundComponent`
+Without automatic splitting, keep critical options in a normal route file.
+Place the four supported render options in the matching `.lazy.tsx` file with
+`createLazyFileRoute`.
 
-Loaders, `beforeLoad`, search validation, context, static data, links, scripts,
-styles, and all other matching configuration stay in the critical chunk.
-
-## Manual file-route lazy boundaries
-
-Without automatic splitting, keep critical options in the normal file and put
-the four supported render options in a same-path `.lazy.tsx` module created
-with `createLazyFileRoute`.
+The `__root` route cannot be split. If a route has no critical configuration,
+delete the empty normal file; the generated route tree provides a virtual
+anchor.
 
 ```tsx
 // routes/posts.tsx
@@ -43,13 +40,9 @@ export const Route = createFileRoute('/posts')({ loader: fetchPosts })
 export const Route = createLazyFileRoute('/posts')({ component: Posts })
 ```
 
-The `__root` route cannot be split. When a route has no critical
-configuration, delete its empty normal file; the generated route tree supplies
-a virtual eager anchor for the lazy file.
+## Split code-defined routes and loaders
 
-## Code-defined routes and split loaders
-
-Code-defined routes attach a `createLazyRoute` export with `Route.lazy()`:
+Attach a `createLazyRoute` result to a code-defined route with `Route.lazy()`.
 
 ```tsx
 // posts.lazy.tsx
@@ -61,7 +54,9 @@ const postsRoute = createRoute({
 }).lazy(() => import('./posts.lazy').then((mod) => mod.Route))
 ```
 
-A code-route loader can be imported by export name through `lazyFn`:
+Import a loader by name with `lazyFn`. Its context generally requires an
+explicit `LoaderContext` type. File-based loaders can only be split through
+automatic splitting with customized bundling options.
 
 ```tsx
 const dataRoute = createRoute({
@@ -71,73 +66,62 @@ const dataRoute = createRoute({
 })
 ```
 
-The lazy loader's context generally needs an explicit `LoaderContext` type.
-File-based loaders cannot use this manual pattern; split them only through
-automatic splitting with customized bundling options.
+## Reuse resolved lazy components
 
-## Virtual-route punctuation
+Since 1.170.28, the router retains a resolved code-split lazy route component
+for later visits. Revisiting the route does not show pending UI merely to
+resolve the same component again.
+
+## Preserve punctuation in virtual routes
 
 The route generator preserves dots in explicit virtual route paths and
-pathless layout IDs. It no longer treats those dots as flat-file separators.
+pathless layout IDs instead of treating them as flat-file separators. Leading
+and trailing underscores in virtual `route()` paths are literal URL
+characters.
 
-Leading and trailing underscores in virtual `route()` paths are literal URL
-characters. Physical file routes still require bracket escapes for literal
-underscore segments. This remains true for:
+Physical file routes still use bracket escapes for literal underscore
+segments. That includes index routes beneath pathless layouts, `physical()`
+prefixes, and `__virtual.ts` subtrees.
 
-- index routes under pathless layouts
-- `physical()` prefixes
-- `__virtual.ts` subtrees
+## Resolve TypeScript aliases in virtual config
 
-Keep the virtual and physical punctuation rules separate during migrations.
+Virtual route configuration files can import through aliases from `tsconfig`.
+The generator resolves those aliases while loading the configuration.
 
-## TypeScript aliases and parsing
+## Parse non-JSX TypeScript transforms correctly
 
-Virtual route configuration files can import through aliases declared in
-`tsconfig`; the generator resolves them while loading the configuration.
+When a filename is available, route and Start import-protection transforms
+parse plain TypeScript files without JSX. Angle-bracket type assertions are no
+longer interpreted as JSX.
 
-When the transform has a filename, Router and Start import-protection
-transforms parse plain TypeScript without JSX. Angle-bracket type assertions in
-`.ts` files are therefore not interpreted as JSX.
+## Use custom tokens containing regex characters
 
-## Custom route tokens
+File-based generation accepts custom `routeToken` and `indexToken` values that
+start with regex metacharacters such as `+`.
 
-File-route generation accepts custom `routeToken` and `indexToken` strings that
-begin with regular-expression metacharacters such as `+`. Do not pre-escape or
-reject such tokens solely because they are meaningful in regular expressions.
+## Isolate multiple plugin instances
 
-## Isolated plugin instances
+Each router plugin instance carries explicit context instead of global route
+metadata. Multiple instances therefore do not cross-transform one another's
+route files.
 
-Each router plugin instance owns explicit context rather than sharing global
-route metadata. Multiple instances should not cross-transform one another's
-route files. When configuring several route trees, still give each plugin a
-clear include scope and verify its generated output.
+## Use current build-tool peers
 
-## Rsbuild and peer compatibility
+`@tanstack/router-plugin` supports Rsbuild, accepts Vite 8 as a peer, and
+supports `vite-plugin-solid` beginning with `3.0.0-0`.
 
-`@tanstack/router-plugin` supports Rsbuild. Its accepted peers include Vite 8
-and `vite-plugin-solid` beginning at `3.0.0-0`.
+## Preserve route state during HMR
 
-For Rsbuild client assets, module scripts are the default; select IIFE output
-for classic-script environments. See the runtime asset details in
-`loaders-and-ssr.md`.
+React route HMR preserves state for auto-split components and lowercase-named
+functions. Development transforms cover split component groups and the
+unsplit root shell, pending, and error options.
 
-## Expanded route HMR
+Aliased route imports retain generated properties, and
+`createRootRouteWithContext` calls with type arguments are recognized by Vite
+Fast Refresh. Webpack and Rspack no longer import the optional
+`react-refresh/runtime` package for route HMR.
 
-React route hot replacement preserves component state for auto-split
-components and lowercase-named functions. Development transforms handle:
+## Use package intent tooling
 
-- split component groups
-- unsplit root shell options
-- unsplit pending and error options
-
-Aliased route imports retain generated properties. Vite Fast Refresh recognizes
-`createRootRouteWithContext` calls that include type arguments. Webpack and
-Rspack route HMR no longer import the optional `react-refresh/runtime` package.
-
-Test state preservation with the actual transformed route shape rather than
-assuming a function's capitalization or split status excludes it.
-
-## Intent tooling
-
-`@tanstack/intent` supplies agent-oriented skills and CLI entry points for
-TanStack Router and TanStack Start packages.
+`@tanstack/intent` provides AI-agent skills and CLI entry points for
+Router and Start packages.

@@ -8,233 +8,184 @@ metadata:
 ---
 
 
-# Prometheus
+# Prometheus Knowledge Patch
 
-Use this skill when upgrading, configuring, querying, operating, or integrating
-Prometheus. Start with compatibility and security hazards, then open only the
-topic references needed for the task. Treat the running binary, its effective
-configuration, and observed API behavior as authoritative.
+Use this skill when designing, upgrading, configuring, querying, or operating
+Prometheus. Establish the deployed Prometheus version and enabled feature flags
+before applying version-sensitive behavior. Prefer the running server's feature
+API, configuration, and observed behavior when they disagree with assumptions.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Migration, security, and operations](references/migration-security-operations.md) | 3.x migration, removed flags, security fixes, reload behavior, images, logging, Alertmanager, runtime operations |
-| [Scraping and ingestion](references/scraping-and-ingestion.md) | Protocol negotiation, UTF-8, relabeling, scrape controls, classic/native histogram ingestion, exemplars |
-| [PromQL, rules, and templates](references/promql-rules-and-templates.md) | Query semantics, duration expressions, histogram functions, experimental selectors, rule evaluation, templates |
-| [Histograms, TSDB, and storage](references/histograms-tsdb-and-storage.md) | Native histogram behavior, WAL and block formats, retention, start timestamps, compaction, encoding boundaries |
-| [OTLP ingestion](references/otlp-ingestion.md) | Translation, delta metrics, resource and scope metadata, target info, start times, limits and tracing |
-| [Remote read, remote write, and authentication](references/remote-io-and-auth.md) | Remote protocols, queue behavior, metrics, AzureAD, OAuth2, SigV4, validation and redirects |
-| [Service discovery](references/service-discovery.md) | Kubernetes, AWS, Azure, Consul, Hetzner, STACKIT and other discovery providers |
-| [HTTP APIs, promtool, and observability](references/apis-promtool-and-observability.md) | API fields and limits, feature discovery, OpenAPI, query statistics, promtool commands, self-monitoring |
+| [Migration, security, and operations](references/migration-security-operations.md) | Major-upgrade blockers, removed flags, security floors, images, reloads, and process behavior |
+| [Scraping and ingestion](references/scraping-and-ingestion.md) | Protocol negotiation, UTF-8, relabeling, scrape controls, and created timestamps |
+| [Histograms, TSDB, and storage](references/histograms-tsdb-and-storage.md) | Native histograms, WAL and block formats, retention, encodings, and compaction |
+| [PromQL, rules, and templates](references/promql-rules-and-templates.md) | Query semantics, experimental syntax, histogram functions, rules, and templates |
+| [OTLP ingestion](references/otlp-ingestion.md) | Translation, resource metadata, delta metrics, start timestamps, and request handling |
+| [Remote I/O and authentication](references/remote-io-and-auth.md) | Remote read/write contracts, protocol behavior, metrics, AzureAD, OAuth2, and SigV4 |
+| [Service discovery](references/service-discovery.md) | Kubernetes and cloud discovery, metadata, filtering, diagnostics, and reliability |
+| [APIs, promtool, and observability](references/apis-promtool-and-observability.md) | HTTP API changes, query statistics, promtool behavior, self-metrics, and diagnostics |
 
-## Apply breaking changes first
+## Upgrade and compatibility triage
 
-### Remove promoted or replaced feature flags
+### Before crossing the major-version boundary
 
-The following are default behavior and must not remain in `--enable-feature`:
+- Remove feature flags whose behavior became default and replace the old
+  `agent` and `remote-write-receiver` flags with their dedicated command-line
+  switches.
+- Remove deleted TSDB retention, overlapping-block, and Alertmanager timeout
+  flags before starting the new binary.
+- Upgrade through the compatible TSDB transition release before reusing a data
+  directory. Treat newer block and WAL encodings as downgrade boundaries.
+- Upgrade Alertmanager and use its v2 API.
+- Update scrape endpoints or configure an explicit fallback protocol; missing
+  or unknown `Content-Type` values are fatal.
+- Audit regular expressions, UTF-8 name handling, normalized `le` and
+  `quantile` labels, and structured-log parsers.
+- Read [Migration, security, and operations](references/migration-security-operations.md)
+  and [Scraping and ingestion](references/scraping-and-ingestion.md) before
+  changing production startup or scrape configuration.
 
-- `promql-at-modifier`
-- `promql-negative-offset`
-- `new-service-discovery-manager`
-- `expand-external-labels`
-- `no-default-scrape-port`
+### Security floor
 
-Replace the old `agent` and `remote-write-receiver` feature flags with `--agent`
-and `--web.enable-remote-write-receiver`. Automatic `GOMEMLIMIT` and
-`GOMAXPROCS` sizing is also on by default; opt out only with
-`--no-auto-gomemlimit` or `--no-auto-gomaxprocs`.
+- Do not remain on an affected patch level when the references identify a
+  credential disclosure, stored XSS, request-size validation, redirect-header,
+  or dependency advisory.
+- Treat `/-/config`, UI exposure, remote-read inputs, cross-host redirects, and
+  service-discovery credentials as security-sensitive surfaces.
+- For the 3.11 line, deploy the patched maintenance release identified in the
+  operations reference; later lines have additional security fixes.
 
-Remove the deleted startup flags `storage.tsdb.allow-overlapping-blocks`,
-`alertmanager.timeout`, and `storage.tsdb.retention`.
+### Regression-sensitive releases
 
-### Correct 3.x scrape assumptions
+- Avoid a release with the Agent startup crash and broken scrape relabel
+  `keep`/`drop` behavior; use its maintenance fix.
+- Upgrade deployments using XOR2, early stale-series compaction, out-of-order
+  ingestion, or native histograms when the storage reference identifies
+  restart, replay, compaction, or sample-loss fixes.
 
-A target without an accepted, parseable `Content-Type` now fails scraping.
-Correct the exporter or set `fallback_scrape_protocol`; do not rely on implicit
-Prometheus text parsing.
+## Feature-flag decisions
 
-Native histograms are stable from 3.9, making `native-histograms` a no-op, but
-scraping them still requires:
+### Verify support rather than inferring it
+
+Use `/api/v1/features` when available. A flag may be promoted to stable and
+become a no-op, renamed, or replaced by configuration. Pass matching feature
+flags to `promtool` when validating gated syntax.
+
+### Current high-impact transitions
+
+- Native histogram support is stable, but scraping native histograms still
+  requires scrape configuration. Retaining classic histograms and converting
+  classic buckets are separate controls available globally, per job, and per
+  target.
+- Duration expressions and `first_over_time` have become stable. Use the
+  current experimental-function flag spelling for functions that remain
+  unstable.
+- Automatic configuration reload is stable; it also watches referenced rule
+  and scrape configuration files.
+- Extra scrape metrics moved from a feature flag to scrape configuration.
+- Out-of-order native histograms follow the out-of-order window and histogram
+  settings; their former dedicated flag is a no-op.
+
+### Experimental storage features
+
+Do not enable start-timestamp storage, start-timestamp synthesis, XOR2,
+histogram start-timestamp encodings, direct I/O, fast startup, or stale-series
+compaction without reading
+[Histograms, TSDB, and storage](references/histograms-tsdb-and-storage.md).
+Some combinations change stored values or formats, constrain downgrade paths,
+or require paired encodings.
+
+### Experimental query features
+
+Before using extended range selectors, query-boundary functions, fill
+modifiers, metadata labels, or concurrent rule evaluation, read
+[PromQL, rules, and templates](references/promql-rules-and-templates.md).
+Function allowlists, subquery restrictions, rule offsets, reserved labels, and
+concurrency limits materially affect correctness.
+
+## Scraping and histogram quick reference
+
+### Native and classic histogram controls
 
 ```yaml
 global:
   scrape_native_histograms: true
+  always_scrape_classic_histograms: true
+  convert_classic_histograms_to_nhcb: true
 ```
 
-Use `always_scrape_classic_histograms`, not the removed
-`scrape_classic_histograms`, when classic and native forms must both be kept.
+Use only the controls required by the deployment. Per-target relabel labels can
+override all three behaviors. Mixed classic and native samples at one timestamp
+can make some histogram functions return no value.
 
-Metric and label names accept UTF-8. To retain the former validation:
+### Protocol and naming compatibility
 
-```yaml
-global:
-  metric_name_validation_scheme: legacy
-```
+- Fix exporters to return an accepted protobuf, Prometheus text, or OpenMetrics
+  content type; use `fallback_scrape_protocol` only deliberately.
+- Set `metric_name_validation_scheme: legacy` globally or per job when an
+  upgrade must preserve legacy name rejection.
+- Configure `scrape_protocols` explicitly when created-timestamp zero injection
+  must not change the default protocol preference.
+- Use the requested escaping scheme and per-target controls when different
+  exporters need different behavior.
 
-Classic histogram `le` and summary `quantile` values are normalized as
-float-like strings. Change matchers such as `{le="1"}` to `{le="1.0"}` and
-expect transition-spanning queries to be awkward.
+## PromQL and rules quick reference
 
-### Respect data-format boundaries
+- A regex dot matches newlines; audit broad matchers after upgrading.
+- Duration literals work as scalars, duration expressions support arithmetic,
+  and the newest experimental helpers are named `min_of()` and `max_of()`.
+- Histogram-aware functions have function-specific output typing and omission
+  rules. Do not assume float behavior for mixed vectors.
+- `anchored` and `smoothed` selectors accept only specific rate/reset
+  functions, reject subqueries, and require rule offsets for reliable smoothed
+  evaluation.
+- Raw OTLP deltas are not counters. Query them with aligned
+  `sum_over_time(...)` windows rather than `rate()` or `increase()`.
+- Range-query sorting functions have no effect and now warn.
+- Concurrent rule evaluation adds query load independently of the ordinary
+  query concurrency settings.
 
-A v3 data directory can be read only by v2.55 or newer. Upgrade through v2.55
-before v3; downgrading below that floor means abandoning the v3 persistent
-data.
+## Remote I/O quick reference
 
-Experimental XOR2, `histogramST`, and `floathistogramST` blocks are unreadable
-by older releases and may not work with downstream block consumers.
-`st-storage` also writes `SamplesV2` WAL records that require 3.11 or newer.
-Treat these as explicit downgrade and interoperability decisions.
+- Remote-write HTTP/2 is opt-in. Enable it explicitly only when retaining that
+  transport behavior is desired.
+- Remote-read implementations must enforce requested selectors and return only
+  matching results.
+- Remote Write 1.0 cannot transport custom-bucket native histograms; use a
+  compatible protocol or expect them to be rejected with a warning.
+- Remote Write 2 uses start-timestamp terminology and has specific rejection
+  semantics for too-old histogram samples.
+- Validate queue configuration during configuration loading and migrate from
+  deprecated remote-write self-metrics.
+- Cross-host redirects strip credentials and configured authorization headers.
 
-### Pin security-sensitive patch levels
-
-On the 3.11 line, deploy at least 3.11.3. Earlier patch levels expose AzureAD
-client secrets through `/-/config`, under-enforce declared Snappy remote-read
-length, and contain stored-XSS paths in the UIs.
-
-Use 3.13.0 or later for the `sanitize-html` UI fix. It also strips credentials
-and configured headers when an HTTP redirect changes host across scraping,
-remote I/O, alerting, and discovery.
-
-STACKIT service-discovery users need a fixed 3.12 release because affected
-versions expose its credentials through `/-/config`.
-
-Use 3.9.1 rather than 3.9.0 for Agent mode or scrape relabel `keep`/`drop`:
-3.9.0 can crash the Agent and breaks those relabel actions.
-
-## Configure high-impact features deliberately
-
-### Start timestamps and storage encodings
-
-`st-storage` does not select a compatible float block encoding. Float chunks
-must resolve to XOR2 or startup and reload are rejected. Native- and
-float-histogram start timestamps additionally require:
-
-```text
---enable-feature=histograms-st-encoding
-```
-
-`st-synthesis` rewrites scraped cumulative series: it drops the first sample
-and subtracts it from later values. It does not support remote write or OTLP,
-and it changes out-of-order and append-failure behavior. Do not enable it when
-stored values must equal scraped values.
-
-`use-start-timestamps` changes `rate()`, `irate()`, `increase()`, and
-`resets()`, enables `start_timestamp()`, and cannot be combined with `anchored`
-or `smoothed` selectors.
-
-### OTLP delta temporality
+## OTLP choice points
 
 Choose one delta strategy:
 
-- `otlp-deltatocumulative` keeps per-series cumulative state. Restart loses
-  that state and presents a counter reset.
-- `otlp-native-delta-ingestion` stores deltas as received and is mutually
-  exclusive with cumulative conversion.
+- `otlp-deltatocumulative` maintains in-memory cumulative state and resets it
+  across restarts.
+- Native delta ingestion stores raw deltas, is mutually exclusive with
+  conversion, and requires delta-aware queries and explicit stream labeling.
 
-For native delta series, `rate()` and `increase()` are wrong. Sum deltas over a
-range aligned to the collection interval:
+Then decide translation strategy, resource and scope metadata promotion,
+reserved type/unit labels, start-timestamp handling, and explicit-histogram
+conversion. Read [OTLP ingestion](references/otlp-ingestion.md) before combining
+these switches.
 
-```promql
-sum_over_time(delta_metric[5m])
-sum_over_time(delta_metric[5m]) / 5m
-```
+## Validation workflow
 
-Use a distinguishing label if cumulative and delta data can coexist.
-
-### Extended range selectors
-
-Enable experimental range modifiers with
-`--enable-feature=promql-extended-range-selectors`.
-
-- `anchored` is limited to `resets`, `changes`, `rate`, `increase`, and
-  `delta`.
-- `smoothed` is limited to `rate`, `increase`, and `delta`.
-- Neither form supports subqueries.
-- Rule groups using `smoothed` need `query_offset` of at least one scrape
-  interval because evaluation requires a sample after the interval.
-
-The experimental-function flag is
-`--enable-feature=promql-experimental-functions`. Function names and semantics
-under this flag are unstable. Duration-expression `min()` and `max()` were
-renamed to `min_of()` and `max_of()`.
-
-### Concurrent rules
-
-`--enable-feature=concurrent-rule-eval` runs dependency-free rules in a group
-concurrently. Bound the additional query load with
-`--rules.max-concurrent-evals`; its default is `4`. When dependency analysis is
-uncertain, evaluation remains serialized.
-
-### Search API exposure
-
-When `search-api` is enabled, `--web.search.max-limit` caps each search
-endpoint request and defaults to `10000`; requests above it return HTTP 400.
-The ordinary response default is `100` and is clamped to a lower operator cap.
-Do not set the cap to `0` on an untrusted endpoint because that makes requests
-unbounded.
-
-## Query and integration checkpoints
-
-### Histogram semantics
-
-- `idelta()` and `irate()` support native histograms.
-- `rate()`, `increase()`, and `delta()` return gauge histograms.
-- Subtraction, or multiplication/division by a negative factor, also produces
-  a gauge histogram.
-- Time, clamp, scalar, and sort functions ignore histogram samples where
-  documented in the references.
-- `histogram_fraction()` accepts classic buckets, but
-  `histogram_fraction()` and `histogram_quantile()` emit no value when classic
-  and native forms coexist at one timestamp.
-- Sample-limit enforcement counts histogram samples.
-
-Inspect annotations: histogram operations can emit warn-level diagnostics for
-counter-reset conflicts.
-
-### Remote write
-
-Remote-write HTTP/2 is opt-in because
-`http_config.enable_http2` defaults to `false`. Enable it explicitly only when
-the endpoint needs the older behavior.
-
-Remote Write 1.0 cannot transport custom-bucket native histograms. Prometheus
-blocks those sends and logs a warning. Remote Write 2 uses start-timestamp
-terminology and returns HTTP 400 for too-old histogram samples so senders do
-not retry them indefinitely.
-
-Validate `remote_write.queue_config` during configuration review; current
-Prometheus rejects invalid fields at load time.
-
-### Alertmanager and alert rules
-
-Alertmanager v1 API configuration is gone. Require Alertmanager 0.16.0 or later
-and use `api_version: v2`.
-
-Each Alertmanager now has an independent send loop. Notification queue,
-capacity, and dropped metrics carry an `alertmanager` label, so aggregate
-queries explicitly when preserving the former single-series interpretation.
-Alert relabel mutations are scoped to their own Alertmanager configuration.
-
-An unevaluated alert rule has state `unknown`; API and UI consumers must handle
-it. Increasing an alert's `FOR` period no longer resets it to pending.
-
-## Verification workflow
-
-1. Inspect the exact Prometheus image tag or binary version and its startup
-   arguments.
-2. Run configuration and rule checks with the same PromQL feature gates used
-   by the server.
-3. Check exporter `Content-Type`, scrape protocol negotiation, histogram
-   controls, and UTF-8 validation assumptions.
-4. Review TSDB/WAL feature flags before any downgrade or shared-block
-   deployment.
-5. Exercise remote-write authentication, redirect behavior, queue validation,
-   and protocol version in staging.
-6. Update dashboards for renamed metrics, normalized labels, and added
-   dimensions.
-7. Query `/api/v1/features` when capability detection is safer than
-   version inference.
-8. Read the relevant reference file before changing experimental PromQL,
-   start-timestamp, OTLP delta, or storage-encoding behavior.
+1. Determine the binary version, image variant, feature flags, and runtime
+   configuration.
+2. Read only the references relevant to the planned change.
+3. Run `promtool check config` and `promtool check rules`, passing required
+   syntax flags. Account for stdout/stderr behavior in pipelines.
+4. Inspect `/api/v1/features`, status APIs, target relabel traces, query
+   warnings, and the relevant self-metrics.
+5. For storage changes, test restart, replay, compaction, and downgrade or
+   downstream-reader compatibility on a copy of the data.
+6. For query changes, compare annotations, histogram typing, sample limits, and
+   read statistics against representative production expressions.

@@ -1,126 +1,63 @@
 # Testing, Build Tooling, and Migrations
 
-Batch attribution: 19.0.0, 20.0.0, 21-platform-guides, 21.0.0, 22.0.0.
-
 ## Vitest progression and defaults
 
-Angular 20 introduced the CLI's Vitest runner experimentally. Angular 21 makes Vitest the default for new CLI projects: they install Vitest and `jsdom`, and `ng test` runs in a Node DOM environment in watch mode by default. `happy-dom` is the other supported DOM emulator and can replace `jsdom`.
+The v20 experimental `@angular/build:unit-test` builder ran Vitest with `jsdom`
+after installing both packages and selecting `runner: "vitest"`; test files
+could need explicit `describe`, `it`, and `expect` imports (`20.0.0`).
 
-An Angular 20 project that adopts the experimental runner installs both packages and selects the unit-test builder:
+New Angular 21 CLI projects install Vitest and `jsdom`. `ng test` uses the Node
+DOM environment and watches by default; `happy-dom` is the other supported DOM
+emulator. (`21-platform-guides`)
 
-```sh
-npm install --save-dev vitest jsdom
-```
-
-```json
-{
-  "test": {
-    "builder": "@angular/build:unit-test",
-    "options": {
-      "tsConfig": "tsconfig.spec.json",
-      "buildTarget": "::development",
-      "runner": "vitest"
-    }
-  }
-}
-```
-
-Test files may need explicit `describe`, `it`, and `expect` imports from `vitest`.
-
-## Configure the unit-test target
-
-The `@angular/build:unit-test` target accepts:
-
-- `include` and `exclude`;
-- `setupFiles`;
-- `providersFile`;
-- `coverage`;
-- `browsers`;
-- `runnerConfig`;
-- `outputFile` for writing test output to a file.
-
-`include` defaults to both `**/*.spec.ts` and `**/*.test.ts`.
-
-A `providersFile` must default-export an Angular provider array. Both provider and setup files must be included by the test TypeScript configuration.
+The unit-test target accepts `include`, `exclude`, `setupFiles`, `providersFile`,
+`coverage`, and `browsers`; `include` defaults to `**/*.spec.ts` and
+`**/*.test.ts`. `providersFile` must default-export an Angular provider array.
+It and setup files must be included by the test TypeScript configuration.
+(`21-platform-guides`)
 
 ```ts
 // src/test-providers.ts
 import {provideHttpClient} from '@angular/common/http';
-import {
-  provideHttpClientTesting,
-} from '@angular/common/http/testing';
+import {provideHttpClientTesting} from '@angular/common/http/testing';
 
-export default [
-  provideHttpClient(),
-  provideHttpClientTesting(),
-];
+export default [provideHttpClient(), provideHttpClientTesting()];
 ```
 
 ```json
-{
-  "test": {
-    "builder": "@angular/build:unit-test",
-    "options": {
-      "providersFile": "src/test-providers.ts"
-    }
-  }
-}
+{"test":{"builder":"@angular/build:unit-test","options":{"providersFile":"src/test-providers.ts"}}}
 ```
 
-## Run tests in real browsers
-
-Install either the Playwright or WebdriverIO Vitest browser provider, then use the target's `browsers` option or the `--browsers` flag.
+For real-browser runs, install the Playwright or WebdriverIO Vitest browser
+provider and set `browsers` or pass `--browsers`. Runs are headed by default,
+become headless when `CI` is set, and accept an explicit `Headless` suffix.
+(`21-platform-guides`)
 
 ```sh
 npm install --save-dev @vitest/browser-playwright playwright
 ng test --browsers=chromiumHeadless
 ```
 
-Browser runs are headed by default. They become headless when `CI` is set; append `Headless` to a browser name to request headless execution explicitly.
+Point `runnerConfig` to a custom Vitest configuration or generate a base with
+`ng generate config vitest`. The CLI still overrides `test.projects` and
+`test.include`, and Angular does not support the custom file's contents or its
+third-party plugins. (`21-platform-guides`)
 
-## Customize Vitest carefully
+The runner also accepts `outputFile` to write results to a file (`21.0.0`).
 
-Point `runnerConfig` at a custom configuration for advanced Vitest options, or generate a starting configuration:
+## Zoneless tests
 
-```sh
-ng generate config vitest
-```
-
-```json
-{
-  "test": {
-    "builder": "@angular/build:unit-test",
-    "options": {
-      "runnerConfig": "vitest-base.config.ts"
-    }
-  }
-}
-```
-
-The CLI still overrides `test.projects` and `test.include`. Angular does not support the contents of the custom configuration or third-party Vitest plugins, so isolate and own that risk.
-
-## Test zoneless applications
-
-`TestBed` is zoneless by default when `zone.js` is absent. If ZoneJS is loaded in the test environment but production is zoneless, add `provideZonelessChangeDetection()` to align them.
-
-Prefer `await fixture.whenStable()` to routinely forcing `fixture.detectChanges()`. Forced detection can hide an application bug where state changed without scheduling a refresh.
-
-Use exhaustive no-change checking to find missed notifications:
+`TestBed` is zoneless by default when `zone.js` is absent. If it is loaded, add
+`provideZonelessChangeDetection()` to mirror production. Prefer
+`await fixture.whenStable()` to unconditional `fixture.detectChanges()`, which
+can hide missed notifications. An exhaustive no-change check exposes bindings
+that changed without scheduling refresh. (`21-platform-guides`)
 
 ```ts
-import {
-  provideCheckNoChangesConfig,
-  provideZonelessChangeDetection,
-} from '@angular/core';
-import {TestBed} from '@angular/core/testing';
-
 TestBed.configureTestingModule({
   providers: [
     provideZonelessChangeDetection(),
-    provideCheckNoChangesConfig({
-      exhaustive: true,
-      interval: 1000,
-    }),
+    provideCheckNoChangesConfig({exhaustive: true, interval: 1000}),
   ],
 });
 
@@ -128,84 +65,73 @@ const fixture = TestBed.createComponent(App);
 await fixture.whenStable();
 ```
 
-Classic Reactive Forms updates do not notify zoneless change detection. See [Core Reactivity](core-reactivity.md) before “fixing” those tests with unconditional detection.
+## Migrations and test integrations
 
-## Migrate legacy test stacks
+The built-in Protractor builder was removed, so dependent projects must migrate
+to a supported end-to-end tool (`19.0.0`). Experimental Jest and Web Test Runner
+integrations were deprecated for removal in v22; Karma and Jasmine remained
+supported, while retained Jest suites require a community integration
+(`21.0.0`).
 
-### Removed and deprecated runners
-
-- The Protractor builder was removed in Angular 19. Move end-to-end tests to a supported tool.
-- Angular 21 deprecates its experimental Jest and Web Test Runner integrations and plans to remove them in Angular 22.
-- Karma and Jasmine remain fully supported.
-- An application that retains Jest needs a community integration.
-
-### Jasmine-to-Vitest schematic
-
-After completing its documented preparation, an existing application can try the experimental Jasmine-to-Vitest refactoring schematic:
+After its preparatory steps, try the experimental Jasmine-to-Vitest schematic
+to refactor an existing suite (`21.0.0`):
 
 ```sh
 ng g @schematics/angular:refactor-jasmine-vitest
 ```
 
-Review every automated test rewrite; the schematic performs the source refactoring but does not establish behavioral equivalence by itself.
+The standalone migration supports `CommonModule`. Other schematics replace
+deprecated `RouterTestingModule`, convert `NgClass` to class bindings, and
+convert `NgStyle` to style bindings (`21.0.0`). The v22 `ng update` migration
+adds `strictTemplates` to the TypeScript configuration (`22.0.0`).
 
-### Test API removals
+## Removed and renamed test APIs
 
-Angular 22 renames `TestBed.getFixture()` to `TestBed.getLastFixture()`. It removes `ChangeDetectorRef.checkNoChanges()`; use `fixture.detectChanges()` for the corresponding test workflow.
+`TestBed.getFixture()` is renamed to `TestBed.getLastFixture()`.
+`ChangeDetectorRef.checkNoChanges()` is removed; use `fixture.detectChanges()`
+in tests instead. (`22.0.0`)
 
-## Hot replacement during development
+## Development server and HMR
 
-Style HMR is enabled by default. Template HMR began as an experimental opt-in:
+Style HMR is enabled by default. Template HMR was experimental and enabled with
+`NG_HMR_TEMPLATES=1 ng serve`; use `ng serve --no-hmr` or development-server
+option `"hmr": false` to disable HMR. (`19.0.0`)
 
-```sh
-NG_HMR_TEMPLATES=1 ng serve
-```
+## Compiler and language-service assistance
 
-Disable HMR with either:
-
-```sh
-ng serve --no-hmr
-```
-
-or the development-server option:
+The CLI warns about unused standalone component imports and the language service
+can remove them. Suppress the check only when needed (`19.0.0`):
 
 ```json
-{"hmr": false}
+{"extendedDiagnostics":{"checks":{"unusedStandaloneImports":"suppress"}}}
 ```
 
-## Modernization migrations
+The Angular 22 language service exposes document symbols for Angular templates
+(`22.0.0`).
 
-Angular 21 expands modernization support:
+## Angular CLI tools
 
-- the standalone migration handles `CommonModule`;
-- a migration replaces deprecated `RouterTestingModule` usage;
-- schematics convert `NgClass` to class bindings;
-- schematics convert `NgStyle` to style bindings.
+The Angular CLI MCP server is stable. Its tools include `get_best_practices`,
+`list_projects`, `search_documentation`, `find_examples`, and
+`onpush_zoneless_migration`. `modernize` remains experimental, while `ai_tutor`
+starts an interactive tutor intended for a new Angular application. (`21.0.0`)
 
-Angular 22's `ng update` migration adds `strictTemplates` to the project TypeScript configuration. It also surfaces duplicate selector matches as compiler diagnostic `NG8023`.
+The development-server tools `devserver.start`, `devserver.stop`, and
+`devserver.wait_for_build` are stable in Angular 22, as are its testing and
+end-to-end tools (`22.0.0`).
 
-## CLI MCP tools
+The `angular-developer` skill provides modern application practices and
+progressively loaded references; `angular-new-app` guides setup of a new
+environment. Separate contributor skills cover framework internals. (`22.0.0`)
 
-The Angular CLI MCP server is stable as of Angular 21. Its stable tools include:
+Angular also has experimental WebMCP support for application-, route-, and
+service-scoped structured browser tools, including tools generated from dynamic
+Signal Forms (`22.0.0`).
 
-- `get_best_practices`;
-- `list_projects`;
-- `search_documentation`;
-- `find_examples`;
-- `onpush_zoneless_migration`.
+## Build integration changes
 
-`modernize` remains experimental. `ai_tutor` launches an interactive tutor intended for use with a new Angular application.
-
-Angular 22 stabilizes `devserver.start`, `devserver.stop`, and `devserver.wait_for_build`, along with the MCP server's testing and end-to-end tools. The language service also exposes document symbols for Angular templates.
-
-## Angular skills and browser tools
-
-Angular 22 supplies an `angular-developer` skill with modern practices and progressively loaded references, plus an `angular-new-app` skill for preparing a new application environment. Separate contributor skills describe the framework's internal development model.
-
-Experimental WebMCP integration can expose structured browser tools at application, route, and service scope. It can also generate tools dynamically from Signal Forms. Treat all WebMCP integration points as experimental contracts.
-
-## Build-tool compatibility
-
-Angular 20.2 supports TypeScript 5.9. Angular 22 supports TypeScript 6 and deprecates webpack support, including `@angular-devkit/build-angular` builders and `@ngtools/webpack`, while the application builder moves toward TSGo support.
-
-Use the exact Node.js, TypeScript, and RxJS ranges in [Compatibility, Security, and Release Policy](compatibility-security-and-releases.md); minor Angular lines do not all share one TypeScript ceiling.
+Webpack support is deprecated, including `@angular-devkit/build-angular`
+webpack-based builders and `@ngtools/webpack`, while the application builder
+moves toward TSGo support (`22.0.0`). The built-in Hammer.js integration is
+removed; applications needing gestures must provide an implementation
+(`22.0.0`).

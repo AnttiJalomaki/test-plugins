@@ -4,8 +4,7 @@
 
 Install `vitest@^4.1.0` with `@cloudflare/vitest-pool-workers`. Add
 `cloudflareTest()` to the Vite plugin list and point it to the Wrangler
-configuration that declares the Durable Object bindings and lifecycle
-configuration.
+configuration that declares the Durable Object bindings and migrations.
 
 ```ts
 export default defineConfig({
@@ -17,7 +16,7 @@ export default defineConfig({
 });
 ```
 
-## Type the provided test environment
+## Type test bindings
 
 Include `@cloudflare/vitest-pool-workers/types` in the test TypeScript
 configuration. Augment `cloudflare:workers` so the test runtime's `env` uses
@@ -29,10 +28,11 @@ declare module "cloudflare:workers" {
 }
 ```
 
-## Test at the Worker or object boundary
+## Test the Worker or a stub at the right boundary
 
-Use `exports.default.fetch()` to exercise the default Worker's HTTP handler and
-its routing to Durable Objects.
+Use `exports.default.fetch()` to test the default Worker's HTTP handler and its
+Durable Object routing. Use a binding from `env` when the test should call a
+Durable Object stub directly.
 
 ```ts
 const response = await exports.default.fetch(
@@ -41,21 +41,16 @@ const response = await exports.default.fetch(
 );
 ```
 
-Use a binding from `env` when the test should call a Durable Object stub
-directly.
+## Account for storage persistence and isolation
 
-## Account for per-file storage persistence
+Repeated access to the same named object across tests in one file sees earlier
+stored data. Distinct object IDs have independent storage. Evicting instances
+does not delete this persisted data.
 
-Repeated access to the same named object across tests in one file sees data
-stored by earlier tests. Distinct IDs have independent storage.
+## Run scheduled alarms immediately
 
-`evictAllDurableObjects()` resets running instances without deleting that
-persisted data.
-
-## Run scheduled alarms
-
-`runDurableObjectAlarm(stub)` immediately executes a scheduled future alarm
-and returns `true`. Calling it when no alarm remains returns `false`.
+`runDurableObjectAlarm(stub)` immediately executes a scheduled future alarm and
+returns `true`. It returns `false` when no alarm remains.
 
 ```ts
 const ran = await runDurableObjectAlarm(stub);
@@ -63,11 +58,12 @@ expect(ran).toBe(true);
 expect(await runDurableObjectAlarm(stub)).toBe(false);
 ```
 
-## Exercise eviction behavior
+## Exercise eviction paths
 
 `@cloudflare/vitest-pool-workers` 0.16.20 and later exports
 `evictDurableObject` and `evictAllDurableObjects` from `cloudflare:test`
-(2026).
+(2026). The targeted helper normally simulates eviction with WebSocket
+hibernation; pass `{ webSockets: "close" }` to test the non-hibernating path.
 
 ```ts
 import {
@@ -81,9 +77,7 @@ await evictDurableObject(stub, { webSockets: "close" });
 await evictAllDurableObjects();
 ```
 
-Targeted eviction normally simulates eviction with WebSocket hibernation. Pass
-`{ webSockets: "close" }` to test the non-hibernating path.
-
-Before tearing down an instance, `evictDurableObject()` waits up to 30 seconds
-for in-flight requests to drain. It clears in-memory state but preserves the
-object's durable storage.
+Before teardown, `evictDurableObject()` waits up to 30 seconds for in-flight
+requests to drain. It resets in-memory state but preserves durable storage.
+`evictAllDurableObjects()` likewise resets running instances without deleting
+persisted data.

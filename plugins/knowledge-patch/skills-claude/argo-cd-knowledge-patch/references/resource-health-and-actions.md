@@ -1,58 +1,77 @@
 # Resource Health and Actions
 
-## Health and customization coverage
+Prefer built-in health checks and actions over overlapping custom Lua. When
+moving from a customization to a built-in implementation, compare state names,
+transition timing, and action parameters before deleting the customization.
 
-Health support and resource customizations expanded substantially in 3.1.0.
-Before carrying a custom Lua assessment forward, check for built-in coverage
-for:
+## Health coverage
 
-- SpinApp;
-- OpenTelemetryCollector;
-- Logstash;
-- RabbitMQ topology resources;
+### Operator and platform resources
+
+Argo CD 3.1.0 adds built-in health checks or customizations for:
+
+- SpinApp, OpenTelemetryCollector, Logstash, and RabbitMQ topology resources;
 - Crossplane and Upbound resources;
-- Kyverno Policy;
-- Contour HTTPProxy;
+- Kyverno Policy and Contour HTTPProxy;
 - Grafana Operator Dashboard and Folder;
-- Kubernetes Gateway API resources; and
-- CloudNativePG.
+- Kubernetes Gateway API and CloudNativePG.
 
-The same 3.1.0 behavior recognizes the `Fallback` condition in KEDA
-`ScaledObject` health. Numaplane resources no longer use a suspended state, so
-custom health code and dashboards must not depend on that former state.
+KEDA `ScaledObject` health recognizes the `Fallback` condition, and Numaplane
+resources no longer use a suspended state.
 
-Built-in health support expanded again in 3.2.0 for:
+Argo CD 3.2.0 adds health support for DatadogMetric, GitOps Promoter, 3scale,
+Coralogix, ExtensionService, and Altinity ClickHouse Operator resources.
+CronJobs also gain health assessment.
 
-- DatadogMetric;
-- GitOps Promoter resources;
-- 3scale resources;
-- Coralogix resources;
-- ExtensionService; and
-- Altinity ClickHouse Operator resources.
+In 3.3.13, built-in assessment is corrected for `ConfigConnectorContext` and
+`ConfigConnector` resources.
 
-CronJobs also gain health assessment in 3.2.0. Prefer maintained built-in
-behavior when it meets the resource's semantics, and remove overlapping custom
-health scripts only after comparing their healthy, progressing, degraded, and
-suspended outcomes.
+### Additional resource families
 
-## Parameterized workload scaling
+Argo CD 3.5.0 adds health support for:
 
-Resource actions can accept parameters when scaling workloads since 3.1.0.
-Define validation and safe bounds for scale inputs rather than treating every
-caller-provided parameter as an acceptable replica target.
+- Gardener `Shoot`;
+- Gateway API `GatewayClass` and `BackendTLSPolicy`;
+- additional GitOps Promoter resources;
+- VictoriaMetrics resources;
+- Karpenter `NodeClaim`.
 
-## Rollout actions
+## Corrected health states
 
-- Numaplane rollout resources gained force-promote actions in 3.0.0. Reserve
-  force promotion for an intentional operational override and retain an audit
-  trail of the caller and reason.
-- Argo Rollouts resources gained `pause` and `skip-current-step` actions in
-  3.1.0. `skip-current-step` changes rollout progression rather than merely
-  changing presentation state, so protect it with appropriate RBAC.
+In 3.5.0:
 
-## Job actions
+- HPA metric failures are recognized as degraded;
+- CRDs in `Installing` are not marked degraded;
+- manual-approval Subscription health is handled;
+- a no-op rehydration no longer leaves a `PromotionStrategy` stuck in
+  `Progressing`.
 
-Jobs gained `suspend`, `resume`, and `terminate` actions in 3.2.0. Distinguish
-the desired outcome before invoking one: suspension preserves the Job for
-later continuation, resumption restarts progression, and termination is an
-explicit end to the active work.
+Remove local workarounds only after confirming dashboards and automation accept
+the corrected state transitions.
+
+## Scaling and rollout actions
+
+Resource scaling actions accept parameters as of 3.1.0. Validate parameter
+names and bounds at the caller because an action can now express more than one
+fixed scaling operation.
+
+Argo Rollouts resources add `pause` and `skip-current-step` actions in 3.1.0.
+Numaplane rollouts add a force-promote action in 3.0.0. Apply promotion and
+flow-control actions only after checking current rollout state and recovery
+options.
+
+## Job and database lifecycle actions
+
+Jobs gain suspend, resume, and terminate actions in 3.2.0.
+
+In 3.5.0, actions add:
+
+- pause and unpause for `psmdb`;
+- suspend and resume for MariaDB;
+- deletion of recyclable Numaflow pipelines;
+- restart for `StrimziPodSet`;
+- auto-sync toggling for Applications.
+
+Treat terminate, delete, restart, and auto-sync actions as state-changing
+operations. Confirm the selected object, namespace, and present health before
+execution, and verify the post-action state.

@@ -1,26 +1,49 @@
 # Components
 
-## Prebuilt sign-in-or-up
+## Configure combined prebuilt sign-in and sign-up
 
-`<SignIn withSignUp>` prompts an unknown user to sign up without leaving the prebuilt sign-in flow.
-
-- `withSignUp` defaults to `true` only when `CLERK_SIGN_IN_URL` is set.
-- It otherwise defaults to `false`.
-- `transferable={false}` separately prevents an OAuth attempt for an unknown email from becoming an opaque sign-up transfer.
+`<SignIn withSignUp>` keeps an unknown user in the prebuilt sign-in surface and
+offers sign-up. `withSignUp` defaults to `true` only when
+`CLERK_SIGN_IN_URL` is set; otherwise it defaults to `false`.
+`transferable={false}` separately stops an OAuth attempt for an unknown email
+from becoming an opaque sign-up transfer.
 
 ```tsx
 <SignIn withSignUp transferable={false} />
 ```
 
-## Sign-out prop migrations
+The combined flow now supports strict user-enumeration protection without an
+additional prop: it verifies email or phone before deciding whether to sign in
+or create the user. The instance must use Open access, cannot use username
+identifiers, and cannot begin with password. Disable password or prefer OTP.
+Development warns about an invalid password-preferred configuration with
+`sign_up_if_missing_password_preferred`. Account Portal does not support this
+combined flow.
 
-In `@clerk/react` 6.1.3 and `@clerk/vue` 2.0.7, `<SignOutButton />` deprecates `signOutOptions`. Pass `redirectUrl` and `sessionId` directly. The nested prop still works temporarily but emits a deprecation warning.
+## Wire an embedded Waitlist
+
+`<Waitlist />` requires Waitlist mode and a `waitlistUrl` on `<ClerkProvider>` or
+`<SignIn>`. Use `afterJoinWaitlistUrl` on the component for post-join routing.
+The Next.js component requires `@clerk/nextjs` 6.2.0 or newer.
 
 ```tsx
-<SignOutButton redirectUrl="/signed-out" sessionId={sessionId} />
+<ClerkProvider waitlistUrl="/waitlist">
+  <Waitlist afterJoinWaitlistUrl="/thanks" />
+</ClerkProvider>
 ```
 
-`afterSignOutUrl` and `afterMultiSessionSingleSignOutUrl` are deprecated on `<UserButton />`; move them to `<ClerkProvider>`. `afterSwitchSessionUrl` remains on `<UserButton />`.
+## Know the Google One Tap boundary
+
+`<GoogleOneTap />` requires custom credentials for the Google social connection
+and does not render when a Clerk user is already signed in. It does not return a
+Google access or refresh token; choose another flow when the application must
+call Google APIs for the user. ITP and FedCM support default to enabled.
+
+## Move UserButton sign-out redirects
+
+`afterSignOutUrl` and `afterMultiSessionSingleSignOutUrl` are deprecated on
+`<UserButton />`; move them to `<ClerkProvider>`. Keep
+`afterSwitchSessionUrl` on `<UserButton />` for multi-session account changes.
 
 ```tsx
 <ClerkProvider
@@ -31,25 +54,11 @@ In `@clerk/react` 6.1.3 and `@clerk/vue` 2.0.7, `<SignOutButton />` deprecates `
 </ClerkProvider>
 ```
 
-## Waitlist routing
+## Authorize UI with Show
 
-Embedded `<Waitlist />` requires Waitlist mode plus a `waitlistUrl` on `<ClerkProvider>` or `<SignIn>`. Set `afterJoinWaitlistUrl` on the component for post-join navigation. The Next.js component requires `@clerk/nextjs` 6.2.0 or newer.
-
-```tsx
-<ClerkProvider waitlistUrl="/waitlist">
-  <Waitlist afterJoinWaitlistUrl="/thanks" />
-</ClerkProvider>
-```
-
-## Google One Tap
-
-`<GoogleOneTap />` requires the Google social connection to use custom credentials. It does not render for an already signed-in Clerk user.
-
-The component does not return a Google access or refresh token. Use a different OAuth flow if the application must call Google APIs on the user's behalf. ITP support and FedCM support both default to enabled.
-
-## Unified authorization rendering
-
-`<Show>` accepts a Role, Permission, Feature, or Plan object in `when`, or a callback receiving `has` for compound conditions. `fallback` renders when the check fails.
+`<Show>` accepts a Role, Permission, Feature, or Plan object in `when`, or a
+callback receiving `has` for compound checks. `fallback` renders when the check
+fails.
 
 ```tsx
 <Show
@@ -62,11 +71,14 @@ The component does not return a Google access or refresh token. Use a different 
 </Show>
 ```
 
-Client-side `<Show>` hides its children visually but does not protect their data. Repeat sensitive authorization checks on the server.
+This only hides client content. Repeat every sensitive authorization check on
+the server.
 
-## Astro loading controls
+## Render Clerk loading states in Astro
 
-`<ClerkLoaded>` renders in both `ready` and `degraded` states. In Astro, `<ClerkLoaded>` and `<ClerkLoading>` are React islands imported from `@clerk/astro/react`, not the usual Astro components entry point, and require React integration.
+`<ClerkLoaded>` renders in both `ready` and `degraded` states. In Astro,
+`<ClerkLoaded>` and `<ClerkLoading>` are React islands imported from
+`@clerk/astro/react`, not the normal Astro component entry, and require React.
 
 ```astro
 ---
@@ -76,15 +88,18 @@ import { ClerkLoaded, ClerkLoading } from '@clerk/astro/react'
 <ClerkLoaded client:load>Ready or degraded</ClerkLoaded>
 ```
 
-## Chrome extension redirects
+## Redirect inside Chrome extensions
 
-Chrome extension `<RedirectToSignIn />` and `<RedirectToSignUp />` depend on React Router. Both replace the current history entry instead of pushing a new one.
+Chrome extension versions of `<RedirectToSignIn />` and
+`<RedirectToSignUp />` depend on React Router. Both replace the current history
+entry rather than adding a new entry.
 
-## Authenticated Billing drawers
+## Guard Billing drawers
 
-`<CheckoutButton />` and `<SubscriptionDetailsButton />` are available from React, Next.js, and Vue `/experimental` entry points. They throw unless nested inside `<Show when="signed-in">`.
-
-They default to the current user. If `for="organization"` is set, an Active Organization is also required.
+`<CheckoutButton />` and `<SubscriptionDetailsButton />` from React, Next.js,
+and Vue experimental entry points throw unless nested under
+`<Show when="signed-in">`. Both default to the current user. Setting
+`for="organization"` also throws unless an Organization is active.
 
 ```tsx
 import {
@@ -96,4 +111,15 @@ import {
   <CheckoutButton planId="cplan_123" planPeriod="month" />
   <SubscriptionDetailsButton />
 </Show>
+```
+
+## Pass SignOutButton props directly
+
+In `@clerk/react` 6.1.3 and `@clerk/vue` 2.0.7,
+`<SignOutButton />` deprecates `signOutOptions`. Pass `redirectUrl` and
+`sessionId` directly. The nested object still works temporarily but logs a
+deprecation warning.
+
+```tsx
+<SignOutButton redirectUrl="/signed-out" sessionId={sessionId} />
 ```

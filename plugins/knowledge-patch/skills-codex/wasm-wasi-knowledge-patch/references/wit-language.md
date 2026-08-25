@@ -1,13 +1,13 @@
-# WIT language and composition
+# WIT Language and Composition
 
-## Identifiers and documentation
+## Identifiers and documentation (`wasi-0.2-guide`)
 
-WIT identifiers are ASCII kebab-case. Each word separated by a hyphen must be
-entirely lowercase or entirely uppercase. When a keyword is used as a name,
-escape it with a `%` prefix (wasi-0.2-guide).
+WIT identifiers use ASCII kebab-case. Each hyphen-delimited word must be
+entirely lowercase or entirely uppercase. Escape a keyword used as a name by
+prefixing it with `%`.
 
-`///` and `/** ... */` attach documentation to the following item. Ordinary
-`/* ... */` comments may be nested.
+`///` and `/** ... */` document the following item. Ordinary `/* ... */`
+comments may be nested.
 
 ```wit
 /// An interface whose escaped name would otherwise be a keyword.
@@ -18,11 +18,11 @@ interface %interface {
 
 ## Result shorthands
 
-Both payload positions of `result<T, E>` are optional (wasi-0.2-guide):
+Either payload in `result<T, E>` may be omitted:
 
-- `result<T>` omits the error payload.
-- `result<_, E>` omits the success payload.
-- bare `result` omits both payloads.
+- `result<T>` has no error payload;
+- `result<_, E>` has no success payload; and
+- bare `result` has neither payload.
 
 ```wit
 interface results {
@@ -33,23 +33,24 @@ interface results {
 
 ## Floating-point NaNs
 
-Although `f32` and `f64` otherwise represent IEEE 754 values, WIT logically
-has one `nan` value (wasi-0.2-guide). Do not depend on a NaN's payload bits
-surviving an interface crossing.
+Although `f32` and `f64` otherwise represent IEEE 754 values, WIT has one
+logical `nan` value. Never depend on the bit-level payload of a NaN surviving
+an interface crossing.
 
-## Generic and concrete types
+## Generic type boundary
 
-User-defined records and variants cannot declare type parameters
-(wasi-0.2-guide). Only built-in generic types such as `list<T>`, `option<T>`,
-and `result<T, E>` can be parameterized.
+User-defined records and variants cannot declare type parameters. Only WIT's
+built-in generic types, including `list<T>`, `option<T>`, and `result<T, E>`,
+may be parameterized.
 
-## Resources
+## Resource ownership and members
 
-A resource can declare:
+A resource can have at most one `constructor`. An ordinary method receives an
+implicit borrowed `self`; a `static func` has no `self`.
 
-- at most one `constructor`;
-- ordinary methods, each with an implicit borrowed `self`; and
-- `static func` members, which have no `self`.
+`borrow<resource>` loans a handle for the duration of a call. Passing an owned
+resource handle instead transfers responsibility for eventually destroying
+the resource.
 
 ```wit
 interface storage {
@@ -61,40 +62,11 @@ interface storage {
 }
 ```
 
-`borrow<resource>` loans a handle only for a call. Passing an owned resource
-handle transfers the responsibility to destroy it eventually
-(wasi-0.2-guide).
-
-Do not apply resource borrowing rules to native streams and futures. Each is
-an owned Canonical ABI value and cannot be borrowed; crossing a component
-boundary transfers its ownership (wasi-0.3.0).
-
-## Native async declarations
-
-WASI 0.3 adds these WIT native async values and calls:
-
-- `stream<T>` for ordered values produced incrementally;
-- `future<T>` for one value produced later; and
-- `async func` for a call that may suspend.
-
-Streams and futures are Canonical ABI values rather than resources. They can
-be parameters, results, or values forwarded across component boundaries. The
-runtime schedules async calls, while bindings expose the host language's
-normal async form (wasi-0.2-guide).
-
-```wit
-interface handler {
-    handle: async func(request: string) -> result<string, u32>;
-    body: func() -> tuple<stream<u8>, future<result>>;
-}
-```
-
 ## Reusing interface types
 
 Import types from another interface with
 `use interface-name.{type-name, ...}`. Braces are mandatory even when importing
-one type. The same form works between `.wit` files in one package
-(wasi-0.2-guide).
+one type. The syntax also works between `.wit` files in the same package.
 
 ```wit
 interface types { type point = tuple<u32, u32>; }
@@ -104,17 +76,12 @@ interface canvas {
 }
 ```
 
-## Composing worlds
+## World composition
 
-A world can:
-
-- import or export an entire interface;
-- import or export an individual function;
-- declare an interface inline; and
-- `include` another world to acquire all of its imports and exports.
-
-Name an external interface with `package/interface` syntax. WIT deliberately
-leaves package resolution to tooling (wasi-0.2-guide).
+A world may import or export entire interfaces or individual functions,
+declare an interface inline, and `include` another world to inherit all its
+imports and exports. Refer to an external interface with `package/interface`;
+the tooling decides how that package is resolved.
 
 ```wit
 world diagnostics { export report: func(message: string); }
@@ -127,11 +94,27 @@ world proxy {
 
 ## Multi-file packages
 
-A package identifier is `namespace:name`, optionally followed by `@semver`.
-A package can span peer `.wit` files in the same directory. Only one file must
-contain the package declaration; if several contain it, every declaration must
-match (wasi-0.2-guide).
+A package ID has the form `namespace:name` with an optional `@semver`. A
+package can span peer `.wit` files in one directory. Only one file must contain
+the declaration; if several files repeat it, every declaration must match.
 
 ```wit
 package documentation:http@1.0.0;
+```
+
+## Multiple instances with `implements` (`wasi-0.3.1`)
+
+The Component Model's `implements` feature lets a component import or export
+multiple instances of the same interface under distinct names. For example,
+remote and in-memory stores may both implement one key-value interface. A
+runtime and toolchain must support this feature to accept WASI 0.3.1 or later.
+
+## First-class maps
+
+Use `map<K, V>` for a dynamic key-value collection instead of encoding it as
+`list<tuple<K, V>>`. This type also requires WASI 0.3.1-or-later runtime and
+toolchain support.
+
+```wit
+type labels = map<string, string>;
 ```

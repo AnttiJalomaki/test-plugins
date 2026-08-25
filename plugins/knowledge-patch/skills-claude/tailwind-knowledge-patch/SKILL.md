@@ -10,17 +10,17 @@ metadata:
 
 # Tailwind CSS Knowledge Patch
 
-Use this patch when configuring, migrating, or extending a Tailwind CSS project. Start with the migration notes, then open the topic reference that matches the work.
+Use this patch when configuring, migrating, integrating, or extending a Tailwind CSS project. Check migration-sensitive behavior first, then open only the topic reference relevant to the task.
 
 ## Reference Index
 
 | Reference | Topics |
 |---|---|
-| [Configuration and Theming](references/configuration.md) | `@theme`, token namespaces, source detection, legacy configuration, custom utilities |
-| [Integrations and Ecosystem](references/integrations.md) | `@reference`, package aliases, Vite, webpack, Tailwind Plus, Prettier |
-| [Migration and Compatibility](references/migration.md) | Renames, removed configuration options, browser fallbacks, logical-property migration |
-| [Utilities](references/utilities.md) | Gradients, masks, shadows, wrapping, alignment, logical properties, scrollbars, containers |
-| [Variants and States](references/variants.md) | Data and ancestor states, negation, pointers, validation, details, popovers, CSS variant composition |
+| [Configuration and Theming](references/configuration.md) | `@theme`, token namespaces, source detection, legacy configuration, build-time functions, custom utilities |
+| [Integrations and Ecosystem](references/integrations.md) | `@reference`, Vite, webpack, CLI watch polling, CSS nesting, Tailwind Plus, Prettier |
+| [Migration and Compatibility](references/migration.md) | Removed configuration, renamed utilities, browser fallbacks, logical positioning, platform font behavior |
+| [Utilities](references/utilities.md) | Values, gradients, masks, shadows, wrapping, alignment, logical properties, scrollbars, containers, typography |
+| [Variants and States](references/variants.md) | Data and ancestor states, negation, pointers, validation, details, popovers, authored CSS composition |
 
 ## Migration Hazards First
 
@@ -35,7 +35,7 @@ Use this patch when configuring, migrating, or extending a Tailwind CSS project.
 }
 ```
 
-- Define framework tokens in a top-level `@theme`; a `:root` custom property alone does not create a utility or variant.
+- Put framework tokens in a top-level `@theme`; a `:root` custom property alone does not create a utility or variant.
 - Use `@config` and `@plugin` only as bridges for legacy JavaScript configuration and plugins.
 - Do not carry forward `corePlugins`, `safelist`, or `separator`; they are unsupported. Replace safelisting with `@source inline()`.
 
@@ -47,11 +47,14 @@ Use this patch when configuring, migrating, or extending a Tailwind CSS project.
 | `start-*` | `inset-s-*` | Logical inline-start positioning. |
 | `end-*` | `inset-e-*` | Logical inline-end positioning. |
 
-Explicit gradient color-space modifiers such as `/srgb` and `/oklch` are optional; unmodified gradients interpolate in OKLAB.
+Unmodified gradients interpolate in OKLAB. Append an explicit modifier such as `/srgb` or `/oklch` only when a particular color space is required.
 
-### Keep compatibility behavior in mind
+### Preserve compatibility deliberately
 
-Fallbacks cover `oklab`, opacity-modified colors, and registered-custom-property implementations used by shadows, transforms, and gradients. Explicit gradient interpolation degrades to the browser default when unsupported; test visual fidelity when older browsers matter.
+- Older-browser fallbacks cover `oklab`, opacity-modified colors, and registered-custom-property implementations used by shadows, transforms, and gradients.
+- Explicit gradient interpolation falls back to the browser default when unsupported; test visual fidelity when older browsers matter.
+- CSS nesting is processed even when Lightning CSS does not run, including in `@tailwindcss/browser` and Tailwind Play.
+- The default sans stack uses explicit platform fonts so Windows CJK selection can follow the document's `lang` attribute.
 
 ## Theme and Configuration Quick Reference
 
@@ -65,11 +68,11 @@ Fallbacks cover `oklab`, opacity-modified colors, and registered-custom-property
 | `--color-*: initial` | Removes one default namespace and its generated utilities. |
 | `--*: initial` | Removes the entire default theme before replacement. |
 
-Theme namespaces drive APIs for colors, fonts, text sizes, font weights, tracking, leading, spacing, radii, shadows, inset shadows, drop shadows, blur, perspective, aspect ratios, easing, and animation. Breakpoint tokens create responsive variants; container tokens create container variants and size utilities.
+Theme namespaces create APIs for colors, fonts, text sizes, font weights, tracking, leading, spacing, radii, shadows, inset shadows, drop shadows, blur, perspective, aspect ratios, easing, and animation. Breakpoint tokens create responsive variants; container tokens create container variants and size utilities.
 
 ### Animation ownership
 
-Place a keyframe inside `@theme` beside its `--animate-*` token when it should be emitted only if that animation is used. Put `@keyframes` outside `@theme` when it must always exist.
+Nest a keyframe in `@theme` beside its `--animate-*` token when it should be emitted only if that animation is used. Put `@keyframes` outside `@theme` when it must always exist.
 
 ```css
 @theme {
@@ -94,16 +97,20 @@ Place a keyframe inside `@theme` beside its `--animate-*` token when it should b
 - `@source inline()` generates literal candidates and supports brace-expanded lists, ranges, and variants.
 - `@source not inline()` suppresses a candidate even if project scanning finds it.
 
-### Build-time functions
+### Build-time functions and functional utilities
 
 ```css
 .card {
   color: --alpha(var(--color-lime-300) / 50%);
   margin: --spacing(4);
 }
+
+@utility tab-* {
+  tab-size: --value(integer, --default(4));
+}
 ```
 
-`--alpha()` compiles opacity changes to `color-mix()`. `--spacing()` multiplies the base spacing token and works inside arbitrary calculations.
+`--alpha()` compiles opacity changes to `color-mix()`. `--spacing()` multiplies the base spacing token and preserves a length for zero by compiling `--spacing(0)` to `0px`. Within a functional `@utility`, nest `--default(...)` in `--value(...)` or `--modifier(...)` to support both a bare utility and explicitly valued forms.
 
 ## Common Utility Changes
 
@@ -118,7 +125,7 @@ Grid counts and spacing-based utilities accept bare values outside a configured 
 Linear, radial, and conic gradients share `from-*`, `via-*`, and `to-*` stops:
 
 ```html
-<div class="bg-linear-to-r/oklch from-indigo-500 to-pink-500"></div>
+<div class="bg-linear-45/oklch from-indigo-500 to-pink-500"></div>
 <div class="bg-conic/[in_hsl_longer_hue] from-red-600 to-red-600"></div>
 <div class="bg-radial-[at_25%_25%] from-white to-zinc-900 to-75%"></div>
 ```
@@ -127,12 +134,13 @@ Linear, radial, and conic gradients share `from-*`, `via-*`, and `to-*` stops:
 
 ```html
 <h1 class="text-shadow-lg text-shadow-sky-300">Title</h1>
-<h2 class="text-shadow-lg/30">Subtitle</h2>
+<h2 class="text-shadow-sm/12.5">Subtitle</h2>
 <svg class="drop-shadow-xl drop-shadow-cyan-500/50">...</svg>
 <img class="mask-b-from-50% mask-radial-[50%_90%] mask-radial-from-80%" src="photo.jpg" />
 ```
 
 - Text shadows range from `text-shadow-2xs` through `text-shadow-lg`; size and color compose.
+- Box, text, drop, and inset shadow sizes accept fractional opacity modifiers.
 - Drop-shadow size and color are separate; color accepts an opacity modifier.
 - Linear, radial, and conic mask utilities compose on one element.
 
@@ -146,21 +154,20 @@ Linear, radial, and conic gradients share `from-*`, `via-*`, and `to-*` stops:
 | `self-baseline-last` | Apply last-baseline alignment to one item. |
 | `justify-center-safe` | Fall back to start alignment when centering would overflow. |
 
-Safe alignment is available across flex and grid alignment properties by appending `-safe` to the alignment value.
+Safe alignment works across flex and grid alignment properties by appending `-safe` to the alignment value.
 
-### Logical properties and scrollbars
-
-Prefer logical families for writing-mode-aware layouts:
+### Logical properties, scrollbars, and size containers
 
 - Spacing and borders: `pbs-*`, `pbe-*`, `mbs-*`, `mbe-*`, `scroll-pbs-*`, `scroll-pbe-*`, `scroll-mbs-*`, `scroll-mbe-*`, `border-bs-*`, and `border-be-*`.
 - Sizing: `inline-*`, `block-*`, `min-inline-*`, `max-inline-*`, `min-block-*`, and `max-block-*`.
 - Positioning: `inset-s-*`, `inset-e-*`, `inset-bs-*`, and `inset-be-*`.
 
-Scrollbar utilities separate width, colors, and reserved gutter space:
-
 ```html
 <div class="scrollbar-thin scrollbar-thumb-sky-700/60 scrollbar-track-sky-100 scrollbar-gutter-stable overflow-auto"></div>
+<div class="@container-size/sidebar"><div class="h-[50cqb]"></div></div>
 ```
+
+`@container-size` creates a size container with block-axis units such as `cqb` and `cqh`; use `@container-size/{name}` for a named one.
 
 ## Variant Quick Reference
 
@@ -183,7 +190,7 @@ Scrollbar utilities separate width, colors, and reserved gutter space:
 <div class="hidden noscript:block">Please enable JavaScript.</div>
 ```
 
-In authored CSS, a colon stacks conditions while a comma applies one block to alternatives:
+In authored CSS, a colon stacks conditions while a comma applies one declaration block to alternatives:
 
 ```css
 .button {
@@ -197,8 +204,9 @@ In authored CSS, a colon stacks conditions while a comma applies one block to al
 - Use `@reference` in component styles or CSS modules to expose theme values, custom utilities, and variants without duplicating the referenced stylesheet.
 - Use `@tailwindcss/vite` with Vite projects, including Vite 8.
 - Use `@tailwindcss/webpack` to run Tailwind directly as a webpack loader instead of routing through PostCSS.
+- Add `--poll` or `--poll=<milliseconds>` to CLI watch mode when filesystem events are unavailable or unreliable.
 - `prettier-plugin-tailwindcss` can sort classes while removing duplicate classes and unnecessary whitespace.
-- Tailwind Plus plain-HTML UI blocks include their accessible interactive behavior without a framework requirement.
+- Tailwind Plus plain-HTML UI blocks include accessible interactive behavior without a framework requirement.
 
 ## Before You Finish
 
@@ -206,5 +214,5 @@ In authored CSS, a colon stacks conditions while a comma applies one block to al
 - Check migrated gradients and logical positioning for renamed classes.
 - Keep `@source inline()` inputs explicit and use exclusions narrowly.
 - Choose primary-pointer or any-pointer variants based on the actual interaction requirement.
-- Use higher-level typography utilities such as `tabular-nums` before reaching for `font-features-*`.
+- Prefer higher-level typography utilities such as `tabular-nums` before `font-features-*`.
 - Open the topic references before changing configuration or writing compatibility-sensitive utilities.

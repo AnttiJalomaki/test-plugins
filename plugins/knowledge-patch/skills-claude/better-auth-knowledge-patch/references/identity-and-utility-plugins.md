@@ -2,9 +2,9 @@
 
 ## Two-factor authentication
 
-`twoFactor.enable` only stages enrollment: it returns the TOTP URI and backup codes, while `twoFactorEnabled` remains false until TOTP verification unless `skipVerificationOnEnable` is set. `allowPasswordless` removes the password requirement only for users without a credential account.
+`twoFactor.enable` stages enrollment: it returns the TOTP URI and backup codes, but `twoFactorEnabled` remains false until TOTP verification unless `skipVerificationOnEnable` is set. `allowPasswordless` removes the password requirement only for users with no credential account.
 
-Server-side sign-in continuations must forward returned cookies into the next two-factor call:
+Server-side continuation must forward cookies returned by the original sign-in into the 2FA call:
 
 ```ts
 const { headers: responseHeaders, response } = await auth.api.signInEmail({
@@ -12,29 +12,15 @@ const { headers: responseHeaders, response } = await auth.api.signInEmail({
   body: { email, password },
 });
 if ("twoFactorRedirect" in response) {
-  // Forward responseHeaders cookies into the following auth.api 2FA call.
+  // Forward responseHeaders into the following auth.api 2FA request.
 }
 ```
 
-TOTP verification accepts the immediately previous and next periods, each 30 seconds by default. Backup codes are single-use; regeneration invalidates all old codes. A trusted device bypasses 2FA for 30 days, and every successful sign-in refreshes that window. Trust duration is enforced by the server.
+TOTP verification accepts the immediately previous and next periods, each 30 seconds by default. Backup codes are single-use and regeneration invalidates all old codes. Trusted devices bypass 2FA for 30 days, refreshing that window after successful sign-in; trust duration is server-enforced.
 
 ## Passkeys
 
-The passkey plugin lives in `@better-auth/passkey`. Conditional autofill requires `webauthn` as the last `autocomplete` token and an `autoFill` sign-in initiated only after conditional-mediation support is confirmed.
-
-```html
-<input name="username" autocomplete="username webauthn">
-```
-
-```ts
-if (await PublicKeyCredential.isConditionalMediationAvailable?.()) {
-  void authClient.signIn.passkey({ autoFill: true });
-}
-```
-
-Passkey register/sign-in ignores fetch option `throw: true`; inspect the returned data object's error.
-
-Passkey-first onboarding can register without an existing session. Set `registration.requireSession: false` and securely validate the supplied context before resolving or creating a user. Registration and authentication options accept server-defined WebAuthn extensions such as `credProps`.
+The plugin is imported from `@better-auth/passkey` (since 1.4.0). Registration can run without a session for passkey-first onboarding (since 1.6.0), but the supplied context must be securely validated before resolving or creating the user.
 
 ```ts
 passkey({
@@ -48,13 +34,19 @@ passkey({
 })
 ```
 
-## Magic links
+Registration and authentication options accept server-defined WebAuthn extensions such as `credProps`.
 
-Magic-link sign-in creates an unknown user unless `disableSignUp` is true. It redirects to `/` without a callback. Calling verification manually with no callback returns the session instead. Links expire after 300 seconds by default, and stored tokens default to plain text. `allowedAttempts` can bound failed verification attempts.
+Conditional UI requires `webauthn` as the final autocomplete token and an `autoFill` sign-in after checking conditional-mediation support. Passkey registration/sign-in ignore fetch option `throw: true`; inspect the returned data error.
 
-## Email OTP
+```html
+<input name="username" autocomplete="username webauthn">
+```
 
-Email OTP defaults to three verification attempts and invalidates the OTP when the limit is reached. Resending rotates the code by default. `resendStrategy: "reuse"` extends and resends a recoverable code, but hashed storage falls back to rotation and exhausted codes are always replaced.
+## Magic links and email OTP
+
+Magic-link sign-in creates an unknown user unless `disableSignUp` is true, and redirects to `/` when no callback is provided. Calling verification manually without a callback returns the session. Links last 300 seconds by default, tokens are plaintext by default, and `allowedAttempts` can cap verification.
+
+Email OTP allows three verification attempts by default and invalidates the code after that. Resends rotate by default. `resendStrategy: "reuse"` extends a recoverable code, but hashed storage forces rotation and exhausted codes are always replaced. Email OTP also supports change-email and richer sign-in fields.
 
 ```ts
 emailOTP({
@@ -64,11 +56,9 @@ emailOTP({
 })
 ```
 
-Email OTP also supports change-email and richer sign-in fields.
+## Phone authentication
 
-## Phone numbers
-
-With `requireVerification`, password sign-in for an unverified phone returns `401 PHONE_NUMBER_NOT_VERIFIED` and automatically sends an OTP. Internal OTPs expire after 300 seconds and permit three attempts before deletion and a 403 response. Verification creates a session unless `disableSession` is passed. Phone-only signup requires `signUpOnVerification.getTempEmail`.
+With `requireVerification`, password sign-in for an unverified phone returns `401 PHONE_NUMBER_NOT_VERIFIED` and sends an OTP. Internal codes last 300 seconds and allow three attempts before deletion and a 403. Verification creates a session unless `disableSession` is passed. Phone-only signup needs `signUpOnVerification.getTempEmail`; additional signup fields and custom OTP verification are supported.
 
 ```ts
 phoneNumber({
@@ -80,51 +70,25 @@ phoneNumber({
 })
 ```
 
-The plugin supports custom OTP verification and additional sign-up fields supplied during phone verification.
+## Anonymous account conversion
 
-## Anonymous accounts
+When an anonymous user signs in or registers another way, `onLinkAccount` receives both identities and is the data-migration boundary. Move carts or other owned data there. The anonymous user is deleted by default after linking; the plugin also supports optional anonymous-user deletion behavior.
 
-When an anonymous user signs in or signs up another way, `onLinkAccount` is the application-data migration boundary and receives both identities. The anonymous user row is deleted after linking by default. Move carts and other owned data in the hook before relying on the new account.
+## SIWE and last-login tracking
 
-```ts
-anonymous({
-  onLinkAccount: async ({ anonymousUser, newUser }) =>
-    moveOwnedData(anonymousUser.id, newUser.id),
-})
-```
-
-The plugin can also delete anonymous users according to its deletion option.
-
-## Admin roles
-
-Defining a custom `admin` or `user` role replaces that role's built-in permissions. Merge `defaultStatements` and `adminAc.statements` to retain them, and pass the same access controller and roles to server and client plugins.
-
-`checkRolePermission` synchronously checks a role definition, not the signed-in user. Use client `hasPermission` or server `userHasPermission` for user authorization. The admin plugin can optionally assign passwords when it creates users.
-
-```ts
-const ac = createAccessControl({
-  ...defaultStatements,
-  project: ["create"],
-} as const);
-const adminRole = ac.newRole({
-  ...adminAc.statements,
-  project: ["create"],
-});
-```
+`siwe()` provides Sign-In with Ethereum through the built-in plugin set (since 1.3.0). Last-login-method tracking recognizes both SIWE and passkeys.
 
 ## Bearer authentication
 
-The bearer plugin exposes the session token in `set-auth-token`. That value—not a JWT plugin token—belongs in `Authorization: Bearer ...` and is resolved by `getSession`. `requireSignature` defaults to false; enable it when unsigned bearer session tokens are unacceptable.
+The bearer value is the session token in `set-auth-token`, not a JWT-plugin token. Send it in `Authorization: Bearer ...`; `getSession` resolves it. `requireSignature` defaults to false.
 
 ```ts
 plugins: [bearer({ requireSignature: true })]
-const token = ctx.response.headers.get("set-auth-token");
-await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 ```
 
-## JWT service tokens
+## JWT service tokens and JWKS
 
-The JWT plugin is a service-token bridge, not session authentication. Tokens default to the complete user payload, 15-minute expiry, and `baseURL` as issuer and audience. JWKS supports alternate algorithms and scheduled key rotation with a grace period.
+The JWT plugin bridges service tokens; it is not session authentication. Tokens default to the full user payload, a 15-minute lifetime, and `baseURL` as issuer and audience. Alternate signing algorithms are supported (since 1.3.0). Scheduled JWKS rotation keeps old keys through a grace period:
 
 ```ts
 jwt({
@@ -135,94 +99,60 @@ jwt({
 })
 ```
 
-When using OAuth Provider, disable both JWT's `/token` endpoint and the `set-auth-jwt` session header so parallel protocol endpoints are not exposed.
+When using OAuth Provider, disable the JWT plugin's parallel `/token` route and its `set-auth-jwt` session header:
 
 ```ts
-betterAuth({
-  disabledPaths: ["/token"],
-  plugins: [jwt({ disableSettingJwtHeader: true })],
-})
+disabledPaths: ["/token"],
+plugins: [jwt({ disableSettingJwtHeader: true })],
 ```
 
-## Multi-session cookies
+## Multi-session
 
-The multi-session plugin maintains an additional browser cookie and allows five account sessions per device by default. Switching or revoking needs the target session token. Ordinary `signOut` revokes every session tracked by the plugin, not only the active account.
-
-## Sign-In with Ethereum
-
-SIWE is built in as the `siwe` plugin. Last-login-method tracking recognizes SIWE and passkeys.
-
-```ts
-import { siwe } from "better-auth/plugins";
-
-plugins: [siwe()]
-```
+The multi-session plugin keeps an extra browser cookie and permits five account sessions per device by default. Switching/revoking requires the target token. Ordinary `signOut` revokes every session tracked by this plugin, not just the active account.
 
 ## API keys
 
-The API-key server/client packages are `@better-auth/api-key` and `@better-auth/api-key/client`. `requireName` can require a key name and `verifyKey` may be asynchronous. Mock sessions are disabled by default and must be enabled explicitly.
-
-Multiple named configurations are supported. Organization-owned keys use `references: "organization"`. The migration renames `ApiKey.userId` to `referenceId`, adds `configId` with default `"default"`, and returns `references` as the owner type. `defaultPermissions` receives `referenceId`; server-side `updateApiKey` needs at least `userId` or request headers.
+The plugin/client are `@better-auth/api-key` and `@better-auth/api-key/client` (since 1.5-guide). It supports multiple named configurations, required key names through `requireName`, asynchronous `verifyKey`, organization ownership with `references: "organization"`, and optional secondary storage.
 
 ```ts
 apiKey([
   { configId: "user-keys", prefix: "usr_" },
   { configId: "org-keys", prefix: "org_", references: "organization" },
 ])
-
-await auth.api.createApiKey({
-  body: { configId: "org-keys", organizationId: "org_123" },
-});
 ```
 
-The plugin can use configured secondary storage. With `fallbackToDatabase: true`, reads check secondary storage then warm it from the database, while writes go to both. Expiring keys receive a secondary-store TTL. Every get, update, delete, and verify operation must carry the correct `configId` when configurations use different backends.
+The schema renames `userId` to `referenceId` and adds `configId`; returned keys expose `references`. Server `updateApiKey` needs `userId` or request headers. Mock sessions require `enableSessionForAPIKeys` and work only for user-owned keys. Configure `apiKeyHeaders` and let `getSession` validate once; explicitly verifying first consumes accounting twice.
 
-```ts
-apiKey({ storage: "secondary-storage", fallbackToDatabase: true })
-```
+Organization-owned keys require organization membership and the relevant `apiKey` create/read/update/delete permission. Owners have all four; other roles require explicit grants. `verifyApiKey({ permissions })` requires every requested permission.
 
-Session mocking works only for user-owned keys. Configure API-key headers so `getSession` validates and rate-limits once; manually calling `verifyApiKey` before `getSession` increments usage twice.
+With `storage: "secondary-storage"` and `fallbackToDatabase: true`, reads check secondary storage and warm it from the database, while writes hit both. Expiring entries receive TTLs. Every get/update/delete/verify operation needs the right `configId` when configurations use different backends.
 
-```ts
-apiKey({
-  enableSessionForAPIKeys: true,
-  apiKeyHeaders: ["x-api-key", "x-service-key"],
-})
-```
-
-Every validation consumes the rate limit and optional `remaining` budget. At zero, the key is disabled and removed. Refill resets `remaining` to `refillAmount`, rather than adding. `deferUpdates` sends counter, timestamp, and budget writes through the global background handler, making accounting optimistic and eventually consistent.
+Each validation consumes the rate limit and optional `remaining` budget. Zero disables and removes the key; refill resets to `refillAmount`, not an increment. `deferUpdates` sends counter, timestamp, and budget writes to the global background handler, making accounting optimistic and eventually consistent.
 
 ```ts
 apiKey({ deferUpdates: true }) // requires advanced.backgroundTasks.handler
 ```
 
+## Admin roles
+
+Custom `admin` or `user` roles replace built-in permissions. Merge `defaultStatements` and `adminAc.statements` to retain them, and pass the same controller/roles to server and client. `checkRolePermission` checks a role definition synchronously; use `hasPermission` or server `userHasPermission` for a signed-in user.
+
 ## Captcha
 
-Captcha protects only POST requests. Its defaults are `/sign-up/email`, `/sign-in/email`, and `/request-password-reset`; supplying `endpoints` replaces the list. Clients send proof in `x-captcha-response`. The server detects remote IP and does not trust a client IP header.
+Captcha protects only POST and defaults to `/sign-up/email`, `/sign-in/email`, and `/request-password-reset`; setting `endpoints` replaces the list. Clients send proof in `x-captcha-response`. The server detects the remote IP and does not trust a client-supplied IP header.
 
 ## Google One Tap
 
-One Tap hard-redirects to `/` after success unless `callbackURL` changes the target or an `onSuccess` fetch callback navigates without reload. Dismissed prompts retry with exponential backoff: five attempts from a one-second base delay by default. Use `onPromptNotification` to show alternate UI. Button mode is available.
+One Tap hard-redirects to `/` after success unless `callbackURL` changes it or `onSuccess` handles navigation. Dismissal retries exponentially, by default five times from a one-second base delay. `onPromptNotification` is the alternate-UI fallback. Button mode is also available.
 
-## One-time tokens
+## One-time cross-domain sessions
 
-The one-time-token plugin attaches a token to the current session and returns that session once on verification. Lifetime defaults to three minutes. Client generation is enabled and database storage is plain text by default; sensitive deployments can require server generation and hashing.
+The one-time-token plugin issues a token bound to the current session and returns that session exactly once on verification. Lifetime defaults to three minutes. Client generation and plaintext database storage are defaults; sensitive deployments can require server generation and hashing.
 
 ```ts
 oneTimeToken({ disableClientRequest: true, storeToken: "hashed" })
 ```
 
-## Internationalized errors
+## Other plugin additions
 
-`@better-auth/i18n` provides type-checked translations and can detect locale from headers, cookies, or sessions. Error responses contain a machine-readable `code`; `defineErrorCodes()` returns `{ code, message }` values accepted by `APIError.from()`.
-
-```ts
-i18n({
-  defaultLocale: "en",
-  detection: ["header", "cookie"],
-  translations: {
-    en: { USER_NOT_FOUND: "User not found" },
-    fr: { USER_NOT_FOUND: "Utilisateur introuvable" },
-  },
-})
-```
+The default API error page can be restyled or replaced. The `AuthClient` type helper and automatic server-side client-IP detection are available. Social providers include Paybin and Polar (since 1.4.0). The admin plugin can optionally create users with passwords; organization membership limits may be functions.

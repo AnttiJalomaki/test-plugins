@@ -1,39 +1,38 @@
 # Server Configuration and Operations
 
-## Exact and literal environment values
+## Preserving literal environment values
 
-`KC_` environment values undergo expression evaluation: `${...}` is resolved
-and `$$` collapses to `$`. Use the equivalent `KCRAW_` name to preserve dollar
-characters exactly. Defining both forms for the same key is a startup error.
+Values supplied through `KC_` environment variables undergo expression evaluation. This includes resolving `${...}` and collapsing `$$` to `$`, which can silently modify a secret.
+
+Use the equivalent `KCRAW_` name when the value must preserve dollar characters exactly. Defining both forms for the same configuration key is a startup error.
 
 ```bash
 export KCRAW_DB_PASSWORD='my$$pa${vault}word'
 ```
 
-Environment-key normalization cannot represent every option name, especially
-logging categories containing underscores. Pair an arbitrary `KC_` value
-variable with a same-suffix `KCKEY_` variable that supplies the exact key.
+## Mapping environment keys exactly
+
+Environment-key normalization cannot round-trip every option name, particularly logging categories that contain underscores. Pair an arbitrary `KC_` value variable with a same-suffix `KCKEY_` variable that supplies the exact option key.
 
 ```bash
 export KC_MYKEY=debug
 export KCKEY_MYKEY=log-level-package.class_name
 ```
 
-## Optimized builds and providers
+## Optimized-build boundaries
 
-Every build option is persisted in plaintext, including options sourced from a
-Java KeyStore. Never place secrets in build options. Under `start --optimized`,
-a repeated build option is ignored when it matches the built value and rejected
-when it differs. Run another build to change it.
+Every build option is persisted in plaintext, including a build option supplied through the Java KeyStore configuration source. Never put a secret in a build option.
+
+With `start --optimized`, a build option repeated at runtime is ignored when it matches the built value and rejected when it differs. Run another build to change it.
 
 ```bash
 bin/kc.sh build --db=postgres
 bin/kc.sh start --optimized
 ```
 
-Docker can change provider JAR modification times between build and runtime,
-making startup report a changed provider. Set deterministic timestamps before
-the optimized build.
+## Stable provider JAR timestamps
+
+Container tooling can change a provider JAR's modification time between optimized build and runtime, causing startup to report that the provider changed. Assign provider files a deterministic timestamp before running the build.
 
 ```dockerfile
 ADD --chown=keycloak:keycloak --chmod=644 some-jar.jar /opt/keycloak/providers/
@@ -41,57 +40,55 @@ RUN touch -m --date=@1743465600 /opt/keycloak/providers/*
 RUN /opt/keycloak/bin/kc.sh build
 ```
 
-## Request queues and bootstrap readiness
+## Bounded request queues
 
-The HTTP request queue is unlimited by default. Set
-`http-max-queued-requests` to cap waiting requests; excess work receives HTTP
-503 immediately.
+The HTTP request queue is unlimited by default. Set `http-max-queued-requests` to cap requests waiting for processing. Requests beyond the limit receive an immediate HTTP 503 response.
 
 ```bash
 bin/kc.sh start --http-max-queued-requests=1000
 ```
 
-With health endpoints enabled, the HTTP(S) and management endpoints open while
-initialization continues. Startup and liveness can be UP while readiness is
-DOWN. Route traffic using `/health/ready`. Alternatively, set
-`--server-async-bootstrap=false` to keep endpoints closed until initialization
-finishes.
+## Bootstrap readiness semantics
 
-## Datasources and health
+When health endpoints are enabled, HTTP(S) and management endpoints can open while initialization continues. Startup and liveness may report UP while readiness remains DOWN.
 
-Exclude individual optional additional datasources from health checks when
-their failure must not make the entire deployment unhealthy. (26.7.0)
+Route traffic using `/health/ready`. Set `server-async-bootstrap=false` when endpoints must not open until initialization completes.
 
-PostgreSQL transactions that touch only ephemeral session, login-failure, or
-event tables use asynchronous commit; logout stays synchronous. Disable this
-with `--spi-connections-jpa--quarkus--async-commit=false`. (26.7.0)
+```bash
+bin/kc.sh start --server-async-bootstrap=false
+```
 
-## Truststores and strict FIPS
+## Metrics and management-interface defaults
 
-Generated system truststores sourced from `conf/truststores` or
-`--truststore-paths` use BCFKS in strict FIPS mode so BCFIPS can load them in
-approved mode. Default and non-strict FIPS deployments continue to use PKCS12
-when supported. (26.7.0)
+Keycloak 25 enables embedded-cache and HTTP server metrics by default. Health and metrics are served on the separate management listener at port `9000`, not on application ports.
 
-## Multi-cluster v2
+`--legacy-observability-interface=true` temporarily restores the former listener placement. Control histogram output with `cache-metrics-histograms-enabled`, `http-metrics-histograms-enabled`, and `http-metrics-slos`.
 
-Enable preview multi-cluster v2 with `stateless`. This design removes the
-external Infinispan cluster and fencing infrastructure. Nodes connect directly
-using embedded caches, use the synchronously replicated database as the source
-of truth, and distribute invalidations through a database-backed outbox.
-(26.7.0)
+## Outbound HTTP response cap
 
-## Operator installation
+Since 25, HTTP responses consumed from brokers and other external services are capped at 10 MB by default. Change the byte limit with `spi-connections-http-client-default-max-consumed-response-size`.
 
-Install the Operator declaratively on vanilla Kubernetes using kustomize rather
-than applying its component manifests separately. (26.7.0)
+```bash
+bin/kc.sh start --spi-connections-http-client-default-max-consumed-response-size=1000000
+```
 
-Preview cluster-wide mode lets one Operator reconcile `Keycloak` resources in
-all namespaces. Choose OLM `AllNamespaces` install mode or, for non-OLM
-installations, the `cluster-wide` kustomization overlay. (26.7.0)
+## Bootstrap administrator recovery
 
-## Graceful shutdown
+Keycloak 26 deprecates `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`. Use the general bootstrap options or the newer environment variables for initial access and recovery.
 
-The default shutdown timeout is ten seconds, and clustered nodes also wait for
-cache rebalance. Roll changes one node at a time. Set `shutdown-timeout=1s`
-only when the former one-second behavior is deliberate. (26.7.0)
+```bash
+export KC_BOOTSTRAP_ADMIN_USERNAME=admin
+export KC_BOOTSTRAP_ADMIN_PASSWORD=change-me
+```
+
+## Container heap sizing
+
+Keycloak 24 container images replace fixed `-Xms` and `-Xmx` values with percentage-based sizing. The default maximum heap is 70% of available container memory.
+
+Always set a container memory limit. Without one, the calculated heap can grow against the host's total memory.
+
+## Secret confidentiality and rotation
+
+The 26.7.2 fixes prevent Admin REST from leaking a vault-resolved rotated client secret and stop `show-config` from printing the vault keystore password in cleartext.
+
+Disabling client-secret rotation now invalidates the rotated secret instead of leaving it accepted. Verify this behavior during any rotation rollback or policy change.

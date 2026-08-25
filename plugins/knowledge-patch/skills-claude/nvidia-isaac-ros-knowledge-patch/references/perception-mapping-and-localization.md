@@ -1,78 +1,49 @@
 # Perception, mapping, and localization
 
-## Build stereo-depth pipelines
+This reference routes detection, pose, segmentation, stereo depth, Nvblox,
+Visual SLAM, mapping, localization, and SIPL camera work. Known failures and
+workarounds are centralized in [Troubleshooting](troubleshooting.md).
 
-FoundationStereo was added to `isaac_ros_dnn_stereo_depth` in 4.0.0.
+## Detection, segmentation, and pose packages (4.0.0)
 
-In 4.5.0, `isaac_ros_dnn_stereo_depth` adds a DNN stereo-decoder package and
-moves the ESS and FoundationStereo workflows into that package. It also adds
-Fast-FoundationStereo. RealSense, ZED, and Isaac Sim workflows resize images
-without retaining aspect ratio.
+The 4.0 package set adds:
 
-Fast-FoundationStereo is research-only; use FoundationStereo for commercial
-work.
+- FoundationStereo to `isaac_ros_dnn_stereo_depth`.
+- GroundingDINO to `isaac_ros_object_detection`.
+- Segment Anything 2 to `isaac_ros_image_segmentation`.
 
-DNN stereo pipelines using RealSense, ZED, or Isaac Sim can intermittently
-omit disparity or point-cloud output. The decoder does not synchronize
-`CameraInfo` messages with disparity tensors.
-
-FoundationStereo FP16 conversion can run out of memory because of the TensorRT
-version used by Isaac ROS 4.1.0.
-
-## Configure detection, segmentation, and pose
-
-The 4.0.0 integrations include:
-
-| Capability | Package |
-| --- | --- |
-| GroundingDINO | `isaac_ros_object_detection` |
-| Segment Anything 2 | `isaac_ros_image_segmentation` |
-
-The current package index also includes
-`isaac_ros_rtdetr`, `isaac_ros_yolov8`, `isaac_ros_centerpose`, and
-`isaac_ros_foundationpose` for RT-DETR, YOLOv8, CenterPose, and FoundationPose
-respectively (`current-runtime-and-packages`).
-
-DOPE can fail to detect objects in manipulation workflows (4.0.0). On Jetson
-AGX Thor, the 4.1.0 DOPE quickstart cannot convert its ONNX network to a
-TensorRT Plan because the network contains unsupported layers.
-
-DetectNet can emit overlapping duplicate boxes because of its DBScan
-implementation (4.0.0).
-
-If PyTorch 2.6 breaks MobileSAM-to-ONNX conversion because of its changed
-`weights_only` default, set this for the conversion process (4.0.0):
-
-```bash
-export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
-```
-
-For SAM2 in Docker-optional environments, consult
-[platforms-and-environments](platforms-and-environments.md).
-
-## Use visual SLAM and AprilTags
-
-`isaac_ros_visual_slam` supports RGB-D cameras as of 4.1.0.
-
-Isaac ROS 4.0.0 fixes TF broadcasting for AprilTags detected by
+The release also fixes TF broadcasting for AprilTags detected by
 `isaac_ros_apriltag`.
 
-## Configure Nvblox with lidar
+## Lidar and RGB-D inputs (4.1.0)
 
 `isaac_ros_nvblox` adds dynamics support for lidar inputs and lidar motion
-compensation in 4.1.0.
+compensation. `isaac_ros_visual_slam` adds RGB-D camera support.
 
-The Nvblox RealSense people-segmentation example can display an incorrect RViz
-color overlay (4.0.0). This is a visualization caveat, not evidence that the
-segmentation output itself has the same color interpretation.
+These features expand input support but do not remove downstream requirements
+for consistent encodings, timestamps, frames, and camera metadata.
 
-If the Isaac Sim Nvblox sample scene fails to load normally, use the Content
-Window path documented in
-[platforms-and-environments](platforms-and-environments.md).
+## DNN stereo decoder and workflow moves (4.5.0)
 
-## Resolve mapping and localization packages
+`isaac_ros_dnn_stereo_depth` adds a DNN stereo-decoder package and moves the
+ESS and FoundationStereo workflows into it. It also adds
+Fast-FoundationStereo.
 
-The current mapping and localization surface consists of:
+RealSense, ZED, and Isaac Sim workflows now resize without preserving aspect
+ratio. Revalidate calibration and any downstream assumptions about image
+geometry after adopting the moved workflows.
+
+Fast-FoundationStereo is a research-only model. Use FoundationStereo for
+commercial work.
+
+The decoder has a known synchronization limitation: RealSense, ZED, or Isaac
+Sim runs can intermittently omit disparity or point-cloud output because
+`CameraInfo` messages are not synchronized with disparity tensors. Diagnostic
+steps are in the troubleshooting reference.
+
+## Current mapping and localization package surface
+
+The 2026-07-28 package index contains:
 
 - `isaac_ros_visual_global_localization`
 - `isaac_mapping_ros`
@@ -80,6 +51,46 @@ The current mapping and localization surface consists of:
 - `isaac_ros_occupancy_grid_localizer`
 - `isaac_ros_pointcloud_utils`
 
-Supported packages are release-dependent, and 4.4 included package renames.
-Resolve older launch files against the current package index instead of
-assuming their package names remain valid (`current-runtime-and-packages`).
+Resolve older launch files against the installed package index. The supported
+set is release-dependent, and 4.4 included package renames.
+
+## Additional detection and pose integrations
+
+The 2026-07-28 package index includes:
+
+- RT-DETR as `isaac_ros_rtdetr`
+- YOLOv8 as `isaac_ros_yolov8`
+- CenterPose as `isaac_ros_centerpose`
+- FoundationPose as `isaac_ros_foundationpose`
+
+Keep the package name distinct from the model name when resolving launch files,
+assets, and graph components.
+
+## SIPL camera integrations
+
+Early SIPL and Leopard Imaging Eagle stereo Camera-over-Ethernet support uses
+`isaac_ros_sipl_camera` to publish camera images through zero-copy NITROS.
+
+### Leopard Imaging Hawk stereo (4.6.0)
+
+`isaac_ros_sipl_camera` adds SIPL support for the Leopard Imaging Hawk GMSL2
+stereo camera. The paired stereo output has aligned timestamps, which should be
+preserved through downstream stereo processing.
+
+## cuVSLAM source builds (4.6.0)
+
+`isaac_ros_visual_slam` builds the cuVSLAM library from source on both
+`x86_64` and `aarch64`. cuVSLAM remains unsupported on DGX Spark even though
+the broader Isaac ROS environment supports DGX Spark.
+
+## Workflow checks
+
+When composing a perception or mapping graph:
+
+1. Confirm that the model integration exists in the installed package index.
+2. Match camera SDK support to the platform and JetPack release.
+3. Verify encoding, timestamps, frame IDs, `CameraInfo`, and resize behavior.
+4. Treat DNN stereo disparity, point-cloud, and visualization output as
+   separate checkpoints.
+5. Distinguish research-only models from models suitable for commercial use.
+6. Check architecture-specific library support before building Visual SLAM.

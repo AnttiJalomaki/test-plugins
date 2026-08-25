@@ -1,10 +1,11 @@
 # Frontend resources
 
-## Web3 authentication
+## Authenticate with Web3 wallets
 
-The frontend `Clerk` object provides wallet flows for MetaMask, Coinbase Wallet, OKX Wallet, Base, and Solana, plus generic `authenticateWithWeb3()`.
-
-Solana requires `walletName`. Sign-up-capable calls can include `unsafeMetadata` and `legalAccepted`.
+The frontend `Clerk` object supports MetaMask, Coinbase Wallet, OKX Wallet,
+Base, and Solana flows, plus the generic `authenticateWithWeb3()` entry point.
+Solana requires `walletName`. Sign-up-capable calls may include
+`unsafeMetadata` and `legalAccepted`.
 
 ```ts
 await clerk.authenticateWithWeb3({
@@ -14,9 +15,11 @@ await clerk.authenticateWithWeb3({
 })
 ```
 
-## Raw Google One Tap
+## Complete raw Google One Tap
 
-A custom Google Identity Services UI can pass its credential to `authenticateWithGoogleOneTap()`. The call returns a `SignIn` or `SignUp` resource; complete routing with `handleGoogleOneTapCallback()`.
+A custom Google Identity Services UI can pass its credential token to
+`authenticateWithGoogleOneTap()`. The result is a `SignIn` or `SignUp`
+resource; route it with `handleGoogleOneTapCallback()`.
 
 ```ts
 const attempt = await clerk.authenticateWithGoogleOneTap({ token })
@@ -26,13 +29,13 @@ await clerk.handleGoogleOneTapCallback(attempt, {
 })
 ```
 
-This is separate from `<GoogleOneTap />`, which does not return Google provider tokens.
+## Handle cross-device email links
 
-## Cross-device email links
-
-`handleEmailLinkVerification()` understands `__clerk_status` values including `verified`, `failed`, `expired`, and `client_mismatch`.
-
-A successful link opened on a different device may create the session named by `__clerk_created_session`; that session is absent from the initiating client's `Client.sessions`. Handle that outcome with `onVerifiedOnOtherDevice`.
+`handleEmailLinkVerification()` recognizes `__clerk_status` values including
+`verified`, `failed`, `expired`, and `client_mismatch`. A link completed on a
+different device may create the session named by `__clerk_created_session`
+without adding it to the initiating client's `Client.sessions`. Handle that
+outcome with `onVerifiedOnOtherDevice`.
 
 ```ts
 await clerk.handleEmailLinkVerification({
@@ -42,40 +45,38 @@ await clerk.handleEmailLinkVerification({
 })
 ```
 
-## Enterprise SSO email linking
+## Link an EmailAddress through Enterprise SSO
 
-An `EmailAddress` can email an enterprise SSO link and poll for completion. `createEnterpriseSSOLinkFlow()` returns independent start and cancellation functions, allowing custom UI to stop polling during cleanup.
+An `EmailAddress` can email an Enterprise SSO link and poll for completion.
+`createEnterpriseSSOLinkFlow()` returns independent start and cancel functions;
+cancel when custom UI unmounts or abandons the flow.
 
 ```ts
-const {
-  startEnterpriseSSOLinkFlow,
-  cancelEnterpriseSSOLinkFlow,
-} = emailAddress.createEnterpriseSSOLinkFlow()
-
+const { startEnterpriseSSOLinkFlow, cancelEnterpriseSSOLinkFlow } =
+  emailAddress.createEnterpriseSSOLinkFlow()
 await startEnterpriseSSOLinkFlow({ redirectUrl })
 ```
 
-## Frontend API-key lifecycle
+## Manage frontend API keys
 
-`clerk.apiKeys` lists, creates, and revokes user- or Organization-owned API keys.
-
-When `subject` is omitted, the Active Organization takes precedence over the current User. Only the `create()` response contains the secret, so capture and display it immediately.
+`clerk.apiKeys` lists, creates, and revokes user- or Organization-owned keys.
+Without `subject`, it chooses the Active Organization before the current User.
+Only the `create()` response includes the secret, so capture it immediately.
 
 ```ts
 const key = await clerk.apiKeys.create({
   name: 'Automation',
   secondsUntilExpiration: 3600,
 })
-
 await clerk.apiKeys.revoke({ apiKeyID: key.id })
 ```
 
-## Session-token cache and Organization claims
+## Control the session-token cache and Organization claims
 
-`Session.getToken()` caches one-minute tokens and retries transient failures. If the client remains offline, it eventually throws `ClerkOfflineError`.
-
-- `skipCache` forces a server request.
-- `organizationId` creates claims for the selected Organization without changing the session's Active Organization.
+`Session.getToken()` caches one-minute tokens and retries transient failures;
+after retries, offline operation throws `ClerkOfflineError`. `skipCache` forces
+a server call. `organizationId` creates claims for a selected Organization
+without changing the session's Active Organization.
 
 ```ts
 const token = await session.getToken({
@@ -84,34 +85,33 @@ const token = await session.getToken({
 })
 ```
 
-## Refresh user data and claims
+## Refresh user data and replace unsafe metadata safely
 
-`User.reload()` fetches the current user and forces a session-token refresh, so changed claims do not wait for the normal token cycle.
+`User.reload()` fetches the current user and forces a session-token refresh so
+new claims are not delayed until the normal token cycle.
 
-`User.update({ unsafeMetadata })` replaces the entire unsafe-metadata object rather than merging. Copy existing keys explicitly when applying a patch.
+`User.update({ unsafeMetadata })` replaces the complete unsafe-metadata object;
+merge existing keys in the caller when applying a partial change.
 
 ```ts
 await user.update({
-  unsafeMetadata: {
-    ...user.unsafeMetadata,
-    ...patch,
-  },
+  unsafeMetadata: { ...user.unsafeMetadata, ...patch },
 })
 await user.reload()
 ```
 
-## Custom reverification
+## Build custom and native reverification
 
-`factorVerificationAge` is `[firstFactorAge, secondFactorAge]` in minutes. Build a custom flow with `Session.startVerification()` followed by the matching prepare and attempt methods.
+`factorVerificationAge` is `[firstFactorAge, secondFactorAge]` in minutes. A
+custom UI starts with `Session.startVerification()` and follows with the
+matching prepare and attempt methods.
 
 ```ts
-const verification = await session.startVerification({
-  level: 'first_factor',
-})
+const verification = await session.startVerification({ level: 'first_factor' })
 const email = verification.supportedFirstFactors?.find(
   (factor) => factor.strategy === 'email_code',
 )
-if (!email) throw new Error('Email code is unavailable')
+if (!email) throw new Error('Email-code reverification is unavailable')
 
 await session.prepareFirstFactorVerification({
   strategy: 'email_code',
@@ -123,23 +123,28 @@ await session.attemptFirstFactorVerification({
 })
 ```
 
-Expo's prebuilt reverification modal works only on web. Native mobile uses `useReverification(..., { onNeedsReverification })` and calls the provided `complete` or `cancel` callback.
+Expo's prebuilt reverification modal works on web only. Native mobile code must
+call `useReverification(..., { onNeedsReverification })` and eventually invoke
+the callback's `complete` or `cancel`.
 
-## Multi-session scope
+## Distinguish device sessions from all user sessions
 
-`useSessionList()` returns sessions registered on the current client device. `User.getSessions()` fetches every active session for that user and caches the network result after its first call.
+`useSessionList()` returns sessions registered on the current client device.
+`User.getSessions()` fetches every active session for that user and caches its
+network result after the first call.
 
-In a multi-session application, `clerk.signOut()` without arguments signs the active user out of all sessions. Pass `sessionId` to sign out only one session.
+In a multi-session application, bare `clerk.signOut()` signs the active user out
+of every session. Pass `sessionId` to sign out one session only.
 
 ```ts
 await clerk.signOut({ sessionId })
 ```
 
-## Resource subscriptions
+## Subscribe to resource changes
 
-`Clerk.addListener()` emits `client`, `session`, `user`, and `organization` immediately by default and again whenever they change.
-
-Set `skipInitialEmit` when only future updates matter. Always call the returned unsubscribe function during cleanup.
+`Clerk.addListener()` emits `client`, `session`, `user`, and `organization`
+immediately by default and whenever they change. Use `skipInitialEmit` when only
+future changes matter, and invoke the returned unsubscribe function on cleanup.
 
 ```ts
 const unsubscribe = clerk.addListener(handleResources, {
@@ -147,9 +152,12 @@ const unsubscribe = clerk.addListener(handleResources, {
 })
 ```
 
-## Safari-safe session activation
+## Activate sessions safely in Safari
 
-When `setActive()` uses custom navigation, wrap the destination with `decorateUrl()`. It can return an absolute Clerk URL to refresh Safari's ITP-limited `__client` cookie. Use full-page navigation for an absolute URL and client routing otherwise.
+When `setActive()` uses custom navigation, wrap the target in `decorateUrl()`.
+The result can be an absolute Clerk URL used to refresh Safari's ITP-limited
+`__client` cookie. Use full-page navigation for an absolute result and client
+routing otherwise.
 
 ```ts
 await clerk.setActive({
@@ -163,6 +171,8 @@ await clerk.setActive({
 })
 ```
 
-## Agent-task sessions
+## Identify an Agent Task session
 
-When `Session.actor.type === 'agent'`, `Session.agent` exposes the agent and Agent Task that created the session. This distinguishes an agent-created session from ordinary impersonation.
+When `Session.actor.type` is `agent`, `Session.agent` exposes the agent and
+Agent Task behind the session. Use it to distinguish an agent-created session
+from ordinary impersonation.

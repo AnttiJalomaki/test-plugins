@@ -1,133 +1,111 @@
 # Go Backend SDK
 
-## Install v2
+## Install v2 and choose a client style
 
-The v2 SDK requires Go 1.24 or newer. Its module path includes the major version.
+The v2 SDK requires Go 1.24 or newer and uses the major-version module path:
 
-```bash
+```sh
 go get -u github.com/clerk/clerk-sdk-go/v2
 ```
 
-Import packages beneath `github.com/clerk/clerk-sdk-go/v2`; do not use the unversioned v1 path for v2 code.
-
-## Global and per-key clients
-
-For a single secret key, set it globally and use package-level resource functions:
+For one key, call `clerk.SetKey` and use package-level resource functions. For
+multiple keys, instantiate resource clients with the shared
+`clerk.ClientConfig` type.
 
 ```go
 clerk.SetKey("sk_live_XXX")
 usr, err := user.Get(ctx, userID)
-```
 
-For multiple keys, construct resource clients with the shared `clerk.ClientConfig` type:
-
-```go
 config := &clerk.ClientConfig{}
 config.Key = "sk_live_YYY"
 users := user.NewClient(config)
-usr, err := users.Get(ctx, userID)
+usr, err = users.Get(ctx, userID)
 ```
 
-## Raw responses and errors
+## Responses, errors, and middleware
 
-Successful resources carry a `Response` containing raw headers, status, body, and trace information. Failed operations may return `*clerk.APIErrorResponse`, which exposes the API error list, `TraceID`, and the same raw response data.
+Successful resources carry a `Response` containing raw headers, status, body,
+and trace data. Failures may be `*clerk.APIErrorResponse`, which exposes its
+error list, `TraceID`, and the same response data.
 
-## Authorization middleware
-
-`WithHeaderAuthorization` parses a bearer token and places valid `SessionClaims` in request context, but does not require authentication. `RequireHeaderAuthorization` performs the same parsing and returns HTTP 403 when valid claims are absent.
+`WithHeaderAuthorization` parses a bearer token and stores valid
+`SessionClaims` in the request context, but does not require authentication.
+`RequireHeaderAuthorization` returns HTTP 403 when valid claims are absent.
+Read claims with `clerk.SessionClaimsFromContext`.
 
 ```go
 protected := clerkhttp.RequireHeaderAuthorization()(handler)
 claims, ok := clerk.SessionClaimsFromContext(r.Context())
 ```
 
-Do not assume the optional middleware rejects signed-out requests; branch on the returned `ok` value.
+## User and organization changes
 
-## Update metadata deprecations
+- v2.7.0 deprecates metadata fields on user and organization update
+  parameters. They still compile but are migration surfaces.
+- v2.6.0 adds `LastSignInAtBefore` and `LastSignInAtAfter` to user list
+  parameters.
+- Organization responses gained `membership_limit_set_by` in v2.6.0 so callers
+  can identify the source of a membership cap.
+- The user model now includes passkeys, `CreatedAt`, `UpdatedAt`, `MFAEnabledAt`,
+  `MFADisabledAt`, `LegalAcceptedAt`, and `EnterpriseAccounts` for SAML and OAuth.
+- Related models add `EmailAddress.MatchesSSOConnection`, shared `Verification`
+  and `LinkedIdentification`, `Verification.Message`, membership public
+  `Username`, exported enterprise/SAML connection types, and
+  `ExternalAccount.PhoneNumber`.
 
-In v2.7.0, user and Organization update-parameter metadata fields are deprecated. Existing callers still compile, but treat these inputs as migration-only rather than stable update surfaces.
+## Billing and API keys
 
-## User list filters
-
-Since v2.6.0, user `List` parameters accept `LastSignInAtBefore` and `LastSignInAtAfter` for server-side last-sign-in timestamp filtering.
-
-## Billing and membership-limit provenance
-
-Billing endpoints arrived in v2.4.2. Version 2.5.0 moved to Backend API `2025-04-10` and changed corresponding Billing resource schemas. Since v2.6.0, Organization responses include `membership_limit_set_by`, identifying what established the membership limit.
-
-## API-key resources
-
-Version 2.5.1 includes API Keys endpoints in the v2 module, including `Get` and `Delete` on the `apikey` client. Typed API-key management no longer requires a raw Backend API request.
+Billing endpoints arrived in v2.4.2. v2.5.0 moved to Backend API version
+`2025-04-10` and changed the Billing models accordingly. v2.5.1 backports API
+Keys to v2, including `Get` and `Delete` on the `apikey` client, eliminating the
+need for raw Backend API calls.
 
 ## Organization roles, permissions, and role sets
 
-Version 2.5.1 adds v2 clients for custom Organization Roles and Permissions. The `roleset` resource supports CRUD and Role management. Organizations expose `RoleSetKey`, and Role Set types distinguish built-in `initial` sets from user-created `custom` sets.
+v2.5.1 adds clients for custom organization Roles and Permissions. The
+`roleset` resource supports CRUD and Role management. Organizations expose
+`RoleSetKey`, and Role Set types distinguish `initial` sets from user-created
+`custom` sets.
 
-## User and enterprise-account fields
+## Machines and M2M
 
-The v2 user resource includes:
-
-- Passkeys.
-- `CreatedAt` and `UpdatedAt`.
-- `MFAEnabledAt` and `MFADisabledAt`.
-- `LegalAcceptedAt`.
-- `EnterpriseAccounts`, covering SAML and OAuth connections.
-
-Related additions include:
-
-- `EmailAddress.MatchesSSOConnection`.
-- Shared `Verification` and `LinkedIdentification` types.
-- `Verification.Message`.
-- `OrganizationMembershipPublicUserData.Username`.
-- Exported enterprise-connection and SAML-connection types.
-- `ExternalAccount.PhoneNumber`.
-
-Preserve these fields when mapping SDK resources into application types.
-
-## Machines and M2M resources
-
-The v2 SDK includes machine and M2M endpoints, including:
-
-- Machine scopes during creation.
-- Secret-key and default-TTL data.
-- Secret retrieval and rotation.
-- Nullable M2M claims.
-- Ordering for M2M queries.
-
-M2M values were renamed from `secret` to `token`. The scoped-machine input was removed from machine updates. Code written against beta-era fields needs an explicit migration.
+The typed SDK includes machine and M2M endpoints, scopes at machine creation,
+secret-key/default-TTL data, secret retrieval and rotation, nullable M2M claims,
+and M2M ordering. M2M values were renamed from `secret` to `token`; the scoped-
+machine input was removed from machine updates. Migrate beta-era field names.
 
 ## OAuth application flags
 
-OAuth application resources expose `consent_screen_enabled` and `dynamically_registered`. `consent_screen_enabled` can be set during creation and changed afterward.
+OAuth application models expose `consent_screen_enabled` and
+`dynamically_registered`. `consent_screen_enabled` is accepted on creation and
+update, so consent behavior no longer needs a raw request.
 
-## Session-token and password operations
+## Session and password operations
 
-Version 2.4.0 adds typed session-token creation and user-password verification operations. Direct Backend API calls are not required for either operation.
+v2.4.0 adds typed session-token creation and user-password verification
+operations.
 
 ## JWT verification and claims
 
-When no JSON web key is supplied, `jwt.Verify` can fetch one from `GET /v1/jwks`. Callers may provide a `jwks.Client`; cache fetched keys when requests reuse them.
+Without a supplied JSON web key, `jwt.Verify` fetches one from `GET /v1/jwks`.
+Callers may provide a `jwks.Client`; cache fetched keys for reuse. The public
+claim model separates `RegisteredClaims`, Clerk `Claims`, and `SessionClaims`.
+`jwt.Decode` exposes the token key ID. Version 2 organization claims are
+populated only when an Organization exists, avoiding a false Role.
 
-The public claims API separates `RegisteredClaims`, Clerk `Claims`, and `SessionClaims`. `jwt.Decode` exposes the token key ID. Version 2 Organization claims are populated only when an Organization exists, so an absent Organization no longer yields a false Organization Role.
+## Reverification
 
-## Session reverification
+Go helpers and HTTP middleware can check factor ages and trigger session
+reverification.
 
-The SDK provides factor-age helpers and HTTP middleware for testing session freshness and triggering reverification. Use these instead of manually interpreting timestamps when protecting sensitive operations.
+## Expanded resource fields
 
-## Authentication, invitation, and SAML fields
-
-The v2 resources include:
-
-- `LastAuthenticationStrategy` on clients.
-- `URL` on Organization invitations.
-- `force_authn` handling on SAML connections.
-
-## Instance and domain settings
-
-Instance Organization settings accept `force_organization_selection`. Instance settings expose `ignore_dots_for_gmail_addresses`.
-
-Domain updates accept `is_secondary`. When `true` and supported by the application, Clerk retains the complete supplied hostname, including subdomains, instead of reducing it to eTLD+1.
-
-## Invitation and template variants
-
-The invitation API supports multiple invitation templates. Custom templates can set a reply-to email name and expose `flagged_as_suspicious`. Preserve both fields when storing or transforming templates and invitations.
+- Client models expose `LastAuthenticationStrategy`.
+- Organization invitations expose `URL`.
+- SAML connections support `force_authn`.
+- Instance organization-settings updates accept `force_organization_selection`.
+- Instance settings expose `ignore_dots_for_gmail_addresses`.
+- Domain updates accept `is_secondary`; when supported and true, Clerk keeps
+  the complete hostname, including subdomains, rather than reducing to eTLD+1.
+- The invitation API supports multiple templates. Custom templates have a
+  reply-to email name and `flagged_as_suspicious`; preserve these fields.

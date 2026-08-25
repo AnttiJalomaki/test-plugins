@@ -1,30 +1,22 @@
 # SvelteKit routing and runtime
 
-## Contents
+The versioned runtime behavior in this reference is attributed to
+`sveltekit-2.54.0`, `sveltekit-2.55.0`, `sveltekit-2.65.0`,
+`sveltekit-2.66.0`, and `sveltekit-2.67.0`.
 
-- [Server rendering](#server-rendering)
-- [Paths and route parameters](#paths-and-route-parameters)
-- [Navigation and preloading](#navigation-and-preloading)
-- [Prerendering](#prerendering)
-- [Environment validation](#environment-validation)
-- [Security policy](#security-policy)
-- [Service workers](#service-workers)
-- [Rerouting](#rerouting)
-- [Instrumentation](#instrumentation)
+## Rendering and error boundaries
 
-## Server rendering
+### Server-rendered boundaries
 
-Error boundaries can catch errors during server rendering. When a boundary
-catches such an error, its fallback can render instead of letting the error
-escape the component tree. This behavior is attributed to
-`sveltekit-2.54.0`.
+Error boundaries can catch errors during server rendering. Their fallback can
+render instead of letting the error escape the component tree.
 
-## Paths and route parameters
+## Paths and route types
 
-### Resolve query and hash suffixes
+### Resolve query strings and fragments
 
-`resolve()` from `$app/paths` accepts a pathname with a search string, a hash,
-or both:
+`resolve()` from `$app/paths` accepts pathnames containing a search string, a
+hash, or both:
 
 ```js
 import { resolve } from '$app/paths';
@@ -32,53 +24,53 @@ import { resolve } from '$app/paths';
 const href = resolve('/search?q=svelte#results');
 ```
 
-This behavior is attributed to `sveltekit-2.54.0`.
+### Matcher-narrowed parameters
 
-### Use matcher-narrowed types
+Page and layout parameters that use matchers are type-narrowed in `$app/types`.
+The narrower types flow through `$app/state` and hooks, so matched route
+parameters do not require redundant casts.
 
-Parameters for pages and layouts that use route matchers are narrowed in
-`$app/types`. The narrowed types also flow through `$app/state` and hooks, so
-matched parameters do not require redundant casts. This behavior is attributed
-to `sveltekit-2.55.0`.
+### Asynchronous rerouting
 
-## Navigation and preloading
+SvelteKit rerouting can be asynchronous, so route resolution may await data or
+other asynchronous decisions.
 
-`preloadCode` may run during the initial page load. Start route-code preloading
-before that load completes when doing so improves the transition.
+## Navigation lifecycle
 
-During a navigation, the active element is blurred before the component update.
-Consequently, `blur` and `focusout` handlers still observe the outgoing
-component's data. Snapshots are restored only after `afterNavigate` callbacks
-run.
+### Initial-load preloading
 
-Initial-load preloading is attributed to `sveltekit-2.65.0`; navigation ordering
-is attributed to `sveltekit-2.66.0`.
+`preloadCode` can run during the initial page load. Start route-code preloading
+before that load completes when doing so helps the next navigation.
+
+### Blur and snapshot ordering
+
+During navigation, SvelteKit blurs the active element before updating the
+component. `blur` and `focusout` handlers therefore see the outgoing
+component's data. Snapshot restoration occurs after `afterNavigate` callbacks.
 
 ## Prerendering
 
-### Root response type
+### Root endpoints must return HTML
 
 Prerendering fails when a root `+server.js` returns a non-HTML response. Treat
-such a root endpoint as invalid during the build. This behavior is attributed to
-`sveltekit-2.65.0`.
+this as an invalid root prerender surfaced during the build.
 
 ### Page and endpoint ambiguity
 
-Prerendering prefers a page over an endpoint. If the same prerenderable route
-contains both `+page` and `+server`, the build fails early rather than producing
-ambiguous output. This behavior is attributed to `sveltekit-2.66.0`.
+Prerendering otherwise prefers pages over endpoints. A prerenderable route that
+contains both `+page` and `+server` fails early because the output is ambiguous.
 
 ### Invalid crawled URLs
 
-Use `prerender.handleInvalidUrl` to choose how invalid URLs found while crawling
-are handled. This extends prerender policy to malformed crawl targets. The
-option is attributed to `sveltekit-2.67.0`.
+Use `prerender.handleInvalidUrl` to control how malformed URLs discovered by the
+prerender crawler are handled.
 
-## Environment validation
+## Environment and browser runtime
 
-`building` from `$app/environment` resolves correctly when it guards explicit
-runtime environment validation. Runtime-only variables may remain unset during
-the build:
+### Guard runtime-only validation
+
+Use `building` from `$app/environment` when explicit validation should require a
+variable only at runtime:
 
 ```js
 import { building } from '$app/environment';
@@ -89,27 +81,25 @@ if (!building && !env.REQUIRED) {
 }
 ```
 
-This behavior is attributed to `sveltekit-2.65.0`.
+### Service-worker base paths
+
+`base` from `$service-worker` is available during development as well as
+production. Service-worker code can honor the configured base path in both.
 
 ## Security policy
 
-SvelteKit CSP source lists accept `ws:`, `wss:`, and `trusted-types-eval`.
-Include them when expressing WebSocket or Trusted Types requirements in the
-application CSP. This support is attributed to `sveltekit-2.66.0`.
+### Additional CSP sources
 
-## Service workers
+SvelteKit CSP source lists accept `ws:`, `wss:`, and `trusted-types-eval`. Use
+them when expressing WebSocket or Trusted Types policy.
 
-`base` from `$service-worker` is available during development. Service-worker
-code can therefore honor a configured base path in development and production.
-This behavior is attributed to `sveltekit-2.66.0`.
+### CSP-compatible hydration
 
-## Rerouting
+Svelte can hydrate applications protected by a Content Security Policy; client
+hydration no longer needs to be treated as incompatible with CSP-protected
+pages.
 
-SvelteKit rerouting can be asynchronous. Route resolution may await data or
-another asynchronous decision before choosing the target route.
+## Server instrumentation
 
-## Instrumentation
-
-SvelteKit applications can emit OpenTelemetry traces. Initialize observability
-code reliably from `instrumentation.server.ts` so server instrumentation is in
-place for application work.
+SvelteKit applications can emit OpenTelemetry traces. Initialize server-side
+observability reliably from `instrumentation.server.ts`.

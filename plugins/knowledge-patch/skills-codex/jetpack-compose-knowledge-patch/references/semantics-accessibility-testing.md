@@ -1,108 +1,109 @@
 # Semantics, Accessibility, and Testing
 
-## Semantic autofill
+Use this reference for autofill, semantics-tree behavior, accessibility exposure, visibility observation, Compose test scheduling, and hybrid View/Compose tests.
 
-### Semantics-based autofill (1.8.0)
+## Semantics-based autofill (1.8.0)
 
-Compose autofill is semantics-based. Text autofill requires both UI and
-Foundation 1.8 or newer. The old autofill APIs are deprecated.
-`AutofillManager` is an abstract class, `InputText` exposes the pre-output-
-transformation value, and `requestAutofill` is no longer a manager method. The
-text toolbar can initiate autofill. `LocalAutofillHighlightColor` uses `Color`.
+Compose supports semantics-based autofill. Text autofill requires both UI and Foundation 1.8.0 or newer.
 
-### Typed fill data (1.10.0)
+Migration details:
 
-`FillableData` supports text, Boolean, integer, list, and date values. Its
-factories live on the companion object, so call `FillableData.createFrom(value)`;
-read dates through `dateMillisValue`. Replace deprecated `onAutofillText` with
-the `fillableData` property and `onFillData` action. A composition local can
-customize the highlight brush for a successful fill.
+- legacy autofill APIs are deprecated;
+- `AutofillManager` is an abstract class;
+- `InputText` exposes the value before output transformation;
+- `requestAutofill` is no longer a manager method;
+- the text toolbar can initiate autofill;
+- `LocalAutofillHighlightColor` uses `Color`.
 
-## Semantics API migrations
+## Semantics API migrations (1.8.0)
 
-### Roles, hidden content, and node IDs (1.8.0)
+Use `Role.Carousel` for pager-like controls. Replace `invisibleToUser()` with `hideFromAccessibility()`.
 
-Use `Role.Carousel` for pager-like controls. Replace `invisibleToUser()` with
-`hideFromAccessibility()`. `SemanticsNodeInteraction.semanticsId()` was
-removed; obtain the ID from `fetchSemanticsNode().id`.
+`SemanticsNodeInteraction.semanticsId()` is removed. Fetch the node and read `fetchSemanticsNode().id`.
 
-### Decoration modifiers can insert semantics nodes (1.9.0)
+## Accessibility-check artifacts (1.8.0)
 
-The `background`, `border`, and `graphicsLayer` nodes implement
-`SemanticsModifierNode`. They can insert nodes and change exact parent, child,
-or sibling relationships. Tag the intended target directly or use a resilient
-ancestor-based matcher instead of hard-coding the full tree shape.
+When `enableAccessibilityChecks()` is used without a test rule, depend on `compose:ui:ui-test-accessibility`. When it is invoked on a rule, use `compose:ui:ui-test-junit4-accessibility`.
 
-### Bounds, shapes, and Android extras (1.9.0)
+The experimental `GlobalAssertions` API is removed; use accessibility checks instead.
 
-The `Shape` semantics property describes meaningful control shapes that differ
-from their bounding rectangle. Set `SemanticsModifierNode.isImportantForBounds`
-to exclude a node from bounds calculation. On Android, a platform-specific
-`SemanticsPropertyKey` factory exposes custom values through
-`AccessibilityNodeInfo.getExtras`.
+## Test-host theme (1.8.0)
 
-## Accessibility behavior
+The `ComposeContentTestRule.setContent` host supplied by `ui-test-manifest` uses `Theme.Material.Light.NoActionBar`. This prevents an action bar from covering test content when targeting SDK 35.
 
-### Accessibility checks artifacts (1.8.0)
+To use a different theme, remove `ui-test-manifest` and declare `ComponentActivity` with the desired theme in the test manifest.
 
-For checks without a rule, `enableAccessibilityChecks()` is in
-`compose:ui:ui-test-accessibility`. For checks invoked on a rule, use
-`compose:ui:ui-test-junit4-accessibility`. The experimental `GlobalAssertions`
-API was removed; migrate to accessibility checks.
+## Semantics-tree structure (1.9.0)
 
-### Nested show-on-screen and off-screen children (1.11.0)
+The `background`, `border`, and `graphicsLayer` modifier nodes implement `SemanticsModifierNode`. They can insert semantics nodes and break tests that assume an exact parent, child, or sibling structure.
 
-Accessibility `showOnScreen` actions traverse nested scrolling containers.
-Off-screen semantics children of a partially visible merging node remain
-reported to accessibility services rather than disappearing from the exposed
-tree.
+Tag the intended target node directly or prefer a looser ancestor-based matcher over exact tree-position assumptions.
 
-## Test hosts and themes
+## Semantics bounds, shapes, and Android extras (1.9.0)
 
-### `ui-test-manifest` host theme (1.8.0)
+The `Shape` semantics property describes a control whose meaningful shape differs from its bounding rectangle. `SemanticsModifierNode.isImportantForBounds` can exclude a node from semantics bounds computation.
 
-The `ComposeContentTestRule.setContent` host supplied by `ui-test-manifest`
-uses `Theme.Material.Light.NoActionBar`, preventing an action bar from covering
-test content at target SDK 35. To use another theme, remove
-`ui-test-manifest` and declare `ComponentActivity` with the desired theme in
-the test manifest.
+An Android-specific `SemanticsPropertyKey` factory exposes custom values through `AccessibilityNodeInfo.getExtras`.
 
-## Test APIs and scheduling
+## UI-test APIs (1.9.0)
 
-### Selection, suspend tests, and nonfatal errors (1.9.0)
+`SemanticsNodeInteraction.performTextInputSelection` is stable. Its `relativeToOriginal` parameter chooses whether offsets apply to original or transformed text.
 
-`SemanticsNodeInteraction.performTextInputSelection` is stable;
-`relativeToOriginal` chooses whether offsets use original or transformed text.
-Experimental `runComposeUiTest` accepts a suspending block. The harness can
-report uncaught layout or draw exceptions without ending the entire test suite.
+Experimental `runComposeUiTest` accepts a suspend block. Uncaught layout or draw exceptions can be reported without terminating the entire test suite.
 
-### Scheduling and state restoration (1.10.0)
+## Typed semantic autofill (1.10.0)
 
-The `effectContext` overloads of `createComposeRule`,
-`createAndroidComposeRule`, and `createEmptyComposeRule` are stable and accept a
-`StandardTestDispatcher`. Call `MainTestClock.runCurrent()` to run due
-scheduler work. The default for these APIs remains `UnconfinedTestDispatcher`.
+`FillableData` supports text, Boolean, integer, list, and date values. Its factories live on the companion object, so create values with `FillableData.createFrom(value)`. Date data is read through `dateMillisValue`.
 
-`StateRestorationTester` always applies platform-specific state encoding.
-`isHiddenFromAccessibility()` matches hidden semantics. Results from
-`SemanticsNode` finders and selectors carry `@CheckResult`; consume them.
+Use the `fillableData` property and `onFillData` action instead of deprecated `onAutofillText`. A composition local can customize the brush shown after a successful fill.
 
-### Compose UI testing v2 (1.11.0)
+## Test scheduling and restoration (1.10.0)
 
-The `androidx.compose.ui.test.v2.run*ComposeUiTest` and
-`androidx.compose.ui.test.junit4.v2.create*ComposeRule` APIs use
-`StandardTestDispatcher` by default. Coroutines remain queued until scheduled.
-Use the exposed shared `TestCoroutineScheduler`, including `runCurrent()` when
-due tasks must run.
+The `effectContext` variants of `createComposeRule`, `createAndroidComposeRule`, and `createEmptyComposeRule` are stable and accept a `StandardTestDispatcher`. Call `MainTestClock.runCurrent()` to execute due scheduler work. The default dispatcher for these established APIs remains `UnconfinedTestDispatcher`.
 
-`ComposeUiTestFlags.isStandardTestDispatcherSupportEnabled` was removed.
-Deprecated test variants continue to use `UnconfinedTestDispatcher`.
+`StateRestorationTester` always applies platform-specific state encoding. Use `isHiddenFromAccessibility()` to match hidden semantics. `SemanticsNode` finder and selector results are annotated `@CheckResult`.
 
-## Test checklist
+## Visibility observation (1.10.0)
 
-- Add the accessibility artifact that matches rule or no-rule usage.
-- Match semantics by stable properties rather than exact decoration-node shape.
-- Advance the correct scheduler after triggering effects or queued work.
-- Test selection using the intended original or transformed offset space.
-- Re-run restoration tests where platform encoding changes serialized values.
-- Exercise `showOnScreen` through every nested scrolling parent.
+`onVisibilityChanged` does not call back for a node that begins invisible. It correctly emits `false` after a nonzero `minDurationMs` when the node ceases to satisfy visibility.
+
+`onVisibilityChangedNode()` exposes the same behavior as a delegatable `Modifier.Node` for custom modifiers.
+
+## Accessibility scrolling and merged semantics (1.11.0)
+
+Accessibility `showOnScreen` actions can walk up through nested scrolling containers. Off-screen semantics children of a partially visible merging node remain exposed to accessibility services rather than disappearing from the tree.
+
+## Compose UI testing v2 (1.11.0)
+
+The `androidx.compose.ui.test.v2.run*ComposeUiTest` and `androidx.compose.ui.test.junit4.v2.create*ComposeRule` APIs use `StandardTestDispatcher` by default. Coroutines remain queued until scheduled.
+
+`ComposeUiTestFlags.isStandardTestDispatcherSupportEnabled` is removed. Use the exposed shared `TestCoroutineScheduler`, including `runCurrent()`, to advance queued work. Deprecated test variants continue to use `UnconfinedTestDispatcher`.
+
+## Credential Manager semantics (1.12.0)
+
+On API 34 and newer, a text field can expose a low-level Credential Manager request through the `credentialRequest` semantics property.
+
+```kotlin
+BasicTextField(
+    value = value,
+    onValueChange = onValueChange,
+    modifier = Modifier.semantics {
+        if (Build.VERSION.SDK_INT >= 34) {
+            credentialRequest = CredentialRequestData(request, callback)
+        }
+    },
+)
+```
+
+## Espresso scoping for hybrid UIs (1.12.0)
+
+`onRootWithViewInteraction` scopes Compose-node lookup to the View hierarchy selected by an Espresso `ViewInteraction`. Use it when repeated or embedded Compose roots make an unscoped node query ambiguous.
+
+```kotlin
+val row = onView(
+    allOf(withId(R.id.row), hasDescendant(withText("Item #5"))),
+)
+composeTestRule.onRootWithViewInteraction(row)
+    .onNodeWithTag("fav_icon")
+    .performClick()
+```

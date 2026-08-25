@@ -1,48 +1,27 @@
 # Streaming and interrupts
 
-## Wire-format streaming
+## Private state in value streams
 
-The low-level `toLangGraphEventStream` helper has been removed. Low-level
-clients should request the wire format through `graph.stream`'s `encoding`
-option and return that stream directly:
+A node's input schema limits reads, not the graph channels it may update.
+Node-declared schemas can add private channels to the graph-state union. Input,
+output, and private schemas do not redact `values` streams. When private
+channels must not appear in emitted snapshots, filter v3 event streams with
+`output_keys` in Python or `outputKeys` in JavaScript.
 
-```typescript
-const stream = await graph.stream(input, {
-  encoding: "text/event-stream",
-  streamMode: ["values", "messages"],
-});
-
-return new Response(stream, {
-  headers: { "Content-Type": "text/event-stream" },
-});
+```python
+stream = graph.stream_events(
+    {"user_input": "My"},
+    version="v3",
+    output_keys=["graph_output"],
+)
 ```
-
-## UI transport injection
-
-The React `useStream` hook accepts a custom `transport`, so a UI can retain its
-stream handling while changing the network layer:
-
-```typescript
-const stream = useStream({
-  transport: new FetchStreamTransport({
-    apiUrl: "http://localhost:2024",
-  }),
-});
-```
-
-## Snapshot privacy
-
-State schemas do not redact `values` streams. Input and output schemas, and
-channels intended as private, can all appear in full state snapshots. Filter
-v3 event snapshots with `output_keys` in Python or `outputKeys` in JavaScript
-when emitted snapshots must expose only selected channels.
 
 ## Typed JavaScript interrupts
 
-The `StateGraph` constructor accepts an `interrupts` map of named definitions.
-`interrupt<Input, Resume>()` types the payload sent through
+The `StateGraph` constructor accepts an `interrupts` map of named interrupt
+definitions. `interrupt<Input, Resume>()` types both the payload passed through
 `runtime.interrupt.<name>()` and the value returned on resume.
-`graph.isInterrupted(result)` recognizes an interrupted result.
+`graph.isInterrupted(result)` detects an interrupted result.
 
 ```typescript
 import { StateGraph, interrupt } from "@langchain/langgraph";
@@ -62,15 +41,13 @@ const graph = new StateGraph(State, {
   .compile();
 ```
 
-## Python v3 interrupt streams
+## Typed v3 Python event streams
 
 `graph.stream_events(..., version="v3")` provides typed projections for
 message chunks, state snapshots, pending interrupts, interruption status, and
-final output.
-
-Drive the stream to completion before reading `stream.output`,
-`stream.interrupted`, or `stream.interrupts`. If interrupted, construct a new
-v3 stream with `Command(resume=...)` and repeat until it finishes:
+final output. Drive the stream to completion, inspect `stream.interrupted` and
+`stream.interrupts`, and resume with a new v3 stream using
+`Command(resume=...)`. Repeat until it finishes without interruption.
 
 ```python
 stream = graph.stream_events(inputs, config=config, version="v3")
@@ -84,15 +61,15 @@ if stream.interrupted:
     )
 ```
 
-Token chunks are available in `stream.messages`, full per-step snapshots in
-`stream.values`, and nested-subgraph token chunks in
+Token chunks are in `stream.messages`, full per-step snapshots in
+`stream.values`, and nested-child token chunks in
 `stream.subgraphs[*].messages`.
 
 ## Resume parallel interrupts by ID
 
 Parallel branches may pause on multiple interrupts. Pair every pending
-interrupt's `id` with its answer, then pass the whole mapping as the resume
-value so each branch receives the intended response:
+interrupt `id` with its response and pass the complete mapping as `resume`, so
+each branch receives the right answer.
 
 ```typescript
 import { Command, INTERRUPT, isInterrupted } from "@langchain/langgraph";
@@ -109,15 +86,12 @@ if (isInterrupted(paused)) {
 await graph.invoke(new Command({ resume: responses }), config);
 ```
 
-## Validate with one interrupt call
+## Validate with one interrupt per invocation
 
-Do not re-prompt using a `while` loop that contains `interrupt()`. Each resume
-restarts the node and replays earlier iterations, causing repeated work to
-grow exponentially.
-
-Store the next prompt in state, call `interrupt()` exactly once per node
-invocation, and use a conditional edge to revisit the node after invalid
-input:
+Do not put `interrupt()` inside a re-prompting `while` loop. Every resume
+restarts the node and replays earlier iterations, making the loop body's work
+grow exponentially. Save the next prompt in state, invoke `interrupt()` once,
+and use a conditional edge to revisit the node after invalid input.
 
 ```typescript
 builder
@@ -131,4 +105,33 @@ builder
     "collectAge",
     (state) => state.age !== null ? END : "collectAge",
   );
+```
+
+## Stream wire encoding
+
+The low-level `toLangGraphEventStream` helper is removed. Request wire encoding
+through `graph.stream` and return the stream directly.
+
+```typescript
+const stream = await graph.stream(input, {
+  encoding: "text/event-stream",
+  streamMode: ["values", "messages"],
+});
+
+return new Response(stream, {
+  headers: { "Content-Type": "text/event-stream" },
+});
+```
+
+## Custom `useStream` transports
+
+React `useStream` accepts a custom `transport`, allowing the network layer to
+change without replacing UI stream handling.
+
+```typescript
+const stream = useStream({
+  transport: new FetchStreamTransport({
+    apiUrl: "http://localhost:2024",
+  }),
+});
 ```

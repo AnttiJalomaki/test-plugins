@@ -1,11 +1,9 @@
 # Protocol Revisions and Schemas
 
-## Apply lifecycle and framing changes
+## JSON-RPC message shape
 
-### Batching was added, then removed
-
-Stable batch `2025-03-26` added JSON-RPC batching, allowing multiple requests
-in one top-level array:
+The `2025-03-26` revision added JSON-RPC batching, allowing multiple protocol
+requests in one top-level array:
 
 ```json
 [
@@ -14,108 +12,35 @@ in one top-level array:
 ]
 ```
 
-Stable batch `2025-06-18` removed batching. For that revision and later, a
-top-level array of requests or responses is invalid; send each JSON-RPC
-message separately. This is a deliberate revision change, not a transport-only
-exception.
+The `2025-06-18` revision removed JSON-RPC batching, reversing the prior
+addition. A top-level array of requests or responses is no longer valid MCP;
+send each JSON-RPC message separately.
 
-### Lifecycle support is mandatory
+## Lifecycle requirement
 
-The lifecycle operation requirement changed from **SHOULD** to **MUST** in
-2025-06-18. Implementations targeting that revision must implement it.
+The `2025-06-18` revision strengthened the lifecycle operation requirement
+from **SHOULD** to **MUST**. Implementations targeting that revision must treat
+the operation as required rather than optional.
 
-## Negotiate completions
+## Extensible metadata
 
-The `completions` capability lets a server explicitly advertise support for
-argument autocompletion. Clients should check the capability before relying on
-completion requests.
+The `2025-06-18` schema adds `_meta` to more interface types and defines its
+proper use. Validators and generated bindings for that revision must allow
+metadata on the newly covered interface shapes.
 
-`CompletionRequest` also accepts `context` containing previously resolved
-variables. Supply it when later suggestions depend on values already selected.
+## JSON Schema dialect
 
-## Describe progress and content
+JSON Schema 2020-12 is the default dialect for MCP schema definitions in
+`2025-11-25`. Schema producers, validators, and code generators should use it
+unless another dialect is selected explicitly.
 
-`ProgressNotification` has a `message` field in addition to numeric progress
-values. Use it for a human-readable status update:
+## Standalone request parameters
 
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "notifications/progress",
-  "params": {
-    "progressToken": "job-7",
-    "progress": 42,
-    "message": "Indexing files"
-  }
-}
-```
+In `2025-11-25`, request payload schemas are decoupled from RPC method
+definitions and exposed as standalone parameter schemas. Schema consumers and
+generated bindings should account for the new organization.
 
-MCP content may contain audio alongside text and image content.
+## Revision stability
 
-## Describe tools and validate their results
-
-Tool definitions may contain behavior annotations such as read-only or
-destructive intent. Clients can use these annotations to present expected
-effects more accurately.
-
-A tool may declare `outputSchema` and return the corresponding JSON object in
-`structuredContent`. Servers must conform to the schema and clients should
-validate it. For compatibility with older clients, also serialize the same
-object into a text item in `content`:
-
-```json
-{
-  "content": [
-    {"type": "text", "text": "{\"temperature\":22.5}"}
-  ],
-  "structuredContent": {"temperature": 22.5}
-}
-```
-
-A tool result may also contain a `resource_link` with a fetchable or
-subscribable URI and resource annotations:
-
-```json
-{
-  "type": "resource_link",
-  "uri": "file:///project/src/main.rs",
-  "name": "main.rs",
-  "mimeType": "text/x-rust"
-}
-```
-
-The target of a `resource_link` is not guaranteed to appear in
-`resources/list`.
-
-Since stable batch `2025-11-25`, an input-validation failure from a tool call
-should be a Tool Execution Error rather than a Protocol Error. This exposes a
-correctable argument failure as the result of the tool operation.
-
-## Use identifiers, titles, icons, and descriptions
-
-Schema types may provide `title` as a human-friendly display label while
-keeping `name` as the programmatic identifier. Continue using `name` in
-protocol calls and show `title` in interfaces.
-
-Servers may attach icon metadata to tools, resources, resource templates, and
-prompts. Clients can display those icons with the corresponding objects.
-
-The `Implementation` interface has an optional `description` for readable
-client or server context during initialization.
-
-## Update metadata and generated bindings
-
-The schema adds `_meta` to additional interface types. Validators and
-generated bindings must accept it on every interface shape defined to carry
-metadata in the negotiated revision.
-
-Request payload schemas are decoupled from RPC method definitions and exposed
-as standalone parameter schemas. Schema consumers and generated bindings must
-resolve and emit the standalone organization rather than assuming parameters
-remain embedded in methods.
-
-## Use the current JSON Schema dialect
-
-JSON Schema 2020-12 is the default dialect for MCP schema definitions. Schema
-producers, validators, and generators should use it unless another dialect is
-selected explicitly.
+The `2026-07-28` protocol revision is stable. Behavior previously published in
+the 2026-07-28 release candidate is no longer prerelease guidance.

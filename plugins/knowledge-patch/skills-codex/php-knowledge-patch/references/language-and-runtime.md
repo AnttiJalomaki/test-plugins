@@ -1,236 +1,203 @@
 # Language and Runtime
 
-Use this reference for language syntax, execution order, object behavior,
-introspection, serialization, diagnostics, and standard-library migration.
-Attributions below preserve the included batch identifiers:
-`8.4-migration`, `8.4.0`, `8.5-migration`, and `8.5.0`.
+## Syntax and name deprecations
 
-## Syntax, names, and constants
+Source batch: `8.5-migration`.
 
-### Deprecated spellings and forms
+- Replace the non-canonical casts `(boolean)`, `(integer)`, `(double)`, and
+  `(binary)` with `(bool)`, `(int)`, `(float)`, and `(string)`.
+- Terminate `case` labels with `:` rather than `;`.
+- Replace backticks used as an alias for `shell_exec()` with an explicit
+  `shell_exec()` call.
+- Incrementing a non-numeric string with `++` is deprecated; use
+  `str_increment()`.
+- A `null` array offset and a `null` key passed to `array_key_exists()` are
+  deprecated. Use the empty string explicitly when that is the intended key.
 
-- In `8.5-migration`, `(boolean)`, `(integer)`, `(double)`, and `(binary)` are
-  deprecated. Use `(bool)`, `(int)`, `(float)`, and `(string)`.
-- A `case` terminated with `;` instead of `:` is deprecated, as are backticks
-  used as an alias for `shell_exec()`.
-- Declaring a class whose complete name is `_` is deprecated
-  (`8.4-migration`); names that merely begin with `_` remain valid.
-- Redeclaring a constant is deprecated in addition to emitting a warning, and
-  the `report_memleaks` INI directive is deprecated (`8.5-migration`).
-- `class_alias()` no longer allows `array` or `callable` as alias names
-  (`8.5-migration`).
+Declaring a class whose complete name is `_` is deprecated (source batch
+`8.4-migration`). Class names that merely start with an underscore remain
+valid.
 
-### Namespace symbol tracking
+## Errors, diagnostics, and output lifecycle
 
-Since `8.4.0`, leaving a namespace block clears the symbols seen for that
-block. A later namespace block can reuse a name declared in an earlier block
-without the former cross-block conflict.
+### User-generated fatal errors
 
-### Constant expressions and attributed constants
+Source batch: `8.4-migration`.
 
-Since `8.5.0`, closures and first-class callables can appear in attribute
-arguments, property and parameter defaults, constants, and class constants.
-Casts are also valid constant expressions.
+`trigger_error($message, E_USER_ERROR)` is deprecated. Throw an exception when
+the failure should be recoverable, or call `exit()` when it should not be.
+
+### Output and magic methods
+
+Source batch: `8.5-migration`.
+
+Producing output from inside a user output handler is deprecated. Its
+deprecation bypasses that handler, so the message remains visible.
+
+`__debugInfo()` must return an array rather than `null`. `__sleep()` and
+`__wakeup()` are soft-deprecated in favor of `__serialize()` and
+`__unserialize()`.
+
+For `SplFixedArray` subclasses, `SplFixedArray::__wakeup()` is deprecated; use
+`__serialize()` and `__unserialize()` instead (source batch `8.4-migration`).
+The nonstandard uppercase `S` tag in serialized strings is also deprecated.
+
+### Fatal errors and shutdown
+
+Fatal errors, including maximum-execution-time failures, now include a
+backtrace (source batch `8.5.0`).
+
+Tick handlers remain active until shutdown functions, destructors, and
+output-handler cleanup have all completed (source batch `8.5-migration`).
+
+Traits now bind before the parent class. Compilation and linking errors are
+delayed until those phases finish. A fatal error flushes delayed errors without
+user error handlers, and an exception from a handler processing a linking error
+no longer prevents linking.
+
+## Numeric, comparison, and destructuring behavior
+
+### Zero to a negative power
+
+Source batch: `8.4-migration`.
+
+`0 ** $negative` and `pow(0, $negative)` are deprecated because they imply
+division by zero. Use `fpow()` when IEEE 754 behavior is wanted.
+
+### Recursive and loose comparisons
+
+Encountering recursion while comparing values now throws `Error` rather than
+ending with an `E_ERROR` fatal error, allowing deliberate comparisons of cyclic
+structures to catch the failure (source batch `8.4-migration`).
+
+Loose comparisons between otherwise uncomparable objects and booleans now
+consistently follow `(bool)$object` (source batch `8.5-migration`).
+
+### Cast and destructuring warnings
+
+Source batch: `8.5-migration`.
+
+Destructuring a non-array value other than `null` now warns. Casting `NAN` to
+`int` warns, as does casting a float or float-like string to `int` when the
+value cannot be represented as an integer.
+
+`class_alias()` no longer permits `array` or `callable` as alias names. Final
+subclasses may substitute `static` with `self` or with their concrete class
+name. `gc_collect_cycles()` no longer counts strings or resources collected
+only indirectly through cycles.
+
+## Constants, properties, and constant expressions
+
+### Internal constant metadata
+
+Source batch: `8.4-migration`.
+
+Class constants supplied by Date, Intl, PDO, Reflection, SPL, SQLite, and
+XMLReader now declare types. Reflection and tooling that assumed these internal
+constants were untyped must account for the type metadata.
+
+Redeclaring a constant is deprecated in addition to continuing to emit a
+warning (source batch `8.5-migration`). The `report_memleaks` INI directive is
+also deprecated.
+
+### Closures and casts in constant expressions
+
+Source batch: `8.5.0`.
+
+Closures and first-class callables may appear in attribute arguments, property
+or parameter defaults, constants, and class constants. Casts are also valid in
+constant expressions.
 
 ```php
 const LENGTH = strlen(...);
 const ZERO = (int) 0.3;
 ```
 
-Attributes can decorate compile-time non-class constants declared with
-`const`, and `#[\Deprecated]` can mark them.
+### Attributes and property declarations
+
+Source batch: `8.5.0`.
+
+Attributes may decorate compile-time non-class constants declared with
+`const`, and `#[\Deprecated]` can mark those constants.
 
 ```php
 #[\Deprecated]
 const LEGACY_MODE = 1;
 ```
 
-## Numeric, key, and comparison behavior
+`#[\Override]` may be applied to properties. Static properties support
+asymmetric visibility, and constructor property promotion may declare final
+properties.
 
-- `0 ** $negative` and `pow(0, $negative)` are deprecated in
-  `8.4-migration`, because they imply division by zero. Use `fpow()` only when
-  IEEE 754 behavior is intended.
-- Using `null` as an array offset or as the key to `array_key_exists()` is
-  deprecated in `8.5-migration`; use `''` explicitly when that key is intended.
-- Incrementing a non-numeric string with `++` is deprecated; use
-  `str_increment()`.
-- Loose comparison between otherwise uncomparable objects and booleans now
-  consistently follows `(bool) $object` (`8.5-migration`).
-- Casting `NAN` to `int`, or casting an unrepresentable float or float-like
-  string to `int`, now warns (`8.5-migration`).
-- A `printf`-family conversion without explicit precision now treats precision
-  as zero instead of resetting it (`8.5-migration`).
-- Integer `0` is no longer accepted as `setlocale()`'s locales argument; it
-  throws `TypeError` (`8.5-migration`).
+### Attribute target validation
 
-## Failure and diagnostic behavior
+Source batch: `8.5-migration`.
 
-### Deliberate failures
+Applying `#[\Attribute]` to an abstract class, enum, interface, or trait now
+fails during compilation. Adding `#[\DelayedTargetValidation]` defers the check
+until runtime, where `ReflectionAttribute::newInstance()` can throw.
 
-`trigger_error($message, E_USER_ERROR)` is deprecated in `8.4-migration`.
-Throw an exception when recovery should be possible, or call `exit()` when
-termination is intentional.
+## Cloning and readonly properties
 
-### Recursive comparison and fatal traces
+In `__clone()`, a readonly property may be reinitialized, but code may no longer
+take an indirect reference such as `$ref = &$this->readonlyProperty` (source
+batch `8.4-migration`).
 
-Recursion found while comparing values now throws `Error` instead of ending
-with an `E_ERROR` fatal error (`8.4-migration`). Code that deliberately
-compares cyclic structures can catch the error.
-
-Since `8.5.0`, fatal errors include a backtrace, including fatal
-maximum-execution-time failures. Review logging and redaction paths that
-collect fatal output.
-
-### Output handlers and magic methods
-
-In `8.5-migration`:
-
-- Producing output inside a user output handler is deprecated. Its deprecation
-  message bypasses that handler so it remains visible.
-- `__debugInfo()` must return an array, not `null`.
-- `__sleep()` and `__wakeup()` are soft-deprecated in favor of
-  `__serialize()` and `__unserialize()`.
-
-`SplFixedArray::__wakeup()` is also deprecated in `8.4-migration`; subclasses
-should implement the modern serialization hooks. The nonstandard uppercase
-`S` tag in serialized strings is deprecated.
-
-## Closures, cloning, and properties
-
-### Closure binding
-
-The following rebinding operations are deprecated in `8.5-migration`:
-
-- binding an instance to a static closure;
-- binding a method to an unrelated object;
-- unbinding `$this`;
-- binding to an internal-class scope; and
-- changing the scope of a closure created from a function or method.
-
-### Readonly properties while cloning
-
-In `8.4-migration`, `__clone()` may reinitialize a readonly property but may
-not take an indirect reference to it, such as:
-
-```php
-$ref = &$this->readonlyProperty;
-```
-
-Since `8.5.0`, `clone` also has function syntax and accepts a
-`$withProperties` map. It can replace properties, including readonly
-properties, during cloning.
+The `clone` operation also has function syntax with a `$withProperties`
+argument. It may replace properties, including readonly properties, while
+cloning (source batch `8.5.0`).
 
 ```php
 $copy = clone($original, ['id' => $newId]);
 ```
 
-### Property declaration additions
+## Closures and reflection
 
-Since `8.5.0`:
+Source batch: `8.5-migration`.
 
-- `#[\Override]` can target properties;
-- asymmetric visibility is available for static properties; and
-- constructor property promotion can declare final properties.
+The following closure operations are deprecated:
 
-Final subclasses may also substitute a `static` type with `self` or their
-concrete class name (`8.5-migration`).
+- Binding an instance to a static closure.
+- Binding a method to an unrelated object.
+- Unbinding `$this`.
+- Binding to the scope of an internal class.
+- Rebinding the scope of a closure created from a function or method.
 
-## Attributes and reflection
+The no-op Reflection `setAccessible()` methods are deprecated. Do not request a
+missing constant with `ReflectionClass::getConstant()` or request a default
+value from a `ReflectionProperty` that has none.
 
-Applying `#[\Attribute]` to an abstract class, enum, interface, or trait fails
-during compilation in `8.5-migration`. `#[\DelayedTargetValidation]` defers
-that check until use, where `ReflectionAttribute::newInstance()` can throw.
+The one-argument `ReflectionMethod::__construct()` is deprecated; use
+`ReflectionMethod::createFromMethodName()` instead (source batch
+`8.4-migration`).
 
-The following reflection operations are deprecated in `8.5-migration`:
+## SPL collections and autoloading
 
-- no-op `setAccessible()` methods;
-- requesting a missing constant with `ReflectionClass::getConstant()`; and
-- requesting a default from a `ReflectionProperty` that has no default.
+Source batch: `8.5-migration`.
 
-Extension class constants from Date, Intl, PDO, Reflection, SPL, SQLite, and
-XMLReader gained declared types in `8.4-migration`. Reflection and source
-generation must not assume that internal constants are untyped.
-
-`PHP_DEBUG` and `PHP_ZTS` contain booleans rather than integers in
-`8.4-migration`.
-
-## Class linking and shutdown
-
-In `8.5-migration`:
-
-- Traits bind before the parent class.
-- Compilation and linking errors are delayed until their respective phases
-  finish.
-- A fatal error flushes delayed errors without invoking user error handlers.
-- An exception thrown while a handler processes a linking error no longer
-  prevents linking.
-- Tick handlers remain active through shutdown functions, destructors, and
-  output-handler cleanup.
-
-Tests that observe autoloading, error order, cleanup, or ticks should exercise
-the complete shutdown path.
-
-## SPL and object APIs
-
-### Autoloading and storage
-
-In `8.5-migration`:
-
-- To unregister all autoloaders, iterate over `spl_autoload_functions()`; do
-  not pass `spl_autoload_call` to `spl_autoload_unregister()`.
+- To unregister every autoloader, iterate over `spl_autoload_functions()`
+  instead of passing `spl_autoload_call` to `spl_autoload_unregister()`.
 - Prefer `SplObjectStorage::offsetExists()`, `offsetSet()`, and `offsetUnset()`
   over `contains()`, `attach()`, and `detach()`.
 - Stop constructing `ArrayObject` or `ArrayIterator` over objects.
 - `ArrayObject` no longer accepts enums.
+- `SplFileObject::fwrite()` has a nullable `length` parameter whose default is
+  `null` rather than `0`.
 
-### File objects
+## Namespaces, values, and generated filenames
 
-`SplFileObject::fwrite()` has a nullable `length` parameter whose default is
-`null` rather than `0` in `8.5-migration`.
+Leaving a namespace block now clears its seen symbols, so a later namespace
+block may reuse a symbol name declared by an earlier block without the prior
+cross-block conflict (source batch `8.4.0`).
 
-For `fgetcsv()`, `fputcsv()`, `str_getcsv()`, and the `SplFileObject` CSV
-methods, relying on the default `escape` argument is deprecated in
-`8.4-migration`. Pass it explicitly unless the file object has already
-received an explicit value through `setCsvControl()`.
+`PHP_DEBUG` and `PHP_ZTS` contain booleans rather than integers (source batch
+`8.4-migration`). Names generated for uploads and by `tempnam()` are 13 bytes
+longer, so revisit path-length assumptions.
 
-```php
-$row = fgetcsv($stream, null, ',', '"', '\\');
-```
+## Non-CLI argument derivation
 
-Delimiter, enclosure, and escape arguments are validated for valid widths.
+Source batch: `8.5-migration`.
 
-## Standard-library inputs and request globals
-
-In `8.5-migration`:
-
-- Pass explicit directory handles to `readdir()`, `rewinddir()`, and
-  `closedir()` instead of `null`.
-- Restrict `chr()` to integers from 0 through 255 and `ord()` to one-byte
-  strings.
-- Replace the local `$http_response_header` variable with
-  `http_get_last_response_headers()`.
-- Deriving `$_SERVER['argc']` and `$_SERVER['argv']` from a query string in a
-  non-CLI SAPI is deprecated. Set `register_argc_argv=0`, validate input, and
-  read `$_GET` or `$_SERVER['QUERY_STRING']`.
-- Destructuring a non-array value other than `null` now warns.
-
-An invalid `round()` mode throws `ValueError` instead of falling back to
-`PHP_ROUND_HALF_UP` (`8.4-migration`). `unserialize()` also validates the
-`allowed_classes` option.
-
-Since `8.5.0`, `FILTER_THROW_ON_FAILURE` makes filter validation failure throw
-instead of returning a failure value. It cannot be combined with
-`FILTER_NULL_ON_FAILURE`; the combination throws `ValueError`.
-
-```php
-$id = filter_var($input, FILTER_VALIDATE_INT, FILTER_THROW_ON_FAILURE);
-```
-
-## Runtime-generated paths and collection counts
-
-Upload names and `tempnam()` names are 13 bytes longer in `8.4-migration`.
-Revisit maximum-path and fixed-buffer assumptions.
-
-`gc_collect_cycles()` no longer counts strings or resources that are collected
-only indirectly through cycles (`8.5-migration`). Do not treat its count as an
-exact inventory of every released value.
+Deriving `$_SERVER['argc']` and `$_SERVER['argv']` from a query string in
+non-CLI SAPIs is deprecated. Set `register_argc_argv=0`; after validating the
+input, read `$_GET` or `$_SERVER['QUERY_STRING']` instead.

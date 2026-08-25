@@ -1,83 +1,65 @@
 # Transport Security, HTTP/2 Limits, and Tooling
 
-Use this reference for TLS behavior, gRPC-Go server flood protection, Android
-server transport support, or Linux ARM64 generated-code tooling.
+## Post-quantum TLS key exchange is the Core default
 
-## Post-quantum TLS key exchange by default
-
-From `core-1.83.0`, gRPC Core defaults to post-quantum cryptography for TLS key
-exchange. New connections therefore change security behavior without an
+New gRPC Core TLS connections use post-quantum cryptography for key exchange by
+default. This changes negotiated security behavior without requiring an
 application opt-in.
 
-When upgrading:
+When updating Core or its TLS dependencies:
 
-- Re-test handshakes against every supported peer, proxy, service mesh, TLS
-  inspector, and policy-enforcement point.
-- Treat transport-policy and performance differences as possible consequences
-  of the default change even when certificates and application configuration
-  stay the same.
-- Keep explicit compatibility settings until interoperability tests establish
-  that all deployed endpoints accept the new negotiation behavior.
+- exercise handshakes against each deployed peer, proxy, inspection device, and
+  policy engine;
+- compare negotiation and latency behavior rather than assuming unchanged
+  application configuration means unchanged transport behavior; and
+- retain deliberate compatibility overrides until interoperability tests show
+  that every required peer accepts the default exchange.
 
-Do not infer a specific algorithm or opt-out mechanism from this patch; inspect
-the project's gRPC Core and TLS configuration when either detail matters.
+## gRPC-Go control-frame flood protection
 
-## gRPC-Go HTTP/2 frame-flood protection
+A gRPC-Go server stops reading from a connection when HTTP/2 frames fill the
+control-buffer throttle. The default limit is 100 frames. DATA and HEADERS do
+not count toward that limit.
 
-From `go-1.82.1`, the gRPC-Go server stops reading from a connection when an
-HTTP/2 frame flood fills its control buffer. The default throttle limit is 100
-frames. DATA and HEADERS frames are excluded from the count.
-
-Change the threshold with:
+Override the threshold with the environment variable below only after testing
+both legitimate high-control-frame traffic and flood behavior:
 
 ```sh
 export GRPC_GO_EXPERIMENTAL_CONTROL_BUFFER_THROTTLE_LIMIT=200
 ```
 
-Operational guidance:
+Do not treat a higher value as a general throughput setting: observe connection
+read behavior, resource pressure, and recovery under the workload that requires
+the override.
 
-- Test the default against legitimate workloads that produce many control
-  frames before increasing it.
-- Test excessive-frame behavior separately so a tuning change does not undo
-  the protection.
-- Set the variable in the server's real launch environment and verify that
-  deployment manifests preserve the intended value.
-- Diagnose an apparently stalled connection with the throttle behavior in mind;
-  the server may have deliberately stopped reading.
+## Java Netty client-initiated stream limits
+
+Since java-1.83.1, the Netty server enforces its client-initiated stream limit
+proactively from connection startup instead of waiting for `SETTINGS_ACK`.
+Clients can no longer use the setup window to bypass the configured limit.
+
+Regression-test clients that create streams immediately after connecting as
+well as clients that wait for settings acknowledgment. Both paths must respect
+the same server limit, and tests should make any connection-setup timing
+assumptions explicit.
 
 ## Android server TLS 1.3
 
-From `java-1.83.0`, the gRPC-Java OkHttp transport enables TLS 1.3 for servers
-on Android. Android clients already had TLS 1.3 enabled in 1.82.0.
+The gRPC Java OkHttp transport enables TLS 1.3 for servers on Android. Client
+support was already enabled in 1.82.0, so review server and client policy
+separately instead of assuming TLS 1.3 is client-only on Android.
 
-Test the two roles independently:
-
-- Exercise Android server handshakes with the actual client and network path.
-- Review protocol-version allowlists or tests that assumed TLS 1.3 applied only
-  to Android clients.
-- Keep server-side cipher, interception, and certificate tests distinct from
-  client-side coverage.
+Test Android server handshakes with the application's enabled protocol and
+cipher policy, all required peers, and any intermediary that observes or
+terminates TLS.
 
 ## Linux ARM64 `Grpc.Tools` packaging
 
-From `core-1.83.0`, the C# `Grpc.Tools` build fixes an ARM64 `protoc` crash by
-aligning the maximum page size. Its Linux ARM64 packaging also moves to the
-`manylinux_2_28` baseline.
+The C# `Grpc.Tools` package aligns the maximum page size for its bundled
+`protoc`, fixing an ARM64 crash, and uses a `manylinux_2_28` packaging baseline.
+An upgrade can therefore change build-image compatibility even when the `.proto`
+inputs and generated source stay the same.
 
-When consuming the package on Linux ARM64:
-
-- Run the bundled `protoc` inside the actual build image rather than validating
-  only on an x86_64 workstation.
-- Check that the image satisfies the `manylinux_2_28` packaging baseline.
-- Distinguish a tool-execution or image-compatibility failure from an error in
-  the generated source or `.proto` schema.
-- Retest code generation after changing the SDK image, package cache, or build
-  architecture.
-
-## Review checklist
-
-- Treat the post-quantum TLS behavior as a default change.
-- Count only the HTTP/2 frame classes included by the Go throttle.
-- Verify TLS 1.3 for Android servers, not just clients.
-- Validate ARM64 tooling on an ARM64 environment with the required packaging
-  baseline.
+Run the packaged `protoc` in the actual Linux ARM64 build image. Check both that
+the executable starts successfully and that the image satisfies the new
+packaging baseline before promoting the toolchain update.

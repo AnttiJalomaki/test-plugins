@@ -1,12 +1,14 @@
 # Database, Eloquent, and Schema
 
-Queries, models, relationships, casts, migrations, schema operations, and database drivers.
-
-Batch identifiers in section headings provide exact source attribution.
+Connections, queries, Eloquent models and relationships, casts, migrations, and schema operations.
 
 ## Arbitrary SQLite pragmas (2025-09)
 
 SQLite connection configuration can set arbitrary pragmas. A follow-up attempt to move existing options into the pragmas configuration was reverted, so this support is additive and existing option locations remain valid.
+
+## Associative eager-loading keys (2026-02)
+
+Eager-loaded relationships now retain associative keys instead of reindexing their related results.
 
 ## Attribute-declared named scopes (2025-03)
 
@@ -57,6 +59,10 @@ Discarding Eloquent model changes now clears cached cast values, so subsequent a
 
 Enum types may implement Laravel's `Castable` contract, enabling an enum to select its own custom Eloquent caster.
 
+## Clean deadlock retries (2026-02)
+
+A lingering PDO transaction is rolled back before Laravel retries a commit deadlock, so the retry starts from a clean transaction state.
+
 ## Closure values for Eloquent creation (2026-04)
 
 `firstOrNew()` and `updateOrCreate()` accept a closure for their values argument.
@@ -67,10 +73,6 @@ $user = User::firstOrNew(
     fn () => ['name' => $name],
 );
 ```
-
-## Collision-free migration timestamps (2026-07)
-
-`make:migration` generates collision-free, ordered timestamp prefixes when migrations are created close together.
 
 ## Combined model pruning filters (2025-07)
 
@@ -110,10 +112,6 @@ Database reconnections now dispatch `ConnectionEstablished`, and an `SSL error: 
 ## Disabling SSL for MySQL schema operations (2025-05)
 
 MySQL migration squashing and restoration can explicitly disable SSL, which is needed when client defaults request TLS but the target server does not provide it.
-
-## Dynamic missing-model handling for queued listeners (13.0.0)
-
-Queued listeners may now decide dynamically whether their job should be deleted when a serialized model is missing, rather than relying only on a fixed setting.
 
 ## Eloquent partition result type (12.0.0)
 
@@ -185,9 +183,16 @@ protected function casts(): array
 $user->posts()->forceCreateMany($posts);
 ```
 
-## HTTP query helpers (2026-07)
+## HTML string casts (2025-03)
 
-The HTTP client provides `Http::query()`, while HTTP tests provide `query()` and `queryJson()` helpers for working with request query data.
+`AsHtmlString` casts model attributes to HTML string values.
+
+```php
+protected function casts(): array
+{
+    return ['body' => AsHtmlString::class];
+}
+```
 
 ## Instant column additions (2025-11)
 
@@ -196,6 +201,10 @@ Schema operations now support instant column additions on compatible databases, 
 ## Joined MySQL delete clauses (13.0-upgrade)
 
 MySQL joined deletes now include requested `ORDER BY` and `LIMIT` clauses instead of silently dropping them. Database variants that reject that syntax now raise `QueryException` rather than executing an unbounded delete.
+
+## Lazy creation values (2026-02)
+
+`firstOrCreate()` and `createOrFirst()` accept a closure for their values payload, allowing creation attributes to be computed only when an insert is needed.
 
 ## Literal values between columns (2025-07)
 
@@ -238,14 +247,6 @@ Laravel's schema support now includes MariaDB vector indexes.
 
 Eloquent mass assignment now works with value-object casts, allowing cast-backed value objects to be populated through `fill()`, `create()`, and related mass-assignment paths.
 
-## Migration and locale event data (2025-12)
-
-Laravel dispatches a `MigrationSkipped` event for skipped migrations, and `LocaleUpdated` now includes the previous locale for listeners that need both sides of the change.
-
-## Migration names in lifecycle events (2026-05)
-
-`MigrationStarted` and `MigrationEnded` now include the migration name, allowing listeners to identify the migration being run.
-
 ## Mode-less PostgreSQL full-text search (2025-11)
 
 PostgreSQL full-text queries may now be issued without selecting a named search mode.
@@ -265,9 +266,23 @@ $names = Schema::getTableListing(schema: 'main', schemaQualified: false);
 
 The `db:table` and `db:show` commands likewise include every schema on MySQL, MariaDB, and SQLite.
 
+## MySQL DDL locking options (2026-01)
+
+The MySQL schema grammar can express DDL locking options, allowing supported schema changes to select MySQL's lock behavior.
+
 ## MySQL query timeouts (2026-02)
 
 MySQL query builders now provide `timeout()` for applying a timeout to an individual query.
+
+## Nested array notation in `loadMissing` (2025-08)
+
+`loadMissing()` accepts nested relationship arrays in addition to flattened relationship paths.
+
+```php
+$post->loadMissing([
+    'comments' => ['author'],
+]);
+```
 
 ## Nested model construction during boot (13.0-upgrade)
 
@@ -313,6 +328,14 @@ Schema blueprint `morphs()` and `nullableMorphs()` definitions accept an `after`
 $table->morphs('commentable', after: 'body');
 ```
 
+## PostgreSQL `tsvector` columns (2026-03-laravel-12)
+
+The schema builder supports PostgreSQL `tsvector` columns directly.
+
+```php
+$table->tsvector('search_document');
+```
+
 ## PostgreSQL conversion expressions (2026-07)
 
 PostgreSQL migrations can use `->using(...)->change()` to supply a conversion expression when changing a column.
@@ -324,14 +347,6 @@ PostgreSQL migrations can use `->using(...)->change()` to supply a conversion ex
 ## PostgreSQL transaction poolers (2026-06)
 
 PostgreSQL connections now support transaction poolers.
-
-## PostgreSQL `tsvector` columns (2026-03-laravel-12)
-
-The schema builder supports PostgreSQL `tsvector` columns directly.
-
-```php
-$table->tsvector('search_document');
-```
 
 ## PostgreSQL unique nulls-not-distinct indexes (2025-03)
 
@@ -377,15 +392,9 @@ When an Eloquent model collection is serialized and restored, including through 
 Post::withoutGlobalScopesExcept([TenantScope::class])->get();
 ```
 
-## Scoped context (2025-03)
+## Reverted Eloquent key-disjunction helpers (2026-08)
 
-`Context::scope()` bounds temporary context changes to a callback and restores the surrounding context afterward.
-
-```php
-Context::scope(function () {
-    Context::add('tenant_id', 123);
-});
-```
+Laravel 13.26.1 removes the Eloquent builder's `orWhereKey()` and `orWhereKeyNot()` methods. Code using either helper must stop relying on it when updating to this patch release.
 
 ## Semantic vector queries (13.0.0)
 
@@ -396,18 +405,6 @@ $documents = DB::table('documents')
     ->whereVectorSimilarTo('embedding', 'Best wineries in Napa Valley')
     ->limit(10)
     ->get();
-```
-
-## Singleton and scoped container attributes (2025-07)
-
-The container's `Singleton` and `Scoped` attributes declare a class's lifetime without service-provider binding code.
-
-```php
-#[Singleton]
-final class ExchangeRates {}
-
-#[Scoped]
-final class RequestState {}
 ```
 
 ## SQLite JSON and JSONB columns (2025-03)
@@ -426,6 +423,10 @@ SQLite connections now support Eloquent's `whereNotMorphedTo()` relationship que
 ## SQLite URI connections (2026-05)
 
 SQLite connections now accept URI-style database names using the `file:` prefix, allowing URI connection options to be supplied in the database value.
+
+## Subqueries as range bounds (2026-01)
+
+Query-builder `between` conditions now accept subqueries in their boundary values and in the column-bound variant, allowing ranges whose limits are computed by another query.
 
 ## TLS credentials for MySQL schema operations (2026-02)
 

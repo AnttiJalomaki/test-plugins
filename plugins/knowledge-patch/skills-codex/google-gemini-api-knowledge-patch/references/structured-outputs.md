@@ -1,16 +1,10 @@
 # Structured outputs
 
-Source batch: `structured-outputs`.
+## Define recursive response schemas
 
-Use this reference when defining a recursive schema, validating streamed JSON,
-combining a built-in tool with a constrained final response, or checking the
-supported schema subset.
-
-## Recursive response schemas
-
-Structured-output schemas can recurse. To recurse to the root, use `$ref` from
-the nested value back to `#`. A self-referential Pydantic model can provide the
-equivalent schema through `model_json_schema()`.
+Structured-output schemas may recurse. Point a nested value back to a recursive
+root with `$ref`; self-referential Pydantic models can provide the equivalent
+through `model_json_schema()`.
 
 ```json
 {
@@ -23,10 +17,10 @@ equivalent schema through `model_json_schema()`.
 }
 ```
 
-## Accumulate stream fragments
+## Accumulate structured stream fragments
 
 With `stream=True`, structured output arrives in text step deltas as partial
-JSON strings. Concatenate them in order and validate only the completed
+JSON strings. Concatenate fragments in order and validate only the completed
 document.
 
 ```python
@@ -37,14 +31,11 @@ for event in stream:
 result = Result.model_validate_json("".join(fragments))
 ```
 
-Do not parse each fragment as standalone JSON and do not validate until the
-stream has supplied the full document.
+## Combine built-in tools with a structured final response
 
-## Built-in tools plus a structured final response
-
-As a preview limited to Gemini 3-series models, an Interactions request can run
-built-in tools and still constrain its final text to a response schema. Supply
-`tools` and the JSON `response_format` together.
+As a preview limited to Gemini 3-series models, an interaction can execute
+built-in tools while constraining the final text to a response schema. Supply
+`tools` and JSON `response_format` in the same request.
 
 ```python
 interaction = client.interactions.create(
@@ -59,15 +50,14 @@ interaction = client.interactions.create(
 )
 ```
 
-## Supported subset and complexity limits
+## Stay within the supported schema subset
 
-In addition to basic types and constraints, the supported subset includes:
+In addition to basic types and constraints, the subset includes:
 
-- nullable unions such as `{"type": ["string", "null"]}`;
-- schema-valued or boolean-valued `additionalProperties`;
-- string formats `date-time`, `date`, and `time`;
-- numeric `minimum` and `maximum`;
-- array `prefixItems`, `minItems`, and `maxItems`.
+- Nullable unions such as `{"type": ["string", "null"]}`.
+- Boolean- or schema-valued `additionalProperties`.
+- String formats `date-time`, `date`, and `time`.
+- Numeric `minimum` and `maximum`.
+- Array `prefixItems`, `minItems`, and `maxItems`.
 
-Very large or deeply nested schemas can be rejected. Keep schemas as compact as
-the response contract permits.
+Very large or deeply nested schemas can be rejected.

@@ -1,9 +1,12 @@
 # Migration and Packaging
 
-## Removed Core Abstractions
+## Core API Migration (`llamaindex-v0.11-v0.12-api`)
 
-Core v0.11 removes the deprecated `ServiceContext` and `LLMPredictor`
-abstractions. Use `Settings` for process defaults:
+### Replace `ServiceContext` and `LLMPredictor`
+
+Core 0.11 removes both deprecated abstractions. Use `Settings` for process-wide
+defaults, or pass LLM, embedding, and transformation objects directly when
+configurations coexist.
 
 ```python
 from llama_index.core import Settings
@@ -12,32 +15,19 @@ Settings.llm = llm
 Settings.embed_model = embed_model
 ```
 
-Pass LLMs, embedding implementations, and transformations directly when
-configurations coexist. Direct injection avoids one process-wide setting
-leaking across libraries, tests, tenants, or independently configured indexes.
+Core also moves officially to Pydantic v2. Audit custom readers, nodes, output
+parsers, tools, models, validators, serialization, and any integration that
+depends on Pydantic v1 behavior.
 
-The same transition moves core officially to Pydantic v2. Audit code that
-subclasses or serializes framework objects, including:
+### Coordinate the 0.12 dependency upgrade
 
-- custom readers and nodes;
-- output parsers and tools;
-- LLM and embedding integrations;
-- validators and model configuration;
-- stored payloads and other serialized state;
-- dependencies that still assume Pydantic v1 behavior.
+Every `llama-index-*` distribution received a version bump for the 0.12
+transition. Resolve and test one coherent environment rather than upgrading
+core alone or assigning every distribution version `0.12.0`; integrations keep
+independent versions and core constraints.
 
-Changing only `ServiceContext` construction can leave validators, schemas, and
-serialization paths broken.
-
-## Coordinated Dependency Upgrades
-
-The v0.12 package generation bumps every `llama-index-*` distribution, but the
-distributions do not all become version `0.12.0`. Integration packages retain
-their own versions and declare constraints against core. Resolve a coherent
-environment instead of upgrading only `llama-index-core` or pinning the entire
-family to a shared number.
-
-Inspect installed distributions when debugging an environment:
+The release drops Python 3.8. Selected newer distributions may set a still
+higher floor, so follow package metadata and preserve the resulting lockfile.
 
 ```python
 from importlib.metadata import version
@@ -46,70 +36,65 @@ core_version = version("llama-index-core")
 starter_version = version("llama-index")
 ```
 
-A safe dependency-upgrade loop is:
+### Migrate agents and workflows deliberately
 
-1. state the application's Python version and direct requirements;
-2. resolve every installed `llama-index-*` distribution together;
-3. inspect the resolver's chosen integration versions and core constraints;
-4. run ingestion, retrieval, agent, and workflow integration tests;
-5. preserve the successful lockfile.
+Current workflow-based agents are asynchronous and imported from
+`llama_index.core.agent.workflow`. Current memory guidance uses `Memory`; the
+older buffer and vector memory classes are deprecated.
 
-Do not assume interpreter support from the core release number alone. The
-v0.12 package generation drops Python 3.8, while selected later integration
-releases can impose a higher floor. Follow the metadata of the exact
-distributions selected by the resolver.
+Workflows require a control-flow redesign rather than a `QueryPipeline` rename.
+Use typed events, asynchronous steps, event branches and loops, `Context`,
+streaming, and checkpointed durable execution. Core applications use
+`llama_index.core.workflow`; standalone applications can use the
+`llama-index-workflows` distribution and import from `workflows`.
 
-## Agent API Migration
+### Move maintained updates into ingestion
 
-Current workflow agents are imported from:
+Use `IngestionPipeline` when an index needs transformation caching, document
+update strategy, or direct vector-store insertion. Rebuild or verify persisted
+vector indexes after embedding changes, and test ingestion, retrieval, agents,
+and workflows together after migration.
 
-```python
-from llama_index.core.agent.workflow import (
-    AgentWorkflow,
-    FunctionAgent,
-    ReActAgent,
-)
-```
+## Integration Releases in 0.14.24
 
-Legacy provider-specific agent classes and runner/worker examples do not
-describe the current execution contract. `run()` starts asynchronous workflow
-execution and returns a streamable, awaitable handler.
+These distributions version independently. Change only the integrations the
+application uses and solve their dependency constraints as a set.
 
-Current memory guidance uses `Memory`. `ChatMemoryBuffer`,
-`ChatSummaryMemoryBuffer`, and `VectorMemory` are deprecated. Create a
-`Memory` instance explicitly and pass it to the agent run.
+### `llama-index-llms-anthropic` 0.11.10
 
-## Workflow Migration
+The integration supports the provider's generation-5 balanced model and
+allowlists its generation-5 flagship model, including corrected function
+calling for the balanced variant. It reports a one-million-token context window
+for the provider's flagship 4.6 model.
 
-A `QueryPipeline` DAG cannot be migrated by renaming its class. Redesign it as
-a workflow with:
+### `llama-index-llms-bedrock-converse` 0.14.18
 
-- typed Pydantic event classes;
-- asynchronous `@step` methods;
-- explicit event branches and loops;
-- `Context` state access;
-- streaming through the run handler;
-- checkpoint-aware durable execution where required.
+The integration supports the provider's generation-5 balanced model, allowlists
+its generation-5 flagship model, and accepts thinking type `disabled`.
 
-Core applications retain the `llama_index.core.workflow` import surface.
-Standalone workflow applications can install `llama-index-workflows` and
-import through `workflows`.
+### `llama-index-llms-google-genai` 0.10.0
 
-## Ingestion Migration
+The library and its documentation default to the provider's 3.7 fast model.
+Pin a model explicitly when the application must preserve earlier behavior.
 
-`VectorStoreIndex.from_documents` remains a useful convenience. Move
-maintained ingestion flows to `IngestionPipeline` when they need
-transformation caching, document update strategies, or direct vector-store
-insertion.
+### `llama-index-llms-openai` 0.7.10
 
-An embedding change is a data migration concern. Rebuild or explicitly verify
-persisted vector indexes after changing the embedding implementation or its
-configuration. Successful deserialization does not prove vector
-compatibility.
+The supported-model set includes the provider's 5.6 family, avoiding
+unknown-model validation for those identifiers.
 
-Upgrade verification should cover the full paths the application uses:
-ingestion, retrieval, agent tools and memory, workflow streaming, validation,
-checkpointing, and resource construction.
+### `llama-index-tools-mcp` 0.5.0
 
-This guidance originates from the included
-`llamaindex-v0.11-v0.12-api` compatibility batch.
+The tooling migrates to MCP 2.x. Treat the release as a dependency and API
+compatibility boundary, and test the complete tool integration when upgrading.
+
+### Optional asynchronous AWS dependency
+
+`llama-index-embeddings-bedrock` 0.8.3 and
+`llama-index-llms-bedrock-converse` 0.14.18 make `aioboto3` optional. The base
+installation no longer needs it when asynchronous AWS access is unused.
+
+### `llama-index-llms-llama-cpp` 0.6.1
+
+The integration reports the loaded model's effective context window. Prompt
+budgeting therefore follows the actual loaded model instead of stale or nominal
+metadata.

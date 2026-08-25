@@ -1,66 +1,49 @@
 # Compiler and Hooks Lint
 
-The compiler behavior is attributed to `compiler-1.0.0`; the ESLint v6 configuration shipped with the React 19.2 tooling updates.
+## Configure Hooks ESLint v6
 
-## Dependency tracking
-
-Compiler 1.0 can track optional-chain accesses and indexed reads as memoization dependencies. Keep idiomatic expressions such as this intact:
-
-```jsx
-const selectedName = users[selected]?.profile?.name;
-```
-
-These reads can participate directly in generated memoization; they do not need to be rewritten merely to make dependency tracking work.
-
-## Consolidated lint plugin
-
-Compiler linting moved into the Hooks plugin. Remove `eslint-plugin-react-compiler` and install the current Hooks plugin:
-
-```sh
-npm remove eslint-plugin-react-compiler
-npm install --save-dev eslint-plugin-react-hooks@latest
-```
-
-The Hooks plugin's recommended preset includes compiler-powered linting, and linting does not require `babel-plugin-react-compiler` to be installed. The plugin also exposes compiler-powered rules for projects that opt into additional checks.
-
-## ESLint flat config
-
-In v6, `recommended` is a flat-config preset:
-
-```js
-// eslint.config.js
-import reactHooks from "eslint-plugin-react-hooks";
-
-export default [
-  reactHooks.configs.recommended,
-];
-```
-
-An eslintrc project must use the explicitly named legacy preset:
+Since `19.2.0`, the v6 `recommended` preset uses ESLint flat config. Existing
+eslintrc projects must opt into the legacy preset explicitly:
 
 ```yaml
 extends:
   - plugin:react-hooks/recommended-legacy
 ```
 
-Do not leave an eslintrc project on `plugin:react-hooks/recommended` after upgrading to v6.
+The Hooks plugin offers React Compiler-powered rules. With Compiler 1.0
+(`compiler-1.0.0`), remove `eslint-plugin-react-compiler`, install
+`eslint-plugin-react-hooks@latest`, and use its `recommended` preset, which
+includes the compiler-powered rules. Linting does not require the compiler
+package itself to be installed.
 
-## Starter defaults
+## Use optional chains and indexed reads directly
 
-Compiler adoption differs across starters:
+Compiler 1.0 (`compiler-1.0.0`) tracks optional-chain accesses and array
+indices as memoization dependencies. Idiomatic reads can participate directly
+in generated memoization:
 
-- Expo SDK 54 and newer enable the compiler by default for newly created applications.
-- `create-vite` offers a compiler-enabled choice.
-- `create-next-app` offers a compiler-enabled choice.
+```jsx
+const selectedName = users[selected]?.profile?.name;
+```
 
-## Upgrade policy
+## Know starter defaults
 
-Compiler releases can change memoization boundaries. Those changes can expose latent Rules-of-React violations, especially through different Effect dependency behavior.
+Compiler 1.0 starter behavior (`compiler-1.0.0`) differs by platform:
 
-When end-to-end coverage is not strong enough to detect behavioral changes, save the compiler package at an exact version instead of accepting a SemVer range:
+- New Expo projects on SDK 54 and newer enable the compiler by default.
+- `create-vite` and `create-next-app` offer compiler-enabled choices rather
+  than enabling it unconditionally.
+
+Check the generated project configuration instead of assuming every starter
+uses the same default.
+
+## Pin upgrades when behavior lacks coverage
+
+Compiler releases can change memoization boundaries. Those changes can expose
+latent Rules-of-React violations by changing Effect dependency behavior. If
+the application lacks strong end-to-end coverage, pin the Compiler 1.0 package
+to an exact version and test upgrades manually (`compiler-1.0.0`):
 
 ```sh
 npm install --save-dev --save-exact babel-plugin-react-compiler@1.0.0
 ```
-
-Test each compiler upgrade manually before updating the pin.

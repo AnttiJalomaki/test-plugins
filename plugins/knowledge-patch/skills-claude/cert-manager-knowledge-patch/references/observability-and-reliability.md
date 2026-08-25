@@ -1,112 +1,62 @@
 # Observability and Reliability
 
-Use this reference for metrics and logs, CA bundle rotation, webhook recovery,
-and failure modes that changed from loops or terminal errors to bounded retry.
+## Logging and Prometheus compatibility
 
-## Logging
+Structured log messages include more contextual data from 1.17. Rules that
+match complete lines or literal message strings should instead target stable
+fields and be updated for the new shape.
 
-### Structured context affects literal matches
+The ACME request metrics below replace their `path` label with bounded
+cardinality `action` in 1.19:
 
-Since `upgrade-1.17`, log messages include more contextual structured data.
-Rules that match complete log lines or literal message strings may stop
-matching. Parse structured fields or use stable substrings and conditions
-instead of treating the rendered line as an API.
+- `certmanager_acme_client_request_count`
+- `certmanager_acme_client_request_duration_seconds`
+
+Rewrite dashboards and alerts. Use Prometheus relabeling or recording rules
+only when preserving the older high-cardinality semantics is necessary.
+
+With chart monitoring enabled in 1.20, the metrics label is consistently
+`cert-manager` instead of changing with release name or namespace. In 1.21,
+the metrics endpoint and port name are fixed to `/metrics` and `http-metrics`.
 
 ## Certificate and challenge metrics
 
-### Validity timestamps
-
-Since `1.18`, these metrics expose certificate issuance and expiration times:
+The following certificate validity metrics are available from 1.18:
 
 - `certmanager_certificate_not_before_timestamp_seconds`
 - `certmanager_certificate_not_after_timestamp_seconds`
 
-Use them for remaining-lifetime alerts while accounting for renewal policy and
-clock skew.
+The 1.19 `certmanager_certificate_challenge_status` metric exposes challenge
+state for alerting and monitoring.
 
-### Challenge status
+## Issuance failure behavior
 
-Since `1.19`, `certmanager_certificate_challenge_status` exposes ACME challenge
-status for dashboards and alerts.
+- ACME authorization waits for up to two minutes from 1.17.3, reducing early
+  `error waiting for authorization` failures.
+- From 1.18.5, a returned certificate whose public key does not match its CSR
+  is rejected before Secret storage and retries with backoff rather than
+  entering an endless reissuance loop.
+- TLS handshake timeouts, DNS errors, and context cancellation during ACME
+  nonce retrieval or authorization waiting use workqueue backoff in 1.21
+  instead of terminally failing the Challenge.
+- An already-expired certificate returned by an issuer stops issuance instead
+  of triggering an infinite reissuance loop (`1.21`).
+- DigitalOcean DNS-01 uses regulated retries and records complete errors as
+  Challenge events (`1.20`).
 
-## ACME request metric migration
+## Controller and webhook recovery
 
-In `upgrade-1.19`, the `path` label was removed from
-`certmanager_acme_client_request_count` and
-`certmanager_acme_client_request_duration_seconds`. It was replaced by the
-bounded-cardinality `action` label. Rewrite PromQL queries, dashboards, and
-alerts that select or group by `path`. If preserving the old high-cardinality
-semantics is essential, implement it explicitly with Prometheus relabeling or a
-recording rule.
+While a Certificate is deleting, its controller does not create replacement
+CertificateRequests or Secrets (`1.17`).
 
-## Helm monitoring labels and endpoints
+After host suspension or VM live migration, the webhook uses wall-clock
+polling to detect a missed serving-certificate renewal and recovers within one
+minute of resume (`1.21`).
 
-### Stable metrics label
+For Certificate durations longer than roughly three years,
+`renewBeforePercentage` is calculated correctly in 1.21. Earlier behavior can
+reject the value or calculate the wrong renewal time.
 
-In `1.20`, enabling Prometheus monitoring always sets the metrics label to
-`cert-manager`; it no longer varies with the installation namespace or Helm
-release name. Update selectors that interpolated either value.
-
-### Removed monitor overrides
-
-In `upgrade-1.21`, these chart values were removed:
-
-- `prometheus.servicemonitor.targetPort`
-- `prometheus.servicemonitor.path`
-- `prometheus.podmonitor.path`
-
-Delete them before upgrade or chart schema validation fails. Metrics now use
-the fixed `/metrics` path and `http-metrics` port name. Custom scrape
-configuration that used `tcp-prometheus-servicemonitor` must switch to the new
-port name.
-
-## Cainjector CA bundle behavior
-
-### Merge lifecycle
-
-In `1.17`, the opt-in `CAInjectorMerging` gate made cainjector add new CA
-certificates to an injected bundle rather than replacing the existing
-certificate. This supplies a trust overlap during issuer rotation.
-
-In `1.19`, the gate became beta and enabled by default. It could still be
-explicitly disabled when replacement semantics were required.
-
-In `1.21`, merging became GA and unconditional. The feature gate can no longer
-restore replacement behavior. Cainjector also always uses server-side apply,
-and the `ServerSideApply` feature gate is deprecated.
-
-### Ignore selected namespaces
-
-In `1.21`, pass `--ignore-namespaces` to cainjector to exclude specified
-namespaces when it watches Secrets for CA injection.
-
-## Webhook recovery
-
-In `1.21`, the webhook uses wall-clock polling to detect a serving-certificate
-renewal missed during host suspension or VM live migration. It recovers within
-one minute after resume.
-
-## Bounded failure behavior
-
-### Public-key mismatch
-
-Starting in 1.18.5, an issuer response whose certificate public key does not
-match its CSR is rejected before storage. Issuance backs off instead of
-entering an infinite reissuance loop.
-
-### Already-expired certificate
-
-In `1.21`, a certificate response that is already expired no longer produces
-an infinite reissuance loop.
-
-### Transient ACME operations
-
-In `1.21`, TLS handshake timeouts, DNS failures, and context cancellation
-during nonce fetches or authorization waits retry through workqueue backoff
-rather than terminally failing the Challenge.
-
-### DigitalOcean diagnostics
-
-In `1.20`, DigitalOcean DNS-01 retries are regulated and complete provider
-errors are attached to the Challenge as events. Inspect events before reducing
-backoff or retry settings.
+Version 1.21.1 fixes a 1.21.0 controller panic when
+`spec.renewal.policy: Disabled` is configured. It also lets an ACME DNS-01
+issuer recover after its missing credential Secret is created.

@@ -1,32 +1,33 @@
 # Kubernetes, network, and storage
 
-Use this reference for Kubernetes YAML replay and generation, CDI devices, network behavior,
-volume semantics, secrets, host-file generation, and local storage integrity.
+## Kubernetes generation and replay
 
-## Kubernetes YAML workflows
+### Jobs and richer round-trips (5.3.0)
 
-### Jobs, namespaces, and image volumes
+`podman kube generate` and `podman kube play` create and run Kubernetes Job YAML. Generated YAML
+preserves pod and container user-namespace settings for replay, and `kube play` understands
+Kubernetes image volumes.
 
-Since 5.3.0, `podman kube generate` and `podman kube play` can generate and run Kubernetes Job
-YAML. Generated YAML preserves pod and container user-namespace configuration for later replay,
-and `kube play` understands Kubernetes image volumes.
+### Tar contexts in the Play API (5.3.0)
 
-### Volume subpaths and PID limits
+The Kubernetes YAML Play API accepts compressed context directories with content type
+`application/x-tar`.
 
-Since 5.5.0, generated Kubernetes YAML correctly represents volume mounts that use subpaths.
-Generate and replay per-container PID limits with this annotation:
+### CDI devices (5.4.0)
 
-```text
-io.podman.annotation.pids-limit/$containername
-```
+`podman kube play` supports Container Device Interface devices. Compat Container Create also
+honors CDI devices, allowing clients such as Compose to request GPUs and other CDI resources.
 
-### CPU and memory placement
+### PID limits and volume subpaths (5.5.0)
 
-Since 5.6.0, `podman kube play` accepts per-container CPU-set and memory-node annotations and
-honors `lifecycle.stopSignal`:
+`kube generate` and `kube play` preserve per-container PID limits with
+`io.podman.annotation.pids-limit/$containername`. Generated YAML correctly represents volume
+mounts that use subpaths.
 
-- `io.podman.annotations.cpuset/$ctrname` selects CPUs;
-- `io.podman.annotations.memory-nodes/$ctrname` selects NUMA memory nodes.
+### CPU placement and stop signals (5.6.0)
+
+`kube play` accepts per-container `io.podman.annotations.cpuset/$ctrname` and
+`io.podman.annotations.memory-nodes/$ctrname`. It also honors `lifecycle.stopSignal`.
 
 ```yaml
 metadata:
@@ -40,240 +41,200 @@ spec:
         stopSignal: SIGTERM
 ```
 
-The PID-limit annotation uses singular `annotation`; the CPU and memory keys use plural
-`annotations`. Preserve the exact spellings.
+### Multi-file workflows and names (5.7.0)
 
-### CDI devices
-
-Since 5.4.0, `podman kube play` accepts Container Device Interface devices. The Compat Container
-Create API also honors CDI requests, allowing clients such as Compose front ends to request GPUs
-and other CDI-described devices.
-
-Since 5.5.0, add global CDI specification search paths with `--cdi-spec-dir`. Since 6.0.0,
-`podman info` reports both CDI specification directories and discovered CDI devices.
-
-### Multiple YAML files and naming
-
-Since 5.7.0, `podman kube play` and `podman kube down` accept several YAML files in one command;
-Quadlet `.kube` units can also reference several files:
+`podman kube play` and `podman kube down` accept several YAML files in one invocation; Quadlet
+`.kube` units do too. `podman kube play --no-pod-prefix` removes the pod prefix from container
+names, but fails if a pod and container then have the same name.
 
 ```console
 podman kube play app.yaml worker.yaml
 podman kube down app.yaml worker.yaml
 ```
 
-`podman kube play --no-pod-prefix` suppresses pod-name prefixes on container names. Creation can
-fail when the resulting pod and container names collide.
+### Generated health checks (5.8.6-6.1.0)
 
-### Play API build contexts
+`podman generate kube` emits a container health check as a Kubernetes `livenessProbe`.
 
-Since 5.3.0, the Kubernetes YAML Play API accepts a compressed context directory with content
-type `application/x-tar`.
+### Untrusted YAML security floor (5.6.0)
 
-### Untrusted YAML
+Use 5.6.1 or later for YAML from untrusted sources. CVE-2025-9566 allowed crafted symlinks in
+`ConfigMap` or `Secret` volumes processed by `kube play` to overwrite host content.
 
-Use Podman 5.6.1 or later when processing untrusted YAML. CVE-2025-9566 allowed crafted symlinks
-inside `ConfigMap` or `Secret` volumes to overwrite host content.
+## Volumes and mounts
 
-## Volume mounts and lifecycle
+### Volume subpaths (5.4.0)
 
-### Subpaths
-
-Since 5.4.0, volume mounts for `podman run`, `podman create`, and `podman volume create` accept
-`subpath=` to expose only a directory within a volume:
+Volume mounts for `podman run`, `create`, and `volume create` accept `subpath=` to expose only a
+directory within a volume.
 
 ```console
 podman run --mount type=volume,source=data,target=/data,subpath=logs IMAGE
 ```
 
-Container creation through the 6.0.0 API also honors volume `subpath`.
+### Ownership at creation (5.6.0)
 
-### Require existing named volumes
+`podman volume create --uid` and `--gid` set ownership when creating a volume.
 
-Since 6.0.0, add `nocreate` to a container or pod volume mount to fail rather than implicitly
-create a missing named volume:
+### Remote import and export (5.6.0)
+
+The remote client supports `podman volume import` and `podman volume export`. Export refuses to
+write to standard output when standard output is a TTY.
+
+### Existing-only named volumes (6.0.0)
+
+Container and pod volume mounts accept `nocreate`, causing creation to fail if the named volume
+does not exist.
 
 ```console
 podman run --mount type=volume,src=myvol,dst=/mnt,nocreate IMAGE
 ```
 
-### Ownership at creation
+### Volume pruning scope and conjunction (6.0.0)
 
-Since 5.6.0, `podman volume create --uid` and `--gid` set volume ownership when the volume is
-created.
-
-### Mount defaults and tmpfs access time
-
-Since 5.6.0:
-
-- tmpfs mounts accept `noatime`;
-- `--mount` defaults to `type=volume` when `type=` is omitted.
+`podman volume prune` removes only unused anonymous volumes. Use `--all` for the former scope and
+`--dry-run` to preview. Repeated `podman volume list` filters combine with logical AND, as do
+repeated supported `label!=` filters.
 
 ```console
-podman run --tmpfs /run:noatime IMAGE
-podman run --mount source=data,destination=/data IMAGE
-```
-
-### Export safety and remote support
-
-Since 5.6.0, `podman volume export` refuses to write an export to standard output when stdout is
-attached to a TTY. The remote client supports both `podman volume import` and
-`podman volume export`.
-
-### Pruning and filter conjunction
-
-Since 6.0.0, `podman volume prune` removes only unused anonymous volumes. Pass `--all` for the
-former scope or `--dry-run` to preview:
-
-```console
-podman volume prune --dry-run
 podman volume prune --all
+podman volume prune --dry-run
 ```
 
-Multiple `podman volume list` filters combine with logical AND. Repeated `label!=` filters also
-combine with AND on commands that support them.
+### Label-safe all-volume pruning (5.8.6-6.1.0)
 
-## Secrets
+Podman 6.1 makes `podman volume prune --all` honor label filters. Earlier versions can discard the
+filter and prune every eligible volume; do not rely on this combination before 6.1.
 
-### Idempotent creation
+```console
+podman volume prune --all --filter label=foo
+```
 
-Since 5.6.0, `podman secret create --ignore` makes repeated creation succeed when the secret
-already exists.
+### Volume renaming (5.8.6-6.1.0)
 
-### Interactive input
+Podman 6.1 adds `podman volume rename`. A driver-backed volume or one currently used by a
+container cannot be renamed.
 
-Since 5.8.0, `podman secret create NAME -` can read a secret typed directly into a terminal as
-well as piped standard input:
+```console
+podman volume rename OLD NEW
+```
+
+## Secrets and CDI discovery
+
+### CDI paths and secret events (5.5.0)
+
+The global `--cdi-spec-dir` option adds CDI specification search paths. Events include secret
+creation and removal.
+
+### Idempotent secret creation (5.6.0)
+
+`podman secret create --ignore` makes repeated creation succeed.
+
+### Interactive secret input (5.8.0)
+
+`podman secret create NAME -` can read directly from a terminal as well as from piped input.
 
 ```console
 podman secret create db-password -
 ```
 
-Secret creation and removal have appeared in the event stream since 5.5.0. Environment-variable
-secrets are omitted from container inspection output.
+## Network creation and addressing
 
-## Hostname and host-file handling
+### Existing bridges and interface names (5.4.0)
 
-### Several aliases for one address
+`podman network create --opt mode=unmanaged` adopts an existing host bridge without changing it.
+For bridge networking, per-container `--network` accepts `host_interface_name` to choose the host
+interface name.
 
-Since 5.3.0, `podman create`, `podman run`, and `podman pod create` accept semicolon-separated
-hostnames in one `--add-host` entry:
+### DHCP hostnames (5.4.0)
 
-```console
-podman run --add-host 'test1;test2:192.168.1.1' IMAGE
-```
+Podman passes a container hostname to Netavark, which includes it in DHCP requests.
 
-### Select or suppress generated files
+### Network isolation default (6.0.0)
 
-Since 5.4.0, those same create commands accept:
+Network isolation is enabled by default. Make previously implicit cross-network communication
+explicit.
 
-- `--hosts-file` to select the base content for `/etc/hosts`;
-- `--no-hostname` to prevent creation of `/etc/hostname`.
+### Static addresses and host binding (6.0.0)
 
-```console
-podman run --hosts-file /etc/containers/custom-hosts --no-hostname IMAGE
-```
-
-The Compat and Libpod Images Build APIs also accept boolean `nohosts` since 5.4.0; use
-`nohosts=true` to suppress `/etc/hosts` creation during a build.
-
-### DHCP hostnames
-
-Since 5.4.0, Podman passes the container hostname to Netavark for inclusion in DHCP requests.
-
-## Host reachability and DNS
-
-### Pasta guest-to-host mapping
-
-Since 5.3.0, Podman enables Pasta's `--map-guest-addr` by default and uses it for
-`host.containers.internal`, allowing a container to reach the host through that name.
-
-### Host-network alias
-
-Since 6.0.0, `host.containers.internal` resolves to `127.0.0.1` inside `--net=host` containers,
-not to a public host address.
-
-### Non-default network search domains
-
-With Netavark 1.15 or newer and Podman 5.5.0 or newer, non-default networks no longer receive the
-`dns.podman` search domain. Names ending in that domain still resolve.
-
-## Bridge networks and interfaces
-
-### Adopt an existing bridge
-
-Since 5.4.0, create an unmanaged network over an existing host bridge without Podman altering the
-bridge:
-
-```console
-podman network create --opt mode=unmanaged NAME
-```
-
-For bridge networks, per-container `--network` options also accept `host_interface_name` to set
-the interface name outside the container.
-
-### Network isolation default
-
-Since 6.0.0, network isolation is enabled by default. Explicitly model communication that relied
-on the former non-isolated behavior.
-
-### Several static addresses and default binding address
-
-Since 6.0.0, repeat `ip=` in one network attachment to give a container several static addresses:
+Repeat `ip=` within one `--net` attachment to assign several static addresses. The containers.conf
+field `default_host_ips` selects the host address for port forwarding when a command omits one.
 
 ```console
 podman run --net mynet:ip=10.0.0.2,ip=10.0.0.3 IMAGE
 ```
 
-Set `default_host_ips` in `containers.conf` to choose the host address for port forwarding when a
-command does not specify one.
+### Typed routes (6.0.0)
 
-### Deterministic attachment order
-
-Since 6.0.0, Podman configures several joined networks in command-line order.
-
-## Routes and rootless forwarding
-
-### Typed routes
-
-With Netavark 2.0 or newer and Podman 6.0.0, `podman network create --route` accepts `blackhole`,
-`unreachable`, and `prohibit` route types:
+With Netavark 2.0 or newer, `podman network create --route` accepts `blackhole`, `unreachable`,
+and `prohibit` route types.
 
 ```console
 podman network create --route 10.20.30.0/24,blackhole isolated
 ```
 
-### Experimental Pasta/Pesto bridge forwarding
+### Host aliases and deterministic network order (6.0.0)
 
-Set this in `containers.conf` to make rootless bridge networks use Pasta's Pesto forwarding and
-preserve the original client source address:
+For `--net=host`, `host.containers.internal` resolves to `127.0.0.1`, not a public host address.
+When joining several networks, Podman configures them in command-line order.
 
-```toml
-rootless_port_forwarder="pasta"
+### Idempotent network removal (5.8.6-6.1.0)
+
+`podman network rm --ignore` suppresses errors for missing networks.
+
+```console
+podman network rm --ignore NETWORK
 ```
 
-`rootlessport` remains the default. Use 6.0.1 or later for this experimental mode; 6.0.0 can
-leave forwarding rules behind after container restarts or network reloads.
+## Rootless forwarding and host reachability
 
-## Storage integrity and reset behavior
+### Pasta host reachability (5.3.0)
 
-### Full and quick checks
+Podman enables Pasta `--map-guest-addr` by default and uses it for
+`host.containers.internal`, allowing containers to reach the host through that name.
 
-Since 5.2.0, `podman system check` inspects local container storage for corruption and can repair
-detected damage where possible:
+### Experimental Pasta bridge forwarding (6.0.0)
+
+Setting `rootless_port_forwarder="pasta"` makes rootless bridge networks use Pasta's Pesto
+forwarder and preserves the original client source address. `rootlessport` remains the default.
+Use 6.0.1 or later because 6.0.0 can leave stale rules after restart or network reload.
+
+### IPv6 through Pesto (5.8.6-6.1.0)
+
+Pesto-based rootless port forwarding supports IPv6 while preserving the original source address.
+
+## Events and network lifecycle
+
+### Network events (5.4.0)
+
+`podman events` reports network creation and removal.
+
+### Reset and DNS lifecycle (5.5.0)
+
+`podman system reset` preserves the user's `podman.sock`. With Netavark 1.15 or later,
+non-default networks no longer receive the `dns.podman` search domain, though names in that domain
+still resolve. Stopping a Quadlet `.network` deletes the network when unused.
+
+### Expanded labels and OOM data (6.0.0)
+
+Container `died` events include `OOMKilled`; artifact events cover create, pull, push, and remove;
+pod and volume events include labels as attributes.
+
+## Storage integrity
+
+### Full checks (5.2.0)
+
+`podman system check` inspects local container storage for corruption and can repair detected
+damage when possible.
 
 ```console
 podman system check
 ```
 
-Since 5.6.0, `podman system check --quick` skips layer-digest verification. Run the full check
-when digest validation is required.
+Parent directories of Podman's root and runroot no longer all need world-execute permission, so
+private ancestor permissions need not be relaxed for storage access. (5.2.0)
 
-### Private root and runroot ancestors
+### Quick checks (5.6.0)
 
-Since 5.2.0, ancestor directories of Podman's root and runroot do not all need world-executable
-permissions. Do not relax private ancestor permissions merely to make storage accessible.
-
-### System reset socket preservation
-
-Since 5.5.0, `podman system reset` preserves the user's `podman.sock`.
+`podman system check --quick` skips layer-digest verification. Run the full check when digest
+validation is required.

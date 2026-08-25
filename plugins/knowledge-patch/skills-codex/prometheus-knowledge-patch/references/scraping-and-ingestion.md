@@ -1,103 +1,93 @@
-# Scraping and ingestion
+# Scraping and Ingestion
 
-Use this reference for scrape protocol negotiation, metric-name handling,
-relabeling, scrape-time histogram conversion, and target-level overrides.
+Use this reference for scrape protocol negotiation, metric naming, relabeling,
+histogram scrape controls, and created-timestamp behavior.
 
 ## Protocol negotiation and parsing
 
-### Content-Type is strict
+### Require a recognized Content-Type (3.0-migration)
 
-Starting with the `3.0-migration`, a scrape fails if a target omits an accepted
-`Content-Type` or sends an unparsable or unknown value. Prometheus no longer
-silently falls back to its text format. Correct the endpoint to advertise one
-of the supported formats:
+A scrape fails when a target omits an accepted `Content-Type` or supplies an
+unparsable or unknown value. Fix the exporter to advertise protobuf-delimited,
+Prometheus text 0.0.4/1.0.0, or OpenMetrics 0.0.1/1.0.0. Otherwise configure
+`fallback_scrape_protocol` explicitly for that target.
 
-- protobuf-delimited
-- Prometheus text 0.0.4 or 1.0.0
-- OpenMetrics 0.0.1 or 1.0.0
+### Accept quoted OpenMetrics exemplar keys (3.1.0)
 
-If the endpoint cannot be fixed, configure `fallback_scrape_protocol` for that
-target.
+The OpenMetrics text parser accepts the format's quoted exemplar-key form, so
+producers using quoted keys are not rejected.
 
-### Requested escaping and unit rules
+### Request an escaping scheme (3.4.0)
 
-Scrape configuration can choose the escaping scheme requested during content
-negotiation from 3.4.0.
+Scrape configuration can select the escaping scheme requested from targets
+during content negotiation. Set it when exporter name escaping must be
+predictable.
 
-Scraping classic protobuf no longer requires the metric unit to be embedded in
-the metric name from 3.9.0. Producers can supply unit metadata independently.
+### Relax classic-protobuf unit naming (3.9.0)
 
-The OpenMetrics parser accepts quoted exemplar keys from 3.1.0.
+Classic protobuf scraping no longer requires the unit to be part of the metric
+name. Producers may supply unit metadata independently of the name.
 
-### Zero-injection protocol preference
+### Created-timestamp zero injection changes negotiation (feature-flags)
 
 Unless `scrape_protocols` is explicit, enabling
-`created-timestamp-zero-ingestion` changes the global preference order to the
-following (`feature-flags`):
+`created-timestamp-zero-ingestion` changes the global preference to
+`PrometheusProto`, `OpenMetricsText1.0.0`, `OpenMetricsText0.0.1`, then
+`PrometheusText0.0.4`. Configure the list explicitly when protobuf-first
+negotiation is not desired.
 
-1. `PrometheusProto`
-2. `OpenMetricsText1.0.0`
-3. `OpenMetricsText0.0.1`
-4. `PrometheusText0.0.4`
+## Names, labels, and relabeling
 
-This means protobuf is negotiated first.
+### Choose UTF-8 or legacy validation (3.0-migration)
 
-## Names, labels, and normalization
-
-### UTF-8 metric and label names
-
-The `3.0-migration` accepts UTF-8 metric and label names. Names rejected by
-older versions can be ingested, and exposed names can change after an upgrade.
-Preserve the old validator globally with:
+Metric and label names accept UTF-8. Previously rejected names can be ingested,
+and exposed names may change after upgrade. Preserve the earlier validation
+globally or per scrape job:
 
 ```yaml
 global:
   metric_name_validation_scheme: legacy
 ```
 
-The same `metric_name_validation_scheme` can be set to `utf8` or `legacy` per
-scrape job.
+The allowed values are `utf8` and `legacy`.
 
-From 3.2.0, replace relabel actions accept UTF-8 in `targetLabel`. `$<chars>`
-and `${<chars>}` are expanded. `LabelMap` applies the same expansion rules to
-its `replacement` field.
+### Normalize classic histogram and summary labels (3.0-migration)
 
-### Histogram and summary label values
-
-The `3.0-migration` normalizes classic histogram `le` and summary `quantile`
-values into float-like strings regardless of scrape protocol. For example,
-`"1"` is stored as `"1.0"`:
+Classic histogram `le` and summary `quantile` values are stored as float-like
+strings regardless of protocol. An exposed `"1"` becomes `"1.0"`. Update
+rules, alerts, and dashboards that match integer strings; queries spanning the
+transition can still be surprising.
 
 ```promql
 my_classic_hist_bucket{le="1.0"}
 ```
 
-Update rules and dashboards that match integer strings. Queries spanning the
-normalization transition can still produce unexpected results.
+### Use UTF-8 relabel targets and replacements (3.2.0)
 
-## Native and classic histogram controls
+Replace relabel actions accept UTF-8 in `targetLabel`. `$<chars>` and
+`${<chars>}` expand, and the same behavior applies to the `replacement` field
+for `LabelMap` actions.
 
-### Enabling ingestion
+### Inspect explicitly empty relabel fields (3.13.2-3.14.0)
 
-Created-Timestamp processing supports native histograms and the TSDB can ingest
-out-of-order native-histogram samples from 3.0.0.
+`/api/v1/status/config` includes `separator: ""` and `replacement: ""` when
+either field was explicitly set empty. Configuration consumers must distinguish
+an explicit empty value from an omitted field.
 
-Native histograms are stable from 3.9.0, so `native-histograms` becomes a
-no-op. Scraping them still requires the configuration option introduced in
-3.8.0:
+## Created and start timestamps
 
-```yaml
-global:
-  scrape_native_histograms: true
-```
+### Do not expect extra `_created` series (3.0.0)
 
-When native-histogram ingestion is disabled, scraping skips native-histogram
-series from 3.3.0.
+With `created-timestamp-zero-ingestion`, processing created timestamps no
+longer creates additional `_created` time series.
 
-### Retaining classic histograms
+## Histogram scrape controls
 
-During the `3.0-migration`, the job-level `scrape_classic_histograms` setting
-is renamed to `always_scrape_classic_histograms`:
+### Rename the classic-retention option (3.0-migration)
+
+Replace job-level `scrape_classic_histograms` with
+`always_scrape_classic_histograms` when retaining a concurrently exposed
+classic histogram:
 
 ```yaml
 scrape_configs:
@@ -106,45 +96,47 @@ scrape_configs:
     always_scrape_classic_histograms: true
 ```
 
-`always_scrape_classic_histograms` is also accepted globally from 3.5.0:
+### Reload all histogram scrape settings (3.1.0)
 
-```yaml
-global:
-  always_scrape_classic_histograms: true
-```
+Configuration reloads honor `always_scrape_classic_histograms` and
+`convert_classic_histograms_to_nhcb`; they are no longer silently ignored.
 
-Reloaded configuration correctly applies this setting from 3.1.0.
+### Skip disabled native histograms (3.3.0)
 
-### Classic-to-custom-bucket conversion
+When native-histogram ingestion is disabled, scraping skips native-histogram
+series rather than ingesting them unexpectedly.
 
-`convert_classic_histograms_to_nhcb` can be set globally from 3.4.0 instead of
-being repeated in every scrape job:
+### Configure classic-to-NHCB conversion globally (3.4.0)
+
+Set `convert_classic_histograms_to_nhcb` in `global` rather than repeating it
+for each job when all scrapes need the same conversion:
 
 ```yaml
 global:
   convert_classic_histograms_to_nhcb: true
 ```
 
-Reloaded configuration honors it from 3.1.0. Classic-histogram-to-NHCB
-conversion can be combined with created-timestamp zero ingestion from 3.8.0.
+### Retain classic histograms globally (3.5.0)
 
-### Out-of-order ingestion
+`always_scrape_classic_histograms` is also a global option:
 
-`--enable-feature=ooo-native-histograms` is a no-op from 3.4.0. At that point,
-out-of-order native histograms are enabled when `out_of_order_time_window` is
-greater than zero and `--enable-feature=native-histograms` is present. From
-3.9.0 the latter feature flag is itself a no-op because native histograms are
-stable.
+```yaml
+global:
+  always_scrape_classic_histograms: true
+```
 
-## Per-target and per-job controls
+### Send trace context on scrapes (3.6.0)
 
-Target relabeling can set these special labels from 3.13.0:
+Scrape requests include the `traceparent` HTTP header, allowing scrape work to
+participate in propagated tracing context.
+
+### Override histogram behavior per target (3.13.0)
+
+Target relabeling can set these reserved labels for individual targets:
 
 - `__convert_classic_histograms_to_nhcb__`
 - `__always_scrape_classic_histograms__`
 - `__scrape_native_histograms__`
-
-They override the corresponding scrape settings for one target:
 
 ```yaml
 relabel_configs:
@@ -152,31 +144,23 @@ relabel_configs:
     replacement: "true"
 ```
 
-Dropped targets returned by `/api/v1/targets` include their scrape pool name
-from 3.3.0, making per-pool diagnosis possible even after relabeling drops a
-target.
+## Scrape metadata and diagnostics
 
-## Created timestamps and extra scrape metrics
+### Include scrape-pool data for dropped targets (3.3.0)
 
-With `created-timestamp-zero-ingestion` enabled, created timestamps no longer
-produce separate `_created` time series from 3.0.0.
+Dropped targets returned by `/api/v1/targets` include their scrape pool name.
+Use it to attribute a dropped target to its job.
 
-Scrape requests include a `traceparent` header from 3.6.0 so scrape work can
-participate in propagated tracing.
+### Move extra scrape metrics into configuration (feature-flags)
 
-`--enable-feature=extra-scrape-metrics` is deprecated. Configure its
-replacement globally or per scrape configuration (`feature-flags`):
+`--enable-feature=extra-scrape-metrics` is deprecated. Enable the replacement
+globally or per scrape configuration:
 
 ```yaml
 global:
   extra_scrape_metrics: true
 ```
 
-This stores:
-
-- `scrape_timeout_seconds`
-- `scrape_sample_limit`
-- `scrape_body_size_bytes`
-
-A sample limit of zero means unlimited. Body size is `-1` when a size-limit
-failure occurred and `0` for other scrape failures.
+This stores `scrape_timeout_seconds`, `scrape_sample_limit`, and
+`scrape_body_size_bytes`. A zero sample limit means unlimited. Body size is
+`-1` when the size limit caused failure and `0` for other scrape failures.

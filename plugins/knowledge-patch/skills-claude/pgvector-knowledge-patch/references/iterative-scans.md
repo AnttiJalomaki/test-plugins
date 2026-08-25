@@ -1,68 +1,58 @@
 # Iterative Scans and Filtered Search
 
-## Why filtered approximate searches can return too few rows
+This reference organizes filtered-search guidance from `0.8-guide` and
+`0.8.0` by query task.
 
-HNSW and IVFFlat approximate scans retrieve candidate vectors before ordinary
-PostgreSQL filters are evaluated. If a filter is selective, many candidates can
-be discarded and the result can contain fewer rows than `LIMIT` even though
-additional matching rows exist.
+## Why filters can leave a short result set
 
-Iterative scans address this by continuing to retrieve candidates until the
-query has enough matching rows or an index-specific scan limit is reached.
+Approximate HNSW and IVFFlat indexes gather candidates before PostgreSQL
+applies ordinary filters. If a filter is selective, too few candidates may
+survive to satisfy `LIMIT`. Iterative scanning lets the index continue looking
+until enough matching rows are found or its configured limit is reached.
 
-## HNSW iterative scans
+## Configure HNSW iterative scans
 
-The 0.8-guide introduced `hnsw.iterative_scan`. It defaults to `off` and accepts
-two active modes:
+HNSW iterative scanning is opt-in and defaults to `off`. Set
+`hnsw.iterative_scan` to one of these modes:
 
-- `strict_order` preserves distance order.
-- `relaxed_order` trades exact ordering for faster search.
+| Mode | Ordering behavior |
+| --- | --- |
+| `strict_order` | Exact distance order |
+| `relaxed_order` | Approximate order with faster scanning |
 
 ```sql
 SET hnsw.iterative_scan = 'strict_order';
 
 SELECT id, embedding <=> '[1,2,3]' AS distance
-FROM items
+FROM filtest
 WHERE category = 1
 ORDER BY embedding <=> '[1,2,3]'
-LIMIT 20;
+LIMIT 3;
 ```
 
-Keep the distance `ORDER BY` immediately before `LIMIT`; that query shape lets
-the planner use iterative scanning.
+The distance `ORDER BY` must appear immediately before `LIMIT` for iterative
+scanning to apply.
 
-### Scan limits
+## Tune HNSW scan limits
 
-`hnsw.max_scan_tuples` caps the number of tuples visited and defaults to
-`20000`. `hnsw.scan_mem_multiplier` caps scan memory as a multiple of
-`work_mem` and defaults to `1`.
+`hnsw.max_scan_tuples` defaults to `20000` and limits the tuples an iterative
+scan visits. `hnsw.scan_mem_multiplier` defaults to `1` and limits scan memory
+as a multiple of `work_mem`.
 
-```sql
-SET hnsw.max_scan_tuples = 40000;
-SET hnsw.scan_mem_multiplier = 2;
-```
+If a selective filter still leaves fewer rows than requested, increase the
+tuple limit, the memory multiplier, or both.
 
-Raise these settings when selective filters still stop the iterative scan from
-filling the requested limit. Tuple and memory limits are independent reasons
-for the search to stop.
+## Re-establish exact order after `relaxed_order`
 
-## IVFFlat iterative scans
-
-Since 0.8.0, IVFFlat supports the same continue-after-filtering strategy.
-Configure it with `ivfflat.iterative_scan`. When the initial scan supplies too
-few filtered results, IVFFlat continues until it finds enough matches or reaches
-`ivfflat.max_probes`.
-
-## Re-establish ordering after `relaxed_order`
-
-`relaxed_order` candidates may not be in exact distance order. Put the
-approximate search and candidate limit in a subquery, then re-sort the limited
-candidate set. An expression such as `distance * 1` forces the final sort.
+First bound the candidate set in a subquery. Then sort the candidates by a
+derived expression such as `distance * 1`, which forces PostgreSQL to perform
+the final exact sort.
 
 ```sql
-SELECT * FROM (
+SELECT *
+FROM (
   SELECT id, embedding <=> '[1,2,3]' AS distance
-  FROM items
+  FROM filtest
   WHERE category = 1
   ORDER BY embedding <=> '[1,2,3]'
   LIMIT 20
@@ -70,9 +60,19 @@ SELECT * FROM (
 ORDER BY distance * 1;
 ```
 
-## Planner costing for filtered vector searches
+The inner `LIMIT` controls how many approximate candidates are reconsidered.
 
-Vector operations now have better cost estimates for filtered searches. The
-planner may correctly choose a sequential scan or conventional index instead
-of HNSW, especially for a small or selective example. Use `EXPLAIN` to verify
-the chosen plan rather than assuming the vector index is exercised.
+## Configure IVFFlat iterative scans
+
+Set `ivfflat.iterative_scan` to enable iterative behavior for an IVFFlat
+index. When the initial scan yields too few filtered rows, the index continues
+searching until it finds enough or reaches `ivfflat.max_probes`.
+
+## Inspect filter-aware plans
+
+Vector-operation costing for filtered searches can lead PostgreSQL to prefer a
+sequential scan or a conventional index over HNSW. That choice can be correct;
+the mere presence of a vector index does not require the planner to use it.
+
+Run `EXPLAIN` on the real filtered query and verify the selected plan before
+changing scan-depth controls or forcing a different access path.

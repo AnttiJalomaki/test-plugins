@@ -1,140 +1,187 @@
 # Responses and streaming
 
-Use this reference to choose between ordinary model responses, JSON Lines, raw chunk streaming, and Server-Sent Events.
+## Bodiless responses can return `None`
 
-## Contents
+FastAPI 0.117.0 accepts `-> None` on operations whose status code forbids a
+body (`2025-09`):
 
-- [Ordinary responses](#ordinary-responses)
-- [Yield directly from a path operation](#yield-directly-from-a-path-operation)
-- [JSON Lines](#json-lines)
-- [Raw `StreamingResponse` chunks](#raw-streamingresponse-chunks)
-- [Server-Sent Events](#server-sent-events)
-- [Resource lifetime and disconnects](#resource-lifetime-and-disconnects)
+```python
+from fastapi import FastAPI
 
-## Ordinary responses
+app = FastAPI()
 
-### Bodiless status codes
+@app.delete("/items/{item_id}", status_code=204)
+def delete_item(item_id: int) -> None:
+    return None
+```
 
-FastAPI 0.117 accepts `-> None` for a response status that cannot carry a body, such as `204 No Content` (`2025-09`). Use the accurate annotation rather than inventing a response model to satisfy route construction.
+This expresses the actual handler contract without producing a response-model
+error.
 
-### Model-backed JSON serialization
+## Prefer direct Pydantic JSON serialization
 
-FastAPI 0.130 serializes through Pydantic when a handler has a Pydantic return annotation or a `response_model`. FastAPI 0.131 deprecates `ORJSONResponse` and `UJSONResponse` (`2026-02`):
+From FastAPI 0.130, a Pydantic return annotation or `response_model` makes
+Pydantic serialize a standard JSON response directly to bytes (`2026-02`).
 
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+app = FastAPI()
+
 class Item(BaseModel):
     name: str
 
-app = FastAPI()
-
-@app.get("/items/{name}", response_model=Item)
-def read_item(name: str):
-    return {"name": name}
+@app.get("/items/{item_id}")
+def read_item(item_id: int) -> Item:
+    return Item(name=f"item-{item_id}")
 ```
 
-Use specialized response classes only when response semantics—not routine JSON speed—require them.
+Declaring a JSON response class still applies Pydantic validation and
+filtering, but then passes the result through `jsonable_encoder` and lets the
+response class serialize bytes. Omit the response class for the direct path.
+`ORJSONResponse` and `UJSONResponse` are deprecated from FastAPI 0.131.
 
-### Byte schemas
+FastAPI 0.140.9 propagates `exclude_defaults=True` recursively through mapping
+keys and values (`2026-08`):
 
-FastAPI 0.129.1 documents `bytes` with JSON Schema `contentMediaType: application/octet-stream` instead of `format: binary`. Update schema snapshots and generators that used the old marker.
+```python
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel
 
-## Yield directly from a path operation
+class Item(BaseModel):
+    count: int = 0
 
-FastAPI 0.134 can stream JSON Lines or binary data directly when the path operation uses `yield`; wrapping every generator in `StreamingResponse` is no longer necessary (`2026-02`). The declaration and response class determine the mode.
+assert jsonable_encoder(
+    {"item": Item(count=0)}, exclude_defaults=True
+) == {"item": {}}
+```
 
-## JSON Lines
+## Stream typed JSON Lines
 
-A normally yielded endpoint responds with `application/jsonl` (`streaming-and-responses`). Annotate the generator to define item handling:
-
-- Use `AsyncIterable[Item]` for an asynchronous generator.
-- Use `Iterable[Item]` for a synchronous generator.
-- With one of these annotations, FastAPI validates, filters, documents, and serializes every item through Pydantic.
-- Without a return annotation, FastAPI serializes yielded values through `jsonable_encoder` instead.
+FastAPI 0.134 supports generator path operations. Without a custom response
+class, annotate the generator as `Iterable[Item]` or `AsyncIterable[Item]` to
+validate, filter, document, and serialize every yielded item with Pydantic as
+`application/jsonl`. Without a return annotation, each item goes through
+`jsonable_encoder`.
 
 ```python
 from collections.abc import AsyncIterable
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    value: int
 
 @app.get("/items/stream")
 async def stream_items() -> AsyncIterable[Item]:
-    for item in items:
-        yield item
+    yield Item(value=1)
 ```
 
-Use this mode for structured sequences whose individual records must obey the documented model.
+FastAPI 0.140.8 preserves the streaming item type when the endpoint's router
+is attached with `include_router()`, keeping validation, serialization, and
+OpenAPI generation intact. FastAPI 0.140.13 honors a non-default `status_code`
+declared on JSON Lines and SSE generator endpoints (`2026-08`).
 
-## Raw `StreamingResponse` chunks
-
-Set `response_class=StreamingResponse` to yield unmodified strings or bytes. In this mode:
-
-- FastAPI bypasses JSON conversion and Pydantic serialization.
-- The generator's return annotation does not control runtime serialization.
-- A bare `StreamingResponse` has no content type.
-
-Define a response subclass when clients require a media type:
+For non-generator endpoints annotated with `Iterable[...]`, FastAPI 0.140.11
+applies `response_model_*` settings, including filtering such as
+`response_model_exclude_none`:
 
 ```python
-from collections.abc import AsyncIterable
+from collections.abc import Iterable
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    note: str | None = None
+
+@app.get("/items", response_model_exclude_none=True)
+def read_items() -> Iterable[Item]:
+    return [Item(name="one")]
+```
+
+## Stream raw strings and bytes
+
+Set `response_class=StreamingResponse` for raw output. Yielded strings and
+bytes bypass Pydantic and structured serialization; the generator annotation
+is only for type checking. Provide an explicit media type, normally through a
+subclass:
+
+```python
+from collections.abc import Iterable
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
-class PNGStreamingResponse(StreamingResponse):
-    media_type = "image/png"
+class BinaryStream(StreamingResponse):
+    media_type = "application/octet-stream"
 
-@app.get("/image/stream", response_class=PNGStreamingResponse)
-async def stream_image() -> AsyncIterable[bytes]:
-    for chunk in chunks:
-        yield chunk
+app = FastAPI()
+
+@app.get("/download", response_class=BinaryStream)
+def stream_bytes() -> Iterable[bytes]:
+    yield b"first chunk\n"
+    yield b"second chunk\n"
 ```
 
-Use this mode for already encoded media, protocol frames, or other byte streams that must not be structurally transformed.
+Prefer the decorator-and-`yield` form. A directly returned
+`StreamingResponse` relies on its async generator reaching an `await`
+cancellation point, while the path-operation form handles cancellation. For a
+blocking file-like source, use regular `def` and `Iterable[bytes]` so FastAPI
+runs the work without blocking the event loop.
 
-## Server-Sent Events
+Starlette 0.42 and newer raises `ClientDisconnect` when the client drops a
+`StreamingResponse`. Middleware or code around response transmission should
+handle that outcome deliberately.
 
-FastAPI 0.135 introduces SSE support (`2026-03`). Import its response and event types from `fastapi.sse`.
+## Send Server-Sent Events
 
-### Plain yielded values
-
-Set `response_class=EventSourceResponse`. Each plain yielded value is JSON-encoded into the event's `data:` field. As with JSON Lines, `AsyncIterable[Item]` enables per-item Pydantic validation, documentation, and serialization; no annotation falls back to `jsonable_encoder`.
+FastAPI 0.135.0 adds native SSE support (`2026-03`). Set
+`response_class=EventSourceResponse` and yield ordinary values; each becomes
+JSON in the event's `data:` field. An iterable item annotation enables
+Pydantic validation, documentation, and serialization, while an unannotated
+generator uses `jsonable_encoder`.
 
 ```python
 from collections.abc import AsyncIterable
+from fastapi import FastAPI
 from fastapi.sse import EventSourceResponse
 
-@app.get("/items/events", response_class=EventSourceResponse)
-async def stream_items() -> AsyncIterable[Item]:
-    for item in items:
-        yield item
+app = FastAPI()
+
+@app.get("/events", response_class=EventSourceResponse)
+async def events() -> AsyncIterable[dict[str, str]]:
+    yield {"status": "ready"}
 ```
 
-### Structured event metadata
-
-Yield `ServerSentEvent` when an event needs `event`, `id`, `retry`, or `comment` fields. Its `data` argument is always JSON-encoded. Use the mutually exclusive `raw_data` argument for preformatted text or sentinel values:
+Yield `ServerSentEvent` to set `event`, `id`, `retry`, or `comment`. `data` is
+always JSON-encoded; use the mutually exclusive `raw_data` for preformatted
+text and sentinels.
 
 ```python
 from collections.abc import AsyncIterable
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
-@app.get("/events", response_class=EventSourceResponse)
-async def events() -> AsyncIterable[ServerSentEvent]:
-    yield ServerSentEvent(
-        data={"status": "ready"}, event="status", id="1", retry=5000
-    )
+@app.get("/status", response_class=EventSourceResponse)
+async def status() -> AsyncIterable[ServerSentEvent]:
+    yield ServerSentEvent(data={"ready": True}, event="status", id="1")
     yield ServerSentEvent(raw_data="[DONE]", event="done")
 ```
 
-### Connection defaults
+`EventSourceResponse` sends an idle keepalive comment every 15 seconds and
+defaults to `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
 
-FastAPI's SSE response sends a keepalive comment after 15 idle seconds. It also sets:
+FastAPI 0.140.12 fixes `format_sse_event()` line splitting to follow the SSE
+wire format. Upgrade before relying on multiline event content instead of
+compensating in clients. FastAPI 0.140.13 also fixes SSE decorator status
+codes (`2026-08`).
 
-- `Cache-Control: no-cache`
-- `X-Accel-Buffering: no`
+## Byte schema metadata
 
-These defaults discourage intermediary caching and buffering and help keep idle connections alive.
-
-## Resource lifetime and disconnects
-
-A request-scoped `yield` dependency remains active until streaming finishes; a function-scoped one exits before sending the response. Select the dependency scope based on whether the generator still needs the resource. See [dependency-injection.md](dependency-injection.md).
-
-With Starlette 0.42 or newer, a client disconnect while a `StreamingResponse` is sending raises `ClientDisconnect`. Allow intentional cleanup to run, and update middleware, tests, and error reporting that assumed a dropped stream ended silently.
+From FastAPI 0.129.1, JSON Schema for `bytes` uses
+`contentMediaType: application/octet-stream`, not `format: binary`. Update
+schema snapshots, generators, and consumers that match the older form.

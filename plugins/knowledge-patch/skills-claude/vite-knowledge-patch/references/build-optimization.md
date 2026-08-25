@@ -1,62 +1,39 @@
 # Builds and Dependency Optimization
 
-## Bundled development
+## Keep Chunk Hash Changes Local With Import Maps
 
-Large browser applications can opt into experimental bundled ESM during
-development while retaining HMR (since 8.1.0). Bundling reduces the per-module
-request overhead that can otherwise slow initial startup and reloads.
-
-Enable it at the command line:
-
-```sh
-vite --experimental-bundle
-```
-
-Or in Vite configuration:
+Since `8.1.0`, the experimental `build.chunkImportMap` option uses an import
+map to stop a changed chunk hash from cascading into every chunk that imports
+it. The result is better cache reuse across deployments when only part of the
+chunk graph changes.
 
 ```ts
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  experimental: {
-    bundledDev: true,
-  },
+  build: { chunkImportMap: true },
 })
 ```
-
-This mode is still experimental and limited. Confirm that the application's
-framework, plugins, HMR boundaries, startup, and reload behavior work as
-expected before adopting it broadly.
-
-## Chunk import maps
-
-Enable `build.chunkImportMap` to use an import map for built chunks (since
-8.1.0):
-
-```ts
-import { defineConfig } from 'vite'
-
-export default defineConfig({
-  build: {
-    chunkImportMap: true,
-  },
-})
-```
-
-Without this mechanism, changing a chunk hash can change the import reference
-embedded in every importing chunk, cascading new hashes through the graph. The
-import map isolates that relationship and improves cache reuse across
-deployments.
 
 `build.chunkImportMap` is currently incompatible with
-`experimental.renderBuiltUrl`. Choose one of the two mechanisms rather than
-combining them.
+`experimental.renderBuiltUrl`. Do not enable both in the same build.
 
-## Trying the Rolldown-based bundler
+## Combine Chunk Import Maps With Shared Plugins
 
-The `rolldown-vite` package is a drop-in replacement for `vite` that exposes the
-future Rolldown-powered implementation (since 7.0.0). It allows projects to
-exercise that bundler before it becomes Vite's default.
+In `8.1.5-8.2.1`, client chunk import maps work with `sharedPlugins: true`.
+Framework integrations can therefore combine shared plugin instances with
+`build.chunkImportMap`.
 
-Treat the package swap as an evaluation step: run the project's builds and
-plugin integration checks even though the package is designed to be drop-in.
+Treat this as an interoperability improvement to the chunk-import-map feature;
+it does not remove the incompatibility with `experimental.renderBuiltUrl`.
+
+## Trial the Rolldown-Backed Package
+
+Starting with `7.0.0`, the `rolldown-vite` package can replace `vite` as a
+drop-in way to try the future Rolldown-based bundler before it becomes the
+default.
+
+Use the alternate package for an evaluation, then exercise the project's
+plugins and production build before adopting it. Drop-in package replacement
+does not imply that every plugin has identical behavior under the future
+bundler.

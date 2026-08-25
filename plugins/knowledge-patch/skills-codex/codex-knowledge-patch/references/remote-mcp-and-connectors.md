@@ -1,93 +1,77 @@
 # Remote TUI, MCP, and connectors
 
-## Remote TUI architecture
+## Remote TUI and app-server ownership
 
-An app server can own a workspace and execute commands on one machine while a
-TUI on another machine connects with `--remote`. Both the listener and client
-require an explicit `ws://` or `wss://` URL.
-
-For a local or SSH-forwarded loopback connection:
+The machine that owns the workspace and executes commands can run an app
+server while another machine provides the TUI.
 
 ```bash
-# Workspace host
 codex app-server --listen ws://127.0.0.1:4500
-
-# TUI host, through the forwarded loopback port
 codex --remote ws://127.0.0.1:4500
 ```
 
-Use unauthenticated plain WebSockets only for loopback or an SSH-forwarded
-connection.
+For non-local use, authenticated connections should be behind TLS.
+Capability-token authentication uses `--ws-token-file` and
+`--remote-auth-token-env`. Signed-bearer authentication uses an HS256 JWT with
+`exp` and a shared secret of at least 32 bytes. The client sends bearer tokens
+only over `wss://` or loopback `ws://` URLs.
 
-## Capability-token authentication
+## Interactive and runtime authentication
 
-For a network listener, store the server's capability token in a protected file
-and tell the client which environment variable contains the token. The client
-refuses to send a token over non-loopback `ws://`, so authenticated network
-access must reach the server through TLS at a `wss://` URL.
+MCP tools can request authentication interactively without an experimental
+opt-in since `0.144.0`.
 
-```bash
-# Workspace host
-codex app-server --listen ws://0.0.0.0:4500 \
-  --ws-auth capability-token \
-  --ws-token-file "$HOME/.codex/codex-app-server-token"
+App-server hosts can provide authentication at runtime, and successful logins
+can redirect to a hosted page.
 
-# TUI host; retrieve the same token through SSH
-export CODEX_REMOTE_AUTH_TOKEN="$(ssh devbox 'cat ~/.codex/codex-app-server-token')"
-codex --remote wss://devbox.example.com:4500 \
-  --remote-auth-token-env CODEX_REMOTE_AUTH_TOKEN
-```
+## MCP administration and serving
 
-## Signed bearer authentication
+Configure STDIO or streaming HTTP MCP servers in `~/.codex/config.toml` or
+manage them with `codex mcp`. The CLI can also run as an MCP server for another
+agent.
 
-Select `--ws-auth signed-bearer-token` and provide
-`--ws-shared-secret-file`. The server accepts HS256 JWTs with a required `exp`
-claim and a shared secret of at least 32 bytes. It validates `nbf`, `iss`, and
-`aud` when those claims are configured or present.
-
-## Responses WebSockets behind proxies
-
-Since `0.144.0`, Responses WebSockets retain their low-latency transport when
-system proxies or custom certificate authorities are configured.
-
-## MCP server administration
-
-Register a local stdio server by placing its launcher after `--`. Pass launcher
-environment values with repeatable `--env KEY=VALUE`:
-
-```bash
-codex mcp add local-tools --env MODE=dev -- ./tool-server
-```
-
-Alternatively, register a streamable-HTTP server with `--url` and optionally
-name an environment variable that contains its bearer token:
-
-```bash
-codex mcp add hosted-tools --url https://tools.example/mcp \
-  --bearer-token-env-var MCP_TOKEN
-```
-
-The stdio launcher and streamable-HTTP URL forms are mutually exclusive.
-`codex mcp list` and `codex mcp get` support JSON output.
-
-For an HTTP server that supports OAuth, use `login --scopes` and `logout`:
-
-```bash
-codex mcp login hosted-tools --scopes tools.read,tools.write
-```
-
-These OAuth commands do not apply to stdio servers. Use `codex mcp-server` to
-expose the Codex CLI itself as an MCP server over stdio.
-
-## Interactive and host-provided authentication
-
-Since `0.144.0`, MCP tools may request interactive authentication without an
-experimental opt-in. App-server hosts may provide Codex authentication at
-runtime, and hosted login flows may redirect successful sign-ins to a hosted
-page.
+## Hosted connector refresh
 
 Long-running app sessions refresh expired authentication for the hosted
 `codex_apps` connector.
 
-For selecting a connector with `/apps`, see
-[tui-and-session-controls.md](tui-and-session-controls.md).
+## Proxy-aware Responses WebSockets
+
+Responses WebSockets retain their low-latency transport while respecting
+system proxies and custom certificate authorities.
+
+## Code Mode approvals
+
+Hosted mode is the default for Code Mode, and every approval request triggers
+an elicitation pause.
+
+## CLI plugins
+
+The CLI can browse and add plugins from available marketplaces, extending
+terminal work with team tools and data.
+
+## Marketplace sources
+
+`codex plugin marketplace add` accepts repository shorthand, Git or SSH URLs,
+or a local marketplace root. Git sources may be pinned with `--ref` and
+sparsely checked out with repeatable `--sparse`. `upgrade` refreshes one named
+Git marketplace or all of them, and `remove` deletes a configured source.
+
+```bash
+codex plugin marketplace add owner/repo --ref release --sparse plugins/team
+codex plugin marketplace upgrade
+```
+
+## Sign in with ChatGPT for plugins
+
+The beta sign-in flow initially supports Airtable, GitLab, HubSpot, Notion,
+Supabase, and Vercel integrations. It can create or link accounts from the
+plugin directory or participating partner sites. A partner receives only the
+available name, email address, and profile picture; each plugin's requested
+permissions still require a separate approval. (`2026-07-10-2026-08-18`)
+
+## App-server V2 test client
+
+`codex debug app-server send-message-v2 USER_MESSAGE` initializes the
+experimental V2 protocol, starts a thread, sends one turn, and streams server
+notifications for local protocol debugging.

@@ -10,119 +10,161 @@ metadata:
 
 # Unbound Knowledge Patch
 
-Load this skill when configuring, upgrading, operating, packaging, or
-troubleshooting the Unbound validating resolver. It is especially useful for
-changes involving encrypted DNS, cache behavior, response policy, DNSSEC,
-remote control, cachedb, or service confinement.
-
-## How to use this skill
-
-1. Determine the deployed Unbound version and build features before applying
-   version-sensitive advice.
-2. Inspect `unbound-checkconf -o module-config` and the active listener,
-   forwarding, cache, and policy configuration.
-3. Read the topic reference that matches the task.
-4. Apply defaults and compatibility changes deliberately during upgrades.
-5. Validate configuration, reload behavior, statistics, and representative DNS
-   answers after the change.
+Use this skill when configuring, upgrading, operating, building, or debugging
+Unbound. Start with the quick references below, then open the topic file that
+matches the task. Treat the deployed binary, `unbound-checkconf`, service logs,
+and runtime statistics as authoritative for build-time feature availability.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [security-and-policy.md](references/security-and-policy.md) | DNSSEC, COOKIE controls, RPZ, local-zone policy, rebinding protection |
-| [transports-and-tls.md](references/transports-and-tls.md) | DoQ, DoT, DoH, upstream TLS, listener activation, TLS reloads |
-| [cache-and-recursion.md](references/cache-and-recursion.md) | cachedb, Redis, serve-expired, TTLs, ECS, DNAME, NAT64 |
-| [zones-and-resolution.md](references/zones-and-resolution.md) | Forward and stub zones, auth-zones, subnet cache, DNS64, RESINFO |
-| [operations-and-observability.md](references/operations-and-observability.md) | Remote control, fast reload, cache inspection, dnstap, limits, logging |
-| [platforms-and-builds.md](references/platforms-and-builds.md) | Build flags, service units, Windows, BSD PF, Linux, QNX |
+| --- | --- |
+| [references/cache-and-recursion.md](references/cache-and-recursion.md) | Cache TTLs, cachedb and Redis, serve-expired, recursion, ECS, quota |
+| [references/operations-and-observability.md](references/operations-and-observability.md) | Reloads, control commands, dnstap, statistics, diagnostics |
+| [references/platforms-and-builds.md](references/platforms-and-builds.md) | Build dependencies, Windows, BSD PF, systemd, QNX, reproducibility |
+| [references/security-and-policy.md](references/security-and-policy.md) | DNSSEC, rate limits, COOKIE secrets, rebinding, validation policy |
+| [references/transports-and-tls.md](references/transports-and-tls.md) | DoQ, DoH, DoT, TLS selection and reload, upstream transport |
+| [references/zones-and-resolution.md](references/zones-and-resolution.md) | Auth zones, RPZ, local zones, DNS64/NAT64, forwarding, RESINFO |
 
-## Upgrade-critical changes
+## Upgrade-critical defaults and removals
 
-### Configure the subnet cache module explicitly
+### Configure subnetcache explicitly
 
-Building with subnet support no longer inserts `subnetcache` into
-`module-config`. Add it explicitly when EDNS Client Subnet processing is
-required:
+`module-config` defaults to `"validator iterator"` even when Unbound was built
+with subnet support. If EDNS Client Subnet caching is required, name it:
 
 ```conf
 server:
     module-config: "subnetcache validator iterator"
 ```
 
-Check the configured order rather than assuming the build option changes it.
+### Review serve-expired defaults
 
-### Review changed defaults
+The secure defaults are now:
 
-- `serve-expired-ttl` defaults to `86400`.
-- `serve-expired-client-timeout` defaults to `1800`.
-- `max-global-quota` defaults to `200`.
-- `resolver.arpa` and `service.arpa` are served locally by default.
-- `module-config` defaults to `"validator iterator"`.
+```conf
+server:
+    serve-expired-ttl: 86400
+    serve-expired-client-timeout: 1800
+```
 
-These changes can alter stale-answer behavior, resource limits, forwarding, and
-module execution without a syntax change in an existing configuration.
+Pin explicit values when an older operational policy must remain unchanged.
+The reply TTL remains bounded by the record's original TTL.
 
-### Select TLS versions explicitly
+### Account for new local zones
 
-Use `tls-protocols` to choose supported protocol versions. Do not use the
-pre-release `tls-use-system-versions` or `--enable-system-tls` controls.
-Unbound 1.24.0 disabled TLS 1.2, while 1.24.1 permitted it again, so a
-deployment that needs TLS 1.2 should not remain on 1.24.0.
+`resolver.arpa` and `service.arpa` are served locally by default. Verify
+forwarding expectations for these names after an upgrade.
 
-### Recheck limit semantics
+### Select TLS protocols at runtime
 
-`wait-limit: 0` disables all wait limits, and `wait-limit-cookie: 0` can
-disable limits for COOKIE-validated clients. A wait-limit rejection returns
-`SERVFAIL`. `discard-timeout` drops UDP queries, not stream connections.
-Loopback clients are exempt from `wait-limit`.
+Use `tls-protocols` to select supported TLS versions. Do not use the removed
+transient controls `tls-use-system-versions` or `--enable-system-tls`.
+Deployments that require TLS 1.2 must not remain on 1.24.0; 1.24.1 restored it.
 
-### Account for stricter cache exclusions
+### Recheck changed limit semantics
 
-`forward-no-cache` and `stub-no-cache` now prevent both lookup and storage in
-external cachedb, including applicable ECS paths. TTL-0 upstream answers are
-not stored by cachedb, and DNAME or synthesized-CNAME data follows cache TTL
-policy.
+- `max-global-quota` defaults to `200` rather than `128`.
+- `wait-limit: 0` disables all wait limits.
+- `wait-limit-cookie: 0` can disable limits for COOKIE-validated clients.
+- Exceeding a wait limit returns `SERVFAIL`.
+- `discard-timeout` drops UDP queries, not stream connections.
+- Loopback clients are exempt from `wait-limit`.
 
-## Security quick reference
+## Security-first configuration
 
-### Protect against oversized signature sets
+### Bound signature sets
 
-`iter-scrub-rrsig` caps retained RRSIG records and defaults to 8:
+`iter-scrub-rrsig` caps RRSIG records retained by the iterator scrubber and
+defaults to `8`:
 
 ```conf
 server:
     iter-scrub-rrsig: 8
 ```
 
-### Apply private-address filtering to modern service records
+### Protect SVCB and HTTPS answers
 
-`private-address` filtering covers SVCB and HTTPS records as well as address
-records. Keep the configured private ranges aligned with the network boundary
-to prevent rebinding through service-binding answers.
+`private-address` filtering applies to SVCB and HTTPS records as well as
+address records. Keep private ranges complete when using rebinding protection.
+
+### Harden glue lookups consistently
+
+`harden-unverified-glue` also covers missing AAAA lookups started by cache
+filling. Enable it when that hardened behavior is required on all glue paths.
+
+### Apply DNS64 policy in the supported order
+
+To apply RESPIP and RPZ to DNS64-synthesized answers, use:
+
+```conf
+server:
+    module-config: "respip dns64 validator iterator"
+```
+
+Do not assume that inserting cachedb as
+`"respip dns64 validator cachedb iterator"` works. DNS64 now also preserves
+`rpz-passthru`, respects ECS cache scope, and validates the AAAA leg when
+DNSSEC is enabled.
 
 ### Rotate EDNS COOKIE secrets without restart
 
-Persist rollover state with `cookie-secret-file`, then use
-`add_cookie_secret`, `activate_cookie_secret`, and `drop_cookie_secret`.
-Inspect active values with `print_cookie_secrets`.
+Persist rollover material with `cookie-secret-file`, then use
+`add_cookie_secret`, `activate_cookie_secret`, and `drop_cookie_secret` through
+`unbound-control`. Use `print_cookie_secrets` to inspect the active values.
 
 ```conf
 server:
     cookie-secret-file: "unbound_cookiesecrets.txt"
 ```
 
-### Treat DNSSEC alias chains strictly
+## High-value operational commands
 
-Expect YXDOMAIN only with DNAME. Revoked DNSKEY signatures are rejected, and
-DNAME-to-CNAME plus wildcard-CNAME chains receive stricter trust checks.
+### Reload with a short pause
+
+```sh
+unbound-control fast_reload
+```
+
+`fast_reload` parses changed configuration in a separate thread and briefly
+pauses service threads. It handles relevant TLS files, dnstap changes, scrub
+settings, quota changes, and auth-zone activity. Key-file configuration errors
+no longer terminate the daemon, but always inspect the returned status and
+logs.
+
+### Inspect selected cache entries
+
+```sh
+unbound-control cache_lookup example.com
+unbound-control cache_lookup +t .
+```
+
+`cache_lookup` returns cached RRsets and messages for selected domains and
+includes matching subnet-cache content. `+t` permits TLD and root names.
+
+### Remove one local-data RR
+
+Pass a complete record to avoid deleting every local-data record at the owner:
+
+```sh
+unbound-control local_data_remove \
+  'host.example. 300 IN A 192.0.2.10'
+```
+
+### Inspect trust-anchor material
+
+```sh
+unbound-anchor -l
+unbound-anchor -c /etc/unbound/icannbundle.pem
+```
+
+`-l` prints built-in material; `-c` selects an external certificate bundle.
 
 ## Transport quick reference
 
-### Enable DNS over QUIC
+### Enable DNS over QUIC only with build support
 
-The build needs libngtcp2 and a QUIC-capable OpenSSL. Configure a listener and
-memory budget:
+Build with libngtcp2 and a QUIC-capable OpenSSL, then configure:
 
 ```conf
 server:
@@ -131,9 +173,9 @@ server:
 ```
 
 A build without DoQ support ignores QUIC ports and warns when `quic-port` is
-set. Confirm operation through `num.query.quic` and `mem.quic`.
+set. Check `num.query.quic` and `mem.quic` after enabling it.
 
-### Override transport per forward zone
+### Override upstream transport by forward zone
 
 ```conf
 server:
@@ -146,99 +188,40 @@ forward-zone:
     forward-tls-upstream: yes
 ```
 
-Per-zone settings override the global upstream transport selection.
+`forward-tcp-upstream` and `forward-tls-upstream` override the global choices
+for that forward zone.
 
-### Renew listener certificates with a reload
+### Give control listeners explicit ports
 
-Reload processing detects certificate-file changes and rebuilds TLS contexts
-for DoT, DoH, DoQ, and outgoing DoT. `fast_reload` handles
-`tls-service-key`, `tls-service-pem`, and `tls-cert-bundle`.
-
-## Cache and recursion quick reference
-
-### Use secure serve-expired behavior
-
-Expired data can be served with the RFC 8767-oriented defaults. Current
-delegation and validation-recursion data can replace expired state, which may
-leave less older DNSSEC-validated data available for later fallback.
-`serve-expired-reply-ttl` never exceeds the original record TTL.
-
-### Understand ECS cache placement
-
-If an ECS subquery cannot be created, the result is `SERVFAIL`. For
-`0.0.0.0/0`, untreated data enters the global cache; data with configured
-subnet treatment enters the subnet cache.
-
-### Inspect a cache selectively
-
-```sh
-unbound-control cache_lookup example.com
-unbound-control cache_lookup +t .
+```conf
+remote-control:
+    control-interface: 127.0.0.1@8953
 ```
 
-The `+t` form accepts TLD and root names, and results include matching subnet
-cache data.
+Each `control-interface` may use `IP@port`.
 
-## Policy and zone quick reference
+## Zone and blocking patterns
 
-Use this module order when RESPIP or RPZ must process DNS64-synthesized
-answers:
+### Block one address family while serving local data
+
+`block_aaaa` suppresses AAAA lookups like `block_a` suppresses A lookups. The
+`_wdata` variants serve matching local data, recurse transparently for other
+data, and deny the selected address family:
 
 ```conf
 server:
-    module-config: "respip dns64 validator iterator"
+    local-zone: "v4-only.example." block_aaaa_wdata
+    local-data: "v4-only.example. 300 IN A 192.0.2.10"
 ```
 
-Do not assume that inserting cachedb as
-`"respip dns64 validator cachedb iterator"` works.
+### Avoid circular zone dependencies
 
-Review these policy details during upgrades:
+Prefer IP addresses for stub- and forward-zone name servers. Hostnames can
+create a circular resolution dependency; Unbound detects this and logs a
+warning, but the configuration still needs correction.
 
-- Tagged RPZ zones honor their tags.
-- RPZ local-CNAME rewrites follow resulting CNAME chains.
-- `always_refuse` zones block DS queries too.
-- Dynamically added `always_nxdomain` zones locate their parent correctly.
-- ZONEMD records in RPZ input are ignored as policy types.
-- An ineffective `nodefault` local-zone declaration produces a warning.
+### Bound zone transfers when needed
 
-## Operations quick reference
-
-### Prefer fast reload for supported changes
-
-```sh
-unbound-control fast_reload
-```
-
-Configuration is read in a separate thread and service threads pause only
-briefly. Dnstap changes propagate to workers, as do supported certificate and
-iterator-limit settings.
-
-### Use cache tools without assuming a long global stall
-
-`dump_cache` periodically releases cache locks and separates file-descriptor
-activity from lookups. `flush_negative` reports removed data correctly.
-Remote-control commands that accept no arguments reject extra arguments.
-
-### Watch the new counters
-
-Depending on enabled features, collect:
-
-- `num.query.quic` and `mem.quic`
-- `num.dns_error_reports`
-- discard-timeout and wait-limit statistics
-- `num.queries.replyaddr_limit`
-- `requestlist.current.replies`
-
-## Validation checklist
-
-- Run `unbound-checkconf` and resolve every warning before reload.
-- Confirm the effective module order and listener protocol support.
-- Exercise one normal, one DNSSEC, and one policy-affected query.
-- Verify cache behavior with `cache_lookup` where the task changes TTLs,
-  cachedb, ECS, or serve-expired handling.
-- Check statistics for QUIC, wait-limit, discard-timeout, mesh, and error-report
-  activity as applicable.
-- Confirm that a reload actually picked up certificates, dnstap settings, and
-  changed limits.
-- On packaged systems, inspect service-unit ordering and capabilities rather
-  than assuming generated templates replaced local copies.
+`max-transfer-size` and `max-transfer-time` limit auth-zone and RPZ transfers.
+Both are disabled by default, so configure them explicitly for bounded
+resource use.

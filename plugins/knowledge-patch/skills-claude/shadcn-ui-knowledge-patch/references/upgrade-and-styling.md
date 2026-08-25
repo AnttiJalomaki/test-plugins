@@ -1,58 +1,43 @@
 # Upgrade and Styling
 
-## Keep Stack Upgrades Explicit
+## Project Stack and Upgrade Boundary
 
 The CLI can initialize Tailwind v4 and React 19 projects. Existing Tailwind v3
-and React 18 applications stay on their installed stack, including when the CLI
-adds more components. Adding a component is not an upgrade operation.
-
-Before moving to Tailwind v4, confirm that its browser support matches the
-application's requirements and run the upgrade codemod:
+and React 18 applications, including components later added to them, stay on
+their current stack until explicitly upgraded. Before an upgrade, check
+Tailwind v4 browser compatibility and run the preview upgrade codemod.
 
 ```sh
 npx @tailwindcss/upgrade@next
 ```
 
-Review the codemod result separately from shadcn/ui component changes.
+## Tailwind v4 CSS Variable Layout
 
-## Tailwind v4 Variables
-
-Move `:root` and `.dark` out of `@layer base`. A palette variable contains the
-complete color expression. `@theme inline` maps that variable directly and
-must not add another `hsl()`, `oklch()`, or other color-function wrapper.
+Move `:root` and `.dark` outside `@layer base`. Variables must contain complete
+color expressions. Map them through `@theme inline` without another color
+function wrapper. New palettes use OKLCH. Chart configuration likewise uses a
+complete variable directly, for example `color: "var(--chart-1)"`.
 
 ```css
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: hsl(0 0% 100%);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
+  --background: hsl(0 0% 3.9%);
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
-}
-```
-
-New palettes use OKLCH. The same complete-value rule applies to chart colors:
-
-```ts
-const chartConfig = {
-  revenue: { label: "Revenue", color: "var(--chart-1)" },
 }
 ```
 
 ## React 19 Wrappers and Slots
 
-Current generated components no longer need `React.forwardRef` wrappers. Type
-the function with `React.ComponentProps<typeof Primitive>`, pass all remaining
-props through, and allow `ref` to travel with those props. Add `data-slot` to
-every rendered primitive so styling can address stable component parts. Remove
-the old wrapper's `displayName` assignment.
+Updated component source replaces `React.forwardRef` wrappers with functions
+typed from `React.ComponentProps`. The ref is passed with the remaining props,
+each primitive receives a `data-slot` attribute for styling, and the old
+wrapper `displayName` assignment can be removed.
 
 ```tsx
 function AccordionItem({
@@ -69,50 +54,44 @@ function AccordionItem({
 }
 ```
 
-Apply this as a generated-source pattern, not as a reason to rewrite unrelated
-application components.
+## Changed Component Defaults
 
-## Deprecated Components and Defaults
-
-The older `toast` component is deprecated in favor of `sonner`. Base UI's newer
-Toast is a separate implementation and remains available for Base UI projects;
-identify the project's base before deciding which advice applies.
-
-The old `default` component style is deprecated, and new projects use
-`new-york`. Installed source stays local until explicitly regenerated. Buttons
-now preserve the browser's default cursor instead of forcing a pointer.
+The legacy `toast` component is deprecated in favor of `sonner`; do not
+confuse that deprecation with the supported Toast implementation available to
+Base UI projects. The `default` style is deprecated and new projects use
+`new-york`. Buttons now retain the browser's default cursor.
 
 ## Animation Package Replacement
 
-Replace `tailwindcss-animate` with `tw-animate-css` in existing projects:
-
-1. Remove the `tailwindcss-animate` dependency.
-2. Remove its `@plugin` directive from CSS.
-3. Install `tw-animate-css` as a development dependency.
-4. Import the replacement from global CSS.
-
-```sh
-pnpm remove tailwindcss-animate
-pnpm add -D tw-animate-css
-```
+`tailwindcss-animate` is deprecated. For an existing project, remove the old
+dependency and its `@plugin` directive, install `tw-animate-css` as a
+development dependency, and import it from global CSS.
 
 ```css
 @import "tw-animate-css";
 ```
 
-## Opt In to the Refreshed Dark Palette
+## Opt-in Dark-mode Palette Refresh
 
-The refreshed dark-mode palette applies automatically to projects created on
-Tailwind v4, but not to applications upgraded from v3. To opt an upgraded
-application in:
+The refreshed dark palette applies automatically to projects created on
+Tailwind v4, not to projects upgraded from v3. To opt in safely:
 
-1. Commit all local component changes.
-2. Overwrite the generated components.
-3. Replace the `.dark` variables in global CSS with the refreshed OKLCH values.
-4. Review the diff and reapply intentional customizations.
+1. Commit local component changes.
+2. Overwrite the components.
+3. Replace dark variables in `globals.css` with the new OKLCH colors.
+4. Review the diff and reapply project customizations.
 
 ```sh
 pnpm dlx shadcn@latest add --all --overwrite
 ```
 
-Do not run the overwrite against uncommitted customized components.
+## Shared Tailwind CSS and Ejection
+
+New initialization imports `shadcn/tailwind.css`, which supplies shared
+Tailwind v4 variants, utilities, and animations. `eject` irreversibly inlines
+that stylesheet and removes the `shadcn` dependency. Once ejected, later CLI
+updates to the shared stylesheet no longer reach the project automatically.
+
+```sh
+pnpm dlx shadcn@latest eject
+```

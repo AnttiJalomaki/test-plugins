@@ -1,41 +1,77 @@
 # Systems, Control, and Data
 
-## Load statically registered plugins
+## Pose, sensors, and entity data
 
-System plugins can load from the static plugin registry (9.2.0), making
-statically registered systems available through the normal Gazebo Sim system
-loading path.
+### Publish non-top-level poses
 
-## Control motion and joints
+The pose publisher is not limited to top-level model poses (9.1.0). Subscribers
+must be prepared for poses from deeper entity scopes.
 
-- `DriveToPoseController` is available as a system plugin (9.2.0).
-- `JointPositionController` accepts dynamic PID parameters (9.3.0), allowing
-  PID configuration to change at runtime.
-- `JointController` supports nested joints (10.0.0).
-- `MecanumDrive` supplies mecanum-drive behavior with odometry and TF output
-  (10.0.0).
+It also suppresses empty poses (10.1.0), so absence of an empty entry is normal
+and should not be treated as a dropped message.
 
-## Publish pose, wind, and particle data
+### Access sensors through Link
 
-- The pose publisher can publish poses beyond top-level models (9.1.0).
-- Empty poses are suppressed (10.1.0), so subscribers should not wait for
-  empty placeholder entries.
-- Wind can be published to Gazebo and ROS topics (9.2.0).
-- `ParticleEmitter` can take its topic from SDF (10.1.0).
+The public C++ `Link` API has sensor accessor methods for sensors associated
+with a link (9.1.0). Prefer these accessors over reconstructing link-to-sensor
+relationships externally.
 
-## Access sensors and detect nested models
+### Read configurable particle-emitter topics
 
-- The public C++ `Link` API provides accessors for sensors associated with a
-  link (9.1.0).
-- `LogicalCamera` detects nested models (9.2.0).
+`ParticleEmitter` accepts its topic from SDF (10.1.0). Read or set the topic in
+configuration rather than assuming a fixed topic.
 
-## Attach semantics to entities
+### Assign entity semantics
 
-Use the `EntitySemantics` system to assign categories and tags to simulation
-entities (10.0.0).
+The `EntitySemantics` system assigns categories and tags to entities (10.0.0).
+Use it for machine-readable entity classification instead of encoding all
+semantics in names.
 
-## Manage Entity Component Manager tracking
+## Controllers and drive systems
 
-The Entity Component Manager exposes APIs that clear its internal tracking of
-entity additions and removals (10.0.0). Use those APIs when a consumer has
-finished processing the tracked changes.
+### Configure force-mode braking
+
+`JointController` can disable braking in force mode (9.3.0). Set the option
+when force-controlled joints must coast instead of applying braking
+unconditionally.
+
+### Change position PID parameters dynamically
+
+`JointPositionController` supports dynamic PID parameters (9.3.0). Update its
+PID configuration at runtime rather than treating gains as immutable startup
+state.
+
+### Control nested joints
+
+`JointController` supports nested joints (10.0.0). Resolve and command nested
+joint entities through the controller instead of limiting control to
+top-level joints.
+
+### Drive to a target pose
+
+The `DriveToPoseController` system plugin is available (9.2.0). Use it when a
+system should drive an entity toward a requested pose.
+
+### Use Mecanum drive outputs
+
+The `MecanumDrive` plugin provides odometry and TF output (10.0.0). Integrations
+can consume those outputs directly rather than recreating them from wheel
+commands.
+
+## Power, wind, and publication rates
+
+### Select the battery-current convention
+
+The battery plugin exposes a parameter that adjusts current sign (9.1.0).
+Configure the convention required by the integration instead of negating
+measurements downstream.
+
+### Publish wind to Gazebo and ROS
+
+Wind information can be published to both Gazebo and ROS topics (9.2.0). Use
+the appropriate topic for native or ROS-connected consumers.
+
+### Set Joint State Publisher frequency
+
+The Joint State Publisher has an update-rate parameter (10.5.0). Configure it
+to control publication frequency instead of rate-limiting the output later.

@@ -1,39 +1,35 @@
 # Tools, Betas, and Streaming
 
-Use this reference for tool definitions, streamed event consumers, interrupted
-responses, and beta-header composition. The eager-input behavior comes from the
-`fine-grained-tool-streaming` compatibility batch.
+## Eager tool-input streaming
 
-## Per-tool eager input streaming
+Batch `fine-grained-tool-streaming` adds per-tool eager input. All targets
+support unbuffered tool-input streaming when the request streams and an
+individual user-defined tool sets `eager_input_streaming: true`. Omitting the
+field retains buffered, server-validated parameter streaming.
 
-All models support unbuffered tool-input streaming. Make a streaming request and
-set `eager_input_streaming: true` on each user-defined tool that needs it.
-Omitting the field retains buffered, server-validated parameter streaming.
+The legacy `fine-grained-tool-streaming-2025-05-14` beta header now supplies
+eager behavior only for tools where the field is unset. Explicit `false` always
+forces buffering.
 
 ```python
 tools=[{
     "name": "make_file",
     "eager_input_streaming": True,
-    "input_schema": {
-        "type": "object",
-        "properties": {"text": {"type": "string"}},
-    },
+    "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}},
 }]
 ```
 
-The per-tool field replaces `fine-grained-tool-streaming-2025-05-14`. The
-legacy beta header enables eager streaming only where the field is unset; an
-explicit `false` still forces buffered streaming.
+## Accumulating tool input
 
-A streamed `tool_use` block begins with `input: {}`. Accumulate every
+A streamed `tool_use` block opens with `input: {}`. Accumulate each
 `input_json_delta.partial_json` string by content-block index and parse only at
-`content_block_stop`. Eager fragments are not server-validated and may be
-truncated by a `max_tokens` stop, so catch parse failures and never execute
-invalid input.
+`content_block_stop`. Eager fragments are not server-validated and a
+`max_tokens` stop can truncate them. Guard parsing and never execute malformed
+input.
 
-Return invalid input as an error tool result whose string content preserves the
-raw input inside an `INVALID_JSON` wrapper. Serialize the wrapper with a JSON
-library, never string concatenation.
+Return failure as an error tool result whose string content preserves the raw
+input in an `INVALID_JSON` wrapper. Serialize the wrapper with a JSON library,
+not interpolation or concatenation.
 
 ```json
 {
@@ -46,47 +42,38 @@ library, never string concatenation.
 
 ## Multiple beta features
 
-Raw HTTP combines beta names in one comma-separated `anthropic-beta` header.
-SDK beta calls use a `betas` list. The `ant` CLI also requires one
-comma-separated `--beta` value; repeating the flag currently honors only the
-first occurrence.
+Batch `streaming-and-betas` defines multi-beta syntax. Raw HTTP uses one
+comma-separated `anthropic-beta` header, while SDK beta calls use a `betas`
+list. The `ant` CLI also needs a single comma-separated `--beta` value; when the
+flag is repeated, only its first occurrence currently takes effect.
 
 ```text
 anthropic-beta: feature1,feature2
-ant --beta feature1,feature2
+--beta feature1,feature2
 ```
 
-## Aggregating a complete streamed message
+## Aggregating complete messages
 
-For large `max_tokens`, stream to keep the connection alive even when the
-application only needs the completed message. SDK completion helpers produce
-the same `Message` shape as a non-streaming request:
+For large output ceilings, stream to keep the connection alive even when
+incremental output is not needed. SDK accumulators yield the same complete
+`Message` as a non-streaming call:
 
-- Python: `get_final_message()`
-- TypeScript: `finalMessage()`
-- Go: `message.Accumulate(event)`
-- Java: `MessageAccumulator`
-- C#: `Aggregate()` or `CollectAsync()`
-- Ruby: `accumulated_message`
-- PHP: manually accumulate events
+- Python: `get_final_message()`.
+- TypeScript: `finalMessage()`.
+- Go: `message.Accumulate(event)`.
+- Java: `MessageAccumulator`.
+- C#: `Aggregate()` or `CollectAsync()`.
+- Ruby: `accumulated_message`.
+- PHP: manually accumulate events.
 
-```python
-with client.messages.stream(
-    model=model_id,
-    max_tokens=128000,
-    messages=messages,
-) as stream:
-    message = stream.get_final_message()
-```
+## Unusual block lifecycles
 
-## Unusual event-block lifecycles
+Each server-side fallback boundary emits a `fallback` content block as adjacent
+`content_block_start` and `content_block_stop` events with no deltas. Consumers
+must accept this empty lifecycle.
 
-At each server-side model fallback boundary, the stream emits a `fallback`
-content block as `content_block_start` followed by `content_block_stop`, with no
-delta between them. Consumers must accept the empty lifecycle.
-
-With thinking configured as `display: "omitted"`, no `thinking_delta` arrives.
-A thinking block still opens, receives one `signature_delta`, and closes:
+With thinking set to `display: "omitted"`, no `thinking_delta` arrives, but a
+thinking block still opens, receives one `signature_delta`, and closes:
 
 ```text
 content_block_start(thinking) -> signature_delta -> content_block_stop
@@ -95,29 +82,36 @@ content_block_start(thinking) -> signature_delta -> content_block_stop
 ## Recovering an interrupted stream
 
 Claude 4.5 and earlier can resume by prefilling a new assistant message with
-captured partial output. Claude 4.6 and later reject that approach: add a new
-user message containing the captured text and an instruction to continue.
+captured partial output. Claude 4.6 and later reject that approach: append a new
+user message that contains the partial text and explicitly asks to continue.
 
 ```python
 messages.append({
     "role": "user",
-    "content": (
-        "Your previous response was interrupted and ended with "
-        f"{partial_text}. Continue from where you left off."
-    ),
+    "content": f"Your previous response ended with {partial_text}. Continue from there.",
 })
 ```
 
-Only the most recent text block is resumable. Partially streamed tool-use and
+Only the latest text block is resumable. Partially streamed tool-use and
 thinking blocks cannot be recovered.
 
-## Advisor and hosted-tool response pruning
+## MCP tunnel migration
+
+Tunnel management moved from the Admin API's `/v1/organizations/tunnels` to
+`/v1/tunnels` on the Claude API. The new route needs
+`mcp-tunnels-2026-06-22` and WIF scope `workspace:manage_tunnels`. The old route
+exists only for a migration window.
+
+## Advisor tool
 
 The beta advisor tool pairs a faster executor with a higher-intelligence
-advisor during generation and requires `advisor-tool-2026-03-01`. Set
-`tools[].max_tokens` to cap each advisor response when full-length advice is
-unnecessary.
+advisor during generation. Enable `advisor-tool-2026-03-01`. Limit each advisor
+response with `tools[].max_tokens` when full-length advice is unnecessary.
 
-`web_search_20260318` and `web_fetch_20260318` accept `response_inclusion` so
-agent loops can omit already-consumed hosted-tool result blocks from the API
-response.
+This direct tool is separate from Managed Agents advisor roster entries, which
+are documented in [Managed Agents](managed-agents.md).
+
+## Hosted-tool response pruning
+
+`web_search_20260318` and `web_fetch_20260318` accept `response_inclusion` so an
+agentic loop can omit consumed result blocks from subsequent API responses.

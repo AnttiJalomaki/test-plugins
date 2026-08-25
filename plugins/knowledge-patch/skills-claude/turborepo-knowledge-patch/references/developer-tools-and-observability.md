@@ -1,46 +1,85 @@
 # Developer tools and observability
 
-Use this reference for terminal navigation, live graph inspection,
-documentation discovery, structured logs, OpenTelemetry metrics, and
-profiling.
-
-## Persistent terminal UI state and controls
+## Use persistent terminal UI controls (since 2.4.0)
 
 The terminal UI remembers the selected task, task-list visibility, and task
-pinning between invocations (since 2.4.0).
+pinning between invocations.
 
-| Key | Action |
-| --- | --- |
-| `h` | Toggle the task list |
-| `c` | Copy highlighted logs |
-| `j` / `k` | Select tasks |
-| `p` | Pin or unpin a task |
-| `u` / `d` | Scroll logs |
-| `m` | List all keybindings |
+- Press `h` to toggle the task list.
+- Press `c` to copy highlighted logs.
+- Press `j` or `k` to select tasks.
+- Press `p` to pin or unpin a task.
+- Press `u` or `d` to scroll logs.
+- Press `m` to list all keybinds.
 
-Press `/` to enter a search query (since 2.6.0). The task list is filtered so
-only matching tasks are selected.
+Press `/` to enter a search query; the task list is filtered so only matching
+tasks are selected (since 2.6.0).
 
-## Live graph devtools
+The task list can be scrolled with the mouse wheel (since 2.10.8).
 
-`turbo devtools` provides hot-reloading Package Graph and Task Graph views
-(since 2.7.0):
+## Serve local microfrontends through one proxy (since 2.6.0)
+
+Turborepo can serve several applications through one local proxy at
+`localhost:3024`. Put `microfrontends.json` in the parent application, map each
+application to its development port and route prefixes, and run `turbo dev`.
+The unrouted application handles all remaining paths.
+
+```json
+{
+  "$schema": "https://turborepo.dev/microfrontends/schema.json",
+  "applications": {
+    "web": {
+      "development": {
+        "local": 3000
+      }
+    },
+    "docs": {
+      "development": {
+        "local": 3001
+      },
+      "routing": [
+        {
+          "paths": ["/docs", "/docs/:path*"]
+        }
+      ]
+    }
+  }
+}
+```
+
+```bash
+turbo dev
+```
+
+## Inspect graph and dry-run output (since 2.6.0)
+
+The JSON output from `turbo ls` includes dependents. Dry-run and summary output
+include `with` sidecar relationships.
+
+## Open live package and task graphs (since 2.7.0)
+
+`turbo devtools` provides visual Package Graph and Task Graph views that
+hot-reload as the repository changes. The direct and transitive relationships
+can explain cache misses.
 
 ```bash
 turbo devtools
 ```
 
-The views expose direct and transitive relationships, which can explain task
-selection and cache misses as the repository changes.
+## Install the Turborepo Agent Skill (since 2.8.0)
 
-Dry-run and summary output show `with` sidecar relationships (since 2.6.0).
-JSON output from `turbo ls` includes package dependents.
+The Turborepo Agent Skill gives compatible coding agents Turborepo and monorepo
+guidance, including recommended patterns and anti-patterns.
 
-## Documentation from HTTP and the CLI
+```bash
+npx skills add vercel/turborepo
+```
+
+## Request machine-readable documentation (since 2.8.0)
 
 Documentation routes return Markdown when requested with
-`Accept: text/markdown`, and appending `.md` to a route also returns Markdown
-(since 2.8.0). `/sitemap.md` is a machine-readable index. Version-pinned
+`Accept: text/markdown`. Markdown is also available by appending `.md` to a
+route. The machine-readable index is `/sitemap.md`, and version-pinned
 documentation is available from version subdomains such as
 `v2-7-6.turborepo.dev`.
 
@@ -49,44 +88,20 @@ curl -sL -H "Accept: text/markdown" https://turborepo.dev/repo/docs
 curl -sL https://turborepo.dev/sitemap.md
 ```
 
-Search documentation directly from the terminal:
+## Search documentation from the CLI (since 2.8.0)
+
+`turbo docs` searches Turborepo documentation and prints matching pages in the
+terminal.
 
 ```bash
 turbo docs "package configurations"
 ```
 
-The official Turborepo Agent Skill packages Turborepo and monorepo patterns
-and anti-patterns for compatible coding assistants (since 2.8.0):
+## Export experimental OpenTelemetry metrics (since 2.9.0)
 
-```bash
-npx skills add vercel/turborepo
-```
-
-## Structured logging
-
-`--json` streams newline-delimited JSON objects with `timestamp`, `source`,
-`level`, and `text` fields (since 2.9.0):
-
-```bash
-turbo run build --json
-```
-
-`--log-file` keeps normal terminal output while writing structured logs. With
-no path it writes `.turbo/logs/<epoch-millis>.json`; it also accepts a custom
-path and can be combined with `--json`:
-
-```bash
-turbo run build --log-file
-turbo run lint --json --log-file=logs.json
-```
-
-Choose `--json` for a structured stdout consumer and `--log-file` when people
-still need the ordinary terminal display.
-
-## Experimental OpenTelemetry metrics
-
-Enable the `experimentalObservability` future flag and configure an OTLP
-endpoint before expecting metric export (since 2.9.0):
+Enable the `experimentalObservability` Future Flag and configure an OTLP
+endpoint to export metrics such as `turbo.run.duration_ms`,
+`turbo.run.tasks.cached`, and `turbo.run.tasks.failed`.
 
 ```json
 {
@@ -101,29 +116,25 @@ endpoint before expecting metric export (since 2.9.0):
 }
 ```
 
-Exported metrics include:
+## Write experimental structured logs (since 2.9.0)
 
-- `turbo.run.duration_ms`
-- `turbo.run.tasks.cached`
-- `turbo.run.tasks.failed`
+`--json` streams NDJSON objects containing `timestamp`, `source`, `level`, and
+`text`. `--log-file` keeps normal terminal output while writing structured logs
+to `.turbo/logs/<epoch-millis>.json`; it accepts a custom path and can be
+combined with `--json`.
 
-The future flag changes the global hash. Confirm that both the flag and
-`otel.enabled` are set when the collector receives nothing.
+```bash
+turbo run build --json
+turbo run build --log-file
+turbo run lint --json --log-file=logs.json
+```
 
-## Profiling
+## Name profiles optionally (since 2.9.0)
 
-`--profile` and `--anon-profile` no longer require a filename (since 2.9.0):
+`--profile` and `--anon-profile` do not require a filename. Profile output also
+includes a Markdown companion beside the trace.
 
 ```bash
 turbo run build --profile
 turbo run build --anon-profile
 ```
-
-Each profile also produces a Markdown companion alongside the trace.
-
-## Shutdown behavior while observing tasks
-
-On `SIGINT` or `SIGTERM`, Turborepo forwards the signal and waits for task
-cleanup handlers (since 2.10.0). A second `Ctrl+C` forces immediate exit. Give
-the first signal time to flush logs, traces, or other shutdown output before
-forcing termination.

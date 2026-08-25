@@ -1,8 +1,10 @@
 {
   "patch": "playwright-knowledge-patch",
-  "merged_at": "2026-07-12T22:42:17Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T13:39:37Z",
   "streams": {
-    "codex": "codex-gpt-5.6-sol"
+    "codex": "codex-gpt-5.6-sol-r2"
   },
   "batches": {
     "1.59.1": {
@@ -17,6 +19,11 @@
     },
     "mcp-and-test-agents": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.62.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

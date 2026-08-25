@@ -1,20 +1,15 @@
-# Core WebAssembly standards and features
+# Core WebAssembly
 
-## Evergreen specification
+## Evergreen standards
+
+### WebAssembly 2.0 (`wasm-2.0`)
 
 WebAssembly 2.0 reached W3C Candidate Recommendation in December 2024 after
-the language specification was completed in early 2022 (wasm-2.0). From that
-release onward, the Candidate Recommendation is updated in place as an
-evergreen standard. Treat the GitHub-hosted specification as the location of
-the latest fixes and formats.
+the language specification was completed in early 2022. Candidate
+Recommendation 2.0 is maintained in place as an evergreen standard; use the
+GitHub-hosted specification for the latest fixes and formats.
 
-WebAssembly 3.0 became the live standard with its release on 2025-09-17
-(wasm-3.0).
-
-## Standardized feature sets
-
-WebAssembly 2.0 is fully backward compatible and standardizes
-(wasm-2.0):
+The backward-compatible standard includes:
 
 - 128-bit SIMD;
 - bulk memory and table operations;
@@ -23,68 +18,52 @@ WebAssembly 2.0 is fully backward compatible and standardizes
 - non-trapping float-to-integer conversions; and
 - sign-extension instructions.
 
-WebAssembly 3.0 completes and standardizes (wasm-3.0):
+### WebAssembly 3.0 (`wasm-3.0`)
 
-- memory64 and multi-memory;
-- garbage collection and typed references;
-- tail calls and native exception handling;
-- relaxed SIMD and a deterministic profile; and
-- text annotations.
+WebAssembly 3.0 is the live standard. It completes memory64, multi-memory,
+garbage collection, typed references, tail calls, native exception handling,
+relaxed SIMD, a deterministic profile, and text annotations. Its JavaScript
+embedding also includes string builtins.
 
-The JavaScript embedding also gains string builtins.
+## Memory64 and 64-bit tables
 
-## 64-bit memories and tables
+Memories and tables may select `i64` instead of `i32` for their address type.
+This increases the theoretical address space from 4 GiB to 16 EiB. The web
+embedding imposes a smaller limit: a 64-bit memory is capped at 16 GiB.
 
-A memory or table can use `i64` instead of `i32` for its address type
-(wasm-3.0). This raises the theoretical address space from 4 GiB to 16 EiB.
-Web embeddings impose a smaller limit: a 64-bit memory is capped at 16 GiB.
-
-Keep the theoretical core limit distinct from the Web embedding limit when
-validating layouts or deciding whether a deployment target can instantiate a
-module.
+Treat the address type and the embedding's size limit as separate constraints.
 
 ## Multiple memories
 
-A module can define or import multiple memories and address them directly,
-including copying data between memories (wasm-3.0). This removes the former
-single-memory constraint from module-merging tools and permits intentionally
-separate address spaces.
+A module may define or import multiple memories, address them directly, and
+copy data between them. This removes the former multi-memory constraint from
+module-merging tools and permits intentionally separate address spaces.
 
 ## Native exception dispatch
 
-Exception tags declare their payload data (wasm-3.0). A handler block uses a
-dispatch list containing tag/label pairs or catch-all labels to choose where
-execution continues after a throw.
-
-Use these semantics for portable exception handling inside Wasm rather than
-forcing every exception to escape into the host.
+Exception tags declare their payload. A handler block uses a dispatch list of
+tag/label pairs, or catch-all labels, to choose where execution continues after
+a throw. This keeps exception handling portable within Wasm rather than
+requiring control to escape to the host.
 
 ## Deterministic execution profile
 
-The deterministic profile defines one behavior for instructions whose base
-semantics allow more than one result (wasm-3.0). The affected cases are
-currently:
+The deterministic profile specifies results where base semantics allow several
+legal outcomes. It currently covers floating-point NaN generation and relaxed
+SIMD edge cases.
 
-- floating-point NaN generation; and
-- relaxed SIMD edge cases.
+Reproducibility is guaranteed only between platforms that choose to implement
+the profile. Without it, ordinary relaxed SIMD may choose any specified legal
+outcome.
 
-Reproducibility is a property of platforms that opt into this profile.
-Ordinary relaxed SIMD may still choose any result permitted by its specified
-semantics.
+## Custom text annotations
 
-## Text annotations
-
-The text format supports generic annotations that tools may ignore
-(wasm-3.0). They are analogous to custom sections in the binary format. Core
-Wasm assigns them no meaning; downstream standards can define concrete
-annotations.
-
-Do not assume an unknown annotation changes core execution semantics, and do
-not reject it merely because the current tool does not interpret it.
+The text format accepts generic, optionally ignored annotations analogous to
+binary custom sections. Core Wasm assigns no semantics to them; downstream
+standards may define concrete meanings.
 
 ## JavaScript string builtins
 
-The JavaScript API exposes an importable primitive library for strings
-(wasm-3.0). Wasm can use it to access and manipulate JavaScript strings passed
-as external references without first translating them through a separate
-linear-memory representation.
+The JavaScript API exposes an importable primitive library for directly
+accessing and manipulating JavaScript strings passed to Wasm as external
+references.

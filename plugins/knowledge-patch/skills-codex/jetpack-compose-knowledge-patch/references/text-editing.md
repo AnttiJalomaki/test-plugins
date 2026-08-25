@@ -1,108 +1,80 @@
 # Text and Editing
 
-## Display text
+Use this reference for text measurement and rendering, state-backed editing, output transformation, selection, menus, secure input, IME suggestions, fonts, and clipboard access.
 
-### Text autosizing (1.8.0)
+## Text autosizing (1.8.0)
 
-`AutoSize` was renamed to `TextAutoSize`, including public APIs for custom
-autosizing implementations. Deprecated `AutoSize` overloads were removed; use
-the matching `TextAutoSize` APIs.
+`TextAutoSize` replaces `AutoSize` and includes public APIs for custom autosizing implementations. Deprecated `AutoSize` overloads are removed; migrate callers to the matching `TextAutoSize` APIs rather than retaining the old type name.
 
-### Start and middle ellipsis (1.8.0)
+## Start and middle ellipsis (1.8.0)
 
-Single-line text supports `TextOverflow.StartEllipsis` and
-`TextOverflow.MiddleEllipsis` as well as end ellipsis. Set `maxLines = 1` when
-using either new mode.
+Single-line text can use `TextOverflow.StartEllipsis` and `TextOverflow.MiddleEllipsis` as well as end ellipsis. Keep `maxLines = 1` when selecting either new mode.
 
-### Annotated strings and paragraphs (1.8.0)
+## Annotated text and paragraphs (1.8.0)
 
-`Paragraph` and `ParagraphIntrinsics` receive every `AnnotatedString`
-annotation, not only span styles. Paragraph annotations may fully overlap or
-nest. Builder methods are stable, and `AnnotatedString.fromHtml` supports
-`<ul>` and `<li>`.
+`Paragraph` and `ParagraphIntrinsics` receive every `AnnotatedString` annotation, not only span styles. Account for non-style annotations in custom paragraph processing.
 
-### `BasicText` rendering behavior (1.8.0)
+`AnnotatedString` allows fully overlapping and nested paragraphs. Its builder methods are stable, and `AnnotatedString.fromHtml` supports `<ul>` and `<li>`.
 
-`BasicText` no longer inserts an implicit `graphicsLayer`. Add
-`Modifier.graphicsLayer()` when code depends on layer behavior. Tests can turn
-off cursor drawing with `LocalCursorBlinkEnabled`.
+## BasicText rendering and cursor tests (1.8.0)
 
-### Resource-font failures (1.8.0)
+`BasicText` no longer inserts an implicit `graphicsLayer`; add `Modifier.graphicsLayer()` explicitly if code depends on layer behavior.
 
-A resource font that cannot load falls back silently to the default font
-instead of throwing during measurement. If a particular font is required,
-validate availability rather than treating successful measurement as proof.
+Tests can disable cursor drawing by providing `LocalCursorBlinkEnabled`.
 
-## State-backed editing and undo
+## Resource-font failure behavior (1.8.0)
 
-### Undo history (1.9.0)
+A resource font that cannot load falls back silently to the default font instead of throwing during measurement. If a specific font is required for layout or brand fidelity, verify the resolved font rather than relying on an exception.
 
-`TextFieldState.edit {}` creates an independent undo entry; it no longer clears
-history. When a programmatic replacement intentionally starts a new history,
-call `TextFieldState.undoState.clearHistory()` explicitly.
+## Common clipboard and tooltip APIs (1.8.0)
 
-### Styled output (1.9.0)
+Foundation and UI expose a common `Clipboard` interface and composition local. `BasicTooltip` is available from common Foundation code.
 
-An `OutputTransformation` can style state-backed text output with
-`TextFieldBuffer.addStyle`. The interim `AnnotatedOutputTransformation` API was
-removed. `AnnotatedString` also supports custom bullet-list construction.
+## Undo history for state-backed fields (1.9.0)
 
-## Context menus and selection
+`TextFieldState.edit {}` creates a standalone undo entry; it no longer clears history. Call `TextFieldState.undoState.clearHistory()` explicitly after a programmatic edit that should reset the undo stack.
 
-### Context menus and smart selection (1.9.0)
+## Styled output and bullet lists (1.9.0)
 
-Text fields support right-click context menus and Android smart-selection
-items. On versions that expose them, control smart selection with
-`ComposeFoundationFlags.isSmartSelectionEnabled` and its work context with
-`LocalTextClassifierCoroutineContext`.
+In state-backed fields, `OutputTransformation` can style rendered output through `TextFieldBuffer.addStyle`. The interim `AnnotatedOutputTransformation` API is removed.
 
-Customize public menus with:
+`AnnotatedString` also provides APIs for constructing custom bullet lists.
 
-- `Modifier.appendTextContextMenuComponents`
-- `Modifier.filterTextContextMenuComponents`
-- text-context-menu provider, data, and component APIs
-- `ProcessTextKey` for Android `PROCESS_TEXT` actions
+## Context menus and smart selection (1.9.0)
 
-### Transformed selection offsets (1.9.0)
+Text fields support right-click context menus and Android smart-selection items. Control smart selection with `ComposeFoundationFlags.isSmartSelectionEnabled` and supply its work context through `LocalTextClassifierCoroutineContext`.
 
-`SemanticsNodeInteraction.performTextInputSelection` is stable. Its
-`relativeToOriginal` parameter chooses whether selection offsets refer to the
-original or transformed text.
+Customize public menu behavior with:
 
-### Word selection (1.10.0)
+- `Modifier.appendTextContextMenuComponents`;
+- `Modifier.filterTextContextMenuComponents`;
+- the text-context-menu provider, data, and component APIs;
+- `ProcessTextKey` for Android `PROCESS_TEXT` actions.
 
-Double-tap word selection works in `SelectionContainer` and in the
-value/`onValueChange` overload of `BasicTextField`.
+## Secure text behavior (1.9.0)
 
-## Secure and IME-driven text
+`BasicSecureTextField` hoists the `ScrollState` used by its internal text field. `TextObfuscationMode.RevealLastTyped` honors Android's `TEXT_SHOW_PASSWORD` system setting.
 
-### Secure text behavior (1.9.0)
+## Mouse-wheel and word selection (1.10.0)
 
-`BasicSecureTextField` hoists the `ScrollState` used internally.
-`TextObfuscationMode.RevealLastTyped` follows Android's `TEXT_SHOW_PASSWORD`
-system setting.
+Mouse-wheel scrolling supports two-dimensional deltas. Double-tap word selection works in `SelectionContainer` and in the value/on-value-change `BasicTextField` API.
 
-### Transliteration suggestion state (1.11.0)
+## Transliteration suggestion state (1.11.0)
 
-`InputTextSuggestionState` exposes replacement-suggestion state from
-transliteration IMEs. `TextCompositionRange` identifies the active
-transliteration composition range; `null` means no active composition.
+`InputTextSuggestionState` exposes replacement-suggestion state from transliteration IMEs. `TextCompositionRange` identifies the active transliteration composition range; `null` means there is no active composition.
 
-## Text parsing
+## Downloadable variable fonts (1.12.0)
 
-### Strict `valueOf` behavior (1.10.0)
+`ui-text-google-fonts` can construct variable Google fonts with `FontVariation.Settings` while automatically using the default Google Mobile Services certificates. An app no longer needs to configure a font provider solely to supply those certificates.
 
-`TextDirection.valueOf`, `TextAlign.valueOf`, `Hyphens.valueOf`, and
-`FontSynthesis.valueOf` throw `IllegalArgumentException` for unknown values.
-
-## Editing checklist
-
-- Remember that a programmatic `TextFieldState.edit` creates a standalone undo
-  entry; call `TextFieldState.undoState.clearHistory()` when it should reset the
-  undo stack.
-- Use `OutputTransformation` and `TextFieldBuffer.addStyle` to style rendered
-  output in state-backed text fields.
-- Interpret selection offsets in the correct original or transformed space.
-- Respect the host's password reveal setting for secure fields.
-- Handle missing fonts and invalid serialized enum-like values explicitly when
-  correctness depends on them.
+```kotlin
+val fontFamily = FontFamily(
+    Font(
+        googleFont = GoogleFont("Google Sans Flex"),
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(900),
+            FontVariation.slant(0f),
+        ),
+    ),
+)
+```

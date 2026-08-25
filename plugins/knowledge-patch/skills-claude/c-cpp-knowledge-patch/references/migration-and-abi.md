@@ -1,153 +1,149 @@
 # Migration and ABI
 
-Use this reference for clean-build planning, source migrations, compatibility
-switches, and binary-boundary decisions.
+Use this reference before mixing objects, shared libraries, plugins, or public
+headers built by different compiler or standard-library generations. A
+compatibility flag named here addresses a specific transition only.
 
-## Pin changed default dialects
+## Clang C++ ABI transitions
 
-### GCC C defaults (gcc-15.1-porting)
-
-GCC 15 changed the default C mode from `-std=gnu17` to `-std=gnu23`. In the new
-mode, `f()` means that `f` takes no arguments; declare the actual parameter
-types instead of relying on the old unspecified-parameter form. `bool`, `true`,
-`false`, `nullptr`, and `thread_local` are keywords, so rename conflicting
-identifiers. Do not treat public C `bool` as ABI-identical to `int`.
-
-### GCC C++ defaults (gcc-16.1-porting)
-
-GCC 16 changed the default from `-std=gnu++17` to `-std=gnu++20`. Pass the
-intended dialect explicitly in every build and probe.
-
-Autoconf before 2.73 can mis-detect GCC 16 in `AC_PROG_CXX` and inject
-`-std=gnu++11`, making default-mode facilities such as `std::make_unique`
-appear unavailable. Regenerate with a corrected Autoconf setup rather than
-adding feature-by-feature workarounds.
-
-## Resolve new source incompatibilities
-
-### C pointer and statement-expression errors (clang-22.1)
-
-`-Wincompatible-pointer-types` is an error by default; use
-`-Wno-error=incompatible-pointer-types` only while correcting the types. A
-trailing null statement makes a GNU statement expression `void`, so
-`({ 1;; })` no longer has type `int`.
-
-### Hardened C++ compatibility diagnostics (clang-20.1)
-
-`__is_nullptr` was removed; use
-`__is_same(__remove_cv(T), decltype(nullptr))`. `__is_referenceable` is
-deprecated for removal in Clang 21. Out-of-range enum values in constant
-expressions cannot be restored with the removed
-`-Wenum-constexpr-conversion`. Extraneous template headers are errors unless
-temporarily demoted with `-Wno-error=extraneous-template-head`.
-
-### Iterator adaptors must advertise real capabilities (gcc-15.1-porting)
-
-The `std::vector` range constructor recognizes C++20 iterator concepts and can
-select a stronger optimized path. An adaptor that exposes invalid operations
-unconditionally can now fail during instantiation. Constrain each operation to
-the wrapped iterator's capability, using SFINAE in older modes:
-
-```cpp
-iterator_adaptor& operator--()
-  requires std::bidirectional_iterator<Iter>
-{
-  --iter;
-  return *this;
-}
-```
-
-### Union initialization does not clear padding (gcc-15.1-porting)
-
-For an automatic C or C++ union, `{0}` initializes the first member but need
-not zero every padding byte. Do not hash, serialize, compare, or expose the
-whole representation on that assumption. Use `{}` where supported, clear the
-storage explicitly, or deliberately opt into
-`-fzero-init-padding-bits=unions`.
-
-### Removed Concepts TS behavior (gcc-15.1)
-
-Concepts TS support and the behavior selected by `-fconcepts-ts` are gone.
-Migrate to standard concepts.
-
-### Removed compatibility paths (clang-21.1)
-
-The Objective-C ARC migrator is gone. The libstdc++ 4.7 workaround was removed,
-making 4.8.3 the oldest supported version. The deprecated
-`-frelaxed-template-template-args` spellings were removed.
-
-## Rebuild across ABI transitions
-
-### C++ mangling (clang-20.1)
+### Mangling changes in Clang 20
 
 Microsoft mangling for placeholder, `auto`, and `decltype(auto)` return types
-now matches MSVC 1920+. Use `-fms-compatibility-version=19.14` when old object
-compatibility is required. Itanium construction-vtable names and member-like
-friend function-template mangling also changed; `-fclang-abi-compat=19`
-selects the old forms.
+matches MSVC 1920 and later in Clang 20 (`clang-20.1`). Compile with
+`-fms-compatibility-version=19.14` only when compatibility with objects built by
+older Clang behavior is required.
 
-### 32-bit Arm empty structures (clang-20.1)
+Itanium construction-vtable names and member-like friend function-template
+mangling also change. `-fclang-abi-compat=19` restores the former encodings.
+Prefer rebuilding every object that names these entities.
 
-Empty C++ structures are passed as one-byte objects to match AAPCS32 and GCC.
-`-fclang-abi-compat=19` restores the old ignored-argument behavior. SME
-function-type attributes now participate in mangling. Separately,
-`-fno-omit-frame-pointer` retains frame pointers in leaf functions unless
-paired with `-momit-leaf-frame-pointer`.
+### C++ record returns in Clang 21
 
-### C++ record returns (clang-21.1)
+Clang 21 returns larger C++ records in memory rather than AVX registers
+(`clang-21.1`). Objects built by older Clang releases are incompatible across
+affected calls unless new compilation uses `-fclang-abi-compat=20`. Treat this
+as a whole-boundary rebuild, especially for virtual calls, callbacks, and
+plugin APIs.
 
-Larger C++ records are returned in memory rather than AVX registers. Objects
-built by older Clang releases are incompatible unless new compilation uses
-`-fclang-abi-compat=20`.
+### Windows destructor ABI in Clang 22
 
-### Windows deleting destructors (clang-22.1)
+For the MSVC ABI, `::delete` now invokes the scalar deleting destructor in
+Clang 22 (`clang-22.1`). Mixing Clang 21-or-earlier and Clang 22 objects can
+select the wrong deallocator and corrupt memory. `-fclang-abi-compat=21`
+retains the prior scalar behavior as a migration bridge.
 
-Under the MSVC ABI, `::delete` now invokes the scalar deleting destructor.
-Mixing Clang 21-or-earlier and Clang 22 objects can select the wrong deallocator
-and corrupt memory; `-fclang-abi-compat=21` retains the older scalar behavior.
 Windows vtables now use the differently named and linked MSVC vector deleting
-destructor, which is another mixed-version incompatibility for classes with
-virtual destructors.
+destructor. That is a separate mixed-version runtime incompatibility for
+classes with virtual destructors. Rebuild all producers and consumers of such
+classes together.
 
-### Solaris 8-bit typedef identity (gcc-16.1-porting)
+## Arm and target-layout transitions
 
-On Solaris, `int8_t`, `int_fast8_t`, and `int_least8_t` now use `signed char`
-instead of plain `char`. Those types mangle differently in C++, so rebuild all
-objects across the boundary. `_LEGACY_INT8_T` is temporary compatibility when a
-complete rebuild is impossible.
+### Empty Arm records
 
-### C++17 `std::variant` layout (gcc-16.1)
+On 32-bit Arm, Clang 20 passes empty C++ structs as one-byte objects to match
+AAPCS32 and GCC (`clang-20.1`). `-fclang-abi-compat=19` restores the earlier
+ignored-argument behavior. SME function-type attributes also begin
+participating in mangling.
 
-A layout correction affects the narrow case where an empty base and first
-member interact in C++17 mode. `_GLIBCXX_USE_VARIANT_CXX17_OLD_ABI` restores
-the old layout for migration.
+### Explicitly aligned empty AArch64 classes
 
-### Formerly experimental C++20 library components (gcc-16.1)
+Clang 22 changes AArch64 argument passing for empty C++ classes with large
+explicit alignment (`clang-22.1`). Rebuild both sides of any affected call and
+validate generated interfaces that expose such types.
 
-The C++20 library is no longer experimental. ABI changed in atomic waiting,
-semaphores, syncstream, format-argument representation, partial ordering, some
-stop-token/variant combinations, and some range adaptors. Rebuild objects that
-exchange affected types or state across binary boundaries.
+### LoongArch `_BitInt` layout
 
-## Platform migration details
+Clang 21 consistently gives LoongArch `_BitInt(N)` values wider than 64 bits
+16-byte alignment (`clang-21.1`). Inspect record layout, parameter passing, and
+serialized/native shared structures.
 
-### Solaris pthread flags (gcc-16.1-porting)
+## libstdc++ ABI and sequence transitions
 
-On Solaris, `-pthread` and `-pthreads` are ignored and no longer define
-`_REENTRANT` or `_PTHREADS`. If application code used those macros for feature
-selection, define an application-specific macro explicitly.
+### Solaris integer typedef identity
 
-### GCC discovery with incomplete libstdc++ (clang-22.1)
+On Solaris, GCC 16 changes `int8_t`, `int_fast8_t`, and `int_least8_t` from
+plain `char` to `signed char` (`gcc-16.1-porting`). These types mangle
+differently in C++. Rebuild every object across an affected ABI boundary.
+`_LEGACY_INT8_T` is a temporary compatibility option when a complete rebuild
+cannot happen immediately.
 
-Clang warns with `-Wgcc-install-dir-libstdcxx` when automatic discovery chooses
-the highest-version GCC installation, that installation lacks libstdc++
-headers, and another complete installation exists. Install or remove headers
-consistently, select the intended tree with `--gcc-install-dir`, or suppress
-the warning with `-Wno-gcc-install-dir-libstdcxx`.
+### Narrow C++17 `variant` correction
 
-## Clean-rebuild rule
+GCC 16 corrects a C++17 `std::variant` layout case involving an empty base and
+the first member (`gcc-16.1`).
+`_GLIBCXX_USE_VARIANT_CXX17_OLD_ABI` restores the former layout while migrating.
 
-Compatibility switches are migration tools, not a durable mixed-ABI design.
-Clean module caches, PCH files, LTO state, generated configuration, and every
-object that owns or exchanges affected layouts, names, calling conventions, or
-library state.
+### Formerly experimental C++20 components
+
+GCC 16 no longer treats the C++20 library as experimental, and several
+components change ABI (`gcc-16.1`): atomic waiting, semaphores, syncstream,
+format-argument representation, partial ordering, some stop-token/variant
+combinations, and some range adaptors. Rebuild objects that exchange affected
+types or state across binary boundaries.
+
+### `generate_canonical` reproducibility
+
+GCC 16 adopts P0952R2 for `std::generate_canonical`, changing generated result
+sequences (`gcc-16.1`). `_GLIBCXX_USE_OLD_GENERATE_CANONICAL` temporarily
+restores the old sequence; it is a behavioral compatibility switch rather than
+a general ABI switch.
+
+## Removed compatibility paths and targets
+
+### Clang 20 removals
+
+Clang 20 removes `le32`, `le64`, `clang-rename`, and RenderScript target
+support (`clang-20.1`). Replace the tool or target configuration; do not leave
+dead probes in the build indefinitely.
+
+On SPARC Linux, `clang -m32` now defaults to `-mcpu=v9`. A distribution that
+retains SPARC V8 must pass `-mcpu=v8` explicitly.
+
+### GCC 15 removals and deprecations
+
+GCC 15 removes Nios II and Solaris 11.3 support and deprecates AArch64 ILP32
+(`-mabi=ilp32`) (`gcc-15.1`). It is also the final release with the old
+`reload` register allocator; targets without LRA support are affected by the
+removal in GCC 16.
+
+### Clang 21 compatibility removals
+
+Clang 21 removes the Objective-C ARC migrator and the libstdc++ 4.7 workaround,
+making libstdc++ 4.8.3 the oldest supported version (`clang-21.1`). It also
+removes deprecated `-frelaxed-template-template-args` and its negative
+spelling. Migrate source to the standard matching rules.
+
+## Intrinsic and low-level migration
+
+### X86 MMX header intrinsics
+
+In Clang 20, `*mmintrin.h` intrinsics operating on `__m64` always use SSE2 and
+XMM registers (`clang-20.1`). They no longer work on MMX-only targets or with
+`-mmmx -mno-sse2`; MMX inline assembly remains supported.
+
+Former `__builtin_ia32_*` implementation builtins used by those intrinsics are
+removed. Direct callers must migrate to the header intrinsics and accept their
+SSE2 requirement or replace the implementation.
+
+### Extended assembly red-zone declarations
+
+GCC 15 permits extended assembly at file scope, subject to its documented
+restrictions (`gcc-15.1`). Assembly that overwrites the stack red zone can name
+the special `"redzone"` clobber. Add it wherever the assembly truly destroys
+that region so surrounding generated code does not rely on it.
+
+## Platform build semantics
+
+### Solaris pthread flags
+
+On Solaris, GCC 16 ignores `-pthread` and `-pthreads`; these flags no longer
+define `_REENTRANT` or `_PTHREADS` (`gcc-16.1-porting`). Code that used those
+implementation macros for its own feature selection should define a distinct
+application macro explicitly.
+
+### Clang-cl static Blocks runtime
+
+On Windows in Clang 21, `-static-libclosure` changes only Blocks-extension code
+generation and does not itself alter linker behavior (`clang-21.1`). Configure
+the intended runtime linkage separately.

@@ -1,12 +1,6 @@
 # Views, Resources, and Frontend Integration
 
-Blade, views, API resources, pagination, Vite, Markdown, and JSON presentation.
-
-Batch identifiers in section headings provide exact source attribution.
-
-## Additional JSON Schema constraints (2026-02)
-
-Numeric schema types support `multipleOf`, while array schema types support `uniqueItems`.
+Blade, resources and serialization, Vite, frontend kits, pagination views, and image or font integration.
 
 ## Backed enums as dynamic Blade components (2025-09)
 
@@ -40,10 +34,6 @@ The new `@hasStack` directive conditionally renders content when a named Blade s
 
 The Bootstrap 3 pagination views are now named `pagination::bootstrap-3` and `pagination::simple-bootstrap-3`, replacing `pagination::default` and `pagination::simple-default` for direct references.
 
-## Current-page URLs in paginator output (2025-05)
-
-Serialized paginator data now includes `current_page_url`, so API consumers no longer need to reconstruct the URL from `path` and `current_page`.
-
 ## Explicit model resource attributes (2025-09)
 
 Models may declare their API resource and resource collection with `#[UseResource(...)]` and `#[UseResourceCollection(...)]` instead of relying only on convention-based discovery.
@@ -58,6 +48,10 @@ class User extends Model {}
 
 Vite asset-path generation can now be customized through inheritance, providing an extension point for applications that resolve built assets from nonstandard locations.
 
+## First-party image processing (2026-07)
+
+Laravel 13 adds first-party image processing, and `ImageManager::fromStorage()` accepts enum disk selectors.
+
 ## Function and constant imports in Blade (2025-04)
 
 Blade's `@use` directive supports PHP `function` and `const` import modifiers in addition to class imports.
@@ -65,17 +59,6 @@ Blade's `@use` directive supports PHP `function` and `const` import modifiers in
 ```blade
 @use('function App\Support\format_money')
 @use('const App\Support\DEFAULT_CURRENCY')
-```
-
-## HTML string casts (2025-03)
-
-`AsHtmlString` casts model attributes to HTML string values.
-
-```php
-protected function casts(): array
-{
-    return ['body' => AsHtmlString::class];
-}
 ```
 
 ## Isolated Blade includes (2026-01)
@@ -89,18 +72,6 @@ protected function casts(): array
 ## JSON:API resources (2026-01)
 
 Laravel now includes a `JsonApiResource` trait for JSON:API resource serialization. Resource handling deduplicates circular references, and `ModelInspector` results now include the model's `JsonResource`.
-
-## JSON schema contract (2025-11)
-
-Laravel's JSON schema facilities now expose a contract alongside schema-generation improvements, allowing extensions to depend on an abstraction rather than a concrete implementation.
-
-## JSON Schema dependencies (2025-12)
-
-Laravel's JSON Schema facilities can now express dependencies between schema members instead of requiring dependent requirements to be modeled outside the schema.
-
-## JSON Schema deserialization and composition (2026-06)
-
-Illuminate JSON Schema can deserialize array schemas and multi-type unions, and schemas may use `anyOf` composition.
 
 ## Limiting Vite asset preloads (2025-05)
 
@@ -123,14 +94,6 @@ The React, Svelte, and Vue kits use Inertia 2, TypeScript, shadcn/ui, and Tailwi
 
 View compilation can be configured to ignore cached-view timestamps, which avoids filesystem timestamp checks when deployments provide an immutable precompiled view cache.
 
-## Page numbers in paginator links (2025-08)
-
-Serialized paginator link entries now include a `page` field, giving API clients a numeric page value without having to parse it from each link URL.
-
 ## Unescaped Unicode in JavaScript output (13.0-upgrade)
 
 `Js::from()` now applies `JSON_UNESCAPED_UNICODE` by default, so rendered output and exact assertions contain Unicode characters instead of `\u` escape sequences.
-
-## Unsetting JSON Schema flags (2026-05)
-
-Fluent JSON Schema boolean flags can now be unset after being enabled, which helps when refining or reusing a schema definition.

@@ -1,39 +1,46 @@
 # Desktop bindings
 
-## Node.js upgrades
+Use this reference for the Node native package and Qt 3 integration,
+rendering, resource loading, logging, linking, and deployment.
 
-### PMTiles, sprites, and renderer
+## Node runtime and renderer
 
-MapLibre Native Node 6.1 supports PMTiles-backed map data
-(`node-6.1.0`). Sprites can expose `textFitWidth` and `textFitHeight`, making
-their text-fit metadata available to Node rendering.
+### Runtime support (`node-6.1.0`, `desktop-bindings`)
 
-Linux and Windows builds now use the drawable renderer; the legacy renderer
+The Node 6.1 package line moved back to `@mapbox/node-pre-gyp`, which requires
+Node.js 18 or newer; Node.js 16 is unsupported. The stable 6.4.1 binding
+explicitly supports Node.js 20, 22, and 24. Node.js 26 support is associated
+with the 6.5 prerelease line and must not be assumed for the stable package.
+
+### Drawable renderer (`node-6.1.0`)
+
+Linux and Windows Node builds use the drawable renderer. The legacy renderer
 has been removed.
 
-### Runtime support
+## Node data and sprite support
 
-The package moved back to `@mapbox/node-pre-gyp`, which requires Node.js 18 or
-newer. Node.js 16 is therefore unsupported (`node-6.1.0`).
+### PMTiles (`node-6.1.0`)
 
-Stable binding 6.4.1 supports Node.js 20, 22, and 24. Node.js 26 support
-belongs to the 6.5 prerelease line and should not be assumed for the stable
-package (`desktop-bindings`).
+Node 6.1 supports PMTiles-backed map data. A custom request hook still needs to
+understand every URL scheme used by the style.
 
-## Node rendering and lifecycle
+### Sprite text-fit metadata (`node-6.1.0`)
 
-`Map.render` accepts these optional fields (`desktop-bindings`):
+Sprites may define `textFitWidth` and `textFitHeight`, exposing text-fit
+metadata to Node rendering code.
 
-- `zoom`, default `0`
-- `width` and `height`, default `512` by `512`
-- `center` as `[longitude, latitude]`, default `[0, 0]`
-- `bearing`, counter-clockwise from north and default `0`
-- `pitch`, default `0`
-- style `classes`
+## Node rendering
 
-Rendering is asynchronous and yields a raw four-channel pixel buffer.
-`release()` permanently disables subsequent renders. It is safe to call
-`release()` in the render callback because the buffer stays retained for that
+### Render options and buffer lifetime (`desktop-bindings`)
+
+`Map.render` accepts optional `zoom`, `width`, `height`, `[longitude, latitude]`
+`center`, counter-clockwise-from-north `bearing`, `pitch`, and style `classes`.
+Defaults are zoom 0, 512×512 pixels, center `[0, 0]`, and zero bearing and
+pitch. Rendering completes asynchronously with a raw four-channel pixel
+buffer.
+
+`release()` permanently prevents further rendering. It is safe to call inside
+the render callback because the returned buffer remains retained for that
 callback.
 
 ```js
@@ -49,27 +56,25 @@ map.render({ width: 256, height: 256, center: [24.94, 60.17], zoom: 10 },
   });
 ```
 
-## Node resource requests
+### Resource request hook (`desktop-bindings`)
 
 The `Map` constructor's `request({ url, kind }, callback)` hook routes every
-style resource through application code (`desktop-bindings`). Resource kinds
-are:
+style resource through application code. `kind` values are:
 
-| Kind | Value |
-| --- | ---: |
-| `Unknown` | 0 |
-| `Style` | 1 |
-| `Source` | 2 |
-| `Tile` | 3 |
-| `Glyphs` | 4 |
-| `SpriteImage` | 5 |
-| `SpriteJSON` | 6 |
+| Value | Kind |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Style` |
+| 2 | `Source` |
+| 3 | `Tile` |
+| 4 | `Glyphs` |
+| 5 | `SpriteImage` |
+| 6 | `SpriteJSON` |
 
-The handler must understand every custom URL scheme used by the style. A
-successful result requires uncompressed byte `data` and may include
-`modified` and `expires` dates plus an `etag`. Calling the callback with no
-arguments represents no content. Constructor option `ratio` controls the
-high-density rendering scale.
+The hook must handle any custom scheme used by the style. A successful
+response requires uncompressed byte `data` and may include `modified` and
+`expires` dates and an `etag`. Invoke the callback with no arguments for a
+no-content result. Constructor `ratio` controls high-density rendering scale.
 
 ```js
 const fs = require('node:fs');
@@ -87,11 +92,11 @@ const map = new mbgl.Map({
 });
 ```
 
-## Node logging
+### Log events (`desktop-bindings`)
 
 The imported module is an `EventEmitter`. Its `message` events may contain
 `class`, `severity`, `code`, and `text`, exposing native style and resource
-failures (`desktop-bindings`):
+failures directly.
 
 ```js
 const mbgl = require('@maplibre/maplibre-gl-native');
@@ -101,34 +106,36 @@ mbgl.on('message', (message) => {
 });
 ```
 
-## Qt 3 libraries and CMake targets
+## Qt 3 linking and discovery
 
-Qt 3 places the API in the `QMapLibre` namespace and splits installation into
-`QMapLibre`, `QMapLibreLocation`, and `QMapLibreWidgets`
-(`desktop-bindings`). The CMake package exposes them as the `Core`, `Location`,
-and `Widgets` components and as `QMapLibre::*` targets.
+### Libraries and CMake targets (`desktop-bindings`)
 
-Qt 3 supports static builds and use as a CMake subproject. Its release was
-built with Qt 6.5–6.7 on all supported platforms, plus Qt 5.15.2 on macOS,
-Linux, and Windows.
+Qt 3 places the API in `QMapLibre` and splits installation into `QMapLibre`,
+`QMapLibreLocation`, and `QMapLibreWidgets`. The CMake package exposes `Core`,
+`Location`, and `Widgets` components and matching `QMapLibre::*` targets. The
+release supports static builds and use as a CMake subproject.
 
-Point `QMapLibre_DIR` to `<install>/lib/cmake/QMapLibre`, or put the
-installation prefix in `CMAKE_PREFIX_PATH`. A Widgets deployment must include
-both the `QMapLibre` and `QMapLibreWidgets` libraries.
+It was built with Qt 6.5–6.7 on every supported platform and Qt 5.15.2 on
+macOS, Linux, and Windows. Point `QMapLibre_DIR` at
+`<install>/lib/cmake/QMapLibre`, or put the installation prefix in
+`CMAKE_PREFIX_PATH`. Widgets deployments require both the `QMapLibre` and
+`QMapLibreWidgets` libraries.
 
 ```cmake
 find_package(QMapLibre COMPONENTS Widgets REQUIRED)
 target_link_libraries(MyApplication PRIVATE QMapLibre::Widgets)
 ```
 
-## Qt 3 QML and deployment
+## Qt QML and deployment
+
+### QML import and plugin trees (`desktop-bindings`)
 
 Qt 3 QML applications use `import MapLibre 3.0` and configure styles through
-`maplibre.map.styles` (`desktop-bindings`).
+`maplibre.map.styles`. Deploy both `plugins/geoservices` and `qml/MapLibre`
+together with the core and Location libraries.
 
-Deploy both `plugins/geoservices` and `qml/MapLibre`, together with the core
-and Location libraries. Linking the Location component makes
-`qmaplibre_location_setup_plugins` available to install both plugin trees:
+Linking `Location` provides `qmaplibre_location_setup_plugins`, which installs
+both plugin trees:
 
 ```cmake
 find_package(QMapLibre COMPONENTS Location REQUIRED)
@@ -136,15 +143,15 @@ target_link_libraries(MyApplication PRIVATE QMapLibre::Location)
 qmaplibre_location_setup_plugins(MyApplication)
 ```
 
-For an undeployed development run, set `QML_IMPORT_PATH=<install>/qml` and
-`QT_PLUGIN_PATH=<install>/plugins` when Qt cannot find them. Set
-`QSG_RHI_BACKEND=opengl` to force the Qt 3 renderer.
+For undeployed development runs, set `QML_IMPORT_PATH=<install>/qml` and
+`QT_PLUGIN_PATH=<install>/plugins` when Qt cannot find them. Use
+`QSG_RHI_BACKEND=opengl` to force Qt 3's supported renderer.
 
-## Qt Android multi-ABI selection
+### Android multi-ABI packages (`desktop-bindings`)
 
-For a multi-ABI Android build, select the ABI-specific package below a common
-`QMapLibre_Android_DIR`; do not reuse one architecture's `QMapLibre_DIR`
-(`desktop-bindings`):
+For a Qt Android multi-ABI build, resolve the ABI-specific package below a
+common `QMapLibre_Android_DIR`; do not reuse one architecture's
+`QMapLibre_DIR`.
 
 ```cmake
 if(ANDROID AND DEFINED ENV{QMapLibre_Android_DIR})
@@ -153,7 +160,7 @@ if(ANDROID AND DEFINED ENV{QMapLibre_Android_DIR})
 endif()
 ```
 
-## Empty Qt styles
+### Empty styles (`desktop-bindings`)
 
-Qt 3 permits constructing a `Style` with an empty URL. A placeholder URL is
-no longer needed solely for construction (`desktop-bindings`).
+Qt 3 allows construction of a `Style` with an empty URL. Do not add a
+placeholder URL solely to construct the object.

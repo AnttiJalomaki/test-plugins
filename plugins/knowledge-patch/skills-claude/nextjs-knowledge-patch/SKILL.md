@@ -10,25 +10,38 @@ metadata:
 
 # Next.js Knowledge Patch
 
-Use this patch when changing a modern Next.js application, especially when migrating request APIs, adopting Cache Components, configuring Turbopack, or debugging routing and rendering behavior.
+Use this patch when upgrading or maintaining modern Next.js applications, especially around asynchronous request APIs, Cache Components, routing and prefetching, Turbopack, image security, or framework diagnostics. Check the application's installed Next.js version before applying version-dependent options.
 
 ## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [migration-and-runtime.md](references/migration-and-runtime.md) | Runtime floors, removals, async request APIs, Proxy migration, security updates, upgrades |
-| [routing-and-rendering.md](references/routing-and-rendering.md) | Link navigation, route fallbacks, global not-found, error boundaries, transitions, scrolling |
-| [caching-and-prefetching.md](references/caching-and-prefetching.md) | Cache Components, cache keys and lifetimes, tag invalidation, route prefetching, instant routes |
-| [bundlers-and-builds.md](references/bundlers-and-builds.md) | Turbopack, build adapters, workers, SRI, loaders, compiler caching, service workers |
-| [types-and-configuration.md](references/types-and-configuration.md) | Typed routes, generated route props, type generation, configuration flags |
-| [tooling-and-observability.md](references/tooling-and-observability.md) | Instrumentation, logging, inspectors, analyzers, DevTools, browser tools, testing |
-| [images-css-and-assets.md](references/images-css-and-assets.md) | Image security and defaults, ImageResponse, icons, Sass, Lightning CSS, PostCSS |
+| [migration-and-runtime.md](references/migration-and-runtime.md) | Runtime floors, removed APIs, async request data, Proxy, command changes, upgrades and security |
+| [routing-and-rendering.md](references/routing-and-rendering.md) | Link navigation, route fallbacks, global not-found, errors, transitions, scrolling and focus |
+| [caching-and-prefetching.md](references/caching-and-prefetching.md) | Cache Components, cache keys and lifetimes, tag invalidation, route prefetching and instant routes |
+| [bundlers-and-builds.md](references/bundlers-and-builds.md) | Turbopack, adapters, filesystem caches, workers, loaders, compiler integration and service workers |
+| [types-and-configuration.md](references/types-and-configuration.md) | Typed routes, generated props, type generation and configuration migrations |
+| [tooling-and-observability.md](references/tooling-and-observability.md) | Instrumentation, logs, inspectors, analyzers, browser tools, managed rules, testing and documentation |
+| [images-css-and-assets.md](references/images-css-and-assets.md) | Image trust boundaries and defaults, ImageResponse, icons, Sass, Lightning CSS and PostCSS |
 
 ## Migration Priorities
 
-### Rename request interception to `proxy.ts`
+### Await request-bound APIs
 
-Use one `proxy.ts` beside `app` or `pages`, either at the project root or under `src`. Export `proxy` or a default function.
+Request values are asynchronous. Await page `params` and `searchParams`, plus `cookies()`, `headers()`, and `draftMode()`. Metadata image route `params` are asynchronous too, and IDs produced by `generateImageMetadata` arrive as `Promise<string>` values.
+
+```tsx
+export default async function Page({ params }: PageProps<'/blog/[slug]'>) {
+  const { slug } = await params
+  return <h1>{slug}</h1>
+}
+```
+
+Resolve request data outside a cached scope and pass only the serializable value into it.
+
+### Replace Middleware with `proxy.ts`
+
+Use one `proxy.ts` beside `app` or `pages`, at the project root or under `src`. Export `proxy` or a default function.
 
 ```ts
 import { NextResponse, type NextRequest } from 'next/server'
@@ -40,55 +53,49 @@ export function proxy(request: NextRequest) {
 export const config = { matcher: '/legacy/:path*' }
 ```
 
-Proxy is for request-dependent rewrites, redirects, headers, and optimistic checks. Keep slow data fetching and complete authorization in application code. Fetch caching, revalidation, and tags have no effect in Proxy.
+Proxy is for request-dependent rewrites, redirects, headers, and optimistic checks. Keep slow data loading and complete authorization in application code. Fetch caching, revalidation, and tags do not take effect in Proxy.
 
-Middleware's stable Node.js runtime was previously opt-in through `config.runtime = 'nodejs'`; use the `proxy.ts` convention when migrating to Next.js 16.
+### Remove obsolete commands and configuration
 
-### Make request APIs asynchronous
+- Replace `next lint` with the ESLint CLI or another linter. `next build` no longer runs linting.
+- Replace `serverRuntimeConfig` and `publicRuntimeConfig` with environment variables.
+- Move Turbopack options from `experimental.turbopack` to top-level `turbopack`.
+- Remove AMP APIs and configuration, `experimental.ppr`, `experimental_ppr`, `unstable_rootParams()`, and removed development-indicator settings.
+- Use top-level `typedRoutes`; use `cacheComponents` instead of the earlier `dynamicIO` preview name.
 
-Await all request-bound values. Synchronous access is removed.
+### Meet runtime floors and route requirements
+
+Use Node.js 20.9 or newer and TypeScript 5.1 or newer. Supported browser floors are Chrome, Edge, and Firefox 111, plus Safari 16.4.
+
+Every parallel-route slot needs `default.js`; a missing fallback is a build error. Call `notFound()` or return `null` if the slot needs no fallback UI.
 
 ```tsx
-export default async function Page({ params }: PageProps<'/blog/[slug]'>) {
-  const { slug } = await params
-  return <h1>{slug}</h1>
+import { notFound } from 'next/navigation'
+
+export default function Default() {
+  notFound()
 }
 ```
 
-- Await page `params` and `searchParams`.
-- Await `cookies()`, `headers()`, and `draftMode()`.
-- In metadata image routes, await `params`; each `generateImageMetadata` ID is a `Promise<string>`.
+### Review changed defaults
 
-### Fix hard build failures and removals
-
-- Add `default.js` to every parallel-route slot. Call `notFound()` or return `null` when no fallback UI is wanted.
-- Replace `next lint` with the ESLint CLI or another linter; `next build` no longer runs linting.
-- Move Turbopack options to top-level `turbopack`, not `experimental.turbopack`.
-- Replace `serverRuntimeConfig` and `publicRuntimeConfig` with environment variables.
-- Remove AMP, `experimental.ppr`, `experimental_ppr`, `unstable_rootParams()`, and removed development-indicator options.
-- Meet the runtime floors: Node.js 20.9+, TypeScript 5.1+, Chrome/Edge/Firefox 111+, and Safari 16.4+.
-
-### Review behavior changes
-
-- Opt into smooth scrolling with `<html data-scroll-behavior="smooth">`; automatic handling was removed.
-- Image optimization defaults and trust boundaries changed. Configure quality, local query patterns, redirect limits, and private-IP access deliberately.
-- Development and builds use separate output directories and project locking, so they can run concurrently without allowing conflicting instances of the same command.
+- Add `data-scroll-behavior="smooth"` to `<html>` when smooth-scrolling behavior is intended.
+- Audit image quality allowlists, local query patterns, private-IP access, redirect limits, cache TTLs, and generated-image fonts.
+- Development and production builds use separate output directories, while project locks reject conflicting instances of the same command.
+- ESLint integration defaults to Flat Config, and modern Sass behavior comes from `sass-loader` 16.
 
 ## Cache Components Quick Reference
 
-Enable Cache Components before using `use cache`:
+Enable Cache Components before using `use cache`.
 
 ```ts
 import type { NextConfig } from 'next'
 
-const nextConfig: NextConfig = {
-  cacheComponents: true,
-}
-
+const nextConfig: NextConfig = { cacheComponents: true }
 export default nextConfig
 ```
 
-The directive can cache all exports in a file, one async component, or one async function. Every function export in a file-level cached module must be async. A fully cached route needs the directive in both layout and page because each segment has its own entry.
+The directive may cover a module, an async component, or an async function. In a module-level cached file, exported functions must be async; exported literal constants are allowed. Cache both layout and page when both route segments must be cached.
 
 ```tsx
 async function ProductList({ category }: { category: string }) {
@@ -97,14 +104,14 @@ async function ProductList({ category }: { category: string }) {
 }
 ```
 
-Cache keys are compiler-generated from the build, function identity, serialized arguments or props, captured values, and an HMR hash in development. Do not manually assemble a key.
+### Keys and boundaries
 
-### Boundary rules
+The compiler builds keys from build identity, function identity, serialized arguments or props, captured values, and a development HMR hash. Do not assemble keys manually.
 
-- Resolve `cookies()`, `headers()`, and request-time `searchParams` outside cached scopes, then pass serializable values in.
-- Inputs follow Server Component serialization. Class and `URL` instances cannot be key inputs.
-- Return values follow the broader Client Component serialization and may include JSX.
-- Non-serializable children and Server Actions may pass through by reference only when cached code neither inspects nor invokes them.
+- Cache-key inputs follow Server Component serialization; class and `URL` instances are not valid inputs.
+- Return values use the broader Client Component serialization and may contain JSX.
+- Non-serializable children and Server Actions can pass through by reference only if cached code does not inspect or invoke them.
+- `cookies()`, `headers()`, and request-time `searchParams` cannot be read directly inside the cached scope.
 - Each cached scope has isolated `React.cache` state.
 
 ### Lifetime and invalidation
@@ -120,75 +127,70 @@ export async function getProducts() {
 }
 ```
 
-| API | Allowed context | Effect |
+| API | Context | Effect |
 | --- | --- | --- |
-| `updateTag(tag)` | Server Actions only | Expires tagged data immediately for read-your-writes |
-| `refresh()` | Server Actions only | Refreshes uncached data elsewhere without touching cached content |
-| `revalidateTag(tag, profile)` | Server code | Uses stale-while-revalidate with a named/custom profile or `{ expire }` |
+| `updateTag(tag)` | Server Actions only | Immediately expires tagged data for read-your-writes |
+| `refresh()` | Server Actions only | Refreshes uncached data elsewhere without invalidating cached content |
+| `revalidateTag(tag, profile)` | Server code | Applies stale-while-revalidate using a named/custom profile or `{ expire }` |
 
-The one-argument `revalidateTag(tag)` form is deprecated. Use a profile such as `'max'`, a custom profile, or `{ expire: seconds }`.
+The one-argument `revalidateTag(tag)` form is deprecated. Cache lifetime values are validated early; handle `Infinity` deliberately.
 
 ## Navigation and Prefetching
 
-Use `onNavigate` for SPA navigation guards rather than generic click handling:
+Use `onNavigate` for SPA navigation guards, because it runs for navigation rather than every click. `useLinkStatus()` exposes the pending state for its enclosing link and must be called below that `Link`.
 
 ```tsx
-<Link
-  href="/dashboard"
-  onNavigate={(event) => {
-    if (hasUnsavedChanges) event.preventDefault()
-  }}
->
+<Link href="/dashboard" onNavigate={(event) => {
+  if (hasUnsavedChanges) event.preventDefault()
+}}>
   Dashboard
 </Link>
 ```
 
-`useLinkStatus()` exposes the pending state for its enclosing `Link`; the caller must be rendered below that link. `prefetch="auto"` explicitly requests the default automatic behavior.
+`prefetch="auto"` explicitly selects the default link behavior. `router.prefetch(href, { onInvalidate })` can warm a route again after prefetched data becomes stale.
 
-`router.prefetch(href, { onInvalidate })` can refresh stale prefetched data. Modern segment prefetching reuses shared layouts, cancels work when links leave the viewport, reprioritizes hover and re-entry, and re-prefetches after invalidation.
-
-For Cache Components applications, use Suspense or cached work to preserve instant navigation. `export const instant = false` explicitly accepts a server-bound page or layout. `partialPrefetching: true` shares one loading shell per route; `prefetch={true}` adds build-known content and `export const prefetch = 'allow-runtime'` can include request-time cached content.
+With Cache Components, keep navigation instant by caching work or placing it behind `Suspense`; use `export const instant = false` to accept server-bound navigation explicitly. `partialPrefetching: true` shares a route loading shell. `prefetch={true}` adds build-known content, while `export const prefetch = 'allow-runtime'` may add request-time cached content at greater server cost.
 
 ## Types and Configuration
 
-Enable stable typed routes at the top level:
+Enable stable typed routes at the top level.
 
 ```ts
 const nextConfig = { typedRoutes: true }
 export default nextConfig
 ```
 
-Generated, import-free helpers include `PageProps<'/route'>`, `LayoutProps<'/route'>`, and `RouteContext<'/route'>`. Layout props include typed parallel-route slots.
+Use the generated, import-free `PageProps<'/route'>`, `LayoutProps<'/route'>`, and `RouteContext<'/route'>` helpers. Layout props include typed parallel-route slots.
 
-Generate route types without starting the server or building:
+Generate route types without starting a server or running a build:
 
 ```sh
 next typegen && tsc --noEmit
 ```
 
-The command also accepts an optional project directory. Native type stripping for `next.config.ts` is available through `--experimental-next-config-strip-types` on `next dev`, `next build`, and `next start`.
+The command accepts an optional project directory. Native stripping for `next.config.ts` is available through `--experimental-next-config-strip-types` on `next dev`, `next build`, and `next start`.
 
 ## Turbopack and Build Essentials
 
-- Turbopack production builds began behind `next build --turbopack`; development support did not imply production use.
-- Development filesystem caching is stable and on by default. Build filesystem caching remains configurable and can be reused in CI by restoring `.next`.
-- A Babel configuration is detected and enabled automatically under Turbopack.
+- Production Turbopack originally required `next build --turbopack`; development support alone did not select it for builds.
+- Development filesystem caching is stable and enabled by default. Build caching can be enabled separately and reused in CI by restoring `.next`.
+- A detected Babel configuration is enabled automatically with Turbopack.
 - `serverExternalPackages` can externalize transitive dependencies.
-- Build adapters can adjust configuration or process output; use the stable API for deployment integrations.
-- `import.meta.glob` supports lazy, eager, named, multiple, and negative patterns under Turbopack, but not `--webpack`.
-- Per-import loader attributes, text imports, same-origin workers, issue filtering, SRI, and package-local PostCSS are covered in the build and asset references.
+- Stable build adapters can adjust configuration or process build output for deployment integrations.
+- `import.meta.glob` supports lazy, eager, named, multiple, and negative patterns under Turbopack, but not with `--webpack`.
+- Per-import loaders, text imports, same-origin workers, issue filters, SRI, service workers, and package-local PostCSS are detailed in the build and asset references.
 
 ## Diagnostics and Documentation
 
 - Put `instrumentation-client.js` or `.ts` at the project root to initialize client monitoring before application code.
-- Use `next build --debug-prerender` for focused prerender failures.
-- Use `next dev --inspect` for only the application process and `next start --inspect` for the production server.
-- Use `next experimental-analyze` to inspect client/server bundles, route filters, import chains, and asset sizes.
+- Use `next build --debug-prerender` for focused prerender diagnostics.
+- Use `next dev --inspect` for the application process and `next start --inspect` for the production server.
+- Use `next experimental-analyze` to inspect client/server bundles, routes, import chains, CSS, and other asset sizes.
 - Browser errors can be forwarded to the terminal with `logging.browserToTerminal`.
-- Development output identifies compilation versus rendering time, Server Function calls, hydration sides, and chained causes.
-- Installed Next.js documentation is available under `node_modules/next/dist/docs/`; managed `AGENTS.md` markers can point tools there while preserving surrounding content.
-- Documentation URLs can return Markdown through a `.md` suffix or `Accept: text/markdown`; use `/docs/llms.txt` as an index.
+- Development output identifies compile versus render time, Server Function calls, hydration sides, and chained causes.
+- Installed documentation is available under `node_modules/next/dist/docs/`; managed `AGENTS.md` markers can point tools there without overwriting surrounding content.
+- Documentation URLs support a `.md` suffix or `Accept: text/markdown`; `/docs/llms.txt` is an index.
 
 ## Security
 
-Treat React Server Components security updates as urgent. A critical remote-code-execution issue affects Next.js 15.x and 16.x, with denial-of-service and source-exposure issues also affecting older lines. Upgrade every affected application to a patched release immediately.
+Treat React Server Components security updates as urgent. A critical remote-code-execution issue affects Next.js 15.x and 16.x, while denial-of-service and source-exposure issues also affect older lines. Upgrade affected applications to a patched release immediately.

@@ -1,93 +1,16 @@
 # Resources, Tests, Snapshots, and Functions
 
-Use this reference for resource properties, unit and data tests, snapshot
-deletion semantics, managed UDFs, and versioned-model pointers. Relevant
-extraction sections: 1.9-guides, 1.9.0, 1.11-udfs, 1.11.0, and 1.12.0.
+Use this reference for managed warehouse functions, tests, constraints, versioned models, macro metadata, analyses, and resource-name behavior.
 
-## Snapshot hard deletes
+## Unit and data-test configuration (1.9.0)
 
-Snapshots support `hard_deletes` with three modes:
+Data tests accept arbitrary config options, which are passed to adapter `pre_model` and `post_model` hooks. Unit tests may be disabled through config and may use versioned refs. The older `tests:` key remains accepted without a deprecation warning alongside `data_tests:`.
 
-- `ignore` is the default and does not record a source deletion.
-- `invalidate` closes the existing row by setting `dbt_valid_to`.
-- `new_record` writes a deletion record and adds `dbt_is_deleted`.
+Columns may carry `config`; column meta and tags propagate to tests.
 
-```yaml
-snapshots:
-  - name: my_snapshot
-    config:
-      unique_key: id
-      strategy: timestamp
-      updated_at: updated_at
-      hard_deletes: new_record
-```
+## Foreign-key constraint references (1.9.0)
 
-The legacy `invalidate_hard_deletes` setting remains accepted, but it cannot
-be combined with `hard_deletes`. dbt does not migrate existing snapshot tables
-automatically. Migrate the table schema and existing data before switching
-modes, or use the new setting only for new snapshots. PostgreSQL, BigQuery,
-Snowflake, and Redshift adapters support this config.
-
-## Unit and data test behavior
-
-Select unit tests directly with the `unit_test:` method:
-
-```bash
-dbt test --select "unit_test:test_order_total"
-```
-
-`dbt test` also accepts `--resource-type` and `--exclude-resource-type`, with
-corresponding environment-variable flags. Unit tests can be disabled by config
-and can use versioned refs.
-
-The older `tests:` property remains accepted without a deprecation warning
-alongside `data_tests:`. Data tests accept arbitrary config options; adapters
-receive them through `pre_model` and `post_model` hooks.
-
-Core 1.12 provides two test opt-ins:
-
-```yaml
-flags:
-  require_sql_header_in_test_configs: true
-  support_custom_ref_kwargs: true
-```
-
-The first permits `sql_header` in data-test configuration. The second permits
-custom `ref()` keyword arguments from unit tests and generic data tests.
-
-## Generic test argument layout
-
-`require_generic_test_arguments_property` appeared disabled in 1.10.5 and
-defaults to `true` from 1.10.8. Nest test parameters under `arguments`:
-
-```yaml
-models:
-  - name: orders
-    columns:
-      - name: status
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: [placed, shipped, completed]
-```
-
-## Column config and constraints
-
-Columns may contain a `config` mapping. Column meta and tags propagate to the
-tests defined on that column.
-
-```yaml
-models:
-  - name: orders
-    columns:
-      - name: id
-        config:
-          meta:
-            owner: analytics
-```
-
-Foreign-key constraint expressions can use `ref()` and `source()` instead of
-hard-coded relation names:
+Foreign-key constraint expressions may use `ref()` and `source()` instead of hard-coded relation names:
 
 ```yaml
 models:
@@ -99,16 +22,12 @@ models:
             expression: "{{ ref('customers') }} (id)"
 ```
 
-## Managed function files
+## Managed UDF resource layout (1.11-udfs)
 
-Core 1.11 manages scalar and aggregate warehouse functions as DAG resources.
-Place each body in `functions/<name>.sql` or `.py` and define its name, return
-type, arguments, and config in a corresponding properties file. dbt combines
-the files into `CREATE FUNCTION`, then creates, updates, or renames the
-function before dependent models.
+Managed functions are DAG resources. Put the body in `functions/<name>.sql` or `functions/<name>.py`, then define the required name and return type, arguments, and optional config in a properties file. dbt combines these into `CREATE FUNCTION` and creates, updates, or renames the function before dependent models.
 
 ```sql
--- functions/is_positive_int.sql (Snowflake expression body)
+-- functions/is_positive_int.sql, Snowflake expression body
 REGEXP_INSTR(a_string, '^[0-9]+$')
 ```
 
@@ -125,25 +44,13 @@ functions:
       data_type: integer
 ```
 
-Only scalar and aggregate functions are supported. Java, Scala, and other UDF
-languages are not supported.
+SQL functions work on BigQuery, Snowflake, Redshift, Postgres, and Databricks. BigQuery, Snowflake, and Databricks use expression bodies; Redshift and Postgres require a `SELECT` body. Argument defaults are available only on Snowflake and Postgres. BigQuery warns and ignores `volatility` for SQL and Python functions, while Snowflake applies it.
 
-## SQL function adapter rules
+Only scalar and aggregate functions are supported. Java, Scala, and other function languages are not supported.
 
-SQL functions are supported on BigQuery, Snowflake, Redshift, Postgres, and
-Databricks. BigQuery, Snowflake, and Databricks bodies are expressions;
-Redshift and Postgres bodies use a `SELECT`. Argument defaults are available
-only on Snowflake and Postgres.
+## Python UDFs (1.11-udfs)
 
-BigQuery ignores `volatility` on SQL and Python functions with a warning.
-Snowflake applies it.
-
-## Python function adapter rules
-
-Python functions are supported on Snowflake, BigQuery, and Databricks with
-Unity Catalog. Snowflake and BigQuery require `runtime_version` and
-`entry_point`; both can install optionally version-pinned warehouse packages.
-Snowflake supports Python 3.10–3.13, and BigQuery supports 3.11.
+Python function resources work on Snowflake, BigQuery, and Databricks with Unity Catalog. Snowflake and BigQuery require `runtime_version` and `entry_point`; they can install warehouse packages with optional version pins. Snowflake supports Python 3.10–3.13 and BigQuery supports Python 3.11.
 
 ```yaml
 functions:
@@ -157,10 +64,7 @@ functions:
     returns: {data_type: integer}
 ```
 
-Databricks accepts `runtime_version` and `entry_point` only for cross-adapter
-compatibility and warns that they have no effect. It embeds the `.py` file
-verbatim as the function body, so the file needs a top-level return rather
-than the shape of a standalone Python module:
+Databricks accepts `runtime_version` and `entry_point` only for cross-adapter compatibility and warns that they have no effect. It embeds the `.py` file verbatim as the body, so the file needs a top-level return rather than the shape of a standalone module:
 
 ```python
 import re
@@ -169,16 +73,13 @@ def main(a_string):
 return main(a_string)
 ```
 
-## JavaScript functions
+## JavaScript UDFs (1.11-udfs)
 
-Core 1.12 accepts `.js` bodies on Snowflake and BigQuery. JavaScript on another
-adapter is a parse error.
+Core 1.12 accepts `.js` bodies on Snowflake and BigQuery. JavaScript on another adapter is a parse error. Snowflake can quote argument names with `config.snowflake.quote_args`; BigQuery applies `deterministic` and `non-deterministic` volatility but does not support `stable`.
 
 ```javascript
 return /^[0-9]+$/.test(a_string) ? 1 : 0;
 ```
-
-Snowflake can quote argument names through nested adapter config:
 
 ```yaml
 config:
@@ -186,14 +87,9 @@ config:
     quote_args: true
 ```
 
-BigQuery applies `deterministic` and `non-deterministic` volatility, but does
-not support `stable`.
+## Overloaded UDFs (1.11-udfs)
 
-## Overloaded functions
-
-Core 1.12 adds `overloads`, giving one function name multiple signatures. Each
-overload uses `defined_in` to name a separate body and may override arguments
-and returns. Omitting an overload return type inherits the root return type.
+`overloads` gives one function name multiple argument signatures. Each overload names a distinct body with `defined_in` and may replace `arguments` and `returns`; an omitted return type inherits the root return type.
 
 ```yaml
 functions:
@@ -207,22 +103,16 @@ functions:
           - {name: a_num, data_type: numeric}
 ```
 
-SQL overloads work on Snowflake and Postgres. Python and JavaScript overloads
-work on Snowflake. All signatures share one DAG node and are selected and
-built together; `dbt retry` reruns only overloads that failed.
+SQL overloads work on Snowflake and Postgres. Python and JavaScript overloads work on Snowflake. All signatures share one DAG node and are built and selected together; `dbt retry` reruns only the overloads that failed.
 
-## Function references, selection, and state
+## Function references, selection, and state (1.11-udfs)
 
-Use `function()` instead of hard-coding a qualified warehouse name:
+Call `function()` instead of hard-coding a qualified warehouse name. dbt compiles the qualified name and records a function-to-model DAG edge:
 
 ```sql
 select {{ function('is_positive_int') }}(value) as is_positive
 from {{ ref('input_values') }}
 ```
-
-It compiles to the qualified function and records a function-to-model DAG
-edge. Body, config, argument, and return-type changes all participate in
-`state:modified`.
 
 ```bash
 dbt list --select "resource_type:function"
@@ -230,38 +120,41 @@ dbt build --select "resource_type:function"
 dbt build --select is_positive_int
 ```
 
-With `--defer` and a state manifest, `function()` resolves to the deferred
-environment's existing function when the function is not selected or has not
-yet been built in the target environment.
+Body, config, argument, and return-type changes are detected by `state:modified`. With `--defer` and a state manifest, `function()` uses the deferred environment's existing function when it is not selected or has not yet been built in the target.
 
-Unit tests do not create functions implicitly. Build the function and tested
-model's ancestors first:
+## Unit tests with functions (1.11-udfs)
+
+Unit tests do not create a warehouse function implicitly. Build it and the tested model's ancestors first:
 
 ```bash
 dbt build --select "+my_model_to_test" --empty
 ```
 
-## Versioned-model latest pointers
+## Metadata accessors in model Jinja (1.11.0)
 
-Core 1.12 can create an unversioned relation such as `dim_customers` pointing
-to the latest version. Enable it project-wide or per model:
-
-```yaml
-flags:
-  latest_version_pointer_enabled_by_default: true
-```
-
-The per-model property is `latest_version_pointer`. Pointer collision checks
-respect identifier quoting and case. Unquoted floating versions such as
-`v: 4.5` are no longer silently dropped.
-
-## Model config metadata access
-
-Model Jinja has `config.meta_get(key)` for optional metadata and
-`config.meta_require(key)` for required metadata:
+Use `config.meta_get(key)` for optional metadata and `config.meta_require(key)` for required metadata:
 
 ```jinja
 {{ config(meta={"owner": "finance", "policy": "restricted"}) }}
 {% set owner = config.meta_get("owner") %}
 {% set policy = config.meta_require("policy") %}
 ```
+
+## Latest-version relation pointers (1.12.0)
+
+Versioned models can create an unversioned relation pointer, such as `dim_customers`, for the latest version. Enable pointers project-wide with `latest_version_pointer_enabled_by_default` or per model with `latest_version_pointer`.
+
+```yaml
+flags:
+  latest_version_pointer_enabled_by_default: true
+```
+
+Collision checks honor quoting and case. Unquoted floating versions such as `v: 4.5` are no longer silently discarded.
+
+## Test ref and SQL-header opt-ins (1.12.0)
+
+Data tests may use `sql_header` behind `require_sql_header_in_test_configs`. Unit tests and generic data tests may pass custom `ref()` keyword arguments behind `support_custom_ref_kwargs`.
+
+## Macro and analysis configuration (1.12.0)
+
+Macro properties accept `config.meta` and `config.docs`. Analyses may be enabled or disabled from `dbt_project.yml` at project or folder scope. Python-model parsing recognizes `config.meta_get`, and the Jinja `graph` includes unit tests.

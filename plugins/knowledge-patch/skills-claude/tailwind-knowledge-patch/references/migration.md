@@ -1,99 +1,80 @@
 # Migration and Compatibility
 
-Use this reference when upgrading an existing project or deciding whether a compatibility fallback preserves the intended result.
+Use this reference when moving from legacy configuration or class names, or when older browsers and platform-specific rendering matter.
 
-## Move Configuration Into CSS
+## Start from the CSS-first entry point
 
-The configuration transition is documented in source batch `4.0.0-configuration`.
-
-The primary configuration surface is CSS. Import Tailwind and define framework tokens in `@theme`:
+Tailwind 4 configuration starts by importing the framework and declaring framework tokens in CSS:
 
 ```css
 @import "tailwindcss";
 
 @theme {
-  --color-brand: oklch(0.62 0.16 252);
+  --color-brand: oklch(0.68 0.14 250);
 }
 ```
 
-Use `@config` to load an existing JavaScript configuration and `@plugin` to load legacy plugins while migrating. CSS and legacy definitions merge where possible; CSS wins when they cannot be merged.
+Tokens intended to create utilities or variants must live in a top-level `@theme`. A custom property declared only in `:root` does not create a Tailwind API. See [Configuration and Theming](configuration.md) for theme block modes and namespaces.
 
-Three JavaScript configuration options have no legacy bridge:
+## Retire unsupported legacy options
 
-| Legacy option | Migration |
-|---|---|
-| `corePlugins` | Remove it; this option is unsupported. |
-| `safelist` | Express literal candidates with `@source inline()`. |
-| `separator` | Remove it; this option is unsupported. |
+The `4.0.0-configuration` bridge supports `@config` for a v3 JavaScript config and `@plugin` for legacy plugins, but these JavaScript configuration options are not supported:
 
-Do not move custom properties mechanically from `:root` and expect new utilities. Only appropriately named variables in a top-level `@theme` block generate matching framework APIs.
+- `corePlugins`
+- `safelist`
+- `separator`
 
-## Rename Linear Gradient Utilities
+Replace `safelist` with explicit `@source inline()` candidates. Let CSS-defined settings take precedence when a legacy and CSS definition cannot merge.
 
-The gradient migration comes from source batch `4.0.0`.
+## Rename gradient utilities
 
-Linear gradient utilities use `bg-linear-*` rather than `bg-gradient-*`:
+In `4.0.0`, linear gradients moved from `bg-gradient-*` to `bg-linear-*`.
 
 ```html
 <!-- Before -->
 <div class="bg-gradient-to-r from-indigo-500 to-pink-500"></div>
 
-<!-- After -->
+<!-- Current -->
 <div class="bg-linear-to-r from-indigo-500 to-pink-500"></div>
 ```
 
-Angles can be supplied directly as utility values:
+An angle may be the direct value, as in `bg-linear-45`. Gradients interpolate in OKLAB by default; append `/srgb`, `/oklch`, or another supported explicit modifier only when the design requires that interpolation behavior.
 
-```html
-<div class="bg-linear-45 from-indigo-500 via-purple-500 to-pink-500"></div>
-```
+## Replace deprecated logical positioning names
 
-## Review Gradient Color Interpolation
+The logical-property families described in the `4.3.0` batch deprecate `start-*` and `end-*` in favor of:
 
-Gradients interpolate in OKLAB by default. Add a color-space modifier when a design depends on another interpolation mode:
-
-```html
-<div class="bg-linear-to-r/srgb from-indigo-500 to-teal-400"></div>
-<div class="bg-linear-to-r/oklch from-indigo-500 to-teal-400"></div>
-```
-
-The modifier works with linear, radial, and conic gradient families. In browsers that do not support explicit interpolation, the declaration falls back to the browser's default interpolation behavior, so compare the fallback visually instead of assuming identical colors.
-
-## Understand Older-Browser Fallbacks
-
-Compatibility fallbacks are documented in source batch `4.1.0`.
-
-Fallback output covers:
-
-- `oklab` colors;
-- colors with opacity modifiers;
-- registered-custom-property behavior used by shadows;
-- registered-custom-property behavior used by transforms;
-- registered-custom-property behavior used by gradients.
-
-These fallbacks improve rendering in older Safari and Firefox releases. Full-fidelity output still targets modern browser capabilities such as Safari 16.4 and later. Explicit gradient interpolation falls back to the browser default when that syntax is unavailable.
-
-Test the actual utilities a project uses: a valid fallback can be visually different from the modern declaration, especially for interpolation and color mixing.
-
-## Replace Deprecated Logical Positioning
-
-Logical-property migration is represented by source batch `4.3.0` and belongs to the 4.2 utility set.
-
-Replace the deprecated `start-*` and `end-*` positioning utilities:
-
-| Deprecated | Replacement | CSS axis |
+| Deprecated | Replacement | Logical side |
 |---|---|---|
 | `start-*` | `inset-s-*` | Inline start |
 | `end-*` | `inset-e-*` | Inline end |
 
-Related logical positioning utilities include `inset-bs-*` and `inset-be-*` for block start and block end. Prefer these logical forms when the layout must follow writing direction.
+Use `inset-bs-*` and `inset-be-*` for block start and block end. Review bidirectional and vertical-writing layouts after replacing physical or deprecated positioning classes.
 
-## Migration Checklist
+## Understand older-browser fallbacks
 
-- Replace `bg-gradient-*` with `bg-linear-*` and inspect interpolation-sensitive designs.
-- Move API-producing tokens into top-level `@theme` blocks.
-- Replace a legacy safelist with explicit `@source inline()` candidates.
-- Remove unsupported `corePlugins` and `separator` settings.
-- Replace `start-*` and `end-*` with `inset-s-*` and `inset-e-*`.
-- Test opacity colors, transforms, shadows, and gradients in the oldest supported browsers.
-- Keep `@config` and `@plugin` only where the legacy bridge is still needed.
+The `4.1.0` fallbacks cover:
+
+- `oklab` colors
+- colors with opacity modifiers
+- registered-custom-property features used by shadows, transforms, and gradients in older Safari and Firefox
+
+Explicit gradient interpolation still falls back to the browser's default interpolation when the requested mode is unsupported. The full-fidelity target remains modern browsers such as Safari 16.4 and later, so verify appearance in older supported browsers rather than assuming the fallback is visually identical.
+
+## Keep nesting behavior consistent across pipelines
+
+As of `4.3.3`, Tailwind handles CSS nesting when Lightning CSS does not run, including in `@tailwindcss/browser` and Tailwind Play.
+
+```css
+.card {
+  &:hover { color: red; }
+}
+```
+
+When comparing development and production output, account for any additional nesting or prefixing transforms that only one pipeline applies.
+
+## Preserve Windows CJK font selection
+
+The default sans stack in `4.3.3` uses explicit platform fonts instead of `system-ui` and `ui-sans-serif`. This allows CJK text on Windows to choose a font according to the page's `lang` attribute.
+
+Keep accurate document or subtree language attributes, and re-check font rendering before overriding the default stack with a system-only shorthand.

@@ -1,25 +1,22 @@
 # Upgrade and Compatibility
 
-## Public API boundary and preflight
+Use this reference for migration sequencing, public-interface boundaries, runtime support, serialization, and compatibility traps.
 
-Airflow 3 establishes `airflow.sdk` as the semver-governed public surface for
-Dag authoring and task execution (3.0-upgrade). Move decorators and core types
-there, rename `Dataset*` imports to `Asset*`, and move `airflow.io.*` to
-`airflow.sdk.io.*`.
+## Airflow 3 migration
 
-Unlisted Python APIs, the metadata schema, and Web UI HTML are internal. Base
-extension interfaces are public, but only a built-in operator's parameters and
-behavior—not its methods or structure—are stable. Built-in executor
-implementations are not safe subclassing contracts.
+### `airflow.sdk` is the stable authoring interface
 
-Tasks and workers use the Task Execution API and can no longer open metadata
-ORM sessions. Use Task Context or SDK accessors at runtime. For Dag runs, task
-instances, Connections, Variables, and XComs beyond task context, use REST API
-v2 or `apache-airflow-client`; obtain a token from `/auth/token`.
+For the **3.0-upgrade**, treat `airflow.sdk` as the semver-governed public interface for Dag authoring and task execution. Unlisted Python APIs, the metadata schema, and Web UI HTML are internal. Move decorators and core authoring types to the SDK, rename `Dataset*` imports to `Asset*`, and move `airflow.io.*` imports to `airflow.sdk.io.*`.
 
-Before upgrading, reach at least Airflow 2.7, preferably the latest 2.x, back
-up and optionally clean the metadata DB, and ensure Dag parsing and
-reserialization succeed:
+```python
+from airflow.sdk import Asset, DAG, dag, get_current_context, task
+```
+
+Base extension interfaces are public. For built-in operators, parameters and behavior are stable but methods and class structure are not. Built-in executor implementations are not safe subclassing contracts.
+
+### Upgrade preflight and compatibility checks
+
+Upgrade to Airflow 2.7 or later first, preferably the latest 2.x. Back up and optionally clean the metadata database, then ensure Dag parsing and reserialization complete without errors. Ruff 0.13.1 or later provides Airflow rules: AIR301/AIR302 locate 3.0 breaks, while AIR311/AIR312 recommend migrations. Import-path changes can require `--unsafe-fixes`; enable F401 to remove stale imports.
 
 ```bash
 airflow db clean
@@ -28,125 +25,78 @@ ruff check dags/ --select AIR301 --show-fixes
 ruff check dags/ --select AIR301 --fix --unsafe-fixes
 ```
 
-Ruff 0.13.1 or later provides AIR301/AIR302 for breaks and AIR311/AIR312 for
-recommended migrations. Import changes can require `--unsafe-fixes`; use F401
-to remove stale imports.
+### Common operators moved to the standard provider
 
-## Dependencies and import moves
+`BashOperator`, `PythonOperator`, `ExternalTaskSensor`, `FileSensor`, and other formerly core operators, sensors, and triggers require `apache-airflow-providers-standard`. Install that provider on Airflow 2.x and migrate imports before upgrading core.
 
-Common operators, sensors, and triggers formerly shipped in core require
-`apache-airflow-providers-standard`, including `BashOperator`,
-`PythonOperator`, `ExternalTaskSensor`, and `FileSensor`. Install the provider
-on Airflow 2.x to migrate imports before upgrading core.
+### Configuration, database, and startup migration
 
-Task-facing exceptions moved to `airflow.sdk.exceptions` in 3.2.0. Imports
-from `airflow.exceptions` warn, and providers may use
-`airflow.providers.common.compat.sdk`. Invalid sensor `poke_interval` or
-`timeout` values now raise `ValueError`, not `AirflowException`.
+Diagnose configuration changes with `airflow config update`, optionally apply them with `--fix`, and then migrate the database. Replace the webserver process with the API server and run the Dag processor separately, including in local development.
 
-Serialization moved to `airflow.sdk.serde` and
-`airflow.sdk.serde.serializers.*` in 3.2.0. The old
-`airflow.serialization.*` paths warn and remain only until Airflow 4. Custom
-deserializers have received the loaded class rather than a class-name string
-since 3.1.0:
+```bash
+airflow config update --fix
+airflow db migrate
+airflow api-server
+airflow dag-processor
+```
+
+### Removed facilities and API v2
+
+Replace SubDAGs with TaskGroups, Assets, or data-aware scheduling. Replace SequentialExecutor with LocalExecutor, which supports SQLite. Replace CeleryKubernetesExecutor and LocalKubernetesExecutor hybrids with multiple-executor configuration. Deadline Alerts replace SLAs, Dag bundles replace CLI `--subdir`/`-S`, and the FastAPI stable `/api/v2` replaces `/api/v1`.
+
+### DAG and XCom pickling are removed
+
+Dags are always JSON-serialized, so embedded custom objects must be JSON-serializable. XCom pickling is also removed; use a custom XCom backend for values that need another representation.
+
+## Public and internal interfaces
+
+### Task SDK serialization has a versioned contract
+
+Since **3.1.0**, versioned Dag-serialization contracts allow components deployed separately to be upgraded with less coordination. This is a decoupling foundation rather than complete code separation, which was planned for Airflow 3.2.
+
+### Custom deserializers receive a loaded class
+
+Since 3.1.0, `airflow.serialization.serializers` deserializers receive the loaded class, not a class-name string. Update custom signatures accordingly.
 
 ```python
 def deserialize(cls: type, version: int, data: Any):
     ...
 ```
 
-`get_task_group_children_getter` and `task_group_to_dict` are no longer public
-and moved from `airflow.sdk.definitions.taskgroup` into server-side services
-in 3.1.0. `PriorityWeightStrategy.serialize()` and `.deserialize()`, plus
-internal `TaskInstance.run()`, `.render_templates()`,
-`.get_template_context()`, and related private members, were removed in 3.2.0.
+### Task-group serialization helpers are no longer public
 
-The legacy `airflow.datasets`, `airflow.timetables.datasets`, and
-`airflow.utils.dag_parsing_context` modules are removed in 3.2.0. Use their
-SDK-era Asset and parsing surfaces.
+Do not import `get_task_group_children_getter` or `task_group_to_dict` from `airflow.sdk.definitions.taskgroup`; they moved into server-side API services in 3.1.0.
 
-## Configuration and service migration
+### Serialization moved into the Task SDK
 
-Use `airflow config update` to diagnose changes and optionally apply them with
-`--fix`, then run `airflow db migrate`. Replace the webserver process with
-`airflow api-server`, and run `airflow dag-processor` separately even in local
-development.
+Since **3.2.0**, import `airflow.sdk.serde` and `airflow.sdk.serde.serializers.*`, not `airflow.serialization.serde` or `airflow.serialization.serializers.*`. The old paths warn and remain only until Airflow 4.
 
-The initial 3.0.0 moves from `[webserver]` to `[api]` are:
+### Experimental and internal task methods were removed
 
-| Old key | New key |
-| --- | --- |
-| `web_server_host` | `host` |
-| `web_server_port` | `port` |
-| `web_server_worker_timeout` | `worker_timeout` |
-| `web_server_ssl_cert` | `ssl_cert` |
-| `web_server_ssl_key` | `ssl_key` |
+`PriorityWeightStrategy.serialize()` and `.deserialize()` are removed. Internal `TaskInstance.run()`, `.render_templates()`, `.get_template_context()`, and related private members are also gone; use Task SDK and service interfaces instead.
 
-`workers` and `access_logfile` initially retain their names. Move
-`dag_file_processor_timeout`, `parsing_processes`, `file_parsing_sort_mode`,
-`max_callbacks_per_loop`, `min_file_process_interval`, `stale_dag_threshold`,
-and `print_stats_interval` into `[dag_processor]`. Obsolete scheduler/logging
-keys and other legacy `[webserver]` options have no effect; find them with
-`airflow config lint`.
+### Legacy parsing and dataset modules are removed
 
-In 3.1.0, also move `log_fetch_timeout_sec`,
-`hide_paused_dags_by_default`, `page_size`, `default_wrap`,
-`require_confirmation_dag_change`, and `auto_refresh_interval` from
-`[webserver]` to `[api]`. Replace `[api] access_logfile` with `[api] log_config`
-pointing to a `logging.config.fileConfig`-compatible file. `[api] workers`
-defaults to `1`; prefer multiple API-server instances for horizontal scaling.
-`instance_name_has_markup`, `warn_deployment_exposure`, and
-`dag_stale_not_seen_duration` are removed.
+`airflow.datasets`, `airflow.timetables.datasets`, and `airflow.utils.dag_parsing_context` no longer exist. Use their Airflow 3 SDK-era Asset, timetable, and parsing-context replacements.
 
-In Helm values, move configuration under `webserver` to `apiServer` and review
-all renamed or removed Airflow options.
+## Runtime and dependency compatibility
 
-## Authentication and extension migration
+### Runtime and database compatibility changed
 
-Simple Auth is the default auth manager in Airflow 3. To retain FAB, install
-its provider and configure:
+Airflow 3.1.0 drops Python 3.9, supports Python 3.10 through 3.13, adds SQLAlchemy 2.0 compatibility, and supports the psycopg3 PostgreSQL driver.
 
-```ini
-[core]
-auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-```
+### Runtime and official-image compatibility changed
 
-Custom security managers import `FabAirflowSecurityManagerOverride` from
-`airflow.providers.fab.auth_manager.security_manager.override`. Auth-manager
-routes live under `/auth`; for example, `/oauth-authorized/google` becomes
-`/auth/oauth-authorized/google`.
+Airflow 3.2.0 adds Python 3.14 support and requires SQLAlchemy 2. Official container images no longer include a MySQL client; add one in a derived image when needed.
 
-Plugins using `appbuilder_views`, `appbuilder_menu_items`, or
-`flask_blueprints` must install the FAB compatibility provider or migrate to
-`external_views`, `fastapi_apps`, and `fastapi_root_middlewares`. Operators,
-sensors, hooks, and executors are ordinary Python classes and can no longer be
-registered or imported via the plugin namespace; import their packages
-directly. Provider hooks `get_connection_form_widgets` and
-`get_ui_field_behaviour` are deprecated as of 3.2.0.
+### pandas 3 DataFrame XComs require an Airflow-first rollout
 
-## Removed facilities
+In **3.3.1**, Airflow recognizes both the pandas 2-era `pandas.core.frame.DataFrame` name and pandas 3's `pandas.DataFrame` name, so either pandas version can read XComs written by the other after Airflow is upgraded. Upgrade every Airflow component, especially workers, before introducing pandas 3. Older Airflow cannot read pandas 3 DataFrame XComs, `allowed_deserialization_classes` does not fix this, and rolling Airflow back strands those XComs until Airflow is upgraded again.
 
-During the 3.0-upgrade:
+The reader's pandas version controls reconstructed dtypes. Under pandas 3, string columns use `str` rather than `object`, and missing values use `nan` rather than `None`. Audit dtype branches, identity checks, and `DataFrame.equals()` assertions.
 
-- Replace SubDAGs with TaskGroups, Assets, or data-aware scheduling.
-- Replace SequentialExecutor with LocalExecutor; LocalExecutor supports
-  SQLite.
-- Replace CeleryKubernetes/LocalKubernetes hybrids with multiple executors.
-- Replace SLAs with Deadline Alerts.
-- Replace CLI `--subdir` and `-S` with Dag bundles.
-- Replace `/api/v1` with the FastAPI stable `/api/v2`.
+## Dag bundle migration
 
-Dag pickling and XCom pickling are removed in 3.0.0. Dags must be
-JSON-serializable. Use a custom XCom backend for values needing another
-representation.
+### Custom Dag bundle upgrades repair legacy bundle names
 
-## Runtime, database, and image compatibility
-
-Airflow 3.1.0 removes Python 3.9 and supports Python 3.10–3.13. It adds
-SQLAlchemy 2.0 compatibility and psycopg3 support. Airflow 3.2.0 adds Python
-3.14 and supports only SQLAlchemy 2.
-
-Official 3.2.0 container images no longer include a MySQL client. Add one to a
-derived image when required. For FIPS-oriented builds, `PYTHON_LTO` controls
-Python link-time optimization; builds can also verify cryptographic signatures
-on Python source packages.
+The 2.x-to-3.x migration could label every legacy Dag as belonging to `dags-folder`, blocking runs when another bundle was configured. Since 3.3.1, the Dag processor performs a best-effort path-based repair at startup. Unmatched Dags repair on their next successful parse; run `airflow dags reserialize` to force that parse.

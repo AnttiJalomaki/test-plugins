@@ -1,58 +1,116 @@
 # Storage, Locking, and Correctness
 
-## Statistics and expression indexes
+Use this reference for optimizer maintenance, page access, expression indexes,
+locking, WAL, `VACUUM`, VFS behavior, and release-specific correctness fixes.
 
-`PRAGMA optimize` applies a temporary analysis limit automatically and re-analyzes tables without `sqlite_stat1` entries (since 3.46.0). Add mask bit `0x10000` to consider every table, including tables this connection has not recently queried:
+## Analysis and indexes
+
+### Bounded and all-table optimization (3.46.0)
+
+`PRAGMA optimize` temporarily limits analysis work so it does not run too long
+on large databases. It also reanalyzes tables that lack `sqlite_stat1` entries.
+Add option bit `0x10000` to consider every table rather than only tables used
+recently by the connection:
 
 ```sql
-PRAGMA optimize=0x10002;
+PRAGMA optimize;
+-- Include option bit 0x10000 when every table must be considered.
 ```
 
-SQLite 3.53.0 adds self-healing support for stale expression indexes. `REINDEX EXPRESSIONS` remains available to rebuild all expression indexes explicitly:
+### Expression-index repair (3.53.0)
+
+Rebuild stale expression-index values explicitly with:
 
 ```sql
 REINDEX EXPRESSIONS;
 ```
 
-## WAL and advisory locks
+SQLite can also self-heal stale expression indexes during normal operation.
 
-- Version 3.50.2 avoids creating checksumless WAL frames after rolling back a savepoint whose dirty pages had already spilled.
-- Version 3.51.3 fixes a database-corruption bug during WAL reset. Use 3.51.3 or later on the 3.51 line.
-- SQLite 3.51.0 added protection against corruption when an application breaks POSIX advisory locking by calling `close()` on an associated descriptor. Version 3.51.2 fixes a deadlock in that detection, so use 3.51.2 or later for this protection.
-- `SQLITE_CHECKPOINT_NOOP` / `PRAGMA wal_checkpoint=NOOP` invokes checkpoint interfaces without performing checkpoint work (since 3.51.0).
+## Database pages and file generation
 
-## Vacuum copies and reserved bytes
+### Resizing through `sqlite_dbpage` (3.47.0)
 
-When the destination is a URI, `VACUUM INTO` accepts `reserve=N` from 0 through 255 and assigns that many reserved bytes per page in the copied database (since 3.53.0):
+An `INSERT` on the `sqlite_dbpage` virtual table may increase or decrease the
+database file's size. Treat such writes as low-level file operations and verify
+the resulting page layout.
+
+### Reserve bytes in `VACUUM INTO` (3.53.0)
+
+When the output is a URI filename, `reserve=N` sets its reserve amount. `N`
+must be from 0 through 255:
 
 ```sql
 VACUUM INTO 'file:copy.db?reserve=32';
 ```
 
-## Direct page access
+## Blocking locks and WAL
 
-`INSERT` operations on `sqlite_dbpage` may grow or shrink the file (since 3.47.0). Code using this low-level interface must preserve database page structure and transactional safety.
+### Independent blocking-lock timeout (3.50.0)
 
-## Native VFS compatibility
+On builds that support blocking locks, `sqlite3_setlk_timeout()` controls a
+lock-wait timeout independently of `sqlite3_busy_timeout()`. Version 3.50.1
+extends it to opening snapshot transactions and waiting behind recovery. Use
+3.50.2 or later because it ensures the call holds the database mutex.
 
-Custom VFS implementations may report `SQLITE_IOCAP_SUBPAGE_READ` (since 3.47.1). Use it where appropriate to avoid problems associated with direct overflow reads, which became the default in 3.45.0.
+```c
+sqlite3_setlk_timeout(db, 5000);
+```
 
-## WASM OPFS VFSes
+### WAL maintenance fixes (3.50.0, 3.51.0)
 
-- SQLite 3.46.1 fixes a corruption-causing bug in the JavaScript `opfs` VFS and adds browser-specific OPFS workarounds. OPFS applications should not remain on 3.46.0.
-- The OPFS SAHPool VFS corrected its filename-digest calculation in 3.50.0. New SQLite can read databases from older SAHPool releases, but older VFS versions cannot read databases created by 3.50.0 or later.
-- The `opfs-wl` VFS uses Web Locks for fairer lock sharing while otherwise matching `opfs` behavior (since 3.53.0). It requires browser support for `Atomics.waitAsync()`.
-- Custom JavaScript/WASM builds can target 64-bit WASM through the normal `make` build as of 3.51.0; canonical builds remain 32-bit.
+- Version 3.50.2 prevents checksum-free WAL frames after a savepoint rollback
+  involving spilled dirty pages.
+- Version 3.51.3 repairs a WAL-reset database-corruption bug. Deployments that
+  remain on the 3.51 line should use 3.51.3 or later.
+- Version 3.51.2 repairs a deadlock in broken POSIX-lock detection.
 
-## Maintenance-release correctness
+## Browser and Unix VFS behavior
 
-- 3.47.1 fixes wrong answers for some `IN` queries introduced by 3.47.0 optimization work.
-- 3.47.2 fixes x64/i386 conversion of text to floating point for a narrow family of 16-significant-digit inputs.
-- 3.50.1 fixes a long-standing `jsonb_set()`-family bug exposed by JSONB update optimization.
-- 3.50.2 fixes FTS5 updates containing BLOBs and `RIGHT JOIN` queries involving transitive `IS` constraints.
-- 3.50.3 fixes incorrect answers from an over-optimized `AND` expression.
-- 3.51.1 and 3.51.2 fix wrong answers and related faults in the `EXISTS`-to-join optimization; 3.51.1 also fixes an `fts5vocab` fault exposed by it.
+### OPFS and unix-dotfile correctness (3.47.0)
 
-## Withdrawn release
+SQLite 3.47.0 fixes a corruption-causing bug, read-only behavior, and
+browser-specific issues in the JavaScript `opfs` VFS. It also fixes hot-journal
+rollback in the uncommon `unix-dotfile` VFS.
 
-SQLite 3.52.0 was withdrawn because of backward-compatibility issues. All features planned for it moved to 3.53.0. Do not use 3.52.0 as a deployment target.
+### Custom VFS subpage reads (3.47.0)
+
+From 3.47.1, a custom VFS can report `SQLITE_IOCAP_SUBPAGE_READ`. Use it when
+the VFS safely supports direct overflow reads; this avoids compatibility
+problems after direct overflow reads became the default in 3.45.0.
+
+### OPFS SAHPool format boundary (3.50.0)
+
+The corrected filename-digest calculation is backward-readable: 3.50.0 can
+read databases made by older SAHPool implementations. The reverse is false;
+older implementations cannot read databases created by 3.50.0 or later.
+
+### Web Locks VFS (3.53.0)
+
+The `opfs-wl` JavaScript/WASM VFS is functionally equivalent to `opfs` but
+uses Web Locks for fairer sharing. It requires `Atomics.waitAsync()`, so its
+browser baseline is newer than that of `opfs`.
+
+## Numeric and query correctness
+
+### Text-to-floating-point conversion (3.47.0)
+
+Version 3.47.2 repairs x64/i386 conversion for affected values whose first 16
+significant digits are `1844674407370955`, a regression introduced in 3.47.0.
+
+### Query-planner maintenance fixes (3.47.0, 3.49.0, 3.50.0, 3.51.0)
+
+- 3.47.1 fixes wrong answers in some `IN` queries.
+- 3.49.2 fixes a `NOT NULL` optimization memory error, `DISTINCT`
+  count-of-view plans, and `IN` plans involving a `UNIQUE` constraint that
+  contains the primary-key column.
+- 3.50.2 fixes transitive `IS` constraints on `RIGHT JOIN`; 3.50.3 fixes an
+  over-optimized `AND` expression.
+- 3.51.1 and 3.51.2 repair nested `EXISTS` and `EXISTS`-to-join wrong results.
+
+## Withdrawn target
+
+### Do not deploy 3.52.0
+
+SQLite 3.52.0 was withdrawn because new features caused backward-compatibility
+problems. Those planned features moved to 3.53.0; do not target 3.52.0.

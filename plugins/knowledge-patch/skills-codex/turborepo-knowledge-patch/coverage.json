@@ -2,7 +2,7 @@
   "patch": "turborepo-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T16:16:10Z",
+  "built_at": "2026-08-22T09:05:27Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -38,6 +38,11 @@
       "build": "included"
     },
     "2.10.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.10.8": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

@@ -1,25 +1,45 @@
-# Routing, rate limits, and fallbacks
+# Routing, Rate Limits, and Fallbacks
 
-## Deployment selection
+## Rate-limit enforcement and accounting
 
-### Strict deployment limits
+### Per-tag and token-direction rate limits
 
-Deployment `rpm` and `tpm` are routing hints unless
-`router_settings.optional_pre_call_checks` contains
-`enforce_model_rate_limits`. With that check, LiteLLM rejects an over-limit
-call before the provider with 429 and `retry-after: 60`. RPM enforcement is
-exact. TPM enforcement is best-effort because actual token usage is recorded
-after the response. Multiple Proxy instances require shared Redis state.
+Since 1.93.0, one key can enforce RPM limits per tag, and Router deployments
+can constrain input TPM and output TPM separately. A local rate-limit error
+can enter gateway fallback handling.
 
-Router deployments can also set separate input and output TPM limits. Local
-rate-limit failures are eligible to enter gateway fallback handling (since
-1.93.0).
+### Strict deployment rate-limit enforcement
 
-### Model-group aliases
+Deployment `rpm` and `tpm` values normally guide routing; they do not hard
+block traffic. Add `enforce_model_rate_limits` to pre-call checks to reject an
+over-limit request before provider dispatch with 429 and `retry-after: 60`.
+RPM is exact. TPM is best-effort because actual usage is recorded after the
+response. Multiple proxy instances require shared Redis state.
 
-Use the object form of `router_settings.model_group_alias` with `hidden: true`
-to accept a legacy or alternate request name without listing it in
-`/v1/models`, `/v1/model/info`, or `/v1/model_group/info`:
+```yaml
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: provider/chat
+      rpm: 60
+      tpm: 90000
+router_settings:
+  optional_pre_call_checks: [enforce_model_rate_limits]
+```
+
+### TPM reservation mode
+
+The v3 rate limiter reserves TPM before a call by default. Set
+`LITELLM_TPM_TOKEN_RESERVATION_ENABLED=false` to skip the reservation and
+enforce TPM after the call from actual usage only.
+
+## Model-group selection
+
+### Hidden model-group aliases
+
+Use an object alias with `hidden: true` to accept a request name without
+advertising it through `/v1/models`, `/v1/model/info`, or
+`/v1/model_group/info`.
 
 ```yaml
 router_settings:
@@ -31,8 +51,11 @@ router_settings:
 
 ### Per-model routing groups
 
-Use `router_settings.routing_groups` to apply different strategies and
-strategy arguments to selected `model_name` sets:
+`routing_groups` gives model-name sets separate strategies and arguments in a
+single Router. A model can occur in only one group, `default` is reserved, and
+ungrouped models use the top-level strategy. Updating
+`Router.update_settings(routing_groups=[...])` or `/config/update` rebuilds
+group state at runtime.
 
 ```yaml
 router_settings:
@@ -44,51 +67,95 @@ router_settings:
       routing_strategy_args: {ttl: 60}
 ```
 
-A model may belong to only one group, and `default` is reserved. Ungrouped
-models retain the top-level strategy. Updating `routing_groups` with
-`Router.update_settings(...)` or `/config/update` rebuilds group state at
-runtime.
+### Silent traffic mirroring
 
-### Mirroring
-
-Configure Router traffic mirroring to send a production request to a
-secondary model for evaluation. LiteLLM collects the secondary response in
-the background; it neither replaces the primary response nor adds secondary
-latency to it.
+The Router can mirror production requests to a secondary model for evaluation.
+It collects the secondary response in the background without changing the
+primary response or adding secondary latency to it.
 
 ### Ordered deployment tiers
 
-Set `order` inside each deployment's `litellm_params`. Lower values run first,
-and the active routing strategy balances deployments tied in a tier. A tier
-receives all configured retries before promotion to the next tier.
-Model-group fallbacks begin only after every order tier is exhausted.
+Set `order` under `litellm_params`; lower values run first. The selected
+strategy balances deployments tied within a tier. A tier receives its retries
+before the next tier is promoted, and model-level `fallbacks` begin only after
+every order tier is exhausted.
 
-### Async weighted failover
+```yaml
+model_list:
+  - model_name: chat
+    litellm_params: {model: provider/chat-primary, order: 1}
+  - model_name: chat
+    litellm_params: {model: provider/chat-secondary, order: 2}
+```
 
-With `simple-shuffle`, set `enable_weighted_failover: true` to let an async
-call exclude a failed deployment and choose another peer in the same model
-group using existing weights and rate limits. It does not apply to synchronous
-calls. `max_fallbacks` caps these attempts and defaults to 5. Context-window
-and content-policy failures continue to use their dedicated routes.
+### Async weighted failover within a model group
 
-### Team model names
+With `simple-shuffle`, `enable_weighted_failover` lets an async call exclude a
+failed deployment and choose another same-group peer using current weights and
+rate limits before crossing to `fallbacks`. `max_fallbacks` caps attempts and
+defaults to 5. This does not apply to synchronous calls. Context-window and
+content-policy failures stay on their dedicated fallback paths.
 
-Request team deployments through `model_info.team_public_model_name` so all
-sibling deployments participate in ordering and failover. A stale team
-`model_aliases` row can rewrite the public name to one internal deployment.
-Remove that database alias, or temporarily set
-`LITELLM_ENABLE_TEAM_STALE_ALIAS_BYPASS=true` while migrating.
+```yaml
+router_settings:
+  routing_strategy: simple-shuffle
+  enable_weighted_failover: true
+```
 
-## Fallback processing
+### Team-scoped stale-alias migration
 
-### Sequence and cooldown
+Request team deployments through `model_info.team_public_model_name` so every
+sibling deployment participates in ordering and failover. A legacy team
+`model_aliases` row can rewrite that public name to one internal deployment.
+Remove the obsolete database alias, or temporarily set
+`LITELLM_ENABLE_TEAM_STALE_ALIAS_BYPASS=true` during an upgrade.
 
-The Router maintains separate ordered routes for general, context-window, and
-content-policy errors. It exhausts `num_retries` before crossing model groups.
-`request_timeout` bounds each attempt. `allowed_fails` determines when a
-deployment enters cooldown, and `cooldown_time` controls how long it remains
-out of selection. A model-specific fallback mapping takes precedence over
-`default_fallbacks`.
+## Affinity and health
+
+### Encrypted-content affinity for Responses
+
+Encrypted Responses items such as `rs_...` can continue only through the
+deployment key that created them. Assign distinct `model_info.id` values and
+enable the affinity check; ordinary requests remain load-balanced.
+
+```yaml
+router_settings:
+  optional_pre_call_checks:
+    - encrypted_content_affinity
+```
+
+### Deployment and session affinity
+
+`deployment_affinity` and `session_affinity` provide sticky routing separately
+from encrypted-response affinity. `deployment_affinity_ttl_seconds` defaults
+to 3600. `model_group_affinity_config` can choose checks for individual model
+groups; groups absent from it inherit the global checks.
+
+```yaml
+router_settings:
+  optional_pre_call_checks: [deployment_affinity]
+  deployment_affinity_ttl_seconds: 3600
+  model_group_affinity_config:
+    batch: [session_affinity]
+```
+
+### Shared health-aware routing
+
+`enable_health_check_routing` removes unhealthy deployments from selection.
+`health_check_staleness_threshold` expires old results, and
+`health_check_ignore_transient_errors` prevents 408 and 429 probes from
+affecting routing or cooldown. `use_shared_health_check` stores health state in
+Redis for a multi-instance proxy.
+
+## Retries, cooldowns, and fallback routes
+
+### Retry sequencing, cooldowns, and fallback routes
+
+The Router has distinct ordered routes for context-window errors,
+content-policy violations, and all other errors. It consumes `num_retries`
+before crossing to another model group. `request_timeout` bounds an attempt;
+`allowed_fails` and `cooldown_time` control deployment removal. A specific
+model fallback mapping overrides `default_fallbacks`.
 
 ```python
 router = Router(
@@ -99,12 +166,20 @@ router = Router(
 )
 ```
 
-### Request-scoped fallback parameters
+```yaml
+litellm_settings:
+  num_retries: 3
+  request_timeout: 10
+  allowed_fails: 3
+  cooldown_time: 30
+  default_fallbacks: [emergency]
+```
 
-An SDK or Proxy request may supply `fallbacks`. Use an object fallback to
-replace the model, messages, temperature, or other parameters on that
-attempt. Request-scoped fallback objects also apply to operations such as
-embeddings and image generation:
+### Request-scoped fallback inputs
+
+SDK and proxy requests can provide `fallbacks`. An object fallback can replace
+the model, messages, temperature, and other parameters for its attempt. The
+same form works for operations such as embeddings and image generation.
 
 ```python
 response = client.chat.completions.create(
@@ -118,75 +193,120 @@ response = client.chat.completions.create(
 )
 ```
 
-### Exact deployment targets
+### Pre-call context-window enforcement
 
-A fallback target may be a deployment's `model_info.id`. This selects only
-that deployment and deliberately skips its cooldown check. Inspect
-`x-litellm-model-id` to identify the deployment that served the response.
+Set `router_settings.enable_pre_call_checks: true` to filter undersized peers
+or reject oversized input before provider dispatch. A deployment-level
+`model_info.max_input_tokens` overrides the known limit. If the deployment
+name hides its provider model, also set `model_info.base_model`. If nothing
+fits, `ContextWindowExceededError` can select `context_window_fallbacks`.
 
-### Wildcard targets
+```yaml
+router_settings:
+  enable_pre_call_checks: true
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: provider/chat
+    model_info:
+      max_input_tokens: 8000
+```
 
-Register a wildcard deployment such as `provider/*` to make concrete
-provider-prefixed model names valid fallback targets without listing each
-model:
+### Region-aware pre-call filtering
+
+Pre-call checks can filter by region. Set `litellm_params.region_name` when an
+integration cannot infer it; location-bearing provider parameters may supply
+it automatically.
+
+```yaml
+router_settings:
+  enable_pre_call_checks: true
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: provider/chat
+      region_name: eu
+```
+
+### Exact-deployment fallback targets
+
+A fallback target can name `model_info.id` instead of a model group. This
+selects only that deployment and deliberately bypasses its cooldown check.
+The response header `x-litellm-model-id` identifies the serving deployment.
+
+```yaml
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: provider/emergency-chat
+    model_info:
+      id: emergency-deployment
+litellm_settings:
+  fallbacks: [{"chat": ["emergency-deployment"]}]
+```
+
+### Wildcard model fallback targets
+
+A wildcard deployment such as `provider/*` makes concrete provider-prefixed
+names valid fallback targets without listing each deployment.
 
 ```yaml
 model_list:
   - model_name: "provider/*"
-    litellm_params: {model: "provider/*"}
+    litellm_params:
+      model: "provider/*"
 litellm_settings:
-  fallbacks: [{chat: ["provider/backup-chat"]}]
+  fallbacks: [{"chat": ["provider/backup-chat"]}]
 ```
 
-### Disable fallback
+### Per-request and per-key opt-out
 
-Set `disable_fallbacks: true` in the Proxy request body to suppress failover
-for one call. Put the same value in virtual-key metadata to suppress failover
-for every request authenticated by that key.
+Set `disable_fallbacks: true` in a proxy request to suppress failover for that
+call. Store the same flag in virtual-key metadata to suppress it for every
+request made with that key.
 
-### Test fallbacks
+```json
+{"model": "chat", "messages": [], "disable_fallbacks": true}
+```
 
-Proxy releases since v1.85.0 strip incoming `mock_testing_fallbacks`,
+```json
+{"metadata": {"disable_fallbacks": true}}
+```
+
+### Proxy fallback-test flags are ignored
+
+Since Proxy v1.85.0, incoming `mock_testing_fallbacks`,
 `mock_testing_context_fallbacks`, and
-`mock_testing_content_policy_fallbacks`. These flags work only on direct
-`Router` calls. Trigger a real provider failure in a non-production
-environment when testing Proxy behavior.
+`mock_testing_content_policy_fallbacks` are stripped. They remain available
+only for direct `Router` calls. Test proxy fallbacks by producing a real
+provider error outside production.
 
-## Pre-call filtering
+## Stall detection
 
-Set `router_settings.enable_pre_call_checks: true` to filter deployments by
-input size or region before provider invocation.
+### Stall-specific timeout controls
 
-For context limits, set `model_info.max_input_tokens` when it must override
-known metadata. Also set `model_info.base_model` when a deployment name does
-not reveal the underlying model. If no same-group deployment fits, LiteLLM
-raises `ContextWindowExceededError`, enabling a `context_window_fallbacks`
-route.
+Router `ttft_timeout` detects a provider that never emits its first token and
+internally streams even a non-streaming call. `stream_idle_timeout` detects
+long gaps between tokens. `LITELLM_MAX_STREAMING_DURATION_SECONDS` caps total
+stream life; `LITELLM_STREAM_INACTIVITY_TIMEOUT_SECONDS` catches an async
+provider that sends keepalives without content chunks.
 
-For region filtering, set `litellm_params.region_name` when the provider
-integration cannot infer location. Integrations with location-bearing
-parameters can infer it automatically.
+## Auto-routing
 
-## Health, timeout, and affinity checks
+### Complexity auto-router classifiers
 
-Set `enable_health_check_routing` to exclude unhealthy deployments.
-`health_check_staleness_threshold` expires old observations, while
-`health_check_ignore_transient_errors` prevents 408 and 429 probes from
-affecting routing or cooldown. Set `use_shared_health_check` to keep health
-state in Redis across Proxy instances.
+Since 1.93.0, the complexity router supports keyword tier overrides, semantic
+keyword matching, custom technical keywords, and an optional LLM classifier.
+It can emit a log for each routing decision.
 
-Use Router `ttft_timeout` to detect a provider that never emits its first
-token; LiteLLM internally streams even a nominally non-streaming request for
-this check. Use `stream_idle_timeout` to detect excessive token gaps.
-`LITELLM_MAX_STREAMING_DURATION_SECONDS` caps total stream lifetime, while
-`LITELLM_STREAM_INACTIVITY_TIMEOUT_SECONDS` detects async streams that send
-keepalives but no content chunks.
+### Complexity and auto-router controls
 
-Encrypted Responses items such as `rs_...` must return through the deployment
-key that created them. Give sibling deployments distinct `model_info.id`
-values and enable `encrypted_content_affinity`.
+Since 1.97.0, complexity-router session affinity defaults to off and is
+visible in the UI. Operators can rename all four tiers, configure the reminder
+marker pair, replace the LLM-classifier system prompt, and test routing from
+the auto-router creation form.
 
-For general sticky routing, enable `deployment_affinity` or
-`session_affinity`. `deployment_affinity_ttl_seconds` defaults to 3600.
-Use `model_group_affinity_config` to select checks per model group; groups not
-listed inherit the global checks.
+### Auto-router savings reports
+
+Since 1.97.0, cost optimization reports net savings, use the hardest tier as
+the default baseline, and aggregate benchmarks per session.

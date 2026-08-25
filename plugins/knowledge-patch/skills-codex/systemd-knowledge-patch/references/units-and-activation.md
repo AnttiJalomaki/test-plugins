@@ -1,63 +1,127 @@
 # Units and Activation
 
-## Express mount and condition dependencies
+## Dependencies, mounts, and directories
 
-- `WantsMountsFor=` adds non-fatal mount dependencies for paths (since 256).
-- In fstab, `x-systemd.wants=` adds a soft `Wants=` dependency, complementing `x-systemd.requires=` (since 257).
-- `x-systemd.graceful-option=` includes a mount option only when the running kernel supports it, allowing optional settings such as tmpfs `usrquota` without failing older kernels (since 258).
-- `ConditionVersion=` supersedes `ConditionKernelVersion=` and tests kernel, systemd, or glibc versions. `ConditionKernelModuleLoaded=` tests whether a module is loaded or built in (since 258).
+### Soft mount dependencies (256, 257)
 
-## Pass socket and activation descriptors
+Use unit `WantsMountsFor=` for nonfatal mount dependencies. In fstab,
+`x-systemd.wants=` adds a soft `Wants=` dependency and complements
+`x-systemd.requires=`.
 
-- `PassFileDescriptorsToExec=yes` exposes a socket's listening descriptors through `LISTEN_FDS` to `ExecStartPost=`, `ExecStopPre=`, and `ExecStopPost=` (since 256).
-- For `Accept=yes` AF_UNIX sockets, `MaxConnectionsPerSource=` limits simultaneous connections by peer UID (since 256).
-- `FileDescriptorName=` is honored for `Accept=yes` instead of being replaced with `connection`. `SocketUser=` and `SocketGroup=` apply to POSIX message queues (since 257).
-- Socket units support Multipath TCP. AF_UNIX per-connection services receive `REMOTE_ADDR` (since 257).
-- Transient services receive arbitrary activation descriptors through the `ExtraFileDescriptor=` D-Bus property (since 257).
-- `sd_notify()` can change a unit's main process using a pidfd or pidfd inode number rather than a numeric PID (since 257).
-- AF_UNIX socket units support `PassPIDFD=` for `SO_PASSPIDFD` and `AcceptFileDescriptors=` for `SO_PASSRIGHTS` (since 258).
-- The activation protocol's `LISTEN_PIDFDID` contains the pidfd inode ID corresponding to `LISTEN_PID`, allowing a consumer to reject PID-recycling races (since 259).
+### Credential-aware graceful mounts (258)
 
-## Defer activation and timer work
+Mount units accept `SetCredential=`, `LoadCredential=`, `ImportCredential=`,
+and related settings. Fstab `x-systemd.graceful-option=` includes a kernel
+mount option only if supported, such as optional tmpfs `usrquota`.
 
-- `RestartMode=debug` sets `DEBUG_INVOCATION=1` and temporarily raises `LogLevelMax=` only during an automatic restart attempt (since 257).
+## Socket activation and descriptor handoff
 
-```ini
-[Service]
-Restart=on-failure
-RestartMode=debug
-```
-- `DeferReactivation=yes` on a calendar timer discards an expiration that happened while the activated service was still running, instead of immediately retriggering on completion (since 257).
-- `RandomizedOffsetSec=` adds a stable randomized offset to a timer schedule rather than fresh jitter at every activation (since 258).
-- A socket's `DeferTrigger=` and `DeferTriggerMaxSec=` use lenient job mode and retry a transaction that would otherwise stop an active unit (since 258).
+### Descriptors in lifecycle hooks (256)
 
-## Execute commands and transient services
+Socket `PassFileDescriptorsToExec=yes` exposes listening descriptors through
+`LISTEN_FDS` to `ExecStartPost=`, `ExecStopPre=`, and `ExecStopPost=`. For
+`Accept=yes` UNIX sockets, `MaxConnectionsPerSource=` limits simultaneous
+connections per peer UID.
 
-- A leading `|` on an `Exec*=` directive invokes the command through a shell (since 258).
-- `systemd-run --scope` expands command-line environment references by default (since 258).
-- `systemd-run --root-directory=` selects a root tree. `systemd-run --same-root-dir` or `-R` reuses the caller's root (since 259).
-- A transient service can receive its root through the `RootDirectoryFileDescriptor` property instead of `RootDirectory=` (since 259).
+### Socket metadata, MPTCP, and peer address (257)
 
-```ini
-[Service]
-ExecStart=|echo "$HOME"
-```
+`FileDescriptorName=` is honored for `Accept=yes` rather than replaced by
+`connection`; `SocketUser=`/`SocketGroup=` apply to POSIX message queues.
+`SocketProtocol=mptcp` enables MPTCP. Per-connection AF_UNIX stream services
+receive peer address in `REMOTE_ADDR`.
 
-## Reload services and attached content
+### Race-free process and descriptor handoff (257)
 
-- `ExecReloadPost=` runs after the configured service reload completes (since 259).
-- Reloading a service also reloads its associated configuration-extension images (since 258).
-- `RefreshOnReload=` controls whether reload refreshes attached extensions and credentials (since 260).
-- `BindNetworkInterface=` binds every socket created for the service to a named interface or VRF (since 260).
+Transient services accept arbitrary activation fds through D-Bus
+`ExtraFileDescriptor=`. `sd_notify()` can assign the main process with a pidfd
+or pidfd inode instead of a recycled numeric PID.
 
-## Build reliable generators and readiness handoff
+### PIDFD, rights, and deferred triggers (258)
 
-- Generators receive `SYSTEMD_SOFT_REBOOTS_COUNT`, the number of soft reboots since the current kernel boot (since 257).
-- Initrd system services have their own preset scope, disabled by default unlike host presets (since 258).
-- `systemd-notify --fork` launches a child, waits for its `READY=1`, then exits while leaving the ready child running, enabling shell scripts to hand off readiness correctly (since 258).
-- `systemctl start --verbose` and related verbs stream startup logs until the operation finishes (since 258).
+AF_UNIX sockets use `PassPIDFD=` for `SO_PASSPIDFD` and
+`AcceptFileDescriptors=` for `SO_PASSRIGHTS`. `DeferTrigger=` with
+`DeferTriggerMaxSec=` uses lenient jobs and retries a transaction that would
+otherwise stop an active unit.
 
-## Manage native units
+### Verify activation PID identity (259)
 
-- SysV service loading and rc.local compatibility are gone; use native units. `getty@.service` must be explicitly enabled (since 260).
-- `systemctl enqueue-marked` is the dedicated command for marked jobs. `Markers=` supports `needs-start` and `needs-stop` (since 260).
+The descriptor protocol adds `LISTEN_PIDFDID`, the pidfd inode corresponding
+to `LISTEN_PID`. Validate both to avoid PID-recycling races.
+
+### Interface-bound sockets (260)
+
+`BindNetworkInterface=` binds every unit-created socket to a named interface,
+including a VRF.
+
+## Commands, timers, and lifecycle hooks
+
+### Deferred timers (257)
+
+For calendar timers, `DeferReactivation=yes` discards an expiration that
+occurred while the activated service was active instead of starting
+immediately after completion.
+
+### Shell execution and stable spreading (258)
+
+A leading `|` on an `Exec*=` directive invokes a shell. Without it, shell
+syntax is not interpreted. Timer `RandomizedOffsetSec=` gives a randomized
+but stable schedule offset rather than new jitter each activation.
+
+### Scope expansion (258)
+
+`systemd-run --scope` enables command-line environment expansion by default.
+
+### Post-reload and root descriptors (259)
+
+`ExecReloadPost=` runs after configured reload. Transient services can receive
+root through D-Bus `RootDirectoryFileDescriptor` instead of a path.
+
+### Transient root selection (259)
+
+`systemd-run --root-directory=` selects a root tree;
+`--same-root-dir`/`-R` reuses the caller root. Run0 also accepts `-R`.
+
+### Refresh on reload (260)
+
+`RefreshOnReload=` determines whether reload also refreshes extensions and
+credentials.
+
+### Marked jobs (260)
+
+Use `systemctl enqueue-marked` instead of deprecated `systemctl --marked`.
+Unit `Markers=` accepts `needs-start` and `needs-stop`.
+
+### Stricter systemd-run combinations (258.10-261.2)
+
+All covered point releases reject `--no-block` and `--ignore-failure` in
+scope mode. JSON is rejected with stdio forwarding, trigger units, scopes, or
+verbose logs; waiting is rejected for remain-after-exit services. Trigger
+units honor `--no-block` and accept explicit trigger-unit names.
+
+### Oneshot exit tracking (258.10-261.2)
+
+All covered point releases reject `ExitType=cgroup` with `Type=oneshot`. Keep
+`ExitType=main` or choose a compatible service type.
+
+## Presets, startup, and manager state
+
+### Initrd presets and confext reloads (258)
+
+The third preset scope controls initrd system services and defaults disabled,
+unlike host system presets. Service reload also reloads associated confexts.
+
+### Live startup logs and readiness (258)
+
+`systemctl start --verbose` and related verbs stream unit logs until the job
+finishes. `systemd-notify --fork` launches a child, waits for its `READY=1`,
+then exits while leaving the ready child running for shell-friendly handoff.
+
+### Generator and soft reboot inputs (257)
+
+Generators receive `SYSTEMD_SOFT_REBOOTS_COUNT`, the soft reboot count since
+the current kernel boot.
+
+### System-wide protection default (256)
+
+Manager `ProtectSystem=` defaults enabled in initrd, so early units must not
+assume writable `/usr`.

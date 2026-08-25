@@ -1,34 +1,8 @@
 # Migration and Configuration
 
-Relevant versioned source batches: `3.0.0`, `3.2.0`, `4.0.0`, and `4.1.0`.
+## Replace workspace configuration with projects
 
-## Contents
-
-- [Replace workspaces with projects](#replace-workspaces-with-projects)
-- [Migrate Browser Mode providers and imports](#migrate-browser-mode-providers-and-imports)
-- [Update reporters and extensions](#update-reporters-and-extensions)
-- [Update test and hook APIs](#update-test-and-hook-apis)
-- [Use the installed Vite version](#use-the-installed-vite-version)
-- [Filter a test by source line](#filter-a-test-by-source-line)
-- [Rerun tests for non-import dependencies](#rerun-tests-for-non-import-dependencies)
-- [Review programmatic integrations](#review-programmatic-integrations)
-- [Check coverage migration separately](#check-coverage-migration-separately)
-
-## Replace workspaces with projects
-
-Inline workspace configuration was introduced through `test.workspace`, allowing projects to be declared in `vitest.config` without a separate workspace file:
-
-```ts
-import { defineConfig } from 'vitest/config'
-
-export default defineConfig({
-  test: {
-    workspace: ['packages/*'],
-  },
-})
-```
-
-That transitional API is now deprecated. Both a separate `vitest.workspace` file and the `test.workspace` option warn; move declarations to root-level `test.projects` before workspace support is removed in a future major:
+Vitest 3.0.0 allowed projects to be declared inline through `test.workspace`, removing the need for a separate workspace file. Vitest 3.2.0 then deprecated both the separate `vitest.workspace` file and `test.workspace`. Move the declaration to root-level `test.projects`:
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -40,110 +14,63 @@ export default defineConfig({
 })
 ```
 
-Before migrating a nontrivial workspace, account for project resolution and inheritance:
+Do this before the old forms are removed. Project resolution and inheritance have additional rules; see [Projects and coverage](projects-and-coverage.md).
 
-- A root `vitest.config` is not itself a test project unless explicitly included.
-- File-based project configs inherit none of the root test options.
-- An inline project can opt into root-option merging with `extends: true`.
-- `coverage`, `reporters`, and `resolveSnapshotPath` remain root-only.
-- Every resolved project name must be unique.
+## Browser migration checklist
 
-See [Projects and coverage](projects-and-coverage.md) for glob, directory, config-name, identity, and scheduling rules.
+The current Browser Mode configuration differs from the early 3.0.0 form:
 
-## Migrate Browser Mode providers and imports
+- Import a provider factory from its provider-specific package and call it instead of assigning a provider string.
+- Import `page`, `locators`, and other browser context APIs from `vitest/browser`, not `@vitest/browser/context`.
+- Configure instances under `test.browser.instances`; each can override `launch`, `setupFiles`, and `provide`.
+- Define `test.browser` before passing `--browser`; since 3.2.0 the flag does not assume a Node configuration is browser-compatible.
+- Review screenshot baselines after moving to 4.1.0 because the comparison implementation changed.
 
-Browser providers are supplied by provider-specific packages and configured by invoking a factory. Browser context APIs come from `vitest/browser`, not `@vitest/browser/context`:
+## Reporter and assertion compatibility
 
-```ts
-import { playwright } from '@vitest/browser-playwright'
-import { page } from 'vitest/browser'
-import { defineConfig } from 'vitest/config'
+When moving to 4.0.0:
 
-export default defineConfig({
-  test: {
-    browser: {
-      provider: playwright(),
-      instances: [{ browser: 'chromium' }],
-    },
-  },
-})
-```
+- Replace the removed `basic` reporter with `['default', { summary: false }]`.
+- Review custom reporters based on `onTaskUpdate`; the public lifecycle was redesigned in 3.0.0.
 
-The provider package already includes `@vitest/browser`, so remove an unnecessary direct dependency. Replace old provider strings such as `provider: 'playwright'` with factory calls.
+When moving to 4.1.0:
 
-Passing `--browser` also requires a configured `browser` option. It no longer assumes a Node test configuration can run unchanged in a browser:
+- Replace old `toBe*` spy assertions with corresponding `toHaveBeen*` forms or `toThrowError`.
+- Remove use of the undocumented `Suite` argument from suite hooks. File and worker fixture contexts are available to `beforeAll`, `afterAll`, and `aroundAll` instead.
+- Expect WebdriverIO and Preview actions to throw on multi-match locators unless a specific action opts out with `strict: false`.
 
-```sh
-npx vitest --browser=chromium --browser.headless
-```
+## Run a test at a source line
 
-Open [Browser Mode](browser-mode.md) for instance overrides, provider selection, locators, traces, screenshots, and runtime requirements.
-
-## Update reporters and extensions
-
-The public reporter lifecycle was redesigned; custom reporters centered on the previous `onTaskUpdate` callback need review.
-
-The `basic` reporter was removed. Use the default reporter with its summary disabled for the closest replacement:
-
-```ts
-export default defineConfig({
-  test: {
-    reporters: [['default', { summary: false }]],
-  },
-})
-```
-
-Reporter output semantics also changed: `default` shows a test tree only for a single test file, `tree` always shows it, and `verbose` reports each test as it completes in every environment.
-
-The VS Code extension removed `maximumConfigs` and no longer leaves Vitest running in the background unless continuous run is enabled manually or through `watchOnStartup`. See [Reporters and integrations](reporters-and-integrations.md) for the current reporter and extension surface.
-
-## Update test and hook APIs
-
-Review these test-facing compatibility changes:
-
-- Old `toBe*` mock/spy assertions are deprecated. Use their `toHaveBeen*` forms or `toThrowError` as appropriate.
-- `beforeAll`, `afterAll`, and `aroundAll` receive file/worker fixture contexts, but no longer receive the previously undocumented `Suite` argument.
-- WebdriverIO and Preview locator actions are strict by default. Add `{ strict: false }` only to an action that intentionally uses the first of multiple matches.
-- Browser screenshot comparison uses BlazeDiff instead of Pixelmatch, which can alter visual-diff results.
-- The `--update` snapshot flag accepts explicit `new` and `all` modes; snapshot configuration accepts `update: 'none'`.
-
-## Use the installed Vite version
-
-Vitest supports Vite 8. When possible, it reuses the project's installed `vite` package instead of obtaining a separate copy. This avoids configuration type mismatches caused by two Vite versions.
-
-## Filter a test by source line
-
-Append a line number to a test-file path to run the test at that location. Both accepted relative forms are useful in scripts and editor integrations:
+Since 3.0.0, append a line number to a test-file path to run the test at that location. Both relative forms are valid:
 
 ```sh
 vitest basic/foo.js:10
 vitest ./basic/foo.js:10
 ```
 
-## Rerun tests for non-import dependencies
+## Watch non-imported dependencies
 
-Static and dynamic imports let Vitest infer most watch dependencies. Use `test.watchTriggerPatterns` when changes outside that graph—templates, generated inputs, child-process resources, or similar files—must rerun related tests.
-
-Each entry matches a changed path and computes the test path or paths to run:
+Use `test.watchTriggerPatterns` for templates, subprocess inputs, or other dependencies that Vitest cannot find through static or dynamic imports (3.2.0).
 
 ```ts
-import { defineConfig } from 'vitest/config'
-
 export default defineConfig({
   test: {
     watchTriggerPatterns: [{
       pattern: /^src\/templates\/(.*)\.html$/,
-      testsToRun: (_file, match) =>
-        `api/tests/mailers/${match[1]}.test.ts`,
+      testsToRun: (_file, match) => `api/tests/mailers/${match[1]}.test.ts`,
     }],
   },
 })
 ```
 
-## Review programmatic integrations
+## Vite compatibility
 
-The Node API exported from `vitest/node` was redesigned. Do not carry assumptions from the earlier experimental shape into current integrations. Custom runners, editor adapters, and build tooling should use the current methods documented in [Reporters and integrations](reporters-and-integrations.md), including static collection and specification filtering.
+Vitest 4.1.0 supports Vite 8. When possible, it reuses the project's installed `vite` rather than obtaining a separate copy, which avoids configuration type mismatches between Vite versions.
 
-## Check coverage migration separately
+## Lifecycle concurrency fix
 
-Coverage behavior has independent opt-ins and new extension interfaces. In particular, AST-aware V8 remapping began as an explicit option, ignore comments need transform-preserving forms, and changed-file coverage is different from changed-test selection. See [Projects and coverage](projects-and-coverage.md) before updating coverage configuration.
+Vitest 4.1.11 again enforces the global concurrency limit while running test lifecycles. Workloads affected by the regression should no longer exceed their configured global cap.
+
+## Redirect mock filesystem boundary
+
+In 4.1.11, redirect-based mocks respect the filesystem allowlist. A redirect target outside the permitted paths is rejected; place intentional redirect targets inside the allowed filesystem scope rather than widening access accidentally.

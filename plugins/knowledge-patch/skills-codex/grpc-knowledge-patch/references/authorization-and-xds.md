@@ -1,90 +1,71 @@
 # Authorization, xDS, and Telemetry
 
-Use this reference for gRPC-Go xDS RBAC policy compatibility and gRPC-Java xDS
-telemetry, metric labels, or control-plane connection behavior.
+## Enforced Go RBAC permission matchers
 
-## gRPC-Go permission matchers
+gRPC-Go supports the xDS RBAC `Metadata` and `RequestedServerName` permission
+matcher fields. In DENY rules they are enforced rather than ignored; the prior
+behavior could fail open.
 
-From `go-1.82.1`, gRPC-Go supports the xDS RBAC `Metadata` and
-`RequestedServerName` permission matcher fields.
+Audit existing DENY policies that contain either field. Test both matching and
+non-matching metadata and requested server names, and confirm that a matching
+permission denies the RPC as intended.
 
-The security-sensitive change is their behavior in DENY rules: these fields are
-now enforced. Earlier behavior ignored them and could fail open. After an
-upgrade:
+## Header matcher validation and canonicalization
 
-- Audit DENY rules containing either field.
-- Test a request that matches and one that does not match each matcher.
-- Include absent, malformed, and repeated metadata cases relevant to the policy.
-- Include the actual requested server names used through direct connections,
-  proxies, and test environments.
-- Do not remove a DENY condition merely because the earlier runtime ignored it.
+Since go-1.83.1, gRPC-Go applies header-name validation and canonicalization to
+nested `Principal` and `Permission` rules and to non-lowercase header names.
+Specifically, it:
 
-## Deprecated `source_ip` principal compatibility
+- rejects `:scheme` matchers;
+- rejects matchers with the `grpc-` prefix;
+- maps `host` to `:authority`; and
+- canonicalizes non-lowercase names instead of letting mixed-case matchers
+  silently match nothing.
 
-From `go-1.82.1`, gRPC-Go accepts the deprecated xDS RBAC `source_ip`
-principal identifier and treats it as equivalent to `direct_remote_ip`.
+This closes another fail-open path for DENY rules. Test accepted lowercase and
+mixed-case inputs, both rejected name classes, `host`/`:authority` behavior,
+and nested principal and permission locations. Treat rejected configuration as
+a deployment error rather than weakening the rule to make it load.
 
-Use the compatibility behavior when consuming older control-plane output, but
-prefer `direct_remote_ip` in newly generated configuration. Test legacy and
-current spellings against the same connection so migration does not change the
-principal being matched.
+## Deprecated `source_ip` compatibility
 
-## ORCA-to-LRS propagation
+gRPC-Go accepts the deprecated xDS RBAC principal identifier `source_ip` and
+treats it as equivalent to `direct_remote_ip`. Continue accepting legacy input
+where migration compatibility is required, but emit `direct_remote_ip` when
+creating or rewriting configuration.
 
-From `java-1.83.0`, gRPC-Java enables ORCA-to-LRS propagation by default. Under
-gRFC A85, xDS configuration selects which fields from ORCA backend metric
-reports are propagated into LRS load reports.
+Keep an equivalence test until the legacy spelling has been removed from all
+configuration producers and stored resources.
 
-Implementation guidance:
+## ORCA metrics propagated to LRS
 
-- Treat propagation as active even when application code did not enable it.
-- Configure the desired field selection in xDS rather than assuming every ORCA
-  field should enter LRS.
-- Validate backend emission, selected-field propagation, and LRS reporting as
-  separate stages.
-- Revisit telemetry volume and downstream processing when enabling additional
-  fields.
+gRPC Java enables ORCA-to-LRS propagation by default. Under gRFC A85, xDS
+configuration selects which fields from backend ORCA metric reports are copied
+into LRS load reports.
 
-## Aggregate-cluster backend-service labels
+Review field selection as part of control-plane configuration. Verify that the
+chosen ORCA fields appear in LRS and that fields not selected are not assumed to
+be present by aggregation, dashboards, or policy consumers.
 
-From `java-1.83.0`, gRPC-Java uses the leaf cluster name, not the aggregate
-cluster name, as the backend-service label in metrics for xDS aggregate
-clusters.
+## Aggregate-cluster metric labels use the leaf
 
-Review any consumer that keys on this label:
+For xDS aggregate clusters, gRPC Java uses the leaf cluster name rather than the
+aggregate cluster name as the backend-service label in metrics.
 
-- Update dashboard groupings and alert filters.
-- Update joins against cluster inventory.
-- Expect one aggregate cluster to produce dimensions for multiple leaf
-  clusters.
-- Test cardinality and aggregation behavior with the deployed cluster graph.
+Update queries, dashboards, alerts, joins, and cardinality estimates that group
+or filter by this label. Validate a request routed through an aggregate cluster
+and confirm that its emitted backend-service dimension names the selected leaf.
 
-Do not rewrite the actual xDS aggregate-cluster topology merely to preserve an
-older metric label.
+## Control-plane connections are channel-scoped
 
-## Control-plane connection scoping
+gRPC Java reverted the connection-reuse behavior introduced in 1.81.0. Do not
+design capacity or diagnostics around an assumption that channels share an xDS
+control-plane connection.
 
-From `java-1.83.0`, gRPC-Java reverts the 1.81.0 behavior that reused xDS
-control-plane connections across channels. Do not design or size the system on
-the assumption that channels share one control-plane connection.
+The reuse behavior was problematic under heavy xDS use with many targets: it
+could exceed the control plane's `MAX_CONCURRENT_STREAMS`, prevent new targets
+from loading resources, and leave their channels stuck in name resolution.
 
-The reuse behavior could cause heavy xDS deployments with many targets to
-exceed the control plane's `MAX_CONCURRENT_STREAMS`. New targets could then fail
-to load resources, leaving their channels stuck in name resolution.
-
-When testing or diagnosing:
-
-1. Create a production-like number of channels and distinct targets.
-2. Observe control-plane connections and concurrent resource streams.
-3. Confirm every new target progresses beyond name resolution.
-4. Correlate stalled channels with the control plane's stream limits.
-5. Size connection and stream capacity for the channel-scoped behavior actually
-   present after the revert.
-
-## Security and operations checklist
-
-- Re-test DENY policies now that both permission matchers are enforced.
-- Accept legacy `source_ip` but emit `direct_remote_ip` for new policy.
-- Select ORCA fields intentionally before they enter LRS.
-- Query leaf-cluster labels for aggregate-cluster metrics.
-- Load-test xDS resource delivery across many channels and targets.
+Test with a production-like count of channels and targets. Observe control-plane
+stream capacity, resource delivery, and channel resolution together so a stalled
+target is not misdiagnosed as an application resolver error.

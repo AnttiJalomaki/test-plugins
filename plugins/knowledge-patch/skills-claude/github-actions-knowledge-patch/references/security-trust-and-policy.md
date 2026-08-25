@@ -1,46 +1,58 @@
-# Security, trust, and policy
+# Security, Trust, and Policy
 
-Use this reference when a workflow handles fork content, environments,
-caches, OIDC credentials, or centrally managed execution policy.
+Use this reference when a workflow crosses a pull-request trust boundary,
+writes a cache, checks out contributor code, requests an OIDC token, or is
+subject to repository or organization policy.
 
-## Privileged pull-request execution refs
+## Start with the execution identity
 
-Since December 8, 2025, `pull_request_target` always sources both its workflow
-and commit from the repository's default branch. `GITHUB_REF` is the default
-branch and `GITHUB_SHA` is the latest commit on that branch, even when the
-pull request targets some other base branch.
+Before changing a privileged workflow, establish:
 
-Do not use either value as the pull request's proposed revision. If a
-privileged workflow needs information about the pull request, obtain it from
-the event payload and keep all untrusted content separate from executable
-code.
+- which event starts the run and who can trigger it;
+- which ref and commit supply the workflow;
+- which contributor-controlled values reach checkout, shell, actions, or
+  reusable workflows;
+- the effective token permissions and environment protections; and
+- the cache scope and whether the run is allowed to write it.
 
-Environment branch protections now evaluate the execution ref instead of
+## `pull_request_target` execution refs
+
+Since December 8, 2025, `pull_request_target` always sources its workflow and
+commit from the repository's default branch. `GITHUB_REF` is the default branch
+and `GITHUB_SHA` is the latest commit on that branch, even when the pull request
+targets another base branch.
+
+This behavior makes the workflow definition trusted, but does not make the
+pull request's code or metadata safe to execute. Treat any later checkout,
+fetch, interpolation, or action selection derived from the pull request as a
+separate trust decision.
+
+Environment branch protections evaluate the execution ref rather than
 `HEAD_REF`:
 
-| Event | Ref evaluated by environment protection |
+| Event | Ref evaluated by environment branch protection |
 | --- | --- |
 | `pull_request` | `refs/pull/number/merge` |
 | `pull_request_review` | `refs/pull/number/merge` |
 | `pull_request_review_comment` | `refs/pull/number/merge` |
 | `pull_request_target` | Default branch |
 
-Review existing environment branch filters and add the corresponding patterns
-where access was previously based on the pull request's head or base branch.
+Review environment branch patterns that expected the pull request's head or
+base branch.
 
-## Cache tokens in untrusted contexts
+## Cache writes in untrusted contexts
 
 The cache token becomes read-only when both of these conditions hold:
 
-1. An untrusted actor can trigger the event.
-2. The execution scope and cache scope both use the shared default-branch SHA.
+1. an untrusted actor can trigger the event; and
+2. the execution and cache scope use the shared default-branch SHA.
 
-Cache restoration still succeeds. A save attempt is blocked with a warning,
-but the step and job continue. Do not mistake a successful job for a
-successful cache update. Populate caches needed by such runs from a trusted
-workflow, commonly `push`.
+Cache restores continue to work. When a save is blocked, the step emits a
+warning and the job continues; the warning is not evidence that a new cache
+entry was stored. Populate caches required by untrusted runs from a trusted
+workflow such as `push`.
 
-The usual default-branch triggers retain read-write cache access:
+The usual default-branch triggers that retain read-write cache access are:
 
 - `push`
 - `schedule`
@@ -53,74 +65,71 @@ The usual default-branch triggers retain read-write cache access:
 Events with non-default-branch cache scope, including `pull_request` and
 `release`, also retain read-write access.
 
-## Safer checkout defaults for fork content
+## Fork checkout protection
 
-`actions/checkout` v7 rejects a fork pull request's head or merge checkout in
-`pull_request_target`. It applies the same protection to `workflow_run` when
-the originating event is any `pull_request*` event.
+`actions/checkout` v7 rejects a fork pull request's head or merge checkout in:
 
-The action detects:
+- `pull_request_target`; and
+- `workflow_run` when the originating event is a `pull_request*` event.
 
-- a fork repository;
-- a pull-request head or merge ref; and
-- the corresponding head or merge SHA passed through `repository` or `ref`.
+The protection recognizes a fork repository, a pull-request head or merge ref,
+and the corresponding head or merge SHA when supplied through `repository` or
+`ref`. Same-repository pull requests and ordinary `pull_request` runs are
+unaffected.
 
-Same-repository pull requests are unaffected. Ordinary `pull_request` runs are
-also unaffected because they do not have the privileged trust boundary these
-checks address.
-
-The safeguard was scheduled for backport to every other supported major
+The protection was scheduled for backport to every other supported major
 version on July 20, 2026, except v1. Floating major tags receive the backport
-automatically. SHA pins and minor or patch pins must be upgraded explicitly.
+automatically. SHA, minor, and patch pins must be upgraded explicitly to pick
+it up.
 
-A reviewed workflow can deliberately bypass the check with the
-`allow-unsafe-pr-checkout` input. This opt-out does not cover untrusted code
-fetched with shell commands, and it does not cover unrelated repositories.
-Review those paths separately.
+`allow-unsafe-pr-checkout` deliberately bypasses the action's protection. Use
+it only after reviewing the workflow's permissions, secrets, environment,
+cache writes, artifacts, and all code that will execute. The action cannot
+protect shell-based fetches or checkouts of unrelated repositories.
 
-## Allowed actions and reusable workflows
+## Automatic approval holds
 
-Action and reusable-workflow allowlisting is available on Free, Team, and
-Enterprise plans. A repository policy can restrict execution to an explicitly
-selected set of actions and reusable workflows.
+(Since 2026-07-28.) GitHub Actions automatically holds certain workflow runs
+that it identifies as potentially malicious in public repositories on
+github.com. No repository configuration is needed. GitHub Enterprise Server
+is not covered.
 
-Treat the allowlist as a dependency policy: account for every reusable
-workflow in the call graph as well as direct `uses:` entries.
+A held run starts only after a repository collaborator with write access
+approves it through an authenticated web session. After approval, the run
+continues normally.
 
-## Workflow execution protections
+## Action and reusable-workflow allowlisting
 
-Public-preview workflow execution protections provide ruleset-based policy at
-enterprise, organization, and repository scope. The policies are evaluated
-before a run begins rather than relying solely on conditions inside the
-workflow file.
+Allowlisting is available on Free, Team, and Enterprise plans. A repository
+policy can restrict execution to an explicitly selected set of actions and
+reusable workflows. Keep the allowed set intentional and update policy before
+introducing a new dependency.
+
+## Workflow execution protection rulesets
+
+Public-preview workflow execution protections provide ruleset policy at the
+enterprise, organization, and repository scopes. They are evaluated before a
+run starts rather than being controlled only by the workflow file.
 
 Actor rules can allowlist:
 
-- users;
+- individual users;
 - repository roles;
 - GitHub Apps;
 - Copilot; and
 - Dependabot.
 
-Event rules can allowlist triggers such as:
+Event rules can allowlist triggers such as `push`, `pull_request`,
+`pull_request_target`, and `workflow_dispatch`.
 
-- `push`;
-- `pull_request`;
-- `pull_request_target`; and
-- `workflow_dispatch`.
-
-Organization-wide rulesets can select repositories with custom properties.
-Use evaluate mode to preview which runs enforcement would block before
-turning it on. Configure these controls separately from general Actions
-settings under **Actions > Policies**.
+Organization-wide rulesets can use custom properties to select repositories.
+Use evaluate mode to preview which runs enforcement would block. Configure
+these rules under **Actions > Policies**; they are separate from the general
+Actions settings.
 
 ## Job-specific OIDC identity
 
-Actions OIDC tokens include `check_run_id` alongside `run_id` and
-`run_attempt`. `run_id` and `run_attempt` identify the workflow run and its
-attempt; `check_run_id` identifies the exact job and compute that requested
-the token.
-
-External authorization and audit systems can use this claim to bind an
-identity decision to one job rather than granting based only on the overall
-run.
+Actions OIDC tokens include `check_run_id` alongside claims such as `run_id`
+and `run_attempt`. An external authorization or audit system can bind its
+decision to `check_run_id` when it must identify the exact job and compute
+that requested a token, rather than only the overall workflow run.

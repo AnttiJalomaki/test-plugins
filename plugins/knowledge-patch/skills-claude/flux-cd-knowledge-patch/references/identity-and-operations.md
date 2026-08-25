@@ -1,38 +1,11 @@
-# Identity and operations
-
-## Object-level Workload Identity
-
-The opt-in `ObjectLevelWorkloadIdentity` feature gate was introduced in
-2.6.0. It permits identities to be assigned per object and tenant for:
-
-- Kustomization SOPS decryption through KMS services;
-- OCIRepository access to container registries;
-- ImageRepository access to container registries.
-
-The scope expanded in 2.7.0:
-
-- `Bucket.spec.serviceAccountName` for S3, Azure Blob Storage, and GCS;
-- `GitRepository.spec.serviceAccountName` for Azure DevOps;
-- `Provider.spec.serviceAccountName` for Azure DevOps, Azure Event Hub, and
-  Google Pub/Sub.
-
-Remote EKS, AKS, and GKE authentication no longer requires static kubeconfig
-Secrets. Configure:
-
-- `Kustomization.spec.kubeConfig.configMapRef.name`, or
-- `HelmRelease.spec.kubeConfig.configMapRef.name`.
-
-Since 2.9.0, GitRepository access and bootstrap support AWS CodeCommit through
-Workload Identity. Kustomize-controller can authenticate to OpenBao and
-HashiCorp Vault by exchanging a Kubernetes ServiceAccount token instead of
-storing a long-lived Vault token.
+# Identity and Operations
 
 ## GitHub App authentication
 
-Since 2.5.0, source-controller and image-automation-controller can
-authenticate to GitHub repositories as a GitHub App installation.
+### Create and use an App Secret (since 2.5.0)
 
-Generate the Secret:
+Source-controller and image-automation-controller can authenticate to GitHub as
+an App installation. Create the Secret with the CLI helper:
 
 ```shell
 flux create secret githubapp github-auth \
@@ -42,34 +15,79 @@ flux create secret githubapp github-auth \
 ```
 
 Reference it through `.spec.secretRef.name` in a `GitRepository` or
-`ImageUpdateAutomation`. `flux create source git --provider=github` supports
-the same authentication mode.
+`ImageUpdateAutomation`. `flux create source git --provider=github` also
+supports this authentication mode.
 
-Since 2.6.0, `github` and `githubdispatch` notification Providers also support
-GitHub App authentication. Since 2.7.0, GitRepository GitHub App
-authentication supports mTLS.
+GitHub App credentials can authenticate `github` and `githubdispatch`
+notification Providers (since 2.6.0). GitRepository GitHub App authentication
+can be combined with mutual TLS (since 2.7.0).
 
-Since 2.8.0, supported flows can discover the installation ID automatically
-from the repository owner, so it need not always be supplied manually.
+Since 2.8.0, supported flows can discover the installation ID from the
+repository owner, so it does not always need to be supplied explicitly.
 
-## Debug merged configuration
+## Object-level Workload Identity
 
-Since 2.5.0, these commands display effective Kustomization substitutions or
-HelmRelease values after merging inline configuration with referenced
-ConfigMaps and Secrets:
+### Enable the feature gate (since 2.6.0)
 
-```shell
-flux debug kustomization --show-vars
-flux debug helmrelease --show-values
-```
+`ObjectLevelWorkloadIdentity` is opt-in. It initially supports identities per
+object and tenant for:
 
-They print referenced Secret values in clear text. Treat the output, terminal
-scrollback, command logs, and CI artifacts as sensitive.
+- Kustomization SOPS decryption through KMS services.
+- OCIRepository and ImageRepository access to container registries.
+
+### Expanded object support (since 2.7.0)
+
+Object-level Kubernetes Workload Identity also supports:
+
+- `Bucket.spec.serviceAccountName` for S3, Azure Blob Storage, and GCS.
+- `GitRepository.spec.serviceAccountName` for Azure DevOps.
+- `Provider.spec.serviceAccountName` for Azure DevOps, Azure Event Hub, and
+  Google Pub/Sub.
+- Azure DevOps access by image-automation-controller.
+
+Kustomization and HelmRelease can authenticate to remote EKS, AKS, or GKE
+clusters without a static kubeconfig Secret. Set
+`spec.kubeConfig.configMapRef.name` to point at the configuration used to
+obtain the remote identity.
+
+Notification-controller can publish to Azure Event Hub with Azure Workload
+Identity (since 2.6.0).
+
+Static GCS authentication accepts service-account keys only (since 2.9.4).
+Replace any other static credential form before upgrading; Workload Identity
+remains the keyless option.
+
+### Keyless Git and secret-service access (since 2.9.0)
+
+GitRepository access and `flux bootstrap` support AWS CodeCommit through
+Workload Identity, avoiding stored AWS access keys. Kustomize-controller can
+authenticate to OpenBao or HashiCorp Vault with Kubernetes Workload Identity,
+exchanging its ServiceAccount token instead of storing a long-lived Vault
+token.
+
+## SOPS key operations
+
+Kustomize-controller supports centrally managed Age keys for global SOPS
+decryption (since 2.7.0). It also supports SOPS secrets sealed with the Age
+post-quantum cipher (since 2.9.0). Object-level identity can be used for KMS,
+Vault, and OpenBao access as described above.
+
+## Flux Operator UI
+
+The Flux Operator Web UI provides cluster and GitOps-resource monitoring,
+rollout inspection, delivery graphs, and RBAC-guarded actions (since 2.8.0).
+It combines OIDC single sign-on with Kubernetes RBAC for multi-tenant clusters.
+
+The UI adds a workload dashboard for Deployments, StatefulSets, DaemonSets,
+and CronJobs plus a multi-pod, multi-container log viewer (since 2.9.0).
+Workload actions and log access use Kubernetes RBAC through user impersonation.
 
 ## Flux CLI plugins
 
-Since 2.9.0, the CLI installs independently versioned plugins under
-`~/fluxcd/plugins` and exposes them as `flux <plugin>`.
+Since 2.9.0, the Flux CLI installs independently versioned plugins under
+`~/fluxcd/plugins` and exposes them as `flux <plugin>`. The initial catalog
+includes Mirror for declarative registry mirroring and Schema for JSON Schema
+and CEL validation.
 
 ```shell
 flux plugin search
@@ -79,24 +97,4 @@ flux plugin update schema
 flux plugin uninstall schema
 ```
 
-The initial catalog includes:
-
-- Mirror, for declarative registry mirroring;
-- Schema, for JSON Schema and CEL validation.
-
-Pin plugin versions or immutable digests in reproducible automation.
-
-## Flux Operator Web UI
-
-The Flux Operator Web UI added in 2.8.0 provides:
-
-- cluster and GitOps-resource monitoring;
-- rollout inspection and delivery graphs;
-- RBAC-guarded actions;
-- OIDC single sign-on integrated with Kubernetes RBAC for multi-tenant
-  clusters.
-
-Since 2.9.0, it also provides a workload dashboard for Deployments,
-StatefulSets, DaemonSets, and CronJobs, plus a multi-pod, multi-container log
-viewer. Workload actions and log access continue to use Kubernetes RBAC
-through user impersonation.
+Pin a plugin version or immutable digest in reproducible automation.

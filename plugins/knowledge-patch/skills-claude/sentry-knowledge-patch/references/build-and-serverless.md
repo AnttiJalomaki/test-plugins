@@ -1,23 +1,28 @@
 # Build, Source Maps, and Serverless Deployments
 
-## Meta-framework source maps
+## Meta-framework source maps (9.0.0-guide)
 
-In the v9 migration (`9.0.0-guide`), meta-framework SDKs stop rewriting
-explicitly enabled or disabled source-map settings. When source-map generation
-is unspecified, the SDK enables maps and deletes them after upload. When maps
-are explicitly enabled, it preserves the chosen emission mode and does not
-delete them automatically. Use `filesToDeleteAfterUpload` for custom cleanup.
+Meta-framework SDKs preserve explicitly enabled or disabled source-map build
+settings rather than rewriting them.
 
-## Next.js
+- When generation is unspecified, the SDK enables source maps and deletes
+  them after upload.
+- When generation is explicitly enabled, the SDK preserves the emission mode
+  and does not delete maps automatically.
+- Use `filesToDeleteAfterUpload` for custom cleanup.
 
-Next.js enables client `hidden-source-map` and server `source-map` builds unless
-`sourcemaps.disable` is set. Client maps are deleted after upload by default;
-set `sourcemaps.deleteSourcemapsAfterUpload: false` to retain them.
-`hideSourceMaps` is removed without a replacement.
+## Next.js build configuration
 
-The SDK no longer uses the nondeterministic Next.js Build ID as a release
-fallback. Set a release explicitly. Replace the discontinued `sentry` property
-in Next config with options passed directly to `withSentryConfig`:
+Next.js enables client `hidden-source-map` and server `source-map` output
+unless `sourcemaps.disable` is set. Client maps are deleted after upload by
+default; set `sourcemaps.deleteSourcemapsAfterUpload: false` to keep them.
+
+The removed `hideSourceMaps` option has no replacement. The SDK no longer
+falls back to the nondeterministic Next.js Build ID for its release. Set a
+release name explicitly or provide another deterministic release source.
+
+The Next config's discontinued nested `sentry` property must become options
+passed directly to `withSentryConfig`:
 
 ```js
 export default withSentryConfig(nextConfig, {
@@ -26,65 +31,89 @@ export default withSentryConfig(nextConfig, {
 });
 ```
 
-Next.js route handlers flush automatically before returning in serverless
-environments (`10.0.0`).
+## Bundler plugin and instrumentation checks
 
-## SolidStart and Remix builds
+SDK v10 upgrades Sentry bundler plugins to the v4 major line (10.0.0). Upgrade
+direct pins and SDK packages together.
 
-Replace removed `sentrySolidStartVite` with `withSentry`, passing build-time
-Sentry options as its second argument.
+Server instrumentation warns when a bundler marks an instrumented module as
+external (since 10.68.0). Treat the warning as an instrumentation failure
+risk: bundled wrappers cannot instrument a module they do not load.
 
-Remix always applies automatic instrumentation; `autoInstrumentRemix` is
-removed. Sentry CLI failures during Remix source-map upload are silent instead
-of failing the build.
+## AWS Lambda layers
 
-## Bundler plugins and diagnostics
+The v9 Lambda layer is `SentryNodeServerlessSDKv9`; continuing v8 updates use
+`SentryNodeServerlessSDKv8` (9.0.0-guide).
 
-Sentry SDK v10 upgrades its bundler plugins to their v4 major line. Check
-direct or pinned plugin dependencies during the upgrade (`10.0.0-guide`).
+The v10 layer is `SentryNodeServerlessSDKv10` and is shared by ESM and
+CommonJS deployments (10.0.0).
 
-As of 10.68.0, server instrumentation warns when an instrumented module is
-marked external by bundler configuration. Treat the warning as an indication
-that instrumentation may not be applied; adjust externalization rules or the
-deployment layout.
+## Serverless flushing and environment detection
 
-## AWS Lambda and serverless flushing
+React Router automatically flushes for serverless loaders and actions and for
+Vercel request handlers. Next.js route handlers also flush automatically
+(10.0.0).
 
-The v10 AWS Lambda layer is `SentryNodeServerlessSDKv10` and is unified for ESM
-and CommonJS. The v9 layer is `SentryNodeServerlessSDKv9`, while maintained v8
-updates remain under `SentryNodeServerlessSDKv8`.
-
-React Router flushes automatically for serverless loaders and actions and for
-Vercel request handlers. Next.js route handlers also flush automatically.
 Unified serverless-environment detection recognizes Cloud Run, so
 serverless-specific behavior applies there without custom detection.
 
-## Cloudflare runtime behavior
+## Cloudflare Vite auto-instrumentation
 
-Cloudflare Workflow instrumentation accepts non-UUID instance IDs. Durable
-Object instrumentation keeps synchronous methods synchronous.
+The `@sentry/cloudflare/vite` Orchestrion plugin reads Wrangler configuration,
+resolves the Sentry options module, wraps the worker entry with `withSentry`,
+and instruments Durable Object, `WorkerEntrypoint`, and Workflow classes
+(10.68.0).
 
-The `@sentry/cloudflare/vite` Orchestrion plugin introduced by `10.68.0` reads
-Wrangler configuration, resolves the Sentry options module, wraps the worker
-entry with `withSentry`, and automatically instruments Durable Object,
-`WorkerEntrypoint`, and Workflow classes.
+The plugin also instruments Cloudflare `Agent` classes automatically in
+10.69.0-10.70.0. Set its `wranglerConfigPath` option when a non-default
+Wrangler configuration must be selected explicitly.
 
-## Nitro deployment
+## Cloudflare Agents and development tools
 
-`@sentry/nitro` uses `withSentryConfig`, a root `instrument.mjs`, and a
-`--import` preload for development, preview, and production. Its wrapper
-registers the module, enables tracing channels, and by default uploads hidden
-source maps and deletes them afterward. An explicit `sourcemap` setting is
-respected. See [framework-integrations.md](framework-integrations.md) for the
-runtime hooks, version floors, and error policy.
+`instrumentAgentWithSentry` wraps `Agent` classes from the Cloudflare `agents`
+SDK in the same style as `instrumentDurableObjectWithSentry`. It creates spans
+for `@callable` RPC methods and derives `conversationId` from the agent name.
+Clearing a chat rotates the conversation ID.
 
-## TanStack Start deployment
+The Cloudflare SDK can forward local-development events through the Spotlight
+integration.
+
+## Cloudflare runtime semantics
+
+Workflow instrumentation accepts non-UUID instance IDs. Durable Object
+instrumentation preserves synchronous methods instead of converting them to
+asynchronous functions (10.0.0).
+
+## Framework build behavior
+
+### SolidStart
+
+Replace the removed `sentrySolidStartVite` export by wrapping the SolidStart
+config with `withSentry`; pass build-time Sentry options as the second
+argument.
+
+### Nitro
+
+`withSentryConfig` registers the Sentry module, enables tracing channels, and
+uploads hidden source maps before deleting them by default. An explicit Nitro
+`sourcemap` setting is respected. Preload the root `instrument.mjs` with
+`--import` in development, preview, and production.
+
+### TanStack Start
 
 Place `sentryTanstackStart()` last in the Vite plugin list. It manages
-production source-map upload and tracing middleware. For full server coverage,
-preload `instrument.server.mjs` with `--import` and include it in the deployed
-build output. Importing it from `src/server.ts` is a limited Node-only fallback
-and does not work on Cloudflare.
+production source-map uploads and tracing middleware. Copy and preload
+`instrument.server.mjs` in the deployed output for full server
+instrumentation.
 
-Use `tunnelRoute: true` to generate and configure an opaque same-origin event
-tunnel per development session and production build.
+### Remix
+
+Sentry CLI source-map upload failures during Remix builds are silent rather
+than build-failing (10.0.0). Monitor upload results separately when missing
+source maps must block a release.
+
+## Next.js middleware tracing
+
+Next.js middleware wrappers no longer add tracing in 10.69.0-10.70.0. Build
+and telemetry validation must not treat wrapper installation as proof that
+middleware spans are produced.

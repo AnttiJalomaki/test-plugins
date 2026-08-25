@@ -1,47 +1,35 @@
 # Configuration and Migration
 
-Use this reference when locating configuration, composing monorepo settings,
-scoping files, migrating another tool, or updating deprecated Biome options.
+## Discover the effective configuration
 
-## Contents
+Biome searches for configuration names in this order: `biome.json`,
+`biome.jsonc`, `.biome.json`, then `.biome.jsonc`. It searches the working
+directory, then ancestors, then the platform configuration home (since
+`2.4-guide`). The fallback is `$XDG_CONFIG_HOME` or `$HOME/.config/biome` on
+Linux, `/Users/$USER/Library/Application Support/biome` on macOS, and
+`C:\Users\$USER\AppData\Roaming\biome\config` on Windows.
 
-- [Discover and select configuration](#discover-and-select-configuration)
-- [Compose root and nested configurations](#compose-root-and-nested-configurations)
-- [Scope files and scanner work](#scope-files-and-scanner-work)
-- [Configure VCS ignore behavior](#configure-vcs-ignore-behavior)
-- [Migrate ESLint](#migrate-eslint)
-- [Migrate Prettier](#migrate-prettier)
-- [Import EditorConfig settings](#import-editorconfig-settings)
-- [Configure rules and fixes](#configure-rules-and-fixes)
-- [Gate language and parser support](#gate-language-and-parser-support)
-- [Configure resolver experiments](#configure-resolver-experiments)
+`--config-path` and `BIOME_CONFIG_PATH` accept either a configuration directory
+or the file itself (since `1.7-guide`):
 
-## Discover and select configuration
+```shell
+biome format --config-path=./config/biome.json ./src
+```
 
-Biome searches configuration names in this order:
+Compatible editors can merge inline configuration over the project
+configuration for the language server only (since `2.4-guide`). VS Code uses
+`biome.lsp.inlineConfig`; Zed uses `lsp.biome.settings.inline_config`. Do not
+assume such a setting affects CLI runs.
 
-1. `biome.json`
-2. `biome.jsonc`
-3. `.biome.json`
-4. `.biome.jsonc`
+## Resolve shared and monorepo configuration
 
-It searches the working directory, then ancestors, then the platform
-configuration home:
+Package-exported configurations in `extends` resolve from the CLI working
+directory or LSP project root, and `.jsonc` is a valid extension target (since
+`1.7.0`).
 
-- Linux: `$XDG_CONFIG_HOME`, or `$HOME/.config/biome`
-- macOS: `/Users/$USER/Library/Application Support/biome`
-- Windows: `C:\Users\$USER\AppData\Roaming\biome\config`
-
-Use `--config-path` or `BIOME_CONFIG_PATH` with either a directory or a direct
-configuration-file path. Package-exported configuration names in `extends`
-resolve from the CLI working directory or the language-server project root.
-Files ending in `.jsonc` are valid extension targets.
-
-## Compose root and nested configurations
-
-Treat every configuration as a root by default. Make a nested configuration
-non-root with `"root": false`, or inherit the monorepo root with `"extends":
-"//"`; the latter also implies `root: false`.
+Every configuration is a root by default (since `2.0-guides`). A nested
+configuration must either set `"root": false` or use `"extends": "//"`; the
+latter inherits the monorepo root and implies `root: false`.
 
 ```json
 {
@@ -50,14 +38,15 @@ non-root with `"root": false`, or inherit the monorepo root with `"extends":
 }
 ```
 
-Apply an array of `extends` entries from least to most relevant. Do not make an
-extended file extend another file. Resolve paths declared inside shared
-configuration relative to the configuration that extends it.
+Apply array-form `extends` entries from least to most relevant. Extended files
+cannot themselves extend other files. Paths declared in shared configuration
+are resolved relative to the configuration that extends it.
 
-Merge a local `overrides` array with arrays inherited through `extends`, so
-shared and package-specific entries both remain available. Within the effective
-`overrides` array, only the first matching entry applies; put narrow patterns
-before broad patterns.
+Before the configuration model changed, matching overrides became cumulative
+in `1.8.0`, and `1.9.0` merged locally declared override arrays with arrays
+inherited through `extends`. Current configurations use first-match override
+selection (since `2.0-guides`): only the first matching entry is used. Put
+specific entries before broad ones.
 
 ```json
 {
@@ -68,14 +57,12 @@ before broad patterns.
 }
 ```
 
-Earlier configurations accumulated fields from every matching override, with
-later unset fields no longer restoring base values. Reorder and consolidate
-such overlapping entries when migrating to first-match semantics.
+## Apply includes and scanner exclusions
 
-## Scope files and scanner work
-
-Use ordered `files.includes` patterns. A later positive glob can re-include an
-earlier ordinary exclusion:
+`files.includes` is ordered (since `2.0-guides`). A later positive pattern can
+re-include an ordinary earlier `!` exclusion. A `!!` force-ignore prevents the
+scanner from indexing or traversing a path; `!` prevents processing but still
+allows project-domain analysis to index an imported dependency.
 
 ```json
 {
@@ -85,184 +72,94 @@ earlier ordinary exclusion:
 }
 ```
 
-Distinguish the two exclusion forms:
+`linter.includes`, `formatter.includes`, and `assist.includes` run after
+`files.includes`. They can only narrow the initial set and cannot re-add a
+file.
 
-- `!pattern` prevents the matched files from being processed but still permits
-  the scanner to index a file reached through an included dependency.
-- `!!pattern` prevents both traversal and indexing. Use it when project-domain
-  rules must not inspect that path.
+`files.experimentalScannerIgnores` is deprecated (since `2.3.0`). Run
+`biome migrate --write` to convert those paths to `!!` entries in
+`files.includes`.
 
-Apply `linter.includes`, `formatter.includes`, and `assist.includes` after
-`files.includes`. These tool-specific filters can only narrow the file set; they
-cannot re-include a file excluded at the top level.
-
-Replace deprecated `files.experimentalScannerIgnores` with `!!` entries by
-running:
-
-```shell
-biome migrate --write
-```
-
-## Configure VCS ignore behavior
-
-When ignore-file support is enabled, account for both `.gitignore` and
-repository-local `.git/info/exclude`. In a linked worktree, Biome selects the
-appropriate exclude file for that worktree.
-
-Resolve `.gitignore` relative to an explicitly configured `vcs.root`. Let
-`biome init` detect supported ignore files and turn on Git VCS integration; it
-also writes a force-ignore for an existing `dist/` directory.
+`biome init` detects supported ignore files, enables Git VCS integration with
+ignore-file use, and adds a force-ignore for `dist/` when that directory exists
+(since `2.3.0`). When `vcs.root` is explicit, `.gitignore` is resolved relative
+to that root (since `2.4.0`). Biome also honors `.git/info/exclude` and the
+corresponding exclude file in linked worktrees (since `2.5-guide`).
 
 ## Migrate ESLint
 
-Run the writable migration to port legacy or flat ESLint configuration:
+`biome migrate eslint --write` ports legacy and flat ESLint configuration
+(since `1.7-guide`). It handles legacy `extends`, shared/plugin configurations,
+`.eslintignore`, globals, rules, and overrides. Node.js is required to resolve
+plugins and `extends`; YAML configuration is unsupported. Rules merely inspired
+by ESLint are skipped unless `--include-inspired` is supplied.
 
 ```shell
 biome migrate eslint --write --include-inspired
 ```
 
-The migration handles legacy `extends`, flat configuration, shared and plugin
-configuration, `.eslintignore`, globals, rules, and overrides. It also migrates
-the `eslintIgnore` field from `package.json` and converts gitignore-style
-patterns, including root-relative `/src` to Biome's `./src` form.
+Migration can overwrite an existing Biome configuration and may disable its
+recommended rules. Review or commit the existing file first. Later migration
+behavior preserves an existing `overrides` array (since `1.9.0`).
 
-Observe these constraints:
+Package-level `eslintIgnore` is migrated (since `1.8.0`). Gitignore-style
+patterns are converted; for example, root-relative `/src` becomes Biome's
+`./src` form.
 
-- Install or expose Node.js so the migration can resolve plugins and `extends`.
-- Do not expect YAML ESLint configuration to work.
-- Pass `--include-inspired` to include Biome rules that are inspired by, rather
-  than direct equivalents of, ESLint rules.
-- Review the result because migration overwrites the existing Biome
-  configuration and may disable Biome's recommended rules.
-
-Biome recognizes the e18e ESLint plugin as a source for `useAtIndex`,
+The e18e plugin is a recognized rule source for `useAtIndex`,
 `useExponentiationOperator`, `noPrototypeBuiltins`, `useDateNow`, `useSpread`,
-and `useObjectSpread` mappings.
+and `useObjectSpread` (since `2.4-guide`).
 
 ## Migrate Prettier
 
-Run:
+`biome migrate prettier --write` translates Prettier `overrides` and attempts
+to convert `.prettierignore` patterns to Biome globs (since `1.7-guide`).
+JavaScript configuration requires Node.js; JSON5, TOML, and YAML configurations
+are unsupported. Migration preserves an existing Biome `overrides` array
+(since `1.9.0`).
 
-```shell
-biome migrate prettier --write
-```
-
-The migration translates Prettier `overrides` into Biome overrides and attempts
-to convert `.prettierignore` patterns into compatible globs. JavaScript
-configuration requires Node.js. JSON5, TOML, and YAML configurations are not
-supported.
-
-Current ESLint and Prettier migrations preserve an existing Biome
-`overrides` array instead of overwriting it. Still inspect ordering because
-Biome uses first-match override selection.
-
-## Import EditorConfig settings
-
-Opt in with:
+Biome can import settings from the single `.editorconfig` at the project root
+when `formatter.useEditorconfig` is `true` (since `1.9-guide`). Explicit Biome
+configuration takes precedence.
 
 ```json
 { "formatter": { "useEditorconfig": true } }
 ```
 
-Biome imports formatting values from the single `.editorconfig` at the project
-root. Explicit Biome configuration takes precedence. `biome ci` loads that file,
-and the language server applies it, watches it, and refreshes settings after a
-change.
+When enabled, `biome ci` loads that root file and the language server applies,
+watches, and refreshes EditorConfig settings after changes (since `1.9.0`).
 
-## Configure rules and fixes
+## Update renamed and deprecated settings
 
-At group level, set `"all": false` to disable that group's recommended rules
-even when top-level `recommended` is true or omitted. Configure an optionless
-rule with object form containing only `level`; do not add `"options": null`.
-
-```json
-{
-  "linter": {
-    "rules": {
-      "recommended": true,
-      "style": { "all": false }
-    }
-  }
-}
-```
-
-For current presets, use `linter.rules.preset` instead of the deprecated
-`linter.rules.recommended`:
+- `javascript.formatter.trailingComma` and `--trailing-comma` are deprecated;
+  use `javascript.formatter.trailingCommas` and `--trailing-commas` (since
+  `1.8.0`).
+- `correctness/noInvalidNewBuiltin`, `style/useSingleCaseStatement`, and
+  `suspicious/noConsoleLog` are deprecated; use
+  `correctness/noInvalidBuiltinInstantiation`,
+  `correctness/noSwitchDeclarations`, and `suspicious/noConsole` (since
+  `1.9-guide`).
+- The nursery rule `useAnchorHref` was removed because `useValidAnchor` covers
+  the same use case (since `2.3.0`).
+- `linter.rules.preset` replaces `linter.rules.recommended` (since
+  `2.5-guide`). `"recommended"` retains the former selection; `"all"` enables
+  all stable rules but still excludes nursery. Run `biome migrate --write`.
 
 ```json
 { "linter": { "rules": { "preset": "all" } } }
 ```
 
-Choose `"recommended"` to preserve the former recommended selection or
-`"all"` to select every stable rule. Neither value includes nursery rules. Run
-`biome migrate --write` to update existing configuration.
+The `2.5-guide` stable promotions also renamed `noFloatingClasses` to
+`noUnusedInstantiation`, `noMultiStr` to `noMultilineString`, `useFind` to
+`useArrayFind`, and `useSpread` to `useSpreadOverApply`.
 
-Set an object-form rule's `fix` property to `none`, `safe`, or `unsafe` to
-disable its action or override its applicability:
+## Resolver configuration
 
-```json
-{
-  "linter": {
-    "rules": {
-      "correctness": {
-        "noUnusedVariables": { "level": "error", "fix": "none" }
-      }
-    }
-  }
-}
-```
+Package-sensitive rules use the nearest relevant `package.json` in a monorepo
+(since `2.0.0`). Resolution prefers the most specific overlapping package
+`exports` pattern (since `2.4.0`).
 
-Use `"info"` for informational diagnostics. They emit no error code and are not
-promoted by `--error-on-warnings`.
-
-## Gate language and parser support
-
-CSS formatter and linter gates were initially opt-in under
-`css.formatter.enabled` and `css.linter.enabled`, with matching CLI flags.
-They are now enabled by default. JavaScript and JSON retain per-language linter
-gates at `javascript.linter.enabled` and `json.linter.enabled`.
-
-```shell
-biome check --css-formatter-enabled=true --css-linter-enabled=true .
-```
-
-GraphQL formatting and linting are enabled by default and can be disabled
-independently:
-
-```json
-{
-  "graphql": {
-    "formatter": { "enabled": false },
-    "linter": { "enabled": false }
-  }
-}
-```
-
-Use explicit parser gates for syntax that is not inferred:
-
-```json
-{
-  "javascript": {
-    "parser": { "jsxEverywhere": false },
-    "experimentalEmbeddedSnippetsEnabled": true
-  },
-  "css": {
-    "parser": { "cssModules": true, "tailwindDirectives": true }
-  },
-  "html": {
-    "experimentalFullSupportEnabled": true,
-    "parser": { "interpolation": true, "vue": true }
-  }
-}
-```
-
-JSX in `.js` is accepted by default; set `jsxEverywhere: false` to reject it.
-`html.parser.interpolation` separately enables `{{ expression }}` in plain
-HTML. `html.parser.vue` enables Vue syntax in ordinary `.html` files.
-
-## Configure resolver experiments
-
-Enable default and named pnpm catalog resolution explicitly:
+Enable experimental pnpm catalog support explicitly (since `2.5-guide`):
 
 ```json
 {
@@ -272,5 +169,4 @@ Enable default and named pnpm catalog resolution explicitly:
 }
 ```
 
-Coverage IDs: `1.7-guide`, `1.7.0`, `1.8.0`, `1.9-guide`, `1.9.0`,
-`2.0-guides`, `2.3.0`, `2.4-guide`, `2.4.0`, `2.5-guide`.
+The resolver then reads both default and named pnpm catalogs.

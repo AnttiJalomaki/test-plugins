@@ -1,36 +1,25 @@
 # SQL, Types, and Schema Design
 
-Batch attribution: `18-uuid-guide`, `17.0`, `18.0`.
-
-## Contents
-
-- [UUIDv7](#generate-and-inspect-uuidv7-values)
-- [Generated columns](#choose-virtual-or-stored-generated-columns)
-- [RETURNING and MERGE](#return-old-and-new-row-images)
-- [Temporal constraints](#model-temporal-uniqueness-and-referential-coverage)
-- [Partitions, indexes, and constraints](#design-partitions-indexes-and-constraints)
-- [Privileges](#delegate-maintenance-and-inspect-privileges)
-- [Collations and foreign tables](#use-portable-and-nondeterministic-collations)
-- [Types and conversions](#work-with-expanded-type-and-conversion-behavior)
-- [PL/pgSQL](#use-richer-procedural-type-references-and-calls)
-- [Event triggers](#audit-logins-with-event-triggers)
+Use this reference for keys, constraints, generated values, DML, privileges,
+collations, type behavior, and PL/pgSQL syntax. UUID guidance is attributed to
+`18-uuid-guide`; other versioned changes come from `17.0` and `18.0`.
 
 ## Generate and inspect UUIDv7 values
 
-`uuidv7([shift interval])` generates time-ordered UUIDs from a millisecond Unix
-timestamp, sub-millisecond timestamp data, and randomness. The optional interval
-shifts the timestamp embedded in the result.
+PostgreSQL 18 `uuidv7([shift interval])` creates time-ordered UUIDs from a
+millisecond Unix timestamp, sub-millisecond timestamp data, and randomness.
+The optional interval shifts the embedded timestamp:
 
 ```sql
 SELECT uuidv7(),
        uuidv7(interval '-1 hour');
 ```
 
-`uuid_extract_timestamp(uuid)` returns `timestamp with time zone` for UUID
-versions 1 and 7, and `NULL` for other versions. Treat the extracted value as
-implementation-dependent metadata; it need not exactly equal the creation
-time. `uuid_extract_version(uuid)` returns a `smallint` version for RFC 9562
-variants and `NULL` for other variants.
+`uuid_extract_timestamp(uuid)` returns `timestamp with time zone` for version
+1 or 7 UUIDs and `NULL` for other versions. The recovered timestamp depends on
+the generating implementation and need not exactly equal generation time.
+`uuid_extract_version(uuid)` returns a `smallint` version for RFC 9562 variants
+and `NULL` for other variants.
 
 ```sql
 WITH generated AS (SELECT uuidv7() AS id)
@@ -39,41 +28,46 @@ SELECT uuid_extract_timestamp(id),
 FROM generated;
 ```
 
-## Choose virtual or stored generated columns
+## Design partitioned tables and indexes
 
-Generated columns are virtual by default and compute on read. Add `STORED` for
-write-time materialization.
+PostgreSQL 17 partitioned tables can have identity columns and table access
+methods. Their exclusion constraints are allowed when every partition-key
+column uses equality; other columns can use the constraint's exclusion
+operators.
+
+PostgreSQL 18 unique non-B-tree indexes can support partition keys and
+materialized views when the access method provides equality semantics.
+
+## Choose generated-column storage explicitly
+
+PostgreSQL 18 generated columns are virtual by default and compute on read.
+Add `STORED` for write-time materialization:
 
 ```sql
 CREATE TABLE line_item (
-  quantity integer,
-  unit_price numeric,
-  total numeric GENERATED ALWAYS AS (quantity * unit_price)
-);
-
-CREATE TABLE stored_line_item (
   quantity integer,
   unit_price numeric,
   total numeric GENERATED ALWAYS AS (quantity * unit_price) STORED
 );
 ```
 
-Replace a stored generated expression without rebuilding the column definition:
+For a stored generated column, PostgreSQL 17 allows replacing its expression
+with `SET EXPRESSION`:
 
 ```sql
 ALTER TABLE order_lines
   ALTER COLUMN total SET EXPRESSION AS (quantity * unit_price);
 ```
 
-Use `SET STATISTICS DEFAULT` instead of the older `-1` spelling. Likewise,
-`ALTER TABLE ... SET ACCESS METHOD DEFAULT` selects the configured default
+`ALTER COLUMN ... SET STATISTICS DEFAULT` replaces the older `-1` spelling,
+and `ALTER TABLE ... SET ACCESS METHOD DEFAULT` selects the configured default
 table access method.
 
 ## Return old and new row images
 
-`INSERT`, `UPDATE`, `DELETE`, and `MERGE` can explicitly refer to `old` and
-`new` in `RETURNING`. Rename these special aliases when they conflict with
-table or column names.
+PostgreSQL 18 `INSERT`, `UPDATE`, `DELETE`, and `MERGE` can reference the
+special `old` and `new` aliases in `RETURNING`. Rename the aliases when they
+conflict with relation names:
 
 ```sql
 UPDATE products
@@ -81,25 +75,24 @@ SET price = price * 1.05
 RETURNING id, old.price AS previous_price, new.price AS current_price;
 ```
 
-`MERGE` can target an updatable view, act on `WHEN NOT MATCHED BY SOURCE`, and
-return affected rows. `merge_action()` reports `INSERT`, `UPDATE`, or `DELETE`
-for each output row.
+PostgreSQL 17 `MERGE` can target updatable views, use
+`WHEN NOT MATCHED BY SOURCE`, and return rows. `merge_action()` identifies
+whether each result came from an insert, update, or delete:
 
 ```sql
 MERGE INTO inventory AS i
 USING current_stock AS s ON i.sku = s.sku
 WHEN MATCHED THEN UPDATE SET quantity = s.quantity
-WHEN NOT MATCHED THEN
-  INSERT (sku, quantity) VALUES (s.sku, s.quantity)
+WHEN NOT MATCHED THEN INSERT (sku, quantity) VALUES (s.sku, s.quantity)
 WHEN NOT MATCHED BY SOURCE THEN DELETE
 RETURNING merge_action(), i.*;
 ```
 
-## Model temporal uniqueness and referential coverage
+## Enforce temporal relationships
 
-Put `WITHOUT OVERLAPS` on the last column of a primary or unique key to require
-non-overlapping ranges. Put `PERIOD` on the last foreign-key column to require
-the referenced ranges collectively to cover the referencing range.
+PostgreSQL 18 `WITHOUT OVERLAPS` on the last column of a primary or unique key
+rejects overlapping ranges. `PERIOD` on the last foreign-key column requires
+referenced ranges to cover the referencing range:
 
 ```sql
 CREATE TABLE room_prices (
@@ -117,86 +110,57 @@ CREATE TABLE bookings (
 );
 ```
 
-## Design partitions, indexes, and constraints
+## Control constraint enforcement and inheritance
 
-Partitioned tables support identity columns and table access methods. They can
-also have exclusion constraints when every partition-key column is compared
-for equality; non-key columns may use the constraint's other exclusion
-operators.
+PostgreSQL 18 `CHECK` and foreign-key constraints can be `NOT ENFORCED`; inspect
+`pg_constraint.conenforced`. `NOT NULL` constraints are represented in
+`pg_constraint`, can be named or marked `NOT VALID`, and support
+`ALTER CONSTRAINT ... [NO] INHERIT`. Partitioned tables also allow `NOT VALID`
+foreign keys and parent-only constraint drops.
 
-Unique non-B-tree indexes can support partition keys and materialized views
-when the index access method provides equality semantics.
+## Delegate access without ownership
 
-`CHECK` and foreign-key constraints may be declared `NOT ENFORCED`. Inspect
-that state through `pg_constraint.conenforced`.
+PostgreSQL 18 adds `pg_get_acl()` for ACL details and
+`has_largeobject_privilege()` for large-object permissions.
+`ALTER DEFAULT PRIVILEGES` can establish large-object defaults. Membership in
+`pg_signal_autovacuum_worker` permits signaling autovacuum workers.
 
-`NOT NULL` constraints are represented in `pg_constraint`. They can be named,
-marked `NOT VALID`, and changed with `ALTER CONSTRAINT ... [NO] INHERIT`.
-Partitioned tables also support `NOT VALID` foreign keys and parent-only
-constraint drops.
+For maintenance delegation, PostgreSQL 17 adds table-level `MAINTAIN` and the
+predefined `pg_maintain` role.
 
-## Delegate maintenance and inspect privileges
+## Define login event triggers
 
-`MAINTAIN` is a per-table privilege for `VACUUM`, `ANALYZE`, `REINDEX`,
-`REFRESH MATERIALIZED VIEW`, `CLUSTER`, and `LOCK TABLE`. The predefined
-`pg_maintain` role grants maintenance capability without conferring ownership
-or general superuser access.
+PostgreSQL 17 event triggers can fire on `login`, and `REINDEX` participates in
+event-trigger command reporting:
 
 ```sql
-GRANT MAINTAIN ON TABLE app.orders TO maintenance_bot;
-GRANT pg_maintain TO operations_role;
+CREATE EVENT TRIGGER audit_login
+ON login
+EXECUTE FUNCTION app.record_login();
 ```
 
-Use `pg_get_acl()` to retrieve ACL details and
-`has_largeobject_privilege()` to test large-object rights.
-`ALTER DEFAULT PRIVILEGES` can establish defaults for large objects.
-Membership in `pg_signal_autovacuum_worker` permits signaling autovacuum
-workers.
+## Work with interval and enum values
 
-## Use portable and nondeterministic collations
+PostgreSQL 17 `interval` accepts positive and negative infinity. An enum value
+added in a transaction can be used immediately when the enum type itself was
+created earlier in that same transaction; this remains disallowed for a
+pre-existing enum type.
 
-The platform-independent built-in collation provider supplies `C` and
-`C.UTF-8`. `PG_UNICODE_FAST` provides Unicode case mapping with code-point-order
-sorting.
+## Use current time-zone syntax
 
-`LIKE` and text-position functions accept nondeterministic collations.
-`CREATE FOREIGN TABLE ... LIKE` can derive a foreign table's columns from a
-local table.
-
-## Work with expanded type and conversion behavior
-
-`interval` accepts positive and negative infinity. A newly added enum value can
-be used immediately when its enum type was itself created earlier in the same
-transaction; immediate use remains disallowed for a pre-existing enum type.
-
-`to_timestamp()` format strings accept `TZ` for abbreviations or numeric offsets
-and `OF` for numeric offsets. `AT LOCAL` uses the session time zone while adding
-or removing time-zone information.
+PostgreSQL 17 `to_timestamp()` format strings accept `TZ` for abbreviations or
+numeric offsets and `OF` for numeric offsets. `AT LOCAL` adds or removes
+time-zone information using the session zone:
 
 ```sql
 SELECT timestamp '2024-09-26 12:00' AT LOCAL;
 ```
 
-Integer-to-`bytea` casts use two's-complement representation, and reverse casts
-are supported.
+## Use expanded type references and procedural syntax
 
-`casefold()` performs Unicode-aware caseless transformation, including mappings
-that change string length. Unicode case conversion supports conditional,
-title-case, and one-to-many mappings. `MIN()` and `MAX()` can aggregate arrays
-and composite values.
-
-`to_number()` accepts the `RN` Roman-numeral pattern, and `EXTRACT()` accepts
-`WEEK`.
-
-```sql
-SELECT to_number('XIV', 'RN');
-```
-
-## Use richer procedural type references and calls
-
-In PL/pgSQL, `%TYPE` and `%ROWTYPE` may be followed by array notation when the
-base reference is not already an array. `%TYPE` can reference a column whose
-declared type is composite.
+PostgreSQL 17 `%TYPE` and `%ROWTYPE` references can be followed by array
+notation when the base type is not already an array. `%TYPE` can reference a
+column declared with a composite type:
 
 ```plpgsql
 DO $$
@@ -208,16 +172,29 @@ BEGIN
 END $$;
 ```
 
-Cursor arguments accept `=>` as well as `:=`. The regular-expression function
-family accepts named arguments.
+PostgreSQL 18 PL/pgSQL cursor arguments accept `=>` as well as `:=`, and the
+regular-expression function family accepts named arguments.
 
-## Audit logins with event triggers
+## Apply collation and foreign-table capabilities
 
-Event triggers can fire on `login`, and event-trigger command reporting covers
-`REINDEX`.
+PostgreSQL 18 `CREATE FOREIGN TABLE ... LIKE` derives a foreign table from a
+local one. `LIKE` and text-position functions accept nondeterministic
+collations. The built-in `PG_UNICODE_FAST` collation performs case mapping with
+code-point-order sorting.
+
+## Use Unicode, aggregate, formatting, and binary additions
+
+PostgreSQL 18 `casefold()` performs Unicode-aware caseless transformation,
+including mappings that change length. Unicode case conversion supports
+conditional, title-case, and one-to-many mappings. `MIN()` and `MAX()` can
+aggregate arrays and composite values.
+
+`to_number()` accepts the `RN` Roman-numeral pattern and `EXTRACT()` accepts
+`WEEK`:
 
 ```sql
-CREATE EVENT TRIGGER audit_login
-ON login
-EXECUTE FUNCTION app.record_login();
+SELECT to_number('XIV', 'RN');
 ```
+
+Integer-to-`bytea` casts use two's-complement representation, and reverse casts
+from `bytea` to integer types are supported.

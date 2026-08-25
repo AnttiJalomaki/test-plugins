@@ -1,13 +1,12 @@
 # Execution and Operations
 
-Use this reference for run coordination, concurrency, executors, backfills,
-daemon behavior, GraphQL clients, retries, and operational limits.
+## Run coordination and concurrency
 
-## Run coordination and pools
+### Queued coordinator default
 
-The queued run coordinator is the default as of 1.10.0. The Dagster daemon
-must be running for queued runs to launch. To retain immediate in-process
-launching, configure:
+Since 1.10.0, the queued run coordinator is the default. The Dagster daemon must
+be running for runs to launch. To keep immediate, in-process launching, configure
+the former coordinator explicitly:
 
 ```yaml
 run_coordinator:
@@ -15,35 +14,31 @@ run_coordinator:
   class: SyncInMemoryRunCoordinator
 ```
 
-Run blocking for concurrency keys and pools is enabled by default. With op
-granularity, the coordinator dequeues a run once at least one op can execute.
-With run granularity, every pool the run uses must have a free slot.
+Run blocking for concurrency keys and pools is also enabled by default. With op
+granularity, a run dequeues when at least one op can execute. With run
+granularity, every pool used by the run must have an available slot.
 
-Pool-name validation evolved. In 1.10.0, names allowed only letters, numbers,
-dashes, and underscores. In 1.12.0, names were relaxed to allow any
-non-whitespace character, replacing both the original restriction and the
-intermediate slash allowance.
+Pool names accepted only letters, digits, dashes, and underscores in 1.10.0.
+By 1.12.0, this was relaxed to any non-whitespace character, superseding both
+the original restriction and an intermediate slash-only expansion.
 
-The `dagster-dbt`, `dagster-dlt`, and `dagster-sling` integrations support
-pools as of 1.10.0.
+### Early downstream execution
 
-## Step dependency behavior
-
-Every executor supports `step_dependency_config.require_upstream_step_success`
-as of 1.11.0. Set it to `false` to start a downstream step after its required
-outputs are available, even if the producing multi-asset step is still
-running:
+All executors accept `step_dependency_config.require_upstream_step_success`
+since 1.11.0. Set it to `false` when a downstream step may start as soon as its
+required outputs are available, even if the producing multi-asset step is still
+running.
 
 ```json
 {"step_dependency_config": {"require_upstream_step_success": false}}
 ```
 
-## Custom executor failure handling
+## Custom executors and retry state
 
-Since 1.12-upgrade, process-based executors can recover from resource
-initialization failures through step retries. A custom `Executor` must emit and
-register an explicit failure-or-retry event for every such failure; otherwise
-the run may remain in `started` status.
+The 1.12-upgrade added retry recovery for resource-initialization failures in
+executors that run steps in dedicated processes. A custom `Executor` must emit
+and register a failure-or-retry event for each such failure; otherwise the run
+can remain in `started`.
 
 ```python
 if event.is_resource_init_failure:
@@ -56,57 +51,69 @@ if event.is_resource_init_failure:
     active_execution.handle_event(failure_or_retry_event)
 ```
 
-## Backfills and run configuration
+## Backfills, retries, and cancellation
 
-`BackfillPolicy` is GA as of 1.11.0. Backfill submission uses a thread pool
-with four daemon workers by default. Failed backfills cancel their in-progress
-runs before terminating, and asset backfills can receive run config.
+`BackfillPolicy` is GA as of 1.11.0. Backfill submission uses a thread pool with
+four daemon workers by default, asset backfills may carry run config, and a
+failed backfill cancels its in-progress runs before terminating. A schedule's
+`RunRequest` can select a subset of asset checks.
 
-As of 1.13.0, job backfills retry transient daemon failures.
+In 1.13.0, job backfills retry transient daemon failures.
 `DAGSTER_MAX_ASSET_BACKFILL_RETRIES` was renamed to
-`DAGSTER_MAX_BACKFILL_RETRIES`; the old name remains a fallback.
+`DAGSTER_MAX_BACKFILL_RETRIES`; the old environment variable remains a fallback.
 
-Partial run configuration now inherits job-level defaults for omitted sections
-as of 1.13.0.
+Runs that supply only part of their config inherit defaults from the job-level
+config for omitted sections as of 1.13.0.
 
-## Daemon dispatch and failure context
+## Daemons, schedules, sensors, and failure context
 
-Schedule, sensor, and asset-daemon ticks dispatch instigators round-robin
-across code locations as of 1.13.0. When a run fails because a step failed,
-the originating step error is available on the run-failure sensor context.
+Schedule, sensor, and asset-daemon ticks dispatch instigators round-robin across
+code locations starting in 1.13.0.
+
+When a run fails because a step failed, the originating step error is available
+on the run-failure sensor context as of 1.13.0. Use that error rather than
+reconstructing the cause from run-level status alone.
 
 ## GraphQL clients and pagination
 
-`DagsterGraphQLClient.submit_job_execution` accepts `asset_selection` as of
+### Launch selections
+
+`DagsterGraphQLClient.submit_job_execution` accepts `asset_selection` since
 1.11.0.
 
-`logsForRun` and `eventConnection` return at most 1,000 events per query by
-default. Follow the returned cursor until all required events have been read;
-do not assume one response is complete.
+### Event cursors and bounded selections
 
-As of 1.13.0, `DagsterGraphQLClient` accepts `path_prefix` for webservers
-mounted below the URL root. The GraphQL `Run` type adds an optional selection
-`limit`, `assetSelectionCount`, and `assetCheckSelectionCount`, so a client can
-show a bounded preview while retaining true totals.
+The `logsForRun` and `eventConnection` resolvers return at most 1,000 events per
+query by default as of 1.11.0. Follow the returned cursor until no additional
+pages remain.
 
-## Errors, logs, and heartbeat limits
+In 1.13.0, `DagsterGraphQLClient` accepts `path_prefix` for a webserver mounted
+below the URL root. The GraphQL `Run` type adds an optional selection `limit`
+plus `assetSelectionCount` and `assetCheckSelectionCount`, so callers can request
+bounded previews without losing true totals.
 
-Event error messages and stack traces over 500 KB are truncated by default
-(1.11.0). Override the threshold with
-`DAGSTER_EVENT_ERROR_FIELD_SIZE_LIMIT`.
+## Logs, errors, and heartbeats
 
-`DAGSTER_GRPC_PROXY_HEARTBEAT_TTL_SECONDS` configures the proxy gRPC heartbeat
-TTL; its default is 30 seconds (1.11.0).
+Since 1.11.0, event error messages or stack traces larger than 500 KB are
+truncated. Override the threshold with `DAGSTER_EVENT_ERROR_FIELD_SIZE_LIMIT`.
 
-The SQLite event-log `busy_timeout` default increased from 5 to 30 seconds in
-1.13.0.
+`DAGSTER_GRPC_PROXY_HEARTBEAT_TTL_SECONDS` sets the proxy gRPC heartbeat TTL;
+the default is 30 seconds (1.11.0).
 
-## Cleanup and transient failures
+## Pipes
 
-The Kubernetes executor option `enable_owner_references` ties step jobs and
-pods to the run pod for garbage collection (1.11.0).
+In 1.13.0, the preview `PipesCompositeMessageReader` supports multiple concurrent
+message streams in one Pipes session.
 
-In 1.13.0, ECS stops caused by `InsufficientFreeAddressesInSubnet` or
-`Task provisioning failed` are classified as transient. Dagster retries the
-affected run instead of permanently failing it.
+`PipesK8sClient.run(delete_pod_on_completion=False)` retains its pod after the
+run. `PipesEMRServerlessClient.dashboard_refresh_interval` controls Spark
+dashboard refreshes and has a longer default so UI URLs remain valid during runs
+(1.13.0).
 
+## Operational API surfaces
+
+The 1.12.0 `dg api` commands cover schedule and job metadata, asset-check
+execution history, and asset partition status. In 1.13.0,
+`dg api run launch` launches through the Dagster+ API.
+
+Dagster+ SCIM Groups queries accept the `members.value eq` filter as of 1.13.0.

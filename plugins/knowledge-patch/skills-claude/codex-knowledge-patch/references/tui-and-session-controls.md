@@ -1,94 +1,64 @@
 # TUI and session controls
 
-## Steer a running turn
+## Turn steering and queued work
 
-While a turn is running:
+During an active turn, `Enter` injects an instruction immediately. `Tab`
+queues a prompt, slash command, or `!` shell command for the next turn. `@`
+opens fuzzy workspace-file search. `!command` runs locally under the active
+sandbox and approval policy.
 
-- `Enter` injects text into the active turn.
-- `Tab` queues normal input, slash commands, or `!` shell commands for the next
-  turn.
+## Prompt history and external editing
 
-## Edit and recover prompts
+With an empty composer, press `Esc` twice to select the previous user message;
+press it again to walk farther backward. Submitting an edited prior message
+forks the conversation from that point.
 
-- `Ctrl+G` opens a long prompt in `VISUAL`, or in `EDITOR` when `VISUAL` is
-  unset.
-- `Ctrl+R` searches prompt history.
-- `Up` and `Down` recover earlier drafts, including image placeholders.
-- `/copy` or `Ctrl+O` copies the latest completed output, never partial output
-  from an active turn.
-
-With an empty composer, press `Esc` twice to open the previous user message for
-editing. Additional presses move farther backward. Submitting the edited
-message forks the conversation from that point.
-
-## Start, clear, compact, resume, or fork
-
-- `/clear` starts a fresh conversation and clears the terminal view.
-- `Ctrl+L` clears only the terminal display.
-- `/new` starts a fresh conversation without clearing the terminal view.
-- `/compact` replaces older turns with a concise, context-preserving summary.
-- `/resume` loads a saved transcript from a picker.
-- `/fork` clones the current conversation under a new thread ID.
-
-For equivalent CLI session commands, see
-[cli-execution-and-cloud.md](cli-execution-and-cloud.md).
+`Ctrl+G` opens the editor configured by `VISUAL`, falling back to `EDITOR`.
 
 ## Themes
 
-`/theme` previews syntax-highlighting themes and persists the selection as
-`tui.theme` in `~/.codex/config.toml`.
+`/theme` previews themes and saves the chosen theme as `tui.theme` in
+`~/.codex/config.toml`. Custom `.tmTheme` files placed in
+`$CODEX_HOME/themes` appear in the picker.
 
-```text
-/theme
-```
+## Fast mode and planning
 
-Place custom TextMate `.tmTheme` files under `$CODEX_HOME/themes` to make them
-available in the picker.
+`/fast on`, `/fast off`, and `/fast status` control Fast mode for the current
+supported thread and may persist the choice.
 
-## Plan mode, Fast mode, and experimental features
+`/plan [PROMPT]` enters plan mode with optional pasted text or images. It is
+unavailable while a task is running.
 
-`/plan [prompt]` switches the conversation into plan mode. Its inline prompt
-accepts pasted content or images. The command is unavailable while a task is
-running.
+## Conversation reset, copy, and branching
 
-```text
-/plan Propose a migration plan for this service
-```
-
-Control Fast mode for the current thread with `/fast on`, `/fast off`, and
-`/fast status`. Persist the selection when the interface offers that choice.
-
-```text
-/fast status
-```
-
-`/experimental` saves feature toggles to configuration and identifies changes
-that require a restart.
-
-## Permissions and diagnostics
-
-For `/permissions`, `/status`, and `/debug-config`, see
-[security-and-configuration.md](security-and-configuration.md).
+- `/clear` clears the terminal and starts a new conversation.
+- `/new` starts a new conversation without clearing the view.
+- `Ctrl+L` clears only the display.
+- `/copy` or `Ctrl+O` copies the latest completed output, even if a later turn
+  is still running.
+- `/fork` clones the current transcript under a new thread ID.
+- `codex fork` selects a saved session to clone.
 
 ## Status line and terminal title
 
-`/statusline` selects and reorders footer fields and saves them to
-`tui.status_line`. Available fields cover model and reasoning, context, rate
-limits, Git branch, tokens, session, paths, and version.
+`/statusline` interactively selects and reorders footer fields and stores them
+in `tui.status_line`. `/title` does the same for window or tab title fields and
+stores them in `tui.terminal_title`.
 
-`/title` configures terminal-title fields for app, project, spinner, status,
-thread, branch, model, and task progress.
+Available fields cover model and context or limits, repository state, session
+identity, task progress, and version.
 
-## Background terminals
+## Background terminal controls
 
-When `unified_exec` is active, `/ps` lists each background terminal, its
-command, and up to three recent non-empty output lines. `/stop` terminates every
+When `unified_exec` is enabled, `/ps` lists each background command, its
+status, and up to three recent non-empty output lines. `/stop` stops every
 background terminal for the current session; `/clean` remains an alias.
 
-## Apps, plugins, and agent threads
+## Explicit subagents and navigation
 
-- `/apps` inserts a selected connector into the composer as `$app-slug`.
-- `/plugins` browses allowed marketplaces; press `Space` to toggle an installed
-  plugin.
-- `/agent` switches to a spawned agent thread so its work can be inspected or
-  continued.
+Subagents spawn only when explicitly requested. Configure roles beneath
+`[agents]` in `config.toml`. Every subagent performs separate model and tool
+work, so parallel workflows consume additional tokens.
+
+`/agent` opens the thread picker and switches the active view, allowing a
+spawned agent's work to be inspected or continued.

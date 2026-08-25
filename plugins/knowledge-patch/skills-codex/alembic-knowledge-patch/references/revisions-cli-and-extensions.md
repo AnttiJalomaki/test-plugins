@@ -1,53 +1,18 @@
 # Revisions, CLI, and Extensions
 
-## Register custom commands publicly
+## Revision identifiers and files
 
-Since 1.16.0, applications that extend Alembic's command-line tool can use the
-public registration API:
+### Colons are reserved in revision IDs (1.17.0)
 
-```python
-command_line.register_command(my_command)
-```
+Custom revision identifiers cannot contain `:` because Alembic reserves the
+character for revision-range syntax. Use an identifier such as `REV_1` rather
+than `REV:1`. Update generators that derive revision IDs from external names
+before creating new revisions.
 
-`CommandLine.register_command()` replaces reliance on the formerly internal
-registration mechanism.
+### Date-organized revision paths (1.18.0)
 
-## Avoid colons in revision identifiers
-
-As of 1.17.0, custom revision IDs cannot contain `:` because the character is
-reserved for revision range syntax. Use an identifier such as `REV_1`, not
-`REV:1`.
-
-## Verify that every head is applied
-
-Since 1.17.0, `command.current()` accepts `check_heads=True`. The equivalent
-CLI option is:
-
-```console
-alembic current --check-heads
-```
-
-The check raises `DatabaseNotAtHead` through the Python API, or exits nonzero
-through the CLI, if any head revision has not been applied.
-
-## Replace an operation implementation
-
-Since 1.17.0, an extension can pass `replace=True` to
-`Operations.implementation_for()` to replace an existing implementation:
-
-```python
-@Operations.implementation_for(CreateTableOp, replace=True)
-def create_table(operations, operation):
-    ...
-```
-
-This supports overriding built-in operations such as `CreateTableOp`, not only
-registering implementations for new operation types.
-
-## Place revisions in date directories
-
-As of 1.18.0, `file_template` accepts directory separators and creates the
-necessary directories:
+`file_template` accepts directory separators and automatically creates the
+required directories:
 
 ```toml
 [tool.alembic]
@@ -55,43 +20,91 @@ file_template = "%(year)d/%(month).2d/%(day).2d_%(rev)s_%(slug)s"
 recursive_version_locations = true
 ```
 
-Set `recursive_version_locations = true`; otherwise later commands do not find
-the revision files nested below the version location.
+Enable `recursive_version_locations`; without it, later commands will not find
+the nested revision files.
 
-## Build automatically loaded plugins
+## Head validation and graph traversal
 
-The 1.18.0 `Plugin` interface lets third-party extensions load automatically
-and register operations, implementations, and autogenerate comparators.
-Register a comparator through `Plugin.add_autogenerate_comparator()`.
+### Require every head to be applied (1.17.0)
 
-Select built-in and third-party comparison plugins for an environment with:
-
-```python
-EnvironmentContext.configure(autogenerate_plugins=[...])
-```
-
-Existing add-ons continue to work without adopting plugin entry points.
-
-## Splice a merge revision
-
-Since 1.18.0, merge revisions can be created from non-head revisions by passing
-`--splice`:
+`command.current()` accepts `check_heads=True`. The equivalent CLI option is:
 
 ```console
-alembic merge --splice rev_a rev_b
+alembic current --check-heads
 ```
 
-The programmatic `command.merge()` API accepts the corresponding `splice`
-parameter.
+When any head revision is not applied, the API raises `DatabaseNotAtHead` and
+the CLI exits with a nonzero status. Use this as a deployment or health-check
+gate when all branches must be current.
 
-## Resolve effective heads with dependencies
+### Dependency-aware head lookup (1.18.0)
 
-As of 1.18.0, request dependency-aware head lookup with:
+`ScriptDirectory.get_heads(consider_depends_on=True)` removes nominal heads
+that another revision references through `depends_on`:
 
 ```python
 heads = script.get_heads(consider_depends_on=True)
 ```
 
-`ScriptDirectory.get_heads(consider_depends_on=True)` excludes a nominal head
-that another revision references through `depends_on`. The result matches the
-effective heads stored in `alembic_version` after all upgrades.
+The result matches the effective heads stored in `alembic_version` after all
+upgrades. Leave the option off only when callers specifically need nominal
+revision-graph heads.
+
+## Creating merge revisions
+
+### Splice from non-head revisions (1.18.0)
+
+The merge command accepts `--splice`, and `command.merge()` accepts the
+corresponding `splice` parameter. This permits creation of a merge revision
+whose selected revisions are not currently heads:
+
+```console
+alembic merge --splice rev_a rev_b
+```
+
+Use the option deliberately: the resulting graph is a splice rather than a
+normal merge of current branches.
+
+## Command extensions
+
+### Public custom-command registration (1.16.0)
+
+Applications extending the Alembic CLI can register a command through the
+public mechanism:
+
+```python
+command_line.register_command(my_command)
+```
+
+`CommandLine.register_command()` replaces reliance on the previously internal
+registration path.
+
+## Operation implementation extensions
+
+### Replace an existing implementation (1.17.0)
+
+Pass `replace=True` to `Operations.implementation_for()` when an extension must
+replace the registered implementation for an existing operation such as
+`CreateTableOp`. Without the flag, registration remains suited to new
+operation types rather than overriding an existing handler.
+
+## Automatically loaded plugins
+
+### Plugin interface and autogenerate comparators (1.18.0)
+
+The `Plugin` interface supports automatically loaded third-party extensions.
+A plugin can register operations, implementations, and autogenerate
+comparators; use `Plugin.add_autogenerate_comparator()` for comparator
+registration.
+
+Built-in and third-party comparison plugins can be selected for each migration
+environment:
+
+```python
+context.configure(autogenerate_plugins=[...])
+```
+
+The underlying API is
+`EnvironmentContext.configure(autogenerate_plugins=...)`. Existing add-ons do
+not have to adopt plugin entry points and can continue using their established
+registration mechanisms.

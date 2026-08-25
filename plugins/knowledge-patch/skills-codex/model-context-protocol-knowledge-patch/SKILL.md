@@ -8,238 +8,196 @@ metadata:
 ---
 
 
+# Model Context Protocol Compatibility Guidance
 
-# Model Context Protocol Knowledge Patch
-
-Use this skill when implementing, reviewing, or debugging MCP clients, servers,
-transports, authorization, schemas, elicitation, sampling, or experimental
-tasks. Start with the breaking-change checks, negotiate every optional feature,
-and then open the topic reference that matches the work.
+Use this skill when implementing or reviewing MCP authorization, transports,
+schemas, tools, elicitation, sampling, or tasks. Match behavior to the negotiated
+protocol revision; requirements that changed between revisions are called out
+explicitly.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [authorization.md](references/authorization.md) | OAuth profile, discovery, registration, resource binding, scopes, and step-up authorization |
-| [transport-sessions-and-subscriptions.md](references/transport-sessions-and-subscriptions.md) | Streamable HTTP, sessions, SSE resumption, cancellation, security, and legacy HTTP+SSE fallback |
-| [interactive-operations.md](references/interactive-operations.md) | Elicitation, sampling with tools, experimental tasks, and task polling |
-| [protocol-revisions-and-schemas.md](references/protocol-revisions-and-schemas.md) | Lifecycle, batching, capabilities, tool results, content, metadata, and JSON Schema changes |
+| [Authorization](references/authorization.md) | OAuth profile, discovery, registration, token binding, scopes, and step-up authorization |
+| [Interactive operations](references/interactive-operations.md) | Tools, content, progress, completion, elicitation, sampling, tasks, and presentation metadata |
+| [Protocol revisions and schemas](references/protocol-revisions-and-schemas.md) | Batching, lifecycle requirements, metadata, schema dialect, parameter schemas, and revision status |
+| [Transport, sessions, and subscriptions](references/transport-sessions-and-subscriptions.md) | Streamable HTTP, SSE, framing, sessions, cancellation, security, and legacy fallback |
 
-## Breaking changes first
+## Breaking changes and required behavior
 
-### Send one JSON-RPC message at a time
+### JSON-RPC batching is revision-sensitive
 
-Do not send a top-level JSON-RPC batch when targeting 2025-06-18 or later.
-Batching existed in 2025-03-26, but the next revision removed it. Streamable
-HTTP also requires each POST body to contain exactly one request, notification,
-or response.
+The 2025-03-26 revision added top-level JSON-RPC batches, but the 2025-06-18
+revision removed them. For 2025-06-18, send each request, notification, or
+response as a separate JSON-RPC message rather than a top-level array.
 
-### Treat lifecycle operation support as mandatory
+Streamable HTTP framing for 2025-06-18 likewise requires each POST body to
+contain one JSON-RPC request, notification, or response.
 
-The lifecycle operation requirement is a **MUST** from 2025-06-18. Do not treat
-it as a best-effort feature when validating an implementation.
+### The lifecycle operation is mandatory
 
-### Send the negotiated protocol version
+For 2025-06-18, the lifecycle operation requirement is **MUST**, strengthened
+from **SHOULD**. Treat the operation as required for implementations targeting
+that revision.
 
-After initialization, include `MCP-Protocol-Version` on every Streamable HTTP
-request. A missing version is interpreted as `2025-03-26` when no other version
-information exists; an invalid or unsupported value produces HTTP 400.
+### Separate tool execution errors from protocol errors
 
-```http
-MCP-Protocol-Version: 2025-11-25
-```
+For 2025-11-25, return tool-call input validation failures as Tool Execution
+Errors rather than Protocol Errors so the failure can be inspected and the tool
+input corrected.
 
 ### Use the current schema organization
 
-JSON Schema 2020-12 is the default dialect. Request parameter schemas are
-standalone rather than embedded in RPC method definitions, and additional
-interface shapes accept `_meta`. Update validators and generated bindings
-accordingly.
+JSON Schema 2020-12 is the default dialect for 2025-11-25 MCP schemas unless
+another dialect is selected explicitly. Request payload schemas are standalone
+parameter schemas rather than being coupled to RPC method definitions.
 
-### Classify bad tool input as an execution error
+### Stable revision status
 
-Return input-validation failures as Tool Execution Errors, not Protocol
-Errors. This keeps an ordinary bad argument visible to the caller so it can be
-corrected.
-
-## Deprecations and compatibility traps
-
-### Prefer Client ID Metadata Documents
-
-For a client and authorization server with no prior relationship, use a Client
-ID Metadata Document when the server advertises support. Dynamic Client
-Registration and manually entered credentials are compatibility fallbacks.
-
-### Omit legacy sampling context by default
-
-`includeContext: "thisServer"` and `"allServers"` are soft-deprecated. Omit
-`includeContext` for the `"none"` default. Send an old value only when the
-client advertises `sampling: {context: {}}`.
-
-### Restrict legacy HTTP+SSE detection
-
-When probing an unknown URL, fall back from the initial Streamable HTTP POST to
-legacy GET only after HTTP 400, 404, or 405. Other 4xx responses do not select
-the old transport. On a successful legacy probe, require the initial
-`endpoint` SSE event.
+The 2026-07-28 protocol revision is stable. Behavior previously published in
+its release candidate is no longer prerelease guidance.
 
 ## Authorization quick reference
 
-### Select the profile by transport
+### Choose credentials by transport
 
-- Authorization is optional at the protocol level.
-- An HTTP transport that implements authorization should use OAuth 2.1.
-- A stdio implementation should obtain credentials from its environment.
-- Require PKCE for every client.
-- Use authorization-code grants for users or client-credentials grants for
-  applications as appropriate.
+Authorization is optional. HTTP transports that implement it should use OAuth
+2.1, while stdio implementations should obtain credentials from the
+environment. PKCE is required for every client.
 
-### Discover the protected resource first
+Servers may use authorization-code grants for users or client-credentials
+grants for applications. Authorization-required or invalid-token responses use
+HTTP 401.
 
-An authorized server publishes RFC 9728 protected-resource metadata with at
-least one `authorization_servers` entry. Point the client to it from a 401
-`WWW-Authenticate` challenge using `resource_metadata`. If that parameter is
-absent, try protected-resource discovery at the MCP-path form, then at the
-origin root.
+### Authenticate every HTTP request
 
-After choosing an advertised authorization server, discover its RFC 8414 or
-OIDC metadata. Preserve the defined ordering for issuers that contain paths;
-do not construct a single guessed well-known URL.
+Send `Authorization: Bearer <access-token>` on every HTTP request, including
+requests made within an established MCP session. Never place the token in the
+query string.
 
-### Bind every token request to the resource
+Invalid or expired tokens receive HTTP 401; insufficient scope receives HTTP
+403. A server delegating authorization must issue its own token bound to the
+upstream session and synchronize both tokens' validity and lifecycle.
 
-Include RFC 8707 `resource` in every authorization and token request, even if
-the authorization server does not advertise support. Use the most specific
-canonical absolute MCP URI, retain a distinguishing path, and omit fragments.
-The MCP server must reject tokens issued for another resource.
+### Bind tokens to the MCP resource
 
-Send `Authorization: Bearer <access-token>` on every HTTP request. Never place
-the token in the query string and never pass an inbound MCP token through to
-an upstream API.
+For the 2025-06-18 authorization profile, every authorization and token request
+must include the RFC 8707 `resource` parameter, even when the authorization
+server does not support it. Use the most specific canonical absolute MCP URI,
+including a distinguishing path when needed and no fragment.
 
-### Handle status codes deliberately
+The MCP server must reject tokens not issued for that resource and must not pass
+the inbound token through to an upstream API.
 
-- Missing, invalid, or expired authorization returns HTTP 401.
-- Insufficient scope returns HTTP 403 with an `insufficient_scope` Bearer
-  challenge, the required `scope`, and `resource_metadata`.
-- A user-facing client should reauthorize for the challenged scopes and retry
-  the original operation with a small retry limit.
+### Discover authorization metadata
+
+For 2025-06-18, an authorized MCP server must publish RFC 9728 metadata with at
+least one `authorization_servers` entry and advertise that metadata in a 401
+`WWW-Authenticate` header. The client chooses an advertised authorization
+server and uses its RFC 8414 metadata.
+
+For 2025-11-25, support both the challenge's `resource_metadata` value and
+protected-resource well-known discovery. Follow the MCP-path and origin-root
+fallback order, then the documented OAuth and OIDC issuer-path order in the
+[authorization reference](references/authorization.md).
+
+### Register clients and handle scope escalation
+
+For 2025-11-25 clients and authorization servers without a prior relationship,
+Client ID Metadata Documents are the preferred registration path when
+`client_id_metadata_document_supported` is true. Dynamic registration and
+user-entered credentials are fallbacks.
+
+For initial authorization, use the scope from the 401 challenge; otherwise
+request all `scopes_supported` values or omit `scope` when that metadata field
+is absent. On an insufficient-scope challenge, user-facing clients should
+reauthorize with the increased scope set and retry with a small retry limit.
 
 ## Streamable HTTP quick reference
 
-### POST requests and responses
+### POST and GET roles
 
-POST every client message to the single MCP endpoint with both accepted media
-types:
+Streamable HTTP replaces HTTP+SSE with one MCP endpoint supporting POST and
+GET. Each client message uses a fresh POST with `Accept` listing
+`application/json, text/event-stream`.
 
-```http
-Accept: application/json, text/event-stream
-Content-Type: application/json
-```
+Accepted notification- or response-only input returns an empty HTTP 202. A
+request returns either one JSON response or an SSE stream; clients must support
+both forms.
 
-For a request, accept either one JSON response or an SSE response stream. For
-accepted notification-only or response-only input, expect an empty HTTP 202.
+A client may separately GET with `Accept: text/event-stream` for
+server-initiated traffic. A server without that stream returns HTTP 405. The GET
+stream must not carry ordinary JSON-RPC responses except while replaying a
+previous request's stream.
 
-### Optional GET stream
+### Carry session and revision headers
 
-A client may open a separate GET with `Accept: text/event-stream` for
-server-initiated traffic. A server without this stream returns 405. Do not put
-ordinary JSON-RPC responses on it except while replaying a previous request's
-stream.
+When initialization returns `Mcp-Session-Id`, repeat it on every later HTTP
+request. A required missing ID should produce HTTP 400; a terminated or expired
+ID produces HTTP 404 and requires new initialization without an ID.
 
-### Sessions and cleanup
+After initialization, send `MCP-Protocol-Version` on every subsequent HTTP
+request. Without other version information, a missing header means
+`2025-03-26`; an invalid or unsupported value produces HTTP 400.
 
-If initialization returns `Mcp-Session-Id`, repeat it on every later HTTP
-request. A missing required ID yields 400. An expired or terminated ID yields
-404; initialize again without an ID. Request cleanup with DELETE and tolerate
-405 when the server does not support deletion.
+### Resume and cancel explicitly
 
-### Resume without implicitly cancelling
+Reconnect SSE with GET plus `Last-Event-ID`. Replay is confined to the
+disconnected stream. Dropping the stream does not cancel its request; send an
+explicit `CancelledNotification` to cancel.
 
-SSE event IDs must be unique within their session, or within their client when
-there is no session. Resume with GET plus `Last-Event-ID`. Replay only the
-disconnected logical stream. A dropped stream does not cancel its request;
-send an explicit cancellation notification.
+For pollable SSE, honor the server's `retry` delay before reconnecting, whether
+the original stream came from POST or GET.
 
-For pollable SSE, honor the server's `retry` delay. A server may send an event
-ID with empty data and close the HTTP connection while the logical stream
-remains active.
+### Enforce HTTP security
 
-### Enforce transport security
-
-Validate `Origin` on every incoming connection and return HTTP 403 when it is
-invalid. Bind local servers to `127.0.0.1`, not `0.0.0.0`; authenticate
-connections; serve authorization endpoints over HTTPS; and accept only
+Validate `Origin` on every incoming connection. Return HTTP 403 when rejecting
+an invalid `Origin`. Local servers should bind to `127.0.0.1`, authenticate
+connections, serve authorization endpoints over HTTPS, and accept only
 localhost or HTTPS redirect URIs.
 
 ## Interactive operations quick reference
 
-### Negotiate elicitation modes
+### Advertise capabilities before use
 
-The legacy empty elicitation capability means form-only. Current clients can
-advertise `elicitation: {form: {}, url: {}}`; an omitted request mode defaults
-to `"form"`.
+Use `completions` to advertise argument-completion support, and check it before
+relying on completion requests. Later completion requests can use `context` for
+previously resolved variables.
 
-Form elicitation is for non-sensitive structured input. Keep its schema flat.
-Use primitive values and string choices; titled single-select choices use
-`oneOf` with `const` and `title`, while titled multi-select choices use a string
-array with `items.anyOf`. Honor defaults and pre-populate them.
+A client advertises `capabilities.elicitation` before a server sends nested
+`elicitation/create`. For 2025-11-25, negotiate form and URL modes explicitly;
+the legacy empty capability object is form-only and an omitted request `mode`
+defaults to `"form"`.
 
-Use URL mode for sensitive or third-party interaction outside the client, not
-to authorize the client to the MCP server. Its behavior is still subject to
-change. `accept` means only that the user agreed to open the URL. Completion
-arrives later through `notifications/elicitation/complete`, or error `-32042`
-can carry required URL elicitations before a retry.
+Clients advertise `sampling: {tools: {}}` before servers include sampling tools
+or `toolChoice`. Tasks are experimental in 2025-11-25 and require capability
+negotiation by request category.
 
-### Validate structured tool results
+### Return structured and linked tool results
 
-When a tool declares `outputSchema`, return a matching object in
-`structuredContent` and validate it. Also serialize the same value into a text
-content item for older clients. A tool result may include a `resource_link`;
-do not assume that linked URI also appears in `resources/list`.
+A tool may declare `outputSchema` and return a matching JSON object in
+`structuredContent`. Servers must conform to the schema, clients should
+validate it, and servers should also serialize the JSON into a text content
+item for older clients.
 
-### Negotiate sampling tools
+A tool result may contain a `resource_link` with a fetchable or subscribable
+URI and resource annotations. The linked resource is not guaranteed to appear
+in `resources/list`.
 
-Require `sampling: {tools: {}}` before sending `tools` or `toolChoice` in
-`sampling/createMessage`. `toolChoice` is `auto`, `required`, or `none`.
-Follow every assistant `tool_use` immediately with exactly one matching
-`tool_result`; that user message must contain only tool results. Violations are
-invalid parameters (`-32602`).
+### Preserve sampling tool-message order
 
-### Gate experimental tasks by operation
+A sampling tool use must be followed, before any other message, by exactly one
+matching tool result. A tool-result message must contain only tool results;
+violations use `-32602`.
 
-Negotiate task support separately for tool calls, sampling, elicitation, list,
-and cancel. Respect each tool's `execution.taskSupport`. An accepted task-
-augmented request returns `result.task` immediately; poll `tasks/get` at the
-advertised interval and use `tasks/result` for the eventual underlying result.
-Do not assume optional status notifications replace polling.
+### Poll task results
 
-## Presentation and capability checks
+An accepted augmented request returns `result.task` immediately. Poll
+`tasks/get` while respecting `pollInterval`; optional status notifications do
+not replace polling. `tasks/result` blocks until a terminal state and then
+returns exactly the underlying result or JSON-RPC error.
 
-- Check the `completions` capability before relying on completion requests.
-  Pass already resolved variables through `CompletionRequest.context`.
-- Use `name` as the protocol identifier and optional `title` as the display
-  label.
-- Display optional `icons` on tools, resources, resource templates, and
-  prompts when supported.
-- Use `Implementation.description` as human-readable initialization context.
-- Accept audio content in addition to text and images.
-- Present descriptive progress from `ProgressNotification.message`.
-- Use tool behavior annotations as intent metadata, especially read-only and
-  destructive hints.
-
-## Final implementation checklist
-
-- Negotiate the protocol revision and all optional capabilities.
-- Reject top-level batches for current revisions.
-- Validate JSON Schema 2020-12 inputs and declared structured outputs.
-- Include the version, session ID when present, and Bearer token when required
-  on every applicable HTTP request.
-- Keep authorization resource and token audiences exact.
-- Validate `Origin` before processing Streamable HTTP traffic.
-- Preserve SSE event IDs, retry delays, and explicit cancellation semantics.
-- Separate form elicitation, URL elicitation, sampling, and task capability
-  checks.
-- Return tool input mistakes as execution errors.
-- Open the linked reference before implementing discovery orders, task state
-  transitions, or compatibility fallback behavior.
+Read [interactive operations](references/interactive-operations.md) for task
+capability shapes, status transitions, related-task metadata, URL elicitation,
+form schemas, sampling content, and the remaining presentation fields.

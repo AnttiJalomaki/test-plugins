@@ -1,180 +1,286 @@
 # Processes, Workers, Async Context, and Permissions
 
-Process lifecycle, worker threads, async context, resource lifetime, and the Permission Model.
+Use this reference for processes, workers, async context, and permissions work.
 
-## Contents
+## `process.execve()` inherits the environment by default (`24.10.0`)
 
-- [Permission Model](#permission-model)
-- [Workers and locks](#workers-and-locks)
-- [Async context and hooks](#async-context-and-hooks)
-- [Process lifecycle and signals](#process-lifecycle-and-signals)
+When its `env` argument is omitted, `process.execve()` now uses the corrected default environment.
 
-## Permission Model
+```js
+import { execve } from 'node:process';
 
-### Addon permission queries (since 24.4.0)
-
-`process.permission.has()` now accepts the `addon` scope, allowing code to test native-addon permission with `process.permission.has('addon')`.
-
-### Implicit permission for the entry point (since 24.2.0)
-
-Under the Permission Model, Node now implicitly grants filesystem read access to the application's entry-point file. The entry point no longer needs to be repeated in `--allow-fs-read`; other filesystem reads remain restricted.
-
-### Network and inspector permissions (since 25.0.0)
-
-The Permission Model adds `--allow-net` for explicitly permitted network destinations and `--allow-inspector` for inspector access. Restricted processes that need either capability must grant it rather than assuming it remains available.
-
-```console
-node --permission --allow-net=api.example.com \
-  --allow-inspector --inspect app.js
+execve('/usr/bin/env', ['env']); // uses the current process environment
 ```
 
-### Network permission checks for pipe connections (since 25.3.0)
+## AbortSignal listener warnings (`23.5.0`)
 
-With the Permission Model enabled, connections made through Node's pipe wrapper now undergo a network permission check (CVE-2026-21636). Restricted applications must no longer assume that pipe-backed connections bypass network policy and should handle permission denial when connecting.
+`AbortSignal` instances no longer use the default memory-leak warning for listener counts, avoiding spurious warnings for signals with many consumers.
 
-### Permission checks for pipe operations (since 26.3.1)
+## Dedicated-thread module-hook deprecation (`25.9.0`)
 
-With the Permission Model enabled, opening a pipe or changing its mode with `chmod` now checks the `net` permission scope. Restricted processes must grant the relevant network permission or handle a permission denial instead of assuming these pipe operations bypass policy.
+`module.register()` is documentation-deprecated as DEP0205. Prefer the synchronous, in-thread `module.registerHooks()` API when a dedicated loader-hooks thread is not required.
 
-### Permission checks in filesystem paths (since 25.8.2)
+## Dependent AbortSignals update before listeners run (`23.0.0`)
 
-The Permission Model now applies previously missing checks to `fs.realpath.native()` and affected promise-based filesystem paths (CVE-2026-21715 and CVE-2026-21716). Restricted applications should expect these operations to fail when the corresponding filesystem permission has not been granted.
+When a source signal aborts, its dependent signals are marked aborted before abort events are dispatched. A source listener can therefore observe the up-to-date state of an `AbortSignal.any()` signal.
 
-### Permission flags in spawned children (since 24.4.0)
-
-Permission Model flags are now propagated on spawn, so child Node processes retain the active restrictions instead of silently starting with broader access.
-
-### Permission Model filesystem restrictions (since 24.13.0)
-
-With the Permission Model enabled, file-descriptor timestamp updates (`futimes`) are disabled (CVE-2025-55132), while symlink APIs require full read and write access (CVE-2025-55130). Permission-restricted applications must account for both constraints when updating timestamps or manipulating symlinks.
-
-### Permission Model filesystem restrictions (since 24.17.0)
-
-With the Permission Model enabled, `FileHandle.utimes()` is now disabled. Permission checks while writing diagnostic reports also account for changes made by `process.chdir()`.
-
-### Stable Permission Model (since 23.5.0)
-
-The Permission Model and the `--permission` CLI switch are now stable, so restricted processes no longer need the experimental switch spelling.
-
-```console
-node --permission --allow-fs-read=./config app.js
+```js
+const controller = new AbortController();
+const dependent = AbortSignal.any([controller.signal]);
+controller.signal.addEventListener('abort', () => {
+  console.log(dependent.aborted); // true
+});
+controller.abort();
 ```
 
+## Detecting internal worker threads (`23.7.0`)
 
-## Workers and locks
+`node:worker_threads` now exposes `isInternalThread`, allowing code to distinguish a Node-created internal worker from the main thread and user-created workers.
 
-### Async-disposable workers (since 24.2.0)
+```js
+import { isInternalThread } from 'node:worker_threads';
+console.log(isInternalThread);
+```
 
-`Worker` now implements `Symbol.asyncDispose`, allowing `await using worker = new Worker(...)` to terminate the worker automatically when its scope exits.
+## Disabling SIGUSR1 handling (`23.7.0`)
 
-### Internal worker detection (since 23.7.0)
+The new `--disable-sigusr1` flag prevents Node from creating its SIGUSR1 signal I/O thread, which is useful when the process must not support signal-triggered inspector activation.
 
-`node:worker_threads` now exports `isInternalThread`, which identifies Node-created internal worker threads separately from the main thread and user-created workers.
+```sh
+node --disable-sigusr1 app.js
+```
 
-### OS-visible thread names (since 23.8.0)
+## Disposable `AsyncLocalStorage` (`25.9.0`)
 
-Threads created by Node now receive names that improve debugger and profiler output. A worker thread uses the `name` option passed to its `Worker` constructor.
+`AsyncLocalStorage` now supports `using` scopes, so an instance can be disposed automatically when its lexical scope ends.
+
+```js
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+using requestContext = new AsyncLocalStorage();
+await requestContext.run({ requestId: 1 }, handleRequest);
+```
+
+## Empty child-process shell values are deprecated (`24.2.0`)
+
+Passing an empty string as `options.shell` to child-process APIs is deprecated. Omit `shell` when no shell is wanted, or supply a valid shell selection.
+
+## Entry points have implicit read permission (`24.2.0`)
+
+With the Permission Model enabled, the application entry point receives implicit filesystem-read permission. It no longer needs to be repeated in `--allow-fs-read`.
+
+```sh
+node --permission app.mjs
+```
+
+## EventTarget listener counts (`25.4.0`)
+
+The module-level `events.listenerCount()` helper now accepts `EventTarget` instances as well as event emitters.
+
+```js
+import { listenerCount } from 'node:events';
+
+const target = new EventTarget();
+target.addEventListener('ready', () => {});
+console.log(listenerCount(target, 'ready')); // 1
+```
+
+## Frozen signal constants (`24.13.0`)
+
+`os.constants.signals` is frozen in 24.13.1, so code that needs an augmented signal map must copy it before adding entries.
+
+## In-place process replacement (`23.11.0`)
+
+`process.execve()` starts another executable by replacing the current process rather than spawning a child. A successful call never returns, so normal JavaScript exit handlers and cleanup do not run.
+
+```js
+import { execve } from 'node:process';
+
+execve('/usr/bin/env', ['env'], { ...process.env, APP_MODE: 'worker' });
+```
+
+## Named `AsyncLocalStorage` with a default store (`24.0.0`)
+
+The `AsyncLocalStorage` constructor accepts `defaultValue` and `name` options. Outside an active context, `getStore()` returns the configured default instead of `undefined`.
+
+```js
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const context = new AsyncLocalStorage({
+  defaultValue: { requestId: null },
+  name: 'request',
+});
+```
+
+## Named Node.js threads (`23.8.0`)
+
+Node-created threads now have names visible to debugging tools, and worker threads use the `name` passed to the `Worker` constructor.
 
 ```js
 import { Worker } from 'node:worker_threads';
-
 new Worker(new URL('./worker.mjs', import.meta.url), { name: 'indexer' });
 ```
 
-### Posting after worker messaging is closed (since 23.0.0)
+## Native-addon permission checks (`24.4.0`)
 
-Calling `postMessage()` on a closed worker-thread messaging object now throws `InvalidStateError` instead of silently accepting the call.
+`process.permission.has()` now accepts the `addon` scope, allowing restricted applications to test whether native-addon loading is permitted with `process.permission.has('addon')`.
 
-### Promise-only worker termination (since 25.0.0)
+## Network and inspector permissions (`25.0.0`)
 
-The callback form of `worker.terminate()` has been removed. Await the promise returned by `terminate()` when shutdown must complete before continuing.
+The Permission Model adds separate `--allow-net` and `--allow-inspector` grants. Restricted applications must opt in before using the network or starting the inspector.
 
-```js
-await worker.terminate();
+```sh
+node --permission --allow-net app.mjs
+node --permission --allow-inspector --inspect app.mjs
 ```
 
-### Web Locks for worker threads (since 24.5.0)
+## Per-thread CPU usage (`23.9.0`)
 
-`node:worker_threads` now exposes the Web Locks API for coordinating access to resources shared between threads.
+`process.threadCpuUsage()` reports CPU consumption for the calling thread, allowing main-thread and worker-thread CPU costs to be measured independently of process-wide usage.
+
+```js
+const usage = process.threadCpuUsage();
+```
+
+## Per-worker CPU profiles (`24.8.0`)
+
+`Worker.prototype.startCpuProfile()` starts profiling a particular worker and returns a handle whose `stop()` method resolves to the captured profile.
+
+```js
+const handle = await worker.startCpuProfile();
+await runWork(worker);
+const profile = await handle.stop();
+```
+
+## Per-worker CPU usage (`24.6.0`)
+
+`Worker.prototype.cpuUsage()` reports CPU consumption for a particular worker from the parent thread, without requiring measurement code inside that worker.
+
+```js
+const usage = await worker.cpuUsage();
+console.log(usage.user, usage.system);
+```
+
+## Per-worker heap profiles (`24.9.0`)
+
+`Worker.prototype.startHeapProfile()` starts heap profiling for one worker and returns a handle whose `stop()` method resolves to the captured profile.
+
+```js
+const handle = await worker.startHeapProfile();
+await runWork(worker);
+const profile = await handle.stop();
+```
+
+## Permission audit behavior (`26.7.0`)
+
+Denied access no longer throws in permission-audit mode, and permission warnings have unique warning codes. Audit tooling can observe and classify violations without treating them as enforcement exceptions.
+
+## Permission checks for pipe connections (`25.3.0`)
+
+The Permission Model now applies its network check when `pipe_wrap` connects (CVE-2026-21636), closing a path that could bypass network restrictions. Restricted applications using pipe connections must have the required network permission.
+
+## Permission checks for pipe operations (`26.3.1`)
+
+The Permission Model now guards pipe opening and mode changes with its network scope. Restricted applications using those operations must have the required network permission.
+
+## Permission flag rename (`24.0.0`)
+
+The Permission Model is now enabled with `--permission`; `--experimental-permission` is removed, so startup commands must use the new flag.
+
+## Permission Model filesystem hardening (`24.13.0`)
+
+With `--permission`, the `futimes` APIs are now disabled (CVE-2025-55132), and symlink APIs require both filesystem-read and filesystem-write permission (CVE-2025-55130). Restricted applications that create symlinks must grant both capabilities for the relevant paths.
+
+```sh
+node --permission --allow-fs-read=./links --allow-fs-write=./links app.mjs
+```
+
+## Permission Model filesystem restrictions (`24.17.0`)
+
+With the Permission Model enabled, `FileHandle.utimes()` is now disabled. Permission checks while writing diagnostic reports also account for changes made by `process.chdir()`.
+
+## Permission Model path and output enforcement (`22.23.2`)
+
+Filesystem grants no longer over-authorize paths when radix permission nodes split. Trace-event output and a diagnostic report's final output path now require filesystem-write permission, so restricted processes must explicitly allow every destination they use.
+
+## Permission restrictions propagate on spawn (`24.4.0`)
+
+Active Permission Model flags now propagate to spawned Node.js processes, so a child no longer silently loses the restrictions applied to its parent.
+
+## Process signals as exit codes (`24.14.0`)
+
+`convertProcessSignalToExitCode()` from `node:util` converts a process signal to its conventional numeric exit status.
+
+```js
+import { convertProcessSignalToExitCode } from 'node:util';
+
+console.log(convertProcessSignalToExitCode('SIGINT')); // 130
+```
+
+## Promise tracking controls for async hooks (`24.14.0`)
+
+`createHook()` now accepts a `trackPromises` option, allowing an async hook to control whether promise resources are tracked. Hooks that do not need promise lifecycle events can disable that tracking.
+
+## Runtime SIGINT stack-trace control (`24.6.0`)
+
+`util.setTraceSigInt()` enables or disables the same SIGINT stack-trace behavior that was previously selected only at process startup.
+
+```js
+import { setTraceSigInt } from 'node:util';
+setTraceSigInt(true);
+```
+
+## Shell argument deprecation (`23.11.0`)
+
+Passing a separate `args` array to `child_process.spawn()` or `execFile()` with `shell: true` is deprecated. Keep the shell disabled when supplying arguments separately to avoid unsafe shell concatenation.
+
+## Structured-clone controls (`23.0.0`)
+
+`File` objects are now cloneable. `node:worker_threads` also adds `markAsUncloneable()` for deliberately rejecting an object during cloning, and `postMessage()` after a port is closed now throws `InvalidStateError`.
+
+```js
+import { markAsUncloneable, MessageChannel } from 'node:worker_threads';
+
+const { port1 } = new MessageChannel();
+const value = {};
+markAsUncloneable(value);
+port1.postMessage(value); // throws DataCloneError
+```
+
+## Synchronous, on-thread module hooks (`23.5.0`)
+
+`module.registerHooks()` registers `resolve` and `load` functions directly in the current thread. The hooks cover modules loaded by `require()`, `import`, and `createRequire()`, including cases the asynchronous `module.register()` hooks cannot cover.
+
+```js
+import { registerHooks } from 'node:module';
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    return nextResolve(specifier.replace('foo', 'bar'), context);
+  },
+});
+```
+
+## Web Lock diagnostics (`25.9.0`)
+
+`node:diagnostics_channel` adds channels for Web Lock activity, allowing observability tooling to trace lock coordination without wrapping the lock APIs.
+
+## Web Locks for worker coordination (`24.5.0`)
+
+`node:worker_threads` now exposes the Web Locks API, allowing threads to coordinate access to named resources.
 
 ```js
 import { locks } from 'node:worker_threads';
 
 await locks.request('cache-update', async () => {
-  console.log('lock held');
+  await updateCache();
 });
 ```
 
-### Worker inspection in Chrome DevTools (since 24.1.0)
+## Worker inspection in Chrome DevTools (`24.1.0`)
 
-The inspector now supports inspecting Node worker threads in Chrome DevTools.
+The inspector can now expose worker threads to Chrome DevTools, allowing workers associated with an inspected Node.js process to be debugged alongside the main thread.
 
+## Worker names in diagnostic reports (`24.7.0`)
 
-## Async context and hooks
-
-### Async context in `stream.finished()` (since 24.0.0)
-
-Callbacks registered with `stream.finished()` now run in the `AsyncLocalStorage` context in which `finished()` was called, preserving request-local state through stream completion.
-
-### Disposable `AsyncLocalStorage` (since 25.9.0)
-
-`AsyncLocalStorage` now supports `using` scopes, allowing an instance to be disabled automatically when its lexical scope exits.
-
-```js
-import { AsyncLocalStorage } from 'node:async_hooks';
-
-using storage = new AsyncLocalStorage();
-```
-
-### Named and default `AsyncLocalStorage` values (since 24.0.0)
-
-`AsyncLocalStorage` accepts `name` and `defaultValue` constructor options. The default is returned by `getStore()` when no other store is active, and the name is exposed as `storage.name`.
-
-```js
-import { AsyncLocalStorage } from 'node:async_hooks';
-
-const storage = new AsyncLocalStorage({
-  name: 'requests',
-  defaultValue: { requestId: 'none' },
-});
-console.log(storage.name, storage.getStore().requestId);
-```
-
-### Removed bound-function async-resource metadata (since 25.0.0)
-
-Functions returned by `AsyncResource.bind()` no longer expose the legacy `asyncResource` property. Code must not recover the underlying resource through `bound.asyncResource`.
-
-### Selective promise tracking in async hooks (since 24.14.0)
-
-`createHook()` now accepts a `trackPromises` option, allowing an async hook to control whether promise resources are tracked. Hooks that do not need promise lifecycle events can disable that tracking.
-
-
-## Process lifecycle and signals
-
-### Deprecated process feature probes (since 23.4.0)
-
-`process.features.ipv6`, `process.features.uv`, and the `process.features.tls_*` properties are deprecated and should no longer be used as capability checks.
-
-### Disabling SIGUSR1 activation (since 23.7.0)
-
-The new `--disable-sigusr1` flag prevents Node from starting its SIGUSR1 signal I/O thread; run `node --disable-sigusr1 app.js` when that activation path must be disabled.
-
-### Optional `process.execve()` arguments (since 24.5.0)
-
-The `args` array passed to `process.execve()` is now optional, so a replacement process that needs no arguments no longer requires an explicit empty array.
-
-### Process-level reference controls (since 23.6.0)
-
-The new `process.ref()` and `process.unref()` methods provide process-level control over whether supported resources keep the event loop alive.
-
-### Process-signal exit codes (since 25.4.0)
-
-`convertProcessSignalToExitCode()` from `node:util` converts a process signal to its conventional numeric exit status; for example, `convertProcessSignalToExitCode('SIGINT')` returns `130`.
-
-### Replacing the current process (since 23.11.0)
-
-The new `process.execve(file, args, env)` executes another program in place of the current process; a successful call does not return. For example, `process.execve('/usr/bin/env', [], { ...process.env, MODE: 'worker' })` replaces the running program with `env`.
-
-### Shell-mode child-process arguments (since 23.11.0)
-
-Passing a separate `args` array to `spawn()` or `execFile()` while `shell: true` is deprecated. Avoid shell mode where possible; when it is required, pass the shell command without a separate arguments array.
+Diagnostic reports now include a worker's configured name, making failures from multiple named worker threads easier to distinguish.

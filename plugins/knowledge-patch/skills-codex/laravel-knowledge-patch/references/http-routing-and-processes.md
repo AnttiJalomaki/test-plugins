@@ -1,22 +1,6 @@
 # HTTP, Routing, Requests, and Processes
 
-HTTP clients, routing, middleware, requests and responses, URIs, maintenance mode, and processes.
-
-Batch identifiers in section headings provide exact source attribution.
-
-## Allowed URLs while preventing stray requests (2025-08)
-
-`Http::preventStrayRequests()` accepts allowed URL patterns, so tests may block all unexpected outbound traffic while permitting selected real endpoints.
-
-```php
-Http::preventStrayRequests(allowedUrls: [
-    'https://telemetry.example/*',
-]);
-```
-
-## API-aware maintenance mode (2026-07)
-
-The `down` command now handles API and JSON routes, so non-HTML requests receive maintenance-mode handling as well.
+HTTP client behavior, requests and responses, routing, rate limits, URLs, pagination, and processes.
 
 ## Carbon intervals for process timeouts (13.0.0)
 
@@ -34,17 +18,13 @@ Process::timeout(CarbonInterval::seconds(30))->run('php artisan report:build');
 
 Controllers can use the `WithoutMiddleware` attribute to declare middleware exclusions.
 
+## Current-page URLs in paginator output (2025-05)
+
+Serialized paginator data now includes `current_page_url`, so API consumers no longer need to reconstruct the URL from `path` and `current_page`.
+
 ## Custom server-sent events (2025-03)
 
 `response()->eventStream()` now supports custom event names and start messages, allowing a stream to identify event types and send an initial message.
-
-## Datetime maintenance retries (2026-01)
-
-The `down` command's `--retry` option accepts datetime values in addition to delay values, allowing the retry time to target the planned end of maintenance.
-
-```shell
-php artisan down --retry="2026-01-28 18:00:00"
-```
 
 ## Defaults for fluent request data (2025-11)
 
@@ -53,6 +33,14 @@ php artisan down --retry="2026-01-28 18:00:00"
 ```php
 $filters = $request->fluent('filters', ['sort' => 'created_at']);
 ```
+
+## Defaults when retrieving enum input (2025-05)
+
+Enum retrieval from request data accepts a default enum value when the key is absent or does not yield an enum: `$request->enum('status', Status::class, Status::Draft)`.
+
+## Deferred HTTP batches (2025-10)
+
+HTTP client batches provide `defer()`, allowing a batch to be scheduled for deferred execution instead of being sent immediately.
 
 ## Deprecated request getter (2026-02)
 
@@ -66,14 +54,6 @@ Routes with explicit domains are now matched before routes without domains, rega
 
 Cached and uncached routing now agree when routes share a name: the first registered route wins. Uncached routing previously selected the last registered route.
 
-## Extensible maintenance mode facade (2025-07)
-
-The new `MaintenanceMode` facade exposes maintenance-mode driver extension, allowing applications to register custom maintenance backends through the facade.
-
-## First-party image processing (2026-07)
-
-Laravel 13 adds first-party image processing, and `ImageManager::fromStorage()` accepts enum disk selectors.
-
 ## Fluent asynchronous HTTP requests (2025-12)
 
 `PendingRequest` HTTP methods may now return promises, and pools use `FluentPromise` for cleaner chaining. `Pool` and `Batch` also expose `newRequest()` for constructing requests within those coordinators.
@@ -81,6 +61,22 @@ Laravel 13 adds first-party image processing, and `ImageManager::fromStorage()` 
 ## HTTP client lifecycle hooks (2025-12)
 
 `PendingRequest` adds `withRequestContext()`, and the HTTP client can run callbacks after building a response, providing explicit request-context and post-construction extension points.
+
+## HTTP pool and batch concurrency (2025-10)
+
+`Http::pool()` and `Http::batch()` support concurrency control, allowing callers to bound the number of simultaneous outgoing requests.
+
+## HTTP pool default concurrency (13.0.0)
+
+Pools created from `PendingRequest` now default to a concurrency of two; specify concurrency explicitly when a different limit is required.
+
+## HTTP query helpers (2026-07)
+
+The HTTP client provides `Http::query()`, while HTTP tests provide `query()` and `queryJson()` helpers for working with request query data.
+
+## HTTP request batches (2025-09)
+
+`Http::batch()` provides first-class batching for multiple outgoing HTTP requests, avoiding manual coordination when a set of client calls should be managed together.
 
 ## HTTP response JSON flags (2026-01)
 
@@ -127,6 +123,10 @@ The built-in health route supports JSON responses, and the application builder p
 
 SSL certificate and connection failures from the HTTP client no longer leak as Guzzle exceptions; they are exposed through Laravel's HTTP client exception abstraction.
 
+## Page numbers in paginator links (2025-08)
+
+Serialized paginator link entries now include a `page` field, giving API clients a numeric page value without having to parse it from each link URL.
+
 ## Parameter-name route injection (2026-06)
 
 `RouteParameter` can use the name of its attributed parameter, so route injection does not always need a separately repeated parameter name.
@@ -143,9 +143,15 @@ Http::truncateExceptionsAt(240)->get($url)->throw();
 
 Laravel 13's HTTP client can be used directly as a PSR client, allowing integrations that require the PSR client contract to accept Laravel's client.
 
-## Refreshable maintenance options (2026-02)
+## Recording non-faked HTTP requests (2025-03)
 
-Running the `down` command while the application is already in maintenance mode can refresh its options instead of retaining stale settings.
+The HTTP client can record real requests without faking their responses, so tests and diagnostics can inspect traffic while it is still sent normally.
+
+```php
+Http::record();
+Http::get('https://example.test');
+$recorded = Http::recorded();
+```
 
 ## Request-aware after-response callbacks (2026-04)
 
@@ -175,3 +181,7 @@ Routes can carry metadata, allowing application or tooling annotations to be ass
 ## Safe malformed cursor decoding (2026-04)
 
 `Cursor::fromEncoded()` returns `null` for a malformed payload, so callers handling untrusted cursor input should null-check the result.
+
+## Wildcard trim exclusions (2025-12)
+
+`TrimStrings` middleware exclusions accept wildcard patterns, allowing one pattern to preserve matching nested inputs instead of enumerating every field.

@@ -2,7 +2,7 @@
   "patch": "aws-cdk-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T02:30:39Z",
+  "built_at": "2026-08-20T21:12:13Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -98,6 +98,11 @@
       "build": "included"
     },
     "2026-07": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-08": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

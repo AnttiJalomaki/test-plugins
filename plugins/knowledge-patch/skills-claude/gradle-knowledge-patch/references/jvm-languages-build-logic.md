@@ -1,47 +1,11 @@
 # JVM, Languages, and Build Logic
 
-## Daemon JVM selection and provisioning
+## Java and daemon toolchains
 
-When no installed JDK matches daemon JVM criteria, Gradle can download one
-(since `8.13.0`). Apply Foojay resolver plugin 0.9.0 or a custom resolver, then
-run `updateDaemonJvm`:
+### Require Native Image capability (8.14.0)
 
-```kotlin
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
-}
-```
-
-```text
-./gradlew updateDaemonJvm --jvm-version=17 --jvm-vendor=adoptium
-```
-
-The generated `gradle/gradle-daemon-jvm.properties` records the requested
-vendor and version and can include a download URL for each platform.
-
-Daemon toolchains became stable in `9.2.0`; configuring daemon JVM criteria no
-longer emits an incubation warning.
-
-`JAVA_HOME` participates in Java toolchain auto-detection as of `9.0.0`, which
-aligns command-line discovery with IDE discovery.
-
-Daemon logs older than 14 days are automatically deleted when a daemon shuts
-down (since `9.4.0`).
-
-For machines where address auto-detection is unsuitable, set the bind address
-explicitly (since `9.5.0`):
-
-```text
-GRADLE_DAEMON_BIND_ADDRESS=192.168.1.10 ./gradlew build
-```
-
-This selects the address for both client-daemon and cross-daemon
-communication.
-
-## Java runtime and toolchain capabilities
-
-Java and daemon toolchain selection can require a JDK that supplies GraalVM
-Native Image (since `8.14.0`):
+Java and daemon JVM toolchain specifications can require a JDK that includes
+GraalVM Native Image:
 
 ```kotlin
 java {
@@ -52,53 +16,41 @@ java {
 }
 ```
 
-Gradle can run its daemon on Java 25 and use Java 25 toolchains as of `9.1.0`.
-Tooling API clients on Java 25 must enable native access at startup because
-the API uses JNI. Third-party tool compatibility may lag.
+### Include `JAVA_HOME` in discovery (9.0.0)
 
-Daemon and toolchain support extends to Java 26 as of `9.4.0`; verify
-third-party plugins and tools separately.
+Java toolchain auto-detection considers the JDK referenced by `JAVA_HOME`,
+aligning command-line discovery with IDE discovery.
 
-## Scala configuration
+### Run on newer Java releases (9.1.0, 9.4.0)
 
-The `scala` and `scala-base` plugins accept an explicit `scalaVersion` in the
-Scala extension (since `8.13.0`) and resolve the required Scala toolchain
-dependencies automatically:
+Gradle can run its daemon on Java 25 and Java 26 and can use both as Java
+toolchains. Tooling API clients on Java 25 must enable native access at startup
+because the API uses JNI. Verify third-party plugin and tool compatibility
+before changing the daemon or toolchain.
+
+## Project layout and plugin inputs
+
+### Locate settings without `rootProject` (8.13.0)
+
+`ProjectLayout.settingsDirectory` exposes the directory containing
+`settings.gradle` or `settings.gradle.kts`, so build-wide files need not be
+resolved through `rootProject`:
 
 ```kotlin
-scala {
-    scalaVersion = "3.6.3"
-}
+val versionFile = layout.settingsDirectory.file("version.txt")
 ```
 
-A `scala-library` dependency is no longer needed solely to select or infer the
-Scala version.
-
-## Kotlin scripts and convention plugins
-
-Stable Kotlin DSL dependency and constraint `invoke` overloads are available
-as of `9.0.0`. This includes overloads on named configuration providers and
-overloads accepting `Provider` or `ProviderConvertible` values.
-`DependencyHandler.create(String, action)`,
-`PluginDependenciesSpec.embeddedKotlin(String)`, and
-`GroovyBuilderScope.hasProperty(String)` are stable as well.
-
-Precompiled Kotlin script plugins can apply and configure plugins supplied as
-`compileOnly` dependencies, including their type-safe extension accessors
-(since `9.1.0`).
+### Use type-safe accessors in Settings convention plugins (9.5.0)
 
 Precompiled `*.settings.gradle.kts` plugins receive generated type-safe
-accessors when the convention-plugin build applies `kotlin-dsl` (since
-`9.5.0`):
+accessors when their convention-plugin build applies `kotlin-dsl`:
 
 ```kotlin
 // build-logic/build.gradle.kts
 plugins {
     `kotlin-dsl`
 }
-```
 
-```kotlin
 // build-logic/src/main/kotlin/conventions.settings.gradle.kts
 plugins {
     id("com.gradle.develocity")
@@ -110,15 +62,51 @@ develocity {
 }
 ```
 
-Settings extensions can then use typed configuration instead of string-based
-lookups.
+### Use `compileOnly` plugins from precompiled scripts (9.1.0)
 
-## Groovy lazy-property coercion
+Precompiled Kotlin script plugins can apply and configure plugins supplied as
+`compileOnly` dependencies, including their type-safe extension accessors.
 
-The Groovy DSL can coerce a string assigned to `Property<File>`,
-`RegularFileProperty`, or `DirectoryProperty`, resolving the path relative to
-the project directory (since `9.6.1`). It can also assign a scalar or array
-directly to `ListProperty<T>` or `SetProperty<T>`:
+## Scala
+
+### Select Scala explicitly (8.13.0)
+
+The `scala` and `scala-base` plugins accept `scalaVersion` and resolve their
+toolchain dependencies automatically. Do not add `scala-library` solely to
+select or infer the Scala version:
+
+```kotlin
+scala {
+    scalaVersion = "3.6.3"
+}
+```
+
+## Kotlin-generated builds
+
+### Let the test runner choose the Kotlin test variant (9.1.0)
+
+Kotlin projects generated by `init` depend on
+`org.jetbrains.kotlin:kotlin-test` rather than `kotlin-test-junit5`, allowing
+variant selection to follow the configured test runner.
+
+## Groovy DSL and Groovydoc
+
+### Remove implicit parent-project lookup (9.6.1)
+
+Groovy DSL resolution of missing properties or methods from a parent project is
+deprecated. So are `findProperty()`, `property()`, and `hasProperty()` when the
+answer comes from a parent. Qualify the owner and enable the preview to catch
+accidental lookup before Gradle 10:
+
+```kotlin
+enableFeaturePreview("NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS")
+```
+
+### Assign lazy properties with Groovy coercion (9.6.1)
+
+A string assigned to `Property<File>`, `RegularFileProperty`, or
+`DirectoryProperty` is resolved relative to the project directory. Scalars and
+arrays can be assigned to `ListProperty<T>` or `SetProperty<T>`:
 
 ```groovy
 task.workingDir = '../my-build'
@@ -126,13 +114,28 @@ task.filter.includePatterns = 'Foo'
 task.filter.includePatterns = ['Foo', 'Bar'] as String[]
 ```
 
-Use these assignments only where the property element type makes the intended
-coercion unambiguous.
+### Select a Groovydoc toolchain and worker heap (9.7.0)
 
-## ANTLR source generation
+`Groovydoc` uses the project's Java toolchain by default and exposes
+`javaLauncher` for per-task selection. It runs in a separate worker; configure
+the incubating `maxMemory` to size that process:
 
-For ANTLR 4, set the target package through `AntlrTask.packageName` (since
-`9.1.0`):
+```kotlin
+tasks.named<Groovydoc>("groovydoc") {
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    maxMemory = "1g"
+}
+```
+
+## ANTLR
+
+### Set the generated package with the task property (9.1.0)
+
+`AntlrTask.packageName` supplies ANTLR 4's `-package` argument and chooses the
+matching output directory. Passing `-package` directly is deprecated and
+becomes an error in Gradle 10:
 
 ```kotlin
 tasks.named("generateGrammarSource").configure {
@@ -140,43 +143,11 @@ tasks.named("generateGrammarSource").configure {
 }
 ```
 
-This supplies ANTLR's `-package` argument and selects the corresponding output
-directory. Passing `-package` directly is deprecated and becomes an error in
-Gradle 10.
+Changing the generated-sources directory also updates the associated Java
+source set and wires consumers to depend on source generation automatically.
 
-Changing the generated-sources directory now updates the associated Java
-source set and automatically wires its consumers to depend on the generation
-task (`9.1.0`).
+### Find ANTLR tasks in the normal listing (9.2.0)
 
-ANTLR tasks including `generateGrammarSource` and
-`generateTestGrammarSource` belong to the `Antlr` task group as of `9.2.0`,
-so they appear in normal `./gradlew tasks` output.
-
-## Plugin registrations and model APIs
-
-With `java-gradle-plugin`, a plugin registration uses its registration name as
-the plugin ID unless `id` is set explicitly (since `9.4.0`):
-
-```kotlin
-gradlePlugin {
-    plugins {
-        register("my.plugin-id") {
-            implementationClass = "my.PluginClass"
-        }
-    }
-}
-```
-
-`ProjectLayout.settingsDirectory` exposes the directory containing
-`settings.gradle` or `settings.gradle.kts` (since `8.13.0`):
-
-```kotlin
-val versionFile = layout.settingsDirectory.file("version.txt")
-```
-
-Use it for build-wide files instead of reaching through `rootProject`.
-
-Plugin authors can call `DomainObjectCollection.disallowChanges()` to block
-later additions and removals without realizing lazy entries (since `9.5.0`).
-The lock covers membership only; properties of objects already in the
-collection can still change.
+`generateGrammarSource`, `generateTestGrammarSource`, and other ANTLR tasks use
+the `Antlr` task group, so they appear in `./gradlew tasks` rather than only in
+`./gradlew tasks --all` under `Other tasks`.

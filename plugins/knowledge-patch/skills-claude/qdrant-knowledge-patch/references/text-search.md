@@ -1,51 +1,60 @@
 # Full-Text Search
 
-Full-text behavior is defined on the payload index. Features that require
-additional index structures must be selected when creating that index.
-
 ## Multilingual tokenization
 
-Use the built-in `multilingual` tokenizer for languages without whitespace
-word boundaries, including Japanese and Chinese (since 1.15.0). It needs
-neither a custom build nor external preprocessing:
+The `multilingual` tokenizer handles languages without whitespace word
+boundaries, including Japanese and Chinese, without custom builds or external
+preprocessing (since 1.15.0):
 
 ```http
 PUT /collections/{collection_name}/index
-{"field_name":"description","field_index_params":{"type":"text","tokenizer":"multilingual"}}
+{
+  "field_name": "description",
+  "field_index_params": {"type": "text", "tokenizer": "multilingual"}
+}
 ```
 
-## Stop-word removal
+## Configurable stop words
 
-Set `stopwords` on a full-text index to remove configured common words
-automatically (since 1.15.0). Queries no longer need to strip them manually:
+A full-text index can remove configured stop words automatically rather than
+requiring callers to strip them from each query (since 1.15.0):
 
 ```http
 PUT /collections/{collection_name}/index
-{"field_name":"title","field_index_params":{"type":"text","stopwords":"english"}}
+{
+  "field_name": "title",
+  "field_index_params": {"type": "text", "stopwords": "english"}
+}
 ```
 
 ## Snowball stemming
 
-Configure a language-specific Snowball stemmer to normalize grammatical
-variants to common roots (since 1.15.0):
+A language-specific Snowball stemmer normalizes grammatical variants to common
+roots, increasing matches between related word forms (since 1.15.0):
 
 ```http
 PUT /collections/{collection_name}/index
-{"field_name":"body","field_index_params":{"type":"text","stemmer":{"type":"snowball","language":"english"}}}
+{
+  "field_name": "body",
+  "field_index_params": {
+    "type": "text",
+    "stemmer": {"type": "snowball", "language": "english"}
+  }
+}
 ```
-
-This increases matches between related word forms; choose the language that
-matches the indexed field.
 
 ## Exact phrase matching
 
-Phrase search needs `phrase_matching: true` when the index is created because
-Qdrant builds an additional data structure (since 1.15.0). Query with
-`match.phrase` to require words in the supplied order:
+Enable `phrase_matching` when creating the full-text index; it builds an
+additional data structure and cannot be supplied only at query time (since
+1.15.0). Then use `match.phrase` to require the words in order:
 
 ```http
 PUT /collections/{collection_name}/index
-{"field_name":"headline","field_index_params":{"type":"text","phrase_matching":true}}
+{
+  "field_name": "headline",
+  "field_index_params": {"type": "text", "phrase_matching": true}
+}
 
 POST /collections/{collection_name}/points/query
 {
@@ -60,10 +69,11 @@ POST /collections/{collection_name}/points/query
 }
 ```
 
-## Match any query term
+## Match-any full-text queries
 
-Use `text_any` to tokenize a multi-term query and match a field containing at
-least one term (since 1.16.0):
+`text_any` tokenizes a multi-term query and matches a text field containing at
+least one term (since 1.16.0). It replaces client-built `should` filters with a
+single condition:
 
 ```json
 {
@@ -73,13 +83,11 @@ least one term (since 1.16.0):
 }
 ```
 
-This replaces a client-built group of `should` conditions with one match
-condition.
-
 ## ASCII folding
 
-Set `ascii_folding` to `true` when creating the text payload index to
-normalize diacritics in indexed text and search terms (since 1.16.0):
+Set `ascii_folding` to `true` when creating a full-text payload index to
+normalize diacritics in both indexed text and search terms (since 1.16.0). For
+example, `cafe` can then match `café`.
 
 ```json
 {
@@ -87,5 +95,3 @@ normalize diacritics in indexed text and search terms (since 1.16.0):
   "ascii_folding": true
 }
 ```
-
-For example, this allows `cafe` to match `café`.

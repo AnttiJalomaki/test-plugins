@@ -10,50 +10,81 @@ metadata:
 
 # Auth.js Knowledge Patch
 
-Use this patch to choose the maintained authentication path, avoid security-sensitive provider mistakes, and apply current Auth.js integration patterns. Read the topic reference before changing an affected flow; the quick reference below prioritizes breaking behavior, security updates, and common implementation work.
+Use this patch when choosing an Auth.js maintenance path, changing providers or
+session handling, implementing an adapter, or diagnosing current compatibility
+and security behavior. Read the relevant topic reference before editing an
+authentication flow.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Better Auth transition](references/better-auth-transition.md) | Project status, choosing Auth.js or Better Auth, migration direction |
-| [Providers and authentication](references/providers-and-authentication.md) | Account linking, credentials errors, email providers, passkeys, OAuth customization, redirect proxies |
-| [Sessions and frameworks](references/sessions-and-frameworks.md) | Session lifecycle, Qwik, SvelteKit, Express |
-| [v5 migration](references/v5-migration.md) | Next.js Pages Router limitations, Next.js 16 proxy protection |
-| [Adapters, operations, and security](references/adapters-operations-and-security.md) | Adapter contracts, value normalization, logging, security upgrade floors |
+| [Better Auth transition](references/better-auth-transition.md) | Maintenance status, project choice, migration direction |
+| [Providers and authentication](references/providers-and-authentication.md) | Account linking, credentials errors, email, passkeys, OAuth customization |
+| [Sessions and frameworks](references/sessions-and-frameworks.md) | Session freshness and expiry, Qwik, SvelteKit, Express |
+| [v5 migration](references/v5-migration.md) | Next.js Pages Router limitations and Next.js 16 route protection |
+| [Adapters, operations, and security](references/adapters-operations-and-security.md) | Adapter contracts, logging, security upgrade floors, token and OAuth hardening |
 
-## Decide between Auth.js and Better Auth
+## Choose the maintained path
 
-- Prefer Better Auth for a new project.
-- Keep Auth.js for an existing application that needs continued security and urgent fixes, or when Better Auth still lacks a required capability such as stateless sessions without a database.
-- Use the NextAuth migration guide when moving an existing application to Better Auth.
-- Read [Better Auth transition](references/better-auth-transition.md) before making the choice.
+- Start new applications with Better Auth unless a required feature is still
+  unavailable there, such as stateless sessions without a database.
+- Continue using Auth.js for an existing application that needs security
+  patches and urgent fixes.
+- Use the NextAuth migration guide when moving an existing application.
 
-## Apply urgent compatibility and security fixes
+See [Better Auth transition](references/better-auth-transition.md) before making
+an architecture choice.
 
-Audit installed package versions before debugging provider or adapter behavior.
+## Apply security and compatibility updates first
+
+Audit installed package versions before debugging a provider or adapter.
 
 | Package | Required action | Reason |
 | --- | --- | --- |
-| `@auth/sveltekit` | Upgrade to `1.11.1` or later | Pull in the Nodemailer security fix. |
-| `next-auth` v4 | Upgrade to `4.24.14` or configure the GitHub issuer explicitly | Accept GitHub callbacks containing the now-validated `iss` parameter. |
-| `@auth/kysely-adapter` | Upgrade to `1.11.2` and install `kysely@^0.28.15` | Address CVE-2026-33468, an SQL-injection vulnerability. |
+| `@auth/sveltekit` | Upgrade to `1.11.1` or later | Includes the Nodemailer security fix. |
+| `next-auth` v4 | Upgrade to `4.24.14` or explicitly configure the GitHub issuer | Accepts GitHub callbacks whose `iss` parameter is now validated. |
+| `@auth/kysely-adapter` | Upgrade to `1.11.2` and install `kysely@^0.28.15` | Addresses CVE-2026-33468, an SQL-injection vulnerability. |
 
-Read [Adapters, operations, and security](references/adapters-operations-and-security.md) for exact upgrade implications.
+Read [Adapters, operations, and security](references/adapters-operations-and-security.md)
+for the full upgrade and runtime implications.
 
-## Treat cross-provider linking as a security boundary
+## Account for hardened runtime behavior
 
-With a database and multiple authentication methods, a later sign-in can link to an existing user when emails match. Evaluate the email-verification guarantee of every enabled provider; the weakest provider can undermine linking safety.
+- Treat `null` from `getToken()` as an unauthenticated request; malformed
+  Bearer values no longer need exception-driven handling.
+- OAuth state, nonce, and PKCE cookies belong to the provider that created
+  them. A callback through another provider must fail.
+- Expect OAuth attempts already in flight during an upgrade to fail once and
+  then succeed after the user retries.
+- Keep an explicit `NEXTAUTH_URL` authoritative in trusted-host deployments;
+  it takes precedence over an auto-detected forwarded host.
+- Let the email sign-in path validate the NFKC-normalized address so Unicode
+  lookalikes cannot bypass the address checks.
+- On Node.js releases earlier than 20.19, retain a CommonJS-compatible `uuid`
+  dependency rather than an ESM-only release.
 
-Do not assume matching email text alone proves common ownership. Read [Providers and authentication](references/providers-and-authentication.md#database-backed-account-linking) before enabling a provider alongside existing accounts.
+## Treat account linking as a security boundary
+
+With a database and multiple authentication methods, a later sign-in can link
+to an existing user when email addresses match. Evaluate the email-verification
+guarantee of every enabled provider: the weakest provider can undermine the
+safety of cross-provider linking.
+
+Do not treat matching email text alone as proof of common ownership. Review
+[database-backed account linking](references/providers-and-authentication.md#database-backed-account-linking)
+before enabling another provider.
 
 ## Handle credentials failures by invocation style
 
-Returning `null` from `authorize` has two observable forms:
+Returning `null` from `authorize` has different observable results:
 
-- Expect built-in-page flows to redirect with `?error=CredentialsSignin&code=credentials`.
-- Catch a thrown `CredentialsSignin` in form actions and custom server-side flows.
-- Subclass `CredentialsSignin` to replace the public, URL-visible `code`; keep the value generic enough to avoid leaking sensitive details.
+- Built-in-page flows redirect with
+  `?error=CredentialsSignin&code=credentials`.
+- Form actions and custom server-side flows receive a thrown
+  `CredentialsSignin`; catch it there.
+- A `CredentialsSignin` subclass can replace the public, URL-visible `code`.
+  Keep that value generic enough not to reveal sensitive details.
 
 ```ts
 class InvalidLoginError extends CredentialsSignin {
@@ -71,13 +102,16 @@ Credentials({
 
 ## Configure experimental passkeys completely
 
-Treat passkeys as experimental. Before enabling them:
+Passkeys remain experimental. Before enabling them:
 
-1. Run Node.js 20 or later.
-2. Use a compatible database adapter and apply its migration for the `Authenticator` table.
+1. Use Node.js 20 or later.
+2. Select a compatible database adapter and run its migration for the
+   `Authenticator` table.
 3. Install `@simplewebauthn/server@9.0.3`.
-4. Add the singular `Passkey` provider and set `experimental.enableWebAuthn` to `true`.
-5. For a custom page, also install `@simplewebauthn/browser@9.0.1` and import `signIn` from `next-auth/webauthn`.
+4. Add the singular `Passkey` provider.
+5. Set `experimental.enableWebAuthn` to `true`.
+6. For a custom page, install `@simplewebauthn/browser@9.0.1` and import
+   `signIn` from `next-auth/webauthn`.
 
 ```ts
 export default {
@@ -87,7 +121,7 @@ export default {
 }
 ```
 
-Register a passkey only for an authenticated user; omit the action for ordinary sign-in.
+Register only for an authenticated user; omit the action for ordinary sign-in.
 
 ```ts
 import { signIn } from "next-auth/webauthn"
@@ -96,57 +130,69 @@ await signIn("passkey", { action: "register" })
 await signIn("passkey")
 ```
 
-Use the built-in sign-in page when possible because it exposes the configured passkey action automatically. Check the package floors in [Providers and authentication](references/providers-and-authentication.md#experimental-passkeys).
+Prefer the built-in sign-in page when possible because it exposes the
+configured passkey action automatically. See
+[experimental passkeys](references/providers-and-authentication.md#experimental-passkeys)
+for adapter and package floors.
 
 ## Configure email authentication
 
-- Provide a database adapter for every email-type provider so verification tokens can be stored and consumed.
-- For Loops, create the transactional template in advance, use the case-sensitive `url` template variable, and configure both the API key and transactional ID.
-- For an arbitrary HTTP email service, define a raw provider with `type: "email"`, implement `sendVerificationRequest`, and use the provider `id` when initiating sign-in.
-- Read [Providers and authentication](references/providers-and-authentication.md#email-providers) for working configurations.
+- Supply a database adapter for every email-type provider so verification
+  tokens can be stored and consumed.
+- For Loops, create the transactional template first, use the case-sensitive
+  `url` variable, and configure both the API key and transactional ID.
+- For another HTTP email service, define a raw provider with `type: "email"`,
+  implement `sendVerificationRequest`, and use its `id` to initiate sign-in.
 
-## Customize OAuth providers without replacing defaults
+See [email providers](references/providers-and-authentication.md#email-providers)
+for working configuration shapes.
 
-- Return extra persisted `User` fields from `profile()`.
-- Add or omit persisted `Account` fields with `account()`.
-- Pass narrow nested overrides to a built-in provider; Auth.js deep-merges them with its defaults.
-- Assign a fetch-compatible transport to the symbol-keyed `[customFetch]` option to scope proxying to one provider.
-- Do not use `RedirectProxyUrl` with Apple; select another callback strategy.
+## Customize OAuth providers narrowly
 
-Read [Providers and authentication](references/providers-and-authentication.md#oauth-provider-customization) before changing profile persistence or transport behavior.
+- Return extra persisted `User` properties from `profile()`.
+- Add or omit persisted `Account` properties with `account()`.
+- Pass only the required nested overrides to a built-in provider; Auth.js
+  deep-merges them with the provider defaults.
+- Put a fetch-compatible transport on the symbol-keyed `[customFetch]` option
+  to proxy one provider without changing the others.
+- Do not combine Apple with `RedirectProxyUrl`; use another callback strategy.
 
-## Implement only the adapter surface the deployment uses
+## Implement the adapter surface the deployment uses
 
-A local adapter may implement the methods required by enabled flows. An officially distributed adapter must implement the complete `Adapter` interface.
+A local adapter may implement only the methods exercised by enabled flows. An
+officially distributed adapter must implement the complete `Adapter` interface.
 
 | Enabled flow | Required methods |
 | --- | --- |
-| User/account management | `createUser`, `getUser`, `getUserByAccount`, `updateUser`, `linkAccount` |
+| User and account management | `createUser`, `getUser`, `getUserByAccount`, `updateUser`, `linkAccount` |
 | Database sessions | `createSession`, `getSessionAndUser`, `updateSession`, `deleteSession` |
 | Passwordless email | `getUserByEmail`, `createVerificationToken`, `useVerificationToken` |
 
-Do not build a local flow around `deleteUser` or `unlinkAccount`; Auth.js does not currently invoke them. Normalize database-native values to plain JavaScript objects in both directions, including values stored in custom fields. Read [Adapters, operations, and security](references/adapters-operations-and-security.md#adapter-surface-by-authentication-flow).
+Do not design a local flow around `deleteUser` or `unlinkAccount`; Auth.js does
+not currently invoke them. Normalize database-native values to plain JavaScript
+objects in both directions, including arbitrary custom properties.
 
-## Preserve fresh session state
+## Preserve and access current session state
 
-- Rely on the session endpoint's cache-prevention headers for its GET responses.
-- Expect an expired database-backed `Session` row to be deleted when Auth.js reads it.
-- Populate a request-local session once in Express middleware when several handlers need it.
-- Read [Sessions and frameworks](references/sessions-and-frameworks.md) for framework-specific access patterns.
-
-## Access and mutate sessions by framework
+- Rely on the session endpoint's cache-prevention headers for GET responses.
+- Expect an expired database-backed `Session` row to be deleted when read.
+- In Express, populate a request-local session once when several downstream
+  handlers need it.
 
 | Framework | Read session | Sign in or out |
 | --- | --- | --- |
-| Qwik server | `event.sharedMap.get("session")` | Use the actions returned by `useSignIn()` and `useSignOut()` in `<Form>` or call `.submit()`. |
+| Qwik server | `event.sharedMap.get("session")` | Use actions from `useSignIn()` and `useSignOut()` in `<Form>` or call `.submit()`. |
 | Qwik client | `useSession()` | Submit `providerId` and `options.redirectTo` for sign-in; submit `redirectTo` for sign-out. |
-| SvelteKit server | `event.locals.auth()` after installing the Auth.js `handle` | Wire `signIn` or `signOut` to matching default form actions. |
-| SvelteKit client | Return the server session through page data | Import the client handlers from `@auth/sveltekit/client`. |
-| Express | `getSession(req)` | Call `signIn(req, res)` or `signOut(req, res)` from application-owned routes. |
+| SvelteKit server | `event.locals.auth()` after installing the Auth.js `handle` | Connect `signIn` or `signOut` to matching default form actions. |
+| SvelteKit client | Return the server session in page data | Import handlers from `@auth/sveltekit/client`. |
+| Express | `getSession(req)` | Call `signIn(req, res)` or `signOut(req, res)` in application-owned routes. |
 
-## Protect Next.js routes with the correct file convention
+## Protect Next.js routes with the right convention
 
-For Next.js 16, export Auth.js `auth` as `proxy` from `proxy.ts`; keep `middleware.ts` and the `middleware` export on older Next.js versions. The proxy matcher chooses the covered routes, and the `authorized` callback decides whether the request proceeds.
+On Next.js 16, export Auth.js `auth` as `proxy` from `proxy.ts`. Older Next.js
+versions must retain `middleware.ts` and the `middleware` export. The proxy
+matcher selects routes, and the `authorized` callback decides whether each
+request proceeds.
 
 ```ts
 // proxy.ts
@@ -160,11 +206,14 @@ export const { auth, handlers } = NextAuth({
 })
 ```
 
-Do not expect restored server-side session helpers in Pages Router API routes; fetch the session REST endpoint there. Continue to call `auth(ctx)` from `getServerSideProps`. Read [v5 migration](references/v5-migration.md).
+Pages Router API routes still lack the restored server-side session helpers;
+fetch the session REST endpoint there. Pages rendered with
+`getServerSideProps` can continue to call `auth(ctx)`.
 
-## Configure logging deliberately
+## Configure custom logging deliberately
 
-When supplying custom `logger` handlers, route debug output through `logger.debug`. The separate `debug` option is ignored once a custom logger is present.
+When `logger` handlers are supplied, the separate `debug` option is ignored.
+Route debug messages through `logger.debug` alongside warnings and errors.
 
 ```ts
 NextAuth({
@@ -176,11 +225,14 @@ NextAuth({
 })
 ```
 
-## Work through a change safely
+## Verify a change
 
-1. Identify the provider, session strategy, adapter, and framework integration involved.
-2. Open the matching reference from the index before editing configuration.
+1. Identify the provider, session strategy, adapter, framework, and runtime.
+2. Open the matching reference before changing configuration.
 3. Check security floors and experimental prerequisites.
-4. Trace the invocation style: built-in page, form action, server handler, or client action.
-5. Test success, rejection, expiry, redirect, and account-linking paths as applicable.
-6. Verify that public error codes and logs reveal no sensitive authentication detail.
+4. Trace the invocation path: built-in page, form action, server handler, or
+   client action.
+5. Test success, rejection, expiry, retry, redirect, and account-linking paths
+   as applicable.
+6. Verify that public errors and logs disclose no sensitive authentication
+   detail.

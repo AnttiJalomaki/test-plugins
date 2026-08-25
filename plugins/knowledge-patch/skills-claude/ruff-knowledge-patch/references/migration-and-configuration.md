@@ -1,70 +1,31 @@
 # Migration and configuration
 
-Use this reference when upgrading Ruff, preserving an existing lint policy, or
-changing configuration files. The sections are organized by migration task,
-not release chronology.
+Use this reference for version-sensitive configuration, renamed or removed
+rules, Python-target behavior, discovery, and upgrade planning.
 
-## Default lint selection
+## Python target inference and defaults
 
-The preview defaults expanded to 412 rules in 0.15.2, versus the stable
-default's 59. That set was mostly a superset, but initially omitted `E401`,
-`E402`, `E701`–`E703`, `E711`–`E714`, `E721`, `E731`, `E741`–`E743`, `F403`,
-`F405`, `F406`, and `F722`; 0.15.6 removed several more from the preview
-defaults. Pin the former selection if preview must not broaden policy:
+### Inference timing
 
-```toml
-[tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
-```
+The announced inference of Python from `requires-python` did **not** ship in
+`0.10.0-guide`; it first ships in 0.11.0. Do not diagnose 0.10 behavior as if
+that inference were already active.
 
-The stable default expanded to 413 rules in 0.16.0-guide. It is not a strict
-superset of the old 59-rule default: 18 opinionated pycodestyle and Pyflakes
-rules are no longer implicit. Explicit `select` is the migration-safe choice.
+In 0.15.0, Ruff resolves the full chain of `extend`ed configurations before it
+falls back to its default Python version. A target inherited from an extended
+file can therefore win over the fallback.
 
-## Rule-code migrations, deprecations, and removals
+### Different fallbacks for syntax and rules
 
-- `A005` is now named `stdlib-module-shadowing`, replacing
-  `builtin-module-shadowing` (0.9.0).
-- Preview split `UP007`: it handles `Union`, while `UP045` handles `Optional`.
-  The split became stable in 0.12.0, so update explicit `select`, `ignore`, and
-  `noqa` entries.
-- Preview rule code `RUF025` moved to `RUF037` (0.9.0).
-- `unsafe-markup-use` moved from `RUF035` to `S704`; update selections,
-  ignores, and suppressions (0.10.0-guide).
-- `UP038` (`non-pep604-isinstance`) and `S320`
-  (`suspicious-xmle-tree-usage`) were deprecated in 0.10.0. `S320` was removed
-  in 0.12.0. `PD901` (`pandas-df-variable-name`) was then deprecated.
-- Deprecated rules stopped activating via a selected group or prefix; select
-  one by exact code while it still exists. `PD901` and `UP038`, the remaining
-  deprecated rules, were removed in 0.13.0-guide.
-- The Airflow 3 preview codes changed in 0.11.0: the former `AIR301` moved to
-  `AIR002`, `AIR302` moved to `AIR301`, and `AIR303` moved to `AIR302`.
-  Additional checks split into `AIR311` and `AIR312`, and some `AIR312` checks
-  later returned to `AIR302`. Update explicit selectors, ignores, and `noqa`
-  codes. Fixes exist, but module-move fixes are unsafe.
-- The `NPY201` fix for `np.in1d` was removed (0.15.0).
+Since 0.12.0, regular checks include version-related and CPython compile-time
+syntax errors. With no `target-version`, version-related syntax checks assume
+the latest supported Python, then 3.13, while ordinary lint behavior still
+defaults to the minimum supported Python, then 3.9. Pin the real project target
+to avoid this split fallback.
 
-## Target Python version
-
-The announced inference of Python version from `requires-python`, when
-`target-version` is unset, did not ship in 0.10.0; it first shipped in 0.11.0
-(0.10.0-guide).
-
-Syntax validation introduced in preview later became part of regular checks.
-When `target-version` was unset in 0.12.0, version-related syntax checks assumed
-the latest supported Python, 3.13, while other behavior such as lint-rule
-application still defaulted to the minimum supported Python, 3.9.
-
-Ruff advanced its implicit default and latest baselines for Python 3.14 in
-0.14.0. Pin the real project version to keep syntax, rule, and formatting
-decisions stable:
-
-```toml
-[tool.ruff]
-target-version = "py312"
-```
-
-Preview accepts `py315`:
+Ruff advances its default and latest baselines for Python 3.14 in 0.14.0.
+Projects relying on implicit versions can therefore see different parsing,
+lint, or formatting decisions. Preview also accepts `py315`:
 
 ```toml
 [tool.ruff]
@@ -72,81 +33,141 @@ preview = true
 target-version = "py315"
 ```
 
-Starting in 0.15.0, Ruff resolves the entire chain of `extend`ed configuration
-files before falling back to its default Python version. A target inherited
-from an extended file can therefore win instead of an earlier default fallback.
+## Rule-code migrations
 
-## Type-checking and generated imports
+### Renames, splits, and moves
 
-Any local variable named `TYPE_CHECKING` is recognized as a type-checking guard.
-Legacy `if 0:` and `if False:` guards are no longer recognized; use a local
-`TYPE_CHECKING` variable (0.10.0-guide).
+- In 0.9.0, `A005` is named `stdlib-module-shadowing`, replacing
+  `builtin-module-shadowing`; it also ignores stub files.
+- Preview in 0.9.0 splits `UP007`: it retains `Union` handling, while new
+  `UP045` handles `Optional`. This split becomes stable in 0.12.0, so update
+  explicit selections, ignores, and `noqa` comments to include `UP045` where
+  intended.
+- Preview in 0.9.0 moves `RUF025` to `RUF037`.
+- The `unsafe-markup-use` rule moves from `RUF035` to `S704` in
+  0.10.0-guide; `S704` is stable in 0.10.0. Update selectors and suppressions.
+- Airflow preview rules are reorganized in 0.11.0: former `AIR301` becomes
+  `AIR002`, former `AIR302` becomes `AIR301`, and former `AIR303` becomes
+  `AIR302`. Checks are also split into `AIR311` and `AIR312`, with some
+  `AIR312` checks later returning to `AIR302`. Update every explicit selector,
+  ignore, and suppression. Autofixes cover these rules, but module-move fixes
+  are unsafe.
 
-Prevent generated fixes from introducing `typing_extensions` imports with the
-0.11.0 setting:
+### Deprecations and removals
+
+- `UP038` (`non-pep604-isinstance`) and `S320`
+  (`suspicious-xmle-tree-usage`) are deprecated in 0.10.0.
+- `S320` is removed in 0.12.0. `pandas-df-variable-name` is deprecated there.
+- In 0.13.0-guide, selecting a group or prefix no longer activates deprecated
+  rules; a deprecated rule must be selected by its exact code. The remaining
+  deprecated rules `PD901` (`pandas-df-variable-name`) and `UP038` are then
+  removed and no longer run.
+
+Search `select`, `extend-select`, `ignore`, per-file ignores, suppressions,
+editor settings, and scripts for all affected identifiers.
+
+## Default rule selection
+
+Preview mode expands from 59 stable-default rules to 412 rules beginning in
+0.15.0 (specifically 0.15.2). It is mostly, but not completely, a superset. It
+initially omits `E401`, `E402`, `E701`–`E703`, `E711`–`E714`, `E721`, `E731`,
+`E741`–`E743`, `F403`, `F405`, `F406`, and `F722`; later 0.15.6 removes a few
+more rules from preview defaults.
+
+The expanded stable default in 0.16.0-guide enables 413 rules rather than 59.
+It is primarily an expansion but is not a strict superset: 18 opinionated
+pycodestyle and Pyflakes rules stop being enabled implicitly. Pin a fixed
+selection when CI must remain stable:
+
+```toml
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+```
+
+## Lint option migrations
+
+### `flake8-builtins`
+
+In 0.10.0, `lint.flake8-builtins.strict-checking` changes its default from
+`true` to `false`. The `builtins-`-prefixed option names are deprecated in favor
+of unprefixed names; for example, replace `builtins-allowed-modules` with
+`allowed-modules`.
+
+### Type-checking guards
+
+In 0.10.0-guide, any local variable named `TYPE_CHECKING` is recognized as a
+type-checking guard. Legacy `if 0:` and `if False:` guards are no longer
+recognized; migrate them to a local `TYPE_CHECKING` variable.
+
+To prevent generated fixes from importing `typing_extensions`, set
+`lint.typing-extensions` to false (since 0.11.0):
 
 ```toml
 [tool.ruff.lint]
 typing-extensions = false
 ```
 
-With `lint.future-annotations` enabled, fixes for `TC001`, `TC002`, `TC003`,
-`RUF013`, and `UP037` can insert `from __future__ import annotations`. This
-lets them move more imports under `TYPE_CHECKING`, use PEP 604 unions before
-Python 3.10, and unquote more annotations (0.13.0-guide):
+With `lint.future-annotations = true` in 0.13.0-guide, fixes for `TC001`,
+`TC002`, `TC003`, `RUF013`, and `UP037` can insert
+`from __future__ import annotations`. This can move more imports under
+`TYPE_CHECKING`, use PEP 604 unions before Python 3.10, or unquote annotations:
 
 ```toml
 [tool.ruff.lint]
 future-annotations = true
 ```
 
-Preview fixes for `UP006`, `UP007`, and `UP045` can also insert that future
-import (0.15.0). Bandit import checks `S401`–`S415` allow imports inside
-`TYPE_CHECKING`, while `TC001`–`TC003` avoid strict behavior when
-`lint.future-annotations` is enabled.
+In 0.15.0 preview, `UP006`, `UP007`, and `UP045` fixes may also insert that
+future import. Bandit import rules `S401`–`S415` allow guarded imports, while
+`TC001`–`TC003` avoid strict behavior when future annotations are enabled.
 
-## Plugin and rule-family settings
+### Import classification and conventions
 
-- `lint.flake8-builtins.strict-checking` defaults to `false`, not `true`
-  (0.10.0).
-- `builtins-`-prefixed `flake8-builtins` options are deprecated. For example,
-  replace `builtins-allowed-modules` with `allowed-modules` (0.10.0).
-- `numpy.typing as npt` is a default `flake8-import-conventions` alias, so
-  `ICN001` recognizes it without custom configuration (0.11.0).
-- Preview `RUF066` honors decorators listed under
-  `lint.pydocstyle.property-decorators` (0.14.0).
-- Import sorting supports configurable section-heading comments (0.15.0).
-- Human-readable rule names can be used in preview suppressions and selectors.
-  Preview output, LSP hovers, and code actions prefer them; `ruff rule` accepts
-  them; unknown selectors warn rather than fail. Preview migration rules
-  `RUF105`, `RUF106`, and `RUF201` convert `noqa` to `ruff:ignore`, codes to
-  names inside `ruff:ignore`, and configuration selectors to names
-  respectively (0.15.0).
+Since 0.11.0, isort checks a module's full path against the configured project
+root or roots when classifying first-party imports. Nested modules can move
+between import sections. The same release makes `numpy.typing as npt` a default
+`flake8-import-conventions` alias, so `ICN001` recognizes it without custom
+configuration.
 
-## File types, discovery, and project roots
+In 0.15.0, import sorting gains configurable section-heading comments.
 
-The isort implementation compares a module's full path with the configured
-project root or roots when classifying first-party imports. Nested modules can
-therefore move between import sections (0.11.0).
+## Configuration discovery and extensions
 
-Preview input discovery includes `*.pyw` by default (0.14.0).
+The macOS fallback at
+`~/Library/Application Support/ruff/ruff.toml` is removed in 0.13.0-guide. Put
+user configuration in the XDG location, normally `~/.config/ruff/ruff.toml`.
 
-Preview formatting handles labeled Python blocks in Markdown, including
-`pycon` and Quarto language markers, while leaving unlabeled blocks unchanged.
-Markdown discovery became a preview default in 0.15.5. `.qmd` no longer has an
-implicit special case and must be mapped when desired:
+Preview in 0.14.0 discovers `*.pyw` by default.
+
+Preview Markdown support in 0.15.0 discovers `.md` files by default from
+0.15.5. `.qmd` loses its implicit special case and must be mapped:
 
 ```toml
 [tool.ruff]
 extension = { qmd = "markdown" }
 ```
 
-Configured extensions participate in discovery, code-block language choice,
-and later server handling (0.15.0). Markdown formatting became a default,
-non-preview behavior in 0.16.0-guide.
+Configured extensions affect discovery, code-block language selection, and
+later language-server handling. Markdown formatting becomes default behavior in
+0.16.0-guide rather than requiring preview.
 
-## User-level configuration
+## Human-readable rule names
 
-Ruff no longer searches `~/Library/Application Support/ruff/ruff.toml` on
-macOS. Put user-level configuration in the XDG location, normally
-`~/.config/ruff/ruff.toml` (0.13.0-guide).
+In 0.15.0 preview, suppressions and selectors can use human-readable rule
+names. Preview output, LSP hovers, and code actions prefer those names;
+`ruff rule` accepts them, and unknown selectors warn rather than fail. Preview
+rules `RUF105`, `RUF106`, and `RUF201` migrate `noqa` to `ruff:ignore`, codes to
+names in `ruff:ignore`, and configuration selectors to names.
+
+The 0.16.1 preview option can opt out of human-readable names, allowing an
+integration to retain code-oriented output while using other preview behavior.
+
+## Release and environment notes
+
+The `ruff:alpine` image moves from Alpine 3.20 to 3.21 in 0.10.0-guide;
+`ruff:alpine3.20` stops receiving updates. In 0.15.0, `ruff:alpine` advances to
+Alpine 3.23 and `ruff:debian` / `ruff:debian-slim` use Debian 13 “Trixie.”
+
+Version 0.14.12 was published to PyPI without a GitHub release or tag after a
+WASM publishing issue; 0.14.13 has identical contents and is its follow-up.
+Account for that if release automation assumes every PyPI version has a tag.

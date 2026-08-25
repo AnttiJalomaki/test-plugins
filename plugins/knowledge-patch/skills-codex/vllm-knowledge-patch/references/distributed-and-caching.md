@@ -1,58 +1,77 @@
 # Distributed Execution and Caching
 
-## Offline and executor evolution
+Use this reference for parallel execution, cluster launch, disaggregated
+serving, KV transfer and offload, expert scaling, topology, and cache capacity.
 
-- In `0.7-0.10`, offline inference added `torchrun` and SPMD execution;
-  `AsyncLLM` gained a Ray executor; `LLM` became `torchrun` compatible; and
-  multiprocess/`torchrun` pipeline parallelism plus pipeline-combined sequence
-  parallelism arrived.
-- RayExecutorV2 became the default in 0.21.
-- Version 0.25 permits sequence parallelism without data parallelism. Version
-  0.26 adds hybrid-attention decode-context parallelism and NIXL
-  pipeline-parallel prefill in push mode.
+## Parallel execution modes
 
-## Choosing and launching parallelism
+### Offline launch and early parallel combinations (`0.7-0.10`)
 
-- Use pipeline parallelism with `tensor_parallel_size=1` when the GPU count
-  does not divide the model evenly, or when GPUs such as L40S lack NVLink and
-  tensor-parallel communication would dominate. Set `pipeline_parallel_size`
-  to the GPU count:
+Offline inference supports `torchrun` and SPMD-style execution. `AsyncLLM`
+has a Ray executor and `LLM` works under a `torchrun` launcher. Multiprocess
+and `torchrun` pipeline parallelism are supported, as is sequence parallelism
+combined with pipeline parallelism.
 
-```bash
-vllm serve MODEL --tensor-parallel-size 1 --pipeline-parallel-size 4
-```
+Expert parallelism for DeepSeek models uses `--enable-expert-parallel`. EP/TP
+MoE can run with data-parallel attention and data-parallel communication.
+Elastic expert parallelism can change GPU counts while preserving state;
+`MOE_DP_CHUNK_SIZE` controls MoE data-parallel chunking.
 
-- `--nnodes/-n` requires the multiprocessing DP backend. Node count must
-  evenly divide `DP × PP × TP`; `--node-rank/-r` is zero-based. The engine
-  derives local DP size/rank and may use the rank for external balancing.
-- External DP is rejected for non-MoE models, requires a rank, and forces
-  local DP size to one. A rank can be explicit or inferred.
-  `--data-parallel-multi-port-external-lb` instead starts a node-local
-  supervisor with one API server per local rank and aggregate health.
-- `--enable-fault-tolerance` requires external DP balancing or an explicit DP
-  rank; internal balancing is unsupported. A dictionary-valued
-  `fault_tolerance_config` passed to `EngineArgs` enables it automatically.
-- Version 0.22 added a DP supervisor and forwards the selected rank in
-  `X-data-parallel-rank`.
-- Version 0.23 added node-targeted Ray placement groups, per-GPU-worker RDMA
-  NIC selection, a 120-second coordinator startup timeout, and supervisor TLS.
+### New distributed layouts (`0.11-0.14`)
 
-## Ray and multiprocessing network safety
+Preparatory Prefill Context Parallelism and cross-layer KV blocks were added,
+followed by the Mooncake Transfer Engine and external-launcher mode. Later
+layouts include XBO, asymmetric-TP and heterogeneous-layout NIXL, cross-layer
+MultiConnector arrangements, and LMCache KV-cache registration.
 
-- Install the Ray executor with:
+### Dynamic expert serving (`0.15-0.18`)
 
-```bash
-pip install "ray[cgraph]"
-```
+Elastic expert parallelism supports dynamic GPU scaling. NIXL-EP integrates
+with that path, and `--enable-ep-weight-filter` skips irrelevant expert weights
+during load.
 
-- For `examples/ray_serving/run_cluster.sh`, assign every head/worker container
-  its own private `VLLM_HOST_IP`, keep each launcher shell open, and verify
-  `ray status` plus `ray list nodes`.
-- Ray cluster traffic is unencrypted and its payload format can allow
-  arbitrary code execution. Never expose cluster addresses to untrusted
-  hosts.
-- For native multiprocessing, rank 0 runs the server and workers join the same
-  head address with `--headless`:
+### Data-parallel supervisor and bidirectional transfer (`0.19-0.22`)
+
+Disaggregated serving supports a 3FS KV connector, heterogeneous-TP
+prefill/decode for Mamba2-like models, and bidirectional KV transfers. The
+data-parallel supervisor forwards the selected rank in the
+`X-data-parallel-rank` header.
+
+### New defaults and hybrid layouts (`0.23-0.26`)
+
+Async EPLB is the default. NCCL-based EPLB combined with async EPLB is
+rejected; DeepEP v2 is available. Sequence parallelism can run without data
+parallelism. Hybrid-attention DCP and NIXL pipeline-parallel prefill in push
+mode are supported.
+
+Ray placement groups can target nodes, each GPU worker can select an RDMA NIC,
+the coordinator startup timeout is 120 seconds, and the data-parallel
+supervisor supports TLS.
+
+## Native multi-node and external balancing
+
+### World-size arithmetic (`engine-and-openai-server`)
+
+`--nnodes/-n` requires the multiprocessing data-parallel backend. Node count
+must evenly divide `DP × PP × TP`, and `--node-rank/-r` is zero-based. The
+engine derives local data-parallel size and rank and may use that rank for
+external load balancing.
+
+### External balancing and fault tolerance (`engine-and-openai-server`)
+
+External data parallelism is MoE-only, requires a rank, and forces local
+data-parallel size to one. Supply the rank directly or infer it from
+multi-node launch. `--data-parallel-multi-port-external-lb` runs a node-local
+supervisor with one API server per local rank and aggregate health.
+
+`--enable-fault-tolerance` requires external balancing or an explicit
+data-parallel rank; internal balancing is unsupported. Passing a dictionary as
+`fault_tolerance_config` to `EngineArgs` enables fault tolerance automatically.
+
+### Headless workers (`distributed-parallelism`)
+
+For native multi-node multiprocessing, rank 0 runs the normal server and every
+worker connects to its head address with `--headless`:
 
 ```bash
 vllm serve /path/to/model \
@@ -61,75 +80,93 @@ vllm serve /path/to/model \
   --master-addr HEAD_NODE_IP --headless
 ```
 
-## RDMA and capacity checks
+## Topology and capacity
 
-- `GPU KV cache size` in startup logs is total GPU KV token capacity.
-  `Maximum concurrency for N tokens per request` estimates simultaneous
-  requests at `ModelConfig.max_model_len`; add GPUs/nodes if these miss the
-  deployment target.
-- Docker should provide host IPC and `/dev/shm`; Kubernetes should add
-  `IPC_LOCK` and mount a memory-backed `emptyDir` at `/dev/shm`.
-- With `NCCL_DEBUG=TRACE`, `[send] via NET/IB/GDRDMA` confirms GPUDirect RDMA;
-  `[send] via NET/Socket` shows TCP transport.
+### Pipeline parallelism for uneven or weakly connected GPUs (`distributed-parallelism`)
+
+If a model fits on one node but the GPU count does not divide it evenly, use
+`tensor_parallel_size=1` and set `pipeline_parallel_size` to the GPU count.
+Pipeline parallelism is also preferable on GPUs without NVLink, such as L40S,
+because tensor parallelism has heavier communication:
+
+```bash
+vllm serve MODEL --tensor-parallel-size 1 --pipeline-parallel-size 4
+```
+
+### Read capacity from startup logs (`distributed-parallelism`)
+
+`GPU KV cache size` is total GPU KV token capacity. `Maximum concurrency for N tokens per request`
+estimates simultaneous requests at
+`ModelConfig.max_model_len`. Add GPUs or nodes if either value misses the
+deployment target.
+
+### Device ID composition (`engine-and-openai-server`)
+
+If a device-visibility environment variable already masks devices, integer
+values in `--device-ids` index the visible list rather than raw physical
+devices. UUIDs are accepted, but integer and UUID forms cannot be mixed;
+duplicates are rejected. `--device-ids` has no effect with Ray executors.
+
+## Ray cluster safety and RDMA
+
+### Containerized Ray (`distributed-parallelism`)
+
+Install the executor with:
+
+```bash
+pip install "ray[cgraph]"
+```
+
+With `examples/ray_serving/run_cluster.sh`, give every head and worker
+container a distinct `VLLM_HOST_IP`, keep each launching shell open, and verify
+membership with `ray status` and `ray list nodes`. Use private addresses that
+untrusted hosts cannot reach: cluster traffic is unencrypted and its payload
+format can allow arbitrary code execution.
+
+### GPUDirect RDMA (`distributed-parallelism`)
+
+Docker needs host IPC and `/dev/shm`; Kubernetes needs `IPC_LOCK` plus a
+memory-backed `emptyDir` mounted at `/dev/shm`:
 
 ```bash
 docker run --gpus all --ipc=host --shm-size=16G \
   -v /dev/shm:/dev/shm vllm/vllm-openai
 ```
 
-## Data and expert parallelism
+Run with `NCCL_DEBUG=TRACE`. `[send] via NET/IB/GDRDMA` confirms GPUDirect
+RDMA; `[send] via NET/Socket` indicates inefficient TCP transport.
 
-- In `0.7-0.10`, DeepSeek MoE gained `--enable-expert-parallel`, EP/TP MoE
-  with DP attention, and DP communication. Elastic EP added GPU-count changes
-  while retaining state; `MOE_DP_CHUNK_SIZE` became configurable.
-- In `0.15-0.18`, elastic EP reached dynamic serving, NIXL-EP integration,
-  and `--enable-ep-weight-filter` for skipping irrelevant expert weights.
-- MRV2 later gained EPLB. Async EPLB became the default in 0.23; 0.24 rejects
-  NCCL-based EPLB combined with async EPLB and adds DeepEP v2.
+## KV connectors and disaggregation
 
-## Disaggregated serving and KV transfer
+### LMCache, NIXL, and multiple connectors (`0.7-0.10`)
 
-- In `0.7-0.10`, LMCache supported KV offload, disaggregated and chunked
-  prefill; NIXL and multiple simultaneous KV connectors followed.
-- In `0.11-0.14`, layouts added preparatory Prefill Context Parallelism,
-  cross-layer KV blocks, Mooncake Transfer Engine, external launch, XBO,
-  asymmetric TP, heterogeneous NIXL, cross-layer MultiConnector, and LMCache
-  cache registration.
-- In `0.19-0.22`, a 3FS connector, heterogeneous-TP prefill/decode for
-  Mamba2-like models, and bidirectional prefill/decode transfers arrived.
-- Version 0.23 enabled HMA by default for capable connectors. Later changes
-  include NIXL pipeline-parallel prefill in push mode.
+LMCache supports KV offload, disaggregated prefill, and chunked prefill. NIXL
+integration and multiple simultaneous KV connectors were added later.
 
-## Prefix and multimodal caching
+### Policy-aware and tiered offload (`0.19-0.22`)
 
-- V1 processes multimodal inputs outside the engine loop and caches
-  preprocessed inputs across requests. Image hashes participate in prefix
-  lookup.
-- A separate encoder cache stores vision embeddings, letting the scheduler
-  split accompanying text prefill across steps.
-- Prefix-cache salting arrived in `0.7-0.10` for tenant isolation.
-  SHA-256 plus CBOR can make hashes reproducible.
-- Mamba/hybrid models can use block-aligned state caching with
-  `--enable-prefix-caching --mamba-cache-mode align`; speculative decoding
-  gained compatibility in `0.15-0.18`.
-- Processor caching has `--mm-processor-cache-type` and a shared-memory object
-  size limit. The encoder independently controls tensor parallelism, attention
-  backend/dtype, FP8 scale load/save and margin, plus tensor-IPC mode and GPU
-  memory.
+CPU offload has a pluggable `CachePolicy` and supports hybrid models. It
+integrates with the Hybrid Memory Allocator and `MooncakeStoreConnector`.
+Multi-tier offload can extend beyond CPU memory to a Python filesystem tier or
+Mooncake disk, and exposes `reset_cache`.
 
-## Offloading policy and failure semantics
+### Request and object-store controls (`0.23-0.26`)
 
-- Version 0.11 added CPU KV offload with LRU management.
-- In `0.15-0.18`, CPU stores can be restricted to frequently reused blocks,
-  FlexKV became a backend, and one specification can contain multiple KV
-  groups.
-- Version 0.17 changed connector load failure from `recompute` to `fail`.
-  Configure recomputation explicitly if request failure is not desired.
-- In `0.19-0.22`, CPU offload gained a pluggable `CachePolicy`, hybrid-model
-  support, Hybrid Memory Allocator integration, `MooncakeStoreConnector`,
-  filesystem and Mooncake disk secondary tiers, and `reset_cache`.
-- In `0.23-0.26`, storage expanded to object-store tiers, async batched
-  lookup, parallelism-independent filesystem storage, workload identity,
-  heterogeneous-group `blocks_per_chunk`, and encoder-cache connectors with
-  CPU offload.
-- Per-request `on_new_request` hooks can select offloading policy.
+An object-store secondary tier is available, and capable connectors enable HMA
+by default. `on_new_request` selects per-request offload policy. The cache also
+supports async batched lookup, a parallelism-independent filesystem tier,
+workload identity for object storage, `blocks_per_chunk` for heterogeneous KV
+groups, and encoder-cache connectors with CPU offload.
+
+### Hybrid disaggregation (`0.27.1`)
+
+NIXL prefill/decode disaggregation supports hybrid MLA+SSM models and different
+block sizes between prefill and decode. MoRIIO routes reads between
+heterogeneous tensor-parallel prefill and data-parallel decode layouts.
+
+### Peer and policy extension points (`0.27.1`)
+
+KV offload supports a generic peer-to-peer secondary tier with lookup and
+serving. `TierFilter` and `TierMatcher` select tiers per request;
+`TieringOffloadingSpec` makes KV events self-describing; and
+`CachePolicyFactory` supplies pluggable eviction policies.

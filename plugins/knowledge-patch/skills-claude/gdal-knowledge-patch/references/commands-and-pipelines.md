@@ -1,303 +1,247 @@
 # Commands, algorithms, and pipelines
 
-Use this reference for the task areas below. Batch labels identify when each behavior entered the covered compatibility history.
-
 ## Unified command family
 
-### Restored raster API and CLI behavior
+### Core front end and algorithm registry (`3.11.0`)
 
-*Batch: 3.10.1*
+The `gdal` front end groups raster, vector, multidimensional, VSI, dataset, and
+driver work. Initial commands include `gdal raster calc`, `resclassify`, and
+`tile`, `gdal vsi list|copy|delete|move|sync`, and `gdal driver DRIVER`.
+`gdal raster tile` is a C++ port of `gdal2tiles`. The framework is callable
+through C, C++, and Python and installs Bash completion.
 
-`GDALContourGenerateEx()` returns `CE_None` for a constant-valued raster, reversing a 3.10.0 regression. `gdalinfo` again streams to standard output, and the `gdaltindex -ot` option removed accidentally in 3.10.0 is available again.
+The read-only GDALG driver stores a compatible vector command line and replays
+it as a streamed, on-the-fly dataset—a streamed-pipeline counterpart to VRT.
 
-### Exact non-rectangular clipping in `ogr2ogr`
+### Command path and default migrations (`3.12-migration`)
 
-*Batch: 3.10.2*
+The geometry operations `buffer`, `explode-collections`, `make-valid`,
+`segmentize`, `simplify`, and `swap-xy` move from `gdal vector geom` directly
+under `gdal vector`. `geom set-type` becomes `vector set-geom-type`. Old paths
+are temporary compatibility aliases and are removed in the next command-family
+transition.
 
-`-clipsrc` and `-clipdst` now reject an input geometry that lies within a non-rectangular clip geometry's envelope but does not intersect the clip geometry itself.
+Progress is written to stdout unless `--quiet` or `-q` is set. CLI invocations
+of raster info, vector info, and VSI list default to text, while API calls keep
+their JSON defaults.
 
-### Unified `gdal` command family
+### Input and output names (`3.13-migration`)
 
-*Batch: 3.11.0*
+Unified arguments increasingly use `--input` and `--output` instead of
+`--src` and `--dst`. The old spellings remain accepted by CLI and C, C++, and
+Python APIs where provided.
 
-The new `gdal` front end groups operations into subcommands, including `gdal raster calc`, `gdal raster resclassify`, `gdal raster tile` (a C++ port of `gdal2tiles`), `gdal vsi list/copy/delete/move/sync`, and `gdal driver {driver_name}`. The algorithm framework is also exposed through C, C++, and Python APIs, and the command installs Bash completion.
+## Pipeline composition
 
-### Unified overview controls
+### Composite, nested, and reusable pipelines (`3.12.0`)
 
-*Batch: 3.11.1*
+`gdal pipeline` can mix raster and vector stages. It supports nested pipelines,
+`tee`, and running an existing pipeline while overriding or adding parameters.
+Raster `mosaic` and `stack` may begin a pipeline; `fill-nodata`, `proximity`,
+`sieve`, and `viewshed` may be stages. Vector pipelines add `limit`.
 
-`gdal raster overview add` accepts `-r none`. COG cleanup through `gdaladdo` or the unified overview commands exposes the `IGNORE_COG_LAYOUT_BREAK` message and automatically enables that option for `-clean`, which does not break the layout.
+### External and multi-output stages (`3.13.0`)
 
-### Expanded unified raster operations
+Use `external` to invoke an external command. The `_` placeholder dataset name
+selects a non-first dataset from the preceding stage. Commands using `--append`
+create the target if it does not already exist.
 
-*Batch: 3.12.0*
+Named materialization infers format from its output (`3.13.1`):
 
-The unified CLI adds `gdal raster as-features`, `blend`, `compare`, `neighbors`, `nodata-to-alpha`, `pansharpen`, `proximity`, `rgb-to-palette`, `update`, and `zonal-stats`. `fill-nodata`, `proximity`, `sieve`, and `viewshed` can be pipeline steps, while `mosaic` and `stack` can start a raster pipeline.
+```text
+... ! materialize --output my.tif ! tile
+```
 
-### Raster editing, clipping, and overview inputs
-
-*Batch: 3.12.0*
-
-`gdal raster clip` adds `--window <column>,<line>,<width>,<height>`, and `gdal raster edit` adds `--gcp` and `--unset-metadata-domain`. `gdal raster overview add` can take an existing overview with `--overview-src` and forwards overview creation settings through `--creation-option` or `--co`; `gdalbuildvrt` adds `-write_absolute_path`.
-
-### Unified-source-nodata warping
-
-*Batch: 3.12.2*
-
-Warping with `UNIFIED_SRC_NODATA=YES` no longer applies inappropriate destination-nodata avoidance.
-
-### Unified CLI option parity
-
-*Batch: 3.12.3*
-
-Pipeline-mode `gdal raster contour`, `gdal raster polygonize`, and `gdal vector select` expose `--output-layer`. Standalone `gdal raster edit` now exposes the `--oo` input open-option argument.
-
-### Dataset copy and rename targets
-
-*Batch: 3.12.3*
-
-`gdal dataset copy` and `gdal dataset rename` now work with vector datasets and directories, rather than only their earlier target types.
-
-### Expanded unified CLI
-
-*Batch: 3.13.0*
-
-New commands include `gdal vector combine`, `concave-hull`, `convex-hull`, `create`, `dissolve`, `export-schema`, `update`, `rename-layer`, and `sort`, plus `gdal dataset check` and COG and GeoPackage validation under `gdal driver`.
-
-### Multidimensional CLI additions
-
-*Batch: 3.13.0*
-
-`gdal mdim info --summary` provides abbreviated output, and `gdal mdim mosaic` accepts dimensions that have no indexing variable.
-
-### Curve layers in `gdal vector clip`
-
-*Batch: 3.13.2*
-
-`gdal vector clip` now works when the layer geometry type is a curve type.
-
-## Pipelines and algorithm composition
-
-### GDALG streamed vector pipelines
-
-*Batch: 3.11.0*
-
-The read-only GDALG (GDAL Streamed Algorithm Format) driver represents an on-the-fly vector dataset by replaying compatible `gdal` command lines, providing a VRT-like format for streamed algorithm pipelines.
-
-### Composite and reusable pipelines
-
-*Batch: 3.12.0*
-
-`gdal pipeline` can mix raster and vector stages and supports nested pipelines plus a `tee` step. An existing pipeline can also be run while overriding or adding parameters.
-
-### Raster inputs supplied through pipelines
-
-*Batch: 3.12.1*
-
-`gdal raster compare`, `info`, and `tile` work when a pipeline receives its input dataset outside the pipeline string. `gdal raster calc` also accepts input files represented by nested pipelines.
-
-### Nested raster and vector pipelines
-
-*Batch: 3.12.4*
-
-Nested `gdal pipeline` definitions work when a stage such as vector concatenation can accept several input datasets. In raster pipelines, `gdal raster edit` can follow an anonymous VRT-producing stage without failing.
-
-### Selected-layer vector SQL pipelines
-
-*Batch: 3.12.4*
-
-In `gdal vector pipeline`, `read --layer` now forwards `ExecuteSQL()` to the source dataset, so a selected-layer read can feed a subsequent `sql` step.
-
-### External, multi-output, and append pipelines
-
-*Batch: 3.13.0*
-
-Pipelines gain an `external` step for running an external command, and the `_` placeholder dataset name can select a non-first dataset produced by the preceding step. Unified commands using `--append` now create the target dataset when it does not exist.
-
-### Named pipeline materialization
-
-*Batch: 3.13.1*
-
-A pipeline `materialize` step with a named output now infers the output format; a sequence such as `... ! materialize --output my.tif ! tile` is supported.
-
-### Tiled-pipeline standard output
-
-*Batch: 3.13.1*
-
-A `gdal raster pipeline ... ! tile` sequence no longer writes the output filename to standard output.
-
-### Anonymous COG materialization before tiling
-
-*Batch: 3.13.2*
-
-A raster pipeline can materialize an unnamed COG and pass it directly to a tiling stage:
+An anonymous COG can be materialized and tiled directly (`3.13.2`):
 
 ```text
 gdal raster pipeline read byte.tif ! materialize --format COG ! tile
 ```
 
-### OSM and PBF vector pipelines
+### Pipeline corrections and constraints
 
-*Batch: 3.13.2*
+- Raster `compare`, `info`, and `tile` accept an input passed outside the
+  pipeline string; `calc` accepts nested-pipeline inputs (`3.12.1`).
+- Nested pipelines accept multi-input stages such as vector concatenation, and
+  raster `edit` can follow an anonymous VRT stage (`3.12.4`).
+- A selected-layer `read --layer` forwards `ExecuteSQL()` so a following SQL
+  stage sees the selected layer (`3.12.4`).
+- OSM/PBF read, operate, filter, and write pipelines execute correctly
+  (`3.13.2`).
+- `gdal vector limit` applies dataset filters before limiting (`3.13.2`).
+- A raster pipeline ending in `tile` does not print the output filename to
+  stdout (`3.13.1`).
 
-Vector pipelines that read an OSM or PBF source, perform an operation and filter, and then write the result now execute correctly.
+## Raster commands
 
-## Utilities and automation contracts
+### Broad raster operation set (`3.12.0`)
 
-### Double-valued `gdal_rasterize` target sizes
+Unified raster adds `as-features`, `blend`, `compare`, `neighbors`,
+`nodata-to-alpha`, `pansharpen`, `proximity`, `rgb-to-palette`, `update`, and
+`zonal-stats`.
 
-*Batch: 3.10.2*
+`calc` handles nodata, accepts `--flatten`, and selects
+`--dialect=muparser|builtin`; the built-in dialect can combine all bands of one
+input into one output. `mosaic` accepts `--pixel-function` and its arguments;
+`mosaic` and `stack` accept `--absolute-path`.
 
-`gdal_rasterize` now accepts double values for `-ts`:
+`clip` accepts `--window column,line,width,height`. `edit` adds `--gcp` and
+`--unset-metadata-domain`. `overview add` accepts `--overview-src` and forwards
+creation options with `--creation-option`/`--co`. `gdalbuildvrt` adds
+`-write_absolute_path`.
 
-```text
--ts 1024.0 512.0
+`reproject` adds `-j`/`--num-threads` and defaults to `ALL_CPUS`; `resize` adds
+`--resolution`. Tiling supports `--parallel-method=fork` off Windows or
+`spawn`, emits `stacta.json`, and can terminate a pipeline. Viewshed adds
+angular, pitch, and minimum-distance masking.
+
+### Later raster workflow expansion (`3.13.0`)
+
+`blend` adds multiply, screen, overlay, hard-light, darken, lighten,
+color-dodge, and color-burn. Raster creation becomes a pipeline stage and
+copies `--like` tiling where possible. Editing can set color interpretation,
+scale, offset, and color map or remove a color table.
+
+`raster index` adds a `STAC-GeoParquet` profile, `filename`, `md5`, and
+`metadata-item` identifiers plus metadata-name and base-URL controls.
+`dataset identify --detailed` can write through any writable vector driver.
+Text raster/vector info accepts `--crs-format=AUTO|WKT2|PROJJSON`.
+
+`pixel-info` can promote samples to Z, take position datasets/layers, retain
+selected fields, write a dataset, and run in a pipeline. Selection accepts
+color interpretations such as `red`, `alpha`, and `nir`, plus `--exclude`.
+Reprojection adds `--like`.
+
+`rgb-to-palette` adds `--output-nodata`, `--no-dither`, and `--bit-depth`.
+Zonal statistics adds `--include-field ALL|NONE`, `--include-geom`, and output
+layer selection. Rasterization derives the missing output dimension from the
+other dimension and input extent when one requested size is zero.
+
+### Raster utility compatibility and fixes
+
+- `gdal_rasterize -ts` accepts floating-point sizes (`3.10.2`).
+- `gdaldem -az` accepts zero and negative azimuths (`3.10.3`). Aspect, TPI, and
+  TRI are correct for non-north-up rasters, and hillshade, slope, and roughness
+  are correct on rotated sources (`3.11.5`).
+- `gdalinfo` again streams to stdout and `gdaltindex -ot` is restored
+  (`3.10.1`). `gdalinfo -wkt_format WKT1_ESRI` is restored (`3.12.3`).
+- `gdal_translate` and warp reject invalid numeric options; translation nodata
+  is copied only when exactly representable (`3.11.0`).
+- `gdal_translate -projwin` includes partially covered pixels and transforms
+  full bounds (`3.11.0`).
+- `gdalbuildvrt` adds `-co` and `-resolution same|compatible`; it later warns
+  when `-separate` nodata is outside the target type (`3.11.0`, `3.13.1`).
+- `gdaldem` derives scale from the CRS and adds `-xscale`/`-yscale`;
+  `gdallocationinfo` can query corners (`3.11.0`). Nodata queries in
+  `gdallocationinfo` are restored (`3.11.2`).
+- `rgb2pct` accepts `--creation-option`; `gdal2xyz` writes VSI targets;
+  `gdalenhance` is installed and documented (`3.11.0`).
+- Polygonized contours omit min/max fields, and `gdal2tiles` applies source
+  nodata even without reprojection (`3.11.0`).
+- `gdal2tiles` computes correct extents for non-square source pixels
+  (`3.12.3`).
+
+### Overviews, tiling, and GTI
+
+`gdal raster overview add -r none` is valid. COG cleanup exposes the
+`IGNORE_COG_LAYOUT_BREAK` message; `-clean` enables the option automatically
+and does not break COG layout (`3.11.1`). Timestamp-based partial refresh works
+for GTI as well as VRT.
+
+Raster tile supports excluded-value and nodata-percentage thresholds
+(`3.11.1`). Spawn mode no longer stalls on Windows with `CPL_DEBUG=ON`
+(`3.12.1`). It later chooses a suitable source overview automatically
+(`3.13.1`).
+
+### Output and status contracts
+
+JSON `gdalinfo` emits integer nodata as an integer, includes a `rat` object,
+and omits `wgs84Extent`/`extent` for ungeoreferenced images (`3.11.1`). STAC
+transform coefficient order and floating nodata output were corrected in
+`3.12.1`.
+
+`gdal mdim info` exits zero on success. `gdal_footprint` reports failure when
+its only feature cannot be simplified, and `gdal_viewshed` initializes its DEM
+lower bound from input (`3.11.4`).
+
+`gdal raster mosaic --target-aligned-pixels` requires `--resolution`
+(`3.12.2`). `raster as-features --skip-nodata` retains valid features
+(`3.12.4`).
+
+The bundled JSON schemas for `gdalinfo` and `ogrinfo` validate correctly
+(`3.12.4`).
+
+Pipeline `raster contour`, `raster polygonize`, and `vector select` expose
+`--output-layer`; standalone raster edit exposes `--oo` (`3.12.3`). Raster
+calc accepts ungeoreferenced inputs. `dataset copy` and `dataset rename`
+support vector datasets and directories.
+
+## Vector commands
+
+### Vector operation set (`3.12.0`)
+
+Unified vector adds `check-coverage`, `check-geometry`, `clean-coverage`,
+`index`, `layer-algebra`, `make-point`, `partition`, `set-field-type`, and
+`simplify-coverage`. `vector convert` can update an existing destination and
+accept output open options. `vector write` and `convert` accept `--upsert`, and
+`vector sql --update` changes data in place.
+
+Conversion no longer assumes Shapefile merely because an extensionless output
+lacks `.shp`. Text vector info requires `--features` to emit rows and accepts
+`--limit`.
+
+### Later vector operation set (`3.13.0`)
+
+Commands add `combine`, `concave-hull`, `convex-hull`, `create`, `dissolve`,
+`export-schema`, `update`, `rename-layer`, and `sort`. `dataset check` and
+driver-level COG/GeoPackage validators are also available.
+
+Unified vector algorithms preserve field domains, relationships, and metadata.
+Filtering can use `--update-extent`, info can select `--fid`, and pipelines can
+avoid empty layers with `--no-create-empty-layers`.
+
+Partitioning can group by geometry type, makes `--field` optional, and creates
+Parquet `_metadata`; `gdal driver parquet create-metadata-file` builds that
+index independently.
+
+### Vector corrections and stricter failures
+
+- Exact non-rectangular `ogr2ogr -clipsrc`/`-clipdst` rejects features that
+  intersect only the clip envelope (`3.10.2`).
+- `ogr2ogr -upsert` accepts GeoPackage sources (`3.10.3`).
+- `ogr2ogr` and unified vector tools accept `@filename` files up to 10 MB
+  (`3.11.2`).
+- `gdal vector concat` accepts more than 1,000 inputs (`3.11.4`).
+- `make-valid` processes 3D geometries; `check-geometry` adds
+  `--include-field`; `vector sql --overwrite-layer` performs replacement
+  (`3.12.1`).
+- `gdaltindex` uses GDALWarp for reprojected extents (`3.12.3`).
+- `vector clip` supports curve layer types (`3.13.2`).
+- `ogrlineref` accepts a one-part `MULTILINESTRING` and handles invalid input
+  geometry safely (`3.13.2`).
+- `ogr2ogr` returns nonzero when VRT processing fails (`3.13.2`).
+- `ogrmerge.py` accepts input paths beginning with spaces (`3.12.3`).
+- Destination field-creation failure is fatal unless `-skip` is used;
+  conversion warns when curve, Z, or M cannot be retained (`3.13.0`).
+
+## Multidimensional and dataset commands
+
+`gdal mdim mosaic` and `gdal dataset` replace or expand older management
+workflows (`3.12.0`). `gdal mdim convert` accepts repeated `--group`, `--subset`,
+and `--scale-axes` values (`3.12.1`). `mdim info --summary` emits abbreviated
+output, and `mdim mosaic` accepts dimensions without indexing variables
+(`3.13.0`).
+
+## Python command equivalents
+
+The dynamically generated `gdal.alg` namespace mirrors the algorithm registry
+(`3.12.0`):
+
+```python
+gdal.alg.raster.convert(input="in.tif", output="out.tif")
 ```
 
-### Zero and negative `gdaldem` azimuths
-
-*Batch: 3.10.3*
-
-`gdaldem` accepts zero or negative values for `-az`:
-
-```text
-gdaldem hillshade input.tif output.tif -az 0
-```
-
-### GeoPackage sources for `ogr2ogr -upsert`
-
-*Batch: 3.10.3*
-
-`ogr2ogr -upsert` now works when the source dataset is a GeoPackage.
-
-### Algorithm argument and cancellation errors
-
-*Batch: 3.11.1*
-
-`GDALAlgorithm` rejects malformed list arguments and `NaN` values for range-constrained arguments. An interrupted `Run()` also reports `CE_Failure` through its progress function.
-
-### Excluded-value controls in `gdal raster tile`
-
-*Batch: 3.11.1*
-
-The unified tiling command supports the `gdal2tiles` options `--excluded-values`, `--excluded-values-pct-threshold`, and `--nodata-values-pct-threshold`.
-
-### JSON output contracts in `gdalinfo`
-
-*Batch: 3.11.1*
-
-JSON output represents an integer band's nodata value as an integer, attaches its raster attribute table as the band's `rat` object, and omits `wgs84Extent` and `extent` for non-georeferenced images.
-
-### Bounds transformation for `gdalwarp`
-
-*Batch: 3.11.1*
-
-When `-te` and `-te_srs` are combined, `gdalwarp` computes the target-CRS extent with `OGRCoordinateTransformation::TransformBounds()`.
-
-### Nodata queries with `gdallocationinfo`
-
-*Batch: 3.11.2*
-
-`gdallocationinfo` again handles nodata values correctly, fixing a regression introduced in 3.10.0.
-
-### Larger `@filename` arguments
-
-*Batch: 3.11.2*
-
-`ogrinfo`, `ogr2ogr`, `gdal vector sql`, and related vector utilities accept `@filename` argument files up to 10 MB instead of 1 MB.
-
-### Raster utility result semantics
-
-*Batch: 3.11.4*
-
-`gdal mdim info` returns status 0 on success. `gdal_footprint` reports failure when its single input feature cannot be simplified, and `gdal_viewshed` sets the DEM lower bound from the input raster.
-
-### `gdaldem` on non-north-up rasters
-
-*Batch: 3.11.5*
-
-Aspect, TPI, and TRI results are corrected for non-north-up sources. Hillshade, slope, and roughness are also corrected for rotated sources.
-
-### Expanded vector, multidimensional, and dataset operations
-
-*Batch: 3.12.0*
-
-New commands include `gdal vector check-coverage`, `check-geometry`, `clean-coverage`, `index`, `layer-algebra`, `make-point`, `partition`, `set-field-type`, and `simplify-coverage`, plus a vector-pipeline `limit` step. `gdal mdim mosaic` is new, and `gdal dataset` replaces the functionality of `gdal manage`.
-
-### Raster calculation and composition controls
-
-*Batch: 3.12.0*
-
-`gdal raster calc` handles nodata, adds `--flatten`, and accepts `--dialect=muparser|builtin`; the built-in dialect can compute one output band from all bands of one input. `gdal raster mosaic` accepts `--pixel-function` and `--pixel-function-arg`, while `mosaic` and `stack` add `--absolute-path`.
-
-### Correct STAC JSON from `gdalinfo`
-
-*Batch: 3.12.1*
-
-`gdalinfo -json` reports `stac:transform` coefficients in the correct order and sets `[stac][raster:bands][0][nodata]` for floating-point datasets.
-
-### Vector SQL layer replacement
-
-*Batch: 3.12.1*
-
-`gdal vector sql --overwrite-layer` now performs the requested layer overwrite correctly.
-
-### Windows spawn-mode raster tiling
-
-*Batch: 3.12.1*
-
-`gdal raster tile --parallel-mode=spawn` no longer stalls on Windows when `CPL_DEBUG=ON`.
-
-### Target-aligned raster mosaics require a resolution
-
-*Batch: 3.12.2*
-
-`gdal raster mosaic` now checks that `--resolution` is supplied whenever `--target-aligned-pixels` is used.
-
-### Raster calculations without geotransforms
-
-*Batch: 3.12.3*
-
-`gdal raster calc` now handles inputs that have no geotransform.
-
-### Leading-space paths in `ogrmerge.py`
-
-*Batch: 3.12.3*
-
-`ogrmerge.py` now accepts input filenames that begin with spaces.
-
-### Nodata filtering in `raster as-features`
-
-*Batch: 3.12.4*
-
-`gdal raster as-features --skip-nodata` no longer omits features that should remain in the output.
-
-### Raster indexing and dataset discovery
-
-*Batch: 3.13.0*
-
-`gdal raster index` adds a `STAC-GeoParquet` profile, `filename`, `md5`, or `metadata-item` ID methods, and metadata-name and base-URL controls. `gdal dataset identify --detailed` can emit results through any writable vector driver, and text raster/vector info accepts `--crs-format=AUTO|WKT2|PROJJSON`.
-
-### Dataset- and layer-option diagnostics
-
-*Batch: 3.13.1*
-
-Dataset creation warns when an unknown dataset creation option matches a layer creation option, and layer creation issues the converse warning.
-
-### `ogrlineref` geometry inputs
-
-*Batch: 3.13.2*
-
-`ogrlineref` accepts a single-part `MULTILINESTRING` and handles non-line-string inputs without failing unsafely.
-
-### `ogr2ogr` VRT error status
-
-*Batch: 3.13.2*
-
-`ogr2ogr` now returns a nonzero status when an error occurs while processing a VRT, allowing automation to detect the failure.
-
-### Filters in `gdal vector limit`
-
-*Batch: 3.13.2*
-
-`gdal vector limit` now applies dataset filters instead of limiting an unfiltered stream.
+The functions accept a `progress` keyword (`3.12.1`) and visible or hidden
+argument aliases (`3.13.0`). Python `gdal.Translate()` adds
+`colorInterpretation`, and `gdal.TileIndex()` corrects the same argument
+(`3.10.1`).

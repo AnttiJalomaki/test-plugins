@@ -1,89 +1,136 @@
 # Migrations and Runtime Compatibility
 
-## Runtime and dependency floors
+## Runtime and package floors (9.0.0-guide)
 
-For the v9 migration (`9.0.0-guide`), SDK packages may emit ES2020. The general
-Node.js floor is 18.0.0; the ESM-only Astro, Nuxt, and SvelteKit SDKs require
-18.19.1. The other floors are Deno 2.0 and TypeScript 5.0.4.
+SDK packages may contain ES2020. The general Node.js floor is 18.0.0; the
+ESM-only Astro, Nuxt, and SvelteKit SDKs require Node.js 18.19.1. Deno 2.0 and
+TypeScript 5.0.4 are the other minimums.
 
-Native browser floors are Chrome and Edge 80, Safari 14, iOS Safari 14.4,
-Firefox 74, Opera 67, and Samsung Internet 13. Transpile the SDK for older
-targets.
+Native browser support begins at Chrome/Edge 80, Safari 14, iOS Safari 14.4,
+Firefox 74, Opera 67, and Samsung Internet 13. Transpile SDK code when an
+application targets older browsers.
 
-Support is dropped for Remix 1.x, TanStack Router 1.63.0 and lower, SvelteKit
-1.x, Ember 3.x and lower, and Prisma 5.x. Prisma-specific migration details
-are in [framework-integrations.md](framework-integrations.md).
+Support is removed for Remix 1.x, TanStack Router 1.63.0 and lower, SvelteKit
+1.x, Ember 3.x and lower, and Prisma 5.x.
 
-## Package and integration moves
+## Package and client API migration
 
-- `@sentry/utils` is no longer published. `@sentry/types` is deprecated. Move
-  their remaining exports to `@sentry/core`.
-- `processThreadBreadcrumbIntegration` becomes `childProcessIntegration`, and
-  the integration name becomes `ChildProcess` instead of
-  `ProcessAndThreadBreadcrumbs`.
-- `vercelAIIntegration` keeps its factory spelling, but its integration name
-  changes from `vercelAI` to `VercelAI`. Update integration-name filters.
-- `@sentry/deno` is no longer published on `deno.land`:
+### Utility and type packages
 
-```js
-import * as Sentry from "npm:@sentry/deno";
-```
+`@sentry/utils` is no longer published. `@sentry/types` is deprecated; import
+its remaining exports and former utility exports from `@sentry/core`.
 
-## Core API removals
+The metrics API, `getCurrentHub()`, `Hub`, and `getCurrentHubShim()` are
+removed. Replace `debugIntegration` with send hooks and replace
+`sessionTimingIntegration` by setting event context explicitly.
 
-The v9 release (`9.0.0`) removes these core exports:
+### Custom clients and logging internals
 
-- `TransactionNamingScheme`, `arrayify()`, `flatten()`, `getDomElement()`,
-  `makeFifoCache()`, `memoBuilder`, `urlEncode()`, the deprecated `Request`
-  type, and `validSeverityLevels`;
-- the metrics API, `getCurrentHub()`, `Hub`, and `getCurrentHubShim()`;
-- React's `getNumberOfUrlSegments()`;
-- Next.js's `experimental_captureRequestError`;
-- the `nitro-utils` package.
+Custom clients were required to extend `BaseClient` in v9 rather than using a
+structural custom implementation. In v10, `BaseClient` itself is removed; use
+`Client` directly. The internal `logger` value and `Logger` type are replaced
+by `debug` and `SentryDebugLogger` (10.0.0-guide).
 
-Further signature and type changes:
+### Core removals and type changes (9.0.0)
 
-- `recordDroppedEvent()` no longer accepts an event argument.
-- `hasTracingEnabled()` is renamed to `hasSpansEnabled()`.
-- The `shutdownTimeout` option type moves from core to Node.
-- The `Scope` type interface is replaced by the `Scope` class.
-- React `ErrorBoundary` changes the type of `componentStack`.
-- Replace `debugIntegration` with send hooks.
-- Replace `sessionTimingIntegration` with explicit event context.
+Core removes `TransactionNamingScheme`, `arrayify()`, `flatten()`,
+`getDomElement()`, `makeFifoCache()`, `memoBuilder`, `urlEncode()`, the
+deprecated `Request` type, and `validSeverityLevels`. React removes
+`getNumberOfUrlSegments()`. Next.js removes
+`experimental_captureRequestError`.
 
-## Low-level extension APIs
+`recordDroppedEvent()` no longer accepts an event argument.
+`hasTracingEnabled()` is renamed to `hasSpansEnabled()`.
 
-- Custom propagation contexts require `sampleRand`.
-- Replace `spanId` with optional `propagationSpanId`.
-- Enrich requests with `httpRequestToRequestData()` and assign the result to
-  `event.request`.
-- Replace `generatePropagationContext()` with `generateTraceId()`.
-- Replace `BAGGAGE_HEADER_NAME` with the literal `"baggage"`.
-- Replace `IntegrationClass` with `Integration` or `IntegrationFn`.
+The `shutdownTimeout` option type moves from core to Node. The `Scope` type
+interface is replaced by the `Scope` class. React's `ErrorBoundary` changes
+the type of `componentStack`, and the `nitro-utils` package is removed.
 
-During the v9 migration, custom clients had to extend `BaseClient`. At the v10
-boundary (`10.0.0-guide`), `BaseClient` is removed, so v10 custom clients use
-`Client` directly. This is a versioned transition, not interchangeable advice.
+## Feedback migration
 
-V10 also removes the `logger` value and `Logger` type. Use `debug` and
-`SentryDebugLogger` instead.
-
-## Feedback and browser API changes
-
-`captureUserFeedback()` is removed. Use `captureFeedback()` and rename the
+`captureUserFeedback()` is removed. Call `captureFeedback()` and rename the
 payload's `comments` field to `message`:
 
 ```js
 Sentry.captureFeedback({ message: "What happened" });
 ```
 
-Browser SDKs no longer report First Input Delay in v10. Replace FID-dependent
-processing, filters, alerts, and dashboards with Interaction to Next Paint
-equivalents where appropriate.
+## Low-level extension API migration
 
-## AWS Lambda layer names
+Custom propagation contexts require `sampleRand`; replace `spanId` with the
+optional `propagationSpanId`. Use `httpRequestToRequestData()` for request
+enrichment and assign its return value to `event.request`.
 
-- The v9 layer is `SentryNodeServerlessSDKv9`; continuing v8 updates use
-  `SentryNodeServerlessSDKv8`.
-- The v10 layer is `SentryNodeServerlessSDKv10` and is unified for ESM and
-  CommonJS deployments (`10.0.0`).
+Replace these removed symbols:
+
+| Removed | Replacement |
+| --- | --- |
+| `generatePropagationContext()` | `generateTraceId()` |
+| `BAGGAGE_HEADER_NAME` | Literal `"baggage"` |
+| `IntegrationClass` | `Integration` or `IntegrationFn` |
+
+## Deno distribution
+
+`@sentry/deno` is no longer published on `deno.land`. Import the npm package:
+
+```js
+import * as Sentry from "npm:@sentry/deno";
+```
+
+## Sessions and scope selection
+
+Core always reads session state from the isolation scope (since 9.0.0). If
+several scopes contain sessions, this can select a different session than
+older code expected.
+
+`autoSessionTracking` is removed. Browser sessions belong to
+`browserSessionIntegration`; request sessions belong to `httpIntegration`;
+Node.js process sessions use the default `processSessionIntegration`.
+
+```js
+Sentry.init({
+  integrations: [
+    Sentry.httpIntegration({ trackIncomingRequestsAsSessions: false }),
+  ],
+});
+```
+
+Disable browser tracking by removing `browserSessionIntegration`.
+
+## Browser behavior changes
+
+Browser SDKs no longer ask the backend to infer IP addresses by default. Set
+`sendDefaultPii: true` only when inference is intended.
+
+When `attachStackTrace: true`, `captureConsoleIntegration` marks console events
+handled. Configure `{ handled: false }` to retain the opposite behavior.
+
+```js
+Sentry.init({
+  sendDefaultPii: true,
+  attachStackTrace: true,
+  integrations: [Sentry.captureConsoleIntegration({ handled: false })],
+});
+```
+
+Browser SDKs no longer report First Input Delay (10.0.0-guide). Replace
+FID-based event processing, filters, alerts, and dashboards with Interaction
+to Next Paint equivalents where appropriate.
+
+## Express user enrichment
+
+`requestDataIntegration` no longer copies `request.user` into events for
+Express. Call `Sentry.setUser()` explicitly, normally from middleware.
+
+## OpenTelemetry compatibility boundary
+
+Node-based v10 packages use OpenTelemetry 2.x/0.20x dependencies and current
+instrumentations. Applications unable to adopt OpenTelemetry 2 should remain
+on Sentry v9 or use `@sentry/node-core`, whose peer dependency ranges are
+wider. Sentry v10 remains compatible with self-hosted Sentry 24.4.2 and newer.
+
+## Bundler plugin major
+
+SDK v10 uses the v4 major line of Sentry bundler plugins (10.0.0). Update
+directly installed or pinned plugins across that major boundary together with
+the SDK.

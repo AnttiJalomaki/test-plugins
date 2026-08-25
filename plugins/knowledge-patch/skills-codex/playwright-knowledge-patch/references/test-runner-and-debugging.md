@@ -1,56 +1,42 @@
 # Test Runner and Debugging
 
-## Removed support and supported platforms
+## Command-line debugging
 
-As of 1.59.1:
+In `1.59.1`, `npx playwright test --debug=cli` pauses a test for attachment
+with `playwright-cli attach`. Session commands such as `step-over` can control
+the attached test.
 
-- WebKit no longer supports macOS 14.
-- The JavaScript package `@playwright/experimental-ct-svelte` has been removed.
+## Trace inspection without the GUI
 
-Playwright supports Ubuntu 26.04 as of 1.61.0.
+Open a trace with:
 
-## CLI-controlled debugging
-
-Start tests with the CLI debugger and attach to their named bound-browser session (since 1.59.1):
-
-```bash
-npx playwright test --debug=cli
-playwright-cli attach
+```sh
+npx playwright trace open <trace.zip>
 ```
 
-The attached session accepts debugger commands such as `step-over`, allowing a paused test to be controlled without a graphical debugger.
+Then inspect it with `actions`, `action <id>`,
+`snapshot <id> --name before|after`, and `close`.
 
-## Command-line trace inspection
+## Trace retention across retries
 
-Open a trace and inspect it entirely from the command line (since 1.59.1):
+In `1.59.1`, trace mode `'retain-on-failure-and-retries'` records every test
+attempt and keeps all those traces when an attempt fails. Passing and failing
+runs of a flaky test can therefore be compared.
 
-```bash
-npx playwright trace open trace.zip
-actions
-action <id>
-snapshot <id> --name before
-snapshot <id> --name after
-close
+```ts
+export default defineConfig({
+  use: { trace: 'retain-on-failure-and-retries' },
+});
 ```
 
-- `actions` lists trace actions.
-- `action <id>` shows a selected action.
-- `snapshot <id> --name before|after` selects the before or after snapshot.
-- `close` closes the trace session.
+## Video retry modes and annotations
 
-For live recording updates, start tracing with `tracing.start({ live: true })`.
+In `1.59.1`, the test `video` option can configure `show.actions` and
+`show.test` annotations.
 
-## Trace retention for retries
-
-Trace mode `'retain-on-failure-and-retries'` records every test attempt but retains all attempt traces only if an attempt fails (since 1.59.1). This keeps both passing and failing attempts for a flaky test together for comparison.
-
-## Video retry modes
-
-The test `video` option supports the following retry-aware modes (since 1.61.0):
-
-- `'on-all-retries'`
-- `'retain-on-first-failure'`
-- `'retain-on-failure-and-retries'`
+Since `1.61.0`, the `video` option also accepts `'on-all-retries'`,
+`'retain-on-first-failure'`, and `'retain-on-failure-and-retries'`, matching
+the trace mode choices.
 
 ```ts
 export default defineConfig({
@@ -58,25 +44,89 @@ export default defineConfig({
 });
 ```
 
-These align video collection with the runner's trace-mode choices.
+## Soft polling
 
-## Soft polling assertions
-
-Polling assertions can be soft (since 1.61.0), collecting a failure without immediately stopping the test:
+Since `1.61.0`, `expect.soft.poll()` adds polling assertions whose final
+failure is reported softly.
 
 ```ts
 await expect.soft.poll(async () => readStatus()).toBe('ready');
 ```
 
-## Runner configuration and reporter data
+## Runner and reporter data
 
-The following runner and reporting surfaces were added in 1.61.0:
+The following runner and reporter data is available in `1.61.0`:
 
-- `fullConfig.argv` snapshots the runner's `process.argv`, including application-specific arguments supplied after `--`.
-- `fullConfig.failOnFlakyTests` exposes the effective flaky-test policy to reporters and other consumers of full configuration.
-- `testInfo.errors` expands an `AggregateError` into separate error entries.
+- `fullConfig.argv` captures the runner's `process.argv`, including custom
+  arguments after `--`.
+- `fullConfig.failOnFlakyTests` exposes the effective flaky-test policy.
+- `testInfo.errors` expands an `AggregateError` into separate entries.
 - `-G` is shorthand for `--grep-invert`.
 
-## Recording coverage
+## WebSockets in recordings
 
-HAR and trace recordings include WebSocket requests as of 1.61.0.
+Since `1.61.0`, HAR and trace recordings include WebSocket requests.
+
+## Story-and-gallery component testing
+
+In `1.62.0`, component testing uses stories for concrete component scenarios
+and a served gallery that renders them on demand. The `mount` fixture opens a
+story by id and returns a locator scoped to its root. That locator exposes
+`update(props)` and `unmount()`. A story type can be supplied as a type argument
+to check props.
+
+```ts
+test('click should expand', async ({ mount }) => {
+  const component = await mount('components/Expandable/Stateful');
+  await component.getByRole('button').click();
+  await expect(component.getByTestId('expanded')).toHaveValue('true');
+});
+```
+
+## Reporter preprocessing
+
+In `1.62.0`, a reporter's `preprocess()` hook runs after configuration
+resolution and before `onBegin()`. Through its `TestRun`, it can mark individual
+tests skipped, excluded, fixed, or failing before execution begins.
+
+```ts
+class MyReporter {
+  async preprocess({ suite, testRun }) {
+    for (const test of suite.allTests()) {
+      if (shouldSkip(test)) testRun.skip(test);
+    }
+  }
+}
+```
+
+## Isolated retry scheduling
+
+In `1.62.0`, `testConfig.retryStrategy` controls retry ordering. Its default,
+`'immediate'`, schedules a retry as soon as a worker is available. `'isolated'`
+defers retries until the end and runs them serially in one worker to reduce
+interference with the main suite.
+
+```ts
+export default defineConfig({
+  retries: 2,
+  retryStrategy: 'isolated',
+});
+```
+
+## HTML report file grouping
+
+In `1.62.0`, the HTML reporter can enable file merging directly with
+`mergeFiles` rather than only through the report UI.
+
+```ts
+export default defineConfig({
+  reporter: [['html', { mergeFiles: true }]],
+});
+```
+
+## Platform and package support
+
+Since `1.61.0`, Playwright supports Ubuntu 26.04.
+
+WebKit no longer supports macOS 14 as of `1.59.1`. The JavaScript package
+`@playwright/experimental-ct-svelte` was also removed in `1.59.1`.

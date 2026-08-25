@@ -1,23 +1,23 @@
 # MoveIt Task Constructor
 
-## Stage flow and containers
+## Stage result flow and container semantics
 
-Choose a stage by how results move:
+Stage order is constrained by result flow:
 
-- Generators create states independently and send them in both directions.
-- Propagators extend a neighboring result either forward or backward.
-- Connectors bridge independently generated states on their two interfaces.
-- Wrappers modify or filter one child stage.
-- Serial containers accept only end-to-end child solutions.
-- Parallel containers select alternatives, provide fallbacks, or merge
+- generators create states independently and send them both directions;
+- propagators extend a neighboring result forward or backward;
+- connectors bridge independently produced states on their two interfaces;
+- wrappers modify or filter one child;
+- serial containers accept only end-to-end child solutions;
+- parallel containers select alternatives, provide fallbacks, or merge
   independent solutions.
 
-## Task lifecycle and solutions
+## Task lifecycle and solution handling
 
-Set root properties before adding stages. Then initialize, request a bounded
-number of successful plans, and explicitly choose a solution for introspection
-or execution. `init()` can throw `mtc::InitStageException`; `plan(5)` stops
-after five successful solutions.
+Set root properties before adding stages, initialize the task, request a
+bounded number of successful plans, and explicitly choose a solution for
+visualization or execution. `init()` can throw `InitStageException`, and
+`plan(5)` stops after five successful solutions.
 
 ```cpp
 mtc::Task task;
@@ -35,12 +35,12 @@ if (task.plan(5)) {
 }
 ```
 
-## Planner objects and connectors
+## Planner objects and connector stages
 
 MTC provides `PipelinePlanner(node)`, `JointInterpolationPlanner`, and
-`CartesianPath`; stages share planner objects. `Connect` takes a
-`GroupPlannerVector`, so different planners can bridge generated states for
-different groups.
+`CartesianPath`. Stages receive a shared planner object. `Connect` accepts a
+`GroupPlannerVector`, which can assign different planners to multiple groups
+while bridging two generated states.
 
 ```cpp
 auto pipeline = std::make_shared<mtc::solvers::PipelinePlanner>(node);
@@ -57,32 +57,29 @@ connect->properties().configureInitFrom(mtc::Stage::PARENT);
 task.add(std::move(connect));
 ```
 
-## Property forwarding
+## Property forwarding through containers and wrappers
 
 Task properties are not automatically inherited through nested stages. Expose
-selected properties to the container, initialize them from `Stage::PARENT`,
-and import generated interface properties at the wrapper that consumes them.
+selected task properties to a container, configure them from `Stage::PARENT`,
+and let an IK wrapper import the generated `target_pose` from
+`Stage::INTERFACE`.
 
 ```cpp
 auto pick = std::make_unique<mtc::SerialContainer>("pick object");
-task.properties().exposeTo(pick->properties(), { "eef", "group", "ik_frame" });
+task.properties().exposeTo(
+    pick->properties(), { "eef", "group", "ik_frame" });
 pick->properties().configureInitFrom(
     mtc::Stage::PARENT, { "eef", "group", "ik_frame" });
 ```
 
-An IK wrapper commonly gets its task properties from the parent and its
-generated pose from the interface:
-
-```cpp
-ik->properties().configureInitFrom(mtc::Stage::PARENT, { "eef", "group" });
-ik->properties().configureInitFrom(mtc::Stage::INTERFACE, { "target_pose" });
-```
-
-## Monitored generators and IK
+## Monitored pose generators and IK wrappers
 
 `GenerateGraspPose` must monitor the earlier `CurrentState` stage so it sees
-the object's current scene state. Save the stage pointer before moving it into
-the task.
+the object state. `GeneratePlacePose` instead monitors the saved attach-object
+stage so it knows how the object is attached.
+
+Move pose generators into `ComputeIK`, then configure IK count, joint-space
+separation, and IK frame.
 
 ```cpp
 auto current = std::make_unique<mtc::stages::CurrentState>("current");
@@ -95,21 +92,24 @@ poses->setObject("object");
 poses->setAngleDelta(M_PI / 12);
 poses->setMonitoredStage(current_state_ptr);
 
-auto ik = std::make_unique<mtc::stages::ComputeIK>("grasp IK", std::move(poses));
+auto ik = std::make_unique<mtc::stages::ComputeIK>(
+    "grasp IK", std::move(poses));
 ik->setMaxIKSolutions(8);
 ik->setMinSolutionDistance(1.0);
 ik->setIKFrame(grasp_frame_transform, hand_frame);
+ik->properties().configureInitFrom(mtc::Stage::PARENT, { "eef", "group" });
+ik->properties().configureInitFrom(
+    mtc::Stage::INTERFACE, { "target_pose" });
 ```
 
-`GeneratePlacePose` instead monitors the saved attach-object stage so it knows
-how the object is attached. Its `setPose()` accepts a stamped target expressed
-in the object frame, and `ComputeIK::setIKFrame("object")` can make that object
-the IK frame.
+For placement, `GeneratePlacePose::setPose()` accepts a stamped target that
+may be expressed in the object frame. `ComputeIK::setIKFrame("object")` then
+makes the object itself the IK frame.
 
-## Relative motion and scene transitions
+## Relative motions and planning-scene transitions
 
-`MoveRelative` combines a Cartesian planner, minimum and maximum travel
-distances, and a stamped direction. The direction's frame determines how its
+`MoveRelative` combines a Cartesian planner with minimum and maximum travel
+distances and a stamped direction. The direction's frame controls how its
 vector is interpreted.
 
 ```cpp
@@ -123,7 +123,7 @@ up.vector.z = 1.0;
 lift->setDirection(up);
 ```
 
-Build pick/place scene changes with `ModifyPlanningScene`: allow hand-object
+Pick/place transitions use `ModifyPlanningScene` stages to allow hand-object
 collision, attach the object, later forbid collision, and detach it.
 
 ```cpp
@@ -133,18 +133,18 @@ auto detach = std::make_unique<mtc::stages::ModifyPlanningScene>("detach");
 detach->detachObject("object", hand_frame);
 ```
 
-When a `ModifyPlanningScene` stage propagates backward, its operation reverses.
-In particular, allowing collisions in that direction uses
+When `ModifyPlanningScene` propagates backward, its operation reverses.
+Notably, allowing collision in that direction uses
 `allowCollisions(..., false)`, not `true`.
 
 ## Stage diagnostics
 
-The terminal stage diagram reports backward-propagated, locally generated, and
-forward-propagated solutions from left to right. Its arrows show propagation
-direction. The first stage with zero generation or forwarding is the likely
-composition failure.
+The terminal stage diagram reports, left to right, solutions propagated
+backward, generated locally, and propagated forward. Arrows show propagation
+direction. The first stage with zero generation or forwarding identifies where
+composition failed.
 
-Get the visualization identifier for a named stage through:
+Retrieve a stage visualization identifier with:
 
 ```cpp
 task.stages()->findChild(name)->introspectionId()

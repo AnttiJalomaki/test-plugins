@@ -1,14 +1,12 @@
 # Nixpkgs Packaging
 
-Use this reference when maintaining Nixpkgs expressions, overlays, build
-helpers, hooks, language packages, platform support, or Nixpkgs library calls.
+## General derivation interfaces
 
-## Core derivation and environment contracts
+### Strict `env` and structured attributes
 
-### Strict derivation `env` values
-
-Since nixos-25.11, `stdenv.mkDerivation` and related builders require `env` to
-be an attribute set. To create a variable literally named `env`, use:
+`stdenv.mkDerivation` and related builders require `env` to be an attribute
+set in nixos-25.11. To create an environment variable literally named `env`,
+write:
 
 ```nix
 stdenv.mkDerivation {
@@ -16,96 +14,67 @@ stdenv.mkDerivation {
 }
 ```
 
-### Structured attributes with debug reference checks
+A derivation combining `separateDebugInfo` with `allowedReferences`,
+`allowedRequisites`, `disallowedReferences`, or `disallowedRequisites` must set
+`__structuredAttrs = true`. The reference checks do not apply to the generated
+`debug` output.
 
-Since nixos-25.11, a derivation combining `separateDebugInfo` with any of
-`allowedReferences`, `allowedRequisites`, `disallowedReferences`, or
-`disallowedRequisites` must set `__structuredAttrs = true`. Those reference
-allow- and deny-lists do not apply to the generated `debug` output.
+`buildEnv` switched to fixed-point `finalAttrs: { ... }` arguments in
+nixos-25.11. Its custom result `.override` is deprecated; place extra
+`stdenv.mkDerivation` values under `derivationArgs`. Direct `nativeBuildInputs`
+and `buildInputs` remain only as compatibility inputs. In nixos-26.05,
+`buildEnv` completes this migration and uses structured attributes exclusively.
 
-### Fixed-point `buildEnv`
+### Symlinks, PIE, and input shapes
 
-Since nixos-25.11, `buildEnv` takes `finalAttrs: { ... }` fixed-point
-arguments. Its custom result `.override` is deprecated. Put extra
-`stdenv.mkDerivation` arguments under `derivationArgs`; direct
-`nativeBuildInputs` and `buildInputs` survive only through compatibility.
+The `no-broken-symlinks` hook in nixos-25.05 rejects dangling and reflexive
+links. Set `dontCheckForBrokenSymlinks = true` only for intentional cases. In
+nixos-25.11, the hook also rejects output symlinks into `$TMPDIR` (normally
+`/build`).
 
-### Structured-only `buildEnv`
+The `pie` hardening flag was removed because current toolchains enable PIE by
+default. A package that genuinely cannot use PIE should add `-no-pie` through
+`CFLAGS`. Nested lists in build and runtime inputs are deprecated in
+nixos-26.05; flatten them.
 
-Since nixos-26.05, `buildEnv` uses only structured attributes
-(`__structuredAttrs = true`), completing the fixed-point and `derivationArgs`
-migration.
+### Main programs and fixed-point-safe configuration
 
-### `meta.mainProgram` participates in builds
+`meta.mainProgram` sets `NIX_MAIN_PROGRAM` from nixos-25.11, so changing it can
+trigger a rebuild. `versionCheckHook` can now fail when `pname` differs from
+the selected executable instead of silently checking a `pname` binary.
 
-Since nixos-25.11, `meta.mainProgram` determines `NIX_MAIN_PROGRAM`, so changing
-it can rebuild a package. `versionCheckHook` may fail when `pname` differs from
-the chosen main program instead of silently checking the `pname` executable.
+In nixos-26.05, Nixpkgs configuration functions receive `lib` directly as
+well as `pkgs`. Use the direct `lib` argument for licenses and other library
+values to avoid pulling on the package fixed point and causing recursion.
 
-### Literal `requireFile` strings
+## Language ecosystems
 
-Since nixos-26.05, `requireFile` treats `message` and `url` as literal strings,
-not Bash here-document input. Forms such as `$PWD` do not expand and need no
-shell-oriented escaping.
+### Rust
 
-## Output validation, hardening, and filesystems
+Cargo 1.84 invalidated older `cargoHash` values in nixos-25.05. Regenerate
+them, replace Cargo-format-dependent `fetchCargoTarball` with
+`rustPlatform.fetchCargoVendor`, and remove the unsupported `cargoSha256`
+argument from `rustPlatform.buildRustPackage`.
 
-### Broken-symlink checks
+### Go
 
-Since nixos-25.05, the `no-broken-symlinks` hook rejects dangling and reflexive
-symlinks in outputs. Set `dontCheckForBrokenSymlinks = true` only when the
-derivation intentionally requires them.
+`buildGoPackage` was removed in nixos-25.05; use `buildGoModule`. Put
+`CGO_ENABLED` below `env`, while direct `GOOS` and `GOARCH` builder arguments
+now error. Use `goSum` and self-referencing `finalAttrs` inputs where required.
 
-### Stricter symlink checks and PIE handling
+```nix
+env.CGO_ENABLED = "1";
+```
 
-Since nixos-25.11, the symlink hook also rejects output links into `$TMPDIR`,
-normally `/build`. The `pie` hardening flag was removed because toolchains
-enable PIE by default. A package that cannot use PIE must pass `-no-pie` in
-`CFLAGS`.
+### Python
 
-### glibc executable-stack policy
+Python hooks use space-delimited flag variables without structured attributes
+and Bash arrays with structured attributes (nixos-25.05). They no longer
+Bash-evaluate values. Use `pytestFlags` and `unittestFlags`; the old `*Array`
+names are compatibility-only.
 
-In nixos-26.05, glibc 2.42 no longer makes the stack executable solely because
-a loaded shared library requests it. Rebuild with
-`env.NIX_LDFLAGS = "-z,noexecstack"` or clear a mistaken marker with
-`patchelf --clear-execstack`. Use
-`GLIBC_TUNABLES=glibc.rtld.execstack=2` only per process for code that truly
-needs an executable stack.
-
-### XFS feature compatibility
-
-In nixos-26.05, xfsprogs 6.18 enables parent pointers and exchange-range by
-default. Use a 6.18-or-newer kernel for filesystems created with those features;
-GRUB 2 may not boot from them.
-
-## Language ecosystem builders
-
-### Stable Rust vendoring hashes
-
-In nixos-25.05, Cargo 1.84 invalidated existing `cargoHash` values.
-`rustPlatform.fetchCargoVendor` replaces the Cargo-format-dependent
-`fetchCargoTarball`. `buildRustPackage` no longer accepts deprecated
-`cargoSha256`; use and regenerate `cargoHash`.
-
-### Go builder argument migration
-
-In nixos-25.05, removed `buildGoPackage` becomes `buildGoModule`. Put
-`CGO_ENABLED` at `env.CGO_ENABLED`; direct `GOOS` and `GOARCH` arguments error.
-Use `goSum` and self-referencing `finalAttrs` inputs when required.
-
-### Python hook flag representation
-
-In nixos-25.05, Python hook flags follow `stdenv.mkDerivation`: space-separated
-variables without structured attributes and Bash arrays with them, without
-Bash-evaluating the values. Use `pytestFlags` and `unittestFlags`; the
-`*FlagsArray` forms are compatibility-only.
-
-### Explicit modern Python build formats
-
-Since nixos-25.11, `buildPythonPackage` and `buildPythonApplication` require an
-explicit format. For modern setuptools, set `pyproject = true` and
-`build-system = [ setuptools ]`. Passing `stdenv` directly is deprecated;
-override the helper instead:
+`buildPythonPackage` and `buildPythonApplication` require an explicit format
+in nixos-25.11. For a modern setuptools build:
 
 ```nix
 (buildPythonPackage.override { stdenv = customStdenv; }) {
@@ -114,201 +83,180 @@ override the helper instead:
 }
 ```
 
-### Default compiler and language runtimes
+Passing `stdenv` directly to the package definition is deprecated; override
+the helper as shown.
 
-In nixos-26.05, defaults move from GCC 14 to GCC 15, Node.js 22 LTS to 24 LTS,
-and Ruby 3.3 to 3.4. Unpinned package expressions can inherit upstream
-incompatibilities from these transitions.
+### Node.js, npm, pnpm, and Yarn
 
-### Node package-set and Yarn 1 migrations
+Nixos-26.05 moves the default Node.js from 22 LTS to 24 LTS.
+`nodejs_latest` denotes Node 26. `nodejs` is a non-overridable wrapper around
+`nodejs-slim` plus npm and Corepack outputs; override `nodejs-slim` directly
+and add `nodejs-slim.corepack` explicitly when using the slim package.
 
-In nixos-26.05, the `nodePackages` set and `node2nix` are removed; use
-top-level packages or current JavaScript packaging helpers. Removed
-`yarn2nix`, `mkYarnPackage`, and related Yarn 1 tools become
+The `nodePackages` set and `node2nix` are removed. Move to top-level packages
+or maintained JavaScript helpers. Yarn's `yarn2nix`, `mkYarnPackage`, and
+related tooling are also removed; package Yarn 1 software with
 `yarnBuildHook`, `yarnConfigHook`, and `yarnInstallHook`.
 
-### Node wrapper outputs
+Replace `pnpm.fetchDeps` and `pnpm.configHook` with top-level
+`fetchPnpmDeps` and `pnpmConfigHook`. Fetcher versions 1 and 2 are deprecated,
+so regenerate pnpm hashes with version 3. For npm workspaces,
+`buildNpmPackage` can set `npmDepsFetcherVersion = 2` for packument caching.
 
-In nixos-26.05, `nodejs_latest` names Node 26. `nodejs` is a non-overridable
-wrapper around `nodejs-slim` plus npm and Corepack outputs. Override
-`nodejs-slim` directly and include `nodejs-slim.corepack` when using the slim
-package.
+### Ruby and compiler defaults
 
-### Pnpm dependency fetchers
+Nixos-26.05 updates the default GCC from 14 to 15 and Ruby from 3.3 to 3.4, in
+addition to Node 24. Unpinned package expressions inherit the corresponding
+upstream incompatibilities.
 
-In nixos-26.05, top-level `fetchPnpmDeps` and `pnpmConfigHook` replace
-`pnpm.fetchDeps` and `pnpm.configHook`. Fetcher versions 1 and 2 are deprecated;
-regenerate pnpm hashes with version 3. Npm workspaces can set
-`npmDepsFetcherVersion = 2` on `buildNpmPackage` for packument caching.
+### glibc executable stacks
 
-### Neovim configuration delivery
+glibc 2.42 no longer makes the process stack executable merely because a
+loaded shared object requests it (nixos-26.05). Prefer rebuilding with
+`env.NIX_LDFLAGS = "-z,noexecstack"` or clearing an erroneous marker using
+`patchelf --clear-execstack`. Reserve
+`GLIBC_TUNABLES=glibc.rtld.execstack=2` for individual programs that truly
+require an executable stack.
 
-In nixos-26.05, Nixpkgs disables Neovim Python 3 and Ruby providers by default.
-Lua dependencies are recorded in generated `init.lua`, not `LUA_PATH` wrapper
-arguments. Commands needing those dependencies must run after initialization
-with `-c`; `wrapRc = false` users must load the generated init file themselves.
+## Fetchers and source handling
 
-## Fetchers, substitution, and generated caches
+### Substitution and policy controls
 
-### `replaceVars` supersedes substitution helpers
+`replaceVars` supersedes deprecated `substituteAll` and `substituteAllFiles`
+from nixos-25.05.
 
-Since nixos-25.05, `substituteAll` and `substituteAllFiles` are deprecated in
-favor of `replaceVars` and scheduled for removal.
+Nixpkgs configuration in nixos-25.11 can apply `rewriteURL` and
+`hashedMirrors` to `fetchurl`, `gitConfig` or `gitConfigFile` to all `fetchgit`
+calls, and `npmRegistryOverrides` or `npmRegistryOverridesString` to all
+`fetchNpmDeps` calls. Individual `fetchgit` calls accept `gitConfigFile` and
+`rootDir`; `fetchNpmDeps` accepts `npmRegistryOverridesString`.
 
-### Binary-cache compression default
+`fetchFromSavannah` is deprecated in nixos-26.05; use `fetchgit` or a release
+mirror.
 
-Since nixos-25.05, `mkBinaryCache` creates zstd-compressed caches by default.
-Pass `compression = "xz";` for the former format.
+### Literal `requireFile` values
 
-### Fetcher-wide policy and source-subdirectory controls
+In nixos-26.05, `requireFile` treats `message` and `url` as literal strings,
+not Bash here-document content. Text such as `$PWD` is not expanded and does
+not need shell escaping.
 
-Since nixos-25.11, Nixpkgs configuration can set:
+## Native libraries, graphics, and kernels
 
-- `rewriteURL` and `hashedMirrors` for `fetchurl`;
-- `gitConfig` or `gitConfigFile` for all `fetchgit`;
-- `npmRegistryOverrides` or `npmRegistryOverridesString` for all
-  `fetchNpmDeps`.
+### Mesa and PostgreSQL build inputs
 
-Individual `fetchgit` calls accept `gitConfigFile` and `rootDir`;
-`fetchNpmDeps` accepts `npmRegistryOverridesString`.
+Applications linked against different Mesa versions can coexist from
+nixos-25.05. Depend on `libgbm` for GBM metadata or `dri-pkgconfig-stub` for
+DRI metadata rather than depending on Mesa as a proxy.
 
-## Libraries, formats, and module types
+`postgresql` and `libpq` no longer include `pg_config`; add
+`postgresql.pg_config` or `libpq.pg_config` to `nativeBuildInputs`.
+PL/Python, PL/Perl, and PL/Tcl are selected with `postgresql.withPackages`
+instead of support overrides.
 
-### Recursive package scopes
+### Kernel output compatibility
 
-Since nixos-25.05, `lib.packagesFromDirectoryRecursive` rejects unknown
-arguments and can construct nested scopes matching a directory tree.
+Evaluating nixos-25.11 Nixpkgs requires Nix 2.18 or newer. In-tree Linux kernel
+modules moved into each kernel package's separate `modules` output; consumers
+must not expect them in the primary output.
 
-### Instantiated systemd format
+### Darwin platform policy
 
-Since nixos-25.11, direct use of `pkgs.formats.systemd` is deprecated.
-Instantiate it:
+Nixos-25.11 requires macOS 14.0 or newer and defaults to SDK 14.4. Darwin uses
+the system libc++; packages needing newer C++ library features must raise the
+deployment target.
 
-```nix
-systemdFormat = pkgs.formats.systemd { };
-```
+Nixos-26.05 is the final Nixpkgs release for `x86_64-darwin`; support and
+binaries end with its release branch at the end of 2026. Suppress the warning
+with `allowDeprecatedx86_64Darwin`, passed through an explicit Nixpkgs import
+for flakes rather than `~/.config/nixpkgs/config.nix`.
 
-### Nixpkgs library removals
+## Fonts, locales, and package scopes
 
-Since nixos-25.11, use these direct replacements:
+### Fonts and locales
 
-| Removed | Replacement |
+The monolithic `nerdfonts` package split into per-font packages below
+`nerd-fonts` in nixos-25.05. Font files also gained per-font directories below
+`share/fonts/{opentype,truetype}/NerdFonts/`; migrate package names and
+hard-coded paths.
+
+Prefer `i18n.extraLocales` for additional locales. `i18n.supportedLocales`
+remains functional but is an implementation detail and warns when required
+locales are absent. Use `i18n.defaultCharset` and `i18n.localeCharsets` for
+global and per-locale character sets (nixos-25.05).
+
+### Recursive and desktop package scopes
+
+`lib.packagesFromDirectoryRecursive` rejects unknown arguments and can create
+nested scopes mirroring the source directory tree (nixos-25.05).
+
+In nixos-26.05, MATE and Xfce packages move to top-level attributes and the
+`xorg` package set is deprecated in favor of top-level packages. Use, for
+example, `pkgs.caja` and `pkgs.xfce4-whiskermenu-plugin`. The compatibility
+`xfce` scope is scheduled for removal.
+
+The same release deprecates `xfce.mkXfceDerivation` in favor of
+`stdenv.mkDerivation`. Replace `mpv-unwrapped.scripts` and `.wrapper` with
+`mpvScripts` and `mpv.override`.
+
+### Nix formatter package names
+
+Use stable `pkgs.nixfmt` from nixos-25.11. `pkgs.nixfmt-rfc-style` is
+deprecated; the old implementation remains temporarily as
+`pkgs.nixfmt-classic`.
+
+## Nixpkgs library and format APIs
+
+### Removed or renamed library functions
+
+For nixos-25.11, apply these replacements:
+
+| Removed or deprecated | Replacement |
 | --- | --- |
 | `cartesianProductOfSets` | `lib.attrsets.cartesianProduct` |
-| `zipWithNames`, `zip` | `zipAttrsWithNames`, `zipAttrsWith` |
+| `zipWithNames` | `zipAttrsWithNames` |
+| `zip` | `zipAttrsWith` |
 | `literalExample` | `literalExpression` or `literalMD` |
 | `mapAttrsFlatten` | `lib.attrsets.mapAttrsToList` |
 | `lib.modules.defaultPriority` | `defaultOverridePriority` |
 | `mkPackageOptionMD` | `mkPackageOption` |
 | `replaceChars` | `replaceStrings` |
-| `lib.sources.path*` | matching `lib.filesystem` helpers |
-| `lib.types.string` | a concrete type such as `lib.types.str` |
+| `lib.sources.path*` | corresponding `lib.filesystem` helpers |
+| `lib.strings.isCoercibleToString` | `isStringLike` or broader `isConvertibleWithToString` |
+| `lib.types.string` | a specific type such as `lib.types.str` |
 
-`lib.strings.isCoercibleToString` splits into `isStringLike` and broader
-`isConvertibleWithToString`.
+`types.either` now correctly rejects mismatched values inside `freeformType`;
+this also affects `oneOf`, `number`, and `numbers.*`. Module authors often need
+`attrsOf (types.either ...)` so the free-form value has the intended shape.
 
-### Correct type checking inside `freeformType`
+### Command-line rendering
 
-Since nixos-25.11, `types.either` no longer silently accepts mismatches when
-used as a `freeformType`; this also affects `oneOf`, `number`, and `numbers.*`.
-Module authors commonly need `attrsOf` around the union so the free-form value
-has the intended shape.
+Replace deprecated `lib.cli.toGNUCommandLine` and `toGNUCommandLineShell` with
+`lib.cli.toCommandLine`, `toCommandLineShell`, `toCommandLineGNU`, or
+`toCommandLineShellGNU`. Choose GNU variants only for GNU-specific rendering.
 
-### Replacement command-line rendering APIs
+### Format helper instantiation
 
-Since nixos-25.11, `lib.cli.toGNUCommandLine` and `toGNUCommandLineShell` are
-deprecated. Use `toCommandLine`, `toCommandLineShell`, `toCommandLineGNU`, or
-`toCommandLineShellGNU`; choose GNU variants only for GNU rendering.
-
-### Fixed-point-free Nixpkgs configuration
-
-In nixos-26.05, Nixpkgs configuration functions receive `lib` directly along
-with `pkgs`, avoiding package fixed-point recursion when only library values
-are needed.
+Direct `pkgs.formats.systemd` use is deprecated. Instantiate it like other
+format helpers in nixos-25.11:
 
 ```nix
-{ lib, ... }: {
-  allowlistedLicenses = [ lib.licenses.nasa13 ];
-}
+systemdFormat = pkgs.formats.systemd { };
 ```
 
-## Package scopes, platforms, and outputs
+## Binary-cache derivations
 
-### Mesa packaging inputs
+`mkBinaryCache` creates zstd-compressed caches by default in nixos-25.05. Pass
+`compression = "xz";` only when consumers require the previous format.
 
-In nixos-25.05, applications linked to different Mesa versions can coexist.
-Packages requiring GBM or DRI metadata should depend on `libgbm` or
-`dri-pkgconfig-stub`, respectively, instead of Mesa itself.
+## Neovim packaging
 
-### Split PostgreSQL development tools and extensions
+Nixpkgs disables Neovim's Python 3 and Ruby providers by default in
+nixos-26.05. Lua dependencies are recorded in generated `init.lua` instead of
+wrapper `LUA_PATH` arguments. Run commands needing them after initialization
+with `-c`; when `wrapRc = false`, load the generated init file yourself.
 
-In nixos-25.05, `postgresql` and `libpq` no longer include `pg_config`; add
-`postgresql.pg_config` or `libpq.pg_config` to `nativeBuildInputs`.
-Select PL/Python, PL/Perl, and PL/Tcl with `postgresql.withPackages` instead of
-support overrides.
+## Stateless command lookup
 
-```nix
-nativeBuildInputs = [ postgresql.pg_config ];
-postgresql.withPackages (ps: [ ps.plpython3 ])
-```
-
-### Per-font Nerd Fonts packages
-
-In nixos-25.05, monolithic `nerdfonts` splits into packages below
-`nerd-fonts`. Installed files gain a per-font directory below
-`share/fonts/{opentype,truetype}/NerdFonts/`; migrate both package attributes
-and paths.
-
-### Stable `nixfmt` package name
-
-Since nixos-25.11, use `pkgs.nixfmt`. `pkgs.nixfmt-rfc-style` is deprecated,
-while the former formatter remains temporarily as `pkgs.nixfmt-classic`.
-
-### Darwin platform floor and system libc++
-
-Nixpkgs nixos-25.11 requires macOS 14.0 or newer and defaults to SDK 14.4.
-Darwin builds use the system libc++; packages needing newer C++ library
-features must raise their deployment target.
-
-### Nixpkgs evaluation and kernel-output compatibility
-
-Evaluating Nixpkgs nixos-25.11 requires Nix 2.18 or newer. Linux packages move
-all in-tree kernel modules to a separate `modules` output; consumers must not
-assume they remain in the primary output.
-
-### Final Intel Darwin release
-
-nixos-26.05 is the final Nixpkgs release supporting `x86_64-darwin`; support and
-binaries end with the release branch at the end of 2026.
-`allowDeprecatedx86_64Darwin` suppresses the warning. Flakes must pass it
-through an explicit Nixpkgs import, not `~/.config/nixpkgs/config.nix`.
-
-```nix
-import nixpkgs {
-  system = "x86_64-darwin";
-  config.allowDeprecatedx86_64Darwin = true;
-}
-```
-
-### Top-level desktop package scopes
-
-In nixos-26.05, MATE and Xfce packages move to top-level attributes, and `xorg`
-is deprecated in favor of top-level packages. Use, for example, `pkgs.caja` and
-`pkgs.xfce4-whiskermenu-plugin`. The compatibility `xfce` scope is scheduled
-for removal in 26.11.
-
-### Stateless `command-not-found`
-
-In nixos-26.05, when a Nixpkgs source contains `programs.sqlite`, as channel
-tarballs do, `command-not-found` enables itself and uses that source database
-without mutable state.
-
-### Nixpkgs expression migrations
-
-In nixos-26.05:
-
-- replace `xfce.mkXfceDerivation` with `stdenv.mkDerivation`;
-- replace `mpv-unwrapped.scripts` and `.wrapper` with `mpvScripts` and
-  `mpv.override`;
-- replace deprecated `fetchFromSavannah` with `fetchgit` or a release mirror;
-- flatten nested lists in build and runtime inputs.
+When the Nixpkgs source contains `programs.sqlite`, including channel tarballs,
+`command-not-found` is automatically enabled in nixos-26.05 and reads that
+database directly without maintaining separate state.

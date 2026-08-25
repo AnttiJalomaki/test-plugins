@@ -1,32 +1,29 @@
 # Networking and Network Services
 
-Use this reference for interface configuration, firewalls, remote services, DNS, DHCP, mail, NFS, and hostname behavior.
+## NetworkManager and interface configuration
 
-## Interface configuration
+NetworkManager is the only supported Leap 16 network configuration stack.
+systemd predictable names replace the Leap 15 persistent naming scheme; use
+`systemd.link` files for complex requirements rather than relying on legacy
+names. (leap-16.0-guide)
 
-### NetworkManager and names
+SLES 16 removes `teamd`, `libteam-tools`, and `NetworkManager-team`. Convert
+teaming, including LACP, to NetworkManager's built-in bonding support.
 
-Leap 16 supports only NetworkManager for network configuration. systemd predictable interface names replace Leap 15's persistent naming scheme; use `systemd.link` files for complex naming requirements instead of relying on legacy names.
+DCCP and UDP-Lite are deprecated in the later SLES 16.0 revision. Plan to
+migrate any dependent workloads. SLES Minimal images now contain both
+`iptables` and `nftables`, so minimal-image automation can use them without an
+extra package installation. (16.0-rev-2026-08-04)
 
-### Bonding replaces teaming
+## firewalld and virtualization networking
 
-SLES 16 removes and does not support `teamd`, `libteam-tools`, or `NetworkManager-team`. Migrate teaming configurations, including LACP, to NetworkManager's built-in bonding support.
-
-### Literal hostname handling
-
-SLES 16 applies `/etc/hostname` literally instead of silently stripping the domain from an FQDN. Prefer an unqualified hostname because an FQDN can cause application-specific surprises.
-
-## Firewall behavior
-
-### Docker and libvirt
-
-When Docker breaks networking for Leap 16 libvirt guests, select the iptables backend in `/etc/libvirt/network.conf`:
+When Docker disrupts networking for libvirt guests, choose libvirt's iptables
+backend in `/etc/libvirt/network.conf`, assign `virbr0` permanently to the
+`libvirt` zone, and restart libvirt:
 
 ```conf
 firewall_backend = "iptables"
 ```
-
-Persist `virbr0` in the libvirt zone and restart libvirt:
 
 ```sh
 firewall-cmd --add-interface=virbr0 --zone=libvirt --permanent
@@ -34,9 +31,10 @@ firewall-cmd --reload
 systemctl restart libvirtd
 ```
 
-### SLES 15 SP6 legacy firewalld
-
-Prefer `firewalld` 2.x. If slow reloads require the maintained 1.3.4 fallback, downgrade and lock it, then restart because package replacement leaves the live firewall and configuration in place:
+On affected SLES 15 SP6 systems with slow firewalld 2.x reloads, maintained
+1.3.4 is available as a legacy fallback, although 2.x remains preferred. The
+transaction leaves the live firewall and configuration in place, so restart
+after downgrading and locking:
 
 ```sh
 zypper refresh
@@ -45,7 +43,7 @@ zypper addlock 'firewalld >= 2'
 systemctl restart firewalld.service
 ```
 
-Return to the current series by removing the lock, updating, and restarting:
+Return to the current series with:
 
 ```sh
 zypper removelock 'firewalld >= 2'
@@ -54,40 +52,35 @@ zypper update
 systemctl restart firewalld.service
 ```
 
-### Many-interface limitation
+On SLES 16, a restart after assigning many interfaces can take a long time or
+time out with `org.freedesktop.DBus.Error.NoReply`. Recognize that signature as
+the known interface-scaling limitation rather than generic D-Bus failure.
 
-On SLES 16, restarting firewalld after assigning many interfaces can be slow or time out with `org.freedesktop.DBus.Error.NoReply`. Recognize that signature as a known interface-scaling limitation rather than generic D-Bus failure.
+## NFS
+
+Leap 16 supports NFS traffic encryption with TLS, so transport encryption need
+not be supplied outside NFS.
+
+On SLE 15, NFSv4 over IPv6 is supported for clients only; serving NFSv4 over
+IPv6 is unsupported. NFSv2 is enabled but deprecated in SLE 15 and disabled and
+removed in SLE 16.
 
 ## Routing, DNS, DHCP, and mail
 
-### FRRouting
+FRRouting (`frr`) replaces unmaintained Quagga. Its configuration, including
+`vtysh`, is mostly backward compatible, but review migrations for FRR changes
+and additions.
 
-Use SLES 15 SP6 `frr` as the maintained successor to unmaintained Quagga. Configuration, including `vtysh`, is mostly backward compatible, but review FRR changes and additions during migration.
+SLES 15 SP6 moves BIND from 9.16 to 9.18, removing some options while adding
+DNS-over-TLS, DNS-over-HTTPS, and OpenSSL 3 support. Validate `named`
+configuration against the installed major version before upgrade. SLES 15 SP7
+records disagree between package comparison (`bind` 9.20.3) and release prose
+(BIND 9.18), so query the enabled repository or installed RPM rather than
+assuming either record.
 
-### BIND
+Leap 16 Dovecot 2.4 configuration is incompatible with 2.3. Convert it manually
+before starting the upgraded service.
 
-SLES 15 SP6 moves BIND from 9.16 to 9.18, removes configuration options, and adds DNS-over-TLS, DNS-over-HTTPS, and OpenSSL 3 support. Validate `named` configuration against 9.18 before upgrading.
-
-For SLES 15 SP7, the release documentation disagrees with itself: the GA package comparison records BIND 9.20.3 and MariaDB 11.4.5, while the release-note prose describes BIND 9.18 and MariaDB 11.8 LTS. The conflict is unresolved in the documentation, so query enabled repositories or installed RPMs before version-specific work.
-
-### Kea DHCP
-
-SLES 15 SP7 supplies `kea` 2.6.1 as the successor to end-of-life ISC `dhcpd`. Migrate server configuration and service automation; changing only the package name is insufficient.
-
-### Dovecot
-
-Leap 16 Dovecot 2.4 configuration is incompatible with 2.3. Convert it manually during upgrade and do not start the new service with an unreviewed 2.3 configuration.
-
-### NFS protocol boundaries and encryption
-
-On SLES 15 SP6, NFSv4 over IPv6 is supported only for clients; an NFSv4 server over IPv6 is unsupported. NFSv2 remains enabled but deprecated in SLE 15 and is disabled and removed in SLE 16.
-
-Leap 16 supports NFS over TLS, allowing NFS storage traffic to use native transport encryption instead of requiring an external encryption layer.
-
-## Installer networking
-
-Agama's UI can edit only existing NetworkManager connections. Use its CLI or a configuration file to create a connection for an unconfigured device. See [installation-migration.md](installation-migration.md) for early-boot NTP and netboot parameters.
-
-## Compatibility files
-
-Leap 16 provides `/etc/services` only as a dummy file. Do not assume the file already exists when software attempts to append service entries.
+SLES 15 SP7 supplies Kea 2.6.1 as the successor to end-of-life ISC `dhcpd`.
+Migrate DHCP configuration and service automation rather than merely replacing
+the package name.

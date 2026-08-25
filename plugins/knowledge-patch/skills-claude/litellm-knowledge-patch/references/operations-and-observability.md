@@ -1,47 +1,93 @@
 # Operations and observability
 
-## OpenTelemetry changes
+## Telemetry attribute migration
 
-LiteLLM-specific error details moved under the `litellm.*` namespace, so update queries that use previous keys. Streaming spans add `gen_ai.response.time_to_first_chunk`; failed calls emit `gen_ai.client.operation.exception`; v2 error spans again expose `error.*` attributes.
+Since 1.93.0, LiteLLM-specific error details use the `litellm.*` namespace, so
+update queries that use the old keys. Streaming spans add
+`gen_ai.response.time_to_first_chunk`, failed calls emit
+`gen_ai.client.operation.exception`, and v2 error spans expose `error.*`
+attributes again.
 
-## Database topology
+Inference spans in 1.97.0 include service-tier attributes, allowing traces to
+distinguish the tier used by a request.
 
-`DATABASE_URL_READ_REPLICA` sends read-only Prisma operations to a reader while writes remain on `DATABASE_URL`. With `IAM_TOKEN_DB_AUTH=true`, tokens for both connections are refreshed.
+## Independent coordination Redis
 
-`database_disable_prepared_statements` adds `pgbouncer=true`; `database_extra_connection_params` takes precedence. `supported_db_objects` restricts the stored object classes loaded, and `proxy_config_reload_interval_seconds` controls database-backed cross-pod convergence with a default of 30 seconds.
-
-## Pool sizing and timeouts
-
-`database_connection_pool_limit` applies per worker, so total capacity equals instances multiplied by workers multiplied by the configured limit. `database_connection_timeout` bounds a general connection call, `database_connect_timeout` bounds opening a connection, and `database_socket_timeout` bounds idle or silent sockets.
-
-```yaml
-general_settings:
-  database_connection_pool_limit: 10
-  database_connection_timeout: 60
-  database_connect_timeout: 15
-  database_socket_timeout: 300
-```
-
-## Drain and client disconnects
-
-`enable_drain_endpoint` exposes `GET /health/drain` for pre-stop hooks and is disabled by default. Without `drain_endpoint_token`, it is unauthenticated; otherwise requests must carry the matching `X-Drain-Token`.
-
-`cancel_on_disconnect: true` cancels non-streaming upstream work after a client disconnect and records status 499.
+Coordination Redis can be separate from the response cache. The usage cache can
+be constructed from `REDIS_*` environment variables. The request allowlist
+under `general_settings` is also applied to LiteLLM globals.
 
 ## Redis circuit breaker
 
-The Redis circuit breaker is enabled by default. It opens after five consecutive failures and tries recovery after 60 seconds. Override with `REDIS_CIRCUIT_BREAKER_ENABLED`, `REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD`, and `REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT`.
+The Redis circuit breaker defaults on. It opens after five consecutive
+failures and tries recovery after 60 seconds. Override the behavior with:
 
-## Health and streaming stalls
+- `REDIS_CIRCUIT_BREAKER_ENABLED`
+- `REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD`
+- `REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT`
 
-`use_shared_health_check` stores deployment health in Redis for multi-instance deployments. `health_check_staleness_threshold` expires old results, while `health_check_ignore_transient_errors` excludes 408 and 429 probe failures from health-routing and cooldown decisions.
+## Shared health-aware routing
 
-`ttft_timeout` detects a provider that never emits its first token and internally streams non-streaming calls. `stream_idle_timeout` detects token gaps. `LITELLM_MAX_STREAMING_DURATION_SECONDS` caps total stream lifetime; `LITELLM_STREAM_INACTIVITY_TIMEOUT_SECONDS` catches async streams that send keepalives without content.
+`enable_health_check_routing` filters unhealthy deployments.
+`health_check_staleness_threshold` expires old results, while
+`health_check_ignore_transient_errors` prevents HTTP 408 and 429 probe results
+from changing routing or cooldown. `use_shared_health_check` keeps the health
+state in Redis for multi-instance Proxy deployments.
 
-## Runtime compatibility
+## Graceful drain and disconnect cancellation
 
-Package metadata allows Python 3.14 with an upper bound of `<3.15`. Compatible `redisvl`, `pypdf`, `openapi-core`, and native-bridge dependencies are included for that runtime.
+`enable_drain_endpoint` exposes `GET /health/drain` for pre-stop hooks and is
+off by default. Without `drain_endpoint_token`, the endpoint is unauthenticated;
+when a token is set, require the matching `X-Drain-Token`.
 
-## Operational request bounds
+`cancel_on_disconnect: true` cancels a non-streaming provider request after the
+client disconnects and records the cancellation as status 499.
 
-`max_request_size_mb` rejects oversized requests. `max_response_size_mb` prevents oversized model responses from being sent. `pass_through_request_timeout` bounds custom and native-provider pass-through calls at 600 seconds by default; endpoint-specific timeouts override it.
+## Request, response, and pass-through bounds
+
+`max_request_size_mb` rejects oversized requests.
+`max_response_size_mb` prevents oversized model responses from being sent.
+`pass_through_request_timeout` separately limits custom and native-provider
+pass-through calls and defaults to 600 seconds; an endpoint-specific timeout
+wins.
+
+## Stall-specific timeout controls
+
+Router `ttft_timeout` detects a provider that never emits its first token and
+internally streams even a non-streaming call. `stream_idle_timeout` detects
+excessive gaps between tokens.
+
+`LITELLM_MAX_STREAMING_DURATION_SECONDS` caps total stream lifetime.
+`LITELLM_STREAM_INACTIVITY_TIMEOUT_SECONDS` catches an async provider that
+sends keepalives without content chunks.
+
+## Outbound HTTP transport controls
+
+The aiohttp transport ignores `HTTP_PROXY` and `HTTPS_PROXY` by default. Set
+`AIOHTTP_TRUST_ENV=true` to use them. Connector limits default to unlimited
+(`0`). Socket keepalive defaults off; when enabled with
+`AIOHTTP_SO_KEEPALIVE`, idle, interval, and probe-count settings default to 60
+seconds, 30 seconds, and 5 probes respectively.
+
+## Deployment rate-limit enforcement
+
+Deployment `rpm` and `tpm` guide routing unless
+`enforce_model_rate_limits` is in `optional_pre_call_checks`. With the check,
+over-limit calls fail before the provider with HTTP 429 and `retry-after: 60`.
+RPM is exact; TPM is best-effort because actual usage is recorded after the
+response. Use shared Redis state across Proxy instances.
+
+## Admin UI operations
+
+In 1.97.0, the Playground can send non-streaming requests. Administrators can
+configure a user-facing banner. The auto-router creation form includes a
+routing test action and exposes its expanded complexity controls.
+
+The Admin UI build toolchain targets Node.js 24, with bootstrap selecting that
+dashboard version floor through nvm or fnm.
+
+## Cost and routing reports
+
+Caller-scoped spend-report endpoints are available for keys, users, teams, and
+organizations. Auto-router cost optimization reports net savings, uses the
+hardest tier as its default baseline, and rolls benchmarks up by session.

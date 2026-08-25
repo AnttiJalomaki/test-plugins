@@ -1,6 +1,8 @@
 {
   "patch": "react-router-knowledge-patch",
-  "merged_at": "2026-07-15T01:49:12Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-22T01:27:55Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -144,7 +146,14 @@
       "kind": "unversioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "6.30.6-8.3.0": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "6.30.6-8.3.0"
+  ]
 }

@@ -1,85 +1,82 @@
 # Dependency Resolution and Lockfiles
 
-Use this reference for dependency declarations, constraints, source handling,
-release cutoffs, lock verification, and standardized lockfile inputs.
+## Strict request and group validation (0.6-0.8)
 
-## Upgrade and Add Operations
+uv errors for nonexistent local extras, dependency groups absent from a frozen
+lockfile, and unknown dependency-group object specifiers. `--frozen` conflicts
+with `--no-sources`.
 
-### Upgrade marker-specific declarations
+## Build constraints and CLI inputs (0.6-0.8)
 
-As of 0.11.32, preview `uv upgrade` can update multiple declarations of the
-same package when environment markers distinguish those declarations.
+Declare build-time constraints with `tool.uv.build-constraint-dependencies`.
+They apply during sync and to ephemeral `uv run --with` environments, tools,
+and PEP 723 scripts.
 
-### Supply constraints, markers, groups, and overrides
+`uv add` accepts `--marker` and `-c` constraints. `uv pip install` and
+`uv pip compile` accept pip-compatible `--group`, while `uvx` accepts
+`--constraints` and `--overrides`.
 
-In the 0.6-0.8 batch, CLI dependency inputs expanded:
+## Dependency-group coverage (0.6-0.8)
 
-- `uv add` accepts `--marker` and `-c` constraints.
-- `uv pip install` and `uv pip compile` accept pip-compatible `--group`.
-- `uvx` accepts `--constraints` and `--overrides`.
+`default-groups = "all"` enables every group by default.
+`[tool.uv.dependency-groups].<group>.requires-python` limits a group by Python
+version. `tool.uv.required-environments` makes selected target environments
+mandatory for wheel coverage.
 
-`uv add --bounds` and the `add-bounds` configuration setting are stable
-controls for the constraints uv writes. Bounds also apply when adding
-dependencies to inline scripts.
+## Dependency exclusions and source suppression (0.9-0.10)
 
-## Build Constraints and Coverage
-
-Constrain build dependencies with
-`tool.uv.build-constraint-dependencies`. These constraints apply during sync
-and are also supported for `uv run --with`, tool workflows, and PEP 723
-scripts.
-
-Use `tool.uv.required-environments` when resolution must provide wheel coverage
-for particular target environments. Group-level Python restrictions belong in
-`[tool.uv.dependency-groups].<group>.requires-python`, while
-`default-groups = "all"` enables all groups by default.
-
-## Exclusions and Source Overrides
-
-The `exclude-dependencies` setting removes named transitive dependencies from
-resolution. Exclusions also apply in scripts and tool upgrades.
+`exclude-dependencies` removes named transitive dependencies from resolution;
+the exclusions also apply to scripts and tool upgrades.
 
 ```toml
 [tool.uv]
 exclude-dependencies = ["unwanted-package"]
 ```
 
-Use `--no-sources-package <name>` to ignore `[tool.uv.sources]` overrides for
-selected packages without disabling every source override.
+Use `--no-sources-package <name>` to ignore `[tool.uv.sources]` for selected
+packages while preserving other source overrides.
 
-## Release Cutoffs
+## Bounds and release cutoffs
 
-`exclude-newer-package` assigns a package-specific cutoff instead of one date
-for the whole resolution.
+`exclude-newer-package` gives individual packages their own release cutoff
+(0.6-0.8).
 
-Across the 0.9-0.10 batch, `exclude-newer` also accepts relative-duration
-cooldowns, and individual packages can opt out of the cutoff. Changing a
-cutoff retains locked versions that still satisfy it. Add `--upgrade` or
-`--upgrade-package` when a version refresh is intended.
+`uv add --bounds` and `add-bounds` are stable controls for constraints written
+by `uv add`, including dependencies added to inline scripts (0.9-0.10).
 
-## Lockfile Verification and Mutation
+`exclude-newer` accepts relative-duration cooldowns, and packages can opt out
+of the cutoff (0.9-0.10). Changing a cutoff retains locked versions that still
+satisfy it; use `--upgrade` or `--upgrade-package` to refresh versions.
 
-### Enforce canonical formatting
+## Marker-aware upgrades (0.11.32)
 
-At 0.11.32, `uv lock --check` and commands using `--locked` reject a
-non-canonically formatted lockfile. `uv lock --refresh` regenerates it in
-canonical form.
+Preview `uv upgrade` can update multiple declarations of one package when
+environment markers distinguish those declarations.
 
-### Preserve CI exit-code meaning
+## Prerelease resolution (0.12.5)
 
-`uv sync --check` verifies environment freshness. An outdated environment or
-lockfile makes `uv sync --check` or `uv lock --check` exit with status 1.
-Status 2 remains an error. CI should distinguish stale state from an
-operational failure.
+The default `if-necessary` policy tries stable candidates first, then permits
+prereleases if no stable candidate satisfies active constraints, including
+constraints discovered transitively. Override it with `--prerelease disallow`,
+`allow`, or `explicit`. `if-necessary-or-explicit` is a deprecated alias, and
+`--prerelease-package` sets package-specific policies.
 
-### Keep isolated operations separate
+## Canonical `uv.lock` checks
 
-Commands using `--isolated` do not update `uv.lock`; temporary isolated work
-therefore remains separate from project lock state.
+`uv lock --check` and commands using `--locked` reject non-canonical lockfile
+formatting; `uv lock --refresh` regenerates canonical output (0.11.32).
 
-## PEP 751 `pylock.toml`
+`uv sync --check` verifies environment freshness (0.6-0.8). A stale lockfile
+or environment gives `uv lock --check` or `uv sync --check` exit status 1;
+status 2 is an operational error.
 
-uv can generate, export, install, and sync standardized PEP 751 lockfiles:
+Commands using `--isolated` do not update `uv.lock` (0.6-0.8).
+
+## PEP 751 workflows and validation
+
+uv can generate, export, install, and sync PEP 751 lockfiles (0.6-0.8).
+Custom filenames must be `pylock.<name>.toml`; arbitrary TOML files are not
+treated as requirements files.
 
 ```console
 uv export -o pylock.toml
@@ -88,11 +85,25 @@ uv pip sync pylock.toml
 uv pip install -r pylock.toml
 ```
 
-A custom filename must have the form `pylock.<name>.toml`. Arbitrary TOML
-files are rejected instead of being interpreted as requirements files.
+At 0.12.5, a PEP 751 file must contain a `packages` array, although
+`packages = []` is valid. Its name must be `pylock.toml` or a single-name
+variant such as `pylock.dev.toml`. Declared artifact sizes are verified against
+downloaded or cached artifacts.
 
-## Remote and Script Inputs
+## Requirements-file hash checking (0.12.5)
 
-Requirement loading supports extensionless scripts containing inline metadata
-and scripts at HTTP or HTTPS paths. `pylock.toml` inputs may also be remote.
-Git dependency sources expose an LFS toggle through `UV_GIT_LFS`.
+For `uv pip install` and `uv pip sync`, a `--require-hashes` directive inside a
+requirements file enables hash-checking mode. Every requirement must be pinned
+and hashed, and MD5 alone is insufficient; include a secure digest such as
+SHA-256.
+
+```text
+--require-hashes
+anyio==4.0.0 --hash=sha256:<digest>
+```
+
+## Remote and script inputs (0.9-0.10)
+
+Requirement loading accepts extensionless scripts with inline metadata and
+scripts at HTTP(S) paths. `pylock.toml` inputs may be remote. Git sources expose
+an LFS toggle through `UV_GIT_LFS`.

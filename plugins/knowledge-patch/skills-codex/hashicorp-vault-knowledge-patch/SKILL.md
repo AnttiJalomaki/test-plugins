@@ -10,177 +10,220 @@ metadata:
 
 # HashiCorp Vault Knowledge Patch
 
-Use this skill when designing, upgrading, configuring, or troubleshooting Vault deployments whose behavior depends on recent server, CLI, API, plugin, or Enterprise changes.
+Load this skill when configuring, upgrading, integrating, or troubleshooting
+Vault. It emphasizes changed defaults, removals, request and response schema
+changes, edition-specific behavior, and operational hazards.
 
-Prefer the deployed edition, exact patch release, configuration, API responses, and observed behavior over general guidance. Many capabilities here are Enterprise-only, beta, experimental, or gated by a feature or environment flag.
+## How to use this skill
+
+1. Determine the exact server, CLI, SDK, plugin, and provider versions in use.
+2. Distinguish Community and Enterprise features before proposing a design.
+3. Read the topic reference for every subsystem touched by the change.
+4. Apply breaking-change and upgrade-safety guidance before new-feature advice.
+5. Validate paths, response fields, listener settings, and policy semantics
+   against the deployed release rather than assuming old behavior persists.
+6. For clustered changes, test standby, secondary, seal, snapshot, and event
+   behavior as applicable—not just an active-node happy path.
+7. For secrets and identity changes, plan rollback around externally created
+   credentials, synchronized copies, and ownership boundaries.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [operations-and-upgrades.md](references/operations-and-upgrades.md) | Upgrade blockers, integrated storage, Raft, seals, containers, listeners, configuration, and known issues |
-| [authentication-and-policy.md](references/authentication-and-policy.md) | Auth methods, identity, ACLs, MFA, OAuth, SCIM, namespaces, and request authorization |
-| [secrets-and-rotation.md](references/secrets-and-rotation.md) | Secrets engines, static and root rotation, Secret Sync, leases, cloud integrations, and recovery |
-| [pki-and-cryptography.md](references/pki-and-cryptography.md) | PKI, ACME, SCEP, Transit, KMIP, managed keys, FIPS, and cryptographic constraints |
-| [audit-events-and-telemetry.md](references/audit-events-and-telemetry.md) | Audit records, events, activity, utilization, billing, reporting, metrics, and rotation evidence |
-| [plugins-ui-and-clients.md](references/plugins-ui-and-clients.md) | Plugin lifecycle, SDK and client changes, GUI routes and workflows, Terraform, and operators |
+| [operations-and-upgrades.md](references/operations-and-upgrades.md) | Server configuration, containers, Raft, snapshots, storage, recovery, cluster health, upgrade issues |
+| [authentication-and-policy.md](references/authentication-and-policy.md) | Auth methods, identities, SCIM, OAuth resource servers, ACLs, policy templates |
+| [pki-and-cryptography.md](references/pki-and-cryptography.md) | Transit, PKI, ACME, SCEP, KMIP, managed keys, FIPS, TLS |
+| [secrets-and-rotation.md](references/secrets-and-rotation.md) | Secrets engines, static and root rotation, Secret Sync, databases, secret delivery |
+| [audit-events-and-telemetry.md](references/audit-events-and-telemetry.md) | Audit schemas, events, utilization, billing, logs, metrics |
+| [plugins-ui-and-clients.md](references/plugins-ui-and-clients.md) | Plugin packaging, registration APIs, SDKs, listener limits, GUI routes |
 
-## Start with upgrade blockers
+## Breaking changes and removals
 
-Before changing a Vault release, edition, image, or plugin:
+### Reject duplicate HCL
 
-1. Identify the exact current and target patch releases.
-2. Inventory integrated storage, seals, auth mounts, secrets engines, external plugins, policies, agents, and UI-dependent runbooks.
-3. Check the relevant known-issue and fixed-version notes in [operations-and-upgrades.md](references/operations-and-upgrades.md).
-4. Confirm every Enterprise-only capability against the installed license and enabled feature flags.
-5. Exercise recovery, unseal, login, rotation, renewal, and plugin-registration paths in a representative environment.
-6. Retain rollback artifacts and do not assume that a schema or behavior change is reversible.
+Duplicate server-configuration and policy attributes are parsing errors. Do not
+rely on the former warning-only compatibility switch; it is gone. Search and
+deduplicate keys before deployment. See
+[operations and upgrades](references/operations-and-upgrades.md).
 
-### Configuration changes that can stop startup
+### Remove Snowflake password authentication
 
-- Integrated storage requires an explicit `disable_mlock = true` or `disable_mlock = false`; omission prevents startup.
-- Integrated storage rejects `performance_multiplier` values less than or equal to zero.
-- Duplicate attributes in server HCL and policy definitions are errors. The temporary `VAULT_ALLOW_PENDING_REMOVAL_DUPLICATE_HCL_ATTRIBUTES` escape hatch only downgrades them to warnings.
-- Enterprise IBM PAO licenses require a `license_entitlement` stanza.
-- Enterprise Common Criteria mode restricts listener TLS suites and tightens PKI validation.
+Snowflake database connections must no longer use password authentication.
+Plan a key-pair migration and account for the separate key-pair refresh issue
+on affected older release lines. See
+[secrets and rotation](references/secrets-and-rotation.md).
 
-### Authentication and policy breaks
+### Migrate retired integrations
 
-- Azure auth requires a bound group or service-principal ID.
-- Stored `auth/azure/config` values take precedence over `AZURE_*` environment variables.
-- Empty LDAP passwords are always rejected; remove reliance on `deny_null_bind`.
-- Exact-match list comparison for policy `allowed_parameters` and `denied_parameters` is retired; use per-element matching.
-- Identity entity merges require `sudo`.
-- Rekey cancellation requires the operation nonce.
+The Active Directory secrets plugin is retired, and Centrify authentication is
+no longer officially supported. Replace both before an upgrade depends on
+their continued availability. See
+[secrets and rotation](references/secrets-and-rotation.md) and
+[authentication and policy](references/authentication-and-policy.md).
 
-### Secrets-engine retirements and migrations
+### Use per-element list-policy matching
 
-- Snowflake database password authentication is retired; migrate to key-pair authentication.
-- The Active Directory secrets plugin is retired; migrate before upgrading.
-- Built-in Vault Agent API proxy support is deprecated; move proxy workloads to Vault Proxy.
-- The PKI `allow_token_displayname` role field is deprecated; replace it with explicit name constraints.
-- The AWS `security_token` response field is deprecated; consume `session_token`.
-- Azure secrets `password_policy` is unusable and deprecated because Microsoft Graph generates passwords.
-- Centrify auth is no longer officially supported.
+Exact-match comparison for list-valued `allowed_parameters` and
+`denied_parameters` is retired. Write constraints for per-element contains-all
+matching, and remember that policy names are lowercased before constraint
+evaluation. See [authentication and policy](references/authentication-and-policy.md).
 
-### Container and plugin hazards
+### Stop using the token-counter endpoint
 
-- Containers run as the `vault` user by default in newer patch images.
-- Current images cannot call `mlock()` through a built-in `cap_ipc_lock`; set `disable_mlock = true` and prevent swapping at the host or runtime level.
-- External plugin registration requires an extracted artifact in the plugin directory.
-- Several specific Enterprise patch releases cannot verify plugins signed with the renewed signing key; use the fixed patch releases listed in the operations reference.
+`/sys/internal/counters/tokens` returns an unsupported-path 403. Replace it with
+supported activity, utilization, or billing interfaces. See
+[operations and upgrades](references/operations-and-upgrades.md) and
+[audit and telemetry](references/audit-events-and-telemetry.md).
 
-## High-value feature quick reference
+### Set integrated-storage memory locking explicitly
 
-### Automated credential rotation
+An integrated-storage server will not start if `disable_mlock` is omitted.
+Containers cannot call `mlock()` in the current image behavior, so set
+`disable_mlock = true` there and prevent swapping outside Vault. See
+[operations and upgrades](references/operations-and-upgrades.md).
 
-Rotation Manager supports schedules and TTL/period cadences, interpreted in UTC, across supported cloud, database, and directory integrations. Check these details before enabling it:
+### Supply removed UBI utilities yourself
 
-- Manual LDAP static-role rotation does not reset the automated TTL.
-- Rotation retries can be bounded and exhausted entries can become orphaned.
-- Azure static rotations need spacing to avoid propagation races.
-- Database imports can skip the first automatic static-role rotation.
-- Logs and events provide evidence of rotation successes and failures.
+Do not assume `gnupg`, `openssl`, or `procps` exists inside a UBI image. Add a
+separate tool image or package layer for scripts and diagnostics that need
+them. See [operations and upgrades](references/operations-and-upgrades.md).
 
-See [secrets-and-rotation.md](references/secrets-and-rotation.md) for target coverage and migration behavior.
+### Replace the Agent API proxy
+
+Built-in API proxying in Vault Agent is deprecated and pending removal. Move
+proxy workloads to Vault Proxy. See
+[plugins, UI, and clients](references/plugins-ui-and-clients.md).
+
+### Enforce Azure auth bindings and stored precedence
+
+Azure auth requires a bound group or service-principal ID. Stored plugin
+configuration wins over `AZURE_*` environment variables, so move intended
+values into `auth/azure/config`. See
+[authentication and policy](references/authentication-and-policy.md).
+
+### Respect token-header limits
+
+Listeners cap Vault token and bearer-authorization headers at 8 KB by default.
+Reduce oversized tokens or explicitly configure the listener; use `-1` only
+after assessing the operational tradeoff. See
+[plugins, UI, and clients](references/plugins-ui-and-clients.md).
+
+### Treat SCIM-managed identities as externally owned
+
+Entity merge cannot move aliases, policies, or memberships across the
+SCIM-managed ownership boundary, even for privileged callers. Reconcile those
+changes through the managing SCIM client. See
+[authentication and policy](references/authentication-and-policy.md).
+
+### Treat External CA PEM bundles as secret material
+
+An External CA `pem_bundle` certificate response includes the private key in
+the `certificate` field. Protect logs, caches, and parsers that handle it. See
+[PKI and cryptography](references/pki-and-cryptography.md).
+
+### Reclassify invalid cross-cluster tokens
+
+Invalid cross-cluster consistency tokens at an active performance secondary
+prefer HTTP 403 rather than 412. Update retry and authorization-error logic.
+See [operations and upgrades](references/operations-and-upgrades.md).
+
+## Upgrade-safety checklist
+
+- Remove duplicate HCL attributes and deprecated configuration fields.
+- Confirm Azure auth values are stored where precedence rules will read them.
+- Space Azure static-role rotations to allow cloud propagation.
+- Upgrade away from plugin-signing-key verification failures before registering
+  newly released Enterprise plugins.
+- Preserve rekey nonces for cancellation automation.
+- Verify container startup, memory locking, and required diagnostic utilities.
+- Exercise snapshot load, delegated recovery, unload, and destination-path
+  restore before relying on disaster recovery.
+- Test policy paths containing wildcards, trailing slashes, and rendered
+  identity values under the stricter rules.
+- Check GUI workarounds independently from CLI/API access.
+- Verify event consumers tolerate bounded-queue loss and status-code changes.
+
+The detailed version-specific fixes and known issues are in
+[operations and upgrades](references/operations-and-upgrades.md) and the
+subsystem references.
+
+## High-value feature guidance
 
 ### Snapshot recovery
 
-Enterprise integrated-storage recovery can expose supported snapshot data without restoring the whole cluster. Use `X-Vault-Recover-Snapshot-Id` instead of the deprecated query parameter. Recovery accepts `RECOVER`, `POST`, or `PUT`; `vault recover -from` can restore to a different live path.
+Enterprise recovery can load snapshots, delegate recovery separately from
+snapshot management, restore to another live path, and recover KV v1, KV v2,
+cubbyhole data, selected static credentials, and an SSH CA. See
+[operations and upgrades](references/operations-and-upgrades.md).
 
-Automatic snapshot loading is controlled by `autoload_enabled`. Separate snapshot-management permissions from recovery permissions. A stuck loaded snapshot can be force-unloaded with the CLI or snapshot-load API.
+### OAuth resource-server authorization
 
-### Workload identity and authorization
+Vault can authorize requests from OAuth JWTs and apply RAR parameter controls
+with identity-template expressions. Validate accepted `typ` values and treat an
+empty optional authorization-details array as absent. See
+[authentication and policy](references/authentication-and-policy.md).
 
-- SPIFFE auth accepts JWT- or X.509-based SPIFFE IDs.
-- Authenticated workloads can request JWT-SVIDs from Vault.
-- Enterprise Agent Registry and OAuth resource-server support can authorize registered agents with OAuth 2.0 JWTs without a Vault token.
-- SCIM 2.0 provisioning manages entities, aliases, and groups.
-- Secret Sync can use workload identity federation for AWS, Azure, and GCP destinations.
+### SCIM provisioning
 
-### Transit and key management
+Enterprise SCIM manages identities, aliases, and groups, supports multi-change
+PATCH operations, offers explicit filtering, and exposes direct memberships.
+Unsupported filters return 400. See
+[authentication and policy](references/authentication-and-policy.md).
 
-- Transit supports envelope-encryption workflows so applications can process bulk data locally while Vault protects data-encryption keys.
-- Recent algorithms include experimental ML-DSA and SLH-DSA, RSA PKCS#1 v1.5 encryption, and Enterprise Ed25519ph, Ed25519ctx, AES-CBC, and 192-bit AES CMAC.
-- Derived datakey endpoints accept `context`, and rewrap supports managed keys.
-- Managed-key usage values are strings such as `encrypt`, `sign`, and `mac`, not numeric IDs.
-- Random-byte requests can be larger but consume correspondingly more memory.
+### LDAP self-managed rotation
 
-Use [pki-and-cryptography.md](references/pki-and-cryptography.md) for constraints and protocol-specific behavior.
+Mount the engine as `ldap`, enable `self_managed`, and account for Rotation
+Manager migration, retry/orphan policy, and manual-rotation cadence. See
+[secrets and rotation](references/secrets-and-rotation.md).
 
-### PKI issuance and validation
+### Transit and managed keys
 
-Validate issuer extended-key usages, name constraints, issuer-name extensions, path length, chain usability, requested TTL, and role subject constraints together. Common Criteria mode adds full-chain and validation-time checks.
+Transit supports newer signature schemes, AES-CBC, derived-DEK context,
+envelope encryption, managed-key rewrap, and managed-key certificate
+operations. Parse managed-key usages as names rather than integers. See
+[PKI and cryptography](references/pki-and-cryptography.md).
 
-For ACME, constrain HTTP-01 and TLS-ALPN-01 targets with permitted and excluded IP ranges. Enterprise External CA and Vault Agent can run public-CA ACME workflows, and Agent templates re-render after issue or renewal.
+### PKI protocol services
 
-### Events, audit, and billing
+PKI includes SCEP, richer ACME administration, External CA workflows, managed
+key issuers, chain constraints, and delta-CRL advertisement. Apply the private
+key handling rule for External CA PEM bundles. See
+[PKI and cryptography](references/pki-and-cryptography.md).
 
-- Storage-changing events with `modified=true` carry `vault_index` for consistent follow-up reads.
-- Response audit entries may carry `supplemental_audit_data`; PKI OCSP details remain HMACed by default.
-- Activity query boundaries align to billing periods.
-- Utilization bundles use `snapshot_records`; `decoded_snapshot` contains the readable data.
-- Billing overview supports month ranges and configurable historical retention.
+### Secret Sync safeguards
 
-See [audit-events-and-telemetry.md](references/audit-events-and-telemetry.md) before changing parsers, dashboards, or billing exports.
+Use destination allowlists, workload identity federation, and customer-managed
+GCP keys. Understand `force_delete` orphaning, mount-triggered unsync, and KV v2
+fallback behavior before deleting either side. See
+[secrets and rotation](references/secrets-and-rotation.md).
 
-## Request and listener compatibility
+### Event and billing consumers
 
-### Token header limit
+Events can include consistency indexes and lease or LDAP rotation signals;
+billing and utilization schemas add and rename fields. Treat schema changes as
+API migrations rather than display-only additions. See
+[audit, events, and telemetry](references/audit-events-and-telemetry.md).
 
-Listeners cap `X-Vault-Token` and `Authorization: Bearer` content at 8 KB by default. If an existing integration legitimately needs larger tokens, assess the memory and exposure implications before disabling the limit:
+### External plugins
 
-```hcl
-max_token_header_size = -1
-```
+Place extracted artifacts before registration, use detailed registration APIs,
+and validate pinned-version overrides and SHA-256 data. Confirm the server line
+can verify the current Enterprise plugin signing key. See
+[plugins, UI, and clients](references/plugins-ui-and-clients.md).
 
-### Privileged unauthenticated endpoints
+## Task routing
 
-Generate-root, DR operation-token generation, and rekey endpoints authenticate callers by default. Restore legacy unauthenticated behavior only after a deliberate threat review:
+For a server upgrade, begin with operations, then read every reference matching
+an enabled auth method, secrets engine, audit device, plugin, or UI workflow.
 
-```hcl
-enable_unauthenticated_access = ["generate-root", "generate-operation-token", "rekey"]
-```
+For policy or identity work, combine authentication guidance with the target
+auth or secrets-engine reference; identity templates affect both ACL paths and
+OAuth authorization details.
 
-### Canonical paths
+For certificate workflows, read PKI guidance plus authentication guidance when
+certificates are used for login, and audit guidance when OCSP or failed-login
+metadata enters audit records.
 
-Clients should emit canonical paths. Requests containing `/./`, `/../`, or `//` may redirect to a cleaned path. Treat trailing-slash LIST authorization separately because more-specific denies now take precedence.
-
-### JSON limits and forwarding
-
-Listeners can bound JSON nesting, string length, object entries, and array elements. Rate-limit quotas run before these checks. When proxying to plugins, Vault strips Vault tokens from `Authorization` unless that header is explicitly allowed through; forwarded client IPs must parse as IPv4 or IPv6.
-
-## Edition and maturity checks
-
-Do not infer availability from an API name alone:
-
-- Verify Community versus Enterprise edition.
-- Distinguish generally available, beta, and experimental functionality.
-- Verify whether a feature depends on managed keys, PKCS#11, seal entropy, a licensed add-on, or a specific plugin type.
-- Confirm whether an auth or secrets plugin is built in, external, official-download eligible, or pinned.
-- For GUI workflows, keep an equivalent CLI or API procedure where known UI issues can block work.
-
-## Change-review checklist
-
-For every proposed configuration or code change:
-
-- Resolve the mount path and plugin type; aliases are not always equivalent.
-- Preserve nonce, snapshot ID, lease, and rotation-schedule state where required.
-- Check field renames, changed response types, deprecated parameters, and removed endpoints.
-- Confirm UTC assumptions and cloud-provider propagation delays.
-- Check whether a write is now persistent and therefore needs an explicit zero value to clear a field.
-- Validate ACL, `sudo`, EGP, Sentinel, namespace, and role-based quota effects.
-- Re-test proxies, canonical paths, forwarded headers, and certificate metadata.
-- Bound memory-sensitive operations such as CRLs, JSON parsing, random bytes, and recovery.
-- Capture audit, event, and telemetry evidence for the changed path.
-- Consult every topic reference that intersects the deployment before rollout.
-
-## Troubleshooting order
-
-1. Reproduce with the exact API path, method, headers, namespace, and mount type.
-2. Compare the installed patch release with the issue-specific fixed versions.
-3. Inspect server logs, audit entries, health and seal status, Raft state, and plugin registration.
-4. Distinguish authorization failure from routing, canonicalization, quota, JSON-limit, or header-limit failure.
-5. Check provider-side propagation and external-secret state before retrying destructive rotation or sync operations.
-6. Use the CLI or API when a documented GUI pagination, routing, or EGP interaction may be involved.
-7. Escalate unresolved HSM, seal-wrap quorum, or recovery issues with preserved diagnostics and rollback state.
+For rotation automation, combine secrets guidance with audit/event guidance so
+the schedule, retry policy, and compliance signals agree.

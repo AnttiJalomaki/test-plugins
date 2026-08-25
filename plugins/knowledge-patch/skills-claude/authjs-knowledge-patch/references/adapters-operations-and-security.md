@@ -1,59 +1,24 @@
 # Adapters, Operations, and Security
 
-## Contents
-
-- [Adapter surface by authentication flow](#adapter-surface-by-authentication-flow)
-- [Normalize adapter values](#normalize-adapter-values)
-- [Custom logging](#custom-logging)
-- [Security and compatibility upgrades](#security-and-compatibility-upgrades)
-
 ## Adapter surface by authentication flow
 
-A local adapter only needs the methods and tables exercised by enabled flows. An adapter distributed as an official package must implement the entire `Adapter` interface.
+A local adapter may implement only the methods and tables exercised by enabled flows. An adapter distributed as an official package must implement the complete `Adapter` interface.
 
-### User and account management
+| Enabled flow | Required methods |
+| --- | --- |
+| User and account management | `createUser`, `getUser`, `getUserByAccount`, `updateUser`, `linkAccount` |
+| Database sessions | `createSession`, `getSessionAndUser`, `updateSession`, `deleteSession` |
+| Passwordless email | `getUserByEmail`, `createVerificationToken`, `useVerificationToken` |
 
-Implement:
-
-- `createUser`
-- `getUser`
-- `getUserByAccount`
-- `updateUser`
-- `linkAccount`
-
-### Database sessions
-
-Also implement:
-
-- `createSession`
-- `getSessionAndUser`
-- `updateSession`
-- `deleteSession`
-
-### Passwordless email
-
-Also implement:
-
-- `getUserByEmail`
-- `createVerificationToken`
-- `useVerificationToken`
-
-Auth.js does not currently invoke `deleteUser` or `unlinkAccount`. Do not assume those methods participate in a local authentication flow merely because the interface defines them.
+Auth.js does not currently invoke `deleteUser` or `unlinkAccount`; do not design a local authentication flow around those methods being called.
 
 ## Normalize adapter values
 
-Official adapters must accept arbitrary user-supplied properties and translate database-native values to and from plain JavaScript objects.
+Official adapters must accept arbitrary user-supplied properties and convert database-native values to plain JavaScript objects in both directions. Base conversion on value type rather than a list of known field names. Custom models can introduce more fields that need conversion, including dates.
 
-Base conversion on runtime value type, not a fixed list of field names. Custom models may add fields containing dates or other database-native values, and those fields require the same normalization as built-in fields.
+## Custom logger precedence
 
-Apply normalization in both directions:
-
-1. Convert plain input values into the database representation before persistence.
-2. Convert database results back into plain JavaScript objects before returning them.
-
-## Custom logging
-
-Supplying custom `logger` handlers causes Auth.js to ignore the separate `debug` option. Handle debug output in the custom logger together with warnings and errors:
+Supplying custom `logger` handlers makes the separate `debug` option ineffective. Route debug output through `logger.debug` alongside warning and error output.
 
 ```ts
 NextAuth({
@@ -65,20 +30,38 @@ NextAuth({
 })
 ```
 
-## Security and compatibility upgrades
+## Security and compatibility floors
 
-### SvelteKit and Nodemailer
+### SvelteKit Nodemailer update
 
-Upgrade `@auth/sveltekit` to `1.11.1` or later. Version `1.11.1` addresses a security issue inherited from Nodemailer.
+Upgrade `@auth/sveltekit` to `1.11.1` or later. That release addresses a security issue inherited from `nodemailer`.
 
-### NextAuth.js v4 and GitHub issuer validation
+### NextAuth.js v4 GitHub issuer
 
-Upgrade `next-auth` v4 applications using GitHub to `4.24.14`, or explicitly configure the issuer as `https://github.com/login/oauth`.
+GitHub OAuth callbacks include an `iss` parameter that `openid-client` validates unconditionally. Earlier applications without an explicitly configured issuer can therefore fail authentication. `next-auth@4.24.14` sets the GitHub provider's default issuer to `https://github.com/login/oauth`; either upgrade to that release or later, or configure the issuer explicitly.
 
-GitHub OAuth callbacks include an `iss` parameter that `openid-client` validates unconditionally. Earlier `next-auth` releases without an explicitly configured issuer can therefore fail authentication. Version `4.24.14` supplies the GitHub provider's issuer by default.
+### Kysely adapter SQL-injection floor
 
-### Kysely adapter dependency floor
+Upgrade `@auth/kysely-adapter` to `1.11.2` and ensure the installed peer is `kysely@^0.28.15`. The raised peer floor addresses CVE-2026-33468, an SQL-injection vulnerability.
 
-Upgrade `@auth/kysely-adapter` to `1.11.2` and ensure the installed `kysely` satisfies `^0.28.15`.
+## v4.24.15 authentication hardening and compatibility
 
-The raised peer-dependency floor addresses CVE-2026-33468, an SQL-injection vulnerability. Upgrading the adapter without resolving its peer dependency does not guarantee the fixed Kysely version is installed.
+### Malformed Bearer tokens
+
+`getToken()` returns `null` when the `Authorization` header contains a malformed Bearer value (since 4.24.15). Treat the result as unauthenticated; do not depend on exception handling for this case.
+
+### Provider-bound OAuth check cookies
+
+OAuth state, nonce, and PKCE check cookies are bound to the provider that created them (since 4.24.15). A callback handled by another provider is rejected. A sign-in already in flight when an upgrade is deployed can fail once, then succeed when the user retries.
+
+### Unicode-normalized email validation
+
+Email sign-in applies NFKC normalization before validating an address (since 4.24.15). This prevents homoglyph forms of `@` from bypassing validation.
+
+### Explicit `NEXTAUTH_URL` precedence
+
+In trusted-host mode, an explicit `NEXTAUTH_URL` takes precedence over the auto-detected forwarded host (since 4.24.15). Treat the configured URL as authoritative even when forwarded-host information is present.
+
+### CommonJS-compatible `uuid`
+
+The v4 line pins `uuid` to `^11.1.1` (since 4.24.15). This restores `require()` compatibility on Node.js versions earlier than 20.19; `uuid` 14.x is ESM-only and breaks those CommonJS consumers.

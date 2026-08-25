@@ -1,295 +1,286 @@
 # Router Configuration, Security, and Deployment
 
-## Router v2 configuration migration
+## Configuration and lifecycle
 
-The router-v2-migration stops applying major-version upgrades while loading
-configuration. Preview and materialize the upgraded YAML before deployment.
-The removed `--schema` flag becomes `router config schema`.
+### Configuration upgrades are explicit (router-v2-migration)
 
-```bash
-router config upgrade --diff router.yaml
-router config upgrade router.yaml > router.next.yaml
-mv router.next.yaml router.yaml
-router config schema
-```
+Router v2 does not apply upgrade migrations while loading configuration.
+Preview with `router config upgrade --diff router.yaml`, materialize and commit
+the upgraded file, and use `router config schema` instead of removed `--schema`.
 
-Minor-version YAML migrations within Router 2 are applied automatically from
-2.2.0. Major-version migrations still are not. Regularly materialize and commit
-minor migrations so a later major upgrade starts from current configuration.
+### Automatic minor-version configuration migration (2.2.0)
 
-Router v2 rejects incoming work when busy instead of retaining it in memory.
-Stricter traffic shaping can expose more HTTP 503 and 504 responses. During
-rollout, monitor CPU and logs and retune timeouts, concurrency, and rate limits.
+Within one Router major, YAML migrations are applied automatically. Cross-major
+migrations are not; regularly materialize changes with `router config upgrade`
+before a major-version boundary.
 
-## Routes and listener behavior
+### Busy routers reject instead of queue (router-v2-migration)
 
-### Supergraph paths
+V2 backpressure rejects work rather than retaining it in memory, and stricter
+traffic shaping can expose more HTTP 503/504 responses. Monitor CPU and logs,
+then retune timeouts, concurrency, and rate limits for the workload.
 
-The router-v2-migration changes named path parameters from `:name` to `{name}`;
-wildcards must be named and braced:
+### Remote supergraph polling was removed (router-v2-migration)
 
-```yaml
-supergraph:
-  path: /foo/{bar}/baz
-  # Wildcard: /foo/{*rest}
-```
+Remove `--apollo-uplink-poll-interval` and `APOLLO_UPLINK_POLL_INTERVAL`.
+Supergraphs from `--supergraph-urls` or `APOLLO_ROUTER_SUPERGRAPH_URLS` no longer
+hot reload; download remote schemas periodically to a local file when reloads
+are needed.
 
-Router 2.14.0 normalizes trailing slashes while matching `supergraph.path`, so
-`/graphql` also accepts `/graphql/`.
+### OCI tag references reload when their target changes (2.11.0)
 
-Router 2.3.0 restores the ability to disable the health-check endpoint after
-Router 2.0's plugin conversion temporarily lost that behavior.
+The Router can poll mutable OCI tags—including generated variant and custom
+tags—and reload when the referenced digest changes, enabling promotion by tag,
+for example `artifacts.apollographql.com/my-org/my-graph:prod`.
 
-### Request-header timeouts and limits
+### Failed reloads retry automatically (2.15.0)
 
-Router 2.2.0 adds `server.http.header_read_timeout`; its default is the earlier
-hard-coded 10 seconds.
+Transient schema or related reload failures enter a retrying state. Defaults
+are `reload.max_retries: 5` and `retry_delay: 10s`; zero disables retries, null
+allows unlimited retries, and a new trigger resets the budget.
 
-Router 2.9.0 adds `limits.http2_max_headers_list_bytes`, defaulting to 16 KiB.
-An oversized HTTP/2 header list is rejected with 431. Since 2.10.0, the limit
-applies to TLS, cleartext TCP, and Unix-domain-socket listeners; before that it
-covered only TLS.
+### Proxied Router release downloads (2.1.0)
 
-```yaml
-limits:
-  http2_max_headers_list_bytes: "48KiB"
-```
+Release downloads can use a remote proxy mirror when GitHub is unreachable from
+the deployment environment.
 
-Known-size GraphQL responses retain `Content-Length` instead of switching to
-`transfer-encoding: chunked` from 2.9.0. Body-size hints survive both
-client-to-Router and Router-to-subgraph paths.
+### Bookworm builders for DIY Docker images (2.10.0)
 
-### GET hardening
+Pin custom Rust builders to a Bookworm variant such as
+`rust:1.91.1-slim-bookworm` so builder and runtime glibc match. Generic builders
+can produce `GLIBC_2.39 not found` at startup.
 
-Router 2.12.1, in the 2.12.0 batch, rejects a GraphQL `GET` carrying any
-`Content-Type` other than `application/json` with optional parameters. It
-returns 415. Omitting the header remains allowed subject to CSRF checks. This
-is especially important for cookie or HTTP Basic Auth deployments.
+### Helm deployment annotations (2.7.0)
 
-### Unix sockets and HTTP/2
+Use chart `deploymentAnnotations` for Deployment metadata and `podAnnotations`
+for pod metadata.
 
-Router 2.13.0 supports subgraph endpoints over Unix sockets. Put the request
-path in the URL's `path` query parameter:
+### Helm `ServiceMonitor` names follow the Router fullname (2.13.0)
 
-```text
-unix:///tmp/some.sock?path=some_path
-```
+`ServiceMonitor.metadata.name` uses the `router.fullname` helper and honors
+`nameOverride`/`fullnameOverride`; a default release `my-release` changes from
+`my-release` to `my-release-router`.
 
-The same release lets `pool_idle_timeout` control idle keep-alive eviction for
-subgraphs, Connector sources, and the coprocessor client. Its default is 15
-seconds rather than the previous 5 seconds; `null` disables idle eviction.
+### Insecure graph-artifact registries can be allowlisted (2.13.0)
 
-For outbound subgraph, Connector, and coprocessor traffic,
-`experimental_http2: http2only` uses HTTP/2 prior knowledge over cleartext
-connections in 2.13.0. Plain `enable` without TLS still uses HTTP/1.1 because
-the client cannot perform h2c upgrade.
+Explicitly allow trusted registry hostnames when graph artifacts must be pulled
+over HTTP, such as a private registry or pull-through cache.
 
-Traffic-shaping compression adds `content-encoding`, and every subgraph request
-advertises `gzip`, `br`, or `deflate` through `accept-encoding` from 2.11.0.
-These headers are added after the request enters the debugging stack, so the
-Connectors Debugger does not display them.
+## HTTP listeners, paths, and connections
 
-Router 2.4.0 fixes a Router 2.3.0 regression that rejected some valid SigV4
-configurations at startup and blocked access to SigV4-protected services.
+### Supergraph endpoint parameters use braces (router-v2-migration)
 
-### Response and upload size/time limits
+Use `/foo/{bar}/baz` instead of `:bar`; wildcards must be named and braced, for
+example `/foo/{*rest}`.
 
-Router 2.15.0 lets `limits.subgraph` and `limits.connector` set global and
-per-destination `http_max_response_size`. There is no default. Older
-Router-level limit fields migrate under `limits.router`.
+### Trailing-slash-tolerant supergraph paths (2.14.0)
 
-An oversized streaming body is stopped and returned as
-`SUBREQUEST_HTTP_ERROR`. The Router increments the destination-specific
-`apollo.router.limits.*_response_size.exceeded` metric and marks the response
+`supergraph.path` matching normalizes a trailing slash, so `/graphql` and
+`/graphql/` reach the same configured endpoint.
+
+### Configurable HTTP header-read timeout (2.2.0)
+
+`server.http.header_read_timeout` controls header read time and defaults to the
+previous hard-coded 10 seconds.
+
+### HTTP/2 header-list size limit (2.9.0)
+
+`limits.http2_max_headers_list_bytes` caps total HTTP/2 request-header size,
+defaults to 16 KiB, and returns HTTP 431 when exceeded.
+
+### HTTP/2 header limits cover every listener (2.10.0)
+
+`limits.http2_max_headers_list_bytes` applies to TLS, cleartext TCP, and Unix-domain-socket
+listeners; before 2.10 it covered TLS only.
+
+### GET request content-type hardening (2.12.0)
+
+Router 2.12.1 rejects GraphQL GET requests with any `Content-Type` other than
+`application/json` plus optional parameters, returning 415. Omitting the header
+is still valid subject to CSRF checks. Treat this as security-critical for
+cookie or Basic-authenticated graphs.
+
+### Subgraphs over Unix domain sockets (2.13.0)
+
+Subgraph URLs may use Unix sockets. Put the HTTP request path in the URL's
+`path` query parameter, for example `unix:///tmp/some.sock?path=some_path`.
+
+### HTTP connection-pool idle lifetime (2.13.0)
+
+`pool_idle_timeout` controls idle keep-alive eviction for subgraphs, Connector
+sources, and coprocessors. It defaults to 15 seconds rather than 5; null disables
+idle eviction.
+
+### `http2only` uses h2c for cleartext connections (2.13.0)
+
+`experimental_http2: http2only` uses HTTP/2 prior knowledge without TLS for
+subgraph, Connector, and coprocessor traffic. Plain `enable` without TLS remains
+HTTP/1.1 because no h2c upgrade is performed.
+
+### Known-size responses retain `Content-Length` (2.9.0)
+
+Known-size GraphQL bodies keep `Content-Length` instead of chunked encoding;
+body-size hints survive client-to-router and router-to-subgraph paths.
+
+### Downstream response-size limits (2.15.0)
+
+Set `limits.subgraph` and `limits.connector` global/per-destination
+`http_max_response_size`; there is no default. Old Router-level fields migrate
+under `limits.router`. Oversized streaming bodies stop early with
+`SUBREQUEST_HTTP_ERROR`, increment the corresponding
+`apollo.router.limits.subgraph_response_size.exceeded` or
+`apollo.router.limits.connector_response_size.exceeded` metric, and mark the response
 span aborted for `response_size_limit`.
 
-```yaml
-limits:
-  subgraph:
-    all:
-      http_max_response_size: 10MB
-    subgraphs:
-      products:
-        http_max_response_size: 20MB
-  connector:
-    all:
-      http_max_response_size: 5MB
-    sources:
-      products.rest:
-        http_max_response_size: 10MB
-```
+### File-upload operation-body timeout (2.15.0)
 
-Also in 2.15.0, multipart uploads can bound time spent reading the operations
-field with `preview_file_uploads.protocols.multipart.limits.operation_body_timeout`.
-The option has no default; expiry returns HTTP 504 and `GATEWAY_TIMEOUT`.
+`preview_file_uploads.protocols.multipart.limits.operation_body_timeout` bounds
+only reading the operations field. It has no default and returns HTTP 504 with
+`GATEWAY_TIMEOUT` when exceeded.
 
-## CORS and Private Network Access
+## CORS and request authentication
 
-Router 2.5.0 adds ordered `cors.policies` with literal `origins` or regex
-`match_origins`. This permits credentials and broader headers only for trusted
-origins while retaining a restrictive catch-all.
+### Per-origin CORS policies (2.5.0)
 
-```yaml
-cors:
-  policies:
-    - match_origins: ["^https://(dev|www)\\.example\\.com$"]
-      allow_credentials: true
-      allow_headers: ["content-type", "authorization"]
-    - origins: ["*"]
-      allow_credentials: false
-      allow_headers: ["content-type"]
-```
+`cors.policies` applies distinct rules using literal `origins` or regex
+`match_origins`, so trusted sites can receive credentials or broader headers
+while a catch-all remains restrictive.
 
-Router 2.9.0 lets each policy enable `private_network_access`; `access_id` and
-`access_name` are optional.
+### Private Network Access per CORS policy (2.9.0)
 
-Invalid CORS values prevent startup in the router-v2-migration instead of being
-ignored.
+Each `cors.policies` entry can enable `private_network_access`; `access_id` and `access_name`
+are optional.
 
-## Authentication and token validation
+### Security validation is stricter (router-v2-migration)
 
-### Failure policy and context
+`limits.introspection_max_depth: true` is the default; disable only for legitimate deep
+introspection. Invalid CORS prevents startup. Empty `Content-Type` is rejected
+earlier as possible CSRF with HTTP 400 rather than 415.
 
-Router 2.1.0 adds `authentication.router.jwt.on_error`. It defaults to `Error`;
-`Continue` ignores JWT-processing errors and leaves claims unset. The outcome
-is stored in `apollo::authentication::jwt_status`.
+### JWT failures can be nonfatal (2.1.0)
 
-```yaml
-authentication:
-  router:
-    jwt:
-      on_error: Continue
-```
+`authentication.router.jwt.on_error` defaults to `Error`. `Continue` ignores
+JWT-processing errors, leaves claims unset, and records the outcome in
+`apollo::authentication::jwt_status`.
 
-### Issuers and audiences
+### Multiple JWT issuers per JWKS (2.2.0)
 
-Since 2.2.0, each `authentication.router.jwt.jwks` entry accepts an `issuers`
-list. Singular `issuer` is auto-migrated during Router 2, but should be removed
-before a later major.
+Each `authentication.router.jwt.jwks` entry accepts `issuers`. Singular `issuer` auto-migrates during
+Router 2.x but should be upgraded before the next major.
 
-Router 2.4.0 adds an optional `audiences` list; a token fails if its `aud`
-matches none. Router 2.11.0 accepts `aud` as a string or array and succeeds if
-any value matches. Other types, including `null`, fail. `iss` must be a string
-or `null`; a string must match configured issuers.
+### JWT audience validation (2.4.0)
 
-### Expiration and matching keys
+Each JWKS entry can declare `audiences`; a token is rejected when its `aud`
+matches none.
 
-Router 2.14.0 lets each JWKS entry use `allow_missing_exp: true`. Missing `exp`
-is then accepted, but a supplied expired value is still rejected.
+### JWT audience arrays and stricter claim types (2.11.0)
 
-Also in 2.14.0, when several entries share signing key material, issuer or
-audience failure on the first signature match no longer stops validation. The
-Router tries the other matching entries, supporting shared keys across policy
-issuers.
+`aud` may be a string or string array and passes when any value matches;
+`null`/other types fail. `iss` must be string or null, and a string must match
+configured issuers.
 
-## Authorization and error exposure
+### Per-JWKS missing-expiry policy (2.14.0)
 
-The router-v2-migration enables `limits.introspection_max_depth` by default.
-Disable it only for a legitimate introspection query that must exceed the
-depth; its default is `limits.introspection_max_depth: true`. An empty
-`Content-Type` is rejected earlier as possible CSRF with HTTP 400 rather than
-415.
+`allow_missing_exp: true` on a JWKS entry accepts tokens lacking `exp`; supplied
+expiry values are still validated.
 
-Router 2.1.1 fixes resource-exhaustion query vulnerabilities. Earlier releases
-need all three mitigations enabled: persisted queries, safelisting, and required
-IDs.
+### Multiple matching JWKS candidates (2.14.0)
 
-```yaml
-persisted_queries:
-  enabled: true
-  safelist:
-    enabled: true
-    require_id: true
-```
+When JWKS entries reuse signing keys, issuer/audience failure on the first
+signature match does not end validation; remaining matching entries are tried.
 
-Router 2.2.0 makes `include_subgraph_errors` composable. Put global redaction
-and extension allowlists under `all`, then refine per subgraph. Per-subgraph
-rules can extend or exclude global keys; `deny_extensions_keys` wins over the
-global allowlist; `false` redacts everything; an omitted subgraph inherits
-`all`. Prefer allowlists because denylists can expose newly introduced fields.
+### Client-awareness metadata is validated (2.13.0)
 
-When every requested field is unauthorized, Router 2.13.0 returns `data: null`
-and honors `errors.response` (`errors`, `extensions`, or `disabled`) and
-`errors.log`, matching partially unauthorized operations.
+Invalid client library names or versions in headers or operation extensions are
+rejected. Metadata producers must emit valid values.
 
-Client-awareness names and versions supplied through headers or extensions are
-validated in 2.13.0. Invalid metadata is rejected.
+### Root-type authorization directives are graph-wide (2.15.0)
 
-Router 2.15.0 clarifies that `@authenticated`, `@requiresScopes`, or `@policy`
-on a subgraph root type composes onto the shared supergraph root and affects
-fields contributed by every subgraph. Put authorization on individual root
-fields to keep it scoped.
+`@authenticated`, `@requiresScopes`, or `@policy` on a subgraph root type
+composes onto the shared supergraph root and affects fields from all subgraphs.
+Apply directives to individual root fields for subgraph-local policy.
 
-## Rate and batch limits
+### Fully unauthorized requests return null data (2.13.0)
 
-Router 2.1.0 adds `batching.maximum_size`. A larger client batch is rejected in
-full with HTTP 422 and `BATCH_LIMIT_EXCEEDED`; unset means unlimited.
+If every selected field is unauthorized, the Router returns `data: null` and
+honors configured `errors.response` (`errors`, `extensions`, or `disabled`) and
+`errors.log`, matching partial-authorization behavior.
 
-Rate-limit HTTP semantics changed during Router 2:
+### Fine-grained subgraph error inclusion (2.2.0)
 
-- In 2.11.0, enforced rate limits again return HTTP 429 and
-  `TOO_MANY_REQUESTS`.
-- In 2.13.0, exceeding Router or subgraph rate limits or buffer capacity returns
-  HTTP 503 and `SERVICE_UNAVAILABLE`, reverting the 429 behavior. Treat it as
-  service load rather than a client-specific throttle.
+`include_subgraph_errors.all` can define message redaction and an extension
+allowlist, then named `subgraphs` can refine it. Named rules may extend the
+allowlist or `exclude_global_keys`; `deny_extensions_keys` overrides the global
+allowlist, `false` redacts everything, and an omitted subgraph inherits `all`.
+Prefer allowlists because denylists can expose unforeseen sensitive fields.
 
-Configure retries and alerts for the exact deployed version.
+### Warning-state licenses enforce restrictions (2.11.0)
 
-Router 2.16.0 adds `limits.router.max_recursive_selections`, with the existing
-default of 10,000,000. `limits.router.warn_only: true` makes the check warn
-instead of reject. The
-`APOLLO_ROUTER_DISABLE_SECURITY_RECURSIVE_SELECTIONS_CHECK` escape hatch
-remains available.
+Restricted features are blocked even in license warning state; using one now
+returns an error rather than continuing.
 
-Router 2.16.0 also deprecates and ignores
-`traffic_shaping.deduplicate_variables`; variable deduplication is always
-enabled. Remove the field to clear its startup warning.
+## Resource and traffic limits
 
-## Schema, configuration, and artifact reloads
+### Client batch-size limits (2.1.0)
 
-The router-v2-migration removes `--apollo-uplink-poll-interval` and
-`APOLLO_UPLINK_POLL_INTERVAL`. Supergraphs supplied by
-`--supergraph-urls` or `APOLLO_ROUTER_SUPERGRAPH_URLS` no longer hot-reload.
-Download a remote schema to a local file periodically when reload is required.
+`batching.maximum_size` rejects an oversized whole client batch with HTTP 422
+and `BATCH_LIMIT_EXCEEDED`; unset remains unlimited.
 
-Router 2.11.0 polls mutable OCI tag references, including generated variant
-tags and custom tags, and reloads when a tag points to a new artifact. For
-example, `artifacts.apollographql.com/my-org/my-graph:prod` supports promotion
-by retargeting the tag.
+### Enforced rate limits return HTTP 429 (2.11.0)
 
-Router 2.13.0 allows explicitly safe registry hostnames to serve graph
-artifacts over HTTP, supporting private registries and trusted pull-through
-caches.
+At this point in the release line, rate-limit enforcement returned HTTP 429
+`TOO_MANY_REQUESTS` rather than the Router 2.0-era 503
+`SERVICE_UNAVAILABLE`. Update retry and alert
+classification when running this version.
 
-Router 2.15.0 retries transient schema or related reload failures instead of
-permanently retaining the previous schema. `reload.max_retries` defaults to 5;
-`0` disables retries and `null` allows unlimited attempts. `retry_delay`
-defaults to 10 seconds. Any new reload trigger resets the retry budget.
+### Capacity rate limiting returns HTTP 503 (2.13.0)
 
-```yaml
-reload:
-  max_retries: 5
-  retry_delay: 10s
-```
+Router 2.13 again returns HTTP 503 when router/subgraph rate or buffer capacity
+is exceeded. Classify this as service load rather than client-specific
+throttling. This supersedes the 2.11 behavior for later versions.
 
-Router release downloads can use a remote proxy mirror from 2.1.0 when direct
-GitHub access is unavailable.
+### Recursive-selection limit (2.16.0)
 
-## Packaging and Helm
+`limits.router.max_recursive_selections` sets the fragment-expansion ceiling;
+default remains 10,000,000. `limits.router.warn_only: true` warns instead of
+rejecting, and `APOLLO_ROUTER_DISABLE_SECURITY_RECURSIVE_SELECTIONS_CHECK`
+remains an escape hatch.
 
-Router 2.7.0 adds Helm `deploymentAnnotations` for annotations on the
-Deployment. Keep `podAnnotations` for pod annotations.
+### Sensitive-header masking (2.16.0)
 
-In 2.10.0, the DIY Dockerfile pins its Rust builder to a Bookworm variant such
-as `rust:1.91.1-slim-bookworm`, so the builder and Bookworm runtime use
-compatible glibc. A generic new Rust image can otherwise build a binary that
-fails with `GLIBC_2.39 not found`.
+Header masking is active even without a `masking` block across logs, telemetry,
+coprocessors, and Apollo trace-header forwarding. The built-in case-insensitive
+list combines with global/per-subgraph additions unless `replace_defaults: true`;
+Connectors inherit their parent subgraph. Telemetry selectors may override with
+`redact: mask` or `redact: allow`. The shared `http_client` layer applies only
+global rules, and secrets copied into coprocessor body/context are not masked.
 
-Router 2.13.0 derives Helm `ServiceMonitor.metadata.name` from the
-`router.fullname` helper, honoring `nameOverride` and `fullnameOverride`. With
-defaults, a `my-release` release changes from `my-release` to
-`my-release-router`.
+### Resource-exhaustion query vulnerabilities (2.1.0)
 
-Restricted features are blocked even when the license is only in a warning
-state from 2.11.0. The Router returns an error instead of continuing to use the
-feature.
+Router 2.1.1 fixes simple-query denial-of-service paths. Earlier releases need
+all three mitigations: persisted queries enabled, safelist enabled, and
+`require_id: true`.
+
+### Variable deduplication configuration deprecated (2.16.0)
+
+Remove `traffic_shaping.deduplicate_variables`. It is deprecated, ignored, and
+warns at startup because variable deduplication is always enabled.
+
+## TLS, proxies, and service connectivity
+
+### SigV4 configurations recover from the 2.3 regression (2.4.0)
+
+Router 2.4 fixes the 2.3.0 regression that rejected some valid SigV4
+configuration and blocked SigV4 services.
+
+### Subgraph compression headers are added after debugging capture (2.11.0)
+
+`traffic_shaping` sets `content-encoding`; every subgraph request advertises
+`gzip`, `br`, or `deflate` through `accept-encoding`. These are added after the
+debug stack, so they do not appear in the Connectors Debugger.
+
+### GraphOS OTLP exporters honor HTTP proxies (2.14.0)
+
+HTTP-based GraphOS OTLP export respects `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NO_PROXY`. TLS-inspecting proxies require their root certificate in the Router
+trust store.

@@ -2,7 +2,7 @@
   "patch": "unbound-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T14:37:09Z",
+  "built_at": "2026-08-22T04:48:29Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -28,6 +28,11 @@
       "build": "included"
     },
     "1.25.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.26.0": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

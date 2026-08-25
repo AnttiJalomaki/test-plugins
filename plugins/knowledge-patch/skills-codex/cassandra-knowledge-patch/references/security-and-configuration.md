@@ -1,105 +1,112 @@
-# Security and configuration
+# Security and Configuration
 
-## Authorization and identity
+Use this reference for authorizers, identities, audit logging, credentials,
+`cassandra.yaml`, virtual settings, and extension loading.
 
-### Parameterized CIDR authorizers
+## Authorization and identities
 
-`CassandraCIDRAuthorizer` retains and applies configured parameters (5.0.3).
-Keep parameterized authorizer settings in the configuration; they are no
-longer discarded before application.
+### Keep CIDR authorizer parameters (since 5.0.3)
 
-### Tightened authorization boundaries
+`CassandraCIDRAuthorizer` accepts parameterized configuration and applies the
+provided settings. Parameters are no longer silently lost during authorizer
+construction.
 
-Authorization checks around data centers, authorizer handling, and system
-keyspaces reject access that earlier behavior could inadvertently allow
-(5.0.3). Re-run permission tests after an upgrade instead of carrying forward
-assumptions based on accidentally permissive paths.
+### Expect stricter permission boundaries (since 5.0.3)
 
-### Virtual system keyspace grants
+Authorization is tighter in DC and authorizer handling and on system keyspaces.
+Access inadvertently allowed before can now be rejected; test upgrades with the
+actual roles used by applications and operators.
 
-Roles can be granted permissions on `system_views` and
-`system_virtual_schema` (5.0.5):
+### Grant access to virtual system keyspaces (since 5.0.5)
+
+Permissions can be granted on `system_views` and `system_virtual_schema`.
 
 ```cql
 GRANT SELECT ON KEYSPACE system_views TO monitoring_role;
 GRANT SELECT ON KEYSPACE system_virtual_schema TO monitoring_role;
 ```
 
-Use explicit least-privilege grants for monitoring and schema-inspection
-clients.
+### Prevent superuser identity binding (since 5.0.7)
 
-### Identity binding and passwords
+A regular user cannot bind an identity to a superuser. Provisioning flows must
+perform that association under an appropriately privileged principal.
 
-A regular user cannot bind an identity to a superuser (5.0.7). Provisioning
-that creates this association must run with superuser authority. Password
-changes are also rate-limited (5.0.7), so rotation workflows must handle
-rejection, wait, and retry rather than issue an unbounded burst.
+## Audit and credential safety
 
-## Startup and YAML validation
+### Validate audit configuration at startup (since 5.0.3)
 
-### Audit logging
+`audit_logging_options` are sanitized and validated during startup. Treat a
+startup failure as a configuration defect rather than deferring validation
+until the audit path is exercised.
 
-`audit_logging_options` are sanitized and validated during startup (5.0.3).
-Malformed audit configuration is a startup error; validate deployment inputs
-before restarting a node.
+### Rate-limit password changes (since 5.0.7)
 
-### Default configuration YAML
+Password changes are rate-limited. Rotation automation should serialize or back
+off after rejection rather than retrying rapidly.
 
-Optional settings shipped in the default `cassandra.yaml` remain valid YAML
-when uncommented (5.0.4). Configuration generators and uncommenting tools can
-use those examples without compensating for previously malformed defaults.
+### Obfuscate more password forms (since 5.0.9)
 
-### First boot with disk limits
+`PasswordObfuscator` masks password forms that were previously missed. Logging
+and diagnostic callers should still avoid emitting credentials and use the
+obfuscator as defense in depth.
 
-Setting `data_disk_usage_max_disk_size` before the data directory exists no
-longer crashes a node on first boot (5.0.5). It is safe for immutable
-configuration to declare the limit before storage initialization.
+## YAML and server configuration
 
-## Batchlog and guardrail configuration
+### Uncomment valid defaults safely (since 5.0.4)
 
-### Batchlog endpoint strategies
+Optional settings in the default `cassandra.yaml` remain parseable when
+uncommented, including when configuration-management tools perform the edit.
 
-`batchlog_endpoint_strategy` accepts `random_remote`, `prefer_local`,
-`dynamic_remote`, and `dynamic` (5.0.3):
+### Select a batchlog endpoint strategy (since 5.0.3)
+
+Batchlog endpoint selection accepts `random_remote`, `prefer_local`,
+`dynamic_remote`, and `dynamic`.
 
 ```yaml
 batchlog_endpoint_strategy: dynamic_remote
 ```
 
-Choose deliberately according to locality and endpoint-selection needs; do
-not reduce the setting to a local/remote boolean.
+### Discover Paxos v2 configuration (since 5.0.9)
 
-### Guardrail commands
+The shipped `cassandra.yaml` includes the Paxos v2 option and its configuration
+information. Manage the option in the normal configuration template rather
+than relying on an undocumented setting.
 
-The final command interface provides `nodetool getguardrailsconfig` and
-`nodetool setguardrailsconfig` (5.0.5):
+### Reject overlong table names (since 5.0.6)
 
-```shell
-nodetool getguardrailsconfig
-```
+Cassandra rejects table names that would produce filenames that are too long.
+DDL generation must handle validation failure at schema creation rather than a
+later filesystem-path error.
 
-Use the commands rather than scripting an earlier provisional interface. A
-disk-usage guardrail may also be disabled after its failure threshold has
-already tripped (5.0.7); recovery procedures do not have to clear the tripped
-state before disabling the guardrail.
+## Virtual settings inventory
 
-## Configuration inventory through `system_views.settings`
+### Parse complex values as JSON (since 5.0.6)
 
-Complex values in `system_views.settings` are represented as JSON (5.0.6).
-Inventory and monitoring clients must parse those values as JSON rather than
-depending on the former representation.
+Complex values in `system_views.settings` are represented as JSON. Consumers
+must parse them as JSON rather than depending on the earlier representation.
 
-The view redacts security-sensitive settings (5.0.6). Treat redaction as the
-supported security boundary and obtain secrets from their authoritative secret
-store, not this virtual table.
+### Treat secrets as redacted (since 5.0.6)
 
-Configurations that had gone missing from the view are included again for
-backward compatibility (5.0.7). Consumers may discover the restored entries,
-but should still tolerate additions and redacted values.
+Security-sensitive data is redacted in `system_views.settings`. Monitoring and
+inventory code must not expect the view to return usable secret values.
 
-## Index-status configuration
+### Include the complete settings surface (since 5.0.7)
 
-`IndexStatusManager` can be forced to use the optimized index-status format
-instead of relying on automatic selection (5.0.7). Use the override only when
-the deployment requires deterministic format selection, and keep mixed-node
-compatibility in mind during rollout.
+Configurations previously absent from `system_views.settings` are included for
+backward compatibility. Inventory consumers should tolerate the expanded row
+set.
+
+### Handle non-string mapping keys (since 5.0.9)
+
+Queries against `system_views.settings` work when a setting contains non-string
+keys. JSON or mapping consumers must preserve those values without assuming
+every source key began as a string.
+
+## Extension configuration
+
+### Check reflected extension types first (since 5.0.9)
+
+Cassandra verifies that a reflectively loaded extension has the required type
+before initializing its class. Incompatible extension classes fail before
+initialization, so configuration validation should report the type mismatch
+directly.

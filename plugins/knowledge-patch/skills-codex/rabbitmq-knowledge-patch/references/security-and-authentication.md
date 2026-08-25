@@ -1,22 +1,11 @@
 # Security and authentication
 
-Use this reference for authentication chains, OAuth/OIDC, LDAP, TLS defaults,
-authorization, and protected administrative resources.
+## Authentication backend selection
 
-## Contents
+### Separate HTTP API backend chain (`4.0.6`)
 
-- [Authentication backend chains](#authentication-backend-chains)
-- [OAuth 2 and OIDC](#oauth-2-and-oidc)
-- [LDAP](#ldap)
-- [TLS and secret values](#tls-and-secret-values)
-- [Protected resources](#protected-resources)
-- [Authorization changes](#authorization-changes)
-- [MQTT authorization](#mqtt-authorization)
-- [WebSocket origin and login protection](#websocket-origin-and-login-protection)
-
-## Authentication backend chains
-
-HTTP API access can use a backend chain independent from messaging protocols:
+HTTP API access can authenticate through a backend chain independent of the
+one used by messaging protocols:
 
 ```ini
 auth_backends.1 = ldap
@@ -24,121 +13,113 @@ auth_backends.2 = internal
 http_dispatch.auth_backends.1 = http
 ```
 
-Starting in 4.1.4, a node refuses to start when a configured authentication or
-authorization backend belongs to a known but disabled plugin. It no longer
-boots with unusable client authentication.
+Beginning in 4.1.4, configuring an authentication or authorization backend
+from a known but disabled plugin makes the node refuse to start. This prevents
+a node from booting with client authentication that cannot work.
 
-Explicitly invalidate the caching authentication and authorization backend:
+### Cache invalidation and credential refresh
+
+The caching authentication and authorization backend provides an explicit
+cache flush:
 
 ```shell
 rabbitmqctl clear_auth_backend_cache
 ```
 
-## OAuth 2 and OIDC
+For AMQP 0-9-1, refreshing credentials clears the connection permission cache
+and immediately revalidates consumer permissions. Starting in `4.3.5`, refresh
+also replaces the connection's original user tags with the current tags of the
+refreshed user.
 
-### Token renewal
+Authentication events use logging category `user`: successes are emitted at
+`info`, failures at `warning`.
 
-- AMQP 1.0 clients can replace a JWT before expiry without disconnecting. The
-  connection closes when no replacement is supplied in time.
-- Starting in 4.1.4, a failed JWT renewal immediately closes a Stream Protocol
-  connection, and a renewed token is checked again for access to the current
-  virtual host.
+## OAuth 2 and OpenID Connect
 
-### Provider configuration
+### Provider and discovery configuration (`4.1.0`)
 
-The OAuth 2 plugin no longer provides defaults for several Azure Entra and
-Auth0 values. Configure required provider values explicitly.
+The OAuth 2 plugin no longer supplies defaults for several Azure Entra and
+Auth0 values. Configure all provider-required values explicitly.
 
-Configurable OpenID discovery endpoints and support for more complex JWT
-structures improve compatibility with deployments such as Keycloak.
-
-### Scope aliases and variables
-
-Declare reusable aliases in `rabbitmq.conf`:
+The plugin supports configurable OpenID discovery endpoints and complex JWT
+structures used by providers such as Keycloak. Scope aliases can be defined in
+`rabbitmq.conf`:
 
 ```ini
 auth_oauth2.scope_aliases.admin = tag:administrator configure:*/*
 auth_oauth2.scope_aliases.developer = tag:management configure:*/* read:*/* write:*/*
 ```
 
-Starting in 4.1.1, scope patterns can interpolate selected variables,
-including `{vhost}` and `{sub}`.
+Starting in 4.1.1, selected variables such as `{vhost}` and `{sub}` can be
+interpolated in scope patterns.
+
+### Token renewal
+
+AMQP 1.0 clients can replace a JWT before expiry without disconnecting. If no
+replacement arrives before expiry, RabbitMQ closes the connection. From 4.1.4,
+a failed Stream Protocol JWT renewal closes the connection immediately, and a
+successful renewal is reauthorized for the current virtual host.
+
+### TLS-terminating proxies
+
+When the login flow rewrites the token endpoint URL returned by OpenID
+discovery, it honors `X-Forwarded-Proto`, `X-Forwarded-Host`, and
+`X-Forwarded-Port`. Ensure the trusted TLS-terminating proxy supplies correct
+values.
+
+## TLS and encrypted values
+
+When no CA certificate is explicitly configured and a system CA list exists,
+RabbitMQ falls back to that list. The ineffective `*.cacerts` configuration
+keys are removed in `4.2.0`; `cacertfile` remains valid and is not renamed.
+
+Beginning in 4.1.4, values for `default_password` and `ssl_options.password`
+are considered encrypted only when they start with `encrypted:`. A colon in an
+ordinary or generated password does not imply encryption.
+
+## Management UI credential encryption
+
+When `management.credential_encryption_secret` is configured, `POST /api/login`
+returns an AES-256-GCM-encrypted token prefixed `rmqe.`. The browser sends it as
+`Authorization: Bearer rmqe.<token>`.
+
+Use the same secret on every node. Enable this only after a rolling upgrade has
+completed because older nodes reject these tokens.
 
 ## LDAP
 
-- `in_group_nested` performs case-insensitive matching.
-- LDAP queries can be configured directly in `rabbitmq.conf`, including
-  multi-line queries.
+The `in_group_nested` LDAP query matches group membership case-insensitively.
+In `4.3.0`, LDAP queries, including multi-line queries, can be expressed in
+`rabbitmq.conf`.
 
-## TLS and secret values
+## HTTP authentication and authorization
 
-- When no CA certificate is configured explicitly, a node falls back to the
-  system CA list when one is available.
-- Removed `*.cacerts` settings do not remove or rename `cacertfile`.
-- Starting in 4.1.4, encrypted `default_password` and
-  `ssl_options.password` values must begin with `encrypted:`. A colon in an
-  ordinary or generated password does not imply encryption.
-
-## Protected resources
-
-### Virtual hosts, queues, and streams
-
-Virtual-host metadata can prevent deletion. Plugins can likewise mark queues
-and streams as protected against application deletion.
-
-### Users
-
-The `protected` tag prevents the HTTP API from modifying or deleting a user.
-CLI operations can still remove the tag or delete and recreate the user:
-
-```shell
-rabbitmqctl set_user_tags "a-user" "protected"
-```
-
-### HTTP API reference
-
-Require authentication for the `/api` reference page:
+Require authentication for the API reference page with:
 
 ```ini
 management.require_auth_for_api_reference = true
 ```
 
-## Authorization changes
-
-### AMQP 0-9-1
-
-Refreshing credentials clears cached permissions and immediately rechecks
-consumer authorization. Passive queue and exchange declarations require
-`configure`, matching active declarations.
-
-### Management operations
-
-Federation link restarts and Shovel management `DELETE` operations require the
-`policymaker` tag.
-
-### HTTP backend denial details
-
-An HTTP authentication backend may return `deny <Reason>` and disclose that
-reason to AMQP clients when explicitly enabled:
+An HTTP authorization backend can return `deny <Reason>` and disclose the
+custom reason to AMQP clients when explicitly enabled:
 
 ```ini
 auth_http.authorization_failure_disclosure = true
 ```
 
-Keep disclosure disabled unless clients should receive backend-supplied denial
-details.
+Protect a user from HTTP API mutation or deletion by assigning the `protected`
+tag. CLI operations can remove the tag or delete and recreate the user:
 
-## MQTT authorization
-
-By default, an authorization failure closes the MQTT connection. Keep the
-connection open and return a protocol-level error with:
-
-```ini
-mqtt.disconnect_on_unauthorized = false
+```shell
+rabbitmqctl set_user_tags "a-user" "protected"
 ```
 
-## WebSocket origin and login protection
+Federation-link restarts and Shovel management `DELETE` operations require the
+`policymaker` tag.
 
-Web MQTT enforces `login_timeout` and bounds decompressed frames before and
-after authentication. Use `web_mqtt.allow_origins` and
-`web_stomp.allow_origins` to validate browser origins.
+## Permission semantics
+
+Credential refresh immediately rechecks an AMQP 0-9-1 consumer's permissions.
+Passive queue and exchange declarations require `configure`, just like normal
+declarations. When designing refreshable OAuth permissions, account for both
+the permission recheck and refreshed user tags.

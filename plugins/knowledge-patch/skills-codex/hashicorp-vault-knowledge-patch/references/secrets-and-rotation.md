@@ -1,117 +1,196 @@
-# Secrets engines, sync, and rotation
+# Secrets Engines, Sync, and Rotation
 
-Use this reference for secrets-engine configuration, credential lifecycle, Rotation Manager, Secret Sync, leases, snapshot recovery, and provider-specific compatibility.
+Use this reference for secrets-engine behavior, credential rotation, Secret
+Sync, database integrations, and secret delivery.
 
-## Rotation Manager fundamentals
+## Root and static credential rotation
 
-- Rotation Manager schedules root credential rotation using a schedule or TTL/period. Schedule expressions are interpreted in UTC.
-- Enterprise targets include AWS auth and secrets, database secrets, GCP auth and secrets, plus Azure and LDAP auth and secrets integrations.
-- Snowflake root rotation supports key-pair credentials.
-- Time remaining until an Enterprise scheduled rotation is exposed for operational visibility (since 1.21).
-- Retry policies can cap attempts. Entries that exhaust their attempt allowance can be orphaned (since 2.0).
-- Server logs provide success and failure details for automated root rotation and database or LDAP static-role rotation (since 1.21).
+### AWS secrets configuration updates (`1.19-changelog`)
 
-## Static-role scheduling
+AWS secrets-engine writes persist fields and support partial updates. Clear a
+field by writing its zero value. Enterprise supports cross-account static-role
+management. STS configuration has fallback endpoint/region fields, and root
+configuration has `sts_region`.
 
-- Enterprise database imports can skip the initial automatic rotation of imported static roles.
-- PostgreSQL `rotation_statements` support multiline statements.
-- Self-managed database static roles honor their configured `escaping` or `disable_escaping` state (since 1.21).
-- A manual LDAP static-role rotation in Enterprise 2.0+ does not reset the automated-rotation TTL. To begin a new cadence, set `disable_automated_rotation=true` on the role and then restore it to `false`; this recalculates `next_vault_rotation` (`upgrade-safety`).
+### Automated root rotation (`1.19-changelog`)
 
-## LDAP secrets engine
+Rotation Manager schedules root rotation by schedule or TTL/period; schedules
+use UTC. Enterprise integrations include AWS auth and secrets, database
+secrets, and GCP auth and secrets. Snowflake later supports key-pair root
+rotation.
 
-- The Enterprise LDAP secrets engine supports IBM RACF static-role password phrases.
-- Enterprise 2.0 adds self-managed static roles that rotate with their own password instead of requiring `bindpass`. These roles support schedules and retry policies.
-- Existing static roles migrate from the plugin queue into Rotation Manager. Track migration through the `static-migration` endpoint.
-- Self-managed roles do not work when the mount uses the `openldap` built-in type alias. Enable the engine with type `ldap`, then turn on self-management (`upgrade-safety`):
+### Static-role rotation behavior (`1.19-changelog`)
+
+Enterprise database imports can skip the first automatic static-role rotation.
+PostgreSQL `rotation_statements` accepts multiline statements.
+
+### LDAP, Active Directory, and RACF rotation (`1.19-changelog`)
+
+Enterprise Active Directory root-password rotation supports `schema`, which
+defaults to `openldap` for compatibility. LDAP secrets static roles support IBM
+RACF password phrases.
+
+### Additional automated root-rotation targets (`1.19`)
+
+Enterprise Rotation Manager schedules root rotation for the Azure and LDAP auth
+method and secrets-engine integrations.
+
+### Rotation scheduling visibility (`1.21-changelog`)
+
+Enterprise Rotation Manager reports the time remaining until a scheduled
+rotation.
+
+### Enterprise LDAP static roles (`2.0-changelog`)
+
+Enterprise LDAP self-managed static roles can rotate using their own password
+without `bindpass`; they support schedules and retry policies. Existing static
+roles migrate from the plugin queue to Rotation Manager, with progress exposed
+at `static-migration`.
+
+### Rotation retry policies (`2.0-changelog`)
+
+Enterprise Rotation Manager supports retry limits and can orphan entries after
+they exhaust the allowed attempts.
+
+### Linux local-account rotation (`2.0`)
+
+The OS secrets engine can automatically rotate credentials for Linux local
+accounts.
+
+### LDAP manual-rotation cadence (`upgrade-safety`)
+
+In Enterprise 2.0+, manual LDAP static-role rotation no longer resets its
+automated TTL; the original schedule remains. To restart the cadence, set
+`disable_automated_rotation=true` and then `false`, recalculating
+`next_vault_rotation`.
+
+### LDAP self-managed static-role mount type (`upgrade-safety`)
+
+Enterprise 2.0 self-managed roles do not work when the LDAP engine is mounted
+via the `openldap` alias. Mount type `ldap` and enable self-management:
 
 ```shell
 vault secrets enable -path=<mount_path> ldap
 vault write <mount_path>/config self_managed=true
 ```
 
-- LDAP secrets emits rotation-success, rotation-failure, and other events (since 1.21).
+### Azure static-credential rotation spacing (`upgrade-safety`)
 
-## Active Directory retirement
+In Enterprise 1.21 and 2.0, rapid consecutive Azure `static-rotate` calls can
+race propagation, fail to remove the previous credential, and require manual
+cleanup. Wait several minutes between calls.
 
-The Active Directory secrets plugin is retired in the 1.19 line. Migrate workloads to a supported alternative before upgrading; do not confuse this plugin retirement with LDAP auth root-password rotation.
+### Azure dynamic-role provisioning fixes (`upgrade-safety`)
 
-## AWS secrets
+New service-principal propagation can intermittently break dynamic credential
+creation. Use 1.19.19, 1.20.13, 1.21.8, or 2.0.3 or later in the corresponding
+release line.
 
-- AWS secrets-engine writes persist fields, so partial updates preserve omitted values. To clear a stored field, explicitly write its zero value.
-- Enterprise supports cross-account management of AWS static roles.
-- STS configuration accepts fallback endpoint and region values, while root configuration accepts `sts_region`.
-- AssumeRole and FederationToken consumers should read `session_token`; `security_token` is deprecated (`upgrade-safety`).
+## Database and cloud secrets engines
 
-## Azure secrets
+### Active Directory secrets-engine retirement (`1.19`)
 
-- Enterprise Azure secrets adds static-role support in 1.21.
-- In 2.0, Azure roles expose metadata, static-credential import is a separate operation, and the minimum TTL for static roles is 30 days.
-- Allow several minutes between Enterprise `static-rotate` calls. Back-to-back rotation can race Azure propagation, fail to remove an old credential, and require manual provider-side cleanup (`upgrade-safety`).
-- Dynamic-role creation can intermittently fail while a service principal propagates. Fixed patch floors are 1.19.19, 1.20.13, 1.21.8, and 2.0.3 for their respective lines.
-- `password_policy` is deprecated and unusable because Microsoft Graph generates and returns passwords instead of accepting a requested password. Remove dependencies on Vault-generated Azure passwords (`upgrade-safety`).
+The Active Directory plugin is retired in the 1.19 line. Migrate before
+upgrading.
 
-## Database connectivity and revocation
+### Snowflake key-pair credential refresh (`1.19`)
 
-- The database secrets engine supports Private Service Connect for GCP Cloud SQL MySQL and PostgreSQL, and Private IP for MySQL (since 1.21).
-- MSSQL lease revocation requires `VIEW ANY DEFINITION`, not `sysadmin`.
-- Custom MSSQL revocation statements run as one batch rather than being split at semicolons.
+Snowflake credential refresh can fail with key-pair authentication. The issue
+is unresolved in 1.19.x; use the release-line workaround.
 
-## Snowflake authentication
+### MSSQL revocation (`1.19-changelog`)
 
-- Password authentication was deprecated in the 1.20 release line.
-- It is retired in 1.21.x and can no longer be used. Migrate to key-pair credentials.
-- Key-pair credential refresh has an unresolved issue in 1.19.x with an available workaround; validate the exact patch even after migrating.
+MSSQL revocation requires only `VIEW ANY DEFINITION`, not `sysadmin`. Custom
+revocation statements execute as one batch rather than splitting at
+semicolons.
 
-## Terraform Cloud secrets
+### Snowflake password authentication deprecation (`1.20`)
 
-The Terraform Cloud secrets engine can issue dynamic team tokens (since 1.20).
+Snowflake password authentication is deprecated; migrate away from password
+credentials.
 
-## OS local accounts
+### Azure static roles (`1.21-changelog`)
 
-The OS secrets engine can automatically rotate Linux local-account credentials (since 2.0).
+The Enterprise Azure secrets plugin supports static roles.
 
-## Secret Sync controls
+### Private database connectivity (`1.21-changelog`)
 
-- Enterprise GCP destinations support user-managed encryption keys.
-- Destination configuration accepts IP and port allowlists.
-- `force_delete` defaults to false. It can delete a destination when associations cannot be unsynced, but provider-side secrets remain orphaned; inventory and clean them separately.
-- If the latest KV v2 version is removed, sync selects the highest remaining active version instead of deleting the external secret.
-- GitHub destinations accept `enterprise_url` for self-hosted GitHub Enterprise Server (since 1.21).
-- Workload identity federation is supported for AWS, Azure, and GCP destinations and can be configured in the UI (since 2.0).
-- Deleting or disabling a secrets-engine mount immediately unsyncs its external secrets (since 2.0). Treat mount lifecycle changes as provider-impacting operations.
-- Enterprise secret-deletion event subscriptions do not require a root token from 1.19.
+Database secrets support Private Service Connect for GCP Cloud SQL MySQL and
+PostgreSQL, plus Private IP for MySQL.
 
-## Cloud secret import
+### Database static-role escaping (`1.21-changelog`)
 
-Enterprise beta import can bring key-value-compatible secrets from AWS, Azure, and GCP into Vault. Plan naming, ownership, and deletion behavior before treating import as a migration cutover.
+Self-managed database static roles honor their configured `escaping` or
+`disable_escaping` setting.
 
-## Lease behavior
+### Snowflake password authentication retirement (`1.21`)
 
-- `vault lease renew --fail-if-not-fulfilled` exits with failure when Vault cannot satisfy the requested renewal, so shell command chaining can reliably stop.
-- The default API client honors `Retry-After`; delays are rounded up to whole seconds.
-- Enterprise `remove_irrevocable_lease_after` automatically removes irrevocable leases after the configured duration beyond expiry. Zero disables removal; a nonzero duration must be at least two days.
+Snowflake password authentication is retired and unavailable in 1.21.x.
 
-## KV v2 attribution
+### Azure role management (`2.0`)
 
-KV v2 versions carry attribution metadata that is visible through the CLI and API (since 1.21). Preserve this data when building inventory or change-history tooling.
+The Azure secrets engine adds role metadata, separates static-credential
+import, and lowers the static-role minimum TTL to 30 days.
 
-## Integrated-storage recovery
+### AWS session-token response field (`upgrade-safety`)
 
-Enterprise can load a Raft snapshot and read, list, or recover KV v1 and cubbyhole values. Later 1.20 patches extend recovery to database static roles and credentials and to the SSH plugin CA.
+AWS AssumeRole and FederationToken consumers must read `session_token`;
+`security_token` is deprecated.
 
-- Send the snapshot ID in `X-Vault-Recover-Snapshot-Id`; `recover_snapshot_id` is deprecated.
-- Recovery accepts the `RECOVER` method as well as `POST` and `PUT`.
-- `vault recover -from` restores an item to a different live path.
-- Automated snapshot configuration accepts `autoload_enabled`; generated snapshots are automatically loaded when enabled.
-- Snapshot-management and recovery permissions are separate, allowing recovery to be delegated without snapshot administration.
-- Remove a stuck loaded snapshot with `vault operator raft snapshot unload -force` or `DELETE sys/storage/raft/snapshot-load/{snapshot_id}?force=true`.
+### Azure secrets password policies (`upgrade-safety`)
 
-## Rotation validation checklist
+Azure `password_policy` is deprecated and unusable because Microsoft Graph
+generates passwords instead of accepting requested ones. Remove dependencies on
+Vault-generated Azure passwords.
 
-1. Resolve UTC schedules and whether manual action should preserve or reset cadence.
-2. Check whether the role is managed, self-managed, imported, or still being migrated.
-3. Space cloud-provider rotations to accommodate propagation.
-4. Confirm retry limits and monitor for orphaned entries.
-5. Verify provider-side deletion after force delete, mount disable, or failed rotation.
-6. Capture logs, LDAP events, and KV version attribution as evidence.
+## Secret Sync and delivery
+
+### Secret Sync safety controls (`1.19-changelog`)
+
+Enterprise GCP destinations support user-managed encryption keys; destination
+configuration supports IP and port allowlists. `force_delete` defaults false
+and can delete an unsyncable destination while leaving provider-side secrets
+orphaned. If the latest KV v2 version is removed, sync falls back to the highest
+active version rather than deleting the external secret.
+
+### Cloud secrets import (`1.20`)
+
+Enterprise beta imports KV-compatible secrets from AWS, Azure, and GCP into
+Vault.
+
+### KV v2 version attribution (`1.21-changelog`)
+
+KV v2 versions carry attribution metadata visible through CLI and API.
+
+### GitHub Enterprise Secret Sync (`1.21-changelog`)
+
+Secret Sync destinations accept `enterprise_url` for self-hosted GitHub
+Enterprise Server.
+
+### Protected secrets through the Vault Secrets Operator (`1.21`)
+
+Vault Secrets Operator can mount secrets directly into application pods as CSI
+shared volumes, avoiding native Kubernetes Secret objects.
+
+### Secret Sync workload identity (`2.0-changelog`)
+
+Secret Sync supports workload identity federation and GUI configuration for
+AWS, Azure, and GCP. Disabling or deleting a secrets-engine mount immediately
+unsyncs its external secrets.
+
+### GCP Secret Sync KMS persistence (`2.0.4`)
+
+GCP Secret Manager destinations retain their per-region KMS key across Vault
+restarts. Customer-controlled-encryption validation failures return HTTP 400,
+not 500.
+
+## Client and infrastructure integrations
+
+### Terraform ephemeral values (`1.20`)
+
+The Enterprise Vault provider supports ephemeral resources and write-only
+attributes for KV and database secrets engines.
+
+### Terraform Cloud dynamic team tokens (`1.20`)
+
+The Terraform Cloud secrets engine generates dynamic team tokens.

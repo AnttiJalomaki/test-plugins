@@ -1,55 +1,85 @@
 # Gateways, Security, and Identity
 
-## Validate KV Key Names
+## Configure UI OIDC clients
 
-The key/value endpoint validates key names (since 1.22.0). This is a breaking
-security change for keys that older deployments accepted even though their
-names are invalid. Audit existing data paths and clients before upgrading.
+Since 1.22.0, PKCE is enabled by default for Consul UI OIDC login. OIDC providers can authenticate the client with a JWT assertion instead of a client secret. Match the provider's client registration and Consul configuration to the intended authentication method.
 
-`DisableKVKeyValidation` controls whether validation is disabled. Treat this
-as a compatibility escape hatch and make the security tradeoff explicit.
+## Handle KV key validation
 
-## Use PKCE and JWT Client Authentication
+Since 1.22.0, the key/value endpoint validates key names. This is a breaking security change for clients or existing data that relied on previously accepted invalid names.
 
-PKCE is enabled by default for Consul UI OIDC login (since 1.22.0). OIDC
-providers can also authenticate the client with a JWT assertion instead of a
-client secret. Verify provider support and client-authentication configuration
-when replacing a stored secret.
+Audit key producers and names before rollout. `DisableKVKeyValidation` controls whether validation is disabled; use it only as a temporary, explicit compatibility decision.
 
-## Rely on Normalized Gateway Paths
+## Normalize paths before L7 intention checks
 
-API Gateway and terminating-gateway HTTP listeners normalize request paths
-(since 2.0.0). Normalization prevents non-normalized paths from bypassing L7
-intention RBAC checks. Test routing and intentions with the normalized form,
-especially when existing clients emit unusual paths.
+Since 2.0.0, API Gateway and terminating-gateway HTTP listeners normalize request paths before L7 intention RBAC evaluation. This prevents non-normalized paths from bypassing authorization checks.
 
-## Supply Gateway Certificates with SDS
+Since 2.0.3, Consul also applies its default normalization to user-supplied `envoy_public_listener_json` HTTP Connection Manager filter chains and other custom public listeners. The mesh option `InsecureDisablePathNormalization` disables that protection. Avoid the insecure option unless its security consequence is understood and accepted.
 
-API Gateway listeners can use a default SDS TLS certificate (since 2.0.0).
-HTTP or TCP route services can override that certificate. When a route does
-not supply an override, it inherits the listener's SDS cluster. Conflicting
-override mappings are rejected.
+## Source gateway certificates through SDS
 
-Terminating-gateway upstream TLS also uses SDS, so updated certificates become
-available without restarting the gateway.
+Since 2.0.0, an API Gateway listener can use a default SDS TLS certificate. HTTP and TCP route services can override that certificate. Without an override, a service inherits the listener's SDS cluster; Consul rejects conflicting override mappings.
 
-## Limit API Gateway Upstreams
+Terminating-gateway upstream TLS also uses SDS. Certificate material can therefore change without restarting the gateway.
 
-Set gateway-wide upstream defaults or route-service overrides for these limits
-(since 2.0.0):
+## Apply API Gateway upstream limits
 
-- `MaxConnections`
-- `MaxPendingRequests`
-- `MaxConcurrentRequests`
+Since 2.0.0, API Gateway accepts gateway-wide defaults and route-service overrides for:
 
-Use defaults for consistent protection and overrides only where a route
-service has a justified capacity profile.
+- `MaxConnections`.
+- `MaxPendingRequests`.
+- `MaxConcurrentRequests`.
 
-## Delegate Mesh CA Signing to CyberArk WIM
+Use route overrides for exceptional destinations and keep the gateway-wide values aligned with normal upstream capacity.
 
-Enterprise can delegate service-mesh certificate signing to CyberArk Workload
-Identity Manager, also known as Venafi Firefly (since 2.0.0). Select the
-provider by setting `connect.ca_provider` to `"pan-distributed-issuer"`.
+## Delegate mesh signing to CyberArk WIM
 
-Treat the external issuer as part of the mesh certificate trust and
-availability path.
+Since 2.0.0, Enterprise can delegate service-mesh certificate signing to CyberArk Workload Identity Manager, also known as Venafi Firefly:
+
+```hcl
+connect {
+  ca_provider = "pan-distributed-issuer"
+}
+```
+
+## Respect agent API body limits
+
+Since 2.0.3, the agent caps request bodies at 512 KiB before decoding or ACL resolution for:
+
+- Check updates.
+- Check registration.
+- Service registration.
+- Connect authorization.
+
+The limit also applies to chunked transfer encoding. Oversized requests return HTTP 413. Split large payloads rather than retrying them with a different transfer encoding or token.
+
+## Limit external gRPC connections by source
+
+Since 2.0.3, external gRPC and gRPC-TLS listeners default to 100 connections per source IP. Configure the value with `limits.grpc_max_conns_per_client`:
+
+```hcl
+limits {
+  grpc_max_conns_per_client = 100
+}
+```
+
+Their handshake timeout is 20 seconds rather than 120 seconds. Consider shared NAT addresses when choosing a connection limit.
+
+## Control the API Gateway server header
+
+Since 2.0.3, `ProxyDefaults.spec.config` accepts:
+
+- `envoy_suppress_envoy_headers` to remove the server response header.
+- `envoy_server_header_name` to rename it.
+
+If both are set, suppression takes precedence.
+
+```yaml
+spec:
+  config:
+    envoy_server_header_name: edge-gateway
+```
+
+## Forward XFCC on inbound gRPC
+
+Since 2.0.3, Connect-proxy inbound listeners add XFCC headers to gRPC requests, matching their existing HTTP behavior. Account for the header in applications or intermediaries that validate or consume forwarded client-certificate identity.

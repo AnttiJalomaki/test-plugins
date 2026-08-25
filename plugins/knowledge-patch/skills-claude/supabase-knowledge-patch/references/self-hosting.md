@@ -1,150 +1,114 @@
 # Self-hosting
 
-## Upgrade and key architecture
+Use this reference for Docker configuration, key rotation, Auth and Functions setup, proxying, Storage, MCP, and restores.
 
-### Configuration-aware Docker upgrades
+## Docker and self-hosting operations
 
-Releases change Compose wiring, not only images. Merge every Docker changelog file, then recreate. The 2026-03-16 config changes Compose files, `.env.example`, Kong config/entrypoints, Function main worker, Auth-key utilities, proxy overlays.
+### Opaque API keys and ES256 are opt-in for Docker
+The Docker stack can now add one `sb_publishable` and one `sb_secret` key alongside the legacy JWT keys with `utils/add-new-auth-keys.sh --update-env`. The script creates `JWT_KEYS` for Auth signing and `JWT_JWKS` for verification; enable them together in Auth, Realtime, and Storage, while PostgREST already falls back from `JWT_JWKS` to `JWT_SECRET`.
 
-```sh
-docker compose pull
-docker compose down
-docker compose up -d
+```yaml
+auth:
+  environment:
+    GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
+realtime:
+  environment:
+    API_JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
+storage:
+  environment:
+    JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
 ```
 
-### Self-hosted publishable keys and asymmetric sessions
+Self-hosted opaque keys are matched literally—the checksum is not validated—and, unlike hosted projects, only one key per role is supported. Changing `JWT_SECRET` also requires regenerating the JWKS because the legacy symmetric key is embedded in both generated values.
 
-The 2026-03-16 stack adds `sb_publishable_...`/`sb_secret_...` beside `ANON_KEY`/`SERVICE_ROLE_KEY`. Use Node 16+ and OpenSSL to generate opaque keys and EC P-256 pair:
+### Kong translates self-hosted opaque keys into role JWTs
+For an API-key-only request, Kong replaces an `sb_` bearer value with an internal pre-signed `anon` or `service_role` ES256 JWT; a real user session JWT is passed through unchanged. Realtime WebSockets put the API key in `?apikey=`, while Storage and Functions routes do not require an API key at the gateway.
 
-```sh
-sh utils/add-new-auth-keys.sh --update-env
-```
-
-Set signing/verification on every JWT-aware service: Auth `GOTRUE_JWT_KEYS`, Realtime `API_JWT_JWKS`, Storage `JWT_JWKS`; PostgREST selects `${JWT_JWKS:-${JWT_SECRET}}`. `JWT_KEYS` has private EC plus legacy symmetric key; `JWT_JWKS` accepts ES256 and HS256. Changing `JWT_SECRET` requires regeneration. Public `/auth/v1/.well-known/jwks.json` publishes only EC public key.
-
-### Self-hosted key compatibility and rotation
-
-Gateway accepts old/new concurrently, but only one publishable and one secret key. It exact-matches opaque values without checksum validation, exchanges unauthenticated opaque keys for internal role JWTs, and preserves actual user bearer sessions.
+### API-key and signing-key rotations have different blast radii
+`rotate-new-api-keys.sh` changes only the opaque keys and leaves user sessions valid. Re-running `add-new-auth-keys.sh` replaces the EC P-256 pair and invalidates ES256 sessions, while legacy HS256 sessions remain valid as long as `JWT_SECRET` is unchanged.
 
 ```sh
-# Opaque keys only; sessions survive.
 sh utils/rotate-new-api-keys.sh --update-env
-# Opaque keys and EC pair; ES256 sessions invalidated.
-sh utils/add-new-auth-keys.sh --update-env
 ```
 
-Legacy HS256 sessions survive EC regeneration while `JWT_SECRET` stays in JWKS. Restart, then update clients after opaque rotation.
+### Docker upgrades require configuration migrations
+Self-hosted updates cannot be handled safely by changing image tags alone: recent bundles require matching changes to Compose files and mounted configuration. Notable requirements include Realtime's mandatory `METRICS_JWT_SECRET`, Storage's `STORAGE_PUBLIC_URL` and named S3 volumes, Edge Runtime's `SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS`, `SUPABASE_PUBLIC_URL`, and hybrid verifier, Studio's `PGRST_DB_SCHEMAS`/`PGRST_DB_EXTRA_SEARCH_PATH`/`PGRST_DB_MAX_ROWS`, the Vector 0.53 config rewrite, and removal of public Logflare `:4000` and the default Kong `/analytics/v1` route.
 
-### Hybrid authentication for self-hosted Functions
+### Bootstrap and database-password helpers
+`generate-keys.sh` generates and applies the initial secrets, while `db-passwd.sh` changes the database roles and `.env` together before the services are recreated. Manual configuration has non-obvious constraints: `VAULT_ENC_KEY` is exactly 32 characters, `SECRET_KEY_BASE` is at least 64, and `DASHBOARD_PASSWORD` must contain a letter but no special characters.
 
-Merge `SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS`, `SUPABASE_PUBLIC_URL` into Functions and update `volumes/functions/main/index.ts` for hybrid JWT verification. March 2026 adds optional rate limiting; February adds persistent named `deno-cache`.
+```sh
+sh ./utils/generate-keys.sh
+sh ./utils/db-passwd.sh
+docker compose up -d --force-recreate
+```
 
-## Functions and Storage
+### Auth email templates are fetched over HTTP
+Self-hosted Auth does not read templates directly from mounted volumes; every `GOTRUE_MAILER_TEMPLATES_*` value must be a URL reachable from the Auth container and return a valid Go HTML template, with fetch or parsing failures falling back to the built-in template. A private Caddy file-server container can serve the mounted files, and notification templates additionally require their `GOTRUE_MAILER_NOTIFICATIONS_*_ENABLED` switch.
 
-### Self-hosted Function lifecycle and URLs
+```yaml
+GOTRUE_MAILER_TEMPLATES_INVITE: http://templates-server/invite.html
+GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: 'true'
+GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://templates-server/password_changed_notification.html
+```
 
-Functions live `volumes/functions/<name>/index.ts`. Restart after code edits; force-recreate after environment changes. Internally use `SUPABASE_URL=http://kong:8000`; use `SUPABASE_PUBLIC_URL` only for external links.
+### Self-hosted MCP is default-deny and has no OAuth
+The Docker MCP route maps `/mcp` to Studio's internal `/api/mcp`, but Kong denies every connection by default and the server currently has no OAuth 2.1 authentication. Permit only a VPN or the Docker bridge gateway IP in Kong's `ip-restriction` plugin, retain `deny: []`, and reach it through an SSH tunnel rather than exposing it publicly.
+
+```sh
+ssh -L localhost:8080:localhost:8000 you@your-supabase-host
+```
+
+### Functions deploy from a shared filesystem
+Self-hosted Functions live at `volumes/functions/<name>/index.ts`; Studio mounts the same directory, and adding or changing code requires restarting the `functions` service. Configuration changes require container recreation, `env_file` values load before explicit `environment` values, and the default per-invocation limits are 150 MB and 60 seconds in `volumes/functions/main/index.ts`.
 
 ```sh
 docker compose restart functions --no-deps
 docker compose up -d --force-recreate --no-deps functions
 ```
 
-Defaults are 150 MB/60s per invocation, configurable as `memoryLimitMb`/`workerTimeoutMs` in main worker. Current Studio mounts same function directory; management UI needs February 2026 Compose changes.
+Inside a function, use the internal `SUPABASE_URL` (`http://kong:8000`) for service calls and `SUPABASE_PUBLIC_URL` only when constructing externally reachable links.
 
-### S3 protocol and S3 backend are independent
-
-`/storage/v1/s3` is a protocol even with filesystem persistence. `STORAGE_BACKEND=s3` separately changes persistence. Protocol credentials: `REGION`, `S3_PROTOCOL_ACCESS_KEY_ID`, `S3_PROTOCOL_ACCESS_KEY_SECRET`. Non-AWS backend: `GLOBAL_S3_BUCKET`, `GLOBAL_S3_ENDPOINT`, path-style.
-
-For AWS omit endpoint/path style. User-RLS S3 uses `STORAGE_TENANT_ID` access key, `ANON_KEY` secret, user JWT session token. On Cloudflare R2 set `TUS_ALLOW_S3_TAGS: "false"` if resumable upload fails because R2 lacks `x-amz-tagging`.
-
-### Copying hosted Storage objects correctly
-
-Never write downloaded files into `volumes/storage`; that bypasses internal layout/metadata. Pre-create buckets and copy through hosted/self-hosted S3 remotes; a restored DB already has bucket definitions. S3 never auto-creates a destination bucket.
-
-```sh
-rclone copy platform:media self-hosted:media --progress
-rclone size platform:media
-rclone size self-hosted:media
-```
-
-Use hosted `/storage/v1/s3`, preferring direct Storage hostname for large transfers.
-
-## Auth and email
-
-### URL-served Auth email templates
-
-Auth fetches Go HTML templates over HTTP, not mounted volumes, and falls back to defaults for invalid/unreachable URLs. Serve private static files on Compose network. Flow templates: confirmation, recovery, magic link, invite, email change, reauth. Enabled notification variants: password/email/phone changes, MFA enrollment, identity linking. Recreate Auth after adding service/variables.
+### OAuth settings need explicit Compose passthrough
+Values placed in `.env` do not enter the Auth container unless matching `GOTRUE_EXTERNAL_*` entries exist under its Compose `environment`; every provider callback is `${API_EXTERNAL_URL}/auth/v1/callback`, and Auth must be recreated after changes. Keycloak additionally requires its full realm URL, while LinkedIn and Slack use the `LINKEDIN_OIDC` and `SLACK_OIDC` prefixes.
 
 ```yaml
-auth:
-  environment:
-    GOTRUE_MAILER_TEMPLATES_INVITE: http://templates-server/invite.html
-    GOTRUE_MAILER_SUBJECTS_INVITE: You have been invited
-    GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: 'true'
-    GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://templates-server/password_changed.html
+GOTRUE_EXTERNAL_KEYCLOAK_REDIRECT_URI: ${API_EXTERNAL_URL}/auth/v1/callback
+GOTRUE_EXTERNAL_KEYCLOAK_URL: ${KEYCLOAK_URL}
 ```
 
-### Self-hosted phone and MFA defaults
+### Phone Auth and MFA defaults
+Phone signup is enabled by default but cannot deliver codes until an SMS provider is passed into the Auth container; SMS OTPs default to six digits, a 60-second lifetime, and a 60-second per-number send interval. TOTP enrollment and verification are on by default, phone MFA is off, and users may enroll up to ten factors.
 
-Phone signup defaults enabled but needs SMS provider. SMS OTP default: 60s, six digits (6–10 configurable). TOTP enroll/verify enabled; phone MFA disabled; 10 factors/user. Every setting needs matching `GOTRUE_SMS_*`/`GOTRUE_MFA_*` Compose pass-through and Auth force-recreate.
+Development numbers can bypass delivery through `SMS_TEST_OTP`, optionally bounded by `SMS_TEST_OTP_VALID_UNTIL`; production should remove these mappings.
 
 ```dotenv
-SMS_OTP_EXP=300
-SMS_OTP_LENGTH=6
-SMS_MAX_FREQUENCY=60s
-MFA_PHONE_ENROLL_ENABLED=true
-MFA_PHONE_VERIFY_ENABLED=true
-MFA_MAX_ENROLLED_FACTORS=5
 SMS_TEST_OTP=16505551234:123456
 SMS_TEST_OTP_VALID_UNTIL=2026-12-31T23:59:59Z
 ```
 
-Remove test OTPs in production. `GOTRUE_RATE_LIMIT_SMS_SENT` separately defaults to 30/hour.
-
-## MCP and reverse proxy
-
-### Self-hosted MCP is local-only and denied by default
-
-Self-hosted MCP lacks OAuth 2.1 and Kong denies it by default. Expose only through VPN/SSH. For SSH, allow Docker bridge gateway in route `ip-restriction`, retain `deny: []`, restart Kong, and tunnel gateway port.
+### Reverse proxies have a Supabase-specific routing contract
+A production proxy must forward normal traffic to Kong on port 8000, send Storage traffic directly to the Storage container, preserve `X-Forwarded` headers, and support Realtime WebSocket upgrades. The Docker bundle supplies Caddy and Nginx/Certbot overlays; after choosing one, set `SUPABASE_PUBLIC_URL`, `API_EXTERNAL_URL`, and `SITE_URL` to the same HTTPS origin.
 
 ```sh
-docker inspect supabase-kong \
-  --format '{{range .NetworkSettings.Networks}}{{println .Gateway}}{{end}}'
-docker compose restart kong
-ssh -L localhost:8080:localhost:8000 you@your-supabase-host
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
 ```
 
-Client URL is `http://localhost:8080/mcp`. Older automation must replace removed `get_anon_key` with `get_publishable_keys`.
+### The S3 endpoint and S3 storage backend are independent
+`/storage/v1/s3` is an S3-compatible client endpoint that can run over the default file backend, while `STORAGE_BACKEND=s3` can store objects in S3 without exposing that endpoint. The client endpoint uses `REGION`, `S3_PROTOCOL_ACCESS_KEY_ID`, and `S3_PROTOCOL_ACCESS_KEY_SECRET`; an AWS backend omits `GLOBAL_S3_ENDPOINT` and `GLOBAL_S3_FORCE_PATH_STYLE`, while Cloudflare R2 needs `TUS_ALLOW_S3_TAGS: "false"` for resumable uploads.
 
-### Reverse-proxy and HTTPS contract
+For an RLS-scoped S3 client on self-hosted Storage, use `STORAGE_TENANT_ID` as the access-key ID, `ANON_KEY` as the secret, and the user's JWT as the session token.
 
-Production TLS terminates before Kong. Proxy headers, Realtime WebSocket upgrade, and route Storage directly to Storage rather than Kong. Set public/Auth/Site URLs to HTTPS; remove Kong host binding if proxy shares network.
+### Storage migrations must pass through the S3 protocol
+Copying downloaded objects into `volumes/storage` does not recreate Storage's internal layout or metadata. Pre-create matching destination buckets, then copy S3-to-S3; restoring the database first already supplies the bucket definitions but not the objects.
 
-```dotenv
-SUPABASE_PUBLIC_URL=https://supabase.example.com
-API_EXTERNAL_URL=https://supabase.example.com
-SITE_URL=https://app.example.com
+```sh
+rclone copy platform:your-bucket self-hosted:your-bucket --progress
 ```
 
-Supplied Caddy or Nginx/Certbot overlays are available. Self-signed certs may mount into Kong 8443 for development, but browsers warn and most OAuth callbacks reject them.
-
-## Restore and bootstrap
-
-### Platform-to-self-host restore mismatches
-
-Use `supabase db dump` because it filters internals/roles. Test for service/Postgres skew: Postgres 17 dump into current Postgres 15 can contain `SET transaction_timeout = 0` and newer Auth/Storage `COPY` columns. Identify in non-atomic trial, remove incompatibilities, then final single transaction.
+### Platform restores need self-hosted version cleanup
+Use `supabase db dump` rather than raw `pg_dump`, because the CLI filters internal schemas and reserved roles and makes the SQL idempotent. A hosted Postgres 17 dump can target the current Postgres 15 Docker image, but may require commenting out `transaction_timeout` and `COPY` blocks for newer Auth or Storage tables and columns; diagnose once without `--single-transaction`, then perform the corrected restore atomically.
 
 ```sh
 sed -i 's/^SET transaction_timeout/-- &/' data.sql
 ```
-
-Hosted JWTs fail after move due different secrets; preserved users reauthenticate. Storage objects/Functions need separate copies.
-
-### Docker bootstrap and password helpers
-
-`utils/generate-keys.sh` populates initial secrets; `utils/db-passwd.sh` rotates DB password across roles/`.env`. Review values and recreate. Rootless Docker needs `DOCKER_SOCKET_LOCATION`, e.g. `/run/user/1000/docker.sock`, or Vector may exit.
-
-### Recent self-hosted security and configuration boundaries
-
-February 2026 stops Logflare on `0.0.0.0:4000`, removes `/analytics/v1` from Kong, rewires Storage, enables S3 endpoint. Preserve when merging custom routes. March makes `METRICS_JWT_SECRET` mandatory for Realtime in `docker-compose.s3.yml`, adds `STORAGE_PUBLIC_URL`, named S3 volumes, optional RustFS, and passes `PGRST_DB_SCHEMAS`, `PGRST_DB_EXTRA_SEARCH_PATH`, `PGRST_DB_MAX_ROWS` into Studio.

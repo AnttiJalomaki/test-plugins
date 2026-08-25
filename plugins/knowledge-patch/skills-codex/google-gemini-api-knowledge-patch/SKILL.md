@@ -10,207 +10,189 @@ metadata:
 
 # Google Gemini API Knowledge Patch
 
-Use this skill when implementing, migrating, or operating Gemini API clients.
-Start with the breaking-change checks below, then open the topic reference that
-matches the task. Treat concrete model aliases, quotas, and lifecycle dates as
-operational inputs that should be checked before deployment.
+Use this skill for Gemini API implementation, migration, model selection,
+function calling, structured output, streaming, billing, and lifecycle work.
+Start by identifying which API surface the project uses: `generateContent`,
+the Interactions API, Live, Batch, or an OpenAI-compatible endpoint. Also
+identify the language SDK and whether conversation history is managed by the
+SDK or assembled manually.
+
+Prefer concrete model IDs when reproducibility matters. Treat moving aliases,
+preview endpoints, quotas, billing state, and lifecycle dates as operational
+inputs that should be checked before deployment.
 
 ## Reference index
 
 | Reference | Topics |
-| --- | --- |
-| [thought-signatures.md](references/thought-signatures.md) | Signature preservation, turn validation, sequential and parallel calls, compatibility envelopes, streaming, imported traces |
-| [interactions-api.md](references/interactions-api.md) | `steps` migration, stateless history, SSE assembly, continuation, response formats, background agents |
-| [models-and-lifecycle.md](references/models-and-lifecycle.md) | Production model behavior, removed controls, endpoint lifecycle, multimodal services, Live sessions, long-running work |
-| [sdk-migration.md](references/sdk-migration.md) | GA package names, centralized clients, per-call config, async access, JavaScript response shapes, automatic functions, parsing, caches, embeddings |
-| [function-calling-and-tools.md](references/function-calling-and-tools.md) | Function declarations, tool choice, identity, multimodal results, MCP, streamed arguments, pre-tool text |
-| [structured-outputs.md](references/structured-outputs.md) | Recursive schemas, stream accumulation, built-in tools, supported schema subset |
-| [billing-and-limits.md](references/billing-and-limits.md) | Billing tiers, Prepay and Postpay, spend caps, quota dimensions, spend-rate enforcement, Priority and Batch pools |
+|---|---|
+| [SDK migration](references/sdk-migration.md) | GA package names, clients, async calls, JavaScript streams, automatic tools, parsed output, caches, embeddings |
+| [Interactions API](references/interactions-api.md) | `steps`, revision dates, SSE assembly, function continuation, response formats, agents, logs |
+| [Thought signatures](references/thought-signatures.md) | Required history replay, sequential and parallel calls, compatibility envelopes, streams, imported traces |
+| [Models and lifecycle](references/models-and-lifecycle.md) | Current model IDs, defaults, shutdowns, multimodal endpoints, Live, Batch, research, external files |
+| [Function calling and tools](references/function-calling-and-tools.md) | Declarations, tool choice, multimodal results, remote MCP, argument deltas, pre-tool text |
+| [Structured outputs](references/structured-outputs.md) | Recursive schemas, streaming JSON, built-in tools, supported schema subset |
+| [Billing and limits](references/billing-and-limits.md) | Account tiers and caps, Prepay/Postpay, project caps, quota dimensions, traffic pools |
 
-## Breaking-change triage
+## Migration priorities
 
-Before changing application logic, identify the API surface:
+### Use the current SDK packages
 
-- `generateContent` uses content parts and preserves `thoughtSignature` on the
-  exact model part that received it.
-- Interactions uses typed `steps`, top-level `response_format`, and
-  `previous_interaction_id` plus `function_result` for continuation.
-- The OpenAI-compatible chat surface carries a signed tool call under
-  `extra_content.google.thought_signature`.
+Replace the legacy packages with `google-genai`, `@google/genai`, or
+`google.golang.org/genai`. Create one client and access models, files, caches,
+and other services through it. Generation configuration is per call; Python
+async methods live under `client.aio`.
 
-Do not translate field names mechanically between these surfaces.
+JavaScript responses are flattened: use `response.text`, and iterate the value
+returned by `generateContentStream` directly. Python callables passed as tools
+execute automatically unless automatic function calling is disabled.
 
-### Preserve Gemini 3.x thought signatures
+See [SDK migration](references/sdk-migration.md) for language-specific examples
+and changes to structured responses, caches, and embeddings.
 
-For manually managed history, replay each opaque signature unchanged on its
-original model part. A Gemini 3.x function call requires the signature even at
-minimal thinking and returns HTTP 400 when it is missing.
+### Migrate Interactions clients to typed steps
 
-For sequential calls in one turn, retain all earlier signed model-call parts.
-A user message containing only a function response does not create a new turn.
-For parallel calls, keep all model calls together and all function responses
-together; only the first function call in the model response is signed.
+Current Interactions responses use typed `steps`, not flat `outputs`.
+`POST /interactions` returns output steps; `GET /interactions/{id}` returns the
+full timeline. For stateless continuation, replay the entire preceding steps
+array as `input`, then append a `user_input` step.
+
+The SSE lifecycle is:
+
+```text
+interaction.created
+  → step.start → step.delta → step.stop
+  → interaction.completed
+  → [DONE]
+```
+
+The completion event does not contain assembled steps. Accumulate indexed
+deltas, tolerate unknown event variants, and parse function arguments or
+structured JSON only when the corresponding output is complete.
+
+Python and JavaScript SDK 2.0.0+ select the new schema. Older clients and REST
+revision headers had a dated transition ending June 8, 2026; use the exact
+revision rules in [Interactions API](references/interactions-api.md) when
+maintaining transition-era code.
+
+### Remove unsupported generation controls
+
+On `gemini-3.6-flash` and `gemini-3.5-flash-lite`, remove `temperature`,
+`top_p`, and `top_k`; they are deprecated and ignored, and future generations
+will reject them. Replace `thinking_budget` with string-valued
+`thinking_level` when moving to 3.6 Flash, and remove `candidate_count` for
+Gemini 3.x.
+
+Do not send a prefilled model turn as the last non-empty turn. Use
+`system_instruction` or `response_format` to constrain the answer instead.
+For legacy `generateContent` with Gemini 3.x, every `FunctionResponse` needs
+both `call_id` and function `name`.
+
+## Thought signatures are conversation state
+
+For Gemini 3.x function calling, return each opaque thought signature unchanged
+on the exact model part where it arrived. This is mandatory even with minimal
+thinking when history is manually assembled. Official SDK history handling is
+safe when the complete response object is appended.
+
+Sequential tool loops must retain every signed model-call step since the most
+recent user message containing ordinary content. A user message containing
+only a function response does not start a new turn.
+
+Parallel calls must stay grouped:
 
 ```text
 model: [FC1 + signature, FC2]
 user:  [FR1, FR2]
 ```
 
-Read [thought-signatures.md](references/thought-signatures.md) before assembling
-history manually, adapting chat-completion messages, or consuming signatures
-from streams.
+Only the first parallel function call carries the signature. Do not interleave
+calls and results. Also consume streamed responses through `finish_reason`,
+because a non-call signature can arrive on an empty-text part. See
+[Thought signatures](references/thought-signatures.md) for version differences,
+the compatibility envelope, and documented sentinels for imported traces.
 
-### Migrate Interactions clients to typed steps
+## Function calling
 
-Current Interactions responses use `steps`, not flat `outputs`. Model content
-is nested in `model_output`; thoughts, client function calls, and server-side
-tool calls/results are separate typed steps. `POST /interactions` returns output
-steps, while `GET /interactions/{id}` returns the full timeline.
+Interactions custom functions are direct `{"type": "function", ...}` entries
+in `tools`; their `parameters` are object schemas. `tool_choice` supports
+`auto`, `any`, `none`, and preview `validated`, with `allowed_tools` for
+filtering. Very large or deeply nested schemas can fail in forced-call mode.
 
-For stateless continuation, pass the prior `steps` array as the next `input`
-and append a `user_input` step. For client-side functions, wait for
-`requires_action`, execute the call, then continue with the previous interaction
-ID and matching call ID. Server-side tools do not require that round trip.
+For a streamed client-side call, capture its ID and name at `step.start`,
+concatenate argument fragments by event index, and parse only after completion.
+If the interaction ends in `requires_action`, execute the function and continue
+with `previous_interaction_id` plus a matching `call_id`. Server-side tools run
+without that round trip and expose paired call/result steps.
 
-Streaming clients must assemble indexed steps from:
+Gemini 3-series function results can contain multiple typed blocks, including
+images. Preserve the function name and call ID. Remote MCP tools accept only
+Streamable HTTP; MCP server names cannot contain hyphens.
 
-```text
-interaction.created
-step.start -> step.delta -> step.stop
-interaction.completed
-[DONE]
-```
+Avoid requiring XML, YAML, or JSON prose immediately before a tool call, which
+can trigger `Malformed_Function_Call`. Prefer a dedicated notes function or,
+secondarily, Markdown notes. See
+[Function calling and tools](references/function-calling-and-tools.md).
 
-The completion event has status and usage but no steps. Preserve unknown event
-and delta variants by logging and skipping them rather than failing.
+## Structured output
 
-### Update Interactions output configuration
+Put Interactions structured JSON controls in top-level `response_format` as a
+text format with `mime_type: application/json` and `schema`. The same field can
+be an array for multiple modalities. Image settings also move there, and audio
+uses a typed audio format rather than `response_modalities`.
 
-Use top-level, type-discriminated `response_format`. Structured JSON uses a
-text format with `mime_type` and `schema`; image settings belong in an image
-format; audio uses an audio format instead of `response_modalities`. Supply an
-array for multiple modalities and accept interleaved deltas.
+Schemas may recurse with `$ref: "#"`. Supported features include nullable
+unions, boolean or schema-valued `additionalProperties`, date/time formats,
+numeric bounds, and `prefixItems`, `minItems`, and `maxItems`. Keep schemas
+reasonably sized and shallow.
 
-```python
-response_format={
-    "type": "text",
-    "mime_type": "application/json",
-    "schema": Result.model_json_schema(),
-}
-```
+Structured streaming yields partial JSON text. Concatenate all text fragments
+in order and validate once complete. On 3-series models, built-in tools and a
+structured final response can be combined as a preview feature. See
+[Structured outputs](references/structured-outputs.md).
 
-Read [interactions-api.md](references/interactions-api.md) for the migration
-dates, raw event shapes, multimodal format examples, and background-agent flow.
+## Model and lifecycle choices
 
-### Remove rejected or ignored generation patterns
+`gemini-3.7-flash` is the GA coding and agentic model. Its introductory pricing
+ends December 31, 2026. Other current production choices include
+`gemini-3.6-flash` and `gemini-3.5-flash-lite`; both support a one-million-token
+context, 64k maximum output, and native Computer Use.
 
-On the current production Flash family:
+Do not assume a `-latest` alias remains on one generation. Before deploying,
+check the concrete successors and cutoff dates for embedding, image, Gemini
+2.5, and Flash-Lite workloads in
+[Models and lifecycle](references/models-and-lifecycle.md).
 
-- remove `temperature`, `top_p`, and `top_k`; they are ignored now and future
-  generations will reject them;
-- replace `thinking_budget` with string-valued `thinking_level` when moving to
-  Gemini 3.6 Flash;
-- remove `candidate_count` for Gemini 3.x;
-- never end a request with a non-empty `model` turn as a completion prefill;
-  use `system_instruction` or `response_format` instead;
-- include both `call_id` and function `name` on every Gemini 3.x
-  `FunctionResponse` sent through `generateContent`.
-
-Pin a concrete model ID when reproducibility matters. Moving aliases have
-changed targets more than once, and published shutdown dates require planned
-migrations. See [models-and-lifecycle.md](references/models-and-lifecycle.md).
-
-## GA SDK migration quick reference
-
-Use the current packages and service-oriented clients:
-
-| Language | Package | Generation entry point |
-| --- | --- | --- |
-| Python | `google-genai` | `client.models.generate_content(...)` |
-| JavaScript | `@google/genai` | `ai.models.generateContent(...)` |
-| Go | `google.golang.org/genai` | `client.Models.GenerateContent(...)` |
-
-Put optional generation settings in each call's `config`; Python async methods
-live under `client.aio`. In JavaScript, read `response.text` as a property and
-iterate the object returned by `generateContentStream` directly.
-
-Python callables passed as tools execute automatically by default. Disable
-automatic function calling when the application must authorize, inspect, or
-dispatch the call itself. Pydantic response schemas expose validated output at
-`response.parsed`. Caches are created through `client.caches` and referenced by
-name from generation config. JavaScript embeddings are returned as the plural
-`result.embeddings`.
-
-See [sdk-migration.md](references/sdk-migration.md) for complete code patterns.
-
-## Function-calling quick reference
-
-Interactions custom functions are direct entries in `tools`:
-
-```python
-tool = {
-    "type": "function",
-    "name": "get_weather",
-    "description": "Get weather for a city.",
-    "parameters": {
-        "type": "object",
-        "properties": {"city": {"type": "string"}},
-        "required": ["city"],
-    },
-}
-```
-
-Tool choice supports `auto`, `any`, `none`, and preview `validated`; restrict
-the callable set through nested `allowed_tools`. Large or deeply nested schemas
-can be rejected. A function result may contain multiple typed text and image
-blocks, but must preserve its name and call ID.
-
-Remote MCP tools use `type: mcp_server`; they support Streamable HTTP only,
-require names without hyphens, and may carry headers and an allowed-tools list.
-For streamed calls, capture ID and name at `step.start`, accumulate arguments
-by step index, and parse JSON only after completion.
-
-Read [function-calling-and-tools.md](references/function-calling-and-tools.md)
-before building a manual dispatcher or combining client and server tools.
-
-## Structured-output quick reference
-
-Recursive response schemas can use `$ref: "#"` for the root. Structured stream
-fragments are partial JSON text: concatenate them in order and validate only
-after the document is complete. Gemini 3-series Interactions can, in preview,
-run built-in tools and constrain the final text with a schema in the same
-request.
-
-The supported subset includes nullable unions, schema- or boolean-valued
-`additionalProperties`, date/time string formats, numeric bounds, and array
-`prefixItems`, `minItems`, and `maxItems`. See
-[structured-outputs.md](references/structured-outputs.md).
+The API no longer offers model tuning. Current capabilities instead include
+multimodal embeddings, native image and short-video endpoints, stateful Live
+sessions, event-driven long-running operations, and Deep Research agents.
 
 ## Billing and quota guardrails
 
 Billing plan, usage tier, and account spend cap belong to the Cloud Billing
-account and are inherited by linked projects. Request quotas remain per project,
-shared by all keys. A zero prepaid balance or account cap can stop every linked
-project; neither is an API-key setting.
+account and are inherited by linked projects; request quotas are per project,
+shared by all its keys. A billing-account cap or zero Prepay balance stops all
+linked projects. Project spend caps and balance enforcement can lag by roughly
+ten minutes, so they are not hard real-time circuit breakers.
 
-Enforce client backoff against all independent interactive dimensions: RPM,
-input TPM, and RPD. A paid project can also hit a rolling spend-rate limit and
-receive `429 RESOURCE_EXHAUSTED` while token/request capacity remains. HTTP 400
-and 500 requests consume quota even though their tokens are not billed.
+Handle RPM, input TPM, and RPD independently. Paid tiers can also hit a rolling
+ten-minute spend-rate limit and receive `429 RESOURCE_EXHAUSTED` while ordinary
+quota remains. Failed 400/500 requests consume quota but are not token-billed;
+`GetTokens` consumes neither inference quota nor billable tokens.
 
-Priority inference has a separate pool but also counts toward overall
-interactive traffic. Batch traffic is isolated from non-batch quota and has its
-own concurrency, storage, and per-model enqueued-token ceilings. Read
-[billing-and-limits.md](references/billing-and-limits.md) before capacity or
-cost planning.
+Priority inference and Batch have distinct limits. Consult
+[Billing and limits](references/billing-and-limits.md) before capacity planning
+or changing billing accounts.
 
 ## Implementation checklist
 
-1. Identify `generateContent`, Interactions, or the compatibility surface.
-2. Pin the intended model ID and check its lifecycle deadline.
-3. Remove unsupported generation controls and model-prefill turns.
-4. Preserve thought signatures, call IDs, function names, and step ordering.
-5. Accumulate streamed text or arguments before parsing.
-6. Validate schemas against the supported subset and keep them compact.
-7. Confirm project quota plus billing-account plan, balance, and spend caps.
-8. Expect aliases, preview endpoints, quotas, and account status to move.
+1. Identify the API surface, SDK package and major version, concrete model ID,
+   and whether history is automatic or manual.
+2. Check lifecycle status, shutdown dates, aliases, and pricing assumptions.
+3. For Interactions, confirm typed steps, response formats, and the correct raw
+   SSE or typed-SDK delta representation.
+4. Preserve thought signatures, call IDs, function names, ordering, and all
+   history required for continuation.
+5. Assemble streamed arguments and JSON before parsing; skip and log unknown
+   extensible event variants.
+6. Treat billing-account state, project quotas, spend rate, traffic class, and
+   enforcement lag as separate controls.

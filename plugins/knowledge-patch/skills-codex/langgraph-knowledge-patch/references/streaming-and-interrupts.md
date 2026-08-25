@@ -1,61 +1,14 @@
 # Streaming and Interrupts
 
-Source batches: `langgraph-v1`, `graph-api-overview`,
+Relevant source topics: `langgraph-v1`, `graph-api-overview`, and
 `human-in-the-loop`.
 
-## Event-stream wire encoding
+## Typed JavaScript interrupts
 
-The low-level JavaScript `toLangGraphEventStream` helper has been removed.
-Request the wire representation with the `encoding` option of `graph.stream`
-and return that stream directly.
-
-```typescript
-const stream = await graph.stream(input, {
-  encoding: "text/event-stream",
-  streamMode: ["values", "messages"],
-});
-
-return new Response(stream, {
-  headers: { "Content-Type": "text/event-stream" },
-});
-```
-
-## Pluggable React transports
-
-React `useStream` accepts a custom `transport`, allowing the network
-implementation to change without rewriting UI stream handling.
-
-```typescript
-const stream = useStream({
-  transport: new FetchStreamTransport({
-    apiUrl: "http://localhost:2024",
-  }),
-});
-```
-
-## State visibility in value streams
-
-Input, output, and private state schemas do not redact `values` snapshots. A
-node's input schema only limits what it reads, and node schemas may add private
-channels to the graph-state union.
-
-Use v3 event streams with `output_keys` in Python or `outputKeys` in
-JavaScript when private state must stay out of emitted snapshots.
-
-```python
-stream = graph.stream_events(
-    {"user_input": "My"},
-    version="v3",
-    output_keys=["graph_output"],
-)
-```
-
-## Named, typed JavaScript interrupts
-
-The JavaScript `StateGraph` constructor accepts an `interrupts` map.
-`interrupt<Input, Resume>()` types the payload passed to
-`runtime.interrupt.<name>()` and the value returned after execution resumes.
-Use `graph.isInterrupted(result)` to recognize an interrupted result.
+The `StateGraph` constructor accepts an `interrupts` map containing named
+interrupt definitions. `interrupt<Input, Resume>()` types both the payload sent
+through `runtime.interrupt.<name>()` and the value returned on resume.
+`graph.isInterrupted(result)` identifies an interrupted result.
 
 ```typescript
 import { StateGraph, interrupt } from "@langchain/langgraph";
@@ -75,15 +28,57 @@ const graph = new StateGraph(State, {
   .compile();
 ```
 
-## Python v3 interrupt streams
+## Stream wire encoding
 
-`graph.stream_events(..., version="v3")` provides typed projections for
-message chunks, state snapshots, pending interrupts, interruption status, and
-final output. Drive the stream to completion before reading `output`,
-`interrupted`, or `interrupts`.
+The low-level `toLangGraphEventStream` helper is removed. Low-level clients
+should request the wire format with `graph.stream`'s `encoding` option and
+return the stream directly.
 
-If interrupted, start another v3 stream with `Command(resume=...)` and repeat
-until the stream completes without an interruption.
+```typescript
+const stream = await graph.stream(input, {
+  encoding: "text/event-stream",
+  streamMode: ["values", "messages"],
+});
+
+return new Response(stream, {
+  headers: { "Content-Type": "text/event-stream" },
+});
+```
+
+## Pluggable React stream transports
+
+The React `useStream` hook accepts a custom `transport`. Swap the network layer
+without changing the component's stream handling.
+
+```typescript
+const stream = useStream({
+  transport: new FetchStreamTransport({
+    apiUrl: "http://localhost:2024",
+  }),
+});
+```
+
+## Filtering private channels
+
+Input, output, and private state schemas do not redact `values` streams. Filter
+v3 events with Python `output_keys` or JavaScript `outputKeys` when state
+snapshots must omit private channels.
+
+```python
+stream = graph.stream_events(
+    {"user_input": "My"},
+    version="v3",
+    output_keys=["graph_output"],
+)
+```
+
+## Typed Python v3 event projections
+
+`graph.stream_events(..., version="v3")` exposes typed projections for message
+chunks, state snapshots, pending interrupts, interruption status, and final
+output. After consuming the stream, inspect `stream.interrupted` and
+`stream.interrupts`. Resume with a new v3 stream using `Command(resume=...)` and
+repeat until the stream completes without interrupting.
 
 ```python
 stream = graph.stream_events(inputs, config=config, version="v3")
@@ -97,16 +92,15 @@ if stream.interrupted:
     )
 ```
 
-Token chunks are exposed through `stream.messages`, full step snapshots
-through `stream.values`, and nested-subgraph token chunks through
+Use `stream.messages` for token chunks and `stream.values` for full per-step
+snapshots. Nested-subgraph token chunks are in
 `stream.subgraphs[*].messages`.
 
-## Resuming parallel interrupts
+## Resuming parallel interrupts by ID
 
-Parallel branches may pause on multiple interrupts simultaneously. Build a
-complete mapping from each pending interrupt's `id` to its answer and pass that
-mapping as the resume value. This ensures that every branch receives the
-intended response.
+Parallel branches can pause on several interrupts simultaneously. Pair every
+pending interrupt's `id` with its response, then pass the complete mapping as
+the `resume` value so each branch receives the right answer.
 
 ```typescript
 import { Command, INTERRUPT, isInterrupted } from "@langchain/langgraph";
@@ -123,15 +117,12 @@ if (isInterrupted(paused)) {
 await graph.invoke(new Command({ resume: responses }), config);
 ```
 
-## Validation without replay amplification
+## Validation with one interrupt per invocation
 
-Do not put `interrupt()` inside a validation `while` loop. Every resume
-restarts the node and replays earlier iterations, so repeated invalid answers
-cause the loop's work to grow exponentially.
-
-Keep the next prompt in graph state, call `interrupt()` exactly once in each
-node invocation, and use a conditional edge to revisit the node after invalid
-input.
+Do not put `interrupt()` in a validation `while` loop. Every resume restarts the
+node and replays earlier loop iterations, making the loop body's work grow
+exponentially. Store the next prompt in state, call `interrupt()` exactly once,
+and use a conditional edge to return after invalid input.
 
 ```typescript
 builder

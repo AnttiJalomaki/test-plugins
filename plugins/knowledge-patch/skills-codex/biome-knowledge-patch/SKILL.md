@@ -10,59 +10,52 @@ metadata:
 
 # Biome Knowledge Patch
 
-Use this skill to choose current Biome configuration, CLI, formatter, analyzer,
-language, editor, and plugin behavior. Read the topic reference that matches the
-task before changing configuration or interpreting diagnostics.
+Use this skill when configuring, migrating, running, or integrating Biome and
+the requested work touches the behaviors summarized here. Read the topic guide
+that matches the task before changing configuration or recommending a command.
 
-## Reference map
+## Topic index
 
 | Reference | Topics |
 | --- | --- |
-| [CLI, editors, and reporters](references/cli-editors-and-reporters.md) | Command selection, reporters, exit behavior, watch mode, daemon logging, LSP, editor actions, JavaScript API |
-| [Configuration and migration](references/configuration-and-migration.md) | Configuration discovery and inheritance, monorepos, includes, overrides, VCS ignores, ESLint/Prettier migration, parser gates |
-| [Formatting, assists, and suppressions](references/formatting-assists-and-suppressions.md) | Formatter settings, import organization, assists, safe/unsafe fixes, suppressions, sorting |
-| [GritQL search and plugins](references/gritql-search-and-plugins.md) | Structural search, custom definitions, lint plugins, languages, scoped plugins, rewrites |
-| [Languages and frameworks](references/languages-and-frameworks.md) | CSS, GraphQL, HTML, SVG, JSON dialects, JSX/TypeScript syntax, React, Vue, Svelte, Astro |
-| [Linting and project analysis](references/linting-and-project-analysis.md) | Domains, module graph and type inference, rule configuration, promotions, new rules, framework-aware analysis |
+| [CLI, Editors, and Reporters](references/cli-editors-and-reporters.md) | Command selection and filters, reporters, watch mode, daemon controls, standard input, editor and language-server behavior |
+| [Configuration and Migration](references/configuration-and-migration.md) | ESLint and Prettier migration, configuration discovery and inheritance, includes and overrides, VCS ignores, presets |
+| [Formatting, Assists, and Suppressions](references/formatting-assists-and-suppressions.md) | Formatter settings, import organization, assists, fix policy, and suppression forms |
+| [GritQL Search and Plugins](references/gritql-search-and-plugins.md) | Structural search, reusable definitions, plugin diagnostics and fixes, target languages, path scoping |
+| [Languages and Frameworks](references/languages-and-frameworks.md) | CSS, GraphQL, HTML, SVG, JSON, embedded languages, Vue, Svelte, Astro, React, and parser compatibility |
+| [Linting and Project Analysis](references/linting-and-project-analysis.md) | Rule changes and options, domains, module-graph and type-aware analysis, profiling, framework-aware linting |
 
-## Work from the effective configuration
+## Breaking changes and migrations
 
-1. Locate the effective configuration before editing it.
-2. Identify whether the file belongs to a nested package configuration.
-3. Resolve `extends`, include patterns, the first matching override, and any
-   editor-only inline configuration.
-4. Determine which language tools, linter domains, and individual rules are
-   active.
-5. Run the narrowest suitable command, then inspect its exit status and chosen
-   reporter output.
+### Rule presets
 
-## Handle configuration roots and inheritance
+Use `linter.rules.preset` instead of the deprecated
+`linter.rules.recommended`. The `"all"` preset selects all stable rules but
+still excludes nursery rules; `"recommended"` preserves the former
+recommended selection. Update an existing configuration with:
 
-Treat every configuration as a root unless it explicitly opts out. In a nested
-package, use either `"root": false` or `"extends": "//"`; the latter inherits
-the monorepo root and implies `root: false`.
-
-```json
-{
-  "extends": "//",
-  "formatter": { "enabled": false }
-}
+```shell
+biome migrate --write
 ```
 
-Apply array-form `extends` entries from least to most relevant. Do not make an
-extended configuration extend another configuration. Resolve paths declared in
-shared configuration relative to the configuration that consumes it.
+### Object-form rule configuration
 
-Pass `--config-path` or `BIOME_CONFIG_PATH` either a directory or the
-configuration file itself. Account for editor clients that overlay LSP-only
-configuration without changing CLI behavior.
+Include `level` whenever a rule uses object form. Omitting it is a
+configuration error:
 
-## Use ordered includes deliberately
+```json
+{ "linter": { "rules": { "suspicious": { "noConsole": { "level": "warn" } } } } }
+```
 
-Apply `files.includes` in order. Let a later positive pattern re-include an
-ordinary earlier exclusion. Use `!!` only to prevent the scanner from traversing
-or indexing a path; use `!` when project and type analysis may still need an
-excluded dependency.
+An optionless rule object needs only `level`; do not add an
+`"options": null` property.
+
+### Scanner ignores
+
+Replace deprecated `files.experimentalScannerIgnores` with `!!` force-ignore
+patterns in `files.includes`. A force-ignore stops traversal and indexing; a
+single `!` only excludes processing and can still allow project analysis to
+index an imported file.
 
 ```json
 {
@@ -72,152 +65,183 @@ excluded dependency.
 }
 ```
 
+### Override selection
+
+Only the first matching `overrides` entry applies. Put specific patterns before
+broader patterns:
+
+```json
+{
+  "overrides": [
+    { "includes": ["src/generated/**"], "formatter": { "enabled": false } },
+    { "includes": ["src/**"], "formatter": { "lineWidth": 100 } }
+  ]
+}
+```
+
+### Renamed formatter and lint settings
+
+- Use `javascript.formatter.trailingCommas` and `--trailing-commas`; the
+  singular `trailingComma` and `--trailing-comma` names are deprecated.
+- Replace `correctness/noInvalidNewBuiltin` with
+  `correctness/noInvalidBuiltinInstantiation`.
+- Replace `style/useSingleCaseStatement` with
+  `correctness/noSwitchDeclarations`.
+- Replace `suspicious/noConsoleLog` with `suspicious/noConsole`.
+- Stable-rule promotion renamed `noFloatingClasses` to
+  `noUnusedInstantiation`, `noMultiStr` to `noMultilineString`, `useFind` to
+  `useArrayFind`, and `useSpread` to `useSpreadOverApply`.
+
+### Removed and relocated rules
+
+Do not configure the removed nursery rule `useAnchorHref`; `useValidAnchor`
+covers its use case. Domain-specific rules are not enabled merely by enabling
+their rule group. They require a matching dependency, an explicit domain, or
+explicit rule configuration.
+
+## Configuration quick reference
+
+### Monorepo roots and inheritance
+
+Each configuration is a root by default. For a nested configuration, set
+`"root": false` or use `"extends": "//"`; the latter inherits the monorepo
+root and implies `root: false`.
+
+```json
+{
+  "extends": "//",
+  "formatter": { "enabled": false }
+}
+```
+
+Array-form `extends` entries run from least to most relevant. Extended files
+cannot extend other files, and paths inside shared configuration resolve
+relative to the configuration that extends it.
+
+### Tool-specific file scopes
+
 Apply `linter.includes`, `formatter.includes`, and `assist.includes` after
-`files.includes`. Treat these narrower scopes as filters that cannot add a file
-back. Put specific overrides before broad overrides because only the first
-matching override applies.
+`files.includes`. They can narrow the initial file set but cannot add files
+back. Configure assist scope and recommended source actions separately from
+linting and formatting.
 
-## Migrate deprecated configuration
+## CLI quick reference
 
-Run `biome migrate --write` after upgrades. In particular:
+### Focus checks
 
-- Replace `files.experimentalScannerIgnores` with `!!` entries in
-  `files.includes`.
-- Replace `linter.rules.recommended` with `linter.rules.preset`; choose
-  `"recommended"` or `"all"`, noting that `"all"` still excludes nursery.
-- Replace `javascript.formatter.trailingComma` and `--trailing-comma` with the
-  plural `trailingCommas` and `--trailing-commas` forms.
-- Replace deprecated rule paths and renamed promoted rules before enabling new
-  presets.
-
-Read [Configuration and migration](references/configuration-and-migration.md)
-before migrating ESLint or Prettier. Those migrations have Node.js,
-configuration-format, ignore-pattern, and overwrite constraints.
-
-## Enable analysis by domain
-
-Use `linter.domains` for coherent framework, test, project, and type-aware rule
-sets:
-
-```json
-{
-  "linter": {
-    "domains": {
-      "project": "all",
-      "types": "all",
-      "react": "recommended",
-      "test": "all"
-    }
-  }
-}
-```
-
-Choose `"all"` when nursery rules are required; `"recommended"` excludes them.
-Expect matching dependencies to activate supported framework and test domains.
-Do not assume enabling an entire rule group also enables domain-specific rules.
-
-Budget extra runtime for `project` and `types`: both scan the project, and
-project rules can trigger a full scan including `node_modules`. Use `!!` only
-when the analyzer must not read a subtree at all.
-
-## Configure assists independently
-
-Treat assists as source actions without diagnostics. Give them their own file
-scope and action policy.
-
-```json
-{
-  "assist": {
-    "includes": ["src/**"],
-    "actions": { "source": { "recommended": true } }
-  }
-}
-```
-
-Use assists for import/export organization and structural sorting. Remember
-that `source.fixAll.biome` does not organize imports when
-`source.organizeImports.biome` is disabled. Select lint rules and assist actions
-for `check` or `ci` with repeatable `--only` and `--skip` filters.
-
-## Control fixes and suppressions
-
-Set a rule's object-form `fix` to `none`, `safe`, or `unsafe` to override action
-applicability. Applying fixes through `biome check` also formats the result.
-
-Use dependency-specific suppression comments when only one hook dependency is
-wrong. Use `// biome-ignore-all` for a whole file, or pair
-`// biome-ignore-start` and `// biome-ignore-end` for a range. CSS and GraphQL
-diagnostics also expose suppression actions.
-
-## Choose current language coverage
-
-Expect CSS and GraphQL formatting and linting to run by default, while allowing
-each tool to be disabled per language. Enable full HTML-like parsing when Vue,
-Svelte, or Astro template analysis is required. Keep plain HTML interpolation,
-Vue syntax in `.html`, embedded JavaScript template snippets, and specialized
-CSS syntax behind their respective parser or experimental switches.
-
-Expect `.module.css` to enable CSS Modules syntax automatically. Use the
-dedicated parser controls for Tailwind directives or nonstandard input when
-automatic detection is insufficient. Treat SVG as a formatted and linted
-language.
-
-Read [Languages and frameworks](references/languages-and-frameworks.md) before
-changing overrides that disable template linting; fuller framework analysis may
-make those workarounds unnecessary.
-
-## Run focused checks
-
-Use repeatable `--only` and `--skip` selectors for rules, groups, domains, and
-assist actions. Let `--skip` win when selectors overlap.
+Repeat `--only` and `--skip` to select rules, groups, domains, assist actions,
+or plugins where the command supports them. `--skip` takes precedence.
 
 ```shell
 biome check --only=suspicious/noDebugger src
 biome ci --skip=project src
 ```
 
-Use `--staged` to select files in the Git index, but remember that Biome reads
-the working-tree contents of each selected file rather than an isolated index
-snapshot. Use read-only `--watch` with `lint`, `format`, or `check`; do not
-combine watch mode with `--write` or `--fix`.
+Selecting a disabled rule enables it at `error` when recommended and `warn`
+otherwise. Selecting a group enables only its recommended preset. Nursery is
+also a valid selector.
 
-## Select reporters and diagnostics
+### Staged and watched files
 
-Repeat `--reporter` to produce multiple outputs and place `--reporter-file`
-next to the reporter whose output it should capture.
+`--staged` selects files in the Git index, but Biome reads the current working
+tree contents of each selected file rather than an isolated index snapshot.
 
 ```shell
-biome ci --reporter=default --reporter=rdjson \
-  --reporter-file=./reports/report.json
+biome check --staged .
 ```
 
-Choose among terminal, concise, summary, JSON, GitHub, GitLab, JUnit,
-Checkstyle, RDJSON, and SARIF outputs according to the consumer. A non-default
-reporter lifts the diagnostic cap. Use `--max-diagnostics=none` to lift it for
-the default reporter.
+Read-only `lint`, `format`, and `check` commands accept `--watch`. Do not combine
+watch mode with `--fix` or `--write`.
 
-Do not infer command success from visible warning counts alone. Diagnostic
-level filtering, enforced assist violations, standard-input behavior, and
-`lint --write`/`--fix` have distinct exit semantics.
+```shell
+biome check --watch .
+```
 
-## Add GritQL safely
+### Diagnostics and reports
 
-Single-quote shell queries that contain GritQL backticks. Define reusable
-patterns, predicates, and functions where useful. Load lint plugins from
-top-level `plugins`, scope them with `includes`, and use
-`register_diagnostic(...)` to report findings.
+Use `--max-diagnostics=none` for no cap. A non-default reporter also lifts the
+cap. `--reporter` is repeatable, and a neighboring `--reporter-file` sends that
+reporter to a file.
 
-Mark rewrite fixes `safe` or `unsafe`; unclassified plugin fixes are unsafe.
-Run unsafe rewrites only with the corresponding unsafe CLI option. Select the
-plugin language explicitly for CSS or JSON rather than assuming JavaScript.
+```shell
+biome ci --reporter=default --reporter=rdjson --reporter-file=./reports/report.json
+```
 
-Read [GritQL search and plugins](references/gritql-search-and-plugins.md) before
-authoring syntax-node patterns or cross-language transformations.
+Available outputs described in the reference include JSON, summary, GitHub,
+GitLab, JUnit, Checkstyle, RDJSON, SARIF, and concise diagnostics.
 
-## Validate changes
+## Linting quick reference
 
-Run the command used by CI after changing configuration. When analysis is slow,
-use `--profile-rules` to inspect lint-rule, assist, and plugin timing. When a
-daemon behaves differently from the CLI, compare LSP-only configuration,
-workspace roots, watcher mode, log settings, and configuration paths before
-changing project rules.
+### Domains and project analysis
+
+Use `linter.domains` with `"recommended"`, `"all"`, or `"none"`. Recommended
+excludes nursery rules; all includes them. Project and type domains scan the
+whole project and can materially increase lint time.
+
+```json
+{
+  "linter": {
+    "domains": { "project": "all", "types": "all" }
+  }
+}
+```
+
+The `project` domain supplies module-graph rules. The `types` domain enables
+type inference; its covered rules are nursery rules and therefore require
+`"types": "all"`, not `"recommended"`.
+
+### Fix applicability
+
+Object-form rule configuration accepts `fix: "none"`, `"safe"`, or
+`"unsafe"` to disable actions or override applicability. Applying safe or
+unsafe fixes through `biome check` also formats the result.
+
+## Formatting and language quick reference
+
+### Expansion and final newlines
+
+`formatter.expand` and JavaScript- or JSON-specific overrides accept `"auto"`,
+`"always"`, or `"never"`. In auto mode, an existing first-property line break
+keeps an object multiline while fitting arrays collapse. `package.json`
+behaves as always unless explicitly configured.
+
+`formatter.trailingNewline` defaults to `true`; set it globally or per language
+to `false` to remove the final newline.
+
+### HTML and embedded content
+
+The HTML formatter must be enabled explicitly. Embedded JavaScript and CSS use
+their own formatter settings. `html.formatter.indentScriptAndStyle` defaults to
+`false` and controls indentation inside `<script>` and `<style>` blocks.
+
+Enable `javascript.experimentalEmbeddedSnippetsEnabled` to format and lint
+recognized CSS, GraphQL, and Relay-tagged snippets in JavaScript template
+literals.
+
+### Import organization and other assists
+
+Import organization is an assist rather than a lint diagnostic. It can move
+imports across ordinary blank lines, merge same-module imports, sort attributes
+and exports, and honor detached-comment boundaries. Consult the formatting
+reference for other structural-sorting assists.
+
+## GritQL quick reference
+
+Run experimental structural searches with `biome search`. Quote a query that
+contains GritQL backticks with shell single quotes when backticks would be
+interpreted as command substitution.
+
+```shell
+biome search '`console.$method($args)` where { $method <: or { `log`, `info` } }' ./
+```
+
+Top-level `plugins` entries load `.grit` lint patterns. Plugins can register
+diagnostics, target supported languages, restrict execution with `includes`,
+and attach safe or unsafe rewrites. Read the plugin guide before authoring or
+changing a pattern.
+
+## Editor note
+
+Go-to-definition is disabled by default as of 2.5.1 because enabling it builds
+the module graph and could cause memory leaks when Biome starts in a home
+directory. Re-enable it in the Biome extension settings only when needed.

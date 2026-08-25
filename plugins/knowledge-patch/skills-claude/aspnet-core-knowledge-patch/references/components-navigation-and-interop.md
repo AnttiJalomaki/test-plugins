@@ -1,33 +1,33 @@
 # Components, Navigation, and Interop
 
-Use this reference for component routing, browser interop, reconnection, server circuits, and
-standalone WebAssembly globalization. The stable behavior described here is from batch `10.0`.
+## Navigation and routing
 
-## Navigation behavior
+### Same-page navigation preserves scroll position
 
-### Preserve scroll position for same-page navigation
+`NavigationManager.NavigateTo` no longer scrolls to the top when navigation
+stays on the current page and changes only a query string or fragment (since
+10.0). Do not add scroll-restoration workarounds unless the application actually
+requires a reset.
 
-`NavigationManager.NavigateTo` no longer scrolls to the top when navigation remains on the same
-page and changes only its query string or fragment. Do not add scroll restoration that assumes
-the earlier reset. If the product requires a reset, implement it explicitly.
+### `NavLinkMatch.All` matches only the path
 
-### Match `NavLinkMatch.All` by path
-
-`NavLinkMatch.All` ignores the query string and fragment. A link remains active while either
-portion changes, provided the path still matches.
-
-Set the following AppContext switch to `true` only when an upgraded app must temporarily retain
-the earlier query-and-fragment-sensitive behavior:
+`NavLinkMatch.All` ignores the query string and fragment, so the link remains
+active while either changes (since 10.0). Restore the earlier whole-URI match
+with this AppContext switch:
 
 ```text
 Microsoft.AspNetCore.Components.Routing.NavLink.EnableMatchAllForQueryStringAndFragment
 ```
 
-### Route Not Found responses
+Set the switch to `true` before the affected navigation logic runs.
 
-Use `NavigationManager.NotFound()` to produce a 404 during static server-side rendering and to
-signal the router during interactive rendering. Select the routed page with
-`Router.NotFoundPage`, and subscribe to `NavigationManager.OnNotFound` for customization.
+### Not Found routing
+
+`NavigationManager.NotFound()` sets the 404 status during static SSR and signals
+the router during interactive rendering (since 10.0). Set `Router.NotFoundPage`
+to choose the routed component and subscribe to `NavigationManager.OnNotFound`
+when custom behavior is required. The old `<NotFound>` router fragment is not
+supported.
 
 ```razor
 <Router AppAssembly="@typeof(Program).Assembly"
@@ -38,45 +38,63 @@ signal the router during interactive rendering. Select the routed page with
 </Router>
 ```
 
-Do not use the old `<NotFound>` router fragment; it is unsupported in ASP.NET Core 10.
-
 ## Reconnection and circuit state
 
-### Observe reconnection states
+### Reconnection notifications
 
-The current `ReconnectModal` template collocates its CSS and JavaScript instead of injecting
-styles. This works with strict CSP `style-src` policies. Reconnection changes dispatch the
-`components-reconnect-state-changed` browser event, and the state set includes `retrying`.
+The template `ReconnectModal` collocates CSS and JavaScript instead of injecting
+styles, allowing strict CSP `style-src` policies (since 10.0). Reconnection
+transitions dispatch the `components-reconnect-state-changed` browser event.
+Handle the `retrying` state as well as the other reconnection states.
 
-Use the event when surrounding UI or telemetry must react to reconnection. Keep custom modal
-styles collocated so a strict CSP does not require inline-style exceptions.
+### Server circuit resumption
 
-### Resume server circuit state
+A server-side Blazor circuit can retain unsaved state across an extended lost
+connection or a proactive pause and resume (since 10.0). A full-page refresh
+still discards the circuit, so do not treat resumption as durable persistence.
 
-Server-side Blazor can retain circuit state through an extended lost connection or a proactive
-pause and resume. This preserves unsaved state, but a full-page browser refresh still discards
-the circuit. Design recovery UI so it distinguishes resumable disconnects from reloads.
+## Browser HTTP and JavaScript interop
 
-## Direct JavaScript object interop
+### Streaming WebAssembly responses
 
-`IJSRuntime` and `IJSObjectReference` support JavaScript construction and property access through
-`InvokeConstructorAsync`, `GetValueAsync`, and `SetValueAsync`.
+Response streaming is enabled by default in Blazor WebAssembly (since 10.0).
+`ReadAsStreamAsync` returns `BrowserHttpReadStream`, not `MemoryStream`, and the
+browser stream rejects synchronous reads. Prefer asynchronous consumers.
+
+Disable streaming for one request when a dependency requires buffering:
+
+```csharp
+requestMessage.SetBrowserResponseStreamingEnabled(false);
+```
+
+Disable it globally with either project configuration or an environment flag:
+
+```xml
+<WasmEnableStreamingResponse>false</WasmEnableStreamingResponse>
+```
+
+```text
+DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0
+```
+
+### Direct JavaScript object access
+
+`IJSRuntime` and `IJSObjectReference` can construct objects and access
+properties with `InvokeConstructorAsync`, `GetValueAsync`, and `SetValueAsync`
+(since 10.0). In-process references provide synchronous equivalents.
 
 ```csharp
 var instance = await JSRuntime.InvokeConstructorAsync(
-    "jsInterop.TestClass",
-    "Blazor!");
-
+    "jsInterop.TestClass", "Blazor!");
 var text = await instance.GetValueAsync<string>("text");
 await instance.SetValueAsync("text", "updated");
 ```
 
-In-process references expose synchronous counterparts. Prefer asynchronous calls unless the
-component is deliberately tied to an in-process runtime.
+## Globalization
 
-## Standalone WebAssembly UI culture
+### UI-culture resources in standalone WebAssembly
 
 Standalone Blazor WebAssembly apps load globalization resources for
 `CultureInfo.DefaultThreadCurrentUICulture` as well as
-`CultureInfo.DefaultThreadCurrentCulture`. Account for UI-culture resources when estimating the
-published payload and when testing localization defaults.
+`DefaultThreadCurrentCulture` (since 10.0). Account for both values when
+choosing which satellite resources must ship.

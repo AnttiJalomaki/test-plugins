@@ -1,453 +1,269 @@
 # Vector and database workflows
 
-Use this reference for the task areas below. Batch labels identify when each behavior entered the covered compatibility history.
+## Arrow, Parquet, and columnar data
 
-## Geometry, CRS, and spatial filtering
+### Arrow stream correctness
 
-### Reprojection in Arrow streams from warped layers
+`OGRWarpedLayer` obtains Arrow data through the warped layer rather than
+directly from its source, preserving reprojection (`3.10.1`). Arrow streams
+accept `DATETIME_AS_STRING=YES|NO`; vector translation uses it to preserve time
+zones and can carry dataset relationships (`3.11.0`).
 
-*Batch: 3.10.1*
+Arrow-backed `selectFields` works in `ogr2ogr` and `VectorTranslate`
+(`3.12.1`). `CompactValidityBuffer()` produces compliant `ArrowArray` output
+when `null_count == 0` (`3.12.4`).
 
-`OGRWarpedLayer` no longer takes its Arrow stream directly from the source layer, because doing so skipped reprojection. Arrow-stream reads from a warped layer therefore retain the layer's reprojection behavior.
+Arrow field creation and batch output support string-view values, and the C API
+adds `OGR_L_GetAttributeFilter()` (`3.13.0`).
 
-### FlatGeobuf output without a spatial index
+### Parquet editing, types, and filters
 
-*Batch: 3.10.1*
+Parquet supports editable layers, `GEOMETRY` with libarrow 21+, and a
+`COMPRESSION_LEVEL` layer creation option (`3.12.0`). It adds
+`LISTS_AS_STRING_JSON=YES|NO`; ignored fields work for lists of structures
+(`3.12.1`).
 
-With `SPATIAL_INDEX=NO`, the FlatGeobuf writer accepts a dataset with no features and handles empty geometries as null geometries.
+Hive-partition filters work, and a GeoArrow file lacking GeoParquet metadata
+opens without colliding with the `geoarrow.pyarrow` module (`3.12.2`).
+`LargeList` is supported (`3.12.4`). Ignored fields work when a top-level and
+nested column share a name (`3.13.1`).
 
-### GML and AIXM geometry handling
+Arrow and Parquet support Timestamp With Offset and the
+`TIMESTAMP_WITH_OFFSET` layer option. GeoParquet adds `COVERING_BBOX_NAME`
+(`3.13.0`).
 
-*Batch: 3.10.1*
+### Closing and partition metadata
 
-The GML driver supports AIXM `ElevatedCurve` and honors `SWAP_COORDINATES=YES` even when a geometry has no spatial reference system.
+Arrow/Parquet datasets expose `Close()` and flush through it or their
+destructors (`3.11.4`). Vector partition can group by geometry type, does not
+require `--field`, and builds Parquet `_metadata`; the same index can be made by
+`gdal driver parquet create-metadata-file` (`3.13.0`).
 
-### Geodesic lengths for open line strings
+Dataset creation warns when an unknown dataset option matches a layer option,
+and layer creation gives the converse diagnostic (`3.13.1`).
 
-*Batch: 3.10.2*
+## GeoPackage and SQLite
 
-`GeodesicLength()` works on non-closed line strings again; a regression in 3.10.0 had limited it to closed line strings.
+### Creation, schema, and capabilities
 
-### GeoJSON detection when geometry comes first
+GeoPackage supports vector `CreateCopy()` (`3.10.1`) and newly created files
+default to version 1.4 (`3.11.0`). It supports field-domain update/deletion
+(`3.12.0`). GeoPackage and SQLite dialects later add `ST_Hilbert()`
+(`3.13.0`).
 
-*Batch: 3.10.3*
+SQLite accepts `SAVEPOINT` and runs `PRELUDE_STATEMENTS` after initialization
+and SpatiaLite loading (`3.11.0`). `ogr_inflate` and `ogr_deflate` use the
+64-bit blob-result API to avoid large-result truncation (`3.13.2`).
 
-The GeoJSON driver now detects features whose object starts with a `geometry` member, including input beginning `{"geometry":{"type":...,"coordinates":...`.
+### Correctness fixes
 
-### Multipolygon results from edge-built polygons
+- SQLite SQL and GeoPackage operate with SQLite 3.49.1 and `SQLITE_DQS=0`
+  (`3.10.3`).
+- GeoPackage indexed iteration works after `SetNextByIndex()` without forcing
+  `GetLayerDefn()` (`3.10.3`).
+- SQLite `REGEXP` null behavior matches the official extension (`3.11.4`).
+- OGRSQL honors an `ExecuteSQL()` spatial filter for aggregate results; a
+  GeoPackage count reflects an in-transaction insertion and active filter
+  (`3.12.3`).
 
-*Batch: 3.11.5*
+## Database drivers
 
-`OGRBuildPolygonFromEdges()` returns a multipolygon when the edges require one, including for affected DXF `HATCH` geometries. Callers must therefore be prepared for a multipolygon result.
+### ADBC, DuckDB, and BigQuery
 
-### Three-dimensional geometry validation
+The read-only ADBC driver accesses DuckDB or Parquet when libduckdb is present
+(`3.11.0`). It reports a missing DuckDB database rather than pretending to
+open it (`3.11.5`). An installed ADBC BigQuery driver is supported, and layers
+are loaded lazily when no SQL open option is used (`3.12.0`). DuckDB 1.5 is
+supported (`3.12.3`).
 
-*Batch: 3.12.1*
+### PostgreSQL, PostGIS, MySQL, MSSQL, and OCI
 
-`gdal vector make-valid` no longer skips 3D geometries.
+- OCI offers `TIMESTAMP_WITH_TIME_ZONE` during layer creation, with matching
+  `ogr2ogr` behavior (`3.10.1`).
+- MSSQLSpatial creates `dbo` metadata tables correctly (`3.10.3`).
+- PostgreSQL table names containing `(` are escaped in `TABLES`, and MySQL
+  removes its obsolete reconnect option for MySQL 8.0.34+ (`3.11.0`).
+- PostgreSQL string truncation is restored (`3.11.3`).
+- PostGIS uses full-geometry intersection and offers
+  `SPATIAL_FILTER_INTERSECTION=LOCAL|SERVER` (`3.13.0`).
 
-### Geometry-check result fields
+### GeoRaster and MongoDB
 
-*Batch: 3.12.1*
+GeoRaster preserves double quotes inside database connection strings
+(`3.12.3`). The MongoDB driver builds with `mongo-cpp-driver` 4+
+(`3.11.4`).
 
-`gdal vector check-geometry` adds the `--include-field` option for including a field in its results.
+## GeoJSON, JSON-FG, ESRIJSON, and TopoJSON
 
-### GML 3D geometry discovery
+### GeoJSON-family behavior
 
-*Batch: 3.12.1*
+GeoJSON detection works when a feature object begins with `geometry`
+(`3.10.3`). `FOREIGN_MEMBERS=AUTO|ALL|NONE|STAC` controls preserved members
+(`3.11.0`). `OGR_G_ExportToJson()` accepts `ALLOW_MEASURE`, `ALLOW_CURVE`, and
+`COORDINATE_ORDER` (`3.12.1`). The writer recognizes both
+`application/geo+json` and `application/vnd.geo+json` (`3.13.1`).
 
-The GML reader accepts 3D geometries whose `srsName` is three-dimensional even without `srsDimension='3'`. When several geometry elements exist and the last one is consistently selected, that geometry column now receives a name.
+GeoJSON-like drivers merge caller `GDAL_HTTP_HEADERS` with their generated
+`Accept` header (`3.10.1`).
 
-### Degenerate line geometries in MIF
+### JSON-FG, ESRIJSON, and TopoJSON
 
-*Batch: 3.12.2*
+JSON-FG implements specification 0.3.0 and reads/writes curved and measured
+geometry (`3.12.0`). ESRIJSON recognizes DateOnly, TimeOnly, BigInteger, GUID,
+and GlobalID field kinds and identifies more document variants (`3.11.5`); it
+later adds `HTTP_METHOD=AUTO|GET|POST` (`3.13.0`). TopoJSON reads a top-level
+`crs` (`3.11.0`).
 
-The MITAB `.mif` reader now accepts line strings and multi-line strings containing one point or no points.
+## GML, GMLAS, and XML-related formats
 
-### Complex OSM multipolygons
+### Geometry interpretation
 
-*Batch: 3.12.2*
+GML supports AIXM `ElevatedCurve` and honors `SWAP_COORDINATES=YES` on geometry
+without an SRS (`3.10.1`). A center-point circle becomes a five-point
+`CIRCULARSTRING` as required by ISO/IEC 13249-3:2011 (`3.10.2`). An empty GML
+curve with empty segments becomes `LINESTRING EMPTY` (`3.11.1`).
 
-The OSM driver again reads complex multipolygons correctly, fixing a regression introduced in 3.11.5.
+JGD2024 is recognized (`3.11.4`). GML/GMLAS supports `gml:TimeInstantType`
+(`3.11.5`). A 3D `srsName` establishes three-dimensional geometry even without
+`srsDimension`; when the last of several geometry elements is consistently
+selected, its column is named (`3.12.1`). GML reads CityGML 3 Shell geometry
+(`3.12.0`).
 
-### Closed polygons after polar reprojection
+### Schema and repeated values
 
-*Batch: 3.12.4*
+GMLAS reads every repeated element representing a `StringList` (`3.10.3`) and
+resolves CityGML 2.0 without `schemaLocation` (`3.11.0`). GML accepts
+`SKIP_CORRUPTED_FEATURES` and `SKIP_RESOLVE_ELEMS` (`3.12.0`).
 
-`OGRGeometryFactory::transformWithOptions()` closes polygons produced by its polar-reprojection path, including when used with GEOS 3.15.
+## CSV, tabular, and office formats
 
-### CSV geometry-option routing
+### CSV parsing and creation
 
-*Batch: 3.13.1*
+Embedded double quotes parse correctly (`3.10.2`), and integers above `2^53`
+remain 64-bit integers (`3.10.3`). A directory containing `.csv` and `.prj`
+files opens as a CSV dataset (`3.11.4`).
 
-For CSV output, `GEOMETRY=AS_WKT` supplied as a layer creation option is also set as a dataset creation option.
+CSV creation supports pipe separators and `HEADER=YES|NO`; FIDs are 64-bit
+(`3.12.0`). `GEOMETRY=AS_WKT` supplied as a layer option is also routed as a
+dataset option (`3.13.1`). CSV, GML, and SQLite accept the `OGR_SCHEMA` open
+option (`3.11.0`).
 
-### C geometry growth through `OGR_G_SetPoint()`
+### ODS and Shapefile
 
-*Batch: 3.13.2*
+ODS preserves title-row field names when the first data row is shorter
+(`3.12.2`). Shapefile conversion writes DateTime as ISO 8601 text (`3.11.0`),
+and reading `.shp.xml` can supply long names and aliases (`3.13.0`).
 
-`OGR_G_SetPoint()` can again grow a geometry when the supplied point index is greater than or equal to its current point count.
+## DXF, MapInfo, and CAD
 
-## Databases and network services
+### DXF behavior
 
-### OCI time-zone timestamp creation
+An `INSERT` array with zero row/column count is treated as count one
+(`3.10.2`). Creation can set `$INSUNITS`/`$MEASUREMENT`, output MultiPoint, and
+read WIPEOUT (`3.11.0`). The `ENCODING` open option is honored (`3.11.5`).
 
-*Batch: 3.10.1*
+AutoCAD Binary DXF can be read and translated directly to ASCII. Reading and
+writing support true color, transparency, and more HATCH styles (`3.12.0`).
+Edge-built HATCH polygons may be `MULTIPOLYGON`, matching
+`OGRBuildPolygonFromEdges()` (`3.11.5`).
 
-The OCI driver adds a `TIMESTAMP_WITH_TIME_ZONE` layer creation option, with corresponding `ogr2ogr` handling.
+### MapInfo and MIF
 
-### SQLite 3.49.1 with double-quoted strings disabled
+MapInfo styling distinguishes `px` and `pt` pen widths and permits fractional
+points (`3.11.5`). MIF accepts one-point and empty line/multiline geometry
+(`3.12.2`). MapInfo exposes coordinate-system bounds as `BOUNDS` metadata
+(`3.13.0`).
 
-*Batch: 3.10.3*
+## KML, MVT, and tile vectors
 
-The SQLite SQL dialect and the GeoPackage driver now work with SQLite 3.49.1 built or configured with `SQLITE_DQS=0`.
+LIBKML advertises Date, Time, DateTime, and Integer64 for creation, maps them to
+strings, and maps Boolean fields correctly (`3.11.1`). A simple field colliding
+with a core attribute is renamed with a `2` suffix (`3.12.2`).
 
-### MSSQLSpatial metadata tables in `dbo`
+MVT supports multiple zoom-zero tiles (`3.10.2`), reads trailing zero padding
+(`3.11.5`), and exposes tile-coordinate fields (`3.13.0`).
 
-*Batch: 3.10.3*
+## FlatGeobuf, OpenFileGDB, and memory datasets
 
-The MSSQLSpatial driver now creates the metadata tables associated with the `dbo` schema correctly.
+FlatGeobuf accepts an empty dataset with `SPATIAL_INDEX=NO` and writes empty
+geometry as null (`3.10.1`).
 
-### WFS feature counts with client-side filters
+OpenFileGDB accepts `CREATE_MULTIPATCH=YES` and ZIP files whose contents are at
+archive root (`3.11.0`). Its writer rejects range domains missing a bound, while
+Python range-domain creation accepts `None`; binding failure is surfaced
+(`3.11.1`).
 
-*Batch: 3.10.3*
+MEM creates layers from `OGRFeatureDefn` and advertises Boolean, Int16,
+Float32, JSON, and UUID subtypes (`3.12.0`). It later creates, updates, and
+deletes relationships (`3.13.0`).
 
-`GetFeatureCount()` no longer crashes on WFS layers that use client-side filters.
+## Web feature and service drivers
 
-### Database and service driver capabilities
+### WFS and WFS-T
 
-*Batch: 3.11.0*
+WFS feature counts do not crash under a client-side filter (`3.10.3`). A
+spatial filter is forwarded even if the XSD is not understood (`3.11.5`). The
+synthetic GeoServer CRS `EPSG:404000` is ignored (`3.12.2`). WFS-T formats
+`xs:dateTime`, `xs:date`, and `xs:boolean` values correctly (`3.12.4`).
 
-OpenFileGDB adds `CREATE_MULTIPATCH=YES` and accepts ZIP archives whose contents are directly at the top level; SQLite supports `SAVEPOINT` and runs `PRELUDE_STATEMENTS` after initialization and SpatiaLite loading. NGW adds HTTP timeouts/retries, filtered deletes, coded domains, COG and TMS web-map sources, and field alteration; PostgreSQL adds escaping for table names containing an opening parenthesis in `TABLES`, while MySQL removes its deprecated reconnect option for MySQL 8.0.34 and later.
+### STACIT, OAPIF, WMS, and NGW
 
-### OAPIF collection item counts
+STACIT supports STAC 1.1 and identifies an item if at least two of
+`proj:transform`, `proj:bbox`, and `proj:shape` exist (`3.10.2`). It avoids an
+initial empty JSON pagination body (`3.12.1`).
 
-*Batch: 3.11.1*
+OAPIF reads Collection `itemCount` (`3.11.1`). WMS adds an IIIF Image API 3.0
+mini-driver (`3.11.1`). NGW adds timeout/retry, filtered delete, coded domains,
+COG and TMS web maps, and field alteration (`3.11.0`).
 
-The OAPIF driver recognizes the `itemCount` element in a Collection description.
+## OGR VRT, filters, and schema
 
-### PostgreSQL string truncation restored
+An OGR VRT `SrcRegion` accepts any geometry type, `SetSpatialFilter()` accepts
+the same, and clipping applies at the OGRVRTLayer level (`3.10.1`).
 
-*Batch: 3.11.3*
+Schema overrides can match all layers with `*` and select by
+`srcType`/`srcSubType` (`3.12.0`). Unified vector filters can update extents,
+and algorithms preserve domains, relationships, and metadata (`3.13.0`).
 
-The PostgreSQL driver again truncates strings as intended, restoring behavior that was broken in 3.11.1.
+## Geometry and feature APIs
 
-### SQLite `REGEXP` null handling
+### Domains, generated fields, and geometry APIs
 
-*Batch: 3.11.4*
+Generated fields use `SetGenerated()`/`IsGenerated()` (`3.11.0`). Envelope
+conversion and constrained Delaunay triangulation are public, and vector
+datasets expose `GetSpatialRef()` (`3.12.0`).
 
-The SQLite driver's `REGEXP` behavior for null values now matches the official extension.
+Concave hull from polygons and invalidity-reason retrieval are available in C,
+C++, and SWIG. `ExportToKML()` fails on invalid latitude instead of emitting
+bad coordinates (`3.13.0`).
 
-### Missing DuckDB databases through ADBC
+`OGR_G_SetPoint()` can grow geometry again for an out-of-range insertion index
+(`3.13.2`). C point mutation functions return `OGRErr` as described in the API
+migration reference.
 
-*Batch: 3.11.5*
+### Geometry filtering and validation
 
-The ADBC driver reports an error when asked to open a DuckDB database that does not exist.
+`gdal vector make-valid` processes 3D geometry (`3.12.1`). Polar reprojection
+closes output polygons (`3.12.4`). Curve layers work in unified clip
+(`3.13.2`).
 
-### WFS spatial-filter forwarding
+## Additional format and service details
 
-*Batch: 3.11.5*
+- NAS updates qualified and unqualified properties (`3.12.2`).
+- OSM complex multipolygons recover from an earlier regression (`3.12.2`),
+  and OSM/PBF operation/filter pipelines work (`3.13.2`).
+- MiraMonVector launders layer names to safe filenames (`3.12.4`).
+- ILI2 supports INTERLIS 2.4 (`3.13.0`).
+- PGDump adds `SKIP_CONFLICTS` (`3.12.0`).
+- AIVector is a new read-only driver (`3.11.0`).
+- A directory-oriented vector capability is advertised by Shapefile, MapInfo,
+  CSV, FlatGeobuf, and MiraMonVector (`3.13.0`).
 
-The WFS driver forwards a spatial filter to the server even when it cannot understand the XSD schema.
+## Conversion safety checklist
 
-### MiraMon and ADBC BigQuery
-
-*Batch: 3.12.0*
-
-The new MiraMon raster driver is read-only. The ADBC vector driver can use an installed ADBC BigQuery driver and defers layer loading when no SQL open option is supplied.
-
-### Unqualified NAS property updates
-
-*Batch: 3.12.2*
-
-The NAS driver now updates properties expressed without namespace qualification, as well as their qualified equivalents.
-
-### Fake GeoServer CRS values in WFS
-
-*Batch: 3.12.2*
-
-The WFS driver now skips the synthetic GeoServer CRS identifier `EPSG:404000`.
-
-### Spatial filters in SQL and GeoPackage counts
-
-*Batch: 3.12.3*
-
-OGRSQL honors a spatial filter passed through `ExecuteSQL()` when the result is an aggregation record. GeoPackage `GetFeatureCount()` also reports the filtered count correctly immediately after an insertion within a transaction.
-
-### DuckDB 1.5 through ADBC
-
-*Batch: 3.12.3*
-
-The ADBC driver is compatible with DuckDB 1.5.
-
-### WFS-T typed-value formatting
-
-*Batch: 3.12.4*
-
-WFS-T now formats `xs:dateTime`, `xs:date`, and `xs:boolean` fields correctly.
-
-### Large SQLite compression results
-
-*Batch: 3.13.2*
-
-The SQLite driver's `ogr_inflate` and `ogr_deflate` functions use the 64-bit blob-result API, avoiding size truncation for large results.
-
-## Vector drivers, schemas, and fields
-
-### Vector `CreateCopy()` for GeoPackage
-
-*Batch: 3.10.1*
-
-The GPKG driver's `CreateCopy()` operation now works with vector datasets.
-
-### More general OGR VRT source regions
-
-*Batch: 3.10.1*
-
-An OGR VRT `SrcRegion` accepts any geometry type, as does `SetSpatialFilter()`, and `SrcRegion.clip` is applied correctly at the `OGRVRTLayer` level.
-
-### CSV fields containing double quotes
-
-*Batch: 3.10.2*
-
-The CSV driver now correctly parses a double quote within a field value.
-
-### Zero-sized DXF `INSERT` arrays
-
-*Batch: 3.10.2*
-
-The DXF driver interprets an `INSERT` block whose row count or column count is zero as having a count of one.
-
-### ISO-compliant GML center-point circles
-
-*Batch: 3.10.2*
-
-`gml:CircleByCenterPoint()` now returns a five-point `CIRCULARSTRING`, complying with ISO/IEC 13249-3:2011.
-
-### Multiple zoom-zero MVT tiles
-
-*Batch: 3.10.2*
-
-The MVT driver can generate a tileset with more than one tile at zoom level 0.
-
-### Full-range 64-bit integers in CSV
-
-*Batch: 3.10.3*
-
-The CSV driver now parses 64-bit integer values above `2^53` without losing their integer interpretation.
-
-### Repeated GMLAS string-list elements
-
-*Batch: 3.10.3*
-
-The GMLAS driver now reads every value when a `StringList` field is represented by a repeated element.
-
-### GeoPackage indexed iteration without schema preloading
-
-*Batch: 3.10.3*
-
-After `SetNextByIndex()`, `GetNextFeature()` works without an explicit preceding call to `GetLayerDefn()`.
-
-### Vector schema, defaults, and format controls
-
-*Batch: 3.11.0*
-
-CSV, GML, and SQLite accept the `OGR_SCHEMA` open option, GeoJSON adds `FOREIGN_MEMBERS=AUTO/ALL/NONE/STAC`, and newly created GeoPackages default to version 1.4. DXF creation can set `$INSUNITS` and `$MEASUREMENT` and handles MultiPoint output and WIPEOUT input; Shapefile conversion writes DateTime as ISO 8601 text, GMLAS can resolve CityGML 2.0 without `schemaLocation`, and TopoJSON reads a top-level `crs`.
-
-### Empty GML curves
-
-*Batch: 3.11.1*
-
-The GML geometry parser interprets `<gml:Curve><gml:segments/></gml:Curve>` as `LINESTRING EMPTY`.
-
-### LIBKML creation types
-
-*Batch: 3.11.1*
-
-The LIBKML driver advertises Date, Time, DateTime, and Integer64 fields during creation, mapping them to strings, and maps boolean fields correctly.
-
-### Larger vector concatenations
-
-*Batch: 3.11.4*
-
-`gdal vector concat` accepts more than 1,000 input files.
-
-### Explicit Arrow and Parquet flushing
-
-*Batch: 3.11.4*
-
-Arrow and Parquet datasets implement `Close()`, and their destructors call it so deleting a dataset properly flushes pending output.
-
-### CSV directories with projection sidecars
-
-*Batch: 3.11.4*
-
-The CSV driver can open a directory containing both `.csv` and `.prj` files.
-
-### JGD2024 in GML
-
-*Batch: 3.11.4*
-
-The GML driver recognizes the JGD2024 coordinate reference system used by recent Japanese Fundamental Geospatial Data.
-
-### DXF encoding selection
-
-*Batch: 3.11.5*
-
-The DXF driver now honors its `ENCODING` open option.
-
-### ESRIJSON field types and identification
-
-*Batch: 3.11.5*
-
-The ESRIJSON driver recognizes `esriFieldTypeDateOnly`, `esriFieldTypeTimeOnly`, `esriFieldTypeBigInteger`, `esriFieldTypeGUID`, and `esriFieldTypeGlobalID`, and its format detection recognizes more ESRIJSON variants.
-
-### GML time instants
-
-*Batch: 3.11.5*
-
-The GML and GMLAS drivers support `gml:TimeInstantType`.
-
-### MapInfo pen-width units
-
-*Batch: 3.11.5*
-
-MapInfo `.tab` styling now distinguishes pixel (`px`) from point (`pt`) pen widths and supports fractional point widths.
-
-### Zero-padded MVT input
-
-*Batch: 3.11.5*
-
-The MVT driver can read files containing zero-byte padding.
-
-### Vector update and inspection workflows
-
-*Batch: 3.12.0*
-
-`gdal vector convert` can update an existing output and accept output open options, and `gdal vector write`/`convert` add `--upsert`; `gdal vector sql --update` performs in-place changes. Conversion no longer assumes Shapefile when the output has no `.shp` extension, and text-mode `gdal vector info` needs `--features` to emit features and accepts `--limit`.
-
-### JSON-FG and Parquet evolution
-
-*Batch: 3.12.0*
-
-JSON-FG is updated to specification 0.3.0 with read/write support for curve and measured geometries. Parquet gains editable-layer update support, reads and writes the Parquet `GEOMETRY` type with libarrow 21 or later, and adds a `COMPRESSION_LEVEL` layer creation option.
-
-### CSV and binary DXF creation controls
-
-*Batch: 3.12.0*
-
-CSV creation supports pipe separators and a `HEADER=YES/NO` layer creation option, and its feature IDs are 64-bit. DXF can read AutoCAD Binary DXF and translate it directly to ASCII DXF, and its reader/writer supports true color, transparency, and additional HATCH styling properties.
-
-### GML, GeoPackage, MEM, and PGDump schema capabilities
-
-*Batch: 3.12.0*
-
-GML exposes `SKIP_CORRUPTED_FEATURES` and `SKIP_RESOLVE_ELEMS` open options and reads CityGML 3 Shell geometry. GeoPackage implements field-domain update and deletion, MEM can create a layer from an `OGRFeatureDefn` and declares Boolean, Int16, Float32, JSON, and UUID subtypes, and PGDump adds `SKIP_CONFLICTS`.
-
-### Arrow-backed field selection
-
-*Batch: 3.12.1*
-
-`ogr2ogr` and `VectorTranslate` correctly apply `selectFields` through the Arrow code path.
-
-### VRT source schema and deterministic reads
-
-*Batch: 3.12.1*
-
-The VRT XML schema permits a `name` attribute on source types. Nearest-neighbor reads use the generic raster-band coordinate rounding, and multithreading is disabled for neighboring sources that are not aligned to an integer output coordinate so pixel output remains deterministic.
-
-### GeoJSON export controls
-
-*Batch: 3.12.1*
-
-`OGR_G_ExportToJson()` adds the `ALLOW_MEASURE`, `ALLOW_CURVE`, and `COORDINATE_ORDER` options.
-
-### Parquet list-field handling
-
-*Batch: 3.12.1*
-
-The Parquet driver adds the `LISTS_AS_STRING_JSON=YES/NO` open option. `SetIgnoredFields()` also works for fields whose type is a list of structures.
-
-### LIBKML field-name collisions
-
-*Batch: 3.12.2*
-
-When a LIBKML simple field has the same name as a core attribute, the driver appends `2` to the simple field's name.
-
-### ODS field names with short first rows
-
-*Batch: 3.12.2*
-
-The ODS driver now preserves field names from the title row when the first data row has fewer columns.
-
-### Parquet Hive filtering and GeoArrow interoperability
-
-*Batch: 3.12.2*
-
-Filters now apply correctly to Hive-partitioned Parquet datasets. GeoArrow-encoded files without GeoParquet metadata can also be opened without conflicting with the `geoarrow.pyarrow` Python module.
-
-### Valid bundled JSON schemas
-
-*Batch: 3.12.4*
-
-JSON Schema validation errors in the bundled `gdalinfo` and `ogrinfo` schemas are fixed.
-
-### Arrow validity-buffer compliance
-
-*Batch: 3.12.4*
-
-`CompactValidityBuffer()` now produces ArrowArray-compliant output when `null_count == 0`.
-
-### Filename-safe MiraMon layer names
-
-*Batch: 3.12.4*
-
-The MiraMonVector driver's `CreateLayer()` launders layer names for filename compatibility.
-
-### Parquet `LargeList` fields
-
-*Batch: 3.12.4*
-
-The Parquet driver adds support for the `LargeList` type.
-
-### Vector workflow preservation and inspection
-
-*Batch: 3.13.0*
-
-Unified vector algorithms propagate dataset field domains, relationships, and metadata. Vector filtering adds `--update-extent`, vector info adds `--fid`, and pipelines can use `--no-create-empty-layers`.
-
-### Partitioned vector datasets
-
-*Batch: 3.13.0*
-
-`gdal vector partition` can partition by geometry type, makes `--field` optional, and automatically creates the Parquet `_metadata` index. The same index can be built independently with `gdal driver parquet create-metadata-file`.
-
-### Stricter vector conversion failures
-
-*Batch: 3.13.0*
-
-`ogr2ogr` now fails by default when destination field creation fails unless `-skip` is supplied. It and `gdal vector convert` also warn when the output driver cannot preserve curve, Z, or M geometries.
-
-### Temporal, GeoParquet, and service-driver controls
-
-*Batch: 3.13.0*
-
-Arrow and Parquet support the Timestamp With Offset extension type and a `TIMESTAMP_WITH_OFFSET` layer creation option, while GeoParquet adds `COVERING_BBOX_NAME`. ESRIJSON adds `HTTP_METHOD=AUTO|GET|POST`; PostGIS uses full-geometry spatial intersection and offers `SPATIAL_FILTER_INTERSECTION=LOCAL|SERVER`.
-
-### Additional vector format capabilities
-
-*Batch: 3.13.0*
-
-ILI2 supports INTERLIS 2.4, MEM datasets can create, update, and delete relationships, and MVT reads expose tile-coordinate fields. Shapefile reads `.shp.xml` long field names and aliases, and MapInfo exposes coordinate-system bounds through `BOUNDS` metadata.
-
-### GeoJSON media types
-
-*Batch: 3.13.1*
-
-The GeoJSON writer recognizes `application/geo+json` as well as `application/vnd.geo+json`.
-
-### Parquet ignored-field name collisions
-
-*Batch: 3.13.1*
-
-`SetIgnoredFields()` works when a top-level Parquet column and a nested column have the same name.
+1. Explicitly select output drivers and creation/open options.
+2. Close Arrow/Parquet outputs and check flush results.
+3. Validate whether geometry curves, Z, M, domains, and relationships survive.
+4. Test spatial filters in service, SQL, Arrow, and transaction paths.
+5. Expect conversion failure on destination field-creation errors unless the
+   explicit skip policy is chosen.

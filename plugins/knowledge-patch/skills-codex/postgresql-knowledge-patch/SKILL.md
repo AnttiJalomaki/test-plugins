@@ -11,7 +11,7 @@ metadata:
 # PostgreSQL Knowledge Patch
 
 Use this skill when writing SQL, planning an upgrade, operating a cluster, building
-a client, or maintaining an extension. Start with the checks below, then open the topic reference that matches the task.
+a client, or maintaining an extension. Start below, then open the matching reference.
 
 ## Reference index
 
@@ -41,7 +41,8 @@ Source and destination checksum settings must match for `pg_upgrade`.
 
 ### Generated columns now default to virtual
 
-An omitted storage keyword means compute-on-read. Add `STORED` when the value must be materialized during writes:
+An omitted storage keyword means compute-on-read. Add `STORED` when the value
+must be materialized during writes:
 
 ```sql
 CREATE TABLE line_item (
@@ -53,7 +54,8 @@ CREATE TABLE line_item (
 
 ### Parent maintenance includes children
 
-`VACUUM` and `ANALYZE` on an inheritance parent process child relations. Use `ONLY` when parent-only behavior is required:
+`VACUUM` and `ANALYZE` on an inheritance parent process child relations. Use
+`ONLY` when parent-only behavior is required:
 
 ```sql
 VACUUM (ONLY, ANALYZE) measurements;
@@ -61,7 +63,8 @@ VACUUM (ONLY, ANALYZE) measurements;
 
 ### Maintenance uses a safe search path
 
-Functions invoked by expression indexes or materialized views must qualify non-default objects or set their own path:
+Functions invoked by expression indexes or materialized views must qualify
+non-default objects or set their own path:
 
 ```sql
 ALTER FUNCTION app.normalize(text)
@@ -134,7 +137,8 @@ RETURNING id, old.price AS before, new.price AS after;
 
 ## Ingest imperfect data deliberately
 
-`COPY FROM ... ON_ERROR ignore` skips conversion failures. Add `REJECT_LIMIT` so a bad file cannot discard an unlimited number of rows:
+`COPY FROM ... ON_ERROR ignore` skips conversion failures. Add `REJECT_LIMIT`
+so a bad file cannot discard an unlimited number of rows:
 
 ```sql
 COPY staging_orders FROM '/imports/orders.csv'
@@ -165,7 +169,8 @@ pg_basebackup -D /backup/inc \
 pg_combinebackup /backup/full /backup/inc -o /backup/combined
 ```
 
-Set `wal_summary_keep_time` for the backup cadence. Validate the result with `pg_verifybackup`; tar backups are accepted.
+Set `wal_summary_keep_time` for the backup cadence. Validate the result with
+`pg_verifybackup`; tar backups are accepted.
 
 ## Query JSON with standard SQL
 
@@ -219,8 +224,8 @@ EXPLAIN (ANALYZE, MEMORY, SERIALIZE TEXT)
 SELECT * FROM orders;
 ```
 
-Statistics consumers must account for I/O and WAL data moving between views,
-new per-backend reset functions, one-based memory-context levels, and renamed
+Statistics consumers must account for I/O and WAL data moving between views, new
+per-backend reset functions, one-based memory-context levels, and renamed
 `pg_stat_statements` timing columns.
 
 ## Secure client connections
@@ -241,7 +246,6 @@ API when cancellation must retain encrypted transport.
 
 ## Follow task-specific references
 
-Do not infer old defaults for generated-column storage, checksums, I/O
-concurrency, subscription streaming, or vacuum inheritance. Open the indexed
-reference whenever code, configuration, monitoring queries, or migration
-automation depends on one of these behaviors.
+Do not infer old defaults for generated-column storage, checksums, I/O concurrency,
+subscription streaming, or vacuum inheritance. Open the indexed reference when code,
+configuration, monitoring queries, or migration automation depends on these behaviors.

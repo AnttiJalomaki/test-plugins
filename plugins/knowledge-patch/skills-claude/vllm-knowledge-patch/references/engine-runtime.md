@@ -1,232 +1,233 @@
 # Engine, Runtime, and Configuration
 
-## V1 engine and scheduling
+## V1 architecture and runner selection
 
-### Default and removal path (`0.7-0.10`, `0.11-0.14`)
+### EngineCore and token-based scheduling
 
-V1 was opt-in with `VLLM_USE_V1=1` in 0.7 and became the default for supported
-uses in 0.8; `VLLM_USE_V1=0` selected V0 only while V0 remained available. The
-0.10 cleanup removed the V0 CPU, XPU, TPU, and HPU backends, long-context LoRA,
-Phi3-Small and BlockSparse Attention, and the V0 speculative-decoding workers.
-Version 0.11 then removed `AsyncLLMEngine`, `LLMEngine`, `MQLLMEngine`, V0
-attention backends and executors, and the remaining V0 interfaces. V1 is the
-only engine after that removal.
+V1 isolates the scheduler and model executor in `EngineCore`. Tokenization,
+multimodal preprocessing, detokenization, and response streaming overlap
+outside that hot path. Workers cache request state and receive incremental
+updates, so single-GPU and tensor-parallel execution share a symmetric worker
+design.
 
-### EngineCore architecture (`v1-architecture-and-batching`)
+Scheduling is token-based, not split into separate prefill and decode phases.
+Each step is conceptually an allocation such as `{request_id: num_tokens}`;
+the same budget covers ordinary decoding, chunked prefill, prefix caching, and
+speculative decoding.
 
-V1 puts the scheduler and model executor in an isolated `EngineCore`.
-Tokenization, multimodal preprocessing, detokenization, and response streaming
-can overlap outside it. Workers cache request state and receive incremental
-updates, giving single-GPU and tensor-parallel execution the same symmetric
-worker design.
+### V1 replaced V0
 
-Scheduling is token-based, not divided into prefill and decode phases. Each
-step resembles `{request_id: num_tokens}`; one budget therefore represents
-normal decoding, chunked prefill, prefix-cache hits, and speculative decoding.
+In batch `0.7-0.10`, V1 moved from opt-in via `VLLM_USE_V1=1` to the default
+for supported use cases. `VLLM_USE_V1=0` was a temporary escape hatch. The
+cleanup removed V0 CPU, XPU, TPU, and HPU backends, long-context LoRA,
+Phi3-Small and BlockSparse Attention, and speculative-decoding workers.
 
-### Compilation and CUDA graphs
+Batch `0.11-0.14` completed removal of `AsyncLLMEngine`, `LLMEngine`,
+`MQLLMEngine`, the V0 attention backends and executors, and the remaining V0
+interfaces. V1 is the only engine. Custom model `forward` methods no longer
+receive `kv_cache` or `attn_metadata`; attention backends obtain them from
+`forward_context`. The temporary `SupportsV0Only` protocol was only useful
+while V0 still existed.
 
-- In `0.7-0.10`, `torch.compile` became fully integrated and enabled by default
-  in V1; `-O3` explicitly enabled it. Experimental `--async-scheduling` arrived
-  in 0.10 to overlap engine-core scheduling with the GPU runner.
-- In `0.11-0.14`, `FULL_AND_PIECEWISE` became the default CUDA graph mode and
-  standalone Inductor compilation was disabled. Optimization levels `-O0`
-  through `-O3` express startup/performance tradeoffs. `compile_ranges` enables
-  selective compilation, and the deprecated `-O.xx` form was removed.
-- In `0.15-0.18`, Model Runner V2 added piecewise and mixed CUDA-graph capture.
-- In `0.23-0.26`, Model Runner V2 added dynamic speculation under full CUDA
-  graphs.
+### Model Runner V2 rollout
 
-### Async scheduling compatibility
+Model Runner V2 first appeared as an experimental, disabled-by-default GPU
+runner in `0.11-0.14`, with M-RoPE, `logit_bias`, `allowed_token_ids`, and
+`min_tokens` added by the end of that batch. In `0.15-0.18` it expanded to
+VLMs, pipeline and decode-context parallelism, piecewise and mixed CUDA-graph
+capture, pooling models, Whisper state, and probabilistic rejection sampling.
 
-`--async-scheduling` in 0.10.2 and 0.11 can corrupt output under preemption and
-some other cases. Version 0.14 enables it by default except with pipeline
-parallelism, CPU, and speculation methods other than MTP/Eagle;
-`--no-async-scheduling` opts out. Version 0.15 makes async scheduling compatible
-with pipeline parallelism and 0.16 marks the combination fully supported. NGram
-speculation can use async scheduling from 0.18, and 0.19 adds zero-bubble
-overlap for broader speculative decoding.
+In `0.19-0.22`, MRV2 added EPLB, multimodal speculative embeddings,
+greedy/logprob rejection modes, multiple prompt logprobs, and Qwen3.5/Mamba
+hybrid support. It became the default for dense Qwen3, with automatic fallback
+to MRV1 for unsupported features. Batch `0.23-0.26` extended the default path
+to dense Llama and Mistral, then quantized models, and finally every dense
+model. That batch also removed legacy PagedAttention and added EVS,
+Mamba-hybrid prefix caching, and dynamic speculation under full CUDA graphs.
 
-### Model Runner V2 progression
+In `0.27.1`, MRV2 gained encoder-only attention, sequence pooling for
+embeddings and classification, encoder token classification and embeddings,
+BGE-M3 pooling, multimodal CPU execution, and a multi-layer MTP speculator;
+PCP now selects MRV2.
 
-The experimental GPU Model Runner V2 arrived in 0.12. By 0.14 it supported
-M-RoPE, `logit_bias`, `allowed_token_ids`, and `min_tokens`, but remained off by
-default. Across `0.15-0.18`, it gained VLMs, pipeline and decode-context
-parallelism, piecewise and mixed CUDA graphs, pooling models, Whisper state, and
-probabilistic rejection sampling.
+## Compilation, graphs, and scheduling
 
-Across `0.19-0.22`, it added EPLB, multimodal speculative embeddings,
-greedy/logprob rejection-sampling modes, multiple prompt logprobs, and
-Qwen3.5/Mamba hybrid support. It became the default for dense Qwen3 models in
-0.22 with automatic fallback when an unsupported feature was requested.
+### Compilation modes
 
-In `0.23-0.26`, the default expanded to dense Llama and Mistral models in 0.23,
-quantized models in 0.24, and every dense model in 0.25. Version 0.25 deleted the
-legacy PagedAttention implementation and added EVS, Mamba-hybrid prefix caching,
-and full-graph dynamic speculation to the newer runner.
+V1 integrates `torch.compile` and enables it by default; `-O3` explicitly
+selects it in the early interface. Batch `0.11-0.14` made
+`FULL_AND_PIECEWISE` the default CUDA-graph mode and disabled standalone
+Inductor compilation. Startup tradeoffs became `-O0` through `-O3`, selective
+compilation became available through `compile_ranges`, and deprecated
+`-O.xx` spellings were removed.
 
-## Sampling and generation behavior
+### Async scheduling evolution
 
-### Seeds, top-k, and model defaults (`0.7-0.10`)
+The `--async-scheduling` option was experimental in `0.7-0.10`, overlapping
+engine-core scheduling with the GPU runner. In 0.10.2 and early
+`0.11-0.14`, it could corrupt output under preemption and some other cases.
+It later became default except with pipeline parallelism, CPU, and speculative
+decoding other than MTP/Eagle; `--no-async-scheduling` opts out.
 
-The default seed became `None` in 0.8, then V1 changed its default to `0` in
-0.9. Separate runs can therefore be deterministic even with nonzero
-temperature. Caller RNG isolation does not apply with
-`VLLM_USE_V1_MULTIPROCESSING=0`. From 0.9, `top_k=0` disables top-k sampling;
-`-1` remained temporarily accepted.
+Batch `0.15-0.18` made async scheduling compatible and then fully supported
+with pipeline parallelism. N-gram speculative decoding also became compatible
+with it. Continue to check the selected backend and speculative method rather
+than treating one historical compatibility matrix as universal.
 
-Starting in 0.8, the model's `generation_config` supplies defaults for sampling
-and chat-template settings such as temperature. Pin behavior-sensitive values
-because a model or vLLM upgrade can otherwise change an unchanged request.
+### Performance and attention presets
 
-### Logprobs and validation (`0.11-0.14`)
+`--performance-mode {balanced,interactivity,throughput}` provides coarse
+deployment tuning, and `--attention-backend auto` chooses a backend
+automatically (`0.15-0.18`). On Blackwell, MLA initially defaulted to
+FlashInfer and prefill to TRTLLM; later, cascade attention became disabled by
+default. Sparse MLA FP8-KV later defaulted to FlashInfer, CPU enabled
+`tcmalloc`, FlashAttention 4 became the MLA prefill default on SM90+, and
+RayExecutorV2 plus the FlashInfer top-k/top-p sampler became defaults
+(`0.19-0.22`).
 
-Prompt logprobs are returned for every token from 0.11, and `logprobs=-1`
-requests the full vocabulary. Version 0.12 moved flat-logprob control from an
-environment variable to `SamplingParams` and deprecated `seed=None`. Version
-0.14 rejects unsupported speculative-decoding sampling parameters instead of
-silently ignoring them.
+Attention backends can vary by KV-cache group (`0.23-0.26`), and
+sliding-window support is now an explicit backend capability. This permits
+mixed-backend hybrid models.
 
-### Token-limit meaning (`0.15-0.18`)
+## Batching, context, and prefix caching
 
-From 0.17, `generation_config.max_tokens` supplies a default rather than a hard
-ceiling; an explicit request value may exceed it.
+### Prefix-cache behavior
 
-## Runtime input and lifecycle
+V1 keeps hash-based prefix lookup and LRU eviction, but uses constant-time
+eviction and low allocation overhead. Prefix caching is therefore enabled by
+default for supported non-hybrid models even when hit rates are low.
 
-Version 0.11 adds CPU KV-cache offloading with LRU management, prompt
-embeddings, sharded state loading, and `LLM.apply_model`. Version 0.12 adds
-pause/resume generation for asynchronous reinforcement-learning training and
-audio embeddings in Chat Completions.
+Hybrid models keep prefix caching opt-in, while chunked prefill follows the
+model's support declaration. Disabling chunked prefill on a supported
+generation model, or enabling it on an unsupported pooling model, can crash or
+corrupt output. RISC-V CPU execution forces both chunked prefill and prefix
+caching off.
 
-Version 0.15 accepts async generators of `StreamingInput` objects while
-preserving KV-cache alignment. This provides session-oriented incremental input
-for workloads such as ASR.
+Mamba and hybrid models can use block-aligned states with
+`--enable-prefix-caching --mamba-cache-mode align`; speculative decoding later
+became compatible with that mode (`0.15-0.18`).
 
-Mamba and hybrid models can cache block-aligned states with
-`--enable-prefix-caching --mamba-cache-mode align`; speculative decoding works
-with the alignment mode from 0.17.
+### Automatic context fitting
 
-## Attention and performance controls
-
-Version 0.13 replaced `VLLM_ATTENTION_BACKEND` with `--attention-backend` and
-introduced `AttentionConfig`; version 0.14 also accepts `attention_config` in
-`LLM`. Version 0.17 adds `--performance-mode
-{balanced,interactivity,throughput}`, and 0.18 adds
-`--attention-backend auto`.
-
-On Blackwell, version 0.15 defaults MLA to FlashInfer and prefill to TRTLLM.
-Version 0.18 disables cascade attention by default. Version 0.19 defaults sparse
-MLA with FP8 KV cache to FlashInfer and enables `tcmalloc` by default on CPU.
-Version 0.20 makes FlashAttention 4 the default MLA prefill backend on SM90+;
-0.21 enables RayExecutorV2 and the FlashInfer top-k/top-p sampler by default.
-
-Version 0.26 allows each KV-cache group to use a different attention backend
-and makes sliding-window support an explicit backend capability. Mixed-backend
-hybrid models can therefore select per-group implementations.
-
-Generation models can set `head_dtype` from 0.26 to retain the `lm_head` in
-FP32 for accuracy. The setting also applies through LoRA.
-
-## Configuration mechanics (`engine-and-openai-server`)
-
-Dataclass-backed options accept a complete JSON object or dotted keys such as
-`--attention-config.flash_attn_version=2`. Bare JSON values accept decimal
-`k/m/g/t` and binary `K/M/G/T` suffixes; human-readable integers also work for
-batch-token, scheduled-token, KV-memory, and safetensors-prefetch block sizes.
-
-### Scheduler defaults
-
-On GPUs with at least 70 GiB other than A100, offline/server defaults are
-16,384/8,192 batched tokens and 1,024 sequences. Other GPUs use 8,192/2,048
-tokens and 256 sequences. CPU token/sequence defaults are 4,096/256 offline and
-2,048/128 for the server, multiplied by `PP × TP`. TPU V6E, V5E, and V5P token
-defaults are 2,048/1,024, 1,024/512, and 512/256 offline/server. Throughput mode
-doubles token or sequence defaults that were not explicitly overridden.
+`--max-model-len auto` selects a context length that fits available GPU memory
+(`0.11-0.14`). Set `VLLM_LOG_MODEL_INSPECTION=1` or print an `LLM` object to
+inspect modules, attention backends, and quantization.
 
 Without chunked prefill, an unspecified batched-token limit is raised to at
-least the model context length. A multimodal prefix-LM can raise it again to fit
-its largest single media item. The result is capped at
-`max_num_seqs × max_model_len`; an unspecified sequence limit is capped at the
-final batched-token count.
+least the model context length. A multimodal prefix-LM can raise it again to
+fit its largest single media item. The result is capped at
+`max_num_seqs × max_model_len`, and an unspecified sequence limit is capped at
+the final batched-token count.
 
-Prefix caching defaults on only when the model supports it and is not hybrid;
-chunked prefill follows the model's support declaration. Disabling supported
-chunked prefill on a generation model or enabling it on an unsupported pooling
-model can crash or corrupt output. RISC-V CPU forces both features off.
+### Hardware-dependent scheduler defaults
 
-### Model context and inspection
+GPUs with at least 70 GiB except A100 default to 16,384/8,192 batched tokens
+for offline/server use and 1,024 sequences; other GPUs use 8,192/2,048 tokens
+and 256 sequences. CPU defaults are 4,096/256 offline and 2,048/128 server,
+multiplied by `PP × TP`. TPU V6E, V5E, and V5P token defaults are respectively
+2,048/1,024, 1,024/512, and 512/256 offline/server. Throughput mode doubles
+token or sequence defaults that were not explicitly overridden.
 
-Version 0.14 accepts `--max-model-len auto` to fit the context to available GPU
-memory. Set `VLLM_LOG_MODEL_INSPECTION=1` or print an `LLM` object to inspect
-modules, attention backends, and quantization.
+## Sampling and returned probabilities
 
-### Offline identifiers and tokenizer control
+### Seed and top-k semantics
+
+The default seed became `None` in 0.8, then V1 changed it to `0` in 0.9. This
+makes separate runs deterministic even with nonzero temperature. Caller RNG
+isolation does not apply when `VLLM_USE_V1_MULTIPROCESSING=0`. From 0.9,
+`top_k=0` disables top-k sampling; `-1` remains only a temporary compatibility
+sentinel.
+
+Later, flat-logprob control moved from an environment variable into
+`SamplingParams`, `seed=None` was deprecated, and `seed_everything` was also
+deprecated (`0.11-0.14`). Unsupported speculative-decoding sampling parameters
+are rejected instead of silently ignored.
+
+### Generation configuration defaults
+
+Starting in 0.8, a model's `generation_config` supplies chat-template and
+sampling defaults such as temperature. Make these values explicit when an
+upgrade or model change must not alter an unchanged request. From
+`0.15-0.18`, `generation_config.max_tokens` is a default rather than a hard
+ceiling, so an explicit request value can exceed it.
+
+### Logprob behavior
+
+Prompt logprobs are returned for every token and `logprobs=-1` requests the
+full vocabulary (`0.11-0.14`). A separate runtime logprobs mode selects which
+processing stage supplies returned logprobs. Generation models can retain
+`lm_head` in FP32 through `head_dtype`, including through the LoRA path
+(`0.23-0.26`).
+
+## Configuration and launch semantics
+
+### Nested values and readable sizes
+
+Dataclass-backed options accept either a whole JSON object or dotted keys such
+as `--attention-config.flash_attn_version=2`. Bare values inside configuration
+JSON accept decimal `k/m/g/t` and binary `K/M/G/T` suffixes, for example:
+
+```bash
+vllm serve MODEL --kv-transfer-config '{"cpu_bytes_to_use":80m}'
+```
+
+Human-readable integers also work for batch-token, scheduled-token, KV-memory,
+and safetensors-prefetch block sizes. Nested YAML configuration was added in
+`0.15-0.18`.
+
+### Attention configuration migration
+
+`VLLM_ATTENTION_BACKEND` was replaced with `--attention-backend` and
+`AttentionConfig` (`0.11-0.14`); `LLM` also accepts `attention_config`.
+Backend environment variables later gained `--moe-backend` and
+`--linear-backend` replacements (`0.19-0.22`).
+
+### Device placement
+
+From `0.23-0.26`, vLLM does not mutate `CUDA_VISIBLE_DEVICES`; use the
+`device_ids` argument. ROCm also began deprecating `CUDA_VISIBLE_DEVICES`.
+With an existing visibility mask, integer `--device-ids` index that visible
+list instead of raw physical devices. UUIDs are allowed, but cannot be mixed
+with integers; duplicates are rejected. The option does not affect Ray
+executors.
+
+### Offline repository resolution and tokenizer skipping
 
 In Hugging Face offline mode, non-cloud model and tokenizer repository IDs are
-resolved to revision-specific local paths. Cloud-storage URIs are unchanged.
+replaced by revision-resolved local paths. Cloud-storage URIs remain unchanged.
 `EngineArgs(tokens_only=True)` independently skips tokenizer initialization.
 
-## Runtime, wheels, and build baseline
+### CLI usability
 
-### `0.7-0.10`
+The consolidated `vllm bench` command replaced separate benchmark entrypoints,
+and `--dataset` in `benchmark_serving.py` was deprecated (`0.7-0.10`). Paged
+help is available with `--help=page`; the CLI default model changed to
+Qwen3-0.6B. The Rust `vllm-bench` later became integrated into the `vllm` CLI
+(`0.27.1`).
 
-Version 0.8 moved to PyTorch 2.6 and CUDA 12.4 wheels. Version 0.9 moved to
-PyTorch 2.7, made CUDA 12.8 the default, dropped CUDA 12.4, and offered CUDA
-12.6 as a GitHub artifact; the CUDA 12.8 flow supports
-`--torch-backend=auto`. Version 0.10 uses PyTorch 2.7.1.
+## Removed and deprecated runtime interfaces
 
-### `0.11-0.14`
+Batch `0.11-0.14` removed `num_lookahead_slots`, `best_of`, LoRA extra
+vocabulary, deprecated plugin/compilation/task/seed/multimodal settings,
+`embed_input_ids` and `embed_multimodal` fallbacks, and the tokenizer setter.
+`--convert reward` became `--convert embed`, and the `xformers` backend was
+deprecated.
 
-Version 0.11 moved CPU builds to PyTorch 2.8 and ROCm to 7.0. Version 0.12
-requires PyTorch 2.9.0 with CUDA 12.9 and Transformers 4.57.3. Version 0.14
-requires PyTorch 2.9.1 and its default wheel uses CUDA 12.9 (`cu129`).
+Direct-child EPLB fields on `ParallelConfig`, `guided_*`,
+`override_pooler_config`, `disable_log_requests`,
+`CompilationConfig.use_inductor`, and already-deprecated metrics were also
+scheduled for removal. Batch `0.15-0.18` removed per-request logits
+processors and `swap_space`, along with other format- and metrics-specific
+removals documented in their topic references.
 
-### `0.15-0.18`
+Batch `0.19-0.22` deprecated `--calculate-kv-scales`, the `score` task,
+virtual engines, and `--disable-frontend-multiprocessing`. It removed old
+import locations for `get_tokenizer` and `resolve_hf_chat_template`, plus
+deprecated MLA-prefill arguments. Batch `0.23-0.26` moved legacy
+`api_server.py` into examples and deleted legacy PagedAttention.
 
-Version 0.17 upgrades to PyTorch 2.10.0; an updated wheel fixes the noted CUDA
-12.9+ library mismatch. XPU moves from IPEX to `vllm-xpu-kernels`, ROCm renames
-`aiter` to `amd-aiter`, and 0.18 removes Ray from default dependencies. Install
-Ray explicitly when selecting it.
+## Container startup checks
 
-### `0.19-0.22`
-
-Version 0.20 makes CUDA 13.0 the default PyPI wheel and OpenAI-compatible image,
-upgrades CUDA and XPU builds to PyTorch 2.11, adds Python 3.14, and requires
-`transformers>=5`. For CUDA 12.9, use `uv` with `--torch-backend=cu129`.
-Version 0.21 deprecates Transformers v4 and requires a C++20 compiler.
-
-CUDA 13.0 wheels in 0.21 and CUDA 12.9 wheels in 0.22 use PyTorch's
-`manylinux_2_28` base. Version 0.22 adds a non-root `vllm-openai` Docker target
-and permits Python-only installation.
-
-### `0.23-0.26`
-
-Version 0.24 moves ROCm to PyTorch 2.11, XPU to torch-xpu 2.12, CUDA container
-builds to GCC 12, and makes `mistral_common` optional. Starlette must be at
-least 1.0.1 for its security fix. Version 0.26 moves the Transformers
-integration to 5.13.0.
-
-## Removed and deprecated configuration
-
-- Version 0.12 removes `num_lookahead_slots`, `best_of`, and LoRA extra
-  vocabulary; deprecates xFormers; and deprecates direct-child EPLB fields on
-  `ParallelConfig`, `guided_*`, `override_pooler_config`,
-  `disable_log_requests`, `CompilationConfig.use_inductor`, and already
-  deprecated metrics.
-- Version 0.13 removes deprecated plugin, compilation, task, seed, and
-  multimodal settings; `embed_input_ids`/`embed_multimodal` fallbacks; and the
-  tokenizer setter. Use `--convert embed` rather than `--convert reward`.
-  Version 0.14 deprecates `seed_everything`.
-- Version 0.15 removes `vllm:time_per_output_token_seconds` in favor of
-  `vllm:inter_token_latency_seconds`, plus DeepSpeedFp8 and RTN. Version 0.16
-  removes BitBlas, Marlin 24, `reasoning_content`, and
-  `VLLM_ALL2ALL_BACKEND`; 0.17 removes per-request logits processors; 0.18
-  removes `swap_space`.
-- Version 0.19 deprecates `--calculate-kv-scales`, the `score` task, virtual
-  engines, and `--disable-frontend-multiprocessing`, while removing
-  per-tensor/per-channel FP8 and Sparse24 integration.
-- Version 0.22 removes old import locations for `get_tokenizer` and
-  `resolve_hf_chat_template` plus deprecated MLA-prefill arguments. Use
-  `--moe-backend` and `--linear-backend` instead of their backend environment
-  variables.
+As of `0.27.1`, vLLM respects cgroup memory limits on every platform and fails
+fast when `/dev/shm` is too small. This changes startup behavior in constrained
+containers; size shared memory and container memory explicitly.

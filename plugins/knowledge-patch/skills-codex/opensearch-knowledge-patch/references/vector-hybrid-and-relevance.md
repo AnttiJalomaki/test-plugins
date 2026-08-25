@@ -1,254 +1,123 @@
 # Vector, Hybrid, and Search Relevance
 
-Use this reference for k-NN mappings and engines, compressed vectors, remote
-and GPU builds, hybrid and semantic queries, sparse retrieval, star-tree
-indexes, Learning to Rank, and Search Relevance Workbench.
+## Defining vector mappings and source behavior
 
-## k-NN mappings, source, and retrieval
+### Engine and mapping rules
 
-### Mapping validation and index settings
+In 2.19.0, Lucene supports binary vector indexes, and Faiss supports cosine similarity and radial search without caller-side normalization. Nested k-NN `inner_hits` can return multiple values with Lucene or Faiss. NMSLIB uses `expand_nested_docs`, while neural k-NN queries use `expand_nested`.
 
-- Since 2.19.0, a training-backed vector mapping cannot specify both a model ID
-  and `dimension`; the model's training index supplies the dimension.
-- `index.knn` is immutable after index creation (2.19.0).
-- Derived vector source cannot be enabled when `index.knn=false` (3.1.0).
-- Mode and compression settings are rejected for indexes created before
-  2.17.0 (3.1.0).
-- Vector-field creation accepts an optional top-level `engine` (3.3.0).
+A training-backed mapping cannot contain both a trained artifact identifier and `dimension`; the dimension comes from the training index. `index.knn` is immutable after index creation, `fields` searches work with `knn_vector`, and `rescore: false` actually disables rescoring.
+
+Faiss became the implicit k-NN engine in 2.18. With `space_type: "cosinesimil"` and no explicit engine, vectors are normalized at indexing time and stored values differ from input. Already-normalized vectors can use `innerproduct` for equivalent scoring without implicit normalization.
 
 ### Derived vector source
 
-- The experimental 2.19.0 derived-source mode removes k-NN vectors from stored
-  JSON `_source` and injects them when a document is read. It supports flat
-  mappings, object fields, and one nested level and is disabled by default.
-- Derived vector source is production-ready in 3.0.0 across Faiss, Lucene, and
-  NMSLIB.
+The 2.19.0 experimental derived-source feature removes k-NN vectors from stored JSON `_source` and reinjects them when reading a document. It supports flat mappings, object fields, and single-level nested fields and is disabled by default.
 
-### Returning vectors
+Derived vector source becomes production-ready across Faiss, Lucene, and NMSLIB in 3.0.0. Since 3.1.0, enabling it while `index.knn=false` is rejected. Mode and compression settings are also rejected for indexes created before 2.17.0.
 
-- Searches using `fields` work with `knn_vector` from 2.19.0.
-- In 3.7.0, `docvalue_fields` can retrieve float, byte, and binary
-  `knn_vector` values from Lucene and Faiss indexes at every compression level
-  without reindexing. The default representation is base64-encoded binary
-  rather than an array.
+### Retrieving and transmitting vectors
 
-### Nested vectors and highlights
+Since 3.7.0, `docvalue_fields` can retrieve float, byte, and binary `knn_vector` values from Lucene and Faiss indexes at any compression level without reindexing. The default representation is Base64 binary rather than an array.
 
-- Nested k-NN `inner_hits` can return multiple values with Lucene or Faiss
-  (2.19.0). NMSLIB adds `expand_nested_docs`, and neural k-NN adds
-  `expand_nested`.
-- From 2.19, map nested `text_embedding` inputs directly instead of using
-  nested `_ingest._value` substitution:
+Since 3.8.0, `knn_vector` values can be ingested as Base64, reducing JSON-array serialization overhead for indexing and bulk requests. A search request processor can also exclude vector fields from response `_source` when only documents and scores are needed.
 
-  ```json
-  "field_map": {
-    "books.title": "title_embedding"
-  }
-  ```
+## Building and executing vector indexes
 
-- SEISMIC sparse ANN supports nested fields during ingestion and querying in
-  3.4.0, and its query may omit `method_parameters`.
-- In 3.7.0, batch semantic highlighting can process nested-document
-  `inner_hits` through a request-level opt-in and return the relevant nested
-  passage instead of only top-level content.
+### Defaults and remote builds
 
-## Engines, execution, and compression
+Concurrent segment search is enabled by default for k-NN in 3.0.0. In 3.1.0, GPU index builds become production-ready, remote vector builds are enabled by default through `index.knn.remote_index_build.enabled`, and new OnDisk indexes with 4x compression rescore by default. Set `rescore: false` for the older behavior.
 
-### Engine compatibility
+A terminal remote-vector-build failure no longer falls back to CPU in 3.2.0. GPU indexing in that release expands from FP32 to FP16, byte, and binary vectors. Remote builds support 1-bit scalar quantization in 3.7.0.
 
-- Lucene supports binary vector indexes from 2.19.0.
-- Faiss supports cosine similarity and radial search without caller-side
-  normalization from 2.19.0.
-- The implicit k-NN engine changed from NMSLIB to Faiss in 2.18. With
-  `space_type: "cosinesimil"` and no explicit engine, indexing normalizes
-  vectors, so stored values differ from inputs. Already-normalized vectors can
-  use `innerproduct` for equivalent scoring without implicit normalization.
-- NMSLIB is deprecated in favor of Faiss or Lucene as part of the 3.0
-  migration.
+### Faiss execution controls
 
-### Search execution
+In 3.0.0, Faiss explanation covers exact, ANN, radial, and disk-based searches. `memory-optimized-search` reduces memory use, and node-level circuit breakers support heterogeneous memory limits. Remove legacy index-level `ef_construction`, `m`, space-type, and plugin-enablement settings.
 
-- Concurrent segment search is enabled by default for k-NN in 3.0.0.
-- Faiss explain support in 3.0.0 covers exact, ANN, radial, and disk-based
-  searches.
-- `memory-optimized-search` provides a lower-memory Faiss mode in 3.0.0.
-- Lucene HNSW graph search can execute directly over Faiss indexes in 3.1.0,
-  enabling partial byte loading and early termination.
-- Memory-optimized search supports Faiss binary index types in 3.1.0, and
-  inner vector search results can be rescored.
-- k-NN warmup supports memory-optimized search in 3.4.0, including indexes
-  created before 2.18.
-- A 3.5.0 index setting can disable the exact-search phase after ANN when
-  Faiss efficient filters are used.
+Since 3.1.0, Lucene HNSW graph search can execute on existing Faiss indexes with partial byte loading and early termination. Memory-optimized search supports Faiss binary indexes, and inner vector results can be rescored.
 
-### Rescoring and failure behavior
+The 3.4.0 warmup path supports memory-optimized search, including indexes created before 2.18. Since 3.5.0, an index setting can disable the exact-search phase that follows ANN when Faiss efficient filters are used.
 
-- `rescore: false` actually disables rescoring from 2.19.0.
-- New OnDisk indexes with 4x compression rescore by default in 3.1.0. Set
-  `rescore: false` to preserve the prior behavior.
-- A terminal remote vector-index-build failure no longer falls back to CPU in
-  3.2.0.
+### Compression, quantization, and distance
 
-### Memory and circuit breakers
+In 3.2.0, binary-quantized Faiss indexes can use asymmetric distance computation, comparing a full-precision query vector with compressed documents. Random rotation reduces information loss at 32x compression, and asymmetric distance also works when Lucene graph search executes on Faiss indexes.
 
-- k-NN adds node-level circuit breakers for heterogeneous memory limits in
-  3.0.0.
-- Legacy index-level settings for `ef_construction`, `m`, space type, and
-  plugin enablement are removed in 3.0.0.
+In 3.6.0, Lucene BBQ and Faiss scalar quantization support 1-bit vectors at 32x compression for approximate and exact search. This includes Lucene flat format and Faiss memory-optimized search; Faiss 32x defaults to the SQ 1-bit encoder. Vector metadata can use Zstandard, and byte vectors gain a Hamming-distance scorer.
 
-### Quantization and recall
+### Approximate queries
 
-- Binary-quantized Faiss indexes in 3.2.0 can use asymmetric distance
-  computation, comparing a full-precision query vector with compressed
-  document vectors, and random rotation to reduce loss at 32x compression.
-  Asymmetric distance also works when Lucene graph search executes on Faiss.
-- Lucene BBQ and Faiss scalar quantization support 1-bit vectors at 32x
-  compression in 3.6.0 for approximate and exact search, including Lucene
-  flat format and Faiss memory-optimized search.
-- Faiss 32x compression defaults to the SQ 1-bit encoder in 3.6.0.
-- Vector metadata can use Zstandard compression in 3.6.0, and byte vectors gain
-  a Hamming-distance scorer.
-- Remote index builds support 1-bit scalar quantization in 3.7.0.
+Since 3.2.0, approximate queries support `HALF_FLOAT`, `FLOAT`, `DOUBLE`, `INTEGER`, `BYTE`, `SHORT`, and `UNSIGNED_LONG`, and accept `search_after`.
 
-## Vector index building
+## Building hybrid search pipelines
 
-- GPU vector operations are a disabled-by-default experiment in 3.0.0.
-- GPU-accelerated index building becomes production-ready in 3.1.0.
-- Remote vector index building is enabled by default in 3.1.0 through
-  `index.knn.remote_index_build.enabled`.
-- GPU index builds support FP16, byte, and binary vectors in addition to FP32
-  in 3.2.0.
+### Fusion, normalization, and diagnostics
 
-## Hybrid search
+Hybrid search in 2.19.0 adds `pagination_depth` for large result sets and reciprocal rank fusion as a rank-based alternative. `hybrid_score_explanation` explains normalization and combination, while `verbose_pipeline` exposes transformations across search-pipeline processors.
 
-### Fusion, pagination, and diagnostics
+In 3.0.0, hybrid pipelines add Z-score normalization and a lower bound for min-max normalization. Hybrid and neural query builders accept filter functions, and nested or parent-join results can return `inner_hits`.
 
-- Hybrid queries add `pagination_depth` for large result sets and reciprocal
-  rank fusion (RRF) in 2.19.0.
-- Use `hybrid_score_explanation` to explain normalization and combination and
-  `verbose_pipeline` to expose transformations across search-pipeline
-  processors (2.19.0).
-- Hybrid search adds Z-score normalization and a lower bound for min-max
-  normalization in 3.0.0.
-- The RRF normalization processor accepts custom weights in 3.1.0.
-- Min-max normalization adds an upper bound in 3.2.0.
-- The 3.7.0 hybrid optimizer supports Z-score normalization and RRF across
-  selected `rank_constant` values. It evaluates 82 variants per query and can
-  limit an experiment to selected techniques.
+In 3.1.0, RRF accepts custom weights. `collapse` groups and deduplicates by field, and invalid nested hybrid structures are rejected. In 3.2.0, min-max adds an upper bound and collapsed groups can return their own `inner_hits`.
 
-### Filtering, grouping, and nesting
+Neural Search in 3.5.0 supports hybrid queries over gRPC and `min_score` on hybrid searches. The 3.7.0 hybrid optimizer adds Z-score and RRF over selected `rank_constant` values, evaluates 82 variants per query, and can opt into selected techniques.
 
-- Filter functions are available to hybrid and neural query builders in
-  3.0.0.
-- Hybrid queries support `inner_hits` for nested and parent-join results in
-  3.0.0.
-- Hybrid queries support `collapse` for field grouping and deduplication in
-  3.1.0.
-- Invalid nested hybrid-query structures are rejected in 3.1.0.
-- A collapsed hybrid query can return `inner_hits` for each group in 3.2.0.
-- Hybrid searches support `min_score` in 3.5.0 and hybrid queries can run over
-  gRPC.
-- From 3.6.0, a `hybrid` query is rejected inside compound queries such as
-  `function_score`, `constant_score`, and `script_score`.
+### Composition restrictions
 
-## Semantic and sparse neural search
+Since 3.6.0, a `hybrid` query is rejected when nested in a compound query such as `function_score`, `constant_score`, or `script_score`.
+
+Since 3.8.0, hybrid queries reject `dfs_query_then_fetch`, which can produce incorrect results. Use a supported search type.
+
+## Authoring deferred and inference-driven searches
+
+The 2.19.0 `template` query deliberately leaves placeholders unresolved until a search request processor fills them. ML inference search-request extensions can supply extra input fields required by an inference endpoint.
+
+## Configuring semantic and sparse search
 
 ### Semantic fields and highlighting
 
-- Neural Search in 3.0.0 adds semantic sentence highlighting with a bundled QA
-  model and custom tags, a semantic field mapper, analyzer-based neural sparse
-  queries, and a stats API.
-- Semantic fields in 3.1.0 can toggle chunking, use fixed-character-length
-  chunks, and apply search analyzers at index creation and query time.
-- A neural sparse query cannot supply both a model ID and an analyzer
-  (3.1.0).
-- The Neural Search stats API in 3.1.0 adds `include_individual_nodes`,
-  `include_all_nodes`, and `include_info`, covers more processors and
-  algorithms, and rejects invalid statistic names with a bad request.
-- Semantic fields in 3.2.0 can configure generated dense `knn_vector` engine,
-  mode, compression level, and method. They also add ingest batch sizing,
-  sparse prune strategies, configurable chunking, embedding reuse, and
-  `TOKEN_ID` sparse embeddings.
-- The semantic-highlight response processor can batch remote inference in
-  3.3.0. Semantic fields can use the sparse two-phase processor.
-- Neural Search supports asymmetric embedding models in 3.5.0.
+Neural Search 3.0.0 adds semantic sentence highlighting with a bundled QA artifact and custom tags, a semantic field mapper, analyzer-based neural sparse queries, and a statistics API.
 
-### Sparse retrieval and reranking
+Since 3.1.0, semantic fields can enable or disable chunking, use fixed-character-length chunks, and apply search analyzers at index creation and query time. A neural sparse query cannot provide both an analyzer and an artifact identifier. The stats API adds `include_individual_nodes`, `include_all_nodes`, and `include_info`, covers more processors and algorithms, and returns a bad request for invalid statistic names.
 
-- Neural Search adds SEISMIC sparse approximate-nearest-neighbor retrieval in
-  3.3.0.
-- k-NN and neural queries gain native maximal marginal relevance in 3.3.0.
-- The `lateInteractionScore` Painless function provides ColBERT-style
-  multi-vector rescoring in 3.3.0.
-- SEISMIC sparse ANN participates in query explanation in 3.5.0.
+In 3.2.0, semantic fields can configure generated dense `knn_vector` engine, mode, compression, and method. They also gain ingest batch sizing, sparse prune strategies, configurable chunking, existing-embedding reuse, and `TOKEN_ID` sparse embeddings.
 
-## Approximate queries, aggregation, and star-tree
+In 3.3.0, the semantic-highlighting response processor can batch remote inference. Semantic fields can use the sparse two-phase processor. Since 3.7.0, batch highlighting can process nested-document `inner_hits` through request-level opt-in and return the relevant nested passage.
 
-### Approximate query coverage
+### Sparse and multi-vector retrieval
 
-- Approximate queries support `HALF_FLOAT`, `FLOAT`, `DOUBLE`, `INTEGER`,
-  `BYTE`, `SHORT`, and `UNSIGNED_LONG` and can use `search_after` in 3.2.0.
+OpenSearch 3.3.0 adds SEISMIC sparse approximate-nearest-neighbor retrieval. k-NN and neural queries gain native maximal marginal relevance, `lateInteractionScore` supports ColBERT-style multi-vector rescoring, and vector-field creation accepts an optional top-level `engine`.
 
-### Streaming aggregation
+In 3.4.0, SEISMIC supports nested fields at ingestion and query time, and its query may omit `method_parameters`. It participates in query explanation in 3.5.0, when Neural Search also adds asymmetric embedding support.
 
-- In 3.2.0, shards can stream segment-level partial aggregation results to the
-  coordinating node, moving high-cardinality reduction work away from data
-  nodes.
+Since 3.8.0, a reranking pipeline can choose the field that retains the previous score, avoiding accidental overwrite of an existing document field.
 
-### Star-tree lifecycle and safeguards
+## Accelerating aggregations with star-tree
 
-- Experimental star-tree aggregation in 2.19.0 supports metric aggregations
-  and date histograms containing metric aggregations.
-- Star-tree indexes become production-ready in 3.1.0.
-- Star-tree accelerates aggregations over IP-field queries in 3.2.0. Index,
-  node, and shard statistics report total, active, and elapsed-time usage.
-- Star-tree optimization is suppressed when DLS, FLS, or field masking applies
-  (3.2.0).
-- Custom Codecs adds composite-index support in 3.2.0.
-- Star-tree accelerates `multi_terms` aggregations in 3.3.0, and search
-  statistics at index, node, and shard scope add failure counts.
-- The AdditionalCodecs registration path in 3.5.0 lets plugins such as k-NN,
-  Neural Search, and Security Analytics use custom codecs.
-- OpenSearch Custom Codecs adds Intel QAT-accelerated Zstandard compression in
-  3.1.0.
+In 2.19.0, disabled-by-default experimental star-tree supports metric aggregations and date histograms containing metric aggregations. It becomes production-ready in 3.1.0.
 
-## Learning to Rank
+In 3.2.0, star-tree accelerates aggregations whose queries target IP fields. Index, node, and shard stats expose total, active, and elapsed-time usage. Optimization is suppressed when DLS, FLS, or field masking is active.
 
-- The Learning to Rank plugin introduced in 2.19.0 rescores with lightweight
-  models such as XGBoost and RankLib. It uses `.ltrstore*` as a system index
-  and includes settings, statistics, a circuit breaker, and read/full-access
-  security roles.
-- Learning to Rank can evaluate XGBoost models with missing input features in
-  3.2.0.
+In 3.3.0, star-tree adds `multi_terms` acceleration and failure counts to index-, node-, and shard-level search statistics.
 
-## Search Relevance Workbench
+## Evaluating relevance
 
-### Data and evaluation
+### Search Relevance Workbench
 
-- The 3.1.0 workbench compares algorithms and evaluates quality using User
-  Behavior Insights, hybrid experiments, and imported judgments. Its backend
-  root is `/_plugin/_search_relevance`, it exposes statistics, and judgments
-  are ratings rather than scores.
-- In 3.2.0 its redesigned interface becomes the default with an opt-out.
-  Dashboards visualizes evaluation and hybrid-experiment results; implicit
-  judgments can filter User Behavior Insights by date, and hybrid-optimizer
-  and pointwise experiments can run as scheduled tasks.
-- In 3.4.0, experiments can be scheduled and descheduled in the UI, agentic
-  search can be compared in single-query and pairwise tools, and GUID filters
-  are available for experiments, search configurations, query sets, and
-  judgment lists.
-- Search Relevance Workbench is generally available in 3.5.0.
-- In 3.5.0 it adds customizable judgment prompt templates, reusable comparison
-  configurations, and OpenSearch DSL `_search` endpoints for Search
-  Configurations, Judgments, Query Sets, and Experiments.
+Introduced in 3.1.0, Search Relevance Workbench compares search algorithms and evaluates User Behavior Insights, including hybrid experiments and imported external judgments. Its API root is `/_plugin/_search_relevance`; it exposes statistics and represents judgments as ratings, not scores.
 
-### Expanded metrics and optimization
+In 3.2.0, the new Workbench interface becomes the default with an opt-out. It visualizes evaluation and hybrid-experiment results, filters implicit-judgment events by date, and schedules hybrid-optimizer and pointwise experiments.
 
-- In 3.6.0 the workbench supports multiple data sources and manual Query Set
-  creation from plain text, key-value, JSON Lines, or NDJSON.
-- Evaluations in 3.6.0 add Recall@K, mean reciprocal rank, and DCG@K.
-  Precision and MAP use dynamic percentile-based relevance thresholds.
-- The disabled-by-default 3.6.0 Relevance Agent uses a multi-agent Dashboards
-  workflow to analyze user behavior, propose changes, and validate them with
-  offline evaluation.
-- In 3.7.0 Dashboards imports CSV judgment sets of up to 10,000 rows directly.
+In 3.4.0, the UI schedules and deschedules experiments and compares agentic search in single-query and pairwise tools. Experiment, search-configuration, query-set, and judgment-list views accept GUID filters.
+
+Search Relevance Workbench is generally available in 3.5.0. It adds customizable prompt templates for automated judgments, lets the comparison UI reuse search configurations, and adds OpenSearch-DSL `_search` endpoints for Search Configurations, Judgments, Query Sets, and Experiments.
+
+In 3.6.0, Workbench supports multiple data sources and manual Query Set creation from text, key-value, JSON Lines, or NDJSON. Evaluations add Recall@K, mean reciprocal rank, and DCG@K; binary-dependent Precision and MAP use dynamic percentile-based relevance thresholds. A disabled-by-default Relevance Agent uses a multi-agent workflow to analyze behavior, propose changes, and validate them offline.
+
+In 3.7.0, Dashboards imports CSV judgment sets up to 10,000 rows directly. In 3.8.0, automated judgments work through any ML Commons connector, and metadata reports success and failure counts plus failed queries rather than silently dropping unrated documents.
+
+Search configurations in 3.8.0 accept ScriptService-backed Mustache variables in addition to `%SearchText%`. Experiments record SHA-256 signatures for query sets, judgments, and search configurations; `GET /_plugins/_search_relevance/experiments/{id}/validate` reports `VALID`, `DRIFTED`, or `UNAVAILABLE`, and create/update validates referenced resources.
+
+### Learning to Rank
+
+The 2.19.0 Learning to Rank plugin rescores with lightweight ranking artifacts such as XGBoost and RankLib. It stores data in the `.ltrstore*` system index and provides settings, statistics, a circuit breaker, and read/full-access Security roles.
+
+Since 3.2.0, Learning to Rank can evaluate XGBoost inputs containing missing feature values.

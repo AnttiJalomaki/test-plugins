@@ -1,25 +1,14 @@
 # SQL/JSON and JSON Processing
 
-Batch attribution: `17-json-guide`, `17.0`, `18.0`.
+Use this reference for SQL-standard JSON queries, relational projection,
+constructors, path conversion, and JSON null behavior. The query-function and
+table material is attributed to `17-json-guide`; the scalar changes are from
+`18.0`.
 
 ## Query JSON with SQL-standard functions
 
-`JSON_EXISTS`, `JSON_QUERY`, and `JSON_VALUE` accept a SQL/JSON path and named
-variables supplied by `PASSING`.
-
-`JSON_EXISTS` tests whether the path produces an item. Its default on error is
-`FALSE`.
-
-`JSON_VALUE` extracts exactly one scalar. It returns `text` unless `RETURNING`
-requests another SQL type. JSON null becomes SQL `NULL`.
-
-`JSON_QUERY` returns JSON, or the type selected by `RETURNING`. It can apply a
-conditional or unconditional array wrapper and can keep or omit the quotes
-around scalar strings. Unlike `JSON_VALUE`, it preserves JSON null.
-
-`JSON_QUERY` and `JSON_VALUE` support `ON EMPTY` and `ON ERROR` fallbacks; both
-default to SQL `NULL`. Conversion of the context expression to `jsonb` occurs
-outside `ON ERROR`, so malformed context input still raises an error.
+PostgreSQL 17 supports `JSON_EXISTS`, `JSON_QUERY`, and `JSON_VALUE`. Each
+accepts an SQL/JSON path and named variables supplied by `PASSING`:
 
 ```sql
 SELECT JSON_EXISTS(
@@ -35,19 +24,23 @@ SELECT JSON_EXISTS(
        );
 ```
 
-## Project JSON into rows with `JSON_TABLE`
+- `JSON_EXISTS` tests whether the path yields an item.
+- `JSON_VALUE` extracts one scalar as `text` by default or as the requested SQL
+  type.
+- `JSON_QUERY` returns JSON or another `RETURNING` type. It supports
+  conditional and unconditional array wrappers and controls for retaining or
+  omitting scalar-string quotes.
 
-`JSON_TABLE` turns every match of its row path into a row whose shape is
-declared by `COLUMNS`. In `FROM` it is implicitly lateral to earlier source
-rows.
+`JSON_QUERY` and `JSON_VALUE` accept `ON EMPTY` and `ON ERROR` fallbacks and
+default to SQL `NULL`; `JSON_EXISTS` defaults to `FALSE`. Context conversion to
+`jsonb` occurs outside `ON ERROR`, so malformed input still raises an error.
+`JSON_VALUE` maps JSON null to SQL `NULL`, while `JSON_QUERY` preserves JSON
+null.
 
-Columns can:
+## Project JSON as rows with JSON_TABLE
 
-- extract and coerce a value, with `PATH` optional when `$.column_name` is
-  correct;
-- test a path with `EXISTS`;
-- number matches with `FOR ORDINALITY`; or
-- recursively expand arrays with `NESTED PATH`.
+`JSON_TABLE` turns every row-path match into a row whose schema is declared by
+`COLUMNS`. It is implicitly lateral to its source row in `FROM`:
 
 ```sql
 SELECT o.id, item.*
@@ -64,14 +57,18 @@ FROM orders AS o,
      ) AS item;
 ```
 
-A nested path's rows join to its parent row. Sibling `NESTED PATH` clauses are
-combined as a union, not a cross product. Value extraction defaults to `NULL`
-on empty or error, and `EXISTS` defaults to `FALSE`; each column can override
-those actions. Top-level `EMPTY ON ERROR` instead produces no rows.
+Columns can extract and coerce values, test a path with `EXISTS`, number rows
+with `FOR ORDINALITY`, or recursively expand arrays with `NESTED PATH`.
+Omitting a column path uses `$.column_name`.
 
-## Construct, serialize, and convert JSON
+A nested path's rows join to its parent. Sibling `NESTED PATH` clauses form a
+union rather than a cross product. Column extraction defaults to `NULL` on
+empty or error, while `EXISTS` defaults to `FALSE`; per-column clauses can
+override those defaults. Top-level `EMPTY ON ERROR` produces no rows.
 
-The SQL-standard constructors and serializer are available:
+## Construct and convert JSON
+
+PostgreSQL 17 adds standard `JSON()`, `JSON_SCALAR()`, and `JSON_SERIALIZE()`:
 
 ```sql
 SELECT JSON('{"n":1}'),
@@ -79,17 +76,20 @@ SELECT JSON('{"n":1}'),
        JSON_SERIALIZE(JSON('{"n":1}') RETURNING text);
 ```
 
-SQL/JSON paths can convert values with `.bigint()`, `.boolean()`, `.date()`,
-`.decimal()`, `.integer()`, `.number()`, `.string()`, `.time()`,
-`.time_tz()`, `.timestamp()`, and `.timestamp_tz()`.
+SQL/JSON paths add `.bigint()`, `.boolean()`, `.date()`, `.decimal()`,
+`.integer()`, `.number()`, `.string()`, `.time()`, `.time_tz()`,
+`.timestamp()`, and `.timestamp_tz()` conversion methods.
 
-## Handle JSON nulls in scalar and array conversions
+## Handle JSONB nulls explicitly
 
-Casting a `jsonb` null to a scalar produces SQL `NULL`. The optional second
-Boolean argument to `jsonb_strip_nulls` also removes null array elements;
-without it, the function removes null-valued object fields only.
+In PostgreSQL 18, casting a JSONB null to a scalar produces SQL `NULL`.
+`jsonb_strip_nulls()` accepts a second Boolean argument that also removes null
+array elements:
 
 ```sql
 SELECT ('null'::jsonb)::integer,
        jsonb_strip_nulls('[1,null,{"x":null}]'::jsonb, true);
 ```
+
+This behavior is distinct from SQL/JSON `JSON_QUERY`, which deliberately
+preserves a JSON null result.

@@ -1,186 +1,113 @@
 # Terraform and OpenTofu Testing
 
-Mocks and overrides, test inputs, execution ordering, concurrency, diagnostics, reports, and cleanup.
+## Terraform test inputs (`terraform-1.7.0-guide`)
 
-## Mocks and overrides
-
-### Formatting mock data files
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-Starting in 1.7.2, `terraform fmt` includes Terraform mock data files with the `.tfmock.hcl` suffix.
-
-### Functions in Terraform Test mocks
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-Terraform Test mock blocks can now call functions when constructing mock values, allowing generated or transformed fixture values rather than literals only.
-
-### Mock providers and targeted test overrides
-
-*Terraform 1.7.0 — batch `terraform-1.7.0-guide`.*
-
-Terraform tests can replace provider calls with `mock_provider`; unspecified computed attributes receive generated fake data, while `mock_resource` defaults supply stable values for every resource of that type. Aliases allow real and mocked providers in the same suite, and override blocks can replace individual resources, data sources, or module outputs either for the whole test file or inside one `run`, with real or mocked providers.
+Terraform 1.7 test provider blocks can reference variables and earlier run outputs. HCL functions are accepted in variable and provider blocks, and tests can load values from `*.tfvars` files.
 
 ```hcl
-mock_provider "aws" {
-  mock_resource "aws_s3_bucket" {
-    defaults = { arn = "arn:aws:s3:::test-bucket" }
+provider "aws" {
+  region = var.test_region
+}
+
+run "verify" {
+  variables {
+    expected_id = run.setup.resource_id
   }
 }
-
-override_module {
-  target  = module.database
-  outputs = { endpoint = "db.example.test:3306" }
-}
 ```
 
-### Mock-provider-local overrides
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-`override_resource` and `override_data` blocks can be scoped inside one `mock_provider`, rather than affecting the whole test file. Invalid override and mock fields now fail `tofu test` as errors instead of warnings.
-
-### Plan-time test mocks and overrides
-
-*Terraform 1.11.0 — batch `terraform-1.11.0-guide`.*
-
-Mocked and overridden values can now be used by unit-test runs whose `command` is `plan`. Set `override_during = plan` in the test configuration; the default remains `override_during = apply`.
-
-### Provider-mocking patch compatibility
-
-*OpenTofu 1.8.0 — batch `opentofu-1.8.0`.*
-
-The new provider mocks and test overrides received significant follow-up fixes: 1.8.6 relaxes provider-schema and type validation, 1.8.7 corrects dynamic nulls and variable type defaults, 1.8.10 handles structural attributes, and 1.8.11 corrects mocked `ReadResource` calls. Use 1.8.11 or later when relying heavily on mocks; 1.8.8 also prevents outputs from destroyed modules leaking between test runs.
-
-### Test and provider-lock behavior
-
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
-
-Verbose `terraform test` output now includes expected diagnostics, and test cleanup ignores `prevent_destroy`. Terraform 1.14.1 permits ephemeral outputs in tested root modules and makes `terraform providers lock` include providers required by tests; 1.14.6 reports an invalid test provider configuration as an error.
-
-## Variables and evaluation
-
-### Dynamically sensitive test inputs
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-Test runs now preserve the dynamic sensitivity of values passed to input variables; the destination variable no longer needs a static `sensitive = true` declaration for the value to remain sensitive.
-
-### More flexible Terraform test inputs
-
-*Terraform 1.7.0 — batch `terraform-1.7.0-guide`.*
-
-Provider blocks in tests can reference variables and prior run outputs, HCL functions are accepted in variable and provider blocks, and test variables can be loaded from `*.tfvars` files.
-
-### Richer variables in Terraform tests
-
-*Terraform 1.13.0 — batch `terraform-1.13.0`.*
-
-A `.tftest.hcl` file can declare `variable` blocks for external values it references; declarations are optional, but complex values can produce diagnostics without their type definitions. File-level `variables` blocks can also refer to run outputs and other variables, allowing shared inputs to be derived inside the test file.
+Terraform 1.8 file-level `variables` blocks can refer to global inputs (`terraform-1.8.0`).
 
 ```hcl
-variable "fixture" {
-  type = object({ region = string })
+variables {
+  region = var.test_region
 }
 ```
 
-### Test environment variables restored in 1.8.2
-
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
-
-Terraform 1.8.2 restores propagation of `TF_ENV_*` variables into testing modules, so test suites relying on them should not remain on 1.8.0 or 1.8.1.
-
-### Test file variables can use global variables
-
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
-
-File-level `variables` blocks in Terraform test files can now refer to global variables, allowing shared inputs to feed file-specific values without duplication.
-
-### Windows test variable-file loading
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-Terraform 1.7.4 fixes automatic loading of variable files from the test directory on Windows, so Windows users relying on this 1.7 test feature should use 1.7.4 or later.
-
-## Execution, reporting, and cleanup
-
-### Alpha-only retained test state and cleanup
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-In alpha builds, a test `run` block can select a `backend`, and `skip_cleanup` at file or run scope retains affected state under `.terraform`. The experimental `terraform test cleanup` command can retry cleanup from the saved manifests and state files after failed or deliberately skipped cleanup.
-
-### Initialization in test-only directories
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-`terraform init` now succeeds when tests are present even if the current directory contains no Terraform configuration files directly.
-
-### JUnit test reports
-
-*Terraform 1.11.0 — batch `terraform-1.11.0-guide`.*
-
-The `terraform test` command's `-junit-xml` flag is now generally available for writing JUnit XML reports for CI systems.
-
-### More capable test configuration
-
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
-
-Test-file `mock_provider` blocks now accept `for_each`, and test-file `variable` blocks can call functions. Generated mocks follow provider schemas more strictly, so formerly accepted invalid mocks or overrides must be corrected; the still-unreleased 1.11.6 fixes cleanup for mocked resources that have write-only attributes.
-
-### More capable test configurations
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-An explicit module under test in `.tftest.hcl` can now use a remote module source. Test-file provider configurations can also refer to output values from an earlier `run` block.
-
-### Parallel test controls
-
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
-
-Individual `run` blocks can be marked as eligible for parallel execution. Separately, `terraform test -parallelism=n` controls the number of parallel operations within each run's plan or apply.
+Terraform 1.9 preserves sensitivity marks dynamically carried by values passed to test variables, not only marks arising from `sensitive = true` on the destination (`terraform-1.9.0`). Provider version constraints are no longer allowed in `.tftest.hcl`; declare them in the main configuration's `required_providers` block.
 
 ```hcl
-run "unit" {
-  command  = plan
-  parallel = true
+terraform {
+  required_providers {
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
+  }
 }
 ```
 
-### Parallel test teardown and patch compatibility
+## Cleanup order and failure handling
 
-*Terraform 1.13.0 — batch `terraform-1.13.0`.*
+Terraform 1.7 destroys test infrastructure in reverse run-block order; arrange dependent cleanup accordingly. On Windows, use Terraform 1.7.4 or later for reliable automatic variable-file loading from the test directory (`terraform-1.7.0`).
 
-Teardown operations for parallel tests can now run concurrently. Terraform 1.13.1 restores a successful exit for suites containing zero tests, and 1.13.2 corrects cleanup-node ordering, so use at least 1.13.2 when cleanup dependencies matter.
+Terraform 1.12 continues later tests when a run fails to encounter a declared expected failure. Terraform 1.13 can tear down eligible test infrastructure in parallel; use 1.13.2 or later for corrected cleanup-node ordering.
 
-### Provider constraints must leave test files
+Terraform 1.14 ignores `prevent_destroy` during test cleanup and includes expected diagnostics in verbose output. Use 1.14.1 or later for ephemeral root-module outputs and 1.14.6 or later so invalid test provider configuration reliably errors.
 
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
+## Shared state and plan-time overrides (`terraform-1.11.0-guide`)
 
-Terraform 1.9 rejects version constraints in provider blocks inside `.tftest.hcl` files. Move those constraints into the main configuration's provider requirements before upgrading.
+`run` blocks accept `state_key`; runs sharing a key operate on one internal state file.
 
-### Shared state between test runs
+```hcl
+run "setup" {
+  state_key = "shared"
+}
 
-*Terraform 1.11.0 — batch `terraform-1.11.0-guide`.*
+run "verify" {
+  state_key = "shared"
+}
+```
 
-The new `state_key` attribute on a `run` block selects the internal test state file. Assigning the same key to setup and verification runs lets them deliberately target the same infrastructure.
+Mocks and overrides can affect `command = plan` runs with `override_during = plan`; the default is `override_during = apply`.
 
-### Test cleanup follows reverse run order
+## Parallelism and initialization (`terraform-1.12.0`)
 
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
+Terraform 1.12 lets test runs opt into parallel execution. Independently, `terraform test -parallelism=n` controls concurrent operations inside each run's plan or apply.
 
-`terraform test` now destroys test infrastructure in simple reverse order of the `run` blocks, making cleanup order explicit for tests with dependencies between runs.
+```shell
+terraform test -parallelism=4
+```
 
-### Test failure continuation and diagnostics
+`terraform init` now succeeds in a directory containing tests but no root configuration files.
 
-*Terraform 1.12.0 — batch `terraform-1.12.0`.*
+## External and derived test variables (`terraform-1.13.0`)
 
-A missing expected failure no longer prevents subsequent tests from executing. Failed run assertions also produce detailed diagnostic objects.
+Test files can declare external variables. Declarations are optional, but omitting them for complex values can produce diagnostics.
 
-### Test isolation and cleanup diagnostics
+```hcl
+variable "region" {
+  type = string
+}
+```
 
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
+A top-level test `variables` block can refer to other variables and run outputs.
 
-When `tofu test` cannot clean up resources, it now dumps the state file for recovery. Starting in 1.7.4, automatically loaded test-directory tfvars files no longer leak into non-test commands.
+```hcl
+variables {
+  region      = var.region
+  resource_id = run.setup.resource_id
+}
+```
 
+## Mock data and reports
+
+Terraform 1.7.2 `fmt` formats `*.tfmock.hcl` files. Terraform 1.11 makes `terraform test -junit-xml=report.xml` generally available (`terraform-1.11.0-guide`). Terraform 1.15 mock values can call functions (`terraform-1.15.0`).
+
+Starting in Terraform 1.14.1, `terraform providers lock` includes providers used only by tests. Terraform 1.15 adds file-level diagnostics to JUnit XML skipped-test elements.
+
+## OpenTofu mocks and overrides (`opentofu-1.8.0`)
+
+OpenTofu Test supports `mock_provider`, `mock_resource`, `mock_data`, `override_resource`, `override_data`, and `override_module`. Use at least 1.8.11 for tests that rely on mocks; fixes through that patch cover structural typed attributes and provider `ReadResource` calls.
+
+OpenTofu 1.9 permits `override_resource` and `override_data` inside a specific `mock_provider` (`opentofu-1.9.0`). Invalid mock or override fields become errors instead of warnings. Tests with structural typed attributes need at least 1.9.2, and 1.9.3 fixes mocked `ReadResource` behavior.
+
+Variable files inside `tests` are isolated from non-test commands in OpenTofu 1.9. Move ordinary plan/apply inputs elsewhere or pass them explicitly.
+
+OpenTofu 1.10 permits a `.tftest.hcl` selected module to use a remote source (`opentofu-1.10.0`). Use at least 1.10.7 when testing deprecated module outputs or complex deprecated values.
+
+OpenTofu 1.11 test `mock_provider` blocks accept `for_each`, and scenario `variable` blocks can call functions (`opentofu-1.11.0`). Generated mocks follow provider schemas more strictly, so configurations tolerated by older versions can fail validation.
+
+## Experimental retained infrastructure
+
+Terraform 1.15 alpha builds allowed a test `run` backend, `skip_cleanup`, and `terraform test cleanup` for state retained under `.terraform`. These are not available in stable 1.15 releases; do not build stable workflows around them.

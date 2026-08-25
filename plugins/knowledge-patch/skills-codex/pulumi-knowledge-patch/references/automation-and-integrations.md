@@ -1,76 +1,74 @@
-# Automation and integrations
+# Automation and Integrations
 
-This reference includes `release-notes-117`, `3.160.0-3.181.0`,
-`3.182.0-3.198.0`, `3.199.0-3.214.0`, `3.214.1-3.228.0`,
-`3.229.0-3.248.0`, and `3.249.0-3.254.0`.
+## Automation API operation control
 
-## Automation API operation controls
+Inline Go, Node.js, and Python programs can request run-program behavior for
+refresh and destroy. Node.js adds `previewDestroy`; Python preview exposes JSON
+output and command options can use `on_error` to consume stderr incrementally.
+These operation controls arrived in batch `3.182.0-3.198.0`.
 
-Go, Node.js, and Python inline programs can request run-program behavior for
-refresh and destroy. Node.js adds `previewDestroy` for a dry-run destroy.
-Python preview exposes its JSON option, and Python command options accept
-`on_error` callbacks for incremental stderr (`3.182.0-3.198.0`).
+The generated low-level Node.js interface exposes `cancel`. Generated Node.js,
+Python, and Go Automation APIs expose import; Go preview-refresh and refresh can
+pass `--import-pending-creates`. Python's `preview_refresh` and
+`preview_destroy` accept a `program` argument, and the Python SDK has native
+async entrypoints through `pulumi.run`.
 
-Generated low-level Node.js Automation API exposes `cancel`
-(`3.214.1-3.228.0`). Generated Node.js, Python, and Go APIs also expose
-`import`; Go preview-refresh and refresh can pass
-`--import-pending-creates` (`3.249.0-3.254.0`).
+Automation API project settings may omit a runtime. Go Automation API supports
+Go 1.26.
 
-Automation API can set bulk JSON configuration with `SetAllConfigJson`
-(`3.199.0-3.214.0`). Go preview and update options can carry policy packs
-(`3.160.0-3.181.0`). Projects in Automation API settings may omit a runtime
-(`3.229.0-3.248.0`).
+## Pulumi Cloud API
 
-## Cancellation and output streams
+Use `pulumi api <op-or-path>` to call any Pulumi Cloud API operation or raw path.
+It handles fields, headers, input/body data, path templates, content negotiation,
+and dry runs. `list` and `describe` expose the OpenAPI surface. `--paginate`
+combines cursor pages into one JSON envelope, `--emit-events` reports pagination
+on stderr, and the final result selector is `--output`, not `--format` (batch
+`3.229.0-3.248.0`).
 
-Node.js and Python providers have cancellation handlers. Bun, Go, Node.js, and
-Python propagate cancellation to language-host runs, and hosts send `Cancel`
-when closing plugins (`3.229.0-3.248.0`).
+## Remote deployments
 
-CLI diagnostics are emitted on stderr, making stdout safer for programmatic
-output. `PULUMI_ENABLE_STREAMING_JSON_PREVIEW` controls streaming JSON previews
-(`3.182.0-3.198.0`). Engine commands expose structured `--output json`
-summaries (`3.229.0-3.248.0`).
+Failed `pulumi up --remote` and `pulumi deployment run` operations return a
+nonzero exit code. Remote execution no longer needs a local `Pulumi.yaml`, and
+new projects install packages required by generated programs (batch
+`3.255.0-3.258.0`).
 
-## OpenTelemetry traces
+## Neo workflows
 
-`--otel-traces` writes traces to a relative file or sends them to a gRPC
-endpoint. Export supports `grpcs://`, authenticated headers, and
-`OTEL_RESOURCE_ATTRIBUTES`; provider OpenTracing spans are bridged into
-OpenTelemetry (`3.214.1-3.228.0`).
+`pulumi neo` is available without an experimental switch. Its assistant runs
+approved shell and filesystem tools locally in the working directory while the
+conversation is backed by Pulumi Console. It supports non-interactive `--print`,
+approval and permission modes, and `--disable-integrations`. Plan mode must be
+selected before the first message and blocks writes, updates, and pull-request
+creation until approval.
+
+`pulumi neo acp` serves Neo over stdio using Agent Client Protocol. Read-only and
+plan modes are session options. `pulumi neo resume` restores history, while
+`--debug-update` and `--debug-preview` investigate failed operations. The old
+Pulumi AI choice and the `pulumi new --ai` and `--language` flags were removed;
+Neo is the supported replacement.
+
+## MCP integration
+
+The Pulumi MCP Server exposes CLI and Registry capabilities to compatible
+clients, including registry resource information and infrastructure operations
+(batch `release-notes-117`).
+
+## CI and controllers
+
+The GitLab integration supports multiple Pulumi jobs in parallel in one pipeline
+on SaaS and self-managed installations. CI/CD-variable authentication provides a
+tokenless path without personal access tokens.
+
+Pulumi Kubernetes Operator 2.0 provides automatic retries for temporary
+failures, fine-grained refresh control, idempotent updates, and revised
+reconciliation and CRD management.
+
+## Project bootstrapping
+
+Projects can omit a runtime in CLI operations. `pulumi project new -y` creates a
+minimal project without a template, `pulumi new` aliases `pulumi project new`,
+and the `pulumi` package makes commands available through `npx`.
 
 ```shell
-pulumi preview --otel-traces ./traces.json
+npx pulumi preview
 ```
-
-`TRACEPARENT` attaches CLI spans below an existing trace
-(`3.229.0-3.248.0`).
-
-## Pulumi MCP Server
-
-Pulumi's MCP Server exposes CLI and Registry capabilities to MCP-compatible
-coding tools, including resource information and infrastructure-management
-operations from an editor workflow (`release-notes-117`).
-
-## GitLab pipelines
-
-The GitLab integration supports multiple Pulumi jobs in parallel in one
-pipeline on GitLab SaaS and self-managed installations. Authentication through
-CI/CD variables avoids personal access tokens (`release-notes-117`).
-
-## Kubernetes Operator
-
-Pulumi Kubernetes Operator 2.0 is generally available with automatic retries
-for transient failures, fine-grained refresh control, idempotent updates, and
-revised reconciliation and CRD management (`release-notes-117`).
-
-## Neo editor integration
-
-`pulumi neo` runs requested shell and filesystem tools locally while the chat
-uses Pulumi Console. Its approval, permission, non-interactive, integration,
-and plan controls must be set appropriately for the workspace
-(`3.229.0-3.248.0`).
-
-`pulumi neo acp` exposes Neo over Agent Client Protocol stdio with read-only and
-plan modes. Resume and failed-update/preview investigation workflows are also
-available (`3.249.0-3.254.0`).

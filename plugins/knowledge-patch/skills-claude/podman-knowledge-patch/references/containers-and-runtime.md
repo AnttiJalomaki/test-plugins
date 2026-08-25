@@ -1,199 +1,128 @@
 # Containers and runtime
 
-Use this reference for container lifecycle commands, live updates, health checks, pods, user
-namespaces, runtime defaults, filtering, logging, and checkpoint/restore behavior.
-
 ## Create and run behavior
 
-### Privileged device mappings
+### Devices, namespaces, and mounts
 
-Since 5.2.0, `podman create` and `podman run` apply explicit `--device` mappings even when
-`--privileged` is also set. Do not assume privileged mode causes the mapping to be ignored.
+`podman create` and `podman run` apply an explicitly requested `--device` even with
+`--privileged`; the mapping is no longer ignored (since 5.2.0).
 
-### Sized `keep-id` namespaces
-
-Since 5.4.0, `podman run`, `podman create`, and `podman pod create` accept `size` with
-`keep-id` user namespaces:
+Bound a `keep-id` namespace with a `size` parameter (since 5.4.0):
 
 ```console
 podman run --userns=keep-id:size=65536 IMAGE
 ```
 
-### Explicit user-namespace paths
+The `--userns=ns:/path` form works with runc 1.1.11 and newer after its regression was corrected
+(since 5.7.0). `--security-opt unmask=` accepts comma-separated paths, and a tmpfs mount accepts
+`noatime` (since 5.6.0). When `type=` is omitted, `--mount` again defaults to a volume.
 
-Podman 5.7.0 restores `--userns=ns:/path` for `podman run` and `podman create` when using runc
-1.1.11 or newer.
+`--gpus` supports AMD GPUs as well as previously supported device types (6.0.0).
 
-### Resource-limit inheritance
+### Host-file and logging controls
 
-Since 5.3.0, Podman does not explicitly reapply its default rlimits. A container can retain a
-higher inherited limit instead of being lowered to Podman's default.
-
-### GPU selection
-
-Since 6.0.0, `--gpus` on `podman create` and `podman run` supports AMD GPUs as well as previously
-supported devices.
-
-### Pod infrastructure root filesystem
-
-Since 5.5.0, pod infra and service containers do not use a pause image by default. Their root
-filesystem contains only `catatonit`.
-
-### Default masks
-
-Since 5.5.0, containers mask these paths by default:
-
-- `/proc/interrupts`;
-- `/sys/devices/system/cpu/$CPU/thermal_throttle`.
-
-Since 5.6.0, `--security-opt unmask=` accepts a comma-separated path list.
-
-## Live container updates
-
-### Health checks
-
-Since 5.4.0, `podman update` can add, change, disable, or remove an existing container's health
-check with options such as `--health-cmd` and `--no-healthcheck`. Resource limits remain unchanged
-unless the update explicitly modifies them.
+`podman run`, `create`, and `pod create` accept `--hosts-file` to select base `/etc/hosts` content
+and `--no-hostname` to suppress `/etc/hostname` creation (since 5.4.0). One `--add-host` mapping can
+associate semicolon-separated names with an address (since 5.3.0):
 
 ```console
-podman update --no-healthcheck CONTAINER
+podman run --add-host 'test1;test2:192.168.1.1' IMAGE
 ```
 
-Since 5.5.0, inherited image health-check settings can be overridden without also providing
-`--health-cmd`.
+`containers.conf` provides `log_path` as the default path for the `k8s-file` driver and
+`runtimes_flags` for default OCI-runtime flags (since 5.7.0). With journald only,
+`--log-opt label=...` attaches extra labels to messages (6.0.0); reject that option with other log
+drivers.
 
-### Environment
+### Runtime defaults and limits
 
-Since 5.5.0, update environment variables in place with `podman update --env` and
-`--unsetenv`.
+Podman no longer reapplies default rlimits when an inherited limit is higher (since 5.3.0).
+Containers mask `/proc/interrupts` and `/sys/devices/system/cpu/$CPU/thermal_throttle` by default
+(since 5.5.0). Pod infra and service containers use a minimal root filesystem containing
+`catatonit` rather than a pause image.
 
-### Target the newest container
+When Podman creates a systemd cgroup, it passes the container stop timeout to systemd so scope
+shutdown honors the configured timeout (since 5.2.0).
 
-Since 5.6.0, `podman update --latest` targets the most recently created container where that
-selection is appropriate.
+## Live updates and selection
 
-### Ulimits
+### Update health, resources, environment, and ulimits
 
-Since 5.8.0, update an existing container's ulimits without recreation:
+`podman update` can add, change, disable, or remove health checks with controls such as
+`--health-cmd` and `--no-healthcheck`; unspecified resource limits remain unchanged (since 5.4.0).
+Inherited image health settings can be overridden without also supplying `--health-cmd`
+(since 5.5.0).
+
+Use `--env` and `--unsetenv` to update environment variables, and `--latest` to target the newest
+container (since 5.5.0 and 5.6.0). Use `--ulimit` for live rlimit changes (since 5.8.0):
 
 ```console
 podman update --ulimit nofile=4096:8192 web
 ```
 
-## Health-check execution and logs
+### Filters and target selection
 
-### Retention controls
+The `command` filter works with `pause`, `ps`, `restart`, `rm`, `start`, `stop`, and `unpause`; it
+matches command element `argv[0]` (since 5.5.0). `podman exec --cidfile` reads the target container
+ID from a file.
 
-Since 5.3.0, `podman create` and `podman run` accept:
+`podman ps --filter ancestor=...` accepts substring matching rather than requiring a complete
+ancestor value (since 5.7.0). `podman ps` and `podman container prune` accept
+`--filter annotation=...` (6.0.0).
 
-- `--health-log-destination` to select health-log storage;
-- `--health-max-log-count` to cap retained entries;
-- `--health-max-log-size` to cap entry size.
+Repeated supported `label!=` filters combine with logical AND (6.0.0). Do not write clients that
+assume repeated negative filters are alternatives.
 
-### Interrupted and timed-out checks
+## Health checks and signals
 
-- Since 5.5.0, a check interrupted because its container stopped has status `stopped`.
-- Since 5.6.0, a check that exceeds its timeout receives SIGTERM, followed by SIGKILL after a
-  delay.
+### Health log bounds and timeout behavior
 
-## Exec, wait, and signal handling
+`podman create` and `run` accept `--health-log-destination`, `--health-max-log-count`, and
+`--health-max-log-size` to select and bound health-log retention (since 5.3.0).
 
-### Exec target files
+A health check interrupted because its container stopped has status `stopped` (since 5.5.0). A
+check that exceeds its timeout receives SIGTERM, then SIGKILL after a delay (since 5.6.0).
 
-Since 5.5.0, `podman exec --cidfile` reads the target container ID from a file.
+### Signal and process-exit behavior
 
-### Untracked exec sessions
+Signal proxying for `podman run` and `attach` does not forward SIGSTOP (since 5.6.0). Podman no
+longer treats its own SIGTERM receipt as a successful process exit by default (since 5.3.0), so
+supervisors must not assume status 0.
 
-Since 5.8.0, use `--no-session` to skip exec-session tracking and reduce startup overhead when
-session tracking is unnecessary:
+## Exec, wait, checkpoint, and restore
+
+`podman exec --no-session` disables exec-session tracking when its overhead and session record are
+unnecessary (since 5.8.0):
 
 ```console
 podman exec --no-session web true
 ```
 
-### Wait for the first match
+`podman wait --return-on-first` returns when any selected container meets the condition instead of
+waiting for all targets (since 5.7.0). `podman container restore --tcp-close` permits repeated
+restores of checkpoints that had active TCP connections.
 
-Since 5.7.0, `podman wait --return-on-first` returns when any selected container meets the wait
-condition instead of waiting for all selected containers:
+During `podman container checkpoint --leave-running`, the container remains paused until root
+filesystem and named-volume diffs finish, then continues running (6.0.0). Account for this brief
+pause in availability-sensitive workflows.
 
-```console
-podman wait --return-on-first ctr1 ctr2
-```
+## Pods, start/stop, and restart behavior
 
-### Signal behavior
+Pod start and stop output echoes the identifier supplied by the caller instead of expanding it to
+a full ID (since 5.2.0). Scripts should accept a name, partial ID, or other supplied identifier.
 
-- Since 5.3.0, Podman does not return success by default after receiving SIGTERM. Do not interpret
-  that termination as exit code 0.
-- Since 5.6.0, signal proxying for `podman run` and `podman attach` does not forward SIGSTOP.
+Containers in a pod stop in dependency order, with the infra container last so application
+containers retain networking during shutdown (since 5.5.0).
 
-### systemd stop timeouts
+From 5.8.2, a container with `unless-stopped` restarts after reboot when
+`podman-restart.service` is enabled. Do not rely on the corrected behavior in earlier releases.
 
-Since 5.2.0, when Podman creates a systemd cgroup it passes the container's stop timeout to
-systemd. The scope therefore honors the configured timeout instead of risking a shutdown hang.
+## Commit, deletion, and recovery
 
-## Pod start and shutdown
+`podman commit` pauses the source container by default for a consistent snapshot (6.0.0). Use
+`--pause=false` only when concurrent changes and a potentially inconsistent result are acceptable.
 
-### Printed identifiers
+Forced deletion through the Compat path removes only stopped containers (since 5.6.0).
 
-Since 5.2.0, pod start/stop output echoes the identifier supplied by the caller rather than
-expanding it to a full pod ID. For example, `podman pod start b` prints `b`. Scripts must not
-assume a full ID.
-
-### Dependency-ordered shutdown
-
-Since 5.5.0, containers in a pod stop in dependency order. The infra container stops last so
-application containers retain networking while shutting down.
-
-## Restart behavior
-
-Since 5.8.2, containers with restart policy `unless-stopped` restart after reboot when
-`podman-restart.service` is enabled.
-
-## Checkpoint and restore
-
-### Repeated restores with TCP connections
-
-Since 5.7.0, `podman container restore --tcp-close` allows repeated restores of a checkpoint that
-had active TCP connections.
-
-### `--leave-running` completion
-
-Since 6.0.0, `podman container checkpoint --leave-running` keeps the container paused until
-root-filesystem and named-volume diffs finish. The container resumes and remains running after
-checkpoint creation, but callers must tolerate that temporary pause.
-
-## Container selection and filters
-
-### Command filter
-
-Since 5.5.0, the `command` filter is available to `pause`, `ps`, `restart`, `rm`, `start`, `stop`,
-and `unpause`. It matches only the first command element, `argv[0]`.
-
-### Ancestor substring matching
-
-Since 5.7.0, `podman ps --filter ancestor=...` accepts substring matches instead of requiring a
-complete ancestor match.
-
-### Annotation filters
-
-Since 6.0.0, `podman ps` and `podman container prune` accept `--filter annotation=...`.
-
-## Logging and runtime defaults
-
-### Configuration defaults
-
-Since 5.7.0, `containers.conf` supports:
-
-- `log_path`, the default log location for the `k8s-file` driver;
-- `runtimes_flags`, default flags passed to OCI runtimes.
-
-### Journald labels
-
-Since 6.0.0, `podman run` and `podman create` accept `--log-opt label=...` with the `journald`
-driver to attach extra labels to log messages. Do not use this option with another log driver.
-
-## Container inspection caveat
-
-Environment-variable secrets used by a container have been omitted from `podman inspect` output
-since 5.3.0. Do not build automation that expects secret material there.
+Podman 5.7.1 restores rootless user-namespace recreation when both Conmon and the rootless pause
+process die unexpectedly. Require that maintenance level where this recovery path matters.

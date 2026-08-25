@@ -1,9 +1,16 @@
-# Inference routing, endpoints, and Spaces
+# Inference, endpoints, and Spaces
 
-## Routed providers and dedicated deployments
+## Routed providers are not dedicated deployments
 
 `InferenceClient(..., provider="auto")` selects an available provider for a
-supported model and task according to current Hub routing rules:
+supported model and task under current Hub routing rules. Model-page
+serverless availability and a dedicated Inference Endpoint are separate
+capabilities.
+
+The common client surface does not guarantee the same processor, region,
+isolation, scaling, billing, or optional chat features across routes. Choose a
+named provider when those constraints matter, or explicitly target a deployed
+endpoint URL.
 
 ```python
 from huggingface_hub import InferenceClient
@@ -11,92 +18,103 @@ from huggingface_hub import InferenceClient
 client = InferenceClient("org/model", provider="auto", token=token)
 ```
 
-This routed, serverless availability is separate from a dedicated Inference
-Endpoint. The shared client surface does not guarantee that routes use the
-same:
+## Route-specific inference credentials
 
-- processor;
-- region;
-- isolation;
-- scaling behavior;
-- billing behavior; or
-- optional chat features.
+Hub-routed inference can use a Hugging Face token carrying the required
+inference permissions and billing association. A direct partner-provider route
+uses that provider's key as documented for the route. Never send a partner
+credential to an arbitrary model repository URL.
 
-Select a named provider when route constraints matter. Explicitly target the
-deployed endpoint URL when the application intends to use a dedicated
-deployment.
+## Dedicated endpoint lifecycle
 
-## Route-specific credentials
+Creating or updating an Inference Endpoint is asynchronous. Poll the returned
+remote state, handle terminal failure, and direct traffic only after the state
+is ready.
 
-Hub-routed inference can use a Hugging Face token with the required inference
-permissions and billing association. A direct partner-provider route uses
-that provider's key according to the route's documentation.
+- `scale_to_zero` retains configuration and permits a later request to
+  cold-start serving.
+- `pause` requires an explicit resume.
+- Endpoint exposure is configured independently of whether the source model
+  repository is private.
 
-Credentials are not interchangeable merely because the client surface is
-similar. Never send a partner credential to an arbitrary model repository
-URL.
+## Discover deployable endpoint hardware
 
-## Inference Endpoint lifecycle
+Since `1.28.0`, `hf endpoints hardware` lists mutually valid vendor, region,
+accelerator, instance-type, and instance-size combinations. Results include
+hourly price, namespace quota, and availability. By default the command shows
+hardware the namespace can deploy immediately, and filters can narrow it.
 
-Creating or updating an Inference Endpoint is asynchronous. The returned
-object is not proof that the endpoint is ready for traffic.
+```console
+hf endpoints hardware --vendor aws --region eu-west-1
+```
 
-After a create or update:
+The SDK exposes the flattened results as `InferenceEndpointHardware` objects
+through `list_inference_endpoints_hardware()`.
 
-1. poll the remote state;
-2. wait for the serving-ready state;
-3. handle a terminal failure explicitly; and
-4. only then direct traffic to the endpoint.
+## Managed engine image payloads
 
-`scale_to_zero` retains configuration and allows a later request to trigger a
-cold start. `pause` does not wake on request and requires an explicit resume.
+Inference Endpoint `custom_image` payloads can be keyed by an engine name such
+as `vLLM`, `sGLang`, `tgi`, `tei`, `llamacpp`, or `hfServe`, with
+engine-specific tuning alongside container fields. A dictionary without a
+top-level `url` is forwarded unchanged, allowing newly supported API engines
+without a client upgrade. `update_inference_endpoint` accepts the same payload
+shapes as endpoint creation.
 
-Endpoint exposure is an independent setting. A private source model repository
-does not by itself define whether the endpoint is publicly or privately
-exposed.
+The undocumented
+`huggingface_hub.constants.INFERENCE_ENDPOINT_IMAGE_KEYS` constant was removed;
+stop reading it directly.
 
-## Space hardware and storage suggestions
+## Multi-accelerator endpoint parallelism
 
-The README fields `suggested_hardware` and `suggested_storage` recommend
-choices to people duplicating or configuring a Space. They do not allocate
-the resources.
+`hf endpoints deploy` and `hf endpoints update` accept `--engine`,
+`--tensor-parallel-size`, and `--data-parallel-size`. The update command also
+accepts `--custom-image`, `--health-route`, and `--port`.
 
-Configure actual hardware and persistent storage through runtime settings.
-Do not use the suggestion fields as evidence that a running Space has the
-recommended resources.
+Set parallelism explicitly when vLLM or SGLang receives a multi-accelerator
+instance. These engines default to one accelerator, and the API rejects the
+mismatch.
 
-## Preloading and custom headers
+```console
+hf endpoints deploy ENDPOINT_NAME --repo ORG/MODEL \
+  --framework custom --accelerator gpu --instance-size x8 \
+  --instance-type INSTANCE_TYPE --region REGION --vendor VENDOR \
+  --engine vllm --custom-image IMAGE \
+  --tensor-parallel-size 8
+
+hf endpoints update ENDPOINT_NAME \
+  --tensor-parallel-size 4 --data-parallel-size 2
+```
+
+## DeepInfra task support
+
+The DeepInfra inference provider supports text-to-speech and
+feature-extraction requests through the Hub provider integration.
+
+## Space metadata controls
+
+README fields `suggested_hardware` and `suggested_storage` recommend choices
+to users duplicating or configuring a Space. Actual hardware and persistent
+storage are allocated separately through runtime settings.
 
 `preload_from_hub` can stage narrowly selected, revision-pinned Hub files
-during build or startup. Pin the intended revision and select only the files
-that should be staged.
+during build or startup. It does not replace dependency declarations. Custom
+HTTP headers are limited to the documented allowlist.
 
-Preloading is not dependency management; declare runtime and build
-dependencies separately. Custom HTTP headers are limited to the documented
-allowlist, so an arbitrary header cannot be assumed to reach the application.
+## Space persistence and stopped states
 
-## Persistent and ephemeral state
-
-The ordinary Space filesystem is ephemeral across restarts and rebuilds.
-Place durable state either:
-
-- on separately provisioned persistent storage at its documented mount; or
-- in an external service.
+A Space's ordinary filesystem is ephemeral across restarts and rebuilds.
+Durable state belongs on separately provisioned persistent storage at its
+documented mount or in an external service.
 
 A sleeping Space wakes on access. A paused Space requires an explicit restart
-or resume. In either case, restarting does not guarantee that files on the
-ephemeral filesystem survive.
+or resume, and restarting does not guarantee preservation of ephemeral files.
 
-## Variables, secrets, and OAuth
+## Space secrets and OAuth authorities
 
-Space variables can be viewed by users with settings access. Space secrets
-become write-only through the settings UI or API after they are created. Both
-are normally delivered to the runtime as environment variables.
+Space variables are visible to users with settings access. Secrets become
+write-only through the settings UI or API after creation. Both are normally
+injected into the runtime as environment variables.
 
-Use secrets for values that should not remain readable through settings, but
-still treat runtime environment access as sensitive.
-
-README `hf_oauth` configuration can provision callback and client settings
-and requested scopes for user login. That user-facing OAuth setup is a
-separate authority from the Space server process: it does not automatically
-authorize server-side access to private repositories.
+README `hf_oauth` configuration can provision OAuth callback and client
+settings plus requested scopes for user login. It does not automatically
+authorize the Space's server process to access private repositories.

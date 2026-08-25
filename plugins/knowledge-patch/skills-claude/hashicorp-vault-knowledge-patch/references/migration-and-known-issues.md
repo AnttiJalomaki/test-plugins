@@ -1,130 +1,186 @@
 # Migration and Known Issues
 
-Use this reference while planning an upgrade or diagnosing behavior that
-changed across patch lines. Evolution within the source is resolved here as a
-sequence, not treated as a contradiction. Batch attributions include
-`1.19-changelog`, `1.19`, `1.20-changelog`, `1.20`, `1.21-changelog`, `1.21`,
-`2.0-changelog`, `2.0`, and `upgrade-safety`.
+Use this as an upgrade gate. Match each item to the exact edition, storage type,
+plugins, and release line in the deployment.
 
-## Required configuration and behavior changes
+## Mandatory configuration and packaging changes
 
-### Memory locking and containers
+### Integrated storage and `mlock`
 
-- Container execution changed during the `1.19-changelog` batch. Images run as
-  the `vault` user by default from 1.19.16. The 1.19.17 image required runtime
-  `IPC_LOCK`, but 1.19.18 removed built-in `cap_ipc_lock`; containers can no
-  longer call `mlock()`. Configure `disable_mlock = true` and disable swapping
-  in the runtime or host.
-- With integrated storage (batch `1.20-changelog`), `disable_mlock` has no
-  default. Set it explicitly to `true` or `false` or Vault refuses to start.
-- The 1.19.16 image has a separate unresolved startup failure related to
-  `setfcap`; use the published workaround when that exact image is unavoidable.
+Integrated-storage deployments must set `disable_mlock` explicitly to `true` or
+`false`; there is no default, and startup fails when it is omitted.
+(`1.20-changelog`)
 
-### HCL and policy migration
+Containers run as the `vault` user from 1.19.16. The 1.19.17 image required
+runtime `IPC_LOCK`; 1.19.18 removed the built-in `cap_ipc_lock`. Current
+containers cannot call `mlock()`, so use `disable_mlock = true` and prevent swap
+at the runtime or host. (`1.19-changelog`)
 
-- Duplicate server-HCL and policy attributes were deprecated in 1.19. They are
-  errors in the `1.21-changelog` behavior. The temporary
-  `VAULT_ALLOW_PENDING_REMOVAL_DUPLICATE_HCL_ATTRIBUTES` switch downgrades them
-  to warnings while configurations are cleaned up.
-- `VAULT_NEW_PER_ELEMENT_MATCHING_ON_LIST` opted into per-element “contains
-  all” checks for `allowed_parameters` and `denied_parameters` in 1.19.
-  Exact-match list comparison is retired in the `1.21` line, so policies must
-  use the per-element semantics.
-- `resultant-acl` now merges segment-wildcard (`+`) paths with prefix rules in
-  `glob_paths`; consumers should expect the complete combined view.
-- Enterprise soft-mandatory Sentinel policy overrides now honor the request's
-  override flag and may allow a request that the policy initially denied.
+### Minimal UBI images
 
-### Auth and secrets migrations
+UBI container images no longer contain `gnupg`, `openssl`, or `procps`. Supply
+those utilities separately for setup, health checks, or debugging that needs
+them. (`2.0.4`)
 
-- Azure auth requires a bound group or service-principal ID from `1.20`.
-- From 2.0, stored `auth/azure/config` values override `AZURE_*` environment
-  variables. Move intended overrides into the stored configuration.
-- Empty LDAP passwords are always denied. The `deny_null_bind` setting is
-  deprecated and no longer changes behavior.
-- The Active Directory secrets-engine plugin is retired in `1.19`; migrate
-  before upgrading.
-- Snowflake database password authentication is deprecated in `1.20` and
-  retired in `1.21`; use key-pair authentication.
-- The Centrify auth plugin is no longer officially supported.
-- AWS AssumeRole and FederationToken consumers should read `session_token`;
-  `security_token` is deprecated.
-- Azure secrets `password_policy` is deprecated and unusable because Microsoft
-  Graph generates the password; remove dependencies on Vault-side password
-  generation.
+Vault container images are distributed as compressed OCI image layouts, and
+UBI images use UBI 10 minimal. (`1.19-changelog`)
 
-### Endpoint, UI, and client migrations
+### HCL duplicate attributes
 
-- `/sys/internal/counters/tokens` is deprecated and returns
-  `403 unsupported path` in the `1.20-changelog` behavior.
-- Secrets-engine UI routes move from `/secrets` to `/secrets-engines` in
-  `2.0-changelog`; the list view also drops bulk deletion.
-- Vault Agent's built-in API proxy is deprecated and pending removal. Migrate
-  proxy behavior to Vault Proxy.
+Duplicate attributes in server HCL and policy definitions were deprecated.
+(`1.19-changelog`)
+
+They became errors in 1.21; the temporary
+`VAULT_ALLOW_PENDING_REMOVAL_DUPLICATE_HCL_ATTRIBUTES` switch downgraded them to
+warnings. (`1.21-changelog`)
+
+The switch is removed, and duplicates now always fail parsing. Remove all
+duplicates before upgrade. (`2.0.4`)
+
+### File audit-device permissions
+
+An executable file audit device became an unseal blocker in 1.19.7. From
+1.19.16, unseal warns about and clears existing executable bits; creation of a
+new file audit device still rejects executable permissions.
+(`1.19-changelog`)
+
+## Retirements and replacements
+
+### Secrets and authentication
+
+- The Active Directory secrets plugin is retired in the 1.19 line; migrate
+  before upgrading. (`1.19`)
+- Snowflake database password authentication is deprecated in 1.20.
+  (`1.20`)
+- Snowflake password authentication is retired in 1.21.x and no longer works;
+  use key-pair authentication. (`1.21`)
+- Centrify authentication is no longer officially supported; choose another
+  auth method. (`upgrade-safety`)
+- LDAP `deny_null_bind` is deprecated and ineffective because empty-password
+  login is always denied; remove it. (`upgrade-safety`)
+
+### Policy, API, and agent behavior
+
+- Exact-match list comparison for `allowed_parameters` and
+  `denied_parameters` is retired in 1.21.x; use per-element matching. (`1.21`)
+- `/sys/internal/counters/tokens` is deprecated and now returns HTTP 403
+  `unsupported path`; remove callers. (`1.20-changelog`)
+- Vault Agent's built-in API proxy is deprecated and pending removal; migrate
+  proxy workloads to Vault Proxy. (`upgrade-safety`)
 - PKI role `allow_token_displayname` is deprecated and targeted for removal in
   April 2027. Replace it with `allowed_domains`, `allow_bare_domains`,
-  `allow_subdomains`, or `allow_glob_domains`.
-- API plugin clients should move from deprecated `RegisterPlugin` and
-  `RegisterPluginWithContext` to detailed registration variants that return
-  both the registration response and an error.
-- Manual utilization bundles replace `snapshots` with `snapshot_records`;
-  `decoded_snapshot` contains the former readable snapshot data.
-- `GET sys/managed-keys/:type/:name` returns usage names (`encrypt`, `decrypt`,
-  `sign`, `verify`, `wrap`, `unwrap`, `generate_random`, `mac`) instead of
-  numeric IDs. Update strongly typed decoders.
+  `allow_subdomains`, or `allow_glob_domains`. (`upgrade-safety`)
+- AWS AssumeRole and FederationToken consumers should use `session_token`; the
+  `security_token` response is deprecated. (`upgrade-safety`)
+- Azure secrets `password_policy` is deprecated and unusable because Microsoft
+  Graph generates and returns the password. Remove dependencies on a
+  Vault-generated Azure password policy. (`upgrade-safety`)
 
-## Cluster and request compatibility
+## Client and API migrations
 
-- Removed Raft nodes with existing data are rejected by
-  `sys/storage/raft/join`; they stop serving, shut down, and seal. Reprovision
-  rather than repeatedly joining the old data directory.
-- Starting in 1.19.6, rekey cancellation requires its nonce. Persist the nonce
-  in operational automation.
-- 1.19.16 began rejecting non-canonical paths; 1.19.19 redirects paths
-  containing `/./`, `/../`, or `//` to their cleaned form. Always send
-  canonical paths. A mount tuneable can trim POST trailing slashes, and
-  trailing-slash LIST requests now apply more-specific deny rules.
-- In `2.0-changelog`, listeners cap `X-Vault-Token` and
-  `Authorization: Bearer` values with `max_token_header_size`, default 8 KB.
-  Set `max_token_header_size = -1` only to opt out deliberately.
-- Integrated storage rejects `performance_multiplier` values at or below zero.
+### Managed keys, activity, and utilization
 
-## Enterprise plugin compatibility
+`GET sys/managed-keys/:type/:name` returns usage names—`encrypt`, `decrypt`,
+`sign`, `verify`, `wrap`, `unwrap`, `generate_random`, and `mac`—rather than
+numeric IDs. Update typed decoders. (`2.0-changelog`)
 
-Vault Enterprise 1.19.17, 1.20.11, 1.21.6, and 2.0.1 cannot register
-Enterprise plugins released on or after April 21, 2026 because they cannot
-verify the renewed signing key. Existing registrations are unaffected. Upgrade
-to 1.19.18, 1.20.12, 1.21.7, or 2.0.2 or later within the corresponding release
-line.
+Activity exports rename `timestamp` to `token_creation_time` and add the
+client's first-use timestamp for the requested interval. (`1.21-changelog`)
 
-## Azure rotation compatibility
+Manual utilization bundles rename `snapshots` to `snapshot_records`; the old
+human-readable snapshot is nested in `decoded_snapshot`. (`2.0-changelog`)
 
-- Static-role rotations performed too close together in 1.21 and 2.0 can race
-  Azure propagation, fail to remove the old credential, and require manual
-  cleanup. Wait several minutes between `static-rotate` calls.
-- Dynamic-role creation can fail while a new service principal propagates.
-  Upgrade to 1.19.19, 1.20.13, 1.21.8, or 2.0.3 or later in the matching line.
+### Recovery and error handling
 
-## Enterprise 1.19 issue matrix
+Recovery clients should move snapshot IDs from the deprecated
+`recover_snapshot_id` query parameter to `X-Vault-Recover-Snapshot-Id`.
+`RECOVER` joins `POST` and `PUT` as an accepted recovery method.
+(`1.21-changelog`)
 
-Vault Enterprise 1.19 is the current LTS line in its `1.19` batch; 1.16.x moved
-to long-term support. Account for these unresolved or partially fixed hazards:
+Invalid cross-cluster Server-Side Consistent Tokens sent to an active
+performance secondary prefer HTTP 403 over HTTP 412. Treat the new response as
+an authorization failure. (`2.0.4`)
 
-| Area | Behavior | Mitigation |
-| --- | --- | --- |
-| HSM | Duplicate unseal or seal-wrap HSM keys | Apply the release-note workaround |
-| Snowflake | Key-pair credential refresh can fail | Apply the available workaround |
-| Local auth mounts | Writes to local LDAP, AWS, GCP, or Azure auth mounts may ignore `local` | No workaround is listed |
-| Events | Multiple connected event clients can miss events | Apply the available workaround |
-| Rotation Manager | 1.19.19 fixes routing of local namespace mounts, but mount migration can still lose tracking | Reconcile entries after migration |
-| Container | 1.19.16 may fail startup because of `setfcap` | Apply the available workaround |
-| Raft | 1.19.18 seal wrapping can cause quorum failures | No workaround is listed |
+External CA responses using `certificate_format=pem_bundle` include the private
+key in the `certificate` field. Update parsers and protect this value as secret
+material. (`2.0.4`)
 
-## Open GUI issues
+### UI route changes
 
-- In Enterprise 2.0, an Endpoint Governing Policy can deny a root token's child
-  namespace GUI access when the GUI calls `sys/internal/ui/mounts`. Use CLI or
-  API access, or explicitly permit that endpoint in the EGP.
-- In 1.21 and 2.0, changing **Items per page** away from page 1 of Secrets
-  Engines can render an empty or incomplete list. Return to page 1 first, or
-  refresh and retry there.
+Secrets-engine routes moved from `/secrets` to `/secrets-engines`, and the
+secrets-engine list no longer permits bulk deletion. Update bookmarks, tests,
+and UI automation. (`2.0-changelog`)
+
+## Release-line upgrade blockers
+
+### Enterprise plugin signing key
+
+Vault Enterprise 1.19.17, 1.20.11, 1.21.6, and 2.0.1 cannot register Enterprise
+plugins released on or after April 21, 2026 because verification fails for the
+renewed signing key. Existing registrations still work. Upgrade to 1.19.18,
+1.20.12, 1.21.7, or 2.0.2 or later in the corresponding line.
+(`upgrade-safety`)
+
+### Azure provisioning and rotations
+
+Azure dynamic-role creation can fail while a new service principal propagates.
+Upgrade to 1.19.19, 1.20.13, 1.21.8, or 2.0.3 or later in the corresponding
+line. (`upgrade-safety`)
+
+In Enterprise 1.21 and 2.0, rapid Azure static-role rotations can race Azure
+propagation, leave the old credential, and require manual cleanup. Wait several
+minutes between `static-rotate` calls. (`upgrade-safety`)
+
+### Azure authentication configuration precedence
+
+From 2.0, stored `auth/azure/config` values override `AZURE_*` environment
+variables. Persist intended settings in the auth configuration before upgrade.
+(`upgrade-safety`)
+
+### LDAP self-managed roles and schedules
+
+Enterprise 2.0 self-managed LDAP static roles do not work when the engine is
+mounted with the `openldap` built-in alias. Mount type `ldap`, then enable
+self-management. (`upgrade-safety`)
+
+```shell
+vault secrets enable -path=<mount_path> ldap
+vault write <mount_path>/config self_managed=true
+```
+
+Manually rotating an Enterprise LDAP static role no longer resets its automated
+rotation TTL. To establish a new cadence, set `disable_automated_rotation` to
+`true`, then back to `false`, which recalculates `next_vault_rotation`.
+(`upgrade-safety`)
+
+## Known operational issues
+
+### Enterprise 1.19 issues
+
+- Duplicate unseal or seal-wrap HSM keys remain unresolved and require the
+  release-note workaround. (`1.19`)
+- Snowflake key-pair credential refresh can fail and requires its documented
+  workaround. (`1.19`)
+- Writes to local LDAP, AWS, GCP, or Azure auth mounts can ignore `local`; no
+  workaround is listed. (`1.19`)
+- Multiple event clients can miss events; a workaround is available. (`1.19`)
+- 1.19.19 corrects routing of local mount entries beneath namespaces, but
+  Rotation Manager can still lose entries after mount migration. (`1.19`)
+- The 1.19.16 Docker image can fail startup due to `setfcap`; use the available
+  workaround. (`1.19`)
+- Enterprise 1.19.18 seal wrapping can cause Raft quorum failure; no workaround
+  is listed. (`1.19`)
+
+Vault Enterprise 1.19 is the current LTS line in its release context, while
+1.16.x moves into long-term support. (`1.19`)
+
+### GUI issues
+
+An Enterprise 2.0 Endpoint Governing Policy can block root-token GUI access to
+a child namespace when the UI calls `sys/internal/ui/mounts`. CLI and API
+access still work. Use those interfaces or explicitly permit the endpoint.
+(`upgrade-safety`)
+
+In 1.21 and 2.0, changing **Items per page** from any Secrets Engines results
+page other than page 1 can produce an empty or incomplete table. Return to page
+1 or refresh before changing page size. (`upgrade-safety`)

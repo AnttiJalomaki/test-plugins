@@ -1,44 +1,55 @@
 # Migration, Build, and Packaging
 
-## Custom GUI plugin migration
+## Build systems
 
-### Qt6 QML and plugin code
+### Observe initial Bazel limits (since 9.2.0)
 
-Gazebo GUI's move to `gz-gui10` uses Qt6, so custom Qt5 GUI plugins must be
-ported. C++ objects exposed to QML are referenced with a leading underscore in
-QML, without a matching rename on the C++ side (jetty-migration):
+The initial Bazel build covers the core Gazebo Sim library, not the GUI, physics, or systems.
 
-```qml
-_MyClass.FunctionFoo()
+### Build systems with Bazel (since 9.3.0)
+
+Bazel support extends to system targets; verify target availability rather than retaining the earlier core-only assumption.
+
+### Migrate to Bzlmod (`jetty-highlights`)
+
+Gazebo packages use Bzlmod rather than legacy workspace-based Bazel setup. Jetty and Ionic libraries, plus required third-party packages, are available through the Bazel Central Registry.
+
+### Follow the repository Bazel default (since 10.5.0)
+
+The repository default and CI use Bazel 9.1.1. Builds that follow the repository default should use that version.
+
+## Command and package layout
+
+### Use the standalone model executable (since 9.2.0)
+
+`gz model` is available as a standalone executable.
+
+### Package standalone `gz` applications (`jetty-highlights`)
+
+The `gz` tool no longer relies on Ruby-based CLI library loading. Package and debug command implementations as standalone applications.
+
+### Depend on unversioned packages (`jetty-highlights`)
+
+Major version numbers have been removed from Gazebo package names. Update package dependencies to the unversioned names.
+
+## Removed APIs and paths
+
+### Use runtime path functions (`jetty-migration`)
+
+The `config.hh` path and install-directory macros are removed. Replace them as follows:
+
+```text
+GZ_SIM_GUI_CONFIG_PATH        -> gz::sim::getGUIConfigPath()
+GZ_SIM_SYSTEM_CONFIG_PATH     -> gz::sim::getSystemConfigPath()
+GZ_SIM_SERVER_CONFIG_PATH     -> gz::sim::getServerConfigPath()
+GZ_SIM_PLUGIN_INSTALL_DIR     -> gz::sim::getPluginInstallDir()
+GZ_SIM_GUI_PLUGIN_INSTALL_DIR -> gz::sim::getGUIPluginInstallDir()
+GZ_SIM_WORLD_INSTALL_DIR      -> gz::sim::getWorldInstallDir()
 ```
 
-Omit versions from Qt6 QML imports—for example, change
-`import QtQuick.Dialogs 1.0` to `import QtQuick.Dialogs`. Review Qt6 migration
-requirements for affected types, including `FileDialog` and `TreeView`.
+### Supply component registration IDs (`jetty-migration`)
 
-`gz::gui::App()` may return a null `qGuiApp` pointer, so validate it before use.
-Qt6 plugins should not manually call `QCoreApplication::processEvents()`.
-
-## Removed configuration macros
-
-The `config.hh` path and install-directory macros were removed. Resolve these
-locations at runtime instead (jetty-migration):
-
-| Removed macro | Replacement |
-| --- | --- |
-| `GZ_SIM_GUI_CONFIG_PATH` | `gz::sim::getGUIConfigPath()` |
-| `GZ_SIM_SYSTEM_CONFIG_PATH` | `gz::sim::getSystemConfigPath()` |
-| `GZ_SIM_SERVER_CONFIG_PATH` | `gz::sim::getServerConfigPath()` |
-| `GZ_SIM_PLUGIN_INSTALL_DIR` | `gz::sim::getPluginInstallDir()` |
-| `GZ_SIM_GUI_PLUGIN_INSTALL_DIR` | `gz::sim::getGUIPluginInstallDir()` |
-| `GZ_SIM_WORLD_INSTALL_DIR` | `gz::sim::getWorldInstallDir()` |
-
-## Component factory registration
-
-The `std::string` overloads of `gz::sim::components::Factory::Register` and the
-parameterless `Unregister()` were removed. Registration takes a C-string type
-name and explicit registration-object ID; unregistration requires that ID too
-(jetty-migration):
+The `std::string` overloads of `gz::sim::components::Factory::Register` and parameterless `Unregister()` are removed. Registration takes a C-string type name and explicit registration-object ID; unregistration requires that ID.
 
 ```cpp
 Register(const char *_type, ComponentDescriptorBase *_compDesc,
@@ -46,26 +57,16 @@ Register(const char *_type, ComponentDescriptorBase *_compDesc,
 Unregister(RegistrationObjectId _regObjId);
 ```
 
-## Commands and executable layout
+### Rename the time API (since 10.0.0)
 
-- `gz model` is available as a standalone model executable (since 9.2.0).
-- The `gz` tool moved away from Ruby-based CLI library loading to standalone
-  applications. Package and debug command implementations as applications
-  rather than dynamically loaded Ruby CLI libraries (jetty-highlights).
-- `gz-sim-main` is relocatable, so it can run correctly when its runtime
-  location differs from the original installation layout (since 10.1.0).
+Replace `systemTimeISO` with `systemTimeIso`.
 
-## Package naming
+## Relocation and tooling
 
-Gazebo's major version was removed from package names. Update package
-dependencies to use unversioned names (jetty-highlights).
+### Relocate the simulation executable (since 10.1.0)
 
-## Bazel support and migration
+`gz-sim-main` is relocatable. Installation and packaging may place it at a runtime location different from its original layout.
 
-- Initial Bazel support covers the core Gazebo Sim library, not the GUI,
-  physics, or systems (since 9.2.0).
-- System targets became supported after the initial core-only work (since
-  9.3.0). This does not imply GUI or physics coverage.
-- Gazebo packages moved from legacy workspace-based Bazel configuration to
-  Bzlmod. Jetty and Ionic library versions and required third-party packages
-  are available through the Bazel Central Registry (jetty-highlights).
+### Use the exporter with newer Blender (since 10.5.0)
+
+`sdf_exporter.py` works with newer Blender versions.

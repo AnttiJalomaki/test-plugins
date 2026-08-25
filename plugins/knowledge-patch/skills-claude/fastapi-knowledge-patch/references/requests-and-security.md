@@ -1,12 +1,54 @@
 # Requests and security
 
-Use this reference for request classification and parsing, strict JSON media types, authentication failures, OAuth2 metadata, and security-scope generation.
+## Form and parameter parsing
 
-## JSON request media types
+FastAPI 0.115.14 validates union-typed `Form()` fields directly (`2025-06`):
 
-FastAPI 0.132 validates JSON `Content-Type` by default (`2026-02`). A request carrying JSON without a valid JSON media type is rejected rather than parsed permissively. Update clients to send a valid value such as `Content-Type: application/json`.
+```python
+from typing import Annotated
+from fastapi import FastAPI, Form
 
-Temporarily retain the older behavior at application construction while migrating clients:
+app = FastAPI()
+
+@app.post("/values")
+async def create_value(value: Annotated[int | float, Form()]):
+    return {"value": value}
+```
+
+FastAPI 0.123.3 applies aliases in `Query`, `Header`, and `Cookie` parameter
+models and accepts optional sequences such as `list[str] | None` (`2025-11`).
+
+```python
+from typing import Annotated
+from fastapi import FastAPI, Query
+from pydantic import BaseModel, Field
+
+app = FastAPI()
+
+class Filters(BaseModel):
+    tags: list[str] | None = Field(default=None, alias="tag")
+
+@app.get("/items")
+def items(filters: Annotated[Filters, Query()]):
+    return filters
+```
+
+Related fixes give empty HTML form controls missing-value semantics when the
+default is `None` and preserve extra list-valued form or non-body parameters.
+FastAPI 0.140.10 correctly handles sequence types containing nested
+`Annotated` metadata (`2026-08`); upgrade instead of flattening the annotation.
+
+FastAPI 0.118.2 recognizes tagged discriminated-union annotations as request
+bodies (`2025-09`). Keep the discriminator metadata intact and let FastAPI
+parse the union from the body rather than forcing it through a query parameter.
+
+## Require a JSON content type
+
+FastAPI 0.132 validates the JSON media type by default. Clients must send a
+valid JSON `Content-Type`, normally `application/json`; headerless or
+incorrectly typed JSON is rejected (`2026-02`).
+
+Use the compatibility switch only during a controlled client migration:
 
 ```python
 from fastapi import FastAPI
@@ -14,35 +56,18 @@ from fastapi import FastAPI
 app = FastAPI(strict_content_type=False)
 ```
 
-Prefer correcting clients; the compatibility flag weakens a useful request-boundary check.
+The strict behavior also blocks a narrow trust-boundary bypass: a browser can
+send a credential-free, headerless `Blob` without CORS preflight to a localhost
+or internal-network API that trusts network location. Disabling strict content
+types removes this barrier. It is not a substitute for authenticating
+privileged endpoints.
 
-## Form parsing
+## Missing credentials return 401
 
-### Union annotations
-
-FastAPI handles union-typed form inputs correctly as of the `2025-06` batch. Keep the intended union annotation instead of widening the field or manually parsing the submitted value.
-
-### Empty and list-valued controls
-
-FastAPI 0.123.2 treats an empty string from an HTML form control as missing. When the parameter default is `None`, an empty control consequently resolves to `None`. The same release correctly handles extra list-valued values in `Form` and other non-body parameters (`2025-11`).
-
-## Query, header, and cookie parameter models
-
-FastAPI 0.123.3 honors aliases on Pydantic parameter models passed through `Query`, `Header`, or `Cookie`. It also fixes Pydantic V2 serialization of optional sequences. FastAPI 0.123.5 completes parsing support for Python 3.10 union syntax such as `list[str] | None`.
-
-Remove manual alias translation and sequence-normalization workarounds when the minimum FastAPI version includes these fixes.
-
-## Request-body classification
-
-FastAPI 0.118.2 recognizes tagged discriminated unions as request bodies (`2025-09`). A parameter using a tagged union no longer needs an explicit workaround to prevent it being classified as a query parameter.
-
-Callable discriminators on PEP 695 aliases are also supported by Pydantic 2.12; see [openapi-and-pydantic.md](openapi-and-pydantic.md).
-
-## Missing authentication credentials
-
-Starting with FastAPI 0.122.0, built-in security classes raise `401 Unauthorized` for absent credentials instead of `403 Forbidden` (`2025-11`). Update response assertions, generated-client expectations, and any middleware keyed to the previous status.
-
-To retain custom behavior, subclass the security implementation and override `make_not_authenticated_error()`. Return the exception; the implementation raises it:
+From FastAPI 0.122, built-in security utilities return `401 Unauthorized`, not
+`403 Forbidden`, when credentials are absent. If an established client
+contract requires `403`, override the compatibility hook and return the
+exception instance:
 
 ```python
 from fastapi import HTTPException, status
@@ -56,39 +81,60 @@ class HTTPBearer403(HTTPBearer):
         )
 ```
 
-FastAPI 0.128.1 strips surrounding whitespace from credentials extracted from the `Authorization` header (`2025-12`). Authentication dependencies therefore receive the normalized credential rather than the original padded substring.
+Do not raise inside `make_not_authenticated_error()`; the hook's contract is
+to return an exception.
 
-## OAuth2 password flows
+## OAuth2 metadata and nested scopes
 
-`OAuth2PasswordBearer` accepts `refreshUrl` and emits it in the OpenAPI password flow. Use the OpenAPI spelling shown by the constructor:
+`OAuth2PasswordBearer` accepts `refreshUrl`, which appears on the generated
+password-flow definition. The password request form's `password` and
+`client_secret` fields use the password schema format so interactive
+documentation masks them (`2025-06`).
 
 ```python
 from fastapi.security import OAuth2PasswordBearer
 
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/auth/token",
-    refreshUrl="/auth/refresh",
+    tokenUrl="/token",
+    refreshUrl="/token/refresh",
 )
 ```
 
-`OAuth2PasswordRequestForm` marks both `password` and `client_secret` with OpenAPI's `password` format. Documentation UIs and generated forms can render them as password controls without application schema customization (`2025-06`).
+FastAPI 0.122.1 propagates security scopes through dependency hierarchies.
+Follow-up fixes through 0.123.9 correct OAuth2 declarations and deduplicate
+schemes when parents and sub-dependencies use different scopes. Remove
+workarounds that repeat nested scopes or schemes manually.
 
-## Nested security scopes and OpenAPI schemes
+FastAPI 0.120.4 also emits top-level application security schemes correctly
+in OpenAPI (`2025-10`).
 
-FastAPI 0.122.1 fixes hierarchical security-scope propagation. FastAPI 0.123.9 fixes the corresponding OpenAPI scope declarations and scheme deduplication for combinations such as a scoped parent dependency with an unscoped child security scheme.
+## Authorization and exception headers
 
-FastAPI 0.120.4 also fixes omission of security schemes added at the top-level application (`2025-10`). Upgrade instead of patching the generated document or duplicating schemes manually.
+FastAPI 0.128.1 strips surrounding whitespace from credentials parsed from
+the `Authorization` header, so built-in dependencies receive the normalized
+token (`2025-12`). Avoid depending on preserved leading or trailing spaces.
 
-## Exception header mappings
-
-FastAPI 0.128.7 types `HTTPException.headers` as any `Mapping`, not only `dict`. Read-only and custom mappings are accepted without a static type error:
+FastAPI 0.128.7 accepts any string-to-string `Mapping` for
+`HTTPException.headers`, not only a concrete dictionary:
 
 ```python
-from types import MappingProxyType
+from collections.abc import Mapping
 from fastapi import HTTPException
 
-raise HTTPException(
-    status_code=404,
-    headers=MappingProxyType({"X-Reason": "missing"}),
-)
+headers: Mapping[str, str] = {"Retry-After": "30"}
+raise HTTPException(status_code=429, headers=headers)
+```
+
+## Public and internal schema descriptions
+
+With Pydantic V2, a form-feed character in a model docstring ends the portion
+published in generated API documentation. Keep internal notes after `\f`:
+
+```python
+from pydantic import BaseModel
+
+class Item(BaseModel):
+    """Public schema description.\fInternal documentation."""
+
+    name: str
 ```

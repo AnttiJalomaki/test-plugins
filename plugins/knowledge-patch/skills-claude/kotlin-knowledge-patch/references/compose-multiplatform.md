@@ -1,78 +1,81 @@
 # Compose Multiplatform
 
-## Compatibility and dependency migration
+## Version and build compatibility
 
-### Android Gradle plugin requirements
+- Compose Multiplatform 1.7 requires Android Gradle plugin 8.1.0 or newer.
+- Native and web KLIBs depending on Compose 1.8 can be consumed only with Kotlin 2.1.0 or newer. Rebuild and republish libraries with Compose 1.8 and Kotlin 2.1.x; Kotlin 2.1.20 is the recommended application baseline for that line.
+- AGP 9.0.0 requires Compose Multiplatform 1.9.3 or 1.10.0; earlier 1.9 releases are incompatible. A separate Android application module gives smoother AGP upgrades.
+- Compose 1.10 features on Native and web require Kotlin 2.2.20 or newer.
 
-Compose Multiplatform 1.7 requires Android Gradle plugin 8.1.0 or newer, so projects on AGP 7 must upgrade first.
-
-AGP 9.0.0 requires Compose Multiplatform 1.9.3 or 1.10.0; earlier 1.9 releases are incompatible. A separate Android application module is the recommended structure for smoother upgrades.
-
-### Kotlin requirements
-
-Starting with Compose Multiplatform 1.8, native and web KLIBs that depend on Compose can be consumed only with Kotlin 2.1.0 or newer. Rebuild and republish libraries with Compose 1.8 and Kotlin 2.1.x; Kotlin 2.1.20 is the recommended application version for that generation.
-
-Compose Multiplatform 1.10 features on native or web targets require Kotlin 2.2.20 or newer.
-
-### Dependency coordinates and aliases
-
-Compose Multiplatform 1.8.2 no longer brings in `material-icons-core` transitively. Add it explicitly when older icon references still depend on it:
-
-```kotlin
-implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
-```
-
-`androidx.compose.runtime:runtime` publishes every Compose Multiplatform target directly. `org.jetbrains.compose.runtime:runtime` remains compatible as an alias, so shared builds can use the AndroidX coordinate.
-
-Compose Gradle-plugin aliases such as `compose.ui` are deprecated. Replace them with direct coordinates, preferably through a version catalog.
-
-Material 3 and the Compose Multiplatform Gradle plugin no longer need matching versions or stability levels. The stable `compose.material3` alias uses Material 3 1.9.0, whose upstream 1.4.0 base excludes public APIs marked `ExperimentalMaterial3ExpressiveApi` or `ExperimentalMaterial3ComponentOverrideApi`. Use the separate Alpha artifact and opt in for `MaterialExpressiveTheme`:
-
-```kotlin
-implementation("org.jetbrains.compose.material3:material3:1.9.0-alpha04")
-```
+Compose Multiplatform for iOS is stable and ready for production use. Compose Multiplatform for Web is Beta. Desktop Compose Hot Reload is stable.
 
 ## Compose compiler behavior
 
-### Open, overridden, and callable composables
+Open `@Composable` functions compiled with Kotlin 2.1.20 may safely have default parameter values and generate wrappers compatible with binaries older than Compose compiler 1.5.8. Older producers use a warning-level compatibility mode that can still crash at runtime.
 
-Open `@Composable` functions compiled with Kotlin 2.1.20 can safely have default parameter values and produce wrappers compatible with pre-1.5.8 binaries. Older producers use a warned compatibility mode that can still crash at runtime.
+Overridden composables that are final or belong to final classes are restartable and skippable again. Add `@NonRestartableComposable` only when the Kotlin 2.1.0 behavior is required.
 
-Overridden composables that are final or belong to final classes are restartable and skippable again. Apply `@NonRestartableComposable` when the earlier non-restartable behavior is required.
+The Compose compiler Gradle plugin includes source information by default on every platform. Remove equivalent values from `freeCompilerArgs`; setting the same option there and through the plugin can fail the build. Kotlin 2.2.10 source information includes parameter names, and multiplatform metrics and reports use target-specific subdirectories.
 
-Composable function references are supported when assigned a composable function type, although they lack the skipping control of `ComposableLambda` objects:
+Composable callable references work when assigned a composable function type, although they do not expose the skipping controls of `ComposableLambda` objects:
 
 ```kotlin
 val content: @Composable (String) -> Unit = ::Text
 ```
 
-`PausableComposition` is enabled by default and can be disabled with `ComposeFeatureFlag.PausableComposition.disabled()`. `StrongSkipping` and `IntrinsicRemember` feature flags are deprecated.
+`PausableComposition` is enabled by default and can be turned off with `ComposeFeatureFlag.PausableComposition.disabled()`. `StrongSkipping` and `IntrinsicRemember` feature flags are deprecated.
 
-### Source information, metrics, and mappings
+With Compose runtime 1.10 or newer, the compiler plugin adds group keys to R8 mappings so minified composition stack traces can be deobfuscated. Disable it with `composeCompiler { includeComposeMappingFile.set(false) }` only when necessary.
 
-The Compose compiler Gradle plugin includes source information by default on every platform. Remove equivalent settings from `freeCompilerArgs`; setting the option both there and through the plugin can fail the build.
+Kotlin 2.3.10 restores project-file stack-trace mappings and permits `produceReleaseComposeMapping` to process Java 25 class files. Kotlin 2.3.21 stops `MergeMappingFileTask` from clearing R8 artifacts with AGP 9.1 or newer.
 
-Kotlin 2.2.10 includes parameter names in Compose source information. Multiplatform Compose metrics and reports use target-specific subdirectories.
+Compose compiler 2.4 could regress types previously inferred as `stable` to `runtime` or `Uncertain`; Kotlin 2.4.10 restores stability inference.
 
-With Compose runtime 1.10 or newer, the Compose compiler adds group-key entries to R8 mapping files so diagnostic composition stack traces from minified builds can be deobfuscated. Disable mapping tasks when necessary with:
+## Dependencies, annotations, and modules
+
+Compose Gradle-plugin aliases such as `compose.ui` are deprecated. Use direct library coordinates, preferably through a version catalog.
+
+Common previews should import `androidx.compose.ui.tooling.preview.Preview`. The old `org.jetbrains.compose.ui.tooling.preview.Preview` and desktop-only `androidx.compose.desktop.ui.tooling.preview.Preview` are deprecated.
+
+`androidx.compose.runtime:runtime` publishes all Compose Multiplatform targets. `org.jetbrains.compose.runtime:runtime` remains compatible as an alias.
+
+Material 3 versions and Compose plugin versions no longer need matching stability levels. The stable `compose.material3` alias in Compose 1.9 uses Material 3 1.9.0, whose upstream 1.4.0 base excludes public `ExperimentalMaterial3ExpressiveApi` and `ExperimentalMaterial3ComponentOverrideApi` APIs. Use the separate Alpha artifact and opt in for `MaterialExpressiveTheme`:
 
 ```kotlin
-composeCompiler { includeComposeMappingFile.set(false) }
+implementation("org.jetbrains.compose.material3:material3:1.9.0-alpha04")
 ```
 
-Kotlin 2.3.10 restores stack-trace mappings for project files and lets `produceReleaseComposeMapping` process Java 25 class files. Kotlin 2.3.21 prevents `MergeMappingFileTask` from clearing R8 artifacts with AGP 9.1 or newer.
+Compose 1.8.2 no longer brings in `material-icons-core` transitively. Add it explicitly if existing icon references still depend on it:
 
-## Resources
+```kotlin
+implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
+```
 
-### Migrate Java resource APIs
+Material 3 adaptive layout and navigation, the adaptive navigation suite, `material3-window-size-class`, and `material-navigation` can be used from `commonMain`. `calculateWindowSizeClass()` remains platform-specific even though the classes are common.
 
-The `compose.ui` Java-resource functions `painterResource()`, `loadImageBitmap()`, `loadSvgPainter()`, `loadXmlImageVector()`, and `ClassLoaderResourceLoader` are deprecated. Use the multiplatform resource library for generated accessors, localization, and multimodule support.
+`LocalLifecycleOwner` moved from Compose UI to the Lifecycle package. Its Compose helpers can be used without Compose UI bindings, but then receive no platform event integration.
 
-### Android resources
+## Resources and assets
 
-Multiplatform resources are packed into Android assets. Android components such as WebViews and media players can address them with paths such as `Res.getUri("files/index.html")`.
+The Java-resource APIs `painterResource()`, `loadImageBitmap()`, `loadSvgPainter()`, `loadXmlImageVector()`, and `ClassLoaderResourceLoader` are deprecated. Use the multiplatform resource library for generated accessors, localization, and multimodule support.
 
-For the AGP 8.8-or-newer `androidLibrary` target, enable generated assets or resource access can throw `MissingResourceException`:
+Multiplatform resources are packed into Android assets so Android components can address them by URI, for example `Res.getUri("files/index.html")`.
+
+The resource DSL's `customDirectory` associates a generated or downloaded directory with a source set. Test source sets may also contain resources; they get separate generated accessors and are packaged only for tests.
+
+Generated classes expose filename-keyed maps such as `Res.allDrawableResources` for dynamic lookup by string ID. Their class name is configurable:
+
+```kotlin
+compose.resources {
+    nameOfResClass = "MyRes"
+}
+```
+
+`ByteArray.decodeToImageBitmap()` handles JPEG, PNG, BMP, and WEBP. `decodeToImageVector()` reads XML vectors, and `decodeToSvgPainter()` reads SVG on every target except Android.
+
+Resources are embedded in generated XCFrameworks so resource-bearing libraries can be distributed as ordinary XCFrameworks. This requires Kotlin Gradle plugin 2.2 or newer.
+
+For the AGP 8.8-or-newer `androidLibrary` target, enable generated assets or resource lookup can throw `MissingResourceException`:
 
 ```kotlin
 kotlin {
@@ -82,37 +85,13 @@ kotlin {
 }
 ```
 
-### Resource source sets and lookup
-
-The resource DSL has `customDirectory` for associating a custom directory, including one containing downloaded files, with a source set.
-
-Test source sets can contain resources, receive generated accessors, and package those resources only for test runs.
-
-Generated resource classes expose filename-keyed maps such as `Res.allDrawableResources` for dynamic string-ID lookup. Their class name is configurable:
-
-```kotlin
-compose.resources {
-    nameOfResClass = "MyRes"
-}
-```
-
-### Image decoding and preloading
-
-`ByteArray.decodeToImageBitmap()` supports JPEG, PNG, BMP, and WEBP. `decodeToImageVector()` handles XML vectors, and `decodeToSvgPainter()` handles SVG everywhere except Android.
-
-Web targets provide Experimental `preloadFont()`, `preloadImageBitmap()`, and `preloadImageVector()` for caching resources before display and avoiding font or image flashes.
-
-### XCFramework embedding
-
-Compose resources are embedded in generated XCFrameworks, allowing resource-bearing libraries to be distributed as ordinary XCFrameworks. This requires Kotlin Gradle plugin 2.2 or newer.
+Web targets can preload resources with experimental `preloadFont()`, `preloadImageBitmap()`, and `preloadImageVector()` to avoid display flashes.
 
 ## Navigation and back handling
 
-### Type-safe routes and arguments
+Navigation 2.8 exposes type-safe route-object graphs and arguments across Compose Multiplatform, replacing string-only routes.
 
-Navigation 2.8 route-object APIs are available for compile-time-safe graphs and arguments instead of string-only routing.
-
-Navigation 2.9 replaces `Bundle`-style argument access with `SavedState` accessors. Read arguments inside a `read` block, or prefer type-safe routes:
+Navigation 2.9 moves argument access from `Bundle` patterns to `SavedState`. Read values in a `read` block or use type-safe routes:
 
 ```kotlin
 val userId = navBackStackEntry.arguments?.read {
@@ -120,11 +99,9 @@ val userId = navBackStackEntry.arguments?.read {
 }
 ```
 
-Compose Multiplatform 1.8.2 with `org.jetbrains.androidx.navigation:navigation-compose` 2.9.2 supports destination deep links on iOS through normal `NavController` APIs.
+Compose 1.8.2 with `org.jetbrains.androidx.navigation:navigation-compose` 2.9.2 supports iOS destination deep links through ordinary `NavController` APIs.
 
-### Predictive back
-
-`PredictiveBackHandler()` is deprecated in favor of the Navigation Event library. Use `NavigationBackHandler()` with mandatory event state and separate cancellation and completion callbacks. Gesture progress is in `state.transitionState`.
+`PredictiveBackHandler()` is deprecated. The Navigation Event replacement requires event state and separate cancellation and completion callbacks; progress is available through `state.transitionState`.
 
 ```kotlin
 val state = rememberNavigationEventState(NavigationEventInfo.None)
@@ -136,71 +113,41 @@ NavigationBackHandler(
 )
 ```
 
-### Navigation 3
+Compose 1.10 provides Alpha Navigation 3 artifacts on non-Android targets: `navigation3-ui`, `lifecycle-viewmodel-navigation3`, and `adaptive-navigation3`. Navigation 3 does not yet integrate browser history or the address bar, and iOS end-edge forward gestures are disabled by default.
 
-Compose Multiplatform 1.10 adds Alpha Navigation 3 artifacts for non-Android targets:
+## Shared UI and graphics
 
-- `org.jetbrains.androidx.navigation3:navigation3-ui`
-- `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3`
-- `org.jetbrains.compose.material3.adaptive:adaptive-navigation3`
-
-Browser history and address-bar integration do not yet work with Navigation 3. iOS end-edge forward gestures are disabled by default.
-
-## Layout, drawing, and interaction
-
-### Drag and drop
-
-The deprecated desktop `Modifier.onExternalDrag` is replaced by `dragAndDropSource` and `dragAndDropTarget`, and `DragData` moves to `compose.ui.draganddrop`; `onExternalDrag` is removed in 1.8.
-
-The common modifiers work on Android and desktop in 1.7 and add iOS support in 1.8. iOS transfer data uses `UIDragItem` and currently supports `String` and `NSObject` values.
-
-### Shared elements and graphics layers
+Cross-platform drag and drop uses `Modifier.dragAndDropSource` and `dragAndDropTarget`; desktop `Modifier.onExternalDrag` was deprecated and removed in 1.8, and `DragData` moved to `compose.ui.draganddrop`. The common modifiers work on Android and desktop from 1.7 and iOS from 1.8. iOS transfer data currently supports `String` and `NSObject` through `UIDragItem`.
 
 Shared-element transition APIs animate matching content between composable scenes, including navigation destinations.
 
-Standalone `GraphicsLayer`, available in Compose Multiplatform 1.7, can render composable content outside its original scene, unlike `Modifier.graphicsLayer`.
+Standalone `GraphicsLayer` can render composable content outside its original scene, unlike `Modifier.graphicsLayer`.
 
-### Shadows
+Compose 1.9 adds `DropShadowPainter`, `InnerShadowPainter`, `dropShadow`, and `innerShadow` for colored arbitrary-shape shadows and inner-gradient masks.
 
-`DropShadowPainter`, `InnerShadowPainter`, and the `dropShadow` and `innerShadow` modifiers support colored shadows of arbitrary shapes, including shadow geometry as an inner-gradient mask.
+Variable fonts work on every platform as of 1.8.2. `LineHeightStyle.Alignment` is also cross-platform, and Material 3 centers text within an explicit line height by default.
 
-```kotlin
-Box(
-    Modifier.size(120.dp)
-        .dropShadow(RectangleShape, DropShadow(12.dp))
-        .background(Color.White)
-)
-```
+`Popup` overloads without `PopupProperties` are deprecated at error level. `PopupProperties.usePlatformDefaultWidth` and `usePlatformInsets`, plus `DialogProperties.usePlatformInsets`, `useSoftwareKeyboardInset`, and `scrimColor`, are stable.
 
-### Fonts and line height
+The synchronous `ClipboardManager` is deprecated. Use the suspending, cross-platform `Clipboard` interface, including on web where clipboard access cannot be synchronous.
 
-Variable fonts are supported on every platform as of 1.8.2. `LineHeightStyle.Alignment` is implemented everywhere, and Material 3 centers text within an explicit line height by default across platforms.
+## Text input and context menus
 
-### Clipboard
+Desktop uses the stable state-based `BasicTextField`, renamed from `BasicTextField2`. It includes `TextFieldBuffer` for programmatic edits, transformation and styling APIs, and `UndoState`.
 
-The synchronous `ClipboardManager` is deprecated in favor of the suspending `Clipboard` interface. The replacement works on every target, including web, whose clipboard API cannot be synchronous.
-
-### Context menus
-
-The new context-menu API customizes menus in `SelectionContainer` and `BasicTextField`. Initial support is complete on iOS and web but partial on desktop. Enable it at application startup:
+The opt-in context-menu API customizes menus in `SelectionContainer` and `BasicTextField`. Initial support is complete on iOS and web and partial on desktop. Enable it at startup:
 
 ```kotlin
 ComposeFoundationFlags.isNewContextMenuEnabled = true
 ```
 
-### Popup and dialog properties
+On iOS, `KeyboardOptions.platformImeOptions` configures native keyboard, autocorrection, and return-key traits. Later `PlatformImeOptions` can replace `UIResponder.inputView` or attach `UIResponder.inputAccessoryView` for a focused text field.
 
-`Popup` overloads without `PopupProperties` are deprecated at error level. `PopupProperties.usePlatformDefaultWidth` and `usePlatformInsets`, plus `DialogProperties.usePlatformInsets`, `useSoftwareKeyboardInset`, and `scrimColor`, are stable.
+Compose 1.11 adds an opt-in iOS text implementation backed by `UIView`, with native caret movement, gestures, selection handles, and system context-menu actions. The cross-platform implementation remains the stable default.
 
-### Common UI modules
+## Preview and testing
 
-Material 3 adaptive layout/navigation modules, the adaptive navigation suite, `material3-window-size-class`, and `material-navigation` can be `commonMain` dependencies. `calculateWindowSizeClass()` remains platform-specific even though window-size classes are common.
-
-`LocalLifecycleOwner` moved from Compose UI to Lifecycle, allowing its Compose helpers without Compose UI bindings. Without those bindings, it has no platform event integration.
-
-## Preview tooling
-
-`@Preview` supports `name`, `group`, maximum `widthDp` and `heightDp`, `locale`, `showBackground`, and a 32-bit ARGB `backgroundColor`. IntelliJ IDEA and Android Studio recognize the parameters.
+Multiplatform `@Preview` supports `name`, `group`, maximum `widthDp` and `heightDp`, `locale`, `showBackground`, and a 32-bit ARGB `backgroundColor` in both IntelliJ IDEA and Android Studio:
 
 ```kotlin
 @Preview(
@@ -216,106 +163,72 @@ Material 3 adaptive layout/navigation modules, the adaptive navigation suite, `m
 fun AppPreview() = App()
 ```
 
-Common previews should import `androidx.compose.ui.tooling.preview.Preview`. The former `org.jetbrains.compose.ui.tooling.preview.Preview` and desktop `androidx.compose.desktop.ui.tooling.preview.Preview` annotations are deprecated.
+`runComposeUiTest()` accepts a suspending body, allowing `awaitIdle()` directly. JVM and Native behave like `runBlocking` with delays skipped; JS and Wasm return a `Promise` and also skip delays.
 
-## iOS
+Composition coroutines suspended in `delay()` count as idle, so `waitForIdle()`, `awaitIdle()`, and `runOnIdle()` do not advance them. Move `mainClock` explicitly. `runOnIdle()` executes on the UI thread without another wait afterward; `mainClock.advanceTimeBy()` renders only when time crosses the next 16-ms virtual frame.
 
-### Required frame-duration setting
+Non-Android UI tests now have v2 `ComposeUiTest` APIs and use `StandardTestDispatcher` by default, running coroutines in queued order. The v2 runner accepts `effectContext`; earlier `runComposeUiTest`, `runSkikoComposeUiTest`, and `runDesktopComposeUiTest` APIs are deprecated.
 
-An iOS app crashes when `CADisableMinimumFrameDurationOnPhone` is absent from `Info.plist` or false. Normally enable it for 120-Hz displays:
+```kotlin
+@OptIn(ExperimentalTestApi::class)
+@Test
+fun uiTest() = runComposeUiTest(
+    effectContext = motionDurationScale + StandardTestDispatcher(),
+) {
+    setContent { App() }
+}
+```
+
+## iOS application configuration and rendering
+
+Set `CADisableMinimumFrameDurationOnPhone` to `true`; absence or `false` can crash the app under the strict sanity check:
 
 ```xml
 <key>CADisableMinimumFrameDurationOnPhone</key>
 <true/>
 ```
 
-Set `ComposeUIViewControllerConfiguration.enforceStrictPlistSanityCheck=false` only to disable enforcement.
+Set `ComposeUIViewControllerConfiguration.enforceStrictPlistSanityCheck=false` only when intentionally disabling enforcement.
 
-### Touch dispatch and native interop
+Touch sequences over native interop views wait 150 ms from Compose 1.7.3: movement beyond the threshold lets the Compose parent intercept, while a stationary touch goes to the native view. In 1.8, nested native/Compose scrolling follows iOS gesture arbitration and a non-scrollable Compose modal can be dismissed by swiping down.
 
-Starting in 1.7.3, touches over native interop views wait 150 ms. Movement beyond the threshold lets the parent composable intercept the sequence; an unmoved touch goes to the native view. In 1.8, nested native/Compose scrolling follows iOS gesture arbitration, and a non-scrollable Compose modal can be dismissed by swiping down.
+`ComposeUIViewControllerDelegate` now produces a deprecation error. Override the relevant methods on the parent `UIViewController`.
 
-`ComposeUIViewControllerDelegate` produces a deprecation error; override relevant methods on the parent `UIViewController`.
+The old experimental `platformLayers` option is removed because out-of-container iOS layers for popups, dialogs, and dropdowns are always enabled.
 
-The experimental `platformLayers` option is removed because out-of-container layers for popups, dialogs, and dropdowns are the iOS default.
-
-`SwingPanel` now derives size from its embedded component's minimum, preferred, and maximum sizes. UIKit interop views can use intrinsic fitting size, including SwiftUI hosted through `UIHostingController` and basic `UIView` subclasses that do not depend on `NSLayoutConstraints`.
-
-Experimental UIKit interop views can render above Compose, enabling transparent backgrounds and native shader effects. The native view covers composables in the same area.
+Experimental UIKit interop may place a native view over Compose, enabling transparent backgrounds and native shader effects; the native view covers composables in that area.
 
 ```kotlin
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-fun NativeOverlay() {
-    UIKitViewController(
-        factory = { createNativeController() },
-        update = {},
-        properties = UIKitInteropProperties(placedAsOverlay = true),
-    )
-}
-```
-
-### Accessibility
-
-`AccessibilitySyncOptions` is removed. The semantic tree loads lazily on the first accessibility request and is disposed when interaction ends.
-
-iOS gains RTL gestures, traversal semantics, editable text traits, VoiceOver list announcements, pointer and keyboard control. Fully transparent components no longer expose semantics.
-
-### Frame rates and concurrent rendering
-
-An iOS composable can request a frame-rate category or non-negative frames-per-second value with `Modifier.preferredFrameRate(FrameRateCategory.High)` or `Modifier.preferredFrameRate(30f)`. If multiple requests exist, Compose applies the highest subject to hardware limits.
-
-The earlier opt-in separate render thread used `useSeparateRenderThreadWhenPossible` or the `parallelRendering` controller option:
-
-```kotlin
-ComposeUIViewController(configure = { parallelRendering = true }) {
-    App()
-}
-```
-
-Concurrent iOS rendering is enabled by default in 1.11, so rendering work uses a dedicated render thread without controller configuration.
-
-### Keyboard and text input
-
-Text fields pass native keyboard, autocorrection, and return-key traits through `KeyboardOptions.platformImeOptions`:
-
-```kotlin
-BasicTextField(
-    value = "",
-    onValueChange = {},
-    keyboardOptions = KeyboardOptions(
-        platformImeOptions = PlatformImeOptions {
-            keyboardType(UIKeyboardTypeEmailAddress)
-        }
-    ),
+UIKitViewController(
+    factory = { createNativeController() },
+    update = {},
+    properties = UIKitInteropProperties(placedAsOverlay = true),
 )
 ```
 
-`PlatformImeOptions` can configure `UIResponder.inputView` to replace the system keyboard and `UIResponder.inputAccessoryView` to attach an accessory view on focus.
+`SwingPanel` derives size from the embedded component's minimum, preferred, and maximum size. UIKit interop may use intrinsic fitting size, including SwiftUI via `UIHostingController` and basic `UIView` subclasses without `NSLayoutConstraints`.
 
-Compose Multiplatform 1.11 adds an opt-in `UIView`-backed text-input implementation with native caret movement, gestures, selection handles, and system context-menu actions. The existing cross-platform path remains the stable default.
+An iOS composable can request a frame-rate category or non-negative FPS with `Modifier.preferredFrameRate(FrameRateCategory.High)` or `Modifier.preferredFrameRate(30f)`. Compose chooses the highest request in a tree subject to hardware limits.
 
-### Insets and tracing
+`WindowInsetsRulers` position and size iOS content against system bars and the keyboard. `WindowInsets.Companion.captionBar` is composable for cross-platform behavior.
 
-iOS supports `WindowInsetsRulers` for positioning and sizing against system bars and the on-screen keyboard. `WindowInsets.Companion.captionBar` is composable for consistent cross-platform behavior.
+Concurrent rendering was opt-in through `useSeparateRenderThreadWhenPossible` or `parallelRendering`:
 
-`enableTraceOSLog()` is stable and needs no experimental opt-in; inspect its trace output with Xcode Instruments.
+```kotlin
+ComposeUIViewController(configure = { parallelRendering = true }) { App() }
+```
 
-### Production status
+Compose 1.11 enables it by default, placing rendering work on a dedicated thread without controller configuration.
 
-Compose Multiplatform for iOS is Stable and intended for production use.
+iOS accessibility loads the semantic tree lazily on first request and disposes it when interaction ends; removed `AccessibilitySyncOptions` is unnecessary. Support includes RTL gestures, traversal semantics, editable-text traits, VoiceOver list announcements, pointer and keyboard control, and omission of semantics for fully transparent components.
 
-## Web
+`enableTraceOSLog()` is stable; inspect its traces in Xcode Instruments.
 
-### Accessibility
+## Web applications
 
-Web accessibility is enabled by default. It initially exposes description labels and accessible button navigation and activation. Interop views, scrollable or slider container views, and traversal indexes are not yet supported.
+Web accessibility is enabled by default and initially exposes descriptions plus accessible button navigation and activation. Interop views, scrollable and slider container views, and traversal indexes are not yet supported. Disable with `isA11YEnabled=false` in the `ComposeViewport` configuration only when necessary.
 
-Set `isA11YEnabled = false` in `ComposeViewport`'s `configure` block only when generated accessibility support must be disabled.
-
-### DOM elements inside Compose
-
-`WebElementView()` embeds a DOM element as an overlay sized by Compose and intercepts input in that area. It works only with `ComposeViewport`; `CanvasBasedWindow` is deprecated.
+Use `ComposeViewport` rather than deprecated `CanvasBasedWindow`. `WebElementView()` embeds a DOM overlay sized by Compose and intercepts input in its area; it works only with `ComposeViewport`.
 
 ```kotlin
 WebElementView(
@@ -328,11 +241,7 @@ WebElementView(
 )
 ```
 
-### Browser navigation
-
-The earlier `window.bindToNavigation()` connects the main graph to browser Back/Forward, address-bar, and direct route URLs. Its optional `getBackStackEntryPath` customizes route-to-URL conversion.
-
-The suspending `NavController.bindToBrowserNavigation()` replaces deprecated `Window.bindToNavigation()` and removes direct `window` access from shared JS/Wasm code:
+Use suspending `NavController.bindToBrowserNavigation()` for browser Back/Forward, address-bar, and direct-route integration. It replaces deprecated `Window.bindToNavigation()` and removes direct `window` access from shared JS/Wasm code.
 
 ```kotlin
 LaunchedEffect(Unit) {
@@ -340,66 +249,20 @@ LaunchedEffect(Unit) {
 }
 ```
 
-### Browser cursors and fallback distributions
+The earlier `window.bindToNavigation()` accepted `getBackStackEntryPath` to customize route-to-URL conversion. Preserve equivalent routing policy when migrating.
 
-Experimental `PointerIcon.fromKeyword()` creates web pointer icons from CSS cursor keywords.
+`PointerIcon.fromKeyword()` creates experimental web pointer icons from CSS cursor keywords.
 
-The `composeCompatibilityBrowserDistribution` Gradle task packages JS and Wasm browser distributions together, allowing a Wasm application to fall back to JS when a browser lacks required modern Wasm features.
+Kotlin/Wasm pages no longer need `skiko.js` in `index.html`; Kotlin/JS pages still do.
 
-Kotlin/Wasm applications can remove `skiko.js` from `index.html`; Kotlin/JS applications still require it.
+Use `composeCompatibilityBrowserDistribution` to bundle JS and Wasm browser distributions so JS can serve as a fallback when modern Wasm features are unavailable.
 
-### Lifecycle status
+## Desktop platforms
 
-Compose Multiplatform for Web is Beta.
+`ComposePanel` accepts `RenderSettings.isVsyncEnabled`. VSync remains on by default; disabling it can reduce latency but may cause tearing.
 
-## Desktop
+`SwingFrame()` and `SwingDialog()` accept an `init` block that runs before the window appears, suitable for one-time properties such as `Window.setType` and early listeners. Continue using `LaunchedEffect(window)` for values that change after display.
 
-### Text fields and panels
+JVM desktop applications run on Windows ARM64 starting with Compose 1.8.2.
 
-Desktop adopts the stable state-based `BasicTextField`, renamed from `BasicTextField2`. It adds `TextFieldBuffer` for programmatic edits, transformation and styling APIs, and access to `UndoState`.
-
-`ComposePanel` accepts `RenderSettings.isVsyncEnabled`; disabling VSync can reduce input-to-render latency but may cause tearing. VSync remains enabled by default.
-
-### Window initialization
-
-`SwingFrame()` and `SwingDialog()` add an `init` block that runs before the native window is visible, allowing one-time properties such as `java.awt.Window.setType` and early event listeners. Continue using `LaunchedEffect(window)` for properties that can change after display.
-
-### Platforms and Hot Reload
-
-Compose Multiplatform 1.8.2 supports JVM desktop applications on ARM64 Windows.
-
-The Compose Multiplatform Gradle plugin bundles and enables Compose Hot Reload for desktop. Remove an explicit Hot Reload plugin declaration to use the bundled version, or keep it to override the version. With Kotlin older than 2.1.20, bundled integration is disabled.
-
-Compose Hot Reload is Stable.
-
-## Testing
-
-### Idleness and clocks
-
-Composition coroutines suspended in `delay()` count as idle, so `waitForIdle()`, `awaitIdle()`, and `runOnIdle()` do not drive them. Advance `mainClock` explicitly when a test depends on delayed work.
-
-`runOnIdle()` runs on the UI thread without waiting again afterward. `mainClock.advanceTimeBy()` renders only when time crosses the next 16-ms virtual frame.
-
-### Suspending test bodies
-
-`runComposeUiTest()` accepts a suspending body, allowing direct `awaitIdle()` calls. On JVM and Native it behaves like `runBlocking` with delays skipped; on JS and Wasm it returns a `Promise` and also skips delays.
-
-```kotlin
-runComposeUiTest {
-    awaitIdle()
-}
-```
-
-### Compose UI testing v2
-
-Non-Android tests gain v2 `ComposeUiTest` APIs and use `StandardTestDispatcher` by default, executing coroutines in queued order. The v2 runner accepts `effectContext`; prior `runComposeUiTest`, `runSkikoComposeUiTest`, and `runDesktopComposeUiTest` forms are deprecated.
-
-```kotlin
-@OptIn(ExperimentalTestApi::class)
-@Test
-fun uiTest() = runComposeUiTest(
-    effectContext = motionDurationScale + StandardTestDispatcher(),
-) {
-    setContent { App() }
-}
-```
+The Compose plugin bundles and enables Hot Reload for desktop. Remove an explicit Hot Reload plugin to use the bundled version, or retain it to override the version. Bundled integration is disabled with Kotlin older than 2.1.20.

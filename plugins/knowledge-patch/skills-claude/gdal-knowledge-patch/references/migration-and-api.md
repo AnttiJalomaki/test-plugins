@@ -1,264 +1,255 @@
 # Migration and API compatibility
 
-Use this reference for the task areas below. Batch labels identify when each behavior entered the covered compatibility history.
+## C and C++ source migrations
 
-## Breaking migrations
+### Opaque declarations and layer hooks (`3.11-migration`)
 
-### Canonical opaque-type forward declarations
+Include `gcore/gdal_fwd.h` instead of redeclaring GDAL public opaque types;
+stricter aliases can otherwise conflict, particularly in debug builds.
 
-*Batch: 3.11-migration*
+`OGRLayer::GetExtent()` is no longer virtual and its `bForce` argument is
+`bool`. Drivers override protected `IGetExtent(int, OGREnvelope*, bool)`.
+Likewise, callers use checked `GetExtent3D()` and drivers override
+`IGetExtent3D()`. `SetSpatialFilter()` and `SetSpatialFilterRect()` are
+non-virtual, return `OGRErr`, and take `const OGRGeometry*`; check their return
+and implement `ISetSpatialFilter(int, const OGRGeometry*)` in drivers.
 
-The new `gcore/gdal_fwd.h` header normalizes forward declarations for GDAL's public opaque types. Downstream code that redeclares those types can now conflict with GDAL, especially in DEBUG builds with stricter aliases, and should use GDAL's declarations instead.
+### Half precision and CMake version constraints (`3.11-migration`)
 
-### Driver extent override hooks
-
-*Batch: 3.11-migration*
-
-The public `OGRLayer::GetExtent()` overloads are no longer virtual, and their `bForce` parameter is now `bool`. Drivers should override the protected `IGetExtent(int, OGREnvelope*, bool)` hook; likewise, `GetExtent3D(int, OGREnvelope3D*, bool)` is now the checked public entry point and drivers can override `IGetExtent3D()`.
-
-### Spatial-filter API now reports errors
-
-*Batch: 3.11-migration*
-
-`OGRLayer::SetSpatialFilter()` and `SetSpatialFilterRect()` are no longer virtual, now return `OGRErr` instead of `void`, and accept `const OGRGeometry*`. Callers should check the result, while drivers should implement the protected `ISetSpatialFilter(int, const OGRGeometry*)` hook.
-
-### Half-precision raster band types
-
-*Batch: 3.11-migration*
-
-Drivers may return bands of type `GDT_Float16` or `GDT_CFloat16`, so GDAL API consumers must handle both values in data-type dispatch. Code without native Float16 support can request conversion by passing `GDT_Float32` as the `RasterIO()` buffer type.
-
-### CMake minor-version pinning
-
-*Batch: 3.11-migration*
-
-Projects that support only GDAL 3.11 must express that minor-version constraint as a range in `find_package()`:
+Handle `GDT_Float16` and `GDT_CFloat16` in data-type switches. A consumer
+without native half precision can request `GDT_Float32` conversion through the
+`RasterIO()` buffer type. To pin only the 3.11 minor line, use a CMake range:
 
 ```cmake
 find_package(GDAL 3.11...<3.12 REQUIRED)
 ```
 
-### Partial coordinate-transform failures
+### Partial coordinate-transform failures (`3.11-migration`)
 
-*Batch: 3.11-migration*
+Time-aware `Transform()` and `TransformWithErrorCodes()` return `FALSE` when
+any point fails, as do `GDALTransformerFunc` implementations. After aggregate
+failure, inspect `pabSuccess[]` or `panErrorCodes[]`; successfully transformed
+points may still be usable.
 
-The time-aware `OGRCoordinateTransformation::Transform()` and `TransformWithErrorCodes()` overloads now return `FALSE` when any point fails, rather than only when no point can be transformed. The same rule applies to `GDALTransformerFunc` implementations; inspect `pabSuccess[]` or `panErrorCodes[]` to distinguish successful points from failed ones after an aggregate failure.
+### Const-correct vector APIs (`3.12-migration`)
 
-### Unified CLI subcommand moves and output defaults
+Out-of-tree drivers must make these overrides const:
 
-*Batch: 3.12-migration*
+- `GDALDataset::GetLayer()`, `GetLayerCount()`, and `TestCapability()`;
+- `OGRLayer::GetName()`, `GetGeomType()`, `GetLayerDefn()`, `GetFIDColumn()`,
+  `GetGeometryColumn()`, `GetSpatialRef()`, and `TestCapability()`.
+
+`GetLayer()`, `GetLayerDefn()`, `GetSpatialRef()`, and
+`OGRFeature::GetDefnRef()` now return const pointers. Store them as const; if
+only reference-count mutation is required, the migration guidance permits a
+targeted cast.
 
-`gdal vector geom buffer`, `explode-collections`, `make-valid`, `segmentize`, `simplify`, and `swap-xy` move directly under `gdal vector`; the old paths remain only for 3.12 and are removed in 3.13. `gdal vector geom set-type` is renamed and moved to `gdal vector set-geom-type`. Command-line progress now goes to standard output unless `--quiet`/`-q` is used, and `gdal raster info`, `gdal vector info`, and `gdal vsi list` default to text output at the CLI while retaining JSON defaults through the API.
+### Raster attribute tables and geotransforms (`3.12-migration`)
 
-### Const-correct vector driver and C++ APIs
+Handle `GFT_Boolean`, `GFT_DateTime`, and `GFT_WKBGeometry` in
+`GDALRATFieldType` switches. `GDALRasterAttributeTable::SetValue()` returns
+`CPLErr`, so check it and update overrides. Raster driver `GetGeoTransform()`
+and `SetGeoTransform()` overrides now use `GDALGeoTransform&` and
+`const GDALGeoTransform&`, a wrapper over `std::array<double, 6>`.
 
-*Batch: 3.12-migration*
-
-Out-of-tree drivers must update overrides because `GDALDataset::GetLayer()`, `GetLayerCount()`, and `TestCapability()`, plus `OGRLayer::GetName()`, `GetGeomType()`, `GetLayerDefn()`, `GetFIDColumn()`, `GetGeometryColumn()`, `GetSpatialRef()`, and `TestCapability()`, are now const methods. `GetLayer()`, `GetLayerDefn()`, and `GetSpatialRef()` return pointers to const objects; C++ callers also receive a `const OGRFeatureDefn*` from `OGRFeature::GetDefnRef()`. Store these results in const pointers; when only reference-count mutation is required, the migration guidance recommends casting away constness.
-
-### Raster attribute table type and mutation changes
-
-*Batch: 3.12-migration*
-
-`GDALRATFieldType` adds `GFT_Boolean`, `GFT_DateTime`, and `GFT_WKBGeometry`, so code switching on `GDALRATGetTypeOfCol()` must handle them. `GDALRasterAttributeTable::SetValue()` methods now return `CPLErr` instead of `void`; callers should check failures and subclasses in out-of-tree drivers must update their overrides.
-
-### Restricted raw VRT bands
-
-*Batch: 3.12-migration*
-
-`VRTRawRasterBand` raw-file capabilities are restricted by default for security. VRT workflows that depend on unrestricted raw-file access must account for the `vrtrawrasterband_restricted_access` policy instead of assuming the previous default behavior.
-
-### `GDALGeoTransform` parameters in raster driver overrides
-
-*Batch: 3.12-migration*
-
-The virtual `GDALDataset::GetGeoTransform()` and `SetGeoTransform()` methods now take `GDALGeoTransform&` and `const GDALGeoTransform&`, respectively, rather than pointers to six doubles. Out-of-tree raster drivers must update their overrides; `GDALGeoTransform` is a thin wrapper around `std::array<double, 6>`.
-
-### Geometry point mutation now reports errors
-
-*Batch: 3.13-migration*
-
-`OGR_G_SetPointCount`, `OGR_G_SetPoint`, `OGR_G_SetPoint_2D`, `OGR_G_SetPointM`, `OGR_G_SetPointZM`, `OGR_G_AddPoint`, `OGR_G_AddPoint_2D`, `OGR_G_AddPointM`, `OGR_G_AddPointZM`, `OGR_G_SetPoints`, and `OGR_G_SetPointsZM` now return `OGRErr` instead of `void`. C callers should check the result of these mutations.
-
-### CPL macro and pi exposure changes
-
-*Batch: 3.13-migration*
-
-The `MIN`, `MAX`, and `ABS` macros from `port/cpl_port.h` are renamed to `CPL_MIN`, `CPL_MAX`, and `CPL_ABS`. GDAL also no longer exports `M_PI`; code relying on it must define `_USE_MATH_DEFINES` before including `math.h`.
-
-```c
-#define _USE_MATH_DEFINES
-#include <math.h>
-```
-
-### Out-of-tree driver signature updates
-
-*Batch: 3.13-migration*
-
-`GDALDataset::Close()` overrides must now accept `(GDALProgressFunc pfnProgress, void *pProgressData)`; both arguments may be null. The option-list parameters of `GDALDataset::AddBand()`, `AdviseRead()`, `BeginAsyncReader()`, and `CopyLayer()`, `GDALDriver::pfnCreate` and `pfnCreateCopy`, and `GDALRasterBand::AdviseRead()` and `GetVirtualMemAuto()` are now `CSLConstList` instead of `char **`.
-
-### Const metadata string lists
-
-*Batch: 3.13-migration*
-
-`GDALMajorObject::SetMetadata()` now accepts `CSLConstList`, while `GDALMajorObject::GetMetadata()` and `GDALGetMetadata()` now return it. C++ callers that stored returned metadata in `char **` must use `CSLConstList`; that declaration remains compatible with earlier GDAL versions.
-
-### Unified CLI input and output option names
-
-*Batch: 3.13-migration*
-
-Several unified `gdal` arguments are renamed from the `--src`/`--dst` pattern to `--input`/`--output`. The old names remain accepted by the command line and the C, C++, and Python APIs.
-
-### RasterIO resampling uses the output buffer type
-
-*Batch: 3.13-migration*
-
-RasterIO resampling and VRT operations now run in the output buffer type by default; set the new `GDALRasterIOExtraArg::bOperateInBufType` field to false to opt out. Consequently, non-nearest resampling from a Byte band into a Float32 buffer now generally yields non-integer values.
-
-## Public C, C++, and raster APIs
-
-### Raster SDK additions
-
-*Batch: 3.11.0*
-
-New SDK facilities include `gdal::CXXTypeTraits<T>`, `gdal::GDALDataTypeTraits<T>`, `gdal_minmax_element.hpp`, `gdal::VectorX`, `GDALRasterComputeMinMaxLocation()`/`GDALRasterBand::ComputeMinMaxLocation()`, `GDALDataset::GeolocationToPixelLine()`, `GDALRasterBand::InterpolateAtGeolocation()`, `GDALTranspose2D()`, `GDALGroup::GetMDArrayFullNamesRecursive()`, `GDALIsValueInRangeOf()`, and `GDALRasterBand::SetNoDataValueAsString()`.
-
-### OGR APIs and Arrow time values
-
-*Batch: 3.11.0*
-
-`OGRFieldDefn::SetGenerated()`/`IsGenerated()` marks generated fields, `OSRGetAuthorityListFromDatabase()` lists CRS authorities from PROJ, and `OGR_GT_GetSingle()` is available through SWIG. `OGRLayer::GetArrowStream()` adds `DATETIME_AS_STRING=YES/NO`; `ogr2ogr` uses it to preserve source time zones and can now transfer dataset relationships when the target supports them.
-
-### IIIF Image API 3.0
-
-*Batch: 3.11.1*
-
-The WMS driver adds a mini-driver for International Image Interoperability Framework Image API 3.0.
-
-### Raster band algebra API
-
-*Batch: 3.12.0*
-
-The C, C++, and Python APIs support arithmetic and comparison directly on raster bands, type conversion with `AsType()`, and algebra functions including `abs()`, `sqrt()`, logarithms, `min()`, `max()`, `mean()`, and `IfThenElse()`.
-
-### Dataset extent, overview, and window APIs
-
-*Batch: 3.12.0*
-
-New APIs include `GDALDataset::GetLayerIndex()`, `GetExtent()`, `GetExtentWGS84LongLat()`, and `AddOverviews()`, plus `GDALRasterBand::IterateWindows()` and `SplitRasterIO()`. `GDALGetGDALPath()` exposes GDAL's installation path, and `GDALRescaleGeoTransform()` rescales a geotransform.
-
-### Geolocation, geometry, schema, and celestial-body APIs
-
-*Batch: 3.12.0*
-
-The geolocation transformer adds `GEOLOC_NORMALIZE_LONGITUDE_MINUS_180_PLUS_180` to force longitude normalization. OGR adds envelope-to-geometry creation and constrained Delaunay triangulation, vector datasets expose `GetSpatialRef()`, schema overrides accept `*` layer matching and `srcType`/`srcSubType` matching, and CRS APIs can report celestial-body names.
-
-### Progressive dataset closure
-
-*Batch: 3.13.0*
-
-The new `GDALCloseEx()` API and `GDALDataset::Close()` progress callback support observable long-running closes; `GDALDataset::GetCloseReportsProgress()` reports whether a dataset provides that progress.
-
-### Newly public headers
-
-*Batch: 3.13.0*
-
-The installed headers now include `gdal_mem.h`, which exposes the `MEMCreate()` C API, plus `gdal_thread_pool.h` and `ogr_refcountedptr.h`.
-
-### Vector geometry and SQL APIs
-
-*Batch: 3.13.0*
-
-The GeoPackage and SQLite dialects add `ST_Hilbert()`, and geometry APIs add polygon-based concave hull generation plus invalidity-reason retrieval in C, C++, and SWIG. `ExportToKML()` now fails rather than emitting coordinates with invalid latitudes.
-
-## Driver and algorithm extension APIs
-
-### Driver capability and algorithm metadata
-
-*Batch: 3.12.0*
-
-Drivers can advertise maximum string length and the new append, upsert, close-time visibility, reopen-after-write, and read-after-delete capabilities. Algorithm consumers can retrieve typed default arguments through the new C/SWIG getters, while algorithm implementers gain dedicated geometry-type, append-layer, overwrite-layer, absolute-path, stdout, hidden, and deprecation helpers.
-
-### Driver exclusion and algorithm metadata
-
-*Batch: 3.13.0*
-
-An allowed-driver entry prefixed with `-` now excludes that driver in `GDALOpenEx()`. Algorithm front ends can inspect pipeline-step availability, direct and aggregate argument dependencies, mutual-dependency groups, duplicate-value allowance, and maximum character counts.
-
-### Arrow and directory-oriented vector capabilities
-
-*Batch: 3.13.0*
-
-Arrow field creation and batch writing support string-view values, and the C API gains `OGR_L_GetAttributeFilter()`. A new driver capability identifies directories that may contain multiple vector layers and is advertised by Shapefile, MapInfo, CSV, FlatGeobuf, and MiraMonVector.
-
-## Language and binding APIs
-
-### Python color interpretation during translation
-
-*Batch: 3.10.1*
-
-The Python `gdal.Translate()` binding adds a `colorInterpretation` argument; the similar argument in `gdal.TileIndex()` also receives a correctness fix.
-
-### Python raster arrays and accepted inputs
-
-*Batch: 3.11.0*
-
-Python adds `Dataset.ReadAsMaskedArray()`, `mask_resample_alg` on `ReadAsArray()` methods, and the `-epo`/`-eco` translation controls; `gdal.VectorTranslate()` gains `relatedFieldNameMatch`. `osr.SpatialReference()` accepts a CRS definition, `Driver.Create()` accepts NumPy types, `Driver.Rename()`/`CopyFiles()` accept `os.PathLike`, and `GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY` accepts `YES/1/ON/TRUE` or `NO/0/OFF/FALSE`.
-
-### Range-domain validation and binding errors
-
-*Batch: 3.11.1*
-
-Python's `ogr.CreateRangeFieldDomain()` and `ogr.CreateRangeFieldDomainDateTime()` correctly handle `None` bounds. The OpenFileGDB writer rejects range domains missing either bound, and SWIG `AddFieldDomain()` surfaces failures as errors or exceptions.
-
-### C# spatial-reference matching
-
-*Batch: 3.11.1*
-
-The C# bindings add `SpatialReference.FindMatches`.
-
-### Zero-stride Python array writes
-
-*Batch: 3.11.4*
-
-Python `Dataset.WriteArray()` and `Band.WriteArray()` correctly write arrays containing a zero stride.
-
-### Java dataset closure
-
-*Batch: 3.11.4*
-
-Closing a dataset obtained with `Band.GetDataset().Close()` no longer causes a double free.
-
-### Python algorithm namespace
-
-*Batch: 3.12.0*
-
-Python exposes the algorithm registry through a dynamically generated `gdal.alg` module:
-
-```python
-gdal.alg.raster.convert(input="in.tif", output="out.tif")
-```
-
-### Python raster iteration and Boolean arrays
-
-*Batch: 3.12.0*
-
-Python adds `Band.BlockWindows()`, permits a band as `Driver.CreateCopy()` input, maps NumPy Boolean types to GDAL types, and avoids promoting Boolean arrays to `float64` when writing. Configuration-option values are coerced to strings.
-
-### SWIG feature-definition ownership
-
-*Batch: 3.12.1*
-
-`Feature.GetDefnRef` now increments the returned `FeatureDefn` reference count.
-
-### Binding behavior
-
-*Batch: 3.13.0*
-
-Python `Dataset.AdviseRead()` and `Band.AdviseRead()` accept keywords, with dataset calls defaulting to all bands; algorithm functions accept visible and hidden argument aliases, and `Feature.SetField()` accepts NumPy values. Java exposes full and partial `/vsicurl/` cache clearing, while SWIG adds the missing relationship capability constants.
-
-### Python open-option parsing
-
-*Batch: 3.13.1*
-
-Python methods such as `gdal.VectorTranslate()` recognize the list form `options=["-oo", "FOO=BAR"]`.
+### Geometry mutation, macros, and signatures (`3.13-migration`)
+
+All C point-count, point-set, and point-add functions in the `OGR_G_*Point*`
+family now return `OGRErr`; check mutations. Replace `MIN`, `MAX`, and `ABS`
+from `cpl_port.h` with `CPL_MIN`, `CPL_MAX`, and `CPL_ABS`. GDAL no longer
+exports `M_PI`; where needed on supported platforms, define
+`_USE_MATH_DEFINES` before `math.h`.
+
+Out-of-tree drivers must also update:
+
+- `GDALDataset::Close(GDALProgressFunc, void*)`, whose arguments may be null;
+- option-list arguments on dataset `AddBand()`, `AdviseRead()`,
+  `BeginAsyncReader()`, and `CopyLayer()`;
+- `GDALDriver::pfnCreate` and `pfnCreateCopy`;
+- raster-band `AdviseRead()` and `GetVirtualMemAuto()`.
+
+Those option lists are `CSLConstList`, not `char **`.
+
+### Const metadata and RasterIO resampling (`3.13-migration`)
+
+`SetMetadata()` accepts `CSLConstList`; C++ `GetMetadata()` and C
+`GDALGetMetadata()` return it. Declaring returned metadata as `CSLConstList`
+also remains source-compatible with earlier versions.
+
+RasterIO resampling and VRT operations work in the output buffer type by
+default. Thus non-nearest Byte-to-Float32 resampling can yield fractional
+values. Set `GDALRasterIOExtraArg::bOperateInBufType = false` to opt out.
+
+## ABI, drivers, and compatibility surface
+
+### Driver removals and replacements (`3.11.0`)
+
+Removed raster drivers: BLX, BT, CTable2, ELAS, FIT, GSAG, GSBG, JP2Lura, OZI
+OZF2/OZFX3, Rasterlite v1, R object `.rda`, RDB, SDTS, SGI, XPM, and DIPex.
+Removed vector drivers: Geoconcept Export, OGDI, SDTS, SVG, Tiger, and UK .NTF.
+Write support was removed from Interlis 1/2, ADRG, PAux, MFF, MFF2/HKV, LAN,
+NTv2, BYN, USGSDEM, and ISIS2.
+
+The OpenCL warper, `gdalwarpsimple`, and `ogrdissolve` were removed. The OGR
+`Memory` driver is deprecated and aliases `MEM`. FileGDB updates and creation
+route through OpenFileGDB, and PDF creation no longer accepts
+`GEO_ENCODING=OGC_BP`. The shared-library major changed.
+
+### Later driver restorations
+
+GSBG was restored in `3.11.1`, GSAG in `3.11.2`, and BT in `3.11.4`. Tiger and
+UK .NTF returned in `3.13.0` but remain future-removal candidates. The later
+shared-library-major bump still requires binary dependents to rebuild or use a
+matching library.
+
+## Error, lifetime, and result contracts
+
+### Core validation and status corrections
+
+- `GDALGCPsToGeoTransform()` returns `FALSE` for an invalid result (`3.10.2`).
+- `GDALContourGenerateEx()` returns `CE_None` for a constant raster (`3.10.1`).
+- `GDALAlgorithm` rejects malformed list values and range-constrained `NaN`;
+  interrupted `Run()` reports `CE_Failure` to progress (`3.11.1`).
+- Unix, Win32, sparse, and archive VSI handles tolerate repeat `Close()` calls;
+  destructors close them too (`3.11.2`).
+- `InitializeDestinationBuffer()` warns and zero-fills rather than returning
+  failure for `INIT_DEST=NO_DATA` without nodata (`3.11.5`); the later command
+  contract makes this configuration fail, as documented in the raster file.
+- Arrow and Parquet datasets expose `Close()`, and destruction flushes pending
+  output (`3.11.4`).
+- Java closure through `Band.GetDataset().Close()` no longer double-frees
+  (`3.11.4`).
+
+### Progressive close and driver capabilities (`3.13.0`)
+
+Use `GDALCloseEx()` or the progress-aware `GDALDataset::Close()` for observable
+long closes. `GetCloseReportsProgress()` tells whether progress is available.
+Driver metadata can describe append, upsert, close-time visibility,
+reopen-after-write, read-after-delete, update, and create-subdataset behavior.
+Drivers can also advertise maximum string length. In `GDALOpenEx()`, prefix an
+allowed-driver entry with `-` to exclude that driver.
+
+### Geometry and date corrections
+
+- `GeodesicLength()` again supports open line strings (`3.10.2`).
+- `OGRParseDate()` keeps `59.999999` within second 59 (`3.11.2`) and accepts
+  leap seconds (`3.11.5`).
+- `OGRBuildPolygonFromEdges()` can return `MULTIPOLYGON`; callers and DXF HATCH
+  handling must accept it (`3.11.5`).
+- `OGR_G_SetPoint()` can grow a geometry when the index is at or beyond the
+  current point count (`3.13.2`).
+- `transformWithOptions()` closes polygons after polar reprojection, including
+  with GEOS 3.15 (`3.12.4`).
+
+## Public facilities and algorithm APIs
+
+### CPL, VSI, and raster SDK additions (`3.11.0`)
+
+Public helpers include `CPLIsInteractive()`, `CPLIsDebugEnabled()`, `VSIGlob()`,
+`VSIMove()`, `CPLGetKnownConfigOptions()`, `CPLErrorOnce()`, `CPLDebugOnce()`,
+and safe path functions. C++ adds `CPLTurnFailureIntoWarningBackuper`,
+`CPLErrorAccumulator`, and `CPLQuietWarningsErrorHandler`.
+
+Raster facilities include `gdal::CXXTypeTraits<T>`,
+`gdal::GDALDataTypeTraits<T>`, `gdal_minmax_element.hpp`, `gdal::VectorX`,
+min/max-location APIs, geolocation-to-pixel/line, interpolation at geolocation,
+`GDALTranspose2D()`, recursive multidimensional-array names,
+`GDALIsValueInRangeOf()`, and string-form nodata setting.
+
+`GDALMDArray::AsClassicDataset()` accepts `BAND_IMAGERY_METADATA`; built-in tile
+matrix sets add `WorldMercatorWGS84Quad`, `PseudoTMS_GlobalMercator`, and
+`GoogleCRS84Quad`. `GDAL_CACHEMAX` accepts memory units. Raster APIs reject
+`GDT_Unknown` and `GDT_TypeCount`.
+
+### OGR and binding-visible APIs (`3.11.0`)
+
+Generated fields use `OGRFieldDefn::SetGenerated()`/`IsGenerated()`.
+`OSRGetAuthorityListFromDatabase()` enumerates CRS authorities, and
+`OGR_GT_GetSingle()` is available to SWIG. Arrow streams accept
+`DATETIME_AS_STRING`; `ogr2ogr` uses it to preserve time zones and can transfer
+dataset relationships.
+
+SWIG adds `Driver.CreateVector()`. C# exposes `VSIGetMemFileBuffer`. Python adds
+`VSIFile`, `gdal_fsspec`, masked-array reads, mask resampling, translation
+`-epo`/`-eco`, and relationship-field matching. Python constructors and driver
+methods accept CRS definitions, NumPy types, and `os.PathLike` as documented;
+the no-NumPy build switch accepts common true/false spellings.
+
+### Dataset and multidimensional bridging APIs (`3.12.0`)
+
+New dataset APIs include layer lookup, extent and WGS84 extent, overview
+addition, window iteration, and split RasterIO. `GDALGetGDALPath()` returns the
+installation path and `GDALRescaleGeoTransform()` rescales transforms.
+
+`GDALDataset::AsMDArray()` bridges a classic dataset to an array;
+`GDALMDArray::GetRawBlockInfo()` works with HDF5, netCDF, Zarr, and VRT.
+Extended types can expose raster attribute tables, groups enumerate data types,
+and classic views can obtain band metadata from fully qualified attributes.
+
+Geolocation can normalize longitude to -180..180. OGR adds envelope-to-geometry
+and constrained Delaunay APIs, vector datasets expose `GetSpatialRef()`, schema
+overrides can match `*`, `srcType`, and `srcSubType`, and CRS APIs expose
+celestial-body names.
+
+### Raster band algebra (`3.12.0`)
+
+C, C++, and Python bands support arithmetic, comparisons, `AsType()`, `abs()`,
+`sqrt()`, logarithms, `min()`, `max()`, `mean()`, and `IfThenElse()`.
+Algorithm consumers can read typed defaults; implementers have helpers for
+geometry type, append/overwrite layer, absolute path, stdout, hidden arguments,
+and deprecation. Front ends can inspect pipeline-step availability, direct and
+aggregate dependencies, mutual-dependency groups, duplicate-value allowance,
+and maximum character counts.
+
+### Public headers and data types (`3.12.0`, `3.13.0`)
+
+Installed raster headers include `gdal_dataset.h`, `gdal_rasterband.h`,
+`gdal_geotransform.h`, and `gdal_raster_cpp.h`. Later additions include
+`gdal_mem.h` with `MEMCreate()`, `gdal_thread_pool.h`, and
+`ogr_refcountedptr.h`.
+
+`GDT_UInt8` is canonical and `GDT_Byte` aliases it. C, C++, and Python expose
+inter-band covariance; multidimensional arrays expose indexed overviews.
+
+### Custom VSI handlers and config masking (`3.13.0`)
+
+`VSIVirtualHandle::Read()` and `Write()` take a single `size_t` count, requiring
+override updates. Handlers can be installed with `shared_ptr`; handles also add
+little-endian `ReadLSB()` and `WriteLSB()`. Passing `CPL_NULL_VALUE` to
+`CPLSetConfigOption()` masks an environment variable with an explicit null.
+
+## Language-binding details
+
+### Python array and option behavior
+
+- `Dataset.WriteArray()` and `Band.WriteArray()` support zero-stride arrays
+  (`3.11.4`).
+- `Band.BlockWindows()`, band input to `CreateCopy()`, Boolean NumPy mapping,
+  Boolean writes without Float64 promotion, and string coercion for config
+  values arrived in `3.12.0`.
+- Free-threaded/no-GIL Python 3.13+ builds are supported; `gdal.alg.*` accepts a
+  `progress` keyword (`3.12.1`).
+- `Dataset.AdviseRead()` and `Band.AdviseRead()` accept keywords, dataset calls
+  default to all bands, algorithm functions accept argument aliases, and
+  `Feature.SetField()` accepts NumPy values (`3.13.0`).
+- `VectorTranslate()` and related methods parse `options=["-oo", "FOO=BAR"]`
+  correctly (`3.13.1`).
+
+### Ownership and C#/Java/SWIG behavior
+
+`Feature.GetDefnRef()` increments the returned definition's reference count
+(`3.12.1`). C# adds `SpatialReference.FindMatches` (`3.11.1`). Java exposes
+full and partial `/vsicurl/` cache clearing, and SWIG exports relationship
+capability constants (`3.13.0`).
+
+## Portability helpers and path behavior
+
+`CPLDebug` accepts `YES`, `TRUE`, and `1`. `CPLGetPath()` and
+`CPLGetDirname()` handle `/vsicurl?` and encoded paths, while
+`CPLFormFilename()` strips a leading relative `../...` when joining to an
+absolute path (`3.10.1`). `CPLLexicallyNormalize()` adds lexical path
+normalization (`3.12.3`).
+
+`OGRSpatialReference::importFromEPSG()` tries an ESRI lookup for ESRI-like
+codes and warns on successful fallback (`3.10.1`). Transformations also handle
+a CRS mislabeled EPSG when its code is actually ESRI (`3.11.2`).

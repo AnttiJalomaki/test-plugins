@@ -1,190 +1,119 @@
 # PPL, SQL, Query APIs, and Transports
 
-Use this reference for Calcite routing and semantics, PPL commands and
-functions, SQL compatibility, unified query APIs, gRPC and Arrow request
-coverage, and pull-based ingestion.
+## Routing and executing PPL
 
-## PPL engine routing and request behavior
+### Calcite selection and fallback
 
-### Calcite defaults and fallback
+Calcite is enabled by default for PPL in 3.0.0. Since 3.2.0, failed Calcite queries do not fall back to the v2 engine by default. OpenSearch 3.3.0 refines this: unsupported commands implicitly route to v2, but general query failures still do not.
 
-- Calcite is enabled by default for PPL in 3.0.0.
-- Failed Calcite PPL queries no longer fall back to the v2 engine by default
-  in 3.2.0.
-- Unsupported Calcite PPL commands do implicitly fall back to v2 in 3.3.0;
-  distinguish unsupported syntax from a generally failed query.
-- When `plugins.ppl.syntax.legacy.preferred=false`, `join` defaults to `max=1`
-  in 3.5.0.
+PPL supports direct-query data sources in 3.3.0. Point-in-Time searches use `_shard_doc` as the default sort tiebreaker.
 
-### Limits, cancellation, and diagnostics
+Since 3.4.0, Calcite queries accept timeouts, Explain can return YAML, and subsearch and join limits are configurable. A zero or negative `subsearch.maxout` means unlimited.
 
-- From 3.1.0, `query.size_limit` limits only final results, not intermediate
-  processing.
-- Calcite queries support timeouts in 3.4.0. Subsearch and join limits are
-  configurable, and zero or negative `subsearch.maxout` means unlimited.
-- Explain can return YAML in 3.4.0.
-- PPL profiling reports phase-level and operator-level metrics in 3.5.0.
-- PPL queries can be cancelled through `_tasks/_cancel` in 3.6.0 and accept
-  `fetch_size`.
-- The 3.6.0 grammar-bundle API supports third-party query tooling.
+When `plugins.ppl.syntax.legacy.preferred=false`, `join` defaults to `max=1` in 3.5.0. Profiling can report phase- and operator-level metrics.
 
-### Result and error semantics
+In 3.6.0, PPL requests accept `fetch_size`, can be cancelled through `_tasks/_cancel`, and expose a grammar-bundle API for third-party query tooling.
 
-- `count(*)` and `dc` cap at `MAX_INTEGER` in 3.3.0.
-- Decimal `mod` returns a decimal in 3.3.0.
-- An unmatched index pattern raises `IndexNotFoundException` in 3.3.0.
-- In 3.6.0, final struct values are maps rather than lists.
-- Missing or null `JSON_EXTRACT` paths return null in 3.6.0, as does arithmetic
-  that overflows a double to infinity.
-- `FIRST`, `LAST`, and `TAKE` accept text fields and scripts in 3.6.0.
-- `NOT IN` and `NOT LIKE` exclude null or missing values in 3.7.0.
-- `COALESCE(null, integer)` retains an integer type in 3.7.0.
-- PPL wildcard searches in 3.7.0 no longer silently drop documents when a
-  field is text in one index and keyword in another.
-- Calcite `dedup` preserves sort order in 3.7.0.
-- Dotted-path `eval` assignments preserve their map root in 3.7.0.
-- `json_set` and `json_delete` handle `$.key` paths in 3.7.0.
+## Composing PPL pipelines
 
-## PPL data access and pipeline commands
+### Relational and shaping commands
 
-### Metadata, schemas, and data sources
+The 3.0.0 Calcite path supports `join`, `lookup`, `IN`, relation, `exists`, scalar subqueries, `BETWEEN`, `dedup`, `parse`, multiple index patterns, nested fields, and comments.
 
-- PPL can reference metadata fields from 2.19.0.
-- The 3.1.0 Calcite path supports `match_only_text` fields and merges object
-  fields during index-schema discovery.
-- Direct-query data sources are supported in 3.3.0.
-- PIT searches use `_shard_doc` as the default sort tiebreaker in 3.3.0.
+OpenSearch 3.1.0 adds `flatten`, `expand`, `trendline`, `appendcol`, `grok`, `top`, `rare`, `fillnull`, `describe`, and `eventstats`. It supports `match_only_text` and merges object fields while discovering an index schema.
 
-### Relational and pipeline operations
+OpenSearch 3.3.0 adds `spath`, `rex`, `regex`, and `append`. `rex` supports `sed` mode and `offset_field`; `join` gains field lists and options, `search` gains time modifiers, `rename` accepts wildcards, and Calcite supports `timechart`.
 
-- The 3.0.0 Calcite PPL path supports `join`, `lookup`, `IN`, relation,
-  `exists`, and scalar subqueries.
-- It also supports `BETWEEN`, `dedup`, `parse`, JSON casts, `CASE`, `TYPEOF`,
-  multiple index patterns, nested fields, comments, and additional scalar and
-  data types.
-- PPL 3.1.0 adds `flatten`, `expand`, `trendline`, `appendcol`, `grok`, `top`,
-  `rare`, `fillnull`, `describe`, and `eventstats`.
-- PPL 3.3.0 adds `spath`, `rex`, and `regex`; `rex` supports `sed` mode and
-  `offset_field`.
-- PPL 3.3.0 also adds `append`, expands `join` with field lists and options,
-  adds time modifiers to `search`, supports wildcard `rename`, and implements
-  Calcite `timechart`.
-- Calcite PPL 3.4.0 adds `chart`, `streamstats`, `multisearch`, `replace`, and
-  `appendpipe`.
-- PPL 3.5.0 adds `addtotals`, `addcoltotals`, `transpose`, and `mvcombine`.
-- PPL 3.6.0 adds bidirectional `graphlookup` with literal starting values,
-  `convert` with five conversion functions, `mvexpand`, `nomv`, and
-  `fieldformat`.
-- PPL 3.6.0 also adds result highlighting, `spath` auto-extraction, a
-  `contains` operator, and trailing or empty pipes.
-- PPL 3.7.0 adds `union` with type coercion and UNION ALL semantics.
-- Predicates accept `IS [NOT] NULL` in 3.7.0, and `head` and `top` accept
-  `limit=N`.
+In 3.4.0, Calcite adds `chart`, `streamstats`, `multisearch`, `replace`, and `appendpipe`. `replace` supports wildcards, its eval form supports regex, and `regexp_replace()` is an alias. `timechart` adds per-second, per-minute, per-hour, and per-day functions.
 
-### Extraction and conversion behavior
+Since 3.5.0, PPL includes `addtotals`, `addcoltotals`, `transpose`, and `mvcombine`; `lookup` accepts `OUTPUT` as an alias for `REPLACE`, and `spath` supports dynamic fields. The `ml` command accepts `category_field`.
 
-- `rex`, `spath`, and `parse` extractions perform automatic type conversion in
-  3.4.0.
-- `spath` supports dynamic fields in 3.5.0.
-- `lookup` accepts `OUTPUT` as an alias for `REPLACE` in 3.5.0.
-- PPL 3.7.0 extends `convert` with `ctime`, `mktime`, `mstime`, `dur2sec`, and
-  a `timeformat` parameter.
+OpenSearch 3.6.0 adds bidirectional `graphlookup` with literal starting values, `convert` with five conversion functions, `mvexpand`, `nomv`, and `fieldformat`. It adds highlighting, automatic extraction for `spath`, a `contains` operator, and trailing or empty pipes.
 
-## PPL functions and expressions
+In 3.7.0, `union` applies type coercion and UNION ALL semantics. Predicates accept `IS [NOT] NULL`, while `head` and `top` accept `limit=N`.
 
-### General functions
+OpenSearch 3.8.0 adds `makeresults`, `foreach` over field lists, multivalue fields, and JSON arrays, `timewrap` for period comparison over `timechart`, and experimental `xyseries` for pivoting grouped rows to wide output. Bare-field join shorthand uses `join on <field>`.
 
-- PPL 3.1.0 adds `DISTINCT_COUNT_APPROX`, `earliest`, `latest`, `coalesce`,
-  `isempty`, `isblank`, `ispresent`, `geoip`, `cidrmatch`, JSON functions,
-  cryptographic hashes, lambdas, array functions, and decimal literals.
-- Calcite 3.2.0 adds `compare_ip`, IP casts, function-argument coercion,
-  improved date comparisons, and broader expression support.
-- Date/time functions default to UTC across PPL and SQL in 3.2.0.
-- PPL 3.3.0 adds `values` and `list` statistics, `first` and `last`
-  aggregates, `mvjoin`, `strftime`, `regex_match`, and nonnumeric and
-  eval-context `max`/`min`.
-- PPL 3.3.0 accepts ISO 8601 strings and adds `distinct_count`, `earliest`, and
-  `latest` to `eventstats`.
-- `geoip` accepts IP-typed input in 3.4.0.
-- Eval division returns a decimal in 3.4.0.
-- `like` accepts an optional `case_sensitive` argument in 3.4.0.
+### Aggregation and window controls
 
-### Multivalue and replacement functions
+In 3.4.0, `streamstats` and `eventstats` accept `bucket_nullable`; `top` and `rare` accept `usenull`; `timechart` chooses its timestamp through `timefield`. Span expressions accept milliseconds, decimal literals, and an implicit `@timestamp`.
 
-- PPL 3.4.0 adds `mvdedup`, `mvindex`, and `mvappend`.
-- `replace` supports wildcards in 3.4.0, its eval form supports regex, and
-  `regexp_replace()` is an alias.
-- PPL 3.5.0 adds `tonumber`, `mvzip`, `split`, `mvfind`, and `mvmap`.
-- The 3.5.0 `ml` command accepts `category_field`.
+Since 3.3.0, `values` and `list` statistics, `first` and `last` aggregates, and `distinct_count`, `earliest`, and `latest` in `eventstats` are supported. `count(*)` and `dc` cap at `MAX_INTEGER`.
 
-### Aggregation and time controls
+## Writing PPL expressions
 
-- `timechart` in 3.4.0 adds per-second, per-minute, per-hour, and per-day
-  functions and can select its timestamp with `timefield`.
-- `streamstats` and `eventstats` add `bucket_nullable` in 3.4.0.
-- `top` and `rare` add `usenull` in 3.4.0.
-- Span expressions support milliseconds, decimal literals, and an implicit
-  `@timestamp` in 3.4.0.
+### Scalar, JSON, and collection functions
 
-## SQL and unified query APIs
+OpenSearch 3.0.0 adds JSON casts, `CASE`, `TYPEOF`, and additional scalar and data types.
 
-### SQL compatibility
+OpenSearch 3.1.0 adds `DISTINCT_COUNT_APPROX`, `earliest`, `latest`, `coalesce`, `isempty`, `isblank`, `ispresent`, `geoip`, `cidrmatch`, JSON functions, cryptographic hashes, lambdas, array functions, and decimal literals.
 
-- SQL cursor continuation in 3.7.0 remains within the original query indexes
-  under fine-grained access control.
-- SQL 3.7.0 adds the `vectorSearch()` table function with k-NN pushdown and
-  filtering modes.
+OpenSearch 3.3.0 adds `mvjoin`, `strftime`, `regex_match`, nonnumeric and eval-context `max` and `min`, and ISO 8601 strings. Decimal `mod` returns a decimal.
 
-### Unified query paths
+In 3.4.0, multivalue eval adds `mvdedup`, `mvindex`, and `mvappend`. `rex`, `spath`, and `parse` extractions automatically convert types; `geoip` accepts IP-typed input; eval division returns a decimal; and `like` accepts optional `case_sensitive`.
 
-- SQL 3.6.0 adds a unified query parser API, unified-API profiling, and native
-  Calcite SQL planning.
-- The query-only unified V2 path in 3.7.0 blocks DML and DDL and supports
-  joins, `IN` and `EXISTS` subqueries, derived tables, window functions,
-  `LIMIT`/`OFFSET`, and `LENGTH`, `REGEXP_REPLACE`, and `DATE_TRUNC`.
+OpenSearch 3.5.0 adds `tonumber`, `mvzip`, `split`, `mvfind`, and `mvmap`.
 
-## PPL Alerting integration
+In 3.7.0, `convert` adds `ctime`, `mktime`, `mstime`, `dur2sec`, and `timeformat`.
 
-- PPL Alerting 3.4.0 adds monitor execution and statistics, get/search/delete
-  monitor operations, and alert retrieval and lifecycle operations.
-- Alerting V2 roles are added to `roles.yml` in 3.4.0.
-- Dashboards bucket-level monitor triggers can carry keyword filters in
-  3.4.0.
-- PPL can create or update Prometheus rules in 3.6.0.
-- Experimental PPL Alerting assets are removed in 3.6.0 pending refactoring.
-  Dashboards PPL Alerting moves to v1 endpoints and no longer maintains
-  separate legacy and PPL paths.
+### Result and null behavior
 
-## gRPC, Arrow, HTTP/3, and ingestion
+Since 3.1.0, `query.size_limit` limits only final results, not intermediate processing.
 
-### gRPC lifecycle and protection
+In 3.2.0, Calcite adds `compare_ip`, IP casts, argument coercion, improved date comparisons, and broader expression support. Date and time functions default to UTC across PPL and SQL.
 
-- Protobuf-over-gRPC is a disabled-by-default experiment in 3.0.0.
-- In 3.2.0 it becomes production-ready for bulk ingestion, expands search and
-  k-NN coverage, and supports encryption in transit.
-- The 3.3.0 production transport adds term-level, full-text, geographic,
-  Boolean, script, and nested queries.
-- OpenSearch protobuf Python packages are published to PyPI in 3.3.0.
-- gRPC search in 3.4.0 adds `ConstantScoreQuery`, `FuzzyQuery`,
-  `MatchBoolPrefixQuery`, `MatchPhrasePrefix`, `PrefixQuery`, and `MatchQuery`.
-- Bulk gRPC requests in 3.4.0 can carry CBOR, SMILE, or YAML documents.
-- Hybrid queries run over gRPC in 3.5.0.
+In 3.3.0, unmatched index patterns raise `IndexNotFoundException`.
 
-### Other transports
+OpenSearch 3.6.0 returns final struct values as maps rather than lists. Missing or null `JSON_EXTRACT` paths return null, and arithmetic that overflows a double to infinity returns null. `FIRST`, `LAST`, and `TAKE` accept text fields and scripts.
 
-- The disabled-by-default Apache Arrow Flight transport in 3.3.0 provides
-  secured server-side streaming for node-to-node communication through
-  `StreamTransportService`.
-- Server-side HTTP/3 is a disabled-by-default experiment in 3.5.0.
+OpenSearch 3.7.0 makes `NOT IN` and `NOT LIKE` exclude null or missing values. `COALESCE(null, integer)` preserves integer type; wildcard searches no longer silently discard documents when a field is text in one index and keyword in another; `dedup` preserves sort order; dotted-path `eval` assignments preserve the root map; and `json_set` and `json_delete` handle `$.key` paths.
 
-### Pull-based ingestion
+Since 3.8.0, `constant_keyword` is treated as a string, narrow integers widen for arithmetic, and `head` retains struct and nested columns. A configurable expression-depth limit constrains complex expressions, and `_explain?format=json_tree` returns machine-readable plans.
 
-- Pull-based ingestion from Apache Kafka and Amazon Kinesis is a
-  disabled-by-default 3.0.0 experiment with native backpressure.
-- Pull-based ingestion becomes generally available in 3.6.0 and adds warmup
-  settings and adaptive shard selection.
+## Using PPL metadata and authoring tools
 
-## Dashboards query experience
+PPL queries can reference metadata fields since 2.19.0.
 
-- The disabled-by-default experimental Discover view in 2.19.0 adds SQL and
-  PPL alongside DQL and Lucene, with autocomplete and improved data selection.
+OpenSearch Dashboards 3.8.0 adds a visual PPL builder for filters, aggregations, and sorting with round-trip editing, plus lint suggestions for unknown fields and misspelled commands. Dev Tools adds a Grok Debugger that simulates a pattern against a sample log and displays extracted fields.
+
+## Using SQL and unified query APIs
+
+### SQL lifecycle
+
+OpenSearch 3.0.0 removes the SparkSQL connector and SQL `DELETE`, deprecates the OpenSearch DSL format and several settings, removes `plugins.sql.pagination.api`, and defaults pagination to Point in Time. Scroll-based pagination is deprecated, and OpenDistro endpoints and `opendistro`-prefixed settings are removed.
+
+OpenSearch 3.6.0 adds a unified query parser API, profiling for the unified API, and native Calcite SQL planning.
+
+In 3.7.0, SQL adds `vectorSearch()` with k-NN pushdown and filtering modes. The query-only unified V2 path blocks DML and DDL and supports joins, `IN` and `EXISTS` subqueries, derived tables, window functions, `LIMIT`/`OFFSET`, `LENGTH`, `REGEXP_REPLACE`, and `DATE_TRUNC`.
+
+SQL cursor continuation in 3.7.0 remains within the original query indexes under fine-grained access control.
+
+## Operating PPL Alerting
+
+PPL Alerting 3.4.0 adds monitor execute and statistics plus get, search, and delete monitor operations and alert retrieval/lifecycle operations. Alerting V2 roles are added to `roles.yml`, and Dashboards bucket-level triggers can carry keyword filters.
+
+OpenSearch 3.6.0 removes the experimental PPL Alerting assets pending refactoring. Dashboards APIs move to v1 endpoints and no longer maintain separate legacy and PPL paths. PPL can create or update Prometheus rules.
+
+In 3.7.0, Alerting provides PPL monitor CRUD and manual execution with RBAC checks. PPL monitor names can contain up to 100 characters rather than 30.
+
+## Choosing ingestion and wire transports
+
+### Protobuf over gRPC
+
+OpenSearch 3.0.0 introduces disabled-by-default Protobuf-over-gRPC transport and experimental bulk ingestion. OpenSearch 3.2.0 makes the transport production-ready for bulk ingestion, expands search coverage including k-NN, and adds encryption in transit.
+
+OpenSearch 3.3.0 expands gRPC to term-level, full-text, geographic, Boolean, script, and nested queries and publishes OpenSearch protobuf Python packages to PyPI.
+
+In 3.4.0, gRPC search adds `ConstantScoreQuery`, `FuzzyQuery`, `MatchBoolPrefixQuery`, `MatchPhrasePrefix`, `PrefixQuery`, and `MatchQuery`; bulk documents can be CBOR, SMILE, or YAML.
+
+OpenSearch 3.5.0 adds circuit-breaker protection, Security JWT authentication, case-insensitive JWT header names, and hybrid queries over gRPC. OpenSearch 3.6.0 adds Security Basic authentication.
+
+### Apache Arrow Flight
+
+OpenSearch 3.3.0 adds a separate disabled-by-default Apache Arrow Flight transport for secured server-side node-to-node streaming through `StreamTransportService`.
+
+### HTTP/3 and pull-based ingestion
+
+OpenSearch 3.5.0 adds disabled-by-default server-side HTTP/3.
+
+Pull-based ingestion from Apache Kafka and Amazon Kinesis begins as a disabled-by-default 3.0.0 experiment with native backpressure. It becomes generally available in 3.6.0 with warmup settings and adaptive shard selection.

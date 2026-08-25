@@ -1,13 +1,17 @@
 # Behavior Flags and Migrations
 
-## Default behavior changes
+## Resource Names and Freshness Hooks
 
-The following behavior changes are part of the `1.10-behavior-changes` batch.
+The `1.10-behavior-changes` batch makes two previously optional behaviors the
+Core 1.10 defaults:
 
-Core 1.10 changes `require_resource_names_without_spaces` and
-`source_freshness_run_project_hooks` from `false` to `true`. Resource names with
-spaces are rejected by default, and `dbt source freshness` runs project hooks by
-default. A version-controlled compatibility opt-out is possible:
+- `require_resource_names_without_spaces: true` rejects resource names that
+  contain spaces.
+- `source_freshness_run_project_hooks: true` makes `dbt source freshness` run
+  project hooks.
+
+Temporary compatibility opt-outs belong in the version-controlled `flags`
+block of `dbt_project.yml`:
 
 ```yaml
 flags:
@@ -15,12 +19,16 @@ flags:
   source_freshness_run_project_hooks: false
 ```
 
-An explicit `false` retains legacy behavior but emits deprecation warnings.
-Core 2.0 removes both flags and always applies the new behavior.
+Explicit `false` values preserve the legacy behavior but continue to emit
+deprecation warnings. Core 2.0 removes both flags and always uses the new
+behavior.
 
-Core 1.10.5 introduces `require_generic_test_arguments_property` with a default
-of `false`; in 1.10.8 it matures to `true`. When enabled, put generic-test
-inputs under `arguments`:
+## Generic Test Arguments
+
+Core 1.10.5 introduces `require_generic_test_arguments_property` with a
+default of `false`; 1.10.8 changes the default to `true`. When enabled, nest
+generic-test arguments below `arguments` instead of placing them directly
+under the test name.
 
 ```yaml
 flags:
@@ -36,8 +44,16 @@ models:
                 values: [placed, shipped, completed]
 ```
 
-Core 1.10 introduces two other opt-ins, both initially `false` and both default
-`true` in Core 1.12:
+## Macro Arguments and Warning Handling
+
+Core 1.10 introduces two opt-ins:
+
+- `validate_macro_args` warns when documented macro arguments do not match the
+  macro definition. `--warn-error` promotes these warnings to errors.
+- `require_all_warnings_handled_by_warn_error` can stop a build when
+  `--warn-error` is set.
+
+Both begin with a `false` default and mature to `true` in Core 1.12.
 
 ```yaml
 flags:
@@ -45,68 +61,108 @@ flags:
   require_all_warnings_handled_by_warn_error: true
 ```
 
-`validate_macro_args` warns when documented macro arguments do not match the
-macro definition. Those warnings are errors under `--warn-error`.
-`require_all_warnings_handled_by_warn_error` can stop a build when
-`--warn-error` is set.
+## Databricks Materialization V2
 
-dbt-databricks 1.10.0 separately introduces `use_materialization_v2`, default
-`false`, to select its restructured materializations. It uses the same
-project-level `flags` block. No maturity release is specified.
+dbt-databricks 1.10.0 introduces `use_materialization_v2`, disabled by
+default, to choose restructured materializations. Configure it as a project
+behavior flag. No maturity release is specified.
 
-## Validation and diagnostics
+```yaml
+flags:
+  use_materialization_v2: true
+```
 
-Core 1.10.0 begins JSON Schema validation of `dbt_project.yml` and resource
-YAML. Validation also:
+## Validation Defaults
 
-- detects duplicate YAML keys;
-- validates `{{ config(...) }}` in model SQL even when static parsing is
-  unavailable;
-- warns about unexpected Jinja blocks and unsupported custom keys or
-  properties;
-- reports named diagnostic events, summarizes repeated violations, and can be
-  expanded to display every instance.
+The `1.10.0` changes begin JSON Schema validation of `dbt_project.yml` and
+resource YAML. Validation also detects duplicate YAML keys, validates
+`{{ config(...) }}` in model SQL even when static parsing is unavailable, and
+warns about unexpected Jinja blocks and unsupported custom keys or properties.
 
-Some schema checks are gated by adapter support, and some diagnostics begin as
-preview deprecations.
+Schema checks are adapter-gated, and some diagnostics begin as preview
+deprecations. Diagnostics carry event names, summarize repeated violations,
+and can be expanded to show every instance.
 
-In Core 1.12.0, JSON Schema deprecation warnings are raised by default. A custom
-`generate_schema_name` macro that returns null is deprecated behind
-`require_valid_schema_from_generate_schema_name`:
+In `1.12.0`, JSON Schema-based deprecation warnings are raised by default.
+Also:
+
+- A custom `generate_schema_name` macro that returns null is deprecated behind
+  `require_valid_schema_from_generate_schema_name`.
+- Source and Semantic Model names containing spaces warn.
+- `REQUIRE_SOURCE_AND_SEMANTIC_MODEL_NAMES_WITHOUT_SPACES` converts that name
+  validation into an error.
 
 ```yaml
 flags:
   require_valid_schema_from_generate_schema_name: true
 ```
 
-Source and Semantic Model names containing spaces warn. The
-`REQUIRE_SOURCE_AND_SEMANTIC_MODEL_NAMES_WITHOUT_SPACES` setting can promote
-that validation to an error.
+## Deprecated Interfaces
 
-## Deprecated and inert interfaces
+Core 1.10 deprecates these interfaces:
 
-Core 1.10 deprecates:
+- `dbt source freshness --output` and `-o`.
+- The source `overrides` property.
+- `modules.itertools` in Jinja.
+- Model-selection aliases `--models`, `--model`, and `-m`; use `--select`.
+- The terms `include` and `exclude` in warn-error options.
 
-- `dbt source freshness --output` and `-o`;
-- source `overrides`;
-- `modules.itertools` in the Jinja context;
-- `--models`, `--model`, and `-m` selection aliases; use `--select`;
-- `include` and `exclude` terminology in warn-error options.
+From 1.10.11, project-level `quoting.snowflake_ignore_case` is a no-op. Do not
+rely on it to change identifier casing.
 
-```bash
-dbt run --select my_model
+Core 1.12.2 warns when the installed dbt version is deprecated. This behavior
+is recorded in the `1.12.1` batch.
+
+## Snapshot Hard-Delete Migration
+
+The `1.9-guides` behavior adds `hard_deletes` modes:
+
+- `ignore` is the default and does not record source deletion.
+- `invalidate` closes the current row by setting `dbt_valid_to`.
+- `new_record` records deletion as a new row and adds `dbt_is_deleted`.
+
+```yaml
+snapshots:
+  - name: my_snapshot
+    config:
+      unique_key: id
+      strategy: timestamp
+      updated_at: updated_at
+      hard_deletes: new_record
 ```
 
-From Core 1.10.11, project-level `quoting.snowflake_ignore_case` is a no-op.
-Projects must use deliberate identifier naming and quoting rather than relying
-on this setting to change casing.
+Legacy `invalidate_hard_deletes` remains supported but cannot be combined with
+`hard_deletes`. Existing tables are not migrated automatically, so migrate
+their schema and data before changing modes; otherwise, use the setting only
+for new snapshots. PostgreSQL, BigQuery, Snowflake, and Redshift support the
+configuration.
 
-## Exit and runtime migration checks
+## Resource and Package Lookup Compatibility
 
-Starting in 1.9.1 (from the `1.9.0` batch), `PartialSuccess` yields a nonzero
-exit status. CI and wrappers must handle it as a failing process status even if
-some nodes succeeded.
+Core `1.11.0` adds two behavior flags:
 
-The 1.9 line removes Python 3.8 support. Core 1.11.0 removes Python 3.9 support,
-so use Python 3.10 or newer there. Runtime package details are collected in
-[cli-artifacts-and-runtime.md](cli-artifacts-and-runtime.md).
+```yaml
+flags:
+  require_unique_project_resource_names: true
+  require_ref_searches_node_package_before_root: true
+```
+
+`require_unique_project_resource_names` restores an error for duplicate node
+names within one project. `require_ref_searches_node_package_before_root`
+makes an ambiguous package-internal `ref()` search the referencing node's
+package before the root project.
+
+## Latest-Version Relation Pointers
+
+Core 1.12 can create an unversioned relation pointer, such as `dim_customers`,
+for the latest version of a versioned model. Enable pointers project-wide with
+`latest_version_pointer_enabled_by_default` or per model with
+`latest_version_pointer`.
+
+```yaml
+flags:
+  latest_version_pointer_enabled_by_default: true
+```
+
+Pointer collision checks honor quoting and case. Unquoted floating versions,
+such as `v: 4.5`, are no longer silently discarded.

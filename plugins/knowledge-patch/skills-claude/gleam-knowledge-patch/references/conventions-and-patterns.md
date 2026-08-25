@@ -1,10 +1,9 @@
 # Conventions and patterns
 
-## Imports and annotations
+## Imports and module boundaries
 
-### Keep functions and constants qualified
-
-Call functions and constants from another module through their module qualifier. Import types and record constructors unqualified only when that remains readable.
+Call imported functions and constants through their module qualifier. Types and
+record constructors may be imported unqualified when that remains readable.
 
 ```gleam
 import gleam/list
@@ -14,33 +13,63 @@ pub fn reversed(items: List(a)) -> List(a) {
 }
 ```
 
-### Annotate module functions
+Use singular names for every module-path segment, such as
+`app/payment/invoice`, not `app/payments/invoice`.
 
-Give every module-level function, including private functions, types for all arguments and an explicit return type. Keep inference inside function bodies rather than at the definition boundary.
+Production modules in `src/` may import only regular dependencies and other
+`src/` modules. They cannot import development dependencies or modules in
+`dev/` or `test/`. Modules in `dev/` and `test/` may import from every dependency
+scope and source directory.
+
+## Types and function boundaries
+
+Annotate every module-level function, including private functions, with types
+for every argument and an explicit return type. Keep inference within function
+bodies rather than at definition boundaries.
+
+Use shared types and functionality from `gleam_stdlib`, `gleam_time`,
+`gleam_json`, `gleam_http`, `gleam_erlang`, `gleam_otp`, and
+`gleam_javascript` rather than recreating them. Their shared representations
+allow independently developed packages to interoperate.
+
+## Failure handling
+
+Fallible functions return `Result`, not `Option`. Use `Nil` for the error type
+when failure carries no additional information.
+
+Libraries must not use `panic` or `let assert` for ordinary failure. An
+OTP-focused library may deliberately panic when a suitable supervision tree
+provides non-local handling.
+
+```gleam
+pub fn first(items: List(a)) -> Result(a, Nil) {
+  case items {
+    [item, ..] -> Ok(item)
+    _ -> Error(Nil)
+  }
+}
+```
 
 ## Naming
 
-### Treat acronyms as words
+Treat acronyms as ordinary words: use `Json` and `json`, not `JSON` or
+`j_s_o_n`. An all-capital name produces a segmented BEAM name such as
+`j_s_o_n`.
 
-Use `Json` and `json`, not `JSON` or `j_s_o_n`. This follows Gleam naming conventions and avoids generated BEAM names such as `j_s_o_n`.
+Use `x_to_y` for a general conversion, omitting the source when the module
+already supplies it, as in `identifier.to_string`. Prefer a precise format such
+as `date_to_rfc3339`, or a domain operation such as `round`, when available.
 
-### Name conversions by direction or format
+Name result-returning functions by their domain operation, such as `parse_json`
+or `enqueue`. Reserve `try_` for a result-propagating counterpart of an existing
+operation, such as `map` and `try_map`.
 
-Use `x_to_y` for a general conversion, but omit the source type when the module already establishes it, as with `identifier.to_string`. Prefer a format-specific name such as `date_to_rfc3339`, or a semantic operation such as `round`, when available.
+## Tool configuration
 
-### Reserve `try_` for counterparts
-
-Name a `Result`-returning function after its domain operation, such as `parse_json` or `enqueue`. Use `try_` only for a result-propagating counterpart of an existing operation, such as `map` and `try_map`, rather than to describe an abstract fallibility pattern.
-
-## Package and source design
-
-### Share core package types
-
-Prefer `gleam_stdlib`, `gleam_time`, `gleam_json`, `gleam_http`, `gleam_erlang`, `gleam_otp`, and `gleam_javascript` rather than recreating their data types or functionality. Shared representations keep packages interoperable.
-
-### Put tool settings in `gleam.toml`
-
-Store an additional development tool's static settings below `tools.<tool-name>` rather than in a dedicated configuration file. Dynamic settings may still come from environment variables or command-line arguments.
+Put static configuration for extra development tools under
+`tools.<tool-name>` in `gleam.toml`, rather than in separate configuration
+files. Dynamic settings may still come from environment variables or command-line
+arguments.
 
 ```toml
 [tools.lustre.build]
@@ -48,24 +77,24 @@ minify = true
 outdir = "../server/priv/static"
 ```
 
-### Respect source import boundaries
+## Sans-I/O clients
 
-Code under `src/` may import only regular dependencies and other `src/` modules. It cannot import development dependencies or modules under `dev/` or `test/`. Code under `test/` may import from every dependency and source directory.
-
-## Portable APIs and FFI
-
-### Design Sans-I/O clients
-
-For each API action, expose one function that constructs an HTTP request and another that parses an HTTP response, leaving transport to the caller. Passing an HTTP-sending callback couples the package to incompatible transport shapes across targets, notably promise-based JavaScript and Erlang.
+At each HTTP API boundary, expose one function that constructs a request and
+another that parses a response, leaving transport to the caller.
 
 ```gleam
 pub fn create_user_request(name: String) -> Request(String)
 pub fn create_user_response(response: Response(String)) -> Result(User, ApiError)
 ```
 
-### Do not use `Dynamic` as an FFI catch-all
+Accepting an HTTP-sending callback would couple a package to incompatible
+transport shapes on Erlang and JavaScript.
 
-If a foreign value cannot be represented by an existing Gleam type, declare a purpose-specific opaque type. Exposing `gleam/dynamic.Dynamic` would incorrectly promise that every Gleam value is valid input.
+## FFI types
+
+Do not use `gleam/dynamic.Dynamic` as a catch-all for foreign values. When no
+existing Gleam representation fits, declare a purpose-specific opaque type.
+Using `Dynamic` would promise incorrectly that every Gleam value is valid input.
 
 ```gleam
 pub type Buffer

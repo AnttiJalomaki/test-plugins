@@ -1,185 +1,108 @@
 # CLI, Automation, and Output
 
-Planning and display behavior, console and inspection commands, structured output, query operations, actions, and automation controls.
+## Graphs, console, and human-readable plans (`terraform-1.7.0`)
 
-## Plan and apply behavior
+`terraform graph` emits a simplified resource-relationship graph by default. Use `terraform graph -type=plan` for the detailed plan-style dependency graph used by older releases.
 
-### Configuration inspection without a plan
+`terraform console -plan` first calculates a proposed state and evaluates expressions against it rather than only the prior state. Startup is consequently slower. Terraform 1.9 console input waits for additional lines while parentheses or similar delimiters remain open; editing is limited and the feature is primarily intended for pasted multiline expressions (`terraform-1.9.0`).
 
-*OpenTofu 1.11.0 — batch `opentofu-1.11.0`.*
+Terraform 1.7.4 renders integers larger than 2^63 without truncation in human-readable plans. When `postcondition` or `prevent_destroy` rejects a change, plans retain the proposed change alongside its diagnostic. Terraform 1.9 restores entirely unknown blocks in plan output and 1.9.6 adds complete nested-block changes.
 
-`tofu show -json -config` emits a machine-readable summary of configuration without first creating a plan, while `-module=DIR` limits it to one module. Configuration JSON now also reports each input variable's type constraint and whether it is required.
+## Formatting
+
+Terraform 1.7.2 `fmt` formats test mock-data files named `*.tfmock.hcl`. Terraform 1.15 `fmt` also formats `*.tfquery.hcl` query files.
+
+## Structured output
+
+Terraform 1.8 plan JSON from `terraform show -json` includes:
+
+- `applyable`: whether automation should offer an apply.
+- `complete`: whether applying should fully converge. When false, plan another round.
+
+Terraform 1.9 adds `terraform init -json` for structured initialization (`terraform-1.9.0`). Terraform 1.15 adds backend-configuration messages to `init -json`, includes early diagnostics in `validate -json`, adds file-level diagnostics to JUnit XML skipped-test elements, and makes `terraform state show` exit 1 when it cannot render the requested resource (`terraform-1.15.0`).
+
+OpenTofu 1.7 provides structured `tofu init -json` and `tofu get -json` and adopts XDG base-directory locations (`opentofu-1.7.0`). OpenTofu 1.11 adds plan-free configuration inspection:
 
 ```shell
 tofu show -json -config
-tofu show -json -config -module=./modules/app
+tofu show -json -module=./modules/service
 ```
 
-### Diagnostic and sensitive-output controls
+The configuration JSON includes each variable's type constraint and whether it is required.
 
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
+OpenTofu 1.12 `-json-into=FILENAME` writes machine-readable JSON to a file while preserving normal human output on standard output. Streaming commands can target an IPC path such as a named pipe.
 
-Various commands accept `-consolidate-warnings` and `-consolidate-errors` to toggle diagnostic summarization. `-show-sensitive` deliberately unmasks sensitive configuration or state values in `plan`, `apply`, and other commands that display them.
+```shell
+tofu plan -json-into=plan.json
+```
 
-### Exclusion-oriented planning
+## Inventory and installation automation
 
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
+Terraform 1.10 `terraform modules -json` lists installed modules and whether the current configuration references them (`terraform-1.10.0`). Terraform 1.8 `providers lock -enable-plugin-cache` can reuse packages in the global plugin cache; installation and lockfile details are in the backend and security reference.
 
-`tofu plan -exclude=ADDRESS` skips the selected configuration or state objects and everything that depends on them, complementing `-target`, which selects what to include.
+Terraform 1.13 adds `terraform stacks`; its subcommands are supplied by the installed Stacks plugin, so inspect them dynamically (`terraform-1.13.0`):
+
+```shell
+terraform stacks -help
+```
+
+Terraform 1.15 initialization skips provider development overrides while installing other dependencies normally.
+
+## Targeting and exclusion
+
+Terraform 1.9 accepts the optional `resource.` prefix in target addresses.
+
+OpenTofu 1.9 `-exclude=ADDRESS` skips selected objects and everything depending on them, complementing `-target`, which selects a dependency closure (`opentofu-1.9.0`).
 
 ```shell
 tofu plan -exclude=kubernetes_manifest.crds
 ```
 
-### Large-number plan rendering
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-Starting in 1.7.4, the human-readable plan no longer truncates numbers larger than 2^63.
-
-### Machine-readable plan readiness flags
-
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
-
-The JSON produced for a saved plan by `terraform show` now includes `applyable`, indicating whether automation should offer to apply it, and `complete`, indicating whether applying it is expected to converge desired and actual state. A false `complete` value means automation should encourage another plan/apply round.
-
-### Planned-state console evaluation
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-`terraform console -plan` calculates a plan and evaluates expressions against the planned new state rather than the prior state; it exposes more values at the cost of slower startup.
-
-### Rejected changes remain visible in plans
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-When a `postcondition` or `prevent_destroy` rejects a proposed resource change, the plan now displays that change alongside the error instead of replacing the change with the error.
-
-### Reusable plan selections and explicit CLI output modes
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-`tofu plan` accepts `-target-file` and `-exclude-file` to load reusable lists of resource-instance addresses, while `-concise` is also available for `tofu apply` to suppress progress-like output. `tofu show` adds explicit `-state` and `-plan=PLANFILE` forms while retaining the old positional form.
+OpenTofu 1.10 adds reusable `-target-file` and `-exclude-file` address lists (`opentofu-1.10.0`).
 
 ```shell
-tofu plan -exclude-file=deferred-resources.txt
-tofu show -plan=tfplan
+tofu plan -target-file=targets.txt
+tofu plan -exclude-file=excluded.txt
 ```
 
-### Unknown blocks remain visible in plans
+## Concise and sensitive output
 
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
+OpenTofu 1.7 `tofu plan -concise` omits state-refresh messages. OpenTofu 1.10 `tofu apply -concise` suppresses progress-like messages and emphasizes final results.
 
-Terraform 1.9 restores entirely unknown blocks to plan output. Terraform 1.9.6 additionally renders complete changes inside unknown nested blocks and fixes related rendering crashes.
+OpenTofu 1.9 commands accept `-consolidate-warnings` and `-consolidate-errors` to control diagnostic summarization. `-show-sensitive` reveals normally masked values in commands such as plan and apply; protect all resulting output as secret-bearing.
 
-## Console and inspection
+`TF_STATE_PERSIST_INTERVAL` controls OpenTofu state persistence frequency for long operations, starting in OpenTofu 1.8.
 
-### Expression and console patch compatibility
+## State and plan selection
 
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
+Terraform 1.10 deprecates `-state` for `plan`, `apply`, and `refresh`; configure a local backend path instead.
 
-Terraform 1.10.1 prevents `templatefile` crashes with an entirely unknown variables map or marked values. Terraform 1.10.4 fixes empty-map conversion type information and prevents `terraform console` from crashing while printing ephemeral values.
-
-### Installed-module inventory
-
-*Terraform 1.10.0 — batch `terraform-1.10.0`.*
-
-`terraform modules -json` lists every installed module in the working directory and reports whether the current configuration still references it.
-
-### Interactive early evaluation and console input
-
-*OpenTofu 1.9.0 — batch `opentofu-1.9.0`.*
-
-OpenTofu now prompts for input variables needed during early evaluation. `tofu console` also accepts expressions split across lines inside matching brackets or with a backslash-escaped newline.
-
-### Multi-line interactive console input
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-The interactive `terraform console` waits for additional lines when an expression has unclosed parentheses or similar delimiters. This initial support is aimed mainly at pasting multi-line expressions and has limited interactive editing.
-
-### Resource-only graphs by default
-
-*Terraform 1.7.0 — batch `terraform-1.7.0`.*
-
-`terraform graph` now shows only relationships between resources by default. Use `terraform graph -type=plan` to request the more detailed approximation of Terraform Core's planning dependency graph that earlier releases produced by default.
-
-## Machine-readable output and automation
-
-### Automation-visible command behavior
-
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
-
-Applying a saved plan in a different workspace now fails explicitly, `terraform state show` returns exit code 1 when rendering fails, and an unchanged refresh-only plan no longer spuriously returns a nonzero status. Backend messages from `terraform init -json` and early diagnostics from `terraform validate -json` now remain JSON, while file-level test diagnostics appear in skipped JUnit XML elements.
-
-### Experimental initialization tracing
-
-*OpenTofu 1.10.0 — batch `opentofu-1.10.0`.*
-
-Environment-controlled OpenTelemetry export can send partial `tofu init` traces to an operator-controlled collector. The 1.10 implementation is experimental and covers initialization only, with later commands and richer spans left for future releases.
-
-### Machine-readable initialization
-
-*Terraform 1.9.0 — batch `terraform-1.9.0`.*
-
-`terraform init -json` enables machine-readable JSON output for automation.
-
-### New CLI output modes
-
-*OpenTofu 1.7.0 — batch `opentofu-1.7.0`.*
-
-`tofu plan -concise` suppresses state-refresh log lines. `tofu init -json` and `tofu get -json` provide machine-readable output for automation.
-
-### Simultaneous human and JSON output
-
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-Commands that support JSON output can use `-json-into=FILENAME` to write the machine-readable stream to a file while retaining normal human-readable output on stdout. The destination can be an IPC path such as a named pipe or `/dev/fd/N` when a companion UI must consume streaming events concurrently.
+OpenTofu 1.10 accepts explicit state and plan modes while preserving the older positional form:
 
 ```shell
-tofu plan -json-into=plan-events.json
+tofu show -state
+tofu show -plan=plan.tfplan
 ```
 
-## Query and action operations
+OpenTofu 1.12 console accepts `-lock=false` and `-lock-timeout=DURATION`. Its `destroy -suppress-forget-errors` returns success despite errors caused by objects being forgotten.
 
-### CLI environment and locking changes
+## Infrastructure queries (`terraform-1.14.0`)
 
-*OpenTofu 1.12.0 — batch `opentofu-1.12.0`.*
-
-`OPENTOFU_USER_AGENT`, which fully replaced the default HTTP User-Agent, has been removed. On Unix, `tofu login` now honors `BROWSER` when it names a single command that accepts the URL as its sole argument; `tofu console` adds `-lock=false` and `-lock-timeout=DURATION` for state-lock control.
-
-### Deferred actions remain alpha-only
-
-*Terraform 1.13.0 — batch `terraform-1.13.0`.*
-
-Alpha builds can use `terraform plan -allow-deferral` to permit unknown `count` and `for_each` values in `module`, `resource`, and `data` blocks and to let providers react more flexibly to unknown values. This experiment is not available in stable Terraform 1.13 releases.
-
-### Indexed diffs for same-length lists
-
-*Terraform 1.8.0 — batch `terraform-1.8.0`.*
-
-`terraform plan` now compares old and new lists of the same length by corresponding index and renders a separate diff for each element. Lists whose lengths differ retain the previous whole-list presentation.
-
-### List resources and `terraform query`
-
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
-
-Terraform 1.14 adds list resources in `*.tfquery.hcl` files for querying and filtering existing infrastructure. `terraform query` executes those operations and can optionally generate import configuration; `terraform validate -query` validates query files offline, and 1.14.4 restores warning rendering in cloud-backed query sessions.
+Declare provider list resources in `*.tfquery.hcl`, then validate query files without accessing remote systems or execute them to find existing infrastructure:
 
 ```shell
 terraform validate -query
 terraform query
 ```
 
-### Provider-defined actions
+Query results can generate import configuration. Providers can implement `GenerateResourceConfiguration` for more precise generated resource blocks. Terraform 1.15 extends `fmt` to query files.
 
-*Terraform 1.14.0 — batch `terraform-1.14.0`.*
+## Provider-defined actions
 
-Providers can expose top-level action blocks for imperative operations outside Terraform's CRUD model, such as invoking a Lambda function or creating a CloudFront invalidation; actions can be lifecycle-triggered or explicitly requested with `-invoke`. Apply output now summarizes invoked actions, while 1.14.1 ensures `after_create` and `after_update` actions run after the resource is applied and 1.14.4 fixes plan graphs for actions in modules without instances.
+Terraform 1.14 top-level action blocks represent imperative provider operations outside ordinary CRUD. Trigger an action from resource lifecycle or explicitly with `-invoke`. Use 1.14.1 or later so `after_create` and `after_update` actions run after the resource apply, and 1.14.4 or later for actions in modules with no instances.
 
-### Query-file formatting
+## Validation and exit behavior
 
-*Terraform 1.15.0 — batch `terraform-1.15.0`.*
+Terraform 1.15.1 deliberately does not validate backend attributes that may arrive through `-backend-config`, reversing the over-broad 1.15.0 behavior. Terraform 1.15.9 does diagnose invalid `list`, `import`, `backend`, and `cloud` blocks in child modules.
 
-`terraform fmt` now formats `*.tfquery.hcl` files used by Terraform query operations.
-
+OpenTofu 1.12 removes `OPENTOFU_USER_AGENT`. On Unix, `tofu login` uses `BROWSER` only if it names a single command accepting the URL as its only argument.

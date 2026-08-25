@@ -8,118 +8,66 @@ metadata:
 ---
 
 
-# LangGraph
+# LangGraph Knowledge Patch
 
-Use this skill when designing, migrating, debugging, or deploying LangGraph
-graphs in Python or JavaScript/TypeScript. Start with the quick references for
-high-impact compatibility changes, then open the topic reference that matches
-the work.
+Use this skill when implementing, migrating, debugging, or deploying LangGraph
+graphs in Python or JavaScript. Start with the quick rules below, then read only
+the reference file that matches the work at hand.
 
 ## Reference index
 
-| Reference | Topics |
+| Reference | Read when working on |
 | --- | --- |
-| [references/migration-and-state.md](references/migration-and-state.md) | Agent migration, package requirements, state schemas, reducers, private and runtime-only state, runtime context |
-| [references/execution-and-routing.md](references/execution-and-routing.md) | Routing, replay, retries, timeouts, error handlers, caching, recursion, migrations, execution metadata |
-| [references/streaming-and-interrupts.md](references/streaming-and-interrupts.md) | Wire encoding, UI transports, v3 streams, privacy filtering, interrupt and resume patterns |
-| [references/persistence-and-subgraphs.md](references/persistence-and-subgraphs.md) | Durability, checkpoint savers, serialization, delta channels, subgraph state and namespaces |
-| [references/deployment.md](references/deployment.md) | Agent Server loading, storage roles, runtime layouts, queues, threadless runs, JavaScript deployment |
+| [references/migration-and-state.md](references/migration-and-state.md) | Agent migration, runtime requirements, schemas, state, context, and graph migration |
+| [references/execution-and-routing.md](references/execution-and-routing.md) | Routing, replay, recursion, caching, retries, timeouts, recovery, fan-in, and tracing |
+| [references/persistence-and-subgraphs.md](references/persistence-and-subgraphs.md) | Checkpoints, savers, serialization, delta channels, and subgraph lifetime or inspection |
+| [references/streaming-and-interrupts.md](references/streaming-and-interrupts.md) | Event streams, transports, typed interrupts, privacy, and resume flows |
+| [references/deployment.md](references/deployment.md) | Agent Server loading, storage, runtime layouts, queues, and remote streaming |
 
-## Breaking changes and deprecations
+## Migration priorities
 
-### Build agents through LangChain
+### Construct agents through LangChain
 
-Replace the deprecated prebuilt React-agent factory with the LangChain agent
-factory. The resulting agent still runs on LangGraph and supports middleware.
+Use `create_agent` from `langchain.agents` in Python or `createAgent` from
+`langchain` in JavaScript. These factories still run on LangGraph and add
+middleware support.
+
+Rename the prompt option while migrating:
+
+- Python: `prompt` becomes `system_prompt`.
+- JavaScript: `prompt` becomes `systemPrompt`.
 
 ```python
 from langchain.agents import create_agent
 
-agent = create_agent(
-    model,
-    tools,
-    system_prompt="You are a helpful assistant.",
-)
+agent = create_agent(model, tools, system_prompt="Be helpful.")
 ```
+
+### Replace deprecated Python prebuilt APIs
+
+- Import `AgentState` from `langchain.agents` and use it in place of the
+  Pydantic and structured-response state variants.
+- Replace `HumanInterruptConfig` and `ActionRequest` with `InterruptOnConfig`.
+- Replace `HumanInterrupt` with `HITLRequest`.
+- Let `create_agent` validate tool input instead of using `ValidationNode`.
+- Replace `MessageGraph` with `StateGraph` and a `messages` channel.
+
+### Respect runtime and package boundaries
+
+Use Node.js 22 or newer for JavaScript packages and Python 3.10 or newer for
+Python-side LangChain packages. JavaScript packages ship bundled output; remove
+private imports from `dist/` and import only public modules.
+
+## State and schema rules
+
+### Prefer current schema APIs
+
+In JavaScript, prefer `StateSchema` with standard field schemas and LangGraph
+value types. Use `MessagesValue` for message-aware reduction and `ReducedValue`
+for a schema, default, and custom reducer. Treat `Annotation.Root` and direct
+Zod v3/v4 integrations as legacy alternatives.
 
 ```typescript
-import { createAgent } from "langchain";
-
-const agent = createAgent({
-  model,
-  tools,
-  systemPrompt: "You are a helpful assistant.",
-});
-```
-
-Use `system_prompt` in Python and `systemPrompt` in JavaScript instead of
-`prompt`.
-
-For Python migrations:
-
-- Import `AgentState` from `langchain.agents`.
-- Replace the Pydantic and structured-response state variants with
-  `AgentState`.
-- Rename `HumanInterruptConfig` and `ActionRequest` to `InterruptOnConfig`.
-- Rename `HumanInterrupt` to `HITLRequest`.
-- Remove `ValidationNode`; `create_agent` validates tool input automatically.
-- Replace `MessageGraph` with a `StateGraph` whose state has a `messages` key.
-
-JavaScript packages require Node.js 22 or newer. Python-side LangChain packages
-require Python 3.10 or newer. JavaScript packages ship bundled output, so
-replace private `dist/` imports with public module imports.
-
-### Return encoded streams directly
-
-The low-level `toLangGraphEventStream` helper is gone. Ask `graph.stream` for
-the wire encoding and return that stream:
-
-```typescript
-const stream = await graph.stream(input, {
-  encoding: "text/event-stream",
-  streamMode: ["values", "messages"],
-});
-
-return new Response(stream, {
-  headers: { "Content-Type": "text/event-stream" },
-});
-```
-
-### Treat commands as additive routing
-
-`Command(goto=...)` adds a destination; it does not cancel a node's static
-outgoing edges. If both exist, both paths execute. Choose dynamic command
-routing or static edges for a node, including nodes that process
-tool-returned commands.
-
-Any `Command` passed to `invoke` or `stream` resumes the latest checkpoint.
-Use `Command(resume=...)`, optionally with `update`, only for a resume. Start a
-new turn on an existing thread by passing a plain state mapping:
-
-```python
-graph.invoke({"messages": [follow_up]}, config)
-graph.invoke(Command(resume=review_answer), config)
-```
-
-### Design replay-safe nodes
-
-An interrupt or retry restarts the affected node from its beginning. Make
-side effects before the restart point idempotent. Tasks within the node are
-checkpointed and completed task results may be reused, but reordering tasks or
-interrupts before a resume point can mismatch saved results.
-
-## State and schema quick reference
-
-### Prefer `StateSchema` in JavaScript
-
-`StateSchema` accepts standard field schemas and LangGraph value types.
-`MessagesValue` supplies message-aware reduction; `ReducedValue` combines a
-field schema and default with a custom reducer.
-
-```typescript
-import { MessagesValue, ReducedValue, StateSchema } from "@langchain/langgraph";
-import * as z from "zod";
-
 const State = new StateSchema({
   messages: MessagesValue,
   total: new ReducedValue(z.number().default(0), {
@@ -128,111 +76,158 @@ const State = new StateSchema({
 });
 ```
 
-Treat `Annotation.Root` and direct Zod v3/v4 integrations as legacy
-alternatives.
+Python `BaseModel` state validates only the input to the first node. Later
+updates and graph output are not automatically validated, and `invoke` returns
+a dictionary. Use `AnyMessage` for message fields that cross the wire.
 
 ### Keep runtime context outside state
 
-In Python, declare `context_schema`, type `Runtime.context`, and pass
-`context=` when invoking. In JavaScript, supply a context schema to the
-`StateGraph` constructor, read `runtime.context`, and pass
-`{ context: ... }` in invocation options.
+Declare Python `context_schema`, read values from `Runtime.context`, and pass
+them with `context=`. In JavaScript, pass the context schema to `StateGraph`,
+read `runtime.context`, and invoke with `{ context: ... }`.
 
-Do not assume an input or output schema hides state in streams. A node input
-schema restricts reads, not writes; node schemas can extend the state-channel
-union. `values` snapshots include input, output, and private channels. For v3
-events, select safe snapshot fields with `output_keys` or `outputKeys`.
+Use `UntrackedValue` for JavaScript objects that must exist only during one
+execution and never enter a checkpoint. Its default `guard: true` rejects
+multiple same-step writes; `guard: false` accepts them and keeps the last.
 
-Use Python `Overwrite(value)` to bypass a configured reducer for one update.
-Use JavaScript `UntrackedValue` for execution-only objects that must not enter
-checkpoints. Its default `guard: true` rejects multiple writes in one step;
-`guard: false` allows them and keeps the last value.
+### Understand channel visibility and replacement
 
-## Reliability and node policy quick reference
+A node input schema restricts reads, not writes. Node schemas may also add
+private channels to the graph-state union. `values` streams do not redact
+private channels; apply v3 `output_keys` or `outputKeys` filtering when emitted
+snapshots must exclude them.
 
-### Configure both halves of caching
+In Python, wrap a value in `Overwrite` to replace a channel for one update
+without invoking its reducer.
 
-Caching needs a node cache policy and a cache on the compiled graph. Without
-either, the node is not cached. An omitted TTL means no expiry. Python's
-default key hashes the pickled node input; JavaScript configures `cachePolicy`
-and `keyFunc` and imports `InMemoryCache` from
-`@langchain/langgraph-checkpoint`.
+## Execution and routing rules
 
-### Select retries deliberately
+### Choose one routing mechanism per node
 
-Python's default retry filter excludes `ValueError`, `TypeError`,
-`RuntimeError`, and `OSError`, and retries HTTP-library errors only for 5xx
-responses. JavaScript excludes `TypeError`, `SyntaxError`, and
-`ReferenceError`. Use `retry_on` or `retryOn` when those defaults do not match
-the failure model.
+`Command(goto=...)` adds a dynamic destination; it does not suppress static
+outgoing edges. If both exist, both routes run. Use either commands or static
+edges for the node, including nodes that return commands from tools.
 
-Python async nodes can use per-attempt `timeout=` values. A timeout raises
-`NodeTimeoutError`, discards buffered writes and child-task scheduling, and
-may be retried with a fresh timer. A timeout on a synchronous node makes graph
-compilation fail.
+To begin a new turn on an existing thread, invoke with a plain state mapping.
+Passing any `Command` resumes the latest checkpoint; use
+`Command(resume=..., update=...)` only for a resume.
 
-An `error_handler` runs only after a Python node fails and exhausts retries.
-It receives state and a typed `NodeError`, and may return a `Command` that
-updates state and routes to recovery.
+### Design for replay
 
-Use `StateGraph.set_node_defaults()` for graph-wide Python defaults. Explicit
-node settings win, and defaults do not propagate into subgraphs. Retry and
-timeout defaults apply to handler nodes; cache and error-handler defaults
-apply only to regular nodes.
+An interrupted or retried node starts again from its beginning. Make earlier
+side effects idempotent. Completed task results inside a node can be reused,
+but do not reorder tasks or interrupts before a stored resume point.
 
-## Interrupt quick reference
+### Configure recursion at invocation scope
 
-### Use one interrupt per node invocation
+Set Python `recursion_limit` or JavaScript `recursionLimit` at the top level of
+invocation config, never inside `configurable`. Python defaults to 1000
+super-steps and JavaScript to 25. Inspect `metadata.langgraph_step`; Python can
+also expose `RemainingSteps` in managed state for proactive routing.
 
-Do not place `interrupt()` in a validation `while` loop. Each resume restarts
-the node and replays earlier loop iterations, so work grows rapidly. Store the
-next prompt in state, call `interrupt()` once, and route back with a
-conditional edge after invalid input.
+### Configure resilience deliberately
 
-When parallel branches pause, resume all pending interrupts by mapping each
-interrupt `id` to its response. This keeps answers paired with the correct
-branch.
+Default retry filters exclude several programming and runtime errors. Supply
+`retry_on` or `retryOn` when a particular exception is intentionally retryable.
 
-For Python v3 streams, inspect `stream.interrupted` and `stream.interrupts`
-after driving the stream to completion. Resume with a new
-`stream_events(Command(resume=...), version="v3")` call and repeat until the
-stream finishes without interruption.
+Python async nodes can use `timeout=`. A timeout raises `NodeTimeoutError`,
+discards buffered writes and child-task scheduling, and starts a fresh timer on
+retry. A timeout on a synchronous node is a compile error.
 
-## Persistence and subgraph quick reference
+Use `error_handler=` for recovery only after retries are exhausted. The handler
+receives state and `NodeError` and may return a routing `Command`.
 
-Choose durability per run:
+Use `set_node_defaults()` for graph-wide Python retry, timeout, cache, and
+error-handler defaults. Per-node settings win; defaults do not enter subgraphs,
+and cache or error-handler defaults apply only to regular nodes.
+
+## Persistence rules
+
+### Select durability by loss and latency tolerance
 
 - `exit` writes when execution completes, errors, or interrupts.
-- `async` writes while the next step runs and can lose the latest checkpoint
-  in a crash.
-- `sync` persists before advancing.
+- `async` writes while the next step runs and can lose the newest checkpoint
+  on a crash.
+- `sync` persists before execution advances.
 
-Subgraph compilation controls state lifetime:
+Custom savers must support exact-ID and latest reads, newest-first history,
+bounded history with `before` and `limit`, complete deletion, and serialization
+of checkpoints, writes, and metadata through `self.serde`. Run the checkpointer
+conformance package in CI.
 
-- Default `checkpointer=None` starts fresh for each call but inherits the
-  parent checkpointer for interrupts and durable execution during that call.
-- `checkpointer=True` retains state across calls on the same thread.
-- `checkpointer=False` disables checkpointing, interrupts, durable execution,
-  and state inspection.
+Use `pickle_fallback=True` only for values unsupported by msgpack and JSON.
+Encrypt saver data with `EncryptedSerializer` when stored state needs
+encryption. PostgreSQL saver thread IDs must remain under 255 characters.
 
-The parent needs a checkpointer for either stateful mode. Never run two
-concurrent calls to the same `checkpointer=True` subgraph: they share a
-checkpoint namespace and conflict. Serialize access or use per-invocation
-persistence.
+### Treat delta channels as chains
 
-## Deployment quick reference
+`DeltaChannel` stores incremental writes and reconstructs from a prior
+`_DeltaSnapshot`. Exact checkpoint lookup is mandatory. Pruning or thread-copy
+logic must retain every required ancestor or first materialize a snapshot.
 
-Exported compiled graphs are loaded once at Agent Server startup and reused.
-Graph factories run for every execution and are appropriate only when
-per-run customization is required. The server injects its checkpointer and
-memory store, so deployed graph code must not configure either one.
+## Interrupt and streaming rules
 
-PostgreSQL always stores assistants, threads, runs, and cron jobs. Checkpoints
-default to PostgreSQL but may use MongoDB or a custom backend. The long-term
-Store also defaults to PostgreSQL and is replaceable. Redis is only for
-ephemeral signaling, cancellation, and streaming pub/sub.
+Use one `interrupt()` call per node invocation. A resume replays the node, so a
+loop around `interrupt()` replays prior iterations and grows work rapidly.
+Persist the next prompt in state and route back through a conditional edge.
 
-In a queue-backed deployment, the durable database leases runs to workers and
-only one run per thread executes at a time. `N_JOBS_PER_WORKER` controls jobs
-per worker and defaults to `10`; it does not limit API request concurrency.
-Split deployments must keep at least one queue worker listening.
+When parallel branches interrupt, map every interrupt ID to its answer and pass
+the complete mapping as the resume value.
+
+For Python typed v3 event streams, inspect `stream.interrupted` and
+`stream.interrupts`, then create another stream with `Command(resume=...)` until
+execution completes. Use `messages`, `values`, and nested subgraph projections
+for the corresponding stream data.
+
+For low-level JavaScript SSE, request `encoding: "text/event-stream"` from
+`graph.stream` and return the stream directly. Use a custom `transport` with
+React `useStream` when the network layer differs from the default.
+
+## Subgraph rules
+
+Choose subgraph checkpoint mode from the required lifetime:
+
+- Default `None`: new state per call, while inheriting the parent saver for
+  interrupts and durability during that call.
+- `True`: persistent state across calls on one thread.
+- `False`: no checkpointing, interrupts, durable execution, or inspection.
+
+The parent needs a checkpointer for either stateful mode. Serialize concurrent
+calls to the same `checkpointer=True` child because they share a namespace.
+Give persistent children stable, name-based namespaces so call reordering does
+not load another child's state.
+
+State inspection discovers only statically visible children. A subgraph hidden
+behind a tool or other indirection has no discoverable child snapshot.
+
+## Deployment rules
+
+Export a compiled graph when Agent Server can load and reuse it at startup. Use
+a factory only for per-run customization. Do not configure a checkpointer or
+Store in graph code when the server owns and injects them.
+
+PostgreSQL persists assistants, threads, runs, and cron jobs. Redis is only for
+ephemeral signaling, cancellation, and stream pub/sub. Keep those roles distinct
+when designing backups or recovery.
+
+Single-host mode runs the task queue in the API server. Split mode uses
+`queue.enabled: true` and separately scaled API and worker pools; keep at least
+one worker listening. The queue allows one executing run per thread, while
+`N_JOBS_PER_WORKER` controls worker job concurrency rather than API concurrency.
+
+For a deployed threadless stream, pass `None` as the thread identifier and the
+deployed graph name as the next argument. JavaScript agents may also implement
+the Agent Streaming Protocol on supported web and edge runtimes.
+
+## Implementation workflow
+
+1. Inspect the project's Python and JavaScript package versions and runtime
+   versions before choosing APIs.
+2. Read the reference that matches the requested change.
+3. Separate graph state, runtime context, and untracked execution objects.
+4. Decide whether routing is static or command-driven for each node.
+5. Make side effects safe under retry and interrupt replay.
+6. Choose checkpoint mode, durability, and subgraph lifetime explicitly.
+7. Filter stream outputs when graph state contains private channels.
+8. Test normal completion, retry exhaustion, interrupt/resume, and checkpoint
+   recovery paths that the graph actually uses.

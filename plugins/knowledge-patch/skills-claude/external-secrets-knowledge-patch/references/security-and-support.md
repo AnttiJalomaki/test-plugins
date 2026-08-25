@@ -1,137 +1,188 @@
 # Security and Support Policy
 
-Use this reference to assess upgrade urgency, compatibility guarantees, provider
-risk, controller privilege, deployment hardening, and release identity.
+Use this reference for upgrade planning, support expectations, controller
+authority, namespace isolation, network policy, and release verification.
 
-## Support window
+## Support window (`operations-and-security`)
 
-ESO supports only its newest minor release. Publishing a new minor immediately
-deprecates the prior minor. At the operations-and-security snapshot, 2.8 is the
-supported line, guarantees Kubernetes 1.35, and reaches end of life when 2.9 is
-published. Image rebuilds, Go dependency updates, and security and bug fixes are
-applied to the supported line. Upgrade one minor at a time.
+ESO supports only its newest minor release; publishing the next minor
+automatically deprecates the previous one. The policy snapshot recorded 2.8 as
+the supported line, with Kubernetes 1.35 guaranteed and end of life when 2.9
+shipped. Image rebuilds, Go dependency updates, and security or bug fixes applied
+to that supported line. Upgrade one minor at a time and re-check the current
+support table rather than treating the snapshot as a permanent support claim.
 
-This short window means a pinned controller is not a long-term supported branch.
-Plan CRD, controller, chart, and policy validation as a recurring minor-upgrade
-operation.
+## Deprecation boundaries (`operations-and-security`)
 
-## Deprecation guarantees are narrow
-
-The protected compatibility surface consists of (operations-and-security):
-
-- API object specs, status, and conditions;
-- enums and constants;
-- controller flags and environment variables;
-- metrics;
-- documented `ExternalSecret` update mechanics.
+The protected surface comprises API object specs, status and conditions, enums
+and constants, controller flags and environment variables, metrics, and
+documented `ExternalSecret` update mechanics.
 
 Helm charts, releases, images, signatures, OLM builds, source imports, and
-unspecified behavior are outside that guarantee. Introducing a deprecation
-requires a minor release during 0.x and a major release from 1.x onward. Only
-removals from the protected surface inherit Kubernetes deprecation timelines.
+unspecified behavior are outside the guarantee. Introducing a deprecation
+requires a minor release during 0.x or a major release from 1.x onward. Only
+in-scope removals inherit Kubernetes deprecation timelines.
 
-ESO's component policy still classifies it as beta. Beta features are enabled by
-default and considered safe to enable, but schemas or semantics may change
-incompatibly with migration instructions; the policy does not recommend beta
-software for production.
+The component policy classifies ESO as beta: features are enabled by default and
+considered safe to enable, but schemas or semantics can change incompatibly when
+migration instructions are supplied. The policy does not recommend beta software
+for production.
 
-## Provider maturity is not feature parity
+Legacy beta API serving became configurable in 1.3.0 to aid migration. Do not
+confuse temporary serving compatibility with a broader stability promise.
 
-The operations-and-security support table classifies these providers as stable:
+## Provider maturity is not feature parity (`operations-and-security`)
 
-- AWS Secrets Manager and AWS Parameter Store;
-- Akeyless;
-- Azure Key Vault;
-- CyberArk Secrets Manager;
-- GCP Secret Manager;
-- HashiCorp Vault;
-- IBM Cloud Secrets Manager;
-- Oracle Vault;
-- Previder.
+The 2.8 support table classified AWS Secrets Manager, AWS Parameter Store,
+Akeyless, Azure Key Vault, CyberArk Secrets Manager, GCP Secret Manager, HashiCorp
+Vault, IBM Cloud Secrets Manager, Oracle Vault, and Previder as stable. Kubernetes
+and SecretServer were beta; every other listed provider was alpha.
 
-Kubernetes and SecretServer are beta. Every other provider in that table is
-alpha. A maturity label does not promise the same operations: find, metadata
-fetch, referent authentication, store validation, push, merge, and delete support
-vary independently. Consult the provider references and its live CRD schema
-before designing a workflow.
+Maturity does not guarantee find, metadata fetch, referent authentication, store
+validation, push, or merge/delete support. Check the capability table for the
+specific provider and release.
 
-All providers have build tags, so unwanted providers can be excluded from a
-custom binary (1.1.0).
-Alibaba and Device42 were removed in 2.0.0 because they were unmaintained and
-unsupported; no maturity label or compatibility promise keeps a removed provider
-available.
+Stores whose provider has no explicit maintainer emit both controller and
+admission warning events. The
+`external-secrets.io/ignore-maintenance-checks: "true"` annotation suppresses only
+the controller warning.
 
-## Pod defaults versus chart hardening
+## Default pod security versus chart hardening (`operations-and-security`)
 
-Default pod security contexts have used the restricted profile since 0.8.2
-(operations-and-security):
+Default pod security contexts have followed the restricted profile since 0.8.2:
+non-root UID 1000, read-only root filesystem, privilege escalation disabled, all
+capabilities dropped, and `RuntimeDefault` seccomp.
 
-- non-root UID `1000`;
-- read-only root filesystem;
-- privilege escalation disabled;
-- all Linux capabilities dropped;
-- `RuntimeDefault` seccomp.
+That does not make the chart a hardened deployment. NetworkPolicies and metrics
+TLS/authentication default off, while blanket ServiceAccount-token creation and
+aggregation into view, edit, and admin roles default on. Review the rendered RBAC,
+network paths, provider set, and monitoring endpoints for each installation.
 
-Those pod settings do not make the chart a hardened deployment. NetworkPolicy
-and metrics TLS/authentication default off. Blanket ServiceAccount token creation
-and RBAC aggregation into view, edit, and admin roles default on. Render values,
-inspect the resulting RBAC, and opt into the controls described in
-`helm-and-operations.md`.
+Relevant controls include secure metrics serving from 0.20.0, metrics
+authentication and authorization through `FilterProvider` from 2.5.0,
+`aggregateToAdmin` from 2.8.0, and an optional chart NetworkPolicy from 2.8.0.
 
-## Namespace and identity boundaries
+## Namespace-scoped installation (`operations-and-security`)
 
-Namespaced resources cannot cross-reference namespaced stores, Secrets, or other
-namespaced referents. Use a namespace-scoped installation when cluster fan-out is
-not required, and explicitly review every cluster-scoped controller and
-`ClusterSecretStore` condition when it is required (operations-and-security).
+Namespaced `ExternalSecret` and `SecretStore` resources cannot reference a
+`SecretStore`, Secret, or other namespaced referent across namespaces.
+Cluster-scoped resources require separate review because they can span namespace
+boundaries.
 
-Provider `serviceAccountRef` authentication needs TokenRequest authority. A
-broad `serviceaccounts/token` grant lets the controller request tokens for every
-ServiceAccount in scope. Disable the broad chart rule and grant creation only for
-the named provider accounts. See `helm-and-operations.md` for the Role and
-RoleBinding pattern.
+For a namespace-only installation, scoped RBAC also disables cluster-scoped
+controllers:
 
-## Generic targets expand privilege
+```yaml
+scopedRBAC: true
+scopedNamespace: payments
+```
 
-`genericTargets.enabled` defaults to false because enabling it grants the
-controller create, update, and delete access to ConfigMaps plus the configured
-verbs for every additional type in `genericTargets.resources`
-(operations-and-security). Treat every added API group and resource as a direct
-authority expansion. Provide encryption, admission controls, and audit policy
-appropriate to each target; a resource being template-compatible does not make
-it secret-safe.
+From 2.5.0, an omitted `scopedNamespace` defaults to `.Release.Namespace` when
+`scopedRBAC` is enabled. Prefer an explicit namespace when reviewing generated
+permissions.
 
-## Network and serving posture
+Use `ClusterSecretStore.spec.conditions` to restrict referencing namespaces.
+Label selectors, explicit names, and regular expressions are ORed, so satisfying
+any one grants access.
 
-Constrain egress to the Kubernetes API, DNS, and the selected provider endpoints;
-prefer private endpoints. Constrain ingress to the documented controller,
-webhook, and cert-controller ports. Policy controls should also deny unused
-providers, restrict remote-key prefixes, and limit which namespaces can use
-cluster stores (operations-and-security).
+## CRDs, reconcilers, and conversion (`operations-and-security`)
 
-Metrics secure serving arrived in 0.20.0, authentication and authorization
-through `FilterProvider` in 2.5.0, optional chart NetworkPolicy in 2.8.0, and
-HTTP/2 can be disabled as of 0.20.0. These are separate controls: enable and
-validate each one needed by the threat model.
+CRD installation defaults on, but CRD and reconciler switches are independent.
+Pair each disabled `crds.create*` with the matching `process*` value. If disabling
+the webhook, disable CRD conversion too, or the API server continues to call a
+conversion endpoint that no longer exists.
 
-## Availability is part of the security posture
+```yaml
+crds:
+  createPushSecret: false
+  conversion:
+    enabled: false
+processPushSecret: false
+webhook:
+  create: false
+```
 
-Controller, webhook, and cert-controller replica, probe, PDB, and leader-election
-defaults do not provide full high availability. Enable the controls deliberately
-and assign distinct lease IDs to independent deployments in one namespace
-(operations-and-security). Availability settings and their release-specific
-behavior are detailed in `helm-and-operations.md`.
+## ServiceAccount token delegation (`operations-and-security`)
 
-## Release artifact identity
+Provider authentication through `serviceAccountRef` requires TokenRequest access.
+The default controller role can create tokens for any ServiceAccount in scope.
+Disable blanket creation and grant it per referenced account:
 
-ESO images publish keyless Cosign signatures, SLSA provenance attestations, and
-SPDX JSON SBOM attestations (operations-and-security). Verify an immutable image
-digest and validate both:
+```yaml
+rbac:
+  serviceAccountTokenCreate: false
+```
 
-- certificate issuer: `https://token.actions.githubusercontent.com`;
-- certificate subject: the External Secrets release workflow on
-  `refs/heads/main`.
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eso-token-provider-reader
+  namespace: payments
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["provider-reader"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eso-token-provider-reader
+  namespace: payments
+subjects:
+  - kind: ServiceAccount
+    name: external-secrets
+    namespace: external-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eso-token-provider-reader
+```
 
-Signatures and provenance are themselves outside the deprecation guarantee.
-Verification proves the checked artifact's release identity; it does not expand
-the compatibility or support policy.
+The chart conditionally renders its token-create rule from 2.5.0. Provider
+TokenRequests also use the URL namespace consistently in the body from 2.6.0.
+
+## Generic targets widen authority (`operations-and-security`)
+
+`genericTargets.enabled` defaults false. Enabling it grants create, update, and
+delete access to ConfigMaps and the configured verbs for each resource under
+`genericTargets.resources`. Treat each added API group as a privilege expansion;
+apply encryption and admission controls suitable for that target.
+
+## Network and exfiltration controls (`operations-and-security`)
+
+The controller needs egress to the Kubernetes API and selected secret providers;
+webhook and cert-controller need the API. Prefer private provider endpoints. Allow
+DNS plus only the required API and provider destinations.
+
+Expected inbound ports are:
+
+- Controller: metrics 8080 and optional health 8082.
+- Webhook: admission 10250, metrics 8080, and health 8081.
+- Cert-controller: metrics 8080 and health 8081.
+
+Policy engines should deny unused providers, constrain remote-key prefixes, and
+limit `ClusterSecretStore` references. HTTP/2 serving is configurable from 0.20.0
+and can be disabled when the security posture requires it.
+
+## Availability controls (`operations-and-security`)
+
+The controller defaults to one replica, with leader election, liveness,
+readiness, and PodDisruptionBudget disabled. Webhook and cert-controller readiness
+is enabled, but each defaults to one replica with liveness and PDB disabled.
+
+Enable controls to meet the availability objective. Give independent ESO
+deployments in one namespace distinct lease IDs. Leader identity can be configured
+from 2.4.0, and lease timings from 2.8.0.
+
+## Release artifact identity (`operations-and-security`)
+
+ESO images carry keyless Cosign signatures, SLSA provenance attestations, and
+SPDX JSON SBOM attestations. Verify an immutable digest and check for certificate
+issuer `https://token.actions.githubusercontent.com` and the External Secrets
+release workflow subject on `refs/heads/main`.
+
+Signatures and provenance are themselves outside the deprecation guarantee. Their
+presence supports supply-chain verification but does not expand the supported API
+surface.

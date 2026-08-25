@@ -2,7 +2,7 @@
   "patch": "llamaindex-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T09:41:17Z",
+  "built_at": "2026-08-21T12:42:03Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -28,6 +28,11 @@
       "build": "omitted"
     },
     "llamaindex-v0.11-v0.12-api": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "0.14.24": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

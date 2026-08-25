@@ -2,7 +2,7 @@
   "patch": "gitlab-ci-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T05:45:40Z",
+  "built_at": "2026-08-21T07:22:06Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -24,6 +24,11 @@
     },
     "upgrade-guidance": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "19.2.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

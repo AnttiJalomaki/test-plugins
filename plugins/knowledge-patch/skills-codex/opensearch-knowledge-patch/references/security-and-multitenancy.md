@@ -1,165 +1,113 @@
 # Security, Resource Access, and Multitenancy
 
-Use this reference for Security plugin upgrades, authentication mechanisms,
-certificates, audit controls, centralized resource authorization, tenant
-isolation, remote metadata, and plugin-specific multi-tenant constraints.
+## Managing certificates and authentication
 
-## Certificates, authentication, and password storage
+### Certificate reload and validation
 
-### Certificates
+The Security plugin in 2.19.0 supports certificate hot reload and authority-certificate validation. A hot-reload option can skip distinguished-name validation; use it only when the certificate trust design makes that safe.
 
-- The Security plugin adds certificate hot reload and authority-certificate
-  validation in 2.19.0, with an option to skip distinguished-name validation
-  during hot reload.
-- Security can authenticate from X.509 v3 Subject Alternative Name extensions
-  in 3.4.0.
-- `securityadmin.sh` adds `--timeout` and `-to` in 3.4.0.
+Since 3.2.0, SPIFFE X.509 SVID authentication is available through `SPIFFEPrincipalExtractor`, and auxiliary transports can be configured for SSL only.
 
-### JWT, JWKS, and claims
+OpenSearch 3.4.0 can authenticate from X.509 v3 Subject Alternative Name extensions. `securityadmin.sh` accepts `--timeout` or `-to`.
 
-- Roles can be stored in nested JWT claims from 3.1.0.
-- JWT authentication can resolve the subject from a nested claim in 3.2.0.
-- The JWT backend can consume a JWKS directly in 3.3.0.
-- Nested JWT claims can be addressed with dot notation in 3.5.0.
-- gRPC JWT header names are case-insensitive in 3.5.0.
+### JWT and client certificates
 
-### Client certificates, SPIFFE, and transport authentication
+Security 3.1.0 supports roles in nested JWT claims. In 3.2.0, JWT authentication can resolve its subject from a nested claim. In 3.5.0, nested claim paths support dot notation.
 
-- Security 3.2.0 adds SPIFFE X.509 SVID authentication through
-  `SPIFFEPrincipalExtractor`.
-- Auxiliary transports can be configured for SSL only in 3.2.0.
-- Client-certificate authentication adds
-  `clientcert_auth_domain.http_authenticator.config.skip_users` in 3.3.0.
-- gRPC gains JWT authentication through the Security plugin in 3.5.0.
-- Security adds Basic authentication for gRPC in 3.6.0.
+In 3.3.0, the JWT backend can consume JWKS directly. Client-certificate authentication adds `clientcert_auth_domain.http_authenticator.config.skip_users`.
 
-### Passwords and API keys
+Security 3.5.0 protects gRPC with JWT and treats JWT header names case-insensitively. Basic authentication for gRPC follows in 3.6.0.
 
-- Password-strength validation accepts `good` in 3.0.0.
-- Security adds Argon2 password hashing in 3.2.0.
-- Security 3.7.0 can issue long-lived API keys whose cluster and index
-  permissions are attached directly to the key instead of inherited from user
-  roles.
-- API keys support expiration, synchronous cluster-wide revocation, automatic
-  system-index protection, and create/list/revoke administration in
-  Dashboards.
+### Password and hashing behavior
 
-## Security configuration and permissions
+The 3.0.0 password-strength validator accepts `good`. OpenSearch 3.2.0 adds Argon2 password hashing.
 
-### 3.x configuration changes
+The 3.0.0 Blake2b salt-handling correction can change hashes for identical inputs. Update integrations and tests that compare generated Blake2b values.
 
-- The Security plugin removes its OpenSSL provider in 3.0.0.
-- Whitelist settings are replaced by allowlist settings in 3.0.0.
-- The `_cat/shards` action requires `cluster:monitor/shards` from 3.0.0.
-- `ignore_hosts` accepts CIDR ranges in 3.0.0.
-- Security resource settings are dynamically updateable in 3.4.0.
-- Static and custom security configurations may overlap in 3.4.0, with static
-  configuration taking precedence.
-- `plugins.security.system_indices.indices` is deprecated in 3.4.0.
+## Updating Security configuration
 
-### Versioned security configuration
+### Renamed, removed, and dynamic settings
 
-- An experimental versioned security-configuration system is available in
-  3.2.0.
-- Versioned security configuration adds View and Rollback APIs in 3.3.0.
+OpenSearch 3.0.0 removes the Security OpenSSL provider and renames whitelist settings to allowlist settings. The `_cat/shards` action requires `cluster:monitor/shards`; `ignore_hosts` accepts CIDR ranges.
 
-### Cache and request checks
+Since 3.1.0, `plugins.security.cache.ttl_minutes` changes are picked up by a cluster-settings listener, and an endpoint can flush one user's cache.
 
-- Security adds a cache-flush endpoint for an individual user in 3.1.0.
-- Changes to `plugins.security.cache.ttl_minutes` are picked up by a
-  cluster-settings listener in 3.1.0.
-- In 3.2.0, a query parameter can validate permission for a request without
-  executing it.
+OpenSearch 3.3.0 makes custom-attribute serialization dynamically configurable. Disabling `plugins.security.system_indices.enabled` permits plugin system requests.
 
-### System and custom request controls
+In 3.4.0, resource settings are dynamically updateable. Static and custom configurations may overlap, with static configuration taking precedence. `plugins.security.system_indices.indices` is deprecated.
 
-- Custom-attribute serialization is dynamically configurable in 3.3.0.
-- Disabling `plugins.security.system_indices.enabled` permits plugin system
-  requests in 3.3.0.
-- The dynamic 3.5.0 setting `plugins.security.dls.write_blocked` blocks all
-  writes when document-level restrictions apply.
-- gRPC has circuit-breaker protection in 3.5.0.
+### Versioned configuration
 
-## Audit logging
+OpenSearch 3.2.0 introduces an experimental versioned Security configuration system. It can validate permission for a request through a query parameter without executing the request and exposes an API for migrating resource-sharing data into Security.
 
-- Webhook audit-log sinks support Basic authentication in 3.4.0 through
-  `plugins.security.audit.config.username` and
-  `plugins.security.audit.config.password`.
-- Audit logs gain configurable time zones in 3.5.0.
-- Audit logs can include document contents for DELETE operations in 3.5.0.
+Versioned configuration adds View and Rollback APIs in 3.3.0.
 
-## Centralized resource authorization
+### Request validation
 
-### Framework lifecycle
+Since 3.8.0, Security-plugin PUT and PATCH requests enforce a 256-character maximum on every text input. Validate generated configuration before sending it.
 
-- The disabled-by-default 3.1.0 resource authorization framework centralizes
-  sharing and access control in Security instead of reimplementing it in every
-  plugin. Anomaly Detection is the first onboarded plugin.
-- Security 3.2.0 provides an API to migrate resource-sharing data into the
-  plugin.
-- Resource sharing in 3.3.0 adds management APIs and a Dashboards interface,
-  DLS-backed visibility filtering, persisted tenant and principal visibility,
-  an explicit protected-resource list, and centralized access control for ML
-  model groups.
-- Flow Framework joins the centralized resource-sharing framework in 3.4.0,
-  and one resource index can hold multiple sharable resource types.
+## Authorizing resources
 
-### Sharing API changes
+### Central resource authorization
 
-- A 3.4.0 sharing migration requires `default_owner` and a default access
-  level.
-- Update-sharing uses POST rather than PATCH in 3.4.0.
-- The share and revoke Java APIs are removed in 3.4.0.
-- Security resource configuration can set a default access level in 3.6.0.
-- Resource providers in 3.6.0 can declare parent type and parent-ID fields for
-  parent-child authorization.
-- On-behalf-of token authentication no longer requires `encryption_key` in
-  3.6.0.
-- The resource configuration filename changes from
-  `resource-action-groups.yml` to `resource-access-levels.yml` in 3.6.0.
+OpenSearch 3.1.0 introduces a disabled-by-default resource authorization framework that centralizes sharing and access control in Security. Anomaly Detection is the first integrated plugin.
 
-## Remote metadata
+OpenSearch 3.3.0 adds resource-sharing management APIs and a Dashboards interface, DLS-backed visibility filtering, persisted tenant and principal visibility, an explicit protected-resource list, and centralized access control for ML model groups.
 
-### Storage and concurrency
+Flow Framework joins in 3.4.0. A single resource index can hold multiple shareable resource types. Migration requires `default_owner` and a default access level; sharing updates use POST rather than PATCH; and the share and revoke Java APIs are removed.
 
-- The 2.19.0 Remote Metadata SDK and repository wrapper let plugins keep
-  metadata in external storage instead of system indexes on stateful nodes.
-- The SDK adds global-resource support in 3.3.0.
-- Put and delete operations add sequence-number and primary-term concurrency
-  controls in 3.3.0.
-- Put, update, delete, and bulk operations accept refresh policies and timeouts
-  in 3.3.0.
+In 3.6.0, resource providers can declare parent type and parent-identifier fields for parent-child authorization. On-behalf-of token authentication no longer requires `encryption_key`.
 
-### Encryption
+Security resource configuration can also set a default access level. Rename `resource-action-groups.yml` to `resource-access-levels.yml` during upgrade.
 
-- The Remote Metadata SDK can encrypt and decrypt customer data with
-  customer-managed keys in 3.4.0 and assume a role for those key operations.
+### Scoped API keys
 
-## Tenant isolation and Dashboards login
+OpenSearch 3.7.0 Security can issue long-lived API keys whose cluster and index permissions are attached directly to the key rather than inherited from user roles. Keys support expiration, synchronous cluster-wide revocation, automatic protection of their system index, and create/list/revoke administration in Dashboards.
 
-### Plugin resource isolation
+### DLS, FLS, and write controls
 
-- Tenant-ID isolation in 2.19.0 spans Flow Framework and ML Commons resources
-  and operations, including connectors, models, tasks, deployment, prediction,
-  agents, search, and configuration.
-- DLS/FLS variables accept fallback values in 3.7.0.
-- `opensearch_security.multitenancy.tenants.preferred` is dynamically
-  updateable through the security configuration API in 3.7.0 without a
-  Dashboards restart.
-- `?auto_login=false` forces the login screen in 3.7.0.
-- `opensearch_security.auth.default_redirect_auth_type` selects the default
-  redirect authenticator in 3.7.0.
+Since 3.5.0, dynamic `plugins.security.dls.write_blocked` blocks all writes when document-level restrictions apply.
 
-### Alerting and Anomaly Detection constraints
+In 3.7.0, DLS and FLS variables accept fallback values.
 
-- With Alerting multi-tenancy enabled in 3.7.0, email, findings, chained
-  actions, Job Scheduler indexes, and other unsupported actions are disabled.
-- Pluggable-data-format domains reject non-PPL monitor CRUD in this mode.
-- Anomaly Detection data sources for multi-tenant services disable default or
-  flattened result indexes and historical analysis.
-- Unsupported multi-tenant routes return HTTP 501.
+OpenSearch 3.8.0 allows DLS rules to use query-based terms lookup queries.
 
-## Notifications configuration
+Star-tree optimization is suppressed whenever DLS, FLS, or field masking applies; do not assume acceleration on protected queries.
 
-- Notifications 3.6.0 adds `multi_tenancy_enabled` and changes its settings
-  prefix. Review existing notification configuration during upgrade.
+## Configuring tenants and object visibility
+
+### Tenant isolation
+
+OpenSearch 2.19.0 extends tenant-identifier isolation across Flow Framework and ML Commons resources and operations, including connectors, models, tasks, deployment, prediction, agents, search, and configuration.
+
+In 3.7.0, `opensearch_security.multitenancy.tenants.preferred` becomes dynamically updateable through the Security configuration API without a Dashboards restart. `?auto_login=false` forces the login page, while `opensearch_security.auth.default_redirect_auth_type` selects the default redirect authenticator.
+
+### Backend-role access strategies
+
+OpenSearch 3.8.0 adds filter-by-backend-roles strategies for Alerting and Notifications. Each setting controls how backend-role filtering or matching determines access to that plugin's objects.
+
+## Storing remote plugin metadata
+
+### External metadata storage
+
+The Remote Metadata SDK and repository wrapper in 2.19.0 let plugins store metadata externally rather than in system indexes on stateful nodes.
+
+In 3.3.0, global resources are supported. Put and delete operations accept sequence number and primary term for optimistic concurrency; put, update, delete, and bulk operations accept refresh policy and timeout controls.
+
+OpenSearch 3.4.0 adds customer-managed-key encryption and decryption for customer data, including role assumption for key operations.
+
+## Auditing and protected operations
+
+### Audit sinks and payloads
+
+OpenSearch 3.4.0 audit webhook sinks support Basic authentication through `plugins.security.audit.config.username` and `plugins.security.audit.config.password`.
+
+In 3.5.0, audit logs can use configured time zones and include document content for DELETE operations.
+
+Since 3.8.0, audit logging can run in SSL-only mode without the full authentication and RBAC stack. The unified `disabled_categories` setting controls excluded audit-event categories.
+
+### System and plugin operations
+
+OpenSearch 3.0.0 removes REST access to system indexes. Use supported plugin APIs and roles instead of direct reads or writes.
+
+When configuring notification resources in 3.6.0, account for the new `multi_tenancy_enabled` setting and changed settings prefix; existing configuration needs review.

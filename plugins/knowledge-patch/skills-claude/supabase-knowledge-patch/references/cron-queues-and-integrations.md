@@ -1,91 +1,40 @@
-# Cron, queues, and platform integrations
+# Cron, Queues, and Platform Integrations
 
-## Cron
+Use this reference for scheduled jobs, queue delivery, Management API workflows, ETL, and marketplace integrations.
 
-### Cron installation and removal
+## Cron and Queues
 
-Install `pg_cron` in `pg_catalog` and grant project `postgres` access to separate `cron` schema. Dropping extension permanently deletes every job.
-
-```sql
-create extension pg_cron with schema pg_catalog;
-grant usage on schema cron to postgres;
-grant all privileges on all tables in schema cron to postgres;
--- Destructive: also removes all jobs.
-drop extension if exists pg_cron;
-```
-
-### Cron job identity and sub-minute schedules
-
-Names are case-sensitive and immutable. Calling `cron.schedule()` with same name upserts/replaces. Dashboard accepts cron or natural language. Intervals 1–59 seconds need Postgres 15.1.1.61+.
+### Cron job identity, replacement, and history
+Job names are case-sensitive and cannot be renamed; calling `cron.schedule()` again with the same name replaces that job, and intervals from 1 through 59 seconds require Postgres `15.1.1.61` or later. `cron.unschedule()` removes the definition but leaves `cron.job_run_details`, whose rows are never cleaned automatically, while disabling `pg_cron` permanently deletes all jobs.
 
 ```sql
-select cron.schedule('process-work', '30 seconds', 'call process_work()');
+select cron.schedule('worker', '30 seconds', 'call process_work()');
+select cron.unschedule('worker');
 ```
 
-### Editing, pausing, and retaining Cron history
+### Maintenance cron can disrupt platform work
+A blanket maintenance job such as `pg_terminate_backend()` for idle sessions can terminate critical Supabase processes, including nightly backups. Prefer the corresponding Postgres setting, such as `idle_session_timeout`, when it fits the task.
 
-`cron.alter_job()` changes schedule, command, DB, username, active by ID. `cron.unschedule()` removes job but retains `cron.job_run_details`; history is never auto-cleaned.
+### Queue durability and physical layout
+Supabase Queues requires Postgres `15.6.1.143` or later, and each queue creates active `pgmq.q_<name>` and archive `pgmq.a_<name>` tables. An unlogged queue makes only the active table unlogged—the archive remains durable—and partitioned queues are not yet available.
 
 ```sql
-select cron.alter_job(
-  job_id := (select jobid from cron.job where jobname = 'process-work'),
-  schedule := '*/5 * * * *', active := false
-);
-select cron.unschedule('process-work');
+select pgmq.create_unlogged('transient_jobs');
 ```
 
-## Queues
-
-### Queue types, names, and storage
-
-Queues uses `pgmq`, available Postgres 15.6.1.143+. Names lowercase with hyphens/underscores. Basic queue creates logged `pgmq.q_<name>` and `pgmq.a_<name>`; unlogged keeps only active `q_` unlogged and archive durable. Partitioned queues unavailable.
-
-```sql
-create extension pgmq;
-select from pgmq.create('work_items');
-select pgmq.create_unlogged('transient_work');
-```
-
-### PGMQ sends and visibility-based reads
-
-`send()`/`send_batch()` accept optional delay seconds and return IDs. `read(queue, vt, qty)` returns records and hides them for `vt` without deletion; records include `msg_id`, `read_ct`, `enqueued_at`, `vt`, JSONB `message`.
-
-```sql
-select * from pgmq.send('work_items', '{"task":"resize"}'::jsonb, 10);
-select * from pgmq.read('work_items', 60, 5);
-```
-
-### Long polling and destructive pops
-
-`read_with_poll()` waits up to five seconds by default and polls every 100ms, configurable. `pop()` atomically reads/deletes one, giving at-most-once delivery if consumer fails.
-
-```sql
-select * from pgmq.read_with_poll('work_items', 60, 5, 10, 250);
-select * from pgmq.pop('work_items');
-```
-
-### Queue completion, archival, and operations
-
-Delete/archive one ID or arrays. `purge_queue()` clears active; `drop_queue()` deletes active/archive tables. `set_vt()` moves visibility relative to now. `list_queues()`, `metrics()`, `metrics_all()` show inventory, depth, ages, lifetime count, scrape time. `detach_archive()` removes archive from extension ownership but future archives still use it, preserving it across extension drop.
-
-### Queue Data API boundary and permissions
-
-Queues are Postgres-only by default. **Expose Queues via PostgREST** creates `pgmq_public` wrappers for send/batch/read/pop/archive/delete, not create/drop. Wrapper `sleep_seconds` means send delay or read visibility timeout.
-
-Each exposed `pgmq.q_*` needs RLS/policies. Sends need SELECT+INSERT; read/pop SELECT+UPDATE; archive/delete SELECT+DELETE. Never expose `postgres`/`service_role`.
+### Client queue access is an opt-in wrapper surface
+Queues are not exposed through the Data API by default; enabling exposure creates `pgmq_public` wrappers for message operations but not queue creation or deletion, while the raw `pgmq` schema must remain private because its queue tables have no RLS by default. Enable RLS and policies on every client-accessible `pgmq.q_<name>` table, then grant each API role the required permissions: `send`/`send_batch` need `SELECT, INSERT`; `read`/`pop` need `SELECT, UPDATE`; and `archive`/`delete` need `SELECT, DELETE`.
 
 ```ts
 await supabase.schema('pgmq_public').rpc('send', {
-  queue_name: 'work_items', message: { task: 'resize' }, sleep_seconds: 10,
-})
-const { data } = await supabase.schema('pgmq_public').rpc('read', {
-  queue_name: 'work_items', sleep_seconds: 60, n: 5,
+  queue_name: 'jobs',
+  message: { task: 'resize' },
+  sleep_seconds: 30,
 })
 ```
 
-### Exposing queues locally and when self-hosting
-
-Local/Compose do not expose wrappers automatically. Add `pgmq_public` to API schemas and restart:
+### Local and self-hosted queue exposure
+The hosted toggle exposes `pgmq_public` automatically, but local CLI and Docker Compose deployments must add the already-created schema to PostgREST and restart the stack.
 
 ```toml
 [api]
@@ -96,60 +45,71 @@ schemas = ["public", "graphql_public", "pgmq_public"]
 PGRST_DB_SCHEMAS=public,graphql_public,pgmq_public
 ```
 
-## Management API OAuth
+### Long polling and message lease control
+`pgmq.read_with_poll()` waits up to `max_poll_seconds` for work, while `pgmq.set_vt()` moves a message's visibility time to an offset from now. By contrast, `pgmq.pop()` deletes on read and therefore provides at-most-once delivery if processing subsequently fails.
 
-### Management API OAuth apps
+```sql
+select * from pgmq.read_with_poll('jobs', 60, 10, 5, 100);
+select * from pgmq.set_vt('jobs', 42, 60);
+```
 
-Platform integrations use `https://api.supabase.com/v1/oauth/authorize` and `/v1/oauth/token`, separate from project Auth OAuth. `organization_slug` may preselect organization; `redirect_uri` plus `state` must remain under 4 kB; PKCE S256 recommended. Token exchange requires exact original redirect URI. Revocation breaks access and refresh, so handle unauthorized.
+### Preserving archives across extension removal
+`pgmq.detach_archive()` removes a queue's archive table from extension ownership so `drop extension pgmq` will not delete it; detaching does not prevent later `archive()` calls from appending while the extension remains installed.
+
+```sql
+select pgmq.detach_archive('jobs');
+```
+
+## Management API and integrations
+
+### Management API OAuth authorization
+Organization OAuth apps can obtain access and refresh tokens for Management API calls on a user's behalf; send users to `https://api.supabase.com/v1/oauth/authorize`, where the optional `organization_slug` preselects an organization, S256 PKCE is recommended, and `redirect_uri` plus `state` cannot exceed 4 KB. Exchange the code as form data at `POST /v1/oauth/token`, authenticate the client with HTTP Basic auth, and reuse the exact redirect URI.
 
 ```sh
 curl https://api.supabase.com/v1/oauth/token \
-  --user "$CLIENT_ID:$CLIENT_SECRET" \
-  --header 'Content-Type: application/x-www-form-urlencoded' \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode grant_type=authorization_code \
   --data-urlencode code="$CODE" \
-  --data-urlencode redirect_uri="$CALLBACK" \
+  --data-urlencode redirect_uri="$REDIRECT_URI" \
   --data-urlencode code_verifier="$CODE_VERIFIER"
 ```
 
-### Management API OAuth scopes and dynamic callbacks
+### OAuth scope changes require renewed consent
+Management API scopes are configured on the OAuth app rather than requested during authorization; the `scope` query parameter is deprecated. Scopes grant read and/or write access by resource family—such as Auth, Database, Edge Functions, Environment, Projects, Secrets, and Storage—and existing users must reauthorize after an app's scopes change.
 
-App-configured resource permissions cover Auth, DB, Domains, Functions, Environment, Organizations, Projects, REST, Secrets, Storage, generally read/write. Authorize URL `scope` is deprecated; scope changes require reauthorization. For per-installation destinations, register one callback and put desired destination in integrity-protected `state`; verify before following.
+### Programmatic project provisioning contract
+`POST /v1/projects` accepts smart region groups (`americas`, `emea`, or `apac`), but callers should poll `GET /v1/projects/{ref}/health` until the service they need is `ACTIVE_HEALTHY` before configuring it. Database passwords must be unique and stored encrypted because the Management API cannot retrieve or programmatically change them; customers with Pico access must omit `desired_instance_size` to get scale-to-zero, which Micro and larger instances do not support.
 
-### Database credentials for platform integrations
+### Enabling new API keys through the Management API
+After provisioning, inspect `GET /v1/projects/{ref}/api-keys?reveal=true`; if the project lacks the new keys, create `publishable` and `secret` keys with separate `POST /v1/projects/{ref}/api-keys` calls. Creating the secret key accepts `"secret_jwt_template": { "role": "service_role" }`.
 
-Management API returns project API keys but not database password. Direct integration must collect existing password; project creator must retain supplied `db_pass`, which cannot be changed programmatically.
+### Transactional Management API migrations and restore points
+For customers with access, `POST /v1/projects/{ref}/database/migrations` records a migration in `supabase_migrations` and rolls back all its changes if execution fails. A restore-point undo reverts schema, seed rows, Auth users and tokens, and Storage pointer rows, but not configuration, secrets, stored objects, or deployed Edge Functions.
+
+### Platform branch merge boundary
+`POST /v1/branches/{branch_id_or_ref}/merge` promotes only database changes and deployed Edge Functions from the branch. Configuration, secrets, and other project state are outside this merge contract.
+
+### OAuth project claim flow
+For customers with access, `GET /v1/oauth/authorize/project-claim` transfers a project from a platform-owned organization to the user's organization while preserving the platform's access through its OAuth integration. Remove any custom configuration that the user should not inherit before starting the claim.
 
 ```text
-postgresql://postgres:[DB-PASSWORD]@db.[REF].supabase.co:5432/postgres
+/v1/oauth/authorize/project-claim?project_ref=<ref>&client_id=<client-id>&response_type=code&redirect_uri=<uri>
 ```
 
-## Provisioning and transfer
+### Vercel Marketplace identity and role mapping
+A Vercel team maps one-to-one to a Supabase organization; Vercel users receive linked Supabase accounts, with Vercel owners mapped to `owner` and members to `developer`. Manage those roles in Vercel—permissions for separately invited non-Vercel users are not synchronized.
 
-### Programmatic project provisioning
+### Vercel Marketplace synchronization boundaries
+Marketplace-created projects automatically sync connection variables and server credentials, including `POSTGRES_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_JWT_SECRET`, into connected Vercel projects. During the public alpha, projects can be created only in Vercel, billing and payments stay there, the organization is removed only by uninstalling the integration, owners cannot be added manually in Supabase, and custom domains are unsupported.
 
-Use `POST /v1/projects`, get capacity regions at `/available-regions`, poll `/health` until needed service is `ACTIVE_HEALTHY`. Smart groups: `americas`, `emea`, `apac`. Pico alone scales to zero and is requested by omitting `desired_instance_size`.
+### ETL removal and initial-copy behavior
+Removing a table from a publication does not delete its existing destination data. Generated columns and transformations are unsupported, and changes made during the initial copy accumulate in WAL before being replayed when streaming begins.
 
-After create, request `/api-keys?reveal=true`. If modern keys absent, POST separate `publishable` and `secret`; a server key may use `secret_jwt_template: { "role": "service_role" }`.
+## Platform capabilities (`1.26.08`)
 
-### Managed development branches and restore points
+### Pipelines reach public alpha
+Supabase Pipelines has moved from private to public alpha and is available on all paid plans.
 
-Restricted `/database/migrations` records SQL in `supabase_migrations` and rolls back failure. Platform can seed via `/database/query`, deploy Functions, merge via `/v1/branches/{id_or_ref}/merge`; only DB changes and deployed Functions promote.
-
-Restricted restore points capture DB only. Undo reverts schema, seed, Auth users/tokens, Storage metadata pointers—not config, secrets, objects, or deployed Functions.
-
-### Transferring a platform-owned project to a user
-
-Restricted `/v1/oauth/authorize/project-claim` moves a project to a user-selected organization while authorizing integration to retain API access. Remove configuration users should not inherit first.
-
-## Marketplace and data integrations
-
-### Vercel Marketplace ownership and environment sync
-
-One Vercel team maps to one Supabase organization. Resource creator/Vercel owners become owners; Vercel members developers; role changes remain in Vercel. Separately invited users do not sync.
-
-Connected projects receive DB URLs/credentials, `SUPABASE_URL`, publishable/service-role keys, JWT secret, and `NEXT_PUBLIC_SUPABASE_*`. Marketplace projects can be created only in Vercel; owners cannot be added in Supabase; uninstall removes organization. Billing is in Vercel though Supabase cycle remains/reset on plan changes. Custom domains unsupported.
-
-### Stripe Sync Engine integration
-
-Dashboard one-click Stripe Sync Engine synchronizes customers, subscriptions, invoices, payments for SQL queries. The open-source engine is maintained in Stripe's GitHub organization.
+### Management API logs endpoint migration
+Clients that query project logs through `analytics/endpoints/logs.all` must migrate to the new logs endpoint.

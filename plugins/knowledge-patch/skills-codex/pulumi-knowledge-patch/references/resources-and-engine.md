@@ -1,135 +1,93 @@
-# Resources and engine behavior
+# Resources and Engine Behavior
 
-This reference consolidates resource behavior from `3.145.0-3.159.0`,
-`release-notes-117`, `3.160.0-3.181.0`, `3.182.0-3.198.0`,
-`replace-with`, `3.199.0-3.214.0`, `3.214.1-3.228.0`,
-`3.229.0-3.248.0`, and `3.249.0-3.254.0`.
+## Inherited options and autonaming
 
-## Inheritance, protection, and retention
+An explicit `protect: false` or `retainOnDelete: false` on a child overrides an
+inherited `true`. A protected-delete error no longer stops unrelated deployment
+work. Autonaming configuration became stable in 3.146.0 and applies to custom,
+not component, resources. It can disable generated names globally or configure
+the resources beneath a component without code changes.
 
-An explicit `false` on a child overrides inherited `protect: true` and
-`retainOnDelete: true`. A protected-delete error no longer stops unrelated
-deployment work (`3.145.0-3.159.0`).
+Provider inheritance during registration honors the `provider` option without
+incorrectly carrying default providers between resource packages. A component's
+providers also apply to parented invokes.
 
-```typescript
-const child = new aws.s3.Bucket("child", {}, {
-  parent,
-  protect: false,
-  retainOnDelete: false,
-});
-```
+## Imports and reads
 
-Autonaming configuration is stable as of 3.146.0 and applies to custom
-resources, not component resources (`3.145.0-3.159.0`). It can disable generated names
-globally or configure autonaming per component without program changes; the
-feature is available from CLI 3.91.1 (`release-notes-117`).
+A program resource with the `import` option can be adopted and updated in one
+deployment, and the import ID survives later updates. The engine honors imports
+inserted by resource transforms. An import identifier that differs from the
+provider's canonical ID no longer makes the resource delete on a later update.
 
-Provider-option inheritance during registration no longer incorrectly carries
-default providers across package boundaries (`3.214.1-3.228.0`).
+Import files may provide inputs and outputs. Supplying outputs imports the state
+directly and skips the provider read. Provider resources can appear alongside
+the imported resources that use them.
 
-## Replacement and diff controls
+PCL `read` blocks query resources by ID without registration. `customTimeouts`
+includes a `read` timeout.
 
-### `replaceWith`
+## Resource hooks
 
-A custom resource can use `replaceWith` to reference resources whose
-replacement must also replace it. Relationships are transitive and may be
-mutual to replace an entire group. Go, Python, Node.js, and Java support this;
-C# and YAML support is still forthcoming (`replace-with`).
+Go, Node.js, and Python support lifecycle hooks; hooks pass through component
+`Construct`, and transforms can set them. `ResourceHookArgs` includes type and
+name. Destroy operations involving delete hooks must run the program;
+after-delete hooks also run for components.
 
-```typescript
-const app = new aws.ec2.Instance("app-service", {}, {
-  replaceWith: [database],
-});
-```
+`OnError` hooks implement retry policy. All provider errors reach error hooks;
+a successful hook command retries, while a failing after-hook fails the
+deployment. Hook calls receive resource options. Node.js and Python hook secrets
+remain secret `Output` values.
 
-### Arbitrary triggers and hidden diffs
+## Replacement
 
-`replacement_trigger` forces replacement whenever its arbitrary value changes
-between program runs. Engine and Go support arrived in 3.208.0, followed by Node.js
-and Python (`3.199.0-3.214.0`). Remote-component `Construct` calls propagate
-replacement triggers (`3.214.1-3.228.0`).
+`pulumi state taint` and `untaint` set or clear forced replacement for the next
+update. `replaceWith`, introduced in batch `replace-with` at v3.207.0, replaces a
+custom resource when any referenced resource is replaced even without an
+infrastructure dependency. Relationships can be transitive or mutual; Go,
+Python, Node.js, and Java support it, while C# and YAML were not yet supported by
+that release.
 
-Go `HideDiffs`, Node.js `hideDiffs`, and Python `hide_diffs` hide selected
-resource diffs (`3.199.0-3.214.0`). Diffs nested inside `Output` values are no
-longer ignored (`3.249.0-3.254.0`).
+`replacement_trigger` replaces when any arbitrary trigger value changes. Engine
+and Go support began in 3.208.0, followed by Node.js and Python. Replacement
+triggers propagate through remote-component `Construct` calls.
 
-### `ignoreChanges`
+## Diffs and failure behavior
 
-If an `ignoreChanges` path is absent from old state, the engine uses the new
-value for that path rather than failing (`3.182.0-3.198.0`).
+Go `HideDiffs`, Node.js `hideDiffs`, and Python `hide_diffs` suppress selected
+diff display. An `ignoreChanges` path absent from old state uses the new value
+instead of erroring. Diffs nested in `Output` values are no longer ignored.
 
-## Resource lifecycle hooks
+Failed resource registrations produce faulted outputs rather than unknowns.
+Node.js and Python `Output.recover` handle exceptions during resolution.
 
-Go, Node.js, and Python support resource hooks. Hooks pass through component
-`Construct`; transforms can set them; and hook arguments include resource type
-and name. Destroy involving delete hooks must run the program. After-delete
-hooks run for component resources (`3.182.0-3.198.0`).
+## Refresh and dynamic providers
 
-Node.js and Python hooks receive secrets as `Output` values rather than an
-internal representation (`3.199.0-3.214.0`). The engine and these three SDKs
-also support `OnError` hooks for custom retry policies
-(`3.214.1-3.228.0`).
+Providers can ask the engine to refresh affected resources after partial
+failure. Node.js and Python dynamic-provider `read()` may return inputs so a
+refresh preserves the values needed for future diffs. Refreshing stack
+configuration includes its imported environments.
 
-PCL can declare hooks, including `onError`; Python supplies decorator forms.
-Hooks receive resource options, a failing after-hook fails the deployment, and
-all provider errors reach error hooks. A successful error-hook command retries
-the operation (`3.229.0-3.248.0`, `3.249.0-3.254.0`).
+## Views, state values, and snippets
 
-## Timeouts and failed values
+Engine views are enabled by default as of 3.176.0 and YAML views as of 3.177.0.
+The builtin `Stash` resource keeps an arbitrary value in state. State accepts
+floating-point NaN and infinity.
 
-`customTimeouts` has a `read` field for provider read timeouts
-(`3.229.0-3.248.0`). Failed registrations now produce faulted outputs instead
-of unknown outputs (`3.249.0-3.254.0`). Node.js and Python `Output.recover`
-can catch and recover from errors raised during output resolution
-(`3.229.0-3.248.0`).
+PCL snippets are retained in state for ad-hoc resources and can be targeted by
+UUID with `TargetSnippets`. Stateful `pulumi do` create, delete, upsert, and
+patch operations maintain these direct-resource entries.
 
-## Providers and resource registration
+## Component registration
 
-Provider `Configure` receives the provider resource URN and ID. Explicit
-providers receive `DiffConfig` calls for replacement decisions just like
-default providers. Go `AnalyzerResourceOptions` exposes `Parent`, and resource
-transforms receive the parent URN (`3.145.0-3.159.0`).
+Go and Node.js components send their inputs for diffing and state storage,
+matching Python. Node.js can opt out with
+`PULUMI_NODEJS_SKIP_COMPONENT_INPUTS`. Local Node.js components obtain version
+metadata from `package.json`; Python component providers can set a version.
+Node.js `initialize` receives resource options, name, and type.
 
-Node.js provider constructors receive `ignoreChanges`, `replaceOnChanges`,
-`customTimeouts`, `retainOnDelete`, and `deletedWith` rather than dropping
-them (`3.160.0-3.181.0`).
+## Invoke scheduling
 
-Provider resources accept `EnvVarMappings` to remap environment variables
-before handing them to the provider (`3.214.1-3.228.0`).
-
-Node.js and Python dynamic-provider `read()` methods may return inputs so a
-refresh retains the inputs needed by future diffs (`3.214.1-3.228.0`).
-
-## Invokes and secrets
-
-Go, Node.js, and Python avoid invokes whose resource dependencies remain
-unknown. Node.js and Python also wait for dependencies discovered in input
-properties; plain invokes continue to accept output arguments for compatibility
-(`3.145.0-3.159.0`).
-
-When an invoke has a secret input and the provider lacks secret support, the
-engine marks its outputs secret (`3.214.1-3.228.0`). The general CLI secrets
-filter no longer treats case-insensitive `true` and `false` as filter values.
-
-Provider invokes receive a `preview` flag (`3.199.0-3.214.0`). Calls honor a
-provider reference in `__self__`, and the engine supplies `Name` and `Type` in
-wire `ResourceReference` values (`3.214.1-3.228.0`).
-
-## Views and recovery refresh
-
-Engine views are enabled by default as of 3.176.0; Pulumi YAML enables them by
-default as of 3.177.0 (`3.160.0-3.181.0`).
-
-Providers can request default refresh of affected resources after partial
-failures, and the engine honors that request as of 3.178.0
-(`3.160.0-3.181.0`).
-
-## Resource inspection
-
-.NET, Go, Java, Node.js, Python, and YAML can locate the project root. Go and
-Python expose `pulumiResourceName` and `pulumiResourceType` for a resource's
-runtime name and type token (`3.145.0-3.159.0`).
-
-Go and Python mock monitors can return registered resources for test
-assertions. Go also exposes the current stack export map through
-`GetCurrentExportMap` (`3.182.0-3.198.0`).
+Output-form invokes declare dependencies, allowing the engine to defer calls
+until resources and remote-component children are created. During preview they
+resolve unknown. Go also infers dependencies from invoke arguments. This final
+dependency-gating behavior is recorded in `3.255.0-3.258.0`.

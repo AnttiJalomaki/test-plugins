@@ -1,40 +1,39 @@
 # Browser Automation
 
-## Page screencasts and presentation overlays
+## Controlled screencasts and overlays
 
-`page.screencast` provides explicit start/stop control for WebM recording and can stream JPEG frames through `onFrame` at the same time (since 1.59.1).
+`page.screencast.start()` can save a WebM through `path`, deliver JPEG frames
+through `onFrame`, or do both, with explicit `stop()` control (since 1.59.1).
 
 ```ts
 await page.screencast.start({
   path: 'video.webm',
-  onFrame: ({ data }) => consumeJpeg(data),
+  onFrame: ({ data, timestamp }) => consumeFrame(data, timestamp),
   size: { width: 800, height: 600 },
   quality: 90,
 });
 await page.screencast.stop();
 ```
 
-The options behave as follows:
+`size` supplies aspect-ratio-preserving maximum bounds. By default the
+viewport is scaled within 800x800. A screencast already started by tracing or
+video recording can override the requested size, and `quality` ranges from 0
+through 100. Frame events include the browser presentation `timestamp` (since
+1.61.0).
 
-- `path` writes a WebM when recording stops.
-- `onFrame` receives JPEG data. Since 1.61.0, each frame also includes its browser presentation `timestamp`.
-- `size` is an aspect-ratio-preserving maximum, not a forced output shape. Its default scales the viewport within 800×800.
-- `quality` ranges from 0 to 100.
-- A screencast already started for tracing or video can override the requested size.
+`showActions({ position, duration, fontSize, cursor })` annotates interactions
+and returns a disposable; `cursor` controls the pointer decoration. The cursor
+option was added in 1.61.0. `showChapter(title, { description, duration })`
+adds a timed title card. `showOverlay(html, { duration })` returns a disposable
+for arbitrary HTML, and an overlay can be hidden and restored without being
+removed. The test `video` option can configure `show.actions` and `show.test`
+annotations.
 
-Decorate the recording with:
+## Bound sessions and the dashboard
 
-- `showActions({ position, duration, fontSize, cursor })` for action decorations; `cursor` was added in 1.61.0.
-- `showChapter(title, { description, duration })` for timed title cards.
-- `showOverlay(html, { duration })` for arbitrary HTML.
-- `hideOverlays()` and `showOverlays()` to temporarily toggle overlays.
-- `hideActions()` to remove action decorations.
-
-`start()`, `showActions()`, and `showOverlay()` return disposables. The test runner's `video` option can also set `show.actions` and `show.test` annotation settings.
-
-## Bound browsers and dashboard
-
-`browser.bind(name, { workspaceDir })` exposes one launched browser to multiple Playwright clients, `playwright-cli`, or `@playwright/mcp` (since 1.59.1). The result contains an `endpoint` suitable for the normal connect API.
+`browser.bind(name, { workspaceDir })` makes a launched browser available to
+multiple Playwright, `playwright-cli`, or MCP clients (since 1.59.1). Pass its
+returned `endpoint` to `chromium.connect()` or the corresponding browser type.
 
 ```ts
 const { endpoint } = await browser.bind('my-session', {
@@ -45,26 +44,39 @@ const { endpoint } = await browser.bind('my-session', {
 const attached = await chromium.connect(endpoint);
 ```
 
-Supplying `host` and `port` exposes a WebSocket endpoint rather than a named pipe. Call `browser.unbind()` to prevent new connections. `playwright-cli show` opens a dashboard for bound browsers, manual intervention, and DevTools. CLI browsers bind automatically; set `PLAYWRIGHT_DASHBOARD=1` to include browsers launched by `@playwright/test`.
+Adding `host` and `port` creates a WebSocket endpoint; otherwise the session
+uses a named pipe. `browser.unbind()` stops accepting new connections.
+`playwright-cli show` opens a dashboard for bound browsers with manual
+intervention and DevTools. CLI-launched browsers bind automatically; set
+`PLAYWRIGHT_DASHBOARD=1` to expose browsers launched by `@playwright/test`.
 
-## Async disposal
+## AbortSignal and scroll control
 
-Pages, routes, and init scripts support JavaScript async disposal (since 1.59.1):
+Most operations and web-first assertions accept `signal` (since 1.62.0), so
+actions, navigation, waits, and assertions can be cancelled independently of
+their timeout. A supplied signal does not disable the default timeout; use
+`timeout: 0` when only the signal should bound the operation.
 
 ```ts
-await using page = await context.newPage();
-{
-  await using route = await page.route('**/*', route => route.continue());
-  await using script = await page.addInitScript('console.log("ready")');
-  await page.goto('https://example.com');
-}
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 1_000);
+await page.getByRole('button', { name: 'Submit' }).click({
+  signal: controller.signal,
+});
+await expect(page.getByText('Done')).toBeVisible({
+  signal: controller.signal,
+});
 ```
 
-Leaving scope closes the page and removes the route or script.
+Actions accept `scroll: 'auto' | 'none'` (since 1.62.0). Use `'none'` to
+prevent Playwright from automatically scrolling the target into view.
 
-## Virtual passkeys
+## Virtual passkeys and storage state
 
-Every browser context exposes a cross-browser `credentials` virtual authenticator (since 1.61.0). It can seed passkeys and answer the page's `navigator.credentials.create()` and `navigator.credentials.get()` ceremonies without physical hardware.
+`browserContext.credentials` provides a cross-browser virtual authenticator
+(since 1.61.0). It can seed backend-provisioned passkeys and answer the page's
+`navigator.credentials.create()` and `navigator.credentials.get()` ceremonies
+without a hardware key.
 
 ```ts
 await context.credentials.create('example.com', {
@@ -77,11 +89,15 @@ await context.credentials.install();
 await page.goto('https://example.com/login');
 ```
 
-Credentials registered by the application can be fetched with `credentials.get()` and reused in later tests.
+Retrieve an app-created credential with `credentials.get()` and reuse it in a
+later test. Storage state accepts `credentials` (since 1.62.0), allowing a
+context's virtual WebAuthn credentials to be persisted and used to seed later
+contexts.
 
-## Web Storage and context state
+## Direct and mutable Web Storage
 
-`page.localStorage` and `page.sessionStorage` expose `WebStorage` for the current page origin (since 1.61.0):
+`page.localStorage` and `page.sessionStorage` expose the current origin's
+storage directly (since 1.61.0).
 
 ```ts
 await page.localStorage.setItem('token', 'abc');
@@ -89,37 +105,86 @@ const token = await page.localStorage.getItem('token');
 const items = await page.sessionStorage.items();
 ```
 
-`browserContext.setStorageState()` replaces state in an existing context (since 1.59.1). It first clears all cookies and all local-storage and IndexedDB origins, then applies the supplied replacement state. Recreating the context is not required.
+`browserContext.setStorageState()` replaces a live context's state without
+recreating it (since 1.59.1). It clears the current cookies, local-storage
+origins, and IndexedDB origins before applying the replacement.
+
+## WebP screenshots and snapshots
+
+Page and locator screenshot assertions select WebP when the snapshot name ends
+in `.webp` (since 1.62.0). Standalone page and locator screenshots accept
+`type: 'webp'`; quality 100 is lossless and is the default, while lower values
+enable lossy compression.
+
+```ts
+await expect(page).toHaveScreenshot('homepage.webp');
+await page.screenshot({ path: 'homepage.webp', quality: 50 });
+```
 
 ## ARIA snapshots and locator tools
 
-The following interactive and accessibility tools were added in 1.59.1:
+The following APIs were added in 1.59.1:
 
-- `page.ariaSnapshot()` snapshots the whole page in the same way as `page.locator('body').ariaSnapshot()`.
-- Locator snapshots accept `depth` and `mode`.
-- `locator.normalize()` rewrites a locator toward recommended test-id and ARIA-role forms.
-- `page.pickLocator()` enters interactive selection: a person hovers and clicks an element, and the call returns its locator.
-- `page.cancelPickLocator()` cancels active selection.
+- `page.ariaSnapshot()` snapshots the whole page, equivalent to
+  `page.locator('body').ariaSnapshot()`.
+- Locator ARIA snapshots accept `depth` and `mode`.
+- `locator.normalize()` converts a locator toward recommended test-id and
+  ARIA-role forms.
+- `page.pickLocator()` highlights elements interactively and returns the
+  selected element's locator; `page.cancelPickLocator()` cancels selection.
 
-## Retained diagnostics
+## Async-disposable resources
 
-`page.consoleMessages()` and `page.pageErrors()` accept `filter` (since 1.59.1). Clear their retained entries with `clearConsoleMessages()` and `clearPageErrors()`. Console-message entries expose `timestamp()`.
+Pages, routes, init scripts, and other returned JavaScript resources support
+`await using` (since 1.59.1). Scope exit closes the page or removes the route
+or script.
 
-## Browser and protocol inspection
+```ts
+await using page = await context.newPage();
+{
+  await using route = await page.route('**/*', route => route.continue());
+  await using script = await page.addInitScript('console.log("ready")');
+  await page.goto('https://example.com');
+}
+```
 
-The 1.59.1 APIs add several lower-level inspection hooks:
+## Evaluation and init-script arguments
 
-- `browserContext.debugger` provides programmatic debugger control.
+`page.evaluate()` and related evaluation methods accept functions as argument
+values (since 1.62.0). `page.addInitScript()` and
+`browserContext.addInitScript()` likewise accept functions as init-script
+arguments.
+
+## Retained page diagnostics
+
+`page.consoleMessages()` and `page.pageErrors()` accept `filter` (since
+1.59.1). Reset retained entries with `clearConsoleMessages()` and
+`clearPageErrors()`. Retained console messages expose `timestamp()`.
+
+## Debugger, response, protocol, and lifecycle APIs
+
+The following additions date to 1.59.1:
+
+- `browserContext.debugger` exposes programmatic debugger control.
 - `browserContext.isClosed()` reports context lifecycle state.
-- `request.existingResponse()` returns an already available response without waiting.
-- `response.httpVersion()` reports the HTTP protocol version.
-- CDP sessions emit generic `event` and `close` events.
-- `tracing.start({ live: true })` enables real-time trace updates.
-- `browserType.launch({ artifactsDir })` controls where launch artifacts are written.
+- `request.existingResponse()` returns an already-available response without
+  waiting.
+- `response.httpVersion()` reports the negotiated HTTP version.
+- CDP sessions emit `event` and `close`.
 
-API-request responses gained browser-response metadata in 1.61.0:
+Responses from API requests add `apiResponse.securityDetails()` and
+`apiResponse.serverAddr()` (since 1.61.0), matching the TLS and server-address
+metadata available on browser responses.
 
-- `apiResponse.securityDetails()` returns connection security details.
-- `apiResponse.serverAddr()` returns the responding server address.
+## Artifact placement
 
-Use `browserType.connectOverCDP(endpoint, { artifactsDir })` to choose where traces, downloads, and other artifacts from an attached browser are stored (since 1.61.0).
+`browserType.launch({ artifactsDir })` chooses the launch artifact directory
+(since 1.59.1). `browserType.connectOverCDP(endpoint, { artifactsDir })`
+controls where traces, downloads, and other artifacts from an attached browser
+are stored (since 1.61.0).
+
+```ts
+const browser = await chromium.connectOverCDP(endpoint, {
+  artifactsDir: 'artifacts',
+});
+```

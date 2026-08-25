@@ -1,88 +1,58 @@
 # Platforms and Reporting
 
-This reference covers platform detection, Raspberry Pi behavior, and reporting
-changes from batch `26.1`.
+Use this reference when diagnosing environment detection, building Raspberry
+Pi images, consuming reporting events, or integrating boot analysis.
 
-## Newly detected platforms
+## Platform detection
 
-Cloud-init detects the Tilaa cloud platform. Integrations targeting Tilaa should
-check the built-in detection before retaining a local datasource or platform
-detection workaround.
+### Tilaa
 
-Cloud-init also detects s390x LXD environments. Architecture-specific LXD image
-logic should allow the built-in detection path to run rather than assuming LXD
-detection is unavailable on s390x.
+Since 26.1, cloud-init detects the Tilaa cloud platform. Before carrying a
+local Tilaa detection workaround forward, check whether built-in detection
+already covers the image and environment.
 
-These are detection additions. They do not imply that the two environments
-share configuration or datasource behavior.
+### s390x LXD
 
-## Raspberry Pi support
+Since 26.1, cloud-init detects s390x LXD environments. Re-evaluate local
+architecture-specific LXD detection logic before retaining it in an image.
 
-Raspberry Pi platform support includes three positive integration features:
+## Raspberry Pi image behavior
+
+Since 26.1, Raspberry Pi support includes:
 
 - keymap handling
 - USB-gadget handling
 - a systemd network service template
 
-Image builders and platform integrations should account for these built-in
-features before adding replacement platform scripts or service templates.
+Cloud-init also changes two defaults for this platform:
 
-### Platform defaults
+- fallback network configuration is disabled
+- APT mirror configuration is removed
 
-Cloud-init changes two generic behaviors for Raspberry Pi:
+Account for those defaults when assembling or debugging a Raspberry Pi image.
+The absence of generic fallback networking or emitted APT mirror configuration
+is expected platform behavior, not by itself evidence of failed detection.
 
-- fallback network configuration is disabled;
-- APT mirror configuration is removed.
+## Reporting integration
 
-An absent fallback network configuration is therefore expected on this
-platform. Diagnose the intended platform configuration instead of assuming that
-generic fallback generation failed.
+### Finish-event duration
 
-Likewise, an absent APT mirror configuration can be the result of the
-platform-specific removal. Do not re-add generic mirror data without deciding
-that the image requires behavior different from the Raspberry Pi default.
+Since 26.1, reporting finish events include their duration. Consumers can use
+that field to obtain stage timing directly from the finish event rather than
+reconstructing timing elsewhere.
 
-### Image review checklist
+When updating an event pipeline, retain the duration through:
 
-When preparing a Raspberry Pi image:
+- parsing
+- storage
+- export
+- downstream stage-timing calculations
 
-1. Check whether keymap handling already meets the image requirement.
-2. Check whether USB-gadget handling overlaps local boot scripts.
-3. Use or deliberately replace the provided systemd network service template.
-4. Supply intentional networking rather than depending on fallback network
-   configuration.
-5. Treat APT mirror configuration as absent unless the image explicitly adds
-   its own policy.
+### Boot-analysis exit status
 
-This keeps platform defaults and image policy separate and avoids duplicating
-the new built-in handling.
+Since 26.2, `analyze_boot` returns an integer exit code. Callers can interpret
+the result as a conventional process status.
 
-## Finish-event duration
-
-Reporting finish events include their duration. A consumer can obtain stage
-timing directly from the finish event.
-
-Event integrations should preserve the duration through each layer that handles
-the event:
-
-- decoding or parsing
-- internal event representation
-- persistence
-- logging, metrics, or export
-
-A consumer that previously derived timing from separate timestamps can use the
-reported duration instead. When maintaining compatibility with older stored
-events, handle the field according to the consumer's existing schema policy;
-the current event itself provides the duration.
-
-## Operational review
-
-- Remove Tilaa detection workarounds only after confirming the built-in path is
-  used by the target image.
-- Let s390x LXD environments reach the built-in detection logic.
-- Avoid duplicating Raspberry Pi keymap, USB-gadget, or systemd network-template
-  behavior.
-- Do not depend on generic fallback networking or APT mirror generation on
-  Raspberry Pi.
-- Preserve finish-event duration so stage timing remains available to event
-  consumers.
+Update integrations that ignored, loosely typed, or otherwise treated the
+return as a non-status result. Preserve the integer through wrappers so calling
+automation can make its normal success-or-failure decision.

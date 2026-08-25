@@ -1,39 +1,33 @@
 # Generation, caches, and serving
 
-Use this reference for assisted or custom generation, cache contracts, continuous batching, the chat CLI, and local Serve endpoints.
+Use this reference for `generate`, custom generation, speculative decoding,
+cache implementations, continuous batching, the chat CLI, and local serving.
 
-## Generation tools and extension points
+## Generation entry points
 
-### Inspect attention layouts
+### Assisted generation (4.50.0)
 
-`AttentionMaskVisualizer` loads a tokenizer and model by ID and renders the resulting attention layout, including sliding-window and multimodal masks (since 4.50.0):
-
-```python
-from transformers.utils.attention_visualizer import AttentionMaskVisualizer
-
-visualizer = AttentionMaskVisualizer("meta-llama/Llama-3.2-3B-Instruct")
-visualizer("A normal attention mask")
-```
-
-### Universal assisted generation
-
-An assistant can belong to a different model family from the target, and assisted generation works while sampling with `do_sample=True` (since 4.50.0):
+The assistant can be any compatible model rather than the same model family,
+and assisted generation works with sampling.
 
 ```python
+from transformers import pipeline
+
 pipe = pipeline(
     "text-generation",
-    model=target_id,
-    assistant_model=assistant_id,
+    model="google/gemma-2-9b",
+    assistant_model="double7/vicuna-68m",
     do_sample=True,
 )
 result = pipe("Alice and Bob", max_new_tokens=50, do_sample=True)
 ```
 
-Gemma 4 Assistant is a text-only Multi-Token Prediction draft model specifically for Gemma 4. It reuses the target KV cache to skip its own prefill and cross-attends to the target context while drafting (since 5.8.0).
+### Custom generation
 
-### Hub-hosted custom generation
-
-`generate(custom_generate=...)` loads an implementation from a Hub repository. This executes repository code and therefore requires `trust_remote_code=True` (since 4.52.1):
+`model.generate()` can load a generation implementation from a Hub repository
+through `custom_generate` (4.52.1). This executes repository code, so opt in
+with `trust_remote_code=True`. Relative imports inside custom implementations
+work as of 4.57.0.
 
 ```python
 output = model.generate(
@@ -43,118 +37,183 @@ output = model.generate(
 )
 ```
 
-Custom generation repositories can use relative imports (since 4.57.0). Pin and review the revision as an executable dependency.
+A `custom_generate` implementation loaded from a local directory also requires
+`trust_remote_code=True` as of 5.15.1. Treat both local and remote custom code
+as an explicit trust boundary.
 
-DoLa and Contrastive Search no longer ship in the package. Their implementations live in `transformers-community/dola` and `transformers-community/contrastive-search` (since 4.56.0). Group Beam Search and Constrained Beam Search are removed entirely (since 4.57.0).
+### Removed strategies
 
-## Generation input contract
+- DoLa and Contrastive Search leave the built-in library in 4.56.0; use the
+  remote implementations `transformers-community/dola` and
+  `transformers-community/contrastive-search` with explicit trust.
+- Group Beam Search and Constrained Beam Search are removed in 4.57.0. Remove
+  these options from generation configs and callers.
 
-- Passing a tensor `cache_position` into `generate` no longer fails argument handling (since 4.55.0).
-- Model code initializes caches explicitly and returns `Cache` objects. Cache arguments are standardized on `past_key_values`, not `past_key_value`; deprecated cache objects are removed and `from_legacy_cache` is heading toward removal (since 4.56.0).
-- Generation no longer uses `cache_position` to prepare inputs and always sends full `input_ids` to `prepare_inputs_for_generation`. Custom overrides must stop slicing with `cache_position` (since 5.3.0).
-- Most major direct model `forward` methods no longer accept `cache_position`; only `generate` manages cache positions (since 5.4.0).
-- Repetition-penalty generation requires `input_ids` (since 5.9.0).
-- Gemma 4 generation accepts `inputs_embeds` and `per_layer_inputs`; `per_layer_inputs` is available on every Gemma 4 variant (since 5.9.0).
+### Inputs and penalties
 
-## Cache architecture
+Generation accepts `inputs_embeds` consistently. Gemma 4 generation supports
+both `inputs_embeds` and `per_layer_inputs` as of 5.9.0, with
+`per_layer_inputs` exposed on every variant. Calls using a repetition penalty
+must supply `input_ids` in 5.9.0.
 
-### Per-layer and sliding-window caches
+## Cache architecture and migration
 
-KV caches are represented per layer, enabling hybrid caches that mix attention types. `CacheProcessor` encapsulates cache quantization and offload as independently customizable behavior (since 4.54.0).
+### Per-layer cache objects (4.54.0)
 
-`DynamicSlidingWindowLayer` and its cache retain and pass only the state required by sliding-window and chunk attention. A checkpoint default of `cache_implementation="hybrid"` is ignored in favor of dynamic sliding-window caching, avoiding unusually slow static-hybrid first generation (since 4.56.0).
+KV caches are represented per layer, allowing hybrid caches that mix attention
+types. `CacheProcessor` separates cache quantization and offloading so each
+behavior can be customized independently. Non-generative models no longer use
+a KV cache.
 
-Generation cache preparation receives model configuration and enforces configured sliding-window limits. Code that depended on an effectively unbounded cache can produce different output or require shorter input (since 5.1.0).
+### Explicit caches and argument names (4.56.0)
 
-### Model cache behavior
+Model implementations initialize caches explicitly and return `Cache` objects.
+Deprecated cache objects are removed. Use `past_key_values` instead of the
+singular `past_key_value`; `from_legacy_cache` is being prepared for
+deprecation.
 
-- Non-generative models no longer allocate a KV cache (since 4.54.0).
-- Vision encoder-decoder models support static caches (since 4.55.0).
-- Flash Attention 2 can continue generation from an existing cache (since 4.56.0).
-- Paged caches can reside on CPU (since 5.1.0).
-- Mamba-only and mixed Mamba-attention architectures use first-class cache classes; replace custom caches and workarounds (since 5.5.0).
-- Gemma 4 and Gemma 3n share KV states regardless of whether the caller supplies a `Cache` object (since 5.6.0).
-- T5Gemma2 long-input cross-attention selects the correct cache-layer type, and Qwen3.5 Gated DeltaNet linear attention handles multi-token cached forwards (since 5.7.0).
+### Sliding-window caches
 
-### Result-affecting attention corrections
+`DynamicSlidingWindowLayer` and its cache retain and pass only the required
+past state for sliding-window and chunk-attention models (4.56.0). A
+checkpoint's `cache_implementation="hybrid"` default is ignored in favor of
+dynamic sliding-window caching, avoiding the slow first generation associated
+with static hybrid caches.
 
-Flash Attention's sliding-window size is corrected by one position. Long-context output can change when initial context exceeds the configured window. Causality handling also supports bidirectional attention (since 4.56.0). Re-run generation tests instead of treating old and new caches as numerically equivalent.
+Generation cache preparation enforces configured sliding-window limits as of
+5.1.0. Code that relied on an effectively unbounded cache can produce different
+output or require shorter inputs.
+
+### Native state-space and hybrid caches (5.5.0)
+
+Mamba-only and mixed Mamba-plus-attention architectures use first-class native
+cache classes. Remove earlier custom cache classes and workarounds.
+
+### Relative cropping (5.15.1)
+
+`Cache.crop` no longer accepts an absolute target length. Remove a relative
+number of tokens with a negative offset:
+
+```python
+cache.crop(-tokens_to_remove)
+```
+
+### Static and rollback behavior
+
+Vision encoder-decoder models support static caches as of 4.55.0. Passing a
+tensor `cache_position` to `generate()` no longer fails during argument
+handling in that release.
+
+CPU paged caches are supported as of 5.1.0.
+
+Sliding-window cache layers can be rolled back during speculative decoding as
+of 5.15.1. That release also supports stop strings that span byte-fragment
+tokens.
+
+## Result-affecting cache and attention corrections
+
+- Flash Attention 2 can continue from an existing cache as of 4.56.0.
+- Sliding-window size in Flash Attention is no longer off by one (4.56.0), so
+  output can change when the initial context exceeds the window.
+- Flash Attention causality handling supports bidirectional attention
+  (4.56.0).
+- T5Gemma2 long-input cross-attention selects the correct cache-layer type
+  (5.7.0).
+- Qwen3.5 Gated DeltaNet handles multi-token cached forwards correctly
+  (5.7.0).
+- Attention-only GraniteMoeHybrid configs no longer update a nonexistent Mamba
+  mask and crash (5.7.0).
+- Gemma 3 and Gemma 4 image-token attention in local layers respects
+  sliding-window boundaries (5.15.1), potentially changing output.
+- Multi-head Latent Attention cache compression and recurrent-layer padding
+  masks during chunked prefill or continuation are corrected (5.15.1), also
+  potentially changing cached output.
 
 ## Continuous batching
 
-### Basic usage
+### Stable batch generation (4.57.0)
 
-Stable `generate_batch` supports batched generation for full- and sliding-window models. The documented configuration uses paged SDPA and left-padded inputs; results are keyed by request ID (since 4.57.0):
+Use `generate_batch` for stable continuous batching with full- or
+sliding-window attention. Paged SDPA is the documented setup. The feature
+targets workloads such as GRPO training and evaluation and is integrated with
+`transformers serve`.
 
 ```python
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model = AutoModelForCausalLM.from_pretrained(
-    model_id,
+    "Qwen/Qwen3-4B-Instruct-2507",
     dtype=torch.bfloat16,
     _attn_implementation="sdpa_paged",
     device_map="auto",
 )
-tokenizer = AutoTokenizer.from_pretrained(model_id, padding_side="left")
+model.generation_config.max_new_tokens = 32
+tokenizer = AutoTokenizer.from_pretrained(
+    "Qwen/Qwen3-4B-Instruct-2507", padding_side="left"
+)
 inputs = [
     tokenizer("Explain continuous batching.")["input_ids"],
     tokenizer("Write a haiku.")["input_ids"],
 ]
 outputs = model.generate_batch(inputs=inputs)
-for request_id in outputs:
-    print(tokenizer.decode(outputs[request_id].generated_tokens))
 ```
 
-The feature is suitable for GRPO training, evaluation, and Serve workloads.
+### Ordering, offload, and long contexts
 
-### Scheduling, memory, and parallelism
+- Incoming request order is preserved as of 5.1.0.
+- CPU request offload arrives in 5.7.0. KV deduplication and memory estimation
+  are corrected for generations of 16K tokens or more, and per-request sampling
+  settings are documented.
+- Tensor parallelism arrives in 5.9.0. `generate_batch()` restores
+  `_attn_implementation` and fixes request offsets. Its OpenTelemetry
+  integration is removed.
+- As of 5.15.1, `max_requests_per_batch` and a configurable default compile
+  level are available, and batching switches to Flash Attention automatically
+  when appropriate.
 
-- Incoming request order is preserved (since 5.1.0).
-- Requests can offload to CPU. KV deduplication and memory estimation are corrected for generations of 16K tokens or more, and per-request sampling parameters are documented (since 5.7.0).
-- Tensor parallelism is supported. `generate_batch` restores `_attn_implementation` and uses corrected request offsets (since 5.9.0).
-- The continuous-batching OpenTelemetry integration was removed (since 5.9.0).
+## Speculative and multimodal generation
+
+Gemma 4 Assistant adds Multi-Token Prediction speculative decoding in 5.8.0.
+It reuses the target's KV cache to skip assistant prefill and cross-attends to
+target context while drafting.
+
+Generation gains Multi-Token Prediction decoding and static ensemble
+verification for lossy speculative decoding in 5.15.1. Batched audio generation
+is supported for Qwen2.5-Omni and Qwen3-Omni.
 
 ## Chat CLI
 
-Use `transformers chat MODEL`. Generation settings follow the model as `GenerationConfig`-style `key=value` arguments rather than a fixed flag set (since 4.52.1):
+The simplified entry point is `transformers chat MODEL` as of 4.52.1.
+Generation settings follow the model as `GenerationConfig`-style `key=value`
+arguments.
 
 ```bash
 transformers chat Qwen/Qwen2.5-0.5B-Instruct do_sample=False max_new_tokens=10
 ```
 
-The CLI can use the same local Serve instance as API clients.
+The CLI can use the same model served by `transformers serve`.
 
-## Transformers Serve
+## Local serving
 
-### Intended scope and endpoints
+### Initial server (4.54.0)
 
-`transformers serve` is a local serving utility for supported modalities, intended for experimentation and private local use. It initially exposes OpenAI-compatible:
+`transformers serve` is a separate utility for experimentation and private
+local use across supported modalities. It exposes these endpoint paths:
 
 - `/v1/chat/completions`
 - `/v1/responses`
 - `/v1/audio/transcriptions`
 - `/v1/models`
 
-These endpoints and cross-client use with `transformers chat` arrived in 4.54.0.
+### Expanded server behavior (5.6.0)
 
-### Expanded request handling
+The server adds legacy `/v1/completions`, audio and video inputs,
+`--compile`, and `--model-timeout`. It forwards `tool_calls` and
+`tool_call_id` into processor inputs and uses `parse_response` for tool calls.
+A request naming a model other than the pinned server model returns HTTP 400.
 
-Serve also provides legacy `/v1/completions`, accepts audio and video, and supports `--compile` and `--model-timeout` (since 5.6.0). Tool-aware handling:
+### Response schema (5.9.0)
 
-- forwards `tool_calls` and `tool_call_id` to processor inputs;
-- uses `parse_response` for tool calls;
-- returns HTTP 400 when the request names a model other than the server's pinned model.
-
-Continuous batching is integrated into Serve (since 4.57.0) and later supports tensor-parallel execution (since 5.9.0).
-
-`GET /v1/models` returns `owned_by` as a string, correcting the earlier list shape (since 5.9.0).
-
-## Generation regression checklist
-
-1. Verify full `input_ids` handling in custom `prepare_inputs_for_generation`.
-2. Remove `cache_position` from direct forwards and old cache conversions.
-3. Test sliding-window limits, static vision caches, hybrid layers, and cache reuse.
-4. Supply `input_ids` whenever repetition penalties are active.
-5. For continuous batching, test request order, long-generation memory, sampling, offload, and tensor-parallel offsets.
-6. Keep Serve private unless the surrounding deployment supplies production authentication, isolation, limits, and observability.
+`GET /v1/models` returns `owned_by` as a string rather than the former
+erroneous list.

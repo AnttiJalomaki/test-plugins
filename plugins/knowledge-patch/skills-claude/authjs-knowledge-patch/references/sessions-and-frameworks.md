@@ -1,29 +1,20 @@
 # Sessions and Framework Integrations
 
-## Contents
-
-- [Session lifecycle](#session-lifecycle)
-- [Qwik](#qwik)
-- [SvelteKit](#sveltekit)
-- [Express](#express)
-
 ## Session lifecycle
 
-### Prevent session response caching
+### Session endpoint cache prevention
 
-GET requests to the session endpoint automatically receive cache-prevention headers. Consume those responses directly; do not add a separate cache-control wrapper merely to obtain fresh session state.
+GET requests to the session endpoint automatically include cache-prevention headers. Consumers receive fresh session state without wrapping that endpoint in additional cache-control handling.
 
-### Clean up expired database sessions
+### Expired database sessions
 
-Whenever Auth.js reads a database-backed `Session`, it checks `expires`. If the row is already expired, Auth.js deletes it as part of that read.
-
-Do not depend on expired session rows remaining available after access. Use separate audit storage if historical session records are required.
+When Auth.js reads a database-backed `Session`, it checks `expires`. If the row is already expired, Auth.js deletes it.
 
 ## Qwik
 
-### Read and protect on the server
+### Read and protect with the session
 
-The integration prepares the session automatically. Read it from `event.sharedMap` in server code:
+The Qwik integration prepares the session automatically. Server code reads it from `event.sharedMap`; client code uses the `useSession()` action. A request handler can protect a server route directly from the shared session.
 
 ```ts
 export const onRequest: RequestHandler = (event) => {
@@ -34,13 +25,11 @@ export const onRequest: RequestHandler = (event) => {
 }
 ```
 
-Use `useSession()` in client code.
-
 ### Sign in and sign out
 
-`useSignIn()` and `useSignOut()` return actions. Bind either action to a server-side `<Form>` or call its `.submit()` method from the client.
+`useSignIn()` and `useSignOut()` return actions. Use either action as a server-side `<Form>` action or invoke its `.submit()` method on the client.
 
-For sign-in, submit `providerId` and `options.redirectTo`:
+Sign-in submissions use `providerId` and `options.redirectTo`. Sign-out submissions use `redirectTo`.
 
 ```tsx
 const signIn = useSignIn()
@@ -52,15 +41,11 @@ const signIn = useSignIn()
 </Form>
 ```
 
-For sign-out, submit `redirectTo` rather than `options.redirectTo`.
-
 ## SvelteKit
 
-### Install and read the server session
+### Server session access
 
-The Auth.js `handle` installs `event.locals.auth()`. Call it from page or layout server loads and from `+server.ts` endpoints.
-
-Return the session from a load function to expose it through page data:
+Install the Auth.js SvelteKit `handle` to make `event.locals.auth()` available in page and layout server loads and in `+server.ts` endpoints. Return the result from a load function when the client needs the session through page data.
 
 ```ts
 export const load: PageServerLoad = async (event) => {
@@ -70,9 +55,9 @@ export const load: PageServerLoad = async (event) => {
 }
 ```
 
-### Wire authentication form actions
+### Authentication form actions
 
-The server-rendered `SignIn` and `SignOut` components from `@auth/sveltekit/components` require matching default form actions at `/signin` and `/signout`.
+The server-side `SignIn` and `SignOut` components from `@auth/sveltekit/components` require matching default form actions at `/signin` and `/signout`. Change those locations through `signInPage` and `signOutPage` when necessary.
 
 ```ts
 // src/routes/signin/+page.server.ts
@@ -82,17 +67,11 @@ export const actions: Actions = { default: signIn }
 export const actions: Actions = { default: signOut }
 ```
 
-If the routes differ, pass `signInPage` and `signOutPage` to the components. For purely client-side controls, import the corresponding handlers from `@auth/sveltekit/client`.
+For purely client-side controls, import the corresponding handlers from `@auth/sveltekit/client`.
 
 ## Express
 
-Use the integration primitives in application-owned middleware and routes:
-
-- Call `getSession(req)` to read the session.
-- Call `signIn(req, res)` to authenticate from an application route.
-- Call `signOut(req, res)` to end the session from an application route.
-
-Populate `res.locals.session` once when downstream handlers share session state:
+The Express integration exposes `getSession(req)` for middleware and `signIn(req, res)` and `signOut(req, res)` for application-owned routes. If several downstream handlers need the session, resolve it once and put it in `res.locals`.
 
 ```ts
 app.use(async (req, res, next) => {

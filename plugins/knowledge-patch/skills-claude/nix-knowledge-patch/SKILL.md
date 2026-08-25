@@ -7,192 +7,214 @@ metadata:
   author: Nevaberry
 ---
 
-# Nix Compatibility Guide
 
-Load this skill when changing Nix expressions, Nix CLI automation, NixOS
-modules, Nixpkgs packages, binary-cache infrastructure, or Home Manager
-configuration. Use it during upgrades, when reviewing code written against an
-older interface, and when a current command behaves differently than expected.
+# Nix Knowledge Patch
 
-The reference files are the source of detail. Start with the quick checks below,
-then open the reference matching the work at hand. Treat project expressions,
-locked inputs, state-version declarations, and observed evaluation results as
-authoritative for the specific deployment.
+Use this skill when changing Nix expressions, Nix CLI integrations, flakes,
+stores and caches, NixOS modules, Nixpkgs packages, or Home Manager
+configurations. Check the relevant reference before preserving an old option,
+output format, package name, service default, or builder interface.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Nix language, CLI, flakes, and APIs](references/nix-language-cli-flakes.md) | Evaluation semantics, CLI output, flake inputs and locks, REPL, installer, C and C++ APIs |
-| [Stores, builds, transports, and caches](references/stores-builds-caches.md) | Store durability and GC, builders, SSH, HTTP and S3 substituters, logs, credentials |
-| [NixOS systems and services](references/nixos-systems-services.md) | Rebuilds, boot and initrd, networking, service modules, security, databases, system migrations |
-| [Nixpkgs packaging](references/nixpkgs-packaging.md) | Builders, hooks, library APIs, language ecosystems, package scopes, platform changes |
-| [Home Manager](references/home-manager.md) | Activation, profiles, state-gated defaults, module renames, XDG and Darwin behavior |
+| [Nix language, CLI, flakes, and APIs](references/nix-language-cli-flakes.md) | Evaluation, flake inputs and locks, CLI behavior, JSON formats, installers, C and C++ APIs |
+| [Stores, builds, transports, and caches](references/stores-builds-caches.md) | Store settings, garbage collection, builders, SSH and HTTP transport, S3 and binary caches, hooks |
+| [NixOS systems and services](references/nixos-systems-services.md) | Rebuild and boot flows, networking, systemd, security, databases, service migrations |
+| [Nixpkgs packaging](references/nixpkgs-packaging.md) | Builders, hooks, package scopes, language ecosystems, library and expression migrations |
+| [Home Manager](references/home-manager.md) | Activation, profiles, state-version behavior, program and service migrations, XDG and Darwin integration |
 
-## Upgrade triage
+## Start with migrations that can break evaluation
 
-Before changing code:
+### Use current path-literal lint settings
 
-1. Identify the Nix, Nixpkgs, NixOS, and Home Manager revisions independently.
-   They evolve on different schedules.
-2. Read `system.stateVersion` and `home.stateVersion`; do not bump either merely
-   to silence an option warning.
-3. Inspect `flake.lock`, explicit package pins, cache URLs, and remote-builder
-   URIs before assuming defaults.
-4. Search the references for every removed option, renamed command, or changed
-   JSON field reported by evaluation or CI.
-5. Evaluate first, build second, and activate last. For system changes, keep a
-   bootable generation and a rollback path.
+Replace the old URL-literal feature and Boolean short-path warning with the
+tri-state settings. Each accepts `ignore`, `warn`, or `fatal`.
 
-## Breaking evaluation and CLI checks
-
-- Signed integer overflow is an evaluation error. JSON integers must fit in a
-  signed 64-bit value, and negative numeric `nixConfig` values are rejected.
-- Relative path flake locks are not readable by older Nix clients. Coordinate
-  lock-file format changes across all machines that consume the repository.
-- Lock generation does not consult user or system flake registries. Pin input
-  URLs or use an explicit command-line override for reproducible resolution.
-- Short, URL, and absolute path literal checks are tri-state lints. Prefer the
-  stable lint settings and decide explicitly between `ignore`, `warn`, and
-  `fatal`.
-- A zero-argument `nix fmt` call is distinct from `nix fmt .`; the configured
-  formatter decides what no arguments mean.
-- JSON intended for machines needs an explicit schema where the command offers
-  one. Do not parse terminal pretty-printing or human-readable size units.
-- Derivation JSON writers must emit the current envelope and structured input
-  and content-address fields; older input formats are not accepted.
-- `nix flake check` may validate substitutable outputs without downloading them.
-  Success does not prove every result exists in the local store.
-- Relative paths in `file:` tarball references are invalid. Use an absolute
-  path or a different reference form.
-
-## Store and build safety
-
-- Build directories live under the Nix state directory and have opaque names.
-  Do not discover active derivations by scanning `/tmp` or parsing directory
-  names.
-- `build-cores = 0` means automatic CPU detection; builders receive the detected
-  count through `NIX_BUILD_CORES`.
-- Incomplete closures from a substituter are not combined with local builds.
-  Configure overlay caches together with the cache that provides their
-  references.
-- Use `nix copy --profile` or `--out-link` when copied paths need immediate GC
-  protection.
-- Turn on durable store-path registration only after considering its I/O cost;
-  it is a crash-consistency setting, not a substitute for backups.
-- External derivation builders, tolerant GC, and the runtime roots daemon are
-  experimental facilities with explicit feature and privilege requirements.
-- If an application links `libnixstore` and performs remote builds, ensure Nix
-  executables are on `PATH` or set `build-hook` explicitly.
-
-## Cache and transport checks
-
-- HTTP substituters have a finite default connection timeout. Override it for
-  deliberately slow endpoints.
-- Compression for cache metadata and logs is conveyed by `Content-Encoding`;
-  use codecs supported by the linked libcurl.
-- HTTPS substituters can use a client certificate and key. Keep both paths out
-  of world-readable configuration.
-- S3 authentication and upload behavior depend on the Nix build's curl and AWS
-  CRT support. Confirm OIDC, container metadata, multipart settings, addressing
-  style, and storage class in the deployment environment.
-- SSH store URIs accept explicit ports. Bracket IPv6 literals and percent-encode
-  a scoped address's zone separator.
-- `NIX_SSHOPTS` is shell-parsed. Quote multiword options as one shell argument
-  and test them through both ordinary Git and Git LFS paths.
-
-## NixOS migration checks
-
-- The systemd initrd is the default. Verify encrypted-root device names, stable
-  root paths, and any LVM-on-LUKS timeout before rebooting.
-- `nixos-rebuild-ng` is the normal rebuild implementation. Remove obsolete
-  opt-in and switch implementation toggles.
-- Services that require connectivity must explicitly want and order themselves
-  after `network-online.target`.
-- Core module types are stricter: declare filesystem types, use lists where
-  required, and expect unknown video drivers to fail evaluation.
-- RFC 42-style `settings` attributes replace many free-form `extraConfig`
-  strings. Migrate values structurally instead of copying raw fragments.
-- Changing the D-Bus implementation is a switch inhibitor and needs a reboot.
-- Secret-bearing module options increasingly require files or credential
-  injection. Never put private keys or application secrets into the Nix store.
-- Database and application defaults are state-gated. Major-version upgrades for
-  Nextcloud and extension changes for Immich require deliberate stepping.
-- Removed kernels, filesystems, legacy network tools, and module paths require a
-  real replacement; an option rename alone may not preserve behavior.
-
-## Nixpkgs packaging checks
-
-- Modern Python builders require an explicit build format and build system.
-- Rust packages use `cargoHash` and stable vendoring helpers; regenerate hashes
-  after Cargo-format changes.
-- Go packages use `buildGoModule`; place `CGO_ENABLED` under `env` and do not
-  pass `GOOS` or `GOARCH` as builder arguments.
-- `buildEnv` uses fixed-point arguments and structured attributes. Put
-  derivation-specific arguments under `derivationArgs`.
-- `stdenv.mkDerivation` requires `env` to be an attribute set. A variable
-  literally named `env` belongs at `env.env`.
-- Broken-symlink checks reject dangling, reflexive, and build-directory links.
-  Disable the check only for an intentional output contract.
-- Use current Nixpkgs library, command-line rendering, fetcher, and package-scope
-  APIs. Removed aliases often differ semantically from their replacements.
-- Default compiler and runtime changes can break unpinned packages. Pin only
-  when necessary and preserve the reason in the expression.
-- Nested build-input lists are deprecated; flatten them.
-
-## Home Manager migration checks
-
-- Generated activation scripts should not own profile updates. Callers that run
-  them directly must manage the profile.
-- User-service activation now restarts services by default; the legacy mode is
-  invalid.
-- Minimal module mode imports only Home Manager basics. Import every program or
-  service module used by the configuration.
-- State-gated XDG, application-copying, plugin-language, and window-manager
-  defaults can move files or reinterpret configuration.
-- Prefer structured SSH settings and the common SSH-auth-socket integration.
-  Migrate profile-scoped Firefox and Anki configuration to the profile itself.
-- Login-time activation is available for homes unavailable during boot.
-- Automatic upgrades no longer imply an input update. Add a pre-switch update
-  command only when that policy is desired.
-
-## Verification patterns
-
-For expressions and flakes:
-
-```sh
-nix flake check
-nix eval --show-trace .#nixosConfigurations.host.config.system.build.toplevel.drvPath
+```ini
+lint-url-literals = fatal
+lint-short-path-literals = warn
+lint-absolute-path-literals = warn
 ```
 
-For a NixOS host:
+Write relative paths as `./foo/bar`; do not use relative paths in `file:`
+tarball references.
 
-```sh
-nixos-rebuild build
-nixos-rebuild test
+### Treat integers as signed 64-bit values
+
+Arithmetic overflow is an evaluation error. `builtins.fromJSON` rejects
+larger integers, and negative numeric values are invalid for flake `nixConfig`
+options.
+
+### Build structured derivations explicitly
+
+Do not serialize JSON into the `__json` environment variable. Set
+`__structuredAttrs = true` on `builtins.derivation`; it is also required when
+debug-info splitting is combined with derivation reference checks.
+
+```nix
+builtins.derivation (attrs // { __structuredAttrs = true; })
 ```
 
-For a package:
+### Select current CLI and JSON interfaces
 
-```sh
-nix build --print-build-logs .#package
-```
+- Use `nix profile add`; `nix profile install` is only a compatibility alias.
+- Pass `--json-format` to `nix path-info --json`; format 2 changes store-path
+  keys and content-address representation, and format 3 structures signatures.
+- Produce and consume derivation JSON version 4; `nix derivation add` rejects
+  older versions.
+- Do not parse human-readable sizes as fixed MiB values.
+- Force `--pretty` or `--no-pretty` when JSON formatting must not depend on
+  whether stdout is a terminal.
 
-For output consumed by automation, redirect stdout and select explicit JSON
-format and pretty-print flags. Validate the result against the command's chosen
-schema rather than relying on presentation defaults.
+### Update C and C++ integrations
 
-## Decision rules
+Include C++ headers as `nix/<component>/...`, rely on pkg-config's include
+directory, and use public `NIX_` configuration macros. Configure flakes on
+each evaluator-state builder; the global flake initializer is gone.
 
-- When a state version gates a default, preserve the current state version and
-  configure the desired behavior explicitly unless the user is intentionally
-  adopting all migrations attached to the newer state.
-- When an option is removed, follow the replacement described in the relevant
-  reference; do not recreate removed free-form configuration through string
-  concatenation.
-- When cache behavior differs between hosts, compare Nix build features,
-  credential-provider environment, URI parameters, and proxy or SSH options.
-- When a flake update changes more than the named input, inspect nested lock
-  provenance before forcing a second update.
-- When activation can interrupt access, use a test activation or a recoverable
-  console and verify inhibitors rather than bypassing them by default.
+Indexed C accessors accept mutable values. Prefer lazy list and attribute
+accessors when a sub-value must remain unevaluated. Plugins may resolve the
+Nix executable's exported C symbols dynamically. Primop errors are sticky
+unless returned as `NIX_ERR_RECOVERABLE`.
+
+## Flake and source quick reference
+
+### Declare repository features on inputs
+
+Relative `path:` inputs can point to flakes in the same repository, but their
+locks are incompatible with older clients. A Git-backed flake can declare
+`inputs.self.submodules = true` and `inputs.self.lfs = true`. Git URLs can also
+request LFS with `lfs=1`.
+
+Lock generation ignores user and system registries for indirect inputs. Pin
+URLs explicitly, use `nix registry resolve` to inspect registry resolution,
+and remember that input updates preserve nested locks from the updated input.
+
+### Prefer explicit source operations
+
+- `nix flake prefetch-inputs` fetches all inputs concurrently.
+- `nix flake prefetch --out-link` protects or exposes a prefetched source.
+- `nix flake archive --no-check-sigs` can copy directly to a remote store.
+- `nix formatter build` builds the configured formatter and prints its
+  executable path.
+- `nix fmt` with no arguments does not imply `.`.
+- `builtins.getFlake` accepts path values, although paths outside the store
+  remain unsupported.
+
+## Store, cache, and build quick reference
+
+### Account for changed build locations and concurrency
+
+Temporary builds live below the Nix state directory and their directory names
+are opaque. `build-cores = 0` performs automatic CPU detection. Post-build
+hooks can overlap up to `max-jobs`; build hooks receive `SIGTERM` on shutdown.
+
+### Configure durable and safe garbage collection
+
+Enable `fsync-store-paths` when new paths must reach durable storage before
+registration. Runtime roots can be served by `nix store roots-daemon` for a
+daemon without `/proc` tracing capability. Recursive deletion can keep live
+paths with `nix store delete --recursive --skip-alive`.
+
+### Keep cache automation format-aware
+
+HTTP caches can compress narinfo, listing, and log metadata. Configure cache
+metadata lifetime with `narinfo-cache-meta-ttl`, refresh with
+`nix store info --refresh`, and supply mTLS credentials in HTTPS store URLs.
+Authentication failures are reported distinctly from missing objects.
+
+S3 stores support STS, web-identity and container credentials, object version
+IDs, storage classes, multipart controls, and explicit addressing styles.
+Configure every overlay cache alongside its underlying cache to avoid local
+rebuilds of incomplete substituted closures.
+
+## NixOS migration quick reference
+
+### Review boot and switching assumptions
+
+The initrd uses systemd by default. Replace `/dev/root` with a stable device,
+name LUKS mapper paths explicitly, and retain scripted stage 1 only as a
+temporary compatibility measure. `nixos-rebuild-ng` and the Rust system switch
+are the supported paths; remove obsolete switch implementation toggles.
+
+`/etc/nixos/system.nix` can be a channel-free system entry point. Use
+`nixos-rebuild --attr` for an attribute set and `--file` for another entry.
+
+### State dependencies explicitly
+
+Services needing connectivity must both want and follow
+`network-online.target`. Depend on `postgresql.target` when the database must
+be writable and initialized. Depend on the ACME certificate service when a
+syntactically valid certificate is required.
+
+### Migrate structured settings and secrets
+
+Move legacy `extraConfig` and flat option values into their RFC 42-style
+`settings` attribute sets. Prefer secret-file and systemd-credential options;
+never place private keys or application secrets in the Nix store.
+
+### Treat state versions as migration switches
+
+Use valid `"YY.MM"` NixOS state versions and change them only with the
+corresponding data and default migrations. Database and application defaults,
+private data directories, and several Home Manager paths are state-gated.
+
+## Nixpkgs packaging quick reference
+
+### Use current builders and dependency hooks
+
+- Use `buildGoModule`, with `env.CGO_ENABLED` where required.
+- Use `cargoHash` and `rustPlatform.fetchCargoVendor` for Rust vendoring.
+- Set an explicit modern Python format, normally `pyproject = true` with a
+  declared `build-system`.
+- Use top-level `fetchPnpmDeps` and `pnpmConfigHook`, regenerating version-3
+  pnpm dependency hashes.
+- Use Yarn build, config, and install hooks for remaining Yarn 1 packages.
+
+### Expect stricter derivation validation
+
+`env` must be an attribute set, nested input lists are deprecated, dangling
+and build-directory symlinks fail checks, and `meta.mainProgram` can affect
+build output. Use structured attributes with `buildEnv` and put custom
+derivation arguments in `derivationArgs`.
+
+### Replace removed package and library names
+
+Prefer top-level desktop packages, `pkgs.nixfmt`, current `lib.cli` rendering
+functions, and current `lib.attrsets`, `lib.filesystem`, and string-type
+helpers. Consult the packaging reference for exact one-to-one replacements.
+
+## Home Manager quick reference
+
+### Let the command own profile updates
+
+Use `home-manager switch --rollback` or `--specialisation NAME` for safe
+activation. Direct activation-script callers must update the profile
+themselves. Legacy shadow-profile management is only a temporary escape hatch.
+
+### Review activation and login behavior
+
+User services restart during activation by default. Use
+`home-manager.startAsUserService` when the home is unavailable until login.
+Minimal mode imports only essential modules; explicitly import everything else.
+
+### Migrate program configuration
+
+Use structured SSH settings, per-profile Firefox extensions and Anki sync,
+`services.syncthing.tray.enable`, `guiCredentials`, dedicated editor-fork
+modules, and the renamed Neovim, man-viewer, and wallpaper-service options.
+State-version changes also affect XDG paths, Hyprland and Neovim configuration
+formats, application copying on Darwin, and automation defaults.
+
+## Verification checklist
+
+Before shipping a migration:
+
+1. Identify whether the change belongs to Nix, NixOS, Nixpkgs, or Home Manager.
+2. Check state-version gates separately from package or executable versions.
+3. Validate option types and renamed paths with evaluation, not string search.
+4. Exercise machine-readable output with an explicit format version.
+5. Test store and hook changes with concurrent jobs and garbage collection.
+6. Read the topic reference for defaults, escape hatches, and exact replacements.

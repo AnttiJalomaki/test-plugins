@@ -1,12 +1,10 @@
 # Configuration and Theming
 
-Use this reference for CSS-first theme definition, source detection, legacy bridges, and custom utility authoring.
+Use this reference for CSS-first configuration, design tokens, candidate discovery, and custom functional utilities.
 
-## Theme Variables Create Framework APIs
+## Theme variables create framework APIs
 
-These theme behaviors are recorded in source batch `4.0.0-configuration`.
-
-A variable in a top-level `@theme` block does two jobs: it emits a CSS custom property and creates the utility or variant associated with its namespace. Defining the same variable only in `:root` makes it available to CSS but does not extend Tailwind's API.
+In `4.0.0-configuration`, variables in a top-level `@theme` block both emit CSS custom properties and create the matching utilities or variants. Ordinary variables declared only in `:root` remain CSS variables and do not create framework APIs.
 
 ```css
 @import "tailwindcss";
@@ -17,32 +15,17 @@ A variable in a top-level `@theme` block does two jobs: it emits a CSS custom pr
 }
 ```
 
-The main namespaces are:
+The recognized namespaces include:
 
-| Namespace | Generated API |
-|---|---|
-| `--color-*` | Color utilities |
-| `--font-*` | Font-family utilities |
-| `--text-*` | Font-size utilities |
-| `--font-weight-*` | Font-weight utilities |
-| `--tracking-*` | Letter-spacing utilities |
-| `--leading-*` | Line-height utilities |
-| `--spacing-*` | Spacing and sizing utilities |
-| `--radius-*` | Border-radius utilities |
-| `--shadow-*` | Box-shadow utilities |
-| `--inset-shadow-*` | Inset-shadow utilities |
-| `--drop-shadow-*` | Filter drop-shadow utilities |
-| `--blur-*` | Blur utilities |
-| `--perspective-*` | Perspective utilities |
-| `--aspect-*` | Aspect-ratio utilities |
-| `--ease-*` | Transition timing utilities |
-| `--animate-*` | Animation utilities |
-| `--breakpoint-*` | Responsive variants |
-| `--container-*` | Container variants and size utilities |
+- `--color-*`, `--font-*`, `--text-*`, `--font-weight-*`, `--tracking-*`, and `--leading-*`
+- `--spacing-*`, `--radius-*`, `--shadow-*`, `--inset-shadow-*`, and `--drop-shadow-*`
+- `--blur-*`, `--perspective-*`, `--aspect-*`, `--ease-*`, and `--animate-*`
+- `--breakpoint-*` for responsive variants
+- `--container-*` for container variants and size utilities
 
-## Remove or Replace Defaults
+## Remove default theme values
 
-Set a wildcard namespace to `initial` to remove its defaults and the utilities those defaults would generate. Set the global wildcard when building a theme entirely from scratch.
+Assign `initial` to a wildcard namespace to remove that namespace's defaults and generated utilities. Use `--*: initial` to discard the entire default theme before defining a replacement.
 
 ```css
 @theme {
@@ -51,34 +34,18 @@ Set a wildcard namespace to `initial` to remove its defaults and the utilities t
 }
 ```
 
-```css
-@theme {
-  --*: initial;
-  --color-brand: oklch(0.55 0.18 265);
-}
-```
+## Inline references or force unconditional output
 
-## Inline and Static Theme Output
-
-Use `inline` when one token refers to another variable. Generated utilities then contain the referenced value instead of referring to the theme token by name.
+Use `@theme inline` when a token references another variable and the generated utility should contain the referenced value rather than the token name. Tailwind normally emits only used theme variables; use `@theme static` to emit every variable in the block.
 
 ```css
-@theme inline {
-  --font-sans: var(--font-inter);
-}
+@theme inline { --font-sans: var(--font-inter); }
+@theme static { --color-primary: var(--color-red-500); }
 ```
 
-Tailwind normally emits only theme variables that are used. Use `static` when every variable in a block must be present in the output regardless of utility usage.
+## Control animation keyframe ownership
 
-```css
-@theme static {
-  --color-primary: var(--color-red-500);
-}
-```
-
-## Theme-Owned Animation Keyframes
-
-Keyframes nested in `@theme` alongside an `--animate-*` token are emitted only when the animation token is used.
+Keyframes nested in `@theme` beside an `--animate-*` token are emitted only when that token is used. Put `@keyframes` outside `@theme` when it must always be present.
 
 ```css
 @theme {
@@ -91,72 +58,57 @@ Keyframes nested in `@theme` alongside an `--animate-*` token are emitted only w
 }
 ```
 
-Move `@keyframes` outside `@theme` when the rule must always be emitted, including when animation is invoked without the corresponding theme utility.
+## Use build-time color and spacing functions
 
-## Build-Time Color and Spacing Functions
-
-`--alpha()` changes a color's opacity and compiles to `color-mix()`. `--spacing()` multiplies the base theme spacing value and can participate in arbitrary-value calculations.
+`--alpha()` changes a color's opacity and compiles to `color-mix()`. `--spacing()` multiplies the base spacing value and can appear in arbitrary-value calculations.
 
 ```css
 .card {
   color: --alpha(var(--color-lime-300) / 50%);
   margin: --spacing(4);
-  padding-inline: calc(--spacing(3) + 1px);
 }
 ```
 
-## Source Detection
-
-The source controls in this section come from source batch `4.1.0`.
-
-### Exclude Paths
-
-`@source not` prevents selected paths from being scanned for class candidates.
+Since `4.3.3`, `--spacing(0)` compiles to `0px`, not unitless `0`, so it retains the `<length>` type inside `calc()` expressions.
 
 ```css
-@import "tailwindcss";
-@source not "./src/components/legacy";
+.panel { width: calc(100% - --spacing(0)); }
 ```
 
-### Add Literal Candidates
+## Bridge legacy configuration selectively
 
-`@source inline()` forces literal candidates into generated CSS. Its brace expansion supports lists, numeric ranges, steps, and variant prefixes.
-
-```css
-@source inline("{hover:,}bg-red-{50,{100..900..100},950}");
-```
-
-This generates the base and hover forms for the listed red shades. Prefer explicit ranges over attempting to generate candidates dynamically at runtime.
-
-### Suppress Candidates
-
-`@source not inline()` prevents a candidate from being generated even when it is found in project files.
-
-```css
-@source not inline("container");
-```
-
-## Legacy Configuration Bridge
-
-`@config` loads a JavaScript configuration file, and `@plugin` loads a package or local legacy plugin.
+`@config` loads a v3 JavaScript configuration, while `@plugin` loads a package or local legacy plugin. CSS-defined settings merge with legacy definitions where possible and otherwise take precedence.
 
 ```css
 @config "../../tailwind.config.js";
 @plugin "@tailwindcss/typography";
 ```
 
-CSS-defined settings merge with legacy definitions where possible. When the two forms cannot be merged, the CSS definition wins. The legacy `corePlugins`, `safelist`, and `separator` options are not supported; replace safelisting with `@source inline()`.
+The legacy `corePlugins`, `safelist`, and `separator` options are unsupported. Replace safelisting with `@source inline()`.
 
-## Defaults in Functional Utilities
+## Control candidate discovery
 
-Functional utility defaults are recorded in source batch `4.3.0`.
+Source controls introduced in `4.1.0` can exclude scanned paths, add literal candidates, or suppress specific candidates.
 
-Pass `--default(...)` inside `--value(...)` or `--modifier(...)` so the bare utility and explicitly valued forms share one definition.
+```css
+@import "tailwindcss";
+@source not "./src/components/legacy";
+@source inline("{hover:,}bg-red-{50,{100..900..100},950}");
+@source not inline("container");
+```
+
+- `@source not` prevents selected paths from being scanned.
+- `@source inline()` supports brace expansion for candidate lists, numeric ranges, and variants.
+- `@source not inline()` suppresses a candidate even when source scanning detects it.
+
+Keep forced candidates literal and exclusions narrow so the generated stylesheet remains predictable.
+
+## Give functional utilities a bare default
+
+In the `4.3.0` batch, functional `@utility` definitions can pass `--default(...)` inside `--value(...)` or `--modifier(...)`. This lets the bare utility and explicitly valued forms share one definition.
 
 ```css
 @utility tab-* {
   tab-size: --value(integer, --default(4));
 }
 ```
-
-Here `tab` uses `4`, while an explicitly valued class can supply another integer through the same functional definition. The same default mechanism is available for modifiers.

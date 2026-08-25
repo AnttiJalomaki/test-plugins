@@ -1,44 +1,44 @@
 # Operations, Observability, and Deployment
 
-Topic details draw from batches `7.2`, `8.0`, `8.1-guide`, `8.1`, and `deployment-with-kamal`.
-
-## Contents
-
-- [Development and runtime defaults](#development-and-runtime-defaults)
-- [Structured events](#structured-events)
-- [Local CI and credential access](#local-ci-and-credential-access)
-- [Kamal deployment defaults](#kamal-deployment-defaults)
-- [Migrating from Kamal 1](#migrating-from-kamal-1)
-- [Upgrade and rollback commands](#upgrade-and-rollback-commands)
-
-## Development and runtime defaults
+## Local development
 
 ### Development containers
 
-Generate a `.devcontainer` setup for a new or existing application (`7.2`):
+Since `7.2`, Rails can generate a `.devcontainer` setup for a new or existing
+application. It contains a Dockerfile, Compose file, and `devcontainer.json`.
+Defaults include the chosen database, Redis, Headless Chrome, and local Active
+Storage with preview support.
 
 ```console
 rails new myapp --devcontainer
 rails devcontainer
 ```
 
-The generated setup includes a Dockerfile, Compose file, and `devcontainer.json`. Defaults account for the selected database, Redis, Headless Chrome, and local Active Storage with preview support.
+### Server backtraces
 
-### Puma, allocation, and backtraces
+Setting `BACKTRACE` disables backtrace cleaning during ordinary server runs,
+not only during tests.
 
-Generated Puma configuration uses three threads instead of five (`7.2`). Recalculate per-process concurrency and database pool capacity when an existing deployment relied on the generated default.
+## Runtime defaults
 
-Generated Rails Dockerfiles install and use jemalloc to reduce allocator fragmentation in threaded processes (`7.2`).
+### Puma threads
 
-Setting the `BACKTRACE` environment variable disables backtrace cleaning during normal server runs, not only tests (`7.2`).
+Generated Puma configuration defaults to three threads rather than five.
+Upgraded deployments that relied on the generated value therefore have less
+per-process concurrency. Recalculate Puma process counts, queue concurrency,
+and database pool capacity together.
 
-### Regular-expression timeout
+### Docker memory allocation
 
-Rails sets Ruby's global `Regexp.timeout` to one second by default (`8.0`). Audit intentionally expensive expressions before overriding it; an application that depends on longer execution may otherwise start timing out after upgrade.
+Generated Rails Dockerfiles install and use jemalloc to reduce allocator
+fragmentation in threaded processes.
 
-## Structured events
+## Structured observability
 
-`Rails.event` emits structured notifications with payloads, tags, and shared context (`8.1-guide`):
+### Event reporting
+
+The `8.1-guide` adds `Rails.event` for structured notifications. Events can
+include payload fields, shared context, and tags:
 
 ```ruby
 Rails.event.set_context(request_id: "abc123", shop_id: 456)
@@ -51,15 +51,14 @@ Rails.event.tagged("graphql") do
 end
 ```
 
-Each registered subscriber implements `emit(event)`, receives the event as a hash, and decides serialization and emission behavior.
+Registered subscribers implement `emit(event)`. The event is a hash, and the
+subscriber controls its serialization and output destination.
 
-Active Record reports `active_record.strict_loading_violation` and `active_record.sql` through this structured reporter (`8.1`). See the Active Record reference for SQL notification retry and affected-row metadata.
+## Local CI
 
-## Local CI and credential access
-
-### Local CI workflow
-
-Declare a local workflow in `config/ci.rb` and run it with `bin/ci` (`8.1-guide`):
+Applications can declare a local workflow in `config/ci.rb` and run it with
+`bin/ci`. The DSL executes named command steps and can branch on `success?` to
+report success or failure.
 
 ```ruby
 CI.run do
@@ -69,11 +68,14 @@ CI.run do
 end
 ```
 
-The DSL runs named command steps. Branch on `success?` when the workflow needs explicit success or failure reporting. An optional `gh signoff` step can make a successful local run a merge prerequisite.
+An optional `gh signoff` step can make a successful local run a merge
+prerequisite.
 
-### Fetching encrypted credentials
+## Credentials
 
-`rails credentials:fetch` prints a dot-delimited value from encrypted Rails credentials (`8.1-guide`). It can populate deployment secret files without a separate secret store:
+`rails credentials:fetch` reads a dot-delimited key from encrypted Rails
+credentials. This lets deployment scripts create secret files without a
+separate secret store:
 
 ```sh
 KAMAL_REGISTRY_PASSWORD=$(rails credentials:fetch kamal.registry_password)
@@ -81,63 +83,72 @@ KAMAL_REGISTRY_PASSWORD=$(rails credentials:fetch kamal.registry_password)
 
 ## Kamal deployment defaults
 
-### Registry behavior
+### Local registry
 
-Kamal 2.8 uses a local registry by default for basic deployments (`8.1-guide`), so a remote registry is no longer required to get started. Large-scale deployments can still use a remote registry.
+Kamal 2.8 uses a local registry by default for basic deployments, so getting
+started no longer requires a remote registry. Large deployments can still
+configure a remote registry.
+
+### SSL behavior
+
+Rails 8.1.1 no longer assumes or forces SSL in production for generated Kamal
+deployments. The generated deployment can boot before TLS is available; enable
+the relevant SSL settings once TLS has been provisioned.
+
+## Migrating to Kamal 2
+
+The `deployment-with-kamal` migration is an operational sequence, not only a
+Gemfile upgrade.
+
+### Prerequisites
+
+For an in-place Kamal 1 migration, first install Kamal 1.9.x and complete a
+successful deployment. That version also supplies the downgrade path.
+
+Kamal 2 then changes several deployment surfaces:
+
+- Traefik is replaced by `kamal-proxy`;
+- containers move to a `kamal` Docker network;
+- configuration needs incompatible updates; and
+- deployment secrets move from `.env` to `.kamal/secrets`.
+
+Validate the converted configuration for every destination before upgrading:
+
+```console
+$ gem install kamal --version 1.9.0
+$ kamal deploy
+$ gem install kamal
+$ kamal config
+$ kamal config -d staging
+```
 
 ### Application port
 
-Kamal 2 changes the proxy's default application port from 3000 to 80 (`deployment-with-kamal`). If the container does not listen on 80, set `app_port` explicitly or change the image's `EXPOSE` port.
+Kamal 2 changes the proxy's default application port from 3000 to 80. If the
+application does not listen on port 80, set `app_port` explicitly or update the
+image's `EXPOSE` port.
 
-### SSL generation default
+### Upgrade and rolling migration
 
-Rails `8.1.1` no longer assumes or forces SSL in production for generated Kamal deployments (`8.1`). This lets the generated deployment boot before TLS is configured. Enable the production SSL settings once TLS is available.
-
-## Migrating from Kamal 1
-
-For an in-place migration, first install Kamal 1.9.x and complete a successful deploy (`deployment-with-kamal`). That release establishes the supported downgrade path.
-
-```console
-gem install kamal --version 1.9.0
-kamal deploy
-gem install kamal
-```
-
-Kamal 2 makes several incompatible infrastructure and configuration changes:
-
-- Replaces Traefik with `kamal-proxy`.
-- Moves containers onto a Docker network named `kamal`.
-- Requires corresponding incompatible configuration changes.
-- Moves deployment secrets from `.env` to `.kamal/secrets`.
-
-Validate converted configuration for every destination before upgrading:
+`kamal upgrade` migrates the proxy, network, application, and accessories
+separately for each destination. On a multi-server deployment, `--rolling`
+migrates host by host and `-h` selects particular hosts. Pre- and post-proxy
+reboot hooks can coordinate an upstream load balancer.
 
 ```console
-kamal config
-kamal config -d staging
+$ kamal upgrade -d staging
+$ kamal upgrade --rolling -d staging
 ```
 
-## Upgrade and rollback commands
+The command may be rerun for hosts already migrated in the requested
+direction.
 
-`kamal upgrade` migrates the proxy, network, application, and accessories separately for each destination (`deployment-with-kamal`):
+### Rollback
+
+To roll back, uninstall Kamal 2, activate Kamal 1.9, and run `kamal downgrade`
+with the same destination and host-targeting options. The downgrade command is
+also safe to rerun for hosts already moved in that direction.
 
 ```console
-kamal upgrade -d staging
-kamal upgrade --rolling -d staging
+$ kamal downgrade -d staging
 ```
-
-On a multi-server destination, `--rolling` proceeds one host at a time. Use `-h` to target selected hosts. Pre- and post-proxy-reboot hooks can coordinate traffic with an upstream load balancer.
-
-Upgrade is rerunnable for hosts already migrated in the requested direction.
-
-To roll back:
-
-1. Uninstall Kamal 2.
-2. Activate Kamal 1.9.
-3. Run `kamal downgrade` with the same destination, rolling, or host targeting options as needed.
-
-```console
-kamal downgrade -d staging
-```
-
-Downgrade is also rerunnable for hosts already moved in the requested direction.

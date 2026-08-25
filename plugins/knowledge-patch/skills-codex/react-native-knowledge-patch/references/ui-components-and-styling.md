@@ -2,15 +2,14 @@
 
 ## New Architecture CSS properties
 
-React Native 0.77 adds these New Architecture-only styling capabilities:
+React Native 0.77 adds the following New Architecture-only styling features:
 
 - `display: 'contents'`
 - `boxSizing: 'content-box'`
-- `mixBlendMode`
-- `isolation: 'isolate'`
+- `mixBlendMode` with `isolation: 'isolate'`
 - `outlineWidth`, `outlineStyle`, `outlineSpread`, and `outlineColor`
 
-`boxSizing` remains `border-box` by default. Outlines render outside the border
+`boxSizing` still defaults to `border-box`. Outlines render outside the border
 box and do not affect layout.
 
 ```jsx
@@ -19,24 +18,54 @@ box and do not affect layout.
 </View>
 ```
 
-React Native 0.86 adds `plus-lighter` as a `mixBlendMode` value:
+React Native 0.86.0 also accepts `plus-lighter` for `mixBlendMode`:
 
 ```jsx
 <View style={{mixBlendMode: 'plus-lighter'}} />
 ```
 
-## Stricter CSS string syntax
+## CSS string parsing
 
-React Native 0.79 rejects unitless lengths in `box-shadow` and `filter` strings.
-For example, replace `1 1 black` with `1px 1px black`. It also rejects
-comma-separated `hwb()` colors: use `hwb(0 0% 100%)`, not
+From 0.79, lengths in `box-shadow` and `filter` strings require units. Change a
+value such as `1 1 black` to `1px 1px black`. Comma-separated `hwb()` colors
+are no longer accepted; use `hwb(0 0% 100%)`, not
 `hwb(0, 0%, 100%)`.
+
+## `Modal` layout and styling
+
+In 0.86.0, `Modal` forwards its `style` prop to the inner container `View`.
+The `transparent` and `backdropColor` props retain precedence, so account for
+them when a forwarded background style appears not to apply.
+
+## Native component refs and DOM APIs
+
+From 0.82, native component refs implement a subset of DOM node APIs while
+retaining legacy methods such as `measure`. Element refs include traversal and
+measurement APIs such as `parentNode`, `children`, `getBoundingClientRect()`,
+and `ownerDocument`; text and document nodes are exposed too.
+
+```jsx
+const element = ref.current;
+const bounds = element.getBoundingClientRect();
+const other = element.ownerDocument.getElementById('some-view');
+```
+
+Treat this as a supported subset, not a browser-complete DOM implementation.
+
+## React Activity behavior
+
+React Native 0.83 brings React 19.2's `<Activity>` and `useEffectEvent` APIs. A
+hidden Activity preserves state while hiding its children, unmounting effects,
+and deferring updates. From 0.85, a `Pressable` inside a hidden Activity keeps
+its event listeners while hidden.
 
 ## Images
 
-On Android, `Image` can load vector or shape drawable XML through a static
-`require` or import from 0.78. XML drawables are build-time resources: they
-cannot be loaded from the network, require explicit dimensions, and permit only
+### Android XML drawables
+
+Android `Image` can load vector or shape drawable XML through a static
+`require` or import. XML resources are available only at build time, cannot be
+loaded from the network, require explicit dimensions, and support only
 whole-image size or tint customization at runtime.
 
 ```jsx
@@ -46,55 +75,26 @@ whole-image size or tint customization at runtime.
 />
 ```
 
+### Source dimensions
+
 On iOS under the Old Architecture, the 0.78 `Image` load event changes its size
-values from logical dimensions to pixel dimensions. Update persisted metadata,
-comparisons, and layout calculations that consumed those values.
+from logical dimensions to pixel dimensions. Update consumers that persist or
+compare those values.
 
-React Native 0.84 adds HEIC/HEIF image support. Android source-size corrections
-in 0.86 are documented in [platform-behavior.md](platform-behavior.md).
+In 0.86.0, Android `Image.getSize` and `Image.getSizeWithHeaders` return true
+source dimensions instead of Fresco's downsampled dimensions. Code that used
+the older, downsampled values for layout or caching must adjust.
 
-## `Modal` and touch behavior
+### HEIC and HEIF
 
-In 0.86, `Modal` forwards its `style` prop to the inner container `View`.
-`transparent` and `backdropColor` keep precedence over conflicting forwarded
-style values.
+React Native 0.84 adds HEIC and HEIF image support.
 
-On both Android and iOS, a view with a non-invertible transform such as
-`scaleX: 0` or `scaleY: 0` no longer receives touches in 0.86. Do not use a zero
-scale when an invisible element must remain interactive.
+## Animations
 
-## DOM-compatible native refs
-
-From 0.82, native component refs implement a subset of DOM node APIs while
-retaining React Native methods such as `measure`. Element refs expose traversal
-and measurement members including `parentNode`, `children`,
-`getBoundingClientRect()`, and `ownerDocument`. Text and document nodes are also
-exposed.
-
-```jsx
-const element = ref.current;
-const bounds = element.getBoundingClientRect();
-const other = element.ownerDocument.getElementById('some-view');
-```
-
-Code to the documented subset. A native ref is not a browser node and does not
-implicitly implement every Web DOM API.
-
-## React 19.2 APIs
-
-React Native 0.83 adds React's `<Activity>` and `useEffectEvent`. A hidden
-`Activity` preserves child state, hides its output, unmounts effects, and defers
-updates. From React Native 0.85, a `Pressable` inside a hidden Activity retains
-its event listeners while hidden.
-
-Account for effect teardown separately from preserved component state when
-placing native resources or subscriptions inside an Activity.
-
-## Shared animation backend
-
-Starting with 0.85.1 on the experimental release channel, the Shared Animation
-Backend lets `Animated` use the native driver for layout properties, including
-Flexbox and position properties. The backend also supports Reanimated.
+Starting with 0.85.1 on the experimental release channel, the
+Shared Animation Backend allows `Animated` to use the native driver for layout properties,
+including Flexbox and position properties. It also backs Reanimated. This is an
+experimental integration surface; pin the release channel and version.
 
 ```jsx
 const width = useAnimatedValue(100);
@@ -107,17 +107,17 @@ Animated.timing(width, {
 <Animated.View style={{width}} />
 ```
 
-This is experimental channel behavior. Pin the release and verify the backend
-before assuming native-driver support for layout properties.
-
-React Native 0.84 also permits `PlatformColor` values in animated
-interpolations and output ranges.
-
-## Interactive text accessibility
+## Accessibility behavior
 
 In 0.84, a `Text` with `onPress` or `onLongPress` automatically receives
-`accessibilityRole="link"`. Set an explicit role when the interaction is not
-semantically a link.
+`accessibilityRole="link"`. Audit explicitly assigned roles if this changes the
+announced semantics.
 
 In 0.85, `AccessibilityInfo.setAccessibilityFocus` is deprecated. Use
-`AccessibilityInfo.sendAccessibilityEvent` and select the appropriate event.
+`AccessibilityInfo.sendAccessibilityEvent` instead.
+
+## Touches and transforms
+
+From 0.86.0, a view with a non-invertible transform, such as `scaleX: 0` or
+`scaleY: 0`, no longer receives touches on Android or iOS. Do not use a zero
+scale for an invisible element that must remain an input target.

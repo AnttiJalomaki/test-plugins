@@ -2,15 +2,17 @@
 
 ## Identity and lifecycle
 
-The protocol distinguishes a persistent host identity from each runtime agent. Every agent receives its own Ed25519 keypair and is permanently registered as either `delegated` or `autonomous`; only `active` agents can authenticate.
+Agent Auth separates a persistent host identity from runtime agents. Each agent owns an Ed25519 keypair and has an immutable delegated or autonomous mode. Only `active` agents authenticate.
 
-The sliding session TTL defaults to 3,600 seconds, the maximum lifetime from activation is 86,400 seconds, and the absolute lifetime runs from creation until disabled. Reactivation resets the sliding and activation clocks and drops escalated grants. Revocation is permanent, and revoking a host cascades to its agents.
+Sliding session TTL defaults to 3,600 seconds, maximum lifetime from activation to 86,400 seconds, and absolute lifetime runs from creation until disabled. Reactivation resets the first two clocks and removes escalated grants. Revocation is permanent, and host revocation cascades to its agents.
 
-A delegated host can link to at most one user. An active linked host can auto-approve later agents only for its default capabilities. Linking a formerly unlinked host terminally marks its active autonomous agents as `claimed`, revokes their grants, attributes their history to the user, and transfers their resources. Continuing requires registering a new delegated agent.
+A delegated host links to at most one user. An active linked host may auto-approve later agents only for default capabilities. Linking a previously unlinked host terminally marks active autonomous agents `claimed`, revokes their grants, attributes history to the user, and transfers resources. Continued execution requires a new delegated agent.
 
 ## Discovery, registration, and consent
 
-Every server publishes `/.well-known/agent-configuration` with protocol version, issuer, supported modes and algorithms, approval methods, and endpoint map. A client must stop when the server advertises an unsupported major version.
+Publish `/.well-known/agent-configuration` with protocol version, issuer, supported modes and algorithms, approval methods, and endpoint map. A client must stop on an unsupported major version.
+
+Registration sends a Host JWT and agent public key to `POST /agent/register`. Device authorization is the mandatory approval baseline; CIBA and server extensions are discoverable alternatives. Poll `GET /agent/status` at the returned interval unless an optional SSE `notification_url` succeeds.
 
 ```http
 GET /.well-known/agent-configuration
@@ -18,25 +20,25 @@ POST /agent/register
 GET /agent/status
 ```
 
-Registration sends a Host JWT and the agent public key to `POST /agent/register`. Device authorization is the mandatory approval baseline. CIBA and server extensions are discoverable alternatives. Poll `GET /agent/status` at the returned interval unless the optional SSE `notification_url` succeeds.
+## JWT profiles
 
-## Host and Agent JWT profiles
+Host-management JWTs use Ed25519 with:
 
-Host management JWTs use Ed25519 and must contain:
+- `typ: host+jwt`;
+- a public-key thumbprint in `iss`;
+- the discovery issuer in `aud`;
+- `iat`, `exp`, and `jti`;
+- inline keys or a JWKS URL.
 
-- Header `typ: host+jwt`.
-- A public-key thumbprint in `iss`.
-- The discovery issuer in `aud`.
-- `iat`, `exp`, and unique `jti` claims.
-- An inline public key or JWKS URL. Registration also binds the new agent key.
+Registration also binds the new agent key.
 
-Execution JWTs use `typ: agent+jwt`, host ID in `iss`, agent ID in `sub`, and the resolved capability location in `aud`, plus an optional capability restriction. Mint a fresh token with a lifetime of at most 60 seconds for every request. Servers reject replayed `jti` values. Higher-assurance deployments can bind DPoP or mTLS through `cnf`.
+Execution JWTs use `typ: agent+jwt`, host ID in `iss`, agent ID in `sub`, resolved capability location in `aud`, and an optional capability restriction. Mint a new token of at most 60 seconds for every request. Servers reject repeated `jti` values. Higher-assurance deployments may additionally bind DPoP or mTLS with `cnf`.
 
-## Capabilities and grants
+## Capabilities, grants, and constraints
 
-Capabilities have stable names and optional input/output JSON Schemas. Per-agent grants separately track approval, expiry, and constraints. Trusted-host defaults may be granted during registration, but runtime escalation always requires explicit consent.
+Capabilities have stable names and optional input/output JSON Schemas. Per-agent grants independently record approval, expiration, and constraints. Trusted-host defaults may be granted during registration; runtime escalation always requires explicit consent.
 
-Constraints support exact values and `max`, `min`, `in`, and `not_in`. The server may narrow requested scope but may never widen it; unknown operators fail closed. A capability-specific `location` becomes the Agent JWT audience.
+Constraints accept exact values and `max`, `min`, `in`, and `not_in`. A server may narrow but never widen requested scope, and unknown operators fail closed. A capability-specific `location` becomes the Agent JWT audience.
 
 ```json
 {
@@ -51,37 +53,37 @@ Constraints support exact values and `max`, `min`, `in`, and `not_in`. The serve
 
 ## Server plugin
 
-`@better-auth/agent-auth` adds discovery, registration, approvals, grant enforcement, JWT verification, and the `agentHost`, `agent`, `agentCapabilityGrant`, and `approvalRequest` tables. Run database migrations after enabling it.
+`@better-auth/agent-auth` supplies discovery, registration, approvals, grant enforcement, JWT validation, and four tables: `agentHost`, `agent`, `agentCapabilityGrant`, and `approvalRequest`. Run a migration after enabling it.
 
-Define capabilities with JSON Schema, reserve `defaultHostCapabilities` for low-risk automatic grants, and execute validated requests through `onExecute`:
+Define capabilities with JSON Schema in `agentAuth()`. Reserve `defaultHostCapabilities` for low-risk automatic grants, and execute already-validated requests in `onExecute`.
 
 ```ts
-plugins: [
-  agentAuth({
-    providerName: "bank",
-    capabilities: [{
-      name: "check_balance",
-      description: "Check an account balance",
-      input: {
-        type: "object",
-        required: ["account_id"],
-        properties: { account_id: { type: "string" } },
-      },
-    }],
-    defaultHostCapabilities: ["check_balance"],
-    onExecute: async ({ capability, arguments: args }) => {
-      if (capability === "check_balance") return db.getBalance(args.account_id);
-      throw new Error(`Unknown capability: ${capability}`);
+plugins: [agentAuth({
+  providerName: "bank",
+  capabilities: [{
+    name: "check_balance",
+    description: "Check an account balance",
+    input: {
+      type: "object",
+      required: ["account_id"],
+      properties: { account_id: { type: "string" } },
     },
-  }),
-]
+  }],
+  defaultHostCapabilities: ["check_balance"],
+  onExecute: async ({ capability, arguments: args }) => {
+    if (capability === "check_balance") {
+      return db.getBalance(args.account_id);
+    }
+    throw new Error(`Unknown capability: ${capability}`);
+  },
+})]
 ```
 
-## Execution modes and OpenAPI import
+## Synchronous, asynchronous, and streaming execution
 
-A plain `onExecute` return value produces a synchronous data response. `asyncResult(statusUrl, retryAfter)` produces `202 Accepted` polling, and `streamResult(stream)` produces SSE. Every asynchronous poll needs a new Agent JWT. Long streams need explicit duration and revocation checks.
+A normal `onExecute` value becomes a synchronous data response. `asyncResult(statusUrl, retryAfter)` returns `202 Accepted` with polling. `streamResult(stream)` produces SSE. Every async poll requires a fresh Agent JWT; long streams require duration and revocation checks.
 
-`createFromOpenAPI()` converts operations with an `operationId` into capabilities and a proxy handler. It maps parameters and bodies to JSON Schema, supports method-specific defaults and approval strengths, and recognizes upstream 202, SSE, JSON, and text responses.
+`createFromOpenAPI()` maps operations with an `operationId` into capabilities and a proxy handler. It maps parameters and request bodies to JSON Schema, supports HTTP-method defaults and approval strengths, and recognizes upstream 202, SSE, JSON, and text responses.
 
 ```ts
 agentAuth({
@@ -93,24 +95,26 @@ agentAuth({
 })
 ```
 
-## Request verification and resource servers
+## Verification and resource servers
 
-Auth routes can resolve the verified agent, user, host, and grants with `auth.api.getAgentSession({ headers })`. Routes outside the auth handler use `verifyAgentRequest(request, auth)`.
+Within auth routes, resolve the verified agent, user, host, and grants through `auth.api.getAgentSession({ headers })`. Outside the auth handler call `verifyAgentRequest(request, auth)`.
 
 ```ts
-const session = await auth.api.getAgentSession({ headers: request.headers });
+const session = await auth.api.getAgentSession({
+  headers: request.headers,
+});
 const customSession = await verifyAgentRequest(request, auth);
 ```
 
-A separate resource server can call protected `POST /agent/introspect`. An unauthenticated resource should advertise discovery with an `AgentAuth` challenge instead of treating a missing grant as a generic authentication failure:
+Separate resource servers can call protected `POST /agent/introspect`. An unauthenticated resource can advertise discovery through an `AgentAuth` challenge; a missing grant is authorization failure, not necessarily authentication failure.
 
 ```http
 WWW-Authenticate: AgentAuth discovery="https://auth.example.com/.well-known/agent-configuration"
 ```
 
-## Approval UI and proof of presence
+## Approval and proof of presence
 
-`deviceAuthorizationPage` receives `agent_id` and `code`. Approval should require a fresh user session rather than a long-lived cookie; `freshSessionWindow` defaults to 300 seconds.
+`deviceAuthorizationPage` receives `agent_id` and `code`. Approval should require a fresh session, not merely a long-lived cookie; `freshSessionWindow` defaults to 300 seconds.
 
 High-risk capabilities can set `approvalStrength: "webauthn"` when `proofOfPresence` and the passkey plugin are enabled. This prevents an agent with browser access from silently approving itself.
 
@@ -131,9 +135,9 @@ agentAuth({
 })
 ```
 
-## Multi-instance state and policy hooks
+## Multi-instance deployment and policy
 
-Replay and JWKS caches are in memory by default. Multi-instance deployments should select configured secondary storage for both, otherwise replay protection and key caching remain instance-local.
+Replay and JWKS caches are process-local by default. Use configured secondary storage for both in multi-instance systems or replay protection and key caching remain instance-local.
 
 ```ts
 agentAuth({
@@ -142,21 +146,23 @@ agentAuth({
 })
 ```
 
-Use `resolveCapabilities`, `blockedCapabilities`, `resolveGrantTTL`, per-path `rateLimit`, and lifecycle callbacks for user-specific capability visibility, non-grantable actions, expiring grants, endpoint limits, and audit integration.
+Use `resolveCapabilities`, `blockedCapabilities`, `resolveGrantTTL`, per-path `rateLimit`, and lifecycle callbacks for user-specific visibility, non-grantable actions, grant expiration, endpoint limits, and audit integration.
 
-## Embedded SDK
+## Embedded client SDK
 
-The `@auth/agent` `AgentAuthClient` handles discovery, host and agent keys, registration, approval polling, fresh JWT signing, escalation, rotation, and capability execution. It can expose these operations through filterable AI-tool adapters.
-
-The default `MemoryStorage` is process-local and ephemeral. Durable clients must provide a `Storage` implementation for host identity, connections, and provider configuration.
+`@auth/agent` provides `AgentAuthClient` for discovery, key management, registration, approval polling, fresh JWT signing, escalation, rotation, execution, and filterable tool adapters. Default `MemoryStorage` is ephemeral; durable clients must supply storage for host identity, connections, and provider configurations.
 
 ```ts
 const client = new AgentAuthClient({ storage: durableStorage });
+
 const agent = await client.connectAgent({
   provider: "https://api.example.com",
   capabilities: [
     "read_data",
-    { name: "transfer_money", constraints: { amount: { max: 1000 } } },
+    {
+      name: "transfer_money",
+      constraints: { amount: { max: 1000 } },
+    },
   ],
   mode: "delegated",
 });
@@ -170,25 +176,28 @@ const result = await client.executeCapability({
 
 ## CLI and MCP client
 
-`@auth/agent-cli` provides `auth-agent` commands and a stdio MCP server for discovery, capabilities, lifecycle, execution, signing, enrollment, and rotation. It persists a shared host identity, agents, and providers under `~/.agent-auth`. Set `AGENT_AUTH_ENCRYPTION_KEY` to encrypt private keys at rest with AES-256-GCM.
+`@auth/agent-cli` provides `auth-agent` commands and a stdio MCP server for discovery, capability, lifecycle, execution, signing, enrollment, and rotation. It stores a shared host identity, agents, and providers under `~/.agent-auth`. Set `AGENT_AUTH_ENCRYPTION_KEY` to encrypt private keys at rest using AES-256-GCM.
 
 ```sh
 npx @auth/agent-cli discover https://api.example.com
-npx @auth/agent-cli connect --provider https://api.example.com --capabilities read_data
+npx @auth/agent-cli connect \
+  --provider https://api.example.com \
+  --capabilities read_data
 npx @auth/agent-cli mcp --url https://api.example.com
 ```
 
-## Hardening
+## Protocol hardening
 
-- Accept direct discovery only through a trusted directory, explicit confirmation, or an allowlist.
-- For client URL fetches, require HTTPS, bound redirects and response sizes, and set timeouts.
-- When fetching client JWKS, resolve DNS and block private, loopback, and link-local addresses.
-- Validate server-returned approval, notification, and asynchronous URLs. Require `status_url` to share the issuer's origin.
+- Require a trusted directory, user confirmation, or allowlist before direct discovery.
+- For client URL fetches, require HTTPS, bound redirects and response sizes, and enforce timeouts.
+- For server-side JWKS fetches, resolve DNS and block private, loopback, and link-local addresses.
+- Validate server-returned approval, notification, and asynchronous URLs.
+- Require `status_url` to use the issuer's origin.
 - Sanitize attacker-controlled approval text.
-- Use per-server host keys when cross-provider host correlation is unacceptable.
+- Use per-server host keys if cross-provider host correlation is unacceptable.
 
 ## Error recovery
 
-Clients should re-sign and retry `invalid_jwt`, reactivate on `agent_expired`, request access after `capability_not_granted`, correct input from `constraint_violated.violations`, and respect `Retry-After` for `rate_limited`.
+Clients re-sign and retry `invalid_jwt`, reactivate `agent_expired`, request access after `capability_not_granted`, correct inputs from `constraint_violated.violations`, and honor `Retry-After` for `rate_limited`.
 
-Revoked, rejected, claimed, or absolute-lifetime-expired agents cannot recover and require new registration. Unknown error codes fall back to their HTTP status semantics.
+Revoked, rejected, claimed, and absolute-lifetime-expired agents cannot recover; register a new agent. Unknown error codes fall back to their HTTP status semantics.

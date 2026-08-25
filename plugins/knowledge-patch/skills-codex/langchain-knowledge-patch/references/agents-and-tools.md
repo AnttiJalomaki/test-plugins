@@ -1,122 +1,12 @@
 # Agents, Middleware, Tools, State, and Runtime
 
-## `create_agent` loop
+## Agent construction and structured output
 
-`langchain.agents.create_agent` constructs a LangGraph-backed model/tool loop.
-It is the current replacement for `langgraph.prebuilt.create_react_agent` and is
-the integration point for middleware, state, structured output, and model
-profiles.
+### Structured output in the loop
 
-```python
-from langchain.agents import create_agent
-
-agent = create_agent(
-    model="openai:gpt-5",
-    tools=[get_weather],
-    system_prompt="Use tools when they improve the answer.",
-)
-```
-
-An optional `name` becomes the node identifier when the agent is embedded as a
-subgraph. Use only alphanumerics, underscores, and hyphens because some providers
-reject spaces or other special characters.
-
-## Middleware lifecycle
-
-Python custom middleware subclasses `AgentMiddleware`; JavaScript custom
-middleware is created with `createMiddleware`. The six hook pairs are:
-
-| Phase | Python | JavaScript |
-| --- | --- | --- |
-| Before the loop | `before_agent` | `beforeAgent` |
-| Before a model call | `before_model` | `beforeModel` |
-| Around a model call | `wrap_model_call` | `wrapModelCall` |
-| Around a tool call | `wrap_tool_call` | `wrapToolCall` |
-| After a model call | `after_model` | `afterModel` |
-| After the loop | `after_agent` | `afterAgent` |
-
-Wrapper hooks receive a request and handler, making them suitable for routing,
-retries, policy checks, request overrides, and short-circuit results.
-
-```python
-from langchain.agents.middleware import AgentMiddleware
-from langchain_openai import ChatOpenAI
-
-fast_model = ChatOpenAI(model="gpt-5-nano")
-
-class RouteModel(AgentMiddleware):
-    def wrap_model_call(self, request, handler):
-        return handler(request.override(model=fast_model, tools=[read_email]))
-```
-
-### Bundled policy middleware
-
-- `PIIMiddleware` accepts named or regex detectors and a `redact` or `block`
-  strategy. It can apply policy to input and other configured boundaries.
-- `SummarizationMiddleware` supports token-count triggers and can summarize near
-  a context limit.
-- `HumanInTheLoopMiddleware` maps tool names to allowed `approve`, `edit`, and
-  `reject` decisions.
-- Model-retry middleware supplies configurable exponential backoff for transient
-  provider endpoint errors.
-- Content-moderation middleware can apply one safety policy to user input, model
-  responses, and values returned by tools.
-
-```python
-from langchain.agents.middleware import (
-    HumanInTheLoopMiddleware,
-    PIIMiddleware,
-    SummarizationMiddleware,
-)
-
-middleware = [
-    PIIMiddleware("email", strategy="redact", apply_to_input=True),
-    SummarizationMiddleware(
-        model="claude-sonnet-4-6",
-        trigger={"tokens": 500},
-    ),
-    HumanInTheLoopMiddleware(interrupt_on={
-        "send_email": {
-            "allowed_decisions": ["approve", "edit", "reject"],
-        }
-    }),
-]
-```
-
-JavaScript `dynamicSystemPromptMiddleware` now composes prompts additively.
-Returned strings and `SystemMessage` objects extend existing system messages
-instead of replacing them.
-
-## Capability profiles
-
-Since `1.1.0`, chat models expose `.profile`, declarative capability data sourced
-from the cross-provider models.dev index. Profiles can report structured-output,
-function-calling, and JSON-mode support without application-maintained provider
-tables.
-
-```python
-capabilities = chat_model.profile
-```
-
-Summarization middleware consults profiles when choosing when and how to
-summarize, allowing provider-sensitive behavior in long sessions.
-`ProviderStrategy` can also be inferred from a profile, so an agent can select
-native structured output without hard-coded model-name tests.
-
-Profiles are capability hints, not a substitute for handling endpoint errors,
-deployment restrictions, or an integration's unsupported options.
-
-## Structured output inside the loop
-
-Structured output participates in the main model/tool loop rather than requiring
-an extra model call. Set `response_format` to a schema strategy:
-
-- `ToolStrategy` requests schema output through tool calling.
-- `ProviderStrategy` requests provider-native generation and can be inferred
-  from a model profile.
-- Native strategies can explicitly request strict schema adherence. Python sets
-  strict behavior through `response_format` with `ProviderStrategy`; JavaScript
-  `providerStrategy` exposes `strict`.
+Structured output participates in the main model/tool loop instead of needing
+an extra model call. `response_format` chooses tool-based or provider-native
+generation. Wrap a Pydantic schema in `ToolStrategy` to request tool calling.
 
 ```python
 from langchain.agents import create_agent
@@ -135,31 +25,87 @@ agent = create_agent(
 )
 ```
 
-`ToolStrategy.handle_errors` in Python and `handleErrors` in JavaScript control
-what happens when generated data fails schema parsing or the model emits several
-structured-output tool calls.
+`ToolStrategy` exposes `handle_errors` in Python and `handleErrors` in
+JavaScript. These control handling when generated data fails schema parsing or
+the model emits multiple structured-output tool calls.
 
-When middleware dynamically switches models for an agent with structured output,
-the replacement models must not be pre-bound with `bind_tools`; that combination
-is unsupported.
+Provider-native output can explicitly request strict schema adherence. Python
+uses `response_format` with `ProviderStrategy`; JavaScript `providerStrategy`
+can set `strict` manually.
 
-## Unified `ToolRuntime` injection
+When middleware dynamically switches models for an agent using structured
+output, replacement models must not be pre-bound with `bind_tools`; pre-bound
+models are unsupported in this combination.
 
-A tool can declare a model-hidden `runtime: ToolRuntime` parameter. It exposes:
+### Agent names as subgraph identifiers
 
-- short-term `state`;
-- immutable typed `context`;
-- the long-term `store`;
-- `stream_writer`;
-- invocation `config`;
-- `tool_call_id`.
+The optional `create_agent(..., name="research_assistant")` name becomes the
+node identifier when the agent is embedded as a subgraph. Keep names to
+alphanumerics, underscores, and hyphens because some providers reject spaces
+or special characters.
 
-The names `runtime` and `config` are reserved tool arguments. Declare
-`context_schema=Context` on the agent and use `ToolRuntime[Context]` for typed
-context.
+## Middleware policy and lifecycle
 
-Return a LangGraph `Command` to mutate state. If the model needs a visible tool
-result, include a `ToolMessage` correlated with `runtime.tool_call_id`.
+Prebuilt policies support named or regex PII detectors with `redact` or
+`block`, token-count summarization triggers, and tool-keyed human decisions of
+`approve`, `edit`, or `reject`. Python custom middleware subclasses
+`AgentMiddleware`; JavaScript uses `createMiddleware`.
+
+The six hook pairs are `before_agent`/`beforeAgent`,
+`before_model`/`beforeModel`, `wrap_model_call`/`wrapModelCall`,
+`wrap_tool_call`/`wrapToolCall`, `after_model`/`afterModel`, and
+`after_agent`/`afterAgent`.
+
+```python
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    HumanInTheLoopMiddleware,
+    PIIMiddleware,
+    SummarizationMiddleware,
+)
+from langchain_openai import ChatOpenAI
+
+fast_model = ChatOpenAI(model="gpt-5-nano")
+
+class RouteModel(AgentMiddleware):
+    def wrap_model_call(self, request, handler):
+        return handler(request.override(model=fast_model, tools=[read_email]))
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[read_email, send_email],
+    middleware=[
+        PIIMiddleware("email", strategy="redact", apply_to_input=True),
+        SummarizationMiddleware(
+            model="claude-sonnet-4-6", trigger={"tokens": 500}
+        ),
+        HumanInTheLoopMiddleware(interrupt_on={
+            "send_email": {
+                "allowed_decisions": ["approve", "edit", "reject"]
+            }
+        }),
+        RouteModel(),
+    ],
+)
+```
+
+Values returned by JavaScript `dynamicSystemPromptMiddleware` extend rather
+than replace existing system messages. Strings and `SystemMessage` objects can
+therefore compose across multiple prompt-modifying middleware.
+
+## Runtime injection and state
+
+### Unified `ToolRuntime`
+
+A tool can declare a model-hidden `runtime: ToolRuntime` parameter. It exposes
+short-term `state`, immutable typed `context`, long-term `store`,
+`stream_writer`, `config`, and `tool_call_id`. `config` and `runtime` are
+reserved argument names. Typed context uses `context_schema=Context` and
+`ToolRuntime[Context]`.
+
+Return `Command` to mutate state. Include a `ToolMessage` correlated with
+`runtime.tool_call_id` when the model needs a result. State fields written by
+parallel tools need reducers.
 
 ```python
 from langchain.messages import ToolMessage
@@ -178,15 +124,30 @@ def set_language(language: str, runtime: ToolRuntime) -> Command:
     })
 ```
 
-State fields written by parallel tools require reducers so concurrent updates
-can be combined deterministically.
+### Custom agent state
+
+Custom schemas must extend `AgentState` as `TypedDict`; Pydantic models and
+dataclasses are not accepted. Prefer middleware-owned `state_schema` when its
+hooks or tools use the fields. `create_agent(state_schema=...)` remains a
+backward-compatible shortcut for tool-only state.
+
+```python
+from langchain.agents import AgentState
+from langchain.agents.middleware import AgentMiddleware
+
+class PreferencesState(AgentState):
+    user_preferences: dict
+
+class PreferencesMiddleware(AgentMiddleware):
+    state_schema = PreferencesState
+```
 
 ## Runtime-discovered tools
 
-Filtering the tools already registered with `create_agent` only requires
-`wrap_model_call`. A genuinely new runtime tool must also be installed on its
-`ToolCallRequest` in `wrap_tool_call`. Showing a definition to the model does not
-make that tool executable.
+Filtering tools already registered with `create_agent` requires only
+`wrap_model_call`. A runtime-discovered tool must additionally be installed on
+its `ToolCallRequest` in `wrap_tool_call`; exposing it to the model does not
+make it executable.
 
 ```python
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ToolCallRequest
@@ -207,68 +168,103 @@ class DynamicTools(AgentMiddleware):
         return handler(request)
 ```
 
-Apply authorization and tenancy checks in both hooks when discovery itself may
-reveal sensitive tool names.
+## Tool execution and metadata
 
-## Custom agent state
+### `ToolNode` error boundary
 
-Custom state schemas must extend `AgentState` as a `TypedDict`. Pydantic models
-and dataclasses are no longer accepted.
-
-```python
-from langchain.agents import AgentState
-from langchain.agents.middleware import AgentMiddleware
-
-class PreferencesState(AgentState):
-    user_preferences: dict
-
-class PreferencesMiddleware(AgentMiddleware):
-    state_schema = PreferencesState
-```
-
-Prefer middleware-owned `state_schema` when that middleware's hooks or tools use
-the fields. `create_agent(state_schema=...)` remains a compatibility shortcut
-for state used only by tools.
-
-## Provider-specific tool metadata
-
-Python `BaseTool.extras` carries provider-only definitions and parameters through
-the common tool abstraction. It supports cases such as programmatic tool calls,
-tool search, provider input examples, and provider built-ins executed by the
-client. The metadata stays outside the model-visible input schema.
-
-```python
-from langchain.tools import tool
-
-@tool(extras={"defer_loading": True})
-def search_catalog(query: str) -> str:
-    """Search the catalog."""
-    return lookup(query)
-```
-
-Use this field instead of discarding provider-only configuration or replacing a
-portable tool with an unrelated provider dictionary when the integration knows
-how to translate the extras.
-
-## `ToolNode` execution errors
-
-`ToolNode` distinguishes invocation errors from errors raised by the tool body.
-It catches invocation errors by default and re-raises execution errors. Set
-`handle_tool_errors` to one of the following to expose selected execution
-failures to the model:
-
-- `True`;
-- a fixed model-visible error string;
-- an exception-handling callable;
-- a tuple of exception classes.
+By default, `ToolNode` catches invocation errors and re-raises errors from tool
+execution. Set `handle_tool_errors` to `True`, a model-visible error string, an
+exception-handling callable, or a tuple of exception types to catch execution
+failures.
 
 ```python
 from langgraph.prebuilt import ToolNode
 
-all_errors = ToolNode(tools, handle_tool_errors=True)
-selected = ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
+ToolNode(tools, handle_tool_errors=True)
+ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
 ```
 
-Do not convert authorization, process-corruption, cancellation, or other
-non-recoverable failures into ordinary model-visible tool results without an
-explicit policy.
+### Provider-specific metadata
+
+Python LangChain v1.2 adds `BaseTool.extras`, which lets `create_agent` carry
+provider-specific tool definitions and parameters. This includes Anthropic
+programmatic tool calling and tool search, plus provider built-ins executed
+client-side, without replacing the common tool abstraction.
+
+JavaScript `@langchain/openai` supports provider-side file search, web search,
+code interpreter, image generation, computer use, shell, and MCP connector
+tools. `ChatOpenAI` also provides `moderateContent`, and GPT-5.2 Pro prefers the
+Responses API. `@langchain/anthropic` supports provider-side text editing, web
+fetch, computer use, tool search, and MCP toolsets.
+
+## Streaming ordinary model invocations
+
+`stream_mode="messages"` emits `(message_chunk, metadata)` tokens for
+LangChain model calls anywhere in a graph, even when node code uses
+`model.invoke()` instead of `model.stream()`. Select an invocation through
+metadata such as `langgraph_node` or model tags.
+
+```python
+for message, metadata in graph.stream(inputs, stream_mode="messages"):
+    if metadata["langgraph_node"] == "writer":
+        print(message.content, end="")
+```
+
+## Middleware and agent correctness fixes (`1.3.15`)
+
+### Public policy and state schema APIs
+
+`AgentMiddleware.trace_policy` is public, so middleware-aware tooling can
+inspect the policy directly instead of relying on an internal attribute.
+
+The function-style `wrap_tool_call` decorator accepts `state_schema`, allowing
+middleware to declare the custom agent-state fields it consumes.
+
+```python
+from langchain.agents import AgentState
+from langchain.agents.middleware import wrap_tool_call
+
+class TenantState(AgentState):
+    tenant_id: str
+
+@wrap_tool_call(state_schema=TenantState)
+def tenant_aware_tool_call(request, handler):
+    return handler(request)
+```
+
+`PIIMatch` is re-exported publicly:
+
+```python
+from langchain.agents.middleware import PIIMatch
+```
+
+### Message projections and failure behavior
+
+Internal model calls made by middleware are filtered from the `messages`
+projection. Consumers should not rely on that projection to observe
+middleware-internal model work.
+
+If `SummarizationMiddleware` fails while creating a summary, it preserves the
+existing conversation history. Failures in human-in-the-loop approval gates no
+longer silently allow the gated action. When `ToolCallLimitMiddleware` ends a
+run, it no longer leaves orphaned `tool_calls` in message history.
+
+The checkpointed `structured_response` value is cleared between turns, so a
+turn with no new structured result does not return stale output.
+
+### Generic model initialization
+
+`init_chat_model` recognizes LangSmith as a model provider.
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("deployment-name", model_provider="langsmith")
+```
+
+Core chat models expose `reasoning_effort` as a standard parameter, so generic
+initialization can pass it without a provider-specific keyword container.
+
+```python
+model = init_chat_model("provider:model", reasoning_effort="high")
+```

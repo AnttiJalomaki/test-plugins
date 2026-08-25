@@ -1,235 +1,180 @@
 # Search, Vectors, Reranking, and Inference
 
-Use this reference when choosing vector mappings, semantic retrieval,
-retrievers, rescorers, or Inference API endpoints. Benchmark with the actual
-dimensions, data distribution, memory budget, and provider.
-
-## Contents
-
-- [Semantic field mappings](#semantic-field-mappings)
-- [Dense-vector storage and indexing](#dense-vector-storage-and-indexing)
-- [Vector retrieval and inspection](#vector-retrieval-and-inspection)
-- [Retriever and rescorer selection](#retriever-and-rescorer-selection)
-- [Inference request behavior](#inference-request-shape-and-endpoint-behavior)
-- [Inference tasks and providers](#inference-tasks-and-providers)
-
-## Semantic field mappings
+## Semantic fields and multi-vector ranking
 
 ### `semantic_text`
 
-`semantic_text` is generally available as of 8.18.0 and combines field mapping
-with inference for semantic search.
+`semantic_text` is generally available in 8.18.0 and integrates field mapping
+with inference for semantic search. Since 9.0.0 it works with `match`,
+`sparse_vector`, kNN, highlighting, multi-fields, and text-family behavior.
 
-- It participates in the text field family and supports `match`,
-  `sparse_vector`, and kNN queries, highlighting, and multi-fields (9.0.0).
-- Mappings support `index_options`, configurable chunking, and bit vectors in
-  9.1.0. Compatible models default new fields to BBQ.
-- Empty content skips embedding generation.
-- `semantic_text` subfields are excluded from field-capabilities responses.
-- The Fields API can retrieve indexed semantic chunks in 9.2.0, and semantic
-  embeddings can be explicitly included in `_source`.
-- Semantic queries can span multiple inference IDs (9.2.0).
-- Existing mappings can update `inference_id` in 9.3.0.
-- New fields default to ELSER on Elastic Inference Service when available in
-  9.3.0, and BFloat16 is supported.
-- HNSW and `int8_hnsw` semantic fields can optionally use GPU indexing
-  (9.3.0).
-- In 9.4.0, new fields inherit DiskBBQ indexing and BFloat16 storage defaults,
-  and the default inference ID/model changes to Jina v5.
-- The text-similarity rank retriever chooses chunking defaults suited to its
-  inference ID in 9.4.0.
+In 9.1.0, mappings accept `index_options`, configurable chunking, and bit
+vectors. Compatible new fields default to BBQ. Empty content skips embedding;
+`semantic_text` subfields are omitted from field capabilities. `sparse_vector`
+mappings gain a default token-pruning setting, and sparse query token pruning
+is generally available in 8.19.0.
 
-Review defaults when upgrading rather than assuming an existing mapping and a
-newly created mapping behave identically.
+The Fields API can retrieve indexed semantic chunks in 9.2.0. Semantic
+embeddings can be included in `_source`, semantic queries can span inference
+IDs, and kNN filters support nested metadata. Existing mappings can update
+`inference_id` in 9.3.0. New fields default to ELSER on the Elastic Inference
+Service when available and support BFloat16; GPU indexing can be used for HNSW
+and `int8_hnsw`.
 
-### `sparse_vector`
-
-- Sparse-vector values can be stored outside `_source` in 9.0.0.
-- Sparse-vector mappings gain a default token-pruning setting in 9.1.0.
-- Sparse-query token pruning is generally available as of 8.19.0.
-- The Inference API sparse-embedding service route changed in 9.0.0.
+In 9.4.0, new semantic fields inherit DiskBBQ indexing and BFloat16 storage,
+and the default inference ID and model switch to Jina v5. The text-similarity
+rank retriever selects chunking defaults appropriate to its inference ID.
 
 ### `rank_vectors`
 
-The experimental `rank_vectors` type in 8.18.0 stores multiple vectors for
-late-interaction second-stage ranking with models such as ColBERT and ColPali.
-It is useful when indexing all token vectors into HNSW is too expensive but
-reranking can improve relevance. BFloat16 is supported in 9.3.0.
+Experimental `rank_vectors` in 8.18.0 supports multi-vector, late-interaction
+second-stage ranking for dense vectors, including ColBERT- and ColPali-style
+workflows where HNSW indexing cost is undesirable. It supports BFloat16 in
+9.3.0.
+
+## Retriever composition and reranking
+
+### Fusion and rescoring
+
+Search adds a generic rescorer retriever and a weighted-sum linear retriever in
+9.0.0. Quantized kNN vectors can be rescored, and BBQ indices are generally
+available.
+
+In 9.1.0, search adds a pinned retriever, `l2_norm` and minimum score for the
+linear retriever, and simplified Linear and RRF retrievers. Text-similarity
+reranking can optionally fail without failing the whole search.
+
+RRF supports weighting in 9.2.0, and simplified RRF accepts per-field weights.
+Simplified RRF and linear retrievers can search multiple indices, while linear
+adds a top-level normalizer. Search also adds a script-based rescorer.
+`text_similarity_reranker.chunk_rescorer` chunks fields and scores contextual
+snippets rather than the complete field value.
+
+MMR result diversification arrives as a retriever in 9.3.0. In 9.4.0, an ES|QL
+MMR command is available and the MMR retriever accepts `semantic_text`.
 
 ## Dense-vector storage and indexing
 
-### Quantization and rescoring
+### Quantized index controls
 
-- BBQ vector indices are generally available in 9.0.0.
-- Quantized kNN results can be rescored in 9.0.0.
-- `rescore_vector` is generally available in 9.1.0.
-- `oversample: 0` disables oversampling and rescoring; BBQ indices otherwise
-  receive a default oversample value.
-- Quantized index types add `vector_rescore`, and existing `dense_vector`
-  mappings can be updated to `bbq_flat` or `bbq_hnsw` in 9.1.0.
-- HNSW early termination is enabled by default in 9.3.0.
-- HNSW fields add `flat_index_threshold` in 9.4.0.
+`rescore_vector` is generally available in 9.1.0. `oversample: 0` disables
+oversampling and rescoring; BBQ indices otherwise receive a default oversample.
+Quantized index types add `vector_rescore`. Existing `dense_vector` mappings
+can be changed to `bbq_flat` or `bbq_hnsw`.
+
+New 9.1 indices with dense vectors over 384 dimensions default to `bbq_hnsw`.
+In 9.1.0, `vector.rescoring.directio=true` can severely slow searches when
+vectors fit in memory; set it false until upgrading to 9.1.1.
 
 ### DiskBBQ
 
-The `disk_bbq` dense-vector index type introduced in 9.2.0 targets
-lower-memory operation without HNSW's memory profile:
+The `disk_bbq` type in 9.2.0 targets lower memory use without HNSW's memory
+profile. It accepts floating-point vectors, uses one-bit quantization, and is
+not recommended for low-dimensional vectors. Tune kNN with `num_candidates` or
+`visit_percentage`:
 
 ```http
 PUT vectors
 {"mappings":{"properties":{"vector":{"type":"dense_vector","index_options":{"type":"disk_bbq"}}}}}
 ```
 
-It initially accepts only floating-point vectors, uses one-bit quantization,
-and is not recommended for low-dimensional data. Tune queries with
-`num_candidates` or `visit_percentage`.
+Set `vector.rescoring.directio=true` on every vector-search node to use direct
+I/O for BBQ rescoring in low off-heap-memory environments. This avoids severe
+page-cache latency but is slower when vectors fit in memory.
 
-In 9.4.0, new vector indices default to DiskBBQ and its quantization level can
-be configured to 1, 2, 4, or 7 bits.
+Elasticsearch 9.2.0 did not enforce the Enterprise requirement for `bbq_disk`
+indices. After moving to 9.3 or later, existing indices remain usable, but new
+ones require an Enterprise license.
 
-### BFloat16 and on-disk raw vectors
+### BFloat16 and on-disk rescoring
 
-All dense-vector index types can store `element_type: bfloat16` in 9.3.0,
-halving bytes per value at the cost of precision and conversion overhead.
-Set `on_disk_rescore: true` when raw vectors exceed available RAM:
+All dense-vector index types accept `element_type: bfloat16` in 9.3.0, halving
+stored bytes per value at reduced precision and with conversion overhead.
+`on_disk_rescore: true` keeps raw-vector rescoring on disk when vectors exceed
+RAM:
 
 ```http
 PUT vectors
 {"mappings":{"properties":{"vector":{"type":"dense_vector","element_type":"bfloat16","index_options":{"type":"disk_bbq","on_disk_rescore":true}}}}}
 ```
 
-Vector values can also be indexed from base64 as of 9.3.0.
+Vector input can be base64. HNSW early termination defaults on. A `GPUPlugin`
+supports GPU indexing from 9.2.0.
 
-### Direct I/O
+### Current index defaults and tuning
 
-On every vector-search node, the 9.2.0 Java option
-`vector.rescoring.directio=true` makes BBQ rescoring use direct I/O. It avoids
-severe page-cache latency under low off-heap memory but is slower when vectors
-fit in memory.
+New indices default vector indexing to DiskBBQ in 9.4.0, with configurable
+one-, two-, four-, or seven-bit quantization. HNSW fields add
+`flat_index_threshold`, and search adds an embedding query-vector builder.
 
-In 9.1.0 specifically, the default `true` can make `bbq_hnsw` search up to ten
-times slower for in-memory vectors. Set it to `false` on every search node and
-restart; remove that override in 9.1.1.
+New indices also exclude vectors from `_source` by default. Source retrieval
+can explicitly include or exclude vectors; reindex always carries vectors
+despite transparent removal. HNSW kNN profiling includes early-termination
+information.
 
-### GPU indexing
+## Vector statistics and scripting
 
-A `GPUPlugin` can index vectors on a GPU as of 9.2.0. In 9.3.0,
-`semantic_text` can optionally use GPU indexing for HNSW and `int8_hnsw`.
-Mixed-GPU 9.3.1 clusters have a usage-reporting log-flood issue; see the
-compatibility reference.
+Node and index stats expose dense-vector off-heap usage from 9.1.0. Painless
+`dotProduct` and `cosineSimilarity` can combine float query vectors with byte
+vector fields. ES|QL adds dense-vector KNN, Hamming distance, magnitude,
+arithmetic, comparisons, aggregation, and presence functions over subsequent
+releases.
 
-## Vector retrieval and inspection
+## Inference request shape and endpoint controls
 
-- New indices exclude vectors from `_source` by default.
-- Source retrieval can explicitly include or exclude vectors in 9.1.0.
-- Semantic embeddings can be explicitly included in `_source`, and the Fields
-  API can retrieve indexed `semantic_text` chunks in 9.2.0.
-- Reindex always includes vectors even when transparent source-vector removal
-  hides them from `_source`.
-- Node and index stats expose dense-vector off-heap memory usage in 9.1.0.
-- kNN filters accept nested metadata in 9.2.0.
-- HNSW kNN profiling includes early termination in 9.2.0.
-- Painless `dotProduct` and `cosineSimilarity` accept float vectors against
-  byte-vector fields as of 9.1.0.
-- Search adds an embedding query-vector builder in 9.4.0.
+### Task, chunking, and rerank options
 
-## Retriever and rescorer selection
+In 9.1.0, EIS sparse-inference bodies rename `model_id` to `model`. Perform
+Inference exposes root `input_type` for `text_embedding` and common rerank
+options. Endpoints accept `none` to disable automatic chunking and add a
+recursive chunker.
 
-### Fusion and normalization
+Adaptive allocation can scale to zero and defaults to 24 hours. New Cohere
+endpoints use Cohere V2. Services can expose aliases. In 9.2.0, inference
+requests gain a configurable query timeout, chunking settings lose their upper
+limit, and partial search results are disabled. Invalid endpoints can be
+force-deleted if their configuration is invalid or deployment shutdown fails.
 
-- A generic rescorer retriever based on request rescoring and a linear
-  retriever for weighted sums arrive in 9.0.0.
-- The linear retriever gains `l2_norm` normalization and `min_score` in
-  9.1.0, alongside simplified Linear and RRF retriever forms.
-- RRF retrievers support weights in 9.2.0; simplified RRF supports per-field
-  weights.
-- Simplified RRF and linear retrievers can query multiple indices in 9.2.0.
-- The linear retriever gains a top-level normalizer in 9.2.0.
+In 9.3.0, the API adds an embedding task. EIS dense and sparse services accept
+`max_batch_size`; unified responses report cached tokens, and Jina AI supports
+late chunking. EIS completion is available and requires a basic license.
 
-### Specialized retrievers
+### Provider and service additions
 
-- A pinned retriever arrives in 9.1.0.
-- Text-similarity reranking can be allowed to fail in 9.1.0.
-- Script-based rescoring arrives in 9.2.0.
-- `text_similarity_reranker.chunk_rescorer` chunks fields and scores
-  contextual snippets instead of an entire field in 9.2.0.
-- An MMR retriever for result diversification arrives in 9.3.0.
-- In 9.4.0, the MMR retriever accepts `semantic_text`, and ES|QL offers an MMR
-  command.
+The 9.0.0 Inference API adds unified chat completions, more embedding and
+reranking backends, node-local rate limiting, and mTLS for the hosted inference
+service. Service paths acquire a version prefix, and the sparse-embedding route
+changes.
 
-## Inference request shape and endpoint behavior
+Provider expansion in 9.1.0 includes a custom service; Vertex AI chat and
+completion; Mistral and Hugging Face chat completion; DeepSeek; VoyageAI
+embedding and rerank; and SageMaker OpenAI-compatible chat and embedding.
+Cohere adds binary embeddings, Jina AI accepts an embedding type, and Bedrock
+Cohere accepts task settings.
 
-### Request and chunking options
+In 9.2.0, additions include ContextualAI reranking; AI21, Google Model Garden
+Anthropic, Llama, and IBM watsonx completion/chat; and Azure AI reranking.
+Vertex AI embeddings accept dimensions, OpenAI embedding and chat requests
+accept custom headers, and Gemini accepts a thinking budget.
 
-- The Perform Inference API puts `input_type` at the request root for
-  `text_embedding` in 9.1.0 and adds common rerank options.
-- EIS sparse-inference request bodies rename `model_id` to `model` in 9.1.0.
-- Set chunking to `none` to disable automatic chunking, or select the recursive
-  chunker (9.1.0).
-- Configured chunking settings no longer have an upper limit in 9.2.0.
-- Inference requests gain a configurable query timeout in 9.2.0, while partial
-  search results are disabled.
-- Invalid endpoints can be force-deleted when the model is invalid or stopping
-  a deployment fails (9.2.0).
-- EIS dense and sparse services accept `max_batch_size` in 9.3.0.
-- Jina AI embedding settings support late chunking in 9.3.0.
-- Unified responses report cached tokens in 9.3.0.
-- Base64 embedding inputs must use data-URI format in 9.4.0.
-- SageMaker `ElasticTextEmbeddingPayload` requires `similarity` in 9.4.0.
-- Inference timeouts return HTTP 504 in 9.4.0.
+In 9.3.0, provider coverage adds Azure OpenAI and Groq chat completion, NVIDIA,
+OpenShift AI, and Google Model Garden integrations for Meta, Mistral, Hugging
+Face, and AI21. EIS adds completion.
 
-### Scaling, compatibility, and security
+In 9.4.0, additions include Fireworks AI chat and embedding, Amazon Bedrock
+chat, Jina AI and EIS embedding tasks, and Azure OpenAI custom headers and
+OAuth2. Chat-completion integrations accept multimodal input and reasoning.
 
-- Node-local rate limiting, mTLS for the hosted inference service, unified chat
-  completions, version-prefixed service paths, and additional embedding and
-  reranking backends arrive in 9.0.0.
-- Adaptive-allocation scale-to-zero is configurable in 9.1.0 and defaults to
-  24 hours.
-- New Cohere endpoints use the Cohere V2 API in 9.1.0.
-- Inference services can expose aliases in 9.1.0.
-- EIS requires a basic license as of 9.3.0.
-- Request-level `secret_parameters` overrides are rejected in 9.3.8 and
-  9.4.4.
+### Input and error compatibility
 
-## Inference tasks and providers
+In 9.4.0, reasoning chat requests no longer accept `max_tokens`. Base64
+embedding input must be a data URI. SageMaker `ElasticTextEmbeddingPayload`
+requires `similarity`. Inference timeout responses use HTTP 504. Requests in
+9.3.8 and 9.4.4 cannot override `secret_parameters`.
 
-Provider-specific configuration is not portable. Validate task type,
-capabilities, request fields, authentication, timeout behavior, and model
-compatibility against the selected service.
+## Sparse storage and source behavior
 
-### Added in 9.1.0
-
-- A custom inference service.
-- Vertex AI chat/completion.
-- Mistral and Hugging Face chat completion.
-- DeepSeek.
-- VoyageAI embedding and reranking.
-- SageMaker OpenAI-compatible chat and embeddings.
-- Cohere binary embeddings.
-- Jina AI embedding-type selection.
-- Bedrock Cohere task settings.
-
-### Added or expanded in 9.2.0
-
-- ContextualAI and Azure AI reranking.
-- AI21, Google Model Garden Anthropic, Llama, and IBM watsonx
-  completion/chat.
-- Vertex AI embedding dimensions.
-- Custom headers for OpenAI embedding and chat requests.
-- Gemini thinking-budget configuration.
-
-### Added or expanded in 9.3.0
-
-- A general embedding task type and EIS completion.
-- Azure OpenAI and Groq chat completion.
-- NVIDIA and OpenShift AI.
-- Google Model Garden integrations for Meta, Mistral, Hugging Face, and AI21.
-
-### Added or expanded in 9.4.0
-
-- Fireworks AI chat completion and embeddings.
-- Amazon Bedrock chat completion.
-- Jina AI and Elastic Inference Service embedding tasks.
-- Azure OpenAI custom headers and OAuth2.
-- Multimodal inputs and reasoning for chat-completion integrations.
-- Reasoning chat requests no longer accept `max_tokens`.
+`sparse_vector` values can be stored outside `_source` from 9.0.0.
+Synthetic-source indices also have an index setting that skips recovery source.
+Sparse token pruning is generally available in 8.19.0. Empty semantic content
+does not trigger embedding generation.

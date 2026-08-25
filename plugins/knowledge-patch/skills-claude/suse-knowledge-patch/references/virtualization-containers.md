@@ -1,97 +1,131 @@
 # Virtualization, Containers, and High Availability
 
-Use this reference for libvirt, QEMU, Xen, KubeVirt, confidential computing, container images, and cluster-stack transitions.
+## Leap 16 virtualization changes
 
-## Containers and images
+### Xen and compatibility removals (`leap-16.0-guide`)
 
-### Registry defaults and RPM databases
+Leap can no longer be a Xen host or a paravirtualized Xen guest. It can still
+run as a Xen HVM or PVH guest. `criu` is removed, and `crun` users must move to
+`runc`.
 
-SLES 15 SP6 no longer preconfigures Docker Hub or the openSUSE Registry. Add required registries explicitly to `/etc/containers/registries.conf`. A WSL image's free `SLE_BCI` repository is disabled after base-product registration.
+### Confidential-computing state (`leap-16.0-guide`)
 
-The `suse/sle15` image uses RPM's NDB database backend. Host-side scanners, diff tools, and image builders need an RPM implementation that can read NDB, such as SLE 15 SP2 or later.
+AMD SEV-SNP is integrated across kernel, QEMU, libvirt, and OVMF for KVM guests
+on SEV-SNP-enabled third-generation EPYC or newer systems. The initial Leap 16
+state had Intel TDX kernel patches but no QEMU/libvirt integration. The newer
+SLES 16 state is described under [Intel TDX](#intel-tdx-integration).
 
-### STIG BCI
+### OVMF, libvirt, and bridge setup (`leap-16.0-guide`)
 
-A STIG-compliant SLE Base Container Image is available from the US Department of Defense Iron Bank repository for deployments that require Iron Bank content.
+iSCSI boot is disabled in OVMF images, and libvirt uses modular daemons.
+`virt-bridge-setup` replaces YaST's automatic virtualization bridge setup. It is
+IPv4-only, must run locally before custom networking, and is unsuitable for
+VLAN or bonding configurations. `virt-v2v --parallel=N` permits parallel disk
+copies.
 
-### Runtime changes
+### Docker/libvirt firewall interaction (`leap-16.0-guide`)
 
-SLES 15 SP6 removes `docker-runc` in favor of `runc`. Leap 16 removes `criu` and requires former `crun` users to switch to `runc`.
+When Docker breaks libvirt guest networking, configure libvirt's iptables
+backend and persist `virbr0` in the `libvirt` firewalld zone. Exact commands are
+in [networking-services.md](networking-services.md).
 
-Leap 16 cannot run 32-bit container images. Do not assume x86-64 `ia32_emulation` makes a 32-bit container image a supported workload.
+## SLES 15 SP6 virtualization
 
-### Kiwi KubeVirt output
+### SEV firmware and installation
 
-SLES 16 Kiwi can combine an OEM disk build with OCI packaging using `containerdisk`. It stores the disk at `/disk` and adds KubeVirt metadata. Select both container transport and inner disk format in the format string:
+The split `ovmf-x86_64-sev-{code,vars}.bin` images remain for compatibility but
+have an unmeasured variable store and are deprecated for removal. Use unified
+`ovmf-x86_64-sev.bin`.
+
+`virt-install --cdrom` cannot install an ISO into an SEV guest. Use `--location`,
+PXE, or an existing disk image, or install without SEV and enable it afterward.
+
+### QEMU 8.2
+
+QEMU 8.2 adds virtio-sound, Hyper-V `hv-balloon`, UFS emulation, 64-bit NBD
+offsets, standard-kdump output from `dump-guest-memory`, Granite Rapids and
+Sapphire Rapids CPU models, and supported rather than experimental VFIO live
+migration. Audit removed and deprecated QEMU features before changing guests or
+management automation.
+
+### libguestfs 1.52
+
+Tar APIs add LZMA and Zstandard compression. `guestfish --key` accepts LVM
+mapper names and the `all:` selector. `virt-customize` adds `--chown` and
+`--tar-in`. `virt-dib` is removed.
+
+### KubeVirt support window
+
+KubeVirt has L3 support only on the packaged N or N+1 versions during the normal
+SP6 lifecycle. It is not covered by LTSS or Extended support.
+
+### Container registries and RPM database
+
+Docker Hub and the openSUSE Registry are no longer preconfigured. Add required
+registries to `/etc/containers/registries.conf`. `suse/sle15` uses RPM NDB, so
+host scanners and builders require NDB-aware RPM tooling such as SLE 15 SP2 or
+newer.
+
+## SLES 15 SP7 virtualization
+
+### Stack transition and vGPU
+
+The stack moves to Xen 4.20, QEMU 9.2.2, libvirt 11.0.0, and virt-manager 5.0.0.
+`sanlock` is removed. NVIDIA vGPU 16.10 support is added, but migration is
+supported only in some scenarios.
+
+### OVMF deprecation
+
+The 2 MB OVMF image is deprecated for removal in SLES 16.1; update VM
+definitions before that release.
+
+### STIG-compliant base container
+
+A STIG-compliant SLE Base Container Image is available from the US Department
+of Defense Iron Bank. Deployments requiring Iron Bank content can use it rather
+than hardening the ordinary BCI from scratch.
+
+## SLES 16 virtualization and HA
+
+### High Availability stack
+
+SLE HA 16 moves Pacemaker and Corosync from major 2 to 3 and splits fence agents
+from one combined package into separately packaged agents. Filesystem-based HA
+for SAP ENSA1/2 central services is unsupported.
+
+### Cockpit SR-IOV attachment
+
+An SR-IOV VF attached through Cockpit direct mode can fail to obtain IPv4. Use
+passthrough or a `hostdev` device definition.
+
+### Guest CPU exposure
+
+A SLES 16 guest can crash during kernel startup if QEMU exposes too old an
+instruction level. Use `-cpu host` or an equivalent virtual CPU model.
+
+### Kiwi KubeVirt `containerdisk`
+
+Kiwi can combine an OEM disk with OCI packaging. The image is stored at `/disk`
+with KubeVirt metadata, and the format selects container transport plus disk
+format:
 
 ```xml
 format="oci:qcow2:docker://registry.example.com/kubevirt-disk:latest"
 ```
 
-## libvirt and QEMU
+### UEFI KVM startup limitation (`16.0-rev-2026-08-04`)
 
-### Modular daemons and bridge setup
+SLES 16.0 documents a startup failure affecting UEFI KVM guests. Treat it as a
+known limitation when validating UEFI deployments.
 
-Leap 16 libvirt uses modular daemons. `virt-bridge-setup` replaces YaST's automatic virtualization bridge setup, but it is IPv4-only, must run locally before custom network configuration, and is unsuitable for VLAN or bonding configurations.
+### Intel TDX integration
 
-When Docker disrupts libvirt guest networking, configure libvirt's iptables firewall backend and persist `virbr0` in the libvirt firewalld zone; see [networking-services.md](networking-services.md).
+The `16.0-rev-2026-08-04` revision supplies both libvirt and QEMU integration
+for Intel TDX, so TDX guests can be managed with the distribution virtualization
+stack. This supersedes the earlier Leap 16 kernel-only integration state.
 
-### QEMU capabilities
+## Architecture-specific virtualization
 
-SLES 15 SP6 QEMU 8.2 adds virtio-sound, Hyper-V `hv-balloon`, UFS emulation, 64-bit NBD offsets, standard-kdump output from `dump-guest-memory`, Granite Rapids and Sapphire Rapids CPU models, and supported rather than experimental VFIO live migration. Audit removed and deprecated QEMU features before updating guests or management automation.
-
-SLES 15 SP7 moves to Xen 4.20, QEMU 9.2.2, libvirt 11.0.0, and virt-manager 5.0.0. It removes `sanlock` and adds NVIDIA vGPU 16.10 support; migration is supported only in some scenarios.
-
-### Guest CPU exposure
-
-A SLES 16 guest can crash during kernel startup if QEMU exposes a virtual CPU below the required instruction level. Use `-cpu host` or an equivalent virtual CPU model.
-
-### Disk conversion and guestfs
-
-Leap 16 `virt-v2v` adds `--parallel=N` for concurrent disk copies.
-
-SLES 15 SP6 libguestfs 1.52 adds LZMA and Zstandard compression to tar APIs, lets `guestfish --key` recognize LVM mapper names and the `all:` selector, and adds `--chown` and `--tar-in` to `virt-customize`. Remove workflows that depend on the deleted `virt-dib` tool.
-
-### SR-IOV through Cockpit
-
-An SLES 16 SR-IOV virtual function attached to a VM through Cockpit direct mode may fail to obtain IPv4. Use passthrough or a `hostdev` device definition instead.
-
-## Confidential computing
-
-### AMD SEV-SNP and Intel TDX
-
-Leap 16 integrates AMD SEV-SNP across kernel, QEMU, libvirt, and OVMF for KVM guests on enabled third-generation EPYC or newer hosts. Intel TDX has kernel patches only; complete QEMU and libvirt integration is deferred.
-
-### SLES 15 SP6 SEV
-
-Use unified `ovmf-x86_64-sev.bin`. The split `ovmf-x86_64-sev-{code,vars}.bin` images remain only for compatibility, have an unmeasured variable store, and are deprecated for removal.
-
-`virt-install --cdrom` cannot install an ISO into an SEV guest. Use `--location`, PXE, or an existing disk image, or install without SEV and enable it afterward.
-
-The SLES 15 SP6 Confidential Computing Module is disabled by default and is a technical preview; its host, secure-VM, and remote-attestation tooling is unsupported.
-
-### IBM Z Secure Execution
-
-For SLES 16 host-key hashes, `genprotimg`, `pvimg`, retrievable secrets, and boot ordering, see [platforms.md](platforms.md).
-
-## KubeVirt support
-
-SLES 15 SP6 provides L3 support for KubeVirt only while running the latest packaged version N or N+1 during the normal SP6 lifecycle. KubeVirt is not covered by LTSS or Extended Support.
-
-## Xen and firmware boundaries
-
-Leap 16 cannot host Xen or run as a Xen paravirtualized guest. It can still run as a Xen HVM or PVH guest.
-
-Leap 16 OVMF images disable iSCSI boot. SLES 15 SP7 deprecates its 2 MB OVMF image for removal in SLES 16.1; update VM definitions before that release.
-
-## Arm and POWER virtualization
-
-KVM with the SLES 15 SP6 Arm 64 KiB kernel is only a technology preview; use the default kernel for supported virtualization.
-
-Leap 16 can host KVM inside a dedicated-core, KVM-enabled PowerVM LPAR on firmware 1060.10. See [platforms.md](platforms.md) for console and hardware constraints.
-
-## High Availability
-
-SLE HA 16 moves Pacemaker and Corosync from major version 2 to 3 and splits fence agents into separate packages. Plan cluster configuration and package automation migrations for both changes.
-
-SLES 16 removes OCFS2; use HA-provided read/write GFS2 for migrated clustered storage. Filesystem-based HA for SAP ENSA1/2 central services is not supported.
+KVM in a PowerVM LPAR, Arm 64 KiB kernel preview status, IBM Z Secure Execution,
+and architecture firmware requirements are detailed in
+[platforms.md](platforms.md).

@@ -1,46 +1,29 @@
 # Upgrades, Security, and Configuration
 
-This topic reference incorporates upgrade and runtime changes from batch
-`1.8.x`.
+Use this reference during upgrades and when reviewing endpoint configuration,
+controller and router setup, browser headers, transport limits, or sensitive
+parameter logging.
 
-## Runtime Baseline
+## Runtime requirement
 
-Phoenix 1.8 requires Erlang/OTP 25 or later. Validate the deployed Erlang/OTP
-version before upgrading the Phoenix dependency, including the runtime inside
-the release image or host rather than only the local toolchain.
+Phoenix 1.8 requires Erlang/OTP 25 or later. Verify both development and
+deployment runtimes before attributing compilation or boot failures to
+application code.
 
-## Secure Browser Headers
+## Controller and router deprecations
 
-When the caller does not supply a Content Security Policy,
-`put_secure_browser_headers` now sets `content-security-policy` to:
-
-```text
-base-uri 'self'; frame-ancestors 'self';
-```
-
-The `frame-ancestors 'self'` directive blocks third-party framing. Provide an
-explicit policy when cross-origin embedding is an intended part of the
-application.
-
-The function no longer adds the deprecated `x-download-options` or
-`x-frame-options` headers. If downstream checks still require either header,
-decide whether to update the check or add an explicit application policy; do
-not assume Phoenix supplies it.
-
-## Controller and Router Deprecations
-
-`use Phoenix.Controller` must specify `:formats`; an empty list is valid.
+`use Phoenix.Controller` must specify `:formats`; an empty list is valid for a
+controller with no formats.
 
 ```elixir
 use Phoenix.Controller, formats: [:html]
 ```
 
-The following forms are deprecated:
+Remove or migrate these deprecated forms:
 
-- The controller `:namespace` option.
-- The controller `:put_default_views` option.
-- Layouts without a module name.
-- The router's `:trailing_slash` option.
+- `use Phoenix.Controller` options `:namespace` and `:put_default_views`;
+- module-less layouts; and
+- the router's `:trailing_slash` option.
 
 Name the layout module explicitly:
 
@@ -50,10 +33,21 @@ put_layout(conn, html: {MyAppWeb.Layouts, :print})
 
 Move trailing-slash URL generation to `Phoenix.VerifiedRoutes`.
 
-## Endpoint Compile-Time Configuration
+Phoenix 1.8.6 also raises when `use Phoenix.VerifiedRoutes` appears more than
+once in a module or when a list is interpolated into a verified route. Keep a
+single setup call and convert list values to a supported route representation.
 
-The `config` variable is no longer injected inside `Phoenix.Endpoint`. Read a
-compile-time value with `Application.compile_env/3`:
+Tests can opt into deterministic query-parameter ordering using the top-level
+Phoenix setting added in 1.8.3:
+
+```elixir
+config :phoenix, sort_verified_routes_query_params: true
+```
+
+## Endpoint compile-time configuration
+
+The injected `config` variable is unavailable inside `Phoenix.Endpoint`. Read
+compile-time values with `Application.compile_env/3`:
 
 ```elixir
 @value Application.compile_env(
@@ -63,52 +57,52 @@ compile-time value with `Application.compile_env/3`:
 )
 ```
 
-Audit whether each value is present at compile time. Configuration previously
-provided only at runtime can cause a boot failure after the endpoint has been
-compiled without it.
+Audit endpoint settings that were previously provided only at runtime. If code
+reads one during compilation, leaving it exclusively in runtime configuration
+can cause a boot error after the upgrade.
 
-## LongPoll Activation and Hardening
+## Secure browser headers
 
-Phoenix 1.8.0 inadvertently enabled LongPoll by default; Phoenix 1.8.2 restored
-it to opt-in. Configure it explicitly rather than relying on the brief default
-behavior.
+When no Content Security Policy is supplied, `put_secure_browser_headers`
+sets:
 
-The security and request-limit sequence matters:
-
-- Phoenix 1.8.6 fixes memory exhaustion caused by nd-JSON body splitting.
-- Phoenix 1.8.9 enforces the resulting limit of 100 events per batch.
-- A high-frequency LongPoll application that may exceed 100 events in one
-  request should first move to Phoenix 1.8.7, then adapt before moving to
-  Phoenix 1.8.9.
-
-Keep LongPoll opt-in, the body-splitting fix, and the batch limit separate when
-diagnosing an upgrade: they were introduced in different patch releases.
-
-## Presence and Log Hardening
-
-Phoenix 1.8.9 prevents JavaScript Presence keys that match
-`Object.prototype` members from crashing the client. Phoenix masks a `token`
-parameter in logs by default since 1.8.7, alongside `password`. If an
-application previously depended on logging a parameter named `token`, rename
-or instrument that value deliberately instead of weakening the default mask.
-
-## Stricter Verified Routes
-
-Phoenix 1.8.6 raises in two cases that previously escaped validation:
-
-- A module invokes `use Phoenix.VerifiedRoutes` more than once.
-- A list is interpolated into a verified route.
-
-Remove duplicate `use` declarations and serialize repeated query values in a
-supported form rather than interpolating a list directly.
-
-Since Phoenix 1.8.3, tests can request deterministic ordering of verified-route
-query parameters with a top-level Phoenix setting:
-
-```elixir
-config :phoenix, sort_verified_routes_query_params: true
+```text
+content-security-policy: base-uri 'self'; frame-ancestors 'self';
 ```
 
-Use the setting where assertions compare complete URLs and ordering would
-otherwise make the result nondeterministic.
+Third-party embedding therefore requires an explicit policy. The function no
+longer emits the deprecated `x-download-options` or `x-frame-options` headers;
+do not write checks or proxy rules that assume those defaults remain present.
 
+## Generated production SSL configuration
+
+Generated `prod.exs` enables `force_ssl` by default. Ensure forwarded-protocol
+and trusted-proxy configuration accurately represent HTTPS, or the application
+may redirect unexpectedly behind a proxy.
+
+## LongPoll activation and request limits
+
+Phoenix 1.8.0 unintentionally enabled LongPoll by default. Phoenix 1.8.2
+restored it to opt-in, so explicitly configure the transport when it is
+required.
+
+Phoenix 1.8.6 fixes memory exhaustion caused by nd-JSON body splitting.
+Phoenix 1.8.9 enforces the resulting 100-event batch limit. A high-frequency
+LongPoll application that can exceed 100 events in one request should first
+upgrade to Phoenix 1.8.7 before moving to 1.8.9, then adapt batching to the
+enforced ceiling.
+
+## Channels per transport
+
+Phoenix 1.8.9 added `max_channels_per_transport` with a default of 100. Raise
+it explicitly only when a client deliberately needs to multiplex more than
+100 channels over one transport.
+
+## Presence and sensitive log data
+
+Since Phoenix 1.8.7, the default parameter filtering masks `token` in logs as
+well as `password`. Preserve that protection when customizing log filters.
+
+Phoenix 1.8.9 also prevents JavaScript Presence keys matching
+`Object.prototype` members from crashing the client. Upgrade the client asset
+alongside the server when relying on this hardening.

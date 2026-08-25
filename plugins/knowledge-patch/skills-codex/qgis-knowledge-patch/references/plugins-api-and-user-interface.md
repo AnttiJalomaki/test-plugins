@@ -1,13 +1,13 @@
 # Plugins, APIs, and User Interface
 
-## Plugin compatibility and application integration
+## QGIS 4 plugin migration
 
-### Advertise QGIS 4 compatibility with a version range
+### Advertise compatibility with a version range
 
-Plugin compatibility is derived from `qgisMinimumVersion` and the optional
-`qgisMaximumVersion`. Without a maximum, support is assumed only through the
-end of the minimum version's major line. To retain QGIS 3.22 support and join
-the QGIS 4 Ready list, use:
+The `qgis4-plugin-migration` guidance uses `qgisMinimumVersion` and the
+optional `qgisMaximumVersion` as the compatibility contract. When the maximum
+is absent, QGIS assumes support only through the end of the minimum version's
+major line. To retain QGIS 3.22 support and join the QGIS 4 Ready list, use:
 
 ```ini
 [general]
@@ -15,134 +15,141 @@ qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 ```
 
-The Ready list includes a plugin when either bound is at least 4.0.
+The Ready list includes a plugin if either bound is at least 4.0.
 
-### Remove the obsolete Qt 6 flag
+### Remove `supportsQt6`
 
-`supportsQt6=True` is removed from core and is not recognized as a QGIS 4
-compatibility declaration. Remove it and use the version range.
+`supportsQt6=True` has been removed from QGIS core and is not recognized. It
+cannot advertise QGIS 4 support; remove it and use the version range.
 
-### Check the Qt 6 migration before widening compatibility
+### Complete the Qt 6 migration first
 
-QGIS 4 plugins must replace Qt 5-only APIs and direct `PyQt5` imports with Qt 6
-equivalents, preferably through `qgis.PyQt`, and must be tested on QGIS 4
-before their metadata range is widened. Repository uploads run
-`pyqgis4-checker`; its Qt6 Check tab identifies affected files and lines, but
-findings do not block upload or approval. These three compatibility items form
-the `qgis4-plugin-migration` guidance.
+Replace Qt 5-only APIs and direct `PyQt5` imports with Qt 6 equivalents,
+preferably through `qgis.PyQt`, and test on QGIS 4 before widening plugin
+metadata. Repository uploads run `pyqgis4-checker`; its Qt6 Check tab identifies
+affected files and lines, but findings do not block upload or approval.
 
-### Isolated QGIS 4 settings (4.2)
+## Settings, themes, and UI extension
 
-QGIS 4 stores settings separately from QGIS 3. On first startup, it makes a
-one-time, lossless copy of the loaded QGIS 3 user profile. Later changes do not
+### Isolated settings
+
+Since 4.2, QGIS 4 stores settings separately from QGIS 3. First startup makes a
+one-time, lossless copy of the loaded QGIS 3 profile. Later changes do not
 synchronize, so installation, profile-management, and enterprise-deployment
-scripts must target the QGIS 4 location.
+scripts must target the new location.
 
-### Plugin-delivered application themes (4.0)
+### Plugin-delivered application themes
 
-Plugins can ship themes and custom application styles. Installing a plugin can
-therefore alter the application theme without a corresponding core theme.
+Since 4.0, plugins can ship themes and custom application styles. Installing a
+plugin can therefore change the application's appearance without a matching
+core theme.
 
-### User-defined menus and toolbars (4.0)
+### User-defined menus and toolbars
 
-Users can create their own menus and toolbars instead of only customizing
-built-in ones.
+Since 4.0, users can create menus and toolbars instead of only customizing
+built-in ones. Since 4.2, a Processing algorithm can be assigned to one of
+these UI containers; its action opens the parameter and execution dialog.
 
-### Processing actions in custom UI (4.2)
+## Widgets and application services
 
-A Processing algorithm can be assigned to a user-defined menu or toolbar.
-Triggering the action opens the algorithm's parameter and execution dialog.
+### Value Relation ordering
 
-## Security, forms, and layer interaction
+Since 3.42, Value Relation widgets can reverse their order or sort choices by a
+specified field.
 
-### Project trust for embedded Python (4.0)
+### GPS plugin controls
 
-Projects carry granular trust for macros, expression functions, actions, and
-attribute-form initialization code. A trust dialog can preview code, while
-global policy can allow or deny execution by project or path.
-
-### Per-field remembered form values (4.0)
-
-Attribute forms show a pin indicating whether the last captured value will be
-reused, and users can toggle it. Layer form configuration controls session
-reuse policies and their default, or can disable reuse for every field.
-
-### Value-relation sorting (3.42)
-
-Value Relation widgets can reverse their order or sort choices by a specified
-field.
-
-### Per-field merge policies (3.44)
-
-Field configuration can choose the initial value used by Merge Features.
-Policies include numeric Sum, Minimum, Maximum, and Geometry Weighted values;
-Default Value; Unset Field, which falls back to the provider default or first
-feature; Largest Geometry, based on length, area, or part count; and Set to
-Null.
-
-### SQL from the layer context menu (3.42)
-
-Supported layers can execute SQL directly from their context menu in the
-project table of contents.
-
-### Bulk layer-style transfer (4.0)
-
-The layer-tree menu can copy and paste every named style between layers in one
-operation. Grouped style-category shortcuts transfer related sets of style
-properties.
-
-### Raw attribute copying (4.0)
-
-Attribute tables and Identify Results can copy the literal provider value
-instead of its represented value from locale formatting, expressions, or
-display relations.
-
-## PyQGIS and C++ APIs
-
-### `QgsGeos` in PyQGIS (3.42)
-
-PyQGIS exposes `QgsGeos` directly. Use it for GEOS-specific functionality that
-is not available through the base `QgsGeometryEngine`.
-
-### Dimensional `QgsGeometry.as_numpy()` output (3.42)
-
-`QgsGeometry.as_numpy()` preserves dimensionality. Z and/or M geometries
-return XYZ, XYM, or XYZM coordinates instead of always returning XY.
-
-### Geometry and GeoPandas APIs (4.0)
-
-`QgsGeometry.area3D()` returns surface area for polygons, polyhedral surfaces,
-TINs, and collections, and zero for points and lines.
-`QgsGeometryUtilsBase::pointsAreCollinear` handles 2D and 3D points, with
-`QgsGeometryUtilsBase::points3DAreCollinear` available explicitly for 3D.
-When GeoPandas is installed, `QgsVectorLayer.as_geopandas()` converts a layer
-and its attributes to a GeoPandas dataframe.
-
-### PyQGIS 3D extension points (4.0)
-
-Plugins can derive custom canvas tools from `Qgs3DMapTool`, apply the
-cross-section tool's four clipping planes, and call
-`Qgs3DMapCanvas.castRay()` to obtain and manage 3D hits through `QgsRay3D`.
-
-### GPS controls for plugins (3.44)
-
-PyQGIS exposes `QgsAppGpsTools` through `iface.gpsTools()`. A plugin can create
-a feature from the current track:
+Since 3.44, PyQGIS exposes `QgsAppGpsTools` through `iface.gpsTools()`. Create a
+feature from the current track with:
 
 ```python
 iface.gpsTools().createFeatureFromGpsTrack()
 ```
 
-It can also change the track symbol and update its geometry:
+Change the track symbol and update its geometry with:
 
 ```python
 iface.gpsTools().setGpsTrackLineSymbol(line_symbol)
 ```
 
-### Persistent and synchronized elevation profiles (4.0)
+### Topocentric CRS selection
 
-Elevation profiles can be saved in the project, reopened, renamed, or removed
-through the project-level profile manager. Opt-in Synchronize Layers to
-Project mode mirrors the main layer tree, including groups and order, into a
-profile. `QgsLayerTreeCustomNode` lets APIs represent non-layer application
-objects in layer trees.
+Since 4.2, QGIS supports topocentric coordinate reference systems. The CRS
+chooser enables an origin-point widget when Topocentric CRS is selected
+explicitly.
+
+## Expression APIs
+
+### String and CRS functions
+
+Since 3.44, string forms of `repeat` and `reverse` are available. Use
+`crs_from_text` for authority codes, WKT, or PROJ definitions and
+`crs_to_authid` to obtain an `authority:id` string:
+
+```text
+repeat('ab', 3)
+reverse('abc')
+crs_to_authid(crs_from_text('EPSG:4326'))
+```
+
+### Magnetic-model functions
+
+Since 4.0, expressions provide `magnetic_declination`,
+`magnetic_inclination`, `magnetic_declination_rate_of_change`, and
+`magnetic_inclination_rate_of_change`. They return angles or annual rates at a
+point.
+
+### Time-zone functions
+
+Since 4.0, `timezone_from_id`, `timezone_id`, and `get_timezone` create or
+inspect IANA time zones. `convert_timezone` changes a datetime to the equivalent
+time in another zone. `set_timezone` replaces the zone without changing the
+date or time components.
+
+### Cubic Bézier and joined concatenation
+
+Since 4.2, `scale_cubic_bezier` performs cubic Bézier interpolation and can
+convert MapBox `cubic-bezier` styles. `concat_ws(separator, ...)` ignores NULL
+arguments; `concat_ws('-', 'a', NULL, 'b')` returns `a-b`.
+
+## Geometry and layer APIs
+
+### Direct GEOS access and dimensional arrays
+
+Since 3.42, PyQGIS exposes `QgsGeos` directly for GEOS-specific operations not
+available from the base `QgsGeometryEngine`. `QgsGeometry.as_numpy()` preserves
+dimensionality, returning XY, XYZ, XYM, or XYZM coordinates as applicable.
+
+### Geometry and GeoPandas additions
+
+Since 4.0, `QgsGeometry.area3D()` returns surface area for polygons, polyhedral
+surfaces, TINs, and collections; it returns zero for points and lines.
+`QgsGeometryUtilsBase::pointsAreCollinear` accepts 2D and 3D points, and
+`QgsGeometryUtilsBase::points3DAreCollinear` is available explicitly.
+`QgsVectorLayer.as_geopandas()` converts geometry and attributes to a GeoPandas
+dataframe when GeoPandas is installed.
+
+### Layer-tree custom nodes
+
+Since 4.0, `QgsLayerTreeCustomNode` lets APIs represent non-layer application
+objects in layer trees. This is used by synchronized elevation profiles and is
+available to other tree-based extensions.
+
+## 3D plugin extension points
+
+Since 4.0, plugins can derive tools from `Qgs3DMapTool`, apply the cross-section
+tool's four clipping planes, and use `Qgs3DMapCanvas.castRay()` to obtain and
+manage 3D hits through `QgsRay3D`.
+
+## Project trust and translated metadata
+
+### Granular embedded-Python trust
+
+Since 4.0, project trust is separate for macros, expression functions, actions,
+and attribute-form initialization code. The trust dialog previews code, while
+global policy can allow or deny execution by project or path.
+
+### Translatable metadata
+
+Since 4.0, key project and layer metadata can be translated. Those localized
+values can feed layout labels, map decorations, and other consumers.

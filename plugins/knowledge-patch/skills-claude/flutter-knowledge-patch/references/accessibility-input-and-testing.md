@@ -1,30 +1,43 @@
 # Accessibility, input, and testing
 
-## Contents
+## Semantics and accessibility
 
-- [Semantics construction](#semantics-construction)
-- [Announcements, progress, and user preferences](#announcements-progress-and-user-preferences)
-- [Selection](#selection)
-- [Text fields and editing](#text-fields-and-editing)
-- [Pointer, keyboard, focus, and stylus input](#pointer-keyboard-focus-and-stylus-input)
-- [Sensitive content](#sensitive-content)
-- [Tests and diagnostics](#tests-and-diagnostics)
+### Roles, live regions, and forced colors (3.32-guide)
 
-## Semantics construction
+`SemanticsRole` assigns a fine-grained role to a `Semantics` subtree. Role support
+was web-only when introduced. Flutter web can honor Windows forced-color themes
+with `ThemeData(useSystemColors: true)`.
 
-- Assign a fine-grained `SemanticsRole` to a `Semantics` subtree when the role is
-  meaningful. Role support was web-only when introduced (`3.32-guide`), so verify
-  behavior on every target rather than assuming identical platform exposure.
-- Use `semanticsIdentifier` on text widgets to give accessibility and automation
-  clients a stable identity without changing the spoken label (`3.32.0`).
-- Use `SemanticsLabelBuilder` to combine several values into one announcement.
-  Wrap a sliver in `SliverEnsureSemantics` when it must stay in the semantics tree
-  while offscreen (`3.35-guide`).
-- Continue accessibility indexes across independently built slivers with
-  `semanticIndexOffset` on `SliverList.builder`, `SliverGrid.builder`, and
-  `SliverFixedExtentList.builder` (`3.38.0`).
-- Select how a semantic node participates in pointer hit testing with
-  `Semantics.hitTestBehavior` (`3.41.0`):
+Android API 36 deprecates semantic announcement events. Prefer polite implicit
+announcements through a live region, while accounting for the known limitation
+around text that must remain non-focusable.
+
+```dart
+Semantics(liveRegion: true, child: Text(status))
+```
+
+### Stable identifiers and sliver semantics (3.32.0, 3.35-guide, 3.38.0)
+
+Text widgets accept `semanticsIdentifier` so accessibility and automation clients
+can distinguish similar nodes without changing their spoken labels.
+
+Web semantics supports locales. `SemanticsLabelBuilder` joins values into one
+announcement, and `SliverEnsureSemantics` keeps an offscreen sliver in the
+semantics tree.
+
+For a logical accessibility sequence spanning separately built slivers, set
+`semanticIndexOffset` on `SliverList.builder`, `SliverGrid.builder`, and
+`SliverFixedExtentList.builder`.
+
+The obsolete `SemanticsConfiguration.elevation` and
+`SemanticsConfiguration.thickness` members and their `SemanticsNode` counterparts
+are removed; custom semantics code must stop accessing them (3.35-guide).
+
+### Hit testing and platform enablement (3.38-guide, 3.41.0)
+
+On iOS, `WidgetsFlutterBinding.instance.ensureSemantics` can keep semantics enabled
+by default. `Semantics.hitTestBehavior` explicitly selects how a semantics node
+participates in pointer hit testing.
 
 ```dart
 Semantics(
@@ -33,134 +46,126 @@ Semantics(
 )
 ```
 
-Do not read or assign the removed `SemanticsConfiguration.elevation`,
-`SemanticsConfiguration.thickness`, or corresponding `SemanticsNode` properties.
+### User preferences and feedback (3.41-guide, 3.44-guide)
 
-## Announcements, progress, and user preferences
+Progress indicators expose native accessibility progress updates. Use natural
+percentage text such as `50%` as `semanticsValue` when appropriate. Flutter web
+honors user text-spacing overrides and `prefers-reduced-motion`; form validation
+errors receive immediate screen-reader feedback through `aria-description`.
 
-On Android API 36, semantic announcement events are deprecated. Prefer a polite,
-implicit announcement through a live region; text which must remain non-focusable
-still has a platform limitation.
-
-```dart
-Semantics(liveRegion: true, child: Text(status))
-```
-
-Progress indicators expose native accessibility progress updates. Supply percentage
-text such as `50%` through `semanticsValue` when that produces a more natural
-screen-reader announcement (`3.44-guide`).
+On iOS, `AccessibilityFeatures` exposes preferences for auto-playing animated
+images, auto-playing video previews, and blinking cursors. Respect these preferences
+when scheduling media or cursor effects.
 
 ```dart
 CircularProgressIndicator(value: 0.5, semanticsValue: '50%')
 ```
 
-Honor these platform preferences:
+## Selection and text input
 
-- Flutter web respects user text-spacing overrides and automatically disables
-  animations for `prefers-reduced-motion`. Web form-validation failures receive
-  immediate screen-reader feedback through `aria-description`.
-- On Windows web sessions, `ThemeData(useSystemColors: true)` can honor forced-color
-  themes.
-- On iOS, `AccessibilityFeatures` reports preferences for auto-playing animated
-  images, auto-playing video previews, and blinking cursors.
-- `WidgetsFlutterBinding.instance.ensureSemantics` can force semantics on by default
-  on iOS (`3.38-guide`).
+### Observing selection (3.29.0)
 
-Flutter web semantics support locales. At the engine layer, `dart:ui` can set the
-application-level locale, and the Android and iOS bridges carry section locales for
-accessibility integrations. Keep these locale signals aligned with the localized
-labels in the widget tree.
+Wrap a `SelectionArea` or `SelectableRegion` subtree in `SelectionListener` and use
+its `SelectionListenerNotifier` to receive `SelectionDetails`: subtree-relative
+start and end offsets plus absent/collapsed selection state.
+`SelectableRegionSelectionStatusScope.maybeOf(context)` reports whether the
+enclosing region is still changing or has finalized.
 
-## Selection
+### Selectable-region layout and copy behavior (3.44-guide)
 
-Wrap a `SelectionArea` or `SelectableRegion` subtree in `SelectionListener`, then
-observe its `SelectionListenerNotifier`. `SelectionDetails` reports subtree-relative
-start and end offsets and whether the selection exists or is collapsed (`3.29.0`).
-Use `SelectableRegionSelectionStatusScope.maybeOf(context)` to distinguish a changing
-selection from a finalized one.
+On web, `SelectableRegion` forwards constraints unchanged instead of shrinking its
+child. Multiline copy preserves line breaks across native and web targets.
 
-On the web, `SelectableRegion` now forwards incoming layout constraints unchanged;
-it no longer unexpectedly shrinks its child. Copying multiline selections preserves
-line breaks on native and web targets.
+`ExtendSelectionByPageIntent` is removed (3.44.0); eliminate callers rather than
+trying to retain page-extension behavior through that intent.
 
-## Text fields and editing
+### Text-field hooks and context menus (3.32-guide, 3.32.0)
 
-### Shared controls
+Text fields accept `onTapUpOutside`. A `FormField` can render an arbitrary error
+widget rather than text only. On iOS, ordinary paste no longer prompts for cross-app
+permission by default, but fields with custom context menus were not covered by
+that change.
 
-- Handle taps released outside a text field with `onTapUpOutside`.
-- Set `selectAllOnFocus` on `TextField`, `TextFormField`, or `EditableText` when focus
-  must not automatically select all text (`3.35.0`).
-- `InputDecoration.hint` accepts a widget when `hintText` is too limited:
+Editable text uses `SystemContextMenu` by default on iOS. Supply custom context-menu
+behavior only when the application intentionally replaces the native baseline.
+Custom iOS edit-menu actions later gained secure-paste participation (3.38.0).
 
-```dart
-const InputDecoration(
-  hint: Row(children: [Icon(Icons.search), Text('Search')]),
-)
-```
+### Platform keyboard and focus behavior
 
-- Replace `InputDecoration.maintainHintHeight` with `maintainHintSize`.
-- A `FormField` can render an arbitrary error widget. Forms also support
-  `AutovalidateMode.onUserInteractionIfError`; later form-state APIs expose registered
-  `fields` and let `clearError()` clear form-level or individual field errors without
-  resetting values (`3.44.0`).
+- Android 14 and newer supports stylus handwriting in Material and Cupertino text
+  fields. Disable it with `stylusHandwritingEnabled: false` and rename
+  `SelectionChangedCause.scribble` to `.stylusHandwriting` (3.32-guide).
+- Single-line fields are no longer user-scrollable on iOS; Android text editing
+  recognizes Home and End (3.35-guide).
+- `hintLocales` supplies Android input-method language hints. `selectAllOnFocus` on
+  `TextField`, `TextFormField`, and `EditableText` controls automatic full
+  selection (3.35.0).
+- Desktop text editing recognizes Shift-Delete, Ctrl-Insert, and Shift-Insert.
+  Material buttons use the basic arrow cursor by default off web, and
+  `CupertinoActionSheetAction` can receive keyboard focus (3.41.0).
+- `TextField.enableInlinePrediction` opts into experimental native iOS inline
+  prediction; it is off by default and its styling is experimental (3.44-guide).
 
-```dart
-for (final field in formKey.currentState!.fields) {
-  field.clearError();
-}
-```
+## Focus, pointers, and gestures
 
-### Platform behavior
+`ScaleStartDetails` exposes the originating `PointerDeviceKind`, allowing touch,
+trackpad, mouse, and other input to diverge when necessary (3.32.0).
 
-- iOS basic text fields use `SystemContextMenu` by default. Pasting no longer shows a
-  cross-application confirmation by default, although custom context-menu actions were
-  initially outside that behavior. Custom iOS edit-menu actions now participate in
-  secure-paste handling.
-- iOS single-line fields are not user-scrollable. Native inline predictive text is an
-  opt-in experiment through `TextField.enableInlinePrediction`; it is off by default
-  and its visuals remain experimental.
-- Android text editing recognizes Home and End. Android-only `hintLocales` supplies
-  language hints to the input method.
-- Desktop editing recognizes Shift-Delete, Ctrl-Insert, and Shift-Insert.
+Pointer-based detail objects share `PositionedGestureDetails`, enabling generic
+handlers to consume common position information (3.35-guide).
 
-## Pointer, keyboard, focus, and stylus input
+`Visibility.maintainFocusability` decides whether a maintained but hidden subtree
+can remain focusable. Hidden `IndexedStack` children are excluded from focusability
+by default (3.35.0).
 
-- `ScaleStartDetails` exposes its originating `PointerDeviceKind`, allowing scale
-  gestures to distinguish touch, trackpad, mouse, and other sources.
-- Pointer-based gesture details implement `PositionedGestureDetails`, which provides
-  common position information to generic handlers.
-- Material `Autocomplete` supports keyboard option traversal. `RawAutocomplete` can
-  choose `OptionsViewOpenDirection.mostSpace`; see the widget reference for its
-  external editing state.
-- `Visibility.maintainFocusability` decides whether a maintained but hidden subtree
-  remains focusable. Hidden `IndexedStack` children are excluded from focusability.
-- `CupertinoActionSheetAction` can receive keyboard focus. Material buttons use the
-  basic arrow cursor rather than the click cursor by default on non-web platforms.
+`Autocomplete` supports keyboard option traversal and can accept an external
+`focusNode` and `textEditingController`. `RawAutocomplete` can open toward
+`OptionsViewOpenDirection.mostSpace` when available space should drive placement
+(3.32.0, 3.35.0, 3.41-guide).
 
-Android 14 and newer can handwrite directly into Material and Cupertino text fields.
-Disable it per field with `stylusHandwritingEnabled: false`, and replace
-`SelectionChangedCause.scribble` with `SelectionChangedCause.stylusHandwriting`.
+On Windows, the embedder reports stylus pressure and rotation for native drawing and
+handwriting input (3.44-guide). Test pointer-kind and stylus-specific code on real
+target hardware.
 
-```dart
-TextField(stylusHandwritingEnabled: false)
-```
+`dart:ui` can set the application-level locale, and Android and iOS bridges carry
+section locales for accessibility integrations (3.38.0).
 
-The Windows embedder reports stylus pressure and rotation, so drawing and handwriting
-do not require a custom native bridge.
+## Diagnostics and test controls
 
-## Sensitive content
+### Semantics matchers (3.41-guide)
 
-On Android API 35 and newer, `SensitiveContent` obscures the entire application screen
-during media projection. Use it for UI that must not appear in a screen share; it is
-not merely a per-widget blur.
+`flutter_test` provides `isSemantics` and `accessibilityAnnouncement` matchers.
+Use them for semantics-tree and announcement behavior, not only visual widget
+goldens.
 
-## Tests and diagnostics
+### Timeouts and installed applications
 
-- Use the `isSemantics` and `accessibilityAnnouncement` matchers from `flutter_test`
-  to validate semantics trees and announcements (`3.41-guide`).
-- Use `flutter test --ignore-timeouts` only when an external harness or interactive
-  debugger owns the run timeout.
-- Use `flutter test --no-uninstall integration_test` to preserve the installed
-  integration-test application on its target.
-- Set `debugPaintTextLayoutBoxes = true` in a debug build to paint line and glyph
-  layout boxes when diagnosing text geometry.
+`flutter test --ignore-timeouts` disables framework test timeouts when an external
+harness or interactive debugger owns the limit (3.32.0).
+
+For integration tests, `flutter test --no-uninstall integration_test` preserves the
+installed app after the run for inspection or follow-up testing (3.44.0).
+
+### Text, microtask, and runtime diagnostics
+
+Set `debugPaintTextLayoutBoxes = true` in debug builds to render line and glyph
+layout boxes (3.38.0). Use `flutter run --profile-microtasks` to profile excessive
+or long `dart:async` microtask queues (3.35.0), and
+`flutter run --profile-startup` for startup profiling (3.38.0).
+
+The redesigned inspector stays in on-device selection mode until explicitly exited.
+The Logging tool filters by severity and shows severity, category, zone, and isolate
+metadata (3.29.0).
+
+## Accessibility test matrix
+
+- Screen readers: native progress updates, live regions, semantic identifiers,
+  roles, continuous sliver indexes, and form errors.
+- Preferences: reduced motion, forced colors, web text spacing, animated-image and
+  video autoplay, and blinking cursors.
+- Input: keyboard-only traversal, focus hiding, Android stylus, Windows stylus,
+  pointer kinds, Home/End and desktop editing shortcuts.
+- Selection: collapsed and changing selections, multiline copy, context menus, and
+  secure paste.
+- Layout: text boxes, offscreen sliver semantics, and web `SelectableRegion`
+  constraints.

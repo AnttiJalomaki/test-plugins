@@ -2,7 +2,7 @@
   "patch": "prometheus-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-30T00:26:44Z",
+  "built_at": "2026-08-21T21:49:43Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -84,6 +84,11 @@
     },
     "feature-flags": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "3.13.2-3.14.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

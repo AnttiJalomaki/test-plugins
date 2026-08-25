@@ -1,130 +1,141 @@
-# Go SDK, AST, and extensibility
+# Go SDK, AST, and Extensibility
 
-## Import paths and toolchain baseline
+## Imports and evaluation options
 
-For the `1.0-migration`, every OPA Go import moves under `/v1/`, including
-`rego`, `sdk`, `ast`, `bundle`, `compile`, `types`, and `topdown`. Old paths are
-deprecated but remain for the lifetime of OPA 1.0.
+### Move every OPA import to `/v1/` (`1.0-migration`)
+
+OPA v1 packages insert `/v1/` into the import path. Migrate every dependency,
+including `rego`, `sdk`, `ast`, `bundle`, `compile`, `types`, and `topdown`.
+Legacy paths are deprecated but remain available for the lifetime of OPA 1.0.
 
 ```go
 import "github.com/open-policy-agent/opa/v1/rego"
 ```
 
-OPA 1.0.0 requires Go 1.22 or newer when built from source or as part of a Go
-integration. See the runtime reference for later release-specific build
-toolchains.
+### Distinguish cancellation from timeout (`1.0.0`)
 
-## Evaluation options and caches
+Evaluation errors identify a canceled context separately from a timeout. Branch
+on the actual cause when deciding whether to retry, report a deadline, or stop
+work permanently.
 
-Since 1.0.0, an embedded evaluator can customize requests from `http.send` by
-using eval-level `EvalHTTPRoundTrip` or query-level `WithHTTPRoundTrip`. The
-option wraps the Topdown-configured `http.Transport` and returns an
-`http.RoundTripper`.
+### Supply a caller-owned base cache (`1.2.0`)
 
-Cancellation and timeout errors are distinct since 1.0.0, so integrations can
-react to the actual termination cause. Since 1.2.0, Rego and Topdown evaluations
-can use a caller-provided base cache.
+The Rego and Topdown APIs accept a custom base cache. Use it when an embedded
+evaluator must control cache sharing, lifetime, or memory independently of the
+default.
 
-OPA 1.13.0 adds `rego.Data`, allowing callers to provide map data without first
-constructing a store:
+### Add map data directly (`1.13.0`)
+
+Use `rego.Data` to provide a map without first creating a store.
 
 ```go
 r := rego.New(
-    rego.Query("data.authz.allow"),
-    rego.Data(map[string]any{"roles": []any{"admin"}}),
+	rego.Query("data.authz.allow"),
+	rego.Data(map[string]any{"roles": []any{"admin"}}),
 )
 ```
 
-Since 1.17.0, a caller can provide the Rego `GenerateJSON` function per
-evaluation, so evaluations through one integration can choose different JSON
-generation behavior.
+### Select JSON generation per evaluation (`1.17.0`)
+
+Go integrations can provide the Rego `GenerateJSON` function per evaluation.
+Different calls through the same integration may choose different JSON
+generation behavior without rebuilding the shared evaluator.
+
+## HTTP behavior in embedded evaluation
+
+### Wrap `http.send` transports (`1.0.0`)
+
+Use eval-level `EvalHTTPRoundTrip` or query-level `WithHTTPRoundTrip` to wrap the
+`http.Transport` configured by Topdown and return an `http.RoundTripper`. This
+customizes requests made by the `http.send` built-in.
+
+### Customize SDK transport per decision (`1.19.0`)
+
+The SDK can provide a distinct HTTP `RoundTripper` for every `Decision`, making
+request-specific transport behavior possible during decision evaluation.
+
+### Register built-ins before concurrency (`1.6.0`)
+
+`RegisterBuiltin` is not thread-safe. Finish all custom built-in registration
+before evaluations or other callers access the registry concurrently.
 
 ## AST conversion and source fidelity
 
-`ast.InterfaceToValue` accepts `[]string` and an existing `ast.Value` directly
-since 1.2.0. Since 1.5.0, compiler reference resolution retains `Location` on
-`SomeDecl` nodes. The same release changes AST reference-to-string conversion
-to use JSON-escaped literals only when required, so serialized strings can
-contain less escaping.
+### Convert existing values directly (`1.2.0`)
 
-OPA 1.18.0 attaches source locations to inner `ast.Not` expressions, enabling
-editors and analyzers to inspect definitions inside negation without a location
-blind spot.
+`ast.InterfaceToValue` accepts both `[]string` and an existing `ast.Value`, so
+embedders can avoid an intermediate conversion.
 
-## Policy oracle
+### Expect less escaping in reference strings (`1.5.0`)
 
-OPA 1.2.0 makes the oracle public at
-`github.com/open-policy-agent/opa/v1/ast/oracle` and lets callers supply an
-existing compiler. Since 1.6.0, it understands `some` and `every`, and
-`FindDefinition` resolves object references. Since 1.18.0, it can find
-definitions for expressions inside inner `ast.Not` nodes.
+AST reference-to-string conversion emits a JSON-escaped literal only when it is
+needed. Tools that compare serialized references can observe fewer escapes.
 
-## Results and rule indexing
+### Keep `some` source locations (`1.5.0`)
 
-Since 1.5.0, OPA does not synthesize JSON values for wildcard or generated keys
-in result sets. Consumers must not expect fabricated values for those keys.
+Compiler reference resolution preserves `Location` on `SomeDecl` nodes. AST
+tools can keep source positions instead of reconstructing them.
 
-OPA 1.15.0 fixes candidate selection for indexed rules with overlapping array
-and scalar patterns. Re-test policies that depend on those overlaps because
-evaluation results can change.
+### Do not expect generated wildcard JSON values (`1.5.0`)
 
-## Custom built-ins and HTTP evaluation
+Rego result sets no longer receive synthetic JSON values for wildcard or
+generated keys. Consumers must tolerate their absence.
 
-Complete custom built-in registration before starting concurrent evaluations:
-`RegisterBuiltin` is not thread-safe as of 1.6.0.
+### Inspect definitions within negation (`1.18.0`)
 
-Also since 1.6.0, Topdown accepts lenient forms of the `application/json`
-`Content-Type` for HTTP responses instead of requiring the formerly strict
-header representation.
+Inner `ast.Not` expressions have source locations, and the policy oracle can
+find definitions inside those nodes. Editors and analyzers need not treat
+negated expressions as a source-location or definition blind spot.
 
-## Server integration and routing
+## Capabilities and the policy oracle
 
-OPA 1.6.0 replaces `gorilla/mux` with `http.ServeMux` for server routing. Go
-integrations that interact directly with the router must adapt rather than
-assuming gorilla-specific behavior.
+### Recognize `rego_v1` in v0 capabilities (`1.4.0`)
 
-## Compile API to PostgreSQL
+Capabilities produced for `--v0-compatible` include the `rego_v1` feature.
+Metadata consumers must not infer that v0 compatibility excludes that feature.
 
-OPA 1.9.0 can compile a Rego query to a PostgreSQL filter. Declare unknown data
-references in document-scoped compile metadata, then request the PostgreSQL SQL
-response media type.
+### Use the public oracle with an existing compiler (`1.2.0`)
 
-```rego
-package filters
+Import the oracle from
+`github.com/open-policy-agent/opa/v1/ast/oracle`. Callers may pass their existing
+compiler rather than relying on an internally created compiler.
 
-# METADATA
-# scope: document
-# compile:
-#   unknowns: [input.fruits]
-include if input.fruits.name == input.favorite
-```
+### Resolve additional definitions (`1.6.0`)
 
-```http
-POST /v1/compile/filters/include HTTP/1.1
-Content-Type: application/json
-Accept: application/vnd.opa.sql.postgresql+json
+The policy oracle supports `some` and `every`, while `FindDefinition` supports
+object references. Tooling can resolve those forms instead of reporting them as
+unsupported.
 
-{"input":{"favorite":"pineapple"}}
-```
+## Metadata and external rule sources
 
-The response returns a filter in `result.query`, such as
-`WHERE fruits.name = E'pineapple'`.
+### Carry custom API metadata (`1.17.0`)
 
-## Custom request and response metadata
-
-Since 1.17.0, wrapping servers can read extra top-level request fields from
-`BuiltinContext.RequestMetadata`, while custom built-ins can populate
+Wrapping servers can read extra top-level request keys through
+`BuiltinContext.RequestMetadata`, and custom built-ins can populate
 `BuiltinContext.ResponseMetadata`. Request metadata is logged under
-`custom.request_metadata`; non-empty response metadata is returned to the
-caller and logged. Use namespaced keys to avoid collisions with future fields.
-The Compile API handler supports the same metadata path.
+`custom.request_metadata`; non-empty response metadata is returned and logged.
+The same plumbing applies to Data and Compile API handlers. Namespace keys to
+avoid collisions with future fields.
 
 ```json
 {"input":{"user":"alice"},"com.example.opa/metadata":{"corp-id":"acme-42"}}
 ```
 
-## Version information
+### Use prefix-aware external rule sources (`1.19.0`)
 
-Since 1.5.0, the runtime preserves caller-supplied `commit` and `timestamp`
-fields in version information, allowing custom builds to keep injected
-provenance.
+External rule sources distinguish a missing rule from a rule whose value is
+unknown and can be parameterized by reference prefix. Model externally resolved
+namespaces without collapsing absence into unknown.
+
+## Embedding the server and runtime
+
+### Adapt direct routing integrations (`1.6.0`)
+
+OPA's server routes through `http.ServeMux` rather than `gorilla/mux`. Go
+integrations that depend directly on router internals or route matching must be
+adapted and re-tested.
+
+### Preserve custom build provenance (`1.5.0`)
+
+The runtime does not overwrite caller-supplied `commit` and `timestamp` fields
+in version information. Custom builds can retain injected provenance.

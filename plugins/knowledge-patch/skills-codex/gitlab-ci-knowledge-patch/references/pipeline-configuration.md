@@ -1,33 +1,26 @@
 # Pipeline Configuration
 
-Use this reference for pipeline-source selection, typed inputs, merge trains,
-and centrally enforced schedules.
+## Select AST merge-request or branch pipelines
 
-## Select security-scanner pipeline behavior
-
-GitLab 18.0 adds `AST_ENABLE_MR_PIPELINES` to choose whether AST security
-scanners use merge request or branch pipelines when a merge request is open.
+Since 18.0, set `AST_ENABLE_MR_PIPELINES` to choose whether application
+security testing uses a merge-request pipeline or a branch pipeline when a
+merge request is open.
 
 ```yaml
 variables:
   AST_ENABLE_MR_PIPELINES: "true"
 ```
 
-The defaults differ by template family:
+Stable security templates continue to default to branch pipelines and Latest
+templates default to merge-request pipelines, so set the variable when the
+template default is not the desired behavior. The control applies to every
+security scanning template except `API-Discovery.gitlab-ci.yml`. API Discovery
+itself defaults to branch pipelines starting in 18.0.
 
-- Stable security templates default to branch pipelines.
-- Latest security templates default to merge request pipelines.
-- The variable applies to every security scanning template except
-  `API-Discovery.gitlab-ci.yml`.
-- API Discovery itself defaults to branch pipelines in 18.0.
+## Index an array input element
 
-Override the template behavior explicitly when pipeline type matters to the
-project.
-
-## Index CI/CD array inputs
-
-CI/CD input interpolation supports the `[]` array index operator (since 19.0).
-A job can consume one element without an intermediate processing step:
+Since 19.0, CI/CD input interpolation supports the `[]` array index operator.
+Consume a single input element without adding a processing step.
 
 ```yaml
 spec:
@@ -41,38 +34,25 @@ show-first-target:
     - echo "$[[ inputs.targets[0] ]]"
 ```
 
-## Accept multiple choices in the Run pipeline UI
+## Select multiple pipeline input options
 
-For an array input with declared options, the Run pipeline UI allows multiple
-selections (since 19.0). GitLab combines the selections into one array, such as
-`["option1","option2"]`, so a single run can operate on several targets.
-
-Use array interpolation or pass the array to a job that understands its typed
-value; do not add string-splitting solely to recover the selected elements.
+Since 19.0, an array input with options accepts multiple selections in the
+Run pipeline UI. GitLab combines the selected values into an array such as
+`["option1","option2"]`, allowing one run to act on several targets.
 
 ## Configure merge-train concurrency
 
-Premium and Ultimate customers on GitLab Self-Managed and GitLab Dedicated can
-configure a merge-train pipeline limit per project or across the instance
-(since 19.0). This replaces the former fixed maximum of 20 parallel pipelines.
+Since 19.0, Premium and Ultimate customers on GitLab Self-Managed and GitLab
+Dedicated can replace the former fixed maximum of 20 parallel merge-train
+pipelines with a per-project or instance-wide limit. Set the limit to `1` to
+process merge requests sequentially against a clean target branch.
 
-A limit of `1` processes merge requests one at a time against a clean target
-branch. Select it when serialized validation matters more than train
-throughput.
+## Enforce scheduled pipeline execution policies
 
-## Schedule pipelines through security policy
+Since 19.2, define a pipeline schedule once in a security policy project and
+enforce it across every project in scope without editing each project's
+`.gitlab-ci.yml`.
 
-Scheduled pipeline execution policies can define one schedule in a security
-policy project and enforce it across all projects in scope (since 19.2). The
-target projects do not need corresponding changes to `.gitlab-ci.yml`.
-
-Each policy starts a separate pipeline independently of commit activity. A
-policy can define:
-
-- daily, weekly, or monthly cadence;
-- time zone;
-- distribution within an execution window; and
-- target branches.
-
-Use policy scope to choose the affected projects and keep centrally required
-schedules out of project-local pipeline files.
+Each policy starts a separate pipeline independently of commit activity. The
+schedule can be daily, weekly, or monthly and can specify a time zone,
+execution-window distribution, and target branch.

@@ -8,90 +8,134 @@ metadata:
 ---
 
 
-# Nav2 compatibility guide
+# Nav2 Knowledge Patch
 
-Use this skill when configuring, migrating, extending, or debugging Nav2.
-Inspect the project's ROS distribution, parameter files, behavior trees,
-plugin implementations, and message types before applying guidance. Preserve
-the project's observed interfaces when they differ from an assumed default.
+Use this skill when designing, configuring, migrating, extending, or debugging
+Nav2 systems. Start with the migration notes when upgrading a robot, then open
+the task-specific reference for complete parameters, defaults, and constraints.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migrations-and-interfaces.md](references/migrations-and-interfaces.md) | Distribution posture, stamped velocity, action errors, multi-pose messages, namespaces, lifecycle wrappers |
-| [behavior-trees-and-navigation.md](references/behavior-trees-and-navigation.md) | BT node and port migrations, control nodes, selectors, subtree loading, validation, replanning |
-| [planning-control-and-smoothing.md](references/planning-control-and-smoothing.md) | Planner and controller choice, path handling, goal checking, RPP, MPPI, Rotation Shim, smoothers |
-| [servers-behaviors-and-tools.md](references/servers-behaviors-and-tools.md) | Route, loopback, docking, Behavior Server, following, vector objects, RViz, tests |
-| [costmaps-and-localization.md](references/costmaps-and-localization.md) | Costmap APIs, layers, filters, clearing, transport, inflation, AMCL, transforms |
-| [collision-monitor.md](references/collision-monitor.md) | Command pipeline, fail-safe timeouts, zones, observation sources, costmap sources |
+| [migrations-and-interfaces.md](references/migrations-and-interfaces.md) | Distribution status, message and action migrations, namespaces, lifecycle wrappers, docking, RViz, and testing |
+| [behavior-trees-and-navigation.md](references/behavior-trees-and-navigation.md) | BT nodes and controls, navigator blackboards, plugin selectors, route following, waypoint status, and introspection |
+| [planning-control-and-smoothing.md](references/planning-control-and-smoothing.md) | Planner and controller selection, path handling, SMAC, RPP, DWB, MPPI, goal checking, and smoothers |
+| [servers-behaviors-and-tools.md](references/servers-behaviors-and-tools.md) | Controller, Planner, Behavior, Following, Vector Object, Route, and loopback servers |
+| [costmaps-and-localization.md](references/costmaps-and-localization.md) | Costmap layers and filters, transport, inflation, speed zones, footprint handling, and AMCL |
+| [collision-monitor.md](references/collision-monitor.md) | Command pipeline, fail-safe timing, zones, observation sources, runtime controls, and costmap sources |
 
-## Migration triage
+## Upgrade-critical interface changes
 
-Check these surfaces first when an existing system stops configuring,
-activating, or exchanging messages.
+### Velocity commands are stamped by default
 
-### Align command-velocity types
+Nav2 nodes publish and subscribe to `geometry_msgs/TwistStamped` on the existing
+`cmd_vel` topic names. Set `enable_stamped_cmd_vel: false` on every affected
+node only when the complete command chain must retain `Twist`.
 
-Nav2 uses `geometry_msgs/TwistStamped` by default on the existing `cmd_vel`
-topic names. Either migrate the complete pipeline or set
-`enable_stamped_cmd_vel: false` on every affected node. A mixed pipeline does
-not interoperate.
-
-### Replace action-error configuration
+### Propagate action errors by prefix and BT ports
 
 Remove `error_code_names`; it now causes startup failure. Configure
-`error_code_name_prefixes`, then wire both `error_code_id` and `error_msg`
-ports on the corresponding BT action nodes.
+`error_code_name_prefixes`, and expose matching `error_code_id` and
+`error_msg` ports on relevant BT action nodes.
 
 ```yaml
 error_code_name_prefixes: [compute_path, follow_path, spin, route]
 ```
 
-### Update multi-goal messages
+### Use `nav_msgs/Goals` for multi-pose requests
 
-Use `nav_msgs/Goals` for navigation-through-poses and
-compute-path-through-poses flows. Read navigation poses from `poses.goals`
-and planning goals from `goals.goals`. Keep `WaypointStatus` lists synchronized
-when pruning goals.
+`NavigateThroughPoses`, `ComputePathThroughPoses`, and their BT nodes no longer
+use raw `PoseStamped` vectors. Read navigation poses from `poses.goals` and
+compute-path poses from `goals.goals`. Preserve the new `WaypointStatus` list
+through pruning nodes using `input_waypoint_statuses` and
+`output_waypoint_statuses`.
 
-### Remove obsolete bringup switches
+### Apply namespaces without `use_namespace`
 
-Delete `use_namespace`. `namespace` is always applied, and relative topic names
-resolve under it. Use absolute topics only when they intentionally bypass the
-robot namespace.
+Remove the `nav2_bringup.use_namespace` argument. `namespace` is always applied
+and defaults to `/`. Relative topics such as `scan` resolve under the robot
+namespace; `/scan` remains global.
 
-Move `map_topic` from `Costmap2DROS` to the `StaticLayer` configuration.
+### Move and rename migrated parameters
 
-```yaml
-static_layer:
-  plugin: "nav2_costmap_2d::StaticLayer"
-  map_topic: my_map
-```
+- Put `map_topic` on each costmap `StaticLayer`, not `Costmap2DROS`.
+- Nest the Rotation Shim controller under `primary_controller`.
+- Replace Graceful Controller `motion_target_dist` with `min_lookahead` and
+  `max_lookahead`, and `final_rotation` with `prefer_final_rotation`.
+- Replace Dynamic Window Pure Pursuit `desired_linear_vel` with
+  `max_linear_vel`.
+- Move transformed-plan pruning and its parameters to Controller Server's path
+  handler; controller plugins receive the processed plan and global goal.
+- Replace `ValidatePath.check_full_path` with the inverse
+  `stop_at_first_collision`; old `false` maps to new `true`.
+- Rename `TruncatePathLocal.robot_frame` to `robot_base_frame`.
+- Remove `action_server_result_timeout` and configure `control_frequency`
+  before Controller Server startup.
 
-### Migrate custom lifecycle code
+### Update custom plugins and ROS wrappers
 
-For Lyrical custom plugins and task servers, use `nav2::LifecycleNode` and the
-node's `create_*` factories from `nav2_ros_common`. Update service callbacks
-for the `rmw_request_id_t` header, place explicit subscription QoS after the
-callback, and remove `action_server_result_timeout`.
+Use `nav2::LifecycleNode` and its `create_*` factories for Nav2 service, action,
+publisher, and subscription wrappers. Service callbacks include an
+`rmw_request_id_t` header. Custom planner `createPath()` implementations accept
+intermediate viapoints; goal checkers receive the transformed plan; controllers
+use `newPathReceived()` instead of a heavy `setPlan()` path handoff.
 
-### Update controller plugin interfaces
+## Behavior-tree essentials
 
-Controller Server owns transformed-plan pruning through a path-handler plugin.
-Move path-handling parameters out of individual controllers. Update custom
-controllers and goal checkers for `newPathReceived()`, the processed-plan and
-global-goal command inputs, and the transformed-plan goal-checker input.
+### Choose plugins at runtime
 
-### Correct inverted path-validation naming
+The standard tree can select progress checker, goal checker, path handler,
+controller, and planner IDs from named selector topics. Always set a default ID
+on each selector and pass its blackboard output to the consuming action.
 
-Replace `check_full_path` with `stop_at_first_collision`. The polarity is
-opposite: old false maps to new true. A negative
-`max_lookahead_distance` retains full-path validation.
+### Preserve valid paths near the goal
 
-### Migrate MPPI motion models
+Suppress replanning only when the goal is unchanged, the robot is near it, and
+the truncated remaining path validates. If any check fails, compute a new path.
 
-Replace old motion-model string values with named plugin groups:
+### Understand control-node execution
+
+- `NonblockingSequence` ticks later children while an earlier one is running.
+- `PauseResumeController` pairs with `PersistentSequence` to resume at a saved
+  bidirectional child index.
+- `RoundRobin` no longer wraps by default; set `wrap_around="true"` for legacy
+  cycling.
+
+Navigator plugin parameters own their blackboard IDs. Load reusable BT subtrees
+from `bt_search_directories`, and give selectable trees unique IDs rather than
+reusing `MainTree`.
+
+## Planning and control choices
+
+### Match the planner to geometry
+
+Use NavFn, Smac 2D, or Theta Star for circular differential or omnidirectional
+robots. Use Smac Hybrid-A* when arbitrary footprint and curvature constraints
+matter, or Smac Lattice for kinematically valid differential, omnidirectional,
+or Ackermann control sets.
+
+### Match the controller to motion and task
+
+- DWB normally serves differential and omnidirectional bases; Ackermann and
+  legged bases need a curvature-aware trajectory generator.
+- TEB and MPPI cover differential, omnidirectional, Ackermann, and legged
+  motion; use them when their optimization or dynamic-obstacle behavior fits.
+- RPP emphasizes exact path tracking and does not support omnidirectional
+  motion.
+- Vector Pursuit targets high-speed or resource-constrained tracking and does
+  not support omnidirectional motion.
+
+### Treat controller-path handling as a server concern
+
+Configure a Controller Server path-handler plugin such as
+`nav2_controller::FeasiblePathHandler`. Move pruning parameters out of DWB,
+RPP, Graceful, and MPPI. Keep each controller's new-path callback lightweight.
+
+### Configure MPPI plugins explicitly
+
+Even though `motion_model` defaults to `diff_drive`, declare its named plugin
+group. Use `OptimalTrajectoryValidator` separately for final trajectory safety.
 
 ```yaml
 motion_model: "diff_drive"
@@ -99,125 +143,66 @@ diff_drive:
   plugin: "mppi::DiffDriveMotionModel"
 ```
 
-Remove `publish_critics_stats`; visualization mode publishes the statistics
-automatically.
+Retune Constrained Smoother weights after upgrading: its corrected objective is
+`weight * residual²`, not the former effectively quartic weighting.
 
-### Retune corrected smoothing costs
+## Server timing and failure behavior
 
-Constrained Smoother now applies `weight * residual²`. Retune existing weights
-instead of carrying forward values tuned against the formerly quartic
-behavior.
+- Controller Server waits `costmap_update_timeout: 0.3` seconds by default;
+  Planner Server defaults to `1.0` second.
+- `failure_tolerance: 0.0` rejects the first controller exception, `-1.0`
+  tolerates failures indefinitely, and positive values set a time allowance.
+- `odom_duration` defaults to `0.3` seconds for Controller Server velocity
+  estimation.
+- `use_realtime_priority: true` requests controller-thread priority `90` and
+  requires an adequate OS `rtprio` limit.
+- Lifecycle bond heartbeat defaults to `0.25` seconds; explicit legacy values
+  continue to override it.
 
-## Defaults that change behavior
+## Safety and map configuration
 
-- `RoundRobin` defaults to `wrap_around="false"` and fails after the final
-  child.
-- `bond_heartbeat_period` defaults to `0.25` seconds.
-- Controller Server's `control_frequency` is startup configuration, not a
-  dynamically mutable setting.
-- Rotation Shim `closed_loop` defaults to true and uses odometry.
-- Docking collision checking is enabled by default.
-- `publish_zero_velocity` defaults to true on Controller Server.
-- Partial multi-pose planning is disabled unless `allow_partial_planning` is
-  enabled.
-- Service introspection and navigator live-monitoring features are disabled
-  unless configured.
-- Savitzky-Golay Smoother exposes `window_size: 7` and `poly_order: 3`.
+### Keep the velocity chain ordered
 
-## High-value behavior-tree capabilities
+Collision Monitor normally consumes `cmd_vel_smoothed` and publishes the
+safety-adjusted command on `cmd_vel`. A stale source stops the robot after
+`source_timeout` (default `2.0` seconds); `0.0` disables the check. Keep
+`base_shift_correction` enabled for moving robots unless its processing cost is
+deliberately accepted.
 
-Use runtime selectors to switch progress checker, goal checker, path handler,
-controller, and planner IDs through selector topics without replacing the
-tree.
+### Configure zones deterministically
 
-Use `NonblockingSequence` when later children must tick while an earlier child
-is running. Pair `PauseResumeController` with `PersistentSequence` when a
-paused flow must resume at its previous child.
+Each polygon entry needs a geometry `type` and an `action_type`: `stop`,
+`slowdown`, `limit`, or `approach`. At least `min_points` observations must be
+inside, and simultaneous zones resolve to the most restrictive result. When
+migrating from Humble, use `min_points = max_points + 1`.
 
-Store blackboard-ID parameters under each navigator plugin. Load reusable
-subtrees from `bt_search_directories` and give selectable trees unique IDs.
+Velocity polygons use the first matching sub-polygon, so order overlaps and end
+with a range covering every velocity. For holonomic robots, linear bounds are
+nonnegative speed magnitudes and may be direction-gated.
 
-Near the goal, preserve a valid remaining path when the goal has not changed.
-The standard gated fallback uses `GlobalUpdatedGoal`, `IsGoalNearby`,
-`TruncatePathLocal`, and `ValidatePath` before deciding to replan.
+### Separate layers from filters
 
-## Planning and controller selection
+Costmap `plugins` build the layered map first; `filters` then apply keepout,
+speed, or binary policy on top. Give every listed filter a matching namespaced
+`plugin` parameter. Set a Static Layer's `map_topic` in that layer's namespace.
 
-Match the algorithm to both footprint and kinematics:
+### Handle unsafe cost encodings deliberately
 
-- NavFn, Smac 2D, and Theta Star suit circular differential or
-  omnidirectional robots.
-- Smac Hybrid-A* provides full-footprint, curvature-aware planning for
-  arbitrary-shaped Ackermann and legged platforms.
-- Smac Lattice supplies kinematically valid control sets for differential,
-  omnidirectional, and Ackermann robots.
-- DWB ordinarily serves differential and omnidirectional motion.
-- RPP prioritizes exact path following but is not omnidirectional.
-- MPPI covers differential, omnidirectional, Ackermann, and legged motion with
-  model-predictive control.
-- Vector Pursuit targets high-speed or resource-constrained path tracking.
+`custom_inscribed_radius: 0.0` bypasses the inscribed region and is unsafe for
+ordinary planners and controllers. Collision Monitor costmap sources treat
+unknown cost `255` separately from `cost_threshold`; disable
+`treat_unknown_as_obstacle` only when unknown space must not stop the robot.
 
-Controller Server waits for costmap freshness before control, supports
-bounded plugin-failure tolerance, and can run its controller thread at
-real-time priority `90` when the operating-system limits permit it.
+## Working method
 
-Use `goal_heading_mode` when Smac should consider multiple arrival
-orientations in one request. Use goal-checker capabilities rather than
-controller-specific state to preserve XY completion during final yaw
-alignment.
-
-## Costmap and localization checkpoints
-
-Keep ordinary layers in `plugins` and keep filters in `filters`; filters run
-after the combined layered costmap. Selective clear requests are atomic: an
-invalid or non-clearable plugin name makes the request fail without clearing
-anything.
-
-Compressed point-cloud transport is available to obstacle and voxel layers
-and Collision Monitor. Leave `transport_type: raw` unless the source and
-consumer share a configured compressed transport.
-
-Use a nonnegative AMCL `random_seed` for repeatable tests. Decide independently
-whether reset requires a new initial pose and whether replacement maps should
-be accepted.
-
-Treat `custom_inscribed_radius: 0.0` as a specialized representation; it
-bypasses the normal inscribed region and is unsafe for ordinary planning and
-control algorithms.
-
-## Collision Monitor safety checklist
-
-Confirm the command chain enters Collision Monitor on `cmd_vel_smoothed` and
-leaves on `cmd_vel`. Keep `source_timeout` enabled unless another mechanism
-provides equivalent stale-sensor fail safety.
-
-Order overlapping `velocity_polygon` entries deliberately because the first
-matching range wins, and finish with a range that covers every command.
-
-When migrating a Humble zone threshold, convert the largest safe
-`max_points` value to the smallest triggering count with
-`min_points = max_points + 1`.
-
-Use the `Toggle` service only with the understanding that it disables polygons
-while sensor checking remains active. Treat a `CostmapSource` carefully:
-`cost_threshold` and `treat_unknown_as_obstacle` directly determine which map
-cells become collision evidence.
-
-## New servers and operational tools
-
-Use Route Server for navigation over a predefined graph and contextual
-node/edge operations. It can provide the entire global route or long-range
-structure for a nearby free-space planner.
-
-Use Loopback Simulator for ideal odometry without physics or localization
-error. In Lyrical, launch only `loopback_simulator` because it includes the
-clock publisher.
-
-Docking supports charging and non-charging infrastructure, dynamic docks,
-and per-plugin docking direction. Recalculate custom three-axis detector
-rotations for Lyrical and implement the detection start/stop hooks in custom
-dock plugins.
-
-Use Vector Object Server to rasterize dynamic geometric regions into an
-`OccupancyGrid`. Use `opennav_following` for topic-detected or TF-tracked
-dynamic targets.
+1. Identify the robot geometry, motion model, ROS distribution, and every node
+   that participates in velocity, planning, and safety pipelines.
+2. Apply interface and parameter migrations before tuning algorithms.
+3. Select planners, controllers, goal checkers, and path handlers as a coherent
+   set, then configure their server-owned timing and failure policy.
+4. Validate BT blackboard ports, cancellation behavior, and navigation result
+   messages end to end.
+5. Exercise costmap filters and Collision Monitor zones with stale, unknown,
+   overlapping, and reverse-motion cases.
+6. Use deterministic AMCL seeds and loopback simulation for repeatable
+   integration tests where physical realism is not required.

@@ -10,206 +10,195 @@ metadata:
 
 # Prometheus Knowledge Patch
 
-Use this skill when upgrading, configuring, operating, or querying Prometheus and
-the task depends on recent PromQL, ingestion, storage, API, or deployment
-behavior. Check the running binary and configuration before applying advice;
-feature-gated behavior may differ even between servers on the same release.
+Use this skill when upgrading, configuring, querying, integrating, or operating
+Prometheus and recent behavior may affect the result. Inspect the deployed
+server, image, configuration, and client versions first. Apply version-tagged
+guidance only when it matches the deployment, and prefer observed behavior and
+the repository's tests over assumptions.
 
 ## Reference index
 
 | Reference | Topics |
 |---|---|
-| [histograms-tsdb-start-timestamps.md](references/histograms-tsdb-start-timestamps.md) | Native and classic histograms, TSDB, WAL/WBL, retention, encodings, start timestamps |
-| [http-apis-observability.md](references/http-apis-observability.md) | HTTP and status APIs, query statistics, server metrics, profiling, web UI |
-| [migration-security-deployment.md](references/migration-security-deployment.md) | Major migration, removed flags, security fixes, images, platform and log changes |
-| [promql.md](references/promql.md) | PromQL syntax, functions, range selectors, histogram semantics, result behavior |
-| [promtool-ui-feature-flags.md](references/promtool-ui-feature-flags.md) | Promtool commands and tests, UI diagnostics, feature gates and constraints |
-| [remote-storage-otlp.md](references/remote-storage-otlp.md) | Remote read/write, Remote Write 2, OTLP translation and ingestion, authentication |
-| [scraping-configuration-rules.md](references/scraping-configuration-rules.md) | Scraping, content negotiation, relabeling, reloads, rules, alerts, templates |
-| [service-discovery.md](references/service-discovery.md) | Kubernetes, cloud and catalog discovery, labels, filters, metrics and build tags |
+| [Histograms, TSDB, and start timestamps](references/histograms-tsdb-start-timestamps.md) | Native and classic histograms, TSDB compatibility, retention, WAL, encodings, start timestamps |
+| [HTTP APIs and observability](references/http-apis-observability.md) | Query and status APIs, OpenAPI, self-metrics, tracing, notification and service metrics |
+| [Migration, security, and deployment](references/migration-security-deployment.md) | Major-upgrade breaks, security floors, containers, logs, removed flags, redirect credentials |
+| [PromQL](references/promql.md) | Language changes, experimental syntax, functions, modifiers, annotations, result corrections |
+| [Promtool, UI, and feature flags](references/promtool-ui-feature-flags.md) | Validation and test tooling, UI behavior, feature discovery, current feature-gate constraints |
+| [Remote storage and OTLP](references/remote-storage-otlp.md) | Remote read/write, protocol versions, authentication, OTLP translation and delta ingestion |
+| [Scraping, configuration, and rules](references/scraping-configuration-rules.md) | Scrape negotiation, relabeling, reloads, rule evaluation, alerts, templates |
+| [Service discovery](references/service-discovery.md) | Provider additions, metadata labels, filters, identity, reliability, build tags |
 
-## Upgrade blockers first
+## Critical upgrade and security decisions
 
-### Remove promoted or replaced feature flags
+### Patch vulnerable lines before exposing endpoints
 
-Do not leave these former feature names in `--enable-feature` after the major
-upgrade:
+- On the 3.11 line, deploy at least 3.11.3. Earlier patch levels can disclose an
+  AzureAD client secret, accept oversized Snappy remote-read requests, and
+  expose stored-XSS paths in the UIs.
+- Upgrade STACKIT service-discovery users to a fixed 3.12 release because
+  rendered configuration previously exposed credentials.
+- Prometheus 3.13.0 fixes CVE-2026-44990 in the UI and strips credentials and
+  configured headers when an HTTP redirect crosses hosts.
+- Use 3.13.2 or later when CVE-2026-56852 or GHSA-hrxh-6v49-42gf applies.
 
-```text
-promql-at-modifier
-promql-negative-offset
-new-service-discovery-manager
-expand-external-labels
-no-default-scrape-port
-```
+Read [Migration, security, and deployment](references/migration-security-deployment.md)
+before choosing an image or patch level.
 
-They are normal behavior. Replace `agent` with `--agent` and
-`remote-write-receiver` with `--web.enable-remote-write-receiver`. Automatic
-`GOMEMLIMIT` and `GOMAXPROCS` sizing is also normal; opt out with
-`--no-auto-gomemlimit` or `--no-auto-gomaxprocs`.
+### Treat the v3 transition as a compatibility migration
 
-### Remove rejected startup flags
+- Remove feature gates that became default and replace the former `agent` and
+  `remote-write-receiver` gates with `--agent` and
+  `--web.enable-remote-write-receiver`.
+- Remove the deleted `storage.tsdb.allow-overlapping-blocks`,
+  `alertmanager.timeout`, and `storage.tsdb.retention` command-line flags.
+- Upgrade through v2.55 before reusing a TSDB with v3. A v3 data directory
+  cannot be downgraded below v2.55 without abandoning that persistent data.
+- Configure Alertmanager API v2 and use Alertmanager 0.16.0 or later.
+- Scrapes with a missing, unparsable, or unknown `Content-Type` now fail. Fix
+  the producer or configure `fallback_scrape_protocol` deliberately.
+- UTF-8 metric and label names are accepted by default. Set
+  `metric_name_validation_scheme: legacy` globally or per job when old name
+  validation is required.
+- Update log parsing for `log/slog` fields such as `time`, `source`, and
+  uppercase `level`, and update selectors for normalized `le` and `quantile`
+  values such as `"1.0"`.
 
-Delete `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and
-`storage.tsdb.retention`. The last name is not the current retention-time flag.
+See [Migration, security, and deployment](references/migration-security-deployment.md)
+for the complete transition checklist.
 
-### Respect the storage downgrade boundary
+## Histograms, storage, and downgrade boundaries
 
-A data directory written by the major release can be opened only by 2.55 or
-newer on downgrade. Upgrade through 2.55 before moving to the major release;
-downgrading farther means discarding that persistent data. Experimental XOR2,
-histogram start-timestamp encodings, and related blocks impose additional
-downgrade and downstream-consumer boundaries.
+### Native histogram activation is configuration-driven
 
-### Patch security-sensitive lines
-
-On the 3.11 line, deploy at least 3.11.3 for the AzureAD secret-disclosure,
-Snappy remote-read length-limit, and stored-XSS fixes. Upgrade STACKIT discovery
-users to a fixed 3.12 release. Use 3.13.0 or later where the web UI is exposed,
-and rely on the corrected cross-host redirect behavior so configured credentials
-are not forwarded to a different host.
-
-### Keep protocol peers compatible
-
-Alertmanager v1 configuration is gone; use Alertmanager 0.16.0 or later and
-`api_version: v2`. Third-party remote-read storage must return only series that
-match requested selectors. Remote Write 1.0 cannot transport custom-bucket
-native histograms.
-
-## Scraping quick reference
-
-### Make scrape protocols explicit when endpoints are imperfect
-
-A missing, unparsable, or unknown `Content-Type` now fails a scrape. Correct the
-producer or set `fallback_scrape_protocol`. Accepted families include
-protobuf-delimited, Prometheus text 0.0.4 or 1.0.0, and OpenMetrics 0.0.1 or
-1.0.0.
-
-Enabling created-timestamp zero ingestion changes the default negotiation order
-to prefer `PrometheusProto` unless `scrape_protocols` is explicitly configured.
-
-### Enable native histogram scraping in configuration
-
-The old `native-histograms` gate becomes a no-op once native histograms are
-stable, but scraping them still requires:
+Native histograms are stable starting in v3.9, so `native-histograms` becomes a
+no-op, but scraping them still requires:
 
 ```yaml
 global:
   scrape_native_histograms: true
 ```
 
-To retain a concurrently exposed classic histogram, use
-`always_scrape_classic_histograms`, not `scrape_classic_histograms`. It may be
-global or job-local. Per-target relabeling can override these choices with
-`__scrape_native_histograms__`, `__always_scrape_classic_histograms__`, and
-`__convert_classic_histograms_to_nhcb__`.
+Use `always_scrape_classic_histograms` to retain concurrently exposed classic
+histograms; the old `scrape_classic_histograms` key is obsolete. Global,
+per-job, and per-target controls are available, with target relabel labels
+providing the narrowest override.
 
-### Audit label and parser assumptions
+### Start-timestamp storage changes data compatibility
 
-Metric and label names accept UTF-8. Set `metric_name_validation_scheme: legacy`
-globally or per job to retain old validation. Relabel targets, replacements,
-rule names, and `label_replace()` have their own UTF-8 support details in the
-references.
+`st-storage` requires XOR2 for float chunks. Native- and float-histogram start
+timestamps additionally require `histograms-st-encoding`. The resulting WAL
+records need Prometheus 3.11 or later, and XOR2 or histogram-ST blocks may be
+unreadable by older servers and downstream block consumers.
 
-Classic histogram `le` and summary `quantile` label values are normalized as
-float-like strings, for example `"1.0"`. Update exact-match rules and dashboards.
-The regular-expression dot now matches newlines too.
+`st-synthesis` rewrites scraped cumulative values: it drops the first sample
+and subtracts it from later samples. It does not apply to remote write or OTLP,
+and it changes out-of-order handling and recovery after append failures.
 
-## PromQL quick reference
+Before enabling these features, read
+[Histograms, TSDB, and start timestamps](references/histograms-tsdb-start-timestamps.md).
 
-### Treat histogram results deliberately
+## PromQL compatibility quick reference
 
-`idelta()` and `irate()` accept native histograms. `rate()`, `increase()`, and
-`delta()` return gauge histograms for histogram input. Addition and subtraction
-can reconcile mismatched custom bounds, while negative multiplication or
-division and subtraction also produce gauge typing.
+- Regular-expression `.` matches newlines as well as other characters.
+- Duration and float literals are interchangeable, and duration expressions
+  later become default. Use current `min_of()` and `max_of()` names instead of
+  the earlier experimental duration `min()` and `max()` forms.
+- Millisecond range selectors retain their precision rather than rounding to
+  whole seconds.
+- `histogram_fraction()` and `histogram_quantile()` return no value when classic
+  and native histograms coexist at the same timestamp.
+- `fill()`, `fill_left()`, and `fill_right()` supply values for unmatched sides
+  of a binary expression; later fixes restore group-matched range results.
+- Start-timestamp-aware rates cannot be combined with `anchored` or `smoothed`
+  extended selectors.
+- `sort()`, `sort_by_label()`, and `sort_by_label_desc()` do nothing in range
+  queries and now emit warnings.
+- Query raw OTLP deltas with aligned `sum_over_time()` windows; counter
+  functions are wrong for natively stored delta values.
 
-Several scalar, sort, clamp, and time functions ignore histogram samples. A
-classic/native mix at one timestamp makes `histogram_fraction()` and
-`histogram_quantile()` emit no value. Histogram samples now count toward query
-sample limits.
+Read [PromQL](references/promql.md) before changing rule expressions or relying
+on experimental syntax.
 
-### Use duration expressions with the active spelling
+## Remote storage and OTLP quick reference
 
-Duration literals work as scalars and duration arithmetic is accepted. The
-duration-expression gate adds `step()` and bounded-duration helpers. Use
-`min_of()` and `max_of()` where the earlier experimental names `min()` and
-`max()` are no longer accepted:
+- Remote-write HTTP/2 now defaults off. Set `http_config.enable_http2: true`
+  only when retaining the previous behavior is intentional.
+- Replace deprecated remote-write input and highest-timestamp metrics with the
+  WAL-watcher, dropped-sample, and queue-highest-timestamp metrics.
+- Remote Write 2 uses “start timestamp” terminology and carries supported
+  start timestamps, type labels, and unit labels.
+- Too-old Remote Write 2 histogram samples return HTTP 400 so senders do not
+  retry them indefinitely.
+- Choose one OTLP delta mode: stateful delta-to-cumulative conversion or raw
+  native delta ingestion. They are mutually exclusive.
+- Validate translated label collisions through
+  `prometheus_api_otlp_translation_warnings_total`.
 
-```promql
-rate(http_requests_total[max_of(5m, step())])
-```
+Use [Remote storage and OTLP](references/remote-storage-otlp.md) for translation
+strategies, identity propagation, authentication, and receiver limits.
 
-Reject `NaN`, infinite, and out-of-range computed durations in generated
-queries. Millisecond range selectors retain their exact precision.
+## Scraping, configuration, and rules quick reference
 
-### Constrain extended range selectors
+- Explicitly configure `scrape_protocols` when created-timestamp zero injection
+  must not make protobuf the first negotiation choice.
+- Use `extra_scrape_metrics: true` globally or per job; the old
+  `extra-scrape-metrics` feature gate is deprecated.
+- Configuration reloads honor histogram scrape settings and automatic reload
+  watches referenced rule and scrape files. Automatic reload is stable.
+- Invalid remote-write queue settings are rejected while loading configuration.
+- Unknown rule dependencies evaluate serially; optional concurrent evaluation
+  applies only to dependency-free rules and should be bounded with
+  `--rules.max-concurrent-evals`.
+- API and UI clients must handle the explicit `unknown` state for an alerting
+  rule that has not yet evaluated.
 
-`anchored` is limited to `resets`, `changes`, `rate`, `increase`, and `delta`;
-`smoothed` is limited to `rate`, `increase`, and `delta`. Neither supports
-subqueries. Rules using `smoothed` need a `query_offset` of at least one scrape
-interval because evaluation needs a later sample.
+See [Scraping, configuration, and rules](references/scraping-configuration-rules.md)
+for relabel overrides, alert delivery, reload cleanup, and template helpers.
 
-Start-timestamp-aware rates cannot be combined with extended selectors. Consult
-the PromQL reference for boundary behavior, native-histogram support, and fixes
-to reset handling.
+## APIs and operational monitoring
 
-## OTLP and remote storage quick reference
+- Discover server capabilities at `/api/v1/features` and the machine-readable
+  HTTP contract at `/api/v1/openapi.yaml`.
+- Query endpoints accept `limit`. For `stats`, use only `true` or `all`; other
+  values are deprecated and scheduled for rejection.
+- Distinguish `samplesRead` storage I/O from `totalQueryableSamples` evaluator
+  loads. Enable `promql-per-step-stats` with `stats=all` for per-step reads.
+- The TSDB status endpoint caps statistics at 10,000 sets.
+- Monitor WAL/WBL unknown references, out-of-order distance, stale series,
+  native histogram head use, OTLP translation warnings, and service-discovery
+  update timestamps with their dedicated metrics.
+- Notification metrics gain an `alertmanager` dimension, and each Alertmanager
+  now has an independent send loop.
 
-### Choose exactly one delta strategy
+Read [HTTP APIs and observability](references/http-apis-observability.md) before
+updating clients, dashboards, alerts, or tracing integrations.
 
-`otlp-deltatocumulative` keeps per-series cumulative state in memory; restart
-causes a counter reset and stale state is cleared according to `max_stale`.
-`otlp-native-delta-ingestion` stores raw deltas and is mutually exclusive with
-that conversion. Query raw deltas with `sum_over_time`, not `rate()` or
-`increase()`, and align the range with collection cadence.
+## Service discovery and tooling
 
-### Preserve or translate identity intentionally
+- Audit relabeling whenever a provider changes metadata labels. In particular,
+  Hetzner `hcloud` no longer exposes `__meta_hetzner_datacenter`.
+- Use provider-side filters where supported to reduce target volume before
+  relabeling.
+- `promtool` debug output is on stderr. Keep stdout separate in pipelines.
+- Match `promtool` feature flags to gated PromQL syntax during checks, and use
+  its fuzzy comparisons and explicit test start timestamps for time-sensitive
+  rules.
+- Prefer the feature discovery API over guessing support from a version string.
 
-OTLP can preserve UTF-8 names, use underscore escaping without suffixes, leave
-names and attributes untranslated, promote scope metadata, or promote resource
-attributes with exclusions. Reserved `__type__` and `__unit__` labels override
-user values when their feature is enabled and are dropped by the same operations
-that drop `__name__`.
+Consult [Service discovery](references/service-discovery.md) and
+[Promtool, UI, and feature flags](references/promtool-ui-feature-flags.md) for
+provider-specific and command-specific details.
 
-### Validate remote-write assumptions
+## Working method
 
-Remote-write HTTP/2 defaults off so parallel queues can use multiple sockets;
-set `http_config.enable_http2: true` to retain the prior behavior. Configuration
-loading now validates queue fields. Too-old Remote Write 2 histogram samples
-return HTTP 400, and start-timestamp terminology replaces created timestamp in
-the 2.0-rc.4 schema.
-
-## Storage and start timestamps quick reference
-
-### Satisfy encoding prerequisites
-
-`st-storage` does not select a compatible block encoding. Float chunks must use
-XOR2 or startup and reload fail; persisting histogram start timestamps also
-requires `histograms-st-encoding`. Its `SamplesV2` WAL records require 3.11 or
-later to replay.
-
-Use `storage.tsdb.chunk_encoding.floats` to choose `xor` or `xor2` at runtime.
-Upgrade for the XOR2 chunk-snapshot restart fix and the early-stale-series
-checkpoint/replay fixes before relying on those paths.
-
-### Understand synthesis before enabling it
-
-`st-synthesis` drops the first scraped cumulative sample and subtracts it from
-later values. It does not support remote write or OTLP, rejects those metrics'
-out-of-order samples, and resets its per-series reference after append failure.
-Stored values therefore differ from scraped values.
-
-## Operational checks
-
-1. Query `/api/v1/features` instead of inferring enabled behavior from the
-   binary version.
-2. Validate configuration and rule files before reload; automatic reload is
-   stable and watches referenced rule and scrape files.
-3. Check `/api/v1/status/self_metrics`, TSDB block metadata, WAL/WBL replay
-   counters, stale-series metrics, and out-of-order-distance metrics during a
-   rollout.
-4. Keep API clients tolerant of pagination tokens, added fields and labels,
-   unknown alert state, statistics caps, and sample/read accounting changes.
-5. Use the topic references for exact flags, configuration keys, metrics, and
-   edge cases before changing production behavior.
+1. Identify the exact server version, image variant, enabled features, storage
+   formats, remote protocol versions, and relevant client versions.
+2. Read only the topic references needed for the task and honor their inline
+   version attributions.
+3. For upgrades, check security floors, removed options, storage downgrade
+   boundaries, protocol changes, metric renames, and label-shape changes.
+4. Validate configurations and rules with the matching `promtool` feature
+   gates, then exercise affected API clients and dashboards.
+5. Treat experimental formats and syntax as changeable. Preserve a rollback
+   path before enabling storage encodings or ingestion modes that rewrite data.

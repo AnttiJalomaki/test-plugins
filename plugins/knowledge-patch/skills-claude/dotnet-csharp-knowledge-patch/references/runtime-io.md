@@ -1,69 +1,97 @@
 # Runtime, I/O, and Core Libraries
 
-## Runtime and I/O compatibility (`10.0-guides`)
+Compatibility items are attributed to `10.0-guides`; new API items marked below are
+from `10.0`.
 
-### Buffering, filesystems, and TAR metadata
+## Buffered I/O and Shutdown
 
-- `BufferedStream.WriteByte` no longer flushes implicitly. Flush explicitly at
-  the required visibility or durability boundary.
-- On Linux, `DriveInfo.DriveFormat` reports filesystem types.
-- `GnuTarEntry` and `PaxTarEntry` omit `atime` and `ctime` by default. Set the
-  timestamps deliberately if an archive consumer requires them.
+`BufferedStream.WriteByte` no longer implicitly flushes. Call `Flush`/`FlushAsync` or
+dispose the stream at the point durability or downstream visibility is required.
 
-### Trace propagation and activity sampling
+The runtime no longer installs default termination-signal handlers. Applications that
+depend on graceful signal handling must own the lifecycle behavior and verify it in
+their deployment environment.
 
-The default trace-context propagator is the W3C standard. The sampling behavior
-of `ActivitySource.CreateActivity` and `ActivitySource.StartActivity` also
-changed. Test code that assumes a particular propagation format or that an
-activity is created under a specific listener/sampler arrangement.
+## Tracing, Filesystems, TAR, and LDAP
 
-### Core types and metadata
+The default trace-context propagator is the W3C standard. Check interoperability with
+systems that expect a different propagation format and configure propagation
+explicitly when required.
 
-- Generic-math shift operations behave consistently with the updated rules.
-- An explicit struct size is disallowed on a type with `InlineArray`.
-- `FilePatternMatch.Stem` is non-nullable.
-- `Type.MakeGenericSignatureType` validates its arguments more thoroughly.
-- `System.Linq.AsyncEnumerable` is part of the core libraries.
-- Reflection and trimming annotations were tightened or removed on several
-  APIs. This can expose both source and binary incompatibilities; recompile and
-  rerun trimming analysis rather than assuming annotation-only effects.
+On Linux, `DriveInfo.DriveFormat` reports filesystem types. Code that assumed a blank
+or generic value should accept concrete filesystem names.
 
-## Core-library APIs (`10.0`)
+`GnuTarEntry` and `PaxTarEntry` omit `atime` and `ctime` by default. Populate those
+timestamps explicitly when archive consumers require them.
 
-### Numeric string ordering
+`ActivitySource.CreateActivity` and `StartActivity` sampling behavior changed. Re-run
+sampling tests and avoid assuming that the same listeners or parent context produce
+the previous creation/start result.
 
-`CompareOptions.NumericOrdering` compares embedded digit sequences by numeric
-value. Consequently, `"2"` sorts before `"10"`, and `"2"` compares equal to
-`"02"`. Do not combine this option with index or prefix operations such as
-`IndexOf`, `StartsWith`, or `IsPrefix`.
+LDAP `DirectoryControl` parsing is stricter. Reject or repair malformed controls
+instead of depending on permissive parsing.
+
+## Core Types and Metadata
+
+Generic-math shift operations now behave consistently. Re-test custom numeric types
+whose operators depended on earlier inconsistent shift semantics.
+
+An explicit struct size cannot be combined with `InlineArray`. Remove the explicit
+size and let the inline-array layout be defined by its supported contract.
+
+`FilePatternMatch.Stem` is non-nullable. Update nullable annotations and eliminate
+branches that exist only for a null stem unless another source can introduce null.
+
+`Type.MakeGenericSignatureType` performs additional argument validation. Pass a valid
+generic type definition and suitable signature arguments; expect formerly tolerated
+invalid combinations to fail.
+
+`System.Linq.AsyncEnumerable` is part of the core libraries. Check namespace and
+package collisions where a separate async-LINQ surface was previously referenced.
+
+Reflection and trimming annotations were tightened or removed on several APIs. Treat
+new warnings as migration work: preserve required members, update annotations, and
+test trimmed publications instead of suppressing warnings wholesale.
+
+## Numeric String Ordering
+
+In `10.0`, `CompareOptions.NumericOrdering` compares embedded digit sequences
+numerically: `"2"` sorts before `"10"`, and `"2"` compares equal to `"02"`.
 
 ```csharp
 int order = CultureInfo.InvariantCulture.CompareInfo.Compare(
     "2", "10", CompareOptions.NumericOrdering);
 ```
 
-### `TimeSpan.FromMilliseconds` overloads
+Do not use `NumericOrdering` with index or prefix operations such as `IndexOf`,
+`StartsWith`, or `IsPrefix`; those combinations are unsupported.
 
-A real `TimeSpan.FromMilliseconds(long)` overload now works in expression
-trees. The second parameter of the existing two-`long` overload is no longer
-optional.
+## `TimeSpan.FromMilliseconds` Overload
+
+In `10.0`, a real `FromMilliseconds(long)` overload works in expression trees. The
+second parameter of the existing two-`long` overload is no longer optional.
 
 ```csharp
 Expression<Action> expression = () => TimeSpan.FromMilliseconds(1000L);
 ```
 
-### Tensor contracts and slice views
+Recompile calls that relied on the optional second parameter so overload binding is
+verified under the current API surface.
 
-`System.Numerics.Tensors` is stable and includes the nongeneric
-`IReadOnlyTensor` interface. Slicing returns a non-copying view; later reads
-observe changes in the underlying storage. Tensor arithmetic operators are
-available only when the element type implements the matching generic-math
-interfaces.
+## Tensor Contracts and Slices
 
-### AVX10.2 intrinsics
+In `10.0`, `System.Numerics.Tensors` is no longer experimental and includes the
+nongeneric `IReadOnlyTensor` contract. Slicing returns a non-copying view; access made
+after the source storage changes observes those changes. Copy when an independent
+snapshot is required.
 
-The x64 intrinsics are exposed under
-`System.Runtime.Intrinsics.X86.Avx10v2`, but JIT support is disabled by default
-because capable hardware was not available when the support shipped. Do not
-assume that the presence of the API means generated AVX10.2 instructions are
-enabled.
+Tensor arithmetic operators are available only when the element type implements the
+corresponding generic-math interfaces. Add suitable constraints to generic code that
+uses those operators.
+
+## AVX10.2 Intrinsics
+
+The `10.0` x64 intrinsics are under
+`System.Runtime.Intrinsics.X86.Avx10v2`, but JIT support remains disabled by default
+because capable hardware was not yet available. Do not make this API's presence a
+proxy for executable hardware/JIT support; retain a tested fallback path.

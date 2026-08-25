@@ -1,38 +1,56 @@
 # Sources, authentication, and artifacts
 
-## Contents
+## Use the stable OCIRepository API
 
-- [GitHub App authentication](#github-app-authentication)
-- [GitRepository transport and checkout](#gitrepository-transport-and-checkout)
-- [OCI repositories and registry authentication](#oci-repositories-and-registry-authentication)
-- [Workload Identity coverage](#workload-identity-coverage)
-- [Commit signing and source verification](#commit-signing-and-source-verification)
-- [ArtifactGenerator and ExternalArtifact](#artifactgenerator-and-externalartifact)
+`OCIRepository` is GA at `source.toolkit.fluxcd.io/v1` since 2.6.0. It is
+backward compatible with `v1beta2`, so a repository manifest migrates by
+changing only `apiVersion`. Migrate live stored objects before installing CRDs
+that remove the beta API.
 
-## GitHub App authentication
+The associated stable artifact media types are:
+
+- `application/vnd.cncf.flux.config.v1+json`
+- `application/vnd.cncf.flux.content.v1.tar+gzip`
+
+The stable CLI surface includes `flux build artifact`, `push artifact`,
+`pull artifact`, `tag artifact`, `diff artifact`, and `list artifacts`.
+
+## Validate registry provider selection
+
+Since 2.6.0, `OCIRepository` and `ImageRepository` reject a `spec.provider`
+that does not match the repository URL. Use `aws`, `azure`, or `gcp` only for
+a matching registry when automatic OIDC authentication is intended. For a
+public registry or image-pull-secret authentication, omit `provider` or set it
+to `generic`.
+
+GCS static authentication accepts only service-account keys as of 2.9.4.
+Other static GCS credential forms must be replaced. Source-controller and
+image-reflector-controller in that release also understand GCP sovereign-cloud
+artifact registry endpoints.
+
+## Authenticate as a GitHub App
 
 Since 2.5.0, source-controller and image-automation-controller can authenticate
-to GitHub repositories as a GitHub App installation. Create the Secret and
-reference it through `.spec.secretRef.name` on a `GitRepository` or
-`ImageUpdateAutomation`:
+to GitHub repositories as an App installation. Create the Secret with:
 
-```bash
+```shell
 flux create secret githubapp github-auth \
   --app-id=1 \
   --app-installation-id=2 \
   --app-private-key=~/private-key.pem
 ```
 
-`flux create source git --provider=github` supports the same mode. GitRepository
-GitHub App authentication also supports mutual TLS (since 2.7.0). Since 2.8.0,
-Flux can look up the installation ID from the repository owner, so supported
-flows do not require it to be supplied manually.
+Reference it through `spec.secretRef.name` on a `GitRepository`, or in the
+Git configuration of `ImageUpdateAutomation`. `flux create source git
+--provider=github` supports this mode too.
 
-## GitRepository transport and checkout
+From 2.7.0, GitRepository GitHub App authentication can also use mutual TLS.
+From 2.8.0, supported flows can discover the installation ID from the
+repository owner, so the ID need not be supplied manually.
 
-Since 2.6.0, `GitRepository` v1 accepts a directory list in
-`.spec.sparseCheckout` and HTTPS Git repositories can authenticate with mutual
-TLS:
+## Limit Git checkout and configure TLS
+
+`GitRepository` v1 accepts `spec.sparseCheckout` since 2.6.0:
 
 ```yaml
 spec:
@@ -41,64 +59,77 @@ spec:
     - clusters/production
 ```
 
-## OCI repositories and registry authentication
+Only the listed directories are fetched. HTTPS Git repositories can also use
+mutual-TLS client authentication.
 
-`OCIRepository` is GA at `source.toolkit.fluxcd.io/v1` (since 2.6.0) and is
-backward compatible with `v1beta2`; migration requires only an `apiVersion`
-change.
+ImageUpdateAutomation sparse checkout is a separate 2.7.0 controller feature;
+enable it on image-automation-controller with
+`--feature-gates=GitSparseCheckout=true`.
 
-`OCIRepository` and `ImageRepository` reject a `.spec.provider` that does not
-match the repository URL. Use `aws`, `azure`, or `gcp` only for a matching
-registry with automatic OIDC authentication. For public repositories or
-image-pull-secret authentication, omit the provider or set it to `generic`.
+## Choose object-level Workload Identity
 
-The opt-in `ObjectLevelWorkloadIdentity` gate supports per-object and
-per-tenant identities for `OCIRepository` and `ImageRepository` registry
-access (since 2.6.0).
+The 2.6.0 `ObjectLevelWorkloadIdentity` feature gate allows each object or
+tenant to select an identity rather than sharing one controller identity. Its
+initial uses include:
 
-## Workload Identity coverage
+- Kustomization SOPS decryption through KMS services;
+- OCIRepository and ImageRepository registry access.
 
-The object-level Kubernetes Workload Identity integrations added in 2.7.0
-include:
+The 2.7.0 expansion adds object-level identity through
+`spec.serviceAccountName` for:
 
-- `Bucket.spec.serviceAccountName` for S3, Azure Blob Storage, and GCS.
-- `GitRepository.spec.serviceAccountName` for Azure DevOps.
-- `Provider.spec.serviceAccountName` for Azure DevOps, Azure Event Hub, and
-  Google Pub/Sub.
-- `Kustomization.spec.kubeConfig.configMapRef.name` and
-  `HelmRelease.spec.kubeConfig.configMapRef.name` for remote EKS, AKS, and GKE
-  authentication without static kubeconfig Secrets.
+- Bucket access to S3, Azure Blob Storage, and GCS;
+- GitRepository access to Azure DevOps;
+- notification Provider access to Azure DevOps, Azure Event Hub, and Google
+  Pub/Sub.
 
-Since 2.7.0, image-automation-controller can also use Kubernetes Workload
-Identity for Azure DevOps repositories. Since 2.9.0, GitRepository access and
-bootstrap support AWS CodeCommit through Workload Identity.
+Image-automation-controller can also use Kubernetes Workload Identity for
+Azure DevOps repositories.
 
-For SOPS and Vault-compatible decryption identity, see
-[kustomizations-and-helm.md](kustomizations-and-helm.md).
+For remote-cluster reconciliation without a static kubeconfig Secret, use
+`Kustomization.spec.kubeConfig.configMapRef.name` or
+`HelmRelease.spec.kubeConfig.configMapRef.name`. These flows support remote
+EKS, AKS, and GKE authentication when the referenced ConfigMap and environment
+are configured correctly.
 
-## Commit signing and source verification
+## Use keyless Git providers
 
-Since 2.9.0:
+Since 2.9.0, `GitRepository` and `flux bootstrap` can authenticate to AWS
+CodeCommit with Workload Identity. Prefer this to long-lived AWS Git
+credentials when the cluster and repository trust are configured for it.
 
-- `GitRepository.spec.verify` accepts SSH-signed Git commits as well as GPG
-  signatures.
-- `ImageUpdateAutomation.spec.git.commit.signingKey` can SSH-sign pushed
-  commits.
-- `flux bootstrap` can SSH-sign its manifest commits.
-- Source-controller can use a custom Sigstore trusted root for keyless OCI
-  artifact and container image verification. This permits air-gapped systems
-  to use self-hosted Rekor and Fulcio infrastructure.
+## Verify and sign source revisions
 
-OCI artifact and container image verification supports Cosign v3 (since
-2.8.0).
+`GitRepository.spec.verify` supports SSH-signed commits in addition to GPG
+signatures since 2.9.0. Image automation can SSH-sign pushed commits through
+`ImageUpdateAutomation.spec.git.commit.signingKey`, and `flux bootstrap` can
+SSH-sign the manifest commits that it pushes.
 
-## ArtifactGenerator and ExternalArtifact
+OCI artifacts and container images support Cosign v3 verification since
+2.8.0. In 2.9.0, source-controller can load a custom Sigstore trusted root for
+keyless verification. Use that trusted root for air-gapped environments with
+self-hosted Rekor and Fulcio rather than assuming the public Sigstore trust
+domain.
 
-Install the optional source-watcher component with
-`--components-extra=source-watcher` during bootstrap or installation (since
-2.7.0). Its `ArtifactGenerator` can combine GitRepository, OCIRepository, and
-Bucket content or split a monorepo into independently revised
-`ExternalArtifact` objects.
+## Install source-watcher
+
+`ArtifactGenerator` and `ExternalArtifact` are supplied by the optional
+source-watcher component introduced in 2.7.0. Add it at bootstrap or install
+time:
+
+```shell
+--components-extra=source-watcher
+```
+
+The 2.9.4 OCI `flux-manifests` artifact includes source-watcher, so that
+distribution can be used to deploy ArtifactGenerator support. Upgrade its CRD
+along with the component because the 2.9.4 schema changes.
+
+## Combine sources into an ExternalArtifact
+
+`ArtifactGenerator` can combine content from GitRepository, OCIRepository, and
+Bucket sources. Copy strategies can overwrite or merge content into one
+artifact:
 
 ```yaml
 apiVersion: source.extensions.fluxcd.io/v1beta1
@@ -128,16 +159,28 @@ spec:
           strategy: Merge
 ```
 
-A HelmRelease can consume the result with `chartRef.kind: ExternalArtifact`.
-Path-specific `copy.from` globs can produce multiple artifacts from a monorepo;
-a Kustomization uses `sourceRef.kind: ExternalArtifact`, so only the artifact
-whose paths changed triggers that deployment.
+A HelmRelease consumes the result through `spec.chartRef`:
 
-ArtifactGenerator can extract and modify Helm charts (since 2.8.0).
+```yaml
+spec:
+  chartRef:
+    kind: ExternalArtifact
+    name: podinfo-composite
+```
 
-Since 2.9.0, `ArtifactGenerator.spec.pathPattern` discovers matching monorepo
-directories. Named captures become template variables for artifact names,
-labels, and copy rules:
+ArtifactGenerator can extract and modify Helm charts while generating outputs
+since 2.8.0.
+
+## Split and discover monorepo content
+
+Multiple artifact entries with path-specific `copy.from` globs split a
+monorepo into independently revised `ExternalArtifact` objects. A
+Kustomization consumes one through `sourceRef.kind: ExternalArtifact`; only the
+artifact whose selected paths changed triggers that deployment.
+
+Since 2.9.0, `ArtifactGenerator.spec.pathPattern` discovers matching
+directories. Named captures become variables in artifact names, labels, and
+copy rules:
 
 ```yaml
 spec:
@@ -152,3 +195,6 @@ spec:
         - from: "@monorepo/apps/{app}/envs/{env}/**"
           to: "@artifact/"
 ```
+
+Use discovery when directory naming is regular; use explicit artifacts when
+each output needs bespoke copy or merge rules.

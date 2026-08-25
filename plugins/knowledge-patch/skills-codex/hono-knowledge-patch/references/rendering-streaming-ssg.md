@@ -1,50 +1,103 @@
 # Rendering, Streaming, and Static Generation
 
-## Contents
+## Stop long-lived producers on abort
 
-- [Response streaming](#response-streaming)
-- [Static generation entry points](#static-generation-entry-points)
-- [Route-to-file generation](#route-to-file-generation)
-- [SSG plugins](#ssg-plugins)
-- [JSX rendering and CSS](#jsx-rendering-and-css)
-- [Client JSX and view transitions](#client-jsx-and-view-transitions)
-
-## Response streaming
-
-### Run an abort-aware producer
-
-`stream`, `streamText`, and `streamSSE` from `hono/streaming` run an async producer. Depending on the helper, their writers support byte or text writes, piping a readable stream, sleeping, and abort callbacks; the SSE writer also provides `writeSSE()`.
-
-The response closes when the producer finishes. Stop a long-lived producer when `stream.aborted` becomes true.
+Long-lived `stream`, `streamText`, and `streamSSE` producers should stop when
+`stream.aborted` becomes true. Register `stream.onAbort()` for cleanup.
 
 ```ts
-return streamSSE(c, async (stream) => {
-  while (!stream.aborted) {
-    await stream.writeSSE({ data: 'tick', event: 'tick' })
-    await stream.sleep(1000)
+return streamText(
+  c,
+  async (stream) => {
+    stream.onAbort(() => cleanup())
+    while (!stream.aborted) {
+      await stream.writeln(await nextMessage())
+      await stream.sleep(1000)
+    }
+  },
+  (err, stream) => {
+    console.error(err)
+    stream.writeln('Stream failed')
   }
+)
+```
+
+A producer error after the response starts goes to the streaming helper's
+optional third callback rather than `app.onError()`. The callback may finish or
+close the existing stream, but it cannot replace the response.
+
+If streaming misbehaves under Wrangler, set `Content-Encoding: Identity` before
+returning the streaming response.
+
+## Nonce streamed JSX scripts
+
+Since `4.8.0`, `StreamingContext` accepts `scriptNonce`. Wrap streamed `Suspense`
+or `ErrorBoundary` output with that value and allow the same nonce in the
+response CSP, because those features may emit inline scripts.
+
+```tsx
+<StreamingContext value={{ scriptNonce: nonce }}>
+  <Suspense fallback={<p>Loading…</p>}>
+    <Page />
+  </Suspense>
+</StreamingContext>
+```
+
+## Start Service Worker applications with the helper
+
+Since `4.8.0`, import `fire` from `hono/service-worker` and call `fire(app)`.
+The older `app.fire()` method is deprecated.
+
+```ts
+import { fire } from 'hono/service-worker'
+
+fire(app)
+```
+
+## Use the SSG plugin pipeline
+
+Since `4.8.0`, `toSSG()` accepts `SSGPlugin` implementations through the
+`plugins` option. Plugins may use hooks such as `afterGenerateHook` to emit
+additional files. The legacy SSG hook options are deprecated as of `4.9.0`;
+move custom hooks into plugin objects.
+
+The default plugin introduced in `4.10.0` defines the recommended generation
+behavior. With no `plugins` option, it skips non-200 responses. Supplying custom
+plugins disables that implicit default, so include `defaultPlugin()` explicitly
+when its filtering is still wanted.
+
+`beforeRequestHook` and `afterResponseHook` may return a changed value or `false`
+to skip a route or generated file.
+
+```ts
+const getOnly: SSGPlugin = {
+  beforeRequestHook: (request) =>
+    request.method === 'GET' ? request : false,
+}
+
+await toSSG(app, fs, {
+  plugins: [getOnly, defaultPlugin()],
 })
 ```
 
-### Handle errors after the response starts
+## Generate redirect pages before normal pages
 
-Streaming helpers accept an optional third callback, `(err, stream)`, for producer failures. These errors do not reach the application's `onError` hook because the response has already started. The callback may write to or close the existing stream, but it cannot replace the response.
-
-### Apply the Wrangler workaround when needed
-
-If Cloudflare Workers streaming misbehaves under Wrangler, set the identity content encoding before returning the stream:
+Since `4.12.0`, `redirectPlugin()` emits HTML pages for 301, 302, 303, 307, and
+308 responses. Put it before `defaultPlugin()` so redirects are handled before
+normal generation.
 
 ```ts
-c.header('Content-Encoding', 'Identity')
+await toSSG(app, fs, {
+  plugins: [redirectPlugin(), defaultPlugin()],
+})
 ```
 
-### Add a CSP nonce to streamed JSX
+## Select runtime-specific SSG entry points
 
-Set `StreamingContext` to `value={{ scriptNonce: nonce }}` so inline scripts generated for streamed `Suspense` and `ErrorBoundary` receive a nonce (since 4.8.0). Allow that same nonce in the response CSP header.
-
-## Static generation entry points
-
-On Node.js, import `toSSG(app, fs, options)` from `hono/ssg` and pass a promise-based filesystem object. It defaults to `./static` with concurrency `2`. The result has `success`, generated `files`, and an optional `error`.
+On Node.js, import `toSSG` from `hono/ssg` and pass a promise-based filesystem
+object. Bun and Deno export filesystem-bound `toSSG(app, options)` functions
+from `hono/bun` and `hono/deno`. Generation defaults to `./static` with
+concurrency `2` and returns `{ success, files, error? }`.
 
 ```ts
 import fs from 'node:fs/promises'
@@ -53,31 +106,28 @@ import { toSSG } from 'hono/ssg'
 const result = await toSSG(app, fs, { dir: './dist', concurrency: 4 })
 ```
 
-The Deno and Bun adapters instead export `toSSG(app, options)` from `hono/deno` and `hono/bun`; do not pass a filesystem argument to those adapter entry points.
+## Map routes to generated files
 
-## Route-to-file generation
-
-### Understand path mapping
-
-SSG maps routes below the output directory as follows:
-
-| Route | Generated path |
-| --- | --- |
-| `/` | `index.html` |
-| `/path` | `path.html` |
-| `/path/` | `path/index.html` |
-
-Extensions derive from each response's `Content-Type`. Add MIME mappings with `extensionMap`, usually by extending `defaultExtensionMap`.
+SSG maps `/` to `index.html`, `/path` to `path.html`, and `/path/` to
+`path/index.html`. File extensions come from each response's `Content-Type`.
+Extend `defaultExtensionMap` through `extensionMap` for custom types. A
+trailing-slash route always becomes `index.<ext>`.
 
 ```ts
-toSSG(app, fs, {
-  extensionMap: { 'application/x-html': 'html', ...defaultExtensionMap },
+await toSSG(app, fs, {
+  extensionMap: {
+    'application/x-html': 'html',
+    ...defaultExtensionMap,
+  },
 })
 ```
 
-### Enumerate parameterized routes
+## Select routes for static generation
 
-Attach `ssgParams()` before a parameterized handler to provide every parameter object that should be generated.
+Use `ssgParams()` to enumerate parameter sets for a dynamic route,
+`disableSSG()` to omit a route, and `onlySSG()` for a route that is generated but
+becomes `c.notFound()` afterward. `isSSGContext(c)` lets shared handlers vary
+their output while `toSSG` runs.
 
 ```ts
 app.get(
@@ -85,45 +135,26 @@ app.get(
   ssgParams(async () => [{ id: '1' }, { id: '2' }]),
   (c) => c.html(`<h1>${c.req.param('id')}</h1>`)
 )
+app.get('/api', disableSSG(), (c) => c.text('dynamic'))
+app.get('/build-only', onlySSG(), (c) => c.html('static'))
 ```
 
-### Select generation modes
+## Derive renderer and CSS options
 
-- `disableSSG()` excludes a route from generation.
-- `onlySSG()` generates a route and then makes it return `c.notFound()` after `toSSG` finishes.
-- `isSSGContext(c)` lets one handler return different content during static generation and normal serving.
+Since `4.12.0`, `jsxRenderer()` accepts function-based options so renderer
+configuration can depend on each request. `createCssContext()` accepts
+`classNameSlug` for project-specific generated class-name slugs.
 
-## SSG plugins
+Keep request-derived rendering state isolated; current patched behavior isolates
+JSX context per request and validates JSX tag and attribute names.
 
-### Use the plugin array
+## Use the browser JSX runtime
 
-`toSSG()` accepts a `plugins` array of `SSGPlugin` objects from 4.8.0. Hooks such as `afterGenerateHook(result, fsModule, options)` can create artifacts after generation. `DEFAULT_OUTPUT_DIR` exposes the default destination.
-
-Legacy SSG hook options are deprecated from 4.9.0; migrate the hooks into objects passed through `plugins`.
-
-### Compose redirect and default behavior
-
-Hono provides a default plugin with the recommended generation behavior from 4.10.0.
-
-In 4.12, `redirectPlugin()` turns 301, 302, 303, 307, and 308 responses into HTML redirect pages. Put it before `defaultPlugin()` so redirects are handled before ordinary pages.
-
-```ts
-import { defaultPlugin, redirectPlugin, toSSG } from 'hono/ssg'
-
-await toSSG(app, fs, {
-  plugins: [redirectPlugin(), defaultPlugin()],
-})
-```
-
-## JSX rendering and CSS
-
-In 4.12, `jsxRenderer` accepts function-based options for request-dependent renderer settings. `createCssContext` accepts `classNameSlug` to customize generated class-name slugs.
-
-## Client JSX and view transitions
-
-### Configure the client runtime
-
-Render browser components with `render()` from `hono/jsx/dom` and import hooks from `hono/jsx`. For the smaller client runtime, set `jsxImportSource` to `hono/jsx/dom`.
+Browser components render with `render()` from `hono/jsx/dom`. React-compatible
+or partially compatible hooks such as `use()`, `useSyncExternalStore()`,
+`useFormStatus()`, `useActionState()`, and `useOptimistic()` come from
+`hono/jsx`. Set `jsxImportSource` to `hono/jsx/dom` for the smaller client
+runtime.
 
 ```json
 {
@@ -134,13 +165,16 @@ Render browser components with `render()` from `hono/jsx/dom` and import hooks f
 }
 ```
 
-Its compatible or partially compatible surface includes transitions and deferred values, plus `use()`, `useSyncExternalStore()`, `useFormStatus()`, `useActionState()`, and `useOptimistic()`.
+## Apply JSX view transitions
 
-### Animate state changes
+`startViewTransition()` from `hono/jsx` wraps a state update in the browser View
+Transitions API. `viewTransition()` from `hono/jsx/dom/css` creates a class with
+a unique transition name for `::view-transition-old()` and
+`::view-transition-new()` rules.
 
-- `startViewTransition()` from `hono/jsx` wraps a state update in the browser View Transitions API.
-- `viewTransition()` from `hono/jsx/dom/css` creates a class with a unique transition name and inserts it into `::view-transition-old()` and `::view-transition-new()` rules.
-- `useViewTransition()` returns `[isUpdating, startViewTransition]` and reevaluates the component during the update and after the transition finishes.
+`useViewTransition()` returns `[isUpdating, startViewTransition]` and
+reevaluates the component during the update and again when the transition
+finishes.
 
 ```tsx
 const [isUpdating, start] = useViewTransition()

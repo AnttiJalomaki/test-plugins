@@ -1,14 +1,11 @@
-# Search parameters
+# Search Parameters
 
-## Validation failure flow
+## Handle validation failures deliberately
 
-`validateSearch` receives the JSON-parsed but still unvalidated search object.
-If validation throws, the route's `onError` hook runs with
-`error.routerCode === 'VALIDATE_SEARCH'`, then the route renders its
-`errorComponent`.
-
-Use tolerant defaults when an externally edited or malformed URL should remain
-navigable:
+`validateSearch` receives the JSON-parsed but unvalidated search object. If it
+throws, the route's `onError` runs with `error.routerCode ===
+'VALIDATE_SEARCH'`, then the route renders `errorComponent`. Prefer tolerant
+schema fallbacks when malformed shared URLs should still navigate.
 
 ```tsx
 const searchSchema = z.object({
@@ -21,20 +18,18 @@ export const Route = createFileRoute('/products')({
 })
 ```
 
-Reserve thrown validation errors for URLs that should interrupt navigation and
-enter the route error flow.
+## Preserve validator input and output types
 
-## Validator input and output types
+Navigation is typed against the validator's input; reading validated search is
+typed against its output. A default can make a field optional for links only
+if both sides are inferred correctly.
 
-Search validators have two important types:
-
-- navigation is checked against the validator's input type;
-- `Route.useSearch()` and other reads expose its output type.
-
-Defaults make search fields optional at navigation sites only if the integration
-preserves both types. For Zod v3, use `@tanstack/zod-adapter`; use its `fallback`
-helper instead of a Zod v3 `.catch()` that erases the needed input/output
-distinction.
+- Zod v3 requires `@tanstack/zod-adapter`. Wrap the schema with
+  `zodValidator`, and use the adapter's `fallback` instead of a type-erasing
+  Zod v3 `.catch()`.
+- Zod v4 schemas can be passed directly.
+- Standard Schema implementations can be passed directly, including Valibot
+  1, ArkType 2, and Effect's `standardSchemaV1`.
 
 ```tsx
 import { fallback, zodValidator } from '@tanstack/zod-adapter'
@@ -47,27 +42,18 @@ export const Route = createFileRoute('/products')({
   validateSearch: zodValidator(searchSchema),
 })
 
-// The default makes search optional for this navigation.
+// The default makes search optional here.
 const link = <Link to="/products" />
 ```
 
-Zod v4 schemas can be supplied directly. Standard Schema implementations can
-also be supplied directly, including Valibot 1, ArkType 2, and Effect's
-`standardSchemaV1`.
+## Transform destinations with search middlewares
 
-## Search middlewares
+A route's `search.middlewares` transforms search for links to that route or
+its descendants. The chain runs again on navigation after validation, and
+middlewares compose through `next`.
 
-Configure route-level search transforms under `search.middlewares`. A route's
-middlewares apply while constructing links to that route or its descendants.
-They run again during navigation, after validation.
-
-Middlewares compose through `next`. The built-in helpers cover common URL
-policy:
-
-- `retainSearchParams` carries selected values from the current search into the
-  next location;
-- `stripSearchParams` removes values equal to supplied defaults, keeping the
-  visible URL compact.
+`retainSearchParams` carries selected values from the current search into the
+destination. `stripSearchParams` removes values equal to the supplied defaults.
 
 ```tsx
 import {
@@ -86,7 +72,3 @@ export const Route = createFileRoute('/search')({
   },
 })
 ```
-
-Because these middlewares affect descendant links as well as the route itself,
-place them at the narrowest route whose descendants share the same search
-policy.

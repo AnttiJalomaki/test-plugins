@@ -1,10 +1,19 @@
-# Queries, schema, and indexing
+# Queries, Schema, and Indexing
 
-## CQL schema and expression behavior
+Use this reference for query correctness, schema rendering and compatibility,
+SAI, legacy secondary indexes, row filtering, and clustering order.
 
-### Descending UDT and vector keys
+## CQL schema and query semantics
 
-Frozen UDTs and vectors can be clustering keys ordered with `DESC` (5.0.3):
+### Read partitions after column deletion (since 5.0.3)
+
+Reading a partition whose column was deleted no longer fails with
+`IndexOutOfBoundsException`. Regression tests should retain the delete-then-read
+sequence when applications depend on it.
+
+### Use descending UDT and vector keys (since 5.0.3)
+
+Frozen UDTs and vectors can be clustering keys ordered with `DESC`.
 
 ```cql
 CREATE TYPE coordinates (x int, y int);
@@ -16,92 +25,118 @@ CREATE TABLE samples (
 ) WITH CLUSTERING ORDER BY (position DESC, embedding DESC);
 ```
 
-Snapshot-generated schema CQL also emits definitions for UDTs used as reverse
-clustering columns (5.0.3), so restoring such schema no longer depends on
-manually supplying the missing type definition.
+### Render UDTs in snapshot schema CQL (since 5.0.3)
 
-### Descriptions, aggregates, and names
+Snapshot-generated schema CQL includes definitions for UDTs used as reverse
+clustering columns. Restore tooling should execute those definitions before the
+dependent table statement.
 
-`DESCRIBE TABLE` includes the table's materialized views (5.0.4). Treat the
-output as a more complete schema representation when diffing or recreating a
-table.
+### Include views in `DESCRIBE TABLE` (since 5.0.4)
 
-Built-in `min` and `max` return correct values for descending clustering
-columns (5.0.4). Remove workarounds that inverted or post-processed the older
-incorrect result.
+`DESCRIBE TABLE` includes the table's materialized views. Schema capture tools
+must avoid separately appending the same view definitions a second time.
 
-Table creation rejects names that would lead to filenames that are too long
-(5.0.6). DDL generators should cap constructed identifiers and handle a
-validation error before any filesystem path is created.
+### Compute descending extrema correctly (since 5.0.4)
 
-`BytesType` compatibility is restricted to scalar types (5.0.7). Schema
-evolution and compatibility checks must not treat it as compatible with
-non-scalar types.
+The built-in `min` and `max` functions return correct results for clustering
+columns ordered descending. Do not invert their results as a client-side
+workaround.
 
-## Read and filtering correctness
+### Restrict `BytesType` compatibility (since 5.0.7)
 
-Reading a partition after one of its columns has been deleted no longer throws
-`IndexOutOfBoundsException` (5.0.3).
+`BytesType` is compatible only with scalar types. Schema evolution and schema
+inspection tools must reject compatibility with non-scalar types.
+
+## Filtering and reconciliation
+
+### Keep unresolved static rows in RFP (since 5.0.4)
 
 Replica filtering protection does not apply its fetch limit while a static row
-is unresolved (5.0.4). This prevents premature limiting during resolution.
+remains unresolved. This prevents the row from being prematurely excluded from
+distributed reconciliation.
+
+### Evaluate numeric range intersections (since 5.0.5)
 
 `RowFilter.isMutableIntersection()` evaluates numeric ranges on one column
-correctly (5.0.5). Do not preserve a planner workaround based on the former
-misclassification.
+correctly. Planning or extension code can use its result without compensating
+for the former same-column range error.
 
-When reconciliation is required, `RowFilter` keeps deletions instead of
-purging them early (5.0.5). This prevents deletion loss while replicas' results
-are reconciled.
+## Index selection and accepted values
 
-## Index selection and validation
+### Prefer a legacy index when it coexists with SAI (since 5.0.4)
 
-When both a legacy secondary index and SAI exist on one column, Cassandra
-prioritizes the legacy secondary index (5.0.4). Query diagnostics and
-performance tests should expect that selection order.
+If one column has both a legacy secondary index and SAI, Cassandra prioritizes
+the legacy secondary index. Query plans and performance tests must account for
+that choice.
 
-Indexes reject empty values for non-literal types and for any other type that
-does not permit an empty value (5.0.4). Validate such writes instead of relying
-on an index to retain them.
+### Reject invalid empty values (since 5.0.4)
 
-During compaction, secondary-index implementations are notified about rows in
-fully expired SSTables (5.0.6). Custom index implementations should handle the
-notification consistently with other expired-row cleanup.
+Indexes do not accept empty values for non-literal types or other types that
+forbid empty values. Validate such values before indexing rather than expecting
+the index to store them.
+
+### Notify indexes about fully expired rows (since 5.0.6)
+
+During compaction, secondary index implementations receive notifications for
+rows in fully expired SSTables. Custom index implementations should handle the
+callback consistently with other row-removal paths.
 
 ## SAI query correctness
 
-Intersection queries avoid consistency violations involving repaired index
-matches and matches across multiple non-indexed columns (5.0.4).
+### Preserve intersection consistency (since 5.0.4)
 
-Multi-column SAI queries accept a non-indexed composite column that contains a
-map instead of failing during filter evaluation (5.0.5).
+SAI intersection queries avoid consistency violations involving repaired index
+matches and matches on multiple non-indexed columns. Remove client-side query
+splitting that existed only to avoid those cases.
 
-Single-node SAI queries involving static columns return correct results
-(5.0.5).
+### Query composite map filters (since 5.0.5)
 
-Range queries against early-open BTI SSTables return correct results before
-the files are fully opened (5.0.6).
+Multi-column SAI queries work when a non-indexed column is a composite that
+contains a map. The filter no longer fails merely because of that structure.
 
-SAI approximate-nearest-neighbor queries use score-ordered iterators (5.0.7).
-The corrected execution both preserves score ordering and improves query
-speed; test relevance and latency together.
+### Query static columns on one node (since 5.0.5)
 
-## SAI lifecycle and observability
+Single-node SAI queries involving static columns return correct results. Keep
+static and regular column expectations distinct in result validation.
 
-`nodetool tablestats` exposes selected SAI index state and query-performance
-metrics through the normal table-statistics output (5.0.3):
+### Execute ANN in score order (since 5.0.7)
 
-```shell
-nodetool tablestats
-```
+SAI approximate-nearest-neighbor queries use score-ordered iterators. This
+corrects result execution and improves query speed; do not re-sort a truncated
+result set as a substitute for server-side score ordering.
 
-Already-built SAI indexes no longer lag behind the node's `UP` state after a
-restart (5.0.5). Clients should not encounter the earlier window in which a
-node was up but those indexes were not queryable.
+### Reconcile distributed static tombstones (since 5.0.9)
 
-When repair flushes a partial partition or row modification, SAI marks the
-index as non-empty (5.0.5).
+For SAI queries on static columns, range tombstones are sent to the coordinator
+so deleted ranges can be reconciled. Distributed tests should cover deletion
+and replica divergence, not only single-node reads.
 
-When the current SSTable writer switches, Cassandra flushes the active SAI
-segment builder (5.0.6), so segment state is not stranded at the writer
-boundary.
+## SAI lifecycle and storage integration
+
+### Mark indexes queryable after restart (since 5.0.5)
+
+Already-built SAI indexes no longer have a gap between the node being marked
+`UP` and the indexes becoming queryable. Clients need not delay solely to cover
+that former state transition.
+
+### Mark state after repair flushes (since 5.0.5)
+
+When repair flushes a partial partition or row modification, SAI marks the index
+as non-empty. Index state therefore reflects repair-produced data.
+
+### Flush segments at writer switches (since 5.0.6)
+
+Switching the current SSTable writer flushes the active SAI segment builder.
+Index segment state is not left pending across the writer boundary.
+
+### Force the optimized status format (since 5.0.7)
+
+`IndexStatusManager` can be forced to use the optimized index-status format
+when automatic selection is undesirable. Apply the override consistently
+across nodes that exchange or consume index status.
+
+### Validate checksums per segment (since 5.0.9)
+
+SAI component checksum validation operates per segment. Segmented index
+components are checked against their own checksum boundaries rather than a
+whole-component assumption.

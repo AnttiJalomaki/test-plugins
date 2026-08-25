@@ -1,137 +1,217 @@
 # Tooling, debugging, and testing
 
-Use this reference for interactive shells and pdb, profiling and monitoring, CLI parsing, logging and testing, imports, and diagnostics.
+## Imports, startup, and packaging
 
-## Interactive shell and debugger
+### Nested import resources (`whatsnew-3.13`)
 
-### Interactive-shell controls (Python 3.13)
-The new terminal REPL supports multiline editing, F1 help, F2 history browsing without output or prompts, and F3 paste mode. Set `PYTHON_BASIC_REPL` to fall back to the basic REPL, use `PYTHON_HISTORY` to relocate `.python_history`, and control color with `PYTHON_COLORS`, `NO_COLOR`, or `FORCE_COLOR`.
-
-### `pdb` stops at the call site (Python 3.13)
-`breakpoint()` and `pdb.set_trace()` now enter the debugger immediately instead of waiting for the next executed line, avoiding jumps outside a just-finished context. During post-mortem debugging, the new `exceptions [number]` command navigates chained exceptions.
-
-### Interactive embedding controls (3.13.0)
-`readline.backend` identifies `readline` versus `editline`. `code.interact(local_exit=True)` keeps `exit()` and `quit()` local to the interactive console instead of closing `sys.stdin` and propagating `SystemExit`.
-
-### Broader `pdb` commands and expression evaluation (3.13.0)
-`pdb` can execute arbitrary statements against current-frame locals, including in generators and nested functions; `.pdbrc` and `-c` accept any valid debugger command. Breakpoints accept `package.module` targets, `pdb -m` accepts target arguments, post-mortem mode handles `SyntaxError`, and `$_exception` exposes the active post-mortem exception.
-
-### Safe remote process debugging (Python 3.14)
-`sys.remote_exec(pid, script_path)` schedules a file for execution in another Python process at its next safe execution point, and `python -m pdb -p PID` builds an interactive attach flow on it. Access can be disabled with `PYTHON_DISABLE_REMOTE_DEBUG`, `-X disable-remote-debug`, or `--without-remote-debug`; a target blocked in a system call will not attach until it executes bytecode or receives a signal.
-
-### Highlighted and import-aware REPL (Python 3.14)
-The default REPL now highlights syntax and completes module and submodule names in `import` statements; attribute completion is not included, and the highlighting is disabled by basic-REPL or no-color settings.
-
-### Async-aware `pdb` (Python 3.14)
-`await pdb.set_trace_async()` permits `await` expressions while debugging a coroutine, and `$_asynctask` exposes the current asyncio task. Inline breakpoints also reuse the most recent `Pdb` instance, preserving displays and command lists between stops.
-
-### Scripted inline debugger entry (3.14.0)
-`pdb.set_trace(commands=[...])` can execute debugger commands supplied by source code when entering the breakpoint.
+`importlib.resources.is_resource()`, `open_binary()`, `open_text()`, `path()`,
+`read_binary()`, and `read_text()` accept multiple positional path components
+and are no longer deprecated. For text helpers, pass `encoding` and `errors` by
+keyword:
 
 ```python
-pdb.set_trace(commands=["p request", "continue"])
+read_text(pkg, "templates", "page.txt", encoding="utf-8")
 ```
 
-### `pdb` console and CLI behavior (3.15.0b3)
-`pdb` uses PyREPL as its default input console, accepts the standard `--` end-of-options separator, and can set a breakpoint on an async function by function name.
+### Import-startup switches (`3.13.0`)
+
+`PYTHON_PRESITE=package.module` imports a module before `site.py`, but only in a
+debug build. `PYTHON_FROZEN_MODULES` mirrors `-X frozen_modules` to control
+whether import machinery ignores frozen modules.
+
+### `.pth` loading (`3.13.0`)
+
+`site` decodes `.pth` files as UTF-8 first and falls back to locale encoding on
+`UnicodeDecodeError`. Dot-prefixed and hidden-attribute files are skipped.
+
+### Import metadata surface (`3.13.0`)
+
+`importlib.metadata` 7 adds `Distribution.origin`, `EntryPoints.__repr__`, and a
+`diagnose` script. Deprecated numeric indexing of `EntryPoint` is removed.
+
+### Command-line code and import timing (`3.14.0`)
+
+`python -c` dedents its source string before compilation. `-X importtime=2`
+reports imports satisfied from already-loaded modules as well as new imports.
+
+### Explicit lazy imports (`whatsnew-3.15`, `3.15.0b3`)
+
+The `lazy` soft keyword defers loading until first use. It supports both import
+forms only as direct module-level statements, not inside `try` and not for star
+or future imports:
+
+```python
+lazy import json
+lazy from pathlib import Path
+```
+
+Control global mode with `-X lazy_imports=all`, `PYTHON_LAZY_IMPORTS=all`, or
+`sys.set_lazy_imports()`. Use `sys.set_lazy_imports_filter()` for selection,
+`types.LazyImportType` for detection, and module-level `__lazy_modules__` for
+source shared with older runtimes.
+
+In 3.15.0b3, `sys.lazy_modules` is a set and `all` includes imports executed by
+`exec()` inside functions. `none` is not a supported mode spelling.
+
+### Auditable package startup (`whatsnew-3.15`)
+
+`.start` files contain `package.module:callable` entries that `site` invokes
+without arguments after static path additions. Executable `import` lines in
+`.pth` files are silently deprecated and ignored when a matching `.start` file
+exists. `site.StartupState` exposes the same batched path-then-code processing.
+
+### Import and hashing failures (`whatsnew-3.15`)
+
+`importlib.metadata` raises `MetadataNotFound` when a distribution directory
+lacks its metadata file. Guaranteed hashlib constructors remain present as
+attributes when the backend is unavailable and fail only when called.
+
+### Isolated ensurepip lookup (`3.15.0b3`)
+
+`ensurepip` does not search the current directory for `pip-*.whl`, preventing
+ambient files from replacing the bundled wheel.
+
+### Path initialization diagnostics (`3.15.0b3`)
+
+Startup warns when path initialization cannot find a valid standard library.
+Control this with `-X pathconfig_warnings` or
+`PYTHON_PATHCONFIG_WARNINGS`.
+
+## Command-line parsing, REPLs, and UI
+
+### Contained embedded REPL exits (`3.13.0`)
+
+`code.interact(local_exit=True)` keeps `exit()` and `quit()` within the
+interactive session instead of closing `sys.stdin` or raising `SystemExit` in
+the embedding process.
+
+### Pdb targets (`3.13.0`)
+
+Pdb debugs zipapps, accepts arguments with `pdb -m`, and resolves
+`break package.module`, allowing packaged and module programs to be debugged
+without unpacking or target rewrites.
+
+### Typed Tk callbacks (`3.13.0`)
+
+`tkinter.wantobjects` defaults to `2`, so callback arguments arrive as suitable
+Python values such as `int`, `float`, `bytes`, or `tuple` rather than always as
+`str`.
+
+### Optional and ordered getopt (`whatsnew-3.14`)
+
+`getopt` supports options with optional arguments and can return intermixed
+options and operands in their original order.
+
+### Argparse defaults and inference (`whatsnew-3.15`)
+
+`ArgumentParser(suggest_on_error=...)` defaults to `True`.
+`BooleanOptionalAction` supports single-dash long options and alternative
+prefix characters. With `add_argument("-f", "-foo")`, the inferred destination
+is `foo`, not `f`; specify `dest` to retain the old name.
+
+### Extended Tk searching (`3.15.0b3`)
+
+`tkinter.Text.search()` supports `-nolinestop` and `-strictlimits`;
+`Text.search_all()` exposes Tcl's `-all` and `-overlap` modes.
+
+### Pdb console refinements (`3.15.0b3`)
+
+Pdb runs scripts supplied through anonymous process-substitution pipes and
+resolves async functions by name for breakpoints. Its CLI accepts `--`, and
+PyREPL is the default input console.
+
+### Argparse inline code (`3.15.0b3`)
+
+Backticks in parser descriptions, epilogs, and option help mark inline code for
+highlighting when colored help is enabled.
+
+### IDLE behavior (`3.15.0b3`)
+
+IDLE saves Shell and Output windows as `.txt`, reads configuration and
+breakpoints as UTF-8, and no longer adds `idlelib` to the user process path.
+User extensions can obtain settings and bindings from `~/.idlerc`.
 
 ## Profiling, monitoring, and diagnostics
 
-### Changed disassembly representation (Python 3.13)
-`dis` output now uses logical labels for jump targets and exception handlers; request offsets with CLI `-O` or `show_offsets=True`. `dis.get_instructions()` no longer emits inline caches as separate instructions, placing them in `Instruction.cache_info` instead, and its `show_caches` argument is deprecated and ineffective.
+### Exception profiling events (`3.13.0`)
 
-### Exception-group traceback formatting (Python 3.13)
-`TracebackException.format_exception_only(show_group=True)` now recursively includes nested exceptions from a `BaseExceptionGroup`; `TracebackException.exc_type_str` provides the display name as `exc_type` begins deprecation.
+`sys.setprofile()` and `cProfile` account for generator `PY_THROW` events.
+`sys.monitoring` adds `RERAISE` for explicit and implicit re-raises.
 
-### Monitoring and profiling exception events (3.13.0)
-`sys.setprofile()` now receives `PY_THROW`, while `sys.monitoring` adds `RERAISE`, supplies the exception as the third `PY_UNWIND` callback argument, and raises `ValueError` if a callback returns `DISABLE` for an event that cannot be disabled locally.
+### Linux perf without frame pointers (`3.13.0`)
 
-### Frame-pointer-free Linux perf profiling (3.13.0)
-Linux perf integration can use advanced JIT support without frame pointers when `PYTHON_PERF_JIT_SUPPORT` is set or Python is started with `-X perf_jit`.
+Set `PYTHON_PERF_JIT_SUPPORT` or use `-X perf_jit` for advanced JIT integration
+with Linux `perf`, allowing profiling without frame pointers.
 
-### Multiple profiler sort keys (3.13.0)
-`Profile.print_stats()` now accepts multiple sort arguments, allowing deterministic secondary ordering in one call.
+### Live debugging (`3.14.0`)
 
-### Directional monitoring branch events (Python 3.14)
-`sys.monitoring.BRANCH_LEFT` and `BRANCH_RIGHT` replace the deprecated undirected `BRANCH` event. Native monitoring tools emit them with `PyMonitoring_FireBranchLeftEvent()` and `PyMonitoring_FireBranchRightEvent()`.
+Pdb accepts `-p PID` for same-version process attachment and supports
+`await pdb.set_trace_async()` in coroutines. Async task-graph facilities are
+covered in the concurrency reference.
 
-### Unified tracing and sampling profilers (Python 3.15 preview)
-The new `profiling` package contains deterministic `profiling.tracing` (the implementation formerly exposed as `cProfile`) and the new `profiling.sampling` profiler; `cProfile` remains an alias, while pure-Python `profile` is deprecated for removal in 3.17. The sampling CLI can attach to a PID, run a script or module, or dump stacks, and supports wall, CPU, GIL, and exception modes plus pstats, collapsed stacks, flame graphs, Gecko profiles, heatmaps, live TUI, async-aware, and opcode views.
+### Unified profiling (`whatsnew-3.15`)
 
-### Per-code exception monitoring (Python 3.15 preview)
-`sys.monitoring` exception events such as `PY_THROW`, `PY_UNWIND`, `RAISE`, `EXCEPTION_HANDLED`, and `RERAISE` may now be enabled or disabled per code object. Returning `DISABLE` from one of their callbacks disables that event for the current tool and code object instead of raising `ValueError`.
+`profiling.tracing` provides deterministic profiling, and
+`profiling.sampling` provides the attachable Tachyon sampler. `cProfile`
+remains an alias; pure-Python `profile` is deprecated for removal in 3.17. The
+sampler can attach, run, or dump processes; sample wall, CPU, GIL, or exception
+time; reconstruct async tasks; and emit pstats, collapsed stacks, flame graphs,
+Gecko profiles, or heatmaps.
 
-### Sampling-profiler capture workflows (3.15.0b3)
-`profiling.sampling` adds subprocess following, blocking capture, compact `--binary` recordings replayable into other formats, and sequential `--jsonl` output. Its flamegraph tooling can invert stacks or compare two runs with `--diff-flamegraph`; binary capture currently rejects `--async-aware`.
+### Sampling captures (`3.15.0b3`)
 
-### Configurable `timeit` target duration (3.15.0b3)
-`timeit.Timer.autorange()` has a configurable target duration, and `python -m timeit --target-time ...` exposes the same control for benchmarks that need longer or shorter calibration runs.
+`profiling.sampling` follows child processes with `--subprocesses`, records
+adaptive bytecode operations with `--opcodes`, and stores compact `--binary`
+captures for `replay`. It emits streaming `--jsonl` and differential flame
+graphs.
 
-### Bounded faulthandler dumps (3.15.0b3)
-`faulthandler.dump_traceback()`, `dump_traceback_later()`, `enable()`, and `register()` accept keyword-only `max_threads` to cap the number of thread stacks emitted.
+### Bounded faulthandler output (`3.15.0b3`)
 
-### Programmatic colored representations (3.15.0b3)
-`difflib.unified_diff()` accepts `color` for git-like colored diffs, and `ast.dump()` has a corresponding color control for syntax-tree output.
+`faulthandler.dump_traceback()`, `dump_traceback_later()`, `enable()`, and
+`register()` accept `max_threads=` to cap emitted thread stacks.
 
-## CLI parsing
+### Colored diagnostics (`3.15.0b3`)
 
-### `optparse` support status reversed (Python 3.13)
-`optparse` is no longer soft-deprecated: `argparse` remains preferred for new applications, but `optparse` is explicitly recognized as a viable lower-level base for Unix-style argument-processing libraries.
+`difflib.unified_diff(color=...)` provides opt-in colored output. See the
+typing reference for `ast.dump(color=...)`.
 
-### Optional `getopt` arguments and ordered GNU parsing (3.14.0)
-Short options ending in `::` and long options ending in `=?` accept optional arguments. Prefixing the GNU short-option specification with `-` also returns non-options in their original position as `(None, value)` entries.
+## Warnings, logging, tests, and timing
 
-```python
-options, rest = getopt.gnu_getopt(argv, "-o::", ["output=?"])
-```
+### Regular-expression warning filters (`whatsnew-3.15`)
 
-### Changed `argparse` defaults and inference (Python 3.15 preview)
-`ArgumentParser(..., suggest_on_error=...)` now defaults to `True`, so mistyped argument suggestions are enabled unless explicitly disabled. `BooleanOptionalAction` supports single-dash long options and alternative prefix characters; when both `-f` and `-foo` name one argument, inferred `dest` is now `foo` rather than `f`, so pass `dest=` to preserve the old result.
+Message and module fields in `-W` and `PYTHONWARNINGS` are regular expressions
+when enclosed in `/.../`.
 
-### Inline-code markup in `argparse` (3.15.0b3)
-Backticks in an `ArgumentParser` description, epilog, or option help mark inline code for highlighting when colored help is enabled; color is controlled by the parser rather than `HelpFormatter`.
+### Warning assertions (`whatsnew-3.15`)
 
-## Logging and testing
+`unittest.TestCase.assertWarns()` and `assertWarnsRegex()` propagate warnings
+that do not match the requested category or expression, and support nesting.
+Add explicit filters if a test relied on incidental suppression.
 
-### Queue-listener lifecycle management (3.14.0)
-`logging.handlers.QueueListener` is now a context manager, and calling `start()` on an already-started listener raises `RuntimeError`.
+### Formatter objects (`3.15.0b3`)
 
-```python
-with logging.handlers.QueueListener(queue, handler):
-    run_application()
-```
+`logging.basicConfig(formatter=...)` accepts a formatter object, and
+`unittest.TestCase.assertLogs(..., formatter=...)` controls captured formatting.
+`logging.Formatter` and `Filter` have informative representations.
 
-### Formatter objects in logging and tests (3.15.0b3)
-`logging.basicConfig(formatter=...)` accepts a prebuilt `Formatter`, and `unittest.TestCase.assertLogs(..., formatter=...)` uses one to format captured output.
+### Complete module cleanup failures (`3.15.0b3`)
 
-### Complete module-cleanup failures (3.15.0b3)
-`unittest.doModuleCleanups()` raises an `ExceptionGroup` when several cleanup callbacks fail instead of discarding every exception after the first.
+`unittest.doModuleCleanups()` raises an `ExceptionGroup` when multiple cleanups
+fail rather than discarding every exception after the first.
 
-## Imports, packaging, and discovery
+### Configurable timeit duration (`3.15.0b3`)
 
-### Frozen-module and pre-site startup controls (3.13.0)
-`PYTHON_FROZEN_MODULES` mirrors `-X frozen_modules` to control whether imports ignore frozen modules. Debug builds also support `PYTHON_PRESITE=package.module` to import a module before `site.py` runs.
+`Timer.autorange()` accepts a target duration; the CLI exposes it as
+`--target-time`.
 
-### Dedented `-c` code and cached import timing (Python 3.14)
-The interpreter automatically applies `textwrap.dedent()`-like handling to the argument of `python -c`, and `-X importtime=2` includes already-loaded modules with `cached` in place of timing values.
+## Library migration checklist
 
-### Auditable package startup files (Python 3.15 preview)
-Site directories may contain `.start` files whose lines are `package.module:callable` entry points invoked with no arguments at startup. Executable `import` lines in `.pth` files are silently deprecated and are ignored when the matching `.start` file exists, while ordinary `.pth` path-extension lines remain supported.
+### Removed and deprecated surfaces (`whatsnew-3.14`)
 
-```text
-my_package.bootstrap:initialize
-```
-
-`site.StartupState` lets custom startup code collect path changes across several site directories and execute all entry points only after those static paths have been applied.
-
-### Importer-defined module discovery (3.15.0b3)
-`importlib.abc.MetaPathFinder.discover()` and `PathEntryFinder.discover()` let custom importers enumerate module and submodule names without pretending they live in a conventional filesystem tree.
-
-### Isolated `ensurepip` wheel lookup (3.15.0b3)
-`ensurepip` no longer searches the current working directory for `pip-*.whl`, preventing an unrelated local wheel from changing bootstrap behavior.
-
-### Environment-clearing audit event (3.15.0b3)
-`os.environ.clear()` emits the `os._clearenv` auditing event, allowing audit hooks to observe bulk environment removal.
-
-### IDLE file and import behavior (3.15.0b3)
-IDLE reads its configuration and breakpoint files as UTF-8, defaults Shell and Output saves to `.txt`, and no longer adds `idlelib` itself to the user process path, so names such as `idlelib/help.py` cannot be imported as accidental top-level modules.
+- Replace `pkgutil.get_loader()` / `find_loader()` with modern import APIs.
+- Replace `pty.master_open()` / `slave_open()` with supported PTY APIs.
+- Remove `urllib.request.URLopener` and `FancyURLopener` usage.
+- Import resource ABCs from `importlib.resources.abc`, not `importlib.abc`.
+- Replace deprecated `argparse.FileType` and `codecs.open()`.
+- Prefer `subprocess` to soft-deprecated `os.popen()` and `os.spawn*()`.
+- Call `Path.as_uri()` rather than `PurePath.as_uri()`.

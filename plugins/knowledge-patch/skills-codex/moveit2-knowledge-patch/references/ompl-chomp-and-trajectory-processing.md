@@ -1,10 +1,10 @@
 # OMPL, CHOMP, and Trajectory Processing
 
-## OMPL objectives and termination
+## OMPL optimization and termination
 
-An OMPL planner configuration can select any of these optimization objectives:
+An OMPL planner configuration can select any of these objectives:
 
-- `PathLengthOptimizationObjective`, the default
+- `PathLengthOptimizationObjective` (default)
 - `MechanicalWorkOptimizationObjective`
 - `MaximizeMinClearanceObjective`
 - `StateCostIntegralObjective`
@@ -12,8 +12,7 @@ An OMPL planner configuration can select any of these optimization objectives:
 
 `termination_condition` accepts `Iteration[num]`,
 `CostConvergence[solutionsWindow,epsilon]`, or `ExactSolution`.
-`allowed_planning_time` remains a hard upper bound regardless of that
-condition.
+`allowed_planning_time` remains a hard upper bound.
 
 ```yaml
 RRTstarkConfigDefault:
@@ -24,10 +23,10 @@ RRTstarkConfigDefault:
 
 ## Persistent OMPL roadmaps
 
-PRM, PRM*, LazyPRM, and LazyPRM* can retain a roadmap across requests when
-`multi_query_planning_enabled` is enabled. Use `store_planner_data`,
-`load_planner_data`, and `planner_data_path` to persist it across process
-lifetimes. Planner data is stored when the planner instance is destroyed.
+PRM, PRM*, LazyPRM, and LazyPRM* can retain their roadmap across requests when
+`multi_query_planning_enabled` is set. `store_planner_data` and
+`load_planner_data` persist the roadmap at `planner_data_path`; storage occurs
+when the planner instance is destroyed.
 
 ```yaml
 PersistentLazyPRMstar:
@@ -38,42 +37,44 @@ PersistentLazyPRMstar:
   planner_data_path: /tmp/roadmap.graph
 ```
 
-With both load and store set to `0`, the roadmap is still reused and extended
-for the lifetime of the node. Lazy variants revalidate nodes and edges and can
-therefore tolerate modest planning-scene changes; use non-lazy variants only
-for static scenes. A common durable workflow builds and saves with a star
-planner, then loads with the corresponding non-star planner for faster queries.
+With both load and store set to `0`, the planner still reuses and extends its
+roadmap for the node's lifetime. Lazy variants revalidate nodes and edges and
+therefore tolerate modest scene changes; non-lazy variants are appropriate
+only for static scenes. A typical persistent workflow builds and saves using a
+star planner, then loads using the corresponding non-star planner for faster
+queries.
 
-## CHOMP objective and stopping controls
+## CHOMP objective and termination
 
-Configure CHOMP in `chomp_planning.yaml`. Bound optimization with
-`planning_time_limit`, `max_iterations`, and
-`max_iterations_after_collision_free`.
+Configure CHOMP in `chomp_planning.yaml`:
 
-Its objective combines `smoothness_cost_weight`, `obstacle_cost_weight`, and
-separate `smoothness_cost_velocity`, `smoothness_cost_acceleration`, and
-`smoothness_cost_jerk` terms. An `obstacle_cost_weight` of `0.0` ignores
-obstacles; `1.0` makes them a hard constraint.
+- `planning_time_limit`, `max_iterations`, and
+  `max_iterations_after_collision_free` bound optimization;
+- `smoothness_cost_weight` and `obstacle_cost_weight` balance the objective;
+- `smoothness_cost_velocity`, `smoothness_cost_acceleration`, and
+  `smoothness_cost_jerk` tune its smoothness terms.
+
+An `obstacle_cost_weight` of `0.0` ignores obstacles; `1.0` treats them as a
+hard constraint.
 
 ## CHOMP numerical and recovery controls
 
-- `learning_rate` and `joint_update_limit` bound optimization updates.
-- `collision_clearance` and `collision_threshold` control collision handling.
-- `ridge_factor` adds diagonal noise to the quadratic cost matrix. A value of
-  at least `0.001` can help the path escape obstacles, at some cost to
-  smoothness.
-- `use_pseudo_inverse` uses its own `pseudo_inverse_ridge_factor`.
-- `use_stochastic_descent` updates one random trajectory point rather than all
-  points.
-- `enable_failure_recovery` retries with varied parameters, bounded by
-  `max_recovery_attempts`.
+`learning_rate`, `joint_update_limit`, `collision_clearance`, and
+`collision_threshold` control numerical updates and collision handling.
+`ridge_factor` adds diagonal noise to the quadratic cost matrix; `0.001` or
+more can help escape obstacles at the cost of smoothness.
+
+`use_pseudo_inverse` has a separate `pseudo_inverse_ridge_factor`.
+`use_stochastic_descent` updates a random trajectory point rather than every
+point. `enable_failure_recovery` retries with varied parameters up to
+`max_recovery_attempts`.
 
 ## CHOMP trajectory initialization
 
-`trajectory_initialization_method` accepts `quintic-spline`, `linear`, `cubic`,
-or `fillTrajectory`. The interpolation methods synthesize a seed from start to
-goal. `fillTrajectory` consumes a trajectory from a planner such as OMPL and
-can keep CHOMP away from poor local minima.
+`trajectory_initialization_method` accepts `quintic-spline`, `linear`,
+`cubic`, or `fillTrajectory`. The interpolation modes synthesize a
+start-to-goal seed. `fillTrajectory` consumes another planner's trajectory,
+such as one from OMPL, and can avoid a poor CHOMP local minimum.
 
 ```yaml
 ridge_factor: 0.001
@@ -82,21 +83,32 @@ trajectory_initialization_method: fillTrajectory
 
 ## Legacy optimizer and smoothing adapters
 
-The available CHOMP planning-adapter examples are MoveIt 1/Melodic migration
-material. They use Catkin, `roslaunch`, XML launch files, and legacy adapter
-identifiers; do not treat them as direct MoveIt 2 configuration.
+Examples using Catkin, `roslaunch`, XML launch files, and legacy adapter IDs
+are MoveIt 1/Melodic migration material, not copy-paste MoveIt 2 syntax.
 
-In that legacy API, adapter order is significant:
-`chomp/OptimizerAdapter` calls the base planner, OMPL or STOMP, before CHOMP.
-Both planners' YAML files must be loaded, and CHOMP must use
-`fillTrajectory`.
+In that older API, adapter order matters:
 
-The legacy `stomp_moveit/StompSmoothingAdapter` post-processes an OMPL or CHOMP
-path when STOMP uses `initialization_method: 4` (`FILL_TRAJECTORY`). That
-smoothing adapter is explicitly marked work in progress.
+- `chomp/OptimizerAdapter` invokes the base planner (OMPL or STOMP) before
+  CHOMP. Load both planners' YAML files and configure CHOMP with
+  `fillTrajectory`.
+- `stomp_moveit/StompSmoothingAdapter` post-processes an OMPL or CHOMP path
+  when STOMP uses `initialization_method: 4` (`FILL_TRAJECTORY`). The source
+  characterizes this smoothing adapter as work in progress.
 
-## Trajectory processing choices
+## Jazzy planners and trajectory processing
 
-The Jazzy-era trajectory-processing toolset includes TOTG, Ruckig, and
-Butterworth filtering. STOMP is also available as a motion planner through its
-new implementation; distinguish it from the legacy smoothing adapter above.
+The `jazzy-release` adds a new STOMP motion-planner implementation, execution
+of multi-DOF trajectories, and trajectory-processing updates spanning TOTG,
+Ruckig, and Butterworth filtering.
+
+## Multi-DOF trajectory derivatives
+
+MoveIt now populates `velocities` and `accelerations` in multi-DOF joint
+trajectories. Consumers must not assume that those fields are empty.
+
+## Acceleration-limited smoothing and OSQP
+
+`online_signal_smoothing::AccelerationLimitedPlugin` supports both the OSQP
+v0.6.x API and the redesigned v1.0 C API. Humble, Jazzy, and Kilted use the
+apt-provided v0.6.x; Lyrical and Rolling use the MoveIt `osqp_vendor` fork with
+v1.0.

@@ -10,130 +10,101 @@ metadata:
 
 # MapLibre GL JS Knowledge Patch
 
-Use this skill when migrating MapLibre GL JS applications, updating map
-configuration, or working with events, sources, projections, terrain, styles,
-workers, and custom rendering.
+Use this skill when writing, migrating, reviewing, or debugging MapLibre GL JS
+applications. Check the installed package version first, then apply only the
+guidance that is relevant to that version. Prefer the application's manifest,
+code, runtime behavior, and tests when they disagree with compatibility notes.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [Runtime and migration](references/runtime-and-migration.md) | ESM packaging, workers and CSP, browser and WebGL requirements, map construction, runtime errors |
-| [Events and controls](references/events-and-controls.md) | Subscriptions, event typing, style loads, geolocation, box zoom, reduced motion, popups, markers |
-| [Sources, data, and requests](references/sources-data-and-requests.md) | Queries, vector and GeoJSON sources, overscaling, request transforms, missing images, validation, raster alpha |
-| [Camera, globe, and terrain](references/camera-globe-and-terrain.md) | Projections, globe queries, camera orientation, fitting, elevation, terrain skirts, lighting |
-| [Style and custom rendering](references/style-and-custom-rendering.md) | Data-driven properties, resampling, layer opacity, shader pragmas, custom-layer matrices and projection data |
+| --- | --- |
+| [Camera, globe, and terrain](references/camera-globe-and-terrain.md) | Projection expressions, globe queries, camera movement, elevation, terrain, and globe-aware custom layers |
+| [Events and controls](references/events-and-controls.md) | Subscriptions, typed events, style loading, geolocation, popups, box zoom, and marker interaction |
+| [Runtime and migration](references/runtime-and-migration.md) | ESM packaging, workers and CSP, browser/WebGL requirements, API migrations, errors, hashes, and sanitization |
+| [Sources, data, and requests](references/sources-data-and-requests.md) | Vector and GeoJSON sources, overscaling, request transforms, image sources, raster data, and validation |
+| [Style and custom rendering](references/style-and-custom-rendering.md) | Data-driven paint/layout, opacity, style images, shader pragmas, custom layers, and light transitions |
 
-## Use this patch
+## Start with the breaking changes
 
-1. Read the installed `maplibre-gl` version before changing code.
-2. For an upgrade to v6, start with Runtime and migration, then review Events
-   and controls because packaging and event types both changed substantially.
-3. Open the topic reference that owns the API being changed. Several familiar
-   APIs still exist but now have different return types, parameter shapes, or
-   rendering semantics.
-4. Prefer public `Map` APIs and supported render arguments over internal
-   `transform` state.
-5. Test worker loading, CSP, WebGL availability, feature queries, and custom
-   rendering in the same deployment topology used in production.
+### Use ESM imports
 
-## Critical v6 migration
-
-### Import the ESM distribution
-
-The package is ESM-only. UMD and dedicated CSP bundles are gone. Named npm
-imports remain valid, while a former default import must become a namespace or
-named import.
+The package is ESM-only. Replace default imports and legacy browser bundles
+with namespace or named imports. Browser scripts must be modules.
 
 ```ts
 import * as maplibregl from 'maplibre-gl';
 import {Map, setWorkerUrl} from 'maplibre-gl';
 ```
 
-Direct browser loading requires a module script and the `.mjs` build.
-
 ```html
 <script type="module">
-  import {Map} from 'https://unpkg.com/maplibre-gl@^6.0.0/dist/maplibre-gl.mjs';
+  import {Map} from '/vendor/maplibre-gl.mjs';
 </script>
 ```
 
-### Configure workers for the actual deployment
+The final browser distribution loads the worker as a module URL. Do not add a
+`worker-src blob:` exception solely for this final loading path. Bundled
+applications should configure the worker URL once when the bundler cannot
+resolve it automatically.
 
-The final ESM build loads its worker as a real module URL. Direct CDN loading
-auto-loads the cross-origin worker without the former CSP-specific bundle or a
-`worker-src blob:` exception. In a bundled application, call `setWorkerUrl()`
-once when the bundler cannot preserve worker URL resolution.
+### Require modern JavaScript and WebGL
 
-Do not copy CSP advice from preview migration builds without checking the final
-worker path. Self-hosted and direct-CDN deployments have different origin
-constraints.
-
-### Meet the runtime floor
-
-Published JavaScript targets ES2022 and requires WebGL 2. Update older tooling
-or transpile in the application where necessary. WebGL initialization failures
-arrive on the map's `error` event.
+Published code targets ES2022 and rendering requires WebGL 2. Update browsers
+and tooling or transpile in the application. Handle missing WebGL through the
+map's `error` event.
 
 ```js
 map.on('error', handleMapError);
 ```
 
-Configure context creation under `canvasContextAttributes`, not with former
-top-level map options.
+Canvas context settings belong under `canvasContextAttributes`; do not pass
+`antialias`, `preserveDrawingBuffer`, or
+`failIfMajorPerformanceCaveat` at the top level.
+
+### Treat listener registration as a subscription
+
+`on()` returns a `Subscription`, not the evented object. Register listeners
+separately and retain a subscription when it must be removed.
 
 ```js
-const map = new Map({
-  container: 'map',
-  canvasContextAttributes: {
-    antialias: true,
-    preserveDrawingBuffer: true,
-    contextType: 'webgl2'
-  }
-});
-```
-
-### Stop depending on `Map` inheritance
-
-`Map` composes and forwards a `Camera`; it no longer extends `Camera`. Replace
-inheritance checks and access to `map.transform` with public map methods.
-`transform.getMatrixForModel` is removed.
-
-### Update event code
-
-Listeners return a `Subscription`, so fluent listener registration no longer
-works. Register separately and retain subscriptions that must be removed.
-
-```js
-const moveSubscription = map.on('move', onMove);
+const subscription = map.on('move', onMove);
 map.on('zoom', onZoom);
-moveSubscription.unsubscribe();
+subscription.unsubscribe();
 ```
 
-Event objects are classes, but identify them through `event.type`, not
-`instanceof`. `Evented` is abstract and generic over an event map. Replace
-`MapDataEvent` with `MapSourceDataEvent | MapStyleDataEvent`, and rename
-`MapLibreZoomEvent` uses to `MapBoxZoomEvent`.
+Do not identify event classes with `instanceof`; discriminate on `event.type`.
+TypeScript event names and payloads are checked more strictly, and `Evented`
+is abstract and generic over an event map.
+
+### Stop depending on `Map` inheritance and internals
+
+`Map` composes and forwards a `Camera`; it no longer inherits from one. Replace
+inheritance checks, direct `map.transform` access, and
+`transform.getMatrixForModel` with public map APIs.
+
+`StyleLayer.queryIntersectsFeature` takes one
+`QueryIntersectsFeatureParams` object instead of positional arguments.
 
 ### Update source mutation code
 
-`GeoJSONSource.setData(data)` no longer accepts `waitForCompletion` and no
-longer returns the source. Do not pass a second argument or chain from it.
+`GeoJSONSource.setData(data)` accepts one argument and returns no chainable
+source. Remove `waitForCompletion` and do not call another method from its
+result.
 
 ```js
 source.setData(nextData);
 ```
 
-Nested objects in GeoJSON feature properties now round-trip as objects through
-an internal `__$json__`-prefixed representation. Recheck integrations that
-depended on the former unsupported serialized shape.
+Nested GeoJSON properties now round-trip as objects. Do not depend on their
+former unsupported representation or on the internal `__$json__` encoding
+prefix.
 
-### Resolve missing style images before completion
+### Resolve missing style images through the resolver
 
-`styleimagemissing` can observe unresolved images but cannot satisfy the
-current request by calling `addImage()`. Install a synchronous or asynchronous
-resolver instead. An asynchronous resolver must add the image before its
-promise settles.
+`styleimagemissing` is observational when an image remains unresolved. Supply
+missing images with `setMissingStyleImageResolver`; an asynchronous resolver
+must add the image before its promise settles.
 
 ```js
 map.setMissingStyleImageResolver(async (id) => {
@@ -142,58 +113,18 @@ map.setMissingStyleImageResolver(async (id) => {
 });
 ```
 
-### Review vector-tile overscaling
+## High-use capabilities
 
-The v5 experimental tile-slicing option is named `zoomLevelsToOverscale` in
-v6. It can alter rendering and `queryRenderedFeatures()` results. Set it to
-`undefined` explicitly when preserving the former overscaling behavior.
+### Configure vector-tile overscaling deliberately
 
-```js
-const map = new Map({
-  container: 'map',
-  zoomLevelsToOverscale: undefined
-});
-```
+Use `zoomLevelsToOverscale` for the public slicing/overscaling policy. Setting
+it to `undefined` retains the previous overscaling behavior. Because slicing
+can change rendering and `queryRenderedFeatures()` results, pin the value and
+test high-zoom queries when migrating.
 
-### Update shared shaders
+### Use async request transforms
 
-Custom shader source must use the MapLibre pragma spelling.
-
-```glsl
-#pragma maplibre
-```
-
-## High-use API changes
-
-### Typed events and style properties
-
-TypeScript applications may extend `MapEventType` with declaration merging.
-Layout and paint getters and setters now enforce the actual type of each
-property, so correct property names and values are required.
-
-```ts
-declare module 'maplibre-gl' {
-  interface MapEventType {
-    'app:ready': {type: 'app:ready'; payload: string};
-  }
-}
-```
-
-### Style lifecycle
-
-`setStyle()` emits `style.load` when it applies style JSON as a diff as well as
-when it fully reloads the style.
-
-```js
-map.once('style.load', onStyleLoad);
-map.setStyle(nextStyle);
-```
-
-### Async request transformation
-
-Request transforms may be asynchronous. Use
-`RequestParameters.referrerPolicy` when tile requests need an explicit
-referrer policy.
+Request transforms may be asynchronous and may set `referrerPolicy`.
 
 ```js
 map.setTransformRequest(async (url) => ({
@@ -202,39 +133,80 @@ map.setTransformRequest(async (url) => ({
 }));
 ```
 
-### Data-driven lines
+Imported worker scripts can communicate with the worker environment and call
+`makeRequest`.
 
-`line-dasharray`, `line-cap`, `line-miter-limit`, and `line-round-limit`
-support feature expressions. Use literal arrays where an expression must
-return a dash pattern.
+### Prefer whole-layer opacity when overlap must not accumulate
+
+Use `fill-layer-opacity` or `line-layer-opacity` to composite opacity across a
+whole layer. `line-layer-opacity` avoids accumulation where line geometry
+overlaps; alpha embedded in `line-color` still stacks.
 
 ```js
-paint: {
-  'line-dasharray': [
-    'match',
-    ['get', 'kind'],
-    'rail', ['literal', [2, 2]],
-    ['literal', [1, 0]]
-  ]
+paint: {'line-layer-opacity': 0.5}
+```
+
+Line dash arrays, caps, miter limits, and round limits can be data-driven.
+Raster-derived layers also expose resampling paint properties.
+
+### Use global state for environment and projection values
+
+`global-state` expressions work in `sky.*`, `light.*`, and `projection.type`.
+
+```js
+projection: {
+  type: ['global-state', 'projection']
 }
 ```
 
-### Whole-layer opacity
+### Pass decoded images directly
 
-Use `fill-layer-opacity` or `line-layer-opacity` to composite opacity uniformly
-across a layer. `line-layer-opacity` avoids accumulation at overlapping line
-geometry; alpha embedded in `line-color` still stacks.
+`ImageSource.updateImage({image})` accepts an `HTMLImageElement`, canvas,
+`ImageBitmap`, or `ImageData`, avoiding another network request.
 
-### Camera fitting and snapping
+```js
+map.getSource('overlay').updateImage({image: decodedImage});
+```
 
-`fitBounds` and `fitScreenCoordinates` snap zoom downward so requested bounds
-remain visible. `jumpTo`, `easeTo`, and `flyTo` snap to the nearest configured
-increment. Vertical Perspective `fitBounds` also honors `maxZoom`.
+Style images that change frequently may provide `renderWithWebGL` through
+`StyleImageInterface.data` so their pixels stay on the GPU path.
 
-### Accessible motion and UI placement
+## Camera, globe, and terrain checks
 
-Set `MapOptions.reduceMotion` for map-level reduced-motion behavior. Use
-`Popup({padding})` to keep automatic placement away from container edges.
-Markers accept numeric opacity values and receive
-`maplibregl-marker-covered` when hidden by terrain or the globe.
+- Projection type may be an expression, including Vertical Perspective.
+- Globe queries crossing the international date line work directly.
+- Globe `unproject` clamps to the visible horizon.
+- Marker drag longitude on a globe no longer needs a full-world correction.
+- Camera orientation supports pitch beyond 90 degrees and roll.
+- `queryTerrainElevation` returns actual altitude.
+- `zoomSnap` affects both fitting and direct camera methods, with different
+  rounding rules; verify bounds remain visible.
+- Use `rotateSpeed` and `pitchSpeed` to tune drag sensitivity.
+- Use `terrainSkirtLength` to suppress visible terrain edges against a
+  transparent background.
+
+## Controls and accessibility checks
+
+- `reduceMotion` configures map-level reduced-motion behavior.
+- `Popup({padding})` keeps automatic placement away from container edges.
+- `outofmaxbounds` is emitted only while geolocation tracking is enabled.
+- Numeric marker opacity values are accepted, and covered markers receive
+  `maplibregl-marker-covered` for state-specific CSS.
+- Default markers expose an accessibility role matching whether they are
+  interactive.
+- Default draggable markers support arrow-key movement and Shift acceleration;
+  custom elements must implement their own keyboard behavior.
+
+## Working method
+
+1. Inspect the installed `maplibre-gl` version and the application's loading
+   mode: browser modules, a bundler, or self-hosted assets.
+2. Read the migration and runtime reference before changing imports, workers,
+   CSP, event typing, or internal camera access.
+3. Open the topic reference for the feature being changed and preserve its
+   version-specific caveats.
+4. Exercise runtime paths that types cannot prove: worker loading, CSP,
+   WebGL failure, globe transitions, source validation, and style diff events.
+5. Test accessibility roles and keyboard behavior when markers or controls use
+   custom DOM elements.
 

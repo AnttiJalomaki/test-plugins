@@ -1,10 +1,10 @@
 # Transport, Sessions, and Subscriptions
 
-## Use the single Streamable HTTP endpoint
+## Streamable HTTP request and response flow
 
-Streamable HTTP replaces the old HTTP+SSE pair with one MCP endpoint that
-supports POST and optional GET. Every client message gets a fresh POST. Set
-both accepted response media types:
+Streamable HTTP replaces HTTP+SSE with one MCP endpoint supporting POST and
+GET. Every client message gets a fresh POST whose `Accept` lists
+`application/json, text/event-stream`. (`2025-03-26-compat`)
 
 ```http
 POST /mcp HTTP/1.1
@@ -14,93 +14,83 @@ Content-Type: application/json
 {"jsonrpc":"2.0","id":1,"method":"ping"}
 ```
 
-For a JSON-RPC request, the server returns either one JSON response or an SSE
-stream; a client must support both. Accepted notification-only or response-only
-input returns an empty HTTP 202.
+Accepted notification- or response-only input returns an empty HTTP 202. A
+request returns either one JSON response or an SSE stream; clients must support
+both response forms.
 
-The transport behavior above comes from compatibility batch
-`2025-03-26-compat`.
+A client may separately GET the endpoint with `Accept: text/event-stream` for
+server-initiated traffic. A server that does not provide that stream returns
+HTTP 405. The GET stream must not carry ordinary JSON-RPC responses except when
+replaying a previous request's stream.
 
-## Keep one message per POST
+## Message framing and protocol version
 
-Each Streamable HTTP POST body contains exactly one JSON-RPC request,
-notification, or response. A top-level batch is invalid. After initialization,
-the client sends the negotiated protocol revision on every later HTTP request:
+For `2025-06-18-compat`, each Streamable HTTP POST body must contain one
+JSON-RPC request, notification, or response. A top-level JSON-RPC batch is not
+valid on this transport.
+
+After initialization, clients must send the negotiated version on every
+subsequent HTTP request:
 
 ```http
 MCP-Protocol-Version: 2025-06-18
 ```
 
-Without other version information, a missing header means `2025-03-26`. An
-invalid or unsupported header value produces HTTP 400. These framing rules are
-part of compatibility batch `2025-06-18-compat`.
+Absent other version information, a missing header means `2025-03-26`. An
+invalid or unsupported value produces HTTP 400.
 
-## Open the optional server-initiated GET stream
+## Stateful HTTP sessions
 
-A client may separately GET the endpoint with
-`Accept: text/event-stream` for server-initiated traffic. A server that does
-not offer this stream returns HTTP 405. The GET stream must not carry ordinary
-JSON-RPC responses, except while replaying the response stream of a previous
-request.
+A server may return `Mcp-Session-Id` with the initialization response. The
+client must repeat it on every later HTTP request. A required but missing ID
+should produce HTTP 400. A terminated or expired ID produces HTTP 404 and
+requires new initialization without an ID. (`2025-03-26-compat`)
 
-## Resume an SSE stream
+Clients should request cleanup with DELETE. A server may reject DELETE with
+HTTP 405.
 
-Servers may attach an ID to each SSE event. IDs must be unique across the
-session, or across the client when sessions are absent. When a connection
-drops, reconnect with GET and `Last-Event-ID`. Replay is confined to the
-disconnected stream.
+## SSE event identity, resumption, and cancellation
 
-A dropped SSE connection does not cancel its associated request. Cancellation
-requires an explicit `CancelledNotification`.
+Servers may assign SSE event IDs that are unique across the session, or across
+the client when sessions are absent. A reconnecting client sends
+`Last-Event-ID` on GET. Replay is confined to the disconnected stream.
+(`2025-03-26-compat`)
 
-## Poll Streamable HTTP SSE
+A dropped stream does not cancel its request. Cancellation requires an explicit
+`CancelledNotification`.
 
-Compatibility batch `2025-11-25-compat` refines reconnectable SSE behavior. A
-server should first send an event ID with empty data. Once the stream has an
-ID, the server may close the HTTP connection without ending the logical stream;
-it should send an SSE `retry` delay before doing so.
+## Pollable SSE streams
 
-The client must honor `retry` and reconnect with GET plus `Last-Event-ID`. This
-applies whether the logical stream originated from POST or GET.
+For `2025-11-25-compat`, a server should first send an event ID with empty data
+for an SSE response. After assigning an ID, it may close the HTTP connection
+without terminating the logical stream and should send an SSE `retry` delay
+first.
 
-## Maintain stateful HTTP sessions
+The client must honor the delay and reconnect with GET plus `Last-Event-ID`,
+whether the original stream came from POST or GET.
 
-A server may include `Mcp-Session-Id` with its initialization response. The
-client must repeat that value on every later HTTP request.
+## Origin, binding, and redirect security
 
-- A required but missing session ID should produce HTTP 400.
-- A terminated or expired session ID produces HTTP 404.
-- After 404, initialize a new session without sending an ID.
-- Request session cleanup with DELETE.
-- A server may reject DELETE with HTTP 405.
+Servers must validate `Origin` on every incoming connection to prevent DNS
+rebinding. Local servers should bind to `127.0.0.1` rather than `0.0.0.0`,
+authenticate connections, serve authorization endpoints over HTTPS, and accept
+only localhost or HTTPS redirect URIs. (`2025-03-26-compat`)
 
-Authorization is independent of the session ID. Continue sending the Bearer
-token on every authorized request.
+A Streamable HTTP server must return HTTP 403 Forbidden when it rejects an
+invalid `Origin` header. (`2025-11-25`)
 
-## Protect Streamable HTTP
+## HTTP+SSE backwards compatibility
 
-Validate `Origin` on every incoming connection to prevent DNS rebinding. Since
-stable batch `2025-11-25`, rejection of an invalid `Origin` must return HTTP
-403 Forbidden.
+Servers supporting old clients should keep the legacy SSE and POST endpoints
+alongside the new MCP endpoint. (`2025-03-26-compat`)
 
-For local servers:
-
-- bind to `127.0.0.1` instead of `0.0.0.0`;
-- authenticate connections;
-- serve authorization endpoints over HTTPS;
-- allow only localhost or HTTPS redirect URIs.
-
-## Interoperate with legacy HTTP+SSE
-
-Servers that support older clients should retain the legacy SSE and POST
-endpoints beside the Streamable HTTP endpoint.
-
-For an unknown server URL, first POST an `InitializeRequest` using the
-Streamable HTTP `Accept` header. A successful response selects Streamable
-HTTP. Current fallback behavior is narrower than the original profile: fall
-back to GET only if that first POST returns HTTP 400, 404, or 405. Other 4xx
-responses do not trigger legacy detection.
-
-On fallback, require an initial `endpoint` SSE event. It identifies the
-2024-11-05 HTTP+SSE transport and supplies the POST endpoint for later
+A client given an unknown server URL first POSTs an `InitializeRequest` using
+the Streamable HTTP `Accept` header. Under the `2025-03-26-compat` behavior,
+success selects Streamable HTTP, while a 4xx response triggers GET. An initial
+`endpoint` event identifies the 2024-11-05 HTTP+SSE transport for all later
 communication.
+
+For `2025-11-25-compat`, legacy detection is limited to an initial Streamable
+HTTP POST failing with HTTP 400, 404, or 405 before the client falls back to GET
+and expects an `endpoint` event. Other 4xx responses do not trigger that
+fallback.

@@ -10,223 +10,212 @@ metadata:
 
 # Transformers Knowledge Patch
 
-Use this skill when upgrading or writing Python code against recent Hugging Face
-Transformers APIs, especially for tokenizer migrations, checkpoint loading,
-generation caches, attention kernels, quantization, distributed execution,
-multimodal processors, pipelines, or local serving.
+Use this skill when writing, migrating, reviewing, or debugging Python that uses
+Hugging Face Transformers. It emphasizes API removals, changed defaults,
+loading and generation contracts, cache and attention behavior, distributed
+execution, multimodal processing, serving, and newly integrated model families.
 
-## How to use this patch
+## How to use this skill
 
-1. Read the project's declared `transformers`, Python, PyTorch, quantization,
-   and accelerator versions before proposing code.
-2. Apply only guidance introduced at or below the installed Transformers
-   version. If the project is newer than this skill's frontmatter version,
-   treat the patch as potentially stale and verify against project code/tests.
-3. Search the reference index for the developer task, then keep model-specific
-   constraints alongside generic API advice.
-4. Prefer the project's manifests, code, tests, checkpoint metadata, and
-   observed behavior whenever they disagree with this guidance.
+1. Inspect the project's pinned `transformers`, Python, PyTorch, quantization,
+   and accelerator versions before changing code.
+2. Start with the breaking-change checks below when moving from a 4.x project
+   or when old examples fail under 5.x.
+3. Open the topic reference that matches the code path under review.
+4. Prefer public APIs and explicit configuration over private helpers, inferred
+   defaults, or model-specific cache workarounds.
+5. Re-run numerical, generation, preprocessing, and distributed tests after an
+   upgrade; several fixes intentionally change results.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Migration and runtime](references/migration-and-runtime.md) | v5 removals, configuration changes, runtime floors, renamed APIs, output behavior |
-| [Loading, quantization, and kernels](references/loading-quantization-and-kernels.md) | checkpoint conversion, dtypes, quantizers, GGUF/FP8/MXFP4, Hub kernels |
-| [Generation, attention, and caches](references/generation-attention-and-caches.md) | decoding removals, continuous batching, assisted/custom generation, cache contracts |
-| [Training and distributed execution](references/training-and-distributed.md) | Trainer behavior, tensor/expert/sequence parallelism, optimizers, export and compilation |
-| [Tokenizers, processors, and multimodal inputs](references/tokenizers-processors-and-multimodal.md) | tokenizer backends, chat templates, image/video/audio preprocessing |
-| [Serving, pipelines, and tools](references/serving-pipelines-and-tools.md) | `transformers serve`, chat CLI, task cleanup, visualization and callbacks |
-| [Model and task integrations](references/model-and-task-integrations.md) | model-family capabilities, task coverage, model-specific caveats and corrections |
+| [Migration and runtime](references/migration-and-runtime.md) | Runtime floors, loading defaults, configuration migrations, removed APIs, serialization, backend behavior |
+| [Generation, attention, and caches](references/generation-attention-and-caches.md) | Decoding, attention backends, custom attention, KV caches, speculative decoding, continuous batching |
+| [Loading, quantization, and kernels](references/loading-quantization-and-kernels.md) | Checkpoint conversion, quantizers, GGUF, FP8/MXFP4/NVFP4, torchao, downloadable and custom kernels |
+| [Tokenizers, processors, and multimodal inputs](references/tokenizers-processors-and-multimodal.md) | Tokenizer backend migration, chat templates, image/video/audio preprocessing, embedding and position-ID contracts |
+| [Training and distributed execution](references/training-and-distributed.md) | Trainer changes, tensor/expert/sequence parallelism, FSDP, compilation, weight tying and export |
+| [Serving, pipelines, and tools](references/serving-pipelines-and-tools.md) | `transformers serve`, chat CLI, pipelines, observability, visualization and callbacks |
+| [Model and task integrations](references/model-and-task-integrations.md) | Language, vision, document, audio, multimodal, time-series, robotics and scientific architectures |
 
-## Breaking-change quick reference
+## Breaking-change checklist
 
-### Runtime floors
+### Use `dtype`, not `torch_dtype`
 
-- Current v5-era code requires Python 3.10 or newer.
-- The PyTorch floor moved to 2.2 and then 2.4. Pin a compatible pair instead of
-  assuming an older environment will import successfully.
-- TensorFlow and JAX backends were deprecated. Plan new integrations around the
-  PyTorch path.
-
-### Loading and dtype
-
-- Use `dtype=...`; `torch_dtype` is transitional compatibility syntax.
-- `from_pretrained()` defaults `dtype` to `auto`, preserving the checkpoint's
-  saved dtype. Pass an explicit dtype when float32 or another dtype is required.
-- Replace `use_auth_token=` with `token=`.
-- Replace top-level `load_in_4bit=` and `load_in_8bit=` with a
-  `quantization_config`, such as `BitsAndBytesConfig`.
-- Saved model shards default to a 50 GB maximum rather than 5 GB.
+Pass `dtype=` to loading and pipeline APIs. Loading now defaults to `auto`, so
+it preserves the checkpoint dtype rather than forcing float32. Specify a dtype
+when exact precision is required.
 
 ```python
-from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+model = AutoModelForCausalLM.from_pretrained(model_id, dtype="auto")
+```
+
+### Move quantization flags into a configuration
+
+Top-level `load_in_4bit` and `load_in_8bit` arguments are removed. Use a
+quantization configuration.
+
+```python
+from transformers import BitsAndBytesConfig
 
 model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-3.2-3B",
-    token=token,
-    dtype="auto",
-    device_map="auto",
+    model_id,
     quantization_config=BitsAndBytesConfig(load_in_4bit=True),
 )
 ```
 
-### Tokenizers
+### Replace authentication and agent APIs
 
-- Call the tokenizer instead of `encode_plus()`.
-- `decode()` accepts single and batched inputs; `batch_decode()` is no longer
-  required just because the input is batched.
-- `apply_chat_template()` returns `BatchEncoding`; select `input_ids` or the
-  required field rather than treating the return value as a tensor.
-- Use `text_target=` instead of `as_target_tokenizer()` and related target-mode
-  helpers. Use `word_ids()` instead of `BatchEncoding.words()`.
-- Tokenizer saves no longer write `special_tokens_map.json` or
-  `added_tokens.json`; named special tokens live in `tokenizer_config.json`,
-  while added tokens live in `tokenizer.json`.
+- Replace `use_auth_token=` with `token=`.
+- Use `smolagents`; `transformers.agents` is removed.
+- Treat every custom generation implementation as executable code. Whether it
+  comes from the Hub or a local directory, opt in with
+  `trust_remote_code=True` only after reviewing it.
+
+### Update tokenizer calls and outputs
+
+- Call the tokenizer instead of `encode_plus`.
+- Use `text_target=` instead of `as_target_tokenizer()` or target-mode helpers.
+- Use `word_ids()` instead of `BatchEncoding.words()`.
+- Expect `apply_chat_template()` to return a `BatchEncoding`; read
+  `input_ids` or the required field explicitly.
+- Use `extra_special_tokens` for unnamed additions. Newly saved tokenizers no
+  longer write `special_tokens_map.json` or `added_tokens.json`.
 
 ```python
-encoded = tokenizer(["hello", "world"])
-texts = tokenizer.decode(encoded["input_ids"])
 chat = tokenizer.apply_chat_template(messages, return_tensors="pt")
 input_ids = chat["input_ids"]
 ```
 
-### Configurations
+### Migrate configuration access
 
-- Construct `PreTrainedConfig` and model configs with keyword arguments only;
-  they are dataclasses and reject positional arguments.
-- Replace removed `from_xxx_config` helpers with ordinary constructors.
-- Load configs from a local path or Hub repository, not an arbitrary URL.
-- Read rotary settings from `config.rope_parameters`, not direct attributes
-  such as `config.rope_theta`.
-- Read Qwen-VL values from subconfigs such as `config.text_config.vocab_size`.
-- Do not read `model.config.generation_config` on non-generative models.
-- Use `config.backbone_config` as the source of truth for backbone models.
+- Construct configuration dataclasses with keyword arguments only.
+- Read rotary settings from `config.rope_parameters`.
+- Read multimodal values from their subconfigurations, such as
+  `config.text_config.vocab_size`.
+- Use `config.backbone_config` as the source of backbone selection.
+- Do not assume non-generative configs contain `generation_config`.
+- Preserve heterogeneous `per_layer_config` instead of flattening it into one
+  global attention configuration.
 
-### Caches and generation hooks
+### Remove legacy model and pipeline hooks
 
-- Model code should initialize and return `Cache` objects and use the plural
-  argument name `past_key_values`.
-- Native Mamba and hybrid cache classes replace custom cache workarounds.
-- Remove `cache_position` from direct `forward()` calls. `generate()` manages
-  cache positions and passes full `input_ids` to `prepare_inputs_for_generation`.
-- Custom generation overrides must no longer slice inputs based on
-  `cache_position`.
-- Configured sliding-window limits are enforced and can change outputs that
-  previously relied on an effectively unbounded cache.
-- `EncoderDecoderCache.batch_split` has been removed.
+- Head masking, head pruning, and BERT-style relative positional biases are not
+  supported; keep such workloads on 4.x or redesign them.
+- Replace Transformers `torchscript` and `torch.fx` integrations with PyTorch
+  `dynamo` or `export`.
+- Replace imports from removed `image_processing_utils_fast` with
+  `image_processing_utils`.
+- Audit removed or renamed pipeline tasks, especially question answering,
+  visual question answering, and image-to-image.
+- Replace Apex mixed precision and fused operations with native PyTorch.
 
-### Removed features and names
+## Generation and cache essentials
 
-- `transformers.agents` is gone; use the separate `smolagents` library.
-- `pad_to_max_length`, DoLa, Contrastive Search, Group Beam Search, and
-  Constrained Beam Search are no longer built in. The first two decoding
-  strategies are available as remote custom-generation repositories.
-- Head masking, head pruning, and BERT-style relative positional biases require
-  staying on Transformers 4.x.
-- The `torchscript` and `torch.fx` integrations were replaced by PyTorch
-  `dynamo` and `export` workflows.
-- Use `AnnotationFormat`, not the removed `AnnotionFormat`; the ASR pipeline no
-  longer returns `num_frames`.
-- Use `visualize_keypoint_matching`, not deprecated `plot_keypoint_matching`.
-- The Apex integration was removed; use native PyTorch mixed precision and
-  fused operations.
+### Let generation own cache positions
 
-## High-value current APIs
+Custom `prepare_inputs_for_generation` implementations now receive full
+`input_ids`; do not slice them by `cache_position`. Most model `forward` methods
+also no longer accept `cache_position` because `generate` manages it.
 
-### Continuous batching
-
-Use `generate_batch()` with paged attention for stable continuous batching.
-Left-pad tokenizer inputs, configure generation on the model, and consume the
-result mapping by request ID. The implementation supports full and
-sliding-window attention, CPU offload, tensor parallelism, and per-request
-sampling. Recent fixes preserve arrival order, long-generation memory
-estimates, request offsets, and the caller's attention implementation.
+Cache objects are first-class and per-layer. Use native dynamic,
+sliding-window, hybrid, Mamba, and paged cache types instead of legacy tuples or
+model-specific workarounds. Crop caches with a negative relative offset:
 
 ```python
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-model = AutoModelForCausalLM.from_pretrained(
-    "Qwen/Qwen3-4B-Instruct-2507",
-    dtype=torch.bfloat16,
-    _attn_implementation="sdpa_paged",
-    device_map="auto",
-)
-model.generation_config.max_new_tokens = 32
-tokenizer = AutoTokenizer.from_pretrained(
-    "Qwen/Qwen3-4B-Instruct-2507", padding_side="left"
-)
-requests = [tokenizer(text)["input_ids"] for text in ["Explain KV caches.", "Write a haiku."]]
-outputs = model.generate_batch(inputs=requests)
+cache.crop(-tokens_to_remove)
 ```
 
-### Explicit kernels and attention
+### Supply token IDs when penalties need them
 
-- Installing `kernels` does not alter a model automatically. Opt in with
-  `use_kernels=True`, call `kernelize`, or select an implementation explicitly.
-- Select Hub attention implementations at runtime with
-  `set_attn_implementation()`. References may include an `@revision` suffix.
-- Unsupported `output_attentions=True` combinations fail early; do not expect a
-  silent eager-attention fallback.
-- Custom attention integrations must follow the current attention-mask
-  interface and call the rotary function directly rather than
-  `self.rotary_fn(...)`.
+Repetition penalties require `input_ids`, even when a generation path otherwise
+starts from embeddings. Gemma 4 generation additionally supports
+`inputs_embeds` and `per_layer_inputs`.
+
+### Select attention explicitly when reproducibility matters
+
+Unsupported attention/output combinations fail instead of silently falling
+back. T5-family models can dispatch to SDPA and registered backends; set
+`attn_implementation="eager"` when the eager path is required. Hub kernel
+references may include a revision suffix.
 
 ```python
 model.set_attn_implementation("kernels-community/flash-attn3@main")
 ```
 
-### Custom quantization
+Linear-attention and convolution-only families use native fallbacks unless
+loaded with `use_kernels=True`.
 
-Register a quantization config and quantizer under the same method name. Once
-registered, `from_pretrained()` accepts the custom configuration.
+## Loading and quantization essentials
 
-```python
-@register_quantization_config("custom")
-class CustomConfig(QuantizationConfigMixin):
-    pass
+### Treat checkpoint conversion as declarative
 
-@register_quantizer("custom")
-class CustomQuantizer(HfQuantizer):
-    pass
-```
+Use `WeightConverter` operations for reversible key mapping, tensor reshape,
+merge, split, quantization, and parallelism conversion. Conversion applies
+recursively to nested model structures.
 
-### Custom generation from the Hub
+### Validate device and quantizer combinations
 
-`generate(custom_generate=...)` can execute a generation implementation stored
-in a Hub repository. This runs repository code, so review and pin that code and
-opt in explicitly with `trust_remote_code=True`.
+- GGUF cannot be disk-offloaded.
+- Quantized tensor parallelism is method-dependent.
+- Do not quantize a model that is already quantized.
+- MXFP4 can dequantize on CPU when the device map includes CPU.
+- Torchao requires a recent compatible release; validate serialization paths
+  for NVFP4 and custom parameter names.
+- FP-Quant acceleration is hardware- and library-dependent; pseudoquant is an
+  emulation path, not accelerated quantization.
 
-```python
-output = model.generate(
-    **inputs,
-    custom_generate="transformers-community/custom_generate_example",
-    trust_remote_code=True,
-)
-```
+## Training and distributed essentials
 
-### Multimodal chat inputs
+- `TrainingArguments.average_tokens_across_devices` is enabled by default.
+- The final partial gradient-accumulation window now receives correct loss
+  scaling; expect changed results for uneven batch counts.
+- Review tensor-parallel conversion mappings after corrected decoder all-reduce
+  handling.
+- Treat expert-parallel and FSDP upgrades as numerically significant because
+  fixes address silent wrong results, NaNs, and non-primary-rank weight damage.
+- Use `ddp_static_graph` only when the graph is actually static.
+- Prefer the native FSDP2 migration path for new distributed work.
+- Compilation defaults to `fullgraph=False`; continuous batching has its own
+  configurable compile level.
 
-`apply_chat_template()` accepts in-memory video and OpenAI-style `image_url`
-content. Modern integrations standardize embedding inputs on `inputs_embeds`.
-Model-specific processors still impose shape, token-budget, and embedding-form
-requirements; consult the multimodal and model references before normalizing or
-pooling inputs yourself.
+## Multimodal and preprocessing essentials
 
-## Upgrade verification checklist
+- Standardize embedding arguments on plural `inputs_embeds`.
+- Use full text embeddings, not pooled outputs, for SAM3-family `text_embeds`.
+- Preserve model-specific preprocessing: Gemma 4 has fixed patch budgets,
+  divisible-by-48 dimensions, and internal `[-1, 1]` scaling, so do not apply
+  ordinary ImageNet normalization.
+- Expect CUDA Lanczos requests to fall back to bicubic; CPU and accelerator
+  preprocessing can differ.
+- Use the shared 3D position-ID interface for affected vision-language models.
+- Keep heterogeneous image, video, and audio chat inputs in processor-supported
+  message structures rather than private helper calls.
 
-- Exercise one real checkpoint load and save, including device mapping,
-  quantization, tied weights, and dtype assertions.
-- Compare generation beyond any sliding window and continue once from a
-  populated cache.
-- Test custom attention/model overrides against mask and input-preparation
-  contracts.
-- Snapshot tokenizer special tokens, chat-template return fields, decode output,
-  and image/video preprocessing shapes.
-- Run a partial final gradient-accumulation window and the project's distributed
-  strategy; several releases changed loss scaling and collective behavior.
-- Validate any renamed or cleaned-up pipeline task against the concrete model
-  and expected output schema.
-- Treat model-integration fixes as result-affecting when the references say so;
-  re-baseline numerical tests after an upgrade.
+## Serving and batching essentials
+
+`transformers serve` is a local experimentation and private-use server with
+OpenAI-compatible model, chat, response, transcription, and completion APIs.
+Its pinned model is authoritative; mismatched request model names receive HTTP
+400. The models response reports `owned_by` as a string.
+
+Continuous batching supports paged attention, sliding windows, CPU offload,
+tensor parallelism, request ordering, per-request sampling, and request-count
+limits. Validate long-context memory estimates and do not depend on the removed
+continuous-batching OpenTelemetry integration.
+
+## Upgrade validation
+
+After changing versions, exercise all applicable paths:
+
+- load/save round trips, tied weights, sharding, GGUF and quantized checkpoints;
+- tokenizer serialization, special tokens, chat templates, and target encoding;
+- cached and uncached generation, long sliding-window prompts, speculative
+  rollback, repetition penalties, stop strings, and selected attention backend;
+- CPU/CUDA image preprocessing plus batched image, video, and audio inputs;
+- the final partial accumulation window and every distributed rank;
+- serving schemas, model-name rejection, tool-call parsing, timeouts, and batch
+  request ordering;
+- numerical regression fixtures for model-specific attention, RoPE, cache,
+  resizing, and interpolation corrections.

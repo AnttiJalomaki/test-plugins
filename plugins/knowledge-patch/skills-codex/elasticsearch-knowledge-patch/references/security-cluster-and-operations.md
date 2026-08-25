@@ -1,138 +1,117 @@
-# Security, cluster APIs, and operations
+# Security, Cluster APIs, and Operations
 
-Use this reference for authentication, federation, secure settings, node
-runtime changes, cross-project access, and operational diagnostics.
+## Credentials, authorization, and federation
 
-## Credentials, keys, and authorization
+### API-key hashes and secure settings (9.0.0)
 
-### API-key hashes and secure settings
+API-key credential hashes may use `SSHA-256`. Secure settings are not accepted
+in YAML; supply them through Elasticsearch's secure-settings mechanism.
 
-In 9.0.0, API-key credential hashes can use `SSHA-256`. Secure settings are no
-longer accepted in YAML and must be supplied through Elasticsearch's
-secure-settings mechanism.
+### Connector deletion modes (9.0.0)
 
-### Connector deletion and privileges
+Connector APIs support soft and hard deletion through a delete URL parameter.
+Managed connector indices must use the required prefix.
 
-In 9.0.0, Connector APIs add soft and hard deletion through a delete URL
-parameter, and managed connector indices must use the required prefix.
+### Security extensions and federation (9.1.0)
 
-### Extensible security and federation
+`SecurityExtensions` can provide a custom `ServiceAccountTokenStore`. The SAML
+identity provider supports custom attributes. JWT access tokens may use an
+`at+jwt` `typ` header. A Microsoft Graph delegated-authorization realm plugin
+is available.
 
-In 9.1.0, `SecurityExtensions` can provide a custom
-`ServiceAccountTokenStore`; the SAML identity provider supports custom
-attributes; and JWT access tokens may use the `at+jwt` `typ` header.
-Elasticsearch also adds a Microsoft Graph delegated-authorization realm
-plugin.
+### Security statistics (9.2.0)
 
-### Cross-cluster keys and TLS extensibility
+`/_security/stats` reports document-level-security metrics, including DLS cache
+usage, hits, misses, and timing.
 
-In 9.2.0, cross-cluster API keys gain signing and trust configuration, and the
-transport TLS handshake timeout is adjustable. TLS extensions can implement
-the `SslProfileExtension` SPI and receive reload notifications through an
-`SslProfile` listener.
+### SAML configuration (9.2.0)
 
-### Security and federation updates
+SAML private attributes are configurable. URL-based metadata resolution has
+configurable HTTP connect and read timeouts.
 
-In 9.3.0, JWT realms can periodically reload PKC JWK sets, successful SAML
-responses include in-response-to metadata, and cross-cluster API keys carry
-and validate certificate identities. Secure-settings reload responses include
-secure-setting names and the keystore modification time.
+### Cross-cluster keys and TLS extensibility (9.2.0)
 
-### API keys and service accounts
+Cross-cluster API keys support signing and trust configuration. The transport
+TLS handshake timeout is adjustable. TLS extensions can implement
+`SslProfileExtension` and receive reload notifications through an `SslProfile`
+listener.
 
-In 9.4.0, API keys can be cloned through a dedicated endpoint, and
-service-account-token APIs are available in Serverless. The `read` index
-privilege consistently authorizes cross-cluster search regardless of
-`ccs_minimize_roundtrips`.
+### Security and federation changes (9.3.0)
 
-## SAML configuration
+JWT realms can periodically reload PKC JWK sets. Successful SAML responses
+include in-response-to metadata. Cross-cluster API keys carry and validate
+certificate identities. Secure-settings reload responses include setting names
+and the keystore modification time.
 
-In 9.2.0, SAML private attributes are configurable. URL-based SAML metadata
-resolution has configurable HTTP read and connect timeouts.
+### Security API changes (9.4.0)
 
-## Security statistics
+API keys can be cloned through a dedicated endpoint. Service-account-token APIs
+are available in Serverless. The `read` index privilege consistently
+authorizes cross-cluster search regardless of `ccs_minimize_roundtrips`.
 
-In 9.2.0, `/_security/stats` exposes document-level-security statistics,
-including DLS cache usage, hits, misses, and timing.
+## Runtime, plugins, and configuration reload
 
-## Cluster resolution and allocation
+### Java, Lucene, and container baseline (9.0.0)
 
-### Cluster-only resolution
+Elasticsearch bundles JDK 24, uses Lucene 10.1.0, and bases its default Docker
+image on UBI minimal rather than Ubuntu. Startup ignores `_JAVA_OPTIONS`.
 
-In 9.0.0, `_resolve/cluster` can query cluster information without an index
-expression and accepts a user-configurable timeout.
+### Entitlements replace the SecurityManager (9.0.0)
 
-### Per-tier balancing
-
-In 9.1.0, shard-allocation balancing weights can be set independently per data
-tier.
-
-### Synonym refresh control
-
-In 9.1.0, synonyms PUT and delete APIs accept `refresh`, which waits for
-updated synonyms to become accessible and reloads affected analyzers.
-
-## Cross-cluster and cross-project operation
-
-### Cross-project routing
-
-In 9.3.0, cross-project search and `project_routing` extend to `_search`,
-`_async_search`, `_msearch`, EQL, field capabilities, SQL, and JDBC.
-Point-in-time creation and closure can span projects. Cross-project searches
-default to minimizing round trips.
-
-Stateful cross-cluster use in 9.3.0 disables `_delete_by_query` and
-`_update_by_query`.
-
-In 9.4.0, project routing extends to templated searches, data streams, scrolls,
-and the SQL CLI. The SQL CLI and JDBC client can authenticate with API keys.
-
-## Runtime and packaging
-
-### Java, Lucene, and containers
-
-In 9.0.0, Elasticsearch bundles JDK 24, upgrades to Lucene 10.1.0, and bases
-its default Docker image on UBI minimal rather than Ubuntu. Startup ignores
-`_JAVA_OPTIONS`.
-
-Elasticsearch Entitlements permanently replace the Java SecurityManager,
+Elasticsearch Entitlements permanently replaces the Java SecurityManager,
 which Java 24 disables.
 
-In 9.4.0, Elasticsearch upgrades to Apache Lucene 10.4. The
-`cloud-ess-fips` package defaults to FIPS 140-3.
+### File-backed configuration reloads (9.1.0)
 
-### File-backed reloads
+Configuration reload detects Kubernetes CSI-style `..data` symlink switches.
+TLS reload watches SSL files rather than containing directories.
 
-In 9.1.0, configuration reload detects Kubernetes CSI-style `..data` symlink
-switches. TLS reload watches SSL files rather than their containing
-directories.
+### Operational baselines (9.4.0)
 
-## Limits, defaults, and telemetry
+The `cloud-ess-fips` package defaults to FIPS 140-3. Elasticsearch uses Apache
+Lucene 10.4.
 
-### Mustache output limits
+## Cluster and index administration
 
-In 9.0.0, `mustache.max_output_size_bytes` limits Mustache script result
-length.
+### Cluster-only resolution (9.0.0)
 
-### Allocation and reindex metrics
+`_resolve/cluster` can return cluster information without an index expression
+and accepts a caller-configurable timeout.
 
-In 9.0.0, `replica_unassigned_buffer_time` increases from three to five
-seconds. Reindexing metrics report seconds rather than milliseconds.
+### Per-tier shard balancing (9.1.0)
 
-### Circuit breakers, shard capacity, and TLS
+Shard-allocation balancing weights can be configured independently for each
+data tier.
 
-In 9.3.0, cat APIs add a circuit-breakers endpoint, shard-capacity health
-thresholds become configurable, and Elasticsearch can limit concurrent TLS
-handshakes.
+### Synonyms refresh control (9.1.0)
 
-## Search diagnostics and asynchronous operations
+Synonyms PUT and delete accept `refresh`, which waits for updated synonyms to
+be accessible and reloads affected analyzers.
 
-In 9.4.0, query logging covers `_search`, ES|QL, EQL, and SQL. A search-task
-watchdog can log hot threads for slow searches. Async result retrieval adds
-`return_intermediate_results` to control delivery of in-progress partial
-results, and async task status exposes `keep_alive`.
+### Operational endpoints and settings (9.3.0)
 
-## Shutdown and task operation
+Cat APIs add a circuit-breakers endpoint. Shard-capacity health thresholds are
+configurable. Elasticsearch can limit concurrent TLS handshakes.
 
-In 9.4.0, persistent-task reassignment during node shutdown becomes opt-in, and
-shutdown status reports shard snapshot pauses.
+## Resource controls, scripting, and telemetry
+
+### Mustache output limits (9.0.0)
+
+`mustache.max_output_size_bytes` limits Mustache script result length.
+
+### Operational defaults and metrics (9.0.0)
+
+`replica_unassigned_buffer_time` defaults to five seconds instead of three.
+Reindex metrics report seconds rather than milliseconds.
+
+### Indexing safeguards and thread-pool metrics (9.1.0)
+
+`IndexingPressureMonitor` accounts for document-expansion memory, and a maximum
+document-size limit is available. Thread-pool telemetry includes utilization
+and queue latency.
+
+## Connector and API privilege migration
+
+Connector APIs are restricted to `manage_connector` and `monitor_connector` in
+the breaking-change set. Review
+[breaking-changes.md](breaking-changes.md) before changing connector roles.

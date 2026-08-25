@@ -1,117 +1,157 @@
 # Security, Access, and Integrations
 
-## Attribute- and property-based access control
+Use this reference for authorization rules, identity-provider migration, HTTP
+and Java contracts, CDC clients, GenAI procedures, TLS keys, and seed or object
+storage integrations.
 
-ABAC applies to native users and native linked LDAP users as well as externally
-authenticated SSO users (2026.06.0). Administrators can tag native DBMS users
-and reference those tags in ABAC rules for dynamic role assignment. Managing
-the tags requires `DBMS USER METADATA MANAGEMENT`.
+## Attribute-based and property-based access
 
-A user-defined function can no longer be defined as part of a PBAC privilege
-(2026.06.0). This unsupported combination did not enforce the behavior implied
-by its definition; remove it from privilege rules.
+### ABAC user metadata
 
-## OIDC and authentication rules
+Attribute-Based Access Control applies to native users and native linked LDAP
+users as well as externally authenticated SSO users (since `2026.06.0`).
+Administrators can tag native DBMS users and reference those tags in ABAC rules
+for dynamic role assignment. Managing this data requires:
 
-`dbms.security.oidc.<provider>.auth_flow` supports PKCE and Implicit, with PKCE
-as the default (2026.06.0). Implicit is deprecated and will be removed; migrate
-configuration to PKCE.
+```text
+DBMS USER METADATA MANAGEMENT
+```
 
-The OIDC settings `dbms.security.oidc.<provider>.auth_params` and
-`dbms.security.oidc.<provider>.client_id` are deprecated.
+### PBAC and user-defined functions
+
+A user-defined function can no longer be defined as part of a Property-Based
+Access Control privilege. The combination is unsupported and did not behave as
+its definition implied. Remove UDF calls from PBAC privilege definitions.
+
+### Auth-rule validation
 
 Creating an auth rule with an invalid time function now fails immediately
-rather than deferring the failure to authorization-time evaluation
-(2026.05.0). Treat creation-time rejection as configuration validation.
+instead of deferring the error until authorization-time evaluation.
 
-## Privilege changes
+## Server-management privilege
 
 `dbms.cluster.cordonServer()`,
 `dbms.cluster.setAutomaticallyEnableFreeServers()`, and
-`dbms.cluster.uncordonServer()` require `SERVER MANAGEMENT`. Relying on an
-admin privilege to call them is deprecated; grant the specific privilege.
+`dbms.cluster.uncordonServer()` require `SERVER MANAGEMENT`. Relying on a broad
+admin privilege is deprecated; grant the specific privilege.
 
-In Cypher 25, revoking a privilege that cannot exist raises an error
-(2025.06). Administrative automation must handle the failure.
+The procedure-level migration also replaces `dbms.cluster.uncordonServer()`
+with the `ENABLE SERVER` command.
 
-## TLS defaults and key lifecycle
+## OIDC migration
 
-With OpenSSL provider 3.5 or later, TLS can use the
-`X25519MLKEM768` hybrid key exchange, combining X25519 and ML-KEM-768 for
-post-quantum protection (2026.05.0).
+`dbms.security.oidc.<provider>.auth_flow` supports PKCE and Implicit, with PKCE
+as the default. Implicit flow is deprecated and will be removed; migrate
+providers to PKCE.
 
-From 2025.10, four insecure Java 21 CBC suites leave the defaults, although
-they remain explicitly configurable:
+`dbms.security.oidc.<provider>.auth_params` and
+`dbms.security.oidc.<provider>.client_id` are also deprecated configuration
+entry points.
 
-```text
-TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
-TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
-TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
-```
+## HTTP APIs
 
-`dbms.ssl.policy.*.verify_hostname` defaults to `true` rather than `false`.
-After an upgrade, TLS policies verify peer hostnames unless existing
-configuration explicitly fixes the value.
+### Query API transaction identifiers
 
-Neo4j still loads PKCS #1 keys with a
-`-----BEGIN RSA PRIVATE KEY-----` header, but this support is deprecated and
-will be removed. Replace legacy server keys.
+Query API transaction IDs are six characters rather than four (since
+`2026.04.0`). Integrations that validate, persist, or size these identifiers
+must accept the longer value.
 
-## Query and transactional HTTP APIs
-
-Query API transaction identifiers are six characters rather than four
-(2026.04.0). Integrations that validate or store them must allow the longer
-value.
+### Transactional HTTP API replacement
 
 The transactional HTTP API is deprecated in 5.26 in favor of the HTTP Query
-API, which is enabled by default from 5.26. On earlier releases, enable the
-replacement by adding `QUERY_API_ENDPOINTS` to `server.http_enabled_modules`.
+API. The Query API is enabled by default from 5.26. On earlier releases, enable
+it by adding `QUERY_API_ENDPOINTS` to `server.http_enabled_modules`.
 
-Programmatic branching on error-message text is deprecated from 2025.04
-because messages can change. Parse GQLSTATUS error codes instead.
+### Stable error handling
+
+Error-message text is not a programmatic contract. Parse and branch on
+GQLSTATUS error codes; message text can change.
 
 ## Change Data Capture
 
-`db.cdc.current()` returns `txCommitTime` alongside the transaction identifier
-(2026.06.0), allowing a CDC client to obtain its most recent transaction's
-commit time.
+`db.cdc.current()` returns `txCommitTime`, letting a CDC client retrieve its
+most recent transaction's commit time together with its transaction identifier.
 
-The beta procedures `cdc.current()`, `cdc.earliest()`, and `cdc.query()` are
-deprecated. Use `db.cdc.current()`, `db.cdc.earliest()`, and `db.cdc.query()`.
+Replace beta namespace procedures as follows:
 
-## GenAI plugin
+```text
+cdc.current() -> db.cdc.current()
+cdc.earliest() -> db.cdc.earliest()
+cdc.query() -> db.cdc.query()
+```
 
-The GenAI plugin adds `GENAI_AZURE_OPENAI_BASE_URL` to change the base URL used
-by `ai.text` calls (2026.04.0). It also adds:
+## GenAI integrations
 
-- `ai.text.chunkByTokenLimit` to split input within a token limit; and
-- `ai.text.countToken` to estimate an input's token count.
+### Azure OpenAI base URL
+
+The GenAI plugin adds `GENAI_AZURE_OPENAI_BASE_URL`, which changes the base URL
+used by `ai.text` calls.
+
+### Token-aware text handling
+
+The plugin adds:
+
+- `ai.text.chunkByTokenLimit` to split an input into chunks within a token
+  limit.
+- `ai.text.countToken` to estimate the token count of an input.
+
+### File-based batch embeddings
 
 `ai.file.embedBatch` reads text from a local or remote file and generates
-embeddings (2026.05.0). It can split input into chunks and returns one row per
-chunk with its index, content, and embedding vector.
+embeddings (since `2026.05.0`). It can split input into chunks and returns one
+row per chunk with its index, content, and embedding vector.
 
-## Java and notification integrations
+## Java integration contracts
 
-The server-side Notification API and Result Core API
-`getNotifications()` method are deprecated from 5.26. Java integrations should
-stop using these notification entry points.
+The server-side Notification API and Result Core API's `getNotifications()`
+are deprecated from 5.26. Java integrations must stop depending on those
+notification entry points.
 
-Cypher 25 administrative commands using `WAIT` deliver cluster state as
-notifications rather than result rows (2025.06). Consumers must use the
-appropriate supported notification channel while it remains available.
+Neo4j 2025.01 removes public Java APIs related to allocators, groups,
+discovery, Raft, transaction memory, and query annotations. In particular,
+replace removed `com.neo4j.dbms.seeding.SeedProvider` with
+`DatabaseSeedProvider`; consult the upgrade reference for the complete removed
+surface.
 
-## Fleet security logs
+`CREATE DATABASE` in Cypher 25 accepts Java `Long` parameters in addition to
+`Int`.
 
-Security logs from self-managed Enterprise deployments can be collected for
-Aura Console Security Log Analyzer (2026.04.0). The deployment must be
-registered with Fleet Manager and log collection requires explicit opt-in.
+## Cloud and object-storage integration
 
-## Helm and object storage
+`S3SeedProvider` is replaced by `CloudSeedProvider` from 5.26. Cypher 25 also
+removes the `seedCredentials` database option; cloud credentials must come from
+the provider's built-in mechanism.
 
-Non-TLS/SSL MinIO endpoints in the `neo4j/neo4j-admin` Helm charts are
-deprecated. Configure the replacement `s3Endpoint`.
+Support for non-TLS/SSL MinIO endpoints in the `neo4j/neo4j-admin` Helm charts
+is deprecated. Configure the replacement `s3Endpoint`.
 
-Cloud seed credentials must use each provider's built-in mechanism; Cypher 25
-removes the `seedCredentials` database option (2025.06).
+## TLS key migration
+
+Neo4j can still load PKCS #1 private keys whose header is:
+
+```text
+-----BEGIN RSA PRIVATE KEY-----
+```
+
+That legacy form is deprecated and will be removed. Replace affected server
+keys before removal.
+
+With OpenSSL provider 3.5 or later, `X25519MLKEM768` combines X25519 with
+ML-KEM-768 for post-quantum hybrid key exchange. Separately, hostname
+verification defaults to `true` after the breaking TLS-policy change, so ensure
+certificates match configured peer names.
+
+## Cluster procedure integrations
+
+Update callers to the current entry points:
+
+```text
+dbms.cluster.recreateDatabase() -> dbms.recreateDatabase()
+dbms.cluster.routing.getRoutingTable() -> dbms.routing.getRoutingTable()
+dbms.cluster.uncordonServer() -> ENABLE SERVER
+dbms.cluster.readReplicaToggle() -> dbms.cluster.secondaryReplicationDisable()
+dbms.quarantineDatabase() -> dbms.unquarantineDatabase()
+```
+
+Cypher 25 removes `dbms.upgrade()` and `dbms.upgradeStatus()`. Do not invoke
+them from automation.

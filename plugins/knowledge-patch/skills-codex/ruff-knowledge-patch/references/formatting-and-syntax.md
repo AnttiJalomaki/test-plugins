@@ -1,102 +1,117 @@
 # Formatting and Syntax
 
-## Stable 2025 formatter style
+## Stable formatter behavior
 
-Ruff's 2025 stable style can create formatter diffs on upgrade. It includes
-(0.9.0):
+The 2025 stable formatter style includes all of these behaviors (0.9.0):
 
-- formatting expressions inside f-string elements;
-- choosing alternate quotes for strings inside f-strings;
-- preserving hexadecimal casing in f-string debug expressions;
-- choosing quote style per literal in an implicitly concatenated f-string;
-- joining an implicitly concatenated string into one literal when it fits on
-  one line;
-- removing the `ISC001` incompatibility warning;
-- preferring parentheses around an `assert` message instead of breaking the
+- format expressions inside f-string elements, choose alternate quotes for
+  strings inside f-strings, and preserve hexadecimal case in debug expressions;
+- choose quote style per literal in an implicitly concatenated f-string;
+- join an implicitly concatenated string into one literal when it fits on one
+  line;
+- no longer emit the `ISC001` incompatibility warning;
+- prefer parentheses around an `assert` message instead of breaking the
   assertion expression;
-- automatically parenthesizing overlong `if` guards in `match` cases and
-  formatting `match` patterns more consistently;
-- removing unnecessary parentheses around return type annotations;
-- keeping the opening parenthesis on the same line as `if` in a comprehension
-  whose condition has a leading comment;
-- formatting single-context-manager `with` statements consistently on Python
-  3.8 and older; and
-- accounting correctly for line width in docstring code blocks when
+- automatically parenthesize overlong `if` guards in `match` cases and format
+  `match` patterns consistently;
+- remove unnecessary parentheses around return type annotations;
+- keep the opening parenthesis on the same line as `if` in a comprehension when
+  its condition starts with a comment;
+- consistently format single-context-manager `with` statements on Python 3.8
+  and older; and
+- account for docstring-code-block width when
   `max-doc-code-line-length = "dynamic"`.
 
-The formatter later stopped adding unnecessary parentheses around a
-single-context-manager `with` statement with a trailing comment
-(0.10.0-guide).
+The formatter stopped adding unnecessary parentheses around a one-context
+manager `with` statement with a trailing comment (0.10.0-guide).
 
-## F-string, docstring, and match-case corrections
-
-Preview formatting no longer leaves trailing whitespace in a docstring after
-an escaped quote. Match cases using `[]` and `_` format consistently
-(0.11.0).
-
-Python 3.13.4 made a line break after the format specifier in a multiline
-f-string a syntax error. Ruff avoids inserting that break, which can change
-formatting on upgrade (0.12.0).
-
-## Preview style leading to the stable 2026 formatter
-
-Preview formatting removes parentheses around multiple exception types on
-Python 3.14 and newer, permits newlines after function headers without
-docstrings, and avoids extra parentheses around long `match` patterns with
-`as` captures. It adds fluent method-chain formatting and keeps lambda
-parameters on one line while parenthesizing an expanded body. Follow-up fixes
-preserve parentheses required by a lambda body (0.14.0).
-
-These 0.14-series preview changes became the stable 2026 style. Stable behavior
-also allows omission of extra spaces between escaped quotes and closing triple
-quotes, and enforces blank lines before decorated classes in stub files
+The 2026 stable style incorporates the preview formatter work from the 0.14
+series. It also permits omitting extra spaces between escaped quotes and a
+closing triple quote, and enforces blank lines before decorated classes in stub
+files. The `nested-string-quote-style` option was added later in that series
 (0.15.0).
 
-## Syntax validation
+## F-string correctness
 
-Preview mode reports compile-time errors including (0.11.0):
-
-- duplicate parameters or type parameters;
-- invalid `match` patterns;
-- illegal starred expressions;
-- invalid annotations;
-- module-level `nonlocal`; and
-- assignment to or deletion of `__debug__`.
-
-It version-gates PEP 701 f-strings, parenthesized context managers, starred
-annotations and indexes, tuple unpacking in `for` iterators, and
-unparenthesized exception tuples. When no Python version applies to a
-version-related diagnostic, preview defaults to the latest supported version
+Preview formatting stopped adding trailing whitespace to a docstring after an
+escaped quote. It also made `case []` and `case _` formatting consistent
 (0.11.0).
 
-These syntax checks became regular checks, including CPython compiler errors
-such as an irrefutable `match` pattern before the final `case`. At that point,
-an unset target made version-related syntax checks assume Python 3.13, while
-other lint behavior still defaulted to Python 3.9 (0.12.0).
+The formatter avoids a line break after a format specifier in a multiline
+f-string because Python 3.13.4 made that break a syntax error (0.12.0).
 
-## Python 3.15 syntax and imports
+## Preview formatter behavior
 
-Preview parsing supports Python 3.15 lazy imports and PEP 798 starred unpacking
-of comprehensions. It validates lazy-import syntax and preserves the `lazy`
-keyword during import sorting. `TID254` can require or ban lazy imports,
-another preview check finds lazy imports evaluated eagerly, and `RUF017` uses
-starred unpacking on Python 3.15 and newer (0.15.0).
+For Python 3.14 and newer, preview formatting removes parentheses around
+multiple exception types. It permits newlines after function headers without
+docstrings and avoids extra parentheses around long `match` patterns with `as`
+captures (0.14.0).
 
-## Markdown and mapped extensions
+Preview also adds fluent method-chain formatting. Lambda parameters stay on one
+line while an expanded body is parenthesized; later corrections preserve
+parentheses required by the lambda body (0.14.0).
 
-Preview formatting processes labeled Python code blocks in Markdown, including
-`pycon` and Quarto language markers, while leaving unlabeled blocks alone. The
-language server uses the same formatting. Markdown is discovered by default in
-preview from 0.15.5. `.qmd` no longer has an implicit special case and must be
-mapped explicitly (0.15.0):
+## Markdown formatting
+
+Preview formatting processes labeled Python blocks in Markdown, including
+`pycon` and Quarto language markers, while leaving unlabeled blocks unchanged.
+Markdown files became preview-discovered by default, and `.qmd` must be mapped
+explicitly (0.15.0):
 
 ```toml
 [tool.ruff]
 extension = { qmd = "markdown" }
 ```
 
-Configured extensions participate in discovery, code-block language
-selection, and later server handling (0.15.0).
+Python code blocks in Markdown are now formatted by default without a preview
+opt-in (0.16.0-guide).
 
-Python code blocks in Markdown are now formatted by default, without a preview
-opt-in, so `ruff format` can modify Markdown content (0.16.0-guide).
+## Syntax validation
+
+Preview checks validate compile-time errors including (0.11.0):
+
+- duplicate parameters or type parameters;
+- invalid `match` patterns;
+- illegal starred expressions and invalid annotations;
+- module-level `nonlocal`; and
+- assignment to or deletion of `__debug__`.
+
+Preview also version-gates PEP 701 f-strings, parenthesized context managers,
+starred annotations and indexes, tuple unpacking in `for` iterators, and
+unparenthesized exception tuples. If no Python version applies to a
+version-sensitive syntax diagnostic, it uses the latest supported Python
+(0.11.0).
+
+These checks moved into regular linting, including CPython compiler errors such
+as an irrefutable `match` case appearing before the final case (0.12.0). When
+`target-version` is unset, version-related syntax checks assume the latest
+supported Python, then 3.13, while other lint behavior defaults to the minimum
+supported Python, then 3.9.
+
+## Python 3.14 support
+
+`py314` is accepted as a target. Preview understands deferred annotations and
+Python 3.14 unparenthesized exception tuples. Parser and formatter support for
+template strings arrived later in the same series (0.11.0):
+
+```toml
+[tool.ruff]
+target-version = "py314"
+```
+
+Implicit default and latest Python-version settings later advanced for Python
+3.14. Preview also accepts `py315` (0.14.0):
+
+```toml
+[tool.ruff]
+preview = true
+target-version = "py315"
+```
+
+## Python 3.15 preview syntax
+
+Preview parsing supports lazy imports and PEP 798 star-unpacking of
+comprehensions. It validates lazy-import syntax and preserves the `lazy`
+keyword during import sorting. `TID254` can require or ban lazy imports, a
+separate preview check finds lazy imports that are evaluated eagerly, and
+`RUF017` uses starred unpacking on Python 3.15 and newer (0.15.0).

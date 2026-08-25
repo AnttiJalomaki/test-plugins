@@ -202,8 +202,8 @@ omitted. Empty file inputs are likewise omitted from remote form payloads.
 
 Remote queries can refresh related queries. Navigation with `invalidateAll`
 resets remote query state before the next route begins. Failed calls are safely
-consumed by reading `current` or `error`; preserving an HTTP status and body is
-expected for transport failures.
+consumed by reading `current` or `error`; transport failures preserve their HTTP
+status and body.
 
 Remote responses use `cache-control: private, no-store`. Do not put personalized
 results in shared caches by overriding that policy casually.

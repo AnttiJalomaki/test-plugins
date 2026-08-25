@@ -1,8 +1,10 @@
 {
   "patch": "aws-sdk-knowledge-patch",
-  "merged_at": "2026-07-12T19:58:07Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-20T22:07:08Z",
   "streams": {
-    "codex": "codex-gpt-5.6-sol"
+    "codex": "codex-gpt-5.6-sol-r2"
   },
   "batches": {
     "2026-06": {
@@ -32,6 +34,16 @@
     },
     "service-client-launches": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-07-2": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-08": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

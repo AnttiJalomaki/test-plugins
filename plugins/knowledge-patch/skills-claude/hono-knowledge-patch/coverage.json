@@ -1,8 +1,10 @@
 {
   "patch": "hono-knowledge-patch",
-  "merged_at": "2026-07-12T20:10:25Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T12:02:38Z",
   "streams": {
-    "codex": "codex-gpt-5.6-sol"
+    "codex": "codex-gpt-5.6-sol-r2"
   },
   "batches": {
     "4.8.0": {
@@ -52,6 +54,11 @@
     },
     "testing-and-auth": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.13.3": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

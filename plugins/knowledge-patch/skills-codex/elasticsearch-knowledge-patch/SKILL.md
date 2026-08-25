@@ -10,208 +10,185 @@ metadata:
 
 # Elasticsearch Knowledge Patch
 
-Use this skill when implementing, reviewing, upgrading, or operating modern
-Elasticsearch clusters. Start with the compatibility checks below, then open
-the topic reference that matches the work.
+Use this skill when implementing, upgrading, or operating Elasticsearch and
+the answer may depend on recent API, mapping, query-language, inference,
+vector-search, lifecycle, security, or platform behavior. Start with the
+breaking-change and deprecation checks, then load every topic reference that
+matches the task.
 
 ## Reference index
 
 | Reference | Topics |
-| --- | --- |
-| [breaking-changes.md](references/breaking-changes.md) | Removed behavior, changed defaults, migration hazards |
-| [deprecations-and-known-issues.md](references/deprecations-and-known-issues.md) | Deprecated APIs and settings, affected releases, fixes and workarounds |
-| [esql.md](references/esql.md) | ES\|QL sources, joins, full text, vectors, time series, functions, result semantics |
-| [search-and-vectors.md](references/search-and-vectors.md) | Retrievers, reranking, `semantic_text`, dense and sparse vectors |
-| [inference.md](references/inference.md) | Inference API tasks, providers, endpoint controls, chunking |
-| [data-mappings-and-ingest.md](references/data-mappings-and-ingest.md) | Data streams, failure stores, mappings, ingest, logs and metrics |
-| [lifecycle-snapshots-and-storage.md](references/lifecycle-snapshots-and-storage.md) | ILM, downsampling, transforms, reindexing, snapshots, repositories |
-| [security-cluster-and-operations.md](references/security-cluster-and-operations.md) | Security, federation, cluster APIs, runtime baselines, diagnostics |
+|---|---|
+| [breaking-changes.md](references/breaking-changes.md) | Removed APIs and settings, changed defaults, migration requirements, protocol and response changes |
+| [data-mappings-and-ingest.md](references/data-mappings-and-ingest.md) | Data streams, failure stores, mappings, time-series data, ingest processors, LogsDB, and OTLP |
+| [deprecations-and-known-issues.md](references/deprecations-and-known-issues.md) | Deprecation migrations, affected-version defects, workarounds, and fixed versions |
+| [esql.md](references/esql.md) | ES|QL commands, joins, functions, time-series analytics, external sources, PromQL, and partial results |
+| [inference.md](references/inference.md) | Inference tasks, providers, endpoint controls, chunking, credentials, and semantic defaults |
+| [lifecycle-snapshots-and-storage.md](references/lifecycle-snapshots-and-storage.md) | ILM, downsampling, reindexing, snapshots, repositories, transforms, and index controls |
+| [search-and-vectors.md](references/search-and-vectors.md) | Retrievers, rescoring, dense and sparse vectors, semantic fields, cross-project search, and diagnostics |
+| [security-cluster-and-operations.md](references/security-cluster-and-operations.md) | Authentication, authorization, TLS, cluster APIs, runtime baselines, metrics, connectors, and operational settings |
 
-## Apply the patch
+## Triage breaking changes first
 
-1. Determine the exact Elasticsearch version and deployment type.
-2. Check [breaking-changes.md](references/breaking-changes.md) before changing
-   mappings, query behavior, plugins, TLS, ingest, or lifecycle policy.
-3. Check
-   [deprecations-and-known-issues.md](references/deprecations-and-known-issues.md)
-   for the exact patch release, especially before an upgrade or rollback.
-4. Use the task-specific reference for implementation details.
-5. Prefer cluster mappings, settings, API responses, and tests over assumptions.
-6. Treat technical-preview features as unstable contracts and gate them behind
-   explicit deployment checks.
-7. For APIs that can return partial results, make completeness an explicit
-   application decision.
+Before an upgrade or rollout, inspect
+[breaking-changes.md](references/breaking-changes.md) in full. In particular:
 
-## Breaking-change quick reference
+- Treat ES|QL and EQL results as potentially partial unless the request or
+  cluster setting explicitly requires completeness; always inspect the
+  partial-result indicator.
+- Quote an ES|QL remote index pattern as one unit or leave the entire pattern
+  unquoted. Do not quote only the remote or index component.
+- Expect timeouts to return HTTP 429, invalid ingest simulation to return
+  HTTP 400, and byte-size parsing to accept at most two decimal places.
+- Plan for vectors to be excluded from `_source` by default on new indices,
+  while reindexing still carries vector values.
+- Reconfigure `discovery-ec2` for AWS SDK v2 and IMDSv2, remove unsupported
+  credentials and protocol settings, and supply both access-key fields or
+  neither.
+- Add explicit force merging after ILM downsampling when the policy requires
+  merged output; downsampling no longer force-merges by default.
+- Remove APIs and options that no longer exist: the unfreeze endpoint,
+  `_knn_search`, highlighting `force_source`, alias `local`, ingest
+  `user_agent.ecs`, and the removed GeoIP fallback option.
+- Remove retired settings including `client.type`, `tracing.apm.*`, and
+  `xpack.searchable.snapshot.allocate_on_rolling_restart`.
+- Validate TLS configurations without TLSv1.1 or `TLS_RSA`, and provide a bind
+  password whenever LDAP or Active Directory uses a bind DN.
 
-### Partial results
+## Migrate deprecated behavior
 
-- ES|QL returns partial results by default. Inspect `is_partial`, or set
-  `allow_partial_results=false` per request.
-- EQL also defaults `allow_partial_search_results` to `true`.
-- With a remote cluster configured as `skip_unavailable: true`, runtime errors
-  such as missing indices are reported as skipped or partial, not fatal.
-- Async result retrieval can expose intermediate results; callers must decide
-  whether those are acceptable.
+Before introducing or retaining a dependency, read
+[deprecations-and-known-issues.md](references/deprecations-and-known-issues.md).
+High-priority migrations include:
 
-### Source and vector defaults
-
-- New indices enable `exclude_source_vectors`, so vectors are not returned in
-  `_source` unless requested through supported vector retrieval paths.
-- New vector mappings default to DiskBBQ, and new `semantic_text` fields use
-  DiskBBQ with BFloat16 storage.
-- Reindex still carries vectors even when normal `_source` retrieval omits
-  them.
-- LogsDB and TSDB text fields omit norms.
-
-### Lifecycle and downsampling
-
-- ILM downsampling no longer force-merges by default. Add a force-merge action
-  or set `force_merge_index: true` when policy behavior depends on it.
-- The downsampling `aggregate` method preserves counter-reset information;
-  `last_value` remains storage-oriented.
-- Persistent-task reassignment during node shutdown is opt-in.
-
-### Ingest and mapping validation
-
-- Invalid ingest simulation requests return HTTP 400.
-- Metadata field definitions reject `type`, `fields`, `copy_to`, and `boost`.
-- `_source.mode` in the meta-field definition has no effect.
-- `date_histogram` rejects boolean input.
-- Byte-size values accept no more than two decimal places.
-- `ignore_malformed` date fields do not silently accept objects or arrays.
-
-### Security, TLS, and plugins
-
-- Secure settings belong in the Elasticsearch secure-settings mechanism, not
-  YAML.
-- A configured LDAP or Active Directory bind DN must have a bind password or
-  node startup fails.
-- Connector APIs require `manage_connector` or `monitor_connector`.
-- JDK 24 removes `TLS_RSA` cipher support, and TLSv1.1 is absent from defaults.
-- `discovery-ec2` uses AWS SDK v2, requires IMDSv2, and has revised endpoint and
-  credential configuration.
-- Inference requests cannot override endpoint `secret_parameters` in affected
-  patch releases.
-
-### Removed interfaces
-
-- The technical-preview `_knn_search` API, frozen-index reads, and the unfreeze
-  endpoint are removed.
-- Alias APIs no longer accept `local`; highlighting no longer accepts
-  `force_source`.
-- Cluster reroute responses no longer include cluster state.
-- The old `data_frame_transforms` roles and Watcher search `types` field are
-  removed.
-- Fleet search endpoints operate only on the local cluster.
-
-## Deprecation quick reference
-
-- Do not build new operational dependencies on the ES|QL query log.
-- Avoid the `logs` data-stream type in new definitions.
-- Omit `aggregate_metric_double.default_metric` from new mappings.
-- Replace ILM `max_size` rollover conditions.
-- Use strict `true` and `false` values in plugin analysis settings and system
-  properties.
-- Remove `indices.merge.scheduler.use_thread_pool`.
-- Write ES|QL `METADATA _id, _index` without brackets.
-- Plan migrations away from the machine-learning flush API, the `elser`
+- stop building operations around the ES|QL query log;
+- replace the deprecated `logs` data-stream type with a supported stream type;
+- omit `aggregate_metric_double.default_metric` from new mappings;
+- replace ILM's deprecated `max_size` rollover condition;
+- pass strict `true` or `false` values to plugin analysis settings and boolean
+  system properties;
+- remove `indices.merge.scheduler.use_thread_pool`;
+- list ES|QL `METADATA` fields directly, without brackets;
+- retire dependencies on the machine-learning flush API, the `elser`
   inference service, and Behavioral Analytics CRUD APIs.
 
-## ES|QL design checklist
+## Handle partial and asynchronous results deliberately
 
-- Quote a whole remote index pattern or none of it; do not quote only one
-  component.
-- Check index-mode restrictions before using search functions.
-- Treat `LOOKUP JOIN` capabilities as version-sensitive: aliases, multiple
-  fields, expression predicates, remote input, and post-join operations arrived
-  separately.
-- When using `TS`, verify the request timestamp range, `TBUCKET` bounds, window
-  size, reset-preserving downsampling, and series dimensions.
-- Use `METRICS_INFO` for metric discovery and `TS_INFO` for metric-and-series
-  discovery.
-- Expect `FORK` to send every row through every branch and add `_fork`.
-- Remember that `FORK` and subquery branches no longer inherit implicit limits.
-- Profiling is invalid with text response formats.
-- Views run their own pipelines and are unavailable when document- or
-  field-level security applies.
-- For vector queries, verify element type, quantization, candidate count,
-  visit percentage, and whether raw-vector rescoring is in memory or on disk.
+- Async ES|QL can return partial results on demand, formats async-get output,
+  and reports cross-cluster metadata while work is in progress.
+- ES|QL may return partial results by default. Set
+  `allow_partial_results=false` per request or
+  `esql.query.allow_partial_results: false` cluster-wide when correctness
+  requires every shard or cluster.
+- With `skip_unavailable: true`, remote runtime failures—including a missing
+  index—become non-fatal and the remote cluster is marked skipped or partial.
+- EQL defaults `allow_partial_search_results` to `true`; opt out for
+  all-shards-required workflows.
+- Async result retrieval can use `return_intermediate_results`, and async task
+  status exposes `keep_alive`.
 
-## Search and vector checklist
+## Use current ES|QL primitives
 
-- Use `rank_vectors` for multi-vector late-interaction reranking where building
-  HNSW for every vector would be too expensive.
-- Select a retriever based on intent: RRF for rank fusion, linear for weighted
-  normalized scores, MMR for diversification, pinned for curated placement,
-  and rescorer retrievers for a second stage.
-- Verify license requirements before creating DiskBBQ indices.
-- Avoid DiskBBQ for low-dimensional vectors and remember that it accepts
-  floating-point vectors.
-- Use `on_disk_rescore` when raw vectors exceed available RAM.
-- Use BFloat16 only when halved storage is worth its reduced precision.
-- Treat direct I/O as workload-dependent; it can help under page-cache pressure
-  but hurt when vectors fit in memory.
-- Empty `semantic_text` content does not generate embeddings.
-- A `semantic_text` field's `inference_id` can be updated, but defaults and
-  provider availability vary by release.
+Read [esql.md](references/esql.md) before composing recent pipelines.
 
-## Inference checklist
+- Use `LOOKUP JOIN` for lookup-index enrichment; it supports aliases, mixed
+  numeric keys, multiple fields, remote input, and preview expression
+  predicates, subject to the documented index-mode and remote-enrich rules.
+- Use `FORK` to branch every input row and merge results with an `_fork`
+  discriminator. Cross-cluster branches are supported.
+- Use `INLINE STATS` for inline grouped analytics, `LIMIT BY` for per-group
+  limits, and `SET approximate` for approximate analysis where preview status
+  is acceptable.
+- Use `METRICS_INFO` and `TS_INFO` after `TS` to discover metrics and series.
+- Use `PROMQL` and the Prometheus-compatible plugin endpoints only with their
+  technical-preview status in mind.
+- Use `TEXT_EMBEDDING`, `RERANK`, vector functions, and dense-vector
+  expressions with their current availability and usage constraints.
+- Expect `RENAME` to process sequentially and text output to omit null columns.
 
-- Distinguish endpoint creation settings, task settings, request settings, and
-  secrets; do not assume they are interchangeable.
-- Do not override stored secret parameters at request time.
-- Validate task compatibility before force-deleting an invalid endpoint.
-- Set query and transport timeouts deliberately; inference timeout responses
-  use HTTP 504.
-- Choose chunking explicitly when defaults matter; `none` disables automatic
-  chunking and recursive chunking is available.
-- Use data-URI form for base64 embedding inputs.
-- Do not send `max_tokens` with reasoning chat requests.
-- For provider migrations, verify API version, authentication method, aliases,
-  rate limiting, license, and request field names.
+## Configure semantic and vector search consciously
 
-## Data and ingest checklist
+Read [search-and-vectors.md](references/search-and-vectors.md) and
+[inference.md](references/inference.md) together for semantic search.
 
-- Enable a failure store explicitly for existing streams; selected new logs,
-  OTel, and APM streams enable one by default.
-- Query rejected documents with the `::failures` selector.
-- A logs document successfully redirected to a failure store returns HTTP 201
-  and `"failure_store": "used"`.
-- After enabling streams, index only to child streams and ensure conflicting
-  indices do not exist.
-- Use `recover_failure_document` when remediating failure-store records.
-- Inspect the effective mapping returned by ingest simulation.
-- For synthetic source, verify recovery-source behavior and the storage of text
-  multi-fields.
-- For TSDB doc-values skippers, check
-  `index.mapping.use_doc_values_skipper` and per-field overrides.
+- `semantic_text` is generally available and participates in `match`,
+  `sparse_vector`, kNN, highlighting, multi-fields, and the text field family.
+- New `semantic_text` fields use current inference, DiskBBQ, BFloat16, and
+  chunking defaults; pin choices explicitly when stable behavior matters.
+- DiskBBQ is designed for lower-memory search, accepts floating-point vectors,
+  uses quantization, and should not be the automatic choice for
+  low-dimensional data.
+- Tune DiskBBQ with `num_candidates` or `visit_percentage`; configure its
+  quantization level where supported.
+- Use `on_disk_rescore` when raw vectors exceed RAM. Use direct I/O only after
+  evaluating whether vectors fit in memory, because it can trade page-cache
+  pressure for slower searches.
+- Set `oversample: 0` to bypass quantized-vector oversampling and rescoring.
+- Account for the Enterprise-license requirement before creating new
+  DiskBBQ indices migrated from affected earlier versions.
 
-## Upgrade triage
+## Build reliable data-stream and ingest flows
 
-- Never jump to a known-bad patch release when a fixed patch is available.
-- A direct upgrade from 9.1.10 to 9.2.4 can fail; target 9.2.5 or later.
-- Upgrade 9.3.6 to 9.3.7 for trained-model request-limit fixes.
-- Upgrade GCS ADC users from 9.2.8 to 9.2.9 or from 9.3.3 to 9.3.4.
-- Upgrade mixed-GPU clusters from 9.3.1 to 9.3.2.
-- Upgrade shrunk TSDB or LogsDB users from 9.1.0/9.1.1 to 9.1.2.
-- Check old 7.x template residue if Watcher fails after reaching 9.x.
-- Match Windows path casing exactly when entitlements are involved.
-- Read the full workaround, scope, and cleanup steps in
-  [deprecations-and-known-issues.md](references/deprecations-and-known-issues.md).
+Read [data-mappings-and-ingest.md](references/data-mappings-and-ingest.md).
 
-## Operational verification
+- Enable failure stores through data-stream options for existing streams or
+  `template.data_stream_options.failure_store.enabled` for new streams.
+- Query rejected documents with the `::failures` selector and remediate them
+  with `recover_failure_document`.
+- Do not assume a failure-store write is an error response: eligible new log,
+  telemetry, and APM streams can return `201 Created` with
+  `"failure_store": "used"`.
+- Use `include_source_on_error` to control source exposure in parse errors.
+- Use ingest simulation's effective mapping and merge behavior to validate
+  pipelines; malformed processors now fail simulation with HTTP 400.
+- Treat OTLP histograms as `exponential_histogram` by default and use the
+  field's supported ES|QL aggregations.
+- Check LogsDB, TSDB, synthetic-source, doc-values-skipper, sequence-number,
+  and synthetic-ID defaults instead of carrying assumptions from older
+  indices.
 
-- Confirm response status and semantic completion separately; HTTP success can
-  still carry partial or redirected outcomes.
-- Inspect thread-pool utilization and queue latency when diagnosing indexing
-  pressure.
-- Use circuit-breaker and shard-capacity health data before changing capacity.
-- For vector performance, compare off-heap usage, page-cache pressure, direct
-  I/O, candidate counts, and early termination.
-- For S3 repositories, validate conditional-write compatibility and timeouts
-  against the actual object store.
-- Reload secure settings and confirm the returned setting names and keystore
-  modification time.
-- Exercise TLS reloads against the files themselves, including CSI-style
-  symlink swaps where applicable.
+## Plan lifecycle and repository changes
+
+Read [lifecycle-snapshots-and-storage.md](references/lifecycle-snapshots-and-storage.md)
+before changing retention, migration, or backup policy.
+
+- Use `index.lifecycle.skip` to exclude a single index from ILM.
+- Account for automatic unfollow ordering before downsampling and for the
+  leader time-series end-time wait.
+- Choose the downsampling method explicitly and decide whether an ILM force
+  merge is needed.
+- Test S3 repository configuration after the AWS SDK v2 migration. Use IMDSv2,
+  conditional-write protections, idle-timeout controls, and API-call timeouts
+  as appropriate.
+- Filter snapshots by `state` and use `replicate_for` when searchable-snapshot
+  replication must persist for a defined duration.
+- Review the known GCS ADC, S3 analysis, upgrade, merge, and low-disk defects
+  before operating on affected versions.
+
+## Verify security and platform assumptions
+
+Read [security-cluster-and-operations.md](references/security-cluster-and-operations.md)
+for cluster or deployment work.
+
+- Store secure settings through Elasticsearch's secure-settings mechanism,
+  never in YAML.
+- Treat Entitlements—not the Java SecurityManager—as the runtime permission
+  system, and preserve exact filesystem path casing on Windows.
+- Recheck connector roles, cross-cluster key trust and signing, SAML/JWT
+  behavior, API-key cloning, and service-account-token availability.
+- Expect the bundled JDK, Lucene baseline, container base, and FIPS defaults to
+  affect plugins, images, and compliance validation.
+- Inspect thread-pool utilization and queue latency, indexing pressure,
+  document expansion, document-size limits, query logs, and watchdog hot
+  threads when diagnosing load.
+
+## Check affected-version defects
+
+Do not deploy a workaround without matching its exact affected version in
+[deprecations-and-known-issues.md](references/deprecations-and-known-issues.md).
+That reference contains exact fixed versions and, where required, JVM policy
+or logger overrides for trained-model limits, GCS ADC, mixed GPU clusters,
+node-shutdown metadata, DiskBBQ licensing, TSDB/LogsDB merges, direct I/O,
+low-disk shard closure, ES|QL grouping, Windows entitlements, Active Directory,
+Watcher templates, and S3 repository analysis.

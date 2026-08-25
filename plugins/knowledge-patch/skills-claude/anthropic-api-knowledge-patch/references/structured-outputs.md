@@ -1,14 +1,11 @@
 # Structured Outputs
 
-Use this reference for schema-constrained final responses and strict tool
-arguments.
-
 ## Raw JSON output
 
-Structured output is GA and needs no beta header. Set
-`output_config.format.type` to `json_schema` and provide `schema`. The response
-still carries matching JSON as a string in a text content block; a raw client
-must select that block and decode its text.
+Batch `structured-outputs` documents the GA request shape, which needs no beta
+header. Set `output_config.format.type` to `json_schema` and provide `schema`.
+The matching JSON is returned as a string in a text content block; raw callers
+must select the block and decode its text.
 
 ```python
 response = client.messages.create(
@@ -28,10 +25,11 @@ response = client.messages.create(
 data = json.loads(next(b.text for b in response.content if b.type == "text"))
 ```
 
-The Python convenience parser is an intentional exception. Pass a Pydantic
-model through `output_format` to `client.messages.parse()`; it translates the
-request and returns the validated object as `response.parsed_output`. Other
-SDKs require `output_config` directly.
+## Python parse helper
+
+Python's convenience API still takes `output_format=SomePydanticModel`,
+translates it internally, and exposes the validated instance as
+`response.parsed_output`:
 
 ```python
 response = client.messages.parse(
@@ -43,22 +41,26 @@ response = client.messages.parse(
 order = response.parsed_output
 ```
 
+Do not generalize this helper signature to raw requests or other SDKs; those use
+`output_config` directly.
+
 ## SDK schema simplification
 
-Python, TypeScript, Ruby, and PHP helpers strip unsupported constraints such as
-`minimum`, `maximum`, `minLength`, and `maxLength`, move their intent into
+Python, TypeScript, Ruby, and PHP helpers remove unsupported constraints such
+as `minimum`, `maximum`, `minLength`, and `maxLength`, move their intent into
 descriptions, add `additionalProperties: false`, and filter unsupported string
-formats. C# and Go do the same when deriving schemas from native types.
+formats before submitting the schema. C# and Go do the same when deriving a
+schema from native types.
 
-These SDKs validate the result against the original schema locally, but the
-server grammar sees only the simplified schema. Do not assume every source-type
-constraint influenced generation.
+The helpers validate returned data against the original schema client-side, but
+the server grammar is constrained only by the simplified schema. Do not assume
+every native validation rule was enforced during generation.
 
-## Strict tools
+## Strict tool schemas
 
-Set `strict: true` on a tool to grammar-constrain its selected name and input to
-`input_schema`. Strict and non-strict tools may coexist, and strict tools can be
-combined with a final JSON output schema.
+Set `strict: true` separately on every tool that needs grammar-constrained tool
+selection and input. Strict and non-strict tools may coexist, and strict tools
+can be combined with a final JSON output schema.
 
 ```python
 tools=[{
@@ -73,39 +75,42 @@ tools=[{
 }]
 ```
 
-The final-output grammar constrains only direct output. It does not constrain
-tool calls, tool results, or thinking; tool arguments need their own
-`strict: true` schema.
+The final output grammar constrains only direct output. It does not constrain
+tool calls, tool results, or thinking; tool arguments need their own strict
+schema.
 
-## Complexity ceilings
+## Complexity limits
 
-Across all strict tool schemas plus the final-output schema, one request may
-contain at most:
+Across all strict tool schemas and the final-output schema, a request may have
+at most 20 strict tools, 24 optional parameters, and 16 parameters that use
+`anyOf` or a type array. Interactions among unions, nesting, optional fields,
+and tool count can still cause HTTP 400 `Schema is too complex for compilation`.
+Grammar compilation times out after 180 seconds.
 
-- 20 strict tools
-- 24 optional parameters
-- 16 parameters using `anyOf` or a type array
+Reduce nesting, unions, optionals, or strict-tool count when near these limits.
 
-Union interactions, nesting, optional fields, and tool count can still cause
-HTTP 400 `Schema is too complex for compilation`. Grammar compilation times out
-after 180 seconds.
+## Stop reasons, values, and ordering
 
-## Parsing and compliance edge cases
+Inspect `stop_reason` before decoding or validating. Refusals and `max_tokens`
+truncation can return content outside or short of the schema.
 
-Inspect `stop_reason` before parsing. Refusals can return non-schema content,
-and `max_tokens` can truncate a response before it satisfies the schema.
+Even a normally completed `enum` or `const` can differ from its declared value
+only in capitalization. Avoid values distinguished solely by case and compare
+case-insensitively.
 
-Even a normally completed `enum` or `const` may differ from the declared value
-in capitalization. Avoid values distinguished only by case and compare these
-values case-insensitively. Objects emit required properties first in schema
-order, followed by optional properties in schema order.
+Objects place required properties first in schema order, followed by optional
+properties in schema order. Do not rely on arbitrary serializer ordering.
 
-Citations combined with `output_config.format` return HTTP 400. Assistant
-message prefilling is also incompatible with JSON output.
+## Incompatible combinations
 
-## Sensitive data in schema grammars
+Citations combined with `output_config.format` return HTTP 400. Message
+prefilling is also incompatible with JSON outputs. Choose another grounding or
+formatting strategy rather than sending either combination.
 
-Prompts and responses can retain zero-data-retention handling, but the compiled
-schema grammar is cached separately for up to 24 hours and does not receive the
-same protected-health-information safeguards. Keep PHI out of property names,
-`enum` and `const` values, and regex patterns; place it only in message content.
+## Sensitive schema data
+
+Prompts and responses can retain zero-data-retention handling, but the
+schema-derived grammar is cached separately for up to 24 hours and does not
+receive the same protected-health-information safeguards. Keep PHI out of
+property names, `enum` or `const` values, and regex patterns. Put sensitive data
+only in message content.

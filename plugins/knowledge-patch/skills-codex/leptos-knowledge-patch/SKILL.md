@@ -20,7 +20,7 @@ matches the code being changed.
 | --- | --- |
 | [cargo-leptos](references/cargo-leptos.md) | Prebuilt installation, supported archives, checksums, stable hot reload |
 | [Migration and configuration](references/migration-and-configuration.md) | Imports, constructors, storage, options, crate versions, CSS, feature flags |
-| [Reactivity and stores](references/reactivity-and-stores.md) | Arc signals, guards, resources, automatic batching, conversions, stores |
+| [Reactivity and stores](references/reactivity-and-stores.md) | Arc signals, guards, resources, batching, conversions, stores |
 | [Routing, SSR, and integrations](references/routing-ssr-and-integrations.md) | Typed routes, fallbacks, transitions, islands routing, document shells, Axum |
 | [Server functions and lazy loading](references/server-functions-and-lazy-loading.md) | Custom errors, WebSockets, codecs, body limits, code splitting, lazy routes |
 | [Views, components, and browser APIs](references/views-components-and-browser.md) | Typed views, attribute spreading, binding, rendering traits, ShowLet, platform attributes |
@@ -34,7 +34,8 @@ matches the code being changed.
   `leptos_router::hooks`.
 - Replace `create_signal(...)` with `signal(...)` and
   `create_rw_signal(...)` with `RwSignal::new(...)`.
-- Do not add an explicit `batch(...)`: updates are automatically batched.
+- Remove explicit `batch(...)` calls; reactive updates are automatically
+  batched.
 
 ### Return statically typed views
 

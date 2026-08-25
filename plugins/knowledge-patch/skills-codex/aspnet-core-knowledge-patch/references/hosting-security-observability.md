@@ -1,25 +1,22 @@
 # Hosting, Security, Compression, and Observability
 
-These hosting and diagnostics behaviors apply to ASP.NET Core `10.0`.
+Batch attribution: `10.0`.
 
-## Authentication and Identity metrics
+## Collect Authentication and Identity Metrics
 
-ASP.NET Core reports authentication duration and counts for challenge,
-forbid, sign-in, sign-out, and authorization operations. Identity metrics use
-the `Microsoft.AspNetCore.Identity` meter. Available instruments include:
+ASP.NET Core reports authentication duration and counts for challenge, forbid, sign-in, sign-out, and authorization operations.
+
+Identity metrics use the `Microsoft.AspNetCore.Identity` meter. Available instruments include:
 
 - `aspnetcore.identity.user.create.duration`
 - `aspnetcore.identity.user.check_password_attempts`
 - `aspnetcore.identity.sign_in.sign_ins`
 
-Use the actual meter and instrument names when configuring collection or
-dashboards.
+Select instruments intentionally rather than assuming Identity measurements share another authentication meter.
 
-## Exception-handler diagnostic suppression
+## Control Diagnostics for Handled Exceptions
 
-An exception handled by `IExceptionHandler` no longer emits logs or other
-diagnostics by default. Configure `SuppressDiagnosticsCallback` to report
-selected handled exceptions or return `false` to restore the earlier behavior:
+Exceptions handled by an `IExceptionHandler` do not emit logs and other diagnostics by default. Set `ExceptionHandlerOptions.SuppressDiagnosticsCallback` to choose which handled exceptions remain observable, or return `false` for every exception to restore reporting:
 
 ```csharp
 app.UseExceptionHandler(new ExceptionHandlerOptions
@@ -28,35 +25,28 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
 });
 ```
 
-## `.localhost` development domains
+## Bind Development `.localhost` Domains
 
-Kestrel treats configured `*.localhost` hosts as loopback bindings, not
-wildcard external bindings. The `web` and `blazor` templates accept
-`--localhost-tld` and can use a host such as `<project>.dev.localhost`.
+Kestrel treats configured `*.localhost` hosts as loopback bindings instead of wildcard external bindings.
 
-The development certificate covers `*.dev.localhost` after it is trusted
-again:
+The `web` and `blazor` templates accept `--localhost-tld` to create a host such as `<project>.dev.localhost`. After adopting that domain, trust the development certificate again because the development certificate covers `*.dev.localhost`:
 
-```console
+```bash
 dotnet dev-certs https --trust
 ```
 
-## Evicting memory pools from dependency injection
+## Use Evicting Memory Pools
 
-ASP.NET Core registers `IMemoryPoolFactory<byte>`. Its `Create` method returns
-pools that automatically evict idle blocks. Replacing the factory through
-dependency injection removes that guarantee unless the custom implementation
-provides equivalent eviction itself.
+ASP.NET Core registers `IMemoryPoolFactory<byte>`. Its `Create` method returns pools that automatically evict idle blocks.
 
-## HTTP.sys request-queue security descriptors
+A custom registered `IMemoryPoolFactory<byte>` does not acquire this behavior automatically. The custom implementation must provide its own eviction behavior.
 
-Set `HttpSysOptions.RequestQueueSecurityDescriptor` to a
-`GenericSecurityDescriptor` to grant or deny request-queue access for users
-and groups. The setting applies only when HTTP.sys creates a new request queue;
-it cannot modify an existing queue.
+## Secure New HTTP.sys Request Queues
 
-## Test top-level-statement applications
+`HttpSysOptions.RequestQueueSecurityDescriptor` accepts a `GenericSecurityDescriptor` that grants or denies queue access to users and groups.
 
-The ASP.NET Core source generator emits the `public partial class Program`
-needed by test projects. Remove a manual declaration from applications that
-use top-level statements to avoid maintaining a redundant compatibility shim.
+The descriptor applies only when HTTP.sys creates a new request queue. It cannot change the security descriptor of an existing queue, so queue lifecycle must be considered when validating the configuration.
+
+## Test Apps That Use Top-Level Statements
+
+The ASP.NET Core source generator emits the `public partial class Program` needed by test projects. Remove a manual declaration from applications that use top-level statements; retaining it is no longer required for integration-test access.

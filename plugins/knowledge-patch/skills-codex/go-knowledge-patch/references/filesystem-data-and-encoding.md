@@ -1,21 +1,14 @@
 # Filesystems, Data, and Encoding
 
-Batch coverage: `1.23.0`, `1.24-guide`, `1.25.0`, `1.26.0`.
+## Confined and symlink-aware filesystems
 
-## Contents
+### Traversal-resistant filesystem roots (`1.24-guide`)
 
-- [Traversal-resistant roots](#traversal-resistant-roots)
-- [Symbolic links and filesystem testing](#symbolic-links-and-filesystem-testing)
-- [Windows filesystem behavior](#windows-filesystem-behavior)
-- [Tar ownership](#tar-ownership)
-- [JSON v2 experiment](#json-v2-experiment)
-- [JPEG output](#jpeg-output)
-
-## Traversal-resistant roots
-
-### `os.Root`
-
-`os.OpenRoot` opens a directory as an `*os.Root`. Root operations resolve relative names while rejecting `..` or symbolic-link traversal that would escape the directory. Contained `..` components and symlinks remain valid. This is stronger than lexical sanitization and avoids the check/use race created by validating a path before opening it.
+`os.OpenRoot` opens a directory as an `*os.Root`. Its operations resolve
+relative names while rejecting `..` or symlink traversal that would escape the
+root. Contained `..` components and symlinks remain valid, making this stronger
+than lexical sanitization and immune to the check/use race of pre-validating a
+path.
 
 ```go
 root, err := os.OpenRoot(baseDirectory)
@@ -27,56 +20,93 @@ defer root.Close()
 file, err := root.Open(untrustedFilename)
 ```
 
-The original API provides `Create`, `Lstat`, `Mkdir`, `Open`, `OpenFile`, `OpenRoot`, `Remove`, and `Stat` methods on `Root`, but no rename or symlink-creation methods. Use `os.OpenInRoot(baseDirectory, untrustedFilename)` for a one-shot open instead of `os.Open(filepath.Join(baseDirectory, untrustedFilename))`.
+The initial API provides `Create`, `Lstat`, `Mkdir`, `Open`, `OpenFile`,
+`OpenRoot`, `Remove`, and `Stat`, but not rename or symlink creation.
+`os.OpenInRoot(baseDirectory, untrustedFilename)` is the safe one-shot form.
 
-### Platform limits
+### Platform limits of `os.Root` (`1.24-guide`)
 
-- On Unix, a root follows its directory across rename or deletion and prevents symlink escape. It does not prevent traversal through mount points such as bind mounts.
-- On Windows, roots reject reserved device names and hold a handle that prevents renaming or deleting the root.
-- On `GOOS=js`, roots use name-based checks and remain vulnerable to symlink TOCTOU races.
-- On WASI, protection is only as strong as the implementation.
-- On Plan 9, roots use lexical checks because the platform has no symlinks.
+On Unix, a root follows its directory through rename or deletion and blocks
+symlink escape, but does not stop traversal through mount points. Windows roots
+reject reserved device names and retain a handle that prevents renaming or
+deleting the root. `GOOS=js` uses name checks vulnerable to symlink TOCTOU
+races; WASI protection depends on its implementation, and Plan 9 is lexical
+because it has no symlinks.
 
-## Symbolic links and filesystem testing
+### Symlink-aware filesystem operations (`1.25.0`)
 
-### Standard link interface and copying
+`io/fs.ReadLinkFS` standardizes reading links. `os.DirFS`, `os.Root.FS`, and
+`fstest.MapFS` implement it. `tar.Writer.AddFS` and `os.CopyFS` preserve links
+from supporting filesystems. `fstest.TestFS` validates the interface and no
+longer follows links during its walk.
 
-`io/fs.ReadLinkFS` standardizes symbolic-link reads. `os.DirFS`, `os.Root.FS`, and `fstest.MapFS` implement it. `tar.Writer.AddFS` and `os.CopyFS` preserve links when the source filesystem supports the interface.
+## File metadata, handles, and filesystem tests
 
-`fstest.TestFS` validates `ReadLinkFS` and no longer follows symbolic links during its walk.
+### Overriding tar owner names (`1.23.0`)
 
-### Structured `fstest` errors
+When input to `archive/tar.FileInfoHeader` implements `FileInfoNames`, its
+methods supply `Uname` and `Gname` instead of platform-dependent owner lookup.
 
-`testing/fstest.TestFS` returns an error with `Unwrap() []error`. Use `errors.Is` and `errors.As` to inspect individual filesystem failures.
+### Windows reparse-point behavior (`1.23.0`)
 
-## Windows filesystem behavior
+On Windows, `Stat` marks AF_UNIX reparse points as `ModeSocket`; mount points
+are no longer `ModeSymlink`, and other non-symlink reparse points are
+`ModeIrregular`. `EvalSymlinks` no longer follows mount points. It and
+`Readlink` stop normalizing volumes to drive letters. The compatibility
+settings `winsymlink` and `winreadlinkvolume` both default to 1 for 1.23.
 
-### Reparse points
+### Structured `fstest` errors (`1.23.0`)
 
-On Windows, `Stat` reports AF_UNIX reparse points as `ModeSocket`. It no longer reports mount points as `ModeSymlink`; other non-symlink reparse points are `ModeIrregular`.
+`testing/fstest.TestFS` returns an error with `Unwrap() []error`, allowing
+individual failures to be found with `errors.Is` and `errors.As`.
 
-`EvalSymlinks` no longer follows mount points. Both `EvalSymlinks` and `Readlink` stop normalizing volumes to drive letters. The `winsymlink` and `winreadlinkvolume` compatibility settings both default to 1 for Go 1.23.
+### Windows asynchronous file handles (`1.25.0`)
 
-### Asynchronous handles
+`os.NewFile` integrates overlapped handles with the runtime completion port.
+Reads and writes no longer block an OS thread, and deadlines work unless the
+handle already belongs to another completion port.
 
-`os.NewFile` integrates overlapped handles with the runtime completion port. Reads and writes do not block an OS thread, and deadlines are available unless the handle already belongs to another completion port.
+### Native process and Windows file controls (`1.26.0`)
 
-`os.OpenFile` accepts combinations of native Windows flags including `FILE_FLAG_OVERLAPPED` and `FILE_FLAG_SEQUENTIAL_SCAN`.
+`os.Process.WithHandle` provides controlled access to a pidfd on Linux 5.4+ or
+a Handle on Windows. On Windows, `os.OpenFile` accepts combinations of native
+flags such as `FILE_FLAG_OVERLAPPED` and `FILE_FLAG_SEQUENTIAL_SCAN`.
 
-## Tar ownership
+## JSON, hashes, images, compression, and identifiers
 
-When input to `archive/tar.FileInfoHeader` implements `FileInfoNames`, its methods populate `Uname` and `Gname` instead of using platform-dependent owner lookup.
+### Experimental JSON v2 (`1.25.0`)
 
-## JSON v2 experiment
+Building with `GOEXPERIMENT=jsonv2` exposes `encoding/json/v2` and
+`encoding/json/jsontext`, and switches `encoding/json` to the new backend while
+preserving marshal and unmarshal behavior apart from possible error-text
+changes.
 
-Building with `GOEXPERIMENT=jsonv2` exposes `encoding/json/v2` and the lower-level `encoding/json/jsontext` package:
+### Cloneable and extendable hashes (`1.25.0`)
 
-```sh
-GOEXPERIMENT=jsonv2 go test ./...
-```
+`hash.XOF` represents arbitrary-length-output hashes such as SHAKE, while
+`hash.Cloner` copies hash state. Every standard-library `hash.Hash`
+implementation is cloneable, including SHA-3 and `maphash.Hash` through their
+new clone methods.
 
-The experiment also switches `encoding/json` to the new implementation while preserving marshal and unmarshal behavior, apart from possible changes to error text.
+### JPEG output changes (`1.26.0`)
 
-## JPEG output
+The replacement JPEG encoder and decoder are more accurate but can produce
+different bytes. Update golden tests and caches that compare encoded bytes.
 
-The replacement JPEG encoder and decoder are more accurate but may produce different bytes for the same image. Update golden tests and caches that compare encoded JPEG bytes exactly.
+### JSON v2 becomes the standard backend (`1.27.0`)
+
+`encoding/json/v2` and `encoding/json/jsontext` are available. V2 rejects
+invalid UTF-8 strings and duplicate object names by default. The existing
+`encoding/json` API uses the v2 backend while preserving marshal and unmarshal
+behavior apart from possible error-text changes.
+`GOEXPERIMENT=nojsonv2` temporarily restores the old implementation.
+
+### Standard UUID support (`1.27.0`)
+
+The `uuid` package generates and parses UUIDs.
+
+### Changed DEFLATE-family output (`1.27.0`)
+
+The new compression implementation can produce bytes different from 1.26 for
+DEFLATE and packages built on it. Golden tests, caches, and protocols should
+compare decoded content or otherwise tolerate the change.

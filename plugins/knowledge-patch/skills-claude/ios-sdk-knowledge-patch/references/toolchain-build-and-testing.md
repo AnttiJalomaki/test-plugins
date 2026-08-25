@@ -1,88 +1,103 @@
 # Toolchain, Build, and Testing
 
-Use this reference to select an Xcode/host combination, diagnose device and
-Simulator behavior, manage linker and module changes, and adopt build and test
-features.
+## Xcode compatibility and device support
 
-## Selecting Xcode and the Host
+### Xcode 16.3 requirements (18.4)
 
-Xcode 16.3, associated with the 18.4 SDK batch (`18.4`), bundles the iOS and
-iPadOS 18.4 SDKs and requires macOS Sequoia 15.2 or later. Its on-device
-debugging floors are iOS and tvOS 15, watchOS 7, and visionOS.
+Xcode 16.3 bundles the iOS and iPadOS 18.4 SDKs and requires macOS Sequoia 15.2
+or later. On-device debugging supports iOS and tvOS 15 or later, watchOS 7 or
+later, and visionOS.
 
-Xcode 16.4, associated with the 18.5 SDK batch (`18.5`), bundles the iOS and
-iPadOS 18.5 SDKs and supports hosts from macOS Sequoia 15.3 through macOS Tahoe
-26.1.
+### Xcode 16.4 requirements (18.5)
 
-Xcode 26, associated with the stable 26.0 SDK batch (`26.0`), bundles Swift 6.2
-and the version 26 SDKs for iOS, iPadOS, tvOS, watchOS, macOS Tahoe, and
-visionOS. It requires macOS Sequoia 15.6 or later. Its on-device debugging
-floors are iOS and tvOS 15, watchOS 8, and visionOS.
+Xcode 16.4 bundles the iOS and iPadOS 18.5 SDKs. Its supported host range is
+macOS Sequoia 15.3 through macOS Tahoe 26.1.
 
-Distinguish these three constraints when troubleshooting: the host floor, the
-SDK bundled for compilation, and the device OS floor supported for debugging.
+### Xcode 26 requirements (26.0)
 
-## Simulator Safari Extension Limitation
+Xcode 26 bundles Swift 6.2 and the iOS, iPadOS, tvOS, watchOS, macOS Tahoe, and
+visionOS 26 SDKs. It requires macOS Sequoia 15.6 or later. On-device debugging
+supports iOS and tvOS 15 or later, watchOS 8 or later, and visionOS.
 
-Safari extensions do not appear in iOS or visionOS Simulator with Xcode 16.3
-(`18.4`). Test extension discovery and behavior on a physical device for those
-platforms.
+Check this matrix before diagnosing unavailable runtimes, unsupported devices,
+or a host installation failure.
 
-## Linker and Debug Dylib Behavior
+## Linking and module builds
 
-For Xcode 16.3 (`18.4`), using `LD_CLIENT_NAME` no longer needs the
-`ENABLE_DEBUG_DYLIB=NO` workaround for a missing debug-dylib runtime crash.
-Remove the workaround unless another independently verified issue still needs
-it.
+### Debug dylib and `LD_CLIENT_NAME` (18.4)
+
+Using `LD_CLIENT_NAME` no longer needs the `ENABLE_DEBUG_DYLIB=NO` workaround
+for the missing debug-dylib runtime crash. Remove the workaround unless another
+independent issue requires it.
+
+### App-bundle stack size failure (18.4)
 
 The `-stack_size` linker flag can still fail for an app-bundle target in Xcode
-16.3. If the flag is essential, reproduce the failure in a minimal app-bundle
-target and avoid assuming the failure comes from application startup code.
+16.3. Treat this as a toolchain-specific linker limitation when it reproduces
+only for that target and version.
 
-## Device Diagnostics Collection
+### Swift explicit modules (26.0)
 
-In Xcode 16.4 (`18.5`), this command collects a sysdiagnose from the Mac and
-from every available device by default:
+Xcode 26 enables Swift explicit modules by default except for targets using a
+pre-Swift-5 language version or Swift/C++ interoperability. For a severe
+compatibility issue, temporarily set `SWIFT_ENABLE_EXPLICIT_MODULES=NO` while
+isolating the incompatible module.
 
-```sh
-devicectl diagnose
-```
+## Package builds
 
-No additional per-device argument is required. Expect a broader collection,
-more output, and potentially longer collection time than a Mac-only diagnostic.
+### Preview shared package builder (26.0)
 
-## Metal 4 Indirect Command Buffer Residency
-
-When using Metal 4 command encoders from the version 26 SDK (`26.0`), include
-render and compute pipelines that support indirect command buffers in the
-residency set. The driver may not currently enforce this requirement, but code
-must not depend on that enforcement gap.
-
-## Preview Swift Package Builder
-
-Xcode 26 (`26.0`) previews a package-build implementation shared with Swift
-Package Manager. It is planned to become the default later. Enable it for
-targeted compatibility testing with:
+Xcode 26 previews a package builder shared with Swift Package Manager. It is
+planned to become the default later. Enable the preview with:
 
 ```sh
 defaults write com.apple.dt.Xcode IDEEnableNewPackagePIFBuilder -bool YES
 ```
 
-Because this is a preview opt-in, compare build graphs and results with the
-current default before enabling it for a team-wide workflow.
+Record this user default in bug reports and build reproductions because it
+changes the selected implementation.
 
-## Swift Testing Exit Tests and Attachments
+## Simulator and device testing
 
-Swift Testing in Xcode 26 (`26.0`) supports exit tests for code expected to call
-`precondition()`, `fatalError()`, or otherwise terminate the test process.
-Prefer an exit test over allowing intentional termination to abort the whole
-suite.
+### Safari extensions require a device (18.4)
 
-Choose the output directory for Swift Testing attachments with:
+Safari extensions do not appear in the iOS or visionOS Simulator. Test the
+extension on a physical device for those platforms.
+
+### URLSession timeout fix (18.5)
+
+Xcode 16.4 fixes the iOS 18.3 Simulator runtime defect that made
+`NSURLSession` requests always time out and fail. Upgrade the toolchain/runtime
+before debugging application networking for this exact symptom.
+
+## Diagnostics
+
+### Broad `devicectl diagnose` collection (18.5)
+
+`devicectl diagnose` now collects a sysdiagnose from the Mac and all available
+devices by default:
+
+```sh
+devicectl diagnose
+```
+
+Expect broader output and collection scope even when no device arguments are
+supplied.
+
+### Core Data concurrency checks (26.0)
+
+Pass `-com.apple.CoreData.ConcurrencyDebug 1` when testing managed-object access.
+The iOS 26 SDK's concurrency annotations can expose warnings during rebuilds,
+and the runtime diagnostic helps distinguish real context violations.
+
+## Swift Testing
+
+### Exit tests and attachment output (26.0)
+
+Swift Testing supports exit tests for code that invokes `precondition()`,
+`fatalError()`, or otherwise terminates the test process. Use
+`--attachments-path` to select the attachment output directory:
 
 ```sh
 swift test --attachments-path <directory>
 ```
-
-Create or clean the directory according to the surrounding CI job's artifact
-policy before invoking the command.

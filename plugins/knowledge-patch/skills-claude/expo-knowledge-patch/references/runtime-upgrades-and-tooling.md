@@ -1,26 +1,37 @@
 # Runtime Upgrades and Tooling
 
-## Align the runtime and native toolchain
+## Runtime and architecture
 
-SDK 55 pairs React Native 0.83 with React 19.2. It removes Legacy Architecture support and the `newArchEnabled` app-config option. Expo SDK packages now share the SDK major, so compatible package constraints look like `expo-camera@^55.0.0`.
+### SDK 55 runtime floor
 
-For SDK 55, native iOS builds require Xcode 26, EAS Build defaults to Xcode 26.2, and the minimum iOS version remains 15.1. Supported Node.js ranges are `^20.19.4`, `^22.13.0`, `^24.3.0`, and `^25.0.0`.
+Batch `55` pairs React Native 0.83 with React 19.2. Legacy Architecture support and the `newArchEnabled` app-config option are removed.
 
-SDK 56 pairs React Native 0.85 with React 19.2. Native builds require Xcode 26.4, with minimum targets of iOS/tvOS 16.4 and macOS 13.4. Custom Expo module podspecs must also target iOS 16.4. New templates use TypeScript 6.0.3, and Metro can serve development bundles over HTTPS when TLS is configured.
+Native iOS builds require Xcode 26, while EAS Build defaults to Xcode 26.2. The iOS minimum remains 15.1. Supported Node.js ranges are:
 
-## Select the template deliberately
+- `^20.19.4`
+- `^22.13.0`
+- `^24.3.0`
+- `^25.0.0`
 
-The SDK 55 default template uses Native Tabs and places routes in `/src/app` instead of `/app`. Create that template explicitly when reproducibility matters:
+Expo SDK packages share the SDK major, so align packages to versions such as `expo-camera@^55.0.0` rather than carrying an older independent major.
+
+The default template uses Native Tabs and places routes in `/src/app` rather than `/app`. Create that template explicitly with:
 
 ```sh
 npx create-expo-app@latest --template default@sdk-55
 ```
 
-New app scaffolds in SDK 56 also include `AGENTS.md`, a companion agent-guidance file, and a hidden agent-settings file. Treat those files as project instructions when present.
+### SDK 56 runtime floor
 
-## Configure Hermes v1
+Batch `56` pairs React Native 0.85 with React 19.2 and makes Hermes v1 the default. Native builds require Xcode 26.4. Minimum targets are iOS/tvOS 16.4 and macOS 13.4; custom Expo module podspecs must also target iOS 16.4.
 
-Hermes v1 is opt-in in SDK 55. It requires React Native to be built from source and the compiler package to match:
+New templates use TypeScript 6.0.3. Metro can serve development bundles over HTTPS when TLS is configured.
+
+## Hermes v1
+
+### Opt in on SDK 55
+
+Hermes v1 requires a React Native source build and a matching compiler override:
 
 ```json
 {
@@ -33,7 +44,7 @@ Hermes v1 is opt-in in SDK 55. It requires React Native to be built from source 
 }
 ```
 
-For npm, pnpm, or Bun, set:
+For npm, pnpm, or Bun, use:
 
 ```json
 {
@@ -43,51 +54,63 @@ For npm, pnpm, or Bun, set:
 }
 ```
 
-Use `resolutions` with Yarn. Building React Native from source substantially increases native build time, and this opt-in is not recommended for Android monorepos.
+Use `resolutions` with Yarn. Expect substantially longer native builds, and avoid this opt-in for Android monorepos unless its limitations have been evaluated.
 
-Hermes v1 is the default in SDK 56. Opt out with `useHermesV1: false` in `expo-build-properties`. Merely importing `react-native-reanimated` under Hermes v1 can increase memory use by 25–30%; enabling worklets bundle mode is the documented workaround.
+### Default and rollback on SDK 56
 
-## Load app config and plugins
+Hermes v1 is enabled by default. To opt out, set `useHermesV1: false` in `expo-build-properties`.
 
-Dynamic app config experimentally accepts `.mjs`, `.cjs`, `.cts`, and `.mts` in SDK 55. `app.config.ts` is transpiled with the project's own TypeScript version.
+Merely importing `react-native-reanimated` under Hermes v1 can increase memory use by 25–30%. Enable worklets bundle mode as the documented workaround.
 
-In SDK 56, every Expo package config plugin exports typed options from `expo-<name>/plugin` for use in `app.config.ts`. Config plugins use the same loader as app config, so plugin arrays may reference local `.ts` files and `.mjs` or `.cjs` plugins.
+## CLI and configuration loading
 
-## Use CLI isolation and diagnostics
+### Dynamic config and local development on SDK 55
 
-- `expo start --localhost` accepts only localhost connections.
-- The experimental native LogBox requires `EXPO_UNSTABLE_LOG_BOX=1` and a rebuilt native application.
-- `eas update` requires `--environment <name>`, including in CI.
-- `create-expo-module` supports non-interactive scaffolding.
+Dynamic app config experimentally accepts `.mjs`, `.cjs`, `.cts`, and `.mts`. `app.config.ts` is transpiled with the project's own TypeScript version.
 
-## Understand Metro and resolver defaults
+`expo start --localhost` accepts only localhost connections. The experimental native LogBox requires `EXPO_UNSTABLE_LOG_BOX=1` and a rebuilt native application. `eas update` requires `--environment <name>`, including in CI.
 
-SDK 56 makes the on-demand filesystem and the native Node.js watcher the defaults in place of `watchFolders` and Watchman. Disable the on-demand filesystem with `experiment.onDemandFilesystem: false` in app config. Restore Watchman with `resolver.useWatchman` in Metro config. `import.meta` is enabled automatically.
+### Config plugins and Metro on SDK 56
 
-In SDK 55 monorepos, `expo.experiments.autolinkingModuleResolution` defaults to enabled. `EXPO_USE_FAST_RESOLVER`, the alternate resolver implementation, and `experiments.reactCanary` are removed.
+Every Expo package config plugin exports typed options from `expo-<name>/plugin` for use in `app.config.ts`. Config plugins now use the same loader as app config, so plugin lists can reference local `.ts` files and `.mjs` or `.cjs` plugins.
 
-## Migrate removed configuration and APIs
+The on-demand filesystem and native Node.js watcher replace `watchFolders` and Watchman as defaults. To opt out or restore the previous watcher:
 
-- The top-level app-config `notification` field makes prebuild fail; use the `expo-notifications` config plugin.
-- `edgeToEdgeEnabled` is removed.
-- `expo-router/server` uses standard `Request` and `Response`.
-- Headless-tab `reset` is renamed to `resetOnFocus`.
-- `expo-video` replaces `allowsFullscreen` with `fullscreenOptions.enable`.
-- Clipboard listener events no longer include `content`; call `getStringAsync()`.
-- Deprecated cellular carrier constants are removed, and affected iOS methods return `null`.
+```js
+// app config
+export default { expo: { experiment: { onDemandFilesystem: false } } };
 
-## Apply deprecation migrations
+// metro.config.js
+config.resolver.useWatchman = true;
+```
 
-Event APIs return a subscription; retain it and call `subscription.remove()` instead of a module-level `removeSubscription` function. Replace `expo-video-thumbnails` with `expo-video.generateThumbnailsAsync`. Replace video-track `bitrate` with `averageBitrate` and `peakBitrate`.
+`import.meta` is enabled automatically.
 
-Mandatory Android edge-to-edge makes most `expo-navigation-bar` methods and several `expo-status-bar` props and setters deprecated no-ops. Their old app-config fields are also deprecated; use each package's config plugin.
+## Scaffolding and icon packages
 
-`@expo/vector-icons` is deprecated in SDK 56, and `expo` no longer installs it transitively. Install it explicitly as a temporary compatibility measure, or migrate to per-set `@react-native-vector-icons/*` packages:
+`create-expo-module` supports non-interactive scaffolding. It also provides `addPlatformSupport` with selectable platforms and features. Local modules no longer receive an `index.ts` barrel by default; pass `--barrel` to create one.
+
+New application scaffolds include `AGENTS.md` plus additional project-level agent guidance and settings files.
+
+`@expo/vector-icons` is deprecated in favor of per-set `@react-native-vector-icons/*` packages and is no longer installed transitively by `expo`. Either add `@expo/vector-icons` explicitly or migrate:
 
 ```sh
 npx @react-native-vector-icons/codemod
 ```
 
-## Know Expo Go boundaries
+## Removed configuration and compatibility switches
 
-Android push notifications error in Expo Go as of SDK 55 and require a development build. `expo-av` has been removed from Expo Go and no longer receives patches. Use a development client when validating either behavior.
+- Remove `newArchEnabled`; the Legacy Architecture is unavailable.
+- Remove `edgeToEdgeEnabled`; Android edge-to-edge is mandatory.
+- Remove `experiments.reactCanary`.
+- Do not use `EXPO_USE_FAST_RESOLVER` or the removed alternate resolver implementation.
+- In monorepos, `expo.experiments.autolinkingModuleResolution` defaults on.
+- Remove the top-level `notification` app-config field because prebuild rejects it; configure notifications with the `expo-notifications` config plugin.
+
+## General API deprecations
+
+Event listeners should keep the returned subscription and invoke `subscription.remove()`; module-level `removeSubscription` is deprecated.
+
+Android edge-to-edge makes most imperative `expo-navigation-bar` methods and several `expo-status-bar` props and setters deprecated no-ops. Their old app-config fields are deprecated; use each package's config plugin.
+
+Deprecated cellular carrier constants are removed, and the affected iOS methods return `null`.

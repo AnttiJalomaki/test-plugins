@@ -1,90 +1,76 @@
 # Dependencies, Publishing, and Distributions
 
-## Strongly typed dependency blocks
+## Dependency declarations and resolution
 
-The `Dependencies` API used for plugin-defined, strongly typed `dependencies`
-blocks is partially stable as of `8.13.0`. Version-catalog dependencies were
-not included in that stability promotion and remain subject to review.
+### Use typed dependency blocks with their stability boundary (8.13.0)
 
-## Detached and project dependencies
+The plugin-defined `Dependencies` API for strongly typed `dependencies` blocks
+is partially stable. Version-catalog dependencies are still under review and
+are not included in that promotion.
 
-A detached configuration can resolve a dependency on its own project as of
-`9.0.0`. Temporary resolution-only configurations may therefore include
-project dependencies rather than only externally identified components.
+### Resolve a project through a detached configuration (9.0.0)
 
-`Project.getDependencyFactory()` became a stable API in `9.1.0` and is covered
-by Gradle's backward-compatibility guarantees.
+A detached configuration may resolve a dependency on its own project. Temporary
+resolution-only configurations are therefore no longer restricted to externally
+identified components.
 
-## Lazy configurations and published variants
+### Use stable Kotlin dependency helpers (9.0.0)
 
-`AdhocComponentWithVariants.addVariantsFromConfiguration(...)` and
-`withVariantsFromConfiguration(...)` accept
-`Provider<ConsumableConfiguration>` as of `9.2.0`. Pass the provider so the
-configuration is realized only when its publication is published:
+Kotlin DSL dependency and constraint `invoke` overloads are stable, including
+overloads on named configuration providers and overloads accepting `Provider`
+or `ProviderConvertible`. These APIs are also stable:
 
-```kotlin
-val publishedVariant =
-    configurations.consumable("publishedVariant")
+- `DependencyHandler.create(String, action)`
+- `PluginDependenciesSpec.embeddedKotlin(String)`
+- `GroovyBuilderScope.hasProperty(String)`
 
-publishing {
-    val component =
-        softwareComponentFactory.adhoc("custom")
-    component.addVariantsFromConfiguration(publishedVariant) {}
-}
-```
+### Use the stable project dependency factory (9.1.0)
 
-## Custom publishable components
+`Project.getDependencyFactory()` is covered by Gradle's backward-compatibility
+guarantees.
 
-The `publishing` extension exposes `SoftwareComponentFactory` directly (since
-`9.2.0`). A build or plugin can create an ad hoc component without applying a
-JVM plugin merely to obtain one:
+### Handle repository shutdown after failures (9.3.0)
 
-```kotlin
-publishing {
-    val component =
-        softwareComponentFactory.adhoc("custom")
-    component.addVariantsFromConfiguration(
-        consumableConfiguration
-    ) {}
-    publications {
-        create<MavenPublication>("maven") {
-            from(component)
-        }
-    }
-}
-```
+Gradle disables a repository for the rest of the build after repeated retrieval
+failures or a fatal error such as an incorrect hostname. Resolution normally
+fails at that point instead of trying later repositories unless continuation
+has been configured.
 
-## Maven POM distribution management
+### Preview dependency ordering without constraint edges (9.7.0)
 
-`MavenPublication` can declare a distribution repository and emit it in the
-generated POM (since `9.1.0`):
+The `ENHANCED_GRAPH_ORDERING` preview ignores constraint edges during graph
+traversal, so platforms, lockfiles, and other constraints do not reorder
+artifact lists or classpaths. It applies to breadth-first `DEFAULT`,
+`CONSUMER_FIRST`, and `DEPENDENCY_FIRST` orders and previews the Gradle 10
+default:
 
 ```kotlin
-publications.withType<MavenPublication>().configureEach {
-    pom {
-        distributionManagement {
-            repository {
-                id = "github"
-                url =
-                    "https://maven.pkg.github.com/OWNER/REPOSITORY"
-            }
-        }
-    }
-}
+enableFeaturePreview("ENHANCED_GRAPH_ORDERING")
 ```
 
-## Plugin publication
+## Dependency verification
 
-Plugin Publishing plugin 2.0.0 supports the Configuration Cache and exposes
-configuration through the Provider API (`9.1.0`). It requires Gradle 7.4 or
-newer. Signed publications need Gradle 8.1.1 or newer for full Configuration
-Cache compatibility.
+### Record key provenance and diagnose rotation (9.7.0)
 
-## Distribution plugins
+The `dependency-verification-1.4.xsd` schema accepts informational `origin` and
+`reason` attributes on `<trusted-key>` and `<pgp>` entries and preserves them:
 
-The `distribution-base` plugin provides distribution capabilities without
-creating a default `main` distribution (since `8.13.0`). The `distribution`
-plugin wraps it and additionally creates `main`.
+```xml
+<trusted-key id="8756c4f765c9ac3cb6b85d62379ce192d401ab61"
+             group="com.github.javaparser"
+             origin="https://keyserver.ubuntu.com"
+             reason="Verified against the maintainer's website"/>
+```
+
+When an artifact's signing key is missing, console and HTML diagnostics count
+other trusted keys for the same module and group, exposing likely key rotation.
+
+## Distribution and archive tasks
+
+### Create only named distributions (8.13.0)
+
+`distribution-base` supplies distribution capabilities without creating a
+default `main` distribution. The `distribution` plugin wraps it and adds `main`:
 
 ```kotlin
 plugins {
@@ -94,19 +80,54 @@ plugins {
 distributions {
     create("custom") {
         distributionBaseName = "customName"
-        contents {
-            from("src/customLocation")
+        contents.from("src/customLocation")
+    }
+}
+```
+
+### Publish signed Gradle distributions (9.3.0)
+
+Every distribution ZIP has an ASCII-armored `.asc` signature beside its
+`.sha256` checksum. Verify the signature for authenticity rather than treating
+the checksum as proof of origin.
+
+### Give archives one meaningful reproducible timestamp (9.7.0)
+
+`AbstractArchiveTask.reproducibleFileTimestamp` assigns one reproducible
+timestamp to every entry. This supports formats that need a verifiable value
+such as `SOURCE_DATE_EPOCH` instead of Gradle's fixed default:
+
+```kotlin
+tasks.withType<AbstractArchiveTask>().configureEach {
+    reproducibleFileTimestamp = providers.environmentVariable("SOURCE_DATE_EPOCH").map {
+        Instant.ofEpochSecond(it.toLong()).toEpochMilli()
+    }
+}
+```
+
+## Components and publication modeling
+
+### Add Maven distribution management (9.1.0)
+
+`MavenPublication.pom.distributionManagement` emits a distribution repository
+directly in the generated POM:
+
+```kotlin
+publications.withType<MavenPublication>().configureEach {
+    pom {
+        distributionManagement {
+            repository {
+                id = "github"
+                url = "https://maven.pkg.github.com/OWNER/REPOSITORY"
+            }
         }
     }
 }
 ```
 
-Use the base form when all distributions should be explicitly named.
+### Generate Jakarta EE 11 EAR descriptors (9.1.0)
 
-## EAR descriptors
-
-The EAR plugin can generate Jakarta EE 11 deployment descriptors directly
-(since `9.1.0`):
+The EAR plugin can generate a Jakarta EE 11 descriptor without a custom file:
 
 ```kotlin
 tasks.ear {
@@ -116,20 +137,60 @@ tasks.ear {
 }
 ```
 
-A custom descriptor file is not required solely to select Jakarta EE 11.
+### Create ad hoc components from publishing (9.2.0)
 
-## Distribution verification
+The `publishing` extension exposes `SoftwareComponentFactory`, so code can
+create an ad hoc publishable component without applying a JVM plugin solely to
+obtain one:
 
-Every published Gradle distribution ZIP has an ASCII-armored `.asc` signature
-beside its `.sha256` checksum as of `9.3.0`, allowing authenticity verification
-in addition to checksum-based integrity checking.
+```kotlin
+publishing {
+    val component = softwareComponentFactory.adhoc("custom")
+    component.addVariantsFromConfiguration(consumableConfiguration) {}
+    publications {
+        create<MavenPublication>("maven") { from(component) }
+    }
+}
+```
 
-## Repository failure behavior
+### Pass lazy publication variants (9.2.0)
 
-After repeated retrieval failures or a fatal error such as an incorrect
-hostname, Gradle disables that repository for the remainder of the build
-(since `9.3.0`). Resolution normally fails at that point rather than continuing
-to later repositories unless continuation was configured.
+`AdhocComponentWithVariants.addVariantsFromConfiguration(...)` and
+`withVariantsFromConfiguration(...)` accept a
+`Provider<ConsumableConfiguration>`. The provider realizes its configuration
+only when that publication is published.
 
-Do not assume repository ordering alone provides failover. Correct fatal
-repository configuration and make any intended continuation policy explicit.
+## Plugin publication and validation
+
+### Upgrade Plugin Publishing plugin 2.0 (9.1.0)
+
+Plugin Publishing plugin `2.0.0` supports Configuration Cache and models its
+configuration with the Provider API. It requires Gradle 7.4 or newer; signed
+publications need Gradle 8.1.1 or newer for complete cache compatibility.
+
+### Default a plugin ID from its registration (9.4.0)
+
+With `java-gradle-plugin`, a registration uses its name as the plugin ID unless
+`id` is set explicitly:
+
+```kotlin
+gradlePlugin {
+    plugins {
+        register("my.plugin-id") {
+            implementationClass = "my.PluginClass"
+        }
+    }
+}
+```
+
+### Enable stricter validation for published plugins (9.4.0)
+
+Applying `com.gradle.plugin-publish`, `ivy-publish`, or `maven-publish` enables
+stricter plugin validation. Local `buildSrc` and included-build plugins are
+exempt. Other plugin projects can set:
+
+```kotlin
+tasks.validatePlugins {
+    enableStricterValidation = true
+}
+```

@@ -1,81 +1,203 @@
 # Compute, deployment, and networking
 
-## Build and infrastructure deployment
-
-### CodeBuild
-
-On-demand CodeBuild builds can select the host kernel (since `2026-06`). Include the selected kernel in reproducibility and compatibility checks rather than assuming the platform default.
+## Infrastructure deployment
 
 ### CloudFormation
 
-`CreateStack` and `UpdateStack` now run pre-deployment validation automatically (since `2026-06`). Set `DisableValidation` to skip it. Use `DeploymentConfig` to enable Express mode, in which the operation completes once resource configuration has been applied rather than waiting for the ordinary completion boundary.
+- **CloudFormation validation and Express mode (`2026-06`).** `CreateStack`
+  and `UpdateStack` run pre-deployment validation automatically.
+  `DisableValidation` skips it; `DeploymentConfig` enables Express mode, which
+  completes after resource configuration is applied.
+- **CloudFormation sensitive-property drift reasons (`2026-07-2`).** The
+  `DriftIgnoredReason` enum can indicate that drift was ignored because a
+  property is sensitive.
 
-### Image Builder
+### CodeBuild and CodeCommit
 
-Image Builder can apply watermarks to AMIs (since `2026-06`). Account for the watermark configuration when comparing or distributing generated images.
+- **CodeBuild host-kernel selection (`2026-06`).** On-demand builds can select
+  the host kernel.
+- **CodeCommit server-side blob diffs (`2026-08`).** `GetBlobDifferences`
+  returns paginated line-level hunks, including context, additions, and
+  deletions between blob versions, without a local clone.
 
-### EVS and PCS
+### Image Builder and Device Farm
 
-- EVS supports a self-deployed VMware Cloud Foundation mode and connectors to Operations Manager and SDDC Manager for coverage and usage monitoring (since `2026-06`).
-- PCS `UpdateCluster` accepts a target Slurm version in `scheduler.version` and can perform an in-place upgrade (since `2026-06`).
+- **Image Builder AMI watermarks (`2026-06`).** Image Builder models support
+  AMI watermarks.
+- **Cloud9 Amazon Linux 2 API removal (`2026-07`).** The public
+  EC2-environment creation API no longer accepts Amazon Linux 2 as an AMI
+  option.
+- **Device Farm generated insights (`2026-08`).** Run, job, and test models
+  expose service-generated insights.
 
-## Kubernetes, containers, and scaling
+## EKS, ECS, and container networking
 
-### EKS rollback
+### EKS
 
-EKS supports `VersionRollback` updates (since `2026-06`). `RollbackConfig.timeoutMinutes` bounds a rollback, `CancelUpdate` cancels one in progress, and `Update.cancellation` reports cancellation details.
+- **EKS version rollback controls (`2026-06`).** `CancelUpdate` can cancel an
+  in-progress `VersionRollback`; `RollbackConfig.timeoutMinutes` sets the
+  timeout, and `Update.cancellation` reports cancellation details.
+- **EKS Pod Identity request context (`2026-07-2`).** `AssumeRoleForPodIdentity`
+  accepts optional `eksNodeName`, `instanceId`, and `zone`.
+- **EKS control-plane configuration tuning (`2026-08`).** Cluster models can
+  selectively tune Kubernetes control-plane component configurations.
 
 ### ECS
 
-- Deployment circuit breakers accept a custom failure threshold and a choice of failure-counting mechanism (since `2026-06`). Do not assume the former fixed threshold behavior when interpreting deployment failures.
-- ECS automatically detects the correct CPU architecture for Express Mode services (since `2026-07`); avoid hard-coding an architecture solely to compensate for the earlier behavior.
+- **ECS circuit-breaker controls (`2026-06`).** Deployment circuit breakers
+  accept a custom failure threshold and a selectable failure-counting method.
+- **ECS Express Mode architecture selection (`2026-07`).** Express Mode
+  services automatically detect the correct CPU architecture.
+
+### Network Firewall
+
+- **Network Firewall container associations (`2026-06`).** Container
+  associations dynamically track IP addresses for running ECS and EKS
+  workloads.
+- **Network Firewall association status (`2026-07-2`).** Pollers for container
+  associations must handle the new `UPDATING` state.
+
+## EC2 and Auto Scaling
+
+### Fleet, placement, and instance models
+
+- **EC2 precision-time placement groups (`2026-06`).** `CreatePlacementGroup`
+  and `DescribePlacementGroups` support the `precision-time` strategy and
+  `parentGroupId` for precision-time-capable hardware.
+- **EC2 CreateFleet overrides and placement details (`2026-07`).** Launch
+  template overrides accept `LaunchTemplateSpecificationUserData`, `KeyName`,
+  `IamInstanceProfile`, and `MetadataOptions`. Launched-instance responses add
+  `SubnetId`, `AvailabilityZone`, and `AvailabilityZoneId`.
+- **EC2 instance-type model additions (`2026-07-2`).** Models include M9g,
+  M9gd, C9g, C9gd, C8in, M8in, R8in, C8ib, M8ib, R8ib, C8ine, M8ine, M8idn,
+  R8idn, M8idb, R8idb, Mac-m3ultra, and G7 types.
+- **GameLift fleet instance families (`2026-08`).** GameLift managed EC2 and
+  container fleets accept C8a, C8i, C9g, M8a, M8i, and M9g families.
+- **Spot Placement Scores for Local Zones (`2026-08`).** Requests accept
+  `IncludeLocalZones`; it defaults to `false` and includes relevant Local
+  Zones when `true`.
+
+### Host, volume, and health controls
+
+- **EC2 root-volume replacement from an existing volume (`2026-07`).** Replace
+  Root Volume workflows accept `VolumeId` for a prepared replacement volume.
+- **EC2 public-AMI SSM metadata (`2026-07`).** Public AMI metadata exposes the
+  associated public SSM parameter.
+- **EC2 SEV-SNP dedicated hosts (`2026-07`).** Dedicated Hosts support AMD
+  SEV-SNP.
+- **EC2 managed-resource visibility (`2026-07`).** Visibility settings control
+  whether AWS-provisioned resources appear in consoles and list APIs.
+- **EC2 application status checks (`2026-07-2`).** Application checks monitor
+  configurable HTTP or HTTPS paths and ports, enabling responses to
+  application impairment rather than only host or instance failures.
 
 ### Auto Scaling
 
-The `reservations-then-balanced` capacity distribution strategy launches into Capacity Reservations first, then balances remaining capacity across healthy Availability Zones (since `2026-06`).
+- **Auto Scaling reservations-first distribution (`2026-06`).** The
+  `reservations-then-balanced` strategy uses Capacity Reservations first and
+  balances remaining capacity across healthy Availability Zones.
+- **Auto Scaling multi-instance termination (`2026-08`).**
+  `TerminateInstanceInAutoScalingGroup` accepts `InstanceIds` and returns an
+  `Activities` list. Duplicate `LaunchInstances` client tokens can return
+  `IdempotentCallInProgressFault`.
+- **Auto Scaling operator ownership (`2026-08`).** Group models expose an
+  operator when another AWS service manages the group.
 
-### Network Firewall container associations
+## VPC, DNS, and load balancing
 
-Network Firewall container associations can dynamically track IP addresses of running ECS and EKS containers for workload monitoring (since `2026-06`). Use associations where ephemeral container addressing previously required manual rule updates.
+### VPC and Transit Gateway
 
-## EC2
+- **VPC endpoint payer responsibility (`2026-06`).**
+  `ModifyVpcEndpointPayerResponsibility` lets an endpoint-service owner change
+  the billing account for an individual endpoint.
+- **Mutable VPC Lattice idle timeouts (`2026-06`).** VPC Lattice service
+  models support changing idle-timeout configuration.
+- **EC2 VPC Encryption Controls policies (`2026-07`).** Declarative policies
+  can enable VPC Encryption Controls across an organization or selected
+  accounts.
+- **Transit Gateway policy-based routing (`2026-07-2`).** Policy tables can
+  match source/destination IPs, source/destination ports, and protocol, then
+  direct traffic to a target route table.
+- **EC2 IPAM BGP route protection (`2026-08`).** IPAM adds BGP route discovery,
+  RPKI protection findings, and delegated RPKI resources for Internet Registry
+  associations, routing-policy registrations, and ROA management on BYOIP
+  prefixes.
 
-### Precision-time placement groups
+### DNS and endpoint resolution
 
-`CreatePlacementGroup` and `DescribePlacementGroups` support the `precision-time` strategy and `parentGroupId` (since `2026-06`). Precision-time groups, and cluster placement groups parented to them, place instances on precision-time-capable hardware.
+- **Route 53 Global Resolver shared views (`2026-07`).** `ListSharedDNSViews`
+  lists DNS Views shared through Resource Access Manager.
+  `ListHostedZoneAssociations` permits an omitted resource ARN to list all
+  account associations.
+- **Cloud Map dual-stack endpoint resolution (`2026-07-2`).** With dual stack
+  enabled, endpoint resolution correctly uses the dual-stack endpoint; remove
+  workarounds for the prior routing behavior.
 
-### CreateFleet overrides and placement results
+### Load balancing and direct connectivity
 
-`CreateFleet` launch-template overrides add `LaunchTemplateSpecificationUserData`, `KeyName`, `IamInstanceProfile`, and `MetadataOptions` (since `2026-07`). The response identifies each launched instance's subnet, Availability Zone, and Availability Zone ID.
+- **NLB source-IP family matching (`2026-07-2`).** `SourceIpConfig` accepts
+  `IpAddressType`, allowing listener rules to distinguish IPv4 and IPv6 source
+  traffic.
+- **Direct Connect route visibility (`2026-07-2`).**
+  `ListVirtualInterfaceRoutes` returns advertised BGP routes, including AS
+  paths and communities.
 
-### Root-volume replacement
+## Outposts and hybrid infrastructure
 
-Replace Root Volume accepts `VolumeId` (since `2026-07`), allowing a prepared EBS volume to become the replacement root instead of requiring the service to derive one through the older paths.
+- **Outposts phone-number validation (`2026-07`).** Site requests enforce a
+  stricter `ContactPhoneNumber` regular expression; formerly accepted formats
+  can fail validation.
+- **Outposts EKS service support (`2026-07-2`).** `AWSServiceName` accepts
+  `EKS`, and `Address` is marked sensitive.
+- **Outposts VPC endpoint configuration (`2026-08`).**
+  `CreatePrivateConnectivityConfig` accepts VPC endpoint configuration for
+  scoped private connectivity and provisioning-role creation.
+- **EVS self-deployed VCF (`2026-06`).** EVS adds self-deployed VMware Cloud
+  Foundation plus Operations Manager and SDDC Manager connectors for coverage
+  and usage monitoring.
+- **WorkSpaces nested virtualization (`2026-08`).** Creation and property
+  update models can enable or disable nested virtualization for hypervisors
+  and virtualization-based workloads inside a WorkSpace.
+- **WorkSpaces client-experience policy (`2026-07-2`).**
+  `ModifyClientProperties` and `DescribeClientProperties` support
+  `ClientExperiencePolicy` in `ClientProperties`.
 
-### AMI and managed-resource metadata
+## Clusters, schedulers, and streaming infrastructure
 
-- Public AMI metadata surfaces the public SSM parameter associated with the AMI (since `2026-07`).
-- Managed-resource visibility settings control whether AWS-provisioned resources appear in console views and API list operations (since `2026-07`). Treat hidden resources as a visibility choice, not proof that the resources do not exist.
+### PCS and EMR on EKS
 
-### Organization security and hosts
+- **In-place PCS Slurm upgrades (`2026-06`).** `UpdateCluster` accepts
+  `scheduler.version` to upgrade an existing PCS cluster's Slurm version.
+- **PCS node lifecycle actions (`2026-07-2`).** Compute node groups can run
+  structured custom scripts at defined node lifecycle points.
+- **EMR on EKS security and Spark controls (`2026-07-2`).** The client adds
+  `DeleteSecurityConfiguration`, `authenticationConfiguration`, and Spark
+  Connect fields `sessionIdleTimeoutInMinutes`, `sessionEnabled`,
+  `endpointToken`, `authProxyUrl`, and `encryptionKeyArn`. Virtual clusters
+  can cap concurrently running and queued jobs.
 
-- EC2 declarative policies can enable VPC Encryption Controls across an organization or selected accounts (since `2026-07`).
-- EC2 Dedicated Hosts support AMD SEV-SNP (since `2026-07`). Validate instance family, host, and guest prerequisites before requesting confidential-computing features.
+### Kafka, RabbitMQ, and Flink
 
-## Networking and certificates
+- **MSK Replicator mTLS for external Kafka (`2026-06`).** Replicator can use
+  mutual TLS with external Kafka when replicating to MSK Express brokers.
+- **MSK authorizer logs (`2026-08`).** Clusters can deliver authorizer logs
+  alongside broker logs to configured destinations.
+- **Configurable RabbitMQ storage (`2026-07-2`).** RabbitMQ 4.2 cluster
+  deployments can set storage size within the range supported by the broker
+  instance size.
+- **Managed Service for Apache Flink 2.3 (`2026-07-2`).** Managed Service for
+  Apache Flink supports Flink 2.3.
 
-### VPC Lattice
+## Migration, recovery, and data movement
 
-The idle-timeout configuration of a VPC Lattice service is mutable (since `2026-06`). Update it directly instead of replacing the service solely to change the timeout.
-
-### Route 53 Global Resolver
-
-`ListSharedDNSViews` lists DNS Views shared through Resource Access Manager (since `2026-07`). `ListHostedZoneAssociations` makes its resource ARN optional, allowing an account-wide association listing.
-
-### MSK Replicator
-
-MSK Replicator can use mutual TLS with external Kafka clusters when the replication target is an MSK Express broker (since `2026-06`). Supply the external-cluster client authentication material and ensure the target broker type satisfies the constraint.
-
-### ACM ACME issuance
-
-Certificate Manager can issue public certificates through ACME for automated lifecycle management on customer-managed infrastructure, including on-premises hosts and Kubernetes clusters (since `2026-06`).
+- **DataSync Enhanced mode expansion (`2026-07-2`).** Enhanced mode works
+  agentlessly with EFS and FSx for Lustre, and through an agent with HDFS plus
+  TDE, Azure Blob, and object-storage locations. HDFS supports multiple
+  NameNodes for high availability, and Enhanced-mode agents can run on
+  Hyper-V.
+- **Idempotent ARC plan execution (`2026-07-2`).** `StartPlanExecution`
+  accepts a client token for retrying ARC Region Switch executions without
+  starting duplicates.
+- **DRS recovery plans (`2026-08`).** Elastic Disaster Recovery supports
+  reusable Recovery Plans with ordered multi-server steps and wait times,
+  non-disruptive drills, and run monitoring.

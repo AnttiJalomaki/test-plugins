@@ -1,61 +1,52 @@
 # Security, Secrets, and Job Tokens
 
-Use this reference when reducing CI token permissions, enabling cross-project
-pushes, storing pipeline secrets, or automating vulnerable dependency updates.
+## Restrict job-token permissions
 
-## Fine-grained CI job-token permissions
+Since 18.0, projects on GitLab.com and GitLab Self-Managed can use beta
+fine-grained CI job-token permissions in all tiers. Limit a token to specific
+project resources rather than granting the triggering user's full permissions.
+Use this control for least-privilege CI/CD jobs.
 
-Projects on GitLab.com and GitLab Self-Managed can restrict a CI job token to
-specific project resources instead of granting the full permissions of the user
-who triggered the pipeline (beta since 18.0).
+## Store and request scoped secrets
 
-The beta is available in all tiers. Use it to give each CI/CD job only the
-project-resource access that it needs.
+GitLab Secrets Manager enters open beta in 19.0 for Premium and Ultimate
+customers on GitLab.com and GitLab Self-Managed. Project and group Owners can
+store and retrieve secrets scoped to their project or group. Access can be
+limited to pipeline jobs that explicitly request those secrets.
 
-## Push to another project with `CI_JOB_TOKEN`
+The service remains subject to the beta support policy and might not be ready
+for production use. Account for that status when choosing it for critical
+workloads.
 
-GitLab 19.0 can allow a job token to push to a different project when all of
-these conditions hold:
+## Push to another project with a job token
 
-1. The target project opts in.
-2. The user who started the pipeline has at least the Developer role in the
-   target project.
-3. The `allow_push_to_allowlisted_projects` feature flag is enabled.
+Since 19.0, `CI_JOB_TOKEN` can push to a different project when all of these
+conditions hold:
 
-The feature flag is disabled by default. Account for both the target-project
-allowlist decision and the triggering user's role when diagnosing a denied
-push.
+- The target project opts in.
+- The user who started the pipeline has at least the Developer role in the
+  target project.
+- The `allow_push_to_allowlisted_projects` feature flag is enabled.
 
-## Store and request secrets
+The feature flag is disabled by default in 19.0.
 
-GitLab Secrets Manager is in open beta for Premium and Ultimate customers on
-GitLab.com and GitLab Self-Managed (since 19.0).
+## Apply the 19.2.1 security patch
 
-- Project and group Owners can store and retrieve secrets scoped to their
-  project or group.
-- Access can be limited to pipeline jobs that explicitly request a secret.
-- The service remains subject to the beta support policy and might not be
-  production-ready.
+GitLab 19.2.1 fixes 13 vulnerabilities, including three high-severity issues,
+and should be installed immediately on affected self-managed 19.2 systems.
+The equivalent fixed releases are 19.1.3 and 19.0.5. GitLab.com is already
+patched, and GitLab Dedicated customers do not need to act.
 
-Treat the explicit job request as part of the secret's access boundary; storing
-a secret at project or group scope does not make it implicitly available to
-every job.
+## Assess the CI/CD and authorization fixes
 
-## Automatically remediate vulnerable dependencies
+The three high-severity paths fixed in 19.2.1 could allow:
 
-Dependency scanning auto-remediation is available in beta on GitLab.com,
-GitLab Self-Managed, and GitLab Dedicated (since 19.2). When enabled, it
-monitors projects and opens merge requests that update vulnerable dependencies
-to safe versions.
+- A Developer to retrieve unauthorized information through Workhorse.
+- An authenticated user to alter another user's CI/CD configuration through
+  pipeline schedule inputs.
+- An unauthenticated user to cause denial of service through merge request
+  discussions.
 
-By default, remediation is limited to patch and minor upgrades. Enabling the
-credit-consuming Agentic Breaking Change Resolution also permits major
-upgrades. For a failed update pipeline, that capability can:
-
-- analyze the dependency changelog;
-- inspect code usage;
-- commit compatibility fixes to the same merge request; and
-- rerun the pipeline until it passes.
-
-Choose whether major upgrades and credit consumption are acceptable before
-enabling the additional capability.
+The release also fixes a protected-branch approval bypass, unauthorized access
+to pipeline test reports, cross-project disclosure through Duo Code Review,
+and a Duo Workflows bypass of administrator tool-governance policies.

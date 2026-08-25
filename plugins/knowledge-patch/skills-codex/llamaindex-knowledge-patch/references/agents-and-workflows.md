@@ -1,22 +1,14 @@
 # Agents and Workflows
 
-## Select an Agent by Tool Interface
+## Choose an Agent for the Tool Interface
 
-Choose the agent from the LLM's interaction contract:
+`FunctionAgent` requires an LLM with compatible native function or tool calling.
+`ReActAgent` uses text-based reasoning and action parsing when native calls are
+unavailable. Use `CodeActAgent` for code-action scenarios.
 
-| Contract | Agent |
-| --- | --- |
-| Compatible native function or tool calling | `FunctionAgent` |
-| Text-based reasoning and action parsing | `ReActAgent` |
-| Executable code actions | `CodeActAgent` |
-
-Do not select `FunctionAgent` merely because the application has Python
-functions. The configured LLM must expose a compatible native tool-calling
-interface. `ReActAgent` is the text-protocol option when native calls are not
-available.
-
-Current agents accept plain synchronous or asynchronous callables as tools.
-Their type hints and docstrings provide schema information:
+Current agents accept ordinary synchronous or asynchronous callables as tools.
+They derive tool schemas from type hints and docstrings; use `FunctionTool` when
+explicit metadata or adaptation is required.
 
 ```python
 from llama_index.core.agent.workflow import FunctionAgent
@@ -28,14 +20,11 @@ def multiply(a: float, b: float) -> float:
 agent = FunctionAgent(tools=[multiply], llm=llm)
 ```
 
-Use `FunctionTool` when a tool needs explicit metadata, a curated schema, or
-adaptation instead of automatic callable inspection.
+## Treat Runs as Streamable Awaitables
 
-## Run Handlers Are Streamable Awaitables
-
-`agent.run(...)` and `workflow.run(...)` return workflow handlers. Starting a
-run does not immediately return its final response. Retain the handler so the
-same execution can provide live events and its eventual result:
+`agent.run(...)` and `workflow.run(...)` return workflow handlers, not completed
+results. Retain the handler to consume live events and then await that same
+handler for its final result.
 
 ```python
 handler = agent.run("What is 12 times 34?")
@@ -44,110 +33,89 @@ async for event in handler.stream_events():
 result = await handler
 ```
 
-Do not start a second run to obtain the final value after streaming the first.
-Await the same handler.
-
 ## Create Agent Memory Explicitly
 
-Use `Memory.from_defaults` and pass the memory to the run:
+Create current `Memory` instances with `Memory.from_defaults` and pass them to
+`run`. Conversation history and memory blocks are distinct from workflow
+`Context`, which contains per-run execution state and events.
 
 ```python
 from llama_index.core.memory import Memory
 
-memory = Memory.from_defaults(
-    session_id="session-123",
-    token_limit=40000,
-)
+memory = Memory.from_defaults(session_id="session-123", token_limit=40000)
 response = await agent.run("...", memory=memory)
 ```
 
-Memory stores conversation history and memory blocks. It is not workflow
-`Context`. Context carries per-run execution state and event coordination.
-Keep session memory lifetime separate from workflow-run lifetime.
+`ChatMemoryBuffer`, `ChatSummaryMemoryBuffer`, and `VectorMemory` are deprecated.
 
-`ChatMemoryBuffer`, `ChatSummaryMemoryBuffer`, and `VectorMemory` are
-deprecated and should not anchor new designs.
+## Use Workflow-Based Agent Imports
 
-## Fan-Out and Fan-In
+The current agents are asynchronous workflow components imported from
+`llama_index.core.agent.workflow`. Older agent, runner, and worker examples do
+not match this execution model.
 
-For a known finite fan-out, a step can return a list of events. For dynamically
-discovered work, emit one event per item with `Context.send_event`.
+```python
+from llama_index.core.agent.workflow import (
+    AgentWorkflow,
+    FunctionAgent,
+    ReActAgent,
+)
+```
 
-Fan-in uses `Context.collect_events` to wait for the expected event set. Event
-arrival follows completion timing, so result order is not necessarily input
-order. Carry a stable key or ordinal in each event when output order matters,
-then reorder explicitly after collection.
+## Redesign Query Pipelines as Workflows
 
-Design fan-in expectations carefully. Waiting for an event type or count that
-no branch can produce leaves the workflow unable to complete.
+Workflows are not a mechanical rename of `QueryPipeline`. They express control
+flow through typed Pydantic events, asynchronous `@step` methods, event branches
+and loops, `Context` state, streaming, and checkpointed durable execution.
 
-## State and Resources
+Core applications use `llama_index.core.workflow`. Standalone applications can
+install `llama-index-workflows` and import from `workflows`.
 
-Serializable per-run state belongs in `ctx.store`, using its asynchronous
-get/set/edit interface. Use it for values that participate in a run and may
-need to survive checkpointing.
+## Build Dynamic Concurrency with Context Events
 
-Live external objects belong in workflow resources:
+A finite fan-out may return a list of events. For dynamic fan-out, emit work
+with `Context.send_event`; use `Context.collect_events` for fan-in and wait for
+the expected event set. Results do not necessarily arrive in input order.
 
-- API and database clients;
-- indexes and vector-store connections;
-- LLM and embedding instances;
-- configuration and services.
+## Keep State and External Resources Distinct
 
-Resource factories and validation support dependency injection. Recreate live
-resources when resuming execution rather than treating open clients or other
-runtime objects as checkpointable state.
+Put serializable per-run state in the asynchronous `ctx.store` get/set/edit
+interface. Put clients, indexes, models, and configuration in workflow
+resources. Resource factories and validation provide dependency injection
+without treating live objects as checkpointable state.
 
-The boundary is:
+## Validate the Typed Event Graph
 
-| Concern | Location |
-| --- | --- |
-| Serializable value scoped to a run | `ctx.store` |
-| Conversation history or memory blocks | `Memory` |
-| Event coordination | workflow `Context` |
-| Client, index, model, or configuration dependency | workflow resource |
-
-## Validate the Event Graph
-
-Validate workflows in tests or at application startup:
+`workflow.validate()` checks start and stop paths, produced events with no
+consumers, consumed events with no producers, and dead ends. Run it in tests or
+as a startup check.
 
 ```python
 workflow = RagFlow(timeout=60)
 workflow.validate()
 ```
 
-Validation inspects the typed step graph for:
+## Agent, Memory, and Protocol Corrections in 0.14.24
 
-- viable start and stop paths;
-- produced events with no consumers;
-- consumed events with no producers;
-- dead ends.
+### Tool schemas and structured outputs
 
-Validation catches structural event-graph errors before a representative run,
-but it does not replace execution tests for dynamic branches, resource
-failures, fan-in counts, streaming, or checkpoint resumption.
+Tool-schema generation no longer marks `*args` or `**kwargs` as required.
+Within `AgentWorkflow`, agent-level `structured_output_fn` and `output_cls` are
+now honored. Remove workarounds that patched these schemas or bypassed the
+configured structured output.
 
-## Workflow Architecture
+### Asynchronous stores and streaming memory
 
-Workflows express control flow through typed Pydantic events and asynchronous
-`@step` methods. Branches, loops, streaming, `Context`, and checkpoints are
-first-class design concerns. A legacy `QueryPipeline` DAG therefore needs a
-behavioral redesign rather than a class rename.
+`Memory` accepts any `AsyncDBChatStore`. Streaming chat writes preserve
+multiblock histories and populate response text. `SimpleChatStore` persists
+non-ASCII content without escaping it.
 
-Use `llama_index.core.workflow` in core applications. A standalone workflow
-application can install `llama-index-workflows` and import from `workflows`.
+Test custom asynchronous stores against the same history and streaming paths
+used in production.
 
-## Test Matrix
+### Multimodal AG-UI input and safer state
 
-At minimum, test:
-
-1. each selected agent against the configured LLM tool interface;
-2. automatic callable schema generation for sync and async tools;
-3. explicit `FunctionTool` metadata where used;
-4. event streaming and awaiting the same handler;
-5. memory reuse across intended conversation turns;
-6. dynamic fan-out, fan-in, and order-independent completion;
-7. `ctx.store` serialization and edits;
-8. resource construction and validation;
-9. static workflow validation;
-10. checkpoint and resume behavior for durable flows.
+`llama-index-protocols-ag-ui` 0.4.0 accepts user-supplied images, audio, video,
+and documents, and persists frontend tool messages. Missing tool call identity
+now raises `ValueError` instead of fabricating a `tool_call_id`; callers must
+handle the invalid input. Initial state copies are isolated between runs.

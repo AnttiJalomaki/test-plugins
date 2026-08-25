@@ -8,186 +8,163 @@ metadata:
 ---
 
 
-# C and C++ Knowledge Patch
+# C and C++ Compatibility Guide
 
-Use this skill when changing, reviewing, or diagnosing C or C++ projects that
-build with recent Clang, GCC, libc++, or libstdc++ toolchains. Start with the
-project's declared language dialect, compiler family, compiler version, target,
-standard library, sanitizer set, and binary-compatibility constraints. Do not
-infer conformance from a language-mode flag alone.
+Use this skill when upgrading Clang, GCC, libstdc++, compiler-facing tools, or target-specific C and C++ builds. It focuses on source, ABI, optimizer, diagnostics, library, tooling, and offload changes that are easy to miss when a build merely continues to compile.
 
-Prefer project evidence over generic advice:
+## Working method
 
-1. Read the build manifest, presets, toolchain files, and CI matrix.
-2. Confirm the actual compiler and standard-library versions from verbose build
-   output rather than the executable name alone.
-3. Identify objects, modules, plugins, libraries, and serialized layouts that
-   cross compiler-version or ABI boundaries.
-4. Reproduce with the project's exact dialect and warning policy.
-5. Use the references below for changed defaults, removed spellings, ABI
-   transitions, newly available facilities, and known conformance gaps.
+1. Identify the compiler family and exact release used by every compile and link step.
+2. Read the project manifest and build configuration before assuming a language dialect, standard-library mode, target, or sanitizer set.
+3. Pin language modes explicitly; compiler defaults are not a portability contract.
+4. Treat object files, static libraries, modules, plugins, and generated bindings as compatibility boundaries.
+5. Prefer project code, compiler probes, and tests when behavior differs across targets or newer releases.
+6. Open the topic reference that matches the task, then apply only the compiler- and target-specific guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Migration and ABI](references/migration-and-abi.md) | Dialect/default changes, removals, source compatibility, ABI transitions, porting controls |
-| [Language and standards](references/language-and-standards.md) | C23/C2y, C++20/23/26/29, modules, constexpr, templates, conformance status |
-| [Diagnostics and safety](references/diagnostics-and-safety.md) | Warnings, machine-readable diagnostics, analyzers, sanitizers, thread safety |
-| [Code generation and builtins](references/codegen-and-builtins.md) | Optimization semantics, attributes, builtins, LTO, debug/profile controls |
-| [Targets and offload](references/targets-and-offload.md) | Architecture flags, target defaults, CUDA/HIP, OpenMP, OpenACC, platform drivers |
-| [Libraries and tooling](references/libraries-and-tooling.md) | libstdc++, clang-format, libclang, Python bindings, AST tooling, GCC plugins |
+| [Language and standards](references/language-and-standards.md) | C23, C2y, C++20/23/26/29, constexpr, templates, reflection, modules, conformance limits |
+| [Migration and ABI](references/migration-and-abi.md) | Default dialect changes, removals, source breaks, mangling, record layout, mixed-object hazards |
+| [Diagnostics and safety](references/diagnostics-and-safety.md) | Warnings, analyzers, aliasing, overflow, lifetime checks, sanitizers, suppression behavior |
+| [Code generation and builtins](references/codegen-and-builtins.md) | Optimizer controls, assembly, LTO, attributes, allocation contracts, compiler builtins |
+| [Libraries and tooling](references/libraries-and-tooling.md) | libstdc++, modules, diagnostic formats, clang-format, libclang, Python bindings, plugins |
+| [Targets and offload](references/targets-and-offload.md) | Architecture defaults, ABI details, CUDA/HIP, OpenMP, OpenACC, WebAssembly, OpenCL |
 
-## Upgrade triage
+## Highest-priority upgrade checks
 
-### Pin language modes explicitly
+### Pin both C and C++ dialects
 
-GCC 15 changed the C default to GNU C23, and GCC 16 changed the C++ default to
-GNU C++20. An unqualified `gcc` or `g++` invocation can therefore change source
-meaning during a compiler upgrade. Set `-std=` explicitly in production builds,
-feature probes, generated configure tests, and standalone tooling.
+GCC changed its implicit C mode to GNU C23 and later changed its implicit C++ mode to GNU C++20. Add explicit `-std=` choices to reproducible builds, including configure tests, generated build rules, examples, and plugin test harnesses.
 
-Older Autoconf can counterintuitively force GCC 16 back to GNU C++11. If modern
-facilities disappear only in configured builds, inspect the generated flags and
-regenerate with a corrected Autoconf setup.
+For C, audit empty parameter lists and identifiers that became keywords. For C++, audit code that was relying on pre-C++20 parsing, overload, and library behavior.
 
-### Treat mixed compiler objects as an ABI risk
+Do not infer full standards conformance from acceptance of `-std=c23`, `-std=c++23`, `-std=c++2c`, or `-std=c++2d`. Probe required facilities and preserve target-specific fallbacks.
 
-Rebuild a complete binary boundary when it contains any of these transitions:
+### Rebuild across ABI boundaries
 
-- Clang record returns around Clang 21;
-- Windows scalar and vector deleting destructors around Clang 22;
-- Microsoft or Itanium mangling changed by Clang 20;
-- Arm empty-structure calling conventions;
-- Solaris 8-bit integer typedef identity under GCC 16;
-- libstdc++ component or `std::variant` layout changes under GCC 16.
+Several Clang upgrades alter mangling, C++ record returns, Arm argument passing, or Windows destructor entry points. GCC and libstdc++ changes affect Solaris integer identities, a narrow `std::variant` layout, and multiple formerly experimental C++20 components.
 
-Compatibility switches and macros are migration bridges, not a substitute for
-a coherent toolchain. See the migration reference for the precise boundary and
-temporary control.
+When affected types or classes cross a boundary, rebuild the complete boundary together:
 
-### Audit assumptions invalidated by optimization
+- application objects and static libraries;
+- shared-library producers and consumers;
+- plugins and their host compiler;
+- generated bindings and native extensions;
+- module interfaces and consumers.
 
-Do not detect pointer wrap with `ptr + offset < ptr`; pointer-addition overflow
-can be optimized as undefined. Validate the offset before pointer arithmetic or
-use integer-domain checks. Likewise, type-punning through incompatible pointer
-types can be newly exposed by stronger type-based alias analysis.
+Use compatibility switches only as temporary migration aids. Record them in the build configuration and remove them after all producers and consumers are rebuilt.
 
-Do not inspect an automatic union's complete representation after `{0}` and
-assume padding is zero. Hashing, serialization, comparison, and information
-exposure must operate on initialized members or explicitly initialized storage.
+### Audit undefined-behavior assumptions
 
-### Replace removed interfaces, do not suppress around them
+Clang performs stricter pointer type-based alias analysis and more aggressive pointer-overflow and null-pointer-arithmetic optimization. Avoid overflow tests based on forming an overflowing pointer. Validate offsets before addition or use integer-domain checks, and run the relevant sanitizers during migration.
 
-Important removals include Concepts TS mode, legacy AVX10 width spellings,
-Clang trivial-relocation opt-ins, GCC JSON diagnostics, several analyzer checker
-names, old AST matchers, and direct MMX implementation builtins. Follow the
-replacement table in the detailed references before adding compatibility flags.
+Do not depend on whole-object bytes being zero after automatic union `{0}` initialization. Padding may remain indeterminate; initialize or clear representation storage deliberately before hashing, serialization, comparison, or exposure.
 
-## High-value compiler controls
+Do not copy merely relocatable C++ objects with `memcpy`. Use the supported relocation builtin where applicable, and account for the later removal of explicit relocatability marking.
 
-### Diagnostics pipelines
+### Treat new errors as migration signals
 
-Use SARIF for machine-readable GCC diagnostics. GCC 15 deprecates the old JSON
-format and GCC 16 removes it. If a parser expects flat C++ diagnostics, account
-for GCC 16's nested explanations or request the old flat presentation.
+Clang upgrades make several formerly tolerated constructs errors by default, including incompatible C pointer types, chained comparisons, invalid GNU assembly casts, some template headers, and C++ array comparisons. Fix the source when practical; if staged migration requires demotion, use the narrow warning group's `-Wno-error=` form.
 
-Clang 22 makes incompatible C pointer types an error by default. Demote only as
-a bounded migration measure:
+GCC warning levels for unused-but-set variables and parameters became more sensitive. Level 1 is the closest staged-migration setting, but the long-term fix is to remove writes whose prior value is never observed.
 
-```sh
-clang -Wno-error=incompatible-pointer-types ...
-```
+### Move machine diagnostics to SARIF
 
-Clang warning-suppression mappings now use the last matching entry, so review
-ordered rules after an upgrade.
+GCC first deprecated and then removed the JSON value of `-fdiagnostics-format=`. Convert parsers and CI consumers to SARIF. When multiple outputs are needed, use the additive or explicit output controls supported by the relevant release.
 
-### Undefined behavior and sanitizers
+### Make modules build-system aware
 
-Request `-fsanitize=vptr` explicitly with Clang 21 or later when virtual-pointer
-checks are required; it is no longer implied by `-fsanitize=undefined`.
+Clang's reduced BMI spelling stabilized and reduced BMIs later became the default. Two-phase module builds must understand the reduced artifact and must not depend on implementation details intentionally discarded from it.
 
-Use `-fsanitize=pointer-overflow` to find invalid pointer-wrap idioms. Clang also
-offers realtime checking for unsafe operations in nonblocking functions,
-experimental type-aliasing checks, allocation-token instrumentation, granular
-overflow-pattern exclusions, and sanitizer-aware trap diagnostics. Select only
-controls supported by the compiler pinned in the build.
+GCC can prebuild its experimental standard modules before other inputs. Treat those module artifacts as compiler- and library-specific generated products, not portable cached objects.
 
-### Modules
+## Task-oriented guidance
 
-Clang 22 enables reduced BMIs by default. Two-phase module builds must preserve
-the reduced-BMI workflow and cannot depend on discarded implementation details.
-Clang 20's non-experimental control is `-fmodules-reduced-bmi`.
+### Upgrading Clang
 
-GCC's standard modules remain experimental. Build them deliberately and keep
-feature probing separate from assumptions about full C++20 module semantics.
+1. Read [Migration and ABI](references/migration-and-abi.md) for mixed-object hazards and removed compatibility paths.
+2. Read [Diagnostics and safety](references/diagnostics-and-safety.md) for default-error, analyzer, aliasing, and sanitizer changes.
+3. Read [Code generation and builtins](references/codegen-and-builtins.md) if the code uses compiler builtins, inline assembly, allocation hooks, or optimizer flags.
+4. Read [Libraries and tooling](references/libraries-and-tooling.md) for modules, embedding libraries, formatter schemas, AST tooling, or Python bindings.
+5. Read [Targets and offload](references/targets-and-offload.md) for architecture, CUDA/HIP, OpenMP, OpenACC, OpenCL, or WebAssembly builds.
 
-## Language-mode guidance
+### Upgrading GCC or libstdc++
 
-### C
+1. Pin the intended C and C++ modes before investigating downstream failures.
+2. Regenerate old Autoconf outputs if they inject an unintended C++ mode.
+3. Add direct standard-library includes instead of relying on transitive headers.
+4. Review debug-assertion, allocator-assumption, random-sequence, and library ABI changes.
+5. Migrate diagnostic consumers from JSON to SARIF.
+6. Review target removals, Solaris changes, and AArch64 deprecations for platform builds.
 
-In C23, `f()` means no parameters, and `bool`, `true`, `false`, `nullptr`, and
-`thread_local` are keywords. Rename conflicting identifiers and declare actual
-function parameter types. Include owning headers rather than relying on C++
-library transitive inclusions.
+### Maintaining a stable binary interface
 
-Clang and GCC expose useful C23 and C2y features, but their sets differ. Gate
-individual facilities with compiler/version or feature tests, and keep fallback
-paths when using `_Countof`, named loops, `#embed`, `defer`, integer-limit
-operators, or draft generic-selection behavior.
+Inventory every type that crosses the interface and every compiler/runtime combination that produces or consumes it. Pay particular attention to:
 
-### C++
+- virtual destructors under the Windows C++ ABI;
+- record returns and explicitly aligned empty classes;
+- template or construction-vtable mangling;
+- fixed-width integer aliases on Solaris;
+- library types whose formerly experimental representation changed;
+- module and plugin interfaces tied to compiler internals.
 
-Do not equate `-std=c++23`, `-std=c++2c`, or `-std=c++2d` with complete standard
-support. Check the exact facility, library implementation, target, and ABI.
-Windows coroutines, modules, reflection, contracts, constexpr library work, and
-several template edge cases have compiler-specific limitations.
+Add a clean-build job that rejects stale object files. ABI compatibility flags can keep an emergency build working, but they do not make arbitrary mixtures safe.
 
-GCC reflection requires both C++26 mode and `-freflection`:
+### Adopting newer language facilities
 
-```sh
-g++ -std=c++26 -freflection source.cc
-```
+Check [Language and standards](references/language-and-standards.md) for the exact implemented subset. Distinguish these cases:
 
-Clang's trivial relocation remains a builtin operation, but explicit
-replaceability/relocatability markers were removed. Never replace relocation of
-a non-trivially-copyable object with raw `memcpy` merely because it is reported
-relocatable.
+- a standard feature implemented only by one compiler;
+- an extension accepted in older language modes;
+- syntax accepted while lowering or runtime support is incomplete;
+- a feature-test macro that lags actual implementation;
+- a proposal implemented and later rolled back or revised.
 
-## Library and tooling checks
+Use small configure-time compile probes for required syntax and semantics. For ABI-sensitive facilities, also link and run a probe built through the real toolchain.
 
-### libstdc++
+### Hardening and sanitizer work
 
-Add direct includes for every used declaration. In particular, choose
-`<stdint.h>` for global fixed-width typedefs, `<cstdint>` for `std::` typedefs,
-and `<ostream>` for stream declarations and manipulators. Remove compatibility
-headers such as `<cstdbool>` and `<cstdalign>`.
+Use [Diagnostics and safety](references/diagnostics-and-safety.md) to choose explicit sanitizer groups. In particular, undefined-behavior sanitization no longer implies virtual-pointer checks, and optimizer merging can reduce the distinct trap reasons visible to a debugger.
 
-Unoptimized GCC 15 builds enable libstdc++ assertions by default. Treat an
-assertion as evidence of an invalid operation before considering the temporary
-`_GLIBCXX_NO_ASSERTIONS` opt-out.
+Keep suppression mappings ordered deliberately: newer Clang uses the last matching rule. Review ignorelists when adopting positive entries or finer overflow and local-bounds controls.
 
-### Formatting and compiler APIs
+Use realtime checks only around functions whose nonblocking contract is meaningful, and treat the type sanitizer as experimental. Allocation-token instrumentation is specialized allocator tooling, not a general memory-safety replacement.
 
-Version-control the formatter version with its configuration. Recent options
-include renamed enum/boolean values and keys whose old forms are deprecated.
+### Compiler integration and formatting tools
 
-Consumers embedding Clang must link dependencies explicitly after library
-splits. For libclang Python bindings, handle `None` and raised errors where old
-versions returned null cursor objects or silent status values.
+Read [Libraries and tooling](references/libraries-and-tooling.md) before upgrading formatter configuration, libclang consumers, Python bindings, AST matchers, embedded frontend tools, or GCC plugins.
+
+Do not rely on transitive compiler-library linkage. Link the driver/options libraries used directly. Expect bindings to distinguish absence with `None` or empty strings according to the particular API and release, and handle reparse failures as exceptions.
+
+### Architecture and offload builds
+
+Read [Targets and offload](references/targets-and-offload.md) before changing a target compiler. Verify:
+
+- selected CPU, architecture, ABI, vector width, and code model;
+- runtime compatibility for GPU code-object or RDC formats;
+- target-specific feature macros in each offload compilation;
+- deprecated target triples and feature-flag spellings;
+- frontend-only language support versus executable lowering;
+- OpenMP runtime build assumptions and address-mapping behavior.
+
+Do not assume an `asm goto` label is a valid register-controlled branch target under branch-target enforcement. Do not assume a header-only feature macro describes the currently active offload target.
 
 ## Verification checklist
 
-- Confirm explicit C and C++ dialect flags in every build path.
-- Compare warning groups and error promotions under the exact compiler version.
-- Run ABI-sensitive tests with all objects rebuilt, then test any intentional
-  mixed-version boundary separately.
-- Exercise optimized and sanitizer builds; debug-only success is insufficient.
-- Validate machine-readable diagnostic consumers against emitted SARIF.
-- Rebuild module artifacts instead of reusing stale BMIs or header units.
-- Check formatter, analyzer, plugin, and binding clients against renamed or
-  removed APIs.
-- For offload builds, verify host and device target feature detection, runtime
-  version requirements, and actual lowering support.
-- Consult the standards reference before promising a facility solely because a
-  language-mode flag is accepted.
+- [ ] Compiler family and exact release are recorded for compile and link steps.
+- [ ] C and C++ language modes are explicit.
+- [ ] Configure-generated flags select the intended language mode.
+- [ ] Full clean rebuild covers every affected ABI boundary.
+- [ ] Removed options, targets, headers, tools, checkers, and matchers are replaced.
+- [ ] Warning demotions are narrow, documented, and temporary.
+- [ ] Alias, overflow, null arithmetic, padding, lifetime, and relocation assumptions are tested.
+- [ ] Machine-readable diagnostics use supported formats.
+- [ ] Module artifacts are rebuilt and build-system compatible.
+- [ ] Standard-library includes name their owning headers directly.
+- [ ] Feature probes cover facilities whose standards tables remain partial.
+- [ ] Sanitizer groups and ignorelists are selected explicitly.
+- [ ] Target CPU, ABI, vector width, feature macros, and runtime requirements are verified.
+- [ ] Formatter, libclang, AST, Python, plugin, and embedding integrations have dedicated tests.
+- [ ] CUDA/HIP, OpenMP, OpenACC, OpenCL, and WebAssembly assumptions are checked where relevant.

@@ -1,10 +1,8 @@
 # Signal Forms and Forms Changes
 
-Batch attribution: 21-signal-forms, 21.0.0, 22.0.0.
+## Create a field tree (`21-signal-forms`)
 
-## Create a typed field tree
-
-Signal Forms arrived experimentally in Angular 21 under `@angular/forms/signals` and is stable in Angular 22. `form()` turns a writable signal into a callable, type-safe field tree. The `FormField` directive binds one field to a native control and synchronizes the control, field state, and model in both directions.
+`form()` from `@angular/forms/signals` turns a writable model signal into a callable, type-safe field tree. `FormField` binds a field to a native control and synchronizes the control, field state, and model in both directions.
 
 ```ts
 import {Component, signal} from '@angular/core';
@@ -20,19 +18,15 @@ export class Login {
 }
 ```
 
-Nested object fields use property paths; array fields use indices. Calling a field returns its state. For example, `loginForm.email().value.set('a@b.example')` updates both the original model signal and a bound control.
+Nested objects use property paths and arrays use indices. Calling a field returns its state; for example, `loginForm.email().value.set('a@b.example')` updates both the original model and its bound control.
 
-## Design the model shape first
+Signal Forms was experimental in v21 and is stable in v22 (`22.0.0`).
 
-Every bindable field must exist in the model initially.
+## Shape the model for fields
 
-- `undefined` and an optional property mean the field is absent.
-- Use `''` for an empty text control.
-- A `null` complex object has no navigable child fields. Prefer a stable object with empty leaf values.
-- Variable-length arrays are supported.
-- A dynamically shaped value can be treated atomically by a custom control.
+Every bindable field must exist initially. An optional or `undefined` property means no field exists; use `''` for an empty text control. A `null` complex object has no navigable children, so use a static object with empty leaf values.
 
-Array object items receive stable field identities, preserving interaction and validation state across reordering. Track the field identity—not its value or index—when rendering:
+Variable-length arrays are supported. Dynamically shaped values can instead be treated atomically by a custom control. Array object items have stable field identities so interaction and validation state survives reordering; track by field identity, not value or index:
 
 ```html
 @for (emailField of emailsForm.emails; track emailField) {
@@ -44,53 +38,36 @@ Array object items receive stable field identities, preserving interaction and v
 
 `FieldState` exposes:
 
-- `value`, a writable signal;
-- `valid()` and `invalid()`;
-- `errors()` and, in Angular 22, `getError()`;
-- `pending()`;
-- `touched()` and `dirty()`;
+- writable `value`;
+- `valid()`, `invalid()`, `errors()`, and `pending()`;
+- `touched()` and `dirty()`; and
 - `disabled()`, `hidden()`, and `readonly()`.
 
-A validation error contains `kind`, an optional `message`, and a `fieldTree` reference. During asynchronous validation, `valid()` and `invalid()` can both be `false`. `dirty()` records user modification and remains true even if the value is later restored.
+A validation error includes `kind`, an optional `message`, and a `fieldTree` reference. During asynchronous validation both `valid()` and `invalid()` may be false. `dirty()` records user modification and stays true even if the value later returns to its original value.
 
-Calling an object field or the root form returns the same interface aggregated over interactive descendants. One invalid, pending, touched, or dirty child propagates that state to its ancestors.
+Calling an object field or root form returns the same interface aggregated over interactive descendants. One invalid, pending, touched, or dirty child propagates that state to ancestors.
 
-## Configure field availability
+## Declare availability rules
 
-Schema rules `disabled()`, `hidden()`, and `readonly()` can use reactive conditions. Read the current field with `value()` or another field with `valueOf(path)`.
+Schemas apply `disabled()`, `hidden()`, and `readonly()` with reactive conditions. Read the current field through `value()` and another field through `valueOf(path)`:
 
 ```ts
 orderForm = form(orderModel, path => {
-  disabled(
-    path.couponCode,
-    ({valueOf}) => valueOf(path.total) < 50,
-  );
-  hidden(
-    path.shippingAddress,
-    ({valueOf}) => !valueOf(path.requiresShipping),
-  );
+  disabled(path.couponCode, ({valueOf}) => valueOf(path.total) < 50);
+  hidden(path.shippingAddress, ({valueOf}) => !valueOf(path.requiresShipping));
   readonly(path.orderId);
 });
 ```
 
-`FormField` reflects disabled and readonly state onto native controls. Hidden state does not hide markup; render it explicitly with `@if`.
+`FormField` reflects disabled and readonly onto native controls. Hidden state must be rendered explicitly with `@if`. All three states make the field non-interactive and exclude it from ancestor validation, touched, and dirty aggregation without clearing its value.
 
-All three states make a field non-interactive and exclude it from ancestor validation, touched, and dirty aggregation. They do not clear its value.
+## Built-in and custom validation
 
-## Attach schema validation
+The schema callback runs once and attaches reactive rules to `SchemaPathTree` paths. Built-ins include `required`, `email`, `min`, `max`, `minLength`, `maxLength`, and `pattern`. Options support custom messages and conditional `when`; numeric limits can be reactive functions.
 
-The schema callback runs once to attach reactive rules to a `SchemaPathTree`. Built-in rules include:
+`required` treats `null` and `''` as empty, but not `[]`; use `minLength` for a non-empty array.
 
-- `required` and `email`;
-- `min` and `max`;
-- `minLength` and `maxLength`;
-- `pattern`.
-
-Options can supply custom messages and conditional `when` logic. Numeric limits can come from reactive functions. `required` considers `null` and `''` empty, but not `[]`; use `minLength` to require a non-empty array.
-
-### Validate array items and cross-field constraints
-
-Use `applyEach()` to validate each array item. Use `validate()` for a custom or cross-field rule.
+Use `applyEach()` for array items and `validate()` for custom or cross-field validation:
 
 ```ts
 orderForm = form(orderModel, path => {
@@ -102,63 +79,45 @@ orderForm = form(orderModel, path => {
   validate(path.confirmEmail, ({value, valueOf}) =>
     value() === valueOf(path.email)
       ? null
-      : {
-          kind: 'emailMismatch',
-          message: 'Email addresses must match',
-        },
+      : {kind: 'emailMismatch', message: 'Email addresses must match'},
   );
 });
 ```
 
-A custom validator returns `{kind, message?}` or `null`/`undefined`. Its context includes `value()`, `valueOf(path)`, state and field-tree accessors, and reactive path keys.
+A custom validator returns `{kind, message?}` or `null`/`undefined`. Its context supplies `value()`, `valueOf(path)`, state accessors, field-tree accessors, and reactive path keys.
 
-`validateTree()` validates an entire subtree and can attach an error to a selected descendant by using its `fieldTree`. Every synchronous rule runs after each interactive value change. Asynchronous rules start only after all synchronous rules pass.
+`validateTree()` validates a whole subtree and can place an error on a chosen descendant through its `fieldTree`. All synchronous rules run on each interactive value change; asynchronous rules begin only when every synchronous rule passes.
 
-### Validate through HTTP or Standard Schema
+## HTTP and Standard Schema validation
 
-`validateHttp()` builds an asynchronous validator from a reactive `request`, `onSuccess`, and `onError`. It sets `pending()` while the request runs and maps both successful responses and failures to an error or `null`.
+`validateHttp()` builds an asynchronous validator from reactive `request`, `onSuccess`, and `onError` callbacks. It sets `pending()` while the request runs and maps success or failure to an error or `null`.
 
-`validateStandardSchema()` accepts a Standard Schema-compatible validator such as Zod or Valibot. It can also take a function that returns a reactive schema.
+`validateStandardSchema()` accepts Standard Schema-compatible validators such as Zod or Valibot, including a function returning a reactive schema.
 
 ```ts
 form(model, path => {
   validateHttp(path.username, {
-    request: ({value}) =>
-      `/api/users/available?name=${value()}`,
-    onSuccess: (response: {taken: boolean}) =>
-      response.taken
-        ? {kind: 'usernameTaken', message: 'Already taken'}
-        : null,
-    onError: () => ({
-      kind: 'networkError',
-      message: 'Could not validate',
-    }),
+    request: ({value}) => `/api/users/available?name=${value()}`,
+    onSuccess: (r: {taken: boolean}) =>
+      r.taken ? {kind: 'usernameTaken', message: 'Already taken'} : null,
+    onError: () => ({kind: 'networkError', message: 'Could not validate'}),
   });
 
-  validateStandardSchema(
-    path.profile,
-    () => profileSchema(),
-  );
+  validateStandardSchema(path.profile, () => profileSchema());
 });
 ```
 
-Angular 22 adds `reloadValidation` for manually rerunning asynchronous validation and a `debounce` option for `validateAsync` and `validateHttp`.
+In v22, `reloadValidation` manually reruns asynchronous validation; `validateAsync` and `validateHttp` accept `debounce`, and `FieldState.getError()` retrieves a matching error (`22.0.0`).
 
 ## Submit and reset
 
-`FormRoot` binds a field tree to `<form [formRoot]="myForm">`. It prevents native submission, adds `novalidate`, and invokes the form's configured submission action. Angular 22 allows `FormRoot` without submission options.
-
-`submit()` first marks every field touched, then runs the action only when the form is valid. Call it directly to submit without `FormRoot` or to override the form's configured action.
+`FormRoot` binds a field tree to `<form [formRoot]="myForm">`, prevents native submission, adds `novalidate`, and invokes the configured submission action. `submit()` first marks every field touched and runs only while the form is valid. Call it directly when there is no `FormRoot` or to override the configured action.
 
 ```ts
 registrationForm = form(
   registrationModel,
   path => required(path.email),
-  {
-    submission: {
-      action: async () => api.register(registrationModel()),
-    },
-  },
+  {submission: {action: async () => api.register(registrationModel())}},
 );
 
 submit(registrationForm, {
@@ -168,14 +127,14 @@ submit(registrationForm, {
 registrationForm().reset({email: ''});
 ```
 
-Calling the root state's `reset()` clears touched and dirty state. Passing a value also replaces the form model.
+Root `reset()` clears touched and dirty state; passing a value also replaces the form model. In v22, `FormRoot` may be used without submission options.
 
 ## Custom controls and UI integration
 
-Signal Forms bind custom components through signal-based APIs without requiring a `ControlValueAccessor`. Angular 22 adds `ngNoCva` for a control that must explicitly opt out of `ControlValueAccessor` integration.
+Signal Forms can bind signal-based custom components without implementing `ControlValueAccessor` (`21.0.0`). In v22, `ngNoCva` explicitly opts a control out of `ControlValueAccessor` integration (`22.0.0`).
 
-Angular 22 also integrates Signal Forms with Angular Material and Angular Aria. Use their supported adapters rather than manually mirroring state between a field tree and those component systems.
+Stable Signal Forms integrates with Angular Material and Angular Aria. Use the supplied integrations rather than adapting every Material or Aria control manually.
 
-## Zoneless Reactive Forms note
+## Radio value synchronization
 
-This Signal Forms model is signal-driven, but classic Reactive Forms still do not notify zoneless change detection when operations such as `setValue()`, `patchValue()`, or `FormArray.push()` run. If a template consumes classic form state, bridge a form Observable to `markForCheck()` or a template-read signal. See [Core Reactivity](core-reactivity.md).
+Radio inputs remain synchronized when their bound values change (`22.1.2`). A group whose option values are updated now keeps the form control and checked state aligned; remove workarounds that manually re-check radios after a value update.

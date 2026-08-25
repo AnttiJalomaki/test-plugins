@@ -1,8 +1,11 @@
 # Scopes and Authentication
 
-The generator guidance in this file comes from batch `1.8-guides`.
+Use this reference when generating scoped resources, designing ownership-aware
+context APIs, nesting routes under an organization or tenant, or upgrading
+generated authentication. The generator-scope behavior is documented by the
+`1.8-guides` batch.
 
-## Generated Scopes Are Authorization Boundaries
+## Generated scopes are data-access boundaries
 
 Running:
 
@@ -11,11 +14,16 @@ $ mix phx.gen.auth Accounts User users
 ```
 
 creates an `Accounts.Scope` struct. Unless the application already has another
-default, the generator also registers a default user scope.
-`fetch_current_scope_for_user` assigns that scope as `:current_scope` for
-browser requests, and generated LiveView support installs a corresponding mount
-hook. Generated controllers and LiveViews then pass the scope as the first
-argument to context operations.
+default scope, the generator also registers a default user scope.
+
+For browser requests, `fetch_current_scope_for_user` assigns the scope as
+`:current_scope`. Generated authentication provides the corresponding LiveView
+mount hook. Generated controllers and LiveViews then pass the scope as the
+first argument to context operations.
+
+After a default is configured, `phx.gen.schema`, `phx.gen.context`,
+`phx.gen.live`, `phx.gen.html`, and `phx.gen.json` generate ownership fields and
+scoped queries instead of unqualified data access:
 
 ```elixir
 def list_posts(%Scope{} = scope) do
@@ -23,25 +31,14 @@ def list_posts(%Scope{} = scope) do
 end
 ```
 
-After a default scope is configured, these generators produce ownership fields
-and scoped queries instead of unqualified data access:
+Put generated authenticated LiveView routes in the authenticated
+`live_session`. The session's mount hook must establish the scope before any
+generated scoped operation runs.
 
-- `phx.gen.schema`
-- `phx.gen.context`
-- `phx.gen.live`
-- `phx.gen.html`
-- `phx.gen.json`
+## Declare a generator scope
 
-Generated authenticated LiveView routes belong inside the authenticated
-`live_session`; otherwise the expected scope has not been mounted before the
-generated operations run.
-
-## Declare a Generator Scope
-
-Generators discover scopes from application configuration. Only one scope may
-be marked as the default. `access_path` tells generated code how to reach the
-owner identifier, while the `schema_*` keys describe the generated ownership
-column and association.
+Scopes are discovered from application configuration. An application may have
+only one default scope.
 
 ```elixir
 config :my_app, :scopes,
@@ -58,26 +55,29 @@ config :my_app, :scopes,
   ]
 ```
 
-The configured fixture module must export `<name>_scope_fixture/0`, such as
-`user_scope_fixture/0`. The setup helper must be importable by generated
-controller or LiveView tests.
+The options have distinct responsibilities:
 
-Use `schema_migration_type` to override the type used for the migration column.
-Set `schema_table: nil` when the generated schema should contain a plain scope
-identifier rather than a foreign key.
+- `module` identifies the scope struct module.
+- `assign_key` names the connection or socket assign.
+- `access_path` tells generated code how to read the owner identifier.
+- `schema_key`, `schema_type`, and `schema_table` define the generated
+  ownership column and association.
+- `test_data_fixture` supplies scope fixture data.
+- `test_setup_helper` names the setup function used by generated controller or
+  LiveView tests.
 
-## Use Multiple and Route-Aware Scopes
+The fixture module must implement `<name>_scope_fixture/0`; for the `user`
+scope, that is `user_scope_fixture/0`. The setup helper must be importable by
+the generated tests.
 
-An application may declare several scopes. Select a non-default scope with
-`--scope`:
+Set `schema_migration_type` when the migration column type needs to differ from
+`schema_type`. Set `schema_table: nil` when the ownership value should be a
+plain scope-id column rather than a foreign key.
 
-```console
-$ mix phx.gen.live Blog Post posts title:string body:text --scope organization
-```
+## Use multiple and route-aware scopes
 
-`route_prefix` nests generated routes. `route_access_path` identifies the value
-placed in the URL, such as an organization slug, independently of the database
-ownership key in `access_path`.
+Define multiple scopes when the application has more than one ownership
+boundary, then select a non-default scope with `--scope`:
 
 ```elixir
 config :my_app, :scopes,
@@ -95,38 +95,59 @@ config :my_app, :scopes,
   ]
 ```
 
-For a route-derived organization scope, first load the organization through the
-existing user scope. Then update `:current_scope` in both a browser plug and a
-LiveView `on_mount` hook. This keeps nested lookup authorization-aware while
-letting generated paths use the configured slug.
+```console
+$ mix phx.gen.live Blog Post posts title:string body:text --scope organization
+```
 
-## Magic-Link-First Authentication
+`route_prefix` nests generated routes. `route_access_path` selects the
+URL-facing value, such as a slug, independently of the database ownership key
+selected by `access_path`.
 
-The auth generator now uses email confirmation and magic-link login as its
-primary flow. Password authentication is opt-in, and new registration no longer
-collects a password.
+For route-derived scopes:
 
-Generated `UserAuth` provides:
+1. Start from the authenticated user scope.
+2. Load the requested organization through that existing scope so the lookup
+   itself remains authorization-aware.
+3. Update `:current_scope` in a browser plug.
+4. Perform the same update in a LiveView `on_mount` hook.
 
-- `fetch_current_scope_for_user` to establish the request scope.
-- `require_authenticated_user` to require a signed-in user. Run it after the
-  scope-fetching plug.
+This makes generated paths use the route value while preserving scoped access
+for both controller and LiveView requests.
+
+## Magic-link-first authentication
+
+Generated authentication uses email confirmation and magic-link login first.
+Password authentication is opt-in, and registration no longer asks the user to
+choose a password.
+
+The generated `UserAuth` provides:
+
+- `fetch_current_scope_for_user` to establish the current scope;
+- `require_authenticated_user` to enforce sign-in; and
 - `require_sudo_mode` for sensitive operations that require recent
   authentication.
 
-## Migrate Older Generated Authentication
+Run `fetch_current_scope_for_user` before `require_authenticated_user` in the
+browser pipeline.
 
-Generated auth modules, templates, and migrations are application code; a
-Phoenix dependency upgrade does not rewrite them. To migrate a password-first
-registration flow:
+## Generated-auth asset requirement
 
-1. Add a new migration that makes `hashed_password` nullable. Do not alter an
-   already-used historical migration.
+The auth generator warns when esbuild is unavailable. Its generated features
+assume that `phoenix_html.js` is present in the JavaScript bundle, so verify the
+asset import rather than dismissing the warning.
+
+## Migrate authentication generated before Phoenix 1.8
+
+Generated auth code is not updated automatically. To move from the earlier
+password-registration flow:
+
+1. Create a new migration that makes `hashed_password` nullable. Do not edit an
+   old migration that may already have run.
 2. Set `hashed_password` to `nil` for every account that is still unconfirmed.
-   This avoids credential pre-stuffing through an unconfirmed registration.
-3. Account for the race in which a person has just registered and selected a
-   password that the cleanup would invalidate.
+   This avoids credential pre-stuffing.
+3. Plan for the operation to invalidate a password chosen by someone who has
+   just registered but not confirmed.
 
-Deploy the cleanup during low traffic, or introduce magic links while keeping
-the existing password flow until the transition can be coordinated safely.
-
+Deploy the data migration during low traffic, or add magic-link login without
+fully replacing the existing flow when that invalidation window is
+unacceptable.

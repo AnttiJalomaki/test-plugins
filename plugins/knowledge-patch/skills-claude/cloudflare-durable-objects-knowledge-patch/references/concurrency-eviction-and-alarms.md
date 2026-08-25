@@ -1,59 +1,56 @@
 # Concurrency, eviction, and alarms
 
-## Know when hibernation is possible
+## `deleteAll()` can clear the alarm
 
-An idle object cannot hibernate while it has a timer, an in-progress awaited
-`fetch()` handler, standard WebSocket API use, or any unfinished request or
-event. A plain `fetch()` subrequest does not keep the object alive merely
-because its returned body is still streaming.
+With compatibility date `2026-02-24` or later, `ctx.storage.deleteAll()`
+deletes both stored data and the alarm on KV- and SQLite-backed objects (2026).
+A separate `deleteAlarm()` is unnecessary for a complete reset.
+
+## Know when an object can hibernate
+
+Timers, an in-progress awaited `fetch()`, standard WebSocket API use, or an
+unfinished request or event prevent hibernation. A plain `fetch()` subrequest
+does not keep the object alive merely because its returned body is streaming.
 
 An otherwise eligible object currently hibernates after 10 seconds without an
-event. Hibernation discards memory and runs the constructor again on the next
-event while hibernatable client WebSockets remain connected.
+event, discards its memory, and runs its constructor on the next event while
+hibernatable client WebSockets stay connected.
 
-## Account for outbound connection eviction deferral
+## Active outbound connections defer eviction
 
-An active connection created with `connect()` or an outbound WebSocket keeps
-the object alive. After every such connection closes, the normal 70–140 second
-inactivity window begins.
+An active connection created through `connect()` or an outbound WebSocket
+keeps the object alive (2026). Once all such connections close, the ordinary
+70–140 second inactivity window begins. Each connection blocks eviction for at
+most 15 minutes; after that, normal eviction rules resume even if it stays open.
 
-Each connection prevents eviction for at most 15 minutes. After that, normal
-eviction rules resume even if the connection remains open.
-
-## Revalidate after non-storage I/O
+## Distinguish storage and non-storage awaits
 
 Awaited Durable Object storage operations receive input-gate protection.
-Awaiting `fetch()`, R2, or other non-storage I/O lets another request
-interleave. Revalidate a version or other precondition after external I/O
-before committing a dependent storage change.
+Awaiting `fetch()`, R2, or other non-storage I/O permits another request to
+interleave. After external I/O, revalidate a version or other precondition
+before committing dependent storage changes.
 
-## Use output gates and implicit transactions
+## Rely on output gates and write coalescing
 
-Outgoing responses and network requests are held until pending storage writes
-complete.
-
-Consecutive writes without an intervening `await` are coalesced into one atomic
-implicit transaction. An intervening `await`, including between legacy KV
-writes, ends that coalescing boundary.
+Outgoing responses and network requests wait for pending storage writes to
+finish. Consecutive writes without an intervening `await` are coalesced into
+one atomic implicit transaction. An intervening `await`, including one between
+legacy KV writes, ends the coalescing boundary.
 
 ```ts
 this.ctx.storage.sql.exec(
-  "UPDATE accounts SET balance = balance - ? WHERE id = ?",
-  amount,
-  from,
+  "UPDATE accounts SET balance = balance - ? WHERE id = ?", amount, from,
 );
 this.ctx.storage.sql.exec(
-  "UPDATE accounts SET balance = balance + ? WHERE id = ?",
-  amount,
-  to,
+  "UPDATE accounts SET balance = balance + ? WHERE id = ?", amount, to,
 );
 return "transferred";
 ```
 
-## Version the SQLite schema in a table
+## Migrate SQLite schemas under a concurrency block
 
 Durable Object SQLite does not support `PRAGMA user_version`. Track applied
-migrations in an ordinary table. Run constructor migrations inside
+migrations in a normal table and run constructor migrations inside
 `blockConcurrencyWhile()` so no request observes a partial schema.
 
 ```ts
@@ -65,43 +62,33 @@ constructor(ctx: DurableObjectState, env: Env) {
 }
 ```
 
-## Rely on storage boundaries for uniqueness
+## Understand instance uniqueness during replacement
 
-Global uniqueness is enforced when an event starts and whenever it accesses
-storage. A stale HTTP or RPC event that never touches storage may finish after
-a replacement instance starts; a later storage access stops that stale event
-with an error.
+The runtime rechecks global uniqueness at event start and whenever an event
+accesses storage. A stale HTTP or RPC event that never touches storage may
+finish after a replacement instance starts, but a later storage access stops it
+with an error. WebSocket requests are terminated during shutdown, and requests
+affected by a runtime update have at most 30 seconds to finish.
 
-WebSocket requests are terminated during shutdown. Requests affected by a
-runtime update have at most 30 seconds to finish.
+## Persist without a shutdown finalizer
 
-## Persist without a finalizer
+There is no shutdown hook before deployment, eviction, or runtime-driven
+replacement. Persist checkpoints incrementally; never rely on an end-of-process
+flush.
 
-Durable Objects have no shutdown hook or lifecycle callback before deployment,
-eviction, or runtime-driven replacement. Persist checkpoints incrementally
-instead of relying on an end-of-process flush.
+## Build alarms as idempotent, non-recurring work
 
-## Keep adjacent deployments compatible
+Alarms may be delivered more than once and do not recur automatically. The
+handler must schedule its next run and be idempotent. Use
+`AlarmInvocationInfo.retryCount` to schedule a fresh alarm before remaining
+retries are exhausted.
 
-Worker and Durable Object code roll out with eventual consistency. New Worker
-code can call an older object version for seconds to minutes, and a gradual
-deployment extends the overlap. Keep request and RPC contracts forward- and
-backward-compatible across adjacent releases.
-
-## Make alarms idempotent and self-rescheduling
-
-Alarms are non-recurring and may be delivered more than once. An alarm handler
-must schedule its next run and be idempotent.
-
-Use `AlarmInvocationInfo.retryCount` to decide whether to schedule a fresh
-alarm before the remaining retries are exhausted. Under local `wrangler dev`,
-alarm methods may fail after a hot reload; restart the command after editing
-alarm code.
+Under local `wrangler dev`, alarm methods can fail after hot reload. Restart the
+command after editing alarm code.
 
 ## Understand local persistence with `script_name`
 
-By default, `wrangler dev` can read Durable Object storage, but keeps writes in
-memory and does not change persistent data.
-
-If a binding explicitly sets `script_name`, development writes do affect
-persistent storage. Wrangler emits a warning for this mode.
+By default, `wrangler dev` reads Durable Object storage but holds writes in
+memory without modifying persistent data. When a binding explicitly sets
+`script_name`, development writes do affect persistent storage, and Wrangler
+emits a warning.

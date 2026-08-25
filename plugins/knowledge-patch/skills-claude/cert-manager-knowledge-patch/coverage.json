@@ -2,7 +2,7 @@
   "patch": "cert-manager-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T03:49:34Z",
+  "built_at": "2026-08-20T22:19:04Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -59,6 +59,11 @@
     },
     "support-lifecycle": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.21.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

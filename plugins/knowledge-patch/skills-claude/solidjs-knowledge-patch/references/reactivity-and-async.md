@@ -1,26 +1,31 @@
 # Reactivity and Async Data
 
-## Router query migration
+## Query and async-data migration
 
-Use `query` in place of the former `cache` helper. Treat this as an API rename,
-not as a second cache primitive that should coexist with old calls.
+Solid Router renamed the `cache` helper to `query`. During the same API
+evolution, the `store` option was removed, `createAsyncStorage` was added, and
+the async-data APIs gained a `prev` argument. Remove `store` rather than
+transferring it mechanically to `query`.
 
-Update the related async-data contracts at the same time:
+`createAsync` now exposes `.latest`, allowing code to inspect its latest value
+without replacing the primary accessor contract. User-supplied names are
+honored by `createAsync`; do not assume the runtime discards them.
 
-- Use the added `createAsyncStorage` API where storage-backed async state is
-  required.
-- Account for the added `prev` argument in async-data callbacks.
-- Remove the former `store` option from `cache`-era configurations.
-- Read `createAsync.latest` when the latest resolved value is needed.
+## Query response handling
 
-The response side of `query` is covered with actions because filtering,
-redirects, and revalidation interact with mutation behavior. See
-[Stores and actions](stores-and-actions.md).
+Response helpers return `Response` objects, and router data helpers process or
+filter those results according to their contracts. `query().handleResponse()`
+preserves headers, so retain that path when status and header metadata are part
+of the data protocol.
 
-## Server functions as typed RPC
+An absolute redirect produced in a server-side data call is forwarded to the
+client. Older code may describe that call with the former `cache` name; apply
+the behavior while migrating the helper to `query`.
 
-The `solidstart-1.0.0` server-function contract preserves the TypeScript-facing
-call shape while changing execution by environment:
+## Server-only functions as RPC
+
+The `"use server"` directive marks a function whose implementation executes
+only on the server (solidstart-1.0.0):
 
 ```ts
 async function greeting(name: string) {
@@ -29,24 +34,27 @@ async function greeting(name: string) {
 }
 ```
 
-- Execute a server-side call directly.
-- Turn a browser call into an RPC transparently.
-- Keep the implementation server-only even though client code can call the
-  typed function.
-- Transport promises, streams, and async iterables across the boundary.
+The function retains a normal TypeScript call signature. A call made on the
+server invokes it directly; a call made in the browser is transformed into an
+RPC. The same abstraction can therefore back a client data library during SSR
+or client rendering.
 
-Because the call retains an ordinary async function interface, it can back an
-existing client data library in both SSR and client-rendered applications.
-Do not replace the function's TypeScript signature with a transport-specific
-wrapper unless the consuming library itself requires one.
+The transport supports promises, streams, and async iterables. Do not collapse
+these values into an unnecessary request-poll-response wrapper when the caller
+can consume the richer transport directly.
 
-## Async mutation flow
+## Transport compatibility
 
-A server-function mutation can cooperate with the router's single-flight
-navigation. Destination data may begin loading after the mutation and stream
-back in the mutation response while the client redirects.
+The server-function implementation changed in compatibility-sensitive ways:
 
-Use that flow to combine update, redirect, and next-page data loading. See
-[Stores and actions](stores-and-actions.md) for the complete mutation,
-response, and revalidation contracts.
+- SolidStart 1.1 adopted the TanStack server-functions plugin in a breaking
+  transition.
+- SolidStart 1.3 changed serialization to Seroval JSON mode.
+- SolidStart 1.3.0 could loop forever when an upstream returned an unexpected
+  response such as an S3 XML error.
+- SolidStart 1.3.2 fixes that loop; update to a fixed release before diagnosing
+  repeated unexpected-response retries as application logic.
 
+Test request and response serialization across the browser/server boundary
+when upgrading either transition. A function that still type-checks may have a
+different wire contract.

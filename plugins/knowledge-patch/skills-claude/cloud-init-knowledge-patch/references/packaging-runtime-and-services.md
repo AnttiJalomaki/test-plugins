@@ -1,117 +1,110 @@
 # Packaging, Runtime, and Service Integration
 
-This reference organizes the packaging, systemd, runtime, and distribution
-changes carried by batch `26.1`.
+Use this reference when building packages, assembling images, overriding
+services, rendering templates, or consuming command results.
 
-## Installation layout
+## Packaging layout
 
-Since 25.1, cloud-init packages install files under `/usr/lib` rather than
-`/lib`. Downstream packaging and image construction should use the current
-installed paths.
+### Installed files use `/usr/lib`
 
-Audit places that can preserve the older layout implicitly:
+Since 25.1, packaged files install under `/usr/lib` rather than `/lib`
+(guidance recorded in 26.1).
 
-- package file manifests
-- absolute paths in downstream patches
-- image-building copy steps
-- service integration that names installed helpers
-- tests that assert package contents
+Review downstream assumptions in:
 
-A compatibility symlink on one system is not a reason to keep `/lib` in the
-package definition. Validate the actual installation result under `/usr/lib`.
+- package manifests and file lists;
+- patches that use absolute installation paths;
+- service definitions with hard-coded paths;
+- image assembly logic that copies installed files; and
+- tests that assert the old layout.
 
-## Meson build migration
+Do not retain `/lib` solely because an older package used that location.
 
-Cloud-init changed its build backend from setuptools/distutils to Meson in
-25.3. Downstream packages should be reviewed for both command and layout
-differences.
+### Meson replaces setuptools and distutils
 
-The migration affects assumptions such as:
+Since 25.3, cloud-init builds with Meson instead of setuptools or distutils
+(guidance recorded in 26.1). The Meson build also supports BSD.
 
-- how the build is configured and invoked;
-- where staged files appear;
-- which files are included in the final package;
-- whether downstream setuptools or distutils patches still apply.
+When adapting a downstream package:
 
-Do not translate an old build command without checking its output. Compare the
-Meson installation result with the package manifest and correct the manifest or
-downstream patches deliberately.
+1. Remove assumptions that the setuptools or distutils entry point performs
+   the build.
+2. Use the Meson workflow expected by the package environment.
+3. Inspect generated installation paths instead of translating old commands
+   mechanically.
+4. Reconcile package manifests and file lists against the actual Meson result.
+5. Include the current BSD support when maintaining BSD packaging.
 
-Batch 26.1 also adds BSD support for the Meson build. BSD packaging should use
-that support rather than retaining a setuptools/distutils-only build path.
+Treat the backend and installed-layout changes as related audit work, but verify
+each independently.
 
-## systemd socket-command compatibility
+## Runtime support
 
-In 25.3, the socket protocol used by cloud-init's systemd units changed for
-compatibility with alternative commands such as `ncat -U`.
+### Python 3.8 is unsupported
 
-This matters when a downstream replaces a unit's `ExecStart=`. The override is
-responsible for following the changed protocol and must be updated.
+Python 3.8 is no longer supported (26.1). Do not select it as the interpreter
+for a current build or package.
 
-Inspect effective units, including drop-ins:
+Check:
+
+- the interpreter used during package builds;
+- distribution dependency constraints;
+- service shebangs or launch commands; and
+- image tests that may still run under an older default interpreter.
+
+## systemd integration
+
+### Audit overridden `ExecStart=` commands
+
+The socket protocol used by cloud-init's systemd units changed in 25.3 for
+compatibility with alternatives such as `ncat -U` (guidance recorded in 26.1).
+Downstream units that override `ExecStart=` must update their command.
+
+Inspect the effective unit rather than only the vendor file:
 
 ```sh
 systemctl cat cloud-init.service
 ```
 
-For each replaced `ExecStart=`:
+If a drop-in or replacement unit supplies `ExecStart=`:
 
-1. Identify the corresponding current packaged unit.
-2. Compare the socket command and its arguments.
-3. Update the downstream command to use the current protocol.
-4. Recheck any alternative Unix-socket client, including `ncat -U`.
+1. Compare it with the command in the current packaged unit.
+2. Update it for the current socket protocol.
+3. Verify startup and socket communication in the assembled image.
 
-An override can hide vendor-unit changes, so reviewing only the file installed
-by the package is insufficient when a drop-in replaces the command.
+## Jinja rendering
 
-## Python support
+Cloud-init renders Jinja templates in a sandbox (26.2). Existing custom
+templates that use operations forbidden by the sandbox must be revised.
 
-Python 3.8 is no longer supported. Current builds, packages, test environments,
-and image runtime selections must use a supported Python version instead of
-pinning 3.8.
+Migration checks:
 
-Check explicit interpreter constraints in:
+- Render every custom template with the packaged cloud-init version.
+- Replace access to forbidden operations with supported template inputs and
+  expressions.
+- Exercise error paths so a rejected template cannot leave an apparently
+  successful but incomplete provisioning run.
+- Keep the sandbox boundary intact; do not weaken it to preserve an old
+  template.
 
-- package build dependencies
-- continuous-integration matrices
-- image package selections
-- downstream launchers
+## Mount configuration
 
-The relevant compatibility fact is the removal of Python 3.8 support; this
-patch does not prescribe a particular replacement version.
+The `mounts` module escapes special characters in mount paths when it writes
+`fstab` (26.2). This lets paths containing those characters be represented
+correctly.
 
-## Distribution-specific module behavior
+Consumers that inspect or post-process generated `fstab` must retain the
+escaping. Validate both the serialized entry and the resulting mount instead of
+comparing against an unescaped literal path.
 
-### Rocky Linux certificate management
+## Boot analysis
 
-The `ca_certs` module supports Rocky Linux. Distribution dispatch and tests can
-route Rocky Linux through the supported certificate-management behavior.
+`analyze_boot` returns an integer exit code (26.2). Callers can treat the value
+as conventional process status.
 
-### openEuler subscription handling
+Update integrations that assumed a non-numeric result:
 
-`cc_rh_subscription` no longer handles openEuler. Do not route openEuler
-through that module based on older Red Hat-family grouping.
-
-### RHEL sshd key-generation configuration
-
-On RHEL, cloud-init no longer overwrites changes in
-`disable-sshd-keygen-if-cloud-init-active.conf`.
-
-Treat local edits to this file as persistent administrator configuration. A
-downstream package or image customization should not reinstate the older
-overwrite behavior as part of an upgrade.
-
-## Upgrade audit
-
-Use this compact audit when maintaining a downstream package:
-
-- Replace `/lib` file expectations with the `/usr/lib` installation layout.
-- Migrate build integration from setuptools/distutils to Meson.
-- Include Meson's BSD support for BSD targets.
-- Compare custom systemd `ExecStart=` commands with the changed socket
-  protocol.
-- Remove Python 3.8 from supported build and runtime selections.
-- Enable `ca_certs` behavior for Rocky Linux.
-- Stop applying `cc_rh_subscription` to openEuler.
-- Preserve local RHEL edits to
-  `disable-sshd-keygen-if-cloud-init-active.conf`.
+- propagate the integer through wrappers;
+- use normal success and failure handling;
+- avoid string-only comparisons; and
+- test both zero and nonzero outcomes.

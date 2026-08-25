@@ -1,138 +1,129 @@
 # Authentication and sessions
 
-## Authentication option behavior
+## Understand factor persistence and limits
 
-- Disabling password authentication affects only new users; existing users may continue signing in with passwords.
-- SMS starts with only the United States and Canada enabled.
-- Passkeys can be created only after sign-up, cannot serve as MFA, and are limited to 10 per account.
-- X/Twitter sign-in now returns the user's email instead of requiring a separate email step. Development instances can enable X/Twitter without additional provider configuration.
+Disabling password authentication applies only to new users; existing users can
+still sign in with passwords. SMS begins with only the United States and Canada
+enabled. Passkeys can be created only after sign-up, cannot be used as MFA, and
+are limited to 10 per account.
 
-## Social provider scopes and tokens
+## Request and refresh social-provider scopes
 
-Prompt an existing user to reconnect a provider with additional scopes by setting `additionalOAuthScopes` on `<UserProfile />` or inside `<UserButton userProfileProps>`.
+Use `additionalOAuthScopes` on `<UserProfile />` or under
+`<UserButton userProfileProps>` to prompt an existing user to reconnect a
+provider. Provider access tokens are available only on the server. Clerk tries
+to refresh provider access and refresh tokens only when
+`getUserOauthAccessToken()` is called; it does not refresh them proactively.
 
 ```tsx
 <UserProfile additionalOAuthScopes={{ github: ['qux'] }} />
 ```
-
-Provider access tokens are available only on the server. Clerk attempts a provider token refresh only when `getUserOauthAccessToken()` is called; it does not refresh proactively.
 
 ```ts
 const result = await client.users.getUserOauthAccessToken(userId, 'github')
 const token = result.data[0].token
 ```
 
-## Bot protection
+## Place bot protection only in supported flows
 
-The Cloudflare challenge is unsupported outside browsers, including Expo and Chrome extensions. Disable bot protection for those applications. A custom browser sign-up flow must render the challenge mount point whenever bot protection is enabled:
+Cloudflare challenges are unsupported in non-browser environments such as Expo
+and Chrome extensions, where bot protection must be disabled. A custom browser
+sign-up flow must render the challenge mount whenever bot protection is enabled:
 
 ```html
 <div id="clerk-captcha"></div>
 ```
 
-## Allowlist, blocklist, and subaddress rules
+## Apply restriction matching precisely
 
-- An enabled but empty allowlist blocks every sign-up.
-- An allowlist match wins when the same identifier is blocklisted.
+- Enabling an empty allowlist blocks all sign-ups.
+- An allowlist match wins if the same identifier is also blocklisted.
 - Blocking one email also blocks its `+`, `#`, and `=` subaddresses.
 - A rule such as `*@*.clerk.dev` covers subdomains.
-- The dedicated subaddress restriction also recognizes Gmail dot variants of an existing account.
+- The separate subaddress restriction recognizes Gmail dot variants of an
+  existing account.
 
-## Enterprise identifiers and linking
+## Link enterprise identifiers carefully
 
-SAML requires an exact email-domain match unless subdomains are enabled on an eTLD+1 connection. Additional identifiers are disabled by default for SAML and OIDC; EASIE permits only one identifier.
+SAML requires an exact email-domain match unless subdomains are enabled on an
+eTLD+1 connection. Additional identifiers are off by default for SAML and OIDC;
+EASIE permits only one identifier.
 
-An IdP email is treated as verified:
+IdP email addresses count as verified. A matching verified Clerk address links
+automatically. A matching unverified address is verified and linked if
+verification is not required; otherwise Clerk creates a separate user.
 
-- A matching verified Clerk address links automatically.
-- A matching unverified address is verified and linked when application verification is not required.
-- Otherwise Clerk creates a separate user.
+## Handle EASIE deprovisioning
 
-An `EmailAddress` can start an Enterprise SSO email-link flow and poll for completion. Keep the returned cancellation function so custom UI can stop polling.
+EASIE supports Google Workspace and Microsoft Entra ID. Development can use
+shared credentials; production requires custom credentials. Before issuing a
+new session token, Clerk checks provider deprovisioning with up to a 10-minute
+delay. Detection revokes existing sessions and makes new-token requests return
+HTTP 401.
 
-```ts
-const { startEnterpriseSSOLinkFlow, cancelEnterpriseSSOLinkFlow } =
-  emailAddress.createEnterpriseSSOLinkFlow()
-await startEnterpriseSSOLinkFlow({ redirectUrl })
-// call cancelEnterpriseSSOLinkFlow() during cleanup if still pending
-```
+## Account for SCIM Directory Sync lifecycle
 
-## EASIE deprovisioning
+The beta Directory Sync feature is configured per SAML or OIDC enterprise
+connection. SCIM 2.0 creates, updates, disables, and deletes Clerk users. A SCIM
+disable or delete immediately revokes sessions, and synchronized fields become
+read-only in Clerk. This integration does not support group sync or custom
+attribute mapping.
 
-EASIE supports Google Workspace and Microsoft Entra ID, using shared credentials in development and required custom credentials in production. Before issuing a new session token, Clerk checks whether the provider deprovisioned the user. Detection can take up to 10 minutes; after detection, existing sessions are revoked and token requests return HTTP 401.
+## Operate Clerk as an OAuth/OIDC provider
 
-## Directory Sync
+An instance can publish OAuth 2.0 and OIDC endpoints:
 
-Directory Sync is a beta feature configured per SAML or OIDC enterprise connection. It uses SCIM 2.0 to create, update, disable, and delete users.
+- discovery: `/.well-known/oauth-authorization-server`
+- user info: `/oauth/userinfo`
+- token info: `/oauth/token_info`
 
-- Disabling or deleting a SCIM user revokes sessions immediately.
-- Synced fields become read-only in Clerk.
-- Group sync and custom attribute mapping are not supported.
+OAuth access and OIDC ID tokens expire after one day, authorization codes after
+10 minutes, and refresh tokens do not expire. Access tokens default to JWTs;
+choose opaque tokens when immediate revocation is required.
 
-## Clerk as an OAuth/OIDC identity provider
+An OAuth client secret is displayed once and cannot be fetched later. Dynamic
+client registration publishes an unauthenticated registration endpoint and
+forces the consent screen on. Available scopes are `profile`, `email`,
+`public_metadata`, `private_metadata`, and `openid`; custom scopes are not
+available. Public clients may exchange authorization codes without a secret and
+should use PKCE.
 
-An instance can expose OAuth 2.0 and OIDC identity-provider endpoints:
+## Use Client ID Metadata Documents for public clients
 
-- Discovery: `/.well-known/oauth-authorization-server`
-- Token exchange: `/oauth/token`
-- User info: `/oauth/userinfo`
-- Token inspection: `/oauth/token_info`
+Beta Client ID Metadata Documents let a public OAuth or MCP client use an HTTPS
+metadata-document URL as its `client_id`. Clerk fetches the document to validate
+client identity and redirect URIs, avoiding a pre-issued ID, secret, or Dynamic
+Client Registration.
 
-OAuth access and OIDC ID tokens expire after one day, authorization codes after 10 minutes, and refresh tokens do not expire. Access tokens default to JWTs; opaque access tokens support immediate revocation.
+After support enables the workspace beta, CIMD settings can pre-approve URL
+identities and scopes, admit or block unknown clients, inspect fetch health,
+refresh saved metadata, advertise CIMD in authorization-server metadata, and
+optionally require every client to be registered. This item is from batch
+`2026-07-31-2026-08-17`.
 
-## OAuth application constraints
+## Enforce reverification
 
-- The client secret is displayed once and cannot be retrieved later.
-- Dynamic client registration exposes a public, unauthenticated registration endpoint and forces the consent screen on.
-- Available scopes are `profile`, `email`, `public_metadata`, `private_metadata`, and `openid`; custom scopes are unavailable.
-- Public clients may exchange codes without a client secret and should use PKCE.
-
-OAuth application resources expose `consent_screen_enabled` and `dynamically_registered`; consent-screen behavior is configurable at creation and afterward.
-
-## Reverification with SDK helpers
-
-On the server, check factor age with `auth.has()` and return the matching reverification error. On the client, `useReverification()` opens the modal and retries.
+Server code checks factor age with `auth.has()`, returns the corresponding
+reverification error, and client code wrapped in `useReverification()` presents
+the modal and retries.
 
 ```ts
 const { has } = await auth.protect()
-if (!has({ reverification: 'strict' })) return reverificationError('strict')
-
+if (!has({ reverification: 'strict' })) {
+  return reverificationError('strict')
+}
 const protectedAction = useReverification(myAction)
 ```
 
-Password, email code, phone code, TOTP, and backup codes can satisfy reverification. A requested second-factor or multi-factor level silently falls back to first-factor verification when the user has no second factor.
+Password, email code, phone code, TOTP, and backup codes can satisfy
+reverification. A requested second-factor or multi-factor level silently
+downgrades to first-factor verification when the user has no second factor.
 
-Go also provides factor-age helpers and HTTP middleware for triggering reverification.
+## Decode session-token version 2 claims
 
-## Raw and native reverification
-
-`factorVerificationAge` is `[firstFactorAge, secondFactorAge]` in minutes. A custom UI starts with `Session.startVerification()`, then uses the matching prepare and attempt methods.
-
-```ts
-const verification = await session.startVerification({ level: 'first_factor' })
-const email = verification.supportedFirstFactors?.find(
-  (factor) => factor.strategy === 'email_code',
-)
-if (!email) throw new Error('Email-code reverification is unavailable')
-
-await session.prepareFirstFactorVerification({
-  strategy: 'email_code',
-  emailAddressId: email.emailAddressId,
-})
-await session.attemptFirstFactorVerification({ strategy: 'email_code', code })
-```
-
-Expo's prebuilt reverification modal works on web only. Native mobile must pass `onNeedsReverification` to `useReverification()` and invoke the supplied `complete` or `cancel` callback.
-
-## Session-token claim format
-
-Session-token version 1 was deprecated on April 14, 2025. Version 2 adds:
-
-- `v`: token version.
-- `pla`: plans.
-- `fea`: comma-separated features.
-- `sts`: session status, including `pending`.
-- `o`: compact Active Organization data, omitted when no Organization is active.
+Session-token version 1 was deprecated on April 14, 2025. Version 2 adds `v`,
+plan `pla`, feature list `fea`, session status `sts`, and a compact `o` object
+only when an Organization is active.
 
 ```json
 {
@@ -143,22 +134,61 @@ Session-token version 1 was deprecated on April 14, 2025. Version 2 adds:
 }
 ```
 
-In `o.fpm`, each comma-separated integer aligns with the feature in the same position in `fea`. Each integer is a least-significant-bit-first mask over permissions in `o.per`. SDKs supporting Backend API version `2025-04-10` decode this automatically.
+Within `o.fpm`, each comma-separated integer aligns to the same-position
+feature in `fea` and is a least-significant-bit-first permission mask over
+`o.per`. SDKs supporting Backend API version `2025-04-10` decode it
+automatically.
 
-## JWT verification behavior
+## Build enumeration-safe sign-in-or-up
 
-Go's `jwt.Verify` can fetch a JSON web key from `GET /v1/jwks` when none is supplied. It accepts a `jwks.Client`; cache fetched keys when reusing them. The claims API separates `RegisteredClaims`, Clerk `Claims`, and `SessionClaims`, and `jwt.Decode` exposes the key ID. Version 2 Organization claims are populated only when an Organization exists, preventing a false Organization Role.
+`signIn.create({ identifier, signUpIfMissing: true })` verifies an identifier
+before disclosing whether the account exists. When verification returns
+`sign_up_if_missing_transfer`, create sign-up with `transfer: true` to retain the
+verified identifier.
 
-JavaScript request authentication can use `jwtKey` for networkless verification. Environment-based integrations can use `CLERK_JWT_KEY`.
+```ts
+const { error } = await signIn.emailCode.verifyCode({ code })
+if (error?.errors[0]?.code === 'sign_up_if_missing_transfer') {
+  await signUp.create({ transfer: true })
+}
+```
 
-## Legacy Client Trust state
+This supports email, phone, and Web3 identifiers for public sign-up instances.
+It excludes password, username, restricted, and waitlist flows.
 
-The legacy `SignIn` resource may enter `needs_client_trust` on a new device. `clientTrustState` is then present, and the flow must establish trust with a second-factor verification. This legacy resource is scheduled for removal in favor of `SignInFuture`.
+## Route pending sessions to tasks
 
-## Pending sessions and session tasks
+Organization selection, a forced-password reset, or required-MFA setup may
+leave a session `pending`. Pending sessions are treated as signed out by
+default: IDs are null and protected routes reject them. Prebuilt flows include
+task components; custom flows must inspect `session.currentTask` after
+finalization.
 
-Organization selection, forced-password reset, and required-MFA enrollment can leave a session `pending`. Pending sessions are treated as signed out by default. Prebuilt flows contain task UI; custom flows must route from `session.currentTask` after finalization. Set `treatPendingAsSignedOut: false` only for code designed to process pending identity.
+```ts
+await signIn.finalize({
+  navigate: ({ session }) => {
+    if (session?.currentTask) return router.push('/session-tasks')
+  },
+})
+const state = await auth({ treatPendingAsSignedOut: false })
+```
 
-## Agent-created session identity
+Opt into pending identity with `treatPendingAsSignedOut: false` only in code
+that deliberately handles the task.
 
-When `Session.actor.type` is `agent`, `Session.agent` identifies the agent and Agent Task behind the session. Use it to distinguish an agent-created session from ordinary user impersonation.
+## Enroll trusted devices for biometric sign-in
+
+Expo, iOS, and Android SDKs can enroll the current device for a signed-in user,
+then authenticate that user with Face ID, Touch ID, or Android biometrics. The
+device-bound private key remains local. Prebuilt auth and profile views can show
+enrollment, sign-in, and current-device controls.
+
+Custom clients use `useTrustedDevices()` on Expo,
+`Clerk.shared.trustedDevices` on iOS, and `Clerk.trustedDevices` on Android.
+
+```ts
+import { useTrustedDevices } from '@clerk/expo'
+
+const { enroll } = useTrustedDevices()
+await enroll()
+```

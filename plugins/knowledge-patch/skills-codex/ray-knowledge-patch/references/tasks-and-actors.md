@@ -2,11 +2,10 @@
 
 ## Type-safe actor handles
 
-For type-checker-friendly actors, keep the implementation class undecorated
-and wrap it after definition. Mark remotely callable methods with
-`@ray.method`, annotate the wrapper as `ActorClass[T]`, and annotate the
-handle as `ActorProxy[T]`. The remote method's declared result then becomes
-`ObjectRef[R]`.
+Keep the implementation class undecorated, mark remote methods with
+`@ray.method`, and wrap the class with `ray.remote()`. Annotate the remote
+class as `ActorClass[T]` and its handle as `ActorProxy[T]`; this preserves a
+method return type `R` as `ObjectRef[R]` through `.remote()`.
 
 ```python
 import ray
@@ -24,17 +23,16 @@ result: ray.ObjectRef[int] = counter.increment.remote()
 
 ## Cooperative actor-task cancellation
 
-`ray.cancel()` is best-effort, and the result depends on the task state and
-actor execution model:
+`ray.cancel()` is best-effort:
 
-- If an unscheduled actor task is cancelled successfully, `ray.get()` raises
-  `TaskCancelledError`.
+- Successfully cancelling an unscheduled actor task causes `ray.get()` to
+  raise `TaskCancelledError`.
 - A running regular or threaded actor method is not interrupted. It must poll
-  `ray.get_runtime_context().is_canceled()` and stop cooperatively.
-- An async actor method receives `asyncio.Task` cancellation when it reaches
-  an `await`.
-- Calling `is_canceled()` from an async actor method raises `RuntimeError`.
-- `recursive=True` also targets tracked child and actor tasks.
+  `ray.get_runtime_context().is_canceled()` and perform its own cleanup.
+- An async actor method instead receives `asyncio.Task` cancellation at an
+  `await`. Calling `is_canceled()` from an async actor method raises
+  `RuntimeError`.
+- `recursive=True` also targets tracked child tasks and actor tasks.
 
 ```python
 import time
@@ -54,8 +52,8 @@ ray.cancel(ref, recursive=True)
 
 ## Task-event reporting
 
-Remote functions and actors accept `enable_task_events=False`. This suppresses
-the status and profiling events used by the Dashboard and State API.
+Set `enable_task_events=False` on a remote function or actor to suppress the
+status and profiling events consumed by the Dashboard and State API.
 
 ```python
 @ray.remote(enable_task_events=False)
@@ -71,10 +69,38 @@ worker = Worker.options(enable_task_events=False).remote()
 visible = worker.work.options(enable_task_events=True).remote()
 ```
 
-The setting is not implicitly propagated through the call graph:
+Nested tasks do not inherit their parent's setting. An actor method's setting
+overrides the setting on the actor.
 
-- a nested task does not inherit its parent task's setting; and
-- a setting on an actor method overrides the setting on its actor.
+## Actor execution extensions
 
-Set the option explicitly at each boundary whose events should be hidden or
-shown.
+For changes in `2.56.0-2.57.0`, `__ray_call__` is a Developer API that runs
+closures on actors. Async streaming generators support backpressure through
+actor-level configuration and `_num_objects_per_yield`.
+
+## Topology-aware scheduling
+
+The `2.56.0-2.57.0` core scheduling surface includes
+`topology_strategy`. GPU-domain-aware placement groups can pack bundles
+across nodes carrying the same `ray.io/gpu-domain` label; they are not
+restricted to packing on one node.
+
+## Embedded GCS storage
+
+GCS fault tolerance in `2.56.0-2.57.0` can use embedded RocksDB rather than
+an external Redis instance. Select the backend and storage path with:
+
+```sh
+export RAY_gcs_storage=rocksdb
+export RAY_gcs_storage_path=/var/lib/ray/gcs
+```
+
+## Cluster lifecycle behavior
+
+In `2.56.0-2.57.0`:
+
+- Autoscaler v2 has initial Kubernetes in-place Pod resizing support. It can
+  change CPU and memory before adding worker Pods.
+- A node running `ray start --block` drains on `SIGTERM`.
+- The memory monitor warns when the system cgroup slice exceeds
+  `--system-reserved-memory`.

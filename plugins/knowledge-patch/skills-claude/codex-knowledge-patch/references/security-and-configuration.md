@@ -1,86 +1,55 @@
 # Security and configuration
 
-## Contents
+## Desktop sandbox defaults
 
-- [Invocation overrides](#invocation-overrides)
-- [Sandbox and approval presets](#sandbox-and-approval-presets)
-- [Windows sandbox behavior](#windows-sandbox-behavior)
-- [Persisted feature flags](#persisted-feature-flags)
-- [Web-search controls](#web-search-controls)
-- [CLI authentication](#cli-authentication)
-- [Policy evaluation and standalone sandboxes](#policy-evaluation-and-standalone-sandboxes)
-- [Configuration diagnostics](#configuration-diagnostics)
-- [Global pnpm installations](#global-pnpm-installations)
+The desktop app uses the same native, configurable system sandbox as the CLI.
+By default, work is limited to editing the active folder or branch and using
+cached web search. Network access and other elevated commands require
+permission unless project or team rules allow named commands automatically.
+_(codex-app)_
 
-## Invocation overrides
+## Approval and sandbox choices
 
-Use global invocation options to alter a single run:
+Supported approval policies are `untrusted`, `on-request`, and `never`.
+`on-failure` is deprecated. `--full-auto` combines `workspace-write` with
+`on-request`; `--yolo` bypasses both safeguards.
 
-- `--profile NAME` selects a configuration profile.
-- `--oss` selects a local open-source provider backed by a running Ollama
-  instance.
-- `-C PATH` changes the workspace.
-- Repeatable `--add-dir PATH` grants extra writable roots.
-- Repeatable `--enable FEATURE` and `--disable FEATURE` override individual
-  features for the run.
-- `-c key=value` parses the value as JSON when possible and otherwise keeps it
-  as a string.
+Since `0.144.0`, the `writes` app-approval mode permits declared read-only app
+actions without prompting and requires approval for writes.
 
-When using a subcommand, place global options after the subcommand name.
+Since `0.144.0`, Code Mode defaults to hosted mode. Every approval request in
+that mode causes an elicitation pause.
+
+## Interactive permission presets
+
+`/permissions` switches among Auto, Read-only, and Full Access:
+
+- Auto permits reads, edits, and commands in the working directory, but asks
+  for outside or network access.
+- Read-only withholds changes and commands pending plan approval.
+- Full Access removes those prompts across the machine and network.
+
+## Global flags and configuration overrides
+
+Global flags inherited by a subcommand must follow the subcommand name.
+Repeatable `-c key=value` overrides parse JSON values when possible and
+otherwise preserve strings.
 
 ```bash
-codex --profile work -C ./repo --add-dir ../shared \
-  --sandbox workspace-write --ask-for-approval on-request
-codex exec --profile work --enable unified_exec "Run the checks"
+codex exec --profile work -c 'features.unified_exec=true' \
+  --full-auto "Run the checks"
 ```
 
-## Sandbox and approval presets
+`--cd` selects the working root without changing the parent shell's directory.
+Repeat `--add-dir` to expose additional writable roots:
 
-`--sandbox` accepts:
-
-- `read-only`
-- `workspace-write`
-- `danger-full-access`
-
-`--ask-for-approval` accepts:
-
-- `untrusted`
-- `on-request`
-- `never`
-
-The old `on-failure` approval policy is deprecated. `--full-auto` combines
-`workspace-write` with `on-request`. `--yolo` bypasses approval prompts and the
-sandbox; use it only inside an externally isolated environment.
-
-The desktop app uses the same native, configurable system-level sandbox as the
-CLI. By default, app agents may edit only their active folder or branch and use
-cached web search. Network access and other elevated commands require
-permission. Project or team rules can automatically allow specified commands
-to run elevated.
-
-Since `0.144.0`, the `writes` app-approval mode lets declared read-only actions
-run without a prompt and requires approval for writes.
-
-Use `/permissions` to change the approval preset for later actions in the
-current session without restarting.
-
-## Windows sandbox behavior
-
-Since `0.144.0`, Windows sandbox sessions may delete files within writable
-roots and access the managed primary runtime.
-
-On native Windows, grant an additional read path for the rest of the session
-with:
-
-```text
-/sandbox-add-read-dir C:\absolute\path
+```bash
+codex --cd apps/frontend --add-dir ../backend --add-dir ../shared
 ```
 
-The path must be absolute and already exist.
+## Persistent feature flags
 
-## Persisted feature flags
-
-Manage persisted flags with:
+Inspect and persist feature settings with:
 
 ```bash
 codex features list
@@ -88,69 +57,75 @@ codex features enable unified_exec
 codex features disable shell_snapshot
 ```
 
-Changes are stored in `~/.codex/config.toml`. If Codex was launched with
-`--profile`, enable and disable operations update that profile rather than the
-root configuration. Use invocation-level `--enable` and `--disable` for a
-one-run override.
+Changes go to `~/.codex/config.toml`, or to the selected profile when
+`--profile` is active.
 
-For interactive `/experimental` toggles and restart notices, see
-[tui-and-session-controls.md](tui-and-session-controls.md).
+## Web-search modes
 
-## Web-search controls
+Local CLI work uses cached search by default; full-access sandboxing defaults
+to live results. `--search` requests live results for one run.
+`web_search = "live"` or `web_search = "disabled"` persists the choice. JSON
+execution reports searches as `web_search` events.
 
-`--search` requests live search for one run. Persist a mode in configuration:
+## Exec-policy preflight
 
-```toml
-web_search = "live"
-# or
-web_search = "disabled"
-```
-
-Full-access sandbox settings default to live results. In `codex exec --json`
-output, searches appear as `web_search` events.
-
-## CLI authentication
-
-Use the browser OAuth flow with bare `codex login`, or select another mode:
+The preview `codex execpolicy check` evaluates a command against one or more
+rule files and emits JSON containing the strictest decision and matching
+rules. `--pretty` formats the result.
 
 ```bash
-codex login --device-auth
+codex execpolicy check --rules ~/.codex/rules/default.rules \
+  --pretty -- git status
+```
+
+## Script-friendly login
+
+`codex login` defaults to browser OAuth. Use `--device-auth` for a device-code
+flow or `--with-api-key` to read an API key from stdin. `codex login status`
+reports the active mode and exits successfully when credentials exist.
+
+```bash
 printf '%s' "$API_KEY" | codex login --with-api-key
+codex login status
 ```
 
-`--with-api-key` reads the key from stdin, not from an argument. `codex login
-status` reports the active authentication mode and returns success only when
-credentials are present, which makes it suitable for automation.
+## ChatGPT-authenticated model retirement
 
-## Policy evaluation and standalone sandboxes
+On August 31, 2026, ChatGPT-authenticated Codex sessions lose `gpt-5.4` and
+`gpt-5.4-mini`. Both models remain available through the API and in API-key
+authenticated Codex sessions. _(2026-07-10-2026-08-18)_
 
-`codex execpolicy check` evaluates a command against one or more repeatable rule
-files. Its JSON result contains the strictest decision and the matching rules.
+Migrate workspace defaults, saved model settings, managed configuration,
+custom agents, and scheduled tasks from `gpt-5.4` to `gpt-5.6-terra`, and from
+`gpt-5.4-mini` to `gpt-5.6-luna`.
 
-```bash
-codex execpolicy check -r ~/.codex/rules/default.rules --pretty -- git status
-```
+## Direct sandbox runner
 
-Run a command directly under a platform sandbox with `codex sandbox macos` or
-`codex sandbox linux`. These use Seatbelt on macOS and Landlock plus seccomp on
-Linux. For these standalone helpers, `--full-auto` permits writes to the
+The experimental `codex sandbox` helper runs a command under the same platform
+policy used internally: Seatbelt on macOS, or Landlock plus seccomp on Linux.
+Its `--full-auto` option gives that command write access to the current
 workspace and `/tmp`.
 
 ```bash
-codex sandbox linux --full-auto -- make test
+codex sandbox linux -- make test
 ```
+
+## Windows sandbox behavior
+
+Since `0.144.0`, sandboxed Windows sessions may delete files inside writable
+roots and may access the managed primary runtime.
+
+In the native Windows CLI,
+`/sandbox-add-read-dir C:\absolute\path` grants later commands read access to
+an existing absolute directory. The command refreshes the current session's
+sandbox policy and is unavailable on other platforms.
 
 ## Configuration diagnostics
 
-`/status` reports the active runtime model, approval policy, writable roots,
-and token usage.
+Since `0.144.0`, globally installed pnpm is detected so diagnostics and updates
+use the correct package manager.
 
-`/debug-config` displays configuration layers from lowest to highest precedence
-and the effective policy requirements. Its report covers permitted approval and
-sandbox modes, MCP servers, rules, residency enforcement, and experimental
-network constraints.
-
-## Global pnpm installations
-
-Since `0.144.0`, Codex detects global installations managed by pnpm. Diagnostics
-and updates then invoke the correct package manager.
+`/debug-config` prints configuration layers from lowest precedence upward,
+including enabled state, policy sources, and enforced constraints. Constraints
+can cover permitted approval policies, sandbox modes, MCP servers, residency,
+and experimental networking.

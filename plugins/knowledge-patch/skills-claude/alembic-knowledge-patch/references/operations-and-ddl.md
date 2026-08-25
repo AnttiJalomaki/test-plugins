@@ -1,13 +1,15 @@
 # Operations and DDL
 
+Use this reference when generating conditional schema changes, adding keys or
+references with `ADD COLUMN`, managing SQL Server comments, or producing offline
+SQL for moves to `base`.
+
 ## Conditional column and constraint DDL
 
-The following operation flags render guarded DDL on backends that support the
-corresponding clause: (since 1.16.0)
+### Render existence guards
 
-- `Operations.add_column(..., if_not_exists=True)` renders `IF NOT EXISTS`;
-- `Operations.drop_column(..., if_exists=True)` renders `IF EXISTS`;
-- `Operations.drop_constraint(..., if_exists=True)` renders `IF EXISTS`.
+The following operation flags render the corresponding clause on backends that
+support it. (since 1.16.0)
 
 ```python
 op.add_column(
@@ -24,39 +26,36 @@ op.drop_constraint(
 )
 ```
 
-Support remains backend-dependent. A custom autogenerate `Rewriter` can set
-the same flags so generated migrations retain the guarded behavior.
+- `Operations.add_column(..., if_not_exists=True)` renders `IF NOT EXISTS`.
+- `Operations.drop_column(..., if_exists=True)` renders `IF EXISTS`.
+- `Operations.drop_constraint(..., if_exists=True)` renders `IF EXISTS`.
 
-## Replacing registered operation implementations
+Custom autogenerate `Rewriter` recipes can set the same flags on rendered
+migration operations. Backend support still determines whether the resulting
+clause is valid.
 
-`Operations.implementation_for(..., replace=True)` allows an extension to
-replace an existing operation implementation, including the implementation for
-an operation such as `CreateTableOp`. Without `replace=True`, registration is
-limited to operation types that do not already have an implementation. (since
-1.17.0)
+## Column comments on SQL Server
 
-Use replacement deliberately: it changes how an existing Alembic operation is
-executed for the extension's registration context.
+### Add, update, or delete a comment
 
-## SQL Server column comments
-
-`Operations.alter_column(comment=...)` emits SQL Server DDL to add, update, or
-delete a column comment instead of raising `UnsupportedCompilationError`.
-(since 1.18.0)
+`Operations.alter_column(comment=...)` emits Microsoft SQL Server DDL for
+adding, updating, or deleting a column comment. It no longer fails with
+`UnsupportedCompilationError` for that backend. (since 1.18.0)
 
 ```python
 op.alter_column("account", "name", comment="Display name")
 ```
 
-Use the same operation for setting a new comment, changing an existing comment,
-or deleting it through the appropriate `comment` value.
+Use the same operation with the appropriate comment value when changing or
+removing the comment; keep backend coverage in migration tests.
 
-## Inline primary keys on added columns
+## Inline primary keys
 
-`Operations.add_column(..., inline_primary_key=True)` renders `PRIMARY KEY`
-inside `ADD COLUMN`. A `Column` with `primary_key=True` does not opt in by
-itself. The separate flag preserves PostgreSQL `SERIAL` behavior while allowing
-inline primary-key syntax on a backend that supports it. (since 1.18.0)
+### Require explicit opt-in
+
+Pass `inline_primary_key=True` to `Operations.add_column()` to render
+`PRIMARY KEY` inside `ADD COLUMN`. `Column(primary_key=True)` by itself does not
+select inline rendering. (since 1.18.0)
 
 ```python
 op.add_column(
@@ -66,12 +65,16 @@ op.add_column(
 )
 ```
 
+Explicit opt-in preserves PostgreSQL `SERIAL` behavior while allowing inline
+primary-key syntax when supported by the target backend.
+
 ## Inline foreign-key references
 
-`Operations.add_column(..., inline_references=True)` renders the foreign-key
-`REFERENCES` clause inside `ADD COLUMN` rather than emitting a separate
-`ADD CONSTRAINT`. The inline form is supported for PostgreSQL, Oracle, MySQL
-5.7 and newer, and MariaDB 10.5 and newer. (since 1.18.0)
+### Render `REFERENCES` inside `ADD COLUMN`
+
+Pass `inline_references=True` to `Operations.add_column()` to inline the
+foreign-key `REFERENCES` clause instead of emitting a separate
+`ADD CONSTRAINT`. (since 1.18.0)
 
 ```python
 op.add_column(
@@ -86,10 +89,17 @@ op.add_column(
 )
 ```
 
-Inline rendering includes foreign-key actions and attributes such as:
+Inline rendering is available on PostgreSQL, Oracle, MySQL 5.7 and newer, and
+MariaDB 10.5 and newer. It includes foreign-key actions and attributes such as
+`ON DELETE`, `ON UPDATE`, `DEFERRABLE`, `INITIALLY`, and `MATCH`.
 
-- `ON DELETE`;
-- `ON UPDATE`;
-- `DEFERRABLE`;
-- `INITIALLY`;
-- `MATCH`.
+## Offline moves to `base`
+
+### Retain the version table
+
+In `--sql` mode, `stamp base` and `downgrade base` do not emit
+`DROP TABLE alembic_version`; this matches online behavior. The version table is
+still created when it does not exist. (since 1.19.1)
+
+Update SQL snapshot tests that expected a drop, and keep any explicit removal
+of the version table separate from the Alembic move-to-base operation.

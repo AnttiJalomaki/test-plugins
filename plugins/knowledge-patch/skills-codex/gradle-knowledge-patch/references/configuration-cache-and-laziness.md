@@ -1,78 +1,52 @@
 # Configuration Cache and Lazy Configuration
 
-Use this reference when making a build cache-compatible, diagnosing cache
-serialization, or avoiding premature realization of Gradle domain objects.
-
-## Choose Configuration Cache behavior
-
-### Preferred, but optional
-
-In Gradle `9.0.0`, Configuration Cache is preferred but remains optional.
-Compatible builds that have not enabled it receive an end-of-build suggestion.
-Suppress the suggestion by making the choice explicit:
-
-```properties
-org.gradle.configuration-cache=false
-```
-
-Known unsupported features cause an automatic non-cache fallback. The report
-records the reason. A cache problem encountered during task execution instead
-aborts immediately; it does not leave the task up-to-date or cached.
-
-### Consume without populating
-
-Read-only mode (`9.1.0`) reuses an existing entry on a hit but never writes a
-new entry. It is useful for pull-request or other CI jobs that may consume a
-shared cache but must not populate it:
-
-```text
-./gradlew --configuration-cache \
-  -Dorg.gradle.configuration-cache.read-only=true build
-```
-
-### Select the encryption keystore
-
-Since `9.1.0`, Configuration Cache encryption uses the JVM's default keystore
-type when it supports symmetric keys. Gradle falls back to `PKCS12` for known
-asymmetric-only formats. This improves behavior on JVMs with customized or
-FIPS-oriented security configuration.
-
 ## Diagnose cache serialization
 
-The integrity check introduced in `8.14.0` performs stricter serialization
-checks and produces more precise cache-load diagnostics:
+### Integrity checking
+
+Since `8.14.0`, enable stricter serialization validation and more precise cache-load diagnostics with:
 
 ```properties
 org.gradle.configuration-cache.integrity-check=true
 ```
 
-Enable it only while troubleshooting. It makes cache entries larger and slows
-both reads and writes.
+This mode makes entries larger and slows reads and writes. Use it while troubleshooting, then remove it.
 
-## Register supported completion listeners
+## Choose cache read and write behavior
 
-The `9.0.0-upgrade` changes make task-completion listener handling strict:
+### Preferred but optional
 
-- `onTaskCompletion` listeners must be providers created from a registered
-  build service.
-- An unsupported provider is a Configuration Cache problem rather than being
-  silently ignored.
-- An incompatible task always discards the entry, even when
-  `org.gradle.configuration-cache.problems=warn`.
-- The temporary escape hatch for unsupported build-event listeners is
-  `org.gradle.configuration-cache.unsafe.ignore.unsupported-build-events-listeners=true`.
+In `9.0.0`, compatible builds that have not enabled Configuration Cache receive a suggestion after the build. Set `org.gradle.configuration-cache=false` to suppress it explicitly.
 
-Treat the escape hatch as migration scaffolding, not the final design.
+Known unsupported features cause an automatic non-cache fallback, recorded in the Configuration Cache report. A cache problem during task execution aborts immediately instead of leaving the task up-to-date or cached.
 
-## Track environment-backed project properties precisely
+### Read-only mode
 
-As of `9.6.1`, project properties supplied as
-`-Dorg.gradle.project.<name>` system properties or
-`ORG_GRADLE_PROJECT_<name>` environment variables invalidate an entry only
-when the property was read during configuration.
+Since `9.1.0`, read-only mode reuses an existing entry on a hit and never stores a new entry on a miss. It is useful when pull-request jobs may consume shared entries but should not populate them:
 
-Capture a provider during configuration and consume it during task execution
-to let a reused entry observe the new value:
+```text
+./gradlew --configuration-cache -Dorg.gradle.configuration-cache.read-only=true
+```
+
+### Encryption keystore
+
+Since `9.1.0`, Configuration Cache encryption uses the JVM's default keystore type when that type supports symmetric keys. Gradle falls back to `PKCS12` for known asymmetric-only formats, improving compatibility with customized and FIPS-oriented JVM security settings.
+
+## Preserve cache correctness
+
+### Build-event listeners
+
+For the `9.0.0-upgrade`, an `onTaskCompletion` listener must come from a provider created by a registered build service. Unsupported providers are cache problems rather than silently ignored.
+
+An incompatible task discards the cache entry even with `org.gradle.configuration-cache.problems=warn`. During migration only, the listener-specific escape hatch is:
+
+```properties
+org.gradle.configuration-cache.unsafe.ignore.unsupported-build-events-listeners=true
+```
+
+### Environment-backed project properties
+
+Since `9.6.1`, project properties supplied through `-Dorg.gradle.project.<name>` or `ORG_GRADLE_PROJECT_<name>` invalidate an entry only if configuration read that property. A provider first consumed during execution observes a new value while the existing entry is reused:
 
 ```kotlin
 tasks.register("printValue") {
@@ -81,14 +55,64 @@ tasks.register("printValue") {
 }
 ```
 
-Do not call `get()` during configuration if the value is intended to remain an
-execution-time input.
+### `ResolutionResult` task inputs
 
-## Register configurations lazily
+Since `9.7.0`, a task can declare an entire `ResolutionResult` as `@Input` while using Configuration Cache. This preserves access to `allComponents` and `allDependencies` without extracting only a root component and variant:
 
-Applying the `base` plugin, directly or indirectly through Java or Kotlin
-plugins, no longer realizes every configuration declared with `register` or a
-role-based factory (`8.14.0`).
+```kotlin
+abstract class DependencyReport : DefaultTask() {
+    @get:Input
+    abstract val result: Property<ResolutionResult>
+
+    @TaskAction
+    fun report() = println(result.get().allComponents)
+}
+
+tasks.register<DependencyReport>("dependencyReport") {
+    result = configurations.runtimeClasspath.map {
+        it.incoming.resolutionResult
+    }
+}
+```
+
+### Java agents and TestKit
+
+Since `9.7.0`, third-party agents supplied at JVM startup with `-javaagent:` work with Configuration Cache in regular daemon builds and TestKit's default daemon mode. Dynamically attached agents and TestKit embedded mode through `withDebug(true)` remain unsupported. Use `-Dorg.gradle.debug=true` for manual debugging instead.
+
+```properties
+org.gradle.jvmargs=-javaagent:/path/to/jacocoagent.jar=destfile=build/jacoco/functionalTest.exec
+```
+
+## Migrate to Isolated Projects
+
+### Current controls
+
+Since `9.7.0`, use either the CLI flag or property:
+
+```text
+./gradlew --isolated-projects build
+```
+
+```properties
+org.gradle.isolated-projects=true
+org.gradle.isolated-projects.diagnostics=true
+```
+
+The legacy `org.gradle.unsafe.isolated-projects` names are deprecated aliases. Isolation rejects mutable access to other projects or the build. The feature is opt-in and is not recommended for production.
+
+For migration experiments only, violations can temporarily become warnings:
+
+```properties
+org.gradle.isolated-projects.dangerously-ignore-problems=true
+```
+
+Treat the dangerous-ignore property as a diagnostic bridge, not a completed migration.
+
+## Keep configurations lazy
+
+### Registered configurations
+
+Since `8.14.0`, applying `base`—directly or through Java or Kotlin plugins—does not realize every configuration declared with `register` or a role-based factory such as `resolvable`. Prefer registration to eager creation:
 
 ```kotlin
 configurations {
@@ -96,13 +120,9 @@ configurations {
 }
 ```
 
-Prefer `register`, `dependencyScope`, `resolvable`, or `consumable` over
-`create` when callers do not immediately need the instance.
+### Lazy inheritance
 
-## Inherit from a provider
-
-`Configuration.extendsFrom` accepts a `Provider<Configuration>` as of `9.4.0`.
-A lazily registered parent therefore does not need an eager `get()`:
+Since `9.4.0`, `Configuration.extendsFrom` accepts a `Provider<Configuration>`, avoiding a `get()` on a lazily registered parent:
 
 ```kotlin
 configurations {
@@ -113,27 +133,43 @@ configurations {
 }
 ```
 
-## Merge attributes lazily
+### Lazy attribute merging
 
-`AttributeContainer.addAllLater(source)` (`9.1.0`) lazily imports every
-attribute from another container:
+Since `9.1.0`, `AttributeContainer.addAllLater(source)` imports attributes lazily. Imported values override attributes already in the destination and track later changes to the source; destination values set afterward take precedence:
 
 ```kotlin
 target.attributes.addAllLater(source.attributes)
 ```
 
-The merge has three ordering rules:
+## Control domain-object collections
 
-1. Imported values override attributes already present in the destination.
-2. Later changes in the source remain visible.
-3. Destination values set after `addAllLater` take precedence.
+### Freeze membership without realization
 
-## Delay publication configuration realization
+Since `9.5.0`, `DomainObjectCollection.disallowChanges()` prevents later additions and removals without realizing lazily added entries. It freezes membership, not the mutable state of contained objects:
 
-Since `9.2.0`, `AdhocComponentWithVariants.addVariantsFromConfiguration(...)`
-and `withVariantsFromConfiguration(...)` accept a
-`Provider<ConsumableConfiguration>`. Pass the provider directly so the
-configuration is realized only if its publication is published:
+```kotlin
+val items = objects.domainObjectContainer(MyType::class)
+val main = MyType("main")
+items.add(main)
+items.disallowChanges()
+main.setFoo("bar")
+```
+
+### Expose elements as a provider
+
+Since `9.7.0`, `elements` exposes a domain-object collection as `Provider<out Collection<T>>` without forcing realization. It also carries task dependencies contributed through `addLater` and `addAllLater`, so it can be wired safely to task inputs:
+
+```kotlin
+val items = objects.domainObjectSet(MyType::class.java)
+items.addLater(someProvider)
+tasks.register("process") {
+    inputs.property("items", items.elements)
+}
+```
+
+## Lazy publication inputs
+
+Since `9.2.0`, `AdhocComponentWithVariants.addVariantsFromConfiguration(...)` and `withVariantsFromConfiguration(...)` accept `Provider<ConsumableConfiguration>`. The provider realizes the configuration only when its publication is published:
 
 ```kotlin
 val publishedVariant = configurations.consumable("publishedVariant")
@@ -144,22 +180,11 @@ publishing {
 }
 ```
 
-See
-[dependencies-publishing-and-distribution.md](dependencies-publishing-and-distribution.md)
-for the complete ad hoc component setup.
+## Review checklist
 
-## Freeze collection membership without realization
-
-Plugin authors can call `DomainObjectCollection.disallowChanges()` (`9.5.0`)
-to reject later additions and removals without realizing lazily added entries:
-
-```kotlin
-val items = objects.domainObjectContainer(MyType::class)
-val main = MyType("main")
-items.add(main)
-items.disallowChanges()
-main.setFoo("bar")
-```
-
-The lock covers collection membership only. Objects already in the collection
-remain mutable.
+- Prefer `register`, role-based factories, and providers over `create` and `get()`.
+- Ensure values used only at task execution stay inside providers until execution.
+- Run the same task set twice and verify the second invocation loads an entry.
+- Re-run with integrity checking only when serialization or load diagnostics are unclear.
+- Test build-event listener providers and agent mode explicitly.
+- Enable Isolated Projects diagnostics before considering the dangerous-ignore bridge.

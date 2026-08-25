@@ -1,85 +1,133 @@
 # Configuration and transports
 
-## Listener and encrypted-service setup
+## Listener and upstream transports
 
-DNS over QUIC is available when Unbound is built against libngtcp2 and a
-QUIC-enabled OpenSSL (since 1.22.0):
+### DNS over QUIC
 
-```sh
-./configure --with-libngtcp2=/path/to/ngtcp2 --with-ssl=/path/to/openssl
-```
+DoQ requires a build against libngtcp2 and a QUIC-enabled OpenSSL using
+`--with-libngtcp2=path --with-ssl=path` (since 1.22.0). Configure
+`quic-port: 853` and, for example, `quic-size: 8m`. Statistics include
+`num.query.quic` and `mem.quic`. A build without DoQ ignores configured QUIC
+ports and warns when `quic-port` is set.
 
-```conf
-server:
-    quic-port: 853
-    quic-size: 8m
-```
+### Per-forward-zone transport
 
-The statistics are `num.query.quic` and `mem.quic`. If the build lacks QUIC
-support, Unbound ignores configured QUIC ports and warns when `quic-port` is
-set. QUIC SSL setup occurs before chroot and privilege drop, and a QUIC
+`forward-tcp-upstream` and `forward-tls-upstream` override global
+`tcp-upstream` and `tls-upstream` for one forward zone (since 1.22.0).
+
+### Encrypted listener separation
+
+DoT and DoH use separate SSL contexts and can advertise different ALPN values
+(since 1.23.0). Unbound also avoids opening an unencrypted channel alongside
+an encrypted channel on the same port.
+
+### QUIC initialization and confinement
+
+The QUIC SSL context is created before chroot and privilege drop, and a QUIC
 listening context is created only when needed (since 1.23.0).
 
-DoT and DoH have separate SSL contexts, allowing different ALPN values. The
-listener setup also avoids opening unencrypted channels alongside encrypted
-channels on the same port (since 1.23.0). Listing HTTPS or QUIC ports in
-`interface-automatic-ports` now initializes the corresponding protocol
-(since 1.24.0).
+### Automatic encrypted-port activation
 
-## TLS version and connection selection
+HTTPS and QUIC ports listed in `interface-automatic-ports` initialize their
+protocol automatically (since 1.24.0).
 
-Use `tls-protocols` to select the supported TLS protocol versions (since
-1.25.0). The prerelease `tls-use-system-versions` runtime option and
-`--enable-system-tls` build option were removed in favor of this setting.
+### Name-bound upstream TLS reuse
 
-The 1.24.0 release disabled TLS 1.2, while 1.24.1 allowed it again. A
-deployment requiring TLS 1.2 should not stay on 1.24.0.
+An existing upstream TLS connection is reused only when its TLS name matches
+the new destination, even when both names resolve to one address (since
+1.25.0).
 
-For outgoing TLS, connection reuse is bound to the configured TLS name (since
-1.25.0). A connection opened for one name is not reused for another name just
-because both resolve to the same IP address.
+### Encrypted-transport corrections
 
-## Per-zone forwarding transport
+`pad-responses` covers DoQ replies (since 1.26.0). `tls-upstream` continues to
+use `tls-port` after a referral. The `dohclient` utility sends
+`content-length` on POST requests, avoiding HTTP 400 from strict DoH servers.
 
-`forward-tcp-upstream` and `forward-tls-upstream` override the corresponding
-global setting for one forward zone (since 1.22.0):
+## TLS configuration and reload
+
+### TLS 1.2 patch-release behavior
+
+Unbound 1.24.0 disabled TLS 1.2, while 1.24.1 permits it again. A deployment
+that requires TLS 1.2 must not remain on 1.24.0.
+
+### Explicit protocol selection
+
+Use `tls-protocols` to select supported TLS versions (since 1.25.0). The
+transient `tls-use-system-versions` and `--enable-system-tls` controls were
+removed before release.
+
+### TLS-aware reloads
+
+Reload detects changed certificate files and rebuilds contexts for DoT, DoH,
+DoQ, and outgoing DoT (since 1.25.0). `fast_reload` handles
+`tls-service-key`, `tls-service-pem`, and `tls-cert-bundle`; it also propagates
+`iter-scrub-ns`, `iter-scrub-cname`, and `max-global-quota` changes.
+
+## Module configuration
+
+### Explicit subnet cache
+
+`module-config` defaults to `"validator iterator"` regardless of
+`--enable-subnet` (since 1.23.0). Configure
+`"subnetcache validator iterator"` explicitly when needed.
+
+### RESPIP and RPZ with DNS64
+
+Use `module-config: "respip dns64 validator iterator"` so RESPIP and RPZ apply
+to DNS64-synthesized answers (since 1.24.0). The order
+`"respip dns64 validator cachedb iterator"` is explicitly not known to work.
+
+## Resource and request limits
+
+### Wait limits and quota
+
+Loopback addresses are exempt from `wait-limit` (since 1.23.0).
+`wait-limit-netblock` and `wait-limit-cookie-netblock` accept their
+two-argument forms, and statistics expose wait-limit and discard-timeout
+activity. `max-global-quota` defaults to 200 rather than 128, while retaining
+a bounded amplification factor.
+
+### Zero values and discard behavior
+
+`wait-limit: 0` disables all wait limits and `wait-limit-cookie: 0` can disable
+cookie-validated limits (since 1.24.0). Exceeding a wait limit returns
+`SERVFAIL`. `discard-timeout` drops UDP requests, not stream connections.
+
+### Socket-buffer warning
+
+Unbound warns when the operating system rejects the requested `so-sndbuf`
+`setsockopt` value (since 1.24.0).
+
+## Reporting, tracing, and backends
+
+### Dnstap sampling
+
+`dnstap-sample-rate` emits one of every N messages (since 1.21.0), reducing
+high-volume dnstap output:
 
 ```conf
-server:
-    tcp-upstream: no
-    tls-upstream: no
-
-forward-zone:
-    name: "."
-    forward-tcp-upstream: yes
-    forward-tls-upstream: yes
+dnstap:
+    dnstap-sample-rate: 100
 ```
 
-## Limits and timeout semantics
+### DNS Error Reporting
 
-`max-global-quota` defaults to `200`, up from `128`, while keeping a bounded
-amplification factor (since 1.23.0).
+Enable RFC 9567 reporting with `dns-error-reporting` (since 1.23.0). Sent
+reports are counted by `num.dns_error_reports`.
 
-Loopback addresses are exempt from `wait-limit`. Both `wait-limit-netblock`
-and `wait-limit-cookie-netblock` accept their two-argument forms (since
-1.23.0).
+### Redis read-only replicas
 
-The following limit semantics apply (since 1.24.0):
+The Redis cachedb backend provides `redis-replica-*` options for read-only
+replicas (since 1.23.0).
 
-- `wait-limit: 0` disables every wait limit.
-- `wait-limit-cookie: 0` can disable wait limits for cookie-validated clients.
-- Exceeding a wait limit returns `SERVFAIL`.
-- `discard-timeout` drops UDP queries, but it does not drop stream
-  connections.
+## Remote-control listeners
 
-## Error replies and stream EOF
+### Per-interface control port
 
-Malformed error cases receive error replies rather than silence, and the
-replies do not reflect parts of the query (since 1.25.0). CHAOS-class queries
-do not echo incoming EDNS extended RCODEs. EOF from a TCP client cancels
-pending replies and closes the connection.
+`control-interface` accepts `IP@port` (since 1.25.0), allowing each listener
+to select its own port:
 
-## Protocol record support
-
-RESINFO RR type 261 is supported with the `LDNS_RR_TYPE_RESINFO` symbol and a
-TXT-like representation (since 1.23.0).
+```conf
+remote-control:
+    control-interface: 127.0.0.1@8953
+```

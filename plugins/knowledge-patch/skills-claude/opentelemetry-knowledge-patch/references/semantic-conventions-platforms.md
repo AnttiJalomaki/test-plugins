@@ -1,194 +1,160 @@
 # Semantic Conventions: Platforms, Runtimes, and Entities
 
-## Process identity and metrics
+## Process, service, and deployment
 
-Executable details form a separate `process.executable` entity.
-`process.pid` and `process.creation.time` are Required identity attributes;
-descriptive process attributes are Optional.
+### Process identity and descriptor metrics (`semantic-conventions`)
 
-Use:
+Executable details form a separate `process.executable` entity. `process.pid`
+and `process.creation.time` are Required identity attributes; descriptive
+process attributes are Optional. Use `process.unix.file_descriptor.count` and
+`process.windows.handle.count` instead of
+`process.open_file_descriptor.count`. Process attributes, metrics, and the
+entity are Release Candidate.
 
-- `process.unix.file_descriptor.count` on Unix-like systems.
-- `process.windows.handle.count` on Windows.
+### Service and deployment identity (`semantic-conventions`)
 
-These replace `process.open_file_descriptor.count`. Process attributes,
-process metrics, and the process entity are Release Candidate.
+Model namespace, service, and instance as separate entities. Replace
+`peer.service` with `service.peer.name` and, where applicable,
+`service.peer.namespace`. `service.instance.id` is stable.
+`deployment.environment.name` is stable and defines `Production`, `Staging`,
+`Test`, and `Development`. Alpha `service.criticality` accepts `critical`,
+`high`, `medium`, and `low`.
 
-## Service and deployment identity
+### Process and system limits (`2026-08-stable`)
 
-Service modeling separates namespace, service, and instance entities.
+The Release Candidate process namespace adds `process.disk.operations`,
+`process.memory.utilization`, and `process.signals_pending`. System conventions
+add `system.process.limit`.
 
-- `service.peer.name` and `service.peer.namespace` replace `peer.service`.
-- `service.instance.id` is stable.
-- `deployment.environment.name` is stable.
-- Well-known deployment environment values are `Production`, `Staging`,
-  `Test`, and `Development`.
-- Alpha `service.criticality` values are `critical`, `high`, `medium`, and
-  `low`.
+## System and runtime metrics
 
-## System metrics
+### System and Linux names (`semantic-conventions`)
 
-Current metric and attribute names include:
+Use `system.network.packet.dropped`, `system.network.packet.count`,
+`system.network.connection.count`, `system.memory.linux.shared`, and the
+general `*.memory.linux` ordering. CPU metrics remain under `system.cpu.*`.
+Other migrations include `process.state`, `system.paging.fault.type`, and
+`process.context_switch.type`; `cpu.logical_number` is Opt-In.
 
-- `system.network.packet.dropped`.
-- `system.network.packet.count`.
-- `system.network.connection.count`.
-- `system.memory.linux.shared`.
-- The general `*.memory.linux` word ordering.
-- `system.cpu.*` for CPU metrics.
-- `process.state`.
-- `system.paging.fault.type`.
-- `process.context_switch.type`.
+### V8 heap metrics (`semantic-conventions`)
 
-`cpu.logical_number` is Opt-In.
+Heap-space metrics use `v8js.memory.heap.space.*`. The old
+`v8js.memory.heap.limit` meaning moved to `v8js.memory.heap.space.size`;
+`v8js.memory.heap.limit` is now an UpDownCounter for the absolute V8 heap
+limit.
 
-## V8 JavaScript heap metrics
+### Language and runtime coverage (`semantic-conventions`)
 
-Heap-space metrics use `v8js.memory.heap.space.*`.
+.NET has network spans for DNS, TLS, and sockets plus optional HTTP connection
+relationships. ASP.NET Core has Identity, authentication/authorization, and
+memory-pool metrics. Go has Opt-In CPU time, GC pause/cycle metrics, and
+detailed-state attributes. The JVM adds `jvm.file_descriptor.limit`, and
+`kotlin` is a valid `telemetry.sdk.language` value.
 
-- The old meaning of `v8js.memory.heap.limit` moved to
-  `v8js.memory.heap.space.size`.
-- `v8js.memory.heap.limit` is now an UpDownCounter for the absolute V8 heap
-  limit.
+## Kubernetes and containers
 
-## Kubernetes
+### Metric-name and instrument migration (`semantic-conventions`)
 
-### Metric-name migration
+Node allocatable metrics use names such as `k8s.node.cpu.allocatable`,
+`k8s.node.memory.allocatable`, and `k8s.node.pod.allocatable`. Plural
+UpDownCounter names become singular, for example `k8s.job.pod.active`.
+Container limit/request metrics use UpDownCounters; CPU limit/request
+utilization metrics are excluded from code generation.
 
-Node allocatable metric names include:
+### Storage and in-place resize telemetry (`semantic-conventions`)
 
-- `k8s.node.cpu.allocatable`.
-- `k8s.node.memory.allocatable`.
-- `k8s.node.pod.allocatable`.
+`k8s.persistentvolume` and `k8s.persistentvolumeclaim` entities have phase and
+storage capacity/request metrics. `k8s.container.ephemeral_storage.usage`
+distinguishes `rootfs` from `logs` with
+`k8s.container.ephemeral_storage.fs_type`. Container CPU and memory
+limit/request telemetry distinguishes desired and current values for in-place
+resize.
 
-Plural UpDownCounter names are normalized to singular forms, such as
-`k8s.job.pod.active`. Container limit and request metrics use
-UpDownCounters. CPU limit/request utilization metrics are excluded from code
-generation.
+### Service and workload telemetry (`semantic-conventions`)
 
-### Persistent storage and in-place resize
+The `k8s.service` entity has endpoint and load-balancer-ingress counts.
+Additional telemetry covers node system containers, filesystems, pod volumes,
+pod/container memory and status, restarts, readiness, node conditions, quotas,
+and HPA targets. Pod entities add `k8s.pod.ip`, `k8s.pod.hostname`, and
+`k8s.pod.start_time`.
 
-New `k8s.persistentvolume` and `k8s.persistentvolumeclaim` entities have
-phase and storage capacity/request metrics.
-
-`k8s.container.ephemeral_storage.usage` distinguishes `rootfs` from `logs`
-through `k8s.container.ephemeral_storage.fs_type`.
-
-Container CPU and memory limit/request telemetry distinguishes desired values
-from current values during in-place resize.
-
-### Services, workloads, and pods
-
-The `k8s.service` entity includes endpoint and load-balancer-ingress counts.
-Additional Kubernetes telemetry covers:
-
-- Node system containers and filesystems.
-- Pod volumes.
-- Pod and container memory and status.
-- Restarts and readiness.
-- Node conditions.
-- Quotas and HPA targets.
-
-Pod entities add `k8s.pod.ip`, `k8s.pod.hostname`, and `k8s.pod.start_time`.
-
-### Maturity
+### Convention maturity (`semantic-conventions`)
 
 Selected Kubernetes and container-registry resource attributes are stable.
 `k8s.pod.cpu.time`, `k8s.node.cpu.time`, and `container.cpu.time` are Release
 Candidate.
 
-## Application telemetry
+### Paging faults, memory, CPU, and filesystems (`2026-08-stable`)
 
-Application conventions add:
+Use `k8s.pod.paging.faults`, `k8s.node.paging.faults`, and
+`container.paging.faults`, without the former `.memory` segment. The related
+container, pod, and node `memory.usage` instruments are UpDownCounters;
+selected container and Kubernetes memory metrics are Release Candidate.
+Measure CPU usage in cores as
+`(cpuTimeEnd - cpuTimeStart) / elapsedSeconds`. Node filesystem telemetry adds
+`k8s.node.filesystem.inode.count` and `k8s.node.filesystem.inode.free`.
 
-- `app.build_id`.
-- `app.screen.name`.
-- A jank event.
-- A minimal end-user application crash definition.
+## Application and cloud
 
-## Cloud platforms
+### Application telemetry (`semantic-conventions`)
 
-### Azure
+Application conventions add `app.build_id`, `app.screen.name`, a jank event,
+and a minimal end-user application crash definition.
 
-Use:
+### Cloud platform attributes (`semantic-conventions`)
 
-- `azure.service.request.id`.
-- `azure.resource_provider.namespace`.
-- Dotted `cloud.platform` values.
-- `azure.resource_group.name`.
+Azure names use `azure.service.request.id`,
+`azure.resource_provider.namespace`, dotted `cloud.platform` values, and
+`azure.resource_group.name`; on Azure, `cloud.account.id` is the subscription
+ID. Treat GCE labels as resource attributes. GCE Instance Group Manager and
+`gcp.apphub_destination.*` attributes are available. Cloud enumerations cover
+GCP Agent Engine, Hetzner, Linode/Akamai, and Vultr.
 
-On Azure, `cloud.account.id` is the subscription ID.
+### Scaleway and host identity (`2026-08-stable`)
 
-### Google Cloud and other providers
+Scaleway Cloud is represented in `cloud.provider`, with
+`cloud.platform=scaleway_cloud_compute`. Invoke commands used to collect
+`host.id` by full path.
 
-GCE labels are resource attributes. Conventions also add GCE Instance Group
-Manager attributes and `gcp.apphub_destination.*`.
+## SDK, event, and exporter metadata
 
-Cloud enumerations include GCP Agent Engine, Hetzner, Linode/Akamai, and
-Vultr.
+### SDK self-observability metrics (`semantic-conventions`)
 
-## Language and runtime conventions
+`otel.sdk.span.started` replaces `otel.sdk.span.ended` and can distinguish the
+parent-span origin. On `otel.sdk.span.live`, `otel.span.sampling_result`
+permits only `RECORD_ONLY` and `RECORD_AND_SAMPLE`. Exporter retry metrics
+count one operation through its final attempt and backoff. Processor metrics
+reserve `already_shutdown` as an `error.type`.
 
-### .NET and ASP.NET Core
+### Event and exporter metadata (`semantic-conventions`)
 
-.NET adds network spans for DNS, TLS, and sockets, plus optional HTTP
-connection relationships. ASP.NET Core adds Identity,
-authentication/authorization, and memory-pool metrics.
+Non-OTLP paths can carry `otel.event.name` and `otel.scope.schema_url`.
+Zipkin and Prometheus exporters have specified `component.type` values, and
+the `otel.scope` entity has been removed. Events may use complex attributes
+instead of body fields; the event body may contain a display message.
 
-### Go, JVM, and Kotlin
+## Convention maturity and additional platforms
 
-- Go adds Opt-In CPU time, garbage-collection pause and cycle metrics, and
-  detailed-state attributes.
-- The JVM adds `jvm.file_descriptor.limit`.
-- `kotlin` is a valid `telemetry.sdk.language` value.
+### Maturity promotions (`semantic-conventions`)
 
-## SDK self-observability metrics
-
-- `otel.sdk.span.started` replaces `otel.sdk.span.ended` and can distinguish
-  the parent span's origin.
-- `otel.span.sampling_result` on `otel.sdk.span.live` permits only
-  `RECORD_ONLY` and `RECORD_AND_SAMPLE`.
-- Exporter retry metrics count one operation across all attempts, including
-  the final attempt and backoff.
-- Processor metrics reserve `already_shutdown` as an `error.type`.
-
-## Event and exporter metadata
-
-- Non-OTLP paths can carry `otel.event.name` and `otel.scope.schema_url`.
-- Zipkin and Prometheus exporters have specified `component.type` values.
-- The `otel.scope` entity has been removed.
-- Events may use complex attributes in place of body fields.
-- The event body may contain a display message.
-
-## Convention maturity and directional meaning
-
-CI/CD spans, metrics, logs, attributes, and entities are Release Candidate.
-VCS conventions and feature-flag conventions are also Release Candidate.
-
-These attribute conventions are Release Candidate:
-
-- `cpu.mode`.
-- `disk.io.direction`.
-- `network.io.direction`.
-- `system.paging.fault.type`.
-
+CI/CD spans, metrics, logs, attributes, entities, and VCS conventions are
+Release Candidate. So are `cpu.mode`, `disk.io.direction`,
+`network.io.direction`, and `system.paging.fault.type`.
 `network.io.direction` describes traffic at the observed interface boundary,
-not logical application-flow direction.
+not logical flow direction. Feature-flag conventions are Release Candidate.
 
-## Mainframe, filesystem, and network filesystems
+### Network interface maturity (`2026-08-stable`)
 
-- Mainframe and z/OS conventions use `os.type=zos`, replacing `z_os`.
-- NFS metrics use the `nfs.*` namespace with `rpc.onc.*` and `rpc.nfs.*`
-  attributes.
-- OpenShift adds cluster-quota metrics.
-- Filesystem lock counts are supported.
+`network.interface.name` is Release Candidate.
 
-## Profile conversion metadata
+### Mainframe, filesystem, and NFS coverage (`semantic-conventions`)
 
-Pprof attributes support lossless profile conversion, including:
+Conventions cover mainframes and z/OS; use `os.type=zos` instead of `z_os`.
+NFS has `nfs.*` metrics with `rpc.onc.*` and `rpc.nfs.*` attributes. OpenShift
+has cluster-quota metrics, and filesystem lock counts are supported.
 
-- `pprof.profile.comment`.
-- `pprof.scope.default_sample_type`.
-- `pprof.scope.sample_type_order`.
+### Profile conversion metadata (`semantic-conventions`)
 
-LuaJIT is a recognized frame type.
+Pprof attributes including `pprof.profile.comment`,
+`pprof.scope.default_sample_type`, and `pprof.scope.sample_type_order` support
+lossless profile conversion. LuaJIT is a recognized frame type.

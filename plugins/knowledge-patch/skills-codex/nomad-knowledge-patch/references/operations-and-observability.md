@@ -1,9 +1,10 @@
 # Operations and Observability
 
-## Server startup and scheduler limits
+## Bound server startup work
 
-Nomad 1.10.1 adds `server.start_timeout` for setup and startup work such as
-keyring decryption:
+Nomad 1.10.1 adds `server.start_timeout`, which defaults to `30s`. Setup and
+startup work such as keyring decryption must complete within the interval; on
+timeout, the server logs the errors and exits (batch 1.10-upgrade).
 
 ```hcl
 server {
@@ -11,17 +12,11 @@ server {
 }
 ```
 
-It defaults to `30s`. If startup work does not finish before the timeout, the
-server logs the errors and exits.
+## Allocation metrics require opt-in
 
-`num_schedulers` must be between zero and the machine's available CPU count.
-The timeout is from batch `1.10-upgrade`; the scheduler validation is from
-batch `1.10.0`.
-
-## Allocation metrics opt-in
-
-Starting in 1.10.2, clients collect and publish allocation metrics only when
-explicitly enabled:
+Starting in 1.10.2, clients neither collect nor publish allocation metrics when
+`telemetry.publish_allocation_metrics` is unset or `false`. Enable it explicitly
+on clients that must export those metrics.
 
 ```hcl
 telemetry {
@@ -29,12 +24,10 @@ telemetry {
 }
 ```
 
-An unset or false `telemetry.publish_allocation_metrics` disables both
-collection and publication. This behavior is from batch `1.10-upgrade`.
-
 ## Evaluation metric label changes
 
-For dispatch and periodic jobs, the `job` label contains the parent job ID on:
+For dispatch and periodic jobs, the `job` label on these metrics now contains the
+parent job ID (batch 1.11-upgrade):
 
 - `nomad.nomad.broker.wait_time`
 - `nomad.nomad.broker.process_time`
@@ -42,13 +35,13 @@ For dispatch and periodic jobs, the `job` label contains the parent job ID on:
 - `nomad.nomad.broker.eval_waiting`
 
 The `nomad.nomad.broker.eval_waiting` metric no longer has an `eval_id` label.
-Update queries and alerts that rely on the old labels. These changes are from
-batch `1.11-upgrade`.
+Update dashboards, recording rules, and alerts that depend on the former labels.
 
-## CLI links to the web UI
+## CLI links and UI hints
 
-Common CLI commands show web UI URL hints by default and accept `-ui` to open
-the generated link. Disable hints on the server:
+Common CLI commands show web UI URL hints and accept `-ui` to open the generated
+link (batch 1.10.0). Disable hints globally in server configuration or for one CLI
+environment:
 
 ```hcl
 ui {
@@ -56,32 +49,42 @@ ui {
 }
 ```
 
-For one CLI environment, set `NOMAD_CLI_SHOW_HINTS=0` or
-`NOMAD_CLI_SHOW_HINTS=false`. This CLI behavior is from batch `1.10.0`.
+```shell
+export NOMAD_CLI_SHOW_HINTS=0
+```
 
-## Node API resource fields
+The environment value may be `0` or `false`.
 
-The Go API `Node.Resources` and `Node.Reserved` fields, and their Read Node API
-counterparts, are deprecated and never populated. Use `Node.NodeResources` and
-`Node.ReservedResources`. This API migration is from batch `1.11-upgrade`.
+## Scheduler and node resource APIs
+
+`num_schedulers` must be between zero and the machine's available CPU count.
+
+The Go API `Node.Resources` and `Node.Reserved` fields, and the corresponding Read
+Node API fields, are deprecated and never populated. Use `Node.NodeResources` and
+`Node.ReservedResources` (since 1.11.0).
 
 ## Event stream additions
 
-CSI volume and plugin events are available in the event stream as of batch
-`1.10.0`. Nomad variables emit events as of batch `2.0.0`, allowing consumers
-to observe variable activity without polling.
+CSI volume and plugin events are included in the event stream (since 1.10.0).
+Nomad variables also emit events (since 2.0.0), allowing consumers to observe
+variable activity without polling.
 
-## Raft log-store inspection
+## Identifier and rendezvous hash changes
 
-After the WAL capability introduced in batch `2.0.0`, `/v1/agent/self`
-includes Raft log-store details and the WAL backend exposes log-store metrics.
-See [upgrades-and-raft.md](upgrades-and-raft.md) for the one-way migration
-procedure and snapshot requirement.
+In 2.0.5, Nomad-native service check IDs use SHA-256, Consul check IDs move from
+SHA-1 to SHA-256, and service rendezvous hashes also use SHA-256. Generated IDs
+and rendezvous hashes can therefore differ after an upgrade.
 
-## Enterprise reporting and platform support
+## API and operator response changes
 
-Nomad Enterprise 1.10.6 adds detailed product-usage information to automated
-license-utilization reporting (batch `1.10-upgrade`).
+Client allocation endpoints return `404`, rather than `500`, when an allocation's
+node cannot be found (since 2.0.5). Treat it as a not-found condition.
 
-Nomad Enterprise 2.0 supports Linux on the `ppc64le` CPU architecture (batch
-`2.0.0`).
+`nomad operator root keyring remove` accepts an abbreviated root key ID as of
+2.0.5.
+
+## Executor failure status
+
+Executor failures in the `exec`, `raw_exec`, `java`, and `qemu` task drivers
+report exit code `-1` (batch 1.10.0). Monitoring and automation should distinguish
+this from a normal process exit.

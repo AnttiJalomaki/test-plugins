@@ -1,65 +1,63 @@
 # Observability
 
-## Metrics identity
+## Give OTLP metrics an identity
 
-From 3.2.0, the OTLP metrics exporter can assign OpenTelemetry `service.name`.
-Keep that identity stable and distinct from the applications proxied by the
-deployment.
+Set the OTLP metrics `service.name` explicitly when downstream systems need a
+stable Traefik service identity (3.2.0). Metrics also accept
+`resourceAttributes` (3.5.0).
 
-OpenTelemetry metrics add `resourceAttributes` in 3.5.0. Resource detection
-also expands across application logs, access logs, metrics, and traces.
-Kubernetes resource attributes are added automatically to logs and traces when
-running in Kubernetes, so account for those fields in cardinality and storage
-policies.
+Resource detection applies across application logs, access logs, metrics, and
+traces. When Traefik runs in Kubernetes, logs and traces automatically receive
+Kubernetes resource attributes (3.5.0).
 
-`metrics.influxdb2.token` can read its secret from a file path in 3.7.0,
-avoiding a literal token in the static configuration.
+## Correlate access logs and traces
 
-## Access-log correlation
+Access logs can include the request trace ID and the entry point's span ID
+(3.2.0). Later patch-line behavior uses OpenTelemetry-conformant trace-context
+attribute names and adds Kubernetes Ingress fields to access-log records
+(3.7.0).
 
-Access logs can record the trace ID and the entry point's span ID from 3.2.0.
-Use both to connect an incoming proxy request to its distributed trace.
+Tracing has a verbosity setting and produces fewer spans by default (3.5.0).
+Set verbosity explicitly if dashboards, sampling policy, or diagnostics rely on
+the earlier span detail.
 
-ForwardAuth `LogUserHeader` can add the authenticated identity to logs in
-3.2.0; only log a header produced by a trusted authorization service.
+## Export logs through OpenTelemetry
 
-In 3.7.0, access logs can remain on stdio while OTLP logging is active. They
-use OpenTelemetry-conformant trace-context attributes and can include
-Kubernetes Ingress fields.
+Application logs and access logs can be exported through OpenTelemetry behind
+an experimental flag (3.3.0). OTLP logging can run while access logs are also
+written to stdio, preserving a local stream alongside remote export (3.7.0).
 
-Rejected requests caused by opt-in encoded-character entry-point policy are
-also written to access logs in 3.7.0.
+Test both destinations when changing buffering or shutdown behavior so the
+local and exported streams remain complete.
 
-## OpenTelemetry logs
-
-Application-log and access-log OTLP export arrived experimentally in 3.3.0 and
-must be enabled with the experimental setting. Validate collector availability
-and buffering behavior before depending on it as the only log path.
-
-The later ability to retain stdio output alongside OTLP provides an independent
-local collection path.
-
-## Per-route observability
+## Scope observability controls
 
 Metrics, tracing, and access logging can be controlled at entry-point and
-router scope from 3.3.0 rather than only through global settings. Use the
-narrowest scope that still preserves required audit and incident data.
+router scope rather than only globally (3.3.0). Use the narrowest scope that
+matches the desired traffic boundary and verify inherited behavior on every
+router.
 
-## Trace detail
+## Retrieve diagnostics
 
-Tracing gains a verbosity setting in 3.5.0 and emits fewer spans by default.
-Set verbosity explicitly if dashboards, alerts, or sampling rules depend on
-the previous span detail.
+The API exposes a support-dump endpoint for collecting diagnostic state
+(3.3.0). Protect it like other administrative API surfaces and confirm the
+result reflects the provider mix in the target deployment.
 
-Resource detection in the same release applies to traces and automatically
-adds Kubernetes attributes when appropriate.
+The API and dashboard can be mounted under a configurable base path (3.3.0).
+Account for that prefix in reverse-proxy routing, redirects, probes, and links.
 
-## Provider diagnostics
+## Use dashboard additions
 
-Consul, Consul Catalog, and Nomad log their configured provider namespace at
-startup from 3.6.0. Use those records to catch namespace mismatches before
-investigating service discovery.
+The Web UI offers an automatic theme and makes it the default (3.4.0). The
+dashboard name is configurable (3.7.0).
 
-The support-dump API, available from 3.3.0, collects diagnostic state for
-support and incident analysis. Handle its output as potentially sensitive
-operational data.
+The certificate overview lists certificate domains, expiration, and attached
+HTTP and TCP routers. Service details show server weights (3.7.0). Use these
+views to confirm certificate selection and weighted-service configuration, but
+verify runtime behavior with requests and logs as well.
+
+## Read exporter secrets from files
+
+`metrics.influxdb2.token` may point to a file containing the token (3.7.0).
+Mount the file with least privilege and ensure secret rotation updates the file
+visible to the Traefik process.

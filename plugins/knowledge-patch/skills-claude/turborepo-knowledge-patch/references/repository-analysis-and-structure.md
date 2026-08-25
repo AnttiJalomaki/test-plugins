@@ -1,32 +1,42 @@
 # Repository analysis and structure
 
-Use this reference when checking package boundaries, querying repository
-state, narrowing affected work, serving local microfrontends, or operating
-non-JavaScript workspace layouts.
+## Detect package-boundary violations (since 2.4.0)
 
-## Package boundaries
-
-Run the experimental boundary checker to detect imports that escape a
-package's directory and imports of packages missing from that package's
-dependencies (since 2.4.0):
+The experimental `turbo boundaries` command detects imports that escape a
+package's directory and imports of packages not declared in that package's
+dependencies.
 
 ```bash
 turbo boundaries
 ```
 
-Package rules, implicit-dependency handling, and TypeScript configuration path
-aliases are supported (since 2.5.0). Boundary analysis also detects circular
-package dependencies and follows dynamic imports (since 2.10.0).
+Package-boundary analysis gained package rules and implicit-dependency
+handling, and boundary checks support TypeScript configuration path aliases
+(since 2.5.0).
 
-Boundary findings concern package structure. For execution failures in a
-cyclic package graph, inspect the Task Graph separately; package cycles are
-allowed when they do not create cyclic task relationships.
+Boundary checks can also detect circular package dependencies, and import
+analysis includes dynamic imports (since 2.10.0).
 
-## Stable repository queries
+## Use actionable package-cycle diagnostics (since 2.4.0)
 
-`turbo query` is stable (since 2.9.0). Calling it without a query opens
-GraphiQL. Supply GraphQL inline or through `--file`, and inspect the available
-GraphQL schema with `--schema`:
+Cycle errors list sets of dependency edges where removing any one complete set
+will break the Package Graph cycle, rather than listing only the packages
+involved.
+
+## Inspect live graphs (since 2.7.0)
+
+`turbo devtools` provides visual Package Graph and Task Graph views that
+hot-reload as the repository changes. The views expose direct and transitive
+relationships that explain cache misses.
+
+```bash
+turbo devtools
+```
+
+## Query repositories (since 2.9.0)
+
+`turbo query` is stable. Running it without a query opens GraphiQL. Queries can
+be inline or passed with `--file`, and `--schema` exposes the GraphQL schema.
 
 ```bash
 turbo query
@@ -35,100 +45,49 @@ turbo query '{ packages { items { name } } }'
 turbo query --file=query.gql
 ```
 
-The `affected` shorthand returns structured JSON for changed tasks or
-packages:
+The `affected` shorthand emits structured JSON for changed tasks or packages:
 
 ```bash
 turbo query affected --tasks build
 turbo query affected --packages
 ```
 
-Use this instead of the deprecated `turbo-ignore`.
-
-`turbo query ls` pretty-prints package details by default and supports JSON,
-affected-only output, selectors, and filters:
+`ls` pretty-prints package details by default. It also supports JSON output,
+affected-only results, and selectors.
 
 ```bash
 turbo query ls web --output=json
 turbo query ls --affected --filter='./apps/*'
 ```
 
-The JSON output from `turbo ls` includes dependents (since 2.6.0).
+`turbo-ignore` is deprecated in favor of `turbo query affected`.
 
-## Intersect affected and filtered scopes
+## Validate cycles at the Task Graph (since 2.9.0)
 
-`--affected` and `--filter` may be combined (since 2.10.0). Selection is the
-intersection, not the union:
-
-```bash
-turbo run build --affected --filter=web
-turbo run build --affected --filter=!docs
-turbo query ls --affected --filter=my-app
-```
-
-The negated filter removes packages from the affected set. Future flags can
-change affected and filter resolution from package-level to task-level
-semantics, so record those flags when comparing selection results.
-
-## Local microfrontend proxy
-
-Turborepo can serve several applications behind one local proxy at
-`localhost:3024` (since 2.6.0). Put `microfrontends.json` in the parent
-application and map development ports and route prefixes:
+Cycles in the Package Graph no longer make Turborepo exit automatically.
+Turborepo validates the Task Graph instead, so tasks without cyclic task
+dependencies can run in a cyclic package graph. A relationship such as
+`^build` still errors when it creates a Task Graph cycle.
 
 ```json
 {
-  "$schema": "https://turborepo.dev/microfrontends/schema.json",
-  "applications": {
-    "web": {
-      "development": {
-        "local": 3000
-      }
-    },
-    "docs": {
-      "development": {
-        "local": 3001
-      },
-      "routing": [
-        {
-          "paths": ["/docs", "/docs/:path*"]
-        }
-      ]
-    }
+  "tasks": {
+    "simple-task": {},
+    "build": { "dependsOn": ["^build"] }
   }
 }
 ```
 
-Start it with:
+## Infer Cargo workspace tasks (since 2.10.0)
 
-```bash
-turbo dev
-```
+Turborepo supports repositories containing only a Cargo workspace and can infer
+tasks for its workspace members.
 
-The unrouted application handles all paths not claimed by a routing entry.
+## Run on Android (since 2.10.8)
 
-## Graph inspection
+The `turbo` CLI supports running on Android in a Termux environment.
 
-`turbo devtools` shows live Package Graph and Task Graph views that hot-reload
-as repository files change (since 2.7.0). Direct and transitive relationships
-help explain cache misses:
+## Use native Cargo and uv tasks (since 2.10.8)
 
-```bash
-turbo devtools
-```
-
-For saved graph output, prefer SVG, HTML, Mermaid, or DOT. PNG, JPG, and PDF
-output is deprecated; JSON graph output has moved to `turbo query` (since
-2.9.0).
-
-## Catalogs and Cargo-only repositories
-
-The migration codemod handles package-manager catalogs (since 2.10.0):
-
-```bash
-npx @turbo/codemod migrate
-```
-
-Turborepo also supports a repository that contains only a Cargo workspace
-(since 2.10.0). It can infer tasks for Cargo workspace members, so a JavaScript
-workspace manifest is not required merely to establish repository structure.
+The native Cargo integration provides a format task for Cargo workspaces.
+Turborepo also discovers uv workspaces and runs their native tasks.

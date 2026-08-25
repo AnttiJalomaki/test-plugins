@@ -1,91 +1,61 @@
 # Operations, Observability, and Packaging
 
-## Release and page-cache safety
+Use this reference for server settings, page-cache I/O, Fleet Manager, command
+line behavior, logs, metrics, packaging, and operational TLS defaults.
 
-The base 2025.06 release can sporadically deadlock on the checkpoint mutex.
-Production deployments should use `2025.06.1` or later.
+## Server and database settings
+
+### Wildcard database filters
+
+From 2025.12, Enterprise settings `initial.server.allowed_databases` and
+`initial.server.denied_databases` accept wildcard database-name patterns. The
+minimum value length is reduced from three characters to one.
+
+### Cypher language in packaged configuration
+
+Starting in 2026.02, distributed `neo4j.conf` explicitly sets:
+
+```properties
+db.query.default_language=CYPHER_25
+```
+
+New deployments using that file default newly created databases to Cypher 25.
+Retained configuration can preserve the earlier selection.
+
+### Asynchronous page-cache I/O
 
 Linux deployments can opt into initial `io_uring` support for the background
-page evictor and checkpointer (2026.04.0):
+page evictor and checkpointer (since `2026.04.0`):
 
 ```properties
 server.memory.pagecache.async=true
 ```
 
-## Metrics defaults and migrations
+## Fleet and deployment management
 
-`cluster.internal.*` is no longer included in default metric-setting values
-(2025.06). These metrics were not intended for customer use; do not rely on
-implicit collection.
+### Security-log collection
 
-From 2025.03, the default `server.metrics.filter` includes `neo4j.count` in
-place of the deprecated `ids_in_use` class. Update monitoring that relies on
-the default filter.
+Security logs from self-managed Enterprise deployments can be collected for
+the Aura console Security Log Analyzer. Register the deployment with Fleet
+Manager and explicitly opt into log collection.
 
-The old `causal_clustering.core` Raft metrics for indexes, term, leadership,
-retries, in-flight cache, prefetch buffering, message processing, replication,
-and last-leader messages are removed in favor of the Raft metrics. The three
-`causal_clustering.read_replica.pull_update*` metrics move to store-copy
-metrics. Six discovery-v1 metrics under `cluster.discovery` are removed
-without replacements.
+### Local discovery and registration
 
-`<prefix>.store.size.total` is renamed to `<prefix>.store.size.full`; update
-dashboards and alerts.
+The server includes a discovery service for finding running Neo4j deployments
+on the local network. `neo4j-admin fleet discover` lists the servers, and
+`neo4j-admin` can bulk-register them with Fleet Manager for display in the Aura
+Console (since `2026.05.0`).
 
-The HTTP status field `raftCommandsPerSecond` is deprecated. Monitor
-`<prefix>.cluster.raft.commit_index` on every server and look for divergence.
+### Packaging and upgrades
 
-`<prefix>.cluster.raft.in_flight_cache.max_bytes` and
-`<prefix>.cluster.raft.in_flight_cache.max_elements` are deprecated from
-2026.07 and will be removed after the next LTS.
-`<prefix>.cluster.raft.tx_retries`, deprecated since 2025.02, will also be
-removed.
-
-## Log formats and locations
-
-For new installations, the release after the next LTS will default query logs
-to JSON rather than PLAIN (2026.05.0). An upgrade that retains
-`server-logs.xml` keeps its current format. PLAIN remains supported; JSON
-contains more information but produces larger logs.
-
-The JSON query log's `failureReason` field is deprecated from 2025.05. Migrate
-parsers and schemas to `errorInfo`.
-
-The default `debug.log` format changes from text to JSON. Keep the default
-appender for supportability; add another appender if a second format is
-required. Parsers of the default file must accept JSON.
-
-Import-progress paths change twice. In 2026.03, progress moves from
-`server/logs/neo4j-admin-import-yyyy-MM-dd.HH.mm.ss.log` to
-`server/data/imports/dbname-yyyy-MM-dd.HH.mm.ss/import.log`. In 2026.04, the
-generated import-information directory moves back under `server/logs/`.
-
-For new installations or upgrades that replace configuration, query
-annotation formatting defaults to JSON and metrics CSV rotation compression
-defaults to ZIP. `server.logs.config` and `server.logs.user.config` change
-from `conf/server-logs.xml` and `conf/user-logs.xml` to `server-logs.xml` and
-`user-logs.xml`; relative paths resolve from `server.directories.configuration`
-rather than `server.directories.neo4j_home`.
-
-## Fleet and deployment discovery
-
-Self-managed Enterprise deployments registered with Fleet Manager can opt in
-to collection of security logs for Aura Console Security Log Analyzer
-(2026.04.0). Registration alone does not enable log collection.
-
-Enterprise Fleet Management is no longer bundled separately with the DBMS
-package because the functionality is included in Neo4j (2026.04.0).
-Neo4j Ops Manager 1.15.1, included with Enterprise, supports any-to-any Neo4j
-upgrades.
-
-The server includes local-network deployment discovery (2026.05.0).
-`neo4j-admin fleet discover` lists discovered servers, and `neo4j-admin` can
-bulk-register them with Fleet Manager for Aura Console display.
+Enterprise Fleet Management is no longer bundled as a separate DBMS package
+component because the capability is included in Neo4j. Neo4j Ops Manager
+1.15.1, included with Enterprise, supports any-to-any Neo4j upgrades.
 
 ## Cypher Shell
 
-Cypher Shell defaults `--error-format` to `gql` (2025.06). Scripts that parse
-stderr should set the flag explicitly when they require a different format.
+Cypher Shell defaults `--error-format` to `gql`. Scripts that parse errors
+should set the flag explicitly when they require another format.
 
 From 2025.08, disable history for a session with:
 
@@ -93,41 +63,94 @@ From 2025.08, disable history for a session with:
 cypher-shell --history disable
 ```
 
-The `:sysinfo` command supports Infinigraph deployments (2026.05.0).
+The `:sysinfo` command supports Infinigraph deployments.
 
-## Server selection and packaged language defaults
+## Browser packaging
 
-From 2025.12, Enterprise settings `initial.server.allowed_databases` and
-`initial.server.denied_databases` accept wildcard database-name patterns, and
-their minimum value length drops from three characters to one.
-
-Starting in 2026.02, packaged `neo4j.conf` explicitly sets
-`db.query.default_language=CYPHER_25`. New deployments using that file default
-newly created databases to Cypher 25. Retained and customized configurations
-can differ.
-
-From 2026.02.3, Community Edition includes a `web/` directory with Neo4j
+From 2026.02.3, Community Edition has a `web/` directory containing Neo4j
 Browser as a ZIP. Enterprise Edition has no `web/` directory and continues to
-ship Browser as a JAR in `lib/`.
+ship Browser as a JAR in `lib/`. Packaging automation must branch by edition.
 
-## Platform and package lifecycle
+## Query-log formats and fields
 
-Neo4j 2025.01 removes support for macOS 11 and 12, Amazon Linux 2022 AMI,
-Ubuntu Server 16.04, 18.04, and 20.04, and Windows Server 2016 and 2019.
+For new installations, the release after the next LTS will default query
+logging to JSON instead of PLAIN. Upgrades that retain `server-logs.xml` retain
+their current format. PLAIN remains supported; JSON provides more information
+but produces larger files.
 
-RHEL 8.x, Debian 11.x, macOS 13 Ventura, and macOS 14 Sonoma are deprecated
-from 2025.10 and supported only through the 2026 LTS. CentOS Stream 8.x and
-SysV init scripts are deprecated from 2026.01.
+From 2025.05, JSON query-log `failureReason` is deprecated in favor of
+`errorInfo`. Update log schemas and field lookups.
 
-From 2026.05, `debian:bullseye-slim` and
-`redhat/ubi9-minimal:latest` are unsupported as base images. Ubuntu Server
-22.04, macOS 15 Sequoia, CentOS Stream 9, and Windows Server 2022 are also
-deprecated supported platforms (2026.05.0) and will be removed in a future
-release.
+Programmatic reliance on error-message text is deprecated from 2025.04 because
+messages may change. Parse and branch on GQLSTATUS codes instead.
 
-## Routing and query-cache deprecations
+The default `debug.log` format changes from text to JSON in the 2025.01
+breaking configuration. Keep the default appender for supportability and add a
+second appender if another format is required.
 
-The `server_policies` load-balancing plugin and
-`dbms.routing.load_balancing.plugin` are deprecated from 2025.05.
-`server.db.query_cache_size` is also deprecated. Do not introduce these
-configuration entry points in new deployments.
+## Metrics defaults and migrations
+
+### Default filters
+
+`cluster.internal.*` is no longer part of default metrics-setting values.
+Those internal series were not intended for customer use; monitoring must not
+depend on their implicit collection.
+
+From 2025.03, default `server.metrics.filter` includes the `neo4j.count`
+metrics class instead of deprecated `ids_in_use`. Dashboards relying on the
+default filter should consume count metrics.
+
+### Raft health
+
+The HTTP status field `raftCommandsPerSecond` is deprecated. Monitor
+`<prefix>.cluster.raft.commit_index` on every server and check for divergence.
+
+`<prefix>.cluster.raft.in_flight_cache.max_bytes` and
+`<prefix>.cluster.raft.in_flight_cache.max_elements` are deprecated from
+2026.07 and will be removed after the next LTS.
+`<prefix>.cluster.raft.tx_retries` has been deprecated since 2025.02 and will
+also be removed.
+
+### Removed and renamed series
+
+The old `causal_clustering.core` Raft metrics for indexes, term, leadership,
+retries, in-flight cache, prefetch buffering, message processing, replication,
+and last-leader messages are removed in favor of Raft metrics. The three
+`causal_clustering.read_replica.pull_update*` series move to store-copy metrics,
+and six discovery-v1 series under `cluster.discovery` are removed without
+replacement.
+
+Rename `<prefix>.store.size.total` to `<prefix>.store.size.full` in dashboards
+and alerts.
+
+## Import and copy observability
+
+Import-progress files move during the server series:
+
+```text
+2026.03: server/logs/neo4j-admin-import-yyyy-MM-dd.HH.mm.ss.log
+       -> server/data/imports/dbname-yyyy-MM-dd.HH.mm.ss/import.log
+2026.04: generated import-information directory moves back under server/logs/
+```
+
+From 2025.01, `neo4j-admin database copy --from-pagecache=<size>` caps off-heap
+memory for the entire operation, including reads and writes. The clearer option
+name is `--max-off-heap-memory=<size>`.
+
+## TLS operations
+
+With OpenSSL provider 3.5 or later, TLS can use `X25519MLKEM768`, a hybrid key
+exchange combining X25519 with ML-KEM-768 for post-quantum protection.
+
+From 2025.10, four Java 21 CBC cipher suites are removed from defaults, though
+they remain available when explicitly configured:
+
+```text
+TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
+TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
+```
+
+The default for `dbms.ssl.policy.*.verify_hostname` changes from `false` to
+`true`; validate peer certificate hostnames before upgrade.

@@ -2,8 +2,9 @@
 
 ## Android hardware events
 
-In 0.86, `BackHandler` `hardwareBackPress` callbacks receive an event object.
-Its `timeStamp` originates in the native event.
+In 0.86.0, `BackHandler` `hardwareBackPress` callbacks receive an event object
+whose `timeStamp` comes from the native event. Android also channels play and
+pause hardware events.
 
 ```js
 BackHandler.addEventListener('hardwareBackPress', event => {
@@ -12,42 +13,40 @@ BackHandler.addEventListener('hardwareBackPress', event => {
 });
 ```
 
-Android also channels hardware play/pause events. Do not assume every hardware
-event has the old argument-free callback shape.
-
-React Native 0.84 adds Android `onKeyDown` and `onKeyUp` handling for hardware
-keyboards and TV remotes.
+React Native 0.84 also adds Android `onKeyDown` and `onKeyUp` handling for
+hardware keyboards and TV remotes. That addition belongs to batch
+`0.82-0.85`.
 
 ## Platform-native input values
 
-In 0.86, `Pressable.android_ripple.color` accepts `PlatformColor`:
+In 0.86.0, `Pressable.android_ripple.color` accepts `PlatformColor`, and
+`TextInput.autoComplete` supports a wider set of Android autofill hints backed
+by `androidx.autofill` 1.3.0.
 
 ```jsx
-<Pressable
-  android_ripple={{color: PlatformColor('?attr/colorAccent')}}
-/>
+<Pressable android_ripple={{color: PlatformColor('?attr/colorAccent')}} />
 ```
 
-`TextInput.autoComplete` also supports an expanded collection of Android
-autofill hints backed by `androidx.autofill` 1.3.0. Prefer the React Native hint
-values over setting native autofill properties ad hoc.
+React Native 0.84 additionally permits `PlatformColor` values in animated
+interpolations and output ranges.
 
-## Navigation and status bars
+## Image formats and dimensions
 
-React Native 0.86 respects the Android theme's
-`enforceNavigationBarContrast` attribute when configuring the navigation bar.
-Check the theme value before compensating in JavaScript for contrast behavior.
+React Native 0.84 adds HEIC and HEIF image support.
 
-`StatusBar` configuration now also applies to modal windows on Android. Remove
-modal-specific workarounds that would double-apply or fight the shared status
-bar configuration.
+On iOS under the Old Architecture, the 0.78 `Image` load event changes its size
+information from logical dimensions to pixel dimensions. Adjust consumers that
+persist or compare those values. This behavior belongs to batch `0.77-0.81`.
 
-## Android image source dimensions
+On Android in 0.86.0, `Image.getSize` and `Image.getSizeWithHeaders` return the
+true source dimensions rather than Fresco's downsampled dimensions.
 
-In 0.86, `Image.getSize` and `Image.getSizeWithHeaders` return the true source
-dimensions on Android instead of Fresco's downsampled dimensions. Audit caches,
-aspect-ratio calculations, snapshot expectations, and comparisons that encoded
-the downsampled result.
+## Android navigation-bar contrast
 
-For Android XML drawables and the Old Architecture iOS load-event dimension
-change, see [ui-components-and-styling.md](ui-components-and-styling.md).
+React Native 0.86.0 respects the Android theme's
+`enforceNavigationBarContrast` attribute when it configures the navigation
+bar.
+
+## Status bars in modal windows
+
+From 0.86.0, Android `StatusBar` configuration also applies to modal windows.

@@ -1,112 +1,217 @@
 # Columnstore and ingest
 
-## Use the columnstore APIs
+Use this reference for columnstore configuration, compression and
+recompression, Direct Compress, sparse indexes, and compressed-query behavior.
 
-The current API uses columnstore terms. The full deprecated-name mapping is in
-[upgrades-and-compatibility.md](upgrades-and-compatibility.md). Secondary
-indexes, including indexes over `orderby` columns, have been supported on
-columnstore data since 2.18.0:
+## Terminology and table options
+
+### Columnstore API names
+
+The columnstore vocabulary introduced in 2.18.0 replaces these deprecated
+compression names:
+
+| Deprecated | Replacement |
+| --- | --- |
+| `decompress_chunk` | `convert_to_rowstore` |
+| `compress_chunk` | `convert_to_columnstore` |
+| `add_compression_policy` | `add_columnstore_policy` |
+| `remove_compression_policy` | `remove_columnstore_policy` |
+| `hypertable_compression_stats` | `hypertable_columnstore_stats` |
+| `chunk_compression_stats` | `chunk_columnstore_stats` |
+| `hypertable_compression_settings` | `hypertable_columnstore_settings` |
+| `chunk_compression_settings` | `chunk_columnstore_settings` |
+| `compression_settings` | `columnstore_settings` |
+| `timescaledb.compress` | `timescaledb.enable_columnstore` |
+| `timescaledb.compress_segmentby` | `timescaledb.segmentby` |
+| `timescaledb.compress_orderby` | `timescaledb.orderby` |
+
+The old names remain aliases but are deprecated for removal in the next major
+release. Since 2.19.0, `tsdb` is an accepted alias for the `timescaledb`
+reloption prefix:
 
 ```sql
+ALTER TABLE metrics SET (tsdb.enable_columnstore = true);
+```
+
+Since 2.20.0, existing hypertables also accept `columnstore` as an alias for
+`enable_columnstore`. Since 2.23.0, one `ALTER TABLE SET` can combine ordinary
+PostgreSQL options with TimescaleDB options:
+
+```sql
+ALTER TABLE metrics SET (
+    fillfactor = 90,
+    timescaledb.columnstore = true
+);
+```
+
+Use `ALTER TABLE ONLY` when a reloption change should affect future chunks but
+not existing ones:
+
+```sql
+ALTER TABLE ONLY metrics SET (timescaledb.orderby = 'time DESC');
+```
+
+### Hypercore access-method lifecycle
+
+In 2.18.0, hypertables could be converted to the experimental `hypercore` table
+access method, and secondary indexes—including indexes on `orderby` columns—
+could be created over its columnstore data:
+
+```sql
+ALTER TABLE metrics SET ACCESS METHOD hypercore;
 CREATE INDEX metrics_device_id_idx ON metrics (device_id);
 ```
 
-Columnstore tables support foreign keys, while compressed chunks support
-`CHECK`, `SET NOT NULL`, `DROP NOT NULL`, and unique constraints on added
-columns as described in the hypertable reference.
+That access method was deprecated in 2.21.0 and removed in 2.22.0. Convert
+every remaining relation to `heap` before upgrading; the upgrade is blocked
+while a relation still uses `hypercore`. Earlier Hypercore configuration also
+included GUC controls for the `hypercore_use_access_method` default and for
+segmentwise recompression.
 
-## Control compression and recompression
+## Schema changes on columnstore hypertables
 
-### Locking, truncation, and batch size
+- Since 2.18.0, compressed hypertables accept `DROP NOT NULL`.
+- Since 2.19.0, compressed chunks accept `SET NOT NULL`.
+- Since 2.20.0, columnstore tables permit foreign keys; compressed chunks
+  permit `CHECK` constraints and columns carrying them; and `ADD COLUMN` can
+  include a unique constraint.
+- Since 2.24.0, `ALTER COLUMN TYPE` is allowed while columnstore is enabled if
+  the hypertable has no compressed chunks.
+- Since 2.25.0, a compressed column can use any immutable constant expression
+  as its default:
 
-Recompression has been nonblocking by default since 2.19.0, allowing concurrent
-`INSERT`, `UPDATE`, and `DELETE`. Set
-`timescaledb.enable_exclusive_locking_recompression` to `on` only to restore
-legacy exclusive locking.
+  ```sql
+  ALTER TABLE metrics ADD COLUMN scale integer DEFAULT (2 * 3);
+  ```
 
-Poor-compression-ratio warnings are enabled by default since 2.20.0 through
-`timescaledb.enable_compression_ratio_warnings`.
-`timescaledb.compress_truncate_behaviour` defaults to `truncate_only`;
-compression can use `DELETE` if the locks required for `TRUNCATE` are
-unavailable. Compression also supports batch-size limiting.
+- Since 2.28.0, an update that would unsafely modify a unique column on a
+  compressed chunk is rejected rather than allowed to proceed.
 
-New GUCs in 2.18.0 control the `hypercore_use_access_method` default and
-segmentwise recompression. The access-method setting belongs to the obsolete
-experimental Hypercore path; consult the upgrade reference before using it.
+## Compression and recompression behavior
 
-### In-memory and layout-changing recompression
+### Layout selection and settings
 
-Since 2.24.0, `convert_to_columnstore` accepts `recompress := true` for entirely
-in-memory recompression:
+The boolean compression algorithm was early access and disabled by default in
+2.19.0. Data encoded with it could not be read by older releases. Before
+downgrading such data below 2.19, run the migration below. Its original opt-in
+was `SET timescaledb.enable_bool_compression = on`.
+
+```text
+timescaledb-extras/utils/2.19.0-downgrade_new_compression_algorithms.sql
+```
+
+Boolean compression became enabled by default in 2.20.0. That release also
+improved automatic `segmentby` and `orderby` selection; specifying `orderby`
+prevents automatic selection of a default `segmentby`. Since 2.24.0, automatic
+`segmentby` selection excludes date and time columns.
+
+Default compression settings are applied when compression actually runs as of
+2.22.0. Settings support `ALTER TABLE RESET`; an `orderby` value of `NULL`
+blocks downgrade. Compressed continuous aggregates gained new automatic
+`segmentby` and `orderby` defaults in 2.25.0, so a layout that relies on
+automatic selection can change after upgrade.
+
+Specialized UUID compression was experimental and disabled by default behind
+`timescaledb.enable_uuid_compression` in 2.22.0. It works best with UUIDv7 but
+also accepts other UUID versions, and its encoded format was not guaranteed to
+remain backward compatible. UUIDv7 compression became enabled by default in
+2.23.0.
+
+### Locking, truncation, and diagnostics
+
+Chunk recompression is nonblocking by default since 2.19.0. Concurrent
+`INSERT`, `UPDATE`, and `DELETE` continue while it runs. The
+`enable_exclusive_locking_recompression` GUC defaults to `OFF`; enable it only
+to restore legacy exclusive locking.
+
+Since 2.20.0, poor-ratio warnings default on under
+`timescaledb.enable_compression_ratio_warnings`. The
+`timescaledb.compress_truncate_behaviour` GUC defaults to `truncate_only` and
+controls end-of-compression truncation. Compression can use `DELETE` if the
+locks for `TRUNCATE` are unavailable, and it can limit batch size.
+
+`convert_to_columnstore` supports in-memory recompression since 2.24.0:
 
 ```sql
 SET timescaledb.enable_in_memory_recompression = on;
 SELECT convert_to_columnstore('metrics_chunk'::regclass, recompress := true);
 ```
 
-Since 2.25.0, in-memory recompression supports unordered chunks and
-recompression is allowed after `orderby` or index settings change. `VACUUM
-FULL` also recompresses affected chunks and can therefore include substantial
-recompression work.
+Since 2.25.0, in-memory recompression accepts unordered chunks and can run
+after `orderby` or index settings change. `VACUUM FULL` also recompresses
+affected chunks, so include that work in maintenance estimates.
 
-### Automatic layout
+### Compressed-query semantics
 
-- Default compression settings are applied when compression runs rather than
-  earlier in the table lifecycle (since 2.22.0). Compression settings also
-  support `ALTER TABLE RESET`; downgrades are blocked while `orderby` is
-  `NULL`.
-- The boolean compression algorithm became enabled by default in 2.20.0.
-- Automatic `segmentby` and `orderby` selection improved in 2.20.0. An explicit
-  `orderby` prevents choosing a default `segmentby`.
-- Automatic `segmentby` excludes date and time columns since 2.24.0.
-- Compressed continuous aggregates received new automatic `segmentby` and
-  `orderby` defaults in 2.25.0.
-- Direct Compress defers automatic `segmentby` selection, analyzes the data,
-  and chooses the default during flush since 2.27.0.
+Vectorized aggregation and `WHERE` comparisons on compressed data follow
+PostgreSQL NaN behavior as of 2.18.0. Since 2.27.0,
+`compressed_data_column_size` returns `bigint`; update SQL casts and client
+decoders that assumed a narrower integer type.
 
-Specify layout explicitly whenever a stable physical layout is required.
+## Sparse indexes and scan pushdown
 
-## Configure sparse indexes
+### Creation and configuration
 
-Columnstore chunks create `bloom1` sparse indexes by default since 2.20.0:
+Columnstore chunks create `bloom1` sparse indexes by default since 2.20.0.
+Disable automatic creation with:
 
 ```sql
 SET timescaledb.enable_sparse_index_bloom = off;
 ```
 
-Since 2.22.0, `ALTER TABLE` can configure sparse indexes explicitly, including
-multi-column indexes, instead of relying only on internal heuristics.
+Since 2.22.0, `ALTER TABLE` can explicitly configure sparse indexes, including
+multi-column indexes, rather than relying only on internal heuristics.
 
-Composite bloom indexes are created by default since 2.26.0 and controlled by
-`timescaledb.enable_composite_bloom_indexes`, whose default is `true`.
-Multi-column predicates can be pushed into compressed scans for `SELECT` and
-`UPSERT`; `EXPLAIN` reports batch-pruning and false-positive statistics.
+Composite bloom indexes are created by default since 2.26.0. The
+`timescaledb.enable_composite_bloom_indexes` GUC defaults to `true`.
+Multi-column predicates can be pushed into compressed scans for both `SELECT`
+and `UPSERT`; `EXPLAIN` reports batch-pruning and false-positive statistics.
 
-Before an upgrade, check the bloom-index blockers and metadata migrations in
-the upgrade reference.
+`timescaledb.enable_columnar_scan_filter_pushdown` controls compressed-scan
+filter pushdown and defaults on as of 2.27.0.
 
-## Use UUID compression
+### Upgrade repairs and correctness boundaries
 
-Specialized UUID compression was experimental and off by default in 2.22.0:
+Bloom sparse indexes on chunks compressed before 2.24.0 are disabled after
+upgrade because the old hash could vary with build options and silently miss
+matching rows after a package change. Decompress and recompress those chunks.
+Chunks compressed after upgrade are unaffected. On the official AMD64 APT
+package, the hash did not change; legacy indexes can instead be enabled for
+reads in server configuration:
 
-```sql
-SET timescaledb.enable_uuid_compression = on;
+```ini
+timescaledb.read_legacy_bloom1_v1 = on
 ```
 
-It works best with UUIDv7 but supports other UUID versions, and its early
-format did not guarantee backward compatibility. UUIDv7 compression became
-enabled by default in 2.23.0.
+Bloom sparse indexes over compressed `int2` columns can omit matching rows.
+The 2.27.0 upgrade is blocked while affected indexes exist; drop them manually
+before upgrading.
 
-## Configure Direct Compress
+Composite bloom filters created by 2.26.0 use metadata names that 2.27.0 does
+not automatically recognize. Run the catalog-only migration below; no
+recompression is required:
 
-Direct Compress writes in-memory compressed ingest directly to disk rather than
-waiting for a background compression job.
+```text
+timescaledb-extras/utils/2.27.x-fix-composite-bloom-columns.sql
+```
+
+In 2.29.2, min/max sparse-index pushdown was corrected for `IS NULL`.
+Earlier releases can return wrong results, so upgrade before relying on this
+predicate over compressed data.
+
+Compressed SkipScan was also corrected in 2.29.2. Earlier behavior can drop
+uncompressed rows when sort keys differ from distinct keys, and can attach
+SkipScan to mismatched index paths under `MergeAppend`. Upgrade before relying
+on affected `DISTINCT` queries over mixed compressed and uncompressed data.
+
+## Direct Compress ingest
 
 ### `COPY`
 
-The tech-preview `COPY` path arrived in 2.21.0 and is off by default. Batch
-sorting defaults on; client-sorted mode defaults off and is safe only when the
-input is correctly sorted:
+The 2.21.0 tech-preview path can compress `COPY` input in memory and write it
+directly to disk. It is off by default. Batch sorting defaults on;
+client-sorted mode defaults off and is safe only when input is correctly
+ordered:
 
 ```sql
 SET timescaledb.enable_direct_compress_copy = on;
@@ -114,10 +219,10 @@ SET timescaledb.enable_direct_compress_copy_sort_batches = on;
 SET timescaledb.enable_direct_compress_copy_client_sorted = off;
 ```
 
-### `INSERT`
+### `INSERT` and continuous-aggregate sources
 
-Direct Compress supports `INSERT`, including direct chunk inserts, since
-2.23.0:
+Since 2.23.0, Direct Compress also accepts `INSERT`, including inserts directly
+into a chunk:
 
 ```sql
 SET timescaledb.enable_direct_compress_insert = on;
@@ -125,44 +230,29 @@ SET timescaledb.enable_direct_compress_insert_sort_batches = on;
 SET timescaledb.enable_direct_compress_insert_client_sorted = off;
 ```
 
-The client-ordered path could lose data for `INSERT ... SELECT` from a
-compressed hypertable before its fix in 2.26.0. Avoid that combination on
-earlier versions.
+Since 2.24.0, directly compressed batches can feed continuous aggregates;
+their invalidation ranges are recorded at transaction commit. The
+`timescaledb.direct_compress_copy_tuple_sort_limit` and
+`timescaledb.direct_compress_insert_tuple_sort_limit` GUCs separately cap the
+number of tuples sorted at once.
 
-### Continuous-aggregate sources and refresh
-
-Since 2.24.0, Direct Compress supports hypertables that feed continuous
-aggregates and records invalidation ranges for compressed batches at transaction
-commit. `timescaledb.direct_compress_copy_tuple_sort_limit` and
-`timescaledb.direct_compress_insert_tuple_sort_limit` cap tuples sorted at once.
-
-Continuous-aggregate refresh has an experimental Direct Compress path since
-2.25.0:
+Continuous-aggregate refresh gained its own experimental Direct Compress path
+in 2.25.0, disabled by default:
 
 ```sql
 SET timescaledb.enable_direct_compress_on_cagg_refresh = on;
 ```
 
-Refresh policies for compressed continuous aggregates can perform compression
-during refresh since 2.27.0.
+The 2.26.0 release fixes a data-loss path involving client-ordered Direct
+Compress with `INSERT ... SELECT` from a compressed hypertable. Avoid that
+combination on earlier versions. Since 2.27.0, Direct Compress defers automatic
+`segmentby` selection, analyzes data, and chooses the default during flush.
 
-## Tune compressed scans and statistics
+## Cache sizing
 
-Vectorized aggregation and compressed-table `WHERE` comparisons follow
-PostgreSQL NaN behavior after fixes in 2.18.0.
-
-`timescaledb.enable_columnar_scan_filter_pushdown` defaults on since 2.27.0:
-
-```sql
-SET timescaledb.enable_columnar_scan_filter_pushdown = off;
-```
-
-`compressed_data_column_size` returns `bigint` since 2.27.0. Update SQL casts
-and client decoders that assumed a narrower type.
-
-`timescaledb.stats_max_chunks` sets the per-database capacity of the in-memory
-compressed-chunk statistics cache since 2.28.0. It defaults to `1024`; zero
-disables the cache:
+Since 2.28.0, `timescaledb.stats_max_chunks` controls the per-database capacity
+of the in-memory compressed-chunk statistics cache. It defaults to `1024`; use
+`0` to disable the cache:
 
 ```sql
 SET timescaledb.stats_max_chunks = 0;

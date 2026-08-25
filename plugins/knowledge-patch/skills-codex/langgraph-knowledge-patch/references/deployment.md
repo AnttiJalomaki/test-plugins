@@ -1,31 +1,28 @@
 # Deployment
 
-Source batch: `platform-and-deployment`.
+Relevant source topic: `platform-and-deployment`.
 
-## Graph loading and server-owned persistence
+## Server-owned graph loading and persistence
 
-When a compiled graph is exported, Agent Server loads it once when the
-container starts and reuses it. A graph factory runs once per run; reserve it
-for genuine per-run customization.
+When a compiled graph is exported, Agent Server loads it once at container
+startup and reuses it. A graph factory runs for every invocation and is
+appropriate only when each run needs customization. In either case, the server
+injects the deployment's checkpointer and memory Store; graph code must not
+configure its own.
 
-In both cases, Agent Server injects the deployment's checkpointer and memory
-Store. Do not configure those objects in the graph code deployed to the
-server.
+## Adapting agents from other frameworks
 
-## Adapting other agent implementations
+An Agent Server graph does not need to be implemented directly in LangGraph.
+Adapt an agent from another framework for deployment with the LangGraph
+Functional API or the `deployments-wrap-sdk` package.
 
-An Agent Server graph does not need a native LangGraph implementation. Adapt
-an agent built with another framework through the LangGraph Functional API or
-the `deployments-wrap-sdk` package.
-
-## Durable and ephemeral storage roles
+## PostgreSQL and Redis roles
 
 Assistants, threads, runs, and cron jobs always persist in PostgreSQL.
 Checkpoints default to PostgreSQL but may use MongoDB or a custom backend. The
-long-term Store also defaults to PostgreSQL and may be replaced.
-
-Redis is only for ephemeral signaling, cancellation, and streaming pub/sub. It
-does not persist user or run data.
+long-term Store defaults to PostgreSQL but is replaceable. Redis carries only
+ephemeral signaling, cancellation, and streaming pub/sub; it does not persist
+user or run data.
 
 ## Runtime layouts
 
@@ -33,7 +30,7 @@ Self-hosting supports three layouts:
 
 - Single-host mode is the default; the API server manages the task queue
   without separate workers.
-- Split mode independently scales API and worker pools. Enable it with
+- Split mode creates independently scaled API and worker pools. Enable it with
   `queue.enabled: true`.
 - Distributed runtime separates graph orchestration from execution.
 
@@ -45,16 +42,15 @@ queue:
 ## Queue and concurrency boundaries
 
 A worker leases a queued run from the durable database. The queue permits at
-most one executing run for each thread.
+most one executing run per thread. Each worker runs at most
+`N_JOBS_PER_WORKER` jobs concurrently; the default is `10`. This setting does
+not limit API request concurrency. Split deployments must keep at least one
+queue worker listening.
 
-Each worker runs up to `N_JOBS_PER_WORKER` jobs concurrently; the default is
-`10`. This setting does not cap API request concurrency. A split deployment
-must always have at least one queue worker listening.
+## Threadless deployment streaming
 
-## Threadless remote streaming
-
-Pass `None` as the thread identifier to stream a threadless run. The next
-argument is the deployed graph name configured in `langgraph.json`.
+Pass `None` as the thread identifier to stream a threadless run. The following
+argument is the deployed graph name from `langgraph.json`.
 
 ```python
 from langgraph_sdk import get_sync_client
@@ -69,8 +65,7 @@ for chunk in client.runs.stream(
     print(chunk.event, chunk.data)
 ```
 
-## JavaScript deployment targets
+## JavaScript deployment outside LangSmith
 
-JavaScript LangGraph agents can be deployed outside the managed platform on
-Next.js, SvelteKit, Nuxt, Cloudflare Workers, or Deno Deploy while using the
-same Agent Streaming Protocol.
+JavaScript LangGraph agents can use the same Agent Streaming Protocol when
+deployed on Next.js, SvelteKit, Nuxt, Cloudflare Workers, or Deno Deploy.

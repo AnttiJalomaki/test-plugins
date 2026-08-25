@@ -1,50 +1,54 @@
 # Authorization, Roles, Groups, and Feature Flags
 
+Use this reference for authorization resources, scoped roles, assignments,
+groups, permissions, API keys, and feature evaluation.
+
 ## Authorization resources and roles
 
-Use authorization resources and role APIs for scoped authorization. Apply the
-legacy FGA removal described in the Node SDK migration reference when upgrading.
+The SDK includes environment and organization roles, authorization resources,
+and resource-scoped custom roles. Permissions and role objects expose
+`resourceTypeSlug`. Pass `resource_type_slug` to
+`createOrganizationRole`; use `CreateAuthorizationResourceOptions` for typed
+resource creation.
 
-The SDK supports:
-
-- environment roles;
-- organization roles;
-- authorization resources; and
-- resource-scoped custom roles.
-
-Permission and role objects expose `resourceTypeSlug`. Pass
-`resource_type_slug` to `createOrganizationRole`, and use
-`CreateAuthorizationResourceOptions` for typed resource creation.
-
-Invitations accept `role_slug`.
+The legacy FGA package was deprecated in Node SDK v8.4 and removed in v9.
+Migrate FGA integrations to authorization resources and role APIs.
 
 ## Role assignments
 
-Use both resource and group role-assignment endpoints. Filter assignment lists
-with `resource` and `role_slug`.
+Resource and group role-assignment endpoints are available. Filter lists with
+`resource` and `role_slug`. Returned assignments include `source`, which
+distinguishes a direct grant from a grant inherited through a group.
 
-Returned role assignments contain `source`. Inspect it to distinguish direct
-grants from roles inherited through a group.
+Invitations accept `role_slug`. `listEffectivePermissionsByExternalId` uses the
+corrected endpoint as of v9.1.1; the same patch restored the established
+Authorization method names after generated renames.
 
-## Multi-role provisioning
+## Multiple roles and group provisioning
 
-An organization membership can hold multiple roles across AuthKit, SSO, and
-Directory Sync. Do not collapse membership state to one role when consuming or
-persisting it.
+An organization membership may hold multiple roles provisioned through
+AuthKit, SSO, or Directory Sync. During SSO setup, IT administrators can map
+identity-provider groups to roles in Admin Portal.
 
-During SSO setup, an IT administrator can map identity-provider groups to roles
-in Admin Portal. Account for those group-derived roles when explaining or
-auditing effective access.
+The SDK exposes Groups endpoints and group event types. Typed events also cover
+organization roles and permissions, feature flags, and groups; deserialized
+role events expose `resourceTypeSlug`.
 
-## Feature Flag evaluation
+## Feature Flags
 
-Use the Feature Flags runtime client to evaluate flags locally when an API
-request for every evaluation is undesirable.
+Use the Feature Flags runtime client to evaluate flags locally when an API call
+per decision is undesirable.
 
-The Feature Flag control plane supports:
+The control plane supports organization rollouts, per-user targeting, an API
+for fetching flags for an organization, and a management API. Flag updates can
+be delivered to Slack. AuthKit authentication surfaces can return active
+feature flags alongside the rest of the user's state.
 
-- organization rollouts;
-- fetching flags for an organization through the API;
-- targeting individual users;
-- flag management through the management API; and
-- delivery of flag updates to Slack.
+## Organization and user API keys
+
+Organization-owned API keys can be managed through an API. Handle key deletion
+with the `api_key.revoked` event; `api_key.deleted` is obsolete.
+
+Under the SDK contracts attributed to `10.10.0`, user API-key methods are also
+available, `ApiKey.owner` includes a user variant and `organizationId`, and
+API-key validation results can include an agent registration ID.

@@ -1,8 +1,10 @@
 {
   "patch": "sqlite-knowledge-patch",
-  "merged_at": "2026-07-12T22:30:14Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-22T13:53:14Z",
   "streams": {
-    "codex": "codex-gpt-5.6-sol"
+    "codex": "codex-gpt-5.6-sol-r2"
   },
   "batches": {
     "3.46.0": {
@@ -54,7 +56,14 @@
       "kind": "unversioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "3.53.4": {
+      "kind": "versioned",
+      "codex": "fully-known",
+      "build": "omitted"
     }
   },
-  "retire_candidates": []
+  "retire_candidates": [
+    "3.53.4"
+  ]
 }

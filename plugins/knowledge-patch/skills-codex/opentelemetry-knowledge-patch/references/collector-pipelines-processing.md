@@ -1,89 +1,103 @@
 # Collector Pipelines and Processing
 
-The details in this reference apply to the Collector 0.157.0 batch.
+## OTTL collections and lambdas
 
-## OTTL collection functions
+OTTL adds the following collection-oriented functions:
 
-OTTL adds collection-oriented functions for slices and maps:
+- `When`
+- `IsEmpty`
+- `All` and `Any`
+- `Filter`
+- `Find`
+- `MapEach` and `MapKeys`
+- `Reduce`
 
-- `When` for conditional evaluation.
-- `IsEmpty`.
-- Predicate operations `All` and `Any`.
-- `Filter` and `Find`.
-- Mapping operations `MapEach` and `MapKeys`.
-- `Reduce` for folding.
+These provide conditional, predicate, mapping, and folding operations over
+slices and maps. `truncate_all` also accepts an optional
+`truncation_marker`.
 
-`truncate_all` accepts an optional `truncation_marker`.
+Static checking validates OTTL lambda arity separately. Runtime and test APIs
+add `LambdaActivation.IsArgBound` and variadic-argument evaluation helpers.
+`pmetricassert` snapshot generation adds `IncludeHistogramExplicitBounds`,
+which selects bounds without requiring other histogram datapoint values.
 
-## OTTL and pdata test APIs
+OTTL can compare `pcommon.Value` with all six ordering/equality operators. The
+default-off `ottl.set.allowNil` gate lets `set` pass `nil` to its target, and
+`set_semconv_span_name()` supports semantic-convention versions 1.41.0 through
+1.43.0 (batch `2026-08-stable`).
 
-- OTTL lambda-arity validation is separated for static checking.
-- `LambdaActivation.IsArgBound` reports whether an argument is bound.
-- Variadic-argument evaluation helpers are available.
-- `pmetricassert` snapshot generation adds
-  `IncludeHistogramExplicitBounds`, selecting histogram bounds without
-  requiring other histogram datapoint values.
-
-## Lookup, Drain, Transform, and normalization
+## Lookup, Drain, and Transform
 
 ### Lookup processor
 
-The Lookup processor adds a CSV source with:
+The Lookup processor accepts a CSV source with key/value columns selected by
+name or index. Values may be scalars or complete rows, and `reload_interval`
+can periodically reload the source. YAML sources also support periodic reload;
+a failed reload retains the old data.
 
-- Key and value columns selected by name or index.
-- Scalar values or full-row values.
-- An optional `reload_interval`.
+### Drain and Transform processors
 
-YAML sources also gain periodic reload. After a reload failure, the processor
-retains its old data.
-
-### Other processors
-
-- With `extract_parameters`, the Drain processor writes tokens matched by
-  `<*>` to `log.record.template.params`.
-- The Transform processor adds `ParseCEF`.
-- The Generative AI Normalizer can opt into overwriting an existing
-  instrumentation-scope schema URL.
+- With `extract_parameters`, Drain writes tokens matched by `<*>` to
+  `log.record.template.params`.
+- Transform adds `ParseCEF`.
+- The GenAI Normalizer can opt into overwriting an existing scope schema URL.
 
 ## W3C-aware sampling
 
-The Dynamic Sampling processor:
-
-- Composes its sampling rate with an incoming W3C `ot=th`.
-- Uses `ot=rv` randomness when present.
-- Emits the effective threshold.
+Dynamic Sampling composes its rate with an incoming W3C `ot=th` threshold,
+uses `ot=rv` randomness when present, and emits the effective threshold.
 
 The alpha `processor.tailsamplingprocessor.usetracestate` gate gives the Tail
-Sampling probabilistic policy corresponding W3C randomness and outgoing
-threshold behavior across matched policies.
+Sampling probabilistic policy matching W3C randomness and outgoing-threshold
+behavior across matched policies.
 
-## Component self-observability
+Dynamic Sampling also has these decision rules:
 
-The Resource Detection processor adds:
+- Reject user rule names that collide with reserved underscore-prefixed
+  decision labels.
+- The no-match metric label is `_unmatched`, replacing `unmatched`.
+- At shutdown, decide buffered traces instead of dropping them.
+- Forward kept shutdown traces with `ot=th` and record
+  `trigger="shutdown"` without double-counting earlier decisions.
 
-- `otelcol.resourcedetection.detector.results`.
-- `otelcol.resourcedetection.detector.duration`.
-- `otelcol.resourcedetection.attributes.detected`.
+## Component self-observability and entity events
 
-The Span Pruning processor can enable byte-flow counters through
-`enable_bytes_metrics`.
+Resource Detection emits:
 
-`experimentalmetricmetadata` has feature-gated emission of
-specification-format entity-event log records.
+- `otelcol.resourcedetection.detector.results`
+- `otelcol.resourcedetection.detector.duration`
+- `otelcol.resourcedetection.attributes.detected`
+
+Span Pruning enables byte-flow counters with `enable_bytes_metrics`.
+`experimentalmetricmetadata` can emit specification-format entity-event log
+records behind its feature gate.
+
+## Resource Detection migrations
+
+Two alpha Elastic Beanstalk gates stage the migration from
+`deployment.environment` and `service.instance.id` to
+`deployment.environment.name` and `deployment.id`:
+
+1. Enable
+   `processor.resourcedetection.elasticbeanstalk.EmitV1DeploymentConventions`.
+2. Then enable
+   `processor.resourcedetection.elasticbeanstalk.DontEmitV0DeploymentConventions`.
+
+Enabling only the second gate is a startup error. Resource Detection also
+adds global retry configuration, an Azure Container Apps detector, and the
+default-off `processor.resourcedetection.consul.prefixMetaAttributes` gate for
+`consul.meta.<key>` attributes.
 
 ## Profile translation
 
-- The pprof translator maps OTLP sample attributes to pprof sample labels.
-- The pprof receiver sets instrumentation-scope name and version according to
-  whether it runs in file, HTTP client, HTTP server, or self-scraper mode.
+The pprof translator maps OTLP sample attributes to pprof sample labels. The
+pprof receiver sets instrumentation scope name and version according to file,
+HTTP client, HTTP server, or self-scraper mode.
 
-## Trace and metric behavior corrections
+## Processing behavior corrections
 
 - Jaeger translation preserves the sampled flag in both directions.
-- The beta, default-on Datadog receiver 128-bit trace-ID gate reconstructs
-  every span in a payload.
-- Metrics Transform skips unsupported Summary aggregation with a warning
-  instead of dropping all points.
+- Metrics Transform warns and skips unsupported Summary aggregation instead
+  of dropping every point.
 - Tail Sampling treats `threshold_ms` as an exclusive lower bound when
   `upper_threshold_ms` is unset.
-- Podman Stats reports block-I/O byte metrics with unit `By`.

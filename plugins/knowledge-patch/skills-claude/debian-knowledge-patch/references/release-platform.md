@@ -1,76 +1,87 @@
 # Release and platform
 
-## Architecture availability (`13-known-issues`)
+## Architecture support and ABI boundaries
 
-### i386
+These architecture changes are from `13-whats-new` and `13-known-issues`.
 
-Debian retains `i386` only for legacy uses such as chroots and multiarch on `amd64`.
-Upgrading an existing i386 system to Trixie is not supported.
+### Treat i386 as legacy-only
 
-### armel and MIPS
+Do not upgrade an existing i386 installation to Trixie. Debian retains `i386` for
+legacy uses such as chroots and multiarch on amd64, and deliberately keeps its legacy
+time ABI.
 
-Trixie has no armel installer. Debian kernels support only the Raspberry Pi 1, Zero,
-and Zero W in this architecture. This is the last armel release, although supported
-existing systems can still upgrade.
+### Retired and restricted architectures
 
-The `mipsel` and `mips64el` architectures have been removed entirely.
+`mipsel` and `mips64el` are removed. Trixie provides no armel installer and supports
+only Raspberry Pi 1, Zero, and Zero W with Debian kernels. It is the last armel
+release, although supported installed systems may still upgrade.
 
-## Time ABI on 32-bit systems (`13-whats-new`)
+### Audit the 64-bit time transition
 
-All architectures except `i386` now use a 64-bit `time_t`. On `armel` and `armhf`, this
-changes many library ABIs without changing their sonames. Rebuild third-party software
-for those architectures and check it for silent data loss. `i386` deliberately retains
-its legacy ABI.
+Every architecture except `i386` now uses a 64-bit `time_t`. On `armel` and `armhf`,
+this changes many library ABIs without changing sonames. Rebuild third-party software
+for those architectures and test data handling for silent corruption.
 
-## Temporary filesystems and merged `/usr`
+## Platform defaults
 
-Systemd now creates `/tmp` as a tmpfs by default. Fresh installations also enable
-automatic cleanup of `/tmp` and `/var/tmp`; upgraded systems must opt in to that cleanup
-regime.
+The platform changes in this section are from `13-whats-new`.
 
-A fully merged `/usr` is assumed. The `usrmerge` and `usr-is-merged` packages are only
-removable dummy packages.
+### Temporary filesystems and merged `/usr`
 
-## Login and accounting tools
+Systemd creates `/tmp` as tmpfs by default. Fresh installations enable automatic
+cleanup of `/tmp` and `/var/tmp`; upgraded systems must opt in. Fully merged `/usr` is
+assumed, leaving `usrmerge` and `usr-is-merged` as removable dummy packages.
 
-The Y2038-unsafe utmp and wtmp databases are being displaced:
+### Core and desktop baselines
 
-- Replace `lastlog` with the `lastlog2` package.
-- Replace `last` with `wtmpd`.
-- Use `lslogins` from util-linux where appropriate.
-- Account for `util-linux-extra` removing `mesg` and `write`; replace scripts that
-  invoke them.
-- Note that `util-linux-extra` adds tools including `exch` and `waitpid`.
+The principal platform versions are Linux 6.12, glibc 2.41, GCC 14.2, LLVM/Clang 19,
+OpenJDK 21, OpenSSH 10.0p1, OpenSSL 3.5, Perl 5.40, PHP 8.4, PostgreSQL 17, Python
+3.13, Rust 1.85, MariaDB 11.8, Samba 4.22, and systemd 257.
 
-## arm64 hardening
+Desktop choices include GNOME 48, Plasma 6.3, LXDE 13, LXQt 2.1, and Xfce 4.20.
+Use these versions when checking compatibility with third-party modules, packages, or
+local build scripts.
 
-On supported arm64 hardware, Trixie automatically uses Pointer Authentication to
-mitigate return-oriented programming and Branch Target Identification to mitigate
+## Boot and hardware capabilities
+
+### Firmware HTTP Boot
+
+Debian Installer and Live images can boot directly from a full ISO URL through
+firmware HTTP Boot on supported UEFI and U-Boot systems. In TianoCore, configure the
+URL under Device Manager → Network Device List → the interface → HTTP Boot
+Configuration.
+
+### arm64 hardening
+
+On supported arm64 hardware, Pointer Authentication is applied automatically to
+mitigate return-oriented programming, and Branch Target Identification mitigates
 call- and jump-oriented attacks.
 
-## Firmware HTTP Boot
+## Virtualization
 
-The Debian Installer and Debian Live images can boot directly from a full ISO URL by
-using firmware HTTP Boot on supported UEFI and U-Boot systems.
+The ppc64el constraint below is from `13-known-issues`.
 
-With TianoCore, configure the URL under **Device Manager → Network Device List → the
-interface → HTTP Boot Configuration**.
-
-## ppc64el virtual-machine page sizes
+### Match PowerPC page sizes
 
 QEMU requests 64 KiB pages for PowerPC virtual machines, which conflicts with KVM
-acceleration on the default kernel.
-
-For a 4 KiB-capable guest, use:
+acceleration on the default kernel. For a guest that supports 4 KiB pages, run:
 
 ```bash
 kvm -machine pseries,cap-hpt-max-page-size=4096 ...
 ```
 
-Guests that require 64 KiB pages need `linux-image-powerpc64le-64k` on the host.
+A guest requiring 64 KiB pages needs `linux-image-powerpc64le-64k` on the host.
 
-## Support lifecycle (`13.0`)
+## Support lifecycle
 
-Trixie receives full Debian support through August 9, 2028, followed by Long Term
-Support through June 30, 2030. The supported architecture set is reduced during the
-Long Term Support phase.
+### Trixie
+
+The lifecycle dates here are from `13.0`. Full Debian support continues through
+August 9, 2028, followed by Long Term Support through June 30, 2030. The set of
+supported architectures is reduced during the LTS phase.
+
+### Bookworm
+
+The transition here is from `12.15`. Debian 12.15 is Bookworm's final point release,
+ending support from the Debian Release, Security, and Backports teams. Supported
+architectures move to Debian LTS coverage through June 30, 2028.

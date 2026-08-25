@@ -1,11 +1,18 @@
 # Assets and automation
 
-## Values, dependencies, and definitions
+## Asset definitions and values
 
-Since 1.11.0, `MaterializeResult(value=...)` invokes the asset IO manager and
-may be typed as `MaterializeResult[T]`. `AssetExecutionContext.load_asset_value`
-loads another asset dynamically through its IO manager rather than requiring
-the value as a function parameter.
+### External assets in selections (since 1.10.0)
+
+The `include_sources` keyword on `AssetSelection` APIs was renamed to
+`include_external_assets`. Update callers to the new keyword.
+
+### Values through results and execution context (since 1.11.0)
+
+`MaterializeResult(value=...)` invokes the asset IO manager and can be typed as
+`MaterializeResult[T]`. `AssetExecutionContext.load_asset_value` dynamically
+loads another asset through its IO manager, avoiding a required function
+parameter for the upstream value.
 
 ```python
 import dagster as dg
@@ -19,104 +26,53 @@ def downstream(context: dg.AssetExecutionContext):
     return context.load_asset_value(dg.AssetKey("upstream"))
 ```
 
-`Definitions` and `AssetsDefinition` reject distinct `AssetSpec` objects that
-share an asset key. Definition validation also rejects invalid partition
-mappings, including time-partitioned dependencies whose time zones differ.
+### Virtual assets (since 1.13.0)
 
-Configurable resource fields may use union annotations such as `Foo | Bar`.
-To hide a resource parameter in the UI, define its Pydantic field with
-`json_schema_extra={"dagster__is_secret": True}` (1.12.0).
+The preview `is_virtual` parameter on `@asset` and `AssetSpec` represents a
+view or derived table that reflects upstream changes without explicit
+materialization. Virtual assets participate in staleness calculation,
+execution planning, and declarative automation. Set
+`enable_dbt_views_as_virtual_assets` to mark dbt views automatically.
 
-Partial run config now fills omitted sections from job-level config defaults
-(1.13.0). Op and asset inputs accept `typing.Mapping` and `typing.Sequence`,
-and `TableMetadataSet.storage_kind` records the backing system, such as
-Snowflake, Databricks, or BigQuery.
+```python
+import dagster as dg
 
-## Virtual assets and metadata
-
-The preview `is_virtual` parameter on `@asset` and `AssetSpec` represents
-views or derived tables that change with upstream data without explicit
-materialization (1.13.0). Virtual assets participate in staleness
-calculation, execution planning, and declarative automation. dbt views can be
-marked automatically with `enable_dbt_views_as_virtual_assets`.
-
-An asset may carry up to ten kind annotations as of 1.12.0, up from three.
-`define_asset_job` and `build_schedule_from_partitioned_job` accept `owners`
-in 1.13.0, and asset-job owners are validated during definition loading.
-Team-owner strings on jobs, schedules, and sensors may contain special
-characters.
-
-## Checks, hooks, and retries
-
-Ops may yield `AssetCheckEvaluation`, and `@asset` accepts `hooks` for success
-and failure callbacks (1.11.0). Re-execution can target only the failed assets
-inside a failed multi-asset step rather than rerunning every asset in it.
-
-Since 1.12.0, `@asset_check` and `AssetCheckSpec` accept `partitions_def`.
-That definition must match the target asset's partition definition.
-
-Asset-check edge behavior changed in 1.13.0:
-
-- Assets whose names contain dots may be check targets.
-- If a blocking check emits no result, downstream assets proceed with a
-  warning. An emitted failed check still fails the step.
-- Wiping an asset or selected partitions clears their asset-check history.
-
-## Partitions, backfills, and schedules
-
-Time-window partition definitions accept `exclusions` for custom calendars
-(1.11.0). `OpExecutionContext`, `AssetExecutionContext`, and
-`AssetCheckExecutionContext` expose `multi_partition_key` for
-multi-partition runs (1.12.0).
-
-`BackfillPolicy` is GA in 1.11.0. Backfill submission uses four daemon worker
-threads by default, asset backfills can receive run config, and a failed
-backfill cancels in-progress runs before terminating. A schedule
-`RunRequest` may choose a subset of asset checks.
-
-In 1.13.0, job backfills retry transient daemon failures. The environment
-variable `DAGSTER_MAX_ASSET_BACKFILL_RETRIES` was renamed to
-`DAGSTER_MAX_BACKFILL_RETRIES`; the old name remains a fallback.
-
-## Step dependency execution
-
-Every executor understands
-`step_dependency_config.require_upstream_step_success` (1.11.0). Set it to
-`false` when a downstream step may start once the required upstream outputs
-exist, even while their producing multi-asset step is still running:
-
-```json
-{"step_dependency_config": {"require_upstream_step_success": false}}
+view = dg.AssetSpec("reporting_view", is_virtual=True)
 ```
 
-## Automation conditions
+### Kinds, owners, inputs, and table metadata (since 1.12.0 and 1.13.0)
 
-`AutomationCondition.data_version_changed()` can trigger when an asset's data
-version changes (1.10.0).
+- An asset can have as many as 10 kind annotations, up from three.
+- `define_asset_job` and `build_schedule_from_partitioned_job` accept
+  `owners`. Owners on asset jobs are validated while definitions load.
+- Team-owner strings on jobs, schedules, and sensors may contain special
+  characters.
+- Op and asset input annotations accept `typing.Mapping` and
+  `typing.Sequence`.
+- `TableMetadataSet.storage_kind` identifies a backing system such as
+  Snowflake, Databricks, or BigQuery.
 
-The run-tag-aware conditions added in 1.11.0 inspect new events since the
-previous tick:
+## Selection expressions and organization
 
-- `all_new_updates_have_run_tags()` and
-  `any_new_update_has_run_tags()` consider every new materialization, not just
-  the latest run.
-- `all_new_executed_with_tags()` filters newly executed partitions by tags.
+### Unified selection language (since 1.11.0)
 
-Freshness-aware `freshness_passed()`, `freshness_warned()`, and
-`freshness_failed()` branch on the latest policy evaluation (1.12.0).
+Selection expressions combine lineage traversal, attribute filters, and
+Boolean logic. The same form is used by Components YAML, the Asset Catalog,
+saved selections, alerts, and insights. Run Gantt views have analogous op
+selections.
 
-## Selection expressions and groups
+### Partition and automation selectors (since 1.12.0 and 1.13.0)
 
-Since 1.11.0, selection expressions combine lineage traversal, attribute
-filters, and Boolean logic. The syntax is shared by Components YAML, Asset
-Catalog, saved selections, alerts, and insights; Gantt views have analogous
-op selections.
+Filter by partition-definition type, for example:
 
-Partition-definition type filters are supported, for example
-`partitions:"static"` (1.12.0).
+```text
+partitions:"static"
+```
 
-The 1.13.0 syntax adds `sensor:`, `schedule:`, `job:`, and
-`automation_type:` attributes plus `is:` type filters:
+Additional selection attributes are `sensor:`, `schedule:`, `job:`, and
+`automation_type:`. The `is:` filter selects by asset type. A schedule or
+sensor selector includes both directly selected assets and assets in jobs
+targeted by that instigator.
 
 ```text
 sensor:daily_refresh
@@ -124,24 +80,96 @@ automation_type:schedule
 is:materializable
 ```
 
-Schedule and sensor selectors include assets in targeted jobs as well as
-assets directly selected by the instigator. Group names may contain `/`,
-render as a hierarchy, and support wildcards such as
-`group:"marketing/*"`.
+### Hierarchical asset groups (since 1.13.0)
 
-## GraphQL and API selections
+Group names can use `/` separators and render as nested groups. Wildcard group
+selection is supported:
 
-`DagsterGraphQLClient.submit_job_execution` accepts `asset_selection`
-(1.11.0). The `logsForRun` and `eventConnection` resolvers return at most
-1,000 events by default; follow the returned cursor for the rest.
+```text
+group:"marketing/*"
+```
 
-In 1.13.0, `DagsterGraphQLClient` accepts `path_prefix` for a webserver
-mounted below the URL root. GraphQL `Run` adds an optional selection `limit`
-and `assetSelectionCount` / `assetCheckSelectionCount`, allowing a bounded
-preview while preserving total counts.
+## Freshness and declarative automation
 
-## YAML and failure context
+### Data-version changes (since 1.10.0)
 
-Quoted date-like YAML strings such as `"2021-10-30"` remain strings rather
-than becoming datetimes (1.13.0). If a run fails because a step failed, the
-originating step error is available on the run-failure sensor context.
+`AutomationCondition.data_version_changed()` triggers when an asset's data
+version changes.
+
+### Run-tag conditions (since 1.11.0)
+
+`AutomationCondition.all_new_updates_have_run_tags()` and
+`any_new_update_has_run_tags()` inspect all new materializations since the
+previous tick rather than only the latest run.
+`all_new_executed_with_tags()` supplies a related tag filter for newly
+executed partitions.
+
+### Freshness evaluation branches (since 1.12.0)
+
+Use `AutomationCondition.freshness_passed()`, `freshness_warned()`, and
+`freshness_failed()` to branch on the latest freshness evaluation. The older
+`build_.*_freshness_checks` helpers are superseded by freshness policies.
+dbt and Sling translators no longer expose `get_freshness_policy` or parse
+legacy policies from integration configuration.
+
+### Declarative Automation for jobs (since 1.13.16)
+
+As a preview feature, `define_asset_job` accepts `automation_condition`. Wrap
+an asset-level condition in `AutomationCondition.any_job_root_assets_match()`
+or `all_job_root_assets_match()` to launch one job run when its root assets
+satisfy that condition. Evaluation history appears on the job page's
+Automation tab.
+
+```python
+import dagster as dg
+
+refresh_job = dg.define_asset_job(
+    "refresh_job",
+    automation_condition=dg.AutomationCondition.any_job_root_assets_match(
+        dg.AutomationCondition.on_missing()
+    ),
+)
+```
+
+## Asset checks and retry behavior
+
+### Evaluations, hooks, and targeted retries (since 1.11.0)
+
+Ops can yield `AssetCheckEvaluation`. The `@asset` decorator accepts `hooks`
+for success and failure callbacks. During re-execution, Dagster can retry only
+the failed assets in a failed multi-asset step rather than rerunning every
+asset in that step.
+
+### Partition-aware checks (since 1.12.0)
+
+`@asset_check` and `AssetCheckSpec` accept `partitions_def`, allowing checks to
+run against individual partitions. The supplied partition definition must
+match the target asset's definition.
+
+### Edge behavior and history (since 1.13.0)
+
+- Checks can target assets whose names contain dots.
+- When a blocking check produces no result, downstream assets proceed with a
+  warning. An emitted failed check still fails the step.
+- Wiping an asset or selected partitions also clears the matching asset-check
+  history.
+
+## Partitions, schedules, and backfills
+
+### Custom-calendar exclusions (since 1.11.0)
+
+Time-window partition definitions accept `exclusions`, which omit selected
+dates or times from a custom calendar.
+
+### Multi-partition execution context (since 1.12.0)
+
+`OpExecutionContext`, `AssetExecutionContext`, and
+`AssetCheckExecutionContext` expose `multi_partition_key` during a
+multi-partition run.
+
+### Backfill and schedule controls (since 1.11.0)
+
+`BackfillPolicy` is generally available. Backfill submission uses a thread
+pool with four daemon workers by default. Asset backfills can receive run
+config. A failed backfill cancels its in-progress runs before terminating.
+`RunRequest` from a schedule can select a subset of asset checks.

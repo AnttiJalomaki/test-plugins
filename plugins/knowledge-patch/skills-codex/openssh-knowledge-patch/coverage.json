@@ -1,6 +1,8 @@
 {
   "patch": "openssh-knowledge-patch",
-  "merged_at": "2026-07-26T23:31:39Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-21T19:46:42Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -11,6 +13,11 @@
       "build": "included"
     },
     "10.4": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "10.5": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

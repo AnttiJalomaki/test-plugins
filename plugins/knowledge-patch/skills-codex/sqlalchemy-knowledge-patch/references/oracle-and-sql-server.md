@@ -1,89 +1,43 @@
 # Oracle and SQL Server
 
-## Oracle vector types and expressions
+## Oracle vectors
 
-The Oracle dialect provides `VECTOR` for dense vector columns. Its comparator
-supports:
-
-- `l2_distance`;
-- `cosine_distance`; and
-- `inner_product`.
-
-Use these operations on a vector expression when constructing similarity or
-distance ordering rather than spelling an Oracle vector function as
-unstructured SQL.
-
-Sparse vectors are represented by `SparseVector`, and
-`VectorStorageType` describes vector storage choices. Preserve dense-versus-
-sparse representation and storage type when generating schema or binding
-values.
-
-Oracle vector indexes accept the `oracle_vector` dialect option. Keep vector
-index configuration in that Oracle-specific option rather than placing it in
-generic index keyword arguments.
-
-`Select.fetch()` accepts `oracle_fetch_approximate` for Oracle approximate
-vector fetching:
-
-```python
-stmt = (
-    select(items)
-    .order_by(items.c.embedding.l2_distance(query_vector))
-    .fetch(10, oracle_fetch_approximate=True)
-)
-```
-
-Approximate fetching has different accuracy and execution characteristics
-from an exact ordered fetch, so enable it deliberately.
+In 2.0.51, the Oracle dialect provides the `VECTOR` type and its
+`l2_distance`, `cosine_distance`, and `inner_product` operations. It also
+supports `oracle_vector` index options and `oracle_fetch_approximate` for
+`Select.fetch()`. Sparse vectors use `SparseVector` and `VectorStorageType`.
 
 ## Oracle table tablespaces
 
-Set `oracle_tablespace` on `Table` to select the creation tablespace:
+Oracle tables can select their creation tablespace with the 2.0.51 dialect
+option `oracle_tablespace`:
 
 ```python
-from sqlalchemy import Column, Integer, MetaData, Table
-
 event = Table(
     "event",
-    MetaData(),
+    metadata,
     Column("id", Integer),
     oracle_tablespace="USERS",
 )
 ```
 
-The option affects Oracle table DDL. Keep environment-specific tablespace
-names configurable when the same metadata is deployed to databases with
-different storage layouts.
+## SQL Server aioodbc batching
 
-## aioodbc batching on SQL Server
-
-The `mssql+aioodbc` dialect honors `fast_executemany`. Enable it on the async
-engine when batched parameter execution should use the driver's accelerated
-path:
+The `mssql+aioodbc` dialect honors `fast_executemany` in 2.0.51:
 
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine
-
-engine = create_async_engine(
-    url,
-    fast_executemany=True,
-)
+engine = create_async_engine(url, fast_executemany=True)
 ```
-
-Test the actual parameter shapes and driver because the option changes the
-execution path used for batches.
 
 ## Conditional SQL Server index drops
 
-On SQL Server 2016 and later, `DropIndex` honors `if_exists=True` and emits the
-server-supported `IF EXISTS` form:
+On SQL Server 2016 and later with SQLAlchemy 2.0.51,
+`DropIndex(index, if_exists=True)` emits the supported `IF EXISTS` form rather
+than ignoring the flag.
 
-```python
-from sqlalchemy.schema import DropIndex
+## Safer pyodbc parameter quoting
 
-ddl = DropIndex(index, if_exists=True)
-```
-
-Older behavior ignored this flag for SQL Server. Code targeting SQL Server
-2016 or later can now use the SQLAlchemy DDL object for an idempotent drop
-instead of wrapping the statement in hand-written existence checks.
+In 2.0.52, the pyodbc connector brace-quotes driver names, pass-through
+parameter names, and pass-through values containing `}`. This prevents closing
+braces, and semicolons embedded in a parameter name, from being parsed as
+additional ODBC connection attributes.

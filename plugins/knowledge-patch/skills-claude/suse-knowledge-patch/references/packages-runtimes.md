@@ -1,128 +1,201 @@
 # Packages, Repositories, and Runtimes
 
-Use this reference to audit RPM dependencies, module placement, language and database transitions, removed packages, and compatibility shims.
+## Leap package transitions
 
-## Contents
+### Python Podman API (`leap-15.6`)
 
-- [Package discovery and repository behavior](#package-discovery-and-repository-behavior)
-- [Python and development tools](#python-and-development-tools)
-- [Language and database lines](#language-and-database-lines)
-- [HPC package turnover](#hpc-package-turnover)
-- [Runtime replacements and compatibility](#runtime-replacements-and-compatibility)
-- [Removed and deprecated packages](#removed-and-deprecated-packages)
-- [Technology preview and support boundaries](#technology-preview-and-support-boundaries)
+`python-podman` is now built from the `podman-py` project rather than the older
+project of the same package name. Validate consumers against the current
+`podman-py` API during upgrade.
 
-## Package discovery and repository behavior
-
-### Deprecated Leap packages
-
-Install lifecycle data and query installed packages that are no longer maintained or are scheduled for removal:
+### Find deprecated packages (`leap-15.6`)
 
 ```sh
 zypper install lifecycle-data-openSUSE
 zypper lifecycle
 ```
 
-### Cross-module SLE search
+This reports installed packages that are unmaintained and scheduled for removal.
 
-Search both enabled and disabled SLE modules through SCC with `zypper search-packages`; SLES 15 SP6 also supports this for RMT-registered systems:
+### Leap 15.6 removals (`leap-15.6`)
+
+NVIDIA SUSE Prime supersedes `bbswitch`, `bumblebee`, `bumblebee-status`, and
+`primus`. The distribution also removes many unmaintained Python RPMs, including
+`python-Keras-Applications`, `python-Theano`, `python-pep517`, `python-pygeos`,
+`python-jupytext`, `python-moviepy`, `python-requests-html`, `python-torch`, and
+multiple legacy pytest, Jupyter, Dephell, and Spyder plug-ins. Audit RPM-level
+dependencies before upgrade.
+
+### Python interpreter strategy (`leap-16.0-guide`)
+
+`/usr/bin/python3` points to Python 3.13 in Leap 16.0 but may move during a
+future minor update. Distribution tools are being decoupled so a prior
+interpreter can coexist temporarily as a legacy version. Applications must not
+assume that `/usr/bin/python3` is permanently fixed to one minor version.
+
+### IA32 applications, Steam, and Wine (`leap-16.0-guide`)
+
+Leap 16 supports only 64-bit binaries. Static 32-bit binaries and all 32-bit
+container images cannot run; x86-64 can enable 32-bit syscalls using
+`ia32_emulation`. Steam moves from Non-OSS to Flatpak and needs
+`grub2-compat-ia32` plus a reboot; SELinux systems may also need
+`selinux-policy-targeted-gaming`. Packaged Wine 10.10 is WoW64-only.
+
+### Removed Leap 16 compatibility packages (`leap-16.0-guide`)
+
+Leap 16 removes SysV `init.d`, WSL1, `nscd`, `rc<service>` controls, `criu`, and
+`compat-libpthread-nonshared`; replace `crun` with `runc`. `/etc/services` is a
+dummy file, so software must not assume it exists before appending entries.
+
+HexChat is no longer packaged; use Polari or Flatpak. Leap 16 carries the last
+`nmap` under its former compatible license and plans a different replacement in
+a later release.
+
+`mcphost` (configured with no permissions by default) and `lklfuse` are
+unsupported technology previews. `lklfuse` lacks Btrfs support because it
+handles one device per mount and cannot handle Btrfs multi-device filesystems.
+
+### Parallel package downloads (`leap-16.0`)
+
+Zypper supports parallel downloads for faster installs and updates.
+
+## SLES 15 SP6 modules and support
+
+### Container registries and RPM NDB
+
+Docker Hub and the openSUSE Registry are no longer preconfigured; add them to
+`/etc/containers/registries.conf` when needed. Registering the base product
+disables a WSL image's free `SLE_BCI` repository.
+
+The `suse/sle15` image uses RPM's NDB backend. Host-side scanners, diff tools,
+and builders must use an RPM implementation capable of NDB, such as SLE 15 SP2
+or later.
+
+### PostgreSQL and pgAdmin
+
+PostgreSQL receives ordinary product support without an external contract.
+PostgreSQL 16 is added; PostgreSQL 15 is deprecated and moves to the Legacy
+Module. `pgadmin4` 8.5 moves to the Python 3 Module.
+
+### Development and automation boundaries
+
+`clang` and `llvm17` are dependency-only and unsupported. `ansible-core` is
+included, but support covers only playbooks and roles supplied by SLES or its
+management products, including dynamically generated integrated content.
+
+### Python, glibc, and Java placement
+
+`python311-base` and `libpython3_11-1_0` move to Basesystem but retain the
+Python 3 Module lifecycle. glibc 2.38 splits deprecated `libnsl1` into its own
+package. Java 8, 11, and 17 move to Legacy; Java 21 is in Base System. IBM Java
+was externally supported only through 2025-04-30 and was scheduled for removal
+in SP7.
+
+### Other package and module changes
+
+- `libapr1-devel` becomes `apr-devel`.
+- `libapr-util1-devel` becomes `apr-util-devel`.
+- The Systems Management Module carries packages such as Ansible.
+- `xorriso` becomes CLI-only; its GUI moves to `xorriso-tcltk`.
+- `sysctl-logger` adds BPF-based sysctl-change monitoring.
+- `rpm-imaevmsign` supplies the IMA/EVM RPM signing plug-in.
+
+### Technology previews
+
+The AMD Navi32 “Wheat Nas” driver remains a preview because matching firmware
+is unavailable. Intel IAA crypto-compression is also a preview. The disabled-by-
+default Confidential Computing Module is a preview whose host, secure-VM, and
+remote-attestation tooling is unsupported.
+
+### Search across SLE modules
+
+`zypper search-packages` searches enabled and disabled modules through SCC and
+also works through RMT:
 
 ```sh
 zypper search-packages SEARCH_TERM
 ```
 
-### Zypper downloads
+### Removed packages, drivers, and cloud dependencies
 
-Leap 16 supports parallel package downloads for faster installation and updates.
+`docker-runc` is replaced by `runc`; `timezone-java`, insecure `dpt_i2o`, and
+`openmpi2`/`openmpi3` are removed. The Public Cloud Module drops componentized
+Azure CLI packages, legacy Google cloud agents and SDK, packaged Terraform
+providers, `WALinuxAgent`, and related deployment helpers. Audit cloud-image
+and automation RPM dependencies.
 
-## Python and development tools
+PHP 7.4 and `numad` were scheduled for SP7 removal. Replace `sev-tool` with
+`sevctl` and `gnote` with `bijiben`. OpenLDAP support ends with the SP6 lifecycle
+in favor of 389 Directory Server. SP7 removes `ceph-common`, `libcephfs-devel`,
+`python3-ceph-common`, `python3-rbd`, and `python3-rgw`; `intel-opencl` and
+`intel-graphics-compiler` move to Package Hub.
 
-### Podman client API
+## SLES 15 SP7 package turnover
 
-Leap 15.6 bases `python-podman` on the `podman-py` project instead of the former project with the same package role. Test consumers against the current `podman-py` API rather than assuming the old binding's behavior.
+### Languages and databases
 
-### Leap Python strategy
+SP7 adds Ruby 3.4 beside Ruby 2.5, changes the `postgresql` meta-package from 16
+to 17, adds PostgreSQL 17.4, adds `pgvector` 0.8 for PostgreSQL 16 and 17, and
+adds `postgresql16-pgaudit`.
 
-Leap 16 points `/usr/bin/python3` to Python 3.13, but a future minor update may move the path to a newer interpreter. Distribution tools are being decoupled so the former interpreter can temporarily coexist as a legacy version. Do not bind application compatibility to one permanent `/usr/bin/python3` minor version.
+It adds Python 3.13 tooling, Node.js 22, Go 1.23/1.24, GCC 14, and Rust
+1.78/1.85/1.86. The GA comparison removes Python 3.12, Node.js 20, Go
+1.20–1.22, GCC 11 and GCC 13 32-bit packages, LLVM 17, and several older
+Cargo/Rust lines. Audit versioned RPM dependencies.
 
-### SLES 15 SP6 development support
+### Conflicting database records
 
-Treat `clang` and `llvm17` as unsupported dependency-only packages. `ansible-core` is included, but SUSE support covers only playbooks and roles supplied by SLES or its management products, including dynamically generated integrated content.
+The GA comparison records BIND 9.20.3 and MariaDB 11.4.5, while release prose
+describes BIND 9.18 and MariaDB 11.8 LTS. Query enabled repositories or installed
+RPMs before applying version-specific migration steps.
 
-`python311-base` and `libpython3_11-1_0` move to the Basesystem Module but keep the Python 3 Module lifecycle. The Systems Management Module carries packages such as Ansible.
+### Major user-space transitions
 
-Rename build dependencies from `libapr1-devel` to `apr-devel` and from `libapr-util1-devel` to `apr-util-devel`. Use `xorriso-tcltk` for the split-out GUI; `xorriso` itself is CLI-only. Use `rpm-imaevmsign` for the IMA/EVM RPM signing plug-in. `sysctl-logger` adds BPF-based sysctl-change monitoring.
+GA transitions include OpenSSL 3.1.4→3.2.3, Docker 24.0.7→27.5.1, ClamAV
+0.103→1.4, FreeRDP 2.11→3.10, FRR 8.4→10.2, `libfabric` 1.20→2.0, PHP
+8.2→8.3, and Wireshark 3.6→4.2. Compatibility packages such as
+`docker-stable` 24.0.9 and `freerdp2` are newly present; select them explicitly
+rather than assuming the unversioned name remains on the older major.
 
-## Language and database lines
+### HPC turnover
 
-### PostgreSQL, pgAdmin, and module placement
+`slurm` moves from 23.02 to 24.11, with `slurm_23_02` still available. Open MPI
+4.1.6 package names give way to 4.1.7. The comparison removes HDF5 1.10.11 and
+unversioned GNU/MPI HPC families without identifying replacement HDF5 packages;
+audit image and module specifications explicitly.
 
-PostgreSQL now has normal product support without an external contract. PostgreSQL 16 is added, PostgreSQL 15 is deprecated and placed in the Legacy Module, and `pgadmin4` 8.5 moves to the Python 3 Module.
+### Redis, time, and keyboard settings
 
-Java 8, 11, and 17 are in the Legacy Module; Java 21 is in Base System. IBM Java was externally supported only through 2025-04-30 and was scheduled for SP7 removal. glibc 2.38 splits deprecated `libnsl1` into its own package.
+`redis` and `redis7` are removed; use Valkey 8.0.2. `ntp` moves to Legacy before
+SLES 16 removes it in favor of Chrony. `KBD_DISABLE_CAPS_LOCK` is removed from
+`/etc/sysconfig/keyboard`.
 
-### Language and database turnover
+## SLES 16 package model and compatibility
 
-SP7 adds Ruby 3.4 alongside Ruby 2.5, moves the `postgresql` meta-package from 16 to 17, adds PostgreSQL 17.4, adds `pgvector` 0.8 for PostgreSQL 16 and 17, and adds `postgresql16-pgaudit`.
+### Management stacks
 
-It adds Python 3.13 tooling, Node.js 22, Go 1.23 and 1.24, GCC 14, and Rust 1.78, 1.85, and 1.86. The GA comparison removes Python 3.12, Node.js 20, Go 1.20–1.22, GCC 11, GCC 13 32-bit packages, LLVM 17, and several older Cargo/Rust lines. Audit versioned RPM dependencies before upgrading.
+SUSE Multi-Linux Manager can manage SLES 16 and still uses Salt internally, but
+SLES 16 does not ship Salt packages. WBEM through SBLIM packages is removed with
+no direct replacement. SLE 15 modules and pool/update channels are also gone;
+each SLES 16 minor still requires its own repository transition.
 
-The SP7 release documentation records conflicting versions for two packages: the GA package comparison lists `bind` 9.20.3 and MariaDB 11.4.5, while the release-note prose describes BIND 9.18 and MariaDB 11.8 LTS. The documentation does not resolve the disagreement, so query the enabled repository or installed RPM before applying version-specific guidance.
+### Supported Java lines
 
-Other notable GA transitions include OpenSSL 3.1.4 to 3.2.3, Docker 24.0.7 to 27.5.1, ClamAV 0.103 to 1.4, FreeRDP 2.11 to 3.10, FRR 8.4 to 10.2, `libfabric` 1.20 to 2.0, PHP 8.2 to 8.3, and Wireshark 3.6 to 4.2. Select compatibility packages such as `docker-stable` 24.0.9 and `freerdp2` explicitly rather than assuming unversioned names retain old major lines.
+All with L3 support, `java-17-openjdk` is supported through 2027-10-31,
+`java-21-openjdk` through 2031-10-31, and `java-25-openjdk` through 2033-10-31.
 
-### Supported OpenJDK lines
+### Temporary `libnsl.so.1` stub
 
-Use `java-17-openjdk` with L3 support through 2027-10-31, `java-21-openjdk` through 2031-10-31, or `java-25-openjdk` through 2033-10-31.
+The real library is removed. `libnsl-stub1` temporarily provides an ABI-
+compatible but nonfunctional stub for installers that merely check for the
+file. Port applications that call it; the stub itself is scheduled for removal.
 
-## HPC package turnover
+### Removed SLES 16 packages
 
-SLES 15 SP7 moves the `slurm` meta-package from 23.02 to 24.11 while retaining `slurm_23_02`. Open MPI package names move from 4.1.6 to 4.1.7. The GA comparison removes HDF5 1.10.11 and unversioned GNU/MPI HPC families without listing replacement HDF5 packages; audit HPC images and module specifications explicitly.
+SLES 16 removes `hplip`, `ansible-9`, and `ansible-core-2.16`. Prometheus is
+removed because its inclusion was accidental and unsupported.
 
-## Runtime replacements and compatibility
+### Node.js default (`16.0-rev-2026-08-04`)
 
-### Redis and time service
-
-SLES 15 SP7 removes `redis` and `redis7` and replaces them with Valkey 8.0.2. The `ntp` package moves to the Legacy Module ahead of SLES 16 removal in favor of Chrony. Remove automation for the deleted `KBD_DISABLE_CAPS_LOCK` setting in `/etc/sysconfig/keyboard`.
-
-### OpenSSL development packages
-
-SLES 15 SP6 OpenSSL 3.1.4 replaces 1.1.1. Because the two development-package lines conflict and update resolution is not automatic, remove `libopenssl1_1-devel` manually during upgrade.
-
-### `libnsl` compatibility
-
-SLES 16 removes the real `libnsl.so.1`. `libnsl-stub1` temporarily provides an ABI-compatible but nonfunctional stub for installers that only probe for the library. Port callers that use its functions; the stub is scheduled for later removal.
-
-### OpenLDAP soname shims
-
-SLES 16 supplies `libldap` and `liblber` shims with OpenLDAP 2.4 sonames linked to OpenLDAP 2.6 for applications such as SAP central user management. They implement only the public API and cannot supply the two GSSAPI functions removed from OpenLDAP 2.6.
-
-### 32-bit applications, Steam, and Wine
-
-Leap 16 supports only 64-bit binaries; statically linked 32-bit applications and 32-bit container images cannot run. On x86-64, enable 32-bit syscalls with `ia32_emulation` where required. Steam moves from Non-OSS to Flatpak and needs `grub2-compat-ia32` plus a reboot; SELinux installations may also need `selinux-policy-targeted-gaming`. The packaged Wine 10.10 is WoW64-only.
-
-## Removed and deprecated packages
-
-### Leap removals
-
-Leap 15.6 removes `bbswitch`, `bumblebee`, `bumblebee-status`, and `primus`; use NVIDIA SUSE Prime. It also removes unmaintained Python RPMs including `python-Keras-Applications`, `python-Theano`, `python-pep517`, `python-pygeos`, `python-jupytext`, `python-moviepy`, `python-requests-html`, `python-torch`, and legacy pytest, Jupyter, Dephell, and Spyder plug-ins. Audit RPM dependencies.
-
-Leap 16 removes `nscd`, WSL1 support, `criu`, and `compat-libpthread-nonshared`; move `crun` consumers to `runc`. HexChat is no longer packaged because its upstream is archived; use Polari or Flatpak. Leap 16 carries the final `nmap` release available under the formerly compatible license and plans a later replacement. The unsupported `mcphost` MCP agent—configured with no permissions by default—and `lklfuse` are included as previews; `lklfuse` lacks Btrfs support because it cannot mount multi-device filesystems.
-
-### SLES 15 SP6 removals and migrations
-
-Replace `docker-runc` with `runc`; remove dependencies on `timezone-java`, insecure `dpt_i2o`, `openmpi2`, and `openmpi3`. Audit cloud-image and automation dependencies on removed Public Cloud Module componentized Azure CLI packages, legacy Google agents and SDK, packaged Terraform providers, `WALinuxAgent`, and related deployment helpers.
-
-PHP 7.4 and `numad` were scheduled for SP7 removal. Replace `sev-tool` with `sevctl` and `gnote` with `bijiben`. Ceph clients `ceph-common`, `libcephfs-devel`, `python3-ceph-common`, `python3-rbd`, and `python3-rgw` are removed in SP7; `intel-opencl` and `intel-graphics-compiler` move to Package Hub.
-
-### SLES 16 removals
-
-SLES 16 itself ships no Salt packages even though SUSE Multi-Linux Manager still uses Salt internally to manage it. WBEM management through SBLIM is removed without a direct replacement.
-
-SLES 16 removes `hplip`, `ansible-9`, and `ansible-core-2.16`. Prometheus is also removed because its inclusion was accidental and unsupported.
-
-## Technology preview and support boundaries
-
-SLES 15 SP6's disabled-by-default Confidential Computing Module is a technical preview containing unsupported host, secure-VM, and remote-attestation tooling.
-
-Package inclusion does not imply broad automation support: apply the Ansible support boundary above, and check platform-specific previews in [platforms.md](platforms.md) and virtualization boundaries in [virtualization-containers.md](virtualization-containers.md).
+Node.js 24 is the default; package selection and compatibility checks must not
+assume an earlier major line.

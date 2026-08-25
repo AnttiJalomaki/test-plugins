@@ -1,191 +1,181 @@
 # 3D, mesh, and point clouds
 
-## Mesh rendering, editing, and export
+Use this reference for 3D scene configuration, mesh workflows, virtual point
+clouds, point-cloud editing and rendering, and conditional PDAL operations.
 
-### Edit mesh topology and elevation
+## View-dependent mesh color ranges (since 3.42)
 
-Since 3.42, adding a mesh vertex can Delaunay-refine adjacent triangles by
-flipping nonconforming edges. Selection actions cover all vertices or only
-isolated vertices. New-vertex Z policies can prefer the mesh and then a Z
-widget or terrain, always use project terrain, or always use the Z widget.
-Selected vertices can also infer Z from project terrain.
+Mesh color-ramp minimum and maximum values can be calculated from the current
+canvas extent. Lock the range to one canvas or let it follow the active canvas,
+matching raster-rendering behavior.
 
-### Manage mesh dataset groups
+## Mesh editing and elevation controls (since 3.42)
 
-Since 3.42, externally added dataset groups may share names; QGIS numbers them
-automatically to disambiguate the names. These added groups can be removed,
-but groups belonging to the original mesh source cannot.
+Adding a mesh vertex can Delaunay-refine adjacent triangles by flipping
+nonconforming edges. Selection actions cover all vertices or isolated vertices
+only. New-vertex Z values can prefer the mesh then a Z widget or terrain,
+always use project terrain, or always use the Z widget. Selected vertices can
+also infer Z from project terrain.
 
-### Export a mesh surface
+## Mesh dataset-group management (since 3.42)
 
-Since 3.42, **Mesh: Surface to Polygon** exports the mesh surface as a
-MultiPolygon layer.
+Externally added dataset groups may share names and are numbered automatically
+to disambiguate them. These groups can be removed; groups belonging to the
+original mesh source cannot.
 
-## Scene construction and navigation
+## Virtual point-cloud overview behavior (since 3.42)
 
-### Cut 3D cross sections
+VPC layers render an overview when one exists, otherwise extents when zoomed
+out. The styling panel can force extents only, overview only, or both.
 
-Since 3.44, the cross-section tool captures start, end, and thickness points
-from the 2D canvas, filters the 3D scene to that possibly rotated region, and
-moves the camera to a side view. Toggling the section does not reload the
-whole scene.
+## 3D cross sections (since 3.44)
 
-Since 4.0, sections can use a fixed editable width and can be nudged left or
-right. Scene export can omit terrain, extruded polygons can include floors,
-and a 3D view can display a camera-centered 2D map overlay with an optional
-camera frustum.
+The cross-section tool takes start, end, and thickness points from the 2D
+canvas, removes everything outside that possibly rotated region from the 3D
+view, and moves the camera to a side view. Toggling the section does not reload
+the entire scene.
 
-### Use globe scenes
+## Globe scenes (since 3.44)
 
-Since 3.44, globe mode bends the scene mesh to the project ellipsoid. Any map
-layer can provide the 2D texture, and tiled-scene and point-cloud 3D renderers
-are supported. A suitable project CRS and ellipsoid can represent another
-celestial body instead of Earth.
+A 3D scene can use globe mode with a mesh following the project ellipsoid. Any
+map layer can supply its 2D texture; tiled-scene and point-cloud 3D renderers
+are supported. A suitable project CRS and ellipsoid can represent a celestial
+body other than Earth.
 
-### Set camera coordinates and controls
+## COPC Processing output (since 3.44)
 
-Since 4.2, the camera dialog can set target XYZ in map-CRS coordinates
-together with pitch, heading, and distance. Optional live update pushes edits
-to the view, while displayed values always follow camera movement. Vertical
-axis inversion is independently configurable for walk dragging,
-captured-mouse walk mode, and terrain mode.
+PDAL Processing algorithms can write Cloud Optimized Point Cloud outputs
+directly.
 
-### Export STL scenes
+## Point-cloud editing in 3D (since 3.44)
 
-Since 4.2, 3D scenes export to STL as well as OBJ. STL is simpler and does not
-preserve textures.
+Choose an attribute and target value, then select points in a 3D view using a
+polygon, paintbrush, or above/below-line tool. An expression filter can limit
+which selected points are modified.
 
-## 3D vector rendering and materials
+## Annotation editing and 3D billboards (since 4.0)
 
-### Use categorized and rule-based 3D renderers
+The annotation selection tool can multi-select, move, delete, resize, and
+rotate items. Annotation layers can render markers and text as 3D billboards.
+Marker billboards support terrain clamping, offsets, and callout lines; text
+billboards use a separately configurable 3D text format.
 
-Since 4.2, vector 3D symbology supports categorized and rule-based renderers
-with controls modeled on the corresponding 2D renderers.
+## Expanded 3D scene controls (since 4.0)
 
-### Configure physically based materials
+Cross sections can use a fixed editable width and be nudged left or right.
+Scene export can omit terrain, extruded polygons can include floors, and a 3D
+view can show a camera-centered 2D map overlay with an optional camera frustum.
 
-Since 4.2, the physically based material accepts base-color, metalness,
-roughness, and ambient-occlusion texture maps. Metal-rough materials also
-support opacity, a solid emission color and strength, and data-defined base
-and emission colors. Both metal-rough and Phong textures expose data-defined
-scale, rotation, and offset. Save 3D materials as tagged or favorited presets
-in the style database.
+## Esri I3S scene layers (since 4.0)
 
-### Set model axes
+The tiled-scene provider opens I3S 1.7+ `3DObject` and `IntegratedMesh` data
+from ArcGIS REST services or local SLPK files in both 2D and 3D. Global
+EPSG:4326 and local projected-CRS datasets are supported.
 
-Since 4.2, 3D point-model symbols can explicitly choose up and forward axes
-instead of assuming Z-up and Y-forward. This avoids corrective manual
-rotations that interfere with reusable rotation, scale, and data-defined
-settings.
+## Virtual point-cloud conversion, access, and editing (since 4.0)
 
-### Add environmental lighting and effects
+Build VPC can convert LAS/LAZ inputs to COPC so the result is fully renderable.
+VPC styling controls how early actual points replace extents or overviews.
+Remote VPCs open directly, but editing requires both the VPC and every linked
+COPC file to be local.
 
-Since 4.2, a cube-map skybox can dynamically generate environmental lighting
-for physically based materials. This is optional and does not apply to
-fixed-gradient backgrounds. 3D Effects also provides tone mapping, exposure,
-gamma, light bloom, global MSAA, and configurable gradient backgrounds.
+## M3C2 point-cloud comparison (since 4.0)
 
-## Tiled scenes and 3D Tiles
+Compare Point Clouds computes signed multiscale distances along locally
+estimated surface normals through PDAL `filters.m3c2`. It is available only in
+QGIS builds shipping PDAL later than 2.10.
 
-### Open Esri I3S
+## Point-cloud normalization and cleanup (since 4.0)
 
-Since 4.0, the tiled-scene provider opens I3S 1.7+ `3DObject` and
-`IntegratedMesh` content from ArcGIS REST services or local SLPK files in 2D
-and 3D. It supports global EPSG:4326 data and local data in projected CRSs.
+Height Above Ground adds `HeightAboveGround` or replaces Z using nearby or
+triangulated ground points classified as class 2. Processing also provides
+SMRF ground classification, statistical and radius noise filters, and point
+cloud translation, rotation, and scaling.
 
-### Render expanded 3D Tiles
+## Continuous point-cloud profile lines (since 4.0)
 
-Since 4.2, QGIS renders instanced meshes from 3D Tiles 1.0 `i3dm` and 1.1 glTF
-GPU instancing in both 2D and 3D, including rotation correction for projected
-CRSs. Quantized positions, oct-encoded rotations, and feature IDs are not
-supported. It also reads 1.1 implicit tiling with quadtree subdivision and 1.0
-composite `cmpt` tiles.
+Elevation profiles can draw a point cloud as a continuous elevation line
+instead of points; tolerance controls sparse results. A lockable
+distance:elevation scale ratio can replace the usual 1:1 navigation ratio.
 
-## Virtual point clouds and COPC
+## Point-cloud TIN edge limits (since 4.0)
 
-### Select VPC overview behavior
+PDAL Export to Raster (TIN) can omit triangles whose edges exceed a configured
+maximum. This parameter requires PDAL 2.6+ and wrench 1.2.2+.
 
-Since 3.42, a VPC renders its overview while zoomed out when one exists, or
-renders extents when none exists. Styling can force extents only, overview
-only, or both.
+## Categorized and rule-based 3D rendering (since 4.2)
 
-Since 4.0, styling can also choose how early actual points replace extents or
-overviews. Build VPC can convert LAS/LAZ inputs to COPC so the result is fully
-renderable. Remote VPCs can be opened directly, but editing requires the VPC
-and all linked COPC files to be local.
+Vector 3D symbology supports categorized and rule-based renderers with controls
+modeled on their 2D counterparts.
 
-### Use multiple overviews and zipped VPC
+## Physically based 3D materials (since 4.2)
 
-Since 4.2, Build VPC accepts an optional `--overview-length`. Readers recognize
-every asset with the `overview` role, regardless of asset ID, and render
-multiple overviews when zoomed out. `QgsPointCloudLayer.overviews()` and
-`QgsVirtualPointCloudProvider.overviews()` return overview lists. Open zipped
-VPC datasets from `.vpz` files.
+The physically based material supports base-color, metalness, roughness, and
+ambient-occlusion texture maps. Metal-rough materials also support opacity,
+solid emission color and strength, and data-defined base/emission colors.
+Metal-rough and Phong textures expose data-defined scale, rotation, and offset.
+Save 3D materials as tagged or favorited style-database presets.
 
-### Produce COPC from Processing
+## Configurable 3D model axes (since 4.2)
 
-Since 3.44, PDAL Processing algorithms can write Cloud Optimized Point Cloud
-outputs directly.
+3D point-model symbols can explicitly select up and forward axes instead of
+assuming Z-up/Y-forward. This avoids corrective rotations that interfere with
+reusable rotation, scale, and data-defined settings.
 
-## Point-cloud editing, styling, and analysis
+## 3D environmental lighting and effects (since 4.2)
 
-### Edit point attributes in 3D
+A cube-map skybox can generate environmental lighting dynamically for
+physically based materials. This is optional and does not apply to
+fixed-gradient backgrounds. The 3D Effects settings also provide tone mapping,
+exposure, gamma, light bloom, global MSAA, and configurable gradient
+backgrounds.
 
-Since 3.44, select a point-cloud attribute and target value in a 3D view, then
-select points with polygon, paintbrush, or above/below-line tools. An
-expression filter can restrict which selected points are modified.
+## Expanded 3D Tiles support (since 4.2)
 
-### Compare point clouds with M3C2
+QGIS renders instanced meshes from 3D Tiles 1.0 `i3dm` and 1.1 glTF GPU
+instancing in 2D and 3D, including projected-CRS rotation correction.
+Quantized positions, oct-encoded rotations, and feature IDs are unsupported.
+It also reads 1.1 implicit tiling with quadtree subdivision and 1.0 composite
+`cmpt` tiles.
 
-Since 4.0, **Compare Point Clouds** computes signed multiscale distances along
-locally estimated surface normals through PDAL `filters.m3c2`. It is available
-only when the QGIS build includes PDAL later than 2.10.
+## Coordinate-based 3D camera controls (since 4.2)
 
-### Normalize and clean point clouds
+The camera dialog accepts target XYZ in map-CRS coordinates plus pitch,
+heading, and distance. Optional live update pushes edits to the view; displayed
+values always follow camera movement. Vertical-axis inversion is configurable
+independently for walk dragging, captured-mouse walk mode, and terrain mode.
 
-Since 4.0, **Height Above Ground** adds a `HeightAboveGround` attribute or
-replaces Z, using nearby or triangulated ground points classified as class 2.
-Processing also includes SMRF ground classification, statistical and radius
-noise filters, and point-cloud translation, rotation, and scaling.
+## STL scene export (since 4.2)
 
-### Limit TIN edges
+3D scenes export to STL as well as OBJ. STL is simpler and does not preserve
+textures.
 
-Since 4.0, PDAL **Export to Raster (TIN)** can omit triangles whose edges
-exceed a maximum length. This parameter requires PDAL 2.6+ and wrench 1.2.2+.
+## Multi-overview and zipped VPC (since 4.2)
 
-### Apply elevation shading per layer
+Build VPC accepts optional `--overview-length`. Readers recognize every asset
+with the `overview` role regardless of ID and render multiple overviews when
+zoomed out. `QgsPointCloudLayer.overviews()` and
+`QgsVirtualPointCloudProvider.overviews()` return lists. Open zipped VPC data
+from `.vpz` files.
 
-Since 4.2, point-cloud 2D symbology can apply elevation shading per layer
-instead of using the map-wide effect, preventing unrelated map content from
-being blended into the shading.
+## Per-layer point-cloud elevation shading (since 4.2)
 
-### Modify point colors with expressions
+Point-cloud 2D symbology can apply elevation shading per layer instead of via
+the map-wide effect, preventing unrelated map elements from being blended into
+the shading.
 
-Since 4.2, point-cloud renderers can modify their base color with expressions
-using any point attribute and `@point_color`. Arithmetic operates
-channel-by-channel on RGBA. Multiplication accepts the color on either side;
-other operators require it on the left:
+## Point-cloud color expressions (since 4.2)
+
+Renderers can modify base color with any point attribute and `@point_color`.
+Color arithmetic operates channel by channel on RGBA. Multiplication allows
+the color on either side; other operators require it on the left:
 
 ```qgis
 @point_color * (@intensity / 65535)
 ```
 
-## Profiles and 3D extension
+## Elevation profiles in 3D (since 4.2)
 
-### Render continuous point-cloud profile lines
-
-Since 4.0, elevation profiles can render point clouds as continuous elevation
-lines rather than points; tolerance controls sparse results. A lockable
-distance-to-elevation scale ratio can replace the normal 1:1 navigation ratio.
-
-### Show elevation profiles in 3D
-
-Since 4.2, **Show Profile in 3D Views** displays an elevation curve in 3D,
-derives Z limits from data within the curve, and links cursor position with
-line or polygon rubber bands.
-
-### Extend PyQGIS 3D tools
-
-Since 4.0, plugins can derive custom canvas tools from `Qgs3DMapTool`, apply
-the cross-section tool's four clipping planes, and call
-`Qgs3DMapCanvas.castRay()` to obtain and manage 3D hits using `QgsRay3D`.
+Show Profile in 3D Views displays the profile curve in 3D, derives Z limits
+from data within the curve, and links cursor position through line or polygon
+rubber bands.

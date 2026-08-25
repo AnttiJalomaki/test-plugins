@@ -1,23 +1,32 @@
 # Configuration, Validation, and Parsing
 
-Use this reference when migrating project flags, responding to schema
-diagnostics, configuring catalogs, or replacing Core's parser. Relevant
-extraction sections: 1.9.0, 1.10-behavior-changes, 1.10.0, 1.11.0, and
-1.12.0.
+Use this reference for behavior flags, schema diagnostics, project inputs, catalogs, selector configuration, and resource properties.
 
-## Matured behavior defaults
+## Column and source configuration (1.9.0)
 
-Core 1.10 changes these defaults from `false` to `true`:
+Columns accept a `config` mapping. Source freshness can also live under `config`, and explicit null freshness values are preserved.
 
 ```yaml
-flags:
-  require_resource_names_without_spaces: true
-  source_freshness_run_project_hooks: true
+sources:
+  - name: raw
+    config:
+      freshness:
+        warn_after: {count: 12, period: hour}
+
+models:
+  - name: orders
+    columns:
+      - name: id
+        config:
+          meta:
+            owner: analytics
 ```
 
-Resource names containing spaces are rejected by default, and `dbt source
-freshness` runs project hooks by default. Keep a temporary compatibility
-opt-out in the version-controlled `flags` block of `dbt_project.yml`:
+## Resource names and freshness hooks (1.10-behavior-changes)
+
+Core 1.10 changes the defaults of `require_resource_names_without_spaces` and `source_freshness_run_project_hooks` from `false` to `true`. Names containing spaces are rejected by default, and `dbt source freshness` runs project hooks by default.
+
+Temporary compatibility opt-outs belong in the version-controlled `flags` block:
 
 ```yaml
 flags:
@@ -25,14 +34,11 @@ flags:
   source_freshness_run_project_hooks: false
 ```
 
-An explicit `false` keeps legacy behavior but continues to emit deprecation
-warnings. Core 2.0 removes both flags and always applies the new behavior.
+Explicit `false` values keep legacy behavior but continue to emit deprecation warnings. Core 2.0 removes both flags and always uses the new behavior.
 
-## Generic test arguments
+## Generic-test argument nesting (1.10-behavior-changes)
 
-Core 1.10.5 introduces `require_generic_test_arguments_property` disabled by
-default; 1.10.8 changes the default to `true`. With the flag enabled, put all
-generic-test parameters below `arguments`, not directly below the test name.
+Core 1.10.5 introduces `require_generic_test_arguments_property` with default `false`; Core 1.10.8 changes the default to `true`. When enabled, put generic-test inputs under `arguments`:
 
 ```yaml
 flags:
@@ -48,9 +54,9 @@ models:
                 values: [placed, shipped, completed]
 ```
 
-## Macro and warning validation
+## Macro-argument and warning handling (1.10-behavior-changes)
 
-Core 1.10 adds two disabled-by-default flags:
+`validate_macro_args` warns when documented macro arguments disagree with the macro definition. `require_all_warnings_handled_by_warn_error` can stop a build under `--warn-error`. Both begin disabled and mature to default `true` in Core 1.12.
 
 ```yaml
 flags:
@@ -58,15 +64,25 @@ flags:
   require_all_warnings_handled_by_warn_error: true
 ```
 
-`validate_macro_args` warns when documented macro arguments do not match the
-macro definition; `--warn-error` promotes those warnings to errors.
-`require_all_warnings_handled_by_warn_error` allows unhandled warnings to stop
-a build when `--warn-error` is active. Both flags mature to default `true` in
-Core 1.12.
+## Schema validation and diagnostics (1.10.0)
 
-## Resource and ref lookup flags
+Core validates `dbt_project.yml` and resource YAML against JSON Schema, checks duplicate YAML keys, and validates `{{ config(...) }}` in model SQL even when static parsing is unavailable. It warns about unexpected Jinja blocks and unsupported custom keys or properties. Some schema checks are adapter-gated and some arrive as preview deprecations.
 
-Core 1.11 adds:
+Diagnostics identify their event, summarize repeated violations, and can be expanded to show every instance. Under Core 1.12, JSON Schema-based deprecation warnings are raised by default.
+
+## Source overrides and Jinja interfaces (1.10.0)
+
+Source `overrides` and `modules.itertools` are deprecated. Migrate configurations and macros rather than suppressing their diagnostics.
+
+## Catalog integration V1 (1.10.0)
+
+Core parses `catalogs.yml`; from 1.10.12, parsing also happens during `parse`, `seed`, and `test`. Catalog integration configuration accepts `file_format`.
+
+For V1 integrations, `catalog_database` may override the database name for any catalog type and has the highest priority during database-name generation.
+
+## Resource-name and ref search flags (1.11.0)
+
+`require_unique_project_resource_names` restores an error for duplicate node names within one project. `require_ref_searches_node_package_before_root` makes an ambiguous package-internal `ref()` search the referencing node's package before the root project.
 
 ```yaml
 flags:
@@ -74,97 +90,33 @@ flags:
   require_ref_searches_node_package_before_root: true
 ```
 
-The first restores an error for duplicate node names inside one project. The
-second changes an ambiguous package-internal `ref()` to search the referencing
-node's package before the root project.
+## Schema-name and resource-name validation (1.12.0)
 
-## Schema-name and resource-name validation
-
-Core 1.12 raises JSON Schema-based deprecation warnings by default. A custom
-`generate_schema_name` macro returning null is deprecated behind:
+A custom `generate_schema_name` macro returning null is deprecated behind `require_valid_schema_from_generate_schema_name`:
 
 ```yaml
 flags:
   require_valid_schema_from_generate_schema_name: true
 ```
 
-Source and Semantic Model names containing spaces warn.
-`REQUIRE_SOURCE_AND_SEMANTIC_MODEL_NAMES_WITHOUT_SPACES` can promote this
-validation to an error.
+Source and Semantic Model names containing spaces warn. `REQUIRE_SOURCE_AND_SEMANTIC_MODEL_NAMES_WITHOUT_SPACES` can turn that validation into an error.
 
-## Project and resource schema diagnostics
+## Additional project inputs (1.12.0)
 
-Core 1.10 begins JSON Schema validation for `dbt_project.yml` and resource
-YAML. It also:
+Project variables may be declared in `vars.yml`, environment variables may load automatically from `.env`, and SQL or Markdown files may use explicit Jinja suffixes such as `.sql.jinja` and `.md.jinja`.
 
-- detects duplicate YAML keys;
-- validates `{{ config(...) }}` in model SQL even if static parsing is
-  unavailable;
-- warns about unexpected Jinja blocks;
-- warns about unsupported custom keys or properties.
+## Catalog configuration V2 (1.12.0)
 
-Some schema checks are adapter-gated and some begin as preview deprecations.
-Diagnostics expose event names, summarize repeated violations, and can be
-expanded to show every instance. Do not assume a summarized count identifies
-all source locations.
-
-## Deprecated CLI, YAML, and Jinja surfaces
-
-Core 1.10 deprecates:
-
-- `dbt source freshness --output` and `-o`;
-- source `overrides`;
-- `modules.itertools` in Jinja;
-- `--models`, `--model`, and `-m` selection aliases in favor of `--select`;
-- `include` and `exclude` terminology in warn-error options.
-
-Use, for example:
-
-```bash
-dbt run --select my_model
-```
-
-## Catalog configuration
-
-Core 1.10 parses `catalogs.yml`; from 1.10.12 it also parses that file during
-`parse`, `seed`, and `test`. Catalog integration config accepts `file_format`.
-
-Core 1.12 introduces opt-in Catalog configuration V2:
+Enable `catalogs.yml` V2 with the `use_catalogs_v2` behavior flag. Catalog configuration is loaded by every command that requires a manifest.
 
 ```yaml
 flags:
   use_catalogs_v2: true
 ```
 
-Catalog configuration is then loaded by every command that needs a manifest.
-For V1 integrations, `catalog_database` can override the database for any
-catalog type and has highest priority in database-name generation.
+## Data-test configuration opt-ins (1.12.0)
 
-## External V2 parser
-
-`--use-v2-parser` bypasses Core's parser, invokes an external parser, and loads
-the resulting `manifest.json` back into the runtime manifest. Choose the
-command through `--v2-parser`, `DBT_ENGINE_V2_PARSER`, or project flags. The
-default command is `dbt-core-experimental-parser parse`.
-
-```bash
-dbt parse --use-v2-parser \
-  --v2-parser "dbt-core-experimental-parser parse"
-```
-
-This integration requires `dbt-core-experimental-parser>=2.0.0a4`.
-
-## Additional project inputs
-
-Core 1.12 accepts project variables from `vars.yml`, loads environment
-variables automatically from `.env`, and recognizes Jinja-suffixed SQL and
-Markdown extensions such as `.sql.jinja` and `.md.jinja`.
-
-## Test config opt-ins
-
-Data tests can use `sql_header` behind
-`require_sql_header_in_test_configs`. Unit tests and generic data tests can
-pass custom `ref()` keyword arguments behind `support_custom_ref_kwargs`.
+Data tests may use `sql_header` behind `require_sql_header_in_test_configs`. Unit tests and generic data tests may pass custom `ref()` keyword arguments behind `support_custom_ref_kwargs`.
 
 ```yaml
 flags:
@@ -172,15 +124,23 @@ flags:
   support_custom_ref_kwargs: true
 ```
 
-## Databricks materialization V2
+## Macro and analysis configuration (1.12.0)
 
-dbt-databricks 1.10.0 adds project-level `use_materialization_v2`, disabled by
-default, to opt into restructured materializations:
+Macro properties accept a `config` mapping with `meta` and `docs`. Analyses can be enabled or disabled in `dbt_project.yml` at project or folder scope.
 
 ```yaml
-flags:
-  use_materialization_v2: true
+macros:
+  - name: cents_to_dollars
+    config:
+      meta: {owner: finance}
+      docs: {show: true}
+
+analyses:
+  my_project:
+    staging:
+      +enabled: false
 ```
 
-No maturity release is specified, so do not assume the default has changed
-without checking the installed adapter.
+## Databricks schema-recognized keys (1.12.1)
+
+Core 1.12.2 recognizes `query_tags`, `zorder`, `options`, `unique_tmp_table_suffix`, and `skip_optimize` as Databricks adapter config keys. These supported keys no longer generate false `CustomKeyInConfigDeprecation` warnings during JSON Schema validation.

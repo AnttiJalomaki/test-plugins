@@ -1,60 +1,80 @@
 # C APIs and Configuration
 
-## Preparing SQL
+Use this reference for connection controls, prepare flags, limits, hooks,
+status reporting, changegroups, and low-level text configuration.
 
-Pass `SQLITE_PREPARE_DONT_LOG` to `sqlite3_prepare_v3()` when compiling potentially invalid SQL for validation (since 3.48.0). Errors still return to the caller, but malformed input does not emit warnings to the configured error log.
+## Preparing SQL safely
+
+### Validation without log noise (3.48.0)
+
+Pass `SQLITE_PREPARE_DONT_LOG` to `sqlite3_prepare_v3()` when test-compiling SQL
+so invalid input does not emit warning messages to SQLite's error log:
 
 ```c
-sqlite3_prepare_v3(db, sql, -1, SQLITE_PREPARE_DONT_LOG, &stmt, 0);
+sqlite3_prepare_v3(db, sql, -1, SQLITE_PREPARE_DONT_LOG, &stmt, NULL);
 ```
 
-`SQLITE_PREPARE_FROM_DDL` allows a virtual-table implementation to prepare SQL derived from the database schema safely (since 3.53.0).
+### Schema-derived SQL (3.53.0)
 
-## Runtime limits and function arity
+Virtual-table implementations that prepare SQL obtained from schema DDL should
+pass `SQLITE_PREPARE_FROM_DDL` to `sqlite3_prepare_v3()`.
 
-- The minimum accepted `SQLITE_LIMIT_LENGTH` is 30 bytes, rather than 1 (since 3.48.0). Lower requests are clamped.
-- The maximum SQL-function argument count increased from 127 to 1000 in 3.48.0, applying to built-in and application-defined calls.
-- `SQLITE_LIMIT_PARSER_DEPTH` is a new `sqlite3_limit()` category (since 3.53.0).
+## Connection controls
 
-## Database configuration
+### ATTACH and comment controls (3.49.0)
 
-The following `sqlite3_db_config()` controls were added in 3.49.0 and default to enabled:
+`SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE`,
+`SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE`, and
+`SQLITE_DBCONFIG_ENABLE_COMMENTS` independently control those capabilities.
+All three default to enabled.
 
-- `SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE`: whether `ATTACH` may create files.
-- `SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE`: whether attached databases are writable.
-- `SQLITE_DBCONFIG_ENABLE_COMMENTS`: whether comments are accepted in newly submitted SQL.
+```c
+int previous;
+sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE, 0, &previous);
+sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE, 0, &previous);
+sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_COMMENTS, 0, &previous);
+```
 
-`SQLITE_DBCONFIG_FP_DIGITS` selects the significant-digit count used for floating-point-to-text conversion (since 3.53.0). The new default is 17 rather than 15.
+### Existing schemas when comments are disabled (3.50.0)
 
-## Text input and output
+Disabling `SQLITE_DBCONFIG_ENABLE_COMMENTS` blocks comments only in newly
+submitted SQL. Comments in an existing `sqlite_schema` remain readable. Use
+3.50.3 or later for correct comment handling throughout stored
+`CREATE TRIGGER` statements.
 
-`SQLITE_UTF8_ZT` may be passed as the encoding to `sqlite3_bind_text64()` or `sqlite3_result_text64()` to identify zero-terminated UTF-8 (since 3.53.0).
+## Runtime limits and text interfaces
 
-## Hooks and page access
+### Length and function-argument limits (3.48.0)
 
-- Preupdate hooks recognize a non-NULL default on a column added by `ALTER TABLE ADD COLUMN` (since 3.47.0), so consumers observe the effective stored-row value.
-- `INSERT` on the `sqlite_dbpage` table-valued function may grow or shrink the database file (since 3.47.0). Treat it as low-level file mutation and preserve page-size/integrity invariants.
+The smallest accepted `SQLITE_LIMIT_LENGTH` is 30, not 1. SQL functions can
+accept at most 1000 arguments rather than the former 127.
 
-## Blocking locks
+```c
+sqlite3_limit(db, SQLITE_LIMIT_LENGTH, 30);
+```
 
-`sqlite3_setlk_timeout()` configures blocking-lock waits independently from `sqlite3_busy_timeout()` on builds with blocking-lock support (since 3.50.0). Version 3.50.1 covers snapshot-transaction opening and waits behind recovery. Version 3.50.2 fixes mutex handling; use that maintenance release or later.
+### Parser depth and zero-terminated UTF-8 (3.53.0)
 
-## Checkpoint and database status
+`SQLITE_LIMIT_PARSER_DEPTH` is the parser-nesting category for
+`sqlite3_limit()`. `SQLITE_UTF8_ZT` marks values passed through the 64-bit text
+bind and result interfaces as UTF-8 and zero-terminated.
 
-`SQLITE_CHECKPOINT_NOOP` performs no checkpoint work while allowing checkpoint-interface inspection (since 3.51.0). SQL uses `PRAGMA wal_checkpoint=NOOP`.
+## Hooks, status, and changegroups
 
-`SQLITE_DBSTATUS_TEMPBUF_SPILL` reports temporary-buffer spills. Query it with `sqlite3_db_status()` or the new `sqlite3_db_status64()`, which provides 64-bit measurements (since 3.51.0).
+### Added-column defaults in preupdate hooks (3.47.0)
 
-## Incremental changegroups
+After `ALTER TABLE ADD COLUMN` adds a non-null default, preupdate hooks report
+the existing row's effective default value for that column.
 
-Since 3.53.0, the session API can construct one `sqlite3_changegroup` change at a time:
+### No-op checkpoints and 64-bit status (3.51.0)
 
-1. Call `sqlite3changegroup_change_begin()`.
-2. Supply typed values through the `change_blob`, `change_double`, `change_int64`, `change_null`, or `change_text` interfaces.
-3. Complete the change with `sqlite3changegroup_change_finish()`.
+`SQLITE_CHECKPOINT_NOOP` is the C spelling of the no-op WAL checkpoint mode.
+`sqlite3_db_status64()` mirrors `sqlite3_db_status()` with 64-bit results. Both
+accept `SQLITE_DBSTATUS_TEMPBUF_SPILL` for temporary-buffer spill counts.
 
-Use `sqlite3changegroup_config()` to configure the changegroup object.
+### Incremental session changegroups (3.53.0)
 
-## Source metadata
-
-The amalgamated `sqlite3.h` defines `SQLITE_SCM_BRANCH`, `SQLITE_SCM_TAGS`, and `SQLITE_SCM_DATETIME` for source-check-in metadata as of 3.51.0.
+Add one change at a time to a `sqlite3_changegroup` with
+`sqlite3changegroup_change_begin()`, the typed blob, double, int64, null, and
+text setters, then `sqlite3changegroup_change_finish()`. Configure the group
+with `sqlite3changegroup_config()`.

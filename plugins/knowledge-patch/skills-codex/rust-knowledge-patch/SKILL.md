@@ -10,145 +10,153 @@ metadata:
 
 # Rust Knowledge Patch
 
+Use this skill when upgrading, reviewing, or debugging Rust code, Cargo workflows, platform support, documentation, tests, or formatting.
+
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [edition-2024.md](references/edition-2024.md) | Edition migration, syntax, match ergonomics, temporary scope, unsafe requirements, resolver 3, doctests, rustfmt |
-| [language-and-macros.md](references/language-and-macros.md) | Traits, opaque types, inference, patterns, macros, name resolution, lints, newly rejected code |
-| [safety-ffi-and-low-level.md](references/safety-ffi-and-low-level.md) | Raw pointers, provenance, pinning, atomics, allocation, FFI, ABIs, intrinsics, inline assembly |
+| [edition-2024.md](references/edition-2024.md) | Edition migration, iterator and temporary semantics, opaque capture, patterns, unsafe extern blocks, manifests, doctests, rustfmt |
+| [language-and-macros.md](references/language-and-macros.md) | Traits, opaque types, inference, patterns, macros, lints, name resolution, newly rejected code |
+| [safety-ffi-and-low-level.md](references/safety-ffi-and-low-level.md) | Raw pointers, provenance, pinning, allocation, FFI, ABIs, intrinsics, assembly, symbol and layout behavior |
 | [standard-library.md](references/standard-library.md) | Collections, iterators, ranges, I/O, paths, text, numerics, const stabilization, behavior contracts |
-| [cargo.md](references/cargo.md) | Configuration, builds, workspaces, publishing, lockfiles, registries, cache, metadata, environment variables |
-| [targets-and-toolchains.md](references/targets-and-toolchains.md) | Linkers, symbol mangling, WebAssembly, target tiers, platform baselines, LLVM, native linking |
-| [docs-tests-and-formatting.md](references/docs-tests-and-formatting.md) | Rustdoc, doctests, libtest, rustfmt, diagnostic path handling |
+| [cargo.md](references/cargo.md) | Configuration, builds, workspaces, packaging, publishing, lockfiles, registries, cache, metadata, environment variables |
+| [targets-and-toolchains.md](references/targets-and-toolchains.md) | Linkers, WebAssembly, target tiers, platform baselines, LLVM, native linking, host queries |
+| [docs-tests-and-formatting.md](references/docs-tests-and-formatting.md) | Rustdoc, doctests, libtest, rustfmt, diagnostics and path remapping |
 
 ## Apply this patch
 
-1. Identify the crate edition, MSRV, compilation targets, panic strategy, and whether Cargo or rustc is invoked directly.
-2. Check the breaking-change sections below before adopting new APIs.
-3. Read only the topic references relevant to the task; they hold the complete compatibility details and stable API inventory.
-4. Preserve an older MSRV unless the requested change intentionally raises it. New syntax, APIs, Cargo keys, and TOML 1.1 forms require the corresponding toolchain.
-5. For unsafe, FFI, linker, or custom-target work, validate the target-specific preconditions instead of relying on host behavior.
+1. Read the crate's `rust-version`, edition, targets, panic strategy, and Cargo/rustc invocation path.
+2. Preserve the existing MSRV unless the task explicitly raises it.
+3. Check breaking changes before adopting new APIs or syntax.
+4. Open only the topic references relevant to the work; they carry the complete compatibility inventory.
+5. Test target-specific, FFI, linker, unsafe, and const-evaluation assumptions on the actual toolchain and target.
+6. If the project is newer than the frontmatter version, treat this guidance as potentially stale and trust manifests, code, compiler output, and tests.
 
 ## Breaking changes and migrations
 
-### Rust 2024 is a semantic migration
+### Upgrade affected 1.97.0 builds to 1.97.1
 
-- Run `cargo fix --edition`, then review every edit; several migrations insert syntax without proving safety or lifetime intent.
-- Declare foreign blocks as `unsafe extern`, wrap `no_mangle`, `export_name`, and `link_section` as unsafe attributes, and put unsafe operations inside explicit blocks even within an `unsafe fn`.
-- Replace references to `static mut` with synchronization or tightly scoped raw-pointer access.
-- Audit never-type fallback, return-position `impl Trait` capture, boxed-slice `.into_iter()`, match ergonomics, `if let` scrutinee temporaries, and tail-expression temporary destruction.
-- Review macro match order because 2024 `expr` fragments accept const blocks and `_`; use `expr_2021` only when the old grammar is required.
-- Rename `gen` identifiers or use `r#gen`; separate guarded-string `#` tokens with whitespace.
-- Expect resolver 3 for 2024 packages, but configure it explicitly in a virtual workspace.
-- Read [edition-2024.md](references/edition-2024.md) before changing a crate's edition.
+Rust 1.97.1 fixes an LLVM optimization miscompilation whose underlying issue affects releases back to 1.87. Upgrade affected users rather than relying on the generated-IR behavior from 1.97.0.
 
-### Compiler acceptance changed
+### Treat Rust 2024 as a semantic migration
 
-- Trait overlap uses the next-generation solver (1.84.0), so upgrades may reject previously accepted unsound impl sets or accept newly provable disjoint sets.
-- Never-type fallback lints become deny-by-default in 1.92.0 when building the affected crate directly.
-- Pattern capture, binding, and destruction order changed in several releases; code with visible destructor effects or partial moves needs focused tests.
-- Macro expansions with trailing semicolons, missing fragment specifiers, invalid export attributes, unsupported ABI strings, and several formerly tolerated syntactic forms now warn or fail.
-- Custom JSON target specifications require nightly options as of 1.95.0.
-- WebAssembly unresolved symbols fail linking as of 1.96.0; declare intentional imports explicitly.
-- Read [language-and-macros.md](references/language-and-macros.md) and [targets-and-toolchains.md](references/targets-and-toolchains.md) during upgrade triage.
+- Run `cargo fix --edition`, then review every edit.
+- Boxed-slice method-call `.into_iter()` consumes the box and yields owned elements; use `.iter()` for borrowing.
+- Never-type fallback remains `!`; constrain generic results that relied on `()`.
+- Tail-expression and some `if let` temporaries drop earlier.
+- Return-position `impl Trait` captures every in-scope lifetime unless a precise `use<...>` bound says otherwise.
+- Make pattern prefixes explicit before using `mut`, `ref`, `ref mut`, `&`, or `&mut`.
+- Declare foreign blocks `unsafe extern`; mark imports `safe` only when every call is valid.
+- Replace legacy manifest spellings, align workspace-inherited default features, review combined doctests and nested includes, and pin rustfmt's `style_edition` when needed.
 
-### ABI, linking, and symbol behavior changed
+Read [edition-2024.md](references/edition-2024.md) before changing an edition.
 
-- `wasm32-unknown-unknown` switched to the standards-compliant C ABI in 1.89.0; do not mix objects built under the old and new conventions.
-- `x86_64-unknown-linux-gnu` uses LLD by default from 1.90.0; opt out with `-Clinker-features=-lld` only for a confirmed incompatibility.
-- Linux `panic=abort` builds retain unwind tables from 1.92.0 unless `-C force-unwind-tables=no` is set.
-- Stable rustc emits v0 Rust symbols by default from 1.97.0; update debuggers, profilers, and backtrace expectations.
-- The layouts of types without an explicit representation remain non-contractual; 1.96.0 and 1.97.0 include observable layout corrections or changes.
-- Read [safety-ffi-and-low-level.md](references/safety-ffi-and-low-level.md) before altering FFI or unsafe code.
+### Compiler acceptance and inference changed
 
-### Pinning and pointer assumptions need review
+- Direct builds fail on the never-type migration lints from 1.92.0; fix type inference rather than broadly allowing them.
+- Macro matchers require fragment specifiers, expression-position expansions cannot end in semicolons, and invalid `macro_export` arguments can fail builds.
+- Unsupported ABIs, several invalid low-level attributes, uninhabited statics, custom JSON targets on stable, and newly rejected path or pattern forms require source changes.
+- Pattern binding, closure capture, tuple-constructor temporary extension, const promotion, and never coercion changes can alter borrowing, drop order, or inference.
+- Standard macros now resolve through the prelude, so glob imports can create ambiguities.
 
-- `pin!(&mut_value)` no longer performs a dereference coercion in 1.97.0; make the intended pointee explicit.
-- Raw-reference formation through a raw pointer and to a union field is safe, but dereferencing the result still requires valid unsafe reasoning.
-- Debug null-pointer checks are not soundness checks and disappear when debug assertions are disabled.
-- Use exposed-provenance APIs rather than integer transmutation when reconstructing pointers.
+Use [language-and-macros.md](references/language-and-macros.md) for the exact lint, syntax, and release behavior.
+
+### ABI, linker, symbol, and layout assumptions changed
+
+- Rebuild every side of a `wasm32-unknown-unknown` C ABI boundary after the 1.89.0 ABI change.
+- WebAssembly unresolved symbols fail linking from 1.96.0; declare imports or explicitly restore the old linker flag.
+- `x86_64-unknown-linux-gnu` uses LLD by default from 1.90.0.
+- Linux `panic=abort` emits unwind tables from 1.92.0 unless disabled.
+- Stable rustc emits v0 Rust symbols by default from 1.97.0.
+- Never rely on the observed encoding of a type without an explicit representation; enum layouts changed in 1.96.0 and 1.97.0 edge cases.
+
+Read [safety-ffi-and-low-level.md](references/safety-ffi-and-low-level.md) and [targets-and-toolchains.md](references/targets-and-toolchains.md) before changing interop or build infrastructure.
+
+### Pointer and pinning assumptions need review
+
+- Forming `&raw` through a raw pointer or to a union field is safe, but dereferencing remains subject to the full unsafe contract.
+- Debug null checks are diagnostics, not soundness guarantees; read/write validity generally excludes null.
+- Prefer exposed-provenance APIs to integer-to-pointer transmutes.
+- `pin!(x)` no longer dereference-coerces `&mut T`; express the intended pinned place explicitly.
+- Bind temporaries before passing borrowed values to `pin!` or formatting macros when their lifetime matters.
 
 ### Cargo workflows changed
 
-- Cargo may automatically clean unused cache data from 1.88.0; disable it when old Cargo installations share entries that newer Cargo cannot observe.
-- `cargo publish --workspace` publishes in dependency order but is not atomic (1.90.0).
-- `cargo publish` no longer leaves a local `.crate`; use `cargo package` when that artifact is required.
-- Published crates always include `Cargo.lock`, while `cargo package --exclude-lockfile` explicitly omits it from a package archive.
-- Lockfile v4 is the default; declare the actual `package.rust-version` to preserve compatibility with Cargo older than 1.78.
-- `build.build-dir`, `resolver.lockfile-path`, configuration `include`, target-specific `rustdocflags`, and `build.warnings` solve distinct build-layout and policy needs.
-- Use registry credential providers instead of command-line publish tokens.
-- Read [cargo.md](references/cargo.md) before changing CI, packaging, registry, or workspace automation.
+- Automatic cache cleanup can remove old entries; disable it when pre-1.78 Cargo installations share the cache.
+- `cargo publish --workspace` is dependency ordered but non-atomic.
+- Publishing does not leave a `.crate`; use `cargo package` when the archive is required.
+- `cargo package --exclude-lockfile` omits the lockfile, while normal package behavior may include it.
+- `build.build-dir`, `resolver.lockfile-path`, configuration `include`, target `rustdocflags`, and `build.warnings` address different concerns.
+- Keep target cleaning scoped, use explicit package/workspace selectors, and avoid ambiguous relative install roots.
 
-## High-value language features
+Read [cargo.md](references/cargo.md) before changing CI, configuration, packaging, registries, or workspaces.
 
-### Traits and opaque types
+## High-value language and macro features
 
-- Trait-object upcasting to a supertrait is stable from 1.86.0 for references, smart pointers, and raw pointers with valid vtables.
-- Trait return-position `impl Trait` supports precise `use<...>` capture from 1.87.0.
-- Associated types may repeat bounds from 1.92.0, and associated-item bounds now guide auto-trait and `Sized` reasoning.
+### Traits and coercions
+
+- Trait-object coercions can discard the principal trait while retaining auto traits from 1.84.0.
+- Unsized implementations may omit required methods constrained by `Self: Sized` from 1.87.0.
+- Associated items accept repeated bounds outside trait objects from 1.92.0, and item bounds take precedence in auto-trait and `Sized` reasoning.
 
 ```rust
-trait Super {}
-trait Sub: Super {}
-
-fn upcast(value: &dyn Sub) -> &dyn Super {
-    value
+trait Inspect {
+    fn sized_only(&self) where Self: Sized;
 }
 
-trait Value {
-    fn value<'a>(&'a self) -> impl Sized + use<Self>;
-}
+impl Inspect for [u8] {}
 ```
 
-### Conditions, patterns, and configuration
+### Conditions, configuration, and assertions
 
-- Edition 2024 supports `let` chains in `if` and `while`; 1.95.0 adds `if let` match guards.
+- `cfg(true)` and `cfg(false)` work in compiler and Cargo predicates from 1.88.0.
 - `cfg_select!` chooses the first matching item or expression arm from 1.95.0.
-- `assert_matches!` and `debug_assert_matches!` provide pattern failures with `Debug` output from 1.96.0; import them explicitly.
+- Match guards accept `if let` from 1.95.0, but guard patterns do not affect exhaustiveness.
+- `assert_matches!` and `debug_assert_matches!` are stable from 1.96.0 and require an explicit import.
 
 ```rust
-match value {
-    Some(x) if let Ok(y) = compute(x) => use_pair(x, y),
-    _ => {}
-}
+use std::assert_matches;
+
+assert_matches!(Some(4), Some(1..=6));
 ```
 
-### Ranges and slices
+### Ranges and patterns
 
-- `array_windows` yields overlapping `&[T; N]` windows from 1.94.0.
-- `core::range` introduces copyable range values whose iterator types implement iteration; range syntax still constructs legacy `core::ops` ranges.
-- Use `RangeBounds` in public APIs that should accept both range families.
-
-```rust
-use core::range::Range;
-
-#[derive(Clone, Copy)]
-struct Span(Range<usize>);
-```
+- `array_windows` yields overlapping fixed-size slice windows from 1.94.0.
+- The stable `core::range` family grows across 1.95.0 and 1.96.0; its iterable range values implement `IntoIterator`, and range syntax still creates legacy `core::ops` ranges.
+- Use `RangeBounds` in public APIs intended to accept both range families.
 
 ## High-value library features
 
-### Multi-borrowing and extraction
+### Collections and mutable insertion
 
-- Slices and `HashMap` support checked and unchecked disjoint mutable access from 1.86.0.
-- `Vec`, `LinkedList`, `BTreeMap`, and `BTreeSet` have stable `extract_if` variants across 1.87.0 and 1.91.0.
-- `File` has portable shared/exclusive locking operations from 1.89.0; `RwLockWriteGuard::downgrade` is stable from 1.92.0.
+- Hash collections provide `extract_if` from 1.88.0; B-tree collections add it in 1.91.0.
+- Slices provide fixed-width chunks, borrowed split-off operations, UTF-8 boundary adjustment, and fixed-size overlapping windows.
+- Rust 1.95.0 adds insertion methods that return mutable references for `Vec`, `VecDeque`, and `LinkedList`.
 
-### Process and allocation primitives
+### Initialization, allocation, and ownership transfer
 
-- `std::io::pipe()` integrates anonymous pipes with `Command` and `Stdio` from 1.87.0; drain output before waiting to avoid a full-pipe deadlock.
-- `Box<MaybeUninit<T>>::write`, slice-wide `MaybeUninit` operations, zeroed smart-pointer allocation, and raw-parts decomposition cover common staged-initialization and ownership-transfer tasks.
-- `std::fmt::from_fn` creates a display value backed by a formatting callback from 1.93.0.
+- Zeroed `Box`, `Rc`, and `Arc` allocation returns `MaybeUninit`; call `assume_init` only for valid all-zero representations.
+- `MaybeUninit` slice and array APIs support whole-buffer initialization and storage conversion.
+- `Vec::into_raw_parts` and `String::into_raw_parts` transfer pointer, length, and capacity without freeing.
+- `Layout` has stable composition and dangling-pointer helpers for allocator work.
+
+### I/O, locking, and formatting
+
+- `File` has shared/exclusive locking operations from 1.89.0.
+- `RwLockWriteGuard::downgrade` atomically converts a write guard to a read guard from 1.92.0.
+- `std::fmt::from_fn` creates formatting values without a dedicated wrapper type from 1.93.0 and is const-capable from 1.95.0.
+- Unix stream writes suppress broken-pipe signals; Windows socket shutdown now yields `BrokenPipe` on a subsequent write.
 
 ### Const evaluation
 
-- Releases 1.84.0–1.97.0 make many pointer, pinning, numeric, collection-view, string, path, cell, slice, formatting, and character operations const-capable.
-- Check [standard-library.md](references/standard-library.md) for the exact method and minimum release instead of assuming the runtime-stable API is const-stable.
+Many pointer, pinning, numeric, slice, string, path, cell, formatting, and collection-view operations became const-capable. Check [standard-library.md](references/standard-library.md) for exact API names and minimum releases; runtime stability does not imply const stability.
 
-## Target and documentation checks
+## Target, toolchain, and documentation checks
 
-- Query the host triple with `rustc --print host-tuple`, or use Cargo's portable `host-tuple` target where supported.
-- Review target tier changes before assuming rustup artifacts, host tools, or test guarantees.
-- Cross-target doctests now run through configured runners; target-specific failures that were previously skipped may surface.
-- Rustdoc target ignores, external doctest runners, search improvements, attribute validation, and emitted-path remapping are detailed in [docs-tests-and-formatting.md](references/docs-tests-and-formatting.md).
+- Query the host with `rustc --print host-tuple`, or use Cargo's portable `host-tuple` target.
+- Review target tiers and platform baselines before assuming artifacts, host tools, tests, or native libraries.
+- External LLVM minimums rise across these releases; match the compiler version before custom-building rustc.
+- Cross-target doctests run through configured runners, so failures previously skipped can surface.
+- Rustdoc target ignores, output controls, stricter attributes, deprecation Markdown, path remapping, and combined Edition 2024 doctests are detailed in [docs-tests-and-formatting.md](references/docs-tests-and-formatting.md).

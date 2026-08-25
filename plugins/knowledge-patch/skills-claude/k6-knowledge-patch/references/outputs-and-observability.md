@@ -1,23 +1,53 @@
 # Outputs and Observability
 
-## OpenTelemetry output
+## Metric representation
 
-### Use the stable output name (since 1.4.0)
+### Rate metrics use a labeled counter (since 1.3.0)
 
-Select the stable OpenTelemetry output as `opentelemetry`. The old
-`experimental-opentelemetry` name remains accepted but is deprecated.
-`K6_OTEL_EXPORTER_TYPE` is also deprecated; use
-`K6_OTEL_EXPORTER_PROTOCOL`.
+Exported Rate metrics are represented as one counter with a label whose values
+are `zero` and `nonzero`. Downstream consumers must handle the labeled shape
+instead of expecting separate or unlabeled Rate values.
+
+### Correct Cloud Gauge extrema (since 1.8.0)
+
+Cloud output v2 reports Gauge `min` and `max` in the correct fields. Queries no
+longer return a peak as the floor or a floor as the peak. Revisit workarounds
+that swapped the two fields.
+
+### Native histograms (since 2.1.0)
+
+The experimental `native-histograms` feature makes trend metrics use native
+histograms. Enable it with `--features`, `K6_FEATURES`, or the `features`
+configuration key. Feature selections appear in metric tags and are preserved
+in archives and Cloud workers.
+
+```sh
+k6 run --features native-histograms script.js
+```
+
+## OpenTelemetry
+
+### Stable output name (since 1.4.0)
+
+Use the stable `opentelemetry` output. The old `experimental-opentelemetry`
+name remains an alias but is deprecated. `K6_OTEL_EXPORTER_TYPE` is deprecated;
+use `K6_OTEL_EXPORTER_PROTOCOL`.
 
 ```sh
 k6 run --out opentelemetry script.js
 ```
 
-### Configure HTTP Basic Auth (since 2.1.0)
+### Rate fallback removed (since 2.0.0)
 
-The OpenTelemetry HTTP exporter accepts Basic Auth credentials through
+`K6_OTEL_SINGLE_COUNTER_FOR_RATE` has been removed. Delete it from environment
+and deployment configuration; the single labeled-counter Rate representation
+can no longer be postponed.
+
+### HTTP Basic Auth (since 2.1.0)
+
+The OpenTelemetry HTTP exporter accepts credentials through
 `K6_OTEL_HTTP_EXPORTER_USERNAME` and `K6_OTEL_HTTP_EXPORTER_PASSWORD`, or the
-`username` and `password` output-config keys.
+`username` and `password` output configuration keys.
 
 ```sh
 K6_OTEL_HTTP_EXPORTER_USERNAME=user \
@@ -25,80 +55,62 @@ K6_OTEL_HTTP_EXPORTER_PASSWORD=secret \
 k6 run --out opentelemetry script.js
 ```
 
-## TLS for metric outputs
+## Prometheus remote write
 
-### Account for the TLS 1.3 default (since 1.2.0)
+### Minimum TLS version (since 1.6.0)
 
-The experimental OpenTelemetry and Prometheus outputs changed their default to
-TLS 1.3. Because these outputs were experimental, this was a breaking change
-in a minor release.
-
-### Configure Prometheus remote-write minimum TLS (since 1.6.0)
-
-The experimental Prometheus remote-write output accepts
-`K6_PROMETHEUS_RW_TLS_MIN_VERSION`. Its default remains TLS 1.3.
+The experimental Prometheus remote-write output defaults to TLS 1.3 and accepts
+`K6_PROMETHEUS_RW_TLS_MIN_VERSION` to configure the minimum.
 
 ```sh
 K6_PROMETHEUS_RW_TLS_MIN_VERSION=1.3 \
 k6 run script.js -o experimental-prometheus-rw
 ```
 
-## Rate metric representation
+## Console rendering
 
-### Consume the labeled counter shape (since 1.3.0)
+### Deep object logging (since 1.5.0)
 
-An exported Rate is represented by one counter with a label whose values are
-`zero` and `nonzero`. Downstream queries and integrations must consume that
-labeled shape.
+`console.log()` traverses nested arrays and objects without dropping functions
+or classes. Functions and classes render as `"[object Function]"`; circular
+references are marked `"[Circular]"` instead of collapsing the whole value to
+`[object Object]`.
 
-### Remove the fallback switch in v2 (since 2.0.0)
+### Binary values (since 1.6.0)
 
-`K6_OTEL_SINGLE_COUNTER_FOR_RATE` was removed. Delete it from environments and
-deployment configuration; the single-counter migration cannot be postponed.
+`console.log()` renders `ArrayBuffer` byte contents and shows typed-array types,
+lengths, and values, including binary values nested in other objects.
 
-## Machine-readable summaries
+## Browser and Cloud observability
 
-### Opt in to the structured shape (since 1.5.0)
+### Redirect samples (since 1.8.0)
 
-A structured summary representation is available to both `--summary-export`
-and `handleSummary()`. Opt in with `--new-machine-readable-summary` or
-`K6_NEW_MACHINE_READABLE_SUMMARY`. It was planned to become the default in v2.
+Each browser redirect emits request metrics only for its applicable hop; k6 no
+longer re-emits all earlier redirect metrics at every hop.
 
-```sh
-k6 run script.js \
-  --new-machine-readable-summary \
-  --summary-export=summary.json
-```
+### Filter browser failures (since 2.1.0)
 
-## Cloud output correctness
+Browser API failures in Grafana Cloud Logs carry `module=browser`, enabling
+source-specific filters.
 
-### Read Gauge extrema from the corrected fields (since 1.8.0)
+### Raw header byte accounting (since 2.2.0)
 
-Cloud output v2 reports Gauge `min` and `max` in their correct fields. Cloud
-test-result queries no longer return the peak as the floor or the floor as the
-peak.
+Browser sent/received byte metrics include raw header bytes. Header accessors
+expose the wire values for the corresponding redirect hop, including
+`Set-Cookie` and security headers.
 
-## Native histograms
+### Local Cloud log streaming (since 2.2.0)
 
-### Enable experimental Trend storage (since 2.1.0)
+`k6 cloud run --local-execution` streams logs into the Cloud test run unless
+`--no-cloud-logs` is set. Use secret storage and redaction when values might
+reach the remote stream.
 
-The `native-histograms` feature makes Trend metrics use experimental native
-histograms. Enable it through feature flags and remember that enabled features
-are included in metric tags and preserved in archives and Cloud workers.
+## Local visualization
 
-```sh
-k6 run --features native-histograms script.js
-```
+### Bundled web dashboard (since 2.0.0)
 
-Inspect the feature and its lifecycle with `k6 features` or
-`k6 features --json`.
-
-## Web dashboard
-
-### Use the built-in output (since 2.0.0)
-
-The web dashboard is built into the k6 binary. A separate xk6-dashboard
-extension is no longer required.
+The web dashboard ships in the k6 binary; a separate xk6-dashboard extension
+is unnecessary.
 
 ```sh
 k6 run --out=web-dashboard script.js

@@ -2,110 +2,94 @@
 
 ## Generative AI
 
-All `gen_ai.*` attributes, metrics, events, and spans formerly defined in the
-main semantic-conventions repository are deprecated there, including its
-provider-specific and MCP areas. Instrumentations must use the corresponding
-definitions and `schema_url` from the dedicated Generative AI repository.
+### Dedicated convention repository (`semantic-conventions`)
+
+All `gen_ai.*` attributes, metrics, events, and spans formerly in the main
+semantic-conventions repository—including its provider-specific and MCP
+areas—are deprecated there and live in the dedicated GenAI repository.
+Instrumentations must use that repository's corresponding `schema_url`.
 
 ## RPC
 
-### Names, units, and metadata
+### Names and duration metrics (`semantic-conventions`)
 
-- Required duration metrics are `rpc.client.call.duration` and
-  `rpc.server.call.duration`, measured in seconds.
-- `rpc.method` is fully qualified and absorbs the former `rpc.service`.
-- Common request and response metadata names are `rpc.request.metadata` and
-  `rpc.response.metadata`.
-- Response status is `rpc.response.status_code`.
-- `rpc.system` is renamed to `rpc.system.name`.
-- Normalized `rpc.system.name` values include `connectrpc` and `dubbo`.
+Use the required, seconds-based `rpc.client.call.duration` and
+`rpc.server.call.duration` metrics. `rpc.method` is fully qualified and
+absorbs the former `rpc.service`. Use `rpc.request.metadata`,
+`rpc.response.metadata`, and `rpc.response.status_code`. Rename `rpc.system`
+to `rpc.system.name`; normalized values include `connectrpc` and `dubbo`.
 
-### Stability and system-specific metrics
+### Stability, addressing, and retirements (`semantic-conventions`)
 
 Core RPC, gRPC, and Apache Dubbo conventions are Release Candidate. JSON-RPC,
-gRPC, and Connect RPC each have system-specific metric sections.
+gRPC, and Connect RPC have system-specific metric sections. RPC spans and
+metrics no longer include `network.type`, `network.protocol.name`,
+`network.protocol.version`, or `network.transport`; server spans also drop
+`client.address` and `client.port`. Request/response size metrics and
+`rpc.message` are deprecated. `server.address` is only conditionally required.
 
-### Removed and deprecated fields
+## Exceptions, HTTP, and GraphQL
 
-- RPC spans and metrics no longer include `network.type`,
-  `network.protocol.name`, `network.protocol.version`, or
-  `network.transport`.
-- RPC server spans no longer include `client.address` or `client.port`.
-- Request- and response-size metrics are deprecated.
-- `rpc.message` is deprecated.
-- `server.address` is only conditionally required.
+### Exception telemetry in logs (`semantic-conventions`)
 
-## Exceptions move from spans to logs
+Generic exception recording as span events is deprecated.
+`OTEL_SEMCONV_EXCEPTION_SIGNAL_OPT_IN` supports migration to logs. Use domain
+events such as `db.client.operation.exception`, `rpc.client.call.exception`,
+`rpc.server.call.exception`, `http.client.request.exception`,
+`http.server.request.exception`, `faas.invocation.exception`, and the
+messaging-operation variants. Treat `exception.message` as potentially
+sensitive. `error.type` or `exception.type` may unwrap uninformative wrapper
+types.
 
-Generic exception recording as span events is deprecated. During migration,
-`OTEL_SEMCONV_EXCEPTION_SIGNAL_OPT_IN` enables the exception-log path.
+### HTTP configuration and cardinality (`semantic-conventions`)
 
-Domain-specific exception events include:
+HTTP declarative configuration can override known methods and identify
+sensitive query parameters. `QUERY` is recognized. Intentional client
+cancellation is not an error. `network.peer.address` is Opt-In on
+`http.client.open_connections` and `http.client.connection.duration` because
+it can create unbounded cumulative metric streams.
 
-- `db.client.operation.exception`.
-- `rpc.client.call.exception`.
-- `rpc.server.call.exception`.
-- `http.client.request.exception`.
-- `http.server.request.exception`.
-- `faas.invocation.exception`.
-- The corresponding messaging-operation exception variants.
+### GraphQL document capture (`semantic-conventions`)
 
-Treat `exception.message` as potentially sensitive. `error.type` or
-`exception.type` may unwrap an uninformative wrapper type to identify the
-meaningful underlying error.
+`graphql.document` is Opt-In rather than Recommended because it can contain
+sensitive, unbounded, high-cardinality user input. Sanitize it whenever
+capture is enabled.
 
-## HTTP
+## Browser telemetry
 
-### Declarative configuration
+### Browser document identity (`semantic-conventions`)
 
-HTTP conventions add declarative configuration for:
+The `browser.document` entity uses Recommended, Development-stability
+`browser.document.url.full` for the current RFC 3986 URL. This keeps
+navigation-varying document identity separate from immutable browser-runtime
+attributes.
 
-- Overriding the known-method set.
-- Identifying sensitive query parameters.
+### Web Vitals event attributes (`2026-08-stable`)
 
-`QUERY` is a recognized method. Intentional client cancellation is not an
-error.
+Semantic Conventions 1.44 moves Web Vital `name`, `value`, `delta`, and `id`
+out of the `browser.web_vital` event body into `browser.web_vital.*`
+attributes and adds attributes used by current instrumentation.
 
-### Metric cardinality
+## Database telemetry
 
-`network.peer.address` is Opt-In on `http.client.open_connections` and
-`http.client.connection.duration`. Including peer addresses can create
-unbounded cumulative metric streams.
+### Oracle identity (`semantic-conventions`)
 
-## GraphQL
+Oracle `db.namespace` contains only the database's unique identifier. Put PDB,
+instance, service, and domain in `oracle.db.pdb`, `oracle.db.instance.name`,
+`oracle.db.service`, and `oracle.db.domain`. The Oracle client span and its
+connection attributes are Release Candidate.
 
-`graphql.document` is Opt-In rather than Recommended because a document can
-contain sensitive, unbounded, high-cardinality user input. Sanitize the
-document whenever capture is enabled.
+### Batching and context propagation (`semantic-conventions`)
 
-## Browser document identity
+`db.operation.batch.size` covers multi-operand operations, parameterized
+batch APIs, and empty batches. Supported database context-propagation
+approaches include SQL commenter, SQL Server `SET CONTEXT_INFO`, and
+`V$SESSION.ACTION`.
 
-The `browser.document` entity keeps navigation-varying document identity
-separate from immutable browser runtime attributes. Its
-`browser.document.url.full` attribute is Recommended, Development stability,
-and contains the current RFC 3986 URL.
+## Messaging
 
-## Oracle database identity
+### Operation spans (`2026-08-stable`)
 
-`db.namespace` for Oracle contains only the database's unique identifier.
-Move the other identity dimensions to:
-
-| Dimension | Attribute |
-| --- | --- |
-| Pluggable database | `oracle.db.pdb` |
-| Instance | `oracle.db.instance.name` |
-| Service | `oracle.db.service` |
-| Domain | `oracle.db.domain` |
-
-The Oracle client span and its connection attributes are Release Candidate.
-
-## Database operations and propagation
-
-`db.operation.batch.size` explicitly covers:
-
-- Multi-operand operations.
-- Parameterized batch APIs.
-- Empty batches.
-
-Database context-propagation guidance includes SQL commenter, SQL Server
-`SET CONTEXT_INFO`, and Oracle `V$SESSION.ACTION`.
+Model distinct spans for create, send, receive, process, and settle operations,
+then apply the relevant messaging-system refinements. Kafka spans may carry
+`messaging.kafka.cluster.id` to identify the connected cluster.

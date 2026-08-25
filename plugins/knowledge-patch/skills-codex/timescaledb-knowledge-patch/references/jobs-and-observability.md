@@ -1,53 +1,51 @@
 # Jobs and observability
 
-## Configure background jobs
+Use this reference for background-job identity, retention, memory,
+cancellation, and operation progress.
+
+## Job identity and discovery
 
 Background jobs can have custom names since 2.20.0. Continuous-aggregate jobs
-also show the aggregate name in the jobs informational view.
+also include the aggregate name in the jobs informational view, making them
+easier to identify without consulting private catalogs.
 
-Per-job history configuration can separately cap retained successful and failed
-executions since 2.23.0.
+The `bgw_job` table moved into `_timescaledb_catalog` in 2.25.0, with a
+`bgw_job` alias retained for compatibility. Treat the alias as a compatibility
+surface and prefer supported informational views and APIs for durable tooling.
 
-The `bgw_job` table moved to `_timescaledb_catalog` in 2.25.0, with a
-compatibility `bgw_job` alias. Background worker jobs also accept a `work_mem`
-configuration.
+## History retention
 
-Background jobs no longer use advisory locks and support graceful cancellation
-since 2.26.0.
+Since 2.23.0, job-history configuration can independently cap the number of
+successful and failed executions retained for each background job. Size the two
+limits according to diagnostic needs rather than applying a single shared cap.
 
-## Observe long-running and compressed work
+## Per-job resources
 
-Index creation reports progress since 2.27.0.
+Background workers accept per-job `work_mem` configuration since 2.25.0. Use
+it to isolate a memory-intensive maintenance job without changing the session
+or server-wide default.
 
-`EXPLAIN` reports batch-pruning and false-positive statistics for composite
-bloom indexes since 2.26.0. Multi-column predicates can be pushed into
-compressed scans for both `SELECT` and `UPSERT`.
+## Cancellation and locking
 
-`timescaledb.enable_compression_ratio_warnings` defaults on since 2.20.0 and
-warns about poor compression ratios.
+Background jobs stopped using advisory locks in 2.26.0 and support graceful
+cancellation. Call the supported cancellation surface and allow cleanup rather
+than assuming an advisory-lock owner represents the job lifecycle.
 
-`timescaledb.stats_max_chunks` controls the per-database capacity of the
-in-memory compressed-chunk statistics cache since 2.28.0. It defaults to
-`1024`; use `0` to disable it:
+## Progress and diagnostics
+
+Index creation reports progress since 2.27.0, so long-running builds can be
+observed rather than treated as opaque operations.
+
+For compressed scans, 2.26.0 `EXPLAIN` output includes batch-pruning and bloom
+false-positive statistics when composite bloom indexes participate. In
+2.27.0, `timescaledb.cagg_rewrites_debug_info` can expose exact
+continuous-aggregate rewrite diagnostics when both diagnostics and rewrites
+are explicitly enabled:
 
 ```sql
-SET timescaledb.stats_max_chunks = 0;
+SET timescaledb.enable_cagg_rewrites = on;
+SET timescaledb.cagg_rewrites_debug_info = on;
 ```
 
-## Account for maintenance work
-
-`VACUUM FULL` recompresses affected chunks since 2.25.0, so plan for
-recompression cost. Ordinary `VACUUM` and `ANALYZE` accept continuous aggregate
-names and redirect to their materialization hypertables since 2.28.0.
-
-Concurrent chunk merging is available since 2.24.0. Nonblocking recompression
-allows concurrent DML by default since 2.19.0.
-
-## Use supported metadata
-
-Primary-dimension information is available through the information schema since
-2.20.0. Prefer TimescaleDB informational views over private catalog tables:
-`_timescaledb_catalog.chunk_constraint` became only a temporary compatibility
-view in 2.28.0.
-
-The database owner can configure hypertables and policies since 2.28.0.
+The compressed-chunk statistics cache added in 2.28.0 is sized per database by
+`timescaledb.stats_max_chunks`. Its default is `1024`; `0` disables it.

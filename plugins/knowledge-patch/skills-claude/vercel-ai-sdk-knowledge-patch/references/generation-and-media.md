@@ -1,55 +1,34 @@
-# Generation, structured output, and media
+# Generation, Structured Output, and Media
 
-## Stream consumption and error delivery
+## Send PDFs as file parts
 
-`streamText` starts generation immediately but honors backpressure. Work progresses
-only while a returned stream is consumed, so an unconsumed stream can leave generation
-unfinished.
-
-Streaming generation errors are delivered in-band rather than thrown to the original
-caller. Observe them through `onError` or `error` parts in the complete event stream.
-Tool `execute` failures become `tool-error` parts and are also recorded in
-non-streaming `steps`. Schema failures and other `generateText` failures still throw.
+Anthropic, Google Generative AI, and Google Vertex AI models accept PDF bytes as a
+`file` part with `mimeType: 'application/pdf'`. The same message shape works across
+those providers. (since 4.0.0)
 
 ```ts
-const result = streamText({
-  model,
-  prompt,
-  onError: ({ error }) => log(error),
-});
-
-for await (const part of result.fullStream) {
-  handle(part);
-}
-```
-
-The example uses the pre-v7 `fullStream` spelling. For v7-targeted code, the property
-is `stream`.
-
-## Stream transforms
-
-`experimental_transform` accepts one transform or an ordered array. Transformed
-events are what callbacks observe and what result promises resolve from.
-
-```ts
-const result = streamText({
-  model,
-  prompt,
-  experimental_transform: [smoothStream(), redactTransform()],
+const result = await generateText({
+  model: anthropic('claude-3-5-sonnet-20241022'),
+  messages: [{
+    role: 'user',
+    content: [
+      { type: 'text', text: 'Summarize this document.' },
+      {
+        type: 'file',
+        data: readFileSync('./document.pdf'),
+        mimeType: 'application/pdf',
+      },
+    ],
+  }],
 });
 ```
 
-A custom transform receives `tools` and `stopStream`. If it stops early, it must emit
-synthetic `finish-step` and `finish` events; otherwise callbacks and downstream
-consumers may never complete.
+## Continue length-limited text
 
-## Automatic continuation after a length limit
-
-Introduced in `4.0.0`, `experimental_continueSteps: true` lets `generateText` or
-`streamText` continue after a step stops because of the output length limit. Set a
-finite `maxSteps`. The SDK joins the generated steps and reports combined token usage.
-Streaming emits complete words and may trim trailing tokens at continuation
-boundaries.
+Set `experimental_continueSteps: true` together with `maxSteps` on `generateText` or
+`streamText`. When a step reaches the length limit, the SDK continues, joins the steps,
+and reports combined token usage. Streaming emits only complete words and may trim
+trailing tokens at step boundaries. (since 4.0.0)
 
 ```ts
 const result = await generateText({
@@ -60,36 +39,28 @@ const result = await generateText({
 });
 ```
 
-## Structured output with tools
+## Combine tools with structured output
 
-Since `4.1.0`, text generation can perform tool calls and return a schema-validated
-final value in one multi-step operation. At introduction, the combination used
-`experimental_output` and was limited to OpenAI models.
+`generateText` and `streamText` can execute tools and finish with a schema-validated
+output in one multi-step call. The capability was introduced as `experimental_output`
+in 4.1.0 and was then limited to OpenAI models; the current v7 option is `output`.
 
 ```ts
 const result = await generateText({
-  model: openai('gpt-4o', { structuredOutputs: true }),
+  model,
   prompt,
   tools,
-  maxSteps: 5,
-  experimental_output: Output.object({
+  output: Output.object({
     schema: z.object({ answer: z.string() }),
   }),
 });
 ```
 
-On API lines where the prefix has been removed, use `output`. Verify current provider
-support instead of carrying forward the introduction-time restriction blindly.
+## Diagnose structured-output failures
 
-## Diagnosing structured-output failure
-
-`NoObjectGeneratedError` retains enough information for diagnosis or cautious partial
-recovery:
-
-- raw generated `text`;
-- response metadata;
-- token `usage`; and
-- the underlying `cause`.
+`NoObjectGeneratedError` retains the raw generated `text`, response metadata, token
+`usage`, and underlying `cause`. Inspect these before retrying or salvage a partial
+result when appropriate. (since 4.1.0)
 
 ```ts
 try {
@@ -101,58 +72,18 @@ try {
 }
 ```
 
-Do not retry blindly when the retained response can distinguish malformed JSON,
-schema mismatch, truncation, or a provider failure.
-
-## Schema processing and repair
-
 JSON Schema post-processing is stricter for Zod and Standard Schema inputs. Malformed
-JSON extraction and repair can be applied to structured output and tool calls. Array
-output mode preserves schema transforms, coercions, defaults, and pipes rather than
-discarding those effects per element.
+JSON extraction and repair apply to structured outputs and tool calls. Array output
+mode preserves schema transforms, coercions, defaults, and pipes. (since 2026-07)
 
-Test schema behavior explicitly when upgrading code that depends on coercion,
-defaults, transforms, or permissive JSON extraction.
+Use the stable `repairText` option on `generateObject` and `streamObject` rather than
+the deprecated `experimental_repairText` alias. (since 2026-08)
 
-## PDF inputs
+## Reuse provider-managed files and skills
 
-Since `4.0.0`, compatible Anthropic, Google Generative AI, and Google Vertex AI models
-can receive PDF bytes through the same `file` message-part shape. Set
-`mimeType: 'application/pdf'` and put the bytes in `data`:
-
-```ts
-import { readFileSync } from 'node:fs';
-import { generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
-
-const result = await generateText({
-  model: anthropic('claude-3-5-sonnet-20241022'),
-  messages: [
-    {
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Summarize this document.' },
-        {
-          type: 'file',
-          data: readFileSync('./document.pdf'),
-          mimeType: 'application/pdf',
-        },
-      ],
-    },
-  ],
-});
-```
-
-Use the provider-reference form described below when the same document will be reused
-and the provider supports managed uploads.
-
-## Canonical file parts and reusable uploads
-
-Media converges on a canonical `file` shape. Depending on the provider and operation,
-a file part can carry inline data, a URL, a provider reference, or text-backed content.
-
-`uploadFile` sends data once and returns `providerReference`, which can be reused as a
-`file` part instead of retransmitting the bytes:
+`uploadFile` sends data once and returns a provider reference that can be reused in a
+`file` part. `uploadSkill` does the same for provider-managed skills, accepts files as
+`{ path, content }` entries, and returns a reference for later calls. (since 2026-07)
 
 ```ts
 const { providerReference } = await uploadFile({
@@ -163,61 +94,61 @@ const { providerReference } = await uploadFile({
 
 await streamText({
   model,
-  messages: [
-    {
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Summarize this brief.' },
-        {
-          type: 'file',
-          mediaType: 'application/pdf',
-          data: providerReference,
-        },
-      ],
-    },
-  ],
+  messages: [{
+    role: 'user',
+    content: [
+      { type: 'text', text: 'Summarize this brief.' },
+      { type: 'file', mediaType: 'application/pdf', data: providerReference },
+    ],
+  }],
 });
 ```
 
-`uploadSkill` similarly accepts skill files as `{ path, content }` entries and returns
-a provider-managed skill reference for later calls. Provider references are not
-portable raw bytes; retain provider identity and lifecycle information with them.
+Canonical `file` parts can hold inline data, URLs, provider references, or text-backed
+content. (since 2026-07)
 
-## Images, speech, and transcription
+## Generate speech and transcribe audio
 
-`generateImage` is stable, as are `generateSpeech`, `transcribe`, `SpeechResult`, and
-`TranscriptionResult`.
+`generateSpeech`, `transcribe`, `SpeechResult`, and `TranscriptionResult` are stable
+APIs. (since 2026-07)
 
 ```ts
-const speech = await generateSpeech({
-  model: speechModel,
-  text,
-});
-
+const speech = await generateSpeech({ model: speechModel, text });
 const { text: transcript } = await transcribe({
   model: transcriptionModel,
   audio,
 });
 ```
 
-Generated images use the same stable file-oriented representation as other generated
-media. Avoid older experimental image names when the selected API line exposes the
-stable API.
+Awaiting any result promise from `experimental_streamTranscribe` now consumes its
+stream internally, so `await result.text` does not require separately draining
+`fullStream`. There is one consumer and no replay buffer: access `fullStream` before a
+result promise when both incremental parts and final values are needed. (since 2026-08)
 
-## Video generation
+`Experimental_SpeechTranslationModelV4` and `experimental_streamTranslate` provide
+experimental streaming speech-to-speech translation. (since 2026-08)
 
-Experimental `generateVideo` is provider-agnostic and supports bounded downloads and
-abort signals:
+## Use the general generated-file type
+
+`Experimental_GeneratedImage` is deprecated. Use the more general `GeneratedFile`
+type. (since 2026-08)
+
+## Generate video asynchronously
+
+Experimental `generateVideo` provides provider-agnostic video generation with abort
+support and bounded downloads. Video reference inputs are supported in addition to
+images from 7.0.19. (since 2026-07)
+
+`VideoModelV4` can implement `doStart`, `doStatus`, and `handleWebhookOption`.
+`experimental_generateVideo` can wait through `poll` or `webhook`; polling may inject
+a custom delay implementation for durable workflows. Provider-specific calls may use
+`aspectRatio: 'adaptive'` when the model derives the ratio from reference media.
+(since 2026-08)
 
 ```ts
-const result = await experimental_generateVideo({
-  model: videoModel,
+await experimental_generateVideo({
+  model,
   prompt: 'A cat walking on a treadmill',
-  aspectRatio: '16:9',
-  abortSignal,
+  aspectRatio: 'adaptive',
 });
 ```
-
-From 7.0.19, `inputReferences` can contain videos as well as images, enabling both
-image-to-video and reference-video generation. Keep experimental naming aligned with
-the installed API line and bound remote media downloads.

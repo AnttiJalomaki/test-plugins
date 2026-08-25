@@ -1,74 +1,85 @@
 # Observability and security
 
-## Structured task logging
+## Structured task and operator logging
 
-`LoggingMixin.log`, including hook and operator loggers, is a structlog logger
-as of 3.1.0. Standard-library logging calls remain valid. Structlog calls can
-attach searchable fields:
+`LoggingMixin.log`, including hook and operator loggers, is a structlog logger.
+Standard-library logging calls remain valid, while structured calls can attach
+searchable fields. (3.1.0)
 
 ```python
 self.log.info("Registering adapter", name=item.name)
 ```
 
-## API server JSON logs
+## JSON service output
 
-Set `[logging] json_logs` in 3.2.0 to emit API-server access logs, warnings,
-exceptions, and other server output as newline-delimited JSON:
+Set `[logging] json_logs = True` to emit API-server access logs, warnings,
+exceptions, and other output as newline-delimited JSON. `airflow celery worker`
+does not support this mode. (3.2.0)
 
 ```ini
 [logging]
 json_logs = True
 ```
 
-`airflow celery worker` does not yet support this JSON mode.
+## Logging and tracing controls
 
-Other 3.2.0 controls include `log_timestamp_format` for component timestamps
-and `uvicorn_logging_level` for API access-log verbosity. The Execution API
-propagates correlation IDs across components, and the
-`executor.running_dags` gauge counts running Dags.
+`log_timestamp_format` controls component timestamps and
+`uvicorn_logging_level` sets API access-log verbosity. The Execution API
+propagates correlation IDs. The `executor.running_dags` gauge counts running
+Dags. (3.2.0)
 
-## Remote log handler discovery
+## Remote-log handler discovery
 
-In 3.3.0, remote logging resolves lazily in this order:
+Remote logging resolves lazily in this order: (3.3.0)
 
-1. A custom `[logging] logging_config_class`.
-2. A provider `RemoteLogIO` selected by the `remote_base_log_folder` URI
-   scheme.
-3. The transitional `airflow_local_settings.py` fallback.
+1. a custom `[logging] logging_config_class`;
+2. a provider `RemoteLogIO` selected from the `remote_base_log_folder` scheme;
+3. the transitional `airflow_local_settings.py` fallback.
 
-A provider handler needs a no-argument `from_config()` method.
+Provider handlers implement a no-argument `from_config()` method.
 `airflow.logging_config.load_logging_config()` is deprecated. Callback
-subprocesses can upload remote logs, so include them when validating provider
-handlers and credentials.
+subprocesses can upload remote logs.
 
-## OpenTelemetry metrics and tracing
+## OpenTelemetry metrics and spans
 
-OpenTelemetry timer metrics are Histograms rather than Gauges in 3.3.0.
-Dashboards and alerts must expect the histogram contract.
+Timer metrics are Histograms rather than Gauges.
+`dag_processing.last_run.seconds_ago` includes `file_path`, `bundle_name`, and
+`file_name` tags. The legacy filename-suffixed metric remains enabled unless
+`[metrics] legacy_names_on` is disabled. Head sampling is supported, and
+custom samplers receive `dag_id`, `run_id`, and `run_type`. (3.3.0)
 
-`dag_processing.last_run.seconds_ago` now includes `file_path`, `bundle_name`,
-and `file_name` tags. The legacy filename-suffixed metric stays enabled unless
-`[metrics] legacy_names_on` is disabled.
+Task execution has a dedicated `task.execute` span. The
+`dagrun.duration.failed` metric includes a `run_type` tag for dashboard and
+trace segmentation. (3.3.1)
 
-Head sampling is supported. Custom samplers receive `dag_id`, `run_id`, and
-`run_type` attributes, which can drive workflow-aware sampling decisions.
+## API transport security
 
-## API transport and connection isolation
+The API server and client support mutual TLS and private certificate
+authorities. Credentialed CORS is configurable, but wildcard origins are
+rejected when credentials would make them unsafe. Connection tests can run
+asynchronously on workers so the API server does not need direct access to
+Connection secrets. (3.3.0)
 
-API clients and servers support mutual TLS and private certificate authorities
-as of 3.3.0. Configure credentialed CORS explicitly: wildcard origins are
-rejected when credentials would make them unsafe.
+## Backfill authorization
 
-Connection tests may run asynchronously on workers. This keeps Connection
-access away from the API-server process and should be reflected in worker
-network policy, logs, and troubleshooting.
+`BaseAuthManager.is_authorized_backfill` is removed. Backfills are authorized
+through `requires_access_dag` for `DagAccessEntity.Run`. Update policies that
+grant Backfill permission without Dag-run permission. (3.2.0)
 
-## Operational validation checklist
+## Secrets backend configuration
 
-- Parse newline-delimited logs and NDJSON API streams as separate JSON records.
-- Preserve correlation IDs across Execution API clients and remote runtimes.
-- Check remote-log upload from normal tasks, callbacks, and failure paths.
-- Update metric types and tag dimensions before enabling new collectors.
-- Verify that legacy metric names are intentionally enabled or disabled.
-- Test mTLS trust chains and CORS behavior with the actual clients.
-- Ensure asynchronous connection-test workers can reach only required targets.
+Set individual backend arguments with
+`AIRFLOW__SECRETS__BACKEND_KWARG__<KEY>` environment variables instead of
+constructing one combined kwargs value. (3.2.0)
+
+## Team-scoped sensitive configuration
+
+Sensitivity checks normalize `[<team>=<section>]` and
+`AIRFLOW__<TEAM>___<SECTION>__<KEY>` to their base option. Consequently,
+`AirflowConfigParser.as_dict(display_sensitive=False)`, configuration REST
+endpoints, and `airflow config list` return `< hidden >` for team-scoped
+sensitive values. An authorized caller that truly needs values must request
+`display_sensitive=True`. (3.3.1)
+
+Team-scoped `_cmd` and `_secret` entries remain masked in place. They are not
+resolved and removed because those forms cannot be resolved for a team.

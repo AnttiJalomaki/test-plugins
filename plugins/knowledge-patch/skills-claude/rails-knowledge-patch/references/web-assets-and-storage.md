@@ -1,32 +1,12 @@
 # Web, Assets, and Storage
 
-Topic details draw from batches `7.2`, `8.0-guide`, `8.0`, `8.1-guide`, `8.1`, and `hotwire-morphing`.
+## Request and response behavior
 
-## Contents
+### Query parsing and redirect diagnostics
 
-- [Browser guards and request parsing](#browser-guards-and-request-parsing)
-- [Rendering and live streaming](#rendering-and-live-streaming)
-- [Propshaft assets and integrity](#propshaft-assets-and-integrity)
-- [Turbo morphing refreshes](#turbo-morphing-refreshes)
-- [Active Storage hardening and GCS](#active-storage-hardening-and-gcs)
-
-## Browser guards and request parsing
-
-### Browser version guards
-
-`allow_browser` blocks recognized browsers that match the configured names but fall below the requested versions (`7.2`). Unknown browsers and clients without a user-agent remain allowed. A blocked client receives `public/406-unsupported-browser.html` with status 406.
-
-New applications place the guard in `ApplicationController`. Scope it with normal `only:` or `except:` action options:
-
-```ruby
-allow_browser versions: :modern
-allow_browser versions: { safari: 16.4, firefox: 121, ie: false }
-allow_browser versions: { chrome: 119 }, only: :show
-```
-
-### Query parsing and redirects
-
-Action Pack no longer strips a leading bracket from a root parameter name and no longer uses semicolons as query-pair separators (`8.1`):
+In `8.1`, query parsing keeps a leading `[` in a root parameter name and no
+longer treats semicolons as pair separators.
+`config.action_dispatch.ignore_leading_brackets` is deprecated.
 
 ```ruby
 ActionDispatch::ParamBuilder.from_query_string("[foo]=bar")
@@ -36,21 +16,17 @@ ActionDispatch::QueryParser.each_pair("foo=bar;baz=quux").to_a
 # => [["foo", "bar;baz=quux"]]
 ```
 
-`config.action_dispatch.ignore_leading_brackets` is deprecated. New applications enable verbose redirect logging in development; existing applications can opt in:
+New applications enable verbose development redirect logs. Existing
+applications can opt in:
 
 ```ruby
 config.action_dispatch.verbose_redirect_logs = true
 ```
 
-### View compatibility
-
-Do not pass content to void-element builders such as `tag.br`; that form is deprecated (`7.2`). `form_with(model: nil)` is removed and multiple-path route declarations are deprecated (`8.0`).
-
-## Rendering and live streaming
-
 ### Markdown responses
 
-Controllers negotiate `.md` requests and render an object through `to_markdown` with `render markdown:` (`8.1-guide`):
+The `8.1-guide` adds `.md` negotiation and `render markdown:`. The rendered
+object supplies `to_markdown`.
 
 ```ruby
 respond_to do |format|
@@ -59,11 +35,11 @@ respond_to do |format|
 end
 ```
 
-Ensure the rendered object implements `to_markdown`.
+### Live streaming execution state
 
-### Isolated execution state for live responses
-
-`ActionController::Live` shares execution state with its worker thread by default (`8.1`). Exclude selected keys when streaming code needs independent state, such as a separate Active Record connection context:
+`ActionController::Live` shares isolated execution state with its worker thread
+by default. Exclude selected keys when streaming code needs independent state,
+such as its own Active Record connection context:
 
 ```ruby
 config.action_controller.live_streaming_excluded_keys = [
@@ -71,22 +47,25 @@ config.action_controller.live_streaming_excluded_keys = [
 ]
 ```
 
-## Propshaft assets and integrity
+## Propshaft
 
 ### Load paths and digest preservation
 
-Propshaft copies every asset under `config.assets.paths` to `public/assets` during precompilation (`8.0-guide`), not only files referenced by bundles. Exclude compiler-only input directories with their full paths:
+The `8.0-guide` notes that Propshaft copies every file under
+`config.assets.paths` to `public/assets` during precompilation, not only assets
+referenced by bundles. Exclude compiler-only source directories by full path:
 
 ```ruby
-config.assets.excluded_paths <<
-  Rails.root.join("app/assets/stylesheets")
+config.assets.excluded_paths << Rails.root.join("app/assets/stylesheets")
 ```
 
-Name a file that must retain an existing digest with the `-[digest].digested.<extension>` suffix.
+Name a file that must retain an existing digest with the
+`-[digest].digested.<extension>` suffix.
 
 ### Subresource Integrity
 
-Choose SHA-256, SHA-384, or SHA-512, then opt each helper into integrity output:
+Select SHA-256, SHA-384, or SHA-512, then opt each helper into SRI with
+`integrity: true`:
 
 ```ruby
 config.assets.integrity_hash_algorithm = "sha384"
@@ -97,13 +76,16 @@ config.assets.integrity_hash_algorithm = "sha384"
 <%= javascript_include_tag "application", integrity: true %>
 ```
 
-In production, helpers omit SRI hashes when the asset is served over plain HTTP (`8.0-guide`). `stylesheet_link_tag :all` selects every stylesheet; `stylesheet_link_tag :app` selects only stylesheets under `app/assets`.
+In production, helpers omit integrity hashes over plain HTTP.
+`stylesheet_link_tag :all` selects every stylesheet; `:app` selects only those
+under `app/assets`.
 
-## Turbo morphing refreshes
+## Turbo refreshes
 
-### Page refresh behavior
-
-Turbo treats rendering the current page again as a page refresh (`hotwire-morphing`). By default it replaces the body and resets scrolling. Use page directives to morph only changed DOM and preserve both horizontal and vertical scroll:
+The `hotwire-morphing` guidance treats rendering the current page again as a
+page refresh. By default Turbo replaces the body and resets scrolling. Page
+directives can morph only changed DOM and preserve horizontal and vertical
+scroll:
 
 ```html
 <meta name="turbo-refresh-method" content="morph">
@@ -112,29 +94,28 @@ Turbo treats rendering the current page again as a page refresh (`hotwire-morphi
 
 ### Refreshable frames
 
-A `src`-backed frame with `refresh="morph"` reloads during a page refresh. It retains its current content until the response arrives, then morphs the result in place. This preserves independently loaded state such as pagination:
+A `src`-backed frame with `refresh="morph"` reloads during a page refresh. Its
+current content remains visible until the response arrives, then the result is
+morphed into place. This preserves independently loaded regions such as
+pagination through a page morph.
 
 ```html
-<turbo-frame
-  id="results"
-  src="/results?page=2"
-  refresh="morph">
+<turbo-frame id="results" src="/results?page=2" refresh="morph">
 </turbo-frame>
 ```
 
 ### Refresh streams and broadcasts
 
-The `refresh` stream action reloads the page and can override the page-level method and scroll behavior:
+The `refresh` stream action reloads the page and can override the page's
+configured refresh method and scroll behavior:
 
 ```html
-<turbo-stream
-  action="refresh"
-  method="morph"
-  scroll="preserve">
-</turbo-stream>
+<turbo-stream action="refresh" method="morph" scroll="preserve"></turbo-stream>
 ```
 
-Consecutive broadcast refreshes are automatically debounced (`hotwire-morphing`). In Rails, replace per-change DOM-operation broadcasts with `broadcasts_refreshes` and keep a normal stream subscription:
+Consecutive broadcast refreshes are debounced. In Rails, use
+`broadcasts_refreshes` with a normal stream subscription instead of emitting a
+separate DOM-operation broadcast for every change:
 
 ```ruby
 class Calendar < ApplicationRecord
@@ -146,21 +127,55 @@ end
 <%= turbo_stream_from @calendar %>
 ```
 
-## Active Storage hardening and GCS
+## Active Storage delivery hardening
 
-### Range and disk-key handling
+### Byte ranges and disk keys
 
-Active Storage accepts only one blob byte range per request and limits the range to 100 MB by default (`8.1`).
-
-`DiskService#path_for` consistently raises `InvalidKeyError` for dot segments, otherwise invalid keys, or paths outside the configured root. `delete_prefixed` treats glob metacharacters literally rather than expanding them.
-
-The Azure storage backend is deprecated (`8.0`); plan a service migration.
+Active Storage accepts only one byte range per request and limits it to 100 MB
+by default. `DiskService#path_for` consistently raises `InvalidKeyError` for
+keys with dot segments, invalid keys, or paths outside the service root.
+`delete_prefixed` treats glob metacharacters literally rather than expanding
+them.
 
 ### GCS IAM signing
 
-GCS URL signing through IAM again uses application default credentials (`8.1`). Set authorization on the service's memoized IAM client when impersonation or a distinct signing identity is required, without changing other Google API clients:
+GCS URL signing through IAM again uses application default credentials. Set
+authorization on the service's memoized IAM client without changing unrelated
+Google API clients:
 
 ```ruby
 ActiveStorage::Blob.service.iam_client.authorization =
   Google::Auth::ImpersonatedServiceAccountCredentials.new(options)
 ```
+
+## Active Storage image-processing security
+
+The `7.2.3.2-8.1.3.1-security` releases—Rails 7.2.3.2, 8.0.5.1, and
+8.1.3.1—call `Vips.block_untrusted(true)` at boot. This disables loaders and
+savers that libvips marks unfuzzed or untrusted.
+
+When ruby-vips is installed, Active Storage now requires libvips 8.13 or newer
+and ruby-vips 2.2.1 or newer. Older versions raise `RuntimeError` during boot.
+
+### Changed transformation and analysis behavior
+
+Variant transformation now raises `Vips::Error` for BMP, ICO, and PSD inputs,
+as well as outputs to unfuzzed formats such as FITS and JXL or any format
+delegated to ImageMagick.
+
+Analysis of BMP, ICO, PSD, SVG, JPEG XL, JPEG 2000, and Netpbm inputs no longer
+records dimensions. Attaching, storing, and downloading these files are
+unchanged.
+
+If affected attachment types should never be transformed, remove their MIME
+types from the variable-content list:
+
+```ruby
+Rails.application.config.active_storage.variable_content_types -= %w[
+  image/bmp image/vnd.microsoft.icon image/vnd.adobe.photoshop
+]
+```
+
+MiniMagick attachment processing itself is unchanged. However, the untrusted
+operation block and version checks apply process-wide whenever ruby-vips is
+installed. A MiniMagick-only application can avoid both by removing ruby-vips.

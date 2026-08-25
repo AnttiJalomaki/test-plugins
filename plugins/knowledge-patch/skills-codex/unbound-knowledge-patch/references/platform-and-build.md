@@ -1,50 +1,75 @@
 # Platform and build behavior
 
-## Trust anchor content
+## Service integration
 
-The compiled default root-key content in `unbound-anchor` includes key 38696
-(since 1.21.0). Inspect the compiled-in data with:
+### Network-online ordering
 
-```sh
-unbound-anchor -l
-```
+The contributed `unbound.service` and `unbound_portable.service` start after
+`network-online.target` (since 1.21.0). Locally installed copies of these
+templates inherit that boot ordering when updated.
 
-## OpenSSL and dnstap builds
+### Network-administration capability
 
-OpenSSL 3 builds configured with `OPENSSL_NO_DEPRECATED` are supported (since
-1.21.0). Dnstap and `unbound-dnstap-socket` can also link without OpenSSL.
+Generated service units allow `CAP_NET_ADMIN` (since 1.24.0), supporting
+features that require network-administration privileges.
 
-## Reproducible timestamps
+## Build dependencies and reproducibility
 
-Build timestamps use `SOURCE_DATE_EPOCH` in preference to wall-clock time, and
-`--help` documents the variable (since 1.23.0).
+### OpenSSL and dnstap compatibility
 
-## Service-unit behavior
+Builds support OpenSSL 3 compiled with `OPENSSL_NO_DEPRECATED` (since 1.21.0).
+Dnstap and `unbound-dnstap-socket` can link without OpenSSL.
 
-The contributed `unbound.service` and `unbound_portable.service` units order
-startup after `network-online.target` (since 1.21.0). Locally installed copies
-of those templates inherit that ordering when updated.
+### QUIC dependencies
 
-Generated copies of both service units allow `CAP_NET_ADMIN` (since 1.24.0),
-which is required by features that perform network-administration operations.
+DoQ builds use libngtcp2 and a QUIC-enabled OpenSSL with
+`--with-libngtcp2=path --with-ssl=path` (since 1.22.0). Runtime configuration
+cannot add DoQ support to a binary built without it.
 
-## Windows behavior
+### Reproducible timestamps
 
-Module startup initializes `module-config` on Windows, so configured processing
-modules are not silently skipped (since 1.21.0).
+Builds prefer `SOURCE_DATE_EPOCH` to the wall-clock build time (since 1.23.0),
+and `--help` documents the variable.
 
-Windows builds initialize OpenSSL without reading `openssl.cnf` (since
-1.25.0). This prevents local OpenSSL configuration from becoming a
-privilege-escalation path. Any deployment that relied on implicit
-`openssl.cnf` behavior must configure the required behavior elsewhere.
+### QUIC and OpenSSL checks
 
-## Additional operating systems
+Unbound compiles with OpenSSL 4.0.1 (since 1.26.0). QUIC configuration probes
+the available ngtcp2 early-data API and fails explicitly if the
+`ngtcp2_crypto_ossl` header is absent.
 
-The response-IP/ipset integration supports BSD PF tables (since 1.21.0).
+## Operating-system behavior
+
+### Windows module initialization
+
+Windows startup initializes `module-config` and configured processing modules
+(since 1.21.0), instead of silently skipping module setup.
+
+### BSD PF tables
+
+The ipset integration supports BSD PF tables (since 1.21.0), enabling the
+response-ip/ipset workflow on PF-based systems.
+
+### Windows OpenSSL isolation
+
+Windows builds initialize OpenSSL without loading `openssl.cnf` (since
+1.25.0), preventing local configuration from becoming a privilege-escalation
+path. Move any behavior that relied on that implicit file to explicit
+configuration.
+
+### QNX support
+
 Unbound can be built for QNX (since 1.25.0).
 
-## Contributed ECC-GOST12 support
+## Contributed integrations
+
+### ECC-GOST12
 
 RFC 9558 ECC-GOST12 support is supplied as `contrib/gost12.patch` (since
-1.25.0). It replaces the older GOST integration for deployments that apply
-the contributed patch.
+1.25.0), replacing the older GOST integration for deployments that apply the
+contributed patch.
+
+### Executable ipsecmod hooks
+
+`ipsecmod` launches its hook with `execv`, not `system` (since 1.26.0). The
+hook must be executable and begin with an interpreter line, for example
+`#!/bin/sh`.

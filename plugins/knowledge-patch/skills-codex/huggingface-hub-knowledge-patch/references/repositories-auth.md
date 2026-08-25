@@ -1,74 +1,64 @@
 # Repository operations and authentication
 
-## Guard writes with the expected branch head
+## Optimistic concurrency for writes
 
-Repository mutations that accept `parent_commit` can use it as an optimistic
-concurrency guard. Pass the commit that was the known branch head when the
-operation was prepared:
+Repository mutations that accept `parent_commit` can use it as the expected
+branch head. Supply the known commit when an overwrite or lost update would be
+unsafe. If another writer moved the branch, the mutation fails instead of
+silently applying to an unexpected base.
 
-1. Read or retain the current head.
-2. Construct the mutation against that state.
-3. Submit the known head as `parent_commit`.
-4. If the branch moved, handle the failure and re-evaluate the change.
+This is an optimistic-concurrency precondition, not a repository lock. Decide
+whether the caller should re-read, merge, retry, or stop after a mismatch.
 
-Without this guard, a mutation can be applied on a base the caller did not
-inspect. Use it whenever overwrites or lost updates would be unsafe.
+## Redirect-safe file downloads
 
-## Protect bearer tokens across redirects
+Repository `resolve` requests can redirect to content-addressed storage. A raw
+HTTP client must follow the redirect without forwarding the bearer token to an
+unrelated origin. Prefer `hf_hub_download` or another supported client flow,
+which handles this safely.
 
-Repository `resolve` URLs can redirect to content-addressed storage. A raw
-HTTP implementation must follow the redirect while ensuring that the bearer
-token is not forwarded to an unrelated origin.
+Do not implement redirect support by unconditionally copying authorization
+headers across origins.
 
-`hf_hub_download` and the supported client flow handle this safely. If a raw
-client is required, treat cross-origin redirect authentication as an explicit
-security boundary rather than enabling unrestricted credential forwarding.
+## Explicit token resolution
 
-## Token resolution
+`HF_TOKEN` takes precedence over a token stored on disk. For APIs accepting
+`token=`:
 
-`HF_TOKEN` has precedence over the credential stored on disk.
-
-For APIs with a `token=` parameter:
-
-| Value | Meaning |
+| Value | Resolution |
 | --- | --- |
-| credential string | Use that exact credential |
-| `True` | Require the locally resolved token |
+| string | Use that credential directly |
+| `True` | Request the locally resolved token |
 | `False` | Suppress authentication |
 
-Set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1` when an available token must not be
-attached to otherwise-anonymous reads.
+Set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1` when a locally available token must stay
+off otherwise-anonymous reads.
 
 ```python
-api.model_info("open/model", token=False)
-api.model_info("org/private-model", token=True)
+from huggingface_hub import HfApi
+
+api = HfApi()
+public = api.model_info("open/model", token=False)
+private = api.model_info("org/private-model", token=True)
 ```
 
-Use explicit `False` for intentionally public access and explicit `True` when
-local authentication is required. This avoids making authorization behavior
-depend silently on whether a developer or runner happens to be logged in.
+## Token storage and revocation
 
-## Token file placement
-
-`HF_TOKEN_PATH` overrides the location of the stored-token file beneath
-`HF_HOME`. Cache variables are independent:
-
-- `HF_HUB_CACHE` moves Hub cache content, not authentication state.
-- `HF_XET_CACHE` moves Xet cache content, not authentication state.
-
-When relocating an installation, configure the token path deliberately rather
-than assuming cache relocation also moves credentials.
-
-## Logout and remote revocation
+`HF_TOKEN_PATH` overrides the stored-token file beneath `HF_HOME`. Changing
+`HF_HUB_CACHE` or `HF_XET_CACHE` alone does not move authentication state.
 
 `logout()` and `hf auth logout` remove saved local credentials. They do not
-revoke the token on the Hub.
+revoke the remote token. When a credential is compromised or retired, remove
+the local copy and revoke the token in Hub settings.
 
-For a compromised or retired token, perform both actions:
+Logout also does not erase previously downloaded private content. Treat cache
+cleanup as a separate data-retention operation.
 
-1. remove the saved local credential; and
-2. revoke the remote token in Hub settings.
+## Server-side copies in commits
 
-Logout is also not data erasure. Private files already downloaded into local
-cache or working directories remain on disk and require a separate cleanup
-decision.
+Supported clients accept `CommitOperationCopy` alongside add and delete
+operations in `create_commit`. Eligible content is copied server-side without
+re-uploading, while the operation still produces a repository commit.
+
+Validate that the source, destination, revision, and repository context are
+supported before relying on the optimization.

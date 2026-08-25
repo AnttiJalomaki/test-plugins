@@ -10,7 +10,7 @@ metadata:
 
 # systemd Knowledge Patch
 
-Load this skill before changing units, boot images, service sandboxes, networkd configuration, image workflows, user sessions, or systemd-facing C and shell code.
+Load this skill before changing units, boot images, service sandboxes, networkd configuration, image workflows, user sessions, or systemd-facing C and shell code. Start with the project or host's actual systemd version and use only guidance that applies to it.
 
 ## Reference Index
 
@@ -32,15 +32,16 @@ Load this skill before changing units, boot images, service sandboxes, networkd 
 
 ### Use cgroup v2 exclusively
 
-- Legacy and hybrid cgroup v1 hierarchies are unsupported.
-- Remove boot overrides and build logic intended to retain cgroup v1.
-- Expect HugeTLB memory to contribute to cgroup memory accounting on supporting kernels.
+- Remove legacy and hybrid cgroup v1 boot and build configuration.
+- Do not depend on `SYSTEMD_CGROUP_ENABLE_LEGACY_FORCE=1`; it was transitional
+  and cgroup v1 support was subsequently removed.
+- Account for HugeTLB memory in cgroup memory use on supporting kernels.
 
 ### Replace SysV and rc.local logic
 
 - Convert SysV scripts and `/etc/rc.local` work into native service, socket, timer, path, or target units.
 - Compatibility targets do not restore script loading.
-- Explicitly enable getty instances that the system needs:
+- Explicitly enable each required getty instance:
 
 ```sh
 systemctl enable --now getty@tty1.service
@@ -48,12 +49,13 @@ systemctl enable --now getty@tty1.service
 
 ### Account for changed defaults
 
-- Journald defaults to persistent storage even when `/var/log/journal` was not pre-created.
-- TTY and PTY nodes default to mode `0600`; do not assume group-write access or `mesg y`.
+- Journald uses persistent storage by default even without a pre-created
+  `/var/log/journal`.
+- TTY and PTY nodes default to mode `0600`; do not assume group-write access.
 - Networkd and nspawn require nftables for NAT.
-- Systemd-boot and systemd-stub require TPM 2.0 for TPM integration.
-- Main configuration files may come from `/etc`, `/run`, `/usr/local/lib`, or `/usr/lib`, in that priority order.
-- A drop-in ending in `.ignore` is installed but inactive.
+- Systemd-boot and systemd-stub TPM integration requires TPM 2.0.
+- Main configuration files may be selected from `/etc`, `/run`, `/usr/local/lib`, or `/usr/lib`, in that order.
+- A drop-in ending in `.ignore` remains installed but is inactive.
 
 ### Repair udev ACL rules
 
@@ -63,22 +65,26 @@ Rules granting `uaccess` must survive `change` events and sort before rule 73:
 ACTION!="remove", SUBSYSTEM=="hidraw", TAG+="uaccess"
 ```
 
-Use side-effect-free rule testing before deployment:
+Verify and test rules without side effects:
 
 ```sh
 udevadm verify /etc/udev/rules.d/60-example.rules
 udevadm test --verbose /sys/class/hidraw/hidraw0
 ```
 
+Use exact builtin names; prefix abbreviations are rejected. Do not assign
+v258 device ownership to non-system accounts without checking whether the
+local release contains the later partial revert.
+
 ### Treat tmpfiles purge as explicit destruction
 
-Purge requires named configuration files and affects only entries marked with `$`:
+Purge requires named configuration files and affects only entries marked `$`:
 
 ```text
 d$ /var/lib/example 0755 root root -
 ```
 
-Always preview the same invocation first:
+Preview precisely the same invocation first:
 
 ```sh
 systemd-tmpfiles --dry-run --purge example.conf
@@ -87,7 +93,7 @@ systemd-tmpfiles --purge example.conf
 
 ### Declare runtime-loaded package dependencies
 
-ELF dependency scanners may not find compression, crypto, kmod, PAM, ACL, blkid, seccomp, SELinux, or most libmount integrations because they are loaded at runtime. Use declared ELF metadata and explicit package feature dependencies; missing libkmod can prevent boot.
+ELF scanners may not discover compression, crypto, kmod, PAM, ACL, blkid, seccomp, SELinux, or most libmount integrations because they are loaded at runtime. Add explicit feature dependencies; missing libkmod can prevent boot.
 
 ```sh
 systemd-analyze dlopen-metadata /usr/lib/systemd/systemd
@@ -107,10 +113,9 @@ ProtectHostname=private:worker
 PrivateBPF=yes
 ```
 
-- `PrivateUsers=managed` obtains a transient 65,536-ID range from nsresourced.
-- `PrivateUsers=identity` maps the first 65,536 IDs; `full` maps the complete 32-bit range.
-- `PrivateTmp=disconnected` creates separate tmpfs mounts for `/tmp` and `/var/tmp`.
-- Use `DelegateNamespaces=` and `BPFDelegate*=` only for capabilities the workload must own.
+- `PrivateUsers=managed` obtains a transient 65,536-ID range from nsresourced; `identity` maps the first 65,536 IDs and `full` the complete 32-bit range.
+- `PrivateTmp=disconnected` gives `/tmp` and `/var/tmp` separate tmpfs mounts.
+- Delegate namespaces and BPF operations only when the workload needs them.
 
 ### Use current activation and reload controls
 
@@ -128,9 +133,9 @@ PassPIDFD=yes
 AcceptFileDescriptors=yes
 ```
 
-- Validate both `LISTEN_PID` and `LISTEN_PIDFDID` where PID identity matters.
+- Validate both `LISTEN_PID` and `LISTEN_PIDFDID` when PID identity matters.
 - `RefreshOnReload=` governs attached extensions and credentials.
-- A leading `|` on an `Exec*=` command invokes a shell; otherwise shell syntax is not interpreted.
+- A leading `|` on an `Exec*=` command invokes a shell; other shell syntax is not interpreted automatically.
 
 ### Avoid timer stampedes
 
@@ -141,39 +146,41 @@ RandomizedOffsetSec=10min
 DeferReactivation=yes
 ```
 
-`RandomizedOffsetSec=` is stable across activations, while `DeferReactivation=` discards an expiration that occurred while the service was still active.
+The randomized offset is stable, while deferred reactivation discards an expiration that happened while the service was still active.
 
 ## Images, Boot, and TPM
 
 ### Use DDI and version-pick workflows
 
-- Put UAPI-versioned alternatives in a directory ending with `.v/` and select them with `systemd-vpick`.
+- Put UAPI-versioned alternatives in a directory ending `.v/` and select them
+  with `systemd-vpick`.
 - Use `importctl` for tar, raw, filesystem, extension, portable-service, nspawn, and vmspawn image transfer.
-- Use `root=dissect` or `mount.usr=dissect` for automatic DDI discovery and Verity metadata.
-- Automatically dissected XBOOTLDR partitions must be VFAT.
+- Use `root=dissect` or `mount.usr=dissect` for automatic DDI and Verity discovery; automatically dissected XBOOTLDR partitions must be VFAT.
 
 ### Build and update partition images carefully
 
-- Repart's last duplicate partition definition wins in image mount options.
-- `AddValidateFS=` records filesystem-use constraints; an `x-systemd.validatefs` mismatch causes an immediate reboot.
-- Use `systemd-repart -` to calculate minimum required image size without modifying a device.
-- Repart can configure dm-integrity and volume-key pinning for encrypted images.
+- The last duplicate partition definition wins in image mount options.
+- `AddValidateFS=` records filesystem-use constraints; a mismatch requested
+  through `x-systemd.validatefs` causes an immediate reboot.
+- Use `systemd-repart -` to calculate minimum image size without modifying a
+  device.
+- Repart can configure dm-integrity and volume-key pinning.
 
 ### Refresh extensions intentionally
 
-- System and configuration extension refresh is a no-op when the image set is unchanged.
-- Pass `--always-refresh=yes` only when a forced unmount/remount is required.
-- Use `RefreshOnReload=` in a service when reload should also refresh extensions and credentials.
+System and configuration extension refresh is a no-op when the image set did not change. Use `--always-refresh=yes` only for a forced unmount/remount, and use `RefreshOnReload=` when service reload must refresh extensions and credentials too.
 
 ### Build multi-profile UKIs
 
-- Use `.profile` sections for normal, debug, and recovery variants in one UKI.
+- Use `.profile` sections for normal, debug, and recovery profiles in one UKI.
 - Use `.dtbauto`, `.hwids`, and the system hardware-ID catalog for automatic DeviceTree selection.
-- Offline PCR and Secure Boot signing have separate prepare, sign, and join phases.
-- New TPM enrollments use an empty PCR mask; add managed PCR-lock and signed PCR 11 policy when required.
-- PCR-lock does not include PCR 12 by default because a UKI credential is itself measured there.
+- Keep offline PCR signing and Secure Boot prepare/sign/join phases distinct.
+- New TPM enrollments use an empty PCR mask; add managed PCR-lock and signed
+  PCR 11 policy when required.
+- PCR-lock excludes PCR 12 by default because a UKI credential is measured
+  there itself.
 
-## Networking and Name Resolution
+## Networking and Resolution
 
 ### Replace broad forwarding settings
 
@@ -183,29 +190,22 @@ IPv4Forwarding=yes
 IPv6Forwarding=yes
 ```
 
-`IPForward=` is deprecated. Once `[BridgeVLAN]` has a valid setting, it is authoritative and undeclared VLAN IDs are removed from the interface.
+`IPForward=` is deprecated. Once `[BridgeVLAN]` has any valid setting, it is authoritative and undeclared VLAN IDs are removed from the interface.
 
 ### Preserve dynamic configuration deliberately
 
-- Use `KeepConfiguration=dynamic` or `dynamic-on-stop`; the old DHCP-only names are obsolete.
-- A networkd restart preserves DHCPv4, DHCPv6, NDISC, and IPv4LL state regardless of that option.
-- Mutable netdev and traffic-control changes reload in place; immutable identifiers still require recreation.
+- Use `KeepConfiguration=dynamic` or `dynamic-on-stop`; DHCP-only names are
+  obsolete.
+- A networkd restart preserves DHCPv4, DHCPv6, NDISC, and IPv4LL state.
+- Mutable netdev and traffic-control changes reload in place; immutable identifiers still require interface recreation.
+- Treat `DNSOverTLS=yes` as strict certificate verification on affected point
+  releases.
 
-### Use DNS delegates for scoped resolution
+### Use scoped resolution and cellular links
 
-Files below `/etc/systemd/dns-delegate.d/` define independent domain-specific servers and search/routing domains. They can also assign `FirewallMark=` to delegated traffic.
+DNS delegate files define independent domain-specific servers and routing or search domains, with optional `FirewallMark=`. Networkd can configure cellular links through `[MobileNetwork]`, including APN, authentication, roaming, PIN, operator, route metric, IP family, and gateway behavior.
 
-### Configure cellular links through networkd
-
-```ini
-[MobileNetwork]
-APN=internet.example
-AllowRoaming=no
-```
-
-The section can also configure authentication, credentials, IP family, PIN, operator, route metric, and gateway behavior through ModemManager.
-
-## Observability and IPC
+## Observability, Sessions, and Privilege
 
 ### Query one service invocation
 
@@ -214,31 +214,28 @@ journalctl --list-invocation -u example.service
 journalctl --invocation=ID -u example.service
 ```
 
-For reliable streaming shutdown, use `journalctl --follow --synchronize-on-exit=yes`. Programmatic clients can retrieve entries through the journal Varlink interface.
+Use `--follow --synchronize-on-exit=yes` for reliable streaming shutdown. Programmatic clients can retrieve journal entries over Varlink.
 
 ### Prefer public JSON and Varlink APIs
 
 - `sd-json` and `sd-varlink` are public libsystemd APIs.
-- Varlink supports descriptor passing, SSH execution, a public socket registry, and pluggable transport bridges.
-- The manager API exposes execution settings, unit filtering, reload/reexecute, and transaction diagnostics.
-- Unit counters distinguish kernel `OOMKills` from `ManagedOOMKills` initiated by oomd.
-
-## Users, Sessions, and Privilege
+- Varlink supports descriptor passing, SSH execution, a public socket
+  registry, and pluggable transport bridges.
+- Manager APIs expose execution settings, unit filters, reload/reexecute, and
+  transaction diagnostics.
+- Unit counters distinguish kernel `OOMKills` from oomd `ManagedOOMKills`.
 
 ### Choose PAM session classes explicitly
 
-Background system sessions may use lightweight classes that do not start a user manager. Set PAM `class=` or `XDG_SESSION_CLASS` when a full user manager is required; use `class=none` when no logind session should be created.
+Lightweight background classes do not start a user manager. Set PAM `class=` or `XDG_SESSION_CLASS` when a full user manager is required; use `class=none` when no logind session should be created. Logind ends pidfd-tied sessions as soon as their leader exits; the old returned descriptor is not a lifetime anchor.
 
-### Handle pidfd-tied sessions
+### Use run0 and inhibitors deliberately
 
-Logind ends a session immediately when its leader exits. The legacy descriptor returned by `CreateSession()` is unused, so callers must not use it as the session lifetime anchor.
-
-### Use run0's current modes
-
-- Interactive commands default to late PTY attachment, preventing password-prompt races.
-- `run0 --empower` retains the caller's identity and home while granting capabilities and Polkit's `empower` group.
-- `run0 --area=` enters a homed area; areas change `$HOME` and `$XDG_RUNTIME_DIR` but do not isolate files from the owning UID.
-
-### Treat inhibitors as effective for privileged callers
-
-Ordinary `block` locks also affect root and the process holding the lock. Bypass them explicitly with `--force` or `--check-inhibitors=no`; use `block-weak` only for the earlier weaker semantics.
+- Interactive `run0` defaults to late PTY attachment.
+- `run0 --empower` preserves identity and home while granting capabilities
+  and the Polkit `empower` group.
+- `run0 --area=` enters a homed area; it changes `$HOME` and
+  `$XDG_RUNTIME_DIR` but does not isolate files from the owning UID.
+- Ordinary `block` inhibitors affect root and their holder. Bypass explicitly
+  with `--force` or `--check-inhibitors=no`; use `block-weak` only when those
+  older semantics are intended.

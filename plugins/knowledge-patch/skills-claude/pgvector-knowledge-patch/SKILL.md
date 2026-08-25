@@ -10,88 +10,87 @@ metadata:
 
 # pgvector Knowledge Patch
 
+Use this skill when changing pgvector filtered nearest-neighbor queries,
+approximate indexes, sparse vectors, extension builds, or hosted deployments.
+Check the project PostgreSQL and pgvector versions before applying guidance that
+names a specific release.
+
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/iterative-scans.md](references/iterative-scans.md) | Filtered HNSW and IVFFlat searches, scan modes and limits, result ordering, planner costing |
-| [references/indexing-and-storage.md](references/indexing-and-storage.md) | Type and index limits, sparse vectors, quantization, expression and partial indexes, omissions, maintenance |
-| [references/deployment.md](references/deployment.md) | PostgreSQL compatibility, source and container builds, portability, hosted version windows, build resources |
+| [references/iterative-scans.md](references/iterative-scans.md) | Filtered HNSW and IVFFlat searches, scan modes and limits, exact reordering, planner choices |
+| [references/indexing-and-storage.md](references/indexing-and-storage.md) | Sparse-vector casts and indexes, approximate-index omissions, HNSW maintenance, 32-bit IVFFlat builds |
+| [references/deployment.md](references/deployment.md) | PostgreSQL compatibility, release artifacts, portable and container builds, Windows, Neon deployment |
 
-## Breaking compatibility change
+## Compatibility checks
 
-### PostgreSQL 12 is no longer supported
+### PostgreSQL 12 is unsupported on the 0.8 line
 
-pgvector 0.8 requires PostgreSQL 13 or newer. Upgrade the database server before
-adopting the 0.8 line. Current source-build instructions pin pgvector 0.8.5,
-and published containers cover PostgreSQL 13 through 18.
+pgvector 0.8 no longer supports PostgreSQL 12. Upgrade PostgreSQL before
+adopting a pgvector 0.8 release.
 
-```sh
-docker pull pgvector/pgvector:0.8.5-pg18-trixie
-```
+### Upgrade PostgreSQL 17 before building on Windows
 
-See [references/deployment.md](references/deployment.md) for container variants,
-portable compilation, and hosted-platform constraints.
+PostgreSQL 17.0 through 17.2 can produce an unresolved
+`float_to_shortest_decimal_bufn` symbol when building pgvector on Windows.
+Upgrade to PostgreSQL 17.3 or newer first.
 
-## Iterative scans for filtered nearest-neighbor queries
+### Upgrade pgvector before IVFFlat builds on 32-bit systems
+
+pgvector 0.8.6 fixes a buffer overflow in IVFFlat index builds on 32-bit
+systems. Upgrade before building or rebuilding an IVFFlat index there.
+
+## Filtered nearest-neighbor searches
 
 Approximate indexes retrieve candidates before PostgreSQL applies ordinary
 filters. A selective `WHERE` clause can therefore leave fewer rows than the
-requested `LIMIT`. Iterative scans continue looking for candidates until they
-find enough matches or reach their scan limits.
+query's `LIMIT`. Iterative scans continue through the index until enough
+matching rows are found or a scan limit is reached.
 
-### HNSW
+### HNSW iterative scans
 
-HNSW iterative scanning is off by default. Choose one of two modes:
+HNSW iterative scanning defaults to `off`. Select the ordering behavior that
+fits the query:
 
-| Setting | Behavior |
+| `hnsw.iterative_scan` value | Behavior |
 | --- | --- |
-| `strict_order` | Preserves exact distance order |
-| `relaxed_order` | Allows looser ordering for better search performance |
+| `strict_order` | Preserve exact distance order |
+| `relaxed_order` | Permit approximate ordering for faster scans |
 
 ```sql
 SET hnsw.iterative_scan = 'strict_order';
 
 SELECT id, embedding <=> '[1,2,3]' AS distance
-FROM items
+FROM filtest
 WHERE category = 1
 ORDER BY embedding <=> '[1,2,3]'
-LIMIT 20;
+LIMIT 3;
 ```
 
-Keep the distance `ORDER BY` immediately before `LIMIT` so the planner can use
-the iterative scan.
+Keep the distance `ORDER BY` immediately before `LIMIT`; iterative scanning
+depends on this query shape.
 
-HNSW scan controls are:
+Two settings bound an HNSW iterative scan:
 
 | Setting | Default | Purpose |
 | --- | ---: | --- |
-| `hnsw.max_scan_tuples` | `20000` | Caps tuples visited |
-| `hnsw.scan_mem_multiplier` | `1` | Caps scan memory as a multiple of `work_mem` |
+| `hnsw.max_scan_tuples` | `20000` | Limit tuples visited |
+| `hnsw.scan_mem_multiplier` | `1` | Limit scan memory as a multiple of `work_mem` |
 
-Raise one or both when a selective filter still prevents the scan from filling
-the limit.
-
-```sql
-SET hnsw.max_scan_tuples = 40000;
-SET hnsw.scan_mem_multiplier = 2;
-```
-
-### IVFFlat
-
-IVFFlat also supports iterative scans. Enable `ivfflat.iterative_scan`; the scan
-continues after an initial filtered result shortage until it finds enough rows
-or reaches `ivfflat.max_probes`.
+Increase these controls if a selective filter still prevents the query from
+filling its limit.
 
 ### Restore exact order after a relaxed scan
 
-Limit candidates inside a subquery, then sort them again. Use an expression
-such as `distance * 1` to force PostgreSQL to perform the final sort.
+Limit the approximate candidates in a subquery, then sort them again. An
+expression such as `distance * 1` forces PostgreSQL to perform the final sort.
 
 ```sql
-SELECT * FROM (
+SELECT *
+FROM (
   SELECT id, embedding <=> '[1,2,3]' AS distance
-  FROM items
+  FROM filtest
   WHERE category = 1
   ORDER BY embedding <=> '[1,2,3]'
   LIMIT 20
@@ -99,97 +98,106 @@ SELECT * FROM (
 ORDER BY distance * 1;
 ```
 
-Do not assume a filtered query uses the vector index. Improved vector-operation
-costing can correctly favor a sequential scan or a conventional index. Inspect
-the actual choice with `EXPLAIN`.
+### IVFFlat iterative scans
 
-## Current type and index limits
+Enable IVFFlat iterative scanning with `ivfflat.iterative_scan`. If filtering
+leaves too few rows after the initial scan, pgvector continues searching until
+it finds enough matches or reaches `ivfflat.max_probes`.
 
-Storage capacity and approximate-index capacity are different:
+### Verify planner choices
 
-| Type | Storage maximum | HNSW maximum | IVFFlat support |
-| --- | ---: | ---: | --- |
-| `vector` | 16,000 dimensions | 2,000 dimensions | Yes, up to 2,000 dimensions |
-| `halfvec` | 16,000 dimensions | 4,000 dimensions | Yes, up to 4,000 dimensions |
-| `bit` | 64,000 bits | 64,000 bits | Yes, up to 64,000 bits |
-| `sparsevec` | 16,000 nonzero elements | 1,000 nonzero elements | No |
+Vector-operation cost estimates account for filtered searches. PostgreSQL may
+correctly choose a sequential scan or a conventional index instead of HNSW.
+Use `EXPLAIN` rather than assuming that a vector index was selected.
 
-HNSW additionally supports sparse vectors, L1 distance, and Jaccard distance.
-All approximate indexes omit `NULL` embeddings; cosine indexes also omit zero
-vectors. Account for these omissions when result counts are unexpectedly low.
+## Sparse vectors and approximate indexes
 
-## Re-rank lossy or narrowed candidate searches
+### Cast arrays to `sparsevec`
 
-### Binary quantization
-
-A binary-quantized HNSW index is smaller, but Hamming distance should select
-candidates rather than produce the final ranking. Retrieve more candidates than
-the final limit, then re-rank with the original vectors.
+PostgreSQL arrays can be cast directly to `sparsevec`:
 
 ```sql
-CREATE INDEX ON items USING hnsw
-  ((binary_quantize(embedding)::bit(3)) bit_hamming_ops);
-
-SELECT * FROM (
-  SELECT * FROM items
-  ORDER BY binary_quantize(embedding)::bit(3)
-    <~> binary_quantize('[1,-2,3]')
-  LIMIT 20
-) AS candidates
-ORDER BY embedding <=> '[1,-2,3]'
-LIMIT 5;
+SELECT ARRAY[1, 0, 2]::sparsevec;
 ```
 
-### Subvectors
+As of pgvector 0.8.6, the cast enforces the type's nonzero-element limit;
+oversized array casts cannot bypass that constraint.
 
-Use an expression index to search a cast subvector, request a wider candidate
-set, and re-rank by the full embedding. The query expression, cast, and operator
-class must exactly match the indexed expression.
+### Respect sparse storage and HNSW limits
+
+A stored `sparsevec` may contain up to 16,000 nonzero elements. HNSW supports
+only up to 1,000 nonzero elements and uses sparse operator classes such as
+`sparsevec_l2_ops`. IVFFlat does not support `sparsevec`.
 
 ```sql
-CREATE INDEX ON items USING hnsw
-  ((subvector(embedding, 1, 3)::vector(3)) vector_cosine_ops);
+CREATE INDEX ON items USING hnsw (embedding sparsevec_l2_ops);
 ```
 
-## Index mixed dimensions safely
+A value that is valid to store may therefore still be too large to index with
+HNSW.
 
-An unconstrained `vector` column can store mixed dimensions, but each index must
-target one dimension. Use a partial expression index and repeat both its cast
-and predicate in the nearest-neighbor query.
+### Account for omitted values
+
+HNSW and IVFFlat omit `NULL` vectors. Their cosine-distance indexes also omit
+zero vectors. These omissions can reduce result counts even when scan-depth
+settings are sufficient.
+
+## Build and maintenance quick reference
+
+### Reindex HNSW before vacuuming
+
+Vacuuming a table with an HNSW index can be slow. Reindex the HNSW index
+concurrently first, then vacuum the table.
 
 ```sql
-CREATE INDEX ON embeddings USING hnsw
-  ((embedding::vector(3)) vector_l2_ops)
-  WHERE model_id = 123;
-
-SELECT * FROM embeddings
-WHERE model_id = 123
-ORDER BY embedding::vector(3) <-> '[3,1,2]'
-LIMIT 5;
+REINDEX INDEX CONCURRENTLY index_name;
+VACUUM table_name;
 ```
 
-## Sparse vectors
+### Build portable artifacts without native CPU flags
 
-Sparse literals use `{index:value,...}/dimensions` and one-based indexes.
-PostgreSQL arrays can be cast directly to `sparsevec`. HNSW indexes use the
-matching `sparsevec_*_ops` operator class.
+Some platforms compile with `-march=native`. Moving that extension to a
+different processor can then cause an `Illegal instruction` failure. Clear the
+optimization flags for portable artifacts:
+
+```shell
+make OPTFLAGS=""
+```
+
+### Match Docker shared memory to maintenance memory
+
+When raising `maintenance_work_mem` for a parallel HNSW build in Docker, set
+the container's `--shm-size` to at least the same size or the build can fail.
+
+```shell
+docker run --shm-size=1g ...
+```
+
+## Distribution and hosted deployment
+
+Source-build instructions pin pgvector 0.8.5. Versioned Docker tags cover
+PostgreSQL 13 through 18 on Bookworm and Trixie. Homebrew installs the extension
+only for its `postgresql@17` and `postgresql@18` formulas.
+
+```shell
+docker pull pgvector/pgvector:0.8.5-pg18-trixie
+```
+
+Neon supplies its latest supported pgvector release and the immediately
+previous published release. Identify the actual previous release instead of
+decrementing a version number, since pgvector releases are not always
+sequential, and request that version explicitly when needed.
+
+Before building HNSW or IVFFlat on Neon, set `maintenance_work_mem` for the
+session to approximately the vector-index working-set size without exceeding
+50–60% of available RAM. `max_parallel_maintenance_workers` defaults to `2`;
+it can be raised toward the compute CPU count subject to `max_parallel_workers`
+and `max_worker_processes`.
 
 ```sql
-INSERT INTO items (embedding) VALUES ('{1:1,3:2,5:3}/5');
-CREATE INDEX ON items USING hnsw (embedding sparsevec_cosine_ops);
+SET maintenance_work_mem = '10 GB';
+SET max_parallel_maintenance_workers = 7;
 ```
 
-## Build and maintenance essentials
-
-- For a build artifact that will run on another machine, clear `OPTFLAGS` to
-  avoid `-march=native` illegal-instruction failures: `make OPTFLAGS=""`.
-- For parallel HNSW builds in a container, set container shared memory to at
-  least `maintenance_work_mem`, for example `docker run --shm-size=1g ...`.
-- HNSW vacuuming can be slow. Run `REINDEX INDEX CONCURRENTLY index_name;`
-  before `VACUUM table_name;`.
-- On hosted compute, size `maintenance_work_mem` to the vector-index working set
-  without exceeding roughly 50–60% of RAM, and tune parallel maintenance
-  workers within the server's global worker limits.
-
-Consult the indexed references before changing index definitions, filtered
-query shape, build resources, extension versions, or deployment targets.
+See [references/deployment.md](references/deployment.md) before selecting an
+artifact, build environment, or hosted extension version.

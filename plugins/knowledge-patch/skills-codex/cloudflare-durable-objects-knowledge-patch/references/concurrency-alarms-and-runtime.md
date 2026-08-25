@@ -1,32 +1,27 @@
 # Concurrency, alarms, and runtime lifecycle
 
-## Know when an object can hibernate
+## Hibernation requires quiescence
 
-An otherwise eligible object currently hibernates after about 10 seconds with
-no event. Its memory is discarded and its constructor runs on the next event,
-while hibernatable client WebSockets remain connected.
+Timers, an in-progress awaited `fetch()`, standard WebSocket API use, and an
+unfinished request or event prevent an idle object from hibernating. A plain
+`fetch()` subrequest does not keep the object alive solely because its returned
+body is still streaming. An otherwise eligible object currently hibernates
+after 10 seconds without an event: memory is discarded, the constructor runs
+again on the next event, and hibernatable client WebSockets remain connected.
 
-Timers, an unfinished request or event, an in-progress awaited `fetch()`, or
-standard WebSocket API use prevent hibernation. A plain `fetch()` subrequest
-does not keep the object alive merely because its returned body is still
-streaming.
-
-Active connections made with `connect()` or an outbound WebSocket keep the
-object alive. Once all close, the usual 70–140-second inactivity window begins.
-Each connection prevents eviction for at most 15 minutes; afterward normal
-eviction rules resume even if the connection stays open.
-
-## Distinguish storage gates from external I/O
+## Input gates cover storage, not external I/O
 
 Awaited Durable Object storage operations receive input-gate protection.
 Awaiting `fetch()`, R2, or other non-storage I/O allows another request to
-interleave. Revalidate a version or other precondition after external I/O
-before committing dependent changes.
+interleave. After external I/O, revalidate a version or other precondition
+before committing storage changes that depend on the earlier read.
 
-Output gates hold outgoing responses and network requests until pending
-storage writes complete. Consecutive writes with no intervening `await` are
-coalesced into one atomic implicit transaction. An `await` between legacy KV
-writes ends that coalescing boundary.
+## Output gates and implicit transactions
+
+Outgoing responses and network requests wait until pending storage writes
+finish. Consecutive writes with no intervening `await` are coalesced into one
+atomic implicit transaction. An intervening `await`, including one between
+legacy KV writes, ends that coalescing boundary.
 
 ```ts
 this.ctx.storage.sql.exec(
@@ -42,11 +37,11 @@ this.ctx.storage.sql.exec(
 return "transferred";
 ```
 
-## Migrate schemas before requests enter
+## SQLite schema migrations
 
-Durable Object SQLite does not support `PRAGMA user_version`. Track applied
-migrations in an ordinary table and run constructor migrations inside
-`blockConcurrencyWhile()` so no request can observe a partial schema.
+Durable Object SQLite does not support `PRAGMA user_version`. Keep an applied
+version in an ordinary table. Run constructor migrations inside
+`blockConcurrencyWhile()` so no event observes a partially migrated schema.
 
 ```ts
 constructor(ctx: DurableObjectState, env: Env) {
@@ -57,38 +52,48 @@ constructor(ctx: DurableObjectState, env: Env) {
 }
 ```
 
-## Expect stale events to be stopped at storage
+## Instance uniqueness and replacement
 
-Global uniqueness is checked when an event starts and again whenever it
-accesses storage. A stale HTTP or RPC event that never touches storage may
-finish after a replacement instance starts, but a later storage access fails.
-WebSocket requests are terminated during shutdown. Requests interrupted by a
-runtime update have at most 30 seconds to finish.
+Global uniqueness is checked when an event begins and whenever it accesses
+storage. A stale HTTP or RPC event that never touches storage can finish after a
+replacement instance starts; if it later accesses storage, the runtime stops it
+with an error. WebSocket requests are terminated during shutdown. Requests
+interrupted by a runtime update receive at most 30 seconds to finish.
 
-No shutdown hook or lifecycle callback runs before deployment, eviction, or
-runtime replacement. Persist checkpoints incrementally rather than relying on
-a final flush.
+## No shutdown finalizer
 
-## Keep adjacent deployments compatible
+There is no shutdown hook before deployment, eviction, or runtime-driven
+replacement. Persist progress and checkpoints incrementally instead of relying
+on a final memory flush.
 
-Worker and Durable Object code rolls out with eventual consistency. New Worker
-code can call an older object version for seconds to minutes, and a gradual
+## Mixed-version rollout window
+
+Worker and Durable Object code deploy with eventual consistency. For seconds to
+minutes, new Worker code can call an older Durable Object version; gradual
 deployment lengthens the overlap. Keep HTTP and RPC contracts forward- and
 backward-compatible across adjacent releases.
 
-## Treat alarms as retryable one-shots
+## Active outbound connections and eviction
 
-Alarms are non-recurring and may be delivered more than once. Each handler must
-schedule its own next run and be idempotent.
-`AlarmInvocationInfo.retryCount` can guide scheduling a fresh alarm before the
+An active connection opened by `connect()` or an outbound WebSocket keeps the
+object alive (since 2026). Once all such connections close, the usual 70–140
+second inactivity window starts. Any one connection blocks eviction for at most
+15 minutes; normal eviction rules resume afterward even if it remains open.
+
+## Alarms
+
+Alarms do not recur automatically and may be delivered more than once. Schedule
+the next occurrence explicitly and make the handler idempotent.
+`AlarmInvocationInfo.retryCount` can guide creation of a new alarm before the
 remaining retries are exhausted.
 
-Under local `wrangler dev`, alarm methods may fail after a hot reload. Restart
-the command after changing alarm code.
+With compatibility date `2026-02-24` or later, `ctx.storage.deleteAll()` removes
+the object's alarm as well as all stored data on both KV- and SQLite-backed
+objects. A separate `deleteAlarm()` is unnecessary for a full reset.
 
-## Understand local persistence with `script_name`
+```js
+await this.ctx.storage.deleteAll();
+```
 
-By default, `wrangler dev` can read Durable Object storage but keeps writes in
-memory without changing persistent data. When a binding explicitly sets
-`script_name`, development writes do affect persistent storage, and Wrangler
-emits a warning.
+Under local `wrangler dev`, alarm methods may fail after hot reload. Restart the
+development command after editing alarm code.

@@ -1,8 +1,8 @@
 # Starlight
 
-## Sidebar generation
+## Composable generated sidebars
 
-In Starlight 0.39, `autogenerate` is a sidebar item rather than a property of a labeled group (`starlight-0.39`). Move it under `items`, where it can be mixed with page IDs and custom links:
+In starlight-0.39, `autogenerate` becomes a sidebar item. Move it inside a labeled group's `items`; the array may mix a generated directory with page IDs and custom links:
 
 ```js
 starlight({
@@ -17,7 +17,10 @@ starlight({
 });
 ```
 
-## Internationalization and typography
+## Internationalized links
 
-- Multilingual sites emit an `x-default` alternate link for the version of each page in the default locale, giving search engines an explicit fallback.
-- Starlight applies CSS `text-autospace` to add spacing automatically between Chinese or Japanese text and non-CJK characters.
+In starlight-0.39, multilingual sites emit `x-default` alternate links pointing to the page in the default locale, providing a search fallback when no language-specific match applies.
+
+## CJK spacing
+
+In starlight-0.39, Starlight uses CSS `text-autospace` to insert spacing automatically between Chinese or Japanese text and non-CJK characters.

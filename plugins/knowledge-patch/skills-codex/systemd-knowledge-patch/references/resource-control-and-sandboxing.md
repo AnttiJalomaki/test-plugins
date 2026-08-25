@@ -1,48 +1,96 @@
 # Resource Control and Sandboxing
 
-## Enforce a unified cgroup hierarchy
+## Cgroups and workload limits
 
-- Cgroup v1 was force-enableable in 256 but removed in 258; current boot and nspawn operation require unified cgroup v2.
-- PID 1 mounts cgroup2 with `memory_hugetlb_accounting` when the kernel supports it, so HugeTLB usage contributes to a cgroup's memory-controller accounting (since 259).
-- `MemoryZSwapWriteback=` controls the kernel's `memory.zswap.writeback` cgroup knob (since 256).
+### Unified cgroups and zswap (256, 258)
 
-## Create private namespaces
+Version 256 required an explicit transitional kernel override for legacy or
+hybrid hierarchy; 258 removed cgroup v1 entirely. Use cgroup v2. Manager and
+unit `MemoryZSwapWriteback=` controls `memory.zswap.writeback`.
 
-- `PrivateUsers=identity` creates a user namespace with identity mappings for the first 65,536 IDs. `PrivateUsers=full` identity-maps the full 32-bit UID range (since 257 and 258).
-- `PrivateUsers=managed` asks `systemd-nsresourced` for a dynamic, transient range of 65,536 UIDs and GIDs (since 260).
-- `PrivatePIDs=yes` runs a service as PID 1 in a private PID namespace with matching `/proc` (since 257).
-- `ProtectHostname=private[:hostname]` provides a writable private hostname (since 258).
-- `UserNamespacePath=` joins a service to an existing user namespace (since 259).
+### Managed OOM pressure timing (257)
 
-```ini
-[Service]
-PrivateUsers=managed
-ProtectHostname=private:worker
-PrivatePIDs=yes
-```
+`ManagedOOMMemoryPressureDurationSec=` selects the PSI measurement interval
+used with `ManagedOOMMemoryPressureDurationLimit=`.
 
-## Isolate temporary files and cgroups
+### Slice concurrency (258)
 
-- `PrivateTmp=disconnected` supplies separate tmpfs mounts for both `/tmp` and `/var/tmp` (since 257).
-- For an early-boot unit combining `PrivateTmp=yes` and `DefaultDependencies=no`, an absent explicit `/tmp` requirement now yields a disconnected `/tmp`. Without explicit `/var` ordering, no private `/var/tmp` mount is created (since 260).
-- `ProtectControlGroups=private` creates a private cgroup namespace and mount; `strict` also makes it read-only (since 257).
-- `ProtectSystem=` is also a manager setting and defaults on in the initrd, so initrd code must not assume `/usr` is writable (since 256).
+`ConcurrencySoftMax=` queues excess units; `ConcurrencyHardMax=` fails jobs
+beyond the active-plus-queued limit. Nested slices create hierarchical pools.
 
-## Delegate namespace and BPF capabilities
+### Managed directory quotas (258)
 
-- `DelegateNamespaces=` selects namespaces owned by a unit's private user namespace (since 258).
-- `PrivateBPF=` creates a private bpffs. The `BPFDelegate*=` settings selectively delegate BPF operations (since 258).
-- Nsresourced can delegate multiple UID/GID ranges and its resources to nested containers; see [Containers and Virtual Machines](containers-and-virtual-machines.md).
+`StateDirectoryQuota=`/`Accounting=`, `CacheDirectoryQuota=`/`Accounting=`,
+and `LogsDirectoryQuota=`/`Accounting=` use project quotas on ext4/XFS and
+report usage in `systemctl status`; btrfs is unsupported.
 
-## Limit slices and service storage
+### HugeTLB accounting and OOM counters (259)
 
-- `ConcurrencySoftMax=` queues excess units in a slice until capacity becomes available. `ConcurrencyHardMax=` fails jobs beyond the hard active-plus-queued limit. Nested slices form hierarchical workload pools (since 258).
-- `StateDirectoryQuota=`/`StateDirectoryAccounting=`, `CacheDirectoryQuota=`/`CacheDirectoryAccounting=`, and `LogsDirectoryQuota=`/`LogsDirectoryAccounting=` enforce per-unit project quotas and expose usage in `systemctl status` (since 258).
-- Managed-directory quotas support ext4 and XFS, not btrfs (since 258).
+On supporting kernels PID 1 mounts cgroup2 with
+`memory_hugetlb_accounting`, charging HugeTLB to memory-controller use.
+Process units expose kernel `OOMKills` separately from oomd
+`ManagedOOMKills`.
 
-## Control service resources and scheduling
+### Oomd synchronous hooks (260)
 
-- `StateDirectory=`, `RuntimeDirectory=`, `CacheDirectory=`, `LogsDirectory=`, and `ConfigurationDirectory=` accept a trailing `:ro`. `BindLogSockets=` controls whether logging AF_UNIX sockets enter a mount sandbox (since 257).
-- `CPUSchedulingPolicy=ext` selects the kernel SCHED_EXT scheduler. `MemoryTHP=` independently controls transparent huge pages for a service (since 260).
-- `ManagedOOMMemoryPressureDurationSec=` chooses the PSI measurement interval used with `ManagedOOMMemoryPressureDurationLimit=` (since 257).
-- Other components can register a Varlink socket in the designated hook directory to run synchronously before systemd-oomd kills a cgroup (since 260).
+Components can register a Varlink socket in the designated hook directory to
+run synchronously before systemd-oomd kills a cgroup.
+
+## Filesystem and namespace sandboxing
+
+### System protection and soft mounts (256)
+
+`ProtectSystem=` is also a manager setting and defaults on in the initrd; do
+not assume initrd `/usr` is writable. Units use `WantsMountsFor=` for nonfatal
+mount dependencies.
+
+### Identity, temporary, cgroup, and PID namespaces (257)
+
+`PrivateUsers=identity` identity-maps the first 65,536 IDs.
+`PrivateTmp=disconnected` creates separate tmpfs `/tmp` and `/var/tmp`.
+`ProtectControlGroups=private` provides private cgroup namespace/mount;
+`strict` makes it read-only. `PrivatePIDs=yes` runs the service as PID 1 with a
+matching private `/proc`.
+
+### Sandbox resource plumbing (257)
+
+`BindLogSockets=` controls logging socket bind mounts. Managed directory
+settings accept trailing `:ro`; `ImportCredential=` can rename imported
+credentials.
+
+### Full user, hostname, and BPF namespaces (258)
+
+`PrivateUsers=full` maps the full 32-bit ID range.
+`ProtectHostname=private[:hostname]` gives a writable private hostname.
+`DelegateNamespaces=` selects namespaces owned by the private user namespace.
+`PrivateBPF=` and `BPFDelegate*=` create private bpffs and selectively
+delegate operations.
+
+### Existing and managed user namespaces (259, 260)
+
+`UserNamespacePath=` joins an existing namespace. `PrivateUsers=managed`
+asks nsresourced for a transient 65,536 UID/GID range.
+
+### Early-boot PrivateTmp behavior (260)
+
+For `PrivateTmp=yes` with `DefaultDependencies=no`, no explicit `/tmp`
+requirement yields disconnected `/tmp`. With no explicit `/var` ordering,
+no private `/var/tmp` is created; account for changed ordering and visibility.
+
+### Nested namespace resource delegation (260)
+
+Nsresourced can allocate multiple extra 64K ranges and vary client/foreign ID
+mapping. Nspawn `--private-users-delegate=` exposes nsresourced and mountfsd
+Varlink services to nested containers.
+
+## Scheduling and execution resources
+
+### Debug-only restart context (257)
+
+`RestartMode=debug` sets `DEBUG_INVOCATION=1` and temporarily raises
+`LogLevelMax=` to debug for automatic retries only.
+
+### SCHED_EXT and transparent huge pages (260)
+
+`CPUSchedulingPolicy=ext` chooses SCHED_EXT. `MemoryTHP=` independently
+controls transparent huge pages for a service.

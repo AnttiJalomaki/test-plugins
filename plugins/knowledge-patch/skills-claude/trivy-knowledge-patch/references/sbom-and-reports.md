@@ -1,102 +1,97 @@
 # SBOM and Reports
 
-## Package and application structure
+Use this reference when generating, enriching, transporting, or consuming SBOM, JSON, SARIF, JUnit, template, and summary output.
 
-- Duplicate `dpkg` packages found at different paths in separate image layers
-  are consolidated (since 0.59.0).
-- Nested packages attach to their application, and an unknown dependency is
-  associated with a root package when one exists (since 0.59.0).
-- Applications of the same type from different SBOM files remain distinct, and
-  OS packages from multiple SBOM inputs are preserved (since 0.59.0 and
-  0.60.0).
-- When no better application path is available, the SBOM file's path becomes
-  the application's `FilePath` (since 0.60.0).
-- Image layer data is included in SBOM scan results (since 0.59.0), and image
-  scanning saves layer metadata for downstream report consumers
-  (since 0.62.0).
-- OS packages found inside and outside an SBOM dependency graph are merged into
-  scan results (since 0.65.0).
-- Red Hat `BuildInfo` survives SBOM ingestion even without layer information
-  (since 0.70.0).
+## Package graphs and SBOM application structure
 
-Preserve graph edges, source-file distinctions, application paths, layer data,
-and root associations. Flattening on package name or application type loses
-meaning required by vulnerability, license, and report consumers.
+### Package and SBOM result structure (0.59.0)
 
-## CycloneDX ingestion
+Duplicate `dpkg` packages found at different paths or layers are consolidated. Nested packages attach to their application, applications of the same type from different SBOM files remain distinct, image-layer data is retained, and unknown dependencies attach to a root package when one exists.
 
-- External VEX files referenced by a CycloneDX SBOM can be loaded
-  (since 0.60.0).
-- Tool metadata includes `manufacturer` (since 0.64.0).
-- SHA-512 component hashes are understood, and generated CycloneDX licenses use
-  the correct field (since 0.65.0).
-- Components may carry multiple license types, and components of type `file`
-  are supported (since 0.66.0).
-- Updating vulnerabilities in a CycloneDX file preserves the input SBOM
-  structure (since 0.67.0).
-- CycloneDX vulnerability output includes CVSS v4 ratings (since 0.70.0).
-- CycloneDX 1.7 is supported (since 0.71.0).
+### SBOM application paths (0.60.0)
 
-## SPDX ingestion and output
+If an application's path cannot otherwise be detected, the SBOM file path becomes the application's `FilePath`.
 
-- Licenses outside the SPDX list are emitted through
-  `hasExtractedLicensingInfos` (since 0.59.0).
-- Plain SPDX text licenses are retained in `otherLicenses` without normalization
-  (since 0.61.0).
-- SBOMs embedded in SPDX attestations can be consumed (since 0.68.0).
-- SPDX license logic distinguishes identifiers, expressions, and `WITH`
-  exceptions; literal `unlicensed` is not rewritten to `Unlicense`
-  (since 0.68.0).
-- Non-library packages use `NOASSERTION` for both `licenseDeclared` and
-  `licenseConcluded` (since 0.70.0).
-- SPDX serialization supports SHA-512 (since 0.71.0).
-- The SPDX marshaler tolerates a document without a root component instead of
-  dereferencing a missing value (since 0.72.0).
+### OS packages from multiple SBOMs (0.60.0)
 
-## Attested and generated SBOMs
+OS packages collected from multiple SBOM inputs are preserved.
 
-- Docker archives retain `RepoTags`, and SBOMs can be read from Sigstore bundles
-  or SPDX attestations (since 0.68.0).
-- SBOM output exposes `buildInfo` as properties; client/server RPC carries the
-  same information in `BlobInfo` (since 0.68.0).
-- Embedded-SBOM image scans are deterministic (since 0.69.0).
-- The `sbom` command does not accept active `--skip-dir` or `--skip-files`
-  behavior (since 0.63.0).
+### OS packages from SBOM graphs (0.65.0)
 
-## Report identity and metadata
+SBOM results merge OS packages found inside and outside the dependency graph.
 
-- Repository scans add Git metadata (since 0.65.0); filesystem cache hits keep
-  `RepoMetadata`, and repository URLs are sanitized before reporting
-  (since 0.66.0).
-- Targets expose `ArtifactID`, incorporating registry and repository. Reports
-  expose UUIDv7 `ReportID`, vulnerability fingerprints, and image-reference
-  metadata (since 0.68.0).
-- Filesystem targets with Git information are reported as repository artifacts
-  (since 0.68.0).
-- Packages expose the detecting analyzer through `AnalyzedBy` (since 0.69.0).
-- JSON reports include the Trivy version (since 0.69.0), and client/server JSON
-  also includes the server version (since 0.70.0).
-- Client/server transport retains package repository class (since 0.72.0).
+### CycloneDX structure preservation (0.67.0)
 
-## SARIF, JUnit, and templates
+Enriching a CycloneDX SBOM with vulnerability updates preserves the input SBOM's structure.
 
-- SARIF `shortDescription` and `fullDescription` text remains unescaped rather
-  than being HTML-escaped (since 0.60.0).
-- The JUnit template includes source locations for misconfiguration findings
-  (since 0.63.0).
-- SARIF vulnerability results include CVSS vectors (since 0.65.0).
-- SARIF uses the correct `ROOTPATH` URI for a Git repository target
-  (since 0.70.0).
-- The `gitlab.tpl` link array does not contain a trailing comma
-  (since 0.71.0).
-- Flag validation rejects template files with invalid extensions
-  (since 0.70.0).
+### CoreOS SBOM support (0.67.0)
 
-## Misconfiguration report details
+SBOM scanning supports CoreOS.
 
-- Terraform findings render their causes in report output (since 0.60.0).
-- Kubernetes complete reports honor `--report all` (since 0.61.0), while summary
-  reports omit passed misconfigurations (since 0.62.0).
-- Manifest diagnostic snippets include map keys (since 0.68.0).
-- Check metadata accepts `examples` (since 0.59.0) and `Minimum Trivy Version`
-  (since 0.63.0).
+### SBOM build metadata (0.68.0)
+
+SBOM output exposes `buildInfo` as properties. Client/server RPC transports the same data through `BlobInfo`.
+
+### Red Hat build information from SBOMs (0.70.0)
+
+SBOM scanning preserves Red Hat `BuildInfo` even when layer information is absent.
+
+## CycloneDX support
+
+### CycloneDX tool manufacturer (0.64.0)
+
+CycloneDX tool metadata includes `manufacturer`.
+
+### CycloneDX license variants (0.66.0)
+
+CycloneDX handling accepts components with multiple license types.
+
+### CycloneDX file components (0.66.0)
+
+SBOM scanning supports CycloneDX components of type `file`.
+
+### CycloneDX CVSS v4 ratings (0.70.0)
+
+CycloneDX vulnerability output includes CVSS v4 ratings.
+
+### CycloneDX 1.7 (0.71.0)
+
+SBOM scanning supports CycloneDX 1.7.
+
+## SPDX support
+
+### SPDX SHA-512 hashes (0.71.0)
+
+SPDX serialization supports the SHA-512 hash algorithm.
+
+### SPDX documents without a root component (0.72.0)
+
+The SPDX marshaler tolerates a missing root component instead of failing on a nil value.
+
+## Report content and templates
+
+### Report summary table (0.60.0)
+
+Reports can include a summary table for an at-a-glance view.
+
+### SARIF description text (0.60.0)
+
+SARIF `shortDescription` and `fullDescription` text is not HTML-escaped.
+
+### Misconfiguration locations in JUnit (0.63.0)
+
+The JUnit template includes source locations for misconfiguration findings.
+
+### CVSS vectors in SARIF (0.65.0)
+
+SARIF vulnerability findings include CVSS vectors.
+
+### Git repository paths in SARIF (0.70.0)
+
+SARIF uses the correct `ROOTPATH` URI when the scan target is a Git repository.
+
+## Client/server and result metadata
+
+### Repository class in client/server scans (0.72.0)
+
+Client/server transport preserves each package's repository class.

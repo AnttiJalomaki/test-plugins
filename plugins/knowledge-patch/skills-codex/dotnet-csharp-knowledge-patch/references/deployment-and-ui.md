@@ -1,33 +1,35 @@
 # Deployment, Containers, Native Output, and UI
 
-This reference combines deployment and desktop compatibility work from
-`10.0-guides` and `10.0`.
+Compatibility guidance is attributed to `10.0-guides`; publishing features are
+attributed to `10.0`.
 
-## Container Base Distribution
+## Default Container Base Distribution
 
-Default .NET 10 container images use Ubuntu. Any build or runtime layer that
-depends on the previous distribution's package manager, package names,
-filesystem paths, native library versions, user setup, or shell tools must
-either adapt or pin a compatible base image.
+Default .NET 10 container images use Ubuntu. Builds that depend on packages, paths,
+or a package manager from the previous distribution must pin the intended base
+image or adapt their installation steps. Rebuild and validate native dependencies
+when changing bases.
 
-Do not infer distribution compatibility from the .NET tag alone. Resolve the
-actual base image and exercise native dependencies in the produced container.
+## Published File-Based Apps
 
-## Publishing Console Projects as Containers
+`dotnet publish app.cs` produces a native executable because file-based apps use
+Native AOT by default for publishing. Add `#:property PublishAot=false` when a
+dependency is incompatible. File-based apps also accept `#:project` references
+and support executable extensionless shebang files.
 
-Console projects can invoke container publishing directly:
-
-```bash
-dotnet publish /t:PublishContainer
+```csharp
+#!/usr/bin/env dotnet
+#:project ../ClassLib/ClassLib.csproj
+#:property PublishAot=false
+Console.WriteLine(new ClassLib.Greeter().Greet());
 ```
 
-`EnableSdkContainerSupport` is no longer required for this scenario. Remove
-unnecessary compatibility properties when they obscure the active SDK
-behavior.
+## Console Container Publishing and Image Format
 
-## Selecting Docker or OCI Output
-
-Use `ContainerImageFormat` to select the image format explicitly:
+Console projects can run `dotnet publish /t:PublishContainer` without setting
+`EnableSdkContainerSupport`. Set `ContainerImageFormat` to `Docker` or `OCI` to
+avoid inheriting a default that depends on the base image and whether the image
+is multi-architecture.
 
 ```xml
 <PropertyGroup>
@@ -35,53 +37,15 @@ Use `ContainerImageFormat` to select the image format explicitly:
 </PropertyGroup>
 ```
 
-Valid choices include `Docker` and `OCI`. Without an explicit value, the
-effective format can depend on the base image and whether the publish is
-multi-architecture. Pin it when registries, signing, inspection, or deployment
-systems require one format.
+## Windows Desktop Compatibility
 
-## Publishing File-Based Applications
-
-Publishing a file-based application with `dotnet publish app.cs` produces a
-native executable by default through native AOT. Opt out when reflection,
-dynamic code, or another dependency is incompatible:
-
-```csharp
-#:property PublishAot=false
-```
-
-File-based applications also support `#:project` references. An extensionless
-file with a `#!/usr/bin/env dotnet` shebang can be executable, which is useful
-for source-first utilities. Account for native AOT platform targeting and test
-the produced executable on the destination system.
-
-## WPF and Windows Forms Type Collisions
-
-Projects that reference both WPF and Windows Forms must disambiguate
-`MenuItem` and `ContextMenu`. Use aliases or fully qualified names at the
-boundary instead of relying on an ambiguous `using` set.
-
-## Windows Forms Compatibility
-
-- `HtmlElement.InsertAdjacentElement` has a renamed parameter. Update named
-  arguments; positional calls are unaffected by the source-level name change.
-- `StatusStrip` defaults to the system render mode. Set a render mode
-  explicitly when visual consistency is required.
-
-## System.Drawing Exceptions
-
-Some `System.Drawing` failures now throw `ExternalException` instead of
-`OutOfMemoryException`. Narrow catches and tests to the new failure contract.
-Avoid using `OutOfMemoryException` as a generic signal for drawing or image
-format failures.
-
-## WPF Validation and Failure Behavior
-
-WPF rejects empty `ColumnDefinitions` and `RowDefinitions`. Remove empty
-collections or provide actual definitions rather than relying on permissive
-parsing.
-
-Incorrect `DynamicResource` usage can terminate the application. Validate
-resource keys, resource types, and lookup placement during startup and in UI
-tests; do not assume every malformed dynamic resource degrades to a recoverable
-binding warning.
+- Projects that reference both WPF and Windows Forms must disambiguate `MenuItem`
+  and `ContextMenu`.
+- `HtmlElement.InsertAdjacentElement` has a renamed parameter; named-argument
+  call sites must use the new name.
+- `StatusStrip` defaults to the system render mode.
+- Some `System.Drawing` failures throw `ExternalException` instead of
+  `OutOfMemoryException`; update exception handling accordingly.
+- WPF rejects empty `ColumnDefinitions` and `RowDefinitions`.
+- Incorrect `DynamicResource` usage can terminate the application. Validate
+  resource references during startup and UI tests.

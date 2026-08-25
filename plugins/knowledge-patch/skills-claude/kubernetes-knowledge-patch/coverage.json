@@ -1,6 +1,8 @@
 {
   "patch": "kubernetes-knowledge-patch",
-  "merged_at": "2026-07-15T01:25:49Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T13:27:54Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -57,6 +59,21 @@
     },
     "project-news": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.34.10": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.35.7": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.36.3": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

@@ -1,10 +1,14 @@
 # Core Authentication
 
-## Email/password sign-up behavior
+## Email/password and verification lifecycle
 
-`signUp` accepts `rememberMe`. Email sign-in and sign-up also accept form data.
+### Verification mail during sign-in
 
-`emailAndPassword.onExistingUserSignUp` runs when registration targets an existing address, but only while protected responses are active through `requireEmailVerification: true` or `autoSignIn: false`. Use it to notify the existing owner without changing the indistinguishable client response.
+Set `emailVerification.sendOnSignIn: true` to send a verification message when an unverified user attempts to sign in (since 1.3.0). Sign-up also accepts `rememberMe`, and `afterEmailVerification` is the post-verification callback. Account linking may proceed even when the linked account has no email.
+
+### Existing-user registration notification
+
+`emailAndPassword.onExistingUserSignUp` runs when a registration targets an existing email, but only while enumeration-safe responses are active through `requireEmailVerification: true` or `autoSignIn: false`. Use it to notify the owner without changing the indistinguishable client response.
 
 ```ts
 emailAndPassword: {
@@ -16,29 +20,11 @@ emailAndPassword: {
 }
 ```
 
-Enumeration-safe synthetic users now include plugin-defined fields. Do not branch client behavior on protected registration results.
+### Password and email changes
 
-## Email verification
+`auth.api.verifyPassword` verifies the current signed-in user's password without starting a new sign-in flow (since 1.5.0). Use it before sensitive account operations.
 
-`emailVerification.sendOnSignIn` sends a verification email when an unverified user attempts to sign in. `afterEmailVerification` is the post-verification lifecycle hook and replaces removed `onEmailVerification`.
-
-```ts
-emailVerification: {
-  sendOnSignIn: true,
-  sendVerificationEmail: async ({ user, url }) => sendEmail(user.email, url),
-  afterEmailVerification: async (user) => recordVerification(user.id),
-}
-```
-
-## Password checks and resets
-
-The server-side `verifyPassword` endpoint verifies the current user's password without beginning a new sign-in. Use it before sensitive account operations.
-
-`authClient.requestPasswordReset` replaces `authClient.forgotPassword`. The removed `/forget-password/email-otp` endpoint must be replaced by the standard password-reset flow.
-
-## Email changes
-
-`user.changeEmail.sendChangeEmailConfirmation` can require confirmation at the current address before sending verification to the new address. The old change-flow `sendChangeEmailVerification` callback is removed; new-address verification uses `emailVerification.sendVerificationEmail`.
+`/change-email` always returns `{ status: true }` and simulates token generation when needed, so its response means only that the request was accepted. To require approval at the old address, enable `user.changeEmail` and implement `sendChangeEmailConfirmation`; verification at the new address uses `emailVerification.sendVerificationEmail` (since 1.4.0).
 
 ```ts
 user: {
@@ -51,13 +37,25 @@ user: {
 }
 ```
 
-The `/change-email` endpoint always returns `{ status: true }` and simulates token creation when needed. Treat the response as acceptance of the request, not proof that the target address exists or changed.
+### Account deletion
 
-## Account linking
+Deletion is disabled by default. Once enabled, require a valid password, a fresh session, or configured email verification for a passwordless user. A custom verification page completes the operation by passing its token to `deleteUser`.
 
-Account linking can proceed when the provider account has no email address. Social-link email matching is case-insensitive, and trusted providers can be resolved dynamically.
+```ts
+user: {
+  deleteUser: {
+    enabled: true,
+    sendDeleteAccountVerification: async ({ user, url }) =>
+      void sendEmail(user.email, url),
+  },
+}
+```
 
-Request incremental Google permissions for an already-linked account with `linkSocial`. The completed OAuth flow updates the stored account scopes and access token.
+## Social providers and account linking
+
+### Incremental Google permissions
+
+Call `linkSocial` with additional scopes for an already-linked Google account. The completed OAuth flow updates its stored scopes and access token.
 
 ```ts
 await authClient.linkSocial({
@@ -66,13 +64,9 @@ await authClient.linkSocial({
 });
 ```
 
-## Social providers
-
-Built-in provider keys include Notion, Slack, Linear, Faceit, Railway, Polar, and Paybin. Social provider configuration may be asynchronous.
-
 ### Apple web and native identifiers
 
-Apple must be a trusted origin. If `clientId` is a web Service ID but a native ID token has the app bundle ID as its audience, configure `appBundleIdentifier` or token validation fails.
+Add `https://appleid.apple.com` to `trustedOrigins`. If `clientId` is a web Service ID but native sign-in supplies a token whose audience is the app bundle ID, set `appBundleIdentifier` or validation fails.
 
 ```ts
 socialProviders: {
@@ -87,7 +81,7 @@ trustedOrigins: ["https://appleid.apple.com"],
 
 ### Discord bot permissions
 
-`socialProviders.discord.permissions` sets the Discord bot permission bitfield. Discord uses it only when the OAuth request also includes the `bot` scope.
+`socialProviders.discord.permissions` is the bot permission bitfield. Discord uses it only when the OAuth request also contains the `bot` scope.
 
 ```ts
 socialProviders: {
@@ -99,39 +93,21 @@ socialProviders: {
 }
 ```
 
-## Username sign-in
+### Provider additions
 
-The username plugin supports availability checks and custom normalization. `signInUsername` accepts `callbackURL`.
+`socialProviders` includes Notion, Slack, Linear, and Faceit (since 1.3.0), plus Railway (since 1.5-guide). Trusted providers may be resolved dynamically, social-link email matching is case-insensitive, and async social-provider configuration is supported.
 
-By default, canonical `username` is lowercased while the pre-normalized value is preserved in `displayUsername`. Both validators run before normalization unless `validationOrder` says otherwise. Disable `/is-username-available` when exposing availability would permit enumeration.
+Email sign-in and sign-up accept form data. Enumeration-safe signup creates synthetic users that include plugin-defined fields, so custom plugin schemas continue to receive a shape compatible with the real user.
+
+## Username flows
+
+The username plugin supports availability checks, custom normalization, and a `callbackURL` on `signInUsername` (since 1.3.0). The canonical `username` is lowercased by default while `displayUsername` preserves the pre-normalized value. Validators run before normalization unless `validationOrder` says otherwise.
+
+Disable the availability path where exposing it would permit enumeration:
 
 ```ts
 betterAuth({
   disabledPaths: ["/is-username-available"],
-  plugins: [username({
-    validationOrder: { username: "post-normalization" },
-  })],
+  plugins: [username({ validationOrder: { username: "post-normalization" } })],
 })
-```
-
-## Account deletion
-
-User deletion is disabled by default. Once enabled, deletion must be authorized by a valid password, a fresh session, or configured email verification for passwordless users. A custom verification page completes deletion by passing its token to `deleteUser`.
-
-```ts
-user: {
-  deleteUser: {
-    enabled: true,
-    sendDeleteAccountVerification: async ({ user, url }) =>
-      void sendEmail(user.email, url),
-  },
-}
-```
-
-## Account-info endpoint
-
-The account-info endpoint is `GET /account-info` and receives `query`, not the old `POST` body shape.
-
-```ts
-await auth.api.accountInfo({ query: { /* parameters */ } });
 ```

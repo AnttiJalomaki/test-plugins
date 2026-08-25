@@ -1,105 +1,121 @@
 # Networking and Datasources
 
-This reference contains the networking and datasource changes from batch
-`26.1`, including compatibility behavior introduced in earlier releases where
-that behavior is required to understand the current result.
+Use this reference when generating network configuration, selecting a
+datasource, or consuming cloud metadata. Renderer support and datasource
+identity are independent: a network renderer can configure an interface
+without proving which datasource cloud-init should select.
 
-## Network v1 rendering
+## Network rendering
 
-Network v1 can render bonds, bridges, and VLANs. Code that validates, converts,
-or emits network v1 data should therefore retain these device definitions
-instead of rejecting them as unsupported.
+### Network v1 device support
 
-The `network-config` representation can express `allow_accept_ra` for each of
-these device types:
+Since 26.1, Network v1 can render all of these device types:
 
 - bonds
 - bridges
 - VLANs
 
-Preserve this value through parsing and rendering. A translator that keeps the
-device but drops `allow_accept_ra` loses part of the supported configuration.
+`network-config` can express `allow_accept_ra` for each of those device types.
+Keep that property when normalizing, translating, or regenerating Network v1
+data. Do not discard it because the device is not a plain physical interface.
 
-## OpenStack bond naming
+### Route metrics in NetworkManager profiles
 
-Bond names for the OpenStack datasource come directly from
-`network_data.json`. Earlier behavior forced sequential names such as `bond0`,
-`bond1`, and so on; current integrations must not reproduce that renaming.
+Since 26.2, the NetworkManager renderer transfers route-metric settings into
+the generated connection profiles. Configurations that use metrics to choose
+between competing routes no longer require a renderer-specific workaround.
 
-Use the metadata-provided bond name in:
+When migrating such a configuration:
 
-- rendered network configuration
-- relationships between a bond and its member devices
-- downstream references to the bond
-- fixtures and assertions that validate OpenStack network data
+1. Retain the route metric in the input network data.
+2. Confirm it appears in the generated NetworkManager connection profile.
+3. Remove an older workaround only after verifying that the resulting route
+   preference remains correct.
 
-When an upgrade changes a bond name, first compare the value in
-`network_data.json` with any downstream normalizer. A local `bondN` rewrite is
-an integration bug under the current naming behavior.
+### OpenStack bond names
 
-## Strict datasource identity without DMI
+Since 26.1, OpenStack bond names come directly from `network_data.json` rather
+than being forced to `bond0`, `bond1`, and so on. Treat the supplied name as the
+stable input to later rendering.
 
-Since 25.1.4, datasource selection is stricter on non-x86 systems that do not
-provide DMI. The affected datasources are:
+Review downstream code that predicts or rewrites bond names. Tests and device
+lookups must use the metadata-provided name instead of assuming a sequential
+`bondN` identifier.
 
-- Ec2
-- OpenStack
-- AltCloud
+### OpenNebula search domains and routes
 
-These systems no longer wait until networking is available and then probe
-link-local metadata as a fallback. Without positive datasource identification,
-cloud-init stays disabled.
+Since 26.2, OpenNebula network metadata accepts:
 
-Accepted identification paths are:
+- A global `SEARCH_DOMAIN`, applied to all interfaces.
+- `ETHx_ROUTES` values, carrying per-interface static routes.
 
-1. Matching DMI data, when the platform provides it.
-2. A kernel `ds=` override.
-3. An explicit `datasource_list` entry.
+Keep the different scopes intact. Apply the search domain globally and attach
+each `ETHx_ROUTES` value only to its corresponding interface.
 
-The important distinction is identity rather than reachability. A metadata
-endpoint becoming reachable after network setup does not identify the
-datasource through the removed fallback.
+## Datasource identity
 
-### OpenStack mitigations
+### Non-x86 systems without DMI
 
-An OpenStack config drive can provide a path to correct identification. For an
-image dedicated to OpenStack, the datasource can instead be forced in
+The behavior represented in 26.1 has applied since 25.1.4: Ec2, OpenStack, and
+AltCloud systems without DMI no longer fall back to probing link-local metadata
+after networking. Cloud-init stays disabled until the datasource is identified
+by one of the following:
+
+- DMI data
+- A kernel `ds=` override
+- `datasource_list` configuration
+
+For OpenStack, a config drive can identify the datasource. An image dedicated
+to OpenStack can instead force the selection in
 `/etc/cloud/cloud.cfg.d/91_openstack.cfg`:
 
 ```yaml
 datasource_list: [ OpenStack ]
 ```
 
-Use an explicit list only when constraining datasource selection is intended.
-For a multi-cloud image, prefer a platform-provided identity mechanism rather
-than labeling every boot as OpenStack.
+Use that override only when binding the image to OpenStack is intentional. A
+working network and a responsive link-local metadata endpoint do not restore
+the removed fallback.
 
-### Diagnostic sequence
+## Datasource configuration and metadata
 
-For a disabled affected instance:
+### Azure network naming and ready reporting
 
-1. Confirm the architecture and whether DMI is present.
-2. Inspect the kernel command line for a `ds=` selection.
-3. Inspect cloud configuration for `datasource_list`.
-4. On OpenStack, check for a config drive.
-5. Do not rely on a post-network link-local probe to recover selection.
+Since 26.2, the Azure datasource provides
+`apply_network_config_set_name`, allowing application of network-config
+`set-name` directives to be disabled. Use this control when interface renaming
+must remain outside cloud-init's Azure network-config application.
 
-This sequence avoids conflating a working metadata network path with a selected
-datasource.
+Azure also provides the experimental `skip_ready_report` option, which
+suppresses its ready report. Keep this experimental control separate from
+interface naming: changing one should not implicitly change the other.
 
-## Scaleway metadata
+### Azure missing custom data
 
-The Scaleway datasource exposes region and availability-zone fields. Consumers
-that need placement information can read these fields from datasource metadata.
+Since 26.2, missing Azure custom data is reported as a provisioning failure
+rather than silently continuing. Automation that watches provisioning must
+accept and expose this explicit failure, and tests should no longer expect the
+missing-data path to succeed silently.
 
-The datasource no longer handles private-IP metadata. Remove dependencies that
-expect it to discover or populate a private IP through that metadata path.
+### Scaleway location fields
 
-When adapting a consumer, treat these as two independent changes:
+Since 26.1, the Scaleway datasource exposes region and availability-zone
+fields. It no longer handles private-IP metadata.
 
-- location metadata is available through region and availability zone;
-- private-IP metadata is no longer supplied by the datasource.
+Use the location fields directly where region or zone is needed. Remove any
+consumer dependency on Scaleway datasource private-IP metadata, because the
+datasource will not populate it.
 
-Do not substitute region or availability-zone values for a private address, and
-do not infer that the absence of private-IP metadata means the datasource
-failed.
+## Platform discovery inputs
+
+### CloudStack virtual-router discovery
+
+Since 26.2, CloudStack can obtain virtual-router information from
+NetworkManager leases. Include lease data in discovery diagnosis before adding
+or retaining a separate virtual-router workaround.
+
+### Oracle iSCSI-root discovery
+
+Since 26.2, Oracle dracut images can detect an iSCSI root through iBFT. For a
+dracut-based Oracle image, check iBFT discovery before assuming the root device
+requires a local detection patch.

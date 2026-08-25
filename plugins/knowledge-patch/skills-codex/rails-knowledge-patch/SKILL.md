@@ -10,25 +10,25 @@ metadata:
 
 # Ruby on Rails Knowledge Patch
 
-Use the quick references for upgrade-sensitive defaults and common implementation paths. Load the topic file before changing the corresponding subsystem; the reference files contain the complete behavioral details and edge cases.
+Use the quick references for upgrade-sensitive defaults and common implementation paths. Open the linked topic file before changing that subsystem; the reference files contain the complete constraints and edge cases.
 
 ## Reference index
 
 | Reference | Topics |
 |---|---|
-| [Active Job and Solid Queue](references/active-job-and-solid-queue.md) | Transactional enqueueing, queue setup, workers, concurrency, recurring work, continuations |
+| [Active Job and Solid Queue](references/active-job-and-solid-queue.md) | Transactional enqueueing, continuations, workers, recurring work, concurrency |
 | [Active Record and databases](references/active-record-and-databases.md) | Transactions, connections, migrations, queries, adapters, sharding, serialization, tests |
-| [Operations, observability, and deployment](references/operations-observability-and-deployment.md) | Development containers, Puma, backtraces, events, CI, credentials, Kamal |
+| [Operations, observability, and deployment](references/operations-observability-and-deployment.md) | Development containers, Puma, events, CI, credentials, Kamal |
 | [Upgrading and compatibility](references/upgrading-and-compatibility.md) | Removed APIs, changed defaults, deprecated call forms, replacement paths |
-| [Web, assets, and storage](references/web-assets-and-storage.md) | Controllers, request parsing, rendering, Propshaft, Turbo, live streaming, Active Storage |
+| [Web, assets, and storage](references/web-assets-and-storage.md) | Controllers, request parsing, Propshaft, Turbo, streaming, Active Storage |
 
-## Upgrade-critical quick reference
+## Upgrade-critical changes
 
-### Do not rely on transaction block exits
+### Do not use transaction block exits as rollback signals
 
-`return`, `break`, and `throw` no longer implicitly roll back an Active Record transaction. Do not use those control-flow exits as rollback signals.
+`return`, `break`, and `throw` no longer implicitly roll an Active Record transaction back. Do not use those exits as rollback signals.
 
-Register post-transaction work on the transaction object:
+Register work that must follow persistence on the transaction object:
 
 ```ruby
 Article.transaction do |transaction|
@@ -37,42 +37,43 @@ Article.transaction do |transaction|
 end
 ```
 
-Use `ActiveRecord.after_all_transactions_commit` for code that may run inside or outside a transaction but must wait for every open transaction to commit.
+Use `ActiveRecord.after_all_transactions_commit` for code that may run inside or outside a transaction but must wait for all open transactions to commit.
 
 ### Audit removed Active Record call forms
 
-Replace these forms before an upgrade:
+Before upgrading, replace or remove these forms:
 
 - Define `enum` with a positional name and mapping; keyword-style definitions are removed.
 - Pass `coder:` and `type:` to `serialize`; positional coder or class arguments are removed.
 - Do not point `alias_attribute` at a missing attribute or refer to a singular association by a plural name.
 - Do not depend on `read_attribute(:id)` resolving a custom primary-key attribute.
 - Remove `deferrable: true` from `add_foreign_key` and the `rewhere` option from `Relation#merge`.
-- Remove calls to `ConnectionPool#connection` and the removed `ActiveRecord::Base.clear_*_connections!` or `flush_idle_connections!` methods.
+- Remove `ConnectionPool#connection`, `ActiveRecord::Base.clear_*_connections!`, and `flush_idle_connections!` calls.
 
 `establish_connection` does not eagerly make `connection.active?` true. Call `ActiveRecord::Base.connection.verify!` when immediate verification is required.
 
-### Update controller and view compatibility
+### Update controller and framework compatibility
 
 - Do not compare `ActionController::Parameters` with a `Hash`.
 - Replace boolean `config.action_dispatch.show_exceptions` values with a supported symbolic value.
 - Do not pass content to void-element builders such as `tag.br`.
-- Do not call `form_with(model: nil)`.
-- Declare one route path at a time; multiple-path declarations are deprecated.
+- Do not call `form_with(model: nil)` or declare multiple route paths in one call.
+- Treat a leading `[` in a root query key literally; semicolons no longer separate query pairs.
+- Remove `Rails::ConsoleMethods`, `ActiveSupport::ProxyObject`, `@`-prefixed `attr_internal_naming_format`, array arguments to `ActiveSupport::Deprecation#warn`, `bin/rake stats`, and `STATS_DIRECTORIES`.
 
-Query parsing treats a leading `[` in a root key literally and no longer splits pairs on semicolons. Remove reliance on `config.action_dispatch.ignore_leading_brackets`.
+Plan replacements for deprecated `Benchmark.ms`, `String#mb_chars`, `ActiveSupport::Multibyte::Chars`, `ActiveSupport::Configurable`, the Active Storage Azure backend, and arithmetic between `Time` and `ActiveSupport::TimeWithZone`. `to_time` always preserves the receiver timezone.
 
-### Update framework compatibility surfaces
+### Patch Active Storage image processing
 
-Remove uses of `Rails::ConsoleMethods`, `ActiveSupport::ProxyObject`, `@`-prefixed `attr_internal_naming_format`, array arguments to `ActiveSupport::Deprecation#warn`, `bin/rake stats`, and `STATS_DIRECTORIES`.
+Affected Rails security releases enable `Vips.block_untrusted(true)` at boot. With ruby-vips installed, require libvips 8.13 or newer and ruby-vips 2.2.1 or newer. Transforming BMP, ICO, PSD, unfuzzed formats, or ImageMagick-delegated formats can then fail with `Vips::Error`; attachment storage and download are unchanged.
 
-Plan replacements for deprecated `Benchmark.ms`, `String#mb_chars`, `ActiveSupport::Multibyte::Chars`, `ActiveSupport::Configurable`, the Active Storage Azure backend, and arithmetic between `Time` and `ActiveSupport::TimeWithZone`. `to_time` now always preserves the receiver timezone.
+Remove unsupported MIME types from `variable_content_types` if the application should never transform them. MiniMagick processing is unchanged, but the block and version checks are process-wide whenever ruby-vips is installed.
 
 ## Active Job quick reference
 
 ### Enqueueing and transactions
 
-Jobs enqueued inside an Active Record transaction wait for commit and are dropped on rollback when the adapter supports this behavior. Current job-level configuration is boolean:
+Jobs enqueued inside an Active Record transaction wait for commit and are dropped on rollback when the adapter supports transactional deferral. Current job-level configuration is boolean:
 
 ```ruby
 class AuditJob < ApplicationJob
@@ -82,11 +83,11 @@ end
 
 Do not use the removed symbolic `:never`, `:always`, or `:default` values or the removed application-wide setting. `perform_all_later` honors the job-level setting.
 
-Also remove primitive `BigDecimal` serialization, numeric `scheduled_at`, and `retry_on wait: :exponentially_longer`. Use the adapter supplied by Sidekiq or `sucker_punch` rather than the deprecated built-in adapters.
+Also remove primitive `BigDecimal` serialization, numeric `scheduled_at`, and `retry_on wait: :exponentially_longer`. Use the adapters supplied by Sidekiq or `sucker_punch`, not the deprecated built-in adapters.
 
 ### Resumable jobs
 
-Use `ActiveJob::Continuable` to split long work into durable steps. Advance the cursor after each completed record:
+Use `ActiveJob::Continuable` to split long work into durable steps. Advance the cursor only after each record completes:
 
 ```ruby
 class ProcessImportJob < ApplicationJob
@@ -106,9 +107,9 @@ end
 
 ## Solid Queue quick reference
 
-Production installation normally uses a separate `queue` database, `db/queue_schema.rb`, `config/queue.yml`, `config/recurring.yml`, and `bin/jobs`. Configure and prepare the database separately in every additional environment.
+Production installation normally uses a separate `queue` database, `db/queue_schema.rb`, `config/queue.yml`, `config/recurring.yml`, and `bin/jobs`. Configure and prepare the database separately in each additional environment.
 
-Keep each worker's thread count at or below its queue database pool size minus two. Workers exhaust queue names in listed order before considering another queue; within one queue, smaller numeric priorities run first and `0` is the default.
+Keep each worker's thread count at or below its queue database pool size minus two. Workers exhaust queue names in listed order before considering the next queue; within one queue, smaller numeric priorities run first and `0` is the default.
 
 Use async supervisor mode only when process isolation is unnecessary:
 
@@ -119,7 +120,7 @@ solid_queue_mode :async
 
 The Puma plugin requires preloading and cannot use phased restarts. Async mode ignores worker `processes`.
 
-For `limits_concurrency`, remember that `duration` is semaphore expiry, not a runtime limit. The defaults are `to: 1`, three minutes, the job class as `group`, and `on_conflict: :block`; `:discard` rejects the conflicting enqueue.
+For `limits_concurrency`, `duration` is semaphore expiry, not a runtime limit. Defaults are `to: 1`, three minutes, the job class as `group`, and `on_conflict: :block`; `:discard` rejects the conflicting enqueue.
 
 ## Database quick reference
 
@@ -136,17 +137,17 @@ analytics:
   seeds: false
 ```
 
-Set `schema_format` per database when different stores need Ruby and SQL dumps.
+Set `schema_format` per database when stores need different Ruby and SQL dumps.
 
 ### Pools and adapter floors
 
-Use `max_connections` for maximum pool size and optionally configure `min_connections`, `keepalive`, and `max_age`; defaults are unchanged. Ensure SQLite is at least 3.23.0 and PostgreSQL is at least 9.5 where the corresponding Rails point release requires it. MySQL requires 5.6.4 or newer.
+Use `max_connections` for the maximum pool size and optionally configure `min_connections`, `keepalive`, and `max_age`; defaults remain unchanged. Ensure SQLite is at least 3.23.0 and PostgreSQL is at least 9.5 where the corresponding point release requires it. MySQL requires 5.6.4 or newer.
 
-For SQLite, replace adapter `retries` with `timeout`. Transactions use `IMMEDIATE` mode when possible, and busy errors are surfaced as `ActiveRecord::StatementTimeout`.
+For SQLite, replace adapter `retries` with `timeout`. Transactions use `IMMEDIATE` mode when possible, and busy errors surface as `ActiveRecord::StatementTimeout`.
 
 ### Deterministic finders
 
-The framework default can reject `first` or `last` without a relation or model order:
+The framework default can reject `first` or `last` without relation or model order:
 
 ```ruby
 config.active_record.raise_on_missing_required_finder_order_columns = true
@@ -161,7 +162,7 @@ The trailing `nil` prevents automatic primary-key tie-breaking.
 
 Propshaft precompiles every file under `config.assets.paths`. Exclude compiler-only source directories by full path, and name already-digested files with `-[digest].digested.<extension>`.
 
-Configure SRI and opt helpers in individually:
+Configure SRI and opt individual helpers in:
 
 ```ruby
 config.assets.integrity_hash_algorithm = "sha384"
@@ -180,15 +181,15 @@ Production helpers omit integrity hashes over plain HTTP. `stylesheet_link_tag :
 <meta name="turbo-refresh-scroll" content="preserve">
 ```
 
-Use `refresh="morph"` on a `src`-backed Turbo Frame to reload and morph it during a page refresh. A `refresh` stream can override method and scrolling, and consecutive broadcast refreshes are debounced. In Rails, pair `broadcasts_refreshes` with `turbo_stream_from`.
+Use `refresh="morph"` on a `src`-backed Turbo Frame to reload and morph it during a page refresh. A `refresh` stream can override the method and scrolling; consecutive broadcast refreshes are debounced. In Rails, pair `broadcasts_refreshes` with `turbo_stream_from`.
 
-### Storage hardening
+### Storage request hardening
 
 Active Storage accepts one byte range per request and caps it at 100 MB by default. Disk service keys containing dot segments, invalid paths, or paths outside the root raise `InvalidKeyError`; prefix deletion treats glob metacharacters literally.
 
 ## Operations quick reference
 
-Generated Puma configuration uses three threads instead of five. Recalculate process and database-pool capacity rather than assuming the old concurrency. Generated Dockerfiles use jemalloc, and `BACKTRACE` disables server backtrace cleaning.
+Generated Puma configuration uses three threads instead of five. Recalculate process and database-pool capacity after an upgrade. Generated Dockerfiles use jemalloc, and `BACKTRACE` disables server backtrace cleaning.
 
 Use `Rails.event` for structured events:
 
@@ -201,4 +202,4 @@ end
 
 Subscribers implement `emit(event)` and control serialization and output.
 
-For Kamal 2 in-place migration, first deploy successfully with Kamal 1.9.x. Then convert secrets to `.kamal/secrets`, validate every destination with `kamal config`, and account for `kamal-proxy`, the `kamal` Docker network, and the default application port changing from 3000 to 80.
+For a Kamal 2 in-place migration, first deploy successfully with Kamal 1.9.x. Then convert secrets to `.kamal/secrets`, validate every destination with `kamal config`, and account for `kamal-proxy`, the `kamal` Docker network, and the default application port changing from 3000 to 80.

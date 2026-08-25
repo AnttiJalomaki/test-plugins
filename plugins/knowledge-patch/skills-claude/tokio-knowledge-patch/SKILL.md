@@ -10,47 +10,62 @@ metadata:
 
 # Tokio Knowledge Patch
 
-Use this patch to choose safe dependency floors, account for changed behavior, and select APIs added after the baseline. Check the detailed topic reference before implementing version-sensitive code.
+Use this skill for version-sensitive Tokio work: dependency selection, runtime
+construction, task behavior, channels, asynchronous I/O, networking, processes,
+signals, and the companion `tokio-util` and `tokio-stream` crates. Check the
+project manifest first and apply only guidance relevant to its pinned versions.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [compatibility.md](references/compatibility.md) | Rust and dependency floors, safe patch releases, upgrade regressions, build flags |
-| [runtime-and-tasks.md](references/runtime-and-tasks.md) | Runtime construction, local execution, cooperative scheduling, task APIs, metrics, tracing |
-| [synchronization.md](references/synchronization.md) | `watch`, `broadcast`, `mpsc`, `oneshot`, `Notify`, permits, and single-assignment state |
-| [io-and-filesystem.md](references/io-and-filesystem.md) | Async I/O types, files, pipes, AIO, and unstable io_uring filesystem support |
-| [networking-process-signals.md](references/networking-process-signals.md) | Socket behavior and options, platform targets, child processes, and signals |
-| [tokio-util-and-stream.md](references/tokio-util-and-stream.md) | `tokio-util` 0.7.12–0.7.18 and `tokio-stream` 0.1.16–0.1.18 |
+| [compatibility.md](references/compatibility.md) | Toolchain floors, safe patch releases, target support, and unstable configuration |
+| [runtime-and-tasks.md](references/runtime-and-tasks.md) | Runtime construction, scheduling, task APIs, metrics, hooks, and diagnostics |
+| [synchronization.md](references/synchronization.md) | `watch`, `broadcast`, `mpsc`, `oneshot`, `Notify`, semaphores, and `RwLock` |
+| [io-and-filesystem.md](references/io-and-filesystem.md) | Async I/O types, files, pipes, AIO, io_uring, and standard output |
+| [networking-process-signals.md](references/networking-process-signals.md) | Sockets, target-specific networking, child processes, and signals |
+| [tokio-util-and-stream.md](references/tokio-util-and-stream.md) | Compatibility and APIs in `tokio-util` and `tokio-stream` |
 
-## Breaking changes and upgrade gates
+## Upgrade gates
 
 ### Select safe patch releases
 
-- Avoid Tokio 1.39.0: it is yanked. Use 1.39.3 on the 1.39 line to include the timer-wheel rollback, temporary-lifetime `select!` restoration, and Unix abstract-address restoration.
-- Use at least 1.42.1 when a `broadcast` channel may carry a `Send` but non-`Sync` value; 1.42.0 has an unsynchronized-clone soundness bug.
-- Use 1.43.4 on the 1.43 line for the pidfd, receiverless `broadcast`, and closed-and-drained `mpsc::try_recv` fixes.
-- Use at least 1.45.1 on `wasm32-unknown-unknown`; 1.45.0 can panic while collecting time-based metrics.
-- Use at least 1.46.1 when task hooks consume `TaskMeta::spawned_at` for tasks created with `tokio::spawn`.
-- Use 1.51.3 on the 1.51 line for the accumulated channel and `RwLock` fixes, and at least 1.51.1 for Linux UDP error reporting and the cancelled io_uring-open descriptor fix.
-- Use at least 1.52.1; 1.52.0's sharded `spawn_blocking` queue can hang.
+- Use at least 1.42.1 when a `broadcast` channel may carry `Send` but `!Sync`
+  values; 1.42.0 has an unsynchronized-clone soundness bug.
+- On the 1.43 line, use 1.43.4 to include the pidfd, receiverless-broadcast,
+  and closed-and-drained `mpsc::try_recv` corrections.
+- Use at least 1.45.1 on `wasm32-unknown-unknown`; time-based metrics in 1.45.0
+  can make valid `Instant::now()` calls panic.
+- Use at least 1.46.1 when task hooks inspect `TaskMeta::spawned_at` for tasks
+  created with `tokio::spawn`.
+- On the 1.47 line, use 1.47.5 for channel length, permit wakeup, outstanding
+  permit, and `RwLock` limit behavior; 1.47.4 also fixes `recv_many` on a closed
+  channel, and 1.47.2 fixes `join!`/`try_join!` hygiene.
+- Use at least 1.51.1 when semaphore closure, Linux UDP pending errors, or
+  cancellable io_uring opens matter.
+- Do not remain on 1.52.0 when using `spawn_blocking`; require 1.52.1 to avoid a
+  sharded blocking-queue hang.
+- Use 1.53.1 for Windows signal support at the Rust 1.71 minimum and for the
+  unstable alternate-timer cancellation race fix.
 
-See [compatibility.md](references/compatibility.md) for the complete patch-level behavior list.
+See [compatibility.md](references/compatibility.md) for exact patch-line floors
+and older-line backports.
 
 ### Enforce compiler and dependency floors
 
-| Package floor | Requirement |
+| Package | Minimum toolchain or dependency |
 | --- | --- |
-| Tokio 1.39.0 | Rust 1.70 or newer |
-| Tokio 1.48.0 | Rust 1.71 or newer |
-| `tokio-util` 0.7.12 | Rust 1.70 or newer |
-| `tokio-util` 0.7.17 | Rust 1.71 or newer |
-| `tokio-util` 0.7.18 | Tokio 1.44.0 or newer |
-| `tokio-stream` 0.1.16 | Rust 1.70 or newer |
+| Tokio from 1.39.0 | Rust 1.70 |
+| Tokio from 1.48.0 | Rust 1.71 |
+| `tokio-util` 0.7.12 | Rust 1.70 |
+| `tokio-util` 0.7.17 | Rust 1.71 |
+| `tokio-util` 0.7.18 | Tokio 1.44.0 |
+| `tokio-stream` 0.1.16 | Rust 1.70 |
 
-### Adjust changed or rejected code
+### Adjust rejected or changed code
 
-- Put standard-library sockets into nonblocking mode before any Tokio `from_std` conversion. Since 1.44.0, passing a blocking socket panics.
+- Put every standard-library socket into nonblocking mode before a Tokio
+  `from_std` conversion; blocking sockets panic from 1.44.0 onward.
 
 ```rust
 let listener = std::net::TcpListener::bind(addr)?;
@@ -58,110 +73,124 @@ listener.set_nonblocking(true)?;
 let listener = tokio::net::TcpListener::from_std(listener)?;
 ```
 
-- Keep `runtime::Builder::event_interval` nonzero; passing `0` panics since 1.50.0.
-- Do not call Tokio's in-place blocking operation while polling or dropping a `LocalSet` as of 1.46.0. Move blocking work to `spawn_blocking` or outside the local set.
-- Replace deprecated `TcpStream::set_linger` and `TcpSocket::set_linger` calls. For an abortive close, use `TcpStream::set_zero_linger()` from 1.50.0.
-- Consume or explicitly discard the results of `JoinHandle::abort_handle()` and `Notify::notified()`; their types became `#[must_use]` in 1.40.0 and 1.41.0.
-- Stop treating signal-stream `None` as a shutdown path. Since 1.50.0, signal listeners are guaranteed to remain open; use explicit cancellation.
-- Expect a task future's retained state to be dropped before its `JoinHandle` completes as of 1.50.0.
-- Account for changed diagnostics: formatting a panicked task's `JoinError` includes the panic message since 1.40.0.
+- Keep `runtime::Builder::event_interval` nonzero; `event_interval(0)` panics
+  from 1.50.0 onward.
+- Keep blocking work out of futures and destructors polled or dropped by a
+  `LocalSet` from 1.46.0 onward. Use `spawn_blocking` or move it outside.
+- Replace deprecated `TcpStream::set_linger` and `TcpSocket::set_linger` calls.
+  Use `TcpStream::set_zero_linger()` for abortive close from 1.50.0.
+- Await, retain, or explicitly discard `JoinHandle::abort_handle()` and
+  `Notify::notified()` results; their types are `#[must_use]`.
+- Do not interpret a signal receive result of `None` as shutdown; signal
+  listeners remain open from 1.50.0 onward.
+- Expect task-owned state to be dropped before its `JoinHandle` completes from
+  1.50.0 onward.
+- Reuse or synchronize one Tokio standard-output handle when write ordering
+  matters; independent handles may reorder writes.
 
-### Update unstable configuration
+### Update unstable builds
 
-- Enable `taskdump` and `io_uring` as Cargo features as of 1.48.0; do not use the former custom `--cfg` switches.
-- Pass `LocalOptions` by value to unstable `Builder::build_local` as of 1.46.0.
-- Migrate away from the removed unstable alternate multi-threaded runtime as of 1.45.0.
-- Treat io_uring as opportunistic: Tokio can disable it after `EPERM` and checks kernel opcode support before dispatch.
+- Select `taskdump` and `io_uring` with Cargo features from 1.48.0; replace the
+  former custom `--cfg` switches.
+- Pass `LocalOptions` by value to unstable `Builder::build_local` from 1.46.0.
+- Migrate off the removed unstable alternate multi-threaded runtime before
+  using 1.45.0 or newer.
+- Treat io_uring as opportunistic: Tokio may disable it after `EPERM`, and the
+  operations available through the backend depend on the Tokio release.
 
 ## Runtime and task quick reference
 
 ### Choose local execution deliberately
 
-- Use stable `tokio::runtime::LocalRuntime` from 1.51.0 for thread-local `!Send` tasks. It first appeared as an unstable API in 1.41.0.
-- With unstable APIs on 1.48.0, `#[tokio::main(flavor = "local")]` and the corresponding test macro provide a local-runtime macro entry point.
-- Use stable `runtime::id::Id` and `LocalSet::id()` from 1.49.0 to identify runtimes and local sets.
-- From 1.51.0, assign runtime names and call `tokio::runtime::worker_index()` for diagnostic context.
+- Use stable `tokio::runtime::LocalRuntime` from 1.51.0 for thread-local
+  `!Send` tasks. Earlier forms were unstable.
+- The unstable macro flavor `#[tokio::main(flavor = "local")]` is available
+  from 1.48.0.
+- Use stable `runtime::id::Id` and `LocalSet::id()` from 1.49.0 for diagnostic
+  identity.
+- From 1.51.0, assign runtime names and use `runtime::worker_index()` for
+  per-worker diagnostic context.
 
 ### Preserve cooperative scheduling
 
-- `watch` receives and `broadcast::Receiver` became cooperative in 1.41.0.
-- `select!` became budget-aware in 1.44.0.
-- Use `tokio::task::coop` for custom resources from 1.44.0; `cooperative` and `poll_proceed` are available from 1.47.0.
-- `yield_now` takes effect immediately inside `block_in_place` as of 1.42.0.
-- Use `biased;` with `join!` or `try_join!` from 1.46.0 only when declaration-order polling is intentional.
+- `watch` receives and `broadcast::Receiver` participate in cooperative
+  scheduling from 1.41.0.
+- `select!` consumes cooperative budget from 1.44.0.
+- Use `task::coop` for custom asynchronous resources from 1.44.0;
+  `cooperative` and `poll_proceed` arrive in 1.47.0.
+- `yield_now` takes effect immediately inside `block_in_place` from 1.42.0.
 
-```rust
-let (first, second) = tokio::join!(biased; first_job(), second_job());
-```
+### Use current task primitives
 
-### Use newer task primitives
+- Use `tokio::sync::SetOnce` from 1.47.0 for asynchronously observable,
+  single-assignment state.
+- Use `Notify::notified_owned()` and `OwnedNotified` from 1.47.0 when the
+  notification future must not borrow its `Notify`.
+- Extend `JoinSet<T>` from an iterator from 1.49.0.
+- Sort `task::Id` values or use them as ordered keys from 1.48.0.
+- Use `LocalKey::try_get()` from 1.48.0 when missing task-local state should not
+  panic.
 
-- Use `tokio::sync::SetOnce` from 1.47.0 for single assignment.
-- Use `Notify::notified_owned()` and `OwnedNotified` from 1.47.0 when the notification future must not borrow its `Notify`.
-- Extend a `JoinSet<T>` from an iterator with `Extend` as of 1.49.0.
-- Sort `task::Id` values or use them as ordered keys as of 1.48.0.
-- Use `LocalKey::try_get()` from 1.48.0 when absent task-local state should not panic.
+### Interpret metrics carefully
 
-### Read metrics with their guarantees
+- Stable global queue depth arrives in 1.41.0; stable per-worker busy duration
+  and park/unpark counts arrive in 1.45.0.
+- Unstable spawned-task totals, combined park/unpark counts, and worker thread
+  IDs arrive in 1.39.0.
+- Unstable H2 histogram configuration and renamed histogram APIs arrive in
+  1.41.0.
+- Do not use `num_alive_tasks` as an exact concurrent invariant; its samples
+  are not strongly consistent.
 
-- Stable per-worker busy duration and park/unpark counts arrive in 1.45.0.
-- Unstable spawned-task totals, combined worker park/unpark counts, and worker thread IDs arrive in 1.39.0.
-- Unstable H2 histogram configuration and renamed histogram APIs arrive in 1.41.0.
-- Do not use `num_alive_tasks` as an exact concurrent invariant; its samples are not strongly consistent as of 1.49.0.
-
-Read [runtime-and-tasks.md](references/runtime-and-tasks.md) for lifecycle hooks, poll callbacks, task dumps, spawn locations, and eager driver handoff.
+Read [runtime-and-tasks.md](references/runtime-and-tasks.md) for task hooks,
+poll callbacks, task dumps, spawn locations, timers, and lifecycle ordering.
 
 ## Synchronization quick reference
 
-- Await `broadcast::Sender::closed()` from 1.44.0 to stop producers after all receivers disappear.
-- Hold a `broadcast::WeakSender` from 1.44.0 when an observer must not keep a channel open.
-- Inspect `oneshot::Receiver` synchronously with `is_empty()` and `is_terminated()` from 1.44.0.
-- Compare an `mpsc::OwnedPermit` with another permit or sender using `same_channel` and `same_channel_as_sender` from 1.46.0.
-- Derive `Default` for structures containing `watch::Sender<T>` when `T: Default` as of 1.39.0.
-- Use Tokio mpsc types across unwind-safety bounds as of 1.40.0.
+- Await `broadcast::Sender::closed()` to stop producers after every receiver is
+  gone, and use `broadcast::WeakSender` when an observer must not keep the
+  channel open; both are available from 1.44.0.
+- Use `mpsc::Receiver::blocking_recv_many` from 1.41.0 for synchronous batched
+  receives.
+- After `Receiver::close()`, a drained `try_recv()` reports `Disconnected` from
+  1.43.4, except while outstanding permits can still send, where it reports
+  `Empty` from 1.47.5.
+- `watch::Sender<T>` implements `Default` when its value can be defaulted from
+  1.39.0.
+- Tokio mpsc types satisfy unwind-safety bounds from 1.40.0.
 
-Read [synchronization.md](references/synchronization.md) before depending on close, permit, wakeup, or fairness semantics.
+Read [synchronization.md](references/synchronization.md) before relying on close,
+permit, wakeup, or fairness semantics.
 
-## I/O, networking, process, and signal quick reference
+## I/O and networking quick reference
 
-### I/O and files
+- Use `tokio::io::util::SimplexStream` from 1.40.0 or
+  `tokio_util::io::simplex` from `tokio-util` 0.7.18.
+- Name chained readers with public `tokio::io::Chain` and inspect file buffer
+  limits with `File::max_buf_size()` from 1.48.0.
+- Use Unix pipe endpoint `try_io` and `AioSource::register_borrowed` from 1.52.0
+  for immediate pipe operations and borrowed AIO registration.
+- Use `TcpStream::{quickack,set_quickack}` from 1.48.0 and IPv6 `TCLASS`
+  support from 1.49.0 where supported by the target.
+- Configure Unix child process groups with stable `Command::process_group` from
+  1.40.0. `Command::spawn_with` arrives in 1.45.0 and accepts `FnOnce` from
+  1.48.0.
 
-- Use `util::SimplexStream` from 1.40.0, or `tokio_util::io::simplex` from `tokio-util` 0.7.18.
-- Name the concrete chained-reader type with public `tokio::io::Chain` from 1.48.0.
-- Read a file's configured buffer limit with `File::max_buf_size()` from 1.48.0; clones now preserve that limit.
-- Use `unix::pipe::{Sender, Receiver}::try_io` from 1.52.0 for custom nonblocking endpoint operations.
-- Use `AioSource::register_borrowed` from 1.52.0 to register a borrowed resource without transferring ownership.
-
-### Networking
-
-- Use Unix `SocketAddr` standard-library conversions from 1.41.0, cloning from 1.46.0, and `as_abstract_name()` from 1.48.0.
-- Use `TcpStream::{quickack,set_quickack}` from 1.48.0 where the platform exposes TCP quick acknowledgements.
-- Configure IPv6 `TCLASS` through Tokio from 1.49.0.
-- Require 1.46.0 when successful macOS `TcpStream::shutdown` behavior matters.
-
-### Processes and signals
-
-- Configure Unix child process groups with stable `Command::process_group` from 1.40.0.
-- Use `Command::spawn_with` from 1.45.0; its callback may be `FnOnce` from 1.48.0.
-- Treat `Child::start_kill()` after normal exit as a successful cleanup race from 1.44.0.
-- Account for illumos realtime signals from 1.43.0 and Windows console close, logoff, and shutdown events from 1.44.0.
-
-Read [io-and-filesystem.md](references/io-and-filesystem.md) and [networking-process-signals.md](references/networking-process-signals.md) for backend and target details.
+Consult the I/O and networking references for target support, backend details,
+socket-address APIs, process races, and signal behavior.
 
 ## Companion crate quick reference
 
-### `tokio-util`
-
-- Compose cancellation with `run_until_cancelled`, its owned form, or `FutureExt` adapters; cancellation wins a simultaneous-ready tie from 0.7.16.
+- In `tokio-util`, compose cancellation with `run_until_cancelled`, its owned
+  form, or `FutureExt`; cancellation wins a simultaneous-ready tie from 0.7.16.
 - Use `AbortOnDropHandle` from 0.7.12 and detach it from 0.7.16.
 - Use stable `JoinMap` from 0.7.16 and `JoinQueue` from 0.7.17.
-- Recheck framing capacity assumptions: from 0.7.16, `Framed::with_capacity` applies the capacity to the read buffer too.
+- Recheck buffer assumptions: `Framed::with_capacity` applies its capacity to
+  both read and write buffers from 0.7.16.
+- In `tokio-stream`, batch `StreamMap` output with `next_many` or
+  `poll_next_many` from 0.1.16, recover timed-chunk remainder with
+  `ChunksTimeout::into_remainder` from 0.1.18, and use meaningful receiver
+  stream size hints from 0.1.18.
 
-### `tokio-stream`
-
-- Batch `StreamMap` results with `next_many` or `poll_next_many` from 0.1.16.
-- Name public stream adapter types from 0.1.16.
-- Recover an incomplete timed chunk with `ChunksTimeout::into_remainder` from 0.1.18.
-- Use meaningful receiver-stream `size_hint` bounds from 0.1.18.
-
-Read [tokio-util-and-stream.md](references/tokio-util-and-stream.md) for all included companion-crate changes and exact release floors.
+Read [tokio-util-and-stream.md](references/tokio-util-and-stream.md) for all
+companion-crate features, fixes, and exact floors.

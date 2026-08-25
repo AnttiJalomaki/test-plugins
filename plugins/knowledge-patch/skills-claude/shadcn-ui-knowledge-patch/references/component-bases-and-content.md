@@ -1,80 +1,67 @@
 # Component Bases and Content
 
-## Base UI Projects
+## Base UI Component Base
 
-New projects default to Base UI. Non-interactive scripts and CI that require
-Radix must request it explicitly:
-
-```sh
-pnpm dlx shadcn init -b radix
-```
-
-Base UI retains the shadcn/ui abstraction, application imports, appearance,
-and behavior; the underlying primitives change. Application code continues to
-import local components:
+New projects can use Base UI instead of Radix while retaining the shadcn/ui
+component abstraction, imports, appearance, and intended behavior. Only the
+underlying primitives change. When adding components, the CLI detects the
+project's library and applies corresponding transformations, including for
+remote-registry components. The Base UI implementation remains compatible
+with existing components.
 
 ```tsx
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 ```
 
-When adding a component, the CLI detects the project's configured library and
-applies the corresponding transformations. This also applies to components
-from remote registries. Base UI implementations remain compatible with
-existing components, allowing a project to migrate progressively.
+## Base UI Default
 
-Registry authors that must pin the base should provide a `registry:base` item.
-A registry without one initializes with the current Base UI default.
-
-## Base UI Toast
-
-Base UI projects have a current Toast component with actions, status types,
-promises, stacking, and swipe dismissal. Install its source through the CLI:
+New projects default to Base UI. Non-interactive scripts and CI that expect
+Radix must request it explicitly. A registry that needs to pin its component
+base should supply a `registry:base` item; without one, initialization uses
+Base UI.
 
 ```sh
-pnpm dlx shadcn@latest add toast
+pnpm dlx shadcn init -b radix
 ```
 
-This is distinct from the older Radix-oriented `toast` component deprecated in
-favor of `sonner`.
+## Progressive Radix Migration
 
-## React Aria Styles Stay Isolated
-
-The React Aria base supports all eight styles: Vega, Nova, Maia, Lyra, Mira,
-Luma, Rhea, and Sera. Aria-specific dependencies and state selectors come from
-the Aria registry. Adding them does not rewrite existing Base UI or Radix
-components.
-
-## Migrate Customized Radix Components Progressively
-
-The shadcn skill can migrate one customized component and all of its usages at
-a time, or migrate an entire project. Radix and Base UI may coexist while work
-is in progress.
-
-For each component, the migration can:
-
-- Apply mechanical API changes such as converting `asChild` to `render`.
-- Flag behavioral differences for human review.
-- Typecheck and build the project.
-- Write a component report under `.migration/`.
-- Create one commit per component on a migration branch.
-
-An instruction can be as focused as:
+The shadcn skill can migrate a customized Radix component and its usages one
+at a time while Radix and Base UI coexist, or migrate the full project. It
+performs mechanical changes such as converting `asChild` to `render`, flags
+behavior differences for review, typechecks and builds, writes a component
+report below `.migration/`, and creates one commit per component on a branch.
 
 ```text
 migrate accordion to base-ui
 ```
 
-Keep application behavior review in the loop; primitive APIs can be translated
-mechanically, but interaction differences may require judgment.
+## React Aria Style and Isolation
 
-## Build Deterministic Chat Demos
+The React Aria base supports all eight styles: Vega, Nova, Maia, Lyra, Mira,
+Luma, Rhea, and Sera. Aria state selectors and dependencies come from its own
+registry, so existing Base UI and Radix components remain unchanged.
 
-`@shadcn/helpers` can drive AI SDK or TanStack AI chat interfaces without an
-external model, API route, network request, or API key. Scripted conversations
-can include delays, reasoning, tool calls and results, sources, and streaming
-text.
+## Base UI Toast
 
-The AI SDK adapter returns native messages and a `useChat` transport:
+Base UI projects have a Toast component with actions, status types, promises,
+stacking, and swipe dismissal. Install its source through the CLI.
+
+```sh
+pnpm dlx shadcn@latest add toast
+```
+
+This is distinct from the deprecated legacy toast component for which Sonner
+is the recommended replacement.
+
+## Deterministic Chat Helpers
+
+`@shadcn/helpers` can drive AI SDK or TanStack AI chat interfaces without a
+model, API route, network request, or API key. The AI SDK adapter supplies
+native messages and a `useChat` transport. `@shadcn/helpers/tanstack-ai`
+supplies a TanStack AI `useChat` connection with real AG-UI events. Scripted
+conversations can emit delays, reasoning, tool calls and outputs, sources, and
+streaming text.
 
 ```tsx
 import { useChat } from "@ai-sdk/react"
@@ -92,16 +79,12 @@ export function useDemoChat() {
 }
 ```
 
-For TanStack AI, import from `@shadcn/helpers/tanstack-ai`; it supplies a
-TanStack `useChat` connection that emits real AG-UI events.
+## Typeset
 
-## Style HTML and Markdown With Typeset
-
-`shadcn/typeset` is a one-file CSS system for HTML and rendered Markdown. Add
-the `typeset` class to inherit the current theme and container width. It is safe
-for streaming content.
-
-Tune size, leading, and vertical flow per context through custom properties:
+`shadcn/typeset` is a one-file CSS system for styling HTML and rendered
+Markdown with the `typeset` class. It inherits the theme and container size,
+is safe for streaming content, and lets each context tune size, line height,
+and flow through CSS variables.
 
 ```css
 .typeset-chat {

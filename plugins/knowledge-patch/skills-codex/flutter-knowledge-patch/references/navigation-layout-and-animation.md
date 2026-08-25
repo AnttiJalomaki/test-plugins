@@ -1,177 +1,105 @@
 # Navigation, layout, and animation
 
-## Contents
+## Routes and transitions
 
-- [Routes and completion](#routes-and-completion)
-- [Page transitions and predictive back](#page-transitions-and-predictive-back)
-- [Cupertino navigation bars and sheets](#cupertino-navigation-bars-and-sheets)
-- [Overlays and anchored layout](#overlays-and-anchored-layout)
-- [Slivers and paint geometry](#slivers-and-paint-geometry)
-- [Scrolling and cache extent](#scrolling-and-cache-extent)
-- [Grids and carousels](#grids-and-carousels)
-- [Declarative repeating animation](#declarative-repeating-animation)
-- [Alignment and directionality](#alignment-and-directionality)
+- `FadeForwardsPageTransitionsBuilder` combines forward horizontal motion with
+  incoming/outgoing cross-fades (3.29.0). It becomes `MaterialApp`'s default in
+  `3.38-guide`, alongside predictive-back-aware route transitions; override it
+  explicitly only when retaining `ZoomPageTransitionsBuilder` is required.
+- Removing a route invokes `didComplete`, so route futures and custom completion
+  logic run even for `Navigator.removeRoute` (3.32.0).
+- `ModalRoute.opaqueOf(context)`, `ModalRoute.isActiveOf(context)`,
+  `ModalRoute.isFirstOf(context)`, and `ModalRoute.popDispositionOf(context)`
+  subscribe to one route property rather than all route changes (3.35.0).
+- `fullscreenDialog` is available through `ModalRoute`, descendants, and
+  `showDialog` (`3.35-guide`).
+- Shared-element transitions participate in Android predictive back (3.35.0), and
+  `Hero` exposes animation-curve customization in 3.44.0.
+- `Navigator.popUntilWithResult` pops several routes while delivering one result to
+  the destination route (`3.41-guide`).
 
-## Routes and completion
+## Cupertino sheets and bars
 
-Removing a route now invokes `didComplete` (`3.32.0`). A future returned when the
-route was pushed, and custom completion logic, can therefore finish after
-`Navigator.removeRoute` as well as after a normal pop.
-
-Use `Navigator.popUntilWithResult` to pop several routes and pass one value to the
-destination route in the same operation (`3.41-guide`).
-
-`fullscreenDialog` is available on `ModalRoute`, its descendants, and `showDialog`,
-allowing a dialog route to use fullscreen navigation behavior.
-
-For selective rebuilds, use `ModalRoute.opaqueOf(context)`, `isActiveOf(context)`,
-`isFirstOf(context)`, and `popDispositionOf(context)` rather than subscribing to every
-property on the enclosing route.
-
-## Page transitions and predictive back
-
-`FadeForwardsPageTransitionsBuilder` provides the Material transition that combines
-right-to-left movement with cross-fading for both incoming and outgoing pages
-(`3.29.0`). It replaces `ZoomPageTransitionsBuilder` as the `MaterialApp` default.
-
-Material navigation enables Android predictive-back route transitions by default.
-Shared-element transitions participate in predictive-back gestures, and `Hero`
-exposes configurable flight curves (`3.44.0`). Override these defaults explicitly only
-when the application must retain a prior motion design.
-
-The corrected `SpringDescription` formula affects underdamped springs with a mass
-other than `1`, especially near critical damping. Retune spring parameters when
-existing motion must remain visually identical.
-
-## Cupertino navigation bars and sheets
-
-`CupertinoNavigationBar` and `CupertinoSliverNavigationBar` accept a `bottom` widget.
-On the sliver form, `bottomMode` selects whether the bottom resizes away during scroll
-or remains visible. `CupertinoNavigationBar.large` is a static large-title bar.
-
-`CupertinoSheetRoute` and `showCupertinoSheet` create an iOS-style drag-to-dismiss
-route with the normal nested-navigation setup. The sheet surface can display its
-native-styled drag handle through `CupertinoSheet.showDragHandle`.
-
-Set `enableDrag: false` when drag dismissal is inappropriate:
-
-```dart
-showCupertinoSheet<void>(
-  context: context,
-  enableDrag: false,
-  scrollableBuilder: (context, controller) =>
-      ListView(controller: controller),
-);
-```
-
-Use `scrollableBuilder` to receive the managed `ScrollController`. This coordinates
-content scrolling with drag-to-dismiss motion and replaces the deprecated `builder`
-and `pageBuilder` parameters (`3.44-guide`).
-
-Pass `routeSettings` when navigator observers need a sheet name or arguments:
+- `CupertinoNavigationBar` and `CupertinoSliverNavigationBar` accept `bottom`;
+  `bottomMode` controls whether a sliver bar's bottom resizes away. Use
+  `CupertinoNavigationBar.large` for a static large-title bar (3.29.0).
+- `CupertinoSheetRoute` and `showCupertinoSheet` create drag-dismissable iOS-style
+  sheets with nested navigation. `enableDrag: false` disables drag dismissal
+  (`3.29.0`, `3.32-guide`).
+- Full-height sheets stretch upward and `CupertinoSheet.showDragHandle` adds the
+  native handle (3.38.0, `3.41-guide`).
+- Replace deprecated `builder` and `pageBuilder` with
+  `CupertinoSheetRoute.scrollableBuilder`; use its managed controller so scrolling
+  and drag dismissal cooperate (`3.44-guide`).
+- `showCupertinoSheet.routeSettings` gives observers a route name and arguments
+  (3.44.0).
 
 ```dart
 showCupertinoSheet<void>(
   context: context,
   routeSettings: const RouteSettings(name: '/filters'),
   scrollableBuilder: (context, controller) =>
-      ListView(controller: controller),
+      ListView(controller: controller, children: const [Text('Content')]),
 );
 ```
 
-Full-height Cupertino sheets stretch upward. On iOS, their backdrop blur uses bounded
-behavior so translucent colors do not bleed at the filter edges.
+## Overlays, menus, and anchored placement
 
-## Overlays and anchored layout
+- `OverlayPortal.overlayChildLayoutBuilder` positions an overlay child from overlay
+  and anchor geometry and rebuilds with its portal (3.32.0).
+- Replace `OverlayPortal.targetsRootOverlay(...)` with `OverlayPortal(...)` and
+  `overlayLocation: OverlayChildLocation.rootOverlay` (`3.38-guide`).
+- `RawAutocomplete` can use `OptionsViewOpenDirection.mostSpace` to choose the side
+  with most room (`3.41-guide`); Material `Autocomplete` supports keyboard option
+  navigation (3.32.0).
+- `CupertinoMenuAnchor` and `CupertinoMenuItem` provide anchored menus without a
+  Material dependency (3.44.0).
 
-`OverlayPortal.overlayChildLayoutBuilder` receives overlay and anchor geometry for
-positioning an overlay child. Expect the layout builder to rebuild whenever its
-`OverlayPortal` rebuilds.
+## Slivers, viewports, and grids
 
-Replace `OverlayPortal.targetsRootOverlay(...)` with the normal constructor plus:
+- Explicit sliver paint order controls z-order for overlaps such as sticky headers
+  (`3.35-guide`).
+- `SliverList.builder`, `SliverGrid.builder`, and `SliverFixedExtentList.builder`
+  accept `semanticIndexOffset` to continue accessibility indexing across slivers
+  (3.38.0).
+- Two-dimensional viewports choose a cache-extent type, including viewport-relative
+  caching. `GridView` constructors accept `mainAxisExtent` for fixed main-axis tile
+  size (3.41.0).
+- `ScrollCacheExtent` shares cache configuration across scroll views, and
+  `PageView.scrollCacheExtent` caches pages beyond the viewport (3.44.0).
+- Rendering code can use `RenderSliver.getMaxPaintRect` rather than infer maximum
+  paint bounds from current geometry (3.44.0).
 
-```dart
-OverlayPortal(
-  overlayLocation: OverlayChildLocation.rootOverlay,
-  controller: controller,
-  overlayChildBuilder: overlayBuilder,
-  child: child,
-)
-```
+## Layout and shapes
 
-For an experimental content-sized desktop window, `Overlay.alwaysSizeToContent` keeps
-the overlay sizing its window from its contents beyond the usual sizing path.
+- Rounded-superellipse APIs include `RoundedSuperellipseBorder`,
+  `ClipRSuperellipse`, `Canvas.drawRSuperellipse`, `Canvas.clipRSuperellipse`, and
+  `Path.addRSuperellipse`
+  (`3.32-guide`). Initial desktop/web fallback to rounded rectangles ended for web
+  in 3.35.0.
+- Scrollbar padding accepts `EdgeInsetsGeometry`; `TableBorder` paints non-uniform
+  side styles (3.38.0).
+- Material dialogs default to a 560 dp maximum width. Override through
+  `AlertDialog.constraints` or `SimpleDialog.constraints` (3.35.0).
+- `ShapedInputBorder` adapts any `ShapeBorder`, including a rounded superellipse,
+  for Material input decoration (`3.44-guide`).
 
-## Slivers and paint geometry
+## Animation
 
-- Control sliver paint order explicitly when z-order matters, for example for an
-  overlapping sticky header (`3.35-guide`).
-- `RenderSliver.getMaxPaintRect` returns a custom sliver's maximum paint rectangle;
-  do not infer it from current painted geometry.
-- A `Form` cannot itself be a sliver. Place it inside `SliverToBoxAdapter` in a
-  `CustomScrollView`.
-- Continue a semantics index across multiple builder slivers with
-  `semanticIndexOffset`; see the accessibility reference.
+- Dialog entry points and `DialogRoute` accept `animationStyle`
+  (`3.32-guide`).
+- Corrected `SpringDescription` math changes underdamped motion for masses other
+  than 1 near critical damping; retune parameters when preserving old motion
+  (`3.32-guide`).
+- `RepeatingAnimationBuilder` owns a continuous animation without a manual
+  controller; `RepeatMode.reverse` alternates direction (`3.41-guide`).
+- `Expansible` consolidates timing and curve configuration in `AnimationStyle`
+  (3.41.0).
+- `CarouselView` supports infinite looping, `onIndexChanged`, and
+  `CarouselController.leadingItem` (`3.44-guide`).
 
-## Scrolling and cache extent
+## Window-linked layout
 
-`ScrollCacheExtent` supplies shared cache-extent configuration to more scrolling
-widgets. `PageView.scrollCacheExtent` explicitly caches pages outside the viewport.
-Two-dimensional viewports can select a cache-extent type, including a
-viewport-relative extent (`3.41.0`).
-
-`Scrollbar` padding APIs accept `EdgeInsetsGeometry`, enabling direction-aware
-insets. `TableBorder` can paint non-uniform sides.
-
-## Grids and carousels
-
-`GridView` constructors accept `mainAxisExtent`, so fixed-height or fixed-width tiles
-do not need a custom delegate:
-
-```dart
-GridView.count(
-  crossAxisCount: 2,
-  mainAxisExtent: 120,
-  children: children,
-)
-```
-
-`CarouselView` supports infinite scrolling and reports movement through
-`onIndexChanged`. `CarouselController.leadingItem` exposes the current leading item.
-Use `CarouselView.itemClipBehavior` to select child clipping.
-
-## Declarative repeating animation
-
-`RepeatingAnimationBuilder` drives a continuous animation without an owned
-`AnimationController`. `RepeatMode.reverse` alternates direction.
-
-```dart
-RepeatingAnimationBuilder<Offset>(
-  animatable: Tween(
-    begin: const Offset(-1, 0),
-    end: const Offset(1, 0),
-  ),
-  duration: const Duration(seconds: 1),
-  repeatMode: RepeatMode.reverse,
-  builder: (context, offset, child) => FractionalTranslation(
-    translation: offset,
-    child: child,
-  ),
-  child: const SizedBox.square(dimension: 100),
-)
-```
-
-Progress indicators may instead receive an `AnimationController` when application
-state must drive or synchronize their animation.
-
-## Alignment and directionality
-
-`AlignmentGeometry` provides directional static members. In a context expecting
-`AlignmentGeometry`, dot shorthand can select `.centerStart` without spelling
-`AlignmentDirectional.centerStart`:
-
-```dart
-Align(alignment: .centerStart, child: child)
-```
-
-Always test directional members in both text directions.
+Experimental desktop windowing can size views from content. `Overlay.alwaysSizeToContent`
+keeps the window following overlay content (3.44.0). Gate this behavior because
+unsupported window archetypes may throw and main-channel APIs can change.

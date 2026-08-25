@@ -1,14 +1,26 @@
 # Images, fonts, and styles
 
-## Responsive images
+## Cropping and responsive layouts (5.0.0)
 
-### Layouts, cropping, and defaults
+With the default Sharp service, Astro 5's
+`experimental.responsiveImages` adds `fit` and `position` for cropping to
+requested dimensions and predefined responsive layouts that generate
+appropriate `srcset` and `sizes` values.
 
-Behind `experimental.responsiveImages`, the original responsive-image preview added `fit` and `position` cropping for requested dimensions with the default Sharp service, plus `constrained`, `fixed`, and `full-width` layouts that generate `srcset` and `sizes` (`5.0.0`). Astro `5.10.0` made responsive image configuration stable:
+```astro
+<Image src={logo} fit="cover" width={200} height={200} />
+<Image src={rocket} width={800} height={600} layout="responsive" />
+```
+
+In 5.4.0 the same flag makes standard Markdown and MDX images responsive.
+
+## Stable responsive images and priority (5.10.0)
+
+Responsive images no longer need a flag. Set site defaults under `image`; a
+component's `layout` overrides the global default. `priority` applies
+`loading="eager"`, `decoding="sync"`, and `fetchpriority="high"`.
 
 ```js
-import { defineConfig } from 'astro/config';
-
 export default defineConfig({
   image: {
     responsiveStyles: true,
@@ -17,36 +29,99 @@ export default defineConfig({
 });
 ```
 
-A component-level `layout` overrides the global default. The `priority` prop marks a critical image with `loading="eager"`, `decoding="sync"`, and `fetchpriority="high"`:
-
 ```astro
-<Image
-  src="/hero.jpg"
-  alt="Mountain panorama"
-  layout="full-width"
-  priority
-/>
+<Image src="/hero.jpg" alt="Mountain panorama" layout="full-width" priority />
 ```
 
-During the experimental phase, `image.experimentalDefaultStyles` defaulted to `true` and could be disabled when its low-specificity, unlayered CSS interfered with a project's cascade layers, notably Tailwind CSS layers (`5.9.0`). The stable control is `image.responsiveStyles`.
+While using the Astro 5 experimental form, the low-specificity generated
+styles default on. Set `image.experimentalDefaultStyles: false` if those
+unlayered rules conflict with application CSS or Tailwind cascade layers
+(5.9.0).
 
-### Markdown and remote sources
+## Imported SVG components (5.0.0)
 
-Standard Markdown image syntax for a remote URL is processed through Astro's image service by default (`5.4.0`). Use an HTML `<img>` to skip optimization for one remote image; images from `public/` remain unprocessed. The responsive-image preview also applied responsive properties and styles to images in Markdown and MDX (`5.4.0`), behavior now controlled by the stable image configuration.
+Astro 5 initially required `experimental.svg` for default imports of local SVG
+files as inline Astro components. Native `<svg>` attributes such as `width`,
+`height`, `fill`, and `stroke` become component props.
 
-Remote optimization follows at most ten redirects (`6.3.0`). Every URL in the chain must match `image.domains` or `image.remotePatterns`; Astro throws if any hop leaves the allowlist.
+SVG components are stable from 5.7.0 and no longer need the flag. Since 5.6.0
+they do not accept `title`, `size`, or `mode`, are always inline, and receive
+no default `role`. Use an accessible label, role, and explicit dimensions:
 
-## Image transformations
+```astro
+<Logo aria-label="My company logo" role="img" width={64} height={64} />
+```
 
-### Background, resize kernel, and codec defaults
+Use the built-in `SvgComponent` type when passing an imported component
+through a typed API (5.14.0):
 
-`background` accepts any CSS color for transparent sources converted to an opaque format such as JPEG (`5.17.0`). It works in both `<Image>` and `getImage()`:
+```ts
+import type { SvgComponent } from 'astro/types';
+
+type IconProps = { icon: SvgComponent };
+```
+
+## SVG optimization (5.16.0)
+
+The original build-time optimizer used `experimental.svgo: true` for SVGO's
+recommended settings or a custom SVGO configuration object for plugin control.
+
+Astro 6.2 replaces that option with pluggable `experimental.svgOptimizer`.
+Any `SvgOptimizer` implementation is accepted; `svgoOptimizer()` supplies the
+built-in SVGO implementation (6.2.0):
+
+```js
+import { defineConfig, svgoOptimizer } from 'astro/config';
+
+export default defineConfig({
+  experimental: {
+    svgOptimizer: svgoOptimizer({
+      plugins: ['preset-default', { name: 'removeViewBox' }],
+    }),
+  },
+});
+```
+
+Optimization applies to imported SVG components at build time.
+
+## Safe SVG image processing (6.3.0)
+
+The image pipeline does not rasterize SVG image sources by default because SVG
+can contain active content. Only trusted projects should restore the previous
+behavior:
+
+```js
+export default defineConfig({
+  image: { dangerouslyProcessSVG: true },
+});
+```
+
+Importing an SVG as a component is unaffected.
+
+## Remote image redirects (6.3.0)
+
+Remote optimization follows at most ten redirects. Every URL in the chain
+must match `image.domains` or `image.remotePatterns`; Astro throws if any hop
+leaves the allowlist.
+
+```js
+export default defineConfig({
+  image: { domains: ['example.com', 'cdn.example.com'] },
+});
+```
+
+## Image backgrounds and resize kernels (5.17.0)
+
+Image transformations accept any CSS color in `background`, allowing a
+transparent source converted to JPEG to use a chosen background instead of
+black. The option works with `<Image>` and `getImage()`.
 
 ```astro
 <Image src={product} format="jpeg" background="white" alt="Product" />
 ```
 
-The Sharp service's site-wide `kernel` setting selects the resize algorithm (`5.17.0`); it cannot be selected per image, and the default for downsizing is `lanczos3`.
+Sharp's site-wide `kernel` selects the resize algorithm; the default for
+downsizing is `lanczos3`. It cannot be set per image.
 
 ```js
 export default defineConfig({
@@ -59,7 +134,10 @@ export default defineConfig({
 });
 ```
 
-Sharp also accepts global `jpeg`, `webp`, `avif`, and `png` encoding defaults (`6.1.0`). A per-image `quality` still wins over the codec default.
+## Sharp codec defaults (6.1.0)
+
+Sharp global service configuration accepts `jpeg`, `webp`, `avif`, and `png`
+encoding defaults. A component's `quality` still wins over these settings.
 
 ```js
 export default defineConfig({
@@ -76,52 +154,53 @@ export default defineConfig({
 });
 ```
 
-### SVG source safety
+Astro supports Sharp 0.35; pnpm projects on that release no longer need to
+approve Sharp's build script (7.0.1-7.2.4).
 
-Astro no longer rasterizes SVG sources through the image pipeline by default because an SVG can contain active content (`6.3.0`). Trusted projects can restore processing with `image.dangerouslyProcessSVG: true`. This setting does not affect SVG component imports.
+## Experimental Fonts API (5.7.0)
 
-## SVG components and optimization
-
-Local SVG files were first importable as inline Astro components behind `experimental.svg` (`5.0.0`); native `<svg>` attributes such as `width`, `height`, `fill`, and `stroke` become component props. The feature is stable without a flag as of `5.7.0`.
-
-Compatibility changes from `5.6.0` still apply:
-
-- replace the removed `title` prop with `aria-label`;
-- replace `size` with explicit `width` and `height`;
-- remove component and configuration `mode` because SVG components are always inline;
-- add an explicit `role` when accessibility semantics require one, because Astro supplies no default.
-
-Use `SvgComponent` from `astro/types` when a prop or helper accepts any imported SVG component, instead of spelling the type as `typeof import('*.svg')` (`5.14.0`).
-
-```ts
-import type { SvgComponent } from 'astro/types';
-
-type IconProps = { icon: SvgComponent };
-```
-
-Build-time SVG optimization began with `experimental.svgo` and either the recommended settings or a custom SVGO plugin object (`5.16.0`). `experimental.svgOptimizer` replaced it with a provider-neutral `SvgOptimizer` interface in `6.2.0`. Use the built-in `svgoOptimizer()` when SVGO is desired:
+The Astro 5 `experimental.fonts` array supports local fonts and built-in
+Google, Fontsource, and Bunny providers, optimizes files, generates fallbacks,
+and can expose a CSS variable. `<Font>` from `astro:assets` controls applying
+and preloading the family.
 
 ```js
-import { defineConfig, svgoOptimizer } from 'astro/config';
+import { defineConfig, fontProviders } from 'astro/config';
 
 export default defineConfig({
   experimental: {
-    svgOptimizer: svgoOptimizer({
-      plugins: ['preset-default', { name: 'removeViewBox' }],
-    }),
+    fonts: [{
+      provider: fontProviders.google(),
+      name: 'Roboto',
+      cssVariable: '--font-roboto',
+    }],
   },
 });
 ```
 
-Imported SVG components are optimized during the build.
+From 5.15.0, `<Font preload>` may be an array of filters over `weight`,
+`style`, and `subset`. Fields within a filter intersect; separate filters add
+matches. A requested weight matches a variable font range containing it.
 
-## Fonts
+```astro
+<Font
+  cssVariable="--font-roboto"
+  preload={[{ subset: 'latin', style: 'normal' }, { weight: '400' }]}
+/>
+```
 
-### Configuration and providers
+In 5.14.0, `getFontData('--font-roboto')` exposes family and generated source
+URLs for consumers such as Open Graph renderers.
 
-The initial Fonts API used `experimental.fonts`, built-in providers such as Google, Fontsource, and Bunny, automatic optimization and fallback generation, and a `<Font>` component from `astro:assets` (`5.7.0`). Astro 6 moves families to top-level `fonts` (`6.0-guides`), downloads provider files, and serves them locally.
+## Stable top-level fonts (6.0-guides)
 
-Built-in providers cover Adobe, Bunny, Fontshare, Fontsource, Google, Google Icons, NPM packages, and local files. Remote-provider defaults select weight 400, normal and italic styles, the Latin subset, a sans-serif fallback, and WOFF2. A local provider instead declares `options.variants`; each variant's `src` can include fallback formats, and omitted weight and style values are inferred.
+Astro 6 moves families to top-level `fonts`. Provider files are downloaded and
+served locally. Built-ins cover Adobe, Bunny, Fontshare, Fontsource, Google,
+Google Icons, NPM, and local files. Provider defaults are weight 400, normal
+and italic styles, Latin subset, a sans-serif fallback, and WOFF2.
+
+The local provider declares `options.variants`; its `src` can list alternate
+formats, and omitted weight and style are inferred:
 
 ```js
 import { defineConfig, fontProviders } from 'astro/config';
@@ -143,48 +222,34 @@ export default defineConfig({
 });
 ```
 
-The `<Font>` component applies a configured family and can preload it. Its `preload` prop can be an array of filters over `weight`, `style`, and `subset` (`5.15.0`). Fields within one filter are combined, filters are additive, and an exact requested weight also matches a variable-font range containing it.
-
-```astro
-<Font
-  cssVariable="--font-roboto"
-  preload={[{ subset: 'latin', style: 'normal' }, { weight: '400' }]}
-/>
-```
-
-### Selecting non-Cartesian variants
-
-Repeating a font with the same `name`, `cssVariable`, and provider merges the selected variants (`6.0-guides`). This avoids downloading every Cartesian weight/style combination:
-
-```js
-fonts: [
-  {
-    provider: fontProviders.google(),
-    name: 'Roboto',
-    cssVariable: '--font-roboto',
-    weights: [500, 600],
-    styles: ['normal'],
-  },
-  {
-    provider: fontProviders.google(),
-    name: 'Roboto',
-    cssVariable: '--font-roboto',
-    weights: [500],
-    styles: ['italic'],
-  },
-]
-```
-
-### Programmatic font data and caches
-
-The earlier `getFontData()` API accepted a CSS variable and exposed family records and generated file URLs (`5.14.0`). Astro 6 exposes `fontData` from `astro:assets`, keyed by CSS variable (`6.0-guides`):
+`fontData` from `astro:assets` is keyed by CSS variable and exposes generated
+variant source URLs:
 
 ```ts
 import { fontData } from 'astro:assets';
 
-const path = fontData['--font-roboto'][0].src[0].url;
+const url = fontData['--font-roboto'][0].src[0].url;
 ```
 
-During prerendering, the `experimental_getFontFileURL()` helper resolves a managed path against `context.url` to produce a fetchable URL for build-time renderers such as Satori (`6.2.0`).
+To request non-Cartesian weight/style combinations, repeat a family with the
+same name, variable, and provider but different selectors. Astro merges them;
+for example, one declaration can request normal 500/600 and another italic
+500 without downloading italic 600.
 
-Static builds copy font assets to `_astro/fonts`. Delete `.astro/fonts` to clear the development font cache or `node_modules/.astro/fonts` to clear the build cache (`6.0-guides`).
+Builds copy fonts to `_astro/fonts`. Clear `.astro/fonts` for the development
+cache or `node_modules/.astro/fonts` for the build cache.
+
+## Fetchable font URLs during prerendering (6.2.0)
+
+`experimental_getFontFileURL(path, context.url)` resolves an Astro-managed
+`fontData` path against the request during prerendering. Build-time image
+generators such as Satori can then fetch the public URL:
+
+```ts
+import { fontData, experimental_getFontFileURL } from 'astro:assets';
+
+const path = fontData['--font-roboto'][0]?.src[0]?.url;
+if (path === undefined) throw new Error('Font not found');
+const url = experimental_getFontFileURL(path, context.url);
+const data = await fetch(url).then((response) => response.arrayBuffer());
+```

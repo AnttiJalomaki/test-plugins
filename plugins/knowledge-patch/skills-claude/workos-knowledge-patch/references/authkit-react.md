@@ -2,50 +2,39 @@
 
 ## Provider configuration
 
-Initialize `@workos-inc/authkit-react` with:
+Initialize `@workos-inc/authkit-react` with a public client ID, a dashboard
+redirect URI, and the application's allowed origin. Set
+`AuthKitProvider.apiHostname` to an owned Authentication API domain in
+production.
 
-- a public client ID;
-- a dashboard-configured redirect URI; and
-- the application's allowed origin.
+`devMode` stores tokens in local storage. It activates automatically only on
+`localhost` and `127.0.0.1`; treat it as a local-development facility.
 
-Set `AuthKitProvider.apiHostname` to an owned Authentication API domain in
-production. `devMode` stores tokens in local storage; it is enabled
-automatically only on `localhost` and `127.0.0.1`.
+Externally initiated and impersonation flows need a dashboard sign-in endpoint,
+such as `/login`. Its route must call `signIn()` to start the hosted OAuth flow.
 
-Externally initiated and impersonation flows require a dashboard sign-in
-endpoint such as `/login`. That route must call `signIn()` to begin the
-hosted OAuth flow.
-
-## Authentication state
+## Auth state and organizations
 
 `useAuth()` exposes:
 
 - the current user and organization;
 - `role`, `roles`, permissions, and feature flags;
-- the impersonator and authentication method;
-- token-aware `getAccessToken`;
-- synchronous `getUser`;
+- impersonator and authentication method;
+- token-aware `getAccessToken` and synchronous `getUser`;
 - URL-only `getSignInUrl` and `getSignUpUrl`; and
 - `switchToOrganization({ organizationId, signInOpts? })`.
 
 Sign-in and sign-up options support state, organization, login hint, invitation
 token, and screen hint.
 
-## Redirect state and organization switching
+## Redirect state
 
-React authentication state may be an object. Recover it in
-`onRedirectCallback`. This differs from the opaque string state accepted by
-the Next.js callback helper.
+React state may be an object and is recovered in `onRedirectCallback`. This
+differs from the Next.js helper, whose state value is an opaque string.
 
-Use `switchToOrganization` to change the active organization and optionally
-provide sign-in options for the transition.
+## Refresh and token helpers
 
-## Refresh and token handling
-
-Use provider hooks `onRefresh`, `onRefreshFailure`, and
-`onBeforeAutoRefresh` to control renewal behavior. Set
-`refreshBufferInterval` to control how early renewal begins.
-
-Decode access-token claims with `getClaims(token)`. When signed out,
-`getAccessToken()` throws `LoginRequiredError`; handle that typed error
-rather than treating the result as an empty token.
+Use `onRefresh`, `onRefreshFailure`, `onBeforeAutoRefresh`, and
+`refreshBufferInterval` to control token renewal. `getClaims(token)` decodes
+access-token claims. Calling `getAccessToken()` while signed out throws
+`LoginRequiredError`.

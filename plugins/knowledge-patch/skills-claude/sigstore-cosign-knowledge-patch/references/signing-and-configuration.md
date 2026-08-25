@@ -1,59 +1,80 @@
 # Signing and service configuration
 
-## Service discovery
+Use this reference when constructing trusted roots or signing configurations,
+selecting service endpoints, authenticating to a TSA, signing through Rekor
+v2, or using certificates and algorithms.
 
-Service URLs are fetched from the TUF signing configuration by default. Treat that configuration as the source of the effective signing-service endpoints unless an explicit workflow decision overrides it.
+## TUF signing-configuration defaults
 
-Trusted-root and signing-config creation can use default services. This supports standard configuration creation without manually duplicating the service list.
+Service URLs are fetched from the TUF signing configuration by default (batch
+3.1.2). Trusted-root and signing-config creation can also use default services.
 
-## Base configuration precedence
+Prefer the standard configuration source when the normal Sigstore services are
+intended. If a workflow overrides endpoints, make the override explicit and
+reviewable instead of duplicating defaults in a wrapper.
 
-`--base-config` can seed a signing configuration. The service definitions are then overridden, so base-file service entries must not be assumed to survive into the effective configuration.
+## Base-configuration precedence
 
-Use this review sequence:
+`--base-config` can seed a signing configuration, but service definitions are
+subsequently overridden (batch 3.1.2). Service entries in the base file are
+therefore not necessarily authoritative in the effective result.
 
-1. inspect the base configuration inputs;
-2. create or derive the signing configuration;
-3. inspect the effective service definitions after overrides;
-4. confirm that the resulting endpoints match the intended trust and availability policy.
-
-This precedence matters when a base file mixes general defaults with environment-specific service URLs.
-
-## Trusted-root creation
-
-Trusted-root creation can use default services. Keep the trusted-root artifact and signing configuration conceptually separate: one supplies verification trust material, while the other supplies signing-service configuration.
-
-Do not infer the verification trust path merely from the URLs used during signing.
+Inspect the generated configuration after applying a base configuration,
+especially when endpoint selection defines a security or compliance boundary.
 
 ## TSA mutual TLS
 
-TSA clients support mutual TLS when a signing configuration is used. Put the TSA client-authentication requirements into the signing-configuration workflow and test them with the effective endpoint selection.
+TSA clients support mutual TLS when a signing configuration is used (batch
+3.1.2). Supply the required client certificate, private-key material, and
+related authentication settings through the signing configuration rather than
+constructing an unrelated timestamp transport path.
 
-A plain connectivity check is insufficient when the TSA requires a client certificate. Confirm that the configured client can authenticate and obtain the timestamp required by the signing path.
+Validate the effective TSA client setup before signing. A configured TSA URL
+alone does not establish that required client authentication is available.
 
-## Rekor v2 signed timestamps
+## Rekor v2 timestamp requirement
 
-Rekor v2 entries automatically require a signed timestamp. Rekor v2 signing with Fulcio enforces the TSA requirement.
+Rekor v2 entries automatically require a signed timestamp (batch 3.1.2).
+Rekor v2 signing with Fulcio enforces the TSA requirement.
 
-Consequences for a signing workflow:
+Before signing:
 
-- TSA availability is a prerequisite, not an optional enhancement.
-- The effective signing configuration must resolve to a usable timestamp service.
-- TSA mTLS material must be available when the timestamp service requires it.
-- A workflow should fail as a signing failure when it cannot obtain the required signed timestamp.
+1. Resolve the effective signing configuration.
+2. Confirm that it contains a usable TSA.
+3. Confirm any required mTLS material is available.
+4. Treat a missing or unusable TSA as a prerequisite failure.
 
-## Signing choices
+Do not downgrade the missing timestamp to a warning or assume the transparency
+log entry can replace the required signed timestamp.
 
-`sign-blob` can sign with a certificate. Signing exposes `--signing-algorithm`, so a workflow can make the algorithm selection explicit.
+## Blob signing with a certificate
 
-Review certificate selection, signing algorithm, service endpoints, and bundle destination independently. Conflating these inputs makes it difficult to determine which trust or transport decision caused a failure.
+`sign-blob` can sign with a certificate (batch 3.1.2). Keep certificate choice,
+private-key choice, service configuration, and output-bundle path explicit so
+that a change in one does not silently alter the others.
 
-## Configuration review
+## Signing-algorithm selection
 
-- Prefer TUF signing configuration as the default source of service URLs.
-- Use default services when creating a standard trusted root or signing configuration.
-- Verify service definitions after applying `--base-config`.
-- Configure and test TSA mTLS through the signing configuration when required.
-- Provision TSA access before attempting Rekor v2 signing.
-- Keep signing configuration and verification trust material distinct.
-- Record an explicit signing-algorithm choice when policy requires one.
+Signing exposes `--signing-algorithm` (batch 3.1.2). Use it when policy or
+interoperability requires an explicit algorithm. Do not infer the signing
+algorithm solely from service configuration.
+
+For public keys, Cosign 3.1.3 auto-detects the default digest algorithm. Avoid
+hard-coded assumptions that all key types share one default.
+
+## OCI signing with an X.509 chain
+
+Cosign 3.1.3 supports OCI signing with an X.509 certificate chain (batch
+2.6.5-3.1.3). Use the chain-capable signing path when consumers need chain
+material, and preserve the distinction between the leaf certificate and its
+issuer chain.
+
+Verification policy must still validate the certificate chain. Supplying a
+chain during signing is not itself proof that a verifier checked it.
+
+## PKCS#11 lookup failures
+
+When no PKCS#11 key pair matches, Cosign 3.1.3 returns an error instead of
+panicking (batch 2.6.5-3.1.3). Treat the result as a recoverable signing error:
+report the unmatched selector or key reference, fail the operation, and let the
+caller decide whether to retry with corrected input.

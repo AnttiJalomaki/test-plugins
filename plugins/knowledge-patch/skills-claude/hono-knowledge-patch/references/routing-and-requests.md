@@ -1,111 +1,99 @@
 # Routing and Requests
 
-## Contents
+## Inspect the matched route chain
 
-- [Route matching and introspection](#route-matching-and-introspection)
-- [Trailing slashes and proxy behavior](#trailing-slashes-and-proxy-behavior)
-- [Request bodies, queries, and cloning](#request-bodies-queries-and-cloning)
-- [URLs and language matching](#urls-and-language-matching)
+Since 4.8.0, `hono/route` exports:
 
-## Route matching and introspection
+- `matchedRoutes(c)` for the matched handlers.
+- `routePath(c)` for the current route pattern.
+- `baseRoutePath(c)` for a mounted application's registered base pattern.
+- `basePath(c)` for the request-resolved mounted base path.
 
-### HEAD follows GET routing
-
-Hono converts every `HEAD` request to `GET` before route matching and strips the response body afterward. Define a `GET` route for the shared status and headers. Dedicated `app.head()` and `app.on('HEAD', ...)` handlers do not run.
-
-Put HEAD-only behavior in middleware that checks the original `c.req.method`:
-
-```ts
-app.use('/api/users', async (c, next) => {
-  await next()
-  if (c.req.method === 'HEAD') {
-    c.header('X-HEAD-Processed', 'true')
-    c.res = new Response(null, c.res)
-  }
-})
-
-app.get('/api/users', (c) => {
-  c.header('X-Total-Count', '1')
-  return c.json(['Ada'])
-})
-```
-
-### Inspect matched routes
-
-The `hono/route` module provides these helpers (since 4.8.0):
-
-- `matchedRoutes(c)`
-- `routePath(c)`
-- `baseRoutePath(c)`
-- `basePath(c)`
-
-Use them to inspect the handlers that matched and the route paths involved in mounted applications.
-
-`routePath(c, index)` and `baseRoutePath(c, index)` select a match using `Array.prototype.at()` semantics. Negative indices count from the end. The positions include matching middleware as well as the endpoint route.
+`routePath(c, index)` and `baseRoutePath(c, index)` accept an
+`Array.prototype.at()`-style index, including negative values. This makes it
+possible to inspect any entry in the middleware and route chain rather than
+only the last match.
 
 ```ts
-import { routePath } from 'hono/route'
-
-app.all('/api/*', (c, next) => next())
-app.get('/api/users/:id', (c) => {
-  const middlewarePath = routePath(c, 0) // '/api/*'
-  const endpointPath = routePath(c, -1) // '/api/users/:id'
-  return c.json({ middlewarePath, endpointPath })
-})
+app.all('/api/*', (_c, next) => next())
+app.get('/api/users/:id', (c) => c.json({
+  first: routePath(c, 0),
+  last: routePath(c, -1),
+}))
 ```
 
-## Trailing slashes and proxy behavior
-
-### Redirect before wildcard handlers
-
-Trailing-slash middleware accepts `alwaysRedirect: true` so its redirect happens before wildcard handlers run (since 4.12.0).
+Inside a mounted sub-application, distinguish the local route pattern from the
+mount pattern and its resolved path:
 
 ```ts
-import { trimTrailingSlash } from 'hono/trailing-slash'
-
-app.use(trimTrailingSlash({ alwaysRedirect: true }))
+const subApp = new Hono()
+subApp.get('/posts/:id', (c) => c.json({
+  route: routePath(c),         // '/posts/:id'
+  baseRoute: baseRoutePath(c), // '/:sub'
+  base: basePath(c),           // '/api' for GET /api/posts/123
+}))
+app.route('/:sub', subApp)
 ```
 
-Later 4.12 releases add `skip` for selectively exempting requests.
+## Parse requests defensively
 
-### Expect RFC-compliant hop-by-hop handling
+### Query and body normalization
 
-Proxy handling follows RFC 9110 from 4.10.0. Connection-specific, hop-by-hop headers must not be expected to traverse a proxy unchanged.
+As of 4.8.0, invalid query parameters no longer make request query parsing
+throw. `parseBody()` also normalizes returned field names instead of exposing
+inconsistent key forms.
 
-## Request bodies, queries, and cloning
+With `parseBody({ dot: true })`, use a patched 4.12 line: current behavior
+ignores `__proto__` path segments to prevent prototype-oriented input from
+becoming object structure.
 
-### Read raw bytes
+### Recreate a consumed raw request
 
-Use `c.req.bytes()` to read a request body as bytes (since 4.12.0):
-
-```ts
-const bytes = await c.req.bytes()
-```
-
-### Clone after body consumption
-
-Use `cloneRawRequest` from `hono/request` when a validator, middleware, or handler has already consumed the body but another API still needs a raw `Request` (since 4.10.0):
+Since 4.10.0, `cloneRawRequest` from `hono/request` reconstructs a raw
+`Request` after a validator, `c.req.json()`, or other middleware has consumed
+the body.
 
 ```ts
 import { cloneRawRequest } from 'hono/request'
 
-await c.req.json()
-const request = cloneRawRequest(c.req)
+app.post('/api', async (c) => {
+  await c.req.json()
+  const request = cloneRawRequest(c.req)
+  await externalLibrary.process(request)
+  return c.body(null, 204)
+})
 ```
 
-### Account for parsing fixes
+## Respect proxy header semantics
 
-- Invalid query parameters no longer make the request helper throw (since 4.8.0).
-- `parseBody()` normalizes parsed field names (since 4.8.0).
+Proxy behavior follows RFC 9110 as of 4.10.0. Hop-by-hop headers are stripped
+or processed rather than forwarded unchanged. Do not use those headers as an
+application-level communication channel across a proxy boundary.
 
-Do not reintroduce exception handling or field-name assumptions based on the older behavior.
+## Control trailing slashes and locale fallback
 
-## URLs and language matching
+In 4.12.0, `trimTrailingSlash({ alwaysRedirect: true })` redirects before
+handlers run, including for wildcard routes. Later 4.12 releases add `skip` so
+selected requests can be exempted.
 
-### Use HTTP over Unix sockets
+Language normalization performs RFC 4647-style progressive truncation. For
+example, requested `ja-JP` can match supported `ja` before the configured
+fallback is used.
 
-Hono recognizes the `http+unix` URL scheme (since 4.8.0).
+## Address HTTP endpoints over Unix sockets
 
-### Use progressive locale fallback
+Since 4.8.0, Hono recognizes the `http+unix` URL scheme for HTTP endpoints
+reached over Unix domain sockets. Use that scheme rather than treating the
+socket path as a conventional TCP host.
 
-Language normalization performs RFC 4647 Lookup-style progressive truncation (since 4.12.0). A requested locale such as `ja-JP` can match supported `ja` before the configured fallback language is used.
+## Apply router and address fixes
+
+Version 4.13.3 corrects several boundary cases:
+
+- `TrieRouter` matches suffix-wildcard routes.
+- `PatternRouter` and `LinearRouter` no longer let wildcard routes overmatch
+  path prefixes.
+- `expandIPv6` preserves embedded IPv4 addresses while expanding IPv6 input.
+
+These fixes matter when router selection differs by deployment or when client
+IP parsing accepts IPv4-mapped or other mixed-form IPv6 addresses.

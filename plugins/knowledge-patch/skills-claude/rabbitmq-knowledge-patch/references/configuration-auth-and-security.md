@@ -1,25 +1,14 @@
 # Configuration, Authentication, and Security
 
-Use this reference for TLS defaults, authentication and authorization
-backends, OAuth/OIDC and LDAP configuration, protected resources, and
-cluster-wide limits.
+Use this reference when changing authentication backends, OAuth/OIDC, TLS,
+authorization, credentials, or management HTTP protections.
 
-## TLS, Certificates, and Secrets
+## Configure authentication backends and caches (4.0.6, 4.1.0)
 
-Starting in batch `4.1.0`, a node with no explicitly configured CA certificate
-falls back to the system CA certificate list when one is available.
+### Separate HTTP API authentication backends
 
-Starting in 4.1.4, `default_password` and `ssl_options.password` are treated as
-encrypted only when the value begins with `encrypted:`. A colon in an
-otherwise plain or generated password is not an encryption marker.
-
-The obsolete etcd TLS and `*.cacerts` removals are detailed in
-[upgrades-and-deprecations.md](upgrades-and-deprecations.md).
-
-## Authentication Backend Selection
-
-HTTP API traffic can use an authentication chain distinct from messaging
-protocol connections:
+Give the HTTP API its own backend chain with `http_dispatch.auth_backends`;
+protocol connections continue to use `auth_backends`:
 
 ```ini
 auth_backends.1 = ldap
@@ -27,117 +16,156 @@ auth_backends.2 = internal
 http_dispatch.auth_backends.1 = http
 ```
 
-The caching authentication and authorization backend can be invalidated
-explicitly:
+### Authentication cache invalidation
 
-```shell
-rabbitmqctl clear_auth_backend_cache
-```
+Explicitly clear the caching authentication and authorization backend with
+`rabbitmqctl clear_auth_backend_cache`.
 
-Starting in 4.1.4, a configured authentication or authorization backend from
-a known but disabled plugin prevents the node from starting. Enable the
-plugin or remove the backend configuration.
+### Case-insensitive nested LDAP groups
 
-Refreshing AMQP 0-9-1 connection credentials in 4.3 clears the permission
-cache and immediately revalidates consumer permissions. Passive queue and
-exchange declarations now require `configure` permission, like regular
-declarations.
+LDAP `in_group_nested` matching is case-insensitive.
 
-## OAuth 2.0 and OIDC
+### Missing authentication plugins fail startup
 
-The OAuth 2 plugin no longer provides defaults for several Azure Entra and
-Auth0 values. Configure required provider values explicitly.
+From 4.1.4, configuring a backend supplied by a known but disabled plugin
+prevents node startup instead of leaving the node running with unusable client
+authentication.
 
-Scope aliases can be set in `rabbitmq.conf`:
+### LDAP queries in `rabbitmq.conf`
+
+LDAP queries, including multi-line queries, can be defined in
+`rabbitmq.conf`.
+
+## Configure OAuth and OIDC (4.1.0, 4.3.5)
+
+### AMQP 1.0 OAuth token renewal
+
+AMQP 1.0 clients can replace a JWT before expiry without disconnecting. The
+broker closes the connection if the replacement is not supplied in time.
+
+### Stream OAuth renewal enforcement
+
+From 4.1.4, failed JWT renewal immediately closes a Stream Protocol
+connection. A renewed token is rechecked against the connection's current
+virtual host.
+
+### Explicit OAuth provider configuration
+
+Do not rely on former Azure Entra or Auth0 defaults. Configure every required
+provider value explicitly.
+
+### OAuth scope aliases and variables
+
+Declare aliases in `rabbitmq.conf`. From 4.1.1, scope patterns can interpolate
+supported variables such as `{vhost}` and `{sub}`.
 
 ```ini
 auth_oauth2.scope_aliases.admin = tag:administrator configure:*/*
 auth_oauth2.scope_aliases.developer = tag:management configure:*/* read:*/* write:*/*
 ```
 
-From 4.1.1, scope patterns can interpolate supported variables such as
-`{vhost}` and `{sub}`.
+### Broader OAuth and OIDC compatibility
 
-The plugin supports configurable OpenID discovery endpoints and complex JWT
-layouts used by providers such as Keycloak.
+The OAuth 2 plugin accepts configurable discovery endpoints and complex JWT
+shapes used by providers such as Keycloak.
 
-AMQP 1.0 clients can renew a JWT without disconnecting. If no replacement
-arrives before expiry, RabbitMQ closes the connection. Starting in 4.1.4, a
-failed renewal immediately closes a Stream Protocol connection, and a renewed
-token is checked again for access to the connection's current virtual host.
+### OAuth discovery behind TLS-terminating proxies
 
-## LDAP and HTTP Authorization
+When rewriting the token endpoint found through discovery, the login flow
+honors `X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Port` from a
+TLS-terminating proxy.
 
-The LDAP plugin's `in_group_nested` query performs case-insensitive matching
-as of batch `4.0.6`.
+### User tags on credential refresh
 
-LDAP queries, including multi-line queries, can be configured directly in
-`rabbitmq.conf` in 4.3.
+Credential refresh replaces the connection's original user tags with the
+refreshed user's current tags.
 
-An HTTP authentication backend can disclose a custom denial reason to AMQP
-clients by returning `deny <Reason>` when disclosure is explicitly enabled:
+## Handle certificates and encrypted values (4.1.0, 4.2.0, 4.3.5)
 
-```ini
-auth_http.authorization_failure_disclosure = true
-```
+### System CA fallback
 
-Keep disclosure disabled unless clients should receive backend-supplied
-authorization details.
+When no CA certificate is configured explicitly, a node uses the system CA
+list when one is available.
 
-## Protected Resources and API Surfaces
+### Explicit encrypted-value marker
 
-Virtual hosts can be marked as protected from deletion through metadata.
+From 4.1.4, `default_password` and `ssl_options.password` are encrypted only
+when prefixed with `encrypted:`. A colon in an ordinary password is not an
+encryption marker.
 
-Plugins can mark queues and streams as protected so applications cannot
-delete them.
+### Removed `*.cacerts` settings
 
-Require authentication for the management API reference page:
+Remove ineffective `*.cacerts` settings from `rabbitmq.conf`. The supported
+`cacertfile` setting is unchanged.
 
-```ini
-management.require_auth_for_api_reference = true
-```
+### Encrypted management UI credentials
 
-In 4.2, the HTTP API honors the `protected` user tag and refuses to modify or
-delete such users. CLI operations can still remove the tag or delete and
-recreate the user:
+With `management.credential_encryption_secret`, `POST /api/login` returns an
+AES-256-GCM `rmqe.` token that the browser sends as
+`Authorization: Bearer rmqe.<token>`. Configure the same secret on every node
+and enable this only after the rolling upgrade; older nodes reject the token.
+
+## Enforce authorization and protect identities (4.0.6, 4.2.0, 4.3.0)
+
+### Protected HTTP API reference
+
+Set `management.require_auth_for_api_reference = true` to authenticate access
+to the `/api` reference page.
+
+### HTTP API protection for users
+
+Apply the `protected` tag to prevent HTTP API updates and deletion. CLI
+operations can still remove the tag or delete and recreate the user.
 
 ```shell
 rabbitmqctl set_user_tags "a-user" "protected"
 ```
 
-In 4.3, federation link restarts and Shovel management `DELETE` operations
-require the `policymaker` user tag.
+### AMQP 0-9-1 permission reevaluation
 
-## Resource and Feature Limits
+Credential refresh clears the permission cache and immediately revalidates
+consumer permissions. Passive queue and exchange declarations require
+`configure`, like regular declarations.
 
-Starting in 4.1.4, `cluster_exchange_limit` caps exchanges declared by
-applications across the cluster, including protocol-standard predeclared
-exchanges:
+### Management actions require `policymaker`
 
-```ini
-cluster_exchange_limit = 200
-```
+Restarting federation links and deleting Shovels through management require
+the `policymaker` user tag.
 
-Every node must use the same value.
+### HTTP authorization denial reasons
 
-Disable the local-random exchange type when load balancing cannot preserve
-locality:
+An HTTP backend can return `deny <Reason>` for disclosure to AMQP clients when
+explicitly enabled:
 
 ```ini
-exchange_types.local_random.enabled = false
+auth_http.authorization_failure_disclosure = true
 ```
 
-Declarations of that type then fail.
+### MQTT authorization-failure behavior
 
-RabbitMQ 4.2 lets administrators disable individual queue types. Clients
-cannot declare new queues or streams of a disabled type.
+From 4.1.8, `mqtt.disconnect_on_unauthorized` controls whether an authorization
+failure closes the connection. The default is `true`; `false` keeps it open
+and returns the protocol error.
 
-On Linux, macOS, and BSD, the `rabbitmq-server` startup script recognizes
-`RABBITMQ_MAX_OPEN_FILES` from 4.1.4. It can raise a low soft limit when the
-hard limit is already sufficient; it does not replace operating-system
-hard-limit configuration.
+```ini
+mqtt.disconnect_on_unauthorized = false
+```
 
-## Virtual-Host Metadata
+## Harden management HTTP behavior (4.3.5)
 
-Starting in 4.1.1, metadata for a new virtual host includes its default queue
-type. Definition exports therefore agree across export mechanisms.
+### Management HTTP header controls
+
+Use `management.headers.referrer_policy` for `Referrer-Policy`. Setting
+`management.http.hide_allow_header = true` hides `Allow` except on required
+`405 Method Not Allowed` responses.
+
+### Optional JSON filename enforcement
+
+`management.definitions.require_json_extension = true` rejects definition
+uploads without a `.json` extension in both the UI and HTTP API. It defaults
+to `false`; content is always validated as JSON.
+
+### Authentication event log category
+
+Authentication events use the `user` category. Successful logins are `info`;
+failed attempts are `warning`.

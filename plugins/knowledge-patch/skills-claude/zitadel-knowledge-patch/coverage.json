@@ -1,6 +1,8 @@
 {
   "patch": "zitadel-knowledge-patch",
-  "merged_at": "2026-07-15T02:21:53Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-22T09:44:58Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -122,6 +124,11 @@
     },
     "product-news-and-help": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-08": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

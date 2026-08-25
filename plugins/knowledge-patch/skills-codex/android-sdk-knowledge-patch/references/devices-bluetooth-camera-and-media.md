@@ -1,50 +1,70 @@
 # Devices, Bluetooth, Camera, and Media
 
-## Companion-device association
+## Companion devices and Bluetooth
 
-### Discovery timeouts
+### Pairing timeout results
 
-On Android 16, a companion-device discovery timeout no longer directly returns `RESULT_DISCOVERY_TIMEOUT`. The system displays a timeout dialog and, after the user dismisses it, reports `RESULT_USER_REJECTED`. Do not interpret that result exclusively as an explicit rejection. (`api-36`)
+On Android 16 (`api-36`), companion-device discovery timeouts no longer return
+`RESULT_DISCOVERY_TIMEOUT` directly. The system displays a timeout dialog and,
+after dismissal, reports `RESULT_USER_REJECTED`. Do not interpret that result
+only as an explicit user rejection.
 
-### Profiles and association permissions
+### Bond-loss behavior
 
-Android 17 adds Medical Device and Fitness Tracker profiles to Companion Device Manager. `setExtraPermissions()` can fold nearby-device grants into the association dialog.
+Android 16 disconnects a device after authentication failure but retains the
+local bond and asks the user to re-pair. Apps targeting API 36 can observe
+`ACTION_KEY_MISSING` and `ACTION_ENCRYPTION_CHANGE`, but must tolerate OEMs
+that omit them. For a managed companion association, remove the bond with
+`CompanionDeviceManager.removeBond(int)` when that is the desired recovery.
 
-### Cross-device handoff
+Android 17 (`api-37`) can repair a lost bond autonomously in the background.
+It replaces keys only after a successful connection at equal or stronger
+security. `ACTION_PAIRING_REQUEST` adds `EXTRA_PAIRING_CONTEXT`, and
+`ACTION_KEY_MISSING` is delayed until autonomous re-pairing fails.
 
-Android 17 adds cross-device Handoff through `CompanionDeviceManager`.
+### RFCOMM end-of-stream
 
-## Bluetooth behavior
+For apps targeting API 37, an RFCOMM `BluetoothSocket` input stream returns
+`-1` when the socket closes or the connection drops. Read loops must test for
+`-1`; do not rely only on `IOException`.
 
-### Authentication and bond loss on Android 16
+### Association capabilities
 
-When authentication fails, Android 16 disconnects the device, retains the local bond, and asks the user to pair again instead of silently deleting the bond and starting pairing. API 36 targets can observe `ACTION_KEY_MISSING` and `ACTION_ENCRYPTION_CHANGE`, but must tolerate OEMs that omit those broadcasts. For a managed companion association, `CompanionDeviceManager.removeBond(int)` can remove the bond.
+Android 17 adds Medical Device and Fitness Tracker Companion Device Manager
+profiles. `setExtraPermissions()` can include nearby-device grants in the
+association dialog. Cross-device Handoff is also available through
+`CompanionDeviceManager`.
 
-### Autonomous repair on Android 17
+## Photo Picker layout
 
-Android 17 can re-pair in the background after bond loss. It replaces keys only after a successful connection with equal or stronger security. `ACTION_PAIRING_REQUEST` adds `EXTRA_PAIRING_CONTEXT`, and `ACTION_KEY_MISSING` is delayed until autonomous re-pairing fails.
+Android 17 adds `PhotoPickerUiCustomizationParams`, which can change picker
+grid cells from the square default to a 9:16 portrait aspect ratio.
 
-### RFCOMM EOF
-
-For API 37 targets, an RFCOMM `BluetoothSocket` input stream returns `-1` when the socket closes or the connection drops. Every read loop must test for `-1` rather than relying only on `IOException`. (`api-37`)
-
-## Camera and media
-
-### Camera formats and session updates
+## Camera
 
 Android 17 adds:
 
 - `ImageFormat.RAW14`;
-- implementation-defined extension modes discoverable with `isExtensionSupported(int)`;
-- camera device-type APIs;
-- `CameraCaptureSession.updateOutputConfigurations()` for changing use cases without closing the session.
+- OEM-defined extension modes discoverable with
+  `isExtensionSupported(int)`;
+- camera device-type APIs; and
+- `CameraCaptureSession.updateOutputConfigurations()` for changing use cases
+  without closing the session.
 
-### Codecs, quality, and output devices
+Check capabilities before selecting a format, extension, or live
+reconfiguration path.
 
-Android 17 adds VVC/H.266 platform support, constant-quality video through `MediaRecorder.setVideoEncodingQuality()`, the `c2.android.xheaac.encoder` software encoder with loudness metadata, and `AudioDeviceInfo.TYPE_BLE_HEARING_AID`.
+## Media and audio devices
 
-## Other device integration
+Android 17 adds VVC/H.266 platform support, constant-quality recording through
+`MediaRecorder.setVideoEncodingQuality()`, the `c2.android.xheaac.encoder`
+software encoder with loudness metadata, and
+`AudioDeviceInfo.TYPE_BLE_HEARING_AID`. Feature-detect codec and output-device
+support rather than assuming uniform device availability.
 
-Android 17 adds `ACTION_TIMEZONE_OFFSET_CHANGED` for daylight-saving and other offset-only time-zone changes.
+## Device integration
 
-An API 37-targeted app must declare `FEATURE_NEURAL_PROCESSING_UNIT` before directly accessing an NPU.
+Android 17 adds `ACTION_TIMEZONE_OFFSET_CHANGED` for DST and other changes in
+UTC offset that do not necessarily change the time-zone identity. Apps
+targeting API 37 must declare `FEATURE_NEURAL_PROCESSING_UNIT` before directly
+accessing an NPU.

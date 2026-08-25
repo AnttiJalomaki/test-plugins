@@ -1,39 +1,27 @@
 # Email and Feeds
 
-Batch attribution: `5.2-guide`, `5.2`, `6.0-guide`, `6.0`.
+Load this reference for email message construction, attachments, connection
+selection, custom mail subclasses, administrator addresses, and syndication feeds.
 
-## Contents
+## Treat alternatives and attachments as named records
 
-- [Named attachments and alternatives](#named-attachments-and-alternatives)
-- [Inline attachments with MIMEPart](#inline-attachments-with-mimepart)
-- [Modern message objects and policy](#modern-message-objects-and-policy)
-- [Keyword-only call conventions](#keyword-only-call-conventions)
-- [Legacy mail API migration](#legacy-mail-api-migration)
-- [Administrator address settings](#administrator-address-settings)
-- [Feed stylesheets](#feed-stylesheets)
-
-## Named attachments and alternatives
-
-`EmailMultiAlternatives.alternatives` contains named tuples (since `5.2-guide`), so use named
-attributes instead of tuple indexes:
+`EmailMultiAlternatives.alternatives` contains named tuples, so access fields such
+as `content` rather than relying on tuple positions. (`5.2-guide`)
 
 ```python
 html = message.alternatives[0].content
-mime_type = message.alternatives[0].mimetype
 ```
 
-Items in `EmailMessage.attachments` and `EmailMultiAlternatives.attachments` are also named tuples
-(since `5.2`). Preserve their attributes if filtering or copying attachments.
+`EmailMessage.attachments` and `EmailMultiAlternatives.attachments` also expose
+named tuples. Add alternatives only with `attach_alternative()`.
+`body_contains()` searches the main body and every attached `text/*`
+alternative. (`5.2`)
 
-Add an alternative only through `attach_alternative()`; direct alternative construction through
-other paths is no longer supported. `body_contains()` checks the main body and every attached
-`text/*` alternative.
+## Build inline attachments with the modern email API (`6.0-guide`)
 
-## Inline attachments with MIMEPart
-
-Django's mail classes use Python's modern email API, and `EmailMessage.attach()` accepts
-`email.message.MIMEPart` (since `6.0-guide`). Build an inline part, assign a content ID, attach it,
-and reference the ID from an HTML alternative:
+Django's mail classes build messages with Python's modern email API.
+`EmailMessage.attach()` accepts `email.message.MIMEPart`, including inline
+parts whose content ID is referenced by an HTML alternative.
 
 ```python
 from email.message import MIMEPart
@@ -49,62 +37,55 @@ part.set_content(
 message.attach(part)
 ```
 
-Ensure `cid` and the HTML `cid:` reference use matching forms.
+## Pass optional arguments by keyword (`6.0-guide`)
 
-## Modern message objects and policy
+For `get_connection()`, `mail_admins()`, `mail_managers()`, `send_mail()`,
+and `send_mass_mail()`, arguments from `fail_silently` onward are deprecated
+positionally.
 
-`EmailMessage.message(policy=...)` defaults to `email.policy.default` and returns the
-standard-library `email.message.EmailMessage` (since `6.0`), not Django's deprecated safe-MIME
-classes.
+For `EmailMessage` and `EmailMultiAlternatives`, only `subject`, `body`,
+`from_email`, and `to` remain positional. Pass all later constructor arguments
+by keyword. These compatibility paths become hard errors at the Django 7.0
+boundary. (`deprecation-roadmap`)
 
-Review a custom `EmailMessage` subclass if it overrides internal underscore-prefixed construction
-methods; those hooks belonged to the former implementation. Also remove assumptions about the
-undocumented subtype properties, which are gone. The `encoding` property no longer accepts an
-`email.charset.Charset` instance.
+## Update custom message classes (`6.0`)
 
-Use an explicit modern email policy only when transport or serialization genuinely requires it.
-Test headers, multipart structure, and byte serialization after migrating a subclass.
+`EmailMessage.message(policy=...)` defaults to `email.policy.default` and returns
+the standard-library `email.message.EmailMessage` rather than Django's deprecated
+safe MIME classes. Review subclasses that override private underscore methods.
 
-## Keyword-only call conventions
+The undocumented subtype properties are removed, and `encoding` no longer accepts
+`email.charset.Charset`. Legacy `MIMEBase` attachments, `BadHeaderError`,
+`SafeMIMEText`, `SafeMIMEMultipart`, `forbid_multi_line_headers()`, and
+`sanitize_address()` are deprecated. Use the modern email API and handle its
+`ValueError` behavior.
 
-Optional arguments beginning with `fail_silently` are deprecated when passed positionally to
-(since `6.0-guide`):
+Django 7.0 rejects legacy `MIMEBase` attachments and removes these deprecated
+helpers and classes. (`deprecation-roadmap`)
 
-- `get_connection()`
-- `mail_admins()`
-- `mail_managers()`
-- `send_mail()`
-- `send_mass_mail()`
+## Configure multiple mail backends (`6.1`)
 
-For `EmailMessage` and `EmailMultiAlternatives`, only `subject`, `body`, `from_email`, and `to`
-remain positional. Pass every later constructor argument by keyword. These positional compatibility
-paths are removed in Django 7.0.
+`MAILERS` configures named email backends and their options. Email-sending
+functions select a mailer with `using=`, and configured mailers can be retrieved
+by alias.
 
-## Legacy mail API migration
+`EMAIL_BACKEND` and its related legacy settings continue to work in 6.1 but are
+deprecated ahead of Django 7.0. Plan an explicit alias migration instead of
+mixing old and new configuration indefinitely.
 
-The following legacy paths are deprecated in Django 6.0 and removed in Django 7.0:
+## Format administrator addresses (`6.0`)
 
-- Attaching legacy `email.mime.base.MIMEBase` objects. Use `MIMEPart`.
-- `BadHeaderError`. Handle the modern email API's `ValueError` instead.
-- `SafeMIMEText` and `SafeMIMEMultipart`.
-- `forbid_multi_line_headers()`.
-- `sanitize_address()`.
-
-Do not preserve a compatibility import beyond the removal boundary unless the package still
-supports an older Django series and selects imports by supported version.
-
-## Administrator address settings
-
-Tuple-form `(name, address)` entries in `ADMINS` and `MANAGERS` are deprecated in Django 6.0 and
-removed in 7.0. Use a single address string and embed the display name where needed:
+Tuple-form `ADMINS` and `MANAGERS` entries are deprecated. Use address strings
+and embed a display name when needed:
 
 ```python
 ADMINS = ['"Operations" <ops@example.com>']
-MANAGERS = ["managers@example.com"]
 ```
 
-## Feed stylesheets
+The tuple compatibility form is removed at the Django 7.0 boundary.
+(`deprecation-roadmap`)
 
-`SyndicationFeed` subclasses accept a `stylesheets` list (since `5.2`). Django emits an
-`<?xml-stylesheet?>` processing instruction for each list item. Use this instead of manually
-splicing processing instructions into serialized feed XML.
+## Add feed stylesheets (`5.2`)
+
+`SyndicationFeed` classes accept a `stylesheets` list and emit one
+`<?xml-stylesheet?>` processing instruction for each entry.

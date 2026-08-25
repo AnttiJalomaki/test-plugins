@@ -1,41 +1,34 @@
 # Migration and configuration
 
-## Public compatibility boundary
+## Upgrade preflight and SDK boundary
 
-During the `3.0-upgrade`, move Dag-authoring and task-runtime imports to the
-semver-governed `airflow.sdk` surface:
+Before the major upgrade, first reach Airflow 2.7 or later, preferably the
+latest 2.x release. Back up the metadata database, optionally clean it, and
+make sure every Dag parses and reserializes without errors. Ruff 0.13.1 or
+later supplies Airflow checks: AIR301/AIR302 identify breaking changes and
+AIR311/AIR312 recommend migrations. Import fixes can require
+`--unsafe-fixes`; enable F401 handling to remove imports made stale by a move.
 
-```python
-from airflow.sdk import Asset, DAG, dag, get_current_context, task
+```bash
+airflow db clean
+airflow dags reserialize
+ruff check dags/ --select AIR301 --show-fixes
+ruff check dags/ --select AIR301 --fix --unsafe-fixes
 ```
 
-- Rename `Dataset*` imports to `Asset*`.
-- Move `airflow.io.*` imports to `airflow.sdk.io.*`.
-- Treat APIs not listed as public, the metadata schema, and Web UI HTML as
-  internal implementation details.
-- Base extension interfaces are public. For built-in operators, parameters
-  and documented behavior are stable, but methods and structure are not.
-- Built-in executor implementations are not supported subclassing contracts.
+Use `airflow.sdk` as the semver-governed Dag-authoring and task-runtime
+interface. Rename `Dataset*` imports to `Asset*` and move `airflow.io.*` to
+`airflow.sdk.io.*`. Unlisted Python APIs, metadata schema, and UI HTML remain
+internal. Base extension interfaces are public, but built-in operator methods
+and structure, and built-in executor implementations, are not safe subclassing
+contracts. (3.0-upgrade)
 
-Task-facing exceptions moved to `airflow.sdk.exceptions` in 3.2.0; the old
-`airflow.exceptions` proxies warn. Providers that bridge versions can use
-`airflow.providers.common.compat.sdk`.
+## Task access to Airflow data
 
-```python
-from airflow.sdk.exceptions import AirflowSkipException, TaskDeferred
-```
-
-Invalid sensor `poke_interval` or `timeout` arguments now raise `ValueError`
-rather than `AirflowException`.
-
-The legacy `airflow.datasets`, `airflow.timetables.datasets`, and
-`airflow.utils.dag_parsing_context` modules are removed in 3.2.0. Use their
-Airflow 3 SDK-era replacements.
-
-## Task access to deployment data
-
-Tasks and workers communicate through the Task Execution API and cannot use
-metadata ORM models or sessions. Use context/SDK accessors at runtime:
+Tasks no longer open metadata ORM sessions. Workers use the Task Execution API;
+task code uses context or SDK accessors for runtime state. For broader access
+to Dag runs, task instances, Connections, Variables, or XComs, call the stable
+REST API or `apache-airflow-client`; obtain client tokens from `/auth/token`.
 
 ```python
 from airflow.sdk import get_current_context
@@ -46,62 +39,67 @@ connection = context["conn"].get("service")
 variable = context["var"].value.get("setting")
 ```
 
-For wider access to Dag runs, task instances, Connections, Variables, or
-XComs, use stable REST endpoints or `apache-airflow-client`. Obtain a client
-token from `/auth/token`.
+This Task Execution API boundary is part of the 3.0-upgrade batch.
 
-## Upgrade preflight
+## Standard provider imports
 
-Upgrade first to Airflow 2.7 or later, preferably the newest available 2.x.
-Back up the metadata database, optionally clean it, and ensure Dag parsing and
-reserialization complete without errors:
+`BashOperator`, `PythonOperator`, `ExternalTaskSensor`, `FileSensor`, and other
+formerly core operators, sensors, and triggers require
+`apache-airflow-providers-standard`. Install the provider while still on
+Airflow 2.x to migrate imports before the core upgrade. (3.0-upgrade)
 
-```bash
-airflow db clean
-airflow dags reserialize
-```
+## Services, database, and configuration migration
 
-Ruff 0.13.1 or later supplies Airflow migration rules. AIR301/AIR302 identify
-breaks; AIR311/AIR312 identify recommended migrations. Import-path rewrites
-may require unsafe fixes, followed by F401 cleanup of obsolete imports:
-
-```bash
-ruff check dags/ --select AIR301 --show-fixes
-ruff check dags/ --select AIR301 --fix --unsafe-fixes
-```
-
-Install `apache-airflow-providers-standard` for common operators, sensors, and
-triggers moved out of core, including `BashOperator`, `PythonOperator`,
-`ExternalTaskSensor`, and `FileSensor`. The provider works on Airflow 2.x, so
-move imports before upgrading core.
-
-Diagnose and optionally rewrite configuration, then migrate the database:
+Use the updater to diagnose renamed or removed configuration and optionally
+apply fixes before migrating the database:
 
 ```bash
 airflow config update --fix
 airflow db migrate
-airflow config lint
-```
-
-The API server replaces the webserver process. The Dag processor must run as a
-separate process even for local development:
-
-```bash
 airflow api-server
 airflow dag-processor
 ```
 
-## Removed architecture
+The API server replaces the webserver command. The Dag processor must run as a
+separate process, including local development. Helm configuration under
+`webserver` moves under `apiServer`. (3.0-upgrade)
 
-- Replace SubDAGs with TaskGroups, Assets, or data-aware scheduling.
-- Replace SequentialExecutor with LocalExecutor, which supports SQLite.
-- Replace CeleryKubernetes/LocalKubernetes hybrids with multiple-executor
-  configuration.
-- Replace SLAs with Deadline Alerts.
-- Replace CLI `--subdir`/`-S` selection with Dag bundles.
-- Move REST clients from `/api/v1` to the FastAPI stable `/api/v2`.
+The initial service-key moves are: (3.0.0)
 
-## Authentication and plugin migration
+| Old key | New key |
+| --- | --- |
+| `[webserver] web_server_host` | `[api] host` |
+| `[webserver] web_server_port` | `[api] port` |
+| `[webserver] web_server_worker_timeout` | `[api] worker_timeout` |
+| `[webserver] web_server_ssl_cert` | `[api] ssl_cert` |
+| `[webserver] web_server_ssl_key` | `[api] ssl_key` |
+
+`workers` and `access_logfile` initially retain their names. Parser settings
+including `dag_file_processor_timeout`, `parsing_processes`,
+`file_parsing_sort_mode`, `max_callbacks_per_loop`,
+`min_file_process_interval`, `stale_dag_threshold`, and `print_stats_interval`
+move to `[dag_processor]`. Obsolete webserver, scheduler, and logging keys do
+nothing; find them with `airflow config lint`.
+
+Further API settings move from `[webserver]` to `[api]`: (3.1.0)
+
+- `log_fetch_timeout_sec`, `hide_paused_dags_by_default`, `page_size`,
+  `default_wrap`, `require_confirmation_dag_change`, and
+  `auto_refresh_interval`;
+- `[api] access_logfile` is replaced by `[api] log_config`, pointing to a
+  `logging.config.fileConfig`-compatible file; and
+- `[api] workers` defaults to `1`; horizontally scale with multiple API-server
+  instances.
+
+Remove the unused `instance_name_has_markup`, `warn_deployment_exposure`, and
+`dag_stale_not_seen_duration` options.
+
+## Plugin and auth migration
+
+Plugins using `appbuilder_views`, `appbuilder_menu_items`, or
+`flask_blueprints` must install the FAB compatibility provider or migrate to
+`external_views`, `fastapi_apps`, and `fastapi_root_middlewares`.
+(3.0-upgrade)
 
 Simple Auth is the default auth manager. To retain FAB, install its provider
 and configure:
@@ -112,88 +110,53 @@ auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManage
 ```
 
 Custom security managers import `FabAirflowSecurityManagerOverride` from
-`airflow.providers.fab.auth_manager.security_manager.override`.
+`airflow.providers.fab.auth_manager.security_manager.override`. Auth-manager
+routes use `/auth`; update redirects such as `/oauth-authorized/google` to
+`/auth/oauth-authorized/google`. (3.0-upgrade)
 
-Auth-manager routes are under `/auth`. Update external OAuth callbacks such as
-`/oauth-authorized/google` to `/auth/oauth-authorized/google`.
+## Removed facilities
 
-Plugins using `appbuilder_views`, `appbuilder_menu_items`, or
-`flask_blueprints` must install the FAB provider compatibility layer or move to
-`external_views`, `fastapi_apps`, and `fastapi_root_middlewares`. For Helm
-deployments, move values under `webserver` to `apiServer` and audit every
-renamed or removed option during the chart upgrade.
+Apply these replacements during the 3.0-upgrade:
 
-## API server and parser configuration
+- SubDAGs: use TaskGroups, Assets, or data-aware scheduling.
+- SequentialExecutor: use LocalExecutor, which supports SQLite.
+- CeleryKubernetesExecutor and LocalKubernetesExecutor: use multiple-executor
+  configuration.
+- SLAs: use Deadline Alerts.
+- CLI `--subdir` and `-S`: use Dag bundles.
+- REST `/api/v1`: use the FastAPI stable `/api/v2`.
 
-In 3.0.0, API server settings moved from `[webserver]` to `[api]`:
+The context keys `tomorrow_ds`, `tomorrow_ds_nodash`, `yesterday_ds`,
+`yesterday_ds_nodash`, `prev_ds`, `prev_ds_nodash`, `prev_execution_date`,
+`prev_execution_date_success`, `next_execution_date`, `next_ds`,
+`next_ds_nodash`, and `execution_date` are removed. Use `logical_date` for the
+requested trigger date, and `data_interval_start`/`data_interval_end` only for
+timetable-resolved intervals. A manual run's interval need not equal its
+supplied logical date.
 
-| Old key | New key |
-| --- | --- |
-| `web_server_host` | `host` |
-| `web_server_port` | `port` |
-| `web_server_worker_timeout` | `worker_timeout` |
-| `web_server_ssl_cert` | `ssl_cert` |
-| `web_server_ssl_key` | `ssl_key` |
+Task-facing exceptions move to `airflow.sdk.exceptions`; old
+`airflow.exceptions` proxies warn. Providers can import through
+`airflow.providers.common.compat.sdk`. Invalid sensor `poke_interval` or
+`timeout` values now raise `ValueError`, not `AirflowException`. (3.2.0)
 
-`workers` and `access_logfile` retained their names at that point. Dag parsing
-keys moved to `[dag_processor]`: `dag_file_processor_timeout`,
-`parsing_processes`, `file_parsing_sort_mode`, `max_callbacks_per_loop`,
-`min_file_process_interval`, `stale_dag_threshold`, and
-`print_stats_interval`. Other legacy `[webserver]` settings and obsolete
-scheduler/logging keys have no effect; locate them with `airflow config lint`.
+`airflow.datasets`, `airflow.timetables.datasets`, and
+`airflow.utils.dag_parsing_context` are removed. Use SDK-era asset, timetable,
+and parsing surfaces. (3.2.0)
 
-In 3.1.0, move these additional settings from `[webserver]` to `[api]`:
+## Scheduling-default migration
 
-- `log_fetch_timeout_sec`
-- `hide_paused_dags_by_default`
-- `page_size`
-- `default_wrap`
-- `require_confirmation_dag_change`
-- `auto_refresh_interval`
+`catchup_by_default=False` and `create_cron_data_intervals=False` are now the
+defaults. A bare cron schedule therefore selects `CronTriggerTimetable`, not
+`CronDataIntervalTimetable`. If tasks need interval boundaries or derived
+`ds`/`ts` values, set `create_cron_data_intervals=True` before upgrading.
+Switching it back after new-version runs exist skips one scheduled run to avoid
+duplicating a `logical_date`. (3.0-upgrade)
 
-`[api] access_logfile` was replaced by `[api] log_config`, which names a
-`logging.config.fileConfig`-compatible file. `[api] workers` defaults to `1`;
-prefer multiple API-server instances for horizontal scaling. Remove unused
-`instance_name_has_markup`, `warn_deployment_exposure`, and
-`dag_stale_not_seen_duration` settings.
+## XCom pull migration
 
-In 3.2.0, `api.page_size` is deprecated in favor of
-`api.fallback_page_limit`. Rendered-field retention is Dag-run based:
-`max_num_rendered_ti_fields_per_task` is renamed to
-`num_dag_runs_to_retain_rendered_fields`. It retains records for the newest
-Dag runs, so sparse or conditional tasks can retain fewer rendered instances.
-
-Individual secrets-backend arguments can be set independently as
-`AIRFLOW__SECRETS__BACKEND_KWARG__<KEY>` instead of packing all arguments into
-one combined configuration value.
-
-## Scheduling defaults that affect migration
-
-`catchup_by_default` now defaults to `False`. `create_cron_data_intervals`
-also defaults to `False`, so a bare cron `schedule=` uses
-`CronTriggerTimetable` rather than `CronDataIntervalTimetable`. Set it to
-`True` before upgrading when tasks depend on interval boundaries or derived
-`ds`/`ts` values. If it is re-enabled after Airflow 3 runs already exist, one
-scheduled run is skipped to avoid a duplicate `logical_date`.
-
-Removed context keys include `tomorrow_ds`, `tomorrow_ds_nodash`,
-`yesterday_ds`, `yesterday_ds_nodash`, `prev_ds`, `prev_ds_nodash`,
-`prev_execution_date`, `prev_execution_date_success`, `next_execution_date`,
-`next_ds`, `next_ds_nodash`, and `execution_date`.
-
-For manual runs, a supplied `logical_date` is not necessarily equal to the
-timetable-resolved interval. Use it for the requested trigger date; reserve
-`data_interval_start` and `data_interval_end` for actual interval semantics.
+`ti.xcom_pull(key="shared_state")` searches the current task only. Name a
+producer when reading a different task's value: (3.0-upgrade)
 
 ```python
-requested_date = get_current_context()["logical_date"]
+value = ti.xcom_pull(task_ids="upstream_task", key="shared_state")
 ```
-
-## Runtime, database, and image compatibility
-
-In 3.1.0, Python 3.9 support is removed; supported runtimes are Python
-3.10–3.13. SQLAlchemy 2.0 and the psycopg3 PostgreSQL driver are supported.
-
-In 3.2.0, Python 3.14 is supported and SQLAlchemy 2 is the only supported
-major line. Official container images no longer include a MySQL client; add it
-to a derived image when operational tooling needs it.

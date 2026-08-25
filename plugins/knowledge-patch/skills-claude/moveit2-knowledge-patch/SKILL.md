@@ -10,63 +10,62 @@ metadata:
 
 # MoveIt 2 Knowledge Patch
 
-Use this skill when implementing or reviewing MoveIt 2 planning, planner-plugin,
-MoveIt Task Constructor, or MoveIt Servo code. Start with the quick reference,
-then open the topic file that matches the task. Check the project's MoveIt and
-ROS distribution pins before applying version-dependent advice.
+Load this skill when implementing or migrating MoveIt 2 planning pipelines,
+planner plugins, MoveIt Task Constructor tasks, Servo integrations, trajectory
+processing, or downstream CMake linkage. Prefer the project's manifests,
+configuration, installed headers, and observed runtime behavior when they differ
+from this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Core planning](references/core-planning.md) | Jazzy changes, `moveit_py`, profiles, parallel pipelines, constraints, planning-scene access, built-in adapters |
-| [Planner plugins](references/planner-plugins.md) | OMPL optimization and roadmaps, Pilz limits and sequences, CHOMP controls, legacy CHOMP/STOMP adapters |
-| [Task Constructor](references/task-constructor.md) | Stage flow, lifecycle, solvers, properties, monitored generators, IK, relative motion, scene transitions, diagnostics |
-| [Servo](references/servo.md) | Safety scaling, IK configuration, realtime scheduling, direct C++, ROS interfaces, smoothing plugins |
+| [Core planning and pipelines](references/core-planning.md) | Jazzy migration, `moveit_py`, planning profiles, parallel planning, constraints, planning scenes, adapters, trajectories, CMake linkage |
+| [Planner plugins and adapters](references/planner-plugins.md) | OMPL objectives and persistent roadmaps, Pilz limits and sequences, CHOMP configuration, legacy optimizer adapters |
+| [MoveIt Servo](references/servo.md) | Safety scaling, IK configuration, realtime scheduling, C++ and ROS interfaces, smoothing plugins |
+| [MoveIt Task Constructor](references/task-constructor.md) | Stage flow, task lifecycle, planners, properties, pose generation, IK, scene transitions, diagnostics |
 
-## Migration-sensitive behavior
+## Breaking and migration-sensitive changes
 
-### Treat planning-pipeline adapters as an API migration
+### Link exported CMake targets
 
-The planning pipeline now models request and response adapters more explicitly.
-Do not assume a Humble-era integration remains source- or configuration-compatible;
-inspect its adapter API and ordering when moving it to a newer setup.
+Downstream packages should link MoveIt's exported namespaced targets. Do not pass
+MoveIt dependencies to `ament_target_dependencies()`.
 
-### Do not copy MoveIt 1 CHOMP adapter examples into MoveIt 2
+```cmake
+target_link_libraries(my_target
+  moveit_ros_planning::moveit_ros_planning
+)
+```
 
-Examples using Catkin, `roslaunch`, XML launch files,
+See [Core planning and pipelines](references/core-planning.md#downstream-cmake-linkage).
+
+### Recheck planning-adapter integrations
+
+The planning-pipeline API now represents request and response adapters more
+explicitly. Treat integrations written against the Humble-era API as
+migration-sensitive. Examples using Catkin, `roslaunch`, XML launch files,
 `chomp/OptimizerAdapter`, or `stomp_moveit/StompSmoothingAdapter` describe the
-legacy MoveIt 1/Melodic API. Use them only to understand pipeline composition.
-The legacy CHOMP arrangement runs the base planner before CHOMP, loads both
-planners' YAML, and requires `fillTrajectory`. The legacy STOMP smoothing
-adapter requires initialization method `4` (`FILL_TRAJECTORY`) and is marked
-work in progress.
+legacy API and are not copy-paste MoveIt 2 configuration.
 
-### Use the correct Pilz parameter namespace
+See [Core planning and pipelines](references/core-planning.md#planning-pipeline-and-adapter-migration)
+and [Planner plugins and adapters](references/planner-plugins.md#legacy-planning-adapter-material).
 
-Pilz Cartesian limits resolve under
-`<robot_description>_planning.cartesian_limits`. With the conventional URDF
-parameter, load them under `robot_description_planning`, not an arbitrary
-planner namespace.
+### Consume multi-DOF derivatives
 
-### Update changed robot states before checking them
+Multi-DOF trajectories are executable, and newer trajectories populate their
+`velocities` and `accelerations`. Consumers must not assume those derivative
+arrays are empty.
 
-After changing planning-scene state or solving IK, call
-`scene.current_state.update()` or `robot_state.update()`. Otherwise transforms
-and collision queries can observe stale derived state.
+See [Core planning and pipelines](references/core-planning.md#multi-dof-trajectories).
 
-### Declare custom Servo IK parameters in the plugin
+## `moveit_py` quick reference
 
-Pass `robot_description_kinematics` to `ServoNode`. Servo does not accept
-undeclared custom parameters from `kinematics.yaml`, so an IK plugin that adds
-parameters must declare them itself.
+### Plan with a group and execute with `MoveItPy`
 
-## Core planning quick reference
-
-### Plan and execute with `moveit_py`
-
-Obtain a group-specific component from the `MoveItPy` instance. Planning returns
-a result whose `trajectory` is executed by the parent instance.
+Obtain a group-specific component from `MoveItPy`, configure start and goal
+state on it, then execute the successful result's trajectory through the
+`MoveItPy` instance.
 
 ```python
 moveit = MoveItPy(node_name="moveit_py")
@@ -79,15 +78,14 @@ if result:
     moveit.execute(result.trajectory, controllers=[])
 ```
 
-For named SRDF configurations, call
-`set_start_state(configuration_name=...)` or
-`set_goal_state(configuration_name=...)`. A `RobotState` may instead be passed
-as `set_goal_state(robot_state=...)`.
+Named SRDF states use `set_start_state(configuration_name=...)` or
+`set_goal_state(configuration_name=...)`. A `RobotState` goal uses
+`set_goal_state(robot_state=...)`.
 
-### Select reusable and parallel planning profiles
+### Configure profiles before parallel planning
 
-`planning_pipelines.pipeline_names` chooses loaded pipelines. Separate top-level
-profiles contain `plan_request_params` and can select pipeline, planner ID,
+`planning_pipelines.pipeline_names` loads pipelines. Separately named top-level
+profiles contain `plan_request_params` and select the pipeline, planner ID,
 attempts, scaling factors, and planning time.
 
 ```yaml
@@ -102,117 +100,100 @@ ompl_fast:
     planning_time: 1.0
 ```
 
-For parallel planning, construct `MultiPipelinePlanRequestParameters` with the
-`MoveItPy` instance and profile names—not raw plugin names—and pass it via
-`multi_plan_parameters`.
+Build `MultiPipelinePlanRequestParameters` from the `MoveItPy` instance and
+profile names, then pass it as `multi_plan_parameters`:
 
 ```python
 params = MultiPipelinePlanRequestParameters(moveit, ["ompl_fast", "chomp_profile"])
 result = arm.plan(multi_plan_parameters=params)
 ```
 
-### Access the planning scene through scoped contexts
+### Update states before collision checks
 
-Use `read_write()` for scene mutations and `read_only()` for checks.
+Use planning-scene monitor `read_write()` contexts for changes and `read_only()`
+contexts for checks. After changing the scene's current state or solving IK,
+call `update()` before transforms or collision checks.
 
-```python
-monitor = moveit.get_planning_scene_monitor()
-with monitor.read_write() as scene:
-    scene.apply_collision_object(collision_object)
-    scene.current_state.update()
-```
+See [Core planning and pipelines](references/core-planning.md#planning-scene-monitor-contexts).
 
-## Planner-plugin quick reference
+## Planner selection quick reference
 
-### Control OMPL optimization and termination
+### OMPL objectives and termination
 
-The default objective is `PathLengthOptimizationObjective`; alternatives include
-`MechanicalWorkOptimizationObjective`, `MaximizeMinClearanceObjective`,
-`StateCostIntegralObjective`, and `MinimaxObjective`. `termination_condition`
-accepts `Iteration[num]`, `CostConvergence[solutionsWindow,epsilon]`, or
-`ExactSolution`; `allowed_planning_time` remains a hard cap.
+OMPL configurations can choose path length, mechanical work, minimum-clearance,
+state-cost-integral, or minimax objectives. A configured termination condition
+such as `Iteration[...]`, `CostConvergence[...]`, or `ExactSolution` does not
+replace `allowed_planning_time`; that remains the hard upper bound.
 
-```yaml
-RRTstarkConfigDefault:
-  type: geometric::RRTstar
-  optimization_objective: MaximizeMinClearanceObjective
-  termination_condition: CostConvergence[10,.1]
-```
+### Persistent roadmaps
 
-### Configure Pilz requests deliberately
+PRM-family planners reuse a roadmap across requests when
+`multi_query_planning_enabled` is set. `store_planner_data` and
+`load_planner_data` persist it at `planner_data_path`; storage happens when the
+planner instance is destroyed. Prefer lazy variants when modest scene changes
+require node and edge revalidation; reserve non-lazy variants for static scenes.
 
-Use planner ID `PTP`, `LIN`, or `CIRC`. PTP synchronizes trapezoidal joint
-profiles using the slowest lead axis. LIN and CIRC synchronize Cartesian
-translation with quaternion-slerped rotation, require a zero-velocity start,
-and interpret request scaling factors as Cartesian limits.
+### Pilz commands
 
-For blended sequences, only the first item may specify a start state. Each
-positive `blend_radius` permits continuous motion toward the next goal, but
-adjacent radii must sum to less than the distance between goals. Planning is
-all-or-nothing even when a sequence spans multiple groups.
+Set `MotionPlanRequest.planner_id` to `PTP`, `LIN`, or `CIRC`. LIN and CIRC
+require a zero-velocity start and apply request scaling factors to Cartesian
+limits. For sequences, only the first item may specify a start state, adjacent
+blend spheres must not overlap, and any planning failure prevents all execution.
 
-### Seed CHOMP when local minima are likely
+See [Planner plugins and adapters](references/planner-plugins.md) for complete
+configuration, circular constraints, and sequence interfaces.
 
-`trajectory_initialization_method` accepts `quintic-spline`, `linear`, `cubic`,
-or `fillTrajectory`. The first three interpolate start to goal;
-`fillTrajectory` consumes another planner's path and is useful when CHOMP needs
-a better seed.
+## MoveIt Task Constructor quick reference
 
-## Task Constructor quick reference
+### Respect result flow
 
-### Match stages to result flow
+Generators produce states in both directions, propagators extend neighboring
+results forward or backward, and connectors bridge independently generated
+states. Serial containers accept end-to-end child solutions; parallel
+containers select, fall back among, or merge alternatives.
 
-- Generators independently create states and send them in both directions.
-- Propagators extend a neighboring result forward or backward.
-- Connectors bridge states produced independently on their two interfaces.
-- Wrappers modify or filter one child.
-- Serial containers accept end-to-end child solutions.
-- Parallel containers select alternatives, provide fallbacks, or merge results.
+### Forward properties deliberately
 
-Set root properties before adding stages. Then call `init()`, plan a bounded
-number of successful solutions, select a solution explicitly, and publish or
-execute it. `init()` may throw `InitStageException`; `plan(5)` stops after five
-successful solutions.
+Nested stages do not automatically inherit task properties. Expose selected
+properties to containers, configure them from `Stage::PARENT`, and let wrappers
+such as `ComputeIK` import generated values such as `target_pose` from
+`Stage::INTERFACE`.
 
-### Forward properties explicitly
-
-Nested stages do not automatically inherit task properties. Expose the needed
-task properties to a container, initialize them from `Stage::PARENT`, and have
-an IK wrapper import its generated `target_pose` from `Stage::INTERFACE`.
-
-### Monitor the correct scene-producing stage
+### Monitor the correct scene stage
 
 `GenerateGraspPose` monitors the earlier `CurrentState`. `GeneratePlacePose`
-monitors the saved attach-object stage so it sees the attachment. Move each
-generator into `ComputeIK`, then configure solution count, joint-space
-separation, and IK frame.
+monitors the saved attach-object stage so it sees the attached-object transform.
+Move each generator into `ComputeIK`, then configure solution count, separation,
+IK frame, and property sources.
 
-## Servo quick reference
+See [MoveIt Task Constructor](references/task-constructor.md) for lifecycle,
+planner, motion, planning-scene transition, and diagnostic details.
 
-### Respect safety and command-frame requirements
+## MoveIt Servo quick reference
 
-Servo scales velocity near singularities and collisions and enforces joint
-position and velocity limits. Collision checking and smoothing are independent
-(`check_collisions` and `use_smoothing`). Twist and pose messages need
-`header.frame_id`; twist commands currently must use the robot planning frame.
+### Supply IK parameters explicitly
 
-### Choose output and runtime controls
+Pass `robot_description_kinematics` parameters to `ServoNode`. Parameters appear
+under `robot_description_kinematics.<group_name>.<param_name>`. A custom IK
+plugin must declare its own custom parameters because Servo does not accept
+undeclared values from `kinematics.yaml`.
 
-`command_out_type` selects `trajectory_msgs::msg::JointTrajectory` or
-`std_msgs::msg::Float64MultiArray` on `command_out_topic`. Switch active input
-with `/<node_name>/switch_command_type`, pause with
-`/<node_name>/pause_servo`, and observe `/<node_name>/status`.
+### Choose the command and output interfaces
+
+Servo accepts `JointJog`, `TwistStamped`, and `PoseStamped` commands on its
+parameterized inputs. Twist and pose messages require `header.frame_id`; twist
+commands use the robot planning frame. `command_out_type` selects either
+`JointTrajectory` or `Float64MultiArray` output.
 
 ### Choose smoothing by constraint needs
 
-- `online_signal_smoothing::ButterworthFilterPlugin` is inexpensive and avoids
-  joint-space overshoot, but does not explicitly constrain acceleration or jerk.
-- `online_signal_smoothing::AccelerationLimitedPlugin` respects acceleration
-  limits when feasible and preserves direction when kinematics allow, but can
-  overshoot and does not constrain jerk.
-- `online_signal_smoothing::RuckigFilterPlugin` gives the smoothest joint-limit-
-  and acceleration-aware output, but can overshoot or swirl at sharp Cartesian
-  corners.
+- `ButterworthFilterPlugin` is inexpensive and avoids joint-space overshoot,
+  but does not explicitly constrain acceleration or jerk.
+- `AccelerationLimitedPlugin` respects acceleration where feasible and
+  preserves direction when kinematics allow, but may overshoot and does not
+  constrain jerk.
+- `RuckigFilterPlugin` gives the smoothest joint-limit- and acceleration-aware
+  output, but may overshoot or swirl at sharp Cartesian corners.
 
-Open the topic references for complete configuration constraints, service and
-action semantics, stage examples, and planner-specific edge cases.
+See [MoveIt Servo](references/servo.md) for collision behavior, scheduling,
+direct C++ control, services, status, and OSQP compatibility.

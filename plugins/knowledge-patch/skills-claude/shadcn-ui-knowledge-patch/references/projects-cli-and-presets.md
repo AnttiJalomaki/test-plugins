@@ -1,65 +1,44 @@
 # Projects, CLI, and Presets
 
-## Create and Initialize Projects
+## Custom Project Creation
 
-`init` can scaffold Next.js, Vite, TanStack Start, React Router, Astro, and
-Laravel projects. `create` is an alias. Use `--name` for a new project,
-`--monorepo` for a workspace, and `--base` to choose Base UI, Radix, or Aria
-primitives.
+`npx shadcn create` interactively creates a setup for Next.js, Vite, TanStack
+Start, or v0. It prompts for the component library, icon set, base color,
+theme, fonts, and visual style. The supplied styles are Vega (classic), Nova
+(reduced spacing), Maia (soft and rounded), Lyra (boxy and sharp), and Mira
+(compact and dense). A style selection rewrites component code, including
+fonts, spacing, structure, and libraries; it is not merely a color theme.
+
+```sh
+npx shadcn create
+```
+
+## Full-project Initialization
+
+`init` supports Next.js, Vite, TanStack Start, React Router, Astro, and Laravel,
+and `create` is an alias for `init`. Use `--name` to create a project,
+`--monorepo` for a workspace, and `--base` to choose Base UI, Radix, or Aria.
 
 ```sh
 pnpm dlx shadcn@latest init --name dashboard --template astro --base radix
 pnpm dlx shadcn@latest init --template next --monorepo
 ```
 
-The interactive creator configures a Next.js, Vite, TanStack Start, or v0
-project and asks for the component library, icons, base color, theme, fonts,
-and visual style:
+## Project-aware Inspection
+
+`info` reports the detected framework and version, CSS-variable setup,
+installed components, and component resources. `docs` returns documentation,
+examples, and primitive API references for a component; specify a base when
+needed. Both commands support JSON output.
 
 ```sh
-npx shadcn create
-```
-
-The supplied styles are:
-
-- Vega: classic.
-- Nova: reduced spacing.
-- Maia: soft and rounded.
-- Lyra: boxy and sharp.
-- Mira: compact and dense.
-
-A style selection rewrites component code, including fonts, spacing, structure,
-and supporting libraries. It is broader than a color-theme switch.
-
-## Use Portable Preset Codes
-
-A preset code packages colors, theme, icon library, fonts, and radius.
-`init --preset` can scaffold with the code or switch an existing application,
-reconfiguring its components as well.
-
-```sh
-pnpm dlx shadcn@latest init --preset a1Dg5eFl
-```
-
-`apply` changes an existing project. Restrict it with `--only theme` or
-`--only font` when UI components should not be reinstalled.
-
-```sh
-pnpm dlx shadcn@latest apply a2r6bw --only theme
-```
-
-Inspect codes and reconstruct the current project's code with the preset
-commands. Both support JSON output, and `preset info` aliases `preset resolve`.
-
-```sh
-pnpm dlx shadcn@latest preset decode a2r6bw --json
-pnpm dlx shadcn@latest preset resolve --json
-pnpm dlx shadcn@latest preset info --json
+pnpm dlx shadcn@latest info --json
+pnpm dlx shadcn@latest docs combobox --base radix --json
 ```
 
 ## Preflight Component Changes
 
-The `add` command can expose its changes before writing:
+The `add` command can expose a registry change before writing files:
 
 ```sh
 pnpm dlx shadcn@latest add button --dry-run
@@ -67,81 +46,78 @@ pnpm dlx shadcn@latest add button --diff
 pnpm dlx shadcn@latest add button --view
 ```
 
-Use `--dry-run` for the planned operation, `--view` for registry content, and
-`--diff` to compare an installed primitive with its registry update. A diff is
-especially important before merging an update into locally customized source.
+Use `--diff` to compare an installed primitive with its registry update before
+merging local customizations.
 
-## Inspect Project-Aware Context
+## Portable Preset Codes
 
-`info` reports the framework and version, CSS-variable setup, installed
-components, and component resources. `docs` returns documentation, examples,
-and primitive API references for a component; pass a base when it must differ
-from project context. Both commands can emit JSON.
+A preset code packages colors, theme, icon library, fonts, and radius.
+`init --preset` can scaffold with the preset or switch an existing application
+to it, reconfiguring component source as well.
 
 ```sh
-pnpm dlx shadcn@latest info --json
-pnpm dlx shadcn@latest docs combobox --base radix --json
+pnpm dlx shadcn@latest init --preset a1Dg5eFl
 ```
 
-## Run Built-in Migrations
+## Applying and Inspecting Presets
+
+`apply` changes an existing project and can limit the operation to `theme` or
+`font` without reinstalling UI components. `preset decode` inspects a code.
+`preset resolve` reconstructs the current project's preset, and `preset info`
+is an alias for `preset resolve`. Both inspection operations support JSON.
+
+```sh
+pnpm dlx shadcn@latest apply a2r6bw --only theme
+pnpm dlx shadcn@latest preset decode a2r6bw --json
+pnpm dlx shadcn@latest preset resolve --json
+```
+
+## Built-in Migrations
 
 ### Icons
 
-`migrate icons` rewrites imports and JSX, installs the destination icon library,
-and updates `components.json`:
+`migrate icons` rewrites imports and JSX, installs the target icon library,
+and updates `components.json`. Supplying a path or glob scopes the rewrite but
+does not update `components.json`. Unmatched icons remain in place and are
+reported.
 
 ```sh
 pnpm dlx shadcn@latest migrate icons --from lucide --to phosphor --yes
 ```
 
-A path or glob scopes the source rewrite but does not update `components.json`.
-Icons without a destination match are left unchanged and reported.
+### Right-to-left Layout
 
-### Right-to-left layout
-
-`migrate rtl` enables RTL, changes physical CSS utilities to logical utilities,
-and adds directional variants where needed:
+`migrate rtl` enables RTL, replaces physical CSS utilities with logical forms,
+and adds directional variants where required. It accepts a path or glob.
 
 ```sh
 pnpm dlx shadcn@latest migrate rtl "src/components/ui/**"
 ```
 
-### Radix package consolidation
+### Unified Radix Package
 
 `migrate radix` switches imports to the unified `radix-ui` package. After the
-migration and verification, remove individual primitive packages that are no
-longer imported.
+migration succeeds, unused individual primitive packages can be removed.
 
 ```sh
 pnpm dlx shadcn@latest migrate radix
 ```
 
-## Shared Tailwind Utilities and Ejection
+## Project MCP Server
 
-New initialization imports `shadcn/tailwind.css`, which provides shared
-Tailwind v4 variants, utilities, and animations. `eject` copies that CSS into
-the application and removes the `shadcn` dependency:
-
-```sh
-pnpm dlx shadcn@latest eject
-```
-
-Ejection is irreversible from the CLI's perspective. Future updates to the
-shared stylesheet will not flow into the copied CSS automatically.
-
-## Coding Skill and Project MCP
-
-Install the shadcn skill to provide automated coding workflows with Radix and
-Base UI APIs, component patterns, registry procedures, and project-aware CLI
-usage:
-
-```sh
-pnpm dlx skills add shadcn/ui
-```
-
-Initialize the project MCP server with one command. It operates across every
-registry configured for the project, including several registries together.
+Initialize the project MCP server with one command. It uses every registry in
+the project's configuration and supports several registries at once.
 
 ```sh
 pnpm dlx shadcn@latest mcp init
+```
+
+## CLI Skill
+
+The installable shadcn skill supplies coding agents with Radix and Base UI
+APIs, component patterns, registry workflows, and CLI usage aligned with a
+project's design system.
+
+```sh
+pnpm dlx skills add shadcn/ui
 ```

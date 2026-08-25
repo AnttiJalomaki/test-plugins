@@ -1,26 +1,65 @@
 # HTTP, Security, and Authentication
 
-Batch attribution: `5.1`, `5.2-guide`, `5.2`, `6.0-guide`, `6.0`.
+Load this reference for request handling, authentication, sessions, security
+headers, redirects, URL construction, and Django REST framework integration.
 
-## Contents
+## Use asynchronous authentication and sessions
 
-- [Content Security Policy](#content-security-policy)
-- [Content negotiation and accepted media types](#content-negotiation-and-accepted-media-types)
-- [URL generation and redirects](#url-generation-and-redirects)
-- [Async authentication and sessions](#async-authentication-and-sessions)
-- [Passwords and sensitive settings](#passwords-and-sensitive-settings)
-- [Django REST framework compatibility](#django-rest-framework-compatibility)
-- [Protocol and URL behavior](#protocol-and-url-behavior)
+`login_required()`, `permission_required()`, and `user_passes_test()` can wrap
+async views. Every built-in session engine provides `a`-prefixed async methods,
+including `aget()`, `akeys()`, and `acycle_key()`. (`5.1`)
 
-## Content Security Policy
+Async interfaces cover user creation, natural-key lookup, permission checks, and
+the built-in model and remote-user authentication backends. Auth functions use a
+backend's native async method when it exists. `method_decorator()` can wrap async
+view methods directly. (`5.2`)
 
-### Enable enforced or report-only policy
+Pass a real user explicitly to `login()` and `alogin()`. The compatibility path
+for `user=None` is deprecated in 5.2 and removed in 6.1.
+(`5.2`, `deprecation-roadmap`)
 
-Add `django.middleware.csp.ContentSecurityPolicyMiddleware` and define `SECURE_CSP`,
-`SECURE_CSP_REPORT_ONLY`, or both (since `6.0-guide`). Each setting maps CSP directive names to
-source lists or other directive values.
+Async-capable `RemoteUserMiddleware` subclasses must implement
+`aprocess_request()` as well as `process_request()`; the synchronous-only
+compatibility path ends in 6.1. (`5.2`, `deprecation-roadmap`)
 
-Use constants from `django.utils.csp.CSP`; they supply correct CSP quoting:
+## Negotiate response content
+
+`HttpRequest.get_preferred_type()` compares the request's `Accept` header with
+the media types a view can produce. Supply candidates in server-preference order
+and handle `None` when no type is acceptable. (`5.2-guide`)
+
+```python
+media_type = request.get_preferred_type(["text/html", "application/json"])
+```
+
+`HttpRequest.accepted_types` is ordered by client preference. (`5.2`)
+
+## Construct URLs and redirects
+
+`reverse()` and `reverse_lazy()` accept `query` and `fragment`. A mapping
+passed as `query` is URL-encoded, and the fragment follows the generated query
+string. (`5.2-guide`)
+
+```python
+reverse("nebulae", query={"q": "crab neb"}, fragment="facts")
+# "/nebulae/?q=crab+neb#facts"
+```
+
+`HttpResponseRedirect`, `HttpResponsePermanentRedirect`, and `redirect()`
+accept `preserve_request=True`. This selects 307 instead of 302, or 308 instead
+of 301, so the user agent retains the method and body. (`5.2`)
+
+```python
+return redirect("target", preserve_request=True)
+```
+
+## Configure Content Security Policy
+
+### Install policy middleware (`6.0-guide`)
+
+Add `ContentSecurityPolicyMiddleware` and define enforced and/or report-only
+directive mappings in `SECURE_CSP` and `SECURE_CSP_REPORT_ONLY`.
+`django.utils.csp.CSP` provides correctly quoted source constants.
 
 ```python
 from django.utils.csp import CSP
@@ -32,127 +71,52 @@ SECURE_CSP_REPORT_ONLY = {
 }
 ```
 
-A report-only header does not collect reports by itself. Include `report-uri` or the appropriate
-reporting directive and operate a report receiver; Django does not provide one.
+Report-only mode does not collect reports by itself. Include a reporting directive
+and operate a receiver; Django does not provide one.
 
-### Use per-request nonces safely
+### Use nonces without defeating them (`6.0-guide`)
 
-Put `CSP.NONCE` in `script-src` or `style-src`, enable
-`django.template.context_processors.csp`, and add `nonce="{{ csp_nonce }}"` to the permitted
-inline element. The context value is generated lazily.
+Place `CSP.NONCE` in `script-src` or `style-src` and enable
+`django.template.context_processors.csp` to expose the lazily generated
+`csp_nonce`. Render it as `nonce="{{ csp_nonce }}"`.
 
-Do not full-page-cache a nonce-bearing response. Reusing a cached nonce breaks its per-request
-security property. If a fragment cache contains nonce-bearing markup, verify that the containing
-response still gets a matching fresh header and value.
+Do not full-page-cache nonce-bearing responses, because reuse defeats the
+per-request guarantee. `csp_override()` and `csp_report_only_override()` replace,
+rather than merge with, the global policy for a view. An empty mapping disables
+the corresponding header for that view.
 
-### Override a view policy
+## Update URL and request parsing behavior
 
-`csp_override()` and `csp_report_only_override()` replace the corresponding global policy for the
-decorated view; they do not merge mappings. Passing an empty mapping disables that header for the
-view.
+`forms.URLField` assumes HTTPS for schemeless input, and
+`FORMS_URLFIELD_ASSUME_HTTPS` is removed. `urlize` and `urlizetrunc` still
+assume HTTP in 6.0; `URLIZE_ASSUME_HTTPS=True` opts into their future HTTPS
+behavior, although that transitional setting is deprecated. (`6.0`)
 
-## Content negotiation and accepted media types
+ASGI accepts multiple `Cookie` headers on HTTP/2 requests. (`6.0`)
 
-Use `HttpRequest.get_preferred_type()` to choose among the response media types a view can produce
-(since `5.2-guide`):
+Multipart parser classes are customizable. `BinaryField` form input uses strict
+Base64 validation, so values accepted only by permissive decoding are invalid.
+(`6.1`)
 
-```python
-media_type = request.get_preferred_type(["text/html", "application/json"])
-if media_type is None:
-    # Return an appropriate not-acceptable response.
-    ...
-```
+## Validate language and signing inputs
 
-List candidates in server-preference order and handle `None` when no candidate is acceptable.
-`HttpRequest.accepted_types` is sorted by the client's preference (since `5.2`).
+`check_for_language()` rejects language codes longer than 500 characters before
+its cached lookup. This includes values flowing through the optional
+`set_language()` view. (`5.2.17`)
 
-## URL generation and redirects
+Signed cookies use an unambiguous salt derivation by default, changing default
+signing behavior. Include cookie compatibility and rotation in the 6.1 upgrade
+plan. (`6.1`)
 
-### Add query strings and fragments during reversing
+## Integrate Django REST framework
 
-`reverse()` and `reverse_lazy()` accept `query` and `fragment` (since `5.2-guide`). Mapping values
-passed to `query` are URL-encoded. The fragment follows the generated query string:
+DRF 3.16 supports Django 5.1 and 5.2 and Python 3.13. Its minimum versions are
+Django 4.2 and Python 3.9. (`5.2-guide`)
 
-```python
-reverse("nebulae", query={"q": "crab neb"}, fragment="facts")
-# "/nebulae/?q=crab+neb#facts"
-```
+`LoginRequiredMiddleware` can coexist with DRF 3.16 but intentionally does not
+govern API views. Configure the equivalent access policy through DRF
+authentication and permission settings. (`5.2-guide`)
 
-### Preserve request method and body
-
-`HttpResponseRedirect`, `HttpResponsePermanentRedirect`, and `redirect()` accept
-`preserve_request` (since `5.2`). When true, a temporary redirect uses status 307 rather than 302,
-and a permanent redirect uses 308 rather than 301. The user agent can therefore resend the method
-and body:
-
-```python
-return redirect("target", preserve_request=True)
-```
-
-## Async authentication and sessions
-
-### Decorate async views
-
-`login_required()`, `permission_required()`, and `user_passes_test()` can wrap async views (since
-`5.1`). `method_decorator()` can wrap async view methods (since `5.2`). Keep sync and async call
-paths intact in custom decorators.
-
-### Use native async auth interfaces
-
-Async auth support covers user creation, natural-key lookup, permission checks, and the built-in
-model and remote-user backends (since `5.2`). Auth functions use a backend's native async method
-when it provides one, rather than always wrapping its sync method.
-
-An async-capable `RemoteUserMiddleware` subclass must implement `aprocess_request()` as well as
-`process_request()`. The sync-only compatibility path is removed in Django 6.1.
-
-### Use async sessions
-
-Every built-in session engine exposes `a`-prefixed async operations (since `5.1`), including
-`aget()`, `akeys()`, and `acycle_key()`. Use these methods in an async request path rather than
-performing synchronous session I/O there.
-
-## Passwords and sensitive settings
-
-### Admin password forms
-
-`AdminUserCreationForm` was added in `5.1`. It and `AdminPasswordChangeForm` can disable
-password-based authentication by saving an unusable password. `AdminSite.password_change_form`
-can select a custom form for the admin site's password-change view (since `6.0`).
-
-### Hashing defaults
-
-The default PBKDF2 iteration count changes as follows:
-
-- 870,000 in Django 5.1, up from 720,000.
-- 1,000,000 in Django 5.2.
-- 1,200,000 in Django 6.0.
-
-`ScryptPasswordHasher.parallelism` rises from 1 to 5 in Django 5.1. Account for CPU and memory
-cost when capacity-testing authentication workloads.
-
-Exception reporting treats setting names containing `AUTH` as sensitive (since `5.2`). Do not
-depend on exception pages exposing those values.
-
-## Django REST framework compatibility
-
-DRF 3.16 supports Django 5.1 and 5.2 and Python 3.13. It raises its own minimums to Django 4.2 and
-Python 3.9.
-
-Django's `LoginRequiredMiddleware` can coexist with DRF 3.16, but DRF intentionally exempts API
-views from that middleware's login requirement. Configure equivalent protection through DRF's
-authentication and permission policy.
-
-DRF 3.16 improves generated validation for `UniqueConstraint`, including nullable fields and
-conditional constraints. Regression-test serializer validation if custom validators duplicated a
-former workaround.
-
-## Protocol and URL behavior
-
-- ASGI accepts multiple `Cookie` headers on HTTP/2 requests (since `6.0`). Preserve rather than
-  incorrectly collapsing protocol-valid repeated headers in ASGI middleware.
-- `forms.URLField` assumes `https` for a schemeless value (since `6.0`); the
-  `FORMS_URLFIELD_ASSUME_HTTPS` transition setting is gone.
-- `urlize` and `urlizetrunc` still assume HTTP in 6.0. Set `URLIZE_ASSUME_HTTPS = True` to opt into
-  the planned HTTPS behavior during 6.x, but remove the setting when upgrading because it is
-  transitional and deprecated.
+DRF 3.16 improves generated validators for `UniqueConstraint`, including
+nullable fields and conditional constraints. Re-test serializer validation when
+upgrading. (`5.2-guide`)

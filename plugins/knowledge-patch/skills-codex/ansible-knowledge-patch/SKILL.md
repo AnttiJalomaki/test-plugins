@@ -21,7 +21,10 @@ connection settings, test targets, or modules that depend on current
 2. Inspect the affected playbooks and plugins for the migration points below.
 3. Open the topic reference before changing behavior that depends on exact
    configuration names, defaults, or plugin APIs.
-4. Prefer project tests and observed runtime behavior when a project carries
+4. Apply only guidance introduced at or below the project's version. If the
+   project is newer than the frontmatter version, treat this patch as
+   potentially stale.
+5. Prefer project tests and observed runtime behavior when a project carries
    compatibility shims or backports.
 
 ## Reference Index
@@ -29,10 +32,10 @@ connection settings, test targets, or modules that depend on current
 | Reference | Topics |
 | --- | --- |
 | [templating.md](references/templating.md) | Trust, single-pass evaluation, native values, strict conditionals, lazy templating, `omit`, sandboxing, and JSON profiles |
-| [plugins-and-extensions.md](references/plugins-and-extensions.md) | Controller-side I/O, callback and strategy migrations, Jinja plugins, markers, builtin names, and `module_utils` packages |
-| [connections-and-privilege.md](references/connections-and-privilege.md) | SSH agents and askpass, Paramiko removal, connection verbosity, local become, and `sudo_chdir` |
-| [playbooks-cli-and-inventory.md](references/playbooks-cli-and-inventory.md) | CLI flags, inventory parsing, diagnostics, deprecated play syntax, argument-spec validation, and Galaxy compatibility |
-| [modules-facts-and-windows.md](references/modules-facts-and-windows.md) | Fact access, file/package modules, result types, UTF-8 enforcement, Windows execution, and module patch behavior |
+| [plugins-and-extensions.md](references/plugins-and-extensions.md) | Controller-side I/O, callback and strategy migrations, Jinja plugins, collection loading, markers, builtin names, and `module_utils` packages |
+| [connections-and-privilege.md](references/connections-and-privilege.md) | SSH agents and askpass, Paramiko removal, connection verbosity, local become, `sudo_chdir`, and Windows transports |
+| [playbooks-cli-and-inventory.md](references/playbooks-cli-and-inventory.md) | CLI flags, inventory parsing, diagnostics, deprecated play syntax, argument-spec validation, and Galaxy behavior |
+| [modules-facts-and-windows.md](references/modules-facts-and-windows.md) | Fact access, file and package modules, result types, UTF-8 enforcement, Windows execution, and module patch behavior |
 | [testing-runtime-and-security.md](references/testing-runtime-and-security.md) | `ansible-test` environments and timeout diagnostics, supported runtimes, maintenance dates, and security fixes |
 
 ## Highest-Priority Migration Checks

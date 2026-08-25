@@ -1,83 +1,98 @@
-# Diagnostics and Tooling
+# Diagnostics and tooling
 
-Audit warning policy, machine-readable output, formatter configuration,
-analyzer checker names, library dependencies, and binding behavior as one
-upgrade surface.
+Use this reference when compiler upgrades affect warnings, diagnostic parsers,
+format configuration, Clang embedding, libclang/Python clients, AST matchers,
+GCC plugins, or Static Analyzer configurations.
 
-## Diagnostic output consumers
+## Diagnostic output and CI consumers
 
-### GCC machine-readable output (gcc-15.1 and gcc-16.1)
+### GCC machine-readable output
 
-GCC 15 deprecated the `json` value of `-fdiagnostics-format=`. It can emit
-multiple formats from one compilation with `-fdiagnostics-add-output=`, while
-`-fdiagnostics-set-output=` provides detailed output control.
+GCC 15 deprecates `-fdiagnostics-format=json`; use SARIF for machine-readable
+diagnostics (`gcc-15.1`). It can emit multiple formats from one compilation
+with `-fdiagnostics-add-output=`, while `-fdiagnostics-set-output=` provides
+more detailed control.
 
-GCC 16 removed JSON diagnostic output. Migrate machine-readable consumers to
-SARIF.
+GCC 16 removes the `json` value entirely (`gcc-16.1`). Migrate parsers before
+the compiler upgrade and validate path, location, nesting, and fix-it handling
+against SARIF.
 
-### Nested C++ diagnostics (gcc-16.1)
+### Hierarchical C++ diagnostics
 
-C++ diagnostics can contain nested explanations. Use
+GCC 16 presents nested explanations for C++ diagnostics (`gcc-16.1`). Use
 `-fno-diagnostics-show-nesting` or `-fdiagnostics-plain-output` when a tool or
-user requires the former flat presentation.
+human workflow requires the former flat form.
+
+### Clang suppression mappings
+
+Clang 20 accepts `-warning-suppression-mappings` for per-file Static Analyzer
+suppression (`clang-20.1`). Clang 22 changes overlapping mapping precedence:
+the last matching entry wins rather than the longest match (`clang-22.1`).
+Reorder existing files so the intended rule is last and add an overlap test.
+
+### GCC installation discovery
+
+Clang 22 warns with `-Wgcc-install-dir-libstdcxx` when automatic discovery
+selects the highest-version GCC installation even though it lacks libstdc++
+headers and another complete installation exists (`clang-22.1`). Make the
+installations consistent, select one with `--gcc-install-dir`, or suppress the
+warning only when the incomplete selection is intentional.
 
 ## Warning-policy changes
 
-### Clang comparison, memory, assembly, and lifetime warnings (clang-20.1)
+### Clang 20 warning groups
 
-- `-Warray-compare` diagnoses array comparisons before C++20.
-- `-Warray-compare-cxx26` diagnoses them from C++26 and is an error by default.
-- `-Wnontrivial-memcall` checks memory-function destinations that are not
-  trivially copyable and is implied by `-Wnontrivial-memaccess`.
-- `-Winvalid-gnu-asm-cast` is enabled and defaults to an error.
-- `-fheinous-gnu-extensions` is deprecated as an alias for demoting that
+Clang 20 adds or changes these controls (`clang-20.1`):
+
+- `-Warray-compare` diagnoses array comparisons before C++20;
+  `-Warray-compare-cxx26` covers C++26 onward and is an error by default.
+- `-Wnontrivial-memcall` checks non-trivially-copyable destinations passed to
+  memory functions and is implied by `-Wnontrivial-memaccess`.
+- `-Winvalid-gnu-asm-cast` is enabled and is an error by default.
+- `-fheinous-gnu-extensions` is deprecated as an alias for demoting that GNU
   assembly diagnostic.
 - `-Wdangling-assignment-gsl` is enabled by default.
 
-### Header guards and whitespace (gcc-15.1)
+### GCC 15 source-policy warnings
 
-`-Wheader-guard` is enabled by `-Wall`.
-`-Wtrailing-whitespace=` and `-Wleading-whitespace=` enforce whitespace
-policies.
+`-Wheader-guard` is new and enabled by `-Wall` in GCC 15 (`gcc-15.1`).
+`-Wtrailing-whitespace=` and `-Wleading-whitespace=` provide whitespace-policy
+checks. Pin them explicitly if exact CI behavior matters.
 
-### Chained comparisons (clang-21.1)
+GCC 15 also accepts C++11 attribute syntax in C++98 mode, supports `flag_enum`
+to suppress inappropriate switch warnings, and adds
+`-Wdefaulted-function-deleted` for explicitly defaulted functions that become
+deleted (`gcc-15.1`).
 
-Expressions such as `a < b < c`, including fold expressions over comparison
-operators, are errors by default. `-Wno-error=parentheses` demotes them during
-migration.
+### Clang 21 warning and thread-safety coverage
 
-### Clang warning and thread-safety expansion (clang-21.1)
-
-New warnings include `-Wunique-object-duplication`, `-Wshift-bool`, and the
-`-Wextra` member `-Wunnecessary-virtual-specifier`. Unsafe libc calls use
+Clang 21 adds `-Wunique-object-duplication`, `-Wshift-bool`, and
+`-Wunnecessary-virtual-specifier`, the latter under `-Wextra`
+(`clang-21.1`). Unsafe libc calls move to
 `-Wunsafe-buffer-usage-in-libc-call`.
 
 Thread-safety analysis adds opt-in `-Wthread-safety-pointer` and reentrant
-capabilities. The pointer check performs no alias analysis.
+capabilities. The pointer analysis performs no alias analysis, so interpret
+results within that limitation.
 
-### Warning-suppression mappings (clang-22.1)
+### Clang 22 group membership and new warnings
 
-`--warning-suppression-mappings=` resolves overlapping entries by taking the
-last match rather than the longest match. Reorder existing files if they relied
-on longest-match precedence.
-
-### Clang diagnostic groups (clang-22.1)
-
-Pedantic function-effect redeclaration checks moved to
+Pedantic function-effect redeclaration checks move to
 `-Wfunction-effect-redeclarations`, and
-`-Wperf-constraint-implies-noexcept` left `-Wall`. New warnings include
-`-Walloc-size`, `-Wenum-compare-typo`, and `-Wshadow-header`.
+`-Wperf-constraint-implies-noexcept` leaves `-Wall` (`clang-22.1`). New groups
+include `-Walloc-size`, `-Wenum-compare-typo`, and `-Wshadow-header`.
 `ACQUIRED_BEFORE` and `ACQUIRED_AFTER` no longer require
-`-Wthread-safety-beta`. `-Wformat-nonliteral` can detect wrappers missing
-`format` or `format_matches` annotations.
+`-Wthread-safety-beta`. `-Wformat-nonliteral` can diagnose wrappers missing a
+`format` or `format_matches` annotation.
 
-### Unused-but-set sensitivity (gcc-16.1-porting)
+### GCC 16 unused-but-set levels
 
-`-Wunused-but-set-variable` and `-Wunused-but-set-parameter`, including their
-`-Wall` or `-Wextra` forms, default to level 3. Level 2 stops counting
-increment/decrement as uses; level 3 also stops counting compound assignment
-when the old value is not used on the right-hand side. Level 1 is closest to
-the prior behavior:
+`-Wunused-but-set-variable` and `-Wunused-but-set-parameter`, including through
+`-Wall` or `-Wextra`, default to level 3 in GCC 16
+(`gcc-16.1-porting`). Level 2 stops treating increment/decrement as use; level
+3 also stops treating compound assignment as use when its old value is absent
+from the right-hand side. Level 1 approximates older behavior for staged
+migration:
 
 ```text
 -Wunused-but-set-variable=1 -Wunused-but-set-parameter=1
@@ -85,129 +100,132 @@ the prior behavior:
 
 ## clang-format
 
-### Policy and language controls (clang-20.1)
+### Configuration added in Clang 20
 
-New options include `BreakBinaryOperations`, `TemplateNames`,
+Clang 20 adds `BreakBinaryOperations`, `TemplateNames`,
 `RemoveEmptyLinesInUnwrappedLines`, `KeepFormFeed`,
 `AllowShortNamespacesOnASingleLine`, `VariableTemplates`,
 `WrapNamespaceBodyWithEmptyLines`, `IndentExportBlock`, and
-`PenaltyBreakBeforeMemberAccess`. GNU style enables `KeepFormFeed`.
+`PenaltyBreakBeforeMemberAccess` (`clang-20.1`). GNU style enables
+`KeepFormFeed`.
 
-`AlignConsecutiveDeclarations` adds `AlignFunctionDeclarations`.
-`ReflowComments` adds `IndentOnly` and renames its boolean values to
-`Never`/`Always`. Ignore files support bash globstar. C is formatted as its own
-language, and a header can force its language with a first-line comment such as
-`// clang-format Language: ObjC`.
+`AlignConsecutiveDeclarations` gains `AlignFunctionDeclarations`.
+`ReflowComments` gains `IndentOnly`, and its boolean values become
+`Never`/`Always`. Ignore files support Bash globstar. C is formatted as a
+distinct language, and a header can force a language with a first-line comment
+such as `// clang-format Language: ObjC`.
 
-### Additional layout policies (clang-21.1)
+### Configuration added in Clang 21
 
-New settings are `BreakBeforeTemplateCloser`, `BinPackLongBracedList`,
+Clang 21 adds `BreakBeforeTemplateCloser`, `BinPackLongBracedList`,
 `EnumTrailingComma`, `OneLineFormatOffRegex`, `SpaceAfterOperatorKeyword`, and
-`MacrosSkippedByRemoveParentheses`.
+`MacrosSkippedByRemoveParentheses` (`clang-21.1`).
 
-### Renamed and new keys (clang-22.1)
+### Configuration changed in Clang 22
 
-`AlignAfterOpenBracket` is boolean; `AlwaysBreak` and `BlockIndent` are
-deprecated. New controls include `SpaceInEmptyBraces`, `NumericLiteralCase`,
-`IndentPPDirectives: Leave`, `BreakAfterOpenBracket*`,
-`BreakBeforeCloseBracket*`, and `AlignPPAndNotPP`.
+`AlignAfterOpenBracket` becomes boolean in Clang 22; `AlwaysBreak` and
+`BlockIndent` are deprecated (`clang-22.1`). New controls include
+`SpaceInEmptyBraces`, `NumericLiteralCase`, `IndentPPDirectives: Leave`, the
+`BreakAfterOpenBracket*` and `BreakBeforeCloseBracket*` families, and
+`AlignPPAndNotPP`.
 
-Integer-separator `*MinDigits` keys were renamed to `*MinDigitsInsert`, and
-`*MaxDigitsSeparator` keys were added.
+Integer-separator `*MinDigits` keys are renamed to `*MinDigitsInsert`, with new
+`*MaxDigitsSeparator` keys. Update configuration schema and reformat a
+representative corpus before accepting changes.
 
-## Embedding and AST tooling
+## Clang libraries and embedding
 
-### Clang library linkage (clang-22.1)
+### Link dependencies in Clang 22
 
-Options code moved from `clangDriver` to the new `clangOptions` library, so
-downstream tools may need both. `clangFrontend` no longer depends transitively
-on `clangDriver`; consumers of driver APIs must link it explicitly.
+Options code moves from `clangDriver` to the new `clangOptions` library
+(`clang-22.1`). Downstream tools using it may need both. `clangFrontend` also
+stops depending transitively on `clangDriver`; consumers of driver APIs must
+link `clangDriver` explicitly.
 
-### AST matcher and declaration changes (clang-22.1)
+### libclang layout and pretty-print APIs
 
-`VarTemplateSpecializationDecl::getTemplateArgsAsWritten()` returns null for
-implicit instantiations. Anonymous-record members are injected as invalid
-`IndirectFieldDecl`s even on name conflicts. Abbreviated function templates and
-generic lambdas have valid begin locations.
-
-The `elaboratedType` and `dependentTemplateSpecializationType` matchers were
-removed. Additions include `MatchFinderOptions::IgnoreSystemHeaders`,
-`hasConditionVariableStatement` support for `for`, `while`, and `switch`, and
-the `arrayTypeLoc` matcher.
-
-## libclang and Python bindings
-
-### Layout APIs and empty strings (clang-20.1)
-
-libclang adds `clang_isBeforeInTranslationUnit`, policy-controlled
+Clang 20 adds `clang_isBeforeInTranslationUnit`, policy-controlled
 `clang_getTypePrettyPrinted`, `clang_visitCXXBaseClasses`, and
-`clang_getOffsetOfBase`. Python exposes pretty-printing, base iteration,
-virtual-base queries, and base offsets.
+`clang_getOffsetOfBase` (`clang-20.1`). Python bindings expose pretty printing,
+base iteration, virtual-base queries, and base offsets.
 
 Affected Python string-returning interfaces return `""` rather than `None`
-when absent. Static access to `CompletionChunk` or `CompletionString`
-properties is an error.
+when absent. Accessing `CompletionChunk` or `CompletionString` properties
+statically is an error.
 
-### Cursor and method APIs (clang-21.1)
+### libclang method and assembly APIs
 
-libclang adds inline-assembly queries, `clang_visitCXXMethods`, and
-`clang_getFullyQualifiedName`; duplicate binary-opcode APIs are deprecated.
+Clang 21 adds inline-assembly queries, `clang_visitCXXMethods`, and
+`clang_getFullyQualifiedName`; duplicate binary-opcode APIs are deprecated
+(`clang-21.1`). Python bindings add hashable cursors, attribute and template
+queries, method visits, fully qualified names, and `File` equality.
 
-Python's `Cursor.from_location` returns `None` instead of a null cursor, and
-most cursor methods reject null cursors. Bindings add hashable cursors,
-attribute/template queries, method visits, fully qualified names, and `File`
-equality.
+`Cursor.from_location` now returns `None` rather than a null cursor, and most
+cursor methods reject null cursors. Update sentinel tests before invoking
+methods.
 
-### Failure, null, and library selection behavior (clang-22.1)
+### Clang 22 AST interfaces
 
-`Token.cursor` returns `None` instead of a null cursor.
-`TypeKind.ELABORATED` is no longer produced, `AccessSpecifier.NONE` was
-removed, and `TranslationUnit.reparse()` raises on errors.
+In Clang 22, `VarTemplateSpecializationDecl::getTemplateArgsAsWritten()` returns
+null for implicit instantiations (`clang-22.1`). Anonymous-record members are
+injected as invalid `IndirectFieldDecl` objects even on name conflicts, while
+abbreviated function templates and generic lambdas gain valid begin locations.
 
+The `elaboratedType` and `dependentTemplateSpecializationType` matchers are
+removed. Added facilities include `MatchFinderOptions::IgnoreSystemHeaders`,
+`hasConditionVariableStatement` for `for`, `while`, and `switch`, and the
+`arrayTypeLoc` matcher.
+
+### Clang 22 Python failure and null handling
+
+`Token.cursor` returns `None` rather than a null cursor, `TypeKind.ELABORATED`
+is no longer produced, `AccessSpecifier.NONE` is removed, and
+`TranslationUnit.reparse()` raises on errors (`clang-22.1`).
 `LIBCLANG_LIBRARY_PATH` and `LIBCLANG_LIBRARY_FILE` select libclang. Bindings
-also expose cursor language, inline-function queries, and previously missing
+also expose cursor language, inline-function queries, and formerly missing
 cursor, type, and exception kinds.
 
 ## Static Analyzer
 
-### Effects, suppression, and checker renames (clang-20.1)
+### Clang 20 effects, timeouts, and checker migration
 
-The analyzer verifies `nonblocking` and `nonallocating` effects and accepts
-`-warning-suppression-mappings` for per-file suppression. The Z3 cross-check
-timeout returned from 300 ms to 15 seconds; rlimit and equivalence-class
-timeout defaults are disabled.
+The analyzer verifies `nonblocking` and `nonallocating` function effects in
+Clang 20 (`clang-20.1`). Its Z3 cross-check timeout returns from 300 ms to 15
+seconds, while rlimit and equivalence-class timeout defaults become disabled.
 
-Checker migrations include:
+Several alpha checkers graduate or move:
 
-- `alpha.unix.Chroot` to `unix.Chroot`;
-- `alpha.core.PointerSub` to `security.PointerSub`;
-- taint checkers to `optin.taint.*`; and
-- nondeterministic-pointer checks to clang-tidy
+- `alpha.unix.Chroot` becomes `unix.Chroot`;
+- `alpha.core.PointerSub` becomes `security.PointerSub`;
+- taint checkers move under `optin.taint.*`; and
+- the two nondeterministic-pointer checkers become clang-tidy's
   `bugprone-nondeterministic-pointer-iteration-order`.
 
-### Assumptions and array bounds (clang-21.1)
+### Clang 21 assumptions and array bounds
 
-The analyzer understands `[[clang::assume]]` and adds
-`core.FixedAddressDereference`. `alpha.security.ArrayBoundV2` graduated to
-`security.ArrayBound`, replacing the alpha checker. The deprecated
-`optin.cplusplus.VirtualCall:PureOnly` option was removed.
+Clang 21 understands `[[clang::assume]]` and adds
+`core.FixedAddressDereference` (`clang-21.1`).
+`alpha.security.ArrayBoundV2` graduates to `security.ArrayBound`, replacing the
+old alpha checker. The long-deprecated
+`optin.cplusplus.VirtualCall:PureOnly` option is removed.
 
-### Checker consolidation and VFS support (clang-22.1)
+### Clang 22 checker and configuration changes
 
-New checkers are `core.NullPointerArithm` and
-`alpha.core.StoreToImmutable`. All `valist.*` functionality moved to
-`security.VAList`, and `alpha.core.CastSize` was removed.
-`[[clang::suppress]]` works in primary templates. Analyzer model paths and
-taint configurations honor virtual-file-system overlays.
+Clang 22 adds `core.NullPointerArithm` and `alpha.core.StoreToImmutable`
+(`clang-22.1`). All `valist.*` functionality moves to `security.VAList`, and
+`alpha.core.CastSize` is removed. `[[clang::suppress]]` now works in primary
+templates. Analyzer model paths and taint configurations honor virtual-file-
+system overlays.
 
-## GCC plugin API migration
+## GCC plugin diagnostics API migration
 
-GCC 16 moved diagnostic internals below `gcc/diagnostics/` and into the
-`diagnostics::` namespace (gcc-16.1-porting). Plugins using context, path, sink,
-buffering, SARIF, printing, or edit APIs require new headers and names:
+GCC 16 moves diagnostic internals below `gcc/diagnostics/` and into the
+`diagnostics::` namespace (`gcc-16.1-porting`). Plugins using internal context,
+path, sink, buffering, SARIF, printing, or edit APIs require new headers and
+source changes. Important replacements include:
 
-| Old | New |
-|---|---|
+| Former API | Replacement |
+| --- | --- |
 | `diagnostic_context` | `diagnostics::context` |
 | `diagnostic_output_format` | `diagnostics::sink` |
 | `diagnostic_path` | `diagnostics::paths::path` |

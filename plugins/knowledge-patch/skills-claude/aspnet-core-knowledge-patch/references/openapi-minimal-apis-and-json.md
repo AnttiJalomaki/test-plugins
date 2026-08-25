@@ -1,87 +1,65 @@
 # OpenAPI, Minimal APIs, and JSON
 
-Use this reference for generated document semantics, OpenAPI.NET transformer migrations, XML
-comments, schema creation, and form-model binding. The changes are from batch `10.0`.
+## OpenAPI document and schema behavior
 
-## OpenAPI 3.1 schema defaults
+### Account for OpenAPI 3.1 defaults
 
-Generated documents default to OpenAPI 3.1. Nullable shapes differ by schema kind:
+Generated documents default to OpenAPI 3.1 (since 10.0). Nullable scalar
+schemas represent the type as an array that includes `null`; nullable complex
+types and collections use `oneOf`.
 
-- Nullable scalar schemas use a type array that includes `null`.
-- Nullable complex types and collections use `oneOf`.
+ASP.NET Core's default `JsonNumberHandling.AllowReadingFromString` changes the
+schema for `int` and `long`: it uses a digit pattern without
+`type: integer`. Configure number handling as `Strict` when consumers require
+integer schemas.
 
-Do not post-process all nullable schemas into the same representation.
+### Migrate transformers to OpenAPI.NET 2
 
-ASP.NET Core's default `JsonNumberHandling.AllowReadingFromString` also affects number schemas.
-Schemas for `int` and `long` use a digit pattern without `type: integer` because JSON strings are
-accepted. Configure strict number handling when the document must advertise integer-only input:
-
-```csharp
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict;
-});
-```
-
-Keep serializer behavior and the generated contract aligned; changing only the emitted schema
-would misdescribe accepted requests.
-
-## OpenAPI.NET 2 transformer migration
-
-OpenAPI entities are interfaces with distinct inline and reference implementations. Update
-transformers that constructed or type-tested the earlier concrete entities.
+OpenAPI entities are interfaces with separate inline and reference
+implementations (since 10.0). Update transformer code even when the generated
+document is configured for OpenAPI 3.0:
 
 - Replace `OpenApiSchema.Nullable` with a check for `JsonSchemaType.Null`.
 - Replace `OpenApiAny` values with `JsonNode`.
-- Account for inline and reference implementations when reading or mutating an entity.
+- Handle inline and referenced implementations instead of assuming one concrete
+  entity class.
 
-These API migrations are necessary even when ASP.NET Core is configured to emit OpenAPI 3.0.
-Document format selection does not restore the earlier OpenAPI.NET object model.
+### Generate and register schemas in transformers
 
-## XML comments in generated OpenAPI
+Document, operation, and schema transformer contexts expose
+`GetOrCreateSchemaAsync` to generate a schema from a C# type (since 10.0).
+Operation and schema contexts also expose `Document`. Use that document with
+`AddComponent` when the generated schema must be registered as a component.
 
-Enable XML documentation output in the project:
+## Documentation metadata
+
+### Populate OpenAPI from XML comments
+
+Enable the documentation file to let the OpenAPI source generator populate
+summaries, remarks, parameter descriptions, return descriptions, and comments
+from referenced projects (since 10.0):
 
 ```xml
-<PropertyGroup>
-  <GenerateDocumentationFile>true</GenerateDocumentationFile>
-</PropertyGroup>
+<GenerateDocumentationFile>true</GenerateDocumentationFile>
 ```
 
-The OpenAPI source generator can then populate endpoint summaries, remarks, parameter
-descriptions, return descriptions, and comments from referenced projects. Minimal API lambdas
-cannot carry this XML metadata. Use a documented method as the endpoint handler when generated
-documentation is required.
+Minimal API lambdas cannot carry this XML metadata. Use a documented method as
+the endpoint handler when the generated operation needs the comments.
+
+## Minimal API and JSON behavior
+
+### Make converters compatible with `PipeReader`
+
+MVC, Minimal APIs, and `ReadFromJsonAsync` deserialize through `PipeReader`
+(since 10.0). Custom `JsonConverter` implementations must not assume that token
+data always resides in `Utf8JsonReader.ValueSpan`; use `ValueSequence` when
+`HasValueSequence` is true:
 
 ```csharp
-/// <summary>Returns an order.</summary>
-/// <param name="id">The order identifier.</param>
-/// <returns>The matching order.</returns>
-static IResult GetOrder(int id) => Results.Ok(/* ... */);
-
-app.MapGet("/orders/{id}", GetOrder);
+var span = reader.HasValueSequence
+    ? reader.ValueSequence.ToArray()
+    : reader.ValueSpan;
 ```
 
-## Generate schemas from transformers
-
-Document, operation, and schema transformer contexts expose `GetOrCreateSchemaAsync`, which
-generates an OpenAPI schema from a C# type. Operation and schema contexts also expose `Document`.
-Use the document with `AddComponent` when a generated schema must be registered for reuse.
-
-## Nullable properties in complex form models
-
-For a complex `[FromForm]` parameter, an empty string posted to a nullable value-type property
-binds to `null` rather than failing to parse. This is a binding change, not an instruction to
-accept missing domain values. Apply validation separately when the property is required by the
-application.
-
-```csharp
-public sealed class SearchForm
-{
-    public int? Page { get; set; }
-}
-
-app.MapPost("/search", ([FromForm] SearchForm form) => Results.Ok(form));
-```
-
-An empty `Page` field reaches the handler as `null`.
+As a temporary fallback, set the
+`Microsoft.AspNetCore.UseStreamBasedJsonParsing` AppContext switch to `true`.

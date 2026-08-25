@@ -1,26 +1,24 @@
 # Frameworks, builds, and serverless runtimes
 
-Use this reference for established framework integrations, source-map build
-behavior, framework-specific migration, serverless flushing, and runtime
-instrumentation.
+## Source-map behavior across meta-frameworks
 
-## Source-map build behavior (9.0.0-guide)
+From `9.0.0-guide`, meta-framework SDKs preserve explicitly enabled or disabled
+source-map build settings instead of rewriting them. When generation is
+unspecified, the SDK enables source maps and deletes them after upload. When
+source maps are explicitly enabled, it preserves the emission mode and does not
+delete them automatically; use `filesToDeleteAfterUpload` for custom cleanup.
 
-Meta-framework SDKs preserve an explicitly enabled or disabled source-map
-setting. When generation is unspecified, they enable source maps and delete
-them after upload. When generation is explicitly enabled, they preserve the
-emission mode and do not delete maps automatically. Use
-`filesToDeleteAfterUpload` for custom cleanup.
+## Next.js builds and releases
 
-Next.js enables client `hidden-source-map` and server `source-map` unless
-`sourcemaps.disable` is set. Client maps are deleted after upload unless
-`sourcemaps.deleteSourcemapsAfterUpload` is `false`.
+For `9.0.0-guide`, Next.js enables client `hidden-source-map` and server
+`source-map` builds unless `sourcemaps.disable` is set. Client maps are deleted
+after upload unless `sourcemaps.deleteSourcemapsAfterUpload` is `false`. The
+removed `hideSourceMaps` option has no replacement.
 
-- Remove `hideSourceMaps`; it has no replacement.
-- Set an explicit release name. The SDK no longer falls back to the
-  nondeterministic Next.js Build ID.
-- Replace the discontinued `sentry` property in Next config with options
-  passed directly to `withSentryConfig`.
+The SDK no longer falls back to the nondeterministic Next.js Build ID for the
+release. Set a release name explicitly when needed. Replace the discontinued
+`sentry` property in Next config with options passed directly to
+`withSentryConfig`:
 
 ```js
 export default withSentryConfig(nextConfig, {
@@ -29,50 +27,54 @@ export default withSentryConfig(nextConfig, {
 });
 ```
 
-## Prisma and NestJS migration (9.0.0-guide)
+Next.js route handlers flush automatically in `10.0.0`. In
+`10.69.0-10.70.0`, middleware wrappers stop adding tracing; application logic
+and telemetry assertions must not depend on those wrappers to create middleware
+traces.
 
-The bundled `prismaIntegration` targets Prisma 6 and drops Prisma 5. Prisma 6
-does not need the `tracing` preview feature. To instrument another Prisma
-version, install its matching `@prisma/instrumentation`, pass a
-`PrismaInstrumentation` instance through `prismaInstrumentation`, and retain
-`previewFeatures = ["tracing"]` for pre-v6 Prisma when required.
+## SolidStart
 
-```js
-Sentry.init({
-  integrations: [
-    prismaIntegration({
-      prismaInstrumentation: new PrismaInstrumentation(),
-    }),
-  ],
-});
-```
-
-The Node SDK's `nestIntegration` and `setupNestErrorHandler` are removed. Move
-to `@sentry/nestjs` and make these replacements:
-
-- `@WithSentry` -> `@SentryExceptionCaptured`.
-- Generic or GraphQL global filter -> `SentryGlobalFilter`.
-- Remove `SentryService` and `SentryTracingInterceptor`.
-
-`SentryGlobalFilter` also handles NestJS WebSocket errors (10.68.0).
-
-## React Router, SolidStart, Vue, and Nuxt migration (9.0.0-guide)
-
-- Replace generic React `wrapUseRoutes` and `wrapCreateBrowserRouter` helpers
-  with their explicit `V6` or `V7` variants to match React Router.
-- Replace removed `sentrySolidStartVite` with `withSentry`, passing build-time
-  Sentry options as the second argument:
+`sentrySolidStartVite` is no longer exported in `9.0.0-guide`. Wrap the
+SolidStart config with `withSentry`, passing build-time options second:
 
 ```ts
-export default defineConfig(withSentry(solidStartConfig, sentryBuildOptions));
+export default defineConfig(
+  withSentry(solidStartConfig, sentryBuildOptions),
+);
 ```
 
-- Put Vue component tracing under `vueIntegration({ tracingOptions: ... })`,
-  including in Nuxt. Update spans require `"update"` in
-  `tracingOptions.hooks`.
-- Pinia `stateTransformer` receives combined state keyed by store ID.
-- Remove `logErrors`; the Vue handler always invokes a user handler or
-  rethrows.
+In `9.0.0`, server setup defaults to `--import` and adds
+`autoInjectServerSentry`, including the
+`autoInjectServerSentry: "experimental_dynamic-import"` mode.
+
+## NestJS
+
+The Node SDK's `nestIntegration` and `setupNestErrorHandler` are removed in
+`9.0.0-guide`; migrate to `@sentry/nestjs`. Replace `@WithSentry` with
+`@SentryExceptionCaptured`, use `SentryGlobalFilter` for either a global generic
+or GraphQL filter, and remove `SentryService` and `SentryTracingInterceptor`.
+
+As of `10.68.0`, `SentryGlobalFilter` also supports WebSocket errors, so NestJS
+WebSocket failures can flow through the global filter.
+
+## React Router and serverless flushing
+
+The generic React helpers `wrapUseRoutes` and `wrapCreateBrowserRouter` are
+removed in `9.0.0-guide`. Select the explicit `V6` or `V7` variant of each
+wrapper to match the installed React Router major.
+
+React Router flushes automatically for serverless loaders and actions and for
+Vercel request handlers in `10.0.0`. Starting with `10.68.0`, React Router uses
+its instrumentation API by default; custom setup must not assume that the older
+instrumentation path is selected automatically.
+
+## Vue, Nuxt, SvelteKit, and Remix
+
+Vue component tracing belongs under `vueIntegration({ tracingOptions })` from
+`9.0.0-guide`, including in Nuxt. Update spans are emitted only when `"update"`
+is present in `tracingOptions.hooks`. Pinia `stateTransformer` receives the
+combined state keyed by store ID. Remove `logErrors`; the Vue handler always
+propagates to a user handler or rethrows.
 
 ```js
 Sentry.init({
@@ -87,53 +89,70 @@ Sentry.init({
 });
 ```
 
-## SvelteKit and Remix migration (9.0.0-guide)
+Nuxt adds an `enabled` switch in `9.0.0`, and its `SourceMapsOptions` adds
+`silent`, `errorHandler`, and `release`.
 
-- Remove SvelteKit `fetchProxyScriptNonce`. Use a CSP script hash or disable
-  fetch-proxy script injection.
-- Remove Remix `autoInstrumentRemix`; the SDK always behaves as if it were
-  `true`.
+SvelteKit removes `fetchProxyScriptNonce` in `9.0.0-guide`; use a CSP script
+hash or disable fetch-proxy injection. In `9.0.0`, the script is injected only
+for SvelteKit versions below 2.16.0.
 
-## Framework controls added in 9.0.0
+Remix removes `autoInstrumentRemix` and always behaves as though it were `true`
+in `9.0.0-guide`. In `10.0.0`, Sentry CLI failures during Remix source-map
+upload become silent rather than failing the build.
 
-- SolidStart uses `--import` for server setup by default and adds
-  `autoInjectServerSentry`, including the
-  `"experimental_dynamic-import"` mode.
-- Nuxt adds an `enabled` switch for its Sentry module. Nuxt
-  `SourceMapsOptions` adds `silent`, `errorHandler`, and `release`.
-- SvelteKit injects the fetch-proxy script only on versions below 2.16.0.
+## Bundler plugin boundary and warnings
 
-## Framework and serverless changes in 10.0.0
+SDK v10 upgrades its bundler plugins to their v4 major line (`10.0.0`). Account
+for the major boundary when plugins are pinned or consumed directly.
 
-- Astro parameterizes Astro 5 request routes and client routes, constructing
-  the parameterized request route at runtime.
-- `fastifyIntegration` accepts `shouldHandleError` to select captured errors:
+At `10.68.0`, server instrumentation warns when a bundler marks an instrumented
+module as external. Treat the warning as a sign that the module may not be
+instrumented and adjust externalization where appropriate.
+
+## Astro routes
+
+The `10.0.0` Astro integration parameterizes Astro 5 request routes and
+client-side routes, constructing the parameterized request route at runtime.
+
+## Fastify error selection
+
+`fastifyIntegration` gains `shouldHandleError` in `10.0.0`, allowing the
+integration error handler to select captured errors:
 
 ```js
 Sentry.init({
   integrations: [
     Sentry.fastifyIntegration({
-      shouldHandleError: (error) => shouldReport(error),
+      shouldHandleError: error => shouldReport(error),
     }),
   ],
 });
 ```
 
-- React Router automatically flushes serverless loaders, actions, and Vercel
-  request handlers. Next.js route handlers also flush.
-- Unified serverless detection recognizes Cloud Run.
-- Cloudflare Workflow instrumentation accepts non-UUID instance IDs. Durable
-  Object instrumentation leaves synchronous methods synchronous.
-- Sentry CLI failures during Remix source-map upload are silent instead of
-  failing the build.
+## Serverless detection and runtime semantics
 
-## Cloudflare and build diagnostics (10.68.0)
+Serverless-environment detection is unified and recognizes Cloud Run in
+`10.0.0`, so serverless-specific behavior applies automatically there.
 
-Use `@sentry/cloudflare/vite` for Orchestrion auto-instrumentation. The plugin
-reads Wrangler configuration, resolves the Sentry options module, wraps the
-worker entry with `withSentry`, and instruments Durable Object,
-`WorkerEntrypoint`, and Workflow classes automatically.
+Cloudflare Workflow instrumentation accepts non-UUID instance IDs, and Durable
+Object instrumentation preserves synchronous methods instead of turning them
+asynchronous (`10.0.0`).
 
-Server instrumentation warns when a bundler marks an instrumented module
-external. Treat the warning as an instrumentation configuration problem; the
-external module may not be instrumented.
+## Cloudflare Vite instrumentation
+
+The `@sentry/cloudflare/vite` Orchestrion plugin added in `10.68.0` reads
+Wrangler configuration, resolves the Sentry options module, wraps the worker
+entry with `withSentry`, and automatically instruments Durable Object,
+`WorkerEntrypoint`, and Workflow classes.
+
+In `10.69.0-10.70.0`, Vite options accept `wranglerConfigPath` for explicitly
+selecting a Wrangler configuration. The Cloudflare SDK can also send local
+development events through the Spotlight integration.
+
+## Cloudflare Agents
+
+`10.69.0-10.70.0` adds `instrumentAgentWithSentry` for `Agent` classes from the
+`agents` SDK. It behaves like `instrumentDurableObjectWithSentry`, creates spans
+for `@callable` RPC methods, and derives `conversationId` from the agent name.
+The Sentry Vite plugin instruments Agents automatically. Clearing a chat rotates
+the conversation ID.

@@ -1,138 +1,132 @@
 # Upgrades and Lifecycle
 
-## Support and upgrade cadence
-
-Consul 1.21 is an Enterprise long-term support release with two years of
-support (1.21.0). Operators can remain on it while receiving patches and fixes.
-The 2.0 version number adds Enterprise support options for longer contract
-periods; earlier Enterprise releases remain maintained under their existing
-long-term-support contracts (2.0.0).
-
-Routine upgrades should cross at most two major Consul version jumps. For
-example, if `1.21.x` is current, start no earlier than `1.19.x`. Community
-operators need to move to the latest major release about every four months.
-Standard Enterprise major releases are maintained for about one year.
-Enterprise LTS operators can upgrade about annually, jump at most three major
-versions, and expect about two years of maintenance for an LTS release.
-
 ## Enterprise license transition
 
-When upgrading to Consul 1.21.7+ent or later with the updated license, use this
-order (1.21-upgrade):
+For the `1.21-upgrade` procedure to Consul 1.21.7+ent or later with the updated
+license, upgrade server agents before client agents. Apply `enterprise-standard`
+to both groups, but restart only the servers first, one at a time. Clients can
+continue using the existing license until the servers are ready; then restart
+clients with the new license.
 
-1. Upgrade server agents before client agents.
-2. Update the license on servers and clients to `enterprise-standard`.
-3. Restart only the server agents, one at a time.
-4. Leave clients on the existing license while the server set becomes ready.
-5. Restart clients with the new license after the servers are ready.
+## Maintained-version cadence
 
-## Standard rolling upgrade
+Routine upgrades should span at most two major Consul version jumps. For
+example, when `1.21.x` is current, begin from no earlier than `1.19.x`.
 
-Restart servers on the new Consul version one at a time, waiting for each to
-become healthy and rejoin before continuing. Roll clients only after the server
-set is complete. Run `consul members` to verify every agent's build and
-protocol.
+- Community operators generally move to the latest major release about every
+  four months.
+- Standard Enterprise majors are maintained for about one year.
+- Enterprise LTS releases are maintained for about two years; operators can
+  upgrade about annually and jump at most three major versions.
 
-For a service-mesh client:
+Treat these as planning bounds and confirm direct upgrade support before any
+rollout.
+
+## Server, client, and Envoy rollout order
+
+Restart server agents one at a time. Wait for each to become healthy and rejoin
+before continuing, then roll client agents.
+
+On a service-mesh client:
 
 1. Stop the old Consul agent.
 2. Stop its associated Envoy proxies.
 3. Start the new Consul agent.
-4. Restart Envoy proxies on a version compatible with the new agent.
+4. Start Envoy versions compatible with the new agent.
+5. Run `consul members` to confirm every agent's build and protocol.
 
-WAN-federated service-mesh clients should use centralized sidecar and
-mesh-gateway configuration:
+## Federated service-mesh preparation
+
+WAN-federated mesh clients should use centralized sidecar and mesh-gateway
+configuration:
 
 ```hcl
 enable_central_service_config = true
 ```
 
-Consul 1.8.4 or later reports compatible Envoy versions from
-`/v1/agent/self`. If both the old and new Consul versions support the installed
-Envoy version, Envoy does not need to move immediately.
+Consul 1.8.4 or later reports compatible Envoy versions through
+`/v1/agent/self`. If old and new Consul versions both support the installed
+Envoy version, the proxies may not require an immediate upgrade.
 
-## Incompatible protocol transitions
+## Two-phase protocol transitions
 
-When the release notes require an incompatible protocol transition, split the
-work into two phases.
-
-First, run the new binary while speaking the previous protocol. Restart servers
-one at a time and wait for each rejoin, then update the rest of the agents.
+When release notes require an incompatible protocol transition, first run the
+new binary while speaking the previous protocol:
 
 ```shell
 consul -v
 consul agent -protocol=PREVIOUS
 ```
 
-After every node runs the new binary, restart every agent without the protocol
-override. `-protocol` changes only the protocol version the agent speaks, not
-the complete range it understands. Keeping the older spoken protocol can
-disable newer features.
+Keep server restarts one at a time and wait for each server to rejoin. After
+every node runs the new binary, restart all agents without the override. The
+`-protocol` flag changes only the protocol spoken, not the complete understood
+range; an older spoken protocol can disable newer features.
 
-## WAN-federated rollout
+## WAN-federated rollout order
 
-Upgrade the primary datacenter's servers and then its clients. Repeat that
-server-then-client sequence for each secondary datacenter.
+Upgrade the primary datacenter's servers, then its clients. Repeat servers then
+clients for each secondary datacenter.
 
-Within every server set:
+Within a server set:
 
-1. Identify the Raft leader with `consul operator raft list-peers`.
-2. Upgrade followers first and the leader last.
-3. For each server, run `consul leave` and wait for state `left`.
-4. Start the new binary and wait for state `alive` before continuing.
+1. Identify the leader with `consul operator raft list-peers`.
+2. Upgrade followers before the leader.
+3. Run `consul leave` on one server and wait for `left`.
+4. Start its new binary and wait for `alive`.
+5. Continue one server at a time to preserve quorum.
 
-This sequence preserves quorum.
-
-## Availability and ACL recovery
+## Client availability and ACL token restoration
 
 From `consul leave` until a client agent restarts, its services are unhealthy
-and undiscoverable. Zero downtime requires redundant service instances on
-other clients.
+and undiscoverable. Zero-downtime upgrades therefore require redundant service
+instances on other clients.
 
-If `enable_token_persistence` was not enabled and a server's tokens are not in
-its configuration files, reapply the `agent` and `default` tokens after the
-restart. The server cannot rejoin until those tokens are restored.
+If `enable_token_persistence` was not enabled and a server's tokens are absent
+from its configuration files, reapply the `agent` and `default` tokens after
+restart before the server can rejoin.
 
-After every datacenter is upgraded, verify WAN membership:
+## Federated ACL verification
+
+After all datacenters are upgraded, check WAN membership:
 
 ```shell
 consul members -wan
 ```
 
-Then query `/v1/acl/replication` through an agent in a secondary datacenter:
+Then query ACL replication from a secondary datacenter agent:
 
 ```shell
 curl -s -H "X-Consul-Token: $CONSUL_HTTP_TOKEN" \
   "https://consul-server-0.secondary/v1/acl/replication?pretty"
 ```
 
-The primary datacenter always reports ACL replication as disabled, even when
-replication is working. Verify from a secondary.
+The primary datacenter always reports ACL replication as disabled, including
+when replication is working.
 
-## Automated server replacement
+## Autopilot server-set replacement
 
 Consul Enterprise automated upgrades are enabled by default when
-`DisableUpgradeMigration` is `false`. Confirm or enable the setting with:
+`DisableUpgradeMigration` is `false`. New-version servers initially join as
+non-voters. After enough replacements form a quorum, Autopilot promotes them,
+transfers leadership to the new server set, and demotes the old servers. Remove
+the old servers with `consul leave`. The versions must still support a direct
+upgrade.
 
 ```shell
 consul operator autopilot get-config
 consul operator autopilot set-config -disable-upgrade-migration=false
 ```
 
-New-version servers initially join as non-voters. After enough replacements
-join to form a quorum, Autopilot promotes them, transfers leadership to the new
-set, and demotes old servers. Remove the old servers with `consul leave`.
-The two Consul versions must support a direct upgrade.
+## Version-tagged node migrations
 
-## Version-tagged infrastructure migrations
-
-For server replacement caused by an image, operating system, or configuration
-change rather than a Consul binary change, point `UpgradeVersionTag` at a
-`node_meta` key. Autopilot compares the key's semantic versions in `X`, `X.Y`,
-or `X.Y.Z` form instead of comparing Consul versions.
+For an image, operating-system, or configuration replacement that does not
+change the Consul binary, set `UpgradeVersionTag` to a `node_meta` key.
+Autopilot compares that key as a semantic version in `X`, `X.Y`, or `X.Y.Z`
+form instead of comparing Consul versions.
 
 Tag existing servers with the old value and reload them before joining
-replacement servers with a newer value:
+replacements with a newer value:
 
 ```hcl
 node_meta {

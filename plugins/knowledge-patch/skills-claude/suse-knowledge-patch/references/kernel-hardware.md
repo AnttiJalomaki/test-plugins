@@ -1,122 +1,126 @@
 # Kernel and Hardware Behavior
 
-Use this reference for kernel configuration, observability, CPU behavior, hardware limits, graphics drivers, and reported kernel limitations.
+## Accounting, limits, and build compatibility
 
-## Contents
+### I/O accounting for `iotop` (`leap-15.6`)
 
-- [Kernel builds and observability](#kernel-builds-and-observability)
-- [Scheduling, timing, and CPU behavior](#scheduling-timing-and-cpu-behavior)
-- [Capacity limits](#capacity-limits)
-- [Graphics and accelerators](#graphics-and-accelerators)
-- [Known kernel and device issues](#known-kernel-and-device-issues)
-
-## Kernel builds and observability
-
-### External module compiler
-
-Leap 16 builds its kernel with GCC 13 rather than the default compiler. Install `gcc13` and invoke `gcc-13` for external modules or kernel rebuilds. This compiler is supported only for kernel and kernel-module builds.
-
-### External module taint state
-
-SLES 15 SP6 no longer sets a kernel taint flag merely because an externally supported module is loaded. Do not use the former taint bit to detect such modules in monitoring or support automation.
-
-### I/O delay accounting
-
-On kernels 5.14 and later, `iotop` cannot show SWAPIN and IO percentages unless task delay accounting is active. Add the `delayacct` boot parameter or enable it at runtime:
+On kernels 5.14 and later, `iotop` cannot show SWAPIN and IO percentages unless
+task delay accounting is active. Add the `delayacct` boot parameter or enable it
+at runtime:
 
 ```sh
 sysctl -w kernel.task_delayacct=1
 ```
 
-### BPF pairing
+### Kernel and module compiler (`leap-16.0-guide`)
 
-Use SLES 15 SP6 `libbpf`, `bpftool`, BCC, and `bpftrace` only with a kernel from the same product. Pair BCC and `bpftrace` with matching `kernel-*-devel` headers; `bpftrace` may instead use matching built-in kernel BTF when accessing kernel data types.
+The Leap 16 kernel is built with GCC 13 rather than the distribution's default
+compiler. Install `gcc13` and invoke `gcc-13` for external module and kernel
+builds. This compiler is supported only for those uses.
 
-### Lightweight guard regions
+### Userspace live patching (`leap-16.0-guide`)
 
-Leap 16 supports `MADV_GUARD_INSTALL` through `madvise()` for a lightweight guard region over an address range without a conventional mapped backing region.
+`libpulp` can live-patch `glibc` and OpenSSL binaries on x86-64 and ppc64le.
+Other libraries and architectures are outside the stated scope.
 
-### Userspace live patching
+### Lightweight guard regions (`leap-16.0-guide`)
 
-Leap 16 `libpulp` can live-patch `glibc` and OpenSSL binaries on x86-64 and ppc64le. Do not assume support for other libraries or architectures.
+Use `madvise()` with `MADV_GUARD_INSTALL` to install lightweight guard regions
+over address ranges without conventional mapped backing regions.
 
-## Scheduling, timing, and CPU behavior
+### External modules and taint on SLES 15 SP6
 
-### Timer frequency
+Loading an externally supported kernel module no longer sets the former taint
+flag. Do not use that bit to detect whether an external module is loaded.
 
-SLES 15 SP6 fixes non-overridable `CONFIG_HZ` at 250 Hz on x86-64 and Arm and at 100 Hz on POWER and IBM Z. Retest timing-sensitive Arm applications that assumed 100 Hz.
+### Timer frequency and sizing limits
 
-### Real-time group scheduling
+On SLES 15 SP6, non-overridable `CONFIG_HZ` is 250 Hz on x86-64 and Arm and 100
+Hz on POWER and IBM Z. Retest timing-sensitive applications that assumed Arm's
+former 100 Hz value.
 
-The SLES 15 SP7 kernel can enable `CONFIG_RT_GROUP_SCHED` with the `rt_group_sched` kernel command-line parameter and backports cgroup v2 CPU load balancing. Use these features without leaving the SP7 kernel line.
+Documented logical-CPU limits are 8192 on x86-64, 512 on IBM Z, 2048 on POWER,
+and 768 on Arm. Theoretical/certified memory limits are over 1 PiB/64 TiB on
+x86-64, 10 TiB/256 GiB on IBM Z, 1 PiB/64 TiB on POWER, and 256 TiB/no stated
+certified limit on Arm. Block devices can reach 8 EiB.
 
-### AMD P-State
+### BPF tool and kernel pairing
 
-SLES 16 enables AMD P-State by default on AMD EPYC Turin and later processors, including Energy Performance Preference control and autonomous workload-driven frequency scaling.
+On SLES 15 SP6, `libbpf`, `bpftool`, BCC, and `bpftrace` are supported only with
+a kernel from the same product. BCC and `bpftrace` also need matching
+`kernel-*-devel` headers, or built-in kernel BTF for `bpftrace`, when accessing
+kernel data types.
 
-### CPU mitigation policy
+## SLES 15 SP7 scheduling and diagnostics
 
-SLES 15 SP7 defaults side-channel mitigations to `Auto`, but the boot parameters represented by `Auto` can change between service packs. Revalidate the effective mitigation set after every upgrade when performance or threat policy depends on it.
+### CPU scheduling additions
 
-### Intel hybrid PMU limitation
+Enable `CONFIG_RT_GROUP_SCHED` at boot with `rt_group_sched`. The SP7 kernel
+also backports cgroup v2 CPU load balancing, so real-time and container
+schedulers can use it without changing kernel lines.
 
-Do not rely on Performance Monitoring Unit profiling on Intel hybrid CPUs under SLES 15 SP7. Its kernel 6.4 lacks the required kernel 6.9 changes, so PMU features do not work correctly.
+### Intel hybrid CPU PMU limitation
 
-### `hwloc` interfaces
-
-SLES 15 SP7 `hwloc` 2.11 adds:
-
-- `hwloc-calc --cpuset-output-format systemd-dbus-api` for systemd-slice `AllowedCPUs` data.
-- `hwloc-calc --cpuset-input-format list` for bit lists; the option is `--cpuset-input-format list`.
-- `hwloc-info --get-attr` for returning one attribute.
-- `HWLOC_MEMBIND_WEIGHTED_INTERLEAVE` and the `weighted` binding policy.
-
-Use `--cpuset-output-format` instead of superseded `--taskset`. The weighted interleave API needs Linux 6.9 or later and is therefore unavailable with the stock SP7 6.4 kernel.
-
-## Capacity limits
-
-SLES 15 SP6 documents these logical CPU limits: 8192 on x86-64, 512 on IBM Z, 2048 on POWER, and 768 on Arm. The theoretical/certified RAM limits are over 1 PiB/64 TiB on x86-64, 10 TiB/256 GiB on IBM Z, 1 PiB/64 TiB on POWER, and 256 TiB/no stated certified limit on Arm. Block devices can be as large as 8 EiB.
-
-For the higher SLES 16 POWER limits, see [platforms.md](platforms.md).
-
-## Graphics and accelerators
-
-### Leap NVIDIA selection
-
-Leap 15.6 disables `nouveau` by default for NVIDIA Turing and Ampere GPUs. For the recommended openGPU path, install the signed G06 module and GSP firmware:
-
-```sh
-zypper install nvidia-open-driver-G06-signed-kmp-default kernel-firmware-nvidia-gsp-G06
-```
-
-Enable unsupported-GPU support in `/etc/modprobe.d/50-nvidia-default.conf`:
-
-```conf
-options nvidia NVreg_OpenRmEnableUnsupportedGpus=1
-```
-
-To use `nouveau` instead, do not install that openGPU package and add `nouveau.force_probe=1` to the kernel boot parameters.
-
-Leap 16 automatically installs the open kernel driver, NVIDIA repository, and user-space acceleration drivers for supported GPUs. If the installer cannot start graphics, boot with `rd.driver.blacklist=nouveau` for nouveau-specific failures or `nomodeset` for general graphics failures.
-
-### Preview drivers
-
-On SLES 15 SP6, the AMD Navi32 “Wheat Nas” GPU driver remains a preview because matching firmware is unavailable. The Intel IAA crypto-compression driver is also a preview. Do not treat package presence as support.
-
-## Known kernel and device issues
+PMU features do not work correctly on Intel hybrid CPUs because SP7 uses kernel
+6.4 and lacks changes from kernel 6.9. Do not rely on PMU profiling or monitoring
+on those processors.
 
 ### SMC freeze risk
 
-The updated Shared Memory Communications (`smc`) driver can freeze an SLES 15 SP7 host. Avoid it for workloads that cannot tolerate a host hang until the announced maintenance fix is available.
+The updated Shared Memory Communications (`smc`) driver can freeze the host.
+Avoid it for workloads that cannot tolerate a hang until a maintenance update
+provides the stated fix.
 
-### IDXD probe message
+### Harmless IDXD probe message
 
-The SLES 15 SP7 message `IDXD: user: probe of wq1.0 failed with error -95` can be harmless in certain configurations and may be ignored pending the announced future fix. Do not treat that message alone as proof of failed setup.
+`IDXD: user: probe of wq1.0 failed with error -95` can appear in certain
+configurations and may be ignored pending a future fix. The message alone does
+not indicate a failed system setup.
 
-### Kernel and filesystem removals
+### `hwloc` 2.11 interfaces
 
-SLES 16 uses kernel 6.12 and removes quota v1. For the removed file systems and migration target, see [storage-filesystems.md](storage-filesystems.md).
+- `hwloc-calc --cpuset-output-format systemd-dbus-api` emits `AllowedCPUs`
+  data for systemd slices.
+- `--cpuset-input-format list` accepts bit lists.
+- `hwloc-info --get-attr` returns a single attribute.
+- `--cpuset-output-format` supersedes `--taskset`.
+- `HWLOC_MEMBIND_WEIGHTED_INTERLEAVE` and the `weighted` policy require Linux
+  6.9 or later and therefore do not work with stock SP7 kernel 6.4.
 
-### Kdump on POWER
+### CPU mitigation policy drift
 
-Custom SLES 15 SP6 POWER Kdump configurations must replace `maxcpus` with `nr_cpus`. Packaged configurations migrate automatically; custom scripts do not.
+The default side-channel mitigation setting is `Auto`, but its represented boot
+parameters can change between service packs. Revalidate the effective mitigation
+set after upgrade, especially on performance-sensitive hosts.
+
+## Architecture-related kernel behavior
+
+### POWER Kdump CPU parameter
+
+Custom SLES 15 SP6 POWER Kdump configurations must replace `maxcpus` with
+`nr_cpus`. Packaged configuration is migrated automatically; custom scripts are
+not.
+
+### Arm Memory Tagging and IOMMU
+
+SLES 15 SP6 glibc 2.38 enables Armv8.5 Memory Tagging Extension. The Arm kernel
+changes its IOMMU default from passthrough to translated mode; restore the former
+behavior with `iommu.passthrough=1` only when required.
+
+### AMD EPYC Turin frequency scaling
+
+SLES 16 uses AMD P-State by default on EPYC Turin and later processors, enabling
+Energy Performance Preference and autonomous workload-driven frequency scaling.
+
+## Revised SLES 16 defaults (`16.0-rev-2026-08-04`)
+
+### EROFS availability
+
+`erofs` is removed from the kernel module blacklist and is no longer disabled by
+that default policy.
+
+### Regular-file protection
+
+Security protection for regular files is enabled by default. Recheck workloads
+that relied on the former unprotected behavior; related identity and policy
+defaults are described in [security-identity.md](security-identity.md).

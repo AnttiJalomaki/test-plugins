@@ -1,10 +1,11 @@
 # Views, Components, and Browser APIs
 
-## Statically typed views
+## Return statically typed views
 
-The general `View` enum is replaced by statically typed views (since 0.7.0).
-When control-flow branches produce different view types, prefer an `Either`
-variant for explicit alternatives:
+The general `View` enum was replaced by statically typed views in 0.7.0. When
+branches produce different concrete view types, use an `Either` enum for a
+small number of branches or call `.into_any()` on every branch to produce
+`AnyView`.
 
 ```rust
 if ready {
@@ -14,29 +15,33 @@ if ready {
 }
 ```
 
-For broader type erasure, call `.into_any()` on every branch to return
-`AnyView`. Recursive components must box or erase their result so the compiler
-can calculate the view tree's size; ending the recursively used component in
-`.into_any()` is sufficient.
+## Erase recursive component output
 
-Typed views and `AnyView` are not necessarily `Clone`. Do not store views in
-signals and repeatedly read them. If a design must deliver dynamically built
-views, send each view once through a channel and pair the receiver with an
-`ArcTrigger` that invalidates the rendering closure.
+A recursive component must box or erase its return value so the compiler can
+calculate the size of its view tree (since 0.7.0). Ending the recursively used
+component with `.into_any()` is sufficient.
 
-## Custom rendering conversions
+## Do not rely on cloneable views
 
-For custom data types, replace former `IntoView` implementations with
-`IntoRender` and former `IntoAttribute` implementations with
-`IntoAttributeValue` (since 0.7.0). `IntoRender` is also the extension point
-for making otherwise arbitrary data renderable.
+Statically typed views and `AnyView` are not necessarily `Clone` (since
+0.7.0). Storing a view in a signal and reading it repeatedly is therefore not
+reliable. If that pattern is required, send each view once through a channel
+and pair the receiver with an `ArcTrigger` that invalidates the rendering
+closure.
 
-## Component attribute spreading
+## Implement current rendering conversions
+
+For a custom type that previously implemented `IntoView`, implement
+`IntoRender` instead (since 0.7.0). For a custom attribute value that used
+`IntoAttribute`, implement `IntoAttributeValue`. `IntoRender` is also the
+extension point for rendering otherwise arbitrary data types.
+
+## Spread attributes through components
 
 DOM attributes and `class:`, `style:`, `prop:`, and `on:` directives can pass
-through a component and apply to every element in its returned view. Prefix a
-single plain attribute with `attr:`, or put `{..}` between the component's
-props and the attributes that follow:
+through a component and apply to every element in its returned view (since
+0.7.0). Prefix one explicit plain attribute with `attr:`, or place `{..}`
+between component props and the later attributes.
 
 ```rust
 view! {
@@ -44,13 +49,17 @@ view! {
 }
 ```
 
-Use this mechanism instead of dedicated pass-through props such as an anchor
-component's former `class` prop.
+Old dedicated pass-through props, such as an anchor component's `class` prop,
+were removed in favor of this general mechanism.
 
-## Two-way input binding
+## Bind form controls in both directions
 
-The `bind:` directive connects form controls to an `RwSignal` or to a split
-`(read, write)` signal pair (since 0.7.0):
+The `bind:` directive connects a form control to an `RwSignal` or split
+`(read, write)` pair (since 0.7.0):
+
+- Use `bind:checked` for a boolean checkbox.
+- Use `bind:group` for a string-valued radio group.
+- Use `bind:value` for a text input or textarea.
 
 ```rust
 view! {
@@ -60,28 +69,21 @@ view! {
 }
 ```
 
-Use `bind:checked` for boolean checkboxes, `bind:group` for string-valued radio
-groups, and `bind:value` for text inputs and textareas.
+## Await futures and render optional values
 
-## Await, Show, and optional values
+The `Await` component's `future` prop takes a `Future` directly rather than a
+`Fn() -> Future` (since 0.7.0).
 
-The `Await` component's `future` prop receives a `Future` directly rather than
-a `Fn() -> Future` (since 0.7.0).
+`<ShowLet>` renders an `Option` and accepts reactive or static `Option` values
+(since 0.8.0). `<Show>` accepts a signal directly as well as a closure.
 
-`<ShowLet>` is the `Option` counterpart to `<Show>` (since 0.8.0) and accepts
-both reactive and static `Option` values. `<Show>` accepts a signal directly
-as well as a closure.
+## Use added platform attributes and events
 
-## View macro platform support
-
-The view macro accepts `Option<_>` values in `style:` directives:
+The view macro accepts `Option<_>` in `style:` directives (since 0.8.0):
 
 ```rust
-view! {
-    <div style:display=move || visible.get().then_some("block")/>
-}
+view! { <div style:display=move || visible.get().then_some("block")/> }
 ```
 
 It also recognizes the `scrollend` event, button `command` and `commandfor`,
-`name` on `details`, `referrerpolicy` on anchors, and `closedby` on dialogs
-(since 0.8.0).
+`<details name>`, anchor `referrerpolicy`, and dialog `closedby`.

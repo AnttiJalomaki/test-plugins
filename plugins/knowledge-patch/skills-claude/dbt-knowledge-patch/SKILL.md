@@ -10,37 +10,26 @@ metadata:
 
 # dbt Core Knowledge Patch
 
-## When to load this skill
+Use this skill when maintaining dbt projects, packages, macros, automation, or
+adapter integrations that rely on current Core behavior. Start with the quick
+references below, then open the topic file that matches the task.
 
-Load this skill when working with a dbt Core project, especially when:
-
-- upgrading Core, an adapter, or Python;
-- editing `dbt_project.yml`, resource properties, selectors, packages, or catalogs;
-- implementing incremental models, snapshots, freshness, tests, or managed functions;
-- automating the CLI, parsing artifacts, using state or defer, or embedding dbt;
-- diagnosing behavior flags, validation warnings, parser changes, or deprecated syntax.
-
-First inspect the project's pinned Core and adapter versions. Apply only guidance
-available in that project version, and prefer its manifests, code, generated
-artifacts, and test behavior when they disagree with general guidance.
-
-## Reference index
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [behavior-flags-and-migrations.md](references/behavior-flags-and-migrations.md) | Default changes, opt-ins, validation, deprecated interfaces, migration hazards |
-| [incremental-snapshots-and-freshness.md](references/incremental-snapshots-and-freshness.md) | Microbatch models, snapshots, sample and empty modes, source and model freshness, version pointers |
-| [testing-selection-and-state.md](references/testing-selection-and-state.md) | Unit and data tests, selectors, state comparison, defer, constraints, retry |
-| [project-config-and-semantic-layer.md](references/project-config-and-semantic-layer.md) | Resource metadata, Semantic Layer, catalogs, project inputs, packages, analyses |
-| [managed-functions.md](references/managed-functions.md) | SQL, Python, and JavaScript UDF resources, overloads, references, adapter support |
-| [cli-artifacts-and-runtime.md](references/cli-artifacts-and-runtime.md) | CLI automation, docs server, parsers, artifacts, logs, working directory, dependencies |
+| [Behavior Flags and Migrations](references/behavior-flags-and-migrations.md) | Default changes, validation, deprecations, snapshot migration, compatibility flags |
+| [CLI, Artifacts, and Runtime](references/cli-artifacts-and-runtime.md) | Commands, output, parser integration, artifacts, telemetry, dependency floors |
+| [Incremental Models, Snapshots, and Freshness](references/incremental-snapshots-and-freshness.md) | Microbatch execution, retries, hard deletes, source and model freshness |
+| [Managed Functions](references/managed-functions.md) | SQL, Python, and JavaScript UDF resources, overloads, selection, deferral |
+| [Project Configuration and Semantic Layer](references/project-config-and-semantic-layer.md) | YAML, metadata, catalogs, Semantic Layer V2, OSI, packages, analyses |
+| [Testing, Selection, and State](references/testing-selection-and-state.md) | Unit/data tests, selectors, state comparison, resource selection |
 
-## Breaking changes and deprecations
+## Migration Priorities
 
-### Put behavior flags in version control
-
-Use the top-level `flags` block in `dbt_project.yml` for compatibility decisions.
-Do not rely on local CLI flags to preserve shared project semantics.
+Audit behavior flags before an upgrade. Keep compatibility opt-outs in the
+version-controlled `flags` block of `dbt_project.yml`, and remove them after
+the project adopts the new behavior.
 
 ```yaml
 flags:
@@ -51,50 +40,45 @@ flags:
   require_all_warnings_handled_by_warn_error: true
 ```
 
-Important defaults and migrations:
+Important default transitions:
 
-- Resource names containing spaces are rejected, and `dbt source freshness`
-  runs project hooks. Setting either behavior to `false` is temporary and warns.
-- Generic-test inputs belong under `arguments`.
-- Macro argument documentation is checked against definitions; warning handling
-  can fail commands that use `--warn-error`.
-- JSON Schema deprecation diagnostics are raised by default. Duplicate YAML
-  keys, unsupported properties, malformed resource files, and invalid inline
-  `config()` calls can now surface during parsing.
-- A custom `generate_schema_name` macro must return a valid schema rather than
-  null when its validation flag is enabled.
+- `require_resource_names_without_spaces` and
+  `source_freshness_run_project_hooks` default to `true` in Core 1.10. Their
+  legacy opt-outs warn and disappear in Core 2.0.
+- `require_generic_test_arguments_property` arrives disabled in 1.10.5 and
+  defaults to `true` in 1.10.8. Put generic-test inputs under `arguments`.
+- `validate_macro_args` and `require_all_warnings_handled_by_warn_error`
+  arrive disabled in 1.10 and default to `true` in 1.12.
+- JSON Schema deprecation warnings are on by default in 1.12. Correct invalid
+  project and resource YAML instead of depending on permissive parsing.
 
-See [behavior-flags-and-migrations.md](references/behavior-flags-and-migrations.md)
-for maturity timing, adapter-specific opt-ins, and the complete deprecated list.
+See [Behavior Flags and Migrations](references/behavior-flags-and-migrations.md)
+for validation switches, adapter-specific flags, and deprecated interfaces.
 
-### Replace deprecated interfaces
+## Generic Test Argument Shape
 
-Prefer current interfaces in all new automation:
+Use the nested form expected by the matured behavior flag:
 
-| Replace | With |
-| --- | --- |
-| `dbt run --models`, `--model`, or `-m` | `dbt run --select` |
-| `dbt source freshness --output` or `-o` | Consume the supported result/artifact path |
-| source `overrides` | Current source property/config structure |
-| `modules.itertools` in Jinja | Project or package logic that does not use it |
-| direct generic-test keys | An `arguments:` mapping |
-| `quoting.snowflake_ignore_case` | Explicit identifier conventions and quoting |
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [placed, shipped, completed]
+```
 
-`quoting.snowflake_ignore_case` is inert; leaving it in a project does not alter
-identifier casing. A `PartialSuccess` result also exits nonzero, so CI must use
-the command status rather than assuming partial success is a zero exit.
+The older `tests:` key remains accepted alongside `data_tests:` without a
+deprecation warning.
 
-### Respect runtime floors
+## Microbatch Models
 
-- Do not run modern projects on Python 3.8 or 3.9.
-- Pin Core, adapters, and companion packages as a compatible set.
-- When upgrading, verify Click, JSON Schema, Protobuf, Pydantic, `sqlparse`,
-  `dbt-common`, and `dbt-adapters` constraints before debugging application SQL.
-
-## Microbatch quick reference
-
-Use `microbatch` for large time-series incremental models whose work can be
-split into replaceable time windows.
+For time-series incrementals, set `incremental_strategy: microbatch` together
+with `event_time`, `begin`, and `batch_size`. Write SQL for one batch; dbt
+automatically filters direct `ref()` and `source()` parents that have their own
+`event_time` configuration.
 
 ```sql
 {{ config(
@@ -109,111 +93,116 @@ split into replaceable time windows.
 select * from {{ ref('stg_events') }}
 ```
 
-Key rules:
+- Configure `event_time` on every direct parent that should be pruned.
+- Use `.render()` on a configured `ref()` to opt that parent out of filtering.
+- Use both `--event-time-start` and `--event-time-end` for a backfill.
+- Treat `event_time`, `begin`, and CLI bounds as UTC.
+- PostgreSQL needs `unique_key`; Spark and BigQuery need `partition_by`.
+- `dbt retry` reruns only failed batches.
 
-- `begin`, `event_time`, and `batch_size` are required; sizes are `hour`, `day`,
-  `month`, and `year`.
-- dbt filters direct `ref()` and `source()` parents only when each parent has
-  `event_time`; otherwise that parent is fully scanned for every batch.
-- Call `.render()` on a configured parent relation to opt it out of filtering.
-- `lookback` defaults to one batch. `concurrent_batches` can override detected
-  parallelism.
-- PostgreSQL also needs `unique_key`; Spark and BigQuery need `partition_by`.
-- Backfills require both `--event-time-start` and `--event-time-end`; all event
-  times and bounds are UTC.
-- Hooks bracket the full microbatch run: pre-hooks on the first batch and
-  post-hooks on the last. Retry reruns failed batches only.
+Core 1.10 exposes the `batch` Jinja context. Pre-hooks run on the first batch,
+post-hooks on the last, and retries honor `--threads`. From 1.10.20, retries
+recompute batches using the original invocation time.
 
-Full setup and retry semantics are in
-[incremental-snapshots-and-freshness.md](references/incremental-snapshots-and-freshness.md).
+See [Incremental Models, Snapshots, and Freshness](references/incremental-snapshots-and-freshness.md)
+for all strategy options, custom strategies, and freshness configuration.
 
-## Snapshot and freshness quick reference
+## Snapshot Hard Deletes
 
-Choose snapshot hard-delete behavior explicitly:
+Choose `hard_deletes: ignore`, `invalidate`, or `new_record`. `new_record`
+adds `dbt_is_deleted`; `invalidate` closes the current row with `dbt_valid_to`.
+Do not combine `hard_deletes` with legacy `invalidate_hard_deletes`.
 
-```yaml
-snapshots:
-  - name: customers_snapshot
-    config:
-      unique_key: id
-      strategy: timestamp
-      updated_at: updated_at
-      hard_deletes: new_record
-```
+Existing snapshot tables are not migrated automatically. Migrate schema and
+data before changing an existing snapshot to a different hard-delete mode.
 
-- `ignore` is the default.
-- `invalidate` closes the current record by setting `dbt_valid_to`.
-- `new_record` adds a deletion row and the `dbt_is_deleted` column.
-- Do not combine `hard_deletes` with `invalidate_hard_deletes`.
-- Existing snapshot relations are not migrated automatically; migrate their
-  schema and data before changing modes.
+## Managed Functions
 
-Freshness can be query-driven:
-
-```yaml
-sources:
-  - name: raw
-    tables:
-      - name: events
-        config:
-          loaded_at_query: "select max(_loaded_at) from raw.events"
-```
-
-Model freshness is config-only. `build_after` accepts a `count`/`period` pair or
-an update trigger such as `updates_on: any`.
-
-## Managed-function quick reference
-
-Define a function body under `functions/` and its signature in a properties
-file. Use `function()` so dbt records the dependency and qualifies the name.
+Define warehouse functions as DAG resources with a body under `functions/`
+and a YAML properties entry. Invoke one with `function()` so dbt records the
+dependency and emits its qualified warehouse name.
 
 ```sql
 select {{ function('is_positive_int') }}(value)
 from {{ ref('input_values') }}
 ```
 
-```yaml
-functions:
-  - name: is_positive_int
-    arguments:
-      - {name: a_string, data_type: string}
-    returns: {data_type: integer}
+```bash
+dbt build --select "resource_type:function"
+dbt build --select is_positive_int
 ```
 
-Function bodies, adapters, and language support differ substantially. Read
-[managed-functions.md](references/managed-functions.md) before selecting a file
-extension, runtime, volatility, overload, or package configuration.
+Core supports SQL functions on BigQuery, Snowflake, Redshift, Postgres, and
+Databricks; Python functions on Snowflake, BigQuery, and Databricks with Unity
+Catalog; and JavaScript functions on Snowflake and BigQuery. Adapter rules,
+overloads, deferral, and test setup are in
+[Managed Functions](references/managed-functions.md).
 
-## Testing, state, and selection quick reference
+## Freshness
 
-- Select a unit test directly with `unit_test:<name>`.
-- Use `--resource-type` and `--exclude-resource-type` to restrict `dbt test`.
-- The legacy `tests:` property remains accepted alongside `data_tests:`.
-- `--favor-state` favors a deferred relation only when its node is not selected.
-- State comparison can include more unrendered relation properties while
-  ignoring rendered Jinja when its behavior flag is enabled.
-- Named selectors can compose other named selectors with `method: selector`.
-- Function body, config, arguments, and return changes all affect
-  `state:modified`.
+Source and table configs may use `loaded_at_query` instead of a column-based
+timestamp. Model freshness is config-only and is skipped unless `build_after`
+is present.
 
-See [testing-selection-and-state.md](references/testing-selection-and-state.md)
-for flags, custom test configs, graph behavior, and package-ref resolution.
+```yaml
+models:
+  - name: orders
+    config:
+      freshness:
+        build_after:
+          updates_on: any
+```
 
-## CLI and project configuration quick reference
+In Core 1.10, a time-based `build_after` requires both `count` and `period`.
+Core 1.11 also permits `updates_on` without either time field.
 
-- `dbt show --quiet` and `dbt compile --quiet` retain their parseable command
-  result while suppressing event logs.
-- `dbt docs serve` binds to `127.0.0.1` by default; use `--host 0.0.0.0` only
-  when remote access is intended and secured.
+## Empty and Sample Execution
+
+- `dbt build --sample ...` limits work for sampled execution; sampling follows
+  referenced seeds and snapshot dependency graphs.
+- `dbt seed --empty` creates seed relations without loading rows.
+- Snapshots support `--empty`, and Jinja can inspect `flags.EMPTY`.
+- Before a unit test that calls a managed function, build the function and
+  model ancestors with `dbt build --select "+my_model_to_test" --empty`.
+
+## Selection, State, and Tests
+
+- Select a unit test directly with `unit_test:test_order_total`.
+- `dbt test` accepts `--resource-type` and `--exclude-resource-type`, including
+  corresponding environment-variable flags.
+- With `--favor-state`, dbt favors a deferred relation only when its node is
+  not selected in the current command.
+- `state_modified_compare_more_unrendered_values` expands unrendered property
+  comparison while ignoring rendered Jinja in configs.
+- A named selector may reuse another named selector via `method: selector`.
+
+See [Testing, Selection, and State](references/testing-selection-and-state.md)
+for custom test refs, SQL headers, package lookup, and function state behavior.
+
+## CLI and Automation Checks
+
+- `dbt show --quiet` and `dbt compile --quiet` retain their machine-readable
+  command results while suppressing event logs.
+- A `PartialSuccess` result exits nonzero from 1.9.1 onward.
+- `dbt docs serve` binds to `127.0.0.1` unless `--host` is supplied.
 - `dbt deps`, `dbt clean`, and `dbt init` do not change the caller's working
-  directory. Embedded callers must manage paths themselves.
-- `dbt seed --empty` creates seed relations without rows.
-- `dbt run-operation --sql` executes ad-hoc SQL or Jinja without a wrapper macro.
-- `dbt ls --output json --output-keys` accepts nested paths such as
-  `config.materialized`.
-- `vars.yml`, `.env`, and Jinja-suffixed `.sql.jinja`/`.md.jinja` files are
-  project inputs; handle secrets in `.env` with the same care as other secrets.
+  directory; embedded callers must manage paths explicitly.
+- Prefer `--select`; `--models`, `--model`, and `-m` are deprecated.
+- `dbt run-operation --sql` executes ad-hoc SQL or Jinja without a wrapper
+  macro, and its macros may `ref()` private or protected models.
 
-For artifact fields, external parsing, catalogs, package URL resolution, and
-dependency details, use the indexed references rather than assuming an older
-manifest or CLI shape.
+## External Parser Integration
+
+`--use-v2-parser` runs an external parser and loads its `manifest.json` into
+Core. Choose the command with `--v2-parser`, `DBT_ENGINE_V2_PARSER`, or project
+flags. Core 1.12 initially requires `dbt-core-experimental-parser>=2.0.0a4`;
+the 1.12.2 behavior raises that minimum to `2.0.0b1`.
+
+```bash
+dbt parse --use-v2-parser \
+  --v2-parser "dbt-core-experimental-parser parse"
+```
+
+For runtime floors, dependency bounds, artifacts, structured logs, OpenTelemetry,
+and Fusion manifests, open
+[CLI, Artifacts, and Runtime](references/cli-artifacts-and-runtime.md).

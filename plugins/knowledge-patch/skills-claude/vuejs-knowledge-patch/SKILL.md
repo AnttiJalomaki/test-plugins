@@ -17,11 +17,11 @@ projects using Vue Router, Pinia, Pinia Colada, Nuxt, or Vite integrations.
 
 | Reference | Topics |
 | --- | --- |
-| [`references/vue-router-5.md`](references/vue-router-5.md) | Router package migration, file-based routes, typed routes, parameter parsing, data loaders, guards, and distribution changes |
-| [`references/pinia-3.md`](references/pinia-3.md) | Pinia package requirements, ESM/CJS metadata, and IIFE Devtools behavior |
-| [`references/pinia-colada-queries.md`](references/pinia-colada-queries.md) | Query state, keys, cache operations, pagination, infinite queries, callbacks, and query plugins |
+| [`references/vue-router-5.md`](references/vue-router-5.md) | Router package migration, file-based routes, typed routes, parameter parsing, data loaders, guards, scrolling, and distribution changes |
+| [`references/pinia-3.md`](references/pinia-3.md) | Pinia package requirements, ESM migration, Devtools, refs, hydration, public integration APIs, and Nuxt compatibility |
+| [`references/pinia-colada-queries.md`](references/pinia-colada-queries.md) | Query state, keys, cache operations, pagination, infinite queries, callbacks, metadata, and query plugins |
 | [`references/pinia-colada-mutations-and-integration.md`](references/pinia-colada-mutations-and-integration.md) | Mutations, optimistic updates, shared definitions, persistence, SSR, testing, migrations, and extension API |
-| [`references/vue-core-and-vapor.md`](references/vue-core-and-vapor.md) | Typed template refs and Vue release-channel conventions |
+| [`references/vue-core-and-vapor.md`](references/vue-core-and-vapor.md) | Typed template refs, release channels, hydration, SSR, custom elements, slots, transitions, and component types |
 | [`references/ecosystem-tooling.md`](references/ecosystem-tooling.md) | Nuxt custom fetchers, Vite's Rolldown transition, and Vite+ |
 
 ## Breaking changes and migrations
@@ -33,17 +33,12 @@ that dependency and update imports:
 
 ```ts
 import VueRouter from 'vue-router/vite'
-import type {
-  EditableTreeNode,
-  Options,
-} from 'vue-router/unplugin'
+import type { EditableTreeNode, Options } from 'vue-router/unplugin'
 ```
 
-Other build adapters and utilities, including `resolveOptions`, are also
-exported from `vue-router/unplugin`.
-
-Applications that did not use the old plugin generally need no source changes.
-The IIFE distribution is the exception: Devtools is no longer bundled.
+Other build adapters and utilities, including `resolveOptions`, are exported
+from `vue-router/unplugin`. Applications that did not use the old plugin
+generally need no source changes.
 
 Remove the old `unplugin-vue-router/client` type reference. Emit generated
 declarations under `src` so ordinary TypeScript includes find them:
@@ -69,30 +64,38 @@ For route-aware SFC typing, use the bundled Volar plugins:
 The typed-router plugin infers a page's route from its file location, including
 the types returned by no-argument `useRoute()` and template `$route`.
 
-### Treat the experimental router entry as ESM-only
+### Treat experimental routing as ESM-only
 
-Do not load `vue-router/experimental` from CommonJS. Vite itself is only an
-optional peer dependency, so non-Vite installations do not need to install it.
+Do not load `vue-router/experimental` from CommonJS. Vite is only an optional
+peer dependency, so non-Vite installations do not need it.
 
-Typed query parameters are optional. Invalid query formats warn and are
-filtered instead of failing route matching; a query value may be `undefined`.
-Do not assume a declared query key is present.
+Typed query parameters are optional. Invalid formats warn and are filtered
+instead of failing route matching, and a query value may be `undefined`. Do
+not assume a declared query key is present.
 
-### Account for Pinia package metadata
+### Upgrade Pinia packaging deliberately
 
-Pinia 3 requires TypeScript 4.5 or newer because its declarations use the
-native `Awaited` type. Its package declares `"type": "module"` while still
-shipping CommonJS distribution files. The standalone IIFE build no longer
-contains Vue Devtools, so add Devtools separately when that distribution needs
-it.
+Pinia 3 requires TypeScript 4.5 or newer because its declarations use native
+`Awaited`. Its package declares `"type": "module"` while continuing to ship
+CommonJS distribution files. Its standalone IIFE build does not contain Vue
+Devtools, so include Devtools separately when that distribution needs it.
+
+Pinia 4 is ESM-only and requires `@vue/devtools-api` v8 as a separately
+installed package. Move CommonJS-only tooling to an ESM-capable path first:
+
+```sh
+pnpm add pinia@^4 @vue/devtools-api@^8
+```
+
+Vue Router supports Pinia 4. For Nuxt 5, use a compatible `@pinia/nuxt`
+release as detailed in the Pinia reference.
 
 ### Apply Pinia Colada API migrations
 
 Current `useQuery()` accepts one options object. Older two-argument
 `useQuery`/`useQueryState` forms are removed, and global query defaults belong
 under `queryOptions`. The package includes ast-grep migration rules; commit
-work first, then run the matching rule from the installed package against
-source files.
+work first, then run the matching installed rule against source files:
 
 ```sh
 pnpm --package=@ast-grep/cli dlx ast-grep scan \
@@ -199,7 +202,7 @@ For an optimistic update:
 
 1. Snapshot and replace cached data in `onMutate`.
 2. Call `cancelQueries()` so stale results are discarded without refetching.
-3. Return the old and optimistic values as rollback context.
+3. Return old and optimistic values as rollback context.
 4. Roll back only if the cache still holds this mutation's optimistic value.
 5. Invalidate the affected query on settlement.
 
@@ -221,8 +224,10 @@ const input: TemplateRef<HTMLInputElement> =
 
 ## Verification checklist
 
-- Exercise kept-alive route reactivation: guards now run when the route changes.
+- Exercise kept-alive route reactivation: guards run when the route changes.
 - Validate generated routes and parameter parsers; missing parsers throw.
+- Test overlapping navigation and ensure stale async scrolling is ignored.
 - Test query loading separately from data status, including preserved data after refetch errors.
 - Use real `createPinia()` in Pinia Colada component tests, then flush promises.
 - Await cache restoration before mounting when using asynchronous persistence.
+- Test hydration of text inputs, namespaced elements, and Pinia collections.

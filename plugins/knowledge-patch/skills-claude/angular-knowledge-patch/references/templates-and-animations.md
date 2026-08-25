@@ -1,55 +1,39 @@
 # Templates, Control Flow, and Animations
 
-Batch attribution: 19.0.0, 20-guides, 20.0.0, 21.0.0, 22.0.0.
+## Native enter and leave hooks (`20-guides`)
 
-## Native enter and leave animation
-
-`animate.enter` and `animate.leave` apply CSS animation classes as Angular inserts or removes a conditional element. Use them when native CSS can replace the legacy animation DSL for this lifecycle.
+Use `animate.enter` and `animate.leave` to apply CSS classes while Angular inserts or removes a conditional element. This covers the common lifecycle without the legacy animation DSL.
 
 ```html
 @if (shown()) {
-  <div
-    class="panel"
-    animate.enter="enter"
-    animate.leave="leave">
+  <div class="panel" animate.enter="enter" animate.leave="leave">
     Content
   </div>
 }
 ```
 
 ```css
-.enter {
-  animation: fade-in 200ms;
-}
-
-.leave {
-  opacity: 0;
-  transition: opacity 200ms;
-}
+.enter { animation: fade-in 200ms; }
+.leave { opacity: 0; transition: opacity 200ms; }
 
 @keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
+  from { opacity: 0; transform: translateY(10px); }
 }
 ```
 
-Angular 22 can run nested leave animations inside the same component boundary when an ancestor is removed; leave handling is no longer limited to the removed element itself.
+In v22, removal can run nested leave animations within the same component boundary (`22.0.0`); handling is no longer limited to the removed outer element.
 
-## Template expression syntax
+## Template literals
 
-### Template literals
-
-Angular 19.2 templates accept untagged template literals, avoiding manual concatenation and quote escaping:
+Untagged template literals are accepted in templates (`19.0.0`), avoiding manual concatenation and quote escaping:
 
 ```html
 <div [class]="`layout col-${colWidth}`"></div>
 ```
 
-### Exponentiation, property presence, and condition aliases
+## Arithmetic, presence, and branch aliases
 
-Angular 20 accepts exponentiation (`**`) and property-presence (`in`) expressions. Later Angular 20 releases also allow an `as` alias on `@else if`:
+Templates support exponentiation and the property-presence operator (`20.0.0`). Later v20 releases also accept an `as` alias on `@else if`:
 
 ```html
 {{ n ** 2 }}
@@ -62,9 +46,9 @@ Angular 20 accepts exponentiation (`**`) and property-presence (`in`) expression
 }
 ```
 
-### Regular-expression literals
+## Regular-expression literals
 
-Angular 21 accepts regular-expression literals directly in template logic:
+Regular-expression literals are valid template expressions (`21.0.0`):
 
 ```html
 @let isValidNumber = /\d+/.test(someValue);
@@ -74,9 +58,11 @@ Angular 21 accepts regular-expression literals directly in template logic:
 }
 ```
 
-### Comments inside start tags
+Keep substantial validation logic in TypeScript even though short matching logic can now remain in the template.
 
-Angular 22 permits line and block comments between attributes and bindings in an element start tag:
+## Comments inside start tags
+
+Line and block comments may appear between attributes and bindings inside an element start tag (`22.0.0`):
 
 ```html
 <button
@@ -88,9 +74,9 @@ Angular 22 permits line and block comments between attributes and bindings in an
 </button>
 ```
 
-### Spread and rest
+## Spread and rest syntax
 
-Angular 22 template expressions support spread and rest syntax in object literals, array literals, and function calls:
+Object literals, array literals, and calls support spread or rest syntax (`22.0.0`):
 
 ```html
 <div [class]="{...baseClasses, selected: isSelected}"></div>
@@ -98,41 +84,68 @@ Angular 22 template expressions support spread and rest syntax in object literal
 {{ total(...prices) }}
 ```
 
-### Inline arrow functions
+## Multi-case and exhaustive switches
 
-Short arrow functions can be used inline, including callbacks passed to component methods and signal updates:
-
-```html
-<button
-  (click)="item.update(x => ({...x, stock: x.stock - 1}))">
-  Decrease stock
-</button>
-```
-
-Keep complex logic in TypeScript even though short callbacks are syntactically valid.
-
-## Exhaustive and shared-body switches
-
-Consecutive `@case` clauses can share a body. `@default never;` asks the compiler to verify exhaustiveness for a union-valued switch.
+Consecutive `@case` clauses may share a body. `@default never;` asks the compiler to check exhaustiveness for a union-valued expression (`22.0.0`):
 
 ```html
 @switch (status) {
   @case ('pending')
-  @case ('processing') {
-    <p>In progress</p>
-  }
-  @case ('shipped') {
-    <p>Shipped</p>
-  }
+  @case ('processing') { <p>In progress</p> }
+  @case ('shipped') { <p>Shipped</p> }
   @default never;
 }
 ```
 
-## Template and metadata diagnostics
+## Arrow functions
 
-### Unused standalone imports
+Short inline arrow functions are accepted, including callbacks supplied to component methods or signal updates (`22.0.0`):
 
-The CLI warns about unused entries in a standalone component's `imports`, and the language service can remove them. Suppress the extended diagnostic only when necessary:
+```html
+<button (click)="item.update(x => ({...x, stock: x.stock - 1}))">
+  Decrease stock
+</button>
+```
+
+Prefer component code when an inline callback would obscure template intent.
+
+## Optional navigation compilation
+
+Chained optional navigation compiles correctly and the compiler CLI resolves `SafePropertyRead` symbols in the chain (`22.1.2`):
+
+```html
+{{ account?.profile?.name }}
+```
+
+Workarounds for the earlier code-generation or symbol-resolution errors can be removed after adopting the fix.
+
+## Host metadata checking
+
+Compiler and language-service type checking for component host binding and listener expressions is opt-in in v20 (`20.0.0`):
+
+```json
+{
+  "angularCompilerOptions": {
+    "typeCheckHostBindings": true
+  }
+}
+```
+
+Enable it during migration to surface invalid host expressions before runtime.
+
+## Host-directive matching
+
+Angular de-duplicates a host directive that matches more than once (`22.0.0`). A direct template match wins over a host-directive match, and host input/output maps merge. Exposing the same input or output under multiple names is now a compile-time error.
+
+## Template diagnostics
+
+Static checks added in v20 (`20.0.0`) detect:
+
+- nullish-coalescing operations whose left side cannot be nullish;
+- missing imports for structural directives; and
+- `@for (...; track trackFn)` when `track trackFn(item)` was probably intended.
+
+The standalone compiler also warns about unused imports (`19.0.0`), with language-service removal support. Suppress only when justified:
 
 ```json
 {
@@ -144,47 +157,11 @@ The CLI warns about unused entries in a standalone component's `imports`, and th
 }
 ```
 
-### Invalid expressions and missing directive imports
-
-Angular 20 static checks detect:
-
-- a nullish-coalescing expression whose types make `??` ineffective;
-- a missing import for a structural directive;
-- `@for (...; track trackFn)` when the likely intent is to invoke it, such as `track trackFn(item)`.
-
-### Host metadata checking
-
-Compiler and language-service type checking for host binding and listener expressions in component metadata is opt-in in Angular 20:
-
-```json
-{
-  "angularCompilerOptions": {
-    "typeCheckHostBindings": true
-  }
-}
-```
-
-### Defer trigger checks
-
-Angular 21 adds a diagnostic for unreachable or redundant `@defer` triggers. Correct ineffective combinations instead of preserving them through suppression.
-
-### Duplicate selectors
-
-Angular 22 diagnostic `NG8023` makes duplicate selector matches a compile-time error.
-
-## Host-directive matching
-
-Angular 22 de-duplicates the same host directive when it matches more than once:
-
-- a direct template match wins over a host-directive match;
-- host input and output maps are merged;
-- exposing one input or output under multiple names is an error.
-
-Account for the winner and merged maps when composing directive behavior dynamically.
+Angular 21 adds a diagnostic for unreachable or redundant `@defer` trigger combinations (`21.0.0`). Correct the ineffective trigger instead of suppressing it when possible.
 
 ## Viewport defer options
 
-An `@defer` viewport trigger accepts `IntersectionObserver` options, such as a `rootMargin` that starts loading before the trigger enters the viewport:
+The `@defer` viewport trigger accepts IntersectionObserver options such as `rootMargin` (`21.0.0`), allowing preloading before the trigger enters the viewport:
 
 ```html
 <div #trigger>Load boundary</div>
@@ -194,4 +171,4 @@ An `@defer` viewport trigger accepts `IntersectionObserver` options, such as a `
 }
 ```
 
-For hydrate-trigger semantics, see [SSR, Hydration, and Routing](ssr-hydration-and-routing.md).
+Combine this carefully with hydrate triggers: rendering and hydration triggers have distinct responsibilities.

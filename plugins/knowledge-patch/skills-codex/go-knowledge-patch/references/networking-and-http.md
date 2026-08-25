@@ -1,70 +1,89 @@
 # Networking and HTTP
 
-Batch coverage: `1.23.0`, `1.24.0`, `1.25.0`, `1.26.0`.
+## DNS and transport selection
 
-## Contents
+### Inspectable DNS failures (`1.23.0`)
 
-- [DNS](#dns)
-- [HTTP protocol selection](#http-protocol-selection)
-- [Responses, hosts, and redirects](#responses-hosts-and-redirects)
-- [Reverse proxies and cross-origin protection](#reverse-proxies-and-cross-origin-protection)
-- [URL host parsing](#url-host-parsing)
-- [Multipath TCP](#multipath-tcp)
+`net.DNSError` wraps timeout and cancellation causes, so
+`errors.Is(err, context.DeadlineExceeded)` and similar checks work through the
+DNS error.
 
-## DNS
+### Disabling EDNS0 headers (`1.23.0`)
 
-### Inspectable failures
+Set `GODEBUG=netedns0=0` to stop the resolver adding EDNS0 headers when an
+incompatible DNS server or modem breaks requests.
 
-`net.DNSError` wraps timeout and cancellation causes. Use checks such as `errors.Is(err, context.DeadlineExceeded)` through the DNS error.
+### MPTCP listening by default (`1.24.0`)
 
-### EDNS0 compatibility
+`net.ListenConfig` uses Multipath TCP by default on supporting systems,
+currently Linux.
 
-The resolver normally adds EDNS0 headers to DNS requests. Set `GODEBUG=netedns0=0` when an incompatible DNS server or modem fails on them.
+## HTTP protocol configuration and scheduling
 
-## HTTP protocol selection
+### Explicit HTTP protocol selection (`1.24.0`)
 
-### Explicit protocol sets
+`Server.Protocols` and `Transport.Protocols` select HTTP/1, HTTP/2, and
+unencrypted HTTP/2. A server may accept HTTP/1 and prior-knowledge h2c on one
+cleartext port. A transport uses h2c for `http://` only when unencrypted HTTP/2
+is enabled and HTTP/1 is disabled; `Upgrade: h2c` is unsupported.
 
-`http.Server.Protocols` and `http.Transport.Protocols` select HTTP/1, HTTP/2, and unencrypted HTTP/2.
+### Informational-response limits (`1.24.0`)
 
-A server can accept HTTP/1 and prior-knowledge h2c on the same cleartext port. A transport uses h2c for an `http://` URL only when unencrypted HTTP/2 is enabled and HTTP/1 is disabled. The `Upgrade: h2c` mechanism is not supported.
+`http.Transport` limits 1xx responses by combined size using
+`MaxResponseHeaderBytes` instead of aborting after five. With
+`Got1xxResponse`, there is no response-count limit; the hook may return an error
+to abort the request.
 
-### Manual HTTP/2 connections
+### Manual HTTP/2 connection control (`1.26.0`)
 
-`HTTP2Config.StrictMaxConcurrentRequests` controls whether a transport opens another connection after an existing HTTP/2 connection reaches its stream limit.
+`HTTP2Config.StrictMaxConcurrentRequests` controls whether another connection
+opens after an HTTP/2 connection reaches its stream limit.
+`Transport.NewClientConn` exposes a connection for callers managing connections
+themselves; ordinary clients should keep using `RoundTrip`.
 
-`Transport.NewClientConn` exposes a client connection to callers that manage connections themselves. Ordinary clients should continue using `RoundTrip`.
+### HTTP/2 priority signals (`1.27.0`)
 
-## Responses, hosts, and redirects
+HTTP/2 servers honor RFC 9218 client priority signals by default. An option
+retains the earlier round-robin scheduling.
 
-### `ServeContent` error headers
+### HTTP/1 response-body draining (`1.27.0`)
 
-`ServeContent`, `ServeFile`, and `ServeFileFS` remove `Cache-Control`, `Content-Encoding`, `ETag`, and `Last-Modified` from error responses. This can break response-wrapping compression middleware. Set `GODEBUG=httpservecontentkeepheaders=1` to restore the earlier behavior temporarily.
+Closing an HTTP/1 response body drains a conservative amount of unread data to
+permit connection reuse. A client intentionally avoiding reuse should disable
+keep-alives rather than depend on an unread body.
 
-### Informational responses
+## Servers, browser requests, and redirects
 
-`http.Transport` limits 1xx responses by their combined size through `MaxResponseHeaderBytes`, rather than stopping after five responses. When `Got1xxResponse` is installed there is no response-count limit, and the hook may return an error to abort the request.
+### Headers on `ServeContent` errors (`1.23.0`)
 
-### Host and redirect semantics
+`ServeContent`, `ServeFile`, and `ServeFileFS` remove `Cache-Control`,
+`Content-Encoding`, `ETag`, and `Last-Modified` on error responses. This can
+affect compression middleware. `GODEBUG=httpservecontentkeepheaders=1` restores
+the prior behavior temporarily.
 
-`http.Client` scopes cookies to `Request.Host` when that field is set, instead of always using the connection address.
+### Standard-library CSRF protection (`1.25.0`)
 
-`ServeMux` trailing-slash redirects use status 307 instead of 301. A client returned by `httptest.Server.Client` also redirects `example.com` and its subdomains to the test server.
+`net/http.CrossOriginProtection` rejects unsafe cross-origin browser requests
+using Fetch Metadata without tokens or cookies. It supports explicit origin-
+and pattern-based bypasses.
 
-## Reverse proxies and cross-origin protection
+### HTTP host and redirect semantics (`1.26.0`)
 
-### Safe reverse-proxy rewriting
+`http.Client` scopes cookies to `Request.Host` when explicitly set instead of
+always using the connection address. `ServeMux` trailing-slash redirects use
+307 instead of 301. A client from `httptest.Server.Client` redirects
+`example.com` and its subdomains to the test server.
 
-`httputil.ReverseProxy.Director` is deprecated. A client can use hop-by-hop header declarations to remove headers added by `Director`. Use `Rewrite`, which receives both the unmodified inbound request and the outbound request.
+## Proxies and URL validation
 
-### Fetch Metadata CSRF defense
+### Safe reverse-proxy rewriting (`1.26.0`)
 
-`net/http.CrossOriginProtection` rejects unsafe cross-origin browser requests using Fetch Metadata, without requiring tokens or cookies. Configure explicit origin- and pattern-based bypasses where needed.
+`httputil.ReverseProxy.Director` is deprecated because a client can use
+hop-by-hop declarations to remove headers it adds. Use `Rewrite`, whose hook
+receives both the unmodified inbound request and outbound request.
 
-## URL host parsing
+### Strict URL host colons (`1.26.0`)
 
-`url.Parse` rejects malformed host components such as `http://::1/` and `http://localhost:80:80/`. Bracketed IPv6 literals remain valid. Set `GODEBUG=urlstrictcolons=0` to restore permissive parsing temporarily.
-
-## Multipath TCP
-
-`net.ListenConfig` uses Multipath TCP by default on supported systems, currently Linux.
+`url.Parse` rejects malformed host components such as `http://::1/` and
+`http://localhost:80:80/`; bracketed IPv6 remains valid.
+`GODEBUG=urlstrictcolons=0` temporarily restores permissive parsing.

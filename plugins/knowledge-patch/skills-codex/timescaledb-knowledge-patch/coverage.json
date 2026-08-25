@@ -2,7 +2,7 @@
   "patch": "timescaledb-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-30T01:13:34Z",
+  "built_at": "2026-08-22T07:13:05Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -58,6 +58,11 @@
       "build": "included"
     },
     "2.28.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.29.2": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

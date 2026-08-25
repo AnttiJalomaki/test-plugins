@@ -10,182 +10,191 @@ metadata:
 
 # Node.js Knowledge Patch
 
-Use this patch to account for behavior added, changed, deprecated, or removed after the baseline. Match guidance to the exact deployed release line: several APIs changed more than once across Node.js 23–26.
+Use this skill when upgrading, reviewing, debugging, or writing modern Node.js
+applications, tooling, tests, native integrations, or build configurations.
+
+## How to use this skill
+
+1. Determine the exact Node.js version used by the project or deployment.
+2. Read the quick references below for high-impact migrations.
+3. Open only the topic references relevant to the task.
+4. Respect exact batch attribution: later patch and minor releases sometimes
+   restore, revert, or tighten earlier behavior.
+5. Feature-detect where a reference says support can be omitted from custom
+   builds or differs by crypto backend.
 
 ## Reference index
 
-| Reference | Topics |
+| Reference | Read for |
 | --- | --- |
-| [modules-and-typescript.md](references/modules-and-typescript.md) | ESM and CommonJS interop, loader hooks, package resolution, compile caches, built-in TypeScript, VM modules, WebAssembly |
-| [testing-and-assertions.md](references/testing-and-assertions.md) | `node:test`, assertions, mocks, snapshots, discovery, coverage, reporters |
-| [filesystem-and-streams.md](references/filesystem-and-streams.md) | Filesystem migrations, paths, directories, globs, watches, buffers, Node streams, Web streams, VFS |
-| [networking-http-and-tls.md](references/networking-http-and-tls.md) | TCP, UDP, DNS, HTTP/1, HTTP/2, QUIC, proxies, TLS, CA stores |
-| [crypto-and-compression.md](references/crypto-and-compression.md) | Classic crypto, WebCrypto, post-quantum keys, hashing, password derivation, zstd, Brotli, zlib |
-| [sqlite.md](references/sqlite.md) | Connections, statements, sessions, tagged templates, functions, extensions, backups, build options |
-| [diagnostics-and-performance.md](references/diagnostics-and-performance.md) | Inspector, diagnostics channels, reports, CPU and heap profiling, performance metrics |
-| [process-workers-and-permissions.md](references/process-workers-and-permissions.md) | Processes, worker threads, async context, locks, signals, Permission Model |
-| [runtime-and-web-platform.md](references/runtime-and-web-platform.md) | V8 and language features, Web globals, storage, events, URLs, utilities, REPL |
-| [cli-config-sea-and-releases.md](references/cli-config-sea-and-releases.md) | CLI flags, JSON config, `.env`, watch mode, SEA, LTS and Alpha policy |
-| [native-addons-and-builds.md](references/native-addons-and-builds.md) | Build requirements, platform support, addon ABI, Node-API, embedding, FFI |
+| [CLI, Configuration, SEA, and Releases](references/cli-config-sea-and-releases.md) | Startup flags, JSON and environment configuration, watch mode, single executables, and release cadence |
+| [Cryptography and Compression](references/crypto-and-compression.md) | WebCrypto, classic crypto, post-quantum algorithms, OpenSSL, Zstandard, Brotli, and zlib |
+| [Diagnostics and Performance](references/diagnostics-and-performance.md) | Inspector, diagnostic channels and reports, profiling, heap statistics, and performance monitoring |
+| [Filesystem, Buffers, and Streams](references/filesystem-and-streams.md) | Filesystem APIs, buffers, globs, file URLs, Node streams, and Web streams |
+| [Modules, TypeScript, and WebAssembly](references/modules-and-typescript.md) | ESM, CommonJS, loader hooks, built-in TypeScript, WebAssembly, and compile caches |
+| [Native Addons, Embedding, and Builds](references/native-addons-and-builds.md) | Node-API, addon ABI changes, embedders, FFI, source builds, and platform baselines |
+| [Networking, HTTP, and TLS](references/networking-http-and-tls.md) | TCP, UDP, DNS, proxies, HTTP, HTTP/2, TLS, QUIC, certificates, and block lists |
+| [Processes, Workers, Async Context, and Permissions](references/process-workers-and-permissions.md) | Permission Model, processes, signals, workers, async context, cloning, and Web Locks |
+| [Runtime and Web Platform](references/runtime-and-web-platform.md) | Runtime semantics, deprecations, globals, events, URLs, readline, and general Web APIs |
+| [SQLite](references/sqlite.md) | `node:sqlite` connections, statements, sessions, functions, extensions, and query helpers |
+| [Testing and Assertions](references/testing-and-assertions.md) | `node:test`, mocking, snapshots, coverage, reporters, reruns, and deep comparison |
 
-## Apply the patch
+## Breaking changes and migrations
 
-1. Identify the exact Node.js version and whether it is an official or custom build.
-2. Read the breaking-change sections below before changing code or dependencies.
-3. Open every indexed reference relevant to the task; the quick reference intentionally omits lower-frequency details.
-4. Preserve version guards when supporting multiple release lines. Do not infer availability only from a major version when a minor release introduced or reverted behavior.
-5. Feature-detect optional build components such as `node:sqlite`, QUIC, and experimental surfaces.
+### Node.js 26 application migrations
 
-## Breaking changes and deprecations
+- Replace `response.writeHeader()` with `response.writeHead()` and replace
+  private `_stream_*` imports with public `node:stream` APIs.
+- Stop passing `--experimental-transform-types`. Extensionless files inside a
+  package with `"type": "module"` now follow ESM interpretation.
+- Do not assume a readable combines buffered chunks: reads now return one
+  buffered chunk at a time.
+- Pass `authTagLength` when creating a decipher for a short GCM tag.
+- Prefer `module.registerHooks()` when synchronous hooks fit; dedicated-thread
+  `module.register()` now emits a runtime deprecation warning.
+- Add `node_api.h` explicitly when an addon uses the full Node-API surface;
+  `node.h` now includes only `node_api_types.h`.
 
-### Migrating to Node.js 23
+### Node.js 25 application and toolchain migrations
 
-- Replace removed `process.assert()` with `assert.ok()` and removed legacy `util.is*()` helpers with language checks, `Buffer.isBuffer()`, or `util.types` predicates.
-- Replace removed `zlib.bytesRead` with `zlib.bytesWritten`; stop passing the removed fetch, global WebCrypto, and `CustomEvent` opt-out flags.
-- Validate `Buffer.write()` offsets: an out-of-bounds starting offset now throws instead of producing a zero-byte write.
-- Expect distinct `WeakMap` and `WeakSet` instances to compare unequal, dependent abort signals to update before source listeners, and stream cancellation to retain the abort reason.
-- Read `StatementSync.sourceSQL` and `expandedSQL` as properties, not methods. Account for SQLite foreign keys being enabled and double-quoted string literals being disabled by default.
-- Request TAP explicitly when tooling consumes it; the `spec` test reporter is the default even when output is not a TTY.
+- Install Corepack separately when a project depends on it; distributions no
+  longer include it.
+- Replace top-level filesystem access-mode aliases with `fs.constants`, use
+  `fs.rm()` instead of recursive `fs.rmdir()`, and close file handles explicitly.
+- Replace `SlowBuffer` with `Buffer.allocUnsafeSlow()`, avoid
+  `assert.CallTracker`, use the single-message `assert.fail()` form, and await
+  the promise returned by `worker.terminate()`.
+- Use the public child-process `channel` property instead of `_channel`.
+- Replace RSA-PSS `hash` and `mgf1Hash` options with `hashAlgorithm` and
+  `mgf1HashAlgorithm`; specify XOF `outputLength` explicitly.
+- Replace `response.writeHeader()` with `writeHead()` and use valid, explicit
+  hostnames, TLS server names, and ports.
 
-### Migrating to Node.js 24
+### Node.js 24 application migrations
 
-- Replace `Dirent.path` with `Dirent.parentPath`, descriptor calls to `fs.truncate()` with `fs.ftruncate()`, and top-level filesystem access constants with `fs.constants`.
-- Replace removed `tls.createSecurePair()` and `tls.Server.prototype.setOptions()`; migrate from runtime-deprecated `url.parse()` to `URL`.
-- Keep using `SlowBuffer` only as a temporary compatibility measure in 24.x; it remains present but runtime-deprecated after the 24.0.1 reversal.
-- Do not use HTTP/2 priority signaling or `selectPadding`; Node.js 24 removed both after the underlying implementation dropped support.
-- Handle `fs.Dir.read()` failures asynchronously and explicitly close directory handles rather than relying on garbage collection.
-- Account for the 24.0.0 test return-value change only on that range: 24.3.0 restored completion promises from `test()` and `t.test()`.
-- Upgrade past 24.4.0 for the RapidHash HashDoS and Windows reserved-name path-normalization fixes.
+- Start the Permission Model with `--permission`; the removed
+  `--experimental-permission` spelling no longer works.
+- Use `fs.ftruncate()` for file descriptors. Use `fs.constants` for access
+  modes, and replace removed `Dirent.path` reads with `parentPath`.
+- Replace `url.parse()` and the deprecated string form of `url.format()` with
+  the WHATWG `URL` API.
+- Do not pass an empty child-process `shell`; omit it or supply a valid shell.
+- Call `node:http` classes with `new` or use their documented factories.
+- Stop depending on HTTP/2 priority signaling or `options.selectPadding`.
 
-### Migrating to Node.js 25
+### Node.js 23 behavior changes
 
-- Replace removed `SlowBuffer`, recursive `fs.rmdir()`, top-level filesystem access constants, `assert.CallTracker`, and the legacy multi-argument `assert.fail()` form.
-- Explicitly close every `FileHandle`; garbage collection no longer closes leaked handles. Replace removed stream `open()` methods with new streams and their `open` events.
-- Await `worker.terminate()`; its callback form is removed. Replace the removed `multipleResolves` process event with other diagnostics.
-- Read GC data from `PerformanceEntry.detail.kind` and `.flags`; the old direct accessors are removed.
-- Omit falsy hostnames from `dns.lookup()` calls and do not put IP addresses in TLS `servername`.
-- Specify `outputLength` for SHAKE hashes, use `hashAlgorithm` and `mgf1HashAlgorithm` for RSA-PSS generation, and migrate away from `ECDH.setPublicKey()`.
-- Treat distinct promises as unequal in deep comparisons; treat invalid dates as equal unless their own properties differ.
+- Distinct `WeakMap` and `WeakSet` instances no longer compare deeply equal.
+- An out-of-bounds `Buffer.prototype.write()` offset now throws.
+- Negative or `NaN` timer delays warn, and `stream.pipeline()` rejects a
+  closed or destroyed destination.
+- Replace `crypto.fips` with `crypto.getFips()` and `crypto.setFips()`; replace
+  `fs.Dirent.path` with `parentPath`.
+- Remove startup reliance on retired global-experiment opt-outs,
+  `--trace-atomics-wait`, and `--experimental-default-type`.
 
-### Migrating to Node.js 26
+## High-value version transitions
 
-- Supply `authTagLength` for short GCM tags; DEP0182 is end-of-life.
-- Replace removed `response.writeHeader()` with `response.writeHead()` and private `_stream_*` imports with `node:stream`.
-- Stop passing `--experimental-transform-types`; extensionless files inside `"type": "module"` packages now follow ESM interpretation.
-- Do not depend on readable streams coalescing buffered chunks: reads now preserve one buffered chunk at a time.
-- Expect `util.inspect()` and snapshots to identify proxies explicitly.
-- Include `node_api.h` directly when an addon needs the complete Node-API surface; `node.h` no longer includes it transitively.
-- Account for seed-only PKCS#8 exports of ML-KEM and ML-DSA private keys and added OpenSSL detail on asynchronous crypto errors.
+### Test completion and TypeScript discovery
 
-## High-use module and TypeScript changes
+Node.js 24.0 made `test()` and `t.test()` stop returning completion promises,
+but 24.3 restored those promises and reverted automatic subtest waiting. Await
+subtests when sequencing their completion.
 
-- Use stable JSON import attributes:
+The TypeScript discovery glob changed in 23.10 and was rolled back in 24.1.
+Projects adapted to the intervening behavior should verify which tests run.
 
-```js
-import config from './config.json' with { type: 'json' };
-```
+### Built-in TypeScript
 
-- Use stable `import.meta.dirname` and `import.meta.filename`, and guard direct execution with `import.meta.main`.
-- Use `module.registerHooks()` for synchronous in-thread resolve/load hooks that must cover both `require()` and `import`.
-- Migrate from dedicated-thread `module.register()` where possible: it is deprecated in 25.9.0 and runtime-deprecated in 26.0.0.
-- Use stable `require(esm)` in 25.4.0+, with `--require-module` or `--no-require-module` for explicit control.
-- Use `module.enableCompileCache({ directory, portable: true })` for caches that move with an application.
-- Treat built-in TypeScript as type stripping, not type checking. Catch `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` for syntax that requires transformation.
-- Use package `#/` imports in 25.4.0+ and deferred static imports in 26.4.0+:
+- `stripTypeScriptTypes()` provides programmatic stripping.
+- Supported `.ts` execution became enabled by default while still experimental,
+  then type stripping became stable.
+- Unsupported syntax has the dedicated
+  `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` error.
+- `.cts` imports use the synchronous CommonJS loader.
 
-```js
-import defer * as feature from './feature.js';
-feature.run();
-```
+### Module hooks and ESM
 
-## Permission Model and process isolation
+- `module.registerHooks()` installs synchronous `resolve` and `load` hooks in
+  the current thread and covers `require()`, `import`, and `createRequire()`.
+- Synchronous `require(ESM)` is stable, with `--require-module` and
+  `--no-require-module` controls.
+- `import.meta.main` identifies a directly run ES module.
+- `import defer` postpones static-module evaluation until its namespace is used.
+- Native-addon ESM imports are enabled by default.
 
-- Enable stable restrictions with `--permission`; grant filesystem, addon, network, and inspector access explicitly.
+### Permission Model
 
-```console
-node --permission --allow-fs-read=./config \
-  --allow-net=api.example.com app.js
-```
+- An entry point receives implicit read permission.
+- Active permission flags propagate to spawned Node.js processes.
+- Network and inspector grants use separate `--allow-net` and
+  `--allow-inspector` controls.
+- Pipe connections, pipe opening, and pipe mode changes are checked against the
+  network scope.
+- Symlink operations require both filesystem-read and filesystem-write grants;
+  `futimes` and later `FileHandle.utimes()` are disabled under permissions.
+- Audit mode reports denied access without throwing and uses distinct warning
+  codes.
 
-- Do not add the entry point to `--allow-fs-read` on 24.2.0+; it receives implicit read permission.
-- Expect active permission flags to propagate to spawned Node.js children on 24.4.0+.
-- Expect permission checks on pipe connections, pipe mode changes, `realpath.native()`, affected promise filesystem paths, symlink operations, and diagnostic-report paths in the documented security releases.
-- Use `process.permission.has('addon')` before loading native addons in restricted processes.
-- Use `process.execve()` for in-place process replacement and await worker disposal or termination.
+### Core HTTP proxies and connection lifetime
 
-## Test runner and assertions
+- Core `http`, `https`, and fetch clients can use proxy environment variables;
+  custom agents accept `proxyEnv`.
+- `http.setGlobalProxyFromEnv()` enables environment proxy handling at runtime.
+- `server.keepAliveTimeoutBuffer` extends the server socket timeout, while
+  `agentKeepAliveTimeoutBuffer` shortens the client reuse window.
+- `shouldUpgradeCallback()` filters incoming HTTP upgrades before the
+  `'upgrade'` handler.
+- `ServerResponse.writeInformation()` sends arbitrary informational responses.
 
-- Use stable mock timers, test plans, snapshots, isolation, and `assert.partialDeepStrictEqual()` on releases where they have graduated.
-- Use `TestContext.waitFor()`, `t.assert.fileSnapshot()`, and registered custom assertions instead of rebuilding their control flow.
-- Configure global setup and teardown with `--test-global-setup`.
-- Pass `env` to programmatic `run()` for per-run environments; use its coverage, `cwd`, `argv`, and summary-event controls as needed.
-- Migrate module mocks in 25.9.0 from `defaultExport` and `namedExports` to one `exports` object:
+### SQLite defaults and query APIs
 
-```js
-t.mock.module('./dependency.mjs', {
-  exports: { default: defaultMock, named: namedMock },
-});
-```
+- Foreign keys are enabled by default, and double-quoted string compatibility
+  is disabled; use single quotes for SQL string literals.
+- SQLite defensive mode later became the default. Change it explicitly when an
+  application needs the earlier policy.
+- Connections support read-only mode, busy timeouts, connection-wide bigint
+  reads, online backups, custom scalar and aggregate functions, and loadable
+  extensions.
+- Sessions are public and disposable; tagged-template stores bind interpolated
+  values and cache prepared statements.
+- `SQLTagStore.size` is a property, not a method.
+- Custom Node.js builds may omit SQLite, so code targeting those builds must
+  feature-detect `node:sqlite`.
 
-- Expect suite-level errors to set a non-zero exit code. Use expected-failure cases and failed-test reruns when supported.
+### Files, buffers, and streams
 
-## SQLite
+- A `Buffer` backed by a resizable `ArrayBuffer` follows the buffer's resized
+  length, and the default `Buffer.poolSize` is now 64 KiB.
+- `FileHandle.readableWebStream()` always creates a byte stream and can close
+  its handle with `autoClose: true`.
+- `Readable.toWeb()` can create readable byte streams for BYOB consumers.
+- `stream.compose()` is stable, and half-open duplex streams remain half-open
+  during async iteration.
+- `node:vfs` routes mounted filesystem operations but is not a security
+  boundary.
 
-- Open `node:sqlite` without the old startup flag, but feature-detect it because custom builds can omit SQLite.
-- Choose connection behavior explicitly when compatibility matters:
+### Crypto and compression
 
-```js
-const db = new DatabaseSync('app.db', {
-  readOnly: false,
-  timeout: 5_000,
-  readBigInts: true,
-});
-```
+- Use `SubtleCrypto.supports()` before selecting newer algorithms on
+  nonstandard builds.
+- Key encapsulation, Argon2, and modern WebCrypto algorithms are available;
+  later releases promote Argon2 and encapsulation/decapsulation to stable.
+- Post-quantum PKCS#8 imports require seed-bearing private-key encodings, and
+  later ML-KEM and ML-DSA exports default to seed-only encodings.
+- Zstandard supports dictionaries; later decompression rejects truncated input
+  and accepts `ArrayBuffer` dictionaries.
+- `rejectGarbageAfterEnd` rejects trailing compressed data, and Web
+  decompression streams reject trailing gzip members.
 
-- Expect foreign-key enforcement, disabled double-quoted string literals, and—by 25.5.0—defensive mode by default.
-- Use `iterate()`, `columns()`, return-array mode, numbered parameters, typed-array bindings, and connection-wide bigint reads as appropriate.
-- Prefer `DatabaseSync.createTagStore()` for cached parameterized template queries.
-- Use disposable exported sessions, changeset conflict types, online backup, authorization callbacks, custom scalar and aggregate functions, and explicit extension entry points where needed.
+### Diagnostics, profiling, and tests
 
-## Networking, HTTP, and TLS
-
-- Enable environment proxies for built-in `fetch()` and core HTTP clients with `NODE_USE_ENV_PROXY=1` or `--use-env-proxy`; use `setGlobalProxyFromEnv()` for programmatic global activation.
-- Configure server and agent keep-alive timeout buffers to avoid edge-of-expiry socket reuse.
-- Use raw alternating header arrays where HTTP/2 request, response, push, or trailer APIs support them.
-- Treat `headersDistinct` and `trailersDistinct` as null-prototype objects in 25.8.2+; inspect them with `Object.hasOwn()`.
-- Use `shouldUpgradeCallback` to select upgrade requests and `writeInformation()` for arbitrary informational responses.
-- Use system CAs with `--use-system-ca` or `NODE_USE_SYSTEM_CA=1`; inspect and replace default CA sets through the TLS APIs when required.
-- Account for OpenSSL security level 2, stricter SNI and hostname validation, session-to-host binding, and certificate compression support.
-
-## Crypto and compression
-
-- Prefer feature detection with `SubtleCrypto.supports()` for modern WebCrypto algorithms.
-- Use built-in Argon2, ML-KEM encapsulation/decapsulation, ML-DSA and SLH-DSA signatures, SHA-3/SHAKE, KMAC, AES-OCB, and ChaCha20-Poly1305 only on supporting versions.
-- Pass identical context bytes to context-aware signing and verification operations.
-- Migrate classic crypto calls away from WebCrypto `CryptoKey` inputs where deprecated; use supported raw and JWK formats where available.
-- Set `outputLength` for XOF, cSHAKE, KMAC, TurboSHAKE, and KangarooTwelve operations as documented.
-- Use zstd dictionaries when applicable and set `rejectGarbageAfterEnd` when trailing compressed data must be rejected.
-
-## Filesystem, streams, and resource management
-
-- Use `using` and `await using` for disposable directories, workers, readline interfaces, event-loop histograms, SQLite sessions, and `AsyncLocalStorage` where supported.
-- Use `FileHandle.readableWebStream({ autoClose: true })` when the stream owns the handle; expect a byte stream and a `Uint8Array` BYOB request view.
-- Preserve the primary pipeline failure: later aborts no longer replace an existing pipeline error in 25.9.0+.
-- Pass a reusable destination buffer to `readFile()` in 26.4.0+ when allocation control matters.
-- Treat `node:vfs` as routing, never as a security boundary.
-
-## Diagnostics and performance
-
-- Enable CPU and heap profiling through `NODE_OPTIONS`; use `${pid}` in profile names for concurrent processes.
-- Use per-worker CPU usage, CPU profiles, and heap profiles to isolate worker behavior.
-- Use `--heap-snapshot-on-oom`, `--max-heap-size`, percentage old-space limits, and precise inspector coverage where appropriate.
-- Subscribe to HTTP, HTTP/2, and Web Lock diagnostics channels instead of patching core calls.
-- Account for event-loop delay sampling once per loop iteration and the new minor mark-sweep GC classification in 26.5.0.
-
-## Runtime and release planning
-
-- Use `Temporal`, `Map.getOrInsert()`, `Map.getOrInsertComputed()`, and `Iterator.concat()` on 26.0.0+.
-- Use direct `Uint8Array` base64 and hex conversion on 25.0.0+.
-- Feature-detect `localStorage`: it throws without a configured path in 25.2.0 but returns `undefined` in 26.0.0+.
-- Plan for the annual all-LTS cycle beginning with 27.x: Alpha runs October–March, Current ships in April, and LTS begins in October.
-- Add Alpha releases to library CI for compatibility testing, but do not deploy them to production.
+- CPU and heap profiling can be enabled through supported startup options, and
+  workers expose per-worker CPU usage plus CPU and heap profile handles.
+- Inspector network tooling progressively covers HTTP, Undici, WebSocket, and
+  HTTP/2 traffic and bodies.
+- Test runs support global setup, per-test timeouts, object-property mocking,
+  file snapshots, failure reruns, expected failures, tags, ambient contexts,
+  and test-authored log events.
+- Suite-level failures set a non-zero process exit code, and failed-test reruns
+  preserve retry failures.

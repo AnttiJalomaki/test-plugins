@@ -1,288 +1,217 @@
-# Apollo Router caching, traffic, subscriptions, and reloads
+# Apollo Router Caching, Traffic, Subscriptions, and Reloads
 
-## Persisted queries and safelists
+Use this reference for backpressure, rate limits, persisted queries, query-plan/entity/response caches, Redis, and long-lived subscription traffic.
 
-### Local manifests
+## Traffic shaping and connections
 
-`persisted_queries.hot_reload: true` watches configured local manifests
-independently of the Router's `--hot-reload` flag (`2.1.0`).
+### Busy routers reject instead of queue
 
-```yaml
-persisted_queries:
-  enabled: true
-  local_manifests:
-    - ./persisted-query-manifest.json
-  hot_reload: true
-```
+For router-v2-migration, backpressure rejects work when busy instead of retaining it in memory. Stricter shaping may expose more 503/504 responses; monitor CPU and logs, then retune timeouts, concurrency, and rate limits.
 
-`persisted_queries.experimental_local_manifests` is deprecated in `2.16.0`; use
-the behavior-equivalent `local_manifests` key shown above.
+### Connector-specific traffic shaping
 
-The Router reports persisted-query usage keyed by ID from `2.2.0`. Safelisted
-operations sent by operation body also count from `2.7.0`.
+Since 2.1.0, set connector-wide rules under `traffic_shaping.connector.all` and source rules under `traffic_shaping.connector.sources` using a `subgraph_name.source_name` key. Connector shaping does not support `deduplicate_query`.
 
-With manifest safelisting enabled and APQ disabled, a
-`PERSISTED_QUERY_NOT_IN_LIST` error includes `extensions.operation_name` when the
-request supplied a name (`2.4.0`).
+### Entity cache keys changed
 
-Router `2.13.0` puts the resolved persisted-query ID in request context, making it
-available to Rhai.
+Since 2.1.0, entity-cache keys separate entity-key fields from representation variables, fixing directive cases such as `@requires`. Distributed query-plan caches use a changed hash, so expect regeneration cost on upgrade.
 
-Safelist unknown-operation logs include `enforcement_skipped` (`2.3.0`): `false`
-means enforcement rejected an external operation; `true` means an allowed internal
-bypass.
+### Entity caching supports multiple keys
 
-## Response caching
+Router 2.1.3 fixes entity caching for types with multiple `@key` directives using different fields.
 
-### GA namespace and storage
+### Subscription deduplication can ignore headers
 
-Router `2.8.0` introduced Redis root-field and entity-representation caching under
-`preview_response_cache`, using subgraph `Cache-Control` TTLs and cache tags.
-Router `2.10.0` makes it GA under `response_cache`; rename the namespace.
+Since 2.3.0, list event-irrelevant headers under `subscription.deduplication.ignored_headers`; differences in those headers no longer prevent otherwise identical subgraph subscription deduplication.
 
-A configured TTL is only a fallback when the subgraph omits
-`Cache-Control: max-age` (`2.12.0`). Schema changes generate new keys rather than
-serving stale schema data, and multi-root subgraph responses are cached as a unit.
+### Local persisted-query manifest hot reload
 
-The ineffective `ttl` under `redis` was removed in `2.9.0`; put TTL on the
-`preview_response_cache.subgraph` entry (or the equivalent GA
-`response_cache.subgraph` entry):
+Since 2.1.0, `persisted_queries.hot_reload: true` watches local manifests independently of the Router's `--hot-reload` flag.
 
-```yaml
-response_cache:
-  enabled: true
-  subgraph:
-    all:
-      enabled: true
-      ttl: 10m
-      redis:
-        urls: ["redis://localhost:6379"]
-```
+### Persisted-query usage by ID
 
-Federation interface objects are entities for response caching from `2.10.0`.
+Since 2.2.0, usage reporting groups persisted-query traffic by persisted-query ID.
 
-### Entity keys and cache regeneration
+### Unknown persisted-query errors expose the operation name
 
-Router `2.1.0` separates entity-key fields from representation variables in cache
-keys, fixing directive cases such as `@requires` but changing the distributed
-query-plan-cache hash. Router `2.1.3` fixes types with multiple distinct `@key`
-directives.
+Since 2.4.0, with manifest safelisting and APQ disabled, `PERSISTED_QUERY_NOT_IN_LIST` includes `extensions.operation_name` when the request supplied one.
 
-Router `2.8.0` does not store already-expired entity responses whose `Age` exceeds
-`max-age`; its key version changes, so plan for regeneration.
+### Safelisted operation bodies count toward persisted-query usage
 
-Nullable `@key` fields are accepted from `2.11.0`; avoid ambiguous null identity.
-Router `2.13.0` additionally accepts a missing nullable field or a nullable-list
-item set to `null`.
+Since 2.7.0, persisted-query usage includes safelisted operations submitted by body, not only by ID.
 
-### Cache keys from context
+### HTTP connection-pool idle lifetime
 
-`apollo::response_cache::key` can contain `all` plus a `subgraphs` map (`2.9.0`).
-A subgraph entry replaces, rather than merges with, `all`; repeat shared values.
+Since 2.13.0, `pool_idle_timeout` configures idle keep-alive eviction for subgraphs, connector sources, and coprocessors. Default is 15 seconds rather than the earlier fixed 5; `null` disables idle eviction.
+
+### Persisted-query IDs enter request context
+
+Since 2.13.0, the persisted-query layer stores the resolved ID in request context, making it available to Rhai.
+
+### Subgraphs over Unix domain sockets
+
+Since 2.13.0, a subgraph endpoint may use a Unix socket URL whose `path` query parameter carries the request path, for example `unix:///tmp/some.sock?path=some_path`.
+
+### `http2only` uses h2c for cleartext connections
+
+Since 2.13.0, outbound `experimental_http2: http2only` uses HTTP/2 prior knowledge without TLS. Plain `enable` over cleartext still uses HTTP/1.1 because h2c upgrade is unavailable.
+
+### Downstream response-size limits
+
+Since 2.15.0, `limits.subgraph` and `limits.connector` support global and per-destination `http_max_response_size`; no default applies. Old Router-level fields migrate under `limits.router`. An oversized streaming body stops with `SUBREQUEST_HTTP_ERROR`, increments `apollo.router.limits.subgraph_response_size.exceeded` or `apollo.router.limits.connector_response_size.exceeded`, and marks the response span aborted for `response_size_limit`.
+
+### File-upload operation-body timeout
+
+Since 2.15.0, multipart upload `operation_body_timeout` independently bounds reading the operations field. It has no default and returns 504 / `GATEWAY_TIMEOUT` on expiry.
+
+### Variable deduplication configuration deprecated
+
+Since 2.16.0, `traffic_shaping.deduplicate_variables` is deprecated, ignored, and warns at startup because variable deduplication is always enabled. Remove it.
+
+## Response and entity caching
+
+### Entity-cache response headers are normalized
+
+Since 2.6.0, one uncached entity fetch no longer forwards `Cache-Control` unchanged. It follows the common algorithm, emitting `max-age` without `s-maxage`.
+
+### Redis-backed response caching
+
+Since 2.8.0, `preview_response_cache` caches root query fields and entity representations in Redis, using subgraph `Cache-Control` for TTL and cache tags for targeted invalidation. Preview entity-cache deployments can migrate by renaming configuration.
+
+### Entity-cache expiry and key regeneration
+
+Since 2.8.0, an entity response whose `Age` exceeds `Cache-Control: max-age` is not stored. The cache-key version changed, so expect regeneration.
+
+### Redis clients metric replaces connections
+
+Since 2.8.0, `apollo.router.cache.redis.connections` is replaced by `apollo.router.cache.redis.clients`; it counts clients instead of underlying connections and removes `kind`.
+
+### Per-subgraph response-cache key context
+
+Since 2.9.0, `apollo::response_cache::key` may contain `subgraphs`. A subgraph entry replaces rather than merges with `all`, so repeat shared values there.
 
 ```json
-{
-  "all": 1,
-  "subgraphs": {
-    "my_subgraph": { "locale": "be" }
-  }
-}
+{ "all": 1, "subgraphs": { "products": { "locale": "be" } } }
 ```
 
-Rhai and coprocessors can customize cache identity at the subgraph request stage
-from `2.10.0`, for example by copying a request header to a `private_id` context
-key.
+### Uniform response-cache timeout code
 
-### Client-facing `Cache-Control`
+Since 2.9.0, both Tokio and Redis `apollo.router.operations.response_cache.*.error` metrics use code `timeout`.
 
-A single uncached entity fetch no longer forwards its header verbatim in `2.6.0`;
-it follows the common algorithm, emitting `max-age` but not `s-maxage`.
+### Response-cache Redis TTL location
 
-When a cacheable response contains GraphQL errors, Router `2.13.0` emits
-`Cache-Control: no-store` to prevent intermediary storage. In Router cache plugins:
+Since 2.9.0, remove ineffective `redis.ttl`; put `ttl` on the relevant `preview_response_cache.subgraph` entry.
 
-- `no-store` may serve an existing entry but prevents a new store.
-- `no-cache` prevents serving without revalidation but still permits storage; the
-  Router itself does not perform revalidation.
+### Response caching is generally available
 
-`response_cache.include_cache_control_header_on_router_response` defaults to
-`true` (`2.15.0`). Setting it false suppresses the client response header without
-changing Redis storage, TTL, keys, or debugger behavior.
+Since 2.10.0, production configuration uses GA namespace `response_cache`, replacing `preview_response_cache`.
 
-Router `2.16.0` accepts numeric `stale-if-error`, preserves `s-maxage` separately,
-treats extension-only headers as `no-store`, permits field-qualified `no-cache`,
-expires future-dated entries, and lets `private` suppress `public`. It reads older
-Redis entries whose stale directives were booleans for rolling-upgrade
-compatibility.
+### Clustered Redis read replicas
 
-## Invalidation
+Since 2.10.0, read-only query-plan and response-cache commands go to Redis cluster replicas rather than primaries when replicas exist.
 
-From `2.10.0`, the invalidation listener starts when enabled globally or for any
-individual subgraph; `subgraph.all.invalidation.enabled` is not required for
-selective use. In the full path, this is
-`response_cache.subgraph.all.invalidation.enabled`.
+### Selective response-cache invalidation
 
-```yaml
-response_cache:
-  enabled: true
-  invalidation:
-    listen: 127.0.0.1:4000
-    path: /invalidation
-  subgraph:
-    all:
-      enabled: true
-      redis:
-        urls: ["redis://localhost:6379"]
-    subgraphs:
-      products:
-        invalidation:
-          enabled: true
-```
+Since 2.10.0, the invalidation endpoint starts when invalidation is enabled globally or for any named subgraph; `response_cache.subgraph.all.invalidation.enabled` is unnecessary for selected-only invalidation.
 
-Router `2.11.0` returns errors for invalidation failures rather than hiding them,
-which can increase `apollo.router.operations.response_cache.invalidation.error`.
-Payloads with unknown fields return HTTP 400.
+### Subgraph-stage cache identity customization
 
-Each subgraph can disable the `subgraph`, `type`, or `cache_tag` invalidation index
-in `2.16.0`; all default on. Disabled index requests return 400 and skip Redis
-writes. Re-enabling does not backfill older entries; flush the affected namespace
-when old entries must participate immediately.
+Since 2.10.0, Rhai and coprocessors can customize response-cache identity at subgraph request stage, for example by copying a header into context `private_id`.
 
-```yaml
-response_cache:
-  subgraph:
-    all:
-      invalidation:
-        enabled: true
-        indexes:
-          subgraph: false
-          type: false
-```
+### Interface objects participate in response caching
 
-## Redis clients
+Since 2.10.0, Federation interface objects are entities for response caching, and their representations can form entity keys.
 
-Query-plan Redis caches expose stable connection/client, queue, execution, retry,
-and error metrics; detailed instruments are in `router-observability.md`.
+### Nullable entity keys can be cached
 
-Router `2.8.0` replaces `apollo.router.cache.redis.connections` with
-`apollo.router.cache.redis.clients`. The gauge counts clients rather than
-connections and removes `kind`.
+Since 2.11.0, response caching accepts nullable `@key` fields. Keep identity shapes unambiguous when a key value is `null`.
 
-With Redis cluster replicas, Router `2.10.0` sends read-only cache commands to
-replicas. Router `2.16.0` connects to replicas eagerly, preventing read failure,
-backend fallthrough, and CPU spikes with an even replica count.
+### Response-cache invalidation failures are surfaced
 
-Both Tokio and Redis response-cache timeouts use code `timeout` in
-`apollo.router.operations.response_cache.*.error` from `2.9.0`.
+Since 2.11.0, invalidation failures return errors instead of remaining silent and may increase `apollo.router.operations.response_cache.invalidation.error`.
 
-## Traffic shaping and status codes
+### Invalidation payloads reject unknown fields
 
-### Rate-limit semantics
+Since 2.11.0, the invalidation endpoint returns 400 for payload fields outside its schema.
 
-Status behavior changed twice:
+### Response-cache key and TTL semantics
 
-- Router `2.11.0` restored `429 Too Many Requests` / `TOO_MANY_REQUESTS` for
-  enforced rate limits, classifying the response as throttling.
-- Router `2.13.0` changed router/subgraph rate-limit or buffer-capacity exhaustion
-  back to `503 Service Unavailable` / `SERVICE_UNAVAILABLE`, classifying it as
-  overall service load.
+Since 2.12.0, schema changes yield new cache keys; old entries miss rather than serve stale-schema data. Multi-root subgraph responses cache as one unit. Configured TTL is only a fallback when the subgraph omits `Cache-Control: max-age`.
 
-Align retries and alerts with the exact installed minor.
+### Additional nullable cache-key shapes
 
-### Connections and compression
+Since 2.13.0, response/entity keys accept a missing nullable field or a nullable list item containing `null`, extending explicit-null support.
 
-`pool_idle_timeout` applies to subgraphs, Connector sources, and coprocessors
-(`2.13.0`). It defaults to 15 seconds rather than the previous five; a null value
-disables idle eviction.
+### GraphQL errors make cached responses `no-store`
 
-```yaml
-traffic_shaping:
-  all:
-    pool_idle_timeout: 30s
-```
+Since 2.13.0, a response with GraphQL errors receives `Cache-Control: no-store` when the response-cache plugin would otherwise emit cache control.
 
-Traffic-shaping compression sets `content-encoding`; all subgraph requests
-advertise `gzip`, `br`, or `deflate` through `accept-encoding` (`2.11.0`). These
-headers are added after debug capture, so they are absent from the Connectors
-Debugger.
+### Cache plugins distinguish `no-store` and `no-cache`
 
-`traffic_shaping.deduplicate_variables` is deprecated and ignored in `2.16.0`;
-variable deduplication is always enabled.
+Since 2.13.0, `no-store` may serve an existing entry but prevents storing a new one. `no-cache` prevents serving without revalidation yet permits storage; Router does not perform that revalidation.
 
-### Known response sizes
+### Client `Cache-Control` emission is optional
 
-From `2.9.0`, known-size GraphQL responses retain `Content-Length` rather than
-switching to `transfer-encoding: chunked`, and size hints survive both Router and
-subgraph paths.
+Since 2.15.0, `response_cache.include_cache_control_header_on_router_response` defaults to `true`; set `false` to suppress `Cache-Control` on client responses without changing Redis, TTL, cache keys, or debugger behavior.
 
-## Subscriptions
+### Selective response-cache invalidation indexes
 
-### Deduplication identity
+Since 2.16.0, each subgraph can disable `subgraph`, `type`, or `cache_tag` invalidation indexes; all default on. Disabled kinds skip Redis writes and reject that invalidation request with 400. Re-enabling does not backfill: flush the affected namespace when older entries must participate immediately.
 
-`subscription.deduplication.ignored_headers` allows differences in irrelevant
-headers without splitting otherwise identical subgraph subscriptions (`2.3.0`).
+### Response-cache `Cache-Control` semantics
 
-Decoded JWT claims participate independently in subscription identity. In
-`2.15.0`, `ignore_auth_context: true` can share only genuinely non-personalized
-streams. Defaults and overrides may be set per subgraph.
+Since 2.16.0, response caching accepts numeric `stale-if-error`, preserves `s-maxage` separately from `max-age`, treats extension-only headers as `no-store`, permits field-qualified `no-cache`, expires future-dated entries, and lets `private` suppress `public`. It reads older boolean-serialized stale directives during rolling upgrades.
 
-```yaml
-subscription:
-  deduplication:
-    all:
-      enabled: true
-    subgraphs:
-      stocks:
-        ignore_auth_context: true
-```
+### Redis replica routing with even replica counts
 
-### Protocol and lifecycle
+Since 2.16.0, Redis clients eagerly connect to replicas, preventing read failures, backend fallthrough, and CPU spikes from lazy round-robin routing with an even replica count.
 
-Router `2.7.0` accepts `graphql-transport-ws` `connection_error` messages with a
-payload but no `id`, forwarding underlying errors.
+## Rate limits and subscriptions
 
-The Router injects trace headers into the initial subgraph WebSocket upgrade
-request (`2.11.0`); individual messages cannot add propagation headers.
+### Enforced rate limits return HTTP 429
 
-Self-hosted subscriptions are available on every GraphOS plan from `2.11.0`, but
-remain licensed and require GraphOS connection with API key and graph ref.
+Since 2.11.0, enforced rate limits again returned 429 / `TOO_MANY_REQUESTS` rather than 503 / `SERVICE_UNAVAILABLE` used since Router 2.0. This was superseded by the later capacity behavior below.
 
-`subscription.max_lifetime` (`2.15.0`) closes an overlong subscription with
-`SUBSCRIPTION_MAX_LIFETIME_EXCEEDED`; unset remains unlimited.
+### Capacity rate limiting returns HTTP 503
 
-```yaml
-subscription:
-  enabled: true
-  max_lifetime: 10m
-```
+Since 2.13.0, exceeding router/subgraph rate limits or buffer capacity returns `503 Service Unavailable`, reverting the `429 Too Many Requests` change. Current clients, retries, and alerts should classify it as service load, not client-specific throttling.
 
-AWS REST API Gateway can front multipart subscriptions now that response streaming
-is available (`2.13.0`); configure the gateway response transfer mode for
-streaming.
+### Subscription errors retain their protocol level
 
-## Reloading and deployment artifacts
+Since 2.6.0, in multipart HTTP subscriptions, a GraphQL error immediately followed by termination remains a GraphQL error rather than becoming a fatal transport error.
 
-Tag-based OCI references, including generated variant and custom tags, are polled
-and reloaded when their target changes (`2.11.0`). This supports mutable promotion
-such as `artifacts.apollographql.com/my-org/my-graph:prod`.
+### WebSocket connection errors propagate without an ID
 
-From `2.15.0`, a transient schema or related reload failure retries instead of
-permanently serving the previous schema. `reload.max_retries` defaults to five;
-`0` disables retries and null allows unlimited retries. `retry_delay` defaults to
-ten seconds. A new trigger resets the budget.
+Since 2.7.0, Router accepts spec-valid `graphql-transport-ws` `connection_error` messages with payload but no `id` and propagates their errors.
 
-```yaml
-reload:
-  max_retries: 5
-  retry_delay: 10s
-```
+### Known-size responses retain `Content-Length`
 
-Warning-state licenses now enforce restricted-feature blocks (`2.11.0`); a
-deployment using a blocked feature fails rather than continuing.
+Since 2.9.0, known-size GraphQL responses use `Content-Length` instead of `transfer-encoding: chunked`; body-size hints are preserved client-to-router and router-to-subgraph.
 
-The Router Helm chart supports Deployment-level `deploymentAnnotations` separately
-from `podAnnotations` (`2.7.0`). From `2.13.0`, `ServiceMonitor.metadata.name`
-uses the `router.fullname` helper, honoring `nameOverride` and `fullnameOverride`;
-a default release `my-release` changes to `my-release-router`.
+### Subscription event counter semantics
 
-Health-check endpoints can again be disabled from `2.3.0`.
+Since 2.9.0, `apollo.router.operations.subscriptions.events` increments for events but not ping, pong, or close. Router relies on the WebSocket implementation's ping handling and avoids duplicate pongs before acknowledgement.
+
+### WebSocket handshakes propagate trace context
+
+Since 2.11.0, the initial HTTP upgrade to a subgraph carries trace headers. Individual messages on the established connection cannot add propagation headers.
+
+### Subscription request builders restore plugin compatibility
+
+Since 2.11.0, external plugins/crates can again use `SubscriptionTaskParams` with `execution::Request` builders, including tests.
+
+### Subgraph compression headers are added after debugging capture
+
+Since 2.11.0, `traffic_shaping` compression sets `content-encoding`; subgraph requests advertise `gzip`, `br`, or `deflate` via `accept-encoding`. These are added after the debug stack and do not appear in Connectors Debugger.
+
+### AWS API Gateway can front multipart subscriptions
+
+Since 2.13.0, HTTP multipart subscriptions work behind AWS REST API Gateway when response transfer mode is configured for streaming.
+
+### Subscription deduplication can ignore JWT context
+
+Since 2.15.0, decoded JWT claims independently contribute to subscription identity, so `ignored_headers` cannot make authenticated streams share a connection. Set `ignore_auth_context: true` only for non-personalized streams. Dedup defaults and overrides may be configured per subgraph.
+
+### Maximum subscription lifetime
+
+Since 2.15.0, `subscription.max_lifetime` closes a subscription at the configured duration with `SUBSCRIPTION_MAX_LIFETIME_EXCEEDED`; unset remains unlimited.

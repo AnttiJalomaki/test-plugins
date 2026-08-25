@@ -1,26 +1,16 @@
 # Bundlers and Builds
 
-Batch attributions used here: `15.4.0`, `15.5.0`, `16.0.0`, `16.1.0`, `16.2-guide`, `16.2.0`, `16.3.0`, and `release-catalogs`.
+## Production Turbopack opt-in (`15.5.0`)
 
-## Production builder selection
-
-Turbopack development support did not initially imply Turbopack production builds. In `15.5.0`, opt into the beta production builder explicitly:
+Production Turbopack builds were introduced in beta behind an explicit flag. Turbopack use in development did not imply production build use.
 
 ```sh
 next build --turbopack
 ```
 
-In Next.js 16, Turbopack settings live under top-level `turbopack`; `experimental.turbopack` is removed (`16.0.0`). When Turbopack detects a Babel configuration, it enables Babel automatically instead of stopping with an error.
+## Development filesystem caching (`16.0.0`, `16.1.0`)
 
-## Filesystem caching and memory eviction
-
-Turbopack's development disk cache progressed through these states:
-
-- `15.4.0` previewed persistent caching as `experimental.turbopackPersistentCaching`.
-- `16.0.0` provided an opt-in beta under `experimental.turbopackFileSystemCacheForDev`.
-- `16.1.0` made the `next dev` filesystem cache stable and enabled by default; build caching was not yet stable in that release.
-
-The beta form was:
+In 16.0.0, Turbopack's development disk cache was beta and opt-in:
 
 ```ts
 const nextConfig = {
@@ -30,25 +20,11 @@ const nextConfig = {
 export default nextConfig
 ```
 
-As of `16.3.0`, Turbopack evicts memory-backed compilation data to its development filesystem cache by default. Disable eviction only while diagnosing cache or performance behavior; the normal `turbopackMemoryEviction` value is `'full'`.
+In 16.1.0, development filesystem caching became stable, enabled by default, and no longer needed the experimental flag. It persists compiler artifacts across restarts. Filesystem caching for `next build` was not yet stable in that release.
 
-```ts
-export default {
-  experimental: { turbopackMemoryEviction: false },
-}
-```
+## Build adapters (`16.0.0`, `16.2.0`)
 
-Turbopack can also persist compilation work for production builds. CI can reuse that cache by restoring the generated `.next` directory.
-
-```ts
-export default {
-  experimental: { turbopackFileSystemCacheForBuild: true },
-}
-```
-
-## Build adapters
-
-The adapter hook began as an alpha in `16.0.0`. An integration pointed `experimental.adapterPath` at a module that could adjust Next.js configuration or process build output.
+The 16.0.0 alpha adapter hook allowed deployment integrations to adjust Next.js configuration or process build output through `experimental.adapterPath`.
 
 ```js
 const nextConfig = {
@@ -58,21 +34,27 @@ const nextConfig = {
 module.exports = nextConfig
 ```
 
-The build adapter API is stable in `16.2.0`. Deployment platforms and custom build integrations can use it without relying on the experimental status, while preserving the two core responsibilities: changing configuration at build time and processing build output.
+The build adapter API became stable in 16.2.0. Deployment platforms and custom integrations can use the stable API rather than relying on the experimental hook.
 
-## Package externalization
+## Babel configuration detection (`16.0.0`)
 
-Under Turbopack, `serverExternalPackages` can resolve and externalize transitive dependencies (`16.1.0`). An application no longer has to add the transitive package to its own `package.json` solely to make externalization work.
+When Turbopack finds a Babel configuration, it enables Babel automatically instead of terminating with an error.
 
-## Same-origin workers and service workers
+## Separate output and process locking (`16.0.0`)
 
-Turbopack Web Workers report the application's domain through `location.origin` rather than an empty origin (`16.2-guide`). Relative `importScripts()` and `fetch()` calls therefore resolve correctly, including calls made by WebAssembly libraries.
+Development and builds use separate output directories, so `next dev` and `next build` may run concurrently. A project lockfile prevents conflicting command instances.
 
-In the `release-catalogs` 16.3 canary line, Turbopack compiles service workers registered from Pages Router pages and emits their bundles below `/_next/static/`.
+## Transitive server externals (`16.1.0`)
 
-## Subresource Integrity
+Under Turbopack, `serverExternalPackages` can resolve and externalize transitive dependencies. An application no longer needs to add such a package to its own `package.json` merely to externalize it.
 
-Turbopack can generate build-time integrity hashes for JavaScript (`16.2-guide`). This allows a Content Security Policy to approve static scripts without forcing dynamic rendering solely to attach nonces.
+## Same-origin Web Workers (`16.2-guide`)
+
+Turbopack workers report the application's domain in `location.origin` instead of an empty origin. Relative `importScripts()` and `fetch()` calls resolve correctly, including calls made by WebAssembly libraries.
+
+## Subresource Integrity (`16.2-guide`)
+
+Turbopack can experimentally generate build-time integrity hashes for JavaScript. A Content Security Policy can approve static scripts with these hashes without requiring nonce-based dynamic rendering.
 
 ```js
 const nextConfig = {
@@ -82,14 +64,14 @@ const nextConfig = {
 module.exports = nextConfig
 ```
 
-## Per-import loaders
+## Per-import loaders (`16.2-guide`)
 
-Import attributes can apply a Turbopack loader to one import instead of every matching file in `turbopack.rules` (`16.2-guide`). Supported attributes are:
+Import attributes may apply a Turbopack loader to a single import instead of every matching file in `turbopack.rules`. Supported attributes are:
 
-- `turbopackLoader`.
-- `turbopackLoaderOptions`, encoded as a JSON string.
-- `turbopackAs`.
-- `turbopackModuleType`.
+- `turbopackLoader`
+- `turbopackLoaderOptions`, encoded as a JSON string
+- `turbopackAs`
+- `turbopackModuleType`
 
 ```js
 import value from './data.js' with {
@@ -98,38 +80,17 @@ import value from './data.js' with {
 }
 ```
 
-Prefer global rules when they fit; use attributes for genuinely import-specific behavior.
+Prefer global rule configuration when it fits the whole file class.
 
-Text import attributes are enabled by default in the `release-catalogs` canary line, so plain text no longer needs a custom loader:
+## Issue filtering (`16.2-guide`)
 
-```js
-import notice from './notice.txt' with { type: 'text' }
-```
-
-## `import.meta.glob`
-
-Turbopack supports the Vite-compatible glob API (`16.3.0`). It returns path-keyed lazy import functions by default and eagerly imported modules with `{ eager: true }`. Named, multiple, and negative patterns are also supported. The API is unavailable when building with `--webpack`.
-
-```ts
-const posts = import.meta.glob('./posts/*.mdx')
-const eagerPosts = import.meta.glob('./posts/*.mdx', { eager: true })
-```
-
-## Resolution and issue filtering
-
-Turbopack accepts `#/` subpath specifiers when the project maps that prefix in the `release-catalogs` canary line:
-
-```ts
-import config from '#/config'
-```
-
-Use `turbopack.ignoreIssue` to suppress selected streaming warnings or expected overlay errors (`16.2-guide`). A rule can combine a path glob or regular expression with title and description matches expressed as strings or regular expressions.
+`turbopack.ignoreIssue` suppresses selected streaming warnings or expected overlay errors. A rule can combine a path glob or regular expression with title and description string or regular-expression matches.
 
 ```ts
 const nextConfig = {
   turbopack: {
     ignoreIssue: [
-      { path: '**/third-party/**' },
+      { path: '**/vendor/**' },
       { path: /generated\/.*\.ts/, description: /expected error/i },
     ],
   },
@@ -138,11 +99,29 @@ const nextConfig = {
 export default nextConfig
 ```
 
-Keep filters narrow enough that unexpected compiler errors still reach the overlay and terminal.
+## Development memory eviction (`16.3.0`)
 
-## Rust React Compiler
+Turbopack evicts memory-backed compilation data to its development filesystem cache by default. The normal `turbopackMemoryEviction` value is `'full'`. Disable eviction only while diagnosing cache or performance behavior.
 
-Turbopack can run the experimental native Rust React Compiler instead of its Babel implementation when both the compiler and its backend are enabled (`16.3.0`).
+```ts
+export default {
+  experimental: { turbopackMemoryEviction: false },
+}
+```
+
+## Filesystem caching for builds (`16.3.0`)
+
+Turbopack can persist work from `next build`. A CI job can reuse the work by restoring the generated `.next` directory between runs.
+
+```ts
+export default {
+  experimental: { turbopackFileSystemCacheForBuild: true },
+}
+```
+
+## Rust React Compiler (`16.3.0`)
+
+Turbopack can run the native Rust React Compiler rather than the Babel implementation when both the compiler and its experimental backend are enabled.
 
 ```ts
 export default {
@@ -151,9 +130,40 @@ export default {
 }
 ```
 
-## Server Component HMR cancellation
+## `import.meta.glob` (`16.3.0`)
 
-The `serverComponentsHmrCancellation` experiment aborts a superseded Server Component refresh in the browser and cancels its corresponding server-side work (`release-catalogs`).
+Turbopack supports the Vite-compatible glob API. It returns path-keyed lazy import functions by default and eagerly imported modules with `eager: true`. Named, multiple, and negative patterns are supported. The API is unavailable when building with `--webpack`.
+
+```ts
+const posts = import.meta.glob('./posts/*.mdx')
+const eagerPosts = import.meta.glob('./posts/*.mdx', { eager: true })
+```
+
+## Package-local PostCSS (`16.3.0`)
+
+Monorepos can resolve the nearest PostCSS configuration for each CSS file and fall back to the project-root configuration.
+
+```ts
+export default {
+  experimental: { turbopackLocalPostcssConfig: true },
+}
+```
+
+## Pages Router service workers (`release-catalogs`)
+
+The 16.3 canary line compiles service workers registered from Pages Router pages and emits their bundles beneath `/_next/static/`.
+
+## Text imports (`release-catalogs`)
+
+Turbopack enables text import attributes by default, removing the need for a custom loader.
+
+```js
+import notice from './notice.txt' with { type: 'text' }
+```
+
+## Server Component HMR cancellation (`release-catalogs`)
+
+The experimental `serverComponentsHmrCancellation` option aborts a superseded Server Component refresh on the client and cancels its server-side work.
 
 ```ts
 export default {
@@ -161,6 +171,10 @@ export default {
 }
 ```
 
-## WebAssembly compiler package publication
+## `#/` subpath imports (`release-catalogs`)
 
-Next.js `16.2.10` and `15.5.20` contain no code changes; they restore publication of `@next/swc-wasm-web`, which had accidentally been omitted beginning with `16.2.4` and `15.5.15`, respectively (`release-catalogs`). If a WebAssembly compiler install fails on an affected patch, update to the restored package release rather than searching for framework behavior changes.
+Turbopack accepts `#/`-prefixed subpath imports when the project maps that prefix, instead of rejecting them during resolution.
+
+```ts
+import config from '#/config'
+```

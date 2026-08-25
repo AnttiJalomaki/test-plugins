@@ -1,19 +1,24 @@
 # Runtime API and Lua
 
-## Persistent Master CLI worker sessions
+## Master CLI sessions
 
-When selecting a worker by relative PID, use `@@` instead of `@` to keep the
-Master CLI session interactive until exit or command completion (since 3.2.0).
-The worker inherits the master's prompt mode. The `prompt` command supports
-`n`, `i`, and `p` modes.
+### Persistent worker selection (since 3.2.0)
 
-Persistent sessions can subscribe to event rings. The `dpapi` ring introduced
-with this facility initially carries ACME notifications.
+Select a worker by relative PID with `@@` instead of `@` to keep the Master
+CLI session interactive until exit or command completion. This also carries
+the master's prompt mode into the worker.
+
+The `prompt` command accepts `n`, `i`, and `p`. Persistent mode can subscribe
+to event rings, including the `dpapi` ring initially used for ACME
+notifications.
 
 ## Runtime backend lifecycle
 
-HAProxy 3.4.0 can create and remove whole backends without a reload. A minimal
-creation sequence is:
+### Creating and publishing a backend (since 3.4.0)
+
+The Runtime API can add, publish, unpublish, and delete a complete backend
+without a reload. Publication is required before the backend is available for
+routing.
 
 ```text
 add backend test-backend from mydefaults mode http
@@ -23,53 +28,47 @@ enable health test-backend/server1
 publish backend test-backend
 ```
 
-Publication is the routing boundary. Disabled or unpublished targets selected
-by `use_backend` or `default_backend` are skipped unless `force-be-switch` is
-set.
+Disabled or unpublished backends selected by `use_backend` or
+`default_backend` are skipped unless `force-be-switch` is set.
 
-For safe deletion, put each server into maintenance, wait for
-`srv-removable`, and delete it. Then unpublish the backend, wait for
-`be-removable`, and delete it. Named `defaults` sections remain available as
-creation templates unless global `tune.defaults.purge` releases them.
+For safe removal, set each server to maintenance, wait for `srv-removable`,
+and delete it. Unpublish the backend, wait for `be-removable`, then delete the
+backend.
 
-## Runtime certificate operations
+## Certificate operations
 
-For the experimental HTTP-01 ACME workflow introduced in 3.2.0:
+### Certificate-list aliases (since 3.3.0)
 
-- `acme renew @my_files/example` starts issuance.
-- `acme status` lists ACME tasks.
-- `dump ssl cert @my_files/example` returns the in-memory certificate so it can
-  be persisted.
+`add ssl crt-list` no longer checks whether a certificate's filesystem path
+matches its in-memory name, allowing `crt-store` aliases to work with
+`crt-list`. The caller must ensure that the supplied path or alias identifies
+the intended certificate.
 
-DNS-01 automation through HAProxy Data Plane API 3.3 can save issued
-certificates to the filesystem. `haproxy-dump-certs`, introduced in 3.3.0,
-writes certificates obtained through stats or master sockets.
+### Certificate dumping utility (since 3.3.0)
 
-Since 3.3.0, `add ssl crt-list` does not require a certificate filesystem path
-to match its in-memory name. This permits `crt-store` aliases, but moves the
-identity check to the caller: confirm that the supplied path or alias selects
-the intended certificate before modifying the crt-list.
+The `haproxy-dump-certs` script writes certificates obtained through the stats
+or master socket to the filesystem.
 
-## Runtime inspection and trace control
+## Runtime diagnostics
 
-Tracing has Runtime API control and supported sources for HTTP versions, QUIC,
-QMux, FastCGI, SPOP, peers, and checks. `ssl` was added in 3.2.0 and `acme` in
-3.3.0. Scope a trace narrowly and stop it after collection.
+### Thread and map/ACL diagnostics (since 3.3.0)
 
-Runtime inspection additions in 3.3.0 include:
+`show dev` reports thread-to-CPU bindings. `show info` reports added and
+removed line counts for map and ACL files. These counters can identify
+automation that continually adds entries without removing them.
 
-- `show dev` for thread-to-CPU bindings;
-- `show info` counters for lines added to and removed from Map and ACL files;
-- `show stat typed` flags of `P` for persistent shared-memory statistics and
-  `V` for volatile statistics.
+## Lua mutable pattern references
 
-The command line accepts `-vq` for the version, `-vqs` for the short version,
-and `-vqb` for the branch.
+### The `patref` API (since 3.2.0)
 
-## Mutable Lua pattern references
+Use `core.get_patref` to obtain a mutable reference to an ACL or Map file. A
+reference supports:
 
-The Lua `patref` API introduced in 3.2.0 obtains a mutable ACL or Map file
-reference with `core.get_patref`:
+- adding and removing patterns;
+- replacing Map values;
+- bulk additions;
+- whole-file replacement through `prepare()` and `commit()`;
+- event callbacks.
 
 ```lua
 local ref = core.get_patref("virt@cached_paths.txt")
@@ -78,34 +77,21 @@ if ref ~= nil then
 end
 ```
 
-A reference can:
+## Lua sample conversion
 
-- add and remove patterns;
-- replace Map values;
-- perform bulk additions;
-- register event callbacks;
-- replace a whole file atomically by staging with `prepare()` and publishing
-  with `commit()`.
+### Boolean samples (since 3.2.0)
 
-Check for `nil` before use and prefer prepare/commit when readers must not see
-a partially replaced data set.
-
-## Lua boolean samples
-
-Lua fetches still convert boolean samples to integers `0` and `1` by default.
-Opt in to true Lua booleans with the 3.2.0 setting:
+Lua fetches continue to convert boolean samples to integers `0` and `1` by
+default. Opt in to actual Lua booleans with:
 
 ```haproxy
 global
     tune.lua.bool-sample-conversion normal
 ```
 
-Code that compares against `0` or `1` must be updated when normal conversion
-is enabled.
+## Lua TCP applets
 
-## Timed TCP applet receives
+### Timed receives (since 3.2.0)
 
-`AppletTCP:receive()` accepts an optional timeout since 3.2.0. A timed receive
-lets an interactive TCP service regain control for periodic work instead of
-blocking indefinitely for client input. Treat a timeout separately from EOF or
-an application payload.
+`AppletTCP:receive()` accepts an optional timeout. An interactive TCP service
+can therefore resume periodic work instead of waiting indefinitely for input.

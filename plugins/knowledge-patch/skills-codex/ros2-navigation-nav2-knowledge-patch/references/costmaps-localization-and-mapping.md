@@ -1,123 +1,86 @@
 # Costmaps, Localization, and Mapping
 
-## Costmap API and composition
+## Costmap API and static-map topic
 
-`Costmap2DROS.map_topic` was removed. Configure the map topic on the
-`StaticLayer`:
+`Costmap2DROS.map_topic` was removed. Configure `map_topic` on the
+`StaticLayer` instead:
 
 ```yaml
 static_layer:
-  plugin: nav2_costmap_2d::StaticLayer
+  plugin: "nav2_costmap_2d::StaticLayer"
   map_topic: my_map
 ```
 
-`Costmap2DROS` constructors consolidate to:
+Constructors consolidate to:
 
 ```cpp
 Costmap2DROS(name, parent_namespace = "/", use_sim_time = false)
 ```
 
-The local namespace is inferred from the node name. When a layer must resolve a
-topic against the parent costmap rather than its private namespace, use
-`joinWithParentNamespace()`.
+The local namespace is inferred from the node name. Update custom composition
+code rather than passing the removed topic or namespace shape.
 
-The Plugin Container Layer can group selected costmap layers, combine them,
-and then contribute that grouped result to the parent costmap. Use it where a
-subset of layers needs an explicit composition boundary.
+## Plugin Container Layer
 
-## Ordinary layers and filters
-
-Names in `filters` are loaded as plugins but kept separate from `plugins`.
-Filters run on top of the fully combined ordinary layered costmap, preventing
-keepout, speed, or binary filters from interfering with ordinary layer
-combination. Every listed name must have a `plugin` parameter in the matching
-namespace.
-
-```yaml
-filters: [keepout_filter, speed_filter]
-keepout_filter:
-  plugin: nav2_costmap_2d::KeepoutFilter
-speed_filter:
-  plugin: nav2_costmap_2d::SpeedFilter
-```
+The Plugin Container Layer groups selected costmap layers and combines their
+result before the parent costmap incorporates it. Use it when a subset of
+layers needs its own compositing boundary or shared handling.
 
 ## Point-cloud transports
 
-Obstacle and voxel costmap layers can consume compressed
-`point_cloud_transport` streams. `transport_type` defaults to `raw` and can
-select a configured format such as `zstd`, `zlib`, or `draco`.
+Obstacle and voxel costmap layers, as well as Collision Monitor, can consume
+compressed `point_cloud_transport` streams. `transport_type` defaults to `raw`
+and may select formats such as `zstd`, `zlib`, or `draco` when the matching
+transport is available.
 
 ```yaml
 pointcloud:
-  data_type: PointCloud2
+  data_type: "PointCloud2"
   topic: /camera/points
-  transport_type: zstd
+  transport_type: "zstd"
 ```
 
-Collision Monitor supports the same transport setting for point-cloud sources.
-Confirm the producer and consumer have the requested transport plugin and
-budget decompression latency into freshness timeouts.
+Compression changes transport and resource costs, not the point-cloud data
+semantics used by the layer.
 
-## Costmap conversion values
+## Vector Object Server
+
+`nav2_map_server` includes a Vector Object Server that rasterizes configured
+circles, polygons, and polygonal chains into an `OccupancyGrid`. The
+`AddShapes`, `GetShapes`, and `RemoveShapes` services support dynamic virtual
+obstacles, keepout areas, and speed-filter masks.
+
+## Costmap-to-occupancy conversion
 
 `inscribed_obstacle_cost_value` defaults to `99`. It controls conversion of
 `INSCRIBED_INFLATED_OBSTACLE` between `Costmap2D` and `OccupancyGrid`, avoiding
-the earlier `253 → 99 → 251` mismatch. Components interpreting the converted
-grid must use the configured conversion value rather than assuming the native
-costmap constant.
+the previous `253 → 99 → 251` round-trip mismatch.
 
-## Selective clearing
+## Selective costmap clearing
 
 Requests for `ClearEntireCostmap`, `ClearCostmapAroundRobot`,
-`ClearCostmapAroundPose`, and `ClearCostmapExceptRegion` accept a `plugins`
-list.
+`ClearCostmapAroundPose`, and `ClearCostmapExceptRegion` include a `plugins`
+list. An empty list preserves the old behavior and clears all eligible layers.
+Named entries clear only loaded, clearable plugins.
 
-- An empty list preserves the prior behavior and clears everything.
-- Named entries clear only loaded plugins that support clearing.
-- Any invalid or non-clearable name fails the complete request without
-  clearing anything.
-
-Validate names before issuing an operational recovery request; partial success
-is not possible when the list contains an invalid entry.
-
-## Speed-zone anticipation
-
-Speed Filter's `enable_path_lookahead` is disabled by default. When enabled, it
-examines a velocity-dependent window along the planned path and applies the
-strictest speed limit in that window, allowing deceleration before the robot
-enters a restricted zone. Configure controller and smoother deceleration limits
-that can actually meet the anticipated transition.
+Validation is atomic: any invalid or non-clearable plugin name makes the whole
+request fail without clearing any layer.
 
 ## Inflation-layer extensions
 
 An asymmetric inflation field can bias the path-dependent Voronoi boundary for
 keep-left or keep-right behavior.
 
-`custom_inscribed_radius` defaults to `-1.0`, which retains the
-footprint-derived radius. A nonnegative value overrides it. Values such as
-`0.0` bypass the inscribed region and are unsafe for ordinary planners or
-controllers unless they were explicitly designed for that cost
-representation.
+`custom_inscribed_radius`, default `-1.0`, overrides the footprint-derived
+radius. A value such as `0.0` bypasses the inscribed region and is unsafe for
+ordinary planners or controllers unless they were explicitly designed for
+that nonstandard cost representation.
 
-## Vector Object Server
+## Repeatable AMCL particle-filter runs
 
-`nav2_map_server` provides a Vector Object Server that rasterizes configured
-circles, polygons, and polygonal chains into an `OccupancyGrid`. Its services
-are:
-
-- `AddShapes`
-- `GetShapes`
-- `RemoveShapes`
-
-Use it for dynamic virtual obstacles, keepout areas, or speed-filter masks. The
-result is a raster grid, so choose geometry and resolution with the downstream
-costmap or filter semantics in mind.
-
-## AMCL repeatability
-
-`random_seed` controls the particle-filter RNG. Any nonnegative value makes
-runs repeatable. The default `-1` seeds from the current time and retains
-nondeterministic behavior.
+`random_seed` controls AMCL's particle-filter random number generator. Any
+nonnegative value makes runs repeatable. The default `-1` seeds from the
+current time and retains nondeterministic behavior.
 
 ```yaml
 amcl:
@@ -125,17 +88,15 @@ amcl:
     random_seed: 42
 ```
 
-Set a fixed seed in regression tests that compare convergence or pose output,
-but retain time-based seeding when varied runs are desired.
+## AMCL reset and map-reload policy
 
-## AMCL reset and map reload
-
-By default, AMCL reuses its last known pose on reset and accepts replacement
+By default, AMCL reuses its last known pose when reset and accepts replacement
 maps. Set `always_reset_initial_pose: true` to require a new pose from the
-initial-pose topic or from `initial_pose` with `set_initial_pose: true`.
+initial-pose topic or from the configured `initial_pose` when
+`set_initial_pose: true`.
 
-Set `first_map_only: true` only when maps received later on `map_topic` must be
-ignored.
+Set `first_map_only: true` only when later maps arriving on `map_topic` should
+be ignored.
 
 ```yaml
 amcl:
@@ -148,9 +109,9 @@ amcl:
 
 ## Timestamped dynamic footprints
 
-`subscribe_to_stamped_footprint: true` changes a costmap footprint subscription
-from `Polygon` to `PolygonStamped`. Each update can then carry its own timestamp
-and frame.
+`subscribe_to_stamped_footprint: true` changes the costmap footprint
+subscription from `Polygon` to `PolygonStamped`. This lets each footprint
+update carry its own timestamp and frame.
 
 ```yaml
 local_costmap:
@@ -159,8 +120,7 @@ local_costmap:
       subscribe_to_stamped_footprint: true
 ```
 
-Update the publisher and subscription together; the topic name alone does not
-signal the message-type change.
+The publisher and every remapping must agree on the changed message type.
 
 ## Startup transform deadline
 
@@ -172,15 +132,31 @@ configuration.
 initial_transform_timeout: 60.0
 ```
 
-Treat an expiry as a transform or launch-order failure, not merely slow costmap
-data. Increasing the deadline can mask a transform that will never appear.
-
 ## Visualization height
 
-`map_vis_z` offsets only the visualized costmap height; it does not alter
-planning data. A small value can prevent coplanar RViz surfaces from
-flickering:
+`map_vis_z` vertically offsets only the visualized costmap, leaving planning
+data unchanged. A small offset such as `-0.008` can prevent coplanar RViz
+surfaces from flickering.
 
 ```yaml
 map_vis_z: -0.008
 ```
+
+## Filters run after ordinary layers
+
+Names in `filters` are loaded as plugins but remain separate from `plugins`.
+They run on top of the already combined layered costmap, preventing ordinary
+layers from interfering with keepout, speed, or binary filters. Every filter
+name must contain a `plugin` parameter in its matching namespace.
+
+```yaml
+filters: [keepout_filter, speed_filter]
+keepout_filter:
+  plugin: "nav2_costmap_2d::KeepoutFilter"
+speed_filter:
+  plugin: "nav2_costmap_2d::SpeedFilter"
+```
+
+Speed Filter may additionally enable path lookahead to apply the strictest
+upcoming limit before entry into a speed zone; that mode is disabled by
+default.

@@ -10,155 +10,188 @@ metadata:
 
 # SQLite Knowledge Patch
 
+Use this skill for SQLite SQL, C API, CLI, build, storage, FTS5, session,
+JSON, and JSONB work where current compatibility details affect the answer.
+Load only the reference files relevant to the task, and preserve the stated
+conditions and limits when applying their guidance.
+
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [SQL language and schema](references/sql-language-and-schema.md) | `ALTER TABLE`, constraints, triggers, literals, query behavior, STRICT tables |
-| [Core scalar functions](references/core-scalar-functions.md) | `iif()`, date/time, formatting, string/numeric functions, planner hints |
-| [JSON and JSONB](references/json-and-jsonb.md) | Validation, paths, extraction, mutation, traversal, aggregates, JSON5 |
-| [C APIs and configuration](references/c-api-and-configuration.md) | Prepare flags, limits, db-config controls, hooks, status, changegroups |
-| [Storage, locking, and correctness](references/storage-locking-and-correctness.md) | WAL, locks, indexes, `VACUUM`, page access, VFS and WASM storage |
-| [FTS5, sessions, and extensions](references/fts5-sessions-and-extensions.md) | Tokenizers, contentless FTS5, sessions, bundled extensions |
-| [CLI, builds, and utilities](references/cli-build-and-utilities.md) | Shell behavior, build systems, Tcl, `sqlite3_rsync`, `sqldiff`, analyzer |
+| --- | --- |
+| [C APIs and configuration](references/c-api-and-configuration.md) | Prepare flags, connection controls, limits, locks, status, hooks, changegroups |
+| [CLI, builds, and utilities](references/cli-build-and-utilities.md) | Configure systems, Tcl, shell behavior, `sqlite3_rsync`, output, platforms |
+| [Core scalar functions](references/core-scalar-functions.md) | `iif()`, formatting, string and numeric functions, planner hints |
+| [FTS5, sessions, and extensions](references/fts5-sessions-and-extensions.md) | Tokenizers, contentless tables, auxiliary APIs, sessions, changegroups |
+| [JSON and JSONB](references/json-and-jsonb.md) | Operators, validation, traversal, mutation, JSON5, edge cases |
+| [SQL language and schema](references/sql-language-and-schema.md) | Schema changes, triggers, expression indexes, dates, defaults, `VACUUM` |
+| [Storage, locking, and correctness](references/storage-locking-and-correctness.md) | Withdrawn release, VFS compatibility, database pages, maintenance fixes |
 
-## Release and compatibility warnings
+## Highest-risk compatibility changes
 
-- SQLite 3.52.0 was withdrawn for backward-compatibility problems. Its planned features moved to 3.53.0; do not target the withdrawn release.
-- On the 3.51 line, use 3.51.3 or later: 3.51.3 fixes a WAL-reset corruption bug. Version 3.51.2 is also required to avoid a deadlock in POSIX-lock misuse detection.
-- For blocking-lock timeouts introduced in 3.50.0, use 3.50.2 or later; that maintenance release corrects mutex handling. For `sqlite3_rsync`, use 3.50.1 or later because 3.50.0 could omit the replica's final page.
-- SQLite 3.46.1 fixes a corruption-causing bug in the JavaScript `opfs` VFS. Update WASM applications that use OPFS.
-- OPFS SAHPool databases written by 3.50.0 or later cannot be read by older SAHPool VFS versions.
-- Floating-point-to-text conversion uses 17 significant digits by default as of 3.53.0, rather than 15. Use `SQLITE_DBCONFIG_FP_DIGITS` when the old presentation is required.
-- Generated columns in `STRICT` tables now enforce their declared types. A computed value that cannot be converted is rejected.
-- `.indexes PATTERN` now matches index names, not indexed table names. Audit shell scripts that depend on the former behavior.
-- `SQLITE_USE_STDIO_FOR_CONSOLE` was removed. Windows command-line builds can use `SQLITE_USE_W32_FOR_CONSOLE_IO` instead.
-- Windows RT is no longer supported.
+### Do not target the withdrawn release
 
-## Schema changes and repair
+SQLite 3.52.0 was withdrawn because new features caused backward-
+compatibility issues. Its planned features moved to 3.53.0. Do not target
+3.52.0.
 
-SQLite 3.53.0 can add or remove `NOT NULL` and `CHECK` constraints directly. Consult the SQLite grammar for the precise constraint form before generating migration SQL. TEMP trigger bodies may now access `main`, and the second argument to trigger `RAISE()` may be an expression:
+### Use the corrected maintenance releases
 
-```sql
-CREATE TEMP TRIGGER validate_order
-BEFORE INSERT ON main.orders
-BEGIN
-  SELECT RAISE(ABORT, 'invalid order: ' || NEW.id)
-  WHERE NEW.total < 0;
-END;
-```
+- On the 3.51 line, use 3.51.3 or later because that release fixes a
+  WAL-reset database-corruption bug.
+- Use 3.50.1 or later for `sqlite3_rsync`; 3.50.0 can omit the replica's final
+  page.
+- Account for the query-result and memory-safety corrections listed in
+  [Storage, locking, and correctness](references/storage-locking-and-correctness.md).
 
-Expression indexes have explicit repair and self-healing support in 3.53.0:
+### Preserve OPFS SAHPool compatibility direction
+
+The corrected filename digest creates a one-way compatibility boundary:
+3.50.0 can read databases made by older SAHPool VFS versions, but older
+SAHPool VFS versions cannot read databases created by 3.50.0 or later.
+
+### Update `.indexes` consumers
+
+The `.indexes PATTERN` argument matches index names rather than indexed-table
+names. Existing shell scripts can therefore return different results.
+
+### Account for changed output and formatting
+
+- Floating-point-to-text conversion defaults to 17 significant digits rather
+  than 15. `SQLITE_DBCONFIG_FP_DIGITS` changes it per connection.
+- Interactive CLI sessions default to Unicode box output and right-justify
+  numbers in tabular modes; batch sessions keep the legacy format.
+- Built-in `printf()` and SQL `format()` suppress a negative-zero sign for a
+  `#` format without `+` when every displayed digit is zero.
+
+### Respect new type and limit behavior
+
+- Generated columns in `STRICT` tables enforce their declared types.
+- `SQLITE_LIMIT_LENGTH` cannot be set below 30.
+- The SQL-function argument limit is 1000 rather than 127.
+
+## Schema and SQL quick reference
+
+### Change constraints directly
+
+`ALTER TABLE` can add and remove `NOT NULL` and `CHECK` constraints.
+
+### Repair expression indexes
+
+Use the expression-index repair command when stored expression-index values
+are stale:
 
 ```sql
 REINDEX EXPRESSIONS;
 ```
 
-Use this after discovering stale stored expression-index values; automatic self-healing may repair them during normal operation.
+SQLite also self-heals stale expression indexes.
 
-## JSON and JSONB essentials
+### Use expression-based trigger messages
 
-SQLite JSONB is an opaque SQLite BLOB, not a PostgreSQL-compatible encoding and not an O(1) lookup structure. Do not parse or construct it outside SQLite.
-
-Use validation flags deliberately:
-
-```sql
--- Canonical JSON text only:
-SELECT json_valid(value);
-
--- Canonical text, JSON5 text, or superficially valid JSONB:
-SELECT json_valid(value, 6);
-
--- Deep JSONB validation:
-SELECT json_valid(value, 8);
-```
-
-`jsonb_each()` and `jsonb_tree()` preserve JSONB in `value` for arrays and objects. Their text counterparts convert container values to text JSON.
+The message argument to a trigger's `RAISE()` may be any SQL expression, so
+it can include values from the affected row:
 
 ```sql
-SELECT fullkey, value
-FROM jsonb_tree(jsonb('{"items":[1,2]}'));
+SELECT RAISE(ABORT, 'negative total for order ' || NEW.id);
 ```
 
-New in 3.53.0, `json_array_insert()` and `jsonb_array_insert()` insert values into JSON and JSONB arrays respectively.
+### Optimize all tables when requested
 
-Remember the value subtype rule: ordinary SQL text passed to a `value` argument becomes a quoted JSON string. Wrap it in `json()`/`jsonb()` or feed it directly from `->` to insert structured JSON. `->>` yields an SQL scalar.
+`PRAGMA optimize` uses a temporary analysis limit and automatically
+re-analyzes tables without `sqlite_stat1` entries. Include option bit
+`0x10000` when every table should be checked for possible updates.
 
-## Conditional and text functions
+### Choose ambiguous date shifts
 
-`iif()` evolved across two releases. In 3.48.0, it gained the two-argument form and the `if()` alias; in 3.49.0 it became variadic:
+Use `ceiling` or `floor` after a month or year shift to select how an
+ambiguous date is resolved:
 
 ```sql
-SELECT iif(enabled, 'yes');
-SELECT if(enabled, 'yes');
-SELECT iif(score >= 90, 'A', score >= 80, 'B', 'other');
+SELECT date('2024-02-29', '+1 year', 'floor');
 ```
 
-The variadic form evaluates condition/value pairs in order and may end with a fallback. With no true condition and no fallback, it returns `NULL`.
+## JSON and JSONB quick reference
 
-Use `unistr()` for backslash escapes and `unistr_quote()` for safely quoted text containing control characters. `%#q` and `%#Q` escape controls for `unistr()`:
+### Insert array elements
+
+Use `json_array_insert()` for JSON and `jsonb_array_insert()` for JSONB.
+
+### Preserve JSONB during traversal
+
+`jsonb_each()` and `jsonb_tree()` parallel the text traversal functions while
+keeping array and object rows as JSONB in the `value` column.
+
+### Count backward in arrays
+
+A negative integer on the right of `->>` selects an array element from the
+end:
 
 ```sql
-SELECT format('%#Q', char(1));
+SELECT '["first","middle","last"]' ->> -1;
 ```
 
-As of 3.50.2, `concat_ws()` retains empty-string arguments:
+### Treat numeric-looking text keys as labels
+
+For `->` and `->>`, a text right operand that looks numeric remains an object
+label rather than becoming an integer array index:
 
 ```sql
-SELECT concat_ws(',', 'a', '', 'b'); -- a,,b
+SELECT '{"0":"zero"}' -> '0';
 ```
 
-`group_concat()` now preserves an all-empty-string result in both window and ordinary aggregate forms instead of returning `NULL`.
+### Choose validation depth deliberately
 
-## Connection hardening and validation
+For two-argument `json_valid()`, flag `6` accepts JSON5 text or plausible
+JSONB using a superficial check; flag `8` performs a linear-time deep JSONB
+check. Read [JSON and JSONB](references/json-and-jsonb.md) for all modes and
+malformed-input behavior.
 
-Three connection controls, enabled by default, can restrict SQL capabilities:
+## C API and configuration quick reference
 
-```c
-sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE, 0, &oldValue);
-sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_ATTACH_WRITE, 0, &oldValue);
-sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_COMMENTS, 0, &oldValue);
-```
+### Prepare without log noise
 
-Disabling comments affects newly submitted SQL, not parsing of an existing `sqlite_schema`. Comments remain ignored throughout a stored `CREATE TRIGGER` statement.
+Use `SQLITE_PREPARE_DONT_LOG` with `sqlite3_prepare_v3()` when test-compiling
+SQL so ill-formed input does not send warnings to SQLite's error log.
 
-For validation-only prepares, avoid warning-log noise with `SQLITE_PREPARE_DONT_LOG`:
+### Prepare schema-derived SQL
 
-```c
-sqlite3_prepare_v3(db, sql, -1, SQLITE_PREPARE_DONT_LOG, &stmt, 0);
-```
+Virtual-table implementations can pass `SQLITE_PREPARE_FROM_DDL` to
+`sqlite3_prepare_v3()` for schema-derived SQL.
 
-Virtual-table implementations preparing schema-derived SQL should instead add `SQLITE_PREPARE_FROM_DDL`.
+### Separate lock timeouts
 
-The runtime limits changed: the minimum `SQLITE_LIMIT_LENGTH` is 30 bytes, the SQL-function argument ceiling is 1000, and `SQLITE_LIMIT_PARSER_DEPTH` is a new parser-depth category.
+On builds that support blocking locks, `sqlite3_setlk_timeout()` sets the
+blocking-lock timeout independently of `sqlite3_busy_timeout()`.
 
-## Locking, WAL, and status
+### Control newly submitted comments
 
-On builds with blocking locks, `sqlite3_setlk_timeout()` sets a lock-wait timeout independently of `sqlite3_busy_timeout()`. Later 3.50 maintenance releases extend it to opening snapshot transactions and waiting behind recovery.
+Disabling `SQLITE_DBCONFIG_ENABLE_COMMENTS` blocks comments only in newly
+submitted SQL. Comments already stored in `sqlite_schema` remain readable.
 
-Checkpoint without doing checkpoint work:
+## CLI and build quick reference
 
-```sql
-PRAGMA wal_checkpoint=NOOP;
-```
+### Run scripts and one-shot controls
 
-The C spelling is `SQLITE_CHECKPOINT_NOOP`. Inspect temporary-buffer spills through `SQLITE_DBSTATUS_TEMPBUF_SPILL` using `sqlite3_db_status()` or the new 64-bit `sqlite3_db_status64()`.
+A non-empty `.sql` or `.txt` command-line argument is executed as a script.
+Use `.timer once` for only the next SQL statement and `.progress --timeout S`
+to interrupt statements after `S` seconds.
 
-`PRAGMA optimize` now applies a temporary analysis limit and revisits tables missing `sqlite_stat1` entries. Include `0x10000` to consider every table, including those the connection has not queried recently:
+### Replace the removed Windows console option
 
-```sql
-PRAGMA optimize=0x10002;
-```
+`SQLITE_USE_STDIO_FOR_CONSOLE` is removed. Windows command-line-tool builds
+can define `SQLITE_USE_W32_FOR_CONSOLE_IO` to use Win32 console APIs without
+affecting the SQLite core.
 
-## CLI behavior to account for
+### Enable bundled extensions explicitly
 
-- Interactive sessions default to Unicode box output and right-align numbers in tabular modes; batch sessions keep the legacy format.
-- Existing non-empty `*.sql` and `*.txt` command-line arguments execute as scripts.
-- An unquoted trailing semicolon on a dot-command is ignored.
-- `.timer once` times the next statement only; `.progress --timeout S` interrupts after `S` seconds.
-- Startup and `.open` accept `--ifexists`.
-- `.imposter` is read-only, works with `VACUUM`, and no longer requires `--unsafe-testing`.
-- `.dump` uses `unistr()` for special characters unless escape mode is disabled, and the shell suppresses most raw control characters.
-- `.width` is capped at 30,000; `.timer` reports microseconds; `box` and `column` modes account for double-wide characters.
+The amalgamation contains `carray` and `percentile`, but they remain disabled
+unless built with `SQLITE_ENABLE_CARRAY` or `SQLITE_ENABLE_PERCENTILE`.
 
-Load the topic references before depending on edge semantics, maintenance-release fixes, compile-time options, or utility-specific behavior.
+## Apply details without extrapolation
+
+When a task touches a listed edge case, use the exact semantics from its
+reference. Keep version-specific fixes, build conditions, default states,
+directional compatibility, experimental status, and `may`/`should`/`must`
+wording intact. If the references state only that behavior changed, do not
+invent a cause or replacement.

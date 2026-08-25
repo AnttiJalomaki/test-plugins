@@ -1,124 +1,93 @@
 # Operations, Jobs, and Query Behavior
 
-## Container Images
+## Background jobs
+
+Background jobs gained custom names in 2.20.0, and continuous-aggregate jobs
+show the aggregate name in the jobs informational view. Per-job history in
+2.23.0 can independently cap retained successful and failed executions.
+
+The `bgw_job` table moved to `_timescaledb_catalog` in 2.25.0, with a `bgw_job`
+alias retained for compatibility. Background jobs also gained configurable
+`work_mem`.
+
+Background jobs stopped using advisory locks and gained graceful cancellation
+in 2.26.0. Long index builds became observable through index-creation progress
+reporting in 2.27.0.
+
+## Container deployments
 
 TimescaleDB stopped building Bitnami images in 2.18.0. Move container
 deployments to the official `timescale/timescaledb-ha` image.
 
-## Background Jobs
+## Runtime configuration
 
-Background jobs can have custom names (since 2.20.0). Continuous-aggregate jobs
-include the aggregate name in the jobs informational view.
+Several GUCs materially affect operations:
 
-Job-history configuration can separately cap the number of successful and
-failed executions retained for each job (since 2.23.0).
+- `timescaledb.enable_event_triggers` gates chunk-creation event triggers and
+  defaults to `OFF` since 2.20.0.
+- `timescaledb.enable_compression_ratio_warnings` defaults on since 2.20.0.
+- `timescaledb.compress_truncate_behaviour` defaults to `truncate_only`;
+  compression can fall back to `DELETE` when `TRUNCATE` locks are unavailable.
+- `timescaledb.default_chunk_time_interval` is an expert default for new
+  hypertables since 2.26.0; leave it unchanged without a specific reason.
+- `timescaledb.stats_max_chunks` controls the per-database compressed-chunk
+  statistics cache since 2.28.0. It defaults to `1024`; zero disables it.
 
-The `bgw_job` table moved into `_timescaledb_catalog` in 2.25.0, with a
-`bgw_job` alias retained for compatibility. Prefer supported views and APIs
-over a hard dependency on its private catalog location. Background worker jobs
-can be configured with `work_mem`.
+## Planner and scan correctness
 
-Background jobs no longer use advisory locks and support graceful cancellation
-(since 2.26.0).
+Vectorized aggregation and `WHERE` comparisons over compressed data follow
+PostgreSQL NaN semantics after fixes in 2.18.0.
 
-## Query Behavior and Correctness
+Composite bloom indexes in 2.26.0 enable multicolumn predicate pushdown for
+both `SELECT` and `UPSERT`. `EXPLAIN` reports batch-pruning and false-positive
+statistics.
 
-### Compressed data
+The 2.26.0 release fixed cross-type comparisons against partitioning columns
+that could return wrong results or crash. It also fixed a data-loss path when
+client-ordered Direct Compress handled `INSERT ... SELECT` from a compressed
+hypertable; avoid that combination on earlier releases.
 
-Vectorized aggregation handles NaN correctly, and `WHERE` comparisons on
-compressed tables follow PostgreSQL's NaN comparison behavior (since 2.18.0).
+`timescaledb.enable_columnar_scan_filter_pushdown` defaults on since 2.27.0.
+It controls whether columnar-scan filters are pushed into compressed scans.
 
-Multi-column predicates can be pushed into compressed scans for `SELECT` and
-`UPSERT` through composite bloom indexes (since 2.26.0). Use `EXPLAIN` to see
-batch-pruning and false-positive statistics.
+Compressed SkipScan in 2.29.2 no longer loses uncompressed rows when sort keys
+differ from distinct keys, and the planner avoids mismatched index-scan paths
+under `MergeAppend`. Upgrade before depending on affected `DISTINCT` queries
+over mixed storage.
 
-`timescaledb.enable_columnar_scan_filter_pushdown` controls whether
-columnar-scan filters are pushed down and defaults to on (since 2.27.0):
+Also in 2.29.2, min/max sparse-index pushdown returns correct results for `IS
+NULL`. Earlier releases can return wrong results for these predicates over
+compressed data.
 
-```sql
-SET timescaledb.enable_columnar_scan_filter_pushdown = off;
-```
+## Query validation and result types
 
-`compressed_data_column_size` returns `bigint` (since 2.27.0). Adjust explicit
-casts and client result decoding that assumed a narrower type.
+The timezone argument to `time_bucket_gapfill` must be constant since 2.26.0;
+queries deriving it from a non-constant expression are rejected. Other GapFill
+arguments may come from executor parameters sourced by subqueries since
+2.28.0.
 
-Updates that would unsafely modify unique columns on compressed chunks are
-rejected (since 2.28.0).
+Validation became stricter in 2.27.0: `time_bucket` rejects sub-day offsets for
+`DATE`, negative `chunk_interval` values are rejected, and
+continuous-aggregate definitions reject non-positive bucket widths.
 
-### Partition comparisons and `MERGE`
+`compressed_data_column_size` returns `bigint` since 2.27.0. Adjust SQL casts
+and client result decoding that assumed a narrower type.
 
-Cross-type comparisons against a partitioning column no longer risk wrong
-results or crashes (since 2.26.0).
+Hypertables correctly execute `MERGE WHEN NOT MATCHED BY SOURCE` since 2.28.0.
+Unsafe updates to unique columns on compressed chunks are rejected rather than
+allowed to proceed.
 
-Hypertables correctly handle `MERGE WHEN NOT MATCHED BY SOURCE` (since 2.28.0).
+## Maintenance and bulk loading
 
-## Time Bucketing and GapFill
+`VACUUM FULL` recompresses affected chunks since 2.25.0, so plan for additional
+recompression work. `VACUUM` and `ANALYZE` accept a continuous aggregate since
+2.28.0 and redirect to its materialization hypertable.
 
-The timezone argument to `time_bucket_gapfill` must be constant (since 2.26.0).
-Queries that derive it from a non-constant expression are rejected.
+For bulk loads, `timescaledb.skip_cagg_invalidation` can skip
+continuous-aggregate invalidation tracking within a session or transaction and
+defaults off. It reduces tracking overhead at the cost of requiring an
+explicit refresh to make affected aggregates current.
 
-For `DATE` input, `time_bucket` rejects a sub-day offset (since 2.27.0).
-Continuous-aggregate definitions reject non-positive time-bucket widths.
-
-GapFill arguments may come from subquery results represented as executor
-parameters (since 2.28.0), enabling parameterized query shapes that were
-previously rejected.
-
-`time_bucket` also accepts UUIDv7 and returns timezone-aware timestamps. See
-[Hypertables, Chunks, and DDL](hypertables-chunks-and-ddl.md).
-
-## Event Triggers
-
-Event triggers can run when chunks are created (since 2.20.0), gated by
-`timescaledb.enable_event_triggers`, which defaults to `OFF`:
-
-```sql
-SET timescaledb.enable_event_triggers = on;
-```
-
-Transition-table and hypertable trigger behavior is documented in
-[Hypertables, Chunks, and DDL](hypertables-chunks-and-ddl.md).
-
-## Maintenance and Observability
-
-Index creation reports progress (since 2.27.0), making long-running builds
-observable.
-
-`VACUUM FULL` recompresses affected chunks (since 2.25.0). Include
-recompression in runtime, locking, and disk-space estimates.
-
-`VACUUM` and `ANALYZE` accept a continuous aggregate and redirect the operation
-to its materialization hypertable (since 2.28.0):
-
-```sql
-VACUUM hourly_metrics;
-ANALYZE hourly_metrics;
-```
-
-`timescaledb.stats_max_chunks` sets the per-database capacity of the in-memory
-compressed-chunk statistics cache (since 2.28.0). It defaults to `1024`; set it
-to `0` to disable the cache:
-
-```sql
-SET timescaledb.stats_max_chunks = 0;
-```
-
-## Expert and Diagnostic Configuration
-
-`timescaledb.enable_compression_ratio_warnings` defaults to enabled (since
-2.20.0), warning about poor compression ratios.
-
-`timescaledb.default_chunk_time_interval` controls the default time interval
-for newly created hypertables (since 2.26.0). It is an expert setting; leave it
-unchanged unless specifically recommended.
-
-Exact continuous-aggregate query rewrites and diagnostic output are disabled by
-default (since 2.27.0):
-
-```sql
-SET timescaledb.enable_cagg_rewrites = on;
-SET timescaledb.cagg_rewrites_debug_info = on;
-```
-
-The GUCs for Direct Compress, recompression, sparse indexes, and invalidation
-collection are grouped with their feature guidance in the other references.
+Unlogged hypertables are available since 2.23.0 when import speed matters more
+than durability. Newly created chunks of a published hypertable join the
+publication automatically since 2.25.0.

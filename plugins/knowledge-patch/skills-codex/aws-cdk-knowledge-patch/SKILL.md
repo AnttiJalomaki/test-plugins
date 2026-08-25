@@ -10,235 +10,153 @@ metadata:
 
 # AWS CDK Knowledge Patch
 
-Use this skill when writing, reviewing, upgrading, or debugging AWS CDK
-applications. Start with the breaking changes and defaults below, then open the
-reference that matches the service or workflow in question.
+Use this skill when writing, reviewing, upgrading, or debugging AWS CDK applications and construct libraries. Consult the topic references before assuming a generated L1 shape, default runtime, validation behavior, feature-flag effect, or recently added L2 capability.
+
+## How to use this patch
+
+1. Identify the affected construct, service, and language binding.
+2. Check the breaking changes and deprecations below first.
+3. Open the matching topic reference for complete compatibility details.
+4. Prefer the project manifest, lockfile, synthesized template, and tests when they conflict with generic guidance.
+5. For generated L1 properties, compare the installed library's type declarations with the current CloudFormation contract before editing code.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Core, CLI, synthesis, and validation](references/core-cli-and-synthesis.md) | Toolkit contracts, validation plugins and reports, custom resources, synthesis, core APIs, and cross-stack references |
-| [Generated L1 and CloudFormation contracts](references/generated-l1-contracts.md) | Required, removed, and immutable L1 fields; generated imports, interfaces, type guards, and property tracing |
-| [Compute, containers, and runtimes](references/compute-containers-and-runtime.md) | Lambda, ECS, EKS, EC2, Auto Scaling, Batch, EMR, deployment strategies, and runtime defaults |
-| [Storage, databases, and search](references/storage-and-databases.md) | S3, S3 Tables, DynamoDB, RDS, Aurora, ECR, EFS, DocumentDB, ElastiCache, and OpenSearch |
-| [Networking, edge, APIs, and DNS](references/networking-edge-and-dns.md) | API Gateway, CloudFront, load balancers, VPC networking, Route 53, and ACM |
-| [Events, messaging, and workflows](references/events-messaging-and-workflows.md) | Step Functions, EventBridge, Kinesis, Data Firehose, SNS, SQS, Kafka, MSK, AppSync, and IoT |
-| [Identity, security, and AI services](references/identity-security-and-ai.md) | IAM, KMS, Cognito, Secrets Manager, Bedrock, AgentCore, SageMaker, and grants |
-| [Observability, operations, and configuration](references/observability-operations-and-config.md) | CloudWatch, CloudWatch Logs, Synthetics, AppConfig, Backup, SES, and service catalogs |
-| [Delivery, assets, and pipelines](references/delivery-assets-and-pipelines.md) | CDK Pipelines, CodePipeline, CodeBuild, Docker, bundling, staging, and source packaging |
+| [Compute, containers, and runtimes](references/compute-containers-and-runtime.md) | EC2, Auto Scaling, Batch, ECS, EKS, Lambda, runtimes, and capacity providers |
+| [Core, CLI, synthesis, and validation](references/core-cli-and-synthesis.md) | CLI, bootstrap, context, custom resources, synthesis, validation, errors, Mixins, and references |
+| [Delivery, assets, and pipelines](references/delivery-assets-and-pipelines.md) | CodeBuild, CodePipeline, CDK Pipelines, Docker, bundling, staging, and deployments |
+| [Events, messaging, and workflows](references/events-messaging-and-workflows.md) | EventBridge, Firehose, Kinesis, SNS, SQS, SES, Step Functions, AppSync, Kafka, and data integrations |
+| [Generated L1 and CloudFormation contracts](references/generated-l1-contracts.md) | Required and removed properties, immutable fields, attributes, reference interfaces, import factories, and type guards |
+| [Identity, security, and AI services](references/identity-security-and-ai.md) | IAM, KMS, Cognito, Secrets Manager, Bedrock, AgentCore, certificates, and inference |
+| [Networking, edge, APIs, and DNS](references/networking-edge-and-dns.md) | API Gateway, CloudFront, Elastic Load Balancing, Route 53, VPCs, endpoints, and Cloud Map |
+| [Observability, operations, and configuration](references/observability-operations-and-config.md) | CloudWatch, CloudWatch Logs, Synthetics, AppConfig, Backup, and operational defaults |
+| [Storage, databases, and search](references/storage-and-databases.md) | S3, EFS, DynamoDB, RDS, Aurora, DocumentDB, OpenSearch, and other data stores |
 
-## Working method
+## Breaking changes and migration traps
 
-1. Read the project's manifest to determine its pinned `aws-cdk-lib` and CLI
-   versions. Apply only guidance available to that version.
-2. Identify whether the code uses generated L1 resources, stable L2 constructs,
-   experimental packages, or an L3 pattern; their compatibility risks differ.
-3. Check feature flags in `cdk.json` and the synthesized cloud assembly before
-   relying on a new default.
-4. Open the narrowest reference file for the service being changed. Cross-service
-   integrations may require two references.
-5. Run synthesis and inspect the template, validation report, IAM policies,
-   replacements, and runtime settings before deployment.
+### Treat validation failures as typed errors
 
-## Breaking changes and defaults
+Many construct families and the CLI now throw `ValidationError` rather than untyped errors. CDK errors and annotations can also carry error codes. Catch or classify by type and code; do not parse message text.
 
-### Built-in template validation is comprehensive
-
-Built-in template validation now runs a comprehensive default rule set.
-Temporarily disable it for one invocation with:
+Built-in template validation uses a comprehensive default rule set. Disable it for one invocation only when necessary:
 
 ```sh
 CDK_VALIDATION=false cdk synth
 ```
 
-Prefer fixing or explicitly acknowledging violations. Validation reports are
-always written to the cloud assembly, include construct annotations and
-suppressed violations, and are self-contained. Report consumers must accept the
-new schema and must not assume every listed violation failed synthesis.
+Validation reports are always written to the cloud assembly, include construct annotations, and use the newer self-contained schema. Report consumers must handle suppressed violations. The `failSynthOnValidationErrors` context key can suppress validation console output and the failing exit code.
 
-### Validation failures are typed and coded
+### Recheck generated L1 contracts after upgrades
 
-Construct validation across core and many service libraries throws
-`ValidationError` rather than generic errors. CLI callers can distinguish error
-classes without parsing messages, and errors and annotations can carry error
-codes. `ConstructError` can include external traces, which are also appended to
-cloud-assembly metadata when available.
+Generated bindings have accumulated required-property additions, removed attributes and types, immutable fields, and replacement-only updates. Do not rely on an older L1 signature. Inspect [Generated L1 and CloudFormation contracts](references/generated-l1-contracts.md) whenever a compilation error, unexpected replacement, or missing attribute appears after upgrading.
 
-### Generated L1 contracts require upgrade review
+Every generated L1 supplies `from<Resource>Arn`, `from<Resource><Prop>`, and `isCfn<ResourceName>` helpers. Prefer these supported factories and guards over hand-built casts.
 
-Generated CloudFormation bindings have accumulated required fields, immutable
-properties, removed attributes, renamed types, and fields whose update now
-replaces a resource. Before upgrading:
+Some exposed values now use narrow reference interfaces such as `IComputeEnvironmentRef`, `IBackupVaultRef`, `IEventBusRef`, and `ILogGroupRef`. Type-test or cast only when richer L2 members are actually required.
 
-- Compile every language binding that directly consumes `Cfn*` properties or
-  attributes.
-- Diff synthesized templates for replacement-causing changes.
-- Replace reads of removed `Id` attributes with the service's supported
-  identifier or reference interface.
-- Review the generated-contract reference for the exact affected resources.
+### Update Lambda and custom-resource runtimes deliberately
 
-Every generated L1 also exposes `from<Resource>Arn` and
-`from<Resource><Prop>` import factories, shared L1/L2 resource interfaces, and a
-static `isCfn<ResourceName>` type guard:
+Framework functions, custom resources, and `Runtime.NODEJS_LATEST` now resolve to Node.js 24 in every region. Node.js 24 rejects callback-style asynchronous handlers; convert them to `async`, pin `Runtime.NODEJS_22_X`, or set `useLatestRuntimeVersion: false` on `NodejsFunction`.
 
-```ts
-if (s3.CfnBucket.isCfnBucket(value)) {
-  // value is a CfnBucket
-}
-```
+Python 3.8 is deprecated. Current catalogs also include Ruby 4.0, Node.js 24.x, Java 25, Python 3.14, and Java 8/11/17 variants on Amazon Linux 2023. Verify runtime availability and bundling behavior in the target region.
 
-### Lambda defaults use Node.js 24
+### Do not assume old ECS defaults
 
-Lambda framework functions and custom resources default to `nodejs24.x`, and
-`Runtime.NODEJS_LATEST` resolves to it in every region. Node.js 24 rejects
-callback-style asynchronous handlers; convert them to `async`, pin
-`Runtime.NODEJS_22_X`, or set `useLatestRuntimeVersion: false` on
-`NodejsFunction`.
+`AWS::ECS::Service.AvailabilityZoneRebalancing` defaults to `DISABLED`. Set it explicitly when the intended behavior is enabled rebalancing.
 
-Earlier regional custom-resource defaults are therefore historical when using
-the newer release. Also note that asynchronous custom-resource provider logging
-defaults to off, and the managed Lambda log-group feature flag remains disabled
-when absent.
+`ManagedInstancesCapacityProvider` creates its instance profile, requires at least one security group, and accepts `capacityOptionType` for Spot. The deprecated `canContainersAccessInstanceRole` property should not be used.
 
-### Several exposed types are intentionally narrower
+Native ECS blue/green deployment support exists at L1 and L2, and built-in linear and canary configurations are available. Prefer those constructs over reconstructing the deployment contract manually.
 
-Job queues, backup rules, event destinations, log-group results, and API
-destination imports may now expose reference interfaces instead of richer L2
-interfaces. Type-test or cast only when richer members are genuinely required.
+### Supply EKS dependencies and choose defaults explicitly
 
-`IEncryptedResource` extends `IEnvironmentAware`, not `IResource`. Code needing
-both contracts should use `IEncryptedResource & IResource` or guard with
-`Resource.isResource()`. EC2 `IPeer` methods now return specific interfaces
-instead of `any`.
+The older experimental `Cluster` and `FargateCluster` APIs require a `kubectlLayer` matching the Kubernetes version. EKS v2 constructs are stable, support native OIDC providers, removal policies, service-account overwrite control, deletion protection, provisioned control planes, and newer access-entry types.
 
-### `Source.jsonData()` escaping is opt-in
+Feature-flagged defaults can select Amazon Linux 2023 for EKS nodes. Isolated kubectl subnets produce a warning. Keep cluster, AMI, kubectl layer, and load-balancer-controller versions compatible.
 
-S3 Deployment no longer automatically escapes JSON written by
-`Source.jsonData()`. Request the former behavior when special characters need
-it:
+### Preserve explicit S3 deployment behavior
+
+`Source.jsonData()` no longer escapes JSON automatically. Request the earlier behavior when needed:
 
 ```ts
 Source.jsonData("config.json", data, { escape: true })
 ```
 
-Tokens inside lists are resolved, and `Source.data()` accepts an empty string.
+List-contained tokens are resolved, and `Source.data()` accepts an empty string. Asset bundling honors its configured platform, Docker builds accept network and context controls, and `TarballImageAsset` supports newer Docker tarball output.
 
-### KMS alias references preserve alias identity
+### Account for reversals, not just introductions
 
-`Alias` references resolve to the alias rather than the underlying key.
-Aliases imported with `Alias.fromAliasName()` expose `aliasTargetKey`; grant
-methods on imported aliases require the corresponding feature flag. Audit code
-that assumed an alias token resolved to a key ARN.
+CloudWatch Logs metric-filter metrics do not retain the filter dimension map; the short-lived retention behavior was reverted. Batch `useOptimalInstanceClasses` remains supported after its earlier deprecation was reversed. EKS isolated-subnet validation is a warning rather than the earlier error.
 
-### Service defaults and reversions matter
+## High-value core and CLI capabilities
 
-- `AWS::ECS::Service.AvailabilityZoneRebalancing` defaults to `DISABLED`,
-  despite earlier L2 support for availability-zone rebalancing.
-- CloudWatch Logs metric-filter metrics no longer retain the filter's
-  dimension map; the short-lived retention behavior was reverted.
-- Batch `useOptimalInstanceClasses` remains supported after its deprecation was
-  reversed.
-- The EKS isolated-kubectl-subnet diagnostic is a warning, not an error.
-- Under their feature flags, Batch and EKS can default to Amazon Linux 2023,
-  and CloudFront Functions can default to JavaScript 2.0.
-- OpenSearch domains default to the TLS 1.2 security policy.
+### Bootstrap, plugins, and imports
 
-### Deprecations and removals
+- Use `cdk bootstrap --untrust` to retract bootstrap trust.
+- Build CLI plugins against the public contract; imports from internal CLI libraries are unsupported.
+- Credential plugins may return `null` expiration values and initially empty credentials.
+- Use simplified resource import to bring existing resources under stack management with less setup.
+- Treat `CDK_TOOLKIT_VERSION` as a supported cloud-assembly environment variable.
 
-- Use `aws-kinesisanalyticsv2`; Kinesis Analytics v2 through
-  `aws-kinesisanalytics` is deprecated.
-- DynamoDB's point-in-time recovery specification replaces the older recovery
-  setting.
-- `ARecord`'s delete-existing field, ECS
-  `canContainersAccessInstanceRole`, and Lambda Python 3.8 are deprecated.
-- The default `@aws-cdk/aws-lambda:createNewPoliciesWithAddToRolePolicy`
-  feature flag is deprecated.
-- Legacy Bedrock foundation-model entries for Claude 2, Claude 2.1, and Claude
-  Instant are deprecated.
+### Synthesis and construct composition
 
-## High-value new capabilities
+- Use `RemovalPolicies.of(scope)` to apply removal policies from a scope-oriented entry point.
+- Use additional context cache keys when otherwise identical lookups need distinct cached results.
+- Use `IEnvironmentAware` to retrieve a construct's environment.
+- Prefer weak cross-stack references when reference strength is unspecified; they support cross-environment use and list-valued attributes.
+- Use `Fn::GetStackOutput` for cross-region stack outputs.
+- Use `Box` for deferred values when accurate source traces matter.
+- Use property injectors across L2 constructors and `PropertyMergeStrategy` for object or array merge behavior.
 
-### Validation plugins and source-aware diagnostics
+### Mixins and validation plugins
 
-Use `Validations` to register validation plugins and to call `addWarning`,
-`addError`, and `acknowledge`. Policy-validation interfaces are stable without
-the former `Beta1` suffix. Plugins receive `IPolicyValidationContext.scope`,
-may create cloud-assembly files, and can have violations suppressed.
+Mixins are the stable extension mechanism exposed by `@aws-cdk/cfn-property-mixins`, with Aspect conversion helpers and S3/ECS service mixins in `aws-cdk-lib`. ECR and S3 provide auto-delete mixins.
 
-Core also provides source-preserving `Box` deferred values. L1 property
-mutations record source traces, improving diagnostics for changes made after
-construction.
+Add app validation plugins through `Validations`; use `addWarning`, `addError`, and `acknowledge`. Policy-validation APIs use `policyValidation`, and validation plugins receive scope context and may write files into the cloud assembly.
 
-### Mixins and bulk policy behavior
+## High-value service capabilities
 
-Mixins provide an extension mechanism alongside Aspects.
-`@aws-cdk/cfn-property-mixins` is stable, Aspect/Mixin conversion helpers are
-available, and `PropertyMergeStrategy` handles CloudFormation property objects,
-array merge strategies, and deferred `Box` values. S3 and ECS service mixins
-ship in `aws-cdk-lib`; S3 bucket and ECR repository auto-delete mixins are
-available.
+### Workflows and event delivery
 
-### Cross-stack references have safer options
+- Step Functions supports JSONata, workflow variables, JSONata `ItemSelector` and `maxConcurrency`, dynamic queue ARNs and result buckets, Parallel parameters, and custom Distributed Map writer configuration.
+- State machines synthesize permissions for running and redriving Distributed Map, including maps nested in a `StateGraph`.
+- EventBridge supports explicit rule roles, event-bus logging, archive encryption, HTTP API integrations, and targets for HTTP APIs, SNS, SQS, and Data Firehose.
+- Data Firehose is stable and supports dynamic partitioning, record-format conversion, HTTP and Datadog destinations, processors, time zones, and EC2 flow-log destinations.
+- Lambda Kafka event sources support timestamps, schema registries, failure destinations, and observability configuration.
 
-Weak references work within and across environments, including list-valued
-attributes, and avoid forcing unnecessary deployment ordering. `Fn::GetStackOutput`
-supports cross-region references and avoids the earlier export-update failure.
-Choose reference strength deliberately.
+### Networking and edge
 
-### Step Functions supports JSONata deeply
+- CloudFront supports gRPC, VPC origins, origin-group selection criteria, versioned reads, IP-address controls, response-completion timeouts, and the `Managed-HostHeaderOnly` origin request policy.
+- API Gateway supports dual-stack REST, HTTP, WebSocket, and domain configurations; TLS 1.3 domain policies; response streaming; WebSocket usage plans and API keys; and explicit Lambda-authorizer roles.
+- Elastic Load Balancing supports minimum capacity reservations, NLB subnet mappings, mTLS CA-name advertisement, target-group health attributes, multi-value Lambda headers, and ALB JWT verification.
+- Route 53 supports SVCB, HTTPS, failover records, accelerated recovery, and restricted delegation grants. Supplying TTL with an alias target produces a warning.
+- Gateway VPC endpoints accept `ipAddressType` and `dnsRecordIpType`; ECS clusters can attach existing Cloud Map namespaces.
 
-Workflows support JSONata and variables. Map states accept JSONata for
-`ItemSelector` and `maxConcurrency`; Distributed Map result buckets and queue
-ARNs can be dynamic, and synthesized policies include run and redrive
-permissions even for nested `StateGraph` definitions.
+### Data services
 
-### ECS and EKS deployment surfaces expanded
+- DynamoDB `TableV2` supports MRSC and cross-account global-table replication. Resource policies cover streams, and grants include index ARNs added after the original grant.
+- RDS supports deferred modifications, Database Insights, engine lifecycle settings, snapshot restores, standalone parameter groups, proxy authentication schemes, and service-native Secrets Manager credentials.
+- Aurora supports instance Availability Zones, Serverless v2 auto-pause, Limitless PostgreSQL, and current engine catalogs.
+- S3 supports replication filters and custom roles, attribute-based access control, blocked encryption types, bucket-name prefixes and namespaces, and S3 Tables L2 constructs with KMS encryption.
+- OpenSearch supports node options, S3 Vectors, gp3 throughput up to 2000 MiB/s, and local-storage node families that do not require EBS.
 
-ECS supports native blue/green deployment through L1 and L2 constructs, plus
-built-in linear and canary configurations. Managed Instances capacity providers
-create their instance profile, require a security group, and support Spot
-capacity.
+### Observability and operations
 
-EKS v2 constructs are stable. Current catalogs include Kubernetes 1.35,
-additional access-entry types, native OIDC providers, broad removal-policy
-support, cluster deletion protection, and service-account overwrite control.
+- CloudWatch Logs supports field indexes, transformers, multiple `stats` commands, transformed-log metric filters, Infrequent Access in ADC regions, and deletion protection.
+- Dashboard widgets support search expressions, query languages, pie-chart labels, cross-account visibility, metric IDs, and visibility controls.
+- CloudWatch supports anomaly-detection alarms, PromQL alarms, composite `AT_LEAST` expressions, and mute rules.
+- Synthetics supports safe updates, retries, tags, canary groups, browser selection, root-level scripts for newer Puppeteer runtimes, and current Node.js, Python, and Playwright runtimes.
+- AppConfig supports environment and configuration-profile deletion protection, deployment-tick extensions, and KMS-encrypted hosted configurations.
 
-### Data constructs cover newer architectures
+## Review checklist
 
-DynamoDB `TableV2` supports MRSC and cross-account global-table replication.
-S3 supports object replication, attribute-based access control, blocked
-encryption types, name prefixes and namespaces, and Tables L2 constructs.
-RDS supports native Secrets Manager credentials, Database Insights,
-Aurora Serverless v2 auto-pause, proxy endpoints, and standalone parameter
-groups.
-
-### Networking and API integrations are broader
-
-API Gateway supports dual-stack REST, HTTP, WebSocket, and domain resources,
-TLS 1.3 domain policies, response streaming, private API resource policies, and
-WebSocket usage plans. CloudFront supports VPC origins, gRPC, origin-group
-selection criteria, host-header-only forwarding, and expanded HTTP-origin
-controls. Application Load Balancers support JWT verification.
-
-### Observability is construct-native
-
-CloudWatch provides anomaly-detection and PromQL alarm constructs, dashboard
-query languages, cross-account widgets, search expressions, and pie labels.
-CloudWatch Logs adds field indexes, transformers, transformed-log metric
-filters, deletion protection, regular-expression JSON filters, and multiple
-`stats` commands. Synthetics adds browser selection, safe updates, groups,
-retries, tag replication, and newer Playwright, Puppeteer, Python, and Node.js
-runtimes.
-
-## Verification checklist
-
-- Compile against the pinned CDK libraries in every language binding used.
-- Run `cdk synth` with the project's normal context and feature flags.
-- Review validation output and `validation-report.json`.
-- Diff CloudFormation properties, logical IDs, IAM grants, and replacement
-  behavior.
-- Confirm Lambda and custom-resource runtimes and handler style.
-- Check generated asset, Docker, and pipeline project configuration.
-- Verify service defaults rather than assuming an omitted property retains its
-  historical behavior.
+- Confirm the installed `aws-cdk-lib` and construct package versions before applying compatibility advice.
+- Inspect generated types for required, removed, and immutable L1 fields.
+- Synthesize and diff changes that touch defaults, update policies, replacement-only properties, IAM, or encryption.
+- Check feature flags explicitly; several behaviors are flag-controlled or changed defaults.
+- Verify runtime, region, architecture, and image availability for deployment targets.
+- Treat tokens as unresolved during validation unless the referenced guidance says token values are accepted.
+- Prefer typed errors, error codes, and validation reports over message parsing.
+- Open the full topic reference when an item involves more than one service.

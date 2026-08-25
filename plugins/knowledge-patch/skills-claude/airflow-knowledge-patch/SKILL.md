@@ -10,69 +10,41 @@ metadata:
 
 # Apache Airflow Knowledge Patch
 
-Use this skill when upgrading, authoring, integrating, or operating Apache
-Airflow 3 deployments. Inspect the installed core and provider versions before
-applying version-dependent advice. Prefer public `airflow.sdk` interfaces,
-stable REST APIs, and observed project behavior over internal implementation
-details.
+Use this skill when authoring, upgrading, integrating, or operating Apache Airflow. Start with the quick guidance below, then open the topic reference that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrade-and-compatibility.md](references/upgrade-and-compatibility.md) | Airflow 3 migration, public API boundaries, imports, configuration, runtimes, serialization, and removed facilities |
-| [task-authoring-and-execution.md](references/task-authoring-and-execution.md) | Task context, XCom, callbacks, retries, templates, state stores, async and non-Python execution |
-| [scheduling-assets-and-deadlines.md](references/scheduling-assets-and-deadlines.md) | Scheduling defaults, backfills, partitions, assets, deadlines, multi-team behavior, and Dag versions |
-| [api-cli-and-ui.md](references/api-cli-and-ui.md) | REST API v2, `airflowctl`, CLI migrations, UI endpoints, bulk operations, and transport security |
-| [operations-logging-and-extensions.md](references/operations-logging-and-extensions.md) | API server, Dag processor, logging, metrics, bundles, plugins, triggerers, containers, and deployment controls |
+| [upgrade-and-compatibility.md](references/upgrade-and-compatibility.md) | Upgrade sequencing, stable interfaces, removed APIs, serialization, runtimes, pandas, and Dag bundles |
+| [task-authoring-and-execution.md](references/task-authoring-and-execution.md) | Task context, XCom, callbacks, operators, HITL, state stores, retry policy, and durable execution |
+| [scheduling-assets-and-deadlines.md](references/scheduling-assets-and-deadlines.md) | Scheduling defaults, Dag versions, backfills, Assets, partitions, clearing, Deadline Alerts, and teams |
+| [api-cli-and-ui.md](references/api-cli-and-ui.md) | Authentication, REST semantics, `airflowctl`, CLI changes, UI streams, and sensitive configuration |
+| [operations-logging-and-extensions.md](references/operations-logging-and-extensions.md) | Services, plugins, deployment, security, remote logs, metrics, and tracing |
 
-## Migration-critical changes
+## Upgrade first principles
 
-### Author against the stable SDK
+### Author against `airflow.sdk`
 
-Move Dag-authoring and task-runtime imports to `airflow.sdk`. Rename Dataset
-types to Asset types and move `airflow.io.*` imports to `airflow.sdk.io.*`.
+Use the semver-governed SDK for Dag authoring and task execution:
 
 ```python
 from airflow.sdk import Asset, DAG, dag, get_current_context, task
 ```
 
-Only listed public interfaces are semver-governed. Metadata models, database
-sessions, Web UI HTML, built-in executor implementations, and the methods or
-structure of built-in operators are not extension contracts.
+Move `Dataset*` names to their `Asset*` equivalents and `airflow.io.*` imports to `airflow.sdk.io.*`. Treat unlisted Python modules, metadata ORM/schema details, and Web UI HTML as internal.
 
-### Remove task-side metadata database access
+Do not subclass built-in executors as a compatibility contract. For built-in operators, rely on documented parameters and behavior, not methods or class structure.
 
-Tasks communicate through the Task Execution API. Replace ORM and session use
-with Task Context or SDK accessors. Use REST API v2 or
-`apache-airflow-client` for broader access; obtain client tokens from
-`/auth/token`.
+### Run a staged preflight
 
-```python
-context = get_current_context()
-connection = context["conn"].get("service")
-variable = context["var"].value.get("setting")
-```
+Before the core upgrade:
 
-### Update imports and dependencies
-
-Install `apache-airflow-providers-standard` for common operators and sensors,
-including `BashOperator`, `PythonOperator`, `ExternalTaskSensor`, and
-`FileSensor`. Task exceptions now come from `airflow.sdk.exceptions`, and
-serialization from `airflow.sdk.serde` and `airflow.sdk.serde.serializers`.
-
-```python
-from airflow.sdk.exceptions import AirflowSkipException, TaskDeferred
-```
-
-Plugins cannot register operators, sensors, hooks, or executors. Package and
-import those classes directly. Do not subclass built-in executors as a stable
-extension mechanism.
-
-### Run the Airflow 3 preflight
-
-Upgrade through Airflow 2.7 or later, back up the metadata database, confirm
-clean parsing and reserialization, and run the migration checks.
+1. Move to a recent Airflow 2.x release, at least 2.7.
+2. Back up the metadata database and clean it if appropriate.
+3. Make Dag parsing and reserialization error-free.
+4. Run Ruff Airflow checks and migrate provider imports.
+5. Diagnose configuration changes, then migrate the database.
 
 ```bash
 airflow db clean
@@ -83,129 +55,143 @@ airflow config update --fix
 airflow db migrate
 ```
 
-Ruff 0.13.1 or later supplies AIR301/AIR302 breaking-change checks and
-AIR311/AIR312 recommended migrations. Import rewrites can require unsafe fixes
-and F401 cleanup.
+Ruff AIR301/AIR302 identify breaking changes; AIR311/AIR312 suggest recommended migrations. Import rewrites may require `--unsafe-fixes` and F401 cleanup.
 
-### Start the new services
+### Install the standard provider
 
-Replace `airflow webserver` with `airflow api-server`. Run the Dag processor as
-a separate process, including in local development.
+Core operators and sensors such as `BashOperator`, `PythonOperator`, `ExternalTaskSensor`, and `FileSensor` moved to `apache-airflow-providers-standard`. Install it and migrate imports before upgrading core when possible.
+
+### Replace removed facilities
+
+Use these replacements:
+
+| Removed or changed | Replacement |
+| --- | --- |
+| SubDAGs | TaskGroups, Assets, or data-aware scheduling |
+| SequentialExecutor | LocalExecutor, including with SQLite |
+| Kubernetes hybrid executors | Multiple-executor configuration |
+| SLAs | Deadline Alerts |
+| CLI `--subdir` / `-S` | Dag bundles |
+| REST `/api/v1` | Stable FastAPI `/api/v2` |
+| `fail_stop` | `fail_fast` |
+| Dataset APIs | Asset APIs |
+
+Dags and XComs are no longer pickled. Keep embedded Dag values JSON-serializable and use a custom XCom backend for other representations.
+
+## Task runtime rules
+
+### Keep task code away from the metadata database
+
+Task code cannot use metadata ORM models or sessions. Use Task Context and SDK accessors:
+
+```python
+from airflow.sdk import get_current_context
+
+context = get_current_context()
+ti = context["ti"]
+connection = context["conn"].get("service")
+variable = context["var"].value.get("setting")
+```
+
+Use stable REST endpoints or `apache-airflow-client` for broader access to Dag runs, task instances, Connections, Variables, and XComs. Obtain client tokens at `/auth/token`.
+
+Import task-facing exceptions from the SDK:
+
+```python
+from airflow.sdk.exceptions import AirflowSkipException, TaskDeferred
+```
+
+### Pull XComs from an explicit producer
+
+An unqualified pull searches the current task only. Name the upstream task when sharing state:
+
+```python
+value = ti.xcom_pull(task_ids="upstream_task", key="shared_state")
+```
+
+XCom keys cannot be empty. Do not depend on the API server deserializing unknown Python objects for display.
+
+### Handle dateless event runs
+
+Asset-triggered and REST-triggered runs can have `logical_date=None` and no data interval. Guard `dag_run.logical_date`; do not assume `logical_date`, `data_interval_start`, or `data_interval_end` exists in task context.
+
+For manual runs, use `logical_date` for the requested trigger date. Use interval fields only for the timetable-resolved interval.
+
+### Respect callback and teardown changes
+
+`on_success_callback` does not run for `SKIPPED` tasks. Teardown tasks can run after early Dag termination, but cannot use `TriggerRule.ALWAYS`; choose a rule that preserves upstream dependency semantics.
+
+## Scheduling and Assets
+
+### Make cron interval semantics explicit
+
+`catchup_by_default` and `create_cron_data_intervals` default to `False`. A bare cron schedule therefore uses `CronTriggerTimetable`, not `CronDataIntervalTimetable`.
+
+If task logic depends on interval boundaries or derived `ds`/`ts` values, set `create_cron_data_intervals=True` before upgrading. Changing it after new runs exist can intentionally skip a scheduled run to avoid duplicating a `logical_date`.
+
+### Use typed Asset references
+
+Event maps no longer accept string keys. Use typed references or lookup helpers:
+
+```python
+outlet_events[Asset.ref(name="myasset")]
+outlet_events[AssetAlias(name="myalias")]
+outlet_events.for_asset(name="myasset")
+outlet_events.for_asset_alias(name="myalias")
+```
+
+Partitioned Asset scheduling supports validation, composed mappings, temporal mappings, fan-out, rollup, wait policies, runtime keys, and partition-scoped clear/backfill operations. Open the scheduling reference before implementing a mapper because mapper names, imports, limits, and propagation rules matter.
+
+### Treat Dag structure and bundle version as persisted state
+
+Airflow stores historical Dag structures. Clear, rerun, backfill, and trigger operations can select the original or latest Dag-bundle version. Decide this explicitly when reproducibility matters.
+
+## State, retry, and results
+
+Use `task_state_store` and `asset_state_store` for persistent JSON state. Configure expiration, retention, row-size limits, and `clear_on_success`; select a worker-side backend with `[workers] state_store_backend` when metadata-database storage is unsuitable.
+
+Use a custom retry policy when exception-specific retry decisions or custom delays are needed. Waiting failures from `TriggerDagRunOperator`, including failed triggered runs, participate in the policy.
+
+Designate a Dag result with `@result` or a marked return-value XCom. The NDJSON Dag-run wait endpoint can then return the designated result.
+
+## API and service migration
+
+### Run the API server and Dag processor separately
 
 ```bash
 airflow api-server
 airflow dag-processor
 ```
 
-Use `airflow` for local administration and `airflowctl` from
-`apache-airflow-client` for remote operations. Migrate REST clients from
-`/api/v1` to `/api/v2`.
+Move API settings from `[webserver]` to `[api]` and parsing settings to `[dag_processor]`. Run `airflow config lint` to find ignored legacy options. In Helm values, move `webserver` configuration beneath `apiServer`.
 
-### Replace removed concepts
+Use `airflowctl` for remote administration and `airflow` for local operations. API v2 clients must expect validation errors as HTTP 422, send `logical_date` instead of `execution_date`, and preserve an omitted trigger date as `None`.
 
-- Replace SubDAGs with TaskGroups, Assets, or data-aware scheduling.
-- Replace SequentialExecutor with LocalExecutor, including on SQLite.
-- Replace CeleryKubernetes/LocalKubernetes hybrids with multiple executors.
-- Replace SLAs with Deadline Alerts and `fail_stop` with `fail_fast`.
-- Replace CLI `--subdir`/`-S` selection with Dag bundles.
-- Remove Dag and XCom pickling assumptions; Dags are JSON-serialized and
-  non-native XCom representations require a custom backend.
-- Stop importing `airflow.datasets`, `airflow.timetables.datasets`, or
-  `airflow.utils.dag_parsing_context`.
+### Update authentication routes
 
-## Scheduling and context changes
+Simple Auth is the default manager. To retain FAB, install its provider and configure `FabAuthManager`. Auth routes live below `/auth`; update external OAuth redirects accordingly.
 
-`catchup_by_default` and `create_cron_data_intervals` default to `False`. A
-bare cron schedule therefore uses `CronTriggerTimetable`; explicitly enable
-cron data intervals when code depends on interval-derived dates. Re-enabling
-them after Airflow 3 runs exist skips one scheduled run to avoid duplication.
+### Choose API-server process behavior deliberately
 
-Many legacy date context keys, including `execution_date`, `prev_ds`, and
-`next_ds`, are removed. Manual-run `logical_date` is not necessarily the
-timetable-resolved data interval. Asset- or REST-triggered runs can have no
-logical date or data interval, so guard `dag_run.logical_date` and absent
-context keys.
+Uvicorn is the default. For preloaded workers and zero-downtime FIFO recycling, install the Gunicorn extra and configure:
 
-`ti.xcom_pull(key=...)` searches the current task by default. Always pass
-`task_ids` when pulling another task's value.
-
-```python
-value = ti.xcom_pull(task_ids="upstream_task", key="shared_state")
+```ini
+[api]
+server_type = gunicorn
+worker_refresh_interval = 43200
+worker_refresh_batch_size = 1
 ```
 
-## High-value authoring features
+## Extensions and observability
 
-### Partition-aware assets
+Plugins cannot register operators, hooks, sensors, or executors. Package them as ordinary Python classes and import them directly. Migrate legacy FAB plugin surfaces to `external_views`, `fastapi_apps`, and `fastapi_root_middlewares`, or install the compatibility provider.
 
-Partitioned Assets support validated and chained key mappings, temporal
-windows, fan-out, rollup, categorical fixed keys, runtime-assigned keys, and
-wait policies. Producer partition dates and emitted keys propagate to
-consumers. Apply global or per-mapper downstream-key limits to bound fan-out.
+Remote-log providers implement a no-argument `RemoteLogIO.from_config()`. Discovery prefers custom logging configuration, then a provider selected by the remote-log URI scheme, then the transitional local-settings fallback.
 
-Use typed `Asset`, `AssetAlias`, or `Asset.ref` keys with event maps; string
-keys are invalid. Shared aliases can be created across Dag files.
+Review OpenTelemetry dashboards when upgrading: timer metrics are Histograms, Dag-processing metrics have new tags, and task execution has a dedicated `task.execute` span.
 
-### Durable task and asset state
+## Compatibility checks that prevent rollback traps
 
-Use `task_state_store` and `asset_state_store` for JSON state with `get`,
-`set`, `delete`, and `clear`. Configure expiration, retention, row-size limits,
-garbage collection, `clear_on_success`, and an optional worker-side backend.
-Task state survives retries and runs; asset state is available to triggers.
+Upgrade every Airflow component before deploying pandas 3. Older components cannot read XComs carrying pandas 3 DataFrame names, and configuration allowlists do not repair that. Also audit dtype-sensitive code because pandas 3 reconstructs string and missing values differently.
 
-### Flexible task execution
-
-- `PythonOperator` accepts `async def` callables.
-- Async tasks have native async XCom access and `BaseHook.aget_hook()`.
-- `@task.stub` declares implementations outside Python.
-- Experimental coordinators run Java or native executables such as Go while
-  using the Execution API for Variables, Connections, and XComs.
-- Custom retry policies can decide whether and when to retry by exception;
-  numeric `retry_exponential_backoff` values select the multiplier.
-- `ResumableJobMixin` lets supported external jobs, initially Spark submit,
-  resume after worker loss; `durable` opts out.
-
-### Human decisions and deadlines
-
-HITL operators defer for authorized UI or API responses and can expose Dag
-parameters or XCom-backed form context. Waiting tasks use the
-`awaiting_input` state, and `airflow dags test` waits for input.
-
-Deadline Alerts support asynchronous and synchronous callbacks, callback
-lists, executor selection, names, Variable-resolved intervals, Core API
-endpoints, and callback timeouts. Check the installed version before using
-synchronous callbacks or runtime Connections and Variables.
-
-### Dag results and run watching
-
-Use `@result` or mark a return-value XCom as the designated Dag result. The
-NDJSON Dag-run wait endpoint can stream status and return either a named task
-XCom or the designated result without client-side polling.
-
-## Operational guardrails
-
-- Audit `[webserver]` settings: API server options move to `[api]` and parser
-  options to `[dag_processor]`. Use `airflow config lint`.
-- Sensitive Connection and Variable values are hidden in CLI listings unless
-  explicitly shown.
-- Prefer multiple API-server instances for scale. Gunicorn is optional when
-  preloading and rolling worker recycling are required.
-- Remote logging now resolves through custom logging configuration, provider
-  `RemoteLogIO`, then a transitional local-settings fallback.
-- OpenTelemetry timers are Histograms; account for the newer Dag-processing
-  tags and explicitly choose whether to retain legacy metric names.
-- Multi-team deployments remain experimental; enforce team scope consistently
-  across Dags, secrets, assets, pools, triggers, XCom, and asset queries.
-- Configure mutual TLS, private certificate authorities, and CORS credentials
-  deliberately. Credentialed CORS must not use wildcard origins.
-
-## Working method
-
-1. Read the project manifests and constraints to determine core and provider
-   versions.
-2. Choose the relevant topic reference from the index before editing code or
-   configuration.
-3. Separate public SDK/API usage from internal server implementation details.
-4. Apply only features available in the installed version, especially for
-   experimental partitions, teams, HITL, coordinators, and deadlines.
-5. Validate Dag parsing, serialization, configuration lint, database migration,
-   REST schemas, and operational metrics in the project's own environment.
+When custom Dag bundles were migrated from 2.x, force a successful parse with `airflow dags reserialize` if legacy Dags remain incorrectly attached to `dags-folder`.

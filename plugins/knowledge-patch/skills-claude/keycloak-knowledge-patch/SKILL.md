@@ -10,242 +10,181 @@ metadata:
 
 # Keycloak Knowledge Patch
 
-Use this skill for Keycloak design, implementation, migration, extension, and
-operations work. Check the deployed server version and its enabled feature
-profile before applying version-sensitive advice. Treat project manifests,
-configuration, code, and observed behavior as authoritative when they differ.
+Use this skill for Keycloak implementation, configuration, authentication,
+administration, extension, operation, and upgrade work. Establish the exact
+server, Operator, adapter, and client-library versions before applying
+version-dependent guidance. Prefer the deployment's manifests, configuration,
+code, and observed behavior when they differ from general guidance.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| `references/identity-and-authentication.md` | Redirects, consent, logout, browser flows, LoA/ACR, passkeys, SAML, X.509, DPoP |
-| `references/protocols-token-exchange-and-brokering.md` | Standard and legacy token exchange, brokering, OID4VCI, ID-JAG, SCIM, SSF, AuthZEN |
-| `references/admin-account-and-organizations.md` | Client Admin API v2, Account REST, organization permissions and responses |
-| `references/server-operator-and-observability.md` | Quarkus configuration, optimized builds, health, caches, datasources, Operator, metrics |
-| `references/upgrades-extensions-and-themes.md` | Major-version migrations, Java/JS extensions, themes, features, removed integrations |
+| --- | --- |
+| [Admin, Account, and Organization APIs](references/admin-account-and-organizations.md) | Client Admin API, Account REST, SCIM, organizations, permissions, realm search, and corrected API behavior |
+| [Identity and Authentication](references/identity-and-authentication.md) | Redirects, origins, consent, logout delivery, browser flows, passkeys, assurance, session limits, X.509, and authorization resources |
+| [Protocols, Token Exchange, and Brokering](references/protocols-token-exchange-and-brokering.md) | Standard and legacy exchange, external tokens, OID4VCI, ID-JAG, SSF, AuthZEN, SAML step-up, delegation, DPoP, and parameterized scopes |
+| [Server, Operator, and Observability](references/server-operator-and-observability.md) | Quarkus configuration, builds, health, queues, trust, datasources, clustering, caches, proxies, metrics, storage, Kubernetes, and shutdown |
+| [Upgrades, Extensions, and Themes](references/upgrades-extensions-and-themes.md) | Major-version migrations, JavaScript, themes, User Profile, representations, SPIs, events, registration, feature changes, and extension lifecycle |
 
-## Start with breaking changes
+## Working method
 
-### Preserve sessions across the 25-to-26 transition
+1. Identify the exact Keycloak image and Operator versions from deployment
+   manifests, build metadata, or startup output.
+2. Identify separately versioned consumers such as `keycloak-js`, Java
+   extensions, themes, adapters, generated clients, and custom resources.
+3. Load the reference matching the task. For an upgrade, load both the
+   operational and extension/theme references, plus any protocol reference
+   used by the deployment.
+4. Treat preview and experimental features as explicit opt-ins. Verify their
+   feature flags and profile before depending on endpoints or persisted data.
+5. Test authentication, token refresh, logout, proxy, readiness, database, and
+   rolling-upgrade behavior at their actual boundaries.
+6. Preserve exact option spelling and distinguish build-time options from
+   runtime configuration.
 
-- To retain sessions originating on 24, first upgrade to 25 with preview
-  `persistent-user-sessions` enabled.
-- Only sessions already backed by remote Infinispan or embedded-cache JDBC
-  persistence are migratable. Enabling persistence after the first upgrade
+## Breaking changes and deprecations
+
+### Preserve sessions during major upgrades
+
+- When carrying online sessions forward, take the required intermediate
+  persistence migration path; enabling persistence after the migration point
   cannot safely merge persisted and non-persisted sessions.
-- Version 26 changes cache marshalling from JBoss Marshalling to incompatible
-  Protostream and clears caches. A direct 24-to-26 upgrade loses sessions.
-- In 26, sessions are persisted by default. Bound custom session caches like
-  the standard configuration: 10,000 entries and one owner.
+- Expect incompatible cache-marshalling changes to clear caches. Verify that
+  sessions are database-backed before the cache transition.
+- Apply explicit bounds to custom session caches instead of assuming the
+  standard cache limits carry over.
 
-### Replace removed hostname, proxy, and truststore settings
+### Replace legacy hostname and proxy settings
 
-- Hostname v2 is the default from 25 and the only hostname implementation in
-  26. `hostname` accepts a host or full URL; `hostname-admin` requires a full
-  URL. Separate path and port options are gone.
-- Replace `proxy` with exactly one trusted `proxy-headers` format. Enable HTTP
-  only where edge termination requires it.
-- Dynamic backchannel URLs require `hostname-backchannel-dynamic=true` and a
-  full frontend URL.
-- Replace old truststore SPI and HTTPS truststore settings with
-  `conf/truststores` or `truststore-paths`; use `tls-hostname-verifier`.
+- Use hostname v2 semantics. Supply a full frontend URL when scheme, port, or
+  path matters, and always give the admin hostname as a full URL.
+- Replace `proxy` with one trusted `proxy-headers` format plus the required
+  hostname and HTTP settings.
+- Enable dynamic backchannel resolution only with a full frontend URL.
 
-```bash
-bin/kc.sh start \
-  --hostname=https://sso.example.com:8543/auth \
-  --proxy-headers=xforwarded \
-  --http-enabled=true
-```
+### Migrate browser integrations and themes
 
-### Move runtime cache options out of image builds
+- Import browser code from `keycloak-js` or `keycloak-js/authz`; do not rely on
+  deep imports, a server-hosted script, or a UMD/global build.
+- Pass configuration explicitly, run in a secure context, and await login and
+  URL-construction APIs.
+- Move maintained themes to the current parent and shared-resource paths, and
+  test custom FreeMarker templates against the newer compatibility level.
 
-`cache`, `cache-stack`, and `cache-config-file` are runtime-only from 25.
-Remove them from `kc.sh build`; otherwise the server can silently use runtime
-defaults. Build options are persisted in plaintext and must never contain
-secrets.
+### Update authentication and logout entry points
 
-### Update browser JavaScript integration
+- Use OIDC RP-Initiated Logout instead of legacy `redirect_uri` behavior.
+- Use `prompt=create` for registration and the supported
+  `/forgot-credentials` authorization-path variant for credential reset.
+- Do not deep-link into `/login-actions` or `/broker`.
+- Replace the boolean WebAuthn discoverable-credential option with
+  `required`, `preferred`, or `discouraged`.
 
-- Import only from `keycloak-js` and `keycloak-js/authz`; deep package imports
-  crossed the package-exports boundary in 24.
-- The 26 server no longer serves the library and the UMD/global build is gone.
-  Install it in the application and pass configuration explicitly.
-- Run it in a secure context and await `login()`, `createLoginUrl()`, and
-  `createRegisterUrl()`.
+### Update extensions and API representations
 
-```javascript
-import Keycloak from "keycloak-js";
-const keycloak = new Keycloak({
-  url: "https://sso.example.com",
-  realm: "example",
-  clientId: "web"
-});
-await keycloak.login();
-```
+- Treat `UserRepresentation.getAttributes()` as custom attributes only; use
+  dedicated root properties or server-side `getRawAttributes()` as needed.
+- Query identity providers through their dedicated endpoint rather than
+  expecting them in ordinary realm representations.
+- Do not restart a request transaction. Asynchronous work must own a separate
+  session and transaction lifecycle.
+- Replace removed token convenience methods and update provider-factory and
+  test-builder APIs before recompiling extensions.
 
-## Feature and deprecation checks
+### Remove obsolete configuration and dependencies
 
-### Pin versioned feature implementations
+- Remove obsolete token-exchange and persistent-session batching switches.
+- Replace `dynamic-scopes` with `parameterized-scopes`.
+- Supply removed drivers and frontend libraries explicitly, and migrate away
+  from removed handlers, BOMs, test helpers, admin clients, and brokers.
+- Replace deprecated bootstrap administrator variables with
+  `KC_BOOTSTRAP_ADMIN_USERNAME` and `KC_BOOTSTRAP_ADMIN_PASSWORD`.
 
-An enabled feature cannot also be disabled. An unversioned enabled name selects
-the latest supported implementation, so use `name:vN` when upgrades must not
-change it. Disable a versioned feature by its unversioned base name.
+## Security-critical quick reference
 
-Important feature names and states:
+### Redirects, origins, and logout
 
-| Capability | Configuration and boundary |
-|---|---|
-| Standard token exchange | `token-exchange-standard:v2`; enabled by default, but opt in each confidential requester |
-| Token delegation | `token-exchange-delegation`; experimental parameterized `delegation` scope |
-| Parameterized scopes | `parameterized-scopes`; replaces `dynamic-scopes` |
-| Identity assertion JWT grant | `identity-assertion-jwt`; receiver role only |
-| SCIM | `scim-api`; preview and outside the default profile |
-| Shared Signals | `ssf`; experimental |
-| AuthZEN | `authzen`; experimental |
-| Client Admin API v2 | `client-admin-api:v2`; experimental |
-| Multi-cluster v2 | `stateless`; preview |
-| OID4VCI pre-authorized code | `oid4vc-vci-preauth-code` |
-| Attestation-based client auth | `client-auth-abca` |
+- Match redirect URIs exactly and case-sensitively unless the registered value
+  has a trailing wildcard.
+- Force exact matching when a wildcard request contains userinfo or `/../`,
+  and never use a full `*` pattern in production.
+- Treat token-embedded Web Origins as adapter-specific behavior, not portable
+  OIDC client metadata.
+- Validate `post_logout_redirect_uri`; logout confirmation presents it as a
+  continuation instead of automatically redirecting.
 
-Remove obsolete `token-exchange-external-internal:v2` and persistent-session
-batching switches. The OIDC *Bearer only* switch and OAuth 1.0a Twitter broker
-are deprecated. Model service clients with no enabled grants and migrate
-Twitter to a generic OAuth v2 provider.
+### Token exchange
 
-## Authentication quick reference
+- Use standard token exchange v2 only with confidential, authenticated
+  requesters that explicitly enable the capability.
+- Treat `audience` as a filter, never as a way to add an audience, and do not
+  send the unsupported `resource` parameter.
+- Require the original sender and matching DPoP proof or mTLS certificate for
+  sender-constrained subject tokens.
+- Restrict legacy exchange permission to trusted clients because its external
+  JWT path does not validate `aud`.
 
-### Redirects, CORS, and logout
+### Authentication assurance
 
-- Redirect URIs match exactly and case-sensitively unless they have a trailing
-  wildcard. Userinfo or `/../` in a requested URI forces exact matching.
-  Never use the full `*` HTTP/HTTPS pattern in production.
-- *Web Origins* are embedded in access tokens for Keycloak adapters to enforce;
-  they are not portable OIDC metadata.
-- A backchannel logout URL is used only when front-channel logout is disabled.
-  Without one, the nonstandard Admin URL fallback works only with legacy Java
-  OIDC adapters and the Elytron WildFly OIDC adapter.
-- With *Logout confirmation* enabled, a validated
-  `post_logout_redirect_uri` becomes a continuation control, not an automatic
-  redirect. Version 26 requires standards-based RP-Initiated Logout.
+- Order conditional LoA subflows from lowest to highest.
+- Use an essential `claims` request when failure is required; `acr_values` is
+  non-essential.
+- Protect browser-carried assurance requests with PAR or a request object and
+  verify the returned `acr`.
+- Place the session limiter after the user is known and avoid checking normal
+  SSO-cookie reuse a second time.
 
-### Conditional 2FA and assurance levels
+### Secrets, trust, and client credentials
 
-- The default conditional 2FA branch combines *Condition - User Configured*
-  and *Condition - credential*, allowing passwordless WebAuthn to skip a
-  redundant second factor.
-- Set disabled WebAuthn and recovery-code executions to *Alternative* to expose
-  them through *Try Another Way* for configured users.
-- Order conditional LoA subflows from lowest to highest. The first runs on
-  initial authentication; `Max Age=0` makes that level valid only then.
-- Essential `claims` requests must be satisfied; `acr_values` is advisory.
-  Protect browser-carried requests with PAR or request objects and verify the
-  returned `acr`.
-- Place *User Session Count Limiter* after user identification and use one
-  consistent configuration across applicable flows. It does not support CIBA.
+- Use `KCRAW_` for literal environment values containing dollar signs, and do
+  not define its `KC_` counterpart simultaneously.
+- Never place secrets in build options because build values are persisted in
+  plaintext.
+- Trust the authenticator CA for direct WebAuthn attestation.
+- Anchor X.509 client credentials to an exact CA subject DN and move away from
+  regex subject matching.
+- Allow at least 86 characters in stores receiving newly generated client
+  secrets, and verify rotated-secret invalidation behavior.
 
-## Token exchange quick reference
+## High-value features
 
-Standard V2 supports authenticated confidential requesters only. It exchanges a
-same-realm Keycloak access token for an access token, ID token, or conditionally
-a refresh token; it does not support RFC 8693 `resource`.
+### Declarative client administration
 
-```bash
-curl -u requester-client:secret \
-  https://keycloak.example/realms/test/protocol/openid-connect/token \
-  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
-  -d subject_token="$SUBJECT_TOKEN" \
-  -d subject_token_type=urn:ietf:params:oauth:token-type:access_token \
-  -d requested_token_type=urn:ietf:params:oauth:token-type:access_token
-```
+- Enable Client Admin API v2 for strictly validated OIDC and SAML client
+  management over REST, Java, generated JavaScript, CLI, or Operator resources.
+- Use its management-interface OpenAPI document as the schema contract.
+- Apply `q` filtering to the full representation before `fields` projection.
 
-- `scope` adds requester optional scopes; repeated `audience` values only
-  filter resolved audiences and never create them.
-- Require the requester in the subject token's `aud`, unless the token was
-  issued to that client. Use `downscope-assertion-grant-enforcer` to keep
-  requested scopes within the subject token's grants.
-- DPoP- or mTLS-bound subject tokens may be exchanged only by their original
-  client with the matching proof or certificate.
-- An exchange never creates a user session. Original access-token revocation
-  leaves exchanged access tokens active but revokes derived refresh-token
-  chains and requester client sessions.
-- Legacy V1 is disabled, deprecated, and isolated on FGAP V1. Its external JWT
-  path does not validate `aud`; grant exchange permission only to explicitly
-  trusted clients.
+### Organizations and provisioning
 
-## API quick reference
+- Separate organization write, read, and query roles, and combine member
+  listing with user-view permission.
+- Use fine-grained organization resources for per-organization delegation.
+- Enable group-role mappings when organization group roles must appear in
+  realm, client, and organization token claims.
+- Enable `scim-api` for preview user and group provisioning, PATCH, filtering,
+  pagination, extensions, and schema discovery.
 
-### Client Admin API v2 filters
+### Policy, credential, and event protocols
 
-`GET /admin/api/{realmName}/clients/v2` uses `q` with `eq`, `ne`, `co`, `sw`,
-`ew`, `pr`, Boolean operators, and parentheses. Strings are case-sensitive and
-double-quoted; booleans are bare. Invalid syntax, unknown fields, and ordering
-operators return 400. Filtering evaluates the full representation before
-`fields` projection.
+- Enable `authzen` for single or batch authorization-policy evaluations.
+- Enable `ssf` for signed CAEP or RISC events delivered through durable push
+  or poll streams.
+- Enable `identity-assertion-jwt` only for the receiving authorization-server
+  role; the complete ID-JAG flow is not implemented.
+- Configure OID4VCI refresh separately from credential lifetime, and use the
+  dedicated client-attestation feature when required.
+- Enable token-exchange delegation only when consent and refresh-time
+  reassessment match the intended impersonation policy.
 
-### Account API boundaries
+### Operational resilience
 
-- `ACCOUNT_API` gates sessions, credentials, UMA, organizations, verifiable
-  credentials, applications, and consent operations with 404 when disabled.
-- Profile root, locales, linked accounts, and groups are outside that check.
-- Profile reads require `manage-account` or `view-profile`; writes require
-  `manage-account` and validate in the `ACCOUNT` user-profile context.
-- Application discovery unions online/offline sessions, consents, and
-  always-visible clients; bearer-only clients are excluded.
-- Consent POST and PUT are both upserts. Parameterized client scopes are
-  rejected, and scope IDs must resolve to realm client scopes or the
-  consent-required client itself.
-
-## Runtime quick reference
-
-### Preserve literal configuration
-
-`KC_` values evaluate expressions and collapse `$$`. Use the matching `KCRAW_`
-name for literal dollar characters; defining both forms for one key is an
-error. Use `KCKEY_<suffix>` beside `KC_<suffix>` when normalized environment
-names cannot represent the exact option key.
-
-```bash
-export KCRAW_DB_PASSWORD='my$$pa${vault}word'
-export KC_MYKEY=debug
-export KCKEY_MYKEY=log-level-package.class_name
-```
-
-### Build and startup safely
-
-- With `start --optimized`, a repeated build option is accepted only when it
-  matches the built value. Rebuild to change it.
-- Normalize provider JAR modification times before `kc.sh build` in container
-  images so runtime does not report false provider changes.
-- Set `http-max-queued-requests`; excess requests receive 503. The default
-  queue is unlimited.
-- Async bootstrap can open listeners while readiness is DOWN. Route only on
-  `/health/ready`, or use `--server-async-bootstrap=false`.
-- Set container memory limits; the image defaults maximum heap to 70% of
-  available container memory.
-
-### Datasources, health, and observability
-
-- Exclude optional additional datasources from health checks when their
-  failure must not mark the deployment unhealthy.
-- From 26, at most one datasource may be non-XA. Enable XA on the default and
-  configure `quarkus.datasource.<name>.jdbc.transactions=xa` on additions.
-- Health and metrics use management port `9000`; the legacy observability
-  switch only temporarily restores application-listener placement.
-- The 26.7 shutdown default is ten seconds and clustered nodes wait for cache
-  rebalance. Roll one node at a time.
-
-## Extension and migration quick reference
-
-- In 24, `UserRepresentation.getAttributes()` contains custom attributes only;
-  root profile fields remain dedicated properties. Use server-side
-  `getRawAttributes()` only when a combined map is needed.
-- In 25, token convenience setters are replaced by `exp`, `nbf`, and `iat`;
-  `EnvironmentDependentProviderFactory.isSupported` takes `Config.Scope`.
-- In 26.7, a `KeycloakSession` request transaction starts only once. Async REST
-  work owns a separate session and transaction lifecycle.
-- Audit Authorization Services resource URI templates before updating them:
-  empty or slash-containing placeholders, invalid wildcard placement, and
-  unmatched braces are rejected on create or update.
-- Test custom themes against FreeMarker 2.3.32 behavior, particularly deprecated
-  directives, undocumented syntax, and Java-internal access through `?api`.
+- Route traffic with `/health/ready`; startup and liveness may be UP while
+  asynchronous initialization remains incomplete.
+- Bound queued requests with `http-max-queued-requests` to shed excess work
+  with HTTP 503.
+- Give provider JARs deterministic modification times before optimized builds.
+- Treat the synchronously replicated database and its invalidation outbox as
+  central to stateless multi-cluster operation.
+- Roll clustered shutdowns one node at a time and account for cache-rebalance
+  time.

@@ -1,66 +1,71 @@
 # Extensions, Modules, and Foreign Data Wrappers
 
-Batch attribution: `17.0`, `18.0`.
+Use this reference when writing or deploying extensions, foreign data
+wrappers, test hooks, or bundled modules. Version-sensitive items are from the
+`17.0` and `18.0` batches.
 
-## Locate and identify extensions
+## Adapt extension and access-method integrations
 
-`extension_control_path` selects directories in which the server looks for
-extension control files.
+PostgreSQL 17 supports custom wait-event registration. Foreign data wrappers
+and custom scans must also handle pushed-down joins that carry non-join
+qualifications.
 
-Extension binaries can use `PG_MODULE_MAGIC_EXT` to report their name and
-version through `pg_get_loaded_modules()`.
+Bundled access-method changes include:
 
-## Integrate with planning, waits, and cumulative statistics
+- `ltree` supports hash indexes, hash joins, and hash aggregation.
+- `unaccent.rules` can represent whitespace and quotes.
+- `pg_amcheck --checkunique` verifies unique constraints.
 
-Extensions can register custom `EXPLAIN` options, custom wait events, and
-cumulative statistics.
+PostgreSQL 18 adds `PG_MODULE_MAGIC_EXT`, allowing an extension to report its
+name and version through `pg_get_loaded_modules()`. Extensions can register
+custom `EXPLAIN` options and use cumulative statistics.
 
-Foreign data wrappers and custom scans must correctly handle pushed-down joins
-that include non-join qualifications.
+## Use the expanded injection-point test API
 
-## Use expanded extension capabilities
+PostgreSQL 18 separates injection-point loading from execution through
+`INJECTION_POINT_LOAD()` and `INJECTION_POINT_CACHED()`. Injection points can
+receive runtime arguments, and `IS_INJECTION_POINT_ATTACHED()` tests whether a
+named point is attached.
 
-`ltree` supports hash indexes, hash joins, and hash aggregation.
-`unaccent.rules` can represent whitespace and quotation marks.
-`pg_amcheck --checkunique` verifies unique constraints.
+## Inspect internals and manage shared-buffer caches
 
-The `amcheck` function `gin_index_check()` verifies GIN indexes.
+PostgreSQL 18 adds `pg_logicalinspect` for inspecting logical snapshots and
+`pg_overexplain` for debug-level plan details. amcheck adds
+`gin_index_check()` for GIN verification.
+
 `pg_buffercache_evict_relation()` and `pg_buffercache_evict_all()` evict
-unpinned shared buffers.
+unpinned shared buffers. Treat these as operationally disruptive cache tools,
+not ordinary monitoring calls.
 
-The `pg_logicalinspect` extension inspects logical snapshots.
-`pg_overexplain` adds debug-level plan details.
+## Configure extension discovery
 
-## Test extension behavior with injection points
+`extension_control_path` selects the locations searched for extension control
+files in PostgreSQL 18. Account for it in packaging and deployment code rather
+than assuming the compiled-in extension directory is the only source.
 
-Injection-point testing separates loading from running with
-`INJECTION_POINT_LOAD()` and `INJECTION_POINT_CACHED()`. Injection points
-accept runtime arguments, and `IS_INJECTION_POINT_ATTACHED()` reports whether a
-point is attached.
+## Use SCRAM passthrough for remote connections
 
-## Pass SCRAM credentials through foreign connections
-
-`postgres_fdw` option `use_scram_passthrough` forwards client SCRAM
-authentication instead of storing credentials. It uses libpq's
-`scram_client_key` and `scram_server_key` support. `dblink` supports the same
+PostgreSQL 18 `postgres_fdw` option `use_scram_passthrough` forwards the
+client's SCRAM authentication instead of storing remote credentials. It uses
+libpq's `scram_client_key` and `scram_server_key`; dblink supports the same
 passthrough.
 
-`postgres_fdw_get_connections()` reports transaction use, closed state, user
-name, and remote backend PID.
+`postgres_fdw_get_connections()` now reports transaction use, closed state,
+user name, and remote backend PID.
 
-## Tolerate malformed file_fdw rows
+## Tolerate bad file_fdw rows deliberately
 
-`file_fdw` accepts `on_error`, `log_verbosity`, and `reject_limit` controls
-matching tolerant `COPY FROM` behavior.
+PostgreSQL 18 `file_fdw` adds `on_error`, `log_verbosity`, and `reject_limit`,
+matching tolerant `COPY` behavior. Bound rejections rather than allowing an
+unlimited number of malformed rows to disappear.
 
-## Configure bundled security and validation modules
+## Configure bundled validation modules
 
-`passwordcheck.min_password_length` configures the module's minimum password
-length. `isn.weak` controls whether invalid check digits are accepted.
+`passwordcheck.min_password_length` sets the minimum accepted password length.
+The `isn.weak` setting controls whether invalid check digits are accepted.
 
-pgcrypto supports `sha256crypt`, `sha512crypt`, and CFB cipher mode.
-`fips_mode()` reports the server's FIPS state, and `builtin_crypto_enabled` can
+## Select pgcrypto behavior
+
+PostgreSQL 18 pgcrypto supports `sha256crypt`, `sha512crypt`, and CFB cipher
+mode. `fips_mode()` reports server state, while `builtin_crypto_enabled` can
 disable built-in non-FIPS cryptographic functions.
-
-Trusted PL/Perl rejects changes to `%ENV`. The untrusted `plperlu` language
-retains that capability.

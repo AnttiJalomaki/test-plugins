@@ -1,58 +1,96 @@
 # Runtime, Integration, and Testing
 
-## Start and stop servers
+## Process and server lifecycle
 
-- Gazebo Sim handles `SIGTERM` gracefully (9.1.0), including termination by a
-  service manager or container runtime.
-- Startup detects an already-running server (9.2.0).
-- `Server` behavior for a bad SDF file was corrected in 10.1.1. Do not treat
-  invalid-SDF behavior from the affected regression as the intended contract.
+### Stop cleanly with SIGTERM
 
-## Select transport and ROS interfaces
+Gazebo Sim handles `SIGTERM` gracefully (9.1.0). Service managers and
+container runtimes can use their normal termination signal without requiring
+an immediate hard kill.
 
-Jetty can use Zenoh as an alternative Gazebo Transport implementation
-(`jetty-highlights`). Select it per process:
+### Detect an existing server
+
+Startup detects an already-running server (9.2.0). Launch orchestration should
+surface that condition rather than assuming a second server starts normally.
+
+### Handle invalid SDF as corrected behavior
+
+`Server` behavior with a bad SDF file was corrected in 10.1.1 after a
+regression. Do not use the affected invalid-SDF behavior as an API contract.
+
+### Reset through public APIs
+
+Simulation reset has a public callable API (10.0.0). Test fixtures also support
+`ISystemReset`, so exercise system reset behavior through the fixture rather
+than rebuilding all state solely to simulate reset.
+
+## Plugin and language integration
+
+### Load statically registered systems
+
+System plugins can be loaded through the static plugin registry (9.2.0).
+Treat statically linked systems as available to the normal system-loading
+path.
+
+### Let Python bindings release the GIL
+
+GIL-release behavior is corrected for Python systems and Python
+`TestFixture` (9.2.0). Parallel Python work should not preserve workarounds
+whose only purpose was the earlier GIL handling.
+
+### Detect nested models with LogicalCamera
+
+The `LogicalCamera` plugin detects nested models (9.2.0). Consumers should
+accept nested detections instead of filtering expectations to top-level models.
+
+## Transport, ROS, and networking
+
+### Select Zenoh per process
+
+Zenoh is an alternative Gazebo Transport implementation. Select it for a
+process with (jetty-highlights):
 
 ```sh
 export GZ_TRANSPORT_IMPLEMENTATION=zenoh
 ```
 
+Keep this choice in the process environment when different processes need
+different transport implementations.
+
+### Target the standard ROS simulation interface
+
 Gazebo's ROS integration supports the community standard simulation interface
-(`jetty-highlights`), allowing robot code written to that interface to move
-between compatible simulators.
+(jetty-highlights). Robot code written to that interface can move among
+compatible simulators without a Gazebo-specific control surface.
 
-## Export occupancy grids
+### Expect entity creation on network secondaries
 
-Gazebo can export occupancy-grid maps through the `/scan_image` topic
-(`jetty-highlights`). Start exploration by publishing:
+`NetworkManager` creates entities correctly on network secondaries (10.1.0).
+Distributed-simulation tests should expect secondary instances to receive
+those entities.
 
-```sh
-gz topic -t /start_exploration -m gz.msgs.Boolean -p 'data: true'
-```
+### Use the in-process WebSocket server
 
-## Handle commands and reset
+The WebSocket server moved from `gz-launch` into Gazebo Sim (10.0.0). Package,
+configure, and debug it with the simulator rather than expecting launch to own
+it. Protocol definitions also expose top-level enums (10.1.0), so schema
+consumers should handle those declarations.
 
-- UserCommands services return the actual status of the command they execute
-  (10.0.0). Treat the service result as command success or failure.
-- Simulation reset is exposed through a public callable API (10.0.0).
-- The test fixture supports `ISystemReset` (10.0.0), enabling reset-aware
-  fixture systems.
+## Commands, time, and state
 
-## Load physics engines and host WebSockets
+### Trust UserCommands service status
 
-- Physics-engine plugins can load from the static plugin registry (10.0.0).
-- The WebSocket server formerly housed in `gz-launch` is now owned by Gazebo
-  Sim (10.0.0).
-- The WebSocket server protocol includes top-level enums (10.1.0), exposing
-  those enum declarations to schema consumers.
+UserCommands services return the actual status of the command they execute
+(10.0.0). Use the service result as command success or failure rather than
+assuming transport success means command success.
 
-## Run distributed simulations
+### Update the time API spelling
 
-`NetworkManager` correctly creates entities on network secondaries (10.1.0).
-Distributed-simulation code should expect secondary nodes to receive those
-entities.
+Replace `systemTimeISO` with `systemTimeIso` (10.0.0). The former casing is no
+longer the callable API.
 
-## Embed Python systems and fixtures
+### Clear ECM change tracking explicitly
 
-Python systems and the Python `TestFixture` use corrected GIL-release behavior
-(9.2.0). Avoid workarounds that assume the earlier GIL handling.
+The Entity Component Manager provides APIs to clear its internal tracking of
+entity additions and removals (10.0.0). Use them when a consumer establishes a
+new change-tracking baseline.

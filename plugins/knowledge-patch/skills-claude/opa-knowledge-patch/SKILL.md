@@ -8,53 +8,35 @@ metadata:
 ---
 
 
-# Open Policy Agent Compatibility Guide
+# Open Policy Agent Knowledge Patch
 
-Use this skill when upgrading OPA, migrating Rego, building bundles, embedding
-OPA in Go, operating an OPA server, or diagnosing behavior that changed across
-recent releases. Check the project's pinned OPA version first and apply only
-guidance introduced at or before that version. Prefer the repository's policy,
-configuration, tests, manifests, and observed runtime behavior when they
-disagree with general guidance.
+Load this skill when migrating Rego to v1, upgrading an OPA deployment,
+embedding OPA in Go, building bundles, or investigating changed evaluation,
+testing, plugin, security, and observability behavior.
+
+Treat the application's manifests, configuration, policies, tests, and observed
+runtime behavior as primary evidence. Use the references below for changed
+defaults, compatibility traps, corrected behavior, and newly available APIs.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/migration-and-rego.md](references/migration-and-rego.md) | Rego v1 migration, syntax, compatibility, language changes |
-| [references/cli-testing-and-bundles.md](references/cli-testing-and-bundles.md) | CLI streams, formatting, tests, coverage, bundles, Wasm |
-| [references/server-plugins-and-security.md](references/server-plugins-and-security.md) | Server binding, REST and Compile APIs, credentials, TLS, security |
-| [references/observability-and-decision-logs.md](references/observability-and-decision-logs.md) | Metrics, tracing, logging, decision logs |
-| [references/go-sdk-and-tooling.md](references/go-sdk-and-tooling.md) | Go package migration, SDK options, AST tooling, build toolchains |
-| [references/evaluation-and-builtins.md](references/evaluation-and-builtins.md) | Evaluation corrections, partial evaluation, built-ins, schemas |
+| [Migration and Rego](references/migration-and-rego.md) | Rego v1 migration, syntax, safety, built-ins, schemas, and rule semantics |
+| [CLI, Testing, and Bundles](references/cli-testing-and-bundles.md) | `opa check`, `fmt`, `test`, `eval`, REPL behavior, bundle builds, Wasm, and coverage |
+| [Evaluation and Built-ins](references/evaluation-and-builtins.md) | Partial evaluation, SQL filters, cancellation, caching, HTTP, indexes, and corrected results |
+| [Go SDK and Tooling](references/go-sdk-and-tooling.md) | Go imports and toolchains, SDK options, AST/oracle APIs, custom built-ins, and metadata |
+| [Observability and Decision Logs](references/observability-and-decision-logs.md) | Decision-log delivery, masking, labels, metrics, tracing, and file logging |
+| [Server, Plugins, and Security](references/server-plugins-and-security.md) | Network defaults, REST plugins, configuration, credentials, TLS, resource limits, and security fixes |
 
-## Migrate Rego v0 to v1
+## Breaking changes and migration hazards
 
-Rego v1 makes `in`, `every`, `if`, and `contains` keywords without
-`future.keywords` imports. Use `if` on rules with bodies and `contains` on
-multi-value rules:
+### Migrate Rego v1 syntax deliberately
 
-```rego
-package authz
-
-allow if {
-	input.user == "alice"
-}
-
-reasons contains "missing role" if {
-	not input.role
-}
-
-limit := 10
-```
-
-Value assignments still omit `if`. A solitary reference head such as `p.a`
-is invalid. Duplicate and shadowing imports are compilation errors, and
-`input` and `data` cannot be rule or variable names. Substitution with
-`with input as ...` and `with data as ...` remains valid.
-
-Use a current OPA binary to find and rewrite compatibility problems before
-linting:
+Rules with bodies require `if`, multi-value rules require `contains`, and
+`in`, `every`, `if`, and `contains` are keywords. Imports that shadow or
+duplicate other imports fail compilation, as do variables or rules named
+`input` or `data`. Use a current binary to check and rewrite legacy source:
 
 ```sh
 opa check --v0-v1
@@ -63,160 +45,165 @@ opa fmt --write --v0-v1
 regal lint
 ```
 
-Removed built-ins include `any`, `all`, `re_match`, `net.cidr_overlap`,
-`set_diff`, every `cast_*` conversion, and `cast_null`. See
-[references/migration-and-rego.md](references/migration-and-rego.md) for the
-complete migration sequence and later syntax changes.
+During a mixed-version bundle rollout, upgrade bundle producers before
+consumers. Keep policies v0-compatible while v0 consumers remain, and use
+`--v0-compatible` whenever a v1 consumer loads a bundle whose producer could
+not record a Rego version.
 
-## Upgrade mixed-version bundles safely
+### Make assignment inputs independently safe
 
-Upgrade bundle producers before consumers. Bundles built by OPA v0.64.0 or
-later record `rego_version` in their manifest, and that value overrides
-`--v1-compatible`.
+The right side of `:=` must be safe before assignment. A later constraint on
+the assigned variable does not make the source variable safe:
 
-- While v0 consumers remain, keep policy v0-compatible and run v1 producers
-  with `--v0-compatible`, unless every module imports `rego.v1`.
-- A v1 consumer loading a bundle from a v0 producer also needs
-  `--v0-compatible`; old producers cannot declare the Rego version.
-- Recheck mixed-version bundles because per-module version lookup and
-  overlapping `file_rego_versions` patterns now resolve deterministically.
-- Use `opa check --bundle` to catch overlaps between base JSON/YAML documents
-  and virtual documents.
-
-Optimized bundles require an entrypoint with at least package and rule:
-
-```sh
-opa build -O=1 -e=authz/allow .
+```rego
+allow if {
+	y = 7
+	x := y
+	x == 7
+}
 ```
 
-See [references/cli-testing-and-bundles.md](references/cli-testing-and-bundles.md)
-for bundle metadata, polling validation, Wasm output, and formatter behavior.
+Rewrite policies that relied on `x := y; x = 7`, which now fails with
+`rego_unsafe_var_error`. Explicit reference iteration such as
+`some k; v := obj[k]` remains valid.
 
-## Update Go integrations
+### Keep partial rule kinds consistent
 
-Move every OPA import to its `/v1/` package path, including `rego`, `sdk`,
-`ast`, `bundle`, `compile`, `types`, and `topdown`:
+Do not define one name as both a partial set and a partial object. Rename one
+rule or make all definitions produce the same kind:
 
-```go
-import "github.com/open-policy-agent/opa/v1/rego"
+```rego
+p contains "item" if true
+p["key"] := "value" if true
 ```
 
-The old paths remain deprecated during OPA 1.0. Register custom built-ins
-before concurrent evaluation because `RegisterBuiltin` is not thread-safe.
-Direct server integrations must also account for routing through
-`http.ServeMux` rather than `gorilla/mux`.
+These definitions can no longer coexist.
 
-Wasm evaluation now uses the pure-Go wazero runtime, so Wasm-enabled builds no
-longer need cgo or a C toolchain. Consult
-[references/go-sdk-and-tooling.md](references/go-sdk-and-tooling.md) before
-choosing a Go build toolchain or relying on AST source locations, policy-oracle
-lookups, evaluation caches, or request hooks.
+### Re-test corrected evaluation paths
 
-## Secure and expose the server deliberately
+Upgrades can change results for policies affected by earlier implementation
+bugs. Pay particular attention to:
 
-Server mode binds to localhost by default. Bind explicitly when another host
-or container must connect:
+- partial evaluation involving default functions, `every`, nested
+  comprehensions, copy propagation, or internal residual variables;
+- Wasm evaluation of reference-head rules;
+- overlapping indexed array and scalar rules;
+- `graph.reachable_paths`, which now returns all reachable paths;
+- two-variable membership over sets; and
+- arithmetic or formatting of integers larger than 64 bits.
+
+### Adapt server and integration assumptions
+
+`opa run --server` binds to localhost unless `--addr` is explicit:
 
 ```sh
 opa run --server --addr 0.0.0.0:8181
 ```
 
-Do not expose vulnerable standalone servers to attacker-controlled Data API
-paths. OPA 1.4.0 fixed CVE-2025-46569, under which injected path text could
-redirect a request, force success or failure, or consume excessive compute.
+OPA server routing uses `http.ServeMux`, so Go integrations coupled to the old
+router may need changes. HTTP servers also enforce a 32-second
+`ReadHeaderTimeout`. Validate clients and intermediaries that send headers
+slowly.
 
-Choose fixed point releases when a line has a known follow-up:
+Startup now warns about unknown configuration keys. Inspect those warnings,
+including `Config.Warnings` in Go embedders, so misspellings such as
+`decision_log` do not remain unnoticed.
 
-- Use 1.4.2 rather than 1.4.1 when tooling needs the versioned capabilities
-  file.
-- Use at least 1.13.1 for `array.flatten`, and 1.13.2 for the Go security
-  rebuild.
-- Use 1.16.1 rather than 1.16.0 to avoid the plugin-manager shutdown hang.
-- Use 1.17.1 distributed artifacts for the HTTP-handler and crypto-built-in
-  standard-library fixes.
-- Use 1.18.1 or later for long-running servers to avoid the `AnnotationSet`
-  leak, and 1.18.2 before formatting policy.
+### Update external protocol assumptions
 
-See
-[references/server-plugins-and-security.md](references/server-plugins-and-security.md)
-for REST credentials, TLS reloads, compile metadata, runtime limits, and
-outbound request identity.
+Outbound HTTP requests use this product token:
 
-## Treat testing and formatting output as an interface
-
-`opa test` runs in parallel by default, one thread per available CPU core. Use
-`--parallel=1` for order-sensitive tests:
-
-```sh
-opa test . --parallel=1
+```text
+User-Agent: Open-Policy-Agent/<version> (<os>, <arch>)
 ```
 
-Parameterized tests can generate named cases from their rule head. Reports
-count those cases correctly, JSON results can sort by duration, and test
-results now stream one case at a time. Coverage failures include full errors.
-Consumers must accept incremental output and rebaseline coverage because
-source ranges, inline rule heads, and conjunction expressions are tracked.
+Update exact-match log filters and WAF rules. Compile API deployments emitting
+PostgreSQL filters must also use the corrected SQL encoder before allowing
+dynamic reference keys to influence identifier positions.
 
-`opa eval` writes evaluation errors to stderr. Parse stdout and stderr
-separately. Formatting no longer rewrites unchanged files, but use 1.18.2 to
-avoid the 1.18.0 single-item collection layout regression.
+## High-value Rego capabilities
 
-## Opt in to corrected negation
+### Use expression interpolation
 
-Import `future.keywords.not` whenever policy uses `not` and the improved
-semantics are intended:
+Prefix a quoted template with `$` and place expressions in braces. Undefined
+expressions render as `<undefined>` rather than making the rule undefined:
 
 ```rego
-package example
+message := $"User {input.username} has role {input.role}"
+```
 
+### Opt in to improved negation semantics
+
+Import `future.keywords.not` whenever a policy uses `not` and should place all
+compiler-expanded parts of a composite expression inside the negated body:
+
+```rego
 import future.keywords.not
-
-blocked(name) if startswith(name, "blocked-")
 
 allow if {
 	not blocked(input.user)
 }
 ```
 
-The import places compiler-expanded parts of a composite expression inside the
-negated body. An undefined input or nested call then makes `not` succeed
-instead of making the enclosing rule fail. Unlike older future-keyword imports
-under Rego v1, this import selects behavior and is not a no-op.
+Unlike older future-keyword imports under Rego v1, this import selects changed
+behavior: undefined nested input or calls make `not` succeed.
 
-## Recheck corrected evaluation results
+### Use newer data helpers
 
-Upgrades can intentionally change results. Re-run tests for:
+- `array.flatten` flattens nested arrays; require at least 1.13.1 because
+  1.13.0 mishandles single-item arrays.
+- `uri.parse` returns RFC 3986 components and `uri.is_valid` reports malformed
+  inputs.
+- `strings.split_n` selects the first `n` fields for positive `n`, the last
+  `abs(n)` fields for negative `n`, all available fields when the magnitude is
+  too large, and an empty array for zero.
+- `time.parse_duration_ns` accepts days, weeks, and years.
+- `json.match_schema` accepts array-rooted documents; recursive schemas,
+  `$ref` within `allOf`, and `pattern` validation are supported.
 
-- partial evaluation involving default functions, `every`, nested
-  comprehensions, or wall-clock-dependent built-ins;
-- Wasm policies using reference-head rules;
-- overlapping indexed array and scalar rules;
-- `graph.reachable_paths`, which now returns every reachable path;
-- wildcard/generated result keys, which no longer synthesize JSON values;
-- non-finite `to_number` inputs and overly deep parser input, which now error.
+## High-value operations guidance
 
-Long-running `regex.replace`, `replace`, `strings.replace_n`, and `concat`
-calls now honor cancellation. See
-[references/evaluation-and-builtins.md](references/evaluation-and-builtins.md)
-for all built-in and partial-evaluation details.
+### Check bundles and preserve compatibility metadata
 
-## Configure high-volume operations
+Use `opa check --bundle` to detect conflicts between base documents and
+virtual documents. For mixed-version bundles, recheck per-module Rego version
+selection and overlapping `file_rego_versions` patterns. API-created bundles
+receive a default Rego version when one is omitted.
 
-For decision logs, the `event` buffer reduces lock contention but gives up the
-default buffer's precise memory-footprint guarantee:
+Optimized bundle entrypoints must contain at least a package and rule:
 
-```yaml
-decision_logs:
-  reporting:
-    buffer_type: event
-    trigger: immediate
+```sh
+opa build -O=1 -e=authz/allow .
 ```
 
-`trigger: immediate` uploads when a chunk fills; the configured delay remains
-the latest upload time. A rotating `file_logger` can receive both server and
-decision logs, and rule metadata labels can be merged into `rule_labels`.
+### Control testing and formatting changes
 
-Tracing can use HTTP collectors, discovery can join distributed traces, and
-Prometheus metrics can be exported through OTLP. See
-[references/observability-and-decision-logs.md](references/observability-and-decision-logs.md)
-for buffer, masking, metric, trace, logger, and resource-identity details.
+Tests run in parallel by default; use `--parallel=1` for order-sensitive
+suites. Parameterized tests can generate named cases in the test-rule head,
+and test output may be streamed. Coverage reports now use source ranges and
+track inline heads and conjunctions, so rebaseline location and total
+expectations after upgrading.
+
+Use 1.18.2 or later before accepting formatter diffs in the 1.18 line. It
+restores intended one-line formatting for single-item collections while
+retaining fixes for comment-adjacent `with` clauses.
+
+### Prefer patched point releases
+
+Use the patched point release called out for a release line when relying on
+distributed binaries or images. Several point releases restore missing
+capability files or logs, fix shutdown hangs and memory leaks, correct
+formatting or built-in behavior, and rebuild with Go standard-library security
+fixes. Self-built artifact security depends on the selected Go toolchain.
+
+## Working method
+
+1. Determine the deployed OPA version, distribution source, Rego mode, and
+   bundle producer versions from project evidence.
+2. Read the topic reference that matches the change under investigation.
+3. Apply version-specific guidance only where the project's version and mode
+   make it relevant.
+4. Re-run policy checks, tests, bundle validation, and integration tests that
+   exercise corrected behavior.
+5. Inspect startup warnings, logs, metrics, and decision output for changed
+   configuration or result shapes.

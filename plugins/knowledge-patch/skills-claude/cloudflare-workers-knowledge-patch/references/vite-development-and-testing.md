@@ -1,86 +1,77 @@
 # Vite development and testing
 
-## Workers Vite plugin
+This reference covers Vite and production-build test guidance from batches
+`2025` and `2026`, plus local observability from batch
+`2026-07-30-2026-08-14`.
+
+## Run Workers in Vite
 
 `@cloudflare/vite-plugin` v1 runs application code in `workerd` during Vite
-development while preserving HMR. It supports SPA, SSR, static, and API
-workloads (batch `2025`).
+development while retaining HMR. It supports SPA, SSR, static, and API
+workloads.
 
 ```ts
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite";
 
-export default defineConfig({
-  plugins: [cloudflare()],
-});
+export default defineConfig({ plugins: [cloudflare()] });
 ```
 
-## Configuration resolution and defaults
+## Resolve plugin configuration
 
 The entry Worker configuration is resolved in this order:
 
-1. the plugin's `configPath`;
-2. `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`;
-3. a root `wrangler.jsonc`, `wrangler.json`, or `wrangler.toml`.
+1. The plugin's `configPath`.
+2. `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`.
+3. A root `wrangler.jsonc`, `wrangler.json`, or `wrangler.toml`.
 
-A plugin `config` object or callback is applied afterward.
+A `config` object or callback is applied after file resolution. By default,
+state persists to `.wrangler/state`, the inspector listens on port 9229, and
+remote bindings are enabled. Plugin options can override those defaults or
+expose development through a tunnel.
 
-Default development behavior:
+## Configure auxiliary Workers
 
-| Setting | Default |
-|---|---|
-| persisted state | `.wrangler/state` |
-| inspector port | `9229` |
-| remote bindings | enabled |
-
-Plugin options can override those defaults and can expose development through a
-tunnel.
-
-## Auxiliary Workers
-
-Every `auxiliaryWorkers` entry must provide `configPath`, `config`, or both.
+Every `auxiliaryWorkers` entry requires `configPath`, `config`, or both.
 Requests still enter through the main Worker. Builds put each Worker in its own
 `dist` subdirectory.
 
-`wrangler deploy` deploys only the entry Worker. Deploy auxiliary Workers one
-at a time from their generated configurations:
+`wrangler deploy` deploys only the entry Worker. Deploy every auxiliary Worker
+separately:
 
 ```sh
 wrangler deploy -c dist/<auxiliary-worker>/wrangler.json
 ```
 
-## Static Assets with the plugin
+## Test production builds
 
-A project using the Cloudflare Vite plugin does not need to specify
-`assets.directory`; the integration supplies the build relationship. Other
-Static Assets routing options still matter where applicable.
+Wrangler's `createTestHarness()` starts Workers built by Wrangler or the Vite
+plugin from any Node.js test runner. It replaces `unstable_startWorker()` and
+`unstable_dev()` for integration testing.
 
-## Production-build integration tests
-
-Wrangler's `createTestHarness()` exercises Workers built by Wrangler or the
-Cloudflare Vite plugin from any Node.js test runner (batch `2026`). It replaces
-`unstable_startWorker()` and `unstable_dev()`.
-
-The harness can:
-
-- load multiple Worker configurations;
-- listen and dispatch requests through `server.fetch()`;
-- reset persisted storage with `server.reset()`;
-- expose runtime logs;
-- mock outbound requests;
-- integrate with Playwright.
+A harness can load multiple Worker configurations, dispatch requests through
+`server.fetch()`, clear storage with `server.reset()`, expose runtime logs,
+mock outbound requests, and support Playwright.
 
 ```ts
 const server = createTestHarness({
   workers: [{ configPath: "./workers/api/wrangler.jsonc" }],
 });
-
 await server.listen();
 const response = await server.fetch("http://api.example.com/");
 await server.reset();
 await server.close();
 ```
 
-Always close the harness. Reset storage between cases that require isolation.
-Because the harness runs production-built output, use it for behavior that a
-source-only test or a non-`workerd` development server cannot validate.
+Always close the harness. Reset storage between cases that require isolation,
+and exercise the same built output intended for deployment.
+
+## Inspect local traces and logs
+
+`wrangler dev` and `vite dev` automatically capture structured OpenTelemetry
+traces and correlated console logs. Local Explorer displays automatic spans for
+handlers, outbound `fetch()` calls, and binding calls alongside custom spans.
+
+Its `/cdn-cgi/explorer/api` endpoint exposes an OpenAPI schema and read-only
+queries for traces, logs, and binding state. The endpoint is advertised in the
+terminal when an agent session is detected.

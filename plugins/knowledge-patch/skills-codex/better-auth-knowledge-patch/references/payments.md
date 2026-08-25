@@ -1,8 +1,34 @@
 # Payments and Entitlements
 
-## Stripe billing models
+Payment plugins use different identity, persistence, cancellation, and entitlement rules. Do not transfer assumptions between them.
 
-Stripe can synchronize organization member count to a per-seat price. Plans also support usage-oriented `lineItems`, deferred changes through `scheduleAtPeriodEnd`, and tracked `billingInterval` values.
+## Autumn
+
+`autumn-js/better-auth` can bill a user, organization, both, or a custom identity returned by `identify`. It automatically creates customers and assigns configured default plans. Autumn state is queried directly rather than synchronized through application webhooks. React uses `AutumnProvider` and `useCustomer`; server code calls auth APIs to check and record usage.
+
+```ts
+plugins: [
+  organization(),
+  autumn({ customerScope: "user_and_organization" }),
+]
+
+const { allowed } = await auth.api.check({
+  headers,
+  body: { featureId: "messages" },
+});
+if (allowed) {
+  await auth.api.track({
+    headers,
+    body: { featureId: "messages", value: 1 },
+  });
+}
+```
+
+## Stripe
+
+### Organization and usage billing
+
+The Stripe plugin can synchronize organization member count to a per-seat price. Plans support usage `lineItems`, deferred changes through `scheduleAtPeriodEnd`, and tracked `billingInterval` values.
 
 ```ts
 stripe({
@@ -20,13 +46,9 @@ stripe({
 })
 ```
 
-Before granting a free trial, Stripe checks every subscription belonging to the user.
+### References and upgrades
 
-## Stripe references and upgrades
-
-Stripe permits only one active or trialing subscription per reference. To change an existing subscription, pass its Stripe subscription ID to `subscription.upgrade`; otherwise a second billed subscription can be created.
-
-Custom references require `authorizeReference`. A manually defined `subscription.referenceId` must remain non-unique so canceled customers can subscribe again. Organization billing must pass `customerType: "organization"`; user billing is the default.
+Stripe permits one active or trialing subscription per reference. To change one, pass its Stripe subscription ID to `subscription.upgrade`; omitting it may create a second billed subscription. Custom references require `authorizeReference`. A manually defined `subscription.referenceId` must remain non-unique so canceled customers can subscribe again. Organization billing must send `customerType: "organization"` because user billing is the default.
 
 ```ts
 stripe({
@@ -51,11 +73,9 @@ await authClient.subscription.upgrade({
 });
 ```
 
-## Stripe cancellation recovery
+### Cancellation and restore
 
-Cancellation opens Stripe Billing Portal. A subscription scheduled to cancel remains active until it actually ends.
-
-`subscription.restore` clears a still-active pending cancellation or releases a pending plan-change schedule. It cannot revive a subscription whose status is already `canceled` and whose `endedAt` is set.
+Cancellation opens Stripe Billing Portal, and a scheduled cancellation remains active until the period ends. `subscription.restore` can clear a still-active cancellation or release a pending plan-change schedule. It cannot revive a subscription whose status is already `canceled` and whose `endedAt` is set.
 
 ```ts
 await authClient.subscription.restore({
@@ -65,35 +85,11 @@ await authClient.subscription.restore({
 });
 ```
 
-## Autumn
-
-`autumn-js/better-auth` can make the billable customer a user, an organization, both, or a custom identity returned by `identify`. It creates customers automatically and assigns configured default plans.
-
-Autumn is queried directly instead of synchronized through application webhooks. React uses `AutumnProvider` and `useCustomer`; server code checks entitlement and records usage through the auth API.
-
-```ts
-plugins: [
-  organization(),
-  autumn({ customerScope: "user_and_organization" }),
-]
-
-const { allowed } = await auth.api.check({
-  headers,
-  body: { featureId: "messages" },
-});
-if (allowed) {
-  await auth.api.track({
-    headers,
-    body: { featureId: "messages", value: 1 },
-  });
-}
-```
+Before granting a free trial, the plugin checks every subscription owned by the user.
 
 ## Polar
 
-`@polar-sh/better-auth` composes checkout, portal, usage, and webhook modules under `polar({ use: [...] })`. Automatically created customers use the Better Auth user ID as Polar `externalId`; no local mapping is necessary.
-
-A user's customer state and ordinary subscription list exclude subscriptions bought by a parent organization. Organization checkout should set `referenceId`, and access checks should list subscriptions with that same reference.
+`@polar-sh/better-auth` composes checkout, portal, usage, and webhook modules under `polar({ use: [...] })`. Automatically created customers use the Better Auth user ID as Polar `externalId`, so no local mapping is required.
 
 ```ts
 polar({
@@ -110,7 +106,11 @@ polar({
     webhooks({ secret: process.env.POLAR_WEBHOOK_SECRET! }),
   ],
 })
+```
 
+A user's customer state and ordinary subscription list exclude subscriptions bought by a parent organization. Organization checkout must set `referenceId`, and entitlement lookup must list subscriptions with that same reference.
+
+```ts
 const { data: subscriptions } =
   await authClient.customer.subscriptions.list({
     query: { active: true, referenceId: organization.id },
@@ -119,9 +119,7 @@ const { data: subscriptions } =
 
 ## Creem
 
-`persistSubscriptions: true` is the default and requires a migration. Database mode stores webhook-synchronized subscriptions, enables automatic cross-plan trial-abuse prevention, and supports client access checks. API mode has no client `hasAccessGranted`, and server access checks remain limited.
-
-Database mode enables high-level `onGrantAccess` and `onRevokeAccess` hooks. `hasAccessGranted` keeps access through the paid period even after early cancellation.
+`persistSubscriptions: true` is the default and requires a migration. Database mode stores webhook-synchronized subscriptions, automatically prevents cross-plan trial abuse, enables the client access check, and supports `onGrantAccess`/`onRevokeAccess`. API mode has no client `hasAccessGranted`, and server access checks are more limited. A canceled subscription retains access through its paid period.
 
 ```ts
 creem({
@@ -137,9 +135,7 @@ const { data } = await authClient.creem.hasAccessGranted();
 
 ## Dodo Payments
 
-`authClient.dodopayments.checkout()` is deprecated. Configure a product slug and call `checkoutSession()`.
-
-Checkout allows unauthenticated users by default unless `authenticatedUsersOnly` is set. The webhook module defaults to `/api/auth/dodopayments/webhooks`.
+`authClient.dodopayments.checkout()` is deprecated. Configure a product slug and call `checkoutSession()`. Checkout allows anonymous users by default unless `authenticatedUsersOnly` is enabled. The webhook module defaults to `/api/auth/dodopayments/webhooks`.
 
 ```ts
 checkout({
@@ -153,11 +149,11 @@ const { data } = await authClient.dodopayments.checkoutSession({
 });
 ```
 
-## Openfort bearer and encryption sessions
+## Openfort
 
-The Openfort server integration requires Better Auth `bearer()` before `openfort()`. Its `encryptionSession` module mounts `/api/auth/encryption-session` and uses three Shield credentials.
+### Bearer and encryption sessions
 
-On the client, configure the Better Auth bearer client, return its session token from `OpenfortProvider.thirdPartyAuth`, and exchange that token at the mounted endpoint from `getEncryptionSession`.
+Place Better Auth's `bearer` plugin before `openfort`. The `encryptionSession` module mounts `/api/auth/encryption-session` using the three Shield credentials. On the client, add the bearer client, return its session token from `OpenfortProvider.thirdPartyAuth`, and exchange that token from `getEncryptionSession` at the mounted endpoint.
 
 ```ts
 plugins: [
@@ -175,14 +171,11 @@ plugins: [
 ]
 ```
 
-## Openfort chains and recovery
+### Chains and recovery
 
-`@openfort/react` supports EVM, Solana, or both. EVM peers are `viem` and `wagmi`; the Solana peer is `@solana/kit`. The provider does not require a Wagmi/React Query bridge unless Wagmi hooks are used.
-
-`OpenfortProvider` connects on login by default. Set `connectOnLogin: false` to leave wallet creation to embedded-wallet hooks, with automatic, passkey, or password recovery.
+`@openfort/react` supports EVM, Solana, or both. EVM peers are `viem` and `wagmi`; Solana uses `@solana/kit`. The provider does not need a Wagmi/React Query bridge unless Wagmi hooks are used. It connects on login by default; `connectOnLogin: false` leaves wallet creation to embedded-wallet hooks with automatic, passkey, or password recovery.
 
 ```tsx
 const { create } = useEthereumEmbeddedWallet();
-
 await create({ recoveryMethod: RecoveryMethod.PASSKEY });
 ```

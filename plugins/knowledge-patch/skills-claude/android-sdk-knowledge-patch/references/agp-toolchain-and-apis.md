@@ -1,51 +1,57 @@
 # AGP Toolchain and Public APIs
 
-Use this reference when selecting an Android Gradle Plugin toolchain,
-migrating build logic to public lazy APIs, configuring Kotlin, or preparing a
-plugin for the AGP 10 build model. These changes derive from the
-`agp-9-toolchain` batch.
+Source batch: `agp-9-toolchain`.
 
-## Contents
+## Toolchain compatibility
 
-- [Supported toolchain combinations](#supported-toolchain-combinations)
-- [Public DSL and Variant API migration](#public-dsl-and-variant-api-migration)
-- [Kotlin and KMP integration](#kotlin-and-kmp-integration)
-- [Changed Android defaults](#changed-android-defaults)
-- [DSL shape changes](#dsl-shape-changes)
-- [Feature flags and module configuration](#feature-flags-and-module-configuration)
-- [Preparing for AGP 10](#preparing-for-agp-10)
+### Match AGP, Gradle, SDK, JDK, Build Tools, and NDK
 
-## Supported toolchain combinations
+AGP 9.0 supports through API 36.1 and requires Gradle 9.1.0. AGP 9.2
+supports API 37.0 and requires Gradle 9.4.1. AGP 9.3 supports API 37 and
+requires Gradle 9.5.0. All require JDK 17, use Build Tools 36.0.0, and default
+to NDK 28.2.13676358 (`r28c`).
 
-| AGP | Supported Android API | Required Gradle | JDK | Build Tools | Default NDK |
-| --- | --- | --- | --- | --- | --- |
-| 9.0 | Through API 36.1 | 9.1.0 | 17 | 36.0.0 | 28.2.13676358 (`r28c`) |
-| 9.2 | API 37.0 | 9.4.1 | 17 | 36.0.0 | 28.2.13676358 (`r28c`) |
-| 9.3 | API 37 | 9.5.0 | 17 | 36.0.0 | 28.2.13676358 (`r28c`) |
+AGP 9.0 also makes a library's compile SDK the default minimum compile SDK for
+consumers unless the publisher explicitly sets `AarMetadata.minCompileSdk`.
 
-In AGP 9.0, a library's compile SDK becomes the default minimum compile SDK
-for consumers. Publishers that require another floor must set
-`AarMetadata.minCompileSdk` explicitly.
+### Built-in Kotlin owns compiler integration
+
+AGP 9.0 enables built-in Kotlin. Android modules must stop applying
+`org.jetbrains.kotlin.android` or `kotlin-android`. AGP carries KGP 2.2.10 and
+upgrades lower KGP versions and KSP versions below 2.2.10-2.0.2.
+
+Supply a newer KGP as a top-level `buildscript` classpath dependency. A lower,
+strictly constrained KGP—no lower than 2.0.0—requires opting out of built-in
+Kotlin.
+
+### KMP requires the dedicated Android integration
+
+The new DSL cannot combine `org.jetbrains.kotlin.multiplatform` with
+`com.android.application` or `com.android.library` in one subproject. Use the
+Android Gradle Library Plugin for KMP. Move an Android application into a
+separate subproject because the new KMP integration does not support the
+application plugin in the KMP module.
+
+### Shader compilation needs an explicit path
+
+When shader compilation is enabled, set `glslc.dir=/path/to/shader-tools` in
+`local.properties`. The old implicit lookup is available only by opting out of
+`android.custom.shader.path.required` during migration.
 
 ## Public DSL and Variant API migration
 
-AGP 9.0 hides legacy DSL implementations and legacy variant entry points. Use
-the public DSL, `androidComponents`, lazy properties, and artifact providers.
+### Replace legacy entry points
 
-| Removed or legacy API | Replacement |
+AGP 9.0 hides legacy DSL implementations and Variant API entry points. Use:
+
+| Legacy API | Public replacement |
 | --- | --- |
-| `applicationVariants` and sibling collections | `androidComponents.onVariants` |
+| `applicationVariants` and siblings | `androidComponents.onVariants` |
 | `variantFilter` | `androidComponents.beforeVariants` |
 | SDK path getters | `androidComponents.sdkComponents` |
 | Custom test providers | Gradle-managed devices |
-| `Component` bytecode transforms | `Instrumentation` |
-| `Component` ASM frame configuration | `Instrumentation` |
-| `ComponentBuilder.enabled` | `enable` |
-| `VariantOutput.enable` | `enabled` |
-| `*SdkVersion` variant properties | `minSdk`, `maxSdk`, or `targetSdk` |
-| `BaseExtension.registerTransform` | Instrumentation transform APIs |
 
-Example variant disabling:
+For example:
 
 ```kotlin
 androidComponents {
@@ -53,101 +59,114 @@ androidComponents {
 }
 ```
 
-Unit-test members are available only on the relevant `HasUnitTest` and
-`HasUnitTestBuilder` subtypes. Do not cast every component to an implementation
-type merely to recover removed members.
+`android.newDsl=false` can temporarily restore the old implementation for an
+incompatible plugin, but AGP 10 removes this switch.
 
-`android.newDsl=false` temporarily exposes the old implementation to
-incompatible plugins on AGP 9. The switch is removed in AGP 10.
+### Register sources lazily
 
-## Kotlin and KMP integration
+Generated-source providers must use the `androidComponents` Sources API rather
+than `AndroidSourceSet`. Build logic preparing for AGP 10 should use
+`variant.sources.*.addGeneratedSourceDirectory` and avoid eager task or source
+registration.
 
-### Built-in Kotlin
+### Update reshaped DSL types and setters
 
-AGP 9.0 enables built-in Kotlin. Android modules must stop applying
-`org.jetbrains.kotlin.android` or `kotlin-android` in parallel.
+`CommonExtension` is no longer parameterized. Invoke its block methods on a
+concrete extension or through properties such as `defaultConfig.apply`.
 
-AGP carries Kotlin Gradle Plugin 2.2.10. It upgrades lower KGP versions to
-2.2.10 and KSP versions below 2.2.10-2.0.2 to that KSP version. Supply a higher
-KGP as a top-level `buildscript` classpath dependency. A lower strictly
-constrained KGP is supported only down to 2.0.0 and only after opting out of
-built-in Kotlin.
+Other required replacements are:
 
-### Kotlin Multiplatform
+- `DependencyVariantSelection` becomes `DependencySelection` at
+  `kotlin.android.localDependencySelection`.
+- `Installation.installOptions(String)` becomes the mutable `installOptions`
+  property.
+- `ProductFlavor.setDimension` becomes the `dimension` property.
+- `DensitySplit`, `LanguageSplitOptions`, and the experimental
+  `PostProcessing` block are removed.
 
-The new DSL cannot combine `org.jetbrains.kotlin.multiplatform` with
-`com.android.application` or `com.android.library` in one subproject. Use the
-Android Gradle Library Plugin for the KMP module. Put an Android application in
-a separate subproject because the new KMP integration does not support the
-application plugin inside the KMP module.
+### Update plugin APIs
 
-### Local dependency selection
+Bytecode transformation and ASM frame configuration moved from `Component` to
+`Instrumentation`. `ComponentBuilder.enabled` became `enable`, while
+`VariantOutput.enable` became `enabled`. The old `*SdkVersion` variant
+properties became `minSdk`, `maxSdk`, or `targetSdk`.
 
-Replace `DependencyVariantSelection` with `DependencySelection`, configured at
-`kotlin.android.localDependencySelection`.
+Unit-test members are available only on `HasUnitTest` or
+`HasUnitTestBuilder` subtypes. `BaseExtension.registerTransform` is removed;
+use instrumentation transforms.
 
 ## Changed Android defaults
 
-AGP 9.0 changes these defaults and requirements:
+### Core module defaults
+
+AGP 9.0 makes these changes:
 
 - Library package names must be unique.
 - AndroidX is the default dependency family.
 - Application code compiles against a non-final `R`.
-- If `targetSdk` is unset, it defaults to `compileSdk`, not `minSdk`.
-- `resValues` is disabled until enabled in each module that needs it.
-- Generated-source providers must be registered with the
-  `androidComponents` Sources API, not through `AndroidSourceSet`.
-- On-device tests use `AndroidJUnitRunner` by default.
-- Only the tested build type receives a unit-test component by default,
-  normally debug rather than both debug and release.
-- `android.dependency.useConstraints` defaults to `false`, which limits
-  dependency constraints to application device tests unless old behavior is
-  restored explicitly.
+- An unset target SDK defaults to the compile SDK, not the minimum SDK.
+- `resValues` is disabled unless enabled per module.
 
-## DSL shape changes
+Audit implicit behavior before upgrading, especially target SDK and generated
+resource assumptions.
 
-- `CommonExtension` is no longer parameterized.
-- Invoke its block methods on a concrete extension or through properties such
-  as `defaultConfig.apply`.
-- Replace `Installation.installOptions(String)` with the mutable
-  `installOptions` property.
-- Replace `ProductFlavor.setDimension` with the `dimension` property.
-- `DensitySplit`, `LanguageSplitOptions`, and the experimental
-  `PostProcessing` block are removed.
+### Test and dependency defaults
 
-## Feature flags and module configuration
+On-device tests default to `AndroidJUnitRunner`. Only the tested build type gets
+a unit-test component by default—normally debug, not both debug and release.
+
+`android.dependency.useConstraints` defaults to `false`, restricting dependency
+constraints to application device tests unless the old behavior is explicitly
+restored.
+
+### Module-level feature flags
 
 The global `android.defaults.buildfeatures.aidl` and
 `android.defaults.buildfeatures.renderscript` properties are removed. Enable
-`aidl` or `renderScript` only in modules that use the feature.
+`aidl` or `renderScript` only in modules that need them.
 
 AGP 9.0 rejects `android.r8.integratedResourceShrinking` and
-`android.enableNewResourceShrinker.preciseShrinking`. Integrated precise
-resource shrinking is mandatory; remove both properties.
+`android.enableNewResourceShrinker.preciseShrinking`; integrated, precise
+resource shrinking is mandatory.
 
-## Preparing for AGP 10
+## Packaging and publication
 
-AGP 10's planned lazy build model removes:
+### Removed packaging and report features
 
-- `android.newDsl` and `android.builtInKotlin`.
-- Every legacy extension and Variant API.
-- Direct task access and eager generated-source registration.
-- The Transform API.
+AGP 9.0 removes embedded Wear OS apps and the `wearApp` configuration,
+density-split APKs, and the `androidDependencies` and `sourceSets` report tasks.
+Publish Wear apps separately and use app bundles for density delivery.
 
-Custom build logic must use `Variant.artifacts`,
-`variant.sources.*.addGeneratedSourceDirectory`,
-`variant.instrumentation.transformClassesWith`, and lazy properties. Plugin
-projects must compile against `gradle-api`; the `gradle` artifact will no
-longer expose internal AGP classes.
+### Fuse libraries into one AAR
 
-Stage strict behavior on AGP 9.x with:
+The preview Fused Library Plugin can package several Android libraries into one
+published Android Library AAR. Treat it as a preview capability when deciding
+whether to use it in a stable publication pipeline.
+
+## Preparing build logic for AGP 10
+
+### Remove all legacy coupling
+
+AGP 10's planned lazy build system removes `android.newDsl`,
+`android.builtInKotlin`, legacy extensions and Variant APIs, direct task access,
+eager generated-source registration, and the Transform API.
+
+Use `Variant.artifacts`, `variant.sources.*.addGeneratedSourceDirectory`,
+`variant.instrumentation.transformClassesWith`, and lazy properties. Compile
+plugins against `gradle-api`; the `gradle` artifact will no longer expose
+internal AGP classes.
+
+### Stage strict behavior on AGP 9.x
+
+Enable both modern-mode flags to test stricter behavior:
 
 ```properties
 android.newDsl=true
 android.builtInKotlin=true
 ```
 
-Starting in AGP 9.4.0-alpha04, `android.newDsl.optOut=:lib` can temporarily
-exempt named modules. That escape hatch disappears in AGP 10. A module with no
-Kotlin can set `android { enableKotlin = false }` to avoid its Kotlin compiler
-task and standard-library dependency.
+Beginning with AGP 9.4.0-alpha04,
+`android.newDsl.optOut=:lib` can temporarily exempt named modules, but the
+option disappears in AGP 10. A module without Kotlin can use
+`android { enableKotlin = false }` to avoid creating the Kotlin compiler task
+and adding the standard-library dependency.

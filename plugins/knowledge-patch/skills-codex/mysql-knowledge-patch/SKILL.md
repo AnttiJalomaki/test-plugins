@@ -10,36 +10,36 @@ metadata:
 
 # MySQL Knowledge Patch
 
-Use this skill when writing MySQL SQL, planning an upgrade, changing authentication
-or replication, sizing a server, operating InnoDB, or adopting JSON Duality Views
-and stored JavaScript. Check the relevant reference before relying on older defaults,
-plugins, client behavior, or downgrade procedures.
+Use this skill when writing MySQL SQL, planning an upgrade, changing
+authentication or replication, sizing a server, operating InnoDB, or adopting
+JSON Duality Views and stored JavaScript. Check the relevant reference before
+relying on older defaults, plugins, client behavior, or downgrade procedures.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Compatibility, Upgrades, and Installation](references/compatibility-upgrades-and-installation.md) | Upgrade checks, downgrade prohibition, removed features, spatial-index safety, Clone, packages, platform support |
-| [Security, Authentication, and Components](references/security-authentication-and-components.md) | Privileges, authentication policy, password storage, roles, connection control, keyrings, firewall, masking |
-| [Replication and High Availability](references/replication-and-high-availability.md) | Version compatibility, encrypted connections, GTIDs, Group Replication, semisynchronous replication, binary-log behavior |
-| [SQL, Schema, and Optimizer](references/sql-schema-and-optimizer.md) | Primary-key equivalents, DDL algorithms, collation, subqueries, EXPLAIN, temporal validation, Hypergraph Optimizer |
-| [JSON Duality Views and MLE](references/json-duality-and-mle.md) | Duality View definition and DML, stored JavaScript types and APIs, reusable libraries, WebAssembly |
-| [Server, InnoDB, and Resource Sizing](references/server-innodb-and-resource-sizing.md) | Container and cgroup awareness, automatic sizing, change buffering, log writers, Thread Pool |
-| [Clients, Observability, and Audit](references/clients-observability-and-audit.md) | mysql and mysqldump, Configurator, Option Tracker, telemetry, account locks, diagnostics, Audit Log |
+| [Compatibility, Upgrades, and Installation](references/compatibility-upgrades-and-installation.md) | Upgrade checks, downgrade prohibition, removed features, spatial-index safety, Clone, packages, and platform support |
+| [Security, Authentication, and Components](references/security-authentication-and-components.md) | Privileges, authentication policy, password storage, roles, connection control, keyrings, firewall, and masking |
+| [Replication and High Availability](references/replication-and-high-availability.md) | Version compatibility, encrypted connections, GTIDs, Group Replication, retries, and binary-log behavior |
+| [SQL, Schema, and Optimizer](references/sql-schema-and-optimizer.md) | Primary-key equivalents, DDL algorithms, collation, subqueries, EXPLAIN, temporal validation, and optimizer behavior |
+| [JSON Duality Views and MLE](references/json-duality-and-mle.md) | Duality View definition and DML, stored JavaScript types and APIs, reusable libraries, and WebAssembly |
+| [Server, InnoDB, and Resource Sizing](references/server-innodb-and-resource-sizing.md) | Container and cgroup awareness, automatic sizing, change buffering, log writers, redo diagnostics, and Thread Pool |
+| [Clients, Observability, and Audit](references/clients-observability-and-audit.md) | mysql and mysqldump, Configurator, Option Tracker, telemetry, account locks, diagnostics, and Audit Log |
 
 ## Check migration blockers first
 
 ### Do not automate Innovation-release rollback
 
 Downgrades between individual Innovation releases are unsupported, including a
-rollback between point releases. Treat rollback as restore or rebuild work, not as
-starting an older binary over the upgraded data directory.
+rollback between point releases. Treat rollback as restore or rebuild work, not
+as starting an older binary over the upgraded data directory.
 
 ### Protect spatial indexes during upgrade
 
 Before an affected upgrade, drop spatial indexes and recreate them afterward. If
-they remain through the upgrade, recreate them before querying their tables. Use
-`CHECK TABLE ... EXTENDED` afterward to compare each spatial index MBR with the
+they remain through the upgrade, recreate them before querying their tables. Run
+`CHECK TABLE ... EXTENDED` afterward to compare each spatial-index MBR with the
 geometry MBR stored in the clustered record.
 
 ### Validate stored expressions
@@ -56,17 +56,18 @@ interactive repair procedure is ready.
 
 ### Replace removed and deprecated facilities
 
-- Version Tokens is removed; remove plugin loading, its functions, privilege, and
-  session variables.
+- Remove Version Tokens plugin loading, its functions, privilege, and session
+  variables.
 - Migrate server plugins and keyring plugins to components. The plugin API and
   `--early-plugin-load` are deprecated.
 - Replace `semisync_master` and `semisync_slave` with `semisync_source` and
   `semisync_replica`.
 - Install `classic_hashing` only when an application still needs `MD5()` or
   `SHA1()`.
-- Remove configurations for settings that no longer exist, including
-  `innodb_log_file_size`, `innodb_log_files_in_group`, and
-  `innodb_undo_tablespaces`.
+- Remove settings that no longer exist, including `innodb_log_file_size`,
+  `innodb_log_files_in_group`, and `innodb_undo_tablespaces`.
+- Move Enterprise Linux 7 deployments to a supported operating system before
+  upgrading.
 
 Read [Compatibility, Upgrades, and Installation](references/compatibility-upgrades-and-installation.md)
 for the complete removal list and installation constraints.
@@ -75,22 +76,23 @@ for the complete removal list and installation constraints.
 
 ### Stop depending on privilege-cache flushes
 
-Account-management statements update privileges directly. `FLUSH PRIVILEGES`, its
-dedicated privilege, related mysqladmin commands, SIGHUP-based flushing, and using
-the statement to clear the caching-SHA-2 cache are deprecated.
+Account-management statements update privileges directly. `FLUSH PRIVILEGES`,
+its dedicated privilege, related mysqladmin commands, SIGHUP-based flushing, and
+using the statement to clear the caching-SHA-2 cache are deprecated.
 
 ### Choose password storage independently of clients
 
 `caching_sha2_password` can store credentials with PBKDF2 and SHA-512, including
 for X Protocol authentication. Administrators can change or enforce the storage
-format without client changes. Review the digest-round setting as well; its newer
-default is `10000`.
+format without client changes. Review the digest-round setting as well; its
+newer default is `10000`.
 
 ### Account for automatic role activation
 
 `activate_mandatory_roles` is enabled by default. When
 `activate_all_roles_on_login` is off, mandatory roles supplement default roles.
-When it is on, mandatory and granted roles activate regardless of the new setting.
+When it is on, mandatory and granted roles activate regardless of the new
+setting.
 
 ### Use components and policy DDL
 
@@ -120,16 +122,16 @@ anonymous setup. A lower-version replica requires
 
 ### Re-baseline plans and diagnostics
 
-`explain_format` defaults to `TREE`, while JSON EXPLAIN defaults to format version
-2. Consumers must recognize schema `2.0`, the reduced top-level shape, and
-`lookup_references`.
+`explain_format` defaults to `TREE`, while JSON EXPLAIN defaults to format
+version 2. Consumers must recognize schema `2.0`, the reduced top-level shape,
+and `lookup_references`.
 
 ### Recheck automatic sizing
 
-The server observes container CPU and memory limits, including cpuset assignments.
-`server_memory` limits the physical-memory value used to derive defaults; it is not
-a hard cap on process memory. Explicitly configured values remain the safest way
-to preserve a tuned deployment.
+The server observes container CPU and memory limits, including cpuset
+assignments. `server_memory` limits the physical-memory value used to derive
+defaults; it is not a hard cap on process memory. Explicit settings remain the
+safest way to preserve a tuned deployment.
 
 ## Use the current SQL and schema behavior
 
@@ -154,8 +156,8 @@ than `INSTANT` by default. This avoids consuming a row version; do not assert
 
 ### Opt into the Hypergraph Optimizer at the right scope
 
-The Hypergraph Optimizer is available in Community Edition and can be selected at
-session, global, persisted, startup, or statement scope:
+The Hypergraph Optimizer is available in Community Edition and can be selected
+at session, global, persisted, startup, or statement scope:
 
 ```sql
 SET optimizer_switch='hypergraph_optimizer=on';
@@ -163,20 +165,21 @@ SET optimizer_switch='hypergraph_optimizer=on';
 
 ## Adopt JSON Duality View DML consciously
 
-Duality View definitions grant or deny `INSERT`, `UPDATE`, and `DELETE` per table.
-Runtime DML is checked against those tags. Community Server permits all three DML
-forms through the views and supports auto-increment columns, including automatic
-primary-key generation.
+Duality View definitions grant or deny `INSERT`, `UPDATE`, and `DELETE` per
+table. Runtime DML is checked against those tags. Community Server permits all
+three DML forms through the views and supports auto-increment columns, including
+automatic primary-key generation.
 
 Documents selected from a Duality View include `_metadata.etag`. Use the four
-`JSON_DUALITY_VIEW*` Information Schema tables to inspect the mapping rather than
+`JSON_DUALITY_VIEW*` Information Schema tables to inspect the mapping instead of
 reverse-engineering the generated document.
 
 ## Build stored JavaScript with the expanded MLE APIs
 
 Stored JavaScript accepts `ENUM`, `SET`, `BIT`, and full `DECIMAL`/`NUMERIC`
 input, output, binding, and return paths. Decimal values are strings by default;
-request `decimalType=NUMBER` only when JavaScript numeric precision is acceptable.
+request `decimalType=NUMBER` only when JavaScript numeric precision is
+acceptable.
 
 Reusable libraries support create, alter, status, comments, routine `USING`
 clauses, and dynamic imports. A WebAssembly library can be encoded as hexadecimal

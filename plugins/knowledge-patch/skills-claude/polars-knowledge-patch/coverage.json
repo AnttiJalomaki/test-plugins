@@ -2,7 +2,7 @@
   "patch": "polars-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T11:35:52Z",
+  "built_at": "2026-08-21T20:49:56Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -33,6 +33,11 @@
       "build": "included"
     },
     "1.41.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "py-1.43.2-rs-0.55.1-0.55.2": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

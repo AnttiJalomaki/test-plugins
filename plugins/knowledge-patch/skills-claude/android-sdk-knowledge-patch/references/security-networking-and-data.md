@@ -1,181 +1,149 @@
 # Security, Networking, and Data Access
 
-Use this reference for native compatibility, permission, intent, network,
-storage, cryptography, and profile-isolation work. Source batch IDs are shown
-as `api-36` and `api-37` where behavior is API-specific.
+## Intent hardening
 
-## Contents
+### Preserve nested-intent launch protection
 
-- [Native compatibility and dynamic code](#native-compatibility-and-dynamic-code)
-- [Permission migrations](#permission-migrations)
-- [Intent and component boundaries](#intent-and-component-boundaries)
-- [TLS and cleartext traffic](#tls-and-cleartext-traffic)
-- [Data-provider and storage behavior](#data-provider-and-storage-behavior)
-- [Profile isolation and cryptography](#profile-isolation-and-cryptography)
-- [SMS OTP confidentiality](#sms-otp-confidentiality)
-
-## Native compatibility and dynamic code
-
-### 16 KB memory pages (`api-36`)
-
-Android 16 can run some 4 KB-aligned apps in compatibility mode on devices
-using 16 KB pages and displays a user dialog when doing so. When compiling
-with API 36, enabling the `android:pageSizeCompat` manifest property suppresses
-the dialog. This is not a substitute for rebuilding native code with 16 KB
-alignment.
-
-### Read-only native dynamic code (`api-37`)
-
-For API 37-targeted apps, dynamic-code-loading protection includes native
-libraries. A file passed to `System.load()` must already be read-only;
-otherwise loading fails with `UnsatisfiedLinkError`.
-
-## Permission migrations
-
-### Granular health sensors (`api-36`)
-
-API 36-targeted apps replace `BODY_SENSORS` with specific health permissions,
-such as `READ_HEART_RATE`, and replace `BODY_SENSORS_BACKGROUND` with
-`READ_HEALTH_DATA_IN_BACKGROUND`. The migration includes affected Wear OS APIs
-and health foreground services.
-
-Mobile apps must declare an activity that explains the privacy-policy
-rationale. If it is absent, the permission is revoked.
-
-### Local network trial mode (`api-36`)
-
-Android 16 local-network protection is opt-in for testing. Enable
-`RESTRICT_LOCAL_NETWORK`, then reboot:
-
-```shell
-adb shell am compat enable RESTRICT_LOCAL_NETWORK com.example.app
-```
-
-The flag gates in-process LAN TCP, UDP, multicast, broadcast, and native
-sockets while leaving internet traffic available. Out-of-process framework
-APIs such as `NsdManager` are not restricted during this phase. Declaring and
-granting `NEARBY_WIFI_DEVICES` restores the gated access. Test both denial and
-revocation before relying on future dedicated permission behavior.
-
-### Local network runtime permission (`api-37`)
-
-API 37-targeted apps must declare and request `ACCESS_LOCAL_NETWORK`, which is
-in the `NEARBY_DEVICES` group, for LAN discovery and connections. An existing
-nearby-device grant prevents another prompt. A system-mediated device picker
-is the alternative when direct permission is undesirable.
-
-```xml
-<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
-```
-
-## Intent and component boundaries
-
-### Nested-intent launch hardening (`api-36`)
-
-Android 16 protects every app against unsafe launches of nested intents. If a
-reviewed legitimate flow breaks, code compiled against API 36 may call
+Android 16 protects every app from unsafe nested-intent launches. If a
+legitimate flow breaks, code compiled against API 36 can call
 `removeLaunchSecurityProtection()` on the nested `Intent` before launching it.
-This restores the redirection risk and should not be applied broadly.
+Use that escape hatch only after validating the flow because it restores the
+intent-redirection risk.
 
-### Strict incoming intent matching (`api-36`)
+### Opt into strict incoming matching
 
-API 36 apps can require explicit cross-app intents to match the target
-component's filter and stop actionless intents from matching:
+API 36 apps can require cross-app explicit intents to match the target
+component's filter and can prevent actionless intents from matching:
 
 ```xml
 <application android:intentMatchingFlags="enforceIntentFilter" />
 ```
 
 A component can override the application setting with `none`.
-`allowNullAction` selectively permits an absent action.
+`allowNullAction` selectively permits an absent action. Test callers before
+enforcing the setting because explicit intents that previously bypassed filter
+matching can be rejected.
 
-### Background launches through IntentSender (`api-37`)
+## Local-network access
 
-Android 17 extends background-activity launch controls to `IntentSender`.
-Replace the broad legacy `MODE_BACKGROUND_ACTIVITY_START_ALLOWED` with a
-granular mode such as `MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE`. Use
-StrictMode or lint to locate old flows.
+### Test denial on Android 16
 
-### Explicit URI grants (`api-37`)
+Android 16 local-network protection is opt-in rather than enforced. Enable the
+compatibility change and reboot:
 
-Android 18 will stop providing implicit URI access for `ACTION_SEND`,
-`ACTION_SEND_MULTIPLE`, and `ACTION_IMAGE_CAPTURE`. Android 17 provides
-`StrictMode.VmPolicy.Builder.detectImplicitUriPermissionGrant()` to find such
-dependencies.
+```shell
+adb shell am compat enable RESTRICT_LOCAL_NETWORK com.example.app
+```
+
+The test gates in-process LAN TCP, UDP, multicast, broadcast, and native
+sockets, while internet traffic remains available. Out-of-process framework
+APIs such as `NsdManager` are not restricted in this test phase. Declaring and
+granting `NEARBY_WIFI_DEVICES` restores gated LAN access.
+
+Exercise denial and revocation now rather than assuming the early behavior is
+the final permission contract.
+
+### Request the dedicated permission for API 37
+
+API 37 targets must declare and request `ACCESS_LOCAL_NETWORK`, in the
+`NEARBY_DEVICES` group, for LAN discovery and connections:
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+```
+
+An existing nearby-device grant avoids another prompt. Use the system-mediated
+device picker when the app can operate without direct permission.
+
+### Cross-profile loopback is blocked
+
+Android 17 blocks loopback traffic between profiles for all apps regardless of
+target SDK. Loopback within one profile is unchanged. Replace cross-profile
+localhost channels with a supported cross-profile mechanism.
+
+## TLS and cleartext
+
+### Encrypted Client Hello is target-gated
+
+For API 37 targets, TLS connections use ECH when both the networking library
+and server support it; otherwise they send ECH GREASE. Network Security
+Configuration accepts `<domainEncryption>` beneath `<base-config>` or
+`<domain-config>` to enable or disable ECH globally or per domain.
+
+### Certificate transparency defaults on
+
+Certificate transparency is automatically enabled for API 37 targets. Unlike
+API 36 behavior, it requires no explicit opt-in. Test private PKI, interception,
+and exceptional endpoints before raising the target.
+
+### Move cleartext exceptions into network configuration
+
+`android:usesCleartextTraffic` is planned to stop authorizing HTTP at a future
+target SDK. Move domain-specific exceptions to Network Security Configuration.
+
+Apps with a minimum API below 24 must temporarily keep both the manifest
+mechanism and network configuration. Apps with a minimum of 24 or later need
+only Network Security Configuration.
+
+## SMS and one-time passwords
+
+On Android 17, WebOTP messages are withheld for three hours from every app
+except the domain-verified recipient and exempt handlers, regardless of target
+SDK. API 37 targets also lose immediate access to ordinary OTP-bearing SMS.
+
+During the delay, both `SMS_RECEIVED_ACTION` delivery and SMS provider queries
+are filtered. Use SMS Retriever or SMS User Consent for OTP flows.
+
+## Contacts and URI sharing
+
+### Join contact account data through RawContacts
+
+For API 37 targets, `ContactsContract.Data` no longer exposes `ACCOUNT_NAME`,
+`ACCOUNT_TYPE`, or `ACCOUNT_TYPE_AND_DATA_SET`. Obtain these columns from
+`RawContacts` by joining on `RAW_CONTACT_ID`.
+
+When querying `Data` without `READ_CONTACTS`, `StrictColumns` and
+`StrictGrammar` reject incompatible SQL with an exception. Do not depend on
+previously permissive projections or query syntax.
+
+### Make URI grants explicit
+
+Android 18 will stop implicitly granting URI access for `ACTION_SEND`,
+`ACTION_SEND_MULTIPLE`, and `ACTION_IMAGE_CAPTURE`. Android 17 adds
+`StrictMode.VmPolicy.Builder.detectImplicitUriPermissionGrant()` to expose
+dependencies before enforcement.
 
 Add `FLAG_GRANT_READ_URI_PERMISSION` to send intents. Add both read and write
 grant flags to image-capture intents.
 
-## TLS and cleartext traffic
+## Media access and change tokens
 
-### Encrypted Client Hello (`api-37`)
+### Treat MediaStore versions as opaque
 
-TLS connections from API 37-targeted apps use Encrypted Client Hello when the
-network library and server support it; otherwise they send ECH GREASE. Network
-Security Configuration accepts `<domainEncryption>` inside `<base-config>` or
-`<domain-config>` to enable or disable ECH globally or by domain.
+For API 36 targets, `MediaStore.getVersion()` returns an app-specific value.
+Use it only as an opaque change token. Do not parse it or use it to infer device
+information.
 
-### Certificate transparency (`api-37`)
+### App ownership does not override limited access
 
-Certificate transparency is enabled automatically for API 37-targeted apps.
-This differs from API 36 behavior, which required an explicit opt-in.
+For API 36 targets on Android 16, the Photo Picker initially selects app-owned
+photos and videos when the user grants access to selected media only. The user
+can deselect those items and immediately revoke access despite app ownership.
+Handle loss of access on every reopen or query.
 
-### Cleartext migration (`api-37`)
+## Keystore and cryptography
 
-`android:usesCleartextTraffic` is on a path to stop authorizing HTTP in a
-future target SDK. Put domain exceptions in Network Security Configuration.
-If `minSdk` is below 24, keep both the manifest mechanism and network
-configuration temporarily; with `minSdk` 24 or later, the network
-configuration is sufficient.
+### Enforce per-app key budgets
 
-## Data-provider and storage behavior
+Android 17 caps non-system API 37-targeted apps at 50,000 Android Keystore keys
+and other apps at 200,000. Creating another key throws `KeyStoreException`.
 
-### App-specific MediaStore token (`api-36`)
+For API 37 targets, `getNumericErrorCode()` returns `ERROR_TOO_MANY_KEYS`.
+Older targets receive `ERROR_INCORRECT_USAGE`. Bound key creation and clean up
+obsolete keys instead of treating creation as unbounded.
 
-For API 36-targeted apps, `MediaStore.getVersion()` returns a different value
-for each app. Treat it as an opaque change token. Do not parse it or infer
-device details from it.
-
-### Restricted contacts queries (`api-37`)
-
-For API 37 targets, `ContactsContract.Data` does not expose `ACCOUNT_NAME`,
-`ACCOUNT_TYPE`, or `ACCOUNT_TYPE_AND_DATA_SET`. Query `RawContacts` and join
-through `RAW_CONTACT_ID` instead.
-
-Queries against `Data` without `READ_CONTACTS` also enforce `StrictColumns`
-and `StrictGrammar`; incompatible SQL is rejected with an exception.
-
-### Per-app Keystore limits (`api-37`)
-
-Android 17 caps API 37-targeted non-system apps at 50,000 keys and other apps
-at 200,000. Creation beyond the cap throws `KeyStoreException`.
-`getNumericErrorCode()` reports `ERROR_TOO_MANY_KEYS` for API 37 targets and
-`ERROR_INCORRECT_USAGE` for older targets.
-
-## Profile isolation and cryptography
-
-### Cross-profile loopback (`api-37`)
-
-Android 17 blocks loopback traffic between profiles for all apps regardless of
-target SDK. Loopback within one profile is unchanged.
-
-### APK Signature Scheme v3.2 (`api-37`)
-
-Android 17 introduces APK Signature Scheme v3.2. It combines RSA or
-elliptic-curve signatures with ML-DSA signatures for post-quantum hybrid
-verification.
-
-### HPKE provider interface (`api-37`)
+### HPKE has a public provider interface
 
 Android 17 exposes a public service-provider interface for hybrid public key
-encryption implementations.
-
-## SMS OTP confidentiality (`api-37`)
-
-Android 17 withholds WebOTP messages from every app except the domain-verified
-recipient and exempt handlers, regardless of target SDK. API 37-targeted apps
-also lose immediate access to ordinary OTP-bearing SMS.
-
-During the three-hour delay, both `SMS_RECEIVED_ACTION` delivery and SMS
-provider queries are filtered. Use SMS Retriever or SMS User Consent for OTP
-flows.
+encryption implementations. Use the public interface rather than private or
+platform-internal hooks.

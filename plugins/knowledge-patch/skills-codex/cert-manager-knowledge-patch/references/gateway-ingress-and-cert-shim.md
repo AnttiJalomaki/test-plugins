@@ -1,41 +1,32 @@
 # Gateway, Ingress, and cert-shim
 
-Use this reference for source annotations, listener selection, ListenerSets,
-Gateway solver HTTPRoutes, and generated Certificate reconciliation.
+## Generated Certificate metadata
 
-## Listener behavior
+### Copy selected annotations `(1.18)`
 
-Gateway TLS listeners in `Passthrough` mode are ignored from 1.18 rather than
-being treated as certificate-issuing listeners.
+Pass annotation keys to `--extra-certificate-annotations` to copy them from an Ingress or Gateway to the generated Certificate.
 
-The `cert-manager.io/ignore-tls-listeners` annotation added in 1.21 excludes
-selected Gateway TLS listeners from management. Gateway integration can also be
-configured to consider listener protocols outside its default set.
+### Alternative names `(1.21)`
 
-## ListenerSet integration
+Cert-shim controllers map the `cert-manager.io/alt-names` and `cert-manager.io/ip-sans` annotations on ingress-like resources into generated Certificates.
 
-Certificate generation from annotated ListenerSet resources is alpha in 1.20,
-disabled by default, and requires the `ListenerSet` feature gate.
+### Timing annotations reconcile immediately `(1.20)`
 
-For ACME Gateway configuration, issuer `parentRefs` may be left empty for
-cert-manager to infer. Certificate annotations can override configured
-references. Use 1.20.1 or later when combining issuer configuration with
-annotation overrides because 1.20.0 can produce duplicate `parentRef` entries.
+Changing a Duration or `RenewBefore` annotation on an Ingress or Gateway API resource immediately updates the generated Certificate.
 
-In 1.21, a TLS-only ListenerSet can direct a solver HTTPRoute to its parent
-Gateway's HTTP listener:
+## Gateway listener handling
 
-```yaml
-metadata:
-  annotations:
-    acme.cert-manager.io/http01-parentreffallback: "true"
-```
+### Passthrough listeners `(1.18)`
 
-## Gateway controller configuration
+Gateway TLS listeners with mode `Passthrough` are skipped rather than treated as certificate-issuing listeners.
 
-The flat controller fields `enableGatewayAPI` and
-`enableGatewayAPIListenerSet` are deprecated in 1.21. They still work, but new
-configuration should use the nested structure:
+### Listener selection `(1.21)`
+
+Use `cert-manager.io/ignore-tls-listeners` to exclude selected Gateway TLS listeners from certificate management. Gateway integration can also consider configured listener protocols beyond its default set.
+
+### Nested controller configuration `(1.21)`
+
+The flat controller fields `enableGatewayAPI` and `enableGatewayAPIListenerSet` are deprecated. Prefer:
 
 ```yaml
 gatewayAPI:
@@ -43,19 +34,33 @@ gatewayAPI:
   enableListenerSet: true
 ```
 
-## Gateway HTTP-01 challenges
+The old fields remain functional during migration.
 
-From 1.20, the Gateway solver sets `HTTPRoute.spec.hostnames` when the
-challenge DNS name is an IP address. This avoids invalid HTTPRoutes for
-IP-address certificates.
+## ListenerSet integration
 
-Common labels can reach dynamically generated Gateway HTTPRoutes through the
-1.21 `--acme-http01-solver-extra-labels` controller flag.
+### Certificate generation `(1.20)`
 
-## Ingress-specific solver selection
+Annotated ListenerSet resources can produce Certificates. This integration is alpha, disabled by default, and requires the `ListenerSet` feature gate.
 
-The 1.20 annotation below overrides the HTTP-01 solver's
-`http01.ingress.ingressClassName` for one Ingress:
+### ACME parent references `(1.20)`
+
+An ACME Gateway configuration can leave Issuer or ClusterIssuer `parentRefs` empty for inference, while Certificate annotations can override the references. Use 1.20.1 or later when combining issuer configuration with annotation overrides; 1.20.0 can generate duplicate `parentRef` entries.
+
+### HTTP-01 parent fallback `(1.21)`
+
+For a TLS-only ListenerSet, make the solver HTTPRoute use the parent Gateway's HTTP listener:
+
+```yaml
+metadata:
+  annotations:
+    acme.cert-manager.io/http01-parentreffallback: "true"
+```
+
+## HTTP-01 and ingress behavior
+
+### Per-Ingress solver class `(1.20)`
+
+Override the HTTP-01 solver's `http01.ingress.ingressClassName` for one Ingress:
 
 ```yaml
 metadata:
@@ -63,30 +68,10 @@ metadata:
     acme.cert-manager.io/http01-ingress-ingressclassname: nginx
 ```
 
-At the Issuer solver level, configure exactly one of `class`,
-`ingressClassName`, and `name`; 1.19 rejects ambiguous multi-selection.
+### IP-subject Gateway challenges `(1.20)`
 
-## Generated Certificate annotations
+The Gateway solver sets `HTTPRoute.spec.hostnames` when the challenge DNS name is an IP address, preventing invalid HTTPRoutes for IP-address Certificates.
 
-The controller option `--extra-certificate-annotations` accepts keys to copy
-from Ingresses or Gateways into generated Certificates from 1.18.
+### Exact solver paths `(1.18)`
 
-Changing a Duration or `RenewBefore` annotation on an Ingress or Gateway
-triggers immediate reconciliation of the generated Certificate from 1.20.
-
-Cert-shim controllers process these annotations on ingress-like resources from
-1.21:
-
-```yaml
-metadata:
-  annotations:
-    cert-manager.io/alt-names: www.example.com,api.example.com
-    cert-manager.io/ip-sans: 192.0.2.10
-```
-
-## Deletion behavior
-
-While a generated or directly authored Certificate is being deleted, the
-Certificate controller does not create new CertificateRequest or Secret child
-objects (since 1.17). Account for that behavior when debugging finalizers or
-watching source-resource reconciliation.
+HTTP-01 solver Ingresses use `PathType: Exact`. If ingress-nginx strict validation rejects them, move to ingress-nginx 1.12.6+ or 1.13.2+, disable `strict-validate-path-type`, or use cert-manager 1.18.1+ with `ACMEHTTP01IngressPathTypeExact: false`.

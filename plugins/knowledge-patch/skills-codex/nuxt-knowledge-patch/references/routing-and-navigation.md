@@ -1,154 +1,16 @@
 # Routing and navigation
 
-Use this reference for page discovery and metadata, route rules, application middleware, layouts, links, transitions, scrolling, loading feedback, and accessibility announcements.
+Configure pages, route rules, middleware, layouts, links, scrolling, and navigation accessibility.
 
-## Contents
+## Links, navigation, and accessibility
 
-- [Page discovery and route metadata](#page-discovery-and-route-metadata)
-- [Router options and route rules](#router-options-and-route-rules)
-- [Layout selection and props](#layout-selection-and-props)
-- [NuxtLink behavior](#nuxtlink-behavior)
-- [View transitions and loading feedback](#view-transitions-and-loading-feedback)
-- [Scrolling, focus, and announcements](#scrolling-focus-and-announcements)
+### Client-side navigation inside islands (since 4.5.2)
 
-## Page discovery and route metadata
+Links rendered inside islands now use client-side navigation. A client wrapper is no longer required solely to prevent those links from causing full-page navigation.
 
-### Organize pages with pathless route groups (3.13.0)
+### Configurable NuxtLink prefetch triggers (since 3.13.0)
 
-Parenthesized directories under `pages/` group routes without adding a URL segment. `pages/(marketing)/about.vue` resolves to `/about`, not `/marketing/about`.
-
-### Read route groups from page metadata (3.21.0)
-
-Parenthesized page directories are also exposed through `route.meta.groups`. For example, `pages/(protected)/account.vue` adds `'protected'` to `to.meta.groups` for middleware and navigation logic.
-
-### Restrict page scanning with patterns (3.16.0)
-
-The `pages` option accepts a `pattern` array:
-
-```ts
-export default defineNuxtConfig({
-  pages: { pattern: ['**/*.vue'] },
-})
-```
-
-### Expose page metadata at build time (3.10.0)
-
-Enable `scanPageMeta` when modules or hooks must inspect or modify values extracted from `definePageMeta`:
-
-```ts
-export default defineNuxtConfig({
-  experimental: { scanPageMeta: true },
-})
-```
-
-The option is enabled by default in later releases.
-
-### Scan metadata after route extension (3.14.0)
-
-Use `experimental.scanPageMeta: 'after-resolve'` to run scanning after `pages:extend`. The `pages:resolved` hook then receives extended pages augmented with their metadata.
-
-```ts
-export default defineNuxtConfig({
-  experimental: { scanPageMeta: 'after-resolve' },
-})
-```
-
-### Extract custom page-meta fields (3.15.0)
-
-Add module-specific fields to `experimental.extraPageMetaExtractionKeys`; those values become available to the `pages:resolved` hook.
-
-### Reference local functions in page metadata (3.15.0)
-
-`definePageMeta` accepts locally declared functions, including route validators.
-
-```ts
-function validateIdParam(route) {
-  return !!(route.params.id && !isNaN(Number(route.params.id)))
-}
-
-definePageMeta({ validate: validateIdParam })
-```
-
-### Read route rules from resolved pages (3.19.0)
-
-Rules declared with `defineRouteRules` are extracted into the corresponding page object's `rules` property for build-time page consumers.
-
-### Normalize page component names experimentally (4.4.0)
-
-Enable `experimental.normalizeComponentNames` to make page component names match route names in debugging and DevTools output.
-
-```ts
-export default defineNuxtConfig({
-  experimental: { normalizeComponentNames: true },
-})
-```
-
-### Import page composables explicitly (4.4.0)
-
-When auto-imports are disabled or undesirable, import supported page composables from `#app/composables/pages`.
-
-## Router options and route rules
-
-### Inject router options from modules (3.10.0)
-
-Use the `pages:routerOptions` hook to add `router.options` files from a module. These files can define custom scroll behavior or augment routes at runtime.
-
-### Attach page middleware through route rules (3.11.0)
-
-Use `appMiddleware` to attach named Vue application middleware to route families. A more specific rule can disable inherited middleware by mapping its name to `false`.
-
-```ts
-export default defineNuxtConfig({
-  routeRules: {
-    '/admin/**': { appMiddleware: ['auth'] },
-    '/admin/login': { appMiddleware: { auth: false } },
-  },
-})
-```
-
-### Preserve URL fragments in route-rule redirects (3.20.0)
-
-Redirects configured through `routeRules` retain the incoming URL hash rather than dropping it.
-
-### Run middleware for page islands (3.21.0)
-
-Page-island rendering executes Nuxt middleware; do not assume islands bypass route guards or other middleware effects.
-
-## Layout selection and props
-
-### Select layouts through route rules (3.21.0)
-
-Use `appLayout` for a route family rather than repeating `definePageMeta`. Route-rule matching is case-insensitive, matching Vue Router behavior.
-
-```ts
-export default defineNuxtConfig({
-  routeRules: { '/admin/**': { appLayout: 'admin' } },
-})
-```
-
-### Pass props when changing layouts at runtime (3.21.0)
-
-`setPageLayout` accepts layout props as its second argument, and patched releases preserve them across same-path navigation.
-
-```ts
-setPageLayout('admin', { sidebar: true, theme: 'dark' })
-```
-
-### Type layout props in page metadata (4.4.0)
-
-Pass a layout object with `name` and `props` to `definePageMeta`. Nuxt checks the props against the layout component's `defineProps` declaration.
-
-```ts
-definePageMeta({
-  layout: { name: 'panel', props: { sidebar: true, title: 'Dashboard' } },
-})
-```
-
-## NuxtLink behavior
-
-### Choose prefetch triggers (3.13.0)
-
-Configure `NuxtLink` to prefetch on visibility, interaction through hover/focus, or both. Set project defaults under `experimental.defaults.nuxtLink`, then override individual links.
+`NuxtLink` can prefetch on interaction (hover or focus), visibility, or both through `prefetch-on`. Defaults can be set globally under `experimental.defaults.nuxtLink` and overridden per link.
 
 ```vue
 <NuxtLink prefetch-on="interaction" to="/about">About</NuxtLink>
@@ -173,79 +35,178 @@ export default defineNuxtConfig({
 })
 ```
 
-### Format a link with a trailing slash (3.17.0)
+### Focus after hash navigation (since 4.3.0)
 
-Use the `trailingSlash` prop for an individual destination:
+Hash-link navigation now moves focus after the navigation completes, improving keyboard and screen-reader behavior.
 
-```vue
-<NuxtLink to="/about" trailing-slash>About</NuxtLink>
+### Hash-only smooth scrolling (since 3.18.0)
+
+`scrollBehaviorType` now applies only to hash scrolling rather than ordinary route scrolling as well.
+
+### In-page screen-reader announcements (since 4.4.0)
+
+Mount `<NuxtAnnouncer>` once, then use `useAnnouncer().polite()` or `.assertive()` for dynamic changes that do not move focus; `useRouteAnnouncer` remains the navigation-specific API.
+
+```ts
+const { polite, assertive } = useAnnouncer()
+polite('Message sent successfully')
 ```
 
-### Pass object destinations through `href` (4.2.0)
+### Object route locations through `NuxtLink` `href` (since 4.2.0)
 
-The `href` prop accepts object-format route locations as well as strings, so object destinations no longer have to use `to`.
+The `href` prop now accepts object-format route locations, rather than requiring object destinations to be passed through `to`.
 
 ```vue
 <NuxtLink :href="{ name: 'users-id', params: { id } }">Profile</NuxtLink>
 ```
 
-### Pass reactive inputs to `NuxtLink.useLink` (4.4.0)
+### Per-link trailing slashes (since 3.17.0)
 
-`NuxtLink.useLink` accepts refs for destinations and other options without manual unwrapping.
+`<NuxtLink>` accepts a `trailingSlash` prop to format an individual destination with a trailing slash.
 
-### Keep navigation protocol protections intact (3.21.0)
+```vue
+<NuxtLink to="/about" trailing-slash>About</NuxtLink>
+```
 
-`NuxtLink` and the `navigateTo` open option reject script-capable protocols. `navigateTo` also blocks path-normalization open redirects, and `reloadNuxtApp` rejects cross-origin paths. Do not pre-normalize or bypass these safety checks.
+### Reactive `NuxtLink.useLink` inputs (since 4.4.0)
 
-## View transitions and loading feedback
+`NuxtLink.useLink` now accepts refs as inputs, so a link's destination and other reactive options can be passed without manually unwrapping them.
 
-### Control view transitions per page (3.10.0)
+### Route announcements in the built-in app (since 3.18.0)
 
-Enable experimental view transitions globally, then opt a page in or out through `definePageMeta`. Nuxt skips transitions when `prefers-reduced-motion: reduce` is active unless the page explicitly uses `viewTransition: 'always'`.
+Nuxt's built-in `app.vue` now includes `<NuxtRouteAnnouncer>`, so client-side page changes are announced to screen readers. Projects with their own `app.vue` do not receive this automatically and should include `<NuxtRouteAnnouncer />` themselves.
+
+### Route-rule redirects preserve fragments (since 3.20.0)
+
+Redirects configured through `routeRules` now retain the incoming URL hash instead of dropping it.
+
+### Safer navigation destinations (since 3.21.0)
+
+`<NuxtLink>` and the `navigateTo` open option reject script-capable protocols, `navigateTo` blocks path-normalization open redirects, and `reloadNuxtApp` rejects cross-origin paths.
+
+## Page discovery and route rules
+
+### Configurable page scanning (since 3.16.0)
+
+The `pages` option now accepts a `pattern` array to restrict which files and directories Nuxt scans as pages.
 
 ```ts
 export default defineNuxtConfig({
-  experimental: { viewTransition: true },
+  pages: { pattern: ['**/*.vue'] },
 })
-
-definePageMeta({ viewTransition: false })
 ```
 
-### Observe transition starts and force loading completion (3.11.0)
+### Decoded route-rule matching (since 4.5.2)
 
-Use the `page:view-transition:start` hook when an experimental View Transition begins. The loading indicator also supports custom hide timing and a forced `finish()`.
+Nuxt now decodes request paths before matching route rules, so percent-encoded paths are evaluated against their decoded form.
 
-### Configure loading-indicator delays as props (3.17.0)
+### Explicit page-composable imports (since 4.4.0)
 
-`<NuxtLoadingIndicator>` accepts `hideDelay` and `resetDelay` directly.
+Page composables are now exported from `#app/composables/pages`, providing a supported direct-import path when auto-imports are unavailable or undesirable.
 
-```vue
-<NuxtLoadingIndicator :hide-delay="500" :reset-delay="300" />
-```
+### Local functions in `definePageMeta` (since 3.15.0)
 
-### Select view-transition types (4.4.0)
-
-Experimental view transitions support types for distinct forward, backward, tab, or page-navigation CSS transitions.
-
-## Scrolling, focus, and announcements
-
-### Limit smooth-scroll configuration to hashes (3.18.0)
-
-`scrollBehaviorType` applies to hash scrolling, not ordinary route scrolling.
-
-### Announce routes in a custom root app (3.18.0)
-
-Nuxt's built-in `app.vue` includes `<NuxtRouteAnnouncer>`. A project with its own `app.vue` must mount `<NuxtRouteAnnouncer />` explicitly so client-side page changes are announced to screen readers.
-
-### Move focus after hash navigation (4.3.0)
-
-Hash-link navigation moves focus after navigation completes, improving keyboard and screen-reader behavior. Avoid custom focus code that fights this behavior.
-
-### Announce in-page status changes (4.4.0)
-
-Mount `<NuxtAnnouncer>` once, then call `useAnnouncer().polite()` or `.assertive()` for dynamic changes that do not move focus. Keep `useRouteAnnouncer` for navigation announcements.
+Page metadata can now reference locally declared functions, including functions used for route validation.
 
 ```ts
-const { polite, assertive } = useAnnouncer()
-polite('Message sent successfully')
+function validateIdParam(route) {
+  return !!(route.params.id && !isNaN(Number(route.params.id)))
+}
+
+definePageMeta({
+  validate: validateIdParam,
+})
+```
+
+### Module-provided router options (since 3.10.0)
+
+Modules can use the new `pages:routerOptions` hook to inject `router.options` files, including custom scroll behavior or runtime route augmentation.
+
+## Page metadata, middleware, and layouts
+
+### Additional build-time page metadata (since 3.15.0)
+
+Module authors can list extra page-meta keys in `experimental.extraPageMetaExtractionKeys`; Nuxt extracts those keys for build-time use in the `pages:resolved` hook.
+
+### Build-time page metadata (since 3.10.0)
+
+Enable `scanPageMeta` to expose values from `definePageMeta` to modules and hooks at build time, where they can be inspected or changed.
+
+```ts
+export default defineNuxtConfig({
+  experimental: { scanPageMeta: true },
+})
+```
+
+### Layouts from route rules (since 3.21.0)
+
+`routeRules` accepts `appLayout`, allowing a route family to select a layout without repeating `definePageMeta`. Route-rule matching is case-insensitive, in line with `vue-router`.
+
+```ts
+export default defineNuxtConfig({
+  routeRules: { '/admin/**': { appLayout: 'admin' } },
+})
+```
+
+### Middleware for page islands (since 3.21.0)
+
+Page-island rendering now runs Nuxt middleware rather than bypassing it.
+
+### Page metadata after route extension (since 3.14.0)
+
+Opting into `experimental.scanPageMeta: 'after-resolve'` moves metadata scanning until after `pages:extend`. The new `pages:resolved` hook then runs with all extended pages augmented by their metadata.
+
+```ts
+export default defineNuxtConfig({
+  experimental: {
+    scanPageMeta: 'after-resolve',
+  },
+})
+```
+
+### Page middleware in route rules (since 3.11.0)
+
+`routeRules` can attach named Vue application middleware to page paths with `appMiddleware`; a more specific rule can disable inherited middleware by setting its name to `false`.
+
+```ts
+export default defineNuxtConfig({
+  routeRules: {
+    '/admin/**': { appMiddleware: ['auth'] },
+    '/admin/login': { appMiddleware: { auth: false } },
+  },
+})
+```
+
+### Pathless route groups (since 3.13.0)
+
+Parenthesized directories under `pages/` organize routes without contributing a URL segment. For example, `pages/(marketing)/about.vue` produces `/about`, not `/marketing/about`.
+
+### Route groups in page metadata (since 3.21.0)
+
+Parenthesized page directories are exposed as `route.meta.groups`. For example, `pages/(protected)/account.vue` gives middleware a `to.meta.groups` array containing `'protected'`.
+
+### Route rules in resolved page metadata (since 3.19.0)
+
+Rules declared with `defineRouteRules` are extracted to the corresponding page object's `rules` property, making them available to build-time page consumers.
+
+### Route-parameter types from page metadata (since 4.5.2)
+
+Route parameters defined with `definePageMeta` are now included in generated types, so typed route locations recognize parameters introduced through page metadata.
+
+### Runtime layout props (since 3.21.0)
+
+`setPageLayout` accepts layout props as its second argument, and later 3.21 patches preserve them across same-path navigation.
+
+```ts
+setPageLayout('admin', { sidebar: true, theme: 'dark' })
+```
+
+### Typed layout props in page metadata (since 4.4.0)
+
+`definePageMeta` accepts a layout object containing `name` and `props`; those props are checked against the layout component's `defineProps` declaration.
+
+```ts
+definePageMeta({
+  layout: { name: 'panel', props: { sidebar: true, title: 'Dashboard' } },
+})
 ```

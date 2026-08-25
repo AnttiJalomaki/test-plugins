@@ -1,119 +1,75 @@
 # iOS and Darwin SDK
 
-## Distribution and initialization
+Use this reference for iOS and Darwin distribution, map configuration, style
+APIs, sources, custom rendering, networking, snapshots, observers, and
+offline packs.
 
-### Swift Package repository
+## Distribution and integration
 
-The Swift package is published from the distribution-only repository below and
-is imported as `MapLibre`. File issues in the main `maplibre-native`
-repository.
+### Swift package
+
+The Swift package comes from the distribution-only repository below and is
+imported as `MapLibre`. File issues in the main `maplibre-native` repository.
 
 ```text
 https://github.com/maplibre/maplibre-gl-native-distribution
 ```
 
-Starting with 6.21.1, GitHub releases also include a static XCFramework.
+### Static XCFramework
 
-### Style JSON initialization and cancellation
+GitHub releases include a static XCFramework starting with iOS 6.21.1, part
+of the `ios-6.20.0` compatibility line.
 
-Within the `ios-6.10.0` extraction line, iOS 6.13 allows `MLNMapView` to be
-initialized with style JSON. From 6.22, loading style JSON cancels any pending
-style request, so the JSON load supersedes the in-flight request.
+## Map initialization and camera
 
-### Asset range requests and texture atlas
+### Style JSON and request precedence
 
-iOS 6.14 adds range-request support to `AssetFileSource`. It also introduces a
-dynamic texture atlas; after adopting it, verify that glyphs still load
-correctly for existing styles.
+`MLNMapView` can be initialized with style JSON from iOS 6.13
+(`ios-6.10.0`). From 6.22, loading style JSON cancels any pending style
+request, so the JSON load supersedes the in-flight request.
 
-## Sources and dynamic state
+### Bounds, north snap, frustum, and roll
+
+- The camera can be constrained to maximum bounds.
+- iOS 6.20 makes the rotate gesture's north-snap threshold configurable.
+- iOS 6.21 supports a frustum offset that lets the renderer omit screen
+  edges.
+- iOS 6.23 adds basic camera-roll support.
+
+## Sources and source data
 
 ### PMTiles
 
-iOS 6.10 adds PMTiles sources through the `pmtiles://` URL scheme. From 6.14,
-PMTiles metadata is always treated as using the XYZ tile scheme.
+iOS 6.10 adds PMTiles through the `pmtiles://` URL scheme. From 6.14,
+PMTiles metadata is always interpreted with the XYZ tile scheme.
 
-### MLT and GeoJSON
+### MLT and synchronous GeoJSON
 
-At the `ios-6.20.0` boundary, iOS can parse vector-tile sources in MLT format.
-iOS 6.22 adds synchronous GeoJSON updates for changes that must be applied
-before execution continues.
+iOS 6.20 parses vector-tile sources in MLT format. iOS 6.22 provides
+synchronous GeoJSON source updates when a change must be applied before
+execution continues.
 
-### Complete vector-tile feature state
+### Typed source coverage
 
-At `ios-6.15.0`, feature-state updates in `GeometryTile` and
-`SourceFeatureState` are fully applied for vector-tile layers. Remove
-workarounds for the earlier incomplete-update behavior.
+The iOS SDK maps vector, raster, raster-DEM, GeoJSON, and image sources to
+typed `MLN*Source` classes. Canvas and video sources are unsupported.
 
-### Attribution HTML
+### Source attribution HTML
 
-`MLNSource.attributionHtmlString` is exposed from iOS 6.15, allowing a custom
-attribution interface to retrieve the source's HTML attribution directly.
+`MLNSource.attributionHtmlString` is exposed in the `ios-6.15.0` line so a
+custom attribution interface can retrieve source attribution as HTML.
 
-## Camera and map controls
+### Asset range requests
 
-iOS can constrain the camera to maximum bounds. From 6.20, the rotate gesture's
-threshold for snapping the map back to north is configurable.
+`AssetFileSource` supports range requests from iOS 6.14.
 
-iOS 6.21 adds a frustum offset so the renderer can omit screen edges. iOS 6.23
-adds basic camera-roll support.
+## Runtime style APIs
 
-Version 6.25, represented by the `ios-6.25.0` extraction boundary, publicly
-exports `MLNScaleBar`, allowing application code to refer directly to the SDK
-scale-bar type.
+### Cocoa vocabulary
 
-## Snapshotting and attribution
+The Cocoa API renames several style-spec concepts:
 
-iOS 6.21 allows attribution to be hidden and supports extra annotations in
-snapshotter output.
-
-## Layers and renderer inspection
-
-### Custom layers
-
-iOS 6.11 supports defining custom style layers from Swift and provides a method
-to trigger repainting. iOS 6.12 introduces custom drawable layer v3.
-
-In 6.28, `MLNCustomStyleLayer` gains `nearClippedProjectionMatrix`, exposing the
-near-clipped projection matrix to custom style layers.
-
-### Color relief and hillshade
-
-iOS 6.24 adds Color-Relief Layer support and updates the hillshade algorithms.
-
-### Rendering statistics
-
-iOS 6.15 provides a rendering-statistics view for inspecting renderer activity
-inside an application.
-
-### Headless Metal interoperability
-
-iOS 6.26.1 exposes the Metal texture from the headless backend for consumers
-that need direct Metal interoperability.
-
-## Observers, journaling, and networking
-
-### Observer hooks
-
-iOS and macOS observer hooks arrive in 6.12. Version 6.13 adds the previously
-missing `sourceDidChange` event. From 6.28, layer observers are notified when a
-layer's source layer or source ID changes.
-
-### Action journal
-
-iOS 6.15 adds action-journal support and ships an iOS adoption example.
-
-### Network delegates
-
-iOS 6.20 expands network delegate methods and the available networking
-lifecycle. In 6.28, `MLNNetworkConfiguration` forwards `didReceiveResponse` to
-its delegate, so delegate implementations can rely on receiving that callback.
-
-## Cocoa style vocabulary
-
-The iOS API uses names that differ from style-spec terminology:
-
-| Style-spec term | Cocoa API term |
+| Style concept | Cocoa API term |
 | --- | --- |
 | bounds | coordinate bounds |
 | filter | predicate |
@@ -125,51 +81,58 @@ The iOS API uses names that differ from style-spec terminology:
 | SDF icon | template image |
 | source | content source |
 
-## Foundation expressions and predicates
+### Foundation expressions and predicates
 
 Layout and paint attributes take `NSExpression` values backed by Cocoa types
-such as `UIColor`, `CGVector`, and `UIEdgeInsets`. The older style-function API
-is unsupported.
+such as `UIColor`, `CGVector`, and `UIEdgeInsets`; the older style-function
+API is unsupported. Set `MLNVectorStyleLayer.predicate` with `NSPredicate`,
+using forms such as `key != nil`, `key IN {…}`, `AND`, `OR`, and `NOT`.
 
-Set `MLNVectorStyleLayer.predicate` with `NSPredicate`. Translate style
-operators to predicate syntax such as `key != nil`, `key IN {…}`, `AND`, `OR`,
-and `NOT`.
+### Typed property names
 
-Typed property names are not always mechanical conversions:
+Do not mechanically translate JSON property names. Important mappings
+include:
 
-- `line-dasharray` becomes `lineDashPattern`.
-- `raster-hue-rotate` becomes `rasterHueRotation`.
-- `icon-image` and `icon-size` become `iconImageName` and `iconScale`.
-- `text-field`, `text-font`, and `text-size` become `text`, `textFontNames`,
-  and `textFontSize`.
-- Formatted text uses `.fontNamesAttribute`, `.fontScaleAttribute`, and
-  `.fontColorAttribute`.
+| Style property | Typed API property |
+| --- | --- |
+| `line-dasharray` | `lineDashPattern` |
+| `raster-hue-rotate` | `rasterHueRotation` |
+| `icon-image` | `iconImageName` |
+| `icon-size` | `iconScale` |
+| `text-field` | `text` |
+| `text-font` | `textFontNames` |
+| `text-size` | `textFontSize` |
 
-## Coordinate ordering
+Formatted symbol text uses `.fontNamesAttribute`, `.fontScaleAttribute`, and
+`.fontColorAttribute`.
 
-`MLNCoordinateQuad` lists image-source corners counterclockwise, opposite the
-style specification's clockwise order. `UIEdgeInsets(top:left:bottom:right:)`
-is also counterclockwise, while style-spec padding is clockwise.
+### Coordinate ordering
 
-## Offline packs
+`MLNCoordinateQuad` orders image-source corners counterclockwise, opposite
+the style specification's clockwise order. `UIEdgeInsets(top:left:bottom:right:)`
+is also counterclockwise while style-spec padding is clockwise.
 
-`MLNOfflineStorage.sharedOfflineStorage.packs` is the canonical in-memory pack
-collection. After importing an offline database by file or URL, call
-`reloadPacks` before reading the collection so it reflects merged regions.
+### Loaded-style mutation
 
-From iOS 6.25, `MLNOfflinePack` exposes its underlying offline region
-identifier on Darwin and iOS.
+Wait for style loading before mutating `MLNStyle`, `MLNSource`, or
+`MLNStyleLayer`. Use the platform's typed properties rather than inferred JSON
+names.
 
-## Metal plugin layers
+## Custom layers and renderer interoperation
 
-Darwin plugin layers are Metal-only and differ from ordinary annotations and
-browser custom-layer interfaces. Subclass `MLNPluginLayer`, register the class
-with the map view, and implement `layerCapabilities` so the style parser can
-instantiate the declared layer type.
+### Swift custom layers and drawable v3
 
-Capabilities declare the layer ID, render-pass requirements, and typed paint
-properties with defaults. Put initialization values in the style layer's
-`properties` object and expression-capable values in `paint`.
+iOS 6.11 supports defining custom style layers from Swift and exposes a
+method to trigger repaint. iOS 6.12 adds custom drawable layer v3.
+
+### Metal plugin layers
+
+Darwin plugin layers are Metal-only and are not ordinary annotations or
+browser custom layers. Subclass `MLNPluginLayer`, register the class with the
+map view, and implement `+layerCapabilities` so the style parser can
+instantiate it. Capabilities declare the layer ID, render-pass needs, and
+typed paint properties with defaults. Put initialization values in the style
+layer's `properties` object and expression-capable values in `paint`.
 
 ```objc
 + (MLNPluginLayerCapabilities *)layerCapabilities {
@@ -184,3 +147,66 @@ properties with defaults. Put initialization values in the style layer's
     return caps;
 }
 ```
+
+### Texture and projection access
+
+The dynamic texture atlas introduced in iOS 6.14 can affect existing glyph
+loading; verify glyph rendering after adoption. Version 6.26.1 exposes the
+headless backend's Metal texture for direct Metal interoperation. Version
+6.28 adds `nearClippedProjectionMatrix` to `MLNCustomStyleLayer`.
+
+## Observers and networking
+
+### Map and source observer events
+
+iOS and macOS observer hooks arrive in 6.12, with the missing
+`sourceDidChange` event added in 6.13. In 6.28, layer observers are notified
+when a layer's source layer or source ID changes (`ios-6.25.0`).
+
+### Network delegate lifecycle
+
+iOS 6.20 expands the network delegate lifecycle with additional methods. In
+6.28, `MLNNetworkConfiguration` also forwards `didReceiveResponse` to its
+delegate, so implementations can rely on that response callback.
+
+## Snapshots, attribution, and diagnostics
+
+### Snapshot output
+
+iOS 6.21 allows attribution to be hidden. The same release can add extra
+annotations to snapshotter output.
+
+### Rendering statistics and action journal
+
+The `ios-6.15.0` line adds an action journal with an adoption example and a
+rendering-statistics view for inspecting renderer activity in an application.
+
+### Public scale bar
+
+iOS 6.25 exports `MLNScaleBar`, allowing application code to reference the
+SDK scale-bar type directly.
+
+## Feature state and layer rendering
+
+### Complete vector-tile feature state
+
+In the iOS 6.15 line, feature-state changes in `GeometryTile` and
+`SourceFeatureState` are applied completely to vector-tile layers. Remove
+workarounds for the earlier incomplete-update behavior.
+
+### Color-Relief layers
+
+iOS 6.24 adds Color-Relief layers and updates the hillshade algorithms.
+
+## Offline packs and imported databases
+
+### Region identifiers
+
+Starting with iOS 6.25, `MLNOfflinePack` exposes its underlying region ID on
+Darwin and iOS, so applications can identify packs directly.
+
+### Import refresh
+
+`MLNOfflineStorage.sharedOfflineStorage.packs` is the canonical in-memory pack
+collection. After importing another offline database from a file or URL, call
+`reloadPacks` before reading the collection so it reflects merged regions.

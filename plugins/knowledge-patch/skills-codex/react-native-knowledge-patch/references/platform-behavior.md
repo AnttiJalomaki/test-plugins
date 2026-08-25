@@ -1,9 +1,34 @@
 # Platform behavior
 
-## Android hardware events
+## Android system UI and target behavior
 
-In 0.86, `BackHandler` `hardwareBackPress` callbacks receive an event object.
-Its `timeStamp` originates in the native event.
+### Edge-to-edge layouts
+
+With `targetSdk` 35, Android 15 forces edge-to-edge rendering. Layouts must
+account for system-bar insets; `react-native-safe-area-context` already handles
+this case. React Native 0.81 targets Android 16/API 36, where edge-to-edge is
+mandatory. The `edgeToEdgeEnabled` Gradle property can extend the behavior to
+earlier Android versions.
+
+Android 16 also enables predictive back by default. Migrate custom native
+`onBackPressed()` handling or use a temporary opt-out during transition.
+
+### Navigation-bar contrast
+
+React Native 0.86.0 respects the Android theme's
+`enforceNavigationBarContrast` attribute when configuring the navigation bar.
+Check the theme before trying to override unexpected contrast in JavaScript.
+
+### Status bars in modal windows
+
+In 0.86.0, `StatusBar` configuration also applies to Android modal windows.
+Recheck modal-specific workarounds that separately configured the status bar.
+
+## Android hardware input
+
+From 0.86.0, `BackHandler` `hardwareBackPress` callbacks receive an event
+object. Its `timeStamp` comes from the native event. Return the usual boolean to
+indicate whether the callback handled the back action.
 
 ```js
 BackHandler.addEventListener('hardwareBackPress', event => {
@@ -12,15 +37,13 @@ BackHandler.addEventListener('hardwareBackPress', event => {
 });
 ```
 
-Android also channels hardware play/pause events. Do not assume every hardware
-event has the old argument-free callback shape.
+Android also channels play/pause hardware events in 0.86.0. React Native 0.84
+adds Android `onKeyDown` and `onKeyUp` handling for hardware keyboards and TV
+remotes.
 
-React Native 0.84 adds Android `onKeyDown` and `onKeyUp` handling for hardware
-keyboards and TV remotes.
+## Android native values for input components
 
-## Platform-native input values
-
-In 0.86, `Pressable.android_ripple.color` accepts `PlatformColor`:
+`Pressable.android_ripple.color` accepts `PlatformColor` in 0.86.0:
 
 ```jsx
 <Pressable
@@ -28,26 +51,30 @@ In 0.86, `Pressable.android_ripple.color` accepts `PlatformColor`:
 />
 ```
 
-`TextInput.autoComplete` also supports an expanded collection of Android
-autofill hints backed by `androidx.autofill` 1.3.0. Prefer the React Native hint
-values over setting native autofill properties ad hoc.
+`TextInput.autoComplete` also gains an expanded set of Android autofill hints
+backed by `androidx.autofill` 1.3.0. Prefer the platform hint matching the field
+rather than maintaining a custom autofill bridge.
 
-## Navigation and status bars
+React Native 0.84 additionally permits `PlatformColor` values in
+animated interpolations and output ranges.
 
-React Native 0.86 respects the Android theme's
-`enforceNavigationBarContrast` attribute when configuring the navigation bar.
-Check the theme value before compensating in JavaScript for contrast behavior.
+## Android native window lifecycle
 
-`StatusBar` configuration now also applies to modal windows on Android. Remove
-modal-specific workarounds that would double-apply or fight the shared status
-bar configuration.
+Native modules can implement `ExtraWindowEventListener` in 0.86.0 to receive
+creation and destruction events for extra windows such as modal dialogs. Use it
+when module state must follow the window rather than only the host Activity.
 
-## Android image source dimensions
+## Image dimension semantics
 
-In 0.86, `Image.getSize` and `Image.getSizeWithHeaders` return the true source
-dimensions on Android instead of Fresco's downsampled dimensions. Audit caches,
-aspect-ratio calculations, snapshot expectations, and comparisons that encoded
-the downsampled result.
+On iOS under the Old Architecture, the `Image` load event reports pixel
+dimensions from 0.78 instead of logical dimensions.
 
-For Android XML drawables and the Old Architecture iOS load-event dimension
-change, see [ui-components-and-styling.md](ui-components-and-styling.md).
+On Android, `Image.getSize` and `Image.getSizeWithHeaders` return true source
+dimensions from 0.86.0 rather than Fresco's downsampled dimensions. Revisit
+logic that compares these values across platforms or release versions.
+
+## Android memory-page compatibility
+
+React Native 0.77 makes the framework compatible with devices that use 16 KB
+memory pages. This does not certify an app's other native code or dependencies;
+audit every bundled native binary.

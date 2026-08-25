@@ -2,17 +2,17 @@
 
 ## Custom server-function errors
 
-A server function can use any error type that implements
-`FromServerFnError` (since 0.8.0); it is not restricted to `ServerFnError`.
-Migrate custom errors to satisfy that conversion. The `extract()` helper uses
-`ServerFnErrorErr`, and WebSocket request and response streams may use
-different error types.
+Server functions can return any error type that implements
+`FromServerFnError` (since 0.8.0), rather than being restricted to
+`ServerFnError`. Migrate custom error types accordingly. The `extract()`
+helper uses `ServerFnErrorErr`, and WebSocket request and response streams can
+have different error types.
 
 ## WebSocket server functions
 
-The `Websocket` protocol transports encoded `BoxedStream` values through an
-ordinary server function. It does not integrate with Resources or SSR, so the
-client must explicitly consume the returned stream.
+The `Websocket` protocol transports encodable `BoxedStream` values through a
+normal server function (since 0.8.0). It does not integrate with Resources or
+SSR, so the client must consume the returned stream explicitly.
 
 ```rust
 use futures::{channel::mpsc, SinkExt, StreamExt};
@@ -33,26 +33,29 @@ async fn uppercase(
 }
 ```
 
-## Macro declarations and codecs
+## Macro declaration flexibility
 
-Server-function macros accept multiple `#[middleware]` attributes, aliased
-`Result` return types, and argument names with suffixes (since 0.8.0). These
-forms do not need to be rewritten merely to satisfy macro parsing.
+Server-function macros accept repeated `#[middleware]` attributes, aliased
+`Result` return types, and argument names with suffixes as of 0.8.0. These
+forms no longer need rewriting just to satisfy macro parsing.
 
-Supported codecs include additional HTTP methods, direct `bitcode` encoding
-and decoding, and a codec that uses `bitcode`'s Serde integration.
+## Additional codecs
+
+Server-function codecs support additional HTTP methods, direct `bitcode`
+encoding and decoding, and a codec based on `bitcode`'s Serde integration
+(since 0.8.0).
 
 ## Request body limits
 
-Primary server-function encodings honor Axum and Actix request-body limits
-(since 0.8.0). A large non-multipart request, such as a POST body over 2 MB,
-may require a larger Axum `DefaultBodyLimit` or Actix `PayloadConfig`.
-Multipart uploads are unaffected by this change.
+Primary server-function encodings now obey Axum and Actix request-body limits
+(since 0.8.0). For large non-multipart requests, including POST bodies over
+2 MB, raise Axum's `DefaultBodyLimit` or Actix's `PayloadConfig` as
+appropriate. Multipart uploads are unaffected.
 
-## Lazy functions
+## Lazy functions and routes
 
-With a matching `cargo-leptos` release, `#[lazy]` changes a synchronous or
-asynchronous function into a lazy-loaded async function:
+With a matching `cargo-leptos` release, `#[lazy]` converts a synchronous or
+asynchronous function into a lazy-loaded async function (since 0.8.0).
 
 ```rust
 #[lazy]
@@ -61,11 +64,7 @@ fn deserialize_comments(data: &str) -> Vec<Comment> {
 }
 ```
 
-Stack `#[server]` and `#[lazy]` to make a server function lazy. Lazy-loaded
-output supports file hashing. `lazy_preload` can preload lazy code.
-
-## Lazy routes
-
-`#[lazy_route]` splits a `LazyRoute` into data and view halves (since 0.8.0).
-Nested route data and lazy views load concurrently before navigation, avoiding
-a serial data-then-view waterfall while preserving the route boundary.
+Stack `#[server]` and `#[lazy]` for a lazy server function. Use
+`#[lazy_route]` to divide a `LazyRoute` into data and view halves. Nested route
+data and lazy views load concurrently before navigation. Lazy output supports
+hashed filenames, and the later `lazy_preload` macro can preload lazy code.

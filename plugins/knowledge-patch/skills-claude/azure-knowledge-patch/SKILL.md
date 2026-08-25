@@ -10,203 +10,202 @@ metadata:
 
 # Microsoft Azure Knowledge Patch
 
-Use this skill when writing, reviewing, or upgrading Azure infrastructure,
-automation, authentication, SDK, CLI, PowerShell, Terraform, ARM, or Bicep
-work. Start with the migration hazards below, then open the reference whose
-topic matches the resource or tool being changed.
+Use this skill for Azure infrastructure, Azure CLI, Azure PowerShell,
+Terraform AzureRM or AzAPI, Bicep, identity SDK, Microsoft Entra, networking,
+compute, containers, data services, storage, Key Vault, governance, and service
+lifecycle work.
 
-Treat project manifests, provider lockfiles, deployed resource state, command
-help, API metadata, and tests as authoritative. Azure behavior often depends
-on cloud, region, resource API version, provider version, CLI extension, and
-whether a resource is new or already exists.
+Azure is a rolling multi-product platform. Inspect the project's pinned
+provider, CLI, module, API version, SDK, and resource SKU before applying
+version-dependent advice. Prefer manifests, state, schemas, live API metadata,
+command help, plans, and tests when they differ from this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [terraform-providers.md](references/terraform-providers.md) | AzureRM 4, AzAPI 2.x, provider setup, HCL bodies and outputs, imports, actions, schemas, retries |
-| [identity-authentication-and-graph.md](references/identity-authentication-and-graph.md) | Credential chains, Azure CLI and PowerShell sign-in, claims challenges, MFA, managed identity, Microsoft Graph |
-| [aks-and-containers.md](references/aks-and-containers.md) | AKS, node pools, Azure Container Registry, Container Apps, container instances, IoT |
-| [compute-and-app-platform.md](references/compute-and-app-platform.md) | VMs, VMSS, disks, images, Backup, App Service, Functions, Batch, AI, HDInsight, Service Fabric |
-| [networking.md](references/networking.md) | Private subnet defaults, retired SKUs, VNets, gateways, routing, load balancing, WAF, private endpoints |
-| [data-and-storage.md](references/data-and-storage.md) | PostgreSQL, MySQL, SQL, Cosmos DB, App Configuration, Storage, Azure Files, NetApp Files, Key Vault |
-| [deployment-governance-and-cli.md](references/deployment-governance-and-cli.md) | ARM, Bicep, provider registration, deployments, generic CLI behavior, platform support, retirement inventory |
+| [Terraform providers](references/terraform-providers.md) | AzureRM 4.x and AzAPI 2.x migrations, HCL bodies, import, preflight, actions, state, and authentication |
+| [AKS and containers](references/aks-and-containers.md) | AKS, Azure Container Registry, Container Apps, Container Instances, Service Fabric, and container storage |
+| [Compute and application platform](references/compute-and-app-platform.md) | VMs, VMSS, disks, images, App Service, Functions, App Configuration, Batch, AI, and application services |
+| [Data, storage, and Key Vault](references/data-and-storage.md) | PostgreSQL, MySQL, SQL, Cosmos DB, Storage, Azure Files, NetApp Files, Backup, and Key Vault |
+| [Deployment, governance, and CLI](references/deployment-governance-and-cli.md) | ARM, Bicep, provider registration, deployments, RBAC, monitoring, CLI packaging, API Management, and retirements |
+| [Identity, authentication, and Graph](references/identity-authentication-and-graph.md) | Entra and Microsoft Graph, mandatory MFA, Azure Identity SDKs, Azure CLI, PowerShell, managed identity, and federation |
+| [Networking](references/networking.md) | Private VNets, outbound access, load balancers, public IPs, gateways, private endpoints, Application Gateway, and network appliances |
 
-## Breaking migrations first
+## First-pass migration triage
 
-### AzureRM 4
+1. Identify every client surface: Azure CLI version, Az PowerShell modules,
+   Terraform providers, Bicep CLI, SDK packages, and explicit ARM API versions.
+2. Resolve authentication type. Prefer workload identity, managed identity, or
+   a service principal for automation; user-password flows cannot satisfy MFA.
+3. Run `terraform plan`, deployment validation or what-if, and representative
+   CLI queries without mutating production resources.
+4. Check defaults that affect network exposure, egress, operating system,
+   compute size, database version, storage redundancy, and access control.
+5. Validate JSON and table-output consumers against the installed CLI because
+   several commands changed casing, fields, null representation, and shape.
+6. Query provider metadata for supported API versions and locations instead of
+   copying one API version across a namespace.
+7. Inventory retirements separately; an interface can remain operational after
+   retirement while losing support and SLA coverage.
 
-- Set `subscription_id` in every provider instance or provide
-  `ARM_SUBSCRIPTION_ID`; Azure CLI authentication no longer supplies the
-  active subscription implicitly.
-- Replace `skip_provider_registration` with
-  `resource_provider_registrations`; add exact namespaces through
-  `resource_providers_to_register`.
-- Audit removed `azurerm_sql_*`, MariaDB, MySQL Single Server, media, lab,
-  analytics, integration-environment, and other retired resources before
-  changing the provider constraint.
-- Apply exact field migrations, especially AKS `*_enabled` names, diagnostic
-  setting `enabled_log`, positive network-policy booleans, and singular
-  Container App Job blocks.
-- Remove positional assumptions where AzureRM changed lists to sets.
-- Make service-owned computed values explicit or narrowly ignore them when a
-  refresh exposes upgrade-time drift.
+## Highest-impact breaking changes
 
-### AzAPI 2.x
+### AzureRM 4.x requires a subscription
 
-- Express `body` as native HCL and read `output` as an HCL object. Remove
-  surrounding `jsonencode` and `jsondecode`.
-- Replace `ignore_body_changes` with a precise
-  `lifecycle.ignore_changes` path.
-- Opt into managed identity with `use_msi = true`; it is no longer selected
-  implicitly.
-- Expect default computed output to refresh. Use response projections or
-  `disable_default_output` when full output is unnecessary.
-- Remove deprecated retry multiplier, randomization, and provider busy-retry
-  controls; current provider defaults supersede the early 2.0 example.
-- Use `sensitive_body` and sensitive response projections instead of placing
-  secrets in ordinary state-visible body or output values.
+Every provider instance needs `subscription_id` or `ARM_SUBSCRIPTION_ID`.
+Azure CLI authentication no longer supplies the active subscription
+implicitly. Choose `resource_provider_registrations` deliberately and use
+`resource_providers_to_register` for exact additions.
 
-### Azure CLI automation
+```hcl
+provider "azurerm" {
+  subscription_id                 = var.subscription_id
+  resource_provider_registrations = "core"
+  resource_providers_to_register  = ["Microsoft.ContainerService"]
+  features {}
+}
+```
 
-- Pin the CLI and required extensions in reproducible automation, and check
-  the installed command's help before relying on a newly added argument.
-- Pass important defaults explicitly. VM size, AKS node size and SSH-key
-  behavior, App Service plan OS/SKU, MySQL and PostgreSQL versions, storage
-  redundancy, and container settings have all changed.
-- Parse JSON properties by name. Table columns, property casing, null
-  representation, and entire output shapes can change.
-- Treat confirmation prompts as breaking for unattended scripts; pass the
-  command's explicit confirmation option only after validating the target.
-- Remove deprecated or deleted commands and options rather than suppressing
-  their warnings. Some command groups have moved to extensions.
-- Account for the embedded Python runtime when an extension carries native or
-  version-sensitive dependencies.
+AzureRM 4.x also removes broad families of retired resources and renames many
+AKS, networking, storage, diagnostic, and service-bus fields. Read the
+Terraform reference before changing state; several migrations require a new
+resource type or dedicated child resource rather than a spelling change.
 
-## Authentication and identity
+### AzAPI 2.x uses native HCL
 
-- Do not use username/password authentication for users. ROPC and
-  `UsernamePasswordCredential` cannot satisfy mandatory MFA.
-- Prefer managed identity, workload identity, or a service principal for
-  unattended control-plane writes.
-- A control-plane write made with a user identity may return a claims
-  challenge even when reads succeed. Use clients that can surface and satisfy
-  the challenge.
-- Constrain `DefaultAzureCredential` with `AZURE_TOKEN_CREDENTIALS` when a
-  deterministic developer or production chain is required.
-- Managed identity selected as the only default credential skips the IMDS
-  availability probe and can retry for roughly 70 seconds; size startup
-  deadlines accordingly.
-- Use explicit `--client-id`, `--object-id`, or `--resource-id` for
-  user-assigned managed-identity login.
-- Select a subscription directly in supported CLI credential options when
-  ambient CLI state is unsafe.
-- Migrate Azure AD Graph requests and legacy manifest shapes to Microsoft
-  Graph. Do not treat old extended access as a continuing fallback.
-- In Az.Accounts 5, handle `Get-AzAccessToken` tokens as `SecureString`.
+Set `body` as an HCL object and consume `output` as an HCL object. Remove
+surrounding `jsonencode` and `jsondecode`. Replace `ignore_body_changes` with
+a precise `lifecycle.ignore_changes` path.
 
-## Network and access defaults
+```hcl
+resource "azapi_resource" "example" {
+  type      = "Microsoft.Example/widgets@2026-01-01"
+  parent_id = var.parent_id
+  name      = var.name
+  body = { properties = { enabled = true } }
+}
+```
 
-- New virtual networks created with the newer API default subnets to no
-  implicit outbound access. Configure NAT Gateway, a Standard Load Balancer
-  outbound rule, a Standard public IP, or firewall/NVA routing explicitly.
-- Stop and deallocate existing VMs after changing a subnet's
-  `defaultOutboundAccess` so the setting reaches their NICs.
-- Do not expect an Internet-next-hop UDR alone to give a private subnet
-  outbound connectivity.
-- Migrate Basic Load Balancers and Basic public IPs through the owning
-  resource's supported path. Standard public load balancing also needs
-  explicit NSG and outbound design.
-- Preserve public IPs by making them static before disassociation during
-  migration.
-- Match load-balancer and public-IP SKU and tier; mixed-SKU configurations are
-  not an in-place bridge.
-- Treat private-endpoint provider support as command-version specific and
-  verify the target resource provider before scripting approval workflows.
+Custom retry fields `multiplier` and `randomization_factor`, and provider
+`maximum_busy_retry_attempts`, are deprecated in later AzAPI 2.x. Do not copy
+the early 2.0 retry shape into new configurations.
 
-## Resource providers, ARM, and Bicep
+### Azure CLI defaults are not provisioning contracts
 
-- Register only providers that are ready for use and grant the narrow
-  `/register/action` permission when possible.
-- A provider can remain globally `Registering` while a completed region is
-  ready. Re-run registration when a provider later adds a needed region.
-- Template and Bicep deployments auto-register only providers for explicit
-  resource types; register providers needed solely by implicit integrations.
-- Discover API versions and locations from each provider resource type's
-  metadata. Provider support does not override subscription restrictions.
-- Use `@secure()` on string or object outputs that must stay out of deployment
-  history and logs.
-- Treat Bicep module identity syntax as nondeployable until backend support is
-  available.
-- Use direct `bicep snapshot` for deterministic local deployment snapshots;
-  it is not an `az bicep` command.
+Pass values explicitly when repeatability matters. Recent changes include AKS
+creation defaulting to no SSH key, VM and VMSS size defaulting to
+`Standard_D2s_v5`, Linux App Service plans defaulting to `P0V3`, App Service
+plans defaulting to Linux unless Windows is requested, and changing MySQL and
+PostgreSQL creation defaults.
 
-## Service-specific safety checks
+The CLI also removes or relocates commands. Single Server PostgreSQL commands,
+legacy Batch certificate and node commands, and several old options are gone;
+CDN and IoT device-stream commands moved to extensions. Pin and install needed
+extensions in offline or controlled environments.
 
-### AKS and containers
+### Mandatory ARM MFA rejects password automation
 
-- Validate removed preview-only AzureRM AKS fields before provider upgrades;
-  use AzAPI only with clear state ownership boundaries.
-- Pass AKS node VM size explicitly when capacity and cost must be stable.
-- Treat `--no-ssh-key` as the current create default and opt into the intended
-  SSH posture explicitly.
-- Test node-pool upgrade controls, rollback, disruption budgets, and
-  unavailable-node limits against a nonproduction pool first.
-- Keep container-storage generation and enable/disable syntax aligned with the
-  installed CLI.
+Azure Resource Manager write operations can return claims challenges for user
+identities even when Conditional Access exclusions exist. ROPC and username-
+password credentials cannot satisfy MFA. Move unattended work to managed
+identity, workload identity, or service principals, and use clients that can
+handle claims challenges for interactive users.
 
-### Compute and App Service
+### New networks and vaults have safer defaults
 
-- Pass VM or VMSS size and security type explicitly when request stability
-  matters.
-- Re-test scripts that parse disk, snapshot, gallery, runtime, resiliency, or
-  scheduled-event output.
-- Select the App Service plan operating system explicitly; omitted values can
-  now produce Linux plans.
-- Verify VNet routing, end-to-end encryption, certificate scope, and runtime
-  discovery when updating Web Apps or Function Apps.
-- Treat backup restore, vault reconfiguration, disk creation during attach,
-  and zone movement as stateful operations requiring target validation.
+New VNets created with the newer API default subnet
+`defaultOutboundAccess` to `false`; supply NAT gateway, Standard Load Balancer
+outbound rules, Standard public IP, or firewall/NVA routing when egress is
+required. Changing subnet privacy requires deallocating existing VMs before
+their NICs receive the setting.
 
-### Data, storage, and Key Vault
+New Key Vaults created with control-plane API `2026-02-01` or later default to
+RBAC when `enableRbacAuthorization` is omitted. Set it to `false` explicitly
+only when access policies are intentional, and ensure the operator can create
+role assignments before switching access models.
 
-- Pin PostgreSQL and MySQL versions, network mode, HA/zonal resiliency, storage
-  type, and redundancy instead of inheriting CLI defaults.
-- Remove PostgreSQL Single Server commands and unsupported server versions
-  from automation.
-- Remove MySQL `--storage-redundancy` from backup, restore, geo-restore, and
-  replica scripts where the command no longer accepts it.
-- Treat storage TLS 1.0 and 1.1 inputs as TLS 1.2; do not present the older
-  values as enforceable configuration.
-- For new Key Vaults on the current stable control-plane API, omitted
-  `enableRbacAuthorization` means RBAC. Set it to `false` explicitly only
-  when retaining access policies is intentional.
-- Ensure the operator can create role assignments before switching a vault's
-  access model, or the change can lock out administration.
+### Basic network SKUs are retired
 
-## Retirement handling
+Basic Load Balancer and Basic Public IP are retired and unsupported, although
+existing instances can continue operating. Their migrations are resource-
+specific and may require downtime. Do not mix Basic and Standard IP/LB SKUs;
+preserve static public addresses before disassociation and configure NSG and
+outbound behavior explicitly.
 
-- Inventory retirements through Advisor and Resource Graph, but account for
-  incomplete service/resource coverage and sovereign-cloud differences.
-- Replace API Management's retired direct management API with its ARM-based
-  management API.
-- Migrate developer-portal identity providers from ADAL to MSAL authorization
-  code flow with PKCE and republish the portal.
-- Move SQL control-plane callers away from `2014-04-01`; some old operation
-  groups have no direct stable equivalent and require workflow redesign.
-- Treat an Azure resource that remains operational after retirement as
-  unsupported, not as evidence that migration can be deferred safely.
+## Common workflows
 
-## Validation checklist
+### Safely update an AKS cluster
 
-1. Identify the cloud, subscription, region, API version, provider/CLI
-   version, and extension set used by the actual deployment.
-2. Inspect state and live resource defaults before changing configuration.
-3. Search the references for the exact resource type, command, option, or
-   output property being changed.
-4. Run plan, what-if, validation, or read-only discovery before mutation.
-5. Exercise authentication with the same identity type and claims policy used
-   in production.
-6. Test output parsers against captured JSON from the installed tool.
-7. Confirm rollback and recovery paths for network, identity, data, and
-   control-plane migrations.
+1. Query the cluster and node-pool modes, network plugin, outbound type,
+   storage add-on, OS SKU, and current upgrade availability.
+2. Treat preview-only AzureRM fields separately; editing the same AKS resource
+   through both AzureRM and AzAPI can cause perpetual diffs or recreation.
+3. Use ETags where concurrent updates are possible.
+4. Set disruption, soak, undrainable-node, and maximum-unavailable controls
+   explicitly for node-pool upgrades.
+5. Account for Machines-mode pools being skipped by cluster upgrade and use
+   node-pool rollback commands when recovery is needed.
+
+### Choose an authentication chain
+
+Set `AZURE_TOKEN_CREDENTIALS=prod`, `dev`, or a credential class name to
+constrain `DefaultAzureCredential` in current .NET, Go, Java, JavaScript, and
+Python Azure Identity libraries. Use the language-specific required-variable
+option where silent fallback is unsafe. Allow roughly 70 seconds for IMDS
+retry behavior when managed identity is selected directly.
+
+Tool-backed credentials do not uniformly support claims challenges. Validate
+the exact language implementation before relying on Azure CLI, PowerShell, or
+Azure Developer CLI credentials for challenged sign-in.
+
+### Author an ARM or Bicep deployment
+
+Query `resourceTypes` provider metadata for the precise resource type, API
+versions, and locations. Explicit resource types in ARM/Bicep deployments are
+automatically registered, but implicit supporting providers may still need
+manual registration.
+
+Use secure Bicep outputs for secret strings or objects. Parameter files can
+extend one base and merge objects or arrays with `base`, while local snapshots
+can validate deterministic deployment expansion without contacting Azure.
+Module identity syntax is recognized but is not yet deployable.
+
+### Handle output safely
+
+Prefer JSON plus explicit JMESPath queries over parsing table columns. Treat
+new fields as additive, tolerate JSON null, preserve exact property casing,
+and add contract tests for scripts that consume disk, snapshot, gallery,
+resource-list, Web App runtime, Key Vault key, or network outputs.
+
+### Plan database operations
+
+Pass engine version, SKU, storage type, redundancy, network mode, and public
+access explicitly. PostgreSQL and MySQL CLI options have changed repeatedly;
+check current `--help` before upgrades, restores, replica creation, or backup
+automation. Use validation-only PostgreSQL upgrades where available.
+
+### Inventory service retirement
+
+Use Azure Advisor metadata/recommendations and Resource Graph retirement data,
+then supplement them for sovereign clouds and incomplete service coverage.
+Retired APIs and SKUs can demand redesign, not only a new version string; for
+example, some SQL `2014-04-01` operation groups have no stable replacement.
+
+## Validation habits
+
+- Pin provider and module constraints, CLI/extension versions, Bicep versions,
+  and SDK lockfiles in reproducible automation.
+- Test authentication in the target cloud and tenant; endpoint discovery,
+  audiences, claims handling, and sovereign-cloud support differ.
+- Use `az deployment ... validate`, `what-if`, deployment-stack what-if, AzAPI
+  preflight, and Terraform plan before writes.
+- Preserve state backups before Terraform provider upgrades and verify import
+  IDs, resource moves, set/list semantics, and replacements.
+- Query current resource state after CLI updates before depending on defaults.
+- Deallocate VMs when subnet privacy changes and schedule downtime for Basic
+  network SKU migrations.
+- Treat previews, deprecated flags, and announced removals as transitional;
+  avoid adding new dependencies on them.
+- Read the relevant topic reference for exact flags, resource names, output
+  changes, limitations, and version attribution.

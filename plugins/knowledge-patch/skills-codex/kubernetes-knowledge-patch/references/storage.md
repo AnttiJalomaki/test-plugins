@@ -1,100 +1,127 @@
 # Storage and Data
 
-Use this reference for PersistentVolumes, CSI, snapshots, volume attributes, image and git volumes, migration, and volume security behavior.
+## PersistentVolume lifecycle and mutation
 
-Entries are grouped by task; the parenthetical identifier is the source batch.
+### PersistentVolume deletion now always honors reclaim policy (1.33-guide)
 
-## A Pod can reference one PVC through multiple volumes (1.35.0)
+Stable finalizers ensure a `Delete` reclaim policy removes backing storage even
+when the PV is deleted before the PVC, closing the old deletion-order leak.
 
-Multiple entries in a Pod's `volumes` list may now use the same `PersistentVolumeClaim`.
+### PersistentVolume node affinity is mutable (1.35.0)
 
-## CSI allocatable volume counts can be refreshed (1.33.0)
+`PersistentVolume.spec.nodeAffinity` may be updated after PV creation.
 
-With the alpha `MutableCSINodeAllocatableCount` gate, `CSINode.spec.drivers[*].allocatable.count` becomes mutable and `CSIDriver.spec.nodeAllocatableUpdatePeriodSeconds` controls periodic refreshes, preventing scheduling from relying indefinitely on stale capacity.
+### A Pod can reference one PVC through multiple volumes (1.35.0)
 
-## CSI attach-limit refreshes are default-on (1.35-guide)
+Several entries in one Pod's `volumes` list may use the same PVC.
 
-`MutableCSINodeAllocatableCount` remains beta but is enabled by default, and an insufficient-capacity attach failure now triggers an update of `CSINode.spec.drivers[*].allocatable.count` in addition to periodic refreshes.
+### PVCs can report when they became unused (1.36.0)
 
-## CSI mount-point checks no longer imply the inverse (1.33.0)
+With alpha `PersistentVolumeClaimUnusedSinceTime`, the PVC protection controller
+sets `Unused=True` and `lastTransitionTime` when no non-terminal Pod references
+the claim.
 
-CSI drivers using `IsLikelyNotMountPoint` must not interpret a `false` result as proof that a path is a mount point; an irregular file can also produce that result and may still be acceptable.
+## CSI capacity and mutable attributes
 
-## CSI tokens can use the secrets channel (1.35-guide)
+### CSI mount-point checks no longer imply the inverse (1.33.0)
 
-A CSI driver can set `CSIDriver.spec.serviceAccountTokenInSecrets: true` to receive ServiceAccount tokens in the `NodePublishVolume` secrets field instead of the routinely logged `volume_context` field.
+Drivers using `IsLikelyNotMountPoint` must not interpret `false` as proof that a
+path is mounted; an irregular file can also return false and may be acceptable.
 
-## Image volumes are beta with broader usability (1.33.0)
+### Storage capacity scoring reverses the old preference (1.33.0)
 
-Image volume sources now support `subPath` and `subPathExpr` and are accepted by the Restricted Pod Security Admission profile; kubelet also exposes request, successful-mount, and mount-error counters for them.
+Default-off alpha `StorageCapacityScoring` replaces `VolumeCapacityPriority` and
+prefers the node with most allocatable storage; the old feature preferred least.
 
-## Image volumes are default-on but runtime-dependent (1.35-guide)
+### CSI allocatable volume counts can be refreshed (1.33.0)
 
-The beta `image` volume source is enabled by default for delivering OCI artifacts as mounted data. It requires a compatible runtime, such as containerd 2.1 or newer.
+With alpha `MutableCSINodeAllocatableCount`,
+`CSINode.spec.drivers[*].allocatable.count` is mutable and
+`CSIDriver.spec.nodeAllocatableUpdatePeriodSeconds` controls periodic refresh.
 
-## Legacy volume integrations require migration (1.36.0)
+### CSI attach-limit refreshes are default-on (1.35-guide)
 
-The in-tree Portworx plugin and its migration gates are removed, with operations redirected to CSI. Kubeadm no longer mounts the flex-volume directory automatically; continued use requires a non-distroless custom controller-manager image, `--flex-volume-plugin-dir`, and an `extraVolumes` mount for `/usr/libexec/kubernetes/kubelet-plugins/volume/exec` before upgrading.
+The feature is beta and default-on; an insufficient-capacity attach failure also
+triggers a count refresh in addition to the periodic update.
 
-## PersistentVolume deletion now always honors reclaim policy (1.33-guide)
+### Volume attributes can be changed through a stable API (1.34-guide)
 
-Stable finalizers on relevant PVs ensure that a `Delete` reclaim policy removes the backing storage even when the PV is deleted before its PVC, eliminating the old deletion-order leak.
+Stable `VolumeAttributesClass` supports online provider-specific changes such as
+provisioned I/O when the CSI driver implements `ModifyVolume`.
 
-## PersistentVolume node affinity is mutable (1.35.0)
+### ResourceQuota can select a volume class (1.33.0)
 
-`PersistentVolume.spec.nodeAffinity` can now be updated after the PersistentVolume is created.
+The `VolumeAttributesClass` quota scope lets a
+`scopeSelector.matchExpressions` rule cap PVC counts for a named class.
 
-## PVCs can report when they became unused (1.36.0)
+### VolumeAttributesClass drops `v1alpha1` (1.35.0)
 
-With the alpha `PersistentVolumeClaimUnusedSinceTime` gate, the PVC protection controller sets an `Unused=True` condition and `lastTransitionTime` when no non-terminal Pod references the claim.
+`storage.k8s.io/v1alpha1` is removed; use the stable API.
 
-## ResourceQuota can select a volume class (1.33.0)
+## Storage-version and driver migrations
 
-The new `VolumeAttributesClass` quota scope matches PVCs using a named volume attributes class, so a `scopeSelector.matchExpressions` rule can cap PVC counts for that class.
+### Storage-version migration is built in (1.35-guide)
 
-## SELinux volume labeling can happen at mount time (1.36-guide)
+Default-on beta native migration handles conflicts and consistency tokens,
+replacing fragile `kubectl get`/`replace` loops for schema upgrades or at-rest
+reencryption.
 
-The GA behavior labels eligible volumes with `mount -o context=...` instead of recursively rewriting files, while CSI drivers advertise support through `spec.seLinuxMount`. Pods can retain recursive relabeling with `securityContext.seLinuxChangePolicy: Recursive`; audit shared-volume labels because conflicts can prevent Pods from starting.
+### StorageVersionMigration drops `v1alpha1` (1.35.0)
 
-```yaml
-spec:
-  securityContext:
-    seLinuxChangePolicy: Recursive
-```
+Use `v1beta1` and delete all `v1alpha1` migration resources before upgrading.
 
-## Snapshot metadata drops `v1alpha1` (1.36.0)
+### Legacy volume integrations require migration (1.36.0)
 
-`SnapshotMetadataService` is now `v1beta1`, and implementations can no longer use its `v1alpha1` protocol.
+The in-tree Portworx plugin and migration gates are removed; operations redirect
+to CSI. Kubeadm no longer mounts the flex-volume directory. Temporary continued
+flex use requires a non-distroless custom controller-manager image,
+`--flex-volume-plugin-dir`, and an `extraVolumes` mount for
+`/usr/libexec/kubernetes/kubelet-plugins/volume/exec` before upgrade.
 
-## Storage capacity scoring reverses the old preference (1.33.0)
+## Image and source volumes
 
-The alpha, default-off `StorageCapacityScoring` gate replaces `VolumeCapacityPriority`: it prefers the node with the most allocatable storage, whereas the replaced feature preferred the least.
+### Image volumes are beta with broader usability (1.33.0)
 
-## Storage-version migration is built in (1.35-guide)
+Image sources support `subPath` and `subPathExpr`, are accepted by Restricted
+Pod Security, and expose request, successful-mount, and mount-error counters.
 
-Native storage-version migration is beta and enabled by default. Its in-tree controller handles conflicts and consistency tokens, replacing fragile manual `kubectl get` and `kubectl replace` loops for schema upgrades or at-rest re-encryption.
+### Image volumes are default-on but runtime-dependent (1.35-guide)
 
-## StorageVersionMigration drops `v1alpha1` (1.35.0)
+The beta `image` source is default-on for OCI artifacts mounted as data and
+needs a compatible runtime such as containerd 2.1+.
 
-The migration API is now `v1beta1`, and `v1alpha1` is no longer supported. Delete all `v1alpha1` StorageVersionMigration resources before upgrading.
+### The in-tree `gitRepo` volume driver is disabled (1.33-guide)
 
-## The `gitRepo` volume escape hatch is gone (1.36-guide)
+The API admits `gitRepo`, but kubelet rejects it when `GitRepoVolumeDriver` is
+off. Use an init container or git-sync. At this point the gate temporarily
+restores it, with gate and code planned for removal in 1.39.
 
-The in-tree `gitRepo` plugin is permanently disabled in 1.36 and can no longer be restored with a feature gate; workloads must clone through an init container or a tool such as git-sync.
+### The `gitRepo` volume escape hatch is gone (1.36-guide)
 
-## The in-tree `gitRepo` volume driver is disabled (1.33-guide)
+The plugin is permanently disabled and no feature gate restores it.
 
-The API still admits `gitRepo` volumes, but kubelets with `GitRepoVolumeDriver` disabled reject them; use an init container or git-sync instead. The gate can temporarily re-enable the driver, but the gate and remaining plugin code are planned for removal in 1.39.
+## Snapshots and SELinux
 
-## Volume attributes can be changed through a stable API (1.34-guide)
+### Volume group snapshots are stable (1.36-guide)
 
-`VolumeAttributesClass` is stable for online changes to provider-specific volume properties such as provisioned I/O; the CSI driver must implement the CSI `ModifyVolume` operation.
+CSI group snapshot APIs create one crash-consistent recovery point across
+several PVCs and restore the set into new volumes.
 
-## Volume group snapshots are stable (1.36-guide)
+### Snapshot metadata drops `v1alpha1` (1.36.0)
 
-The CSI volume-group snapshot extension APIs can take one crash-consistent recovery point across several PersistentVolumeClaims and restore the resulting snapshot set into new volumes.
+`SnapshotMetadataService` uses `v1beta1`; implementations cannot use the alpha
+protocol.
 
-## VolumeAttributesClass drops `v1alpha1` (1.35.0)
+### SELinux volume labeling can happen at mount time (1.36-guide)
 
-The `storage.k8s.io/v1alpha1` VolumeAttributesClass resource is removed; clients and manifests must use the stable API.
+GA behavior labels eligible volumes using `mount -o context=...`; CSI drivers
+advertise support with `spec.seLinuxMount`. A Pod can retain recursive relabeling
+with `securityContext.seLinuxChangePolicy: Recursive`. Audit shared-volume
+labels because conflicts can prevent startup.
 
+## ServiceAccount material for CSI
+
+### CSI tokens can use the secrets channel (1.35-guide)
+
+Set `CSIDriver.spec.serviceAccountTokenInSecrets: true` so tokens reach
+`NodePublishVolume` in secrets instead of routinely logged `volume_context`.

@@ -1,42 +1,42 @@
 # Function Calling and Thought Signatures
 
-## Preserve signatures in manual history
+## Preserve opaque signatures in manual history
 
-Thought signatures are opaque encrypted reasoning state
-(`gemini-3-thought-signatures`). Official SDKs preserve them when the complete
-response object is appended to history. REST clients and manually constructed
-histories must return each value unchanged on the exact model part that
-received it:
+Thought signatures are encrypted reasoning state attached to response parts.
+Official SDKs preserve them when the complete response object is appended to
+history. REST clients and applications that construct history manually must
+return each signature unchanged on the exact model part where it arrived.
 
 ```json
 {
   "role": "model",
   "parts": [{
-    "functionCall": {
-      "name": "check_flight",
-      "args": {"flight": "AA100"}
-    },
+    "functionCall": {"name": "check_flight", "args": {"flight": "AA100"}},
     "thoughtSignature": "<opaque signature>"
   }]
 }
 ```
 
-For 3.x function calling, signature replay is mandatory even with minimal
-thinking; omission produces HTTP 400.
+For Gemini 3.x function calling, including minimal thinking, this round trip is
+mandatory. Omitting a required signature returns HTTP 400.
 
-Validation scans backward to the newest user message containing ordinary
-content. A user message containing only a `functionResponse` does not begin a
-new turn. Every subsequent step must keep the signature on its first function
-call, so sequential loops resend all earlier signed model-call parts:
+## Retain every signed call in the current turn
+
+Validation scans backward to the newest user message with ordinary content. A
+user message containing only a `functionResponse` does not begin a new turn.
+Every step after that boundary must retain the signature on its first function
+call, so a sequential loop resends all earlier signed model-call parts:
 
 ```text
-user(text) → model(FC1 + signature A) → user(FR1)
-           → model(FC2 + signature B) → user(FR2)
+user(text) -> model(FC1 + signature A) -> user(FR1)
+           -> model(FC2 + signature B) -> user(FR2)
 ```
 
-For parallel calls in one response, only the first `functionCall` part carries
-the signature. Keep it on that part, return all model calls together, and then
-return all function responses together:
+## Keep parallel calls grouped
+
+When one response contains parallel calls, only the first `functionCall` part
+carries the signature. Keep it on that part and return all calls in one model
+message followed by all results in one user message:
 
 ```text
 model: [FC1 + signature, FC2]
@@ -45,11 +45,11 @@ user:  [FR1, FR2]
 
 Interleaving `FC1, FR1, FC2, FR2` fails validation.
 
-## Preserve signatures in compatible chat messages and streams
+## Preserve compatibility-envelope signatures
 
-OpenAI-compatible chat-completion responses attach the signature to the signed
-tool call under `extra_content.google.thought_signature`. Replay that extension
-with the assistant tool-call message:
+Chat-completion compatibility responses put the signature on the signed tool
+call at `extra_content.google.thought_signature`. Replay the assistant
+tool-call message with this extension intact:
 
 ```json
 {
@@ -65,20 +65,24 @@ with the assistant tool-call message:
 }
 ```
 
-Without a function call, a 3.x response can put a signature on its final
-content part. Replaying it is recommended for reasoning continuity but is not
-validated. A streamed non-call signature can arrive on an empty-text part;
-consume the stream through `finish_reason`.
+## Consume non-call and streamed signatures
 
-With function calls, 2.5 can place an optional signature on the first part
-regardless of part type. In contrast, 3.x always signs the first function-call
-part and requires it on replay. Without a function call, 2.5 returns no
-signature, while 3.x can sign the last part when it generated a thought.
+Without a function call, Gemini 3.x may attach a signature to the last content
+part. Returning it is recommended for reasoning continuity but is not
+validated. In a streamed non-call response it can arrive on a part whose text
+is empty, so consume the stream through `finish_reason` rather than stopping
+when text is empty.
 
-Do not manufacture signatures for ordinary API-generated history. If an
-external trace contains function-call blocks that were not produced by the API
-and therefore cannot contain valid signatures, either documented sentinel can
-bypass validation:
+With function calls, Gemini 2.5 can put an optional signature on the first part
+regardless of its type; Gemini 3.x signs the first function-call part and
+requires it on replay. Without calls, 2.5 returns no signature, while 3.x can
+sign its last part after generating a thought.
+
+## Import unsigned traces only when unavoidable
+
+Do not fabricate function-call blocks when a real API response is available.
+When importing a trace that cannot contain genuine signatures, either
+documented sentinel can bypass validation in the signature field:
 
 ```json
 {"thoughtSignature": "context_engineering_is_the_way_to_go"}
@@ -88,12 +92,11 @@ bypass validation:
 {"thoughtSignature": "skip_thought_signature_validator"}
 ```
 
-Importing unsigned function-call traces remains discouraged.
-
 ## Declare Interactions functions directly
 
-In Interactions, a custom function is a direct typed member of `tools`
-(`function-calling`), not a wrapper containing a declarations list:
+Custom functions are typed entries in the Interactions `tools` array; do not
+wrap them in a function-declarations container. `parameters` is an object
+schema with `properties` and `required`:
 
 ```python
 weather_tool = {
@@ -106,21 +109,14 @@ weather_tool = {
         "required": ["city"],
     },
 }
-interaction = client.interactions.create(
-    model="MODEL_ID",
-    input="Weather in Paris?",
-    tools=[weather_tool],
-)
 ```
 
-Set behavior with `generation_config.tool_choice`:
+## Control tool selection and validation
 
-- `auto` is the default.
-- `any` forces a function call.
-- `none` prohibits calls.
-- Preview mode `validated` enforces schema adherence.
-
-Restrict callable functions with nested `allowed_tools`:
+Set behavior through `generation_config.tool_choice`: `auto` is the default,
+`any` forces a call, `none` prohibits calls, and preview mode `validated`
+enforces schema adherence. Restrict callable functions with nested
+`allowed_tools`:
 
 ```python
 generation_config = {
@@ -130,12 +126,12 @@ generation_config = {
 }
 ```
 
-Mode `any` can reject very large or deeply nested schemas.
+Very large or deeply nested schemas can be rejected in `any` mode.
 
-## Return typed and multimodal function results
+## Return multimodal function results
 
-For 3-series models, a `function_result` can carry multiple typed blocks,
-including images. Preserve the function name and call ID:
+For 3-series Interactions, a `function_result` can contain multiple typed
+blocks, including images. Preserve the function name and call ID:
 
 ```python
 input=[{
@@ -144,21 +140,19 @@ input=[{
     "call_id": tool_call.id,
     "result": [
         {"type": "text", "text": "instrument.jpg"},
-        {
-            "type": "image",
-            "mime_type": "image/jpeg",
-            "data": base64_data,
-        },
+        {"type": "image", "mime_type": "image/jpeg", "data": base64_data},
     ],
 }]
 ```
 
-When using legacy `generateContent` with Gemini 3.x, every `FunctionResponse`
-also requires both `call_id` and function `name` (`gemini-3.6`).
+When using legacy `generateContent` with Gemini 3.x, every
+`FunctionResponse` likewise includes both its `call_id` and function name.
 
-## Connect remote MCP tools
+## Connect remote MCP servers
 
-Interactions accepts an `mcp_server` tool:
+Interactions accepts an `mcp_server` tool for a remote MCP endpoint. It
+supports Streamable HTTP, not SSE. Server names cannot contain hyphens;
+`headers` and `allowed_tools` provide authentication and filtering.
 
 ```python
 tools=[{
@@ -169,36 +163,24 @@ tools=[{
 }]
 ```
 
-Only Streamable HTTP is supported; SSE transport is not. Server names cannot
-contain hyphens. Use optional `headers` for authentication and `allowed_tools`
-for filtering.
+## Assemble streamed arguments by event index
 
-## Assemble streamed argument deltas
-
-SDK-normalized streamed Interactions events provide the call ID and name at
-`step.start`. Group calls by `event.index`, append
-`event.delta.partial_arguments` when `event.delta.type == "arguments"`, and
-parse only after `interaction.completed`:
+On the SSE wire, function arguments arrive as partial argument-delta payloads.
+SDKs can normalize their names; the Python surface exposes an `arguments`
+delta with `partial_arguments`. Capture ID and name at `step.start`, group by
+`event.index`, concatenate fragments, and parse only after completion:
 
 ```python
-if (
-    event.event_type == "step.delta"
-    and event.delta.type == "arguments"
-):
-    current_calls[event.index]["arguments"] += (
-        event.delta.partial_arguments
-    )
+if event.event_type == "step.delta" and event.delta.type == "arguments":
+    current_calls[event.index]["arguments"] += event.delta.partial_arguments
 ```
 
-The revisioned SSE wire form calls this discriminant `arguments_delta` and
-places the fragment in `arguments`; see the Interactions reference. Do not mix
-field names between raw-event and SDK-object consumers.
+## Avoid rigid structured prose before a tool call
 
-## Avoid structured text immediately before a tool call
-
-Requiring XML, YAML, or JSON text immediately before calling a tool can produce
-`Malformed_Function_Call`. Prefer a dedicated function for working notes,
-called alongside the real function:
+Requiring XML, YAML, or JSON text immediately before a tool call can produce
+`Malformed_Function_Call`. Prefer a dedicated function for working notes made
+alongside the real call. Markdown notes or removing the pre-tool requirement
+are fallbacks.
 
 ```json
 {
@@ -206,19 +188,11 @@ called alongside the real function:
   "description": "Record working notes before another tool call.",
   "parameters": {
     "type": "OBJECT",
-    "properties": {
-      "next_step": {"type": "STRING"}
-    },
+    "properties": {"next_step": {"type": "STRING"}},
     "required": ["next_step"]
   }
 }
 ```
 
-Markdown notes or removing the pre-tool text requirement are fallback options.
-
-## Combine built-in and custom tools
-
-A single request can include built-in tools and custom functions. Computer Use
-is in public preview on `gemini-3.5-flash`, with browser, mobile, and desktop
-environments plus configurable safety and prompt-injection controls
-(`release-lifecycle`).
+Batch attribution: `gemini-3-thought-signatures`, `function-calling`, and
+`gemini-3.6`.

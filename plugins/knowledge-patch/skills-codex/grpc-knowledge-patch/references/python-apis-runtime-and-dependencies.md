@@ -1,85 +1,49 @@
 # Python APIs, Runtime, and Dependencies
 
-Use this reference when implementing async service failures, maintaining custom
-interceptors or contexts, resolving protobuf constraints, or adopting a newer
-Python runtime.
-
-All changes in this reference come from `core-1.83.0`.
-
-## Async status aborts
+## Abort asynchronous RPCs with a status object
 
 `grpc.aio.ServicerContext` declares `abort_with_status` in its abstract
-interface. Async handlers can abort directly with a status object:
+interface. Async handlers can await the status-based abort API directly:
 
 ```python
 async def handle(request, context):
     await context.abort_with_status(status)
 ```
 
-Apply these rules:
+Update custom `ServicerContext` implementations to satisfy the abstract
+interface. Test that awaiting the method terminates handler control flow with
+the intended status, including through wrappers or test doubles that implement
+the context themselves.
 
-- Await the method; do not treat it as the synchronous context API.
-- Keep custom `ServicerContext` implementations aligned with the abstract
-  interface, including the status-based abort member.
-- Test that handler work does not continue unexpectedly after the abort.
-- Exercise the status code, details, and metadata carried by the status object
-  through the application's normal error path.
+## Custom interceptor exceptions
 
-## Exceptions from custom interceptors
+Python `InterceptedCall` APIs handle exceptions raised by custom interceptors.
+This changes the observable failure behavior of intercepted RPCs, so do not keep
+tests or application logic that depend on the earlier handling path.
 
-Python `InterceptedCall` APIs now handle exceptions raised by custom
-interceptors. This changes the observable failure behavior of intercepted RPCs.
+Raise representative exceptions from each custom interceptor shape the
+application uses. Verify the resulting call failure, status, cleanup, and any
+application-level translation for unary and streaming RPC shapes in scope.
 
-The observation point can vary with the call API used by the application, so
-verify the failure through that API directly:
+## Protobuf dependency bounds
 
-- Raise deliberately from each custom interceptor.
-- Cover every unary or streaming call shape that the interceptor wraps.
-- Observe both awaiting the call and consuming responses where applicable.
-- Update tests that asserted the earlier propagation or wrapping behavior only
-  after recording the behavior of the upgraded package.
-- Preserve causal exception information in application logging and error
-  translation.
+The main Python protobuf dependency moves its lower bound from 6.33.5 to
+7.35.1. Resolve that path independently from the v1.83.x `grpc-status`
+backport: its relaxed bound allows continued use with protobuf 6.x.
 
-## Protobuf version bounds
+Before editing a requirement or lockfile:
 
-The Python protobuf lower bound moves from 6.33.5 to 7.35.1. Resolve and test
-that dependency change together with the gRPC Python packages in the
-application's lockfile.
-
-A separate v1.83.x backport for `grpc-status` relaxes that package's bound so it
-can still be used with protobuf 6.x. Keep the two cases separate:
-
-| Dependency path | Compatibility rule |
-| --- | --- |
-| Main Python protobuf requirement | Use 7.35.1 or newer |
-| v1.83.x `grpc-status` backport | Protobuf 6.x remains permitted by the relaxed bound |
-
-Before editing pins:
-
-1. Identify which package contributes the active protobuf constraint.
-2. Inspect lockfile resolution rather than assuming every gRPC-related package
-   has the same lower bound.
-3. Run serialization, status-details, generated-code, and import tests with the
-   resolved protobuf version.
-4. Avoid raising the backport's bound solely because the main dependency path
-   changed.
+1. Identify whether the constraint comes from the main gRPC package or the
+   `grpc-status` backport.
+2. Apply the 7.35.1 lower bound only to the main dependency path.
+3. Preserve protobuf 6.x compatibility where the backport is intentionally in
+   use.
+4. Resolve and test both environments if the project distributes artifacts for
+   both dependency paths.
 
 ## Python 3.15 support
 
-gRPC Python supports Python 3.15. When adopting it:
-
-- Add the interpreter to CI and exercise both pure-Python and native package
-  installation paths used by the project.
-- Regenerate or import representative protobuf modules.
-- Run async server, interceptor, cancellation, and status-detail tests.
-- Confirm the whole dependency graph supports the interpreter; gRPC Python
-  support does not establish support for unrelated project dependencies.
-
-## Upgrade checklist
-
-- Implement and await `abort_with_status` in every applicable async context.
-- Re-run interceptor exception tests instead of assuming the old failure shape.
-- Determine whether the main protobuf bound or the `grpc-status` backport rule
-  applies.
-- Exercise Python 3.15 in the same packaging environment used for deployment.
+gRPC Python supports Python 3.15. Add that interpreter to the supported-runtime
+matrix when the application adopts it, and verify installation, generated-code
+imports, async RPCs, interceptor failures, and native dependency availability
+under the same constraints used for released artifacts.

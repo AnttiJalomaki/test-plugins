@@ -1,63 +1,90 @@
 # Migrations and Compatibility
 
-## Compatibility policy
+## Release and API guarantees
 
-### Apply Semantic Versioning expectations (since 1.0.0)
+### Semantic Versioning (since 1.0.0)
 
-k6 follows Semantic Versioning. Breaking changes are limited to major
-releases and receive deprecation warnings in advance. Each major version gets
-critical fixes for at least two years. The supported public API surface is
-explicitly identified for extension and integration authors.
+k6 follows Semantic Versioning. Breaking changes are confined to major
+releases and receive deprecation warnings in advance. Each major receives
+critical fixes for at least two years, and k6 delineates the supported public
+API surface for extensions and integrations. Treat undocumented Go internals
+as outside that support guarantee.
 
-Treat experimental outputs, preview libraries, and experimental modules as
-outside the same stability expectations; they can carry breaking changes in a
-minor release.
+### Stable core modules (since 1.0.0)
 
-## Removed execution control
+`k6/browser`, `k6/net/grpc`, and `k6/crypto` are stable and suitable for
+production use.
 
-### Replace externally controlled execution in v2 (since 2.0.0)
+## v2 removals
 
-The `externally-controlled` executor and the `k6 pause`, `k6 resume`,
-`k6 scale`, and `k6 status` commands were removed without direct replacements.
-A script configured with that executor does not start.
+### Live test control (since 2.0.0)
 
-Choose an executor that represents the workload instead, such as:
+The `externally-controlled` executor and the `k6 pause`, `resume`, `scale`, and
+`status` commands have been removed without replacements. A script using that
+executor will not start. Choose an executor such as `ramping-vus`,
+`constant-vus`, or `constant-arrival-rate`.
 
-- `ramping-vus` for a changing number of virtual users.
-- `constant-vus` for fixed virtual-user concurrency.
-- `constant-arrival-rate` for a fixed iteration arrival rate.
+### Extension and Cloud migration surface (since 2.0.0)
 
-## HTTP call compatibility
+For a complete v2 migration, also verify these topic-specific changes:
 
-### Repair extra GET and HEAD arguments (since 1.8.0)
+- Go imports use `go.k6.io/k6/v2` and extension JSON handling uses
+  `encoding/json`.
+- Cloud commands are explicit, Cloud options live under `options.cloud`, and
+  the old `loadimpact` configuration path is not read.
+- The local HTTP API is opt-in, and aborted Cloud runs exit with status `97`.
+- The old OpenTelemetry Rate fallback and extension-provisioning environment
+  switches are removed.
 
-`http.get()` and `http.head()` warn when extra positional arguments are passed.
-The values remain ignored, but the warning identifies a call that does not
-match the supported method signature. Move intended request settings into the
-correct parameters object or remove the extra values.
+See the corresponding extension, CLI, and output references for the exact
+commands and environment variables.
 
-## Migration map
+## Build toolchain
 
-Use the topic references for the remaining compatibility work:
+### Go requirements by line
 
-| Area | Required review |
-| --- | --- |
-| Cloud CLI and script options | [Cloud command migration](cli-cloud-and-configuration.md#cloud-command-migration) |
-| Config file and HTTP API defaults | [Configuration paths and services](cli-cloud-and-configuration.md#configuration-paths-and-services) |
-| Extension resolution and Go imports | [Extensions and dependencies](extensions-and-dependencies.md) |
-| Summary, Rate, and OpenTelemetry changes | [Outputs and observability](outputs-and-observability.md) |
-| FID replacement and browser traffic | [Browser testing](browser-testing.md#browser-metrics-and-cloud-diagnostics) |
-| Stable modules and WebSockets | [Scripting, security, and protocols](scripting-security-and-protocols.md) |
+- Since 1.4.0, building k6 requires Go 1.24 or newer.
+- Since 1.7.0, building k6 requires Go 1.25 or newer, and the default build
+  toolchain is Go 1.26.
 
-## Version-aware review procedure
+Use the requirement associated with the k6 line being built. Release binaries
+may use a newer toolchain than the minimum accepted for source builds.
 
-1. Compare the developer, CI, container, Cloud, and archive k6 versions.
-2. Identify deprecated interfaces before changing the major version.
-3. Inspect environment variables as well as script options; several removed
-   switches never appear in JavaScript.
-4. Rebuild Go extensions against the v2 module path and supported compiler.
-5. Exercise CLI automation while asserting process exit status, not only
-   output text.
-6. Check output schemas and metric labels consumed by dashboards or alerting.
-7. Run browser tests with redirects, frames, and request waits when those paths
-   are present.
+## Containers
+
+### Numeric runtime user (since 1.1.0)
+
+The container image selects numeric UID `12345` rather than the named `k6`
+user. Kubernetes workloads no longer need to set `runAsUser` merely to resolve
+the image's configured user, but volume ownership and security policy should
+still permit UID `12345`.
+
+### Major-line image selection (since 2.0.0)
+
+Prereleases and maintenance releases from older major lines do not update
+Docker `:latest`. Floating tags such as `grafana/k6:v1` track a selected major
+line. Pin a full image version for deterministic CI and deployments.
+
+## HTTP compatibility
+
+### Extra argument warnings (since 1.8.0)
+
+`http.get()` and `http.head()` warn when extra positional arguments are
+provided. The extra values remain ignored, but the warning identifies a call
+whose arguments do not match the supported signature; correct the call rather
+than suppressing the warning.
+
+### HTTP/2 under Go 1.27 (since 1.8.1)
+
+When built with Go 1.27, k6 keeps VUs on HTTP/2, classifies connection and
+`GOAWAY` errors consistently with other Go versions, and preserves unknown
+HTTP/2 error buckets.
+
+## Experimental-output compatibility
+
+### TLS 1.3 default (since 1.2.0)
+
+The experimental OpenTelemetry and Prometheus outputs default to TLS 1.3. This
+was a minor-release breaking change because the outputs were experimental.
+Legacy endpoints may require an explicit output-specific minimum-TLS setting
+where one is available.

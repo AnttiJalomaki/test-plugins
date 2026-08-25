@@ -1,28 +1,23 @@
 # Scoped Data Access and Authentication
 
-This reference organizes the generator-scope and authentication guidance attributed to the `1.8-guides` batch.
+## Generated scopes are data-access boundaries
 
-## Generated scopes are authorization boundaries
-
-Running:
+The `1.8-guides` generator guidance makes scopes part of generated context
+APIs. Running:
 
 ```console
 $ mix phx.gen.auth Accounts User users
 ```
 
-generates an `Accounts.Scope` struct. Unless another default scope is already configured, it also registers a default user scope.
+creates an `Accounts.Scope` struct and, unless another default already exists,
+registers a default user scope. `fetch_current_scope_for_user` assigns that
+scope as `:current_scope` for browser requests, and a corresponding LiveView
+mount hook installs it for LiveViews.
 
-Generated browser authentication uses `fetch_current_scope_for_user` to assign the scope as `:current_scope`. The generated LiveView authentication setup includes a corresponding mount hook. Generated controllers and LiveViews then pass the scope as the first argument to context operations.
-
-Once a default scope exists, all of these generators produce ownership fields and scoped queries instead of unqualified data access:
-
-- `phx.gen.schema`
-- `phx.gen.context`
-- `phx.gen.live`
-- `phx.gen.html`
-- `phx.gen.json`
-
-A generated context function follows this shape:
+Generated controllers and LiveViews pass the scope as the first argument to
+context operations. After a default scope is configured, `phx.gen.schema`,
+`phx.gen.context`, `phx.gen.live`, `phx.gen.html`, and `phx.gen.json` generate
+ownership fields and scoped queries instead of unqualified access:
 
 ```elixir
 def list_posts(%Scope{} = scope) do
@@ -30,11 +25,16 @@ def list_posts(%Scope{} = scope) do
 end
 ```
 
-Put generated authenticated LiveView routes inside the authenticated `live_session`. Otherwise the mount hook does not establish the expected scope before the generated operations run.
+Put generated authenticated LiveView routes in the authenticated
+`live_session`. The mount hook must assign the scope before generated context
+operations run.
 
-## Declaring the default scope
+## Declare a generator scope
 
-Scopes are discovered from application configuration. There may be only one default scope.
+Generators discover scopes through application configuration. There may be
+only one default scope. `access_path` tells generated code how to reach the
+owner identifier; the `schema_*` keys describe the generated ownership column
+and association.
 
 ```elixir
 config :my_app, :scopes,
@@ -51,24 +51,20 @@ config :my_app, :scopes,
   ]
 ```
 
-The options have distinct responsibilities:
+The fixture module must export `<name>_scope_fixture/0`, such as
+`user_scope_fixture/0`. The configured setup helper must be importable by the
+generated controller or LiveView tests.
 
-- `module` identifies the scope struct module.
-- `assign_key` names the request and socket assign.
-- `access_path` tells generated code how to read the owner's identifier from the scope.
-- `schema_key` defines the generated ownership column.
-- `schema_type` defines the schema field type.
-- `schema_table` defines the referenced owner table.
-- `test_data_fixture` supplies generated scope data.
-- `test_setup_helper` prepares authentication and scope state for generated tests.
+Use `schema_migration_type` when the ownership column's migration type differs
+from `schema_type`. Set `schema_table: nil` to generate a plain scope-ID column
+instead of a foreign key.
 
-The fixture module must implement `<name>_scope_fixture/0`; for the `user` scope, that is `user_scope_fixture/0`. The configured setup helper must be importable by the generated controller or LiveView tests.
+## Select multiple and route-aware scopes
 
-Use `schema_migration_type` to override the generated migration's ownership-column type without changing the schema type. Use `schema_table: nil` when the ownership value should be a plain scope-id column rather than a foreign key.
-
-## Multiple scopes
-
-An application may configure several scopes. Select a non-default scope with the generator's `--scope` option.
+An application may configure multiple scopes and choose a non-default scope
+with `--scope`. `route_prefix` nests generated routes. `route_access_path` may
+use a public route value such as a slug independently of the database ownership
+key in `access_path`.
 
 ```elixir
 config :my_app, :scopes,
@@ -90,46 +86,41 @@ config :my_app, :scopes,
 $ mix phx.gen.live Blog Post posts title:string body:text --scope organization
 ```
 
-`route_prefix` nests the generated routes. `route_access_path` supplies the URL-facing route value, such as an organization slug, independently from the identifier used by `access_path` and `schema_key` for data ownership.
+For a route-derived organization scope, first load the organization through
+the existing user scope. Then update `:current_scope` in both a browser plug
+and a LiveView `on_mount` hook. This retains authorization-aware nested
+lookups while allowing generated paths to use the configured slug.
 
-## Route-derived scopes
+## Use magic-link-first authentication
 
-Do not look up a nested organization without an existing authorization boundary merely because its slug came from a route.
+The Phoenix 1.8 auth generator uses email confirmation and magic-link login.
+Password authentication is opt-in, and registration no longer collects a
+password.
 
-Instead:
+Generated `UserAuth` provides:
 
-1. Start with the authenticated user scope.
-2. Load the requested organization through that user scope.
-3. Update `:current_scope` to include the organization in a browser plug.
-4. Mirror that update in a LiveView `on_mount` hook.
+- `fetch_current_scope_for_user` to establish the current scope.
+- `require_authenticated_user` to enforce authentication; it must run after
+  the scope-fetching plug.
+- `require_sudo_mode` to protect sensitive operations with a recent-auth
+  requirement.
 
-The plug and mount hook keep controller and LiveView behavior aligned. Loading through the existing user scope keeps nested lookups authorization-aware, while `route_access_path` allows generated paths to use the configured slug.
+## Migrate authentication generated before 1.8
 
-## Magic-link-first generated authentication
+Generated authentication code is not updated automatically. For a complete
+migration from the older password-registration flow:
 
-The authentication generator uses email confirmation and magic-link login by default. Password authentication is opt-in, and new registration no longer collects a password.
+1. Add a new migration that makes `hashed_password` nullable. Do not edit an
+   old migration that has already run.
+2. Set `hashed_password` to `nil` for every still-unconfirmed account. This
+   prevents credential pre-stuffing against accounts whose email address has
+   not been confirmed.
+3. Plan for the race in which a newly registered person has just chosen a
+   password: the cleanup can invalidate it. Deploy during low traffic, or add
+   magic links without fully replacing the existing flow.
 
-Generated `UserAuth` includes:
+## Keep generated authentication assets available
 
-- `fetch_current_scope_for_user`, which establishes the current scope.
-- `require_authenticated_user`, which must run after the scope-fetching plug.
-- `require_sudo_mode`, which requires recent authentication for sensitive operations.
-
-Preserve that plug order when changing browser pipelines. For LiveView routes, preserve the equivalent authenticated `live_session` and mount-hook arrangement.
-
-## Migrating authentication generated before 1.8
-
-Generators do not retroactively update an application's copied authentication code. A full move from the password-registration flow therefore needs an explicit data migration and deliberate deployment plan.
-
-Create a new migration that makes `hashed_password` nullable. Do not edit a migration that may already have run in other environments.
-
-Set `hashed_password` to `nil` for every account that is still unconfirmed to prevent credential pre-stuffing.
-
-That cleanup can invalidate a password chosen by a legitimate user who registered moments before deployment but has not confirmed yet. Mitigate the race in one of two ways:
-
-- Deploy the migration during a low-traffic period.
-- Introduce magic links without immediately removing the existing password-registration flow.
-
-## Authentication assets
-
-Generated authentication features assume that `phoenix_html.js` is part of the JavaScript bundle. `phx.gen.auth` warns when esbuild is unavailable.
+The auth generator warns when esbuild is unavailable. Its generated behavior
+assumes `phoenix_html.js` is included in the JavaScript bundle, so preserve or
+replace that inclusion deliberately when customizing asset tooling.

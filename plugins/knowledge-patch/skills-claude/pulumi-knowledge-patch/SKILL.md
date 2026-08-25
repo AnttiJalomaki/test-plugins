@@ -8,134 +8,60 @@ metadata:
 ---
 
 
-# Pulumi compatibility guidance
+# Pulumi Knowledge Patch
 
-Use this skill when maintaining Pulumi projects, providers, components,
-Automation API programs, policy packs, or operational tooling. It emphasizes
-removed surfaces, changed defaults, lifecycle semantics, and newer workflows
-that are easy to miss when upgrading.
+Use this skill when implementing, reviewing, upgrading, or operating Pulumi projects. Inspect the project's `Pulumi.yaml`, language manifest, CLI version, backend, and provider constraints before applying version-sensitive guidance. Prefer the project's code, schemas, generated SDKs, and observed CLI behavior when they disagree with generalized advice.
 
-## How to use this skill
-
-1. Read `requiredPulumiVersion` from `Pulumi.yaml` when present, then inspect
-   language manifests, lockfiles, provider versions, and backend type.
-2. Check breaking changes and removed commands before changing an established
-   workflow.
-3. Use the task-specific reference for exact CLI flags, resource options,
-   runtime behavior, package workflows, or provider contracts.
-4. Treat experimental commands and APIs as unstable unless the reference says
-   they graduated.
-5. Exercise previews, state backups, and focused tests before applying
-   lifecycle or state changes.
-
-## Reference index
+## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [CLI operations and configuration](references/cli-operations-and-configuration.md) | Operation flags, environment controls, config, output, logging, authentication, templates, and plugin execution |
-| [State, import, and resource lifecycle](references/state-import-and-lifecycle.md) | State repair, imports, protection, targeting, hooks, replacement, secrets, and backend migration |
-| [Components, packages, and language SDKs](references/components-packages-and-runtimes.md) | Cross-language components, package lifecycle, YAML, runtimes, Automation API, and SDK changes |
-| [Providers, schemas, PCL, and protocols](references/providers-schemas-pcl-and-protocols.md) | Provider contracts, schema authoring, code generation, PCL, conversion, invokes, and protocol changes |
-| [Cloud, policy, and operations](references/cloud-policy-and-operations.md) | Pulumi Cloud API, ESC, CI, Kubernetes Operator, policy, Neo, direct-resource operations, and DIY backends |
+| [CLI operations and configuration](references/cli-operations-and-configuration.md) | Command changes, environment controls, machine output, project creation, Neo, logging, and tracing |
+| [Cloud, policy, and operations](references/cloud-policy-and-operations.md) | Authentication, Pulumi Cloud and ESC, policy, CI/CD, backends, credentials, and remote operations |
+| [Components, packages, and runtimes](references/components-packages-and-runtimes.md) | Cross-language components, package lifecycle, templates, runtime baselines, language SDKs, and testing |
+| [Providers, schemas, PCL, and protocols](references/providers-schemas-pcl-and-protocols.md) | Provider authoring, plugin resolution, schema and code generation, PCL, invokes, and protocol changes |
+| [State, import, and resource lifecycle](references/state-import-and-lifecycle.md) | Protection, deletion, replacement, hooks, imports, stack migration, state repair, and direct resources |
 
-## Breaking changes first
+## Load References by Task
 
-### Remove retired CLI and deployment-settings workflows
+- For an application program or generated project, start with components, packages, and runtimes.
+- For a CLI script or CI wrapper, load CLI operations and configuration, then cloud operations if it authenticates or selects a backend.
+- For provider, converter, analyzer, schema, or code-generator work, load providers, schemas, PCL, and protocols.
+- For imports, repairs, replacements, protection, or resource hooks, load state, import, and resource lifecycle.
+- For ESC, Pulumi Cloud, Registry policy, remote deployment, or DIY backend work, load cloud, policy, and operations.
+- Load more than one reference when a workflow crosses layers; package generation, imports, and component providers commonly do.
 
-`pulumi query` is gone. Local `Pulumi.<stack>.deploy.yaml` files and their
-`deployment settings init`, `pull`, `configure`, `env`, and
-`push`/`update`/`up` commands are also gone. Manage deployment settings in
-Pulumi Cloud:
+## Breaking Changes and Removed Surfaces
 
-```shell
-pulumi deployment settings get
-pulumi deployment settings edit
-pulumi deployment settings destroy
-```
+- Do not use `pulumi query`; the command has been removed.
+- Do not implement provider `StreamInvoke`; that RPC has been removed from the Provider service.
+- Do not use the experimental local `Pulumi.<stack>.deploy.yaml` workflow or its CLI commands. Manage deployment settings through Pulumi Cloud.
+- Do not use `pulumi new --ai` or its removed interactive AI mode. Use `pulumi neo` for the replacement terminal workflow.
+- Treat logout as destructive to local backend configuration: it now removes all backend configuration, shared temporary agent credentials, and the current tokenless backend.
+- The legacy DIY-backend deprecation is now an error. If a temporary bypass is unavoidable, the current variable is `PULUMI_DIY_BACKEND_IGNORE_DEPRECATION_ERROR`.
+- Provider tooling must use the `pulumi-language-dotnet/v3/codegen` module rather than the deprecated core-repository .NET codegen package.
+- PCL `package` block labels are deprecated.
+- Node.js Pulumi programs now require Node.js 22 or later. Newly generated TypeScript projects use `nodenext` for both module settings.
 
-The associated `--config-file` flag and SDK file-reading helpers are no longer
-available.
+For the exact migration details, read the CLI, component/runtime, and provider references before changing scripts or build tooling.
 
-### Upgrade language runtimes deliberately
+## High-Risk Operation Checklist
 
-The Node.js SDK requires Node.js 22 or later and supports pnpm 11. Current
-generated TypeScript projects use `nodenext` for both `module` and
-`moduleResolution`, and TypeScript 6 is accepted as a peer dependency.
-Generated Go programs and SDK modules target Go 1.25; Automation API supports
-Go 1.26.
+Before preview, update, refresh, destroy, import, or direct state work:
 
-When a Node.js project's `Pulumi.yaml` sets the `production` runtime option,
-`pulumi install` omits `devDependencies`.
+1. Confirm the active backend and stack. Current-stack selection is backend-scoped, and `PULUMI_STACK` can select a stack without persisting a selection.
+2. Inspect protection, retention, parents, providers, replacement relationships, hooks, and pending creates.
+3. Decide whether changed program code must run. Refresh and destroy skip it unless run-program behavior is requested; preview and update accept it only with refresh.
+4. Keep secrets redacted. `--show-secrets` emits plaintext to terminals and captured logs.
+5. Use `--output json` when another process consumes operation results; diagnostics are emitted on stderr.
+6. Treat `--ignore-protect`, `state delete --all`, multi-URN state deletion, and direct state import as explicit repair or override operations.
+7. Export or otherwise secure state before manual repair, and verify with a preview afterward.
 
-### Update provider protocol implementations
+## Quick Reference: Engine and Configuration
 
-`StreamInvoke` was removed from the Provider service. The old
-`ProviderHandshakeResponse.pulumi_version_range` field is also removed, and
-`PulumiPlugin.yaml` uses `requiredPulumiVersion` rather than
-`pulumiVersionRange`.
+### Run program code for refresh-aware operations
 
-Provider implementations must account for newer required fields and services:
-
-- `Configure` and `DiffConfig` require the provider type.
-- Plugin loading functions no longer take a separate name.
-- Schema and PCL binding require an explicit schema loader.
-- Provider hosts use `plugin.Context` and no longer retain workspace state.
-- The provider protocol includes streaming `ResourceProvider.List`.
-
-### Treat logout as destructive configuration cleanup
-
-`pulumi logout` now removes all configuration for the selected backend,
-including shared temporary agent credentials and the current tokenless
-backend. Do not use it as a harmless token-only reset.
-
-### Recheck automatic log handling
-
-Encrypted automatic CLI logging is enabled by default. Logs live under
-`~/.pulumi/logs`; property-value secrets are redacted, and `pulumi logs ls`,
-`decrypt`, `rm`, and `share` manage captures. Adjust retention procedures
-rather than relying on the earlier opt-in environment variable.
-
-### Preserve current YAML config semantics
-
-The temporary behavior that preserved scalar types from YAML configuration was
-reverted. The CLI warns when YAML `null` would become an empty string. Use
-explicit config types and test consumers rather than depending on the reverted
-behavior.
-
-### Respect stricter schema and PCL contracts
-
-Provider schema names cannot contain whitespace or control characters, collide
-with module paths, use reserved package names `pulumi` or `input`, or define
-modules nested beneath the index module. Labels on PCL `package` blocks are
-deprecated, and component inputs are typechecked.
-
-### Observe corrected failure and import behavior
-
-Failed resource registrations produce faulted outputs rather than unknown
-outputs. Diffs nested inside `Output` values are no longer ignored. Importing
-with a noncanonical identifier no longer schedules a later deletion, so remove
-workarounds built around the former behavior.
-
-## High-value CLI workflows
-
-### Produce machine-readable operation summaries
-
-Use `--output json` with `up`, `preview`, `refresh`, `destroy`, and `import`.
-For the first four operations, affected-resource records include URN, type,
-name, operation, and parent.
-
-```shell
-pulumi preview --output json
-```
-
-Non-UTF-8 strings appear as `b"<base64>"` in diffs and JSON rather than
-invalid text.
-
-### Run program code when state operations need it
-
-`refresh` and `destroy` skip program execution unless `--run-program` is set.
-The flag is useful for short-lived credentials, dynamic providers, and other
-program-supplied operation context.
+Use `--run-program` with refresh or destroy when the program establishes credentials, loads secrets, defines dynamic providers, or otherwise supplies operation context:
 
 ```shell
 pulumi refresh --run-program
@@ -143,107 +69,84 @@ pulumi destroy --run-program
 PULUMI_RUN_PROGRAM=true pulumi up --refresh
 ```
 
-`preview` and `up` accept the same setting when combined with `--refresh`.
+`pulumi preview --refresh` and `pulumi up --refresh` also accept `--run-program`. Refresh and destroy accept `--config` and `--config-path`, and refreshing stack configuration includes imported environments.
 
-### Control one operation without editing stack configuration
+### Target and safety controls
 
-`up`, `preview`, `destroy`, and `refresh` accept `--override-env` for imported
-environment substitutions and `--skip-config-validation` to bypass the
-project's config schema. Treat the latter as an exceptional recovery tool.
+Use `--exclude <URN>` to omit a target and add `--exclude-dependents` to omit its children. An explicit child value of `protect: false` or `retainOnDelete: false` overrides an inherited true value. A protected-delete error does not stop unrelated deployment work.
 
-Every CLI flag also has a generic `PULUMI_OPTION_*` form; for example,
-`--refresh` maps to `PULUMI_OPTION_REFRESH`.
+Use `pulumi state protect`, `state taint`, and `state untaint` for durable state changes. Use `--ignore-protect` only for a single preview, update, or destroy that intentionally permits protected deletions.
 
-### Call Pulumi Cloud directly
+### Configuration and environment overrides
 
-`pulumi api <operation-or-path>` is the canonical direct Cloud API client. It
-supports fields, headers, request bodies, path templates, content negotiation,
-and dry runs. Use `list` and `describe` to inspect the API, and `--paginate`
-to combine cursor pages into one JSON envelope.
+- `PULUMI_OPTION_<FLAG>` supplies any CLI flag; for example, `PULUMI_OPTION_REFRESH=true` supplies `--refresh`.
+- `PULUMI_PARALLEL` maps to `--parallel`; `PULUMI_PARALLEL_DIFF` enables concurrent diffs.
+- `pulumi config set --type` fixes a scalar's stored type; `--raw` preserves newlines from stdin.
+- `--override-env` temporarily replaces imported environments for one engine operation.
+- `--skip-config-validation` bypasses project config-schema validation for one engine operation.
+- The YAML config change that preserved types was reverted; YAML `null` still warns when it would become an empty string.
 
-### Bootstrap without a runtime
+## Quick Reference: Output, Logs, and Traces
 
-Projects may omit a runtime. `pulumi project new -y` creates a minimal project,
-`pulumi new` aliases `pulumi project new`, and the CLI can run through `npx`:
+Use `--output json` with `up`, `preview`, `refresh`, `destroy`, and `import`. Operation summaries identify affected resources; historical summaries are available through:
 
 ```shell
-npx pulumi preview
+pulumi stack history events --summary
 ```
 
-## High-value lifecycle controls
+Automatic encrypted CLI logging is enabled by default. Property-value secrets are redacted. Use `pulumi logs ls`, `decrypt`, `rm`, and `share` to manage captures.
 
-### Express replacement relationships
+Use `--otel-traces` with a relative file or a supported endpoint. gRPC, secure gRPC, and HTTPS endpoints are supported; headers and `OTEL_RESOURCE_ATTRIBUTES` can enrich exports. `TRACEPARENT` attaches CLI spans to an existing trace.
 
-Use `replaceWith` to replace a resource when another resource is replaced,
-including transitive or mutual replacement groups. Use `replacement_trigger`
-when an arbitrary value change should force replacement.
+## Quick Reference: Authentication
 
-```typescript
-const app = new aws.ec2.Instance("app", args, {
-  replaceWith: [database],
-  replacementTrigger: rolloutVersion,
-});
-```
+For CI/CD, prefer native OIDC login over a stored long-lived Pulumi token. `--oidc-token` accepts a raw JWT or `file://` path; organization, team, and user can be inferred from claims or narrowed explicitly. The exchanged access token expires after two hours by default unless `--oidc-expiration` changes it.
 
-Consult the lifecycle reference for language availability and remote-component
-propagation.
+If `credentials.json` contains an OAuth refresh token, a 401 triggers one automatic token refresh and retry. Stored credentials may opt into OS-protected encryption with `PULUMI_CREDENTIAL_STORE`.
 
-### Recover failed operations with hooks
+## Quick Reference: Packages and Components
 
-Resource hooks are available in Go, Node.js, and Python. `OnError` hooks can
-implement retries; all provider errors reach error hooks, and a successful PCL
-hook command retries the failed operation. A failing after-hook fails the
-deployment. Destroy operations with delete hooks must run the program.
+A cross-language component source contains `PulumiPlugin.yaml`; same-language-only components do not need it. TypeScript exports component classes directly, YAML exposes top-level `components`, and Python, Go, .NET, and Java start runtime-specific component provider hosts.
 
-### Repair state with focused commands
+Install source packages with `pulumi package add`, recording them under `packages` in `Pulumi.yaml`; run `pulumi install` after a fresh checkout when generated SDKs are not committed. Prefix local paths with `./` or `../`. Package sources can be Git URLs, local directories, Registry identifiers, parameterized packages, or extension packages.
 
-`pulumi state taint` and `untaint` control replacement on the next update.
-`pulumi state protect` changes protection directly in state. Bulk deletion can
-accept several URNs and order them by dependency; `--all` removes every state
-entry and requires exceptional care.
+Unqualified package names resolve through the Pulumi Cloud Registry. Use `--server <URL>` only when commands should talk directly to a plugin server and preserve that server in `Pulumi.yaml`.
 
-### Migrate stacks between backends
+## Quick Reference: Resource Lifecycle
 
-`pulumi stack migrate` imports a stack from another backend into the current
-one and re-encrypts configuration secrets and state under the destination
-secrets provider. Back up and verify both sides before migration.
+Use `replaceWith` when replacing one custom resource must replace another even without an infrastructure dependency. Relationships are transitive and may be mutual. Use `replacement_trigger` when replacement should follow an arbitrary value change.
 
-## High-value component and package workflows
+Resource hooks are available in Go, Node.js, Python, and PCL. Delete hooks require the program during destroy; error hooks receive provider failures and can drive retries. A successful PCL `onError` hook retries the failed operation, while a failing after-hook fails the deployment.
 
-### Publish source-backed components across languages
+An `ignoreChanges` path missing from old state uses the new value instead of failing. Failed registrations now produce faulted outputs, and diffs nested in `Output` values are no longer ignored.
 
-A component directory with `PulumiPlugin.yaml` can be analyzed into a schema
-and consumer SDKs. The file is unnecessary for same-language-only components.
-TypeScript and YAML expose components directly; Python, Go, .NET, and Java run
-a component provider host.
+## Quick Reference: Imports and Direct Resources
 
-### Add and restore packages
+Import options can be supplied by resource transforms. A resource can be imported and updated in one deployment while retaining its import ID. Import files can include providers, rich values, inputs, and outputs; supplying outputs imports state directly and skips the provider read.
 
-`pulumi package add` accepts registry identifiers, Git sources, and explicit
-local paths such as `./component`. It records sources under `packages` in
-`Pulumi.yaml`; `pulumi install` restores those packages and recurses into local
-ones.
+`pulumi do` supports stateful create, delete, patch, and upsert. Use `--resources` to reference existing stack resources and `show-resources` to list their identifiers. Stateful patch overlays inputs on the existing snippet. Outside a project, the command creates a fallback project and stack under `PULUMI_HOME`.
 
-Unqualified package names resolve through the Pulumi Cloud Registry by
-default. Use `pulumi install --file` when registry resolution must be bypassed.
+## Quick Reference: Providers and Invokes
 
-### Use YAML components for declarative composition
+Output-form invokes in Go, Node.js, Python, and PCL carry resource dependencies so the engine can defer them while dependencies or remote-component children are being created. During preview, a deferred invoke resolves as unknown. Component-parented invokes inherit providers from the component's `providers` option.
 
-Pulumi YAML supports top-level `components` containing typed inputs, child
-resources, and outputs. Use another authoring language when the definition
-needs conditional logic or map merging.
+Provider handshakes can supply schema-loader, package-resolver, and mapper service addresses. CLI-launched providers receive the active login through `PULUMI_API` and `PULUMI_ACCESS_TOKEN`. Provider `Configure` and `DiffConfig` require type information, and explicit providers receive `DiffConfig` replacement checks.
 
-## Verification targets
+## Quick Reference: Language Runtimes
 
-After an upgrade, prioritize tests that:
+- Python supports native async entrypoints through `pulumi.run`; uv projects may override the environment with `UV_PROJECT_ENVIRONMENT`.
+- Go output-form invoke SDKs that pass unresolved arguments into the core SDK require Pulumi SDK v3.255.0 or later.
+- Bun is a native Pulumi language runtime, distinct from using Bun only as a Node.js package manager.
+- Generated Go programs and SDK modules target Go 1.25; Automation API supports Go 1.26.
+- Python supports Python 3.14, with `grpcio>=1.75.1` on that runtime.
 
-- preview imports, replacements, hooks, and protection changes against copied
-  state;
-- verify Node.js, Python, Go, Java, and Bun runtime/toolchain selection;
-- exercise package restoration from registry, Git, and local sources;
-- assert secret propagation through invokes, hooks, stack references, and
-  imported state;
-- validate generated schemas and code against strict module and type rules;
-- parse JSON operation summaries, stderr diagnostics, and non-UTF-8 values;
-- confirm backend tags, automatic-log retention, and logout behavior;
-- compare Automation API flags with their CLI equivalents.
+Read the component/runtime reference before changing language manifests or regenerating SDKs.
+
+## Decision Rules
+
+- Inspect the installed CLI and SDK versions before using a newly introduced flag, protocol field, or generated-code contract.
+- Separate CLI behavior, language SDK behavior, provider protocol behavior, and Pulumi Cloud behavior; a feature may arrive in those layers at different times.
+- Preserve safety and secrecy defaults unless the user explicitly authorizes an override.
+- When a migration changes persisted state, backend selection, credentials, or secrets providers, preview and verify the destination before removing the source.
+- For package or schema work, resolve whether the package is ordinary, parameterized, or extension-parameterized before choosing token names and generation paths.
+- For provider work, validate against the exact schema and protocol types in the repository rather than assuming older host or handshake signatures.

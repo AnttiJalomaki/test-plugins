@@ -1,80 +1,47 @@
 # Migrating from pnpm 10 to pnpm 11
 
-## Mechanical migration
+## Run the codemod (migration-10-to-11)
 
-Run the migration codemod from the project root (`migration-10-to-11`):
+From the project root, run the v10-to-v11 codemod to relocate supported settings and update the root `packageManager` declaration.
 
 ```sh
 pnpx codemod run pnpm-v10-to-v11
 ```
 
-It relocates supported settings and updates the root package-manager declaration,
-but the following manual review is required.
+Review the result against the topic guides because some changes require manual work.
 
-## Configuration locations
+## Configuration checklist (migration-10-to-11)
 
-pnpm 11 does not read the `pnpm` field in `package.json`. `.npmrc` is limited to
-authentication and registry settings. Put every other setting in
-`pnpm-workspace.yaml` as camelCase. When the codemod finds settings in a
-subproject `.npmrc`, it moves them under `packageConfigs["<project-name>"]`.
+- Move non-authentication and non-registry settings to camelCase keys in `pnpm-workspace.yaml`; pnpm 11 does not read `package.json#pnpm`, and `.npmrc` is limited to authentication and registries. See [configuration-hooks.md](configuration-hooks.md).
+- Replace `managePackageManagerVersions`, `packageManagerStrict`, and `packageManagerStrictVersion` with `pmOnFail`.
+- Rename configuration environment variables from `npm_config_*` to `pnpm_config_*`.
+- Replace each `auditConfig.ignoreCves` entry manually with the matching GHSA from the **More info** column of `pnpm audit`; the codemod renames the key to `auditConfig.ignoreGhsas` but cannot translate values. See [security-audit-sbom.md](security-audit-sbom.md).
+- Fix or remove dependencies whose patches fail; `ignorePatchFailures` is gone and all failures throw.
+- The codemod converts root `useNodeVersion` to `devEngines.runtime`. In subpackages, manually replace `package.json#pnpm.executionEnv.nodeVersion` with that package's `devEngines.runtime`. See [runtimes-scripts-cli.md](runtimes-scripts-cli.md).
 
-Replace these three settings:
+## Command changes (migration-10-to-11)
 
-- `managePackageManagerVersions`
-- `packageManagerStrict`
-- `packageManagerStrictVersion`
+`pnpm link <pkg-name>` no longer resolves through the global store. Pass a relative or absolute filesystem path.
 
-with `pmOnFail`, whose accepted values are `download`, `ignore`, `warn`, and
-`error`:
-
-```yaml
-pmOnFail: download
+```sh
+pnpm link ./foo
 ```
 
-pnpm 11 ignores `npm_config_*` environment variables used as pnpm
-configuration. Rename them to `pnpm_config_*` in CI, shells, containers, and
-other launch environments. This is separate from user-defined variables passed
-to lifecycle scripts.
+Argument-free `pnpm install -g` is unsupported; use `pnpm add -g <pkg>` for a named package. `pnpm server` is removed without a replacement.
 
-Move Node runtime declarations as follows:
+If a package defines `clean`, `setup`, `deploy`, or `rebuild`, `pnpm <name>` runs the package script. Use `pnpm pm <name>` to force the built-in command.
 
-- The codemod converts root `useNodeVersion` to `devEngines.runtime`.
-- In each subpackage, manually replace
-  `package.json#pnpm.executionEnv.nodeVersion` with that subpackage's own
-  `devEngines.runtime` declaration.
-
-## Audit and patch migration
-
-`auditConfig.ignoreCves` becomes `auditConfig.ignoreGhsas`. The codemod can
-rename the key but cannot convert identifiers. For each CVE, use the matching
-GHSA shown in the **More info** column of `pnpm audit`:
-
-```yaml
-auditConfig:
-  ignoreGhsas:
-    - GHSA-xxxx-xxxx-xxxx
+```sh
+pnpm pm deploy
 ```
 
-`ignorePatchFailures` is removed. Every patch application failure throws; fix
-the patch or remove the affected dependency.
+## Runtime and executable requirements (11.0.0)
 
-## Commands removed or reinterpreted
+pnpm 11 requires Node.js 22 or newer and is pure ESM. Its standalone executable additionally requires glibc 2.27 or newer.
 
-- `pnpm link <package-name>` no longer searches the global store. Pass a
-  relative or absolute filesystem path, such as `pnpm link ./foo`.
-- Bare `pnpm install -g` is unsupported. Use `pnpm add -g <pkg>`.
-- `pnpm server` is removed without a replacement.
-- Package scripts named `clean`, `setup`, `deploy`, or `rebuild` shadow the
-  built-in commands. Use `pnpm pm <name>` to force the built-in command.
+## Default policy changes (11.0.0)
 
-## Runtime and platform requirements
-
-pnpm 11 requires Node.js 22 or newer and is pure ESM. The standalone executable
-also requires glibc 2.27 or newer (`11.0.0`).
-
-## Changed installation and security defaults
-
-pnpm 11 defaults to:
+The defaults are:
 
 ```yaml
 minimumReleaseAge: 1440
@@ -85,107 +52,34 @@ optimisticRepeatInstall: true
 verifyDepsBeforeRun: install
 ```
 
-Set `minimumReleaseAge: 0` to opt out of the one-day release delay.
+Set `minimumReleaseAge: 0` to opt out of the one-day publication delay.
 
-The dependency-build settings `onlyBuiltDependencies`,
-`onlyBuiltDependenciesFile`, `neverBuiltDependencies`,
-`ignoredBuiltDependencies`, and `ignoreDepScripts` are removed. Use
-`allowBuilds` for both approvals and denials.
+## Removed legacy build settings (11.0.0)
 
-## Registry command implementation
+`onlyBuiltDependencies`, `onlyBuiltDependenciesFile`, `neverBuiltDependencies`, `ignoredBuiltDependencies`, and `ignoreDepScripts` are unsupported. Replace them with `allowBuilds`; see [build-scripts.md](build-scripts.md).
 
-The following registry-facing commands are implemented natively rather than by
-passing through to another CLI: `publish`, `view`, `login`, `logout`,
-`deprecate`, `unpublish`, `dist-tag`, `version`, `search`, `star`, and `whoami`.
+## Registry command implementation changes (11.0.0)
 
-The following commands throw “not implemented”: `access`, `bugs`, `edit`,
-`issues`, `owner`, `prefix`, `profile`, `pkg`, `repo`, `set-script`, `team`,
-`token`, and `xmas`. Later pnpm 11 minors add native `access` and `team`; check
-the installed minor before treating the initial 11.0 result as current.
+`publish`, `view`, `login`, `logout`, `deprecate`, `unpublish`, `dist-tag`, `version`, `search`, `star`, and `whoami` are native rather than npm CLI passthroughs. `access`, `bugs`, `edit`, `issues`, `owner`, `prefix`, `profile`, `pkg`, `repo`, `set-script`, `team`, `token`, and `xmas` throw “not implemented” in this batch. Publishing reads OTPs from `PNPM_CONFIG_OTP`, prompts when required, and supports QR-code and URL web authentication.
 
-Publishing reads one-time passwords from `PNPM_CONFIG_OTP`, prompts when needed,
-and supports web authentication using a QR code and URL.
+## Global installation migration (11.0.0)
 
-## Global installation layout
+Each `pnpm add -g` installation group has its own manifest, lockfile, and `node_modules` under `{pnpmHomeDir}/global/v11/{hash}/`. Removing one package removes its group, and updating creates a new group. Global binaries moved to `PNPM_HOME/bin`, so run `pnpm setup` after upgrading. `pnpm link --global` and argument-free `pnpm link` are removed; use `pnpm add -g .` in place of the former.
 
-Each `pnpm add -g` operation creates an isolated group with its own manifest,
-lockfile, and `node_modules` under:
+## New command replacements and utilities (11.0.0)
 
-```text
-{pnpmHomeDir}/global/v11/{hash}/
-```
-
-Removing one package removes its entire group; updating creates a new group.
-Global binaries moved to `PNPM_HOME/bin`, so run `pnpm setup` after upgrading.
-`pnpm link --global` and argument-free `pnpm link` are removed; use
-`pnpm add -g .` for the former local-package global-link use case.
-
-## New maintenance and packaging commands
-
-- `pnpm ci` removes workspace `node_modules` and performs a frozen-lockfile
-  install.
+- `pnpm ci` cleans workspace `node_modules` and performs a frozen-lockfile install.
 - `pnpm clean --lockfile` also removes `pnpm-lock.yaml`.
 - `pnpm sbom` emits CycloneDX 1.7 or SPDX 2.3 JSON.
-- `pnpm peers check` reports lockfile peer issues.
+- `pnpm peers check` inspects lockfile peer issues.
 - `pnpm runtime set` replaces `pnpm env use`.
-- `pnpm with` runs a one-off pnpm version while bypassing `packageManager` pins.
-- `pnpm pack-app` creates Node.js single-executable applications.
+- `pnpm with` runs a one-off pnpm version and bypasses `packageManager` pins.
+- `pnpm pack-app` creates Node.js SEA executables.
 
-`pnpm audit --fix=update` updates vulnerable packages in the lockfile rather
-than creating overrides. Add `--interactive` to select advisories. Any
-`pnpm audit --fix` adds minimum patched versions to `minimumReleaseAgeExclude`
-so the default maturity gate does not delay security fixes.
+## Initialization and package-manager declarations (11.0.0)
 
-```sh
-pnpm audit --fix=update --interactive
-```
+With `init-package-manager` enabled, `pnpm init` writes `devEngines.packageManager` rather than `packageManager`. New packages default to `"type": "module"`. `devEngines.packageManager` accepts ranges; the resolved version is stored in `pnpm-lock.yaml` and reused while compatible.
 
-## Hooks, store, and script behavior
+## Script and environment review (11.0.0)
 
-pnpmfiles may use `.pnpmfile.mjs`. If both `.mjs` and `.pnpmfile.cjs` exist,
-only `.mjs` loads.
-
-Store v11 uses one SQLite index at `$STORE/index.db`. Packages missing from the
-new index are fetched again on demand rather than discovered from the old
-per-package JSON indexes.
-
-Command scripts print `$ command` to stderr, which keeps stdout pipe-friendly,
-and show project identity only when running in another directory. Lifecycle
-scripts no longer receive config-derived `npm_config_*` values, while
-well-known `npm_*` values remain.
-
-With `initPackageManager` enabled, `pnpm init` writes
-`devEngines.packageManager` instead of `packageManager`; new packages default
-to `"type": "module"`. `devEngines.packageManager` accepts ranges, and the
-resolved compatible version is stored and reused from `pnpm-lock.yaml`.
-
-`pnpm approve-builds` accepts positional package names for non-interactive
-approval. Prefix a name with `!` to deny it:
-
-```sh
-pnpm approve-builds esbuild '!core-js'
-```
-
-Script names beginning with `.` are hidden from `pnpm run` and can only be
-invoked by another script. `-F` aliases `--filter`. For `pnpm add`, `-d`, `-p`,
-`-o`, and `-e` mean `--save-dev`, `--save-prod`, `--save-optional`, and
-`--save-exact`.
-
-## Virtual-store-only installs and runtime mirrors
-
-`virtualStoreOnly` populates the virtual store without importer symlinks,
-hoisting, binary links, or lifecycle scripts. `pnpm fetch` uses this mode
-internally:
-
-```yaml
-virtualStoreOnly: true
-```
-
-Configure runtime download mirrors in `pnpm-workspace.yaml` with
-`nodeDownloadMirrors`; it replaces the `.npmrc` setting
-`node-mirror:<channel>`:
-
-```yaml
-nodeDownloadMirrors:
-  release: https://my-mirror.example.com/download/release/
-```
+Command scripts print `$ command` to stderr so stdout remains pipe-friendly and show project identity only when running elsewhere. Lifecycle scripts no longer receive config-derived `npm_config_*` values, although well-known `npm_*` variables remain. See [runtimes-scripts-cli.md](runtimes-scripts-cli.md) for script invocation changes.

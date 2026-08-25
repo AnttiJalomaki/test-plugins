@@ -1,45 +1,70 @@
 # TLS, certificates, and QUIC
 
-## Contents
+## Client certificate trust and revocation
 
-- [Client trust, OCSP, and sessions](#client-trust-ocsp-and-sessions)
-- [Keys and certificate identity](#keys-and-certificate-identity)
-- [TLS 1.3 features](#tls-13-features)
-- [TLS variables and fingerprints](#tls-variables-and-fingerprints)
-- [TLS and QUIC observability](#tls-and-quic-observability)
-- [Library compatibility](#library-compatibility)
+### Stream client-certificate OCSP
 
-## Client trust, OCSP, and sessions
+Since `1.27.2`, stream TLS can validate a client certificate's revocation
+status with OCSP. Enable client verification and `ssl_ocsp`, and provide a
+resolver for the responder hostname.
 
-### Use OCSP in stream TLS
+```nginx
+ssl_client_certificate /etc/nginx/tls/client-ca.pem;
+ssl_verify_client on;
+ssl_ocsp on;
+resolver 192.0.2.53;
+```
 
-From 1.27.2, the stream module can validate client certificates with OCSP and staple OCSP responses for its own server certificates. Both client-side validation and server-side stapling are therefore available for TCP/UDP TLS proxying.
+### Stream server OCSP stapling
 
-### Configure client trust without a client CA bundle
+Since 1.27.2, stream TLS servers use the familiar stapling controls for their
+own certificates.
 
-From 1.27.2, `ssl_client_certificate` accepts certificates that carry auxiliary information. Client-certificate verification no longer requires this directive to be configured, allowing other trust configuration patterns.
+```nginx
+ssl_stapling on;
+ssl_stapling_verify on;
+ssl_trusted_certificate /etc/nginx/tls/issuer-chain.pem;
+resolver 192.0.2.53;
+```
 
-### Keep resumed sessions within the trust context
+### Auxiliary trust data in CA files
 
-FreeNginx 1.27 prevents SSL session reuse between virtual servers whose `ssl_trusted_certificate` certificates differ when client-certificate verification is enabled. A resumed session remains associated with the applicable verification store.
+Since 1.27.2, `ssl_client_certificate` accepts OpenSSL auxiliary trust data,
+including `TRUSTED CERTIFICATE` PEM files, without stripping the attributes.
 
-### Cache larger shared sessions
+### Verification without a sent CA list
 
-NGINX 1.27.5 raises the maximum SSL session size stored in a shared-memory cache to 8192, allowing larger TLS sessions to remain cacheable.
+Since 1.27.2, client-certificate verification no longer requires
+`ssl_client_certificate`. Use `ssl_trusted_certificate` alone when the server
+should trust a CA without sending that CA list to clients.
 
-## Keys and certificate identity
+```nginx
+ssl_verify_client on;
+ssl_trusted_certificate /etc/nginx/tls/client-ca.pem;
+```
 
-### Keep private keys in an OpenSSL provider
+### Shared OCSP cache and responder override
 
-From 1.29.0, secret keys can be loaded from hardware tokens through an OpenSSL provider. Use provider-backed keys when private key material must remain in hardware rather than ordinary key files.
+`ssl_ocsp_cache shared:name:size` caches client-certificate OCSP status across
+workers and virtual servers and is off by default. `ssl_ocsp_responder`
+overrides AIA but accepts only `http://` responders. HTTP has these controls
+since 1.19.0 and stream since 1.27.2.
 
-### Verify an upstream by IP address
+```nginx
+ssl_verify_client on;
+ssl_ocsp on;
+ssl_ocsp_cache shared:client_ocsp:10m;
+ssl_ocsp_responder http://ocsp.example.com/;
+resolver 192.0.2.53;
+```
 
-FreeNginx 1.29 supports backend certificates issued for IP addresses. Verified HTTPS proxying can use an IP identity instead of requiring a DNS name.
+## Certificate loading and caching
 
-### Cache variable-selected server certificates
+### Server certificate cache
 
-Since 1.27.4, `ssl_certificate_cache` works in both HTTP and stream servers. It caches server certificates and keys selected through variables. `max` is the LRU capacity; `inactive` and `valid` default to 10 seconds and 60 seconds. The cache is off until configured.
+Since 1.27.4, HTTP and stream `ssl_certificate_cache` cache variable-selected
+server certificates and keys. The cache is off by default. `max` sets LRU
+capacity; `inactive` and `valid` default to 10 and 60 seconds.
 
 ```nginx
 ssl_certificate       $ssl_server_name.crt;
@@ -47,79 +72,117 @@ ssl_certificate_key   $ssl_server_name.key;
 ssl_certificate_cache max=1000 inactive=20s valid=1m;
 ```
 
-For variable-selected client certificates used toward an upstream, configure `proxy_ssl_certificate_cache`; see [upstreams-and-proxying.md](upstreams-and-proxying.md).
+### Hardware-token keys and certificates
 
-## TLS 1.3 features
+NGINX 1.29.0 can load hardware-token secret keys through an OpenSSL provider.
+FreeNGINX 1.29.3 can load both certificates and secret keys from hardware
+tokens through the OpenSSL STORE API.
 
-### Compress server certificates
+### TLS library compatibility
 
-Since 1.29.1, `ssl_certificate_compression on;` enables TLS 1.3 server-certificate compression in HTTP and stream servers. It is off by default and requires OpenSSL 3.2 or newer. BoringSSL support includes `zlib` from 1.29.3.
+Build compatibility expands to AWS-LC in NGINX 1.29.2 and OpenSSL 4.0 in
+1.29.8. Verify build and module requirements before changing TLS libraries.
+
+## Certificate compression and QUIC
+
+### Opt-in certificate compression
+
+Certificate compression is disabled by default from NGINX 1.29.1. Enable it
+with `ssl_certificate_compression`. Version 1.29.3 adds BoringSSL support and
+disables compression when OCSP stapling is active.
 
 ```nginx
 ssl_certificate_compression on;
 ```
 
-### Configure NGINX ECH shared mode
+### QUIC 0-RTT with OpenSSL
 
-NGINX 1.29.4 adds `ssl_ech_file` in HTTP and stream servers. It loads a PEM `ECHConfig` for TLS 1.3 Encrypted ClientHello shared mode and currently requires the OpenSSL ECH feature branch.
+From NGINX 1.29.1, QUIC supports 0-RTT when built with OpenSSL 3.5.1 or newer.
 
-```nginx
-ssl_ech_file /etc/nginx/echconfig.pem;
-```
+### QUIC handshake log levels
 
-Use the ECH variables for observability:
+Starting in `1.29.0`, critical QUIC SSL handshake failures log at `crit`, other
+SSL handshake failures at `info`, and unsupported QUIC transport parameters at
+`debug`. Update alerts that expected previous `error` or `info` severities.
 
-- `$ssl_ech_outer_server_name` exposes the public SNI name only when ECH is accepted.
-- `$ssl_ech_status` reports `FAILED`, `BACKEND`, `GREASE`, `SUCCESS`, or `NOT_TRIED`.
+## Encrypted ClientHello
 
-### Distinguish FreeNginx ECH support
+### ECH configuration
 
-FreeNginx 1.29.2 adds TLS 1.3 ECH separately. Do not assume that NGINX's `ssl_ech_file`, status values, or build constraint apply unchanged to the fork.
-
-## TLS variables and fingerprints
-
-### Inspect TLS signature algorithms
-
-From 1.31.0, `$ssl_sigalgs` exposes TLS signature-algorithm information to configuration.
-
-### Inspect certificate signature algorithms
-
-Since 1.29.3, `$ssl_sigalg` reports the server certificate's signature algorithm and `$ssl_client_sigalg` reports the client certificate's signature algorithm in HTTP and stream. Both variables require OpenSSL 3.5 or newer, are populated only for new sessions, and remain empty with older OpenSSL releases.
+Since 1.29.4, `ssl_ech_file` enables ECH using the OpenSSL ECH feature branch.
 
 ```nginx
-log_format tls '$ssl_sigalg $ssl_client_sigalg';
+ssl_ech_file /etc/nginx/tls/ech-config.pem;
 ```
 
-Do not confuse the singular certificate variables with the plural `$ssl_sigalgs` handshake information.
+### ECH negotiation variables
 
-### Record a SHA-256 client-certificate fingerprint
+With the same ECH build requirement, `$ssl_ech_status` reports `FAILED`,
+`BACKEND`, `GREASE`, `SUCCESS`, or `NOT_TRIED`. `$ssl_ech_outer_server_name`
+contains the public SNI only when ECH succeeds. Both variables are otherwise
+empty.
 
-FreeNginx 1.27.4 adds `$ssl_client_fingerprint_sha256` for configuration and logging. The mail proxy also forwards the value to its authentication server; see [stream-mail-and-protocols.md](stream-mail-and-protocols.md).
+```nginx
+log_format tls '$remote_addr ech=$ssl_ech_status outer=$ssl_ech_outer_server_name';
+```
 
-### Recognize OpenSSL 3.5 hybrid groups
+## TLS observability and session behavior
 
-With OpenSSL 3.5, FreeNginx reports `X25519MLKEM768` through `$ssl_curve` and `$ssl_curves`, allowing curve logging and policy to recognize the hybrid group.
+### Signature-algorithm variables
 
-## TLS and QUIC observability
+Since 1.29.3, `$ssl_sigalg` and `$ssl_client_sigalg` expose selected signature
+algorithms. Since 1.31.2, `$ssl_sigalgs` exposes the algorithm list and is
+distinct from the singular variables.
 
-### Protect client-facing key logs
+```nginx
+log_format tls '$remote_addr sigalg=$ssl_sigalg client="$ssl_client_sigalg" list="$ssl_sigalgs"';
+```
 
-Since 1.27.2, NGINX Plus `ssl_key_log` writes client-connection secrets in SSLKEYLOGFILE format from HTTP and stream servers. Treat this output as sensitive key material.
+### Client-facing TLS key logging
+
+Plus `ssl_key_log`, added in 1.27.2 for HTTP and stream, writes
+SSLKEYLOGFILE-format connection secrets. Treat the file as secret material
+that permits captured traffic decryption.
 
 ```nginx
 ssl_key_log /var/log/nginx/client.keys;
 ```
 
-Use NGINX Plus `proxy_ssl_key_log` for the upstream side.
+### FreeNGINX SHA-256 client fingerprints
 
-### Update QUIC log-level expectations
+FreeNGINX 1.27.4 adds `$ssl_client_fingerprint_sha256` for logs and policy.
 
-From 1.29.0, critical SSL errors during a QUIC handshake are logged at `crit`, while other SSL errors are logged at `info`. Unsupported QUIC transport parameters move from `info` to `debug`. Adjust monitoring that matched the previous levels.
+```nginx
+log_format client_cert '$remote_addr fingerprint=$ssl_client_fingerprint_sha256';
+```
 
-### Update generic SSL alert expectations
+### FreeNGINX client-auth session isolation
 
-From 1.31.0, `invalid alert`, `record layer failure`, and numbered `SSL alert number N` errors are logged at `info` instead of `crit`.
+FreeNGINX 1.27.5 prevents session reuse between virtual servers with different
+client-verification trust, including different `ssl_trusted_certificate`
+values. With OpenSSL 1.1.1e or newer, its TLS 1.3 handling also isolates server
+contexts with settings such as `ssl_client_certificate`.
 
-## Library compatibility
+### Hybrid-group reporting
 
-FreeNginx 1.29.7 adds OpenSSL 4.0 compatibility. Check this boundary when building or upgrading against the new OpenSSL major release.
+With OpenSSL 3.5, FreeNGINX `$ssl_curve` and `$ssl_curves` report the
+`X25519MLKEM768` hybrid group name.
+
+## Server-side stream ALPN
+
+Stream `ssl_alpn` advertises protocols accepted by a TLS server. If the client
+sends ALPN, a listed protocol must be negotiated. Use `$ssl_alpn_protocol` to
+select a destination.
+
+```nginx
+map $ssl_alpn_protocol $backend {
+    h2       127.0.0.1:8001;
+    http/1.1 127.0.0.1:8002;
+}
+
+server {
+    listen 443 ssl;
+    ssl_alpn h2 http/1.1;
+    proxy_pass $backend;
+}
+```

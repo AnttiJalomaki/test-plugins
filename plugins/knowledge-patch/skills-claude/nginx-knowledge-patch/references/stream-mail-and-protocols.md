@@ -1,61 +1,99 @@
 # Stream, mail, and protocol modules
 
-## Stream listeners and upstream TLS
+## Stream TLS protocol selection
 
-### Create Multipath TCP listeners in FreeNginx
+### Client-facing ALPN selection
 
-FreeNginx 1.27.5 adds the `multipath` parameter to `listen`.
+The stream SSL module's `ssl_alpn` advertises protocols supported by a TLS
+server. If the client offers ALPN, one of those protocols must be negotiated.
+Use `$ssl_alpn_protocol` to select a destination.
 
 ```nginx
-listen 443 ssl multipath;
+map $ssl_alpn_protocol $backend {
+    h2       127.0.0.1:8001;
+    http/1.1 127.0.0.1:8002;
+}
+
+server {
+    listen 443 ssl;
+    ssl_alpn h2 http/1.1;
+    proxy_pass $backend;
+}
 ```
 
-### Advertise ALPN to a stream upstream
+### Upstream ALPN
 
-From 1.31.0, the stream module provides `proxy_ssl_alpn` for configuring ALPN on TLS connections to proxied servers.
+Since 1.31.0, `proxy_ssl_alpn` advertises ALPN protocols on a stream proxy's
+TLS connection to its upstream.
 
-## Mail proxying
+```nginx
+stream {
+    server {
+        listen 8443;
+        proxy_pass 192.0.2.10:443;
+        proxy_ssl on;
+        proxy_ssl_alpn h2;
+    }
+}
+```
 
-### Forward the SHA-256 client-certificate fingerprint
+## PROXY protocol
 
-FreeNginx 1.27.4 sends `Auth-SSL-Fingerprint-SHA256` to the mail authentication server. Authentication policy can use the same SHA-256 certificate fingerprint exposed to HTTP and stream configuration as `$ssl_client_fingerprint_sha256`.
+### Named TLV variables
 
-### Apply mail rate and close controls
+On a `proxy_protocol` listener, `$proxy_protocol_tlv_name` exposes a PROXY v2
+TLV by supported symbolic name or hexadecimal type. Names include `alpn`,
+`authority`, `unique_id`, `netns`, and nested SSL fields.
+`$proxy_protocol_tlv_ssl_verify` is `0` only when a client certificate was
+present and verification succeeded.
 
-FreeNginx 1.29 adds these controls to the mail proxy module:
+```nginx
+listen 443 proxy_protocol;
+log_format proxy '$proxy_protocol_tlv_alpn $proxy_protocol_tlv_ssl_cn';
+```
 
-- `limit_rate` and `limit_rate_after` for transfer control.
-- `lingering_close`, `lingering_time`, and `lingering_timeout` for shutdown behavior.
-- Connection limiting.
+### PROXY v2 from stream and mail proxies
 
-### Encode SMTP XCLIENT correctly
+Since 1.31.4, the `proxy_protocol` directive in stream and mail supports
+PROXY protocol version 2, allowing those proxy paths to send the v2 wire format
+to peers that require it.
 
-NGINX 1.28.1 fixes xtext encoding in SMTP XCLIENT commands. The related PTR-record injection security boundary is 1.28.3; see [security-and-upgrades.md](security-and-upgrades.md).
+### Cloud metadata in NGINX Plus
 
-## PROXY protocol metadata
+NGINX Plus R28 adds HTTP and stream modules that expose cloud-provider-specific
+PROXY protocol v2 TLVs as variables. Use them only when a supported cloud load
+balancer supplies the matching metadata.
 
-### Read generic PROXY v2 TLVs
+## Mail proxy controls
 
-On a listener configured with `proxy_protocol`, use `$proxy_protocol_tlv_name` to expose a PROXY protocol v2 TLV by symbolic name, or address a numeric type with a hexadecimal suffix such as `$proxy_protocol_tlv_0x01`.
+### SHA-256 certificate identity in auth requests
 
-Supported symbolic names include:
+FreeNGINX 1.27 mail authentication requests include
+`Auth-SSL-Fingerprint-SHA256`, allowing the authentication server to identify
+a presented client certificate with its SHA-256 fingerprint.
 
-- `alpn`, `authority`, `unique_id`, and `netns`.
-- Nested SSL values such as `$proxy_protocol_tlv_ssl_version`, `$proxy_protocol_tlv_ssl_cn`, and `$proxy_protocol_tlv_ssl_cipher`.
-- `$proxy_protocol_tlv_ssl_verify`, which is `0` only when a client certificate was both presented and successfully verified.
+### Rates, lingering close, and connections
 
-### Read cloud-specific TLVs in NGINX Plus
-
-R28 adds NGINX Plus HTTP and stream modules for PROXY protocol v2 TLVs supplied by Amazon Web Services, Google Cloud Platform, and Microsoft Azure. These supplement the generic TLV variables.
+FreeNGINX 1.29.0 adds `limit_rate`, `limit_rate_after`, `lingering_close`,
+`lingering_time`, and `lingering_timeout` to the mail proxy module, together
+with connection limiting. Revalidate throughput and close behavior after
+enabling them.
 
 ## GeoIP2
 
-FreeNginx 1.29 allows both HTTP and stream GeoIP modules to read MaxMind DB data. Use `geoip_set` to configure variables from GeoIP2 MMDB databases.
+FreeNGINX 1.29.4 adds MaxMind DB GeoIP2 support to both
+`ngx_http_geoip_module` and `ngx_stream_geoip_module`, together with the
+`geoip_set` directive.
 
-## Cross-module stream handoff in NGINX Plus
+## NGINX Plus stream handoff and virtual servers
 
-R32 adds `ngx_stream_pass_module`. It can pass an accepted connection directly to any configured listening socket, including a socket owned by HTTP, stream, mail, or a similar module.
+R32 adds `stream_pass`, which hands an accepted connection directly to a
+configured listening socket in HTTP, stream, mail, or a similar module. It also
+adds name-based stream virtual servers. Stream listeners gain `deferred`,
+`accept_filter`, and `setfib` parameters.
 
-## MQTT in NGINX Plus
+## NGINX Plus MQTT modules
 
-R29 adds MQTT Preread and MQTT Filter modules for inspecting and routing MQTT traffic. R30 adds `mqtt_buffers` to configure the number of buffers allocated per connection and supersedes `mqtt_rewrite_buffer_size`.
+R29 packages MQTT Preread and MQTT Filter modules for stream traffic. R30 adds
+`mqtt_buffers` for per-connection allocation; use it instead of the older
+`mqtt_rewrite_buffer_size`.

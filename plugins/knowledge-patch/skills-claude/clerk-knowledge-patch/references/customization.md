@@ -1,75 +1,49 @@
 # Customization
 
-## Appearance hierarchy
+## Appearance hierarchy and options
 
-The current `appearance` object contains:
+The `appearance` object has `theme`, `options`, `variables`, `elements`,
+`captcha`, and `cssLayerName`. Set it at the integration for global styling,
+nest a component key such as `signIn` to style every instance of that
+component, or pass it directly for a single-instance override.
 
-- `theme`
-- `options`
-- `variables`
-- `elements`
-- `captcha`
-- `cssLayerName`
-
-Set it on the SDK integration for global styling. Nest a component key such as `signIn` to affect every instance of that component, or pass `appearance` directly to one component for a single-instance override.
+`options` contains `animations`, `shimmer`, `logoImageUrl`, `logoLinkUrl`,
+`logoPlacement`, `helpPageUrl`, `privacyPageUrl`, `termsPageUrl`,
+`showOptionalFields`, `socialButtonsPlacement`, `socialButtonsVariant`, and
+`unsafe_disableDevelopmentModeWarnings`. Social buttons are block-style below
+three providers and icons otherwise. Logo placement defaults to `inside`,
+animations and shimmer to `true`, and optional fields to hidden.
 
 ```tsx
 <ClerkProvider appearance={{
-  options: {
-    logoPlacement: 'outside',
-    socialButtonsPlacement: 'bottom',
-  },
-  signIn: {
-    variables: { colorPrimary: '#6c47ff' },
-  },
+  options: { logoPlacement: 'outside', socialButtonsPlacement: 'bottom' },
+  signIn: { variables: { colorPrimary: '#6c47ff' } },
 }}>
   {children}
 </ClerkProvider>
 ```
 
-## Non-CSS appearance options
+## Themes and color mode
 
-`options` supports:
-
-- `animations`
-- `shimmer`
-- `logoImageUrl`
-- `logoLinkUrl`
-- `logoPlacement`
-- `helpPageUrl`
-- `privacyPageUrl`
-- `termsPageUrl`
-- `showOptionalFields`
-- `socialButtonsPlacement`
-- `socialButtonsVariant`
-- `unsafe_disableDevelopmentModeWarnings`
-
-Defaults:
-
-- Social providers render as block buttons when fewer than three are configured, and icon buttons otherwise.
-- `logoPlacement` is `inside`.
-- Animations and shimmer are enabled.
-- Optional fields are hidden.
-
-## Themes and composition
-
-Install themes from `@clerk/ui` and import theme objects from `@clerk/ui/themes`. Available choices are the default theme, `simple`, `shadcn`, `dark`, `shadesOfPurple`, and `neobrutalism`.
-
-`theme` also accepts an array. Themes apply left to right; the last theme wins for overlapping styles.
+Install themes from `@clerk/ui` and import them from `@clerk/ui/themes`.
+Available themes are default, `simple`, `shadcn`, `dark`, `shadesOfPurple`, and
+`neobrutalism`. An array composes left-to-right, with later overlapping styles
+winning.
 
 ```tsx
 import { dark, neobrutalism } from '@clerk/ui/themes'
-
 <ClerkProvider appearance={{ theme: [dark, neobrutalism] }} />
 ```
 
-The default theme follows light/dark mode only when CSS `color-scheme` is set.
+The default follows light/dark mode only when CSS `color-scheme` is set. The
+shadcn theme targets Tailwind v4; import `@clerk/ui/themes/shadcn.css` after
+`tailwindcss` so Tailwind generates externally referenced classes. Tailwind v3
+needs the shadcn variables supplied manually.
 
-The shadcn theme is built for Tailwind v4. Import `@clerk/ui/themes/shadcn.css` after `tailwindcss` so Tailwind generates classes referenced only by the external theme. Tailwind v3 requires manually supplying the shadcn variables.
+## Variable migrations and browser support
 
-## Appearance variable migration
-
-These variable names were deprecated on 2025-07-15 and are scheduled for removal in the next major release:
+These names, deprecated on 2025-07-15, are scheduled for removal in the next
+major:
 
 | Deprecated | Replacement |
 | --- | --- |
@@ -80,44 +54,39 @@ These variable names were deprecated on 2025-07-15 and are scheduled for removal
 | `colorInputText` | `colorInputForeground` |
 | `colorInputBackground` | `colorInput` |
 
-Every appearance variable is also available as a kebab-case CSS custom property with the `--clerk-` prefix, such as `--clerk-color-primary`.
+Every variable also appears in kebab case with `--clerk-`, for example
+`--clerk-color-primary`. Generated variants depend on `color-mix()` and relative
+color syntax. The documented browser floors are Chrome 111/119, Firefox
+113/120, and Safari 16.2/16.4 respectively. Use direct color values rather than
+CSS variables or modern color functions for older browsers.
 
-Generated color variants use `color-mix()` and relative color syntax. Stated minimum browser versions are:
+## Stable element hooks and Tailwind layers
 
-| Feature | Chrome | Firefox | Safari |
-| --- | ---: | ---: | ---: |
-| `color-mix()` | 111 | 113 | 16.2 |
-| Relative color syntax | 119 | 120 | 16.4 |
+Human-readable `cl-*` classes before the lock marker are stable; generated
+classes after it are internal. Remove `cl-` for an `appearance.elements` key.
+Values may be class names or inline style objects.
 
-Use direct color values instead of CSS variables or modern color functions when supporting older browsers.
-
-## Stable element hooks
-
-In inspected Clerk markup, human-readable `cl-*` classes before the lock marker are stable. Generated classes after the marker are internal.
-
-For `appearance.elements`, remove the `cl-` prefix to form the key. Values may be custom class names or inline style objects.
+For Tailwind v4, put Clerk styles in a cascade layer before `utilities`:
 
 ```tsx
 <ClerkProvider appearance={{
   cssLayerName: 'clerk',
-  elements: {
-    formButtonPrimary: 'bg-violet-600 hover:bg-violet-500',
-  },
+  elements: { formButtonPrimary: 'bg-violet-600 hover:bg-violet-500' },
 }} />
 ```
-
-Tailwind v4 utilities need Clerk styles in an earlier cascade layer. Set `cssLayerName` and declare the layer before `utilities`.
 
 ```css
 @layer theme, base, clerk, components, utilities;
 @import 'tailwindcss';
 ```
 
-## Native iOS theming
+## Native iOS themes
 
-Clerk iOS views use `ClerkTheme`, which contains `colors`, Dynamic Type-aligned `fonts`, and `design.borderRadius`.
-
-Apply a complete theme through SwiftUI's `\.clerkTheme` environment key, scope it to one view and its descendants, or override an individual path such as `\.clerkTheme.colors.primary`. The views automatically follow system light/dark mode.
+iOS views use `ClerkTheme`, including `colors`, Dynamic Type-aligned `fonts`,
+and `design.borderRadius`. Apply a whole theme through SwiftUI's
+`\.clerkTheme` environment key or override a path such as
+`\.clerkTheme.colors.primary`. Views automatically follow system light/dark
+mode.
 
 ```swift
 AuthView()
@@ -127,142 +96,101 @@ AuthView()
   ))
 ```
 
-Fonts can use one family name or a separate value per text style. Asset Catalog colors can provide light and dark variants.
+Fonts can use one family or per-text-style values. Asset Catalog colors can
+define distinct light and dark variants.
 
 ## Component localization
 
-Prebuilt-component localization is experimental and comes from `@clerk/localizations`. Locale export names remove the BCP 47 hyphen; for example, `fr-FR` becomes `frFR`.
-
-Pass an imported locale or a custom string tree through the integration's `localization` prop. This changes embedded components only; hosted Account Portal content remains English.
+Experimental localizations come from `@clerk/localizations`; exported names
+remove the BCP 47 hyphen, so `fr-FR` becomes `frFR`. Pass a locale or custom
+string tree through `localization`. It affects embedded components, not the
+English-only hosted Account Portal.
 
 ```tsx
 import { frFR } from '@clerk/localizations'
-
 <ClerkProvider localization={frFR}>{children}</ClerkProvider>
 ```
 
-Custom copy uses keys from the English localization file. Override API errors under `unstable__errors`.
-
-```tsx
-<ClerkProvider localization={{
-  formButtonPrimary: 'Continue',
-  unstable__errors: {
-    not_allowed_access: 'Use a company email.',
-  },
-}} />
-```
+Custom copy uses English localization keys. Override API messages under
+`unstable__errors`.
 
 ## Email and SMS templates
 
-Email and SMS templates interpolate Handlebars values such as `{{app.name}}`; triple braces leave special characters unescaped.
-
-Delivery is configured per template. If Clerk delivery is disabled, consume `emails.created` or `sms.created` webhooks and deliver the message yourself. Changing SMS message content requires this self-delivery path.
+Templates interpolate Handlebars values such as `{{app.name}}`; triple braces
+leave special characters unescaped. Delivery is per-template. If Clerk delivery
+is disabled, consume `emails.created` or `sms.created` webhooks. Changing SMS
+message content requires this self-delivery path.
 
 ## Clerk Elements setup
 
-The beta `@clerk/elements` package targets Next.js App Router on Clerk Core 2. Sign-in and sign-up pages must use optional catch-all routes. TypeScript requires `moduleResolution: "bundler"` for its types.
+The beta `@clerk/elements` package targets Next.js App Router on Clerk Core 2.
+Sign-in and sign-up pages require optional catch-all routes. TypeScript needs
+`moduleResolution: "bundler"`.
 
-```bash
-npm install @clerk/elements
+```text
+app/sign-in/[[...sign-in]]/page.tsx
 ```
 
-```tsx
-// app/sign-in/[[...sign-in]]/page.tsx
+```ts
 import * as Clerk from '@clerk/elements/common'
 import * as SignIn from '@clerk/elements/sign-in'
 ```
 
-## Clerk Elements flow structure
+## Elements flow structure
 
-`SignIn.Root` and `SignUp.Root` own flow state and validate rendered steps against instance settings. An invalid sign-in flow throws during development. Roots infer `/sign-in` or `/sign-up`, accept an explicit `path`, and support `routing="virtual"` for modal flows.
+`SignIn.Root` and `SignUp.Root` own state and validate rendered flows against
+instance settings; invalid sign-in flows throw in development. Roots infer
+`/sign-in` or `/sign-up`, accept `path`, and support `routing="virtual"` for
+modal flows.
 
-Sign-in steps:
-
-- `start`
-- `verifications`
-- `choose-strategy`
-- `forgot-password`
-- `reset-password`
-
-Sign-up steps:
-
-- `start`
-- `continue`
-- `verifications`
-
-`Strategy` conditionally renders the required method. `SupportedStrategy` switches methods. `Action` submits, navigates, or resends; resend actions receive a `resendableAfter` fallback. `SignUp.Captcha` renders Turnstile and is valid only inside the `start` step.
-
-```tsx
-<SignIn.Root>
-  <SignIn.Step name="verifications">
-    <SignIn.Strategy name="email_code">
-      <Clerk.Field name="code">
-        <Clerk.Input />
-      </Clerk.Field>
-      <SignIn.Action submit>Verify</SignIn.Action>
-      <SignIn.Action
-        resend
-        fallback={({ resendableAfter }) => resendableAfter}
-      >
-        Resend
-      </SignIn.Action>
-    </SignIn.Strategy>
-  </SignIn.Step>
-</SignIn.Root>
-```
+Sign-in steps are `start`, `verifications`, `choose-strategy`,
+`forgot-password`, and `reset-password`. Sign-up uses `start`, `continue`, and
+`verifications`. `Strategy` renders a method, `SupportedStrategy` switches
+methods, and `Action` submits, navigates, or resends with a `resendableAfter`
+fallback. `SignUp.Captcha` is valid only in `start` and renders Turnstile.
 
 ## Elements fields, state, and loading
 
-`Field` connects labels, inputs, and errors. `FieldError` and `GlobalError` can expose `message` and `code`; `FieldState` exposes validity plus password-rule messages and codes.
+`Field` connects labels, inputs, and errors. `FieldError` and `GlobalError`
+expose `message` and `code`; `FieldState` exposes validity and password-rule
+messages/codes. A `code` field defaults to a numeric six-character `otp` input,
+with `length`, `autoSubmit`, segmented rendering, and password-manager offset.
+Password rules run live only with `validatePassword`. A sign-in input with
+`autoComplete="webauthn"` attempts passkey autofill.
 
-A `code` field defaults to a numeric, six-character `otp` input. It supports `length`, `autoSubmit`, segmented rendering, and password-manager offset. Password rules run live only with `validatePassword`. A sign-in input with `autoComplete="webauthn"` attempts passkey autofill.
-
-`Loading` reports global, current-step, or provider state. Provider scopes use names such as `provider:google`.
-
-Markup-rendering elements accept `className`, and many accept `asChild`. The child must forward its ref and spread incoming props so Clerk handlers and attributes survive. Validity is also available through `data-valid`, `data-invalid`, and related state attributes.
+`Loading` can observe global, step, or provider state; provider scopes use
+`provider:google`. Markup-producing elements accept `className`, and many allow
+`asChild`. The child must forward its ref and spread incoming props. State is
+also available through `data-valid`, `data-invalid`, and related attributes.
 
 ## UserButton menu extensions
 
-Nest `UserButton.Action` and `UserButton.Link` inside `UserButton.MenuItems` to add callbacks, profile openers, or links. An action's `open` value must match a `UserButton.UserProfilePage` URL.
-
-Actions labeled `signOut` or `manageAccount` reposition existing defaults instead of creating new items.
-
-```tsx
-<UserButton>
-  <UserButton.MenuItems>
-    <UserButton.Action label="Help" labelIcon={<HelpIcon />} open="help" />
-    <UserButton.Link label="Docs" labelIcon={<DocsIcon />} href="/docs" />
-    <UserButton.Action label="signOut" />
-  </UserButton.MenuItems>
-  <UserButton.UserProfilePage
-    label="Help"
-    labelIcon={<HelpIcon />}
-    url="help"
-  >
-    <Help />
-  </UserButton.UserProfilePage>
-</UserButton>
-```
-
-Astro component props become strings, so an `onClick` callback cannot be passed directly. Use an identifying prop and attach a browser event listener.
+Nest `UserButton.Action` and `UserButton.Link` in `UserButton.MenuItems`.
+An action's `open` must match a `UserButton.UserProfilePage` URL. Actions named
+`signOut` or `manageAccount` reposition defaults instead of creating entries.
+Astro turns component props into strings, so it cannot receive `onClick`
+directly; use an identifying prop plus a browser event listener.
 
 ## Profile navigation extensions
 
-- Dedicated user profile: `UserProfile.Page` and `UserProfile.Link`.
-- UserButton modal: `UserButton.UserProfilePage` and `UserProfileLink`.
-- Dedicated Organization profile: `OrganizationProfile.Page` and `OrganizationProfile.Link`.
-- OrganizationSwitcher modal: `OrganizationSwitcher.OrganizationProfilePage` and `OrganizationProfileLink`.
+Dedicated user profiles use `UserProfile.Page`/`Link`; the `UserButton` modal
+uses `UserButton.UserProfilePage`/`UserProfileLink`. Organization equivalents
+are `OrganizationProfile.Page`/`Link` and
+`OrganizationSwitcher.OrganizationProfilePage`/`OrganizationProfileLink`.
+Switch a modal to navigation with `userProfileMode="navigation"` and
+`userProfileUrl`, or the corresponding Organization props.
 
-Switch a default modal to a page with `userProfileMode="navigation"` plus `userProfileUrl`, or the corresponding Organization props.
-
-Default user routes can be reordered with labels `account` and `security`; default Organization routes use `members` and `general`. The first sidenav item cannot be a custom link.
+Reorder default user routes through labels `account` and `security`, and
+Organization routes through `members` and `general`. The first sidenav item
+cannot be a custom link.
 
 ## shadcn registry
 
-Clerk publishes shadcn/ui registry entries for Next.js. The quickstart adds provider and theme integration, catch-all authentication pages, protected-route middleware, a header, and light/dark support.
+Clerk publishes Next.js shadcn/ui registry entries. The quickstart installs the
+provider/theme, catch-all auth pages, protected middleware, header, and
+light/dark support. Sign-in, sign-up, waitlist, provider, and middleware entries
+are independently installable.
 
-```bash
+```sh
 npx shadcn@latest add @clerk/nextjs-quickstart
 ```
-
-Sign-in, sign-up, waitlist, provider, and middleware entries can also be installed independently.

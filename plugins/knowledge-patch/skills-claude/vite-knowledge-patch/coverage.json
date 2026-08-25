@@ -1,6 +1,8 @@
 {
   "patch": "vite-knowledge-patch",
-  "merged_at": "2026-07-15T05:27:48Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-22T09:12:52Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -21,6 +23,11 @@
       "build": "omitted"
     },
     "8.1.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "8.1.5-8.2.1": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

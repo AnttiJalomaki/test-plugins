@@ -1,73 +1,127 @@
 # CLI and Release Automation
 
-## Configuration and CI
+## CLI compatibility
 
-- `tailscale configure` and its subcommands are no longer alpha as of 1.80.0,
-  except for `tailscale configure kubeconfig`. The Standalone macOS client adds
-  `tailscale configure sysext activate`, `deactivate`, and `status` for
-  programmatic system-extension management.
-- The Tailscale GitHub Action is generally available on macOS and Windows
-  runners in 1.82.0-era releases. Set `use-cache: 'true'` to cache Tailscale
-  binaries.
-- Linux can install a freedesktop autostart entry for the tray application
-  (since 1.96.2):
+### Configuration commands (since 1.80.0)
 
-  ```console
-  tailscale configure systray --enable-startup=freedesktop
-  ```
+`tailscale configure` and its subcommands are no longer alpha, except
+`tailscale configure kubeconfig`. The Standalone macOS client also provides
+these programmatic system-extension controls:
 
-## Writing unattended commands
+```console
+tailscale configure sysext activate
+tailscale configure sysext deactivate
+tailscale configure sysext status
+```
 
-- Starting with 1.84.0, CLI commands reject multiple occurrences of the same
-  flag. The stricter parser initially stopped the container's `TS_EXTRA_ARGS`
-  from setting `--accept-dns`; container image 1.84.2 restores that use.
-- Starting with 1.88.1, significant actions can ask for `y/n` confirmation.
-  Audit scripts and subprocess integrations for commands that can now become
-  interactive.
-- `tailscale dns query` and `tailscale dns status` accept `--json` for
-  machine-readable output (since 1.96.2):
+### Duplicate flags and containers (since 1.84.0)
 
-  ```console
-  tailscale dns status --json
-  ```
+Commands reject multiple occurrences of the same flag. Audit command builders
+that combine defaults, user options, and environment variables. This parsing
+change initially prevented container image 1.84.0 from setting `--accept-dns`
+through `TS_EXTRA_ARGS`; image 1.84.2 restores that usage.
 
-- `tailscale wait [flags]` waits for Tailscale resources to become available
-  for binding. `tailscale ip --assert=<specific-ip-address>` verifies that an
-  address matches at least one Tailscale IP on the node (since 1.96.2):
+### Interactive confirmation (since 1.88.1)
 
-  ```console
-  tailscale wait
-  tailscale ip --assert=100.64.0.1
-  ```
+Significant actions may prompt for `y/n` confirmation. An invocation that was
+previously unattended may now wait for input, so test automation around each
+affected command.
 
-- The `release-candidate` track is accepted by both `tailscale version
-  --track` and `tailscale update --track` (since 1.96.2):
+### Machine-readable DNS output (since 1.96.2)
 
-  ```console
-  tailscale version --track=release-candidate
-  tailscale update --track=release-candidate
-  ```
+Both DNS inspection commands accept `--json`:
 
-## Platform and stable-line availability
+```console
+tailscale dns query example.internal --json
+tailscale dns status --json
+```
 
-- In the 1.82.0 line, the Android build was delayed until 1.82.1. Releases
-  1.82.1 and 1.82.4 are Android-only; 1.82.2 and 1.82.3 were internal-only.
-- The 1.86.0 rollout stopped for macOS on July 25, 2025, and for all platforms
-  on July 28 because of regressions; 1.86.1 and 1.86.3 were internal-only.
-  Version 1.86.2 fixes a macOS state-file read failure that could require
-  device re-approval. Version 1.86.4 fixes a fresh-install crash in the
-  Standalone macOS client when `EncryptState` is enabled.
-- Version 1.88.0 was internal-only; 1.88.1 is the applicable public line. QNAP
-  builds resumed first as manual package-site downloads and later through
-  QNAP App Center.
-- Version 1.90.0 was a release candidate intended only for testing; 1.90.1 is
-  the stable release.
-- Version 1.92.0 was a release candidate intended only for testing; 1.92.1 is
-  the stable release.
-- Version 1.94.0 was a release candidate intended only for testing; 1.94.1 is
-  the stable release.
-- Versions 1.96.0 and 1.96.1 were release candidates intended only for
-  testing; 1.96.2 is the stable release.
-- Version 1.98.0 was a release candidate intended only for testing. Linux
-  1.98.1 was withdrawn because of a regression in its interaction with
-  MagicDNS, pending a fix.
+### Readiness and address assertions (since 1.96.2)
+
+Use `tailscale wait [flags]` to wait until Tailscale resources are available
+for binding. Use `tailscale ip --assert=<specific-ip-address>` to fail unless
+the supplied address matches one of the node's Tailscale IP addresses.
+
+```console
+tailscale wait
+tailscale ip --assert=100.64.0.1
+```
+
+### Release-candidate track (since 1.96.2)
+
+The `release-candidate` track works with both version checks and updates:
+
+```console
+tailscale version --track=release-candidate
+tailscale update --track=release-candidate
+```
+
+This lets automation inspect or install release-candidate builds without
+confusing them with the stable track.
+
+### Local inspection commands (since 1.102.2)
+
+Use the dedicated commands rather than reconstructing local state:
+
+```console
+tailscale get
+tailscale whoami
+tailscale service list
+```
+
+They report the node's preferences, user and device identity, and visible
+Tailscale Services. `tailscale status --peers=false` now also includes the
+current device name.
+
+## Automation integrations
+
+### GitHub Action runners and caching (since 1.82.0)
+
+The Tailscale GitHub Action is generally available on macOS and Windows
+runners. Set `use-cache` to the string `'true'` to cache Tailscale binaries:
+
+```yaml
+with:
+  use-cache: 'true'
+```
+
+## Release boundaries and rollout hazards
+
+### Android 1.82 release line
+
+Android 1.82.0 was delayed to 1.82.1. Versions 1.82.1 and 1.82.4 are
+Android-only; 1.82.2 and 1.82.3 were internal-only. Do not infer equivalent
+availability across platforms from these version numbers.
+
+### Halted 1.86 rollout
+
+The 1.86.0 rollout was halted for macOS on July 25, 2025, and for every
+platform on July 28 because of regressions. Versions 1.86.1 and 1.86.3 were
+internal-only. Version 1.86.2 fixes a macOS state-file read failure that could
+require device re-approval. Version 1.86.4 fixes a fresh-install Standalone
+macOS crash when `EncryptState` is enabled.
+
+### Internal 1.88 build
+
+Version 1.88.0 was internal-only. Use 1.88.1 when referring to the stable
+client line.
+
+### Stable release boundaries
+
+- 1.90.0 was a release candidate intended only for testing; 1.90.1 is stable.
+- 1.92.0 was a release candidate intended only for testing; 1.92.1 is stable.
+- 1.94.0 was a release candidate intended only for testing; 1.94.1 is stable.
+- 1.96.0 and 1.96.1 were release candidates intended only for testing;
+  1.96.2 is stable.
+- 1.98.0 was a release candidate intended only for testing.
+
+### Withdrawn Linux 1.98.1 build
+
+The Linux 1.98.1 release was withdrawn because of a regression in its
+interaction with MagicDNS, pending a fix. Do not use its presence on another
+platform as evidence that the Linux build is safe to roll out.
+
+### Funnel repair in 1.102.2
+
+Version 1.102.2 restores incoming Funnel connections that failed in 1.102.1.
+Pin at least the repaired build when the deployment depends on Funnel.

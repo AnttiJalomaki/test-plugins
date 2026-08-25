@@ -1,59 +1,64 @@
 # Discovery and Networking
 
-## Agentless external service monitoring
+## Agentless External Service Monitor
 
-Consul External Service Monitor can run without a Consul agent on the same
-node (1.21.0). It connects directly to Consul servers over one outbound TCP
-connection and does not join cluster gossip. This reduces deployment and
-networking requirements in constrained environments.
+Since 1.21.0, Consul External Service Monitor can connect directly to Consul
+servers instead of requiring a colocated Consul agent. It uses one outbound TCP
+connection and does not join cluster gossip. This is useful where inbound
+connectivity or gossip participation is constrained.
 
-## Multi-port service discovery
+## Session-driven health checks
 
-Service definitions can use the optional `ports` parameter to register
-multiple ports in the catalog (1.22.0). Kubernetes Service sync supports
-multi-port Kubernetes Services, and Consul DNS provides a `port` field for
-addressing a particular service port.
+Since 1.21.0, a Consul session can update the state of a health check. Use this
+when session lifecycle should directly affect service-health reporting.
 
-Treat port names as part of the discovery contract shared by registrations,
-Kubernetes Services, DNS clients, and any service-mesh routing that selects a
-destination port.
+## Multi-port catalog and DNS discovery
 
-## IPv6 and dual stack
+Since 1.22.0, service definitions can use the optional `ports` parameter to
+register multiple ports in the catalog. Kubernetes Service sync handles
+multi-port Kubernetes Services, and Consul DNS accepts a `port` field to select
+a particular service port.
 
-Agents and services on VMs and Kubernetes can use IPv4 or IPv6 addresses
-(1.22.0). A single address family per datacenter is recommended. IPv6 is not
-supported on OpenShift, Nomad, or ECS for this release.
+Keep port names stable across registration, Kubernetes sync, DNS consumers, and
+service-mesh configuration. See the service-mesh reference for Enterprise
+sidecar and upstream routing.
 
-Envoy bootstrap loopback behavior is address-family aware:
+## IPv6 and dual-stack addressing
 
-- IPv4-only environments use `127.0.0.1`.
-- IPv6 and dual-stack environments use `::1`.
-- When the agent bind address is IPv6, `upstream.local_bind_address` defaults
-  to `::1`.
-- In the same case, `proxy.local_service_address` defaults to `::1`.
+Since 1.22.0, agents and services on VMs and Kubernetes can use IPv4 or IPv6.
+Prefer a single address family within a datacenter. IPv6 is not supported on
+OpenShift, Nomad, or ECS in this release.
 
-Account for these defaults when applications, health checks, or firewall rules
-assume an IPv4 loopback address.
+Envoy bootstrap uses `127.0.0.1` in IPv4-only environments and `::1` in IPv6 or
+dual-stack environments. When the agent bind address is IPv6,
+`upstream.local_bind_address` and `proxy.local_service_address` default to
+`::1`. Audit configurations that assume an IPv4 loopback.
 
-## Session-driven health state
+## Agent API request-body ceiling
 
-Consul sessions can update a health check's state (1.21.0). A session can
-therefore directly influence the service-health information exposed through
-discovery. When using this behavior, treat the session lifecycle and the
-health-check lifecycle as coupled.
+Since 2.0.3, the agent rejects request bodies larger than 512 KiB before body
+decoding or ACL resolution for:
 
-## KV key-name validation
+- check updates;
+- check registration;
+- service registration; and
+- Connect authorization.
 
-The key/value endpoint validates key names in 1.22.0. This is a breaking
-security change for clients that previously relied on invalid names.
+The cap also applies to chunked transfer encoding. Oversized requests return
+HTTP 413. Split large registrations or authorization inputs, and classify 413
+responses separately from ACL denials.
 
-Before upgrading:
+## External gRPC connection limiting
 
-1. Inventory code and automation that write KV keys.
-2. Check whether existing naming conventions pass validation.
-3. Update invalid writers and migrate affected names.
-4. Use `DisableKVKeyValidation` only when validation must be disabled for
-   compatibility.
+Since 2.0.3, external gRPC and gRPC-TLS listeners default to 100 connections per
+source IP. Configure the limit with:
 
-Do not treat the configuration switch as evidence that old key names are valid;
-it controls whether the endpoint enforces the validation.
+```hcl
+limits {
+  grpc_max_conns_per_client = 100
+}
+```
+
+The listener handshake timeout is 20 seconds rather than 120 seconds. Account
+for clients concentrated behind NAT or a load balancer, and test slow
+connections before adopting a stricter value.

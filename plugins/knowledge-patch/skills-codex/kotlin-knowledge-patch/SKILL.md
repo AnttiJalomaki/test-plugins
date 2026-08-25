@@ -10,7 +10,7 @@ metadata:
 
 # Kotlin Knowledge Patch
 
-Use this patch when writing, reviewing, upgrading, or troubleshooting Kotlin code and builds. Start with the quick references below, then open only the topic files relevant to the task.
+Use this patch when writing, reviewing, upgrading, or troubleshooting Kotlin source, builds, multiplatform targets, Compose Multiplatform, or the covered ecosystem libraries. Start with the triage notes, then open only the topic references needed for the task.
 
 ## Reference index
 
@@ -18,23 +18,24 @@ Use this patch when writing, reviewing, upgrading, or troubleshooting Kotlin cod
 | --- | --- |
 | [language-and-compiler.md](references/language-and-compiler.md) | Language semantics, context parameters, diagnostics, annotations, JVM interop, reflection, scripting |
 | [jvm-and-build-tooling.md](references/jvm-and-build-tooling.md) | Gradle and Maven compatibility, KGP APIs, kapt, Build Tools API, publishing, ABI validation |
-| [multiplatform-and-native.md](references/multiplatform-and-native.md) | Multiplatform source sets, Apple targets, Kotlin/Native, C/Objective-C interop, Swift export |
+| [multiplatform-and-native.md](references/multiplatform-and-native.md) | Multiplatform source sets, Apple targets, Kotlin/Native, C and Objective-C interop, Swift export |
 | [javascript-and-wasm.md](references/javascript-and-wasm.md) | Kotlin/JS, Kotlin/Wasm, JavaScript interop, browser and Node tooling, NPM publishing |
 | [standard-library.md](references/standard-library.md) | Time, UUIDs, atomics, arrays, collections, and removed APIs |
-| [compose-multiplatform.md](references/compose-multiplatform.md) | Compose compiler changes, resources, navigation, iOS, web, desktop, previews, testing |
-| [ecosystem-libraries.md](references/ecosystem-libraries.md) | Coroutines, serialization, Ktor, Exposed, Koog, IDE and editor tooling |
+| [compose-multiplatform.md](references/compose-multiplatform.md) | Compose compiler changes, resources, navigation, iOS, web, desktop, previews, and testing |
+| [ecosystem-libraries.md](references/ecosystem-libraries.md) | Coroutines, serialization, Ktor, Exposed, Koog, IDE, and editor tooling |
 
 ## Upgrade triage
 
-Before changing source code, identify the exact Kotlin, Kotlin Gradle plugin, Gradle, Android Gradle plugin, Compose Multiplatform, and ecosystem-library versions in use. Patch releases repair important compiler, reflection, JavaScript, Native, Wasm, scripting, and Compose regressions, so first check whether upgrading the patch version resolves the failure.
+Before changing source code, identify the exact Kotlin, Kotlin Gradle plugin, Gradle, Android Gradle plugin, Compose Multiplatform, and ecosystem-library versions in use. Patch releases repair compiler, reflection, scripting, JavaScript, Native, Wasm, Compose, and build regressions; test the relevant patch upgrade before adding a source workaround.
 
 For build upgrades:
 
-1. Remove obsolete Gradle properties and compiler flags before interpreting new failures.
-2. Check common and platform dependency resolution separately in multiplatform builds.
-3. Update custom Gradle plugins away from removed KGP internals and mutable extension assignments.
+1. Remove obsolete Gradle properties and compiler flags.
+2. Compare common and platform dependency resolution in multiplatform builds.
+3. Replace removed KGP internals and mutable extension assignments in custom plugins.
 4. Clean Native commonization caches after removing obsolete number-commonization properties.
 5. Re-run ABI validation, Compose mapping generation, JavaScript/Wasm tests, and Native link tasks.
+6. On Kotlin 2.4.10, prefer the repaired compiler, BCV, Yarn-lock, scripting, Native, Wasm, and Compose behavior over local compensating workarounds.
 
 ## Breaking language and compiler changes
 
@@ -53,7 +54,7 @@ Context lookup requires exactly one compatible value at the nearest scope level.
 
 ### Account for stricter source checks
 
-Expect errors for inaccessible types exposed through indirect dependencies, less-visible type-parameter bounds, private references from non-private inline declarations, nullable type-alias supertypes, serializable inline lambdas, invalid generic Java delegation, and several variance-bearing type-alias uses.
+Expect errors for inaccessible types exposed through indirect dependencies, less-visible type-parameter bounds, private references from non-private inline declarations, nullable type-alias supertypes, serializable inline lambdas, invalid generic Java delegation, and variance-bearing type-alias uses.
 
 Kotlin 2.3.21 postponed strict rejection of inferred type arguments that violate upper bounds. Do not treat a successful build on that patch as proof that the source satisfies the future restriction.
 
@@ -62,7 +63,7 @@ Kotlin 2.3.21 postponed strict rejection of inferred type arguments that violate
 - Do not use callable references to Java synthetic properties; call Java accessors directly where necessary.
 - Replace `kotlin.native.Throws` with `kotlin.Throws`.
 - Replace `AbstractDoubleTimeSource` with `AbstractLongTimeSource`.
-- Replace old character/number conversion APIs and `Number.toChar()` with explicit conversions.
+- Replace old character and number conversion APIs and `Number.toChar()` with explicit conversions.
 - Use `kotlin.io.path.createTempDirectory` and `createTempFile` instead of the removed `kotlin.io` forms.
 - Give `String.subSequence` arguments their current `startIndex` and `endIndex` names.
 - Do not place a non-local `return` in a default lambda.
@@ -79,6 +80,7 @@ Use `@JvmExposeBoxed` or `-Xjvm-expose-boxed` when Java callers need boxed entry
 - Enable `-Xreturn-value-checker=check` or `full`, then use `@MustUseReturnValues`, `@IgnorableReturnValue`, or `val _ = call()` to express intent.
 - Use name-based destructuring only behind `-Xname-based-destructuring`; its modes intentionally differ in syntax and compatibility behavior.
 - Use per-diagnostic `-Xwarning-level=NAME:error|warning|disabled` when global warning settings are too broad.
+- Treat direct Kotlin-to-Java actualization as experimental and migrate K1 selections to K2.
 
 ## Gradle, Android, and compiler tooling
 
@@ -118,7 +120,7 @@ Use `checkKotlinAbi` and `updateKotlinAbi`; ABI validation wires its check into 
 
 Replace removed `ios()`, `watchos()`, and `tvos()` shortcuts with concrete targets. The default hierarchy creates `webMain` and `webTest` above JS and Wasm when both targets are declared. Cross-host KLIB publication does not remove the need for macOS when cinterop, CocoaPods, final Apple binaries, or Apple tests are involved.
 
-Multiplatform metadata matching is stricter. If metadata compilation fails after an upgrade, compare resolved dependencies in common and platform source sets rather than assuming a compiler regression.
+Multiplatform metadata matching is stricter. If metadata compilation fails after an upgrade, compare resolved dependencies in common and platform source sets.
 
 ### Treat Apple baseline changes as deployment constraints
 
@@ -130,7 +132,7 @@ KDoc export and Objective-C block parameter names are enabled by default. Disabl
 
 Use `swiftExport` to name modules, flatten package prefixes, export dependencies, and pass compiler arguments. Put dependency-required opt-ins in the Kotlin module's `compilerOptions`, not inside an `export` block. Review declaration-shape limits before designing a Swift-facing API.
 
-Do not publish libraries built with experimental direct C/Objective-C call mode.
+Do not publish libraries built with experimental direct C or Objective-C call mode.
 
 ## JavaScript and Wasm
 
@@ -148,7 +150,7 @@ Kotlin/Wasm initializes during module instantiation. Avoid `@EagerInitialization
 - `@nativeInvoke` enables direct calls to callable external JavaScript objects on Wasm.
 - `@JsExport.Default` creates ES-module default exports.
 
-Deploy Wasm browser applications only where WebAssembly garbage collection and the required exception-handling behavior are supported. Use the combined JS/Wasm browser distribution when a JavaScript fallback is required.
+Deploy Wasm browser applications only where WebAssembly garbage collection and required exception handling are supported. Use the combined JS/Wasm browser distribution when a JavaScript fallback is required.
 
 ## Standard library highlights
 
@@ -168,12 +170,12 @@ On iOS, set `CADisableMinimumFrameDurationOnPhone` to `true`. Concurrent renderi
 
 On web, prefer `ComposeViewport`, `WebElementView`, and `NavController.bindToBrowserNavigation()`. Accessibility is enabled by default. `CanvasBasedWindow` and `Window.bindToNavigation()` are deprecated.
 
-Compose UI testing now favors the v2 runner with `StandardTestDispatcher`. Delayed composition coroutines can count as idle, so advance the test clock explicitly when delayed work matters.
+Compose UI testing favors the v2 runner with `StandardTestDispatcher`. Delayed composition coroutines can count as idle, so advance the test clock explicitly when delayed work matters.
 
 ## Ecosystem checks
 
 Coroutines add `Flow.any`, `all`, `none`, and `chunked`; `runTest` has a 60-second default whole-test timeout. Close dispatcher views with `use` when their backing dispatcher is closeable.
 
-Serialization adds stable JSON leniency options, per-class unknown-key handling, standard `Instant` serializers, sealed-subclass registration, CBOR/COSE options, generated-serializer retention, UUID support, `kotlinx-io` integration, and ProtoBuf `oneof` hierarchies. Match the serialization runtime and compiler plugin requirements noted in the reference.
+Serialization adds stable JSON leniency options, per-class unknown-key handling, standard `Instant` serializers, sealed-subclass registration, CBOR/COSE options, generated-serializer retention, UUID support, `kotlinx-io` integration, and ProtoBuf `oneof` hierarchies. Match the serialization runtime and compiler-plugin requirements in the reference.
 
 Ktor, Exposed, Koog, the Kotlin language server, and editor tooling have substantial newer capabilities; consult the ecosystem reference before selecting APIs or assuming lifecycle status.

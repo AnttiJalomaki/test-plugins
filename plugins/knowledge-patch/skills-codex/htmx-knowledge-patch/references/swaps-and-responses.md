@@ -1,18 +1,12 @@
 # Swaps and Responses
 
-## Scroll behavior
-
-Swap scrolling is instant by default. Applications that require smooth
-scrolling can restore it globally:
-
-```js
-htmx.config.scrollBehavior = "smooth";
-```
+Use this reference when inserting literal text, returning out-of-band elements,
+or customizing handling by HTTP status.
 
 ## Literal-text swaps
 
 `textContent` is a core swap style. It assigns the response as literal text
-instead of parsing the response as HTML:
+instead of parsing it as HTML:
 
 ```html
 <button hx-get="/source" hx-target="#result" hx-swap="textContent">
@@ -21,14 +15,16 @@ instead of parsing the response as HTML:
 <pre id="result"></pre>
 ```
 
-Use it for source, logs, or other content that must remain text even if the
-response contains markup.
+Choose this style when response markup must be displayed rather than applied to
+the document.
 
-## Template-wrapped out-of-band swaps
+## Out-of-band content
 
-Some elements need a specific parsing context and are invalid as free-standing
-response nodes. Wrap them in `<template>` while retaining `hx-swap-oob` on the
-element to swap:
+### Preserve parsing context with `<template>`
+
+Some elements are invalid as free-standing response nodes and need their normal
+HTML parsing context. Wrap such out-of-band elements in `<template>`; table rows
+are a common example:
 
 ```html
 <template>
@@ -38,26 +34,33 @@ element to swap:
 </template>
 ```
 
-This is especially useful for table rows and other context-sensitive HTML.
+The wrapper allows the response parser to retain the row until htmx applies the
+out-of-band swap.
 
-## Nested out-of-band fragments
+### Process only top-level out-of-band fragments
 
-By default, nested out-of-band fragments may be processed. To process only
-top-level out-of-band fragments, configure:
+Nested out-of-band fragments are processed by default. Restrict processing to
+top-level fragments with:
 
 ```js
 htmx.config.allowNestedOobSwaps = false;
 ```
 
-## Ordered response-status handling
+## Response-status handling
 
-`htmx.config.responseHandling` is an ordered list. The first regular-expression
-match determines whether a response swaps and whether it is treated as an
-error. The defaults skip `204`, swap `2xx` and `3xx`, and treat `4xx` and `5xx`
-as unswapped errors.
+### First matching rule wins
 
-Entries may also override title handling, response selection, the target, or
-the swap style. Insert a specific status rule before the broader defaults:
+`htmx.config.responseHandling` is ordered. The first regular-expression match
+controls whether the response swaps and whether it is treated as an error.
+
+The defaults:
+
+- Skip `204` responses.
+- Swap `2xx` and `3xx` responses.
+- Treat `4xx` and `5xx` responses as unswapped errors.
+
+Prepend a specific case before the broad defaults. For example, swap a `422`
+response without treating it as an error:
 
 ```js
 htmx.config.responseHandling.unshift({
@@ -67,9 +70,23 @@ htmx.config.responseHandling.unshift({
 });
 ```
 
+An entry can also override title handling, response selection, the target, or
+the swap style.
+
 ## Redirects and htmx response headers
 
-The browser handles HTTP `3xx` redirects before htmx receives the response, so
-htmx-specific response headers on the redirect are not processed. Return a
-non-redirect response, such as `200`, when using headers including
-`HX-Redirect`, `HX-Location`, or `HX-Trigger`.
+The browser handles HTTP `3xx` redirects before htmx, so htmx-specific headers
+on the redirect response are hidden from htmx and are not processed.
+
+Return a non-redirect response such as `200` when relying on headers including:
+
+- `HX-Redirect`
+- `HX-Location`
+- `HX-Trigger`
+
+The header itself can then instruct htmx what to do.
+
+## Related public API
+
+Direct swap callers and extensions should use the public `htmx.swap()` API.
+See [Migration and configuration](migration-and-configuration.md#public-swap-api).

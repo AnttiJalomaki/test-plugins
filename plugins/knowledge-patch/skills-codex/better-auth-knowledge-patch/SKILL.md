@@ -177,7 +177,7 @@ Plugin hooks remain matcher/handler entries. A plugin `init()` receives the live
 - Keep Electron auth state and cookies in the main process and align protocol, callback path, client ID, and trusted origin across server, web, and desktop clients.
 - Pair Expo server/client plugins with secure storage; send `getCookie()` manually for non-client requests.
 - Enable Workers AsyncLocalStorage compatibility before constructing auth.
-- Follow the custom Set-Cookie bridge for Waku Server Actions.
+- Follow the custom `Set-Cookie` bridge for Waku Server Actions.
 
 ## Agent Auth essentials
 

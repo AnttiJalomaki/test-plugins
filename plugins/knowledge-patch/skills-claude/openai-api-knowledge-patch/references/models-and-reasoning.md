@@ -1,46 +1,45 @@
 # Models and Reasoning
 
-This reference covers the `gpt-5.6` family, endpoint-specific reasoning controls, reasoning continuity, Pro mode, multimodal detail, and generation-time safeguards.
+Source batches: `gpt-5.6` and `2026-08-04-2026-08-13`.
 
-## Family selection
+## GPT-5.6 family
 
-The `gpt-5.6` alias routes to the flagship `gpt-5.6-sol` model. Choose among the explicit tiers when cost, latency, or capacity must be controlled:
+### Model IDs, context, and output limits
 
-| Model | Positioning | Approximate input context | Maximum output |
-| --- | --- | --- | --- |
-| `gpt-5.6-sol` | Flagship | 1.05M | 128K |
-| `gpt-5.6-terra` | Balanced lower-cost tier | 1.05M | 128K |
-| `gpt-5.6-luna` | Efficient high-volume tier | 400K | 128K |
+The `gpt-5.6` alias routes to flagship `gpt-5.6-sol`. Use
+`gpt-5.6-terra` for the balanced lower-cost tier and `gpt-5.6-luna` for
+efficient high-volume work.
 
-For Sol and Terra, requests above 272K input tokens use different pricing for the full request, not only the excess portion.
+- Sol and Terra have roughly 1.05M input context.
+- Luna has 400K input context.
+- All three have 128K maximum output.
+- Sol and Terra requests above 272K input tokens enter different full-request
+  pricing.
 
-## Reasoning effort by endpoint
+### Reasoning levels and endpoint fields
 
-The family accepts `none`, `low`, `medium`, `high`, `xhigh`, and `max`. Both standard and Pro modes default to `medium` when effort is omitted.
+The family supports `none`, `low`, `medium`, `high`, `xhigh`, and `max`.
+Omission defaults to `medium` in standard and Pro modes.
 
-Responses nests the field:
-
-```json
-{
-  "model": "gpt-5.6-sol",
-  "reasoning": {"effort": "none"}
-}
-```
-
-Chat Completions uses a top-level field:
+Responses:
 
 ```json
-{
-  "model": "gpt-5.6-luna",
-  "reasoning_effort": "none"
-}
+{"reasoning":{"effort":"none"}}
 ```
 
-When migrating, first preserve the previous effective effort, then benchmark and tune. This separates endpoint migration regressions from reasoning-level changes.
+Chat Completions:
 
-### Chat Completions tool constraint
+```json
+{"reasoning_effort":"none"}
+```
 
-Function tools on Chat Completions require effective reasoning `none`. The omitted default, `medium`, is incompatible. Set `reasoning_effort: "none"` explicitly or move a reasoning-plus-tools workflow to Responses.
+During migration, first preserve the old effective effort, then tune it.
+
+### Chat Completions function-tool constraint
+
+Function tools on Chat Completions require effective reasoning `none`, making
+the default `medium` incompatible. Set `reasoning_effort` explicitly or move
+reasoning-plus-tools workflows to Responses.
 
 ```json
 {
@@ -58,61 +57,71 @@ Function tools on Chat Completions require effective reasoning `none`. The omitt
 }
 ```
 
-## Persisted reasoning context
+### Persisted reasoning context
 
-Responses can preserve reasoning context across a `previous_response_id` chain:
+Set `reasoning.context` to `all_turns` and continue with
+`previous_response_id` only while goals and assumptions remain stable. Use
+`current_turn` when earlier reasoning is stale. Use `auto` or omit the field
+for the default, and inspect the returned effective value.
+
+Manual replay must retain every user input and output item together with item
+IDs, call IDs, caller metadata, and assistant phase values.
 
 ```json
 {
-  "reasoning": {"context": "all_turns"},
+  "reasoning": {"context":"all_turns"},
   "previous_response_id": "resp_..."
 }
 ```
 
-Choose context by task continuity:
+### Multimodal detail defaults
 
-- `all_turns`: retain earlier reasoning only while goals and assumptions remain stable.
-- `current_turn`: discard stale earlier reasoning while retaining the current turn's work.
-- `auto` or omission: use the service default and inspect the effective value returned in the response.
+Omitted or `auto` image detail can retain original dimensions. In Responses,
+omitted or `input_file.detail: "auto"` can use high-detail PDF page images,
+increasing tokens and latency. Chat Completions file inputs do not expose the
+same detail control. Set detail explicitly where the endpoint permits when
+cost or latency matters.
 
-If the application reconstructs history manually, keep every user input and output Item. Preserve item IDs, call IDs, caller metadata, and assistant phase values; these protocol fields are part of reasoning and tool continuity.
+### Pro mode
 
-For stateless requests, replay every returned reasoning Item with its default `encrypted_content`. Setting `store: false` alone does not make text-only message replay equivalent to Item replay.
-
-## Pro mode
-
-Pro is a Responses-only reasoning mode applied to a normal family model. It is not a separate model slug. Mode and effort are independent, but the supported effort range in Pro begins at `medium`.
+Pro is a Responses-only reasoning mode on a normal family model, not a
+separate model slug. Mode and effort are independent; supported Pro efforts
+begin at `medium`.
 
 ```json
 {
   "model": "gpt-5.6-sol",
-  "reasoning": {
-    "mode": "pro",
-    "effort": "medium"
-  }
+  "reasoning": {"mode":"pro", "effort":"medium"}
 }
 ```
 
-Do not send Pro mode through Chat Completions or construct names such as `gpt-5.6-pro`.
+### Generation-time safeguards
 
-## Multimodal detail and cost
+Cyber and biology safeguards can refuse output or pause a stream for several
+seconds while generation is synchronously reviewed, including for legitimate
+dual-use requests. Attach a stable, privacy-preserving `safety_identifier` to
+each end-user request.
 
-An omitted image detail or `auto` can preserve original dimensions. In Responses, omitted `input_file.detail` or `input_file.detail: "auto"` can use high-detail images for PDF pages. Both behaviors may increase tokens and latency.
+## Access-controlled modes and models
 
-Chat Completions file inputs do not expose the same detail control. Where the endpoint permits, set detail explicitly when cost or latency must be bounded.
+### Ultrafast limited preview
 
-## Generation-time safeguards
+Ultrafast is a new API service tier for `gpt-5.6-sol`. It is available only in
+limited preview to selected customers; do not assume a project has access.
 
-Cyber and biology safeguards can synchronously review generation. They may refuse output or pause a stream for several seconds, including on legitimate dual-use requests. Streaming clients should tolerate the pause without assuming the connection has failed.
+### Daybreak access and IDs
 
-Attach a stable, privacy-preserving `safety_identifier` for each end user on standard requests. For Realtime, use the separate `OpenAI-Safety-Identifier` header described in [realtime.md](realtime.md).
+Responses supports `daybreak-blue-latest`, `daybreak-red-latest`, and
+`gpt-5.6-cyber` for approved defensive-security users. Daybreak models require
+separate approval and provisioning. Red access is separately approved for
+purpose-trained models such as `gpt-5.6-cyber`.
 
-## Validation checklist
+```json
+{"model":"daybreak-blue-latest","input":"Review this code."}
+```
 
-1. Confirm the explicit model tier and account for the 272K pricing transition on Sol or Terra.
-2. Confirm effort field placement for the chosen endpoint.
-3. Set Chat Completions reasoning to `none` before enabling function tools.
-4. Choose reasoning context from task continuity, not merely conversation length.
-5. Preserve protocol Items and identifiers during manual replay.
-6. Set multimodal detail explicitly where variable token use is unacceptable.
-7. Test refusal handling and multi-second stream pauses.
+### Fast mode for long context
+
+Fast mode accepts prompts exceeding 272K tokens for `gpt-5.6-sol`,
+`gpt-5.6-terra`, and `gpt-5.6-luna`; long-context requests no longer need to
+avoid this processing mode.

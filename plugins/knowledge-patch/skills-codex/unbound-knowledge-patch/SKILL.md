@@ -8,137 +8,72 @@ metadata:
 ---
 
 
-# Unbound
+# Unbound Knowledge Patch
 
-Use this skill when configuring, upgrading, operating, or troubleshooting
-Unbound. Start with the breaking defaults and security-sensitive behavior
-below, then open the topic reference that matches the task.
+Use this skill when configuring, upgrading, operating, or debugging Unbound.
+Start with the quick references below, then open the topic file that matches
+the work. Treat deployed configuration, build flags, and observed behavior as
+authoritative when they differ from generic assumptions.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [configuration-and-transports.md](references/configuration-and-transports.md) | Listener setup, DNS over QUIC, TLS selection, forwarding transports, limits, and protocol behavior |
-| [cache-resolution-and-validation.md](references/cache-resolution-and-validation.md) | Cachedb, Redis, serve-expired, TTL handling, prefetch, DNSSEC, ECS, NAT64, and alias processing |
-| [policy-and-auth-zones.md](references/policy-and-auth-zones.md) | RPZ, response-IP, local zones, auth zones, forwarding checks, notifications, and rebinding protection |
-| [operations-and-observability.md](references/operations-and-observability.md) | Reloads, remote control, cache inspection, dnstap, error reporting, statistics, rate limits, and logging |
-| [platform-and-build.md](references/platform-and-build.md) | Build dependencies, service units, platform behavior, root keys, and reproducible builds |
+| [Cache, resolution, and validation](references/cache-resolution-and-validation.md) | Cache lifetime, serve-expired, cachedb, DNSSEC, DNS64, ECS, alias handling |
+| [Configuration and transports](references/configuration-and-transports.md) | DoQ, DoT, DoH, forwarding, limits, TLS, dnstap, listeners |
+| [Operations and observability](references/operations-and-observability.md) | Remote control, reloads, cache inspection, keys, counters, anchors |
+| [Platform and build behavior](references/platform-and-build.md) | Build dependencies, services, Windows, BSD PF, QNX, OpenSSL |
+| [Policy and auth zones](references/policy-and-auth-zones.md) | Local zones, RPZ, RESPIP, auth zones, transfers, notifications |
 
-## Breaking defaults and upgrade checks
+## Upgrade-critical configuration
 
 ### Configure subnet caching explicitly
 
-Enabling subnet support at build time no longer inserts `subnetcache` into
-`module-config`. Add it explicitly when EDNS Client Subnet caching is required:
+Building with subnet support no longer inserts `subnetcache` into
+`module-config`. Add it explicitly when ECS-aware caching is required:
 
 ```conf
 server:
     module-config: "subnetcache validator iterator"
 ```
 
-Check custom processing orders separately. For DNS64 answers subject to
-response-IP and RPZ policy, use:
+### Select TLS protocols at runtime
+
+Use `tls-protocols` to choose supported TLS versions. Do not use the removed
+`tls-use-system-versions` or `--enable-system-tls` controls. If TLS 1.2 is
+required, avoid 1.24.0 specifically; 1.24.1 permits it again.
+
+### Preserve RESPIP and RPZ behavior with DNS64
+
+Use this module order so policy applies to DNS64-synthesized answers:
 
 ```conf
 server:
     module-config: "respip dns64 validator iterator"
 ```
 
-Do not assume that placing cachedb in
+Do not assume that inserting cachedb as
 `"respip dns64 validator cachedb iterator"` works.
 
-### Review serve-expired behavior
+### Review serve-expired defaults
 
-The defaults are now:
+`serve-expired-ttl` defaults to `86400` and
+`serve-expired-client-timeout` defaults to `1800`. Account for those defaults
+when upgrading a configuration that relied on implicit values.
 
-```conf
-server:
-    serve-expired-ttl: 86400
-    serve-expired-client-timeout: 1800
-```
+### Understand wait-limit zero values
 
-`serve-expired-reply-ttl` cannot exceed the original record TTL. Records leave
-cache at TTL 0, and upstream TTL-0 answers are not stored in cachedb.
-
-### Account for newly local names
-
-`resolver.arpa` and `service.arpa` are served locally by default. Check
-forwarding expectations for these names during an upgrade.
-
-### Recheck resource limits
-
-`max-global-quota` defaults to `200`. Loopback clients are exempt from
-`wait-limit`; setting `wait-limit: 0` disables all wait limits, and
-`wait-limit-cookie: 0` disables the cookie-validated limit. A wait-limit
-excess returns `SERVFAIL`. `discard-timeout` drops UDP queries, not stream
+`wait-limit: 0` disables all wait limits. `wait-limit-cookie: 0` can disable
+limits for cookie-validated clients. A wait-limit rejection returns
+`SERVFAIL`; `discard-timeout` drops UDP queries but retains stream
 connections.
 
-### Select TLS versions explicitly
+## High-value features
 
-Use `tls-protocols` to choose supported TLS versions. Do not use the removed
-`tls-use-system-versions` or `--enable-system-tls` controls. If a deployment
-must run the release that disabled TLS 1.2, move to a patch release that
-restores TLS 1.2 compatibility.
+### Serve DNS over QUIC
 
-## Security-sensitive configuration
-
-### Bound signature-set work
-
-`iter-scrub-rrsig` limits the number of RRSIG records retained by the iterator
-scrubber and defaults to `8`:
-
-```conf
-server:
-    iter-scrub-rrsig: 8
-```
-
-### Preserve rebinding protection
-
-`private-address` filtering applies to SVCB and HTTPS records as well as
-address records. Keep private ranges complete when relying on this control.
-
-### Harden glue consistently
-
-`harden-unverified-glue` also controls missing-AAAA lookups made during cache
-fill. Enabling it therefore hardens both ordinary and cache-fill glue paths.
-
-### Understand alias validation
-
-DNSSEC handling accepts YXDOMAIN only with DNAME, rejects signatures made by
-revoked DNSKEYs, and applies stricter trust checks to DNAME-to-CNAME and
-wildcard-CNAME chains.
-
-### Rotate EDNS COOKIE secrets
-
-Persist rollover state with `cookie-secret-file`, then use remote control to
-add, activate, inspect, and drop secrets:
-
-```conf
-server:
-    cookie-secret-file: "unbound_cookiesecrets.txt"
-```
-
-```sh
-unbound-control add_cookie_secret SECRET
-unbound-control activate_cookie_secret SECRET
-unbound-control print_cookie_secrets
-unbound-control drop_cookie_secret SECRET
-```
-
-`ip-ratelimit-cookie` is enforced for COOKIE-bearing clients. Recheck existing
-settings after an upgrade because a previously configured value may now take
-effect.
-
-## Transport quick reference
-
-### Enable DNS over QUIC
-
-Build with libngtcp2 and a QUIC-capable OpenSSL, then configure the listener
+Build with libngtcp2 and a QUIC-capable OpenSSL, then configure a QUIC port
 and memory allowance:
-
-```sh
-./configure --with-libngtcp2=/path/to/ngtcp2 --with-ssl=/path/to/openssl
-```
 
 ```conf
 server:
@@ -146,12 +81,12 @@ server:
     quic-size: 8m
 ```
 
-Confirm `num.query.quic` and `mem.quic` in statistics. A build without QUIC
-support ignores QUIC ports and warns when `quic-port` is configured.
+A build without DoQ support ignores QUIC ports and warns when `quic-port` is
+configured. See the transport and build references for dependency checks.
 
 ### Override transport per forward zone
 
-Zone-level settings can override global upstream transport:
+Zone-specific transport can override global upstream settings:
 
 ```conf
 server:
@@ -164,83 +99,139 @@ forward-zone:
     forward-tls-upstream: yes
 ```
 
-An upstream TLS connection is reusable only when its TLS name matches the new
-destination, even if both destinations resolve to the same address.
+### Reload with a short service pause
 
-### Keep encrypted listeners distinct
-
-DoT and DoH use separate SSL contexts and can advertise different ALPN values.
-Unbound avoids opening an unencrypted channel beside an encrypted channel on
-the same port. Adding HTTPS or QUIC ports to `interface-automatic-ports`
-initializes the corresponding protocol.
-
-## Operations quick reference
-
-### Reload with a short interruption
+Use fast reload for changed configuration:
 
 ```sh
 unbound-control fast_reload
 ```
 
-`fast_reload` parses changed configuration in a separate thread and briefly
-pauses service threads. It propagates dnstap changes, reloads changed service
-keys, certificates, and trust bundles, and applies changes to
-`iter-scrub-ns`, `iter-scrub-cname`, and `max-global-quota`.
+It parses in a separate thread and pauses service threads briefly. It also
+propagates supported dnstap, TLS-file, scrub, and quota changes. Key-file
+errors no longer terminate the daemon, but always inspect the command result
+and logs before treating the reload as successful.
 
-A reload logs Redis backend failures instead of failing solely because Redis
-is unavailable.
+### Reload renewed certificates
 
-### Inspect selected cache entries
+Reloads detect changed certificate files and rebuild contexts for DoT, DoH,
+DoQ, and outgoing DoT. `fast_reload` handles `tls-service-key`,
+`tls-service-pem`, and `tls-cert-bundle`, removing the need for a full restart
+after ordinary certificate renewal.
+
+### Inspect selected cache names
+
+Use targeted lookup instead of a full cache dump:
 
 ```sh
 unbound-control cache_lookup example.com
 unbound-control cache_lookup +t .
 ```
 
-`cache_lookup` prints cached RRsets and messages and includes matching subnet
-cache data. Use `+t` for TLD and root names. Long `dump_cache` operations
-periodically release locks so the resolver remains responsive.
+The `+t` form accepts TLD and root names, and matching subnet-cache content is
+included.
 
-### Select remote-control listener ports
+### Isolate control listener ports
+
+Bind a port on each `control-interface` value:
 
 ```conf
 remote-control:
     control-interface: 127.0.0.1@8953
 ```
 
-Commands that take no arguments reject extra arguments. Members of the
-`unbound` group can access the control key.
+### Persist and rotate EDNS COOKIE secrets
 
-### Sample high-volume dnstap traffic
-
-```conf
-dnstap:
-    dnstap-sample-rate: 100
-```
-
-The value emits one out of every N messages. Confirm worker configuration
-after a fast reload when dnstap settings change.
-
-### Correlate Linux worker logs
+Persist secrets with `cookie-secret-file`, then rotate them using
+`add_cookie_secret`, `activate_cookie_secret`, and `drop_cookie_secret`.
+Inspect active values with `print_cookie_secrets`.
 
 ```conf
 server:
-    log-thread-id: yes
+    cookie-secret-file: "unbound_cookiesecrets.txt"
 ```
 
-This selects the system-wide Linux thread ID instead of Unbound's internal
-counter, making correlation with operating-system tools easier.
+### Bound iterator signature sets
 
-## Validation checklist
+`iter-scrub-rrsig` caps retained RRSIG records; its default is 8:
 
-- Run `unbound-checkconf` and investigate ineffective `nodefault` warnings.
-- Check warnings for hostname-based stub or forward servers; they may create a
-  circular dependency on the resolver itself.
-- Confirm the operating system granted the requested `so-sndbuf`.
-- Verify QUIC build support before relying on configured QUIC ports.
-- Confirm the processing order for subnet cache, response-IP, DNS64, and
-  validation features.
-- Exercise certificate renewal with the chosen reload path.
-- Test TTL-0, serve-expired, and external cachedb behavior independently.
-- Check local-zone behavior for DS queries and dynamically added blocking
-  zones.
+```conf
+server:
+    iter-scrub-rrsig: 8
+```
+
+### Block one address family locally
+
+Use `block_a` or `block_aaaa` to suppress A or AAAA lookups. The `_wdata`
+forms can answer matching `local-data`, recurse for other data, and deny the
+selected family:
+
+```conf
+server:
+    local-zone: "v4-only.example." block_aaaa_wdata
+    local-data: "v4-only.example. 300 IN A 192.0.2.10"
+```
+
+### Remove one exact local-data record
+
+Pass a complete RR to avoid deleting every record at the owner name:
+
+```sh
+unbound-control local_data_remove \
+  'host.example. 300 IN A 192.0.2.10'
+```
+
+## Diagnostic checkpoints
+
+### Cache behavior
+
+- TTL-0 upstream answers are not stored by cachedb; cached records expire at
+  TTL 0.
+- `forward-no-cache` and `stub-no-cache` suppress external cachedb lookup and
+  storage, including applicable ECS paths.
+- A TTL-0 DNAME can yield a synthesized response reused internally for a
+  one-second grace period while clients still receive TTL 0.
+- Limit-triggered `SERVFAIL` results may be cached briefly, so an immediate
+  retry need not repeat recursion.
+
+### Validation and policy
+
+- `private-address` filtering covers matching SVCB and HTTPS records.
+- `always_refuse` local zones block DS queries too.
+- DNS64 validates the AAAA lookup and preserves `rpz-passthru` and ECS cache
+  scope.
+- RPZ loading ignores ZONEMD as a policy type.
+
+### Encrypted transports
+
+- DoT and DoH use separate SSL contexts and ALPN values.
+- Unbound avoids opening unencrypted channels beside encrypted channels on
+  the same port.
+- Upstream TLS connections are reused only when the configured TLS name also
+  matches, not merely the resolved address.
+- `pad-responses` applies to DoQ; after referrals, `tls-upstream` continues to
+  use `tls-port`.
+
+### Auth-zone resilience
+
+- A failed secondary load clears that zone and leaves the daemon running;
+  update attempts continue.
+- Missing zonefile-only primary data no longer terminates the daemon.
+- Secondary zonefiles cannot use `$INCLUDE`, and out-of-zone records are
+  discarded during auth-zone and RPZ loads.
+- Use `max-transfer-size` and `max-transfer-time` to bound transfers; both are
+  disabled by default.
+
+## Working method
+
+1. Identify the running binary version, compile options, module order, and
+   active listener configuration.
+2. Open the relevant topic reference and apply every interacting rule, not
+   just the first matching option.
+3. Validate syntax with `unbound-checkconf`; its warnings include ineffective
+   `nodefault` declarations and circular hostname dependencies in stub or
+   forward zones.
+4. For runtime changes, inspect the remote-control result, logs, and relevant
+   counters after reload.
+5. Test DNSSEC, ECS, policy, cachedb, and encrypted-transport paths separately
+   when more than one module participates.

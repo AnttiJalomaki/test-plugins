@@ -1,84 +1,109 @@
 # Administration and Desktop
 
-Use this reference for service management, desktop sessions, resource controls, tuning, and local administration.
+## Cockpit and administration
 
-## Administration stack
-
-### Cockpit and YaST
-
-Leap 16 removes YaST in favor of Cockpit for manual administration. Cockpit modules cover subscriptions, repositories, and package installation or removal, and the PackageKit module can select individual updates. The subscription and repository modules do not yet work for unprivileged users, and package removal does not protect overall system usability.
-
-Leap 15.6 includes Cockpit but disables password login as `root` by default. To allow it, remove `root` from `/etc/cockpit/disallowed-users` and restart the socket:
+Leap 15.6 includes Cockpit but disables password login as `root`. Remove `root`
+from `/etc/cockpit/disallowed-users` and restart the socket only when direct root
+login is deliberately required:
 
 ```sh
 systemctl restart cockpit.socket
 ```
 
-### systemd configuration and compatibility
-
-Leap 16 ships main systemd configuration under `/usr`, so local files under `/etc` take precedence. Prefer drop-ins such as `/etc/systemd/coredump.conf.d/*.conf`, or copy a packaged default into `/etc` before editing it. Remove the `/etc` override to restore the packaged default.
-
-SLES 15 SP6 moves systemd from 249 to 254. It adds encrypted and authenticated credentials, raises the maximum inode count for `/dev` and `/tmp` to one million, changes `busctl capture` output to `pcapng`, deprecates `udevadm hwdb` in favor of `systemd-hwdb`, warns when `systemctl` runs in a chroot without `/proc`, and allows all matching `modalias` patterns to contribute hardware-database properties. The `after-local` SysV script is removed except where an upgrade creates a compatibility path.
-
-Leap 16 removes SysV `init.d` support and `rc<service>` controls; use native systemd units.
-
-### Resource control
-
-SLES 15 SP6 defaults to unified cgroup v2 but can still boot in hybrid mode for v1-dependent workloads. Access to v1-only controls—including `cpu.rt_quota_us`, `cpuset.*`, `freezer.state`, older `memory.*` attributes, and the v1-specific `/proc/cgroups`—emits deprecation messages.
-
-Leap 16 supports cgroup v2 only; do not design a supported deployment around cgroup v1 or a hybrid hierarchy.
-
-Query inherited effective systemd limits through `EffectiveMemoryMax`, `EffectiveMemoryHigh`, and `EffectiveTasksMax` rather than manually walking the hierarchy.
-
-### Dynamic tuning
-
-SLES 16 installs `tuned` and its dynamic tuning daemon by default. Check both service state and the selected profile when deployment policy requires deterministic tuning.
-
-Replace removed `sapconf` with `saptune`. When no SAP Notes or Solutions were selected previously, migration gives `saptune` a base tuning automatically; update automation that invokes `sapconf` or assumes its configuration model.
+Leap 16 removes YaST for manual administration in favor of Cockpit. Its Leap
+modules cover subscriptions, repositories, and package installation/removal;
+the subscription and repository modules do not yet work for unprivileged users,
+and package removal has no system-usability safeguard. (leap-16.0-guide)
 
 ## Desktop sessions and applications
 
-### Wayland and remote desktops
+KDE Plasma does not autostart IBus. Add `ibus-daemon -x` in System Settings,
+Startup and Shutdown, Autostart. (leap-15.6)
 
-Leap 16 installation offers only Wayland desktop variants. The Xorg server is no longer the supported graphical display server; add Xorg-based environments after installation when needed and run X11 applications through XWayland. The Xfce Wayland session is experimental and uses `gtkgreet` with `greetd`; the LXQt Wayland session is available only after installation.
+Leap 16 installation offers Wayland desktop variants only. Install an
+Xorg-based environment afterward if required; X11 applications run through
+XWayland. Xfce's Wayland session is experimental and uses `gtkgreet` with
+`greetd`; the LXQt Wayland session is available only after installation.
 
-SLES 16 supplies only a minimal GNOME environment and has no planned SUSE Linux Enterprise Desktop release for 16.0. It removes the VNC server, GTK2, Qt5, and wxWidgets; use RDP for remote desktops and port GUI dependencies to GTK4, Qt6, or another supported toolkit.
+`opensuse-welcome-launcher` selects `gnome-tour` or `plasma-welcome` instead of
+the old Qt 5 greeter. Remove the launcher from appliances and managed systems
+where no welcome application may appear.
 
-### Welcome applications
+PipeWire replaces PulseAudio by default. Upgrades should migrate automatically,
+and `opensuse-migration-tool` supplies a post-migration script when they do not.
+When audio is still unavailable, also inspect the
+`wireplumber-video-only-profile` configuration.
 
-`opensuse-welcome-launcher` selects `gnome-tour` or `plasma-welcome` instead of the former Qt 5 greeter. Remove the launcher from appliances or managed systems where no welcome application may appear.
+GNOME Software now handles online updates and detects transactional systems, so
+desktop workflows can distinguish those hosts. (16.0-rev-2026-08-04)
 
-### KDE and IBus
-
-KDE Plasma on Leap 15.6 does not start IBus automatically. Add this command as an Autostart application in System Settings:
-
-```sh
-ibus-daemon -x
-```
-
-On SLES 15 SP7, the full `kde` pattern requires a Workstation Extension subscription and can block upgrade without one. Complete the upgrade, then install the subscription-free minimal pattern:
+The full `kde` pattern requires a Workstation Extension subscription and can
+block an SLES 15 SP7 upgrade without one. Finish the upgrade and then select the
+minimal pattern:
 
 ```sh
 zypper rm -t pattern kde
 zypper in -t pattern kde_minimal
 ```
 
-### Audio
+## systemd and cgroups
 
-Leap 16 uses PipeWire instead of PulseAudio by default, and upgrades should migrate automatically. Use the post-migration script supplied by `opensuse-migration-tool` if they do not, and rule out the `wireplumber-video-only-profile` configuration during troubleshooting.
+Leap 16 ships main systemd configuration under `/usr`; local `/etc` files and
+drop-ins such as `/etc/systemd/coredump.conf.d/*.conf` take precedence. Copy a
+default into `/etc` before editing when needed, and remove the `/etc` override to
+restore the package default.
 
-## Local state and diagnostics
+SLES 15 SP6 moves systemd from 249 to 254. It adds encrypted/authenticated
+credentials and raises the `/dev` and `/tmp` inode limits to one million.
+Compatibility changes include:
 
-### Temporary storage
+- `busctl capture` writes `pcapng`.
+- `udevadm hwdb` is deprecated; use `systemd-hwdb`.
+- `systemctl` warns in chroots without `/proc`.
+- All matching `modalias` patterns can contribute hardware-database properties.
+- `after-local` is removed except for upgrade-created compatibility paths.
 
-Leap 16 mounts `/tmp` as `tmpfs`; it does not survive reboot. Store persistent work state elsewhere.
+SLES 15 SP6 defaults to unified cgroup v2 but still permits a boot option for
+hybrid mode. Use of v1 controls such as `cpu.rt_quota_us`, `cpuset.*`,
+`freezer.state`, older `memory.*` attributes, and `/proc/cgroups` emits
+deprecation messages. Leap 16 supports only cgroup v2.
 
-### Kdump administration
+Query `EffectiveMemoryMax`, `EffectiveMemoryHigh`, and `EffectiveTasksMax` to
+obtain inherited effective systemd session limits directly.
 
-SLES 15 SP6 changes Kdump directory names from `YYYY-MM-DD-HH:MN` to `YYYY-MM-DD-HH-MN`. Update parsers and retention jobs for the hyphen between hour and minute.
+## Files, users, and host settings
 
-SLES 16 removes the YaST Kdump module. Configure `KDUMP_CRASHKERNEL` and `KDUMP_UPDATE_BOOTLOADER` in `/etc/sysconfig/kdump`; use `kdumptool` to verify crash-kernel settings, update the boot loader, or disable Kdump by removing `crashkernel` settings from the boot loader.
+Leap 16 mounts `/tmp` as `tmpfs`; it does not survive reboot. Move persistent
+work state elsewhere.
 
-### Year 2038
+With `USERGROUPS_ENAB` in `/usr/etc/login.defs`, newly created Leap 16 users get
+a same-named primary group rather than `users`, including after upgrades that
+did not override `/etc/login.defs`. Audit `@users` policy and home-directory
+group ownership. If a home uses no other group, convert it with:
 
-Leap 16 date and time handling is 2038-safe and is intended to work past the 32-bit Unix timestamp rollover.
+```sh
+chgrp -R myuser "$HOME"
+```
+
+SLES 16 applies `/etc/hostname` literally rather than stripping the domain from
+an FQDN. Prefer an unqualified hostname to avoid application-specific surprises.
+
+The `tuned` package and dynamic tuning daemon are installed by default. Inspect
+the service and selected profile whenever deployment policy must control tuning.
+The later SLES 16.0 revision also centralizes kernel hardening in a `tuned`
+profile, so compliance automation must account for the profile rather than
+assuming every hardening control is independent.
+
+## SAP tuning and Kdump
+
+Leap 16 replaces `sapconf` with `saptune`. When no SAP Notes or Solutions were
+selected, `saptune` receives a base tuning automatically; migrate automation and
+assumptions that invoke `sapconf`.
+
+SLES 15 SP6 Kdump directories use `YYYY-MM-DD-HH-MN`, not
+`YYYY-MM-DD-HH:MN`; update parsers and retention jobs.
+
+With the YaST Kdump module removed in SLES 16, set `KDUMP_CRASHKERNEL` and
+`KDUMP_UPDATE_BOOTLOADER` in `/etc/sysconfig/kdump`. Use `kdumptool` to verify
+settings and update the boot loader, or disable Kdump by removing its
+`crashkernel` boot-loader settings.

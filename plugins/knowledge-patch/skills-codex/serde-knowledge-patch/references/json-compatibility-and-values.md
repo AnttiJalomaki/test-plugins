@@ -1,73 +1,82 @@
 # JSON Compatibility and Value APIs
 
-## Dependency compatibility
+## Check dependency compatibility
 
-### Serde version floor
+### Respect the Serde dependency floor
 
-`serde_json` 1.0.145 requires Serde 1.0.220 or newer. A dependency graph
-pinned to an older Serde release has two valid upgrade paths:
+`serde_json` 1.0.145 and newer require Serde 1.0.220 or newer. When upgrading,
+allow both packages to resolve to compatible versions:
 
-- update Serde to at least 1.0.220; or
-- keep `serde_json` below 1.0.145.
-
-Check lockfiles and workspace-wide version constraints when an apparently
-isolated `serde_json` update fails dependency resolution.
-
-## Serialization behavior
-
-### JSON object keys from enums
-
-As of `serde_json` 1.0.150, enum keys whose Serde representation is not a
-string are rejected during JSON object serialization. JSON object keys are
-strings, so do not rely on a data-carrying or otherwise non-string enum
-representation being accepted as a key.
-
-Give such variants an explicit representation that produces the intended
-string key. This is especially important for maps keyed by enums with tuple
-or struct variants.
-
-### Arbitrary-precision number spelling
-
-In `serde_json` 1.0.149, number strings produced with the
-`arbitrary_precision` feature were aligned with `zmij` formatting. An
-upgrade can therefore alter the exact serialized spelling without altering
-the numeric value.
-
-Audit consumers that compare bytes rather than values, including:
-
-- snapshot and golden-file tests;
-- content hashes and signatures;
-- caches keyed by serialized bytes; and
-- protocols that incorrectly require one numeric spelling.
-
-Prefer semantic numeric comparisons when the spelling is not part of the
-actual contract.
-
-## Parsing and deserializing object maps
-
-### `Map<String, Value>` implements `FromStr`
-
-Since `serde_json` 1.0.143, a JSON object can be parsed directly into its map
-type with Rust's `.parse()`:
-
-```rust
-let object: serde_json::Map<String, serde_json::Value> =
-    r#"{"answer":42}"#.parse().unwrap();
-assert_eq!(object["answer"], serde_json::json!(42));
+```toml
+[dependencies]
+serde = "1.0.220"
+serde_json = "1.0.145"
 ```
 
-The target type must be clear from an annotation or surrounding context.
+If the application must keep Serde below 1.0.220, keep `serde_json` below
+1.0.145 as well. Inspect `Cargo.lock` after resolution rather than assuming a
+manifest edit selected the intended pair.
 
-### Object maps are deserializers
+## Migrate incompatible JSON output
 
-Since `serde_json` 1.0.131, both of these types implement Serde's
-`Deserializer` and `IntoDeserializer`:
+### Convert non-string enum object keys
 
-- `serde_json::Map<String, Value>`
-- `&serde_json::Map<String, Value>`
+As of `serde_json` 1.0.150, serializing a JSON object rejects enum keys whose
+Serde representation is not a string. Data-carrying variants are a common
+source of non-string representations.
 
-Feed a parsed map directly to `Deserialize` without wrapping it in
-`Value::Object` and without round-tripping through JSON text:
+Convert the key into the exact string representation required by the wire
+format before inserting it into a map:
+
+```rust
+use std::collections::BTreeMap;
+
+let object = [("item-42".to_owned(), "ready")]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
+let json = serde_json::to_string(&object).unwrap();
+assert_eq!(json, r#"{"item-42":"ready"}"#);
+```
+
+Do not rely on a non-string enum representation being coerced into a JSON
+property name.
+
+### Recheck arbitrary-precision number spelling
+
+With `arbitrary_precision` enabled, `serde_json` 1.0.149 aligns serialized
+number strings with `zmij` formatting. The values remain numerically
+equivalent, but exact text can change across the upgrade.
+
+Audit consumers that treat serialized JSON as bytes rather than as data:
+
+- snapshots and golden files;
+- hashes, fingerprints, and cache keys;
+- digital signatures;
+- protocol fixtures and exact-output assertions.
+
+Confirm that the new spelling is acceptable before updating expected bytes.
+
+## Work directly with object maps
+
+### Parse an object with FromStr
+
+Since `serde_json` 1.0.143, `Map<String, Value>` implements `FromStr`. Parse
+object text directly with `.parse()`:
+
+```rust
+use serde_json::{Map, Value};
+
+let object: Map<String, Value> =
+    r#"{"enabled":true}"#.parse().unwrap();
+assert_eq!(object.get("enabled"), Some(&Value::Bool(true)));
+```
+
+This avoids parsing a general `Value` and then extracting its object.
+
+### Deserialize typed data from an owned map
+
+Since `serde_json` 1.0.131, `Map<String, Value>` implements `Deserializer` and
+`IntoDeserializer`. Pass an owned map directly to `Deserialize`:
 
 ```rust
 use serde::Deserialize;
@@ -78,73 +87,102 @@ struct Config {
     enabled: bool,
 }
 
-let map: Map<String, Value> =
-    serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+let mut map = Map::new();
+map.insert("enabled".into(), Value::Bool(true));
 let config = Config::deserialize(map).unwrap();
 assert!(config.enabled);
 ```
 
-Pass the map by value when it can be consumed. Pass `&map` when it must
-remain available to the caller.
+There is no need to wrap the map in `Value::Object` or serialize it back to
+JSON text.
 
-## Shared values and raw literals
+### Deserialize without consuming a map
 
-### Default shared `Value` references
-
-Since `serde_json` 1.0.142, `&serde_json::Value` implements `Default`.
-Consequently, `Option<&Value>::unwrap_or_default()` yields a shared JSON
-`null` value:
+`&Map<String, Value>` also implements `Deserializer` and `IntoDeserializer`.
+Use a borrowed map when the caller must retain the object after decoding:
 
 ```rust
-let value = serde_json::json!({});
-let missing: &serde_json::Value = value.get("missing").unwrap_or_default();
+use serde::Deserialize;
+use serde_json::{Map, Value};
+
+#[derive(Deserialize)]
+struct Config {
+    enabled: bool,
+}
+
+let mut map = Map::new();
+map.insert("enabled".into(), Value::Bool(true));
+let config = Config::deserialize(&map).unwrap();
+assert!(config.enabled);
+assert_eq!(map.get("enabled"), Some(&Value::Bool(true)));
+```
+
+## Use value-level conveniences
+
+### Default a missing borrowed value to JSON null
+
+Since `serde_json` 1.0.142, `&Value` implements `Default`. A missing optional
+reference can therefore fall back to a shared JSON null:
+
+```rust
+use serde_json::{json, Value};
+
+let document = json!({});
+let missing: &Value = document.get("missing").unwrap_or_default();
 assert!(missing.is_null());
 ```
 
-The fallback is a reference to a default null value; this operation does not
-mutate the object or insert a key.
+This does not allocate and does not insert a member into `document`. Use it
+only when a read-only null fallback has the intended semantics.
 
-### Static `RawValue` literals
+### Reuse static raw literals
 
-Since `serde_json` 1.0.134, the following associated constants provide
-static raw JSON fragments:
-
-- `RawValue::NULL`
-- `RawValue::TRUE`
-- `RawValue::FALSE`
-
-They require serde_json's `raw_value` feature:
-
-```toml
-[dependencies]
-serde_json = { version = "1", features = ["raw_value"] }
-```
+Since `serde_json` 1.0.134, `RawValue` exposes constants for the JSON literals
+`null`, `true`, and `false`:
 
 ```rust
 use serde_json::value::RawValue;
 
-let raw: &'static RawValue = RawValue::NULL;
-assert_eq!(raw.get(), "null");
+let null: &'static RawValue = RawValue::NULL;
+let yes: &'static RawValue = RawValue::TRUE;
+let no: &'static RawValue = RawValue::FALSE;
+assert_eq!((null.get(), yes.get(), no.get()), ("null", "true", "false"));
 ```
 
-Use the constants to avoid allocating or parsing a boxed `RawValue` when a
-literal null, true, or false fragment is needed.
+Use these constants instead of parsing or allocating one of the three raw
+fragments.
 
-## Deterministic object ordering
+### Sort object keys in place
 
-Since `serde_json` 1.0.129, `Map::sort_keys()` sorts the keys of one object,
-while `Value::sort_all_objects()` recursively sorts every object in a JSON
-tree:
+Since `serde_json` 1.0.129, `Map::sort_keys()` sorts one object in place. Use it
+when only a specific map needs deterministic key order:
 
 ```rust
-let mut value = serde_json::json!({
-    "z": {"second": 2, "first": 1},
-    "a": 0,
-});
-value.sort_all_objects();
-assert_eq!(value.to_string(), r#"{"a":0,"z":{"first":1,"second":2}}"#);
+use serde_json::{Map, Value};
+
+let mut map = Map::new();
+map.insert("z".into(), Value::Null);
+map.insert("a".into(), Value::Null);
+map.sort_keys();
 ```
 
-These APIs provide deterministic order when the `preserve_order` feature is
-enabled. Without `preserve_order`, object maps are already kept sorted and
-`sort_keys()` does no work.
+`Value::sort_all_objects()` recursively sorts every object in an entire JSON
+tree. Use the recursive operation when nested objects are also part of the
+deterministic output contract:
+
+```rust
+let mut value = serde_json::json!({"z": {"b": 1, "a": 2}, "a": 0});
+value.sort_all_objects();
+assert_eq!(value.to_string(), r#"{"a":0,"z":{"a":2,"b":1}}"#);
+```
+
+## JSON upgrade checklist
+
+- Match `serde_json` 1.0.145 or newer with Serde 1.0.220 or newer.
+- Convert non-string enum object keys to explicit strings.
+- Revalidate byte-sensitive consumers with `arbitrary_precision` enabled.
+- Parse object text directly into `Map<String, Value>` when appropriate.
+- Deserialize from owned or borrowed maps without a JSON text round trip.
+- Use a shared null default only for read-only missing-value behavior.
+- Reuse the three `RawValue` constants for static literal fragments.
+- Choose `sort_keys()` for one map or `sort_all_objects()` for a full tree.

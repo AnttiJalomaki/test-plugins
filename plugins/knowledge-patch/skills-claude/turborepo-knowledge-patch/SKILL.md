@@ -8,96 +8,70 @@ metadata:
 ---
 
 
-
 # Turborepo Knowledge Patch
 
-Use this skill when configuring, upgrading, debugging, or operating a
-Turborepo workspace. It is especially useful for task-graph behavior, cache
-correctness, package boundaries, repository queries, and migration away from
-interfaces that are being removed.
+Use this skill when working with current Turborepo configuration, task execution,
+caching, repository analysis, developer tools, or supported package managers.
+Consult the topic reference that matches the work before changing an existing
+repository.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migration-and-configuration.md](references/migration-and-configuration.md) | Configuration formats and inheritance, schema selection, future flags, lint integrations, deprecations, and codemods |
-| [task-execution-and-inputs.md](references/task-execution-and-inputs.md) | Sidecars, continuation, task and package cycles, watch behavior, structured inputs, hashing, and graceful shutdown |
-| [caching-environment-and-package-managers.md](references/caching-environment-and-package-managers.md) | Environment handling, cache precedence and eviction, worktree sharing, Bun, Yarn catalogs, and pruning |
-| [repository-analysis-and-structure.md](references/repository-analysis-and-structure.md) | Package boundaries, repository queries, affected scopes, microfrontends, graph output, catalogs, and Cargo workspaces |
-| [developer-tools-and-observability.md](references/developer-tools-and-observability.md) | Terminal UI, graph devtools, documentation access, structured logs, metrics, profiling, and the packaged guidance skill |
+| [Migration and configuration](references/migration-and-configuration.md) | Configuration formats, inheritance, schemas, lint rules, Future Flags, and deprecated interfaces |
+| [Task execution and inputs](references/task-execution-and-inputs.md) | Sidecars, continuation, watch behavior, task inputs, affected scopes, signals, graphs, and profiles |
+| [Caching, environment, and package managers](references/caching-environment-and-package-managers.md) | Cache controls, pruning, environment variables, worktrees, Bun, Yarn, Cargo, uv, and remote cache authentication |
+| [Repository analysis and structure](references/repository-analysis-and-structure.md) | Boundaries, cycle diagnostics, queries, package and task graphs, and Cargo repository inference |
+| [Developer tools and observability](references/developer-tools-and-observability.md) | Terminal UI, local microfrontends, devtools, documentation access, metrics, and structured logs |
 
-## Migrate deprecated interfaces first
+## Migrate deprecated interfaces
 
-When preparing a repository for the next major release, replace deprecated
-commands, flags, environment variables, and configuration instead of building
-new automation around them.
+Use the current forms when replacing interfaces that warn in 2.9:
 
-| Deprecated interface | Replacement |
+| Deprecated interface | Current form |
 | --- | --- |
-| `turbo-ignore` | `turbo query affected` |
-| `turbo scan` | Remove it; there is no replacement |
+| `turbo scan` | Obsolete; no replacement |
 | `--parallel` | Task-level `persistent` and `with` |
 | `--no-cache` | `--cache=local:r,remote:r` |
 | `TURBO_REMOTE_ONLY`, `--remote-only` | `--cache=remote:rw` |
 | `TURBO_REMOTE_CACHE_READ_ONLY`, `--remote-cache-read-only` | `--cache=local:rw,remote:r` |
+| `--graph` with `.png`, `.jpg`, or `.pdf` | `.svg`, `.html`, `.mermaid`, or `.dot` |
+| `--graph` with `.json` | `turbo query` |
 | `turbo prune --scope web` | `turbo prune web` |
-| JSON `--graph` output | `turbo query` |
-| PNG, JPG, or PDF graph output | SVG, HTML, Mermaid, or DOT |
+| `turbo-ignore` | `turbo query affected` |
 
-`turbo run` and `turbo watch` no longer use the daemon. Remove
-`TURBO_DAEMON`, `--daemon`, `--no-daemon`, and the `daemon` configuration key.
+`turbo run` and `turbo watch` no longer use the daemon. `TURBO_DAEMON`,
+`--daemon`, `--no-daemon`, and the `daemon` configuration key are deprecated
+because they no longer have a role.
 
-Run the migration codemod after reviewing these replacements:
+For the full migration and Future Flag details, read
+[Migration and configuration](references/migration-and-configuration.md).
 
-```bash
-npx @turbo/codemod migrate
-```
+## Account for task-level cycle validation
 
-The codemod understands package-manager catalogs.
-
-## Choose the right configuration form
-
-Use the schema shipped with the installed package so editor validation follows
-the local Turborepo version:
+Package Graph cycles no longer make Turborepo exit automatically. Turborepo
+validates the Task Graph instead: a task can run in a cyclic package graph when
+its task dependencies are not cyclic, while a relationship such as `^build`
+still errors when it creates a Task Graph cycle.
 
 ```json
 {
-  "$schema": "./node_modules/turbo/schema.json"
-}
-```
-
-Adjust the relative path in package-level configuration. Both `turbo.jsonc`
-and trailing commas in `turbo.json` are supported.
-
-Package configuration may extend the root with `//` and another workspace
-package by name:
-
-```json
-{
-  "extends": ["//", "web"]
-}
-```
-
-Local arrays replace inherited arrays unless they include
-`$TURBO_EXTENDS$`:
-
-```json
-{
-  "extends": ["//"],
   "tasks": {
-    "build": {
-      "outputs": ["$TURBO_EXTENDS$", ".next/**"]
-    }
+    "simple-task": {},
+    "build": { "dependsOn": ["^build"] }
   }
 }
 ```
 
-Task `description` values are informational and never change execution.
+Read [Repository analysis and structure](references/repository-analysis-and-structure.md)
+for boundary checks, cycle diagnostics, graph devtools, and repository queries.
 
-## Model long-running work explicitly
+## Compose long-running tasks with sidecars
 
-Use `with` when a persistent task needs another long-running task to coexist
-with it. Use `dependsOn` only for completion ordering.
+A persistent task can use `with` to start other long-running tasks whenever it
+runs. This expresses runtime coexistence instead of the completion ordering
+imposed by `dependsOn`.
 
 ```json
 {
@@ -111,128 +85,137 @@ with it. Use `dependsOn` only for completion ordering.
 }
 ```
 
-To continue independent work after failures without running dependents of
-failed tasks:
+To continue after failures but run a dependent task only when all of its
+dependencies succeeded, use:
 
 ```bash
 turbo run test --continue=dependencies-successful
 ```
 
-Package Graph cycles are not automatically fatal. The Task Graph is decisive:
-a simple task may run in a cyclic package graph, while `^build` still fails
-when it creates a cyclic task dependency.
+On `SIGINT` or `SIGTERM`, Turborepo forwards the signal to tasks and waits for
+their cleanup handlers. Press `Ctrl+C` again to force an immediate exit.
 
-## Make task inputs precise
+Read [Task execution and inputs](references/task-execution-and-inputs.md) for
+watch cache writes, graph output, sidecar summaries, and profiling.
 
-Anchor repository-level files with `$TURBO_ROOT$` rather than package-relative
-`../` traversal:
+## Hash generated and dependency outputs at the right time
 
-```json
+Structured `inputs` objects can defer part of a task hash until upstream work
+is complete. Use `mode: "jit"` for files generated by a dependency. Use
+`mode: "dependencyOutputs"` to hash selected outputs of task dependencies.
+
+```jsonc
 {
   "tasks": {
+    "codegen": { "cache": false },
     "build": {
-      "inputs": ["$TURBO_ROOT$/important-file.txt"]
+      "dependsOn": ["codegen"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!src/generated/**",
+        { "mode": "jit", "globs": ["src/generated/**"] }
+      ]
+    },
+    "check-types": {
+      "dependsOn": ["^check-types"],
+      "outputs": ["dist/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        {
+          "mode": "dependencyOutputs",
+          "globs": ["dist/**/*.d.ts"],
+          "from": ["^check-types"]
+        }
+      ]
     }
   }
 }
 ```
 
-For generated files, use a structured `inputs` entry with `mode: "jit"` so
-that portion of the hash is computed after dependencies finish. For an
-upstream task's stable public artifacts, use `mode: "dependencyOutputs"` with
-`globs` and `from`. This keeps downstream tasks cached when implementation
-changes do not alter the selected outputs.
+JIT inputs are hashed after dependencies finish. Dependency-output inputs let
+downstream tasks remain cached when an upstream implementation changes but the
+selected outputs do not.
 
-Do not use deferred inputs as a substitute for dependency edges. The producing
-task must still appear in `dependsOn`.
+Use `$TURBO_ROOT$` to anchor an input glob at the workspace root:
 
-## Query before running broad scopes
-
-Use stable repository queries for scripts and diagnostics:
-
-```bash
-turbo query affected --tasks build
-turbo query affected --packages
-turbo query ls web --output=json
-turbo query ls --affected --filter='./apps/*'
+```json
+{
+  "tasks": {
+    "build": { "inputs": ["$TURBO_ROOT$/important-file.txt"] }
+  }
+}
 ```
 
-`turbo query` accepts inline GraphQL or `--file`, exposes its schema with
-`--schema`, and opens GraphiQL when called without a query.
+## Intersect affected and filtered scopes
 
-`--affected` and `--filter` intersect. Use this to narrow changed work or to
-exclude a package:
+`--affected` and `--filter` can be combined. Only tasks or packages satisfying
+both constraints are selected, and filters can exclude packages from the
+affected set.
 
 ```bash
 turbo run build --affected --filter=web
 turbo run build --affected --filter=!docs
+turbo query ls --affected --filter=my-app
 ```
 
-When opting into task-aware future behavior, remember that relevant future
-flags alter selection semantics and every enabled future flag affects the
-global hash.
+`turbo query affected` emits structured JSON for changed tasks or packages.
+`turbo query ls` can return affected-only results and accept selectors. See
+[Repository analysis and structure](references/repository-analysis-and-structure.md)
+for the complete query forms.
 
-## Protect cache correctness
+## Configure inheritance deliberately
 
-Environment-variable declarations are part of cache correctness. ESLint Flat
-Config can register `eslint-plugin-turbo` directly or spread the shareable
-configuration. Biome can also report undeclared environment variables, but
-its rule must be enabled explicitly.
-
-`DISPLAY` is passed through by default. Negated `passThroughEnv` entries can
-exclude built-ins and values inherited from `globalPassThroughEnv`. Force mode
-takes precedence over other cache settings, including `remoteCache.enable`.
-
-Use `cacheMaxAge` and `cacheMaxSize` to opt into local artifact eviction:
+Configuration may use `turbo.jsonc`; `turbo.json` also accepts trailing commas.
+A package-level `turbo.json` can extend `//` and another workspace package:
 
 ```json
+{
+  "extends": ["//", "web"]
+}
+```
+
+Put `$TURBO_EXTENDS$` in an array to retain inherited values while adding local
+ones. Without it, the local array replaces the inherited array completely.
+
+```json
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": ["$TURBO_EXTENDS$", ".next/**"]
+    }
+  }
+}
+```
+
+## Control local cache retention
+
+Top-level `cacheMaxAge` and `cacheMaxSize` opt into age- and size-based local
+cache eviction. At the start of each `turbo run`, eviction removes expired
+artifacts and then the oldest artifacts needed to meet the size cap in a
+background thread.
+
+```jsonc
 {
   "cacheMaxAge": "7d",
   "cacheMaxSize": "10GB"
 }
 ```
 
-At the start of `turbo run`, eviction removes expired entries and then the
-oldest entries needed to satisfy the size cap. It runs in a background thread.
-Linked Git worktrees share their local cache automatically.
+Linked Git worktrees share their local cache automatically with no
+configuration. For pruning, environment behavior, cache flags, and dependency-
+aware package-manager support, read
+[Caching, environment, and package managers](references/caching-environment-and-package-managers.md).
 
-## Respect package-manager granularity
+## Inspect and observe runs
 
-Bun repositories can be pruned when using Bun 1.2 or newer. The text
-`bun.lock` v1 format is parsed granularly, so a dependency edit invalidates
-only affected packages. Yarn catalogs receive similarly granular handling
-with Yarn 4.10.0 or newer.
+Use `turbo devtools` for live Package Graph and Task Graph views. Use `turbo
+docs` to search documentation from the terminal. For machine consumption,
+documentation routes can return Markdown and `turbo query` exposes structured
+repository data.
 
-To honor ignored files during pruning:
-
-```bash
-turbo prune web --use-gitignore
-```
-
-## Inspect boundaries and graphs
-
-Run `turbo boundaries` to find imports outside a package, undeclared package
-dependencies, circular package dependencies, and dynamic imports. Boundary
-analysis also understands package rules, implicit dependencies, and
-TypeScript path aliases.
-
-Use `turbo devtools` for hot-reloading Package Graph and Task Graph views.
-Use `turbo query` or `turbo ls` when a machine-readable answer is preferable.
-Cycle diagnostics can suggest complete sets of dependency edges where removing
-any one set breaks the package cycle.
-
-## Observe and debug execution
-
-Use `--json` for NDJSON logs and `--log-file` to preserve normal terminal
-output while writing structured logs. The options can be combined.
-
-Enable experimental observability through both the corresponding future flag
-and the OTLP configuration before expecting metrics. For local profiling,
-`--profile` and `--anon-profile` may omit the filename and produce a Markdown
-companion beside the trace.
-
-The terminal UI persists selection, list visibility, and pinned tasks. Press
-`m` to see all keybindings and `/` to search tasks.
-
-On `SIGINT` or `SIGTERM`, Turborepo forwards the signal and waits for task
-cleanup. A second `Ctrl+C` forces immediate termination.
+Experimental observability can export OpenTelemetry metrics. `--json` streams
+NDJSON structured logs, while `--log-file` writes structured logs without
+replacing normal terminal output. Read
+[Developer tools and observability](references/developer-tools-and-observability.md)
+for the exact configuration and commands.

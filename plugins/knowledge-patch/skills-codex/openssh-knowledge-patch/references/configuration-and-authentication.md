@@ -1,84 +1,141 @@
 # Configuration and Authentication
 
-## Server process split
+## Server packaging and isolation
 
-OpenSSH 10.0 moves each connection's user-authentication phase from `sshd-session` into a separate `sshd-auth` executable.
+### Install `sshd-auth` (batch 10.0-10.3)
 
-- Install `sshd-auth` in portable packages, custom prefixes, containers, chroots, and immutable allowlists.
-- Expect authentication-phase log messages to be attributed to `sshd-auth`.
-- Check packaging before debugging authentication configuration when the executable is missing or blocked.
+OpenSSH 10.0 moves each connection's user-authentication phase out of
+`sshd-session` into a separate `sshd-auth` executable.
 
-## Linux sandbox failures
+- Install `sshd-auth` in portable packages, custom installations, images, and
+  integrity or execution policies.
+- Attribute authentication-phase log messages to `sshd-auth` where log
+  processing groups messages by executable.
+- Treat a missing `sshd-auth` binary as a packaging error rather than an
+  authentication configuration error.
 
-On Linux builds that use the seccomp sandbox, OpenSSH 10.4 treats failure to enable seccomp or `NO_NEW_PRIVS` as fatal. Verify those facilities in containers and restricted service environments. If the platform cannot provide them, disable the sandbox at configure time; the former log-and-continue behavior is gone.
+### Require a working Linux sandbox (batch 10.4)
 
-## Configuration dumps and validation
+On Linux builds that select the seccomp sandbox, failure to enable seccomp or
+`NO_NEW_PRIVS` prevents `sshd` from continuing. Confirm both features in the
+actual runtime. If a platform cannot provide them, disable the sandbox at
+configure time; the former log-and-continue behavior is gone.
 
-OpenSSH 10.4 emits mixed-case directive names from `sshd -G`, such as `PubkeyAuthentication`, instead of all-lowercase names. Make parsers case-insensitive or normalize keys before matching.
+## Matching, expansion, and refusal
 
-## Match criteria
+### Use the new match criteria (batch 10.0-10.3)
 
-OpenSSH 10.0 adds `Match version` to both client and server configuration. A version pattern may be written as:
+`Match version` is valid in both client and server configuration. Client
+configuration also supports `Match sessiontype` and `Match command`.
+Session types are `shell`, `exec`, `subsystem`, and `none`.
 
 ```sshconfig
 Match version OpenSSH_10.*
+    SetEnv GENERATION=10
 ```
 
-Client configuration also gains `Match sessiontype` and `Match command`. Valid session types are `shell`, `exec`, `subsystem`, and `none`.
+Use `Match tagged ""` or `Match command ""` to match an explicitly empty
+value.
 
-Use `Match tagged ""` and `Match command ""` to match an explicitly empty value. Do not treat an omitted argument as equivalent.
+### Expand client values deliberately (batch 10.0-10.3)
 
-## Expansion and authorization paths
+Client `SetEnv` and `User` values expand percent tokens and environment
+variables. Expansion of `User` excludes `%r` and `%C` because they are
+self-referential. Review values that previously expected literal `%` or
+environment syntax.
 
-Client `SetEnv` and `User` values expand percent tokens and environment variables from 10.0. For `User`, exclude self-referential `%r` and `%C` tokens.
+### Glob authorization files (batch 10.0-10.3)
 
-Server `AuthorizedKeysFile` and `AuthorizedPrincipalsFile` accept `glob(3)` patterns. For example:
+Server `AuthorizedKeysFile` and `AuthorizedPrincipalsFile` accept `glob(3)`
+patterns, enabling split authorization data:
 
 ```sshconfig
 AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/*
 ```
 
-Account for file ordering and permissions when splitting authorization material.
+Ensure file ownership, permissions, and deployment rules cover every matched
+file.
 
-## Refusing configured destinations
+### Refuse configured destinations (batch 10.0-10.3)
 
-Use the client `RefuseConnection` directive to abort configuration processing with its argument as the error:
+Client `RefuseConnection` aborts configuration processing with its argument as
+the error when reached in an active `Host` or `Match` block:
 
 ```sshconfig
 Match host old.example
     RefuseConnection "old.example is retired; use new.example"
 ```
 
-Place it in an active `Host` or `Match` block so the intended destination is rejected before a connection is attempted.
+## Identity and certificate authorization
 
-## Command-line identity validation
+### Apply command-line identity validation (batch 10.0-10.3)
 
-OpenSSH 10.1 rejects control characters in command-line or percent-expanded usernames and NUL characters in `ssh://` URIs. Trusted literal usernames in configuration files remain exempt.
+- OpenSSH 10.1 rejects control characters in command-line or percent-expanded
+  usernames and NUL characters in `ssh://` URIs. Trusted literal usernames in
+  configuration files remain exempt.
+- OpenSSH 10.3 validates usernames before `Match exec` expansion.
+- The `-J`/`ProxyJump` command-line user and host names are validated, while
+  `ProxyJump` values read from configuration files intentionally are not
+  subject to that check.
 
-OpenSSH 10.3 performs username validation early enough to precede `Match exec` expansion. It also validates command-line `-J` and `ProxyJump` user and host names, but intentionally does not apply that ProxyJump check to configuration-file values. Do not assume command-line and file-based ProxyJump inputs have identical validation.
+Do not assume command-line and configuration-file identities share identical
+validation boundaries.
 
-## Forwarding policy
+### Harden certificate-principal matching (batch 10.0-10.3)
 
-In 10.4, `DisableForwarding=yes` overrides `PermitTunnel=yes` as documented. On older servers, set `PermitTunnel=no` explicitly whenever tunnels must be prohibited; `DisableForwarding` alone did not reliably enforce that policy.
+- An empty user-certificate principals list is not a wildcard when a trusted
+  CA is constrained by an `authorized_keys` `principals="..."` restriction.
+- Wildcard principals work for host certificates, not user certificates.
+- A comma within one certificate principal is no longer confused with a
+  configured list of several principals.
 
-## Certificate authorization
+## Forwarding and authentication policy
 
-OpenSSH 10.3 stops treating an empty user-certificate principals list as a wildcard when the CA is trusted through an `authorized_keys` `principals="..."` restriction. Host certificates support principal wildcards consistently; user certificates do not. Matching also keeps a comma inside one certificate principal distinct from a configured multi-principal list.
+### Let `DisableForwarding` override tunnels (batch 10.4)
 
-## GSSAPI behavior
+`DisableForwarding=yes` overrides `PermitTunnel=yes` as documented. On older
+servers, explicitly configure `PermitTunnel=no` when tunnels must be forbidden;
+do not treat `DisableForwarding` alone as sufficient there.
 
-Do not depend on `GSSAPIStrictAcceptorCheck` when the server is joined to Windows Active Directory; the setting is ineffective in that environment.
+### Handle GSSAPI caveats and hardening (batch 10.4)
 
-OpenSSH 10.4 fixes a pre-authentication denial of service when `GSSAPIAuthentication` is enabled. `MaxAuthTries` did not mitigate the older path, while `PerSourcePenalties` applied. The release also restores the minimum authentication delay in several cases where it was not enforced. Upgrade rather than treating `MaxAuthTries` as a substitute.
+- `GSSAPIStrictAcceptorCheck` is ineffective when the server is joined to
+  Windows Active Directory.
+- Upgrade servers with `GSSAPIAuthentication` enabled for the fixed
+  pre-authentication denial of service. `MaxAuthTries` did not mitigate the
+  affected path, while `PerSourcePenalties` did.
+- The minimum authentication delay is restored in cases that previously
+  skipped it. Re-test latency assumptions in authentication clients and tests.
 
-OpenSSH 10.3 adds server-side `GSSAPIDelegateCredentials`, mirroring the client option. Set it in `sshd_config` when the server must decide whether to accept credentials delegated by a client.
+### Control delegated GSSAPI credentials (batch 10.0-10.3)
 
-## Per-source penalties
+OpenSSH 10.3 adds server-side `GSSAPIDelegateCredentials` to `sshd_config`,
+mirroring the client option. Set it according to whether the server should
+accept credentials delegated by clients.
 
-OpenSSH 10.3 adds the `invaliduser` category to `PerSourcePenalties`, with the same default five-second penalty as `authfail`. It also accepts floating-point durations for subsecond penalties:
+### Set finer per-source penalties (batch 10.0-10.3)
+
+The server supports an `invaliduser` category, whose default is the same five
+seconds as `authfail`, and floating-point durations for subsecond penalties:
 
 ```sshconfig
 PerSourcePenalties invaliduser:10s authfail:0.5s
 ```
 
-Use separate values when nonexistent-account probes deserve a stronger penalty than general authentication failures.
+This permits a distinct penalty for nonexistent accounts without applying the
+same duration to every authentication failure.
+
+## Configuration validation and output
+
+### Accept mixed-case `sshd -G` directives (batch 10.4)
+
+Configuration dump mode emits mixed-case directive names such as
+`PubkeyAuthentication` rather than only lowercase names. Make parsers
+case-tolerant or match the actual emitted spelling instead of relying on
+lowercase literals.
+
+### Fail invalid algorithm lists during processing (batch 10.4)
+
+Invalid cipher and MAC lists in files or command-line arguments now fail while
+configuration is processed, rather than surfacing later at runtime. Run config
+validation as part of deployment and report the early failure accurately.

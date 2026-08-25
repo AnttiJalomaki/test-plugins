@@ -1,31 +1,15 @@
 # Tooling, Testing, and Serialization
 
-Batch attribution: `5.1`, `5.2-guide`, `5.2`, `6.0-guide`, `6.0`.
+Load this reference for the interactive shell, management commands, test
+isolation, fixtures, pagination, serializers, scaffolding, static files, and
+protocol output.
 
-## Contents
+## Control automatic shell imports
 
-- [Automatic shell imports](#automatic-shell-imports)
-- [Management-command extension hooks](#management-command-extension-hooks)
-- [Test request query parameters](#test-request-query-parameters)
-- [Test isolation and debugging](#test-isolation-and-debugging)
-- [Fixture timing and parallel tests](#fixture-timing-and-parallel-tests)
-- [Asynchronous pagination](#asynchronous-pagination)
-- [Serialization](#serialization)
-- [Project scaffolding and static files](#project-scaffolding-and-static-files)
-
-## Automatic shell imports
-
-The `shell` command automatically imports models from every installed application (since
-`5.2-guide`). Use verbosity 2 to list successful automatic imports, and pass `--no-imports` to
-start without them:
-
-```console
-python manage.py shell -v 2
-python manage.py shell --no-imports
-```
-
-A custom `shell` command can extend the set by overriding `get_auto_imports()` and returning fully
-qualified import paths:
+The `shell` command imports models from every installed application.
+`--verbosity 2` lists the imports and `--no-imports` disables them. A custom
+shell command can extend the defaults by overriding `get_auto_imports()` with
+fully qualified paths. (`5.2-guide`)
 
 ```python
 from django.core.management.commands import shell
@@ -35,82 +19,74 @@ class Command(shell.Command):
         return [*super().get_auto_imports(), "django.conf.settings"]
 ```
 
-In addition to application models, Django 6.0 automatically imports `settings`, `connection`,
-`models`, `reset_queries`, `functions`, and `timezone` (since `6.0-guide`). Account for name
-collisions in project models and custom auto-import lists. Use `--no-imports` when validating that
-an example contains all of its required imports.
+In addition to app models, the shell imports `settings`, `connection`, `models`,
+`reset_queries`, `functions`, and `timezone` by default. (`6.0-guide`)
 
-## Management-command extension hooks
+## Construct test requests
 
-- A `makemigrations` or `migrate` subclass can replace `Command.autodetector` (since `5.2`).
-- A custom command can override `BaseCommand.get_check_kwargs()` to control the arguments passed
-  into system checks (since `5.2`).
-- `runserver` warns that it is not a production server (since `5.2`). Set
-  `DJANGO_RUNSERVER_HIDE_WARNING=true` only to suppress that warning in a deliberate development
-  environment; it does not make the server production-safe.
-- A custom migration operation can set `Operation.category`, which lets `makemigrations` display
-  a meaningful operation symbol (since `5.1`).
-
-## Test request query parameters
-
-`RequestFactory`, `AsyncRequestFactory`, `Client`, and `AsyncClient` accept `query_params` on every
-HTTP method (since `5.1`):
+`RequestFactory`, `AsyncRequestFactory`, `Client`, and `AsyncClient` accept a
+`query_params` mapping for every HTTP method. (`5.1`)
 
 ```python
-self.client.post(
-    "/items/1",
-    query_params={"action": "delete"},
-)
+self.client.post("/items/1", query_params={"action": "delete"})
 ```
 
-Use this parameter for the URL query string and the existing request-data parameter for the body;
-do not manually concatenate an unescaped query string.
+## Select the right test case
 
-## Test isolation and debugging
+Database connections used from threads are rejected in `SimpleTestCase`. Use an
+appropriate database-enabled test class for threaded database tests. (`5.1`)
 
-`SimpleTestCase` rejects database connections used from threads (since `5.1`). If a threaded test
-needs database access, inherit from an appropriate database-enabled test case and configure its
-database access rather than bypassing the isolation guard.
+Django's custom assertions hide internal stack frames, so failures point at the
+calling test. `test --pdb` therefore opens in the failing test method rather
+than an assertion helper. (`5.2-guide`)
 
-Django's custom assertion helpers hide their internal stack frames (since `5.2-guide`). Assertion
-failures point to the calling test, and `test --pdb` enters the failing test method rather than an
-assertion helper. Debug local variables in that test frame first.
+`TransactionTestCase.fixtures` data and migrations using
+`serialized_rollback=True` are available during
+`TransactionTestCase.setUpClass()`. (`5.2`)
 
-## Fixture timing and parallel tests
+`DiscoverRunner` supports parallel execution when multiprocessing uses the
+`forkserver` start method. (`6.0`)
 
-Data from `TransactionTestCase.fixtures` and from migrations using `serialized_rollback=True` is
-available during `TransactionTestCase.setUpClass()` (since `5.2`). Class-level setup may query that
-data, but still clean up any other class-scoped resources correctly.
+## Extend management commands
 
-`DiscoverRunner` supports parallel tests when Python multiprocessing uses the `forkserver` start
-method (since `6.0`). Do not disable parallelism solely because the runtime selects `forkserver`;
-instead test that workers can import and initialize the suite.
+`makemigrations` and `migrate` command subclasses can replace
+`Command.autodetector`. Custom commands can override
+`BaseCommand.get_check_kwargs()` to control system checks. (`5.2`)
 
-## Asynchronous pagination
+`runserver` warns that it is unsuitable for production. Set
+`DJANGO_RUNSERVER_HIDE_WARNING=true` to suppress only that warning. (`5.2`)
 
-`AsyncPaginator` and `AsyncPage` are asynchronous counterparts to `Paginator` and `Page` (since
-`6.0`). Use their async interfaces when the object count or page data comes from async-capable
-query work. Passing `orphans >= per_page` is deprecated for both paginator families and becomes
-unsupported in Django 7.0.
+`startproject` and `startapp` create a missing custom target directory.
+(`6.0`)
 
-## Serialization
+## Interpret static-file command output (`6.0`)
 
-Each registered serialization format exposes a `Deserializer` class rather than a function (since
-`5.2`). Subclass it when a custom format needs to extend deserialization behavior.
+Static manifests have deterministic path ordering. At verbosity 1,
+`collectstatic` summarizes skipped and `--clear`-deleted files; use verbosity 2
+for per-file output.
 
-The JSON serializer always ends its output with a newline, even when `indent` is omitted (since
-`6.0`). Include that terminal newline in byte-for-byte snapshots and stream consumers.
+## Extend deserialization (`5.2`)
 
-Migration serialization supports `zoneinfo.ZoneInfo` and deconstructible-object keyword names that
-are not valid Python identifiers (since `6.0`). See
-[orm-and-databases.md](orm-and-databases.md) for migration state and re-squashing details.
+Every serialization format exposes a `Deserializer` class rather than a function.
+Custom formats can subclass it to extend deserialization behavior.
 
-## Project scaffolding and static files
+The JSON serializer always terminates output with a newline, even when `indent`
+is not specified. (`6.0`)
 
-`startproject` and `startapp` create a missing custom target directory (since `6.0`). A caller no
-longer needs to pre-create that destination, but should still reject an unintended path before
-running the command.
+Migration serialization supports `zoneinfo.ZoneInfo` and deconstructible-object
+keyword names that are not valid Python identifiers. A squashed migration can be
+squashed again before it becomes a normal migration. (`6.0`)
 
-Static-file manifests have deterministic path ordering (since `6.0`), improving reproducible
-output. At `collectstatic --verbosity 1`, Django summarizes skipped files and files deleted by
-`--clear`; use verbosity 2 when per-file output is required.
+## Paginate asynchronously
+
+`AsyncPaginator` and `AsyncPage` provide async counterparts to `Paginator` and
+`Page`. (`6.0`)
+
+Passing `orphans >= per_page` to either paginator is deprecated and becomes
+unsupported at the Django 7.0 boundary. (`6.0`, `deprecation-roadmap`)
+
+## Account for protocol behavior (`6.0`)
+
+ASGI accepts multiple `Cookie` headers in HTTP/2 requests. If protocol tests or
+custom request adapters previously collapsed these headers, add a multi-header
+case.

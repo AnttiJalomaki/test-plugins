@@ -1,32 +1,16 @@
 # Self-hosting and operations
 
-- [Version 4 deployment boundary](#version-4-deployment-boundary)
-- [Docker Compose deployment scope](#docker-compose-deployment-scope)
-- [Docker Compose topology and overlays](#docker-compose-topology-and-overlays)
-- [Runtime and bootstrap configuration layering](#runtime-and-bootstrap-configuration-layering)
-- [Init, setup, and runtime phases](#init-setup-and-runtime-phases)
-- [Managed PostgreSQL bootstrapping and credential changes](#managed-postgresql-bootstrapping-and-credential-changes)
-- [Public endpoint and virtual-instance resolution](#public-endpoint-and-virtual-instance-resolution)
-- [Reverse-proxy transport and Login routing](#reverse-proxy-transport-and-login-routing)
-- [Proxy-specific failure modes](#proxy-specific-failure-modes)
-- [Internal cache connector contract](#internal-cache-connector-contract)
-- [Helm removal leaves hook resources](#helm-removal-leaves-hook-resources)
-- [Runtime health and Login observability](#runtime-health-and-login-observability)
-- [Mirror execution and scope contract](#mirror-execution-and-scope-contract)
-- [Instance blocking and audit-query retention](#instance-blocking-and-audit-query-retention)
-- [Per-instance request and Action quotas](#per-instance-request-and-action-quotas)
-
 ## Version 4 deployment boundary
 
-The documented direct Linux installation does not work for ZITADEL 4, for which the container deployment is the supported path. The `stable` container tag is the production release while `latest` is the frequently updated pipeline build; Docker Compose requires the V2 `docker compose` plugin, and the Kubernetes guide assumes Kubernetes 1.30 or newer.
+The documented direct Linux installation does not work for ZITADEL 4, for which container deployment is the supported path. The `stable` container tag is the production release while `latest` is the frequently updated pipeline build; Docker Compose requires the V2 `docker compose` plugin, and the Kubernetes guide assumes Kubernetes 1.30 or newer.
 
 ## Docker Compose deployment scope
 
-ZITADEL presents Cloud, public-cloud, and self-hosted deployment choices but recommends Docker Compose for development rather than production. Do not treat the official Compose setup as a production deployment recommendation.
+Docker Compose is presented for development rather than production; the official stack must not be interpreted as a production recommendation.
 
 ## Docker Compose topology and overlays
 
-The official base stack is Traefik in front of separate ZITADEL API and Login containers backed by PostgreSQL. Add exactly one of the Let's Encrypt, externally terminated TLS, or local self-signed TLS overlays. The `cache` and `observability` profiles add Redis and an OpenTelemetry collector, while the `prodlike` overlay separates one-shot init and setup containers from the long-running API and is required before scaling API replicas.
+The official base stack is Traefik in front of separate ZITADEL API and Login containers backed by PostgreSQL. Add exactly one of the Let's Encrypt, externally terminated TLS, or local self-signed TLS overlays; the `cache` and `observability` profiles add Redis and an OpenTelemetry collector, while the `prodlike` overlay separates one-shot init and setup containers from the long-running API and is required before scaling API replicas.
 
 ```sh
 docker compose --env-file .env \
@@ -42,7 +26,7 @@ docker compose --env-file .env \
 
 ## Runtime and bootstrap configuration layering
 
-Runtime settings come from repeatable `--config` files, while database initialization and the first instance use repeatable `--steps` files; multiple files are merged so public and secret configuration can remain separate. Environment-variable forms flatten the documented keys below `ZITADEL_`, and the master key can be passed by value, from `ZITADEL_MASTERKEY` with `--masterkeyFromEnv`, or from a file with `--masterkeyFile`.
+Runtime settings come from repeatable `--config` files, while database initialization and the first instance use repeatable `--steps` files; multiple files are merged so public and secret configuration can remain separate. Environment-variable forms flatten documented keys below `ZITADEL_`, and the master key can be passed by value, from `ZITADEL_MASTERKEY` with `--masterkeyFromEnv`, or from a file with `--masterkeyFile`.
 
 ```sh
 zitadel setup \
@@ -67,7 +51,7 @@ Without `--init-projections=true`, runtime can become ready while stale projecti
 
 ## Managed PostgreSQL bootstrapping and credential changes
 
-Pre-provisioning the PostgreSQL role and database does not create ZITADEL's `eventstore`, `projections`, and `system` schemas. On a managed service without superuser access, run `zitadel init schema` (legacy alias `zitadel init zitadel`) with the database-owner service account, then run setup. `Database.postgres.Admin.ExistingDatabase` tells a normal init invocation to bypass database and user creation checks.
+Pre-provisioning the PostgreSQL role and database does not create ZITADEL's `eventstore`, `projections`, and `system` schemas. On a managed service without superuser access, run `zitadel init schema` (legacy alias `zitadel init zitadel`) with the database-owner service account, then run setup; `Database.postgres.Admin.ExistingDatabase` tells a normal init invocation to bypass database and user creation checks.
 
 ```sh
 ZITADEL_DATABASE_POSTGRES_DSN='postgresql://zitadel:<password>@db.example.com:5432/zitadel?sslmode=require' \
@@ -76,7 +60,7 @@ ZITADEL_DATABASE_POSTGRES_DSN='postgresql://zitadel:<password>@db.example.com:54
   zitadel start-from-setup --masterkeyFile /run/secrets/zitadel-masterkey
 ```
 
-Init never rotates a database password, replaces an existing user, or transfers object ownership. A password change must be propagated to every ZITADEL credential, while changing users requires manually reassigning all schemas, tables, ownership, and grants. The application itself is stateless, so database backups—especially the `eventstore.events` history—define the restore boundary.
+Init never rotates a database password, replaces an existing user, or transfers object ownership. A password change must be propagated to every ZITADEL credential, while changing users requires manually reassigning all schemas, tables, ownership, and grants; the application itself is stateless, so database backups—especially the `eventstore.events` history—define the restore boundary.
 
 ## Public endpoint and virtual-instance resolution
 
@@ -130,7 +114,7 @@ Caches:
     MaxAge: 1h
 ```
 
-The Redis connector accepts one standalone Redis or Valkey endpoint. Cluster and Sentinel routing, client-certificate authentication, and mTLS are unsupported, although `rediss://` performs server-authenticated TLS. The database number in the URL is ignored; ZITADEL derives separate indexes from `DBOffset` and cache purpose and may issue `FLUSHDB`, so those indexes must not contain another application's data.
+The Redis connector accepts one standalone Redis or Valkey endpoint: Cluster and Sentinel routing, client-certificate authentication, and mTLS are unsupported, although `rediss://` performs server-authenticated TLS. The database number in the URL is ignored; ZITADEL derives separate indexes from `DBOffset` and cache purpose and may issue `FLUSHDB`, so those indexes must not contain another application's data.
 
 The Redis circuit breaker temporarily bypasses a failed cache and falls back to database queries. PostgreSQL caching uses crash-discardable unlogged tables and needs auto-pruning, while local-memory caching is per process and can serve inconsistent values across replicas until `MaxAge` expires.
 
@@ -148,11 +132,11 @@ done
 
 ## Runtime health and Login observability
 
-The built-in `zitadel ready` probe uses HTTP when `ZITADEL_TLS_ENABLED=false` and HTTPS otherwise, so a TLS-setting mismatch can make a healthy process appear unhealthy. Login has its own readiness endpoint and supports push-based OpenTelemetry logs, metrics, and traces; OpenTelemetry resources use the configured service name. The core process separately exposes `/debug/metrics` for scraping.
+The built-in `zitadel ready` probe uses HTTP when `ZITADEL_TLS_ENABLED=false` and HTTPS otherwise, so a TLS-setting mismatch can make a healthy process appear unhealthy. The separate Login container emits stdout logs but exposes neither tracing nor metrics; only the core ZITADEL container can send traces and expose scrapeable metrics.
 
 ## Mirror execution and scope contract
 
-A mirror destination must be initialized and set up without an instance, mirrored with the current deployment's master-key and TLS settings, set up again, and then verified. `--system` and `--instance` are mutually exclusive scopes that must remain consistent across runs; after choosing instance-scoped migration, later switching to `--system` can collide with already present instances.
+A mirror destination must be initialized and set up without an instance, mirrored with the current deployment's master key and TLS settings, set up again, and then verified. `--system` and `--instance` are mutually exclusive scopes that must remain consistent across runs; after choosing instance-scoped migration, later switching to `--system` can collide with already present instances.
 
 ```sh
 zitadel init --config destination.yaml
@@ -162,11 +146,11 @@ zitadel setup --for-mirror --config destination.yaml
 zitadel mirror verify --system --config mirror.yaml
 ```
 
-Use `--replace` on repeated runs to replace the static system assets, auth requests, and unique constraints that events alone do not reconstruct. Mirror cannot use files as endpoints or change the deployment domain, and the source encryption keys must be copied. Verification can legitimately report fewer old projection states, locks, expired keys, failed events, and `auth.users2` rows in the destination.
+Use `--replace` on repeated runs to replace static system assets, auth requests, and unique constraints that events alone do not reconstruct. Mirror cannot use files as endpoints or change the deployment domain, and source encryption keys must be copied; verification can legitimately report fewer old projection states, locks, expired keys, failed events, and `auth.users2` rows in the destination.
 
 ## Instance blocking and audit-query retention
 
-Self-hosters can block an existing instance through the System API or make new instances blocked by default. Most blocked requests return HTTP 429 or gRPC `Resource Exhausted`, while the System API remains reachable. Requests below `/ui/login` redirect to Console and blocked responses set a cookie that a WAF can reject earlier.
+Self-hosters can block an existing instance through the System API or make new instances blocked by default. Most blocked requests return HTTP 429 or gRPC `Resource Exhausted`, while the System API remains reachable; requests below `/ui/login` redirect to Console and blocked responses set a cookie that a WAF can reject earlier.
 
 ```yaml
 AuditLogRetention: 0s

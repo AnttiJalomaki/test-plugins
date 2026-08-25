@@ -10,37 +10,66 @@ metadata:
 
 # Erlang/OTP Knowledge Patch
 
-Use this skill when upgrading Erlang/OTP, reviewing code that uses recent
-language or runtime behavior, or diagnosing compatibility changes in the
-compiler, standard applications, networking, cryptography, and build system.
+Use this skill when writing, reviewing, upgrading, or troubleshooting Erlang/OTP code whose behavior may depend on recent language, runtime, standard-library, security, or build changes.
+
+Check the installed OTP release and patch level before applying version-sensitive advice. Prefer the project's code, configuration, release artifacts, and tests when they demonstrate behavior more precisely than general guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [language-and-compiler.md](references/language-and-compiler.md) | Comprehensions, native records, guards, literals, types, warnings, abstract forms, and compiler fixes |
-| [runtime-and-data.md](references/runtime-and-data.md) | Priority messages, process memory, shell I/O, arrays, maps, trees, graphs, regexes, terminal output, and persistent terms |
-| [crypto-tls-and-ssh.md](references/crypto-tls-and-ssh.md) | Post-quantum algorithms, certificates, TLS hardening, SSH defaults, SFTP confinement, and crypto errors |
-| [networking-and-protocols.md](references/networking-and-protocols.md) | DNS, TCP, sockets, HTTP, FTP, SCTP, SNMP, and TLS distribution |
-| [tooling-build-and-release.md](references/tooling-build-and-release.md) | `xref`, Common Test, doctests, tar extraction, native code, release artifacts, third-party libraries, VEX, and platforms |
+| [references/language-and-compiler.md](references/language-and-compiler.md) | Comprehensions, literals, types, native records, warnings, deprecations, abstract output |
+| [references/runtime-and-data.md](references/runtime-and-data.md) | Priority messages, shell and I/O, regular expressions, arrays, maps, graphs, archives, ETF |
+| [references/crypto-tls-and-ssh.md](references/crypto-tls-and-ssh.md) | Cryptography, TLS, certificates, OCSP, SSH, and SFTP |
+| [references/networking-and-protocols.md](references/networking-and-protocols.md) | DNS, TCP, HTTP, FTP, sockets, SCTP, SNMP, Diameter, Megaco, and `epmd` |
+| [references/tooling-build-and-release.md](references/tooling-build-and-release.md) | Native-code loading, build inputs, releases, SBOM/VEX, documentation tests, crash dumps, and `xref` |
 
-## Start with breaking changes and deprecations
+## Breaking changes and migration priorities
 
-### Prepare for removals
+### Treat native records as experimental runtime types
 
-- Replace old-style guard tests such as `integer` and `atom`; they are
-  deprecated and scheduled for removal in OTP 30.
-- Plan replacements for the deprecated `odbc` application and the `ftp` and
-  `ct_ftp` modules, which have the same removal schedule.
-- Replace old-style `catch Expr` with targeted `try ... catch` logic. The
-  compiler warning is enabled by default.
-- Audit eager `and` and `or` with `warn_obsolete_bool_op`; use `andalso`,
-  `orelse`, or guard separators where appropriate.
+Native records use `-record #name{...}.` and are distinct runtime types rather than tagged tuples. Their definitions are private unless exported with `-export_record`; field-aware construction and matching from another module require that export.
 
-### Restore SSH daemon services explicitly
+Do not assume tuple-record representation, serialization, comparison, formatting, or analysis behavior applies. Keep the full OTP installation current because compiler, ERTS, Dialyzer, and formatting fixes have landed across patch releases.
 
-`ssh:daemon/2` does not enable shell, exec, or SFTP services by default.
-Configure every service the application intends to expose:
+```erlang
+-record #vec{x = 0.0, y = 0.0}.
+-export_record([vec]).
+
+make_vec(X, Y) -> #vec{x = X, y = Y}.
+```
+
+### Audit comprehension qualifiers
+
+A match used as a comprehension qualifier is a compile error by default. If assignment semantics are intentional, enable `compr_assign`; the assignment then behaves like a strict one-element generator.
+
+Use strict generators when a mismatch should fail rather than skip:
+
+```erlang
+[X || {ok, X} <:- Results].
+```
+
+Use `&&` to zip generators in parallel. It does not produce a Cartesian product.
+
+### Address compiler warnings deliberately
+
+Old-style `catch Expr` now warns by default. Prefer targeted `try ... catch` handling; use `nowarn_deprecated_catch` only as a migration aid.
+
+Also review default warnings for variables exported from subexpressions and aliases that unify constructors. The opt-in obsolete-boolean-operator warning helps migrate eager `and` and `or` to short-circuit operators or guard syntax.
+
+Old-style guard type tests, `odbc`, `ftp`, and `ct_ftp` are deprecated for removal. Avoid new dependencies on them.
+
+### Do not carry serialized arrays across the representation change
+
+The `array` module gained substantial new construction, slicing, concatenation, traversal, and map-fold APIs, but its internal representation changed. Recreate or migrate array data rather than decoding array terms serialized by an earlier runtime.
+
+### Recheck code-path assumptions
+
+The current working directory is last in the default code path. A local BEAM file no longer shadows an OTP or application module unless the path is changed explicitly.
+
+### Configure SSH daemon services explicitly
+
+`ssh:daemon/2` does not enable shell, exec, or SFTP services automatically. Opt in only to required services:
 
 ```erlang
 ssh:daemon(Port, [
@@ -51,182 +80,110 @@ ssh:daemon(Port, [
 ]).
 ```
 
-Do not assume an existing daemon configuration still exposes the same
-surface after an upgrade.
+### Require SANs in certificates
 
-### Treat serialized arrays as release-bound
+Hostname validation no longer falls back to a certificate subject common name. Certificates need a matching subject alternative name, and error handling may need to distinguish subject-name from subject-alternative-name constraint failures.
 
-The `array` internal representation changed. Do not carry array terms created
-with `term_to_binary/1` on an earlier installation into OTP 29 unchanged.
-Decode and migrate them using a release-neutral representation.
+Keep OCSP responses within the enforced size limit and expect expired responder certificates, malformed chains, policy-tree explosions, and chain cycles to be rejected.
 
-### Recheck code-path assumptions
+### Preserve confinement at protocol and archive boundaries
 
-The current working directory is last, not first, in the default code path.
-A local BEAM file no longer shadows an OTP or application module unless the
-path is changed explicitly. Remove workflows that depended on implicit local
-shadowing.
+Do not depend on redirects forwarding credentials to a changed host or port, FTP passive replies redirecting data connections, SFTP revealing paths outside its root, or ZIP entries escaping their extraction directory. These behaviors are rejected.
 
-### Supply ordered input to ordered constructors
+Use `{max_size, Size}` for bounded tar extraction. SFTP clients must split reads larger than the server limit.
 
-`gb_sets:from_ordset/1` and `gb_trees:from_orddict/1` reject unordered input
-instead of constructing an invalid data structure. Sort or validate input
-before calling them.
+## High-value language features
 
-### Use SAN certificates
+### Strict, zipped, and multi-valued comprehensions
 
-Hostname validation no longer falls back to the certificate subject common
-name. Certificates need a matching subject alternative name. Error matching
-must distinguish subject-name and subject-alternative-name constraint
-failures.
-
-## Security-sensitive upgrade checks
-
-### Update complete installations
-
-Avoid mixing individual application patches unless their documented
-dependencies are also installed:
-
-- PKICMP support in `public_key` depends on the OpenSSL-backed `crypto`
-  version that introduced it.
-- Stricter TLS duplicate-message handling requires corresponding `crypto`
-  and `public_key` versions.
-- `ssl-11.7.1` requires `public_key-1.21.1`.
-- Native-record fixes span compiler, ERTS, Dialyzer, and formatting code;
-  update the full installation.
-
-### Expect stricter TLS and certificate failures
-
-- Missing or invalid configured PEM files fail earlier during server setup.
-- Duplicate TLS 1.3 handshake messages, a second HelloRetryRequest, injected
-  plaintext-window application data, and invalid ticket or PSK state are
-  rejected.
-- Expired OCSP responder certificates and invalid certificate-path basic
-  constraints are rejected.
-- OCSP responses larger than 100 KB are rejected before ASN.1 decoding.
-- Malformed clients can receive an alert where older servers silently closed
-  the connection.
-
-### Revalidate redirect and file-service boundaries
-
-- `httpc` strips authorization, proxy-authorization, cookie, referer, and
-  origin headers when a redirect changes host or port.
-- FTP passive mode rejects responses that redirect the data connection to an
-  arbitrary host.
-- SFTP `READLINK` and `REALPATH` remain confined to the configured root, and
-  reads are limited to 255 KiB per request.
-- TLS distribution applies the same-LAN restriction when `check_ip` is
-  enabled.
-
-## Language quick reference
-
-### Choose strict or zipped generators deliberately
-
-Strict generators raise on a nonmatching input:
+Strict list/map generators use `<:-`; strict binary generators use `<:=`. Join generators with `&&` to consume inputs in parallel. A comprehension may also emit several comma-separated values for each iteration.
 
 ```erlang
-[X || {ok, X} <:- [{ok, 1}, error, {ok, 3}]].
+Pairs = [{X, Y} || X <- [1, 2] && Y <- [a, b]],
+Signed = [I, -I || I <- lists:seq(1, 3)].
 ```
 
-Use `<:-` for list and map generators and `<:=` for binary generators. Keep
-the traditional operators when filtering nonmatches is intentional.
+### Precise guards and application syntax
 
-Zip generators with `&&` to consume them in parallel:
+`is_integer(Term, Lower, Upper)` checks both integer type and inclusive bounds without admitting floats. Function application is left associative, so `f(X)(Y)` applies the result of `f(X)` to `Y`.
 
-```erlang
-[{X, Y} || X <- [1, 2] && Y <- [a, b]].
-%% [{1,a},{2,b}]
-```
+### Based floating-point literals and nominal types
 
-Zipping is not a Cartesian product and supports list, binary, and map
-generators.
+Based floats can express non-decimal values and based exponents. Dialyzer `-nominal` declarations keep structurally identical domain types distinct in specifications.
 
-### Gate experimental comprehension assignment
+## Runtime and data quick reference
 
-A match used as a qualifier is a compile error by default. Enable the
-`compr_assign` feature before using assignment qualifiers:
+### Priority messages
 
-```erlang
--feature(compr_assign, enable).
-hashes(Items) ->
-    [H || Item <- Items, H = erlang:phash2(Item), H rem 10 =:= 0].
-```
-
-The assignment acts like a strict single-element generator. Comprehensions
-can also emit multiple comma-separated values per iteration.
-
-### Treat native records as experimental
-
-Declare a native record with `-record #name{...}.`. It is a runtime type, not
-a tagged tuple:
-
-```erlang
--record #vec{x = 0.0, y = 0.0}.
--export_record([vec]).
-
-make_vec(X, Y) -> #vec{x = X, y = Y}.
-```
-
-Definitions are private by default. Other modules may make field-free
-matches, but construction and field-aware matching require
-`-export_record/1`. Use a current patch release because early compiler,
-runtime, analysis, and formatting defects were corrected.
-
-### Prefer the bounded integer guard
-
-`is_integer(Term, LowerBound, UpperBound)` checks that all arguments are
-integers and that the term is within the inclusive range. It avoids range
-guards that accidentally accept floats.
-
-## Runtime quick reference
-
-### Send priority messages through a capability
-
-Create a priority-capable alias and use the `priority` send option:
+Create a priority-capable alias and send with the `priority` option. Sending through the same alias without that option remains ordinary, and `unalias/1` revokes the capability.
 
 ```erlang
 PrioAlias = alias([priority]),
 erlang:send(PrioAlias, Message, [priority]).
 ```
 
-Sending through the alias without the option is ordinary. `unalias/1`
-revokes the capability. Priority exit, link, and monitor signaling are
-available through their corresponding priority options.
+Priority exits use `exit(Alias, Reason, [priority])`; link- and monitor-generated signals require the corresponding priority option when the link or monitor is created.
 
-### Hibernate without discarding the stack
+### Memory and persistent terms
 
-`erlang:hibernate/0` minimizes the calling process while it waits for its next
-message and preserves the call stack. This differs from
-`erlang:hibernate/3`.
+`erlang:hibernate/0` minimizes the calling process while it waits without discarding its call stack. `persistent_term:put_new/2` is quick and idempotent when the same key/value pair already exists, but raises `badarg` for a different existing value.
 
-### Insert persistent terms idempotently
+### Regular expressions
 
-`persistent_term:put_new/2` returns quickly when the key already holds the
-same value and raises `badarg` when it holds a different value:
+PCRE2 makes pattern validation stricter and can change Unicode-property and branch-reset behavior. Do not persist or directly transfer the internal value from `re:compile/2`; use the supported export/import facility when moving compiled expressions between node instances.
 
-```erlang
-persistent_term:put_new(config, Config).
-```
+### Deterministic-within-a-map iteration
 
-### Use functional graphs for persistent updates
+Map order is still undefined, but standard keys, values, list conversion, iterators, and comprehensions agree on the order chosen for a given map. Do not treat that order as sorted or stable across maps or runtime conditions.
 
-The `graph` module is a persistent counterpart to `digraph`; each modifying
-operation returns a new graph and leaves earlier values usable.
+### Functional graphs and terminal styling
 
-## Operational checklist
+The `graph` module returns a new persistent graph from each modifying operation. `io_ansi` uses local terminal capabilities to format colors and styles; remote writes use the destination terminal's capabilities.
 
-1. Compile with default warnings plus `warn_obsolete_bool_op` and, where
-   appropriate, `warn_possibly_unsafe_function`.
-2. Run `xref` unsafe, undocumented, and private-call analyses; handle error
-   results for BEAM files without debug information.
-3. Retest regular expressions under PCRE2 and transfer compiled patterns only
-   through the supported export/import mechanism.
-4. Exercise certificate, TLS, SSH, redirect, FTP, SFTP, and distribution
-   boundaries with negative tests.
-5. Verify TCP keepalive, timeout, accepted-socket inheritance, and batched
-   socket operations on each supported operating system.
-6. Check release packaging, embedded third-party selection, native-code
-   loading, crash-dump requirements, and Windows architecture support.
-7. Run Common Test and documentation examples; update output snapshots that
-   depend on map ordering or protocol alerts.
+## Cryptography and networking quick reference
 
+### Post-quantum algorithms
+
+With a suitable OpenSSL build, the crypto stack supports ML-DSA and ML-KEM, while TLS and SSH support hybrid post-quantum groups. The hybrid TLS and SSH choices are preferred defaults with fallback for peers that lack support.
+
+Do not assume the backend supports every EdDH or EdDSA operation. Catch the structured `{notsup, Info, Description}` error where absence is an expected deployment condition.
+
+### Bound retries and batch socket work
+
+`httpc` performs one retry by default after `Retry-After`, then returns the error response. Configure `{autoretry, Timeout}` or implement an application retry policy rather than assuming unbounded retries.
+
+The socket implementation exposes batched receive/send operations corresponding to `recvmmsg()` and `sendmmsg()`.
+
+### Check patch-level protocol hardening
+
+Security-sensitive deployments should review patch-level changes to `epmd`, TLS handshakes and tickets, SSH Diffie-Hellman and packet alignment, certificate paths, ETF decoding, crypto inputs, Diameter AVPs, Megaco names, and archive extraction.
+
+If localhost-bound `epmd` stops working after the denial-of-service mitigation, install the follow-up ERTS patch that restores loopback binding.
+
+## Build, release, and test quick reference
+
+### Split release artifacts
+
+`make release` produces runtime code. Build documentation and tests separately with `make release_docs` and `make release_tests`.
+
+### Select embedded third-party implementations consciously
+
+The configure switches for embedded third-party alternatives control bundled versus suitable external implementations. Inspect `erlang:system_info(embedded_3pps)` at runtime to see what is in use.
+
+### Keep documentation executable and preserved
+
+`ct_doctest` runs shell-style examples, including expected failures, from module documentation and documentation files. Compiling with `to_abstr` preserves source `-doc` attributes for downstream tooling.
+
+### Use release security metadata
+
+Per-release OpenVEX statements identify vendor CVEs that do not affect Erlang/OTP, and the source SBOM links to them. Feed those statements to vulnerability tooling rather than maintaining local suppressions without provenance.
+
+## Applying this patch
+
+1. Identify the exact OTP and application patch versions in the deployed artifact.
+2. Start with breaking changes, deprecations, security boundaries, and changed defaults.
+3. Open the topic reference that matches the code or operational surface being changed.
+4. Distinguish full-OTP upgrades from application-only patching; honor stated cross-application dependencies.
+5. Recompile native code and BEAM artifacts where representation, compiler, or platform behavior changed.
+6. Exercise malformed-input, legacy-peer, and confinement tests for externally reachable services.
+7. Verify runtime behavior on every supported OS and crypto backend rather than assuming optional capabilities exist.

@@ -1,125 +1,113 @@
 # Middleware, Runtimes, and Integrations
 
-## Contents
+## Configure origin-dependent CORS
 
-- [Cache, CORS, and compression](#cache-cors-and-compression)
-- [Response formatting](#response-formatting)
-- [Contexts and connection information](#contexts-and-connection-information)
-- [Runtime adapter changes](#runtime-adapter-changes)
-- [MCP, MIME types, and logging](#mcp-mime-types-and-logging)
-
-## Cache, CORS, and compression
-
-### Select cacheable responses
-
-Set `cacheableStatusCodes` to control which response statuses cache middleware stores (since 4.8.0):
+Since `4.8.0`, `cors()` can derive `allowMethods` from the request origin.
 
 ```ts
-cache({ cacheName: 'app', cacheableStatusCodes: [200, 404] })
-```
-
-In 4.12, `onCacheNotAvailable` handles runtimes where the configured cache cannot be used. Configured `Vary` headers participate in cache keys. Responses declaring `Vary: Authorization` or `Vary: Cookie` are not cached, preventing cross-user reuse.
-
-Use a current patch release: cache behavior also rejects responses marked `private` or `no-store`.
-
-### Choose CORS methods by origin
-
-`allowMethods` may be a function of the request origin (since 4.8.0):
-
-```ts
-cors({
+app.use('*', cors({
   allowMethods: (origin) =>
     origin === trustedOrigin ? ['GET', 'POST'] : ['GET'],
-})
+}))
 ```
 
-### Filter compression by content type
+In `4.13.3`, CORS middleware appends `Origin` to `Vary` on `OPTIONS` preflight
+responses. Shared caches can then distinguish preflight results by origin. Do
+not remove that variation when a proxy or CDN rewrites response headers.
 
-Compression middleware accepts `contentTypeFilter` in 4.12. It re-exports `COMPRESSIBLE_CONTENT_TYPE_REGEX` as a starting point for custom eligibility logic. MessagePack is recognized as compressible.
+## Select cacheable responses and failure behavior
 
-## Response formatting
-
-### Force pretty JSON
-
-Set `force: true` to format every matching response without the usual request-side trigger (since 4.11.0):
+Since `4.8.0`, `cacheableStatusCodes` selects which response statuses cache
+middleware may store.
 
 ```ts
-import { prettyJSON } from 'hono/pretty-json'
+app.use('*', cache({
+  cacheName: 'pages',
+  cacheControl: 'max-age=3600',
+  cacheableStatusCodes: [200, 404],
+}))
+```
 
+Since `4.12.0`, `onCacheNotAvailable` handles runtimes without a usable Cache
+API, and configured `Vary` headers contribute to cache keys. Patched 4.12
+releases refuse responses with `Vary: Authorization` or `Vary: Cookie` and also
+avoid responses marked `private` or `no-store`. Keep these checks intact when
+wrapping or replacing cache middleware.
+
+## Filter compression by content type
+
+Since `4.12.0`, compression middleware accepts `contentTypeFilter` and exports
+`COMPRESSIBLE_CONTENT_TYPE_REGEX` as a starting point for custom predicates.
+MessagePack is included among compressible content types. Extend the exported
+baseline instead of rebuilding its known-type list unless replacement is
+intentional.
+
+## Format JSON responses
+
+Since `4.11.0`, Pretty JSON accepts `force: true` to enable formatting without
+its normal request-dependent trigger.
+
+```ts
 app.use(prettyJSON({ force: true }))
 ```
 
-## Contexts and connection information
+In `4.13.3`, Pretty JSON recognizes structured JSON media types ending in
+`+json`, including `application/problem+json`. Preserve the original media type
+while formatting the body.
 
-### Access context storage optionally
+## Preserve stream and conditional-response correctness
 
-`tryGetContext()` from `hono/context-storage` returns `undefined` instead of throwing when no request context is available (since 4.11.0):
+The `4.13.3` ETag fix copies pending stream bytes and preserves headers while
+filtering a `304` response. When combining ETag middleware with streamed or
+conditional responses, test both the initial body-bearing response and a later
+`If-None-Match` request.
 
-```ts
-import { tryGetContext } from 'hono/context-storage'
+## Use direct adapter exports
 
-const context = tryGetContext<Env>()
-```
+Since `4.9.0`, the Bun adapter directly exports `upgradeWebSocket` and
+`websocket`; do not obtain them through the adapter's older factory API.
 
-### Use expanded context exports
+Also since `4.9.0`, the AWS Lambda adapter can designate response content types
+as binary. Configure the relevant types when returning images, archives, or
+other binary bodies so Lambda does not treat them as text.
 
-- Hono's `ExecutionContext` type exposes its `props` property from 4.8.0.
-- In 4.12, Cloudflare's `ExecutionContext` includes `exports`, which can be typed through module augmentation.
-- A later 4.12 release makes the `Context` class a public runtime export.
+Since `4.12.0`, `getConnInfo(c)` is exported by `hono/aws-lambda`,
+`hono/cloudflare-pages`, and `hono/netlify`. The Lambda implementation handles
+API Gateway v1, API Gateway v2, and ALB requests.
 
-```ts
-declare module 'hono' {
-  interface ExecutionContext {
-    readonly exports: Cloudflare.Exports
-  }
-}
-```
+## Type execution context and public context
 
-### Read hosted-adapter connection data
+Since `4.8.0`, Hono's `ExecutionContext` type contains the runtime-provided
+`props` property.
 
-`getConnInfo(c)` is available from `hono/aws-lambda`, `hono/cloudflare-pages`, and `hono/netlify` in 4.12. The AWS Lambda implementation supports API Gateway v1, API Gateway v2, and ALB events.
+Since `4.12.0`, it also contains `exports`. A Cloudflare application can
+module-augment this as `readonly exports: Cloudflare.Exports` to consume
+Wrangler-generated export types.
 
-```ts
-import { getConnInfo } from 'hono/aws-lambda'
+The runtime `Context` class is publicly exported from `hono` from `4.12.0`.
+Integrations that construct, recognize, or extend the actual class can import it
+directly instead of relying only on its structural type.
 
-const remoteAddress = getConnInfo(c).remote.address
-```
+## Expose MCP over Streamable HTTP
 
-## Runtime adapter changes
-
-### Start Service Workers with `fire`
-
-Use the standalone startup helper introduced in 4.8.0:
-
-```ts
-import { fire } from 'hono/service-worker'
-
-fire(app)
-```
-
-`app.fire()` is deprecated.
-
-### Import Bun WebSocket helpers directly
-
-The Bun adapter exports `upgradeWebSocket` and `websocket` directly from 4.9.0. Import them from the adapter when defining WebSocket routes and the Bun server; an indirect setup is no longer required.
-
-### Declare binary AWS Lambda content types
-
-The AWS Lambda adapter can be configured with response `Content-Type` values that should use Lambda binary handling (since 4.9.0). Declare binary formats so their bodies are not treated as text.
-
-## MCP, MIME types, and logging
-
-### Serve streamable HTTP MCP
-
-`@hono/mcp` exports `StreamableHTTPTransport` from 4.8.0. Connect it to an MCP server and return `transport.handleRequest(c)` from an all-method route.
+Since `4.8.0`, `@hono/mcp` provides `StreamableHTTPTransport` for exposing an MCP
+server over Streamable HTTP.
 
 ```ts
-app.all('/mcp', (c) => transport.handleRequest(c))
+app.all('/mcp', async (c) => {
+  const transport = new StreamableHTTPTransport()
+  await mcpServer.connect(transport)
+  return transport.handleRequest(c)
+})
 ```
 
-The initial transport is intended for stateless servers without authentication; add another design for state or authentication requirements.
+Create and connect the transport according to the MCP server's lifecycle, then
+return `transport.handleRequest(c)` from the Hono route.
 
-### Recognize manifests and suppress color
+## Use updated MIME and logger behavior
 
-- Web app manifest files are recognized during MIME-type detection from 4.8.0.
-- The logger honors the `NO_COLOR` environment setting on Cloudflare Workers from 4.8.0.
+Since `4.8.0`, MIME utilities recognize web app manifest files. Use the inferred
+manifest MIME type rather than overriding it with a generic JSON or text type.
+
+Also since `4.8.0`, the logger honors `NO_COLOR` on Cloudflare Workers. Set that
+environment value for plain logs rather than stripping escape codes downstream.

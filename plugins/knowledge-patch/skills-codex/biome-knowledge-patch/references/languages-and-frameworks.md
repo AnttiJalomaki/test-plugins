@@ -1,28 +1,103 @@
 # Languages and Frameworks
 
-Use this reference when enabling a language, parsing framework files, or
-deciding whether an override is still needed.
+## JavaScript, JSX, and TypeScript
 
-## Contents
+### Classic React JSX runtime (1.7-guide)
 
-- [CSS](#css)
-- [GraphQL](#graphql)
-- [HTML and HTML-like files](#html-and-html-like-files)
-- [Embedded template-literal snippets](#embedded-template-literal-snippets)
-- [SVG](#svg)
-- [JSON dialects](#json-dialects)
-- [JavaScript and JSX](#javascript-and-jsx)
-- [TypeScript syntax and resolution](#typescript-syntax-and-resolution)
-- [React and Preact](#react-and-preact)
-- [Vue](#vue)
-- [Svelte](#svelte)
-- [Astro and route filenames](#astro-and-route-filenames)
-- [Test globals and assertions](#test-globals-and-assertions)
+Setting `javascript.jsxRuntime` to `reactClassic` makes `noUnusedImports` and
+`useImportType` ignore the otherwise apparently unused `React` import required
+by the classic JSX transform.
+
+```json
+{
+  "javascript": {
+    "jsxRuntime": "reactClassic"
+  }
+}
+```
+
+### JSX in JavaScript files
+
+The editor extension can parse JSX in documents associated with the JavaScript
+language identifier (1.7-guide). In the 2.0-guides parser behavior, JSX in
+`.js` is accepted by default and can be rejected with `jsxEverywhere: false`.
+
+```json
+{
+  "javascript": {
+    "parser": { "jsxEverywhere": false }
+  }
+}
+```
+
+### TypeScript syntax and compatibility
+
+TypeScript construct signatures accept const type parameters (1.8.0).
+
+```ts
+interface I {
+  new<const T>(x: T): T;
+}
+```
+
+Import types accept a `with` object that selects `"resolution-mode"`. `.cts`
+files may place the same attribute on type-only imports; that form remains
+restricted to `.cts` (1.9.0).
+
+```ts
+type Fs = typeof import("fs", { with: { "resolution-mode": "import" } });
+import type { TypeFromRequire } from "pkg" with { "resolution-mode": "require" };
+```
+
+Biome 2.3.0 adds React 19 support and supports `baseUrl` in `tsconfig.json`.
+
+### JavaScript API spans (2.5-guide)
+
+The JavaScript API exposes `spanInBytesToSpanInCodeUnits` to convert byte-based
+diagnostic spans to the UTF-16 code-unit offsets used by JavaScript strings.
+
+## JSON and JSONC
+
+### Well-known dialects (1.7-guide)
+
+Biome recognizes additional well-known JSON files and distinguishes files that
+permit comments from those that permit both comments and trailing commas,
+applying parser settings automatically.
+
+`turbo.json`, `jest.config.json`, and `.json` files under `.vscode` or `.zed`
+automatically allow comments. Files in the two editor directories still reject
+trailing commas (1.9.0).
+
+JSON files in project `.cursor` directories and Cursor platform user-config
+directories automatically permit comments and trailing commas (2.4-guide).
+
+### JSON linter analysis
+
+`noDuplicateObjectKeys` analyzes JSON and JSONC (1.9.0). JSON nursery rules
+`noTopLevelLiterals` and `noEmptyObjectKeys` respectively require an object or
+array root and reject empty-string object keys (2.4.0).
 
 ## CSS
 
-CSS formatting and linting are enabled by default. Disable either independently
-when a project is not ready to include CSS:
+### Opt-in stage (1.8.0)
+
+CSS formatting and linting were opt-in through CLI flags or
+`css.formatter.enabled` and `css.linter.enabled`. Equivalent language linter
+gates became available at `javascript.linter.enabled` and
+`json.linter.enabled`.
+
+```shell
+biome check --css-formatter-enabled=true --css-linter-enabled=true .
+```
+
+The parser gained unknown at-rules, Unicode ranges, named grid lines, and
+nested style rules and at-rules.
+
+### Stable default (1.9-guide)
+
+CSS formatting and linting became enabled by default. The parser still accepts
+standard CSS rather than dialects such as SCSS. Disable either tool separately
+for projects not ready to process CSS.
 
 ```json
 {
@@ -33,44 +108,40 @@ when a project is not ready to include CSS:
 }
 ```
 
-Biome parses standard CSS, not dialects such as SCSS. Parser coverage includes
-unknown at-rules, Unicode ranges, named grid lines, nested style rules, and
-nested at-rules.
+Stable CSS rules include `a11y/useGenericFontNames`; correctness checks for
+gradients, grid areas, `@import` placement, functions, media features,
+properties, units, and An+B selectors; and suspicious checks for duplicate
+imports, font names, keyframe selectors, empty blocks, `!important` in
+keyframes, and shorthand overrides.
 
-Enable specialized syntax when it is not inferred:
+### CSS Modules, Tailwind, and current syntax
+
+In the 2.0-guides parser, CSS Modules and Tailwind `@theme`, `@utility`, and
+`@apply` require parser flags.
 
 ```json
 {
-  "css": {
-    "parser": {
-      "cssModules": true,
-      "tailwindDirectives": true
-    }
-  }
+  "css": { "parser": { "cssModules": true, "tailwindDirectives": true } }
 }
 ```
 
-The Tailwind switch covers `@theme`, `@utility`, and `@apply`. CSS Modules
-syntax is enabled automatically for `*.module.css`, so remove obsolete manual
-switches for those files.
+By 2.4-guide, CSS Modules syntax is automatic for `*.module.css`; the manual
+switch can be removed for those files. The parser and formatter support
+`@function`, and property ordering follows `stylelint-config-recess-order`
+v7.4.0 with newer containment, font-synthesis, ruby, color-adjustment,
+view-transition, shape, and motion-path properties.
 
-The parser and formatter understand the `@function` at-rule. CSS compatibility
-also recognizes:
-
-- `dynamic-range-limit`, `overlay`, `reading-flow`, `reading-order`,
-  `scroll-marker-group`, and `scroll-target-group`;
-- newer picker, scroll-marker, column, checkmark, and view-transition
-  pseudo-selectors;
-- `@container scroll-state()`;
-- general-enclosed container and supports queries.
-
-Embedded framework styles recognize Vue `:slotted`, `:deep`, and `v-bind()` as
-well as `:global` and `:local` in Astro, Svelte, and Vue.
+In 2.4.0, recognized CSS syntax also includes `dynamic-range-limit`, `overlay`,
+`reading-flow`, `reading-order`, `scroll-marker-group`, and
+`scroll-target-group`; newer picker, scroll-marker, column, checkmark, and
+view-transition pseudo-selectors; and `@container scroll-state()` plus
+general-enclosed container and supports queries.
 
 ## GraphQL
 
-GraphQL files are formatted and linted by default. Disable the tools separately
-under `graphql.formatter.enabled` and `graphql.linter.enabled`:
+Biome formats and lints GraphQL files by default. Disable either operation with
+`graphql.formatter.enabled` or `graphql.linter.enabled`. Initial lint coverage
+is limited to nursery and includes `noDuplicateFields` (1.9-guide).
 
 ```json
 {
@@ -81,16 +152,19 @@ under `graphql.formatter.enabled` and `graphql.linter.enabled`:
 }
 ```
 
-Initial GraphQL lint coverage lived in nursery and included
-`noDuplicateFields`. CSS and GraphQL diagnostics both support analyzer
-suppression actions.
+CSS and GraphQL analyzer diagnostics support suppression actions as of 1.9.0.
 
-## HTML and HTML-like files
+## HTML and embedded languages
 
-Enable full template parsing with:
+### Parser opt-ins (2.0-guides)
+
+Embedded snippets and full HTML-ish parsing are separate experimental opt-ins.
 
 ```json
 {
+  "javascript": {
+    "experimentalEmbeddedSnippetsEnabled": true
+  },
   "html": {
     "experimentalFullSupportEnabled": true,
     "parser": { "interpolation": true }
@@ -98,134 +172,58 @@ Enable full template parsing with:
 }
 ```
 
-Without full support, Vue, Svelte, and Astro contribute only their JavaScript or
-TypeScript sections. `html.parser.interpolation` is a separate switch for
-`{{ expression }}` in plain HTML.
+Without full support, Vue, Svelte, and Astro contribute only their
+JavaScript/TypeScript sections. `html.parser.interpolation` independently
+enables `{{ expression }}` in plain HTML.
 
-Full support improves Vue and Svelte parsing and reduces false positives from
-`noUnusedVariables`, `useConst`, `useImportType`, and `noUnusedImports`.
-Re-evaluate overrides that disabled these rules as parser coverage improves.
+### HTML formatter boundary (2.0.0)
 
-HTML, Vue, Svelte, and Astro support accessibility analysis including
-`noAutofocus`, `noPositiveTabindex`, `useAltText`, `useAnchorContent`,
-`useMediaCaption`, `useHtmlLang`, `useValidLang`, `useValidAriaRole`,
-`useAriaPropsForRole`, `useButtonType`, `noAccessKey`,
-`noDistractingElements`, `noSvgWithoutTitle`, `noRedundantAlt`, and
-`useIframeTitle`.
+The experimental HTML formatter is disabled by default throughout 2.0 and
+initially handles only `.html`, not markup in Vue or Svelte or embedded
+JavaScript and CSS. It supports `attributePosition`, `bracketSameLine`, and
+`whitespaceSensitivity`.
 
-Enable Vue syntax in ordinary `.html` files used as external templates:
+```json
+{
+  "html": {
+    "formatter": { "enabled": true }
+  }
+}
+```
+
+### Embedded indentation (2.3.0)
+
+`html.formatter.indentScriptAndStyle` controls indentation of `<script>` and
+`<style>` contents and defaults to `false`. Embedded JavaScript and CSS use
+their own language formatter settings.
+
+### CSS, GraphQL, and Relay snippets
+
+With `javascript.experimentalEmbeddedSnippetsEnabled`, Biome formats and lints
+CSS and GraphQL template literals used by styled-components, Emotion, and
+`graphql-tag` (2.4-guide). Relay's `graphql` tag is also recognized (2.4.0).
+
+### Accessibility (2.4-guide)
+
+HTML, Vue, Svelte, and Astro gain `noAutofocus`, `noPositiveTabindex`,
+`useAltText`, `useAnchorContent`, `useMediaCaption`, `useHtmlLang`,
+`useValidLang`, `useValidAriaRole`, `useAriaPropsForRole`, `useButtonType`,
+`noAccessKey`, `noDistractingElements`, `noSvgWithoutTitle`, `noRedundantAlt`,
+and `useIframeTitle`.
+
+### Vue syntax in HTML (2.5-guide)
+
+`html.parser.vue` enables Vue syntax in ordinary `.html` files for projects
+whose Vue templates live outside `.vue` files.
 
 ```json
 { "html": { "parser": { "vue": true } } }
 ```
 
-## Embedded template-literal snippets
-
-Enable embedded CSS and GraphQL in JavaScript template literals:
-
-```json
-{
-  "javascript": {
-    "experimentalEmbeddedSnippetsEnabled": true
-  }
-}
-```
-
-This covers styled-components, Emotion, `graphql-tag`, and Relay's `graphql`
-tag. The embedded snippets are formatted and linted with their own language
-rules.
-
-## SVG
-
-Treat `.svg` as a first-class formatted and linted language.
-
-## JSON dialects
-
-Biome recognizes well-known JSON files and automatically distinguishes files
-that allow comments from files that allow both comments and trailing commas.
-
-`turbo.json`, `jest.config.json`, and `.json` files under `.vscode` or `.zed`
-allow comments automatically. Files in `.vscode` and `.zed` still reject
-trailing commas.
-
-JSON files under a project's `.cursor` directory and Cursor's platform user
-configuration directories automatically allow both comments and trailing
-commas.
-
-The analyzer applies `noDuplicateObjectKeys` to JSON and JSONC. JSON-specific
-nursery rules include `noTopLevelLiterals`, which requires an object or array at
-the document root, and `noEmptyObjectKeys`, which rejects empty-string keys.
-
-## JavaScript and JSX
-
-JSX is accepted in `.js` by default. Set
-`javascript.parser.jsxEverywhere: false` to reject it. Editor documents using
-the JavaScript language identifier can also parse JSX.
-
-For the classic React transform, declare:
-
-```json
-{
-  "javascript": {
-    "jsxRuntime": "reactClassic"
-  }
-}
-```
-
-This makes `noUnusedImports` and `useImportType` retain the otherwise apparently
-unused `React` import required by the classic transform. Biome also supports
-React 19.
-
-The `Temporal` API is recognized as a global.
-
-## TypeScript syntax and resolution
-
-TypeScript construct signatures accept const type parameters:
-
-```ts
-interface I {
-  new<const T>(x: T): T;
-}
-```
-
-Import types accept a `with` object that selects `"resolution-mode"`. In `.cts`
-files, type-only imports may carry the same attribute; that import-declaration
-form remains restricted to `.cts`.
-
-```ts
-type Fs = typeof import("fs", { with: { "resolution-mode": "import" } });
-import type { TypeFromRequire } from "pkg" with { "resolution-mode": "require" };
-```
-
-Resolver support includes `baseUrl` from `tsconfig.json`. Module resolution
-prefers the most specific overlapping package `exports` pattern.
-
-## React and Preact
-
-`useExhaustiveDependencies` understands Preact hooks as well as React hooks. It
-detects some dependencies that change on every render, missing dependencies
-declared as function declarations, duplicate dependencies, and dependency
-instances targeted by narrow suppression comments. It does not report a
-recursive call as a missing dependency.
-
-Configure `reportUnnecessaryDependencies` to control declared-but-unused hook
-dependencies; it defaults to `true`. Configure
-`reportMissingDependenciesArray` to control reports for absent dependency
-arrays.
-
-`useHookAtTopLevel.ignore` exempts named `use*` utilities. The rule detects hooks
-at module scope and inside non-hook, non-component functions or methods, except
-function expressions.
-
-React-domain membership matters: `noChildrenProp`, `noReactPropAssignments`,
-`noDangerouslySetInnerHtml`, `noDangerouslySetInnerHtmlWithChildren`,
-`useComponentExportOnlyModules`, and `noArrayIndexKey` require the React domain
-or a nearby React dependency. Recommended members are `noChildrenProp`, both
-dangerously-set-inner-HTML rules, and `noArrayIndexKey`.
-
 ## Vue
 
-Vue single-file components support generic parameters on `<script setup>`:
+The analyzer accepts Vue SFC `<script setup>` blocks with generic type
+parameters (1.7.0).
 
 ```vue
 <script generic="T extends Record<string, any>" lang="ts" setup>
@@ -233,23 +231,27 @@ Vue single-file components support generic parameters on `<script setup>`:
 </script>
 ```
 
-Vue scripts accept both `lang="tsx"` and `lang="jsx"` with their corresponding
-JSX behavior. Framework rules include `useVueScopedStyles`, which requires
-`scoped` or `module`, and `noVueRefAsOperand`, which catches refs used without
-`.value`.
+Vue SFCs accept `lang="tsx"` (1.8.0), and later parse `lang="jsx"` scripts as
+JSX (1.9.0). `--stdin-file-path` selects Vue behavior and preserves lint output
+for Vue input from standard input (1.7.0).
 
-`useVueValidVOn` accepts expressionless verb modifiers such as
-`<div @click.stop></div>` and `<div @click.prevent></div>`, plus the
-argument-less object form `<div v-on="$listeners"></div>`.
+With full HTML support, Vue and Svelte parsing and the `noUnusedVariables`,
+`useConst`, `useImportType`, and `noUnusedImports` rules produce fewer false
+positives. Embedded styles recognize Vue `:slotted`, `:deep`, and `v-bind()` as
+well as `:global` and `:local` in Astro, Svelte, and Vue (2.4-guide).
 
-## Svelte
+`useVueValidVOn` accepts verb modifiers without handlers, such as
+`<div @click.stop></div>` and `<div @click.prevent></div>`, and the argument-less
+object form `<div v-on="$listeners"></div>` (2.5.0).
 
-`noUndeclaredVariables` recognizes Svelte 5 runes in `.svelte`, `.svelte.js`,
-and `.svelte.ts` files. `noUnusedVariables` treats `$store` in a template as use
-of the underlying `store` binding and permits `$bindable()` props that are
-intentionally only written in the script block.
+## Svelte and Astro
 
-Svelte opening tags accept JavaScript line and block comments:
+`--stdin-file-path` selects the correct parser and linter for Svelte and Astro
+(1.7.0). `useFilenamingConvention` permits the leading `+` used by SvelteKit
+and Vike routes (1.7.0).
+
+Svelte parsing accepts JavaScript line and block comments inside opening tags
+(2.4.0).
 
 ```svelte
 <button
@@ -258,30 +260,28 @@ Svelte opening tags accept JavaScript line and block comments:
 >Save</button>
 ```
 
-## Astro and route filenames
+`noUnusedVariables` treats a `$store` template reference as use of the
+underlying `store` binding and permits `$bindable()` props intentionally only
+written in the script block (2.5.0).
 
-Astro parses shorthand attributes such as:
+Astro shorthand attributes such as `<button {disabled}>Save</button>` parse
+correctly in embedded markup (2.5.0).
 
-```astro
-<button {disabled}>Save</button>
+## React, Preact, and test globals
+
+`useExhaustiveDependencies` understands Preact hooks as well as React hooks
+(1.7-guide).
+
+`Temporal` is a recognized global. The test domain supplies Mocha's `context`,
+`run`, `setup`, `specify`, `suite`, `suiteSetup`, `suiteTeardown`, `teardown`,
+`xcontext`, `xdescribe`, `xit`, and `xspecify` globals (2.4.0).
+
+## SVG
+
+Biome formats and lints `.svg` files (2.5-guide). In 2.5.1 the SVG parser also
+accepts processing instructions such as an XML declaration.
+
+```svg
+<?xml version="1.0" encoding="UTF-8" ?>
+<svg></svg>
 ```
-
-Filename-convention analysis permits the leading `+` used by SvelteKit and
-Vike routes and recognizes dynamic route names used by Next.js, SolidStart,
-Nuxt, and Astro. Catch-all names such as `[...slug].js` and
-`[[...slug]].js` are accepted when the parameter is alphanumeric.
-
-## Test globals and assertions
-
-The Playwright and test domains supply common test globals. The test domain also
-provides Mocha's `context`, `run`, `setup`, `specify`, `suite`, `suiteSetup`,
-`suiteTeardown`, `teardown`, `xcontext`, `xdescribe`, `xit`, and `xspecify`.
-
-Assertion analysis recognizes Testing Library `waitFor`, method-based APIs such
-as `test.each`, Jest static helpers such as `expect.any`,
-`expect.objectContaining`, and `expect.extend`, and Vitest `assert`,
-`expectTypeOf`, and `assertType`. Asymmetric matchers and helpers such as
-`expect.extend()` are not standalone assertions.
-
-Coverage IDs: `1.7-guide`, `1.7.0`, `1.8.0`, `1.9-guide`, `1.9.0`,
-`2.0-guides`, `2.3.0`, `2.4-guide`, `2.4.0`, `2.5-guide`, `2.5.0`.

@@ -1,160 +1,105 @@
 # Material 3 Components
 
-## Dependencies, theme, and color
+Use this reference when upgrading stable Material 3 components or preserving behavior and visuals across the migration.
 
-### Material Icons dependency removal (material3-1.4.0)
+## Tab-row migration (1.9.0)
 
-Material 3 no longer adds `material-icons-core` transitively. Existing code
-that still imports it must declare it directly. The
-`androidx.compose.material.icons` library is no longer updated or recommended;
-prefer a Material Symbols Vector Drawable XML downloaded from the Android tab
-of the Material icons site.
+`TabRow` and `ScrollableTabRow` are deprecated. Migrate to the primary or secondary tab-row variant that matches the component's hierarchy and emphasis.
 
-### Navigation-item selected labels (material3-1.4.0)
+## Icons dependency (material3-1.4.0)
 
-Selected labels in `NavigationBarItem` and `NavigationRailItem` use
-`MaterialTheme.colorScheme.secondary` instead of `onSurface`. To keep the old
-look, copy the defaults and set `selectedTextColor` to
-`MaterialTheme.colorScheme.onSurface`.
+Material 3 no longer adds `material-icons-core` transitively. A project that still imports it must declare it directly.
 
-### Motion schemes (material3-1.4.0)
+The `androidx.compose.material.icons` library is no longer updated or recommended. Prefer a Material Symbols Vector Drawable XML downloaded from the Android tab of the Material icons site.
 
-Material 3 components take motion from a `MotionScheme` supplied through
-`MaterialTheme`. Modifier nodes can read it with
-`currentValueOf(MotionTheme.LocalMotionScheme)`. Create the standard scheme
-with `MotionScheme.standard()`.
+## Navigation-item selected labels (material3-1.4.0)
 
-### Stable-line expressive API removal (material3-1.4.0)
+Selected `NavigationBarItem` and `NavigationRailItem` labels use `MaterialTheme.colorScheme.secondary` instead of `onSurface`.
 
-Public APIs still annotated `ExperimentalMaterial3ExpressiveApi` or
-`ExperimentalMaterial3ComponentOverrideApi` were removed from the stable 1.4
-line. Code requiring those APIs must intentionally select the corresponding
-Material 3 alpha line; do not expect an opt-in to restore them on stable 1.4.
+To preserve the previous appearance, copy the default colors and set `selectedTextColor = MaterialTheme.colorScheme.onSurface`.
 
-### Color-scheme constructor requirements (material3-1.4.0)
+## Motion schemes (material3-1.4.0)
 
-The `ColorScheme` constructor lacking fixed color roles is deprecated, and the
-constructor lacking surface-container roles is hidden. Custom schemes should
-supply both role families. `contentColorFor(surfaceDim)` resolves to
-`onSurface`. Links in `Text(AnnotatedString)` receive Material styling by
-default.
+Material 3 components obtain motion from a `MotionScheme` supplied through `MaterialTheme`. Modifier nodes can read it with `currentValueOf(MotionTheme.LocalMotionScheme)`. Create the standard scheme with `MotionScheme.standard()`.
 
-## Text fields and search
+## Expressive and override APIs (material3-1.4.0)
 
-### State-backed and secure text fields (material3-1.4.0)
+Public APIs still annotated `ExperimentalMaterial3ExpressiveApi` or `ExperimentalMaterial3ComponentOverrideApi` were removed from the stable 1.4 line. Code that requires those APIs must use a compatible 1.5 alpha artifact rather than expecting them in stable 1.4.
 
-`TextField` and `OutlinedTextField` have `TextFieldState` overloads, and their
-`TextFieldDecorator`-compatible decoration APIs are stable. `labelPosition`
-can keep the label minimized so an unfocused field still shows its placeholder.
-Use `SecureTextField` or `OutlinedSecureTextField` for password entry.
+## State-backed and secure text fields (material3-1.4.0)
 
-### Search-bar state and expanded views (material3-1.4.0)
+`TextField` and `OutlinedTextField` have `TextFieldState` overloads. Their `TextFieldDecorator`-compatible decoration APIs are stable. Use `labelPosition` to keep a label minimized when a placeholder must remain visible while the field is unfocused.
 
-`SearchBar` renders the collapsed state. Use
-`ExpandedFullScreenSearchBar` or `ExpandedDockedSearchBar` for the expanded UI,
-which opens in a new window. Drive both with `SearchBarState`. `TopSearchBar`
-adds inset and scroll handling, and `InputField` offers a state-backed overload.
+`SecureTextField` and `OutlinedSecureTextField` provide Material password-entry components.
 
-## Navigation
+## Search bars and expanded views (material3-1.4.0)
 
-### Tab-row migration (1.9.0)
+Collapsed and expanded search surfaces are separate:
 
-`TabRow` and `ScrollableTabRow` are deprecated. Choose the primary or secondary
-tab-row variant according to the tab hierarchy and visual treatment.
+- `SearchBar` renders the collapsed surface.
+- `ExpandedFullScreenSearchBar` and `ExpandedDockedSearchBar` render expanded views in a new window.
+- `SearchBarState` coordinates the surfaces.
+- `TopSearchBar` includes inset and scroll handling.
+- `InputField` has a state-backed overload.
 
-### Wide navigation rails (material3-1.4.0)
+## Time pickers (material3-1.4.0)
 
-`WideNavigationRail`, `ShortNavigationBar`, and `NavigationItem` are stable.
-`WideNavigationRailItem` requires `railExpanded`, and
-`WideNavigationRailState` exposes Boolean current and target values. Replace
-`WideNavigationRailArrangement` with `Arrangement.Vertical`. Use the renamed
-shape defaults on `WideNavigationRailDefaults`; `ModalWideNavigationRailDefaults`
-was removed.
+`TimePickerDialog` can host `TimePicker`, `TimeInput`, or a UI that switches between them. Replace `TimePickerState.isAfternoon` with the `isPm` extension property.
 
-### Navigation-suite layouts (material3-1.4.0)
+## Hero carousel and state (material3-1.4.0)
 
-`NavigationSuite`, `NavigationSuiteItem`, `NavigationSuiteColors`, and
-`NavigationSuiteTypes` support different navigation forms selected with
-`navigationSuiteType`. Their scaffold and layout APIs accept optional
-primary-action content.
+`HorizontalCenteredHeroCarousel` provides a center-aligned hero layout. Carousel composables accept `userScrollEnabled`. `CarouselState` exposes `currentItem` and programmatic scrolling.
 
-## Pickers
+## Pull to refresh (material3-1.4.0)
 
-### Time-picker APIs (material3-1.4.0)
+In `PullToRefreshDefaults`:
 
-`TimePickerDialog` can contain `TimePicker`, `TimeInput`, or a UI switching
-between them. Replace `TimePickerState.isAfternoon` with the `isPm` extension
-property.
+- `shape` is renamed to `indicatorShape`;
+- `containerColor` is renamed to `indicatorContainerColor`;
+- `indicatorMaxDistance` is added.
 
-### Date-picker expansion (material3-1.4.0)
+Custom `PullToRefreshState` implementations must implement `isAnimating`; they no longer inherit a default implementation.
 
-`DatePicker`, `DateRangePicker`, and supporting APIs are stable. Their state
-factories and extensions support `LocalDate` and `YearMonth` on API 26 or newer,
-or with desugaring. `getDisplayedMonth()` is non-null.
+## Date pickers (material3-1.4.0)
 
-The input-mode focus option takes an optional `FocusRequester`, not a Boolean.
-Changing the state locale does not localize the default title or headline;
-supply localized content explicitly when changing locale programmatically.
+`DatePicker`, `DateRangePicker`, and their supporting APIs are stable. Their state factories and extensions support `LocalDate` and `YearMonth` on API 26 and newer, or on older APIs with desugaring. `getDisplayedMonth()` is non-null.
 
-## Carousel, refresh, and sliders
+The input-mode focus option accepts an optional `FocusRequester`, not a Boolean. Setting a state locale directly does not localize default title or headline text.
 
-### Hero carousel and state (material3-1.4.0)
+## Tooltip positioning and dismissal (material3-1.4.0)
 
-`HorizontalCenteredHeroCarousel` provides a center-aligned hero layout.
-Carousel composables accept `userScrollEnabled`. `CarouselState` exposes
-`currentItem` and programmatic scrolling.
+Use `rememberTooltipPositionProvider` instead of deprecated plain and rich position-provider functions. `TooltipScope.layoutCoordinates` exposes the anchor and supersedes `drawCaret`; tooltips support custom caret shapes and positions.
 
-### Pull-to-refresh migration (material3-1.4.0)
+The dismissal overload accepts `onDismissRequest`, and `onDismiss` is no longer suspend. `TooltipBox` defaults `focusable` to `false` and adds `hasAction`. Plain and rich tooltips default to maximum widths of 200 dp and 320 dp respectively.
 
-In `PullToRefreshDefaults`, rename `shape` to `indicatorShape` and
-`containerColor` to `indicatorContainerColor`. `indicatorMaxDistance` is new.
-Custom `PullToRefreshState` implementations must implement `isAnimating`;
-there is no inherited default implementation.
+## Bottom sheets (material3-1.4.0)
 
-### Slider state and layouts (material3-1.4.0)
+`ModalBottomSheet` adds `sheetGestureEnabled`. `ModalBottomSheetProperties` can prevent scrim clicks from requesting dismissal; its light status-bar and navigation-bar options are Android-only.
 
-Hoist state with `rememberSliderState` and `rememberRangeSliderState`.
-`SliderState.shouldAutoSnap` can turn off automatic snapping for a custom
-animation, and `onValueChange` is public. Additional layouts include
-`VerticalSlider`, center-origin `CenteredTrack`, external track-corner and icon
-customization, and `trackCornerSize` for range-slider tracks.
+`SheetState.isAnimationRunning` is public. Its density constructor is deprecated in favor of positional and velocity thresholds. `BottomSheetDefaults.windowInsets` includes `WindowInsets.safeDrawing.Top`.
 
-## Tooltips and sheets
+## Wide navigation rails (material3-1.4.0)
 
-### Tooltip positioning and dismissal (material3-1.4.0)
+`WideNavigationRail`, `ShortNavigationBar`, and `NavigationItem` are stable. `WideNavigationRailItem` requires `railExpanded`, and `WideNavigationRailState` exposes Boolean current and target values.
 
-Use `rememberTooltipPositionProvider` instead of deprecated plain and rich
-position-provider functions. `TooltipScope.layoutCoordinates` exposes the
-anchor and supersedes `drawCaret`; tooltips can define custom caret shapes and
-positions.
+Use `Arrangement.Vertical` instead of `WideNavigationRailArrangement`. Use renamed shape defaults in `WideNavigationRailDefaults`; `ModalWideNavigationRailDefaults` is removed.
 
-The dismissal overload takes `onDismissRequest`, and `onDismiss` is no longer
-suspending. `TooltipBox` defaults `focusable` to `false` and adds `hasAction`.
-Plain and rich tooltips default to maximum widths of 200 dp and 320 dp.
+## Navigation-suite layouts (material3-1.4.0)
 
-### Bottom-sheet controls (material3-1.4.0)
+`NavigationSuite`, `NavigationSuiteItem`, `NavigationSuiteColors`, and `NavigationSuiteTypes` support extra navigation layouts selected through `navigationSuiteType`. Matching scaffold and layout APIs accept optional primary-action content.
 
-`ModalBottomSheet` adds `sheetGestureEnabled`. `ModalBottomSheetProperties` can
-prevent scrim clicks from requesting dismissal; light status- and
-navigation-bar options are Android-only. `SheetState.isAnimationRunning` is
-public. Its density constructor is deprecated in favor of positional and
-velocity thresholds. `BottomSheetDefaults.windowInsets` includes
-`WindowInsets.safeDrawing.Top`.
+## Slider state and layouts (material3-1.4.0)
 
-## Insets
+Hoist state with `rememberSliderState` and `rememberRangeSliderState`. `SliderState.shouldAutoSnap` can disable automatic snapping for a custom animation, and `onValueChange` is public.
 
-### Display-cutout defaults (material3-1.4.0)
+Material 3 also provides `VerticalSlider`, center-origin `CenteredTrack`, customizable external track corners and icons, and `trackCornerSize` for range-slider tracks.
 
-Inset-aware Material 2 and Material 3 components include `displayCutout` in
-their default `WindowInsets`. Override the component's inset parameter when the
-layout intentionally draws into the cutout area.
+## Color schemes and annotated links (material3-1.4.0)
 
-## Material migration checklist
+The `ColorScheme` constructor without fixed color roles is deprecated. The constructor without surface-container roles is hidden. Custom schemes should supply both role families.
 
-- Inspect resolved icon dependencies after upgrading Material 3.
-- Recheck selected navigation label colors against the design system.
-- Keep stable and expressive-alpha API expectations separate.
-- Hoist state for text fields, search, carousels, and sliders.
-- Test expanded search, dialogs, tooltips, and sheets as separate windows where
-  applicable.
-- Recheck default insets on devices with display cutouts.
+`ColorScheme.contentColorFor(surfaceDim)` resolves to `onSurface`. Links in `Text(AnnotatedString)` receive Material styling by default.
+
+## Display-cutout insets (material3-1.4.0)
+
+Inset-aware Material 2 and Material 3 components include `displayCutout` in their default `WindowInsets`. Override the component's inset parameter when the layout intentionally draws into the cutout area.

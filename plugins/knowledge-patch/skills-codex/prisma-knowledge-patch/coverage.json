@@ -1,6 +1,8 @@
 {
   "patch": "prisma-knowledge-patch",
-  "merged_at": "2026-07-15T01:38:29Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-21T21:52:55Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -157,6 +159,11 @@
     },
     "product-updates": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "7.9.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

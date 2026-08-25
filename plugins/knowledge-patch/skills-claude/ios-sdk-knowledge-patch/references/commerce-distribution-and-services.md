@@ -1,89 +1,77 @@
 # Commerce, Distribution, and Platform Services
 
-Use this reference for advertising attribution, StoreKit purchases and
-entitlements, background platform capabilities, managed distribution, and
-submission requirements.
+## StoreKit purchases and offers
 
-## AdAttributionKit Re-engagement Conversions
+### Advanced Commerce and introductory-offer control (18.4)
 
-On iOS 18.4 (`18.4`), AdAttributionKit supports multiple simultaneous
-re-engagement conversions. Read the conversion tag from the re-engagement URL
-parameter and pass it to `updateConversionValue` so the update reaches the
-intended conversion rather than another active conversion.
+StoreKit supports Advanced Commerce API purchases. The purchase option
+`introductoryOfferEligibility(compactJWS:)` accepts a server-signed compact JWS
+that can request applying an introductory offer even when the customer would
+otherwise be ineligible, or block redemption.
 
-An advertised app built by Xcode can create and interact with development
-postbacks without a publisher app and without having previously been distributed
-through the store. Enable and inspect them under **Settings > Developer > Ad
-Attribution Testing**.
+### Transaction metadata and platform model (18.4)
 
-## Advanced Commerce and Introductory Offers
+StoreKit exposes `appTransactionID`, `originalPlatform`, and `period` across
+`AppTransaction`, `Transaction`, `Transaction.Offer`, and
+`Product.SubscriptionInfo.RenewalInfo`. The type used by `originalPlatform`
+moved to `AppStore.Platform`. Its `watchOS` case was removed and combined with
+`iOS`, so switches over the old platform model need updating.
 
-StoreKit in iOS 18.4 (`18.4`) adds purchase support for the Advanced Commerce
-API and the `introductoryOfferEligibility(compactJWS:)` purchase option. The
-server-signed compact JWS can request either of two outcomes:
+### Entitlement migration and signed-out eligibility (18.4)
 
-- Apply an introductory offer even if StoreKit would otherwise consider the
-  customer ineligible.
-- Prevent introductory-offer redemption.
-
-Treat the JWS as server-issued purchase policy, not merely a local eligibility
-hint.
-
-## StoreKit Transaction Metadata
-
-The iOS 18.4 SDK (`18.4`) adds metadata named `appTransactionID`,
-`originalPlatform`, and `period` across `AppTransaction`, `Transaction`,
-`Transaction.Offer`, and `Product.SubscriptionInfo.RenewalInfo`.
-
-The platform type used by `originalPlatform` is now `AppStore.Platform`. Its
-former `watchOS` case was removed and folded into `iOS`; do not write exhaustive
-logic that still expects a distinct watchOS case.
-
-## Entitlements and Signed-In Account State
-
-In iOS 18.4 (`18.4`), `Transaction.currentEntitlement(for:)` is deprecated.
-Use `Transaction.currentEntitlements(for:)`; the singular API can omit
+`Transaction.currentEntitlement(for:)` is deprecated. Use
+`Transaction.currentEntitlements(for:)`; the singular lookup can omit
 family-shared transactions.
 
 `isEligibleForIntroOffer(for:)` returns `false` when no App Store account is
-signed in. Establish signed-in account state before treating `false` as the
-customer's actual eligibility.
+signed in. Require a signed-in account before interpreting the result as the
+customer's actual offer eligibility.
 
-## Background Nearby Interaction
+## Advertising attribution
+
+### Overlapping re-engagement conversions (18.4)
+
+AdAttributionKit permits multiple simultaneous re-engagement conversions. Read
+the conversion tag from the re-engagement URL parameter and pass it to
+`updateConversionValue` so the intended conversion is updated.
+
+### Development postback testing (18.4)
+
+An advertised app built by Xcode can create and interact with development
+postbacks without a publisher app or prior store distribution. Enable and
+inspect this under **Settings > Developer > Ad Attribution Testing**.
+
+## Background and extension services
+
+### Background Nearby Interaction (18.4)
 
 An app with an active Live Activity can perform Ultra Wideband ranging through
-Nearby Interaction while running in the background on iOS 18.4 (`18.4`). Tie
-the background ranging experience to the Live Activity lifecycle.
+Nearby Interaction while in the background. Tie the ranging lifetime to the
+Live Activity rather than assuming unrestricted background execution.
 
-## Broadcast Extension Memory
+### Broadcast Extension memory (18.5)
 
-iOS and iPadOS 18.5 (`18.5`) raise the per-process memory limit for Broadcast
-Extensions. Use the additional headroom for higher-quality capture and streaming
-only when system resources permit; it is not an unconditional memory guarantee.
+iOS and iPadOS 18.5 raise the per-process memory limit for Broadcast Extensions.
+Capture and streaming extensions can use the additional headroom for higher
+quality when system resources permit, but should continue handling memory
+pressure.
 
-## Enterprise App Launch Recovery
+### Push to Talk migration (26.0)
 
-iOS and iPadOS 18.5 (`18.5`) fix an iOS 18-era failure that could prevent some
-enterprise apps from launching. A device that already encountered the failure
-must uninstall and reinstall all enterprise apps to recover; updating in place
-is insufficient.
+Apps built with the iOS 26 SDK or later cannot use
+`com.apple.developer.pushkit.unrestricted-voip.ptt`. Migrate to the Push to Talk
+framework introduced in iOS 16.
 
-## Push to Talk Migration
+## Enterprise and App Store distribution
 
-Apps built with the iOS 26 SDK (`26.0`) can no longer use the legacy
-`com.apple.developer.pushkit.unrestricted-voip.ptt` entitlement. Migrate Push to
-Talk behavior to the Push to Talk framework introduced in iOS 16.
+### Enterprise launch recovery (18.5)
 
-## App Store SDK Requirement
+iOS and iPadOS 18.5 fix an iOS 18-era problem that could prevent some enterprise
+apps from launching. A device that already encountered the problem requires all
+enterprise apps to be uninstalled and reinstalled; installing only the affected
+app again is not the documented recovery.
 
-The App Store submission rule tracked as `app-store-sdk-requirements` has applied
-since April 28, 2026. Uploads to App Store Connect must be built with Xcode 26 or
-later and use a version 26 SDK for the submitted platform:
+### App Store SDK requirement
 
-- iOS 26
-- iPadOS 26
-- tvOS 26
-- visionOS 26
-- watchOS 26
-
-The archive's build tool and SDK must satisfy this upload gate.
+Since April 28, 2026, App Store Connect uploads must be built with Xcode 26 or
+later and use a version 26 SDK for iOS, iPadOS, tvOS, visionOS, or watchOS.

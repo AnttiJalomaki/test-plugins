@@ -12,19 +12,25 @@ metadata:
 
 ## Use this patch
 
-- Inspect the app's exact `react-native` version before applying version-dependent advice.
-- Use the project's manifests, native projects, build configuration, code, and tests as the authority when they disagree with this patch.
-- Read the architecture and build notes before upgrading a native app or library.
-- Read the relevant reference before changing Metro, DevTools, native extension points, styling, input, networking, or error reporting.
-- Treat explicitly experimental or unstable APIs as integration surfaces, not compatibility promises.
-- For releases newer than the frontmatter version, verify current behavior in the project and current release documentation.
+- Inspect the app's exact `react-native` version before applying
+  version-dependent guidance.
+- Treat the manifest, native projects, build configuration, code, and tests as
+  authoritative when they disagree with this patch.
+- Read the architecture and native-extension references before upgrading a
+  native app or library.
+- Read the focused reference before changing Metro, DevTools, networking,
+  styling, input, platform behavior, or error reporting.
+- Treat experimental and `unstable_` APIs as integration surfaces rather than
+  compatibility promises.
+- For a release newer than the frontmatter version, verify current behavior in
+  the project and current release documentation.
 
 ## Reference index
 
 | Reference | Topics |
 |---|---|
-| [upgrades-and-architecture.md](references/upgrades-and-architecture.md) | New Architecture enforcement, Legacy removal, iOS bootstrap, Hermes V1, precompiled iOS builds, toolchain requirements, Android platform targets, support policy |
-| [native-extension-migrations.md](references/native-extension-migrations.md) | Android/Kotlin signatures, C++ flags and headers, removed native APIs, view-transition integration, iOS request hooks, window lifecycle, privacy manifests |
+| [upgrades-and-architecture.md](references/upgrades-and-architecture.md) | New Architecture enforcement, Legacy removal, iOS bootstrap, Hermes V1, precompiled iOS builds, toolchains, Android targets, support policy |
+| [native-extension-migrations.md](references/native-extension-migrations.md) | Android/Kotlin signatures, C++ flags and headers, removed native APIs, view transitions, iOS request hooks, window lifecycle, privacy manifests |
 | [ui-components-and-styling.md](references/ui-components-and-styling.md) | CSS additions and parsing, images, `Modal`, DOM refs, React APIs, animations, accessibility, touch behavior |
 | [platform-behavior.md](references/platform-behavior.md) | Android hardware events, platform colors, autofill, system bars, modal windows, image dimensions |
 | [javascript-and-observability.md](references/javascript-and-observability.md) | Error semantics, promise rejections, Performance APIs, instrumentation hooks, JavaScript API changes, DevTools diagnostics |
@@ -39,7 +45,7 @@ From 0.82, the runtime ignores Android `newArchEnabled=false` and iOS
 Legacy Architecture comparison. Dual-architecture libraries may continue to
 use the interop layer.
 
-iOS begins removing Legacy implementation code in 0.83 and does so by default
+iOS can compile out Legacy implementation code in 0.83 and does so by default
 in 0.84. Restoring it requires a source build:
 
 ```sh
@@ -47,14 +53,14 @@ RCT_USE_PREBUILT_RNCORE=0 RCT_REMOVE_LEGACY_ARCH=0 bundle exec pod install
 ```
 
 Android removes or stubs several bridge and UIManager implementation types in
-0.84 and 0.85. Do not replace those types with similarly named internals; load
-the native-extension migration reference and move to supported extension APIs.
+0.84 and 0.85. Do not replace them with similarly named internals; move to
+supported extension APIs described in the native migration reference.
 
 ### Keep iOS bootstrap dependencies explicit
 
 The Swift Community Template does not make Objective-C++ invalid. Keep an
-Objective-C++ `AppDelegate` when pure C++ module registration requires it, but
-install `RCTAppDependencyProvider` on every `RCTAppDelegate`:
+Objective-C++ `AppDelegate` when pure C++ registration requires it, but install
+`RCTAppDependencyProvider` on every `RCTAppDelegate`:
 
 ```objc
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
@@ -80,14 +86,14 @@ RCT_USE_PREBUILT_RNCORE=0 bundle exec pod install
 ```
 
 Set `RCT_SYMBOLICATE_PREBUILT_FRAMEWORKS=1` when precompiled React Native code
-needs dSYMs. Hermes V1 opt-out is a coordinated dependency and build change,
-not only a boolean toggle: resolve `hermes-compiler` to `0.15.0`, disable V1,
-and use source builds on the applicable platform.
+needs dSYMs. Hermes V1 opt-out is coordinated dependency and build work: resolve
+`hermes-compiler` to `0.15.0`, disable V1, and use source builds on the
+applicable platform.
 
 ## Android upgrade essentials
 
-- With `targetSdk` 35, Android 15 forces edge-to-edge layout. Consume system-bar
-  insets; `react-native-safe-area-context` handles this case.
+- With `targetSdk` 35, Android 15 forces edge-to-edge layout. Consume
+  system-bar insets; `react-native-safe-area-context` handles this case.
 - Framework support for 16 KB memory pages does not make every native
   dependency compatible. Audit all app and third-party native binaries.
 - React Native 0.81 targets Android 16/API 36. Edge-to-edge is mandatory on
@@ -95,14 +101,13 @@ and use source builds on the applicable platform.
 - Use `edgeToEdgeEnabled` to extend edge-to-edge behavior to earlier Android
   versions. Migrate custom native `onBackPressed()` handling or use only the
   documented temporary predictive-back opt-out during transition.
-- Check the version-specific Node.js, Xcode, Kotlin, and Gradle requirements
-  before diagnosing build failures.
+- Check version-specific Node.js, Xcode, Kotlin, and Gradle requirements before
+  diagnosing build failures.
 
 ## Metro and package resolution
 
 Metro 0.82, shipped with React Native 0.79, enables package `"exports"` and
-`"imports"` resolution by default. A temporary compatibility switch is to set
-`resolver.unstable_enablePackageExports` to `false`:
+`"imports"` resolution by default. A temporary compatibility switch is:
 
 ```js
 module.exports = {
@@ -123,8 +128,7 @@ relative to the middleware host.
 ## Native library migration essentials
 
 Custom New Architecture CMake projects should apply the supplied compiler
-helper so `RN_SERIALIZABLE_STATE` and the required React Native C++ flags stay
-in sync:
+helper so `RN_SERIALIZABLE_STATE` and required C++ flags stay synchronized:
 
 ```cmake
 target_compile_reactnative_options(myLibraryName PRIVATE)
@@ -134,11 +138,11 @@ Codegen libraries without a custom `CMakeLists.txt` do not need this call.
 Custom Fabric text integrations must model `textAlignVertical` as a paragraph
 attribute.
 
-Across these releases, Android Java-to-Kotlin migrations tighten nullability
-and sometimes parameter types. Recompile overrides against the pinned version;
-do not preserve an old signature with unsafe casts. C++ include roots and
-several shared-pointer aliases also change, so consult the native migration
-reference before patching compiler errors.
+Android Java-to-Kotlin migrations tighten nullability and sometimes parameter
+types. Recompile overrides against the pinned version; do not preserve an old
+signature with unsafe casts. C++ include roots and shared-pointer aliases also
+change, so consult the native migration reference before patching compiler
+errors.
 
 ## JavaScript behavior that can break upgrades
 

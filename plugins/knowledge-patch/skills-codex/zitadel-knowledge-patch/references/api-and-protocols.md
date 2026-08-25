@@ -12,7 +12,7 @@ Organization context moves from the V1 `x-zitadel-orgid` header into each V2 req
 
 ## Stable v2 error slugs
 
-Stable V2 services can return `zitadel.error.v2.ErrorDetail`; branch on its stable `slug`, such as `user.already_exists`, and use `message` only for diagnostics. Do not assume slugs on V1, V2 beta, V3 alpha, or a V2 endpoint whose logic is not backed by the relational-storage feature.
+Stable V2 services can return `zitadel.error.v2.ErrorDetail`; clients should branch on its stable `slug`, such as `user.already_exists`, and use `message` only for diagnostics. Do not assume slugs on V1, V2 beta, V3 alpha, or a V2 endpoint whose logic is not backed by the relational-storage feature.
 
 ## SCIM v2 preview surface and limits
 
@@ -60,14 +60,14 @@ Reserved scopes change both login routing and token contents:
 - `urn:zitadel:iam:org:project:id:{projectid}:aud` adds a project to the access-token audience; use the literal project ID `zitadel` to call the core APIs.
 - `urn:zitadel:iam:org:project:role:{rolekey}` requests current-project roles, while `urn:zitadel:iam:org:projects:roles` emits per-project role claims for requested audience projects.
 - Repeatable `urn:zitadel:iam:org:roles:id:{orgID}` scopes restrict role results to selected organizations; unknown IDs are ignored.
-- `urn:zitadel:iam:user:metadata` includes Base64-encoded metadata, and `urn:zitadel:iam:user:resourceowner` includes the user's organization ID, name, and primary domain.
+- `urn:zitadel:iam:user:metadata` includes base64-encoded metadata, and `urn:zitadel:iam:user:resourceowner` includes the user's organization ID, name, and primary domain.
 - `urn:zitadel:iam:org:idp:id:{idp_id}` redirects directly to an identity provider; with a custom login policy it must be paired with an organization-domain scope.
 
 The authorization endpoint also accepts `prompt=create` to open registration directly.
 
 ## Token claims and lifecycle behavior
 
-When an authorization response includes an access token, the ID token omits the `profile`, `email`, `phone`, and `address` scope claims unless the application enables `id_token_userinfo_assertion` (**User Info inside ID Token**); otherwise retrieve them from userinfo or introspection. Add OIDC custom claims with a complement-token Action and SAML custom attributes with a complement-SAML-response Action.
+When an authorization response includes an access token, the ID token omits the `profile`, `email`, `phone`, and `address` scope claims unless the application enables `id_token_userinfo_assertion` (**User Info inside ID Token**); otherwise retrieve them from userinfo or introspection. OIDC custom claims are added by a complement-token Action, while SAML custom attributes use a complement-SAML-response Action.
 
 Introspection handles opaque and JWT access tokens, checks revocation, and reports `active: true` only when the requesting client is in the token audience. Revoking an access token affects only that token, while revoking a refresh token also revokes its corresponding access token.
 

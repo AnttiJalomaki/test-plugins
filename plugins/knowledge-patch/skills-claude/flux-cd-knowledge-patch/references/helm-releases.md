@@ -1,67 +1,68 @@
-# Helm releases
+# Helm Releases
 
 ## Apply and health behavior
 
-Flux ships Helm v4 beginning with 2.8.0. New releases use server-side apply;
-releases already stored by Helm remain on client-side apply until explicitly
-opted in. Kstatus health is the default for all HelmReleases, and CEL
-expressions can define readiness for Helm-managed objects.
+### Helm v4 defaults (since 2.8.0)
 
-Enable `UseHelm3Defaults` to retain the earlier apply and health behavior.
+Flux ships Helm v4. Newly created releases use server-side apply. Releases
+already stored by Helm continue to use client-side apply until explicitly
+opted in. Kstatus-based health checking is the default for every HelmRelease,
+and CEL expressions can define readiness for Helm-managed objects.
 
-Beginning with 2.9.0, the post-render strategy defaults to `combined`, so Helm
-hooks pass through post-renderers. Configure `nohooks` explicitly before an
-upgrade if a chart relies on the old behavior.
+Enable the `UseHelm3Defaults` feature gate to retain the previous apply and
+health behavior while preparing manifests for the new defaults.
 
-## Retry and cancellation
+### Post-render hooks (since 2.9.0)
 
-Since 2.7.0, HelmRelease install and upgrade handling supports the
-`RetryOnFailure` strategy.
+The default HelmRelease post-render strategy is `combined`, so Helm hooks pass
+through post-rendering. Set the strategy explicitly to `nohooks` before an
+upgrade when a chart depends on hooks bypassing post-rendering.
 
-The helm-controller `CancelHealthCheckOnNewRevision` gate, added in 2.8.0,
-cancels an active health check for a new source revision, spec change,
-referenced ConfigMap or Secret change, manual reconciliation, or Receiver
-trigger. It reports `HealthCheckCanceled` on the `Ready` condition.
+### Cross-kind and dependency readiness (since 2.7.0 and 2.9.0)
 
-Enable `DefaultToRetryOnFailure` together with cancellation so a release does
-not become stuck under the default no-retry configuration.
+Entries in `HelmRelease.spec.dependsOn` can use CEL expressions to extend
+readiness evaluation beyond the dependency's standard Ready condition. CEL
+health-check expressions can omit `kind`, applying one expression to all
+resource kinds in an API group.
 
-## Values and debugging
+## Failure recovery
 
-Since 2.9.0, `HelmRelease.valuesFrom` has a literal mode equivalent to
-`helm install --set-literal`. The entire referenced ConfigMap or Secret key is
-used as one string without type parsing or dotted-property expansion.
+### Retry strategy (since 2.7.0)
 
-Use the debug command to inspect effective values after inline values and
-referenced ConfigMaps or Secrets are merged:
+Set the install or upgrade strategy to `RetryOnFailure` when a failed release
+should be retried.
+
+### Cancel stale health checks (since 2.8.0)
+
+The opt-in `CancelHealthCheckOnNewRevision` feature gate covers helm-controller.
+It cancels an active health check after any of these inputs change:
+
+- Source revision.
+- HelmRelease spec.
+- Referenced ConfigMap or Secret.
+- Manual reconciliation request.
+- Receiver-triggered reconciliation.
+
+Cancellation sets the `Ready` condition reason to `HealthCheckCanceled`.
+Enable `DefaultToRetryOnFailure` with this gate; the default no-retry
+configuration can otherwise leave the release stuck after cancellation.
+
+## Values and referenced configuration
+
+### Inspect effective values (since 2.5.0)
 
 ```shell
 flux debug helmrelease --show-values
 ```
 
-This prints referenced Secret values in clear text. Protect terminal output,
-logs, and captured artifacts accordingly.
+This command displays values after merging inline data with referenced
+ConfigMaps and Secrets. Referenced Secret values are printed in clear text, so
+protect terminal output, logs, and copied diagnostics.
 
-## Resource inventory
+### Reconcile when values change (since 2.7.0)
 
-Since 2.8.0, each HelmRelease records managed objects in `.status.inventory`.
-Use the inventory for debugging, auditing, and tools that need the deployed
-resource set.
-
-## Dependencies and custom health
-
-Since 2.7.0, `HelmRelease.spec.dependsOn` entries can use CEL readiness
-expressions rather than relying only on the dependency's Ready condition.
-
-Since 2.8.0, CEL expressions can define health for Helm-managed objects. Since
-2.9.0, a health expression may omit `kind` to apply across all kinds in the
-selected API group.
-
-## Referenced data watches
-
-Since 2.7.0, helm-controller can immediately reconcile when a referenced
-`valuesFrom` ConfigMap or Secret, or either kubeConfig reference, changes.
-Label an individual referenced object:
+Helm-controller can immediately reconcile changes to `valuesFrom` and to both
+kubeConfig reference forms. Label an individual referenced object:
 
 ```yaml
 metadata:
@@ -69,17 +70,32 @@ metadata:
     reconcile.fluxcd.io/watch: Enabled
 ```
 
-Alternatively, use `--watch-configs-label-selector` on the controller to
-select watched objects globally.
+Alternatively, set a controller selector such as
+`--watch-configs-label-selector=owner!=helm` to watch every matching reference.
 
-## OCI charts and generated artifacts
+### Literal values (since 2.9.0)
 
-The helm-controller v1.3.0 `DisableChartDigestTracking` feature gate, shipped
-with Flux 2.6.0, disables the default behavior of appending an OCI Helm chart
-digest to its chart version.
+`HelmRelease.valuesFrom` supports a literal mode equivalent to
+`helm install --set-literal`. The entire content of the selected ConfigMap or
+Secret key becomes one string value; Flux does not parse its type or expand
+dotted property names.
 
-Since 2.7.0, a HelmRelease can set `spec.chartRef.kind: ExternalArtifact` to
-consume output from the optional source-watcher's `ArtifactGenerator`. Since
-2.8.0, ArtifactGenerator can extract and modify Helm charts while producing
-artifacts.
+## Inventory and chart identity
 
+### Managed-resource inventory (since 2.8.0)
+
+Each HelmRelease records its managed objects in `.status.inventory`. Use it to
+audit the deployed resource set and to debug ownership or cleanup issues.
+
+### OCI chart digest tracking (since 2.6.0)
+
+Helm-controller normally appends an OCI Helm chart digest to the chart version.
+Enable the `DisableChartDigestTracking` feature gate to suppress that behavior.
+
+## ArtifactGenerator chart processing
+
+Since 2.8.0, `ArtifactGenerator` can extract and modify Helm charts while
+producing artifacts. A HelmRelease can consume the resulting
+`ExternalArtifact` with `spec.chartRef`; see
+[Sources and artifacts](sources-and-artifacts.md) for generator composition and
+monorepo discovery.

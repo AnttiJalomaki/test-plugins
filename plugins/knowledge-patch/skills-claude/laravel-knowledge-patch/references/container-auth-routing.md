@@ -1,140 +1,167 @@
 # Container, Authentication, Routing, and Context
 
-## Contents
+## Attribute-declared interface bindings (2025-06)
 
-- [Container resolution and bindings](#container-resolution-and-bindings)
-- [Context, exceptions, and application state](#context-exceptions-and-application-state)
-- [Authentication and request input](#authentication-and-request-input)
-- [Routing, middleware, and URLs](#routing-middleware-and-urls)
-- [Rate limiting and conditional helpers](#rate-limiting-and-conditional-helpers)
+Container interface-to-implementation bindings can be declared with the PHP `Bind` attribute instead of only in service-provider registration.
 
-## Container resolution and bindings
+```php
+#[Bind(RedisEventPusher::class)]
+interface EventPusher {}
+```
 
-- **Optional constructor defaults** `[12.0-upgrade]`: the container leaves a
-  resolvable optional class parameter at its declared default. For
-  `public ?Carbon $date = null`, `resolve()` supplies `null`.
-- **Return-type inferred bindings** `[12.0.0]`: omit the abstract when a binding
-  closure declares it as the return type:
+## Closure locations in route listings (2026-03-laravel-12)
 
-  ```php
-  $app->bind(fn (): ServiceContract => new Service);
-  ```
+`route:list` displays the source file path and line number for closure routes, making those routes traceable from CLI output.
 
-- **Contextual context injection** `[2025-05]`: `#[Context('trace_id',
-  hidden: true)]` injects a value from hidden application context.
-- **Attribute interface bindings** `[2025-06]`: declare an interface binding
-  with `#[Bind(RedisEventPusher::class)]`.
-- **Singleton and scoped attributes** `[2025-07]`: `#[Singleton]` and
-  `#[Scoped]` declare class lifetime without a provider binding.
-- **Enum selectors in attributes** `[2025-08]`: `Bind` accepts a `UnitEnum`
-  environment selector and the `Database` contextual attribute accepts an enum
-  connection selector.
-- **String bindings in `Give`** `[2025-11]`: `#[Give('cache.store')]` can inject
-  a string-named service, not only a class.
-- **Nullable defaults in method calls** `[13.0-upgrade]`: `Container::call()`
-  honors the default of an unbound nullable class parameter, matching
-  constructor injection.
-- **Enum selectors across managers** `[2026-04]`: queue, logging, cache, mail,
-  auth, password, broadcast, notification, and concurrency manager methods
-  accept enums. Enum selectors also cover several default-driver setters,
-  Redis purging, limiter names, and cache-touch keys.
-- **Parameter-aware contextual attributes** `[2026-06]`: a contextual
-  attribute's resolver receives the target `ReflectionParameter`.
-- **Conditional bindings** `[2026-07]`: use `BindWhen` for conditionally
-  binding services.
+## Conditional container bindings (2026-07)
 
-## Context, exceptions, and application state
+The `BindWhen` attribute conditionally binds services into the container.
 
-- **Scoped context** `[2025-03]`: `Context::scope($callback)` restores the
-  surrounding context after the callback:
+## Container resolution respects default values (12.0-upgrade)
 
-  ```php
-  Context::scope(function () {
-      Context::add('tenant_id', 123);
-  });
-  ```
+The container no longer injects a resolvable class into an optional class-typed constructor parameter when that parameter has a default value. For `public ?Carbon $date = null`, `resolve()` now leaves `$date` as `null`.
 
-- **Selective log-context removal** `[2025-03]`: call
-  `Log::withoutContext(['tenant_id', 'trace_id'])` to remove selected context
-  values rather than clearing everything.
-- **Remembered context** `[2025-07]`: `Context::remember()` and
-  `rememberHidden()` lazily compute and save a value only when the key is
-  missing.
-- **Report suppression callbacks** `[2025-07]`: use `dontReportUsing()` when
-  exception reporting suppression needs a callback instead of a class list.
-- **Scheduled context propagation** `[2025-11]`: scheduled tasks inherit
-  Laravel context from the scheduling process.
+## Contextual injection from application context (2025-05)
 
-## Authentication and request input
+The container's `Context` contextual attribute injects a value from Laravel's context repository. `#[Context('trace_id', hidden: true)]` reads from hidden context.
 
-- **Nested request merging** `[12.0-upgrade]`:
-  `Request::mergeIfMissing()` treats dot notation as a nested array path;
-  `'user.last_name'` no longer creates a literal dotted top-level key.
-- **Nested policy discovery** `[12.0.0]`: policy discovery follows parallel
-  nested namespaces, such as `App\Models\Admin\User` to
-  `App\Policies\Admin\UserPolicy`.
-- **Enum input defaults** `[2025-05]`: `Request::enum()` accepts a default enum
-  returned when the key is absent or invalid.
-- **Session regeneration on login** `[2025-10]`: `Auth::login()` regenerates
-  the session identifier; update manual-login tests accordingly.
-- **Fluent request defaults** `[2025-11]`: `Request::fluent($key, $default)`
-  accepts a default for missing input.
-- **Remember-cookie payloads** `[2026-01]`: remember cookies store a MAC of the
-  password hash, not the raw hash. Do not parse or create the old payload.
-- **Expanded enum integration** `[2026-01]`: session and cache APIs accept enum
-  keys more broadly, including session `now()` and `flash()` and cache
-  `flexible()` and `withoutOverlapping()`. Authorization abilities accept
-  `UnitEnum`; `PendingBatch::onConnection()`, `Storage::persistentFake()`, and
-  related selectors also accept enums.
-- **Deprecated request getter** `[2026-02]`: replace `Request::get()` with an
-  explicit source accessor such as `input()` or `query()`.
-- **Wildcard trim exclusions** `[2025-12]`: `TrimStrings` exclusions accept
-  wildcard patterns, including nested input paths.
+## Controller middleware exclusions (2026-07)
 
-## Routing, middleware, and URLs
+Controllers can use the `WithoutMiddleware` attribute to declare middleware exclusions.
 
-- **Duplicate route-name precedence** `[12.0-upgrade]`: cached and uncached
-  routes now both select the first registered route when names are duplicated.
-- **Signed URL exclusions** `[12.0.0]`: signed URL validation accepts a callback
-  that selects query-string parameters to ignore.
-- **New macro extension points** `[2025-09]`: `RouteRegistrar` and
-  `Illuminate\Support\Benchmark` support the normal `macro()` API.
-- **Middleware-filtered route lists** `[2025-11]`: narrow output with
-  `php artisan route:list --middleware=auth`.
-- **Closure locations in route lists** `[2026-03-laravel-12]`: `route:list`
-  displays the file and line for closure routes.
-- **Domain route precedence** `[13.0-upgrade]`: explicit-domain routes match
-  before routes without domains regardless of registration order.
-- **Request forgery protection** `[13.0-upgrade]`: use
-  `PreventRequestForgery`, which checks CSRF tokens and `Sec-Fetch-Site`.
-  `VerifyCsrfToken` and `ValidateCsrfToken` remain deprecated aliases; configure
-  with `preventRequestForgery(...)`.
-- **Expanded PHP attributes** `[13.0.0]`: use controller `Middleware` and
-  `Authorize` attributes for colocated request policy; queue jobs support
-  `Tries`, `Backoff`, `Timeout`, and `FailOnTimeout`.
-- **Inherited framework attributes** `[2026-04]`: controller `Middleware`,
-  queued `WithoutRelations`, model `CollectedBy`, and declarations on abstract
-  parents are inherited. A child model's `Table` attribute overrides its
-  parent's.
-- **CORS bypass callbacks** `[2026-01]`: exempt selected requests with
-  `HandleCors::skipWhen($callback)`.
-- **Restricted route unserialization** `[2026-06]`: serialized routes only
-  instantiate permitted classes; do not store arbitrary restorable objects in
-  route values.
-- **Parameter-name route injection** `[2026-06]`: `RouteParameter` can infer the
-  route key from the attributed parameter name.
-- **Route metadata** `[2026-06]`: attach application or tooling annotations
-  directly to routes.
-- **Controller exclusions** `[2026-07]`: use `WithoutMiddleware` on controllers
-  to declare middleware exclusions.
+## Defaults for fluent request data (2025-11)
 
-## Rate limiting and conditional helpers
+`Request::fluent()` accepts a default value for a missing input key.
 
-- **Response-aware rate limits** `[2025-09]`: use `Limit::after()` to decide
-  from the response whether a completed request counts against the limit.
-- **Macroable rate limiter** `[2026-07]`: `RateLimiter` supports application
-  macros.
-- **Closure conditions for `when()`** `[12.0.0]`: a closure condition is
-  evaluated before choosing the applicable branch.
-- **Lazy `throw_if()` exceptions** `[2025-10]`: pass a closure to construct an
-  exception only when the condition is true.
+```php
+$filters = $request->fluent('filters', ['sort' => 'created_at']);
+```
+
+## Deprecated request getter (2026-02)
+
+`Illuminate\Http\Request::get()` is deprecated; use an accessor for the intended input source, such as `input()` or `query()`.
+
+## Domain route precedence (13.0-upgrade)
+
+Routes with explicit domains are now matched before routes without domains, regardless of their registration order. Applications relying on the previous precedence should review overlapping domain and non-domain routes.
+
+## Duplicate route-name precedence (12.0-upgrade)
+
+Cached and uncached routing now agree when routes share a name: the first registered route wins. Uncached routing previously selected the last registered route.
+
+## Enum selectors in container attributes (2025-08)
+
+The `Bind` attribute accepts a `UnitEnum` for its environment selector, and the `Database` contextual attribute accepts an enum for its connection selector.
+
+```php
+#[Bind(RedisEventPusher::class, environments: AppEnvironment::Production)]
+interface EventPusher {}
+
+public function __construct(
+    #[Database(DatabaseConnection::Analytics)]
+    private Connection $connection,
+) {}
+```
+
+## JSON-preferred health responses (2026-04)
+
+The built-in health route supports JSON responses, and the application builder provides `prefersJsonResponses()` for selecting JSON-preferred response behavior.
+
+## Macroable rate limiting (2026-07)
+
+`RateLimiter` is macroable, allowing applications to add project-specific rate-limiter helpers.
+
+## Manager extension callback binding (13.0-upgrade)
+
+Closures registered through manager `extend()` methods are now bound to the manager. Values previously accessed through another object as `$this` must be captured explicitly with `use (...)`.
+
+## Middleware-filtered route listings (2025-11)
+
+`route:list` accepts a `--middleware` filter for narrowing its output to routes using a given middleware.
+
+```shell
+php artisan route:list --middleware=auth
+```
+
+## Nested policy discovery (12.0.0)
+
+Policy auto-discovery now follows parallel nested model and policy namespaces; for example, `App\Models\Admin\User` can discover `App\Policies\Admin\UserPolicy`.
+
+## Nested request merging (12.0-upgrade)
+
+`Request::mergeIfMissing()` now interprets dot notation as a nested array path. A key such as `'user.last_name'` therefore populates nested `user` data instead of creating a literal top-level dotted key.
+
+## Parameter-aware contextual attributes (2026-06)
+
+A contextual attribute's resolution method receives the target reflection parameter, allowing resolution to depend on the parameter to which the attribute is attached.
+
+## Parameter-name route injection (2026-06)
+
+`RouteParameter` can use the name of its attributed parameter, so route injection does not always need a separately repeated parameter name.
+
+## Password reset token expiry units (12.0-upgrade)
+
+`DatabaseTokenRepository` now expects its `$expires` constructor argument in seconds rather than minutes; custom instantiation must convert existing minute values.
+
+## Remembered context values (2025-07)
+
+`Context::remember()` and `Context::rememberHidden()` lazily compute and store a value only when its visible or hidden context key is absent.
+
+```php
+$traceId = Context::remember('trace_id', fn () => (string) Str::uuid());
+```
+
+## Request forgery protection (13.0-upgrade)
+
+The CSRF middleware is now `PreventRequestForgery` and also validates request origin through `Sec-Fetch-Site`. `VerifyCsrfToken` and `ValidateCsrfToken` remain deprecated aliases; update direct middleware references and use the new `preventRequestForgery(...)` configuration API.
+
+## Response-aware rate limiting (2025-09)
+
+Rate limits can use an `after` callback to inspect the response and decide whether the completed request should count against the limit.
+
+```php
+Limit::perMinute(60)
+    ->after(fn (Response $response) => $response->successful());
+```
+
+## Restricted route unserialization (2026-06)
+
+Routing unserialization now restricts the classes it may instantiate; custom serialized route values can no longer assume arbitrary classes will be restored.
+
+## Return-type-inferred container bindings (12.0.0)
+
+The container can infer the abstract being bound from a concrete closure's declared return type.
+
+```php
+$app->bind(fn (): ServiceContract => new Service);
+```
+
+## Route metadata (2026-06)
+
+Routes can carry metadata, allowing application or tooling annotations to be associated with route definitions.
+
+## Selective log-context removal (2025-03)
+
+`Log::withoutContext()` accepts keys to remove only selected values from subsequent log context.
+
+```php
+Log::withoutContext(['tenant_id', 'trace_id']);
+```
+
+## Server-provided application base paths (2025-09)
+
+Application bootstrap may read `APP_BASE_PATH` from `$_SERVER`, allowing a host or bootstrap wrapper to set the base path before the application is loaded.
+
+```php
+$_SERVER['APP_BASE_PATH'] = '/srv/application';
+```
+
+## String bindings in `Give` (2025-11)
+
+The container's `Give` attribute accepts string service bindings in addition to class names.
+
+```php
+public function __construct(
+    #[Give('cache.store')] private Repository $cache,
+) {}
+```

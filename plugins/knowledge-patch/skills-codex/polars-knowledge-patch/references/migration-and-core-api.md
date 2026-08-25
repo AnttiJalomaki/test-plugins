@@ -1,110 +1,246 @@
 # Migration and Core API
 
-## Construction and inference
+Use this reference when upgrading constructors, frame and series operations,
+exception handling, or deprecated interfaces.
 
-- **Strict `Series` input (1.0-upgrade).** `pl.Series` applies strict
-  construction to inferred and declared dtypes. Incompatible mixed input
-  raises by default. With `strict=False`, `[1, 2, 3.5]` finds `Float64`; with
-  an explicit integer dtype, the float is cast rather than replaced by null.
-- **Row orientation (1.0-upgrade).** `DataFrame` infers orientation from data
-  and schema dimensions rather than value types, and warns when it infers
-  rows. Use `orient="row"` for heterogeneous row records.
-- **Time-zone construction (1.0-upgrade).** Constructing into a zoned datetime
-  dtype always converts values to that zone rather than replacing time-zone
-  metadata. A naive midnight constructed as Amsterdam time can become 01:00
-  CET, so check for wall-clock shifts.
-- **Fixed-size arrays (1.0-upgrade).** `Series.reshape` and construction from
-  two-dimensional NumPy arrays produce fixed-size `Array`, not `List`. Use
-  `.arr.to_list()` when variable-length lists are required.
-- **Byte scalar broadcasting (since 1.41.0).** The `DataFrame` constructor
-  broadcasts byte scalars across rows instead of treating them as
-  non-broadcast inputs.
+## Construction and schema-sensitive behavior
 
-## Replacement, selection, and indexing
+### Construct `Series` values strictly by default
 
-- **`replace` versus `replace_strict` (1.0-upgrade).** `replace` preserves the
-  input dtype, and its `default` and `return_dtype` parameters are deprecated.
-  Use `s.replace_strict(old, new, default=s)` when the mapping may change
-  dtype. Without `default`, any unmapped non-null input raises.
-- **Positional `nth` (1.0-upgrade).** `pl.nth` no longer has `columns`
-  behavior; every positional input is an index. Use `pl.col("a").get(1)` for
-  a row from a named expression.
-- **Out-of-bounds lookup (1.0-upgrade).** All `get` and `gather` variants raise
-  by default. Pass `null_on_oob=True` to return null.
-- **Integer Series indices (since 1.40.0).** Series index assignment accepts
-  every integer dtype.
-- **Unique dummy names (since 1.10.0).** `Series.to_dummies` avoids duplicate
-  output column names.
+In `1.0-upgrade`, strict construction began applying to inferred as well as
+declared dtypes. Incompatible mixed values therefore raise by default.
 
-## Frame reshaping and ordering
+```python
+import polars as pl
 
-- **Pivot API (1.0-upgrade).** `DataFrame.pivot` renamed `columns` to `on`,
-  made it the first positional argument, and made `index` and `values`
-  optional with remaining columns inferred. With multiple value columns,
-  output names omit the redundant pivot-column name.
-- **Null pivot keys (since 1.40.0).** `pivot` retains rows whose `on` value is
-  null.
-- **Run-length fields (1.0-upgrade).** `rle` returns struct fields `len` and
-  `value`, replacing `lengths` and `values`. `len` uses the unsigned index
-  dtype, `UInt32` by default, rather than `Int32`.
-- **Sorted annotations (1.0-upgrade).** `set_sorted` accepts one column per
-  call because it promises that column is independently sorted. Chain calls
-  for several sorted columns.
-- **All-column unnest (since 1.40.0).** `unnest()` with no column arguments
-  operates on every applicable column.
+s = pl.Series([1, 2, 3.5], strict=False)  # common Float64 dtype
+```
 
-## Window and range defaults
+With an explicit integer dtype and `strict=False`, a floating value is cast
+rather than replaced with null.
 
-- **Dynamic-window offset (1.0-upgrade).** `group_by_dynamic` defaults
-  `offset` to zero rather than negative `every`. Specify `offset="-1d"` with
-  `every="1d"` when the former leading window is required.
-- **Integer-range validation (since 1.40.0).** `pl.int_ranges` raises for
-  non-numeric input instead of accepting it.
-- **Ignored correlation degrees of freedom (since 1.40.0).** `rolling_corr`
-  ignores and deprecates `ddof`; changing it no longer changes results.
+### Declare row-oriented frame input
 
-## Equality, names, and implicit columns
+Since `1.0-upgrade`, `DataFrame` infers orientation from the dimensions of the
+data and schema, not from the types of the values. It warns whenever it infers
+rows. Make heterogeneous row records explicit:
 
-- **Series name equality (1.0-upgrade).** `Series.equals` ignores names by
-  default. Pass `check_names=True` for name-sensitive equality.
-- **Line reader output name (since 1.40.0).** `scan_lines` and `read_lines`
-  name their implicit column `line`, not `lines`. Update selectors or rename
-  explicitly.
+```python
+df = pl.DataFrame([[1, "a"], [2, "b"]], orient="row")
+```
 
-## Dtypes, aliases, and deprecations
+### Expect constructor timezone conversion
 
-- **Instance-only dtype attributes (1.0-upgrade).** Attributes such as
-  `time_unit` and `time_zone` exist on dtype instances, so
-  `pl.Datetime.time_unit` raises. Class-aware code can use
-  `getattr(dtype, "time_unit", None)`.
-- **Removed dtype alias exports (1.0-upgrade).** Public type aliases are no
-  longer re-exported from `polars` or `polars.datatypes`. Define local public
-  aliases, such as `pl.DataType | type[pl.DataType]`.
-- **Keyword-only decimal inference (since 1.20.0).** Pass
-  `str.to_decimal(inference_length=100)`; its parameter is keyword-only.
-- **PEP 702 markers (since 1.30.0).** Deprecated Polars APIs expose PEP 702
-  deprecation information to compatible static-analysis tools.
-- **Dataframe interchange (since 1.40.0).** Polars integration with the
-  dataframe interchange protocol is deprecated; treat dependent integrations
-  as transitional.
-- **`StringCache` (since 1.41.0).** `StringCache` is deprecated. Avoid it in
-  new code and prepare existing uses for removal.
+Since `1.0-upgrade`, constructing a datetime column with a zoned dtype always
+converts values to the requested zone. It does not merely replace timezone
+metadata. A naive midnight constructed with
+`pl.Datetime("us", "Europe/Amsterdam")` can therefore become `01:00 CET`.
 
-## Exceptions and diagnostics
+### Broadcast byte scalars
 
-- **Specific operation errors (1.0-upgrade).** Many failures previously
-  surfaced as `ComputeError` now raise `InvalidOperationError` or
-  `SchemaError`. Update broad handlers around casts and schema-dependent
-  operations when the distinction matters.
-- **Lazy schema properties (1.0-upgrade).** Accessing `LazyFrame.schema`,
-  `.dtypes`, `.columns`, or `.width` emits `PerformanceWarning` because schema
-  resolution may be expensive. Call `collect_schema()` and inspect the
-  returned `Schema`.
+Since `1.41.0`, the `DataFrame` constructor broadcasts byte scalars across rows
+instead of treating them as non-broadcast inputs.
 
-## Installation extras
+### Reject duplicate Arrow column names
 
-- **Renamed extras (1.0-upgrade).** Optional dependency definitions changed.
-  Installations requesting `fastexcel`, `gevent`, `matplotlib`, or `async`
-  should review their extras. The documented replacement for
-  `polars[fastexcel,gevent,matplotlib]` is
-  `polars[calamine,async,graph]`.
+Since `1.20.0`, constructing from a PyArrow table with duplicate column names
+raises `DuplicateError`. Handle that exception as an invalid schema rather than
+as a generic conversion failure.
+
+### Preserve empty JSON schemas
+
+Since `1.30.0`, constructing a frame from empty JSON preserves the known schema
+instead of discarding it.
+
+## Replacement, selection, and equality
+
+### Distinguish `replace` from `replace_strict`
+
+As of `1.0-upgrade`, `replace` preserves the existing dtype, and its `default`
+and `return_dtype` parameters are deprecated. Use `replace_strict` for mappings
+that may change dtype:
+
+```python
+out = s.replace_strict(old, new, default=s)
+```
+
+Without `default`, `replace_strict` raises if a non-null input is not mapped.
+Since `1.40.0`, strict replacement also works correctly for Enum data.
+
+### Pass only indices to `pl.nth`
+
+The `columns` behavior was removed in `1.0-upgrade`; every positional input to
+`pl.nth` is an index. Retrieve a row from a named expression with
+`pl.col("a").get(1)` rather than `pl.nth(1, "a")`.
+
+### Choose out-of-bounds behavior
+
+Since `1.0-upgrade`, all `get` and `gather` variants raise on an out-of-bounds
+index by default. Pass `null_on_oob=True` when null is the desired result, for
+example `s.list.get(1, null_on_oob=True)`.
+
+### Compare series names only when required
+
+Since `1.0-upgrade`, `Series.equals` ignores names by default. Pass
+`check_names=True` when names are part of equality.
+
+### Assign with any integer index dtype
+
+Since `1.40.0`, Series index assignment accepts every integer dtype.
+
+### Generate unique dummy names
+
+Since `1.10.0`, `Series.to_dummies` avoids duplicate output column names.
+
+## Reshaping and structural APIs
+
+### Update `pivot` arguments and output names
+
+In `1.0-upgrade`, `DataFrame.pivot` renamed `columns` to `on`, made `on` the
+first positional argument, and made `index` and `values` optional. Unspecified
+columns are inferred. With multiple value columns, generated names omit the
+redundant pivot-column name: for example, `test_1_maths` replaces
+`test_1_subject_maths`.
+
+Since `1.40.0`, pivot retains rows whose `on` value is null.
+
+### Use the current run-length struct fields
+
+Since `1.0-upgrade`, `rle` returns fields named `len` and `value`, replacing
+`lengths` and `values`. `len` uses the unsigned index dtype (`UInt32` by
+default), not `Int32`.
+
+### Annotate one sorted column at a time
+
+Since `1.0-upgrade`, `set_sorted` accepts one column because each annotation
+promises that column is independently sorted. Chain calls for several columns:
+
+```python
+df = df.set_sorted("a").set_sorted("b")
+```
+
+### Unnest applicable columns by default
+
+Since `1.40.0`, calling `unnest()` without column arguments operates on every
+applicable column.
+
+### Update implicit line-reader names
+
+Since `1.40.0`, `scan_lines` and `read_lines` name their default column `line`,
+not `lines`. Select the new name or rename it explicitly.
+
+### Fill `Null`-typed columns
+
+Since `1.40.0`, `DataFrame.fill_null` operates on columns whose dtype is
+`Null`.
+
+## Validation and exceptions
+
+### Catch more specific failures
+
+Beginning with `1.0-upgrade`, many failures that previously raised
+`ComputeError` instead raise `InvalidOperationError` or `SchemaError`. Review
+handlers around casts and schema-dependent operations.
+
+Since `1.30.0`, Python exceptions crossing Polars execution retain their
+original type and traceback, so specific handlers and diagnostics survive.
+
+### Validate integer-range input
+
+Since `1.40.0`, `pl.int_ranges` raises for non-numeric input instead of accepting
+it.
+
+### Reject structurally invalid operations
+
+The `py-1.43.2-rs-0.55.1-0.55.2` changes make temporal/non-temporal addition or
+subtraction raise. Imploding an `Object` series also raises rather than creating
+an invalid `List(Object)`.
+
+## Dtype introspection and public aliases
+
+### Read parameters from dtype instances
+
+As of `1.0-upgrade`, attributes such as `time_unit` and `time_zone` exist only
+on dtype instances; `pl.Datetime.time_unit` raises. Class-aware code can use:
+
+```python
+time_unit = getattr(dtype, "time_unit", None)
+```
+
+Type aliases are no longer re-exported from `polars` or `polars.datatypes`.
+Define public aliases locally, for example:
+
+```python
+PolarsDataType = pl.DataType | type[pl.DataType]
+```
+
+## Runtime and installation migration
+
+### Update the Python floor and supported runtimes
+
+Polars `1.10.0` requires Python 3.9 or newer. Python 3.13 is officially
+supported as of `1.20.0`.
+
+### Rename installation extras
+
+The `1.0-upgrade` optional dependencies renamed extras used for `fastexcel`,
+`gevent`, `matplotlib`, and `async`. The documented replacement for
+`polars[fastexcel,gevent,matplotlib]` is `polars[calamine,async,graph]`.
+
+### Surface deprecated APIs to static tooling
+
+Since `1.30.0`, deprecated APIs participate in PEP 702, so compatible static
+analysis can identify deprecated use.
+
+## Deprecation checklist
+
+### Avoid transitional dataframe interchange
+
+Since `1.40.0`, the dataframe interchange protocol integration is deprecated.
+Treat integrations that depend on it as transitional.
+
+### Remove `StringCache`
+
+Since `1.41.0`, `StringCache` is deprecated. Avoid it in new code and prepare
+existing uses for removal.
+
+### Pass graph and explode choices explicitly
+
+In `py-1.43.2-rs-0.55.1-0.55.2`, calling `show_graph()` without `plan_stage` and
+calling `.explode()` without `empty_as_null` became deprecated. Supply both
+choices explicitly.
+
+### Migrate categorical casts and helpers
+
+In `py-1.43.2-rs-0.55.1-0.55.2`, the following became deprecated:
+
+- casting `Categorical` values to integer dtypes;
+- casting numeric values to `Categorical`;
+- `cat.get_categories()`;
+- `cat.to_local()`.
+
+Use explicit categorical conversion expressions described in
+[Expressions and Data Types](expressions-and-data-types.md).
+
+### Replace deprecated casts and mixed operators
+
+In `py-1.43.2-rs-0.55.1-0.55.2`, string-to-temporal casts, casts from
+non-nested dtypes to `List`, and bitwise operations between integer and Boolean
+values became deprecated. Convert the operands explicitly before applying the
+temporal, list, or bitwise operation.
+
+### Match struct field counts
+
+In `py-1.43.2-rs-0.55.1-0.55.2`, calling `struct.rename_fields()` with a number
+of names different from the number of fields became deprecated. Supply exactly
+one new name per field.
+
+### Remove `rolling_corr` degrees of freedom
+
+Since `1.40.0`, `rolling_corr` ignores and deprecates `ddof`; providing it no
+longer changes the result.
+
+## Reproducibility
+
+Since `1.40.0`, `sample()` respects the global random seed. A global seed now
+makes sampling reproducible without a separate per-call seed.

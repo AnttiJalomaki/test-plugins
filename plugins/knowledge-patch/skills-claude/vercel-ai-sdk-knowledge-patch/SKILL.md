@@ -22,10 +22,10 @@ the required capability.
 | --- | --- |
 | [migrations.md](references/migrations.md) | Runtime requirements, codemods, renamed APIs, deprecations, and result semantics |
 | [agents-and-tools.md](references/agents-and-tools.md) | Agent loops, step control, tools, approvals, timeouts, workflows, and harnesses |
-| [generation-and-media.md](references/generation-and-media.md) | Text streams, structured output, PDFs, files, images, speech, transcription, and video |
-| [mcp-and-runtimes.md](references/mcp-and-runtimes.md) | MCP transports, schemas, resources, prompts, elicitation, apps, drift, and managed assets |
-| [providers-and-observability.md](references/providers-and-observability.md) | Provider capabilities, integrations, reasoning controls, telemetry, and lifecycle events |
-| [ui-and-streams.md](references/ui-and-streams.md) | `useChat`, persistence, data streams, direct agent transport, approvals, and realtime UI |
+| [generation-and-media.md](references/generation-and-media.md) | Text generation, structured output, PDFs, files, images, speech, transcription, and video |
+| [mcp-and-runtimes.md](references/mcp-and-runtimes.md) | MCP transports, schemas, resources, prompts, elicitation, apps, and drift |
+| [providers-and-observability.md](references/providers-and-observability.md) | Provider capabilities, integrations, reasoning controls, telemetry, and lifecycle metadata |
+| [ui-and-streams.md](references/ui-and-streams.md) | `useChat`, persistence, data streams, direct agent transport, approvals, realtime UI, and stream handling |
 
 ## Breaking changes first
 
@@ -61,6 +61,9 @@ System messages placed directly in `prompt` or `messages` require
 methods, and Vue's `Chat` class are deprecated; prefer call-level `toolApproval`,
 top-level response helpers, and `useChat`.
 
+`repairToolCall` and `repairText` are the stable repair options. Their
+`experimental_` aliases remain only for compatibility.
+
 ### Multi-step result scope
 
 Top-level multi-step results accumulate `content`, tool calls and results, files,
@@ -94,8 +97,9 @@ const agent = new ToolLoopAgent({
 ### Reconfigure each step
 
 `prepareStep` receives the current model, zero-based `stepNumber`, prior `steps`,
-outgoing `messages`, and runtime context. It can replace the model or messages and
-restrict `activeTools` or `toolChoice`; return `{}` to keep constructor settings.
+outgoing `messages`, and runtime context. It can replace the model or messages,
+restrict `activeTools` or `toolChoice`, and override model-call settings. Return `{}`
+to keep constructor settings.
 
 For explicit completion, combine `toolChoice: 'required'` with a terminal tool that
 has no `execute`. The terminal payload remains available through `staticToolCalls`.
@@ -133,20 +137,20 @@ policy when replay crosses a trust boundary.
   for runtime-defined calls that need validation or casting.
 - An async-generator `execute` streams preliminary values; its last value is the final
   tool result.
-- `onInputStart` and `onInputDelta` observe streamed argument construction;
-  `onInputAvailable` receives validated complete input in both streaming and
-  non-streaming generation.
+- `onInputStart`, `onInputDelta`, and `onInputAvailable` observe argument
+  construction. `onInputStart` precedes `onInputAvailable` in both streaming and
+  non-streaming calls; deltas remain streaming-only.
 - Media returned by `execute` does not automatically reach the model. Implement
   `toModelOutput`, preferably with inline media bytes where provider URL support is
   uncertain.
-- Use `experimental_repairToolCall` to replace malformed calls or return `null` to
-  decline repair. Distinguish `NoSuchToolError`, `InvalidToolArgumentsError`,
-  `ToolExecutionError`, and `ToolCallRepairError`.
+- Use `repairToolCall` to replace malformed calls or return `null` to decline repair.
+  Distinguish `NoSuchToolError`, `InvalidToolArgumentsError`, `ToolExecutionError`,
+  and `ToolCallRepairError`.
 
-Generation and agents accept total, step, idle-chunk, default-tool, and per-tool
-timeouts. Timeout aborts surface as `TimeoutError`. A supplied `SandboxSession` reaches
-tools as `experimental_sandbox` and supports working directories, environment values,
-streaming output, and abort signals.
+Generation and agents accept total, step, first-content, idle-chunk, default-tool, and
+per-tool timeouts where applicable. Timeout aborts surface as `TimeoutError`. A
+supplied `SandboxSession` reaches tools as `experimental_sandbox` and supports working
+directories, environment values, streaming output, and abort signals.
 
 Use `WorkflowAgent` when execution must survive restarts, deployments, interruptions,
 or delayed approvals. Use `HarnessAgent` to expose an external agent runtime through
@@ -158,6 +162,10 @@ the standard `Agent` interface, including resumable sessions and interrupted tur
 consume a returned stream. Streaming generation failures arrive through `onError` or
 an in-band `error` part; tool failures become `tool-error` parts. Non-streaming schema
 and generation failures still throw.
+
+Await response-piping helpers so stream read and write failures propagate. Stream
+transcription result promises consume the single underlying stream; access
+`fullStream` first when both incremental parts and final values are needed.
 
 Stream transforms run in order before callbacks and result promises. A transform that
 calls `stopStream` must emit synthetic `finish-step` and `finish` events so downstream
@@ -211,27 +219,27 @@ snapshot storage and the policy for detected drift.
   `mimeType: 'application/pdf'`.
 - `uploadFile` and `uploadSkill` create reusable provider references instead of
   resending bytes or skill files.
-- `generateSpeech`, `transcribe`, `SpeechResult`, `TranscriptionResult`, and
-  `generateImage` are stable APIs.
+- `generateSpeech`, `transcribe`, `SpeechResult`, and `TranscriptionResult` are stable
+  APIs; streaming speech translation remains experimental.
 - Canonical `file` parts may contain inline data, URLs, provider references, or
-  text-backed content.
-- Experimental video generation supports aborts and bounded downloads; reference
-  inputs can include images and video.
+  text-backed content; use `GeneratedFile` rather than `Experimental_GeneratedImage`.
+- Experimental video generation supports aborts, bounded downloads, polling,
+  webhooks, adaptive aspect ratio, and image or video reference inputs.
 - Top-level `reasoning` provides portable reasoning effort while `providerOptions`
   remains available for provider-specific controls.
 
-Register one global telemetry integration with `registerTelemetry`. OpenTelemetry lives
-in `@ai-sdk/otel`. Runtime and tool context is excluded unless explicitly selected;
-include only fields safe to export. Use `onStart`, `onStepEnd`, and `onEnd` for portable
-lifecycle handling, or subscribe instrumentation to the Node.js `ai:telemetry` tracing
-channel for structured events.
+Register one global telemetry integration with `registerTelemetry`. OpenTelemetry
+lives in `@ai-sdk/otel`. Runtime and tool context is excluded unless explicitly
+selected; include only fields safe to export. Use `onStart`, `onStepEnd`, and `onEnd`
+for portable lifecycle handling, or subscribe instrumentation to the Node.js
+`ai:telemetry` tracing channel for structured events.
 
 ## Implementation checklist
 
 1. Confirm the target API line before choosing renamed or experimental symbols.
 2. Bound every agent loop and long-running tool with stop rules, timeouts, and aborts.
-3. Consume streams and handle their in-band error parts.
+3. Consume streams, await response piping, and handle in-band error parts.
 4. Persist complete response messages before replaying approvals.
-5. Validate runtime-defined tools, MCP outputs, and remotely supplied tool definitions.
+5. Validate runtime-defined tools, MCP outputs, and remotely supplied definitions.
 6. Keep secrets in tool-scoped context and opt telemetry fields in deliberately.
 7. Use durable workflows for operations that must survive process boundaries.

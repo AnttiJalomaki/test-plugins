@@ -1,190 +1,215 @@
 # Runtime, UI, and Scheduling
 
-Use this reference for lifecycle, scheduling, windowing, text/input, and
-framework-runtime changes. The parenthetical tags preserve the source batch
-IDs `api-36` and `api-37`.
+## Background work and timers
 
-## Contents
+### Runtime quotas cover more jobs
 
-- [Background work and execution](#background-work-and-execution)
-- [Activity and window behavior](#activity-and-window-behavior)
-- [Text, accessibility, and input](#text-accessibility-and-input)
-- [Runtime integrity and resource pressure](#runtime-integrity-and-resource-pressure)
-- [Widgets and media selection](#widgets-and-media-selection)
+On Android 16, runtime quotas also cover jobs in the active standby bucket,
+jobs that begin while the app is visible and continue after it becomes
+invisible, and jobs running alongside a foreground service. This affects
+`JobScheduler`, WorkManager, and DownloadManager.
 
-## Background work and execution
+Use user-initiated data-transfer jobs for qualifying user-started transfers.
+Inspect stop reasons, and call `JobScheduler.getPendingJobReasonsHistory()` to
+diagnose jobs that have not run.
 
-### Job quotas and abandoned work (`api-36`)
+### Do not abandon JobParameters
 
-- Android 16 applies job runtime quotas to the active standby bucket, jobs
-  started while visible that continue after visibility is lost, and jobs
-  running alongside a foreground service. This affects `JobScheduler`,
-  WorkManager, and DownloadManager.
-- Prefer user-initiated data-transfer jobs where appropriate. Inspect stop
-  reasons and, for jobs that have not run, call
-  `JobScheduler.getPendingJobReasonsHistory()`.
-- Keep `JobParameters` reachable until `jobFinished()`. If it is collected and
-  the job later times out, the stop reason is
-  `STOP_REASON_TIMEOUT_ABANDONED`; repeated abandonment can reduce scheduling
-  frequency.
-- `setImportantWhileForeground()` is ignored and
-  `isImportantWhileForeground()` returns `false`.
+Keep each `JobParameters` object alive through completion and call
+`jobFinished()` correctly. If the object is collected before completion and the
+job times out, Android 16 reports `STOP_REASON_TIMEOUT_ABANDONED`. Repeated
+abandonment can cause the system to run the app's jobs less often.
 
-### Missed fixed-rate executions (`api-36`)
+`setImportantWhileForeground()` is ignored;
+`isImportantWhileForeground()` returns `false`.
 
-For API 36-targeted apps, `scheduleAtFixedRate` runs at most one missed
-invocation after the process returns to a valid lifecycle. It no longer replays
-every missed run immediately. Test catch-up assumptions with the
+### Fixed-rate catch-up is capped
+
+For API 36 targets, `scheduleAtFixedRate` executes at most one missed invocation
+when the process returns to a valid lifecycle. Test logic that depended on
+replaying every missed run. Exercise the behavior with the
 `STPE_SKIP_MULTIPLE_MISSED_PERIODIC_TASKS` compatibility flag.
 
-### Ordered broadcasts (`api-36`)
+### Exact idle alarms support in-process callbacks
 
-Receiver priority is honored only within one application process, not across
-processes or apps. Priorities are constrained between
-`SYSTEM_LOW_PRIORITY + 1` and `SYSTEM_HIGH_PRIORITY - 1`; use another
-coordination mechanism when cross-process order matters.
+Android 17 adds an `OnAlarmListener` overload of
+`AlarmManager.setExactAndAllowWhileIdle()`. It avoids a `PendingIntent` and the
+associated long partial wakelock for an in-process exact callback.
 
-### Exact idle alarms (`api-37`)
+## Process and runtime internals
 
-`AlarmManager.setExactAndAllowWhileIdle()` has an `OnAlarmListener` overload.
-It supports an in-process exact callback without a `PendingIntent` and without
-the associated long partial wakelock.
+### Diagnose app memory limits
 
-## Activity and window behavior
+Android 17 imposes RAM-based limits on a subset of devices for all apps. A
+limited process exits with `ApplicationExitInfo.REASON_OTHER` and
+`MemoryLimiter:AnonSwap` in the description. A `TRIGGER_TYPE_ANOMALY` profiling
+trigger can capture a heap dump.
 
-### Edge-to-edge and predictive back (`api-36`)
+Inspect or exercise limits with:
 
-- For an API 36-targeted app on Android 16,
-  `windowOptOutEdgeToEdgeEnforcement` is deprecated and ignored. The same
-  opt-out can still work on Android 15, so remove it and make layouts consume
-  insets on both releases.
-- Predictive back system animations are enabled. Legacy `onBackPressed`
-  callbacks and `KEYCODE_BACK` dispatch do not occur. Migrate to supported
-  back APIs.
-- A temporary application- or activity-level escape hatch is
-  `android:enableOnBackInvokedCallback="false"`. Migrated apps also receive
-  predictive back from a long press in 3-button navigation.
+```shell
+adb shell am memory-limiter status
+adb shell am memory-limiter manual <pid> <limit>
+adb shell am memory-limiter ignore <uid>
+```
 
-### Large-screen restrictions (`api-36`)
+### Avoid private MessageQueue internals
 
-For API 36-targeted apps on displays of at least `sw600dp`, Android ignores
+API 37 targets receive a lock-free `MessageQueue` implementation. Supported
+APIs retain their behavior, but reflection over private queue fields or methods
+can fail. Remove such reflection or isolate it behind a safe fallback.
+
+### Static final fields are immutable
+
+On Android 17, API 37 targets cannot change `static final` fields. Reflection
+throws `IllegalAccessException`; JNI field setters crash the app. Replace
+mutation-based test or initialization techniques.
+
+## Broadcasts and background launches
+
+### Ordered priorities are process-local
+
+On Android 16, receiver priorities are honored only inside one application
+process. They do not establish order across processes or apps. Values are also
+confined between `SYSTEM_LOW_PRIORITY + 1` and
+`SYSTEM_HIGH_PRIORITY - 1`. Use explicit cross-process coordination when order
+matters.
+
+### IntentSender launch controls are granular
+
+Android 17 extends background-activity-launch hardening to `IntentSender`.
+Replace legacy `MODE_BACKGROUND_ACTIVITY_START_ALLOWED` use with a narrower
+mode such as `MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE`. Use StrictMode
+or lint to locate legacy flows.
+
+## Edge-to-edge, back, and large screens
+
+### Edge-to-edge cannot be disabled
+
+For API 36 targets on Android 16,
+`windowOptOutEdgeToEdgeEnforcement` is deprecated and ignored. It still works
+for that app on Android 15, so remove the opt-out and verify inset handling on
+both releases.
+
+### Predictive back is the default
+
+For API 36 targets on Android 16, predictive back animations are enabled.
+Legacy `onBackPressed` callbacks and `KEYCODE_BACK` dispatch no longer occur.
+Use supported back APIs.
+
+As a temporary application- or activity-level fallback, set
+`android:enableOnBackInvokedCallback="false"`. Migrated apps also receive
+predictive back from a long press in 3-button navigation.
+
+### Large screens ignore restrictive declarations
+
+For API 36 targets on displays of at least `sw600dp`, Android 16 ignores
 orientation requests, `resizeableActivity`, minimum and maximum aspect ratios,
-and related runtime APIs in both full-screen and multi-window modes. Games and
-smaller screens are exempt.
+and related runtime APIs in full-screen and multi-window modes. Games and
+smaller displays are exempt.
 
-The following application- or activity-level opt-out is temporary and stops
-working for API 37 targets:
+A temporary application- or activity-level opt-out is available:
 
 ```xml
 <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
           android:value="true" />
 ```
 
-### Configuration changes and IME restoration (`api-37`)
+The opt-out stops working when the app targets API 37. Build adaptive layouts
+instead of treating the property as a permanent solution.
 
-- Android 17 no longer recreates activities by default for keyboard,
-  keyboard-hidden, navigation, touchscreen, color-mode, or desktop UI-mode
-  transitions. If resource reload depends on recreation, opt in with
-  `android:recreateOnConfigChanges`; otherwise update in place.
-- When the app does not handle a configuration change, Android 17 no longer
-  restores the keyboard's previous visibility. Use
-  `windowSoftInputMode="stateAlwaysVisible"`, or request the IME explicitly
-  from `onCreate()` or `onConfigurationChanged()`.
+## Configuration, IME, and input
 
-### Captured touchpads (`api-37`)
+### Recreation defaults changed
 
-Pointer capture translates touchpad motion and scrolling into captured,
-mouse-style relative events by default. Request raw absolute finger positions
-with `View.requestPointerCapture(View.POINTER_CAPTURE_MODE_ABSOLUTE)`.
+Android 17 no longer recreates activities by default for keyboard,
+keyboard-hidden, navigation, touchscreen, color-mode, or desktop UI-mode
+transitions. Apps that rely on recreation to reload resources must opt in with
+`android:recreateOnConfigChanges`.
 
-### Desktop pinned layer (`api-37`)
+### IME visibility is not restored
 
-An app holding both `USE_PINNED_WINDOWING_LAYER` and picture-in-picture
-permissions can request an interactive always-on-top pinned window in desktop
-mode.
+When an app does not handle a configuration change, Android 17 does not restore
+the keyboard's prior visibility. If visibility is required, use
+`windowSoftInputMode="stateAlwaysVisible"` or request the IME explicitly from
+`onCreate()` or `onConfigurationChanged()`.
 
-## Text, accessibility, and input
-
-### Font metrics (`api-36`)
-
-For API 36 targets, `TextView`'s `elegantTextHeight` is deprecated and ignored,
-and compact variants of the affected UI fonts cannot be selected. Recheck
-Arabic, Lao, Myanmar, Tamil, Gujarati, Kannada, Malayalam, Odia, Telugu, and
-Thai layouts.
-
-### Accessibility announcements (`api-36`)
-
-Android 16 deprecates `announceForAccessibility()` and `TYPE_ANNOUNCEMENT`.
-Represent structural changes with pane titles, important dynamic content with
-accessibility live regions, and validation failures with error-specific events
-or `TextView.setError()`.
-
-### Themed launcher icons (`api-36`)
-
-Starting in Android 16 QPR2, the launcher synthesizes a themed icon when an
-app does not supply one. Add a monochrome layer to the adaptive icon to control
-the result.
-
-### Complex IME composition (`api-37`)
+### Complex composition has accessibility metadata
 
 API 37 adds `TextAttribute.Builder.setTextSuggestionSelected()`,
 `TextAttribute.isTextSuggestionSelected()`, and
 `AccessibilityEvent.setTextChangeTypes()`/`getTextChangeTypes()`. CJKV IMEs,
 custom input connections, and accessibility services can distinguish
-composition, candidate selection, and commit changes. Standard `TextView`
-handling is automatic for API 37-targeted apps.
+composition, candidate selection, and committed text. Standard `TextView`
+handling is automatic for API 37 targets.
 
-### Password visibility (`api-37`)
+### Password visibility depends on the input device
 
 For API 37 targets, `show_passwords_physical` hides every character entered
-through a physical input device by default, while touchscreen entry follows
-`show_passwords_touch`. Framework fields adopt the split automatically;
-custom fields should use `ShowSecretsSetting`.
+from a physical input device by default. Touch input follows
+`show_passwords_touch`. Framework fields adopt the split automatically; custom
+fields should use `ShowSecretsSetting`.
 
-## Runtime integrity and resource pressure
+### Captured touchpads become relative pointers
 
-### App memory limits (`api-37`)
+During pointer capture, Android 17 translates touchpad motion and scrolling to
+captured, mouse-style relative events. Apps that require raw absolute finger
+positions must call:
 
-Android 17 applies RAM-based limits on a subset of devices to all apps. A
-limited process exits with `ApplicationExitInfo.REASON_OTHER` and
-`MemoryLimiter:AnonSwap` in the description. `TRIGGER_TYPE_ANOMALY` can capture
-a heap dump.
-
-Inspect and exercise the mechanism with:
-
-```shell
-adb shell am memory-limiter status
-adb shell am memory-limiter manual PID LIMIT
-adb shell am memory-limiter ignore UID
+```java
+view.requestPointerCapture(View.POINTER_CAPTURE_MODE_ABSOLUTE);
 ```
 
-### Message queue internals (`api-37`)
+## Text and accessibility
 
-API 37-targeted apps receive a lock-free `MessageQueue` implementation.
-Supported APIs preserve their behavior, but reflection against private fields
-or methods can break and should be removed or isolated.
+### Elegant font height is fixed
 
-### Immutable constants (`api-37`)
+When targeting API 36, `TextView`'s `elegantTextHeight` is deprecated and
+ignored, and compact variants of the affected fonts cannot be selected. Recheck
+layouts containing Arabic, Lao, Myanmar, Tamil, Gujarati, Kannada, Malayalam,
+Odia, Telugu, and Thai.
 
-Android 17 prevents API 37-targeted apps from changing `static final` fields.
-Reflection throws `IllegalAccessException`; JNI field setters crash the app.
+### Replace generic accessibility announcements
 
-### Profiling and notifications (`api-37`)
+Android 16 deprecates `announceForAccessibility()` and `TYPE_ANNOUNCEMENT`.
+Use pane titles for structural changes, live regions for important dynamic
+content, and error-specific events or `TextView.setError()` for validation
+failures.
 
-`ProfilingManager` adds `COLD_START`, `OOM`, and
-`KILL_EXCESSIVE_CPU_USAGE` triggers. Android 17 also enforces strict size
-limits for custom notification views; test every custom layout.
+## Audio and visual surfaces
 
-## Widgets and media selection
+### Background audio is lifecycle-gated
 
-### Display-aware widgets (`api-37`)
+On Android 17, invalid background playback and volume calls fail silently, and
+audio-focus requests return `AUDIOFOCUS_REQUEST_FAILED`. API 37 targets also
+need a foreground service with while-in-use capability. The exception is an
+app holding exact-alarm permission and using a `USAGE_ALARM` stream.
 
-`RemoteViews.setViewPadding()` accepts complex DP/SP units. Read
-`OPTION_APPWIDGET_DISPLAY_ID` to obtain metrics for the display hosting a
-widget, especially on external displays.
+### Themed icons may be synthesized
 
-### App-owned media under limited access (`api-36`)
+Beginning with Android 16 QPR2, launchers automatically theme an icon when the
+app provides no themed icon. Add a monochrome layer to the adaptive icon to
+control the result.
 
-For API 36-targeted apps on Android 16, the Photo Picker preselects app-owned
-photos and videos when the user grants selected-media access. The user may
-deselect those items, immediately revoking access despite ownership.
+### Photo Picker layout can be customized
+
+Android 17's `PhotoPickerUiCustomizationParams` can change the default square
+grid to a 9:16 portrait cell aspect ratio.
+
+### Widgets are display-aware
+
+`RemoteViews.setViewPadding()` accepts complex DP/SP units. Use
+`OPTION_APPWIDGET_DISPLAY_ID` to obtain metrics for the external display that
+hosts a widget.
+
+### Desktop apps can request a pinned layer
+
+An app holding both `USE_PINNED_WINDOWING_LAYER` and picture-in-picture
+permissions can request an interactive, always-on-top pinned window in desktop
+mode.
+
+### Test profiling and notifications
+
+`ProfilingManager` supports `COLD_START`, `OOM`, and
+`KILL_EXCESSIVE_CPU_USAGE` triggers on Android 17. Custom notification views
+also have strict size limits; exercise custom layouts on Android 17 devices.

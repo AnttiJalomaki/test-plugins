@@ -8,73 +8,69 @@ metadata:
 ---
 
 
-# ASP.NET Core Compatibility Guidance
+# ASP.NET Core Knowledge Patch
 
-Use this skill when updating or reviewing ASP.NET Core applications that use
-Blazor, Minimal APIs, MVC, OpenAPI generation, Kestrel, HTTP.sys, Identity, or
-the ASP.NET Core testing infrastructure.
+Use this skill when upgrading, reviewing, or implementing ASP.NET Core applications where current Blazor, OpenAPI, Minimal API, hosting, or JSON behavior matters.
 
-## Start Here
+## How to Apply This Skill
 
-Before changing code:
+1. Inspect the project file and installed SDK before changing code.
+2. Identify whether the app uses Blazor WebAssembly, Blazor Web App, MVC, Minimal APIs, Kestrel, or HTTP.sys.
+3. Read the matching topic reference before editing configuration or compatibility code.
+4. Apply removals and changed defaults before opting into new capabilities.
+5. Validate behavior with the project's existing build and tests.
 
-1. Inspect the target framework and relevant project properties.
-2. Identify whether the application uses Blazor WebAssembly, static SSR,
-   interactive server rendering, generated OpenAPI, or custom JSON converters.
-3. Treat project files, package versions, generated output, and tests as the
-   source of truth when they differ from a migration assumption.
-4. Read the focused reference for the subsystem being changed.
+Treat the project manifest, code, tests, and observed runtime behavior as authoritative when they disagree with general guidance.
 
 ## Reference Index
 
 | Reference | Topics |
 | --- | --- |
-| [Blazor Components, Navigation, and Circuits](references/blazor-components-navigation.md) | Navigation, Not Found handling, reconnection, circuit state, and JavaScript objects |
-| [Blazor WebAssembly, Static Assets, and Tooling](references/blazor-wasm-tooling.md) | Environments, boot configuration, caching, fingerprinting, streaming, bundlers, and globalization |
-| [Forms, Validation, Persistent State, and Identity](references/forms-validation-state-identity.md) | Recursive validation, form binding, persistent state, passkeys, and Identity redirects |
-| [Hosting, Security, Compression, and Observability](references/hosting-security-observability.md) | Diagnostics, metrics, development domains, memory pools, HTTP.sys, and testing |
-| [OpenAPI, HTTP APIs, and JSON](references/openapi-http-apis.md) | OpenAPI 3.1, transformer migration, XML documentation, schema generation, and `PipeReader` JSON |
+| [Blazor Components, Navigation, and Circuits](references/blazor-components-navigation.md) | Navigation, routing, reconnection, JavaScript object interop, circuit state |
+| [Blazor WebAssembly, Static Assets, and Tooling](references/blazor-wasm-tooling.md) | Environment selection, boot assets, caching, streaming, fingerprinting, bundlers, culture |
+| [Forms, Validation, Persistent State, and Identity](references/forms-validation-state-identity.md) | Recursive validation, form binding, persisted state, passkeys, Identity redirects |
+| [Hosting, Security, Compression, and Observability](references/hosting-security-observability.md) | Diagnostics, metrics, Kestrel, HTTP.sys, memory pools, integration testing |
+| [OpenAPI, HTTP APIs, and JSON](references/openapi-http-apis.md) | OpenAPI generation and transformers, XML comments, schemas, JSON converters |
 
-## Breaking Changes and Migration Priorities
+## Breaking Changes First
 
-### Move standalone WebAssembly environment selection into the project
+### Remove obsolete Blazor boot assumptions
 
-Do not use `Blazor-Environment`, `launchSettings.json`, or
-`ASPNETCORE_ENVIRONMENT` to select a standalone Blazor WebAssembly
-environment. Set the project property explicitly when the defaults are not
-appropriate:
+Do not read or patch `blazor.boot.json`; boot configuration is inlined into `dotnet.js`. There is no documented replacement for workflows that altered that file, including published-asset integrity scripts and DLL-extension customization.
+
+Remove `BlazorCacheBootResources` from client project files. Fingerprinted browser assets now provide caching.
+
+```diff
+- <BlazorCacheBootResources>true</BlazorCacheBootResources>
+```
+
+### Set standalone WebAssembly environments at build time
+
+Standalone Blazor WebAssembly no longer selects its environment from the `Blazor-Environment` header, `launchSettings.json`, or `ASPNETCORE_ENVIRONMENT`. Configure the project property instead:
 
 ```xml
 <WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
 ```
 
-Builds otherwise use `Development`; published apps use `Production`.
+Builds default to `Development`; published output defaults to `Production`.
 
-### Remove obsolete boot-file and cache customization
+### Account for streamed browser responses
 
-The boot configuration is inlined into `dotnet.js`; `blazor.boot.json` no
-longer exists. Do not design an upgrade around editing or inspecting that
-file. There is no documented replacement for the old integrity and DLL-file
-extension customization workflows.
+Blazor WebAssembly enables response streaming by default. `ReadAsStreamAsync` returns a `BrowserHttpReadStream`, which cannot perform synchronous reads. Disable streaming only where compatibility requires it:
 
-Remove `BlazorCacheBootResources` from client project files. Fingerprinted
-browser assets now provide the caching behavior.
+```csharp
+requestMessage.SetBrowserResponseStreamingEnabled(false);
+```
 
-### Update OpenAPI transformers for OpenAPI.NET 2
+Use `<WasmEnableStreamingResponse>false</WasmEnableStreamingResponse>` or `DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0` for a global opt-out.
 
-Transformer code must account for interface-based OpenAPI entities and their
-separate inline and reference implementations. Replace:
+### Update OpenAPI transformer code
 
-- `OpenApiSchema.Nullable` checks with `JsonSchemaType.Null` checks.
-- `OpenApiAny` values with `JsonNode`.
+OpenAPI.NET 2 represents OpenAPI entities as interfaces with separate inline and reference implementations. Replace `OpenApiSchema.Nullable` checks with `JsonSchemaType.Null` checks and replace `OpenApiAny` values with `JsonNode`. These API migrations apply even when emitting an OpenAPI 3.0 document.
 
-This migration is necessary even if document generation is configured for
-OpenAPI 3.0.
+### Make JSON converters sequence-safe
 
-### Make custom JSON converters sequence-aware
-
-ASP.NET Core JSON input now arrives through `PipeReader`. A converter must not
-assume `Utf8JsonReader.ValueSpan` contains the complete token:
+ASP.NET Core JSON input paths now deserialize through `PipeReader`. A custom converter must handle `Utf8JsonReader.HasValueSequence` instead of assuming `ValueSpan` always contains the complete token:
 
 ```csharp
 var span = reader.HasValueSequence
@@ -82,73 +78,71 @@ var span = reader.HasValueSequence
     : reader.ValueSpan;
 ```
 
-Use the `Microsoft.AspNetCore.UseStreamBasedJsonParsing` AppContext switch only
-as a temporary compatibility measure.
+The `Microsoft.AspNetCore.UseStreamBasedJsonParsing` AppContext switch is a temporary compatibility escape hatch.
 
-### Update Blazor Not Found pages
+## Blazor WebAssembly Quick Reference
 
-The router's old `<NotFound>` fragment is unsupported. Set
-`Router.NotFoundPage`, call `NavigationManager.NotFound()` when application
-logic discovers a missing resource, and use `NavigationManager.OnNotFound`
-when custom handling is required.
+### Ensure the Blazor script is included
 
-```razor
-<Router AppAssembly="@typeof(Program).Assembly"
-        NotFoundPage="typeof(Pages.NotFound)">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" />
-    </Found>
-</Router>
-```
-
-### Expect streamed WebAssembly HTTP responses
-
-Blazor WebAssembly response streaming is enabled by default.
-`ReadAsStreamAsync` returns `BrowserHttpReadStream`, which does not support
-synchronous reads. Disable streaming only where compatibility requires it:
-
-```csharp
-requestMessage.SetBrowserResponseStreamingEnabled(false);
-```
-
-For a global opt-out, set `WasmEnableStreamingResponse` to `false` or
-`DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0`.
-
-## High-Value Blazor Behavior
-
-### Include the Blazor script when no component exists
-
-The compressed, fingerprinted Blazor script is included automatically only
-when the project contains a `.razor` file. Force inclusion for component-free
-projects that still need the script:
+The compressed, fingerprinted Blazor script is automatically included only when the project contains a `.razor` file. Force inclusion for component-free hosts that still need it:
 
 ```xml
 <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
 ```
 
-### Account for navigation matching changes
+### Fingerprint standalone assets
 
-Same-page `NavigateTo` calls preserve scroll position when only the query or
-fragment changes. `NavLinkMatch.All` now matches only the path, ignoring query
-and fragment values. Restore its earlier matching behavior only when needed:
+Enable HTML placeholder replacement, add an import map, and place the fingerprint marker in the framework script path:
 
-```csharp
-AppContext.SetSwitch(
-    "Microsoft.AspNetCore.Components.Routing.NavLink.EnableMatchAllForQueryStringAndFragment",
-    true);
+```xml
+<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
 ```
 
-### Use the reconnection event and state model
+```html
+<script type="importmap"></script>
+<script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+```
 
-The template reconnection UI collocates its CSS and JavaScript, making it
-compatible with strict CSP `style-src` policies. Listen for
-`components-reconnect-state-changed`; handle the `retrying` state in addition
-to the other reconnection states.
+Developer modules can use the same `#[.{fingerprint}]` marker through a `StaticWebAssetFingerprintPattern`.
 
-### Use direct JavaScript object APIs
+### Prepare output for JavaScript bundlers
 
-`IJSRuntime` and `IJSObjectReference` can construct JavaScript objects and get
-or set their properties:
+For published output consumed by Webpack, Rollup, or a similar bundler, enable:
+
+```xml
+<WasmBundlerFriendlyBootConfig>true</WasmBundlerFriendlyBootConfig>
+```
+
+Standalone apps also load globalization resources for `CultureInfo.DefaultThreadCurrentUICulture`, not only `DefaultThreadCurrentCulture`.
+
+## Components, Navigation, and Circuits
+
+### Use current not-found routing
+
+Call `NavigationManager.NotFound()` to set a 404 during static SSR or notify the interactive router. Select the page with `Router.NotFoundPage`, and use `NavigationManager.OnNotFound` for customization. The old `<NotFound>` router fragment is unsupported.
+
+```razor
+<Router AppAssembly="@typeof(Program).Assembly"
+        NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" />
+    </Found>
+</Router>
+```
+
+### Review navigation expectations
+
+`NavigateTo` preserves scroll position for same-page query-string or fragment changes. `NavLinkMatch.All` compares only the path, so query strings and fragments no longer deactivate a link. The AppContext switch `Microsoft.AspNetCore.Components.Routing.NavLink.EnableMatchAllForQueryStringAndFragment` restores the earlier link-matching behavior.
+
+### Integrate with reconnection state
+
+The template `ReconnectModal` collocates its CSS and JavaScript, supporting strict CSP `style-src` policies. Listen for `components-reconnect-state-changed`; handle the added `retrying` state.
+
+Server-side circuits can preserve unsaved state across an extended disconnect or proactive pause/resume, but not across a full-page refresh.
+
+### Use direct JavaScript object interop
+
+`IJSRuntime` and `IJSObjectReference` expose `InvokeConstructorAsync`, `GetValueAsync`, and `SetValueAsync`; in-process references provide synchronous equivalents.
 
 ```csharp
 var instance = await JSRuntime.InvokeConstructorAsync(
@@ -157,24 +151,11 @@ var text = await instance.GetValueAsync<string>("text");
 await instance.SetValueAsync("text", "updated");
 ```
 
-In-process references provide synchronous equivalents.
+## Forms, State, and Identity
 
-## State, Validation, and Identity
+### Enable recursive generated validation
 
-### Prefer declarative persistent state
-
-Use `[PersistentState]` on component or service state instead of manually
-coordinating the common `PersistentComponentState` pattern. For advanced
-behavior, use `AllowUpdates`, `RestoreBehavior`, custom
-`PersistentComponentStateSerializer<T>` registrations, or
-`RegisterOnRestoring`.
-
-### Enable recursive source-generated validation
-
-Call `AddValidation`, place the model in a C# file, and annotate its root with
-`[ValidatableType]`. Use `[SkipValidation]` for excluded properties or types.
-Both the application and an external model assembly must call `AddValidation`
-when validation metadata crosses assembly boundaries.
+Call `AddValidation()`, define the model in a C# file, and annotate its root with `[ValidatableType]`. Nested objects and collections are then validated without reflection. `[SkipValidation]` excludes a property or type. For models in another assembly, both that assembly and the app must call `AddValidation()`.
 
 ```csharp
 builder.Services.AddValidation();
@@ -187,54 +168,44 @@ public sealed class Order
 }
 ```
 
-### Fix upgraded Individual Accounts redirects
+For complex `[FromForm]` models, an empty string posted to a nullable value-type property now binds as `null` instead of failing to parse.
 
-When enabling `BlazorDisableThrowNavigationException` in an older Blazor Web
-App, remove the `InvalidOperationException` thrown by `RedirectTo` and all five
-`[DoesNotReturn]` attributes from
-`Components/Account/IdentityRedirectManager.cs`.
+### Persist component state declaratively
+
+Annotate component or service state with `[PersistentState]` instead of wiring every value through `PersistentComponentState`. Register `PersistentComponentStateSerializer<T>` to replace JSON serialization for a type.
+
+Set `AllowUpdates = true` for enhanced-navigation refreshes. Use `RestoreBehavior.SkipInitialValue` or `SkipLastSnapshot` to suppress restoration during prerendering or reconnection; use `RegisterOnRestoring` for imperative control.
+
+### Upgrade Identity behavior deliberately
+
+Existing Blazor Web Apps can use the dedicated passkey migration path. If an older Individual Accounts app enables `<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>`, remove the `InvalidOperationException` from `RedirectTo` and remove all five `[DoesNotReturn]` attributes in `Components/Account/IdentityRedirectManager.cs`.
 
 ## OpenAPI and Hosting Defaults
 
-### Review generated OpenAPI schemas
+Generated documents default to OpenAPI 3.1. Nullable scalar schemas use a type array containing `null`; nullable complex types and collections use `oneOf`.
 
-Generated documents default to OpenAPI 3.1. Nullable scalar schemas use a type
-array containing `null`; nullable complex types and collections use `oneOf`.
-Because the default JSON number handling permits reading numbers from strings,
-`int` and `long` may be represented by digit patterns without
-`type: integer`. Configure strict number handling when integer schemas are
-required.
+The default `JsonNumberHandling.AllowReadingFromString` produces `int` and `long` schemas with a digit pattern and without `type: integer`. Configure strict number handling when downstream consumers require integer schemas.
 
-### Restore diagnostics deliberately
+Set `<GenerateDocumentationFile>true</GenerateDocumentationFile>` to populate OpenAPI summaries, remarks, parameter descriptions, return descriptions, and referenced-project comments. Use a documented method instead of a Minimal API lambda when the handler needs that metadata.
 
-Exceptions handled by `IExceptionHandler` no longer emit diagnostics by
-default. Report selected handled exceptions—or restore the earlier behavior—
-with `ExceptionHandlerOptions.SuppressDiagnosticsCallback`:
+Transformer contexts expose `GetOrCreateSchemaAsync`; operation and schema contexts expose `Document`, allowing generated schemas to be registered with `AddComponent`.
 
-```csharp
-app.UseExceptionHandler(new ExceptionHandlerOptions
-{
-    SuppressDiagnosticsCallback = context => false
-});
-```
+## Diagnostics and Hosting Checks
 
-### Re-trust the development certificate for custom localhost domains
+- Handled `IExceptionHandler` exceptions suppress logs and diagnostics by default. Set `SuppressDiagnosticsCallback` when handled exceptions must still be reported.
+- Authentication reports duration plus challenge, forbid, sign-in, sign-out, and authorization counts. Identity metrics come from the `Microsoft.AspNetCore.Identity` meter.
+- Kestrel treats configured `*.localhost` hosts as loopback bindings. The templates support `--localhost-tld`; retrust the development certificate after adopting `*.dev.localhost`.
+- `IMemoryPoolFactory<byte>` creates pools with automatic idle-block eviction. Custom factories provide eviction only if they implement it.
+- `HttpSysOptions.RequestQueueSecurityDescriptor` applies only when HTTP.sys creates a new request queue; it cannot modify an existing queue.
+- Top-level-statement apps should remove a manually declared `public partial class Program`; the source generator emits it for integration-test access.
 
-Kestrel treats `*.localhost` as loopback bindings. The `web` and `blazor`
-templates accept `--localhost-tld`; after choosing a domain such as
-`<project>.dev.localhost`, trust the development certificate again:
+## Verification Checklist
 
-```console
-dotnet dev-certs https --trust
-```
-
-## Review Checklist
-
-- Remove obsolete WebAssembly boot-file and cache assumptions.
-- Verify streamed response consumers do not perform synchronous reads.
-- Update router Not Found markup and `NavLinkMatch.All` expectations.
-- Check OpenAPI transformers and nullable/integer schema assertions.
-- Make custom JSON converters handle multi-segment values.
-- Verify handled exceptions still produce any diagnostics operations require.
-- Use the topic references for less common hosting, Identity, state, and
-  testing details before completing an upgrade.
+- Search project files and scripts for `blazor.boot.json` and `BlazorCacheBootResources`.
+- Exercise WebAssembly callers that synchronously consume streams.
+- Test query-string and fragment navigation, active links, not-found pages, and reconnection UI.
+- Validate nested form models and nullable form fields.
+- Generate the OpenAPI document and inspect nullable, numeric, and transformed schemas.
+- Run custom JSON converters with segmented input.
+- Confirm handled-exception telemetry matches operational requirements.
+- Run the repository's normal build and test commands.

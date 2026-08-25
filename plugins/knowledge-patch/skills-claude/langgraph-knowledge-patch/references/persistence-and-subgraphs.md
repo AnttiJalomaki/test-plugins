@@ -2,66 +2,55 @@
 
 ## Checkpoint namespaces
 
-Every checkpoint has a `checkpoint_ns`. The root graph uses `""`, a subgraph
-uses `"node_name:uuid"`, and nested subgraph namespaces join segments with
-`|`.
+Each checkpoint has `checkpoint_ns`. The root uses `""`; a subgraph uses
+`"node_name:uuid"`; nested namespaces join with `|`. Subgraph updates may not
+be immediately visible to the parent. Use a shared Store or arrange a write to
+the parent checkpoint when data must cross the boundary.
 
 ```python
 def node(state, config):
     namespace = config["configurable"]["checkpoint_ns"]
 ```
 
-A subgraph update may not be immediately visible to its parent. When data must
-cross the boundary, use a shared Store or arrange for the subgraph to write
-into the parent checkpoint.
+## Per-run durability
 
-## Durability modes
+Execution methods accept three durability modes:
 
-Execution methods accept a per-run `durability`:
-
-| Mode | Persistence point | Tradeoff |
-| --- | --- | --- |
-| `exit` | Completion, error, or interrupt | No intermediate writes |
-| `async` | While the next step runs | Can lose the newest checkpoint in a crash |
-| `sync` | Before advancing | Stronger persistence before progress |
+| Mode | Persistence behavior |
+| --- | --- |
+| `exit` | Write only when execution completes, errors, or interrupts |
+| `async` | Write while the next step runs; a crash can lose the newest checkpoint |
+| `sync` | Persist before advancing to the next step |
 
 ```python
 graph.stream({"input": "test"}, durability="sync")
 ```
 
-## Delta-backed state
+## Delta-backed checkpoint storage
 
-With Python `langgraph>=1.2`, the beta `DeltaChannel` optimizes append-heavy
-state. Instead of copying the full accumulated channel into every checkpoint,
-it saves incremental writes and reconstructs values from the nearest
-`_DeltaSnapshot` and its ancestor writes.
+Python `langgraph>=1.2` adds beta `DeltaChannel` for append-heavy state. It
+stores incremental writes rather than the full accumulated channel and
+reconstructs from the nearest `_DeltaSnapshot` plus ancestor writes.
 
-A custom saver used with delta channels must support exact lookup by
-`(thread_id, checkpoint_ns, checkpoint_id)`. Pruning must keep the write chain
-needed to reach a snapshot or first materialize a snapshot. Copying a thread
-must include ancestors back to a snapshot for every delta channel.
+A custom saver must support exact `(thread_id, checkpoint_ns, checkpoint_id)`
+lookup. Pruning must preserve the write chain or first materialize a snapshot.
+Thread copying must include ancestors back to a snapshot for every delta
+channel.
 
-## Custom checkpoint saver contract
+## Custom saver contract
 
 A `BaseCheckpointSaver` implements `put`, `put_writes`, `get_tuple`, `list`,
-and `delete_thread`, or the asynchronous counterparts.
+and `delete_thread`, or the async equivalents. It must support exact-ID and
+latest-checkpoint reads; return newest-first history with `before` and `limit`;
+delete checkpoint and write rows; and send checkpoints, writes, and complete
+metadata through `self.serde`. Use `WRITES_IDX_MAP` for reserved channels such
+as `__error__` and `__interrupt__`.
 
-The backend must:
-
-- Support both exact-checkpoint-ID and latest-checkpoint reads.
-- Return history newest first, honoring `before` and `limit`.
-- Delete both checkpoint rows and write rows for a thread.
-- Serialize persisted checkpoints, writes, and complete metadata through
-  `self.serde`.
-- Use `WRITES_IDX_MAP` for reserved channels such as `__error__` and
-  `__interrupt__`.
-
-The `langgraph-checkpoint-conformance` package checks the base methods and
-detected extensions, including delta history:
+The `langgraph-checkpoint-conformance` package tests base methods and detected
+extensions, including delta history. Run it against custom backends in CI.
 
 ```python
 import asyncio
-
 from langgraph.checkpoint.conformance import checkpointer_test, validate
 
 @checkpointer_test(name="MyCheckpointer")
@@ -80,11 +69,9 @@ asyncio.run(main())
 ## Serialization and encryption
 
 `JsonPlusSerializer` normally uses msgpack and JSON. Enable
-`pickle_fallback=True` only for unsupported values such as dataframes.
-
-Any saver can encrypt persisted state with
-`EncryptedSerializer.from_pycryptodome_aes()`. It reads `LANGGRAPH_AES_KEY`
-unless the caller supplies a key:
+`pickle_fallback=True` only for unsupported values such as dataframes. Encrypt
+persisted state with `EncryptedSerializer.from_pycryptodome_aes()`; it reads
+`LANGGRAPH_AES_KEY` unless given a key directly.
 
 ```python
 from langgraph.checkpoint.serde.encrypted import EncryptedSerializer
@@ -95,40 +82,43 @@ saver = PostgresSaver.from_conn_string("postgresql://...", serde=serde)
 saver.setup()
 ```
 
+## PostgreSQL thread identifiers
+
 `PostgresSaver` and `AsyncPostgresSaver` require `thread_id` values shorter
-than 255 characters. Use a UUID or hash for an oversized deterministic ID:
+than 255 characters. Use a UUID or hash rather than an oversized deterministic
+identifier.
 
-```python
-import uuid
+## Plain-value delta seeds
 
-config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-```
+In `1.2.11`, delta-channel history collects writes at a plain-value seed.
+Checkpoint-history consumers must expect those writes rather than assuming they
+are absent at the seed boundary.
 
-## Subgraph checkpointer modes
+## Subgraph checkpoint modes
 
-The checkpointer value used to compile a subgraph determines state lifetime:
+The value used when compiling a subgraph sets its state lifetime:
 
-| Setting | Behavior |
+| Checkpointer value | Behavior |
 | --- | --- |
-| Default `None` | Fresh state on every call; inherits the parent checkpointer for interrupts and durable execution within that call |
+| Default `None` | Fresh state per call; inherits the parent's saver for interrupts and durable execution within the call |
 | `True` | Retains state across calls on the same thread |
 | `False` | Disables checkpointing, interrupts, durable execution, and state inspection |
+
+The parent must have a checkpointer for either stateful mode.
 
 ```python
 per_call = builder.compile()
 per_thread = builder.compile(checkpointer=True)
 stateless = builder.compile(checkpointer=False)
-
 graph = parent_builder.compile(checkpointer=MemorySaver())
 ```
 
-The parent graph must have a checkpointer for either stateful mode to work.
+## Persistent-subgraph concurrency
 
-## Concurrency and stable child identity
-
-Two concurrent calls to the same `checkpointer=True` subgraph share its
-checkpoint namespace and conflict. Serialize them. For a tool-wrapped agent,
-a run limit is one option:
+Concurrent calls to the same `checkpointer=True` subgraph collide because they
+write the same checkpoint namespace. Serialize access. For a tool-wrapped
+agent, a run limit is one option. Use per-invocation persistence when calls must
+be independent.
 
 ```python
 middleware = [
@@ -136,12 +126,12 @@ middleware = [
 ]
 ```
 
-Use per-invocation persistence when calls should remain independent.
+## Stable namespaces for child graphs
 
-Persistent subgraphs invoked inside one node receive namespaces according to
-call order. Reordering multiple children can cause one child to load another
-child's state. Wrap every child in a `StateGraph` node with a unique name to
-give it a stable namespace:
+Persistent children invoked inside a node receive namespaces by call order.
+Reordering children can therefore make one load another's stored state. Wrap
+each child in a uniquely named `StateGraph` node. Subgraphs passed directly to
+`add_node` already receive name-based namespaces.
 
 ```python
 def named_child(agent, name):
@@ -153,19 +143,13 @@ def named_child(agent, name):
     )
 ```
 
-A subgraph passed directly to `add_node` already receives a name-based
-namespace.
+## State-inspection discovery boundary
 
-## State inspection boundary
-
-`get_state(..., subgraphs=True)` exposes a child's snapshot only when the
-child is statically discoverable: it is added as a node or invoked directly
-inside a node. A child hidden behind a tool or other indirection is not
-discoverable.
-
-Per-invocation child state can be inspected only during the current
-interrupted call. Per-thread state accumulates across calls. A stateless child
-has no snapshot.
+`get_state(..., subgraphs=True)` exposes child snapshots only for statically
+discoverable subgraphs: children added as nodes or invoked directly inside a
+node. A child behind a tool or other indirection is not discoverable.
+Per-invocation state is inspectable only for the current interrupted call;
+per-thread state accumulates; stateless children have no snapshot.
 
 ```python
 snapshot = graph.get_state(config, subgraphs=True)

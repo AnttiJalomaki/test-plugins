@@ -1,51 +1,93 @@
 # Cryptography, Certificates, and Keys
 
-## Removed algorithms and older peers
+## Algorithm removals and changed defaults
 
-OpenSSH 10.0 removes DSA signature support entirely (batch `10.0-10.3`). It also removes finite-field `diffie-hellman-group*` and `diffie-hellman-group-exchange-*` methods from the server's default `KexAlgorithms`; the client default remains unchanged. Add a legacy method only for a specifically identified peer and only on the side that needs it.
+### Remove legacy cryptography dependencies (batch 10.0-10.3)
 
-When a moduli file is present but contains no suitable groups, do not expect fallback to compiled-in groups. Treat the file as an explicit policy source and repair its contents.
+- OpenSSH 10.0 removes DSA signature support entirely.
+- The server default `KexAlgorithms` no longer contains finite-field
+  `diffie-hellman-group*` or `diffie-hellman-group-exchange-*` methods. The
+  client default was not changed at the same time, so test each endpoint role.
+- A present moduli file with no suitable groups no longer falls back to
+  compiled-in groups.
+- OpenSSH 10.1 removes experimental XMSS keys.
+- OpenSSH 10.3 drops compatibility for peers that cannot rekey. Upgrade or
+  replace those peers rather than broadly weakening policy.
 
-OpenSSH 10.1 removes experimental XMSS keys.
+### Adopt the new cryptographic defaults and warnings (batch 10.0-10.3)
 
-## Key-exchange and cipher defaults
+- OpenSSH 10.0 makes `mlkem768x25519-sha256` the default key exchange.
+- Cipher preference is ChaCha20/Poly1305, AES-GCM 128/256, then AES-CTR
+  128/192/256.
+- From 10.1, a non-post-quantum negotiated key exchange produces a default-on
+  warning. Configure it with `WarnWeakCrypto`.
+- The client warns that SHA1 SSHFP records will eventually be ignored, and
+  `ssh-keygen -r` emits only SHA256 SSHFP records. Migrate DNS records and
+  consumers away from SHA1.
 
-From 10.0, expect `mlkem768x25519-sha256` to be the default key exchange. Expect this cipher preference order:
+## Algorithm configuration
 
-1. ChaCha20/Poly1305
-2. AES-GCM 128 and 256
-3. AES-CTR 128, 192, and 256
+### Enable the composite signature explicitly (batch 10.4)
 
-From 10.1, negotiating a non-post-quantum key exchange produces a default-on warning. Control the warning with `WarnWeakCrypto`; do not mistake it for a negotiation failure.
-
-Expect warnings that SHA1 SSHFP records will eventually be ignored. `ssh-keygen -r` now generates only SHA256 SSHFP records, so update DNS publishing workflows that expect SHA1 output.
-
-## Experimental composite signatures
-
-OpenSSH 10.4 adds an experimental composite signature scheme combining ML-DSA 44 with Ed25519 (batch `10.4`). It is disabled by default. Generate a key with:
+OpenSSH supports an experimental composite post-quantum signature combining
+ML-DSA 44 with Ed25519. Generate the key with:
 
 ```sh
 ssh-keygen -t mldsa44-ed25519
 ```
 
-Add the algorithm explicitly to the lists where it is required, including `HostKeyAlgorithms` and `PubkeyAcceptedAlgorithms`. Do not infer that generating or installing the key enables it automatically.
+The scheme is disabled by default. Add it explicitly wherever it should be
+negotiated, including applicable `HostKeyAlgorithms` and
+`PubkeyAcceptedAlgorithms` lists. Key generation alone does not enable it.
 
-## Algorithm-list validation
+### Validate cipher and MAC lists early (batch 10.4)
 
-Expect invalid cipher or MAC lists in configuration files and command-line arguments to be rejected during configuration processing. Remove invalid names or list modifiers; do not rely on a later runtime failure.
+Invalid cipher or MAC lists in configuration files and command-line arguments
+are rejected while processing configuration rather than at a later runtime
+operation. Validate generated lists at configuration-test time.
 
-OpenSSH 10.3 makes `PubkeyAcceptedAlgorithms` and `HostbasedAcceptedAlgorithms` exact for ECDSA. Listing one ECDSA algorithm admits only that named variant. Do not rely on the earlier behavior in which any listed ECDSA name could admit all ECDSA variants.
+### Keep ECDSA allowlists exact (batch 10.0-10.3)
 
-## Revocation material
+From 10.3, listing one ECDSA algorithm in `PubkeyAcceptedAlgorithms` or
+`HostbasedAcceptedAlgorithms` admits only that exact algorithm. Older releases
+could admit every ECDSA variant when any ECDSA name appeared. Audit whether an
+old configuration accidentally relied on that broader behavior.
 
-OpenSSH 10.3 lets client `RevokedHostKeys` and server `RevokedKeys` name multiple files. Split routine and emergency material without an external merge step:
+## Revocation and certificate principals
+
+### Split revocation material across files (batch 10.0-10.3)
+
+From 10.3, client `RevokedHostKeys` and server `RevokedKeys` accept multiple
+files. External concatenation is unnecessary:
 
 ```sshconfig
 RevokedKeys /etc/ssh/revoked-keys /etc/ssh/emergency-revoked-keys
 ```
 
-## Key formats and resident keys
+### Enforce certificate principals correctly (batch 10.0-10.3)
 
-OpenSSH 10.3 can write Ed25519 private keys in PKCS#8 format. Use `ssh-keygen` operations with `-m PKCS8` for Ed25519 when an interoperable PKCS#8 container is required.
+- A user certificate with an empty principals list is no longer a wildcard
+  when its CA is trusted through an `authorized_keys` `principals="..."`
+  restriction.
+- Principal wildcards are supported consistently for host certificates, not
+  for user certificates.
+- Matching correctly distinguishes a comma inside one certificate principal
+  from a configured list containing multiple principals.
 
-In 10.4, `ssh-keygen` and `ssh-add` skip unsupported key types while downloading resident keys from a FIDO token. A mixed-type token no longer aborts the whole download at the first unsupported type; inspect the resulting set if the caller must report skipped keys.
+Re-test user-certificate authorization that depended on empty principals,
+wildcards, or comma-containing names.
+
+## Key storage and hardware-backed keys
+
+### Download mixed FIDO resident keys robustly (batch 10.4)
+
+`ssh-keygen` and `ssh-add` skip unsupported key types while downloading
+resident keys from a FIDO token. A mixed token no longer aborts the whole
+download at the first unsupported key. Tooling should handle a partial set of
+supported results rather than treating the skipped types as a fatal failure.
+
+### Write Ed25519 keys as PKCS#8 (batch 10.0-10.3)
+
+From 10.3, `ssh-keygen` can write Ed25519 private keys in PKCS#8 format with
+`-m PKCS8`. Interoperability workflows no longer need to exclude Ed25519 solely
+because that output format was unavailable.

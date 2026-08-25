@@ -10,17 +10,17 @@ metadata:
 
 # Angular Knowledge Patch
 
-Use this skill when writing, reviewing, upgrading, or debugging modern Angular applications. Start with the breaking changes and defaults below, then open the topic reference that matches the task.
+Use this skill when writing, reviewing, upgrading, or debugging a modern Angular application. Read the breaking changes and defaults first, then open the topic reference that matches the work.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Compatibility, security, and releases](references/compatibility-security-and-releases.md) | Supported Node.js, TypeScript, and RxJS combinations; browser policy; support lifecycle; update hops; CSP and security changes |
-| [Core reactivity](references/core-reactivity.md) | Resources, effects, runtime bindings, zoneless change detection, services, signals, and core typing changes |
-| [Signal Forms](references/signal-forms.md) | Field trees, schemas, validation, submission, custom controls, and Material/Aria integration |
+| [Compatibility, security, and releases](references/compatibility-security-and-releases.md) | Node.js, TypeScript, RxJS, browsers, support policy, migrations, CSP, sanitization, and i18n security |
+| [Core reactivity](references/core-reactivity.md) | Resources, effects, runtime bindings, zoneless change detection, services, signals, and HTTP behavior |
+| [Signal Forms](references/signal-forms.md) | Field trees, schemas, validation, submission, custom controls, and Material or Aria integration |
 | [SSR, hydration, and routing](references/ssr-hydration-and-routing.md) | Hybrid rendering, server routes, incremental hydration, pending work, transfer cache, engines, and router lifecycle |
-| [Templates and animations](references/templates-and-animations.md) | Template syntax, diagnostics, CSS enter/leave animation, defer triggers, and host-directive matching |
+| [Templates and animations](references/templates-and-animations.md) | Template syntax, diagnostics, CSS enter and leave animation, defer triggers, and host-directive matching |
 | [Testing and tooling](references/testing-and-tooling.md) | Vitest, migrations, HMR, compiler checks, CLI tools, build changes, and removed test APIs |
 | [UI, platform, and DevTools](references/ui-platform-and-devtools.md) | Angular Aria, Material, CDK, locale data, profiling, and debugging visualizations |
 
@@ -39,11 +39,11 @@ An omitted `changeDetection` now means `OnPush`. Use the renamed eager strategy 
 export class LegacyWidget {}
 ```
 
-Audit code that mutates plain fields without a recognized notification. Prefer signals, `markForCheck()`, `ComponentRef.setInput()`, template/host listeners, or attachment of an already-dirty view.
+Audit code that mutates plain fields without a recognized notification. Prefer signals, `markForCheck()`, `ComponentRef.setInput()`, template or host listeners, or attachment of an already-dirty view.
 
 ### New applications are zoneless
 
-Do not add ZoneJS as a reflex. Remove stale `provideZoneChangeDetection()` overrides, `zone.js` polyfills, and the package when migrating an application to the zoneless default. `NgZone` stability events do not report render timing under zoneless operation; use `afterNextRender`, `afterEveryRender`, or a DOM observer.
+Do not add ZoneJS by reflex. When migrating to the zoneless default, remove stale `provideZoneChangeDetection()` overrides, `zone.js` polyfills, and the package. `NgZone` stability events do not report render timing when zoneless; use `afterNextRender`, `afterEveryRender`, or a DOM observer.
 
 Reactive Forms mutations emit through form observables but do not themselves schedule a zoneless refresh. Bridge the relevant observable to a template-read signal or call `markForCheck()`.
 
@@ -65,7 +65,7 @@ export const serverRoutes: ServerRoute[] = [{
 }];
 ```
 
-The older `mode` and `getPrerenderPaths` names belong only to the preview contract. See the SSR reference before changing hybrid rendering or redirect behavior.
+The older `mode` and `getPrerenderPaths` names belong only to the preview contract. See the SSR reference before changing hybrid rendering, headers, status, or redirect behavior.
 
 ### Removed and deprecated integrations
 
@@ -77,7 +77,7 @@ The older `mode` and `getPrerenderPaths` names belong only to the preview contra
 
 ### Security behavior is stricter
 
-Treat SVG animation URL attributes and `object[data]` as security-sensitive URL contexts. Translations cannot target `iframe src`; translated form attributes and translated interpolated bindings are sanitized. Do not bypass these checks to preserve old behavior.
+Treat SVG animation URL attributes and `object[data]` as security-sensitive URL contexts. Translations cannot target `iframe src` or event attributes; translated form attributes and translated interpolated bindings are sanitized. Concrete host bindings also pass through the applicable sanitizer. Do not bypass these checks to preserve old behavior.
 
 ## High-value APIs
 
@@ -133,7 +133,7 @@ loginForm = form(this.model, path => required(path.email));
 <input [formField]="loginForm.email" />
 ```
 
-Every bindable field must exist in the initial model. Prefer empty leaf values over absent optional properties or `null` object branches. Track array fields by field identity so their interaction and validation state survive reordering.
+Every bindable field must exist in the initial model. Prefer empty leaf values over absent optional properties or `null` object branches. Track array fields by field identity so interaction and validation state survives reordering.
 
 Schemas support built-in, custom, cross-field, HTTP, asynchronous, and Standard Schema validation, plus reactive disabled, hidden, and readonly rules. Read the forms reference before implementing arrays, submission, reset, custom controls, or validation timing.
 
@@ -177,7 +177,7 @@ The CLI owns important portions of the Vitest configuration even when `runnerCon
 
 1. Match Angular, Node.js, TypeScript, and RxJS using the exact compatibility row for the destination minor line.
 2. Move across majors one at a time with `ng update`, and ensure the destination is still supported.
-3. Run the supplied migrations, including strict template checking and replacements for deprecated router-testing or styling constructs.
+3. Run supplied migrations, including strict template checking and replacements for deprecated router-testing or styling constructs.
 4. Re-test locale-sensitive output, URL sanitization, translated attributes, server redirects, and hydration transfer caching.
 5. Verify zoneless notifications, pending SSR tasks, OnPush assumptions, and unit tests without relying on forced detection.
 6. Replace removed integrations and plan exits from deprecated test and build tooling.

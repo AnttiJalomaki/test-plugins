@@ -1,48 +1,61 @@
 # Migration and Runtime Requirements
 
-## Node.js support
+## Node.js support in Vite 6
 
-Vite 6 supports Node.js 18, 20, and 22+, but does not support Node.js 21 (since
-6.0.0). Do not infer support solely from Node.js 21 being newer than 20.
+Vite 6 supports Node.js 18, 20, and 22+, but no longer supports Node.js 21
+(since 6.0.0). Check development machines and CI images rather than assuming
+that every recent Node.js line is supported.
 
-Vite 7 raises the runtime floor to Node.js 20.19+ or 22.12+ and drops Node.js 18
-(since 7.0.0). Check exact minor versions in local development, CI, containers,
-and deployment images.
+## Node.js requirements in Vite 7
 
-These minimum releases provide unflagged `require(esm)`. That capability lets
-Vite ship as an ESM-only package while keeping the JavaScript API loadable by
-CommonJS callers.
+Vite 7 requires Node.js 20.19+ or 22.12+ and drops Node.js 18 (since 7.0.0).
+The minimum minor versions matter: earlier Node.js 20 and 22 releases do not
+meet the requirement.
+
+The new floors provide unflagged `require(esm)`. That allows Vite to be
+distributed as ESM-only while its JavaScript API remains loadable from
+CommonJS. Do not read the ESM-only package change as a requirement to rewrite
+every CommonJS caller before it can load Vite's JavaScript API.
+
+Use the actual runtime as the migration gate:
+
+```sh
+node --version
+```
+
+Check both local tooling and all CI or deployment images that execute Vite.
 
 ## Default browser target
 
-The default `build.target` changes from `'modules'` to
-`'baseline-widely-available'` (since 7.0.0). This target is fixed for each Vite
-major rather than moving continuously.
+Vite 7 changes the default `build.target` from `'modules'` to
+`'baseline-widely-available'` (since 7.0.0). The value is fixed for each Vite
+major rather than moving continuously. In Vite 7 it resolves to:
 
-For Vite 7, the default browser versions are:
+- Chrome 107
+- Edge 107
+- Firefox 104
+- Safari 16.0
 
-| Browser | Minimum |
-| --- | --- |
-| Chrome | 107 |
-| Edge | 107 |
-| Firefox | 104 |
-| Safari | 16.0 |
-
-Configure `build.target` explicitly if the product's required browsers differ
-from these defaults.
+Audit the application's browser-support contract during an upgrade. Set
+`build.target` explicitly if these defaults are too new or unnecessarily old;
+do not assume an unset target preserves the output compatibility of an older
+Vite major.
 
 ## Vitest compatibility
 
-Supported Vite 7 integration begins with Vitest 3.2 (since 7.0.0). Upgrade an
-older Vitest dependency when moving to Vite 7; older versions are not the
-supported pairing.
+Official Vite 7 support starts with Vitest 3.2 (since 7.0.0). When a project
+uses an older Vitest version, upgrade it as part of the Vite migration before
+debugging failures as if they were application regressions.
 
 ## Removed APIs
 
-Vite 7 removes two deprecated facilities (since 7.0.0):
+Vite 7 removes Sass legacy API support and `splitVendorChunkPlugin` (since
+7.0.0). Search for both before changing the Vite major:
 
-- Sass legacy API support.
-- `splitVendorChunkPlugin`.
+```sh
+rg "splitVendorChunkPlugin|legacy API" .
+```
 
-Locate and migrate either use before upgrading. A project that still depends on
-one of them is not ready for the new major.
+Migrate Sass integrations to a supported API and replace any dependency on
+`splitVendorChunkPlugin`. An upgrade is not complete while either removed
+surface remains in project or plugin configuration.

@@ -1,97 +1,55 @@
 # Terraform Plugin Framework
 
-Provider implementation APIs and compatibility boundaries from Framework v1.5 through v1.19.
+All guidance in this reference derives from `provider-plugin-framework`.
 
-## Functions and schema types
+## Provider-defined functions
 
-### Dynamic and 32-bit schema values
+Framework v1.5 introduces the `function` package and `provider.ProviderWithFunctions`; compatibility protection begins in v1.8. Upgrading through the early versions is source-breaking:
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+- v1.6 changes variadic values from `types.List` to `types.Tuple` and replaces `RunResponse.Diagnostics` with `FuncError`.
+- v1.7 requires every parameter to set `Name`.
+- v1.8 removes `Definition.Parameter()`.
 
-Framework v1.7 adds `DynamicType`, `DynamicValue`, and `DynamicAttribute` across resource, data source, and provider schemas, plus dynamic function parameters/returns, defaults, plan modifiers, and validators. Framework v1.10 similarly adds native `Int32` and `Float32` types across schemas, functions, defaults, plan modifiers, custom values, and validation rather than requiring providers to model them as the older numeric types.
+Framework v1.8 also replaces `xattr.TypeWithValidate` with `xattr.ValidateableAttribute`, adds `function.ValidateableParameter`, and adds type-specific `ParameterValidator` and `ParameterWith...Validators` interfaces.
 
-### Provider-defined function API stabilization
+## Dynamic and 32-bit values
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+Framework v1.7 adds dynamic types, values, and attributes across resource, data-source, and provider schemas, functions, defaults, plan modifiers, and validators. Framework v1.10 adds equivalent native `Int32` and `Float32` coverage.
 
-Framework v1.5 introduced the `function` package and `provider.ProviderWithFunctions`; the feature became compatibility-protected in v1.8. The intervening releases have important source-breaking edges: v1.6 represents variadic arguments as `types.Tuple` rather than `types.List` and replaces `RunResponse.Diagnostics` with `FuncError`, v1.7 requires every parameter to set `Name`, and v1.8 removes `Definition.Parameter()`.
+## Cross-resource-type state moves
 
-Custom function values and parameters can validate through `attr/xattr.ValidateableAttribute` and `function.ValidateableParameter`. Type-specific `ParameterValidator` and `ParameterWith...Validators` interfaces provide parameter-level validation.
+Framework v1.6 adds `resource.ResourceWithMoveState` for Terraform 1.8 cross-type moves. Framework-only providers need v1.12 or later because that version fixes a server defect that prevented moves.
 
-## Resource capabilities and state semantics
+## Nested-object plan modification
 
-### `UseStateForUnknown` null semantics
+Starting in Framework v1.9, a child modifier does not implicitly turn a null or unknown nested object into a known object. Add an object-level modifier that makes the object known before child modifiers run when the provider depends on that behavior.
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+## Experimental deferred operations
 
-Framework v1.15.1 changes every `UseStateForUnknown` plan modifier to preserve a known null prior value for an unconfigured attribute. This can make child modifiers in newly created nested objects produce inconsistent plans when they relied on the child remaining unknown; Framework v1.17 adds `UseNonNullStateForUnknown` to preserve only known, non-null state and recover the earlier behavior for that case.
+Framework v1.9 adds experimental deferral fields to provider configuration, resource `Read`, `ModifyPlan`, and `ImportState`, and data-source `Read`. Corresponding request types carry `ClientCapabilities`. The surface targets prerelease Terraform clients and has no compatibility guarantee.
 
-### Cross-resource-type state moves
+## Embedded model fields
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
-
-Framework v1.6 adds `resource.ResourceWithMoveState` for provider-side conversions used by Terraform 1.8 cross-type `moved` blocks. Framework-only providers should use v1.12 or later, which fixes a server bug that prevented these moves from working.
-
-### Embedded `tfsdk` model fields
-
-*Plugin Framework update — batch `provider-plugin-framework`.*
-
-Starting in Framework v1.11, reflection used by `Config.Get`, `Plan.Get`, and related conversions promotes exported fields from embedded structs. An embedded unexported struct that was previously ignored can therefore cause an unexpected-field diagnostic; tag the embedded field itself to preserve the old behavior.
+Framework v1.11 reflection promotes exported fields from embedded structs during `Config.Get`, `Plan.Get`, and related conversions. An embedded unexported struct that was previously ignored can now produce an unexpected-field diagnostic. Tag the embedded field to preserve the earlier behavior.
 
 ```go
 type thingModel struct {
-    Name          types.String `tfsdk:"name"`
-    embeddedModel              `tfsdk:"-"`
+    embeddedModel `tfsdk:"-"`
 }
 ```
 
-### Managed resource identity implementation
+## Ephemeral resources
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+Framework v1.13 adds `ephemeral.EphemeralResource`, `ephemeral/schema`, and `provider.ProviderWithEphemeralResources`; compatibility protection starts in v1.14. Implementations provide `Metadata`, `Schema`, and `Open`. Optional interfaces add configuration, validation, renewal, and close behavior. `ConfigureResponse.EphemeralResourceData` carries provider clients.
 
-Framework v1.15 adds `resource.ResourceWithIdentity`, `resource/identityschema`, `tfsdk.ResourceIdentity`, and `Identity` fields on CRUD and import request/response objects. The identity schema supports primitive and list attributes only; it has no `Required` or `Computed`, and each attribute should choose exactly one of `RequiredForImport` or `OptionalForImport`.
+## Write-only schema contracts
 
-Set identity during `Create`, `Read`, and `Update` to avoid validation failures, and return it from `Read` so imports with incomplete identities can be filled from provider configuration or the remote API. Identity is immutable by default; a genuinely mutable remote identity requires `MetadataResponse.ResourceBehavior.MutableIdentity = true`.
+Framework v1.14 adds `WriteOnly` for managed-resource attributes used with Terraform 1.11 or later. A write-only attribute:
 
-For identity imports, `ImportStateRequest.ID` is empty and identity data arrives through `ImportStateRequest.Identity`; providers retaining older Terraform support must continue handling a non-empty ID. `resource.ImportStatePassthroughWithIdentity` handles the common case where either form maps to the same state attribute.
-
-Upgrading to Framework v1.15 requires coordinated minimum versions to avoid Terraform 1.12 runtime errors: `terraform-plugin-go` v0.28.0, `terraform-plugin-mux` v0.20.0, `terraform-plugin-sdk/v2` v2.37.0, and `terraform-plugin-testing` v1.13.1.
-
-### Provider-defined action implementation
-
-*Plugin Framework update — batch `provider-plugin-framework`.*
-
-Framework v1.16 adds the `action` and `action/schema` packages, the `action.Action` interface, and `provider.ProviderWithActions` for Terraform 1.14 actions. `provider.ConfigureResponse.ActionData` passes configured provider data to action instances; action schemas support attributes, nested blocks, standard validation, and, as of Framework v1.17, `WriteOnly` arguments.
-
-### Provider-side ephemeral resources
-
-*Plugin Framework update — batch `provider-plugin-framework`.*
-
-Framework v1.13 introduced the `ephemeral` and `ephemeral/schema` packages, with compatibility protection beginning in v1.14. An implementation supplies `Metadata`, `Schema`, and `Open`; optional lifecycle interfaces add provider configuration, configuration validation, renewal, and close behavior.
-
-Register constructors through `provider.ProviderWithEphemeralResources`. Provider-scoped clients or other data can be routed specifically to these implementations with `provider.ConfigureResponse.EphemeralResourceData`.
-
-```go
-var _ provider.ProviderWithEphemeralResources = (*ExampleProvider)(nil)
-
-func (p *ExampleProvider) EphemeralResources(context.Context) []func() ephemeral.EphemeralResource {
-    return []func() ephemeral.EphemeralResource{NewThingEphemeralResource}
-}
-```
-
-### Provider-side list resources
-
-*Plugin Framework update — batch `provider-plugin-framework`.*
-
-Framework v1.16 adds `list.ListResource` for Terraform 1.14 queries. A list implementation is tied to an existing managed resource type because returned objects use that resource's schema and identity; it defines metadata, a list-configuration schema, and listing behavior, then is registered through `provider.ProviderWithListResources`.
-
-`provider.ConfigureResponse.ListResourceData` passes provider-specific clients to list implementations. Providers extending non-Framework resources can supply their schemas through `ListResourceWithRawV5Schemas` or `ListResourceWithRawV6Schemas` instead.
-
-### Write-only schema contracts
-
-*Plugin Framework update — batch `provider-plugin-framework`.*
-
-Framework v1.14 adds `WriteOnly` to managed-resource attributes. A write-only attribute must also be `Required` or `Optional`, cannot be `Computed`, cannot be a set or occur under set nesting, and when a list-, map-, or single-nested attribute is write-only all of its children must be write-only too.
+- Must also be `Required` or `Optional`.
+- Cannot be `Computed` or use set nesting.
+- Requires every child of a write-only list-, map-, or single-nested attribute to be write-only.
+- Must be read from configuration because prior, planned, and final state are forced to `null`; provider attempts to persist it are discarded.
 
 ```go
 "password_wo": schema.StringAttribute{
@@ -100,31 +58,46 @@ Framework v1.14 adds `WriteOnly` to managed-resource attributes. A write-only at
 },
 ```
 
-Read the value from configuration, never plan or state: the framework forces its prior, planned, and final state values to `null` and undoes any provider attempt to persist it. It cannot create a normal plan difference; attaching `RequiresReplace` is the exception and makes the configured value trigger replacement. To detect intended rotation, pair it with a stored trigger/version, use keepers, or retain only a secure hash in private state; `PreferWriteOnlyAttribute` validators can warn users away from a legacy stored-secret attribute.
+A write-only value creates no normal plan difference. `RequiresReplace` is the exception and makes a configured value trigger replacement. For rotation without replacement, pair the secret with a stored version or keeper, or keep only a secure hash in private state. `PreferWriteOnlyAttribute` validators can steer users away from legacy state-backed secrets.
 
-## Experimental APIs and compatibility boundaries
+## Resource identity
 
-### Configuration-schema deprecations
+Framework v1.15 adds `resource.ResourceWithIdentity`, `resource/identityschema`, `tfsdk.ResourceIdentity`, and identity fields on CRUD and import requests and responses. Identity schemas support primitive and list attributes only, omit ordinary `Required` and `Computed`, and expect each attribute to select exactly one of `RequiredForImport` or `OptionalForImport`.
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+Set identity during `Create`, `Read`, and `Update`; return it from `Read` so incomplete imports can be completed from provider configuration or remote data. Identity is immutable by default. Set `MetadataResponse.ResourceBehavior.MutableIdentity = true` only when the remote identity genuinely changes.
 
-Framework v1.18 can attach deprecation messages directly to attributes and blocks in provider configuration schemas. This is distinct from managed-resource deprecations and lets provider configuration usage produce the provider-authored migration warning.
+For identity imports, `ImportStateRequest.ID` is empty and `ImportStateRequest.Identity` carries the values. Retain non-empty ID handling for legacy imports, or use `resource.ImportStatePassthroughWithIdentity` when both forms map to the same state attribute.
 
-### Experimental deferred operations
+A Framework v1.15 upgrade needs at least `terraform-plugin-go` v0.28.0, `terraform-plugin-mux` v0.20.0, `terraform-plugin-sdk/v2` v2.37.0, and `terraform-plugin-testing` v1.13.1 to avoid Terraform 1.12 runtime errors.
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+## Null-preserving plan modifiers
 
-Framework v1.9 can report deferred work from provider configuration, resource `Read`, `ModifyPlan`, and `ImportState`, and data-source `Read`. Implementations must inspect the corresponding request's `ClientCapabilities` before setting a response's `Deferred` field; this surface was introduced for prerelease Terraform builds and was not covered by compatibility guarantees.
+Framework v1.15.1 changes every `UseStateForUnknown` modifier to preserve known null prior values for unconfigured attributes. Child modifiers on new nested objects can consequently yield inconsistent plans. Framework v1.17 adds `UseNonNullStateForUnknown`, which preserves only known, non-null state and retains the earlier child-attribute behavior.
 
-### Experimental state stores
+## Provider-defined actions
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+Framework v1.16 adds `action.Action`, `action/schema`, and `provider.ProviderWithActions` for Terraform 1.14 actions. `ConfigureResponse.ActionData` carries provider clients. Action schemas allow attributes, nested blocks, and normal validation; Framework v1.17 permits write-only action arguments.
 
-Framework v1.18 introduces experimental `statestore` and `statestore/schema` packages plus `provider.ProviderWithStateStores`. `provider.ConfigureResponse.StateStoreData` is delivered to each state store's `Initialize` method, but the API carries no compatibility promise until Terraform Core's `state_store` support is generally available.
+## Provider-side list resources
 
-### Go toolchain floors
+Framework v1.16 adds `list.ListResource` and `provider.ProviderWithListResources`. Each list has a configuration schema and associates with an existing managed-resource type whose schema and identity describe returned objects. `ConfigureResponse.ListResourceData` carries provider clients. `ListResourceWithRawV5Schemas` and `ListResourceWithRawV6Schemas` can target non-Framework resources.
 
-*Plugin Framework update — batch `provider-plugin-framework`.*
+## Provider configuration deprecations
 
-The Framework module's minimum Go version advances at several upgrade boundaries: v1.6 requires Go 1.21, v1.12 requires Go 1.22, v1.15 requires Go 1.23, v1.16 requires Go 1.24, and v1.19 requires Go 1.25. Provider builds must raise their toolchain with those Framework upgrades.
+Framework v1.18 lets provider configuration schema attributes and blocks include provider-authored deprecation messages.
 
+## Experimental state stores
+
+Framework v1.18 adds experimental `statestore`, `statestore/schema`, and `provider.ProviderWithStateStores`. `ConfigureResponse.StateStoreData` is passed to each state store's `Initialize`. There is no compatibility promise until Terraform Core's `state_store` support becomes generally available.
+
+## Go toolchain floors
+
+Minimum Go versions rise as follows:
+
+| Framework | Minimum Go |
+|---|---|
+| v1.6 | 1.21 |
+| v1.12 | 1.22 |
+| v1.15 | 1.23 |
+| v1.16 | 1.24 |
+| v1.19 | 1.25 |

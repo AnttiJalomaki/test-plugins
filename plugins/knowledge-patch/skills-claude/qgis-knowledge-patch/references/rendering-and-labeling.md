@@ -1,135 +1,95 @@
 # Rendering and labeling
 
-## Rendering extent and temporal behavior
+Use this reference for symbol extents, label formatting and placement, masks,
+temporal raster display, and reusable layer styles.
 
-### Buffer symbol-rendering extents
+## Symbol rendering extent buffers (since 3.42)
 
-Since 3.42, a symbol can request a configurable buffer around the canvas
-extent. Features outside the visible extent are then considered when their
-generated symbols may extend into view. Geometry generators such as
-`buffer(@geometry, 7)` need enough buffer for correct edge rendering; larger
-buffers increase the amount of data considered and therefore trade
-performance for correctness.
+Symbols can request a configurable buffer around the canvas extent. Features
+outside the visible extent are then considered when generated symbols extend
+into view, fixing geometry-generator cases such as
+`buffer(@geometry, 7)`. Larger buffers improve correctness at a rendering-cost
+tradeoff.
 
-### Accumulate temporal raster pixels
+## Raster pixel labeling (since 3.42)
 
-Since 4.0, raster layers in **represent temporal values** mode can accumulate
-pixels over time. This matches the cumulative single-date/time behavior
-already available for vector features, allowing raster and vector animation
-frames to retain earlier values together.
+Raster layers can label pixels from a selected band through the standard
+labeling engine. This includes conflict handling, numeric formatting, text
+effects, priority, scale and pixel-size visibility, z-index, and optional
+values resampled over neighboring pixels.
 
-### Calculate mesh color ranges from the view
+## Custom label tab stops (since 3.42)
 
-Since 3.42, mesh color-ramp minimum and maximum values can be calculated from
-the current canvas extent. The range may be locked to one canvas or follow the
-active canvas, paralleling raster rendering behavior.
+Label formatting can use a list of custom tab-stop distances instead of one
+distance for every tab.
 
-## Raster and vector labeling
+## Expanded CSS for HTML labels (since 3.42)
 
-### Label raster pixels
-
-Since 3.42, raster layers can label pixels from a selected band through the
-normal labeling engine. Raster labels participate in conflict handling and
-support numeric formatting, text effects, priority, z-index, scale
-visibility, pixel-size visibility, and optional values resampled over
-neighboring pixels.
-
-### Set custom tab stops
-
-Since 3.42, label formatting accepts a list of tab-stop distances. Use it when
-successive tabs need different offsets instead of one distance applied to
-every tab.
-
-### Style HTML label blocks and spans
-
-Since 3.42, the text renderer supports `background-color` and
-`background-image` on block and inline HTML. Block elements accept margins in
-points, and `line-height` accepts points or percentages:
+The text renderer supports `background-color` and `background-image` on block
+or inline HTML, point-unit margins on blocks, and `line-height` in points or
+percent:
 
 ```html
 <div style="margin: 5pt 0pt 10pt 0pt; background-color: #fff; line-height: 120%">Text</div>
 ```
 
-HTML backgrounds do not work on curved text. Negative margins are limited to
-the bottom margin.
+Backgrounds do not work on curved text. Negative margins are limited to the
+bottom margin.
 
-### Separate labels across layers
+## Cross-layer label separation (since 3.44)
 
-Since 3.44, a vector label can reserve a margin that excludes labels from any
-layer. A separate duplicate-prevention option suppresses matching label text
-within a minimum distance across all layers, using case-sensitive comparison.
-These controls solve different problems: proximity clearance versus repeated
-text.
+Vector labels can reserve a margin that prevents any other labels from being
+placed nearby. A separate duplicate-prevention option suppresses matching text
+within a minimum distance across all layers; its comparison is case-sensitive.
 
-### Ignore whitespace in curved-label collisions
+## Accumulating temporal raster pixels (since 4.0)
 
-Since 4.0, curved label placement has a data-definable option to ignore spaces
-and tabs during label-to-label and label-to-obstacle collision tests. The
-option is off by default and unavailable for non-curved placement modes.
+Raster layers in represent-temporal-values mode can accumulate pixels over
+time. This matches the existing cumulative single-date/time behavior for
+vector features, allowing raster and vector animation frames to accumulate
+together.
 
-### Distribute multipart labels
+## Editable blank segments in line symbology (since 4.0)
 
-Since 4.0, multipart labeling offers three behaviors: label only the largest
-part, put the same text on every part, or split newline-delimited label lines
-across parts. Splitting happens after the existing wrap-character setting.
-When there are more lines than geometry parts, the surplus lines are not
-rendered.
+The blank-segment map tool creates, selects, deletes, and resizes per-feature
+gaps where a templated line omits hashes or markers. Segments are stored in a
+data-defined field or auxiliary-storage property, backed by templated-line
+symbol-layer support.
 
-### Choose curved-label placement
+## Bulk layer-style transfer (since 4.0)
 
-Since 4.0, curved labels can place successive characters at line vertices,
-stretch character spacing to fill the line, or stretch word spacing to fill
-the line. The mode can be data-defined per feature. Vertex placement omits
-characters that exceed the number of available vertices.
+The layer-tree menu can copy and paste all named styles between layers in one
+operation. Grouped style-category shortcuts transfer related sets of style
+properties.
 
-## Symbology and styles
+## Whitespace-aware curved-label collisions (since 4.0)
 
-### Edit blank templated-line segments
+Curved placement has a data-definable option to ignore spaces and tabs during
+label/obstacle collision tests. It is off by default and is unavailable to
+non-curved placement modes.
 
-Since 4.0, the blank-segment map tool creates, selects, deletes, and resizes
-per-feature gaps where a templated line omits hashes or markers. Segment data
-is stored in a data-defined field or auxiliary-storage property, backed by
-templated-line symbol-layer support.
+## Multipart label distribution (since 4.0)
 
-### Edit additional templated-line items and trim ends
+Multipart labeling can use the largest part only, repeat the same text on every
+part, or split newline-delimited label lines across parts. Splitting happens
+after the existing wrap-character setting. Surplus lines are not rendered when
+the geometry has too few parts.
 
-Since 4.2, hash and marker line symbol layers accept start and end trim
-distances. Templated-line tools can also create, move, rotate, and delete
-additional hashes or markers. Added items share the original item's style and
-state.
+## Curved-label placement modes (since 4.0)
 
-### Reuse selective-masking presets
+Curved labels can place successive characters at line vertices, stretch
+character spacing to the line length, or stretch word spacing to the line
+length. The mode can be data-defined per feature. Vertex placement drops
+excess characters when the line has too few vertices.
 
-Since 4.0, mask sources can be saved as named presets and linked from multiple
-layers. Changing a preset's source selection immediately updates every linked
-layer. Select `custom` to retain the earlier per-layer configuration.
+## Shared selective-masking presets (since 4.0)
 
-### Transfer named styles in bulk
+Store mask sources in named presets to reuse them across layers. Editing a
+preset's source selection immediately updates every linked layer. Select
+`custom` to retain independent per-layer configuration.
 
-Since 4.0, the layer-tree menu can copy and paste every named style between
-layers in one operation. It also supplies grouped style-category shortcuts for
-transferring related sets of style properties.
+## Editable templated-line items (since 4.2)
 
-### Render and edit annotations
-
-Since 4.0, an annotation selection tool can multi-select, move, delete, resize,
-and rotate annotation items. Annotation layers can render marker and text
-items as 3D billboards. Marker billboards support terrain clamping, offsets,
-and callout lines; text billboards use a separately configurable 3D text
-format.
-
-## Scale and legend participation
-
-### Select project-wide scale calculation
-
-Since 3.44, projects can calculate scale at the map top, bottom, middle,
-horizontal average, or equator. The choice affects new layout scale bars,
-displayed and API values including `@map_scale`, scale-based visibility,
-Processing map renders, and server renders. It does not affect symbol sizes in
-map units. Equator mode is latitude-independent only for degree-based CRSs.
-
-### Control automatic layout-legend inclusion
-
-Since 4.0, vector, raster, mesh, and point-cloud layer properties include an
-enabled-by-default setting that controls whether the layer is automatically
-included in print-layout legends.
+Hash and marker line symbol layers have start/end trim distances. Templated-line
+tools can create, move, rotate, and delete extra hashes or markers that share
+the original item's style and state.

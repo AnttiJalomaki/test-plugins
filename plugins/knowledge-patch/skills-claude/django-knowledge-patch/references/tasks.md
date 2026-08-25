@@ -1,20 +1,12 @@
 # Tasks
 
-Batch attribution: `6.0-guide`.
+Load this reference when declaring tasks, selecting execution backends, enqueueing
+work, or inspecting results.
 
-## Contents
+## Declare and enqueue work (`6.0-guide`)
 
-- [Declare and enqueue tasks](#declare-and-enqueue-tasks)
-- [Configure execution backends](#configure-execution-backends)
-- [Select execution options](#select-execution-options)
-- [Serialize arguments and coordinate transactions](#serialize-arguments-and-coordinate-transactions)
-- [Use task context](#use-task-context)
-- [Inspect and retrieve results](#inspect-and-retrieve-results)
-
-## Declare and enqueue tasks
-
-Decorate a function with `@django.tasks.task`. The decorator returns an immutable `Task` object;
-enqueue work through that object rather than invoking the decorated function as a normal callable.
+`@django.tasks.task` returns an immutable `Task`. Calling the decorated object
+does not enqueue work; use `enqueue()` or `aenqueue()`.
 
 ```python
 from django.tasks import task
@@ -26,11 +18,8 @@ def email_users(user_ids):
 result = email_users.enqueue([1, 2])
 ```
 
-Use `enqueue()` from synchronous code and `aenqueue()` from asynchronous code.
-
-## Configure execution backends
-
-Configure aliases in `TASKS`:
+Configure aliases with `TASKS`. Retrieve a configured backend with
+`task_backends[alias]` or use `default_task_backend`.
 
 ```python
 TASKS = {
@@ -40,74 +29,44 @@ TASKS = {
 }
 ```
 
-Retrieve a configured alias from `task_backends[alias]`; use `default_task_backend` for the
-default alias.
+## Choose a real execution backend (`6.0-guide`)
 
-The built-in backends do not provide a production worker system:
+`ImmediateBackend` executes synchronously. `DummyBackend` records enqueue
+operations without executing them. Both are intended for development and tests;
+production needs a third-party backend and worker.
 
-- `ImmediateBackend` runs the task synchronously in the enqueueing process.
-- `DummyBackend` records enqueue operations but does not execute them.
+Backend capabilities vary. Delayed execution, priorities, and result lookup must
+not be assumed unless the selected backend advertises them.
 
-Use a third-party backend and its worker for production execution. Check backend capabilities
-before requiring delayed scheduling, priorities, persistent results, or cross-process lookup.
+## Override task options immutably (`6.0-guide`)
 
-## Select execution options
+`Task.using()` returns a modified copy. It can choose `priority`, `backend`,
+`queue_name`, or `run_after` without mutating the declared task.
 
-`Task.using()` returns a modified immutable copy. It can choose:
+## Serialize arguments and results safely (`6.0-guide`)
 
-- `priority`
-- `backend`
-- `queue_name`
-- `run_after`
+Arguments and return values must survive a JSON encode/decode round trip. Pass
+identifiers and simple JSON values rather than model instances, datetimes, or
+tuples.
 
-The original task is unchanged. Deferred execution through `run_after` and priority ordering work
-only when the selected backend supports them.
-
-## Serialize arguments and coordinate transactions
-
-Task arguments and return values must survive a JSON encode/decode round trip. Pass stable scalar
-data and identifiers. Do not pass model instances, datetimes, or tuples without explicitly
-converting them to a JSON-safe representation.
-
-If a task needs a row written in the current transaction, enqueue only after commit so a worker
-cannot start before the data becomes visible:
+If a worker needs rows changed in the current transaction, enqueue only after
+commit so it cannot observe uncommitted state:
 
 ```python
 from functools import partial
 from django.db import transaction
 
-transaction.on_commit(
-    partial(process_thing.enqueue, thing_id=thing.pk)
-)
+transaction.on_commit(partial(process_thing.enqueue, thing_id=thing.pk))
 ```
 
-Also account for rollback: an `on_commit()` callback is discarded when its transaction rolls back,
-which prevents work from being queued for data that never committed.
+## Read context and results (`6.0-guide`)
 
-## Use task context
+With `@task(takes_context=True)`, the first function argument is an immutable
+`TaskContext` exposing `attempt` and `task_result`.
 
-Set `takes_context=True` when the implementation needs execution metadata:
+Enqueueing returns a snapshot-like `TaskResult`. Call `refresh()` or
+`arefresh()` before reading current state, inspect `status` and `errors`, and
+read `return_value` only after successful completion.
 
-```python
-@task(takes_context=True)
-def process(context, object_id):
-    attempt = context.attempt
-    current_result = context.task_result
-```
-
-The immutable `TaskContext` is supplied as the first argument. It exposes the current `attempt`
-and `task_result`.
-
-## Inspect and retrieve results
-
-Enqueueing returns a snapshot-like `TaskResult`. It does not continuously update in memory.
-
-- Call `refresh()` or `arefresh()` to load the latest state.
-- Inspect `status` and `errors` to handle pending, failed, and successful execution.
-- Read `return_value` only after the result reports success.
-- Use `Task.get_result(id)` for later or cross-request lookup.
-- Alternatively use the selected backend's `get_result(id)` when that backend implements result
-  retrieval.
-
-Do not assume every backend persists results or supports lookup by ID; branch on documented
-backend capabilities.
+For cross-request lookup, use `Task.get_result(id)` or the backend's
+`get_result(id)` when supported.

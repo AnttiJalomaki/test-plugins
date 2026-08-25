@@ -1,6 +1,8 @@
 {
   "patch": "better-auth-knowledge-patch",
-  "merged_at": "2026-07-15T01:04:33Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-20T20:18:26Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -67,6 +69,11 @@
     },
     "plugins-payments": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.7.1": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

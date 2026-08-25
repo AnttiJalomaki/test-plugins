@@ -1,26 +1,24 @@
 # Plugin and Framework APIs
 
-## Environment API
+## Experimental Environment API
 
-Vite's experimental Environment API gives framework and plugin authors a way
-to build development integrations that more closely match production (since
-6.0.0).
+Vite 6 adds an experimental Environment API for framework and plugin authors
+(since 6.0.0). It supports development integrations whose behavior can more
+closely match production environments.
 
-Adopting the API is not required for ordinary applications:
+The API does not change normal single-client SPA behavior. Existing custom SSR
+applications remain backward compatible, so adopt the Environment API for a
+specific integration need rather than treating it as a mandatory rewrite.
 
-- Single-client SPA behavior is unchanged.
-- Existing custom SSR applications remain backward compatible.
-- The main audience is framework and plugin integration code.
+Because the API is experimental, keep its use behind framework or plugin
+boundaries and exercise the development paths that it coordinates.
 
-Because the API is experimental, keep Environment-specific integration logic
-encapsulated and test it across the environments the framework supports.
+## Coordinated multi-environment builds
 
-## Coordinated environment builds
+The experimental Environment API adds a `buildApp` hook so plugins can
+coordinate builds across multiple environments (since 7.0.0). Use this hook
+when a framework integration owns the relationship between environment builds,
+rather than independently launching builds that need shared orchestration.
 
-The experimental Environment API adds a `buildApp` hook (since 7.0.0). Plugins
-can use the hook to coordinate the building of multiple environments rather
-than treating every environment build as an unrelated operation.
-
-Use `buildApp` when a plugin needs application-level orchestration across those
-builds. Keep single-environment work in the narrower integration path when no
-coordination is required.
+Treat `buildApp` as part of the experimental API: isolate the integration and
+test every environment's output and plugin lifecycle together.

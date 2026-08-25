@@ -10,178 +10,169 @@ metadata:
 
 # Neo4j Knowledge Patch
 
-Use this skill when upgrading, configuring, querying, integrating, or operating
-Neo4j. Begin with the migration checklist, then open every reference relevant
-to the database, cluster, client, import, security policy, or plugin involved.
-Treat deployed configuration, schemas, application tests, and observed runtime
-behavior as authoritative.
+Use this skill when upgrading, configuring, querying, administering, or
+integrating with current Neo4j installations. Start with the breaking-change
+checks, then open the topic reference that matches the task.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrades-deprecations-and-removals.md](references/upgrades-deprecations-and-removals.md) | Upgrade blockers, removed settings and APIs, discovery migration, store formats, platform retirement |
-| [cypher-language-and-query-runtime.md](references/cypher-language-and-query-runtime.md) | Cypher selection, syntax, path matching, composition, functions, runtime corrections, graph types |
-| [administration-import-backup-and-clusters.md](references/administration-import-backup-and-clusters.md) | Seeding, import, backup, copy, allocation, Fleet Manager, shell, cluster procedures |
-| [security-access-and-tls.md](references/security-access-and-tls.md) | ABAC and PBAC, OIDC, privileges, TLS defaults, keys, cipher suites, security logs |
-| [configuration-platforms-and-observability.md](references/configuration-platforms-and-observability.md) | Packaged defaults, logs, metrics, query APIs, CDC, Java notifications, packaging |
-| [vector-search-and-genai.md](references/vector-search-and-genai.md) | Vector indexes and import, `SEARCH`, vector procedure migrations, GenAI functions |
+| [Administration, import, backup, and clusters](references/administration-import-backup-and-clusters.md) | `neo4j-admin`, seeds, backup, import, graph types, clustering, Fleet Manager, and store migration |
+| [Configuration, platforms, and observability](references/configuration-platforms-and-observability.md) | Settings, defaults, supported platforms, logs, metrics, Query API, Cypher Shell, and Java APIs |
+| [Cypher language and query runtime](references/cypher-language-and-query-runtime.md) | Cypher 5/25 selection, syntax, semantics, functions, planner behavior, and correctness fixes |
+| [Security, access control, and TLS](references/security-access-and-tls.md) | ABAC, PBAC, OIDC, privileges, auth rules, TLS, keys, and security logs |
+| [Upgrades, deprecations, and removals](references/upgrades-deprecations-and-removals.md) | Urgent patch upgrades, discovery migration, renamed and removed settings, procedures, formats, and platforms |
+| [Vector search and GenAI](references/vector-search-and-genai.md) | Vector indexes, `SEARCH`, vector import, embeddings, token utilities, and provider configuration |
 
-## Breaking-change checklist
+## Upgrade gates
 
-### Before upgrading
+### Avoid known data and checkpoint defects
 
-- Do not run the base 2025.06 release in production; use 2025.06.1 or later to
-  avoid a checkpoint-mutex deadlock.
-- Complete the discovery-v1-to-v2 transition before moving to 2025.01. Update
-  discovery ports and setting names before removing migration aliases.
-- Migrate `high_limit` databases offline to Block format no later than the next
-  LTS. A later release cannot start or recover them through a compatibility
-  path.
-- Move away from the deprecated `standard` store format.
-- Replace removed or renamed configuration settings, cluster tags, catch-up
-  strategies, metrics, procedures, and public Java symbols.
-- Confirm that hostname verification, JSON debug logging, panic behavior, log
-  paths, and metrics compression changes are acceptable.
-- Check the operating system, base image, and init system against the current
-  support policy.
+- Do not remain on 2025.06.0 in production; use 2025.06.1 or later to avoid a
+  sporadic checkpoint-mutex deadlock.
+- Do not remain on 2026.07.0. Its block-format UTF-8 defect can make strings
+  unreadable and can break queries using `trim()`; upgrade to 2026.07.1.
+- Before moving beyond the next LTS, migrate every `high_limit` database
+  offline to Block format. That LTS is the last release able to read, write,
+  or migrate `high_limit`; later releases refuse to start such databases.
 
-### Configuration and cluster migration
+### Complete discovery migration before a 2025.01 upgrade
 
-- Replace discovery port `5000` with `6000` and move the old discovery,
-  Kubernetes service-port, and advertised/listen address settings to their new
-  names.
-- Replace server groups with server tags, including catch-up strategy names,
-  leader-transfer priority, random catch-up selection, and initial server tags.
-- Replace query annotation, catch-up inactivity, and maximum-database settings;
-  remove settings that have no replacement.
-- Expect relative log-configuration paths to resolve from
-  `server.directories.configuration`.
-- Replace removed discovery-migration and allocator procedures in automation.
-- Keep the default `debug.log` JSON appender for supportability; add another
-  appender if a second format is required.
+Discovery v1 is removed in 2025.01. Finish the v1-to-v2 transition first,
+move internal discovery traffic from port `5000` to `6000`, and adopt the
+current setting names:
 
-### API and integration migration
+```text
+dbms.cluster.discovery.v2.endpoints -> dbms.cluster.endpoints
+dbms.kubernetes.discovery.v2.service_port_name -> dbms.kubernetes.discovery.service_port_name
+server.discovery.advertised_address -> server.cluster.advertised_address
+server.discovery.listen_address -> server.cluster.listen_address
+```
 
-- Use the HTTP Query API instead of the deprecated transactional HTTP API.
-- Branch on GQLSTATUS codes, not error-message text.
-- Stop using the server Notification API and Result Core API
-  `getNotifications()`.
-- Migrate old vector procedures to `SEARCH`, `CREATE VECTOR INDEX`, and
-  `db.create.setNodeVectorProperty()`.
-- Move `cdc.*` procedure calls to `db.cdc.*`.
-- Replace removed upgrade and cluster procedures with their documented current
-  commands or procedures.
-- Recompile Java extensions that import removed allocator, discovery, Raft,
-  transaction-memory, seeding, grouping, or query-annotation symbols.
+The old `*.v2.*` names are accepted only to bridge the 5.26-to-2025.01
+migration. The discovery migration procedures themselves are gone in
+2025.01, so do not plan to finish the transition after upgrading.
 
-## Cypher quick reference
+### Update configuration deliberately
 
-### Select the language deliberately
+For an upgrade that replaces configuration files, account for these new
+defaults:
 
-Cypher 5 is the compatibility-focused language; Cypher 25 is the evolving
-language. A database can select its language when created or altered, the DBMS
-can establish the default for newly created databases, and a query can override
-it:
+```text
+db.logs.query.annotation_data_format: CYPHER -> JSON
+server.metrics.csv.rotation.compression: NONE -> ZIP
+server.panic.shutdown_on_panic: false -> true
+server.logs.config: conf/server-logs.xml -> server-logs.xml
+server.logs.user.config: conf/user-logs.xml -> user-logs.xml
+```
+
+Relative log-configuration paths now resolve from
+`server.directories.configuration`. The TLS hostname-verification default is
+also `true`; verify certificates and advertised hostnames rather than relying
+on the former disabled default.
+
+Replace renamed settings and remove unsupported ones before startup. In
+particular, move server groups to server tags, query annotation configuration
+to `db.logs.query.annotation_data_format`, catch-up inactivity to
+`dbms.cluster.network.client_inactivity_timeout`, and the database cap to
+`dbms.max_databases`.
+
+## Choose the Cypher language explicitly
+
+Cypher 5 is the frozen compatibility language; Cypher 25 is the evolving
+language. A database can select its language at creation or alteration,
+`db.query.default_language` controls new and initial databases, and a query
+can override it:
 
 ```cypher
 CYPHER 25 RETURN 1 AS value
 ```
 
-The distributed configuration now selects Cypher 25 for new deployments, so do
-not infer a database's language solely from historical defaults.
+Although databases originally defaulted to Cypher 5, packaged `neo4j.conf`
+sets `db.query.default_language=CYPHER_25` starting in 2026.02. Treat the
+effective database setting and deployment configuration as authoritative.
 
-### Compose and shape queries
+When moving a query to Cypher 25, review these semantic changes:
 
-- Use `WHEN`/`ELSE` for conditional composition and `NEXT` for sequential
-  composition. GQL-style braces can wrap top-level and composite queries.
-- Use standalone `LET` to project variables and `FILTER` to filter mid-query.
-  A write clause no longer requires a `WITH` boundary before a read clause.
-- Use explicit `RETURN ALL` or `WITH ALL` to retain duplicates.
-- Use `FOR` as the GQL equivalent of `UNWIND`.
-- Compose supported `SHOW` and transaction-management commands with other
-  Cypher statements.
-- Copy entity properties with `SET target = properties(source)`, not by placing
-  a node or relationship directly on the right side of `SET`.
+- A node or relationship cannot be the right side of a property-copying
+  `SET`; write `SET target = properties(source)`.
+- Imported variables in `COLLECT`, `COUNT`, and `EXISTS` subquery expressions
+  are constants, not aggregation grouping keys. Empty matches can still
+  produce an aggregate result.
+- `stDev()` returns `null` on empty input.
+- U+0085 is whitespace, formerly deprecated identifier characters are
+  rejected, and parameter starts follow the broader GQL identifier set.
+- Composite constituents use one symbolic reference such as
+  `compdb.constituent`, not separately escaped components.
 
-### Match paths and labels
+## Use current Cypher 25 composition features
+
+Conditional branches use `WHEN`/`ELSE`, sequential composition uses `NEXT`,
+and GQL-style braces can wrap top-level and composite-query arguments.
+Standalone `FILTER` and `LET` avoid artificial `WITH` boundaries, including
+between writes and reads:
 
 ```cypher
-MATCH REPEATABLE ELEMENTS p = (a)-[*]->(b)
-RETURN p
+MATCH (p:Person)
+LET name = p.name
+FILTER name IS NOT NULL
+RETURN name
 ```
 
-- `REPEATABLE ELEMENTS` permits relationship reuse; trail semantics remains
-  the default and can be requested with `MATCH DIFFERENT RELATIONSHIPS`.
-- `ACYCLIC` can be combined with restrictive `ANY` and `SHORTEST` selectors.
-- `IS LABELED` and `IS NOT LABELED` are GQL equivalents of label `IS` and
-  `IS NOT` predicates.
-- `SHORTEST` and `ANY` path patterns accept parameters.
+Other high-use forms include:
 
-### Account for corrected results
+- `FOR item IN list` as the GQL equivalent of `UNWIND`.
+- `IS LABELED` and `IS NOT LABELED` as GQL label predicates.
+- `RETURN ALL` and `WITH ALL` to retain duplicates explicitly.
+- `REPEATABLE ELEMENTS` for walk semantics and
+  `MATCH DIFFERENT RELATIONSHIPS` for explicit trail semantics.
+- `ACYCLIC` with `ANY`, `SHORTEST`, `SHORTEST k`, `ALL SHORTEST`, or
+  `SHORTEST k GROUPS` to forbid repeated nodes.
+- `string.indexOf`, `string.join`, and `string.regexReplace` in place of the
+  deprecated matching `apoc.text.*` functions.
 
-- `stDev()` returns `null` for empty input.
-- Pipelined `COUNT(DISTINCT)` no longer overcounts when leveraged order is
-  missing.
-- Ordered `OR EXISTS` subqueries no longer lose a result row.
-- Undirected multi-type relationship scans no longer omit sibling
-  relationships.
-- In Cypher 25 subquery expressions, imported variables are aggregation
-  constants rather than grouping keys.
+Composable administration commands include `SHOW INDEXES`, `SHOW
+CONSTRAINTS`, `SHOW CURRENT GRAPH TYPE`, `SHOW FUNCTIONS`, `SHOW PROCEDURES`,
+`SHOW SETTINGS`, `SHOW TRANSACTIONS`, `SHOW DATABASES`, and `TERMINATE
+TRANSACTIONS`.
 
-## Administration quick reference
+## Prefer current administration contracts
 
-### Make imports explicit
+### Import and backup
 
-- Set a finite `--bad-tolerance` when malformed input must stop an import; the
-  default is unlimited.
-- Keep `--vector-delimiter` distinct from `--delimiter` and `--quote`.
-- Use native Parquet list values for vectors when available.
-- Composite import identities can retain `INTEGER` types.
-- Full and incremental imports can apply their supported graph-type schema
-  commands through `--schema`.
-- Locate progress logs according to the installed release; their directory
-  moved twice.
+- `neo4j-admin database copy` and `import` accept `--compress` with
+  `--target-format=backup`.
+- Full and incremental import default `--bad-tolerance` to unlimited (`-1`);
+  set a finite value when bad input must stop the job.
+- `--from-pagecache` now caps off-heap memory for the entire copy. Prefer the
+  clearer `--max-off-heap-memory` name.
+- Vector delimiters must differ from both the field delimiter and quote;
+  native Parquet list values can supply vectors directly.
+- Multi-column import identities may use `INTEGER` ID types.
 
-### Copy, backup, and seed
+Use `neo4j-admin backup aggregate` instead of the deprecated `database
+aggregate-backup`, and use `--max-off-heap-memory` instead of `--page-cache`
+for `database migrate`.
 
-- Treat `--from-pagecache` on `database copy` as a whole-operation off-heap
-  limit, or use the clearer `--max-off-heap-memory` spelling.
-- Use `--compress` with backup-format output from database copy or import.
-- Expect backup inspection order by append index, with time as the tie-breaker.
-- Use provider-native credentials for cloud seeds, current seed option names,
-  and `server://` artifacts for cluster-local sharded-property-database seeds.
-- Use `FileSeedProvider` for filesystem locations and `CloudSeedProvider` for
-  cloud seeds.
+### Seeds and graph types
 
-### Operate clusters and fleets
+Cloud seed credentials now come from provider mechanisms; `seedCredentials`
+is removed. Use `existingDataSeedServer` instead of
+`existingDataSeedInstance`, and use `seedSourceDatabase` to select a restored
+backup artifact. For filesystem seeds, use `FileSeedProvider`; the URL
+connection provider no longer accepts `file` locations.
 
-- Use the discovery command to find local servers, then bulk-register them with
-  Fleet Manager when appropriate.
-- Grant `SERVER MANAGEMENT` for server cordon and automatic-enable procedures.
-- Treat administration `WAIT` cluster state as notifications, not result rows.
-- Expect an error when revoking a privilege that cannot exist.
+`GRAPH TYPE` is production-ready. Full import accepts `ALTER CURRENT GRAPH
+TYPE SET {…}` through `--schema`, while incremental import accepts
+`ADD`/`DROP`/`ALTER`. Use `SHOW CURRENT GRAPH TYPE AS GRAPH` when consumers
+need virtual-node and virtual-relationship lists rather than a string.
 
-## Security quick reference
+## Adopt current vector search
 
-- Native and native linked-LDAP users can carry metadata for ABAC role rules;
-  manage it with `DBMS USER METADATA MANAGEMENT`.
-- Move OIDC providers from the deprecated Implicit flow to default PKCE.
-- Do not place a user-defined function in a PBAC privilege.
-- Invalid time functions in auth rules fail when the rule is created.
-- Expect TLS hostname verification to default to enabled.
-- With OpenSSL provider 3.5 or later, use `X25519MLKEM768` when hybrid
-  post-quantum key exchange is required.
-- Remove dependence on default CBC cipher suites and replace legacy PKCS #1 RSA
-  private keys.
-- Configure `s3Endpoint` for secure MinIO access in the administrative Helm
-  charts.
-
-## Vector and GenAI quick reference
-
-### Use vector `SEARCH`
-
-Cypher 25 vector searches accept `IN` inside the filter predicate:
+Use the Cypher 25 `SEARCH` clause instead of the deprecated
+`db.index.vector.queryNodes()` and `db.index.vector.queryRelationships()`.
+Its filter predicate supports `IN`:
 
 ```cypher
 MATCH (movie:Movie)
@@ -194,30 +185,48 @@ SEARCH movie IN (
 RETURN movie.title, movie.rating
 ```
 
-Prefer `SEARCH` over deprecated vector-query procedures. Existing vector
-indexes must be rebuilt to adopt preview Hi-Fidelity quantization and its
-search expansion factor.
+Hi-Fidelity Quantized Vector Search is preview functionality. Enable binary
+quantization and an expansion factor per index; rebuild existing indexes to
+use it. Keep full-precision vectors available because results are reranked
+against them.
 
-### Use GenAI helpers
+## Protect concurrent writes and runtime correctness
 
-- Configure `GENAI_AZURE_OPENAI_BASE_URL` when `ai.text` calls need a custom
-  Azure OpenAI base URL.
-- Use `ai.text.countToken` to estimate token count and
-  `ai.text.chunkByTokenLimit` to split bounded chunks.
-- Use `ai.file.embedBatch` for local or remote files; it can chunk input and
-  yields an index, content, and embedding vector for every chunk.
+Use `DISJOINT BY` with `CALL { … } IN CONCURRENT TRANSACTIONS` when the key
+partition is known. It schedules disjoint write work before transactions
+begin, avoiding lock contention and deadlocks in operations such as unique
+merges and relationship creation.
 
-## Working method
+Do not preserve workarounds that compensate for fixed runtime bugs without
+retesting. The pipelined runtime now returns correct `COUNT(DISTINCT)` results
+without leveraged order, preserves rows for ordered `OR EXISTS` subqueries,
+and no longer undercounts undirected multi-type scans.
 
-1. Identify the deployed server, Cypher language, edition, store format,
-   operating system, plugins, and configuration provenance.
-2. Read the upgrade and configuration references before replacing binaries or
-   generated configuration files.
-3. Review query semantics and runtime corrections before comparing result
-   counts or changing application assertions.
-4. Trace import, copy, backup, seeding, and cluster operations through their
-   current options, paths, and output contracts.
-5. Validate authentication, authorization, TLS, metrics, and logging in a
-   disposable environment before rollout.
-6. Test drivers, HTTP clients, Java extensions, CDC consumers, vector queries,
-   and log parsers independently.
+The parallel runtime disables its Repeat-over-VarExpand heuristic by default
+to avoid excessive memory for variable-length patterns with input cardinality
+one. Re-enable it for a specific query only when measured:
+
+```cypher
+CYPHER parallelRepeatHeuristic=enabled
+MATCH (a:A {prop: 123}) ((n)-[r:R]->(m))+ (b)
+RETURN a, b
+```
+
+## Keep integrations on structured contracts
+
+- Query API transaction identifiers are six characters; do not enforce the
+  former four-character shape.
+- Parse GQLSTATUS codes rather than mutable error-message text.
+- Cypher Shell defaults `--error-format` to `gql`; scripts needing another
+  format must request it explicitly.
+- `SHOW TRANSACTIONS` time fields are `ZONED DATETIME`, unavailable values may
+  be `null`, and `WAIT` cluster state arrives as notifications rather than
+  result rows.
+- Schema procedures report Cypher type names in `propertyTypes`, not Java type
+  names.
+- `EXPLAIN` and `PROFILE` identify the point release, so plan parsers must
+  accept the more detailed version string.
+
+For all renamed APIs, procedures, metrics, settings, platform removals, and
+security migrations, use the linked topic references as the implementation
+checklist rather than guessing compatibility aliases.

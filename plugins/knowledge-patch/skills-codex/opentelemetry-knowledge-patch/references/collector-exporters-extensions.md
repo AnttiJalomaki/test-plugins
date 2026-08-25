@@ -1,92 +1,113 @@
 # Collector Exporters and Extensions
 
-The details in this reference apply to the Collector 0.157.0 batch.
+## Queue and batch telemetry
 
-## Shared database authentication
+`otelcol_exporter_queue_batch_send_size*` measures requests after batching and
+exists only when `sending_queue.batch` is configured. Enqueue-time sizing uses
+`otelcol_exporter_enqueue_size` and
+`otelcol_exporter_enqueue_size_bytes`.
 
-Contrib adds `configdbauth` configuration and a `dbauth` extension interface.
-Components can use them to share database authentication, including AWS IAM
-authentication.
+## Datadog
 
-## Datadog exporter delivery
+### Synchronous serializer delivery
 
-The alpha, default-off
-`datadog.serializerexporter.UseSyncForwarder` gate makes the Datadog metric
-serializer report 4xx and 5xx failures through `exporterhelper`.
+The alpha, default-off `datadog.serializerexporter.UseSyncForwarder` gate
+surfaces metric serializer 4xx/5xx failures through `exporterhelper`. With it
+enabled, `retry_on_failure`, sending-queue overflow telemetry, and failed-point
+telemetry apply; the legacy asynchronous forwarder swallowed those failures.
 
-When enabled:
+### Scope and metric handling
 
-- `retry_on_failure` applies to the serializer path.
-- Sending-queue overflow telemetry applies.
-- Failed-point telemetry applies.
-
-The legacy asynchronous forwarder swallowed these failures.
+With `datadog.EnableScopeConvention`, spans add `otel.scope.name` and
+`otel.scope.version` while retaining deprecated `otel.library.*` attributes.
+Batches with multiple resource-log scopes are routed per scope. Legacy clients
+no longer drop delta sums marked `datadog.metric.as_type=rate`.
 
 ## Elasticsearch and OpenSearch
 
-### Elasticsearch retry policy
-
-`retry::retry_on_document_status` configures document-level retry status codes
-independently of request-level retries.
-
-### OpenSearch templates and dynamic indexes
-
-In `otel-v1` mode, `mapping.manage_index_template` can idempotently create
-span and log composable templates without overwriting existing templates.
-The option is rejected in other mapping modes.
-
-Dynamic-index substitutions are rejected when they are:
-
-- Empty.
-- Prefixed with `.`.
-- Contain `..`.
-
-After a rejected substitution, the exporter tries the next attribute or the
-configured fallback.
+- Elasticsearch document-level retries use
+  `retry::retry_on_document_status`, independently of request-level retry
+  codes.
+- In `otel-v1` mapping mode, `mapping.manage_index_template` can idempotently
+  create OpenSearch span and log composable templates without overwriting
+  existing templates. Reject this option in every other mapping mode.
+- OpenSearch rejects dynamic-index substitutions that are empty, begin with
+  `.`, or contain `..`; it then tries the next attribute or configured
+  fallback.
 
 ## Kafka request mode
 
-The alpha `exporter.kafka.useRequestType` gate is default-off. When enabled:
+The default-off alpha `exporter.kafka.useRequestType` gate converts every
+signal to Kafka records when creating the exporter request. In this mode,
+`queue_batch.sizer: items` counts Kafka records. Persistent
+`sending_queue.storage` is a startup error.
 
-- Every signal is converted into Kafka records when the exporter request is
-  created.
-- `queue_batch.sizer: items` counts Kafka records.
-- Configuring persistent `sending_queue.storage` is a startup error.
+## SignalFx
 
-## SignalFx host-metric translation
+- `cpu.num_processors` is derived from `system.cpu.logical.count`.
+- `system.cpu.time` and `system.disk.io` are exported by default.
+- Default CPU translations expect state-aggregated Host Metrics output, but
+  continue to support an explicitly re-enabled `cpu` attribute.
+- Spans are still accepted but are no longer sent to the retired
+  trace-correlation endpoint.
+- `container.memory.rss` is no longer excluded by default.
 
-The SignalFx exporter:
+## Encoding and OIDC
 
-- Derives `cpu.num_processors` from `system.cpu.logical.count`.
-- Exports `system.cpu.time` and `system.disk.io` by default.
-- Assumes state-aggregated Host Metrics CPU output in its default
-  translations.
-- Still supports an explicitly re-enabled `cpu` attribute.
+- The default-off
+  `extension.encoding.googlecloudlogentryencoding.DontEmitV0RPCConventions`
+  gate suppresses deprecated JSON-RPC error attributes while retaining
+  `rpc.response.status_code`.
+- The OIDC extension can ignore issuer validation for single-provider
+  configurations.
 
-## Encoding and OIDC extensions
+## File exporter
 
-### Google Cloud log-entry encoding
+Output files use mode `0644`, including rotated files. At startup, older
+lumberjack-format backups are renamed into timberjack's scheme so
+`max_backups` and `max_days` can manage them after upgrade.
 
-The default-off
-`extension.encoding.googlecloudlogentryencoding.DontEmitV0RPCConventions`
-gate suppresses deprecated JSON-RPC error attributes while continuing to emit
-`rpc.response.status_code`.
+## Load Balancing exporter
 
-### OIDC
+The default virtual-node count is 200 rather than 100, and ring space is
+131,071 rather than 36,000. Endpoint order no longer biases ring assignment.
+Load Balancing exporter metrics are alpha.
 
-The OIDC extension adds an issuer-ignore option for single-provider
-configurations.
+## AWS CloudWatch Logs
 
-## File exporter rotation
+The default event limit remains 256 KiB. Set
+`max_event_payload_bytes: 1048576` to use the service's 1 MiB ceiling; direct
+callers can use `cwlogs.WithMaxEventPayloadBytes`.
 
-- Output files use mode `0644`, including when rotation is enabled.
-- On startup, older lumberjack-format backups are renamed into timberjack's
-  naming scheme.
-- The migration lets `max_backups` and `max_days` manage those older backups
-  after upgrade.
+`{PodName}` in log-group or stream templates resolves `k8s.pod.name` as well
+as the legacy `pod` attribute (batch `2026-08-stable`).
 
-## Load-balancing exporter
+## Azure Monitor
 
-- The default virtual-node count increases from 100 to 200.
-- Default ring space increases from 36,000 to 131,071.
-- Endpoint ordering no longer biases ring assignment.
+`telemetry_mappings.traces.http.success.additional_success_status_codes`
+adds successful HTTP status codes for client and server spans. Setting
+`telemetry_mappings.traces.http.success.server_policy: otel` treats
+server-side 4xx responses as successful. Defaults preserve the older mapping.
+
+## Prometheus Remote Write
+
+- HTTP client configuration can live under nested `http`, which takes
+  precedence over flat settings.
+- WAL telemetry carries the exporter ID.
+- Deadline expiration is retriable rather than permanent.
+- An idle exporter flushes buffered WAL entries.
+- Permissive label sanitization preserves consecutive underscores.
+
+## Tail storage and Sumo Logic
+
+Bound Pebble tail-sampling storage with `max_storage_size_mib`:
+
+```yaml
+extensions:
+  pebble_tail_storage:
+    directory: /var/lib/otelcol/pebble-tail-storage
+    max_storage_size_mib: 10240
+```
+
+The Sumo Logic extension accepts `fleet_id`. If the fleet is absent or
+invalid, registration retries without that ID.

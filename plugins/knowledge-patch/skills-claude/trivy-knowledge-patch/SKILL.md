@@ -8,210 +8,148 @@ metadata:
 ---
 
 
-# Trivy Knowledge Patch
+# Trivy Compatibility Guide
 
-## Use this patch
+Load this skill when configuring, invoking, embedding, or consuming output from Trivy. It is especially relevant when a scan changes package identity, artifact metadata, dependency relationships, misconfiguration evaluation, SBOM structure, or client/server behavior.
 
-Load this patch when a task involves Trivy CLI behavior, vulnerability or
-license scanning, image and repository acquisition, dependency analysis,
-SBOM processing, report consumers, misconfiguration policies, secret scanning,
-VEX, embedding Trivy, or client/server mode.
+Check the Trivy version used by the project or runtime before applying version-specific guidance. Prefer the installed binary's behavior, project configuration, generated schema, reports, and tests when they disagree with an assumption.
 
-Before changing a command or integration:
-
-1. Identify the scan target and scanners in use: vulnerabilities, licenses,
-   misconfigurations, secrets, or SBOM generation and ingestion.
-2. Check whether the task consumes Trivy's CLI, Go API, RPC transport, JSON,
-   SARIF, CycloneDX, SPDX, or a report template.
-3. Treat project configuration, schemas, generated reports, and runtime
-   behavior as authoritative when they differ from generic examples.
-4. Apply version-dependent migrations before adding new behavior.
-5. Open the matching topic reference; the quick reference is deliberately
-   selective.
-
-## Reference index
+## Reference Index
 
 | Reference | Topics |
-|---|---|
-| [cli-and-runtime.md](references/cli-and-runtime.md) | CLI flags and defaults, configuration, cache behavior, server mode, lifecycle |
-| [artifacts-and-registries.md](references/artifacts-and-registries.md) | Image acquisition, registry authentication, archives, layers, repository identity |
-| [vulnerabilities-and-os.md](references/vulnerabilities-and-os.md) | Severity sources, OS support, package identity, third-party filtering, detector behavior |
-| [dependencies-and-licenses.md](references/dependencies-and-licenses.md) | Language ecosystems, workspaces, lockfiles, dependency graphs, license semantics |
-| [sbom-and-reports.md](references/sbom-and-reports.md) | SBOM ingestion and output, report metadata, SARIF, CycloneDX, SPDX, templates |
-| [iac-and-misconfigurations.md](references/iac-and-misconfigurations.md) | Terraform/OpenTofu, Kubernetes, Helm, cloud schemas, Rego, Dockerfile and ignore behavior |
-| [secrets-and-vex.md](references/secrets-and-vex.md) | Secret detectors and exclusions, VEX loading, TLS, graph handling |
+| --- | --- |
+| [Artifacts and registries](references/artifacts-and-registries.md) | Image acquisition, registry authentication, archives, layers, image history, artifact identity, and repository metadata |
+| [CLI and runtime](references/cli-and-runtime.md) | Flags, configuration, server mode, cache and database behavior, plugins, transport, and shutdown |
+| [Dependencies and licenses](references/dependencies-and-licenses.md) | Language analyzers, workspaces, dependency graphs, package identity, and license handling |
+| [IaC and misconfigurations](references/iac-and-misconfigurations.md) | Terraform/OpenTofu, CloudFormation, Kubernetes, Helm, Azure, AWS, GCP, Rego, checks, and ignores |
+| [SBOM and reports](references/sbom-and-reports.md) | CycloneDX, SPDX, SARIF, JSON, JUnit, templates, report metadata, and SBOM graph preservation |
+| [Secrets and VEX](references/secrets-and-vex.md) | Secret detectors, exclusions, locations, VEX discovery, repository TLS, and VEX graph behavior |
+| [Vulnerabilities and operating systems](references/vulnerabilities-and-os.md) | Severity selection, advisory matching, OS detection, lifecycle data, package filtering, and supported distributions |
 
-## Breaking migrations and changed defaults
+## Breaking Changes and Changed Defaults
 
-### Migrate provider mappings from `AVDID` to `ID`
+### Migrate provider mapping identifiers
 
-Misconfiguration provider mappings use `ID`. Update custom mappings and any
-consumer code that still reads or writes `AVDID`; do not support the old field
-by silently copying it into the new representation.
+Misconfiguration provider mappings use `ID` rather than `AVDID` (0.69.0). Update custom mappings and consumers that still read the old field.
 
-### Migrate Docker configuration to `dockers_v2`
+### Migrate Docker configuration consumers
 
-The Docker configuration representation is `dockers_v2`. Embedders, custom
-configuration adapters, and tests tied to the former representation must move
-to the new structure before relying on current Docker scanning behavior.
+Docker configuration uses `dockers_v2` (0.72.0). Any integration coupled to the previous representation must migrate.
 
-### Account for all-package listing
+### Account for complete package listing
 
-`--list-all-pkgs` defaults to `true`. Commands that require the older selective
-package output must pass the choice explicitly:
+`--list-all-pkgs` defaults to `true` (0.67.0). Pass `--list-all-pkgs=false` explicitly to retain selective output:
 
 ```sh
 trivy image --list-all-pkgs=false alpine:3.22
 ```
 
-### Do not pass filesystem skip flags to `sbom`
+### Remove unsupported SBOM skip flags
 
-The `sbom` command disables `--skip-dir` and `--skip-files`. Remove those flags
-from wrappers that invoke `trivy sbom`; scanner-specific exclusions belong in
-the supported configuration path.
+The `sbom` command disables `--skip-dir` and `--skip-files` (0.63.0). Do not pass those flags to that command.
 
-### Build WebAssembly modules with standard Go
+### Update WebAssembly builds
 
-Trivy's WebAssembly modules use standard Go rather than TinyGo. Update compiler
-selection and build automation accordingly.
+Trivy's WebAssembly modules use standard Go rather than TinyGo (0.61.0). Build environments and compiler assumptions must follow standard Go.
 
-## High-value CLI behavior
+### Do not depend on removed selection behavior
+
+Image history scanning does not run `AVD-DS-0007` (0.60.0), and `trivy registry login` no longer requests a registry scope. Treat these as deliberate behavior changes.
+
+## High-Value CLI and Configuration Choices
 
 ### Override OS detection deliberately
 
-Use `--distro` when automatic distribution detection is missing or unsuitable.
-If the OS is overwritten, package PURLs are rewritten to match the selected OS,
-so compare downstream identities after the override rather than before it.
+Use `--distro` when automatic distribution detection is missing or unsuitable. An OS override also updates OS-package PURLs so their identities match the selected distribution.
 
-### Select the vulnerability severity authority
+### Select the vulnerability severity source
 
-Use `--vuln-severity-source` when severity must come from a particular source:
+Use `--vuln-severity-source` to choose the source used for reported severities:
 
 ```sh
 trivy image --vuln-severity-source nvd alpine:3.20
 ```
 
-Missing vulnerability details now fall back to `UNKNOWN` severity. Consumers
-must accept that value instead of assuming all findings have a populated source
-severity.
+### Generate and validate configuration
 
-### Validate configuration and templates early
+`--generate-default-config` omits hidden flags. A JSON Schema is available for `trivy.yaml`; use it for editor completion and validation. Configuration-only options preserve whether the user actually supplied them, rather than confusing defaults with explicit values.
 
-Use the JSON Schema for `trivy.yaml` in editors and validation workflows.
-The CLI validates `--server` values and template file extensions. Configuration-
-only options track whether the user supplied them, so absence must not be
-treated as an explicit default.
+### Supply custom trust roots
 
-### Recover rather than trust stale database metadata
+Use `--cacert` for a custom CA certificate. Helm deployments can set `sslCertDir`. VEX repositories can use repository-specific TLS configuration.
 
-When database contents are gone but metadata remains, Trivy downloads the
-database again. The vulnerability database also permits concurrent access, so
-avoid adding wrapper-level serialization solely to protect normal reads.
+### Understand validation boundaries
 
-## Scan and artifact selection
+The `--server` value and report-template file extension are validated before execution. `--compliance` is not restricted to a fixed enumeration, so custom compliance values may pass CLI parsing.
 
-Registry mirrors and Docker contexts participate in image resolution. Remote
-artifact types that are not container images are rejected, and images whose
-combined layer size exceeds the configured limit fail early. Preserve these
-errors instead of retrying them as ordinary scan failures.
+## Artifact and Registry Decisions
 
-Registry access supports GitHub Container Registry authentication through
-`GITHUB_TOKEN`, dual-stack ECR endpoints, and registry login without an
-authentication scope. Docker archives retain `RepoTags`.
+Use registry mirrors where image acquisition should go through mirrored endpoints. GHCR artifact downloads honor `GITHUB_TOKEN`, AWS access supports dual-stack ECR endpoints, and Docker contexts are resolved when locating local images.
 
-Filesystem targets with Git information are classified as repository artifacts.
-That affects artifact type, sanitized repository metadata, cache hits, SARIF
-root paths, and stable artifact/report identities. See the artifact and report
-references before keying external storage on a target string.
+Reject or surface acquisition errors rather than masking them: oversized images fail early, unsupported remote artifact types are rejected, and missing database contents trigger a fresh download even if stale metadata remains.
 
-## Vulnerability and OS scanning
+For downstream identity, use the unique `ArtifactID`, UUIDv7 `ReportID`, report fingerprints, package `AnalyzedBy`, repository metadata, and layer metadata rather than reconstructing identity from display fields. Repository URLs are sanitized before they enter reports.
 
-Distribution aliases map to their corresponding OS, and RHEL-derived images can
-be recognized from `os-release`. Explicitly supported families include newer
-Bottlerocket, MinimOS, AlmaLinux, Root.io, Photon, Ubuntu, Rocky Linux, CoreOS,
-ActiveState, Azure/Mariner, Wolfi, and CentOS Stream behaviors documented in the
-OS reference.
+Read [Artifacts and registries](references/artifacts-and-registries.md) for image histories, embedded SBOMs, RapidFort and Root.io images, attested SBOMs, archive tags, and layer attribution.
 
-Debian and Ubuntu packages classified as third-party are skipped by distribution
-vulnerability matching. The common detector path applies third-party filtering
-too. Preserve repository class across client/server scans and package provenance
-through `AnalyzedBy` when a consumer must explain why a package was or was not
-matched.
+## Vulnerability and OS Decisions
 
-## Dependency and license analysis
+Third-party package classification affects whether distribution advisories are applied. Debian and Ubuntu third-party packages are skipped, and the shared detection path also skips packages marked third-party. Detector-specific advisory feeds are still honored when a driver covers the package.
 
-Dependency scanning understands modern workspace and lockfile structures,
-including uv, Poetry v2, `pylock.toml`, Bun, multi-document pnpm locks, Yarn and
-Cargo workspaces, Go binaries built with `-trimpath`, Maven repository settings,
-self-contained .NET runtimes, and Julia vulnerability matching.
+Do not infer unsupported-scan failure uniformly: CentOS Stream skips unsupported vulnerability detection without failing the scan, while missing vulnerability detail falls back to `UNKNOWN` severity.
 
-Do not flatten dependency graphs: Node peer dependencies, workspace roots,
-Cargo relationships, `.deps.json` graphs, Julia relationships, and SBOM root
-associations all affect result interpretation.
+Use [Vulnerabilities and operating systems](references/vulnerabilities-and-os.md) for supported distributions and image families, lifecycle data, Root.io and RapidFort behavior, OS aliases, package metadata, and ecosystem-specific matching.
 
-License handling distinguishes SPDX identifiers, full expressions, exceptions,
-custom classifications, extracted licensing information, and plain text. Read
-the license section before normalizing or filtering values such as `WITH`,
-`unlicensed`, non-SPDX text, and `NOASSERTION`.
+## IaC and Misconfiguration Decisions
 
-## SBOM and report consumers
+### Preserve unknown values
 
-Reports may expose `ArtifactID`, UUIDv7 `ReportID`, vulnerability fingerprints,
-image references, repository metadata, analyzer provenance, the Trivy version,
-and image layer information. Client/server JSON also reports the server version.
-Treat these fields as part of the current result contract.
+Missing variables become unknown values during evaluation. Terraform dynamic blocks expand only when `for_each` is known, and ignore markers apply only when their values are known and non-null. This distinction prevents incomplete input from becoming a false concrete value.
 
-CycloneDX processing preserves input structure during vulnerability updates,
-supports referenced VEX, multiple license shapes, file components, SHA-512,
-CVSS v4 ratings, and CycloneDX 1.7. SPDX supports attestations, SHA-512, extracted
-licenses, and documents without a root component.
+### Apply parser context consistently
 
-SBOM applications from different files remain distinct, packages from multiple
-SBOMs are retained, and OS packages inside and outside dependency graphs are
-merged. Do not reintroduce path-only or type-only deduplication that loses these
-distinctions.
+Terraform parser options apply to root modules and submodules. Module instances get the correct evaluation context, HCL object expressions return references, and the parser can receive an explicit working directory. Cached remote modules in `.terraform` retain their original paths during plan scanning.
 
-## Misconfiguration scanning
+### Use exact ignore semantics
 
-Terraform/OpenTofu evaluation handles cached remote modules, partial schemas,
-unknown values, dynamic blocks, `for_each` maps, policy templates, raw Terraform
-data for Rego, and traversal-safe filesystem functions. Parser options and
-working-directory context must reach modules as well as roots.
+Inline ignores work for Dockerfile and Helm content. Chart subdirectory paths are respected, check aliases work in `.trivyignore`, and ignore identifiers are case-insensitive. Terraform filesystem functions prevent path traversal.
 
-Kubernetes scans support controllers, namespaced components, complete and
-summary report semantics, and artifact version comparison without the
-`last-applied-configuration` annotation. Helm chart discovery uses exact chart
-filenames, includes `.yml`, and applies subdirectory-aware ignore paths.
+### Choose the right extension points
 
-Ignore handling is context-sensitive: Dockerfile and Helm inline comments are
-supported, `.trivyignore` recognizes check aliases, rule identifiers compare
-case-insensitively, and an ignore-marker value must be known and non-null.
+The IaC scanner can receive a Rego scanner. Rego policies can inspect raw Terraform data, findings can be ignored by type, and callers can configure the Rego error limit. Check metadata supports examples, booleans remain booleans, and content can declare `Minimum Trivy Version`.
 
-CloudFormation, AWS, Azure, GCP, GitHub, Ansible, Docker history, and Rego each
-have expanded adapters or evaluation rules. Consult the IaC reference before
-assuming an unknown resource is unsupported.
+Read [IaC and misconfigurations](references/iac-and-misconfigurations.md) before changing schema adapters, Terraform/OpenTofu evaluation, CloudFormation intrinsics, Kubernetes or Helm discovery, Azure/GCP/AWS resource handling, image instruction parsing, or report filtering.
 
-## Secrets and VEX
+## Dependency and License Decisions
 
-Secret scanning validates UTF-8, reports corrected multiline locations,
-supports configurable skipped folders/files/extensions, and has additional
-Azure, Maven, Symfony, Hugging Face, OpenAI, and GitHub App token handling. It
-skips its own configuration file and Python `.dist-info` directories where
-specified.
+Workspaces and dependency graphs are first-class. Yarn and Cargo retain root/workspace context; Cargo supports glob members and inherited monorepo versions; pnpm supports multi-document lockfiles and overlapping workspaces; `.NET` builds graphs from `.deps.json` and identifies the root project.
 
-VEX can be loaded from CycloneDX references and from the scanned repository.
-Repository-specific TLS applies per VEX source, and looping package graphs must
-not cause vulnerabilities to be suppressed.
+Package identity may use source-specific information. pnpm uses the snapshot string as `Package.ID`; Maven POM IDs include a hash of GAV coordinates and root-POM path; nested JARs get per-file digests; Python PEP 621 names are normalized.
 
-## Integration checklist
+Keep SPDX identifiers distinct from expressions. `WITH` exceptions remain attached during category detection, custom text-license classifications still apply, and output uses canonical SPDX IDs. For detailed ecosystem, repository, lockfile, package, license, and Java manifest behavior, read [Dependencies and licenses](references/dependencies-and-licenses.md).
 
-- Confirm the target's artifact type after Git and registry resolution.
-- Pin changed CLI defaults explicitly in automation.
-- Preserve package graph, layer, repository, and analyzer metadata in adapters.
-- Accept `UNKNOWN` vulnerability severity and multiple valid license shapes.
-- Keep client/server fields aligned, including relationships, build information,
-  repository class, and server version.
-- Exercise IaC ignores against aliases, case variation, chart paths, and unknown
-  values.
-- Test report consumers with current JSON, SARIF, CycloneDX, SPDX, and templates.
-- Recheck the matching reference whenever a task crosses scanner boundaries.
+## SBOM and Report Decisions
+
+Preserve incoming structure when enriching SBOMs. CycloneDX updates keep the original structure, applications of the same type from separate SBOMs remain distinct, and OS packages from multiple inputs or both sides of a dependency graph are merged without losing them.
+
+Reports expose producer and server version metadata, image and repository metadata, stable IDs and fingerprints, package relationships, `buildInfo`, layer data, and corrected file locations. Client/server transport must carry the same fields as local scans.
+
+Read [SBOM and reports](references/sbom-and-reports.md) before consuming CycloneDX 1.7, SPDX documents without roots, SHA-512 hashes, CVSS v4 ratings, SARIF paths or descriptions, JSON versions, JUnit locations, templates, and attested or embedded SBOMs.
+
+## Secret and VEX Decisions
+
+Secret scanning can customize skipped folders, files, and extensions. It ignores `.dist-info`, skips its own configuration file, validates UTF-8 before transport, and reports corrected multiline locations. New detector formats include Azure secrets, Maven credentials, the Symfony default secret, Hugging Face tokens, OpenAI secrets, and stateless GitHub App installation tokens.
+
+VEX documents may be referenced by CycloneDX, stored in the repository, or discovered as OCI artifacts. Reject non-local VEX repository names, apply per-repository TLS, and do not suppress a vulnerability merely because its package participates in a cyclic graph.
+
+Read [Secrets and VEX](references/secrets-and-vex.md) for the complete detector, filtering, discovery, graph, and transport behavior.
+
+## Verification Workflow
+
+1. Confirm the Trivy binary or server version and whether execution is local or client/server.
+2. Identify the artifact class: image, filesystem, repository, Kubernetes input, SBOM, cloud target, or uploaded blob.
+3. Check relevant configuration against `trivy.yaml` schema and current flag validation.
+4. Inspect package identities, dependency relationships, repository class, layer data, and producer/server versions in the actual report.
+5. For IaC, test unknown/null inputs, submodules, ignore aliases, and exact source locations.
+6. For SBOM conversion or enrichment, compare graph and structural information before and after scanning.
+7. For vulnerability discrepancies, inspect third-party classification, OS override, detector provenance, severity source, and advisory driver.

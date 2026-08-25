@@ -1,106 +1,132 @@
 # Go SDK and Docker CLI Integration
 
-Use this reference when compiling against Moby or Docker CLI packages, migrating Engine clients, embedding CLI behavior, or parsing command results.
+Use this reference when maintaining Go clients, daemon integrations, or Docker
+CLI plugins across API and package-surface changes.
 
-## Supported modules and toolchain
+## Concurrency and callback signatures
 
-- `github.com/docker/docker` is deprecated for Engine 29 development.
-- Use the public modules `github.com/moby/moby/client` and `github.com/moby/moby/api`. The parent `github.com/moby/moby` module is internal.
-- Engine release tags use the `docker-v29.0.0` form.
-- The Engine SDK requires Go 1.24 or newer.
+### Concurrent Go clients (27.0.1)
 
-## Client construction and interfaces
+`*client.Client` is now safe for concurrent use by multiple goroutines,
+including when API-version negotiation is enabled; callers no longer need to
+serialize access to avoid the former negotiation data race.
 
-- `NewClient` and `NewEnvClient` are removed in Engine 29; migrate to supported client construction in `github.com/moby/moby/client`.
-- `CommonAPIClient` is deprecated in favor of `APIClient` (since 28.0.0).
-- `*client.Client` is safe for concurrent goroutine use, including with `WithAPIVersionNegotiation()` (since 27.0.1).
-- Engine 28.0.0 adds client surfaces `WithTraceOptions`, `HijackDialer`, and `SwarmManagementAPIClient`.
-- Empty IDs passed to inspect-style calls now return an invalid-parameter error rather than not-found (since 28.0.0). Validate identifiers or update error classification.
+### Go SDK callback and image-option changes (27.0.1)
 
-## Function signatures and result types
+`client.RequestPrivilegeFunc`,
+`client.ImageSearchOptions.AcceptPermissionsFunc`, and
+`image.ImportOptions.PrivilegeFunc` callbacks now require a context parameter.
+The deprecated `ImageImportOptions`, `ImageCreateOptions`, `ImagePullOptions`,
+`ImagePushOptions`, `ImageListOptions`, and `ImageRemoveOptions` aliases are
+removed; use the option types in `api/types/image`.
 
-- Starting in 28.0.0, `ImageHistory`, `ImageLoad`, and `ImageSave` take variadic functional options.
-- Engine 29 broadly moves config, image, plugin-list, and prune calls from positional arguments to option structs and dedicated result structs.
-- `ContainerExec...` methods become `Exec...`.
-- Image inspect, history, load, and save wrap their returns in result structs.
-- Image pull and push return objects whose `JSONMessages` method iterates progress records.
-- `container.Stats` and `StatsResponse` merge into one type (since 28.0.0).
-- `CommitResponse` and `ExecCreateResponse` replace generic response typing (since 28.0.0).
-- `client.ImageInspectWithRaw` is deprecated in favor of `client.ImageInspect` (since 28.0.0).
-- `client.RequestPrivilegeFunc`, `client.ImageSearchOptions.AcceptPermissionsFunc`, and `image.ImportOptions.PrivilegeFunc` require a context parameter starting in 27.0.1.
+## Type relocations
 
-## Network and filter types
+### Go SDK type relocations (27.0.1)
 
-- Engine 29 SDK IP addresses and subnets use `netip.Addr` and `netip.Prefix`.
-- MAC addresses use byte slices compatible with `net.HardwareAddr`.
-- Container `Port` becomes `PortSummary`.
-- The client package has its own `client.Filters`.
-- Network `Summary` and `Inspect` are no longer aliases; both embed most fields in a shared struct.
+Container statistics, exec, copy, and prune types move to
+`api/types/container`, including `BlkioStatEntry`, `BlkioStats`, `CPUStats`,
+`CPUUsage`, `ContainerExecInspect`, `ContainerPathStat`, `ContainerStats`,
+`ContainersPruneReport`, `CopyToContainerOptions`, `ExecConfig`,
+`ExecStartCheck`, `MemoryStats`, `NetworkStats`, `PidsStats`, `StatsJSON`,
+`Stats`, `StorageStats`, and `ThrottlingData`.
 
-## Type relocations introduced in 27.0.1
+`ImagesPruneReport`, `ImageImportSource`, and `ImageLoadResponse` move to
+`api/types/image`; `ExecStartOptions`, `VolumesPruneReport`, `EventsOptions`,
+and `ImageSearchOptions` move respectively to `api/types/backend`,
+`api/types/volume`, `api/types/events`, and `api/types/registry`. Network API
+types move to `api/types/network`, dropping the `Network` prefix where
+applicable, and `NetworkResource` moves there as well.
 
-- Move container stats, exec, copy, and prune types to `api/types/container`.
-- Move `ImagesPruneReport`, `ImageImportSource`, and `ImageLoadResponse` to `api/types/image`.
-- Move `ExecStartOptions` to `api/types/backend`.
-- Move `VolumesPruneReport` to `api/types/volume`.
-- Move `EventsOptions` to `api/types/events`.
-- Move `ImageSearchOptions` to `api/types/registry`.
-- Move network create, connect, disconnect, inspect, endpoint, list, and prune types to `api/types/network`; remove the `Network` prefix from their names.
-- Move `NetworkResource` into `api/types/network`.
-- Use the SDK's `Ulimit` alias rather than importing `github.com/docker/go-units.Ulimit` directly, insulating code from that type's future module move.
-- Remove deprecated aliases `ImageImportOptions`, `ImageCreateOptions`, `ImagePullOptions`, `ImagePushOptions`, `ImageListOptions`, and `ImageRemoveOptions`.
+### Go client network and value types (engine-release-history)
 
-## Additional migration targets in 28.0.0
+Operation option types move from `api/types` packages into `client`, filters use
+the client's own `Filters` type, and IP addresses and subnets use `netip.Addr`
+and `netip.Prefix`. MAC addresses become `net.HardwareAddr`-compatible byte
+slices, container `Port` becomes `PortSummary`, and network `Summary` and
+`Inspect` are no longer aliases.
 
-- Compatibility aliases in top-level `api/types` are removed. Import the container, image, network, volume, events, registry, and backend subpackages directly.
-- Move `GraphDriverData` to its storage package.
-- Move `RequestPrivilegeFunc` to its registry package.
-- Move container network, health, and state types to `api/types/container`.
-- Move `ImageInspect` and `RootFS` to `api/types/image`.
-- Move `pkg/reexec` usage to `github.com/moby/sys/reexec`.
+## Call-shape migrations
 
-## Removed client and utility surfaces
+### Go client call and response changes (28.0.0)
 
-- Engine 26.0.0 removes `IDFromDigest`; `pkg/loopback`; `pkg/system.ErrNotSupportedOperatingSystem` and `IsOSSupported`; `pkg/homedir.Key` and `GetShortcutString`; and `pkg/containerfs.ResolveScopedPath`.
-- Engine 26.0.0 also removes the temporary top-level `api/types` aliases deprecated in v25.
-- Engine 28.0.0 removes deprecated `pkg/ioutils` helpers, `pkg/sysinfo.NumCPU`, `cli.Errors`, `pkg/directory`, and `pkg/dmesg.Dmesg`.
-- Engine 28.0.0 removes additional deprecated archive, string-ID, and runconfig helpers and makes `pkg/containerfs` internal.
-- Engine 29 removes `client.ImageCreate`; use `ImagePull` or `ImageImport`.
-- Engine 29 removes deprecated image-client interfaces.
-- Engine 29 removes or relocates `api/pkg/progress`, `api/pkg/streamformatter`, `pkg/fileutils`, `pkg/idtools`, `pkg/system`, `pkg/stdcopy`, `pkg/stringid`, and profiles.
-- Use the documented client/API subpackages, `github.com/moby/profiles`, `github.com/moby/go-archive`, `github.com/moby/sys`, or the Go standard library as appropriate.
+`ImageHistory`, `ImageLoad`, and `ImageSave` now take variadic functional
+options, and container `StatsResponse` is merged into `Stats`. Container commit
+and exec creation gain dedicated `CommitResponse` and `ExecCreateResponse`
+aliases; the generic `IDResponse` is deprecated in their favor.
 
-## Moby extension deprecations
+### Go SDK migration targets (28.0.0)
 
-The following extension surfaces were deprecated in 27.0.1 and should not be used in new integrations:
+Use `client.ImageInspect` instead of `ImageInspectWithRaw`, `config.Validate`
+instead of `Config.ValidatePlatformConfig`, and `github.com/moby/sys/reexec`
+instead of `pkg/reexec`. Atomic-file helpers move to `pkg/atomicwriter`; use
+`os.MkdirAll`, `container.UpdateResponse`, and `container.TopResponse` in place
+of their deprecated wrappers.
 
-- Experimental GraphDriver plugins.
-- `pkg/archive.NewTempArchive`, `TempArchive`, and `CanonicalTarNameForPath`.
-- `pkg/dmesg`.
-- `pkg/stringid.ValidateID` and `IsShortID`.
-- Runconfig helpers `SetDefaultNetModeIfBlank` and `DefaultDaemonNetworkMode`.
-- `opts.ConvertKVStringsToMap` and `IsPreDefinedNetwork`.
+### Go client call-shape migration (engine-release-history)
 
-`ContainerConfigWrapper` moved to `api/types/container`, and the default daemon network-mode definition moved to `daemon/network`.
+Configuration, image, plugin-list, and prune operations move from positional
+arguments to option structs and dedicated result structs. `ContainerExec...`
+methods become `Exec...`; image pull and push return objects with
+`JSONMessages` iterators; inspect, history, load, and save results are wrapped;
+`ContainerCommitOptions.Pause` becomes `NoPause`; and `ImageCreate` is removed
+in favor of `ImagePull` or `ImageImport`.
 
-## CLI API and embedding removals
+## Removed packages and symbols
 
-- Engine 26.0.0 removes CLI APIs `NewStartOptions`, `DockerCliOption`, and `InitializeOpt`; use their replacement packages and types directly.
-- Engine 29 removes most exported `New...Command` constructors across container, image, network, Swarm, registry, volume, context, and trust commands.
-- Many old formatter and `Run...` helpers are also removed.
-- Stop constructing the stock Docker command tree through removed APIs. Use the supported Engine client modules or build a separate command layer.
+### Removed Go and CLI compatibility symbols (26.0.0)
 
-## Command-line behavior
+The Go packages remove `image.IDFromDigest`, `pkg/loopback`,
+`pkg/system.ErrNotSupportedOperatingSystem`, `pkg/system.IsOSSupported`,
+`pkg/homedir.Key`, `pkg/homedir.GetShortcutString`, and
+`pkg/containerfs.ResolveScopedPath`. The temporary aliases in `api/types` for
+info, commit, plugin, network-pool, runtime, security, checkpoint, image,
+service-response, resize, and container-option types are also removed; CLI
+integrations must stop using `cli/command/container.NewStartOptions`,
+`cli/command.DockerCliOption`, and `cli/command.InitializeOpt`.
 
-- `docker stop` and `docker restart` use `--timeout`; deprecated `--time` was removed in 28.0.0.
-- `docker commit --pause` is deprecated in favor of `--no-pause`.
-- `--kernel-memory` is hidden and warns because the daemon and kernel no longer support it.
-- Docker no longer specially unquotes `--tlscacert`, `--tlscert`, and `--tlskey` values.
-- Docker Content Trust commands and classic-builder DCT support are removed from the Engine 29 CLI. Build and install the trust command as a separate CLI plugin if required.
+### Go SDK removals (28.0.0)
 
-## Contexts and CLI plugins
+Engine removes deprecated `pkg/ioutils` pipe, counter, writer, and flusher
+helpers; `pkg/directory`, `pkg/dmsg.Dmesg`, `pkg/sysinfo.NumCPU`, `cli.Errors`,
+and the old image-spec package (use `github.com/moby/docker-image-spec`). Removed
+helpers also include archive temporary-file APIs,
+`pkg/fileutils.GetTotalUsedFds`, `pkg/longpath.Prefix`, string-ID validators,
+and legacy `runconfig` conversion and network-default functions.
 
-- When Docker context metadata contains a `"GODEBUG":"..."` entry, the CLI applies that value while commands use the context.
-- CLI plugin hooks run after failed as well as successful commands.
-- Plugins can declare `error-hooks`; their hints appear only after failures.
-- On Windows, install CLI plugins in `%ProgramFiles%\Docker\cli-plugins`. The former `%PROGRAMDATA%\Docker\cli-plugins` lookup is removed.
+`Daemon.ContainerInspectCurrent`, `Daemon.Exists`, and `Daemon.IsPaused` are
+gone, and `Daemon.ContainerInspect` now takes
+`backend.ContainerInspectOptions`. Deprecated libnetwork iptables types and a
+set of old top-level `api/types` aliases are removed as well.
+
+### Supported Go modules and release tags (engine-release-history)
+
+`github.com/docker/docker` is deprecated; the supported public modules are
+`github.com/moby/moby/client` and `github.com/moby/moby/api`, while the root
+`github.com/moby/moby` module is internal. Engine 29 release tags use the
+`docker-v29.0.0` form, and the SDK now requires Go 1.24 or later.
+
+### Removed Go SDK surface (engine-release-history)
+
+Engine 29 removes deprecated client constructors and interfaces including
+`NewClient`, `NewEnvClient`, `CommonAPIClient`, and the old image-client
+interfaces. It also removes `api/pkg/progress`, `api/pkg/streamformatter`,
+`pkg/system`, `pkg/fileutils`, `pkg/idtools`, the old archive, chroot-archive,
+atomic-writer, reexec, platform, and parser packages, and numerous CLI command
+constructors and formatters; replacements live in
+`github.com/moby/go-archive`, `github.com/moby/sys`, or the standard library.
+
+## CLI plugin behavior and installation
+
+### Failure-aware CLI plugin hooks (engine-release-history)
+
+CLI plugin hooks now run when a command fails as well as when it succeeds.
+Plugins can register `error-hooks` when a hint should appear only for failed
+commands.
+
+### Windows runtime, networking, and plugin changes (engine-release-history)
+
+Windows containers now support `docker run --runtime`, and the Windows overlay
+network driver accepts `--dns`. The CLI no longer discovers plugins under
+`%PROGRAMDATA%\Docker\cli-plugins`; install them under
+`%ProgramFiles%\Docker\cli-plugins` instead.

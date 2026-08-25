@@ -1,22 +1,11 @@
 # Kustomizations and Helm releases
 
-## Contents
+## Define health for custom resources
 
-- [Health and dependency readiness](#health-and-dependency-readiness)
-- [Apply, drift, and lifecycle controls](#apply-drift-and-lifecycle-controls)
-- [SOPS decryption](#sops-decryption)
-- [Referenced configuration watches](#referenced-configuration-watches)
-- [Helm behavior and recovery](#helm-behavior-and-recovery)
-
-## Health and dependency readiness
-
-### Custom-resource health
-
-Since 2.5.0, `Kustomization.spec.healthCheckExprs` can evaluate custom
-resources that do not use conventional Kubernetes readiness. Each entry
-selects an API version and kind and supplies CEL `failed` and `current`
-expressions. With waiting enabled, dependent Kustomizations do not proceed
-until the resources are current.
+`Kustomization.spec.healthCheckExprs`, added in 2.5.0, defines readiness for
+resources that do not follow standard Kubernetes conventions. A rule selects
+an API version and kind and provides CEL expressions for failed and current
+states:
 
 ```yaml
 spec:
@@ -28,46 +17,71 @@ spec:
       current: "status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')"
 ```
 
-Entries in both `Kustomization.spec.dependsOn` and
-`HelmRelease.spec.dependsOn` can use CEL expressions for extended dependency
-readiness (since 2.7.0). Since 2.9.0, CEL health expressions for either resource
-may leave `kind` empty to apply one expression to every resource kind in an API
-group.
+With waiting enabled, dependent Kustomizations do not proceed until the
+resource is current. Since 2.9.0, HelmRelease and Kustomization CEL health
+rules may leave `kind` empty to match every kind in an API group.
 
-### Cancel superseded health checks
+## Extend dependency readiness
 
-For kustomize-controller, the `CancelHealthCheckOnNewRevision` gate cancels an
-active health check when a newer source revision arrives (since 2.7.0).
+Since 2.7.0, entries in both `Kustomization.spec.dependsOn` and
+`HelmRelease.spec.dependsOn` can use CEL expressions. Use them when the
+dependency's standard Ready condition is insufficient.
 
-For helm-controller, its 2.8.0 behavior also cancels for spec changes,
-referenced ConfigMap or Secret changes, manual reconciliation, and
-Receiver-triggered reconciliation. Cancellation places `HealthCheckCanceled`
-on the `Ready` condition. Enable `DefaultToRetryOnFailure` with it so the
-release does not become stuck under the default no-retry configuration.
-
-## Apply, drift, and lifecycle controls
-
-### Deletion policy
+## Choose deletion behavior
 
 `Kustomization.spec.deletionPolicy` provides explicit garbage-collection
-control (since 2.5.0). `WaitForTermination` waits for every managed resource to
-be deleted before allowing the Kustomization itself to be deleted (since
-2.6.0):
+control since 2.5.0. The `WaitForTermination` policy, added in 2.6.0, waits for
+all managed resources to be deleted before Kubernetes can finish deleting the
+Kustomization:
 
 ```yaml
 spec:
   deletionPolicy: WaitForTermination
 ```
 
-### Ordered server-side apply
+Use it when external finalizers or asynchronous deletion must complete before
+the owning Kustomization disappears.
 
-Kustomize-controller supports custom server-side apply stages for explicit
-resource application ordering (since 2.8.0).
+## React to referenced configuration
 
-### Ignore externally owned fields
+Since 2.7.0, kustomize-, helm-, and notification-controller can reconcile
+immediately when selected referenced ConfigMaps or Secrets change. Add this
+label to an individual referenced object:
+
+```yaml
+metadata:
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+```
+
+Or watch all objects selected by a controller flag such as:
+
+```shell
+--watch-configs-label-selector=owner!=helm
+```
+
+The watched references are:
+
+- Kustomization `postBuild.substituteFrom`, `decryption.secretRef`, and both
+  kubeConfig references;
+- HelmRelease `valuesFrom` and both kubeConfig references;
+- Receiver `secretRef`.
+
+## Control Kustomize reconciliation
+
+The 2.7.0-era kustomize-controller supports centrally managed Age keys for
+global SOPS decryption. It also provides:
+
+- `CancelHealthCheckOnNewRevision`, which cancels an active health check when
+  a newer source revision arrives;
+- `Kustomization.spec.ignoreMissingComponents`, which permits absent
+  Kustomize components.
+
+Since 2.8.0, custom server-side apply stages can explicitly order resources
+during application.
 
 Since 2.9.0, `Kustomization.spec.ignore` excludes selected managed fields from
-drift detection and apply:
+both drift detection and apply, allowing another controller to own them:
 
 ```yaml
 spec:
@@ -78,81 +92,95 @@ spec:
         - /spec/replicas
 ```
 
-Use this when a controller such as an HPA owns the selected field.
+The `MigrateAPIVersion` feature gate added in 2.9.4 migrates API versions in
+managed-field entries:
 
-### Missing components
-
-`Kustomization.spec.ignoreMissingComponents` allows absent Kustomize components
-to be ignored (since 2.7.0).
-
-## SOPS decryption
-
-- Since 2.5.0, SOPS decryption includes Secrets generated by Kustomize
-  components.
-- Since 2.6.0, the opt-in `ObjectLevelWorkloadIdentity` feature gate permits
-  per-object and per-tenant identity for Kustomization SOPS decryption through
-  KMS services.
-- Since 2.7.0, kustomize-controller can use centrally managed Age keys for
-  global SOPS decryption.
-- Since 2.9.0, kustomize-controller can decrypt SOPS secrets sealed with the
-  Age post-quantum cipher. It can also authenticate to OpenBao and HashiCorp
-  Vault through Kubernetes Workload Identity, exchanging its ServiceAccount
-  token rather than storing a long-lived Vault token.
-
-## Referenced configuration watches
-
-Since 2.7.0, kustomize-controller and helm-controller can reconcile immediately
-when referenced configuration changes. Supported Kustomization references are
-`postBuild.substituteFrom`, `decryption.secretRef`, and both kubeConfig
-references. Supported HelmRelease references are `valuesFrom` and both
-kubeConfig references.
-
-Opt in one referenced ConfigMap or Secret:
-
-```yaml
-metadata:
-  labels:
-    reconcile.fluxcd.io/watch: Enabled
+```shell
+--feature-gates=MigrateAPIVersion=true
 ```
 
-Alternatively, set a controller-wide selector such as
-`--watch-configs-label-selector=owner!=helm` to watch every matching referenced
-object without per-object labels.
+## Preserve Kustomize inputs
 
-## Helm behavior and recovery
+Flux CRDs distributed with 2.9.4 opt out of post-build substitution through
+the `kustomize.toolkit.fluxcd.io/substitute: disabled` annotation. Preserve
+that setting so `${...}` fragments inside CRD schemas are not corrupted.
 
-### Apply and health defaults
+Also in 2.9.4, a partial `Kustomization.spec.images` override preserves fields
+declared in the source `kustomization.yaml`. An override of only a tag, for
+example, no longer discards the source image's other declared fields.
 
-Since 2.8.0, new Helm v4 releases use server-side apply while releases already
-stored by Helm remain on client-side apply until explicitly opted in. Kstatus
-health is the default for all HelmReleases, and CEL can define readiness for
-Helm-managed objects. `UseHelm3Defaults` retains the previous behavior.
+## Configure SOPS decryption
 
-### Retry strategy
+SOPS decryption applies to Secrets generated by Kustomize components since
+2.5.0, not only to directly declared Secret manifests.
 
-`RetryOnFailure` is available for HelmRelease install and upgrade handling
-(since 2.7.0).
+With the 2.6.0 `ObjectLevelWorkloadIdentity` feature gate, a Kustomization can
+use its object-level identity for SOPS decryption through KMS services. Later
+controllers add centrally managed Age keys, and 2.9.0 adds both:
 
-### Resource inventory
+- decryption of SOPS secrets sealed with the Age post-quantum cipher;
+- Kubernetes Workload Identity authentication to OpenBao and HashiCorp Vault,
+  exchanging the controller ServiceAccount token instead of storing a
+  long-lived Vault token.
 
-Since 2.8.0, `.status.inventory` records every managed object for debugging,
-auditing, and tooling.
+## Understand Helm v4 defaults
 
-### OCI chart digest tracking
+Flux 2.8.0 ships Helm v4. New releases use server-side apply. Releases already
+stored by Helm keep client-side apply until explicitly opted in. Kstatus health
+checking is the default for every HelmRelease, and CEL expressions can define
+readiness for Helm-managed objects.
 
-Helm-controller's `DisableChartDigestTracking` gate disables the default
-behavior of appending an OCI Helm chart digest to its chart version (since
-2.6.0).
+Enable `UseHelm3Defaults` only when the prior apply and health defaults are
+required.
 
-### Post-render strategy
+## Recover failed Helm deployments
 
-Since 2.9.0, the default is `combined` rather than `nohooks`; Helm hooks now
-pass through post-rendering. Set `nohooks` explicitly before upgrading if a
-chart requires the earlier behavior.
+`RetryOnFailure`, added in 2.7.0, is available for HelmRelease install and
+upgrade retry handling.
 
-### Literal values
+In 2.8.0, helm-controller's opt-in `CancelHealthCheckOnNewRevision` also
+cancels an active health check after:
 
-Since 2.9.0, `HelmRelease.valuesFrom` has a literal mode equivalent to
-`helm install --set-literal`. The complete content of the selected ConfigMap or
-Secret key becomes one string without type parsing or expansion of dotted
-property names.
+- a new source revision;
+- a HelmRelease spec change;
+- a referenced ConfigMap or Secret change;
+- manual reconciliation;
+- Receiver-triggered reconciliation.
+
+The Ready condition reports `HealthCheckCanceled`. Enable
+`DefaultToRetryOnFailure` alongside this gate; otherwise the default no-retry
+configuration can leave a release stuck after cancellation.
+
+## Inspect Helm-managed resources
+
+Since 2.8.0, `HelmRelease.status.inventory` records every managed object. Use
+the inventory for auditing, debugging ownership, and tooling instead of
+reconstructing the set solely from rendered manifests.
+
+## Handle chart digests and OCI tags
+
+The helm-controller v1.3.0 `DisableChartDigestTracking` feature gate, surfaced
+with Flux 2.6.0, disables the default behavior of appending an OCI chart digest
+to the chart version.
+
+As of 2.9.4, `OCIRepository` understands Helm's encoding of SemVer build
+metadata in OCI tags. Do not reject such tags merely because the registry
+encoding differs from the chart's displayed SemVer.
+
+## Render and supply Helm values
+
+`ArtifactGenerator` can extract and modify Helm charts while producing
+artifacts since 2.8.0; a HelmRelease can consume the resulting
+`ExternalArtifact` through `spec.chartRef`.
+
+Since 2.9.0, `HelmRelease.valuesFrom` literal mode matches
+`helm install --set-literal`: the complete referenced ConfigMap or Secret key
+becomes one string value. It does not infer types or expand dotted property
+names.
+
+## Preserve post-render compatibility
+
+Flux 2.9.0 changes the default HelmRelease post-render strategy from `nohooks`
+to `combined`. Helm hooks therefore pass through post-rendering. Before an
+upgrade, explicitly select `nohooks` for charts that depend on the former
+behavior.

@@ -1,128 +1,103 @@
 # Node SDK Migrations and Contracts
 
-Use this reference when upgrading `@workos-inc/node` or depending on recently
-added SDK surfaces.
+Use this reference when upgrading `@workos-inc/node` or depending on exact SDK
+types, pagination, errors, events, or request behavior.
 
-## Contents
+## v9 migration
 
-- [Runtime and namespace migrations](#runtime-and-namespace-migrations)
-- [Authorization compatibility](#authorization-compatibility)
-- [Type and constructor migrations](#type-and-constructor-migrations)
-- [Events](#events)
-- [User, membership, session, and identity values](#user-membership-session-and-identity-values)
-- [Errors](#errors)
-- [Authorization URL options](#authorization-url-options)
-- [Pagination](#pagination)
-- [Groups](#groups)
-- [Webhooks](#webhooks)
-- [Vault](#vault)
-- [Radar and headless AuthKit](#radar-and-headless-authkit)
-- [Connect and Audit Logs](#connect-and-audit-logs)
+- The minimum runtime is Node.js 22.11. Node.js 20 is no longer supported.
+- The legacy FGA package, deprecated in v8.4, was removed. Replace it with
+  authorization resources, organization roles, and role-assignment APIs.
+- The Admin Portal namespace changed from `portal` to `adminPortal`.
+- v9.1.1 restored the established Authorization method names after generated
+  renames and corrected the endpoint for
+  `listEffectivePermissionsByExternalId`.
 
-## Runtime and namespace migrations
+## v10 migration
 
-Node SDK v9 requires Node.js 22.11 or newer and no longer supports Node.js 20.
-It also renames the client namespace `portal` to `adminPortal`.
+- `Group.createdAt` and `Group.updatedAt` deserialize to `Date`, not `string`.
+- Construct webhook helpers with the WorkOS client:
+  `new Webhooks(workos)`, not a `CryptoProvider`.
+- `listResources` no longer accepts `search`.
+- `vault.listObjects` is an auto-paginatable object-summary collection, not the
+  earlier list-digest response. Generated Vault key and object response fields
+  use camel-cased SDK names.
 
-## Authorization compatibility
+## Authorization and resource contracts
 
-Replace the legacy FGA package, deprecated in v8.4 and removed in v9, with
-authorization-resource and role APIs.
+The SDK exposes environment and organization roles, authorization resources,
+and resource-scoped custom roles. Permissions and roles expose
+`resourceTypeSlug`; `createOrganizationRole` accepts `resource_type_slug`; and
+`CreateAuthorizationResourceOptions` provides typed resource creation.
 
-As of v9.1.1, `listEffectivePermissionsByExternalId` calls the corrected
-endpoint. The same release reverted generated Authorization method renames, so
-keep using the earlier public method names.
+Resource and group role-assignment endpoints are available. Filter assignment
+lists with `resource` and `role_slug`; inspect returned `source` to distinguish
+direct assignments from group-derived assignments. Invitations accept
+`role_slug`.
 
-Node SDK v10 removes the `search` option from `listResources`.
+## Events and preserved payload data
 
-## Type and constructor migrations
+Typed event contracts cover organization roles and permissions, feature flags,
+Vault, groups, and domain-verification failures. In particular:
 
-In Node SDK v10:
+- handle `vault.byok_key.verification_completed`;
+- read `resourceTypeSlug` on deserialized organization-role events;
+- handle API-key deletion as `api_key.revoked`, replacing
+  `api_key.deleted`;
+- preserve SSO context on authentication events; and
+- preserve `verification_prefix` on organization domains.
 
-- Read `Group.createdAt` and `Group.updatedAt` as `Date` objects rather than
-  strings.
-- Construct `Webhooks` with the `WorkOS` client:
-  `new Webhooks(workos)`. Do not pass a `CryptoProvider`.
-- Consume `vault.listObjects` as an auto-paginatable object-summary collection,
-  not the earlier list-digest shape.
-- Read generated Vault key and object responses through camel-cased SDK fields.
+Webhook signature verification accepts raw request bytes. Supply the original
+bytes rather than a decoded, normalized, or reserialized body. Webhook endpoint
+CRUD is also available through the SDK.
 
-## Events
+## Users, sessions, identities, and errors
 
-Use `api_key.revoked` for API-key deletion; it replaces
-`api_key.deleted`.
+- Organization memberships expose `directoryManaged`.
+- `Profile`, `User`, and `Actions` expose `name`.
+- User Management values carry `signalsId`.
+- `CookieSession` is exported from the package root.
+- Server and authentication errors retain typed data.
+- `isAuthenticationErrorData` recognizes every supported authentication-error
+  shape.
+- Exported `ConflictException` values include `code`.
+- Identity deserialization returns `GitHubOAuth`, not `GithubOAuth`.
 
-Typed events cover:
+The SDK's `getAuthorizationUrl` accepts `claimNonce`, `invitationToken`, and
+`max_age` for nonce-bound claims, invitation flows, and requested
+authentication age.
 
-- organization roles and permissions, including dedicated organization-role
-  event types and `resourceTypeSlug` on deserialized role events;
-- feature flags;
-- Vault, including `vault.byok_key.verification_completed`;
-- groups; and
-- domain-verification failures.
+## Pagination and request handling
 
-## User, membership, session, and identity values
+- `listEvents` accepts `order`.
+- Vault object listing forwards `order` and `before`.
+- Authorization list endpoints use standardized pagination.
+- Connect auto-pagination serializes its pagination options.
+- Vault provides object-list filters, rekey support, and version checks when
+  deleting objects.
 
-- Read `directoryManaged` on organization memberships.
-- Read `name` on `Profile`, `User`, and `Actions`.
-- Pass and read `signalsId` through user-management APIs.
-- Import `CookieSession` from the package root.
-- Expect identity deserialization to normalize the provider to `GitHubOAuth`,
-  not `GithubOAuth`.
+## Additional SDK contracts (10.10.0)
 
-Authentication-event deserialization retains SSO context, and organization-domain
-deserialization retains `verification_prefix`. Do not add compatibility code
-that discards either field.
+- Action contexts expose the authentication method so handlers can inspect how
+  the current authentication occurred.
+- The Agents module adds `linkClaimAttemptToExternalUser`, methods for reading
+  agent registrations and validating credentials, and the agent registration
+  ID in API-key validation results.
+- User API-key methods are available. `ApiKey.owner` includes the user variant
+  and `organizationId`.
+- `CookieSession.refresh()` distinguishes retryable transient failures from
+  terminal refresh failures.
+- `AuthenticationFactor.totp` is optional on values returned by list
+  operations, matching the response contract.
+- The HTTP client supports configurable automatic request retries.
+- Pipes adds API-key installation plus Data Integration operations and models.
+- DELETE requests retain parameters supplied through `{ query: ... }`.
 
-## Errors
+## Product modules exposed by the SDK
 
-Server and authentication exceptions retain typed error data.
-`isAuthenticationErrorData` recognizes every supported authentication-error
-shape, and exported `ConflictException` instances expose `code`.
-
-## Authorization URL options
-
-`getAuthorizationUrl` accepts:
-
-- `claimNonce` for nonce-bound claims;
-- `invitationToken` for invitation flows; and
-- `max_age` for the requested authentication age.
-
-## Pagination
-
-- Pass `order` to `listEvents`.
-- Pass `order` and `before` through Vault object listing.
-- Use standardized pagination on authorization list endpoints.
-- Expect Connect automatic pagination to serialize and forward its pagination
-  options.
-
-## Groups
-
-The SDK exposes Groups endpoints and typed group events. Account for the v10
-timestamp conversion described above when serializing or comparing groups.
-
-## Webhooks
-
-Verify signatures against raw request bytes. Decoding or reserializing a request
-can change the byte sequence and invalidate verification.
-
-Webhook endpoint CRUD is available directly in the SDK. Apply the v10
-constructor migration before instantiating the `Webhooks` helper.
-
-## Vault
-
-In addition to the v10 list and casing changes, Vault supports:
-
-- object rekeying;
-- object-list filters; and
-- version checks when deleting objects.
-
-## Radar and headless AuthKit
-
-The SDK exposes Radar fields on headless AuthKit methods, supports completing
-Radar challenges, and returns typed challenge-error handling.
-
-## Connect and Audit Logs
-
-The SDK includes a Connect module with pagination-aware automatic pagination.
-List Audit Log schemas with `auditlogs.listSchemas`.
+- Groups endpoints and group events are available.
+- Radar is available, including Radar fields on headless AuthKit methods,
+  challenge completion, and typed challenge-error handling.
+- Connect is available and supports pagination options during automatic
+  pagination.
+- Audit Log schemas can be listed with `auditlogs.listSchemas`.

@@ -1,49 +1,11 @@
 # Cloud and Secrets
 
-## Select stacks and projects
+## Cloud command structure
 
-### Save a default Cloud stack
+### Use explicit subcommands
 
-Cloud commands can save a default stack during login and use its slug or ID to
-resolve the default project (since 1.6.0):
-
-```sh
-k6 cloud login --token "$MY_TOKEN" --stack my-stack-slug
-K6_CLOUD_STACK_ID=12345 k6 cloud run script.js
-```
-
-Override the saved stack with `K6_CLOUD_STACK_ID` or
-`options.cloud.stackID`. Stack information was announced as mandatory for v2,
-so configure it explicitly in durable automation.
-
-### List projects and tests
-
-k6 v2 can list Cloud projects in a table or as JSON (2.0.0):
-
-```sh
-k6 cloud project list
-k6 cloud project list --format=json
-```
-
-`k6 cloud test list` lists tests in a project (since 2.1.0):
-
-```sh
-k6 cloud test list --project-id 12345
-k6 cloud test list --json
-```
-
-Project resolution uses this precedence:
-
-1. `--project-id`
-2. `K6_CLOUD_PROJECT_ID` or cloud `projectID`
-3. the configured stack's default project
-
-The default output is a table; `--json` selects machine-readable output.
-
-## Migrate Cloud commands and configuration
-
-k6 v2 removed the top-level `k6 login`, positional `k6 cloud script.js`, and
-`--upload-only` forms (2.0.0). Use explicit commands:
+The v2 CLI removes top-level `k6 login`, positional `k6 cloud script.js`, and
+`--upload-only` (since 2.0.0). Use:
 
 ```sh
 k6 cloud login
@@ -51,9 +13,13 @@ k6 cloud run script.js
 k6 cloud upload script.js
 ```
 
-Supply InfluxDB credentials through `K6_INFLUXDB_*` variables; `k6 login
-influxdb` is gone. Move fields from the removed `options.ext.loadimpact`
-namespace to `options.cloud`:
+InfluxDB credentials must be provided with `K6_INFLUXDB_*` variables rather
+than `k6 login influxdb`.
+
+### Configure scripts under `options.cloud`
+
+`options.ext.loadimpact` is rejected in v2. Move those fields to
+`options.cloud` (since 2.0.0):
 
 ```javascript
 export const options = {
@@ -61,49 +27,116 @@ export const options = {
 };
 ```
 
-The legacy `{USER_CONFIG_DIR}/loadimpact/config.json` path is not migrated or
-read by v2. Move the file to `{USER_CONFIG_DIR}/k6/config.json` or regenerate
-it with `k6 cloud login` (2.0.0).
+## Stacks, projects, tests, and load zones
 
-## Handle Cloud exit status in CI
+### Set a default stack
 
-A Cloud run aborted by the system, a limit, a script error, the user, or a
-timeout exits with status `97` in v2 (2.0.0). Successful runs remain `0`, and
-threshold aborts remain `99`. CI must treat `97` as failure rather than relying
-on the earlier zero status.
-
-## Reuse a Cloud run for local execution
-
-`k6 cloud run --local-execution` honors `K6_CLOUD_PUSH_REF_ID` (since 1.8.0).
-Set an existing run ID to reuse that Cloud test run instead of creating one:
+Cloud login can save a default stack by slug, and Cloud commands can use its
+slug or ID to resolve the default project (since 1.6.0). Override per run with
+`K6_CLOUD_STACK_ID` or `options.cloud.stackID`. Stack information was planned
+to become mandatory in v2:
 
 ```sh
-K6_CLOUD_PUSH_REF_ID="$RUN_ID" k6 cloud run --local-execution script.js
+k6 cloud login --token "$MY_TOKEN" --stack my-stack-slug
+K6_CLOUD_STACK_ID=12345 k6 cloud run script.js
 ```
 
-## Use Cloud secrets during local execution
+### List projects
 
-In v2, `k6 cloud run --local-execution` automatically enables the built-in
-Cloud secret source (2.0.0). Calls through `k6/secrets` can retrieve Grafana
-Cloud secrets without `--secret-source=cloud`. Pass `--no-cloud-secrets` when
-the local run must not access them.
+The v2 Cloud CLI lists Grafana Cloud k6 projects as a table or JSON (since
+2.0.0):
 
-## Configure other secret sources
+```sh
+k6 cloud project list
+k6 cloud project list --format=json
+```
 
-### Supply source configuration through the environment
+### List tests
 
-`K6_SECRET_SOURCE` accepts the same syntax as `--secret-source` (since 1.7.0):
+`k6 cloud test list` lists load tests in a project (since 2.1.0). Project
+resolution checks `--project-id`, then `K6_CLOUD_PROJECT_ID` or script cloud
+`projectID`, then the configured stack's default project. Output is a table
+unless `--json` is supplied:
+
+```sh
+k6 cloud test list --project-id 12345
+k6 cloud test list --json
+```
+
+### List load zones
+
+`k6 cloud load-zone list` lists public and private load zones available to the
+configured stack (since 2.2.0). It prints a table by default or a JSON array
+with `--json`.
+
+## Secret sources
+
+### Configure a source through the environment
+
+`K6_SECRET_SOURCE` accepts the same source syntax as `--secret-source` (since
+1.7.0):
 
 ```sh
 K6_SECRET_SOURCE='mock=cool="not cool secret"' k6 run script.js
 ```
 
-Use the environment form when a runner cannot safely or conveniently construct
-the repeated CLI option.
+### Fetch from an HTTP endpoint
 
-### Fetch secrets from URLs
+URL-based secret management can ask an HTTP service for secrets (since 1.5.0),
+but that release provides only a mock implementation and no production-ready
+external secret-manager integration.
 
-Secret management can fetch values from HTTP endpoints (since 1.5.0), allowing
-a custom service to provide secrets. That release provides only a mock
-implementation, not a production-ready external-secret-manager integration.
-Do not describe the mock URL source as a hardened production connector.
+### Account for local-execution differences
+
+In v2, `k6 cloud run --local-execution` enables the built-in Cloud secret
+source automatically, allowing `k6/secrets` to retrieve Grafana Cloud secrets
+without `--secret-source=cloud`; use `--no-cloud-secrets` to opt out (since
+2.0.0).
+
+The maintained v1 line later changed in the opposite operational direction:
+`k6 cloud run --local-execution` no longer enables the Cloud source by default
+(since 1.8.1). This avoids an implicit source breaking scripts that configure
+their own source. Check the actual major line rather than assuming the same
+default across v1 and v2.
+
+## Local Cloud execution
+
+### Reuse an existing Cloud run
+
+`k6 cloud run --local-execution` honors `K6_CLOUD_PUSH_REF_ID` (since 1.8.0).
+Set it to an existing run ID to reuse that Cloud test run rather than creating
+a new one:
+
+```sh
+K6_CLOUD_PUSH_REF_ID="$RUN_ID" k6 cloud run --local-execution script.js
+```
+
+### Control Cloud log streaming
+
+Locally executed Cloud tests stream logs to the associated Grafana Cloud run
+(since 2.2.0). Pass `--no-cloud-logs` when logs must remain local. Otherwise,
+use Grafana secrets management and redaction for sensitive values that might
+reach logs:
+
+```sh
+k6 cloud run --local-execution --no-cloud-logs script.js
+```
+
+### Supply scoped push credentials
+
+An orchestrator that already provisioned a run can pass its scoped destination
+and token through `K6_CLOUD_METRICS_PUSH_URL` and
+`K6_CLOUD_TEST_RUN_TOKEN` (since 2.2.0).
+
+## Cloud process and output behavior
+
+### Treat aborted runs as failures
+
+In v2, Cloud runs aborted by the system, a limit, a script error, the user, or
+a timeout exit with status `97` instead of `0` (since 2.0.0). Successful runs
+remain `0`; threshold aborts remain `99`.
+
+### Filter browser failures
+
+Browser API failures in Grafana Cloud Logs have `module=browser`, so they can
+be filtered independently from other log sources (since 2.1.0).

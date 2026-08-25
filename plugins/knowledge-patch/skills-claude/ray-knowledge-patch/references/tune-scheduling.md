@@ -1,12 +1,14 @@
 # Ray Tune Scheduling
 
-## Function-trainable result emission
+## Emit function-trainable results
 
-A function trainable has three result-emission patterns:
+A function trainable has three result-emission styles:
 
-- call `tune.report()` for intermediate metrics;
-- return a dictionary for only the final result; or
-- yield dictionaries for successive results.
+- Call `tune.report()` for intermediate metrics.
+- Return one dictionary for only the final result.
+- Yield dictionaries for successive results.
+
+Do not call `tune.report()` inside a class-based `Trainable`.
 
 ```python
 def objective(config):
@@ -14,13 +16,10 @@ def objective(config):
         yield {"score": score}
 ```
 
-Do not call `tune.report()` from a class-based `Trainable`; it is supported
-for function trainables.
+## Run time-budgeted open-ended sampling
 
-## Time-budgeted open-ended sampling
-
-Set `num_samples=-1` with `time_budget_s` to keep generating trials until the
-wall-clock budget expires.
+Set `num_samples=-1` together with `time_budget_s` to generate trials until a
+wall-clock budget expires. A finite `num_samples` caps the number of trials.
 
 ```python
 tuner = tune.Tuner(
@@ -29,28 +28,23 @@ tuner = tune.Tuner(
 )
 ```
 
-If `num_samples` is finite, it caps the number of trials even when a time
-budget is also present.
+## Match schedulers to checkpointing and search
 
-## Scheduler compatibility
-
-Checkpoint requirements and search-algorithm compatibility vary by scheduler:
-
-| Scheduler | Checkpointing | Search algorithm |
+| Scheduler | Checkpointing | Search algorithms |
 | --- | --- | --- |
-| ASHA | Must be disabled | Compatible |
-| Median Stopping | Must be disabled | Compatible |
+| ASHA | Not required | Compatible |
+| Median Stopping | Not required | Compatible |
 | HyperBand | Required | Compatible |
-| BOHB | Required | Only compatible with `TuneBOHB` |
+| BOHB | Required | Only `TuneBOHB` |
 | PBT | Required | Incompatible |
 | PB2 | Required | Incompatible |
 
-Choose the search algorithm and checkpoint policy together with the scheduler;
-they are not independent options.
+## Change resources during a trial
 
-## Changing trial resources
+`ResourceChangingScheduler` can wrap any other scheduler and adjust a trial's
+resource requirements while tuning is in progress.
 
-`ResourceChangingScheduler` can wrap any other scheduler and adjust trial
-resource requirements while tuning is in progress. Put the underlying
-scheduler inside this wrapper when resource changes need to coexist with its
-stopping or promotion policy.
+## Search-integration requirements
+
+In the changes grouped as `2.56.0-2.57.0`, `OptunaSearch` requires
+`optuna>=3.0.0`, and `BayesOptSearch` exposes configurable float-hash precision.

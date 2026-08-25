@@ -1,12 +1,8 @@
 # Integrations and Ecosystem
 
-Use this reference when wiring Tailwind into component styles, package aliases, build tools, formatting, or framework-free UI blocks.
+## Reference-only stylesheet imports
 
-## Reference a Stylesheet Without Emitting It Again
-
-Reference-only imports are recorded in source batch `4.0.0-configuration`.
-
-Component style blocks and CSS modules can use `@reference` to make another stylesheet's theme variables, custom utilities, and custom variants available to `@apply` and `@variant`. The referenced stylesheet is not duplicated in the output.
+Use `@reference` in component style blocks or CSS modules when `@apply` or `@variant` needs access to theme variables, custom utilities, or custom variants. A reference exposes those definitions without duplicating the referenced stylesheet in the output.
 
 ```css
 @reference "../../app.css";
@@ -16,22 +12,9 @@ h1 {
 }
 ```
 
-When the project uses the uncustomized default theme, reference the package directly:
+If the project uses the uncustomized default theme, reference `tailwindcss` directly.
 
-```css
-@reference "tailwindcss";
-```
-
-## Resolve Package Subpath Aliases
-
-The CLI, Vite, and PostCSS integrations resolve package `imports` aliases in all of these directives:
-
-- `@import`
-- `@reference`
-- `@plugin`
-- `@config`
-
-For example, given this package entry:
+The CLI, Vite, and PostCSS integrations resolve package subpath aliases in `@import`, `@reference`, `@plugin`, and `@config`. For example, this package mapping:
 
 ```json
 {
@@ -41,23 +24,21 @@ For example, given this package entry:
 }
 ```
 
-A component stylesheet can use the alias directly:
+supports this reference:
 
 ```css
 @reference "#app.css";
 ```
 
-## Vite Integration
+These reference and alias behaviors are part of the `4.0.0-configuration` batch.
 
-Vite 8 support is recorded in source batch `4.2.2`.
+## Vite
 
-The `@tailwindcss/vite` integration supports Vite 8. A project can upgrade Vite without replacing the Tailwind plugin or pinning Vite to an earlier major release.
+The first-party `@tailwindcss/vite` integration supports Vite 8 as recorded in `4.2.2`. Upgrade Vite without replacing the Tailwind plugin or pinning Vite to an earlier major.
 
-## Webpack Loader
+## webpack loader
 
-The dedicated loader is part of the 4.2 feature set represented by source batch `4.3.0`.
-
-Use `@tailwindcss/webpack` to run Tailwind directly in webpack instead of routing the stylesheet through the PostCSS integration.
+The version 4.2 `@tailwindcss/webpack` loader, recorded in batch `4.3.0`, runs Tailwind directly in webpack rather than sending CSS through the PostCSS integration.
 
 ```js
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
@@ -79,20 +60,32 @@ module.exports = {
 };
 ```
 
-## Interactive Plain-HTML Tailwind Plus Blocks
+## CLI polling watch mode
 
-The Tailwind Plus behavior is recorded in source batch `tailwind-news`.
+As recorded in `4.3.3`, `@tailwindcss/cli` accepts either `--watch --poll` or `--watch --poll=<milliseconds>`. Use polling where file-system events are unavailable or unreliable.
 
-Every Tailwind Plus UI block has functional, accessible, interactive behavior in its plain-HTML form. This includes interaction-heavy patterns such as dialogs, dropdowns, and command palettes. Using these blocks does not require React, Vue, or hand-written behavior.
+```console
+npx @tailwindcss/cli -i input.css -o output.css --watch --poll=500
+```
 
-Treat the supplied HTML behavior as part of the block rather than assuming the example is visual markup that still needs a framework implementation.
+Polling avoids loading `@parcel/watcher`, so it also works in environments where that dependency cannot be loaded.
 
-## Prettier Class-List Cleanup
+## CSS nesting without Lightning CSS
 
-`prettier-plugin-tailwindcss` can perform three class-list cleanup operations together:
+CSS nesting is handled even when Lightning CSS does not run, including in `@tailwindcss/browser` and Tailwind Play (`4.3.3`).
 
-- sort class names;
-- remove duplicate class names;
-- remove unnecessary whitespace.
+```css
+.card {
+  &:hover {
+    color: red;
+  }
+}
+```
 
-This means formatting can normalize both ordering and redundant class-list content instead of sorting alone.
+## Tailwind Plus plain HTML
+
+The `tailwind-news` guidance records that every Tailwind Plus UI block is functional, accessible, and interactive in its plain-HTML form. This includes dialogs, dropdowns, and command palettes; these blocks do not require React, Vue, or hand-written behavior.
+
+## Prettier class cleanup
+
+`prettier-plugin-tailwindcss` can remove unnecessary whitespace and duplicate class names while it sorts class lists. This class-list cleanup is also recorded in `tailwind-news`.

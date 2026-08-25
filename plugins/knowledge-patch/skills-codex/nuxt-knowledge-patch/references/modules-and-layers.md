@@ -1,26 +1,39 @@
 # Modules and layers
 
-Use this reference for layer discovery and precedence, Nuxt Kit utilities, module lifecycle and dependencies, generated templates and types, aliases, imports, and build-time configuration.
+Build Nuxt Kit modules, compose layers, register imports and templates, and resolve generated configuration.
 
-## Contents
+## Layers, aliases, and context boundaries
 
-- [Layer discovery, naming, and precedence](#layer-discovery-naming-and-precedence)
-- [Shared and protected source aliases](#shared-and-protected-source-aliases)
-- [Module definitions and dependencies](#module-definitions-and-dependencies)
-- [Runtime configuration and schema setup](#runtime-configuration-and-schema-setup)
-- [Generated files, imports, components, and types](#generated-files-imports-components-and-types)
-- [File and module resolution](#file-and-module-resolution)
-- [Builder integration and watch hooks](#builder-integration-and-watch-hooks)
+### Automatic local layer registration (since 3.12.0)
 
-## Layer discovery, naming, and precedence
+Directories placed under `~/layers` are now registered as Nuxt layers automatically, just as files under `~/modules` are registered as modules. Explicit `extends` entries are no longer needed for these local layers.
 
-### Auto-register local layers (3.12.0)
+### Disabling modules inherited from layers (since 3.21.0)
 
-Directories under `~/layers` are registered automatically, just as files under `~/modules` are auto-registered. Do not duplicate local layers in `extends` unless a non-default arrangement requires it.
+A project extending a layer can disable one of the layer's modules by setting that module's options to `false`.
 
-### Use named layer aliases (3.16.0)
+```ts
+export default defineNuxtConfig({
+  extends: ['../shared-layer'],
+  image: false,
+})
+```
 
-An auto-scanned `~~/layers/test` layer receives `#layers/test`. Other layers can declare `$meta.name` to create `#layers/<name>`.
+### Layer aliases in stylesheets (release-catalogs)
+
+Named layer aliases such as `#layers/theme` now resolve from CSS files as well as module imports.
+
+```css
+@import "#layers/theme/assets/styles.css";
+```
+
+### Layer override order (since 4.0-platform-guide)
+
+Project files have the highest priority, followed by auto-scanned `~~/layers` entries and then explicitly configured `extends` entries. Auto-scanned layers sort alphabetically with Z overriding A, while earlier `extends` entries override later ones; numeric directory prefixes provide an explicit local ordering convention.
+
+### Named layer aliases (since 3.16.0)
+
+An auto-scanned `~~/layers/test` layer now receives the `#layers/test` alias automatically. Other layers can declare `$meta.name` in their configuration to create a corresponding `#layers/<name>` alias.
 
 ```ts
 export default defineNuxtConfig({
@@ -28,17 +41,17 @@ export default defineNuxtConfig({
 })
 ```
 
-### Resolve named layer aliases in stylesheets (release-catalogs)
+### Protected `#server` alias (since 3.21.0)
 
-Named aliases work in CSS as well as JavaScript and TypeScript imports.
+Server code can import from the server directory through `#server`, while client and shared contexts are prevented from importing through the alias.
 
-```css
-@import "#layers/theme/assets/styles.css";
+```ts
+import { helper } from '#server/utils/helper'
 ```
 
-### Configure remote layers and authentication (4.0-platform-guide)
+### Remote layer configuration (since 4.0-platform-guide)
 
-An `extends` entry may point to a local directory, npm package, or `github:` repository. Supply private-repository authentication and an optional `meta.name` alias as per-layer options. If no Git branch is specified, the branch defaults to `main`; pin a branch or tag when reproducibility matters.
+An `extends` entry can target a local directory, npm package, or a Git repository through a `github:` specifier. Remote entries accept per-layer options for private-repository authentication and a `meta.name` alias; an omitted Git branch defaults to `main`.
 
 ```ts
 export default defineNuxtConfig({
@@ -51,13 +64,9 @@ export default defineNuxtConfig({
 })
 ```
 
-### Apply layer override order correctly (4.0-platform-guide)
+### Resolved layer directories for modules (since 4.1.0)
 
-Project files have highest priority, followed by auto-scanned `~~/layers`, then explicit `extends` entries. Auto-scanned layers sort alphabetically with Z overriding A. Earlier `extends` entries override later entries. Use numeric directory prefixes to make local ordering explicit.
-
-### Resolve public layer directories through Kit (4.1.0)
-
-Use `getLayerDirectories(nuxt)` rather than private layer internals to resolve paths such as `app`, `appPages`, `server`, and `public`.
+Module authors can use `getLayerDirectories(nuxt)` from `@nuxt/kit` to resolve public layer paths such as `app`, `appPages`, `server`, and `public` without relying on private APIs.
 
 ```ts
 import { getLayerDirectories } from '@nuxt/kit'
@@ -70,22 +79,9 @@ export default defineNuxtModule({
 })
 ```
 
-### Disable an inherited layer module (3.21.0)
+### Shared code for the Vue app and Nitro server (since 3.14.0)
 
-Set a module's options to `false` in the extending project.
-
-```ts
-export default defineNuxtConfig({
-  extends: ['../shared-layer'],
-  image: false,
-})
-```
-
-## Shared and protected source aliases
-
-### Put cross-context utilities in `shared/` (3.14.0)
-
-The top-level `shared/` directory holds types and utilities usable by both the Vue application and Nitro server. Do not import Vue-app-specific or Nitro-specific code from shared files. With compatibility version 4, shared exports are auto-imported; `#shared` provides an explicit alias.
+The new top-level `shared/` directory holds context-independent types and utilities that both the Vue app and Nitro server can consume; its files must not import Vue-app or Nitro-specific code. With `compatibilityVersion: 4` its exports are auto-imported, and `#shared` provides an explicit alias to the directory, which sits alongside `server/` rather than inside `app/`.
 
 ```ts
 // shared/format-id.ts
@@ -95,73 +91,66 @@ export const formatId = (id: number) => `item-${id}`
 import { formatId } from '#shared/format-id'
 ```
 
-Keep `shared/` beside `server/`, not under `app/`.
+## Nuxt Kit modules and dependencies
 
-### Protect server-only imports with `#server` (3.21.0)
+### Async build-plugin factories (since 3.21.0)
 
-Server code can import from the server directory through `#server`; client and shared contexts are prevented from using the alias.
+Module authors can give `addVitePlugin` and `addWebpackPlugin` factories that load and construct plugins asynchronously, avoiding loading the plugin for an unused builder.
 
 ```ts
-import { helper } from '#server/utils/helper'
+addVitePlugin(() => import('my-plugin').then(m => m.default()))
+addWebpackPlugin(() => import('my-plugin/webpack').then(m => m.default()))
 ```
 
-### Resolve aliases in auto-import directories (3.19.0)
+### Async module dependencies (since 3.21.0)
 
-Aliases in `imports.dirs` are resolved before scanning:
+Module definitions can provide `moduleDependencies` as an async function when dependencies must be computed dynamically.
+
+### Declarative module dependencies (since 3.19.0)
+
+Modules can now specify dependencies on other modules, making those requirements part of the module definition.
+
+### Enforced module compatibility (since 3.17.0)
+
+Module consumers can opt into an error when Nuxt loads a module that declares incompatible requirements; this check becomes the default in Nuxt 4.
 
 ```ts
 export default defineNuxtConfig({
-  imports: {
-    dirs: ['#shared/composables'],
-  },
+  experimental: { enforceModuleCompatibility: true },
 })
 ```
 
-## Module definitions and dependencies
+### File exclusions in `resolveFiles` (since 3.19.0)
 
-### Type module installation and builder compatibility (3.12.0)
+Nuxt Kit's `resolveFiles` accepts an `ignore` option, so module code can exclude selected paths while resolving file patterns.
 
-`installModule` accepts typed module options. Module options can also declare compatibility with Vite or webpack builders; report accurate requirements instead of assuming every builder is supported.
+### Module dependencies use metadata names (since 4.2.0)
 
-### Compose typed module options with `.with()` (3.13.0)
+As of 4.2.2, `moduleDependencies` entries are typed and matched against a dependency module's metadata name, and `installModule` respects those declarations.
 
-Use `defineNuxtModule().with()` for improved inference when composing and merging module options.
+### Module install and upgrade hooks (since 3.19.0)
 
-### Run installation and upgrade lifecycle hooks (3.19.0)
+Module definitions can provide `onInstall` and `onUpgrade` hooks for installation- and upgrade-specific work.
 
-Module definitions can provide `onInstall` and `onUpgrade` for work specific to first installation or an existing installation's upgrade.
+### Module resolution extensions (since 4.2.0)
 
-### Declare module dependencies (3.19.0)
+Nuxt Kit's `resolveModule` accepts an `extensions` option for resolving non-default file extensions.
 
-Put dependencies on other modules in the module definition so consumers and Nuxt can reason about installation order and requirements.
+```ts
+await resolveModule('my-module', { extensions: ['.ts', '.mjs'] })
+```
 
-### Match dependencies by metadata name (4.2.0)
+### Module-controlled TypeScript hoisting (since 3.18.0)
 
-As of 4.2.2, `moduleDependencies` entries are typed and matched against the dependency module's metadata name. `installModule` respects those declarations. Do not match on package display names or incidental import specifiers.
+Modules can now add entries to `typescript.hoist`, giving them control over which dependencies participate in Nuxt's generated TypeScript configuration and types.
 
-### Compute module dependencies asynchronously (3.21.0)
+### Nested Vite plugin controls (since 4.5.2)
 
-A module may expose `moduleDependencies` as an async function when the dependency set requires asynchronous discovery.
+Nuxt Kit's Vite wrapper now honors nested plugins' `apply`, `applyToEnvironment`, and `enforce` controls. Registering a plugin with `prepend` also prepends its environment wrapper, preserving the requested activation and ordering.
 
-## Runtime configuration and schema setup
+### Nitro type augmentation from modules (since 3.16.0)
 
-### Read and update runtime configuration during module setup (3.12.0)
-
-Module authors can call build-time `useRuntimeConfig` and `updateRuntimeConfig` to inspect and modify the resolved runtime configuration during setup.
-
-### Resolve schema after environment loading (4.4.0)
-
-Nuxt Kit loads `.env` before resolving the Nuxt schema. Environment-dependent schema logic can read those values without a separate early dotenv load.
-
-## Generated files, imports, components, and types
-
-### Add Nitro runtime templates (3.14.0)
-
-Use `addServerTemplate` to generate a virtual file that is importable from Nitro runtime routes.
-
-### Augment Nitro types from a module (3.16.0)
-
-Pass `{ nitro: true }` to `addTypeTemplate` so declarations join Nitro's type context.
+Module authors can pass `{ nitro: true }` to `addTypeTemplate` to add declarations to Nitro's type context.
 
 ```ts
 addTypeTemplate({
@@ -172,51 +161,52 @@ addTypeTemplate({
 }, { nitro: true })
 ```
 
-### Register components from named exports (3.17.0)
+### Typed module installation and builder compatibility (since 3.12.0)
 
-Use `addComponentExports` to register every component exposed as a named export from a file.
+`installModule` now supports typed module options, and module options can declare compatibility with Vite or webpack builders.
 
-### Add a single server import directly (3.18.0)
+### Typed module-option composition (since 3.13.0)
 
-`addServerImports` accepts one import object; an array is unnecessary for a single entry.
+Module authors can use `defineNuxtModule().with()` to get better inferred types for merged module options.
+
+## Templates, imports, and generated configuration
+
+### Aliased auto-import directories (since 3.19.0)
+
+Aliases in `imports.dirs` are now resolved, so aliased directories can supply auto-imports.
+
+```ts
+export default defineNuxtConfig({
+  imports: {
+    dirs: ['#shared/composables'],
+  },
+})
+```
+
+### Build-time runtime configuration (since 3.12.0)
+
+Module authors can use the new build-time `useRuntimeConfig` and `updateRuntimeConfig` utilities to read and update resolved runtime configuration during module setup.
+
+### Component declaration paths (since 4.2.0)
+
+`addComponent` entries can specify a custom `declarationPath` for generated component declarations. This option applies to individual components, not component-directory entries.
+
+### Components from named exports (since 3.17.0)
+
+Module authors can use `addComponentExports` to register every component exposed as a named export from a file automatically.
+
+### Environment loading precedes schema resolution (since 4.4.0)
+
+Nuxt Kit now reads `.env` before resolving the Nuxt schema, making those environment values available to environment-dependent schema resolution.
+
+### Server runtime templates from modules (since 3.14.0)
+
+Module authors can use `addServerTemplate` to add a virtual file that is available inside Nitro runtime routes.
+
+### Single server imports in Nuxt Kit (since 3.18.0)
+
+Module authors can pass one import directly to `addServerImports`; an array is no longer required for a single entry.
 
 ```ts
 addServerImports({ from: 'my-package', name: 'myUtility' })
 ```
-
-### Control generated TypeScript hoisting (3.18.0)
-
-Modules can append dependencies to `typescript.hoist`, controlling which packages participate in Nuxt's generated TypeScript configuration and declarations.
-
-### Set a component declaration path (4.2.0)
-
-An individual `addComponent` entry accepts `declarationPath` for its generated declaration. The option does not apply to component-directory entries.
-
-## File and module resolution
-
-### Exclude files during pattern resolution (3.19.0)
-
-Pass `ignore` to Nuxt Kit's `resolveFiles` to omit selected paths while resolving file patterns.
-
-### Resolve additional module extensions (4.2.0)
-
-Pass `extensions` to `resolveModule` for non-default file extensions.
-
-```ts
-await resolveModule('my-module', { extensions: ['.ts', '.mjs'] })
-```
-
-## Builder integration and watch hooks
-
-### Load builder plugins asynchronously (3.21.0)
-
-Pass factories to `addVitePlugin` and `addWebpackPlugin` so Nuxt loads and constructs a plugin only for the builder in use.
-
-```ts
-addVitePlugin(() => import('my-plugin').then(m => m.default()))
-addWebpackPlugin(() => import('my-plugin/webpack').then(m => m.default()))
-```
-
-### Observe server changes through `builder:watch` (4.3.0)
-
-Changes under `server/` reach the `builder:watch` hook, allowing modules to respond to server-file edits as well as application-file edits.

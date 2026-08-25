@@ -1,140 +1,90 @@
 # Migrations and breaking changes
 
-## Contents
+## Removed build and generated artifacts
 
-- [Type hierarchy restrictions](#type-hierarchy-restrictions)
-- [Failure and lifecycle contracts](#failure-and-lifecycle-contracts)
-- [Changed default behavior](#changed-default-behavior)
-- [Dependency and package retirements](#dependency-and-package-retirements)
-- [Generated and cached files](#generated-and-cached-files)
-- [Callback and property migration map](#callback-and-property-migration-map)
-- [Image and filter migrations](#image-and-filter-migrations)
-- [IDE compatibility](#ide-compatibility)
+- Migrate Android Gradle application from the imperative script to declarative
+  plug-ins and migrate Android v1 embedding code to v2 (3.29.0,
+  `breaking-change-guides`).
+- Stop selecting the removed web HTML renderer (3.29.0), importing synthetic
+  `package:flutter_gen` output, or producing iOS SkSL warm-up bundles (3.32.0).
+- `.flutter-plugins` is gone; read `.flutter-plugins-dependencies` instead. Direct
+  dependency checks cannot be disabled (3.35.0).
+- The SDK-root `version` file and default `AssetManifest.json` generation are gone;
+  use `bin/cache/flutter.version.json` and avoid assuming a legacy manifest exists
+  (`3.38-guide`).
 
-Use this reference for source-compatibility and behavior changes that cut across
-platform topics. Follow the topic references for the detailed Android, Apple, web,
-tooling, and widget migrations.
+## Theme and component type migrations
 
-## Type hierarchy restrictions
+- Replace `ThemeData.dialogBackgroundColor` with
+  `DialogThemeData.backgroundColor`, and move
+  `ButtonStyleButton.iconAlignment` into `ButtonStyle.iconAlignment` or
+  `styleFrom` (3.29.0).
+- Replace `ThemeData.indicatorColor` with `TabBarThemeData.indicatorColor`.
+  `cardTheme`, `dialogTheme`, and `tabBarTheme` values use `CardThemeData`,
+  `DialogThemeData`, and `TabBarThemeData` (`3.32-guide`).
+- Remaining component theme values, including app-bar, bottom-app-bar, and input
+  decoration themes, use their data-oriented `...ThemeData` forms
+  (`3.35-guide`).
+- Replace `Switch.activeColor` with `activeThumbColor`; replace deprecated
+  `AppBarTheme.color`/`AppBarThemeData.color` with `backgroundColor` (3.35.0).
+- Cupertino dynamic-color convenience methods such as `withAlpha` and
+  `withOpacity` are deprecated; use standard `Color` APIs (`3.38-guide`).
 
-`PipelineOwner` is a `base` class (`3.32.0`). A custom pipeline owner outside the
-Flutter library must extend it rather than implement it, and the subclass must use an
-allowed modifier such as `base`, `final`, or `sealed`.
+## Widget and form contracts
 
-`IconData` and `TextDecoration` are `final` (`3.44.0`). Replace external subclasses
-with direct instances or composition. `ExtendSelectionByPageIntent` is removed, so
-delete registrations and invocations rather than substituting a similarly named
-intent without checking the interaction design.
+- `PipelineOwner` is `base`: external custom types must extend it with an allowed
+  `base`, `final`, or `sealed` class modifier, not implement it (3.32.0).
+- Replace `CupertinoButton.minSize` with independent `minWidth` and `minHeight`.
+  Replace `Tooltip.height` with `Tooltip.constraints` (3.32.0).
+- Put `Form` in `SliverToBoxAdapter` rather than using it directly in a
+  `CustomScrollView`. Replace
+  `DropdownButtonFormField.value` with `initialValue` (`3.35-guide`).
+- Put radio group state and change handling in `RadioGroup`; per-radio
+  `groupValue` and `onChanged` are deprecated (`3.35-guide`).
+- Configure `Expansible` timing and curves through `AnimationStyle` (3.41.0).
+- `DropdownMenu<T>` requires non-nullable `T` (3.41.0). Express a
+  `DropdownButton`'s enabled state with `enabled`, independently of `onChanged`
+  (`breaking-change-guides`).
+- Remove colored wrappers around `ListTile` that trigger the Flutter 3.44 debug
+  error. Variable fonts now use `FontWeight` as their weight-axis value starting
+  in Flutter 3.41 (`breaking-change-guides`).
 
-## Failure and lifecycle contracts
+## Renamed members and callbacks
 
-- Removing a route invokes `didComplete`. Futures and custom `Route` completion logic
-  can now run after `Navigator.removeRoute`, not only after a normal pop.
-- Experimental Flutter GPU resource-creation failures throw exceptions. Catch the
-  exception around resource creation instead of testing the old failure return.
-- The unsupported-platform implementation of an experimental regular desktop window
-  throws rather than emulating the feature.
-- `flutter build` without a target exits with status 1. Automation must supply an
-  explicit target and handle a nonzero exit.
+- Replace `ExpansionTileController` with `ExpansibleController`
+  (`3.32-guide`).
+- Replace separated-list `findChildIndexCallback` with `findItemIndexCallback`.
+  Replace `InputDecoration.maintainHintHeight` with `maintainHintSize`
+  (`breaking-change-guides`).
+- Replace `ReorderableListView.onReorder` with `onReorderItem`; its `newIndex`
+  already accounts for removal before reinsertion. Audit custom `RawMenuAnchor`
+  logic because close-callback ordering changed (`3.44-guide`).
+- Replace deprecated Cupertino sheet `builder`/`pageBuilder` with
+  `scrollableBuilder`, which supplies the coordinated controller (`3.44-guide`).
+- Replace `OverlayPortal.targetsRootOverlay` with `OverlayPortal` and
+  `overlayLocation: OverlayChildLocation.rootOverlay` (`3.38-guide`).
 
-## Changed default behavior
+## Final classes and removals
 
-### SnackBars
+- `IconData` and `TextDecoration` are final; use instances or composition.
+  `ExtendSelectionByPageIntent` is removed. Remove the `bounded` argument from
+  `ImageFilterConfig.blur` (3.44.0).
+- Remove `SemanticsConfiguration`/`SemanticsNode` elevation and thickness
+  properties (`3.35-guide`).
+- The `plugin_ffi` template is deprecated in favor of the standard plug-in
+  template with FFI support; Objective-C plug-in generation is deprecated in favor
+  of Swift (`3.44-guide`, 3.38.0).
 
-A `SnackBar` containing an action no longer auto-dismisses (`3.38-guide`). Explicitly
-dismiss it when the product still requires a time-limited action notification.
+## Behavior changes to retest
 
-### Variable fonts
-
-`FontWeight` controls the weight axis of variable fonts starting with Flutter 3.41.
-Text that previously rendered at the font's implicit weight can change when a
-`fontWeight` is set; perform visual regression checks with the actual variable font.
-
-### Colored ListTile wrappers
-
-Flutter 3.44 reports a debug error when `ListTile` is wrapped in a colored widget.
-Remove or restructure colored wrappers instead of ignoring the assertion.
-
-### Underdamped springs
-
-The corrected `SpringDescription` formula changes underdamped animation when mass is
-not `1`, especially near critical damping (`3.32-guide`). Retune mass, stiffness, or
-damping when an animation must preserve its previous motion.
-
-### Route transitions
-
-Material navigation defaults to predictive-back-aware transitions and
-`FadeForwardsPageTransitionsBuilder`. Applications that intentionally preserve the
-old zoom transition must configure it explicitly.
-
-## Dependency and package retirements
-
-Flutter support was scheduled to end on April 30, 2025 for these packages:
-
-- `ios_platform_images`
-- `css_colors`
-- `palette_generator`
-- `flutter_image`
-- `flutter_adaptive_scaffold`
-- `flutter_markdown`
-
-Choose a maintained replacement or community fork; do not assume an SDK upgrade will
-repair an unsupported dependency.
-
-The `firebase_ai` package replaces `firebase_vertexai` for Firebase AI Logic. It
-supports both Gemini API provider paths and Imagen. Existing applications continue to
-work temporarily but should migrate their imports and dependency declaration.
-
-## Generated and cached files
-
-- The synthetic `package:flutter_gen` package is removed. Import localization output
-  from its real generated source path.
-- `.flutter-plugins` is no longer generated or read. Scripts must consume
-  `.flutter-plugins-dependencies`.
-- The Flutter SDK root `version` file is removed. Read
-  `bin/cache/flutter.version.json`.
-- `AssetManifest.json` is not generated by default. Use supported asset APIs instead
-  of assuming the file exists.
-- Flutter no longer bundles SkSL data or an iOS SkSL build target.
-
-## Callback and property migration map
-
-| Removed or deprecated | Current contract |
-| --- | --- |
-| `dart format --fix` | Run `dart fix` separately. |
-| `ThemeData.dialogBackgroundColor` | `DialogThemeData.backgroundColor` |
-| `ThemeData.indicatorColor` | `TabBarThemeData.indicatorColor` |
-| `ButtonStyleButton.iconAlignment` | `ButtonStyle.iconAlignment` or `styleFrom` |
-| `Switch.activeColor` | `activeThumbColor` |
-| `AppBarTheme.color` | `backgroundColor` |
-| `CupertinoButton.minSize` | Independent `minWidth` and `minHeight` |
-| `ExpansionTileController` | `ExpansibleController` |
-| `Tooltip.height` | `Tooltip.constraints` |
-| `DropdownButtonFormField.value` | `initialValue` |
-| `OverlayPortal.targetsRootOverlay` | `OverlayPortal` with `OverlayChildLocation.rootOverlay` |
-| `InputDecoration.maintainHintHeight` | `maintainHintSize` |
-| separated-list `findChildIndexCallback` | `findItemIndexCallback` |
-| `ReorderableListView.onReorder` | `onReorderItem`; `newIndex` is already adjusted |
-| Cupertino sheet `builder` / `pageBuilder` | `scrollableBuilder` |
-| `flutter assemble --define` / `-d` | `--dart-define` / `-D` |
-| `--disable-dds` / `--no-disable-dds` | Use `--no-dds` to opt out. |
-| `--web-hot-reload` | Remove it; use the current web hot-reload workflow. |
-
-For component theme type migrations, radio groups, form and dropdown contracts, and
-menu callback ordering, read the widget reference before applying this table
-mechanically.
-
-## Image and filter migrations
-
-- `ImageFilter.blur` chooses a tile mode automatically when `tileMode` is omitted.
-  Supply `TileMode.clamp` or another explicit value when edge sampling must remain
-  fixed.
-- Remove the former `bounded` argument from `ImageFilterConfig.blur`.
-- Avoid listing one shader as both a shader and a normal asset; it is a build error.
-
-## IDE compatibility
-
-Flutter IntelliJ plug-in M87 expanded support to CLion, GoLand, and PyCharm. At that
-point IDE support for Flutter SDKs older than 3.13 was deprecated, with SDKs older
-than 3.16 scheduled next. Upgrade the SDK rather than pinning an increasingly old IDE
-plug-in.
+- Route removal now calls `didComplete`, so futures and custom lifecycle work run
+  after `Navigator.removeRoute` (3.32.0).
+- Corrected underdamped `SpringDescription` math changes motion when mass is not 1,
+  especially near critical damping; retune parameters if old motion is required
+  (`3.32-guide`).
+- `SnackBar` with an action no longer auto-dismisses (`3.38-guide`).
+- `ImageFilter.blur` chooses tile mode automatically when omitted; specify one if
+  edge sampling must remain fixed (`breaking-change-guides`).
+- Edge-to-edge system UI is the Android default, large screens increasingly ignore
+  orientation/resizability restrictions, and integrations cannot restore separate
+  mobile UI/platform threads.

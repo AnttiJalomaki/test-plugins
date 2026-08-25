@@ -1,80 +1,96 @@
 # Router, UI, and Web
 
-## Migrate the Router dependency boundary
+## Router dependency migration
 
-Expo Router no longer depends on React Navigation in SDK 56. Direct `@react-navigation/*` imports generally stop working unless the application declares and configures those packages itself. Apply the migration codemod to application source:
+In SDK 56, Expo Router no longer makes React Navigation packages available as application-facing dependencies. Direct `@react-navigation/*` imports generally stop working unless the packages are installed intentionally.
+
+Apply the supported replacement codemod, then audit anything left behind:
 
 ```sh
 npx expo-codemod sdk-56-expo-router-react-navigation-replace <source-directory>
 ```
 
-Review any remaining direct imports instead of assuming they are transitively available.
+## Native Router surfaces
 
-## Build native navigation
+SDK 55 adds these Router capabilities:
 
-Router additions in SDK 55 include adaptive Colors, a default-enabled Apple Zoom transition, iOS `Stack.Toolbar`, experimental SplitView, experimental Android form-sheet footers, Xcasset icons, and header and bottom-tab items.
+- Adaptive Colors and a default-enabled Apple Zoom transition.
+- iOS `Stack.Toolbar`.
+- Experimental SplitView and experimental Android form-sheet footers.
+- Xcasset icons plus header and bottom-tab items.
+- Automatic safe-area handling in Native Tabs.
+- `listeners` and `screenListeners` on Native Tabs.
+- `asChild` on `Stack.Screen.Title`.
+- `disableTransparentOnScrollEdge` on `NativeTabs.Trigger`.
 
-Native Tabs handle safe-area insets automatically. They also accept `listeners` and `screenListeners`; `Stack.Screen.Title` accepts `asChild`, and `NativeTabs.Trigger` accepts `disableTransparentOnScrollEdge`.
+SDK 56 experimentally brings `Stack.Toolbar` and Stack v5 to Android, including Material-style headers and predictive back. Treat all explicitly experimental native surfaces as opt-in and test them on each target platform.
 
-Android experimentally supports `Stack.Toolbar` and Stack v5 in SDK 56, including Material-style headers and predictive-back behavior. Keep platform guards around experimental native-stack features.
+The headless-tab option formerly named `reset` is `resetOnFocus`.
 
-## Implement Router rendering and data loading
+## Server rendering, loaders, and metadata
 
-Expo Web adds alpha server-side rendering and experimental data loaders in SDK 55.
+Expo Web introduces alpha server-side rendering and experimental data loaders in SDK 55. `expo-router/server` uses standard `Request` and `Response` objects rather than older custom request/response shapes.
 
-SDK 56 adds streaming web SSR with `unstable_useServerRendering`. Use `generateMetadata` for initial-page metadata; `<Head>` continues to update metadata after hydration.
+SDK 56 adds streaming SSR through `unstable_useServerRendering` and clarifies the loader lifecycle:
 
-`createStaticLoader` receives route params without a request. `createServerLoader` always receives a request and errors if invoked during static generation. A `_layout` route can export `SuspenseFallback` to replace the default Suspense loading UI.
+- `createStaticLoader` receives route params but no request.
+- `createServerLoader` always receives a request and errors during static generation.
+- `generateMetadata` provides initial-page metadata.
+- `<Head>` updates metadata after hydration.
+- A `_layout` route can export `SuspenseFallback` to replace the default Suspense loading UI.
 
-## Migrate the SwiftUI component names
+## Expo UI migration and maturity
 
-The Expo UI SwiftUI API is beta in SDK 55 and aligns several names with platform conventions:
+### SDK 55 Compose API
 
-- `DateTimePicker` becomes `DatePicker`.
-- `Switch` becomes `Toggle`.
-- `CircularProgress` and `LinearProgress` become `ProgressView`.
-- `Section`, `Form`, `Button`, and `Slider` also have breaking API changes; verify their current signatures while migrating.
+The Jetpack Compose API is beta and replaces class-based view definitions with the functional `View("MyView") { props -> }` DSL. It includes Material 3 components, SwiftUI-like `modifiers`, scoped modifiers such as `weight` and `matchParentSize`, XML Material Symbols through `<Icon>`, `Host.matchContents`, and `Host.colorScheme`.
 
-The same API adds `ConfirmationDialog`, `ScrollView`, Markdown rendering in `Text`, more modifiers, and custom SwiftUI views and modifiers.
+### SDK 55 SwiftUI API
 
-## Use functional Compose views
+The SwiftUI API is beta and aligns component names and conventions:
 
-The beta Compose API in SDK 55 replaces class-based view definitions with the functional `View("MyView") { props -> }` DSL. It includes Material 3 components, SwiftUI-like `modifiers`, scoped modifiers such as `weight` and `matchParentSize`, XML Material Symbols through `<Icon>`, and `Host.matchContents` and `Host.colorScheme`.
+| Earlier name | Current name |
+|---|---|
+| `DateTimePicker` | `DatePicker` |
+| `Switch` | `Toggle` |
+| `CircularProgress` or `LinearProgress` | `ProgressView` |
 
-## Use stable universal Expo UI
+`Section`, `Form`, `Button`, and `Slider` also changed. New capabilities include `ConfirmationDialog`, `ScrollView`, Markdown in `Text`, additional modifiers, and custom SwiftUI views and modifiers.
 
-In SDK 56, the SwiftUI and Jetpack Compose APIs are stable, included in the default template, and available in Expo Go. Universal `Host`, layout, text, input, control, and sheet components share an API across Android and iOS; web remains experimental.
+### SDK 56 universal API
 
-Custom SwiftUI and Compose views and modifiers remain supported. `useNativeState` bridges JavaScript state to a SwiftUI `ObservableObject` or Compose `MutableState`. `WorkletCallback` permits synchronous worklet props, including controlled `TextField` updates. Compose also adds `useMaterialColors` and the `@expo/material-symbols` catalog.
+The SwiftUI and Jetpack Compose APIs are stable, included in the default template, and available in Expo Go. A common API now covers `Host`, layout, text, input, controls, and sheets on Android and iOS; web support remains experimental.
 
-## Replace community components selectively
+Custom SwiftUI and Compose views and modifiers are supported. `useNativeState` bridges JavaScript state to SwiftUI `ObservableObject` or Compose `MutableState`. `WorkletCallback` supports synchronous worklet props, including controlled `TextField` updates. Compose adds `useMaterialColors` and the `@expo/material-symbols` catalog.
 
-Compatibility APIs live under `@expo/ui/community/*`. For example:
+## Community-component compatibility APIs
+
+SDK 56 provides compatibility entry points under `@expo/ui/community/*`. For example:
 
 ```ts
 import DateTimePicker from '@expo/ui/community/datetime-picker';
 ```
 
-This can replace `@react-native-community/datetimepicker`. Replacements also cover Gorhom Bottom Sheet, masked view, menu, pager view, picker, segmented control, and slider. Unsupported or different props still require migration work; do not assume complete behavioral equivalence.
+This can replace `@react-native-community/datetimepicker`. Compatibility APIs also cover Gorhom Bottom Sheet, masked view, menu, pager view, picker, segmented control, and slider. Compare component props during migration because differing or unsupported props can require application changes.
 
-## Coordinate status and navigation bars
+## Blur on Android
 
-SDK 56 adds an `expo-navigation-bar` `<NavigationBar>` component whose props align with `<StatusBar>`, plus imperative `setStyle` and `setHidden` methods. Multiple component instances merge their settings in mount order.
+`expo-blur` is stable on Android 12+ using `RenderNode`. Wrap the background content of an Android-capable blur layout in `BlurTargetView`. Rename `experimentalBlurMethod` to `blurMethod`; older blur implementations remain available on the platforms they previously supported.
 
-`expo-status-bar` now has a config plugin, and its plugin options align with `expo-navigation-bar`. Prefer the components and plugins over APIs made ineffective by mandatory Android edge-to-edge.
+## Status and navigation bars
 
-## Render Android blur
+Mandatory Android edge-to-edge makes most imperative `expo-navigation-bar` methods and several `expo-status-bar` props and setters deprecated no-ops. Their former app-config fields are deprecated; use each package's config plugin.
 
-`expo-blur` is stable on Android 12+ in SDK 55 and uses `RenderNode`. Wrap the background content for Android-capable blur layouts in `BlurTargetView`. Rename `experimentalBlurMethod` to `blurMethod`; older implementations remain available on the platforms they previously supported.
+SDK 56 adds a `<NavigationBar>` component whose props match `<StatusBar>`, plus imperative `setStyle` and `setHidden` methods. Multiple component instances merge in mount order. `expo-status-bar` now has a config plugin, and its options align with `expo-navigation-bar`.
 
-## Build widgets and inbound sharing
+## DOM component WebView default
 
-The alpha SDK 55 `expo-widgets` package creates iOS home-screen widgets and Live Activities with `@expo/ui`. Shared objects manage timelines, the Live Activity lifecycle, and push-to-start tokens.
+SDK 56 DOM components use `@expo/dom-webview` by default and no longer require `react-native-webview`. Opt out when the application must keep using `react-native-webview`.
 
-`expo-widgets` is stable in SDK 56. Widgets and Live Activities can access the full environment without pre-rendering.
+## Vector icon migration
 
-Experimental inbound `expo-sharing` support adds an iOS share-extension target and Android intent filters through a config plugin, then passes shared data into the application through deep links.
+`@expo/vector-icons` is deprecated in SDK 56 and is no longer installed transitively by `expo`. Either add it explicitly to retain the old API or move to per-set `@react-native-vector-icons/*` packages:
 
-## Choose the DOM WebView implementation
-
-DOM components use `@expo/dom-webview` by default in SDK 56 and no longer require `react-native-webview`. Opt out when the application specifically needs the previous `react-native-webview` implementation.
+```sh
+npx @react-native-vector-icons/codemod
+```

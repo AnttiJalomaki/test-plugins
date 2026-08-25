@@ -1,108 +1,95 @@
 # Kubernetes and Gateway API
 
-## Gateway API lifecycle and routing
+## Plan CRD, RBAC, and discovery upgrades
 
-In 3.1.0 the Kubernetes Gateway provider left experimental status and adopted
-Gateway API v1.1.0. Its HTTPRoute support includes method and query-parameter
-matches, `RegularExpression` paths, `HTTPURLRewrite`, scheme- and port-aware
-redirect filters, backend `ReferenceGrant` handling, and status for valid and
-invalid routes.
+All Kubernetes providers use EndpointSlices for backend discovery (since
+3.1.0). Grant Traefik access to EndpointSlices before upgrading a cluster. A
+later fix detects condition-only EndpointSlice changes, so endpoint health is
+refreshed even when addresses do not change (3.6.21).
 
-With 3.2.0, install Gateway API v1.2.0 when using the corresponding provider
-features. `GRPCRoute` is supported. HTTPRoute and GRPCRoute backends can select
-protocols using the `http` and `https` Kubernetes Service `appProtocol` values,
-and `BackendTLSPolicy` describes TLS-secured backends. HTTPRoute also supports
-destination-port matches and `ResponseHeaderModifier`. `NativeLB` delegates
-load balancing to the Kubernetes Service. Traefik advertises implemented
-features in `GatewayClass` status.
+The v3.1-to-v3.2 transition includes updated Traefik CRDs. Gateway API users
+must also install the v1.2 CRDs and matching RBAC (3.2.0). Revalidate resources
+after every CRD update: CEL validation and regular-expression validation for
+HTTP status codes became stricter, and the CRD schema stopped supplying a
+default load-balancing strategy (3.4.0). Set the intended strategy explicitly.
 
-Gateway API v1.3 resources are supported from 3.5.0.
+Patch releases also changed generated Kubernetes resource names to prevent
+collisions (3.7.11):
 
-Gateway API v1.4 is supported from 3.6.0. In that API release,
-`BackendTLSPolicy` and supported-feature status graduate from the Experimental
-channel to the Standard channel.
+- CRD-generated Service names are scoped to their parent.
+- Failover Services are named for the referenced Kubernetes Service.
+- A safe-naming option is available.
 
-Gateway API v1.5.1 is supported in 3.7.0. A listener may provide multiple
-`certificateRefs`, enabling SNI-based certificate selection.
-`BackendTLSPolicy.caCertificateRefs` may point to Secrets that contain private
-CA bundles. Patched 3.7 releases reject cross-provider
-`backendRefs.namespace` references and resolve backend `ExtensionRef` filters
-relative to the HTTPRoute namespace.
+Treat scripts or policies that depend on generated names as migration-sensitive.
 
-Later 3.7 patches also let header modifiers change `Host`; redirects retain the
-incoming scheme when no scheme is configured and emit the configured status.
+## Track Gateway API capabilities
 
-## Ownership and status refresh
+The Kubernetes Gateway provider became a regular, non-experimental provider
+with Gateway API v1.1.0 (3.1.0). That version supports HTTP method and query
+parameter matches, `RegularExpression` path matching, `HTTPURLRewrite`, redirects
+that set scheme or port, `ReferenceGrant` for HTTPRoute backends, and route
+status including invalid routes.
 
-As of 3.6.21, the provider ignores route `parentRefs` for Gateways it does not
-manage. It updates route-parent status only for managed Gateways, preventing
-controllers from claiming one another's status in a multi-controller cluster.
+Gateway API v1.2.0 adds `GRPCRoute` (3.2.0). `HTTPRoute` and `GRPCRoute` can
+select backend protocols, including Kubernetes Service `appProtocol` values
+`http` and `https`, and can use `BackendTLSPolicy`. HTTPRoute additionally gains
+destination-port matches and `ResponseHeaderModifier`; Gateway Services support
+`NativeLB`. Traefik publishes supported features in `GatewayClass` status.
 
-Traefik continues to report invalid routes and controller capabilities, so
-status permissions are required in addition to read permissions.
+The provider then progresses through Gateway API v1.3 (3.5.0), v1.4 (3.6.0),
+and v1.5.1 (3.7.0). In v1.4, `BackendTLSPolicy` and `SupportedFeatures` status
+move from the Experimental channel to the Standard channel. With v1.5.1:
 
-## EndpointSlices and service discovery
+- listeners can provide multiple `certificateRefs` for SNI selection;
+- `BackendTLSPolicy.caCertificateRefs` can reference Secrets containing private
+  CA bundles;
+- patched releases reject cross-provider `backendRefs.namespace` references;
+- backend `ExtensionRef` filters resolve relative to the `HTTPRoute` namespace.
 
-All Kubernetes providers switched backend discovery to EndpointSlices in
-3.1.0. Upgrade RBAC before the process: it must list, watch, and read the
-EndpointSlice resources used by the providers.
+The provider moves to Gateway API v1.6.1 in 3.7.10 and requires the Experimental
+Channel CRDs (3.7.11). In 3.7.11, `URLRewrite` and `RequestRedirect` preserve
+encoded path segments instead of changing their representation.
 
-In 3.6.21, discovery began reacting to condition-only EndpointSlice updates.
-Backend health now refreshes when readiness or another endpoint condition
-changes even if the address list is unchanged.
+For `TLSRoute`, Traefik sets rule priority so competing TLS routes have defined
+precedence (3.4.0). Gateway API header modifiers can change `Host`; redirects
+retain the incoming scheme when no scheme is specified and emit the configured
+status (3.7.0 patch line).
+
+## Respect controller status ownership
+
+Traefik reports Gateway route validity and supported features, but must not
+claim another controller's objects. The managed-Gateway correction ignores
+route `parentRefs` for Gateways Traefik does not manage and updates parent status
+only for managed Gateways (3.6.21).
+
+## Configure Kubernetes backends
 
 The Ingress and CRD providers can use node internal addresses for NodePort
-Services when external node addresses are unavailable or inappropriate
-(3.1.0). The CRD provider also supports health checks for `ExternalName`
-Services.
+Services, which supports clusters without suitable external node addresses
+(3.1.0). The CRD provider can health-check `ExternalName` Services (3.1.0), and
+Kubernetes Ingress can publish `ExternalName` Services through Traefik (3.6.0).
 
-Serving endpoints are recognized by the Ingress and CRD providers, including
-when selecting a sticky-session backend (3.3.0). The Ingress provider can
-publish `ClusterIP` and `NodePort` Service status (3.4.0), and it can publish
-`ExternalName` Services through Traefik (3.6.0).
+The Ingress and CRD providers recognize serving endpoints, including for sticky
+backend selection (3.3.0). An `IngressRoute` route can omit its explicit `kind`
+(3.3.0). Ingress status publication supports `ClusterIP` and `NodePort` Service
+types (3.4.0). CRDs later add `ingressClassName` (3.7.0).
 
-## CRD upgrade behavior
+Kubernetes CRD service TLS can source root CA certificates from ConfigMaps
+(3.4.0). Health-check paths are validated and must be path-only; absolute URLs
+are invalid (3.7.0).
 
-The 3.1-to-3.2 Kubernetes upgrade requires the updated Traefik CRDs; Gateway
-installations additionally require the v1.2 Gateway API CRDs and matching RBAC
-(3.2.0).
+## Recheck Ingress prefix matching
 
-CRDs in 3.4.0 apply stronger CEL validation and stricter regular-expression
-validation for HTTP status codes. Validate manifests before swapping the CRDs:
-an object admitted by an older schema may be rejected by the new one.
+Kubernetes Ingress `Prefix` routes follow Kubernetes matching semantics rather
+than Traefik's older interpretation (3.5.0). Test edge cases around segment
+boundaries during an upgrade.
 
-The CRD schema no longer supplies a default service load-balancing strategy in
-3.4.0. Set the desired strategy in every manifest that depends on one.
-Kubernetes CRD service TLS can load additional root CAs from ConfigMaps.
+## Migrate ingress-nginx resources
 
-`IngressRoute` definitions may omit the explicit route `kind` from 3.3.0.
-Kubernetes CRDs add `ingressClassName` in 3.7.0.
-
-For Gateway TLS routing, Traefik assigns a priority to `TLSRoute` rules
-(3.4.0), which determines precedence when multiple TLS routes compete.
-
-## Kubernetes Ingress semantics
-
-Starting in 3.5.0, Ingress `Prefix` paths match according to the Kubernetes
-documented semantics. Audit overlapping paths and trailing segments when
-upgrading from the earlier behavior.
-
-Health-check paths are validated in 3.7.0 and must be URL paths, not complete
-absolute URLs.
-
-Patched 3.7 releases isolate TLS options for the same host on different entry
-points, perform SNI checks for routers without host rules, and select
-certificates deterministically when multiple certificates share a SAN.
-
-## Ingress NGINX compatibility provider
-
-The provider arrived experimentally in 3.5.0. It consumes existing
-ingress-nginx resources, but that first implementation covered common use
-cases and essential annotations rather than complete compatibility. Inventory
-the exact annotations in a migration and test each one.
-
-In 3.7.0, `kubernetesIngressNginx` became a first-class provider and no longer
-requires the experimental flag:
+The ingress-nginx compatibility provider begins as experimental and intentionally
+covers common use cases and essential annotations rather than the full NGINX
+surface (3.5.0). It graduates as the first-class `kubernetesIngressNginx`
+provider in 3.7.0:
 
 ```yaml
 providers:
@@ -110,31 +97,43 @@ providers:
     enabled: true
 ```
 
-It supports more than 85 common annotations across authentication, redirects
-and rewrites, timeouts and buffering, affinity and canaries, rate limits,
-custom headers and errors, access logs, and per-Ingress entry points.
+It supports more than 85 common annotations across authentication, redirect and
+rewrite, timeout and buffering, affinity and canary, rate limiting, custom
+headers and errors, access logs, and per-Ingress entry points. Audit each
+annotation rather than assuming drop-in equivalence.
 
-`configuration-snippet`, `server-snippet`, and `auth-snippet` are only
-partially compatible. Traefik parses allowlisted structured directives and
-rejects unsupported text instead of injecting raw NGINX configuration.
-Review `AllowCrossNamespaceResources`, `GlobalAllowedResponseHeader`,
-`strictValidatePathType`, and `ipAllowListStrategy` when matching an existing
-controller's behavior and security boundaries.
+`configuration-snippet`, `server-snippet`, and `auth-snippet` have partial
+support. Traefik parses them into structured, allowlisted directives and rejects
+unsupported input; it does not inject raw NGINX. Use
+`AllowCrossNamespaceResources`, `GlobalAllowedResponseHeader`,
+`strictValidatePathType`, and `ipAllowListStrategy` for the corresponding
+compatibility and safety policies (3.7.0).
 
-Access logs can include Kubernetes Ingress fields in 3.7.0.
+Authentication, custom headers, custom errors, and SSL redirects also apply to
+the ingress-nginx default backend (3.7.11). Default entry-point selection honors
+`asDefault` and excludes internal entry points.
 
-## Knative
+## Enforce namespace boundaries
 
-The experimental Knative provider was added in 3.6.0. It discovers Services,
-tracks scaling events, and routes Knative workloads. Enable it and bound its
-watch scope:
+The CRD provider corrects cross-namespace Service-reference checks, and
+Kubernetes Ingress service middleware enforces `crossProviderNamespace`
+(3.7.11). The CRD provider can restrict which namespace supplies default TLS
+resources. Keep these checks enabled unless cross-namespace access is an
+explicit part of the design.
+
+## Run Knative workloads
+
+The experimental Knative provider discovers services, follows scaling events,
+and routes workload traffic (3.6.0). Limit the namespaces it watches:
 
 ```yaml
 experimental:
   knative: true
 providers:
   knative:
-    namespaces: [serverless-apps, production]
+    namespaces:
+      - serverless-apps
+      - production
 ```
 
-Knative v1.20 compatibility is available in 3.7.0.
+Knative v1.20 is supported (3.7.0).

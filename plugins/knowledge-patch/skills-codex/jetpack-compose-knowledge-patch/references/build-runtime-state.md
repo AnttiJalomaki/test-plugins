@@ -1,28 +1,24 @@
 # Build, Runtime, and State
 
-## Build and dependency setup
+Use this reference for dependency setup, compiler configuration, Runtime behavior, and state lifetime. Resolve each artifact independently when a project does not use a BOM.
 
-### Compose lint toolchain floor (1.9.0)
+## Android and Kotlin build floors
 
-Compose lint checks require AGP 8.8.2 or newer and Android Studio Ladybug or
-newer. If the project must stay on an older AGP, select standalone Lint 8.8.2
-or newer:
+### Compose lint (1.9.0)
+
+Compose lint checks require Android Gradle Plugin 8.8.2 or newer and Android Studio Ladybug or newer. A project that must remain on an older AGP can select standalone Lint 8.8.2 or newer in `gradle.properties`:
 
 ```properties
 android.experimental.lint.version=8.8.2
 ```
 
-### Core platform and Kotlin floor (1.10.0)
+### Platform and Kotlin requirements (1.10.0)
 
-Compose Animation, Foundation, Runtime, and UI have a minimum SDK of API 23.
-Artifacts built with Kotlin 2.0 require Kotlin Gradle Plugin 2.0.0 or newer in
-the consuming build.
+Compose Animation, Foundation, Runtime, and UI require Android API 23 or newer rather than API 21. Consuming artifacts built with Kotlin 2.0 also requires Kotlin Gradle Plugin 2.0.0 or newer.
 
-### Android toolchain for Compose 1.12 (compiler-toolchain)
+### Compose 1.12 Android toolchain (compiler-toolchain)
 
-Starting with Compose 1.12.0, Android projects must use `compileSdk = 37` and
-Android Gradle Plugin 9. The compile SDK is independent of `targetSdk`; adopting
-the build requirement does not itself require targeting API 37.
+Android projects using Compose 1.12.0 require `compileSdk = 37` and Android Gradle Plugin 9. `compileSdk` is independent of `targetSdk`; meeting the compile requirement does not itself opt the app into target SDK 37 behavior.
 
 ```kotlin
 android {
@@ -32,8 +28,7 @@ android {
 
 ### Compiler reports and stability configuration (compiler-toolchain)
 
-Configure reports and a root-project stability file in the module-level
-`composeCompiler` block:
+Configure reports and the stability file in the module-level `composeCompiler` block:
 
 ```kotlin
 composeCompiler {
@@ -43,10 +38,11 @@ composeCompiler {
 }
 ```
 
-### Compose BOM 2026.06.00 (compiler-toolchain)
+## BOM selection
 
-Import the platform in application and instrumented-test configurations, then
-omit versions from aligned Compose libraries:
+### Stable BOM setup (compiler-toolchain)
+
+The corresponding stable setup imports `androidx.compose:compose-bom:2026.06.00` for both application and instrumented-test configurations. Dependencies governed by the BOM omit individual versions.
 
 ```kotlin
 dependencies {
@@ -57,147 +53,115 @@ dependencies {
 }
 ```
 
-### Alpha and beta BOM artifacts (bom-versioning)
+### Prerelease-channel BOMs (bom-versioning)
 
-`compose-bom-alpha` selects each library's newest alpha, beta, RC, or stable
-release. `compose-bom-beta` selects each library's newest beta, RC, or stable
-release. They are testing-oriented BOMs and can mix stable and prerelease
-libraries; inspect the resolved dependency graph rather than assuming every
-artifact is prerelease.
+`compose-bom-alpha` selects each library's newest alpha, beta, RC, or stable release. `compose-bom-beta` selects each library's newest beta, RC, or stable release. These testing BOMs may therefore resolve some components to stable versions and others to prereleases.
 
 ```kotlin
 dependencies {
-    val composeBom = platform(
-        "androidx.compose:compose-bom-beta:2026.06.00"
-    )
+    val composeBom = platform("androidx.compose:compose-bom-beta:2026.06.00")
     implementation(composeBom)
 }
 ```
 
-## Runtime annotations and diagnostics
+## Nullness and runtime annotations
 
-### JSpecify nullness (1.8.0)
+### JSpecify annotations (1.8.0)
 
-Compose UI includes type-use JSpecify annotations. Kotlin can enforce them with
-`-Xjspecify-annotations=strict`; Kotlin 2.1.0 already defaults to strict mode.
+Compose UI publishes type-use JSpecify nullness annotations. Kotlin can enforce them with `-Xjspecify-annotations=strict`; Kotlin 2.1.0 already uses strict mode by default.
 
-### Runtime annotations without the runtime dependency (1.9.0)
+### Annotations without a Runtime dependency (1.9.0)
 
-Non-Compose modules can depend on `runtime-annotation` to use `@Stable`,
-`@Immutable`, and `@StableMarker` without pulling in Compose Runtime. It also
-contains:
+The `runtime-annotation` library lets non-Compose modules use `@Stable`, `@Immutable`, and `@StableMarker` without depending on Compose Runtime. It also supplies:
 
-- `@FrequentlyChangingValue`, whose lint warns about direct composition reads.
-- `@RememberInComposition`, whose lint rejects construction or calls in
-  composition unless they are remembered.
+- `@FrequentlyChangingValue`, whose lint warns about direct reads during composition.
+- `@RememberInComposition`, whose lint rejects construction or calls in composition that are not remembered.
 
-### Composite-key hashes (1.9.0)
+## Artifact target expansion
 
-Replace deprecated `currentCompositeKeyHash` with
-`currentCompositeKeyHashCode`. The newer value carries more hash bits and
-reduces collisions between unrelated composition groups.
+### Multiplatform Runtime (1.9.0)
 
-### Compose stack traces (1.9.0)
+`androidx.compose.runtime:runtime` from Google Maven includes desktop, iOS, and native targets in addition to Android. This applies to Runtime artifacts only, not the rest of AndroidX Compose.
 
-`setDiagnosticStackTraceEnabled` is experimental. Diagnostic Compose stack
-traces include work launched by `LaunchedEffect` and `rememberCoroutineScope`.
+### RxJava Runtime (1.10.0)
 
-### Group-key stack traces (1.10.0)
+`runtime-rxjava2` and `runtime-rxjava3` are multiplatform artifacts and include JVM as a supported target.
 
-`ComposeStackTraceMode.GroupKeys` supports useful Compose traces in minified
-apps. It is off by default. Kotlin 2.3.0's Compose compiler Gradle plugin starts
-generating the required group-key mapping.
+## Snapshots and composition identity
 
-### Recomposer tooling and concurrent recomposition (1.11.0)
+### Snapshot IDs (1.8.0)
 
-The experimental concurrent-recomposition API was removed. Tooling can inspect
-the experimental `RecomposerInfo.errorState` instead.
+Use `Snapshot.snapshotId` instead of deprecated `Snapshot.id`. The wider identifier avoids `Int` overflow in long-running, high-frame-rate processes. `SnapshotId` arithmetic and special constants are internal; convert with `toInt()` or `toLong()` only where arithmetic is required.
 
-## Snapshots and composition lifecycle
+### Composite key hashes (1.9.0)
 
-### Snapshot identifiers (1.8.0)
+Replace deprecated `currentCompositeKeyHash` with `currentCompositeKeyHashCode`. The newer value carries more hash bits and reduces collisions between unrelated composition groups.
 
-Use `Snapshot.snapshotId` instead of deprecated `Snapshot.id`. The widened ID
-avoids `Int` overflow in long-running, high-frame-rate processes. Arithmetic
-and special `SnapshotId` constants are internal; convert with `toInt()` or
-`toLong()` only when arithmetic is unavoidable.
+## Pausable composition
 
-### Pausable composition and compiler support (1.8.0)
+### Pausing and asynchronous apply (1.8.0)
 
-`PausableComposition` can pause a subcomposition while it is composed and
-apply the result asynchronously. It requires corresponding Compose compiler
-support.
+`PausableComposition` can pause a subcomposition during composition and apply it asynchronously. The feature requires corresponding compiler support.
 
-### Pausable-composition lifecycle (1.9.0)
+### Lifecycle requirements (1.9.0)
 
-Check `isApplied` and `isCancelled`. A cancelled pausable composition must be
-disposed; reusing it throws.
-
-### Runtime completion hooks (1.10.0)
-
-`awaitOrScheduleNextCompositionEnd()` invokes its callback after the current
-frame's composition, or schedules and awaits another frame when the recomposer
-is idle. Composition-local providers may return non-`Unit` values, and
-composition-registration observers run before initial composition.
+Inspect `PausableComposition.isApplied` and `isCancelled` to determine state. Dispose a cancelled pausable composition; reusing it throws.
 
 ## Saveable state
 
-### Saveable collections and serialization (1.9.0)
+### Collections and serialization (1.9.0)
 
-On Android, `SnapshotStateList` and `SnapshotStateSet` implement `Parcelable`
-and can be stored by `rememberSaveable`. Use `rememberSerializable` for the
-`KSerializer` overload. The `Saver`-based API keeps the
-`rememberSaveable` name.
+On Android, `SnapshotStateList` and `SnapshotStateSet` are `Parcelable`, so `rememberSaveable` can store them. Use `rememberSerializable` for the `KSerializer`-based overload; the `Saver`-based API retains the `rememberSaveable` name.
 
-### Positional state and registry owners (1.9.0)
+### Positional scoping and registry owners (1.9.0)
 
-The custom-`key` overload of `rememberSaveable` is deprecated because it
-bypasses positional scoping and can share or lose state, notably in nested lazy
-layouts. Remove the key. Import `LocalSavedStateRegistryOwner` from
-`androidx.savedstate.compose`; `SaveableStateHolder.SaveableStateProvider`
-supplies that owner to its content.
+Remove the deprecated custom `key` parameter from `rememberSaveable`. It bypasses positional scoping and can share or lose state, particularly inside nested lazy layouts.
+
+Import `LocalSavedStateRegistryOwner` from `androidx.savedstate.compose`. `SaveableStateHolder.SaveableStateProvider` supplies that owner to its content.
 
 ## Retained state
 
-### Retained values (1.10.0)
+### Choosing `retain` (1.10.0)
 
-`retain` preserves a value after its composable leaves the hierarchy without
-serializing it. Its lifetime is shorter than saveable state. Android's
-lifecycle-aware retain scope can carry retained values across configuration
-changes. Keys are retained as well, so do not use keys that hold resources or
-other leak-prone objects; annotate unsuitable types with `@DoNotRetain`.
+`retain` keeps a value after its composable leaves the hierarchy without serializing it. Its lifetime is shorter than saveable state. Android's lifecycle-aware retain scope carries retained values across configuration changes.
 
-### Effects and custom retained stores (1.10.0)
+Keys passed to `retain` are themselves retained. Avoid keys that hold resources or other leak-prone objects, and annotate unsuitable types with `@DoNotRetain`.
 
-`RetainedEffect` follows the retention lifecycle rather than the composition
-lifecycle. `RetainObserver.onUnused` is the retention counterpart of
-`RememberObserver.onAbandoned`.
+### Effects and custom stores (1.10.0)
 
-Custom stores implement `RetainedValuesStore`; use
-`ManagedRetainedValuesStore` and install the store with
-`LocalRetainedValuesStoreProvider`, not by directly providing
-`LocalRetainedValuesStore`:
+`RetainedEffect` follows retention rather than composition lifetime. `RetainObserver.onUnused` corresponds to `RememberObserver.onAbandoned`.
+
+Custom stores implement `RetainedValuesStore`, normally through `ManagedRetainedValuesStore`, and are installed with `LocalRetainedValuesStoreProvider`; do not directly provide `LocalRetainedValuesStore`.
 
 ```kotlin
 val store = retainManagedRetainedValuesStore()
 LocalRetainedValuesStoreProvider(store) { content() }
 ```
 
-### Retention API rename (1.11.0)
+### Runtime retention migrations (1.11.0)
 
-Replace `RetainedValuesStore.getExitedValueOrDefault` with
-`consumeExitedValueOrDefault`; consuming makes the operation's ownership
-semantics explicit.
+Rename `RetainedValuesStore.getExitedValueOrDefault` to `consumeExitedValueOrDefault`. The experimental concurrent-recomposition API is removed. Tooling can inspect the experimental `RecomposerInfo.errorState`.
 
-## Multiplatform runtime artifacts
+## Runtime completion and host defaults
 
-### Runtime from Google Maven (1.9.0)
+### Composition completion (1.10.0)
 
-`androidx.compose.runtime:runtime` publishes desktop, iOS, and native variants
-through Google Maven, upstreamed from Compose Multiplatform. This applies to
-Runtime artifacts only, not all AndroidX Compose libraries.
+`awaitOrScheduleNextCompositionEnd()` invokes a callback after the current frame's composition. If the recomposer is idle, it schedules and waits for the next frame. Composition-local providers may now return non-`Unit` values, and composition-registration observers run before initial composition.
 
-### RxJava runtime targets (1.10.0)
+### Host-provided defaults (1.11.0)
 
-`runtime-rxjava2` and `runtime-rxjava3` are multiplatform and include JVM as a
-supported target.
+`compositionLocalWithHostDefaultOf` defines a composition local whose fallback can come from the host, such as an Android `View` tag. `HostDefaultKey` is an interface; `HostDefaultProvider` and `LocalHostDefaultProvider` allow custom hosts to supply platform-specific values.
+
+## Diagnostics
+
+### Compose stack traces (1.9.0)
+
+`setDiagnosticStackTraceEnabled` is experimental. Compose stack traces include work launched by `LaunchedEffect` and `rememberCoroutineScope`.
+
+### Group-key traces in minified apps (1.10.0)
+
+`ComposeStackTraceMode.GroupKeys` enables Compose stack traces in minified applications. It is disabled by default. Starting with Kotlin 2.3.0, the Compose compiler Gradle plugin generates the required group-key mapping.
+
+## Removed Runtime flags (1.11.0)
+
+Delete assignments to removed `isMovingNestedMovableContentEnabled` and `isMovableContentUsageTrackingEnabled` Runtime flags. The behaviors can no longer be selected through those switches.

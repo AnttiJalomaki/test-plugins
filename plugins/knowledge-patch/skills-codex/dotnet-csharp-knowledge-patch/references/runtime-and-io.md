@@ -1,120 +1,75 @@
 # Runtime, Core Libraries, Diagnostics, and I/O
 
-This topic reference incorporates compatibility guidance from
-`10.0-guides` and API guidance from `10.0`.
+Compatibility guidance is attributed to `10.0-guides`; new APIs and behavior are
+attributed to `10.0`.
 
-## Buffered I/O
+## I/O, Diagnostics, and Shutdown Compatibility
 
-`BufferedStream.WriteByte` no longer causes an implicit flush. Code that needs
-bytes to reach the underlying stream at a protocol boundary, durability point,
-or before handing off the stream must call `Flush` or `FlushAsync` explicitly.
-Do not use individual byte writes as a flushing mechanism.
+- `BufferedStream.WriteByte` no longer flushes implicitly. Flush explicitly when
+  subsequent consumers must observe the byte immediately.
+- The default trace-context propagator is the W3C standard.
+- On Linux, `DriveInfo.DriveFormat` reports filesystem types.
+- `GnuTarEntry` and `PaxTarEntry` omit `atime` and `ctime` by default.
+- Sampling behavior changed for `ActivitySource.CreateActivity` and
+  `ActivitySource.StartActivity`; validate custom listeners and samplers.
+- LDAP `DirectoryControl` parsing is stricter, so malformed controls may now fail.
+- The runtime no longer installs default termination-signal handlers. Applications
+  that need graceful signal behavior must arrange it explicitly.
 
-## Trace Context and Activity Sampling
+## Core Types and Metadata Compatibility
 
-The default trace-context propagator is W3C. Verify cross-service headers and
-trace-parent expectations when interoperating with code that assumed another
-default.
-
-`ActivitySource.CreateActivity` and `StartActivity` have changed sampling
-behavior. Keep listener and sampler tests explicit about whether an activity
-is created, started, and recorded instead of relying on older incidental
-behavior.
-
-`ActivitySource` and `Meter` can carry a telemetry schema URL.
-`ActivitySourceOptions` is the constructor path when several source options
-must be configured together. Out-of-process `Activity` serialization includes
-events and links, so downstream schemas and payload sizes should account for
-them.
-
-EventSource trace aggregators support rate limiting of root activities. A
-filter such as the following caps roots at 100 per second:
-
-```text
-[AS]*/-ParentRateLimitingSampler(100)
-```
-
-Choose a limit intentionally so load protection does not silently discard the
-diagnostic volume needed for incident analysis.
-
-## Filesystem and Archive Metadata
-
-On Linux, `DriveInfo.DriveFormat` reports filesystem types. Callers that
-previously treated the value as absent or generic should accept real platform
-filesystem names.
-
-`GnuTarEntry` and `PaxTarEntry` omit `atime` and `ctime` by default. Set those
-fields when archive consumers require them; do not assume merely creating an
-entry preserves access and change timestamps.
-
-## Shutdown and Protocol Validation
-
-The runtime no longer installs default termination-signal handlers.
-Applications that require graceful cleanup or a particular signal-to-exit
-mapping must register and coordinate that behavior explicitly.
-
-LDAP `DirectoryControl` parsing is stricter. Malformed or nonconforming data
-that previously passed may now fail, so validate externally supplied controls
-and update tests that depended on permissive parsing.
-
-## Core Type and Metadata Compatibility
-
-- Generic-math shift operations now behave consistently. Re-test custom
-  numeric types that compensated for inconsistent shifts.
-- A struct with `InlineArray` cannot specify an explicit size. Remove the
-  competing layout declaration rather than trying to make both contracts
-  authoritative.
-- `FilePatternMatch.Stem` is non-nullable. Update nullable annotations and
-  eliminate branches that treated a valid match's stem as null.
+- Generic-math shift operations now behave consistently; test code that depended
+  on the older inconsistency.
+- An explicit struct size cannot be combined with `InlineArray`.
+- `FilePatternMatch.Stem` is non-nullable.
 - `Type.MakeGenericSignatureType` performs additional argument validation.
-  Invalid signature construction now fails earlier.
-- `System.Linq.AsyncEnumerable` is part of the core libraries. Check for
-  duplicate type or extension exposure from compatibility packages.
-- Reflection and trimming annotations were tightened or removed on several
-  APIs. Re-run trim analysis and check binary compatibility; old suppression
-  assumptions may no longer match the API metadata.
+- `System.Linq.AsyncEnumerable` is part of the core libraries.
+- Reflection and trimming annotations were tightened or removed on several APIs,
+  which can surface source or binary incompatibilities. Re-run trim analysis and
+  exercise reflection-heavy paths after upgrading.
 
 ## Numeric String Ordering
 
-`CompareOptions.NumericOrdering` compares embedded digit sequences as numbers:
+`CompareOptions.NumericOrdering` compares embedded digit sequences numerically:
+`"2"` sorts before `"10"`, and `"2"` compares equal to `"02"`. Do not combine
+the option with index or prefix operations such as `IndexOf`, `StartsWith`, or
+`IsPrefix`.
 
 ```csharp
 int order = CultureInfo.InvariantCulture.CompareInfo.Compare(
     "2", "10", CompareOptions.NumericOrdering);
 ```
 
-`"2"` sorts before `"10"`, while `"2"` and `"02"` compare equal. Numeric
-ordering is not valid for index or prefix operations such as `IndexOf`,
-`StartsWith`, or `IsPrefix`. Use it for comparison and sorting only.
+## `TimeSpan.FromMilliseconds` and Expression Trees
 
-## `TimeSpan.FromMilliseconds`
-
-There is a real `TimeSpan.FromMilliseconds(long)` overload, so a long-valued
-call is representable in an expression tree:
+A real `TimeSpan.FromMilliseconds(long)` overload works in expression trees. The
+second parameter of the existing two-`long` overload is no longer optional.
 
 ```csharp
 Expression<Action> expression = () => TimeSpan.FromMilliseconds(1000L);
 ```
 
-The existing overload taking two `long` values no longer makes its second
-parameter optional. Supply both arguments when that overload is intended.
-
 ## Tensor Contracts and Views
 
 `System.Numerics.Tensors` is stable rather than experimental and includes the
-nongeneric `IReadOnlyTensor` contract. Slicing a tensor returns a non-copying
-view. Access through the slice observes later changes to the underlying
-storage, so copy explicitly when isolation is required.
+nongeneric `IReadOnlyTensor`. Slicing returns a non-copying view, so later reads
+observe changes to underlying storage. Tensor arithmetic operators are available
+only when the element type implements the corresponding generic-math interfaces.
 
-Tensor arithmetic operators are constrained by generic math: the element type
-must implement the interface corresponding to the requested operator. A
-numeric-looking type without that interface does not gain the operator merely
-by being stored in a tensor.
+## Telemetry Schemas and Sampling
+
+`ActivitySource` and `Meter` can carry a telemetry schema URL.
+`ActivitySourceOptions` supplies the multi-option constructor path. Out-of-process
+`Activity` serialization includes events and links. EventSource trace aggregators
+can cap root activities per second with a filter such as:
+
+```text
+[AS]*/-ParentRateLimitingSampler(100)
+```
 
 ## AVX10.2 Intrinsics
 
-The x64 intrinsic API surface is under
-`System.Runtime.Intrinsics.X86.Avx10v2`. JIT support remains disabled by
-default because capable hardware was not available when the API shipped.
-Presence of the API is therefore not evidence that a production code path can
-execute it; retain runtime feature checks and a fallback implementation.
+The x64 intrinsics are exposed under
+`System.Runtime.Intrinsics.X86.Avx10v2`, but JIT support remains disabled by
+default because capable hardware was not yet available. Do not make their mere
+API presence a runtime capability check.

@@ -1,73 +1,54 @@
 # Certificates and Issuance
 
-Use this reference for Certificate fields, renewal scheduling, generated
-keystores, signing behavior, name handling, and issuance safety.
+## Private keys, history, and renewal
 
-## Private keys and revision history
+### Rotation and history defaults
 
-### Rotation defaults to `Always`
+The private-key rotation default is `Always`; set
+`spec.privateKey.rotationPolicy: Never` on a Certificate only when key
+retention is required. The former `DefaultPrivateKeyRotationPolicyAlways`
+feature gate is GA and cannot be disabled (`1.20`).
 
-Since `upgrade-1.18`, an omitted `Certificate.spec.privateKey.rotationPolicy`
-means `Always`, not `Never`. Set `Never` explicitly before upgrading when a
-consumer requires the existing private key:
+An omitted `spec.revisionHistoryLimit` defaults to `1`. Configure a larger
+value when more historical CertificateRequests must be retained.
+
+### Renewal calculations and policy
+
+The 1.17 correction to `renewBeforePercentage` can move the renewal time for
+existing Certificates. In 1.21, percentage renewal also works correctly for
+durations longer than roughly three years; earlier calculations could reject
+such Certificates or select the wrong time.
+
+The Certificate API supports `renewalPolicies` alongside `renewBefore` and
+`renewBeforePercentage` for more expressive scheduling (`1.21`). Avoid 1.21.0
+when disabled renewal is used: `spec.renewal.policy: Disabled` can panic the
+controller, and 1.21.1 fixes it.
+
+Failed CertificateRequests use exponential backoff with a 32-hour default
+maximum. Change it with
+`--certificate-request-maximum-backoff-duration`, controller configuration, or:
 
 ```yaml
-spec:
-  privateKey:
-    rotationPolicy: Never
+config:
+  certificateRequestMaximumBackoffDuration: 8h
 ```
 
-The `DefaultPrivateKeyRotationPolicyAlways` behavior became GA in `1.20`, and
-its feature gate is no longer configurable. Explicit per-Certificate policy is
-the supported way to retain a key.
+### ACME Renewal Information
 
-### Revision history is bounded by default
+Experimental RFC 9773 support behind `ACMEUseARI` queries an ACME server's
+`renewalInfo` endpoint. This lets the CA recommend renewal windows, including
+for mass revocation or CA key rollover.
 
-Since `upgrade-1.18`, an omitted `Certificate.spec.revisionHistoryLimit`
-defaults to `1` instead of `nil`. Set an explicit larger limit if operational
-or audit workflows need more historical CertificateRequests.
-
-## Renewal scheduling
-
-### Percentage calculations
-
-The `renewBeforePercentage` calculation was corrected in `1.17` to follow its
-API specification. An upgrade can therefore change the renewal time of an
-existing Certificate that uses this field.
-
-In `1.21`, percentage renewal was also corrected for Certificate durations
-longer than roughly three years. Earlier behavior could reject such values or
-compute the wrong renewal time.
-
-### Expressive renewal policies
-
-The Certificate API in `1.21` adds `renewalPolicies` for more expressive
-scheduling alongside `renewBefore` and `renewBeforePercentage`. Choose one
-coherent policy and validate its interaction with the issuer's validity
-period.
-
-### Annotation changes reconcile immediately
-
-In `1.20`, changing the Duration or `RenewBefore` annotation on an Ingress or
-Gateway API resource immediately triggers an update of its generated
-Certificate. Do not rely on an unrelated source-resource change to force
-reconciliation.
-
-## Keystores and output formats
+## Keystores, output, and algorithms
 
 ### Literal keystore passwords
 
-Since `1.17`, JKS and PKCS#12 output can use a literal password at
-`spec.keystores.jks.password` or `spec.keystores.pkcs12.password`. Each literal
-field is mutually exclusive with its corresponding `passwordSecretRef`.
-Literal passwords exist for software compatibility and do not add substantive
-keystore security.
+A Certificate can set `spec.keystores.jks.password` or
+`spec.keystores.pkcs12.password` directly (`1.17`). Each is mutually exclusive
+with its corresponding `passwordSecretRef`. A literal password satisfies
+software compatibility requirements; it does not add keystore security.
 
 ```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: example
 spec:
   secretName: example-tls
   issuerRef:
@@ -76,94 +57,64 @@ spec:
     jks:
       create: true
       password: changeit
-  dnsNames:
-    - example.com
 ```
 
-### Additional output is unconditional
+### Output and signature choices
 
-`AdditionalCertificateOutputFormats` is GA in `1.18`. Additional certificate
-output formats no longer require a feature gate.
+Signature algorithms are selectable to meet a CA or consumer requirement
+(`1.18`). `AdditionalCertificateOutputFormats` is GA and additional formats no
+longer require a gate.
 
-### FIPS-compatible PKCS#12
+The `Modern2026` PKCS#12 profile uses AES-256 and SHA-256 KDFs rather than
+legacy 3DES or RC2 and is compatible with FIPS 140-3 requirements (`1.21`).
 
-The `Modern2026` profile in `1.21` produces PKCS#12 output using AES-256 and
-SHA-256 KDFs rather than legacy 3DES or RC2, making it suitable for FIPS 140-3
-requirements.
+RSA certificates with 3072-bit keys use SHA-384 and 4096-bit keys use SHA-512.
+Verify consumer support if a large-key rotation begins failing.
 
-## Names, constraints, and signing
+### Large PEM inputs
 
-### Retire the `ValidateCAA` gate
+From 1.18.3, larger PEM certificates and chains can be parsed, including leaf
+certificates with many DNS names or other identities. Operators can also
+configure PEM decoder size limits for certificates or keys beyond normal
+limits (`1.20`).
 
-`ValidateCAA` was deprecated in `upgrade-1.17` with removal planned for 1.18.
-Stop manually enabling it and remove it from feature-gate configuration.
+## Names and constraints
 
-### Name constraints lifecycle and fixes
+`NameConstraints` became beta and enabled by default in 1.17. Use 1.17.4 or
+later for URI constraints because earlier 1.17 releases copied permitted URI
+domains into excluded URI domains in the CSR.
 
-`NameConstraints` became beta and enabled by default in `1.17`, allowing CA
-certificates to express name constraints without manual gate enablement.
+When `commonName` is an IP address, cert-manager places it in `ipAddresses`
+rather than a DNS SAN (`1.18`). Trailing-dot DNS SANs rejected by 1.19.0 work
+again from 1.19.1.
 
-Use 1.17.4 or later for URI name constraints. Earlier 1.17 patches incorrectly
-copied permitted URI domains into the excluded URI domains of the CSR.
+`OtherNames` is beta and enabled by default in 1.20. Ingress-like shim
+controllers in 1.21 also convert `cert-manager.io/alt-names` and
+`cert-manager.io/ip-sans` annotations into the generated Certificate.
 
-### IP common names and SANs
+## Issuance integrity and reconciliation
 
-Since `1.18`, a `commonName` that is an IP address is placed into
-`ipAddresses`, rather than being incorrectly added to DNS subject alternative
-names.
+- While a Certificate is being deleted, its controller does not create a new
+  CertificateRequest or Secret (`1.17`).
+- From 1.18.5, an issuer response whose public key does not match the CSR is
+  rejected before storage; issuance fails with backoff instead of looping.
+- If an issuer returns a certificate that is already expired, the controller
+  stops rather than entering an infinite reissuance loop (`1.21`).
+- Changing Duration or `RenewBefore` on an Ingress or Gateway immediately
+  updates its generated Certificate (`1.20`).
+- The domain-qualified finalizer behavior is beta and enabled by default under
+  `UseDomainQualifiedFinalizer` from 1.17, avoiding Kubernetes warnings.
 
-### Trailing-dot DNS SANs
+## Querying Certificates by issuer
 
-Version 1.19.0 rejected DNS names ending in a trailing dot in X.509 SAN fields.
-Version 1.19.1 restored support; use 1.19.1 or later where fully qualified SANs
-retain their trailing dot.
+The CRDs expose `spec.issuerRef.group`, `spec.issuerRef.kind`, and
+`spec.issuerRef.name` as selectable fields (`1.20`):
 
-### Other names
-
-The `OtherNames` feature is beta and enabled by default in `1.20`.
-
-### Signature algorithms and large RSA keys
-
-The signature algorithm is configurable since `1.18`, allowing issuance to
-meet a CA or consumer's algorithm requirements.
-
-Since `upgrade-1.17`, certificates with 3072-bit RSA keys use SHA-384 and those
-with 4096-bit RSA keys use SHA-512. If larger-key certificates fail when they
-rotate, confirm that every consumer supports the stronger hash algorithm.
-
-## Issuance and reconciliation safety
-
-### No new children during deletion
-
-Since `1.17`, a Certificate being deleted does not cause its controller to
-create new CertificateRequest or Secret objects.
-
-### Larger PEM objects
-
-Starting in 1.18.3, cert-manager accepts larger PEM certificates and chains,
-including leaf certificates containing large numbers of DNS names or other
-identities. In `1.20`, PEM decoding size limits became operator-configurable
-for certificates or keys that exceed normal decoder limits.
-
-### Reject mismatched public keys
-
-Starting in 1.18.5, cert-manager rejects an issued certificate whose public key
-does not match its CSR. Issuance fails with backoff before the certificate is
-stored, instead of entering an infinite reissuance loop.
-
-### Reject already-expired responses
-
-In `1.21`, an already-expired certificate returned by an issuer stops with a
-failure rather than triggering an infinite reissuance loop.
-
-### CertificateRequest retry ceiling
-
-In `1.21`, the maximum exponential-backoff duration for a failed
-CertificateRequest is configurable and defaults to 32 hours. Configure it with
-`--certificate-request-maximum-backoff-duration`, a controller configuration
-file, or the Helm value:
-
-```yaml
-config:
-  certificateRequestMaximumBackoffDuration: 8h
+```console
+kubectl get certificates --field-selector spec.issuerRef.name=example-issuer
 ```
+
+Do not remain on 1.19.0: its CRD-level defaults for Certificate and
+CertificateRequest issuer-reference group and kind can persist defaults and
+cause unnecessary reissuance. Version 1.19.1 restores the earlier runtime
+defaulting behavior.

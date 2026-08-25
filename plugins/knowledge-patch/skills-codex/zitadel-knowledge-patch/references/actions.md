@@ -2,7 +2,11 @@
 
 ## Actions V1 retirement and migration boundary
 
-Actions V1 is frozen and planned for removal in ZITADEL V5, so use V2 for new implementations. Migration moves embedded goja JavaScript using supplied `ctx` and `api` objects to externally hosted HTTP handlers: API pre/post hooks become request/response executions, token and SAML hooks become function executions, and reactions to stored changes become event executions.
+Actions V1 is frozen and planned for removal in ZITADEL V5, so new implementations must use V2. Migration moves embedded goja JavaScript using supplied `ctx` and `api` objects to externally hosted HTTP handlers: API pre/post hooks become request/response executions, token and SAML hooks become function executions, and reactions to stored changes become event executions.
+
+## Concurrent-session limits with Actions V2
+
+Actions V2 can enforce a per-user maximum for concurrent sessions through Actions-based session management.
 
 ## Target creation and execution wiring
 
@@ -62,7 +66,7 @@ Event executions run only after a matching event has been stored, so they are re
 
 ## External identity-provider claim remapping
 
-A response execution on `/zitadel.user.v2.UserService/RetrieveIdentityProviderIntent` can inspect `idpInformation.rawInformation` and return a modified response that fills `idpInformation.userName` and required `addHumanUser` profile, email, username, and link fields. Use this when nonstandard upstream claim names leave required auto-creation fields such as `givenName` empty.
+A response execution on `/zitadel.user.v2.UserService/RetrieveIdentityProviderIntent` can inspect `idpInformation.rawInformation` and return a modified response that fills `idpInformation.userName` and required `addHumanUser` profile, email, username, and link fields. This is the remediation path when nonstandard upstream claim names leave required auto-creation fields such as `givenName` empty.
 
 ## Legacy V1 flow and trigger identifiers
 
@@ -91,7 +95,3 @@ Embedded actions import `zitadel/http`; its `fetch()` is not the standard Fetch 
 const http = require("zitadel/http");
 const response = http.fetch("https://example.com/hook", {method: "POST", body: {user: "123"}});
 ```
-
-## Concurrent-session limits with Actions V2
-
-Actions V2 can enforce a maximum number of concurrent sessions for each user, enabling a per-user session-concurrency policy through Actions-based session management.

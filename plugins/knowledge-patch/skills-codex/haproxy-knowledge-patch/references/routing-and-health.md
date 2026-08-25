@@ -1,12 +1,10 @@
 # Routing and Health Checks
 
-## Backend modes and selection
+## SPOP-native backends
 
-### SPOP-native SPOE agents
-
-SPOE runs as a mux as of 3.1.0, with native `mode spop` backends. These
-backends support every load-balancing algorithm and can share idle connections
-between threads. Existing SPOA agents remain compatible.
+HAProxy 3.1.0 implements SPOE as a mux and adds `mode spop`. SPOP backends can
+use any load-balancing algorithm and share idle connections between threads;
+existing SPOA agents remain compatible.
 
 ```haproxy
 backend spoa_agents
@@ -15,114 +13,45 @@ backend spoa_agents
     server agent1 127.0.0.1:12345
 ```
 
-### Default and tie-breaking balance behavior
+## Dynamic retry counts
 
-Starting in 3.3.0, an ordinary backend with no explicit `balance` directive
-uses `random` rather than `roundrobin`. It uses power-of-two choices: sample
-two servers and select the less-loaded one. Configure `balance roundrobin` to
-retain the old default.
-
-As of 3.4.0, equal concurrent-connection counts are broken by comparing recent
-HTTP request rates. Expect different distribution in large pools where many
-servers previously looked equally loaded.
-
-### Abort abandoned HTTP requests
-
-Backends in `mode http` enable `option abortonclose` by default in 3.3.0. This
-allows processing to stop before an abandoned client request is sent to a
-server. The option is also valid in a frontend.
-
-## Runtime-created backends
-
-The Runtime API can create and remove complete backends without a reload as of
-3.4.0. A newly added backend is unavailable to routing until it is published.
-A disabled or unpublished backend selected by `use_backend` or
-`default_backend` is skipped unless `force-be-switch` applies.
-
-```text
-add backend test-backend from mydefaults mode http
-add server test-backend/server1 127.0.0.1:3000 check
-enable server test-backend/server1
-enable health test-backend/server1
-publish backend test-backend
-```
-
-Remove a dynamic backend in this order:
-
-1. Put every server in maintenance.
-2. Wait for each server to report `srv-removable`, then delete it.
-3. Unpublish the backend.
-4. Wait for `be-removable`, then delete the backend.
-
-Named `defaults` sections stay in memory so runtime creation can use them. If
-the deployment never creates dynamic backends, global `tune.defaults.purge`
-releases that retained memory.
-
-## Retry and delay policy
-
-### Choose retry counts per transaction
-
-The `set-retries` action is valid in `tcp-request` and `http-request` rules as
-of 3.1.0. Select the retry budget from the application path, method, or client:
+The `set-retries` action is available in `tcp-request` and `http-request`
+rules since 3.1.0. It chooses a retry count for the current traffic rather than
+fixing one value for the entire proxy.
 
 ```haproxy
 http-request set-retries 0 if METH_POST
 ```
 
-`retry-on` accepts HTTP status 421 as of 3.2.0, so a request misdirected to a
-backend server that cannot serve it can be retried elsewhere.
+In 3.4.3, custom maximum retry counts and stream timeouts are initialized
+correctly after backend selection. Rules that set them no longer lose their
+values when the backend is assigned.
 
-### Pause traffic conditionally
+## HTTP health-check Host headers
 
-The `pause` action in 3.2.0 delays request or response processing by a fixed
-millisecond value or a sample expression. It can slow rate-limit offenders or
-implement another bounded delay policy.
+Since 3.1.0, `option httpchk` supports a Host header directly. Stop encoding
+the header through fake strings in the `httpchk` line.
 
-```haproxy
-http-request pause 250
-http-response pause 250
-```
+## Health-gated server initialization
 
-## Connection limits and compatibility
+The 3.1.0 server `init-state` setting can hold a server down at startup or
+after it leaves maintenance until its first health check succeeds. Use it to
+avoid a window where an unverified server receives production traffic.
 
-### Enforce an upstream connection cap
+## Checks over pooled connections
 
-Server argument `strict-maxconn` in 3.2.0 makes `maxconn` count open TCP
-connections rather than concurrent HTTP requests. Use it when the upstream has
-a hard connection limit, especially when connection reuse otherwise decouples
-request concurrency from socket count.
+Since 3.2.0, the server argument `check-reuse-pool` runs health checks over
+idle pooled connections instead of creating a connection for each check. This
+reduces connect and TLS handshake cost and supports reverse-HTTP permanent
+connections. Ensure the application protocol can safely distinguish health
+traffic on a reused connection.
 
-### Relax incomplete WebSocket handshakes deliberately
+## Reusable health-check sections
 
-The existing backend directives `accept-unsafe-violations-in-http-request` and
-`accept-unsafe-violations-in-http-response` also tolerate missing expected
-WebSocket headers as of 3.2.0. They deliberately weaken parser enforcement;
-scope their use to a known compatibility need.
-
-## Health checks
-
-### Set a Host header with legacy `option httpchk`
-
-Since 3.1.0, `option httpchk` accepts a Host header directly. Do not encode the
-header through fake strings in the `httpchk` line.
-
-### Gate server readiness
-
-The server `init-state` setting in 3.1.0 can keep a server down at startup, or
-after it leaves maintenance, until its first successful health check.
-
-### Reuse idle connections for checks
-
-Server argument `check-reuse-pool` in 3.2.0 sends health checks over idle
-pooled connections instead of always opening a new connection. This saves TCP
-and TLS handshake work and supports reverse-HTTP permanent connections.
-
-### Reuse named health-check definitions
-
-A named `healthcheck` section in 3.4.0 can contain any supported check type and
-its `http-check` or `tcp-check` actions. A server selects the definition with
-the `healthcheck` argument. Definitions can be shared between backends while
-different servers in one backend select different checks.
+HAProxy 3.4.0 adds named `healthcheck` sections. A section can contain any
+supported check type and its `http-check` or `tcp-check` actions. Servers in
+one backend may select different definitions, and one definition can be reused
+across backends.
 
 ```haproxy
 healthcheck mycheck
@@ -133,3 +62,27 @@ healthcheck mycheck
 backend webservers
     server web1 10.0.0.1:80 check healthcheck mycheck
 ```
+
+## Strict connection caps
+
+The 3.2.0 server argument `strict-maxconn` makes `maxconn` count open TCP
+connections, not concurrent HTTP requests. Enable it for an upstream whose
+contract imposes a hard connection limit, especially when multiplexing would
+otherwise hide open connections.
+
+## Default balancing changed
+
+In 3.3.0, a backend without `balance` uses `random` instead of `roundrobin`.
+The random policy samples two servers and chooses the less-loaded one. Add an
+explicit `balance roundrobin` when the previous behavior is required.
+
+Since 3.4.0, equal-concurrency candidates under `random` are also compared by
+recent HTTP request rate. Large pools with many equally loaded servers may
+therefore distribute traffic differently after a patch upgrade.
+
+## Abort-on-close defaults
+
+Backends in `mode http` enable `option abortonclose` by default from 3.3.0.
+This stops work before an abandoned client request is sent upstream. The
+option is also valid in frontends. State the opposite explicitly if upstream
+processing must continue after the client disconnects.

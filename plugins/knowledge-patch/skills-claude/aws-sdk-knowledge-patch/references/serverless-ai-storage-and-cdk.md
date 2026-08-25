@@ -1,213 +1,254 @@
 # Serverless, AI runtimes, storage, and CDK
 
-## Contents
+## CDK Mixins (`service-client-launches`)
 
-- [Lambda code storage and encryption](#lambda-code-storage-and-encryption)
-- [Lambda Durable Functions](#lambda-durable-functions)
-- [AgentCore](#agentcore)
-- [S3 Vectors](#s3-vectors)
-- [CDK Mixins](#cdk-mixins)
+- **CDK Mixins.** `aws-cdk-lib` supplies composable Mixins that add reusable
+  behavior to L1, L2, or custom constructs through `.with()` without
+  rebuilding the hierarchy. `Mixins.of()` applies policies across a scope with
+  resource-type or path-pattern filters.
 
-## Lambda code storage and encryption
+## Lambda
 
-- Lambda can reference function source code in a customer-managed S3 bucket (since `2026-06`). This permits one managed copy of the code and gives the customer control over code-storage limits; grant Lambda access to the object and any encryption key.
-- Durable Config can specify a customer-managed KMS key for Lambda Durable Functions execution data (since `2026-07`). Include KMS permissions for every execution path that reads or writes durable state.
+### Function code, capacity, and status
 
-## Lambda Durable Functions
+- **Lambda code in self-managed S3 buckets (`2026-06`).** Function code can
+  reside in a self-managed S3 bucket, allowing one retained copy and
+  user-managed code-storage limits.
+- **Lambda managed-capacity telemetry and runtimes (`2026-07-2`).** Managed
+  Instances Capacity Providers accept `TelemetryConfig` for system-log level
+  and a custom log group. Runtime enums include `java8.al2023`,
+  `java11.al2023`, `java17.al2023`, `python3.15`, and `nodejs26.x`.
+- **Lambda dependency failure reasons (`2026-07-2`).** `StateReasonCode` and
+  `LastUpdateStatusReasonCode` can return `DependencyError` when an upstream
+  service prevents a function from becoming healthy.
 
-### Creation and compatibility
+### Durable execution creation (`service-client-launches`)
 
-Select durable execution when creating the Lambda function; it cannot be added to an existing function. An execution can suspend at defined points for up to one year without holding idle compute.
+- **Lambda durable-function creation and compatibility.** Select durable
+  execution when creating the function; it cannot be enabled later. Launch
+  runtimes are Node.js 22 or 24 for JavaScript/TypeScript and Python 3.13 or
+  3.14. Bundle the durable SDK and publish production functions as versions so
+  suspended executions replay against the version that started them.
+- **Lambda durable execution primitives.** Completed steps are checkpointed;
+  replay skips them. Waits can suspend without compute charges for up to one
+  year. `context.step()` checkpoints and retries, while `context.wait()`,
+  `wait_for_condition()`, `create_callback()`, `parallel()`, and `map()` cover
+  suspension, polling, external completion, and concurrency.
 
-Launch SDK support covers:
+  ```python
+  from aws_durable_execution_sdk_python import durable_execution, durable_step
 
-- JavaScript and TypeScript on Node.js 22 or 24.
-- Python on Python 3.13 or 3.14.
+  @durable_step
+  def work(step_context, value):
+      return {"value": value}
 
-Bundle the durable-execution SDK with the function. Publish production code as Lambda versions so a suspended execution always replays against the version on which it began.
+  @durable_execution
+  def lambda_handler(event, context):
+      return context.step(work(event["value"]))
+  ```
 
-### Steps, waits, and concurrency
+- **Lambda durable retries, callbacks, and invocation.** Step exceptions use
+  the step retry strategy; an unhandled exception outside a step terminates
+  the execution. `context.logger` suppresses replay duplicates. Complete a
+  `callback_id` with `SendDurableExecutionCallbackSuccess` or
+  `SendDurableExecutionCallbackFailure`. Reusing a durable execution name
+  returns its existing result instead of starting a duplicate.
+- **Lambda durable events and local tests.** Status changes go to the default
+  EventBridge bus with source `aws.lambda` and detail type
+  `Durable Execution Status Change`. The testing SDK supports credential-free
+  pytest tests; SAM supports broader integration tests.
 
-In Python, decorate the handler with `@durable_execution` and replay-safe units of work with `@durable_step`. `context.step()` checkpoints a result, retries failures, and skips completed work when the handler replays.
+### Durable encryption (`2026-07`)
 
-```python
-from aws_durable_execution_sdk_python import (
-    DurableContext, StepContext, durable_execution, durable_step,
-)
+- **Lambda Durable Functions KMS keys.** Durable Config accepts a
+  customer-managed KMS key to encrypt all durable-execution data.
 
-@durable_step
-def work(step_context: StepContext, value: str) -> dict:
-    return {"value": value}
+## S3 Vectors and vector search (`service-client-launches`)
 
-@durable_execution
-def lambda_handler(event: dict, context: DurableContext) -> dict:
-    return context.step(work(event["value"]))
-```
+### Resources and indexes
 
-Use `context.wait()` to suspend without consuming compute. Use `wait_for_condition()` for polling and `parallel()` or `map()` for concurrent patterns.
+- **S3 Vectors resources and indexes.** Create vector buckets and indexes as
+  separate resources. Indexes use `float32`; their dimensions must match the
+  embedding source, and distance is cosine or Euclidean.
 
-### Callbacks and retry boundaries
+  ```sh
+  aws s3vectors create-vector-bucket \
+    --vector-bucket-name "$BUCKET_NAME"
+  aws s3vectors create-index \
+    --vector-bucket-name "$BUCKET_NAME" \
+    --index-name "$INDEX_NAME" \
+    --data-type float32 \
+    --dimension "$DIMENSIONS" \
+    --distance-metric "$DISTANCE_METRIC"
+  ```
 
-`context.create_callback()` returns a callback ID to send to an external system. `callback.result()` suspends until the external system calls `SendDurableExecutionCallbackSuccess` or `SendDurableExecutionCallbackFailure`.
+### Metadata, queries, and deployment
 
-```python
-callback = context.create_callback(
-    name="awaiting-approval",
-    config=CallbackConfig(timeout=Duration.from_minutes(3)),
-)
-context.step(send_for_approval(callback.callback_id, order_id))
-approval_result = callback.result()
-```
+- **S3 Vectors metadata, queries, and deployment.** Each vector accepts up to
+  50 metadata keys; up to 10 can be non-filterable. Filters use only
+  filterable metadata, while responses can return metadata and distance and
+  contain up to 100 results. Indexes inherit bucket encryption unless assigned
+  an index KMS key. Buckets and indexes support tags, CloudFormation, and
+  PrivateLink; Bedrock Knowledge Bases and OpenSearch can use them as stores.
 
-Exceptions inside a step use that step's default retry policy or `StepConfig`. An unhandled exception outside a step terminates the entire execution. Log through `context.logger` and `step_context.logger` so replay does not duplicate log entries.
+  ```sh
+  aws s3vectors query-vectors \
+    --index-arn "$INDEX_ARN" \
+    --query-vector "{\"float32\": $VECTOR}" \
+    --top-k 100 \
+    --return-metadata \
+    --return-distance
+  ```
 
-### Invocation, events, and tests
+## Other storage behavior
 
-- Start a durable workflow with an asynchronous invocation.
-- Reusing the same durable execution name is idempotent: Lambda returns the existing result instead of creating a duplicate execution.
-- Status changes are delivered to the default EventBridge bus.
+- **S3 lifecycle transition timing (`2026-07-2`).** The former 30-day minimum
+  before transitioning to Standard-IA or OneZone-IA is removed; lifecycle
+  configurations need not preserve it.
+- **DynamoDB vector indexes (`2026-07-2`).** Vector indexes perform
+  approximate-nearest-neighbor similarity search over embeddings stored in
+  table items.
+- **ECR replication-rule limit (`2026-08`).** `PutReplicationConfiguration`
+  accepts up to 25 replication rules rather than 10.
+- **Read-only S3 backup access points (`2026-08`).** AWS Backup and S3 support
+  read-only access points for S3 recovery points, allowing S3 API access to
+  backup data without restoration.
 
-```json
-{
-  "source": ["aws.lambda"],
-  "detail-type": ["Durable Execution Status Change"]
-}
-```
+## AgentCore fundamentals (`service-client-launches`)
 
-Use the separate testing SDK with pytest or AWS SAM for local tests; those tests do not require AWS credentials.
+### Runtime SDK and deployment
 
-## AgentCore
+- **AgentCore Runtime SDK and deployment CLI.** Expose any agent framework
+  through `BedrockAgentCoreApp`. The decorated entry point defines the payload
+  contract shared by local and cloud invocation. The starter toolkit creates
+  an execution role and ECR repository, builds locally or remotely, and
+  reports endpoint status.
 
-### Runtime SDK and deployment CLI
+  ```python
+  from bedrock_agentcore.runtime import BedrockAgentCoreApp
 
-The `bedrock-agentcore` package wraps an arbitrary agent framework in `BedrockAgentCoreApp`. The `bedrock-agentcore-starter-toolkit` package provides the `agentcore` CLI.
+  app = BedrockAgentCoreApp()
 
-```python
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+  @app.entrypoint
+  def invoke(payload):
+      return payload["prompt"]
 
-app = BedrockAgentCoreApp()
+  app.run()
+  ```
 
-@app.entrypoint
-def invoke(payload):
-    return agent(payload.get("prompt", "No prompt supplied"))
+  ```sh
+  agentcore configure --entrypoint my_agent.py
+  agentcore launch --local
+  agentcore invoke --local '{"prompt":"hello"}'
+  agentcore launch
+  agentcore status
+  ```
 
-if __name__ == "__main__":
-    app.run()
-```
+### Memory
 
-The `configure` command can create the execution role and ECR repository and detect dependencies. Local and cloud launch modes use the same entry-point payload contract.
+- **AgentCore short- and long-term memory.** `MemoryClient.create_event()`
+  stores `USER`, `ASSISTANT`, and `TOOL` messages by memory, actor, and session;
+  `list_events()` gets recent short-term context. Long-term preference,
+  summary, or semantic-fact strategies use namespaces such as
+  `/facts/{actorId}` and `retrieve_memories()` for semantic retrieval.
+  Strategies added later affect only subsequently created events.
 
-```sh
-agentcore configure --entrypoint my_agent.py
-agentcore launch --local
-agentcore invoke --local '{"prompt":"hello"}'
-agentcore launch
-agentcore status
-agentcore invoke '{"prompt":"hello"}'
-```
+### Identity and Gateway
 
-At general availability, every AgentCore service supports VPC connectivity, PrivateLink, CloudFormation, and resource tags.
+- **AgentCore identity and gateway compatibility.** `IdentityClient` creates
+  workload identities and OAuth 2.0 or API-key credential providers.
+  `@requires_access_token` provides provider-scoped vaulted tokens. Gateway
+  exposes Smithy AWS services, Lambda functions, and OpenAPI APIs through MCP,
+  with separate inbound and outbound authentication.
 
-### Short- and long-term memory
+### Deployment and observability
 
-`MemoryClient.create_memory_and_wait(..., strategies=[])` creates short-term storage. `create_event()` stores role-tagged messages under a memory, actor, and session; `list_events()` reloads recent turns.
+- **AgentCore deployment and observability.** Every AgentCore service supports
+  VPC connectivity, PrivateLink, CloudFormation, and tags. Starter-toolkit
+  configuration enables observability, but trace delivery also requires
+  CloudWatch Transaction Search and execution-role permissions. Telemetry is
+  OpenTelemetry-compatible.
 
-Long-term strategies extract preferences, summaries, or semantic facts into namespace-partitioned storage. Adding a strategy to an existing store affects new events. `retrieve_memories()` performs semantic lookup within one namespace.
+## AgentCore API evolution
 
-```python
-from bedrock_agentcore.memory import MemoryClient
+### Gateway and authentication
 
-client = MemoryClient(region_name="us-east-1")
-memory = client.create_memory_and_wait(
-    name="CustomerSupport",
-    description="Customer support conversations",
-    strategies=[{
-        "semanticMemoryStrategy": {
-            "name": "semanticFacts",
-            "namespaces": ["/facts/{actorId}"],
-        }
-    }],
-)
-client.create_event(
-    memory_id=memory["id"], actor_id="user-123", session_id="session-456",
-    messages=[("Hi", "USER"), ("Hello", "ASSISTANT")],
-)
-facts = client.retrieve_memories(
-    memory_id=memory["id"], namespace="/facts/user-123", query="preferences",
-)
-```
+- **AgentCore authorizer scope mapping (`2026-07`).** Gateway inbound
+  authorizers can map allowed scopes to a separate advertised-scope set.
+- **AgentCore endpoint validation and model parameters (`2026-07-2`).** Control
+  validates service-emitted harness ARNs containing `harness-endpoint` instead
+  of `endpoint`; provider model configuration accepts `additionalParams` for
+  passthrough values.
+- **AgentCore Gateway schema pinning and streamed metadata (`2026-07-2`).**
+  Targets can pin a connector version to stabilize tool schemas. Web-search
+  connector 1.2.0 adds agent-side domain and publication-date filters plus
+  administrator allowlists. InvokeHarness deltas expose `toolResultMetadata`
+  so metadata need not be embedded in large SSE frames.
+- **AgentCore private-key JWT authentication (`2026-07-2`).** Identity OAuth
+  2.0 providers support private-key JWT client authentication, signing client
+  assertions with a customer-managed KMS asymmetric key.
+- **AgentCore gateway limits and EC2 runtimes (`2026-08`).** Gateways can limit
+  requests, tokens, and active connections. Capacity providers can run
+  runtimes on customer EC2 instances and allow deletion of an active provider
+  session.
+- **AgentCore Memory connector access controls (`2026-08`).** Memory supports
+  fine-grained access control through managed Gateway HTTP connectors.
 
-### Workload identity and credentials
+### Storage and memory integration
 
-`IdentityClient.create_workload_identity()` gives an agent its own identity. Credential providers can vault OAuth client credentials, user tokens, or API keys. Functions decorated with `@requires_access_token` request a named provider and scopes. Vaulted OAuth user tokens are reused until expiry; then a new authorization prompt is required.
+- **AgentCore bring-your-own storage (`2026-07-2`).** Browser and Code
+  Interpreter can mount S3 files and EFS file systems through access points.
+- **Agentic retrieval memory (`2026-08`).** Bedrock `AgenticRetrieveStream`
+  accepts `memoryConfiguration` to resume from AgentCore short-term memory and
+  retrieve relevant long-term memory.
 
-```python
-from bedrock_agentcore.services.identity import IdentityClient
+### Evaluators and payments
 
-identity = IdentityClient("us-east-1")
-workload = identity.create_workload_identity(name="my-agent")
-provider = identity.create_api_key_credential_provider({
-    "name": "external-api",
-    "apiKey": "api-key",
-})
-```
+- **AgentCore OpenResponses evaluators (`2026-07-2`).** `CreateEvaluator` and
+  `UpdateEvaluator` accept OpenResponses model configuration for custom
+  LLM-as-a-Judge evaluators.
+- **AgentCore third-party evaluators (`2026-08`).** Control supports
+  third-party evaluators as managed services and as custom-evaluator
+  templates.
+- **AgentCore recommendation evaluator input (`2026-08`).** Recommendation
+  requests can include an online-evaluation ARN.
+- **AgentCore payment options (`2026-08`).** Payments supports
+  customer-managed keys, Marketplace subscriptions, QuickCreate, Machine
+  Payments Protocol resources, and the `upto` scheme for x402 payments.
 
-### Gateway and authorizers
+## Bedrock
 
-AgentCore Gateway exposes one MCP interface over AWS services described by Smithy, Lambda functions, and internal or third-party APIs described by OpenAPI. It applies separate authentication to inbound agent requests and outbound target connections. It can publish an OAuth interface for tools, including AWS services, that do not expose one themselves.
+- **Bedrock mid-conversation tool changes (`2026-07-2`).** `Converse` and
+  `ConverseStream` can change the available tools during a conversation.
+- **Bedrock ingested-document ACL inspection (`2026-08`).** Knowledge Bases
+  adds `CheckIngestedDocumentAcl` and `GetIngestedDocumentAcl` to test a user's
+  document access and retrieve allow and deny entries.
 
-Inbound authorizers can map allowed scopes to different advertised scopes (since `2026-07`). Keep the enforcement and discovery mappings distinct.
+## SageMaker and feature data
 
-### Observability
+- **Feature Store batch and list operations (`2026-06`).** SageMaker Feature
+  Store runtime adds `ListRecords` and `BatchWriteRecord`.
+- **SageMaker instance-type support (`2026-07-2`).** HyperPod supports g4d,
+  c6g, c7g, c8g, c6a, m6a, m6g, m7g, and m8g; inference endpoints support g7.
+  Studio JupyterLab and CodeEditor accept g7 in `us-east-1`, `us-west-2`, and
+  `us-east-2`.
+- **SageMaker inference-optimization adapters (`2026-07-2`).** Inference
+  optimization supports LoRA adapters and training plans:
+  `CreateAIRecommendationJob` accepts `AdapterSource`, while
+  `CreateOptimizationJob` accepts `TrainingPlanArns`, `ml.g7e`, and
+  `ml.p6-b200`.
+- **SageMaker g7 and training controls (`2026-08`).** Model customization adds
+  `SequenceLength`; training and processing support g7. HyperPod accepts
+  `g7.2xlarge`, `g7.4xlarge`, `g7.8xlarge`, `g7.12xlarge`, `g7.24xlarge`, and
+  `g7.48xlarge`.
+- **SageMaker prefix-aware routing (`2026-08`).** Endpoint configurations
+  accept `PREFIX_AWARE` and `PrefixAwareRoutingConfig` with `PrefixLength` and
+  `ConcurrencyThreshold`. Runtime requests pass `PrefixAwareId` to
+  `InvokeEndpoint` or `InvokeEndpointWithResponseStream`.
+- **SageMaker notebook maintenance states (`2026-08`).** Notebook Instances
+  expose maintenance lifecycle statuses.
 
-Starter configuration enables observability by default. CloudWatch trace delivery additionally requires Transaction Search and suitable permissions on the execution role. The X-Ray settings below affect trace ingestion for the whole account, not only one agent. AgentCore telemetry is OpenTelemetry-compatible.
+## Amplify
 
-```sh
-aws xray update-trace-segment-destination --destination CloudWatchLogs
-aws xray update-indexing-rule \
-  --name Default \
-  --rule '{"Probabilistic":{"DesiredSamplingPercentage":1}}'
-```
-
-## S3 Vectors
-
-### Buckets and indexes
-
-The `s3vectors` client creates vector buckets and indexes separately. An index uses `float32` data, an embedding dimension that must match the embedding source, either `cosine` or Euclidean distance, and optional non-filterable metadata keys.
-
-```sh
-aws s3vectors create-vector-bucket --vector-bucket-name "$BUCKET_NAME"
-aws s3vectors create-index \
-  --vector-bucket-name "$BUCKET_NAME" \
-  --index-name "$INDEX_NAME" \
-  --data-type float32 \
-  --dimension "$DIMENSIONS" \
-  --distance-metric "$DISTANCE_METRIC" \
-  --metadata-configuration \
-    'nonFilterableMetadataKeys=AMAZON_BEDROCK_TEXT,AMAZON_BEDROCK_METADATA'
-```
-
-### Metadata and queries
-
-Each vector can have up to 50 metadata keys, of which at most 10 can be non-filterable. Filterable keys can constrain similarity searches; non-filterable keys store context without enlarging the searchable index. `query-vectors` accepts a `float32` query vector and can return metadata and distances.
-
-```sh
-aws s3vectors query-vectors \
-  --index-arn "$S3_VECTOR_INDEX_ARN" \
-  --query-vector "{\"float32\": $VECTOR_ARRAY}" \
-  --top-k 3 \
-  --return-metadata \
-  --return-distance
-```
-
-### Encryption and integrations
-
-Indexes inherit vector-bucket encryption unless they override it with a customer-managed KMS key. Vector buckets and indexes support tags; index tags can drive access control and cost allocation.
-
-Manage vector resources with CloudFormation and access them through PrivateLink. S3 Vectors can serve as the vector store for Bedrock Knowledge Bases or as the storage layer behind OpenSearch.
-
-## CDK Mixins
-
-`aws-cdk-lib` supports composable Mixins on L1, L2, and custom constructs through `.with()` calls. Mixins can add encryption, versioning, auto-delete, public-access blocking, and similar policies without replacing the construct.
-
-`Mixins.of()` applies policies across a scope and can filter by resource type or path pattern. Combine multiple Mixins into a custom L2 construct when a reusable higher-level policy bundle is needed.
+- **Longer Amplify OAuth tokens (`2026-08`).** `CreateApp` and `UpdateApp`
+  accept longer `oauthToken` strings for third-party Git providers.

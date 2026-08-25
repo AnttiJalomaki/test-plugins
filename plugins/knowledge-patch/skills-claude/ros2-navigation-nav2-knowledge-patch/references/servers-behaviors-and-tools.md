@@ -1,52 +1,44 @@
 # Servers, behaviors, and tools
 
-Source batch attribution: `overview-and-distro-migrations`,
-`behaviors-and-algorithm-selection`.
-
 ## Route Server
 
-`nav2_route` computes and tracks routes over a predefined graph. It may replace
-free-space global planning or provide long-range structure while a planner
-produces the locally feasible path. Route progress can trigger contextual
-operations on node and edge events, such as speed changes or equipment
-activation.
+Kilted's `nav2_route` computes and tracks routes on a predefined graph. It can replace
+free-space global planning, or supply long-range graph structure while a
+planner computes a nearby feasible path. Progress over node and edge events can
+trigger contextual operations such as changing speed or activating equipment.
 
-Enable `smooth_corners` and set `smoothing_radius` to replace graph corners
-with tangent circular arcs. Route Server falls back to linear interpolation
-for nearly straight edges or when an arc does not fit inside its adjacent
-edges.
+Enable `smooth_corners` and set `smoothing_radius` to replace graph corners with
+tangent circular arcs. The server falls back to linear interpolation when an
+edge is nearly straight or an arc cannot fit within its adjacent edges.
 
 ## Loopback simulation
 
-`nav2_loopback_sim` integrates commanded velocity into ideal odometry for
-tests and high-level simulations that do not need physics or localization
-error. In Lyrical it is a C++ node with an embedded clock publisher, so launch
-only `loopback_simulator`. `speed_factor` is dynamically adjustable, and
-`publish_scan`, `odom_publish_dur`, and `scan_noise_std` are available.
+Kilted adds `nav2_loopback_sim`, which integrates commanded velocity into ideal odometry. Use it
+for tests and high-level simulation that do not need physics or localization
+error.
 
-## Docking
+In Lyrical it becomes a C++ node with an embedded clock publisher, so launch only
+`loopback_simulator`. `speed_factor` is dynamically adjustable. The node also
+provides `publish_scan`, `odom_publish_dur`, and `scan_noise_std`.
 
-Docking supports non-charging static infrastructure and dynamic docks,
-including `simple_non_charging_dock` and an RViz docking panel.
-Docking-server collision checking is enabled by default.
+## Vector Object Server
 
-`dock_backwards` moved from the server into each plugin as `dock_direction`,
-whose default is `forward` and alternative is `backward`.
-`reverse_to_dock: true` allows simple plugins to detect from a forward staging
-pose and then dead-reckon backward into the dock.
+`nav2_map_server` includes a Vector Object Server that rasterizes configured
+circles, polygons, and polygonal chains into an `OccupancyGrid`. Use
+`AddShapes`, `GetShapes`, and `RemoveShapes` services to maintain dynamic
+virtual obstacles, keepout areas, or speed-filter masks.
 
-In Lyrical, external detection rotations for simple dock plugins change from
-Rz→Rx→Ry to Rx→Ry→Rz. Recalculate non-default configurations that use all
-three axes. Custom `ChargingDock` and `NonChargingDock` implementations must
-provide `startDetectionProcess()` and `stopDetectionProcess()`. Simple plugins
-also provide `detector_service_name`, `detector_service_timeout`, and
-`subscribe_toggle` for on-demand perception.
+## Following Server
 
-## Behavior Server
+The `opennav_following` server follows either a dynamically detected object or
+a named reference frame while maintaining configured separation. It supports
+topic-based detections and TF tracking.
 
-Behavior plugins share the raw local and global costmaps, their published
-footprints, and TF frame configuration. The server defaults to `10.0` Hz and
-a `0.1`-second transform tolerance:
+## Behavior Server context
+
+Behavior plugins share raw local and global costmaps, their published
+footprints, and TF frames. The server runs plugins at `10.0` Hz by default and
+uses a `0.1`-second transform tolerance.
 
 ```yaml
 behavior_server:
@@ -62,10 +54,10 @@ behavior_server:
     transform_tolerance: 0.1
 ```
 
-Without an override, the server loads Spin, BackUp, DriveOnHeading, and Wait.
-Configured plugin names become their action-server names. Wait duration, Spin
-distance, and the BackUp or DriveOnHeading distance, speed, and time allowance
-belong to each action request rather than server parameters.
+## Default behaviors and request inputs
+
+Without an override, Behavior Server loads Spin, BackUp, DriveOnHeading, and
+Wait. Configured plugin names also become action-server names.
 
 ```yaml
 behavior_plugins: [spin, backup, drive_on_heading, wait]
@@ -79,13 +71,26 @@ wait:
   plugin: nav2_behaviors::Wait
 ```
 
-`DriveOnHeading`, `BackUp`, and `Spin` accept
-`disable_collision_checks`, default false. The first two also provide
-`acceleration_limit: 2.5`, `deceleration_limit: -2.5`, and
-`minimum_speed: 0.10`.
+Wait duration and Spin distance come from their action requests. BackUp and
+DriveOnHeading likewise receive distance, speed, and time allowance from each
+request rather than from server parameters.
 
-Spin projects collision risk `2.0` seconds ahead by default and bounds angular
-motion to `0.4`–`1.0` rad/s with a `3.2` rad/s² acceleration limit:
+In Kilted, Controller Server's `publish_zero_velocity` defaults to `true`; disable it to
+suppress the final zero command. `DriveOnHeading`, `BackUp`, and `Spin` accept
+`disable_collision_checks`, default `false`. DriveOnHeading and BackUp also
+provide `acceleration_limit: 2.5`, `deceleration_limit: -2.5`, and
+`minimum_speed: 0.10` by default:
+
+```yaml
+acceleration_limit: 2.5
+deceleration_limit: -2.5
+minimum_speed: 0.10
+```
+
+## Spin limits
+
+Spin projects collision risk `2.0` seconds ahead by default. It constrains
+angular velocity to `0.4`–`1.0` rad/s and angular acceleration to `3.2` rad/s².
 
 ```yaml
 simulate_ahead_time: 2.0
@@ -94,9 +99,11 @@ max_rotational_vel: 1.0
 rotational_acc_lim: 3.2
 ```
 
-AssistedTeleop is not loaded by default. Add it explicitly when needed. It
-subscribes to `cmd_vel_teleop` and checks projected motion for `1.0` second in
-`0.1`-second steps by default.
+## Assisted teleoperation
+
+AssistedTeleop is not loaded by default; add it explicitly. It listens on
+`cmd_vel_teleop` and projects motion for `1.0` second in `0.1`-second steps by
+default.
 
 ```yaml
 behavior_plugins: [spin, backup, drive_on_heading, wait, assisted_teleop]
@@ -107,22 +114,23 @@ simulation_time_step: 0.1
 cmd_vel_teleop: cmd_vel_teleop
 ```
 
-## Vector objects and dynamic following
+## Planner and Controller Server timing
 
-The Vector Object Server in `nav2_map_server` rasterizes configured circles,
-polygons, and polygonal chains into an `OccupancyGrid`. Its `AddShapes`,
-`GetShapes`, and `RemoveShapes` services support dynamic virtual obstacles,
-keepout regions, and speed-filter masks.
+Controller Server waits `costmap_update_timeout: 0.3` seconds by default for a
+fresh local costmap. Planner Server's default is `1.0` second.
 
-The `opennav_following` server follows a dynamic detected object or a named
-reference frame while maintaining configured distance. It can use topic-based
-detections or TF tracking.
+Controller Server estimates speed over `odom_duration`, default `0.3` seconds,
+using `odom_topic`, default `odom`. `failure_tolerance` controls how long plugin
+exceptions may continue: `0.0` fails immediately, `-1.0` permits them
+indefinitely, and positive values are seconds.
 
-## RViz and isolated tests
+Set `use_realtime_priority: true` to request controller-thread priority `90`.
+This defaults to false and requires the process user's OS `rtprio` limit to be
+configured first.
 
-The Nav2 RViz panel can select BT XML per request, accept exact coordinates
-and frame IDs, and build, edit, save, or load multi-goal lists for
-`NavigateThroughPoses` and Waypoint Following.
+## Service and navigator introspection
 
-Build with `--cmake-args -DUSE_ISOLATED_TESTS=ON` to run
-`rmw_zenoh_cpp` tests without launching a separate Zenoh router.
+`service_introspection_mode` accepts `disabled`, `metadata`, and `contents`; it
+defaults to `disabled`. The standard navigators also have disabled-by-default
+Groot 2 live monitoring, blackboard JSON inspection, and BT XML selection on a
+new goal request.

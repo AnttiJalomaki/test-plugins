@@ -1,164 +1,157 @@
 # Security, Cluster Operations, and Storage
 
-Use this reference for credentials, realms, TLS, entitlement behavior, cluster
-allocation, repositories, snapshots, connectors, and operational APIs.
-
-## Contents
-
-- [Credentials and identity](#credentials-and-secure-settings)
-- [TLS and entitlements](#tls-and-file-reload)
-- [Cluster operations](#cluster-resolution-and-index-metadata)
-- [Snapshots and repositories](#snapshot-and-archive-behavior)
-- [Connectors and synonyms](#connector-apis)
-- [Operational API changes](#operational-api-changes)
-
 ## Credentials and secure settings
 
-- API-key credential hashes may use `SSHA-256` as of 9.0.0.
-- Secure settings are no longer accepted in YAML configuration in 9.0.0; put
-  them in Elasticsearch's secure-settings mechanism.
-- Secure-settings reload responses include the names of reloaded settings and
-  the keystore modification time in 9.3.0.
-- API keys can be cloned through a dedicated endpoint in 9.4.0.
-- Cross-cluster API keys gain signing and trust configuration in 9.2.0.
-- Cross-cluster API keys carry and validate certificate identities in 9.3.0.
-- The `read` index privilege consistently authorizes cross-cluster search in
-  9.4.0 regardless of `ccs_minimize_roundtrips`.
-- Service-account-token APIs are available in Serverless as of 9.4.0.
+### API keys and keystore usage
 
-Keep paired credentials atomic: configuring an LDAP or Active Directory bind
-DN without a bind password prevents startup.
+API-key credential hashes may use `SSHA-256` from 9.0.0. Secure settings are no
+longer accepted in YAML; supply them through Elasticsearch's secure-settings
+mechanism. Secure-settings reload responses include setting names and the
+keystore modification time in 9.3.0.
 
-## Realms, identity, and extensions
+API keys can be cloned through a dedicated endpoint in 9.4.0. Service-account
+token APIs are available in Serverless. Connector APIs require
+`manage_connector` or `monitor_connector`.
 
-- `SecurityExtensions` can supply a custom `ServiceAccountTokenStore` in
-  9.1.0.
-- The SAML identity provider supports custom attributes in 9.1.0.
-- JWT access tokens may use an `at+jwt` `typ` header in 9.1.0.
-- A Microsoft Graph delegated-authorization realm plugin arrives in 9.1.0.
-- SAML private attributes become configurable in 9.2.0.
-- URL-based SAML metadata resolution gains configurable HTTP connect and read
-  timeouts in 9.2.0.
-- JWT realms can periodically reload PKC JWK sets in 9.3.0.
-- Successful SAML responses include in-response-to metadata in 9.3.0.
-- The `reporting_user` role changed in 9.0.6 and 9.1.3 to derive authorization
-  from reserved Kibana privileges. Revisit custom assumptions about its old
-  privilege composition.
+### Connector lifecycle
 
-## TLS and file reload
+Connector APIs add soft and hard deletion through a delete URL parameter in
+9.0.0. Managed connector indices must use the required prefix.
 
-- TLS configuration reload watches SSL files rather than their containing
-  directories in 9.1.0.
-- General configuration reload detects Kubernetes CSI-style `..data` symlink
-  switches in 9.1.0.
-- Transport TLS handshake timeout is configurable in 9.2.0.
-- TLS extensions can implement `SslProfileExtension` and receive reload
-  notifications through an `SslProfile` listener in 9.2.0.
-- Concurrent TLS handshakes can be limited in 9.3.0.
-- On JDK 24, `TLS_RSA` ciphers are unsupported and TLSv1.1 is absent from the
-  default protocol list.
-- The `cloud-ess-fips` package defaults to FIPS 140-3 in 9.4.0.
+## Realms, federation, and authorization
 
-## Entitlements and platform baseline
+### Extension points and token formats
 
-- Elasticsearch Entitlements permanently replaces the Java SecurityManager in
-  9.0.0 because Java 24 disables the SecurityManager.
-- Elasticsearch 9.0.0 bundles JDK 24, uses Lucene 10.1.0, and moves the default
-  Docker image from Ubuntu to UBI minimal. Startup ignores `_JAVA_OPTIONS`.
-- Elasticsearch 9.4.0 upgrades to Apache Lucene 10.4.
-- Elasticsearch 9.0.0 entitlement paths are case-sensitive on Windows even
-  when the filesystem is not. Match exact filesystem casing in settings,
-  environment values, secure settings, and command-line paths.
-- The 9.0.0 `x-pack-core` entitlement policy blocks Active Directory
-  connectivity; use the compatibility-reference workaround or a fixed
-  release.
+Since 9.1.0, `SecurityExtensions` can provide a custom
+`ServiceAccountTokenStore`. SAML identity providers accept custom attributes,
+JWT access tokens may use `typ: at+jwt`, and a Microsoft Graph delegated
+authorization realm plugin is available.
 
-## Cluster resolution and index metadata
+SAML private attributes become configurable in 9.2.0. URL-based SAML metadata
+resolution has configurable HTTP read and connection timeouts.
 
-- `_resolve/cluster` can query cluster information without an index expression
-  and accepts a caller-configurable timeout in 9.0.0.
-- `_resolve/index` can filter by index mode and returns the mode in 9.2.0.
-- The Get Data Stream API reports index mode in 9.1.0.
-- Cat APIs add a circuit-breakers endpoint in 9.3.0.
-- Shard-capacity health thresholds become configurable in 9.3.0.
+In 9.3.0, JWT realms can periodically reload PKC JWK sets. Successful SAML
+responses include in-response-to metadata. Cross-cluster API keys carry and
+validate certificate identities.
 
-## Allocation and shutdown
+### Privilege behavior
 
-- Shard-balancing weights can be configured independently per data tier in
-  9.1.0.
-- `replica_unassigned_buffer_time` defaults to five seconds rather than three
-  seconds in 9.0.0.
-- The single-data-node disk-watermark setting is removed.
-- `/_cluster/reroute` responses no longer include cluster state.
-- Persistent-task reassignment during node shutdown is opt-in in 9.4.0.
-- Shutdown status reports shard snapshot pauses in 9.4.0.
+The built-in `reporting_user` role derives authorization from reserved Kibana
+privileges in 9.0.6 and 9.1.3. The `read` index privilege consistently
+authorizes cross-cluster search in 9.4.0 regardless of
+`ccs_minimize_roundtrips`.
 
-## Snapshot and archive behavior
+ES|QL views cannot be queried with document-level or field-level security.
+View CRUD is authorized as index actions.
 
-- Get Snapshots accepts a `state` query parameter in 9.1.0.
-- Archive and searchable-snapshot indices accept N-2 versions in 9.0.0,
-  including supported 7.x segment cases used as archives in 8.x or 9.x.
-- Frozen indices are no longer readable, and the unfreeze endpoint is removed.
-- ILM searchable snapshots can specify `replicate_for` in 9.0.0.
+### LDAP and Active Directory
 
-## S3 repositories
+A bind DN without a corresponding bind password prevents startup. The 9.0
+`x-pack-core` entitlement policy also blocks the LDAP library's outbound
+connection for Active Directory; use the scoped workaround in the compatibility
+reference until moving to a fixed release.
 
-### SDK and metadata
+## TLS, entitlements, and runtime
 
-- `repository-s3` supports IMDSv2 in 9.0.0.
-- In 8.19.0, `repository-s3` moves from AWS SDK v1 to v2. SDK configuration
-  and behavior differ, so exercise production-equivalent repository settings
-  before upgrading.
+### Java runtime transition
 
-### Integrity and transport controls
+Elasticsearch 9.0.0 bundles JDK 24, uses Lucene 10.1.0, and changes its default
+container base from Ubuntu to UBI minimal. Startup ignores `_JAVA_OPTIONS`.
+Elasticsearch Entitlements permanently replaces the Java SecurityManager,
+which Java 24 disables.
 
-- S3 repositories use conditional writes in 9.2.0 to prevent accidental
-  object overwrites and repository corruption, including on fully
-  S3-compatible storage.
-- Maximum S3 connection idle time is configurable in 9.2.0.
-- S3 repository API-call timeout is configurable in 9.3.0.
-- Before 9.3.0, repository analysis can falsely fail
-  linearizable-register checks because of multipart-upload semantics. Use a
-  one-node analysis with `?register_operation_count=1` or upgrade.
+JDK 24 does not support `TLS_RSA` ciphers, and TLSv1.1 is absent from default
+protocols. Windows paths remain case-sensitive to 9.0 entitlements even when
+the filesystem is not; preserve exact path casing.
 
-## EC2 discovery
+### Reloads and TLS extension points
 
-The `discovery-ec2` plugin uses AWS SDK v2 and now:
+File-backed configuration reload detects Kubernetes CSI-style `..data`
+symlink switches in 9.1.0. TLS reload watches individual SSL files rather than
+their parent directories.
 
-- Requires IMDSv2.
-- Ignores `discovery.ec2.protocol`; put the scheme in
-  `discovery.ec2.endpoint`.
-- Removes `aws.secretKey`.
-- Removes `com.amazonaws.sdk.ec2MetadataServiceEndpointOverride`.
-- Requires both `discovery.ec2.access_key` and `discovery.ec2.secret_key`, or
-  neither.
+In 9.2.0, transport TLS handshake timeout is configurable.
+`SslProfileExtension` lets extensions customize TLS profiles, and an
+`SslProfile` listener receives reload notifications. Cross-cluster API keys add
+signing and trust configuration.
 
-## GCS repositories
+Elasticsearch can cap concurrent TLS handshakes in 9.3.0.
 
-`repository-gcs` operations using Application Default Credentials can fail in
-9.2.8 and 9.3.3 because an entitlement exception escapes credential-path
-discovery. Upgrade to 9.2.9 or 9.3.4; the compatibility reference contains the
-temporary JVM-policy workaround.
+## Cluster discovery, routing, and resolution
 
-## Connector APIs
+### Per-tier allocation
 
-- Connector delete APIs support soft and hard delete through a URL parameter
-  in 9.0.0.
-- Managed connector indices must use the required prefix.
-- Connector APIs require `manage_connector` or `monitor_connector`.
+Shard-allocation balancing weights can be configured independently per data
+tier from 9.1.0. The old
+`cluster.routing.allocation.disk.watermark.enable_for_single_data_node` setting
+is removed. Cluster reroute responses no longer include cluster state.
 
-## Synonyms
+### Cluster and index resolution
 
-Synonyms PUT and delete APIs accept `refresh` in 9.1.0. It waits for changed
-synonyms to become visible and reloads affected analyzers. Use it when a
-workflow must not query with stale synonym state after an update.
+The `_resolve/cluster` API can return cluster information without an index
+expression and accepts a user-configurable timeout in 9.0.0. `_resolve/index`
+can filter by index mode and includes mode in its response from 9.2.0.
 
-## Operational API changes
+### Cross-project routing
 
-- Remote reindex accepts a convenience API-key parameter in 9.3.0 and a
-  blocklist setting in 9.4.0.
-- Stateful cross-cluster operation disables `_delete_by_query` and
-  `_update_by_query` in 9.3.0.
-- Query logging spans `_search`, ES|QL, EQL, and SQL in 9.4.0, and the
-  search-task watchdog can log hot threads for slow searches.
-- Elasticsearch timeouts now return HTTP 429 instead of a 5xx status.
+Cross-project search and `project_routing` extend in 9.3.0 to `_search`,
+`_async_search`, `_msearch`, EQL, field capabilities, SQL, and JDBC. Point in
+time creation and closure can span projects, and cross-project searches default
+to minimizing round trips.
+
+In 9.4.0, project routing extends to templated searches, data streams, scrolls,
+and the SQL CLI. The SQL CLI and JDBC authenticate with API keys.
+
+### Partial and stateful distributed operations
+
+In-progress cross-cluster ES|QL responses include CCS metadata. With
+`skip_unavailable: true`, remote runtime failures become skipped or partial
+outcomes. Stateful cross-cluster use disables `_delete_by_query` and
+`_update_by_query`.
+
+## Snapshots, archives, and cloud repositories
+
+### Archive compatibility
+
+Archive and searchable-snapshot indices may come from N-2 versions starting in
+9.0.0, including supported 7.x segment cases used as archives in 8.x or 9.x.
+The get snapshots API accepts a `state` filter from 9.1.0.
+
+### S3 SDK and metadata service
+
+`repository-s3` supports IMDSv2 in 9.0.0. In 8.19.0 it moves from AWS SDK v1
+to v2; test production repository settings because behavior and configuration
+differ between SDK generations.
+
+In 9.2.0, S3 repositories use conditional writes to prevent accidental object
+overwrite and repository corruption, including on fully compatible S3
+implementations. Maximum idle connection time is configurable.
+
+S3 repositories gain an API-call timeout setting in 9.3.0. Before 9.3.0,
+repository analysis can falsely fail linearizable-register checks; use one node
+with `register_operation_count=1` or upgrade.
+
+### GCS repositories
+
+Application Default Credentials fail under `repository-gcs` entitlement path
+discovery in 9.2.8 and 9.3.3. Upgrade to 9.2.9 or 9.3.4, or use the exact
+temporary JVM policy from the compatibility reference.
+
+## Cluster administration and diagnostics
+
+### Synonym refresh
+
+Synonyms PUT and delete APIs accept `refresh` from 9.1.0. It waits for updated
+synonyms to become accessible and reloads affected analyzers.
+
+### Health, breakers, and shutdown
+
+The cat APIs add a circuit-breakers endpoint in 9.3.0, and shard-capacity
+health thresholds become configurable. In 9.4.0, persistent-task reassignment
+during node shutdown is opt-in, and shutdown status reports shard snapshot
+pauses.
+
+### Packaging and Lucene
+
+The `cloud-ess-fips` package defaults to FIPS 140-3 in 9.4.0. Elasticsearch
+upgrades to Apache Lucene 10.4.

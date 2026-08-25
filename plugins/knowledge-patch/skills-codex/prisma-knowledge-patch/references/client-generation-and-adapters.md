@@ -1,20 +1,11 @@
 # Client generation and driver adapters
 
-Use this reference when selecting a generator, constructing `PrismaClient`, configuring a driver adapter, targeting a JavaScript runtime, or diagnosing generated-client and adapter behavior.
+## Application-owned client generation
 
-## Contents
-
-- [Generate application-owned client code](#generate-application-owned-client-code)
-- [Use the Query Compiler architecture](#use-the-query-compiler-architecture)
-- [Construct the client with an explicit connection](#construct-the-client-with-an-explicit-connection)
-- [Choose runtime and compiler output](#choose-runtime-and-compiler-output)
-- [Configure individual adapters](#configure-individual-adapters)
-- [Account for client correctness changes](#account-for-client-correctness-changes)
-- [Tune query caching](#tune-query-caching)
-
-## Generate application-owned client code
-
-The `prisma-client` generator began emitting multiple generated files instead of one large `index.d.ts` in 6.7.0, avoiding editor and autocomplete failures for large schemas. It became Preview in 6.12.0 and generally available in 6.16.0. It emits ESM-compatible, application-owned code by default and requires an explicit output directory.
+The `prisma-client` generator first split output across multiple files to avoid
+large `index.d.ts` editor problems (6.7.0), added explicit runtime, module
+format, and file-extension controls while in Preview (6.12.0), and became the
+GA, ESM-first generator in 6.16.0. It requires an explicit output directory.
 
 ```prisma
 generator client {
@@ -27,34 +18,20 @@ generator client {
 }
 ```
 
-Import from the generated output rather than assuming `@prisma/client`:
+Import `PrismaClient` from that generated output, not automatically from
+`@prisma/client`. If a legacy `prisma-client-js` generator has a custom
+`output`, install `@prisma/client-runtime-utils` as well (7.0.0).
 
-```ts
-import { PrismaClient } from './generated/prisma/client'
-```
+## Query Compiler architecture
 
-Package installation no longer runs generation, and migration commands no longer generate or seed as side effects (7.0.0). Add explicit steps wherever deployment or development previously relied on those behaviors:
+The Rust-free path began with the `queryCompiler` and `driverAdapters` flags
+for PostgreSQL in 6.7.0, reached Preview for PostgreSQL and SQLite in 6.9.0,
+then added SQL Server and PlanetScale in 6.10.0 and MySQL, MariaDB, Neon, and
+CockroachDB in 6.11.0. The TypeScript Query Compiler and driver adapters became
+GA in 6.16.0, including use with Prisma Accelerate and Prisma Postgres.
 
-```sh
-npx prisma generate
-npx prisma db seed
-```
-
-If an older project retains `prisma-client-js` with a custom `output`, install `@prisma/client-runtime-utils`. The legacy generator remains relevant to compatibility work, but new projects default to `prisma-client`.
-
-`prisma generate` can run under Bun without a separate Node.js installation as of 6.6.0. Very large schemas are handled by the CLI's streaming parser; see the tooling reference for that behavior.
-
-## Use the Query Compiler architecture
-
-The Rust-free path replaces the standalone Query Engine with a TypeScript Query Compiler and database driver adapter.
-
-- In 6.7.0, the Early Access path required both `queryCompiler` and `driverAdapters` in `previewFeatures`.
-- In 6.9.0, PostgreSQL and SQLite support reached Preview.
-- In 6.10.0, SQL Server and PlanetScale reached Preview; use `@prisma/adapter-mssql` or `@prisma/adapter-planetscale`.
-- In 6.11.0, Preview support expanded to MySQL, MariaDB, Neon, and CockroachDB.
-- In 6.16.0, the Query Compiler and driver-adapter architecture became generally available, including use with Prisma Accelerate and Prisma Postgres. The two Preview flags are no longer needed.
-
-For a current `prisma-client` generator, select the client engine when an explicit setting is useful:
+With `prisma-client`, select that architecture using `engineType = "client"`;
+do not retain the earlier Preview flags.
 
 ```prisma
 generator client {
@@ -64,73 +41,26 @@ generator client {
 }
 ```
 
-The legacy library and binary engines, Data Proxy engine, old Accelerate engine, and React Native engine were removed in 7.0.0. Do not set `engineType = "library"` or `engineType = "binary"`, and remove old engine-control environment variables during an upgrade. Accelerate remains available through its connection URL rather than as a legacy engine selection.
+The old library and binary engines, Data Proxy and its controls, the former
+Accelerate engine, and the React Native client engine are removed. The legacy
+`prisma-client-js/wasm` entry point is now `/edge` and targets edge JavaScript
+runtimes, not Accelerate (7.0.0).
 
-## Construct the client with an explicit connection
+## Runtime targets and compiler builds
 
-With the default generator, `new PrismaClient()` and `new PrismaClient({})` are invalid as of 7.0.0. Pass an adapter, or pass `accelerateUrl` when using Prisma Accelerate. The former `datasources` and `datasourceUrl` constructor overrides are removed.
+Deno moved off the removed `deno` Preview feature on `prisma-client-js` and
+onto `prisma-client` with an explicit output and `runtime = "deno"` in 6.8.0.
+Generation can run under Bun without a separate Node.js installation since
+6.6.0.
 
-```ts
-import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from './generated/prisma/client'
+Runtime names were consolidated in 6.15.0: use `nodejs`, `deno`, `bun`,
+`workerd` (or `cloudflare`), `vercel-edge` (or `edge-light`), and
+`react-native`. The former `node`, `deno-deploy`, and `vercel` names are not
+valid. Prisma 7 subsequently removed `runtime = "react-native"` (7.0.0).
 
-const adapter = new PrismaPg(process.env.DATABASE_URL!)
-const prisma = new PrismaClient({ adapter })
-```
-
-For Accelerate:
-
-```ts
-const prisma = new PrismaClient({
-  accelerateUrl: process.env.PRISMA_ACCELERATE_URL!,
-})
-```
-
-Existing Accelerate connection strings remain usable. Prisma Accelerate is the dedicated caching layer, while Prisma Postgres supplies native connection pooling.
-
-Adapter export casing was normalized in 7.0.0. Use these names:
-
-| Old export | Current export |
-| --- | --- |
-| `PrismaBetterSQLite3` | `PrismaBetterSqlite3` |
-| `PrismaD1HTTP` | `PrismaD1Http` |
-| `PrismaLibSQL` | `PrismaLibSql` |
-| `PrismaNeonHTTP` | `PrismaNeonHttp` |
-
-The Preview `@prisma/adapter-better-sqlite3` package first provided a JavaScript-native SQLite connection in 6.7.0:
-
-```ts
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
-import { PrismaClient } from './generated/prisma/client'
-
-const adapter = new PrismaBetterSqlite3({ url: 'file:./prisma/dev.db' })
-const prisma = new PrismaClient({ adapter })
-```
-
-## Choose runtime and compiler output
-
-Deno moved away from the `deno` Preview flag on `prisma-client-js` in 6.8.0. Generate an explicit Deno target instead:
-
-```prisma
-generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
-  runtime  = "deno"
-}
-```
-
-Runtime names were consolidated in 6.15.0:
-
-- Replace `node` with `nodejs`.
-- Replace `deno-deploy` with `deno`.
-- Replace `vercel` with `vercel-edge`.
-- Use `nodejs`, `deno`, `bun`, `workerd` (alias `cloudflare`), `vercel-edge` (alias `edge-light`), or `react-native` where supported by that release line.
-
-The `react-native` runtime setting was then removed from current Prisma Config/generation behavior in 7.0.0 along with the React Native client engine. Do not carry it into a current upgrade.
-
-For `prisma-client-js` compatibility only, the legacy `/wasm` import became `/edge` in 7.0.0. This entry point targets edge JavaScript runtimes, not Prisma Accelerate.
-
-Choose a Query Compiler build with `compilerBuild` (7.3.0):
+The `compilerBuild` generator option added in 7.3.0 accepts `fast` or `small`.
+`fast` is the default and favors execution speed with a larger compiler;
+`small` favors compiler size at the cost of speed.
 
 ```prisma
 generator client {
@@ -140,70 +70,107 @@ generator client {
 }
 ```
 
-`fast` is the default and favors runtime speed with a larger compiler. `small` reduces compiler size at the cost of speed.
+## Explicit client construction
 
-## Configure individual adapters
-
-### PostgreSQL
-
-`@prisma/adapter-pg` accepts a connection string directly as of 7.6.0:
+The generated client needs a connection path. Pass a driver adapter, or pass
+`accelerateUrl` for Prisma Accelerate. `datasources`, `datasourceUrl`, an empty
+options object, and a bare `new PrismaClient()` are no longer connection
+mechanisms for this client (7.0.0).
 
 ```ts
+import { PrismaPg } from '@prisma/adapter-pg'
+import { PrismaClient } from './generated/prisma/client'
+
 const adapter = new PrismaPg(process.env.DATABASE_URL!)
+const prisma = new PrismaClient({ adapter })
 ```
 
-Its `statementNameGenerator` option supports custom prepared-statement names and enables integration with `pg` statement caching. The package includes `@types/pg` directly as of 7.5.0, so consumers no longer need separate driver-type setup.
+## Adapter selection and configuration
 
-### MariaDB
+### SQLite, D1, and LibSQL
 
-`@prisma/adapter-mariadb` switched to the binary MySQL protocol in 7.5.0 to prevent lossy numeric conversions. In 7.6.0, `useTextProtocol` was added for applications that explicitly need the text protocol. MariaDB statement caching is disabled by default to avoid a reported memory leak.
+The JavaScript-native `better-sqlite3` adapter entered Preview in 6.7.0. Its
+constructor accepts the SQLite URL. Prisma 7 normalized adapter export casing:
+
+- `PrismaBetterSQLite3` became `PrismaBetterSqlite3`.
+- `PrismaD1HTTP` became `PrismaD1Http`.
+- `PrismaLibSQL` became `PrismaLibSql`.
+- `PrismaNeonHTTP` became `PrismaNeonHttp`.
+
+Use the normalized names in imports (7.0.0). Remote D1 and Turso/LibSQL can
+run `db push`, `db pull`, and `migrate diff` through adapters supplied by
+Prisma Config; that Early Access path did not support `migrate dev` or
+`migrate deploy` in 6.6.0.
+
+D1's savepoint methods are logged no-ops rather than real SQL. Nested code on
+D1 must not depend on savepoint rollback semantics (7.8.0).
+
+### PostgreSQL and Neon
+
+`PrismaPg` accepts a connection string directly as of 7.6.0. Its
+`statementNameGenerator` option supports custom prepared-statement names and
+the `pg` driver's statement cache. `@prisma/adapter-pg` includes `@types/pg`
+directly as of 7.5.0.
+
+When an interactive transaction exceeds `maxWait` during startup, Prisma now
+issues `ROLLBACK` before returning the connection to adapters such as
+`@prisma/adapter-pg` and `@prisma/adapter-neon` (7.9.0). This prevents later
+queries from inheriting or committing the abandoned transaction.
+
+### MariaDB and MySQL
+
+`@prisma/adapter-mariadb` switched to the binary MySQL protocol to preserve
+number fidelity in 7.5.0. The adapter added `useTextProtocol` in 7.6.0 for an
+explicit protocol switch. MariaDB statement caching is disabled by default to
+avoid a reported leak.
 
 ### SQL Server
 
-`@prisma/adapter-mssql` accepts Microsoft Entra ID authentication parameters as of 6.17.0, including the default Azure credential chain:
+The SQL Server Query Compiler path uses `@prisma/adapter-mssql` (6.10.0). The
+adapter gained Microsoft Entra ID authentication in 6.17.0, including the
+default Azure credential chain:
 
 ```ts
 const adapter = new PrismaMssql({
   server: 'localhost',
   port: 1433,
-  database: 'app',
-  authentication: {
-    type: 'azure-active-directory-default',
-  },
+  database: 'mydb',
+  authentication: { type: 'azure-active-directory-default' },
   options: { encrypt: true },
 })
 ```
 
-### D1
+## Query-plan and statement caching
 
-The D1 adapter treats `createSavepoint`, `rollbackToSavepoint`, and `releaseSavepoint` as logged no-ops as of 7.8.0, matching its top-level transaction behavior. Never assume nested transaction rollback semantics on D1.
-
-For CLI schema operations against remote D1, see the configuration reference.
-
-## Account for client correctness changes
-
-- Generated `Bytes` types select the appropriate `Uint8Array` shape for the installed TypeScript version (6.18.0).
-- PostgreSQL relation-join JSON aggregation preserves `BigInt` values above `Number.MAX_SAFE_INTEGER` by casting them to text before parsing (7.3.0). The same protection covers MySQL and CockroachDB as of 7.4.0.
-- `Prisma.DbNull` no longer serializes to `{}` in bundles such as Next.js, `unixepoch-ms` values no longer become `Invalid Date`, and cursor pagination works with `@db.Date` columns (7.5.0).
-- Current timestamps are generated lazily instead of calling `new Date()` synchronously, avoiding dynamic-usage errors in Next.js cached components (7.6.0).
-- The `prisma-client` generator again exports group-by payload types (7.6.0).
-- PlanetScale adapter errors raised by `COMMIT` are propagated rather than allowing a failed commit to appear successful (7.4.0).
-- SQL Server parameterized strings receive their required `VARCHAR` casts, mapped enum parameters use their database-side `@map` names, and parameter-limit checks raise `P2029` only when appropriate (7.8.0).
-
-## Tune query caching
-
-`createMany` queries stopped populating the query cache in 7.6.0, preventing high-volume inserts from bloating it and potentially crashing Node.js.
-
-Set `queryPlanCacheMaxSize` on `PrismaClient` to tune the remaining plan cache (7.8.0):
+`PrismaClient` accepts `queryPlanCacheMaxSize` (7.8.0). Omit it for the
+default, set it to `0` to disable query-plan caching, raise it for workloads
+with many distinct queries, or lower it to reduce memory use.
 
 ```ts
-const prisma = new PrismaClient({
-  adapter,
-  queryPlanCacheMaxSize: 0,
-})
+const prisma = new PrismaClient({ adapter, queryPlanCacheMaxSize: 0 })
 ```
 
-- Omit the option to use the default.
-- Set it to `0` to disable caching.
-- Increase it for workloads with many distinct query shapes.
-- Lower it to trade repeat-query speed for reduced memory use.
+`createMany` queries stopped populating the query cache in 7.6.0, preventing
+bulk operations from bloating it. Keep adapter-specific statement caching
+separate from Prisma's query-plan cache when tuning memory and throughput.
+
+## Generated types and runtime correctness
+
+- Generator DMMF includes referential-action `onUpdate` data (6.3.0), so
+  custom generators can inspect it.
+- Generated `Bytes` mappings select the appropriate `Uint8Array` shape for the
+  TypeScript version in use (6.18.0).
+- Relation-join JSON aggregation preserves `BigInt` values above
+  `Number.MAX_SAFE_INTEGER` on PostgreSQL (7.3.0) and on MySQL and CockroachDB
+  (7.4.0) by casting them to text before parsing.
+- `Prisma.DbNull` no longer becomes `{}` in bundles, `unixepoch-ms`
+  timestamps no longer become `Invalid Date`, and cursor pagination works on
+  `@db.Date` columns (7.5.0).
+- Current-time defaults are generated lazily, avoiding eager `new Date()`
+  evaluation errors in cached Next.js components (7.6.0).
+- The `prisma-client` generator again exports its group-by payload types
+  (7.6.0).
+- PostgreSQL JSON-list equality uses the correct `jsonb` cast; SQL Server
+  parameterized strings receive `VARCHAR` casts; parameter-limit checks raise
+  `P2029` without rejecting valid queries; and mapped enum query parameters
+  use their database `@map` values (7.8.0).

@@ -1,45 +1,36 @@
 # Prompt Caching and Rate Limits
 
-Use this reference when designing cache breakpoints, diagnosing misses,
-pre-warming prompts, sizing concurrency, or handling throttles.
-
 ## Automatic caching and breakpoints
 
-A request-level `cache_control` enables automatic caching at the last eligible
-block and advances that point as a conversation grows. It can coexist with
-block-level controls and consumes one of four breakpoint slots.
+Batch `prompt-caching` defines request-level automatic caching. The request
+control consumes one of four breakpoint slots. If the final target block has an
+explicit control with the same TTL, automatic caching is a no-op. A different
+TTL or four existing explicit breakpoints produces HTTP 400.
 
-- If the final target block already has an explicit control with the same TTL,
-  automatic caching is a no-op.
-- A different TTL on that target, or four existing explicit breakpoints, makes
-  the request fail with HTTP 400.
-- If the final block is ineligible, the service walks backward to the nearest
-  eligible block. If none exists, it silently skips caching.
-- Amazon Bedrock does not support automatic caching.
+An ineligible final block makes the service walk backward to the nearest
+eligible block; if none exists, caching is silently skipped. Amazon Bedrock
+does not support automatic caching.
 
-For a miss, enable `cache-diagnosis-2026-04-07`, send
-`diagnostics.previous_message_id`, and inspect returned `cache_miss_reason` for
-the first diverging prompt prefix.
+## Cacheable-prefix floors
 
-## Minimum cacheable prefixes
+Minimum cacheable prefixes are:
 
-Prefixes shorter than a model's floor silently run uncached; both
-`usage.cache_creation_input_tokens` and `usage.cache_read_input_tokens` stay
-zero.
+- 2,048 tokens: Mythos Preview, Opus 4.7, and Haiku 3.5.
+- 4,096 tokens: Opus 4.6, Opus 4.5, and Haiku 4.5.
+- 1,024 tokens: Opus 4.8, Sonnet 5, Sonnet 4.6, Sonnet 4.5, Opus 4.1, and
+  Opus 4.
+- 512 tokens: Opus 5, Fable 5, and Mythos 5.
 
-| Minimum | Models |
-|---|---|
-| 512 tokens | Opus 5, Fable 5, Mythos 5 |
-| 1,024 tokens | Opus 4.8, Sonnet 5, Sonnet 4.6, Sonnet 4.5, Opus 4.1, Opus 4 |
-| 2,048 tokens | Mythos Preview, Opus 4.7, Haiku 3.5 |
-| 4,096 tokens | Opus 4.6, Opus 4.5, Haiku 4.5 |
+A shorter marked prefix silently runs uncached;
+`usage.cache_creation_input_tokens` and `usage.cache_read_input_tokens` both
+remain zero.
 
 ## TTL ordering and accounting
 
-Five-minute and one-hour entries may coexist only when every one-hour
-breakpoint precedes all five-minute breakpoints. Cache writes are split under
-`usage.cache_creation`; `ephemeral_5m_input_tokens` plus
-`ephemeral_1h_input_tokens` equals `cache_creation_input_tokens`.
+One-hour and five-minute entries can mix only when all longer-TTL breakpoints
+precede the shorter ones. Under `usage.cache_creation`,
+`ephemeral_5m_input_tokens + ephemeral_1h_input_tokens` equals
+`cache_creation_input_tokens`.
 
 ```json
 {"cache_control": {"type": "ephemeral", "ttl": "1h"}}
@@ -47,38 +38,35 @@ breakpoint precedes all five-minute breakpoints. Cache writes are split under
 
 ## Thinking-aware validity
 
-Thinking blocks cannot carry `cache_control`, but replayed thinking in earlier
-assistant turns is cached with later content and counts as input on a cache
+Thinking blocks cannot have `cache_control`, but replayed thinking in an
+earlier assistant turn is cached with later content and counts as input on a
 read. A tool-result-only user turn preserves that cache.
 
 Ordinary user content preserves prior thinking on Opus 4.5+ and Sonnet 4.6+.
-Earlier Opus and Sonnet models and every Haiku strip prior thinking and
-invalidate later message cache entries.
+Earlier Opus and Sonnet targets and every Haiku target strip earlier thinking
+and invalidate later message cache entries.
 
 Changing thinking mode, manual `budget_tokens`, or effort always invalidates
-message caches and can also invalidate system or tool caches depending on the
-model. Explicitly setting the model's default effort is equivalent to omitting
-it and does not invalidate the cache.
+message caches and can invalidate tool and system caches depending on target.
+Explicitly choosing the target's default effort is equivalent to omitting it
+and does not invalidate cache.
 
-## Prefix invalidators and serialization
+## Prefix invalidators
 
-- Changing tool definitions invalidates tool, system, and message caches.
-- Toggling web search or citations, or changing `speed`, preserves only the
-  tool cache.
-- Changing `tool_choice`, or adding or removing images, preserves tool and
-  system caches but invalidates messages.
-- Prefix matching is byte-sensitive enough that unstable JSON key ordering in
-  replayed `tool_use` blocks can defeat a hit. Use stable serialization.
+- Changing tools invalidates tool, system, and message caches.
+- Toggling web search or citations, or changing speed, preserves only the tool
+  cache.
+- Changing `tool_choice` or adding/removing images preserves tool and system
+  caches but invalidates messages.
+- Unstable JSON key ordering in replayed `tool_use` blocks can defeat a hit
+  because matching is byte-sensitive.
 
-The mid-conversation tool-change beta is a model-specific exception described
-in [Models and Migrations](models-and-migrations.md).
+## Zero-output pre-warming
 
-## Zero-output cache pre-warming
-
-Set `max_tokens: 0`, put an explicit breakpoint on shared system text or tools,
-and send a non-whitespace placeholder user message. Automatic caching is a poor
-fit because it targets the placeholder. Keep thinking and effort identical to
-real traffic.
+Use `max_tokens: 0`, an explicit breakpoint on shared system text or tools, and
+a non-whitespace placeholder user message. Automatic caching would target the
+placeholder, so do not use it for this flow. Keep thinking and effort identical
+to real traffic.
 
 ```json
 {
@@ -93,89 +81,77 @@ real traffic.
 }
 ```
 
-A successful warm-up has `content: []`, `stop_reason: "max_tokens"`, populated
-usage, and zero output tokens. Zero-output requests reject `stream: true`,
-`thinking.type: "enabled"`, `output_config.format`, forced or `any` tool choice,
-and Message Batches.
+Success returns empty content, `stop_reason: "max_tokens"`, populated usage,
+and zero output tokens. Zero-output requests reject streaming, enabled manual
+thinking, `output_config.format`, forced or `any` tool choice, and Message
+Batches.
 
-## Availability, isolation, and replication timing
+## Availability and isolation
 
-A newly written cache entry is not available until the first response begins;
-parallel followers must wait. Caches are workspace-isolated on the Claude API,
-Claude Platform on AWS, and Microsoft Foundry, but organization-isolated on
-Bedrock and Google Cloud.
+A newly written entry is unavailable until the first response begins, so
+parallel followers must wait. Cache scope is per workspace on the Claude API,
+Claude Platform on AWS, and Microsoft Foundry, but per organization on Bedrock
+and Google Cloud. Automatic and explicit caching remain eligible for zero data
+retention; cache representations and hashes live only in memory, not at rest.
 
-Automatic and explicit caching remain zero-data-retention eligible. Cache
-representations and hashes are held only in memory, not stored at rest.
+## Continuous and acceleration throttles
 
-## Continuous throttles and safe retry
+Batch `rate-limits` documents independent token buckets for requests per
+minute, input tokens per minute, and output tokens per minute. Enforcement may
+use sub-minute intervals. Sudden growth can trigger an acceleration-limit 429
+even below an apparent steady-state ceiling. Ramp gradually and honor
+`retry-after`.
 
-The Messages API independently enforces requests per minute, input tokens per
-minute, and output tokens per minute using continuously replenished token
-buckets. Enforcement can happen over sub-minute intervals. A sharp traffic
-increase can trigger an acceleration-limit HTTP 429 even when steady-state
-rates appear safe; ramp gradually and obey `retry-after`.
+## Spend tiers and AWS billing
 
-`retry-after` is the number of seconds until a retry can succeed. The response
-also includes `anthropic-ratelimit-{requests|tokens|input-tokens|output-tokens}`
-families with `limit`, `remaining`, and `reset` variants. Reset values are RFC
-3339 timestamps for full replenishment; remaining token values are rounded to
-the nearest thousand.
+Start, Build, and Scale cap calendar-month API spend at $500, $1,000, and
+$200,000. Reaching the cap pauses the API until the next month unless it is
+raised. Custom-tier organizations have no standard cap, and any organization
+may configure a lower self-imposed cap.
 
-## Spend caps and AWS-billed tiers
-
-Calendar-month caps are $500 on Start, $1,000 on Build, and $200,000 on Scale.
-Reaching the cap pauses API use until the next month unless it is raised.
-Custom-tier organizations have no standard monthly cap, and any organization
-can configure a lower cap.
-
-Claude Platform on AWS organizations begin on Start and do not advance through
-usage tiers automatically. AWS Marketplace handles billing, spend limits appear
-under Billing instead of Limits, and higher limits require an account
-representative or support rather than the ordinary increase-request flow.
+Claude Platform on AWS organizations begin on Start and do not automatically
+advance. Billing uses AWS Marketplace, spend limits appear under Billing rather
+than Limits, and higher limits require an account representative or support;
+the normal increase-request flow is unavailable.
 
 ## Token accounting
 
-For most models, input-token-per-minute use is:
+For most targets, ITPM equals `input_tokens + cache_creation_input_tokens`;
+cache reads are excluded. `input_tokens` covers content after the final cache
+breakpoint, so total input is cache read plus cache creation plus ordinary
+input. Haiku 3.5 is the exception that charges cache reads against ITPM.
 
-```text
-input_tokens + cache_creation_input_tokens
-```
-
-`cache_read_input_tokens` is excluded. Here `input_tokens` covers only content
-after the last cache breakpoint; total input is the sum of cache reads, cache
-writes, and `input_tokens`. Haiku 3.5 is the exception: cache reads also count
-against ITPM.
-
-ITPM is estimated at request start and adjusted to actual input during
-processing. OTPM is charged in real time for generated tokens, so requested
-`max_tokens` does not reserve output capacity.
+ITPM is estimated at request start and reconciled to actual input during
+processing. OTPM is charged in real time for tokens actually generated;
+`max_tokens` does not reserve capacity.
 
 ## Shared and dedicated pools
 
-Most model limits are independent, with these exceptions:
+Opus 4.5 through 4.8 share one Opus 4.x pool, and Sonnet 4.5 and 4.6 share one
+Sonnet 4.x pool. Opus 5 and Sonnet 5 have separate pools. US and global
+`inference_geo` draw from the same capacity.
 
-- Opus 4.5 through 4.8 share one Opus 4.x pool.
-- Sonnet 4.5 and 4.6 share one Sonnet 4.x pool.
-- Opus 5 and Sonnet 5 each have separate pools.
-- `inference_geo: "us"` and `"global"` draw from the same capacity.
+Supported `speed: "fast"` traffic uses a dedicated pool. Its throttle returns
+429 with `retry-after`; `anthropic-fast-*` headers report the pool state.
 
-Supported `speed: "fast"` requests use a dedicated pool rather than the
-standard Opus pool. A fast-pool throttle returns HTTP 429 with `retry-after`;
-its state is exposed through `anthropic-fast-*` headers.
+## Batches, agents, and workspaces
 
 Message Batches have a model-independent pool of 1,000 API requests per minute,
-at most 200,000 constituent requests awaiting successful processing, and at
-most 100,000 constituent requests in one batch. Every constituent item, not
-just the enclosing batch, consumes queue capacity.
+up to 200,000 constituent requests awaiting successful processing, and up to
+100,000 items in one batch. Each constituent item consumes queue capacity.
 
-Managed Agents use a separate organization-level pool: create operations allow
-300 requests per minute, while retrieve, list, stream, and other reads allow
-1,200 requests per minute.
+Managed Agents use a separate organization pool: create operations permit 300
+requests per minute; retrieve, list, stream, and other reads permit 1,200.
 
-## Workspace safeguards
+A non-default workspace can set lower RPM, ITPM, OTPM, and spend ceilings.
+Unset controls inherit organization limits, unused workspace capacity remains
+available elsewhere, the default workspace cannot be capped, and the
+organization ceiling wins even if workspace limits sum above it.
 
-A non-default workspace may set lower RPM, ITPM, OTPM, and spend ceilings. An
-unset limiter inherits the organization limit, and unused capacity remains
-available to other workspaces. The default workspace cannot be capped. The
-organization ceiling still applies even if workspace limits sum above it.
+## Response headers
+
+`retry-after` is the number of seconds until a retry can succeed. The API also
+returns `anthropic-ratelimit-{requests|tokens|input-tokens|output-tokens}-`
+`{limit|remaining|reset}` families. Reset values are RFC 3339 timestamps for
+full bucket replenishment; remaining token counts are rounded to the nearest
+thousand.

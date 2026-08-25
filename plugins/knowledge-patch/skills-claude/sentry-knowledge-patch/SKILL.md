@@ -8,58 +8,76 @@ metadata:
 ---
 
 
-# Sentry JavaScript SDK Knowledge Patch
+# Sentry JavaScript SDK
 
-Use this skill when upgrading, configuring, or debugging Sentry's JavaScript
-and TypeScript SDKs. Check the installed SDK and framework versions before
-applying version-specific advice. Prefer the application's manifests, code,
-and tests when they disagree with an example.
+Use this skill when upgrading or configuring Sentry JavaScript SDK packages,
+framework integrations, tracing, logs, source maps, or serverless runtimes.
+Check the application's installed SDK and framework versions before applying
+version-dependent guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migrations-and-runtime.md](references/migrations-and-runtime.md) | Runtime floors, removed packages and APIs, renamed integrations, client changes |
-| [tracing-and-performance.md](references/tracing-and-performance.md) | Sampling, OpenTelemetry, span hooks, stream mode, span attributes |
-| [telemetry-data.md](references/telemetry-data.md) | Sessions, privacy, feedback, structured logs, shared attributes, variable capture |
-| [framework-integrations.md](references/framework-integrations.md) | Prisma, NestJS, React Router, Vue, Nuxt, SvelteKit, Elysia, Hono, Nitro, TanStack Start |
-| [build-and-serverless.md](references/build-and-serverless.md) | Source maps, bundlers, Lambda, Cloudflare, serverless flushing and deployment |
+| [Migrations and runtime compatibility](references/migrations-and-runtime.md) | Runtime floors, removed APIs, package changes, sessions, browser behavior |
+| [Tracing and performance](references/tracing-and-performance.md) | Sampling, span hooks, OpenTelemetry, stream mode, trace attributes |
+| [Telemetry data](references/telemetry-data.md) | Logs, shared attributes, console capture, feedback, PII, stack variables |
+| [Framework integrations](references/framework-integrations.md) | Prisma, NestJS, routers, Vue, modern server frameworks |
+| [Build and serverless](references/build-and-serverless.md) | Source maps, bundler plugins, Lambda, Cloudflare, Cloud Run, flushing |
 
-## Upgrade triage
+## Migration priorities
 
-1. Read the installed `@sentry/*` versions and the runtime/framework versions.
-2. Raise runtime floors before changing SDK APIs.
-3. Replace removed imports, options, integrations, and wrapper functions.
-4. Verify tracing and session behavior; several old options no longer control it.
-5. Recheck source-map generation, upload, and deletion in production builds.
-6. Run framework-specific error, trace, log, and shutdown-flush tests.
+### Meet the runtime and framework floors
 
-## Breaking changes and deprecations
+Current SDK packages may emit ES2020. Use Node.js 18.0.0 or newer, except
+Astro, Nuxt, and SvelteKit packages require Node.js 18.19.1 because they are
+ESM-only. Deno 2.0 and TypeScript 5.0.4 are the other minimums. Transpile the
+SDK when supporting browsers older than Chrome/Edge 80, Safari 14, iOS Safari
+14.4, Firefox 74, Opera 67, or Samsung Internet 13.
 
-### Runtime floors
+Do not upgrade until incompatible framework versions have moved past Remix
+1.x, TanStack Router 1.63.0, SvelteKit 1.x, Ember 3.x, and Prisma 5.x.
 
-- SDK packages may contain ES2020.
-- Use Node.js 18.0.0 or newer. Astro, Nuxt, and SvelteKit require Node.js
-  18.19.1 because their SDKs are ESM-only.
-- Use Deno 2.0 and TypeScript 5.0.4 or newer.
-- For older browser targets, transpile the SDK. Native floors include
-  Chrome/Edge 80, Safari 14, iOS Safari 14.4, Firefox 74, Opera 67, and
-  Samsung Internet 13.
-- Do not expect support for Remix 1.x, SvelteKit 1.x, Ember 3.x or lower,
-  TanStack Router 1.63.0 or lower, or Prisma 5.x.
+### Replace removed initialization options
 
-### Sampling and span hooks
+Use `tracesSampleRate` instead of `enableTracing`. Replace
+`samplingContext.request` with `normalizedRequest`; sampling-context fields
+formerly under `transactionContext`, including `name`, are top-level.
 
-- Replace `samplingContext.request` with `normalizedRequest`.
-- Read transaction fields such as `name` directly from the sampling context;
-  `transactionContext` is gone.
-- Replace `enableTracing` with a defined `tracesSampleRate` or a
-  `tracesSampler`. An explicitly `undefined` sample rate is treated as absent.
-- In Node.js, `tracesSampler` is not invoked for every child span.
-- `beforeSendSpan` sees root and child spans and cannot drop spans by returning
-  `null`. Configure recording or use `ignoreSpans` where supported.
-- Outside Node.js, `startSpan({ scope })` clones the supplied scope. Mutate the
-  original scope too when changes must persist after the callback.
+Replace `autoSessionTracking` by configuring the owning integration:
+
+- Browser sessions: include or remove `browserSessionIntegration`.
+- Incoming server requests: use
+  `httpIntegration({ trackIncomingRequestsAsSessions: false })` to disable.
+- Node.js process sessions: use the default `processSessionIntegration`.
+
+Move `_experiments.enableLogs` and `_experiments.beforeSendLog` to top-level
+`enableLogs` and `beforeSendLog`. Remove Replay's
+`_experiments.autoFlushOnFeedback`; feedback flushes Replay automatically.
+
+### Replace removed core APIs and packages
+
+Import remaining utility and type exports from `@sentry/core`:
+`@sentry/utils` is gone and `@sentry/types` is deprecated. The metrics API,
+Hub APIs, `debugIntegration`, and `sessionTimingIntegration` are gone. Use send
+hooks for debugging and set event context explicitly for session timing.
+
+Custom clients must now use `Client` directly: v9 first required extending
+`BaseClient`, and v10 removed `BaseClient`. Use `debug` and
+`SentryDebugLogger` instead of `logger` and the `Logger` type.
+
+Use `captureFeedback({ message })` instead of
+`captureUserFeedback({ comments })`. See the migration reference for the full
+set of removed helpers and type changes.
+
+## Tracing quick reference
+
+### Configure sampling at the trace boundary
+
+Node.js no longer calls `tracesSampler` for every span. The callback receives
+`parentSampleRate` and `inheritOrSampleWith` for parent-aware decisions. An
+explicitly `undefined` `tracesSampleRate` behaves as absent, allowing a
+downstream service to decide.
 
 ```js
 Sentry.init({
@@ -68,90 +86,22 @@ Sentry.init({
 });
 ```
 
-### Sessions, privacy, and event data
+Use `strictTraceContinuation: true` when the application should apply stricter
+trace-continuation rules.
 
-- Remove `autoSessionTracking`. Browser sessions come from
-  `browserSessionIntegration`, incoming server sessions from `httpIntegration`,
-  and Node.js process sessions from `processSessionIntegration`.
-- To stop browser session tracking, remove its integration. To stop incoming
-  request sessions, use
-  `httpIntegration({ trackIncomingRequestsAsSessions: false })`.
-- Browser SDKs do not request backend IP inference by default. Enable
-  `sendDefaultPii` only when that data collection is intended.
-- `requestDataIntegration` no longer copies Express `request.user`; call
-  `Sentry.setUser()` explicitly in middleware.
-- Replace `captureUserFeedback({ comments })` with
-  `captureFeedback({ message })`.
+### Treat `beforeSendSpan` as mutation-only
 
-### Packages, clients, and removed APIs
+`beforeSendSpan` receives root and child spans and cannot drop one by returning
+`null`. Control recording with integration configuration, or use
+`ignoreSpans` where supported.
 
-- Move surviving `@sentry/utils` and `@sentry/types` imports to
-  `@sentry/core`; utils is unpublished and types is deprecated.
-- Remove uses of the old metrics API, hubs, and hub shims.
-- Replace `hasTracingEnabled()` with `hasSpansEnabled()`.
-- Replace `debugIntegration` with send hooks and
-  `sessionTimingIntegration` with explicit event context.
-- For v9 custom clients, the migration target was `BaseClient`; in v10,
-  `BaseClient` itself is removed and custom clients use `Client` directly.
-- In v10, replace the removed `logger` value and `Logger` type with `debug`
-  and `SentryDebugLogger`.
+Outside Node.js, `startSpan({ scope })` clones the supplied scope. Mutations to
+the current scope stay within the callback; also mutate the original scope for
+persistent changes.
 
-### Integration and framework renames
+### Opt into streamed spans deliberately
 
-- Rename `processThreadBreadcrumbIntegration` to `childProcessIntegration`;
-  integration-name filters must use `ChildProcess`.
-- Update Vercel AI integration-name filters from `vercelAI` to `VercelAI`.
-- Use `@sentry/nestjs` instead of Node's removed Nest integration and setup
-  helper. Use `SentryExceptionCaptured` and `SentryGlobalFilter`.
-- Choose explicit React Router `V6` or `V7` route wrappers.
-- Use `withSentry` instead of `sentrySolidStartVite`.
-- Import Deno from `npm:@sentry/deno`, not `deno.land`.
-
-## Build and deployment quick reference
-
-### Source maps
-
-- Meta-framework SDKs preserve explicit source-map settings. When generation
-  is unspecified, they generate maps and delete them after upload.
-- Explicitly enabled source maps are not deleted automatically; configure
-  `filesToDeleteAfterUpload` when cleanup is required.
-- Next.js defaults to client `hidden-source-map` and server `source-map`
-  unless `sourcemaps.disable` is set. Use
-  `sourcemaps.deleteSourcemapsAfterUpload` to retain client maps.
-- Pass SDK build options directly to `withSentryConfig`; the old Next.js
-  `sentry` config property and `hideSourceMaps` are removed.
-- Set a deterministic release explicitly; the SDK no longer falls back to
-  the Next.js Build ID.
-
-### Serverless behavior
-
-- The v10 Lambda layer is `SentryNodeServerlessSDKv10` and supports ESM and
-  CommonJS. The v9 layer is `SentryNodeServerlessSDKv9`.
-- React Router serverless loaders/actions, Vercel handlers, and Next.js route
-  handlers flush automatically.
-- Unified serverless detection recognizes Cloud Run.
-- Sentry CLI source-map upload failures in Remix are silent.
-
-## High-value capabilities
-
-### Structured logs
-
-Enable logs at the top level and use structured attributes for searchable
-context. The experimental option names are obsolete.
-
-```js
-Sentry.init({ enableLogs: true, beforeSendLog: log => log });
-Sentry.logger.info("Order created", { orderId: "order_456" });
-Sentry.logger.info(Sentry.logger.fmt`User ${userId} purchased ${productName}`);
-```
-
-Use `setAttribute` or `setAttributes` for values shared by logs and metrics.
-Scope methods provide app-wide or operation-local placement. Active spans and
-supported browser replays automatically correlate emitted logs.
-
-### Streamed spans
-
-SDK 10.66.0 and newer can opt into stream mode. Server SDKs use
+For SDK 10.66.0 and newer, server SDKs enable stream mode with
 `traceLifecycle: "stream"`; direct browser SDKs add
 `spanStreamingIntegration()`. Cordova and Electron do not support it.
 
@@ -159,41 +109,102 @@ SDK 10.66.0 and newer can opt into stream mode. Server SDKs use
 Sentry.init({
   tracesSampleRate: 1,
   traceLifecycle: "stream",
-  beforeSendSpan: Sentry.withStreamedSpan(span => span),
+  beforeSendSpan: Sentry.withStreamedSpan((span) => span),
 });
 ```
 
-- Wrap `beforeSendSpan` with `withStreamedSpan`; an unwrapped hook forces a
-  fallback to transaction mode.
-- `beforeSendTransaction` is unavailable. Move dropping rules to
-  `ignoreSpans`, which evaluates initial names and attributes at span start.
-- Span tags are not propagated in stream mode. Store span data as attributes.
-- Completed spans flush periodically, at capacity, and on `flush()` or
-  `close()`; a long root span no longer retains all children.
+Wrap `beforeSendSpan` with `withStreamedSpan`; an unwrapped hook causes a
+fallback to transaction mode. `beforeSendTransaction` is unavailable, so move
+transaction-dropping rules to `ignoreSpans`. Those rules run when a span starts
+and can inspect only its initial name and attributes.
 
-### Current tracing controls
+Stream mode does not copy `setTag` or `setTags` values to spans. Record
+span-relevant data with attributes as well; tags still apply to errors.
 
-- Set `strictTraceContinuation: true` to opt into strict continuation.
-- Use `fastifyIntegration({ shouldHandleError })` to select captured errors.
-- Streamed responses and tool calls from the instrumented AI client are
-  captured; query
-  `gen_ai.response.object`, not the old `ai.response.object` attribute.
-- Parameterized server spans include `http.route`, `url.full`, and `url.path`;
-  fetch spans include `url.full`.
-- `instrumentStateGraph` is the supported state-graph instrumentation API.
+## Logs quick reference
 
-### Modern server frameworks
+Enable logs, then emit structured messages through `Sentry.logger` at
+`trace`, `debug`, `info`, `warn`, `error`, or `fatal`. The second argument
+holds searchable attributes; `Sentry.logger.fmt` turns interpolated values
+into searchable attributes.
 
-- Elysia, Hono, Nitro, and TanStack Start SDKs accept
-  `dataCollection: { userInfo: false, httpBodies: [] }` when default user and
-  request-body collection must be disabled.
-- Initialize or preload Sentry before application construction and framework
-  imports where required.
-- Put Sentry middleware early so exceptions reach it; keep build plugins in
-  the framework-specific required position.
-- Use each integration's `shouldHandleError` or error-handler control to make
-  capture policy explicit.
+```js
+Sentry.init({ enableLogs: true });
+Sentry.logger.info("Order created", { orderId: "order_456" });
+Sentry.logger.info(Sentry.logger.fmt`User ${userId} purchased ${productName}`);
+```
 
-Consult the framework and build references before copying setup snippets;
-runtime entry points, preload requirements, source-map behavior, and default
-error filters differ substantially.
+Use `Sentry.setAttribute()` and `Sentry.setAttributes()` for attributes shared
+by logs and metrics. Global-scope values are application-wide; current-scope
+values are operation-local. Accepted values are strings, numbers, booleans,
+and arrays of those types.
+
+`consoleLoggingIntegration({ levels })` converts selected console calls to
+logs. Additional console arguments become `message.parameter.N` attributes.
+Consola applications can attach `Sentry.createConsolaReporter()`.
+
+Logs emitted inside an active span carry `sentry.trace.parent_span_id`; logs
+inside a supported active Session Replay also carry `sentry.replay_id`.
+
+## Framework quick reference
+
+### Pick explicit integrations and wrappers
+
+- Prisma's bundled integration targets Prisma 6. For another version, pass a
+  matching `PrismaInstrumentation` through `prismaInstrumentation`.
+- NestJS applications use `@sentry/nestjs`, `SentryGlobalFilter`, and
+  `@SentryExceptionCaptured`; the global filter also handles WebSocket errors.
+- React Router uses explicit `V6` or `V7` variants of `wrapUseRoutes` and
+  `wrapCreateBrowserRouter`.
+- Vue component tracing belongs under
+  `vueIntegration({ tracingOptions: ... })`; include `"update"` in `hooks`
+  when update spans are required.
+- Fastify's `shouldHandleError` selects which errors its handler captures.
+
+### Initialize server frameworks before application code
+
+The Elysia, Hono, Nitro, and TanStack Start SDKs provide native integrations
+and `dataCollection` controls. To prevent automatic user and request-body
+collection, initialize with:
+
+```js
+Sentry.init({ dataCollection: { userInfo: false, httpBodies: [] } });
+```
+
+Preload Node instrumentation with `--import` where a framework requires it.
+Hono needs a runtime-specific entry point and same-version peer SDK. Nitro
+wraps its config with `withSentryConfig`. TanStack Start places
+`sentryTanstackStart()` last in the Vite plugin list and wraps an explicit
+server fetch handler with `wrapFetchWithSentry`.
+
+## Build and serverless quick reference
+
+### Make source-map behavior explicit
+
+Meta-framework SDKs preserve an explicit source-map setting. When generation
+is unspecified, they enable maps, upload them, and delete them; explicitly
+enabled maps are not deleted automatically. Use `filesToDeleteAfterUpload` for
+custom cleanup.
+
+Next.js uses client `hidden-source-map` and server `source-map` unless
+`sourcemaps.disable` is set. It deletes client maps after upload unless
+`sourcemaps.deleteSourcemapsAfterUpload` is false. Pass Sentry options directly
+to `withSentryConfig`; `hideSourceMaps` and the nested Next config `sentry`
+property are removed. Set a deterministic release name rather than relying on
+the Next.js Build ID.
+
+### Use the correct serverless behavior
+
+The AWS Lambda v10 layer is `SentryNodeServerlessSDKv10`, unified for ESM and
+CommonJS. React Router serverless loaders, actions, and Vercel handlers flush
+automatically, as do Next.js route handlers. Unified environment detection
+recognizes Cloud Run.
+
+The Cloudflare Vite Orchestrion plugin reads Wrangler configuration, resolves
+the options module, wraps the worker entry, and instruments Durable Objects,
+`WorkerEntrypoint`, Workflows, and Agents. Supply `wranglerConfigPath` when the
+desired Wrangler configuration is not the default.
+
+Review the build reference for source-map cleanup, externalization warnings,
+Cloudflare method semantics, local Spotlight forwarding, and upload-failure
+behavior.

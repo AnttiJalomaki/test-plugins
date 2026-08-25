@@ -1,52 +1,54 @@
 # Observability, Identity, and SignalR
 
-Use this reference when upgrading Blazor Identity code, adding passkeys to an existing app, or
-instrumenting authentication and ASP.NET Core Identity.
+## Exception handling diagnostics
 
-## Passkeys in existing Blazor Web Apps
+### Handled exceptions are suppressed by default
 
-ASP.NET Core 10 provides a dedicated migration path for adding passkey user authentication to an
-existing Blazor Web App (batch `10.0-migration`). Treat this as an Identity migration rather than
-assuming passkeys are available only to newly generated projects. Preserve the application's
-existing account data and flows while applying the dedicated passkey changes.
+Exceptions handled by an `IExceptionHandler` do not emit logs or other
+diagnostics by default (since 10.0). Use
+`ExceptionHandlerOptions.SuppressDiagnosticsCallback` to select handled
+exceptions that still need reporting. Returning `false` restores the earlier
+reporting behavior for every handled exception:
 
-## Identity redirects with navigation exceptions disabled
-
-The Blazor Web App template sets the following property to avoid navigation exceptions during
-static server-side rendering:
-
-```xml
-<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+```csharp
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    SuppressDiagnosticsCallback = context => false
+});
 ```
 
-When an older Individual Accounts app opts into this behavior during the `10.0-migration`, edit
-`Components/Account/IdentityRedirectManager.cs`:
+## Authentication and Identity telemetry
+
+### Observe authentication and authorization activity
+
+ASP.NET Core reports authentication duration and counts for challenge, forbid,
+sign-in, sign-out, and authorization activity (since 10.0). Configure the
+application's metrics pipeline to collect the relevant framework instruments.
+
+Identity uses the `Microsoft.AspNetCore.Identity` meter. Available instruments
+include:
+
+- `aspnetcore.identity.user.create.duration`
+- `aspnetcore.identity.user.check_password_attempts`
+- `aspnetcore.identity.sign_in.sign_ins`
+
+### Add passkeys to an existing Blazor Web App
+
+Existing Blazor Web Apps can adopt passkey user authentication through the
+dedicated migration path provided for existing apps (`10.0-migration`). Treat
+this as an Identity migration rather than assuming passkeys are limited to newly
+created templates.
+
+### Update Identity redirects after changing navigation exceptions
+
+The Blazor Web App template sets
+`<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>`
+to avoid navigation exceptions during static SSR (`10.0-migration`). When an
+older Individual Accounts app opts into the property:
 
 1. Remove the `InvalidOperationException` thrown by `RedirectTo`.
 2. Remove all five `[DoesNotReturn]` attributes.
 
-Those annotations and the explicit throw encode the earlier control-flow contract. Leaving them
-in place misrepresents a redirect that can now complete without a navigation exception.
-
-## Authentication metrics
-
-Batch `10.0` adds metrics for authentication duration and for challenge, forbid, sign-in,
-sign-out, and authorization counts. Use these built-in instruments before wrapping every handler
-solely to count authentication operations.
-
-Correlate counts with failures and duration rather than treating a high event count by itself as
-an error.
-
-## Identity metrics
-
-Identity instruments are emitted by the `Microsoft.AspNetCore.Identity` meter. Examples include:
-
-```text
-aspnetcore.identity.user.create.duration
-aspnetcore.identity.user.check_password_attempts
-aspnetcore.identity.sign_in.sign_ins
-```
-
-Enable the meter in the application's metrics pipeline, then select instruments according to the
-operation being investigated. The names distinguish user-management, password-check, and
-sign-in behavior; avoid collapsing all of them into one undifferentiated counter.
+Make both edits in
+`Components/Account/IdentityRedirectManager.cs`; leaving either contract behind
+makes the helper's annotations disagree with its new control flow.

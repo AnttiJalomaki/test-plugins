@@ -1,55 +1,39 @@
-# Streams and publishing
+# Streams and Publishing
 
-## Strict request validation
+## Per-message JetStream TTL
 
-Since 2.12.0, JetStream strict mode is enabled by default. JSON requests with
-unknown fields are rejected rather than only logged. Correct clients that send
-invalid fields. During migration, the old behavior can be restored temporarily:
-
-```text
-jetstream {
-  strict: false
-}
-```
-
-## Per-message TTL
-
-Since 2.11.0, streams opt in with `AllowMsgTTL`. Publishers may then set
-`Nats-TTL` to integer seconds, a Go duration such as `1h`, or `never`.
+Since 2.11.0, streams opt in with `AllowMsgTTL`; publishers then set `Nats-TTL`
+to integer seconds, a Go duration such as `1h`, or `never`. The last value also
+exempts the message from stream `MaxAge`. Invalid or sub-second TTLs reject and
+discard the publish, and the option cannot be disabled after enablement.
 
 ```go
 StreamConfig{AllowMsgTTL: true}
 ```
 
-- `never` exempts the message from the stream's `MaxAge`.
-- Invalid or sub-second values reject and discard the publish.
-- `AllowMsgTTL` cannot be disabled after it is enabled.
-- A direct publish with `Nats-TTL` to a stream without the feature is rejected.
-- Sources and mirrors always accept and store an incoming `Nats-TTL`, but
-  expire that message only if their own `AllowMsgTTL` is enabled.
+Sources and mirrors always accept and store an incoming `Nats-TTL` header but
+expire from it only when their own `AllowMsgTTL` is enabled. A direct publish
+with the header to a stream without the feature is rejected.
 
-### Subject delete markers
+## Subject delete markers
 
-`SubjectDeleteMarkerTTL` creates a marker when age-based removal deletes the
-last message for a subject. The marker has its own TTL and reason:
+`SubjectDeleteMarkerTTL` (since 2.11.0) creates a marker when age-based removal
+deletes a subject's final message. The marker has
+`Nats-Marker-Reason: MaxAge` and its own `Nats-TTL`. Explicit delete and purge
+API calls do not create markers, and mirrors cannot enable the setting.
 
-```text
-Nats-Marker-Reason: MaxAge
-Nats-TTL: 1m0s
-```
-
-Delete and purge API calls do not create markers, and mirrors cannot enable the
-setting. Markers require roll-ups and permission to purge. Normal create or
-update requests enable `AllowRollup` and clear `DenyPurge`; pedantic requests
-fail instead.
-
-Unless `MaxMsgsPer` is `1`, `SubjectDeleteMarkerTTL` is also the minimum
-effective per-message TTL. Smaller values are accepted but clamped, and the
-stored `Nats-TTL` header is rewritten.
+The stream must permit roll-ups and purge. Normal create/update requests enable
+`AllowRollup` and clear `DenyPurge`; pedantic requests fail rather than adjusting
+them. Unless `MaxMsgsPer` is 1, the marker TTL is also the minimum effective
+per-message TTL: lower values are accepted but clamped, and the stored header is
+rewritten.
 
 ## Stream ingest backpressure
 
-Since 2.11.0, Core NATS publishes entering JetStream are bounded per stream:
+Core NATS publishing into JetStream is bounded per stream since 2.11.0 by
+`max_buffered_size` (default 128 MB) and `max_buffered_msgs` (default 10,000).
+Exceeding a limit can drop messages and return `429 JSStreamTooManyRequests`.
+JetStream publishing that waits for PubAcks should not normally reach the limit.
 
 ```text
 jetstream {
@@ -58,131 +42,85 @@ jetstream {
 }
 ```
 
-The defaults are `10,000` messages and `128MB`; NATS 2.10 was unlimited.
-Crossing either limit can drop messages and return
-`429 JSStreamTooManyRequests`. JetStream publishes that wait for PubAcks should
-not normally reach these limits.
+## Atomic stream batch publishing
 
-## Atomic stream batches
-
-Since 2.12.0, `AllowAtomicPublish` enables all-or-nothing batches. It requires
-JetStream API level 2, is incompatible with asynchronous persistence, and
-cannot be enabled on mirrors.
+`AllowAtomicPublish` (since 2.12.0) provides all-or-nothing batches. It requires
+API level 2, is incompatible with asynchronous persistence, and cannot be used
+on mirrors.
 
 ```go
 StreamConfig{AllowAtomicPublish: true}
 ```
 
-Every publish uses the same batch ID and a contiguous sequence. The first
-publish must be a request. The final stored message adds the commit header:
+Every message uses the same `Nats-Batch-Id` and a contiguous
+`Nats-Batch-Sequence`. The first must be a request. The stored final message
+adds `Nats-Batch-Commit: 1`; only it receives a normal PubAck, whose `batch` and
+`count` fields identify the commit.
 
-```text
-Nats-Batch-Id: order-42
-Nats-Batch-Sequence: 3
-Nats-Batch-Commit: 1
-```
-
-Only the final message receives a normal PubAck. Its `batch` and `count` fields
-identify the committed batch. In 2.12.0, the limit is 1,000 messages and the
-batch expires after 10 idle seconds. Atomic batches reject `Nats-Msg-Id` and
-`Nats-Expected-Last-Msg-Id`. Abandonment emits
+In 2.12.0, batches are limited to 1,000 messages, expire after 10 idle seconds,
+and reject `Nats-Msg-Id` and `Nats-Expected-Last-Msg-Id`. Abandonment publishes
 `io.nats.jetstream.advisory.v1.stream_batch_abandoned`.
 
 ## Fast and end-of-batch publishing
 
-Since 2.14.0, `AllowBatchPublish` provides flow-controlled, high-throughput
-publishing to replicated and non-replicated streams. It keeps per-message
-consistency checks but does not use atomic publishing's intermediate staging.
+`AllowBatchPublish` (since 2.14.0) enables flow-controlled, high-throughput
+publishing to replicated and non-replicated streams. Each message still gets
+consistency checks, but there is no atomic batch's intermediate staging.
 
 ```go
 StreamConfig{AllowBatchPublish: true}
 ```
 
-Atomic and fast batches can commit with an end-of-batch message that is not
-itself persisted.
+Both atomic and fast batches may commit through an end-of-batch message that is
+not itself persisted.
 
 ## Distributed counter streams
 
-Since 2.12.0, `AllowMsgCounter` turns every subject in a stream into an
-arbitrary-precision signed counter. Every publish must carry `Nats-Incr` in
-signed-integer form. The server replaces the body with the new
-`{"val":"..."}` total and returns that value in the PubAck.
-
-```go
-StreamConfig{AllowMsgCounter: true}
-```
+`AllowMsgCounter` (since 2.12.0) turns every stream subject into an
+arbitrary-precision signed counter. A publish must carry a signed-integer
+`Nats-Incr`; the server replaces the body with `{"val":"..."}` and returns the
+same total in the PubAck.
 
 ```bash
 nats req counter.hits '' -J -H 'Nats-Incr:+2'
 ```
 
-Counter mode:
+Counter mode is creation-only, requires Limits retention and API level 2, and
+is incompatible with mirrors, DiscardNew, per-message TTL, schedules, and
+counter-less publishes. Sourced aggregates track each upstream total in
+`Nats-Counter-Sources` and apply its delta, so aggregation remains eventually
+consistent across missed source messages. Reset one sourced contribution with a
+compensating negative increment: purge does not replicate, and roll-up destroys
+the combined counter.
 
-- is set only at stream creation;
-- requires Limits retention and API level 2;
-- is incompatible with mirrors, DiscardNew, per-message TTL, message
-  schedules, and publishes without a counter increment.
+## JetStream message schedules
 
-For sourced aggregate counters, `Nats-Counter-Sources` tracks each upstream
-total and the receiver applies its delta. This makes aggregation eventually
-consistent even after source messages are missed. Reset one sourced
-contribution with a compensating negative increment: purge does not replicate,
-and roll-up would destroy the combined counter.
+`AllowMsgSchedules` (since 2.12.0) lets a stored schedule emit delayed,
+recurring, or sampled messages on another subject in the same stream. Each
+schedule has a unique subject. `Nats-Schedule` accepts `@at <RFC3339>`, a
+six-field UTC cron or alias such as `@hourly`, or a Go duration such as
+`@every 5m`. Past `@at` values fire immediately.
 
-## Message schedules
-
-Since 2.12.0, `AllowMsgSchedules` lets one stored message produce a delayed,
-recurring, or sampled message on another subject in the same stream. Each
-schedule requires a unique subject.
-
-```go
-StreamConfig{
-    AllowMsgSchedules: true,
-    AllowMsgTTL:       true,
-}
-```
-
-`Nats-Schedule` accepts:
-
-- `@at <RFC3339>`;
-- a six-field UTC cron expression or alias such as `@hourly`;
-- a Go-duration interval such as `@every 5m`.
-
-```bash
-nats pub -J schedules.orders.once \
-  -H 'Nats-Schedule: @at 2025-10-01T12:00:00Z' \
-  -H 'Nats-Schedule-Target: orders' \
-  -H 'Nats-Schedule-TTL: 5m' \
-  'body'
-```
-
-`Nats-Schedule-Source` republishes the latest message on a sampled subject.
+`Nats-Schedule-Target` selects the output subject. `Nats-Schedule-Source`
+instead republishes the latest message on a sampled subject.
 `Nats-Schedule-TTL` becomes `Nats-TTL` on generated messages, while `Nats-TTL`
-on the schedule record limits the schedule itself. Past `@at` values fire
-immediately.
+on the stored schedule controls the schedule record itself.
 
-Schedule mode requires API level 2, may be enabled but not disabled on an
+Schedule mode requires API level 2, can be enabled but not disabled on an
 existing stream, and is rejected on sources and mirrors. Since 2.14.0,
-`Nats-Schedule-Rollup` applies a roll-up to the generated message, analogous to
-`Nats-Schedule-TTL`.
+`Nats-Schedule-Rollup` applies a roll-up to generated messages in the same way
+that `Nats-Schedule-TTL` applies TTL.
 
-## Mirrors, promotion, and source deduplication
+## Source deduplication controls
 
-Since 2.12.0, a mirror can be promoted to a primary stream for disaster
-recovery. Delete the old primary or remove its subjects first, promote the
-mirror second, and only then configure the promoted stream to listen on those
-subjects. This order avoids two primaries ingesting the same traffic.
-
-Since 2.14.0, streams with sources can disable deduplication, and fan-in streams
-can deduplicate across multiple sources.
+Since 2.14.0, a stream with sources can disable source deduplication, while a
+fan-in stream can deduplicate across multiple sources. Choose the setting from
+the desired cross-source identity behavior rather than assuming every source
+maintains an independent duplicate window.
 
 ## Whole-subject transforms
 
-Since 2.12.0, subject transforms include:
-
-- `partition(n)`, which deterministically derives a partition from the whole
-  subject;
-- `random(n)`, which produces a random number up to `n`.
-
-The older multi-argument `partition(n, …)` remains available when selected
-subject tokens should drive partitioning.
+Subject transforms since 2.12.0 include `partition(n)`, a deterministic
+partition derived from the whole subject, and `random(n)`, a random number up
+to `n`. The older multi-argument `partition(n, ...)` remains available when
+partitioning selected subject tokens.

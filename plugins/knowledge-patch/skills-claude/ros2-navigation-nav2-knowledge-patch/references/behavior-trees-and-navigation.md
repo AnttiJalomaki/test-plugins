@@ -1,74 +1,72 @@
 # Behavior trees and navigation
 
-Source batch attribution: `overview-and-distro-migrations`,
-`behavior-trees`.
-
-## Node migrations and additions
+## Navigation action nodes
 
 Kilted adds `GetPoseFromPath`, `RemoveInCollisionGoals`, and `IsStopped`, and
-extends `GoalUpdater` to goal lists. In Lyrical, action-like nodes that may
-return `RUNNING` are renamed:
+extends `GoalUpdater` to lists of goals. In Lyrical, `IsStopped` becomes
+`CheckStopStatus`, `IsPathValid` becomes `ValidatePath`, and `IsPoseOccupied`
+becomes `CheckPoseOccupancy`. These can return `RUNNING`, so treat them as
+actions, not conditions.
 
-| Earlier name | Lyrical name |
-| --- | --- |
-| `IsStopped` | `CheckStopStatus` |
-| `IsPathValid` | `ValidatePath` |
-| `IsPoseOccupied` | `CheckPoseOccupancy` |
+`NavigateThroughPoses`, `ComputePathThroughPoses`, and related nodes use
+`nav_msgs/Goals`. Access fields as `poses.goals` for navigation and
+`goals.goals` for compute-path requests. `NavigateThroughPoses` returns
+`WaypointStatus` values (`PENDING`, `COMPLETED`, `SKIPPED`, and `FAILED`) rather
+than `MissedWaypoint`. Goal-pruning nodes must preserve the status sequence via
+`input_waypoint_statuses` and `output_waypoint_statuses`.
 
-`TruncatePathLocal` renames its `robot_frame` input to `robot_base_frame`. If
-omitted, it inherits BT Navigator's `robot_base_frame` parameter.
+## Action cancellation and logging
+
+BT Navigator's `default_cancel_timeout` defaults to `50` ms for action
+cancellation. `bt_log_idle_transitions` defaults to `true`; set it to `false`
+to suppress idle transition noise. `IsWithinPathTrackingBounds` lets a tree
+test whether the robot remains within configured path-tracking bounds.
+
+## ValidatePath semantics
+
+`ValidatePath` and the `IsPathValid` service use `stop_at_first_collision`
+instead of the inverse `check_full_path`. Old `false` maps to new `true`, which
+is the default. `max_lookahead_distance: -1.0` checks the full path; a positive
+value restricts validation to that forward distance.
+
+`TruncatePathLocal` uses `robot_base_frame` instead of `robot_frame`. When the
+port is omitted, it inherits BT Navigator's `robot_base_frame` parameter.
 
 ```xml
 <TruncatePathLocal robot_base_frame="base_link" ... />
 ```
 
-## Path validation semantics
+## Control-node semantics
 
-`ValidatePath` and the `IsPathValid` service replace `check_full_path` with the
-oppositely worded `stop_at_first_collision`. Old `check_full_path: false`
-means new `stop_at_first_collision: true`, which is the default.
-`max_lookahead_distance` defaults to `-1.0` for full-path checking; a positive
-value limits validation to that forward distance.
+`NonblockingSequence` keeps ticking later children while an earlier child is
+`RUNNING`.
 
-## Control-node behavior
+`PauseResumeController` exposes pause and resume services. Pair it with
+`PersistentSequence`; the sequence's bidirectional child-index port preserves
+the point from which execution should resume.
 
-`NonblockingSequence` continues ticking later children while an earlier child
-is `RUNNING`. `PauseResumeController` supplies pause and resume services and
-pairs with `PersistentSequence`; the latter has a bidirectional child-index
-port so execution resumes at the paused child.
+`RoundRobin` defaults to `wrap_around="false"` and returns failure after its
+last child. Set `wrap_around="true"` only when legacy cyclic behavior is
+required.
 
-`RoundRobin` now defaults to `wrap_around="false"` and fails after its last
-child. Set `wrap_around="true"` to retain the former cycling behavior.
+## Navigator-private blackboards and subtree discovery
 
-## Navigator configuration, subtrees, and introspection
+Blackboard-ID parameters belong under navigator plugins rather than at the BT
+Navigator top level. Examples include:
 
-Blackboard-ID parameters live under each navigator plugin, not at BT
-Navigator's top level. Examples include
-`navigate_to_pose.goal_blackboard_id` and
-`navigate_through_poses.waypoint_statuses_blackboard_id`.
+- `navigate_to_pose.goal_blackboard_id`
+- `navigate_through_poses.waypoint_statuses_blackboard_id`
 
-Reusable subtrees may be loaded from directories in `bt_search_directories`.
-A tree selected by ID must have a unique ID; do not reuse the shared
-`MainTree`.
+Load reusable subtree XML from directories listed in `bt_search_directories`.
+When selecting a tree by ID, assign each tree a unique ID rather than reusing
+the shared `MainTree` identifier.
 
-`service_introspection_mode` accepts `disabled`, `metadata`, or `contents` and
-defaults to `disabled`. The standard navigators also provide disabled-by-
-default Groot 2 live monitoring, blackboard JSON inspection, and per-request
-BT XML selection.
+## Runtime navigation-plugin selectors
 
-## Cancellation, logging, and tracking bounds
-
-BT Navigator's `default_cancel_timeout` defaults to `50` ms for action
-cancellation. `bt_log_idle_transitions` defaults to `true`; set it false to
-suppress idle transition logs. `IsWithinPathTrackingBounds` tests whether the
-robot remains inside configured path-tracking bounds.
-
-## Runtime plugin selectors
-
-The default tree can select progress checker, goal checker, path handler,
-controller, and planner plugins at runtime. Each selector writes a selected
-plugin ID to a blackboard port, listens on its selector topic, and supplies a
-default ID:
+The default tree has selectors for the progress checker, goal checker, path
+handler, controller, and planner. Each selector publishes the chosen plugin ID
+to a blackboard port, listens on a named selector topic, and supplies a default
+ID. Pass the output port to the action that consumes the plugin.
 
 ```xml
 <ProgressCheckerSelector selected_progress_checker="{selected_progress_checker}"
@@ -83,13 +81,21 @@ default ID:
   default_planner="GridBased" topic_name="planner_selector"/>
 ```
 
+This arrangement changes navigation behavior at runtime without replacing the
+tree.
+
 ## Near-goal replanning suppression
 
-The default `ComputePathToPose` subtree keeps the current plan only when the
-global goal is unchanged, the robot is near it, and the remaining path is
-valid. This avoids feasible-planner loops caused by localization drift or
-tracking error during final approach. If any check fails, the fallback
-computes a new path:
+The default `ComputePathToPose` subtree retains the existing plan only when all
+of these gates pass:
+
+1. The global goal has not changed.
+2. The robot is near the goal.
+3. The truncated remaining path is still valid.
+
+If any gate fails, the fallback computes a new path. This prevents feasible
+planners from repeatedly replanning because of localization drift or tracking
+error during final approach.
 
 ```xml
 <Fallback name="FallbackComputePathToPose">
@@ -101,8 +107,31 @@ computes a new path:
                        distance_forward="-1" distance_backward="0.0"/>
     <ValidatePath path="{remaining_path}"/>
   </ReactiveSequence>
-  <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}"
+  <ComputePathToPose goal="{goal}" path="{path}"
+                     planner_id="{selected_planner}"
                      error_code_id="{compute_path_error_code}"
                      error_msg="{compute_path_error_msg}"/>
 </Fallback>
 ```
+
+## Introspection and live tree control
+
+Kilted's `service_introspection_mode` accepts `disabled`, `metadata`, or `contents` and
+defaults to `disabled`. The standard navigators also provide disabled-by-default
+Groot 2 live monitoring, blackboard JSON inspection, and BT XML replacement on
+a new goal request.
+
+The Nav2 RViz panel can select BT XML for each request, enter exact coordinates
+and frame IDs, and build, edit, save, or load multi-goal lists for
+`NavigateThroughPoses` and Waypoint Following.
+
+## Route-based navigation
+
+Kilted's `nav2_route` computes and tracks routes on a predefined graph. It can replace
+free-space global planning or provide long-range graph structure while a
+planner produces the nearby feasible path. Node and edge events can trigger
+contextual operations such as changing speed or activating equipment.
+
+Route Server can smooth graph corners with tangent circular arcs using
+`smooth_corners` and `smoothing_radius`. It falls back to linear interpolation
+for nearly straight edges and for arcs that cannot fit inside their edges.

@@ -1,29 +1,37 @@
 # Applications, Projects, and Sync
 
-## Comparison and reconciliation
+## Comparison and reconciliation defaults
 
-- In 3.0.0, the defaults for comparison options changed. Do not assume that
-  omitted options retain 2.x behavior; set behavior-critical comparison
-  choices explicitly and inspect diffs during an upgrade.
-- Known interim resources are excluded by default since 3.0.0. Transient
-  objects that previously affected comparison or reconciliation may no longer
-  appear unless the exclusion behavior is changed.
-- Resource customizations can target `CustomResourceDefinition` resources
-  since 3.0.0. Remember that a CRD customization concerns the CRD object
-  itself, not automatically every custom resource defined by it.
+The 3.0.0 defaults change several assumptions carried from earlier
+installations:
 
-## Sync execution
+- Comparison-option defaults change. Make any behavior-critical comparison
+  option explicit before upgrading.
+- Known interim resources are excluded by default, so transient objects that
+  previously participated in comparison and reconciliation may disappear from
+  those paths.
+- The application controller stores Application health in Redis by default.
+  Include Redis state when diagnosing stale or missing health.
+- Resource customization can target `CustomResourceDefinition` objects. A CRD
+  customization can therefore affect comparison or health behavior broadly.
 
-### Revision selection on retry
+Setting `timeout.reconciliation=0` (3.5.0) disables soft expiry but does not
+disable use of the diff cache. Diagnose zero-timeout installations with that
+cache behavior in mind.
 
-Since 3.2.0, the application controller can use a newer revision when retrying
-a failed sync rather than remaining tied to the original attempt's revision.
-Record both attempt and revision in deployment auditing, and disable assumptions
-that retries necessarily reproduce the original manifest set.
+## Sync retries and result records
 
-### Explicit automated-sync state
+When retrying a failed sync, the application controller can select a newer
+revision rather than staying on the revision from the original attempt
+(3.2.0). Capture the effective revision for every attempt when reproducibility
+matters.
 
-Since 3.1.0, automated sync has an `enabled` field:
+Resources in a sync result include their container images (3.1.0). Use those
+records with the revision to establish what an attempt actually deployed.
+
+## Explicit automated sync
+
+`SyncPolicy.automated` has an `enabled` field (3.1.0):
 
 ```yaml
 spec:
@@ -32,12 +40,13 @@ spec:
       enabled: true
 ```
 
-Use the field when generated configuration or policy checks need automation
-intent to be explicit rather than inferred from the presence of `automated`.
+Set it explicitly when generated configuration must express automation intent
+without relying on the presence or shape of other automated-sync fields.
 
-### Application-level missing-resource dry runs
+## Application-scoped missing-resource dry runs
 
-Since 3.1.0, an Application can set the sync option directly:
+`SkipDryRunOnMissingResource` can be set as an Application sync option
+(3.1.0):
 
 ```yaml
 spec:
@@ -46,27 +55,45 @@ spec:
       - SkipDryRunOnMissingResource=true
 ```
 
-This is useful when the same sync introduces an API type and its instances.
-Avoid setting it indiscriminately because it suppresses dry-run detection of
-unexpectedly absent APIs.
+This is useful when the same sync introduces a resource type and instances of
+that type. Scope it carefully because it also skips an early check for an API
+that is unexpectedly absent.
 
-### Server-side apply migration
+## Server-side apply and replace behavior
 
-Server-side apply gained controls for field-manager migration in 3.1.0. Treat
-the migration as a field-ownership change: identify the prior manager, choose
-the intended manager, and inspect `managedFields` after reconciliation where
-multiple controllers touch the same object.
+Server-side apply has controls for field-manager migration (3.1.0). Identify
+the current and intended managers, review shared fields, and inspect managed
+fields after migration.
 
-### Sync result detail
+Several corrected paths affect sync and diff behavior:
 
-Resources stored in a sync result include their images since 3.1.0. Consumers
-can use that record to correlate a sync outcome with deployed image references
-without reconstructing them solely from the live workload.
+- When server-side apply is selected, Argo CD no longer also runs auth
+  reconcile (3.3.13). The path now stays on server-side-apply semantics.
+- Replace sync no longer clobbers fields that are not ignored (3.3.13).
+- Webhook-mutation diff filtering preserves descendant fields owned by a
+  manager rather than dropping them (3.4.6).
+- Annotation backfill runs only when the live value is unset, so an existing
+  live annotation takes precedence (3.4.6).
 
-## Project sync windows
+Regression-test resource ownership, ignored fields, manager-owned descendants,
+and existing live annotations when moving between these behaviors.
 
-- Sync-window matching gained an opt-in AND operator in 3.0.0. Use it when all
-  selected criteria must match rather than relying on the ordinary matching
-  relationship.
-- AppProject sync windows gained a `description` field in 3.1.0. Record the
-  operational purpose, owner, and exception procedure close to the window.
+## Server-side diff and Secret handling
+
+Server-side diff prevents CLI Secret-mask spoofing and masks Secret data in the
+last-applied-configuration annotation (3.3.13). Keep diff clients current and
+do not treat client-supplied masking output as a security boundary.
+
+## Sync windows
+
+AppProject sync windows support a `description` field (3.1.0). Record the
+window's purpose and ownership there so exceptions can be evaluated in
+context.
+
+Sync-window matching has an opt-in AND operator (3.0.0). Use it when every
+configured selector must match, and test selector combinations before changing
+an existing project.
+
+An overrun option (3.5.0) lets a sync already in progress continue after its
+window ends. Choose explicitly between allowing completion and enforcing the
+window boundary.

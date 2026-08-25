@@ -1,35 +1,28 @@
 # Hono CLI
 
-Install `@hono/cli` to add the `hono` command and its `docs`, `search`, `request`, `serve`, and `optimize` subcommands.
+Install `@hono/cli` to provide the `hono` command.
 
 ```sh
 npm i @hono/cli
-hono --help
 ```
 
-## Read documentation
+## Discover documentation
 
-### Fetch a page as Markdown
-
-`hono docs [path]` fetches a `hono.dev` documentation path and writes the page as Markdown to standard output.
-
-```sh
-hono docs /docs/api/routing
-```
-
-### Search documentation as JSON
-
-`hono search <query>` writes matching documentation URLs and paths as JSON to standard output. Pass a returned path to `hono docs` to read the page.
+`hono docs [path]` prints a `hono.dev` page as Markdown. `hono search <query>`
+prints matching documentation URLs and paths as JSON, so a selected search
+result path can be passed directly to `docs`.
 
 ```sh
 hono search "basic auth"
+hono docs /docs/middleware/builtin/basic-auth
 ```
 
-## Exercise an application in-process
+## Make an in-process request
 
-`hono request [file]` imports a Hono application and invokes `app.request()` without starting a server. The entry file defaults to `src/index.ts`, the method defaults to `GET`, and the result is printed as JSON.
-
-Use `-P` for the path, `-X` for the method, and `-d` for the body.
+`hono request [file]` imports an application, invokes `app.request()` without
+starting a server, and prints the response as JSON. The file defaults to
+`src/index.ts` and the method defaults to `GET`. Use `-P`, `-X`, and `-d` for
+the path, method, and body.
 
 ```sh
 hono request -P /api/users -X POST -d '{"name":"Alice"}' src/index.ts
@@ -37,17 +30,20 @@ hono request -P /api/users -X POST -d '{"name":"Alice"}' src/index.ts
 
 ## Serve with injected middleware
 
-`hono serve [entry]` starts the application at `http://localhost:7070`. Repeat `--use` to apply built-in middleware or helpers without modifying the application.
+`hono serve [entry]` starts the application at `http://localhost:7070` and
+accepts repeatable `--use` expressions for middleware or helpers. With no
+entry, it uses an empty application, so the server can be assembled entirely
+from injected middleware.
 
 ```sh
 hono serve --use 'logger()' --use "serveStatic({root:'./'})" src/index.ts
 ```
 
-With no entry file, `serve` starts an empty application, so the served application can consist entirely of injected middleware.
+## Build a precomputed router
 
-## Optimize routing for deployment
-
-`hono optimize [entry]` generates `dist/index.js` with route data precomputed for `PreparedRegExpRouter`. Deploy the generated entry directly.
+`hono optimize [entry]` writes `dist/index.js` with route data precomputed for
+`PreparedRegExpRouter`. Deploy the generated entry rather than the original
+source entry.
 
 ```sh
 hono optimize src/index.ts

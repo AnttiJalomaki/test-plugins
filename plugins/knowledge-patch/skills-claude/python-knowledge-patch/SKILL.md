@@ -10,185 +10,176 @@ metadata:
 
 # Python Knowledge Patch
 
-Use the quick reference for migration-sensitive decisions, then open the topic reference that matches the code being changed. Treat every Python 3.15 item as preview behavior and gate it by the actual runtime version.
+Use this skill when updating Python applications, libraries, tooling, native
+extensions, embedded runtimes, or CPython builds whose behavior depends on
+recent language and standard-library changes.
+
+Confirm the exact interpreter and maintenance release before applying an item.
+Open the topic reference that matches the code under review; the quick
+reference below emphasizes compatibility failures, changed defaults, and the
+most broadly useful additions.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [Language and runtime](references/language-and-runtime.md) | Syntax and execution, built-ins, object model, text and numeric behavior, garbage collection, removals |
-| [Typing and introspection](references/typing-and-introspection.md) | Deferred annotations, typing, ASTs, frames and locals, signatures, symbols, runtime metadata |
-| [Concurrency and asyncio](references/concurrency-and-asyncio.md) | Asyncio, threads and queues, multiprocessing, executors, subinterpreters, free-threading |
-| [Data, I/O, and serialization](references/data-io-and-serialization.md) | Configuration, SQLite and dbm, serialization, compression, archives, streams, codecs, TOML and JSON |
-| [Networking and security](references/networking-and-security.md) | TLS, HTTP, URLs, email, sockets, protocol validation, parser hardening |
-| [Filesystems, OS, and platforms](references/filesystem-os-and-platforms.md) | pathlib, OS APIs, mmap, resources, virtual environments, locale, platform behavior |
-| [Tooling, debugging, and testing](references/tooling-debugging-and-testing.md) | REPL, pdb, profiling, monitoring, CLI parsing, logging, tests, imports and packaging |
-| [C API and extensions](references/c-api-and-extensions.md) | Compatibility, references and errors, types and modules, free-threading, Stable/Limited APIs, embedding |
-| [Build and distribution](references/build-and-distribution.md) | Build prerequisites, configure controls, JIT, cross-builds, platform targets, artifacts |
+| [Language and runtime](references/language-and-runtime.md) | Syntax, built-ins, object behavior, text, numbers, garbage collection, removals |
+| [Typing and introspection](references/typing-and-introspection.md) | Annotations, ASTs, frames, signatures, type expressions, symbols |
+| [Concurrency and asyncio](references/concurrency-and-asyncio.md) | Threads, queues, multiprocessing, task groups, subinterpreters, free-threading |
+| [Data, I/O, and serialization](references/data-io-and-serialization.md) | Configuration, SQLite, archives, compression, structured data, streams |
+| [Networking and security](references/networking-and-security.md) | TLS, HTTP, URLs, email, protocol parsing and validation |
+| [Filesystems, OS, and platforms](references/filesystem-os-and-platforms.md) | Paths, descriptors, memory maps, resources, locale, operating systems |
+| [Tooling, debugging, and testing](references/tooling-debugging-and-testing.md) | Imports, REPLs, profiling, pdb, logging, warnings, tests, packaging |
+| [C API and extensions](references/c-api-and-extensions.md) | Extension compatibility, references, types, modules, embedding, Stable ABI |
+| [Build and distribution](references/build-and-distribution.md) | Configure controls, JIT, toolchains, artifacts, cross-builds, installers |
 
 ## Compatibility first
 
-### Runtime and language changes
+### Runtime and language behavior
 
-- In optimized scopes, each `locals()` call returns an independent snapshot. `frame.f_locals` is instead a write-through proxy; copy it when a stable dictionary is needed.
-- An implicit `exec()` or `eval()` namespace no longer makes newly assigned optimized locals observable afterward. Pass explicit globals and locals when retrieving results.
-- AST constructors currently warn for missing required fields or unknown keyword fields and make them errors in 3.15. Python 3.14 removes the old constant-node aliases; use `ast.Constant.value` and `visit_Constant()`.
-- Python 3.14 makes annotations lazy. Annotation readers should use `annotationlib` instead of assuming values are eagerly present in `__annotations__` or a class namespace.
-- `int()` no longer falls back to `__trunc__()`, and Boolean evaluation of `NotImplemented` raises `TypeError` in 3.14.
-- `return`, `break`, or `continue` that exits a `finally` block emits a compile-time `SyntaxWarning` in 3.14.
-- The default pickle protocol is 5 in 3.14. Choose an older protocol explicitly when older readers must consume the data.
-- Python 3.14.0–3.14.4 used the incremental garbage collector; 3.14.5 and later reverted to the 3.13 generational collector. Do not infer collector behavior from the minor version alone.
-- `functools.partial` used directly as a class attribute warns in 3.13; wrap it in `staticmethod()` to retain non-binding behavior.
-- Regular-expression `maxsplit`, `count`, and `flags` parameters are becoming keyword-only. Name them now.
+- `functools.partial` stored directly on a class emits `FutureWarning`; wrap it
+  in `staticmethod()` when non-binding behavior is intended.
+- Optimized builds reject the same invalid syntax as ordinary builds. Do not
+  rely on `-O` to remove an invalid write to `__debug__`, `await`, or async
+  comprehension.
+- Generator-expression iteration is deferred until the generator runs. Code
+  that expects a source error at construction must force iteration explicitly.
+- `Path.exists()` and `Path.is_*()` suppress every `OSError`; use `stat()` when
+  permissions, encoding, or other failures must remain observable.
+- `\B` now matches empty input as the inverse of `\b`. Use `(?!\A\Z)\B` when
+  empty strings must remain excluded.
+- Copying or pickling `itertools` iterators is no longer supported.
+- Garbage-collector behavior depends on the maintenance release: do not infer
+  the collector design from the feature release alone.
 
-```python
-namespace = {}
-exec("answer = 42", globals(), namespace)
-answer = namespace["answer"]
+### Removed and deprecated call patterns
 
-parts = re.split(pattern, text, maxsplit=1, flags=re.ASCII)
-```
+- Pass a mapping for SQLite named placeholders. Sequences now raise
+  `ProgrammingError`.
+- Use `sqlite_version` and `sqlite_version_info`; the module's `version` and
+  `version_info` attributes are removed.
+- Prefer `subprocess` to `os.popen()` and `os.spawn*()`, `Path.as_uri()` to
+  `PurePath.as_uri()`, and normal file opening to `codecs.open()`.
+- Replace `pkgutil.get_loader()` / `find_loader()`, `pty.master_open()` /
+  `slave_open()`, and the legacy `URLopener` classes before upgrading.
+- Name `sqlite3.connect()` options after the database; pass function and
+  callback registration arguments positionally.
+- Use `os.path.isreserved()` instead of `PurePath.is_reserved()`, modern loader
+  APIs instead of `load_module()`, and class or mapping forms for `NamedTuple`
+  and `TypedDict` construction.
+- Stop depending on `CodeType.co_lnotab`, the private `sre_*` modules, CGI
+  support in `http.server`, or removed WAVE marker methods.
+- Avoid legacy false query-string inputs; normalize them before parsing.
 
-### Asyncio and process behavior
+### Changed defaults and failure modes
 
-- `asyncio.get_event_loop()` raises `RuntimeError` when no current loop exists in 3.14. Use `asyncio.run()`, `get_running_loop()`, or `asyncio.Runner` as appropriate.
-- Event-loop policy APIs are deprecated for removal in 3.16. Select an implementation with `loop_factory` on `asyncio.run()` or `Runner`.
-- Task creation APIs pass arbitrary keyword arguments to the task constructor or task factory in 3.14. Custom factories must accept `name`, `context`, and future keywords.
-- On Unix other than macOS, multiprocessing and `ProcessPoolExecutor` default to `forkserver` in 3.14, not `fork`. Explicitly request a context if inherited globals are required.
-- `queue.Queue` and `asyncio.Queue` have explicit `shutdown()` methods and raise `ShutDown` or `QueueShutDown` at termination.
-- `Server.wait_closed()` now waits for closure and all active connections. A Unix server removes its socket when it closes.
-- Third-party asyncio task implementations must implement `Task.set_name()`; `_set_task_name()` is removed.
+- `gzip.compress()` produces reproducible output by default with `mtime=0` and
+  OS byte 255. Pass `mtime=None` when wall-clock timestamps are desired.
+- Pickle protocol 5 is the default. Select an older protocol explicitly when
+  older consumers must read the data.
+- Unclosed `GzipFile` and `NamedTemporaryFile` instances emit
+  `ResourceWarning`; use explicit ownership and closure.
+- Nonblocking text reads and `hashlib.file_digest()` may raise
+  `BlockingIOError` instead of returning empty/spurious data.
+- Email header assignment validates field names, and generators reject unsafe
+  or non-EAI output instead of flattening it inaccurately.
+- `ConfigParser` refuses keys that would not round-trip through its output.
+- `QueueListener.start()` raises if already started; use it as a context
+  manager for paired startup and shutdown.
+- Query-string, URL, cookie, WSGI, HTTP, POP3, IMAP, and archive handling has
+  stricter input validation. Keep malformed-input tests in compatibility runs.
 
-```python
-tasks = [asyncio.create_task(fetch(url)) for url in urls]
-async for task in asyncio.as_completed(tasks):
-    # Async iteration preserves supplied task/future identity.
-    result = await task
-```
+### Asyncio, processes, and free-threading
 
-### Standard-library migrations
+- Guard custom task factories by exact maintenance release: the 3.13.3
+  keyword-forwarding behavior was corrected in 3.13.4.
+- `Thread.join()` waits for the underlying operating-system thread to exit.
+- Unix asyncio servers remove their socket path when closed.
+- `SharedMemory(track=False)` opts out of resource-tracker cleanup; tracker
+  leaks now produce a nonzero tracker exit.
+- Free-threaded builds change warning-context and thread-context inheritance.
+  Test both GIL-enabled and free-threaded configurations when relevant.
+- Hold one critical section around an entire `PyDict_Next()` traversal;
+  per-step locking is not sufficient.
+- Prefer supported iterator serialization/synchronization helpers when sharing
+  generators across concurrent callers.
+- Use direct task-group cancellation when the target runtime provides it,
+  instead of injecting a task whose only purpose is to raise.
 
-- `dbm` now selects the SQLite backend by default. Select a backend explicitly when file format or implementation stability matters.
-- `ssl.create_default_context()` enables `VERIFY_X509_PARTIAL_CHAIN` and `VERIFY_X509_STRICT`; previously accepted malformed certificates can fail verification.
-- `Path.glob()` and `rglob()` patterns ending in `**` return files and directories. Add a trailing slash for directories only, and use `recurse_symlinks` deliberately.
-- On Windows, a path beginning with exactly one slash or backslash is no longer absolute. Mode `0o700` now applies access control in `mkdir()` and `makedirs()`.
-- `Path.exists()` and the `Path.is_*()` predicates suppress every `OSError` in 3.14. Use `stat()` when the failure must be visible.
-- Passing filesystem paths to `mimetypes.guess_type()` is soft-deprecated; use `guess_file_type()`.
-- Email address parsing is strict by default, generated headers are verified, and invalid field names raise `ValueError`.
-- Unclosed `sqlite3.Connection`, `NamedTemporaryFile`, and `GzipFile` objects can emit `ResourceWarning`. Use explicit closure, not only transaction context management.
-- `gzip.compress()` defaults to `mtime=0` in 3.14 for reproducibility. Pass `mtime=None` to record the current time.
-- `ZipFile.writestr()` respects `SOURCE_DATE_EPOCH`; Python 3.15 preview lowers gzip and gzip-tar default compression from 9 to 6.
-- SQLite named placeholders require a mapping in 3.14; supplying a sequence raises `ProgrammingError`. Several connect parameters become keyword-only in 3.15.
-- `urllib.parse.parse_qs()` and `parse_qsl()` deprecate unsupported false values such as `0` and `[]`; bytes handling and lossless component options also changed.
-- `argparse.ArgumentParser.suggest_on_error` defaults to true in the 3.15 preview, and inferred destinations for overlapping short/long forms can change.
-- Python 3.15 removes CGI support from `http.server`, legacy `sre_*` modules, `PurePath.is_reserved()`, `code.co_lnotab`, `zipimporter.load_module()`, and several other deprecated APIs. Review both removal sections before targeting it.
+## High-value additions
+
+### Safer structured data and I/O
+
+- `ConfigParser(allow_unnamed_section=True)` accepts top-level keys; newer
+  mapping access can also create `UNNAMED_SECTION`.
+- `importlib.resources` helpers accept nested path components. Pass text
+  `encoding` and `errors` by keyword.
+- Tar streaming can avoid caching every member. Tar extraction filters also
+  harden symlink fallback and directory fixups.
+- `ZipFile.writestr()` honors `SOURCE_DATE_EPOCH`, and `ZipInfo._for_archive()`
+  resolves the metadata defaults that will be written.
+- `io.Reader` and `io.Writer` are structural protocols for simple stream APIs.
+- TOML 1.1 users should open the data reference for exact parsing changes.
+
+### Runtime features to gate by interpreter
+
+- `Fraction` accepts any object implementing `as_integer_ratio()`.
+- Three-argument `pow()` can dispatch to `__rpow__()`.
+- `super` objects can be copied and pickled.
+- `datetime` and `time` ISO parsing accepts `24:00`.
+- Newer runtimes add explicit lazy imports, immutable built-in mappings,
+  identity-stable sentinels, unpacking comprehensions, generic `slice`, and
+  copy-free `bytearray.take_bytes()`; never emit their syntax or built-ins for
+  an older interpreter.
+- Newer typing surfaces include `TypeForm`, closed or extensible `TypedDict`,
+  richer type aliases, and bounded or variant `TypeVarTuple` declarations.
+
+### Debugging and observability
+
+- Pdb supports packaged and module targets, live process attachment, and async
+  breakpoints; use the exact same runtime version for attachment.
+- `sys.monitoring` exposes richer exception events, including per-code
+  enablement in newer runtimes.
+- Native thread names and C stacks can appear in `faulthandler` output.
+- Asyncio can expose live task trees and in-process call graphs.
+- The `profiling` package adds deterministic tracing plus an attachable sampling
+  profiler with async-aware, process, flame-graph, and replay workflows.
+- `-X importtime=2` includes cached imports, and `-X perf_jit` enables enhanced
+  Linux perf integration.
 
 ### C extensions and embedding
 
-- Free-threaded 3.13 uses `python3.13t` or `--disable-gil`. Extensions declare support with `Py_mod_gil` or `PyUnstable_Module_SetGIL()`; undeclared extensions normally re-enable the GIL.
-- Python 3.14 supports free-threaded builds officially but optionally. Windows backends targeting them must define `Py_GIL_DISABLED` themselves.
-- Python 3.15 preview adds the `abi3t` Stable ABI. Use opaque per-type storage and the new module export/slot machinery; publish a separate `cp315t` build for APIs outside `abi3t`.
-- `PyDict_Next()` does not lock in free-threaded builds. Hold one critical section around the whole iteration.
-- `PyModule_Add()` always steals the supplied reference, including on failure.
-- `Python.h` no longer supplies several system headers transitively. Include every declaration's owning header directly.
-- `PY_SSIZE_T_CLEAN` is obsolete, and removed trashcan macros must become `Py_TRASHCAN_BEGIN(object, deallocator)` / `Py_TRASHCAN_END`.
-- Removed buffer, call, and initialization entry points must migrate to `PyObject_GetBuffer()` plus `PyBuffer_Release()`, `PyObject_Call*()`, and `PyConfig` initialization.
-- Borrowed operand-stack references make refcount-based uniqueness checks unsafe. Use the appropriate `PyUnstable_Object_Is*Referenced()` API.
-- `Py_Finalize()` deletes interned strings in 3.14. Embedders that reinitialize must release extension-held interned references during shutdown.
-- In the 3.15 preview, finalization-safe interpreter guards and attach/detach APIs replace check-then-attach patterns; the `PyGILState` family is soft-deprecated.
-
-## High-value features
-
-### Deferred annotations and runtime typing
-
-Python 3.14 evaluates function, class, and module annotations lazily. Choose the representation required by the consumer:
-
-```python
-from annotationlib import Format, get_annotations
-
-def parse(value: Missing): ...
-
-hints = get_annotations(parse, format=Format.FORWARDREF)
-```
-
-- `Format.VALUE` evaluates values and can raise for missing names.
-- `Format.FORWARDREF` preserves unresolved names as `ForwardRef` objects.
-- `Format.STRING` returns source-like strings.
-- `inspect.signature()` accepts `annotation_format`.
-- `types.UnionType` and `typing.Union` are aliases in 3.14; compare unions by equality or use `get_origin()` / `get_args()`, not identity.
-- The 3.15 preview adds `TypeForm`, closed or extensible `TypedDict`, richer `TypeVarTuple`, and more metadata on type aliases.
-
-### T-strings and structured interpolation
-
-A `t`-prefixed literal creates `string.templatelib.Template`, retaining static strings and interpolation objects for safe DSL-specific rendering:
-
-```python
-name = "Ada"
-template = t"Hello {name}"
-for part in template:
-    process(part)
-```
-
-Templates do not concatenate with `str`, and t-string literals do not implicitly concatenate with string or f-string literals in 3.15.0b3.
-
-### Free-threading and subinterpreters
-
-- Query free-threaded runtime state with `sys._is_gil_enabled()` and control it with `PYTHON_GIL` or `-X gil` where supported.
-- `concurrent.interpreters` exposes isolated interpreters in 3.14, while `InterpreterPoolExecutor` provides a true-multicore executor inside one process.
-- Sharing between interpreters is opt-in and limited. Gate portable use with `sys.implementation.supports_isolated_interpreters` in 3.15.0b3.
-- `-X context_aware_warnings` and `sys.flags.thread_inherit_context` default on for free-threaded builds and off for GIL-enabled builds.
-- Use object critical sections, `PyMutex`, and the documented iterator synchronization APIs rather than assuming the GIL serializes access.
-
-### Asyncio lifecycle and observability
-
-- Asynchronous iteration over `asyncio.as_completed()` can yield the original task or future objects.
-- `Executor.map(buffersize=n)` applies submission backpressure; process pools can terminate or kill all workers explicitly.
-- `multiprocessing.Process.interrupt()` sends `SIGINT`, allowing normal `KeyboardInterrupt` and `finally` cleanup.
-- `python -m asyncio ps PID` and `pstree PID` inspect remote task graphs; in-process code can use `capture_call_graph()` and `print_call_graph()`.
-- `await pdb.set_trace_async()` supports `await` while debugging a coroutine.
-- The 3.15 preview adds `TaskGroup.cancel()` for direct group cancellation.
-
-### Data, archives, and I/O
-
-- `compression.zstd` and the preferred `compression.{gzip,bz2,lzma,zlib}` namespace arrive in 3.14; tar, ZIP, and shutil understand Zstandard archives.
-- `marshal` format 5 serializes slices; `allow_code=False` blocks code-object serialization and deserialization.
-- `mmap(..., trackfd=False)` avoids retaining a duplicate descriptor on Unix and, in the 3.15 preview, on Windows.
-- `Path.info` caches type/stat information, including details obtained during `iterdir()`.
-- `tomllib.TOMLDecodeError` exposes structured location fields in 3.14; the 3.15 preview accepts TOML 1.1.
-- The 3.15 preview adds `json`'s `array_hook`, shelf serializer hooks, `bytearray.take_bytes()`, and stricter/canonical base-encoding controls.
-
-### Debugging and profiling
-
-- `breakpoint()` and `pdb.set_trace()` stop at the call site in 3.13. Pdb can execute statements against current-frame locals and attach remotely in 3.14.
-- Remote execution and attach can be disabled with `PYTHON_DISABLE_REMOTE_DEBUG`, `-X disable-remote-debug`, or `--without-remote-debug`.
-- The 3.15 preview introduces `profiling.tracing` and `profiling.sampling`; `cProfile` remains an alias, while pure-Python `profile` is deprecated.
-- Sampling supports PID attach, scripts/modules, wall/CPU/GIL/exception modes, flame graphs, pstats, heatmaps, live TUI, async-aware views, and compact replayable captures.
-- `sys.monitoring` gains directional branch events in 3.14 and per-code exception-event control in 3.15.
-
-### Python 3.15 preview features
-
-Explicit lazy imports defer loading until first use and report failures at that point:
-
-```python
-lazy import json
-lazy from pathlib import Path
-
-data = json.loads('{"answer": 42}')
-```
-
-- Lazy declarations are module-scope only and exclude functions, classes, `try`, star imports, and future imports.
-- `-X lazy_imports=all` or `PYTHON_LAZY_IMPORTS=all` changes the default; inspect and control it through `sys.get_lazy_imports()`, `set_lazy_imports()`, and filters.
-- `frozendict` is immutable, insertion-ordered, and conditionally hashable; test generic mappings with `collections.abc.Mapping`.
-- `sentinel()` creates identity-stable marker values that survive copying and can be pickleable when importable by name.
-- Comprehensions and generator expressions accept `*` and `**` unpacking.
-- `map(..., strict=True)` is a 3.14 feature; the preview additionally supplies synchronized/concurrent iterator utilities and expands free-threaded iterator guarantees.
+- Declare free-threaded support with `Py_mod_gil` for multi-phase modules or
+  `PyUnstable_Module_SetGIL()` for single-phase modules. Undeclared modules may
+  re-enable the GIL.
+- `PyModule_Add()` always steals the passed reference. Prefer new `*Ref()`
+  lookup helpers when ownership must be explicit.
+- Use error-preserving attribute and mapping lookup APIs when lookup failures
+  must propagate instead of reaching `sys.unraisablehook()`.
+- Include every system header directly; `Python.h` no longer supplies several
+  platform headers transitively.
+- Replace removed trashcan macros, ambiguous iteration, private integer and
+  Unicode builders, and direct representation access with their public APIs.
+- Limited-API reference-count and type macros are opaque. Never use
+  `Py_REFCNT(obj) == 1` as a uniqueness test for borrowed stack references.
+- Release extension-held interned strings before finalization when an embedder
+  can reinitialize the runtime.
+- Newer free-threaded Stable ABI and slot/export APIs require separate artifact
+  planning; keep ordinary and free-threaded wheels distinct when unsupported
+  APIs are used.
 
 ## Upgrade workflow
 
-1. Confirm the exact interpreter and maintenance release; distinguish 3.14.0–3.14.4 from 3.14.5+ for garbage collection and treat 3.15.0b3 as preview-only.
-2. Search for removals and deprecations first: asyncio policies, implicit event-loop creation, AST aliases, old import-loader APIs, positional regex/SQLite arguments, C API removals, and 3.15 standard-library removals.
-3. Audit defaults that can silently change output or behavior: multiprocessing start method, pickle protocol, dbm backend, TLS verification flags, gzip timestamps/compression, argparse suggestions, and URL/base64 parsing.
-4. Review concurrency assumptions for free-threading, context inheritance, task-factory keyword forwarding, queue shutdown, iterator sharing, and native critical sections.
-5. Update annotation consumers before enabling 3.14, and gate lazy imports, frozendict, sentinels, unpacking comprehensions, and `abi3t` behind 3.15 checks.
-6. Run tests with warnings enabled and `ResourceWarning` visible; exercise filesystem errors, malformed protocol fields, nonblocking streams, serialization compatibility, interpreter shutdown, and extension imports.
-7. Open the indexed topic references for the complete API-level details; the quick reference intentionally prioritizes migration-sensitive changes.
+1. Confirm the exact executable, ABI, maintenance release, GIL mode, operating
+   system, and extension build configuration.
+2. Search first for removals, keyword/positional migration warnings, iterator
+   serialization, old loader APIs, legacy SQLite usage, and private C APIs.
+3. Audit changed defaults in serialization, text encoding, query parsing,
+   archives, process startup, warning handling, and argument parsing.
+4. Open the matching topic reference and trace every affected call site;
+   preview-only syntax and APIs require an explicit runtime gate.
+5. Run tests with warnings and `ResourceWarning` visible. Exercise malformed
+   input, nonblocking I/O, shutdown, finalization, interpreter reinitialization,
+   and free-threaded imports where applicable.
+6. For binary extensions, test Limited/Stable API claims, ownership on every
+   error path, GIL declarations, and wheel tags on every supported platform.

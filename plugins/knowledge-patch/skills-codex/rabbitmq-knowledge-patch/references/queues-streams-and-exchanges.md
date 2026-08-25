@@ -1,52 +1,24 @@
 # Queues, streams, and exchanges
 
-Use this reference for declaration constraints, quorum-queue delivery
-semantics, stream consumption, and exchange controls.
+## Queue protection, declaration, and metadata
 
-## Contents
+Virtual hosts can carry metadata that protects them from deletion (`4.0.6`).
+Plugins can likewise mark queues and streams as protected so applications
+cannot delete them. Administrators can disable individual queue types; clients
+then cannot declare a new queue or stream of a disabled type.
 
-- [Resource protection and declaration controls](#resource-protection-and-declaration-controls)
-- [Quorum diagnosis and maintenance](#quorum-diagnosis-and-maintenance)
-- [Priority behavior](#priority-behavior)
-- [Native delayed retries](#native-delayed-retries)
-- [Delivery and poison-message counts](#delivery-and-poison-message-counts)
-- [Consumer timeouts](#consumer-timeouts)
-- [Single Active Consumer](#single-active-consumer)
-- [Stream filters](#stream-filters)
-- [Stream retention and replication](#stream-retention-and-replication)
-- [Commercial queue and stream facilities](#commercial-queue-and-stream-facilities)
+Starting in 4.1.1, a new virtual host's default queue type is injected into its
+metadata, keeping definition exports consistent across export methods
+(`4.1.0`).
 
-## Resource protection and declaration controls
+For 4.3's transient non-exclusive queue default and CQv1 removal, follow the
+migration reference before changing declarations.
 
-- Virtual hosts can carry metadata that protects them from deletion.
-- Plugins can mark queues and streams as protected so applications cannot
-  delete them.
-- Administrators can disable individual queue types. Clients then cannot
-  declare new queues or streams of those types.
-- Starting in 4.1.1, a new virtual host has its default queue type injected
-  into metadata, keeping definition export methods consistent.
-- RabbitMQ 4.1.4 adds a cluster-wide `cluster_exchange_limit`. It counts
-  application-declared and protocol-standard predeclared exchanges and must
-  have the same value on every node:
+## Quorum queues
 
-```ini
-cluster_exchange_limit = 200
-```
+### Leadership, shutdown, and checkpoints
 
-- Environments whose load balancers cannot preserve locality can reject new
-  local-random exchange declarations:
-
-```ini
-exchange_types.local_random.enabled = false
-```
-
-- `x-modulus-hash` is now a core exchange type rather than part of the
-  sharding plugin. With a stable binding set, its distribution remains stable
-  across node restarts.
-
-## Quorum diagnosis and maintenance
-
-Check matching quorum queues for an elected leader:
+Check matching queues for an elected leader:
 
 ```shell
 rabbitmq-diagnostics check_for_quorum_queues_without_an_elected_leader \
@@ -54,145 +26,82 @@ rabbitmq-diagnostics check_for_quorum_queues_without_an_elected_leader \
 ```
 
 Use `--across-all-vhosts ".*"` for a cluster-wide check, but expect it to be
-expensive on clusters with many quorum queues.
+expensive with many queues. Before stopping a node, check quorum criticality and
+wait for quorum-plus-one:
 
-Starting in 4.1.1, force matching queues to checkpoint and remove on-disk
-segment files where possible:
+```shell
+rabbitmq-diagnostics check_if_node_is_quorum_critical
+rabbitmq-upgrade await_online_quorum_plus_one
+```
+
+Starting in 4.1.1, force matching queues to checkpoint and remove eligible
+on-disk segment files with:
 
 ```shell
 rabbitmq-queues force_checkpoint \
-  --vhost-pattern "vhost-pattern" \
-  --queue-pattern "queue-pattern"
+  --vhost-pattern "vhost-pattern" --queue-pattern "queue-pattern"
 ```
 
-A quorum queue's delivery limit can be changed by policy without redeclaring
-the queue. Purging a quorum queue also removes at-least-once dead-lettered
-messages still pending delivery.
+### Strict priorities (`4.3-guides`)
 
-## Priority behavior
+Quorum queues support 32 strict priority levels: all higher-priority messages
+are delivered before any lower-priority message. This replaces the 4.0-4.2
+two-level scheme that interleaved high and normal deliveries at 2:1. The
+management UI reports counts for each priority.
 
-Quorum queues use 32 strict priority levels: all higher-priority messages are
-delivered before lower-priority messages. This replaces the earlier two-level
-model, which interleaved high and normal messages at a 2:1 ratio. The
-management UI reports counts per priority.
+### Delayed retries
 
-## Native delayed retries
+Quorum queues can delay returned messages without a dead-letter cycle or
+external scheduler. Configure queue arguments `x-delayed-retry-type`
+(`disabled`, `all`, `returned`, or `failed`), `x-delayed-retry-min`, and
+`x-delayed-retry-max`, or the equivalent policy keys without `x-`.
 
-Quorum queues can hold returned messages and redeliver them later without a
-dead-letter cycle or an external scheduler. Configure arguments:
-
-- `x-delayed-retry-type`: `disabled` by default, or `all`, `returned`, or
-  `failed`
-- `x-delayed-retry-min`: minimum delay in milliseconds
-- `x-delayed-retry-max`: maximum delay in milliseconds; defaults to the
-  minimum
-
-Policy keys use the same names without `x-`. The delay is:
-
-```text
-min(delayed-retry-min * delivery-count, delayed-retry-max)
-```
-
-AMQP 1.0 can override the delay for a message using the Unix-millisecond
+The delay is
+`min(delayed-retry-min * delivery-count, delayed-retry-max)`; maximum defaults
+to minimum. AMQP 1.0 can override a message's delay using the Unix-millisecond
 `x-opt-delivery-time` annotation on a modified outcome.
 
-## Delivery and poison-message counts
+### Delivery counts and poison handling
 
-Every requeue increments `acquired-count`, but only failed delivery attempts
-increment `delivery-count`. Poison-message handling uses `delivery-count`;
-ordinary returns can therefore be unlimited.
+Every requeue increments `acquired-count`, but only failed attempts increment
+`delivery-count`. Poison-message handling uses `delivery-count`, so ordinary
+returns may be unlimited.
 
-Non-failures include:
+Non-failures include AMQP 1.0 `released`, `modified` with
+`delivery-failed=false`, AMQP 0-9-1 `basic.nack`, a partition that makes the
+consumer node suspect, and a consumer timeout. Failures include `rejected`,
+`modified` with `delivery-failed=true`, `basic.reject`, and client or connection
+loss.
 
-- AMQP 1.0 `released`
-- AMQP 1.0 `modified` with `delivery-failed=false`
-- AMQP 0-9-1 `basic.nack`
-- a partition that makes the consumer node suspect
-- consumer timeouts
+### Consumer timeouts and disconnection
 
-Failures include:
+Consumer timeouts apply to quorum and Tanzu JMS queues, not classic queues or
+streams. Precedence is consumer `x-consumer-timeout`, queue
+`x-consumer-timeout`, policy `consumer-timeout`, then global
+`consumer_timeout`; the global default is 1,800,000 ms.
 
-- AMQP 1.0 `rejected`
-- AMQP 1.0 `modified` with `delivery-failed=true`
-- AMQP 0-9-1 `basic.reject`
-- client or connection loss
+For AMQP 1.0, a timed-out delivery is released without detaching its link. For
+AMQP 0-9-1, RabbitMQ cancels only the affected consumer when
+`consumer_cancel_notify` is supported; otherwise it closes the channel.
 
-## Consumer timeouts
+In `4.3.0`, a quorum queue waits 60 seconds by default before returning
+messages from a consumer whose node is unreachable. Override this globally
+with `consumer_disconnected_timeout`, by policy with
+`consumer-disconnected-timeout`, or per queue with
+`x-consumer-disconnected-timeout`.
 
-### Delivery acknowledgement timeout
+### Delivery limits and purge
 
-The effective value is selected in this order:
+A quorum queue's delivery limit can be changed by policy without redeclaring
+the queue. Purging a quorum queue also deletes at-least-once dead-lettered
+messages that still await delivery.
 
-1. consumer `x-consumer-timeout`
-2. queue `x-consumer-timeout`
-3. policy `consumer-timeout`
-4. global `consumer_timeout`
+## Streams
 
-The global default is `1800000` milliseconds. Quorum queues and commercial JMS
-queues evaluate this timeout; classic queues and streams do not. For a timed
-out AMQP 1.0 delivery, the broker releases the delivery without detaching the
-link. AMQP 0-9-1 cancels only the consumer when `consumer_cancel_notify` is
-supported; otherwise it closes the channel.
+### Retention and replication
 
-### Disconnected-consumer timeout
-
-When a consumer node becomes unreachable in a partition, a quorum queue waits
-60 seconds by default before returning messages. Override it with global
-`consumer_disconnected_timeout`, policy `consumer-disconnected-timeout`, or
-queue argument `x-consumer-disconnected-timeout`.
-
-## Single Active Consumer
-
-- Starting in 4.1.2, an operator can force a chosen stream consumer to become
-  active:
-
-```shell
-rabbitmq-streams activate_stream_consumer \
-  --stream "stream-name" \
-  --reference "consumer-reference"
-```
-
-- AMQP 1.0 consumers on a quorum queue receive immediate active/inactive
-  Single Active Consumer state through flow-frame properties.
-
-## Stream filters
-
-### Property filters
-
-AMQP 1.0 stream consumers can use the `properties` and
-`application-properties` filters from AMQP Filter Expressions Working Draft 09.
-Concurrent consumers can select different ordered subsets of a stream. A
-filter cannot inspect more than 16 properties.
-
-### SQL filters
-
-Broker-side SQL expressions can inspect standard fields and application
-properties. Combine a Bloom-filter value with SQL so the Bloom filter can
-skip entire chunks before the broker evaluates messages:
-
-```java
-String sql =
-    "properties.subject = 'order.created' AND " +
-    "region IN ('AMER', 'EMEA', 'APJ')";
-
-Consumer consumer = connection.consumerBuilder()
-    .queue(STREAM_NAME)
-    .stream()
-    .offset(FIRST)
-    .filterValues("order.created")
-    .filter()
-        .sql(sql)
-    .stream()
-    .builder()
-    .messageHandler((ctx, msg) -> ctx.accept())
-    .build();
-```
-
-## Stream retention and replication
-
-- Configure stream retention with a policy; the old
-  `set_stream_retention_policy` command has no effect.
-- Stream replication can use IPv6 through `advanced.config`:
+Set retention using a policy; the old retention-policy command is a no-op.
+Stream replication can use IPv6 via `advanced.config`:
 
 ```erlang
 [
@@ -200,17 +109,92 @@ Consumer consumer = connection.consumerBuilder()
 ].
 ```
 
-- Starting in 4.1.7, select the replication IP family in `rabbitmq.conf` as
-  well as through `advanced.config`.
+Starting in 4.1.7, select the IPv4 or IPv6 family in `rabbitmq.conf` as well.
 
-## Commercial queue and stream facilities
+### AMQP 1.0 filters
 
-- The Tanzu JMS queue is Raft-backed and optimized for Qpid JMS while remaining
-  usable through AMQP 1.0, AMQP 0-9-1, STOMP, and MQTT.
-- Index selector fields with queue argument `x-selector-fields` or policy key
-  `selector-fields`; the queue supports broker-side selectors,
-  selector-aware non-destructive `QueueBrowser` inspection, and
-  `MessageProducer.setDeliveryDelay(...)`.
-- Stream Browser can inspect streams and super streams from an offset,
-  timestamp, head, or tail; expose AMQP 1.0 sections and segment/chunk layout;
-  and selectively download message sections.
+RabbitMQ initially supports the `properties` and `application-properties`
+filters from AMQP Filter Expressions Working Draft 09. Each filter can inspect
+at most 16 properties. Concurrent consumers can select different subsets of a
+stream while preserving message order.
+
+From `4.2-guides`, consumers can add a broker-side SQL expression over standard
+fields and application properties. Use a Bloom-filter value to skip chunks,
+then apply SQL to matching messages:
+
+```java
+Consumer consumer = connection.consumerBuilder()
+    .queue(STREAM_NAME)
+    .stream().offset(FIRST)
+    .filterValues("order.created")
+    .filter().sql("properties.subject = 'order.created' " +
+                  "AND region IN ('AMER', 'EMEA', 'APJ')")
+    .stream().builder()
+    .messageHandler((ctx, msg) -> ctx.accept())
+    .build();
+```
+
+### Single Active Consumer
+
+From 4.1.2, an operator can make a selected Stream Single Active Consumer group
+member active:
+
+```shell
+rabbitmq-streams activate_stream_consumer \
+  --stream "stream-name" --reference "consumer-reference"
+```
+
+AMQP 1.0 consumers of quorum queues with Single Active Consumer receive
+active/inactive changes immediately as flow-frame properties.
+
+### Connection and frame limits (`4.3.5`)
+
+A Stream Protocol connection accepts at most 256 publishers and 256
+subscriptions. Excess attempts are rejected immediately.
+
+Before a successful `open`, frames default to an 8192-byte limit. Increase it
+only when authentication requires a larger frame:
+
+```ini
+stream.initial_frame_max = 8192
+```
+
+`stream.max_uncompressed_sub_entry_batch_size` limits the declared uncompressed
+size of a sub-entry batch and defaults to 67,108,864 bytes (64 MiB). Give
+publishers the same value as the broker:
+
+```ini
+stream.max_uncompressed_sub_entry_batch_size = 67108864
+```
+
+## Exchanges and routing
+
+### Exchange counts and types
+
+Starting in 4.1.4, `cluster_exchange_limit` caps application-declared exchanges
+across the cluster, including protocol-standard predeclared exchanges. Every
+node must use the same value:
+
+```ini
+cluster_exchange_limit = 200
+```
+
+Disable the local-random exchange type where load balancers cannot preserve
+locality; declarations then fail:
+
+```ini
+exchange_types.local_random.enabled = false
+```
+
+In 4.3, `x-modulus-hash` moves from the sharding plugin into core. Its routing
+distribution remains stable across restarts while the binding set is stable.
+
+### Topic wildcard ceiling
+
+A topic-exchange binding key may contain at most two multi-segment (`#`)
+wildcards. Prefer a single `#` as the final segment.
+
+### Multiple routing keys
+
+An AMQP 1.0 publisher can place a list of string routing keys in the `x-cc`
+message annotation, equivalent to the AMQP 0-9-1 `CC` header.

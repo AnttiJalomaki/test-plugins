@@ -1,8 +1,6 @@
 # Queues, Jobs, and Scheduling
 
-Jobs, workers, queue drivers and metrics, batching, listeners, and scheduled execution.
-
-Batch identifiers in section headings provide exact source attribution.
+Queue drivers, jobs and batches, workers, deferred execution, and scheduler behavior.
 
 ## `JobAttempted` exception data (13.0-upgrade)
 
@@ -76,10 +74,6 @@ Queued jobs can be debounced, and `DebounceFor` declarations are inherited by su
 
 Deferred callbacks registered while using the sync queue are now retained instead of being discarded.
 
-## Deferred HTTP batches (2025-10)
-
-HTTP client batches provide `defer()`, allowing a batch to be scheduled for deferred execution instead of being sent immediately.
-
 ## Deferred queue execution (2025-10)
 
 Laravel includes a deferred queue option for sending queued work through deferred execution rather than requiring an external worker.
@@ -100,9 +94,25 @@ A zero memory limit now disables the worker's memory-exceeded check instead of a
 php artisan queue:work --memory=0
 ```
 
+## Disk-backed SQS overflow payloads (2026-05)
+
+SQS queues may offload large payloads to optional disk storage. `queue:clear` can optionally flush that overflow store as well.
+
+## Dynamic missing-model handling for queued listeners (13.0.0)
+
+Queued listeners may now decide dynamically whether their job should be deleted when a serialized model is missing, rather than relying only on a fixed setting.
+
 ## Dynamic queued-listener retry counts (2025-09)
 
 Queueable listeners may define a `tries()` method to calculate their retry count dynamically instead of relying only on a fixed property.
+
+## Enum scheduler cache stores (2025-10)
+
+`Schedule::useCache()` accepts enum cache-store selectors in addition to strings.
+
+## Environment data in schedule listings (2025-11)
+
+The JSON output from `schedule:list` now includes environment information for scheduled events.
 
 ## Expanded worker lifecycle control (2026-05)
 
@@ -121,37 +131,21 @@ Laravel 13 adds `WorkerIdle`; the `WorkerPausing`, `WorkerResuming`, `WorkerInte
 
 Laravel includes failover queue support for trying alternative queue connections when the primary connection fails. The `QueueFailedOver` event receives the originating exception so listeners can inspect the failure.
 
+## Filtering schedule listings by environment (2026-05)
+
+`schedule:list` can filter scheduled events by environment, so deployment tooling can inspect only events active for a target environment.
+
 ## Foreground scheduled-task failures (2025-06)
 
 A failed foreground scheduled task now dispatches `ScheduledTaskFailed`, so scheduler failure listeners observe foreground and background failures consistently.
 
-## HTTP pool and batch concurrency (2025-10)
-
-`Http::pool()` and `Http::batch()` support concurrency control, allowing callers to bound the number of simultaneous outgoing requests.
-
-## HTTP pool default concurrency (13.0.0)
-
-Pools created from `PendingRequest` now default to a concurrency of two; specify concurrency explicitly when a different limit is required.
-
-## HTTP request batches (2025-09)
-
-`Http::batch()` provides first-class batching for multiple outgoing HTTP requests, avoiding manual coordination when a set of client calls should be managed together.
-
-## Keyed concurrency results (12.0-upgrade)
-
-`Concurrency::run()` preserves keys when given an associative array, so callers now receive a keyed result instead of a numerically indexed one.
-
-```php
-$result = Concurrency::run([
-    'first' => fn () => 2,
-    'second' => fn () => 4,
-]);
-// ['first' => 2, 'second' => 4]
-```
-
 ## Laravel Cloud queue integration (2026-05)
 
 Laravel 12 and 13 add dedicated Cloud queue support, Cloud metrics that can honor `after_commit`, cached-configuration support, and scoped filesystem support. Managed queues boot before application service providers, missing queues throw `ManagedQueueNotFoundException`, and `Cloud-Request-ID` is logged for request correlation.
+
+## Machine-readable failed-job listings (2026-05)
+
+`queue:failed` supports JSON output, and its normal listing reports the actual job class name.
 
 ## Named SQS credential providers (2026-04)
 
@@ -160,10 +154,6 @@ Laravel 12 and 13 SQS queue connections support named credential providers inste
 ## Oldest pending queue metrics (2026-02)
 
 `queue:monitor` now displays `oldest_pending`, exposing the oldest waiting job in its monitoring output.
-
-## Opting listeners out of discovery (2026-05)
-
-Auto-discovered event listeners can opt out of discovery when they should only be registered explicitly.
 
 ## Pausing scheduled execution (13.0.0)
 
@@ -214,6 +204,18 @@ Queues can now be paused and resumed, and a pause may be limited to a specified 
 
 The `WorkerStarting` event is dispatched when a queue worker daemon starts, providing a hook for once-per-worker initialization or observation.
 
+## Redis Cluster queues and concurrency (2026-04)
+
+Queues and `ConcurrencyLimiter` now have first-class Redis Cluster support.
+
+## Redis command failure listeners (2026-01)
+
+Redis connections expose `listenForFailures()` and dispatch `CommandFailed`, allowing applications to observe failed Redis commands explicitly.
+
+## Redis connections for queue middleware (2026-02)
+
+Redis-based queue middleware can select an explicit Redis connection instead of always using the default connection.
+
 ## Released-job exception data (2026-07)
 
 `JobReleasedAfterException` now exposes the exception that caused the job to be released.
@@ -238,13 +240,9 @@ Scheduled tasks now receive Laravel context from the scheduling process, preserv
 
 Macros registered on scheduled command events can be applied to schedule groups.
 
-## Scheduled output email default (12.0.0)
+## Scheduler cache-check opt-outs (2026-06)
 
-Scheduled command `emailOutput()` now sends mail only when output exists by default.
-
-## Scheduler-aware reloads (2026-02)
-
-The reload workflow now includes schedule interruption, so active scheduled execution participates in service reloads.
+The scheduler can opt out of pause and interrupt cache checks when those shared-cache controls are not wanted.
 
 ## Scheduler output modes (2025-09)
 
@@ -254,6 +252,10 @@ The reload workflow now includes schedule interruption, so active scheduled exec
 php artisan schedule:work --whisper
 php artisan schedule:list --json
 ```
+
+## Scheduler-aware reloads (2026-02)
+
+The reload workflow now includes schedule interruption, so active scheduled execution participates in service reloads.
 
 ## Single-string queue routes (2026-04)
 
@@ -267,9 +269,9 @@ SQS jobs now support fair-queue message groups alongside FIFO queues. The final 
 
 Queue `size()` behavior is standardized and extended queue metrics are supported, giving monitoring code more consistent values across queue integrations.
 
-## Timeouts for concurrent runs (2026-05)
+## Unique job locks after rollback (2025-04)
 
-`Concurrency::run()` supports runtime timeouts, allowing a group of concurrent tasks to be bounded.
+When an `afterCommit()` job implementing `ShouldBeUnique` is discarded by a transaction rollback, its unique lock is now released instead of remaining stuck.
 
 ## Unique queued listeners (2026-02)
 

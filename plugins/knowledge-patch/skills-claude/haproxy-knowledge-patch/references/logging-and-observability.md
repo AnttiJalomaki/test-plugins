@@ -1,65 +1,78 @@
 # Logging and Observability
 
-## Transaction-stage log profiles
+## Transaction-stage logging
 
-`log profile` introduced in 3.1.0 assigns formats independently at `accept`,
-`request`, `connect`, `response`, `close`, `error`, or `any`. A profile is tied
-to a particular log destination, so one transaction can emit at several stages
-with destination-specific formats.
+### Destination-specific log profiles (since 3.1.0)
 
-The `do-log` rule action emits additional logs while traffic is processed.
-Since 3.4.0, each invocation can select a profile rather than every invocation
-in a frontend sharing the profile selected by its `log` line:
+`log profile` assigns formats independently at the `accept`, `request`,
+`connect`, `response`, `close`, `error`, or `any` transaction stage and ties
+the profile to a particular log destination. One profile can emit at several
+stages with destination-specific formats. The `do-log` action emits additional
+logs while traffic is processed.
+
+### Per-action profiles (since 3.4.0)
+
+`do-log` can select a log profile per invocation. A frontend no longer has to
+use the same profile for every `do-log` action merely because that profile was
+chosen by its `log` line.
 
 ```haproxy
 http-request do-log profile syslog
 ```
 
-Use stage-specific formats to avoid computing request-only fields during later
-events, and make each destination's parsing contract explicit.
+## Tracing
 
-## Supported tracing
+### Supported runtime-controlled tracing (since 3.1.0)
 
-Tracing is supported rather than experimental since 3.1.0. It has a dedicated
-configuration section and Runtime API controls. Focus collection by subsystem;
-sources include `h1`, `h2`, `h3`, `quic`, `qmux`, `fcgi`, `spop`, `peers`, and
-`check`.
+Tracing is supported rather than experimental, has a dedicated configuration
+section, and is controllable through the Runtime API. Trace sources include
+`h1`, `h2`, `h3`, `quic`, `qmux`, `fcgi`, `spop`, `peers`, and `check` for
+focused advanced debugging.
 
-The `ssl` source was added in 3.2.0 for TLS events. The `acme` source was added
-in 3.3.0 for certificate automation:
+### TLS tracing (since 3.2.0)
+
+The Runtime API `trace` command has an `ssl` source for TLS-related events.
+
+### ACME tracing (since 3.3.0)
+
+The `acme` source exposes certificate-automation events.
 
 ```haproxy
 traces
     trace acme sink stdout level user event +any verbosity clean start now
 ```
 
-Enable the narrowest useful source, sink, event mask, and verbosity, then stop
-the trace through the Runtime API after the incident to limit overhead and
-data volume.
+## Termination and diagnostic samples
 
-## Termination diagnostics
+### Conditional diagnostic fields (since 3.1.0)
 
-`term_events` added in 3.2.0 records a comma-separated sequence of request
-termination states rather than only the final stream state. Add it to an access
-log and decode it with the supplied `term_events` program:
+The `when(condition)` converter returns its input unchanged when the condition
+is true and no value otherwise. It can emit `bs.debug_str` and `fs.debug_str`
+only under selected conditions.
+
+`last_entity` and `waiting_entity` identify the operation interrupted by a
+timeout or error. They can also expose the last evaluated rule behind an
+accept, redirect, or deny.
+
+### Multiple termination events (since 3.2.0)
+
+`term_events` records a comma-separated sequence of request termination states
+instead of only the final stream state. Add it directly to an access log, then
+decode it with the supplied `term_events` program.
 
 ```haproxy
 log-format "$HAPROXY_HTTP_LOG_FMT %[term_events]"
 ```
 
-The `when(condition)` converter can conditionally emit `bs.debug_str` and
-`fs.debug_str`. `last_entity` and `waiting_entity` identify the operation
-interrupted by a timeout or error, or the last evaluated rule that led to an
-accept, redirect, or deny.
+## Statistics and metrics
 
-## Persistent shared-memory statistics
+### Persistent reload statistics (since 3.3.0)
 
-Experimental shared-memory statistics introduced in 3.3.0 persist across a
-reload, but not a full process restart. They require all of:
-
-- global `expose-experimental-directives`;
-- a global `shm-stats-file`;
-- a unique `guid` on every participating frontend, backend, and server.
+Experimental shared-memory statistics require
+`expose-experimental-directives`, a global `shm-stats-file`, and a unique
+`guid` on every participating frontend, backend, and server. Reloading
+preserves the statistics, but restarting the process does not. `show stat
+typed` marks each metric `P` for persistent or `V` for volatile.
 
 ```haproxy
 global
@@ -76,42 +89,40 @@ backend webservers
     server web1 172.16.0.12:80 check guid 775e29c2-0b97-4f19-9976-dba604b833f4
 ```
 
-`show stat typed` marks each metric `P` for persistent or `V` for volatile.
-Missing or reused GUIDs break the intended mapping across reloads.
+### Runtime diagnostic counters (since 3.3.0)
 
-## Runtime diagnostics
+`show dev` reports thread-to-CPU bindings. `show info` reports added and
+removed line counts for map and ACL files, helping identify automation that
+continually adds entries without removing them.
 
-- `show dev` reports thread-to-CPU bindings since 3.3.0.
-- `show info` reports added and removed line counts for Map and ACL files since
-  3.3.0. A continually rising added count without removals can reveal faulty
-  automation.
-- `haproxy -vv` reports socket-owner and UDP GSO support, useful when
-  diagnosing QUIC pacing or batching.
-- `accept_date` and `request_date` fall back to the session date when an early
-  failure, such as TLS handshake failure, occurs before a stream exists.
+### Stick-table update metric (since 3.4.0)
 
-## Stick-table update telemetry
+The Prometheus endpoint exports `haproxy_sticktable_local_updates`, a
+cumulative gauge of local updates for each configured stick table, allowing
+update rates to be monitored.
 
-The Prometheus endpoint exports `haproxy_sticktable_local_updates` since 3.4.0.
-It is a cumulative gauge for local updates on each configured stick table.
-Graph its rate to observe write activity; do not interpret the raw cumulative
-value as a per-second rate.
+### HTTP/2 error-log scope (since 3.4.0)
 
-## HTTP/2 error-log scope
+`tune.h2.log-errors` selects stream-scope logging, connection-scope-only
+logging, or no HTTP/2 error logging. Its default is the most verbose `stream`
+mode.
 
-Global `tune.h2.log-errors` introduced in 3.4.0 selects stream-scope logging,
-connection-only logging, or no HTTP/2 error logging. Default `stream` is the
-most verbose mode and includes stream detail. Reduce it deliberately when log
-volume outweighs per-stream diagnosis.
+### Stats page version display (since 3.4.0)
 
-## Stats-page version disclosure
+The Stats page hides the HAProxy version by default. Add `stats show-version`
+to display it.
 
-The Stats page no longer displays the HAProxy version by default since 3.4.0.
-Set `stats show-version` to opt back in. Consider whether exposing the exact
-version is appropriate for the page's audience.
+### Scoped administration and POST validation (since 3.4.3)
 
-## OpenTelemetry transition
+`stats admin` operations honor `stats scope`, preventing administration of
+proxies excluded by the configured scope. Stats POST requests validate their
+`Origin`. The stats administration interface remains documented as vulnerable
+to CSRF and must be protected accordingly.
 
-OpenTelemetry is available as an add-on replacing OpenTracing. The OpenTracing
-filter is officially deprecated in 3.4.0 and remains scheduled for removal in
-3.5. Plan instrumentation migration before upgrading to the removal release.
+## Telemetry transition
+
+### OpenTelemetry replacing OpenTracing (since 3.4.0)
+
+OpenTelemetry support is available as an add-on replacing OpenTracing.
+OpenTracing is officially deprecated and remains scheduled for removal in
+3.5.

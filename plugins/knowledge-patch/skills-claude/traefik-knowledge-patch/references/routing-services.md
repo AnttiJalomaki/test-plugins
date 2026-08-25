@@ -1,37 +1,41 @@
 # Routing, middleware, and services
 
-## Hierarchical routers
+## Compose multi-layer routers
 
-Multi-layer HTTP routing arrived in 3.6.0. A child's `parentRefs` makes shared
-middleware or TLS at the parent run before the child's own rule:
-
-- A root attaches to entry points and does not select a service.
-- An intermediate router may have children and enrich the request.
-- A leaf must select a service.
-- A child is not independently reachable; traffic must pass every parent.
-
-This supports flows where ForwardAuth writes a response header and a child rule
-then selects a backend from that header.
+Routers can form a `parentRefs` hierarchy (3.6.0). A parent applies shared
+middleware or TLS and can enrich the request before a child evaluates its rule.
+Root routers attach to entry points without selecting a service, intermediate
+routers may have children, and leaf routers select services. A request cannot
+reach a child without traversing its parent.
 
 ```yaml
 http:
   routers:
-    root:
+    api-parent:
       rule: "Host(`api.example.com`) && PathPrefix(`/`)"
-      entryPoints: [websecure]
-      middlewares: [auth-with-tier]
+      middlewares:
+        - auth-with-tier
+      entryPoints:
+        - websecure
       tls: {}
-    premium:
+    api-enterprise:
       rule: "HeaderRegexp(`X-Customer-Tier`, `(enterprise|business)`)"
-      parentRefs: [root]
-      service: stable
+      service: stable-backend
+      parentRefs:
+        - api-parent
 ```
 
-## Service-level middleware
+`Host` and `HostSNI` accept wildcard names such as `*.example.com`, and provider
+routing precedence is configurable when provider-produced routes compete
+(3.7.0).
 
-Since 3.7.0, an HTTP service can name middleware directly. Every router that
-uses the service receives the middleware, and Gateway API filters can be
-applied to HTTP backends:
+The `defaultRuleSyntax` and `ruleSyntax` options are deprecated (3.4.0). Remove
+them instead of extending reliance on syntax-selection behavior.
+
+## Apply service-level middleware
+
+HTTP services can carry middleware that applies to every router selecting the
+service; this also enables Gateway API filters on HTTP backends (3.7.0).
 
 ```yaml
 http:
@@ -45,18 +49,36 @@ http:
         - auth
 ```
 
-Do not duplicate service-wide policy on each router unless rule-local ordering
-requires it.
+## Configure ForwardAuth deliberately
 
-## Retry and failover
+ForwardAuth can log the authenticated identity through `LogUserHeader`
+(3.2.0). It can preserve the authorization server's `Location` response header
+and forward the incoming request body (3.3.0). It can also preserve the original
+request method for the authorization request (3.4.0).
 
-The 3.7.0 Retry middleware can retry selected HTTP response statuses, set a
-timeout per attempt, and opt in to non-idempotent methods:
+When request bodies are forwarded, configure `maxBodySize`; authentication
+middleware warns when it is absent (3.6.0). ForwardAuth later adds
+`authSignInURL` for sign-in redirects and `maxResponseBodySize` for bounding the
+authorization response. `ForwardAuth.TrustForwardHeader` is deprecated
+(3.7.0).
+
+Authentication middleware drops untrusted underscore-bearing `X-*` headers
+(3.7.0). A patch correction passes the proper `X-Forwarded-Port` value to the
+authorization service (3.6.21).
+
+For CONNECT requests, bodies are discarded before ForwardAuth (since 3.7.9;
+reported in 3.7.11). Do not design authorization policy that expects a CONNECT
+payload.
+
+## Retry and fail over by status
+
+The Retry middleware can select response status codes, set a per-attempt
+timeout, and opt in to retrying non-idempotent methods (3.7.0).
 
 ```yaml
 http:
   middlewares:
-    retry-transient:
+    smart-retry:
       retry:
         attempts: 3
         initialInterval: 100ms
@@ -65,11 +87,8 @@ http:
         timeout: 2s
 ```
 
-Treat non-idempotent retries as an application-level decision; a timeout does
-not prove that an upstream operation had no effect.
-
-Failover services can switch based on response status in 3.7.0.
-`TraefikService` expresses this directly:
+Failover services can switch on response status codes, and a
+`TraefikService` CRD can express the failover directly (3.7.0):
 
 ```yaml
 apiVersion: traefik.io/v1alpha1
@@ -85,94 +104,107 @@ spec:
       status: ["500-504"]
 ```
 
-## Health checks
+## Select health checks and load balancing
 
-An HTTP health check can use a distinct interval while the server is unhealthy
-(3.5.0). This separates normal probing cost from recovery detection.
+Health checks accept a separate interval while a backend is unhealthy (3.5.0).
+Services can use native TCP health checks for non-HTTP backends or passive
+health checks inferred from real traffic (3.6.0). Health-check paths must be
+path-only; absolute URLs are rejected (3.7.0).
 
-Traefik 3.6.0 adds native TCP checks for non-HTTP backends and passive checks
-that infer health from real requests. Choose active probes to test a known
-contract and passive checks when synthetic traffic is undesirable.
+The `p2c` server strategy is available from 3.4.0. `Least Time` is supported by
+file and Kubernetes CRD services, while `HighestRandomWeight` is also available
+through Kubernetes CRDs (3.6.0). Confirm provider support before translating
+configuration between providers.
 
-Kubernetes CRD `ExternalName` Services support checks from 3.1.0. In 3.7.0,
-health-check path validation requires a path-only value rather than an
-absolute URL.
+Sticky cookies accept a path (3.3.0) and a domain (3.4.0), allowing their scope
+to be narrowed or shared across the intended hosts.
 
-## Load-balancing strategies
+HTTP services can preserve the configured backend server path while proxying
+(3.2.0).
 
-The `p2c` strategy became an available server load-balancer choice in 3.4.0.
-`Least Time`, added in 3.6.0 for file and Kubernetes CRD configuration, selects
-servers with the lowest observed response time. `HighestRandomWeight` adds a
-probabilistic weighted choice and is available through Kubernetes CRDs.
+## Mirror request bodies intentionally
 
-The Kubernetes CRD no longer supplies a default strategy as of 3.4.0. Make the
-selection explicit in manifests that rely on a particular algorithm.
+`mirrorBody` determines whether an HTTP mirror receives request bodies
+(3.2.0). A later correction handles empty bodies whose length is unknown
+(3.6.21). Test zero-length streaming and chunked requests when body mirroring is
+enabled.
 
-`NativeLB` in the Gateway provider delegates balancing to the Kubernetes
-Service (3.2.0).
+## Handle compression and encoded paths
 
-## Sticky sessions
+The Compress middleware can negotiate Zstandard with clients advertising
+`zstd` (3.1.0), and its `encodings` option limits the compression formats it may
+negotiate (3.2.0).
 
-Sticky-cookie configuration gained a `path` in 3.3.0 and a `domain` in 3.4.0.
-Scope both explicitly when the cookie should be limited to a URL subtree or
-shared across a controlled host set.
+Version 3.7.9 disables Zstandard specifically in the `gzhttp` wrapper
+(3.7.11). This scoped change does not imply that every Traefik compression path
+loses Zstandard; test the wrapper actually used by the deployment.
 
-Kubernetes serving endpoints are considered when selecting sticky backends
-from 3.3.0.
+The `encodedCharacters` middleware provides route-level encoded-character
+policy, while related entry-point options are opt-in. Rejected requests are
+written to access logs. Prefix stripping uses the encoded prefix length and
+sanitizes the resulting URL; 3.7.7 also sanitizes paths produced by
+`ReplacePathRegex` (3.7.0).
 
-## Mirroring and backend URLs
+Gateway API `URLRewrite` and `RequestRedirect` preserve encoded path segments
+in 3.7.11. Exercise encoded delimiters and non-ASCII segments end to end after
+an upgrade.
 
-HTTP mirroring has `mirrorBody` from 3.2.0, allowing each mirror service to
-choose whether request bodies are copied. In 3.6.21, mirroring correctly
-handles an empty body whose length is unknown.
+## Configure security-oriented middleware
 
-HTTP services can preserve a configured backend server path when proxying
-(3.2.0). Label-based providers can configure complete backend server URLs from
-Docker, ECS, Swarm, Consul Catalog, and Nomad labels starting in 3.4.0.
+The Headers middleware can emit `Content-Security-Policy-Report-Only` so a CSP
+can be evaluated without enforcement (3.1.0).
 
-## Host, path, and rule behavior
+`ipStrategy` accepts an IPv6 subnet setting for subnet-normalized client-IP
+decisions (3.2.0). IPAllowList later gains `rejectStatusCode`, allowing a chosen
+rejection response (3.7.11):
 
-`Host` and `HostSNI` accept wildcard names such as `*.example.com` in 3.7.0.
-When multiple providers produce competing routes, configure provider
-precedence instead of relying on incidental order.
+```yaml
+http:
+  middlewares:
+    office-only:
+      ipAllowList:
+        sourceRange:
+          - 192.0.2.0/24
+        rejectStatusCode: 404
+```
 
-The `encodedCharacters` middleware adds route-level encoded-character policy
-in 3.7.0. Related entry-point options are opt-in, and rejected requests appear
-in access logs. Prefix stripping now measures the encoded prefix and sanitizes
-the resulting URL. Release 3.7.7 also sanitizes paths emitted by
-`ReplacePathRegex`.
+The Errors middleware can rewrite status codes while serving an error page
+(3.4.0). It adds `errorRequestHeaders` to select headers sent to the error
+service (3.7.0); the matching Kubernetes CRD field is restored in 3.7.11, when
+the Errors `service` option is also required.
 
-Ingress `Prefix` matching follows Kubernetes semantics from 3.5.0; retest
-routes that relied on the former behavior. The `defaultRuleSyntax` and
-`ruleSyntax` settings are deprecated as of 3.4.0.
+RateLimit can use Redis for state shared across Traefik replicas (3.4.0).
+Configure Redis keyspace notifications before relying on its update events.
 
-## Header, error, and compression middleware
+## Control forwarded and request headers
 
-The Headers middleware can emit report-only CSP via
-`Content-Security-Policy-Report-Only` (3.1.0).
+A global setting can disable appending to `X-Forwarded-For`, and the server can
+remove incoming header names containing underscores (3.7.0). Apply these
+settings consistently with the trusted-proxy boundary.
 
-The Compress middleware can negotiate Zstandard when a client advertises
-`zstd` (3.1.0). Its `encodings` option, added in 3.2.0, restricts which formats
-may be selected.
+The maximum incoming request-header size is configurable (3.2.0). Choose a
+limit that accommodates expected cookies and authentication headers without
+accepting unbounded header memory use.
 
-The Errors middleware can rewrite the response status while serving an error
-page from 3.4.0. In 3.7.0, `errorRequestHeaders` chooses which original request
-headers are sent to the error service.
+## Handle WebSocket and CONNECT traffic
 
-Gateway response-header filters can add, set, or remove response headers from
-3.2.0. Patched 3.7 releases also allow Gateway header modifiers to change the
-`Host` header.
+The 3.3.0 release has a WebSocket-upgrade issue. Deployments that require
+WebSockets must disable HTTP/2 extended CONNECT:
 
-Later 3.7 fixes ensure redirects preserve the incoming scheme when none is
-configured and return the chosen status. CORS no longer emits an implicit
-zero max-age and no longer combines credentialed requests with wildcard
-origin.
+```sh
+GODEBUG=http2xconnect=0 traefik
+```
 
-## IP strategy and forwarded headers
+Patched 3.7 behavior supports WebSocket upgrades with `h2c` backends (3.7.0).
 
-`ipStrategy` can normalize IPv6 clients by subnet from 3.2.0.
+From 3.7.9, CONNECT payloads are held until the backend accepts the tunnel,
+CONNECT requests are not returned to the connection pool, and FastProxy rejects
+CONNECT (3.7.11). Use the regular proxy path for CONNECT tunnels.
 
-In 3.7.0, a global setting can disable appending to `X-Forwarded-For`. The
-server can remove incoming header names containing underscores, and
-authentication middleware discards untrusted underscore-bearing `X-*`
-headers.
+## Account for HTTP behavior corrections
+
+CORS no longer emits a default zero max-age and no longer combines credentialed
+requests with a wildcard origin (3.7.0 patch line). Gateway header modifiers can
+change `Host`, and redirects retain the incoming scheme when none is configured
+while emitting the requested redirect status. Add regression tests for these
+details when middleware or Gateway filters participate in routing.

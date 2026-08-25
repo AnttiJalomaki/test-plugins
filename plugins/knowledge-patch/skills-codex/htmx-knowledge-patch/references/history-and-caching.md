@@ -1,64 +1,74 @@
 # History and Caching
 
-## Restoring after a history-cache miss
+Use this reference when pushing URLs, restoring history, controlling snapshots,
+or serving both complete pages and fragments from one URL.
 
-When a history snapshot is missing, htmx sends
-`HX-History-Restore-Request: true` and expects the response to be a complete
-page. Every URL placed in history must therefore be able to serve a full
-document, not only a fragment.
+## History restoration
 
-If the server normally uses `HX-Request` to choose a fragment response, set:
+### Serve a complete document after a cache miss
+
+Every pushed URL must be able to return a complete document. When the local
+history cache misses, htmx sends `HX-History-Restore-Request: true` and expects
+the response needed to restore the page.
+
+Ordinary fragment negotiation based on `HX-Request` can interfere with that
+restore. Disable that request identity during restoration with:
 
 ```js
 htmx.config.historyRestoreAsHxRequest = false;
 ```
 
-This keeps history restoration from being treated as an ordinary fragment
-request. Alternatively, `refreshOnHistoryMiss` forces a hard browser refresh
-when the snapshot is unavailable.
+Use `refreshOnHistoryMiss` instead when the desired fallback is a hard browser
+refresh.
 
-## Excluding sensitive pages from snapshots
+## Snapshot safety
 
-If `hx-history="false"` appears anywhere in the current document or in a
-loaded fragment, htmx does not store that URL's snapshot in `localStorage`.
-Returning to the URL fetches it from the server instead.
+### Keep sensitive or unsuitable pages out of history storage
 
-This is a document-wide safety control; it does not need to be placed on the
-history element itself.
+Place `hx-history="false"` anywhere in the current document or in a loaded
+fragment to keep that URL out of the `localStorage` history cache. A later
+restoration fetches the URL from the server rather than using a stored
+snapshot.
 
-## Stable snapshot elements
+### Keep a custom history element stable
 
-A custom `hx-history-elt` must exist on every page that can participate in the
-history flow. Missing it on one page makes snapshot and restoration behavior
-inconsistent.
+When using a custom `hx-history-elt`, include it on every page involved in
+history navigation. Restoration depends on that element remaining available
+across pages.
 
-Third-party code may mutate the live DOM into a state that should not be
-cached. Handle `htmx:beforeHistorySave` to undo those mutations before an
-allowed snapshot is written.
+### Undo temporary DOM mutations before saving
+
+Third-party code can leave transient DOM changes that should not be preserved
+in a snapshot. Handle `htmx:beforeHistorySave` to undo those mutations before
+an allowed snapshot is stored.
 
 ## Full-page and fragment cache variants
 
-When the same URL serves a full document without `HX-Request` and a fragment
-with it, caches must treat those responses as distinct variants:
+### Vary on `HX-Request`
+
+If a URL returns complete HTML when `HX-Request` is absent and a fragment when
+it is present, responses represent distinct cache variants. Send:
 
 ```http
 Vary: HX-Request
 ```
 
-Generate distinct ETags for the full-page and fragment representations as
-well. Reusing an ETag across them can validate the wrong representation.
+Generate distinct ETags for the complete-document and fragment variants as
+well.
 
-If an intermediary cannot vary on `HX-Request`, enable:
+### Use a cache-buster when varying is unavailable
+
+If an intermediary cache cannot vary on `HX-Request`, enable:
 
 ```js
 htmx.config.getCacheBusterParam = true;
 ```
 
-htmx then separates its GET requests with an `org.htmx.cache-buster` target
-parameter.
+htmx GET requests then carry an `org.htmx.cache-buster` target parameter,
+separating them from ordinary browser requests to the same URL.
 
-## Explicit client and server cache bypass
+## Related extension
 
-The `no-cache` extension forces a fresh request that bypasses browser caches.
-It also adds an `hx-no-cache` request header so a cooperating server can bypass
-its own cache for the request.
+The `no-cache` extension addresses a different cache-control need: forcing a
+fresh request and signaling a cooperating server. See
+[Extensions and security](extensions-and-security.md#client-and-server-cache-bypass).

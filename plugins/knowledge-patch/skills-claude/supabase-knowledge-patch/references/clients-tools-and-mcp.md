@@ -1,21 +1,49 @@
-# Clients, developer tools, and MCP
+# Clients, Developer Tools, and MCP
 
-## JavaScript and application clients
+Use this reference for client runtime and typing changes, project starters, hosted and local MCP, and server SDKs.
 
-### TypeScript response overrides
+## Supabase JS compatibility (`supabase-js-2.101.0`)
 
-Query-builder `.returns()` is deprecated; `.overrideTypes<T>()` merges with generated result by default. Second generic `{ merge: false }` replaces fully.
+### Node.js 20 runtime floor
+Starting with 2.79.0, all Supabase JavaScript libraries require Node.js 20 or later and rely on native `fetch`. Version 2.78.0 is the last release that supports Node.js 18.
 
-```ts
-const merged = supabase.from('users').select()
-  .overrideTypes<{ custom_field: string }>()
-const replaced = supabase.from('users').select()
-  .overrideTypes<{ id: number; name: string }, { merge: false }>()
+### Stricter generated-query types
+Table and view names passed to `from()` and column names passed to `eq()` or `neq()` are now type-checked; embedded functions and cross-schema set-returning RPCs also receive improved inference. Supabase JS additionally exports the `DatabaseWithoutInternals` utility type.
+
+## Developer setup and hosted MCP
+
+### Installable Supabase agent skills
+Supabase publishes portable agent skills that can be installed all at once or selected by name; the same CLI can search the community directory.
+
+```sh
+npx skills add supabase/agent-skills
+npx skills add supabase/agent-skills --skill SKILL_NAME
+npx skills find QUERY
+```
+
+### Hosted MCP scope controls
+The hosted MCP endpoint accepts `read_only=true`, `project_ref=<id>`, and comma-separated `features=<groups>` controls. Project scoping removes account-management tools, Storage is the only group disabled by default, and the local stack exposes MCP at `http://localhost:54321/mcp`.
+
+```text
+https://mcp.supabase.com/mcp?project_ref=abc123&read_only=true&features=database,docs
+```
+
+### Hosted MCP authentication outside browser flows
+Hosted MCP normally authenticates through browser OAuth with dynamic client registration. CI can instead send a personal access token as `Authorization: Bearer <token>`; clients that require a fixed client ID and secret need an organization OAuth app, currently with write access to every available scope.
+
+### Hosted MCP trust boundary
+The hosted MCP server is intended for development and testing, runs with developer permissions, and must not be exposed to customers. Keep tool-call approval enabled and reduce prompt-injection impact with a development project or branch, project scope, read-only mode, and the smallest necessary feature set.
+
+### Edge Function MCP transport and authentication boundary
+The Edge Functions MCP guide currently supports unauthenticated servers only: use `WebStandardStreamableHTTPServerTransport`, disable function-layer JWT verification when serving and deploying, and send `Accept: application/json, text/event-stream`. Function routes are prefixed with the function name, so a differently named Hono function needs the corresponding `basePath`.
+
+```sh
+supabase functions serve --no-verify-jwt mcp
+supabase functions deploy --no-verify-jwt mcp
 ```
 
 ### Expo SQLite-backed Auth persistence
-
-Expo React Native can install `expo-sqlite`'s localStorage polyfill as Auth storage plus URL polyfill. Keep refresh/persistence on and URL-session detection off.
+Expo React Native can use `expo-sqlite`'s local-storage polyfill for Auth sessions, together with the URL polyfill. Persist and refresh sessions but disable URL session detection.
 
 ```ts
 import 'react-native-url-polyfill/auto'
@@ -33,51 +61,19 @@ export const supabase = createClient(url, publishableKey, {
 ```
 
 ### Next.js Proxy-based Auth refresh
+With `@supabase/ssr`, Server Components cannot write refreshed cookies, so a root `proxy.ts` should call `supabase.auth.getClaims()` and copy refreshed cookies into both the request passed to Server Components and the response sent to the browser. Never authorize server-side pages from `getSession()`, because it does not guarantee token revalidation.
 
-With `@supabase/ssr`, Server Components cannot write refreshed cookies. Root `proxy.ts` calls `supabase.auth.getClaims()` and copies refreshed cookies into both request for Server Components and response to browser. Never authorize server pages from cookie `getSession()` because it is not guaranteed revalidated.
-
-### Supabase UI Library
-
-The official UI library offers ready components built on `shadcn/ui` and integrated with Auth, Storage, and Realtime.
-
-## Developer packages and tools
-
-### Installable Supabase Agent Skills
-
-Install all portable skills or one named skill:
+### Hono project bootstrap
+The CLI can bootstrap a Hono starter already configured with `@supabase/supabase-js` and `@supabase/ssr`; the sample also requires anonymous sign-ins to be enabled.
 
 ```sh
-npx skills add supabase/agent-skills
-npx skills add supabase/agent-skills --skill postgres-best-practices
+npx supabase@latest bootstrap hono
 ```
 
-### Official MCP server
+## MCP tool clients and servers
 
-The official server lets compatible AI tools create projects, fetch project configuration, and query SQL.
-
-## Hosted MCP
-
-### Hosted MCP scope controls
-
-Hosted endpoint query controls: `read_only=true`, `project_ref=<id>`, comma-separated `features=<groups>`. Project scope removes account-management tools. Storage is the only group off by default; groups include Database, Debugging, Development, Functions, Account, Docs, experimental Branching.
-
-```text
-https://mcp.supabase.com/mcp?project_ref=abc123&read_only=true&features=database,docs
-```
-
-Local stack endpoint is `http://localhost:54321/mcp`.
-
-### Noninteractive hosted MCP authentication
-
-Hosted normally uses browser OAuth with dynamic client registration. CI may send personal access token in `Authorization: Bearer`. If client requires OAuth ID/secret, manually create organization OAuth app; currently it needs write access to all available scopes.
-
-### Hosted MCP safety boundary
-
-Use for development/testing, not production data; it acts with developer permissions and must not be customer-facing. Keep per-tool approvals, project scope, read-only, limited features, and disposable branches to reduce prompt-injection impact.
-
-### Typed tools for the AI SDK MCP client
-
-`@supabase/mcp-server-supabase` exports `createToolSchemas()` for client-side input/output validation and static result types. Filters must match URL: `projectScoped` removes account tools/`project_id`, `readOnly` removes mutation, `features` selects groups.
+### Static AI SDK tool schemas
+`@supabase/mcp-server-supabase` exports `createToolSchemas()` so its MCP tools can be used as statically typed AI SDK tools with client-side input and output validation. Match its `features`, `projectScoped`, and `readOnly` options to the server URL; the server does not send `structuredContent`, so the AI SDK falls back to parsing JSON from text content.
 
 ```ts
 import { createMCPClient } from '@ai-sdk/mcp'
@@ -86,36 +82,28 @@ import { createToolSchemas } from '@supabase/mcp-server-supabase'
 const client = await createMCPClient({
   transport: {
     type: 'http',
-    url: 'https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true&features=database,docs',
+    url: 'https://mcp.supabase.com/mcp?project_ref=<ref>&read_only=true&features=database,docs',
   },
 })
 const tools = await client.tools({
   schemas: createToolSchemas({
-    features: ['database', 'docs'], projectScoped: true, readOnly: true,
+    features: ['database', 'docs'],
+    projectScoped: true,
+    readOnly: true,
   }),
 })
 ```
 
-Results are not in MCP `structuredContent`; AI SDK parses JSON from textual `content`.
+### Mutation workflow guardrails
+`apply_migration` records supplied SQL as a database migration and is intended for DDL, while `execute_sql` is for ordinary queries. Read-only mode runs the latter as a read-only Postgres user and removes every other mutating tool; project or branch creation also requires cost confirmation through the account tools.
 
-## Embedded and local MCP behavior
+### Local CLI capability limit
+The MCP server bundled with the local Supabase CLI exposes only a limited subset of tools and has no OAuth 2.1 support.
 
-### Local CLI server limitations
+### End-user PostgREST server
+`@supabase/mcp-server-postgrest` is a separate MCP server for connecting an application's own users to that application through its REST API.
 
-CLI MCP exposes a limited tool subset and has no OAuth 2.1; hosted-auth/full-inventory configurations do not transfer unchanged.
+## Platform capabilities
 
-### Tracked schema changes versus ad hoc SQL
-
-Use `apply_migration` for DDL because it records migration history. `execute_sql` is for ordinary non-schema queries; DDL there escapes migration tracking.
-
-### Cost confirmation gate
-
-Creating project/branch needs `confirm_cost`; first use `get_cost` for amount.
-
-### Compact table discovery
-
-`list_tables` defaults compact and combines `schema.name`; use `verbose` for full metadata.
-
-### SQL-result prompt-injection guard
-
-Server wraps SQL results with a warning against commands embedded in data, but it is not foolproof. Keep approvals and inspect follow-on calls when rows contain untrusted text.
+### Multi-runtime server SDK
+`@supabase/server` centralizes Auth, client creation, CORS, and context injection across Edge Functions, Vercel Functions, Deno, Bun, and Cloudflare Workers.

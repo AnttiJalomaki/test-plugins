@@ -1,8 +1,16 @@
 # Testing, CLI, and Tooling
 
-Test isolation and assertions, fakes, Artisan commands, generators, and development tooling.
+Test helpers and isolation, dependency compatibility, Artisan commands, discovery, and developer tooling.
 
-Batch identifiers in section headings provide exact source attribution.
+## Allowed URLs while preventing stray requests (2025-08)
+
+`Http::preventStrayRequests()` accepts allowed URL patterns, so tests may block all unexpected outbound traffic while permitting selected real endpoints.
+
+```php
+Http::preventStrayRequests(allowedUrls: [
+    'https://telemetry.example/*',
+]);
+```
 
 ## Artisan failure and silence behavior (2025-12)
 
@@ -31,6 +39,10 @@ final class CachedBootstrapTest extends TestCase
 
 `route:list` displays the source file path and line number for closure routes, making those routes traceable from CLI output.
 
+## Collision-free migration timestamps (2026-07)
+
+`make:migration` generates collision-free, ordered timestamp prefixes when migrations are created close together.
+
 ## Config file generation (2025-08)
 
 The new `make:config` Artisan command generates a configuration file in the application's `config` directory.
@@ -42,6 +54,14 @@ php artisan make:config services
 ## Custom command discovery (2025-12)
 
 Console command discovery exposes a `commandFileFinder` hook and excludes test files. The follow-up behavior still discovers a real `Command` class whose name ends in `Test`.
+
+## Dependency requirements (12.0-upgrade)
+
+Laravel 12 applications use `laravel/framework:^12.0`, PHPUnit 11, or Pest 3. Carbon 2 support is removed, so Carbon 3 is required.
+
+## Dependency requirements (13.0-upgrade)
+
+Laravel 13 applications use `laravel/framework:^13.0` and `laravel/tinker:^3.0`; update optional constraints to `laravel/boost:^2.0`, `phpunit/phpunit:^12.0`, or `pestphp/pest:^4.0` where applicable.
 
 ## Development command registry (2026-06)
 
@@ -68,10 +88,6 @@ User::factory()->count(100)->insert();
 Factory::dontExpandRelationshipsByDefault();
 ```
 
-## Environment data in schedule listings (2025-11)
-
-The JSON output from `schedule:list` now includes environment information for scheduled events.
-
 ## Exact queue dispatch assertions (2026-01)
 
 `QueueFake::assertPushedTimes()` is now public, allowing tests to assert an exact job dispatch count.
@@ -88,9 +104,9 @@ Factory `Sequence` callbacks now receive the pending `$attributes` and `$parent`
 
 DNS lookups performed by validation rules can be faked in tests.
 
-## Filtering schedule listings by environment (2026-05)
+## Guided Boost upgrades (13.0-upgrade)
 
-`schedule:list` can filter scheduled events by environment, so deployment tooling can inspect only events active for a target environment.
+Laravel Boost 2 can guide an installed Laravel 12 application through the upgrade with the `/upgrade-laravel-v13` command.
 
 ## Iterable database-empty assertions (2026-07)
 
@@ -99,10 +115,6 @@ DNS lookups performed by validation rules can be faked in tests.
 ## JSON event listings (2025-04)
 
 The event list command can emit machine-readable output with `php artisan event:list --json`.
-
-## Machine-readable failed-job listings (2026-05)
-
-`queue:failed` supports JSON output, and its normal listing reports the actual job class name.
 
 ## Middleware-filtered route listings (2025-11)
 
@@ -136,6 +148,14 @@ An `array` maintenance-mode driver is available for parallel testing.
 
 Parallel database testing has a pre-migration hook, allowing database preparation to run after a test database is selected but before its migrations execute.
 
+## PHP support window (12.0.0)
+
+Laravel 12 supports PHP 8.2 through 8.5. Bug fixes are scheduled through August 13, 2026, and security fixes through February 24, 2027.
+
+## PHP support window (13.0.0)
+
+Laravel 13 requires PHP 8.3 and supports PHP 8.3 through 8.5. Bug fixes are scheduled through Q3 2027 and security fixes through March 17, 2028.
+
 ## PHPUnit 12.2 support (2025-06)
 
 Laravel 12 supports PHPUnit 12.2, allowing application test dependency constraints to move beyond PHPUnit 11.
@@ -156,19 +176,13 @@ The database schema dump command can now be blocked by Laravel's destructive-com
 
 `QueueFake` can inspect delayed and reserved jobs, exposes `beforePushing()` and `afterPushing()` hooks, and implements `creationTimeOfOldestPendingJob()` for backend-free queue tests.
 
-## Recording non-faked HTTP requests (2025-03)
+## Readable encrypted environment files (2026-01)
 
-The HTTP client can record real requests without faking their responses, so tests and diagnostics can inspect traffic while it is still sent normally.
+`env:encrypt --readable` keeps environment key names visible in the encrypted output.
 
-```php
-Http::record();
-Http::get('https://example.test');
-$recorded = Http::recorded();
+```shell
+php artisan env:encrypt --readable
 ```
-
-## Redis command failure listeners (2026-01)
-
-Redis connections expose `listenForFailures()` and dispatch `CommandFailed`, allowing applications to observe failed Redis commands explicitly.
 
 ## Schema dumps without migration data (2026-06)
 
@@ -193,6 +207,10 @@ Custom UUID, ULID, and random string factories registered through `Str` are rese
 ## Test-time isolation (2026-07)
 
 Fake time is reset globally after each test, preventing time state from leaking into later tests.
+
+## Updated dependency compatibility (2025-11)
+
+Laravel 12 now allows Resend 1.x and supports Symfony 7.4.
 
 ## Updated test and component dependencies (2025-12)
 

@@ -8,168 +8,192 @@ metadata:
 ---
 
 
-# Docker Knowledge Patch
+# Docker Compatibility Guidance
 
-## Use this patch
-
-1. Identify whether the task targets Engine runtime, networking, images, the Engine API, Go integration, Buildx, BuildKit/Dockerfile, or Compose.
-2. Read the matching reference before changing configuration, client calls, parsers, or automation.
-3. Check both the daemon version and negotiated API version; several defaults and response shapes are API-gated.
-4. Treat fresh installations, upgrades, and downgrades separately. Engine 28 and 29 include stateful storage and firewall transitions.
-5. Make output parsing explicit. Several human-oriented CLI defaults changed, while event and Compose JSON streams use record framing.
+Use this skill when upgrading Docker Engine, integrating with the Engine API or
+Go client, operating BuildKit or Buildx, or adopting Docker Compose 5 behavior.
+Start with the quick reference for migration blockers, then load only the topic
+reference needed for the task.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [runtime.md](references/runtime.md) | Daemon startup and reload, storage, mounts, resources, security, rootless, Windows, Swarm, platform support |
-| [networking.md](references/networking.md) | Attachments, DNS, IPv4/IPv6, IPAM, gateway modes, firewall backends, routing |
-| [images-registry.md](references/images-registry.md) | Image store, archives, platform selection, manifests, formats, registry behavior, provenance |
-| [engine-api.md](references/engine-api.md) | API compatibility, schema changes, event framing, inspection, updates, deprecations |
-| [go-sdk-cli.md](references/go-sdk-cli.md) | Go modules and client migrations, removed APIs, CLI behavior and embedding |
-| [buildx.md](references/buildx.md) | Bake, exporters, Imagetools, source policies, builders, provenance, resources |
-| [buildkit-dockerfile.md](references/buildkit-dockerfile.md) | BuildKit sources and verification, provenance, deployment, Dockerfile frontend and linting |
-| [compose.md](references/compose.md) | Compose 5 migration, builds, lifecycle, providers, publish, watch, output, init containers |
+| [BuildKit and Dockerfile frontend](references/buildkit-dockerfile.md) | Dockerfile behavior, LLB sources, provenance, security fixes, cgroups |
+| [Buildx, Bake, imagetools, and builders](references/buildx.md) | Source policies, Bake variables, exporters, builder drivers, attestations |
+| [Docker Compose 5](references/compose.md) | Reconciliation, lifecycle hooks, remote resources, Watch, config and publish behavior |
+| [Engine API compatibility and deprecations](references/engine-api.md) | API floors, schemas, event streams, inspection, deprecations |
+| [Go SDK and CLI integration](references/go-sdk-cli.md) | Module paths, call shapes, type moves, removed symbols, CLI plugins |
+| [Images, manifests, archives, and registries](references/images-registry.md) | Image stores, platform selection, mounts, metadata, registry behavior |
+| [Networking, DNS, IPAM, and firewalls](references/networking.md) | Attachments, IPv6, gateway modes, DNS, routing, firewall backends |
+| [Engine runtime, daemon, and platform](references/runtime.md) | Daemon lifecycle, security, logging, container lifecycle, Windows and rootless behavior |
 
-## Breaking changes and migration priorities
+## Upgrade blockers and removals
 
-### Engine 29 fresh installations
+### Engine configuration and extensions
 
-- Fresh Engine 29 installations use the containerd image store by default; upgrades keep their existing store. `userns-remap` temporarily prevents use of the containerd store.
-- Bundled containerd 2.1.5 follows systemd's `LimitNOFILE`, changing the container default from `1048576` to `1024`. Set `--ulimit` or `default-ulimits` for workloads that require more descriptors.
+- Remove the `--oom-score-adjust` daemon option and replace the `logentries`
+  logging driver before moving to Engine 25.0.0.
+- Engine 28 removes the daemon API CORS option, external graph-driver plugins,
+  the temporary Windows `windows-dns-proxy` flag, and Fluentd
+  `fluentd-async-connect`.
+- Engine 28 requires a matching updated `docker-proxy`; older proxy binaries are
+  incompatible. `rootlesskit-docker-proxy` is removed from the distribution.
+- `--allow-nondistributable-artifacts` no longer has any effect and emits a
+  deprecation warning.
+- Docker Content Trust commands are removed from the Engine 29 CLI and are
+  available only by building a separate plugin.
 
-```json
-{
-  "default-ulimits": {
-    "nofile": { "Name": "nofile", "Soft": 1048576, "Hard": 1048576 }
-  }
-}
-```
+### API and client compatibility
 
-- Do not assume the old image-list table: `docker image ls` now uses a collapsed tree and hides untagged images unless `--all` is set. Give scripts an explicit `--format`.
-- Legacy-link environment variables are no longer injected by default. `DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1` is only a temporary compatibility switch.
+- Engine 26 removes API versions older than v1.24.
+- Engine 29.0 through 29.2 requires API v1.44 or later; Engine 29.3 lowers the
+  minimum to v1.40. Clients that target earlier 29.x daemons must still
+  negotiate v1.44 or newer.
+- API v1.52 removes legacy top-level network fields from container inspection;
+  read endpoint data from `NetworkSettings.Networks`.
+- API v1.53 removes the legacy disk-usage fields `LayersSize`, `Images`,
+  `Containers`, `Volumes`, and `BuildCache`.
+- API v1.53 deprecates `POST /grpc` and `POST /session`.
+- The Go SDK removes deprecated constructors, old image-client interfaces, and
+  numerous packages in Engine 29. Use the supported
+  `github.com/moby/moby/client` and `github.com/moby/moby/api` modules; the SDK
+  requires Go 1.24 or later.
 
-### Firewall and network transitions
+### CLI and output migrations
 
-- Engine 28.0.0 requires kernel `ipset` support and installs redesigned iptables/ip6tables rules. Before downgrading, remove those rules; rebooting is the simplest documented cleanup.
-- Engine 28.0.0 blocks remote direct routing to unpublished ports and prevents neighboring hosts from reaching ports published to host loopback. Publish required ports or deliberately choose a `nat-unprotected` gateway mode.
-- Engine 29 removes the `DOCKER-ISOLATION-STAGE-1` and `DOCKER-ISOLATION-STAGE-2` chains. Without the userland proxy, cross-network reachability through host-published ports and `nat-unprotected` networks can increase.
-- The nftables backend is experimental. Docker does not enable host forwarding in this mode; configure forwarding and non-Docker interface policy yourself.
-- IPv6 `ip6tables` filtering became stable and default-enabled in 27.0.1. A host that enables IPv6 forwarding independently owns its `FORWARD` policy.
+- Engine 28 renames `docker stop --time` and `docker restart --time` to
+  `--timeout`.
+- Engine 29 changes `docker image ls` to a collapsed tree-style view, hides
+  untagged images unless `--all` is used, stops truncating image names, and
+  removes `VirtualSize` from JSON and formatting output.
+- `docker compose ps --format json` emits JSON Lines rather than one JSON
+  array.
+- `docker buildx install` and `docker buildx uninstall` are deprecated; invoke
+  `docker buildx` directly.
+- Buildx policy evaluation renames `--filename` to `--file`; the old long flag
+  remains deprecated.
 
-### API compatibility and response parsing
+## Networking quick reference
 
-- Engine 25.0.0 API v1.44 removes image `VirtualSize`; Engine 26.0.0 removes API versions below v1.24 and image `Container`/`ContainerConfig` fields.
-- Engine 29.0 through 29.2 require daemon API v1.44 or newer; 29.3 lowers the raw daemon floor to v1.40. The v29 CLI and Go client still do not negotiate below v1.44.
-- API v1.52 removes many top-level container network fields, omits unset image fields, and can omit `GraphDriver` with the containerd backend. Read per-network data from `NetworkSettings.Networks` and tolerate absent optional fields.
-- API v1.53 removes the legacy `/system/df` arrays in favor of usage summaries and deprecates `/grpc` and `/session`.
-- API v1.55 adds image attestations and makes per-device block-I/O update fields live. Distinguish omitted or `null` update fields from empty arrays, which clear rules.
-- Negotiate event framing explicitly: NDJSON is declared in v1.52, RFC 7464 `application/json-seq` is accepted in v1.52, and `application/jsonl` is accepted in v1.53.
+### Firewall behavior
 
-### Image and registry removals
+- `ip6tables` is enabled by default for Linux bridge networks. On IPv6-enabled
+  bridges it restricts external access to published ports and enables outbound
+  masquerading.
+- Engine 28 blocks remote direct access to unpublished container ports. Publish
+  required ports or deliberately use `nat-unprotected` when that exposure is
+  intended.
+- Engine 28 changes bridge iptables and ip6tables rules and requires kernel
+  `ipset` support. Before downgrading, remove the new rules; rebooting is the
+  documented simplest cleanup.
+- The experimental Engine 29 `nftables` backend does not enable host IP
+  forwarding. If a bridge needs forwarding while it is disabled, daemon startup
+  or network creation fails.
+- The daemon no longer appends permissive host `INPUT` rules for encrypted
+  overlays. Restrictive hosts may need an explicit rule for incoming encrypted
+  overlay traffic.
 
-- Engine 28.2 cannot pull or push Docker Image v1 or manifest v2 schema 1. Republish content as OCI or manifest v2 schema 2.
-- Engine 28.2 also removes pull-by-tag fallback after digest resolution. Registries must conform to the OCI Distribution Specification.
-- Engine 27 and later reject a non-local remote TCP listener configured with explicit `--tls=false` or `--tlsverify=false`. Use verified TLS, a Unix socket, or SSH.
-- Engine 29 removes Docker Content Trust commands and classic-builder DCT support from the CLI; install the trust command separately as a CLI plugin when needed.
+### Addressing and routes
 
-### Go SDK and CLI integration
+- Extended `--network` syntax supports multiple attachments, per-attachment MAC
+  and link-local addresses, endpoint driver options, gateway priority, and
+  container-side interface names.
+- The highest `gw-priority` selects the default gateway; equal priorities are
+  resolved by network-name order.
+- `docker network create --ipv4=false` disables IPv4 assignment, subject to the
+  driver and platform limits in the networking reference.
+- A routed bridge installs no NAT or masquerading for published ports. The
+  surrounding network must route container addresses to the host.
+- Macvlan and IPvlan L2 networks in Engine 29 receive no default gateway unless
+  IPAM explicitly supplies `--gateway`.
 
-- Stop importing `github.com/docker/docker`. Use `github.com/moby/moby/client` and `github.com/moby/moby/api`; the parent `github.com/moby/moby` module is internal, release tags use `docker-v29.0.0` form, and the SDK requires Go 1.24 or newer.
-- Replace removed `NewClient` and `NewEnvClient`; replace `ImageCreate` with `ImagePull` or `ImageImport`.
-- Expect option structs and dedicated result structs instead of positional parameters and raw returns. `ContainerExec...` methods become `Exec...`, while pull/push results expose `JSONMessages` iterators.
-- Migrate IP/subnet values to `netip.Addr` and `netip.Prefix`, MAC values to byte slices compatible with `net.HardwareAddr`, and container `Port` to `PortSummary`.
-- Docker CLI embedding lost most exported stock-command constructors and many formatter and `Run...` helpers. Build on the supported client modules or provide a separate command layer.
+## Images and registries quick reference
 
-### Compose 5 migration
+### Platform selection and stores
 
-- Compose intentionally jumps from v2 to v5; v3 and v4 were skipped to avoid confusion with obsolete Compose file format labels.
-- Compose 5 removes its internal BuildKit builder and delegates builds to Bake. Remove dependencies on the former internal builder path.
-- Compose 5.2.0 introduces a new state-reconciliation algorithm. Regression-test upgrade convergence for existing projects.
-- `docker compose ps --format json` emits JSON Lines, not one JSON array. Consume each line as a separate JSON value.
-- Compose 5.3.0 supports native pre-start init containers.
+- The containerd image store supports `docker image push --platform` for one
+  locally stored platform manifest.
+- Engine 28 adds single-platform selection to `docker load`, `docker save`, and
+  `docker history`.
+- Engine 29 accepts comma-separated platform lists for `docker image load` and
+  `docker image save`; the APIs accept repeated `platform` parameters.
+- Fresh Engine 29 installations use the containerd image store by default, but
+  existing installations are not switched automatically and `userns-remap`
+  installations are excluded.
+- Engine 29.7.0 graduates the `image` mount type from experimental status.
 
-## High-use Engine features
+### Metadata and compatibility
 
-### Mount image content
+- Engine 26 image inspection removes `Container` and `ContainerConfig`.
+- Engine API v1.48 adds image `Manifests`; containerd-backed responses also add
+  OCI descriptor fields.
+- Engine 29.2 adds trusted image `Identity` data, and 29.3 adds an `identity`
+  query parameter to `GET /images/json`.
+- API v1.55 adds `GET /images/{name}/attestations` with platform, predicate-type,
+  and statement-body controls.
+- Saved image tar archives are OCI compliant from Engine 25.0.0.
 
-Use `type=image` (since 28.0.0) and optionally select an internal path with `image-subpath`:
+## Build quick reference
 
-```console
-docker run --mount type=image,source=alpine:latest,target=/mnt,image-subpath=etc alpine:latest
-```
+### Provenance and policies
 
-Use `bind-create-src` when a missing bind source should be created. Replace removed `bind-nonrecursive` with `bind-recursive=disabled`:
+- BuildKit provenance defaults to SLSA v1.0. Set the provenance `version`
+  attribute when v0.2 output is required.
+- Buildx can enforce Rego source policies, evaluate and test them, and apply them
+  to local, remote Git, and HTTP sources.
+- Attestation-aware policy builtins can validate signed Sigstore bundles, fetch
+  attestations from the GitHub API, and inspect image provenance. Provenance
+  policy inputs require BuildKit 0.28 or later.
+- Default verification of Docker pipeline images is opt-in through
+  `BUILDX_DEFAULT_POLICY`; Buildx 0.36.0 extends default-policy checks to the
+  BuildKit release image used by a `docker-container` builder.
 
-```console
-docker run --mount type=bind,src=/host/data,dst=/data,bind-recursive=disabled IMAGE
-```
+### Exports and resources
 
-Anonymous volumes may now be read-only without naming a source.
+- A local export with `mode=delete` replaces the destination instead of merging
+  into it. The destination must be below the working directory unless
+  `--allow=buildx.local.delete` is supplied or the TUI confirms the action.
+- Registry-oriented exports initialized with `--push` or `-o type=registry` do
+  not unpack images created in the Docker image store.
+- Build requests can set CPU and memory limits through `--resource` or a Bake
+  target `resource` key when the stated BuildKit and Dockerfile requirements are
+  met.
+- `imagetools create --metadata-file` writes properties such as the created
+  descriptor and digest for automation.
 
-### Select image platforms
+## Compose quick reference
 
-- With the containerd image store, `docker image push --platform` selects one manifest (since 27.0.1).
-- `docker load`, `docker save`, and `docker history` gained one-platform selection in 28.0.0.
-- Engine 29 accepts comma-separated platform lists for `load` and `save`; the API accepts repeated `platform` parameters.
+### Build and reconciliation
 
-```console
-docker image save --platform linux/amd64,linux/arm64 -o app.tar app:tag
-```
+- Compose 5 delegates builds to Docker Bake and removes its internal BuildKit
+  builder. Integrations that depended on the internal builder must migrate to
+  the delegated path.
+- Compose recreates a container when the digest of an image mounted into it
+  changes.
+- The first `docker compose up` after the image-digest reconciliation upgrade
+  may recreate existing containers once.
+- Compose 5.2 introduces a new workload reconciliation algorithm, so existing
+  workloads can behave differently after upgrading even when their files have
+  not changed.
+- Compose 5.4 includes volume recreation and network lifecycle in reconciliation
+  plans.
 
-### Control network gateways and address families
+### Lifecycle and configuration
 
-Choose the default gateway with extended `--network` syntax and `gw-priority`:
+- Service hooks run on restart; `docker compose run` executes the target
+  service's `post_start` hooks; external providers gain a stop hook.
+- Compose supports native init containers that run before the main workload.
+- `docker compose config --variables` extracts variables without first
+  requiring full model validation.
+- `docker compose config --hash` accounts for zero-replica services and, in
+  Compose 5.5, resolves service environments before computing the hash.
+- `docker compose pull` honors `pull_policy` refresh windows such as `daily`,
+  `weekly`, and `every_N`.
 
-```console
-docker run --network=name=frontend --network=name=egress,gw-priority=100 IMAGE
-```
+## Apply guidance conservatively
 
-Use `gateway_mode_ipv4` or `gateway_mode_ipv6` values `nat`, `routed`, `nat-unprotected`, or, for an internal network, `isolated`. Create IPv6-only networks with `--ipv6 --ipv4=false` where supported.
-
-```console
-docker network create --ipv6 --ipv4=false v6-only
-```
-
-Configure per-endpoint interface sysctls with the `IFNAME` placeholder; API v1.48 no longer migrates container-wide `eth0` sysctls automatically.
-
-## High-use build features
-
-### Enforce source policy
-
-- Buildx 0.31.0 introduces Rego source policy for local contexts; 0.32.0 extends it to Git and HTTP sources and adds Sigstore/provenance inputs.
-- Buildx 0.33.0 adds PGP verification and makes the DAP debugger generally available.
-- Buildx 0.34.0 adds opt-in `BUILDX_DEFAULT_POLICY` verification for Docker pipeline images and global `bake --policy` options.
-- Buildx 0.35.0 can proxy build-step network traffic into policy evaluation with BuildKit 0.31.0 or later.
-
-```console
-docker buildx build --policy ./policy.rego .
-docker buildx bake --policy ./policy.rego
-```
-
-### Make outputs and resources deterministic
-
-- Use local exporter `mode=delete` to replace rather than merge the destination. Outside the working directory, allow `buildx.local.delete` explicitly.
-- Use `buildx build --resource` or Bake's `resource` key for CPU and memory limits; this requires BuildKit 0.31.0 or later and Dockerfile v1.25.0 or later.
-- Use `imagetools create --metadata-file` to capture the created descriptor and digest.
-- Use Buildx command `--timeout` where offered to bound waits for remote builders.
-
-## High-use Compose features
-
-- Use `build.no_cache_filter` to bypass cache only for named build stages.
-- Use `docker compose start --wait` to wait for services after starting them.
-- Expect lifecycle hooks on restart, `post_start` hooks for `compose run`, and provider stop hooks during shutdown.
-- Compose recreates a container when an image-mounted digest changes.
-- OCI and Git remote resources are supported, including overrides for OCI projects and corrected Windows/SSH path handling.
-- `docker compose publish` honors optional missing environment files and checks literal inline environment values for sensitive data.
-- Compose Watch no longer rebuilds `depends_on` services solely because of that relationship.
-
-## Preflight checklist
-
-- Run `dockerd --validate --config-file ...` to validate configuration and host requirements.
-- Verify the active image store and firewall backend with `docker info`.
-- Pin or inspect the Engine API version before relying on fields or omission behavior.
-- Make CLI and stream output formats explicit in automation.
-- Test firewall reachability after Engine 28/29 upgrades and before any downgrade.
-- Test Compose convergence after moving to 5.2.0 or later.
-- Read the complete topic reference before changing SDK integrations or compatibility paths.
+Preserve every stated condition when using these references: API negotiation,
+image-store backend, operating system, network driver, experimental status, and
+minimum component versions all affect whether an item applies. Do not infer a
+replacement or outcome where a reference only records a behavior change.

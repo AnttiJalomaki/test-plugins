@@ -1,18 +1,35 @@
 # Deployment and class lifecycle
 
-## Choose and preserve the storage backend
+## SQLite-backed namespaces
 
-SQLite-backed Durable Objects became generally available in 2025. Each object
-has a 10 GB database, and new classes should use this backend through
-`new_sqlite_classes` or a live declarative entry with `"storage": "sqlite"`.
-Only SQLite-backed objects expose SQL and point-in-time recovery. Existing
-KV-backed objects remain supported, but there is no migration path that
-converts an existing KV-backed namespace to SQLite.
+SQLite-backed Durable Objects are generally available (since 2025). Each
+object receives a 10 GB database, and new classes should use
+`new_sqlite_classes`. SQL and point-in-time recovery exist only on this backend.
+KV-backed objects remain supported for compatibility, but there is no migration
+path that converts an existing KV-backed namespace to SQLite.
 
-An account with no existing KV-backed Durable Object namespace can no longer
-create one with `new_classes`; create a SQLite-backed namespace instead.
-Accounts that already have a KV-backed namespace may still create more for
-now, and existing namespaces are unaffected.
+```ts
+export class MyDurableObject extends DurableObject {
+  sql: SqlStorage;
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+  }
+
+  sayHello() {
+    return this.sql
+      .exec("SELECT 'Hello, World!' AS greeting")
+      .one().greeting;
+  }
+}
+```
+
+New KV-backed namespace creation is restricted (since 2026). An account with no
+existing KV-backed Durable Object namespace cannot create one through
+`new_classes`; use a SQLite-backed namespace instead. Accounts that already
+have at least one KV-backed namespace may still create more for now, and
+existing namespaces are unaffected.
 
 ```toml
 [[migrations]]
@@ -20,24 +37,23 @@ tag = "v1"
 new_sqlite_classes = ["MyDurableObject"]
 ```
 
-## Reconcile code, configuration, and namespace state
+## Declarative `exports` lifecycle
 
-Wrangler's `exports` map is a declarative alternative to the ordered, tagged
-`migrations` array. The two forms are mutually exclusive in one Worker.
-Entries are keyed by class name and use `"type": "durable-object"`. A live
-entry defaults to `created`; other lifecycle states are `deleted`, `renamed`,
-`transferred`, and the receiving state `expecting-transfer`.
-
-A class exported only by Worker code is ignored and gets no namespace. Every
-desired or provisioned namespace needs a corresponding declarative entry. Live
-entries require `storage`; `deleted`, `renamed`, and `transferred` tombstones
-forbid it; and `expecting-transfer` declares the receiving backend. Deployment
-fails when a live entry's class is absent from code.
+Wrangler's `exports` map is an alternative to the ordered, tagged `migrations`
+array, and a Worker cannot use both forms. Entries are keyed by class name and
+have `type: "durable-object"`. A class without an explicit lifecycle `state`
+defaults to `created`; other states are `deleted`, `renamed`, `transferred`, and
+the receiving-side `expecting-transfer`.
 
 ```jsonc
 {
   "exports": {
     "ChatRoom": {
+      "type": "durable-object",
+      "state": "renamed",
+      "renamed_to": "Room"
+    },
+    "Room": {
       "type": "durable-object",
       "storage": "sqlite"
     }
@@ -45,23 +61,43 @@ fails when a live entry's class is absent from code.
 }
 ```
 
-Wrangler also reports other Workers whose bindings still reference a class
-being renamed or deleted.
+Declarative tombstones support staged zero-downtime renames and cross-Worker
+transfers. Wrangler also reports other Workers whose bindings still reference a
+class being renamed or deleted. Existing Workers can continue using migrations.
 
-## Keep tombstones until reconciliation clears them
+## Reconciliation invariants
 
-A `deleted` tombstone is rejected while the class remains in code or any Worker
-in the account still binds to its namespace. Once an operation lands, keep its
-stale tombstone until reconciliation lists it under
-`Safe to remove from exports`. A renamed or transferred tombstone is not safe
-to remove while `referencing_scripts` is non-empty.
+A class exported only from Worker code is ignored and receives no namespace.
+Every desired namespace, and every already-provisioned namespace still being
+managed, needs a corresponding `exports` entry. Live entries require a
+`storage` value; tombstones forbid `storage`. Deployment fails when a live entry
+names a class that Worker code does not export.
 
-## Stage a zero-downtime rename
+```jsonc
+{
+  "exports": {
+    "ChatRoom": { "type": "durable-object", "storage": "sqlite" }
+  }
+}
+```
 
-First deploy the new class while re-exporting it under the old name, leaving
-the declarative map unchanged. Next, deploy the old-name `renamed` tombstone
-and the new live entry while retaining the alias. Remove the alias after
-rollout.
+## Tombstone safety gates
+
+A `deleted` tombstone is rejected while its class remains in code or any Worker
+in the account still binds to the namespace. After a lifecycle operation lands,
+keep the stale tombstone until reconciliation lists it under
+`Safe to remove from exports`. A renamed or transferred tombstone remains
+unsafe to remove while its `referencing_scripts` list is non-empty.
+
+## Zero-downtime rename
+
+Perform a rename in three stages:
+
+1. Deploy the new class while re-exporting it under the old name; leave the
+   lifecycle `exports` map unchanged.
+2. While retaining that alias, deploy an old-name `renamed` tombstone and a new
+   live entry.
+3. Remove the code alias after the second deployment finishes rolling out.
 
 ```ts
 export class NewName extends DurableObject {
@@ -73,19 +109,20 @@ export { NewName as OldName };
 The rename target must be a different valid identifier, must be live in the
 same map, and must not already own a namespace.
 
-## Transfer between Workers target-first
+## Cross-Worker transfer with `exports`
 
-For a declarative cross-Worker transfer:
+Transfers are target-first and binding-last:
 
-1. On the target, deploy `expecting-transfer` with the source class name,
-   backend, and `transfer_from`, but no self-referencing binding.
-2. On the source, deploy `transferred` with `transferred_to`. This atomically
-   commits the handoff.
-3. Make the target entry live and add its binding.
-4. Remove the source binding or redirect it using `script_name`.
+1. On the target Worker, deploy `expecting-transfer` with the source name and
+   storage, but do not add a self-referencing binding.
+2. On the source Worker, deploy `transferred`; this atomically commits the
+   namespace handoff.
+3. After rollout, change the target entry to an ordinary live entry and add its
+   binding. Remove the source binding or redirect it with `script_name`.
 
 ```jsonc
 {
+  // Target, deployed first
   "exports": {
     "MyDO": {
       "type": "durable-object",
@@ -99,6 +136,7 @@ For a declarative cross-Worker transfer:
 
 ```jsonc
 {
+  // Source, deployed second
   "exports": {
     "MyDO": {
       "type": "durable-object",
@@ -109,26 +147,25 @@ For a declarative cross-Worker transfer:
 }
 ```
 
-Both Workers must be in the same account and dispatch-namespace context.
 Removing or replacing the target's pending entry before the source commits
-cancels the transfer without moving the namespace.
+cancels the transfer without moving the namespace. Both Workers must belong to
+the same account and dispatch-namespace context.
 
-## Apply lifecycle state with a full deploy
+## Environments and deployment restrictions
 
-Named environments inherit top-level declarative entries unless they override
-them, but each environment owns separate namespaces and its tombstones affect
-only that environment.
-
-Only `wrangler deploy` applies declarative lifecycle changes.
-`wrangler versions upload` rejects them, gradual deployment is unsupported,
+Named environments inherit top-level `exports` unless they override it, but
+each environment owns separate namespaces and its tombstones affect only that
+environment. Only `wrangler deploy` applies lifecycle changes:
+`wrangler versions upload` rejects `exports`, gradual deployment is unsupported,
 and rollback cannot cross a lifecycle change.
 
-## Convert legacy migrations once
+## Converting from migrations
 
-To move from legacy migrations, replace the entire migration array with live
-entries for every active namespace. Use `sqlite` for classes originally made
-by `new_sqlite_classes` and `legacy-kv` for classes made by `new_classes`.
-Namespace data does not move.
+To move to `exports`, replace the entire `migrations` array with live entries
+for every active namespace. Use `sqlite` for classes created through
+`new_sqlite_classes` and `legacy-kv` for classes created through `new_classes`.
+No namespace data moves during this conversion. Storage cannot later change in
+place, and after deploying `exports` the Worker cannot return to migrations.
 
 ```jsonc
 {
@@ -141,15 +178,12 @@ Namespace data does not move.
 }
 ```
 
-Storage cannot be changed in place. After deploying the declarative map, the
-Worker cannot return to legacy migrations.
+## Legacy cross-script transfer
 
-## Use the destination migration for a legacy transfer
-
-In the legacy cross-script flow, put `transferred_classes` in the destination
-Worker's migration and export the destination class. Do not create its
-namespace first; the transfer creates it. `from`, `from_script`, and `to` can
-also rename the class during transfer.
+In the migration-based flow, declare `transferred_classes` in the destination
+Worker's migration and export the destination class. Do not pre-create the
+destination namespace; the transfer creates it. The directive can rename the
+class using `from`, `from_script`, and `to`.
 
 ```jsonc
 {

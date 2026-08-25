@@ -1,171 +1,99 @@
 # Safety, FFI, and Low-Level Programming
 
-Use this reference for raw-pointer reasoning, pinning, allocation, provenance, atomics, foreign interfaces, target-feature functions, and inline assembly. Edition-specific unsafe requirements are in [edition-2024.md](edition-2024.md).
+## Raw pointers, provenance, and pinning
 
-## Raw pointers, references, and provenance
+### Forming raw references
 
-### Safe raw-reference formation
-
-Forming a raw reference to the place behind a raw pointer no longer requires an unsafe block (1.84.0). Dereferencing the resulting pointer still requires the usual validity proof.
+- Since 1.84.0, `&raw const *ptr` and `&raw mut *ptr` may form a raw reference to the place behind a raw pointer without an unsafe block. Dereferencing the result still needs the normal validity proof.
+- Since 1.92.0, the same rule permits projecting a union field with `&raw`; reading the union field or dereferencing the result remains unsafe.
 
 ```rust
-fn same_place(ptr: *mut u32) -> *mut u32 {
-    &raw mut *ptr
+union Slot { number: u32 }
+
+fn number_ptr(slot: *const Slot) -> *const u32 {
+    &raw const (*slot).number
 }
 ```
 
-The same rule applies to union fields from 1.92.0: safe code may form `&raw const bits.integer` or `&raw mut bits.integer`, but reading the active field through the pointer remains unsafe.
+### Null pointers and validity
 
-### Debug null checks
+- Since 1.86.0, debug-assertion builds issue a non-unwinding panic for non-zero-sized null reads/writes and null reborrows as references. This is diagnostic only: dependencies built without debug assertions omit the check.
+- Since 1.96.0, the library-wide definition of memory valid for reads or writes excludes null. Only methods documenting an explicit exception may receive null.
+- Raw-pointer diagnostics added in 1.88.0 and 1.91.0 catch implicit autoref, invalid-null, dangling-local, and integer-transmute patterns, but diagnostics do not replace unsafe reasoning.
 
-With debug assertions, non-zero-sized reads or writes through a null raw pointer and reborrowing it as a reference cause a non-unwinding panic (1.86.0). This does not establish soundness: the check is absent in code compiled without debug assertions.
+### Provenance-aware addresses
 
-### Provenance APIs
+- `NonNull::{without_provenance, with_exposed_provenance, expose_provenance}` are stable since 1.89.0.
+- `ptr::{with_exposed_provenance, with_exposed_provenance_mut}` are const-capable since 1.91.0.
+- Use no-provenance construction only where the API contract permits it. Reconstruct pointers from integers through exposed-provenance APIs instead of transmutation.
 
-`NonNull` gains `from_ref`, `from_mut`, `without_provenance`, `with_exposed_provenance`, and `expose_provenance` (1.89.0). Const evaluation supports `ptr::with_exposed_provenance` and its mutable form from 1.91.0. Prefer these explicit APIs to integer-to-pointer transmutation.
+### Pinning
 
-`dangling_pointers_from_locals` and `integer_to_ptr_transmutes` warn by default from 1.91.0. Returning a pointer to a local is not itself an unsafe operation, but dereferencing it after the local dies is invalid.
+- Downstream `DerefMut for Pin<LocalType>` implementations are rejected since 1.92.0.
+- `pin!(x)` no longer performs a dereference coercion as of 1.97.0. If `x: &mut T`, the result is `Pin<&mut &mut T>`; explicitly identify the pointee when `Pin<&mut T>` is intended.
+- Non-extended `pin!` arguments stopped receiving incidental temporary lifetime extension in 1.92.0. Bind borrowed temporaries first.
 
-### Pointer and pinning APIs
+## Initialization, allocation, and ownership
 
-- Raw pointers support unsigned `offset_from` and `byte_offset_from`, and `NonNull` supports the corresponding operations (1.87.0).
-- Raw pointers gain `as_ref_unchecked` and `as_mut_unchecked` (1.95.0); callers must uphold all reference validity and aliasing requirements.
-- `pin!` no longer dereference-coerces an `&mut T` in 1.97.0. `pin!(x)` for `x: &mut T` consistently produces `Pin<&mut &mut T>`; explicitly dereference when pinning `T` is intended.
-- Raw trait-object pointers used in upcasting must contain a valid vtable even if code does not dereference them immediately (1.86.0).
+### Zeroed and staged initialization
 
-## Target-feature functions and architecture intrinsics
+- Since 1.92.0, `Box`, `Rc`, and `Arc` have `new_zeroed` and `new_zeroed_slice`. They return `MaybeUninit`; use `assume_init` only when every all-zero bit pattern is valid for `T`.
+- Since 1.93.0, `[MaybeUninit<T>]` supports `write_copy_of_slice`, `write_clone_of_slice`, `assume_init_ref`, `assume_init_mut`, and `assume_init_drop` for whole-buffer operations.
+- Since 1.95.0, `MaybeUninit<[T; N]>` converts to/from `[MaybeUninit<T>; N]` and exposes `AsRef`/`AsMut` array and slice views.
 
-### Safe `#[target_feature]` functions
+### Ownership transfer and layouts
 
-A safe function may carry `#[target_feature]` from 1.86.0. Calling it is safe from a function with the required features; an unmarked caller must detect or otherwise establish the CPU feature and call it in an unsafe block. Such functions cannot be passed to `Fn*`-bounded generics and coerce to function pointers only inside appropriately feature-enabled functions.
+- Since 1.93.0, `Vec::into_raw_parts` and `String::into_raw_parts` yield pointer, length, and capacity without freeing. Reconstruct exactly once with compatible raw-parts APIs.
+- Since 1.95.0, `Layout::{dangling_ptr, repeat, repeat_packed, extend_packed}` support allocator layout composition.
+- Since 1.95.0, raw pointers also provide stable `as_ref_unchecked` and `as_mut_unchecked`; callers must establish the reference validity contract themselves. `core::hint::cold_path` is stable for marking an unlikely path.
+- Since 1.93.0, standard bookkeeping for `thread_local!` and `std::thread::current()` uses the system allocator where needed, so a Rust global allocator may call those facilities without bookkeeping re-entering that allocator.
 
-```rust
-#[target_feature(enable = "avx2")]
-fn avx2_only() {}
+### Allocation and pointer guarantees
 
-fn dispatch() {
-    if is_x86_feature_detected!("avx2") {
-        unsafe { avx2_only() };
-    }
-}
-```
+- `Vec::with_capacity(n)` guarantees since 1.87.0 that its allocation requests the specified amount even when reported capacity differs.
+- The pointer from `Thread::into_raw` has at least eight-byte alignment since 1.90.0.
+- `AtomicPtr` gained element-scaled, byte-scaled, and bitwise read-modify-write operations in 1.91.0; atomic pointer, bool, and integer types gained `update`/`try_update` in 1.95.0.
 
-Most `std::arch` intrinsics without pointer arguments are contextually safe when called from code enabling all required target features (1.87.0). Old unsafe blocks around them can trigger `unused_unsafe`; pointer-taking intrinsics still require their pointer preconditions.
+## Foreign interfaces and ABIs
 
-## Inline assembly
+### Explicit and variadic ABIs
 
-### Label operands
+- Spell the ABI in `extern "C"`; `missing_abi` warns by default since 1.86.0 even though omission still selects C.
+- Since 1.91.0, extern blocks may declare C-style variadic functions with `sysv64`, `win64`, `efiapi`, and `aapcs`; Rust still cannot define them.
+- Since 1.93.0, `extern "system"` foreign declarations may also be variadic.
+- Unsupported ABI strings are rejected consistently in every position since 1.90.0.
 
-`asm!` accepts a `label` operand containing a block of type `()` or `!` (1.87.0). Assembly may jump to the block, which then continues after the assembly. Combining label and output operands remains unstable.
+### Integer and character ABI types
 
-```rust
-unsafe {
-    std::arch::asm!("jmp {}", label {
-        println!("jumped from asm");
-    });
-}
-```
+- `core::ffi::c_char` changed signedness on many Tier 2/3 platforms in 1.85.0 to follow each C ABI; `libc` aligns beginning with 0.2.169. Do not assume `i8` or `u8`.
+- `i128`/`u128` in `extern "C"` definitions and `#[repr(i128)]`/`#[repr(u128)]` are stable since 1.89.0. They match C `__int128` where it exists, not necessarily `_BitInt(128)` or any type on every platform.
+- `core::ffi::c_double` is `f32` on AVR as of 1.96.0, matching that target's ABI.
 
-### Conditional templates and operands
+### Exported symbols and attributes
 
-Attach `#[cfg(...)]` to individual template strings and operands in `asm!`, `global_asm!`, and `naked_asm!` (1.93.0):
+- `#[track_caller]` may accompany `#[unsafe(no_mangle)]` since 1.92.0, provided all declarations specify `#[track_caller]`.
+- Since 1.96.0, the first repeated `export_name`, `link_name`, or `link_section` attribute takes precedence.
+- Since 1.97.0, invalid Mach-O `link_section`, empty `export_name`, and invalid `link_name` or native-link names are errors; `varargs_without_pattern` is reported in dependencies.
+- Stable rustc uses v0 symbol mangling by default since 1.97.0. Update demanglers, profilers, debuggers, and backtrace snapshots; the legacy scheme is nightly-only and planned for removal.
 
-```rust
-unsafe {
-    core::arch::asm!(
-        "nop",
-        #[cfg(target_feature = "sse2")]
-        "mov eax, {value}",
-        #[cfg(target_feature = "sse2")]
-        value = const 123,
-    );
-}
-```
+## Inline assembly and intrinsics
 
-PowerPC and PowerPC64 inline assembly is stable from 1.95.0. S390x vector registers are supported in inline assembly from 1.96.0.
+### Assembly control flow and naked functions
 
-## Foreign functions and ABIs
+- Since 1.87.0, `asm!` accepts a `label` operand with a `()` or `!` block. A jump runs the block, then continues after the assembly. Combining label and output operands remains unstable.
+- Since 1.88.0, a naked function uses `#[unsafe(naked)]` and a body containing exactly one `naked_asm!`. The compiler emits no prologue, epilogue, or argument/return handling; the assembly defines all of it.
+- Since 1.93.0, template strings and operands inside `asm!`, `global_asm!`, and `naked_asm!` may carry `#[cfg]` individually.
+- Inline assembly became stable on PowerPC/PowerPC64 in 1.95.0; s390x vector-register assembly support arrived in 1.96.0.
 
-### Explicit ABI declarations
+### Target-feature intrinsics
 
-`missing_abi` warns by default for `extern {}` and `extern fn` from 1.86.0. Omission still means C, but spell `extern "C"` explicitly.
+- Since 1.87.0, most architecture intrinsics whose sole safety precondition is an enabled target feature, and which accept no pointers, are safe inside a function carrying the matching `#[target_feature]`. Runtime dispatch still requires an unsafe call into that target-feature function.
+- The accidentally stable `std::intrinsics::{copy, copy_nonoverlapping, write_bytes}` became proper intrinsics in 1.89.0: they no longer add debug UB checks and cannot coerce to function pointers. `std::intrinsics::drop_in_place` was removed.
 
-Unsupported ABI strings are rejected in every position from 1.90.0, including trait impls for function pointers. From 1.89.0, legacy 32-bit x86 spellings such as `"stdcall"`, `"fastcall"`, and `"cdecl"` are linted on targets where they do not apply. Dependencies warned in 1.87.0 when a function pointer named an unsupported ABI.
+## Volatile memory, unwind data, and layouts
 
-### C-style variadics
-
-- `sysv64`, `win64`, `efiapi`, and `aapcs` permit C-style variadic declarations in foreign blocks from 1.91.0.
-- The `system` ABI permits them from 1.93.0.
-- Rust may declare these variadic functions but still cannot define them.
-
-```rust
-unsafe extern "sysv64" {
-    fn log(format: *const core::ffi::c_char, ...);
-}
-```
-
-### C integer and character compatibility
-
-`i128` and `u128` no longer trigger `improper_ctypes_definitions` in C-ABI functions, and `#[repr(i128)]` and `#[repr(u128)]` are stable (1.89.0). They match C `__int128` where it exists, are not necessarily compatible with `_BitInt(128)`, and have no guaranteed matching C type on platforms lacking `__int128`.
-
-`core::ffi::c_char` changed between `i8` and `u8` on many Tier 2 and Tier 3 targets to follow the platform C `char` default (1.85.0). `libc` matches from 0.2.169. On AVR, `core::ffi::c_double` is `f32` from 1.96.0 to match that platform's C ABI.
-
-### Representation diagnostics and contracts
-
-- A `repr(C)` enum whose discriminant does not fit `c_int` or `c_uint` receives a future-compatibility warning (1.93.0).
-- `repr(transparent)` receives a warning when it would ignore a field type's `repr(C)` representation (1.93.0).
-- Some enum layouts involving uninhabited zero-sized fields were corrected in 1.96.0; unspecified layouts also changed in 1.97.0. Add an explicit representation only when a stable external layout is required.
-- When duplicate `export_name`, `link_name`, or `link_section` attributes appear, the first takes precedence from 1.96.0.
-
-### Call metadata and symbols
-
-`#[track_caller]` and `#[no_mangle]` may be combined from 1.92.0, but every declaration of the function must carry `#[track_caller]`.
-
-## Allocation and staged initialization
-
-### `MaybeUninit`
-
-- `Box<MaybeUninit<T>>::write` initializes a boxed allocation in place (1.87.0).
-- `[MaybeUninit<T>]` supports `assume_init_drop`, `assume_init_ref`, `assume_init_mut`, `write_copy_of_slice`, and `write_clone_of_slice` for slice-wide initialization and access (1.93.0).
-- `MaybeUninit<[T; N]>` converts to and from `[MaybeUninit<T>; N]` and exposes array or slice views through `AsRef` and `AsMut` (1.95.0).
-
-Each `assume_init_*` operation still requires proof that the relevant elements are initialized and valid for `T`.
-
-### Zeroed allocation and raw parts
-
-`Box`, `Rc`, and `Arc` provide `new_zeroed` and `new_zeroed_slice` from 1.92.0. Zero bytes are not a valid value for every type; initialization must be completed before assuming the value is initialized.
-
-`String::into_raw_parts` and `Vec::into_raw_parts` stably transfer ownership into pointer, length, and capacity from 1.93.0. Reconstruct with the matching allocator and original invariants exactly once.
-
-### Global allocators
-
-A Rust global allocator may use `thread_local!` and `std::thread::current()` from 1.93.0. The standard library uses the system allocator in paths that must avoid re-entering the custom allocator.
-
-## Layout construction and dangling pointers
-
-`Layout` gains `dangling_ptr`, `repeat`, `repeat_packed`, and `extend_packed` in 1.95.0. Earlier const stabilization includes `Layout::for_value`, `align_to`, `pad_to_align`, `extend`, and `array` (1.85.0). A dangling pointer is non-null and aligned but does not make memory dereferenceable.
-
-Pointers from `Thread::into_raw` have at least eight-byte alignment from 1.90.0.
-
-## Atomics and volatile memory
-
-### Atomic operations
-
-- `AtomicPtr` gains element- and byte-offset fetch-add/subtract plus `fetch_or`, `fetch_and`, and `fetch_xor` (1.91.0).
-- Atomic pointer, boolean, and integer types gain `update` and `try_update` (1.95.0).
-- Const evaluation supports `from_ptr` for every supported atomic integer type, `AtomicBool`, and `AtomicPtr` from 1.84.0.
-
-Apply the documented memory ordering to both success and failure cases of update loops; stabilization does not relax atomic ordering rules.
-
-### Mutable and external memory in constants
-
-Constants may end with references to mutable or external memory from 1.90.0, but such constants cannot be used as patterns. Const evaluation can copy pointers byte by byte, and a const item may hold a mutable reference to a static from 1.93.0; the latter remains highly unsafe despite being accepted.
-
-Volatile access to non-Rust memory, including address zero, is permitted from 1.90.0. Volatile affects access observability, not pointer validity, alignment, races, or device-specific ordering.
-
-## Low-level diagnostic changes
-
-- `invalid_null_arguments` detects invalid null-pointer arguments from 1.88.0.
-- The accidentally stable `copy`, `copy_nonoverlapping`, and `write_bytes` compiler intrinsics became proper intrinsics in 1.89.0. They do not coerce to function pointers and do not add runtime undefined-behavior checks.
-- `offset_of!` rejects ill-formed user types from 1.93.0.
-- Empty or malformed native-link attributes are rejected in 1.97.0; keep unsafe attribute invariants explicit.
+- Volatile operations may access memory outside Rust allocations, including address zero, since 1.90.0. This does not relax each operation's other preconditions.
+- Linux `-C panic=abort` emits unwind tables by default since 1.92.0 for useful backtraces; use `-C force-unwind-tables=no` for the old omission.
+- `#[repr(Int)]` enum layout can differ from older output in 1.96.0 edge cases involving fields of uninhabited zero-sized types.
+- Some non-`repr` enums changed encoding in 1.97.0. Layout without an explicit representation is not a compatibility contract; never expose the observed encoding through unsafe code or FFI.
+- Out-of-range discriminants on `repr(C)` enums receive a future-compatibility warning since 1.93.0.

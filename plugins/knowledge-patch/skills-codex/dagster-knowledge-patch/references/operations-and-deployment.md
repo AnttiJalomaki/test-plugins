@@ -1,11 +1,59 @@
 # Operations and deployment
 
-## Custom executors and resource initialization
+## Run coordination and concurrency
 
-Dedicated-process executors can recover from resource initialization failures
-through step retries (1.12-upgrade). A custom `Executor` must emit and
-register a failure-or-retry event for each failure. Without it, the run can
-remain in `started`:
+### Queued coordination is the default (since 1.10.0)
+
+The queued run coordinator is the default, so the Dagster daemon must be
+running before runs launch. To retain immediate in-process launches, configure
+the former coordinator explicitly:
+
+```yaml
+run_coordinator:
+  module: dagster.core.run_coordinator.sync_in_memory_run_coordinator
+  class: SyncInMemoryRunCoordinator
+```
+
+### Pool-aware blocking (since 1.10.0)
+
+Run blocking for concurrency keys and pools is enabled by default. At op
+granularity, a run is dequeued once at least one op can execute. At run
+granularity, every pool used by a run must have a free slot.
+
+Pool names initially accepted only letters, numbers, dashes, and underscores.
+The `dagster-dbt`, `dagster-dlt`, and `dagster-sling` integrations support
+pools.
+
+### Relaxed pool names (since 1.12.0)
+
+Pool names can contain any non-whitespace character. This replaces the earlier
+letters, numbers, dashes, and underscores rule and its later slash allowance.
+The Helm chart also accepts a `concurrency` setting for pools.
+
+### Automatic code-location tags (since 1.12.0)
+
+A run with a remote job origin automatically receives the
+`dagster/code_location` tag. Use it for filtering or concurrency controls.
+
+## Step and executor behavior
+
+### Start downstream work after outputs are ready (since 1.11.0)
+
+All executors accept `step_dependency_config.require_upstream_step_success`.
+Set it to `false` to let a downstream step start after required upstream
+outputs are available, even if the producing multi-asset step is still
+running.
+
+```json
+{"step_dependency_config": {"require_upstream_step_success": false}}
+```
+
+### Resource initialization failures (1.12-upgrade)
+
+Executors that run steps in dedicated processes can recover from resource
+initialization failure through step retries. A custom `Executor` must emit and
+register an explicit failure-or-retry event for every such failure. Without
+that event, the run can remain in `started` status.
 
 ```python
 if event.is_resource_init_failure:
@@ -18,89 +66,99 @@ if event.is_resource_init_failure:
     active_execution.handle_event(failure_or_retry_event)
 ```
 
-## Event and proxy limits
+### Partial run configuration (since 1.13.0)
 
-Since 1.11.0, event error messages or stack traces larger than 500 KB are
-truncated. Override the threshold with
-`DAGSTER_EVENT_ERROR_FIELD_SIZE_LIMIT`.
+When a run supplies only part of its config, Dagster fills omitted portions
+from the job-level config defaults.
 
-Kubernetes executor `enable_owner_references` ties step jobs and pods to the
-run pod for garbage collection. `DAGSTER_GRPC_PROXY_HEARTBEAT_TTL_SECONDS`
-sets proxy gRPC heartbeat TTL; the default is 30 seconds.
+## Definition validation
 
-## Code locations, pools, and daemons
+### Partition mappings and duplicate specs (since 1.11.0)
 
-Runs with a remote job origin automatically receive the
-`dagster/code_location` tag (1.12.0), useful for filters and concurrency
-controls. Helm configuration supports a `concurrency` setting for pools.
+`dagster definitions validate` fails on invalid partition mappings, including
+time-partitioned dependencies with different time zones. `Definitions` and
+`AssetsDefinition` also reject distinct `AssetSpec` objects that share one
+asset key.
 
-Schedule, sensor, and asset-daemon ticks dispatch instigators round-robin
-across code locations in 1.13.0. Job backfills retry transient daemon
-failures.
+### Owner validation (since 1.13.0)
 
-## Kubernetes and Helm
+Asset-job owners are validated when definitions load. Team-owner strings on
+jobs, schedules, and sensors may contain special characters.
 
-The 1.12.0 Helm chart supports image digests. Dagster and Dagster+ agent
-charts accept `k8sApiCaBundlePath` for a custom Kubernetes API CA.
-Code-location Services accept arbitrary Kubernetes Service overrides through
-`service_spec_config`, and the supported Kubernetes dependency range includes
-35.x.
+## Backfills and daemon dispatch
 
-With `includeConfigInLaunchedRuns.enabled` in 1.13.0, launched run pods inherit
-`nodeSelector`, `tolerations`, and `podSecurityContext` from the user
-deployment. User-code deployments accept `replicaCount`; replicas share a
-stable gRPC server ID. `code_server.*` metrics identify the responding process
-through `server_instance_id`.
+### Submission and failure cleanup (since 1.11.0)
 
-For sovereign Azure, ADLS2 and Blob Storage utilities, resources, Components,
-and compute logging accept `endpoint_suffix`. The corresponding compute-log
-Helm field is `endpointSuffix`.
+Backfill submission uses a thread pool of four daemon workers by default.
+Asset backfills can carry run config. When a backfill fails, Dagster cancels
+its in-progress runs before terminating it.
 
-## ECS behavior
+### Fair tick dispatch and retry naming (since 1.13.0)
 
-Jobs and Launchpad runs using `EcsRunLauncher` can use the
-`ecs/container_overrides` tag for settings such as GPU requirements (1.12.0).
+Schedule, sensor, and asset-daemon ticks dispatch instigators round-robin over
+code locations. Job backfills retry transient daemon failures.
 
-`EcsUserCodeLauncher.repository_credentials` can configure ECR credentials at
-agent or deployment scope in 1.13.0, not only per code location.
+`DAGSTER_MAX_ASSET_BACKFILL_RETRIES` was renamed to
+`DAGSTER_MAX_BACKFILL_RETRIES`; the old environment variable remains a
+fallback.
 
-ECS stops caused by `InsufficientFreeAddressesInSubnet` or
-`Task provisioning failed` are classified as transient in 1.13.0, so the
-affected run is retried instead of marked permanently failed.
+## GraphQL clients and event limits
 
-## Authentication
+### Submission selection and pagination (since 1.11.0)
 
-`DatabricksClientResource.credentials_strategy` accepts the Databricks SDK
-`CredentialsStrategy` protocol for custom or federated authentication
-(1.13.0).
+`DagsterGraphQLClient.submit_job_execution` accepts `asset_selection`.
+`logsForRun` and `eventConnection` return at most 1,000 events by default.
+Follow each response cursor to retrieve remaining logs.
 
-PostgreSQL accepts `auth_provider="azure_wif"`, `"gcp_wif"`, or `"aws_wif"`,
-with corresponding optional extras. Helm exposes
-`global.postgresqlAuthWifEnabled`.
+### Mounted webservers and bounded previews (since 1.13.0)
 
-## Storage and IO behavior
+`DagsterGraphQLClient` accepts `path_prefix` for a webserver mounted below the
+URL root. The GraphQL `Run` type accepts an optional selection `limit` and
+reports full `assetSelectionCount` and `assetCheckSelectionCount` values, so a
+client can render bounded previews without losing the true totals.
 
-The SQLite event-log `busy_timeout` default rose from 5 to 30 seconds in
-1.13.0. `PickledObjectS3IOManager` uses an empty key prefix when none is
-provided.
+### Error-field and heartbeat limits (since 1.11.0)
 
-BigQuery, Snowflake, and DuckDB IO managers skip empty DataFrame writes and
-log a warning rather than creating a table from degenerate inferred types.
+Event errors or stack traces larger than 500 KB are truncated.
+`DAGSTER_EVENT_ERROR_FIELD_SIZE_LIMIT` changes that limit.
 
-## Pipes controls
+`DAGSTER_GRPC_PROXY_HEARTBEAT_TTL_SECONDS` changes the proxy gRPC heartbeat TTL
+from its default of 30 seconds.
 
-The preview `PipesCompositeMessageReader` handles multiple concurrent message
-streams within one Pipes session (1.13.0).
-`PipesK8sClient.run(delete_pod_on_completion=False)` preserves its pod after
-completion. `PipesEMRServerlessClient.dashboard_refresh_interval` controls
-Spark dashboard refresh; its longer default keeps UI URLs valid during runs.
+## Databases and local development
 
-## Runtime and notebook compatibility
+### Database migrations and PostgreSQL dependency (since 1.12.0)
 
-The `dagstermill` package requires `papermill>=2.0.0` in 1.13.0 and raises
-the default Jupyter kernel startup timeout from 60 to 120 seconds.
-`dagster-airlift` supports Python 3.12, 3.13, and 3.14.
+MySQL installations must run `dagster instance migrate` for the `LongText`
+migrations affecting bulk-action bodies and cached asset status data.
 
-## Administrative APIs
+`dagster-postgres` no longer installs `psycopg2-binary` transitively. Declare
+it directly when the deployment uses that driver.
 
-Dagster+ SCIM Groups queries support the `members.value eq` filter (1.13.0).
+### Development database pools (since 1.12.0)
+
+`dg dev` and `dagster dev` accept database-pool controls including
+`--db-pool-recycle` and `--db-pool-pre-ping`.
+
+### Storage defaults (since 1.13.0)
+
+- The SQLite event-log `busy_timeout` default increased from 5 to 30 seconds.
+- `PickledObjectS3IOManager` uses an empty key prefix when no prefix is given.
+- BigQuery, Snowflake, and DuckDB IO managers skip empty-DataFrame writes and
+  emit a warning.
+
+## Runtime compatibility
+
+### Python and dependencies (since 1.11.0 and 1.12.0)
+
+Dagster 1.11 supports Python 3.13 and protobuf 6.x, and removes the Click
+`<8.2` cap. The Delta Lake integrations require `deltalake>=1.0.0` without an
+API change.
+
+Dagster 1.12 drops Python 3.9, making Python 3.10 the minimum. Core and most
+libraries support Python 3.14; `dg plus deploy` supports Python 3.13 and 3.14.
+
+### Failure-sensor context (since 1.13.0)
+
+When a run fails because a step failed, the original step error is available
+on the run-failure sensor context.

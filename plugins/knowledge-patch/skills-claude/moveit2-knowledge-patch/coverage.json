@@ -2,7 +2,7 @@
   "patch": "moveit2-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T08:00:34Z",
+  "built_at": "2026-08-21T12:49:20Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -38,6 +38,11 @@
       "build": "omitted"
     },
     "jazzy-release": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.15.0": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

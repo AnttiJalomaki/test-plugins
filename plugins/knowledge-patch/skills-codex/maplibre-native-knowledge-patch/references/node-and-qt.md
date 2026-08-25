@@ -1,29 +1,42 @@
 # Node and Qt Bindings
 
-## Node runtime and renderer
+Use this reference for Node runtime compatibility, offscreen rendering,
+resource hooks and logging, plus Qt 3 linking, QML, deployment, and Android
+multi-ABI selection.
 
-At the `node-6.1.0` boundary, Node.js 16 support is removed. The package moves
-back to `@mapbox/node-pre-gyp`, which requires Node.js 18 or newer. Stable
-binding 6.4.1 supports Node.js 20, 22, and 24; Node.js 26 support belongs to the
-6.5 prerelease line.
+## Node runtime and renderer compatibility
 
-Linux and Windows Node builds use the drawable renderer, and the legacy
-renderer has been removed. Metal has powered macOS Node rendering since Node
-6.0.
+The `node-6.1.0` line requires Node.js 18 or newer because the package moved
+back to `@mapbox/node-pre-gyp`; Node.js 16 is unsupported. Linux and Windows
+also use the drawable renderer from this line, with the legacy renderer
+removed.
 
-Node 6.1 supports PMTiles-backed map data. Sprites can define `textFitWidth` and
-`textFitHeight`, exposing text-fit metadata during Node rendering.
+The stable 6.4.1 binding supports Node.js 20, 22, and 24. Node.js 26 support
+belongs to the 6.5 prerelease line and must not be assumed for the stable
+package.
 
-## Node map rendering
+## Node map data and sprite metadata
 
-`Map.render` accepts optional `zoom`, `width`, `height`, `[longitude, latitude]`
-`center`, counter-clockwise-from-north `bearing`, `pitch`, and style `classes`.
-It asynchronously returns a four-channel raw pixel buffer.
+Node 6.1 supports PMTiles-backed map data. Sprites can expose `textFitWidth`
+and `textFitHeight`, making text-fit metadata available to Node rendering.
 
-Defaults are zoom 0, 512×512 pixels, center `[0, 0]`, and zero bearing and
-pitch. Calling `release()` permanently disables later renders. It is safe to
-call inside the render callback because the returned buffer remains retained
-for that callback.
+## Node rendering and buffer lifetime
+
+`Map.render` accepts these optional values:
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `zoom` | zoom level | `0` |
+| `width`, `height` | output pixels | `512`, `512` |
+| `center` | `[longitude, latitude]` | `[0, 0]` |
+| `bearing` | counter-clockwise from north | `0` |
+| `pitch` | camera pitch | `0` |
+| `classes` | style classes | none |
+
+The callback receives a raw four-channel pixel buffer asynchronously.
+`release()` permanently disables later renders, but calling it within the
+render callback is safe because the returned buffer remains retained for that
+callback.
 
 ```js
 const mbgl = require('@maplibre/maplibre-gl-native');
@@ -38,28 +51,25 @@ map.render({ width: 256, height: 256, center: [24.94, 60.17], zoom: 10 },
   });
 ```
 
-## Node resource requests
+## Node resource request hook
 
 The `Map` constructor's `request({ url, kind }, callback)` hook routes every
-style resource through application code. The handler must understand every
-custom URL scheme in the style.
+style resource through application code. The resource kinds are:
 
-`kind` values are:
+| Kind | Code |
+| --- | ---: |
+| `Unknown` | 0 |
+| `Style` | 1 |
+| `Source` | 2 |
+| `Tile` | 3 |
+| `Glyphs` | 4 |
+| `SpriteImage` | 5 |
+| `SpriteJSON` | 6 |
 
-| Value | Kind |
-| ---: | --- |
-| 0 | `Unknown` |
-| 1 | `Style` |
-| 2 | `Source` |
-| 3 | `Tile` |
-| 4 | `Glyphs` |
-| 5 | `SpriteImage` |
-| 6 | `SpriteJSON` |
-
-A successful response requires uncompressed byte `data` and may include
-`modified` and `expires` dates plus an `etag`. Call the callback with no
-arguments for a no-content result. Constructor `ratio` controls high-density
-rendering scale.
+The handler must understand every custom URL scheme used by the style. A
+successful response needs uncompressed byte `data` and may include `modified`
+and `expires` dates plus an `etag`. Call the callback with no arguments for a
+no-content result. Constructor `ratio` controls high-density rendering scale.
 
 ```js
 const fs = require('node:fs');
@@ -79,9 +89,9 @@ const map = new mbgl.Map({
 
 ## Node log events
 
-The imported module is an `EventEmitter`. Its `message` events can include
-`class`, `severity`, `code`, and `text`, making native style and resource
-failures observable.
+The imported module is an `EventEmitter`. Its `message` events can contain
+`class`, `severity`, `code`, and `text`, exposing native style and resource
+failures.
 
 ```js
 const mbgl = require('@maplibre/maplibre-gl-native');
@@ -91,19 +101,21 @@ mbgl.on('message', (message) => {
 });
 ```
 
-## Qt 3 libraries and CMake
+## Qt 3 libraries and CMake targets
 
-Qt 3 places its API in `QMapLibre` and splits installation into `QMapLibre`,
-`QMapLibreLocation`, and `QMapLibreWidgets`. The CMake package exposes Core,
-Location, and Widgets components and `QMapLibre::*` targets.
+Qt 3 places the API in the `QMapLibre` namespace and splits installation into
+`QMapLibre`, `QMapLibreLocation`, and `QMapLibreWidgets`. The CMake package
+exposes `Core`, `Location`, and `Widgets` components with `QMapLibre::*`
+targets.
 
-Qt 3 supports static builds and CMake subproject consumption. Releases were
-built with Qt 6.5–6.7 on all supported platforms and Qt 5.15.2 on macOS, Linux,
-and Windows.
+The release supports static builds and use as a CMake subproject. It was built
+with Qt 6.5–6.7 on all supported platforms, and with Qt 5.15.2 on macOS,
+Linux, and Windows.
 
-Point `QMapLibre_DIR` at `<install>/lib/cmake/QMapLibre`, or add the installation
-prefix to `CMAKE_PREFIX_PATH`. Widgets deployments need both `QMapLibre` and
-`QMapLibreWidgets`.
+Find the package by setting `QMapLibre_DIR` to
+`<install>/lib/cmake/QMapLibre` or adding the installation prefix to
+`CMAKE_PREFIX_PATH`. A Widgets deployment must include both `QMapLibre` and
+`QMapLibreWidgets` libraries.
 
 ```cmake
 find_package(QMapLibre COMPONENTS Widgets REQUIRED)
@@ -113,11 +125,11 @@ target_link_libraries(MyApplication PRIVATE QMapLibre::Widgets)
 ## Qt 3 QML and deployment
 
 QML applications use `import MapLibre 3.0` and configure styles through
-`maplibre.map.styles`. Deploy both `plugins/geoservices` and `qml/MapLibre`,
+`maplibre.map.styles`. Deploy `plugins/geoservices` and `qml/MapLibre`
 together with the core and Location libraries.
 
-Linking Location exposes `qmaplibre_location_setup_plugins`, which installs both
-plugin trees:
+Linking the Location component exposes `qmaplibre_location_setup_plugins`,
+which installs both plugin trees:
 
 ```cmake
 find_package(QMapLibre COMPONENTS Location REQUIRED)
@@ -126,14 +138,14 @@ qmaplibre_location_setup_plugins(MyApplication)
 ```
 
 For undeployed development runs, set `QML_IMPORT_PATH=<install>/qml` and
-`QT_PLUGIN_PATH=<install>/plugins` if Qt cannot find the imports or plugins. Set
-`QSG_RHI_BACKEND=opengl` to force the Qt 3 renderer. Stable Qt 3 supports only
-OpenGL.
+`QT_PLUGIN_PATH=<install>/plugins` if Qt cannot find them. Set
+`QSG_RHI_BACKEND=opengl` to force the Qt 3 renderer.
 
-## Qt Android multi-ABI builds
+## Qt Android multi-ABI packages
 
-Select the ABI-specific CMake package beneath a common `QMapLibre_Android_DIR`;
-do not reuse one architecture's `QMapLibre_DIR`.
+For a multi-ABI Android build, select the ABI-specific CMake package beneath
+one `QMapLibre_Android_DIR`; do not reuse another architecture's
+`QMapLibre_DIR`.
 
 ```cmake
 if(ANDROID AND DEFINED ENV{QMapLibre_Android_DIR})
@@ -144,5 +156,5 @@ endif()
 
 ## Empty Qt styles
 
-Qt 3 permits a `Style` with an empty URL. A placeholder URL is no longer needed
-just to construct the style object.
+Qt 3 permits constructing a `Style` with an empty URL. A placeholder URL is
+not required solely for construction.

@@ -1,9 +1,17 @@
-# Dependency security, audit, trust, and SBOMs
+# Dependency Security, Audit, Trust, and SBOMs
 
-## Delay newly published versions
+## Audit vulnerability exclusions (2025-05-06)
 
-`minimumReleaseAge` delays installation until a version has existed for the
-configured number of minutes (`2025-09`):
+`pnpm audit --ignore-unfixable` excludes vulnerabilities without fixes. Repeat `--ignore` to exclude selected CVEs even when fixes exist.
+
+```sh
+pnpm audit --ignore-unfixable
+pnpm audit --ignore=CVE-2021-1234 --ignore=CVE-2021-5678
+```
+
+## Minimum release age (2025-09, 2025-10)
+
+`minimumReleaseAge` blocks a version until the configured minutes have elapsed since publication. `minimumReleaseAgeExclude` bypasses the delay for named packages and, as of pnpm 10.17, package patterns. Exact requests remain gated with cached metadata, and a too-new stable dist-tag does not fall back to a prerelease.
 
 ```yaml
 minimumReleaseAge: 1440
@@ -12,32 +20,19 @@ minimumReleaseAgeExclude:
   - "@eslint/*"
 ```
 
-`minimumReleaseAgeExclude` accepts package names and, starting in pnpm 10.17,
-package patterns. Exact-version requests remain gated even when metadata is
-cached. If a stable dist-tag points to a too-new version, pnpm does not fall
-back to a prerelease.
-
-Later pnpm 10 accepts exact versions and `||` disjunctions, allowing selected
-releases to bypass the delay without exempting the package (`2025-10`):
+Exclusions also accept exact versions and `||` disjunctions.
 
 ```yaml
-minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - nx@21.6.5
   - webpack@4.47.0 || 5.102.1
 ```
 
-`pnpm outdated` respects the maturity policy. When `latest` is too new, pnpm
-selects the highest sufficiently mature version even across major-version
-boundaries.
+`pnpm outdated` respects the maturity policy. If `latest` is too new, pnpm selects the highest mature version even when it is in another major.
 
-pnpm 11 defaults `minimumReleaseAge` to 1440 minutes and
-`minimumReleaseAgeStrict` to `false` (`11.0.0`). Set age to 0 to opt out.
+## Trust downgrade policy (2025-11, 2025-12)
 
-## Trust downgrade policy
-
-`trustPolicy: no-downgrade` rejects a release whose trust evidence is weaker
-than an earlier release (`2025-11`):
+`trustPolicy: no-downgrade` fails installation when a release has weaker trust evidence than earlier releases. `trustPolicyExclude` permits named versions. Failures remain fatal for optional dependencies; prerelease evidence is ignored for stable releases.
 
 ```yaml
 trustPolicy: no-downgrade
@@ -46,118 +41,105 @@ trustPolicyExclude:
   - webpack@4.47.0 || 5.102.1
 ```
 
-`trustPolicyExclude` allows named versions. Policy failures stay fatal for
-optional dependencies, and prerelease trust evidence is ignored while
-installing a stable release.
+`trustPolicyIgnoreAfter` skips trust checks for versions published more than the configured age ago.
 
-`trustPolicyIgnoreAfter` skips trust-policy checks for versions published more
-than the configured age ago (`2025-12`).
+## Block exotic transitive sources (2025-12)
 
-`trustLockfile: true` skips both `minimumReleaseAge` and no-downgrade checks for
-entries loaded from an already-reviewed lockfile (`11.1-11.3`). It defaults to
-`false` and is intended only when lockfile changes pass a trusted review
-process.
-
-```yaml
-trustLockfile: true
-```
-
-Trusted-publisher evidence receives its highest trust rank only when provenance
-is also present (`11.4-11.5`). Registry metadata containing an `approver` field
-counts as staged-publish evidence and ranks above trusted publishers and
-provenance attestations.
-
-## Block risky dependency sources
-
-`blockExoticSubdeps` rejects exotic transitive sources such as `git+ssh:` and
-direct HTTPS tarballs, while direct dependencies may still use them
-(`2025-12`):
+`blockExoticSubdeps` rejects exotic transitive sources such as `git+ssh:` repositories and direct HTTPS tarballs. Direct dependencies may still use them.
 
 ```yaml
 blockExoticSubdeps: true
 ```
 
-This is enabled by default in pnpm 11. Lockfile integrity and Git validation are
-covered in [installs-lockfiles-store.md](installs-lockfiles-store.md).
+## Audit migration to GHSA identifiers (migration-10-to-11)
 
-## Audit filtering
+`auditConfig.ignoreCves` is replaced by `auditConfig.ignoreGhsas`. The codemod renames the key but cannot translate entries; manually replace each CVE with the GHSA in the **More info** column of `pnpm audit`.
 
-pnpm 10 adds two forms of audit exclusion (`2025-05-06`):
-
-```sh
-pnpm audit --ignore-unfixable
-pnpm audit --ignore=CVE-2021-1234 --ignore=CVE-2021-5678
+```yaml
+auditConfig:
+  ignoreGhsas:
+    - GHSA-xxxx-xxxx-xxxx
 ```
 
-`--ignore-unfixable` hides vulnerabilities without a fix. Repeatable
-`--ignore` hides selected CVEs even when fixes exist.
+## pnpm 11 audit fixes (11.0.0)
 
-For pnpm 11 migration, replace `auditConfig.ignoreCves` with
-`auditConfig.ignoreGhsas` and manually translate each CVE to the corresponding
-GHSA from the audit report (`migration-10-to-11`).
-
-## Audit fixes
-
-pnpm 11 supports `pnpm audit --fix=update`, which updates vulnerable packages
-in the lockfile rather than adding overrides. `--interactive` selects
-advisories (`11.0.0`):
+`pnpm audit --fix=update` updates vulnerable lockfile packages instead of creating overrides; `--interactive` selects advisories. Any `pnpm audit --fix` adds each minimum patched version to `minimumReleaseAgeExclude` so the default age gate does not delay the fix.
 
 ```sh
 pnpm audit --fix=update --interactive
 ```
 
-Every form of `pnpm audit --fix` adds the minimum patched releases to
-`minimumReleaseAgeExclude`, preventing the default age gate from delaying a
-security fix.
+## Verify registry signatures (11.1-11.3)
 
-## Signature verification
-
-`pnpm audit signatures` verifies installed packages against ECDSA registry
-signatures and keys published at `/-/npm/v1/keys` (`11.1-11.3`). It honors
-scoped registries and skips registries that publish no signing keys.
+`pnpm audit signatures` verifies installed packages against ECDSA registry signatures and keys at `/-/npm/v1/keys`. It respects scoped registries and skips registries without signing keys.
 
 ```sh
 pnpm audit signatures
 ```
 
-## Generate SBOMs
+## CycloneDX specification versions (11.1-11.3)
 
-pnpm 11 introduces `pnpm sbom` with CycloneDX 1.7 and SPDX 2.3 JSON output
-(`11.0.0`). For CycloneDX, `--sbom-spec-version` selects 1.5, 1.6, or 1.7; the
-default is 1.7, and the option is invalid for other formats (`11.1-11.3`):
+For `pnpm sbom --sbom-format cyclonedx`, `--sbom-spec-version` accepts `1.5`, `1.6`, or `1.7`; the default is `1.7`. The option is invalid for other formats.
 
 ```sh
 pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.6
 ```
 
-`--out` writes one output file and `--split` creates one SBOM for every selected
-workspace package (`11.6-11.9`):
+## Trust a reviewed lockfile (11.1-11.3)
+
+`trustLockfile: true` skips reapplying `minimumReleaseAge` and `trustPolicy: no-downgrade` to lockfile entries. It defaults to `false` and is intended for lockfiles whose changes pass a trusted review process.
+
+```yaml
+trustLockfile: true
+```
+
+## Resolution and patch hardening (11.4-11.5)
+
+- Git resolution `commit` must be a 40-character hexadecimal SHA; pnpm rejects other values before invoking Git.
+- Patch `diff --git` headers cannot refer outside the patched package, including writes, deletes, or renames.
+- Dependency aliases with path-traversal segments are rejected when reading manifests and linking `node_modules`.
+
+## Trust evidence ranking (11.4-11.5)
+
+Trusted-publisher metadata receives its highest trust rank only with provenance. Registry metadata containing `approver` is staged-publish evidence and ranks above trusted publishers and provenance attestations.
+
+## Write and split SBOM output (11.6-11.9)
+
+`pnpm sbom --out` writes a file; `--split` writes one SBOM per selected workspace package. A single filtered package becomes the root component. CycloneDX marks components reachable only through development dependencies as excluded development components.
 
 ```sh
 pnpm sbom --out sbom.json
 pnpm sbom --split
 ```
 
-When exactly one filtered package is selected, it becomes the root component.
-CycloneDX marks components reachable only through development dependencies as
-excluded development components.
-
-Use `--exclude-peers` to omit peer dependencies and transitive subtrees
-reachable only through those peers:
+`pnpm sbom --exclude-peers` omits peer dependencies and transitive subtrees reachable only through them.
 
 ```sh
 pnpm sbom --exclude-peers
 ```
 
-## Current audit configuration
+## Release-age filtering and resolution mode (2026-08)
 
-Top-level `audit` replaces `auditConfig` and `auditLevel` in pnpm 11.10–11.17
-(`11.10-11.17`). Deprecated keys continue until the next major, but the new
-form wins when both are present:
+With `minimumReleaseAge`, `resolutionMode: lowest-direct` and `resolutionMode: time-based` select the lowest satisfying direct-dependency version rather than being forced to the highest.
 
 ```yaml
-audit:
-  level: high
-  ignore:
-    - GHSA-xxxx-yyyy-zzzz
+minimumReleaseAge: 1440
+resolutionMode: lowest-direct
+```
+
+## Metadata cache and trust log (2026-08)
+
+`pnpm cache path` prints the metadata-cache directory, which CI may cache with its lockfile verification log. `pnpm store prune` preserves that log, so an unchanged lockfile does not need supply-chain policies rechecked after pruning.
+
+```sh
+pnpm cache path
+```
+
+## Installed versus lockfile-only SBOMs (2026-08)
+
+`pnpm sbom` omits optional platform-specific packages that cannot install on the current platform. `pnpm sbom --lockfile-only` describes the full platform-independent graph. Git-resolution `integrity` values are not reported as checksums because pnpm does not verify them; verified binary-runtime archive checksums are included.
+
+```sh
+pnpm sbom
+pnpm sbom --lockfile-only
 ```

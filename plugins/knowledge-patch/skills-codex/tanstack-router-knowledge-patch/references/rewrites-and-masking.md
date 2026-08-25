@@ -1,16 +1,17 @@
-# URL rewrites and route masks
+# Rewrites and Masking
 
-## Bidirectional URL rewrites
+## Configure bidirectional URL rewrites
 
-The router-level `rewrite` option separates the public browser URL from the URL
-used for route matching:
+Router-level `rewrite.input` maps a browser URL to the internal URL before
+matching. `rewrite.output` maps an internal URL to the public URL before links
+or history entries are written. Each receives `{ url: URL }` and may return the
+mutated object, a new `URL`, a complete href string, or `undefined`.
 
-- `input` maps the browser URL to an internal URL before matching;
-- `output` maps an internal URL to a public URL before a link or history entry is
-  written.
-
-Each handler receives `{ url: URL }`. It may mutate and return that `URL`, return
-a new `URL`, return a full href string, or return `undefined`.
+`location.href` remains the internal location; `location.publicHref` is the
+external shareable location. `Link` and programmatic navigation apply output
+rewrites automatically. If output changes the origin, `Link` performs a hard
+navigation. The same configuration applies to server request parsing and SSR
+hydration.
 
 ```tsx
 import { createRouter } from '@tanstack/react-router'
@@ -27,24 +28,15 @@ const localeRewrite = {
   },
 }
 
-const router = createRouter({
-  routeTree,
-  rewrite: localeRewrite,
-})
+const router = createRouter({ routeTree, rewrite: localeRewrite })
 ```
 
-After matching, `location.href` remains the internal URL and
-`location.publicHref` is the external, shareable URL. `<Link>` and programmatic
-navigation apply output rewrites automatically. If an output rewrite changes the
-origin, `<Link>` performs a hard navigation.
+## Compose rewrites around the basepath
 
-Use the same rewrite configuration while parsing server requests and during SSR
-hydration. Otherwise, server and client route matches can disagree.
-
-## Composition and basepaths
-
-`composeRewrites` applies input rewrites from first to last. It applies output
-rewrites from last to first so the transformations unwrap in reverse order.
+`composeRewrites` runs input rewrites first-to-last and output rewrites
+last-to-first, so nested transformations unwrap in reverse order. A router
+`basepath` is composed outside custom rewrites automatically: it is stripped
+before custom input and restored after custom output.
 
 ```tsx
 import { composeRewrites } from '@tanstack/react-router'
@@ -63,19 +55,12 @@ const router = createRouter({
 })
 ```
 
-A configured `basepath` is automatically composed outside custom rewrites. The
-router strips it before custom input handlers run and restores it after custom
-output handlers finish. Custom handlers should therefore operate on paths that
-do not contain the basepath.
+## Mask one runtime route as another URL
 
-## Route mask APIs
-
-A route mask navigates to one typed runtime location while displaying and
-persisting another location in the URL bar. There are two forms:
-
-- supply `mask` to `<Link>` or `navigate()` for one navigation;
-- create a typed, reusable mapping with `createRouteMask` and register it in the
-  router's `routeMasks` array.
+A mask navigates to one typed runtime location while placing a different
+location in the URL bar. Pass `mask` to a `Link` or `navigate()` call for one
+navigation. For a reusable typed mapping, create it with `createRouteMask` and
+register it in router `routeMasks`.
 
 ```tsx
 import { createRouteMask } from '@tanstack/react-router'
@@ -87,34 +72,24 @@ const photoMask = createRouteMask({
   params: (prev) => ({ photoId: prev.photoId }),
 })
 
-const router = createRouter({
-  routeTree,
-  routeMasks: [photoMask],
-})
+const router = createRouter({ routeTree, routeMasks: [photoMask] })
 
 navigate({
   to: '/photos/$photoId/modal',
   params: { photoId: 5 },
-  mask: {
-    to: '/photos/$photoId',
-    params: { photoId: 5 },
-  },
+  mask: { to: '/photos/$photoId', params: { photoId: 5 } },
 })
 ```
 
-## Mask lifetime and reloads
+## Account for mask lifetime and reloads
 
-The runtime location behind a mask is stored in browser history state. This has
-two consequences:
+The runtime location is stored in browser history state. Copying or sharing
+the displayed URL loses that state and loads the displayed route normally. A
+reload in the same browser retains the mask by default.
 
-- copying or sharing the displayed URL loses the state and loads the displayed
-  route normally;
-- a local reload retains the masked runtime location by default.
-
-Set `unmaskOnReload: true` to discard the hidden runtime location on reload.
-Configuration precedence is most-specific first: a per-link or per-navigation
-setting overrides the registered route-mask setting, which overrides the router
-default.
+Set `unmaskOnReload: true` to discard it. A per-link or per-navigation setting
+overrides the route-mask setting, and the route-mask setting overrides the
+router default.
 
 ```tsx
 const router = createRouter({

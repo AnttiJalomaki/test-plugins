@@ -1,98 +1,67 @@
-# Workspaces, catalogs, linking, and deploy
+# Workspaces, Catalogs, Linking, and Deploy
 
-## Link override behavior
+## Injected packages for deployment (2025-01)
 
-Early pnpm 10 `pnpm link` writes an override to the root `package.json`; in a
-workspace this makes the link apply to every project (`2025-01`). To create a
-global link in that era, run `pnpm link` inside the package directory rather
-than `pnpm link -g`.
+`inject-workspace-packages=true` hard-links all local workspace dependencies instead of symlinking them, and pnpm 10 requires it for `pnpm deploy`. Deploy derives a dedicated lockfile from the shared workspace lockfile, falling back to no deployment lockfile when none exists or `force-legacy-deploy=true`.
 
-Later pnpm 10 writes the root override to `pnpm-workspace.yaml`, not
-`package.json` (`2025-04`). `pnpm audit --fix` likewise updates overrides in the
-workspace file.
-
-pnpm 11 requires a relative or absolute path for `pnpm link`; package-name
-lookup from the global store is removed. Global link commands are also removed;
-see [migration-pnpm-11.md](migration-pnpm-11.md).
-
-## Injected workspace dependencies
-
-`injectWorkspacePackages: true` hard-links all local workspace dependencies
-instead of symlinking them. pnpm 10 requires this setting for `pnpm deploy`
-(`2025-01`).
-
-```yaml
-injectWorkspacePackages: true
+```ini
+inject-workspace-packages=true
 ```
 
-`syncInjectedDepsAfterScripts` names root-configured scripts after which
-`pnpm run` synchronizes an injected package's files into consumers
-(`2025-02`):
+## Catalog-aware additions (2025-01)
+
+`pnpm add` writes `catalog:` when the requested dependency and range match the default workspace catalog; omitting the range also selects the catalog entry. A nonmatching request retains a normal dependency specifier.
+
+`workspace:` and `catalog:` specifiers may participate in wider `peerDependencies` ranges in pnpm 10.1.
+
+## Resynchronize injected dependencies (2025-02)
+
+At the workspace root, `sync-injected-deps-after-scripts` names scripts after which `pnpm run` synchronizes an injected package's files into consumers.
 
 ```ini
 sync-injected-deps-after-scripts[]=compile
 ```
 
-## Deployment lockfiles and stores
+## Recursive packing and concurrency (2025-05-06)
 
-pnpm 10 deploy attempts to derive a dedicated deployment lockfile from the
-shared workspace lockfile. If it cannot, it falls back to no deployment
-lockfile; `forceLegacyDeploy: true` forces that fallback (`2025-01`).
+`pnpm -r pack` packs every workspace project.
 
-Deployment always creates its virtual store inside the output directory,
-ignoring `enableGlobalVirtualStore`, so the deployed tree is self-contained
-(`2026-01-02`). Current pnpm also supports workspaces whose dependencies use
-catalogs (`11.10-11.17`).
+```sh
+pnpm -r pack
+```
 
-## Catalog-aware additions
+The default `workspaceConcurrency` is `Math.min(os.availableParallelism(), 4)`, limiting recursive execution to four tasks unless configured otherwise.
 
-`pnpm add` writes a `catalog:` specifier when a requested dependency and range
-match the default workspace catalog. Omitting the range also selects the
-catalog entry. A nonmatching request remains a direct specifier (`2025-01`).
+## Update and save catalog dependencies (2025-05-06)
 
-Save entries explicitly (`2025-05-06`):
+`pnpm update` updates `catalog:` dependencies and writes their specifiers to `pnpm-workspace.yaml`. `catalogMode` controls default-catalog additions: `strict` rejects versions outside the catalog range, `prefer` uses a compatible catalog version and otherwise falls back to a direct dependency, and `manual` (the default) does not add automatically.
+
+```yaml
+catalogMode: strict
+```
+
+`pnpm add --save-catalog` saves to the default catalog; `--save-catalog-name=<name>` targets a named catalog. The manifest receives `catalog:` or `catalog:<name>`.
 
 ```sh
 pnpm add --save-catalog lodash
 pnpm add --save-catalog-name=testing vitest
 ```
 
-The manifest receives `catalog:` for the default catalog or
-`catalog:<name>` for a named catalog.
+## Clean unused catalogs (2025-08)
 
-## Updating catalogs and controlling additions
+Set `cleanupUnusedCatalogs: true` to remove unused catalog entries during installation.
 
-`pnpm update` updates `catalog:` dependencies and writes the new ranges to
-`pnpm-workspace.yaml` (`2025-05-06`). `catalogMode` controls additions:
+## Use catalogs with ephemeral commands (2026-01-02)
 
-- `strict`: reject a request outside the catalog range.
-- `prefer`: use a compatible catalog entry, otherwise save a direct dependency.
-- `manual` (default): do not add dependencies to catalogs automatically.
-
-```yaml
-catalogMode: strict
-```
-
-Set `cleanupUnusedCatalogs: true` to remove catalog entries no longer used
-whenever install runs (`2025-08`).
-
-## Catalogs outside normal installs
-
-`pnpm dlx` and `pnpx` accept `catalog:` so ephemeral commands can use workspace
-catalog versions (`2026-01-02`):
+`pnpm dlx` and `pnpx` accept `catalog:` specifiers.
 
 ```sh
 pnpm dlx shx@catalog:
 ```
 
-Current `pnpm deploy` supports catalog-managed dependencies. `pnpm update
---changeset` also includes catalog consumers in generated release intents; see
-[release-management.md](release-management.md).
+## Bare workspace protocol (2026-01-02)
 
-## Workspace protocol and peer ranges
-
-A dependency may use bare `workspace:`; pnpm treats it as `workspace:*` and
-replaces it with a concrete version when publishing (`2026-01-02`):
+A bare `workspace:` specifier is treated as `workspace:*` and replaced by the concrete version when publishing.
 
 ```json
 {
@@ -102,40 +71,54 @@ replaces it with a concrete version when publishing (`2026-01-02`):
 }
 ```
 
-Starting in pnpm 10.1, `workspace:` and `catalog:` specifiers can participate in
-wider `peerDependencies` ranges (`2025-01`).
+## Deduplicate recursive peer graphs (2026-03)
 
-Current peer dependencies may also use named-registry, `npm:` alias, `file:`,
-Git, or URL schemes (`11.10-11.17`). Matching uses the embedded range—for
-example `5.x.x` in `work:5.x.x` or `^5` in `npm:bar@^5`—and `*` when no version
-is present. Bare `name@version` peer values remain invalid.
+`dedupePeers: true` uses version-only peer identifiers instead of full dependency paths in peer suffixes, reducing duplicate instances and avoiding nested suffix chains.
 
-## Recursive workspace execution
-
-`pnpm -r pack` packs every workspace project (`2025-05-06`):
-
-```sh
-pnpm -r pack
+```yaml
+dedupePeers: true
 ```
 
-The default `workspaceConcurrency` is
-`Math.min(os.availableParallelism(), 4)`, so recursive execution uses at most
-four tasks unless configured otherwise.
+## Prefix-based workspace discovery (10.34.0)
 
-`pnpm run` accepts a slash-delimited regular expression to run all matching
-scripts. `--sequential`/`-s` forces `workspaceConcurrency` to one across and
-within packages (`11.10-11.17`):
-
-```sh
-pnpm run --sequential "/^build:.*/"
-```
-
-## Prefix-based workspace discovery
-
-Starting with pnpm 10.34, `--prefix=<dir>` participates in workspace-root
-detection even when pnpm starts outside the project, and loads that directory's
-`pnpm-workspace.yaml` (`10.34.0`):
+When invoked outside the target, `--prefix=<dir>` affects workspace-root detection and loads `<dir>/pnpm-workspace.yaml`.
 
 ```sh
 pnpm --prefix=./project install
+```
+
+## Convergence overrides (11.10-11.17)
+
+An empty-range override selector such as `"pkg@"` changes only dependency edges whose declared range accepts the exact override value. The value must be exact, and pnpm warns when all ranges admit a newer convergence target.
+
+```yaml
+overrides:
+  "form-data@": 4.0.6
+```
+
+## Scheme-bearing peer dependencies (11.10-11.17)
+
+`peerDependencies` may use named-registry, `npm:` alias, `file:`, Git, or URL specifiers. Matching uses the embedded range, such as `5.x.x` from `work:5.x.x` or `^5` from `npm:bar@^5`, and `*` when no version is present. Bare `name@version` values remain invalid.
+
+## Deploy catalog workspaces (11.10-11.17)
+
+`pnpm deploy` supports workspaces whose dependencies are managed through catalogs.
+
+## Catalog and release-age pruning (2026-08)
+
+`catalogPrune` replaces `cleanupUnusedCatalogs`; the old name remains accepted, but `catalogPrune` wins when both exist.
+
+`minimumReleaseAgeExcludePrune` makes `add`, `update`, and `remove` remove package/version exclusions absent from the newly written lockfile. It retains name patterns and skips cleanup when `sharedWorkspaceLockfile` is `false`.
+
+```yaml
+catalogPrune: true
+minimumReleaseAgeExcludePrune: true
+```
+
+## Explicit versions move catalog resolutions (2026-08)
+
+With non-manual `catalogMode`, `pnpm add <pkg>@<version>` and `pnpm update <pkg>@<version>` move a compatible catalog entry's resolved version rather than dropping the request. Strict mode accepts versions inside the catalog range and rejects versions outside it. Omitted workspace projects follow the moved resolution on their next install.
+
+```sh
+pnpm update react@19.2.3
 ```

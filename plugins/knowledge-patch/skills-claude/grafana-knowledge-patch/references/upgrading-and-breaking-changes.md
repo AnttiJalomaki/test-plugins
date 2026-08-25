@@ -1,231 +1,156 @@
 # Upgrading and breaking changes
 
-Read this reference before changing major versions or carrying old
-configuration, API clients, images, service commands, and feature flags into a
-new deployment.
+## Upgrade preparation
 
-## Upgrade to 12.x
+Inventory the deployed version, edition, database, provisioning and Git Sync flags, enabled feature toggles, renderer mode, installed plugins, command invocations, external HTTP clients, custom roles, container base, and dashboards that consume Grafana metrics. Back up the database before schema or unified-storage changes.
 
-### Audit data-source UIDs
+Defaults and removed gates should be handled as configuration migrations. Do not keep an obsolete toggle merely because the underlying feature still exists.
 
-During the 12.0-upgrade, `failWrongDSUID` becomes enabled by default. REST and
-provisioning create/update requests reject UIDs longer than 40 characters or
-containing characters other than letters, digits, hyphens, and underscores.
-Audit the existing data sources, create replacements for invalid UIDs, and
-repoint dashboard JSON and alert queries:
+## Crossing into Grafana 12
 
-```bash
-curl http://localhost:3000/api/datasources |
-  jq '.[] | select((.uid | test("^[a-zA-Z0-9\\-_]+$") | not) or (.uid | length > 40)) | {id, uid, name, type}'
-```
+### Data-source UIDs
 
-Add authentication when required.
+Malformed data-source UIDs are rejected by default. Audit the allowed character set and 40-character maximum, create replacement sources, and repoint dashboard and alert JSON. (12.0-upgrade)
 
-### Reserve migration disk
+### Annotation migration capacity
 
-The 12.0-upgrade fills `annotation.dashboard_uid` by rewriting the full
-`annotation` table and rebuilding indexes. Before an 11.x-to-12.x upgrade,
-back up the database and reserve at least two to three times the table size in
-free space. A failed migration can prevent startup.
+The 11.x-to-12.x annotation migration rewrites the table and indexes. Back up and reserve two to three times the table's current size; reclaim storage only later in a table-locking maintenance window. (12.0-upgrade)
 
-After a successful upgrade, reclaim space in a low-traffic maintenance window;
-these operations lock the table:
+### Angular and plugin compatibility
 
-```sql
--- PostgreSQL
-VACUUM FULL annotation;
+Angular frontend support is removed. Update or replace Angular plugins before the upgrade. The plugin CLI enforces `grafanaDependency`; incompatible plugin ZIP installation is possible but should be an explicit exception. (12.0-upgrade, 12.0.0)
 
--- MySQL
-OPTIMIZE TABLE annotation;
+## Crossing into Grafana 13
 
--- SQLite
-VACUUM;
-```
+### Avoid 13.0.0 for Git Sync
 
-### Plugin compatibility
+Grafana 13.0.0 was withdrawn after self-managed Git Sync upgrades could lose or revert dashboards and folders. Upgrade 12.x directly to 13.0.1 or newer. For mixed local/Git resources or uncertain deployment mode, restore the pre-upgrade backup before retrying; an affected database is not repaired by upgrading it alone. (13.0-upgrade)
 
-During the 12.0-upgrade, `grafana cli plugins install` enforces each plugin's
-`grafanaDependency` and rejects versions incompatible with the running Grafana.
-There is no bypass flag; a deliberately incompatible plugin requires the ZIP
-installation path.
+### Update plugins before React 19
 
-In 12.0.0, Angular frontend support is removed. Plugin dependency-version
-support and secrets-manager plugins are also removed. Inventory and update
-plugins before upgrading.
+Patch the current Grafana line, update and validate every plugin, and then move to Grafana 13. This sequence supplies the plugin compatibility updates required by React 19. (13.0-upgrade)
 
-## Upgrade to 13.x
+### One-way dashboard and folder migration
 
-### Avoid 13.0.0 for affected Git Sync installations
+The initial 13.0 startup moves dashboard and folder authority to unified storage and records completion. A binary downgrade reads stale legacy tables. Restore the pre-upgrade database for rollback; do not modify the stale tables and expect a later upgrade to import those changes. (13.0-upgrade)
 
-The 13.0-upgrade guidance is to upgrade directly to 13.0.1 or later. The
-withdrawn 13.0.0 can lose or revert dashboards and folders on self-managed 12.x
-instances using the `provisioning`, `kubernetesClientDashboardsFolders`,
-`kubernetesDashboards`, and `grafanaAPIServerEnsureKubectlAccess` Git Sync
-flags.
+### Renderer service migration
 
-For mixed local and Git Sync content, or an uncertain deployment mode, restore
-the pre-upgrade database before moving to 13.0.1. A full-instance Git Sync
-deployment can upgrade and resync from Git. Upgrading an already affected
-13.0.0 database does not itself restore content.
+Plugin-mode rendering is removed. Deploy Image Renderer as a service and set the same `[rendering] renderer_token` in Grafana and the renderer. JWT renderer authentication is enabled by default. (13.0-upgrade)
 
-### Sequence React 19 and plugin work
+### Commands and API families
 
-Grafana 13 uses React 19. During the 13.0-upgrade, first move the current
-Grafana line to its latest patch, then update and validate all installed
-plugins, and only then upgrade Grafana.
+Replace `grafana-cli` and `grafana-server` with `grafana cli` and `grafana server` in units, images, CI, and scripts. (13.0-upgrade)
 
-### Plan the one-way unified-storage migration
+The legacy `/api` family is deprecated in favor of versioned Kubernetes-style `/apis` resources. Data-source endpoints addressed by numeric ID are disabled by default; use UIDs. (13.0-upgrade)
 
-On first 13.0 startup, folders and dashboards migrate from legacy SQL storage
-to unified storage, and completion is written to
-`unifiedstorage_migration_log`. These tables then become deprecated and
-non-authoritative:
+### Custom role validation
 
-- `dashboard`
-- `dashboard_acl`
-- `dashboard_provisioning`
-- `dashboard_version`
-- `dashboard_tag`
-- `library_element_connection`
-- `folder`
+Remove deprecated annotation permissions, replace wildcard annotation access with organization-annotation and dashboard/folder permissions, and recreate global roles with data-source UID scopes as non-global roles. Existing role scope cannot be changed in place. (13.0-upgrade)
 
-A downgrade reads stale legacy tables. Restore the pre-upgrade backup to roll
-back. Changes made after a downgrade are not picked up by a later upgrade
-because the one-time migration remains recorded.
+## Feature-toggle transitions
 
-SQLite automatically retries lock errors with a Parquet buffer. If
-`database is locked` persists, raise
-`[unified_storage] migration_cache_size_kb` above `1000000` or explicitly set:
+### Promoted or defaulted behavior
 
-```ini
-[unified_storage]
-migration_parquet_buffer = true
-```
+`newFiltersUI` is generally available. Cloud Migrations is enabled by default. `alertingApiServer` is enabled by default. (11.5.0)
 
-### Migrate commands and renderer
+`ssoSettingsSAML` is generally available and enabled by default, while `alertingSaveStateCompressed` enters public preview. (11.6.0)
 
-The 13.0-upgrade removes the `grafana-cli` and `grafana-server` command names.
-Update units, containers, CI, and scripts to use `grafana cli` and
-`grafana server`.
+`pluginsSriChecks` is generally available, `kubernetesClientDashboardsFolders` and `prometheusRunQueriesInParallel` are on by default, and schema validation is available. (12.0.0)
 
-Plugin-mode Image Renderer is also removed. Run it as a separate service.
-`renderAuthJWT` is enabled by default; set the same nonempty and non-`-`
-secret in Grafana and the renderer, then restart Grafana:
+Improved OAuth/SAML sessions, `ssoSettingsLDAP`, recording rules, and library-panel RBAC are enabled by default. (12.1.0)
 
-```ini
-[rendering]
-renderer_token = replace-with-a-shared-secret
-```
+`alertingSaveStateCompressed` and `kubernetesDashboards` are enabled by default. (12.2.0)
 
-The former database-backed opaque-token behavior can be restored temporarily:
+Logs visualization, native HTTP metric histograms, and no-expiry short URLs become defaults. (12.4.0)
 
-```ini
-[feature_toggles]
-renderAuthJWT = false
-```
+Provisioning, Git Sync, folder metadata, gzip, and dashboard recovery are enabled by default. (13.0.0)
 
-### Move HTTP clients toward UIDs and `/apis`
+### Removed toggles and configuration in 11.x
 
-During the 13.0-upgrade, the legacy `/api` family becomes deprecated in favor
-of versioned Kubernetes-style `/apis` resources. Numeric-ID data-source routes
-are disabled by default. Use UIDs; `datasourceLegacyIdApi` can temporarily
-re-enable the old routes until both routes and flag are removed.
+`cloudwatchMetricInsightsCrossAccount` and `publicDashboards` are removed; their features are no longer gated. (11.5.0)
 
-## Defaults that change behavior
+Remove `alertingNoNormalState`, `sqlQuerybuilderFunctionParameters`, `openSearchBackendFlowEnabled`, `managedPluginsInstall`, and `accessControlOnCall` from feature-toggle configuration. (11.6.0)
 
-- In 11.5.0, `alertingApiServer` is enabled by default; Cloud Migrations is
-  enabled by default; alert retry `max_attempts` defaults to 3; and Loki label
-  lookup changes from `/series` to `/labels` plus a `query` parameter.
-- In 11.6.0, existing API keys migrate to service accounts during startup.
-- In 12.0.0, `failWrongDSUID`,
-  `kubernetesClientDashboardsFolders`, and
-  `prometheusRunQueriesInParallel` are enabled by default. Anonymous users are
-  constrained to their Viewer organization role, and standard datetime units
-  are limited to millisecond precision.
-- In 12.1.0, recording rules, improved OAuth/SAML session handling, and
-  `ssoSettingsLDAP` are enabled by default.
-- In 12.2.0, `alertingSaveStateCompressed` and `kubernetesDashboards` are
-  enabled by default.
-- In 12.4.0, short URLs never expire by default, the new Logs visualization is
-  enabled by default, native HTTP histograms are the default, and plugin
-  processes stop inheriting the host environment.
-- In 13.0.0, gzip is enabled by default through `server.enable_gzip`;
-  provisioning, Git Sync, folder metadata, and dashboard restore are enabled
-  by default. Disable gzip explicitly if another layer owns compression.
-- In 13.1.0, no listed default change replaces these; review removed gates and
-  API migrations instead.
+### Removed toggles and features in 12.0
 
-## Removed and transitioned feature flags
+Remove `alertingNoDataErrorExecution`, the Loki Alert State History toggles, `queryOverLive`, `live-service-web-worker`, `userStorageAPI`, and `traceQLStreaming`. Experimental dashboard restore behind `dashboardRestore` is removed. (12.0.0)
 
-Remove obsolete flag names from configuration. A feature becoming generally
-available or default does not mean its old flag remains accepted.
+The external Metrics Drilldown app is the generally available implementation, its legacy paths are removed, and Traces Drilldown is preinstalled. (12.0.0)
 
-- In 11.5.0, `newFiltersUI` becomes generally available;
-  `cloudwatchMetricInsightsCrossAccount` and `publicDashboards` are removed.
-- In 11.6.0, `alertingNoNormalState`, `sqlQuerybuilderFunctionParameters`,
-  `openSearchBackendFlowEnabled`, `managedPluginsInstall`, and
-  `accessControlOnCall` are removed.
-- In 12.0.0, `alertingNoDataErrorExecution`, Loki Alert State History gates,
-  `queryOverLive`, `live-service-web-worker`, `userStorageAPI`,
-  `traceQLStreaming`, and experimental `dashboardRestore` are removed.
-  `pluginsSriChecks` is generally available.
-- In 12.1.0, `libraryPanelRBAC` is removed because the feature is generally
-  available. The experimental Loki query-splitting configuration and
-  predefined operations are removed.
-- In 12.2.0, `prometheusCodeModeMetricNamesSearch`,
-  `HideAngularDeprec`, and the nested-folders flag are removed.
-- In 12.3.0, the deprecated experimental API-server toggle is removed.
-- In 12.4.0, `logRequestsInstrumentedAsUnknown`, `pinNavItems`,
-  `unifiedHistory`, `individualCookiePreferences`,
-  `permissionsFilterRemoveSubquery`, `logRowsPopoverMenu`,
-  `logsInfiniteScrolling`, `exploreMetricsRelatedLogs`, and
-  `postgresDSUsePGX` are removed. Drilldown Investigations and CSV
-  drag-and-drop snapshot queries are removed.
-- In 12.4.0, `localeFormatPreference`, Datagrid,
-  `GrafanaBootData.config.apps`, `GrafanaBootData.config.panels`, and
-  `getFolderByUID` are deprecated. Library Elements moves from `folderFilter`
-  to `folderFilterUIDs`; the Faro v2 upgrade removes
-  `web_vitals_attribution_enabled`.
-- In 13.0.0, environment variables can configure feature toggles directly;
-  `GF_FEATURE_TOGGLES_ENABLE` and `[feature_toggles] enable` are deprecated.
-  `newFiltersUI` and `kubernetesAlertingRules` are removed.
-- In 13.1.0, `alertRuleUseFiredAtForStartsAt`, `dashboardScene`,
-  `publicDashboardsScene`, and `logsPanelControls` are removed.
+### Removed configuration in later 12.x
 
-## Removed and deprecated HTTP surfaces
+Enterprise caching removes Memcached `reconnect_interval`. Loki removes `lokiQuerySplittingConfig` and experimental predefined operations. (12.1.0)
 
-- In 12.0.0, internal Alertmanager configuration writes are removed, including
-  its internal POST endpoint. `viewers_can_edit` is removed.
-- In 12.2.0, internal-ID star APIs are removed.
-- In 12.4.0, internal-ID dashboard routes are removed,
-  `/api/dashboards/home` is deprecated, and data-source routes based on names
-  or internal IDs are deprecated in favor of UIDs.
-- During the 13.0-upgrade, legacy Alertmanager DELETE and receiver-test POST
-  endpoints are removed; several GET/history endpoints become admin-only.
-- In 13.0.0, Enterprise removes `/access-control/assignments/search` and
-  `IncludeMapped` from the user-role listing API.
-- In 13.1.0, notification provisioning endpoints, GroupAttributeSync routes,
-  and the dashboard-version metric are removed. `DashboardDTO.isStarred` is
-  removed.
+Remove `prometheusCodeModeMetricNamesSearch`, `HideAngularDeprec`, and the nested-folders flag. (12.2.0)
 
-## Container and base-image transitions
+The deprecated experimental API-server toggle is removed. (12.3.0)
 
-- In 11.5.0, the frontend toolchain moves to Node 22.
-- In 11.6.0, Docker images use Grafana-provided glibc 2.40 binaries.
-- In 12.2.0, migrate image references from deprecated
-  `grafana/grafana-oss` to `grafana/grafana`.
-- From 12.3.5, Image Renderer supports custom CAs for privately trusted TLS.
-  From 12.3.8, Alpine images use Alpine 3.24.1.
-- In 13.0.0, the Ubuntu base moves from 22.04 to 24.04.
+Remove `logRequestsInstrumentedAsUnknown`, `pinNavItems`, `unifiedHistory`, `individualCookiePreferences`, `permissionsFilterRemoveSubquery`, `logRowsPopoverMenu`, `logsInfiniteScrolling`, `exploreMetricsRelatedLogs`, and `postgresDSUsePGX`. Drilldown Investigations and CSV drag-and-drop snapshot queries are removed. (12.4.0)
 
-Rebuild and test derived images whenever the base distribution or libc changes.
+### Grafana 13 toggle configuration
 
-## Post-upgrade verification
+Feature toggles can be set through direct environment variables. `GF_FEATURE_TOGGLES_ENABLE` and `[feature_toggles] enable` are deprecated. `newFiltersUI` and `kubernetesAlertingRules` are removed. (13.0.0)
 
-1. Confirm migrations completed and that the authoritative storage contains the
-   expected dashboards, folders, annotations, alert rules, and permissions.
-2. Search startup logs for removed settings, feature flags, or malformed UIDs.
-3. Exercise both read and write paths used by API and provisioning clients.
-4. Test all installed plugins, external renderer calls, data-source backend
-   connectivity, authentication flows, custom roles, and alert delivery.
-5. Compare dashboards and metric selectors with renamed or removed metrics.
+`alertRuleUseFiredAtForStartsAt`, `dashboardScene`, `publicDashboardsScene`, and `logsPanelControls` are removed. (13.1.0)
+
+`AlertingCentralHistory` and `alertingSaveStateCompressed` are removed. Scripted dashboards are deprecated and disabled by default. (13.2.0)
+
+## Removed or changed APIs
+
+### Alertmanager and alert provisioning
+
+Internal Alertmanager configuration writes and restore operations are removed. Later, legacy receiver-test and configuration delete endpoints are removed, while selected configuration-history reads and activation are admin-only. Move notification configuration to App Platform resources. (12.0.0, 13.0-upgrade)
+
+Legacy notification actions and rule-provisioning endpoints are deprecated. Notification provisioning endpoints are also deprecated after Rules API v2 becomes available. (13.0.0, 13.1.0)
+
+### Dashboard, star, and data-source APIs
+
+Internal-ID star APIs are removed. Dashboard and data-source clients should use UIDs; `/api/dashboards/home` is deprecated, and numeric-ID data-source routes are disabled by default. (12.2.0, 12.4.0, 13.0-upgrade)
+
+### Access-control APIs
+
+Enterprise removes `/access-control/assignments/search` and `IncludeMapped` from user-role reads. Role writes no longer accept a client-controlled version. (13.0.0)
+
+GroupAttributeSync routes and the dashboard-version metric are removed. (13.1.0)
+
+## Runtime and container changes
+
+The frontend build uses Node 22. (11.5.0)
+
+Docker images use Grafana-provided glibc 2.40. (11.6.0)
+
+Move from `grafana/grafana-oss` to `grafana/grafana`. (12.2.0)
+
+Alpine-derived images move to Alpine 3.24.1 starting in 12.3.8. (12.3.0)
+
+Plugin subprocesses stop inheriting the host environment by default. (12.4.0)
+
+The Ubuntu base image moves from 22.04 to 24.04. (13.0.0)
+
+## Metric and telemetry migrations
+
+The Grafana HA Alertmanager cluster-metric prefix changes. Grafana HTTP metrics use native histograms by default; update selectors or opt back into classic histograms. (12.4.0)
+
+Enterprise query caching removes duplicate `grafana_caching_items` and `grafana_caching_size`, and bundled Prometheus dashboards disappear. (13.0.0)
+
+The dashboard-version metric is removed. (13.1.0)
+
+## Deprecated surfaces
+
+The OpsGenie alerting integration is deprecated. Internal-ID dashboards and data-source routes are removed or deprecated in favor of UIDs. (12.4.0)
+
+`localeFormatPreference`, Datagrid, `GrafanaBootData.config.apps`, `GrafanaBootData.config.panels`, and `getFolderByUID` are deprecated. Use `folderFilterUIDs` instead of Library Elements `folderFilter`; Faro v2 removes `web_vitals_attribution_enabled`. (12.4.0)
+
+The core Elasticsearch and Zipkin data sources are no longer bundled after their removals. Core Prometheus also removes Azure and SigV4 authentication and the `grafana-prometheus` package. (13.0.0, 13.1.0)
+
+## Post-upgrade checks
+
+1. Confirm startup completed all database and unified-storage migrations.
+2. Verify dashboard and folder counts against the backup or Git repository.
+3. Exercise UID-based dashboard, data-source, annotation, star, and home-dashboard calls.
+4. Evaluate and deliver alerts through each authentication and contact-point path.
+5. Validate custom roles, service accounts, SCIM lifecycle, and query permissions.
+6. Load all plugins and test React, manifests, backend environment, renderer, and data-source hooks.
+7. Reconcile metrics, labels, histogram types, and removed bundled dashboards with monitoring rules.
+8. Confirm removed feature-toggle names are absent from configuration.

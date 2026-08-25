@@ -1,8 +1,11 @@
-# Data loading and server rendering
+# Loading and Server Rendering
 
-## Background and blocking stale reloads
+## Select background or blocking stale reloads
 
-A loader can use object form with `handler` and `staleReloadMode`:
+A loader may use an object with `handler` and `staleReloadMode`. Stale
+successful matches reload in `'background'` mode by default, keeping the old
+`loaderData` visible. Set a loader to `'blocking'`, or configure router
+`defaultStaleReloadMode`, when navigation must await the replacement result.
 
 ```tsx
 export const Route = createFileRoute('/posts')({
@@ -13,27 +16,20 @@ export const Route = createFileRoute('/posts')({
 })
 ```
 
-When a successful match is stale, the default mode is `'background'`. Existing
-`loaderData` stays visible while revalidation runs. Use `'blocking'` when the
-navigation must wait for the replacement result. Configure it per loader or set
-`defaultStaleReloadMode` on the router.
+`staleTime: Infinity` has a different purpose: it keeps data from becoming
+stale rather than selecting the behavior of a stale reload.
 
-Do not use `staleTime: Infinity` as a substitute for reload mode. It prevents
-data from becoming stale instead of controlling what happens once stale data is
-reloaded.
+## Apply loader-cache defaults and opt-outs
 
-## Cache defaults and opt-outs
+- Navigation results use `staleTime: 0` by default.
+- Preloads remain fresh for 30 seconds by default.
+- Unused cache entries are garbage-collected after 30 minutes by default.
+- `router.invalidate()` immediately reloads active routes and marks every
+  cached route stale.
 
-Router loader caching uses these defaults:
-
-- navigation results have `staleTime: 0`;
-- preloads remain fresh for 30 seconds;
-- unused entries are garbage-collected after 30 minutes;
-- `router.invalidate()` reloads active routes immediately and marks every cached
-  route stale.
-
-To discard loader data after a route unloads but still permit entry and
-dependency loads, combine `gcTime: 0` with `shouldReload: false`:
+To discard data after a route unloads but still permit entry and dependency
+loads, combine `gcTime: 0` with `shouldReload: false`. The default
+`preloadGcTime` still allows a preload to survive until navigation.
 
 ```tsx
 export const Route = createFileRoute('/posts')({
@@ -44,23 +40,14 @@ export const Route = createFileRoute('/posts')({
 })
 ```
 
-The separate default `preloadGcTime` still lets preloaded data survive until a
-navigation consumes it. When an external cache should see and deduplicate every
-loader event, set `defaultPreloadStaleTime: 0`:
+When an external cache should see and deduplicate every loader event, set
+router `defaultPreloadStaleTime: 0`.
 
-```tsx
-const router = createRouter({
-  routeTree,
-  defaultPreloadStaleTime: 0,
-})
-```
-
-## Router-native React SSR
+## Build a router-native SSR entry
 
 The standalone React SSR API is experimental. Export a shared router factory,
-then give that factory and a web-standard `Request` to `createRequestHandler`.
-The default path supplies server memory history and dehydrates resolved loader
-data for `RouterClient` to rehydrate.
+then pass it and the web-standard `Request` to `createRequestHandler`. Hydrate
+on the client with `RouterClient`.
 
 ```tsx
 // entry-server.tsx
@@ -84,17 +71,17 @@ const router = createRouter()
 hydrateRoot(document, <RouterClient router={router} />)
 ```
 
-The request handler returns a web-standard `Response`. Express and similar
-adapters must translate framework request and response objects at the boundary.
+The request handler returns a web-standard `Response`; Express and similar
+adapters must translate their native request and response at the boundary. The
+default renderer supplies server memory history and transfers resolved loader
+data. For explicit wrappers or providers, use `renderRouterToString` and render
+an explicit `RouterServer` child.
 
-When the default render path is too restrictive, call `renderRouterToString`
-with an explicit `RouterServer` child so custom wrappers or providers can be
-rendered.
+## Stream markup and dehydration data
 
-## Streaming SSR
-
-Streaming uses the same request-handler pattern with `defaultStreamHandler`,
-which streams both markup and dehydration data:
+Use `defaultStreamHandler` with the same request-handler setup to stream markup
+and dehydration data automatically. The lower-level alternative is
+`renderRouterToStream` with an explicit `RouterServer` child.
 
 ```tsx
 import {
@@ -107,19 +94,34 @@ export function render({ request }: { request: Request }) {
 }
 ```
 
-For lower-level control, use `renderRouterToStream` with an explicit
-`RouterServer` child.
+## Respect built-in serialization limits
 
-## Serialization boundaries
+SSR serialization round-trips `undefined`, `Date`, `Error`, and `FormData` in
+addition to ordinary JSON values. `Map`, `Set`, `BigInt`, and other complex
+values are not supported by default and require explicit handling. General
+serializer customization remains work in progress.
 
-The built-in SSR serializer round-trips:
+## Install hydrated configuration before matching
 
-- ordinary JSON-compatible data;
-- `undefined`;
-- `Date`;
-- `Error`;
-- `FormData`.
+Custom router hydration runs before the first client route match. This allows
+hydrated request-specific configuration, including URL rewrites, to be in place
+before SSR hydration compares matches.
 
-`Map`, `Set`, `BigInt`, and other complex values are not supported by default.
-Convert them explicitly before dehydration and restore them after hydration.
-A general serializer-customization mechanism remains work in progress.
+## Keep the document shell outside Suspense
+
+Since 1.170.28, root components that may render the HTML document are not
+wrapped in a Suspense boundary during SSR or hydration. The document shell
+therefore cannot itself suspend at the root.
+
+## Transform SSR assets without duplicate styles
+
+TanStack Start SSR accepts inline CSS manifests that hydrate without adding
+duplicate stylesheet links. `transformAssets` also supports runtime-selected
+inline CSS and opt-in CSS URL templates.
+
+## Defer selected hydration boundaries
+
+TanStack Start's compiler can split `Hydrate` boundaries, preload their
+generated client chunks, preserve server-rendered fallback HTML, and replay
+events that triggered interaction before hydration finished. This integration
+works with Vite and Rsbuild.

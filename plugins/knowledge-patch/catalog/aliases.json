@@ -1,9 +1,24 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-31T12:55:14Z",
+  "generated_at": "2026-08-25T01:43:45Z",
   "aliases": {
     "actions runner": [
       "github-actions-knowledge-patch"
+    ],
+    "adobe commerce": [
+      "magento-adobe-commerce-knowledge-patch"
+    ],
+    "adyen": [
+      "adyen-knowledge-patch"
+    ],
+    "adyen api": [
+      "adyen-knowledge-patch"
+    ],
+    "adyen checkout": [
+      "adyen-knowledge-patch"
+    ],
+    "adyen knowledge patch": [
+      "adyen-knowledge-patch"
     ],
     "agopengps": [
       "agopengps-knowledge-patch"
@@ -134,6 +149,18 @@
     "apple ios sdk": [
       "ios-sdk-knowledge-patch"
     ],
+    "apple pay": [
+      "apple-pay-knowledge-patch"
+    ],
+    "apple pay knowledge patch": [
+      "apple-pay-knowledge-patch"
+    ],
+    "apple pay on the web": [
+      "apple-pay-knowledge-patch"
+    ],
+    "applepay": [
+      "apple-pay-knowledge-patch"
+    ],
     "application set": [
       "argo-cd-knowledge-patch"
     ],
@@ -238,6 +265,18 @@
     ],
     "betterauth": [
       "better-auth-knowledge-patch"
+    ],
+    "big commerce": [
+      "bigcommerce-knowledge-patch"
+    ],
+    "bigcommerce": [
+      "bigcommerce-knowledge-patch"
+    ],
+    "bigcommerce api": [
+      "bigcommerce-knowledge-patch"
+    ],
+    "bigcommerce knowledge patch": [
+      "bigcommerce-knowledge-patch"
     ],
     "biome": [
       "biome-knowledge-patch"
@@ -544,6 +583,18 @@
     "development containers": [
       "devcontainers-knowledge-patch"
     ],
+    "dhl": [
+      "dhl-shipping-knowledge-patch"
+    ],
+    "dhl parcel api": [
+      "dhl-shipping-knowledge-patch"
+    ],
+    "dhl shipping": [
+      "dhl-shipping-knowledge-patch"
+    ],
+    "dhl shipping knowledge patch": [
+      "dhl-shipping-knowledge-patch"
+    ],
     "dioxus": [
       "dioxus-knowledge-patch"
     ],
@@ -624,6 +675,18 @@
     ],
     "eas": [
       "expo-knowledge-patch"
+    ],
+    "easy post": [
+      "easypost-knowledge-patch"
+    ],
+    "easypost": [
+      "easypost-knowledge-patch"
+    ],
+    "easypost api": [
+      "easypost-knowledge-patch"
+    ],
+    "easypost knowledge patch": [
+      "easypost-knowledge-patch"
     ],
     "elastic search": [
       "elasticsearch-knowledge-patch"
@@ -747,6 +810,18 @@
     ],
     "fastapi knowledge patch": [
       "fastapi-knowledge-patch"
+    ],
+    "fedex": [
+      "fedex-shipping-knowledge-patch"
+    ],
+    "fedex api": [
+      "fedex-shipping-knowledge-patch"
+    ],
+    "fedex shipping": [
+      "fedex-shipping-knowledge-patch"
+    ],
+    "fedex shipping knowledge patch": [
+      "fedex-shipping-knowledge-patch"
     ],
     "fedora": [
       "fedora-knowledge-patch"
@@ -931,6 +1006,18 @@
     "google gemini api knowledge patch": [
       "google-gemini-api-knowledge-patch"
     ],
+    "google pay": [
+      "google-pay-knowledge-patch"
+    ],
+    "google pay knowledge patch": [
+      "google-pay-knowledge-patch"
+    ],
+    "googlepay": [
+      "google-pay-knowledge-patch"
+    ],
+    "gpay": [
+      "google-pay-knowledge-patch"
+    ],
     "gpsctl": [
       "gpsd-knowledge-patch"
     ],
@@ -993,6 +1080,9 @@
     ],
     "grpc knowledge patch": [
       "grpc-knowledge-patch"
+    ],
+    "gutenberg": [
+      "wordpress-knowledge-patch"
     ],
     "gz sim": [
       "gazebo-sim-knowledge-patch"
@@ -1352,6 +1442,21 @@
     "loki logging": [
       "grafana-loki-knowledge-patch"
     ],
+    "magento": [
+      "magento-adobe-commerce-knowledge-patch"
+    ],
+    "magento 2": [
+      "magento-adobe-commerce-knowledge-patch"
+    ],
+    "magento adobe commerce": [
+      "magento-adobe-commerce-knowledge-patch"
+    ],
+    "magento adobe commerce knowledge patch": [
+      "magento-adobe-commerce-knowledge-patch"
+    ],
+    "magento open source": [
+      "magento-adobe-commerce-knowledge-patch"
+    ],
     "maplibre": [
       "maplibre-gl-js-knowledge-patch"
     ],
@@ -1388,6 +1493,12 @@
     "material 3": [
       "jetpack-compose-knowledge-patch"
     ],
+    "matkahuolto": [
+      "posti-matkahuolto-knowledge-patch"
+    ],
+    "matkahuolto shipping": [
+      "posti-matkahuolto-knowledge-patch"
+    ],
     "matter": [
       "matter-iot-knowledge-patch"
     ],
@@ -1402,6 +1513,30 @@
     ],
     "mcp": [
       "model-context-protocol-knowledge-patch"
+    ],
+    "medusa": [
+      "medusa-knowledge-patch"
+    ],
+    "medusa commerce": [
+      "medusa-knowledge-patch"
+    ],
+    "medusa knowledge patch": [
+      "medusa-knowledge-patch"
+    ],
+    "medusajs": [
+      "medusa-knowledge-patch"
+    ],
+    "mercur": [
+      "mercur-knowledge-patch"
+    ],
+    "mercur knowledge patch": [
+      "mercur-knowledge-patch"
+    ],
+    "mercur marketplace": [
+      "mercur-knowledge-patch"
+    ],
+    "mercurjs": [
+      "mercur-knowledge-patch"
     ],
     "microsoft azure": [
       "azure-knowledge-patch"
@@ -1423,6 +1558,18 @@
     ],
     "model context protocol mcp": [
       "model-context-protocol-knowledge-patch"
+    ],
+    "mollie": [
+      "mollie-knowledge-patch"
+    ],
+    "mollie api": [
+      "mollie-knowledge-patch"
+    ],
+    "mollie knowledge patch": [
+      "mollie-knowledge-patch"
+    ],
+    "mollie payments": [
+      "mollie-knowledge-patch"
     ],
     "mongo": [
       "mongodb-knowledge-patch"
@@ -1465,6 +1612,9 @@
     ],
     "mri ruby": [
       "ruby-knowledge-patch"
+    ],
+    "mydhl api": [
+      "dhl-shipping-knowledge-patch"
     ],
     "mysql": [
       "mysql-knowledge-patch"
@@ -1773,8 +1923,32 @@
     "otp": [
       "erlang-otp-knowledge-patch"
     ],
+    "paddle": [
+      "paddle-knowledge-patch"
+    ],
+    "paddle api": [
+      "paddle-knowledge-patch"
+    ],
+    "paddle billing": [
+      "paddle-knowledge-patch"
+    ],
+    "paddle knowledge patch": [
+      "paddle-knowledge-patch"
+    ],
     "passkeys": [
       "webauthn-passkeys-knowledge-patch"
+    ],
+    "paypal": [
+      "paypal-knowledge-patch"
+    ],
+    "paypal api": [
+      "paypal-knowledge-patch"
+    ],
+    "paypal checkout": [
+      "paypal-knowledge-patch"
+    ],
+    "paypal knowledge patch": [
+      "paypal-knowledge-patch"
     ],
     "pgsql": [
       "postgresql-knowledge-patch"
@@ -1833,6 +2007,18 @@
     "podman knowledge patch": [
       "podman-knowledge-patch"
     ],
+    "polar": [
+      "polar-knowledge-patch"
+    ],
+    "polar billing": [
+      "polar-knowledge-patch"
+    ],
+    "polar knowledge patch": [
+      "polar-knowledge-patch"
+    ],
+    "polar sh": [
+      "polar-knowledge-patch"
+    ],
     "polars": [
       "polars-knowledge-patch"
     ],
@@ -1859,6 +2045,30 @@
     ],
     "postgresql knowledge patch": [
       "postgresql-knowledge-patch"
+    ],
+    "posti": [
+      "posti-matkahuolto-knowledge-patch"
+    ],
+    "posti matkahuolto": [
+      "posti-matkahuolto-knowledge-patch"
+    ],
+    "posti matkahuolto knowledge patch": [
+      "posti-matkahuolto-knowledge-patch"
+    ],
+    "posti shipping": [
+      "posti-matkahuolto-knowledge-patch"
+    ],
+    "presta shop": [
+      "prestashop-knowledge-patch"
+    ],
+    "prestashop": [
+      "prestashop-knowledge-patch"
+    ],
+    "prestashop api": [
+      "prestashop-knowledge-patch"
+    ],
+    "prestashop knowledge patch": [
+      "prestashop-knowledge-patch"
     ],
     "presto sql successor": [
       "trino-knowledge-patch"
@@ -2220,6 +2430,18 @@
     "rustlang": [
       "rust-knowledge-patch"
     ],
+    "saleor": [
+      "saleor-knowledge-patch"
+    ],
+    "saleor cloud": [
+      "saleor-knowledge-patch"
+    ],
+    "saleor graphql": [
+      "saleor-knowledge-patch"
+    ],
+    "saleor knowledge patch": [
+      "saleor-knowledge-patch"
+    ],
     "satnav": [
       "gnss-navigation-knowledge-patch"
     ],
@@ -2288,6 +2510,30 @@
     ],
     "shadcn ui knowledge patch": [
       "shadcn-ui-knowledge-patch"
+    ],
+    "shopify": [
+      "shopify-knowledge-patch"
+    ],
+    "shopify api": [
+      "shopify-knowledge-patch"
+    ],
+    "shopify app": [
+      "shopify-knowledge-patch"
+    ],
+    "shopify knowledge patch": [
+      "shopify-knowledge-patch"
+    ],
+    "shopware": [
+      "shopware-knowledge-patch"
+    ],
+    "shopware 6": [
+      "shopware-knowledge-patch"
+    ],
+    "shopware api": [
+      "shopware-knowledge-patch"
+    ],
+    "shopware knowledge patch": [
+      "shopware-knowledge-patch"
     ],
     "sigstore": [
       "sigstore-cosign-knowledge-patch"
@@ -2375,6 +2621,18 @@
     ],
     "sqlx knowledge patch": [
       "sqlx-knowledge-patch"
+    ],
+    "square": [
+      "square-knowledge-patch"
+    ],
+    "square api": [
+      "square-knowledge-patch"
+    ],
+    "square knowledge patch": [
+      "square-knowledge-patch"
+    ],
+    "square payments": [
+      "square-knowledge-patch"
     ],
     "ssh": [
       "openssh-knowledge-patch"
@@ -2698,6 +2956,18 @@
     "unbound resolver": [
       "unbound-knowledge-patch"
     ],
+    "ups": [
+      "ups-shipping-knowledge-patch"
+    ],
+    "ups api": [
+      "ups-shipping-knowledge-patch"
+    ],
+    "ups shipping": [
+      "ups-shipping-knowledge-patch"
+    ],
+    "ups shipping knowledge patch": [
+      "ups-shipping-knowledge-patch"
+    ],
     "user data": [
       "cloud-init-knowledge-patch"
     ],
@@ -2718,6 +2988,18 @@
     ],
     "vector extension": [
       "pgvector-knowledge-patch"
+    ],
+    "vendure": [
+      "vendure-knowledge-patch"
+    ],
+    "vendure api": [
+      "vendure-knowledge-patch"
+    ],
+    "vendure commerce": [
+      "vendure-knowledge-patch"
+    ],
+    "vendure knowledge patch": [
+      "vendure-knowledge-patch"
     ],
     "vercel ai": [
       "vercel-ai-sdk-knowledge-patch"
@@ -2842,6 +3124,24 @@
     "wireguard knowledge patch": [
       "wireguard-knowledge-patch"
     ],
+    "woo": [
+      "woocommerce-knowledge-patch"
+    ],
+    "woo commerce": [
+      "woocommerce-knowledge-patch"
+    ],
+    "woocommerce": [
+      "woocommerce-knowledge-patch"
+    ],
+    "woocommerce knowledge patch": [
+      "woocommerce-knowledge-patch"
+    ],
+    "wordpress": [
+      "wordpress-knowledge-patch"
+    ],
+    "wordpress knowledge patch": [
+      "wordpress-knowledge-patch"
+    ],
     "work os": [
       "workos-knowledge-patch"
     ],
@@ -2856,6 +3156,9 @@
     ],
     "workos knowledge patch": [
       "workos-knowledge-patch"
+    ],
+    "wp core": [
+      "wordpress-knowledge-patch"
     ],
     "zephyr": [
       "zephyr-knowledge-patch"

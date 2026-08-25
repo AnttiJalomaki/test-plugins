@@ -1,21 +1,15 @@
 # React Server Components
 
-## Contents
-
-- [Data Mode RSC](#data-mode-rsc)
-- [RSC request routing and responses](#rsc-request-routing-and-responses)
-- [Framework Mode RSC](#framework-mode-rsc)
-- [Middleware and request-local state](#middleware-and-request-local-state)
-- [Rendering streams](#rendering-streams)
-- [CSP](#csp)
-
-React Router provides separate provisional RSC surfaces for Data Mode and Framework Mode. Check
-the installed version and package entry point before using an example; several names and export
-semantics changed while the previews evolved. Do not treat these APIs as production-stable.
+React Server Components support entered as previews, including a later Framework Mode
+preview (`7.0-guide`). Data Mode and Framework Mode use different APIs and entry points;
+many RSC surfaces remain unstable, so bind implementation choices to the installed
+version.
 
 ## Data Mode RSC
 
-Experimental Data Mode support includes these APIs:
+### Initial APIs (`7.7.0`)
+
+Experimental Data Mode support exposes:
 
 - `unstable_RSCHydratedRouter`
 - `unstable_RSCStaticRouter`
@@ -24,54 +18,49 @@ Experimental Data Mode support includes these APIs:
 - `unstable_matchRSCServerRequest`
 - `unstable_routeRSCServerRequest`
 
-`unstable_RSCHydratedRouter` and its utilities moved to the `react-router/dom` entry point.
-`react-server` environments also provide implementations of `Await` and `href`, and expose
-`isRouteErrorResponse`.
+These are experimental in this release and are not recommended for production.
 
-RSC Data Mode supports route `meta` and `links` exports. It proxies side-effect redirects from
-server actions for document requests and `callServer` requests. To suppress revalidation after
-an RSC server action, include a hidden `$SKIP_REVALIDATION` form field.
+### Route support and server actions (`7.8.0`)
 
-```tsx
-<input type="hidden" name="$SKIP_REVALIDATION" value="true" />
-```
+Data Mode RSC handles route `meta` and `links`, and makes `isRouteErrorResponse`
+available in `react-server` environments. Server-action side-effect redirects are proxied
+for both document and `callServer` requests.
 
-## RSC request routing and responses
+To opt a server action out of revalidation, include a hidden form field named
+`$SKIP_REVALIDATION`.
 
-RSC rendering accepts thrown `data()` values and `Response` objects, including redirects. A raw
-response body is not serialized while encoding an error, so throw `data()` when an error
-boundary needs access to a payload.
+### DOM entry-point placement (`7.9.0`)
 
-The provisional `routeRSCServerRequest` integration renamed its `fetchServer` option to
-`serverResponse`. Update custom integrations rather than supporting both names silently.
-
-Server action redirects can be forwarded for both document and `callServer` request paths. Keep
-redirect validation and action-origin protection enabled; origin failures render the proper RSC
-error UI.
+`unstable_RSCHydratedRouter` and related utilities move to `react-router/dom`.
+React-server entry points also implement `Await` and `href`. Audit imports when upgrading
+from the earlier placement.
 
 ## Framework Mode RSC
 
-Framework Mode RSC tooling in `@react-router/dev` and `@react-router/serve` supports custom
-entrypoints. The `react-router reveal` command can reveal `entry.client`, `entry.rsc`, and
-`entry.ssr` for customization.
+### Rendering responses (`7.11.0`)
 
-The preview supports prerendering, SPA Mode, and `<Link prefetch>`. These capabilities remain
-unstable and should be isolated from stable application architecture.
+RSC render paths accept thrown `data()` values and `Response` objects, including
+redirects. Raw response bodies are not serialized into error encoding; throw `data()`
+when an error boundary needs a payload.
 
-### Explicit client and server route exports
+The `routeRSCServerRequest` integration renames `fetchServer` to `serverResponse`.
+Framework tooling in `@react-router/dev` and `@react-router/serve` also begins supporting
+custom RSC entrypoints.
 
-The client-oriented exports `default`, `ErrorBoundary`, `Layout`, and `HydrateFallback` have
-separate, mutually exclusive server counterparts:
+### Expanded framework features (`7.14.0`)
 
-| Client export | Server export |
-| --- | --- |
-| `default` | `ServerComponent` |
-| `ErrorBoundary` | `ServerErrorBoundary` |
-| `Layout` | `ServerLayout` |
-| `HydrateFallback` | `ServerHydrateFallback` |
+Framework Mode RSC adds prerendering, SPA Mode, and `<Link prefetch>`. The
+`react-router reveal` command can expose `entry.client`, `entry.rsc`, and `entry.ssr`.
+These features remain unstable and unsuitable for production in this release.
 
-Declaring `ServerComponent` does not implicitly make the other three exports server components.
-Prefix every export that must execute on the server.
+### Explicit client/server route exports (`7.14.0`)
+
+Client exports `default`, `ErrorBoundary`, `Layout`, and `HydrateFallback` have mutually
+exclusive server counterparts `ServerComponent`, `ServerErrorBoundary`, `ServerLayout`,
+and `ServerHydrateFallback`.
+
+This breaks an earlier implicit behavior: exporting `ServerComponent` does not make the
+other exports server components. Prefix each independently when it belongs on the server.
 
 ```tsx
 export function ServerComponent() {
@@ -91,38 +80,18 @@ export function ServerHydrateFallback() {
 }
 ```
 
-## Middleware and request-local state
+## Middleware and RSC request state
 
-Route middleware works with RSC request handling. A server middleware can wrap `next()` in
-Node's `AsyncLocalStorage.run()` to expose request-local values to loaders, Server Components,
-and Server Actions within the same execution context. Use `RouterContextProvider` instead when
-the code must be runtime-portable.
+Server middleware may wrap `next()` in Node `AsyncLocalStorage.run()` so request-local
+state is visible to React Server Components and Server Actions in the same execution
+context (`middleware`). Prefer React Router's context API when runtime portability is
+required.
 
-```ts
-const currentUser = new AsyncLocalStorage<User>();
+## Adoption checklist
 
-export const middleware: Route.MiddlewareFunction[] = [
-  async ({ request }, next) =>
-    currentUser.run(await getUser(request), next),
-];
-```
-
-Server context still follows HTTP request boundaries. Do not assume an SPA submission's POST and
-subsequent GET share the same provider.
-
-## Rendering streams
-
-For apps without a custom `entry.server.tsx`, the 8.2.0 default uses
-`renderToReadableStream` when no Node-specific React Router adapter is installed. Apps depending
-on `@react-router/node`, `@react-router/express`, or `@react-router/serve` retain
-`renderToPipeableStream`. A Node app without a custom entry may opt into the Web Streams path
-with `future.unstable_enableNodeReadableStream`.
-
-The removed `ServerRouter.abortDelay` does not control Single Fetch streams. Export
-`streamTimeout` from `entry.server` for that timeout.
-
-## CSP
-
-Nonce-aware server-rendered components inherit the `nonce` supplied to `ServerRouter` when they
-do not receive a component-specific nonce. This includes framework-generated output involved in
-RSC SSR. Still inspect rendered markup when combining RSC, prefetching, SRI, and a strict CSP.
+- Identify Data Mode versus Framework Mode before selecting APIs.
+- Confirm whether RSC DOM APIs live in `react-router/dom` for the installed version.
+- Test document, `callServer`, redirect, thrown-data, and error-boundary paths separately.
+- Treat every `unstable_` surface as version-bound.
+- In Framework Mode, choose every client or `Server*` route export explicitly.
+- Reveal and inspect generated RSC entrypoints before replacing them with custom files.

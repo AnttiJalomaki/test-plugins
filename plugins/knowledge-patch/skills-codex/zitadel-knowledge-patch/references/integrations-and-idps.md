@@ -1,25 +1,5 @@
 # Service integration and identity providers
 
-- [Hosted organization bootstrap](#hosted-organization-bootstrap)
-- [External IdP placement and account controls](#external-idp-placement-and-account-controls)
-- [External-provider callback routes](#external-provider-callback-routes)
-- [Generic external-provider templates](#generic-external-provider-templates)
-- [Microsoft Entra OIDC template](#microsoft-entra-oidc-template)
-- [External SAML provider endpoint roles](#external-saml-provider-endpoint-roles)
-- [JWT identity-provider relay](#jwt-identity-provider-relay)
-- [LDAP provider contract](#ldap-provider-contract)
-- [Generic OIDC provider migration](#generic-oidc-provider-migration)
-- [Cloudflare Zero Trust OIDC](#cloudflare-zero-trust-oidc)
-- [Google Cloud Workforce Identity Federation](#google-cloud-workforce-identity-federation)
-- [Google Workspace SAML identity matching](#google-workspace-saml-identity-matching)
-- [Apache mod_auth_openidc](#apache-mod_auth_openidc)
-- [Service-account client credentials](#service-account-client-credentials)
-- [Service-account personal access tokens](#service-account-personal-access-tokens)
-- [Service-account public-key registration](#service-account-public-key-registration)
-- [Introspection credentials belong to API applications](#introspection-credentials-belong-to-api-applications)
-- [Direct System API authentication](#direct-system-api-authentication)
-- [Event API audit queries](#event-api-audit-queries)
-
 ## Hosted organization bootstrap
 
 The hosted `${CUSTOM_DOMAIN}/ui/login/register/org` form creates an organization and its first user with `ORG_OWNER`; deployments that provision customers themselves can disable it through `AdminService.SetRestrictions`. A custom onboarding flow can instead call `POST /admin/v1/orgs/_setup` with the organization, one password-authenticated human, and optional roles, which default to `ORG_OWNER`.
@@ -38,7 +18,7 @@ The hosted `${CUSTOM_DOMAIN}/ui/login/register/org` form creates an organization
 
 ## External IdP placement and account controls
 
-An external provider can be an instance default available to every organization or belong to one organization for tenant-specific SSO; the applicable login policy must enable **External IDP Allowed**. Provider settings independently control automatic creation and profile updates, manual account creation and linking, and automatic matching by username or email, so disable the manual options when an automatic flow must not expose an edit or link choice.
+An external provider can be an instance default available to every organization or belong to one organization for tenant-specific SSO; the applicable login policy must enable **External IDP Allowed**. Provider settings independently control automatic creation and profile updates, manual account creation and linking, and automatic matching by username or email, so disabling the manual options is useful when an automatic flow must not expose an edit or link choice.
 
 ## External-provider callback routes
 
@@ -54,7 +34,7 @@ The Microsoft template always sends `openid` and `User.Read`; Entra should retur
 
 ## External SAML provider endpoint roles
 
-When ZITADEL consumes an external SAML IdP, import that IdP's metadata and give the upstream provider ZITADEL's SP metadata at `/idps/{providerID}/saml/metadata`. The provider details expose distinct **ACS Login Form** for Login V1, **ACS Intent API** for Login V2 or programmatic flows, and **Single Logout** URLs; use the matching ACS as both consumer URL and recipient, and the metadata URL as the SP entity ID or audience.
+When ZITADEL consumes an external SAML IdP, import that IdP's metadata and give the upstream provider ZITADEL's SP metadata at `/idps/{providerID}/saml/metadata`. Provider details expose distinct **ACS Login Form** for Login V1, **ACS Intent API** for Login V2 or programmatic flows, and **Single Logout** URLs; use the matching ACS as both consumer URL and recipient, and the metadata URL as the SP entity ID or audience.
 
 ## JWT identity-provider relay
 
@@ -125,7 +105,7 @@ curl -u "$CLIENT_ID:$CLIENT_SECRET" \
 
 ## Service-account personal access tokens
 
-Personal access tokens are available only for service accounts, may have an expiration or remain unexpired, and are displayed only once. Send them directly as bearer tokens without a token exchange; they remain usable until expiration or deletion.
+Personal access tokens are available only for service accounts, may have an expiration or remain unexpired, and are displayed only once. They are sent directly as bearer tokens without a token exchange and remain usable until expiration or deletion.
 
 ## Service-account public-key registration
 

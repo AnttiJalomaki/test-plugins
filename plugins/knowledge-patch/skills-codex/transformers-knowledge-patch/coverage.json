@@ -2,7 +2,7 @@
   "patch": "transformers-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T14:09:08Z",
+  "built_at": "2026-08-22T10:11:02Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -93,6 +93,11 @@
       "build": "included"
     },
     "5.9.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "5.15.1": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

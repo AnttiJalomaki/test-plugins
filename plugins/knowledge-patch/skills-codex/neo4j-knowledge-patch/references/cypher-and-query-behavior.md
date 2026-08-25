@@ -1,31 +1,38 @@
 # Cypher and Query Behavior
 
-## Choose the query language deliberately
+Use this reference when selecting a language version, adopting Cypher 25
+syntax, or updating tests and consumers for corrected runtime behavior.
 
-Neo4j provides frozen, compatibility-focused Cypher 5 alongside evolving
-Cypher 25 (2025.06). Existing and new databases in that release default to
-Cypher 5. Select Cypher 25 when creating or altering a database, set
-`db.query.default_language` for new and initial databases, or override a query:
+## Language selection and defaults
+
+The `2025.06` line provides frozen, compatibility-focused Cypher 5 alongside
+evolving Cypher 25. Existing and new databases initially defaulted to Cypher 5.
+Choose Cypher 25 per database at creation or alteration, set
+`db.query.default_language` for new and initial databases, or override one
+query:
 
 ```cypher
 CYPHER 25 RETURN 1 AS value
 ```
 
-Starting in 2026.02, the distributed `neo4j.conf` explicitly sets
-`db.query.default_language=CYPHER_25`. A new deployment using the packaged
-configuration therefore creates databases with Cypher 25 by default, while an
-older or retained configuration can behave differently. Inspect the effective
-database and configuration settings.
+Starting in 2026.02, distributed `neo4j.conf` explicitly sets
+`db.query.default_language=CYPHER_25`. New deployments that use the packaged
+file therefore default newly created databases to Cypher 25, while retained
+configuration can preserve earlier behavior.
 
-## Compose queries and intermediate results
+## Query composition
+
+### Conditional and sequential queries
 
 Cypher 25 adds `WHEN`/`ELSE` for conditional query composition and `NEXT` for
-linear composition (2025.06). GQL-style braces may wrap top-level queries and
-the arguments of composite queries, including `UNION`, `UNION ALL`, and
-conditional queries.
+linear composition. GQL-style curly braces are accepted around top-level
+queries and around arguments to composite queries such as `UNION`, `UNION ALL`,
+and conditional queries.
 
-Standalone `LET` adds projected variables and `FILTER` filters mid-query. A
-`WITH` boundary is no longer required between writing and reading clauses:
+### Standalone `FILTER` and `LET`
+
+Use `FILTER` for mid-query filtering and `LET` to add projected variables. A
+`WITH` boundary is no longer required between writing and reading clauses.
 
 ```cypher
 MATCH (p:Person)
@@ -34,48 +41,35 @@ FILTER name IS NOT NULL
 RETURN name
 ```
 
+### Explicit duplicate retention and reordered unions
+
 `RETURN ALL` and `WITH ALL` explicitly retain duplicates. `UNION` and
-`UNION ALL` branches with differently ordered return items are supported and
-are no longer deprecated.
+`UNION ALL` branches whose return items use different ordering are supported
+and are no longer deprecated.
 
-Cypher 25 also supports GQL `FOR` as the equivalent of `UNWIND` (2026.04.0):
+### Composable commands
 
-```cypher
-FOR item IN [1, 2, 3]
-RETURN item
+Cypher 25 can combine several commands in one query and mix them with other
+statements. The composable commands are:
+
+```text
+SHOW INDEXES
+SHOW CONSTRAINTS
+SHOW CURRENT GRAPH TYPE
+SHOW FUNCTIONS
+SHOW PROCEDURES
+SHOW SETTINGS
+SHOW TRANSACTIONS
+SHOW DATABASES
+TERMINATE TRANSACTIONS
 ```
 
-Composable commands can be combined in one query and mixed with other Cypher
-statements (2026.05.0): `SHOW INDEXES`, `SHOW CONSTRAINTS`,
-`SHOW CURRENT GRAPH TYPE`, `SHOW FUNCTIONS`, `SHOW PROCEDURES`,
-`SHOW SETTINGS`, `SHOW TRANSACTIONS`, `SHOW DATABASES`, and
-`TERMINATE TRANSACTIONS`.
+## GQL-compatible syntax
 
-## Select path semantics
+### Label predicates
 
-Cypher 25 adds `REPEATABLE ELEMENTS` walk semantics, in which a relationship
-may repeat in a matched path (2025.06). Trail semantics remains the default and
-can be requested explicitly with `MATCH DIFFERENT RELATIONSHIPS`:
-
-```cypher
-MATCH REPEATABLE ELEMENTS p = (a)-[*]->(b)
-RETURN p
-```
-
-`ACYCLIC` prevents repeated nodes and can be combined with `ANY`, `SHORTEST`,
-`SHORTEST k`, `ALL SHORTEST`, and `SHORTEST k GROUPS` (2026.05.0).
-Parameters are also accepted in `SHORTEST` and `ANY` path patterns (2025.06).
-
-## Functions, predicates, and identifiers
-
-The four-argument `replace()` form limits the number of replacements (2025.06):
-
-```cypher
-RETURN replace('banana', 'a', 'o', 2)
-```
-
-GQL `IS LABELED` and `IS NOT LABELED` are equivalents of Cypher `IS` and
-`IS NOT` label predicates (2026.04.0):
+Cypher 25 accepts GQL `IS LABELED` and `IS NOT LABELED` as equivalents of
+Cypher `IS` and `IS NOT` label predicates (since `2026.04.0`).
 
 ```cypher
 MATCH (n)
@@ -83,61 +77,121 @@ WHERE n IS LABELED Person
 RETURN n
 ```
 
-Native `string.indexOf`, `string.join`, and `string.regexReplace` are available
-(2026.05.0). Migrate from the corresponding deprecated `apoc.text.*`
-functions.
+### `FOR` statement
 
-Cypher 25 treats U+0085 NEXT LINE as whitespace instead of allowing it in
-identifiers and rejects formerly deprecated identifier characters (2025.06).
-Parameters may start with additional characters from the GQL extended
-identifier character set.
+Cypher 25 supports GQL `FOR` to extract rows from a list; it is equivalent to
+`UNWIND`.
 
-## Property and graph-reference compatibility
+```cypher
+FOR item IN [1, 2, 3]
+RETURN item
+```
 
-Cypher 25 no longer accepts a node or relationship directly on the right side
-of a `SET` properties clause (2025.06). Convert the entity to a map:
+### Identifier and parameter characters
+
+Cypher 25 treats U+0085 NEXT LINE as whitespace, not as an identifier
+character, and rejects previously deprecated identifier characters. Parameters
+may begin with more characters from GQL's extended identifier character set.
+
+## Path semantics
+
+### Match modes
+
+Trail semantics remains the default and can be requested as
+`MATCH DIFFERENT RELATIONSHIPS`. `REPEATABLE ELEMENTS` uses walk semantics and
+allows a relationship to repeat in a matched path.
+
+```cypher
+MATCH REPEATABLE ELEMENTS p = (a)-[*]->(b)
+RETURN p
+```
+
+### `ACYCLIC` with restrictive selectors
+
+Cypher 25 permits `ACYCLIC`, which prevents repeated nodes in a path, with
+`ANY`, `SHORTEST`, `SHORTEST k`, `ALL SHORTEST`, and `SHORTEST k GROUPS`.
+
+### Parameterized path patterns
+
+Parameters are permitted in `SHORTEST` and `ANY` path patterns.
+
+## Expressions and functions
+
+### Limited replacement
+
+Cypher 25 adds an optional limit argument to `replace()`:
+
+```cypher
+RETURN replace('banana', 'a', 'o', 2)
+```
+
+### Native string functions
+
+Cypher 25 adds `string.indexOf`, `string.join`, and `string.regexReplace`. The
+corresponding `apoc.text.*` functions are deprecated (since `2026.05.0`).
+
+### Copying entity properties
+
+A node or relationship can no longer appear directly on the right side of a
+Cypher 25 `SET` properties clause. Convert the entity explicitly:
 
 ```cypher
 SET target = properties(source)
 ```
 
-A composite constituent reference must be one symbolic name, such as
-`compdb.constituent`, rather than separate quoted parts such as
-`` `compdb`.`constituent` ``. Resolution infers whether the prefix is a
-composite. In a function argument, pass a dotted name as a complete string:
+### Subquery-expression aggregation
+
+Inside Cypher 25 `COLLECT`, `COUNT`, and `EXISTS` subquery expressions,
+imported variables are constants rather than aggregation grouping keys. An
+aggregation can therefore produce a result even when no rows match. Cypher 5
+retains the previous grouping behavior.
+
+### Empty-input standard deviation
+
+`stDev()` returns `null`, rather than `0`, for empty input.
+
+## Graph references
+
+Cypher 25 requires a composite constituent to be one symbolic reference such
+as `compdb.constituent`, not separately quoted parts such as
+`` `compdb`.`constituent` ``. Resolution infers whether the prefix names a
+composite.
+
+Function arguments that contain more dots use the complete string reference:
 
 ```cypher
 USE graph.byName("composite.with.dot.constituent")
 ```
 
-Ambiguous database, alias, and constituent names are rejected in both language
-versions. A local constituent cannot be a user's home database and must be
+Ambiguous database, alias, and constituent names are rejected in Cypher 5 and
+Cypher 25. A local constituent cannot be a user's home database and must be
 accessed through its composite.
 
-## Aggregation semantics and corrected results
+## Administration result contracts
 
-Inside Cypher 25 `COLLECT`, `COUNT`, and `EXISTS` subquery expressions,
-imported variables are constants rather than aggregation grouping keys
-(2025.06). Aggregation can therefore produce a result when no rows match.
-Cypher 5 retains the former grouping behavior.
+In Cypher 25, `SHOW TRANSACTIONS` returns `startTime` and
+`currentQueryStartTime` as `ZONED DATETIME`, not `STRING`. Several transaction
+columns now use `null` for unavailable values.
 
-The pipelined runtime no longer overcounts `COUNT(DISTINCT)` when a plan lacks
-a leveraged order, and `stDev()` now returns null rather than zero for empty
-input (2026.05.0).
+Administration commands with `WAIT` report cluster state as notifications
+rather than result rows. Revoking a privilege that cannot exist raises an
+error.
 
-Two further correctness fixes landed in 2026.06.0:
+`db.schema.nodeTypeProperties()` and `db.schema.relTypeProperties()` return
+Cypher type names, not Java type names, in `propertyTypes`. Update parsers and
+expected vocabularies.
 
-- An ordered `OR EXISTS` subquery no longer silently drops a result row.
-- An undirected scan over multiple relationship types no longer omits sibling
-  relationships; affected scans previously undercounted by roughly half.
+`EXPLAIN` and `PROFILE` consistently report the underlying point-release
+version in query plans. Tools comparing plan text must accept the more detailed
+value.
 
-Re-baseline assertions that captured the previous incorrect results.
+## Parallel and pipelined runtimes
 
-## Runtime planning
+### Parallel Repeat-over-VarExpand heuristic
 
-The parallel runtime disables the Repeat-over-VarExpand planning heuristic by
-default because a variable-length pattern with input cardinality one can use
-excessive memory (2026.05.0). Restore it for one query only when justified:
+The parallel runtime disables its Repeat-over-VarExpand planning heuristic by
+default because variable-length patterns with input cardinality one could use
+excessive memory. Restore it for one query only when needed:
 
 ```cypher
 CYPHER parallelRepeatHeuristic=enabled
@@ -145,22 +199,37 @@ MATCH (a:A {prop: 123}) ((n)-[r:R]->(m))+ (b)
 RETURN a, b
 ```
 
-The preparser option accepts `enabled` and `disabled`.
+The accepted values are `enabled` and `disabled`.
 
-`EXPLAIN` and `PROFILE` consistently include the Neo4j point release in plan
-output (2026.04.0). Plan parsers and comparisons must accept the more detailed
-version.
+### Corrected result behavior
 
-## Concurrent transaction batches
+- In the pipelined runtime, `COUNT(DISTINCT)` no longer overcounts when a plan
+  lacks a leveraged order.
+- An ordered `OR EXISTS` subquery no longer silently loses a result row (since
+  `2026.06.0`). A corrected query can return rows an earlier runtime omitted.
+- Undirected scans over multiple relationship types no longer omit sibling
+  relationships. Affected scans had undercounted by roughly half.
 
-`CALL { … } IN CONCURRENT TRANSACTIONS` supports `DISJOINT BY` (2026.06.0).
-It schedules disjoint parallel write work before transactions begin, avoiding
-lock contention and deadlocks in operations such as merges under unique
-constraints and relationship creation.
+## Concurrent transaction batching
 
-## Vector search syntax
+`CALL { … } IN CONCURRENT TRANSACTIONS` supports `DISJOINT BY`. It schedules
+disjoint parallel write work before transactions start, avoiding lock
+contention and deadlocks in cases such as merges under unique constraints and
+relationship creation.
 
-Cypher 25 vector `SEARCH` accepts `IN` in its filter predicate (2026.06.0):
+## Graph types
+
+`GRAPH TYPE` is generally available for production schema definition,
+enforcement, and validation. `SHOW CURRENT GRAPH TYPE AS GRAPH` returns lists
+of virtual nodes and relationships instead of a string representation:
+
+```cypher
+SHOW CURRENT GRAPH TYPE AS GRAPH
+```
+
+## Vector `SEARCH`
+
+Cypher 25 vector searches support `IN` within the filter predicate:
 
 ```cypher
 MATCH (movie:Movie)
@@ -173,21 +242,8 @@ SEARCH movie IN (
 RETURN movie.title AS title, movie.rating AS rating
 ```
 
-Prefer `SEARCH` over the deprecated `db.index.vector.queryNodes()` and
-`db.index.vector.queryRelationships()` procedures.
-
-## Administrative and schema result contracts
-
-In Cypher 25, `SHOW TRANSACTIONS` returns `startTime` and
-`currentQueryStartTime` as `ZONED DATETIME`, not `STRING` (2025.06).
-Unavailable values in several transaction columns are null. Administration
-commands using `WAIT` report cluster state as notifications rather than result
-rows, and revoking a privilege that cannot exist raises an error.
-
-The `propertyTypes` column returned by `db.schema.nodeTypeProperties()` and
-`db.schema.relTypeProperties()` contains Cypher type names instead of Java type
-names. Update consumers that parse these rows.
-
-In Cypher 25 from 2025.12, `dbms.setDefaultAllocationNumbers()` accepts
-`propertyShardReplicas`, and `dbms.showTopologyGraphConfig()` returns the same
-field.
+`db.index.vector.queryNodes()` and
+`db.index.vector.queryRelationships()` are deprecated in Cypher 25; prefer
+`SEARCH`. `db.index.vector.createNodeIndex()` is removed in favor of
+`CREATE VECTOR INDEX`, and `db.create.setVectorProperty()` is removed in favor
+of `db.create.setNodeVectorProperty()`.

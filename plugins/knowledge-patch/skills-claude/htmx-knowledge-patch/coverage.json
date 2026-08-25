@@ -1,6 +1,8 @@
 {
   "patch": "htmx-knowledge-patch",
-  "merged_at": "2026-07-15T01:16:07Z",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-08-21T07:33:56Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },

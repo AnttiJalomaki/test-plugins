@@ -1,26 +1,23 @@
 # Plugin and Framework APIs
 
-## Environment API
+## Build Development Integrations With the Environment API
 
-Vite's experimental Environment API gives framework and plugin authors a way
-to build development integrations that more closely match production (since
-6.0.0).
+Vite `6.0.0` adds an experimental Environment API for framework and plugin
+authors. It supports development integrations that more closely match their
+production behavior.
 
-Adopting the API is not required for ordinary applications:
+The API does not change normal single-client SPA behavior. Existing custom SSR
+applications remain backward compatible.
 
-- Single-client SPA behavior is unchanged.
-- Existing custom SSR applications remain backward compatible.
-- The main audience is framework and plugin integration code.
+Because the API is experimental, keep integration-specific code behind clear
+framework or plugin boundaries and validate behavior in the environments the
+integration creates.
 
-Because the API is experimental, keep Environment-specific integration logic
-encapsulated and test it across the environments the framework supports.
+## Coordinate Multiple Environment Builds
 
-## Coordinated environment builds
+In `7.0.0`, the experimental Environment API adds a `buildApp` hook. Plugins
+can use the hook to coordinate builds across multiple environments.
 
-The experimental Environment API adds a `buildApp` hook (since 7.0.0). Plugins
-can use the hook to coordinate the building of multiple environments rather
-than treating every environment build as an unrelated operation.
-
-Use `buildApp` when a plugin needs application-level orchestration across those
-builds. Keep single-environment work in the narrower integration path when no
-coordination is required.
+Use `buildApp` when one plugin must orchestrate related environment builds,
+rather than treating each build as unrelated. The hook remains part of the
+experimental Environment API.

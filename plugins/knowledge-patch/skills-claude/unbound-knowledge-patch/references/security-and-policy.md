@@ -1,116 +1,117 @@
-# Security and policy
+# Security and Policy
 
 ## EDNS COOKIE controls
 
 ### Persistent secret rollover
 
-Since 1.21.0, `cookie-secret-file` persists EDNS COOKIE secrets for rollover:
+`cookie-secret-file` stores COOKIE secrets across restarts (1.21.0):
 
 ```conf
 server:
     cookie-secret-file: "unbound_cookiesecrets.txt"
 ```
 
-Rotate at runtime with the `add_cookie_secret`, `activate_cookie_secret`, and
-`drop_cookie_secret` remote-control commands. Use `print_cookie_secrets` to
-inspect the values currently in use.
+Use the remote-control commands `add_cookie_secret`,
+`activate_cookie_secret`, and `drop_cookie_secret` for runtime rotation, and
+`print_cookie_secrets` to inspect the values in use.
 
 ### COOKIE-aware IP rate limiting
 
-Since 1.21.0, `ip-ratelimit-cookie` is applied as configured. An existing
-configuration that already sets it begins enforcing the intended rate limit
-for COOKIE clients after upgrade.
+`ip-ratelimit-cookie` is enforced (1.21.0). An upgrade can activate the
+intended COOKIE-client rate limit in configurations that already set the
+option, so monitor rejected traffic.
 
-## DNSSEC validation and keys
+## DNSSEC trust anchors and certificate material
 
-### Root trust anchor
-
-The `unbound-anchor` compiled-in root keys include key 38696 since 1.21.0.
-Inspect the compiled content with:
+The default root keys in `unbound-anchor` include key 38696 (1.21.0). Inspect
+compiled-in material with:
 
 ```sh
 unbound-anchor -l
 ```
 
-### Hardened missing-AAAA glue lookup
+The built-in `icannbundle.pem` includes ICANN public keys covering 2009–2029
+and 2025–2045 (1.26.0). Use `-l` to show built-in material or `-c` to select an
+external bundle that can be updated independently:
 
-Since 1.22.0, `harden-unverified-glue` also governs missing AAAA lookups
-started by cache filling. Enabling it therefore hardens this path as well as
-the previously covered glue paths.
+```sh
+unbound-anchor -c /etc/unbound/icannbundle.pem
+```
 
-### RRSIG scrub limit
+## DNSSEC validation tightening
 
-Since 1.25.0, `iter-scrub-rrsig` caps how many RRSIG records the iterator
-scrubber retains. The default is 8:
+### Alias chains
+
+YXDOMAIN is accepted only with a DNAME, signatures from revoked DNSKEYs are
+rejected, and DNAME-to-CNAME and wildcard-CNAME chains have stricter trust
+checks (1.25.0).
+
+### Proof and RSA-key handling
+
+Libnettle builds validate noncanonical RSA DNSKEYs whose modulus has leading
+zeroes and compute their size correctly (1.26.0). Negative caching works with
+unsalted NSEC3 records. Signed wildcard NSEC records are checked before use as
+DS proofs. Aggressive NSEC/NSEC3 processing rejects signer-zone mismatches,
+overreaching next-owner names, and results outside the trust-anchor bailiwick.
+
+## Iterator and query hardening
+
+### RRSIG scrub bound
+
+`iter-scrub-rrsig` caps RRSIGs retained by the iterator scrubber and defaults
+to `8` (1.25.0):
 
 ```conf
 server:
     iter-scrub-rrsig: 8
 ```
 
-### Alias-chain validation
+### Missing glue
 
-Since 1.25.0:
+`harden-unverified-glue` includes missing AAAA lookups initiated by cache fill
+(1.22.0).
 
-- YXDOMAIN is accepted only when a DNAME is present.
-- Signatures made by revoked DNSKEYs are rejected.
-- DNAME-to-CNAME and wildcard-CNAME chains receive stricter trust checks.
+### Malformed errors and EOF
 
-## Response policy zones
+Malformed cases receive error replies rather than silence and do not reflect
+parts of the query (1.25.0). CHAOS queries do not echo incoming EDNS extended
+RCODEs. TCP client EOF cancels pending replies and closes the connection.
 
-### Tagged policy matching
+## Response and local-zone policy
 
-Since 1.21.0, tags on tagged RPZ zones are honored again. The regression
-caused tags to be ignored after an upgrade from 1.19.3 to 1.20.0.
+### SVCB/HTTPS rebinding protection
 
-### RPZ local-CNAME chains
+`private-address` filtering removes matching SVCB and HTTPS records as well as
+address records (1.25.0), closing a rebinding route that did not require A or
+AAAA data.
 
-Since 1.24.0, resolution follows CNAME chains introduced by an RPZ
-local-CNAME rewrite. It no longer stops at the rewritten CNAME.
+### Refused DS queries
 
-### DNS64-synthesized answers
+An `always_refuse` local zone blocks DS queries along with other types
+(1.25.0).
 
-Since 1.24.0, RESPIP and RPZ apply to DNS64-synthesized answers with:
+### Tagged RPZ matching
 
-```conf
-server:
-    module-config: "respip dns64 validator iterator"
-```
+Tags on tagged RPZ zones are honored (1.21.0). This corrects the regression in
+which tags were ignored after moving from 1.19.3 to 1.20.0.
 
-The cachedb insertion
-`"respip dns64 validator cachedb iterator"` is explicitly not known to work.
+### ZONEMD in RPZ data
 
-### RPZ input containing ZONEMD
+ZONEMD records are ignored as a policy type while loading RPZ zones (1.25.0),
+so their presence does not break root-key priming.
 
-Since 1.25.0, ZONEMD is ignored as a policy type while loading RPZ zones.
-This prevents such input from breaking root-key priming.
+## DNS64 and NAT64 validation policy
 
-## Local-zone policy
+When DNSSEC is enabled, the AAAA query behind a DNS64 answer must validate
+successfully (1.26.0). DNS64 synthesis preserves `rpz-passthru` decisions and
+keeps ECS-scoped answers out of the global cache.
 
-### Dynamic `always_nxdomain`
+The interaction between `do-nat64` and `do-not-query-address` is applied
+consistently during retries (1.25.0).
 
-Since 1.21.0, an `always_nxdomain` zone added with `unbound-control` locates
-its parent correctly, restoring reliable blocking for dynamically added
-zones.
+## External cachedb trust
 
-### DS in `always_refuse`
-
-Since 1.25.0, an `always_refuse` local zone blocks DS queries as well as other
-query types.
-
-### Ineffective `nodefault`
-
-Since 1.25.0, `unbound-checkconf` warns when a `nodefault` local-zone
-declaration has no effect.
-
-## Rebinding protection
-
-Since 1.25.0, `private-address` filtering removes SVCB and HTTPS records that
-match configured private-address ranges. This closes a rebinding path that
-does not depend on A or AAAA records.
-
-## Contributed cryptography
-
-RFC 9558 ECC-GOST12 support is available since 1.25.0 as
-`contrib/gost12.patch`. It replaces the older GOST integration for
-deployments that apply the contributed patch.
+Expired bogus cachedb data is not returned as non-bogus, and cached
+aggressive-negative replies carry RA (1.25.0). `forward-no-cache` and
+`stub-no-cache` prevent external cachedb reads and writes, including relevant
+ECS paths.

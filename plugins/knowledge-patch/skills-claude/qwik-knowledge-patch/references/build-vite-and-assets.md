@@ -1,68 +1,81 @@
 # Build, Vite, and Assets
 
-## Optimizer syntax and ordering
+## Optimizer syntax and transform ordering
 
-The optimizer understands `import ... with` and replaces enums with numbers
-where possible. QRL grouping is delegated to Rollup, so other Rollup or Vite
-plugins—including CSS-in-JS transforms—can process code before Qwik transforms
-it.
+Since 1.8, the optimizer understands `import ... with` and replaces enums
+with numbers when possible. QRL grouping is delegated to Rollup, so other
+Rollup or Vite plugins, including CSS-in-JS transforms, can process code
+before Qwik applies its transform.
 
-## Default asset paths
+When plugin ordering matters, preserve the ordering required by the upstream
+transform rather than assuming Qwik groups QRLs first.
 
-Default build assets use `assets/hash-name.ext`. Update deployment rules, cache
-configuration, and asset matching that assumed the former locations.
+## Default build asset paths
 
-## Library QRL filtering
+Default built assets use `assets/hash-name.ext`. Deployment rules, CDN paths,
+and cache matchers that assume earlier output locations must be updated.
 
-A custom `qwikVite()` `fileFilter` cannot exclude library QRL files named
-`*.qwik.js`, `*.qwik.mjs`, or `*.qwik.cjs`; the optimizer always processes
-them.
+## Library QRL file processing
+
+`qwikVite()` always processes library QRL files named `*.qwik.js`,
+`*.qwik.mjs`, or `*.qwik.cjs`. A custom `fileFilter` cannot exclude them.
 
 ## Experimental Vite features
 
-Configure experiments through an array:
+`qwikVite()` accepts an `experimental` array:
 
 ```ts
 qwikVite({ experimental: ['noSPA', 'valibot', 'preventNavigate'] });
 ```
 
-- `noSPA` supports MPA-only applications that do not use `Link`.
+- `noSPA` is for MPA-only applications that do not use `Link`.
 - `valibot` enables the experimental `valibot$` validator.
 - `preventNavigate` enables `usePreventNavigate`. It can asynchronously block
-  SPA navigation and uses browser dialogs for other unsaved-state navigation.
+  SPA navigation and falls back to browser dialogs for other unsaved-state
+  navigation.
 
-## Module-preload priority
+## Module-preload fetch priority
 
-Set `linkFetchPriority` on a prefetch strategy to set the fetch priority of its
-generated `modulepreload` links.
+Prefetch strategies accept `linkFetchPriority` for generated
+`modulepreload` links. Set it when route-critical preloads need an explicit
+browser fetch priority.
+
+## Monorepo-aware integrations
+
+`qwik add` accepts `projectDir`, allowing an integration to target a package
+or subproject instead of the repository root:
+
+```sh
+qwik add --projectDir=packages/my-package
+```
 
 ## Lint default
 
-The `lint` option defaults to `false`. Enable it explicitly when a build must
-run linting.
+The `lint` option defaults to `false`. Enable it explicitly when the build is
+expected to lint.
 
-## Bundle preloading and service workers
+## Automatic bundle preloading
 
-From 1.14, Qwik prefetches through `modulepreload` links and a bundle graph that
-contains dynamic imports and path-to-bundle mappings. The server includes
-built-in manifest support; service workers are no longer the built-in prefetch
-mechanism.
+Since 1.14, Qwik uses `modulepreload` links and a bundle graph rather than its
+service workers for prefetching. The graph includes dynamic imports and
+path-to-bundle mappings, and the server has built-in manifest support.
 
 The built-in service-worker components are deprecated. For an uncustomized
-worker, remove `service-worker.ts` but temporarily retain
-`ServiceWorkerRegister` so existing workers and caches are removed from deployed
-clients. Automatic unregistration does not occur when custom worker logic is
-present. Install the integration only for a legacy application that still
+worker, remove `service-worker.ts` but keep `ServiceWorkerRegister`
+temporarily so already-deployed workers and caches are removed. Automatic
+unregistration does not occur when the worker contains custom logic.
+
+Only add the service-worker integration when a legacy application still
 needs a customizable worker:
 
 ```sh
 qwik add service-worker
 ```
 
-## SSR preload configuration
+## Preload configuration
 
 SSR preload options include `debug` and the stable `maxIdlePreloads`, which
-limits concurrent idle preloads. `preloadProbability` is deprecated from
+limits concurrent idle preloads. `preloadProbability` is deprecated since
 1.16.1.
 
 ```ts
@@ -74,37 +87,50 @@ renderToStream(<Root />, {
 
 ## Cache headers
 
-Unless Rollup output naming is customized, serve content-hashed files below
-`build/` and `assets/` with:
+Content-hashed files under `build/` and `assets/` should normally use:
 
 ```http
 Cache-Control: public, max-age=31536000, immutable
 ```
 
-Qwik City's `q-data.json` requests follow their cache headers instead of being
-forced fresh. Their default cache duration is one hour.
+Do not apply that policy blindly when Rollup output naming has been
+customized and URLs are no longer content-addressed.
+
+Qwik City navigation honors the cache headers of `q-data.json` instead of
+forcing a fresh download. Its default cache duration is one hour.
 
 ## Qwikloader delivery
 
-From 1.15, SSR references Qwikloader as a separate bundle rather than embedding
-it. From 1.17, tests and unusual network configurations can opt into embedding:
+Since 1.15, SSR loads Qwikloader from a separate bundle rather than embedding
+it. Since 1.17, tests or unusual network setups can opt back into embedding
+it:
 
 ```ts
-renderToStream(<Root />, { ...opts, qwikLoader: 'inline' });
+renderToStream(<Root />, {
+  ...opts,
+  qwikLoader: 'inline',
+});
 ```
 
 ## Manifest and preloader artifacts
 
-The preloader bundle graph is emitted as an asset, and `q-manifest.json`
-includes generated assets. By 1.19, references to `core.js` and `preloader.js`
-are filtered from both the manifest and the bundle graph.
+The preloader bundle graph is emitted as an asset. `q-manifest.json` includes
+generated assets. By 1.19, `core.js` and `preloader.js` references are
+filtered from both the manifest and bundle graph.
 
-## Vite and client freshness
+## Client bundle freshness
 
-Qwik core and Qwik City moved to Vite 7 in 1.16. Align the application
-toolchain with that major version. Use the CLI freshness check after producing
-the client bundle:
+Use the CLI's `check-client` command to verify that the client bundle is
+fresh:
 
 ```sh
 qwik check-client
+```
+
+## Compiled i18n integration
+
+Scaffold compiled-i18 support directly:
+
+```sh
+qwik add compiled-i18
 ```

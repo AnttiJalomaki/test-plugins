@@ -10,84 +10,78 @@ metadata:
 
 # Ray Knowledge Patch
 
-Use this skill when working with Ray Core, Ray Data, Ray Train, Ray Tune,
-Ray Serve, or KubeRay. It captures API boundaries, scheduling behavior,
-recovery limits, and lifecycle rules that are easy to miss when these products
-are combined.
+Use this skill for implementation, migration, debugging, or operations involving
+Ray Core, Ray Data, Ray Train, Ray Tune, Ray Serve, or KubeRay. Inspect the
+project's dependency manifests and configuration before applying guidance, and
+prefer observed project behavior when it differs.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/tasks-and-actors.md](references/tasks-and-actors.md) | Typed actor handles, cancellation, task-event reporting |
-| [references/data-processing.md](references/data-processing.md) | Streaming, batches, compute pools, ordering, placement groups, async transforms, expressions |
-| [references/training-and-api-stability.md](references/training-and-api-stability.md) | Train V2, dataset splitting, subclusters, preprocessors, backpressure, API stability |
-| [references/tuning.md](references/tuning.md) | Result emission, time budgets, scheduler constraints, dynamic resources |
-| [references/serving-and-recovery.md](references/serving-and-recovery.md) | Deployment responses, replica and controller recovery, REST management |
-| [references/kubernetes-operations.md](references/kubernetes-operations.md) | RayCluster, RayJob modes and lifecycle, cleanup, RayService endpoints |
+| [Tasks and actors](references/tasks-and-actors.md) | Typed handles, cancellation, task events, actor execution, scheduling, GCS, and node lifecycle |
+| [Data processing](references/data-processing.md) | Streaming, batching, transforms, resource scheduling, expressions, readers, writes, and migrations |
+| [Training and API stability](references/training-and-api-stability.md) | Train V2, dataset sharding, subclusters, checkpoint metadata, logging, restore behavior, and API policy |
+| [Tuning](references/tuning.md) | Result emission, sampling budgets, scheduler compatibility, dynamic resources, and search integrations |
+| [Serving and recovery](references/serving-and-recovery.md) | Deployment handles, failure recovery, management, request routing, ingress, and LLM routing |
+| [Kubernetes operations](references/kubernetes-operations.md) | RayCluster, RayJob, submission modes, retries, cleanup, RayService, and endpoints |
 
-## Migration and deprecation checks
+Read only the references relevant to the component being changed. For changes
+that span Data and Train or Serve and KubeRay, read both corresponding files
+because ownership of execution and recovery settings crosses component
+boundaries.
 
-### Opt in deliberately to Train V2
+## Compatibility priorities
 
-Starting in Ray 2.43, Train V2 is enabled with an environment variable:
+### Data migration hazards
 
-```bash
-RAY_TRAIN_V2_ENABLED=1 python train.py
-```
+- Expression filters use `compute=`; do not use the deprecated `concurrency=`
+  argument.
+- Do not build new code on `ConcurrencyCapBackpressurePolicy`,
+  `DataIterator.to_torch`, pandas UDF batches, `DataContext.scheduling_strategy`,
+  `actor_locality_enabled`, `exclude_resources`, or `local://`.
+- `read_tfrecords` no longer supports `tfx-bsl`, and cluster autoscaler v1 has
+  been removed.
+- DataSource V2 is the default reader path. Account for row-group-aware
+  chunking and predicate splitting when comparing plans or performance.
+- `read_numpy` disallows pickle by default. `write_lance(mode=CREATE)` fails
+  rather than overwriting an existing target.
 
-Do not assume imports from the deprecated V1 reference carry over. Check the
-V2 API when migrating framework helpers, trainers, configuration paths, and
-session utilities.
+See [Data processing](references/data-processing.md) before updating readers,
+transforms, conversion code, or storage behavior.
 
-### Respect API stability windows
+### Train and Tune migration hazards
 
-An API without an annotation is a Developer API and may change. Public and
-deprecated APIs require explicit annotations.
+- Train V2 is opt-in through `RAY_TRAIN_V2_ENABLED=1`; verify V2 imports and
+  APIs instead of carrying forward legacy helpers by assumption.
+- Train v1 `Predictor` is removed. `Result.from_path` is read-only, and
+  `ray.train.report(checkpoint=...)` accepts only in-band checkpoints.
+- `OptunaSearch` requires `optuna>=3.0.0`.
+- `MultiRLModuleSpec.rl_module_specs` must be a dictionary.
 
-For a Stable API demotion or parameter change:
+Use [Training and API stability](references/training-and-api-stability.md) for
+dataset, checkpoint, metadata, and API-transition details. Use
+[Tuning](references/tuning.md) for scheduler and search integration constraints.
 
-- warn users;
-- keep old and new parameters together during the transition; and
-- use a deadline of six months or 25 minor versions.
+### Serve ingress hazards
 
-For Beta APIs, the deadline is three months or 12 minor versions. Alpha APIs
-have no stability guarantee.
+- Replace deprecated `HTTPOptions.location` with `proxy_location`.
+- A nonzero `HTTPOptions.num_cpus` is rejected.
+- Direct ingress rejects an ingress deployment that also uses a custom request
+  router or `serve.multiplexed`.
+- HAProxy ingress expects the separately distributed `ray-haproxy` package.
 
-### Treat RayJob cleanup mechanisms as alternatives
+Read [Serving and recovery](references/serving-and-recovery.md) before changing
+ingress, routing, controller, or request-lifecycle configuration.
 
-KubeRay 1.6.0 provides beta `deletionStrategy` rules behind the
-`RayJobDeletionPolicy` feature gate. Do not combine rules-based cleanup with
-`shutdownAfterJobFinishes` or the global `ttlSecondsAfterFinished`.
-The older `onSuccess` and `onFailure` style is deprecated.
+## Core tasks and actors
 
-`shutdownAfterJobFinishes` defaults to false. A
-`ttlSecondsAfterFinished` value only takes effect when shutdown is enabled.
-The operator can also delete the RayJob custom resource and everything it
-created when `DELETE_RAYJOB_CR_AFTER_JOB_FINISHES=true` and shutdown is
-enabled.
+### Preserve actor method types
 
-### Check RayJob submission-mode constraints
-
-`K8sJobMode` is the default. A `submitterPodTemplate` applies only in that
-mode. `SidecarMode` requires the head Pod restart policy to be `Never` and
-does not support:
-
-- `clusterSelector`;
-- `submitterPodTemplate`; or
-- `submitterConfig`.
-
-`InteractiveMode` is alpha. See the Kubernetes reference before changing
-submission mode, retries, deadlines, suspension, or cleanup.
-
-## Core task and actor quick reference
-
-### Keep actor types through `.remote()`
-
-Leave the original class undecorated, mark its remote methods with
-`@ray.method`, then wrap it with `ray.remote()`. Annotate the wrapper with
-`ActorClass[T]` and the handle with `ActorProxy[T]`; method calls then retain
-`ObjectRef[R]` return types.
+Keep the implementation class undecorated, mark methods with `@ray.method`,
+wrap the class using `ray.remote()`, and annotate the wrapper and handle with
+`ActorClass[T]` and `ActorProxy[T]`. This carries the method's return type
+through `.remote()` to `ObjectRef[R]`.
 
 ```python
 import ray
@@ -103,140 +97,149 @@ counter: ActorProxy[Counter] = CounterActor.remote()
 result: ray.ObjectRef[int] = counter.increment.remote()
 ```
 
-### Implement cooperative cancellation
+### Treat cancellation as cooperative
 
-`ray.cancel()` is best-effort. An unscheduled actor task that is cancelled
-successfully raises `TaskCancelledError` from `ray.get()`. Running regular or
-threaded actor methods are not interrupted; poll:
+`ray.cancel()` is best-effort. A queued actor task can surface
+`TaskCancelledError`, but running regular or threaded actor methods must poll
+`ray.get_runtime_context().is_canceled()`. Async actor methods receive
+`asyncio.Task` cancellation at an `await`; do not call `is_canceled()` inside
+them. Use `recursive=True` when tracked child and actor tasks should also be
+targeted.
 
-```python
-ray.get_runtime_context().is_canceled()
-```
+### Control task-event overhead explicitly
 
-Async actor methods instead receive `asyncio.Task` cancellation at an
-`await`. Calling `is_canceled()` from an async actor method raises
-`RuntimeError`. With `recursive=True`, cancellation also targets tracked
-child and actor tasks.
+Set `enable_task_events=False` on remote functions or actors to suppress
+Dashboard and State API status and profiling events. Nested tasks do not
+inherit the parent's choice. An actor method setting overrides the actor
+setting.
 
-### Control task-event visibility locally
+See [Tasks and actors](references/tasks-and-actors.md) for actor closures,
+streaming-generator backpressure, topology-aware placement, embedded GCS
+storage, and node-drain behavior.
 
-Set `enable_task_events=False` on a remote function or actor to suppress the
-status and profiling events consumed by the Dashboard and State API.
-Nested tasks do not inherit the parent setting. An actor method setting
-overrides the actor setting.
+## Ray Data
 
-## Ray Data quick reference
+### Know where streaming stops
 
-### Identify streaming barriers
+Dataset transformations are lazy. Non-shuffle operators can overlap as a
+streaming pipeline after consumption starts, while `sort()` and `groupby()`
+must materialize their shuffle before streaming continues.
 
-Dataset transforms are lazy. Non-shuffle operators can execute concurrently
-as a streaming pipeline after consumption starts. `sort()` and `groupby()`
-must materialize data, so streaming pauses until their shuffle completes.
+### Select the right transform worker model
 
-### Choose transform execution correctly
+- Plain functions use tasks and can be capped with
+  `TaskPoolStrategy(size=n)`.
+- Callable classes use actors, initialize once per worker, and default to an
+  autoscaling pool unless configured with `ActorPoolStrategy`.
+- Resource arguments affect logical scheduling; they do not enforce physical
+  CPU, GPU, or memory limits.
+- Async transforms require a callable class with `async def __call__`; async
+  function transforms are unsupported.
 
-- Functions run as tasks. Cap concurrency with `TaskPoolStrategy(size=n)`.
-- Callable classes run as actors, initialize once per worker, and default to
-  an autoscaling actor pool.
-- Use `ActorPoolStrategy` when the actor pool must be fixed.
-- `memory`, `num_cpus`, and `num_gpus` affect scheduling; they do not enforce
-  physical resource limits.
-- Async transforms must be callable classes with `async def __call__`.
-  Function-based async transforms are unsupported, and the feature requires
-  `uvloop==0.21.0`.
+GPU transforms require an integer `batch_size`; reduce it after worker memory
+errors. `batch_size="auto"` is available for non-GPU transforms.
 
-`map_batches(batch_size="auto")` enables automatic sizing, but GPU transforms
-need an explicit integer batch size. Lower it when a worker runs out of memory.
+### Preserve order only when required
 
-### Make ordering explicit
+Transforms do not preserve block order unless the Dataset is sorted or the
+current Data context enables `execution_options.preserve_order`. Enabling it
+can reduce throughput when workers finish unevenly.
 
-Transforms do not preserve block order by default. A sorted Dataset retains
-order; otherwise enable `preserve_order` in the current Data context when the
-result requires it. Expect reduced performance when workers finish unevenly.
+See [Data processing](references/data-processing.md) for replica placement
+groups, alpha column expressions, weighted mixing, catalogs, Kafka bounds,
+worker isolation, retries, conversions, and backpressure controls.
 
-## Ray Train quick reference
+## Ray Train
 
-### Split only the intended datasets
+### Decide dataset sharding per input
 
-Train normally calls `Dataset.streaming_split()` so every worker receives a
+Train normally uses `Dataset.streaming_split()` so every worker receives a
 disjoint shard of every Dataset. Set
-`DataConfig(datasets_to_split=[...])` to select which datasets are sharded.
-An unlisted validation Dataset is complete on every worker; metrics from a
-split validation Dataset must be aggregated across workers.
+`DataConfig(datasets_to_split=[...])` to shard only selected inputs. Each
+worker sees an unlisted validation Dataset in full; aggregate results across
+workers when validation is split.
 
-### Apply subcluster selectors twice
+### Configure both stages of subcluster placement
 
-To pin Train data work to a labeled subcluster:
+Apply a copied `DataContext` with an execution label selector while constructing
+the Dataset, then repeat the selector in `DataConfig.execution_options` for
+ingestion. Train replaces Dataset execution options, so the construction-time
+selector alone does not pin worker ingestion.
 
-1. Copy the current `DataContext`, set its `label_selector`, and use it while
-   constructing the Dataset. This covers file listing and schema work.
-2. Repeat the selector in `DataConfig.execution_options` for ingestion.
+### Carry preprocessors through checkpoints
 
-Train replaces the Dataset context's execution options, so the
-construction-time selector alone does not pin per-worker ingest.
+Fit and apply preprocessing before Trainer construction. Serialize the fitted
+preprocessor, encode its bytes for the JSON-compatible Trainer `metadata`, and
+recover it from checkpoint metadata. Use per-Dataset execution resource limits
+to backpressure object-store production when consumers lag.
 
-### Preserve preprocessing and control backpressure
+See [Training and API stability](references/training-and-api-stability.md) for
+examples and the stability and deprecation rules.
 
-Fit and apply preprocessing before constructing the Trainer. Serialize the
-preprocessor, encode the bytes for JSON-compatible Trainer `metadata`, and
-restore it from checkpoint metadata.
+## Ray Tune
 
-Set each Dataset's execution-context `resource_limits` with an
-`ExecutionResources(object_store_memory=...)` limit. Ray Data slows
-production at the limit so training consumers are not overrun by spilled
-data.
+### Emit results correctly
 
-## Tune quick reference
+A function trainable may call `tune.report()` for intermediate results, return
+a dictionary for only its final result, or yield dictionaries for successive
+results. Class-based `Trainable` implementations cannot call `tune.report()`.
 
-- A function trainable may call `tune.report()` for intermediate metrics,
-  return one dictionary for its final result, or yield successive result
-  dictionaries.
-- Do not call `tune.report()` inside a class-based `Trainable`.
-- Combine `num_samples=-1` with `time_budget_s` for open-ended trial
-  generation bounded by wall-clock time.
-- A finite `num_samples` caps the number of trials.
-- `ResourceChangingScheduler` can wrap another scheduler and change trial
-  resources while tuning runs.
+### Bound open-ended searches
 
-Checkpointing and search-algorithm compatibility differ among ASHA, Median
-Stopping, HyperBand, BOHB, PBT, and PB2. Consult the tuning reference before
-combining them.
+Use `num_samples=-1` with `time_budget_s` to generate trials until the wall
+clock budget expires. A finite `num_samples` caps trial count.
 
-## Serve quick reference
+### Match schedulers to checkpointing and search
 
-A deployment-handle method returns `DeploymentResponse` immediately. Await
-it for the value, or pass it directly to another deployment-handle call to
-pipeline intermediate results without materializing them locally.
+- ASHA and Median Stopping require no checkpointing and support search
+  algorithms.
+- HyperBand requires checkpointing and supports search algorithms.
+- BOHB requires checkpointing and only works with `TuneBOHB`.
+- PBT and PB2 require checkpointing and are incompatible with search
+  algorithms.
 
-Application exceptions return HTTP 500 with traceback information but do not
-kill the replica. Serve replaces failed replicas and restarts failed proxies
-and the controller. Controller state is restored from the GCS, but transient
-connections and internal request queues are lost.
+`ResourceChangingScheduler` can wrap another scheduler to change a trial's
+resource request while tuning. See [Tuning](references/tuning.md) for the full
+matrix and search-library requirements.
 
-HTTP, gRPC, and deployment-handle traffic can continue while the controller
-is unavailable. Autoscaling pauses and resumes after recovery without the
-metrics gathered before the failure. Whole-cluster recovery belongs at the
-KubeRay layer.
+## Ray Serve
 
-## KubeRay quick reference
+### Pipeline deployment responses
 
-A RayJob can embed `rayClusterSpec` to create a cluster or use
-`clusterSelector` to target an existing RayCluster. KubeRay submits its
-`entrypoint` only after the cluster is ready.
+A deployment method returns `DeploymentResponse` immediately. Await it for a
+local value or pass it directly to another `DeploymentHandle` call so composed
+deployments do not materialize intermediate values locally.
 
-Keep retry scopes separate:
+### Design around recovery boundaries
 
-- top-level `backoffLimit` defaults to zero and creates a new RayCluster for
-  each retry;
-- `submitterConfig.backoffLimit` defaults to two and retries the submitter
-  Kubernetes Job.
+Application exceptions return HTTP 500 with traceback information without
+killing the replica. Serve recreates failed replicas, proxies, and the
+controller and restores persisted controller state from GCS. Transient
+connections and internal request queues are lost, and whole-cluster recovery
+belongs at the KubeRay layer.
 
-`preRunningDeadlineSeconds` bounds the wait for `Running`; zero disables it.
-`activeDeadlineSeconds` bounds the time to reach `Complete` or `Failed`.
-Do not manually change `suspend` when Kueue owns RayJob scheduling.
+HTTP, gRPC, and deployment-handle traffic can continue while the controller is
+down, but autoscaling pauses and resumes without the metrics gathered before
+failure. Every cluster node exposes a Serve REST management server.
 
-RayService manages a RayCluster and Ray Serve applications.
-`serveConfigV2` accepts multi-application configuration. Once Serve has
-endpoints, RayService reports `Ready=True`, exposes Dashboard access on its
-head service at port 8265, and exposes application HTTP traffic on its Serve
-service at port 8000.
+See [Serving and recovery](references/serving-and-recovery.md) for extensible
+routers, HAProxy and gRPC ingress, controller runtime environments, request
+timeouts, rolling updates, disconnect handling, and LLM routing modes.
+
+## KubeRay
+
+### Choose the RayJob submission model deliberately
+
+A RayJob may embed `rayClusterSpec` to create a cluster or use
+`clusterSelector` for an existing one. Submission modes have distinct
+constraints: `K8sJobMode` creates a submitter Job, `HTTPMode` submits through
+the operator, `InteractiveMode` waits for the user, and `SidecarMode` places
+the submitter in the head Pod.
+
+Keep cluster retries separate from submitter Job retries. Configure
+pre-running and active deadlines independently, and choose cleanup rules only
+after deciding whether the cluster and RayJob custom resource should survive.
+
+See [Kubernetes operations](references/kubernetes-operations.md) for bootstrap
+commands, generated services, submission fields, retry defaults, lifecycle
+status, cleanup compatibility, suspension, and RayService readiness.

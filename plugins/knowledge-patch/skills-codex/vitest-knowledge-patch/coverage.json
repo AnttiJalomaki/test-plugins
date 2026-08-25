@@ -1,6 +1,8 @@
 {
   "patch": "vitest-knowledge-patch",
-  "merged_at": "2026-07-15T03:09:29Z",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-08-22T05:03:25Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -47,6 +49,11 @@
     },
     "experimental-features": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.1.11": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

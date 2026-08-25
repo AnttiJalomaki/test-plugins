@@ -1,61 +1,41 @@
 # Storage and Volumes
 
-Use this reference for dynamic host volumes, stateful workloads, CSI event
-visibility, scheduler disk capacity, and quota migrations.
-
 ## Dynamic host volumes
 
-Nomad can create host volumes through the CLI or API without restarting
-clients. Stateful deployments consume them through `volume` and
-`volume_mount` blocks:
+Since 1.10.0, Nomad can create host volumes through the CLI or API without
+restarting clients, and stateful deployments can use them.
 
 ```shell
 nomad volume create ./internal-plugin.volume.hcl
 ```
 
-The scheduler tracks declared availability, but Nomad does not interpret the
-underlying storage. A dynamic host volume may therefore be backed by local
-storage or highly available network storage. Match rescheduling and recovery
-expectations to the actual backend (source batch `1.10.0`).
+Jobs consume dynamic host volumes with `volume` and `volume_mount` blocks. The
+scheduler tracks availability, but Nomad does not interpret the underlying
+storage, so a volume may use local or highly available network storage.
 
-Nomad Enterprise can apply Sentinel policy during volume creation, enforce
-per-namespace host-volume capacity quotas, and verify the requested node pool
-against namespace node-pool configuration.
+Nomad Enterprise can evaluate volume specifications with Sentinel during
+creation, apply per-namespace host-volume capacity quotas, and validate a
+requested node pool against the namespace's node-pool configuration.
 
-## Volume CLI and events
+## Volume CLI and visibility
 
-`nomad volume status` displays volume capabilities. `nomad volume delete`
-accepts a volume ID prefix and a wildcard namespace. Be careful to resolve the
-intended namespace and prefix before deleting.
+Since 1.10.0, `nomad volume status` shows volume capabilities.
+`nomad volume delete` accepts a volume ID prefix and a wildcard namespace. CSI
+volume and plugin events are included in the event stream.
 
-CSI volume and plugin events are present in the event stream. Event consumers
-can observe lifecycle and plugin activity without relying exclusively on
-polling status endpoints.
+## Quota storage schema
+
+Since 1.10.0, the quota `variables_limit` field and API
+`QuotaSpec.VariablesLimit` are deprecated for removal in 1.12. Use
+`region_limit.storage.variables` and
+`QuotaSpec.RegionLimit.Storage.Variables`.
+
+The Go API type of `QuotaSpec.RegionLimit` changes from `Resources` to
+`QuotaResources`.
 
 ## Scheduling capacity
 
-Storage available for scheduling is calculated as:
-
-```text
-totalBytes - client.reserved.disk
-```
-
-It is no longer based on current free disk space, and the
-`unique.storage.bytesfree` attribute is removed (source batch `1.11-upgrade`).
-Reserve at least the disk space used by the host operating system. If a
-placement decision looks inconsistent with `df`, inspect configured total and
-reserved capacity rather than trying to restore the removed attribute.
-
-## Quota schema migration
-
-The quota field `variables_limit` and Go API field
-`QuotaSpec.VariablesLimit` are deprecated for removal in 1.12. Use:
-
-```text
-region_limit.storage.variables
-QuotaSpec.RegionLimit.Storage.Variables
-```
-
-The Go API type of `QuotaSpec.RegionLimit` changes from `Resources` to
-`QuotaResources`. Update configuration generators, JSON/HCL serializers,
-client code, and tests together so schema shape and Go types remain aligned.
+In the `1.11-upgrade` guidance, available storage for scheduling is calculated
+as `totalBytes - client.reserved.disk` instead of free disk space, and the
+`unique.storage.bytesfree` attribute is removed. Reserve at least the disk space
+consumed by the host operating system.

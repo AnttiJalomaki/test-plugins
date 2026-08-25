@@ -10,95 +10,129 @@ metadata:
 
 # GitLab CI/CD Knowledge Patch
 
-Use this skill when authoring, reviewing, debugging, or upgrading GitLab
-pipelines and their supporting GitLab installation. It is especially useful
-when work involves pipeline inputs, job-token boundaries, security scanning,
-merge trains, Runner telemetry, GitLab Duo automation, or a GitLab 19 upgrade.
-
-Start by identifying the deployment type, exact GitLab and Runner versions,
-license tier, and relevant feature flags. Several capabilities differ between
-GitLab.com, GitLab Self-Managed, and GitLab Dedicated, and some are beta,
-limited-availability, opt-in, or disabled by default.
+Use this skill when writing or reviewing pipeline configuration, operating runners,
+adopting GitLab automation features, or preparing a GitLab platform upgrade. Begin
+with the breaking-change checks below, then open the reference file for the task.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [references/pipeline-configuration.md](references/pipeline-configuration.md) | AST pipeline selection, typed inputs, merge trains, job-token permissions and cross-project pushes |
-| [references/security-and-governance.md](references/security-and-governance.md) | Secrets Manager, scheduled execution policies, dependency remediation |
-| [references/operations-and-automation.md](references/operations-and-automation.md) | Analytics, catalog usage, Runner telemetry and timeouts, terminal tools, agents and flows |
-| [references/platform-upgrades.md](references/platform-upgrades.md) | Required upgrade stops, database and registry migrations, removed services, Helm, operating systems, Geo and RPM cleanup |
+| --- | --- |
+| [Pipeline Configuration and Credentials](references/pipeline-configuration.md) | Security-template pipeline selection, typed inputs, job-token pushes, merge trains, and runner timeouts |
+| [Operations, Observability, and Automation](references/operations-and-automation.md) | CI/CD analytics, component usage, OTLP telemetry, Duo CLI, custom and foundational flows, and pipeline assistance |
+| [GitLab Platform Upgrade Guidance](references/platform-upgrades.md) | Required upgrade stops, PostgreSQL and Redis, registry migrations and repairs, removed packages and services, Helm changes, and RPM cleanup |
+| [Security, Secrets, and Governance](references/security-and-governance.md) | Fine-grained job-token permissions, Secrets Manager, scheduled policies, dependency remediation, and security fixes |
 
-## Upgrade blockers first
+## Working method
 
-### Follow every required stop
+1. Identify whether the task concerns pipeline YAML, runner configuration, GitLab
+   administration, or an upgrade.
+2. Confirm the deployment type and tier before recommending a feature; several
+   capabilities differ across GitLab.com, Self-Managed, and Dedicated.
+3. For upgrades, identify the current version, target version, installation method,
+   database, registry backend, operating system, and bundled services.
+4. Preserve explicit feature flags and opt-ins. Do not present beta or limited-
+   availability behavior as a universal default.
+5. Validate configuration in a non-production project or maintenance window, then
+   record rollback or recovery steps before applying the change broadly.
 
-For GitLab 19 upgrades, include required stops `19.2`, `19.5`, `19.8`, and
-`19.11` in the upgrade plan. Read the notes for every release between the
-current and target versions, including installation-method-specific notes.
+## Upgrade and breaking-change triage
 
-### Do not target 19.2.0 for direct Linux package upgrades
+### Follow every required upgrade stop
 
-A direct upgrade to 19.2.0 can erase locally configured AI Gateway and Duo
-Agent Platform service URLs and reset related settings. Target 19.2.1 or
-later. If the reset already happened, restore the endpoints under
-**Admin area** > **GitLab Duo** > **Configuration** > **Service endpoints**.
+GitLab 19 upgrades must stop at `19.2`, `19.5`, `19.8`, and `19.11` when those
+versions fall between the installed and target releases. Read every intervening
+release note and the notes for the actual installation method. Do not jump directly
+to the target merely because the package manager permits it.
 
-### Upgrade PostgreSQL before GitLab
+### Prepare the database and external services first
 
-PostgreSQL 17 is required before installing GitLab 19, regardless of
-installation method. Upgrade packaged PostgreSQL 16 or the external database
-first.
+Before installing GitLab 19:
 
-### Prepare registry configuration
+- Upgrade packaged PostgreSQL 16 or an external PostgreSQL deployment to
+  PostgreSQL 17.
+- Replace external Redis 6 with Redis 7.0 or later, or Valkey 7.2 or later. The
+  Redis bundled with the Linux package is already version 7.
+- For Helm or Operator installations, externalize PostgreSQL, Redis, and object
+  storage if they use the removed bundled Bitnami PostgreSQL, Bitnami Redis, or
+  MinIO charts.
+- Externalize Spamcheck. Its bundled Linux-package and Helm-chart forms are gone;
+  no Spamcheck data migration is required.
 
-Existing Linux package and self-compiled installations without an explicit
-registry metadata database setting enter `prefer` mode. On 19.0.0 and 19.0.1,
-this can break `/gitlab/v1/` routes even while `/v2/` pushes and pulls work.
-Use the documented temporary disable-and-restart recovery, then upgrade to
-19.0.2 or later.
+### Remove or migrate discontinued package integrations
 
-The legacy registry `s3` driver is removed and aliases to `s3_v2`. For
-non-AWS S3-compatible storage, use a complete URI for `regionendpoint` and set
-`checksum_disabled` if the backend rejects enhanced upload checksums. Deletion
-still sends CRC32, so the backend itself must support it.
+- Migrate bundled Mattermost users to a standalone deployment and remove or
+  comment every `mattermost[...]` key in `/etc/gitlab/gitlab.rb` before upgrading.
+  Otherwise `gitlab-ctl reconfigure` aborts. The versioned `check-config` command
+  does not detect this condition.
+- Move Ubuntu 20.04 Linux-package hosts to Ubuntu 22.04 or another supported OS;
+  GitLab 18.11 is the final package release for Ubuntu 20.04.
+- Move openSUSE Leap 15.6, SLES 12.5, and SLES 15.6 package installations that
+  must stay on SUSE to Docker; their final GitLab package release is 18.11.
 
-### Externalize removed dependencies
+### Migrate registry storage deliberately
 
-Before upgrading affected installations:
+The legacy `s3` registry driver is removed in GitLab 19 and aliases to `s3_v2`.
+Configure `s3_v2` directly. For a non-AWS S3-compatible backend, use a complete URI
+for `regionendpoint`; set `checksum_disabled` if enhanced upload checksums are
+rejected. Deletion still sends CRC32, so the backend itself must support it.
 
-- replace external Redis 6 with Redis 7.0 or later, or Valkey 7.2;
-- move bundled Mattermost users to standalone Mattermost and remove every
-  `mattermost[...]` key before reconfigure;
-- deploy Spamcheck separately;
-- replace the Helm chart's removed bundled PostgreSQL, Redis, and MinIO
-  services with external services;
-- prepare the Helm chart's Gateway API and Envoy Gateway default, or
-  temporarily re-enable bundled NGINX Ingress.
+```ruby
+registry['storage'] = {
+  's3_v2' => {
+    'accesskey' => '<your-access-key>',
+    'secretkey' => '<your-secret-key>',
+    'bucket' => '<your-bucket>',
+    'region' => '<your-region>',
+    'regionendpoint' => 'https://storage.example.com',
+    'pathstyle' => true,
+    'checksum_disabled' => true
+  }
+}
+```
 
-See [references/platform-upgrades.md](references/platform-upgrades.md) for the
-complete upgrade checklist, including Ubuntu, SUSE, Geo, and RPM cases.
+### Account for the Helm ingress default
 
-## Pipeline behavior quick reference
+The GitLab 19 Helm chart defaults to Gateway API with Envoy Gateway. The bundled
+NGINX Ingress can be explicitly restored until its proposed removal in GitLab 20.
+Externally managed Ingress or Gateway API controllers and Linux-package NGINX are
+not affected by this chart default.
 
-### Choose AST merge request or branch pipelines explicitly
+### Avoid known point-release failures
 
-Set `AST_ENABLE_MR_PIPELINES: "true"` to choose merge request pipelines when
-an MR is open:
+- Upgrade directly to `19.2.1` or later rather than `19.2.0` on Linux-package
+  installations that use local AI Gateway or Duo Agent Platform endpoints. If
+  `19.2.0` cleared them, restore the URLs under **Admin area** > **GitLab Duo** >
+  **Configuration** > **Service endpoints**.
+- In `19.0.0` and `19.0.1`, registry metadata database `prefer` mode can make
+  `/gitlab/v1/` return HTTP 500. Temporarily disable the metadata database, then
+  remove the override after reaching `19.0.2` or later.
+- Geo sites on `19.0.0` or `19.0.1` can omit OCI image-index tags. Upgrade both
+  sites to `19.0.2` or later and manually resync container repositories when the
+  default verification interval is too slow.
+
+See [GitLab Platform Upgrade Guidance](references/platform-upgrades.md) for exact
+recovery configuration, affected installation methods, and post-upgrade cleanup.
+
+## Pipeline configuration quick reference
+
+### Select security-scanner pipeline behavior explicitly
+
+Set `AST_ENABLE_MR_PIPELINES` to choose merge-request or branch pipelines when an
+MR is open. Stable security templates default to branch pipelines; Latest templates
+default to MR pipelines. The setting applies to every security scanning template
+except `API-Discovery.gitlab-ci.yml`, whose own default is branch pipelines.
 
 ```yaml
 variables:
   AST_ENABLE_MR_PIPELINES: "true"
 ```
 
-Stable security templates otherwise default to branch pipelines, while Latest
-templates default to merge request pipelines. The option covers all security
-scanning templates except `API-Discovery.gitlab-ci.yml`; API Discovery
-defaults to branch pipelines.
+### Address individual array inputs
 
-### Index typed array inputs directly
-
-Use `[]` during CI/CD input interpolation instead of adding a processing step:
+Use the `[]` operator in CI/CD input interpolation when a job needs one array
+element. The Run pipeline UI can also collect multiple allowed options into the
+array supplied to the pipeline.
 
 ```yaml
 spec:
@@ -112,122 +146,60 @@ show-first-target:
     - echo "$[[ inputs.targets[0] ]]"
 ```
 
-For array inputs with options, the Run pipeline UI supports multiple
-selections and supplies the selected values as one array.
+### Constrain job-token access and pushes
 
-### Treat job tokens as scoped credentials
+Prefer resource-specific job-token permissions for least privilege. Cross-project
+pushes require the target project to opt in and the triggering user to have at
+least the Developer role there. In GitLab 19.0, also enable the disabled-by-default
+`allow_push_to_allowlisted_projects` feature flag.
 
-Fine-grained job-token permissions can limit a token to selected project
-resources instead of inheriting all permissions of the triggering user. The
-capability is beta and available in all tiers on GitLab.com and GitLab
-Self-Managed.
+### Tune merge trains and runner startup
 
-Cross-project pushes require all of the following:
+Premium and Ultimate Self-Managed or Dedicated instances can set merge-train
+pipeline concurrency per project or instance instead of using the old fixed limit
+of 20. Use `1` to test merge requests sequentially against a clean target branch.
+Runner configuration also supports a configurable prepare-stage timeout.
 
-1. the target project opts in;
-2. the user who started the pipeline has at least Developer access there;
-3. `allow_push_to_allowlisted_projects` is enabled where required.
+## Operations and automation quick reference
 
-That feature flag is disabled by default. Do not assume that an allowlist alone
-makes a cross-project push available.
+### Export runner job traces
 
-### Set merge-train concurrency deliberately
+GitLab Runner 19.0 negotiates instrumentation and can export OTLP telemetry. Its
+initial trace signal is the `job_execution` span. Confirm collector connectivity
+and sampling before relying on traces for incident diagnosis.
 
-Self-Managed and Dedicated Premium or Ultimate installations can configure a
-per-project or instance-wide merge-train pipeline limit instead of the former
-fixed maximum of 20. Set the limit to `1` when merge requests must be tested
-one at a time against a clean target branch.
+### Centralize scheduled pipelines
 
-## Security and policy quick reference
+Scheduled pipeline execution policies define one schedule in a security policy
+project and enforce it across projects in scope without editing each
+`.gitlab-ci.yml`. Each policy starts its own daily, weekly, or monthly pipeline,
+independent of commits, with time-zone, execution-window, and target-branch controls.
 
-### Scope secrets to requesting jobs
+### Choose the right automation surface
 
-GitLab Secrets Manager is open beta for Premium and Ultimate on GitLab.com and
-GitLab Self-Managed. Project and group Owners can store and reference secrets
-at project or group scope, while access is limited to jobs that explicitly
-request them. Apply the beta support policy and do not assume production
-readiness.
+- Use the Duo CLI interactively through `glab` or as a standalone tool, and use
+  headless mode in CI/CD.
+- Use YAML custom flows for reusable multi-agent work that needs triggers,
+  approvals, feedback, or controlled identities.
+- Hand work from Agentic Chat to the Developer, Code Review, or Fix CI/CD Pipeline
+  foundational flow after the user approves the handoff.
+- Use the CI Expert Agent to create, debug, or optimize pipelines from repository
+  context.
+- Use the Fix CI/CD Pipeline Flow when failure classification, child-pipeline
+  traversal, or merge-request code suggestions are needed.
 
-### Schedule security pipelines centrally
+See [Operations, Observability, and Automation](references/operations-and-automation.md)
+for availability and behavior details.
 
-Scheduled pipeline execution policies define a schedule once in a security
-policy project and enforce it across all in-scope projects without editing
-each `.gitlab-ci.yml`. Each policy starts a separate pipeline independently of
-commit activity and can control cadence, time zone, execution-window
-distribution, and target branch.
+## Security response quick reference
 
-### Bound dependency remediation
+Install `19.2.1` immediately on affected Self-Managed `19.2` systems. Equivalent
+fixed releases are `19.1.3` and `19.0.5`; GitLab.com is already patched and
+Dedicated customers do not need to act. Review exposure involving Workhorse,
+pipeline schedule inputs, merge-request discussions, protected-branch approvals,
+pipeline test reports, Duo Code Review, and workflow tool-governance enforcement.
 
-Dependency scanning auto-remediation is beta. By default, it opens merge
-requests for safe patch or minor updates. The credit-consuming Agentic
-Breaking Change Resolution option also permits major upgrades and can inspect
-the failed pipeline, dependency changelog, and code usage, commit compatibility
-fixes, and rerun the pipeline until it passes.
-
-## Runner and project operations
-
-Runner 19.0 can negotiate instrumentation, export through OTLP, and emit its
-first `job_execution` span. Configure the prepare-stage timeout in Runner
-configuration when the default does not fit the environment.
-
-On GitLab Dedicated, the redesigned project CI/CD analytics view is limited
-availability and exposes pipeline performance and reliability trends.
-
-Ultimate users can inspect catalog component consumers, their selected
-versions, and whether those versions are current. Outdated consumers sort
-first, which makes the view useful for component migration work.
-
-## Assisted workflow quick reference
-
-GitLab Duo CLI is available through `glab` or as a standalone tool. Use
-interactive chat for exploratory work and headless mode for CI/CD. It can use
-project, pipeline, and agent context, and supports shared sessions, model
-selection, tool approvals, MCP connections, slash commands, skills, and
-`AGENTS.md`. Self-Managed and Dedicated administrators can disable it.
-
-Custom flows are reusable YAML workflows stored in a project or the AI
-Catalog. They can coordinate multiple agents, require human approval or
-feedback, use public or private visibility, validate configuration, run under
-service-account and composite identities, and react to repository and pipeline
-events.
-
-Agentic Chat can hand work to the Developer, Code Review, or Fix CI/CD
-Pipeline foundational flow after user approval. Track the handoff in chat or
-under **AI** > **Sessions**.
-
-The CI Expert Agent can create, debug, and optimize pipelines from repository
-context. When Orbit and its beta Knowledge Graph are enabled, it can use
-graph-based code intelligence.
-
-The Fix CI/CD Pipeline Flow classifies failures before changing code. It can
-return merge request code suggestions when affected files are already in the
-diff, follow child-pipeline failures through the hierarchy, read project
-behavior from `AGENTS.md`, and collapse its reasoning in merge request
-comments by default.
-
-## Review checklist
-
-Before changing a pipeline:
-
-- identify GitLab, Runner, tier, deployment, and feature-flag constraints;
-- check whether a feature is beta, limited availability, opt-in, or generally
-  available;
-- preserve the distinction between branch and merge request pipeline
-  behavior;
-- verify job-token access on both the source and target projects;
-- test typed input interpolation with the values produced by the UI;
-- set merge-train concurrency according to desired target-branch isolation;
-- confirm secrets and scheduled policies reach only the intended jobs and
-  projects;
-- inspect parent and child pipeline failures before proposing a fix.
-
-Before upgrading an installation:
-
-- visit each required stop and read intervening release notes;
-- upgrade PostgreSQL and external Redis or Valkey first;
-- inventory registry storage and metadata database settings;
-- externalize services removed from packages, charts, or the Operator;
-- verify operating-system and installation-method support;
-- plan recovery for Geo replication and known package cleanup cases;
-- back up service endpoint configuration before a direct package upgrade.
-
+For preventive controls, use explicitly requested Secrets Manager access, narrow
+job-token resources, centrally enforced schedules, and dependency scanning
+auto-remediation. Open [Security, Secrets, and Governance](references/security-and-governance.md)
+before enabling beta functionality or credit-consuming major-version remediation.

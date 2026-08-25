@@ -10,222 +10,148 @@ metadata:
 
 # Grafana Knowledge Patch
 
-Use this skill when upgrading, configuring, extending, or integrating with
-Grafana and the work may depend on recent API, alerting, dashboard, data-source,
-authentication, plugin, or deployment behavior.
+Load this skill when upgrading, configuring, extending, or integrating with modern Grafana. Inspect the deployed Grafana version, edition, database, enabled features, provisioning mode, installed plugins, and API consumers before applying guidance.
 
-## How to use this skill
-
-1. Determine the running Grafana version and edition from the deployment,
-   manifest, image tag, or server build information.
-2. Read the upgrade and breaking-change reference before changing a major
-   version.
-3. Open the task-specific reference from the index below.
-4. Treat manifests, configuration, code, and observed behavior as authoritative
-   when they disagree with compatibility guidance.
-5. Gate Enterprise-only and preview features explicitly; do not assume that a
-   feature available in one edition or deployment mode exists in another.
-6. Prefer UID-based and versioned Kubernetes-style APIs for new integrations.
-7. Test provisioning, RBAC, alert delivery, data-source queries, rendering, and
-   plugins after an upgrade rather than relying only on a successful startup.
+Prefer the deployment's manifests, configuration, API discovery, and observed behavior when they differ from this compatibility guidance. Treat feature flags as release-specific: a flag can become default, be promoted, or be removed entirely.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [upgrading-and-breaking-changes.md](references/upgrading-and-breaking-changes.md) | Major-upgrade runbooks, migrations, removed flags, commands, APIs, images, and defaults |
-| [alerting.md](references/alerting.md) | Rules, evaluation, state, recording rules, Alertmanager, contact points, templates, imports, and HA |
-| [dashboards-and-provisioning.md](references/dashboards-and-provisioning.md) | Dashboard APIs and schema, panels, transformations, variables, Git Sync, file provisioning, reporting, and migration |
-| [data-sources-and-observability.md](references/data-sources-and-observability.md) | Prometheus, Loki, Tempo, Elasticsearch, CloudWatch, SQL, traces, profiles, logs, expressions, and metrics |
-| [authentication-and-access.md](references/authentication-and-access.md) | OAuth, SAML, JWT, SCIM, service accounts, RBAC, permissions, identities, and audit controls |
-| [plugins-frontend-and-runtime.md](references/plugins-frontend-and-runtime.md) | Plugin compatibility, frontend APIs, extensions, renderer, sandboxing, server runtime, containers, and process environment |
+| [Alerting](references/alerting.md) | Rules, recording rules, state, notification routing, contact points, Alertmanager, provisioning, and alerting APIs |
+| [Authentication and access](references/authentication-and-access.md) | OAuth, JWT, SAML, LDAP, SCIM, service accounts, RBAC, permissions, and identity behavior |
+| [Dashboards and provisioning](references/dashboards-and-provisioning.md) | Dashboard APIs, Git Sync, file provisioning, unified storage, folders, annotations, and reporting |
+| [Data sources and observability](references/data-sources-and-observability.md) | Prometheus, Loki, Tempo, traces, profiles, cloud and SQL sources, expressions, transformations, and visualizations |
+| [Plugins, frontend, and runtime](references/plugins-frontend-and-runtime.md) | Plugin installation, manifests, frontend APIs, renderer, containers, server defaults, and process isolation |
+| [Upgrading and breaking changes](references/upgrading-and-breaking-changes.md) | Major upgrade sequencing, migrations, removed APIs and commands, defaults, feature gates, and deprecations |
 
-## Upgrade first: high-risk changes
+## Critical upgrade decisions
 
-### Do not stop on Grafana 13.0.0 with affected Git Sync deployments
+### Skip the withdrawn Git Sync release
 
-Grafana 13.0.0 was withdrawn because an affected self-managed Git Sync upgrade
-can lose or revert dashboards and folders. Upgrade directly from the latest
-12.x patch to 13.0.1 or later. If local and Git-managed content were mixed, or
-the deployment mode is uncertain, restore the pre-upgrade database before
-retrying. A full-instance Git Sync deployment may resync from Git, but merely
-upgrading an affected 13.0.0 database does not recover lost content.
+Do not take a self-managed Git Sync deployment from 12.x to Grafana 13.0.0. Upgrade directly to 13.0.1 or later. If local and Git-managed resources were mixed, restore the pre-upgrade database before retrying; merely upgrading an affected 13.0.0 database does not restore lost dashboards or folders.
 
 ### Treat unified-storage migration as one-way
 
-The first 13.0 startup migrates dashboards and folders from legacy SQL tables
-to unified storage and records completion in `unifiedstorage_migration_log`.
-Afterward, legacy dashboard and folder tables are not authoritative. Rollback
-requires the pre-upgrade database backup; a downgrade reads stale tables.
+The first 13.0 startup migrates dashboards and folders from legacy SQL tables and records completion. Those tables cease to be authoritative. Rollback requires restoring the pre-upgrade database; a binary downgrade reads stale tables, and later changes are not automatically migrated again.
 
-For repeated SQLite lock failures, increase
-`[unified_storage] migration_cache_size_kb` above its `1000000` default or
-stage through Parquet:
+For SQLite lock failures, increase `[unified_storage] migration_cache_size_kb` or stage the migration with:
 
 ```ini
 [unified_storage]
 migration_parquet_buffer = true
 ```
 
-### Reserve space for the 12.0 annotation migration
+### Prepare plugins before the React transition
 
-The 11.x-to-12.x migration rewrites the complete `annotation` table and rebuilds
-its indexes to populate `annotation.dashboard_uid`. Back up the database and
-reserve at least two to three times the table size in free space. Reclaim space
-later in a low-traffic window because `VACUUM FULL`, `OPTIMIZE TABLE`, and
-SQLite `VACUUM` lock the table.
+Update the current Grafana line to its latest patch, update and validate every plugin, and then move to Grafana 13. Plugin-mode rendering is removed, Angular plugins no longer run, and frontend compatibility depends on current plugin releases.
 
-### Audit data-source UIDs before 12.0
+### Move rendering to a service
 
-Malformed data-source UIDs are rejected by REST and provisioning when
-`failWrongDSUID` is enabled by default. Valid UIDs contain only letters,
-digits, hyphens, and underscores and are at most 40 characters. Replace invalid
-data sources, then repoint dashboard JSON and alert-rule queries.
+Run Image Renderer as a separate service. JWT renderer authentication is on by default; configure the same nonempty token on both sides and restart Grafana:
 
-```bash
-curl http://localhost:3000/api/datasources |
-  jq '.[] | select((.uid | test("^[a-zA-Z0-9\\-_]+$") | not) or (.uid | length > 40)) | {id, uid, name, type}'
+```ini
+[rendering]
+renderer_token = replace-with-a-shared-secret
 ```
 
-Add authentication to the audit request when the API requires it.
+Temporarily restore opaque database-backed tokens only when required:
 
-### Prepare plugins before a 13.x upgrade
+```ini
+[feature_toggles]
+renderAuthJWT = false
+```
 
-Grafana 13 uses React 19. First update the current Grafana release line to its
-latest patch, then update and validate every installed plugin, and only then
-upgrade Grafana. Angular frontend support is already absent in 12.x, and
-plugin-mode Image Renderer is absent in 13.x.
+### Audit the annotation migration
 
-## API migration rules
+Before an 11.x-to-12.x database upgrade, back up the database and reserve at least two to three times the `annotation` table size. The migration rewrites the table and rebuilds its indexes. Reclaim space only in a low-traffic window because the database-specific maintenance commands lock the table.
 
-- Use stable UIDs rather than numeric IDs or display names for dashboards,
-  folders, data sources, annotations, library panels, analytics, and usage
-  integrations.
-- Migrate new automation from the legacy `/api` family toward versioned
-  `/apis` resources. In 13.0, numeric-ID data-source endpoints are disabled by
-  default; `datasourceLegacyIdApi` is only a temporary bridge.
-- Keep the payload UID identical to the path UID for
-  `PUT /api/datasources/uid/:uid`; mismatches return HTTP 400.
-- Do not depend on `DashboardDTO.isStarred`, internal dashboard IDs on
-  UID-saved annotations, star APIs, or removed dashboard-version metrics.
-- For Alertmanager configuration, move automation to the App Platform
-  notification resources. Legacy configuration write and test endpoints are
-  removed or restricted.
-- Expect `/apis` dashboard operations to enforce fine-grained scopes and
-  protected-field or provenance permissions.
+### Retire numeric IDs and legacy routes
 
-## Alerting quick reference
+Use dashboard and data-source UIDs in HTTP clients, configuration, analytics, preferences, annotations, and usage events. Move integrations toward versioned Kubernetes-style `/apis` resources. Numeric-ID data-source endpoints are disabled by default, many internal-ID routes are removed, and the compatibility flag is temporary.
 
-- Recording rules are enabled by default from 12.1. Set
-  `default_datasource_uid`, choose per-rule write targets when needed, and
-  verify PDC and per-data-source write settings.
-- Use rule UIDs as identity. Rule titles and library-panel names are no longer
-  unique, and rules may exist without a group.
-- Model recovery with `keep_firing_for` and `Recovering`; configure
-  `missing_series_evals_to_resolve` where missing series should resolve only
-  after multiple evaluations.
-- File provisioning accepts `keepFiringFor` and
-  `missing_series_evals_to_resolve`. Provisioned recording rules may omit a
-  condition, but receivers with an empty name are invalid.
-- Compressed alert-state persistence is the default from 12.2. State storage
-  supports batching, jitter, retry with backoff, and configurable save
-  behavior.
-- Notification receivers support HMAC webhook signatures, templatable
-  payloads, OAuth2, external Alertmanager mTLS, Jira, Slack colors, and
-  time-range-aware dashboard and panel links.
-- In 13.0, managed route assignment uses
-  `notification_settings.policy`, not labels. Provisioning and notification
-  APIs enforce more granular authorization and provenance.
-- In 13.1, notification provisioning endpoints are deprecated and Rules API v2
-  is available behind `alerting.rulesAPIV2`.
+Update command invocations from `grafana-cli` and `grafana-server` to `grafana cli` and `grafana server`.
 
-## Dashboard and provisioning quick reference
+## High-value configuration changes
 
-- Prefer schema V2 for new as-code work where supported. Provisioning, export,
-  reporting, conversion, and home-dashboard handling have specific V2 paths;
-  validate round trips.
-- Provisioning and Git Sync are enabled by default in 13.0. Repository checks
-  cover branch protection, write access, and emptiness, and managed resources
-  have stricter ownership rules.
-- Git Sync uses inline secrets from 12.2. Webhooks reject GET, secrets rotate,
-  URL changes require a new token, and GitHub deliveries have replay
-  protection.
-- File provisioning watches for changes, and file-defined V2 dashboards may be
-  selected as the home dashboard.
-- Dashboard preferences and analytics should reference dashboard UIDs.
-- Use the As Code editor, schema validation, labels on V2 imports, rows, tabs,
-  section variables, and default layouts where those authoring features fit.
+### Alerting
 
-## Data-source and query quick reference
+- Expect API keys to have become service accounts before authorizing alerting automation.
+- Account for `max_attempts = 3`, compressed alert-state persistence, retry with backoff, state-write batching, and optional jitter when sizing alerting database load.
+- Recording rules are enabled by default; set their default or per-rule write destinations deliberately and verify remote-write headers.
+- Use UIDs for rule identity. Titles need not be unique, rules can be matched by position, and deleted-rule versions can remain recoverable.
+- Configure missing-series resolution and `keep_firing_for` explicitly where notification timing matters.
+- Move notification resources to App Platform APIs and grant dedicated permissions for status, enrichment, template testing, provenance, and protected fields.
+- Review the exact current routing-tree, provenance, and contact-point behavior before automating imports or deletes.
 
-- Loki label lookup defaults to `/labels` with a `query` parameter rather than
-  `/series`; update proxies, permissions, and integrations that assume the old
-  endpoint.
-- Elasticsearch field discovery uses `_field_caps`, so proxies and permissions
-  must allow it. Core Elasticsearch is no longer bundled in 13.0, even though
-  the separately installed integration adds ES|QL and variable queries.
-- Core Prometheus no longer includes Azure or SigV4 authentication in 13.1, and
-  the `grafana-prometheus` package is removed.
-- Zipkin moves to backend-routed queries and is later removed from core in
-  13.1; server-side network access and explicit installation matter.
-- Tempo streaming header forwarding was disabled in 12.4 and restored in 13.0.
-  Verify the exact running version before relying on incoming or team headers.
-- Prometheus queries containing `$__range` bypass incremental querying.
-- Server-side expression pipelines can return unaffected partial results when
-  one node fails; SQL expressions support `NOT`, CTEs in alerts, variable
-  interpolation, and public-preview workflows.
+### Authentication and authorization
 
-## Authentication and authorization quick reference
+- Validate OAuth refresh-token requirements, ID-token signature checks, token-exchange authentication, and failure behavior rather than relying on former defaults.
+- Audit JWT TLS settings, inline keys, organization-role mapping, and any bearer-token file or client-CA configuration.
+- Replace API-key clients with service accounts; the old endpoints and authentication implementation are removed.
+- Use concrete organization IDs and UID scopes. Review custom roles for deprecated annotation actions, invalid global data-source scopes, and changed action-set writes.
+- Keep data-source `query` permission distinct from `read`, and grant the dedicated Grafana Live push and Alertmanager status actions where needed.
+- Treat SCIM DELETE as deletion, not disabling, and test group membership, `externalId`, and unprovisioned-login policies.
 
-- Existing API keys migrate to service accounts on first 11.6 startup; API-key
-  endpoints and authentication code are removed in 12.1.
-- OAuth supports `client_secret_jwt`, ID-token signature checks, required
-  refresh tokens, access-token user-info extraction, and workload identity.
-  Exhausted token-refresh retries now surface as errors.
-- JWT supports organization-role mapping, TLS controls, bearer-token files,
-  client CAs, and inline public keys.
-- Enterprise data-source queries require the `query` permission; `read` is not
-  an alternative. Drilldown requires `datasources:explore`.
-- In 13.0, audit logging omits data-source request and response bodies by
-  default. Opt in only when their diagnostic value justifies the exposure.
-- Custom roles must not retain deprecated annotation permissions or global
-  data-source UID scopes. Use dashboard/folder permissions for dashboard
-  annotations and non-global roles for UID-scoped data-source access.
+### Dashboards and provisioning
 
-## Plugin and deployment quick reference
+- Back up before storage or Git Sync migrations and verify whether resources are local, file-managed, or repository-managed.
+- Do not override unmanaged resources or mutate ownership fields on repository-managed folders.
+- Expect file provisioning to watch for changes, and remember that Git-synced folders reject directly saved alert rules.
+- Validate webhook method, token rotation, replay protection, `ref` parameters, external URL construction, and sync write timeouts.
+- Use UID-based home-dashboard, annotation, star, analytics, and resource APIs; do not infer identity from names, titles, or numeric IDs.
+- For scripted dashboards, verify the active release's default explicitly; they were restored and later deprecated and disabled by default.
 
-- `grafana cli plugins install` enforces `grafanaDependency`; incompatible
-  versions require the ZIP path because no bypass flag exists.
-- Plugin processes no longer inherit host environment variables by default.
-  Pass required values deliberately; restricted setups receive
-  `PLUGIN_UNIX_SOCKET_DIR`, and external AWS plugins retain AWS credential-chain
-  variables.
-- Every `plugin.json` `routes[]` entry needs `path`, and every `includes[]`
-  entry needs `type`.
-- Replace deprecated `Select` with `Combobox`; account for the later
-  `isItemDisabled` rename and removed `Gauge` component.
-- Use the observable and asynchronous plugin/data-source APIs instead of
-  removed extension APIs or `datasourceSrv`.
-- Run Image Renderer as a separate service in 13.x. Configure the same
-  nonempty, non-`-` `[rendering] renderer_token` in Grafana and renderer; JWT
-  rendering authentication is enabled by default.
-- Invoke `grafana cli` and `grafana server`; the hyphenated legacy command
-  names are removed.
+### Data sources and observability
 
-## Validation checklist
+- Audit data-source UIDs for the required character set and 40-character limit before provisioning or REST writes.
+- Match payload and path UIDs on data-source PUT requests.
+- Allow Elasticsearch `_field_caps`; do not assume Elasticsearch or Zipkin remains bundled in core.
+- Check server-side reachability and authentication for backend-routed Zipkin, Jaeger, Tempo, and other `CallResource` traffic.
+- Review header forwarding per data source and release. Tempo streaming forwarding changed twice, while OAuth pass-through disables Enterprise query caching.
+- Update Loki label lookup consumers for `/labels?query=...` and review removed query-editor and cache options.
+- Account for core Prometheus authentication removals, incremental-query exclusions, parallel execution, and type-migration advice.
+- Verify changed logs, trace, profile, expression, histogram, and visualization data shapes before relying on panel output.
 
-- Back up the database and prove the restore procedure before a major upgrade.
-- Check free disk, migration logs, database locks, and startup logs.
-- Inventory feature toggles and settings; remove obsolete gates instead of
-  carrying them forward.
-- Exercise dashboard and folder CRUD through the API family used by automation.
-- Validate Git Sync ownership, webhook, signing, branch, and write rules.
-- Test alert evaluation, state persistence, routing, templates, remote writes,
-  contact points, and Alertmanager synchronization.
-- Test every data source from the server side, including TLS, proxy, header,
-  identity-forwarding, and backend-routed requests.
-- Re-evaluate custom roles and service-account permissions against the exact
-  actions now enforced.
-- Upgrade, sign-check, and smoke-test all plugins and renderer connections.
-- Compare runtime assumptions in derived container images with the new base
-  image and libc versions.
+### Plugins and runtime
+
+- Declare `type` for every plugin `includes` entry and `path` for every route.
+- Do not depend on host environment variables in plugin processes. Pass required configuration explicitly; use `PLUGIN_UNIX_SOCKET_DIR` for restricted temporary directories.
+- Let the plugin CLI enforce `grafanaDependency`; ZIP installation is the only deliberate incompatible-version path.
+- Migrate removed extension APIs and UI components, and adopt asynchronous data-source access instead of `datasourceSrv`.
+- Recheck derived images against glibc and base-image changes, and move image references from `grafana/grafana-oss` to `grafana/grafana`.
+- Decide explicitly whether upstream or Grafana handles gzip; server compression is enabled by default.
+
+## Safe upgrade workflow
+
+1. Record the Grafana build, edition, database engine, container base, provisioning and Git Sync flags, renderer mode, installed plugins, feature toggles, and external API consumers.
+2. Back up the database and repository-managed resources. Measure the annotation table and reserve migration space before crossing into 12.x.
+3. Replace invalid data-source UIDs, numeric-ID APIs, old commands, API keys, removed Alertmanager endpoints, and deprecated role actions.
+4. Update all plugins while still on the current Grafana patch line; test frontend APIs, manifests, routes, backend environment requirements, and renderer connectivity.
+5. For a 13.x move, verify the target is not 13.0.0 and classify every dashboard and folder as local, file-provisioned, or Git-managed.
+6. Upgrade in a maintenance window. Watch schema and unified-storage migrations, alert-state writes, repository sync, authentication migrations, and startup failures.
+7. Exercise dashboard reads and writes, folder moves, alert evaluation and delivery, contact-point tests, data-source queries, renderer authentication, SCIM, and custom roles.
+8. Compare metrics and logs with existing dashboards and alerts; update removed metrics, renamed prefixes, labels, histogram modes, and log-level assumptions.
+9. Roll back a failed unified-storage migration only by restoring the matching pre-upgrade database backup.
+
+## API integration rules
+
+- Discover the API resource version and permission model used by the deployed release.
+- Prefer UIDs in paths and payloads, and keep them identical when both are required.
+- Handle 400, 403, and 404 responses according to the resource contract; several formerly generic failures now express validation, provenance, or missing-group semantics.
+- Do not write internal Alertmanager configuration or protected provisioning fields through removed legacy endpoints.
+- Preserve provenance, action-set references, Git author/origin metadata, and resource ownership when round-tripping configuration.
+- Treat default changes as configuration changes: pin behavior explicitly when retry counts, compression, recording, garbage collection, gzip, short-URL expiry, or dashboard recovery affect operations.
+
+## Verification focus
+
+After any change, verify:
+
+- Grafana starts with the expected schema and authoritative storage.
+- Dashboard, folder, annotation, library-panel, and home-dashboard identity is UID-based.
+- Alert evaluations, missing-series handling, recovery windows, state persistence, routing, and notification authentication behave as configured.
+- OAuth, SAML, JWT, LDAP, SCIM, service-account, and custom-role paths retain the intended access.
+- Every data source can reach its backend with the intended headers, TLS, query mode, and credential flow.
+- Plugins load with valid manifests and compatible frontend/runtime dependencies.
+- Renderer tokens, certificates, and service connectivity work without plugin mode.
+- Dashboards and alerts that consume Grafana's own metrics tolerate removed series, new labels, native histograms, and renamed prefixes.

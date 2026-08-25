@@ -1,18 +1,17 @@
 # Ray Data Execution
 
-## Lazy execution and shuffle barriers
+## Streaming and materialization
 
-Dataset transformations are lazy. When a Dataset is consumed, non-shuffle
+Dataset transformations are lazy. Once consumption begins, non-shuffle
 operators can execute concurrently as a streaming pipeline. `sort()` and
-`groupby()` require materialization, so streaming stops until their shuffle
-finishes. Plan these operations as execution barriers rather than expecting
-records to flow continuously through them.
+`groupby()` must materialize data, stopping streaming until their shuffle
+finishes.
 
 ## Batch sizing
 
-`map_batches()` accepts `batch_size="auto"` for automatic sizing. GPU
-transforms are the exception: they require an explicit integer batch size.
-Reduce that integer if the transform worker runs out of memory.
+`map_batches()` accepts `batch_size="auto"` for automatic sizing. A GPU
+transform requires an explicit integer batch size; reduce it if the worker runs
+out of memory.
 
 ```python
 ds = ds.map_batches(
@@ -24,10 +23,13 @@ ds = ds.map_batches(
 
 ## Transformation pools and logical resources
 
-A function transform uses Ray tasks. Bound its task pool with
-`TaskPoolStrategy(size=n)`. A callable-class transform uses actors,
-constructing the class once per worker, and defaults to an autoscaling actor
-pool. Supply `ActorPoolStrategy(size=n)` when the actor count must be fixed.
+Function transforms use tasks and can be capped with
+`TaskPoolStrategy(size=n)`. Callable-class transforms use actors, execute
+`__init__` once per worker, and default to an autoscaling actor pool unless a
+fixed `ActorPoolStrategy` is supplied.
+
+`memory`, `num_cpus`, and `num_gpus` influence scheduling; they do not enforce
+physical resource limits.
 
 ```python
 tasks = ds.map_batches(
@@ -41,30 +43,23 @@ actors = ds.map_batches(
 )
 ```
 
-Transformation arguments such as `memory`, `num_cpus`, and `num_gpus` are
-logical resource requirements used by the scheduler. They do not impose
-physical limits on the worker process.
-
 ## Row ordering
 
-Transforms do not preserve block order by default. Ordering is preserved when
-the Dataset is sorted or when it is enabled globally for the current data
-context:
+Transforms do not preserve block order unless the Dataset is sorted or order
+preservation is enabled on the current Data context. Preserving order can reduce
+performance when workers complete unevenly.
 
 ```python
-ctx = ray.data.DataContext.get_current()
+ctx = ray.data.DataContext().get_current()
 ctx.execution_options.preserve_order = True
 ```
 
-This guarantee can reduce performance when workers finish unevenly, because
-later blocks may need to wait for earlier ones.
+## Placement groups for model replicas
 
-## Placement groups per distributed replica
-
-For a class-based transform that launches internal tasks or actors, pass
-`ray_remote_args_fn`. The function can create a separate placement group and
-scheduling strategy for each model replica. Enable child-task capture to
-place the replica's internally launched work in the same group.
+For a class-based distributed transform, pass `ray_remote_args_fn` to create a
+separate placement group and scheduling strategy for each model replica. Enable
+child-task capture to place tasks or actors launched by that replica in the
+same group.
 
 ```python
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
@@ -81,15 +76,11 @@ def remote_args():
 ds = ds.map_batches(DistributedModel, ray_remote_args_fn=remote_args)
 ```
 
-Because `ray_remote_args_fn` is evaluated for replicas, do not create one
-placement group outside the function when each replica needs isolated
-bundles.
-
 ## Async transforms
 
-An asynchronous transform must be a callable class whose `__call__` method is
-`async def`. Function transforms are not supported for this mode. The feature
-currently requires `uvloop==0.21.0`.
+An async transform must be a callable class with `async def __call__`;
+function transforms are unsupported. This feature requires
+`uvloop==0.21.0`.
 
 ```python
 class AsyncTransform:
@@ -101,12 +92,10 @@ ds = ds.map_batches(AsyncTransform)
 
 ## Column expressions
 
-Column expressions are an Alpha API. Build them with `col()` and `lit()` and
-apply them through `with_column()` so the optimizer can reason about and
-reorder column operations.
-
-Custom expression UDFs are vectorized over PyArrow arrays and must declare
-their output with `return_dtype`.
+Column expressions are an alpha API. Use `col()` and `lit()` with
+`with_column()` so the optimizer can understand and reorder column operations.
+Custom expression UDFs are vectorized over PyArrow arrays and must declare a
+`return_dtype`.
 
 ```python
 import pyarrow as pa
@@ -120,3 +109,45 @@ def add_one(values: pa.Array) -> pa.Array:
 
 ds = ds.with_column("value_plus_one", add_one(col("value")))
 ```
+
+## Dataset mixing and data-source behavior
+
+The following data-access changes are grouped in `2.56.0-2.57.0`:
+
+- `Dataset.mix()` is public and combines datasets using weighted sampling,
+  replacing manual iterator interleaving.
+- Ray 2.57 enables `DataContext.use_datasource_v2` by default. Readers such as
+  `read_parquet` use V2 listing and scanning with row-group-aware chunking and
+  predicate splitting.
+- A `Catalog` abstraction can be passed to `read_*` APIs. Its `UnityCatalog`
+  implementation also supports Parquet and Iceberg writes.
+- `read_kafka` accepts per-partition `start_offset` and `end_offset` to bound
+  explicit Kafka ranges.
+
+## Execution controls
+
+- `isolate_read_workers` moves read tasks to isolated worker processes.
+- UDFs can retry transient exceptions.
+- `default_map_logical_memory_enabled` supplies default logical memory for map
+  operators.
+
+These controls affect task placement and retry behavior; retain explicit
+physical capacity planning.
+
+## Safer conversions and writes
+
+- Arrow-backed `to_pandas` conversion can be disabled with
+  `RAY_DATA_ENABLE_ARROW_BACKED_PANDAS_CONVERSION` or
+  `DataContext.enable_arrow_backed_pandas_conversion`.
+- `read_numpy` defaults to `allow_pickle=False`.
+- `write_lance(mode=CREATE)` raises an error instead of silently overwriting an
+  existing target.
+
+## Migration checklist
+
+- For expression filters, use `compute=` instead of deprecated `concurrency=`.
+- `ConcurrencyCapBackpressurePolicy`, `DataIterator.to_torch`, pandas UDF
+  batches, `DataContext.scheduling_strategy`, `actor_locality_enabled`,
+  `exclude_resources`, and `local://` are deprecated.
+- `read_tfrecords` no longer supports `tfx-bsl`.
+- Cluster autoscaler v1 is removed.

@@ -1,10 +1,10 @@
 # Model creation, import, and quantization
 
-## Import GGUF artifacts
+## Import local GGUF content
 
-Since 0.30, `FROM` accepts either a GGUF file or a directory containing GGUF
-files. This allows a downloaded artifact to be packaged as a local Ollama
-model. (batch 0.30-0.32)
+In the `0.30-0.32` line, a Modelfile `FROM` accepts either one local GGUF file
+or a directory containing GGUF files. This permits a downloaded artifact to be
+created and used as a named local model.
 
 ```text
 FROM ./my-model.Q4_K_M.gguf
@@ -15,14 +15,29 @@ ollama create -f Modelfile my-model
 ollama run my-model
 ```
 
-Tool calling carries over when the imported GGUF supports it. Use
-`ollama show my-model` and verify that `tools` appears in its capabilities
-before selecting it in an integration.
+## Preserve tool capability from GGUF
+
+Tool calling carries through an import when the GGUF itself supports it. Check
+the imported model before configuring an integration:
+
+```sh
+ollama show my-model
+```
+
+Proceed only if the output lists the `tools` capability. A capable import can
+then be selected explicitly:
+
+```sh
+ollama launch claude --model my-model
+ollama launch hermes --model my-model
+ollama launch openclaw --model my-model
+```
 
 ## Import Safetensors weights
 
-A Modelfile can build directly from a directory of Safetensors weights for a
-supported architecture. Place the Modelfile next to the weights and use:
+A Modelfile may build directly from a directory containing Safetensors weights
+for a supported architecture. When the Modelfile is alongside the weights,
+use `FROM .`.
 
 ```text
 FROM .
@@ -32,43 +47,26 @@ FROM .
 ollama create my-model
 ```
 
-Direct import supports Llama, Mistral/Mixtral, Gemma, and Phi-3, including
-fine-tunes that have been fused with their foundation model.
+Direct imports support Llama, Mistral/Mixtral, Gemma, and Phi-3 models. A
+fine-tune must already be fused with its foundation model before direct import.
 
-## Apply adapters
+## Apply adapters safely
 
-`ADAPTER` accepts a Safetensors adapter directory or a GGUF adapter file. Paths
-can be absolute or relative to the Modelfile.
+`ADAPTER` accepts either a directory containing a Safetensors adapter or one
+GGUF adapter file. The path may be absolute or relative to the Modelfile.
 
 ```text
 FROM llama3.2
 ADAPTER ./adapter.gguf
 ```
 
-The `FROM` value must identify the exact base used for fine-tuning; otherwise
-results can be erratic. For Safetensors adapters, prefer non-quantized adapters
-over QLoRA adapters because quantization methods differ across frameworks.
+The `FROM` model must be the exact base used during fine-tuning; a mismatch can
+produce erratic output. For Safetensors adapters, prefer a non-quantized
+adapter over QLoRA because quantization methods differ across frameworks.
 
-## Upload blobs and create through the API
+## Quantize during CLI creation
 
-Upload GGUF or Safetensors data with
-`POST /api/blobs/sha256:<digest>`, then pass filename-to-digest mappings to
-`POST /api/create`. Put base model files in `files` and LoRA adapter files in
-`adapters`. Use `HEAD /api/blobs/sha256:<digest>` to avoid uploading an object
-that is already present.
-
-```sh
-digest=$(sha256sum model.gguf | cut -d ' ' -f 1)
-curl -T model.gguf -X POST \
-  "http://localhost:11434/api/blobs/sha256:$digest"
-curl http://localhost:11434/api/create -d \
-  "{\"model\":\"my-model\",\"files\":{\"model.gguf\":\"sha256:$digest\"}}"
-```
-
-## Quantize while creating
-
-The CLI accepts `-q` or `--quantize` to convert an FP16 or FP32 source as it
-creates the model:
+`ollama create` accepts `-q` or `--quantize` for an FP16 or FP32 source.
 
 ```text
 FROM /path/to/fp16-model
@@ -78,43 +76,15 @@ FROM /path/to/fp16-model
 ollama create --quantize q4_K_M my-model
 ```
 
-The create API accepts `quantize` for a non-quantized source. Supported values
-are `q4_K_M`, `q4_K_S`, and `q8_0`; `q4_K_M` and `q8_0` are recommended.
+For the upload and REST quantization workflow, including the supported values,
+see [Blob upload and model creation](native-api-and-server.md#blob-upload-and-model-creation).
 
-```sh
-curl http://localhost:11434/api/create -d \
-  '{"model":"llama3.2:quantized","from":"llama3.2:3b-instruct-fp16","quantize":"q4_K_M"}'
-```
+## Declare a minimum runtime version
 
-## Declare a minimum runtime
-
-Use `REQUIRES` to record the minimum Ollama version needed by a model:
+Use `REQUIRES` in a Modelfile when the model depends on a minimum Ollama
+version.
 
 ```text
 FROM llama3.2
 REQUIRES 0.14.0
-```
-
-## Alias a model
-
-If a compatibility client has a hard-coded default model name, copy an
-existing Ollama model to that name and send requests using the alias:
-
-```sh
-ollama cp llama3.2 gpt-3.5-turbo
-```
-
-## Set derived-model context
-
-The OpenAI-compatible API does not have a per-request context-size field.
-Create a derived model with `PARAMETER num_ctx`, then use that model in API
-requests:
-
-```text
-FROM llama3.2
-PARAMETER num_ctx 65536
-```
-
-```sh
-ollama create mymodel
 ```

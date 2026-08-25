@@ -1,76 +1,94 @@
 # Toolchain, Build, and Testing
 
-## Select a compatible Xcode, host, and SDK
+## Xcode, SDK, and Host Compatibility
 
-| Xcode | Bundled iOS/iPadOS SDK | Build-host requirement | Device-debugging floor |
-| --- | --- | --- | --- |
-| 16.3 | 18.4 | macOS Sequoia 15.2 or later | iOS/tvOS 15, watchOS 7, and visionOS |
-| 16.4 | 18.5 | macOS Sequoia 15.3 through macOS Tahoe 26.1 | Use the platform support supplied by Xcode |
-| 26 | 26, with Swift 6.2 and the corresponding tvOS, watchOS, macOS Tahoe, and visionOS SDKs | macOS Sequoia 15.6 or later | iOS/tvOS 15, watchOS 8, and visionOS |
+### Xcode 16.3
 
-These requirements are tied to their respective SDK releases (18.4, 18.5,
-and 26.0). A deployment target does not relax the Xcode host requirement.
+Xcode 16.3 bundles the iOS and iPadOS 18.4 SDKs and requires macOS Sequoia
+15.2 or later. On-device debugging supports iOS and tvOS 15 or later, watchOS 7
+or later, and visionOS.
 
-## Handle Simulator and device-only behavior
+### Xcode 16.4
 
-Safari extensions do not appear in the iOS or visionOS Simulator. Test those
-extensions on a physical device. (18.4)
+Xcode 16.4 bundles the iOS and iPadOS 18.5 SDKs and requires macOS Sequoia
+15.3 through macOS Tahoe 26.1.
 
-Xcode 16.4 fixes the iOS 18.3 Simulator-runtime defect that made every
-`NSURLSession` request time out. When reproducing that symptom, distinguish the
-selected Simulator runtime from the SDK used to build the app. (18.5)
+### Xcode 26
 
-## Collect diagnostics from all devices
+Xcode 26 bundles Swift 6.2 and the iOS, iPadOS, tvOS, watchOS, macOS Tahoe, and
+visionOS 26.0 SDKs. It requires macOS Sequoia 15.6 or later. On-device debugging
+supports iOS and tvOS 15 or later, watchOS 8 or later, and visionOS.
 
-`devicectl diagnose` now collects a sysdiagnose from the Mac and all available
-devices by default; no additional device-selection argument is required for
-that scope. Expect a larger collection when several devices are connected.
-(18.5)
+## Compiler and Build Defaults
 
-```sh
-devicectl diagnose
-```
+### Swift Explicit Modules Are Enabled by Default
 
-## Revisit linker workarounds
-
-Using `LD_CLIENT_NAME` no longer requires `ENABLE_DEBUG_DYLIB=NO` to avoid the
-missing debug-dylib runtime crash in Xcode 16.3. Remove that workaround if it
-was added only for this issue. The `-stack_size` linker flag can still fail for
-an app-bundle target, so do not treat the debug-dylib fix as resolving that
-separate failure. (18.4)
-
-## Account for Swift explicit modules
-
-Xcode 26 enables Swift explicit modules for Swift targets by default. The
-default does not apply to targets using a language version older than Swift 5
-or to targets using Swift/C++ interoperability. If a severe compatibility
-failure cannot be addressed immediately, opt out temporarily: (26.0)
+Xcode 26 enables Swift explicit modules by default for Swift targets. Targets
+using a pre-Swift-5 language version or Swift/C++ interoperability are exempt.
+For a severe compatibility failure, temporarily set:
 
 ```text
 SWIFT_ENABLE_EXPLICIT_MODULES=NO
 ```
 
-## Try the preview package builder deliberately
+Use the opt-out to unblock diagnosis, then address the incompatible dependency
+or build assumption.
 
-Xcode 26 includes a preview of a package-build implementation shared with
-Swift Package Manager. It is planned to become the default later, so enable it
-in a controlled build or CI lane before relying on it: (26.0)
+### Preview the Shared Swift Package Builder
+
+Xcode 26 includes a preview package builder shared with Swift Package Manager;
+it is planned to become the default later. Enable it with:
 
 ```sh
 defaults write com.apple.dt.Xcode IDEEnableNewPackagePIFBuilder -bool YES
 ```
 
-Because this is a preview switch, keep a lane using the established builder
-until compatibility is established.
+Exercise package builds in CI-like conditions before adopting the preview for
+critical workflows.
 
-## Use Swift Testing exit tests and attachment paths
+## Linking and Runtime Loading
 
-Swift Testing can exercise code paths that terminate the test process through
-`precondition()`, `fatalError()`, or another exit. It also supports directing
-attachments to an explicit directory: (26.0)
+### Drop the Obsolete Debug-Dylib Workaround
+
+With Xcode 16.3, using `LD_CLIENT_NAME` no longer requires
+`ENABLE_DEBUG_DYLIB=NO` to avoid the missing debug-dylib runtime crash. Remove
+the workaround when it exists only for that defect.
+
+The `-stack_size` linker flag can still fail for an app-bundle target in Xcode
+16.3; do not assume the same release resolves that separate linker issue.
+
+## Diagnostics and Simulator Behavior
+
+### Expect `devicectl diagnose` to Collect Every Device
+
+In Xcode 16.4, running the command below obtains a sysdiagnose from the Mac and
+all available devices by default:
 
 ```sh
-swift test --attachments-path ./test-artifacts
+devicectl diagnose
 ```
 
-Choose a path retained by CI if attachments are needed for failure diagnosis.
+Account for collection time, output volume, and the broader device scope.
+
+### Use the Correct Runtime for the URLSession Fix
+
+Xcode 16.4 fixes the iOS 18.3 Simulator defect in which `NSURLSession` requests
+always timed out and failed. Confirm the failing test actually uses the fixed
+runtime.
+
+## Swift Testing
+
+### Test Exiting Code Paths
+
+Swift Testing in Xcode 26 adds exit tests for code that invokes
+`precondition()`, `fatalError()`, or otherwise terminates the test process.
+
+### Choose the Attachment Directory
+
+Pass an explicit output directory when running Swift tests:
+
+```sh
+swift test --attachments-path <directory>
+```
+
+This selects where Swift Testing attachments are saved.

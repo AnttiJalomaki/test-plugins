@@ -10,94 +10,138 @@ metadata:
 
 # NGINX Knowledge Patch
 
+Use this skill when writing, reviewing, upgrading, or debugging NGINX Open
+Source, FreeNGINX, or NGINX Plus configuration. Identify the product line and
+exact patch release first; fork-only and commercial directives are not portable
+to a standard NGINX Open Source build.
+
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [security-and-upgrades.md](references/security-and-upgrades.md) | CVEs, fixed-version boundaries, request hardening, unsafe legacy behavior |
-| [core-http-and-runtime.md](references/core-http-and-runtime.md) | listeners, core HTTP behavior, variables, filters, rate controls, builds |
-| [upstreams-and-proxying.md](references/upstreams-and-proxying.md) | keepalive, runtime DNS, balancing, retries, HTTP/2 backends, trailers, caches |
-| [tls-certificates-and-quic.md](references/tls-certificates-and-quic.md) | trust, OCSP, certificate loading and caches, ECH, TLS observability, QUIC |
-| [stream-mail-and-protocols.md](references/stream-mail-and-protocols.md) | stream TLS, mail proxying, PROXY TLVs, GeoIP2, MQTT, cross-module handoff |
-| [nginx-plus-operations.md](references/nginx-plus-operations.md) | support lifecycle, licensing, platforms, images, OIDC, ACME, API, key-value data |
+| [security-and-upgrades.md](references/security-and-upgrades.md) | CVEs, fixed-version boundaries, reporting, and legacy hazards |
+| [core-http-and-runtime.md](references/core-http-and-runtime.md) | HTTP parsing, listeners, variables, filters, rate controls, builds, and runtime behavior |
+| [upstreams-and-proxying.md](references/upstreams-and-proxying.md) | Discovery, balancing, keepalive, retries, proxy protocols, caches, and backend requests |
+| [tls-certificates-and-quic.md](references/tls-certificates-and-quic.md) | Trust, OCSP, certificate caches, ECH, key logs, TLS observability, and QUIC |
+| [stream-mail-and-protocols.md](references/stream-mail-and-protocols.md) | Stream and mail proxying, PROXY TLVs, GeoIP2, MQTT, and listener handoff |
+| [nginx-plus-operations.md](references/nginx-plus-operations.md) | Plus lifecycle, licensing, platforms, images, OIDC, ACME, API, and key-value data |
 
 ## Select the product line first
 
-Treat NGINX Open Source, FreeNginx, and NGINX Plus as distinct product lines. Do not copy a FreeNginx-only directive into NGINX Open Source or assume a Plus-only directive exists in a standard build. This patch labels fork-specific and commercial features explicitly.
+- Treat NGINX Open Source, FreeNGINX, and NGINX Plus as distinct products.
+- Confirm module availability and build flags before adding a directive.
+- Do not infer Open Source support from a Plus feature or NGINX support from a
+  FreeNGINX change.
+- For Plus, check the supported OS matrix, active support window, and license
+  reporting path before upgrading.
 
-## Upgrade and security gates
+## Security and upgrade gates
 
-Prioritize fixed releases before configuration work:
+Upgrade to a fixed patch release before attempting configuration mitigation.
+Do not assume the first release in a feature series contains later security
+fixes.
 
-| Exposure | Affected releases or condition | Minimum fixed boundary in this patch |
-| --- | --- | --- |
-| HTTP/3 NULL dereference and use-after-free | 1.25.0–1.25.3 as applicable | 1.25.4 |
-| Four HTTP/3 memory-safety flaws | 1.25.0–1.25.5 and 1.26.0 | 1.26.1 or 1.27.0 |
-| MP4 buffer overread, CVE-2024-7347 | 1.5.13–1.27.0 | 1.26.2 or 1.27.1 |
-| TLS 1.3 SNI session reuse bypassing client-certificate verification | before 1.27.4 | 1.27.4 |
-| 1.28-series mail, TLS proxy, WebDAV, MP4, and QUIC issues | 1.28.0–1.28.2 as applicable | 1.28.3; some fixes land in 1.28.1/1.28.2 |
-| 1.30-series request, rewrite, upstream, charset, QUIC, and OCSP flaws | 1.30.0–1.30.2 as applicable | 1.30.3; see the per-CVE table |
-| Crafted HTTP/3 QUIC session use-after-free | before 1.31.2 | 1.31.2 |
+| Exposure | Minimum fixed boundary |
+| --- | --- |
+| HTTP/3 CVE-2024-24989 and CVE-2024-24990 | `1.25.4` |
+| HTTP/3 CVE-2024-32760, CVE-2024-31079, CVE-2024-35200, and CVE-2024-34161 | `1.26.1` or `1.27.0` |
+| MP4 buffer overread, CVE-2024-7347 | `1.26.2` or `1.27.1` |
+| CVE-2025-23419 TLS session reuse issue | `1.26.3` or `1.27.4` |
+| 1.29-series mail authentication disclosure | `1.29.1` |
+| 1.29-series TLS-backend plaintext injection | `1.29.5` |
+| 1.29-series WebDAV, MP4, mail, PTR, and stream OCSP issues | `1.29.7` |
+| 1.30-series request, rewrite, upstream, charset, QUIC, and OCSP flaws | Use the precise `1.30.1`, `1.30.2`, or `1.30.3` gate in the security reference |
+| Crafted HTTP/3 QUIC-session use-after-free | `1.31.2` |
 
-Read [security-and-upgrades.md](references/security-and-upgrades.md) for exact CVEs, affected configurations, and intermediate fixed releases. Do not treat a later feature release as evidence that its earlier patch releases are safe.
+Read [security-and-upgrades.md](references/security-and-upgrades.md) for exact
+affected configurations, CVEs, older-branch floors, and the unsanitized
+error-log caveat.
 
-## Breaking changes, defaults, and deprecations
+## Breaking changes and compatibility defaults
 
 ### Upstream keepalive and HTTP version defaults
 
-Since 1.29.7, upstream connection caching defaults to `keepalive 32 local;` per worker, and HTTP proxying defaults to HTTP/1.1. `local` prevents reuse across locations that happen to reach the same address. Disable caching explicitly with `keepalive 0` when required.
+From 1.29.7, upstream connection caching and proxied keepalive are enabled by
+default, `proxy_http_version` defaults to HTTP/1.1, and NGINX no longer sends a
+`Connection` proxy header by default. Use `local` to keep an explicitly sized
+cache scoped to its upstream usage context.
 
 ```nginx
 upstream backend {
-    server 127.0.0.1:8080;
+    server backend.example:8080;
     keepalive 64 local;
 }
 ```
 
-### Strict HTTP/2 and HTTP/3 connection headers
+Disable or retune caching explicitly when an application depends on connection
+churn or location isolation.
 
-Current NGINX rejects HTTP/2 and HTTP/3 requests carrying `Connection`, `Proxy-Connection`, `Keep-Alive`, `Transfer-Encoding`, or `Upgrade`. It accepts `TE` only when its value is `trailers`. Remove hop-by-hop fields before protocol translation.
+### Strict request parsing and hop-by-hop headers
 
-### FreeNginx response and rate semantics
+Current HTTP/2 and HTTP/3 handling rejects `Connection`,
+`Proxy-Connection`, `Keep-Alive`, `Transfer-Encoding`, and `Upgrade`. `TE` is
+valid only as `trailers`. Protocol translators must remove hop-by-hop fields.
 
-FreeNginx 1.29.1 rejects proxied HTTP/0.9 responses by default; opt in with `proxy_allow_http09` only for a known legacy backend. It also ignores interim 1xx responses and offers `proxy_allow_duplicate_chunked` for duplicate chunked encoding.
+Host and port parsing follows RFC 3986, and a lone LF is rejected in chunked
+request or response bodies. Test legacy clients and upstreams during upgrades.
 
-FreeNginx 1.29.0 changes `limit_rate` to a leaky-bucket algorithm and makes `limit_rate_after` the burst allowance. Recheck existing rate-limit tuning; use `send_min_rate` and `client_body_min_rate` when a minimum transfer rate is required.
+### FreeNGINX proxy compatibility
+
+FreeNGINX rejects proxied HTTP/0.9 responses by default, ignores interim 1xx
+responses, and provides narrowly scoped opt-ins for legacy HTTP/0.9 and
+duplicate chunked encoding.
+
+```nginx
+location /legacy {
+    proxy_pass http://legacy;
+    proxy_allow_http09 on;
+    proxy_allow_duplicate_chunked on;
+}
+```
+
+### FreeNGINX transfer-rate semantics
+
+FreeNGINX uses a leaky-bucket `limit_rate`; `limit_rate_after` is the allowed
+burst. Recheck existing rate tuning, and use `send_min_rate` or
+`client_body_min_rate` when a minimum transfer rate is required.
 
 ### Safer XSLT behavior
 
-FreeNginx no longer loads external character entities declared in an internal DTD subset by default. Enable `xml_external_entities` only for configurations that intentionally need them.
+FreeNGINX does not load external character entities declared in an internal
+DTD subset by default. Enable `xml_external_entities` only for a trusted
+transformation that intentionally requires the legacy behavior.
 
 ### Configure and module migrations
 
-- Use `--without-http_upstream_sticky_module`; `--without-http_upstream_sticky` is deprecated.
-- Migrate NGINX Plus OpenTracing packages to the OpenTelemetry module; OpenTracing was removed in R34 after deprecation in R31.
-- Replace `mqtt_rewrite_buffer_size` with `mqtt_buffers` for NGINX Plus MQTT buffer sizing.
-
-### NGINX Plus license enforcement
-
-From R33, install a per-instance JWT license token and permit hourly usage reporting over a verified connection. An initial report is required after install or upgrade; without it, traffic processing stops unless the optional 180-day `enforce_initial_report` grace period is enabled. Use Instance Manager as a relay in restricted networks; R34 adds report-proxy support and R35 adds automatic renewal.
+- Disable the upstream sticky module with
+  `--without-http_upstream_sticky_module`; the shorter legacy option is
+  deprecated.
+- On Plus, migrate OpenTracing to OpenTelemetry; OpenTracing is no longer
+  packaged.
+- Replace Plus `mqtt_rewrite_buffer_size` with `mqtt_buffers`.
 
 ## High-use configuration patterns
 
 ### Resolve ordinary upstreams at runtime
 
-From 1.27.3, standard builds support upstream `resolver`, `resolver_timeout`, and server parameters `resolve` and `service`. Put dynamically resolved groups in shared memory with `zone`.
+Put dynamically resolved upstream groups in shared memory. Configure an
+upstream resolver and mark servers with `resolve`; for SRV discovery, add
+`service` and omit the server port.
 
 ```nginx
 upstream api {
     zone api 64k;
-    resolver 10.0.0.53 valid=30s;
+    resolver 192.0.2.53 valid=30s;
     resolver_timeout 5s;
-    server api.example.com resolve;
+    server api.example.com service=http resolve;
 }
 ```
 
-For SRV discovery, add `service=http`; the lowest numeric priority is primary and later priorities are backups.
+The lowest numeric SRV priority is primary; later priorities are backups.
 
-### Proxy to HTTP/2 backends
+### Proxy to an HTTP/2 backend
 
-Since 1.29.4, select HTTP/2 upstream proxying explicitly. Build with `ngx_http_v2_module`.
+Select HTTP/2 explicitly for the upstream.
 
 ```nginx
 location / {
@@ -108,21 +152,29 @@ location / {
 
 ### Forward response trailers
 
-Since 1.27.2, enable trailer forwarding and advertise trailer support to the backend.
+Enable trailer forwarding and advertise trailer support to an HTTP/1.1
+backend.
 
 ```nginx
-proxy_set_header Connection "te";
-proxy_set_header TE "trailers";
-proxy_pass_trailers on;
+location / {
+    proxy_pass http://backend;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "te";
+    proxy_set_header TE "trailers";
+    proxy_pass_trailers on;
+}
 ```
 
 ### Send Early Hints
 
-From 1.29.0, NGINX accepts HTTP 103 responses from proxy and gRPC backends. Use `early_hints` to control whether preliminary hints reach the client before the final response.
+NGINX can accept HTTP 103 responses from proxy and gRPC backends. Use
+`early_hints` to decide whether they reach the client before the final response.
 
 ### Cache variable-selected certificates
 
-Since 1.27.4, avoid reloading variable-selected certificate files for every handshake by configuring the relevant cache. Both caches are off until configured; `inactive` and `valid` default to 10 seconds and 60 seconds.
+Both server-side and upstream-client certificate caches are off until
+configured. `max` sets LRU capacity; `inactive` and `valid` default to 10 and
+60 seconds.
 
 ```nginx
 ssl_certificate       $ssl_server_name.crt;
@@ -134,26 +186,44 @@ proxy_ssl_certificate_key   $proxy_ssl_server_name.key;
 proxy_ssl_certificate_cache max=1000 inactive=20s valid=1m;
 ```
 
-### Balance by response time
+### Preserve an explicitly supplied request port
 
-From 1.31.0, use `least_time` inside an `upstream` block when response-time-based selection is more appropriate than round robin or connection count.
+Use the paired variables so an authority without an explicit port does not
+gain a trailing colon.
 
-### Configure stream ALPN
+```nginx
+proxy_set_header Host $host$is_request_port$request_port;
+```
 
-From 1.31.0, use `proxy_ssl_alpn` to advertise ALPN protocols on TLS connections from the stream proxy to an upstream server.
+### Balance by observed response time
 
-### Configure Encrypted ClientHello carefully
+Use `least_time` inside an upstream when response-time selection is preferable
+to round robin or connection count.
 
-NGINX 1.29.4 adds `ssl_ech_file` for a PEM `ECHConfig` in HTTP and stream shared mode, currently requiring the OpenSSL ECH feature branch. Inspect `$ssl_ech_status` and `$ssl_ech_outer_server_name` when diagnosing negotiation. FreeNginx added TLS 1.3 ECH separately in 1.29.2; do not assume identical build requirements.
+```nginx
+upstream backend {
+    least_time header;
+    server 192.0.2.10:8080;
+    server 192.0.2.11:8080;
+}
+```
 
-### Reconstruct request authority safely
+### Advertise ALPN to a stream TLS upstream
 
-Use `$host$is_request_port$request_port`: `$is_request_port` expands to `:` only when `$request_port` is nonempty, avoiding a trailing colon for authorities without an explicit port.
+```nginx
+proxy_ssl on;
+proxy_ssl_alpn h2;
+```
+
+Do not confuse upstream `proxy_ssl_alpn` with server-side `ssl_alpn`.
 
 ## Operational checks
 
-- Revisit log alerts after QUIC handshake severity changes in 1.29.0 and the SSL alert reductions in 1.31.0.
-- Check OpenSSL requirements before enabling certificate compression, ECH, signature-algorithm variables, or QUIC 0-RTT.
-- Remember that an upstream `max_conns` without `zone` is per worker and cached idle connections can push totals above the configured number.
-- Treat SSL key logs as secrets. NGINX Plus `ssl_key_log` and `proxy_ssl_key_log` emit SSLKEYLOGFILE data suitable for decryption tools.
-- Confirm OS support before a Plus R36 upgrade; its platform matrix adds and removes distributions and versions.
+- Revisit alert rules after QUIC and SSL handshake log-level changes.
+- Verify TLS-library and build requirements before enabling certificate
+  compression, ECH, signature variables, or QUIC 0-RTT.
+- Remember that `max_conns` is per worker without `zone`; cached idle
+  connections can also push totals above the configured number.
+- Protect `ssl_key_log` and `proxy_ssl_key_log` output as decryption secrets.
+- For Plus, an unavailable initial usage report can stop traffic unless the
+  optional grace period is deliberately enabled.

@@ -14,7 +14,7 @@ Commands append events while queries read projections, so list and query results
 
 ## Projection failure diagnostics
 
-Projection progress is tracked per instance in `projections.current_sequences` and corresponding `notification`, `auth`, and `adminapi` tables. After retry exhaustion an event is recorded in the matching `failed_events` table so later events are not blocked. Event sequence numbers preserve ordering but are not guaranteed to be contiguous, which matters when monitoring lag or consuming audit events.
+Projection progress is tracked per instance in `projections.current_sequences` and corresponding `notification`, `auth`, and `adminapi` tables; after retry exhaustion an event is recorded in the matching `failed_events` table so later events are not blocked. Event sequence numbers preserve ordering but are not guaranteed to be contiguous, which matters when monitoring lag or consuming audit events.
 
 ## Virtual instance isolation
 

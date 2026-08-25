@@ -1,83 +1,49 @@
 # Modules, Configuration, and Services
 
-Use this reference for container identity, metadata reflection, module exports,
-application contexts, caching, configuration, exceptions, and health checks. It
-incorporates the `11.0-migration` and `11.0.0` guidance.
+Use this reference when module identity, reflection metadata, configuration,
+caching, application contexts, exports, or health indicators are involved.
 
 ## Dynamic-module identity
 
 Dynamic-module equivalence is based on object identity rather than a
-predictable hash of module metadata. Two factory calls that produce deeply
-equal metadata still produce distinct dynamic-module objects.
-
-Create the dynamic-module object once and reuse it when imports should
-deduplicate:
+predictable hash of module metadata (`11.0-migration`). Reuse the same
+dynamic-module object to deduplicate repeated imports.
 
 ```typescript
 const usersFeature = TypeOrmModule.forFeature([User]);
-
-await Test.createTestingModule({
-  imports: [usersFeature],
-}).compile();
 ```
 
-When a test intentionally needs the old metadata-based behavior, select the
-appropriate parent, retrieve every instance, or opt back into deep hashing:
+Tests that deliberately need the old equivalence behavior can opt into deep
+hashing:
 
 ```typescript
-const usersFeature = TypeOrmModule.forFeature([User]);
-
 await Test.createTestingModule(
   { imports: [usersFeature] },
   { moduleIdGeneratorAlgorithm: 'deep-hash' },
 ).compile();
 ```
 
-Prefer reference reuse in application code. Treat deep hashing as an explicit
-test compatibility choice.
+When multiple instances are intentional, tests can instead select the correct
+parent or retrieve every instance.
 
-## Reflector return values and types
+## Reflector results and inferred types
 
-For a single object-valued metadata entry, `Reflector.getAllAndMerge()` returns
-the object itself instead of an array containing the object. Code that always
-indexes or iterates the result as an array must be updated.
+Reflector behavior and types changed in `11.0-migration`:
 
-`Reflector.getAllAndOverride()` returns `T | undefined`, so consumers must
-handle missing metadata. Transformed `ReflectableDecorator` types are inferred
-across Reflector methods; preserve that inferred type instead of adding a
-broader manual assertion.
+- With one object-valued metadata entry, `Reflector.getAllAndMerge()` returns
+  the object, not an array containing that object.
+- `getAllAndOverride()` returns `T | undefined`.
+- Transformed `ReflectableDecorator` types are inferred across the Reflector
+  methods.
 
-## Module exports
+Adjust callers and their annotations to the returned shape and possible
+`undefined` result.
 
-Promise values are not supported in a module's `exports` list. Export resolved
-providers or module tokens rather than promises. Move asynchronous construction
-into the appropriate provider or dynamic-module setup.
+## Keyv cache stores and raw data
 
-## Selected application contexts
-
-`NestApplicationContext.select()` can override `abortOnError` for the context it
-selects:
-
-```typescript
-const featureContext = app.select(FeatureModule, {
-  abortOnError: false,
-});
-```
-
-Use the override when the selected feature context needs different error
-termination behavior from its parent context.
-
-## Intrinsic exceptions
-
-`IntrinsicException` marks exceptions that Nest should not automatically log.
-Use it for expected framework-level failures when automatic logging would
-duplicate or add unwanted log output.
-
-## Cache stores and raw data
-
-The updated `@nestjs/cache-manager` expects external backends as Keyv adapters
-inside a `stores` array. The former `store` configuration is not the migration
-target:
+The updated `@nestjs/cache-manager` expects external backends in a `stores`
+array as Keyv adapters (`11.0-migration`). Do not retain the former `store`
+configuration.
 
 ```typescript
 CacheModule.registerAsync({
@@ -87,31 +53,24 @@ CacheModule.registerAsync({
 });
 ```
 
-Raw cached data has `{ value, expires }` shape. This affects:
+Raw cached data now has the shape `{ value, expires }`. This affects code that
+reads the backend directly and migrations of previously written data.
 
-- Code that consumes the backend directly rather than through the cache
-  abstraction.
-- Migration of entries written by an older cache configuration.
-- Diagnostics or scripts that inspect serialized cache records.
+## Configuration lookup and environment controls
 
-Do not assume direct backend reads return only the application value.
-
-## Configuration precedence
-
-In `@nestjs/config@4`, `ConfigService#get()` resolves values in this order:
+In `@nestjs/config@4`, `ConfigService#get()` resolves values in this order
+(`11.0-migration`):
 
 1. Internal configuration.
 2. Validated environment values.
 3. `process.env`.
 
-Internal configuration can therefore override environment variables. Test
-colliding keys when an application previously assumed that `process.env`
-always won.
+Internal configuration can therefore override environment variables.
 
-`ignoreEnvVars` is deprecated. Its replacement depends on the desired behavior:
+`ignoreEnvVars` is deprecated. Its replacements have distinct meanings:
 
-- `validatePredefined: false` skips validation for environment variables that
-  were present before the configuration module was imported.
+- `validatePredefined: false` skips validation for variables present before
+  the module is imported.
 - `skipProcessEnv: true` prevents `ConfigService#get()` from consulting
   `process.env`.
 
@@ -122,27 +81,43 @@ ConfigModule.forRoot({
 });
 ```
 
-These flags solve different problems and should not be treated as synonyms.
+Select only the setting or settings that implement the desired behavior.
 
-## Terminus health indicators
+## Application-context error policy
 
-Custom Terminus checks can inject `HealthIndicatorService`, start a result with
-`check(key)`, and return `up()` or `down()` with optional details:
+`NestApplicationContext.select()` accepts an `abortOnError` override for the
+selected context (`11.0.0`).
+
+```typescript
+const featureContext = app.select(FeatureModule, { abortOnError: false });
+```
+
+Use the override when the selected context needs an error policy different
+from the surrounding application context.
+
+## Module exports
+
+Promise values are no longer supported in a module's `exports` list
+(`11.0.0`). Export resolved providers or module tokens rather than promises.
+
+## Terminus custom health indicators
+
+Custom Terminus checks can inject `HealthIndicatorService` and begin a result
+with `check(key)` (`11.0-migration`). Return `up()` or `down()`; both forms can
+carry optional details.
 
 ```typescript
 const indicator = this.healthIndicatorService.check(key);
 
 try {
   const healthy = await this.probe();
-  return healthy
-    ? indicator.up()
-    : indicator.down({ reason: 'probe failed' });
+  return healthy ? indicator.up() : indicator.down({ reason: 'probe failed' });
 } catch {
   return indicator.down('Unable to run probe');
 }
 ```
 
 The former `HealthIndicator` and `HealthCheckError` classes are deprecated and
-scheduled for removal in the next major release. New and migrated indicators
-should use `HealthIndicatorService`.
+scheduled for removal in the next major release. Move custom indicators to
+`HealthIndicatorService` before that removal.
 

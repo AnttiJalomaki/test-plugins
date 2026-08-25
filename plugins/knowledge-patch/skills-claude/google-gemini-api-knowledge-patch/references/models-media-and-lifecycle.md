@@ -1,117 +1,119 @@
 # Models, Media, and Lifecycle
 
-## Choose current production IDs
+## Pin IDs instead of moving aliases
 
-The GA Interactions IDs (`gemini-3.6`) are:
+Some endpoint records publish lifecycle stage and deprecation timelines.
+Aliases are mutable: `gemini-pro-latest` and `gemini-flash-latest` moved to
+Gemini 3 previews in January 2026; `gemini-3-pro-preview` redirected to
+`gemini-3.1-pro-preview` in March; and `gemini-flash-latest` moved again to
+`gemini-3.5-flash` in May. Pin a concrete ID when reproducibility matters.
 
-| Model | Default thinking | Context | Maximum output |
-| --- | --- | --- | --- |
-| `gemini-3.6-flash` | `medium` | 1M tokens | 64k tokens |
-| `gemini-3.5-flash-lite` | `minimal` | 1M tokens | 64k tokens |
+## Select current general-purpose endpoints
 
-Both provide native Computer Use. For these models, `temperature`, `top_p`, and
-`top_k` are deprecated and ignored; remove them because later generations are
-expected to reject them with HTTP 400. For 3.6 Flash, replace
-`thinking_budget` with string-valued `thinking_level` (`"medium"` or `"high"`).
-Gemini 3.x does not support `candidate_count`.
-
-A request whose last non-empty turn has role `model` returns HTTP 400. Do not
-prefill a model response. Put formatting or preamble-suppression requirements
-in `system_instruction` or `response_format`:
+`gemini-3.7-flash` is GA and intended for coding and agentic workflows. Its
+introductory pricing ends December 31, 2026, which matters for longer-lived
+cost estimates.
 
 ```python
-client.interactions.create(
-    model="gemini-3.6-flash",
-    input="Translate 'Hello world' to Spanish.",
-    system_instruction="Output only the translation.",
+response = client.models.generate_content(
+    model="gemini-3.7-flash",
+    contents="Implement the requested change.",
 )
 ```
 
-## Pin concrete IDs and read lifecycle metadata
+The GA Interactions IDs `gemini-3.6-flash` and `gemini-3.5-flash-lite` default
+to `medium` and `minimal` thinking, respectively. Both have a one-million-token
+context window, a 64k-token maximum output, and native Computer Use.
 
-Model records can publish lifecycle stage and a deprecation timeline
-(`release-lifecycle`). Treat aliases as mutable:
+For these endpoints, `temperature`, `top_p`, and `top_k` are deprecated and
+ignored; remove them before future generations begin rejecting them with HTTP
+400. When moving to 3.6 Flash, replace `thinking_budget` with string-valued
+`thinking_level` (`medium` or `high`). Gemini 3.x does not support
+`candidate_count`.
 
-- `gemini-pro-latest` and `gemini-flash-latest` moved to Gemini 3 previews in
-  January 2026.
-- `gemini-3-pro-preview` redirected to `gemini-3.1-pro-preview` in March 2026.
-- `gemini-flash-latest` moved again to `gemini-3.5-flash` in May 2026.
+Requests whose last non-empty turn has role `model` return HTTP 400. Do not
+append a partial answer to steer completion; put formatting or preamble rules
+in `system_instruction` or `response_format`.
 
-Pin a concrete ID when reproducibility matters.
+`gemini-3.5-flash` is GA. `gemini-3.1-pro-preview-customtools` is a separate
+3.1 Pro endpoint tuned to prioritize custom tools such as bash.
+`gemini-3.1-flash-lite` is GA but has a May 7, 2027 shutdown in favor of
+`gemini-3.5-flash-lite`.
 
-`gemini-3.5-flash` is GA.
-`gemini-3.1-pro-preview-customtools` is a separate 3.1 Pro endpoint tuned to
-prioritize custom tools such as bash. `gemini-3.1-flash-lite` is GA, but it has
-a May 7, 2027 shutdown date in favor of `gemini-3.5-flash-lite`.
+## Schedule forced migrations
 
-## Complete scheduled migrations
-
-Apply the lifecycle cutoffs after July 28, 2026:
-
-- Move the Embedding 2 preview to GA `gemini-embedding-2` by August 10, 2026.
-- Move Imagen 4 Standard, Ultra, and Fast
-  (`imagen-4.0-*-generate-001`) to `gemini-3.1-flash-image` by August 17, 2026.
+- Move Embedding 2 preview to GA `gemini-embedding-2` by August 10, 2026.
+- Move Imagen 4 Standard, Ultra, and Fast (`imagen-4.0-*-generate-001`) to
+  `gemini-3.1-flash-image` by August 17, 2026.
 - Leave `gemini-2.5-flash-image` by October 2, 2026.
-- Move `gemini-2.5-pro`, `gemini-2.5-flash`, and
-  `gemini-2.5-flash-lite` by October 16, 2026. Their listed successors are
-  `gemini-3.1-pro-preview`, `gemini-3.6-flash`, and
-  `gemini-3.1-flash-lite`, respectively.
-- Move `gemini-3.1-flash-lite` to `gemini-3.5-flash-lite` by May 7, 2027.
-- Move `gemini-embedding-001` to `gemini-embedding-2` by May 14, 2028.
+- By October 16, 2026, replace `gemini-2.5-pro`, `gemini-2.5-flash`, and
+  `gemini-2.5-flash-lite` with `gemini-3.1-pro-preview`, `gemini-3.6-flash`,
+  and `gemini-3.1-flash-lite`, respectively.
+- Replace `gemini-3.1-flash-lite` with `gemini-3.5-flash-lite` by May 7, 2027.
+- Replace `gemini-embedding-001` with `gemini-embedding-2` by May 14, 2028.
 
-Do not use recently retired endpoints:
+Gemini 2.0 Flash and Flash-Lite stable IDs became unavailable June 1, 2026.
+The 3.1 Flash Image and 3 Pro Image previews became unavailable June 25 in
+favor of GA IDs. Stable Veo 2.0 and 3.0 generation IDs became unavailable June
+30 in favor of Veo 3.1 preview endpoints or enterprise GA endpoints.
 
-- Gemini 2.0 Flash and Flash-Lite stable IDs shut down June 1, 2026.
-- 3.1 Flash Image and 3 Pro Image preview IDs shut down June 25, 2026 in favor
-  of their GA IDs.
-- Stable Veo 2.0 and 3.0 generation IDs shut down June 30, 2026 in favor of Veo
-  3.1 preview endpoints or enterprise GA endpoints.
+## Choose current image and video endpoints
 
-## Generate images and video
+GA native-image IDs are `gemini-3.1-flash-image`, `gemini-3-pro-image`, and
+the lower-latency `gemini-3.1-flash-lite-image`. Only
+`gemini-3.1-flash-image` accepts video context for image generation.
 
-Current GA native-image IDs are:
+`gemini-omni-flash-preview` generates 3–10 second 720p video from text or a
+still image and supports conversational edits to generated video.
 
-- `gemini-3.1-flash-image`
-- `gemini-3-pro-image`
-- lower-latency `gemini-3.1-flash-lite-image`
+## Use multimodal embeddings and File Search
 
-Only `gemini-3.1-flash-image` accepts video context for image generation.
+GA `gemini-embedding-2` embeds text, images, video, audio, and PDFs in one
+space. File Search can use it to index and search images. Visual-grounding
+citations expose `media_id` and `page_numbers`.
 
-`gemini-omni-flash-preview` generates 3–10 second, 720p video from text or a
-still image and supports conversational edits to the video.
+## Stream Live audio and speech
 
-## Embed multimodal content and search files
-
-GA `gemini-embedding-2` embeds text, images, video, audio, and PDFs into a
-shared space. File Search can use it to index and search images. Visual
-grounding citations expose `media_id` and `page_numbers`.
-
-The API accepts Cloud Storage buckets and public or private presigned URLs as
-input sources. The per-file limit for those inputs is 100 MB, increased from
-20 MB.
-
-## Stream Live and speech sessions
-
-`gemini-3.1-flash-live-preview` is the current 3.1 audio-to-audio preview.
-`gemini-3.1-flash-tts-preview` is the current TTS preview. TTS output can stream
+`gemini-3.1-flash-live-preview` is the current 3.1 audio-to-audio preview, and
+`gemini-3.1-flash-tts-preview` is the current TTS preview. TTS output streams
 through `streamGenerateContent` or Interactions with `stream: true`.
 
-Live sessions can keep server-side state for up to 24 hours and return a
+Live sessions can retain server-side state for up to 24 hours and return a
 `session_resumption` handle. Sliding-window context compression extends long
-sessions, and `GoAway` warns before disconnect.
+sessions, and `GoAway` warns before disconnection.
 
-Automatic VAD can be tuned or disabled in favor of explicit `activityStart`
-and `activityEnd`. Live configuration has separate controls for interruption,
-turn coverage, media resolution, streamed text, and modality-level
-`usageMetadata`.
+Automatic VAD can be tuned or disabled in favor of `activityStart` and
+`activityEnd`. Separate controls govern interruption, turn coverage, media
+resolution, streamed text, and modality-level `usageMetadata`.
 
-## Use event-driven long-running operations
+## Combine built-in and custom tools
+
+A request can combine built-in tools with custom function tools. Computer Use
+is also in public preview on `gemini-3.5-flash`, with browser, mobile, and
+desktop environments plus configurable safety and prompt-injection controls.
+
+## Supply larger external files
+
+The API accepts Cloud Storage buckets and public or private presigned URLs as
+input sources. The per-file limit for these external inputs is 100 MB, raised
+from 20 MB.
+
+## Prefer events for long-running work
 
 Batch jobs and other long-running operations support event-driven completion,
-so integrations can replace polling. Batch processing also accepts
-embedding-model requests.
+allowing integrations to replace polling. Batch processing also accepts
+embedding-endpoint requests.
 
-## Account for product availability
+## Use current Deep Research integrations
 
-The API no longer supports model tuning: the last tunable model, Gemini 1.5
-Flash 001, shut down in May 2025.
+New Deep Research agent variants add collaborative planning, visualization,
+MCP server integration, and File Search. They can stream results to a client UI
+or run a more comprehensive automated research path.
+
+## Do not plan around model tuning
+
+The final tunable endpoint, Gemini 1.5 Flash 001, shut down in May 2025. The
+API no longer supports tuning on any endpoint.
+
+Batch attribution: `gemini-3.6`, `release-lifecycle`, and
+`rolling-2026-08-19`.

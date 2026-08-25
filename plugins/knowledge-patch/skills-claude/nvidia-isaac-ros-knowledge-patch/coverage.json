@@ -2,7 +2,7 @@
   "patch": "nvidia-isaac-ros-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T08:53:52Z",
+  "built_at": "2026-08-21T14:44:37Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -29,6 +29,11 @@
     },
     "current-runtime-and-packages": {
       "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.6.0": {
+      "kind": "versioned",
       "codex": "gaps",
       "build": "included"
     }

@@ -8,204 +8,181 @@ metadata:
 ---
 
 
-# NVIDIA Isaac ROS Knowledge Patch
+# NVIDIA Isaac ROS
 
-Use this skill when planning, configuring, upgrading, or troubleshooting NVIDIA
-Isaac ROS deployments, especially when platform support, package names, NITROS
-behavior, perception pipelines, or manipulation workflows may have changed.
+Use this skill when selecting an Isaac ROS platform, upgrading packages,
+building accelerated perception or manipulation graphs, integrating NITROS,
+or diagnosing a quickstart that behaves differently across JetPack, desktop,
+DGX Spark, and Isaac Sim.
 
-## How to use this skill
-
-1. Identify the exact Isaac ROS package set and the target hardware.
-2. Match the deployment against the current runtime matrix before debugging an
-   individual package.
-3. Check the breaking changes and renamed surfaces below.
-4. Open the topic reference that matches the task.
-5. Treat release-specific limitations as scoped facts; later current-runtime
-   guidance can supersede an earlier platform exclusion.
-6. Verify older launch files against the installed package index before
-   carrying package names forward.
+Start with the project's pinned Isaac ROS package set and hardware target.
+Package availability, tested simulators, camera support, and workarounds are
+release-dependent. Prefer the installed package index, launch files, and
+observed runtime behavior when they differ from older examples.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [platforms-and-environments](references/platforms-and-environments.md) | JetPack, Jetson, x86_64, DGX Spark, Isaac Sim, Docker-optional modes, cameras |
-| [nitros-data-and-compression](references/nitros-data-and-compression.md) | GXF removal, CUDA streaming, point clouds, H.264, MCAP and fleet-task packages |
-| [perception-mapping-and-localization](references/perception-mapping-and-localization.md) | Stereo depth, segmentation, detection, SLAM, Nvblox, mapping and localization packages |
-| [manipulation-teleoperation-and-robots](references/manipulation-teleoperation-and-robots.md) | Isaac for Manipulation, cuMotion, CloudXR, robot integration, Unitree G1 |
-| [troubleshooting](references/troubleshooting.md) | Conversion failures, missing output, RViz issues, dependency and hardware limits |
+| [Platforms and environments](references/platforms-and-environments.md) | JetPack, Jetson, x86_64, DGX Spark, Isaac Sim, Docker-free modes, camera platform boundaries |
+| [Perception, mapping, and localization](references/perception-mapping-and-localization.md) | Detection, segmentation, stereo depth, Nvblox, Visual SLAM, mapping, localization, SIPL cameras |
+| [NITROS, data, compression, and cloud control](references/nitros-data-and-compression.md) | GXF removal, CUDA streaming, point clouds, H.264, MCAP conversion, cloud-control packages |
+| [Manipulation, teleoperation, and robots](references/manipulation-teleoperation-and-robots.md) | Isaac for Manipulation, cuMotion, CloudXR, robot integrations, Unitree G1 |
+| [Troubleshooting](references/troubleshooting.md) | Conversion failures, missing output, simulator issues, GPU exhaustion, action stalls, model repositories |
 
-## Breaking changes and renamed surfaces
+## Breaking changes and compatibility boundaries
 
-### NITROS no longer uses GXF
+### Treat NITROS as GXF-free
 
-NITROS sunsets its GXF implementation in 4.5. Integrations that assume the GXF
-build or runtime foundation must be revisited. NITROS messaging also supports
-CUDA streaming.
+NITROS sunset its GXF implementation in 4.5. Do not carry assumptions about
+the old GXF build or runtime foundation into new NITROS integrations. CUDA
+streaming is available for NITROS messaging; see the NITROS reference for the
+related point-cloud and compression changes.
 
-### Stereo workflows moved
+### Update coupled hand ordering
 
-The DNN stereo-decoder package now owns the ESS and FoundationStereo workflows.
-Fast-FoundationStereo is also available. RealSense, ZED, and Isaac Sim stereo
-workflows resize without preserving aspect ratio.
+The cuMotion controller and Isaac ROS Teleop revised the hand order in their
+`PoseArray` interfaces together. When replaying data or connecting custom
+publishers, update both ends of the interface instead of compensating on only
+one side.
 
-### Hand order changed
+### Resolve package names before reusing launch files
 
-The cuMotion controller and Isaac ROS Teleop revised the hand ordering in their
-`PoseArray` messages. Update consumers that interpret positions by array index
-and verify both sides use the same ordering.
+Mapping and localization package membership is release-dependent, and 4.4
+included package renames. Check old launch files against the installed package
+index before debugging missing executables or packages.
 
-### Manipulator naming
+### Keep simulator and platform support scoped to the package set
 
-Isaac Manipulator is now called Isaac for Manipulation. Its documented
-reference workflows are identified under `isaac_manipulator`.
+JetPack, Jetson model, DGX Spark, Isaac Sim, camera SDK, and architecture
+support changed across releases. Do not infer compatibility from a nearby
+release. Use the platform reference to select the exact combination and note
+historical exclusions that later updates superseded.
 
-### Mapping and localization names are release-sensitive
+### Preserve fork assumptions in control integrations
 
-Resolve old launch files against the current package index. The current surface
-includes:
+The bundled `topic_based_ros2_control` and Universal Robots dependencies in
+the 4.0 manipulation stack came from forks rather than their upstream package
+lines. Account for those forks when comparing APIs, applying upstream fixes,
+or replacing dependencies.
 
-- `isaac_ros_visual_global_localization`
-- `isaac_mapping_ros`
-- `isaac_ros_visual_mapping`
-- `isaac_ros_occupancy_grid_localizer`
-- `isaac_ros_pointcloud_utils`
+## Environment quick reference
 
-Package renames occurred in 4.4, so do not infer a package name from an older
-launch file.
+The runtime matrix snapshot in the platform reference distinguishes three
+tested families:
 
-## Platform quick reference
+- Jetson Thor on its specified JetPack release and NVMe capacity.
+- x86_64 with an Ampere-or-newer GPU, Ubuntu, CUDA, driver, GPU-memory, and
+  storage minimums.
+- DGX Spark on its specified DGX OS and storage minimum.
 
-### Current tested targets
+Virtual Environment and Bare Metal modes remove the Docker requirement, but
+they do not remove the dependency or hardware matrix. Use the dedicated
+JetPack RealSense setup where required instead of treating a Docker-free mode
+as a camera-stack workaround.
 
-Use the Isaac ROS CLI-managed ROS 2 Jazzy environment on one of these tested
-targets:
+## High-impact troubleshooting
 
-| Target | Required environment |
-| --- | --- |
-| Jetson Thor T5000 or T4000 | JetPack 7.1 and at least 128 GB NVMe storage |
-| x86_64 | Ampere-or-newer NVIDIA GPU with at least 8 GB RAM, Ubuntu 24.04, CUDA 13.0 or newer, driver 580 or newer, and at least 32 GB storage |
-| DGX Spark | DGX OS 7.2.3 and at least 32 GB storage |
+### Confirm the failure layer first
 
-Other GB10 systems are outside the tested matrix. Virtual Environment and Bare
-Metal modes remove the Docker requirement, but not the platform and dependency
-requirements.
+Classify the problem before changing launch parameters:
 
-### Earlier platform decisions
+1. Verify the hardware, operating system, JetPack, driver, CUDA, simulator,
+   and storage combination.
+2. Check whether the package or backend is supported on that platform.
+3. Confirm image encodings, `CameraInfo`, frames, and timestamps at graph
+   boundaries.
+4. Check model conversion, TensorRT engine generation, and Triton repository
+   contents.
+5. Observe GPU memory, component-container exits, action-server occupancy,
+   and controller acknowledgement state.
 
-- For JetPack 6.2 or Jetson Orin Nano Super, use the `v3.2-1` package set
-  rather than base `v3.2`.
-- Isaac ROS 4.0 introduced Jetson AGX Thor and a JetPack 7.0 stack based on
-  Ubuntu 24.04 and CUDA 13.0; it was tested with Isaac Sim 5.1.
-- The 4.1 DGX Spark exclusion is historical. DGX Spark and JetPack 7.1 support
-  arrived on 2026-02-19.
-- Use the dedicated 4.1 RealSense-on-JetPack-7 setup procedure when working in
-  that environment.
+### Model conversion and inference
 
-## Perception quick reference
+- MobileSAM conversion under PyTorch 2.6 may require
+  `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`.
+- SAM2 Virtual Environment dependency trouble has a version-specific NumPy
+  workaround in older packages and is fixed in 4.5.
+- FoundationStereo FP16 conversion, DOPE conversion on Thor, PeopleNet engine
+  generation, and Triton backend or repository failures have distinct causes.
+  Do not substitute one workaround for another.
 
-### Added integrations
+### Missing image, disparity, or point-cloud output
 
-| Capability | Package or integration |
-| --- | --- |
-| FoundationStereo | `isaac_ros_dnn_stereo_depth` |
-| GroundingDINO | `isaac_ros_object_detection` |
-| Segment Anything 2 | `isaac_ros_image_segmentation` |
-| RT-DETR | `isaac_ros_rtdetr` |
-| YOLOv8 | `isaac_ros_yolov8` |
-| CenterPose | `isaac_ros_centerpose` |
-| FoundationPose | `isaac_ros_foundationpose` |
+Trace synchronization and metadata before blaming the accelerator. Known
+failure modes include RealSense SDK instability, a decoder that does not
+synchronize `CameraInfo` with disparity tensors, `PointCloud2` or frame
+metadata problems in simulation, a `mono8`/`rgb8` mismatch, and a Jetson VPI
+backend exit.
 
-`isaac_ros_visual_slam` supports RGB-D cameras. `isaac_ros_nvblox` supports
-lidar dynamics and lidar motion compensation.
+### Long-running and intermittent failures
 
-### Stereo production choice
+Watch for live-camera SAM2 GPU growth, intermittent H.264 decoder starvation,
+Unitree hand motor-temperature limits, and manipulation goals that retain the
+action server after cancellation. These failures need resource or lifecycle
+diagnosis rather than repeated relaunches alone.
 
-Fast-FoundationStereo is research-only. Use FoundationStereo for commercial
-work. With RealSense, ZED, or Isaac Sim, the DNN stereo decoder can
-intermittently omit disparity or point-cloud output because `CameraInfo`
-messages are not synchronized with disparity tensors.
+## Perception and mapping routing
 
-## Manipulation and robot quick reference
+Use the perception reference for:
 
-### Planning and integration
+- FoundationStereo, Fast-FoundationStereo, ESS, and the stereo-decoder package.
+- GroundingDINO, RT-DETR, YOLOv8, DetectNet, DOPE, CenterPose, and
+  FoundationPose.
+- Segment Anything 2 and MobileSAM conversion or live-camera constraints.
+- Nvblox lidar dynamics and motion compensation.
+- RGB-D Visual SLAM, cuVSLAM build behavior, visual mapping, global
+  localization, occupancy-grid localization, and point-cloud utilities.
+- RealSense, ZED, Isaac Sim, SIPL, and Leopard Imaging stereo workflows.
 
-cuMotion 1.1.0 improves self-consistent ESDF planning and adds AABB clearing
-for drop-pose planning. Manipulation integrations include Flexiv Rizon and a
-Bring Your Own Robot guide; Flexiv, Universal Robots, static-planning-scene,
-and cloud pick-and-place workflows were updated.
+Fast-FoundationStereo is research-only; use FoundationStereo for commercial
+work. Stereo resizing for RealSense, ZED, and Isaac Sim no longer preserves
+aspect ratio in the moved decoder workflows.
 
-Reference workflows include:
+## NITROS, data, and cloud routing
 
-- gear assembly with a contact-rich insertion policy;
-- behavior-tree orchestration for multi-object pick-and-place; and
-- a sim-to-real UR10e gear-assembly reach-policy tutorial.
+Use the NITROS reference when changing transport or dataflow. It covers CUDA
+point-cloud support, CUDA streaming, native V4L2 H.264, dynamic image sizes,
+QoS revisions, and the MCAP-to-LeRobot converter's session, resampling, and
+effort-export behavior.
 
-### Teleoperation
+Cloud-control integrations use separate scene-recording, VDA5050 client, and
+action-handler packages. Unitree G1 mission support is split between robot
+hardware and simulation; consult the manipulation reference before assuming
+the same mission types are available in both.
 
-CloudXR teleoperation can run without Docker. The teleoperation surface adds
-Meta Quest 3 support, raw controller-data publication, configurable XR pose
-transforms, and RViz visualization.
+## Manipulation and teleoperation routing
 
-### Unitree G1
+Use the manipulation reference to align:
 
-The physical-AI packages add data recording, GR00T deployment, and G1
-teleoperation for simulation and hardware. Check bridge and bringup defaults,
-topic and frame names, controller configuration, launch behavior,
-acknowledgement handling, and firmware 1.5.1 acknowledgement requirements
-before reusing older configurations.
+- The Isaac for Manipulation name with the `isaac_manipulator` package and
+  reference workflows.
+- cuMotion 1.1 planning behavior, ESDF consistency, AABB clearing, and hand
+  ordering.
+- CloudXR operation without Docker, Quest 3 input, raw controller data,
+  configurable XR transforms, and RViz visualization.
+- Flexiv Rizon, Universal Robots, Bring Your Own Robot, static-scene, and
+  cloud pick-and-place integrations.
+- Unitree G1 recording, GR00T deployment, teleoperation, bridge defaults,
+  firmware acknowledgements, cloud missions, and AGILE policy deployment.
 
-## NITROS and data quick reference
+## Upgrade checklist
 
-- CUDA point clouds are supported through NITROS.
-- `isaac_ros_compression` provides native V4L2 H.264 encoding and decoding,
-  supports dynamic image sizes, and has revised QoS behavior.
-- The MCAP-to-LeRobot converter supports multi-session conversion, FPS
-  resampling, and `action.effort` export.
-- SIPL cameras publish through zero-copy NITROS using
-  `isaac_ros_sipl_camera`.
+Before accepting an upgrade:
 
-## High-priority troubleshooting
+- Re-resolve platform and simulator support for the target package set.
+- Compare camera SDK and backend boundaries for the exact Jetson platform.
+- Replace old NITROS/GXF assumptions and test CUDA stream propagation.
+- Audit renamed packages and moved stereo workflows in launch files.
+- Validate `PoseArray` hand ordering across teleop and cuMotion consumers.
+- Rebuild or relocate model artifacts using the workflow-specific guidance.
+- Exercise cancellation, shutdown, and recovery paths for manipulation goals.
+- Run perception with real timestamps, encodings, `CameraInfo`, and frames.
+- Monitor GPU memory and thermals during sustained live-camera or robot tests.
 
-### Conversion and dependency failures
+## Working rule
 
-- For MobileSAM-to-ONNX conversion under PyTorch 2.6, restore the earlier
-  loading behavior for the conversion process:
-
-  ```bash
-  export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
-  ```
-
-- FoundationStereo FP16 conversion can exhaust memory with the TensorRT
-  version in Isaac ROS 4.1.
-- DOPE cannot convert its ONNX network to a TensorRT Plan on Jetson AGX Thor
-  when unsupported layers are present.
-- The Triton Inference Server PyTorch backend is unsupported in Isaac ROS 4.1.
-- If `trtexec` is absent from `/usr/src/tensorrt/bin/trtexec`, the PeopleNet
-  quickstart may need a manually generated TensorRT engine.
-
-### Missing or misleading runtime output
-
-- An H.264 decoder run beside the encoder can intermittently produce no
-  decoder output.
-- DNN stereo can omit disparity or point clouds.
-- DetectNet can emit overlapping duplicate boxes.
-- The Nvblox RealSense people-segmentation example can show the wrong RViz
-  overlay color.
-- Isaac Sim stereo processing can fail to visualize a point cloud in RViz.
-
-Open [troubleshooting](references/troubleshooting.md) for causes, scopes, and
-the remaining simulation, SAM2, DOPE, and Unitree G1 caveats.
-
-## Working rules
-
-- Prefer current package-index names over copied historical launch files.
-- Keep hardware, operating system, CUDA, driver, and storage checks together;
-  a Docker-optional flow is not a platform-optional flow.
-- Scope workarounds to the affected release and environment.
-- Revalidate indexed `PoseArray` consumers after cuMotion or Teleop updates.
-- For stereo pipelines, distinguish conversion failure, decoder
-  synchronization loss, and visualization metadata failure.
-- For G1 hardware, include acknowledgement and motor-temperature behavior in
-  operational checks.
+Treat the references as compatibility constraints, not as a substitute for
+the package set in the workspace. Apply advice only when its release,
+hardware, and workflow scope match the project, then verify the resulting
+graph with its real messages and lifecycle behavior.

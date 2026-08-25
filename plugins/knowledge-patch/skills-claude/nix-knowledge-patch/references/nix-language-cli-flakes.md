@@ -1,317 +1,240 @@
 # Nix Language, CLI, Flakes, and APIs
 
-Use this reference for evaluation semantics, command output, flake input and
-lock behavior, interactive workflows, installer operations, and native APIs.
+## Evaluation and language behavior
 
-## Evaluation and expression behavior
+### Integer and configuration validation
 
-### Integer overflow is an evaluation error
+Since 2.25.0, signed 64-bit overflow is an evaluation error instead of
+wrapping. `builtins.fromJSON` rejects integers above the signed 64-bit maximum,
+and flake `nixConfig` rejects negative values for numeric configuration options.
 
-Since 2.25.0, signed 64-bit integer overflow fails instead of wrapping.
-`builtins.fromJSON` rejects integers above the signed 64-bit maximum, and flake
-`nixConfig` rejects negative values for configuration options.
+### Path values and literals
 
-```console
-$ nix eval --expr '9223372036854775807 + 1'
-error: integer overflow in adding 9223372036854775807 + 1
-```
+Enable explicit path diagnostics with the tri-state settings introduced in
+2.34.0: `lint-url-literals`, `lint-short-path-literals`, and
+`lint-absolute-path-literals`. They accept `ignore`, `warn`, or `fatal`.
+`lint-url-literals` replaces the experimental `no-url-literals`, while
+`lint-short-path-literals` replaces the 2.31.0 Boolean
+`warn-short-path-literals`. Spell short relative paths as `./foo/bar`.
 
-### Supported structured-attribute construction
+Relative paths in `file:` tarball references are rejected. By contrast,
+`builtins.getFlake` accepts path values as of 2.35.2, so
+`builtins.getFlake ./subflake` is valid when the path is in the store. It does
+not force a lazily hashed source into the store.
 
-Since 2.30.0, serializing structured derivation attributes into the `__json`
-environment variable is deprecated. Use the supported flag on
-`builtins.derivation`:
+### Structured derivations and dynamic attributes
+
+The supported structured-derivation interface since 2.30.0 is:
 
 ```nix
 builtins.derivation (attrs // { __structuredAttrs = true; })
 ```
 
-### Warnings for short path literals
+Do not place serialized JSON in an environment variable named `__json`; that
+construction is deprecated. Early 2.32 releases also regressed simple
+string-literal dynamic attributes in `let`; 2.32.5 restores that special case,
+but other dynamic attributes in `let` remain unsupported.
 
-In 2.31.0, `warn-short-path-literals = true` warns about relative path literals
-such as `foo/bar` that do not begin with `.` or `/`; spell them `./foo/bar`.
-This Boolean is superseded by the tri-state settings below.
+## CLI output and interactive use
 
-### Simple-string dynamic attributes restored in 2.32.5
+### Raw and JSON output
 
-Early 2.32 releases accidentally rejected the special case for simple
-string-literal dynamic attributes in `let`. Release 2.32.5 restores it. Other
-dynamic attributes in `let` remain unsupported.
+`nix-instantiate --eval --raw` requires a string and prints it without quoting
+or escaping (2.26.0). Modern `--json` commands pretty-print when stdout is a
+terminal but stay single-line through a pipe or redirect (2.29.0). Use
+`--pretty` or `--no-pretty` whenever automation must be terminal-independent.
 
-### Tri-state path-literal lints
+Human-readable commands choose size units dynamically since 2.33.0. Never
+assume MiB or one common unit per output line.
 
-Since 2.34.0, stable `lint-url-literals` replaces the `no-url-literals`
-experimental feature, `lint-short-path-literals` replaces the deprecated
-`warn-short-path-literals`, and `lint-absolute-path-literals` covers `/...` and
-`~/...`. Each accepts `ignore` (default), `warn`, or `fatal`.
+### Versioned `nix path-info` JSON
 
-```ini
-lint-url-literals = fatal
-lint-short-path-literals = warn
-lint-absolute-path-literals = warn
-```
+Pass `--json-format` with `nix path-info --json`. In 2.33.0, omission warns and
+temporarily selects format 1:
 
-## Flake inputs, locks, and source handling
+- Format 1 uses absolute store-path keys and references, string hashes, and
+  string content addresses.
+- Format 2 wraps results in `version`, `storeDir`, and `info`, uses path
+  basenames, and structures `ca` into a method and SRI hash.
+- Format 3, added in 2.35.2, represents signatures as `{ keyName, sig }`
+  objects. Readers still accept the older colon-delimited representation.
 
-### Relative path flake inputs
+### Derivation JSON
 
-Since 2.26.0, a flake can use a sibling flake through a relative `path:` URL:
+The unstable derivation JSON representation uses store-path basenames rather
+than full store paths from 2.32.0 onward. Derivation JSON version 4 in 2.33.0
+wraps output in `version` and `derivations`, moves `inputSrcs` and `inputDrvs`
+to `inputs.srcs` and `inputs.drvs`, and represents fixed-output content
+addresses as objects. `nix derivation add` rejects version 3 and older.
+
+### REPL and profiler behavior
+
+`:reload` reloads flakes loaded with `:load-flake` as well as files and
+command-line values (2.29.0). Since 2.34.0 the REPL accepts semicolon-separated
+bindings, nested attribute bindings, and `inherit` statements.
+
+Use the stack-sampling evaluator profiler from 2.30.0 with
+`--eval-profiler flamegraph`; select the destination with
+`--eval-profile-file` (default `nix.profile`) and sampling rate with
+`--eval-profiler-frequency` (default 99 Hz). The collapsed stack output works
+with FlameGraph, speedscope, and compatible viewers.
+
+### Profile and formatter commands
+
+Use `nix profile add` (2.30.0); `nix profile install` remains an alias. `nix
+fmt` without arguments no longer supplies an implicit `.` to the formatter
+(2.25.0), allowing formatters to define repository-wide no-argument behavior.
+`nix formatter build` builds and links the formatter and prints the complete
+executable path without running it (2.29.0).
+
+## Flake inputs, locks, and sources
+
+### Relative repository inputs
+
+Flakes can use a sibling flake through a relative path input (2.26.0):
 
 ```nix
 inputs.foo.url = "path:./foo";
 ```
 
-This changes the lock-file format. Older Nix versions cannot consume lock files
-that contain relative-path input locks.
+This changes the lock format; older Nix versions cannot read locks containing
+relative-path inputs. During lock generation, indirect inputs such as
+`nixpkgs` ignore system and user registries. Only the global registry and
+command-line `--override-flake` values participate, so pin explicit input URLs
+for reproducibility.
 
-### Lock generation ignores local flake registries
+When an input reference changes, lock updates preserve nested versions from
+that input's own lock rather than fetching the newest nested inputs (2.31.0).
 
-Since 2.26.0, resolving an indirect reference while generating a lock file uses
-only the global registry and command-line `--override-flake` values, not system
-or user registries. Use explicit URLs when resolution must be reproducible.
+### Git submodules, LFS, and hashing
 
-### Flakes can require Git submodules
-
-Since 2.27.0, a Git-backed flake can declare its own submodule requirement:
+Since 2.27.0 a Git-backed flake can declare its own source requirements:
 
 ```nix
 inputs.self.submodules = true;
+inputs.self.lfs = true;
 ```
 
-Callers no longer need to pass `submodules = true`.
+Git references can request LFS with `lfs=1`. LFS-over-SSH honors `NIX_SSHOPTS`
+and URL ports and follows the endpoint returned by `git-lfs-authenticate`
+(2.31.0). Experimental Git-hashed store objects can use SHA-256 as well as
+SHA-1 from that release.
 
-### Git fetcher support for LFS
+`builtins.fetchGit` and Git `builtins.fetchTree` inputs again accept SCP-like
+URLs in 2.35.2, including literal `~` paths and bracketed IPv6 hosts:
 
-Since 2.27.0, enable Git LFS materialization with `inputs.self.lfs = true` or
-`lfs=1` on a Git URL:
-
-```sh
-nix flake prefetch 'git+ssh://git@example.com/repo.git?lfs=1'
+```nix
+builtins.fetchGit "host:~/relative/to/home"
+builtins.fetchTree { type = "git"; url = "user@[::1]:~/repo"; }
 ```
 
-### Output links from `nix flake prefetch`
+The `github:` fetcher now rejects unknown URL parameters; for example, `tag`
+is invalid rather than ignored (2.35.2).
 
-Since 2.27.0, `nix flake prefetch --out-link ./result <flake-reference>` creates
-an output link for the prefetched source.
+### Non-flake inputs and source subdirectories
 
-### Partial `nix flake show` output around IFD
-
-Since 2.29.0, `nix flake show` skips outputs that require
-import-from-derivation and continues displaying the remaining outputs instead
-of failing the entire command.
-
-### Source information for non-flake inputs
-
-Since 2.30.0, inputs with `flake = false` expose the parent source's
-`sourceInfo`, distinguishing that source from a nested input. They can select a
-source subdirectory with `?dir=subdir`.
+Since 2.30.0, an input declared with `flake = false` exposes its containing
+source's `sourceInfo`. A non-flake input can select a subdirectory with
+`?dir=subdir`, distinguishing the parent source from the selected child.
 
 ```nix
 inputs.data = {
-  url = "path:./vendor?dir=subdir";
+  url = "path:./sources?dir=subdir";
   flake = false;
 };
 ```
 
-### Parallel flake-input prefetching
+### Fetch and inspection commands
 
-Since 2.31.0, `nix flake prefetch-inputs .` fetches all inputs in parallel. It
-avoids serialized on-demand fetches but can fetch inputs evaluation would not
-use.
+- `nix flake prefetch --out-link ./result REF` creates an output link
+  (2.27.0).
+- `nix flake prefetch-inputs .` fetches all inputs concurrently and may fetch
+  inputs evaluation would not use (2.31.0).
+- `nix flake archive --to STORE --no-check-sigs .` bypasses signature checks
+  for direct remote archiving (2.30.0).
+- `nix flake show` skips IFD-dependent outputs and displays the rest instead of
+  failing the complete command (2.29.0).
+- `nix flake check` may leave substitutable derivations unrealized (2.32.0).
+- `nix flake check --print-out-paths` prints outputs, and `--out-link` creates
+  links; without it, no links are created (2.35.2).
 
-### Nested locks are preserved when updating inputs
+### Registry, clone, and channel operations
 
-Since 2.31.0, when an input reference changes during lock update, Nix consults
-that input's lock file for nested inputs instead of fetching their latest
-versions. This preserves the versions chosen by the updated input.
+`nix registry resolve NAME` prints the flake reference selected for an indirect
+registry input without fetching or evaluating it (2.33.0). `nix flake clone`
+can clone arbitrary input types, including tarball-backed flakes. Built-in
+channel URLs now use `https://channels.nixos.org/`; migrate persisted URLs and
+allowlists away from the redirecting `https://nixos.org/channels/` endpoint.
 
-### SHA-256 Git hashing
+The channel server's `nixexprs.tar.xz` implements the lockable HTTP tarball
+protocol (nixos-25.05), so it can be used directly as a pinned flake input.
 
-Since 2.31.0, experimental Git-hashed store objects support SHA-256 in addition
-to SHA-1.
+## C, C++, and embedding APIs
 
-### `nix flake check` can leave substitutable outputs unrealized
+### C++ headers and build system
 
-Since 2.32.0, a derivation available from a substituter is not downloaded just
-because `nix flake check` sees it. A successful check need not leave every
-checked output in the local store.
-
-### Resolving registry references
-
-Since 2.33.0, `nix registry resolve NAME` prints the flake reference selected
-for an indirect registry name without fetching or evaluating the flake.
-
-### Cloning non-Git flake inputs
-
-Since 2.33.0, `nix flake clone` supports arbitrary input types, including
-tarball-backed flakes.
-
-### Channel URL migration
-
-Since 2.33.0, built-in channel URLs use `https://channels.nixos.org/` rather
-than `https://nixos.org/channels/`. The old endpoint redirects for now; migrate
-stored URLs and allowlists before the redirect is retired.
-
-### Relative `file:` tarball paths are rejected
-
-Since 2.34.0, `file:` tarball references cannot contain relative paths. Use an
-absolute path or an unambiguous alternative reference.
-
-## Command behavior and automation
-
-### Nix-specific XDG location overrides
-
-Since 2.25.0, `NIX_CACHE_HOME`, `NIX_CONFIG_HOME`, `NIX_DATA_HOME`, and
-`NIX_STATE_HOME` override the corresponding XDG variables for Nix only.
-
-```sh
-export NIX_CACHE_HOME="$PWD/.nix/cache"
-export NIX_CONFIG_HOME="$PWD/.nix/config"
-export NIX_DATA_HOME="$PWD/.nix/data"
-export NIX_STATE_HOME="$PWD/.nix/state"
-```
-
-### Zero-argument `nix fmt` is formatter-defined
-
-Since 2.25.0, `nix fmt` does not implicitly pass `.`. The formatter can treat a
-no-argument invocation differently from `nix fmt .`.
-
-### Raw output from `nix-instantiate --eval`
-
-Since 2.26.0, `nix-instantiate --eval --raw` requires a string result and emits
-it without quotes or escaping.
-
-### Terminal-aware JSON formatting
-
-Since 2.29.0, commands using `--json` pretty-print on a terminal and remain
-single-line when redirected. Use `--pretty` or `--no-pretty` explicitly,
-especially under a pseudoterminal.
-
-### Reloading flakes in the REPL
-
-Since 2.29.0, `:reload` reloads flakes added with `:load-flake` as well as files
-added with `:load` and command-line inputs.
-
-### Building a flake formatter
-
-Since 2.29.0, `nix formatter build` builds and links the configured formatter
-without running it, then prints the full executable path.
-
-### `nix profile add`
-
-Since 2.30.0, `nix profile install` is named `nix profile add`; the old spelling
-remains an alias.
-
-### Stack-sampling evaluation profiles
-
-Since 2.30.0, `--eval-profiler flamegraph` emits collapsed evaluator call
-stacks. `--eval-profile-file` selects the output (default `nix.profile`) and
-`--eval-profiler-frequency` selects the sampling rate (default 99 Hz).
-
-### Archiving flakes without signature checks
-
-Since 2.30.0, `nix flake archive --no-check-sigs` can copy directly to a remote
-store when signature verification would otherwise block the archive.
-
-### Tracing import-from-derivation
-
-Since 2.30.0, `trace-import-from-derivation = true` warns for every IFD without
-denying it, allowing CI to inventory IFD while
-`allow-import-from-derivation` remains enabled.
-
-### Multiple bindings and `inherit` in the REPL
-
-Since 2.34.0, the REPL accepts semicolon-separated bindings, nested attribute
-bindings, and `inherit`:
-
-```text
-a = { x = 1; y = 2; }
-inherit (a) x y
-p = 1; q = 2;
-```
-
-### Dynamic size units in human-readable output
-
-Since 2.33.0, commands choose human-readable size units dynamically. Parsers
-must not assume MiB or assume that one line uses a single unit.
-
-## JSON schemas
-
-### Derivation JSON uses store-path basenames
-
-Since 2.32.0, the unstable JSON used by `nix derivation` represents store paths
-by basename rather than absolute store-directory paths.
-
-### Versioned `nix path-info` JSON
-
-Since 2.33.0, automation should pass `--json-format` with
-`nix path-info --json`. Format 1 retains absolute path keys, string hashes and
-content addresses; format 2 wraps data in `version`, `storeDir`, and `info`,
-uses basenames, and structures `ca` as method plus SRI hash. Omitting the
-format currently warns and selects 1, but is planned to become an error.
-
-### Derivation JSON version 4
-
-Since 2.33.0, `nix derivation show` emits a version 4 envelope with `version`
-and `derivations`. `inputSrcs` and `inputDrvs` move to `inputs.srcs` and
-`inputs.drvs`, and fixed-output content addresses are objects.
-`nix derivation add` rejects version 3 and earlier.
-
-## Native API and source-build compatibility
-
-### Namespaced C++ headers and configuration macros
-
-Since 2.28.0, include installed C++ headers through
-`nix/<component>/...`. pkg-config supplies `-I${includedir}`, configuration
-headers need not be force-included, and remaining public macros use `NIX_`.
+Installed headers use component-qualified paths as of 2.28.0:
 
 ```cpp
 #include <nix/store/derived-path.hh>
 #include <nix/util/configuration.hh>
-#if NIX_SUPPORT_ACL
-// ...
-#endif
 ```
 
-### Builder-scoped flake settings in the C API
+pkg-config supplies `-I${includedir}` rather than an include path ending in
+`/nix`. Configuration headers need not be force-included, and remaining public
+configuration macros use the `NIX_` prefix. Nix source builds use Meson and
+Ninja; the Make build was removed in 2.26.0.
 
-Since 2.28.0, `nix_flake_init_global` is removed. Add settings to each evaluator
-builder with `nix_flake_settings_add_to_eval_state_builder`.
+### Flake C APIs
 
-### C API flake loading and locking
+`nix_flake_init_global` was removed in 2.28.0. Add settings to each evaluator
+state builder with `nix_flake_settings_add_to_eval_state_builder`.
 
-Since 2.29.0, C callers can load and perform basic locking of flakes. Choose
-lock modes with `nix_flake_lock_flags_set_mode_check`, `_virtual`, or
+In 2.29.0, C consumers gained direct flake loading and basic locking. Choose a
+mode with `nix_flake_lock_flags_set_mode_check`, `_virtual`, or
 `_write_as_needed`; adding an input override also enables virtual mode. The
 `nix-fetchers-c` library manages `nix.conf` settings for built-in fetchers.
 
-### Mutable values for indexed C API access
+### Value and store C APIs
 
 Since 2.32.0, `nix_get_attr_name_byidx` and `nix_get_attr_byidx` take mutable
-`nix_value *` because access may modify a value. The change is ABI-compatible
-but can require const-correctness source fixes.
+`nix_value *` because lookup can mutate a value. This is ABI-compatible but can
+require const-correctness source fixes. Use `nix_get_list_byidx_lazy`,
+`nix_get_attr_byname_lazy`, and `nix_get_attr_byidx_lazy` to forward members
+without forcing them.
 
-### Lazy C API collection access
+The 2.34.0 API adds `nix_store_query_path_from_hash_part()` and
+`nix_store_copy_path()` for path lookup and controlled inter-store copying.
+C primop failures are sticky when a thunk is forced again; mark intentionally
+retryable failures with `NIX_ERR_RECOVERABLE`.
 
-Since 2.32.0, use `nix_get_list_byidx_lazy`,
-`nix_get_attr_byname_lazy`, and `nix_get_attr_byidx_lazy` to retrieve members
-without forcing them, such as when forwarding a sub-value into another
-collection or function call.
+The `nix` executable exports C-binding symbols as of 2.35.2, so C API plugins
+can resolve those symbols dynamically instead of linking every `libnix*c.so`.
 
-### C primop errors are sticky by default
+### Binary-directory assumptions
 
-Since 2.34.0, a C primop error is remembered in its thunk; forcing it again does
-not retry. Mark an intentionally retryable failure recoverable:
+Separately packaged `libnixstore` cannot infer a Nix binary directory
+(2.25.0). Applications using remote builds must put Nix tools on `PATH` or set
+`build-hook` explicitly. The Perl bindings no longer expose `getBinDir`.
 
-```c
-nix_set_err_msg(context, NIX_ERR_RECOVERABLE, msg);
-```
+## Installation and platform entry points
 
-## Installation
+The Rust installer rewrite entered beta in 2.34.0. It can install over an
+existing script-based installation, and its `uninstall` removes the complete
+installation even when an older installer created it. Review that destructive
+scope before invoking it.
 
-### Beta Rust installer and complete uninstall
+The traditional installer supports `x86_64-freebsd` in 2.35.2 and uses
+FreeBSD `libjail` sandboxing by default. The Rust installer does not yet support
+FreeBSD.
 
-Since 2.34.0, the Rust installer rewrite is beta and can run over an existing
-script-installed Nix without preparation. `/nix/nix-installer uninstall`
-removes the complete installation, including one that predates the Rust
-installer.
+## Environment locations
+
+Since 2.25.0, `NIX_CACHE_HOME`, `NIX_CONFIG_HOME`, `NIX_DATA_HOME`, and
+`NIX_STATE_HOME` override the corresponding XDG variables for Nix alone. Use
+them for an isolated Nix environment without changing other applications'
+XDG layout.
+
+Fish profile scripts derive `NIX_PROFILE` from `$NIX_LINK` in 2.35.2 rather
+than always using `$HOME/.nix-profile`, so custom profile links work in Fish
+sessions too.

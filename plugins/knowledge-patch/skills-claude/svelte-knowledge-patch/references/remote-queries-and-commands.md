@@ -1,84 +1,65 @@
 # Remote queries and commands
 
-## Contents
+The versioned remote-function behavior in this reference is attributed to
+`sveltekit-2.53.0`, `sveltekit-2.54.0`, `sveltekit-2.65.0`, and
+`sveltekit-2.66.0`.
 
-- [Inputs and request context](#inputs-and-request-context)
-- [Template rendering](#template-rendering)
-- [Refresh and invalidation](#refresh-and-invalidation)
-- [Caching and failures](#caching-and-failures)
-- [Live-query reconnects](#live-query-reconnects)
+## Inputs and invocation context
 
-## Inputs and request context
+### Optional inputs
 
-The input types for remote `query`, `command`, and `prerender` functions may be
-optional. Callers may omit an input when the declared type permits omission.
+The input types of remote `query`, `command`, and `prerender` functions may be
+optional. Omit an input when its declared type permits omission.
 
-Remote functions receive URL information for their actual invocation. Code that
-depends on the pathname, search parameters, or other URL state should use that
-request context rather than reconstructing it from unrelated application state.
+### Request URL
 
-The optional-input and URL-context behavior is attributed to
-`sveltekit-2.53.0`.
+A remote function receives URL information for the request that invoked it.
+URL-dependent logic should use that invocation URL.
 
-## Template rendering
+### Await template calls explicitly
 
-Calling a remote function in a template no longer delays rendering by itself.
-Explicitly await the call when the rendered result must wait for completion:
+Calling a remote function in a template does not by itself delay rendering.
+Use `await` when the call must finish before output is rendered:
 
 ```svelte
 <p>{await getSummary()}</p>
 ```
 
-An unawaited invocation can proceed without gating the template. This behavior
-is attributed to `sveltekit-2.54.0`.
-
 ## Refresh and invalidation
 
-### Cross-query refresh
+### Cross-query refreshes
 
-A remote query can refresh other remote queries. Use this to keep related cached
-results synchronized when refreshing one result invalidates another.
+A remote query can refresh other remote queries. Use this to keep related
+cached results synchronized when one query refreshes.
 
-### Navigation invalidation
+### `invalidateAll` reset timing
 
-Navigation with `invalidateAll` resets remote queries before navigation starts.
-The destination route therefore does not begin with stale query state left over
-from the previous route.
+Navigation with `invalidateAll` resets remote queries before navigation begins,
+so the next route does not start with stale query state.
 
-These refresh and reset semantics are attributed to `sveltekit-2.65.0`.
+### Live reconnects
 
-## Caching and failures
+Active `for await` consumers of `query.live` survive reconnects. Reconnect
+completion settles even if the query is offline or interrupted, preventing
+`invalidateAll()` from deadlocking. If a reconnect completes without yielding a
+value, the query retains its last value.
 
-### Response cache policy
+## Response policy and failures
 
-Remote function responses send:
+### Private, non-stored responses
 
-```http
-cache-control: private, no-store
-```
+Remote function responses send `cache-control: private, no-store`. Preserve
+that policy for personalized query results rather than exposing them to a shared
+cache.
 
-This prevents personalized remote-query results from being stored by shared
-caches.
+### Transport errors retain details
 
-### Transport errors
-
-When a remote function request fails during transport, SvelteKit preserves its
-HTTP status and error body. For example, a `401` or `403` produced by a `handle`
-hook remains that failure instead of becoming a generic `500`.
+When a remote request fails in transport, SvelteKit preserves the HTTP status
+and error body. For example, a `401` or `403` produced by a `handle` hook does
+not become a generic `500`.
 
 ### Consume failures without awaiting
 
 Reading a failed remote function through `current` or `error` consumes the
-failure without causing an unhandled promise rejection. Awaiting the function is
-not the only safe way to observe a failure.
-
-The cache and failure behavior is attributed to `sveltekit-2.65.0`.
-
-## Live-query reconnects
-
-Active `for await` consumers of `query.live` survive reconnects. Reconnect
-completion settles even when the query is offline or interrupted, preventing
-`invalidateAll()` from deadlocking. If a reconnect finishes without yielding a
-new value, the query keeps its last value.
-
-These reconnect semantics are attributed to `sveltekit-2.66.0`.
+failure without causing an unhandled promise rejection. Awaiting the function
+is not the only safe consumption path.

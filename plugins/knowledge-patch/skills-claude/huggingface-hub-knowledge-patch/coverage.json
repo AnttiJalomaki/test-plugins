@@ -2,7 +2,7 @@
   "patch": "huggingface-hub-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T06:14:05Z",
+  "built_at": "2026-08-21T11:49:31Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -23,6 +23,11 @@
       "build": "included"
     },
     "huggingface-hub-v1-client": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.28.0": {
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"

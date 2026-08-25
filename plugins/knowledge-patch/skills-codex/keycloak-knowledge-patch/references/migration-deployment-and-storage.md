@@ -1,27 +1,40 @@
 # Deployment and Storage Migrations
 
-## Truststore and TLS verification
+## Additional-datasource health exclusions
 
-Replace the 24-era `spi-truststore-file-*` and truststore-related
-`https-trust-store-*` settings with `conf/truststores` or `truststore-paths`.
-Replace the old hostname-verification policy with `tls-hostname-verifier`.
-Because the truststore is always populated, direct WebAuthn attestation requires
-the authenticator CA to be trusted.
+Since 26.7.0, an individual additional datasource can be excluded from health checks. Use this for an optional datasource whose failure should not mark the entire deployment unhealthy.
 
-Account for the verifier default changing from `WILDCARD` to `DEFAULT` in 25.
-In 26, infer keystore and truststore type from `.p12`, `.jks`, or `.pem`
-extensions unless an explicit type overrides inference.
+## FIPS-compatible generated truststores
 
-## Hostname and reverse proxies
+Generated system truststores sourced from `conf/truststores` or `--truststore-paths` use BCFKS in strict FIPS mode, allowing BCFIPS to load them in approved mode. Default and non-strict FIPS deployments continue to use PKCS12 where supported.
 
-Hostname v2 is the default from 25. `hostname` accepts either a host or a full
-URL, while `hostname-admin` requires a full URL. Remove separate path and port
-options. Select HTTPS with a full HTTPS URL. Dynamic backchannel resolution
-requires `hostname-backchannel-dynamic=true` and a full frontend URL.
+## Multi-cluster v2
 
-Version 26 removes hostname v1 and `proxy`. Replace edge or re-encrypt setups
-with one trusted `proxy-headers` format plus the appropriate hostname and HTTP
-settings.
+The preview multi-cluster v2 architecture removes the external Infinispan cluster and fencing infrastructure. Keycloak nodes connect directly using embedded caches, treat the synchronously replicated database as the source of truth, and propagate invalidations through a database-backed outbox.
+
+Enable this architecture with the `stateless` feature.
+
+## Installing the Operator with kustomize
+
+The Keycloak Operator can be installed declaratively on vanilla Kubernetes with kustomize rather than by applying separate manifest files.
+
+Preview cluster-wide mode lets one Operator reconcile `Keycloak` resources in every namespace. Select OLM's `AllNamespaces` install mode, or use the `cluster-wide` kustomization overlay for non-OLM installations.
+
+## Truststore and hostname-verification migration
+
+For Keycloak 24, replace `spi-truststore-file-*` and truststore-related `https-trust-store-*` settings with `conf/truststores` or `truststore-paths`. Replace the old hostname-verification policy with `tls-hostname-verifier`.
+
+The always-populated truststore means direct WebAuthn attestation now requires the authenticator CA to be trusted.
+
+In 25, the hostname-verifier default changes from `WILDCARD` to `DEFAULT`. In 26, keystore and truststore type is inferred from extensions such as `.p12`, `.jks`, and `.pem` unless explicitly overridden.
+
+## Hostname and reverse-proxy migration
+
+Hostname v2 becomes the default in 25. `hostname` accepts either a host or a full URL, while `hostname-admin` requires a full URL. Separate hostname path and port options are removed. A full HTTPS URL selects HTTPS.
+
+Dynamic backchannel resolution requires `hostname-backchannel-dynamic=true` together with a full frontend URL.
+
+Keycloak 26 removes hostname v1 and `proxy`. Replace edge and re-encrypt arrangements with one trusted `proxy-headers` format and the matching hostname and HTTP settings.
 
 ```bash
 bin/kc.sh start \
@@ -30,116 +43,72 @@ bin/kc.sh start \
   --http-enabled=true
 ```
 
-## Password hashing and user-profile migration
+## Password-hashing transition
 
-The default password hash changes in 24 from PBKDF2-SHA256 to PBKDF2-SHA512 at
-210,000 iterations. Passwords without an explicit realm policy rehash at login.
-Version 25 makes Argon2 the non-FIPS default, causing another one-time rehash
-and temporary database load, and changes the default garbage collector from
-ParallelGC to G1GC.
+Keycloak 24 changes the password-hashing default from PBKDF2-SHA256 to PBKDF2-SHA512 with 210,000 iterations. Passwords in realms without an explicit policy are rehashed on login.
 
-## Preserving sessions across upgrades
+Keycloak 25 makes Argon2 the non-FIPS default and changes the default garbage collector from ParallelGC to G1GC. Expect another one-time password rehash and temporary database load.
 
-To preserve online sessions from 24, upgrade to 25 with preview
-`persistent-user-sessions` enabled on that first upgrade. Only sessions already
-stored in remote Infinispan or embedded-cache JDBC persistence can migrate.
-Enabling the feature later cannot safely merge persisted and non-persisted
-sessions.
+## Preserving sessions through the 25-to-26 upgrade
 
-Version 26 changes cache marshalling from JBoss Marshalling to incompatible
-Protostream and clears all caches. A direct upgrade that skipped the 25
-persistence migration therefore loses sessions.
+To retain online sessions originating in 24, upgrade to 25 with preview `persistent-user-sessions` enabled on that first upgrade. Only sessions already backed by remote Infinispan or embedded-cache JDBC persistence can migrate. Enabling the feature later cannot safely merge persisted and non-persisted sessions.
 
-All sessions persist by default in 26. The standard cache file caps each
-session cache at 10,000 entries with one owner; apply equivalent bounds in
-custom cache XML. The former two-minute idle grace period is gone. Revoked
-access tokens persist across embedded-cache restarts by default; opt out with
-`spi-single-use-object-infinispan-persist-revoked-tokens`.
+Keycloak 26 switches cache marshalling from JBoss Marshalling to incompatible Protostream and clears every cache. A direct upgrade that skips the 25 persistence migration loses sessions.
 
-## Cache topology and runtime options
+## Persistent-session cache and expiry semantics
 
-Move `cache`, `cache-stack`, and `cache-config-file` out of build commands in
-25; they are runtime-only options, and putting them in image builds allows
-runtime cache defaults to be selected silently.
+In 26, all sessions are persisted by default. The standard cache file limits each session cache to 10,000 entries with one owner; custom cache XML should apply equivalent limits.
 
-External multi-site deployments require Infinispan 15 or newer from 25. In 26,
-multi-site mode ignores distributed-cache and remote-store XML; use
-`cache-remote-*` or corresponding custom-resource fields. Reject a single-site
-external store unless the temporary experimental
-`cache-embedded-remote-store` feature is enabled. Prefer persistent sessions
-for single-site restart survival.
+The former two-minute idle-time grace period is removed. Revoked access tokens are persisted across embedded-cache restarts by default. Opt out with `spi-single-use-object-infinispan-persist-revoked-tokens` only when that behavior is intentional.
 
-## Metrics and management endpoints
+## Runtime cache configuration
 
-Version 25 enables embedded-cache and HTTP server metrics by default. Health
-and metrics use the management listener on port `9000`, not the application
-ports. `--legacy-observability-interface=true` temporarily restores the old
-placement. Configure histograms with `cache-metrics-histograms-enabled`,
-`http-metrics-histograms-enabled`, and `http-metrics-slos`.
+Since 25, `cache`, `cache-stack`, and `cache-config-file` are runtime options, not build options. Remove them from image-build commands; otherwise the server can silently use its runtime cache defaults.
 
-## Outbound HTTP response limits
+## XA defaults and additional datasources
 
-Responses consumed from identity brokers and other external services are
-capped at 10 MB by default from 25. Change the byte limit using
-`spi-connections-http-client-default-max-consumed-response-size`.
+Keycloak 25 changes `transaction-xa-enabled` to default `false`, enables transaction recovery, and stores transaction logs under `data/transaction-logs`.
 
-```bash
-bin/kc.sh start --spi-connections-http-client-default-max-consumed-response-size=1000000
-```
+From 26, a deployment with multiple datasources may have at most one non-XA datasource. Enable XA for the default datasource with `--transaction-xa-enabled=true`. Configure each additional datasource with `quarkus.datasource.<name>.jdbc.transactions=xa`.
 
-## Transactions and additional datasources
+## Large-table index migrations
 
-`transaction-xa-enabled` defaults to false from 25. Transaction recovery is
-enabled and writes logs below `data/transaction-logs`. From 26, deployments
-with multiple datasources may contain at most one non-XA datasource. Enable XA
-for the default datasource with `--transaction-xa-enabled=true`; configure each
-additional datasource with
-`quarkus.datasource.<name>.jdbc.transactions=xa`.
+Automatic migration skips some indexes and prints SQL for manual execution when the affected table already exceeds 300,000 rows:
 
-## Large-table indexes
+- In 24, inspect `USER_ATTRIBUTE` and `FED_USER_ATTRIBUTE`.
+- In 25, inspect `RESOURCE_SERVER_PERM_TICKET`.
+- In 26, inspect `IDENTITY_PROVIDER`.
 
-Automatic migration skips selected new indexes when the affected table already
-has more than 300,000 rows and prints SQL for manual execution. This applies to
-`USER_ATTRIBUTE` and `FED_USER_ATTRIBUTE` in 24,
-`RESOURCE_SERVER_PERM_TICKET` in 25, and `IDENTITY_PROVIDER` in 26. Capture and
-run the emitted statements after startup; do not assume migration created them.
+Plan to execute the emitted statements after startup. Do not assume the schema migrator created these indexes.
 
-## Bootstrap administration
+## Operator upgrade defaults
 
-Version 26 deprecates `KEYCLOAK_ADMIN` and `KEYCLOAK_ADMIN_PASSWORD`. Use
-general bootstrap options or the replacement environment variables for initial
-access and recovery.
+From 24, referenced Secrets and ConfigMaps are polled instead of watched, so changes can take about one minute. Advanced property keys move from `operator.keycloak` to `kc.operator.keycloak`.
 
-```bash
-export KC_BOOTSTRAP_ADMIN_USERNAME=admin
-export KC_BOOTSTRAP_ADMIN_PASSWORD=change-me
-```
+When the custom resource omits resource settings, the Operator defaults to a `1700MiB` memory request and `2GiB` limit. Keycloak 26 adds default pod affinities and no longer implicitly supplies `proxy=passthrough`.
 
-## Operator and container resources
+## External Infinispan deployment boundaries
 
-From 24, the Operator polls referenced Secrets and ConfigMaps rather than
-watching them, so changes can take about one minute. Rename advanced property
-keys from `operator.keycloak` to `kc.operator.keycloak`. When custom-resource
-resource settings are absent, expect a `1700MiB` memory request and `2GiB`
-limit. Version 26 adds default pod affinities and no longer implicitly supplies
-`proxy=passthrough`.
+Keycloak 25 requires Infinispan 15 or newer and supports an external server for multi-site deployments.
 
-Keycloak 24 container images replace fixed `-Xms` and `-Xmx` with percentage
-sizing and default maximum heap to 70% of available container memory. Always
-set a container memory limit so heap sizing does not use the host total.
+In 26, multi-site mode ignores distributed-cache and remote-store XML. Use `cache-remote-*` options or equivalent custom-resource fields. A single-site external store is rejected unless temporary experimental `cache-embedded-remote-store` is enabled; use persistent sessions for restart survival instead.
 
-## Removed runtime components
+## LDAP pool and binary decoding
 
-Version 25 no longer bundles the Oracle JDBC driver and removes the legacy
-LinkedIn OAuth provider. Install a compatible Oracle driver and use the
-remaining LinkedIn OIDC provider. Version 26 removes the GELF handler, adapter
-and miscellaneous BOMs, `keycloak-test-helper`, and the JEE admin client; the
-Jakarta admin client remains.
+In 26, realm-level LDAP connection-pool settings are ignored because pooling is JVM-wide. Move them to the documented system properties.
 
-## LDAP pooling and binary attributes
+In 26.7, existing binary user-attribute mappers migrate to `base64`; new mappers default to `auto` and may explicitly select `base64` or `uuid`. Existing group mappers retain base64 behavior, while new group mappers enable UUID decoding.
 
-Realm-level LDAP pool settings are ignored in 26 because connection pooling is
-JVM-wide; migrate them to the documented system properties. In 26.7, existing
-binary user-attribute mappers migrate to `base64`, while new mappers default to
-`auto` and may explicitly choose `base64` or `uuid`. Existing group mappers
-retain base64 behavior, and new group mappers enable UUID decoding.
+## Graceful shutdown timeout
+
+In 26.7, the default shutdown timeout increases from one second to ten seconds. Clustered nodes also wait for cache rebalance. Apply rolling changes one node at a time, and set `shutdown-timeout=1s` only when the former behavior is intentional.
+
+## PostgreSQL asynchronous commit
+
+In 26.7, PostgreSQL transactions that touch only ephemeral session, login-failure, or event tables use asynchronous commit. Logout remains synchronous.
+
+Disable this optimization with `--spi-connections-jpa--quarkus--async-commit=false`.
+
+## Stateless upgrade and organization corrections
+
+The 26.7.2 fixes prevent upgrades involving preview features from failing when the stateless cluster provider initializes. They also allow organization members to be added while `stateless:v1` is enabled.

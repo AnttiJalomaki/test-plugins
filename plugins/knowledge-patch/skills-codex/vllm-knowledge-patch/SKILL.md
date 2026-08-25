@@ -10,210 +10,219 @@ metadata:
 
 # vLLM Knowledge Patch
 
-Use this patch when changing a vLLM engine, server, deployment, model
-integration, or extension. Start with the quick reference, then read every
-topic file relevant to the change.
+Use this skill when implementing, upgrading, extending, serving, or operating
+vLLM. Start with the quick references below, then open the topic file that
+matches the work. Treat the installed package, its configuration, and observed
+runtime behavior as authoritative when they differ from this guidance.
 
 ## Reference index
 
 | Reference | Topics |
-|---|---|
-| [Engine and runtime](references/engine-and-runtime.md) | V1, Model Runner V2, compilation, scheduling, sampling, configuration, custom models |
-| [Serving APIs](references/serving-apis.md) | HTTP, Responses, Chat, Completions, embeddings, speech, parsers, Rust and gRPC frontends |
-| [Distributed execution and caching](references/distributed-and-caching.md) | DP/TP/PP/EP, Ray, multiprocessing, KV connectors, prefix caching, offloading, RDMA |
-| [Quantization and hardware](references/quantization-and-hardware.md) | Checkpoint formats, online quantization, KV cache, hardware boundaries, custom plugins |
-| [Speculative decoding](references/speculative-decoding.md) | Draft models, suffix and n-gram methods, heterogeneous vocabularies, acceptance behavior |
-| [Models, multimodal, and LoRA](references/models-multimodal-and-lora.md) | Model/task support, processors, pooling, adapters, model-specific caveats |
-| [Operations and migrations](references/operations-and-migrations.md) | Dependencies, wheels, CLI, metrics, security, removals, validation |
+| --- | --- |
+| [engine-and-runtime.md](references/engine-and-runtime.md) | V1 architecture, scheduling, compilation, attention, Model Runner V2, sampling, lifecycle, streaming input, and offloading |
+| [serving-apis.md](references/serving-apis.md) | Compatible HTTP APIs, Responses, chat, embeddings, transcription, realtime, render, Rust and gRPC frontends, validation, and endpoint plugins |
+| [distributed-and-caching.md](references/distributed-and-caching.md) | Tensor, pipeline, data, expert, and sequence parallelism; Ray and native clusters; KV connectors, disaggregation, and tiered caches |
+| [quantization-and-hardware.md](references/quantization-and-hardware.md) | Quantized formats, hardware boundaries, custom quantization plugins, accelerator targets, and KV-cache quantization |
+| [speculative-decoding.md](references/speculative-decoding.md) | Draft methods, MTP, n-gram and suffix decoding, heterogeneous vocabularies, acceptance, structured output, and drafter controls |
+| [models-multimodal-and-lora.md](references/models-multimodal-and-lora.md) | Model and task coverage, multimodal processing, pooling, Transformers backend behavior, and LoRA paths |
+| [operations-and-migrations.md](references/operations-and-migrations.md) | Breaking removals, dependency transitions, CLI and metrics migrations, security fixes, containers, logging, and operational controls |
 
 ## Breaking changes first
 
-### Treat V1 as the only engine
+### Use V1 interfaces only
 
-- Do not import or design around `AsyncLLMEngine`, `LLMEngine`,
-  `MQLLMEngine`, V0 executors, or V0 attention backends.
-- Do not pass `kv_cache` or `attn_metadata` to a custom model's forward
-  method. Read both from `forward_context`.
-- V1 schedules token budgets, not distinct prefill and decode phases.
-  Extensions must tolerate chunked prefill, cached tokens, and speculative
-  tokens in the same scheduling model.
-- Prefix caching is normally inexpensive and enabled, but hybrid models keep
-  it opt-in. Respect the model's support declarations for both prefix caching
-  and chunked prefill.
+V1 is the sole engine. Do not build new integrations on `AsyncLLMEngine`,
+`LLMEngine`, `MQLLMEngine`, V0 attention backends, V0 executors, or the old V0
+configuration surface. Custom model forward methods obtain KV cache and
+attention metadata through `forward_context`, not explicit `kv_cache` and
+`attn_metadata` parameters.
 
-### Audit removed parameters and interfaces
+### Audit removed and renamed options during upgrades
 
-- Remove `num_lookahead_slots`, `best_of`, LoRA extra vocabulary,
-  `swap_space`, per-request logits processors, and the old tokenizer setter.
-- Replace `--convert reward` with `--convert embed`.
-- Replace backend environment variables with configuration or CLI fields,
-  including `--attention-backend`, `--moe-backend`, and `--linear-backend`.
-- Use current import locations for `get_tokenizer` and
-  `resolve_hf_chat_template`.
-- Do not rely on the legacy PagedAttention implementation, deprecated model
-  registry entries, retired connectors, or removed quantization schemes.
+Do not carry forward removed `num_lookahead_slots`, `best_of`, LoRA extra
+vocabulary, `swap_space`, per-request logits processors, or the tokenizer
+setter. Replace `--convert reward` with `--convert embed`; use
+`--moe-backend` and `--linear-backend` instead of backend environment
+variables. Use `device_ids` for placement because the runtime no longer sets
+`CUDA_VISIBLE_DEVICES` internally.
 
-### Make sampling explicit
+### Pin request behavior explicitly
 
-- A model's `generation_config` can supply chat-template and sampling
-  defaults. Pin temperature, token limits, and related settings when stable
-  behavior matters.
-- Use `top_k=0` to disable top-k sampling.
-- Avoid `seed=None`; V1 uses deterministic seed behavior, with a caller-RNG
-  caveat when V1 multiprocessing is disabled.
-- `generation_config.max_tokens` is a default, not a hard ceiling.
-- Unsupported speculative sampling options are rejected rather than ignored.
-- Speculative decoding preserves the target distribution within numerical
-  precision but does not promise stable token log probabilities.
+A model's `generation_config` can supply chat-template and sampling defaults.
+Set temperature, token limits, seed, and related sampling controls explicitly
+when stable behavior matters. `generation_config.max_tokens` is only a default,
+not a hard ceiling; an explicit request may exceed it. `top_k=0` disables
+top-k sampling.
 
-### Check deployment and dependency assumptions
+### Revisit async scheduling and connector failure policy
 
-- Ray is not a default dependency. Install its executor extras explicitly.
-- CUDA, PyTorch, Transformers, compiler, and manylinux requirements changed
-  repeatedly; use the exact wheel or container matching the deployment.
-- vLLM no longer rewrites `CUDA_VISIBLE_DEVICES`; use `device_ids`.
-- Treat Ray cluster traffic and the gRPC interface as private-network
-  protocols. Configure authentication and TLS on supported public frontends.
-- Weight loading defaults are stricter. Preserve `weights_only=True`,
-  `trust_remote_code` checks, and insecure-serialization gates.
+Async scheduling evolved from experimental and unsafe in some preemption paths
+to the normal path, and later gained pipeline-parallel and speculative-decoding
+combinations. Validate it against the installed release and opt out where
+needed. KV connector load failures default to failing the request; configure
+recomputation explicitly if that is the intended recovery policy.
 
-## High-value engine controls
+### Rebuild environments across dependency jumps
 
-### Compilation and graph capture
+Wheel CUDA targets, PyTorch, Transformers, compilers, and container bases have
+changed repeatedly. Rebuild images and native extensions rather than reusing
+an older environment. Ray is no longer a default dependency, Python-only
+installation is optional, and newer builds require a C++20-compatible compiler.
 
-- V1 integrates `torch.compile`; `-O0` through `-O3` select
-  startup/performance tradeoffs.
-- Use `compile_ranges` for selective compilation. Do not use the removed
-  `-O.xx` spelling.
-- `FULL_AND_PIECEWISE` is the CUDA graph default. Model Runner V2 supports
-  broader piecewise, mixed, and full-graph workloads.
-- Use `head_dtype` when an accuracy-sensitive generation head must remain
-  FP32.
+## Engine and configuration quick reference
 
-### Scheduling and sizing
+### Understand the V1 execution model
 
-- Async scheduling is supported with pipeline parallelism in current
-  configurations, but historical releases had preemption corruption and
-  excluded several backends. Keep explicit opt-out available during upgrades.
-- `--max-model-len auto` fits context length to available GPU memory.
-- `--performance-mode` provides balanced, interactivity, and throughput
-  presets; explicit values still win.
-- Hardware, offline/server use, parallelism, model context, and multimodal
-  shape all affect automatic sequence and batched-token limits.
-- Use startup KV-cache capacity and maximum-concurrency logs as deployment
-  sizing signals.
+`EngineCore` isolates scheduling and model execution. Tokenization, multimodal
+preprocessing, detokenization, and response streaming overlap outside it.
+Scheduling allocates token counts per request rather than treating prefill and
+decode as separate phases. Prefix caching is cheap and normally enabled for
+supported non-hybrid models; hybrid models keep it opt-in.
 
-### Nested configuration
+### Configure nested dataclasses safely
 
-- Dataclass options accept whole JSON objects or dotted keys such as
-  `--attention-config.flash_attn_version=2`.
-- JSON config values accept decimal `k/m/g/t` and binary `K/M/G/T` size
-  suffixes where the option supports human-readable integers.
-- Speculation shorthand flags and a JSON speculative configuration may not
-  set the same field.
-- Nested YAML configuration is supported.
+Pass a complete JSON object or use dotted flags such as:
 
-## High-value serving behavior
+```bash
+vllm serve MODEL --attention-config.flash_attn_version=2
+```
 
-### OpenAI-style compatibility
+Nested JSON accepts decimal lowercase `k/m/g/t` and binary uppercase
+`K/M/G/T` size suffixes. Do not set the same speculative field through both a
+component shorthand and `--speculative-config`.
 
-- The request `model` field may be omitted.
-- Completions `suffix` and Chat `image_url.detail` are unsupported.
-- Chat `user` is accepted but ignored.
-- `parallel_tool_calls=false` limits output to one tool call; `true` permits
-  but does not force parallel calls.
-- Strict tool calling depends on a supported parser.
-- Invalid token IDs, non-finite sampling values, non-positive scheduling
-  knobs, and degenerate structured-output settings are rejected.
+### Let automatic sizing work unless capacity is known
 
-### Responses and operational routes
+`--max-model-len auto` finds a context length that fits memory. Default batch
+limits depend on hardware, offline versus server use, and performance mode;
+they are also adjusted for context length and multimodal media. Inspect startup
+KV-capacity and maximum-concurrency logs before overriding limits.
 
-- Responses support creation, retrieval, cancellation, structured output,
-  reasoning events, tools, MCP integration, token IDs, and request controls.
-- Health returns HTTP 503 when the engine is dead.
-- Use `/load`, `/is_sleeping`, `/server_info`, tokenizer information, cache
-  reset, pause/resume, and weight-update routes according to the active
-  frontend.
-- Endpoint plugins can extend serving, and the RLHF development router
-  exposes request abortion.
+### Treat hybrid cache settings as correctness-sensitive
 
-### Speech, embeddings, and scoring
+Chunked prefill follows model support. Disabling it on a supported generation
+model or enabling it on an unsupported pooling model can crash or corrupt
+output. Mamba and hybrid models use aligned prefix state with:
 
-- Speech paths include streaming and batch transcription, translation,
-  timestamps, language detection, beam search, and realtime WebSockets.
-- Embeddings support truncation, multiple media items, byte-only encoding,
-  sparse and late-interaction representations, and chat-shaped inputs on
-  supported endpoints.
-- `/score` accepts pair fields or query/document collections and supports
-  multimodal and reranking use cases.
+```bash
+vllm serve MODEL --enable-prefix-caching --mamba-cache-mode align
+```
 
-## High-value distributed and cache guidance
+### Choose attention and compilation deliberately
 
-### Pick parallelism for the topology
+Use `--attention-backend` or `AttentionConfig`, not the retired attention
+backend environment variable. `-O0` through `-O3` trade startup cost for
+runtime performance; selective compilation uses `compile_ranges`. Hardware
+defaults can change, including Blackwell MLA/prefill choices and cascade
+attention, so pin a backend when reproducibility matters.
 
-- Prefer pipeline parallelism when the GPU count does not evenly divide the
-  model or when GPUs lack a fast peer interconnect.
-- Native multi-node launch requires the multiprocessing data-parallel
-  backend and a node count that evenly divides the `DP × PP × TP` world size.
-- External data-parallel balancing is MoE-only. Fault tolerance requires an
-  external balancer or explicit data-parallel rank.
-- Sequence, decode-context, pipeline, tensor, data, and expert parallelism
-  have distinct compatibility constraints; verify the workload-specific
-  combination.
+## Serving quick reference
 
-### Secure and size cluster plumbing
+### Know compatible-API omissions
 
-- Give each containerized Ray node a private `VLLM_HOST_IP`; cluster traffic
-  is unencrypted and unsafe on an untrusted network.
-- Multiprocessing workers use `--headless` and the same head address.
-- For GPUDirect RDMA, provide locked memory and a sufficiently large shared
-  memory mount, then verify `NET/IB/GDRDMA` rather than socket transport.
-- Integer `device_ids` index an existing visibility mask. UUID and integer
-  forms cannot be mixed, and Ray ignores this option.
+Completions `suffix` and Chat `image_url.detail` are unsupported. Chat `user`
+is accepted but ignored. `parallel_tool_calls=false` guarantees no more than
+one call; the default permits multiple calls but does not guarantee them.
 
-### Configure cache failure and offload policy deliberately
+### Use the Responses lifecycle routes
 
-- KV connector load failures fail requests by default; set recomputation
-  explicitly if that is desired.
-- CPU, filesystem, disk, and object-store tiers have connector-specific
-  policy, identity, chunking, reset, and request hooks.
-- Prefix cache salting isolates tenants. Use reproducible SHA-256 plus CBOR
-  hashes only when cross-process stability is required.
-- Multimodal processing, encoder embeddings, and token prefixes use separate
-  reuse paths and memory controls.
+Create at `/v1/responses`, retrieve at `/v1/responses/{response_id}`, and
+cancel at `/v1/responses/{response_id}/cancel`. The API supports multi-turn
+input, reasoning items, tools, structured output, streaming, and request-level
+cache controls; verify the parser required by the selected model.
 
-## High-value quantization and speculation guidance
+### Separate preprocessing when useful
 
-### Validate hardware before selecting a format
+Render endpoints and `vllm launch render` allow prompt preprocessing on a
+GPU-less service. Engines can also consume async generators of `StreamingInput`
+for session-oriented workloads such as speech recognition.
 
-- Quantization support is method-, architecture-, and backend-specific.
-  Check the hardware table before selecting AWQ, GPTQ, Marlin,
-  compressed-tensors, FP8, FP4, or GGUF.
-- TurboQuant KV cache currently forces FlashAttention 2.
-- Pre-SM100 FP4 can fall back to Marlin; unsupported combinations must not be
-  inferred from a nearby format.
-- Qwen3.5 with an FP8 KV cache has a B200 accuracy caveat.
+### Treat gRPC as private transport
 
-### Use the correct speculative configuration
+The binary HTTP/2 server and Rust control plane provide health, abort, model,
+server, and KV-event discovery. Even when TLS or mTLS is available on a
+frontend, keep interfaces documented as private-use behind trusted network
+boundaries.
 
-- Use `draft_tensor_parallel_size` inside `speculative_config`.
-- Use `method="mtp"` for Gemma 4 assistant checkpoints.
-- Heterogeneous vocabulary mapping is draft-model-only and greedy-only.
-- Custom proposer classes are named in the speculative `model` field.
-- Suffix decoding is draft-model-free; n-gram lookup copies a supplied bound
-  to the omitted minimum or maximum.
-- Rejection sampling modes are `strict`, `probabilistic`, and `synthetic`;
-  validate synthetic acceptance rates.
+## Distributed and cache quick reference
 
-## Before finishing a change
+### Match parallelism to topology
 
-1. Confirm the installed vLLM version and frontend.
-2. Check removed and deprecated fields in
-   [operations and migrations](references/operations-and-migrations.md).
-3. Check engine, scheduling, sampling, and model-runner compatibility.
-4. Validate parallelism, cache, connector, and network assumptions.
-5. Validate quantization against exact hardware and checkpoint format.
-6. Make request defaults explicit and test invalid-input behavior.
-7. Exercise health, cancellation, shutdown, and cache-reset paths.
-8. Re-run representative outputs without speculation when diagnosing
-   probability or reproducibility differences.
+Use pipeline parallelism with tensor parallel size one for uneven GPU counts or
+poorly connected GPUs such as hosts without NVLink:
+
+```bash
+vllm serve MODEL --tensor-parallel-size 1 --pipeline-parallel-size 4
+```
+
+Native multi-node launch requires the multiprocessing data-parallel backend;
+the node count must evenly divide `DP × PP × TP`. External data-parallel
+balancing is MoE-only, requires a rank, and is required for fault tolerance.
+
+### Secure Ray and provision shared memory
+
+Ray cluster traffic is unencrypted and can carry unsafe payloads; bind each
+container to a private per-node `VLLM_HOST_IP`. For GPUDirect RDMA, provide
+locked memory and a memory-backed `/dev/shm`, then use `NCCL_DEBUG=TRACE` to
+confirm `NET/IB/GDRDMA` rather than socket transport.
+
+### Choose connector recovery and tiers explicitly
+
+KV paths span CPU LRU offload, LMCache, NIXL, Mooncake, 3FS, FlexKV,
+object-store and filesystem tiers, hybrid allocators, encoder caches, and
+peer-to-peer secondary tiers. Check layout compatibility, block sizes,
+prefill/decode parallelism, per-request policy, and failure behavior together.
+
+## Quantization quick reference
+
+### Validate method, checkpoint, and accelerator as a unit
+
+Quantization names do not imply universal support. Check GPU generation,
+CPU/XPU/ROCm/TPU path, linear versus MoE layers, checkpoint encoding, attention
+backend, KV-cache dtype, and LoRA compatibility. TurboQuant KV cache currently
+forces FlashAttention 2 when no compatible version is pinned.
+
+### Register out-of-tree methods before selection
+
+Decorate a `QuantizationConfig` subclass with
+`@register_quantization_config("name")`, implement its dtype/capability/file
+and dispatch contracts, import the registration module, then select the name.
+Return a linear quantization method for `LinearBase` and a
+`FusedMoEMethodBase` implementation for `FusedMoE`; the two contracts differ.
+
+## Speculative decoding quick reference
+
+### Use method-specific configuration
+
+Use `method="suffix"` for draft-free dynamic-depth speculation,
+`method="ngram"` for prompt lookup, `method="mtp"` for compatible assistant
+checkpoints, and `method="draft_model"` for an explicit drafter. Custom
+proposers use `method="custom_class"` with their fully qualified class in the
+`model` field.
+
+### Keep drafter and target settings separate
+
+Use `draft_tensor_parallel_size` and the speculative configuration's
+`max_model_len` for the drafter. `temperature` and `top_p` remain sampling
+parameters. Heterogeneous vocabulary support is draft-model-only and greedy;
+it intersects normalized token strings and limits proposals to shared tokens.
+
+### Do not promise identical log probabilities
+
+Rejection sampling preserves the target distribution up to numerical
+precision, and greedy decoding is checked against non-speculative execution.
+Token log probabilities can still vary with hardware precision and batch
+composition.
+
+## Working method
+
+1. Inspect the installed vLLM version, model configuration, accelerator, and
+   launch mode.
+2. Open the relevant topic reference and identify defaults, removals, and
+   feature constraints that affect that exact setup.
+3. Prefer explicit request and engine settings when an upgrade changed a
+   default.
+4. Validate startup logs, health, cache capacity, request validation, and one
+   representative generation path before production rollout.
+5. For distributed changes, also validate rank arithmetic, network privacy,
+   shared memory, connector failure handling, and graceful shutdown.

@@ -10,229 +10,222 @@ metadata:
 
 # Trivy Knowledge Patch
 
-Use this skill when configuring, invoking, embedding, or consuming results from
-Trivy. Start with the quick references below, then load the topic reference that
-matches the work at hand.
+## Use this patch
+
+Load this patch when a task involves recent Trivy CLI behavior, scanner output,
+analyzers, vulnerability matching, misconfiguration evaluation, SBOM or VEX
+handling, secret detection, client/server transport, or embedding Trivy as a
+library.
+
+Before changing code or configuration:
+
+1. Determine the Trivy version used by the project, image, Helm release, or
+   client/server pair.
+2. Identify the scan target and enabled scanners.
+3. Read the matching topic reference below.
+4. Treat report fields, package identities, defaults, and filtering behavior as
+   compatibility-sensitive API surface.
+5. Prefer the installed version's schema, code, and tests if they disagree with
+   this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [CLI, reports, and runtime](references/cli-reports-and-runtime.md) | CLI defaults and validation, configuration, report identity and formats, server mode, databases, plugins, cloud scans |
-| [Images, registries, and operating systems](references/images-registries-and-os.md) | Image acquisition and history, registry behavior, OS detection, package metadata, lifecycle and vulnerability matching |
-| [Dependencies and licenses](references/dependencies-and-licenses.md) | Language package analyzers, lockfiles, workspace graphs, Maven behavior, license discovery and classification |
-| [SBOM, VEX, and attestations](references/sbom-vex-and-attestations.md) | CycloneDX and SPDX handling, VEX, embedded and attested SBOMs, dependency graphs and transport metadata |
-| [Misconfiguration and IaC](references/misconfiguration-and-iac.md) | Terraform/OpenTofu, CloudFormation, Kubernetes, Helm, Azure/GCP/AWS schemas, Rego, ignores, image checks |
-| [Secrets and filtering](references/secrets-and-filtering.md) | Secret inspection, exclusions, detectors, input validation, locations, and false-positive controls |
+| [CLI, reports, and runtime](references/cli-reports-and-runtime.md) | Flags, defaults, configuration, server behavior, report identities, templates, and metadata |
+| [Dependencies and licenses](references/dependencies-and-licenses.md) | Language analyzers, lockfiles, dependency graphs, package identity, and license discovery |
+| [Images, registries, and operating systems](references/images-registries-and-os.md) | Image acquisition, histories and layers, OS detection, package vulnerability matching, and lifecycle data |
+| [Misconfiguration and infrastructure as code](references/misconfiguration-and-iac.md) | Terraform, OpenTofu, CloudFormation, Azure, GCP, Kubernetes, Helm, Dockerfile, Rego, and check metadata |
+| [SBOM, VEX, and attestations](references/sbom-vex-and-attestations.md) | CycloneDX, SPDX, VEX discovery, attestations, graph preservation, and SBOM metadata |
+| [Secrets and filtering](references/secrets-and-filtering.md) | Secret inspection, detector rules, ignore semantics, scan exclusions, and result filtering |
 
-## Breaking changes and migration checks
+## Breaking changes and migrations
 
-### Migrate provider mappings
+### Replace provider-mapping `AVDID` with `ID`
 
 Misconfiguration provider mappings use `ID` rather than `AVDID` (since
-0.69.0). Update custom mapping structures and every consumer that reads the old
-field before upgrading.
+0.69.0). Update custom mappings and consumers before upgrading:
 
-### Migrate Docker configuration consumers
+```yaml
+# Old
+AVDID: AVD-AWS-0001
 
-Docker configuration uses the `dockers_v2` representation (since 0.72.0).
-Update integrations that deserialize or inspect the earlier representation.
+# Current
+ID: AVD-AWS-0001
+```
 
-### Decide whether all packages should be listed
+Do not add a compatibility fallback that silently accepts both fields unless
+the application intentionally supports versions on both sides of the change.
+See [Misconfiguration and infrastructure as code](references/misconfiguration-and-iac.md).
 
-`--list-all-pkgs` defaults to `true` (since 0.67.0). Set the old behavior
-explicitly when smaller, selective output is required:
+### Migrate Docker configuration consumers to `dockers_v2`
+
+The Docker configuration representation moved to `dockers_v2` (since 0.72.0).
+Any integration coupled to the previous representation must migrate its
+decoding, traversal, and tests. See
+[Images, registries, and operating systems](references/images-registries-and-os.md).
+
+### Account for the package-listing default
+
+`--list-all-pkgs` defaults to `true` (since 0.67.0). Automation expecting the
+older selective output must opt out explicitly:
 
 ```sh
 trivy image --list-all-pkgs=false alpine:3.22
 ```
 
-### Remove unsupported SBOM skip flags
+Expect package counts and downstream report processing to change when the flag
+is not pinned.
+
+### Stop passing filesystem skip flags to `sbom`
 
 The `sbom` command disables `--skip-dir` and `--skip-files` (since 0.63.0).
-Remove those flags from automation rather than expecting them to filter SBOM
-generation.
+Remove those flags from wrappers rather than assuming they still filter SBOM
+inputs.
 
-### Expect early input rejection
+## High-value CLI and report behavior
 
-Remote image retrieval rejects unsupported artifact types (since 0.64.0), and
-image scans reject inputs whose total layer size exceeds the configured limit
-(since 0.59.0). Treat both as input errors and surface them without retrying the
-same artifact unchanged.
+### Select an OS or severity source explicitly
 
-## High-value CLI behavior
-
-### Select the distribution manually
-
-Use `--distro` when automatic OS detection is missing or inappropriate. When
-overriding the OS, expect package PURLs to be rewritten to the selected OS
-identity.
-
-### Control vulnerability severity provenance
-
-Choose the severity source with `--vuln-severity-source`:
+Use `--distro` when automatic operating-system detection is missing or
+unsuitable (since 0.59.0). Use `--vuln-severity-source` to select the severity
+authority (since 0.60.0):
 
 ```sh
+trivy image --distro "<distribution>" alpine:3.20
 trivy image --vuln-severity-source nvd alpine:3.20
 ```
 
-### Use custom trust for cloud scans
+### Treat reports as identifiable artifacts
 
-Use `trivy cloud` for cloud scanning and `--cacert` when the endpoint requires a
-custom CA certificate.
+Recent reports can carry a UUIDv7 `ReportID`, vulnerability fingerprints, the
+image reference, Git repository metadata, and the producing Trivy version.
+Scan targets expose an `ArtifactID` whose calculation includes registry and
+repository. Persist these fields as identifiers instead of reconstructing them
+from display strings.
 
-### Validate generated configuration assumptions
+Repository URLs are sanitized before entering reports, cache hits preserve
+repository metadata, and repository scans require the repository-aware
+`ROOTPATH` behavior in SARIF. See
+[CLI, reports, and runtime](references/cli-reports-and-runtime.md).
 
-`--generate-default-config` excludes hidden flags. Configuration-only options
-track whether the user actually supplied them, so a default value is not
-equivalent to explicit configuration.
+### Validate client/server assumptions
 
-### Handle databases as shared runtime state
+Server values are schema-validated. HTTP tracing is available, server mode
+sets up an HTTP transport, and client/server reports can include both Trivy and
+server versions. Transport now preserves dependency relationships, repository
+class, build information, check aliases, and query data where applicable.
 
-The vulnerability database supports concurrent access. If contents disappear
-but metadata remains, Trivy downloads the database again; stale metadata alone
-is not a valid cache.
+If the client and server differ, test the serialized fields your integration
+uses rather than assuming local-mode parity.
 
-## High-value result behavior
+### Use concurrent database access deliberately
 
-### Preserve stable identities
+The vulnerability database supports concurrent access (since 0.68.0). If
+database contents disappear while metadata remains, Trivy downloads the
+database again instead of trusting the stale metadata (since 0.67.0).
 
-Targets expose an `ArtifactID` derived partly from registry and repository.
-Reports expose a UUIDv7 `ReportID`; vulnerability results carry fingerprints,
-and report metadata includes the image reference. Use these fields rather than
-inventing identity from display text.
+## High-value analyzer changes
 
-### Track analyzer provenance
+### Lockfile and workspace coverage
 
-Detected packages expose `AnalyzedBy`. Preserve it when transforming reports so
-consumers can identify which analyzer produced a package.
+Dependency analysis understands Poetry v2, uv development and optional
+dependencies, `bun.lock`, PEP 751 `pylock.toml`, multi-document pnpm lockfiles,
+overlapping pnpm workspaces, Yarn workspace relationships, Cargo workspaces and
+monorepos, and `.deps.json` dependency graphs. Do not flatten these inputs into
+unrelated package lists; preserve root, workspace, relationship, and package-ID
+information described in
+[Dependencies and licenses](references/dependencies-and-licenses.md).
 
-### Consume version metadata
+### Preserve package provenance and identity
 
-JSON reports include the producing Trivy version. Client/server JSON reports
-also include the server version, while the server `/version` response omits
-JavaDB and CheckBundle entries.
+Detected packages may expose `AnalyzedBy`. POM package IDs incorporate GAV
+coordinates and the root-POM path, pnpm uses the snapshot string as
+`Package.ID`, nested JARs have per-file digests, and an OS override also updates
+OS-package PURLs. Consumers should treat these emitted identities as canonical.
 
-### Account for repository scans
+### Follow Maven configuration
 
-Filesystem scans become repository artifacts when Git metadata is detected.
-Repository metadata is preserved through filesystem-cache hits, its URL is
-sanitized before reporting, and SARIF uses the repository-aware `ROOTPATH` URI.
+Java analysis can consume environment substitutions, repositories, proxies,
+and mirrors from Maven `settings.xml`, plus configured mirrors from
+`trivy.yaml`. HTTP 429 during remote POM resolution is fatal rather than a
+partial success. Preserve dependency exclusions and inherited model data.
 
-## High-value SBOM and VEX behavior
+### Keep license expressions intact
 
-### Keep the source document structure
+License handling distinguishes SPDX identifiers from expressions, preserves
+`WITH` exceptions as part of one license, supports compound expressions, and
+uses canonical SPDX identifiers. Avoid splitting an expression into unrelated
+licenses or normalizing literal `unlicensed` to `Unlicense`.
 
-Updating vulnerabilities in a CycloneDX file preserves its structure. Trivy
-also preserves applications of the same type from different SBOM files and OS
-packages collected from multiple SBOM inputs.
+## High-value image and vulnerability behavior
 
-### Load VEX from all supported locations
+### Recognize expanded operating-system coverage
 
-CycloneDX documents can reference external VEX files. VEX can also be loaded
-from the scanned repository, and each VEX repository can have its own TLS
-configuration.
+Recent analyzers cover Bottlerocket, MinimOS, AlmaLinux 10, Root.io images,
+Photon 5.0, CoreOS SBOMs, Ubuntu 26.04 LTS, RapidFort curated images, and other
+new lifecycle and package cases. RHEL-derived images can be recognized through
+`os-release`, while third-party Debian and Ubuntu packages are excluded from
+distribution vulnerability matching.
 
-### Preserve graph semantics
+### Preserve image origin information
 
-Nested packages remain attached to their application, unknown dependencies can
-be associated with a root package, and OS packages from both inside and outside
-an SBOM dependency graph are merged. Do not flatten these relationships during
-post-processing.
+Layer metadata is available to report consumers. Custom resources can be
+attributed to their origin layer after layers are merged, Docker archives keep
+`RepoTags`, and embedded-SBOM scans are deterministic. Image history handling
+also normalizes legacy and non-BuildKit instruction forms.
 
-### Accept modern and attested formats
+### Handle missing or driver-owned vulnerability data
 
-CycloneDX 1.7, Sigstore-bundle SBOMs, SPDX attestations, and SPDX documents
-without a root component are valid inputs. Docker archives retain `RepoTags`.
+Packages covered by a detector driver's own advisory feed are no longer
+skipped. When vulnerability details are unavailable, results use `UNKNOWN`
+severity. Embedders using `ospkg.NewScanner` can expect detector options to be
+forwarded.
 
-## High-value dependency analysis
+## High-value IaC behavior
 
-### Respect workspace and graph context
+### Evaluate Terraform and OpenTofu with full context
 
-Yarn and Cargo analysis records root/workspace packages and relationships.
-Node.js peer dependencies affect the resulting tree, `.NET` uses dependency
-graphs from `.deps.json`, and pnpm snapshot strings form package IDs.
+Terraform evaluation handles module instances, block instances, map-based
+`for_each`, unknown dynamic iteration, cached remote modules, plan schema
+recovery, and filesystem-function traversal boundaries. OpenTofu-specific file
+extensions, module detection, and `language` blocks are recognized.
 
-### Configure Maven resolution completely
-
-Maven analysis expands all environment placeholders and reads repositories,
-proxies, and mirrors from `settings.xml`. Parent POM properties and repositories
-flow into dependencies. An HTTP 429 from a remote repository is fatal because
-continuing would yield incomplete resolution.
-
-### Use current Python inputs
-
-Python analysis supports uv dependency groups, Poetry v2, `.egg-info/METADATA`,
-and PEP 751 `pylock.toml`. PEP 770 files below `.dist-info/sboms/` are excluded
-from ordinary SBOM discovery.
-
-### Preserve license expressions
-
-Treat SPDX identifiers, compound expressions, and `WITH` exceptions
-semantically. Do not normalize the literal `unlicensed` to `Unlicense`, and do
-not split an SPDX exception from its license during category detection.
-
-## High-value misconfiguration behavior
-
-### Treat unknown Terraform values as unknown
-
-Missing variables become unknown values. Dynamic blocks expand only when
-`for_each` is known, while map-valued `for_each` creates one resource per key.
-Terraform filesystem functions prevent path traversal.
-
-### Apply parser options consistently
-
-Terraform parser options apply to submodules, including remote modules cached
-under `.terraform`; cached submodules retain their original paths. A parser
-working directory can be set explicitly.
-
-### Modernize custom Rego integration
-
-The IaC scanner accepts an injected Rego scanner. Policies can consume raw
-Terraform data, ignore finding types, and use a configurable error limit.
-Manifest diagnostic snippets include map keys.
-
-### Apply ignores predictably
+### Apply ignores using current semantics
 
 Inline ignores work for Dockerfiles and Helm content. Chart-subdirectory paths
-are respected, identifiers match case-insensitively, and `.trivyignore` applies
-check aliases. An ignore-marker expression only suppresses a result when its
-value is known and non-null.
+are respected, ignore IDs are case-insensitive, and `.trivyignore` resolves
+check aliases. An ignore-marker expression only applies when its value is both
+known and non-null.
 
-### Prefer parsed effective image state
+### Preserve Rego diagnostics
 
-For image misconfiguration, `.Config.User` wins over `USER` history entries.
-Buildah, legacy-builder, non-BuildKit, and build-metadata history forms are
-normalized or reconstructed before instruction checks run.
+Embedders can inject a Rego scanner. Policies can consume raw Terraform data,
+ignore findings by type, and use a configurable error limit. Diagnostic
+snippets include map keys, and check metadata interprets boolean values as
+booleans.
 
-## High-value secret scanning
+## High-value SBOM, VEX, and secret behavior
 
-### Keep client/server scans equivalent
+### Preserve SBOM structure
 
-The configuration analyzer performs secret inspection in client/server mode.
-Repository class and other package metadata should survive RPC transport.
+CycloneDX updates retain the source SBOM's structure, including applications,
+OS packages, dependency graphs, file components, hashes, licenses, and build
+metadata. SPDX handling tolerates documents without a root component and uses
+`NOASSERTION` for non-library package license assertions.
 
-### Customize exclusions
+### Discover VEX from supported locations
 
-Skipped secret-scan folders, files, and extensions are configurable. Python
-`.dist-info` directories and the secret-scanner configuration file itself are
-excluded from inspection.
+VEX can be referenced by CycloneDX, stored within the scanned repository, or
+published as an OCI artifact through generic in-toto referrers. Apply
+repository-specific TLS settings, reject non-local repository names where
+required, and do not suppress vulnerabilities merely because a package graph
+loops.
 
-### Preserve safe input and locations
+### Keep secret scanning transport-safe
 
-Secret input is validated as UTF-8 before protobuf marshalling. Multiline secret
-line numbers are corrected, so downstream presentation should use the reported
-locations directly.
-
-## Working method
-
-1. Identify the scan target and mode: image, filesystem, repository, SBOM,
-   Kubernetes, cloud, or client/server.
-2. Check the relevant CLI defaults and breaking migrations before composing
-   flags or configuration.
-3. Load the matching topic reference and retain its version-sensitive behavior
-   in code, templates, and report consumers.
-4. Preserve IDs, graph relationships, provenance, paths, and transport metadata
-   unless a downstream contract explicitly requires a lossy transformation.
-5. Validate automation against expected failure behavior, especially input
-   rejection, template validation, Maven throttling, and unknown IaC values.
+Client/server analysis performs secret inspection. Secret inputs are validated
+as UTF-8 before protobuf transport, multiline locations use corrected line
+numbers, and configured skip folders, files, and extensions are honored. The
+scanner excludes its own configuration file and supports newer cloud, Maven,
+OpenAI API-key, and GitHub App token patterns.

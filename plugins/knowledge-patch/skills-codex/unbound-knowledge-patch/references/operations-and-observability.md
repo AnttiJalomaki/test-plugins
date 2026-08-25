@@ -1,109 +1,95 @@
 # Operations and observability
 
-## Fast and ordinary reloads
+## Secrets, trust anchors, and access
 
-`unbound-control fast_reload` parses changed configuration in a thread and
-briefly pauses service threads, keeping DNS interruption below one second
-(since 1.23.0):
+### Persistent EDNS COOKIE rollover
 
-```sh
-unbound-control fast_reload
-```
+`cookie-secret-file` persists secrets for rollover (since 1.21.0). Rotate at
+runtime with `add_cookie_secret`, `activate_cookie_secret`, and
+`drop_cookie_secret`; inspect active values with `print_cookie_secrets`.
 
-Dnstap configuration is copied from the daemon to worker threads during fast
-reload (since 1.24.0).
+### Compiled root key
 
-Certificate-file changes are detected during reload and TLS contexts are
-rebuilt for DoT, DoH, DoQ, and outgoing DoT (since 1.25.0). `fast_reload`
-handles `tls-service-key`, `tls-service-pem`, and `tls-cert-bundle`. It also
-propagates changes to `iter-scrub-ns`, `iter-scrub-cname`, and
-`max-global-quota`, allowing these updates and certificate renewals without a
-full restart.
+The default `unbound-anchor` root keys include key 38696 (since 1.21.0). Use
+`unbound-anchor -l` to inspect compiled-in content.
 
-Reload does not fail solely because the Redis cachedb backend cannot connect
-or respond (since 1.23.0); the backend details are in
-[cache-resolution-and-validation.md](cache-resolution-and-validation.md).
-
-## Cache inspection
-
-`cache_lookup` prints cached RRsets and messages for selected names and
-includes matching subnet-cache content (since 1.24.0):
-
-```sh
-unbound-control cache_lookup example.com
-unbound-control cache_lookup +t .
-```
-
-Use `+t` to accept TLD and root names. `dump_cache` periodically releases cache
-locks and separates file-descriptor activity from cache lookups, keeping the
-resolver responsive during long dumps (since 1.24.0).
-
-## Remote-control access and validation
+### Control-key group access
 
 Members of the `unbound` group can access the control key (since 1.23.0).
+Account for that authorization when assigning group membership.
 
-Each `control-interface` can name its own port with `IP@port` (since 1.25.0):
+### Extended certificate bundle
 
-```conf
-remote-control:
-    control-interface: 127.0.0.1@8953
-```
+The built-in `icannbundle.pem` contains ICANN keys covering 2009–2029 and
+2025–2045 (since 1.26.0). Inspect built-in material with `unbound-anchor -l`;
+use `-c /path/to/icannbundle.pem` for an externally updateable bundle.
 
-Commands that take no arguments reject extraneous arguments (since 1.24.0).
+## Reload behavior
 
-## EDNS COOKIE rotation and rate limiting
+### Fast reload
 
-`cookie-secret-file` persists COOKIE secrets for rollover (since 1.21.0):
+`unbound-control fast_reload` parses changed configuration in a separate
+thread and pauses service threads briefly (since 1.23.0), keeping DNS
+interruption below a second.
 
-```conf
-server:
-    cookie-secret-file: "unbound_cookiesecrets.txt"
-```
+### Redis-independent reload
 
-Use `add_cookie_secret`, `activate_cookie_secret`, and `drop_cookie_secret` to
-rotate secrets. `print_cookie_secrets` displays the values currently in use.
+A reload continues when Redis cachedb cannot connect or respond (since
+1.23.0). Unbound logs the failure and checks expiration features only when the
+server is available.
 
-`ip-ratelimit-cookie` is applied to COOKIE clients (since 1.21.0). An existing
-configuration that already sets it begins enforcing that intended limit after
-upgrade.
+### Dnstap propagation
 
-## Dnstap
+Dnstap configuration changes are copied from the daemon into worker threads
+after `fast_reload` (since 1.24.0).
 
-`dnstap-sample-rate` emits one out of every N messages, reducing output volume
-(since 1.21.0):
+### Failure containment
 
-```conf
-dnstap:
-    dnstap-sample-rate: 100
-```
+`fast_reload` no longer terminates the daemon on key-file configuration errors
+(since 1.26.0). It safely handles in-progress ZONEMD checks and auth-zone
+primary-name lookups or removals without stale callbacks or results.
 
-Both dnstap and `unbound-dnstap-socket` can be linked in a build that does not
-link OpenSSL (since 1.21.0).
+## Cache commands
 
-## DNS Error Reporting
+### Negative-cache flush reporting
 
-RFC 9567 DNS Error Reporting is enabled with `dns-error-reporting`, and sent
-reports are counted in `num.dns_error_reports` (since 1.23.0).
+`unbound-control flush_negative` reports removed data correctly (since
+1.23.0).
 
-## Limit and mesh statistics
+### Targeted cache lookup
 
-Statistics report discard-timeout and wait-limit activity (since 1.23.0).
-They also expose `num.queries.replyaddr_limit` and
+`unbound-control cache_lookup <domains>` prints selected cached RRsets and
+messages (since 1.24.0). Prefix with `+t` for TLD or root names; matching
+subnet-cache data is included.
+
+### Responsive full dumps
+
+`dump_cache` releases cache locks periodically and separates file-descriptor
+activity from cache lookups (since 1.24.0), preserving responsiveness during
+long dumps.
+
+### Exact local-data removal
+
+`unbound-control local_data_remove` accepts a complete RR (since 1.26.0), so
+one record can be removed without deleting all local data at its owner.
+
+## Counters and logging
+
+### Mesh reply counters
+
+Statistics expose `num.queries.replyaddr_limit` and
 `requestlist.current.replies` (since 1.24.0). Packets dropped by
-`discard-timeout` decrement the mesh reply-address-in-use count.
+`discard-timeout` reduce the mesh reply-address-in-use count.
 
-## Diagnostics and logging
+### Linux system thread IDs
 
-Unbound warns when the operating system does not grant the `so-sndbuf`
-`setsockopt` request (since 1.24.0).
+On Linux, `log-thread-id: yes` selects the system-wide thread ID instead of
+Unbound's internal counter (since 1.25.0), aiding correlation with system
+tools.
 
-On Linux, `log-thread-id` selects the system-wide thread ID instead of
-Unbound's internal counter (since 1.25.0):
+## Command validation
 
-```conf
-server:
-    log-thread-id: yes
-```
+### Strict argument checking
 
-This makes resolver messages easier to correlate with operating-system
-diagnostic tools.
+Remote-control commands that accept no arguments reject extras (since
+1.24.0). Treat previous scripts that appended harmless arguments as invalid.

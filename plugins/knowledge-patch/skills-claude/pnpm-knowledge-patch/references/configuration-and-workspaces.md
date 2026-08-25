@@ -1,47 +1,47 @@
-# Configuration and workspaces
+# Configuration and Workspaces
 
-This reference covers workspace policy, configuration hooks, catalogs, local
-packages, deploy, hoisting, and peers. Relevant extraction markers include
-`2025-01`, `2025-02`, `2025-03`, `2025-04`, `2025-05-06`, `2025-07`,
-`2025-08`, `2026-01-02`, `2026-03`, `11.0.0`, `11.4-11.5`, and
-`11.10-11.17`.
+Use this reference for configuration placement, workspace mechanics, catalogs,
+hooks, linking, deployment, hoisting, and package maps.
 
-## Workspace configuration
+## Configuration Sources
 
-In later pnpm 10, `pnpm-workspace.yaml` accepts every `.npmrc` setting using
-camelCase keys. It may contain settings without a `packages` field, so it can
-exist solely for workspace policy such as build approvals.
+### Workspace settings (batches `2025-02` and `2025-03`)
+
+`pnpm-workspace.yaml` may exist without a `packages` field and may hold every
+setting accepted by `.npmrc`. Write keys in camelCase. Environment-variable
+substitution is supported in both keys and values.
+
+`pnpm config get` and `pnpm config list` include workspace-file settings.
+`pnpm config set --location=project` writes to `pnpm-workspace.yaml` when the
+project has no `.npmrc`.
 
 ```yaml
 verifyDepsBeforeRun: install
-optimisticRepeatInstall: true
 publicHoistPattern:
   - "*types*"
   - "!@types/react"
-onlyBuiltDependencies:
-  - esbuild
 ```
 
-Environment variables may appear in setting names and values.
-`pnpm config get` and `pnpm config list` include workspace settings. When the
-project has no `.npmrc`, this writes to `pnpm-workspace.yaml`:
+pnpm preserves comments, quoting, whitespace, and formatting when it updates
+`pnpm-workspace.yaml` (batch `2026-03`).
 
-```sh
-pnpm config set --location=project verifyDepsBeforeRun install
-```
+### pnpm 11 authoritative locations (batch `migration-10-to-11`)
 
-When pnpm updates the workspace file, current versions preserve comments,
-quoted-string style, whitespace, and other hand-maintained formatting.
+pnpm 11 ignores `package.json#pnpm`. Keep only authentication and registry
+settings in `.npmrc`; put all other settings in `pnpm-workspace.yaml`.
+The migration codemod places a subproject's old `.npmrc` settings under
+`packageConfigs["<project-name>"]`.
 
-In pnpm 11, the workspace file is authoritative for all settings except
-registry and authentication data. Do not retain policy in the ignored `pnpm`
-field of `package.json` or in `.npmrc`.
+pnpm 11 ignores `npm_config_*` for pnpm configuration; rename these variables
+to `pnpm_config_*` in CI, shells, and container configuration. User-supplied
+`npm_config_*` variables forwarded to lifecycle scripts are a separate
+behavior described in the CLI reference.
 
-## Structured config access
+### Structured config paths (batch `2025-08`)
 
-`pnpm config get` and `set` accept dotted, leading-dot, and bracket paths.
-Object values print as INI by default; `--json` serializes reads or parses a
-written JSON value.
+`pnpm config get` and `set` accept dotted paths, leading-dot paths, and bracket
+notation. Object reads use INI serialization by default. `--json` serializes a
+read as JSON or parses a value being written as JSON.
 
 ```sh
 pnpm config get catalog.react
@@ -50,14 +50,44 @@ pnpm config set .ignoreScripts true
 pnpm config get --json catalog
 ```
 
-Reporter output for `pnpm config` goes to stderr in newer pnpm 11, leaving
-stdout suitable for scripts.
+### Machine-level settings are not project settings (batch `2026-08`)
 
-## pnpmfile hooks and config dependencies
+Workspace configuration cannot set `bin`, `configDir`, `dir`, `globalBinDir`,
+`globalDir`, `npmrcAuthFile`, `pnpmHomeDir`, `stateDir`, `userconfig`, or
+`workspaceDir`. pnpm ignores and warns on these keys.
 
-The experimental `.pnpmfile.cjs` `hooks.updateConfig` hook may rewrite the
-resolved pnpm settings. Local pnpmfiles may also define `preResolution`,
-`importPackage`, and `fetchers` hooks.
+Project-scoped `pnpm config set` rejects them with
+`ERR_PNPM_CONFIG_SET_NOT_A_PROJECT_SETTING`, and `--config.*` aliases do not
+bypass the boundary. Dedicated flags such as `--global-dir` still work, and
+`pnpm config delete` can remove stale workspace keys. `cacheDir` and
+`storeDir` remain valid project settings.
+
+## Config Dependencies
+
+### Definition and installation (batches `2025-01` and `2025-04`)
+
+`pnpm.configDependencies` are installed before production, development, and
+optional dependencies. Each entry requires an exact version plus an integrity
+checksum. Config dependencies cannot have ordinary dependencies or lifecycle
+scripts.
+
+Use `pnpm add --config <package>` to create the checksummed entry:
+
+```sh
+pnpm add --config my-config@1.0.0
+```
+
+Config dependencies may have one level of `optionalDependencies` selected by
+`os`, `cpu`, and `libc`. These optionals require exact versions, and the
+environment lockfile records variants for every platform (batch `11.1-11.3`).
+
+## pnpmfile Hooks and Plugins
+
+### Configuration and local hooks (batch `2025-04`)
+
+The experimental `hooks.updateConfig` hook in `.pnpmfile.cjs` can rewrite pnpm
+settings. Local pnpmfiles may also export `preResolution`, `importPackage`,
+and `fetchers` hooks.
 
 ```js
 module.exports = {
@@ -67,7 +97,12 @@ module.exports = {
 }
 ```
 
-The `pnpmfile` setting accepts multiple hook files:
+### Multiple files and plugin discovery (batches `2025-07` and `2025-08`)
+
+`pnpmfile` accepts a list. Config dependencies named `@pnpm/plugin-*`,
+`pnpm-plugin-*`, or scoped `@scope/pnpm-plugin-*` packages have their
+`pnpmfile.cjs` loaded automatically. Plugin files are loaded alphabetically;
+list files explicitly when order matters.
 
 ```yaml
 pnpmfile:
@@ -75,189 +110,156 @@ pnpmfile:
   - ./hooks/second.pnpmfile.cjs
 ```
 
-Config dependencies named `@pnpm/plugin-*`, `pnpm-plugin-*`, or later
-`@scope/pnpm-plugin-*` have their `pnpmfile.cjs` loaded automatically in
-alphabetical order. List files explicitly when exact ordering matters.
+pnpm 11 also supports `.pnpmfile.mjs`. If both default module formats exist,
+the ESM file takes precedence and only one of the two is loaded
+(batch `11.0.0`).
 
-pnpm 11 also supports `.pnpmfile.mjs`. When `.mjs` and `.cjs` both exist,
-`.mjs` wins and only one file is loaded. A custom fetcher may return
-`{ delegate: resolution }` to rewrite a resolution and invoke pnpm's built-in
-fetcher; this is also the portable delegation form when pacquet hook code does
-not receive `cafs` and `fetchers`.
+### Delegating a custom fetch (batch `11.10-11.17`)
 
-## Config dependencies
+A custom fetcher may return `{ delegate: resolution }` to rewrite a resolution
+and invoke pnpm's built-in fetcher. This is the portable pacquet form because
+its hooks cannot receive `cafs` and `fetchers`.
 
-`pnpm.configDependencies` are installed before normal, development, and
-optional project dependencies. Each root entry uses an exact version plus an
-integrity checksum, and cannot itself have normal dependencies or lifecycle
-scripts.
+## Catalogs
 
-```json
-{
-  "pnpm": {
-    "configDependencies": {
-      "my-configs": "1.0.0+sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="
-    }
-  }
-}
-```
+### Adding and saving dependencies (batches `2025-01` and `2025-05-06`)
 
-Prefer the CLI to generate that entry:
+`pnpm add` writes `catalog:` when the request matches the default workspace
+catalog; omitting the requested range also selects the catalog. A nonmatching
+request remains a direct specifier.
 
-```sh
-pnpm add --config my-config@1.0.0
-```
-
-pnpm 11 permits one level of `optionalDependencies` for config dependencies,
-filtered by `os`, `cpu`, and `libc`. Those optional versions must be exact, and
-the environment lockfile records all platform variants.
-
-## Root links and overrides
-
-Early pnpm 10 `pnpm link` wrote a root override into `package.json`, making the
-link affect every workspace project. Later pnpm 10 writes that override to
-`pnpm-workspace.yaml`; `pnpm audit --fix` likewise updates overrides stored
-there. Inspect the pnpm version before assuming which file changes.
-
-To create a global link in early pnpm 10, run `pnpm link` from the package
-directory rather than `pnpm link -g`. pnpm 11 removes argument-free link and
-`pnpm link --global`; use `pnpm add -g .` for the global-package case. Local
-linking needs a filesystem path:
-
-```sh
-pnpm link ./foo
-```
-
-## Injected workspace dependencies and deploy
-
-`injectWorkspacePackages: true` hard-links local workspace dependencies rather
-than symlinking them. pnpm 10 requires injection for `pnpm deploy`. It attempts
-to derive a dedicated lockfile from the shared workspace lockfile and falls
-back to no deployment lockfile when derivation is impossible or
-`forceLegacyDeploy: true` is selected.
-
-For injected packages, name scripts after which consumers should be
-resynchronized:
-
-```ini
-sync-injected-deps-after-scripts[]=compile
-```
-
-Set each synchronized script at the workspace root. Deployment ignores
-`enableGlobalVirtualStore` and creates its virtual store inside the destination
-so output is self-contained. Current pnpm 11 can deploy workspaces whose
-dependencies use catalogs.
-
-## Catalog behavior
-
-When `pnpm add` finds the requested package and compatible range in the default
-workspace catalog, it writes `catalog:`. Omitting the range also selects the
-catalog entry; an incompatible request keeps a normal dependency specifier.
-
-`catalogMode` controls automatic additions:
-
-- `manual` (default): never add to a catalog automatically;
-- `strict`: reject a request outside the catalog range;
-- `prefer`: use a compatible catalog entry, otherwise save a direct specifier.
-
-```yaml
-catalogMode: strict
-cleanupUnusedCatalogs: true
-```
-
-`pnpm update` updates `catalog:` dependencies and their declarations in
-`pnpm-workspace.yaml`. `cleanupUnusedCatalogs` removes unreferenced catalog
-entries during install.
-
-Save directly to the default or named catalog:
+Use `--save-catalog` for the default catalog or
+`--save-catalog-name=<name>` for a named catalog:
 
 ```sh
 pnpm add --save-catalog lodash
 pnpm add --save-catalog-name=testing vitest
 ```
 
-The consuming manifest receives `catalog:` or `catalog:<name>`. `pnpm dlx`
-and `pnpx` also accept a workspace catalog specifier:
+The package manifest receives `catalog:` or `catalog:<name>` accordingly.
+
+### Catalog update modes (batch `2025-05-06`)
+
+`pnpm update` updates catalog-backed dependencies in `pnpm-workspace.yaml`.
+`catalogMode` controls additions:
+
+- `strict` rejects versions outside the catalog range.
+- `prefer` uses a compatible catalog version and falls back to a direct
+  dependency otherwise.
+- `manual`, the default, does not select catalog entries automatically.
+
+`cleanupUnusedCatalogs` removes unused entries during installation
+(batch `2025-08`).
+
+The newer name is `catalogPrune`; the old setting remains accepted, but the new
+one wins if both appear (batch `2026-08`).
+
+With a non-manual catalog mode, explicit `add` or `update` versions move a
+compatible catalog entry's resolved version instead of silently discarding the
+request. Strict mode accepts versions inside the range and rejects those
+outside. Workspace projects omitted from the operation pick up the moved
+resolution on their next install (batch `2026-08`).
+
+### Catalog protocol variants
+
+Bare `workspace:` is equivalent to `workspace:*` and becomes a concrete
+version during publishing (batch `2026-01-02`).
+
+`pnpm dlx` and `pnpx` accept `catalog:` versions (batch `2026-01-02`).
+`pnpm deploy` supports catalog-managed workspace dependencies
+(batch `11.10-11.17`).
+
+## Linking and Injected Workspace Packages
+
+### Link overrides (batches `2025-01`, `2025-04`, and `migration-10-to-11`)
+
+Early pnpm 10 `pnpm link` wrote a root override to `package.json`, applying it
+to every project in a workspace. Later pnpm 10 writes that override to
+`pnpm-workspace.yaml`; `pnpm audit --fix` also updates overrides stored there.
+For a pnpm 10 global link, run argument-free `pnpm link` from the package
+directory rather than using `pnpm link -g`.
+
+pnpm 11 requires `pnpm link` to receive a relative or absolute filesystem
+path; it no longer resolves a package name from the global store.
 
 ```sh
-pnpm dlx shx@catalog:
+pnpm link ./foo
 ```
 
-## Workspace protocol and JSR
+### Injected packages and deployment (batches `2025-01` and `2025-02`)
 
-`workspace:` with no range is equivalent to `workspace:*`; publishing replaces
-it with the concrete workspace package version.
+`inject-workspace-packages=true` hard-links all local workspace dependencies
+instead of symlinking and is required for pnpm 10 `deploy`. Deployment derives
+a dedicated lockfile from the shared workspace lockfile, falling back to no
+deployment lockfile if none exists or `force-legacy-deploy=true`.
 
-The `jsr:` protocol installs JSR packages with an optional range. A scoped JSR
-package is saved under its ordinary package name and converted to an npm alias
-for publishing. `@jsr` defaults to `https://npm.jsr.io/` unless overridden by
-`@jsr:registry`.
+`sync-injected-deps-after-scripts` names root-configured scripts after which
+`pnpm run` resynchronizes an injected package into its consumers.
 
-```sh
-pnpm add jsr:@foo/bar
-pnpm add jsr:@foo/bar@^0.1
+```ini
+sync-injected-deps-after-scripts[]=compile
 ```
 
-```json
-{
-  "dependencies": {
-    "@foo/bar": "jsr:^0.1.2"
-  }
-}
-```
+`pnpm deploy` always creates a deployment-local virtual store and ignores
+`enableGlobalVirtualStore`, keeping the output self-contained
+(batch `2026-01-02`).
 
-## Peer dependencies
+## Peer Dependency Layout
 
-pnpm 10.1 allows `workspace:` and `catalog:` specifiers to participate in wider
-`peerDependencies` ranges. When auto-installing a missing peer, pnpm 10.15+
-prefers a matching version already present in the root workspace package's
-direct dependencies.
+### Root-guided automatic peers (batch `2025-08`)
 
-Enable `dedupePeers` to use version-only peer identifiers instead of full
-dependency paths in peer suffixes. This avoids nested suffix chains and reduces
-duplicates in recursive peer graphs:
+When pnpm auto-installs a missing peer, it prefers a version already declared
+as a direct dependency of the root workspace project. Upgrades can therefore
+change peer selection even without a peer-range change; this selection rule
+arrived in pnpm 10.15.
 
-```yaml
-dedupePeers: true
-```
+`workspace:` and `catalog:` specifiers may participate in wider
+`peerDependencies` ranges rather than being restricted to exact workspace or
+catalog matches (batch `2025-01`).
 
-Current peer dependency entries may use named-registry, `npm:` alias, `file:`,
-Git, or URL schemes. Matching extracts the range inside the scheme—for example,
-`5.x.x` from `work:5.x.x` or `^5` from `npm:bar@^5`—and uses `*` if no version
-appears. Bare `name@version` remains invalid.
+### Deduplicate recursive peers (batch `2026-03`)
 
-## Convergence overrides
+`dedupePeers: true` uses version-only peer identifiers rather than full
+dependency paths in peer suffixes. This prevents nested suffix chains and
+reduces duplicate package instances in recursive peer graphs.
 
-An empty-range override selector changes only dependency edges whose declared
-range accepts the exact override value. It converges compatible consumers
-without forcing incompatible ones:
+### Scheme-bearing peer specifiers (batch `11.10-11.17`)
 
-```yaml
-overrides:
-  "form-data@": 4.0.6
-```
+Peer dependencies may use named-registry, `npm:` alias, `file:`, Git, or URL
+specifiers. Matching uses the embedded range, such as `5.x.x` from
+`work:5.x.x` or `^5` from `npm:bar@^5`; a scheme without a version uses `*`.
+Bare `name@version` values remain invalid.
 
-The replacement must be exact. pnpm warns when every declared range would
-allow a newer convergence target.
+## Linkers, Hoisting, and Package Maps
 
-## Hoisting and package maps
+The default public hoist pattern no longer makes names containing `eslint` or
+`prettier` visible at the root; configure public hoisting explicitly when
+tooling depends on it (batch `2025-01`).
 
-pnpm 10 no longer implicitly public-hoists package names containing `eslint`
-or `prettier`. Configure `publicHoistPattern` when those dependencies need to
-appear at the root of `node_modules`.
+`verifyDepsBeforeRun` is unsupported with `nodeLinker: pnp` and only warns;
+PnP projects cannot rely on that stale-dependency check (batch `2025-04`).
 
-With `nodeLinker: hoisted`, set `hoistingLimits` to:
+With `nodeLinker: hoisted`, `hoistingLimits` accepts (batch `11.4-11.5`):
 
-- `none` (default), hoist as far as possible;
-- `workspaces`, stop at each workspace package;
-- `dependencies`, stop at each workspace package's direct dependencies.
+- `none`, the default, for maximum hoisting;
+- `workspaces`, stopping at each workspace project; or
+- `dependencies`, stopping at each project's direct dependencies.
 
-```yaml
-nodeLinker: hoisted
-hoistingLimits: workspaces
-```
+Isolated and hoisted installations generate
+`node_modules/.package-map.json`. Enable `nodeExperimentalPackageMap` to inject
+it into pnpm-managed Node.js scripts; `nodePackageMapType: standard` exposes
+declared dependencies only, while `loose` also exposes other reachable
+installed packages (batch `11.6-11.9`).
 
-Both isolated and hoisted installs create `node_modules/.package-map.json`.
-`nodeExperimentalPackageMap: true` injects it into pnpm-managed Node.js
-processes. `nodePackageMapType: standard` exposes only declared dependencies;
-`loose` includes other reachable packages.
+## Workspace Execution
+
+The default `workspaceConcurrency` is
+`Math.min(os.availableParallelism(), 4)`, so recursive execution uses at most
+four concurrent tasks unless configured otherwise (batch `2025-05-06`).
+
+`pnpm -r pack` packs each workspace project (batch `2025-05-06`). For script
+matching and sequential execution, see the CLI reference.
+
+`pnpm prune` is recursive by default in a workspace. Root
+`pnpm prune --prod` preserves production workspace links required by other
+projects (batch `2026-08`).

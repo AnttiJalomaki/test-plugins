@@ -1,224 +1,362 @@
 # Standard Library
 
-Use this reference to select stable APIs, check their minimum release, and account for observable contract changes. Low-level preconditions for pointers, allocation, atomics, and FFI are expanded in [safety-ffi-and-low-level.md](safety-ffi-and-low-level.md).
+## Collections, slices, and extraction
 
-## Collections and simultaneous access
+### Disjoint mutable access
 
-### Disjoint mutable borrowing
-
-Slices and `HashMap` provide `get_disjoint_mut` and `get_disjoint_unchecked_mut` from 1.86.0. Slices return `GetDisjointMutError` from the checked form.
+Slices and `HashMap` can return several mutable references at once from
+`1.86.0`. This is the renamed stable form of nightly `get_many_mut`. Slice
+`get_disjoint_mut` accepts an array of indices or ranges and
+returns `Result<_, slice::GetDisjointMutError>` on overlap or out-of-bounds;
+`HashMap::get_disjoint_mut` accepts key references. Both types also expose
+unchecked variants.
 
 ```rust
-let values = &mut [1, 2, 3];
-if let Ok([first, last]) = values.get_disjoint_mut([0, 2]) {
-    *first = 10;
-    *last = 30;
+let v = &mut [1, 2, 3];
+if let Ok([a, b]) = v.get_disjoint_mut([0, 2]) {
+    *a = 413;
+    *b = 612;
 }
 ```
 
-Use the checked operation unless distinctness is already guaranteed; the unchecked form requires every selected location to be in bounds and mutually disjoint.
+### Conditional removal
 
-### Conditional extraction
+The collection-specific `extract_if` signatures differ:
 
-- `Vec::extract_if` and `LinkedList::extract_if` provide draining iterators for selected elements from 1.87.0.
-- `BTreeMap::extract_if` and `BTreeSet::extract_if` are stable from 1.91.0.
-- B-tree `Entry` and `VacantEntry` gain `insert_entry` from 1.92.0.
+- `Vec::extract_if(range, predicate)` (`1.87.0`) visits only the range and
+  yields removed matches. Dropping the iterator early leaves unvisited values
+  in the vector.
+- `LinkedList::extract_if(predicate)` (`1.87.0`) has no range.
+- `HashMap::extract_if(predicate)` and `HashSet::extract_if(predicate)`
+  (`1.88.0`) have no range and arbitrary iteration order.
+- `BTreeMap::extract_if(range, predicate)` and
+  `BTreeSet::extract_if(range, predicate)` (`1.91.0`) visit a key range and
+  yield removals in sort order.
 
-### B-tree and heap contracts
+`Vec::pop_if` conditionally removes the last item (`1.86.0`).
+`VecDeque::pop_front_if` and `pop_back_if` provide the deque forms in `1.93.0`.
 
-- Appending a B-tree entry whose key is already present no longer replaces the stored key (1.93.0); the existing key object is retained.
-- Some `BinaryHeap` methods no longer require `T: Ord` (1.94.0); check the individual method rather than adding an unnecessary bound.
+### Insertion and entries
 
-## Slices, arrays, and views
+`Vec::push_mut`/`insert_mut`, `VecDeque::push_front_mut`/`push_back_mut`/
+`insert_mut`, and `LinkedList::push_front_mut`/`push_back_mut` return a mutable
+reference to the inserted element (`1.95.0`).
 
-### Splitting and windows
+`btree_map::Entry::insert_entry` and `VacantEntry::insert_entry` return an
+`OccupiedEntry`, matching the `HashMap` API (`1.92.0`).
 
-- Slice references gain `split_off`, `split_off_mut`, and first/last variants (1.87.0).
-- `array_windows` iterates overlapping `&[T; N]` windows rather than dynamically sized `&[T]` windows (1.94.0), with `N` inferable from destructuring:
+`BTreeMap::append` changed in `1.93.0`: when both maps contain the same key,
+the value already in `self` is retained instead of being overwritten by
+`other`.
 
-  ```rust
-  fn has_double(values: &[u8]) -> bool {
-      values.array_windows().any(|[a, b]| a == b)
-  }
-  ```
+### Slice partitioning and views
 
-- Slices gain `element_offset` in 1.94.0.
+The `split_off` family on slice references (`1.87.0`) acts on `&mut &[T]` or
+its mutable counterpart, shrinks the cursor in place, and returns `Option`
+instead of panicking. The range must be one-sided. The family includes
+`split_off`, `split_off_mut`, `split_off_first`, `split_off_first_mut`,
+`split_off_last`, and `split_off_last_mut`; it is unrelated to
+`Vec::split_off(at)`.
 
-### Repetition and cell views
+```rust
+let mut s: &[i32] = &[1, 2, 3, 4];
+let head = s.split_off(..2).unwrap();
+let first = s.split_off_first().unwrap();
+```
 
-- `core::array::repeat` is stable from 1.91.0.
-- `Cell::as_array_of_cells` is stable from 1.91.0.
-- `Cell<[T; N]>` and `Cell<[T]>` implement `AsRef` views as arrays or slices of `Cell<T>` from 1.95.0.
-- `MaybeUninit<[T; N]>` gains `AsRef` and `AsMut` array and slice views plus conversion to and from `[MaybeUninit<T>; N]` in 1.95.0.
+`as_chunks::<N>` and `as_rchunks::<N>` (`1.88.0`) reinterpret a slice as
+fixed-size arrays plus a remainder: `as_chunks` leaves a tail remainder and
+`as_rchunks` a head remainder. Mutable and unchecked variants exist; `N == 0`
+panics. The unchecked methods are `as_chunks_unchecked` and
+`as_chunks_unchecked_mut`.
+
+`<[T]>::as_array::<N>()` and `as_mut_array` return checked fixed-array views in
+`1.93.0`; raw slice pointers gain corresponding methods. In `1.95.0`,
+array-shaped conversions cover `Cell<[T; N]>`/`Cell<[T]>` to `[Cell<T>]` and
+`MaybeUninit<[T; N]>` to and from `[MaybeUninit<T>; N]`.
+
+`<[T]>::element_offset(&T)` returns the index only for a reference inside the
+slice (`1.94.0`). `Cell::as_array_of_cells` converts `&Cell<[T; N]>` to
+`&[Cell<T>; N]` (`1.91.0`).
+
+### Windows over slices and arrays
+
+`array_windows::<N>()` yields overlapping `&[T; N]` windows (`1.94.0`), with
+`N` often inferred from a destructuring pattern:
+
+```rust
+let has_abba = bytes.array_windows().any(
+    |[a1, b1, b2, a2]| a1 != b1 && a1 == a2 && b1 == b2
+);
+```
+
+`core::array::repeat(value)` clones a value into `[T; N]` when `T` is not
+`Copy`, and `core::iter::chain(a, b)` is a receiver-neutral free function
+(`1.91.0`). `[T; N]::from_fn` is guaranteed to call its closure in increasing
+index order from `1.88.0`.
 
 ## Iterators and ranges
 
-### Repeat behavior
-
-Calling `last` or `count` on `iter::Repeat` panics from 1.92.0 instead of looping forever. Do not use terminal traversal on an infinite iterator.
-
-### Peekable and fused iterators
-
-- `Peekable::next_if_map` and `next_if_map_mut` are stable from 1.94.0.
-- `Fuse::<I>::default()` wraps `I::default()` from 1.90.0 instead of always constructing an empty iterator.
-- `vec::IntoIter<T>` no longer requires `T: RefUnwindSafe` to implement `UnwindSafe` (1.93.0).
-
 ### New range family
 
-`core::range::RangeInclusive`, `RangeInclusiveIter`, and the module itself are stable from 1.95.0. From 1.96.0, `core::range::{Range, RangeFrom, RangeToInclusive}` and their iterator types are stable; the range values use `IntoIterator` instead of implementing `Iterator`, so the ranges can be `Copy`. Ranges of `NonZero` integers are iterable, and the new `RangeInclusive` exposes its fields.
+`core::range::RangeInclusive` and `RangeInclusiveIter` stabilize in `1.95.0`.
+`Range`, `RangeFrom`, `RangeToInclusive`, and their `RangeIter`,
+`RangeFromIter`, and `RangeToInclusiveIter` types join in `1.96.0`. These range
+values are `Copy`, are not themselves iterators, implement `IntoIterator`, and
+convert in both directions with legacy `core::ops` ranges. Range syntax still
+creates the legacy types.
 
-`core::hint::cold_path` is also stable from 1.95.0 for marking an unlikely branch.
+The new `RangeInclusive` exposes public `start` and `end` fields. `RangeFull`,
+`RangeTo`, and `core::range::legacy` re-exports remain future work. Public APIs
+that should accept either family should use `RangeBounds`; prefer the new
+concrete type when a concrete range must be stored.
 
-Range syntax still creates legacy `core::ops` types. Construct a `core::range` value explicitly when the concrete type matters, and accept `RangeBounds` in public APIs that should support both families.
+Ranges over `NonZero` integers are iterable from `1.96.0`.
+
+### Iterator behavior and helpers
+
+`FromIterator` and `Extend` for tuples cover arities 1 through 12 (`1.85.0`),
+allowing one iterator of tuples to collect into multiple collections.
+
+`Peekable::next_if_map` and `next_if_map_mut` consume the peeked item only when
+the closure returns `Some` and return that mapped value (`1.94.0`).
+
+`ControlFlow` is `#[must_use]` from `1.87.0`. Its `is_break` and `is_continue`
+methods become const-callable in `1.95.0`; discarding a `try_fold`-style result
+therefore warns. `iter::Repeat::last()` and
+`.count()` panic rather than hanging forever from `1.92.0`.
+
+`core::iter::Fuse::default()` now wraps `I::default()` instead of constructing
+an always-empty iterator (`1.90.0`). Several `BinaryHeap<T>` methods no longer
+require `T: Ord` (`1.94.0`).
+
+## Numeric operations
+
+### Roots, averages, and multiples
+
+`isqrt` is stable on every integer and `NonZero` type (`1.84.0`). Signed types
+also expose `checked_isqrt`, which returns `None` on negative input; `isqrt`
+panics there.
+
+Overflow-free `midpoint` stabilizes for floats, unsigned integers, and
+`NonZeroU*` in `1.85.0`, and for signed integers in `1.87.0`.
+
+Unsigned integers gain `is_multiple_of` in `1.87.0`. For a zero divisor,
+`x.is_multiple_of(0)` is true exactly when `x == 0`; it does not panic.
+
+### Shifts and sign conversion
+
+All integers gain `unbounded_shl` and `unbounded_shr` in `1.87.0`. An oversized
+shift yields zero, except right-shifting a negative value yields `-1`.
+`cast_signed` and `cast_unsigned` on integers and `NonZero` express a sign-only
+reinterpretation without a generic `as` cast.
+
+`unchecked_shl`, `unchecked_shr`, and signed `unchecked_neg` stabilize in
+`1.93.0`.
+
+### Overflow policy
+
+The `strict_*` family (`1.91.0`) returns a plain value and always panics on
+overflow, including release builds. It includes add, subtract, multiply,
+division and remainder variants, negation, shifts, powers, signed absolute
+value, and signed/unsigned mixed forms: `strict_add`, `strict_sub`,
+`strict_mul`, `strict_div`, `strict_div_euclid`, `strict_rem`,
+`strict_rem_euclid`, `strict_neg`, `strict_shl`, `strict_shr`, `strict_pow`,
+signed `strict_add_unsigned`, `strict_sub_unsigned`, and `strict_abs`, plus
+unsigned `strict_add_signed` and `strict_sub_signed`. This contrasts with
+`wrapping_*` and `checked_*`.
+
+Unsigned types also gain `checked_sub_signed`, `overflowing_sub_signed`,
+`saturating_sub_signed`, and `wrapping_sub_signed` in `1.90.0`.
+
+### Bit operations
+
+Every integer and `NonZero` type gains `isolate_highest_one`,
+`isolate_lowest_one`, `highest_one`, and `lowest_one` in `1.97.0`. Unsigned
+types also gain `bit_width`, equivalent to `BITS - leading_zeros()`.
 
 ```rust
-use core::range::Range;
-
-#[derive(Clone, Copy)]
-struct Span(Range<usize>);
+assert_eq!(0b1011u8.isolate_highest_one(), 0b1000);
+assert_eq!(0b1011u8.isolate_lowest_one(), 0b0001);
+assert_eq!(0b1011u8.bit_width(), 4);
 ```
 
-## I/O, files, and processes
+Unsigned bigint primitives `carrying_add`, `borrowing_sub`, `carrying_mul`,
+`carrying_mul_add`, and `checked_signed_diff` are stable from `1.91.0`.
 
-### Error kinds and C strings
+### Floating-point and character operations
 
-- `std::io::ErrorKind` gains `QuotaExceeded` and `CrossesDevices` (1.85.0).
-- On Windows, writing after shutting down a socket's write side returns `ErrorKind::BrokenPipe` instead of `Other` (1.97.0).
-- `FromBytesWithNulError`, returned by `CStr::from_bytes_with_nul`, is an enum from 1.86.0, allowing callers to distinguish conversion failures.
+Float `abs`, `signum`, and `copysign` move into `core` in `1.84.0`, so they are
+usable in `no_std`. `next_up` and `next_down` produce adjacent representable
+values from `1.86.0`. `{float}::NAN` is guaranteed quiet from `1.88.0`.
 
-### File locking and removal
+`floor`, `ceil`, `trunc`, `fract`, `round`, and `round_ties_even` become
+const-callable in `1.90.0`; `mul_add` follows in `1.94.0`. Float constants add
+`EULER_GAMMA` and `GOLDEN_RATIO` in `1.94.0`.
 
-- `File::{lock, lock_shared, try_lock, try_lock_shared, unlock}` provides portable file locking from 1.89.0.
-- `RwLockWriteGuard::downgrade` is stable from 1.92.0.
-- On recent Windows, `std::fs::remove_file` removes a read-only file instead of failing solely due to the attribute (1.86.0).
-- The file-lock family is available on illumos from the 1.91.1 regression fix.
+`NonZero::count_ones` returns `NonZero<u32>` from `1.86.0`;
+`NonZero<uN>::div_ceil` stabilizes in `1.92.0`. `NonZero<char>` exists from
+`1.89.0`. `TryFrom<char> for usize` lands in `1.94.0`, and
+`TryFrom<{integer}> for bool` accepts only zero or one from `1.95.0`.
 
-### Anonymous pipes
+`char::MAX_LEN_UTF8` and `MAX_LEN_UTF16` name the 4- and 2-code-unit maxima
+(`1.93.0`). Module-level `std::char` constants and functions are deprecated in
+favor of the associated items on primitive `char` in `1.97.0`, including
+`MAX`, `from_u32`, `from_digit`, `decode_utf16`, and `REPLACEMENT_CHARACTER`;
+inherent calls such as `char::from_u32` generally keep their spelling, while
+imports should be removed. `char::is_control` is const-callable from `1.97.0`.
 
-`std::io::pipe()` returns `PipeReader` and `PipeWriter`, integrates with `Command` through `Stdio`, and converts to owned file descriptors or Windows handles (1.87.0). Read from the pipe before waiting for the child; waiting first can deadlock when the OS buffer fills.
+## Text, paths, and platform strings
+
+`OsStr::display()` and `OsString::display()` provide lossy, allocation-free
+`Display` output (`1.87.0`), avoiding `to_string_lossy()` when only formatting
+is needed and avoiding quoted `Debug` output.
+
+`str::from_utf8` and related functions also exist as inherent associated
+functions from `1.87.0`. `String::extend_from_within` and
+`TryFrom<Vec<u8>> for String` stabilize in the same release.
+
+`str::floor_char_boundary(i)` and `ceil_char_boundary(i)` clamp byte indices to
+valid UTF-8 boundaries (`1.91.0`).
+
+`Path::file_prefix` splits before the first dot, while `file_stem` splits before
+the last (`1.91.0`). `PathBuf::add_extension` and `with_added_extension` append
+instead of replacing it like `set_extension`. `Path` and `PathBuf` compare directly with
+`str` and `String` in both directions. `OsString::new` and `PathBuf::new` also
+become const-callable in this release.
+
+Unicode data updates to version 17 in `1.94.0`.
+
+## I/O, processes, files, and synchronization
+
+### Anonymous pipes and child processes
+
+`std::io::pipe()` returns `(PipeReader, PipeWriter)` (`1.87.0`); both integrate
+with `Stdio`, `OwnedFd`, and `OwnedHandle`. Move or drop every writer so the
+reader can observe EOF, and drain the pipe before `wait()` so a full OS buffer
+cannot deadlock the child.
 
 ```rust
 let (mut recv, send) = std::io::pipe()?;
-let mut child = std::process::Command::new("tool")
+let mut child = Command::new("path/to/bin")
     .stdout(send.try_clone()?)
     .stderr(send)
     .spawn()?;
 let mut output = Vec::new();
-std::io::Read::read_to_end(&mut recv, &mut output)?;
-child.wait()?;
+recv.read_to_end(&mut output)?;
+assert!(child.wait()?.success());
 ```
 
-### Thread and socket behavior
+### File locking
 
-- Panic output includes the thread ID (1.91.0).
-- Thread creation returns an error rather than panicking when the requested stack size cannot be set (1.91.0).
-- On Unix, `UnixStream` writes use `MSG_NOSIGNAL` (1.90.0). Handle the returned error instead of relying on a termination signal.
-- `std::fs::File` implements `Send` on UEFI from 1.97.0.
+`File::lock`, `lock_shared`, `try_lock`, `try_lock_shared`, and `unlock` are
+stable from `1.89.0`. Locks are advisory: they constrain cooperating lockers,
+not arbitrary I/O. `lock` and `lock_shared` block; the `try_` forms report
+failure instead. Dropping the file releases its lock; re-locking in the same
+process is platform-specific. These APIs remove the usual need for `fs2` or
+`fd-lock` solely to obtain file locking.
 
-## Environment, time, and platform modules
+`1.91.1` fixes `File::lock` incorrectly reporting `Unsupported` on illumos,
+which prevented Cargo from locking its build directory there.
 
-### Home-directory lookup
+### Locks, initialization, and lazy values
 
-- On Windows, `std::env::home_dir()` ignores the nonstandard `HOME` variable from 1.85.0. It remained deprecated in that release.
-- `home_dir()` is no longer deprecated from 1.87.0.
-- On Unix, it falls back to platform lookup when `HOME` is empty from 1.90.0.
+`Once::wait`, `Once::wait_force`, and `OnceLock::wait` block for another
+initializer instead of initializing the value (`1.86.0`).
 
-### Time and platform APIs
+`RwLockWriteGuard::downgrade(write_guard)` atomically creates a read guard
+without allowing another writer between them (`1.92.0`). It is an associated
+function, not a method; there is no read-guard upgrade.
 
-- On Windows, `SystemTime::checked_sub_duration` returns `None` for results before the Windows epoch, 1601-01-01 (1.94.0).
-- `std::os::darwin` is public from 1.84.0 as a shared module for Darwin-family targets.
+`LazyCell` and `LazyLock` implement `DerefMut` from `1.89.0`. They gain `get`,
+`get_mut`, and `force_mut` in `1.94.0`. `From<T>` constructs an already
+initialized `LazyCell<T, F>` or `LazyLock<T, F>` from `1.96.0`.
+`AssertUnwindSafe<T>` also implements `From<T>` from `1.96.0`.
 
-## Numerics and arithmetic
+### Sockets and filesystem behavior
 
-### Midpoints and bit operations
+- `UnixStream` writes suppress `SIGPIPE` with `MSG_NOSIGNAL` from `1.90.0`;
+  a closed peer yields `EPIPE`, so programs relying on signal termination must
+  handle the error.
+- Linux `TcpStreamExt::{quickack, set_quickack}` exposes `TCP_QUICKACK` from
+  `1.89.0`.
+- Windows `fs::remove_file` deletes read-only files on recent systems from
+  `1.86.0`.
+- On Windows, a socket write after shutting down the write half returns
+  `io::ErrorKind::BrokenPipe` instead of `Other` from `1.97.0`.
 
-- Floating-point, unsigned integer, and unsigned `NonZero` midpoint methods are stable from 1.85.0; signed-integer midpoint is stable from 1.87.0.
-- Integers gain `unbounded_shl` and `unbounded_shr` in 1.87.0.
-- Integer primitives and their `NonZero` forms gain `isolate_highest_one`, `isolate_lowest_one`, `highest_one`, and `lowest_one` (1.97.0); unsigned forms also gain `bit_width`.
+`io::ErrorKind` adds `QuotaExceeded` and `CrossesDevices` in `1.85.0`.
 
-### Signed/unsigned mixed arithmetic
+### Threads, panic hooks, and time
 
-- Unsigned integers gain `checked_sub_signed`, `overflowing_sub_signed`, `saturating_sub_signed`, and `wrapping_sub_signed` (1.90.0).
-- The integer `strict_*` family, unsigned `carrying_add`, `borrowing_sub`, `carrying_mul`, `carrying_mul_add`, and `checked_signed_diff` are stable from 1.91.0.
-- Integer primitives implement fallible conversion to `bool` from 1.95.0.
+`Waker::noop()` returns a no-op `&'static Waker` for manual polling in tests
+(`1.85.0`).
 
-### Floating-point and constants
+`PanicHookInfo::payload_as_str` avoids separate `&str` and `String` downcasts,
+and panic messages include the thread id (`1.91.0`). If the OS rejects a thread
+stack size, `spawn` returns `io::Error` rather than panicking inside std.
 
-- `f32` and `f64` provide `abs`, `signum`, and `copysign` in `core` from 1.84.0, making them available to `#![no_std]` crates.
-- Euler's constant and the golden ratio are available as `f32` and `f64` constants from 1.94.0.
+`Ipv4Addr::from_octets`, `Ipv6Addr::from_octets`, and
+`Ipv6Addr::from_segments` provide named const constructors from `1.91.0`.
 
-## Text, paths, formatting, and lazy values
+`Duration::from_mins` and `from_hours` land in `1.91.0`;
+`Duration::from_nanos_u128` accepts values beyond `u64::MAX` in `1.93.0`.
+On Windows, `SystemTime::checked_sub_duration` returns `None` below the 1601
+epoch from `1.94.0`.
 
-### Paths and strings
+## Formatting, comparison, and behavior contracts
 
-- `Path::file_prefix`, `PathBuf::add_extension`, and `PathBuf::with_added_extension` are stable from 1.91.0.
-- `Path` and `PathBuf` can compare directly with strings from 1.91.0.
-- `str::ceil_char_boundary` and `floor_char_boundary` are stable from 1.91.0.
-- `TryFrom<char> for usize` is stable from 1.94.0.
-
-### Formatting values
-
-`format_args!()` results can be stored in a variable from 1.89.0:
+`std::fmt::from_fn` wraps a formatter callback in a value implementing
+`Display` and `Debug` (`1.93.0`):
 
 ```rust
-let name = "Rust";
-let message = format_args!("hello, {name}");
-println!("{message}");
+let list = std::fmt::from_fn(|f| {
+    f.write_str("generated")
+});
 ```
 
-`std::fmt::from_fn` and its `FromFn` value create callback-backed formatting from 1.93.0; the closure receives a `Formatter`.
+Raw-pointer `Debug` output includes metadata such as slice length or vtable
+from `1.87.0`; tests matching the old output must change. Format width and
+precision are capped to 16 bits on every target. `Vec::with_capacity` now
+guarantees an allocation at least as large as requested even if the reported
+capacity differs.
 
-### Lazy initialization
+`cmp::min_by`, `max_by`, and `minmax_by` define their tie-breaking argument
+order from `1.91.0`.
 
-`LazyCell` and `LazyLock` gain `get`, `get_mut`, and `force_mut` from 1.94.0.
+`BuildHasherDefault::new()` is a named constructor (`1.85.0`). `Cell::update`
+applies a function in place, returns `()`, and requires `T: Copy` (`1.88.0`).
+`hint::select_unpredictable` chooses eagerly evaluated alternatives while
+discouraging a branch (`1.88.0`); use it for genuinely unpredictable hot-loop
+conditions. `core::hint::cold_path()` marks a path unlikely from `1.95.0`.
 
-## Other stable APIs and contracts
+`*const T` and `*mut T` implement `Default` as null from `1.88.0`.
+`CStr::from_bytes_with_nul`'s error changes from opaque struct to a matchable
+`FromBytesWithNulError` enum in `1.86.0`.
 
-- `NonZero<char>` is stable from 1.89.0.
-- `CStr`, `CString`, and `Cow<CStr>` compare directly from 1.90.0.
-- `IntErrorKind` is `Copy` and `Hash` from 1.90.0.
-- `proc_macro::Ident::new` accepts `$crate` from 1.90.0.
-- Pinned `Box`, `Rc`, and `Arc` values implement `Default` when their pointer type does (1.91.0).
-- Unsigned `Saturating` values implement `Sum` and `Product` from 1.91.0.
-- `core::panic::Location::file` has a less restrictive return lifetime from 1.91.0.
-- Comparator argument order is guaranteed for `std::cmp` `_by` forms of `min`, `max`, and `minmax` from 1.91.0.
-- `Location::file_as_c_str` is stable from 1.92.0.
-- `TokenStream` implements `Extend` for `Group`, `Literal`, `Punct`, and `Ident` from 1.92.0.
+`std::env::home_dir()` on Windows ignores nonstandard `HOME` from `1.85.0`.
+Its longstanding deprecation is being lifted in a later release, making it
+usable again. On Unix from `1.90.0`, an empty `HOME` counts as unset and the
+function falls back to the passwd entry.
 
-## Allocation and collection contracts
+## Const-callable inventory
 
-`Vec::with_capacity` guarantees an allocation for the requested amount from 1.87.0 even when `capacity()` later reports a different amount. Raw-pointer `Debug` output includes pointer metadata from the same release.
+The following become const-callable in `1.85.0`:
 
-Ignoring a returned `ControlFlow` warns from 1.87.0 because it is `#[must_use]`. Later exceptions for infallible unit results are described in [language-and-macros.md](language-and-macros.md).
+- `mem::size_of_val`, `mem::align_of_val`, `mem::swap`, and `ptr::swap`;
+- `MaybeUninit::write`, `NonNull::new`;
+- `Layout::for_value`, `align_to`, `pad_to_align`, `extend`, and `array`;
+- `HashMap::with_hasher`, `HashSet::with_hasher`, and
+  `BuildHasherDefault::new`;
+- float `recip`, `to_degrees`, `to_radians`, `max`, `min`, `clamp`, `abs`,
+  `signum`, and `copysign`.
 
-## Const-stable operations
+The `1.86.0` additions are `hint::black_box`, string split methods
+`split_at`, `split_at_mut`, `split_at_checked`, `split_at_mut_checked`,
+`str::is_char_boundary`, and `Cursor::get_mut`/`set_position`.
 
-Runtime stability does not imply const stability. Use the following minimum releases.
-
-### Memory, pointers, and pinning
-
-- 1.84.0: raw-pointer `is_null`, `as_ref`, and `as_mut`; `Pin::{new, new_unchecked, get_ref, into_ref, get_mut, get_unchecked_mut, static_ref, static_mut}`; atomic `from_ptr` operations described in the low-level reference.
-- 1.85.0: `size_of_val`, `align_of_val`, `mem::swap`, `ptr::swap`, `NonNull::new`, `MaybeUninit::write`, `HashMap::with_hasher`, `HashSet::with_hasher`, `BuildHasherDefault::new`, and `Layout::{for_value, align_to, pad_to_align, extend, array}`.
-- 1.86.0: `hint::black_box`, `io::Cursor::{get_mut, set_position}`, and `str::{is_char_boundary, split_at, split_at_checked, split_at_mut, split_at_mut_checked}`.
-- 1.87.0: `core::str::from_utf8_mut`, slice `copy_from_slice`, common `String` and `Vec` accessors including mutable slice, string, vector, and pointer forms.
-- 1.88.0: `NonNull::replace`, raw-pointer `replace`, `ptr::swap_nonoverlapping`, and `Cell::{replace, get, get_mut, from_mut, as_slice_of_cells}`.
-- 1.89.0: array `as_mut_slice`.
-- 1.90.0: slice `reverse`.
-- 1.91.0: array `each_ref` and `each_mut`, `OsString::new`, `PathBuf::new`, `TypeId::of`, and exposed-provenance pointer constructors.
-- 1.92.0: slice `rotate_left` and `rotate_right`.
-
-### Numeric, character, and text operations
-
-- 1.85.0: floating-point `recip`, degree/radian conversions, `max`, `min`, `clamp`, `abs`, `signum`, and `copysign`.
-- 1.87.0: `char::{is_digit, is_whitespace}`.
-- 1.89.0: ASCII-case-insensitive equality for byte slices and strings.
-- 1.90.0: `f32` and `f64` `floor`, `ceil`, `trunc`, `fract`, `round`, and `round_ties_even`.
-- 1.94.0: floating-point `mul_add`.
-- 1.97.0: `char::is_control`.
-
-### Slices, networking, formatting, and control flow
-
-- 1.87.0: `SocketAddr*` IP, port, flow-info, and scope setters; slice `as_flattened` and `as_flattened_mut`.
-- 1.95.0: `fmt::from_fn` and `ControlFlow::{is_break, is_continue}`.
-
-Standard macros such as `assert_eq!` and `vec!` also accept const-block expressions from 1.87.0.
+In `1.90.0`, float rounding methods and slice `reverse` become const-callable.
+`1.91.0` adds `TypeId::of`, array `each_ref`/`each_mut`, `OsString::new`,
+`PathBuf::new`, and exposed-provenance pointer constructors. `1.92.0` adds
+slice rotation. `1.94.0` adds float `mul_add`. `1.95.0` adds `fmt::from_fn` and
+`ControlFlow` predicates. `1.97.0` adds `char::is_control`.
